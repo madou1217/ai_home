@@ -285,6 +285,23 @@ async function run(options) {
       const panel=document.querySelector('[aria-label="Web Terminal"]'), handle=panel.querySelector('.global-web-terminal-resize-se');
       const opts={bubbles:true,cancelable:true,button:0,buttons:1,pointerId:1,pointerType:'mouse',isPrimary:true};
       const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const checkHeader=(cols)=>{
+        const row=panel.querySelector('.xterm-rows > div'), content=row?.textContent || '';
+        if(!/^BENCH_TUI [0-9]+x[0-9]+ revision=[0-9]+ *$/.test(content.slice(0, cols)))throw new Error('terminal header contains stale or missing visible text');
+        // xterm keeps alternate-buffer cells beyond the grid after shrinking.
+        // They must stay outside the clipped row even when fonts have loaded.
+        const right=row.getBoundingClientRect().right, walker=document.createTreeWalker(row,NodeFilter.SHOW_TEXT);
+        let node, offset=0;
+        while((node=walker.nextNode())){
+          const text=node.textContent || '';
+          for(let i=Math.max(0,cols-offset);i<text.length;i++){
+            if(text[i]===' ')continue;
+            const range=document.createRange();range.setStart(node,i);range.setEnd(node,i+1);
+            if(range.getBoundingClientRect().left<right-1)throw new Error('offscreen terminal cells are visible after resizing');
+          }
+          offset+=text.length;
+        }
+      };
       await sleep(300);
       const before=panel.getBoundingClientRect(), x=before.right, y=before.bottom;
       const initial=await (await fetch('/__benchmark/status')).json();
@@ -303,13 +320,22 @@ async function run(options) {
       if(Math.abs(after.width-before.width-230)>2||Math.abs(after.height-before.height-160)>2)throw new Error('resize did not follow the pointer');
       if(status.resizeCount<=initial.resizeCount||performance.now()-stableSince<200||!match||!status.lastResize||Number(match[1])!==status.lastResize.rows||Number(match[2])!==status.lastResize.cols)throw new Error('PTY did not converge to the final grid size');
       if(!panel.querySelector('.xterm-rows')?.textContent.includes('汉字'))throw new Error('wide terminal characters did not render');
+      checkHeader(Number(match[2]));
       const styleMutations=window.__benchMutations;
       handle.dispatchEvent(new PointerEvent('pointerdown',{...opts,clientX:after.right,clientY:after.bottom}));
       document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x,clientY:y}));
       document.dispatchEvent(new PointerEvent('pointerup',{...opts,buttons:0,clientX:x,clientY:y}));
-      await sleep(400);
+      let restoredStatus, restoredGrid, restoredLastCount=-1, restoredStableSince=performance.now();
+      for(let i=0;i<80;i++){
+        await sleep(50);restoredStatus=await (await fetch('/__benchmark/status')).json();
+        if(restoredStatus.resizeCount!==restoredLastCount){restoredLastCount=restoredStatus.resizeCount;restoredStableSince=performance.now();}
+        restoredGrid=panel.querySelector('.xterm-rows')?.textContent.match(/BENCH_TUI ([0-9]+)x([0-9]+)/);
+        if(restoredStatus.resizeCount>status.resizeCount&&performance.now()-restoredStableSince>=200&&restoredGrid&&restoredStatus.lastResize&&Number(restoredGrid[1])===restoredStatus.lastResize.rows&&Number(restoredGrid[2])===restoredStatus.lastResize.cols)break;
+      }
       const restored=panel.getBoundingClientRect();
       if(Math.abs(restored.width-before.width)>2||Math.abs(restored.height-before.height)>2)throw new Error('window size did not restore');
+      if(restoredStatus.resizeCount<=status.resizeCount||performance.now()-restoredStableSince<200||!restoredGrid||!restoredStatus.lastResize||Number(restoredGrid[1])!==restoredStatus.lastResize.rows||Number(restoredGrid[2])!==restoredStatus.lastResize.cols)throw new Error('PTY did not converge after shrinking: '+JSON.stringify({restoredGrid,status,restoredStatus}));
+      checkHeader(Number(restoredGrid[2]));
       frames.shift();frames.sort((a,b)=>a-b);
       return {styleOptimization:mode,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
     }`);
@@ -324,8 +350,49 @@ async function run(options) {
       const after = (await cdp.send('Performance.getMetrics')).metrics;
       results.push({ ...result, browserWork: metricDelta(before, after) });
     }
+    // FitAddon must size the screen to the unpadded content area. Sweeping
+    // through more than one cell height catches clipped bottom rows that a
+    // single final grid/PTY comparison cannot see.
+    const gridBounds = await evaluate(cdp, `(async () => {
+      const panel = document.querySelector('[aria-label="Web Terminal"]');
+      const root = panel.querySelector('.xterm');
+      const screen = root.querySelector('.xterm-screen');
+      const originalHeight = panel.style.height;
+      const originalWidth = panel.style.width;
+      const bounds = panel.getBoundingClientRect();
+      const startHeight = bounds.height, startWidth = bounds.width;
+      let worstOverflow = -Infinity;
+      let worstRightOverflow = -Infinity;
+      try {
+        for (let offset = 0; offset < 20; offset++) {
+          panel.style.height = (startHeight + offset) + 'px';
+          panel.style.width = (startWidth + offset) + 'px';
+          await new Promise(resolve => setTimeout(resolve, 180));
+          let rootBox, screenBox, rows, overflow, unused, rowHeight;
+          for (let attempt = 0; attempt < 10; attempt++) {
+            rootBox = root.getBoundingClientRect();
+            screenBox = screen.getBoundingClientRect();
+            rows = screen.querySelector('.xterm-rows')?.children.length || 0;
+            overflow = screenBox.bottom - rootBox.bottom;
+            unused = rootBox.bottom - screenBox.bottom;
+            rowHeight = screenBox.height / rows;
+            if (rows && rootBox.height && screenBox.height && overflow <= 1 && unused < rowHeight + 1 && screenBox.right - rootBox.right <= 1) break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          if (!rows || !rootBox.height || !screenBox.height) throw new Error('terminal grid has no visible size');
+          worstOverflow = Math.max(worstOverflow, overflow);
+          worstRightOverflow = Math.max(worstRightOverflow, screenBox.right - rootBox.right);
+          if (overflow > 1 || unused >= rowHeight + 1) throw new Error('terminal grid does not fit its visible area at height ' + (startHeight + offset) + ': overflow=' + overflow + ', unused=' + unused);
+          if (screenBox.right - rootBox.right > 1) throw new Error('terminal grid exceeds its visible width');
+        }
+      } finally {
+        panel.style.height = originalHeight;
+        panel.style.width = originalWidth;
+      }
+      return { sizesChecked: 20, worstBottomOverflowPx: Number(worstOverflow.toFixed(2)), worstRightOverflowPx: Number(worstRightOverflow.toFixed(2)) };
+    })()`);
     const indexHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST, 'index.html'))).digest('hex');
-    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results };
+    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, gridBounds };
   } finally {
     if (cdp && !cdp.isClosed()) {
       await withTimeout(cdp.send('Browser.close').catch(() => {}), 2000);

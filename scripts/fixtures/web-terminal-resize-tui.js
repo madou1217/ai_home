@@ -15,7 +15,9 @@ function draw() {
     const text = prefix + sample.repeat(Math.ceil(cols / sample.length) + 1).slice(0, remaining);
     lines.push(`\x1b[${row % 2 ? 36 : 37}m${text}\x1b[0m`);
   }
-  output.write(`\x1b[?25l\x1b[H${lines.join('\r\n')}\x1b[J`);
+  // Each redraw replaces the full visible line, including any cells exposed
+  // by shrinking after a wider grid. The final erase clears below the screen.
+  output.write(`\x1b[?25l\x1b[2J\x1b[H${lines.join('\x1b[K\r\n')}\x1b[J`);
 }
 output.write('\x1b[?1049h\x1b[2J');
 output.on('resize', draw);

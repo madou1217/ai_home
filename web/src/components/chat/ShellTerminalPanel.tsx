@@ -756,10 +756,11 @@ function ShellTerminalPanel({
         {tabs.map((t) => (
           <div
             key={t.id}
-            ref={attachBody(t.id)}
             className={styles.shellTerminalBody}
             style={{ display: t.id === activeId ? 'block' : 'none' }}
-          />
+          >
+            <div ref={attachBody(t.id)} className={styles.shellTerminalMount} />
+          </div>
         ))}
         </div>
       </div>

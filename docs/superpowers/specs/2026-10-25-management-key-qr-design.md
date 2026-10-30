@@ -54,7 +54,9 @@ credential and a non-empty replacement.
 The WebUI connection layer keeps the already-fixed semantics that an empty
 Management Key input means “leave unchanged” for an existing profile. Failed
 authorization marks the profile as degraded or redirects to setup without
-deleting the saved credential.
+deleting the saved credential. The QR payload uses the same 32–4096 character
+credential bound as WebUI profile storage and browser transport; it rejects
+CR/LF/NUL while allowing other printable key characters.
 
 ### QR payload and CLI rendering
 

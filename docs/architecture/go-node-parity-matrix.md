@@ -166,6 +166,45 @@ node scripts/gateway-shadow-compare.js \
 禁用策略同步和本地 modality 投影已工作，但不足以覆盖对外全集。下次复测仍使用上面的
 shadow 脚本，不能把这份快照当成永久目录结果。
 
+**鉴权 shadow 复测（2026-10-29）**：无 client key 的只读探针重新运行后，当前仍运行的 Go
+`19550` 工件对 `/v1/props` 返回旧的 `200 {object,data}`，而 Node 返回
+`401 {ok:false,error:"unauthorized_client"}`；这是旧进程尚未加载 `0f891930` 的运行态证据。
+当前源码已把 `clientauth.Authorizer` 注入 `clientpropsapi`，并在未授权时返回 Node 形状的
+`401`；`go test ./internal/transport/http/clientpropsapi ./internal/host/aihserver` 通过，
+临时 httptest 也观察到未授权 `401` 与带 key `200`。因此该修复是**源码/隔离验证完成、运行中
+工件未重启验证**，不能把当前 `19550` 的 shadow 结果写成修复已在线。
+
+同一无 key 复测显示 `/v1/models`、`?capability=vision`、`?capability=image_out` 两侧状态码
+均为 `401`，但 Node 仍返回扁平 `{ok:false,error:"unauthorized_client"}`，Go 返回嵌套
+`{error:{code:"unauthorized_client",message:"请求模型目录失败"}}`。这属于独立的错误 envelope
+合同差异；当前源码已由 `48dafa60` 将**仅客户端鉴权失败**改为 Node 形状，模型目录其它
+错误继续保留结构化 envelope。两个修复均只完成源码与隔离验证，运行中的 `19550` 未重启，
+因此不能把 shadow 结果写成在线切换证据。
+
+**当前 HEAD 的隔离构件复测（2026-10-29）**：在不触碰运行中 `9527`/`19550` 的前提下，
+从 `154d652a92a2318f89c98187d1e517f2333817c8` 的干净 detached worktree 执行
+`npm run go:build` 等价构建。构件 build stamp 的 `source_sha` 与该 HEAD 一致，
+`binary_sha256=00bb1ee755bad0dc2121702f91f03a87d58e2eee82d816fadc5007a4313b8039`，
+`route_manifest_sha256=74fcf69447f78c45e4d0e6dfd1d99eec3de5dae30d245168e4182c8190badc2`。
+构件在临时 `AIH_HOME_DIR`、随机本地 key 和动态 loopback 端口上启动后观察到：无 key 的
+`GET /v1/props`、`/v1/models`、`?capability=vision`、`?capability=image_out` 均为
+`401 {"error":"unauthorized_client","ok":false}`；带 key 的 `/v1/props` 为
+`200 {"object":"props","data":{}}`，`/v1/models` 为 `200 {"object":"list","data":[]}`，
+`/healthz` 为 `200 {"ok":true,"service":"aih-server"}`。临时进程、worktree 和运行文件
+均已清理。该证据把两项修复推进到「当前 HEAD 构件 + 隔离运行」；生产 `19550` 仍是旧
+`source_sha=a7aa5307252f209111b83f2006227fb99168f62a`，所以仍未完成在线重启、公开 shadow
+或 ownership/cut-over 验收。
+
+**后续当前 HEAD 构件复测（2026-10-29）**：在提交
+`31589163dc5e870522a31e685d156e0852019896` 后重新执行 `npm run go:build`。构件 stamp 的
+`source_sha` 与当前 HEAD 一致，`binary_sha256=b812c03c5963740463cf1a4cf87f3327afd0da4745e9e98a1f7ac6d94db9c097`，
+实际二进制摘要与 stamp 一致，`route_manifest_sha256=74fcf69447f78c45e4d0e6dfd1d99eec3de5dae30d245168e4182c8190badc2`。
+在临时 AIH_HOME、随机 loopback 端口和抛弃式 key 上启动该构件后，`/healthz` 为 200；无 key 的
+`/v1/props` 与 `/v1/models` 均为 `401 {"error":"unauthorized_client","ok":false}`，带临时
+key 的两条请求分别为 200（`props` 空数据、`models` 空目录）。临时进程和状态目录已清理。
+运行中的 `19550` PID 未重启，仍加载旧 inode；因此这只是当前 HEAD 构件与隔离运行证据，
+不是生产在线验证或 ownership/cut-over。
+
 **第一阶段目录投影已落地（2026-10-25）**：Node 全局缓存现在通过新的
 `PUT /v1/management/model-catalog` 推送到 Go，Go 以独立的 immutable projection store
 渲染私有 `/v1/models`。投影只包含模型 ID、`owned_by`、模态和 reasoning efforts，

@@ -12,6 +12,7 @@ import { Input, Select, Switch, Tooltip, message } from 'antd';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
+  CheckOutlined,
   CopyOutlined,
   DeleteOutlined,
   MinusCircleOutlined,
@@ -85,6 +86,12 @@ const ROUTE_OPERATIONS: Array<{ value: TranslationRoutePreference['operations'][
   { value: 'batch', label: '批量' },
   { value: 'page', label: '页面' },
   { value: 'replace', label: '替换' },
+];
+
+const QUICK_START_EXAMPLES = [
+  '你好，世界！',
+  '请把这段产品说明翻译得更自然。',
+  '展示本地 Server 调度、熔断、恢复和队列的真实运行态。',
 ];
 
 function createRoutePreference(index: number, model: { id: string; provider: string } | undefined): TranslationRoutePreference {
@@ -514,6 +521,12 @@ export default function TranslationWorkspace() {
     source === AUTO_LANGUAGE && detection
       ? `${detection.label} · ${CONFIDENCE_LABEL[detection.confidence] || detection.confidence}`
       : '';
+  const detectedStatus = detecting
+    ? '正在检测原文'
+    : detectedLabel || (source === AUTO_LANGUAGE ? '等待输入后自动检测' : languageLabelOf(languages, source));
+  const executionTarget = bootstrap?.settings.executionTarget === 'direct-provider'
+    ? 'Provider 直连'
+    : 'AIH Server';
 
   const languageIntent = resolveLanguageIntent(
     {
@@ -601,11 +614,13 @@ export default function TranslationWorkspace() {
       sameLanguage,
     });
 
+  const pageFailedCount = pageProgress.filter((item) => Boolean(item.error)).length;
+
   return (
     <PageScaffold
-      title="AI 翻译"
+      title="灵感工坊 / 翻译"
       code="TRANSLATE"
-      subTitle="粘贴或选中文本即可翻译；划词浮层与页面共用同一套默认值。"
+      subTitle="把选区、页面和长文本放进同一条工作流；划词浮层与页面共用默认值。"
       extra={
         <div className={styles.translationControls}>
           <div className={styles.floatingToggle}>
@@ -629,17 +644,21 @@ export default function TranslationWorkspace() {
       }
     >
       <div className={styles.workspace}>
-        <div className={styles.toolbar}>
-          <div className={styles.toolbarGroup}>
-            <span className={styles.fieldLabel}>源语言</span>
-            <Select
-              className={styles.languageSelect}
-              value={source}
-              options={languageOptions}
-              optionFilterProp="label"
-              showSearch
-              onChange={handleSourceChange}
-            />
+        <div className={styles.heroBar}>
+          <div className={`${styles.languageToolbar} ${styles.heroLanguageControl}`}>
+            <div className={styles.languageField}>
+              <span className={styles.fieldLabel}>源语言</span>
+              <Select
+                id="translation-source-language"
+                className={styles.languageSelect}
+                value={source}
+                options={languageOptions}
+                optionFilterProp="label"
+                showSearch
+                aria-label="选择源语言"
+                onChange={handleSourceChange}
+              />
+            </div>
             <Tooltip title={canSwapLanguages(source, target) ? '互换源语言与目标语言' : '自动检测时无法互换'}>
               <Button
                 appVariant="icon"
@@ -649,31 +668,221 @@ export default function TranslationWorkspace() {
                 onClick={handleSwap}
               />
             </Tooltip>
-            <span className={styles.fieldLabel}>目标语言</span>
-            <Select
-              className={styles.languageSelect}
-              value={target}
-              options={languageOptions.filter((option) => option.value !== AUTO_LANGUAGE)}
-              optionFilterProp="label"
-              showSearch
-              onChange={handleTargetChange}
-            />
+            <div className={`${styles.languageField} ${styles.targetLanguageField}`}>
+              <span className={styles.fieldLabel}>目标语言</span>
+              <Select
+                id="translation-target-language"
+                className={`${styles.languageSelect} ${styles.targetLanguageSelect}`}
+                value={target}
+                options={languageOptions.filter((option) => option.value !== AUTO_LANGUAGE)}
+                optionFilterProp="label"
+                showSearch
+                aria-label="选择目标语言"
+                onChange={handleTargetChange}
+              />
+            </div>
           </div>
-
-          <div className={styles.toolbarGroup}>
-            <span className={styles.fieldLabel}>模型</span>
-            <span className={styles.savedHint}>{selection.model || bootstrap?.defaultModel || '自动选择可用模型'}</span>
-            <span className={styles.savedHint}>高级设置可修改</span>
-          </div>
-          <div className={styles.toolbarGroup}>
-            <span className={styles.fieldLabel}>完成后复制</span>
-            <Switch size="small" checked={autoCopy} onChange={(checked) => { setAutoCopy(checked); persist({ autoCopy: checked }); }} />
-            {autoCopy ? <Select size="small" value={copyScope} options={[{ value: 'selection', label: '选区' }, { value: 'page', label: '页面' }, { value: 'all', label: '全部' }]} onChange={(value) => { setCopyScope(value); persist({ copyScope: value }); }} /> : null}
-            <span className={styles.savedHint}>仅在整段成功完成后复制</span>
+          <div className={styles.heroMeta}>
+            <span className={styles.statusPill} data-tone="accent">
+              <span className={styles.statusPillDot} aria-hidden="true" />
+              {detectedStatus}
+            </span>
+            <span className={styles.statusPill} title={selection.model || bootstrap?.defaultModel || '自动选择可用模型'}>
+              模型 · {selection.model || bootstrap?.defaultModel || '自动选择'}
+            </span>
+            <span className={styles.statusPill}>执行 · {executionTarget}</span>
           </div>
         </div>
 
-        <section className={styles.pageTranslationPanel} aria-labelledby="translation-page-title">
+        <div className={styles.panes}>
+          <section className={`${styles.pane} ${styles.paneSource} ${styles['pane--source']}`} aria-labelledby="translation-source-title">
+            <header className={styles.paneHeader}>
+              <span id="translation-source-title" className={styles.paneTitle}>原文输入</span>
+              <span className={styles.paneMeta}>{chars} 字符</span>
+            </header>
+            <Input.TextArea
+              className={styles.sourceInput}
+              value={text}
+              onChange={(event) => handleTextChange(event.target.value)}
+              onKeyDown={handleTextKeyDown}
+              aria-label="原文输入"
+              placeholder="粘贴要翻译的内容，或直接在这里输入…"
+              autoSize={false}
+              spellCheck={false}
+            />
+            {!text && !busy ? (
+              <div className={styles.sourceEmptyState} aria-label="快速开始示例">
+                <span className={styles.sourceEmptyEyebrow}>从一个句子开始</span>
+                <div className={styles.quickExamples}>
+                  {QUICK_START_EXAMPLES.map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      className={styles.quickExample}
+                      onClick={() => handleTextChange(example)}
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <footer className={styles.paneFooter}>
+              <div className={styles.paneFooterLeft}>
+                {sameLanguage ? (
+                  <span className={styles.paneHint}>源语言与目标语言相同，无需翻译</span>
+                ) : detectedLabel ? (
+                  <span className={styles.detectChip}>检测到 {detectedLabel}</span>
+                ) : (
+                  <span className={styles.paneHint}>自动检测输入语言</span>
+                )}
+                {overLimit ? (
+                  <span className={styles.limitWarning}>
+                    超出 {chars - MAX_TRANSLATION_INPUT_CHARS} 字符
+                  </span>
+                ) : null}
+              </div>
+              <div className={styles.paneFooterRight}>
+                <span className={styles.paneHint}>
+                  <kbd className={styles.kbd}>⌘↵</kbd> 翻译
+                </span>
+                <Button
+                  appVariant="quiet"
+                  icon={<DeleteOutlined />}
+                  aria-label="清空原文和译文"
+                  disabled={!text && !resultText}
+                  onClick={handleClear}
+                >
+                  清空
+                </Button>
+                <Button
+                  type="primary"
+                  className={styles.primaryAction}
+                  aria-label="开始翻译"
+                  icon={<TranslationOutlined />}
+                  loading={busy || detecting}
+                  disabled={!canTranslate(text) || overLimit || sameLanguage}
+                  onClick={() => void handleTranslate()}
+                >
+                  {busy || detecting ? '翻译中' : '翻译'}
+                </Button>
+              </div>
+            </footer>
+            {showConfirmation ? (
+              <div className={styles.languageIntentStrip} role="status">
+                <span>{intentMessage}</span>
+                <Select
+                  size="small"
+                  value={target || undefined}
+                  options={buildLanguageOptions(languages, { includeAuto: false })}
+                  aria-label="确认目标语言"
+                  onChange={handleTargetChange}
+                />
+                <Button appVariant="quiet" onClick={handleKeepOriginal}>保持原文</Button>
+                {sameLanguage ? <Button appVariant="secondary" onClick={() => void handleTranslate('explicit')}>仍然翻译</Button> : null}
+              </div>
+            ) : null}
+          </section>
+
+          <section className={`${styles.pane} ${styles.paneResult} ${styles['pane--result']}`} data-phase={feedback.phase} aria-labelledby="translation-result-title" aria-busy={feedback.active}>
+            <header className={styles.paneHeader}>
+              <span id="translation-result-title" className={styles.paneTitle}>译文输出</span>
+              <span className={styles.paneMeta}>{routeLabel}</span>
+            </header>
+            {stream.state.status !== 'idle' || detecting ? (
+              <div className={styles.translationStatus} role="status" aria-live="polite">
+                <span className={styles.statusDot} aria-hidden="true" />
+                <span key={feedback.phase} className={styles.statusCaption}>{feedback.label}</span>
+                <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
+              </div>
+            ) : null}
+            <div className={styles.output} aria-label="译文输出">
+              {resultText ? (
+                <div className={styles.outputText}>
+                  {resultText}
+                  {busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
+                </div>
+              ) : feedback.active ? (
+                <div className={styles.waitingState}>
+                  <span>{feedback.hint}</span>
+                  <div className={styles.waitingSkeleton} aria-hidden="true"><span /><span /><span /></div>
+                </div>
+              ) : (
+                <div className={styles.outputEmpty}>
+                  <span className={styles.outputEmptyIcon} aria-hidden="true"><TranslationOutlined /></span>
+                  <strong>{busy ? '正在翻译…' : '译文会在这里流式出现'}</strong>
+                  <span>输入原文并开始翻译，结果会实时显示在这里。</span>
+                </div>
+              )}
+            </div>
+            {stream.state.status === 'error' && stream.state.error ? (
+              <div className={styles.inlineError}>
+                {stream.state.error.message}
+                {stream.state.error.code ? (
+                  <code className={styles.errorCode}>{stream.state.error.code}</code>
+                ) : null}
+                <Button appVariant="quiet" aria-label="重试翻译" onClick={() => void handleTranslate()}>
+                  重试
+                </Button>
+              </div>
+            ) : null}
+            <footer className={`${styles.paneFooter} ${styles.resultToolbar}`}>
+              <div className={styles.paneFooterLeft}>
+                {meta ? (
+                  <span className={styles.paneHint}>
+                    {meta.model}
+                    {meta.provider ? ` · ${meta.provider}` : ''}
+                  </span>
+                ) : null}
+                {stream.state.status === 'done' && stream.state.elapsedMs ? (
+                  <span className={styles.paneHint}>
+                    {(stream.state.elapsedMs / 1000).toFixed(1)}s
+                  </span>
+                ) : null}
+                {stream.state.status === 'cancelled' ? (
+                  <span className={styles.paneHint}>已停止，保留已翻译部分</span>
+                ) : null}
+              </div>
+              <div className={styles.paneFooterRight}>
+                {busy ? (
+                  <Button appVariant="secondary" aria-label="停止翻译" onClick={stream.cancel}>
+                    停止生成
+                  </Button>
+                ) : null}
+                {stream.state.status === 'cancelled' ? (
+                  <Button appVariant="secondary" aria-label="重新翻译" onClick={() => void handleTranslate()}>重新翻译</Button>
+                ) : null}
+                {canCopy ? <Button
+                  appVariant="secondary"
+                  className={copied ? styles.copyConfirmed : undefined}
+                  aria-label={copied ? '已复制译文' : '复制译文'}
+                  icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+                  onClick={handleCopy}
+                >
+                  {copied ? '已复制' : '复制'}
+                </Button> : null}
+              </div>
+            </footer>
+          </section>
+        </div>
+
+        {fallbackFrom ? (
+          <div className={styles.inlineNotice}>
+            已保存的模型 {fallbackFrom} 当前不可用，本次改用{' '}
+            {selection.model || '服务端默认模型'}
+          </div>
+        ) : null}
+
+        {status === 'error' ? (
+          <div className={styles.inlineError}>
+            {bootstrapError || '加载翻译设置失败'}
+            <Button appVariant="quiet" onClick={reload}>
+              重试
+            </Button>
+          </div>
+        ) : null}
+
+        <section className={`${styles.pageTranslationPanel} ${styles.taskStrip}`} aria-labelledby="translation-page-title">
           <div className={styles.pageTranslationHeader}>
             <div>
               <span id="translation-page-title" className={styles.paneTitle}>整页翻译</span>
@@ -687,20 +896,20 @@ export default function TranslationWorkspace() {
                 options={[{ value: 'side-by-side', label: '原文旁注' }, { value: 'replace', label: '替换原文' }]}
                 onChange={setPageMode}
               />
-              {pageBusy ? <Button appVariant="quiet" onClick={() => pageAbortRef.current?.abort()}>停止</Button> : <Button appVariant="secondary" onClick={() => void translateCurrentPage()}>翻译当前页面</Button>}
-              {pageApplied && !pageBusy ? <Button appVariant="quiet" onClick={() => { pageUndoRef.current?.(); pageUndoRef.current = null; setPageProgress([]); setPageApplied(false); }}>撤回页面译文</Button> : null}
+              {pageBusy ? <Button appVariant="quiet" aria-label="停止整页翻译" onClick={() => pageAbortRef.current?.abort()}>停止</Button> : <Button appVariant="secondary" onClick={() => void translateCurrentPage()}>{pageFailedCount || pageCancelled ? '重试页面翻译' : '翻译当前页面'}</Button>}
+              {pageApplied && !pageBusy ? <Button appVariant="quiet" aria-label="撤回页面译文" onClick={() => { pageUndoRef.current?.(); pageUndoRef.current = null; setPageProgress([]); setPageApplied(false); }}>撤回页面译文</Button> : null}
             </div>
           </div>
           {pageBusy || pageProgress.length || pageCancelled ? (
             <div className={styles.pageTranslationProgress} role="status" aria-live="polite">
               <span>{pageBusy ? '正在翻译页面' : pageCancelled ? '已停止页面翻译' : '页面翻译完成'} · 已处理 {pageProgress.length} 段</span>
-              {pageProgress.some((item) => item.error) ? <span className={styles.limitWarning}>部分段落失败，可重试</span> : null}
+              {pageFailedCount ? <span className={styles.limitWarning}>失败 {pageFailedCount} 段，可重试</span> : null}
             </div>
           ) : null}
         </section>
 
         <details className={styles.advancedTranslationSettings}>
-          <summary>高级设置 <span className={styles.savedHint}>Provider、模型、路由和服务凭据</span></summary>
+          <summary><span className={styles.settingsSummaryTitle}>高级设置</span> <span className={styles.savedHint}>模型、Provider、路由和服务凭据</span><span className={styles.settingsSummaryHint}>按需展开</span></summary>
           <section className={styles.modelSettings} aria-labelledby="translation-model-settings-title">
             <div className={styles.routeHeader}>
               <div>
@@ -730,9 +939,31 @@ export default function TranslationWorkspace() {
           <section className={styles.systemSettings} aria-labelledby="translation-system-settings-title">
             <div>
               <span id="translation-system-settings-title" className={styles.paneTitle}>系统级取词</span>
-              <span className={styles.routeHint}>macOS 全局选词、右键入口和辅助功能授权。</span>
+              <span className={styles.routeHint}>桌面取词、全局快捷键和权限状态。</span>
             </div>
             <SystemTranslationControl persistedExecutionTarget={bootstrap?.settings.executionTarget} />
+          </section>
+          <section className={styles.copySettings} aria-labelledby="translation-copy-settings-title">
+            <div>
+              <span id="translation-copy-settings-title" className={styles.paneTitle}>完成后复制</span>
+              <span className={styles.routeHint}>整段成功完成后复制译文，避免把半成品写入剪贴板。</span>
+            </div>
+            <div className={styles.copySettingsControl}>
+              <Switch
+                size="small"
+                checked={autoCopy}
+                aria-label="完成后自动复制"
+                onChange={(checked) => { setAutoCopy(checked); persist({ autoCopy: checked }); }}
+              />
+              {autoCopy ? <Select
+                size="small"
+                value={copyScope}
+                aria-label="自动复制范围"
+                options={[{ value: 'selection', label: '选区' }, { value: 'page', label: '页面' }, { value: 'all', label: '全部' }]}
+                onChange={(value) => { setCopyScope(value); persist({ copyScope: value }); }}
+              /> : null}
+              <span className={styles.savedHint}>{autoCopy ? '已开启' : '已关闭'}</span>
+            </div>
           </section>
           <TranslationProviderSettings
             providers={providers}
@@ -858,169 +1089,6 @@ export default function TranslationWorkspace() {
           )}
           </section>
         </details>
-
-        {fallbackFrom ? (
-          <div className={styles.inlineNotice}>
-            已保存的模型 {fallbackFrom} 当前不可用，本次改用{' '}
-            {selection.model || '服务端默认模型'}
-          </div>
-        ) : null}
-
-        {status === 'error' ? (
-          <div className={styles.inlineError}>
-            {bootstrapError || '加载翻译设置失败'}
-            <Button appVariant="quiet" onClick={reload}>
-              重试
-            </Button>
-          </div>
-        ) : null}
-
-        <div className={styles.panes}>
-          <section className={styles.pane}>
-            <header className={styles.paneHeader}>
-              <span className={styles.paneTitle}>原文</span>
-              <span className={styles.paneMeta}>{chars} 字符</span>
-            </header>
-            <Input.TextArea
-              className={styles.sourceInput}
-              value={text}
-              onChange={(event) => handleTextChange(event.target.value)}
-              onKeyDown={handleTextKeyDown}
-              placeholder="粘贴要翻译的内容，或直接在这里输入…"
-              autoSize={false}
-              spellCheck={false}
-            />
-            <footer className={styles.paneFooter}>
-              <div className={styles.paneFooterLeft}>
-                {sameLanguage ? (
-                  <span className={styles.paneHint}>源语言与目标语言相同，无需翻译</span>
-                ) : detectedLabel ? (
-                  <span className={styles.detectChip}>检测到 {detectedLabel}</span>
-                ) : (
-                  <span className={styles.paneHint}>自动检测输入语言</span>
-                )}
-                {overLimit ? (
-                  <span className={styles.limitWarning}>
-                    超出 {chars - MAX_TRANSLATION_INPUT_CHARS} 字符
-                  </span>
-                ) : null}
-              </div>
-              <div className={styles.paneFooterRight}>
-                <span className={styles.paneHint}>
-                  <kbd className={styles.kbd}>⌘↵</kbd> 翻译
-                </span>
-                <Button
-                  appVariant="quiet"
-                  icon={<DeleteOutlined />}
-                  disabled={!text && !resultText}
-                  onClick={handleClear}
-                >
-                  清空
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<TranslationOutlined />}
-                  loading={busy || detecting}
-                  disabled={!canTranslate(text) || overLimit || sameLanguage}
-                  onClick={() => void handleTranslate()}
-                >
-                  {busy || detecting ? '翻译中' : '翻译'}
-                </Button>
-              </div>
-            </footer>
-            {showConfirmation ? (
-              <div className={styles.languageIntentStrip} role="status">
-                <span>{intentMessage}</span>
-                <Select
-                  size="small"
-                  value={target || undefined}
-                  options={buildLanguageOptions(languages, { includeAuto: false })}
-                  aria-label="确认目标语言"
-                  onChange={handleTargetChange}
-                />
-                <Button appVariant="quiet" onClick={handleKeepOriginal}>保持原文</Button>
-                {sameLanguage ? <Button appVariant="secondary" onClick={() => void handleTranslate('explicit')}>仍然翻译</Button> : null}
-              </div>
-            ) : null}
-          </section>
-
-          <section className={styles.pane} data-phase={feedback.phase} aria-busy={feedback.active}>
-            <header className={styles.paneHeader}>
-              <span className={styles.paneTitle}>译文</span>
-              <span className={styles.paneMeta}>{routeLabel}</span>
-            </header>
-            {stream.state.status !== 'idle' || detecting ? (
-              <div className={styles.translationStatus} role="status">
-                <span className={styles.statusDot} aria-hidden="true" />
-                <span key={feedback.phase} className={styles.statusCaption}>{feedback.label}</span>
-                <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
-              </div>
-            ) : null}
-            <div className={styles.output}>
-              {resultText ? (
-                <div className={styles.outputText}>
-                  {resultText}
-                  {busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
-                </div>
-              ) : feedback.active ? (
-                <div className={styles.waitingState}>
-                  <span>{feedback.hint}</span>
-                  <div className={styles.waitingSkeleton} aria-hidden="true"><span /><span /><span /></div>
-                </div>
-              ) : (
-                <div className={styles.outputPlaceholder}>
-                  {busy ? '正在翻译…' : '译文会在这里流式出现'}
-                </div>
-              )}
-            </div>
-            {stream.state.status === 'error' && stream.state.error ? (
-              <div className={styles.inlineError}>
-                {stream.state.error.message}
-                {stream.state.error.code ? (
-                  <code className={styles.errorCode}>{stream.state.error.code}</code>
-                ) : null}
-                <Button appVariant="quiet" onClick={() => void handleTranslate()}>
-                  重试
-                </Button>
-              </div>
-            ) : null}
-            <footer className={styles.paneFooter}>
-              <div className={styles.paneFooterLeft}>
-                {meta ? (
-                  <span className={styles.paneHint}>
-                    {meta.model}
-                    {meta.provider ? ` · ${meta.provider}` : ''}
-                  </span>
-                ) : null}
-                {stream.state.status === 'done' && stream.state.elapsedMs ? (
-                  <span className={styles.paneHint}>
-                    {(stream.state.elapsedMs / 1000).toFixed(1)}s
-                  </span>
-                ) : null}
-                {stream.state.status === 'cancelled' ? (
-                  <span className={styles.paneHint}>已停止，保留已翻译部分</span>
-                ) : null}
-              </div>
-              <div className={styles.paneFooterRight}>
-                {busy ? (
-                  <Button appVariant="secondary" onClick={stream.cancel}>
-                    停止生成
-                  </Button>
-                ) : null}
-                {stream.state.status === 'cancelled' ? (
-                  <Button appVariant="secondary" onClick={() => void handleTranslate()}>重新翻译</Button>
-                ) : null}
-                {canCopy ? <Button
-                  appVariant="secondary"
-                  icon={<CopyOutlined />}
-                  onClick={handleCopy}
-                >
-                  {copied ? '已复制' : '复制'}
-                </Button> : null}
-              </div>
-            </footer>
-          </section>
-        </div>
       </div>
 
       <section className={styles.history}>
@@ -1031,7 +1099,7 @@ export default function TranslationWorkspace() {
               {history.entries.length} 条 · 仅保存在本机
             </span>
             {history.entries.length ? (
-              <Button appVariant="quiet" onClick={history.clear}>
+              <Button appVariant="quiet" aria-label="清空翻译记录" onClick={history.clear}>
                 清空记录
               </Button>
             ) : null}
@@ -1039,12 +1107,14 @@ export default function TranslationWorkspace() {
         </header>
         {history.entries.length === 0 ? (
           <div className={styles.historyEmpty}>
-            完成一次翻译后，原文 / 译文 / 模型会记录在这里。
+            <span className={styles.historyEmptyIcon} aria-hidden="true"><TranslationOutlined /></span>
+            <strong>还没有翻译记录</strong>
+            <span>完成一次翻译后，原文、译文和模型信息会保存在本机。</span>
           </div>
         ) : (
           <ul className={styles.historyList}>
-            {history.entries.map((entry) => (
-              <li key={entry.id} className={styles.historyItem}>
+            {history.entries.map((entry, index) => (
+              <li key={entry.id} className={`${styles.historyItem} ${index === 0 ? styles.historyItemLatest : ''}`}>
                 <div className={styles.historyItemHeader}>
                   <span className={styles.historyRoute}>
                     {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}

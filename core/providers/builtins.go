@@ -283,6 +283,11 @@ func builtinOpenCode() Definition {
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
+			// Console 登录（设备码）：策略在 lib/server/oauth-strategies/opencode.js，
+			// 跑的是官方 `opencode auth login opencode --method device`（方法枚举实测
+			// `Available: device, key`），凭据落 opencode 的 credential 存储而不是 auth.json，
+			// 登录成功后由宿主观察者登记成账号（lib/account/opencode-native-credential-sync.js）。
+			authOptionWithStrategy(AuthModeOAuthBrowser, "opencode:device", "OpenCode Console 登录（设备码）", "官方 CLI 设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"),
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
 		},
 		SessionSync: SessionSync{
@@ -871,7 +876,11 @@ func builtinWorkbuddy() Definition {
 		Presentation:   withAPIHost(presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"), "workbuddy.cn"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
-		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
+		// BaseURLEnv：家族四支共用同一套 CodeBuddy Code runtime，Base URL 覆盖与
+		// codebuddy 同源（认证方式的说明文案本来就写着「绑定 CODEBUDDY_API_KEY /
+		// CODEBUDDY_BASE_URL」，缺了这条声明会让 WebUI 编辑账号时**写不进接口地址**
+		// —— 2026-10-29 真机：applyCredentialPatch 只对契约声明过的键写入）。
+		Credentials: &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
 		// 写的是同一份地区会话存储，读取时两个数据根合并成一个项目列表。
 		// 客户端能力仍是 desktop-only（没有可安装的独立 CLI），因此可读历史、不可自行启动。
@@ -916,6 +925,14 @@ func builtinWorkbuddy() Definition {
 				"WORKBUDDY_USER_DATA_DIR",
 				"CODEBUDDY_CONFIG_DIR",
 				"CODEBUDDY_INTERNET_ENVIRONMENT",
+				// 凭据键必须声明（2026-10-29 真机）：lib/profile/credential-config.js 的
+				// deriveCliSpec 按命名约定**从 EnvKeys 派生** api-key 映射
+				// （`*_API_KEY` / `*_BASE_URL`），漏了它们 WebUI 新增 api-key 账号会直接
+				// `unknown_cli: Unsupported cli name`，而契约里本来就提供了「WorkBuddy 密钥」
+				// 这个认证方式、Credentials.BaseURLEnv 也声明了 CODEBUDDY_BASE_URL。
+				"CODEBUDDY_API_KEY",
+				"CODEBUDDY_BASE_URL",
+				"CODEBUDDY_AUTH_TOKEN",
 			},
 			DesktopClient: &DesktopClient{
 				// 共享 .info 的宿主凭据导入尚未接通；连接器 credentials 不属于主站登录态。
@@ -963,7 +980,8 @@ func builtinWorkbuddyCN() Definition {
 		Presentation:   withAPIHost(presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"), "copilot.tencent.com"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
-		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
+		// 与 workbuddy 同源：Base URL 覆盖与 codebuddy 家族一致（见上面那条说明）。
+		Credentials: &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
@@ -999,11 +1017,15 @@ func builtinWorkbuddyCN() Definition {
 			LoginArgs:  []string{},
 			// EnvKeys 与 builtinWorkbuddy() 一致：同一套内嵌 runtime 读同一组键，
 			// 区别只在国内站账号把 INTERNET_ENVIRONMENT 固定成 internal。
+			// 凭据键同理必须声明（见 builtinWorkbuddy() 的说明）。
 			EnvKeys: []string{
 				"WORKBUDDY_CONFIG_DIR",
 				"WORKBUDDY_USER_DATA_DIR",
 				"CODEBUDDY_CONFIG_DIR",
 				"CODEBUDDY_INTERNET_ENVIRONMENT",
+				"CODEBUDDY_API_KEY",
+				"CODEBUDDY_BASE_URL",
+				"CODEBUDDY_AUTH_TOKEN",
 			},
 			DesktopClient: &DesktopClient{
 				ReloadsHostAuth: &reloadsHostAuth,

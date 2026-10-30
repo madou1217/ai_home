@@ -98,7 +98,7 @@ func (handler *Handler) ServeHTTP(
 		handler.authorizer == nil ||
 		!handler.authorizer.Authorized(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeError(response, http.StatusUnauthorized, "unauthorized_client")
+		writeUnauthorized(response)
 		return
 	}
 	modelID, isSingleModel := singleModelID(request.URL.Path)
@@ -547,6 +547,15 @@ func writeError(response http.ResponseWriter, status int, code string) {
 			"code":    code,
 			"message": "请求模型目录失败",
 		},
+	})
+}
+
+// writeUnauthorized 保留 Node v1-router 的客户端鉴权错误 envelope；其它模型目录
+// 错误继续使用 writeError 的结构化错误对象。
+func writeUnauthorized(response http.ResponseWriter) {
+	writeJSON(response, http.StatusUnauthorized, map[string]any{
+		"ok":    false,
+		"error": "unauthorized_client",
 	})
 }
 

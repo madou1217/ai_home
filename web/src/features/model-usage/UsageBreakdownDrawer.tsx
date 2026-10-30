@@ -197,7 +197,10 @@ export default function UsageBreakdownDrawer({
       title: '模型',
       dataIndex: 'model',
       ellipsis: true,
-      render: (value) => renderModelName(value as string)
+      // The first render argument is ProTable's React cell node, not the raw
+      // model id. Use the row value to avoid coercing that node to
+      // "[object Object]".
+      render: (_, row) => renderModelName(row.model)
     },
     { title: '调用', dataIndex: 'calls', width: 78, align: 'right' },
     {

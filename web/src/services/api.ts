@@ -112,6 +112,8 @@ import type {
   ProviderCliUpgradeClearBrokenResponse,
   AccountAppLaunchResponse,
   AccountEgressBindingInput,
+  AccountEgressAssignment,
+  AccountEgressRuntimeView,
   AccountEgressResponse,
   AccountWindowActivationSettingInput,
   AccountWindowActivationResponse,
@@ -388,6 +390,12 @@ const buildAccountScopedPath = (provider: string, accountRef: string) => (
 const buildAccountEgressPath = (provider: string, accountRef: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/egress`
 );
+const buildAccountEgressAssignmentPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress-assignment`
+);
+const buildAccountEgressRuntimePath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress-runtime`
+);
 const buildAccountWindowActivationPath = (provider: string, accountRef: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/window-activation`
 );
@@ -640,6 +648,25 @@ export const accountsAPI = {
       buildAccountEgressPath(provider, accountRef),
       binding || {}
     );
+    return response.data;
+  },
+
+  getAccountEgressRuntime: async (provider: string, accountRef: string): Promise<{
+    ok: boolean;
+    account: Account;
+    assignment: AccountEgressAssignment | null;
+    runtime: AccountEgressRuntimeView;
+  }> => {
+    const response = await api.get(buildAccountEgressRuntimePath(provider, accountRef));
+    return response.data;
+  },
+
+  saveAccountEgressAssignment: async (
+    provider: string,
+    accountRef: string,
+    assignment: AccountEgressAssignment
+  ): Promise<{ ok: boolean; assignment: AccountEgressAssignment; runtime: AccountEgressRuntimeView }> => {
+    const response = await api.put(buildAccountEgressAssignmentPath(provider, accountRef), assignment);
     return response.data;
   },
 

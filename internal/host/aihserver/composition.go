@@ -63,6 +63,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
+	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clinerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
@@ -97,6 +98,7 @@ const (
 type serverHandlers struct {
 	accounts           http.Handler
 	accountAuth        http.Handler
+	clientProps        http.Handler
 	models             http.Handler
 	blobs              http.Handler
 	images             http.Handler
@@ -540,6 +542,12 @@ func newHandlers(
 	clientAuthorizer, err := clientauth.NewAuthorizer(clientKey)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
+	}
+	clientPropsHandler, err := clientpropsapi.NewHandler(clientpropsapi.Dependencies{
+		Authorizer: clientAuthorizer,
+	})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建客户端属性 Handler 失败: %w", err)
 	}
 	decoder := nativeaccount.NewDecoder()
 	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
@@ -1154,6 +1162,7 @@ func newHandlers(
 		plugins:            plugins,
 		accounts:           accountsHandler,
 		accountAuth:        accountAuthHandler,
+		clientProps:        clientPropsHandler,
 		models:             modelsHandler,
 		blobs:              blobsHandler,
 		images:             imageHandler,

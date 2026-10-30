@@ -1,7 +1,8 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Button, Input, Select, message } from 'antd';
-import { CopyOutlined, SwapOutlined } from '@ant-design/icons';
+import { CheckOutlined, CopyOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
 import {
   AUTO_LANGUAGE,
   MAX_TRANSLATION_INPUT_CHARS,
@@ -24,6 +25,7 @@ import {
   useTranslationHistory,
   useTranslationHistoryRecorder,
 } from '@/features/translation/use-translation-history';
+import { useTranslationFeedback } from '@/features/translation/use-translation-feedback';
 import { formatTranslationHistoryTime } from '@/features/translation/translation-history';
 import { translationAPI } from '@/services/api';
 import MobileBoot from '@/mobile/MobileBoot';
@@ -47,7 +49,10 @@ export default function MobileTranslation() {
   const [modelValue, setModelValue] = useState('');
   const [providerValue, setProviderValue] = useState('');
   const [detection, setDetection] = useState<TranslationDetectionResponse | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const detectionSequence = useRef(0);
+  const copyTimer = useRef<number>();
 
   useEffect(() => {
     if (!bootstrap) return;
@@ -61,26 +66,38 @@ export default function MobileTranslation() {
     if (source !== AUTO_LANGUAGE) {
       detectionSequence.current += 1;
       setDetection(null);
+      setDetecting(false);
       return;
     }
     const sample = text.trim();
     if (!sample) {
       detectionSequence.current += 1;
       setDetection(null);
+      setDetecting(false);
       return;
     }
     const sequence = ++detectionSequence.current;
+    setDetecting(true);
     const timer = window.setTimeout(() => {
       translationAPI
         .detect(sample.slice(0, 1200))
         .then((response) => {
-          if (sequence === detectionSequence.current) setDetection(response);
+          if (sequence === detectionSequence.current) {
+            setDetection(response);
+            setDetecting(false);
+          }
         })
         .catch(() => {
-          if (sequence === detectionSequence.current) setDetection(null);
+          if (sequence === detectionSequence.current) {
+            setDetection(null);
+            setDetecting(false);
+          }
         });
     }, 450);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (sequence === detectionSequence.current) setDetecting(false);
+    };
   }, [text, source]);
 
   const languages = bootstrap?.languages || [];
@@ -139,11 +156,28 @@ export default function MobileTranslation() {
   const copyResult = useCallback(async () => {
     try {
       await writeClipboardText(stream.state.text);
-      message.success('译文已复制');
+      window.clearTimeout(copyTimer.current);
+      setCopied(true);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1800);
     } catch (_error) {
       message.error('复制失败，请手动选择译文');
     }
   }, [stream.state.text]);
+
+  const handleTextKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      handleTranslate();
+    }
+    if (event.key === 'Escape' && stream.busy) {
+      event.preventDefault();
+      stream.cancel();
+    }
+  }, [handleTranslate, stream]);
+
+  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
+  useEffect(() => setCopied(false), [stream.state.text]);
+  const feedback = useTranslationFeedback(stream.state, detecting);
 
   if (status === 'loading' && !bootstrap) {
     return <MobileBoot label="LOADING TRANSLATE" />;
@@ -162,11 +196,11 @@ export default function MobileTranslation() {
           start={<span className={styles.toolbarCode}>TRANSLATE</span>}
         >
           {busy ? (
-            <Button size="small" onClick={stream.cancel}>
+            <Button size="small" aria-label="停止翻译" onClick={stream.cancel}>
               停止
             </Button>
           ) : (
-            <Button size="small" type="primary" disabled={!canTranslate(text) || overLimit} onClick={handleTranslate}>
+            <Button size="small" type="primary" aria-label="开始翻译" disabled={!canTranslate(text) || overLimit} onClick={handleTranslate}>
               翻译
             </Button>
           )}
@@ -186,6 +220,7 @@ export default function MobileTranslation() {
         <div className={styles.languageRow}>
           <Select
             className={styles.languageSelect}
+            aria-label="选择源语言"
             value={source}
             options={languageOptions}
             optionFilterProp="label"
@@ -210,6 +245,7 @@ export default function MobileTranslation() {
           />
           <Select
             className={styles.languageSelect}
+            aria-label="选择目标语言"
             value={target}
             options={targetOptions}
             optionFilterProp="label"
@@ -223,6 +259,7 @@ export default function MobileTranslation() {
 
         <Select
           className={styles.modelSelect}
+          aria-label="选择翻译模型"
           value={modelValue}
           options={[
             {
@@ -249,6 +286,8 @@ export default function MobileTranslation() {
           className={styles.input}
           value={text}
           onChange={(event) => setText(event.target.value)}
+          onKeyDown={handleTextKeyDown}
+          aria-label="原文输入"
           placeholder="粘贴或输入要翻译的内容…"
           autoSize={{ minRows: 5, maxRows: 12 }}
           spellCheck={false}
@@ -258,7 +297,9 @@ export default function MobileTranslation() {
           <span className={overLimit ? styles.limitWarning : styles.counter}>
             {chars} / {MAX_TRANSLATION_INPUT_CHARS}
           </span>
-          {source === AUTO_LANGUAGE && detection ? (
+          {source === AUTO_LANGUAGE && detecting ? (
+            <span className={styles.detectChip}>正在检测语言…</span>
+          ) : source === AUTO_LANGUAGE && detection ? (
             <span className={styles.detectChip}>检测到 {detection.label}</span>
           ) : null}
         </div>
@@ -268,9 +309,20 @@ export default function MobileTranslation() {
         title="译文"
         code="OUT"
         extra={
-          resultText ? (
-            <button type="button" className={styles.linkButton} onClick={copyResult}>
-              <CopyOutlined /> 复制
+            resultText ? (
+            <>
+              <button type="button" className={`${styles.linkButton} ${copied ? styles.copied : ''}`} aria-label={copied ? '已复制译文' : '复制译文'} onClick={copyResult}>
+                {copied ? <CheckOutlined /> : <CopyOutlined />} {copied ? '已复制' : '复制'}
+              </button>
+              {stream.state.status === 'cancelled' ? (
+                <button type="button" className={styles.linkButton} aria-label="重新翻译" onClick={handleTranslate}>
+                  <ReloadOutlined /> 重试
+                </button>
+              ) : null}
+            </>
+          ) : stream.state.status === 'cancelled' ? (
+            <button type="button" className={styles.linkButton} aria-label="重新翻译" onClick={handleTranslate}>
+              <ReloadOutlined /> 重新翻译
             </button>
           ) : null
         }
@@ -281,20 +333,28 @@ export default function MobileTranslation() {
             {meta.model ? ` · ${meta.model}` : ''}
           </div>
         ) : null}
-        <div className={styles.result}>
+        {stream.state.status !== 'idle' || detecting ? (
+          <div className={styles.translationStatus} data-phase={feedback.phase} role="status" aria-live="polite">
+            <span className={styles.statusDot} aria-hidden="true" />
+            <span>{feedback.label}</span>
+            <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
+          </div>
+        ) : null}
+        <div className={styles.result} data-phase={feedback.phase} aria-label="译文输出" aria-live="polite">
           {resultText ? (
             <div className={styles.resultText}>
               {resultText}
               {busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
             </div>
           ) : (
-            <span className={styles.placeholder}>
-              {busy ? '正在翻译…' : '译文会在这里出现'}
-            </span>
+            <div className={styles.resultEmpty}>
+              <strong>{busy ? '正在翻译…' : '译文会在这里出现'}</strong>
+              <span>开始翻译后，结果会实时显示在这里。</span>
+            </div>
           )}
         </div>
         {stream.state.status === 'error' && stream.state.error ? (
-          <div className={styles.inlineError}>
+            <div className={styles.inlineError} role="alert">
             {stream.state.error.message}
             <button type="button" className={styles.linkButton} onClick={handleTranslate}>
               重试

@@ -21,6 +21,16 @@ const (
 // ErrInvalidDependencies 表示 Handler 缺少必需依赖。
 var ErrInvalidDependencies = errors.New("客户端属性 Handler 依赖无效")
 
+// Authorizer 判断客户端是否允许读取标准客户端属性。
+type Authorizer interface {
+	Authorized(request *http.Request) bool
+}
+
+// Dependencies 声明客户端属性 Handler 的最小鉴权端口。
+type Dependencies struct {
+	Authorizer Authorizer
+}
+
 // propsResponse 是端点的完整响应形状。
 //
 // Data 恒为空对象而非省略：客户端按 `data` 存在与否判断响应是否完整，
@@ -31,11 +41,16 @@ type propsResponse struct {
 }
 
 // Handler 以只读方式回答客户端能力协商。
-type Handler struct{}
+type Handler struct {
+	authorizer Authorizer
+}
 
-// NewHandler 创建无外部依赖的属性 Handler。
-func NewHandler() *Handler {
-	return &Handler{}
+// NewHandler 创建带客户端鉴权的属性 Handler。
+func NewHandler(dependencies Dependencies) (*Handler, error) {
+	if dependencies.Authorizer == nil {
+		return nil, ErrInvalidDependencies
+	}
+	return &Handler{authorizer: dependencies.Authorizer}, nil
 }
 
 // ServeHTTP 只接受 GET，其余方法按 405 拒绝。
@@ -44,6 +59,14 @@ func (handler *Handler) ServeHTTP(
 	request *http.Request,
 ) {
 	if handler == nil || response == nil || request == nil {
+		return
+	}
+	if handler.authorizer == nil || !handler.authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(response, http.StatusUnauthorized, map[string]any{
+			"ok":    false,
+			"error": "unauthorized_client",
+		})
 		return
 	}
 	if request.Method != http.MethodGet {

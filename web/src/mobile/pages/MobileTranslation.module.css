@@ -70,6 +70,53 @@
   min-height: 96px;
 }
 
+.translationStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.translationStatus[data-phase="done"] {
+  color: var(--color-success);
+}
+
+.translationStatus[data-phase="error"] {
+  color: var(--color-danger);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.statusElapsed {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.resultEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 96px;
+  justify-content: center;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.resultEmpty strong {
+  color: var(--color-muted-strong);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .resultText {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -128,6 +175,10 @@
 
 .linkButton:hover {
   text-decoration: underline;
+}
+
+.copied {
+  color: var(--color-success);
 }
 
 /* 移动端翻译记录：单列紧凑列表，元信息只保留语言 / 模型 / 时间。 */
@@ -194,4 +245,13 @@
   align-items: center;
   gap: 16px;
   margin-top: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor,
+  .translationStatus,
+  .historyItem {
+    animation: none;
+    transition: none;
+  }
 }

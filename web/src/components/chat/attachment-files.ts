@@ -9,13 +9,11 @@ export const CHAT_ATTACHMENT_ACCEPT = [
   ...Object.keys(limits.videoExtensionTypes).map((extension) => `.${extension}`),
 ].join(',');
 
-/** Paste is converted to a text attachment once either limit is reached. */
-export const LARGE_PASTE_CHAR_LIMIT = 12_000;
-export const LARGE_PASTE_BYTE_LIMIT = 48 * 1024;
+/** Paste is converted to a text attachment once it reaches this many Unicode characters. */
+export const LARGE_PASTE_CHAR_LIMIT = 200;
 
 export function shouldConvertLargePaste(text: string): boolean {
-  return Array.from(text).length >= LARGE_PASTE_CHAR_LIMIT
-    || new TextEncoder().encode(text).byteLength >= LARGE_PASTE_BYTE_LIMIT;
+  return Array.from(text).length >= LARGE_PASTE_CHAR_LIMIT;
 }
 
 export function buildPastedTextFile(text: string, now: Date = new Date()): File {

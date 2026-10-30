@@ -16,7 +16,7 @@
 - Web 源码改动必须执行 `cd web && npm run build`、改动文件 ESLint 和相关现有测试。
 - 不新增测试文件；使用现有测试入口、纯函数探针和真机 WebUI 检查。
 - 保留并行会话已有修改，不暂存 `lib/server/web-ui-router.js`、`web/src/pages/Toolkit.tsx` 等无关路径。
-- 大文本阈值固定为 12,000 Unicode 字符或 48 KiB UTF-8 字节，任一达到即转为文本附件。
+- 大文本阈值为 200 个 Unicode 字符，达到即转为文本附件（2026-10-31 由 12,000 字符 / 48 KiB 下调）。
 
 ### Task 1: 统一消息元数据与复制反馈
 
@@ -61,7 +61,7 @@
 - Consumes: browser `ClipboardEvent`, `ChatDocumentAttachment`, existing `ChatRuntimeAttachmentUpload`.
 - Produces: `LARGE_PASTE_CHAR_LIMIT`, `LARGE_PASTE_BYTE_LIMIT`, `shouldConvertLargePaste`, `buildPastedTextFile`, and pending attachment states.
 
-- [ ] **Step 1: Write the failing pure conversion probe.** Probe short, 12,000-character, and 48 KiB-plus strings and assert only threshold content becomes a UTF-8 `.txt` attachment.
+- [ ] **Step 1: Write the failing pure conversion probe.** Probe short and 200-character strings and assert only threshold content becomes a UTF-8 `.txt` attachment.
 - [ ] **Step 2: Add conversion helpers.** In `attachment-files.ts`, use `Array.from(text).length` and `TextEncoder().encode(text).byteLength`; generate `pasted-text-YYYYMMDD-HHmmss.txt`.
 - [ ] **Step 3: Extend pending state.** Add `preparing|ready|uploading|uploaded|failed` and an error field while retaining document text for retry.
 - [ ] **Step 4: Intercept canonical Composer paste.** If no clipboard files exist and text reaches either threshold, prevent default, create a File, and add it through the existing attachment controller; short text stays native.

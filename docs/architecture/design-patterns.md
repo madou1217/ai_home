@@ -15,6 +15,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `webui-terminal-routes.js` + `webui-terminal-persistence.js` | **Lifecycle Adapter + Scoped Resource** | keyed Web 终端用每会话独立 tmux socket 持有进程；HTTP/SSE 层在服务重启后按 key 收养连接，显式关闭时销毁，凭据不经命令行传递 | `test/webui-terminal-persistence.test.js`：独立服务进程退出后重新接入和关闭、30 分钟空闲保留、外层 tmux 环境；依赖 POSIX 主机安装 tmux |
 | `nativeBoundary.runtime` + provider facade + `provider-native-runtime.js` | **Descriptor + Strategy Registry + Facade** | 原生资源命令按声明选择独立 CLI 或桌面内嵌 Node 入口；WorkBuddy lite bundle flag 随描述符传递，资源运行时与用户 CLI 分开表达 | 真实 WorkBuddy AI 2.161.0 version/help；doctor 显示 desktop-node 来源；既有回归与 provider 合同检查 |
 | `native-plugin-manager.js` + marketplace adapter `replace` | **Strategy + Compensating Action** | 管理器将版本替换委托给拥有原生生命周期的适配器；旧快照用于旧资源校验，新包在任何破坏性步骤前校验清单与目标冲突，运行失败时尝试恢复旧状态 | 真实版本升级成功；坏清单与外来目标在旧插件仍健康时拒绝；补偿不宣称跨 SQLite/原生命令的原子事务 |
 | `native-plugin-adapters/native-marketplace.js` + `marketplace-ownership.js` + WorkBuddy demo | **Owned Projection + Native Facade** | canonical 包进入厂商 marketplace 后才声明原生安装成功；市场按 AIH home/provider/plugin 隔离，归属策略集中校验完整目录摘要和原生登记文件；原生 disable/enable 保留数据，卸载只接受已观测的时间戳元数据 | WorkBuddy 插件/Skill 四阶段、MCP connected 和两次 tool call；隔离运行验证双插件、外部禁用恢复、禁用后卸载、旧投影迁移及损坏/外来状态拒绝 |

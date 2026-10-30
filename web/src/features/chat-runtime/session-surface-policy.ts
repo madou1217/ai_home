@@ -99,6 +99,14 @@ export function runtimeAccountsForSession(
   if (session.mode === 'chat') {
     return withGatewayAccounts(accounts, session.provider);
   }
+  // Work 草稿还没绑定原生会话，provider 只是默认值：列出所有可运行 provider 的账号，
+  // 换到别的 provider 时由调用方按新 provider 重建草稿（见 resolveChatAccountChange）。
+  if (session.draft) {
+    return accounts.filter((account) => {
+      const candidate = chatRuntimeProviders.resolve(account.provider);
+      return Boolean(candidate && candidate.acceptsAccount(account));
+    });
+  }
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return [];
   return accounts.filter((account) => descriptor.acceptsAccount(account));

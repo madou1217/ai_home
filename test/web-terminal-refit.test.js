@@ -87,6 +87,51 @@ test('interactive fits are paced and release flushes the latest size immediately
   refitter.dispose();
 });
 
+test('slow fits leave a full interval for input and painting; release still flushes', () => {
+  let now = 0;
+  let frame;
+  let timer;
+  let delay;
+  let fitted = 0;
+  const refitter = createTerminalRefitter(
+    () => { fitted += 1; now += 120; },
+    (callback) => { frame = callback; return 1; },
+    () => {},
+    { minInterval: () => 64, now: () => now,
+      setTimer: (callback, wait) => { timer = callback; delay = wait; return 2; },
+      clearTimer: () => { timer = undefined; } }
+  );
+  refitter.notifyResize();
+  frame();
+  refitter.notifyResize();
+  assert.equal(delay, 64);
+  assert.equal(fitted, 1);
+  now += 20;
+  refitter.flush();
+  assert.equal(timer, undefined);
+  frame();
+  assert.equal(fitted, 2);
+  refitter.dispose();
+});
+
+test('fast fits retain the usual resize cadence', () => {
+  let now = 0;
+  let frame;
+  let delay;
+  const refitter = createTerminalRefitter(
+    () => { now += 20; },
+    (callback) => { frame = callback; return 1; },
+    () => {},
+    { minInterval: () => 64, now: () => now,
+      setTimer: (_callback, wait) => { delay = wait; return 2; }, clearTimer: () => {} }
+  );
+  refitter.notifyResize();
+  frame();
+  refitter.notifyResize();
+  assert.equal(delay, 44);
+  refitter.dispose();
+});
+
 test('release callback runs after the final local fit in the scheduled frame', () => {
   let frame;
   const order = [];

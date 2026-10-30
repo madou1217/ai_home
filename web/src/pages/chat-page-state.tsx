@@ -357,6 +357,16 @@ export function ChatConversationContent({
                   provider: account.provider, draft: true, mode: 'chat',
                 });
                 setSelectedModel('');
+                return;
+              }
+              // Work 草稿换到另一个 provider 的账号：按新 provider 重建草稿（项目不变），
+              // 否则草稿仍是旧 provider，运行目标会被判成 provider_mismatch。
+              if (session.draft && session.provider !== account.provider) {
+                projectCatalog.setSelectedSession({
+                  id: `draft-${Date.now()}`, title: session.title || '新会话', updatedAt: Date.now(),
+                  provider: account.provider, projectPath: session.projectPath, draft: true, mode: 'work',
+                });
+                setSelectedModel('');
               }
             }}
             onModelChange={setSelectedModel}

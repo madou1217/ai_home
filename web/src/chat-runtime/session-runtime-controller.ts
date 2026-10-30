@@ -229,13 +229,17 @@ export class SessionRuntimeController {
     if (this.disposed || this.visible === visible) return;
     this.visible = visible;
     if (visible) {
-      this.requestSnapshotResync();
+      // 回到前台只需从游标续接：服务端 SSE 会重放 throughSeq 之后的事件，游标超出保留窗口时
+      // 自己下发 session.snapshot.reset。此前这里强制整份快照重同步，每次切回标签页都会
+      // 闪「会话状态可能已过期」并暂停操作；真正的序列缺口仍由 receiveEvent 触发重同步。
+      if (this.resyncTask || this.eventStream) return;
+      this.openEventStreamSafely();
       return;
     }
-    // 隐藏页只暂停事件观察，服务端继续生成；返回时由快照补齐后台进度。
+    // 隐藏页只暂停事件观察，服务端继续生成；连接状态保持不变（页面不可见，没人看提示），
+    // 返回时续接事件流补齐后台进度。
     this.cancelScheduledReconnect();
     this.closeEventStream();
-    this.store.setConnectionState('reconnecting');
   }
 }
 

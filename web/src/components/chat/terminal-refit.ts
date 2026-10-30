@@ -57,8 +57,12 @@ export function createTerminalRefitter(
     if (pendingFrame !== null) return;
     pendingFrame = raf(() => {
       pendingFrame = null;
-      lastFit = now();
+      const startedAt = now();
       fitActive();
+      // Reflowing a long scrollback can itself take longer than minInterval.
+      // After a slow fit, leave time to process input and paint before another.
+      const finishedAt = now();
+      lastFit = finishedAt - startedAt >= (options.minInterval?.() || 0) ? finishedAt : startedAt;
       if (flushRequested) {
         flushRequested = false;
         options.afterFlush?.();

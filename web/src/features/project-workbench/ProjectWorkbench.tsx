@@ -8,6 +8,7 @@ import WorkbenchPanelHost from './WorkbenchPanelHost';
 import { WorkbenchProvider } from './WorkbenchContext';
 import { createInitialState, nextTabId, workbenchReducer } from './workbench-reducer';
 import { loadWorkbenchState, saveWorkbenchState } from './workbench-persistence';
+import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
 import { resolveLayoutMode } from './workbench-layout';
 import type { WorkbenchPanelKind, WorkbenchTab, WorkbenchWorkspaceDescriptor } from './workbench-types';
 import { PANEL_LABELS, PANEL_LIMITS } from './workbench-types';
@@ -57,9 +58,15 @@ export default function ProjectWorkbench({
     if (projectPath) saveWorkbenchState(projectPath, state);
   }, [projectPath, state]);
 
+  const openProjectTerminal = useOpenProjectTerminal();
   const openPanel = useCallback((kind: WorkbenchPanelKind) => {
     if (!projectPath && kind !== 'chat') {
       message.warning('请先选择项目');
+      return;
+    }
+    // 终端统一走全局 Web Terminal 浮窗（可拖动/缩放/最小化，刷新不丢），不再内嵌进工作区。
+    if (kind === 'terminal') {
+      void openProjectTerminal(projectPath);
       return;
     }
     const limit = PANEL_LIMITS[kind];
@@ -67,7 +74,7 @@ export default function ProjectWorkbench({
       message.info(`${PANEL_LABELS[kind]}最多打开 ${limit} 个`);
     }
     dispatch({ type: 'tab/add', tab: createTab(kind) });
-  }, [projectPath, state.tabs]);
+  }, [openProjectTerminal, projectPath, state.tabs]);
 
   const actions = useMemo(() => ({ openPanel }), [openPanel]);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) || state.tabs[0];

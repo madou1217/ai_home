@@ -1,5 +1,4 @@
 import Empty from 'antd/es/empty';
-import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import BrowserPanel from './browser/BrowserPanel';
 import FilesPanel from './files/FilesPanel';
 import ReviewPanel from './review/ReviewPanel';
@@ -14,7 +13,8 @@ interface Props {
   onClose: (id: string) => void;
 }
 
-export default function WorkbenchPanelHost({ state, projectPath, workspace, mobile, onClose }: Props) {
+// 终端不在这里渲染：Work 的终端统一由全局 Web Terminal 浮窗承载。
+export default function WorkbenchPanelHost({ state, projectPath, mobile }: Props) {
   const toolTabs = state.tabs.filter((tab) => tab.kind !== 'chat');
   if (toolTabs.length === 0) return <Empty description="请从上方添加项目工具" />;
 
@@ -29,15 +29,6 @@ export default function WorkbenchPanelHost({ state, projectPath, workspace, mobi
             aria-hidden={!active}
             {...(!active ? { inert: '' } : {})}
           >
-            {tab.kind === 'terminal' ? (
-              <ShellTerminalPanel
-                visible={active}
-                cwd={projectPath}
-                persistent
-                sessionKey={`workbench:${workspace?.kind || 'local-server'}:${encodeURIComponent(workspace?.serverId || 'local')}:${encodeURIComponent(projectPath)}`}
-                onClose={() => onClose(tab.id)}
-              />
-            ) : null}
             {tab.kind === 'browser' ? <BrowserPanel initialUrl={tab.url} /> : null}
             {tab.kind === 'files' && projectPath ? <FilesPanel projectPath={projectPath} mobile={mobile} /> : null}
             {tab.kind === 'review' && projectPath ? <ReviewPanel projectPath={projectPath} mobile={mobile} /> : null}

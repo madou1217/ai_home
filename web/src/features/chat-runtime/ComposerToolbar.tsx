@@ -57,9 +57,8 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         {props.workspaceMode !== 'chat' ? <button
           type="button"
           className={styles.composerToolButton}
-          title={props.terminalOpen ? '关闭项目终端' : '打开项目终端'}
-          aria-label={props.terminalOpen ? '关闭项目终端' : '打开项目终端'}
-          aria-pressed={props.terminalOpen}
+          title="打开项目终端"
+          aria-label="打开项目终端"
           onClick={props.onToggleTerminal}
         >
           <CodeOutlined />

@@ -17,6 +17,7 @@ import { desktopLoginRequiredAction } from '@/features/app-install/launch-requir
 import { APP_CATEGORIES, useManagedApps } from './use-managed-apps';
 import { describeClearBrokenResult } from './provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
+import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
 
 const UPGRADE_TRACK_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 'danger'> = {
   success: 'success',
@@ -41,6 +42,7 @@ function requestError(error: unknown, fallback: string) {
 }
 
 export default function AppManagerPanel() {
+  const adoptLaunchedTerminal = useAdoptLaunchedTerminal();
   const {
     data,
     accounts,
@@ -100,9 +102,10 @@ export default function AppManagerPanel() {
         ...(unscoped ? { unscoped: true } : {})
       });
       if (!response.ok) throw new Error(response.message || response.error || '桌面应用启动失败');
-      message.success(response.status === 'already_running'
-        ? `${app.name} 的该账号实例已在运行`
-        : `${app.name} 已启动`);
+      const inWebTerminal = adoptLaunchedTerminal(response, app.name);
+      message.success(inWebTerminal
+        ? `${app.name} 已在 Web Terminal 中打开`
+        : (response.status === 'already_running' ? `${app.name} 的该账号实例已在运行` : `${app.name} 已启动`));
       if (response.egressWarning) {
         message.warning(`ZCode 出口未生效：${response.egressWarning}`);
       }

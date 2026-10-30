@@ -47,6 +47,7 @@ import { toolkitAPI } from '@/services/api';
 import type { Account, ManagedAppItem } from '@/types';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText, TaskStatus } from './toolkit-parts';
 import styles from '../MobileToolkit.module.css';
+import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
 
 const TYPE_CODES: Record<ManagedAppItem['type'], string> = {
   cli: 'CLI',
@@ -74,6 +75,7 @@ function canOpenAdvanced(app: ManagedAppItem) {
 
 /** 应用管理：清单 + 左滑生命周期操作 + 详情抽屉 + 选择账号打开。 */
 export default function AppsPanel() {
+  const adoptLaunchedTerminal = useAdoptLaunchedTerminal();
   const {
     data,
     accounts,
@@ -144,9 +146,10 @@ export default function AppsPanel() {
         ...(unscoped ? { unscoped: true } : {})
       });
       if (!response.ok) throw new Error(response.message || response.error || '桌面应用启动失败');
-      message.success(response.status === 'already_running'
-        ? `${app.name} 的该账号实例已在运行`
-        : `${app.name} 已启动`);
+      const inWebTerminal = adoptLaunchedTerminal(response, app.name);
+      message.success(inWebTerminal
+        ? `${app.name} 已在 Web Terminal 中打开`
+        : (response.status === 'already_running' ? `${app.name} 的该账号实例已在运行` : `${app.name} 已启动`));
       if (response.egressWarning) {
         message.warning(`ZCode 出口未生效：${response.egressWarning}`);
       }

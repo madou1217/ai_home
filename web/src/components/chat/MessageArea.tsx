@@ -34,7 +34,7 @@ import { CaptureIdentityBoundary } from '@/features/capture';
 import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
-import ShellTerminalPanel from './ShellTerminalPanel';
+import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
 import {
   composerDraftKey,
   readComposerDraft,
@@ -264,7 +264,8 @@ const MessageArea = ({
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
+  // 终端入口唯一：输入框工具栏按钮打开全局 Web Terminal 浮窗（不再内嵌底部终端面板）。
+  const openProjectTerminal = useOpenProjectTerminal();
   const legacyDraftIdentity = useMemo(() => ({
     sessionId: session?.id,
     draft: Boolean(session?.draft),
@@ -1221,11 +1222,11 @@ const MessageArea = ({
               </button>
               {!dictation.recording && (
                 <button
+                  type="button"
                   className={styles.inputToolbarBtn}
-                  title={shellTerminalOpen ? '关闭终端' : '打开终端'}
-                  aria-pressed={shellTerminalOpen}
-                  onClick={() => setShellTerminalOpen((v) => !v)}
-                  style={shellTerminalOpen ? { color: 'var(--color-accent)' } : undefined}
+                  title="打开终端"
+                  aria-label="打开终端"
+                  onClick={() => void openProjectTerminal(terminalCwd)}
                 >
                   <CodeOutlined style={{ fontSize: 16 }} />
                 </button>
@@ -1333,14 +1334,6 @@ const MessageArea = ({
         </div>
       </div>
 
-      {/* VSCode 风格底部终端面板：置于输入框下方，成为最底部 dock */}
-      <ShellTerminalPanel
-        visible={shellTerminalOpen}
-        persistent
-        sessionKey={`chat-shell:${resolveActiveServer().serverId || 'local'}:${encodeURIComponent(session?.id || terminalCwd || 'default')}`}
-        onClose={() => setShellTerminalOpen(false)}
-        cwd={terminalCwd}
-      />
       {mobile ? (
         <Drawer
           placement="bottom"

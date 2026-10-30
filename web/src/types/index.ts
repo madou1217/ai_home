@@ -1935,6 +1935,8 @@ export interface AccountAppLaunchResponse {
   terminalId?: string;
   sessionKey?: string;
   launchMode?: 'webui-pty' | 'interactive-task' | string;
+  /** Web Terminal 页签标题（launchMode 为 webui-pty 时由 Server 生成）。 */
+  sessionTitle?: string;
   executable?: string;
   installRequired?: boolean;
   installAvailable?: boolean;

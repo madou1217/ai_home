@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Empty from 'antd/es/empty';
 import { BranchesOutlined, CloseOutlined, LeftOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined } from '@ant-design/icons';
-import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import Button from '@/components/ui/AppButton';
 import type { GitSummary } from '@/services/api';
 import type { Session } from '@/types';
@@ -30,10 +29,11 @@ interface Props {
 }
 
 type LeftPane = 'files' | 'review' | 'sessions';
-type RightPane = 'terminal' | 'review' | 'browser';
+// 终端不再是栏内面板：统一走全局 Web Terminal 浮窗（会话输入框的终端按钮是唯一入口）。
+type RightPane = 'review' | 'browser';
 
 const LEFT_PANES: readonly LeftPane[] = ['files', 'review', 'sessions'];
-const RIGHT_PANES: readonly RightPane[] = ['terminal', 'review', 'browser'];
+const RIGHT_PANES: readonly RightPane[] = ['review', 'browser'];
 // 'sessions' 不在 WorkbenchPanelKind（不开标签页），页签文案就地补充。
 const PANE_LABELS: Record<LeftPane | RightPane, string> = { ...PANEL_LABELS, sessions: 'Sessions' };
 
@@ -66,11 +66,10 @@ function ColumnToolbar<K extends string>({ panes, active, onSelect, ariaLabel, a
   );
 }
 
-// PC 三栏布局：左=文件/变更，中=会话，右=终端/变更/浏览器。
-// 面板一律「首次访问后常驻挂载 + CSS 显隐」，避免树状态丢失与终端 xterm 重复 init。
+// PC 三栏布局：左=文件/变更，中=会话，右=变更/浏览器（终端在全局浮窗里）。
+// 面板一律「首次访问后常驻挂载 + CSS 显隐」，避免树状态丢失。
 export default function WorkbenchColumns({
   projectPath,
-  workspace,
   chat,
   sessions = [],
   selectedSession = null,
@@ -84,15 +83,15 @@ export default function WorkbenchColumns({
   const [desired, setDesired] = useState<ColumnWidths>(initialLayout.widths);
   const [collapsed, setCollapsed] = useState<ColumnCollapsed>(initialLayout.collapsed);
   const [leftPane, setLeftPane] = useState<LeftPane>('files');
-  const [rightPane, setRightPane] = useState<RightPane>('terminal');
-  const [terminalOpen, setTerminalOpen] = useState(true);
+  const [rightPane, setRightPane] = useState<RightPane>('review');
   // 容器实测宽度：驱动栏可见性降级（0 = 首帧未测量，策略层按三栏全显兜底）。
   const [containerWidth, setContainerWidth] = useState(0);
   // 显式 overlay：栏被策略隐藏后用户可重新打开，覆盖层不占网格宽度。
   const [columnOverlay, setColumnOverlay] = useState<'left' | 'right' | null>(null);
   // 懒挂载标记：非默认面板首次激活后才挂载，之后常驻保活。
   const [leftReviewMounted, setLeftReviewMounted] = useState(false);
-  const [rightReviewMounted, setRightReviewMounted] = useState(false);
+  // 右栏默认就是「变更」，首帧直接挂载。
+  const [rightReviewMounted, setRightReviewMounted] = useState(true);
   const [browserMounted, setBrowserMounted] = useState(false);
 
   // 栏工具行动作区：面板通过回调注册刷新/上报分支，栏头按当前 pane 内联展示。
@@ -173,12 +172,6 @@ export default function WorkbenchColumns({
     if (pane === 'browser') setBrowserMounted(true);
   }, []);
 
-  // 终端面板被用户关闭：回收 PTY，右栏落到可用的次选面板。
-  const closeTerminal = useCallback(() => {
-    setTerminalOpen(false);
-    setRightPane((pane) => (pane === 'terminal' ? 'review' : pane));
-    setRightReviewMounted(true);
-  }, []);
 
   // 栏折叠/展开：折叠收成栏头条（不占宽度预算、不出分隔条），展开恢复期望宽度；
   // 折叠态与宽度同步持久化。overlay 态折叠等价于收起覆盖层并落回栏头条。
@@ -350,28 +343,6 @@ export default function WorkbenchColumns({
         ) : null}
         <ColumnToolbar panes={RIGHT_PANES} active={rightPane} onSelect={selectRightPane} ariaLabel="工具栏" actions={rightActions} />
         <div className={styles.columnBody}>
-          {terminalOpen ? (
-            <div {...paneProps(rightPane === 'terminal')}>
-              {/* 无项目时不挂载终端（cwd 无意义且会自动连接），与其他面板空态一致。 */}
-              {projectPath ? (
-                <ShellTerminalPanel
-                  visible
-                  cwd={projectPath}
-                  persistent
-                  sessionKey={`workbench:${workspace?.kind || 'local-server'}:${encodeURIComponent(workspace?.serverId || 'local')}:${encodeURIComponent(projectPath)}`}
-                  onClose={closeTerminal}
-                  compactChrome
-                />
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择项目" />
-              )}
-            </div>
-          ) : null}
-          {!terminalOpen && rightPane === 'terminal' ? (
-            <div className={styles.columnReopen}>
-              <Button size="small" onClick={() => setTerminalOpen(true)}>打开终端</Button>
-            </div>
-          ) : null}
           {rightReviewMounted ? (
             <div {...paneProps(rightPane === 'review')}>
               {projectPath ? (

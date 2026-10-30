@@ -8,7 +8,7 @@ import type {
 } from '@/chat-runtime';
 import type { ChatAccount, Session } from '@/types';
 import type { Provider } from '@/types';
-import { useWorkbench } from '@/features/project-workbench/WorkbenchContext';
+import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
 import Composer from './Composer';
 import ConversationTimeline from './ConversationTimeline';
 import BranchParentLink from './BranchParentLink';
@@ -48,7 +48,8 @@ interface Props {
 }
 
 export default function SessionWorkspace(props: Props) {
-  const workbench = useWorkbench();
+  // 唯一终端入口：直接打开全局 Web Terminal 浮窗（不依赖是否处于 Work 三栏）。
+  const openProjectTerminal = useOpenProjectTerminal();
   const projection = useSessionSelector(props.controller.store, selectWorkspaceProjection);
   const firstTextPaintProbe = useMemo(
     () => new BrowserFirstTextPaintProbe(props.controller.sessionId),
@@ -155,7 +156,7 @@ export default function SessionWorkspace(props: Props) {
             onApprovalModeChange={props.onApprovalModeChange}
             uploadAttachments={(attachments) => props.controller.uploadAttachments(attachments)}
             terminalOpen={false}
-            onToggleTerminal={() => workbench?.openPanel('terminal')}
+            onToggleTerminal={() => void openProjectTerminal(props.runtimeTarget.projectPath)}
           />
         </fieldset>
       </div>

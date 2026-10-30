@@ -13,6 +13,7 @@ interface Props {
   onAdd: (kind: WorkbenchPanelKind) => void;
 }
 
+// 终端不是工作区页签：选它会打开全局 Web Terminal 浮窗（见 ProjectWorkbench.openPanel）。
 const ADDABLE: WorkbenchToolKind[] = ['terminal', 'files', 'review', 'browser'];
 
 export default function WorkbenchTabBar({

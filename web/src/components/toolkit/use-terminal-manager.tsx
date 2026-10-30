@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, message } from 'antd';
 import { toolkitAPI } from '@/services/api';
+import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
 import { isActiveWebUiTask, useWebUiTaskQueue } from '@/services/webui-task-queue';
 import type { ClientPlatform, ClientTerminalItem, ToolkitLifecycleAction as TerminalAction, WebUiTask } from '@/types';
 import AppActionConfirmContent from './AppActionConfirmContent';
@@ -25,7 +26,15 @@ function isTerminalJobFinished(task: WebUiTask | null | undefined) {
  * 终端管理的数据层（桌面面板与移动端共用）：探测清单、唤起终端、
  * 安装 / 更新 / 卸载走「生成计划 → 确认 → 后台任务队列」，并跟踪提交中的任务。
  */
+function isWebTerminalRequired(error: unknown): boolean {
+  const data = typeof error === 'object' && error
+    ? (error as { response?: { data?: { error?: string } } }).response?.data
+    : undefined;
+  return data?.error === 'web_terminal_required';
+}
+
 export function useTerminalManager() {
+  const openProjectTerminal = useOpenProjectTerminal();
   const [terminals, setTerminals] = useState<ClientTerminalItem[]>([]);
   const [platform, setPlatform] = useState<ClientPlatform | ''>('');
   const [loading, setLoading] = useState(true);
@@ -90,6 +99,12 @@ export function useTerminalManager() {
       if (!result.ok) throw new Error(result.error || '终端唤起失败');
       message.success(`${terminal.name} 已唤起`);
     } catch (error: unknown) {
+      // 浏览器不在 Server 本机：原生窗口会开在服务器上，改用 Web Terminal。
+      if (isWebTerminalRequired(error)) {
+        await openProjectTerminal();
+        message.info('当前不在 Server 本机，已在 Web Terminal 中打开');
+        return;
+      }
       message.error(requestError(error, `${terminal.name} 唤起失败`));
     } finally {
       setOpeningId('');

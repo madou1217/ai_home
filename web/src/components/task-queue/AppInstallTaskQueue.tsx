@@ -27,6 +27,7 @@ import {
 import type { Account, WebUiTask } from '@/types';
 import { writeClipboardText } from '@/utils/clipboard';
 import './AppInstallTaskQueue.css';
+import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
 
 function taskName(task: WebUiTask) {
   if (task.taskName) return task.taskName;
@@ -81,6 +82,7 @@ function updatedLabel(timestamp: number) {
 }
 
 export default function AppInstallTaskQueue() {
+  const adoptLaunchedTerminal = useAdoptLaunchedTerminal();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const knownTerminalTaskIdsRef = useRef<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
@@ -218,7 +220,10 @@ export default function AppInstallTaskQueue() {
         ...(unscoped ? { unscoped: true } : {})
       });
       if (!response.ok) throw new Error(response.message || response.error || '应用启动失败');
-      message.success(response.status === 'already_running' ? `${app.name} 已在运行` : `${app.name} 已启动`);
+      const inWebTerminal = adoptLaunchedTerminal(response, app.name);
+      message.success(inWebTerminal
+        ? `${app.name} 已在 Web Terminal 中打开`
+        : (response.status === 'already_running' ? `${app.name} 已在运行` : `${app.name} 已启动`));
       if (response.egressWarning) {
         message.warning(`ZCode 出口未生效：${response.egressWarning}`);
       }

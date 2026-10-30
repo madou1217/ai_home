@@ -1534,7 +1534,9 @@ export function useAccountActions({
         'open',
         terminalId,
         workdir,
-        kind === 'cli' && serverRuntime
+        // 非本机 Server（远端 profile，或 Server 无桌面）一律 Web Terminal；本机的最终判定
+        // 由 Server 按请求来源再做一次（局域网/代理访问也会被改成 webui-pty）。
+        kind === 'cli' && (serverRuntime || resolveActiveServer().isRemote)
           ? { ...launchOptions, transport: 'webui', sessionKey: launchOptions?.sessionKey || buildWebTerminalSessionKey(
             resolveActiveServer().serverId || 'local',
             record.accountRef,

@@ -32,7 +32,7 @@ export default function AliasesPanel() {
   const aliases = useModelAliases();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<ModelAlias | null>(null);
+  const [editing, setEditing] = useState<AliasGroup | null>(null);
 
   const groups = groupModelAliases(aliases.sortedAliases);
   const detail = detailId ? groups.find((item) => item.alias === detailId) || null : null;
@@ -44,16 +44,8 @@ export default function AliasesPanel() {
 
   const openEdit = (group: AliasGroup) => {
     setDetailId(null);
-    // 编辑聚合行：回填多选值，保存时先删旧记录再按新值写入。
-    setEditing({
-      ...group.records[0],
-      alias: group.alias,
-      target: group.records.map((record) => record.target).join(','),
-      targetProvider: group.records.map((record) => record.targetProvider || 'auto').join(','),
-      priority: group.records[0]?.priority ?? 0,
-      enabled: group.enabled,
-      description: group.description
-    });
+    // 编辑聚合行：表单按整组回填多选值，保存时服务端原子替换这组记录。
+    setEditing(group);
     setFormOpen(true);
   };
 
@@ -67,7 +59,7 @@ export default function AliasesPanel() {
     });
     if (!ok) return;
     setDetailId(null);
-    for (const record of group.records) await aliases.deleteAlias(record.id);
+    await aliases.deleteAliases(group.records.map((record) => record.id));
   };
 
   const targetText = (record: ModelAlias) => {

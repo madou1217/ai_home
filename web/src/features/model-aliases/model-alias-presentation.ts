@@ -9,7 +9,7 @@ import type { ModelAlias } from '@/services/api';
 export const ALIAS_PROVIDER_IDS: readonly string[] = providerIds;
 
 export const getAliasProviderDisplayName = (provider: string) => (
-  providerNames[provider as keyof typeof providerNames] || provider
+  provider === 'auto' ? '自动 (Auto)' : providerNames[provider as keyof typeof providerNames] || provider
 );
 
 export const ALIAS_PROVIDER_SELECT_OPTIONS = ALIAS_PROVIDER_IDS.map((provider) => ({
@@ -66,18 +66,43 @@ export function sortModelAliases(aliases: ModelAlias[]) {
  */
 export function buildTargetModelGroups(
   modelsByProvider: Record<string, string[]>,
-  targetProvider: string | string[]
+  targetProvider: string | string[],
+  keepRecords: Array<Pick<ModelAlias, 'target' | 'targetProvider'>> = []
 ) {
   const selected = Array.isArray(targetProvider)
     ? targetProvider.filter((provider) => provider && provider !== 'auto')
     : (targetProvider && targetProvider !== 'auto' ? [targetProvider] : []);
   const providers = selected.length > 0 ? selected : ALIAS_PROVIDER_IDS;
   return providers
-    .map((provider) => ({
-      provider,
-      models: Array.from(new Set(modelsByProvider[provider] || [])).sort()
-    }))
-    .filter((group) => group.models.length > 0);
+    .map((provider) => {
+      // 编辑已有别名时，已保存的目标即使暂时不在目录里（目录未加载完 / 账号冷却后被收窄）
+      // 也要留成可见选项，否则下拉要么被整个禁用、要么已选项无法识别，用户只能删了重建。
+      const kept = keepRecords
+        .filter((record) => (record.targetProvider || 'auto') === provider)
+        .map((record) => String(record.target || '').trim())
+        .filter(Boolean);
+      return {
+        provider,
+        models: Array.from(new Set([...(modelsByProvider[provider] || []), ...kept])).sort()
+      };
+    })
+    .filter((group) => group.models.length > 0)
+    .concat(buildOrphanTargetGroup(modelsByProvider, keepRecords));
+}
+
+/**
+ * 已保存但没有任何供应商目录收录、且归属为「自动」的目标：单独成组，保证编辑时仍可选。
+ */
+function buildOrphanTargetGroup(
+  modelsByProvider: Record<string, string[]>,
+  keepRecords: Array<Pick<ModelAlias, 'target' | 'targetProvider'>>
+) {
+  const known = new Set(Object.values(modelsByProvider).flat());
+  const orphans = Array.from(new Set(keepRecords
+    .filter((record) => !record.targetProvider || record.targetProvider === 'auto')
+    .map((record) => String(record.target || '').trim())
+    .filter((target) => target && !known.has(target)))).sort();
+  return orphans.length > 0 ? [{ provider: 'auto', models: orphans }] : [];
 }
 
 // 上游 displayName 与 id 可能错位(如 gemini-3-flash-agent 显示为 Gemini 3.5 Flash (High)),

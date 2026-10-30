@@ -1169,6 +1169,19 @@ export const modelAliasesAPI = {
   toggle: async (id: string): Promise<ModelAlias> => {
     const response = await api.post<{ ok: boolean; alias: ModelAlias }>(`/webui/model-aliases/${id}/toggle`);
     return response.data.alias;
+  },
+  /** 可作为别名目标的 provider -> 模型：与服务端保存校验同源，下拉只列这些。 */
+  listTargets: async (): Promise<Record<string, string[]>> => {
+    const response = await api.get<{ ok: boolean; targets: Record<string, string[]> }>('/webui/model-aliases/targets');
+    return response.data.targets || {};
+  },
+  /** 原子替换一组记录：服务端先校验全部新记录再删旧写新；records 为空即删除这组。 */
+  replace: async (replaceIds: string[], records: Array<Partial<ModelAlias>>): Promise<ModelAlias[]> => {
+    const response = await api.post<{ ok: boolean; aliases: ModelAlias[] }>('/webui/model-aliases/replace', {
+      replaceIds,
+      records
+    });
+    return response.data.aliases || [];
   }
 };
 

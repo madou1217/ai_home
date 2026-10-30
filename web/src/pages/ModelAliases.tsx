@@ -31,13 +31,12 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
     fetchModels,
     getModelLabel,
     findModelLabel,
-    deleteAlias: handleDelete,
+    deleteAliases,
     toggleAlias: handleToggle,
     saveAlias
   } = useModelAliases();
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [editingGroup, setEditingGroup] = useState<AliasGroup | null>(null);
   const watchedTargetProviders = Form.useWatch('targetProvider', form);
   const targetProviders = useMemo<string[]>(() => {
@@ -73,15 +72,14 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
   ));
 
   const targetModelGroups = useMemo(
-    () => buildTargetModelGroups(modelsByProvider, targetProviders),
-    [modelsByProvider, targetProviders]
+    () => buildTargetModelGroups(modelsByProvider, targetProviders, editingGroup?.records || []),
+    [modelsByProvider, targetProviders, editingGroup]
   );
 
   const aliasGroups = useMemo(() => groupModelAliases(sortedAliases), [sortedAliases]);
 
   const handleAdd = () => {
     form.resetFields();
-    setEditingId(null);
     setEditingGroup(null);
     setModalVisible(true);
   };
@@ -101,7 +99,6 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
       enabled: group.enabled,
       description: group.description
     });
-    setEditingId(null);
     setEditingGroup(group);
     setModalVisible(true);
   };
@@ -109,12 +106,10 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
   const handleModalOk = async () => {
     try {
       const values = await form.validateFields();
-      // 新增走多选展开；编辑态以聚合行覆盖：先删旧记录再按新值写入。
+      // 新增走多选展开；编辑态以聚合行原子覆盖：服务端校验通过才删旧写新，失败时旧记录不动。
       const records = expandAliasSelections(values, modelsByProvider);
-      if (editingGroup) {
-        for (const record of editingGroup.records) await handleDelete(record.id);
-      }
-      if (await saveAlias(null, { ...values, records })) {
+      const replaceIds = editingGroup ? editingGroup.records.map((record) => record.id) : null;
+      if (await saveAlias(replaceIds, { ...values, records })) {
         setEditingGroup(null);
         setModalVisible(false);
       }
@@ -212,9 +207,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
           </Button>
           <Popconfirm
             title={`确定要删除这个别名的全部 ${group.records.length} 条记录吗？`}
-            onConfirm={async () => {
-              for (const record of group.records) await handleDelete(record.id);
-            }}
+            onConfirm={() => deleteAliases(group.records.map((record) => record.id))}
             okText="确定"
             cancelText="取消"
           >
@@ -237,7 +230,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
       />
 
       <ModalForm
-        title={editingId ? '编辑模型别名' : '添加模型别名'}
+        title={editingGroup ? '编辑模型别名' : '添加模型别名'}
         open={modalVisible}
         onOpenChange={setModalVisible}
         form={form}
@@ -323,7 +316,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
                 const nextProviders = form.getFieldValue('targetProvider');
                 const selected = form.getFieldValue('target');
                 if (!Array.isArray(selected) || selected.length === 0) return;
-                const groups = buildTargetModelGroups(modelsByProvider, nextProviders);
+                const groups = buildTargetModelGroups(modelsByProvider, nextProviders, editingGroup?.records || []);
                 const allowed = new Set(groups.flatMap((group) => group.models));
                 const kept = selected.filter((model: string) => allowed.has(model));
                 if (kept.length !== selected.length) form.setFieldValue('target', kept);

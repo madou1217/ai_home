@@ -1,6 +1,8 @@
 import { memo, useEffect, useState, useMemo, useRef } from 'react';
 import { applyThemeMode } from '@/services/theme-persistence';
 import { history } from '@umijs/max';
+import { useCollapsePresence } from '@/hooks/use-collapse-presence';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import {
   SearchOutlined,
   MessageOutlined,
@@ -28,6 +30,8 @@ interface CommandItem {
   action: () => void;
   shortcut?: string;
 }
+
+const PALETTE_EXIT_MS = 160;
 
 export const GlobalCommandPalette = memo(function GlobalCommandPalette({
   open,
@@ -120,6 +124,10 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
     );
   }, [commands, search]);
 
+  // 关闭时先留在 DOM 里播完退场再卸载；过滤结果用 FLIP 重排，避免列表瞬间跳位
+  const { present } = useCollapsePresence(open, PALETTE_EXIT_MS);
+  const listFlipRef = useFlipReorder<HTMLDivElement>(filtered);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!open) return;
@@ -142,10 +150,15 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [filtered, onClose, open, selectedIndex]);
 
-  if (!open) return null;
+  if (!present) return null;
 
   return (
-    <div className={styles.commandPaletteOverlay} onClick={onClose}>
+    <div
+      className={`${styles.commandPaletteOverlay}${open ? '' : ` ${styles.commandPaletteClosing}`}`}
+      data-state={open ? 'open' : 'closing'}
+      aria-hidden={open ? undefined : true}
+      onClick={open ? onClose : undefined}
+    >
       <div className={styles.commandPaletteCard} onClick={(e) => e.stopPropagation()}>
         <div className={styles.commandPaletteInputWrapper}>
           <SearchOutlined className={styles.commandPaletteSearchIcon} />
@@ -162,7 +175,7 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
           <kbd className={styles.commandPaletteKbd}>ESC</kbd>
         </div>
 
-        <div className={styles.commandPaletteList}>
+        <div ref={listFlipRef} className={styles.commandPaletteList}>
           {filtered.length === 0 ? (
             <div className={styles.commandPaletteEmpty}>无匹配的全局指令</div>
           ) : (
@@ -171,6 +184,7 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
               return (
                 <div
                   key={item.id}
+                  data-flip-key={item.id}
                   className={`${styles.commandPaletteItem} ${isSelected ? styles.commandPaletteItemSelected : ''}`}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   onClick={() => item.action()}

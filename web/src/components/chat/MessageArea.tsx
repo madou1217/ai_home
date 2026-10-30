@@ -59,6 +59,7 @@ import {
   supportsAihServer
 } from './aih-server-account';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
+import { useCollapsePresence } from '@/hooks/use-collapse-presence';
 import { throttle } from '@/utils/timing';
 import {
   getQueueModeDescription,
@@ -734,7 +735,9 @@ const MessageArea = ({
   ]);
   const showPlanChoiceDock = Boolean(interactivePrompt && onSelectPlanChoice && !isTerminated);
   const showTerminalDock = Boolean(terminalRun && terminalRun.runId);
-  const hasComposerDock = Boolean(activeChecklist) || showPlanChoiceDock || showTerminalDock || queuedMessages.length > 0;
+  // 选项卡退场期间仍需留在 dock 栈里，否则整个栈会随判定一起卸载、退场动画看不到
+  const planChoicePresence = useCollapsePresence(showPlanChoiceDock, 160);
+  const hasComposerDock = Boolean(activeChecklist) || planChoicePresence.present || showTerminalDock || queuedMessages.length > 0;
   const helperFontSize = mobile ? 13 : 12;
 
   // 会话模型默认值的唯一解析处（切会话按会话键重算，不靠"模型失效"触发，避免与父组件竞争）：

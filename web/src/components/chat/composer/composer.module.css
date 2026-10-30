@@ -537,6 +537,23 @@
   background: var(--chat-panel-bg);
   box-shadow: var(--chat-panel-shadow);
   padding: var(--hos-space-3);
+  animation: planChoiceDockIn var(--motion-base) var(--ease-emphasized) backwards;
+}
+
+@keyframes planChoiceDockIn {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 退场：留 DOM 160ms（use-collapse-presence 控制卸载），期间不接收点击 */
+.planChoiceDockClosing {
+  animation: planChoiceDockOut var(--motion-base) var(--ease-standard) forwards;
+  pointer-events: none;
+}
+
+@keyframes planChoiceDockOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 6px, 0); }
 }
 
 .planChoiceDockTitle {
@@ -974,12 +991,23 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 100;
-  animation: slashMenuAppear var(--motion-fast) var(--ease-standard);
+  animation: slashMenuAppear var(--motion-fast) var(--ease-emphasized) backwards;
 }
 
 @keyframes slashMenuAppear {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 退场：留 DOM 140ms（use-collapse-presence 控制卸载），期间不接收点击 */
+.slashDropdownClosing {
+  animation: slashMenuDisappear var(--motion-fast) var(--ease-standard) forwards;
+  pointer-events: none;
+}
+
+@keyframes slashMenuDisappear {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 4px, 0); }
 }
 
 .slashDropdownHeader {

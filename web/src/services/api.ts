@@ -2185,6 +2185,14 @@ export const terminalAPI = {
   ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; error?: string }> =>
     terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
   input: (termId: string, data: string) => terminalPost('input', { termId, data }),
+  pasteImage: async (sessionKey: string, cwd: string | undefined, dataUrl: string): Promise<{
+    ok: boolean;
+    path?: string;
+    pasteText?: string;
+    cwd?: string;
+    error?: string;
+    message?: string;
+  }> => terminalPost('clipboard-image', { sessionKey, cwd, dataUrl }),
   resize: (termId: string, cols: number, rows: number) => terminalPost('resize', { termId, cols, rows }),
   close: (termId: string, sessionKey?: string): Promise<{ ok: boolean; error?: string }> =>
     terminalPost('close', { termId, sessionKey }),

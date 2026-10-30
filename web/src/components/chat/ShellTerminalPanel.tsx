@@ -196,6 +196,55 @@ function ShellTerminalPanel({
     flushInput(inst);
   }, [applyFrame, flushInput]);
 
+  const readClipboardImageDataUrl = useCallback((file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('terminal_image_read_failed'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  }), []);
+
+  const pasteImageIntoActiveTerminal = useCallback(async (file: File) => {
+    const tabId = activeIdRef.current;
+    const inst = instancesRef.current.get(tabId);
+    if (!inst) return;
+    const definition = sessionTabsRef.current?.find((item) => item.id === tabId);
+    const cwd = definition?.cwd ?? cwdRef.current;
+    try {
+      const dataUrl = await readClipboardImageDataUrl(file);
+      if (instancesRef.current.get(tabId) !== inst) return;
+      const result = await terminalAPI.pasteImage(
+        inst.sessionKey,
+        cwd,
+        dataUrl
+      );
+      if (!result.ok || !result.path) {
+        message.error(`图片粘贴失败: ${result.error || result.message || 'unknown'}`);
+        return;
+      }
+      if (instancesRef.current.get(tabId) !== inst) {
+        message.warning(`图片已保存，但原终端已关闭: ${result.path}`);
+        return;
+      }
+      inst.inputBuf += ` ${result.pasteText || result.path} `;
+      flushInput(inst);
+      if (activeIdRef.current === tabId) inst.term.focus();
+    } catch (error) {
+      message.error(`图片粘贴失败: ${String((error as Error)?.message || error)}`);
+    }
+  }, [flushInput, readClipboardImageDataUrl]);
+
+  const handleTerminalPaste = useCallback((event: ClipboardEvent) => {
+    if (!(event.target instanceof Element) || !event.target.closest('.xterm')) return;
+    const files = Array.from(event.clipboardData?.files || []);
+    const item = Array.from(event.clipboardData?.items || [])
+      .find((candidate) => candidate.kind === 'file' && candidate.type.startsWith('image/'));
+    const file = files.find((candidate) => candidate.type.startsWith('image/')) || item?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void pasteImageIntoActiveTerminal(file);
+  }, [pasteImageIntoActiveTerminal]);
+
   // ── 打开一个新 tab（新 PTY + 新 xterm），共用面板的 muxId ──
   const createTab = useCallback(async (definition?: SessionTabDefinition) => {
     const id = String(definition?.id || `t-${(tabSeqRef.current += 1)}`);
@@ -434,6 +483,17 @@ function ShellTerminalPanel({
       refitter.dispose();
     };
   }, [visible, layout]);
+
+  // xterm owns its hidden textarea and may stop bubbling paste events. Capture
+  // at the panel boundary so image clipboard items are intercepted before
+  // xterm's text-paste handler; normal text pastes are left untouched.
+  useEffect(() => {
+    if (!visible) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    panel.addEventListener('paste', handleTerminalPaste, true);
+    return () => panel.removeEventListener('paste', handleTerminalPaste, true);
+  }, [handleTerminalPaste, visible]);
 
   const closeTab = useCallback(async (id: string, closeLast = true): Promise<boolean> => {
     if (isCreatingTab?.()) return false;

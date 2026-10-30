@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined, MenuFoldOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
+import { flushTerminalInput } from './terminal-input';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
 import styles from './composer/composer.module.css';
 
@@ -61,22 +62,7 @@ interface TermInstance {
   opened: boolean;
   inputBuf: string;
   sending: boolean;
-}
-
-// 逐击键各发一条并发 POST 无法保证到达顺序（快速输入/粘贴会被打乱 → 命令乱码）。
-// 这里按 tab 合并缓冲、单条在途、顺序发送，既保序又聚合突发输入。
-async function flushInput(inst: TermInstance) {
-  if (inst.sending || !inst.termId) return;
-  inst.sending = true;
-  try {
-    while (inst.inputBuf) {
-      const chunk = inst.inputBuf;
-      inst.inputBuf = '';
-      await terminalAPI.input(inst.termId, chunk);
-    }
-  } catch { /* 忽略：下次击键会重试 */ } finally {
-    inst.sending = false;
-  }
+  inputReady: boolean;
 }
 
 const HEIGHT_STORAGE_KEY = 'aih:webui-terminal-height:v1';
@@ -152,6 +138,7 @@ function ShellTerminalPanel({
   const pendingRef = useRef<Map<string, any[]>>(new Map());
   const tabSeqRef = useRef(0);
   const panelReadyRef = useRef(false);
+  const recoverRef = useRef<() => void>(() => {});
   const sessionTabsRef = useRef<SessionTabDefinition[] | undefined>(sessionTabs);
   sessionTabsRef.current = sessionTabs;
 
@@ -161,12 +148,22 @@ function ShellTerminalPanel({
   const [height, setHeight] = useState<number>(DEFAULT_HEIGHT);
   const [internalMinimized, setInternalMinimized] = useState(false);
   const minimized = controlledMinimized ?? internalMinimized;
+  const flushInput = useCallback((inst: TermInstance) => {
+    void flushTerminalInput(inst, terminalAPI.input, () => {
+      if (Array.from(instancesRef.current.values()).includes(inst)) recoverRef.current();
+    }, () => {
+      if (Array.from(instancesRef.current.values()).includes(inst)) {
+        inst.term.writeln('\r\n\x1b[33m输入发送状态未知，请检查终端后再重试。\x1b[0m');
+      }
+    });
+  }, []);
 
   // 应用一帧（output/exit）到某个 tab 的 xterm。
   const applyFrame = useCallback((tabId: string, inst: TermInstance, msg: any) => {
     if (msg.type === 'output' && typeof msg.data === 'string') {
       inst.term.write(base64ToBytes(msg.data));
     } else if (msg.type === 'exit') {
+      inst.inputReady = false;
       inst.term.options.disableStdin = true;
       inst.term.writeln('\r\n\x1b[90m[进程已退出]\x1b[0m');
       setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, status: 'closed' } : t)));
@@ -176,14 +173,16 @@ function ShellTerminalPanel({
   // 建立 termId→tab 映射，并回放这段时间内早到被缓存的帧（prompt 等）。
   const registerTermId = useCallback((tabId: string, termId: string, inst: TermInstance) => {
     inst.termId = termId;
+    inst.inputReady = panelReadyRef.current;
     byTermIdRef.current.set(termId, tabId);
     const queued = pendingRef.current.get(termId);
     if (queued) {
       pendingRef.current.delete(termId);
       for (const m of queued) applyFrame(tabId, inst, m);
     }
-    void flushInput(inst); // 冲掉 termId 就绪前缓冲的击键
-  }, [applyFrame]);
+    if (inst.opened) void terminalAPI.resize(termId, inst.term.cols, inst.term.rows);
+    flushInput(inst);
+  }, [applyFrame, flushInput]);
 
   // ── 打开一个新 tab（新 PTY + 新 xterm），共用面板的 muxId ──
   const createTab = useCallback(async (definition?: SessionTabDefinition) => {
@@ -195,12 +194,12 @@ function ShellTerminalPanel({
     const term = newTerm();
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const inst: TermInstance = { term, fit, termId: '', opened: false, inputBuf: '', sending: false };
+    const inst: TermInstance = { term, fit, termId: '', opened: false, inputBuf: '', sending: false, inputReady: false };
     instancesRef.current.set(id, inst);
 
     term.onData((data) => {
       inst.inputBuf += data;
-      void flushInput(inst);
+      flushInput(inst);
     });
     term.onResize(({ cols, rows }) => {
       if (inst.termId) terminalAPI.resize(inst.termId, cols, rows).catch(() => {});
@@ -247,7 +246,7 @@ function ShellTerminalPanel({
       term.writeln(`\x1b[31m终端连接失败: ${String((error as Error)?.message || error)}\x1b[0m`);
       setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
     }
-  }, [persistent, registerTermId, sessionKey]);
+  }, [flushInput, persistent, registerTermId, sessionKey]);
 
   // ── 面板生命周期：建立 mux SSE + 首个 tab；卸载/关闭时全部回收 ──
   useEffect(() => {
@@ -290,14 +289,18 @@ function ShellTerminalPanel({
           if (previousTermId !== attached.termId) byTermIdRef.current.delete(previousTermId);
           registerTermId(tabId, attached.termId, inst);
           setTabs((prev) => prev.map((tab) => tab.id === tabId
-            ? { ...tab, termId: attached.termId!, status: 'ready' }
+            ? { ...tab, termId: attached.termId!, status: panelReadyRef.current ? 'ready' : 'connecting' }
             : tab));
         }).catch(() => {});
         attach();
       }
     };
+    recoverRef.current = reattachPersistentTabs;
     es.onerror = () => {
-      if (!panelReadyRef.current) setPanelStatus('error');
+      panelReadyRef.current = false;
+      for (const inst of instancesRef.current.values()) inst.inputReady = false;
+      setPanelStatus('connecting');
+      setTabs((prev) => prev.map((tab) => tab.status === 'ready' ? { ...tab, status: 'connecting' } : tab));
     };
     es.onmessage = (ev) => {
       let msg: any;
@@ -305,7 +308,14 @@ function ShellTerminalPanel({
       if (msg.type === 'connected') {
         panelReadyRef.current = true;
         setPanelStatus('ready');
-        setTabs((prev) => prev.map((t) => (t.termId && t.status === 'connecting' ? { ...t, status: 'ready' } : t)));
+        for (const [tabId, inst] of instancesRef.current) {
+          const key = sessionTabsRef.current?.find((item) => item.id === tabId)?.sessionKey || sessionKey;
+          if (!key && inst.termId) {
+            inst.inputReady = true;
+            flushInput(inst);
+            setTabs((prev) => prev.map((tab) => tab.id === tabId && tab.status === 'connecting' ? { ...tab, status: 'ready' } : tab));
+          }
+        }
         reattachPersistentTabs();
         return;
       }
@@ -335,10 +345,13 @@ function ShellTerminalPanel({
 
     return () => {
       disposed = true;
+      recoverRef.current = () => {};
       for (const timer of retryTimers) clearTimeout(timer);
       try { es.close(); } catch { /* ignore */ }
       esRef.current = null;
       for (const inst of instancesRef.current.values()) {
+        inst.inputReady = false;
+        inst.inputBuf = '';
         if (inst.termId && !persistent) terminalAPI.close(inst.termId).catch(() => {});
         try { inst.term.dispose(); } catch { /* ignore */ }
       }
@@ -351,7 +364,7 @@ function ShellTerminalPanel({
       setActiveId('');
       tabSeqRef.current = 0;
     };
-  }, [createTab, persistent, sessionKey, visible]);
+  }, [createTab, flushInput, persistent, sessionKey, visible]);
 
   useEffect(() => {
     if (controlledActiveTabId && controlledActiveTabId !== activeId && tabs.some((tab) => tab.id === controlledActiveTabId)) {
@@ -413,6 +426,8 @@ function ShellTerminalPanel({
   const closeTab = useCallback((id: string) => {
     const inst = instancesRef.current.get(id);
     if (inst) {
+      inst.inputReady = false;
+      inst.inputBuf = '';
       if (inst.termId) {
         terminalAPI.close(inst.termId).catch(() => {});
         byTermIdRef.current.delete(inst.termId);
@@ -462,6 +477,8 @@ function ShellTerminalPanel({
       byTermIdRef.current.delete(inst.termId);
       inst.termId = '';
     }
+    inst.inputReady = false;
+    inst.inputBuf = '';
     inst.term.options.disableStdin = false;
     inst.term.reset();
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, termId: '', status: 'connecting' } : t)));

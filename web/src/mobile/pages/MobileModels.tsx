@@ -146,7 +146,7 @@ export default function MobileModels(_props: MobilePageProps) {
       </TelemetryGrid>
 
       {probeError ? (
-        <HudCard code="PROBE" title="部分账号模型探测失败" tone={catalog?.source === 'remote' ? 'warn' : 'err'}>
+        <HudCard code="PROBE" title="部分账号模型探测失败" tone={catalog?.source === 'remote' ? 'warn' : 'err'} className="aih-fade-in">
           <div className={styles.probeBody} role="status">
             {probeError.statusCode ? <span className={styles.probeCode}>HTTP {probeError.statusCode}</span> : null}
             <p className={styles.probeMessage}>{probeError.message}</p>
@@ -177,6 +177,7 @@ export default function MobileModels(_props: MobilePageProps) {
           code="REFRESH"
           title="刷新状态"
           tone={catalogJob.status === 'failed' ? 'err' : catalogJob.status === 'succeeded' ? 'ok' : 'info'}
+          className="aih-fade-in"
           extra={(
             <span className={`mhud-status mhud-tone--${catalogJob.status === 'failed' ? 'err' : page.catalogJobActive ? 'info' : 'ok'}`}>
               <span

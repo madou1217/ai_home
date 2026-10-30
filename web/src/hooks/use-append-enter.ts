@@ -21,13 +21,20 @@ export interface AppendEnterOptions {
   distance?: number;
   /** 起始不透明度 */
   from?: number;
+  /**
+   * 新条目落在列表哪一端。默认 'tail'（聊天消息、结果行）。
+   * 'head' 用于「新的在最上面」的列表（翻译记录、日志）：判定换成「旧首项在
+   * keys 里的偏移量 = 新增条数」，尾部被容量上限裁掉不影响判定。
+   */
+  direction?: 'tail' | 'head';
 }
 
 const DEFAULT_OPTIONS: Required<Omit<AppendEnterOptions, 'selector'>> = {
   maxItems: 4,
   duration: 220,
   distance: 6,
-  from: 0.4
+  from: 0.4,
+  direction: 'tail'
 };
 
 export function useAppendEnter<E extends HTMLElement>(
@@ -36,7 +43,7 @@ export function useAppendEnter<E extends HTMLElement>(
   resetKey: string,
   options: AppendEnterOptions
 ) {
-  const { selector, maxItems, duration, distance, from } = { ...DEFAULT_OPTIONS, ...options };
+  const { selector, maxItems, duration, distance, from, direction } = { ...DEFAULT_OPTIONS, ...options };
   const previousRef = useRef<readonly string[] | null>(null);
   const ownerRef = useRef(resetKey);
 
@@ -46,12 +53,24 @@ export function useAppendEnter<E extends HTMLElement>(
     ownerRef.current = resetKey;
     previousRef.current = keys;
     if (ownerChanged || !previous) return;
-    if (keys.length <= previous.length) return;
-    const added = keys.length - previous.length;
-    if (added > maxItems) return;
-    // 只认「纯追加」：已有前缀原样保留，否则是插入/重排/换数据。
-    for (let i = 0; i < previous.length; i += 1) {
-      if (previous[i] !== keys[i]) return;
+    let added = 0;
+    if (direction === 'head') {
+      if (!previous.length) return;
+      // 旧首项的新下标就是新增条数；后面必须原样续上（尾部被容量裁掉不算变）。
+      added = keys.indexOf(previous[0]);
+      if (added <= 0 || added > maxItems) return;
+      const tail = keys.slice(added);
+      for (let i = 0; i < tail.length; i += 1) {
+        if (tail[i] !== previous[i]) return;
+      }
+    } else {
+      if (keys.length <= previous.length) return;
+      added = keys.length - previous.length;
+      if (added > maxItems) return;
+      // 只认「纯追加」：已有前缀原样保留，否则是插入/重排/换数据。
+      for (let i = 0; i < previous.length; i += 1) {
+        if (previous[i] !== keys[i]) return;
+      }
     }
     const container = ref.current;
     if (!container || container.getClientRects().length === 0) return;
@@ -63,7 +82,9 @@ export function useAppendEnter<E extends HTMLElement>(
     }
     if (reduce) return;
     const nodes = container.querySelectorAll<HTMLElement>(selector);
-    for (let i = Math.max(0, nodes.length - added); i < nodes.length; i += 1) {
+    const first = direction === 'head' ? 0 : Math.max(0, nodes.length - added);
+    const end = direction === 'head' ? Math.min(added, nodes.length) : nodes.length;
+    for (let i = first; i < end; i += 1) {
       nodes[i]?.animate(
         [
           { opacity: from, transform: `translateY(${distance}px)` },

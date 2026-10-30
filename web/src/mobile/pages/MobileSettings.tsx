@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { MobilePageProps } from '@/mobile/mobile-routes';
 import { HudChips, MobilePage } from '@/mobile/ui';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import AliasesPanel from './settings/AliasesPanel';
 import BasicSettingsPanel from './settings/BasicSettingsPanel';
 import UpstreamErrorMappingsPanel from './settings/UpstreamErrorMappingsPanel';
@@ -26,10 +27,14 @@ export default function MobileSettings(_props: MobilePageProps) {
       ? String(searchParams.get('tab')).trim() as SettingsTab
       : 'basic'
   ));
+  // 基础设置是 hidden 常驻、其余分区按需挂载：切换时整块面板淡入一次（只碰 opacity）。
+  const panelBodyRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(panelBodyRef, tab, { scope: 'mobile-settings-tab' });
 
   return (
     <MobilePage lead="管理 server、额度刷新和模型别名。">
       <HudChips ariaLabel="设置分区" items={TABS} value={tab} onChange={(key) => setTab(key as SettingsTab)} />
+      <div ref={panelBodyRef}>
       {/* 基础设置常驻挂载：切换分区不丢未保存的表单输入（桌面同为 forceRender）；别名分区按需挂载 */}
       <div hidden={tab !== 'basic'} role="tabpanel" aria-label="基础设置" className={styles.panel}>
         <BasicSettingsPanel />
@@ -44,6 +49,7 @@ export default function MobileSettings(_props: MobilePageProps) {
           <UpstreamErrorMappingsPanel />
         </div>
       ) : null}
+      </div>
     </MobilePage>
   );
 }

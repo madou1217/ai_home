@@ -405,7 +405,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
       <MobileGlobalStatusCard outcomes={accountOutcomes} />
 
       {actions.hasActiveImportJob ? (
-        <HudCard code="IMPORT" title="账号导入正在后台运行" tone="info">
+        <HudCard code="IMPORT" title="账号导入正在后台运行" tone="info" className="aih-fade-in">
           <span className={styles.importProgress} role="status" aria-live="polite">
             <SyncOutlined spin aria-hidden="true" />
             {formatImportJobProgress(actions.importJob)}

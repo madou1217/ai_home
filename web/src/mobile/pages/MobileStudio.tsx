@@ -63,14 +63,14 @@ export default function MobileStudio(_props: MobilePageProps) {
       )}
     >
       {studio.initError ? (
-        <div className={styles.error} role="alert">
+        <div className={`${styles.error} aih-fade-in`} role="alert">
           <span className="hud-led hud-led--err" aria-hidden="true" />
           <span>影像工作台初始化失败：{studio.initError}</span>
         </div>
       ) : null}
       <HudSection title="会话胶片" code="SESSION FILM" count={studio.sessions.length}>
         {studio.sessions.length ? (
-          <MonoList ariaLabel="影像会话">
+          <MonoList ariaLabel="影像会话" className="aih-fade-in">
             {studio.sessions.map((item, index) => {
               const previewUrl = item.previewAssetId ? studio.assetUrls[imageStudioAssetKey(item.id, item.previewAssetId)] : '';
               const status = statusLabel(item.latestStatus);

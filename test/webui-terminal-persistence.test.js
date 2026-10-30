@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const persistence = require('../lib/server/webui-terminal-persistence');
 const { handleWebUiTerminalRequest } = require('../lib/server/webui-terminal-routes');
+const tmuxAvailable = process.platform !== 'win32' && spawnSync('tmux', ['-V'], { stdio: 'ignore' }).status === 0;
 
 async function post(route, body) {
   let reply;
@@ -17,7 +18,20 @@ async function post(route, body) {
   return reply;
 }
 
-test('keyed terminal survives the server process and can be closed after adoption', { skip: process.platform === 'win32', timeout: 15000 }, async () => {
+test('terminal remains usable with an explicit non-durable result when tmux is missing', { skip: process.platform === 'win32' }, () => {
+  const child = spawnSync(process.execPath, ['-e', `
+    const { openWebUiTerminalSession } = require('./lib/server/webui-terminal-routes');
+    const result = openWebUiTerminalSession({ sessionKey: 'without-tmux', file: '/bin/sh', args: [] });
+    console.log(JSON.stringify(result));
+    process.exit(0);
+  `], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', env: { ...process.env, PATH: '' }, timeout: 8000 });
+  assert.equal(child.status, 0, child.stderr);
+  const result = JSON.parse(child.stdout);
+  assert.equal(result.ok, true);
+  assert.equal(result.durable, false);
+});
+
+test('keyed terminal survives the server process and can be closed after adoption', { skip: !tmuxAvailable, timeout: 15000 }, async () => {
   const key = `restart-test-${process.pid}-${Date.now()}`;
   try {
     const child = spawnSync(process.execPath, ['-e', `
@@ -50,7 +64,7 @@ test('keyed terminal survives the server process and can be closed after adoptio
   }
 });
 
-test('idle collection keeps keyed terminals after 30 minutes', { skip: process.platform === 'win32' }, async () => {
+test('idle collection keeps keyed terminals after 30 minutes', { skip: !tmuxAvailable }, async () => {
   const key = `idle-test-${process.pid}-${Date.now()}`;
   const originalNow = Date.now;
   let terminal;

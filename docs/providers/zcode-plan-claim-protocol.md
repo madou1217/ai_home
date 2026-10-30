@@ -137,10 +137,11 @@ let r = await n.codingPlanSubscriptionService.claimManualPlan({ planId: e.args.p
 这解释了「等一会这个账号没有弹窗」：**横幅不是本地算出来的，是 marketing/touch 投放的**；
 投放请求超时 → 没有 banner → 没有领取入口。
 
-**没抓到的那一段（如实记录）**：上述 cap*.out 里没有 `billing/preview`、也没有
-`billing/claim` 的请求记录 —— 用户点「领取」成功的那两次落在 hook 未接管的窗口里。
-补上这一段的方式见 §3.1（非破坏性复放），但那是「我发的同形请求」，不是「桌面端点击瞬间的
-那一次 POST」；后者需要点击时 hook 在线才能拿到。
+**点击那一次补上了**（§3.2）：点击落在横幅外层 `<button>` 上 → host 进程
+`coding-plan-subscription.claimManualPlan` 198.8ms 返回 OK → 紧接的 balance 里出现
+`zcode-v3-start-plan-1030-wk` `status:active`。**没录到的只剩 HTTP 报文本身** ——
+claim 的 `fetch` 在 host 进程里，主进程钩子看不见；§3.2 末尾写清了为什么这条隧道走不通，
+报文形状以 §2.2 的逐字切片为准。
 
 **关于「点了两次才成功」**：点击处理链有三个非成功出口 ——
 `verifying` 阶段被取消 → `{status:'cancelled'}`；验证码解算抛错 → `{status:'failure'}`；
@@ -188,6 +189,70 @@ Authorization: Bearer <zcodejwttoken>
 **host 进程**里发（日志前缀 `[zcode-host] [rpc:call]`），渲染层 `fetch`/`XMLHttpRequest` 钩子
 和页面级 CDP `Network` 都看不到；host 进程的 axios 不读 `HTTPS_PROXY`，所以只能靠
 `--inspect` 注入主进程（`http/https.request`/`tls.connect`）或读 host 日志。
+
+### 3.2 桌面端「点一下领取」的完整链路（2026-10-30 22:40:46 实录）
+
+**点击落点不是 SVG，是包住 iframe 的 button。** 渲染层实测结构：
+
+```html
+<div class="relative w-full">
+  <button aria-label="Open" data-testid="cloud-dialog-interactive-hero" class="block h-24 w-full ...">
+    <span class="pointer-events-none block size-full overflow-hidden" inert>
+      <iframe src="http://127.0.0.1:64812/<uuid>/index.html"
+              class="pointer-events-none size-full border-0 bg-transparent"
+              data-hero-type="interactive_bundle" data-instance-id="cloud-hero-1" data-status="ready">
+```
+
+- iframe 在页面坐标 (17, 647)、234×94，且 `pointer-events:none` —— 横幅里的 `Claim` 永远收不到鼠标事件；
+- 真正的点击入口是外层 `<button>`，onClick 为 `()=>{e.clickBanner().catch(()=>J.warn('[marketing-touch] action failed'))}`；
+- `banner.js` 只处理 `destroy` / `ready` 两条消息，没有任何 click 逻辑 —— 所以对 SVG 派发 `MouseEvent` 什么都不会发生（先试了两次：`Input.dispatchMouseEvent` 打在 (199,73)、以及在 `g#claim-indicator` 上合成 `PointerEvent`/`MouseEvent`，host 日志零 RPC）。
+
+**在页面坐标 (216, 720) 派发一次真实 `Input.dispatchMouseEvent`（mousePressed + mouseReleased）后，host 日志逐条（点击时刻 ≈ 22:40:45.4）：**
+
+```
+22:40:46.771 [zcode-host] [rpc:call] coding-plan-subscription.claimManualPlan OK (198.8ms)
+22:40:46.856 [zcode-host] [rpc:call] marketing-touch.report OK (83.3ms)
+22:40:46.973 [zcode-host] [rpc:call] marketing-touch.query OK (162.7ms)
+22:40:46.987 [coding-plan-availability] billing/balance 请求完成
+   plans:[{plan_id:'zcode-v3-start-plan-1030-wk', name:'ZCODE WEEKEND BUILD',
+           status:'active', starts_at:1793371246, ends_at:1793581200}]
+```
+
+点击前 balance 里只有 `zcode-v3-start-plan-0817`；点击后多出 `zcode-v3-start-plan-1030-wk` 且
+`status:active`、`starts_at` 正好是点击那一秒。**领取成功，且立即生效**（这份投放没有「待生效」窗口）。
+
+由此确定的三件事：
+
+1. **桌面端确实每次都解验证码**，而且解得很快 —— 点击瞬间的验证码事件（同一个 `cap11.out`）：
+
+```
+22:40:45.497 captcha-diagnostics attempt.start  source:'send_preflight'  stage:'start'
+22:40:45.497 attempt.stage trigger_delay → instance_wait → verification
+22:40:46.572 sdk.callback  stage:'sdk_init'  lastSdkEvent:'success'  accepted:true   ← 1.07s 解完
+22:40:46.573 attempt.end
+22:40:46.771 claimManualPlan OK (198.8ms)
+```
+
+   也就是说：**点击 → verifying（真实渲染进程里 1.07s 解完）→ submitting（198.8ms 的 POST）**，
+   与 §2.3 的 `WOt` 完全一致（`source:'send_preflight'` 正是它的标签）。
+   验证码是**客户端自己加的门槛**，桌面端在真浏览器里 1 秒就过；WebUI 用 headless Chrome 同步解，
+   解不出来就整体失败 —— 这就是「桌面能领、WebUI 领不到」的直接差别。
+2. 领取成功后立刻 `marketing-touch.report`（回传点击）+ `marketing-touch.query`（刷新投放）——
+   这就是「领完横幅消失」的机制。
+3. `plan_id` 全程来自横幅按钮的 `action.args.plan_id`，与 `billing/preview` 无关（§2.4）。
+
+**HTTP 报文本身仍然没有录到（如实记录 + 为什么这条路走不通）**：claim 的 `fetch` 发生在 host 进程
+（`out/host/index.js` 的 `NodeApiClient.request` → `fetch`）。
+
+| 尝试 | 结果 |
+|---|---|
+| 主进程 `--inspect` 注入 `http/https.request` / `tls.connect` | 只看到主进程自己的请求，claim 不在其中 |
+| `NODE_OPTIONS=--require` 注入 host | 被 Electron 丢弃（marker 文件无输出） |
+| `utilityProcess` 的 `execArgv` 加 `--inspect` | host 随窗口创建，钩子来不及挂 |
+| `ZCODE_BASE_URL=https://127.0.0.1:8902` + 本地 HTTPS 代理 | 主进程与 host 的 GET 都改道成功（48 条，含 `marketing/touch`、`billing/balance`），但 Chromium 网络服务被代理打断：`Network service crashed` → 渲染进程 `exit_code 1` → 窗口关闭 |
+
+所以 claim 报文的形状以 §2.2 的逐字切片为准（URL / 头 / body 全部来自 app.asar 原文），
+端点行为以 §3.1 的线上复放为准。两者与 §3.2 的 RPC 时间线互相对齐：一个 POST、无验证码、198ms 返回。
 
 ## 4. WebUI 侧实测（只读 GET）
 
@@ -237,9 +302,12 @@ WebUI 领取失败是两条独立缺陷叠加：
    没有验证码头也照样进了 plan 查找）。
 
 桌面端没有第一个问题：横幅走 marketing/touch（preview 为空无所谓），`plan_id` 由投放下发。
-第二个问题上，桌面端虽然也解验证码（`WOt` 拿不到参数就取消领取），但它在**真实浏览器渲染进程**
-里解、且提前预热，成功率与耗时都不是 headless Chrome 能比的；而 WebUI 把这一步做成了
-**硬前置**（解不出来直接失败），承担了一个上游其实并不要求的成本。
+第二个问题上，桌面端**同样每次点击都解验证码**（§3.2 实录：`attempt.start` → `sdk.callback success`
+1.07s → 才发 claim），区别在于它在**真实浏览器渲染进程**里解、且 `prewarm` 会提前把 SDK 实例
+暖起来（`elapsedMs: 183159` 的那次预热），所以 1 秒就能拿到参数；WebUI 把这一步做成了
+**同步硬前置**（headless Chrome 解不出来直接 `zcode_captcha_solve_failed`），既慢又脆。
+换句话说：桌面端能领，不是因为它跳过了验证码，而是因为它解得动；WebUI 领不到，是因为把
+一个「客户端自选动作」变成了「不成功就不领」的开关。
 
 ## 6. 修复对照（commit `96acc06e`）
 
@@ -279,7 +347,9 @@ preview 恒空，WebUI 只能靠「balance 里出现新 plan 但 balances 为空
 `/tmp/zcap/preview-matrix.json` 是 §4 那张「版本 × 平台」矩阵的原始结果。
 
 抓包日志同理：`/tmp/zcap/cap10.out` 为桌面端主进程 hook 输出，`marketing-touch.query`
-的 4 次超时记录见 §3；它是临时文件，重跑桌面端后需重新采集。
+的 4 次超时记录见 §3；`/tmp/zcap/cap11.out` 是 §3.2 点击实录的 host 日志（第 1490 行起）；
+`/tmp/zcap/logs/claim-proxy2.jsonl` 是 §3.2 那张「尝试表」最后一行（`ZCODE_BASE_URL` 改道）的原始记录。
+它们都是临时文件，重跑桌面端后需重新采集。
 
 ## 8. 复核命令
 

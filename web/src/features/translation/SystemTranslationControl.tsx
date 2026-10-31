@@ -56,7 +56,7 @@ function platformCopy(status: SystemTranslationStatus | null) {
   return {
     title: '系统取词',
     description: '在本机应用或网页中选词翻译；首次开启需授权辅助功能。',
-    permission: '请在系统设置 → 隐私与安全性 → 辅助功能中允许 AIH Translation。',
+    permission: '请在系统设置 → 隐私与安全性 → 辅助功能（macOS 27 英文界面：System Settings → Privacy & Security → Device Control and Data Access），把 AIH Translation 拖进列表并打开开关。',
   };
 }
 

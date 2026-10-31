@@ -305,7 +305,13 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       // 取词前由真实 AX 窗口 URL/title 判断是否交还 WebUI。
     case "request-permission":
       _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-      if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
+      // macOS 13+ uses the settings extension URL; the legacy preference-pane URL is the
+      // fallback. A freshly signed (ad-hoc) helper is not listed automatically on macOS 27,
+      // so also reveal the app bundle in Finder for drag-and-drop into the list.
+      let paneURLs = ["x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+                      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]
+      if let url = paneURLs.compactMap(URL.init(string:)).first { NSWorkspace.shared.open(url) }
+      NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     case "host-translate":
       guard fullApp,
             let text = event["text"] as? String,

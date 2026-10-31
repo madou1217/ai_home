@@ -65,7 +65,10 @@ export function useQuickChatHost(launch: QuickChatLaunch): void {
       const next = rewrite(new URL(anchor.href, window.location.href));
       if (next === null) return;
       event.preventDefault();
-      if (next) window.history.pushState(null, '', next), window.dispatchEvent(new PopStateEvent('popstate'));
+      if (next) {
+        window.history.pushState(null, '', next);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
     };
     const patchHistory = (method: 'pushState' | 'replaceState'): (() => void) => {
       const original = window.history[method].bind(window.history);

@@ -47,6 +47,7 @@ function setup() {
   fs.mkdirSync(path.join(runtimeDir, '.kiro', 'settings'), { recursive: true });
   fs.writeFileSync(path.join(runtimeDir, '.kiro', 'settings', 'cli.json'), '{"chat.defaultModel":"claude"}');
   fs.writeFileSync(path.join(runtimeDir, 'unrelated.txt'), 'should not be listed');
+  fs.writeFileSync(path.join(runtimeDir, '.aih-kiro-auth-binding'), `${'a1b2c3d4'.repeat(8)}\n`);
   return {
     aiHomeDir,
     accountRef,
@@ -63,7 +64,13 @@ test('kiro account config: redacted by default, decodes embedded sqlite, lists o
     fs, aiHomeDir: env.aiHomeDir, getProfileDir: env.getProfileDir
   });
   const ids = result.files.map((file) => file.id);
-  assert.deepEqual(ids, ['store:credentials', 'store:database', 'projection:.kiro/settings/cli.json']);
+  assert.deepEqual(ids, [
+    'store:credentials',
+    'store:database',
+    'projection:.kiro/settings/cli.json',
+    'projection:.aih-kiro-auth-binding'
+  ]);
+  assert.equal(result.files[3].content, '<redacted>\n');
   const all = result.files.map((file) => file.content).join('\n');
   assert.ok(!all.includes('AT-SECRET'));
   assert.ok(!all.includes('RT-SECRET'));
@@ -123,7 +130,7 @@ test('route: 200 for the right provider, 404 for mismatched provider, 405 for no
   t.after(env.cleanup);
   const ok = await callRoute(env, `/v0/webui/accounts/kiro/${env.accountRef}/config-files`);
   assert.equal(ok.status, 200);
-  assert.equal(ok.body.files.length, 3);
+  assert.equal(ok.body.files.length, 4);
   const mismatch = await callRoute(env, `/v0/webui/accounts/codex/${env.accountRef}/config-files`);
   assert.equal(mismatch.status, 404);
   const post = await callRoute(env, `/v0/webui/accounts/kiro/${env.accountRef}/config-files`, 'POST');

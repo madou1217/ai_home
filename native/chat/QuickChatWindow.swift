@@ -7,8 +7,9 @@ import WebKit
 /// 同源 Server Profile 的形式注入 localStorage（不进 URL）、把划词内容作为引用投递给页面。
 final class QuickChatWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
   let panel = NSPanel(
-    contentRect: NSRect(x: 0, y: 0, width: 460, height: 640),
-    styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+    contentRect: NSRect(x: 0, y: 0, width: 720, height: 680),
+    // 不用 fullSizeContentView：内容从标题栏下方开始，红绿灯不会压住页面顶栏。
+    styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
     backing: .buffered,
     defer: false
   )
@@ -23,9 +24,9 @@ final class QuickChatWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
   override init() {
     super.init()
     panel.title = "AIH Chat"
-    panel.titleVisibility = .hidden
-    panel.titlebarAppearsTransparent = true
-    panel.isMovableByWindowBackground = true
+    panel.titleVisibility = .visible
+    panel.titlebarAppearsTransparent = false
+    panel.isMovableByWindowBackground = false
     panel.delegate = self
     panel.level = .floating
     panel.hidesOnDeactivate = false

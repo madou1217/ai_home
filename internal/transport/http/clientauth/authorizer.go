@@ -17,7 +17,7 @@ var (
 // KeyProvider 返回当前生效的标准客户端密钥。
 type KeyProvider func() string
 
-// Authorizer 同时支持 OpenAI Bearer 和 Anthropic x-api-key 传递方式。
+// Authorizer 同时支持 OpenAI Bearer、Anthropic x-api-key 与 Gemini x-goog-api-key 传递方式。
 type Authorizer struct {
 	key KeyProvider
 }
@@ -49,9 +49,15 @@ func (authorizer *Authorizer) Authorized(request *http.Request) bool {
 }
 
 // clientKeyFromRequest 拒绝重复、同时出现或包含空白的密钥头。
+//
+// x-goog-api-key 是 Gemini / Vertex 客户端（gemini CLI 的 vertex-ai 认证）的密钥头，
+// 与 x-api-key 同等对待；三种传递方式恰好出现一种才算有效。
 func clientKeyFromRequest(request *http.Request) (string, bool) {
 	authorization := request.Header.Values("Authorization")
-	apiKeys := request.Header.Values("x-api-key")
+	apiKeys := append(
+		append([]string{}, request.Header.Values("x-api-key")...),
+		request.Header.Values("x-goog-api-key")...,
+	)
 	if len(authorization) == 1 && len(apiKeys) == 0 {
 		return parseBearerToken(authorization[0])
 	}

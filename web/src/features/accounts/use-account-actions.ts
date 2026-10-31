@@ -1288,7 +1288,8 @@ export function useAccountActions({
       configPayload = {
         projectId: values.projectId,
         location: values.location,
-        apiKey: values.apiKey
+        apiKey: values.apiKey,
+        baseUrl: values.baseUrl
       };
     }
     const requestPayload = {

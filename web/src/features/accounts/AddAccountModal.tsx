@@ -226,10 +226,17 @@ export function AddAccountModal({
             <InlineNote
               tone="info"
               className="add-account-note"
-              description="Google Cloud Vertex AI 认证暂未接入真实账号验证。提交后将创建占位账号记录，为后续接入打好基础。"
+              description="接口地址留空 = 占位账号（等接入真实 Vertex）。填本机网关地址（如 http://127.0.0.1:9527）并用网关 API Key 作为凭据，gemini CLI 会以 Vertex 模式经网关调用池里的任意模型；以后换成真实 Vertex 只需改地址和密钥。"
             >
-              Vertex AI 占位模式
+              Vertex AI 模式
             </InlineNote>
+            <Form.Item
+              name="baseUrl"
+              label="Vertex 接口地址（可选）"
+              help="实现了 Vertex generateContent 的宿主，例如本机网关 http://127.0.0.1:9527"
+            >
+              <Input placeholder="http://127.0.0.1:9527" size="large" />
+            </Form.Item>
             <Form.Item
               name="projectId"
               label="GCP Project ID"

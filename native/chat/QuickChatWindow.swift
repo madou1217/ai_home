@@ -61,8 +61,11 @@ final class QuickChatWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     NSApp.activate(ignoringOtherApps: true)
   }
 
+  /// 快捷键：窗口不在眼前（未显示或被别的窗口挡住）就拉到前面；已经在最前才收起。
+  /// nonactivatingPanel 的 isKeyWindow 不可靠，用「是否在屏幕上且位于本应用最前」判断。
   func toggle() {
-    if panel.isVisible && panel.isKeyWindow { panel.orderOut(nil) } else { show() }
+    let frontmost = panel.isVisible && panel.occlusionState.contains(.visible) && NSApp.isActive
+    if frontmost { panel.orderOut(nil) } else { show() }
   }
 
   func hide() { panel.orderOut(nil) }

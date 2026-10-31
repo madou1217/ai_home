@@ -162,9 +162,12 @@ final class QuickChatWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
   func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
     // 站内导航留在窗口里；外链交给系统浏览器，避免 Quick Chat 变成一个半成品浏览器。
+    // 这个窗口只做 chat / work：同源但不是 /ui/chat 下的页面（账号、用量、工具箱等）
+    // 也交给浏览器里的完整 WebUI，不在快捷窗口里打开。
     guard let url = navigationAction.request.url else { decisionHandler(.allow); return }
-    let sameOrigin = url.absoluteString.hasPrefix(origin) || url.scheme == "about" || url.scheme == "blob" || url.scheme == "data"
-    if sameOrigin || navigationAction.targetFrame?.isMainFrame == false {
+    let inlineScheme = url.scheme == "about" || url.scheme == "blob" || url.scheme == "data"
+    let chatScope = url.absoluteString.hasPrefix(origin) && url.path.hasPrefix("/ui/chat")
+    if inlineScheme || chatScope || navigationAction.targetFrame?.isMainFrame == false {
       decisionHandler(.allow)
     } else {
       NSWorkspace.shared.open(url)

@@ -232,3 +232,98 @@ test('c：没识别出 harness 会话ID 时给提示，不覆盖剪贴板', () =
   assert.deepEqual(copied, []);
   assert.match(message, /没识别出 harness 会话ID/);
 });
+
+// --- claude：pane 标题 ↔ 会话文件 ai-title ---
+
+const os = require('node:os');
+const nodeFs = require('node:fs');
+const nodePath = require('node:path');
+const { resolveAgentSessionIds } = require('../lib/cli/services/ai-cli/session-title-resolver');
+
+function makeClaudeHome(projectPath, sessions) {
+  const home = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-claude-'));
+  const dirName = String(projectPath).replace(/[^a-zA-Z0-9]/g, '-');
+  const projectDir = nodePath.join(home, '.claude', 'projects', dirName);
+  nodeFs.mkdirSync(projectDir, { recursive: true });
+  for (const session of sessions) {
+    const file = nodePath.join(projectDir, session.id + '.jsonl');
+    const lines = [
+      JSON.stringify({ type: 'mode' }),
+      JSON.stringify({ type: 'ai-title', aiTitle: session.title, sessionId: session.id })
+    ];
+    nodeFs.writeFileSync(file, lines.join(String.fromCharCode(10)) + String.fromCharCode(10));
+  }
+  const stats = new Map(sessions.map((s) => [s.id, s]));
+  return {
+    home,
+    projectDir,
+    options: {
+      hostHomeDir: home,
+      statFile: (filePath) => {
+        const id = nodePath.basename(filePath, '.jsonl');
+        const session = stats.get(id) || {};
+        const size = nodeFs.statSync(filePath).size;
+        return {
+          size,
+          mtimeMs: Number(session.mtimeMs) || Date.now(),
+          birthtimeMs: Number(session.startMs) || Number(session.mtimeMs) || Date.now()
+        };
+      }
+    }
+  };
+}
+
+const MINUTE = 60 * 1000;
+
+test('claude：按 pane 标题绑到会话文件的 ai-title，取 pane 之后最早的那个', () => {
+  const projectPath = '/Users/model/projects/demo';
+  const createdSec = Math.floor((Date.now() - 3 * 60 * MINUTE) / 1000);
+  const createdMs = createdSec * 1000;
+  const { options } = makeClaudeHome(projectPath, [
+    { id: 'aaa-111', title: '本地合并取代 AWS', startMs: createdMs + MINUTE },
+    { id: 'bbb-222', title: '另一个标题', startMs: createdMs + 2 * MINUTE },
+    // 同标题但更晚另开的会话：不能抢走上面那个 pane
+    { id: 'ccc-333', title: '本地合并取代 AWS', startMs: createdMs + 60 * MINUTE }
+  ]);
+  const rows = [
+    { name: 'p1', path: projectPath, title: '✳ 本地合并取代 AWS', created: createdSec },
+    { name: 'p2', path: projectPath, title: '✳ 另一个标题', created: createdSec }
+  ];
+  const out = resolveAgentSessionIds('claude', rows, options);
+  assert.equal(out[0].agentSessionId, 'aaa-111');
+  assert.equal(out[1].agentSessionId, 'bbb-222');
+  assert.equal(out[0].agentSessionIdSource, 'store');
+});
+
+test('claude：标题对不上就不乱认（保持空），已有 id 的也不覆盖', () => {
+  const projectPath = '/Users/model/projects/demo2';
+  const { options } = makeClaudeHome(projectPath, [
+    { id: 'ddd-444', title: '真实标题', startMs: Date.now() }
+  ]);
+  const rows = [
+    { name: 'p1', path: projectPath, title: '✳ 完全不同的标题' },
+    { name: 'p2', path: projectPath, title: '✳ 真实标题', agentSessionId: 'keep-me' }
+  ];
+  const out = resolveAgentSessionIds('claude', rows, options);
+  assert.equal(out[0].agentSessionId, undefined);
+  assert.equal(out[1].agentSessionId, 'keep-me');
+});
+
+test('claude：ai-title 在文件末尾也能读到（大文件不整读）', () => {
+  const projectPath = '/Users/model/projects/demo3';
+  const home = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-claude-'));
+  const dirName = String(projectPath).replace(/[^a-zA-Z0-9]/g, '-');
+  const projectDir = nodePath.join(home, '.claude', 'projects', dirName);
+  nodeFs.mkdirSync(projectDir, { recursive: true });
+  const file = nodePath.join(projectDir, 'eee-555.jsonl');
+  const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(2000) });
+  const lines = [];
+  for (let i = 0; i < 300; i += 1) lines.push(filler);
+  lines.push(JSON.stringify({ type: 'ai-title', aiTitle: '末尾标题', sessionId: 'eee-555' }));
+  nodeFs.writeFileSync(file, lines.join(String.fromCharCode(10)) + String.fromCharCode(10));
+  const out = resolveAgentSessionIds('claude', [
+    { name: 'p1', path: projectPath, title: '✳ 末尾标题' }
+  ], { hostHomeDir: home });
+  assert.equal(out[0].agentSessionId, 'eee-555');
+});
+

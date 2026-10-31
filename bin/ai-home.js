@@ -48,7 +48,13 @@ function tryPersistentSessionFastPath() {
       consoleImpl: console
     });
     Promise.resolve(result).then(
-      (code) => { process.exitCode = Number.isInteger(code) ? code : 0; },
+      (code) => {
+        process.exitCode = Number.isInteger(code) ? code : 0;
+        // 一次性命令：别被残留的 stdin 句柄挂住（picker 自己会放掉，这里再兜一层）。
+        try {
+          if (process.stdin && typeof process.stdin.unref === 'function') process.stdin.unref();
+        } catch (_error) { /* 忽略 */ }
+      },
       (error) => {
         process.stderr.write(`[aih] sessions failed: ${(error && error.message) || error}\n`);
         process.exitCode = 1;

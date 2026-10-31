@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 
 const {
   selectPersistentSessionRow,
+  selectPersistentSessionRowAsync,
   shouldAnimatePicker
 } = require('../lib/cli/services/ai-cli/persistent-session-list');
 const { dissolveFrame, dissolveFrames, displayWidth } = require('../lib/cli/services/ai-cli/particle-dissolve');
@@ -99,4 +100,37 @@ test('dissolveFrame 不抛错（空串/超长）', () => {
   assert.equal(dissolveFrame('', 2, 5), '');
   const long = 'x'.repeat(500);
   assert.equal(displayWidth(dissolveFrame(long, 1, 5)), 500);
+});
+
+test('async picker（macOS 默认路径）：按 x 会播粒子动画再关闭', async () => {
+  const { EventEmitter } = require('node:events');
+  const out = [];
+  const stdin = new EventEmitter();
+  stdin.isTTY = true;
+  stdin.isRaw = false;
+  stdin.setRawMode = () => {};
+  stdin.resume = () => {};
+  stdin.pause = () => {};
+  stdin.isPaused = () => false;
+  const processImpl = {
+    platform: 'darwin',
+    env: { TERM: 'xterm-256color' },
+    stdout: { isTTY: true, columns: 100, write: (text) => out.push(String(text)) },
+    stdin
+  };
+  const closed = [];
+  const promise = selectPersistentSessionRowAsync(makeRows(), {
+    processImpl,
+    refreshRows: () => makeRows(),
+    closeSession: (row) => { closed.push(row.name); return { ok: true }; },
+    homeDir: '/Users/model',
+    animation: true,
+    sessionPickerRefreshIntervalMs: 100000
+  });
+  setTimeout(() => stdin.emit('data', 'x'), 60);
+  setTimeout(() => stdin.emit('data', 'q'), 900);
+  const selected = await promise;
+  assert.equal(selected, null);
+  assert.deepEqual(closed, ['p-1']);
+  assert.match(out.join(''), /[·˙∙✦✧⁺˚]/);
 });

@@ -73,22 +73,31 @@ test('中文按两列宽截断，结果不超过目标宽度', () => {
 });
 
 test('按项目分组时不显示项目列，标题列变宽', () => {
-  const plain = resolveLayout(100);
-  const grouped = resolveLayout(100, { grouped: true });
+  const plain = resolveLayout(160);
+  const grouped = resolveLayout(160, { grouped: true });
   assert.equal(grouped.project, 0);
   assert.ok(grouped.title > plain.title);
   assert.doesNotMatch(headerRow({ layout: grouped }), /项目/);
 });
 
-test('pane 名截断显示尾部；有原生会话 id 时优先原生 id', () => {
+test('默认展示完整 id：有原生 id 用原生 id，没有就用完整 pane 名', () => {
   const cells = resolveRowCells(ROW);
   assert.equal(cells.id, '01a176a2-edbc-7ae2-b7d0-5d084d0c28fe');
   const paneOnly = resolveRowCells({ ...ROW, agentSessionId: '' });
-  assert.ok(paneOnly.id.startsWith('…'));
-  assert.equal(paneOnly.id.length, 13);
+  assert.equal(paneOnly.id, ROW.name);
   assert.equal(paneOnly.account, '#.aih-server');
   assert.equal(paneOnly.status, '●');
   assert.equal(paneOnly.project, 'ai_home');
+});
+
+test('窗口变窄时 ID 才逐步压缩：36 → 24 → 16 → 隐藏', () => {
+  assert.equal(resolveLayout(140).id, 36);
+  const narrow = resolveLayout(85).id;
+  assert.ok(narrow === 16 || narrow === 24);
+  assert.equal(resolveLayout(50).id, 0);
+  // 宽屏时完整显示 36 位 UUID
+  const full = formatRow(ROW, { layout: resolveLayout(140) });
+  assert.match(full, /01a176a2-edbc-7ae2-b7d0-5d084d0c28fe/);
 });
 
 test('空闲会话的状态列是 ○', () => {

@@ -94,8 +94,12 @@ function makeFakeTerminal(columns = 120) {
   stdin.isRaw = false;
   stdin.fd = 0;
   stdin.setRawMode = (value) => { stdin.isRaw = !!value; };
-  stdin.resume = () => {};
-  stdin.pause = () => {};
+  stdin.resumed = 0;
+  stdin.paused = 0;
+  stdin.unrefed = 0;
+  stdin.resume = () => { stdin.resumed += 1; };
+  stdin.pause = () => { stdin.paused += 1; };
+  stdin.unref = () => { stdin.unrefed += 1; };
   stdin.isPaused = () => false;
   const stdout = new EventEmitter();
   stdout.isTTY = true;
@@ -130,6 +134,9 @@ test('async picker：q 直接退出，并恢复终端（raw 模式关掉）', as
   stdin.emit('data', Buffer.from('q'));
   assert.equal(await done, null);
   assert.equal(stdin.isRaw, false, '退出后必须恢复终端，否则 shell 会吃掉按键');
+  // 回归：只 off('data') 不解除引用 → 事件循环不空 → 进程不退（终端回熟模式，按键只回显）。
+  assert.ok(stdin.paused >= 1, '退出时必须 pause stdin');
+  assert.ok(stdin.unrefed >= 1, '退出时必须 unref stdin，否则 aih ss 永远不退');
 });
 
 test('async picker：连按 Esc 也能退出（\x1b\x1b 不能互相抵消）', async () => {

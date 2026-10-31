@@ -13,7 +13,7 @@ import { writeClipboardText } from '@/utils/clipboard';
 
 export interface MessageIconActionsProps {
   text: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   model?: string;
   timestamp?: number | string;
   onRetry?: () => void;

@@ -562,18 +562,16 @@ function buildStartSessionAction(provider: string, view: Omit<FabricNodeInventor
 }
 
 function buildRuntimeGaps(view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>): FabricNodeRuntimeGap[] {
-  return SESSION_PROVIDER_IDS
-    .map((provider) => {
-      const gate = resolveProviderRuntimeGate(provider, view);
-      if (!gate.blocker) return null;
-      return {
-        provider,
-        status: gate.runtimeStatus,
-        blocker: gate.blocker,
-        runtimeId: gate.runtime?.id || ''
-      };
-    })
-    .filter((item): item is FabricNodeRuntimeGap => Boolean(item));
+  return SESSION_PROVIDER_IDS.flatMap((provider): FabricNodeRuntimeGap[] => {
+    const gate = resolveProviderRuntimeGate(provider, view);
+    if (!gate.blocker) return [];
+    return [{
+      provider,
+      status: gate.runtimeStatus,
+      blocker: gate.blocker,
+      runtimeId: gate.runtime?.id || ''
+    }];
+  });
 }
 
 function buildNodeCapabilities(view: Omit<FabricNodeInventoryItem, 'capabilities' | 'actions' | 'runtimeGaps'>): FabricNodeCapabilities {

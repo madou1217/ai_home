@@ -127,8 +127,12 @@ function enforceServerProfileGate() {
   }
 }
 
+// settings 会被 layout() 原样展开进 ProLayout 的 props（见下方 `...initialState?.settings`），
+// 所以它还可以带 siderWidth 这类 ProLayout prop——它不属于 ProSettings，但确实生效。
+type AppLayoutSettings = Partial<LayoutSettings> & { siderWidth?: number };
+
 export async function getInitialState(): Promise<{
-  settings?: Partial<LayoutSettings>;
+  settings?: AppLayoutSettings;
 }> {
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
     window.addEventListener('load', () => {

@@ -33,7 +33,7 @@ function equalActivityMap(
     // 逐字段比：账号数是几十、字段是个位数，比整页重渲染便宜得多。
     const aKeys = Object.keys(a);
     return aKeys.length === Object.keys(b).length
-      && aKeys.every((field) => (a as Record<string, unknown>)[field] === (b as Record<string, unknown>)[field]);
+      && aKeys.every((field) => (a as unknown as Record<string, unknown>)[field] === (b as unknown as Record<string, unknown>)[field]);
   });
 }
 

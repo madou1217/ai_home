@@ -701,12 +701,12 @@ export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
     capabilities: definition.capabilities,
     clients: definition.clients,
   }]),
-) as Readonly<Record<ProviderId, ProviderCatalogEntry>>);
+) as unknown as Readonly<Record<ProviderId, ProviderCatalogEntry>>);
 
 /** 账号添加界面直接消费的认证选项目录。 */
 export const PROVIDER_AUTH_OPTIONS = Object.freeze(Object.fromEntries(
   PROVIDER_DEFINITIONS.map((definition) => [definition.id, definition.authOptions]),
-) as Readonly<Record<ProviderId, readonly ProviderAuthOption[]>>);
+) as unknown as Readonly<Record<ProviderId, readonly ProviderAuthOption[]>>);
 
 /** 未知 Provider 的安全展示回退。 */
 export const PROVIDER_FALLBACK = {

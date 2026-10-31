@@ -27,7 +27,7 @@ interface StreamFailureStatus {
 
 interface CliInstallProgressStatus {
   readonly provider?: Provider | string;
-  readonly installPhase?: 'installing' | 'plan-succeeded' | 'plan-failed' | 'installed' | 'failed';
+  readonly installPhase?: 'installing' | 'plan-succeeded' | 'plan-failed' | 'installed' | 'failed' | 'cancelled';
   readonly planId?: string;
   readonly planLabel?: string;
   readonly message?: string;

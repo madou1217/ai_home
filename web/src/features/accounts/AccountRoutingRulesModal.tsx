@@ -26,7 +26,6 @@ export function AccountRoutingRulesModal({
       form={form}
       layout="vertical"
       width={960}
-      confirmLoading={submitting}
       onOpenChange={(visible) => {
         if (!visible) {
           onClose();
@@ -38,7 +37,9 @@ export function AccountRoutingRulesModal({
         searchConfig: {
           submitText: '保存',
           resetText: '取消'
-        }
+        },
+        // ModalForm 没有 confirmLoading（那是 antd Modal 的属性，传进来被静默忽略，保存时按钮从不转圈）。
+        submitButtonProps: { loading: submitting }
       }}
     >
       <UpstreamErrorRulesEditor provider={account?.provider} />

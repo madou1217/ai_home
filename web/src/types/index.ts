@@ -3187,6 +3187,8 @@ export type ChatRequest = {
   documents?: import('../components/chat/attachment-files').ChatDocumentAttachment[];
   // 会话级审批模式(P3):bypass(默认)/confirm(权限请求转 webUI 审批)/plan(计划模式+确认)。
   approvalMode?: 'bypass' | 'confirm' | 'plan';
+  // 纯聊天 / 项目工作：后端 webui-chat-routes.js 的 requestedChatMode 读这个字段。
+  mode?: 'chat' | 'work';
 } & (
   | { accountRef: string; gateway?: false }
   | { gateway: true; accountRef?: never }

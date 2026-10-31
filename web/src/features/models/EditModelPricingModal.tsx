@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Form, InputNumber, Modal, Typography } from 'antd';
-import type { CustomPricing } from '@/types';
+import type { CustomPricing, Provider } from '@/types';
 import { buildCustomPricingPayload } from './edit-model-pricing';
 
 export interface EditModelPricingModalProps {
@@ -9,7 +9,7 @@ export interface EditModelPricingModalProps {
   target: {
     id: string;
     accountRef: string;
-    provider: string;
+    provider: Provider;
     customPricing?: CustomPricing;
   } | null;
   submitting?: boolean;
@@ -18,7 +18,7 @@ export interface EditModelPricingModalProps {
   onSubmit: (payload: {
     id: string;
     accountRef: string;
-    provider: string;
+    provider: Provider;
     customPricing: CustomPricing | null;
   }) => Promise<void>;
 }

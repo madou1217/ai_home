@@ -15,7 +15,7 @@ import styles from './share-card.module.css';
 export interface ShareCardModalProps {
   open: boolean;
   onClose: () => void;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   model?: string;
   timestamp?: number | string;

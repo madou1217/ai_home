@@ -45,8 +45,10 @@ const STORAGE_KEY_CHAT_MODE = 'aih_chat_workspace_mode';
  * 桌面 Chat.tsx 与移动端 MobileChat 共用同一份逻辑；`mobile` 只影响原有的移动端分支
  * （进入对话屏、沉浸态、深链直达），桌面传入的值与原先一致。
  */
-export function useChatPageState(mobile: boolean) {
+export function useChatPageState(mobile: boolean, launchMode?: WorkspaceMode) {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
+    // 快捷唤起指定了模式：本次打开用它，但不写回偏好（不改用户在主窗口的习惯）。
+    if (launchMode) return launchMode;
     if (typeof window !== 'undefined') {
       return (window.localStorage.getItem(STORAGE_KEY_CHAT_MODE) as WorkspaceMode) || 'chat';
     }

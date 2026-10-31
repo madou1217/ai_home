@@ -13,6 +13,7 @@ import {
 import ChatWorkspaceLayout from '@/features/legacy-chat/ChatWorkspaceLayout';
 import RemoteWorkspacesPanel from '@/features/ssh-hosts/RemoteWorkspacesPanel';
 import { ChatConversationContent, useChatPageState } from './chat-page-state';
+import { readQuickChatLaunch, useQuickChatHost } from './chat-quick-launch';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -47,7 +48,9 @@ export default function Chat() {
 
   const screens = Grid.useBreakpoint();
   const mobile = !screens.md;
-  const state = useChatPageState(mobile);
+  const [quickLaunch] = useState(() => readQuickChatLaunch());
+  useQuickChatHost(quickLaunch);
+  const state = useChatPageState(mobile, quickLaunch.mode);
   const {
     workspaceMode,
     handleModeChange,

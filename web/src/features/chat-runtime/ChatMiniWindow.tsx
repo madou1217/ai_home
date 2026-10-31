@@ -467,7 +467,8 @@ function fallbackTarget(session: Session, account: ChatAccount) {
 }
 
 function isChatPagePath(pathname: string): boolean {
-  return /(?:^|\/)chat\/?$/.test(pathname);
+  // /chat/quick（快捷唤起）本身就是完整会话页：同样视为 Chat 页，不再叠一个浮动小窗。
+  return /(?:^|\/)chat(?:\/quick)?\/?$/.test(pathname);
 }
 
 function clampPosition(left: number, top: number, panel: HTMLDivElement | null): Position {

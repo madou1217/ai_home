@@ -22,6 +22,12 @@ const nodeRoutes = [
     icon: "message",
   },
   {
+    // 快捷唤起（桌面原生小窗 / 一键打开）：同一个 Chat 页，参数见 pages/chat-quick-launch.ts。
+    path: "/chat/quick",
+    component: "./Chat",
+    hideInMenu: true,
+  },
+  {
     name: "模型用量",
     path: "/usage",
     component: "./ModelUsage",

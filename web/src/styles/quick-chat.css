@@ -1,0 +1,19 @@
+/* Chat 快捷唤起的嵌入模式（/chat/quick?embed=desktop，见 pages/chat-quick-launch.ts）：
+ * 原生小窗自己画窗口标题，这里隐藏 WebUI 外壳（顶栏、侧栏、页内边距），只留会话区铺满窗口。
+ * 只在 <html data-aih-embed="desktop"> 下生效，常规 WebUI 不受影响。 */
+:root[data-aih-embed='desktop'] .ant-pro-layout-header,
+:root[data-aih-embed='desktop'] .ant-pro-layout .ant-layout-header,
+:root[data-aih-embed='desktop'] .ant-pro-sider,
+:root[data-aih-embed='desktop'] .ant-pro-layout .ant-layout-sider {
+  display: none !important;
+}
+:root[data-aih-embed='desktop'] .ant-pro-layout-container,
+:root[data-aih-embed='desktop'] .ant-pro-layout-content {
+  margin: 0 !important;
+  padding: 0 !important;
+  padding-block: 0 !important;
+  padding-inline: 0 !important;
+}
+:root[data-aih-embed='desktop'] .ant-pro-layout-has-header .ant-pro-layout-container {
+  padding-top: 0 !important;
+}

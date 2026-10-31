@@ -42,6 +42,53 @@ export function useQuickChatHost(launch: QuickChatLaunch): void {
     return () => { root.removeAttribute('data-aih-embed'); };
   }, [launch.quick, launch.embed]);
 
+  // 留在快捷窗口：任何站内链接点击 / history 跳转如果要离开 /chat/quick（例如去 /ui/chat 主页面），
+  // 改写成 /chat/quick + 同样的查询参数（会话选择参数照常生效）；指向非 chat 页面的站内链接直接拦下。
+  // 原生壳只放行 /ui/chat 前缀，/ui/chat 本身也会被放行，所以这一层必须在页面里兜住。
+  useEffect(() => {
+    if (!launch.quick || typeof window === 'undefined') return undefined;
+    const quickPath = window.location.pathname;
+    const keep = new URLSearchParams(window.location.search);
+    const rewrite = (target: URL): string | null => {
+      if (target.origin !== window.location.origin) return null;
+      if (target.pathname === quickPath) return null;
+      if (!/\/ui\/chat\/?$/.test(target.pathname)) return '';
+      ['embed', 'theme', 'mode'].forEach((key) => {
+        const value = keep.get(key);
+        if (value && !target.searchParams.has(key)) target.searchParams.set(key, value);
+      });
+      return `${quickPath}?${target.searchParams.toString()}`;
+    };
+    const onClick = (event: MouseEvent): void => {
+      const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === '_blank') return;
+      const next = rewrite(new URL(anchor.href, window.location.href));
+      if (next === null) return;
+      event.preventDefault();
+      if (next) window.history.pushState(null, '', next), window.dispatchEvent(new PopStateEvent('popstate'));
+    };
+    const patchHistory = (method: 'pushState' | 'replaceState'): (() => void) => {
+      const original = window.history[method].bind(window.history);
+      window.history[method] = (data: unknown, unused: string, url?: string | URL | null) => {
+        if (url !== undefined && url !== null) {
+          const next = rewrite(new URL(String(url), window.location.href));
+          if (next === '') return;
+          if (next) return original(data, unused, next);
+        }
+        return original(data, unused, url);
+      };
+      return () => { window.history[method] = original; };
+    };
+    document.addEventListener('click', onClick, true);
+    const restorePush = patchHistory('pushState');
+    const restoreReplace = patchHistory('replaceState');
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      restorePush();
+      restoreReplace();
+    };
+  }, [launch.quick]);
+
   // 宿主投递引用：只接受同源或原生壳（WKWebView 注入的 window.postMessage 来源为 null/同源）。
   useEffect(() => {
     if (!launch.quick || typeof window === 'undefined') return undefined;

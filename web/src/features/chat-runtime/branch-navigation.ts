@@ -18,5 +18,11 @@ export async function resolveBranchParentHref(
     query.set('sessionId', nativeId);
     query.set('projectPath', session.projectPath);
   }
+  // 快捷窗口里跳转到原会话时留在 /chat/quick（带上原有的 embed/theme/mode），不把小窗带回主站。
+  if (typeof window !== 'undefined' && /\/chat\/quick\/?$/.test(window.location.pathname)) {
+    const current = new URLSearchParams(window.location.search);
+    ['embed', 'theme', 'mode'].forEach((key) => { const value = current.get(key); if (value) query.set(key, value); });
+    return `${window.location.pathname}?${query}`;
+  }
   return `/ui/chat?${query}`;
 }

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Empty, Tooltip, message as toast } from 'antd';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Empty, message as toast } from 'antd';
 import { ArrowDownOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import type {
@@ -112,6 +112,11 @@ export default function ConversationTimeline({
     const target = container?.querySelectorAll('[data-chat-anchor-key]')?.[index];
     if (target instanceof HTMLElement) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [viewport.containerRef]);
+  // operate 通过 ref 保持引用稳定：行组件是 memo 的，流式输出每帧发布一次投影，
+  // 若每帧给每一行新建 onFork/onRetry 闭包，整条时间线都会跟着重渲染（长会话掉帧的根源）。
+  const operateRef = useRef<(kind: 'fork' | 'regenerate', itemId: string) => void>(() => undefined);
+  operateRef.current = (kind, itemId) => { void operate(kind, itemId); };
+  const stableOperate = useCallback((kind: 'fork' | 'regenerate', itemId: string) => operateRef.current(kind, itemId), []);
   const operate = async (kind: 'fork' | 'regenerate', itemId: string) => {
     if (branching) return;
     setBranching(true);
@@ -173,7 +178,7 @@ export default function ConversationTimeline({
           && ['contextCompaction', 'context_compacted'].includes(item.detail.code || '')
           ? <RuntimeNotice key={item.id} text={item.status === 'completed'
             ? '上下文已压缩' : '正在压缩上下文…'} />
-          : <TimelineItemView
+          : <TimelineRow
           key={item.id}
           item={item}
           reasoningRunning={item.id === presentation.runningReasoningId}
@@ -181,11 +186,10 @@ export default function ConversationTimeline({
           projectPath={projectPath}
           onOpenFile={preview.openFile}
           mobile={mobile}
-          progress={item.id === presentation.progressItemId ? <TurnProgress store={controller.store} /> : undefined}
-          onFork={messageActions && messageOperationAvailable(commands, item, 'fork')
-            ? () => void operate('fork', item.id) : undefined}
-          onRetry={messageActions && messageOperationAvailable(commands, item, 'regenerate')
-            ? () => void operate('regenerate', item.id) : undefined}
+          store={item.id === presentation.progressItemId ? controller.store : undefined}
+          canFork={Boolean(messageActions && messageOperationAvailable(commands, item, 'fork'))}
+          canRetry={Boolean(messageActions && messageOperationAvailable(commands, item, 'regenerate'))}
+          onOperate={stableOperate}
         />
       ))}
       {!presentation.progressItemId ? <div className={styles.turnProgressPlaceholder}>
@@ -194,19 +198,7 @@ export default function ConversationTimeline({
       <TurnFeedback store={controller.store} actions={actions} readOnly={readOnly} />
       </div>
       {!mobile && userAnchors.length > 1 ? (
-        <nav className={styles.userAnchorRail} aria-label="跳转到用户消息">
-          {userAnchors.map((anchor, index) => (
-            <Tooltip key={anchor.id} title={anchor.label} placement="left" mouseEnterDelay={0.05}>
-              <button
-                type="button"
-                className={styles.userAnchorTick}
-                data-active={anchor.id === viewport.activeAnchorId ? 'true' : undefined}
-                aria-label={`第 ${index + 1} 条提问：${anchor.label}`}
-                onClick={() => viewport.scrollToItem(anchor.id)}
-              />
-            </Tooltip>
-          ))}
-        </nav>
+        <UserAnchorRail anchors={userAnchors} activeId={viewport.activeAnchorId} onJump={viewport.scrollToItem} />
       ) : null}
       {viewport.awayFromBottom ? (
         <button
@@ -332,14 +324,34 @@ function useTimelineViewport(
     }
   }, [controller]);
 
-  const updateActiveAnchor = useCallback((container: HTMLDivElement): void => {
-    const top = container.getBoundingClientRect().top + 24;
-    let active: string | undefined;
-    container.querySelectorAll<HTMLElement>('[data-chat-anchor-key][data-chat-role="user"]').forEach((node) => {
-      if (node.getBoundingClientRect().top <= top) active = node.dataset.chatAnchorKey;
-    });
-    setActiveAnchorId(active);
-  }, []);
+  // 当前所在问题：IntersectionObserver 在合成线程外异步回报，滚动帧里不读任何几何
+  // （逐帧 querySelectorAll + getBoundingClientRect 会强制同步布局，长会话滚动掉帧）。
+  // 视口上沿往下 40% 的带内，最靠下的那条用户消息即「当前问题」；带内没有就沿用上一条。
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof IntersectionObserver === 'undefined') return undefined;
+    const above = new Set<string>();
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const key = (entry.target as HTMLElement).dataset.chatAnchorKey;
+        if (!key) return;
+        const rootTop = entry.rootBounds?.top ?? 0;
+        if (entry.isIntersecting || entry.boundingClientRect.top < rootTop) above.add(key);
+        else above.delete(key);
+      });
+      const nodes = container.querySelectorAll<HTMLElement>('[data-chat-anchor-key][data-chat-role="user"]');
+      let active: string | undefined;
+      nodes.forEach((node) => { const key = node.dataset.chatAnchorKey; if (key && above.has(key)) active = key; });
+      setActiveAnchorId((current) => (current === active ? current : active));
+    }, { root: container, rootMargin: '0px 0px -60% 0px' });
+    const observeAll = () => container
+      .querySelectorAll('[data-chat-anchor-key][data-chat-role="user"]')
+      .forEach((node) => observer.observe(node));
+    observeAll();
+    const mutations = new MutationObserver(observeAll);
+    mutations.observe(container, { childList: true });
+    return () => { observer.disconnect(); mutations.disconnect(); };
+  }, [controller.sessionId]);
 
   const scrollFrameRef = useRef(0);
   const handleScroll = useCallback((): void => {
@@ -354,9 +366,8 @@ function useTimelineViewport(
       setAwayFromBottom(distance > 240);
       if (atBottom) { seenCountRef.current = items.length; setUnseenCount(0); }
       if (hasMore && container.scrollTop < 160) void loadEarlier();
-      updateActiveAnchor(container);
     });
-  }, [hasMore, items.length, loadEarlier, updateActiveAnchor]);
+  }, [hasMore, items.length, loadEarlier]);
 
   const scrollToBottom = useCallback((): void => {
     const container = containerRef.current;
@@ -382,6 +393,74 @@ function useTimelineViewport(
     awayFromBottom, unseenCount, scrollToBottom, scrollToItem, activeAnchorId,
   };
 }
+
+// 时间线行：把 fork/regenerate 的闭包收进行内，只在本行 item / 可用性变化时重渲染。
+const TimelineRow = memo(function TimelineRow({
+  item, store, canFork, canRetry, onOperate, ...rest
+}: {
+  readonly item: TimelineItem;
+  readonly reasoningRunning: boolean;
+  readonly provider: Provider;
+  readonly projectPath: string;
+  readonly onOpenFile: (filePath: string) => void;
+  readonly mobile: boolean;
+  readonly store?: SessionRuntimeController['store'];
+  readonly canFork: boolean;
+  readonly canRetry: boolean;
+  readonly onOperate: (kind: 'fork' | 'regenerate', itemId: string) => void;
+}) {
+  const onFork = useCallback(() => onOperate('fork', item.id), [onOperate, item.id]);
+  const onRetry = useCallback(() => onOperate('regenerate', item.id), [onOperate, item.id]);
+  const progress = useMemo(() => (store ? <TurnProgress store={store} /> : undefined), [store]);
+  return (
+    <TimelineItemView
+      {...rest}
+      item={item}
+      progress={progress}
+      onFork={canFork ? onFork : undefined}
+      onRetry={canRetry ? onRetry : undefined}
+    />
+  );
+});
+
+// 锚点轨：独立 memo 组件，悬停提示只用一个共享浮层（不是每个刻度一个 Tooltip 实例），
+// 悬停状态也只在轨内，不会让整条时间线重渲染。
+const UserAnchorRail = memo(function UserAnchorRail({
+  anchors, activeId, onJump,
+}: {
+  readonly anchors: readonly { id: string; label: string }[];
+  readonly activeId?: string;
+  readonly onJump: (itemId: string) => void;
+}) {
+  const [hover, setHover] = useState<{ label: string; top: number }>();
+  // 提示放在轨外（轨本身可滚动会裁掉溢出）；位置只在悬停那一刻读一次。
+  const show = (target: HTMLElement, label: string): void => {
+    const frame = target.closest('nav')?.parentElement;
+    if (!frame) return;
+    const rect = target.getBoundingClientRect();
+    setHover({ label, top: rect.top + rect.height / 2 - frame.getBoundingClientRect().top });
+  };
+  return (
+    <>
+      <nav className={styles.userAnchorRail} aria-label="跳转到用户消息" onMouseLeave={() => setHover(undefined)}>
+        {anchors.map((anchor, index) => (
+          <button
+            key={anchor.id}
+            type="button"
+            className={styles.userAnchorTick}
+            data-active={anchor.id === activeId ? 'true' : undefined}
+            aria-label={`第 ${index + 1} 条提问：${anchor.label}`}
+            onMouseEnter={(event) => show(event.currentTarget, anchor.label)}
+            onFocus={(event) => show(event.currentTarget, anchor.label)}
+            onBlur={() => setHover(undefined)}
+            onClick={() => onJump(anchor.id)}
+          />
+        ))}
+      </nav>
+      {hover ? <span className={styles.userAnchorLabel} style={{ top: hover.top }} aria-hidden="true">{hover.label}</span> : null}
+    </>
+  );
+});
 
 function RuntimeNotice({
   text,

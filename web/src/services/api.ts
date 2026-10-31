@@ -2506,6 +2506,14 @@ export const sshHostsAPI = {
   deleteWorkspace: async (id: string): Promise<void> => {
     await api.delete(`/webui/ssh-workspaces/${encodeURIComponent(id)}`);
   },
+  /** 在远程工作区目录里开（或复用）一个持久 Web Terminal；凭据只在 Server 侧使用。 */
+  openWorkspaceTerminal: async (id: string, payload: { cols?: number; rows?: number; fresh?: boolean } = {}): Promise<{
+    ok: boolean; sessionKey: string; termId: string; reused: boolean; durable: boolean;
+    label: string; remoteRoot: string; host: string;
+  }> => {
+    const response = await api.post(`/webui/ssh-workspaces/${encodeURIComponent(id)}/terminal`, payload);
+    return response.data;
+  },
   browseSshDirectory: async (payload: { connectionId: string; subDir: string }): Promise<any> => {
     const response = await api.post<{ ok: boolean; currentDir: string; parentDir: string; directories: any[] }>('/webui/ssh-hosts/browse', payload);
     return response.data;

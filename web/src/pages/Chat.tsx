@@ -11,6 +11,7 @@ import {
   resolveChatGlobalShortcut,
 } from '@/components/chat/chat-global-shortcuts';
 import ChatWorkspaceLayout from '@/features/legacy-chat/ChatWorkspaceLayout';
+import RemoteWorkspacesPanel from '@/features/ssh-hosts/RemoteWorkspacesPanel';
 import { ChatConversationContent, useChatPageState } from './chat-page-state';
 
 dayjs.extend(relativeTime);
@@ -86,7 +87,7 @@ export default function Chat() {
         onOpenProject={dialogs.openProject}
         onCreateSession={handleCreateSession}
         onProjectRemoved={handleProjectRemoved}
-        remoteSessionsPanel={null}
+        remoteSessionsPanel={workspaceMode === 'work' ? <RemoteWorkspacesPanel /> : null}
       />
       {canonicalDirectory.status === 'failed' ? (
         <div

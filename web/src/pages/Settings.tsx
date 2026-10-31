@@ -162,7 +162,7 @@ const getInitialSettingsTab = () => {
   if (typeof window === 'undefined') return 'basic';
   const params = new URLSearchParams(window.location.search);
   const tab = String(params.get('tab') || '').trim();
-  return tab === 'aliases' || tab === 'upstream-errors' ? tab : 'basic';
+  return ['aliases', 'upstream-errors', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
 };
 
 const formatActiveControlPlaneLabel = (profile: ControlPlaneProfile | null) => {

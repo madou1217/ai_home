@@ -1,0 +1,133 @@
+/* Work 侧栏「远程工作区」：跟随侧栏的 HUD 变量，不引入新的颜色。 */
+.remote-ws {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--color-border, rgba(127, 127, 127, 0.18));
+}
+
+.remote-ws-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.remote-ws-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary, inherit);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.remote-ws-toggle .anticon {
+  font-size: 10px;
+}
+
+.remote-ws-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.remote-ws-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--color-text-secondary, inherit);
+}
+
+.remote-ws-add:hover,
+.remote-ws-toggle:hover {
+  color: var(--color-accent, inherit);
+}
+
+.remote-ws-empty {
+  margin: 2px 4px 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary, inherit);
+}
+
+.remote-ws-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.remote-ws-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.remote-ws-item:hover {
+  background: var(--color-fill-secondary, rgba(127, 127, 127, 0.1));
+}
+
+.remote-ws-item:focus-visible,
+.remote-ws-toggle:focus-visible,
+.remote-ws-add:focus-visible {
+  outline: 2px solid var(--color-accent, currentColor);
+  outline-offset: 1px;
+}
+
+.remote-ws-item:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.remote-ws-icon {
+  flex: none;
+  color: var(--color-accent, inherit);
+}
+
+.remote-ws-text {
+  display: grid;
+  min-width: 0;
+}
+
+.remote-ws-label,
+.remote-ws-meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.remote-ws-label {
+  font-size: 13px;
+}
+
+.remote-ws-meta {
+  font-size: 11px;
+  color: var(--color-text-tertiary, inherit);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .remote-ws-item {
+    transition: none;
+  }
+}

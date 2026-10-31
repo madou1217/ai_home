@@ -9,11 +9,25 @@ export const CHAT_ATTACHMENT_ACCEPT = [
   ...Object.keys(limits.videoExtensionTypes).map((extension) => `.${extension}`),
 ].join(',');
 
-/** Paste is converted to a text attachment once it reaches this many Unicode characters. */
-export const LARGE_PASTE_CHAR_LIMIT = 200;
+/** 默认阈值（未配置时）。实际阈值由 Server 配置决定，见 {@link setLargePasteCharLimit}。 */
+export const LARGE_PASTE_CHAR_LIMIT: number = limits.largePasteChars.default;
+let activeLargePasteCharLimit = LARGE_PASTE_CHAR_LIMIT;
 
-export function shouldConvertLargePaste(text: string): boolean {
-  return Array.from(text).length >= LARGE_PASTE_CHAR_LIMIT;
+/** 由设置加载/修改后写入；越界值夹回 [min, max]，保证最小 50 字。 */
+export function setLargePasteCharLimit(value: number): void {
+  const number = Math.round(Number(value) || 0);
+  activeLargePasteCharLimit = number > 0
+    ? Math.max(limits.largePasteChars.min, Math.min(limits.largePasteChars.max, number))
+    : LARGE_PASTE_CHAR_LIMIT;
+}
+
+export function largePasteCharLimit(): number {
+  return activeLargePasteCharLimit;
+}
+
+/** Paste is converted to a text attachment once it reaches the configured number of Unicode characters. */
+export function shouldConvertLargePaste(text: string, limit: number = activeLargePasteCharLimit): boolean {
+  return Array.from(text).length >= limit;
 }
 
 export function buildPastedTextFile(text: string, now: Date = new Date()): File {

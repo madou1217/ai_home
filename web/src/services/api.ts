@@ -1792,6 +1792,22 @@ export const modelsAPI = {
 };
 
 // 聊天 API
+export interface ChatPasteSettings {
+  ok: boolean;
+  largePasteChars: number;
+  custom: boolean;
+  limits: { default: number; min: number; max: number };
+}
+
+/** 会话框大段粘贴转附件的阈值（与 `aih server config set --large-paste-chars` 同一配置）。 */
+export const chatPasteSettingsAPI = {
+  get: async (): Promise<ChatPasteSettings> => (await api.get<ChatPasteSettings>('/webui/chat/paste-settings')).data,
+  /** 传 null 恢复默认。 */
+  set: async (largePasteChars: number | null): Promise<ChatPasteSettings> => (
+    await api.post<ChatPasteSettings>('/webui/chat/paste-settings', { largePasteChars })
+  ).data,
+};
+
 export const chatAPI = {
   // 发送聊天消息
   send: async (

@@ -1,5 +1,6 @@
 {
   "maxFiles": 8,
+  "largePasteChars": { "default": 200, "min": 50, "max": 100000 },
   "maxImageBytes": 10485760,
   "maxDocumentBytes": 16777216,
   "maxVideoBytes": 104857600,

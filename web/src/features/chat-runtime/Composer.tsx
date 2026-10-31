@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ClipboardEvent } from 'react';
+import { useCallback, useEffect, useRef, type ClipboardEvent } from 'react';
 import { Input, message } from 'antd';
 import type { ChatAccount } from '@/types';
 import type { SessionProjectionStore, SessionRuntimeController } from '@/chat-runtime';
@@ -12,6 +12,7 @@ import ChatSessionSettings from './ChatSessionSettings';
 import { useComposerController } from './use-composer-controller';
 import styles from './session-runtime.module.css';
 import { CHAT_ATTACHMENT_ACCEPT, buildPastedTextFile, shouldConvertLargePaste } from '@/components/chat/attachment-files';
+import { ensureLargePasteSettingsLoaded } from './use-large-paste-settings';
 
 export interface ComposerProps {
   readonly workspaceMode?: 'chat' | 'work';
@@ -36,6 +37,8 @@ export interface ComposerProps {
 
 export default function Composer(props: ComposerProps) {
   const controller = useComposerController(props);
+  // 粘贴阈值来自 Server 配置（默认 200，最小 50）。
+  useEffect(() => { void ensureLargePasteSettingsLoaded(); }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectImages = useCallback(() => fileInputRef.current?.click(), []);
   const compactContext = useCallback((): void => {

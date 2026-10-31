@@ -76,6 +76,7 @@ import stopIcon from '@/assets/icons/stop.svg';
 import areaStyles from './message-area.module.css';
 import composerStyles from './composer/composer.module.css';
 import filePreviewStyles from './file-preview.module.css';
+import { ensureLargePasteSettingsLoaded } from '@/features/chat-runtime/use-large-paste-settings';
 
 // chat.module.css 拆分后按域合并；各类名在三个模块间无交集，引用行为不变
 const styles = { ...areaStyles, ...composerStyles, ...filePreviewStyles };
@@ -266,6 +267,7 @@ const MessageArea = ({
   const [isDragging, setIsDragging] = useState(false);
   // 终端入口唯一：输入框工具栏按钮打开全局 Web Terminal 浮窗（不再内嵌底部终端面板）。
   const openProjectTerminal = useOpenProjectTerminal();
+  useEffect(() => { void ensureLargePasteSettingsLoaded(); }, []);
   const legacyDraftIdentity = useMemo(() => ({
     sessionId: session?.id,
     draft: Boolean(session?.draft),

@@ -1,5 +1,6 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
+import LargePasteSettingCard from '@/features/chat-runtime/LargePasteSettingCard';
 import CaptureSettingsCard from '@/features/capture/CaptureSettingsCard';
 import InlineNote from '@/components/ui/InlineNote';
 import '@/components/settings/settings-shared.css';
@@ -470,6 +471,8 @@ const Settings = ({ section }: SettingsProps) => {
           }
         />
       </SettingsGroupCard>
+
+      <LargePasteSettingCard />
 
       <SettingsGroupCard
         title="外观个性化"

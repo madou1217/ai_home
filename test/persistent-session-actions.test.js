@@ -334,3 +334,122 @@ test('claude：ai-title 在文件末尾也能读到（大文件不整读）', ()
   assert.equal(out[0].agentSessionId, 'eee-555');
 });
 
+
+// --- codebuddy 家族 / kiro：同一套绑定逻辑，目录规则不同 ---
+
+// codebuddy 家族的会话目录名规则和 claude 不一样：去掉前导分隔符、保留下划线。
+function makeFamilyHome(configDir, projectPath, sessions) {
+  const home = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-family-'));
+  const dirName = String(projectPath).replace(/^[/\\]+/, '').replace(/[^a-zA-Z0-9_]/g, '-');
+  const projectDir = nodePath.join(home, configDir, 'projects', dirName);
+  nodeFs.mkdirSync(projectDir, { recursive: true });
+  for (const session of sessions) {
+    const lines = [
+      JSON.stringify({ type: 'mode' }),
+      JSON.stringify({ type: 'ai-title', aiTitle: session.title, sessionId: session.id })
+    ];
+    nodeFs.writeFileSync(
+      nodePath.join(projectDir, session.id + '.jsonl'),
+      lines.join(String.fromCharCode(10)) + String.fromCharCode(10)
+    );
+  }
+  const stats = new Map(sessions.map((s) => [s.id, s]));
+  return {
+    home,
+    options: {
+      hostHomeDir: home,
+      statFile: (filePath) => ({
+        size: nodeFs.statSync(filePath).size,
+        mtimeMs: Number((stats.get(nodePath.basename(filePath, '.jsonl')) || {}).mtimeMs) || Date.now(),
+        birthtimeMs: Number((stats.get(nodePath.basename(filePath, '.jsonl')) || {}).startMs) || Date.now()
+      })
+    }
+  };
+}
+
+function makeKiroHome(projectPath, sessions) {
+  const home = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-kiro-'));
+  for (const session of sessions) {
+    const dir = nodePath.join(home, '.kiro', 'sessions', '0123456789abcdef', session.id);
+    nodeFs.mkdirSync(dir, { recursive: true });
+    nodeFs.writeFileSync(nodePath.join(dir, 'session.json'), JSON.stringify({
+      id: session.id,
+      title: session.title || '',
+      workspacePaths: [projectPath],
+      createdAt: new Date(session.startMs).toISOString()
+    }));
+    nodeFs.writeFileSync(nodePath.join(dir, 'messages.jsonl'), '');
+  }
+  return { home, options: { hostHomeDir: home } };
+}
+
+test('codebuddy 家族：目录名规则不同（无前导 -、保留下划线）也能绑上会话', () => {
+  const projectPath = '/Users/model/projects/demo_app';
+  const createdSec = Math.floor((Date.now() - 3 * 60 * MINUTE) / 1000);
+  const createdMs = createdSec * 1000;
+  const { options } = makeFamilyHome('.codebuddy', projectPath, [
+    { id: '01a19295-aaaa', title: '在 Warp 中重跑 aih ss 验证', startMs: createdMs + 1000 }
+  ]);
+  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']) {
+    const out = resolveAgentSessionIds(provider, [
+      { name: 'p1', path: projectPath, title: '⠧ 在 Warp 中重跑 aih ss 验证', created: createdSec }
+    ], options);
+    assert.equal(out[0].agentSessionId, '01a19295-aaaa', provider);
+    // pane 标题带 spinner 前缀，展示层会丢掉 → 用会话库里的标题补上
+    assert.equal(out[0].agentTitle, '在 Warp 中重跑 aih ss 验证', provider);
+  }
+});
+
+test('kiro：按 workspacePaths + createdAt 绑到 sess_*', () => {
+  const projectPath = '/Users/model/projects/demo_kiro';
+  const createdSec = Math.floor((Date.now() - 3 * 60 * MINUTE) / 1000);
+  const createdMs = createdSec * 1000;
+  const { options } = makeKiroHome(projectPath, [
+    { id: 'sess_0c940c7f', title: '优化一下这个', startMs: createdMs - 3 * MINUTE },
+    { id: 'sess_ed8fd0f8', title: '后开的会话', startMs: createdMs + 2 * MINUTE }
+  ]);
+  const out = resolveAgentSessionIds('kiro', [
+    { name: 'p1', path: projectPath, title: 'modeldeMac-mini.local', created: createdSec }
+  ], options);
+  assert.equal(out[0].agentSessionId, 'sess_ed8fd0f8');
+  assert.equal(out[0].agentSessionIdSource, 'store');
+});
+
+test('同一项目两个 pane 不会抢同一个会话（全局 1:1 认领）', () => {
+  const projectPath = '/Users/model/projects/demo_claim';
+  const base = Math.floor((Date.now() - 6 * 60 * MINUTE) / 1000);
+  const { options } = makeFamilyHome('.codebuddy', projectPath, [
+    { id: 'sess-first', title: '', startMs: (base + 60) * 1000 },
+    { id: 'sess-second', title: '', startMs: (base + 6 * 60) * 1000 }
+  ]);
+  const out = resolveAgentSessionIds('codebuddy', [
+    { name: 'p1', path: projectPath, title: '', created: base },
+    { name: 'p2', path: projectPath, title: '', created: base + 5 * 60 }
+  ], options);
+  assert.equal(out[0].agentSessionId, 'sess-first');
+  assert.equal(out[1].agentSessionId, 'sess-second');
+});
+
+test('早于 pane 半天以上的老会话不乱认（宁可空着）', () => {
+  const projectPath = '/Users/model/projects/demo_stale';
+  const createdSec = Math.floor(Date.now() / 1000);
+  const { options } = makeFamilyHome('.codebuddy', projectPath, [
+    { id: 'sess-old', title: '', startMs: (createdSec - 3 * 24 * 60 * 60) * 1000 }
+  ]);
+  const out = resolveAgentSessionIds('codebuddy', [
+    { name: 'p1', path: projectPath, title: '', created: createdSec }
+  ], options);
+  assert.equal(out[0].agentSessionId, undefined);
+});
+
+test('已有 id 的行（注册表/缓存给的）也能按 id 补上标题', () => {
+  const projectPath = '/Users/model/projects/demo_title';
+  const { options } = makeFamilyHome('.codebuddy', projectPath, [
+    { id: 'sess-known', title: '会话库里的标题', startMs: Date.now() }
+  ]);
+  const out = resolveAgentSessionIds('codebuddy', [
+    { name: 'p1', path: projectPath, title: '⠹ 转圈中的 pane', created: Math.floor(Date.now() / 1000), agentSessionId: 'sess-known' }
+  ], options);
+  assert.equal(out[0].agentSessionId, 'sess-known');
+  assert.equal(out[0].agentTitle, '会话库里的标题');
+});

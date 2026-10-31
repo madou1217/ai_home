@@ -26,6 +26,7 @@ const {
 
 const ROOT = path.join(__dirname, '..');
 const WEB_REGISTRY = path.join(ROOT, 'web', 'src', 'features', 'chat-runtime', 'runtime-provider-registry.ts');
+const WEB_PROVIDER_LIST = path.join(ROOT, 'web', 'src', 'features', 'chat-runtime', 'native-runtime-providers.ts');
 const COMPOSITION = path.join(ROOT, 'lib', 'server', 'chat-runtime-composition.js');
 
 function read(file) {
@@ -36,16 +37,40 @@ function read(file) {
   }
 }
 
-/** web 表面：nativeCredentialProvider('codex') 这类注册。 */
+/** web 表面：runtime-provider-registry 由 native-runtime-providers 的名单派生（或旧式逐个注册）。 */
 function webRegisteredProviders() {
   const source = read(WEB_REGISTRY);
-  return [...new Set([...source.matchAll(/nativeCredentialProvider\('([a-z0-9-]+)'\)/g)].map((match) => match[1]))].sort();
+  const inline = [...source.matchAll(/nativeCredentialProvider\('([a-z0-9-]+)'\)/g)].map((match) => match[1]);
+  const derived = /NATIVE_RUNTIME_PROVIDERS\.map\(/.test(source)
+    ? arrayLiteral(read(WEB_PROVIDER_LIST), 'NATIVE_RUNTIME_PROVIDERS')
+    : [];
+  return [...new Set([...inline, ...derived])].sort();
 }
 
-/** web 表面是否排除了 api-key 账号（legacy 允许 API-key 账号跑 work 会话）。 */
+/**
+ * web 表面对 API-key 账号的口径：legacy 只在「原生 CLI 能用密钥跑真会话」的 provider 上让 API-key
+ * 账号走原生（chat-runner-profile.apiKeyNativeReady），其余 API-key 账号走无状态代理而非原生会话。
+ * 因此 canonical 必须至少覆盖这批 provider 的 API-key 账号，而不是「全部接受」。
+ */
 function webAcceptsApiKeyAccounts() {
   const source = read(WEB_REGISTRY);
-  return !/!\s*account\.apiKeyMode/.test(source);
+  if (!/!\s*account\.apiKeyMode/.test(source)) return true;
+  if (!/API_KEY_NATIVE_READY_PROVIDERS/.test(source)) return false;
+  const web = new Set(setLiteral(read(WEB_PROVIDER_LIST), 'API_KEY_NATIVE_READY_PROVIDERS'));
+  const { isApiKeyNativeReady } = require('../lib/server/chat-runner-profile');
+  const legacyReady = ['codex', 'claude', 'gemini', 'agy', 'opencode', 'grok', 'zcode', 'qoder', 'qodercn',
+    'cline', 'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'].filter((provider) => isApiKeyNativeReady(provider));
+  return legacyReady.every((provider) => web.has(provider));
+}
+
+function arrayLiteral(source, name) {
+  const match = source.match(new RegExp(`${name}\\s*=\\s*Object\\.freeze\\(\\[([\\s\\S]*?)\\]`));
+  return match ? [...match[1].matchAll(/'([a-z0-9-]+)'/g)].map((entry) => entry[1]) : [];
+}
+
+function setLiteral(source, name) {
+  const match = source.match(new RegExp(`${name}[^=]*=\\s*new Set\\(\\[([\\s\\S]*?)\\]`));
+  return match ? [...match[1].matchAll(/'([a-z0-9-]+)'/g)].map((entry) => entry[1]) : [];
 }
 
 /** 服务端驱动：composition 里注册了哪些 provider 的 driver（含引擎派生注册）。 */

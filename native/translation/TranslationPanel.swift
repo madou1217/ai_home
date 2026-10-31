@@ -3,7 +3,7 @@ import AppKit
 final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
   let emit: ([String: Any]) -> Void
   let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 440), styleMask: [.titled, .closable, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
-  let trigger = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 38, height: 38), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+  let trigger = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 52, height: 28), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
   let content = TranslationPanelContent()
   var selected = ""
   var offered = ""
@@ -79,26 +79,31 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
     content.keepOriginal.action = #selector(keepOriginal)
     content.stop.target = self
     content.stop.action = #selector(cancel)
-    let button = TranslationTriggerButton(title: "", target: self, action: #selector(acceptOffer))
-    button.frame = NSRect(x: 0, y: 0, width: 38, height: 38)
+    // 划词入口是一枚紧凑的胶囊：翻译符号 + 「译」。以前把圆角方形的 App 图标塞进圆形
+    // 磨砂底，出现「圆套方」的割裂感；入口不需要品牌图，只需要一眼能认出的动作。
+    let button = TranslationTriggerButton(title: "译", target: self, action: #selector(acceptOffer))
+    button.frame = NSRect(x: 0, y: 0, width: 52, height: 28)
     button.isBordered = false
-    button.imagePosition = .imageOnly
-    if let logoURL = Bundle.main.url(forResource: "ai-home-app-icon", withExtension: "png"),
-       let logo = NSImage(contentsOf: logoURL) {
-      logo.isTemplate = false
-      logo.size = NSSize(width: 32, height: 32)
-      button.image = logo
+    button.font = .systemFont(ofSize: 13, weight: .semibold)
+    button.contentTintColor = .labelColor
+    if let glyph = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "翻译") {
+      button.image = glyph.withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
+      button.imagePosition = .imageLeading
+      button.imageHugsTitle = true
     }
-    button.imageScaling = .scaleProportionallyDown
     button.toolTip = "翻译选中内容"
     button.setAccessibilityLabel("翻译选中内容")
     let surface = NSVisualEffectView(frame: button.frame)
     surface.material = .popover
     surface.state = .active
     surface.wantsLayer = true
-    surface.layer?.cornerRadius = 19
+    surface.layer?.cornerRadius = 14
+    surface.layer?.cornerCurve = .continuous
     surface.layer?.masksToBounds = true
+    surface.layer?.borderWidth = 0.5
+    surface.layer?.borderColor = NSColor.separatorColor.cgColor
     surface.addSubview(button)
+    trigger.setContentSize(button.frame.size)
     trigger.isOpaque = false
     trigger.backgroundColor = .clear
     trigger.hasShadow = true

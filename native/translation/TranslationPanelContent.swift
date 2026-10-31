@@ -54,16 +54,16 @@ final class TranslationPanelContent {
     let stack = NSStackView()
     stack.orientation = .vertical
     stack.alignment = .leading
-    stack.spacing = 10
+    stack.spacing = 8
     stack.translatesAutoresizingMaskIntoConstraints = false
     root.addSubview(stack)
     NSLayoutConstraint.activate([
-      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
-      stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
-      stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
-      stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16)
+      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
+      stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+      stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
+      stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12)
     ])
-    let heading = NSTextField(labelWithString: "译为")
+    let heading = NSTextField(labelWithString: "→")
     heading.textColor = .secondaryLabelColor
     heading.font = .systemFont(ofSize: 12)
     targetMenu.setAccessibilityLabel("目标语言")
@@ -86,7 +86,7 @@ final class TranslationPanelContent {
     historyButton.setAccessibilityLabel("最近翻译")
     let headerSpacer = NSView()
     headerSpacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
-    let controls = NSStackView(views: [heading, targetMenu, headerSpacer, historyButton, pin, settingsButton])
+    let controls = NSStackView(views: [heading, targetMenu, modelPicker, headerSpacer, historyButton, pin, settingsButton])
     controls.spacing = 8
     spinner.style = .spinning
     spinner.controlSize = .small
@@ -96,10 +96,6 @@ final class TranslationPanelContent {
     phaseLabel.font = .systemFont(ofSize: 11, weight: .medium)
     elapsed.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     elapsed.textColor = .secondaryLabelColor
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let status = NSStackView(views: [spinner, phaseLabel, spacer, elapsed])
-    status.spacing = 6
     source.font = .systemFont(ofSize: 12)
     source.textColor = .secondaryLabelColor
     source.lineBreakMode = .byTruncatingTail
@@ -151,8 +147,11 @@ final class TranslationPanelContent {
     let modelHeading = NSTextField(labelWithString: "模型")
     modelHeading.font = .systemFont(ofSize: 12)
     modelHeading.textColor = .secondaryLabelColor
-    let modelRow = NSStackView(views: [modelHeading, modelPicker])
-    modelRow.spacing = 8
+    modelHeading.isHidden = true
+    // 模型选择收进顶栏，紧跟目标语言：一行就能看清「译成什么、用哪个模型」。
+    modelPicker.controlSize = .small
+    modelPicker.font = .systemFont(ofSize: 11)
+    modelPicker.widthAnchor.constraint(lessThanOrEqualToConstant: 180).isActive = true
     model.font = .systemFont(ofSize: 10)
     model.textColor = .tertiaryLabelColor
     model.lineBreakMode = .byTruncatingMiddle
@@ -175,12 +174,21 @@ final class TranslationPanelContent {
     copy.setAccessibilityLabel("复制译文")
     let actionSpacer = NSView()
     actionSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let footer = NSStackView(views: [stop, retry, override, keepOriginal, actionSpacer, replace, copy])
+    // 布局只保留三层：顶部（目标语言 + 工具）、原文摘要与译文、底部一条状态/操作栏。
+    // 以前是 8 行竖排（目标、模型、原文、状态、提示、译文、模型名、按钮），视线要上下跳。
+    // 模型选择挪进设置（⌘,），底栏左侧是状态与计时，右侧是操作；提示只在需要确认时出现。
+    let footer = NSStackView(views: [spinner, phaseLabel, elapsed, actionSpacer, stop, retry, override, keepOriginal, replace, copy])
     footer.spacing = 6
-    for row in [controls, modelRow, source, status, hint, scroll, model, footer] {
+    footer.setCustomSpacing(4, after: spinner)
+    footer.setCustomSpacing(8, after: phaseLabel)
+    model.isHidden = true
+    textView.font = .systemFont(ofSize: 15)
+    source.maximumNumberOfLines = 1
+    for row in [controls, source, hint, scroll, footer] {
       stack.addArrangedSubview(row)
       row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
     }
+    stack.setCustomSpacing(4, after: controls)
     setPhase(.waiting, animated: false)
   }
 
@@ -475,7 +483,8 @@ final class TranslationTriggerButton: NSButton {
   }
   private func setHovered(_ value: Bool) {
     wantsLayer = true
-    layer?.cornerRadius = 19
+    layer?.cornerRadius = 14
+    layer?.cornerCurve = .continuous
     let color = (value ? NSColor.controlAccentColor.withAlphaComponent(0.12) : NSColor.clear).cgColor
     if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
       let animation = CABasicAnimation(keyPath: "backgroundColor")

@@ -2,6 +2,11 @@
 import { createTranslationCache, translationHash } from './cache.js';
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
+const MENU_PDF = 'aih-translation-pdf';
+function openPdfReader(fileUrl) {
+  if (!/^(https?|file):/.test(String(fileUrl || ''))) return;
+  void chrome.tabs.create({ url: `${chrome.runtime.getURL('pdf-reader.html')}?file=${encodeURIComponent(fileUrl)}` });
+}
 
 const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'plain' };
 let clipboardQueue = Promise.resolve();
@@ -179,6 +184,8 @@ function ensureMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: MENU_SELECTION, title: 'AIH 翻译选中内容', contexts: ['selection'] });
     chrome.contextMenus.create({ id: MENU_PAGE, title: 'AIH 翻译当前页面', contexts: ['page'] });
+    // The browser's PDF viewer doesn't run content scripts; PDFs open in our reader.
+    chrome.contextMenus.create({ id: MENU_PDF, title: 'AIH 双语阅读此 PDF', contexts: ['link'], targetUrlPatterns: ['*://*/*.pdf', '*://*/*.pdf?*', '*://*/*.PDF'] });
   });
 }
 
@@ -187,6 +194,7 @@ chrome.runtime.onStartup.addListener(ensureMenus);
 ensureMenus();
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === MENU_PDF) { openPdfReader(info.linkUrl); return; }
   if (!tab?.id) return;
   await chrome.tabs.sendMessage(tab.id, { type: info.menuItemId === MENU_PAGE ? 'aih-translate-page' : 'aih-translate-selection', text: info.selectionText || '' });
 });
@@ -426,4 +434,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'aih-translate') return false;
   void translate(message, sendResponse, sender);
   return true;
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === 'aih-open-pdf') openPdfReader(message.url);
+  return false;
 });

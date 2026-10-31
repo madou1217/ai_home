@@ -113,6 +113,15 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
   let tab = null;
   try { [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); } catch (_error) { return; }
   if (!tab || !tab.id || !/^https?:/.test(String(tab.url || ''))) return;
+  // A PDF tab shows the browser's viewer, where no content script runs: offer our reader.
+  if (/\.pdf($|[?#])/i.test(new URL(tab.url).pathname + new URL(tab.url).search)) {
+    const section = field('page-actions'); section.hidden = false;
+    field('translate-page').textContent = '用双语阅读打开此 PDF';
+    field('translate-page').onclick = () => { void chrome.runtime.sendMessage({ type: 'aih-open-pdf', url: tab.url }); window.close(); };
+    field('undo-page').hidden = true;
+    field('page-state').textContent = 'PDF';
+    return;
+  }
   const section = field('page-actions'); const translate = field('translate-page'); const undo = field('undo-page'); const state = field('page-state');
   section.hidden = false;
   try { state.textContent = new URL(tab.url).hostname; } catch (_error) { state.textContent = ''; }

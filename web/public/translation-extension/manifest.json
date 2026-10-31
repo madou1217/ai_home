@@ -72,6 +72,14 @@
       "matches": [
         "<all_urls>"
       ]
+    },
+    {
+      "resources": [
+        "vendor/pdfjs/pdf.worker.min.mjs"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

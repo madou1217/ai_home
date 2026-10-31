@@ -4,6 +4,9 @@ const CODEX_TEAM_QUOTA_PENDING_MESSAGE = '当前 Team 账号未返回可计算�
 const KNOWN_REASON_MESSAGES: Record<string, string> = {
   billing_blocked: '上游报告余额不足或账单受限，充值或恢复账单后需手动恢复调度。',
   quota_exhausted: '上游报告账号额度耗尽，新可信用量快照确认恢复后自动解除。',
+  // 选号时的额度门禁（lib/server/account-usage-gate.js）：按最新用量快照与「自动切换阈值」判定。
+  usage_exhausted: '账号额度已用完，暂不参与调度；后台用量刷新显示额度恢复后自动重新参与（手动启用不会绕过）。',
+  usage_below_server_threshold: '账号剩余额度已低于「自动切换阈值」换算出的下限，暂不参与调度；后台用量刷新显示额度回升后自动重新参与。',
   permission_denied: '上游报告账号权限受限，权限恢复后需手动恢复调度。',
   // OAuth 账号已可参与推理（relay 前按描述符声明换取业务 token）。
   // 保留该键只为兼容历史快照，文案改为说明「凭据不可用需重新登录」。

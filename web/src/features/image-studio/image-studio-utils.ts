@@ -170,7 +170,8 @@ export function formatImageStudioModelAvailability(model: Pick<
     const reason = String(entry?.reason || '').toLowerCase();
     const count = Math.max(0, Number(entry?.count) || 0);
     if (!count) return;
-    if (reason.includes('codex_usage_below_server_threshold')) buckets.threshold += count;
+    // 阈值停池：codex 的既有码（codex_usage_below_server_threshold）与通用码同一个后缀。
+    if (reason.includes('usage_below_server_threshold')) buckets.threshold += count;
     else if (reason.includes('blocked_by_quota') || reason.includes('quota_exhausted') || reason.includes('usage_exhausted')) buckets.quota += count;
     else if (reason.includes('auth_invalid') || reason.includes('token_expired')) buckets.auth += count;
     else if (reason.includes('cooldown') || reason.includes('rate_limit')) buckets.cooldown += count;

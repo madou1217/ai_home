@@ -572,7 +572,7 @@ const Settings = ({ section }: SettingsProps) => {
           <Form.Item
             name="threshold_pct"
             label="自动切换阈值 (%)"
-            help="当账号剩余额度低于此百分比时，自动切换到下一个可用账号"
+            help="账号已用额度达到此百分比（剩余 ≤ 100 − 阈值）即退出调度、切到其它账号；后台用量刷新显示额度恢复后自动重新参与。对所有按账号计额度的账号生效。"
             rules={USAGE_FIELD_RULES.threshold_pct}
           >
             <NumericAddonInput min={0} max={100} addonAfter="%" />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Empty, message as toast } from 'antd';
+import { Empty, Tooltip, message as toast } from 'antd';
+import { ArrowDownOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import type {
   SessionProjection,
@@ -58,7 +59,7 @@ export default function ConversationTimeline({
   const gap = useSessionSelector(controller.store, selectGap);
   const connectionState = useSessionSelector(controller.store, selectConnectionState);
   const connection = sessionConnectionPresentation(connectionState);
-  const viewport = useTimelineViewport(controller, items);
+  const viewport = useTimelineViewport(controller, items, hasMore);
   // 切换会话时整条时间线内容换掉：一次只碰 opacity 的淡入表达「切换」。
   // key 记在模块级，会话外壳整块重挂载（controller 换实例）时同样能判断出来。
   useSwitchFade(viewport.containerRef, controller.sessionId);
@@ -93,6 +94,13 @@ export default function ConversationTimeline({
     window.addEventListener(IN_SESSION_SEARCH_OPEN_EVENT, openSearch);
     return () => window.removeEventListener(IN_SESSION_SEARCH_OPEN_EVENT, openSearch);
   }, []);
+  // 用户消息锚点：每条用户消息一个刻度，点击直接跳过去（长会话里快速切换回某个问题）。
+  const userAnchors = useMemo(
+    () => presentation.items
+      .filter((item) => item.kind === 'message' && item.detail.role === 'user')
+      .map((item) => ({ id: item.id, label: (item.content || '').trim().replace(/\s+/g, ' ').slice(0, 60) || '（附件）' })),
+    [presentation.items],
+  );
   const searchMessages = useMemo<ChatMessage[]>(
     () => presentation.items
       .filter((item) => item.kind === 'message')
@@ -128,6 +136,7 @@ export default function ConversationTimeline({
         messages={searchMessages}
         onScrollToMessage={scrollToSearchedMessage}
       />
+      <div className={styles.timelineFrame}>
       <div
         ref={viewport.containerRef}
         className={`${styles.timeline} ${chatStyles.messageSurface} ${mobile ? chatStyles.messageSurfaceMobile : ''}`}
@@ -135,8 +144,9 @@ export default function ConversationTimeline({
       >
       {hasMore ? (
         <div className={styles.loadEarlier}>
+          {/* 滚到顶部会自动加载；按钮保留给键盘与「不想滚」的场景 */}
           <Button size="small" loading={viewport.loadingEarlier} onClick={() => void viewport.loadEarlier()}>
-            加载更早记录
+            {viewport.loadingEarlier ? '正在加载更早记录' : '加载更早记录'}
           </Button>
         </div>
       ) : null}
@@ -183,6 +193,33 @@ export default function ConversationTimeline({
       </div> : null}
       <TurnFeedback store={controller.store} actions={actions} readOnly={readOnly} />
       </div>
+      {!mobile && userAnchors.length > 1 ? (
+        <nav className={styles.userAnchorRail} aria-label="跳转到用户消息">
+          {userAnchors.map((anchor, index) => (
+            <Tooltip key={anchor.id} title={anchor.label} placement="left" mouseEnterDelay={0.05}>
+              <button
+                type="button"
+                className={styles.userAnchorTick}
+                data-active={anchor.id === viewport.activeAnchorId ? 'true' : undefined}
+                aria-label={`第 ${index + 1} 条提问：${anchor.label}`}
+                onClick={() => viewport.scrollToItem(anchor.id)}
+              />
+            </Tooltip>
+          ))}
+        </nav>
+      ) : null}
+      {viewport.awayFromBottom ? (
+        <button
+          type="button"
+          className={styles.scrollToLatest}
+          onClick={viewport.scrollToBottom}
+          aria-label="回到最新消息"
+        >
+          <ArrowDownOutlined />
+          {viewport.unseenCount > 0 ? <span className={styles.scrollToLatestCount}>{viewport.unseenCount}</span> : null}
+        </button>
+      ) : null}
+      </div>
       <FileDrawer
         open={preview.open}
         tabs={preview.tabs}
@@ -209,43 +246,141 @@ function useTimelineFilePreview(projectPath: string) {
   return { activeKey, close, open, openFile, setActiveKey, tabs };
 }
 
+// 时间线视口（聊天标准）：
+//  - 打开会话即停在最新消息（底部），不从顶部往下滚；
+//  - 贴底时新内容/图片变高持续跟随，离开底部后不再打扰阅读；
+//  - 滚到顶部自动加载更早历史，插入后保持当前看到的那条不动；
+//  - 离开底部出现「回到最新」按钮，并提示其间新增了几条；
+//  - 用户消息锚点：跳转 + 当前所在问题高亮。
+// 所有程序化定位都用瞬时 scrollTop：容器的 smooth 行为会让钉底与历史插入时的位置补偿失效。
 function useTimelineViewport(
   controller: SessionRuntimeController,
   items: readonly TimelineItem[],
+  hasMore: boolean,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const loadingEarlierRef = useRef(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const [activeAnchorId, setActiveAnchorId] = useState<string>();
+  const seenCountRef = useRef(items.length);
 
-  useEffect(() => {
-    if (!stickToBottomRef.current) return;
-    const container = containerRef.current;
-    if (container) container.scrollTop = container.scrollHeight;
-  }, [items]);
-
-  const handleScroll = useCallback((): void => {
+  const jumpToBottom = useCallback((): void => {
     const container = containerRef.current;
     if (!container) return;
-    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-    stickToBottomRef.current = distance < 96;
+    container.style.scrollBehavior = 'auto';
+    container.scrollTop = container.scrollHeight;
+    container.style.scrollBehavior = '';
   }, []);
 
+  // 切会话：重新贴底。
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true;
+    seenCountRef.current = 0;
+    setAwayFromBottom(false);
+    setUnseenCount(0);
+    jumpToBottom();
+  }, [controller.sessionId, jumpToBottom]);
+
+  // 新内容：贴底就跟随；不贴底就累计「未读」。
+  useLayoutEffect(() => {
+    if (stickToBottomRef.current) {
+      jumpToBottom();
+      seenCountRef.current = items.length;
+      setUnseenCount(0);
+    } else if (items.length > seenCountRef.current) {
+      setUnseenCount(items.length - seenCountRef.current);
+    }
+  }, [items, jumpToBottom]);
+
+  // 内容异步变高（图片、代码高亮、markdown 二次渲染）时，贴底则继续钉底。
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => { if (stickToBottomRef.current) jumpToBottom(); });
+    Array.from(container.children).forEach((child) => observer.observe(child));
+    const mutations = new MutationObserver(() => {
+      Array.from(container.children).forEach((child) => observer.observe(child));
+    });
+    mutations.observe(container, { childList: true });
+    return () => { observer.disconnect(); mutations.disconnect(); };
+  }, [jumpToBottom]);
+
   const loadEarlier = useCallback(async (): Promise<void> => {
+    if (loadingEarlierRef.current) return;
     const container = containerRef.current;
     const previousHeight = container?.scrollHeight || 0;
+    const previousTop = container?.scrollTop || 0;
+    loadingEarlierRef.current = true;
     setLoadingEarlier(true);
     try {
       await controller.loadEarlier();
-      requestAnimationFrame(() => {
-        if (container) container.scrollTop += container.scrollHeight - previousHeight;
-      });
+      // 等更早的记录真正渲染进 DOM，再按新增高度补偿，保持用户正在看的那条不动。
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!container) return;
+        container.style.scrollBehavior = 'auto';
+        container.scrollTop = previousTop + (container.scrollHeight - previousHeight);
+        container.style.scrollBehavior = '';
+      }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '加载更早记录失败');
     } finally {
+      loadingEarlierRef.current = false;
       setLoadingEarlier(false);
     }
   }, [controller]);
-  return { containerRef, loadingEarlier, handleScroll, loadEarlier };
+
+  const updateActiveAnchor = useCallback((container: HTMLDivElement): void => {
+    const top = container.getBoundingClientRect().top + 24;
+    let active: string | undefined;
+    container.querySelectorAll<HTMLElement>('[data-chat-anchor-key][data-chat-role="user"]').forEach((node) => {
+      if (node.getBoundingClientRect().top <= top) active = node.dataset.chatAnchorKey;
+    });
+    setActiveAnchorId(active);
+  }, []);
+
+  const scrollFrameRef = useRef(0);
+  const handleScroll = useCallback((): void => {
+    if (scrollFrameRef.current) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = 0;
+      const container = containerRef.current;
+      if (!container) return;
+      const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const atBottom = distance < 96;
+      stickToBottomRef.current = atBottom;
+      setAwayFromBottom(distance > 240);
+      if (atBottom) { seenCountRef.current = items.length; setUnseenCount(0); }
+      if (hasMore && container.scrollTop < 160) void loadEarlier();
+      updateActiveAnchor(container);
+    });
+  }, [hasMore, items.length, loadEarlier, updateActiveAnchor]);
+
+  const scrollToBottom = useCallback((): void => {
+    const container = containerRef.current;
+    if (!container) return;
+    stickToBottomRef.current = true;
+    seenCountRef.current = items.length;
+    setUnseenCount(0);
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  }, [items.length]);
+
+  const scrollToItem = useCallback((itemId: string): void => {
+    const container = containerRef.current;
+    const target = container?.querySelector<HTMLElement>(`[data-chat-anchor-key="${CSS.escape(itemId)}"]`);
+    if (!container || !target) return;
+    stickToBottomRef.current = false;
+    const offset = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    container.scrollTo({ top: container.scrollTop + offset - 16, behavior: 'smooth' });
+    setActiveAnchorId(itemId);
+  }, []);
+
+  return {
+    containerRef, loadingEarlier, handleScroll, loadEarlier,
+    awayFromBottom, unseenCount, scrollToBottom, scrollToItem, activeAnchorId,
+  };
 }
 
 function RuntimeNotice({

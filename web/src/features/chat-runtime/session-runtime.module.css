@@ -64,13 +64,89 @@
   white-space: nowrap;
 }
 
+/* 时间线外框：给「回到最新」按钮和用户消息锚点轨一个不随内容滚动的定位层。 */
+.timelineFrame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .timeline {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: var(--hos-space-6) max(18px, calc((100% - 820px) / 2)); /* 归级:原 22px */
-  scroll-behavior: smooth;
+  /* 不在容器上设 smooth：钉底、加载历史后的位置补偿都必须瞬时完成，
+   * 平滑滚动只在用户点「回到最新」/锚点时按次使用（scrollTo behavior）。 */
+  overflow-anchor: none;
 }
+
+/* 回到最新：离开底部才出现；有新消息时带计数。 */
+.scrollToLatest {
+  position: absolute;
+  left: 50%;
+  bottom: var(--hos-space-4);
+  z-index: var(--z-raised);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-bg-elevated);
+  color: var(--color-muted-strong);
+  box-shadow: var(--elevation-3);
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: aih-scroll-latest-in var(--motion-base) var(--ease-standard) backwards;
+  transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.scrollToLatest:hover { color: var(--color-accent); border-color: var(--color-accent); }
+.scrollToLatest:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.scrollToLatestCount {
+  font-size: var(--hos-text-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+}
+@keyframes aih-scroll-latest-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 用户消息锚点轨：右侧一列刻度，一条用户消息一个；当前所在问题高亮。 */
+.userAnchorRail {
+  position: absolute;
+  top: var(--hos-space-6);
+  right: 6px;
+  bottom: var(--hos-space-6);
+  z-index: var(--z-raised);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  max-height: calc(100% - 2 * var(--hos-space-6));
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 4px 2px;
+}
+.userAnchorRail::-webkit-scrollbar { display: none; }
+.userAnchorTick {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-muted) 45%, transparent);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), width var(--motion-fast) var(--ease-standard);
+}
+.userAnchorTick:hover { width: 20px; background: var(--color-accent); }
+.userAnchorTick[data-active='true'] { width: 20px; background: var(--color-accent); }
+.userAnchorTick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 
 .timeline > * + * { margin-top: var(--hos-space-3); }
 /* 条件挂载的横幅/按钮：出现即淡入，而不是硬闪一下。 */

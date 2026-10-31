@@ -211,6 +211,19 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
   if (view.pendingSlash) {
     await props.actions.executeSlash(view.pendingSlash.name, view.pendingSlash.arguments);
   } else if (view.delivery === 'turn') {
+    // 先回显再发：按下发送的同一帧就能看到自己的消息（服务端事件到达后自动替换）。
+    const echoId = props.store.echoUserMessage(content);
+    try {
+      await dispatchTurnSubmission(props, view, content);
+    } catch (error) {
+      props.store.discardLocalEcho(echoId);
+      throw error;
+    }
+  } else if (view.delivery) await props.actions.deliver(content, view.delivery);
+}
+
+async function dispatchTurnSubmission(props: ComposerProps, view: ComposerViewState, content: string): Promise<void> {
+  {
     const pending = view.attachments.filter((attachment) => !attachment.attachmentId);
     const pendingKeys = pending.map(({ key }) => key);
     if (pendingKeys.length > 0) view.setAttachmentStatus(pendingKeys, 'uploading');
@@ -241,7 +254,7 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
       }
       throw error;
     }
-  } else if (view.delivery) await props.actions.deliver(content, view.delivery);
+  }
 }
 
 function selectComposerProjection(projection: SessionProjection) {

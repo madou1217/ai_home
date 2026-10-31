@@ -59,6 +59,7 @@ function TimelineItemView({
           provider={provider}
           session={{ projectPath }}
           mobile={mobile}
+          anchorId={item.id}
           progress={progress}
           onRetry={onRetry}
           onFork={onFork}

@@ -61,6 +61,8 @@ interface Props {
   onRetry?: () => void;
   onFork?: () => void;
   progress?: ReactNode;
+  /** 稳定锚点（canonical 时间线传 item.id）；缺省回落到 `<role>-<timestamp>`，兼容旧调用方。 */
+  anchorId?: string;
 }
 
 function detectReadLabelFromCommand(command: string) {
@@ -552,7 +554,7 @@ const PendingStatusLine = ({ text }: { text: string }) => {
   );
 };
 
-const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false, onRetry, onFork, progress }: Props) => {
+const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false, onRetry, onFork, progress, anchorId }: Props) => {
   const isUser = message.role === 'user';
   const showAssistantAvatar = !mobile && !isFollowup;
   const [metaVisible, setMetaVisible] = useState(false);
@@ -867,7 +869,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
 
   if (isUser) {
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowUser}`} data-chat-anchor-key={`user-${message.timestamp || ""}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowUser}`} data-chat-anchor-key={anchorId || `user-${message.timestamp || ""}`} data-chat-role="user">
         <div className={`${styles.messageWrapper} ${styles.messageWrapperUser}`} onClick={handleMessageTap}>
           <div className={`${styles.bubbleUser} ${hasStructuredUserBlocks ? styles.bubbleUserStructured : ''}`}>
             <ImageGallery images={galleryImages} />
@@ -914,7 +916,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
 
   if (isErrorMessage(message.content)) {
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={anchorId || `assistant-${message.timestamp || ""}`} data-chat-role="assistant">
         {showAssistantAvatar ? (
           <Avatar size={32} className={styles.avatarAi} style={{ background: 'var(--tint-danger)', border: '1px solid var(--bd-danger)' }}>
             <WarningOutlined style={{ color: 'var(--color-danger)', fontSize: 16 }} />
@@ -944,7 +946,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
     const hasLiveDetail = hasRenderablePendingBlocks(blocks);
 
     return (
-      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
+      <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={anchorId || `assistant-${message.timestamp || ""}`} data-chat-role="assistant">
         {showAssistantAvatar ? (
           <Avatar size={32} className={styles.avatarAi}>
             <ProviderIcon provider={provider} size={18} />
@@ -987,7 +989,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
   }
 
   return (
-    <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
+    <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={anchorId || `assistant-${message.timestamp || ""}`} data-chat-role="assistant">
       {showAssistantAvatar ? (
         <Avatar size={32} className={styles.avatarAi}>
           <ProviderIcon provider={provider} size={18} />

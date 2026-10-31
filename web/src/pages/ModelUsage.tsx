@@ -110,6 +110,35 @@ function renderAccountScope(accountCount: number, unattributedCalls: number) {
   );
 }
 
+// 切页回来不该每次都从空白骨架开始：按查询条件记住上一份成功的看板快照（只在内存里，
+// 刷新页面即丢），重新进入时先直接显示它，再在后台静默刷新（stale-while-revalidate）。
+type DashboardSnapshot = {
+  stats: ModelUsageStats;
+  models: ModelUsageModelRow[];
+  sessions: ModelUsageSessionRow[];
+  modelOptions: ModelUsageModelRow[];
+  trend: ModelUsageTrend;
+};
+const dashboardSnapshotCache = new Map<string, DashboardSnapshot>();
+const DASHBOARD_SNAPSHOT_CACHE_LIMIT = 12;
+
+function rememberDashboardSnapshot(key: string, snapshot: DashboardSnapshot) {
+  dashboardSnapshotCache.delete(key);
+  dashboardSnapshotCache.set(key, snapshot);
+  while (dashboardSnapshotCache.size > DASHBOARD_SNAPSHOT_CACHE_LIMIT) {
+    const oldest = dashboardSnapshotCache.keys().next().value;
+    if (oldest === undefined) break;
+    dashboardSnapshotCache.delete(oldest);
+  }
+}
+
+// 缓存键不能含 buildQuery 的 `to`（精确到当前秒，每次进页都不同）：
+// 预设范围按「范围模式 + 筛选」记；自定义范围再带上用户选的起止。
+function dashboardSnapshotKey(rangeMode: RangeMode, range: [Dayjs, Dayjs], provider: ProviderFilter, model: string) {
+  const span = rangeMode === 'custom' ? `${formatDateTime(range[0])}~${formatDateTime(range[1])}` : rangeMode;
+  return `${span}|${provider}|${model.trim()}`;
+}
+
 function renderCacheTokens(row: {
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
@@ -161,19 +190,22 @@ export default function ModelUsage() {
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => buildRangeByMode('today'));
   const [provider, setProvider] = useState<ProviderFilter>('');
   const [model, setModel] = useState('');
-  const [modelOptions, setModelOptions] = useState<ModelUsageModelRow[]>([]);
-  const [stats, setStats] = useState<ModelUsageStats>(emptyStats);
-  const [models, setModels] = useState<ModelUsageModelRow[]>([]);
-  const [sessions, setSessions] = useState<ModelUsageSessionRow[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelUsageModelRow[]>(() => (
+    dashboardSnapshotCache.get(dashboardSnapshotKey('today', buildRangeByMode('today'), '', ''))?.modelOptions || []
+  ));
+  const initialSnapshot = dashboardSnapshotCache.get(dashboardSnapshotKey('today', buildRangeByMode('today'), '', ''));
+  const [stats, setStats] = useState<ModelUsageStats>(initialSnapshot?.stats || emptyStats);
+  const [models, setModels] = useState<ModelUsageModelRow[]>(initialSnapshot?.models || []);
+  const [sessions, setSessions] = useState<ModelUsageSessionRow[]>(initialSnapshot?.sessions || []);
   const [requestUsage, setRequestUsage] = useState<ModelUsageRequestRow[]>([]);
   const [requestErrors, setRequestErrors] = useState<ModelUsageRequestRow[]>([]);
   const [requestDetailsRequested, setRequestDetailsRequested] = useState(false);
   const [requestDetailsLoading, setRequestDetailsLoading] = useState(false);
   const [requestDetailsError, setRequestDetailsError] = useState('');
-  const [trend, setTrend] = useState<ModelUsageTrend>(emptyTrend);
+  const [trend, setTrend] = useState<ModelUsageTrend>(initialSnapshot?.trend || emptyTrend);
   const [accountsByRef, setAccountsByRef] = useState<Map<string, Account>>(() => new Map());
   const [loading, setLoading] = useState(false);
-  const [hasDashboardSnapshot, setHasDashboardSnapshot] = useState(false);
+  const [hasDashboardSnapshot, setHasDashboardSnapshot] = useState(Boolean(initialSnapshot));
   const [dashboardLoadError, setDashboardLoadError] = useState('');
   const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -194,6 +226,9 @@ export default function ModelUsage() {
   const requestDetailsSequenceRef = useRef(0);
 
   const query = useMemo(() => buildQuery(range, rangeMode, provider, model, 50), [model, provider, range, rangeMode]);
+  const snapshotKey = useMemo(() => dashboardSnapshotKey(rangeMode, range, provider, model), [model, provider, range, rangeMode]);
+  const snapshotKeyRef = useRef(snapshotKey);
+  snapshotKeyRef.current = snapshotKey;
 
   const beginUsageTransition = useCallback((quiet = false) => {
     quietNextLoadRef.current = quiet;
@@ -215,13 +250,21 @@ export default function ModelUsage() {
     if (!job.id || job.id !== activeDashboardQueryIdRef.current) return;
     setDashboardQueryJob(job);
     if (job.dashboard) {
-      setStats(job.dashboard.stats || emptyStats);
-      setModels(job.dashboard.models || []);
-      setSessions(job.dashboard.sessions || []);
-      setModelOptions(job.dashboard.modelOptions || []);
-      setTrend(job.dashboard.trend || emptyTrend);
+      const snapshot: DashboardSnapshot = {
+        stats: job.dashboard.stats || emptyStats,
+        models: job.dashboard.models || [],
+        sessions: job.dashboard.sessions || [],
+        modelOptions: job.dashboard.modelOptions || [],
+        trend: job.dashboard.trend || emptyTrend
+      };
+      setStats(snapshot.stats);
+      setModels(snapshot.models);
+      setSessions(snapshot.sessions);
+      setModelOptions(snapshot.modelOptions);
+      setTrend(snapshot.trend);
       setHasDashboardSnapshot(true);
       setDashboardLoadError('');
+      if (!isDashboardQueryActive(job)) rememberDashboardSnapshot(snapshotKeyRef.current, snapshot);
     }
     if (isDashboardQueryActive(job)) {
       setLoading(true);
@@ -313,10 +356,19 @@ export default function ModelUsage() {
   }, [applyDashboardQueryJob, cancelDashboardQuery]);
 
   useEffect(() => {
+    const cached = dashboardSnapshotCache.get(snapshotKey);
+    if (cached) {
+      setStats(cached.stats);
+      setModels(cached.models);
+      setSessions(cached.sessions);
+      setModelOptions(cached.modelOptions);
+      setTrend(cached.trend);
+      setHasDashboardSnapshot(true);
+    }
     const quiet = quietNextLoadRef.current;
     quietNextLoadRef.current = true;
     loadUsage(query, { quiet });
-  }, [loadUsage, query, refreshRevision]);
+  }, [loadUsage, query, refreshRevision, snapshotKey]);
 
   useEffect(() => {
     requestDetailsSequenceRef.current += 1;

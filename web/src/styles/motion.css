@@ -308,6 +308,58 @@ details[open]::details-content {
   transition-timing-function: var(--ease-standard);
 }
 
+/* 弹层「点了没反应」的空窗：rc-motion 进场要走 prepare → start → active 三步，每步
+ * nextFrame(delay=2) 等两帧，keyframes 只在 *-active 才挂上；前两步元素已在 DOM 里，
+ * 却被 *-appear/*-enter 的 opacity:0 起始态压着，不可见约 4~6 帧（60Hz 下 70~100ms，
+ * 卡顿时更长；实测下拉/选择/弹窗点击后 250~330ms 才开始出现）。
+ * 这里只把**下拉类**弹层（dropdown / select / cascader / picker / auto-complete，
+ * 都用 slide-up / slide-down）在 prepare/start 阶段就挂上同一组进场 keyframes，
+ * 点击即开始播放。时长、曲线、终态与 antd 原动画一致，离场不改。 */
+.ant-slide-up-appear.ant-slide-up-appear-prepare,
+.ant-slide-up-appear.ant-slide-up-appear-start,
+.ant-slide-up-enter.ant-slide-up-enter-prepare,
+.ant-slide-up-enter.ant-slide-up-enter-start {
+  animation-name: aih-popup-slide-in;
+  animation-duration: var(--motion-base);
+  animation-timing-function: var(--ease-standard);
+  animation-fill-mode: both;
+  animation-play-state: running;
+  transform-origin: 0% 0%;
+}
+.ant-slide-down-appear.ant-slide-down-appear-prepare,
+.ant-slide-down-appear.ant-slide-down-appear-start,
+.ant-slide-down-enter.ant-slide-down-enter-prepare,
+.ant-slide-down-enter.ant-slide-down-enter-start {
+  animation-name: aih-popup-slide-in;
+  animation-duration: var(--motion-base);
+  animation-timing-function: var(--ease-standard);
+  animation-fill-mode: both;
+  animation-play-state: running;
+  transform-origin: 0% 100%;
+}
+@keyframes aih-popup-slide-in {
+  from { opacity: 0; transform: scaleY(0.92); }
+  to { opacity: 1; transform: scaleY(1); }
+}
+/* 弹窗（Modal，antd 用 zoom）同理：prepare/start 期间就开始淡入。起始缩放从 0.2 收到
+ * 0.96 —— 0.2 放大的「从一个点长出来」在 HUD 风格里过重，也是首帧显得慢的原因之一。 */
+.ant-zoom-appear.ant-zoom-appear-prepare,
+.ant-zoom-appear.ant-zoom-appear-start,
+.ant-zoom-enter.ant-zoom-enter-prepare,
+.ant-zoom-enter.ant-zoom-enter-start,
+.ant-zoom-appear.ant-zoom-appear-active,
+.ant-zoom-enter.ant-zoom-enter-active {
+  animation-name: aih-popup-zoom-in;
+  animation-duration: var(--motion-slow);
+  animation-timing-function: var(--ease-emphasized, var(--ease-standard));
+  animation-fill-mode: both;
+  animation-play-state: running;
+}
+@keyframes aih-popup-zoom-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* 进度条：宽度变化平滑 */
 .ant-progress-bg,
 .ant-progress-success-bg {

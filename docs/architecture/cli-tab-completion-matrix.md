@@ -36,6 +36,13 @@
 | `aih export|import <TAB>` | 无（交回 shell） | — | 文件路径由 shell 自己补 |
 | `aih <cli> -- <TAB>` | 无 | — | 逃生门之后是原生 CLI 的世界 |
 
+## aih resume（选择器）
+
+`aih resume [关键词]` 列出最近的会话：当前目录 ◆、provider、标题、相对时间、id，
+第二行是**最后一句用户输入**（尾部 256KB 分块回溯，最多 4MB；JSONL 类 provider 有效，
+DB 类回退到项目路径）。输入编号 / id 前缀 / 标题片段都能选，回车取第一条，q 退出。
+`--json` 输出同样的结构（含 preview），给脚本用。
+
 ## 帮助文本
 
 `aih --help` / `aih <cli> --help` 按用途分组（常用 / 会话 / 账号 / 网关与远程 / 终端与福利 / 进阶 /

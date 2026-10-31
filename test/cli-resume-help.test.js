@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 
 const {
   dedupeSessions,
+  extractUserText,
   filterSessions,
   formatRelativeTime,
   formatResumeList,
@@ -107,4 +108,31 @@ test('provider 帮助：启动/会话/账号分组，且包含 resume/fork 提�
   assert.match(output, /aih codex resume/);
   assert.match(output, /aih codex fork/);
   assert.match(output, /aih codex set-mobile/);
+});
+
+test('预览：各家记录格式都能取出用户输入', () => {
+  // codebuddy 家族
+  assert.equal(
+    extractUserText({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '把链路补完整' }] }),
+    '把链路补完整'
+  );
+  // claude
+  assert.equal(
+    extractUserText({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '检查 server' }] } }),
+    '检查 server'
+  );
+  // codex event_msg
+  assert.equal(
+    extractUserText({ type: 'event_msg', payload: { type: 'user_message', message: '跑一下测试' } }),
+    '跑一下测试'
+  );
+  // assistant / 无内容 → 空
+  assert.equal(extractUserText({ role: 'assistant', content: 'hi' }), '');
+  assert.equal(extractUserText(null), '');
+});
+
+test('列表渲染优先用预览（有预览就不显示路径）', () => {
+  const text = formatResumeList([session('aaa-1', 'codex', { preview: '继续做预览行' })], '/repo');
+  assert.match(text, /继续做预览行/);
+  assert.doesNotMatch(text, /\/repo/);
 });

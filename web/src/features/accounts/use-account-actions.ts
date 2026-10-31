@@ -198,6 +198,7 @@ export function useAccountActions({
   const { setAccounts, requestAccountsSnapshotUpdate, stageAccountRemoval } = snapshot;
   const { clearModelAccountRefreshing, loadModelCatalog } = modelCatalog;
   const onOpenAppResponseRef = React.useRef(onOpenAppResponse);
+  const cliPickerGeneration = React.useRef(0);
   onOpenAppResponseRef.current = onOpenAppResponse;
 
   const [updatingStatusAccountRefs, setUpdatingStatusAccountRefs] = React.useState<Record<string, boolean>>({});
@@ -1705,6 +1706,10 @@ export function useAccountActions({
   };
 
   const chooseCliTerminal = async (record: Account) => {
+    // Clicking account A then B: if A's three requests settle last, A's harnesses and
+    // models would overwrite B's picker (and pin A as the target). Only the latest
+    // request may write picker state.
+    const generation = ++cliPickerGeneration.current;
     setCliTerminalsLoading(true);
     try {
       // 三个数据面并行读取：终端、已安装的 harness、身份账号的模型目录。
@@ -1714,6 +1719,7 @@ export function useAccountActions({
         accountsAPI.listAppEntries(),
         modelsAPI.listCatalog()
       ]);
+      if (generation !== cliPickerGeneration.current) return;
       if (!serverRuntime && terminalsResult.status !== 'fulfilled') throw terminalsResult.reason;
       const response = terminalsResult.status === 'fulfilled' ? terminalsResult.value : { terminals: [], homeDir: '' };
       const available = serverRuntime ? [] : (response.terminals || []).filter((terminal) => terminal.installed);
@@ -1779,9 +1785,9 @@ export function useAccountActions({
       setSelectedCliModel(defaultHarness !== record.provider ? (defaultModel || models[0] || '') : '');
       setCliPickerAccount(record);
     } catch (error: any) {
-      message.error(error?.response?.data?.message || '读取可用终端失败');
+      if (generation === cliPickerGeneration.current) message.error(error?.response?.data?.message || '读取可用终端失败');
     } finally {
-      setCliTerminalsLoading(false);
+      if (generation === cliPickerGeneration.current) setCliTerminalsLoading(false);
     }
   };
 

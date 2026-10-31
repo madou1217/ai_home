@@ -44,6 +44,8 @@ interface Props {
   readonly onFreshNativeSessionBound: (nativeSessionId: string) => void;
   readonly onNativeSessionBound?: (nativeSessionId: string) => void;
   readonly onBranchSession?: (session: Session) => void;
+  /** Chat 快速窗口：接收「引用到 Chat」事件（选中文字 / 文件）作为附件。 */
+  readonly acceptsReferences?: boolean;
   readonly onProjectsRefresh: (selection: { readonly sessionId?: string; readonly provider?: Provider; readonly projectPath?: string }) => Promise<void>;
 }
 
@@ -157,6 +159,7 @@ export default function SessionWorkspace(props: Props) {
             uploadAttachments={(attachments) => props.controller.uploadAttachments(attachments)}
             terminalOpen={false}
             onToggleTerminal={() => void openProjectTerminal(props.runtimeTarget.projectPath)}
+            acceptsReferences={props.acceptsReferences === true}
           />
         </fieldset>
       </div>

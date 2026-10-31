@@ -13,6 +13,11 @@ import { useComposerController } from './use-composer-controller';
 import styles from './session-runtime.module.css';
 import { CHAT_ATTACHMENT_ACCEPT, buildPastedTextFile, shouldConvertLargePaste } from '@/components/chat/attachment-files';
 import { ensureLargePasteSettingsLoaded } from './use-large-paste-settings';
+import {
+  CHAT_MINI_WINDOW_REFERENCE_EVENT,
+  takePendingChatReferences,
+  type ChatReferenceDetail,
+} from '@/components/chat/chat-global-shortcuts';
 
 export interface ComposerProps {
   readonly workspaceMode?: 'chat' | 'work';
@@ -33,6 +38,8 @@ export interface ComposerProps {
   readonly uploadAttachments: SessionRuntimeController['uploadAttachments'];
   readonly terminalOpen: boolean;
   readonly onToggleTerminal: () => void;
+  /** 快速窗口：把「引用到 Chat」的文字 / 文件作为附件收进来。 */
+  readonly acceptsReferences?: boolean;
 }
 
 export default function Composer(props: ComposerProps) {
@@ -67,6 +74,30 @@ export default function Composer(props: ComposerProps) {
     }
     void controller.addAttachments([buildPastedTextFile(text)]);
   }, [controller]);
+  // 「万物皆可引用」：文字一律走附件（与大段粘贴同一条路径，可切割读取），文件原样附上。
+  const acceptReference = useCallback((detail: ChatReferenceDetail | null | undefined): void => {
+    if (!detail) return;
+    const files = [...(detail.files || [])];
+    const text = String(detail.text || '').trim();
+    if (text) files.push(buildPastedTextFile(text));
+    if (files.length === 0) return;
+    if (!controller.canAttach) {
+      message.error('当前投递方式不支持附件');
+      return;
+    }
+    void controller.addAttachments(files);
+  }, [controller]);
+  useEffect(() => {
+    if (!props.acceptsReferences) return undefined;
+    // 窗口打开前排队的引用在挂载时一次收下；之后到达的引用由事件直接投递。
+    takePendingChatReferences().forEach(acceptReference);
+    const onReference = (event: Event): void => {
+      takePendingChatReferences();
+      acceptReference((event as CustomEvent<ChatReferenceDetail>).detail);
+    };
+    window.addEventListener(CHAT_MINI_WINDOW_REFERENCE_EVENT, onReference);
+    return () => window.removeEventListener(CHAT_MINI_WINDOW_REFERENCE_EVENT, onReference);
+  }, [acceptReference, props.acceptsReferences]);
   return (
     <div className={styles.composerStack}>
       {props.workspaceMode === 'chat' ? (

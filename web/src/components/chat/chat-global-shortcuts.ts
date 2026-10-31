@@ -8,6 +8,34 @@
  */
 export const IN_SESSION_SEARCH_OPEN_EVENT = 'aih:in-session-search-open';
 export const CHAT_MINI_WINDOW_OPEN_EVENT = 'aih:chat-mini-window-open';
+/**
+ * 「万物皆可引用」的统一入口：任何页面把选中文字 / 文件交给 Chat 快速窗口。
+ * detail = { text?: string; files?: File[]; source?: string }。文字一律作为附件进入
+ * （与大段粘贴同一条附件路径），不直接塞进输入框。
+ */
+export const CHAT_MINI_WINDOW_REFERENCE_EVENT = 'aih:chat-mini-window-reference';
+
+export interface ChatReferenceDetail {
+  readonly text?: string;
+  readonly files?: readonly File[];
+  readonly source?: string;
+}
+
+// 快速窗口的 Composer 只在窗口打开、会话就绪后才挂载；在那之前到达的引用先排队，
+// 挂载时一次取走。有上限，避免没人消费时无界增长。
+const pendingReferences: ChatReferenceDetail[] = [];
+const MAX_PENDING_REFERENCES = 8;
+
+export function referenceInChatMiniWindow(detail: ChatReferenceDetail): void {
+  if (typeof window === 'undefined') return;
+  pendingReferences.push(detail);
+  if (pendingReferences.length > MAX_PENDING_REFERENCES) pendingReferences.shift();
+  window.dispatchEvent(new CustomEvent<ChatReferenceDetail>(CHAT_MINI_WINDOW_REFERENCE_EVENT, { detail }));
+}
+
+export function takePendingChatReferences(): ChatReferenceDetail[] {
+  return pendingReferences.splice(0, pendingReferences.length);
+}
 
 export type ChatGlobalShortcut = 'command-palette' | 'shortcuts-help' | 'in-session-search' | 'chat-mini-window';
 

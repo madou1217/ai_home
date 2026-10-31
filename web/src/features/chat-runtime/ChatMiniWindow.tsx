@@ -15,6 +15,7 @@ import { sessionsAPI } from '@/services/api';
 import { readPersistedSelection } from '@/pages/chat-selection-state.js';
 import {
   CHAT_MINI_WINDOW_OPEN_EVENT,
+  CHAT_MINI_WINDOW_REFERENCE_EVENT,
   resolveChatGlobalShortcut,
 } from '@/components/chat/chat-global-shortcuts';
 import { chatAccountIdentity } from '@/components/chat/aih-server-account';
@@ -158,9 +159,12 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
       openWindow();
     };
     window.addEventListener(CHAT_MINI_WINDOW_OPEN_EVENT, openWindow);
+    // 引用即打开：附件由窗口内的 Composer 接收（它挂载后会补收打开前到达的引用）。
+    window.addEventListener(CHAT_MINI_WINDOW_REFERENCE_EVENT, openWindow);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener(CHAT_MINI_WINDOW_OPEN_EVENT, openWindow);
+      window.removeEventListener(CHAT_MINI_WINDOW_REFERENCE_EVENT, openWindow);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [loadSession]);
@@ -410,6 +414,9 @@ function MiniRuntimeReady({
         onApprovalModeChange={setApprovalMode}
         onFreshNativeSessionBound={() => {}}
         onBranchSession={() => {}}
+        // The mini window is always a chat-mode session; project refresh only runs in work mode.
+        onProjectsRefresh={() => Promise.resolve()}
+        acceptsReferences
       />
     </>
   );

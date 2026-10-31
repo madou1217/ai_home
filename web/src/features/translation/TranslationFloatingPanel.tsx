@@ -13,7 +13,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Select, message } from 'antd';
-import { CheckOutlined, CloseOutlined, CopyOutlined, PushpinOutlined, PushpinFilled, ReloadOutlined, TranslationOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, CommentOutlined, CopyOutlined, PushpinOutlined, PushpinFilled, ReloadOutlined, TranslationOutlined } from '@ant-design/icons';
+import { referenceInChatMiniWindow } from '@/components/chat/chat-global-shortcuts';
 import type { TranslationLanguage } from '@/types';
 import { translationAPI } from '@/services/api';
 import {
@@ -461,6 +462,23 @@ export default function TranslationFloatingPanel() {
           onClick={() => void openPanel(trigger.text, trigger.rect)}
         >
           <TranslationOutlined className={styles.triggerGlyph} />
+        </button>
+      ) : null}
+      {trigger && triggerAnchor ? (
+        <button
+          type="button"
+          data-translation-floating
+          className={`${styles.trigger} ${styles.triggerSecondary}`}
+          style={{ left: triggerAnchor.left + TRIGGER_SIZE + 6, top: triggerAnchor.top }}
+          title="引用到 Chat 快速窗口"
+          aria-label="引用选中内容到 Chat"
+          onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+          onClick={() => {
+            referenceInChatMiniWindow({ text: trigger.text, source: 'webui-selection' });
+            setTrigger(null);
+          }}
+        >
+          <CommentOutlined className={styles.triggerGlyph} />
         </button>
       ) : null}
 

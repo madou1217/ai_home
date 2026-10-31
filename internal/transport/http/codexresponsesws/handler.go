@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
@@ -95,6 +96,8 @@ type Dependencies struct {
 	// Rules 可选：账号自定义上游错误规则求值端口。为 nil 表示 Go 未承接该能力，
 	// 分类完全由内置观察器决定（与不接入规则时逐字节一致）。
 	Rules configured.Rules
+	// Routes 可选：每轮选号成功后的路由观测（终端标题的当前账号 / 模型帧）。
+	Routes RouteObserver
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
@@ -107,6 +110,7 @@ type Handler struct {
 	routeMisses    RouteMissReporter
 	clock          func() time.Time
 	rules          configured.Rules
+	routes         RouteObserver
 	sessions       *sessionRegistry
 	// sessionAccounts 记住每个 Codex 会话上次由哪个账号服务，换号时剥离旧账号的加密推理。
 	sessionAccounts *sessionAccounts
@@ -140,6 +144,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		routeMisses:     dependencies.RouteMisses,
 		clock:           dependencies.Clock,
 		rules:           dependencies.Rules,
+		routes:          dependencies.Routes,
 		sessions:        newSessionRegistry(),
 		sessionAccounts: newSessionAccounts(),
 	}, nil
@@ -267,6 +272,7 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	handler.observeRoute(request.Header.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
 	if previous, found := handler.sessionAccounts.Swap(
 		strings.TrimSpace(request.Header.Get("Session-Id")),
 		selection.AccountRef(),
@@ -348,6 +354,14 @@ func (handler *Handler) ServeHTTP(
 		strings.TrimSpace(request.Header.Get("X-Account-Ref")),
 		strings.TrimSpace(request.Header.Get("Session-Id")),
 	)
+}
+
+// observeRoute 把本轮选号交给可选的路由观测端口；会话键为空或未接入时什么都不做。
+func (handler *Handler) observeRoute(sessionKey string, accountRef accountcore.AccountRef, model string) {
+	if handler.routes == nil || strings.TrimSpace(sessionKey) == "" {
+		return
+	}
+	handler.routes.ObserveRoute(strings.TrimSpace(sessionKey), accountRef.String(), model)
 }
 
 // available 防止零值或关闭后的 Handler 接受新连接。
@@ -464,6 +478,7 @@ func (handler *Handler) switchModel(
 		writeWebSocketError(session.Client(), http.StatusInternalServerError, "invalid_runtime_route", "账号运行态路由无效")
 		return nil, false
 	}
+	handler.observeRoute(clientHeader.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
 	if previous, found := handler.sessionAccounts.Swap(sessionID, selection.AccountRef(), handler.clock()); found && previous != selection.AccountRef() {
 		session.stripForeignReasoning = true
 		frame = stripForeignReasoning(frame)

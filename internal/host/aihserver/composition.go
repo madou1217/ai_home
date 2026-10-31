@@ -254,6 +254,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		codexVersions,
 		agyModelWires,
 		modelModalities,
+		codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
 	)
 	if err != nil {
 		_ = codexVersions.Close()
@@ -294,6 +295,8 @@ func newHandlers(
 	codexVersions *clientversion.Resolver,
 	agyModelWires *agycodeassist.ModelWireStore,
 	modelModalities *modelsdev.Index,
+	// routeObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
+	routeObserver codexresponsesws.RouteObserver,
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
@@ -1057,6 +1060,7 @@ func newHandlers(
 			RouteMisses:            routeMissRefresh,
 			Clock:                  time.Now,
 			Rules:                  upstreamRuleEvaluator,
+			Routes:                 routeObserver,
 		},
 	)
 	if err != nil {

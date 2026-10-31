@@ -109,3 +109,69 @@ test('库损坏 / 不存在：只丢该来源，不影响其它账号', { skip }
   assert.equal(result.failed.length, 2);
   pool.closeAll();
 }));
+
+// ---------------------------------------------------------------------------
+// 回归基准：只用**结构性断言 + 同进程相对比较**，不写绝对耗时阈值。
+// 绝对毫秒数在不同机器/负载下会抖，写死就会变成 flaky test；能稳定守住的是：
+//   - 缓存命中时不再逐库查询（queries 不涨、cacheHits 涨）；
+//   - 连接池上限默认高于常见账号数（否则 LRU 抖动，实测会慢 3~9 倍）；
+//   - 同一份数据下，池的热路径不慢于"分批 ATTACH + UNION ALL"。
+// 绝对数字由 scripts/bench-session-db-pool.js 输出，进 docs/verification 记录趋势。
+// ---------------------------------------------------------------------------
+
+function attachBatchMs(sources, limit, iterations) {
+  const { DatabaseSync } = require('node:sqlite');
+  const run = () => {
+    const master = new DatabaseSync(':memory:');
+    const rows = [];
+    for (let start = 0; start < sources.length; start += 10) {
+      const batch = sources.slice(start, start + 10);
+      const aliases = batch.map((source, index) => {
+        const alias = 'a' + index;
+        master.exec("ATTACH DATABASE '" + source.dbPath.replace(/'/g, "''") + "' AS " + alias);
+        return alias;
+      });
+      const sql = aliases
+        .map((alias) => 'SELECT * FROM (SELECT session_id, started_at FROM ' + alias + '.sessions ORDER BY started_at DESC LIMIT ' + limit + ')')
+        .join(' UNION ALL ');
+      rows.push(...master.prepare(sql).all());
+      for (const alias of aliases) master.exec('DETACH DATABASE ' + alias);
+    }
+    master.close();
+    rows.sort((left, right) => Number(right.started_at) - Number(left.started_at));
+    return rows.length;
+  };
+  run();
+  const startedAt = process.hrtime.bigint();
+  for (let index = 0; index < iterations; index += 1) run();
+  return Number(process.hrtime.bigint() - startedAt) / 1e6 / iterations;
+}
+
+test('回归基准：缓存命中不重复查询，热路径不慢于分批 ATTACH', { skip }, (t) => withRoot(t, (root) => {
+  const sources = [];
+  for (let account = 0; account < 100; account += 1) {
+    const dbPath = buildDb(root, 'bench' + account, Array.from({ length: 100 }, (_, index) => ({
+      id: '17920502488' + String(account).padStart(2, '0') + '_' + String(index).padStart(3, '0'),
+      startedAt: 1_700_000_000_000 + account * 1000 + index
+    })));
+    sources.push({ id: 'bench' + account, dbPath });
+  }
+
+  const pool = createSessionDbPool({ fs, path, DatabaseSync });
+  pool.querySessionList({ sources, limit: 50 });            // 冷启动：建连接 + 填缓存
+  const before = pool.stats();
+  const warmStartedAt = process.hrtime.bigint();
+  for (let index = 0; index < 5; index += 1) pool.querySessionList({ sources, limit: 50 });
+  const poolMs = Number(process.hrtime.bigint() - warmStartedAt) / 1e6 / 5;
+  const after = pool.stats();
+
+  // 结构性断言：库没变就不该再逐库查询。
+  assert.equal(after.queries, before.queries);
+  assert.equal(after.cacheHits - before.cacheHits, 500);
+
+  const attachMs = attachBatchMs(sources, 50, 3);
+  console.log(`[dbpool-bench] pool ${poolMs.toFixed(2)} ms vs attach ${attachMs.toFixed(2)} ms (100 账号)`);
+  // 留 1.5x 余量吸收机器抖动；真正的性能结论看 docs/verification。
+  assert.ok(poolMs < attachMs * 1.5, `pool ${poolMs.toFixed(2)}ms 明显慢于 attach ${attachMs.toFixed(2)}ms`);
+  pool.closeAll();
+}));

@@ -12,6 +12,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   let reader = SelectionReader()
   let panel = TranslationPanel(emit: emit)
   let chatPanel = ChatPanel(emit: emit)
+  // ⌘⌥C / 「AIH Chat 选中内容」打开的是 WebUI chat/work 的快捷唤起壳；旧的原生
+  // ChatPanel 仅在拿不到本机 server 地址时兜底。
+  let quickChat = QuickChatWindow()
+  var quickChatAvailable = false
   lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
     guard let self = self else { return }
     emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": message])
@@ -33,6 +37,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // background launch. Give the hidden helper a discoverable window entry.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if fullApp { panel.openSettings() }
+    else if quickChatAvailable { quickChat.show() }
     else { chatPanel.openFromShortcut() }
     return true
   }
@@ -137,7 +142,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication])
       },
       ShortcutDescriptor(id: "chat", label: "Chat", shortcut: chat, enabled: chatEnabled) { [weak self] in
-        self?.chatPanel.openFromShortcut()
+        guard let self else { return }
+        if self.quickChatAvailable { self.quickChat.toggle() } else { self.chatPanel.openFromShortcut() }
       }
     ])
   }
@@ -276,7 +282,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       return
     }
     DispatchQueue.main.async { [weak self] in
-      self?.chatPanel.openFromService(text: raw)
+      guard let self else { return }
+      if self.quickChatAvailable { self.quickChat.reference(text: raw, source: "macos-service") }
+      else { self.chatPanel.openFromService(text: raw) }
     }
   }
 
@@ -292,6 +300,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     case "configure":
       panel.configure(event)
       chatPanel.configure(event)
+      let quickOrigin = event["quickChatOrigin"] as? String ?? ""
+      quickChatAvailable = !quickOrigin.isEmpty
+      quickChat.configure(origin: quickOrigin, managementKey: event["quickChatKey"] as? String ?? "")
       registerShortcuts(
         translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
         chat: event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut,

@@ -14,6 +14,11 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
   // The selection trigger is an offer, not a window: it retires itself if ignored, so a
   // stale icon never lingers over unrelated content.
   private var triggerIdleTimer: Timer?
+  // Recent translations for this run only. Kept in memory on purpose: selected text can
+  // be anything the user had on screen, so it is never written to disk by the helper.
+  private struct HistoryEntry { let source: String; let output: String; let target: String }
+  private var history: [HistoryEntry] = []
+  private let maxHistory = 20
   private let triggerIdleSeconds: TimeInterval = 4
   private var selectedModel = ""
   private var selectedProvider = ""
@@ -55,6 +60,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
     content.modelPicker.action = #selector(commitModel)
     content.settingsButton.target = self
     content.settingsButton.action = #selector(openSettings)
+    content.historyButton.target = self
+    content.historyButton.action = #selector(showHistory(_:))
     content.pin.target = self
     content.pin.action = #selector(togglePinned)
     content.settingsHandler = { [weak self] event in self?.emit(event) }
@@ -342,6 +349,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
       content.setPhase(.stopped)
     case "done":
       if let text = event["text"] as? String, !text.isEmpty { output = text; content.setOutput(text) }
+      recordHistory()
       finish()
       content.setPhase(.done)
       content.setReplacementAvailable(replacementElement != nil)
@@ -454,6 +462,56 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
       requestIntent()
     }
   }
+  private func recordHistory() {
+    let source = selected.trimmingCharacters(in: .whitespacesAndNewlines)
+    let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !source.isEmpty, !result.isEmpty, !sameLanguageResult else { return }
+    history.removeAll { $0.source == source && $0.target == target }
+    history.insert(HistoryEntry(source: source, output: result, target: target), at: 0)
+    if history.count > maxHistory { history.removeLast(history.count - maxHistory) }
+  }
+
+  @objc func showHistory(_ sender: NSButton) {
+    let menu = NSMenu()
+    if history.isEmpty {
+      let empty = NSMenuItem(title: "还没有翻译记录", action: nil, keyEquivalent: "")
+      empty.isEnabled = false
+      menu.addItem(empty)
+    }
+    for (index, entry) in history.enumerated() {
+      let title = entry.source.replacingOccurrences(of: "\n", with: " ")
+      let item = NSMenuItem(title: title.count > 48 ? String(title.prefix(48)) + "…" : title, action: #selector(restoreHistory(_:)), keyEquivalent: "")
+      item.target = self
+      item.tag = index
+      item.toolTip = entry.output
+      menu.addItem(item)
+    }
+    if !history.isEmpty {
+      menu.addItem(.separator())
+      let clear = NSMenuItem(title: "清空记录", action: #selector(clearHistory), keyEquivalent: "")
+      clear.target = self
+      menu.addItem(clear)
+    }
+    menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+  }
+
+  @objc private func restoreHistory(_ item: NSMenuItem) {
+    guard history.indices.contains(item.tag) else { return }
+    let entry = history[item.tag]
+    emit(["type": "cancel"])
+    requestID = ""
+    selected = entry.source
+    output = entry.output
+    selectTarget(entry.target)
+    replacementElement = nil
+    content.begin(entry.source)
+    content.setOutput(entry.output)
+    content.setPhase(.done)
+    content.setReplacementAvailable(false)
+  }
+
+  @objc private func clearHistory() { history.removeAll() }
+
   @objc func openSettings() {
     content.showSettings()
   }

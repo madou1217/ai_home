@@ -9,6 +9,7 @@ final class TranslationPanelContent {
   let targetMenu = NSPopUpButton()
   let pin = NSButton(title: "", target: nil, action: nil)
   let settingsButton = NSButton(title: "", target: nil, action: nil)
+  let historyButton = NSButton(title: "", target: nil, action: nil)
   let modelPicker = NSComboBox()
   let stop = NSButton(title: "停止", target: nil, action: nil)
   let copy = NSButton(title: "复制", target: nil, action: nil)
@@ -69,7 +70,7 @@ final class TranslationPanelContent {
     targetMenu.setContentHuggingPriority(.defaultLow, for: .horizontal)
     targetMenu.toolTip = "选择译文目标语言"
     pin.setButtonType(.toggle)
-    for button in [pin, settingsButton] {
+    for button in [pin, historyButton, settingsButton] {
       button.bezelStyle = .recessed
       button.isBordered = false
       button.imagePosition = .imageOnly
@@ -80,9 +81,12 @@ final class TranslationPanelContent {
     settingsButton.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "翻译设置")
     settingsButton.toolTip = "翻译设置 · ⌘,"
     settingsButton.setAccessibilityLabel("翻译设置")
+    historyButton.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "最近翻译")
+    historyButton.toolTip = "最近翻译（仅本次运行，保存在内存中）"
+    historyButton.setAccessibilityLabel("最近翻译")
     let headerSpacer = NSView()
     headerSpacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
-    let controls = NSStackView(views: [heading, targetMenu, headerSpacer, pin, settingsButton])
+    let controls = NSStackView(views: [heading, targetMenu, headerSpacer, historyButton, pin, settingsButton])
     controls.spacing = 8
     spinner.style = .spinning
     spinner.controlSize = .small

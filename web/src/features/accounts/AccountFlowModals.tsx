@@ -14,12 +14,8 @@ import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
-import { IMPORT_FILE_ACCEPT, PASTE_TEMPLATES } from '@/features/accounts/account-import-export';
-import type { ImportUploadKind } from '@/features/accounts/account-import-export';
+import { IMPORT_FILE_ACCEPT } from '@/features/accounts/account-import-export';
 import type { AccountActions } from '@/features/accounts/use-account-actions';
-
-// 目录上传依赖非标准属性 webkitdirectory（Chromium / Safari / Firefox 均支持）。
-const FOLDER_INPUT_PROPS = { webkitdirectory: '', directory: '' } as Record<string, string>;
 
 /**
  * 账号页的业务弹窗栈（添加 / 授权进度 / 编辑凭据 / 导入 / 应用安装 / CLI 终端选择 /
@@ -41,11 +37,11 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
     quotaResetHistory
   } = actions.modals;
 
-  const onPickFiles = (kind: ImportUploadKind) => (event: ChangeEvent<HTMLInputElement>) => {
+  const onPickFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
-    // 清空 value，允许再次选择同一个文件 / 文件夹。
+    // 清空 value，允许再次选择同一个文件。
     event.target.value = '';
-    void importFlow.onFilesSelected(kind, files);
+    void importFlow.onFilesSelected(files);
   };
 
   const installRecord = appInstall.prompt?.record;
@@ -59,14 +55,10 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         canSubmit={importFlow.canSubmit}
         mode={importFlow.mode}
         fileName={importFlow.fileName}
-        pasteTemplate={importFlow.pasteTemplate}
         importText={importFlow.importText}
         onModeChange={importFlow.onModeChange}
-        onTemplateChange={importFlow.onTemplateChange}
         onTextChange={importFlow.onTextChange}
         onPickFile={() => importFlow.inputRef.current?.click()}
-        onPickFolder={() => importFlow.folderInputRef.current?.click()}
-        onFillTemplate={() => importFlow.onTextChange(PASTE_TEMPLATES[importFlow.pasteTemplate].value)}
         onSubmit={importFlow.onSubmit}
         onCancel={importFlow.onCancel}
       />
@@ -76,15 +68,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         accept={IMPORT_FILE_ACCEPT}
         multiple
         hidden
-        onChange={onPickFiles('file')}
-      />
-      <input
-        ref={importFlow.folderInputRef}
-        type="file"
-        multiple
-        hidden
-        {...FOLDER_INPUT_PROPS}
-        onChange={onPickFiles('folder')}
+        onChange={onPickFiles}
       />
 
       <EditAccountModal

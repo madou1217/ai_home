@@ -81,17 +81,15 @@ aih codex terminal-icon --install     # 为当前终端安装 provider 图标
 ## 导入导出
 
 ```bash
-aih export accounts.zip                       # 全部账号
-aih export accounts.zip codex claude:1,2      # 选择器：provider 或 provider:ID 列表
-aih export cliproxyapi [all|codex|gemini|claude] [file.json]
-aih export sub2api [provider] [file.json]
-aih export antigravity [file.json]            # 只导出 agy OAuth 账号
+# 格式：aih 本机原生账号 JSON（与 WebUI「导出 / 导入」同一份），所有 provider 无损往返。
+# 文件含明文凭据（token / API key），请妥善保管。
+aih export                                    # 全部账号 → aih-accounts-<date>.json
+aih export codex claude:1,2 mine.json         # 选择器：provider、provider:编号、或 acct_… 账号引用
+aih codex export 3                            # 单个账号（aih codex 3）
 
-aih import accounts.zip
-aih import ./sub2api-data.json --dry-run      # 只解析统计，不写入
-aih import codex ./some-folder                # 限定 provider
-aih import cliproxyapi                        # 读本机 CLIProxyAPI 的配置与 auth-dir
-aih import ./many-zips -j 8 -f nested/folder  # 并发预算；从 zip 内指定子目录开始
+aih import mine.json                          # 同一身份更新原账号，新身份新增，重复导入不会多出账号
+aih import mine.json --dry-run                # 只解析统计，不写入
+aih codex import mine.json                    # 只导入文件里的 codex 账号
 
 aih codebuddy detect                          # 扫描本机已登录账号（CodeBuddy / WorkBuddy 家族与 cline）并入库
 ```

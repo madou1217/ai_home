@@ -29,9 +29,6 @@ function importTextFromPayload(payload: AccountImportPayload): {
   text: string;
   providerHint: string;
 } {
-  if ('mode' in payload && payload.mode === 'cliproxyapi') {
-    return unsupportedAccountOperation('account_management_cliproxy_import_unsupported');
-  }
   const providerHint = String(payload.provider || '').trim();
   if ('content' in payload) return { text: String(payload.content || ''), providerHint };
   if (payload.uploadKind === 'folder' || payload.files.length !== 1) {

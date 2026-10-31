@@ -1,8 +1,7 @@
-import { Button, Input, Modal, Segmented, Select } from 'antd';
-import { InlineNote } from '@/components/ui/InlineNote';
-import { PASTE_TEMPLATES } from '@/features/accounts/account-import-export';
-import type { ImportMode, PasteTemplate } from '@/features/accounts/account-import-export';
-import './account-overlays.css';
+import { Input, Modal, Segmented } from 'antd';
+import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import type { ImportMode } from './account-import-export';
 
 interface ImportAccountsModalProps {
   open: boolean;
@@ -10,36 +9,31 @@ interface ImportAccountsModalProps {
   canSubmit: boolean;
   mode: ImportMode;
   fileName: string;
-  pasteTemplate: PasteTemplate;
   importText: string;
   onModeChange: (mode: ImportMode) => void;
-  onTemplateChange: (template: PasteTemplate) => void;
-  onTextChange: (text: string) => void;
   onPickFile: () => void;
-  onPickFolder: () => void;
-  onFillTemplate: () => void;
+  onTextChange: (value: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
 }
 
+/**
+ * 导入账号：只接受 aih 自己导出的账号文件（WebUI「导出」或 `aih export` 生成），
+ * 同一身份更新原账号、新身份新增，重复导入不会多出账号。
+ */
 export function ImportAccountsModal({
   open,
   importing,
   canSubmit,
   mode,
   fileName,
-  pasteTemplate,
   importText,
   onModeChange,
-  onTemplateChange,
-  onTextChange,
   onPickFile,
-  onPickFolder,
-  onFillTemplate,
+  onTextChange,
   onSubmit,
   onCancel
 }: ImportAccountsModalProps) {
-  const activePasteTemplate = PASTE_TEMPLATES[pasteTemplate];
   return (
     <Modal
       title="导入账号"
@@ -57,9 +51,7 @@ export function ImportAccountsModal({
           onChange={(value) => onModeChange(value as ImportMode)}
           options={[
             { label: '文件', value: 'file' },
-            { label: '文件夹', value: 'folder' },
-            { label: '粘贴', value: 'text' },
-            { label: 'CLIProxyAPI', value: 'cliproxyapi' }
+            { label: '粘贴', value: 'text' }
           ]}
         />
         {mode === 'file' ? (
@@ -67,73 +59,29 @@ export function ImportAccountsModal({
             key="file"
             className="aih-fade-in"
             tone={fileName ? 'success' : 'info'}
-            description="支持迁移 JSON、Antigravity Manager、JSONL 和 zip 导入包。"
+            description="选择 aih 导出的账号文件（可多选）。已有的账号会更新凭据，不会重复添加。"
             action={
               <Button size="small" onClick={onPickFile}>
                 {fileName ? '重新选择' : '选择文件'}
               </Button>
             }
           >
-            {fileName ? `已选择 ${fileName}` : '选择 JSON / JSONL / ZIP 文件'}
-          </InlineNote>
-        ) : null}
-        {mode === 'folder' ? (
-          <InlineNote
-            key="folder"
-            className="aih-fade-in"
-            tone={fileName ? 'success' : 'info'}
-            description="支持包含 provider 目录、账号目录、JSON 文件或嵌套 ZIP 的文件夹，上传后由统一导入器自动发现。"
-            action={
-              <Button size="small" onClick={onPickFolder}>
-                {fileName ? '重新选择' : '选择文件夹'}
-              </Button>
-            }
-          >
-            {fileName ? `已选择 ${fileName}` : '选择账号文件夹'}
+            {fileName ? `已选择 ${fileName}` : '选择 .json 账号文件'}
           </InlineNote>
         ) : null}
         {mode === 'text' ? (
           <div key="text" className="accounts-import-paste aih-fade-in">
-            <Select
-              value={pasteTemplate}
-              onChange={(value) => onTemplateChange(value as PasteTemplate)}
-              options={Object.entries(PASTE_TEMPLATES).map(([value, template]) => ({
-                value,
-                label: template.label
-              }))}
-            />
-            <InlineNote
-              tone="info"
-              description={activePasteTemplate.description}
-              action={
-                <Button size="small" onClick={onFillTemplate}>
-                  填入模板
-                </Button>
-              }
-            >
-              {activePasteTemplate.label}
+            <InlineNote tone="info" description="粘贴导出文件的完整内容，或单个账号的 JSON。">
+              粘贴 aih 账号 JSON
             </InlineNote>
-            <div className="accounts-import-template">
-              <div className="hud-label">格式模板</div>
-              <pre>{activePasteTemplate.value}</pre>
-            </div>
             <Input.TextArea
-              rows={8}
-              placeholder="粘贴真实 JSON / JSONL 数据，或先填入模板再替换占位凭据"
+              id="account-import-text"
+              rows={10}
+              placeholder={'{\n  "kind": "aih-accounts",\n  "version": 1,\n  "accounts": [ … ]\n}'}
               value={importText}
               onChange={(e) => onTextChange(e.target.value)}
             />
           </div>
-        ) : null}
-        {mode === 'cliproxyapi' ? (
-          <InlineNote
-            key="cliproxyapi"
-            className="aih-fade-in"
-            tone="info"
-            description="读取本机 CLIProxyAPI 配置和账号凭据，导入到 AI Home 账号池；无需上传文件。"
-          >
-            从 CLIProxyAPI 配置导入
-          </InlineNote>
         ) : null}
       </div>
     </Modal>

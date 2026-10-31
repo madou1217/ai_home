@@ -307,6 +307,12 @@ export default function MobileAccounts(_props: MobilePageProps) {
       });
     }
     list.push({
+      key: 'export-account',
+      label: '导出',
+      icon: <ExportOutlined />,
+      onAction: () => { void actions.handleExport({ accountRef: record.accountRef }); }
+    });
+    list.push({
       key: 'delete',
       label: '删除',
       icon: <DeleteOutlined />,
@@ -499,7 +505,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
         open={exportOpen}
         exporting={actions.exportingAccounts}
         onClose={() => setExportOpen(false)}
-        onExport={(format) => { void actions.handleExport(format); }}
+        onExport={(scope) => { void actions.handleExport(scope); }}
       />
       <AccountFlowModals actions={actions} />
       <AccountEgressModal

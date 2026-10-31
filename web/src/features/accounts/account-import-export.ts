@@ -1,62 +1,25 @@
-import type { AccountExportFormat } from '@/services/api';
 import type { AccountImportJob, AccountImportResponse } from '@/types';
 
 // 账号导入导出 —— 常量与进度格式化纯函数模块。
 // 从 Accounts.tsx 抽取：导入模式/粘贴模板/导出动作集中于此，
 // 组件只负责弹窗交互与触发导入导出。
 
-export type ImportMode = 'file' | 'folder' | 'text' | 'cliproxyapi';
-export type PasteTemplate = 'antigravity' | 'jsonl';
+export type ImportMode = 'file' | 'text';
 
-export const EXPORT_ACTIONS: Array<{ format: AccountExportFormat; label: string; description: string }> = [
+/** 导出范围：全部 / 某个 provider / 单个账号。格式只有一种：aih 本机原生账号文件。 */
+export interface AccountExportScope {
+  readonly provider?: string;
+  readonly accountRef?: string;
+}
+
+export const EXPORT_ACTIONS: Array<{ key: string; label: string; description: string; scope: AccountExportScope }> = [
   {
-    format: 'antigravity',
-    label: '导出为 Antigravity Manager JSON',
-    description: '导出 AGY OAuth 账号，适配 Antigravity Manager。'
-  },
-  {
-    format: 'cliproxyapi',
-    label: '导出为 CLIProxyAPI 数据',
-    description: '下载 JSON 数据文件，不写入本机 CLIProxyAPI 配置。'
+    key: 'all',
+    label: '导出全部账号',
+    description: '下载 aih 账号文件（含明文凭据），可在另一台 aih 的「导入」或 aih import 中使用。',
+    scope: {}
   }
 ];
-
-export const PASTE_TEMPLATES: Record<PasteTemplate, { label: string; description: string; value: string }> = {
-  antigravity: {
-    label: 'Antigravity Manager',
-    description: '粘贴 Antigravity Manager JSON，账号会导入到 AGY provider。',
-    value: JSON.stringify({
-      accounts: [
-        {
-          email: 'user@example.com',
-          refresh_token: 'agy-refresh-token'
-        }
-      ]
-    }, null, 2)
-  },
-  jsonl: {
-    label: 'JSONL / 单账号',
-    description: '每行一个账号 JSON，适合手工合并多个来源。',
-    value: [
-      JSON.stringify({
-        provider: 'codex',
-        config: {
-          OPENAI_API_KEY: 'sk-...',
-          OPENAI_BASE_URL: 'https://api.openai.com/v1'
-        }
-      }),
-      JSON.stringify({
-        provider: 'gemini',
-        auth: {
-          access_token: 'access-token',
-          refresh_token: 'refresh-token',
-          client_id: 'client-id',
-          email: 'user@example.com'
-        }
-      })
-    ].join('\n')
-  }
-};
 
 export function formatImportResult(result: AccountImportResponse) {
   const summary = result.summary;
@@ -95,8 +58,8 @@ export function formatImportJobProgress(job: AccountImportJob | null) {
 
 export type ImportUploadKind = 'file' | 'folder';
 
-/** 文件选择器的 accept：与导入弹窗文案一致（JSON / JSONL / ZIP，粘贴模板也允许 .txt）。 */
-export const IMPORT_FILE_ACCEPT = '.json,.jsonl,.txt,.zip,application/json,application/zip';
+/** 文件选择器的 accept：aih 账号文件是 JSON。 */
+export const IMPORT_FILE_ACCEPT = '.json,application/json';
 
 interface ImportFileLike {
   name: string;

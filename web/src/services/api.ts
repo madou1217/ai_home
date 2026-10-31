@@ -206,7 +206,11 @@ export function isSessionRequestCancelled(error: unknown) {
     || maybeError?.message === 'session_request_superseded';
 }
 
-export type AccountExportFormat = 'antigravity' | 'cliproxyapi';
+/** 导出范围（provider / 单个账号）；不传 = 全部。 */
+export interface AccountExportScope {
+  provider?: string;
+  accountRef?: string;
+}
 export type KimiDesktopSessionStatus =
   | 'STATUS_PENDING'
   | 'STATUS_SCANNED'
@@ -237,8 +241,7 @@ export interface AccountImportUploadFile {
 
 export type AccountImportPayload =
   | { content: string; provider?: string }
-  | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string }
-  | { mode: 'cliproxyapi'; provider?: string };
+  | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string };
 
 // 认证来源链（本机导入能力）——服务端 lib/account/auth-sources.js 的解析结果形状。
 export interface ProviderAuthSourceSummary {
@@ -961,16 +964,19 @@ export const accountsAPI = {
   },
 
   // 导出账号
-  export: async (format: AccountExportFormat = 'cliproxyapi') => {
+  export: async (scope: AccountExportScope = {}) => {
     const response = await api.get('/webui/accounts/export', {
-      params: { format },
+      params: {
+        ...(scope.provider ? { provider: scope.provider } : {}),
+        ...(scope.accountRef ? { accountRef: scope.accountRef } : {})
+      },
       responseType: 'blob'
     });
     const contentType = (response.headers['content-type'] as string) || 'application/json';
     const url = URL.createObjectURL(new Blob([response.data], { type: contentType }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = response.headers['content-disposition']?.match(/filename="([^"]+)"/)?.[1] || 'accounts.json';
+    a.download = response.headers['content-disposition']?.match(/filename="([^"]+)"/)?.[1] || 'aih-accounts.json';
     a.click();
     URL.revokeObjectURL(url);
     return undefined;

@@ -9,7 +9,7 @@ import {
   waitForAppInstallJob,
   resolveActiveServer
 } from '@/services/api';
-import type { AccountExportFormat, AccountImportUploadFile, PluginAccountLoginJob, ProviderAuthMethodSources, ProviderAuthSourceSummary, TokenConsumedEvent } from '@/services/api';
+import type { AccountExportScope, AccountImportUploadFile, PluginAccountLoginJob, ProviderAuthMethodSources, ProviderAuthSourceSummary, TokenConsumedEvent } from '@/services/api';
 import type {
   Account,
   AccountAddJob,
@@ -45,7 +45,7 @@ import {
   formatImportResult,
   readImportUploadFiles
 } from '@/features/accounts/account-import-export';
-import type { ImportMode, ImportUploadKind, PasteTemplate } from '@/features/accounts/account-import-export';
+import type { ImportMode } from '@/features/accounts/account-import-export';
 import { getAccountLaunchBlockReason } from '@/features/accounts/account-view-model';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import type {
@@ -234,7 +234,6 @@ export function useAccountActions({
   const [routingRulesSubmitting, setRoutingRulesSubmitting] = React.useState(false);
   const [importModalVisible, setImportModalVisible] = React.useState(false);
   const [importMode, setImportMode] = React.useState<ImportMode>('file');
-  const [pasteTemplate, setPasteTemplate] = React.useState<PasteTemplate>('jsonl');
   const [importText, setImportText] = React.useState('');
   const [importFileName, setImportFileName] = React.useState('');
   const [importFiles, setImportFiles] = React.useState<AccountImportUploadFile[]>([]);
@@ -261,7 +260,6 @@ export function useAccountActions({
   const [cliPickerDefaultModel, setCliPickerDefaultModel] = React.useState('');
   const [selectedCliModel, setSelectedCliModel] = React.useState('');
   const importInputRef = React.useRef<HTMLInputElement>(null);
-  const importFolderInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
   const completedImportJobKeysRef = React.useRef<Set<string>>(new Set());
   const completedAuthJobKeysRef = React.useRef<Set<string>>(new Set());
@@ -357,11 +355,9 @@ export function useAccountActions({
   }, []);
 
   const hasActiveImportJob = Boolean(importJobId);
-  const canSubmitImport = !hasActiveImportJob && (importMode === 'cliproxyapi'
-    ? true
-    : importMode === 'text'
-      ? Boolean(importText.trim())
-      : importFiles.length > 0);
+  const canSubmitImport = !hasActiveImportJob && (importMode === 'text'
+    ? Boolean(importText.trim())
+    : importFiles.length > 0);
 
   const resetImportState = React.useCallback(() => {
     setImportText('');
@@ -379,11 +375,12 @@ export function useAccountActions({
     resetImportState();
   }, [importingAccounts, resetImportState]);
 
-  const handleExport = async (format: AccountExportFormat = 'cliproxyapi') => {
+  /** 导出：不传 scope = 全部账号；scope.accountRef = 单个账号；scope.provider = 某个 provider。 */
+  const handleExport = async (scope: AccountExportScope = {}) => {
     setExportingAccounts(true);
     try {
-      await accountsAPI.export(format);
-      message.success('导出成功');
+      await accountsAPI.export(scope);
+      message.success(scope.accountRef ? '已导出该账号（文件含明文凭据，请妥善保管）' : '导出成功（文件含明文凭据，请妥善保管）');
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '导出失败');
     } finally {
@@ -401,13 +398,13 @@ export function useAccountActions({
     setImportFiles([]);
   };
 
-  const handleImportFilesSelected = async (kind: ImportUploadKind, fileList: FileList | File[] | null) => {
+  const handleImportFilesSelected = async (fileList: FileList | File[] | null) => {
     const files = fileList ? Array.from(fileList) : [];
     if (files.length === 0) return;
     try {
       const uploads = await readImportUploadFiles(files);
       setImportFiles(uploads);
-      setImportFileName(describeImportSelection(files, kind));
+      setImportFileName(describeImportSelection(files, 'file'));
     } catch (error: any) {
       setImportFiles([]);
       setImportFileName('');
@@ -422,11 +419,9 @@ export function useAccountActions({
     }
     setImportingAccounts(true);
     try {
-      const payload = importMode === 'cliproxyapi'
-        ? { mode: 'cliproxyapi' as const }
-        : importMode === 'file' || importMode === 'folder'
-          ? { mode: 'upload' as const, uploadKind: importMode, files: importFiles }
-          : { content: importText };
+      const payload = importMode === 'file'
+        ? { mode: 'upload' as const, uploadKind: 'file' as const, files: importFiles }
+        : { content: importText };
       const result = await accountsAPI.import(payload);
       if (result.jobId) {
         setImportJobId(result.jobId);
@@ -1982,12 +1977,9 @@ export function useAccountActions({
         canSubmit: canSubmitImport,
         mode: importMode,
         fileName: importFileName,
-        pasteTemplate,
         importText,
         inputRef: importInputRef,
-        folderInputRef: importFolderInputRef,
         onModeChange: handleImportModeChange,
-        onTemplateChange: setPasteTemplate,
         onTextChange: setImportText,
         onFilesSelected: handleImportFilesSelected,
         onSubmit: handleImportSubmit,

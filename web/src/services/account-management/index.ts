@@ -27,7 +27,7 @@ export type {
 export { createActiveAccountManagementClient } from './active-client.ts';
 export { AccountManagementFacade, accountsAPI } from './facade.ts';
 export type {
-  AccountExportFormat,
+  AccountExportScope,
   AccountImportPayload,
   AccountImportUploadFile,
   AccountManagementFacadeOptions,

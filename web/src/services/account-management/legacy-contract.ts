@@ -7,7 +7,10 @@ import type {
   AccountsListResponse
 } from '../../types/index.ts';
 
-export type AccountExportFormat = 'antigravity' | 'cliproxyapi';
+export interface AccountExportScope {
+  provider?: string;
+  accountRef?: string;
+}
 
 export interface AccountImportUploadFile {
   name: string;
@@ -23,8 +26,7 @@ export type AccountImportPayload =
       uploadKind?: 'file' | 'folder';
       files: AccountImportUploadFile[];
       provider?: string;
-    }
-  | { mode: 'cliproxyapi'; provider?: string };
+    };
 
 export interface AccountsWatchHandlers {
   onSnapshot?: (payload: AccountsListResponse) => void;

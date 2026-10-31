@@ -53,7 +53,6 @@ import {
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
-import type { AccountExportFormat } from '@/services/api';
 import type { Account, AccountActivityAction, AccountActivityJob, AccountActivityResult } from '@/types';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { getProviderFamily } from '@/providers/catalog';
@@ -549,6 +548,7 @@ export default function Accounts() {
       menuItems.push({ key: 'edit', label: '编辑配置', icon: <EditOutlined /> });
     }
     menuItems.push({ key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> });
+    menuItems.push({ key: 'export-account', label: '导出此账号', icon: <ExportOutlined /> });
     if (canEditAccountRoutingRules(record)) {
       menuItems.push({ key: 'routing-rules', label: '编辑调度规则', icon: <CodeOutlined /> });
     }
@@ -576,7 +576,7 @@ export default function Accounts() {
   };
 
   const handleAccountMenuClick = (record: Account, key: string) => {
-    if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'config-files') return;
+    if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'config-files' && key !== 'export-account') return;
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
     if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
@@ -604,6 +604,10 @@ export default function Accounts() {
     }
     if (key === 'window-activation') {
       setAccountWindowActivationAccount(record);
+      return;
+    }
+    if (key === 'export-account') {
+      void handleExport({ accountRef: record.accountRef });
       return;
     }
     if (key === 'config-files') {
@@ -973,7 +977,7 @@ export default function Accounts() {
     })
   ];
   const exportMenuItems: MenuProps['items'] = EXPORT_ACTIONS.map((action) => ({
-    key: action.format,
+    key: action.key,
     label: (
       <span className="accounts-export-menu-item">
         <span>{action.label}</span>
@@ -988,7 +992,8 @@ export default function Accounts() {
       selectable={false}
       onClick={({ key }) => {
         setExportMenuOpen(false);
-        handleExport(key as AccountExportFormat);
+        const action = EXPORT_ACTIONS.find((item) => item.key === key);
+        if (action) void handleExport(action.scope);
       }}
     />
   );

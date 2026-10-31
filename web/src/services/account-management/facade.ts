@@ -14,7 +14,7 @@ import { assertAccountRef, assertOAuthJobId } from './decoders.ts';
 import { AccountManagementError, unsupportedAccountOperation } from './errors.ts';
 import { decodeNativeImport } from './import-policy.ts';
 import type {
-  AccountExportFormat,
+  AccountExportScope,
   AccountImportPayload,
   AccountsWatchHandlers
 } from './legacy-contract.ts';
@@ -301,7 +301,7 @@ export class AccountManagementFacade {
     return { ok: true };
   }
 
-  async export(_format: AccountExportFormat): Promise<void> {
+  async export(_scope: AccountExportScope = {}): Promise<void> {
     return unsupportedAccountOperation('account_management_global_export_unsupported');
   }
 
@@ -452,7 +452,7 @@ async function defaultClientFactory(): Promise<AccountManagementClient> {
 }
 
 export type {
-  AccountExportFormat,
+  AccountExportScope,
   AccountImportPayload,
   AccountImportUploadFile,
   AccountsWatchHandlers

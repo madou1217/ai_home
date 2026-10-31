@@ -202,6 +202,8 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     {
         var nextTarget = GetString(root, "target");
         if (!string.IsNullOrWhiteSpace(nextTarget)) target = nextTarget;
+        var nextTheme = GetString(root, "readingTheme");
+        if (!string.IsNullOrWhiteSpace(nextTheme)) window.SetReadingTheme(nextTheme);
         var nextShortcut = GetString(root, "shortcut") ?? GetString(root, "nativeShortcut");
         if (!string.IsNullOrWhiteSpace(nextShortcut)) shortcut = nextShortcut;
         if (!hotKeyWindow.TryRegister(shortcut))
@@ -578,6 +580,7 @@ internal sealed class TranslationWindow : Form
     {
         SetTarget(target);
         output.Clear();
+        ApplyReadingTheme();
         SetStatus("正在准备翻译…");
         var screen = Screen.FromPoint(Cursor.Position).WorkingArea;
         Location = new Point(Math.Max(screen.Left + 12, Math.Min(Cursor.Position.X - Width / 2, screen.Right - Width - 12)), Math.Max(screen.Top + 12, Math.Min(Cursor.Position.Y + 16, screen.Bottom - Height - 12)));
@@ -595,9 +598,37 @@ internal sealed class TranslationWindow : Form
     public void SetOutput(string value)
     {
         output.Text = value;
+        ApplyReadingTheme();
     }
 
     public void SetStatus(string value) => status.Text = value;
+
+    // Same theme ids as the macOS panel and the browser extension (reading-themes.js).
+    // WinForms RichTextBox can express underline and background tint; frame-only
+    // styles stay plain.
+    private string readingTheme = "plain";
+
+    public void SetReadingTheme(string value)
+    {
+        readingTheme = value ?? "plain";
+        ApplyReadingTheme();
+    }
+
+    private void ApplyReadingTheme()
+    {
+        var underline = readingTheme.StartsWith("underline-", StringComparison.Ordinal) || readingTheme == "cyberpunk";
+        output.BackColor = readingTheme switch
+        {
+            "soft" => Color.FromArgb(20, 27, 38),
+            "hud" => Color.FromArgb(10, 30, 38),
+            "cyberpunk" => Color.FromArgb(28, 14, 40),
+            _ => Color.FromArgb(9, 15, 25),
+        };
+        output.SelectAll();
+        output.SelectionFont = new Font(output.Font, underline ? FontStyle.Underline : FontStyle.Regular);
+        output.Select(output.TextLength, 0);
+        output.SelectionFont = new Font(output.Font, underline ? FontStyle.Underline : FontStyle.Regular);
+    }
 }
 
 internal sealed class DesktopEvent

@@ -256,6 +256,43 @@ Authorization: Bearer <zcodejwttoken>
 
 ## 4. WebUI 侧实测（只读 GET）
 
+### 4.0 2026-10-31 复测：7 个账号「全部失败」的真实归因
+
+WebUI 报 `全部 7 个账号失败：zcode_preview_missing_data ×5、zcode_preview_failed ×2`。
+逐账号只读复放（`preview` / `marketing/touch` / `balance` 各一次，串行 1.2s 间隔）后：
+
+| 账号 | preview | 投放 | balance | 真实结论 |
+|---|---|---|---|---|
+| acct_91aa805b… | 200 `{code:0}` 无 data | 0 条 | `zcode-v3-start-plan-1030-wk / active` | **已领到** |
+| acct_9fe1dc… | 200 `{code:0}` 无 data | 0 条 | 同上 | **已领到** |
+| acct_a09b9df4… | 200 `{code:0}` 无 data（上一轮曾 429） | 0 条 | 同上 | **已领到** |
+| acct_ae47a462… | 200 `{code:0}` 无 data | 0 条 | 同上 | **已领到** |
+| 另 3 个 | — | — | — | 本机 shell 解不出 JWT（§4.3 的 HOME 投影限制，非账号故障） |
+
+三条结论，全部有原始报文支撑：
+
+1. **`zcode_preview_missing_data` 不是故障**：preview 恒空（§4.2 的 4 版本 × 2 平台矩阵，
+   2026-10-30 与 2026-10-31 两轮一致）。把它当「不可判定」会让**每一次**正常巡检都变红。
+2. **`zcode_preview_failed:429` 是瞬时限流**：同一账号几分钟后单独复放返回 200；
+   且 429 只影响 preview，投放通道照常可用。它是「没看到」而不是「没领到」。
+3. **投放为空是「已领到」的证据**，不是「没活动」：领取成功后桌面端会
+   `marketing-touch.report` 回执，上游随即撤下横幅（§3.2）。所以
+   「preview 空 + 投放空」在发现侧天然无法区分这两种状态 —— 判读必须看 `balance`。
+
+于是判读链固定为 **preview → 投放 → balance**，由 balance 出最终结论：
+
+| preview | 投放 | balance | 结论 |
+|---|---|---|---|
+| 有 plans | — | — | 可领，按 priority/类型挑一个 |
+| 空 / 缺 data / 429 | 有 `claim_zcode_plan` | — | 可领，`discovery: marketing_touch` |
+| 空 / 缺 data | 空 | 有该套餐 | `already_claimed`（正常结束，定时任务不报警） |
+| 空 / 缺 data | 空 | 有套餐但非所选类型 | `nothing_claimable` + `plan_kind_unavailable:<kind>` |
+| 空 / 缺 data | 空 | 明确无套餐 | `nothing_claimable` |
+| 非 2xx / 网络错误 | 空 | 不可用 | `zcode_preview_failed:<status>`（可重试） |
+
+修复前 7 个账号的「全部失败」= 4 个其实早就领到了 + 3 个采集环境解不出 JWT；
+没有任何一个账号真的需要重新领取。
+
 ### 4.1 全量三通道矩阵（2026-10-30 15:05Z 复测，app_version 3.20.0）
 
 | 账号 | balance | preview | marketing/touch | 判定 |
@@ -332,6 +369,7 @@ WebUI 领取失败是两条独立缺陷叠加：
 | 验证码前置 | 改为「先裸领；只有上游回 3007 才解一次并重试一次」，解不出来按 3007 如实报错 | `96acc06e` |
 | 已领取但未生效的套餐在 WebUI 不可见 | 额度探针产出结构化结论快照（`planGroups` + `account.planNames` + `pendingEffectiveAtMs`），界面显示「套餐未生效 · 10-30 23:00 起可用」 | `96acc06e` |
 | 只有 preview 一条发现通道，preview 恒空就永远「暂无可领」 | 补 marketing/touch 发现通道：preview 空/缺 data 时回落取投放里的 `claim_zcode_plan` plan_id | 本次 |
+| preview 缺 data 被当成故障 | 判读链改为 preview → 投放 → **balance**：preview 缺 data 是常态，空投放由 balance 区分「已领到 / 没活动」，只有三条通道都不可用才报 `zcode_preview_failed` | 本次（§4.0） |
 
 发现通道的实现（`lib/account/activity-claim/zcode-plan.js`）：
 
@@ -341,8 +379,8 @@ WebUI 领取失败是两条独立缺陷叠加：
   只认 `buttons[].action.type === 'claim_zcode_plan'`，取 `action.args.plan_id`；
 - `result.discovery` 记录本次 plan_id 来自 `preview` 还是 `marketing_touch`，
   `result.marketingTouch` 记录投放条数 / 可领数 / 错误，便于排障；
-- preview 缺 data **且**投放也为空时，仍按 `zcode_preview_missing_data` 报错（可重试），
-  不会被误判成「活动没开」。
+- preview 缺 data **且**投放也为空时，不再直接报错：再问一次 `GET /api/v1/zcode-plan/billing/balance`
+  （桌面端同款，`Authorization` + `X-ZCode-App-Version`），由它给出最终结论（§4.0 的判读表）；
 
 线上只读验证（2026-10-30 15:00Z，dryRun 只发 GET，不产生 claim）：
 

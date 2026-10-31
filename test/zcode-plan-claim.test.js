@@ -1,8 +1,8 @@
 'use strict';
 
-// zcode「领臭鸡蛋」的两条关键回归：
-//   1) preview 成功信封但缺 data 必须判错（不是 nothing_claimable）——
-//      2026-10-30 真机：上游对全部账号只回 { code:0, msg:"" }，桌面端却能领取；
+// zcode「领臭鸡蛋」的关键回归：
+//   1) 判读链 preview → 投放 → balance：preview 缺 data 是上游常态（§4.2 矩阵），
+//      空投放要靠 balance 区分「已领到 / 没活动」，三条都不可用才判可重试错误；
 //   2) claim 不再前置阿里云验证码：先裸领，只有上游回 3007 才解一次并重试。
 // 外加额度探针对「已领取、未生效」套餐的结构化结论（planGroups + 生效时间）。
 
@@ -33,12 +33,17 @@ function createRecord() {
   };
 }
 
-function createHarness({ previewJson, claimJson }) {
+function createHarness({ previewJson, claimJson, balanceJson }) {
   const requests = [];
   let claimCalls = 0;
+  const balanceBody = balanceJson || { code: 0, data: { plans: [], balances: [] } };
   const fetchWithTimeout = async (url, init) => {
     requests.push({ url: String(url), init });
-    const isPreview = String(url).includes('/billing/preview');
+    const target = String(url);
+    if (target.includes('/billing/balance')) {
+      return { ok: true, status: 200, text: async () => JSON.stringify(balanceBody) };
+    }
+    const isPreview = target.includes('/billing/preview');
     const body = isPreview
       ? previewJson
       : (typeof claimJson === 'function' ? claimJson(claimCalls++) : claimJson);
@@ -79,12 +84,86 @@ const PREVIEW_WITH_PLAN = {
   }
 };
 
-test('preview 缺 data 判为错误，而不是「暂无可领」', async () => {
+test('preview 缺 data + 投放空 + balance 明确无套餐 → 暂无可领（不再误报故障）', async () => {
+  // preview 缺 data 是上游常态（协议文档 §4.2 的版本×平台矩阵），不能单独当故障信号；
+  // 判读交给 balance：它明确回答「没有任何套餐」时，空投放就是没活动。
   const harness = createHarness({ previewJson: { code: 0, msg: '' }, claimJson: { code: 0 } });
   const { result } = await runClaim(harness);
-  assert.strictEqual(result.status, 'error');
-  assert.strictEqual(result.error, 'zcode_preview_missing_data');
+  assert.strictEqual(result.status, 'nothing_claimable');
+  assert.strictEqual(result.error, undefined);
+  assert.strictEqual(result.balance.ok, true);
   assert.strictEqual(harness.claimHeaders().length, 0);
+});
+
+test('preview 缺 data + 投放空 + balance 已有该套餐 → 已领取过（不是失败）', async () => {
+  const harness = createHarness({
+    previewJson: { code: 0, msg: '' },
+    claimJson: { code: 0 },
+    balanceJson: {
+      code: 0,
+      data: {
+        server_time: 1793426666,
+        plans: [{
+          user_plan_id: 'upl_1',
+          plan_id: 'zcode-v3-start-plan-1030-wk',
+          name: 'ZCODE WEEKEND BUILD',
+          priority: 101,
+          status: 'active',
+          starts_at: 1793372919,
+          ends_at: 1793581200
+        }],
+        balances: []
+      }
+    }
+  });
+  const { result } = await runClaim(harness, { actionKinds: zcodeKinds() });
+  assert.strictEqual(result.status, 'already_claimed');
+  assert.strictEqual(result.plan.planId, 'zcode-v3-start-plan-1030-wk');
+  assert.strictEqual(result.planKind, 'weekend_build');
+  // 手上持有的套餐不进 result.plans：那是「本次发现的可领项」，进了会让探测把已领的当成可领。
+  assert.deepStrictEqual(result.plans, []);
+  assert.strictEqual(harness.claimHeaders().length, 0);
+});
+
+test('已有套餐但不是要的那一类 → nothing_claimable + 类型不可用', async () => {
+  const harness = createHarness({
+    previewJson: { code: 0, msg: '' },
+    claimJson: { code: 0 },
+    balanceJson: {
+      code: 0,
+      data: {
+        plans: [{ plan_id: 'zcode-v3-start-plan-1030-wk', name: 'ZCODE WEEKEND BUILD', status: 'active' }],
+        balances: []
+      }
+    }
+  });
+  const { result } = await runClaim(harness, {
+    actionKinds: zcodeKinds(),
+    params: { planKind: 'start_plan' }
+  });
+  assert.strictEqual(result.status, 'nothing_claimable');
+  assert.strictEqual(result.planKind, 'start_plan');
+  assert.strictEqual(result.reason, 'plan_kind_unavailable:start_plan');
+  assert.strictEqual(result.heldPlans.length, 1);
+});
+
+test('preview 429 且 balance 也不可用 → 保留可重试错误（真的看不到）', async () => {
+  const requests = [];
+  const fetchWithTimeout = async (url) => {
+    const target = String(url);
+    requests.push(target);
+    if (target.includes('/billing/preview')) {
+      return { ok: false, status: 429, text: async () => JSON.stringify({ code: 429, msg: 'rate limited' }) };
+    }
+    if (target.includes('/marketing/touch')) {
+      return { ok: true, status: 200, text: async () => JSON.stringify({ code: 0, data: { deliveries: [] } }) };
+    }
+    return { ok: false, status: 429, text: async () => JSON.stringify({ code: 429, msg: 'rate limited' }) };
+  };
+  const { result } = await runClaim({ fetchWithTimeout, claimHeaders: () => [] });
+  assert.strictEqual(result.status, 'error');
+  assert.strictEqual(result.error, 'zcode_preview_failed:429');
+  assert.strictEqual(result.balance.ok, false);
 });
 
 test('preview 返回空 plans 才是暂无可领', async () => {
@@ -187,14 +266,16 @@ test('有余额桶时不走未生效结论', () => {
 
 // —— 发现通道：preview 空/缺 data 时，plan_id 来自营销投放（桌面端横幅同源） ——
 
-function createRoutedHarness({ previewJson, touchJson, claimJson }) {
+function createRoutedHarness({ previewJson, touchJson, claimJson, balanceJson }) {
   const requests = [];
+  const balanceBody = balanceJson || { code: 0, data: { plans: [], balances: [] } };
   const fetchWithTimeout = async (url, init) => {
     const target = String(url);
     requests.push({ url: target, init });
     let body = claimJson;
     if (target.includes('/billing/preview')) body = previewJson;
     else if (target.includes('/marketing/touch')) body = touchJson;
+    else if (target.includes('/billing/balance')) body = balanceBody;
     return { ok: true, status: 200, text: async () => JSON.stringify(body) };
   };
   return {

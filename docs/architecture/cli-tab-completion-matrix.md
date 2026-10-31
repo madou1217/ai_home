@@ -48,6 +48,12 @@ DB 类回退到项目路径）。输入编号 / id 前缀 / 标题片段都能�
 `aih --help` / `aih <cli> --help` 按用途分组（常用 / 会话 / 账号 / 网关与远程 / 终端与福利 / 进阶 /
 看细节），列宽按每组最长命令自适应，中文按两列计算宽度（`displayWidth`），避免说明列跳动。
 
+## 覆盖审计
+
+`node scripts/audit-cli-completion.js` 会遍历 command-tree 的每个命令与声明过的子命令层，
+列出候选数量与意外空位（退出码非 0 表示需要补）。`test/cli-completion-coverage.test.js`
+把它变成常规套件的一部分：新增命令忘了配声明会直接失败。
+
 ## 刻意不给候选的地方
 
 - `aih <cli> resume <id> <TAB>`：后面是原生参数，aih 不猜。

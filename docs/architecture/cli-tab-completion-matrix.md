@@ -26,8 +26,12 @@
 | `aih <cli> resume <标题片段>` | 标题命中的会话 id | 会话库 | id 是 UUID，记不住就按标题片段找 |
 | `aih <cli> fork <TAB>` | 同上 | 同上 | |
 | `aih resume <TAB>` | 最近会话 id（标题 · provider · 时间） | 会话库（45s 缓存） | 选中回车即续聊 |
-| `aih ss <TAB>` | 本机持久会话名（pane 名） | 持久会话注册表（静默采集） | 注释：◆ 当前目录 · 项目描述 · ● 运行中；选中即进入 |
+| `aih ss <TAB>` | 本机持久会话名（pane 名） | 持久会话注册表 + 标题缓存 | 注释：◆ 当前目录 · **标题** · provider · 多久前 · ● 运行中；选中即进入 |
 | `aih harness <TAB>` | pi / dsh / dsh-tui | `harness/catalog` 注册表 | 与实际能跑的集合同源 |
+
+> `aih ss <TAB>` 的性能取舍：完整采集要逐 socket 问 tmux（~2s），TAB 用不起，所以读**持久会话注册表**
+> （JSON，~5ms）+ `run/cache/complete/ss-rows.json` 里的标题缓存（真实跑过 `aih ss` 后写入，30 分钟 TTL）。
+> 没有缓存时标题退回项目目录名——按一次 `aih ss --list` 即可把标题补上。
 | `aih harness pi --provider <TAB>` | 所有 provider | 合同（manifest） | |
 | `aih harness pi --provider X --account <TAB>` | X 的账号 id | 账号库 | 也支持 `--account codex:2` 简写 |
 | `aih claim <provider> --account <TAB>` | 该 provider 账号 id | 账号库 | 没有 `--provider` 时就近认 provider |

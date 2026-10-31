@@ -191,8 +191,8 @@ test('会话说明：标题始终存在（没有标题也要有占位与时间�
 test('aih ss <TAB>：pane 名候选，注释带项目描述与运行状态', () => {
   const ctx = context({
     listPersistentSessions: () => ([
-      { name: 'p-ai_home-1-ab', description: '✳ 本地合并取代 AWS', live: true, here: true },
-      { name: 'p-other-2-cd', description: '列出上游接口', live: true, here: false }
+      { name: 'p-ai_home-1-ab', title: '✳ 本地合并取代 AWS', provider: 'claude', createdAt: Date.now() - 90 * 1000, live: true, here: true },
+      { name: 'p-other-2-cd', title: '列出上游接口', provider: 'codex', createdAt: Date.now() - 3 * 3600 * 1000, live: true, here: false }
     ])
   });
   const items = resolveCompletion(['ss', ''], ctx);
@@ -200,6 +200,8 @@ test('aih ss <TAB>：pane 名候选，注释带项目描述与运行状态', () 
   assert.match(items[0].description, /当前目录/);
   assert.match(items[0].description, /本地合并取代 AWS/);
   assert.match(items[0].description, /运行中/);
+  assert.match(items[0].description, /claude/);
+  assert.match(items[1].description, /3 小时前/);
   // 子命令旗标仍然在
   assert.ok(values(items).includes('--list'));
 });
@@ -227,4 +229,28 @@ test('aih ss 前缀匹配：精确 > 唯一前缀 > 唯一描述；多义不猜'
   assert.equal(matchGlobalSessionTarget(rows, '上游').chosen.name, 'p-other-ccc-3');
   assert.equal(matchGlobalSessionTarget(rows, 'nope').reason, 'not-found');
   assert.equal(matchGlobalSessionTarget(rows, '').reason, 'empty');
+});
+
+test('ss 标题缓存：写读一致，过期后失效', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const cache = require('../lib/runtime/persistent-session-cache');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-ss-cache-'));
+  try {
+    cache.write(home, [{ name: 'p-1', title: '✳ 标题', provider: 'claude', path: '/repo', live: true, created: 1 }]);
+    const rows = cache.read(home);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].title, '✳ 标题');
+    assert.equal(rows[0].live, true);
+
+    // 手工把时间戳改旧，模拟过期
+    const file = path.join(home, 'run', 'cache', 'complete', cache.CACHE_FILE);
+    const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+    payload.at = Date.now() - cache.CACHE_TTL_MS - 1000;
+    fs.writeFileSync(file, JSON.stringify(payload));
+    assert.deepEqual(cache.read(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });

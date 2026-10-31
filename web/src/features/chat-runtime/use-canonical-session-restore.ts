@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { AggregatedProject, Session } from '@/types';
-import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
+import type { PersistedChatSelection } from '@/features/chat-workspace/runtime-types';
 import { resolveCanonicalSessionSelection } from './canonical-session-selection';
 import { CanonicalRestoreIntent } from './canonical-restore-intent';
 

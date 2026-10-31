@@ -10,7 +10,7 @@ import {
   IN_SESSION_SEARCH_OPEN_EVENT,
   resolveChatGlobalShortcut,
 } from '@/components/chat/chat-global-shortcuts';
-import ChatWorkspaceLayout from '@/features/legacy-chat/ChatWorkspaceLayout';
+import ChatWorkspaceLayout from '@/features/chat-workspace/ChatWorkspaceLayout';
 import RemoteWorkspacesPanel from '@/features/ssh-hosts/RemoteWorkspacesPanel';
 import { ChatConversationContent, useChatPageState } from './chat-page-state';
 import { readQuickChatLaunch, useQuickChatHost } from './chat-quick-launch';

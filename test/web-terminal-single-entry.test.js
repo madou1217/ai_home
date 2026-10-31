@@ -30,8 +30,8 @@ test('ShellTerminalPanel is rendered only by the global web terminal host', () =
 });
 
 test('chat and work open terminals through the shared global-terminal hook', () => {
+  // legacy MessageArea 已随旧聊天表面删除：chat/work 统一由 canonical SessionWorkspace 承载。
   for (const file of [
-    'components/chat/MessageArea.tsx',
     'features/chat-runtime/SessionWorkspace.tsx',
     'features/project-workbench/ProjectWorkbench.tsx',
   ]) {
@@ -47,6 +47,6 @@ test('the work three-column layout has no terminal pane of its own', () => {
 
 test('each chat surface has exactly one terminal button', () => {
   const count = (file, pattern) => (read(path.join(webSrc, file)).match(pattern) || []).length;
-  assert.equal(count('components/chat/MessageArea.tsx', /openProjectTerminal\(/g), 1);
+  assert.equal(count('features/chat-runtime/SessionWorkspace.tsx', /openProjectTerminal\(/g), 1);
   assert.equal(count('features/chat-runtime/ComposerToolbar.tsx', /onToggleTerminal/g), 1);
 });

@@ -5,7 +5,6 @@ import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';
 import { isSharedNativeSession } from '@/components/chat/session-provider-policy.js';
 import type { AggregatedProject, Session } from '@/types';
-import { sessionsAPI } from '@/services/api';
 import {
   CanonicalChatRuntime,
   resolveCanonicalSessionDirectoryFocus,
@@ -19,19 +18,18 @@ import ProjectWorkbench from '@/features/project-workbench/ProjectWorkbench';
 import type { WorkbenchWorkspaceDescriptor } from '@/features/project-workbench/workbench-types';
 import { resolveActiveServer } from '@/services/webui-auth-transport';
 import { resolveWorkbenchSessions } from '@/features/project-workbench/workbench-sessions';
-import LegacyChatRuntime from '@/features/legacy-chat/LegacyChatRuntime';
-import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
+import ChatRuntimeFallback from '@/features/chat-runtime/ChatRuntimeFallback';
+import { useChatAccountCatalog } from '@/features/chat-workspace/use-chat-account-catalog';
 import { chatAccountIdentity } from '@/components/chat/aih-server-account';
-import { useProjectDialogs } from '@/features/legacy-chat/use-project-dialogs';
-import { useProjectCatalog } from '@/features/legacy-chat/use-project-catalog';
-import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
+import { useProjectDialogs } from '@/features/chat-workspace/use-project-dialogs';
+import { useProjectCatalog } from '@/features/chat-workspace/use-project-catalog';
+import type { PersistedChatSelection } from '@/features/chat-workspace/runtime-types';
 import { carryComposerDraftToNextSession } from '@/features/chat-runtime/composer-draft-store';
 import {
   readPersistedSelection,
 } from './chat-selection-state.js';
 import { shouldMobileDeepLinkEnterChat } from './chat-mobile-deeplink';
 import {
-  mergeRunningSessionKeys,
   useChatSessionRestore,
   useMobileChatNavigation,
   useMobileImmersiveMode,
@@ -85,7 +83,6 @@ export function useChatPageState(mobile: boolean, launchMode?: WorkspaceMode) {
     isSharedNativeSession(projectCatalog.selectedSession),
   );
   const [selectedModel, setSelectedModel] = useState('');
-  const [legacyRunningSessionKeys, setLegacyRunningSessionKeys] = useState<Set<string>>(new Set());
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const cancelCanonicalRestore = useCanonicalSessionRestore({
     initialSelection: initialSelectionRef.current,
@@ -143,9 +140,6 @@ export function useChatPageState(mobile: boolean, launchMode?: WorkspaceMode) {
     setMobileShowChat(true);
   }, [mobile, projectCatalog.selectedSession]);
 
-  const handleLegacyRunningSessionKeysChange = useCallback((keys: Set<string>): void => {
-    setLegacyRunningSessionKeys(keys);
-  }, []);
   const handleSelectProject = useCallback((project: AggregatedProject): void => {
     cancelCanonicalRestore();
     projectCatalog.setSelectedProject(project);
@@ -212,32 +206,6 @@ export function useChatPageState(mobile: boolean, launchMode?: WorkspaceMode) {
     if (mobile) setMobileShowChat(true);
   }, [accountCatalog, cancelCanonicalRestore, mobile, projectCatalog, workspaceMode]);
 
-  const handleForkSession = useCallback(async (messageIndex: number) => {
-    if (!projectCatalog.selectedSession) return;
-    try {
-      const current = projectCatalog.selectedSession;
-      const originalMessages = (await sessionsAPI.getSessionMessages(current.provider, current.id)) || [];
-      const branchMessages = originalMessages.slice(0, messageIndex + 1);
-
-      const newSessionId = `chat-branch-${Date.now()}`;
-      const forkedSession = {
-        id: newSessionId,
-        title: `${current.title || '会话'} (分支)`,
-        provider: current.provider,
-        model: selectedModel || current.model,
-        mode: workspaceMode,
-        projectPath: current.projectPath,
-        updatedAt: Date.now(),
-        messages: branchMessages,
-      };
-
-      projectCatalog.setSelectedSession(forkedSession as any);
-      message.success('已从此消息成功派生新分支会话！');
-    } catch {
-      message.error('分支派生失败');
-    }
-  }, [projectCatalog, selectedModel, workspaceMode]);
-
   const handleProjectRemoved = useCallback((project: AggregatedProject): void => {
     cancelCanonicalRestore();
     if (projectCatalog.selectedProject?.path === project.path) {
@@ -248,10 +216,7 @@ export function useChatPageState(mobile: boolean, launchMode?: WorkspaceMode) {
     }
   }, [cancelCanonicalRestore, projectCatalog]);
 
-  const runningSessionKeys = mergeRunningSessionKeys(
-    legacyRunningSessionKeys,
-    projectCatalog.passiveRunningSessionKeys,
-  );
+  const runningSessionKeys = projectCatalog.passiveRunningSessionKeys;
   const selectedSessionRunning = projectCatalog.selectedSession
     ? isSessionRunning(projectCatalog.selectedSession, runningSessionKeys)
     : false;
@@ -275,11 +240,9 @@ export function useChatPageState(mobile: boolean, launchMode?: WorkspaceMode) {
     approvalMode,
     refreshSessionDirectory,
     refreshProjectList,
-    handleLegacyRunningSessionKeysChange,
     handleSelectProject,
     handleSelectSession,
     handleCreateSession,
-    handleForkSession,
     handleProjectRemoved,
     runningSessionKeys,
     selectedSessionRunning,
@@ -313,10 +276,8 @@ export function ChatConversationContent({
     dialogs,
     approvalMode,
     refreshSessionDirectory,
-    handleLegacyRunningSessionKeysChange,
     handleSelectSession,
     handleCreateSession,
-    handleForkSession,
     runningSessionKeys,
     projectLabel,
   } = state;
@@ -385,38 +346,8 @@ export function ChatConversationContent({
           ? <div className={canonicalFrameClassName}>{canonical}</div>
           : canonical;
       }}
-      legacy={(session) => (
-        <LegacyChatRuntime
-          mobile={mobile}
-          selection={{
-            session,
-            sessionRef: projectCatalog.selectedSessionRef,
-            project: projectCatalog.selectedProject,
-            account: accountCatalog.selectedAccount,
-            model: selectedModel,
-            approvalMode: approvalMode.mode,
-            changeSession: projectCatalog.setSelectedSession,
-            changeProject: projectCatalog.setSelectedProject,
-            changeAccount: accountCatalog.setSelectedAccount,
-            changeModel: setSelectedModel,
-            changeApprovalMode: approvalMode.change,
-          }}
-          catalog={{
-            projects: projectCatalog.projects,
-            accounts: accountCatalog.accounts,
-            accountsRef: accountCatalog.accountsRef,
-            findProjectByPath: projectCatalog.findProjectByPath,
-            refreshProjects: projectCatalog.loadProjects,
-            pauseProjectWatch: projectCatalog.pauseProjectWatch,
-            resumeProjectWatch: projectCatalog.resumeProjectWatch,
-            selectAccountForProvider: accountCatalog.selectAccountForProvider,
-          }}
-          onRunningSessionKeysChange={handleLegacyRunningSessionKeysChange}
-          // 原样搬自 Chat.tsx：LegacyChatRuntime 的 props 尚未声明/转发 onForkSession（既有问题，
-          // 运行时该属性被忽略）。此处不改运行时行为，只保留原有接线并显式标注类型缺口。
-          // @ts-expect-error LegacyChatRuntimeProps 未声明 onForkSession
-          onForkSession={handleForkSession}
-        />
+      fallback={(session) => (
+        <ChatRuntimeFallback session={session} account={accountCatalog.selectedAccount} mobile={mobile} />
       )}
       empty={() => (
         <ChatEmptyState

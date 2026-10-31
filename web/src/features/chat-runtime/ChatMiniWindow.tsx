@@ -19,7 +19,7 @@ import {
   resolveChatGlobalShortcut,
 } from '@/components/chat/chat-global-shortcuts';
 import { chatAccountIdentity } from '@/components/chat/aih-server-account';
-import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
+import { useChatAccountCatalog } from '@/features/chat-workspace/use-chat-account-catalog';
 import {
   resolveChatAccountChange,
   resolveSessionRuntimeTarget,

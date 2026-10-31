@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
 import { providerNames } from '@/components/chat/ProviderIcon';
-import DirectoryPickerDialog from '@/features/legacy-chat/DirectoryPickerDialog';
+import DirectoryPickerDialog from '@/features/chat-workspace/DirectoryPickerDialog';
 import AccountQuotaResetHistoryModal from '@/features/accounts/AccountQuotaResetHistoryModal';
 import { AccountAppInstallModal } from '@/features/accounts/AccountAppInstallModal';
 import { AccountAppInstallResultModal } from '@/features/accounts/AccountAppInstallResultModal';

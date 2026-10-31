@@ -50,7 +50,7 @@ export function discoverEvolutionTasks(): EvolutionTask[] {
       id: 'TASK-HOS2-02',
       category: '架构演进',
       title: 'Chat 会话集成 dsh 2.0 全链路状态机与极速重连',
-      targetFiles: ['web/src/components/chat/MessageArea.tsx', 'web/src/pages/Chat.tsx'],
+      targetFiles: ['web/src/features/chat-runtime/SessionWorkspace.tsx', 'web/src/pages/Chat.tsx'],
       status: 'pending',
       acceptanceCriteria: [
         '细粒度状态订阅，高频流式输入与 60fps 帧率稳固',

@@ -3,7 +3,7 @@ import type { ChatMessage, Session } from '@/types';
 /**
  * 会话数据离线缓存（PWA 离线可读的最小闭环）。
  *
- * 存储选型：仓库没有 IndexedDB 封装，项目既有惯例（features/legacy-chat/chat-cache.ts）
+ * 存储选型：仓库没有 IndexedDB 封装，项目既有惯例（features/chat-workspace/chat-cache.ts）
  * 是 localStorage + 版本号前缀 + TTL；会话消息按「每会话保留尾部 N 条 + 条数上限 +
  * 配额失败逐条淘汰」三重守卫控制容量，因此沿用 localStorage，不引入新依赖。
  *

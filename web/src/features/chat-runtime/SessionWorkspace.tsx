@@ -15,6 +15,7 @@ import BranchParentLink from './BranchParentLink';
 import InteractionDock from './InteractionDock';
 import PlanImplementationPrompt from './PlanImplementationPrompt';
 import QueueDock from './QueueDock';
+import { useAssistantCompletionNotification } from './use-assistant-completion-notification';
 import RuntimeTerminalDock from './RuntimeTerminalDock';
 import TaskDock from '@/components/chat/TaskDock';
 import { sameChecklist, selectActiveChecklist } from './timeline-checklist';
@@ -78,6 +79,7 @@ export default function SessionWorkspace(props: Props) {
     [props.controller],
   );
   useEffect(() => () => freshPlanWorkflow.dispose(), [freshPlanWorkflow]);
+  useTurnCompletionNotification(props.controller.store, props.runtimeTarget.provider as Provider);
   useEffect(() => {
     if (projection.state !== 'idle') return;
     if (props.runtimeTarget.policy.workspaceMode === 'chat') {
@@ -295,4 +297,21 @@ function useSecondClock(startedAt: number | undefined): number {
 function ActiveChecklistDock({ store }: { readonly store: SessionRuntimeController['store'] }) {
   const checklist = useSessionSelector(store, selectActiveChecklist, sameChecklist);
   return checklist ? <TaskDock checklist={checklist} /> : null;
+}
+
+// 桌面完成通知（legacy 同款）：本轮从运行中回到空闲、且页面不在前台时，弹系统通知（首次发送时请求权限）。
+// 只看状态转移，不跟随流式输出的每帧发布。
+function useTurnCompletionNotification(store: SessionRuntimeController['store'], provider: Provider): void {
+  const { requestPermission, notify } = useAssistantCompletionNotification();
+  const state = useSessionSelector(store, (projection) => projection.state);
+  const previous = useRef(state);
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = state;
+    if (state === 'running' || state === 'starting') requestPermission();
+    if (state !== 'idle' || (before !== 'running' && before !== 'completing')) return;
+    const items = store.getSnapshot().items;
+    const last = [...items].reverse().find((item) => item.kind === 'message' && item.detail.role === 'assistant');
+    notify(provider, last?.content || '');
+  }, [notify, provider, requestPermission, state, store]);
 }

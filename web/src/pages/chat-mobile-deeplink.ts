@@ -1,5 +1,5 @@
 import type { Session } from '@/types';
-import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
+import type { PersistedChatSelection } from '@/features/chat-workspace/runtime-types';
 
 /**
  * 移动端深链直达判定：初始选择（URL ?sessionId=… 或持久化恢复）带 sessionId，

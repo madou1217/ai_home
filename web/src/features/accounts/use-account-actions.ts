@@ -59,7 +59,7 @@ import {
   confirmOccupiedAccountDeletion,
   isAccountOccupiedError
 } from '@/features/accounts/account-deletion-confirm';
-import { useServerDirectoryPicker } from '@/features/legacy-chat/use-server-directory-picker';
+import { useServerDirectoryPicker } from '@/features/chat-workspace/use-server-directory-picker';
 import { normalizeUpstreamErrorRulesForForm } from './upstream-error-mapping-presets';
 import { getAuthOptionValue, splitAuthOptionValue } from '@/features/accounts/auth-option-value';
 import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';

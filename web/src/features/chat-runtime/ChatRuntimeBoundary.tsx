@@ -15,7 +15,7 @@ export default function ChatRuntimeBoundary({
   account,
   empty,
   canonical,
-  legacy,
+  fallback,
 }: ChatRuntimeBoundaryProps) {
-  return renderChatRuntimeBranch(session, { empty, canonical, legacy }, account);
+  return renderChatRuntimeBranch(session, { empty, canonical, fallback }, account);
 }

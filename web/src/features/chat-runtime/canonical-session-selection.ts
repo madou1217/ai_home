@@ -1,5 +1,5 @@
 import type { AggregatedProject, Session } from '@/types';
-import { preserveCanonicalSessionIdentity } from '@/features/legacy-chat/project-selection-policy';
+import { preserveCanonicalSessionIdentity } from '@/features/chat-workspace/project-selection-policy';
 
 interface PersistedSessionIdentity {
   readonly projectPath?: string;

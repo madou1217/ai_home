@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction, TouchEvent } from 'react';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import { matchPersistedChatSession, writePersistedSelection } from './chat-selection-state.js';
-import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
+import type { PersistedChatSelection } from '@/features/chat-workspace/runtime-types';
 
 export function useMobileImmersiveMode(mobile: boolean, showChat: boolean): void {
   useEffect(() => {

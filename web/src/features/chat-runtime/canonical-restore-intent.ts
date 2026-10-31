@@ -1,5 +1,5 @@
 import type { AggregatedProject, Session } from '@/types';
-import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
+import type { PersistedChatSelection } from '@/features/chat-workspace/runtime-types';
 import { shouldConsumeCanonicalRestoreIntent } from './canonical-session-selection';
 
 interface RestoreObservation {

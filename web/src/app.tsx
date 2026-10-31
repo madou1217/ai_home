@@ -206,6 +206,15 @@ function renderHudMenuItem(item: HudMenuItem, dom: ReactNode) {
   );
 }
 
+// Chat 快捷唤起的嵌入页（/chat/quick?embed=desktop，桌面原生小窗）：只做 chat/work。
+// 外壳的全局面板与轮询（HUD 遥测、安装任务队列、划词翻译浮层、Chat 浮动小窗、侧栏服务器选择）
+// 都不挂载，也就不再请求 metrics / tasks / app-entries 等与会话无关的接口。
+function isQuickChatEmbed(): boolean {
+  if (typeof window === "undefined") return false;
+  return /\/chat\/quick\/?$/.test(window.location.pathname)
+    && new URLSearchParams(window.location.search).get("embed") === "desktop";
+}
+
 export const layout = ({ initialState }: any) => {
   if (isGoAccountsPreview) {
     return {
@@ -213,6 +222,22 @@ export const layout = ({ initialState }: any) => {
       title: "AI Home Go 账号 Preview",
       menuDataRender: (menuData: any[]) => menuData,
       childrenRender: (children: any) => children,
+      ...initialState?.settings,
+    };
+  }
+  if (isQuickChatEmbed()) {
+    return {
+      logo,
+      title: "AI Home",
+      token: LAYOUT_TOKEN,
+      // 嵌入页：不渲染顶栏、侧栏与菜单（原生壳自己画窗口标题），只留会话区。
+      pure: true,
+      menuRender: false,
+      headerRender: false,
+      footerRender: false,
+      childrenRender: (children: any) => (
+        <AppErrorBoundary>{children}</AppErrorBoundary>
+      ),
       ...initialState?.settings,
     };
   }

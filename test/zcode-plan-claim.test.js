@@ -293,3 +293,77 @@ test('投放去重：同位置只取第一条，popup 通道也能取到 plan_id
   assert.deepStrictEqual(plans.map((p) => p.position), ['banner', 'popup']);
   assert.strictEqual(plans[1].campaignId, 'c3');
 });
+
+// ---- 类型化领取：描述符声明 kinds，handler 只做求值 ----
+
+// kinds 从**真实描述符**取，避免测试与描述符各写一份规则而漂移。
+function zcodeKinds() {
+  const { getProviderCapability } = require('../lib/providers');
+  return getProviderCapability('zcode', 'activity').actions[0].kinds;
+}
+
+const PREVIEW_TWO_PLANS = {
+  code: 0,
+  msg: '',
+  data: {
+    server_time: 1793300000,
+    plans: [
+      {
+        plan_id: 'zcode-v3-start-plan-1030-wk',
+        name: 'ZCODE WEEKEND BUILD',
+        priority: 10,
+        entitlements: []
+      },
+      {
+        plan_id: 'zcode-v3-start-plan-0817',
+        name: 'ZCode Start Plan',
+        priority: 20,
+        entitlements: []
+      }
+    ]
+  }
+};
+
+test('指定类型时按类型领，而不是按 priority 领最高的那个', async () => {
+  const harness = createHarness({ previewJson: PREVIEW_TWO_PLANS, claimJson: { code: 0 } });
+  const { result } = await runClaim(harness, {
+    actionKinds: zcodeKinds(),
+    params: { planKind: 'weekend_build' }
+  });
+  assert.strictEqual(result.status, 'claimed');
+  assert.strictEqual(result.plan.planId, 'zcode-v3-start-plan-1030-wk');
+  assert.strictEqual(result.planKind, 'weekend_build');
+  assert.strictEqual(JSON.parse(harness.claimHeaders()[0].init.body).plan_id, 'zcode-v3-start-plan-1030-wk');
+});
+
+test('指定类型当前没货 → nothing_claimable（不是故障，定时任务不该报警）', async () => {
+  const harness = createHarness({ previewJson: PREVIEW_WITH_PLAN, claimJson: { code: 0 } });
+  const { result } = await runClaim(harness, {
+    actionKinds: zcodeKinds(),
+    params: { planKind: 'start_plan' }
+  });
+  // 只有周末套餐（-wk），但 start_plan 的前缀规则同样匹配它 —— 首个命中即 weekend_build，
+  // 因此 start_plan 这一类当前没有可领项。
+  assert.strictEqual(result.status, 'nothing_claimable');
+  assert.strictEqual(result.planKind, 'start_plan');
+  assert.strictEqual(result.reason, 'plan_kind_unavailable:start_plan');
+  assert.strictEqual(harness.claimHeaders().length, 0);
+});
+
+test('探测（dryRun）回传类型目录与每个 plan 的类型标注', async () => {
+  const harness = createHarness({ previewJson: PREVIEW_TWO_PLANS, claimJson: { code: 0 } });
+  const { result } = await runClaim(harness, { actionKinds: zcodeKinds(), dryRun: true });
+  assert.strictEqual(result.status, 'dry_run');
+  assert.deepStrictEqual(
+    result.plans.map((plan) => [plan.planId, plan.planKind]),
+    [
+      ['zcode-v3-start-plan-1030-wk', 'weekend_build'],
+      ['zcode-v3-start-plan-0817', 'start_plan']
+    ]
+  );
+  assert.deepStrictEqual(
+    result.availableKinds.map((kind) => [kind.id, kind.claimable]),
+    [['weekend_build', true], ['start_plan', true]]
+  );
+  assert.strictEqual(harness.claimHeaders().length, 0);
+});

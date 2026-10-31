@@ -17,6 +17,7 @@ import {
   message
 } from 'antd';
 import {
+  accountsAPI,
   deleteScheduledTask,
   listScheduledTaskRecords,
   listScheduledTasks,
@@ -25,7 +26,13 @@ import {
   saveScheduledTask,
   toggleScheduledTask
 } from '@/services/api';
+import { ActivityParamFields } from '@/features/accounts/ActivityParamFields';
+import { getAccountPrimaryLabel, getAccountSecondaryLabel } from '@/features/accounts/AccountBadges';
 import type {
+  Account,
+  ActivityParamField,
+  ActivityParamOption,
+  ActivityProbeResult,
   ScheduledTask,
   ScheduledTaskEvent,
   ScheduledTaskRecord,
@@ -43,6 +50,8 @@ type EditorState = {
   name: string;
   command: string;
   cwd: string;
+  /** 活动事件的抽象参数（key → 值），语义由服务端描述符声明。 */
+  activityParams: Record<string, unknown>;
   scheduleKind: ScheduledTaskSchedule['kind'];
   at: string;
   weekday: number;
@@ -60,6 +69,7 @@ const EMPTY_EDITOR: EditorState = {
   name: '',
   command: '',
   cwd: '',
+  activityParams: {},
   scheduleKind: 'daily',
   at: '20:00',
   weekday: 1,
@@ -161,6 +171,75 @@ export default function ScheduledTasks() {
     [editor.eventId, events]
   );
 
+  // ---- 活动参数：schema 由事件下发，候选值按需拉（账号来自凭据库、类型来自声明）----
+  const [accountOptions, setAccountOptions] = useState<ActivityParamOption[]>([]);
+  const [paramFields, setParamFields] = useState<ActivityParamField[]>([]);
+  const [probe, setProbe] = useState<ActivityProbeResult | null>(null);
+  const [probing, setProbing] = useState(false);
+
+  const isActivityEvent = selectedEvent?.kind === 'activity';
+
+  // 账号选项只在需要时拉一次：这里是计划任务页，不该为了一个下拉框建立常驻 SSE。
+  useEffect(() => {
+    if (!editor.open || !isActivityEvent || accountOptions.length > 0) return undefined;
+    let cancelled = false;
+    void accountsAPI.list()
+      .then((result) => {
+        if (cancelled) return;
+        const provider = selectedEvent?.provider || '';
+        const options = (result.accounts || [])
+          .filter((account: Account) => !provider || account.provider === provider)
+          .map((account: Account) => ({
+            value: account.accountRef,
+            label: getAccountPrimaryLabel(account),
+            description: getAccountSecondaryLabel(account)
+          }))
+          .filter((option) => option.value);
+        setAccountOptions(options);
+      })
+      .catch(() => { /* 账号列表拉不到时仍可留空 = 全部账号 */ });
+    return () => { cancelled = true; };
+  }, [editor.open, isActivityEvent, accountOptions.length, selectedEvent?.provider]);
+
+  // 参数 schema + 动态选项：服务端按描述符解析；失败时退回事件自带的静态 schema。
+  useEffect(() => {
+    if (!editor.open || !isActivityEvent || !selectedEvent?.provider || !selectedEvent.actionId) {
+      setParamFields([]);
+      return undefined;
+    }
+    let cancelled = false;
+    void accountsAPI.listActivityParamOptions({
+      provider: selectedEvent.provider,
+      actionId: selectedEvent.actionId
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setParamFields(result.ok && result.params.length > 0 ? result.params : (selectedEvent.params || []));
+      })
+      .catch(() => {
+        if (!cancelled) setParamFields(selectedEvent.params || []);
+      });
+    return () => { cancelled = true; };
+  }, [editor.open, isActivityEvent, selectedEvent?.provider, selectedEvent?.actionId, selectedEvent?.params]);
+
+  const handleProbe = useCallback(async () => {
+    if (!selectedEvent?.provider || !selectedEvent.actionId) return;
+    setProbing(true);
+    try {
+      const result = await accountsAPI.probeAccountActivity({
+        providers: [selectedEvent.provider],
+        actionId: selectedEvent.actionId
+      });
+      setProbe(result);
+      if (!result.ok) message.error(`探测失败：${result.error || 'unknown'}`);
+      else if ((result.kinds || []).length === 0) message.info('探测完成：当前没有可领类型');
+    } catch (_error) {
+      message.error('探测失败：请求异常');
+    } finally {
+      setProbing(false);
+    }
+  }, [selectedEvent?.provider, selectedEvent?.actionId]);
+
   // 调度预览（含 cron 的中文解读）：防抖 400ms，避免边打字边打服务端。
   const [preview, setPreview] = useState<{ label: string; nextRunAt: number } | null>(null);
   const [previewError, setPreviewError] = useState('');
@@ -231,6 +310,7 @@ export default function ScheduledTasks() {
 
   const openCreate = () => {
     const first = events.find((event) => event.available !== false) || null;
+    setProbe(null);
     setEditor({
       ...EMPTY_EDITOR,
       open: true,
@@ -241,13 +321,22 @@ export default function ScheduledTasks() {
 
   const openEdit = (task: ScheduledTask) => {
     const schedule = task.schedule || { kind: 'daily', at: '20:00' };
+    const rawParams = task.eventParams || {};
+    // 活动参数整体回填（不再只认 command/cwd）；未知 key 会被服务端 schema 丢掉。
+    const activityParams: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rawParams)) {
+      if (key === 'command' || key === 'cwd') continue;
+      activityParams[key] = value;
+    }
+    setProbe(null);
     setEditor({
       open: true,
       editing: task,
       eventId: task.eventId,
       name: task.name,
-      command: String((task.eventParams || {}).command || ''),
-      cwd: String((task.eventParams || {}).cwd || ''),
+      command: String(rawParams.command || ''),
+      cwd: String(rawParams.cwd || ''),
+      activityParams,
       scheduleKind: schedule.kind,
       at: schedule.at || '20:00',
       weekday: Number(schedule.weekday ?? 1),
@@ -256,6 +345,17 @@ export default function ScheduledTasks() {
       expression: schedule.expression || '0 20 * * *',
       enabled: task.enabled !== false
     });
+  };
+
+  /** 只提交非空值：空数组/空串代表「不限」，服务端与指纹都按「没填」处理。 */
+  const buildActivityEventParams = () => {
+    const params: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(editor.activityParams)) {
+      if (value === undefined || value === null || value === '') continue;
+      if (Array.isArray(value) && value.length === 0) continue;
+      params[key] = value;
+    }
+    return params;
   };
 
   const submitEditor = async () => {
@@ -272,7 +372,9 @@ export default function ScheduledTasks() {
           : { kind: 'daily', at: editor.at };
     const eventParams = selectedEvent?.kind === 'custom'
       ? { command: editor.command.trim(), ...(editor.cwd.trim() ? { cwd: editor.cwd.trim() } : {}) }
-      : {};
+      : selectedEvent?.kind === 'activity'
+        ? buildActivityEventParams()
+        : {};
     const result = await saveScheduledTask({
       ...(editor.editing ? { id: editor.editing.id } : {}),
       name: editor.name.trim() || (selectedEvent ? selectedEvent.label : ''),
@@ -492,9 +594,13 @@ export default function ScheduledTasks() {
               options={eventOptions}
               onChange={(value) => {
                 const event = events.find((item) => item.id === value) || null;
+                // 换事件 = 换参数 schema：清掉旧参数与旧探测结果，避免把 A 事件的
+                // 参数存进 B 事件（服务端会丢弃未知 key，但 UI 不该制造这种静默差异）。
+                setProbe(null);
                 setEditor((prev) => ({
                   ...prev,
                   eventId: value,
+                  activityParams: {},
                   name: prev.editing ? prev.name : (event ? event.label : prev.name)
                 }));
               }}
@@ -527,6 +633,17 @@ export default function ScheduledTasks() {
                 />
               </Form.Item>
             </>
+          ) : null}
+          {selectedEvent?.kind === 'activity' ? (
+            <ActivityParamFields
+              fields={paramFields}
+              value={editor.activityParams}
+              onChange={(next) => setEditor((prev) => ({ ...prev, activityParams: next }))}
+              accountOptions={accountOptions}
+              probe={probe}
+              probing={probing}
+              onProbe={selectedEvent.supportsProbe ? () => void handleProbe() : undefined}
+            />
           ) : null}
           <Form.Item label="周期">
             <Space size={8} wrap>

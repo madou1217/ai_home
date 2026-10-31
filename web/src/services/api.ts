@@ -18,6 +18,8 @@ import type {
   Account,
   AccountActivityJob,
   AccountActivityResult,
+  ActivityParamField,
+  ActivityProbeResult,
   UpstreamErrorRule,
   UpstreamErrorMappingGroup,
   AccountRefreshJob,
@@ -872,6 +874,8 @@ export const accountsAPI = {
   startAccountActivityJob: async (input: {
     providers: string[];
     actionId: string;
+    /** 抽象参数（账号子集 / 类型），由服务端按描述符 schema 归一。 */
+    params?: Record<string, unknown>;
   }): Promise<{
     ok: boolean;
     alreadyRunning?: boolean;
@@ -885,6 +889,34 @@ export const accountsAPI = {
       // 只负责“开始”，真正执行在服务端后台，不需要长超时。
       timeout: 30000
     });
+    return response.data;
+  },
+
+  /**
+   * 只读探测：先发现「有什么可领、是什么类型」。
+   * 服务端逐账号串行打上游，账号多时会比较慢，给足超时。
+   */
+  probeAccountActivity: async (input: {
+    providers: string[];
+    actionId: string;
+  }): Promise<ActivityProbeResult> => {
+    const response = await api.post<ActivityProbeResult>(
+      '/webui/accounts/activity/probe',
+      input,
+      { timeout: 150000 }
+    );
+    return response.data;
+  },
+
+  /** 活动参数的候选值（账号来自凭据库，类型来自描述符声明）。 */
+  listActivityParamOptions: async (input: {
+    provider: string;
+    actionId: string;
+  }): Promise<{ ok: boolean; params: ActivityParamField[]; error?: string }> => {
+    const response = await api.get<{ ok: boolean; params: ActivityParamField[]; error?: string }>(
+      '/webui/accounts/activity/params',
+      { params: input }
+    );
     return response.data;
   },
 

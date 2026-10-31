@@ -218,6 +218,71 @@ export interface AccountActivityAction {
   id: string;
   label: string;
   description?: string;
+  /** 是否支持只读探测（先看清有什么可领，再决定领什么）。 */
+  supportsProbe?: boolean;
+  /** 参数 schema；账号快照不下发，只有计划任务目录带。 */
+  params?: ActivityParamField[];
+}
+
+/** 活动参数的一个候选值（账号 / 类型 / 自定义枚举）。 */
+export interface ActivityParamOption {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+  hint?: string;
+}
+
+/**
+ * 活动参数的**抽象声明**：调度器只认 type，不认识 key 的语义。
+ * `account-refs` 的候选值来自服务端注入的账号端口，`enum` 来自声明或探测。
+ */
+export interface ActivityParamField {
+  key: string;
+  label: string;
+  type: 'account-refs' | 'enum' | 'string' | 'boolean' | string;
+  description?: string;
+  required?: boolean;
+  emptyMeans?: 'all' | 'any';
+  maxItems?: number;
+  options?: ActivityParamOption[];
+  optionsFrom?: 'kinds';
+  /** 候选值来源（params 接口回填）：declared / accounts / freeform / unavailable。 */
+  source?: string;
+  error?: string;
+}
+
+/** 只读探测结果：先发现「是什么类型的鸡蛋」。 */
+export interface ActivityProbeKind {
+  id: string;
+  label: string;
+  description?: string;
+  claimable?: boolean;
+  planIds?: string[];
+}
+
+export interface ActivityProbeResult {
+  ok: boolean;
+  provider?: string;
+  actionId?: string;
+  error?: string;
+  accounts?: Array<{
+    accountRef: string;
+    status: string;
+    error?: string;
+    discovery?: string;
+    plans?: AccountActivityPlan[];
+  }>;
+  plans?: Array<{
+    planId: string;
+    name?: string;
+    planKind?: string;
+    accounts: string[];
+  }>;
+  kinds?: ActivityProbeKind[];
+  summary?: AccountActivitySummary;
+  failures?: AccountActivityFailures;
+  truncated?: number;
 }
 
 export interface AccountActivityPlan {
@@ -2221,6 +2286,9 @@ export interface ScheduledTaskEvent {
   provider?: string;
   actionId?: string;
   available?: boolean;
+  /** 活动事件声明的参数（静态 schema，候选值按需再拉）。 */
+  params?: ActivityParamField[];
+  supportsProbe?: boolean;
 }
 
 export interface ScheduledTask {

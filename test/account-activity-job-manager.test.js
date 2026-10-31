@@ -93,3 +93,30 @@ test('「暂无可领」不是失败：全部 nothing_claimable 时任务算成�
   assert.equal(job.summary.failed, 0);
   assert.equal(job.error, '');
 });
+
+test('参数指纹：同动作不同参数是不同任务，互不复用；无参数仍是历史键', async () => {
+  const { targetKeyOf } = require('../lib/server/account-activity-job-manager');
+  assert.equal(targetKeyOf('trial_plan', ['zcode'], {}), 'trial_plan:zcode');
+  assert.notEqual(
+    targetKeyOf('trial_plan', ['zcode'], { accountRefs: ['a'] }),
+    targetKeyOf('trial_plan', ['zcode'], { accountRefs: ['b'] })
+  );
+
+  const manager = createAccountActivityJobManager();
+  const make = (accountRef, params) => manager.start({
+    providers: ['zcode'],
+    actionId: 'trial_plan',
+    params,
+    targets: targetsOf(accountRef),
+    execute: async () => new Promise((resolve) => {
+      setTimeout(() => resolve({ provider: 'zcode', accountRef, status: 'claimed' }), 5);
+    })
+  });
+  const first = make('a', { accountRefs: ['a'] });
+  const second = make('b', { accountRefs: ['b'] });
+  // 两个任务并行存在（全局串行执行，但不会被 findActive 合并）
+  assert.equal(first.job.id === second.job.id, false);
+  assert.deepEqual(first.job.params, { accountRefs: ['a'] });
+  await waitForTerminal(manager, first.job.id);
+  await waitForTerminal(manager, second.job.id);
+});

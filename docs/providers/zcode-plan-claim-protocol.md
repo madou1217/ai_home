@@ -411,3 +411,25 @@ node /tmp/zcap/collect-preview-evidence.js   # preview/balance 只读对照（�
 node /tmp/zcap/wire-claim.js                 # §3.1 的 wire 复放（claim 用不存在的 plan_id，零状态变更）
 node /tmp/zcap/preview-matrix.js             # §4 的版本 × 平台矩阵（只读 GET）
 ```
+
+## 9. plan 族与「类型」分类（2026-10-31 补充）
+
+「ZCODE WEEKEND BUILD」与「ZCode Start Plan」**不是两个接口或两种活动**，而是同一产品族
+`zcode-v3-start-plan-*` 的**不同实例**：
+
+| plan_id | name | 归属 |
+|---|---|---|
+| `zcode-v3-start-plan-1030-wk` | `ZCODE WEEKEND BUILD` | 周末活动（`-wk` 后缀） |
+| `zcode-v3-start-plan-0817` | （早期试用套餐） | Start Plan 基线 |
+
+判据只能落在 **plan_id** 上：服务端返回的字段只有 `plan_id / name / priority / status /
+starts_at / ends_at / entitlements`，**没有 type**；而营销投放通道（§2.4）**只下发 plan_id、
+没有 name**。所以分类规则写成 `planIdSuffix: '-wk'` 优先、`planIdPrefix:
+'zcode-v3-start-plan'` 兜底，按声明顺序**首个命中**，一个 plan 只归一个类型 ——
+否则前缀规则会把周末套餐也算进 Start Plan，「这次领的是哪一种」就失去意义。
+
+规则是描述符数据（`lib/providers/defs/zcode.js` 的 `activity.actions[0].kinds`），求值器在
+`lib/account/activity-claim/plans.js`；领取按 `params.planKind` 过滤候选，命中不到时返回
+`status: nothing_claimable` + `reason: plan_kind_unavailable:<kind>` —— 这是**结论不是故障**，
+定时任务不该因为活动换代而报警。
+

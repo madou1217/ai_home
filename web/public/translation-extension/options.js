@@ -122,6 +122,8 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
       const status = await send({ type: 'aih-page-status' });
       undo.hidden = !status?.translated;
       translate.textContent = status?.translated ? '重新翻译' : '翻译此页';
+      field('subtitles-row').hidden = !(status?.videos > 0);
+      field('subtitles').checked = Boolean(status?.subtitles);
     } catch (_error) {
       // Content script not injected yet (page opened before install): translating still
       // works via the background, which injects on demand.
@@ -134,6 +136,11 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
     catch (_error) { translate.disabled = false; translate.textContent = '翻译此页'; state.textContent = '此页面暂不可翻译，请刷新后重试'; }
   };
   undo.onclick = async () => { try { await send({ type: 'aih-undo-page' }); } catch (_error) { /* page closed */ } await refresh(); };
+  field('subtitles').onchange = async () => {
+    const result = await send({ type: 'aih-subtitles', action: field('subtitles').checked ? 'enable' : 'disable' }).catch(() => null);
+    field('subtitles').checked = Boolean(result?.enabled);
+    if (result?.enabled && !result.tracks) state.textContent = '此视频没有可读取的字幕轨';
+  };
   const autoSite = field('auto-site'); let host = '';
   try { host = new URL(tab.url).hostname; } catch (_error) { host = ''; }
   const siteState = await chrome.runtime.sendMessage({ type: 'aih-auto-site', action: 'get', host }).catch(() => null);

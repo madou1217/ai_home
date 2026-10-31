@@ -506,10 +506,22 @@
       else void translatePage();
     }
   });
+  // Bilingual subtitles for <video> text tracks; off until the user turns it on.
+  const videoSubtitles = globalThis.AIHVideoSubtitles?.create({
+    translate: (text) => translateOne(text, 'selection', { operationId: ++operationSerial })
+  });
+  function videoCount() { return document.querySelectorAll('video').length; }
   // The toolbar popup asks the page for its state so it can offer "translate" or "undo".
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'aih-subtitles') {
+      if (!videoSubtitles) { sendResponse({ ok: false }); return false; }
+      if (message.action === 'enable') videoSubtitles.enable();
+      if (message.action === 'disable') videoSubtitles.disable();
+      sendResponse({ ok: true, enabled: videoSubtitles.enabled, tracks: videoSubtitles.count(), videos: videoCount() });
+      return false;
+    }
     if (message?.type !== 'aih-page-status') return false;
-    sendResponse({ ok: true, translated: Boolean(pagePresentation), active: Boolean(active) });
+    sendResponse({ ok: true, translated: Boolean(pagePresentation), active: Boolean(active), videos: videoCount(), subtitles: Boolean(videoSubtitles?.enabled) });
     return false;
   });
 })();

@@ -39,6 +39,7 @@
         "reading-themes.js",
         "page-language.js",
         "page-segments.js",
+        "video-subtitles.js",
         "content.js"
       ],
       "run_at": "document_idle"

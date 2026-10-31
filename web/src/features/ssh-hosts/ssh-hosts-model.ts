@@ -15,6 +15,8 @@ export interface SshConnection {
   identityFile?: string;
   privateKey?: string;
   password?: string;
+  /** 出网代理：借这条连接的网络出去（安装工具等需要外网的任务）；空为直连。 */
+  egressConnectionId?: string;
   createdAt: number;
 }
 
@@ -64,12 +66,13 @@ export function buildSshConnectionFormValues(connection: SshConnection) {
     authType: connection.authType,
     identityFile: connection.identityFile || '',
     password: connection.password || (connection.authType === 'password' ? SSH_PASSWORD_MASK : ''),
-    privateKey: connection.privateKey || (connection.authType === 'key' ? SSH_PASSWORD_MASK : '')
+    privateKey: connection.privateKey || (connection.authType === 'key' ? SSH_PASSWORD_MASK : ''),
+    egressConnectionId: connection.egressConnectionId || ''
   };
 }
 
 /** 新建连接的默认值 */
-export const SSH_CONNECTION_FORM_DEFAULTS = { port: 22, authType: 'agent' as SshAuthType };
+export const SSH_CONNECTION_FORM_DEFAULTS = { port: 22, authType: 'agent' as SshAuthType, egressConnectionId: '' };
 
 /** 目录浏览器面包屑：把绝对路径拆成可点击的逐级路径。 */
 export function buildRemotePathCrumbs(currentPath: string) {

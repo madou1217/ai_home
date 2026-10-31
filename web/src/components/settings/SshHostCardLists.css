@@ -364,3 +364,9 @@ textarea.ssh-private-key-input {
     background-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard);
 }
+
+.ssh-list-card-egress {
+  font-size: 12px;
+  color: var(--hud-text-muted, rgba(127, 127, 127, 0.9));
+  margin: 4px 0 8px;
+}

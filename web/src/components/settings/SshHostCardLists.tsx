@@ -51,6 +51,11 @@ export function SshConnectionCardList({
             </div>
             <span className={`ssh-auth-pill ssh-auth-pill--${connection.authType}`}>{AUTH_LABELS[connection.authType]}</span>
           </div>
+          {connection.egressConnectionId ? (
+            <div className="ssh-list-card-egress">
+              出网经由：{connections.find((item) => item.id === connection.egressConnectionId)?.label || '已删除的连接'}
+            </div>
+          ) : null}
           <div className="ssh-list-card-footer">
             <Space size={6} wrap>
               <Button size="small" loading={testingIds.includes(connection.id)} onClick={() => onTest(connection)}>测试连接</Button>

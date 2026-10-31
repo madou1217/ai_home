@@ -433,6 +433,21 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               <Input.Password placeholder="密码" />
             </Form.Item>
           )}
+
+          <Form.Item
+            name="egressConnectionId"
+            label="出网代理"
+            help="这台机器访问外网（GitHub、npm 等）不通或很慢时，借另一台连接的网络出去。只在安装工具等任务期间临时生效，两端都不安装任何程序。"
+          >
+            <Select
+              options={[
+                { value: '', label: '直连（不使用代理）' },
+                ...connections
+                  .filter((item) => !editingConn || item.id !== editingConn.id)
+                  .map((item) => ({ value: item.id, label: `${item.label}（${item.host}）` }))
+              ]}
+            />
+          </Form.Item>
         </div>
       </ModalForm>
 

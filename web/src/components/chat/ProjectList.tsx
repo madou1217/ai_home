@@ -45,6 +45,10 @@ import expandIcon from '@/assets/icons/expand.svg';
 import SessionRelativeTime from './SessionRelativeTime';
 import styles from './session-list.module.css';
 
+
+// 进程内（标签页）缓存：只用于下次挂载时先显示，不持久化。
+let lastChatSessionsSnapshot: Session[] = [];
+
 interface Props {
   mobile?: boolean;
   projects: AggregatedProject[];
@@ -103,7 +107,9 @@ const ProjectList = ({
   const projectSessionsFlipRef = useFlipReorder<HTMLDivElement>(projects);
 
   // 纯聊天 (Chat 模式) 会话列表状态
-  const [chatSessions, setChatSessions] = useState<Session[]>([]);
+  // 先显示上次拿到的纯聊天会话列表，后台再刷新：/webui/chat-sessions 在会话多时要 2s+，
+  // 每次进 chat 都从空骨架开始会让侧栏「闪一下空、再整列冒出来」。
+  const [chatSessions, setChatSessions] = useState<Session[]>(() => lastChatSessionsSnapshot);
   const [loadingChatSessions, setLoadingChatSessions] = useState(false);
   const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => getPinnedSessionIds());
   const chatSessionsFlipRef = useFlipReorder<HTMLDivElement>(chatSessions);
@@ -130,7 +136,9 @@ const ProjectList = ({
     setLoadingChatSessions(true);
     try {
       const list = await sessionsAPI.getChatSessions();
-      setChatSessions(Array.isArray(list) ? list : []);
+      const next = Array.isArray(list) ? list : [];
+      lastChatSessionsSnapshot = next;
+      setChatSessions(next);
     } catch {
       // ignore
     } finally {

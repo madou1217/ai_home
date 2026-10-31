@@ -36,12 +36,17 @@ const actionKey = (app: ManagedAppItem, action: string) => `${app.id}:${action}`
  * 安装 / 更新 / 卸载计划确认、检查更新、启用即时刷新。
  * 打开 / 结束应用与配置编辑仍由各自界面持有（交互差异较大）。
  */
+// 标签页内缓存上一份应用清单与账号：切回工具箱时先显示它，再在后台刷新，
+// 不再每次都整页「正在探测应用」转圈（探测要扫磁盘、Windows 上要几秒）。
+let lastManagedApps: ManagedAppsResponse | null = null;
+let lastManagedAppAccounts: Account[] = [];
+
 export function useManagedApps() {
-  const [data, setData] = useState<ManagedAppsResponse | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [data, setData] = useState<ManagedAppsResponse | null>(() => lastManagedApps);
+  const [accounts, setAccounts] = useState<Account[]>(() => lastManagedAppAccounts);
   const [runningAccountPids, setRunningAccountPids] = useState<Record<string, number[]>>({});
   const [runningCliAccountPids, setRunningCliAccountPids] = useState<Record<string, number[]>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !lastManagedApps);
   const [error, setError] = useState('');
   const [installingHooks, setInstallingHooks] = useState(false);
   const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
@@ -77,8 +82,12 @@ export function useManagedApps() {
         refreshRunningApps()
       ]);
       if (!response.ok) throw new Error('应用接口未返回可用结果');
+      lastManagedApps = response;
       setData(response);
-      if (accountResponse) setAccounts(accountResponse.accounts || []);
+      if (accountResponse) {
+        lastManagedAppAccounts = accountResponse.accounts || [];
+        setAccounts(lastManagedAppAccounts);
+      }
     } catch (requestFailure: unknown) {
       setError(requestError(requestFailure, '读取应用列表失败'));
     } finally {

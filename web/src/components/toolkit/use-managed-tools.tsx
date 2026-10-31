@@ -94,12 +94,15 @@ function actionKey(tool: ManagedToolItem, action: ManagedToolLifecycleAction) {
  *
  * `options.toolIds` 用于「不按分类、只按 id」的视图（入口与转发要同时管 nginx / caddy / frpc）。
  */
+// 标签页内缓存上一份工具清单：切回时先显示，再后台刷新（同 use-managed-apps）。
+let lastManagedTools: ManagedToolsResponse | null = null;
+
 export function useManagedTools(
   category: ToolkitToolCategoryId,
   lifecycleApi: ManagedToolLifecycleApi,
   options: { toolIds?: string[] } = {}
 ) {
-  const [data, setData] = useState<ManagedToolsResponse | null>(null);
+  const [data, setData] = useState<ManagedToolsResponse | null>(() => lastManagedTools);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
@@ -111,6 +114,7 @@ export function useManagedTools(
     try {
       const result = await toolkitAPI.listTools();
       if (!result.ok) throw new Error('工具状态接口未返回可用结果');
+      lastManagedTools = result;
       setData(result);
     } catch (error: unknown) {
       setError(requestError(error, '获取工具状态失败'));

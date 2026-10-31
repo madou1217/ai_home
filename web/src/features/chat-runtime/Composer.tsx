@@ -10,6 +10,8 @@ import ComposerAttachmentPreview from './ComposerAttachmentPreview';
 import SessionMetrics from './SessionMetrics';
 import ChatSessionSettings from './ChatSessionSettings';
 import { useComposerController } from './use-composer-controller';
+import { useComposerFileReferences } from './use-composer-file-references';
+import FileReferencePopover from '@/components/chat/FileReferencePopover';
 import styles from './session-runtime.module.css';
 import { CHAT_ATTACHMENT_ACCEPT, buildPastedTextFile, shouldConvertLargePaste } from '@/components/chat/attachment-files';
 import { ensureLargePasteSettingsLoaded } from './use-large-paste-settings';
@@ -44,6 +46,8 @@ export interface ComposerProps {
 
 export default function Composer(props: ComposerProps) {
   const controller = useComposerController(props);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileRefs = useComposerFileReferences(controller.input, controller.setInput, props.projectPath, textareaRef);
   // 粘贴阈值来自 Server 配置（默认 200，最小 50）。
   useEffect(() => { void ensureLargePasteSettingsLoaded(); }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -128,13 +132,24 @@ export default function Composer(props: ComposerProps) {
         onRemove={controller.removeAttachment}
         onRetry={(key) => { void controller.retryAttachment(key); }}
       />
+      <FileReferencePopover
+        candidates={fileRefs.candidates}
+        loading={fileRefs.loading}
+        fetchError={fileRefs.fetchError}
+        hasProject={Boolean(props.projectPath)}
+        selectedIndex={fileRefs.selectedIndex}
+        onSelect={fileRefs.apply}
+        onHoverIndex={fileRefs.setSelectedIndex}
+        visible={fileRefs.open}
+      />
       <Input.TextArea
+        ref={(instance) => { textareaRef.current = instance?.resizableTextArea?.textArea || null; }}
         value={controller.input}
         autoSize={{ minRows: 2, maxRows: 8 }}
         placeholder={controller.policy.turnActive ? '插话，或加入本轮后的队列…'
           : props.workspaceMode === 'chat' ? '发送消息…' : '向 AIH Chat Runtime 发送消息…'}
         onChange={(event) => controller.setInput(event.target.value)}
-        onKeyDown={(event) => controller.handleKeyDown(event)}
+        onKeyDown={(event) => { if (!fileRefs.handleKeyDown(event)) controller.handleKeyDown(event); }}
         onPaste={handlePaste}
       />
       <input

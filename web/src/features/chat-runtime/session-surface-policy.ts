@@ -87,9 +87,18 @@ export function resolveSessionRuntimeTarget(
       ...(!input.session.draft ? { nativeSessionId: input.session.id } : {}),
       ...(input.session.runtimeSessionId ? { sessionId: input.session.runtimeSessionId } : {}),
       ...(observer ? { readOnly: true } : {}),
-      policy: { approvalMode: input.approvalMode },
+      policy: { approvalMode: effectiveApprovalMode(input.session.provider, input.approvalMode) },
     },
   };
+}
+
+// 逐项审批不可用时的默认回落（与服务端审批策略表 native-approval-transports 同源）。
+// 只做「更严格」方向的回落：zcode 的确认弹在 ZCode Desktop，WebUI 默认改用计划模式。
+// agy / grok 没有可用的审批通道，**不**静默放宽成直接执行（那是用户没选过的权限降级）：
+// 保持 confirm，服务端明确拒绝并给原因，审批菜单里不可用项置灰写明原因，由用户显式选择。
+export function effectiveApprovalMode(provider: string, mode: ApprovalMode): ApprovalMode {
+  if (provider === 'zcode' && mode === 'confirm') return 'plan';
+  return mode;
 }
 
 export function runtimeAccountsForSession(

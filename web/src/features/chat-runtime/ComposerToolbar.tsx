@@ -85,6 +85,7 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         />
         {props.workspaceMode !== 'chat' ? <ComposerApprovalMenu
           value={props.approvalMode}
+          unavailable={controller.approvalAvailability}
           onChange={(mode) => void controller.changeApprovalMode(mode)}
         /> : null}
         <ComposerModelMenu

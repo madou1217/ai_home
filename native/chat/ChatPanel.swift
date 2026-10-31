@@ -14,6 +14,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   private var model = ""
   private var provider = ""
   private var target: [String: Any] = ["kind": "aih-server"]
+  private var largePasteChars = 200
   private var assistantItems: [String: String] = [:]
   private var assistantItemIDs = Set<String>()
   private var assistantMetadataByID: [String: String] = [:]
@@ -58,6 +59,11 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     if let configuredTarget = event["chatTarget"] as? [String: Any] { target = configuredTarget }
     else if let configuredTarget = event["serverTarget"] as? [String: Any] { target = configuredTarget }
     if let configuredModel = event["chatModel"] as? String { model = configuredModel }
+    // Same threshold as the WebUI composer (aih server config --large-paste-chars, default 200).
+    if let threshold = event["largePasteChars"] as? Int, threshold >= 50 {
+      largePasteChars = threshold
+      content.largePasteChars = threshold
+    }
     content.setState(state, sessionID: sessionID, model: model, provider: provider, message: "")
     if panel.isVisible && state == .disconnected {
       show()
@@ -401,7 +407,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   }
 
   private func shouldUseFileReference(_ text: String) -> Bool {
-    text.count >= 12_000 || text.utf8.count >= 48 * 1024
+    text.count >= largePasteChars || text.utf8.count >= 48 * 1024
   }
 
   private func persistLargeText(_ text: String) -> String? {

@@ -41,9 +41,10 @@ private final class ChatMessageRow: NSView {
   private let isAssistant: Bool
 
   init(role: String, text: String) {
-    super.init(frame: .zero)
     let isUser = role == "你" || role == "user"
+    // Stored `let` properties must be set before super.init (Swift two-phase init).
     self.isAssistant = !isUser
+    super.init(frame: .zero)
     horizontalInset = isUser ? 52 : 24
     surface.fill = isUser ? .controlBackgroundColor : .clear
     surface.border = isUser ? ChatPalette.accent.withAlphaComponent(0.2) : .clear
@@ -217,6 +218,7 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
   private var statusTimer: Timer?
   private var pinned = true
   private(set) var state: ChatPanelState = .disconnected
+  var largePasteChars = 200
   var sendHandler: (() -> Void)?
   var stopHandler: (() -> Void)?
   var reconnectHandler: (() -> Void)?
@@ -501,7 +503,7 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     let canSend = canSubmit
     let count = composer.string.count
     let bytes = composer.string.utf8.count
-    composerHint.stringValue = (count >= 12_000 || bytes >= 48 * 1024) ? "\(count) · 将作为文件引用发送" : "↵ 发送 · ⇧↵ 换行"
+    composerHint.stringValue = (count >= largePasteChars || bytes >= 48 * 1024) ? "\(count) · 将作为文件引用发送" : "↵ 发送 · ⇧↵ 换行"
     composerHint.textColor = .secondaryLabelColor
     let canStop = state == .streaming
     let actionLabel = canStop ? "停止回复" : "发送消息"

@@ -193,6 +193,32 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === 'translate-selection' && tab?.id) await chrome.tabs.sendMessage(tab.id, { type: 'aih-translate-selection' });
+  // One key flips the page between translated and original (the 沉浸式翻译 Alt+A habit).
+  if (command === 'toggle-page' && tab?.id) await chrome.tabs.sendMessage(tab.id, { type: 'aih-toggle-page' }).catch(() => {});
+});
+
+// Sites the user chose to always translate. Hostnames only, stored in sync storage
+// so the choice follows the browser profile; no page content is stored here.
+const AUTO_SITES_KEY = 'autoTranslateSites';
+async function readAutoSites() {
+  const stored = await chrome.storage.sync.get(AUTO_SITES_KEY);
+  return Array.isArray(stored[AUTO_SITES_KEY]) ? stored[AUTO_SITES_KEY].filter((host) => typeof host === 'string') : [];
+}
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'aih-auto-site') return false;
+  (async () => {
+    let host = String(message.host || '').trim().toLowerCase();
+    if (!host && sender.tab?.url) { try { host = new URL(sender.tab.url).hostname; } catch (_error) { host = ''; } }
+    const sites = await readAutoSites();
+    if (!host || !/^[a-z0-9.-]{1,253}$/.test(host)) return sendResponse({ ok: false, enabled: false, sites });
+    if (message.action === 'set') {
+      const next = message.enabled ? [...new Set([...sites, host])].slice(-200) : sites.filter((item) => item !== host);
+      await chrome.storage.sync.set({ [AUTO_SITES_KEY]: next });
+      return sendResponse({ ok: true, enabled: next.includes(host) });
+    }
+    return sendResponse({ ok: true, enabled: sites.includes(host) });
+  })().catch(() => sendResponse({ ok: false, enabled: false }));
+  return true;
 });
 
 async function translate(request, sendResponse, sender) {

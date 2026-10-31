@@ -426,8 +426,13 @@
   }, true);
 
   const initialOperation = operationSerial;
-  void pageState('get').then((result) => {
-    if (result?.state && operationSerial === initialOperation && !active) void translatePage(result.state.target || '', { restoring: true });
+  void pageState('get').then(async (result) => {
+    if (result?.state && operationSerial === initialOperation && !active) { void translatePage(result.state.target || '', { restoring: true }); return; }
+    // Not restoring a previous translation: translate on load if the user marked this
+    // site "always translate". Only top frames, so iframes don't each open a panel.
+    if (window.top !== window || operationSerial !== initialOperation || active) return;
+    const site = await new Promise((resolve) => chrome.runtime.sendMessage({ type: 'aih-auto-site', action: 'get' }, (response) => resolve(chrome.runtime.lastError ? null : response)));
+    if (site?.enabled && operationSerial === initialOperation && !active) void translatePage();
   });
 
   chrome.runtime.onMessage.addListener((message) => {
@@ -451,6 +456,10 @@
     if (message?.type === 'aih-translate-selection') { const item = selected(); if (item) void translateSelection(message.text || item.text, item.rect, item.range); }
     if (message?.type === 'aih-translate-page') void translatePage(message.target || '');
     if (message?.type === 'aih-undo-page') { pagePresentation?.undo(); pagePresentation = null; void pageState('clear', { operationId: operationSerial }); }
+    if (message?.type === 'aih-toggle-page') {
+      if (pagePresentation) { pagePresentation.undo(); pagePresentation = null; void pageState('clear', { operationId: operationSerial }); }
+      else void translatePage();
+    }
   });
   // The toolbar popup asks the page for its state so it can offer "translate" or "undo".
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

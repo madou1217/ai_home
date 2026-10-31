@@ -134,5 +134,13 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
     catch (_error) { translate.disabled = false; translate.textContent = '翻译此页'; state.textContent = '此页面暂不可翻译，请刷新后重试'; }
   };
   undo.onclick = async () => { try { await send({ type: 'aih-undo-page' }); } catch (_error) { /* page closed */ } await refresh(); };
+  const autoSite = field('auto-site'); let host = '';
+  try { host = new URL(tab.url).hostname; } catch (_error) { host = ''; }
+  const siteState = await chrome.runtime.sendMessage({ type: 'aih-auto-site', action: 'get', host }).catch(() => null);
+  autoSite.checked = Boolean(siteState?.enabled);
+  autoSite.onchange = async () => {
+    const result = await chrome.runtime.sendMessage({ type: 'aih-auto-site', action: 'set', host, enabled: autoSite.checked }).catch(() => null);
+    autoSite.checked = Boolean(result?.enabled);
+  };
   await refresh();
 })();

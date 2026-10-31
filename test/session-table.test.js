@@ -58,7 +58,7 @@ test('表头与数据行的列数、顺序完全一致（含中文）', () => {
     assert.equal(header[0], '状态');
     assert.equal(header[1], 'provider');
     assert.equal(header[2], '账号');
-    assert.equal(row[0], '●');
+    assert.match(row[0], /运行中/);
     assert.equal(row[1], 'claude');
     assert.equal(row[2], '#.aih-server');
     assert.ok(displayWidth(formatRow(ROW, { layout }).trimEnd()) <= Math.max(width, 48));
@@ -80,14 +80,21 @@ test('按项目分组时不显示项目列，标题列变宽', () => {
   assert.doesNotMatch(headerRow({ layout: grouped }), /项目/);
 });
 
-test('默认展示完整 id：有原生 id 用原生 id，没有就用完整 pane 名', () => {
+test('会话ID 用 harness 原生 id；没有原生 id 时显示占位而不是 tmux 名', () => {
   const cells = resolveRowCells(ROW);
   assert.equal(cells.id, '01a176a2-edbc-7ae2-b7d0-5d084d0c28fe');
   const paneOnly = resolveRowCells({ ...ROW, agentSessionId: '' });
-  assert.equal(paneOnly.id, ROW.name);
+  assert.equal(paneOnly.id, '—');
   assert.equal(paneOnly.account, '#.aih-server');
-  assert.equal(paneOnly.status, '●');
+  assert.match(paneOnly.status, /运行中/);
   assert.equal(paneOnly.project, 'ai_home');
+});
+
+test('状态列：运行中 / 空闲 / 已结束 / 警告', () => {
+  assert.match(resolveRowCells({ ...ROW, live: true }).status, /运行中/);
+  assert.match(resolveRowCells({ ...ROW, live: false }).status, /空闲/);
+  assert.match(resolveRowCells({ ...ROW, statusLabel: '已结束', statusIcon: '✔' }).status, /已结束/);
+  assert.match(resolveRowCells({ ...ROW, statusLabel: '警告', statusIcon: '⚠' }).status, /警告/);
 });
 
 test('窗口变窄时 ID 才逐步压缩：36 → 24 → 16 → 隐藏', () => {
@@ -100,8 +107,8 @@ test('窗口变窄时 ID 才逐步压缩：36 → 24 → 16 → 隐藏', () => {
   assert.match(full, /01a176a2-edbc-7ae2-b7d0-5d084d0c28fe/);
 });
 
-test('空闲会话的状态列是 ○', () => {
-  assert.equal(resolveRowCells({ ...ROW, live: false }).status, '○');
+test('空闲会话的状态列是 ○ 空闲', () => {
+  assert.match(resolveRowCells({ ...ROW, live: false }).status, /空闲/);
 });
 
 test('picker 行与列表用同一套列（选中行有 ❯ 标记）', () => {
@@ -109,7 +116,7 @@ test('picker 行与列表用同一套列（选中行有 ❯ 标记）', () => {
   const row = formatSessionPickerRow(ROW, true, { columns: 120 });
   assert.ok(row.startsWith('❯ '));
   const cells = row.slice(2).split(/ {2,}/).filter(Boolean);
-  assert.equal(cells[0], '●');
+  assert.match(cells[0], /● 运行中/);
   assert.equal(cells[1], 'claude');
   assert.equal(cells[2], '#.aih-server');
   assert.match(cells[3], /本地合并取代 AWS/);

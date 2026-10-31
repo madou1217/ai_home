@@ -33,6 +33,24 @@ interface CliInstallProgressStatus {
   readonly message?: string;
 }
 
+export interface CliInstallConfirmationStatus {
+  readonly provider?: Provider | string;
+  readonly expiresAt?: number;
+}
+
+export declare function getProviderLabel(provider?: Provider | string): string;
+
+export declare function getCliInstallConfirmationRemainingSeconds(
+  event?: CliInstallConfirmationStatus,
+  now?: number
+): number;
+
+export declare function formatCliInstallConfirmationText(
+  event?: CliInstallConfirmationStatus,
+  provider?: Provider | string,
+  now?: number
+): string;
+
 export declare function getThinkingStatusText(provider?: Provider | string): string;
 
 export declare function getProcessingStatusText(): string;

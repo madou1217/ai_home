@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { MessageOutlined, CodeOutlined } from '@ant-design/icons';
 import styles from './composer/composer.module.css';
 

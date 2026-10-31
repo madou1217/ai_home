@@ -1,4 +1,3 @@
-import React from 'react';
 import type { CSSProperties } from 'react';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import type { ManagementAccountActivity } from '@/types';

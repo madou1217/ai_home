@@ -40,7 +40,7 @@ function readDayTokens(usage: AccountTokenUsage | null | undefined): number {
 }
 
 function readDayCostUsd(usage: AccountTokenUsage | null | undefined): number | null {
-  const models = Array.isArray(usage && usage.models) ? usage.models : [];
+  const models = usage && Array.isArray(usage.models) ? usage.models : [];
   let total = 0;
   for (const model of models) {
     const cost = Number(model && model.dayCostUsd);

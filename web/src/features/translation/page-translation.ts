@@ -110,7 +110,7 @@ export function applyPageTranslation(progress: TranslationPageProgress[], mode: 
 
   function schedule(callback: FrameRequestCallback, view: Window | null): number {
     if (view && typeof view.requestAnimationFrame === 'function') return view.requestAnimationFrame(callback);
-    return globalThis.setTimeout(() => callback(performance.now()), 16);
+    return window.setTimeout(() => callback(performance.now()), 16);
   }
 
   function cancelScheduledFrames() {

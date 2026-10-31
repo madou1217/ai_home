@@ -51,7 +51,7 @@ export function createTerminalRefitter(
   let flushRequested = false;
   let lastFit = -Infinity;
   const now = options.now || Date.now;
-  const setTimer = options.setTimer || setTimeout;
+  const setTimer = options.setTimer || ((cb: () => void, delay: number) => setTimeout(cb, delay));
   const clearTimer = options.clearTimer || clearTimeout;
   const scheduleFrame = () => {
     if (pendingFrame !== null) return;

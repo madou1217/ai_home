@@ -1,0 +1,32 @@
+// gifenc@1.0.x 不自带类型声明：这里只声明 capture/encoders/gif-encoder.ts 实际用到的 API。
+declare module 'gifenc' {
+  export type GifPalette = number[][];
+  export type GifPixelFormat = 'rgb565' | 'rgb444' | 'rgba4444';
+
+  export function quantize(
+    rgba: Uint8Array | Uint8ClampedArray,
+    maxColors: number,
+    options?: { format?: GifPixelFormat; oneBitAlpha?: boolean | number; clearAlpha?: boolean; clearAlphaThreshold?: number; clearAlphaColor?: number }
+  ): GifPalette;
+
+  export function applyPalette(
+    rgba: Uint8Array | Uint8ClampedArray,
+    palette: GifPalette,
+    format?: GifPixelFormat
+  ): Uint8Array;
+
+  export interface GifEncoderInstance {
+    writeFrame(
+      index: Uint8Array,
+      width: number,
+      height: number,
+      options?: { palette?: GifPalette; delay?: number; repeat?: number; transparent?: boolean; transparentIndex?: number; dispose?: number; first?: boolean }
+    ): void;
+    finish(): void;
+    bytes(): Uint8Array;
+    bytesView(): Uint8Array;
+    reset(): void;
+  }
+
+  export function GIFEncoder(options?: { auto?: boolean; initialCapacity?: number }): GifEncoderInstance;
+}

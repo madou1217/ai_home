@@ -7,7 +7,7 @@ import { getCaptureFormat } from './format-catalog';
 export function canvasToBlob(canvas: HTMLCanvasElement | OffscreenCanvas, mimeType: string, quality?: number): Promise<Blob> {
   const context = canvas as HTMLCanvasElement;
   const offscreen = canvas as OffscreenCanvas;
-  if (typeof context.convertToBlob === 'function' && !(typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement)) {
+  if (typeof offscreen.convertToBlob === 'function' && !(typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement)) {
     return offscreen.convertToBlob({ type: mimeType, quality });
   }
   if (typeof context.toBlob === 'function') {

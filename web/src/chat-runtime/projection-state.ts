@@ -135,8 +135,9 @@ export class ProjectionState {
 
   private applyTurnOrRunEvent(event: ChatRuntimeEvent): boolean {
     if (event.type === 'turn.metrics.updated') {
-      if (this.activeTurn?.turnId === event.turnId) {
-        this.activeTurn = { ...this.activeTurn, metrics: { ...this.activeTurn.metrics, ...event.payload.metrics } };
+      const activeTurn = this.activeTurn;
+      if (activeTurn && activeTurn.turnId === event.turnId) {
+        this.activeTurn = { ...activeTurn, metrics: { ...activeTurn.metrics, ...event.payload.metrics } };
       }
       return true;
     }

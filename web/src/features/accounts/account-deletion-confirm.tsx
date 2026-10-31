@@ -1,4 +1,3 @@
-import React from 'react';
 import { Modal } from 'antd';
 
 // 删除账号被「占用」时的统一交互。

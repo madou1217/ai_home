@@ -1,4 +1,3 @@
-import React from 'react';
 
 import type { TokenDropEvent } from './useTokenDropEvents';
 import './TokenDropNumber.css';

@@ -1,4 +1,5 @@
 import type { ProviderId } from '@/providers/catalog';
+import type { NetworkLayerStatus } from './proxy-pool';
 export * from './proxy-pool';
 
 // Provider 类型由 Go 核心生成，新增 Provider 不再手工修改 TypeScript 联合类型。
@@ -146,6 +147,13 @@ export type AccountUsageSnapshot =
       kind: 'kiro_credit_usage';
       capturedAt: number;
       account?: { email: string; planType: string; planName: string } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      // 后端 lib/providers/defs/cline.js（quota.kind）+ lib/server/account-usage-view.js 的字段表。
+      kind: 'cline_pass_usage';
+      capturedAt: number;
+      account?: { userId: string; planName: string; periodStartMs: number | null; periodEndMs: number | null } | null;
       entries: CodexUsageEntry[];
     }
   | {

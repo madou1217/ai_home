@@ -146,7 +146,8 @@ import type {
   ScheduledTaskSchedule,
   ScheduledTaskSchedulePreview,
   ScheduledTaskRecordsPage,
-  ScheduledTasksResponse
+  ScheduledTasksResponse,
+  Session
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 

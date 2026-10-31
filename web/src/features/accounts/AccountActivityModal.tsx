@@ -1,4 +1,3 @@
-import React from 'react';
 import { Modal, Space, Tag, Typography } from 'antd';
 import type { AccountActivityResult } from '@/types';
 

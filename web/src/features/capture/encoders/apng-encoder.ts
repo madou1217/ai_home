@@ -287,5 +287,5 @@ export async function encodeApngAnimation(request: EncodeAnimationRequest): Prom
   // 装配是纯字节操作，单独占进度最后一档。
   const assembled = assembleApngFromPngFrames(frames, bounds.width, bounds.height);
   request.onProgress?.(1);
-  return new Blob([assembled], { type: descriptor.mimeType });
+  return new Blob([assembled as Uint8Array<ArrayBuffer>], { type: descriptor.mimeType });
 }

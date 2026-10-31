@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import type { Account, ManagementAccountActivity } from '@/types';

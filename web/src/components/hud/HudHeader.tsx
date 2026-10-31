@@ -40,7 +40,7 @@ export function HudTelemetryBar({ enabled: requested }: { enabled: boolean }) {
   // 手机视口由移动端 HUD 顶栏自己轮询；桌面顶栏被隐藏时不再重复请求
   const mobile = useMobileMode();
   const enabled = requested && !mobile;
-  const { state, status, receivedAt } = useHudTelemetry(enabled);
+  const { state, status, receivedAt, reconnecting } = useHudTelemetry(enabled);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -63,6 +63,8 @@ export function HudTelemetryBar({ enabled: requested }: { enabled: boolean }) {
         <span className={`${styles.value} ${styles[`tone_${gateway.tone}`]}`}>
           <span className={`hud-led hud-led--${gateway.tone}${state === 'online' ? ' hud-led--live' : ''}`} />
           {gateway.text}
+          {/* 轮询失败但还没到离线阈值：保留上一次状态，只提示正在重连，不闪 OFFLINE。 */}
+          {reconnecting ? <span className="hud-label" title="网关请求失败，正在重试"> · RETRY</span> : null}
         </span>
       </div>
       <span className={styles.divider} />

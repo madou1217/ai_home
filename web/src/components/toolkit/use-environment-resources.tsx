@@ -6,6 +6,7 @@ import type {
   EnvironmentLifecycleAction,
   EnvironmentResourceItem,
   EnvironmentsResponse,
+  ToolkitTarget,
   WebUiTask
 } from '@/types';
 import AppActionConfirmContent from './AppActionConfirmContent';
@@ -18,8 +19,13 @@ import { toolkitRequestError as requestError } from './request-error';
 
 type PendingAction = { phase: 'planning' | 'submitted'; jobId?: string };
 
-function taskTargetsResource(task: WebUiTask, resourceId: string) {
+function taskTarget(task: WebUiTask) {
+  return task.target || 'local';
+}
+
+function taskTargetsResource(task: WebUiTask, resourceId: string, target: string) {
   return task.source === 'environment'
+    && taskTarget(task) === target
     && (task.appId === resourceId || task.provider === resourceId);
 }
 
@@ -30,19 +36,22 @@ function actionKey(resource: EnvironmentResourceItem, action: EnvironmentLifecyc
 /**
  * 运行环境（Node / Python 工具链）的数据层（桌面面板与移动端共用）：
  * 探测结果、生命周期计划确认与后台任务跟踪。
+ *
+ * target：执行目标，'local'（AIH Server 本机）或 'ssh:<连接 ID>'（SSH 开发机）。
+ * 同一套目录 / 计划 / 任务队列，只是执行位置不同；切换目标即重新探测该目标。
  */
-export function useEnvironmentResources() {
+export function useEnvironmentResources(target = 'local') {
   const [data, setData] = useState<EnvironmentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingActions, setPendingActions] = useState<Record<string, PendingAction>>({});
   const { tasks, recentTasks } = useWebUiTaskQueue();
 
-  const load = useCallback(async (options: { showLoading?: boolean } = {}) => {
+  const load = useCallback(async (options: { showLoading?: boolean; refresh?: boolean } = {}) => {
     if (options.showLoading !== false) setLoading(true);
     setError('');
     try {
-      const response = await toolkitAPI.getEnvironments();
+      const response = await toolkitAPI.getEnvironments(target, { refresh: options.refresh });
       if (!response.ok) throw new Error('环境接口未返回可用结果');
       setData(response);
     } catch (requestFailure: unknown) {
@@ -50,16 +59,19 @@ export function useEnvironmentResources() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [target]);
 
   useEffect(() => {
+    // 切换目标：先清空旧目标的数据，避免把本机结果当成远端显示。
+    setData(null);
+    setPendingActions({});
     void load();
   }, [load]);
 
   useEffect(() => {
     const handleTaskCompleted = (event: Event) => {
       const task = (event as CustomEvent<WebUiTask>).detail;
-      if (task?.source !== 'environment') return;
+      if (task?.source !== 'environment' || taskTarget(task) !== target) return;
       setPendingActions((current) => {
         const next = { ...current };
         Object.entries(current).forEach(([key, pending]) => {
@@ -67,11 +79,11 @@ export function useEnvironmentResources() {
         });
         return next;
       });
-      void load({ showLoading: false });
+      void load({ showLoading: false, refresh: true });
     };
     window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
     return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
-  }, [load]);
+  }, [load, target]);
 
   useEffect(() => {
     if (!recentTasks.length) return;
@@ -92,12 +104,12 @@ export function useEnvironmentResources() {
   }, [recentTasks]);
 
   const environmentTasks = useMemo(
-    () => tasks.filter((task) => task.source === 'environment'),
-    [tasks]
+    () => tasks.filter((task) => task.source === 'environment' && taskTarget(task) === target),
+    [tasks, target]
   );
 
   const activeTaskFor = (resource: EnvironmentResourceItem) => environmentTasks.find(
-    (task) => taskTargetsResource(task, resource.id)
+    (task) => taskTargetsResource(task, resource.id, target)
   );
 
   const busyActionFor = (resource: EnvironmentResourceItem) => {
@@ -114,7 +126,7 @@ export function useEnvironmentResources() {
     key: string
   ) => {
     try {
-      const response = await toolkitAPI.executeEnvironmentToolAction(resource.id, action);
+      const response = await toolkitAPI.executeEnvironmentToolAction(resource.id, action, target);
       if (!response.ok || !response.job) throw new Error(response.error || '运行环境任务未创建');
       setPendingActions((current) => ({
         ...current,
@@ -136,13 +148,15 @@ export function useEnvironmentResources() {
     if (busyActionFor(resource)) return;
     setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
     try {
-      const response = await toolkitAPI.planEnvironmentToolAction(resource.id, action);
+      const response = await toolkitAPI.planEnvironmentToolAction(resource.id, action, target);
       if (!response.ok) throw new Error(response.error || '无法生成运行环境计划');
       Modal.confirm({
         title: `${ACTION_LABELS[action]} ${resource.name}`,
         content: (
           <AppActionConfirmContent
-            summary={`确认后将创建 ${resource.name}${ACTION_LABELS[action]}任务，进度显示在后台任务队列。`}
+            summary={target === 'local'
+              ? `确认后将创建 ${resource.name}${ACTION_LABELS[action]}任务，进度显示在后台任务队列。`
+              : `将在远端机器「${data?.target?.label || target}」上执行（经 SSH，不安装任何 AIH 组件），进度显示在后台任务队列。`}
             plans={(response.plans || []).map((plan) => ({
               id: plan.id,
               label: plan.label,
@@ -172,4 +186,17 @@ export function useEnvironmentResources() {
   };
 
   return { data, loading, error, load, activeTaskFor, busyActionFor, runAction };
+}
+
+/** 可选执行目标（本机 + SSH 开发机里的连接）。只列清单，不触发远端连接。 */
+export function useToolkitTargets() {
+  const [targets, setTargets] = useState<ToolkitTarget[]>([{ kind: 'local', id: 'local', label: '本机（AIH Server）' }]);
+  useEffect(() => {
+    let cancelled = false;
+    toolkitAPI.getToolkitTargets()
+      .then((list) => { if (!cancelled && list.length) setTargets(list); })
+      .catch(() => { /* 旧服务端没有该接口：只显示本机 */ });
+    return () => { cancelled = true; };
+  }, []);
+  return targets;
 }

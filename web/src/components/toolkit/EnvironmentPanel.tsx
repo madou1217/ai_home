@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Empty, Segmented, Space, Spin, Tag } from 'antd';
+import { Empty, Segmented, Select, Space, Spin, Tag } from 'antd';
 import {
   BookOutlined,
   ReloadOutlined
@@ -16,11 +16,19 @@ import {
 import ManagedResourceCard from './ManagedResourceCard';
 import { resolveRuntimePlugins, runtimePluginIcon, runtimePluginName } from './runtime-plugin-presentation';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
-import { useEnvironmentResources } from './use-environment-resources';
+import { readToolkitTarget, writeToolkitTarget } from '@/pages/toolkit-url-state';
+import { useEnvironmentResources, useToolkitTargets } from './use-environment-resources';
 
 export default function EnvironmentPanel() {
   const [runtime, setRuntime] = useState('node');
-  const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources();
+  const [target, setTarget] = useState(() => readToolkitTarget());
+  const targets = useToolkitTargets();
+  const remote = target !== 'local';
+  const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources(target);
+  const changeTarget = (value: string) => {
+    setTarget(value);
+    writeToolkitTarget(value);
+  };
   const runtimePlugins = useMemo(
     () => resolveRuntimePlugins(data?.runtimePlugins, data?.resources),
     [data]
@@ -40,35 +48,47 @@ export default function EnvironmentPanel() {
           <h2 id="toolkit-environment-title">运行环境</h2>
         </div>
         <div className="toolkit-header-actions">
+          <Select
+            aria-label="执行目标"
+            value={target}
+            onChange={changeTarget}
+            popupMatchSelectWidth={false}
+            style={{ minWidth: 180 }}
+            options={targets.map((item) => ({
+              value: item.id,
+              label: item.kind === 'local' ? item.label : `${item.label}（SSH）`,
+              title: item.host || item.label
+            }))}
+          />
           <Button
             icon={<BookOutlined />}
             href={buildAppHref('/toolkit/install-guide')}
           >
             安装指南与命令
           </Button>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load({ refresh: true })}>重新探测</Button>
         </div>
       </header>
 
       {error ? (
         <div className="toolkit-inline-error" role="alert">
           <span className="hud-led hud-led--err" aria-hidden="true" />
-          <strong>运行环境读取失败</strong>
+          <strong>{remote ? '远端运行环境读取失败' : '运行环境读取失败'}</strong>
           <span>{error}</span>
         </div>
       ) : null}
 
       {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" tip="正在探测运行环境" /></div>
+        <div className="toolkit-loading"><Spin size="large" tip={remote ? '正在经 SSH 探测远端运行环境' : '正在探测运行环境'} /></div>
       ) : data ? (
         <>
           <ToolkitStatusTrack
             ariaLabel="运行环境状态轨道"
             items={[
               {
-                label: '当前系统',
-                value: PLATFORM_LABELS[data.platform] || data.platform,
-                detail: '只展示本机可执行的管理方式',
+                label: remote ? `远端 · ${data.target?.label || ''}` : '当前系统',
+                value: `${PLATFORM_LABELS[data.platform] || data.platform}${data.target?.arch ? ` · ${data.target.arch}` : ''}`,
+                detail: remote ? '经 SSH 零安装执行，只展示该系统可执行的管理方式' : '只展示本机可执行的管理方式',
                 tone: 'info'
               },
               {
@@ -182,7 +202,7 @@ export default function EnvironmentPanel() {
                 );
               })}
             </div>
-          ) : <Empty description="当前系统没有可管理的运行环境工具" />}
+          ) : <Empty description={remote ? '该远端系统没有可管理的运行环境工具' : '当前系统没有可管理的运行环境工具'} />}
         </>
       ) : null}
     </section>

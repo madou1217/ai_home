@@ -59,3 +59,36 @@ export function subscribeToolkitPanel(listener: (panel: string) => void): () => 
   window.addEventListener('popstate', handler);
   return () => window.removeEventListener('popstate', handler);
 }
+
+// 运行环境面板的执行目标：`target=local`（缺省）或 `target=ssh:<连接 ID>`。
+// 「SSH 开发机」连接卡片的「环境与工具」直接带上它跳转过来。
+export const TOOLKIT_TARGET_QUERY_KEY = 'target';
+
+export function readToolkitTarget(search?: string): string {
+  if (typeof window === 'undefined') return 'local';
+  const source = typeof search === 'string' ? search : window.location.search;
+  try {
+    const value = new URLSearchParams(source).get(TOOLKIT_TARGET_QUERY_KEY) || '';
+    return /^ssh:conn_[a-f0-9]{16}$/.test(value) ? value : 'local';
+  } catch (_error) {
+    return 'local';
+  }
+}
+
+export function writeToolkitTarget(target: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    if (target && target !== 'local') url.searchParams.set(TOOLKIT_TARGET_QUERY_KEY, target);
+    else url.searchParams.delete(TOOLKIT_TARGET_QUERY_KEY);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch (_error) {
+    // URL 不可写时保持页面状态可用。
+  }
+}
+
+export function buildToolkitEnvironmentHref(target: string): string {
+  const params = new URLSearchParams({ [TOOLKIT_PANEL_QUERY_KEY]: 'environment' });
+  if (target && target !== 'local') params.set(TOOLKIT_TARGET_QUERY_KEY, target);
+  return `/toolkit?${params.toString()}`;
+}

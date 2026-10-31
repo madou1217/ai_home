@@ -9,6 +9,7 @@ import {
 import { getEnvironmentCategoryLabel } from '@/components/toolkit/environment-presentation';
 import { CLIENT_PLATFORM_LABELS } from '@/components/toolkit/lifecycle-presentation';
 import { useEnvironmentResources } from '@/components/toolkit/use-environment-resources';
+import { readToolkitTarget } from '@/pages/toolkit-url-state';
 import {
   resolveRuntimePlugins,
   runtimePluginIcon,
@@ -36,7 +37,7 @@ import styles from '../MobileToolkit.module.css';
 export default function EnvironmentPanel() {
   const [runtime, setRuntime] = useState('node');
   const [detailId, setDetailId] = useState('');
-  const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources();
+  const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources(readToolkitTarget());
   const runtimePlugins = useMemo(
     () => resolveRuntimePlugins(data?.runtimePlugins, data?.resources),
     [data]
@@ -75,7 +76,7 @@ export default function EnvironmentPanel() {
         status={data ? `当前系统 ${CLIENT_PLATFORM_LABELS[data.platform] || data.platform}` : null}
         refreshLabel="重新探测"
         refreshing={loading}
-        onRefresh={() => void load()}
+        onRefresh={() => void load({ refresh: true })}
       >
         <HudIconButton icon={<BookOutlined />} label="安装指南与命令" onClick={() => history.push('/toolkit/install-guide')} />
       </PanelToolbar>

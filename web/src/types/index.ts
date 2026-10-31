@@ -2259,6 +2259,8 @@ export interface AppInstallJob {
 export interface WebUiTask extends AppInstallJob {
   source: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
   taskName: string;
+  /** 运行环境任务的执行目标（'local' | 'ssh:<connectionId>'）。 */
+  target?: string;
 }
 
 // ── 计划任务（含账号活动的定时触发：签到 / 领臭鸡蛋）──
@@ -2896,9 +2898,25 @@ export interface EnvironmentRuntimePlugin {
   icon: string;
 }
 
+/** toolkit 执行目标：本机（AIH Server）或「SSH 开发机」里的一台远端机器。 */
+export interface ToolkitTarget {
+  kind: 'local' | 'ssh';
+  /** 'local' | 'ssh:<connectionId>' */
+  id: string;
+  label: string;
+  host?: string;
+  platform?: ClientPlatform;
+  arch?: string;
+  os?: string;
+}
+
 export interface EnvironmentsResponse {
   ok: boolean;
   platform: ClientPlatform;
+  /** 远端目标时返回目标描述（本机不返回）。 */
+  target?: ToolkitTarget;
+  stale?: boolean;
+  probedAt?: number;
   runtimePlugins?: EnvironmentRuntimePlugin[];
   runtimes: Record<string, EnvironmentRuntimeSummary | undefined>;
   resources: EnvironmentResourceItem[];

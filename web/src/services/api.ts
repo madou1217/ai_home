@@ -124,6 +124,7 @@ import type {
   WebUiTask,
   ClientTerminalsResponse,
   EnvironmentsResponse,
+  ToolkitTarget,
   EnvironmentActionInput,
   EnvironmentActionResponse,
   EnvironmentGuideResponse,
@@ -2812,9 +2813,16 @@ export const toolkitAPI = {
     );
     return response.data.job;
   },
-  getEnvironments: async (): Promise<EnvironmentsResponse> => {
-    const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments');
+  getEnvironments: async (target = 'local', options: { refresh?: boolean } = {}): Promise<EnvironmentsResponse> => {
+    const params: Record<string, string> = {};
+    if (target && target !== 'local') params.target = target;
+    if (options.refresh) params.refresh = '1';
+    const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments', { params });
     return response.data;
+  },
+  getToolkitTargets: async (): Promise<ToolkitTarget[]> => {
+    const response = await api.get<{ ok: boolean; targets: ToolkitTarget[] }>('/webui/toolkit/environments/targets');
+    return response.data.targets || [];
   },
   getEnvironmentGuide: async (platform?: string): Promise<EnvironmentGuideResponse> => {
     const response = await api.get<EnvironmentGuideResponse>('/webui/toolkit/environments/guide', {
@@ -2824,21 +2832,25 @@ export const toolkitAPI = {
   },
   planEnvironmentToolAction: async (
     toolId: string,
-    action: EnvironmentLifecycleAction
+    action: EnvironmentLifecycleAction,
+    target = 'local'
   ): Promise<EnvironmentToolActionResponse> => {
     const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/plan', {
       toolId,
-      action
+      action,
+      target
     });
     return response.data;
   },
   executeEnvironmentToolAction: async (
     toolId: string,
-    action: EnvironmentLifecycleAction
+    action: EnvironmentLifecycleAction,
+    target = 'local'
   ): Promise<EnvironmentToolActionResponse> => {
     const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/execute', {
       toolId,
       action,
+      target,
       confirmed: true
     });
     return response.data;

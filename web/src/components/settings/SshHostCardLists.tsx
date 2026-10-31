@@ -1,5 +1,7 @@
 import { Card, Empty, Popconfirm, Space, Spin } from 'antd';
-import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
+import { buildAppHref } from '@/services/app-navigation';
+import { buildToolkitEnvironmentHref } from '@/pages/toolkit-url-state';
 import Button from '@/components/ui/AppButton';
 import {
   SSH_AUTH_LABELS as AUTH_LABELS,
@@ -53,6 +55,13 @@ export function SshConnectionCardList({
             <Space size={6} wrap>
               <Button size="small" loading={testingIds.includes(connection.id)} onClick={() => onTest(connection)}>测试连接</Button>
               <Button size="small" onClick={() => onViewWorkspaces(connection)}>查看工作区</Button>
+              <Button
+                size="small"
+                icon={<ToolOutlined />}
+                href={buildAppHref(buildToolkitEnvironmentHref(`ssh:${connection.id}`))}
+              >
+                环境与工具
+              </Button>
               <Button size="small" onClick={() => onCreateWorkspace(connection)}>创建工作区</Button>
             </Space>
             <Space size={6} wrap>

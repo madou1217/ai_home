@@ -456,6 +456,19 @@ final class TranslationTriggerButton: NSButton {
   }
   override func mouseEntered(with event: NSEvent) { setHovered(true) }
   override func mouseExited(with event: NSEvent) { setHovered(false) }
+  // Pressed state: a brief scale-down so the click has physical feedback before the
+  // panel replaces the trigger.
+  override func mouseDown(with event: NSEvent) {
+    if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = superview?.layer {
+      let press = CABasicAnimation(keyPath: "transform.scale")
+      press.fromValue = 1
+      press.toValue = 0.9
+      press.duration = 0.08
+      press.autoreverses = true
+      layer.add(press, forKey: "press")
+    }
+    super.mouseDown(with: event)
+  }
   private func setHovered(_ value: Bool) {
     wantsLayer = true
     layer?.cornerRadius = 19

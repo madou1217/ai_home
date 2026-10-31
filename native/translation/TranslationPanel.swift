@@ -11,6 +11,10 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
   var target = "zh-Hans"
   var defaultTarget = "zh-Hans"
   private var modelCandidates: [[String: Any]] = []
+  // The selection trigger is an offer, not a window: it retires itself if ignored, so a
+  // stale icon never lingers over unrelated content.
+  private var triggerIdleTimer: Timer?
+  private let triggerIdleSeconds: TimeInterval = 4
   private var selectedModel = ""
   private var selectedProvider = ""
   private var modelWasEdited = false
@@ -175,7 +179,29 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
     offered = selection.text
     offeredSelection = selection
     if explicit { acceptOffer() }
-    else { place(trigger, at: point ?? NSEvent.mouseLocation); show(trigger) }
+    else {
+      place(trigger, at: point ?? NSEvent.mouseLocation)
+      show(trigger)
+      popInTrigger()
+      triggerIdleTimer?.invalidate()
+      triggerIdleTimer = Timer.scheduledTimer(withTimeInterval: triggerIdleSeconds, repeats: false) { [weak self] _ in
+        self?.hideTrigger()
+      }
+    }
+  }
+
+  /// Small spring-in so the entry reads as a deliberate, native affordance rather than a
+  /// window popping into existence. Skipped under Reduce Motion.
+  private func popInTrigger() {
+    guard !content.reducedMotion, let layer = trigger.contentView?.layer else { return }
+    let spring = CASpringAnimation(keyPath: "transform.scale")
+    spring.fromValue = 0.72
+    spring.toValue = 1
+    spring.damping = 14
+    spring.stiffness = 260
+    spring.mass = 0.8
+    spring.duration = spring.settlingDuration
+    layer.add(spring, forKey: "pop-in")
   }
 
   @objc func acceptOffer() {
@@ -505,7 +531,11 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
       window.alphaValue = 1
     })
   }
-  func hideTrigger() { hide(trigger) }
+  func hideTrigger() {
+    triggerIdleTimer?.invalidate()
+    triggerIdleTimer = nil
+    hide(trigger)
+  }
   @objc func cancel() {
     emit(["type": "cancel"])
     requestID = ""

@@ -76,11 +76,11 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 func defaultRetryAfter(response sharedfailure.Response, kind runtimecore.FailureKind) time.Duration {
 	switch {
 	case response.StatusCode() == 503 && kind == runtimecore.FailureUpstreamUnavailable:
-		return time.Minute
+		return runtimecore.GuessedCooldown
 	case response.StatusCode() >= 500 && kind == runtimecore.FailureUpstreamUnavailable:
-		return 5 * time.Minute
+		return runtimecore.GuessedCooldown
 	case response.StatusCode() == 529 && kind == runtimecore.FailureModelOverloaded:
-		return 10 * time.Minute
+		return runtimecore.GuessedCooldown
 	default:
 		return 0
 	}

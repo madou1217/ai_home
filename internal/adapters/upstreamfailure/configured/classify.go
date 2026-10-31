@@ -6,18 +6,16 @@
 package configured
 
 import (
-	"time"
-
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/upstreamrules"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
 const (
-	// rateLimitedCooldown 与 Node 规则策略的 rate_limited 冷却一致。
-	rateLimitedCooldown = 5 * time.Minute
+	// rateLimitedCooldown 与 Node 规则策略的 rate_limited 冷却一致（统一的猜测冷却）。
+	rateLimitedCooldown = runtimecore.GuessedCooldown
 	// serviceUnavailableCooldown 与 Node 规则策略的 service_unavailable 冷却一致。
-	serviceUnavailableCooldown = time.Minute
+	serviceUnavailableCooldown = runtimecore.GuessedCooldown
 )
 
 // Rules 是账号自定义规则求值端口；为 nil 表示 Go 未承接该能力。

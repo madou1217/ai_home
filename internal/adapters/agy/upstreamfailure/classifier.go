@@ -124,11 +124,11 @@ func defaultRetryAfter(
 	}
 	switch {
 	case statusCode == http.StatusServiceUnavailable && kind == runtimecore.FailureUpstreamUnavailable:
-		return time.Minute
+		return runtimecore.GuessedCooldown
 	case statusCode >= http.StatusInternalServerError && kind == runtimecore.FailureUpstreamUnavailable:
-		return 5 * time.Minute
+		return runtimecore.GuessedCooldown
 	case statusCode == 529 && kind == runtimecore.FailureModelOverloaded:
-		return 10 * time.Minute
+		return runtimecore.GuessedCooldown
 	default:
 		return 0
 	}

@@ -14,8 +14,12 @@ const (
 	//
 	// 超过一天的限制必须进入 quota 或 policy 阻塞，不能伪装成长 cooldown。
 	MaxCooldownHint = 24 * time.Hour
+	// GuessedCooldown 是上游没有给出恢复时刻时的冷却时长（与 Node 的
+	// ACCOUNT_GUESSED_COOLDOWN_MS 同值）。没有 Retry-After / reset 提示的冷却都是猜测，
+	// 只给短值，到期由下一次请求复核（旧值：限流 5 分钟、5xx 5 分钟、529 10 分钟、静态密钥 30 分钟）。
+	GuessedCooldown = 30 * time.Second
 	// StaticCredentialRejectedCooldown 是静态密钥被拒后的复核间隔。
-	StaticCredentialRejectedCooldown = 30 * time.Minute
+	StaticCredentialRejectedCooldown = GuessedCooldown
 )
 
 var (
@@ -108,15 +112,15 @@ type FailurePolicy struct {
 func PolicyFor(kind FailureKind) (FailurePolicy, error) {
 	switch kind {
 	case FailureRateLimited:
-		return modelCooldownPolicy(1, 5*time.Minute, 0), nil
+		return modelCooldownPolicy(1, GuessedCooldown, 0), nil
 	case FailureModelOverloaded:
-		return modelCooldownPolicy(1, time.Minute, 0), nil
+		return modelCooldownPolicy(1, GuessedCooldown, 0), nil
 	case FailureUpstreamUnavailable:
-		return modelCooldownPolicy(1, 30*time.Second, 0), nil
+		return modelCooldownPolicy(1, GuessedCooldown, 0), nil
 	case FailureRequestTimeout,
 		FailureConnectionReset,
 		FailureStreamDisconnected:
-		return modelCooldownPolicy(2, 30*time.Second, time.Minute), nil
+		return modelCooldownPolicy(2, GuessedCooldown, time.Minute), nil
 	case FailureStaticCredentialRejected:
 		return modelCooldownPolicy(1, StaticCredentialRejectedCooldown, 0), nil
 	case FailureCredentialRejected, FailureReauthenticationRequired:

@@ -20,9 +20,9 @@ func TestObserveHTTPUsesNodeGenericStatusSemantics(t *testing.T) {
 		{name: "legal restriction is region policy", statusCode: http.StatusUnavailableForLegalReasons, wantKind: runtimecore.FailureRegionUnsupported, wantScope: runtimecore.BlockScopeAccount},
 		{name: "request timeout is request scoped", statusCode: http.StatusRequestTimeout, wantKind: runtimecore.FailureUnclassified},
 		{name: "ordinary payment required is request scoped", statusCode: http.StatusPaymentRequired, wantKind: runtimecore.FailureUnclassified},
-		{name: "server error", statusCode: http.StatusInternalServerError, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: 5 * time.Minute},
-		{name: "service unavailable", statusCode: http.StatusServiceUnavailable, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: time.Minute},
-		{name: "model overloaded", statusCode: 529, wantKind: runtimecore.FailureModelOverloaded, wantRetry: 10 * time.Minute},
+		{name: "server error", statusCode: http.StatusInternalServerError, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: runtimecore.GuessedCooldown},
+		{name: "service unavailable", statusCode: http.StatusServiceUnavailable, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: runtimecore.GuessedCooldown},
+		{name: "model overloaded", statusCode: 529, wantKind: runtimecore.FailureModelOverloaded, wantRetry: runtimecore.GuessedCooldown},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

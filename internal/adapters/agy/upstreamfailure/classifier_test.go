@@ -17,9 +17,9 @@ func TestClassifyGenericHTTPFailureMatchesNode(t *testing.T) {
 	}{
 		{name: "forbidden is credential rejection", statusCode: 403, wantKind: runtimecore.FailureCredentialRejected, wantScope: runtimecore.BlockScopeAccount},
 		{name: "request timeout is request scoped", statusCode: 408, wantKind: runtimecore.FailureUnclassified},
-		{name: "server error", statusCode: 500, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: 5 * time.Minute},
-		{name: "service unavailable", statusCode: 503, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: time.Minute},
-		{name: "model overloaded", statusCode: 529, wantKind: runtimecore.FailureModelOverloaded, wantRetry: 10 * time.Minute},
+		{name: "server error", statusCode: 500, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: runtimecore.GuessedCooldown},
+		{name: "service unavailable", statusCode: 503, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: runtimecore.GuessedCooldown},
+		{name: "model overloaded", statusCode: 529, wantKind: runtimecore.FailureModelOverloaded, wantRetry: runtimecore.GuessedCooldown},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

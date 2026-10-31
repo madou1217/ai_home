@@ -58,7 +58,7 @@ function crossDeviceFs() {
   };
 }
 
-test('cline 跨设备：接管被拒（fail-closed），不复制、不建链、原文件还在', (t) => withRoot(t, ({ sandboxDir, hostHomeDir }) => {
+test('cline 有真实会话数据：不接管（不搬/不复制/不建链），原文件还在', (t) => withRoot(t, ({ sandboxDir, hostHomeDir }) => {
   const projectionFile = path.join(sandboxDir, '.cline', 'data', 'sessions', 's1', 'session.json');
   fs.mkdirSync(path.dirname(projectionFile), { recursive: true });
   fs.writeFileSync(projectionFile, '{"messages":[]}\n');
@@ -71,7 +71,7 @@ test('cline 跨设备：接管被拒（fail-closed），不复制、不建链、
     DatabaseSync: null
   });
 
-  assert.equal(summary.deferred, 'move-blocked');
+  assert.equal(summary.deferred, 'legacy-data-present');
   assert.equal(summary.linked, 0);
   // 原文件没被动过
   assert.equal(fs.existsSync(projectionFile), true);
@@ -83,16 +83,15 @@ test('cline 跨设备：接管被拒（fail-closed），不复制、不建链、
   assert.equal(fs.lstatSync(path.join(sandboxDir, '.cline', 'data', 'sessions')).isSymbolicLink(), false);
 }));
 
-test('cline 同设备：照旧移动并建链（行为未受影响）', (t) => withRoot(t, ({ sandboxDir, hostHomeDir }) => {
-  const projectionFile = path.join(sandboxDir, '.cline', 'data', 'sessions', 's1', 'session.json');
-  fs.mkdirSync(path.dirname(projectionFile), { recursive: true });
-  fs.writeFileSync(projectionFile, '{"messages":[]}\n');
+test('cline 投影里没有真实数据时：照常建链（行为未受影响）', (t) => withRoot(t, ({ sandboxDir, hostHomeDir }) => {
+  fs.mkdirSync(path.join(sandboxDir, '.cline', 'data'), { recursive: true });
 
   const summary = ensureClineSharedSessionState({ fs, path, sandboxDir, hostHomeDir, DatabaseSync: null });
 
   assert.equal(summary.deferred, '');
-  const sharedFile = path.join(hostHomeDir, '.cline', 'data', 'sessions', 's1', 'session.json');
-  assert.equal(fs.existsSync(sharedFile), true);
-  assert.equal(fs.readFileSync(sharedFile, 'utf8'), '{"messages":[]}\n');
-  assert.equal(fs.lstatSync(path.join(sandboxDir, '.cline', 'data', 'sessions')).isSymbolicLink(), true);
+  assert.equal(
+    fs.lstatSync(path.join(sandboxDir, '.cline', 'data', 'sessions')).isSymbolicLink(),
+    true
+  );
+  assert.equal(fs.existsSync(path.join(hostHomeDir, '.cline', 'data', 'sessions')), true);
 }));

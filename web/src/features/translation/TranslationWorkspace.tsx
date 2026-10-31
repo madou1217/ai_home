@@ -611,16 +611,22 @@ export default function TranslationWorkspace() {
         return output;
       },
     });
+    // 每段一译完就写进页面（不等整页结束），撤销仍是一个整体。
+    const undoSegments: Array<() => void> = [];
+    pageUndoRef.current = () => { while (undoSegments.length) undoSegments.pop()?.(); };
     try {
-      const progress = await translator(segments, controller.signal, (item) => setPageProgress((current) => {
-        const next = current.filter((entry) => entry.segment.id !== item.segment.id);
-        next.push(item);
-        return next.sort((a, b) => a.segment.index - b.segment.index);
-      }));
-      if (!controller.signal.aborted) {
-        pageUndoRef.current = applyPageTranslation(progress, pageMode);
-        setPageApplied(true);
-      } else setPageCancelled(true);
+      await translator(segments, controller.signal, (item) => {
+        if (!controller.signal.aborted && item.text.trim()) {
+          undoSegments.push(applyPageTranslation([item], pageMode));
+          setPageApplied(true);
+        }
+        setPageProgress((current) => {
+          const next = current.filter((entry) => entry.segment.id !== item.segment.id);
+          next.push(item);
+          return next.sort((a, b) => a.segment.index - b.segment.index);
+        });
+      });
+      if (controller.signal.aborted) setPageCancelled(true);
     } finally {
       if (pageAbortRef.current === controller) {
         pageAbortRef.current = null;

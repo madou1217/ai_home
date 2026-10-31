@@ -465,7 +465,9 @@ export default function ScheduledTasks() {
               {
                 title: '摘要',
                 render: (_value, row) => (
-                  <span className="scheduled-tasks-summary">{row.error || row.summary || '—'}</span>
+                  <span className="scheduled-tasks-summary">
+                    {row.errorSummary || row.error || row.summary || '—'}
+                  </span>
                 )
               }
             ]}
@@ -641,7 +643,9 @@ export default function ScheduledTasks() {
               {
                 title: '摘要',
                 render: (_value, row) => (
-                  <span className="scheduled-tasks-summary">{row.error || row.summary || '—'}</span>
+                  <span className="scheduled-tasks-summary">
+                    {row.errorSummary || row.error || row.summary || '—'}
+                  </span>
                 )
               }
             ]}

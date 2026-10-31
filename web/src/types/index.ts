@@ -228,6 +228,8 @@ export interface AccountActivityPlan {
   status?: string;
   startsAt?: string;
   endsAt?: string;
+  /** 由 provider 描述符声明的分类规则派生（如 weekend_build / start_plan）。 */
+  planKind?: string;
 }
 
 /** 一次领取的执行结果（服务端 / CLI 同一形状）。 */
@@ -238,6 +240,8 @@ export interface AccountActivityResult {
   action?: string;
   status: string;
   error?: string;
+  /** 服务端归一后的错误码（去掉 `:401` 这类细节），用于分组与统计。 */
+  errorCode?: string;
   message?: string;
   code?: number | null;
   auth?: boolean;
@@ -257,6 +261,28 @@ export interface AccountActivitySummary {
   nothingClaimable: number;
   notApplicable: number;
   failed: number;
+  /** 正常结束的账号数（领到 / 已领过 / 暂无可领 / 不适用 / 跳过）。 */
+  succeeded?: number;
+  skipped?: number;
+  byStatus?: Record<string, number>;
+  failures?: AccountActivityFailures;
+  /** 按 plan 聚合：同一 plan 被几个账号领到 / 已领过。 */
+  claims?: Array<{
+    planId: string;
+    name?: string;
+    planKind?: string;
+    claimed: number;
+    alreadyClaimed: number;
+  }>;
+  /** 失败部分的人话摘要（服务端生成，前端不拼）。 */
+  errorSummary?: string;
+}
+
+/** 失败归因：按错误码分组 + 逐账号明细。 */
+export interface AccountActivityFailures {
+  total: number;
+  byCode: Array<{ code: string; count: number; accountRefs: string[] }>;
+  byAccount: Array<{ provider: string; accountRef: string; code: string; message: string }>;
 }
 
 /** 异步领取任务的进度（服务端后台串行执行）。 */
@@ -285,6 +311,10 @@ export interface AccountActivityJob {
   results: AccountActivityResult[];
   summary: AccountActivitySummary | null;
   error?: string;
+  /** `all_accounts_failed` 旁边的结构化归因。 */
+  errorCode?: string;
+  errorSummary?: string;
+  failures?: AccountActivityFailures | null;
   createdAt: number;
   updatedAt: number;
   finishedAt?: number | null;
@@ -2221,6 +2251,8 @@ export interface ScheduledTaskRecord {
   status: string;
   summary: string;
   error: string;
+  /** 失败归因的人话摘要（如「全部 3 个账号失败：zcode_captcha_rejected ×2」）。 */
+  errorSummary?: string;
   startedAt: number;
   finishedAt: number;
 }

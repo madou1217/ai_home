@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  BranchesOutlined,
   BuildOutlined,
   CodeOutlined,
   ExperimentOutlined,
@@ -15,14 +16,16 @@ const RUNTIME_PLUGIN_ORDER: readonly EnvironmentRuntimePlugin[] = Object.freeze(
   { id: 'node', name: 'Node.js', icon: 'node' },
   { id: 'python', name: 'Python', icon: 'python' },
   { id: 'rust', name: 'Rust', icon: 'rust' },
-  { id: 'go', name: 'Go', icon: 'go' }
+  { id: 'go', name: 'Go', icon: 'go' },
+  { id: 'git', name: 'Git', icon: 'git' }
 ]);
 
 const RUNTIME_ICONS: Readonly<Record<string, ReactNode>> = Object.freeze({
   node: <CodeOutlined />,
   python: <ExperimentOutlined />,
   rust: <BuildOutlined />,
-  go: <ThunderboltOutlined />
+  go: <ThunderboltOutlined />,
+  git: <BranchesOutlined />
 });
 
 export function runtimePluginIcon(id: string): ReactNode {

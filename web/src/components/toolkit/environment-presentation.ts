@@ -3,7 +3,8 @@ const ENVIRONMENT_CATEGORY_LABELS: Readonly<Record<string, string>> = Object.fre
   'package-manager': '包管理器',
   'environment-manager': '环境管理器',
   'virtual-environment': '虚拟环境',
-  runtime: '运行时'
+  runtime: '运行时',
+  'version-control': '版本控制'
 });
 
 export function getEnvironmentCategoryLabel(category: string) {

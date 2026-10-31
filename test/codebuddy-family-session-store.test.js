@@ -167,3 +167,27 @@ test('归一之后，国内站 Provider 也能读到国际站写的会话（同�
     assert.deepEqual(ids, ['intl-9'], provider);
   }
 }));
+
+test('跨设备 rename 失败时不复制、不建链接（用户硬规则：只许移动与软链接）', (t) => withHome(t, (home) => {
+  const source = writeSession(home, '.codebuddy-cn', 'proj-a', 'cn-1', LINE);
+  const exdevFs = {
+    ...fs,
+    renameSync: (from, to) => {
+      if (String(from).includes('.codebuddy-cn')) {
+        const error = new Error('EXDEV: cross-device link not permitted');
+        error.code = 'EXDEV';
+        throw error;
+      }
+      return fs.renameSync(from, to);
+    }
+  };
+
+  const result = unifyFamilySessionStore({ fs: exdevFs, path, platform: 'darwin', hostHomeDir: home });
+
+  assert.equal(result.failed.length, 1);
+  assert.equal(result.adopted.length, 0);
+  assert.equal(isSymlink(path.join(home, '.codebuddy-cn', 'projects')), false);
+  // 来源还在原位，目标没有多出一份拷贝。
+  assert.equal(fs.readFileSync(source, 'utf8'), LINE);
+  assert.equal(fs.existsSync(path.join(home, '.codebuddy', 'projects', 'proj-a', 'cn-1.jsonl')), false);
+}));

@@ -95,5 +95,5 @@ export async function encodeGifAnimation(request: EncodeAnimationRequest): Promi
   const bytes = encoder.bytes();
   if (!bytes || bytes.length === 0) throw new Error('gif_encode_empty');
   const view = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return new Blob([view], { type: descriptor.mimeType });
+  return new Blob([view as Uint8Array<ArrayBuffer>], { type: descriptor.mimeType });
 }

@@ -8,9 +8,9 @@ import {
 import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
-import type { ManagedAppItem } from '@/types';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ManagedAppCard from './ManagedAppCard';
+import type { ManagedAppLaunchTarget } from './ManagedAppAccountActions';
 import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
@@ -77,7 +77,7 @@ export default function AppManagerPanel() {
   const [category, setCategory] = useState('ALL');
   const [advancedAppId, setAdvancedAppId] = useState('');
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
-    app: ManagedAppItem;
+    app: ManagedAppLaunchTarget;
     accountRef: string;
   } | null>(null);
 
@@ -93,7 +93,7 @@ export default function AppManagerPanel() {
       : data.apps.filter((app) => app.categories.includes(category));
   }, [category, data]);
 
-  const openManagedApp = async (app: ManagedAppItem, accountRef?: string, unscoped = false) => {
+  const openManagedApp = async (app: ManagedAppLaunchTarget, accountRef?: string, unscoped = false) => {
     const kind = app.type === 'desktop' ? 'desktop' : 'cli';
     try {
       const response = await toolkitAPI.openManagedApp(app.id, {
@@ -121,7 +121,7 @@ export default function AppManagerPanel() {
     }
   };
 
-  const closeManagedApp = async (app: ManagedAppItem, accountRef: string) => {
+  const closeManagedApp = async (app: ManagedAppLaunchTarget, accountRef: string) => {
     const kind = app.type === 'desktop' ? 'desktop' : 'cli';
     try {
       const response = await toolkitAPI.openManagedApp(app.id, {

@@ -112,7 +112,7 @@ export default function AihPluginPanel() {
           );
         })}
       </Space>
-      {doctor ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>Doctor：{doctor.ok ? '健康' : `${doctor.issues?.length || 0} 个问题`}；runtime {doctor.runtime?.state || 'unknown'}</Typography.Text> : null}
+      {doctor ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>Doctor：{doctor.ok ? '健康' : `${doctor.issues?.length || 0} 个问题`}；runtime {String(doctor.runtime?.state || 'unknown')}</Typography.Text> : null}
       {demo ? <Card size="small" title="最近一次 demo 证据" style={{ marginTop: 12 }}><Space direction="vertical" size={4}>{evidenceLines(demo).map((line) => <Typography.Text key={line}>{line}</Typography.Text>)}</Space></Card> : null}
     </section>
   );

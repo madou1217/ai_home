@@ -4,7 +4,7 @@ import Button from '@/components/ui/AppButton';
 import type { Account, ManagedAppItem } from '@/types';
 import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedAppIcon from './ManagedAppIcon';
-import ManagedAppAccountActions from './ManagedAppAccountActions';
+import ManagedAppAccountActions, { type ManagedAppLaunchTarget } from './ManagedAppAccountActions';
 import ManagedResourceCard from './ManagedResourceCard';
 import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
 import {
@@ -32,8 +32,8 @@ export interface ManagedAppCardProps {
   clearingUpgrade?: boolean;
   onAction: (app: ManagedAppItem, action: 'install' | 'update' | 'uninstall') => void;
   onCheckUpdate: (app: ManagedAppItem) => void;
-  onOpenApp: (app: ManagedAppItem, accountRef?: string, unscoped?: boolean) => void;
-  onCloseApp: (app: ManagedAppItem, accountRef: string) => void;
+  onOpenApp: (app: ManagedAppLaunchTarget, accountRef?: string, unscoped?: boolean) => void;
+  onCloseApp: (app: ManagedAppLaunchTarget, accountRef: string) => void;
   onClearUpgradeBroken?: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
 }

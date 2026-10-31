@@ -92,7 +92,6 @@ import {
 } from '@/features/accounts/account-state';
 import { getPlanTagColor, getPlanTagLabel } from '@/features/accounts/AccountBadges';
 import {
-  confirmOccupiedAccountDeletion,
   isAccountOccupiedError
 } from '@/features/accounts/account-deletion-confirm';
 import dayjs from 'dayjs';
@@ -1571,7 +1570,8 @@ export default function Accounts() {
     }
     const requestPayload = {
       provider: values.provider as SupportedAccountProvider,
-      ...selectedOption,
+      authMode: selectedOption.authMode as AccountAuthMode,
+      ...(selectedOption.authStrategy ? { authStrategy: selectedOption.authStrategy } : {}),
       config: configPayload
     };
     try {
@@ -1647,25 +1647,21 @@ export default function Accounts() {
     }
   };
 
-  const handleDelete = async (provider: string, accountRef: string, options?: { force?: boolean }) => {
+  const handleDelete = async (provider: string, accountRef: string) => {
     const key = getAccountRef({ accountRef });
     if (!key || deletingAccountRefsRef.current.has(key)) return;
     deletingAccountRefsRef.current.add(key);
     try {
-      await accountsAPI.delete(provider, accountRef, options);
+      await accountsAPI.delete(provider, accountRef);
       stageAccountRemoval({ accountRef });
       message.success('删除账号成功');
     } catch (error: any) {
       const data = error?.response?.data;
-      // 被占用不是「失败」而是「需要用户决定」：列出占用者，确认后带 force 重发。
+      // Go 账号管理在账号仍有活跃持久会话时拒绝删除（409 account_runtime_active），
+      // 且删除接口**没有** force：旧代码在这里弹「强制删除」再原样重发，必然再 409，按钮无效。
+      // 如实告知用户先结束会话。
       if (isAccountOccupiedError(data)) {
-        confirmOccupiedAccountDeletion({
-          data,
-          onConfirm: () => {
-            deletingAccountRefsRef.current.delete(key);
-            void handleDelete(provider, accountRef, { force: true });
-          }
-        });
+        message.warning(data?.message || '账号仍有活跃持久会话，请先结束会话再删除');
         return;
       }
       message.error(data?.message || '删除账号失败');
@@ -1998,7 +1994,7 @@ export default function Accounts() {
       render: (_value: any, record: Account) => {
         const probe = getAccountModelProbe(record, modelProbes);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getAccountRef(record)]);
-        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing, record.provider);
+        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="accounts-model-probe">
             <span
@@ -2183,7 +2179,7 @@ export default function Accounts() {
             >
             <Badge
               status={getModelProbeTagColor(probe, modelRefreshing) as any}
-              text={getModelProbeTagLabel(probe, modelRefreshing, record.provider)}
+              text={getModelProbeTagLabel(probe, modelRefreshing)}
             />
           </span>
         </div>

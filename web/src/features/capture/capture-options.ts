@@ -26,7 +26,7 @@ export function listRecordableAnimationFormats(
   const prefs = deps.preferences ?? readCapturePreferences();
   return listAnimationFormats()
     .filter((format) => prefs.enabledFormats[format.id] && isFormatAvailable(format.id, availability))
-    .map((format) => ({ id: format.id, label: format.label }));
+    .flatMap((format) => (isAnimationCaptureFormat(format.id) ? [{ id: format.id, label: format.label }] : []));
 }
 
 /** 主按钮默认动作：偏好默认格式（必须启用且在可选清单里），否则清单第一项。 */

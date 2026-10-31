@@ -107,16 +107,16 @@ export function findReferenceField(
   const actualSegments = String(keyPath).split('.').filter(Boolean);
   if (!actualSegments.length) return null;
   let best: { field: ProviderConfigSchemaField; score: number } | null = null;
-  fields.forEach((field) => {
+  for (const field of fields) {
     const schemaSegments = String(field.path || '').split('.').filter(Boolean);
-    if (!schemaSegments.length) return;
-    if (!schemaSegments.some(isPlaceholderSegment)) return;
+    if (!schemaSegments.length) continue;
+    if (!schemaSegments.some(isPlaceholderSegment)) continue;
     const penalty = matchPlaceholderPath(schemaSegments, actualSegments, 0, 0);
-    if (penalty === null) return;
+    if (penalty === null) continue;
     const literals = schemaSegments.filter((segment) => !isPlaceholderSegment(segment)).length;
     const score = literals * 100 - penalty;
     if (!best || score > best.score) best = { field, score };
-  });
+  }
   return best ? best.field : null;
 }
 

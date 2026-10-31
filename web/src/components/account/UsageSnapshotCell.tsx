@@ -460,7 +460,7 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
   const visibleRows = hideModels ? rows.slice(0, 1) : (expanded ? rows : rows.slice(0, 2));
   // 具名桶（zcode 的每模型余额）在组标题位置显示套餐名，通用桶不显示。
   const planName = rows.some((row) => isNamedBucket(row.bucket))
-    ? String(('account' in snapshot ? snapshot.account?.planType : '') || '')
+    ? String(('account' in snapshot && snapshot.account && 'planType' in snapshot.account ? snapshot.account.planType : '') || '')
     : '';
   return (
     <div className="usage-snapshot-content usage-snapshot-content--scopes">

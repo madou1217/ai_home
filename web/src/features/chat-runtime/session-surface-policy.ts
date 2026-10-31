@@ -82,7 +82,7 @@ export function resolveSessionRuntimeTarget(
     status: 'ready',
     target: {
       provider: input.session.provider,
-      executionAccountRef: boundAccountRef || (selectedAccount as ChatAccount).accountRef,
+      executionAccountRef: boundAccountRef || String((selectedAccount as ChatAccount).accountRef || ''),
       projectPath,
       ...(!input.session.draft ? { nativeSessionId: input.session.id } : {}),
       ...(input.session.runtimeSessionId ? { sessionId: input.session.runtimeSessionId } : {}),

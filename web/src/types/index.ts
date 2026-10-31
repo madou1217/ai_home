@@ -2418,6 +2418,8 @@ export interface ProviderConfigSchemaField {
   cliFlag?: string;
   /** 可直接复制的用法示例，例如 `codex --model <model>`。 */
   cliSample?: string;
+  /** 字段出处（官方文档锚点）；后端从 schema 数据透传，可能为空。 */
+  sourceUrl?: string;
   compatibility?: ProviderConfigFieldCompatibility;
 }
 

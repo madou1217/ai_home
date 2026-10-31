@@ -1,6 +1,6 @@
 import type {
   ProviderConfigSchemaField,
-  ProviderConfigSchemaFieldCompatibility
+  ProviderConfigFieldCompatibility as ProviderConfigSchemaFieldCompatibility
 } from '@/types';
 
 // Provider 配置的轻量行级大纲。

@@ -241,14 +241,13 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
                       </Button>
                       {task ? (
                         <span className="toolkit-section-note">
-                          {LIFECYCLE_ACTION_LABELS[task.action] || '操作'}中
+                          {(LIFECYCLE_ACTION_LABELS as Readonly<Record<string, string>>)[task.action || ''] || '操作'}中
                         </span>
                       ) : null}
                     </Space>
                   )}
                   footer={tool.service ? (
                     <ToolServicePolicy
-                      tool={tool}
                       service={tool.service}
                       busy={toolService.busyFor(tool)}
                       onChange={(settings) => void toolService.updateSettings(tool, settings)}

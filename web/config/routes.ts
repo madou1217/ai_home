@@ -24,8 +24,10 @@ const nodeRoutes = [
   {
     // 快捷唤起（桌面原生小窗 / 一键打开）：同一个 Chat 页，参数见 pages/chat-quick-launch.ts。
     path: "/chat/quick",
-    component: "./Chat",
+    component: "./QuickChat",
     hideInMenu: true,
+    // 独立外壳：不套 ProLayout（顶栏/侧栏）与移动端 HUD 外壳，见 pages/QuickChat.tsx。
+    layout: false,
   },
   {
     name: "模型用量",

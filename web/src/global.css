@@ -9,7 +9,6 @@
 @import './styles/mobile-shell.css';
 @import './styles/hud.css';
 @import './styles/motion.css';
-@import './styles/quick-chat.css';
 
 html, body {
   margin: 0;

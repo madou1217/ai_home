@@ -261,9 +261,12 @@ export type ChatPageState = ReturnType<typeof useChatPageState>;
 export function ChatConversationContent({
   state,
   canonicalFrameClassName,
+  workbench = true,
 }: {
   state: ChatPageState;
   canonicalFrameClassName?: string;
+  /** work 模式是否外包项目工作台（文件 / Review）。快捷窗口窄宽度下关掉，只留会话。 */
+  workbench?: boolean;
 }) {
   const {
     mobile,
@@ -362,7 +365,7 @@ export function ChatConversationContent({
   );
 
   // 在纯聊天模式下，直接展示对话面板，无需 ProjectWorkbench 工作区标签页
-  return workspaceMode === 'chat' ? (
+  return workspaceMode === 'chat' || !workbench ? (
     runtimeContent
   ) : (
     <ProjectWorkbench

@@ -6,7 +6,10 @@ import type { AggregatedProject, Provider, Session } from '@/types';
 import { branchResultSession } from './message-operation';
 
 export interface CanonicalSessionDirectoryQuery {
-  readonly provider: Provider;
+  /** 缺省 = 该项目下所有已注册 provider（一次请求，客户端按 providers 过滤）。 */
+  readonly provider?: Provider;
+  /** provider 缺省时的允许名单。 */
+  readonly providers?: readonly Provider[];
   readonly projectPath: string;
   readonly nativeSessionId?: string;
 }
@@ -115,6 +118,7 @@ export function overlayCanonicalSessionDirectoryFocus(
   if (!nativeSessionId) {
     return combineCanonicalSessionDirectoryResults([base, exact]);
   }
+  if (!focus.provider) return combineCanonicalSessionDirectoryResults([base, exact]);
   const focusedIdentity = nativeIdentity(focus.provider, nativeSessionId);
   const baseWithoutFocusedIdentity = {
     sessions: base.sessions.filter((session) => sessionIdentity(session) !== focusedIdentity),
@@ -140,13 +144,13 @@ export function buildCanonicalSessionDirectoryQueries(
   focus: CanonicalSessionDirectoryFocus = {},
 ): CanonicalSessionDirectoryQuery[] {
   const queries = new Map<string, CanonicalSessionDirectoryQuery>();
+  // 每个项目一次请求（不按 provider 拆）：注册表覆盖全部 14 个 provider 后，按 provider × 项目
+  // 拆分会让打开会话页发出数百个请求（2026-11-01 实测 245 个）。服务端按项目查，客户端按名单过滤。
   projects.forEach((project) => {
     const projectPath = project.path.trim();
     if (!projectPath) return;
-    providers.forEach((provider) => {
-      const query = { provider, projectPath };
-      queries.set(directoryQueryIdentity(query), query);
-    });
+    const query = { projectPath, providers };
+    queries.set(directoryQueryIdentity(query), query);
   });
   const focusProvider = providers.find((provider) => provider === focus.provider);
   const focusProjectPath = String(focus.projectPath || '').trim();
@@ -163,7 +167,11 @@ export async function loadCanonicalSessionDirectory(
   api: Pick<ChatRuntimeApi, 'listSessions'>,
 ): Promise<CanonicalSessionDirectoryResult> {
   const responses = await mapWithConcurrency(queries, async (query) => {
-    const sessions = await api.listSessions(query);
+    const sessions = await api.listSessions({
+      ...(query.provider ? { provider: query.provider } : {}),
+      projectPath: query.projectPath,
+      ...(query.nativeSessionId ? { nativeSessionId: query.nativeSessionId } : {}),
+    });
     return sessions.flatMap((session) => projectRuntimeSession(session, query));
   }, 6);
   return combineCanonicalSessionDirectoryResults(
@@ -219,8 +227,11 @@ function projectRuntimeSession(
   const nativeSessionId = typeof session.runtimeBinding.nativeSessionId === 'string'
     ? session.runtimeBinding.nativeSessionId.trim()
     : '';
+  const providerAllowed = query.provider
+    ? session.provider === query.provider
+    : !query.providers || query.providers.includes(session.provider as Provider);
   if (!nativeSessionId
-    || session.provider !== query.provider
+    || !providerAllowed
     || session.projectPath !== query.projectPath
     || (query.nativeSessionId && nativeSessionId !== query.nativeSessionId)) return [];
   if (session.policy.lineage && session.policy.workspaceMode !== 'chat') {
@@ -234,7 +245,7 @@ function projectRuntimeSession(
     runtimeSessionId: session.sessionId,
     title: sessionTitle(session.policy.title),
     updatedAt: session.updatedAt,
-    provider: query.provider,
+    provider: session.provider as Provider,
     accountRef: session.executionAccountRef,
     projectPath: query.projectPath,
     model: typeof session.policy.model === 'string' ? session.policy.model : undefined,
@@ -309,7 +320,7 @@ function isPlaceholderTitle(value: string): boolean {
 
 function sessionIdentity(value: Pick<Session, 'provider' | 'id'> | CanonicalSessionDirectoryQuery): string {
   const identity = 'id' in value ? value.id : value.projectPath;
-  return nativeIdentity(value.provider, identity);
+  return nativeIdentity((value.provider || '*') as Provider, identity);
 }
 
 function nativeIdentity(provider: Provider, nativeSessionId: string): string {
@@ -317,7 +328,7 @@ function nativeIdentity(provider: Provider, nativeSessionId: string): string {
 }
 
 function directoryQueryIdentity(query: CanonicalSessionDirectoryQuery): string {
-  return `${query.provider}\u0000${query.projectPath}\u0000${query.nativeSessionId || ''}`;
+  return `${query.provider || '*'}\u0000${query.projectPath}\u0000${query.nativeSessionId || ''}`;
 }
 
 function sortSessionsByActivity(sessions: Session[]): Session[] {

@@ -4014,3 +4014,25 @@ export interface TranslationExecutionTarget {
   };
   providers?: TranslationExecutionTargetProvider[];
 }
+
+/** 账号配置查看：服务端声明的只读文件（凭据记录 / 解码后的凭据库 / 运行时投影文件）。 */
+export interface AccountConfigFile {
+  id: string;
+  label: string;
+  source: 'store' | 'projection';
+  location: string;
+  format: string;
+  content: string;
+  redactedFields: string[];
+  updatedAt: number;
+  size?: number;
+}
+
+export interface AccountConfigFilesResponse {
+  ok: boolean;
+  provider: string;
+  accountRef: string;
+  mode: 'redacted' | 'raw';
+  runtimeDirExists: boolean;
+  files: AccountConfigFile[];
+}

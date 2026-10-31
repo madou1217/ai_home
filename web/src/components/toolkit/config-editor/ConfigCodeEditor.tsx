@@ -26,6 +26,7 @@ interface ConfigCodeEditorProps {
   onSave?: () => void;
   onCursorLineChange?: (line: number) => void;
   onHoverLineChange?: (line: number | null) => void;
+  readOnly?: boolean;
 }
 
 function formatError(error: unknown) {
@@ -44,7 +45,8 @@ export default function ConfigCodeEditor({
   detectContent = false,
   onSave,
   onCursorLineChange,
-  onHoverLineChange
+  onHoverLineChange,
+  readOnly = false
 }: ConfigCodeEditorProps) {
   const sourceKey = `${format || ''}:${fileName || ''}:${detectContent ? 'detect' : 'fixed'}`;
   const inferredLanguage = useMemo(() => resolveConfigLanguage({
@@ -116,7 +118,7 @@ export default function ConfigCodeEditor({
             <span>
               <Button
                 icon={<FormatPainterOutlined />}
-                disabled={!formatSupported}
+                disabled={!formatSupported || readOnly}
                 loading={formatting}
                 onClick={() => void runFormatter()}
               >
@@ -138,6 +140,7 @@ export default function ConfigCodeEditor({
             onSave={onSave}
             onHighlightingStatusChange={setHighlightingStatus}
             onCursorLineChange={onCursorLineChange}
+            readOnly={readOnly}
             onHoverLineChange={onHoverLineChange}
           />
         </Suspense>

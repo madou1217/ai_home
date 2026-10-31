@@ -84,6 +84,8 @@ interface MonacoConfigEditorProps {
   onCursorLineChange?: (line: number) => void;
   /** 鼠标悬停行变化；离开编辑器时传 null。 */
   onHoverLineChange?: (line: number | null) => void;
+  /** 只读查看（账号配置查看等场景）。 */
+  readOnly?: boolean;
 }
 
 export default function MonacoConfigEditor({
@@ -96,7 +98,8 @@ export default function MonacoConfigEditor({
   onSave,
   onHighlightingStatusChange,
   onCursorLineChange,
-  onHoverLineChange
+  onHoverLineChange,
+  readOnly = false
 }: MonacoConfigEditorProps) {
   const [highlightingStatus, setHighlightingStatus] = useState<'loading' | 'ready' | 'fallback'>('loading');
   const saveRef = useRef(onSave);
@@ -178,6 +181,7 @@ export default function MonacoConfigEditor({
         lineNumbers: 'on',
         minimap: { enabled: false },
         padding: { top: 12, bottom: 12 },
+        readOnly,
         placeholder: '配置文件为空，可直接输入内容后保存',
         renderValidationDecorations: 'on',
         scrollBeyondLastLine: false,

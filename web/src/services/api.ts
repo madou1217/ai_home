@@ -98,6 +98,7 @@ import type {
   ManagedToolServiceResponse,
   ManagedToolLifecycleAction,
   ToolkitToolConfigResponse,
+  AccountConfigFilesResponse,
   ProviderConfigDetailResponse,
   ProviderConfigExportResponse,
   ProviderConfigHistoryEntryResponse,
@@ -758,6 +759,17 @@ export const accountsAPI = {
     const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
     const response = await api.get<{ ok: boolean; provider: string; accountRef: string; events: any[] }>(
       `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-reset-events${query}`
+    );
+    return response.data;
+  },
+
+  getAccountConfigFiles: async (
+    provider: string,
+    accountRef: string,
+    mode: 'redacted' | 'raw' = 'redacted'
+  ): Promise<AccountConfigFilesResponse> => {
+    const response = await api.get<AccountConfigFilesResponse>(
+      `${buildAccountScopedPath(provider, accountRef)}/config-files?mode=${mode}`
     );
     return response.data;
   },

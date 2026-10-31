@@ -49,6 +49,7 @@ import {
   BranchesOutlined,
   FieldNumberOutlined,
   GiftOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
@@ -124,6 +125,7 @@ import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
 import { AccountAliasPoolModal } from '@/features/accounts/AccountAliasPoolModal';
+import AccountConfigFilesModal from '@/features/accounts/AccountConfigFilesModal';
 import { AccountModelContextModal } from '@/features/accounts/AccountModelContextModal';
 import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
 import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
@@ -282,6 +284,7 @@ export default function Accounts() {
   const [rewardsJob, setRewardsJob] = useState<AccountActivityJob | null>(null);
   const rewardsPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aliasPoolAccount, setAliasPoolAccount] = useState<Account | null>(null);
+  const [configFilesAccount, setConfigFilesAccount] = useState<Account | null>(null);
   const [modelContextAccount, setModelContextAccount] = useState<Account | null>(null);
 
   const renderEgressBadge = (record: Account) => (
@@ -499,12 +502,13 @@ export default function Accounts() {
   };
 
   // 账号操作菜单（⋮）—— 列表列与卡片视图共用同一套 items + 点击分发，避免逻辑分叉。
-  // 需要重新登录的账号只有重新登录一件事可做：调度规则是第三方上游专属，
+  // 需要重新登录的账号只能重新登录（外加只读查看配置文件，便于排查凭据）：调度规则是第三方上游专属，
   // 登录态账号本来就没有入口。
   const buildAccountMenuItems = (record: Account): MenuProps['items'] => {
     if (requiresAccountReauth(record)) {
       return [
-        { key: 'reauth', label: '重新登录', icon: <SyncOutlined /> }
+        { key: 'reauth', label: '重新登录', icon: <SyncOutlined /> },
+        { key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> }
       ];
     }
     const menuItems: MenuProps['items'] = [];
@@ -544,6 +548,7 @@ export default function Accounts() {
     if (canEditAccountConfig(record)) {
       menuItems.push({ key: 'edit', label: '编辑配置', icon: <EditOutlined /> });
     }
+    menuItems.push({ key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> });
     if (canEditAccountRoutingRules(record)) {
       menuItems.push({ key: 'routing-rules', label: '编辑调度规则', icon: <CodeOutlined /> });
     }
@@ -571,7 +576,7 @@ export default function Accounts() {
   };
 
   const handleAccountMenuClick = (record: Account, key: string) => {
-    if (requiresAccountReauth(record) && key !== 'reauth') return;
+    if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'config-files') return;
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
     if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
@@ -599,6 +604,10 @@ export default function Accounts() {
     }
     if (key === 'window-activation') {
       setAccountWindowActivationAccount(record);
+      return;
+    }
+    if (key === 'config-files') {
+      setConfigFilesAccount(record);
       return;
     }
     if (key === 'alias-pool') {
@@ -1272,6 +1281,10 @@ export default function Accounts() {
       <AccountWindowActivationModal
         account={accountWindowActivationAccount}
         onClose={() => setAccountWindowActivationAccount(null)}
+      />
+      <AccountConfigFilesModal
+        account={configFilesAccount}
+        onClose={() => setConfigFilesAccount(null)}
       />
       <AccountAliasPoolModal
         account={aliasPoolAccount}

@@ -131,3 +131,15 @@
     transition: none;
   }
 }
+
+.remote-ws-live {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  vertical-align: 1px;
+  color: var(--color-success, #1d7a4c);
+  background: var(--color-success-bg, rgba(29, 122, 76, 0.12));
+}

@@ -102,8 +102,8 @@ test('route opens a persistent terminal per workspace and reuses it on the next 
   assert.equal(first.payload.sessionKey, 'remote-ws:ws_1');
   assert.equal(first.payload.reused, false);
   assert.equal(first.payload.host, 'model@mac.local');
-  assert.equal(opened[0].file, 'ssh');
-  assert.equal(opened[0].args.at(-2), 'model@mac.local');
+  // PTY 里跑的是 SSH 守护（自动重连），由它去拼 ssh 命令（见 ssh-remote-supervisor.test.js）。
+  assert.deepEqual(opened[0].args.slice(1), ['__remote_ws__', 'ws_1', 'remote-ws:ws_1']);
 
   const again = await callRoute(aiHomeDir, '/v0/webui/ssh-workspaces/ws_1/terminal', {}, open);
   assert.equal(again.payload.reused, true);

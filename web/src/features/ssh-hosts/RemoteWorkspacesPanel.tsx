@@ -24,6 +24,8 @@ export default function RemoteWorkspacesPanel() {
   const [connections, setConnections] = useState<SshConnection[]>([]);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [opening, setOpening] = useState('');
+  // 远端会话是否仍在运行（Server 端状态）：换设备 / 刷新 / Server 重启后都能看到并一键接回。
+  const [alive, setAlive] = useState<Record<string, boolean>>({});
   const openTerminal = useOpenRemoteWorkspaceTerminal();
 
   const load = useCallback(async () => {
@@ -37,6 +39,20 @@ export default function RemoteWorkspacesPanel() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  const refreshSessions = useCallback(async () => {
+    try {
+      const sessions = await sshHostsAPI.listWorkspaceSessions();
+      setAlive(Object.fromEntries(sessions.map((item) => [item.workspaceId, item.alive])));
+    } catch {
+      // 状态拿不到不影响打开终端。
+    }
+  }, []);
+  useEffect(() => {
+    void refreshSessions();
+    const timer = window.setInterval(() => { void refreshSessions(); }, 15000);
+    return () => window.clearInterval(timer);
+  }, [refreshSessions]);
+
   const toggle = () => {
     setCollapsed((value) => {
       try { window.localStorage.setItem(COLLAPSE_KEY, value ? '0' : '1'); } catch { /* ignore */ }
@@ -46,7 +62,7 @@ export default function RemoteWorkspacesPanel() {
 
   const open = async (workspace: SshWorkspace) => {
     setOpening(workspace.id);
-    try { await openTerminal(workspace); } finally { setOpening(''); }
+    try { await openTerminal(workspace); } finally { setOpening(''); void refreshSessions(); }
   };
 
   const hostOf = (workspace: SshWorkspace) => {
@@ -88,7 +104,10 @@ export default function RemoteWorkspacesPanel() {
               >
                 <CloudServerOutlined className="remote-ws-icon" />
                 <span className="remote-ws-text">
-                  <span className="remote-ws-label">{workspace.label}</span>
+                  <span className="remote-ws-label">
+                    {workspace.label}
+                    {alive[workspace.id] ? <span className="remote-ws-live" title="远端会话仍在运行，点击接回">运行中</span> : null}
+                  </span>
                   <span className="remote-ws-meta">{hostOf(workspace)} · {workspace.remoteRoot}</span>
                 </span>
               </button>

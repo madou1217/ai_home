@@ -2557,6 +2557,11 @@ export const sshHostsAPI = {
   deleteWorkspace: async (id: string): Promise<void> => {
     await api.delete(`/webui/ssh-workspaces/${encodeURIComponent(id)}`);
   },
+  /** 各远程工作区的远端会话是否还活着（以 Server 端持久 PTY 为准，跨设备 / Server 重启一致）。 */
+  listWorkspaceSessions: async (): Promise<Array<{ workspaceId: string; sessionKey: string; alive: boolean }>> => {
+    const response = await api.get<{ ok: boolean; sessions: Array<{ workspaceId: string; sessionKey: string; alive: boolean }> }>('/webui/ssh-workspaces/sessions');
+    return response.data.sessions || [];
+  },
   /** 在远程工作区目录里开（或复用）一个持久 Web Terminal；凭据只在 Server 侧使用。 */
   openWorkspaceTerminal: async (id: string, payload: { cols?: number; rows?: number; fresh?: boolean } = {}): Promise<{
     ok: boolean; sessionKey: string; termId: string; reused: boolean; durable: boolean;

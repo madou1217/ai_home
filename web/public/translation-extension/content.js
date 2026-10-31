@@ -449,6 +449,13 @@
       }
     }
     if (message?.type === 'aih-translate-selection') { const item = selected(); if (item) void translateSelection(message.text || item.text, item.rect, item.range); }
-    if (message?.type === 'aih-translate-page') void translatePage();
+    if (message?.type === 'aih-translate-page') void translatePage(message.target || '');
+    if (message?.type === 'aih-undo-page') { pagePresentation?.undo(); pagePresentation = null; void pageState('clear', { operationId: operationSerial }); }
+  });
+  // The toolbar popup asks the page for its state so it can offer "translate" or "undo".
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'aih-page-status') return false;
+    sendResponse({ ok: true, translated: Boolean(pagePresentation), active: Boolean(active) });
+    return false;
   });
 })();

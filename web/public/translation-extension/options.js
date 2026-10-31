@@ -105,3 +105,34 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
   field('concurrency').value = String(Math.max(1, Math.min(8, Number(settings.concurrency) || 3))); field('theme').value = readingThemes.normalize(settings.theme); updateThemePreview(); field('autoCopy').checked = settings.autoCopy === true; selectedModel = { model: settings.model, provider: settings.provider };
   fillModels({}); void refreshModels();
 }).catch(() => { field('status').textContent = '无法读取设置，请重新打开扩展'; });
+
+
+// Page actions: when opened from the toolbar on a normal web page, translate or restore
+// that page directly (the options page itself, chrome:// pages and the store are skipped).
+(async function setupPageActions() {
+  let tab = null;
+  try { [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); } catch (_error) { return; }
+  if (!tab || !tab.id || !/^https?:/.test(String(tab.url || ''))) return;
+  const section = field('page-actions'); const translate = field('translate-page'); const undo = field('undo-page'); const state = field('page-state');
+  section.hidden = false;
+  try { state.textContent = new URL(tab.url).hostname; } catch (_error) { state.textContent = ''; }
+  const send = (message) => chrome.tabs.sendMessage(tab.id, message);
+  async function refresh() {
+    try {
+      const status = await send({ type: 'aih-page-status' });
+      undo.hidden = !status?.translated;
+      translate.textContent = status?.translated ? '重新翻译' : '翻译此页';
+    } catch (_error) {
+      // Content script not injected yet (page opened before install): translating still
+      // works via the background, which injects on demand.
+      undo.hidden = true;
+    }
+  }
+  translate.onclick = async () => {
+    translate.disabled = true; translate.textContent = '已开始翻译…';
+    try { await send({ type: 'aih-translate-page', target: field('target').value }); window.close(); }
+    catch (_error) { translate.disabled = false; translate.textContent = '翻译此页'; state.textContent = '此页面暂不可翻译，请刷新后重试'; }
+  };
+  undo.onclick = async () => { try { await send({ type: 'aih-undo-page' }); } catch (_error) { /* page closed */ } await refresh(); };
+  await refresh();
+})();

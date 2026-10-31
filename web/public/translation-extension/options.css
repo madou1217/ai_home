@@ -5,3 +5,9 @@ section{padding:18px 18px 15px;margin-bottom:12px;border:1px solid var(--line);b
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 .preview-heading{display:flex;justify-content:space-between;gap:10px;margin-block:16px 9px;color:var(--muted);font-size:10px}.preview-heading span:first-child{font-weight:600}.theme-preview{display:block;min-inline-size:0;max-inline-size:100%;font-size:13px;line-height:1.8;color:var(--text);padding-block:4px 6px}
+
+.page-actions{border-color:color-mix(in srgb,var(--accent) 24%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface))}
+.page-buttons{display:flex;gap:8px}.page-buttons button{flex:1;padding:10px 12px;border-radius:11px;cursor:pointer;transition:transform .12s,background .15s,opacity .15s}
+.page-buttons button:active{transform:scale(.97)}.page-buttons button:disabled{opacity:.55;cursor:default}
+.secondary{border:1px solid var(--line);background:var(--soft);color:var(--text)}
+@media (prefers-reduced-motion:reduce){.page-buttons button{transition:none}.page-buttons button:active{transform:none}}

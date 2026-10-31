@@ -453,3 +453,119 @@ test('已有 id 的行（注册表/缓存给的）也能按 id 补上标题', ()
   assert.equal(out[0].agentSessionId, 'sess-known');
   assert.equal(out[0].agentTitle, '会话库里的标题');
 });
+
+// --- qoder-cn / agy：会话库没有「开始时间」，只有最后活动时间 ---
+
+function makeQoderHome(provider, projectPath, sessions) {
+  const home = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-qoder-'));
+  const configDir = provider === 'qodercn' ? '.qoder-cn' : '.qoder';
+  const projectDir = nodePath.join(home, configDir, 'projects', String(projectPath).replace(/[^a-zA-Z0-9]/g, '-'));
+  nodeFs.mkdirSync(projectDir, { recursive: true });
+  for (const session of sessions) {
+    const file = nodePath.join(projectDir, session.id + '.jsonl');
+    nodeFs.writeFileSync(file, [
+      JSON.stringify({ type: 'user', cwd: projectPath, message: { content: session.title } }),
+      JSON.stringify({ type: 'assistant', message: { content: 'ok' } })
+    ].join(String.fromCharCode(10)) + String.fromCharCode(10));
+    nodeFs.utimesSync(file, new Date(session.at), new Date(session.at));
+  }
+  return { home, options: { hostHomeDir: home } };
+}
+
+function makeAgyHome(projectPath, sessions) {
+  const home = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-agy-'));
+  const root = nodePath.join(home, '.gemini', 'antigravity-cli');
+  const index = {};
+  for (const session of sessions) {
+    const transcript = nodePath.join(root, 'brain', session.id, '.system_generated', 'logs', 'transcript.jsonl');
+    nodeFs.mkdirSync(nodePath.dirname(transcript), { recursive: true });
+    nodeFs.writeFileSync(transcript, JSON.stringify({
+      type: 'USER_INPUT',
+      content: session.title,
+      created_at: new Date(session.at).toISOString()
+    }) + String.fromCharCode(10));
+    nodeFs.utimesSync(transcript, new Date(session.at), new Date(session.at));
+    index[session.id] = { projectPath, updatedAt: new Date(session.at).toISOString() };
+  }
+  nodeFs.mkdirSync(root, { recursive: true });
+  nodeFs.writeFileSync(nodePath.join(root, 'aih-session-projects.json'), JSON.stringify(index));
+  return { home, options: { hostHomeDir: home } };
+}
+
+test('qodercn：pane 活了三小时也拿「刚聊过」的会话，不是「离创建最近」的那个', () => {
+  const projectPath = '/Users/model/projects/demo_qcn';
+  const now = Date.now();
+  const { options } = makeQoderHome('qodercn', projectPath, [
+    { id: 'qcn-old', title: '三小时前聊的', at: now - 180 * MINUTE },
+    { id: 'qcn-live', title: '刚聊过的', at: now - 2 * MINUTE }
+  ]);
+  const out = resolveAgentSessionIds('qodercn', [
+    { name: 'p1', path: projectPath, title: '', created: Math.floor((now - 180 * MINUTE) / 1000) }
+  ], options);
+  assert.equal(out[0].agentSessionId, 'qcn-live');
+  assert.equal(out[0].agentTitle, '刚聊过的');
+});
+
+test('qodercn：两个 pane 同项目也是 1:1，不会显示同一个会话ID', () => {
+  const projectPath = '/Users/model/projects/demo_qcn2';
+  const now = Date.now();
+  const { options } = makeQoderHome('qodercn', projectPath, [
+    { id: 'qcn-a', title: '会话A', at: now - 180 * MINUTE },
+    { id: 'qcn-b', title: '会话B', at: now - 2 * MINUTE }
+  ]);
+  const out = resolveAgentSessionIds('qodercn', [
+    { name: 'p1', path: projectPath, title: '', created: Math.floor((now - 180 * MINUTE) / 1000) },
+    { name: 'p2', path: projectPath, title: '', created: Math.floor((now - 30 * MINUTE) / 1000) }
+  ], options);
+  assert.deepEqual(out.map((row) => row.agentSessionId).sort(), ['qcn-a', 'qcn-b']);
+});
+
+test('agy：sidecar 索引 + transcript，按最近活动绑，标题能对上时按标题', () => {
+  const projectPath = '/Users/model/projects/demo_agy';
+  const now = Date.now();
+  const { options } = makeAgyHome(projectPath, [
+    { id: 'agy-old', title: 'agy 老会话', at: now - 180 * MINUTE },
+    { id: 'agy-live', title: 'agy 刚聊过的', at: now - 3 * MINUTE }
+  ]);
+  const live = resolveAgentSessionIds('agy', [
+    { name: 'p1', path: projectPath, title: '', created: Math.floor((now - 180 * MINUTE) / 1000) }
+  ], options);
+  assert.equal(live[0].agentSessionId, 'agy-live');
+  assert.equal(live[0].agentTitle, 'agy 刚聊过的');
+
+  const byTitle = resolveAgentSessionIds('agy', [
+    { name: 'p2', path: projectPath, title: 'agy 老会话', created: Math.floor((now - 200 * MINUTE) / 1000) }
+  ], options);
+  assert.equal(byTitle[0].agentSessionId, 'agy-old');
+});
+
+test('agy：宿主目录由调用方注入（HOME 被投影改写时也能读到会话库）', () => {
+  const projectPath = '/Users/model/projects/demo_agy2';
+  const now = Date.now();
+  const { home } = makeAgyHome(projectPath, [
+    { id: 'agy-only', title: '只有一份会话', at: now - MINUTE }
+  ]);
+  // 不传注入目录时读的是 os.homedir()，这个 fixture 读不到 → 说明注入确实生效了
+  const injected = resolveAgentSessionIds('agy', [
+    { name: 'p1', path: projectPath, title: '', created: Math.floor((now - 2 * MINUTE) / 1000) }
+  ], { hostHomeDir: home });
+  assert.equal(injected[0].agentSessionId, 'agy-only');
+});
+
+test('没有任何时间戳的候选不参与时间匹配（sqlite 行 time_created=0 的情况）', () => {
+  const projectPath = '/Users/model/projects/demo_zero';
+  const now = Date.now();
+  const { options } = makeQoderHome('qoder', projectPath, [
+    { id: 'real-one', title: '真会话', at: now - MINUTE }
+  ]);
+  // 造一个 mtime 为 0 的“僵尸”候选：不能因为它「最早」就抢走 pane
+  const zombieDir = nodePath.join(options.hostHomeDir, '.qoder', 'projects', String(projectPath).replace(/[^a-zA-Z0-9]/g, '-'));
+  nodeFs.writeFileSync(nodePath.join(zombieDir, 'zombie.jsonl'), JSON.stringify({
+    type: 'user', cwd: projectPath, message: { content: '僵尸会话' }
+  }) + String.fromCharCode(10));
+  nodeFs.utimesSync(nodePath.join(zombieDir, 'zombie.jsonl'), new Date(0), new Date(0));
+  const out = resolveAgentSessionIds('qoder', [
+    { name: 'p1', path: projectPath, title: '', created: Math.floor((now - 2 * MINUTE) / 1000) }
+  ], options);
+  assert.equal(out[0].agentSessionId, 'real-one');
+});

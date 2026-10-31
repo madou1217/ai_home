@@ -8,6 +8,9 @@ import ComposerAccountMenu from '@/components/chat/composer/ComposerAccountMenu'
 import ComposerApprovalMenu from '@/components/chat/composer/ComposerApprovalMenu';
 import ComposerModelMenu from '@/components/chat/composer/ComposerModelMenu';
 import PromptPresetsCapsule from '@/components/chat/PromptPresetsCapsule';
+import DictationButton from '@/components/chat/composer/DictationButton';
+import DictationRecordingBar from '@/components/chat/composer/DictationRecordingBar';
+import { useDictation } from '@/components/chat/composer/useDictation';
 import { chatAccountIdentity, isAihServerAccount } from '@/components/chat/aih-server-account';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
 import type { ComposerDelivery } from './session-runtime-actions';
@@ -41,6 +44,19 @@ function resolveOpenCodeCatalogTarget(
 }
 
 export default function ComposerToolbar({ props, controller, onSelectImages }: Props) {
+  // 语音输入（由 legacy MessageArea 迁入）：浏览器支持 SpeechRecognition 才显示；
+  // 录音中右侧换成录音条，识别结果追加到当前输入。
+  const dictation = useDictation();
+  if (dictation.recording) {
+    return (
+      <div className={styles.composerToolbar}>
+        <div className={styles.composerTools} />
+        <div className={styles.composerActions}>
+          <DictationRecordingBar elapsedSeconds={dictation.elapsedSeconds} onStop={dictation.stop} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.composerToolbar}>
       <div className={styles.composerTools}>
@@ -102,6 +118,9 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         />
       </div>
       <div className={styles.composerActions}>
+        {dictation.supported ? (
+          <DictationButton onClick={() => dictation.start(controller.input, controller.setInput)} />
+        ) : null}
         {controller.policy.turnActive && controller.policy.deliveries.length > 0 ? (
           <DeliveryControl controller={controller} />
         ) : null}

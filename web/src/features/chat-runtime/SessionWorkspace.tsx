@@ -15,6 +15,8 @@ import BranchParentLink from './BranchParentLink';
 import InteractionDock from './InteractionDock';
 import PlanImplementationPrompt from './PlanImplementationPrompt';
 import QueueDock from './QueueDock';
+import TaskDock from '@/components/chat/TaskDock';
+import { sameChecklist, selectActiveChecklist } from './timeline-checklist';
 import { BrowserFreshPlanRuntimePort } from './browser-fresh-plan-runtime-port';
 import { BrowserFirstTextPaintProbe } from './browser-first-text-paint-probe';
 import {
@@ -139,6 +141,7 @@ export default function SessionWorkspace(props: Props) {
             onImplementFresh={implementFresh}
           /> : null}
           <InteractionDock store={props.controller.store} actions={actions} />
+          <ActiveChecklistDock store={props.controller.store} />
           <QueueDock store={props.controller.store} actions={actions} />
           <Composer
             workspaceMode={props.runtimeTarget.policy.workspaceMode}
@@ -283,4 +286,11 @@ function useSecondClock(startedAt: number | undefined): number {
     return () => window.clearInterval(timer);
   }, [startedAt]);
   return now;
+}
+
+// 最近一份仍有未完成项的计划/待办：钉在输入框上方（legacy TaskDock 同款卡片）。
+// 独立组件 + 内容等价选择器：只在清单变化时重渲染，不跟随流式输出的每帧发布。
+function ActiveChecklistDock({ store }: { readonly store: SessionRuntimeController['store'] }) {
+  const checklist = useSessionSelector(store, selectActiveChecklist, sameChecklist);
+  return checklist ? <TaskDock checklist={checklist} /> : null;
 }

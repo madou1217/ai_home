@@ -152,3 +152,38 @@ test('aih harness --account codex:2 简写等价于 --provider codex --account 2
   assert.equal(parsed.provider, 'codex');
   assert.equal(parsed.account, '2');
 });
+
+test('aih resume <TAB>：直接给最近会话，注释里一定有标题与 provider', () => {
+  const ctx = context({
+    listResumeSessions: () => ([
+      { id: '01a1-abc', title: '部署脚本排查', provider: 'codex', updatedAt: 1793440000000 },
+      { id: '01a1-def', title: '', provider: 'claude', updatedAt: 1793430000000 }
+    ])
+  });
+  const items = resolveCompletion(['resume', ''], ctx);
+  assert.deepEqual(values(items), ['01a1-abc', '01a1-def']);
+  assert.match(items[0].description, /部署脚本排查/);
+  assert.match(items[0].description, /codex/);
+  assert.match(items[1].description, /无标题/);
+});
+
+test('aih export <TAB>：不抢 shell 的文件补全', () => {
+  assert.deepEqual(resolveCompletion(['export', ''], context()), []);
+  assert.deepEqual(resolveCompletion(['import', ''], context()), []);
+});
+
+test('aih edge apply <TAB>：给引擎名（frp / nginx / caddy）', () => {
+  const items = values(resolveCompletion(['edge', 'apply', ''], context()));
+  assert.ok(items.includes('frp'));
+  assert.ok(items.includes('nginx'));
+  assert.ok(items.includes('caddy'));
+});
+
+test('会话说明：标题始终存在（没有标题也要有占位与时间）', () => {
+  const ctx = context({
+    listSessions: () => [{ id: 'aaaa-1111', title: '', updatedAt: '1793440000000' }]
+  });
+  const [item] = resolveCompletion(['codex', 'resume', ''], ctx);
+  assert.match(item.description, /无标题/);
+  assert.match(item.description, /\d{4}-\d{2}-\d{2}/);
+});

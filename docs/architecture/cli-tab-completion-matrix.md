@@ -25,13 +25,21 @@
 | `aih <cli> <账号> resume <TAB>` | 会话 id，**aih 活跃会话排最前** | 持久会话注册表 + 会话库 | 活跃项标 `● 活跃` |
 | `aih <cli> resume <标题片段>` | 标题命中的会话 id | 会话库 | id 是 UUID，记不住就按标题片段找 |
 | `aih <cli> fork <TAB>` | 同上 | 同上 | |
+| `aih resume <TAB>` | 最近会话 id（标题 · provider · 时间） | 会话库（45s 缓存） | 选中回车即续聊 |
 | `aih harness <TAB>` | pi / dsh / dsh-tui | `harness/catalog` 注册表 | 与实际能跑的集合同源 |
 | `aih harness pi --provider <TAB>` | 所有 provider | 合同（manifest） | |
 | `aih harness pi --provider X --account <TAB>` | X 的账号 id | 账号库 | 也支持 `--account codex:2` 简写 |
 | `aih claim <provider> --account <TAB>` | 该 provider 账号 id | 账号库 | 没有 `--provider` 时就近认 provider |
 | `aih usage <TAB>` | stats/models/sessions/… | 声明表 | |
+| `aih edge apply|plan <TAB>` | frp / nginx / caddy | 声明表 | |
 | `aih node|fabric|native|mcp|skill|shell … <TAB>` | 下一层子命令 | `NESTED_SUBCOMMAND_TABLES` | 表里没有的层级让路给 shell |
+| `aih export|import <TAB>` | 无（交回 shell） | — | 文件路径由 shell 自己补 |
 | `aih <cli> -- <TAB>` | 无 | — | 逃生门之后是原生 CLI 的世界 |
+
+## 帮助文本
+
+`aih --help` / `aih <cli> --help` 按用途分组（常用 / 会话 / 账号 / 网关与远程 / 终端与福利 / 进阶 /
+看细节），列宽按每组最长命令自适应，中文按两列计算宽度（`displayWidth`），避免说明列跳动。
 
 ## 刻意不给候选的地方
 

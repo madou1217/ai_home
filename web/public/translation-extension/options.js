@@ -1,4 +1,4 @@
-/* global chrome, document, URL, AbortController, setTimeout, clearTimeout, fetch */
+/* global chrome, document, window, URL, AbortController, setTimeout, clearTimeout, fetch */
 const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'plain' };
 const field = (id) => document.getElementById(id);
 const readingThemes = globalThis.AIHReadingThemes;
@@ -111,7 +111,7 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
 // that page directly (the options page itself, chrome:// pages and the store are skipped).
 (async function setupPageActions() {
   let tab = null;
-  try { [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); } catch (_error) { return; }
+  try { [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); } catch { return; }
   if (!tab || !tab.id || !/^https?:/.test(String(tab.url || ''))) return;
   // A PDF tab shows the browser's viewer, where no content script runs: offer our reader.
   if (/\.pdf($|[?#])/i.test(new URL(tab.url).pathname + new URL(tab.url).search)) {
@@ -124,7 +124,7 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
   }
   const section = field('page-actions'); const translate = field('translate-page'); const undo = field('undo-page'); const state = field('page-state');
   section.hidden = false;
-  try { state.textContent = new URL(tab.url).hostname; } catch (_error) { state.textContent = ''; }
+  try { state.textContent = new URL(tab.url).hostname; } catch { state.textContent = ''; }
   const send = (message) => chrome.tabs.sendMessage(tab.id, message);
   async function refresh() {
     try {
@@ -133,7 +133,7 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
       translate.textContent = status?.translated ? '重新翻译' : '翻译此页';
       field('subtitles-row').hidden = !(status?.videos > 0);
       field('subtitles').checked = Boolean(status?.subtitles);
-    } catch (_error) {
+    } catch {
       // Content script not injected yet (page opened before install): translating still
       // works via the background, which injects on demand.
       undo.hidden = true;
@@ -142,16 +142,16 @@ Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defa
   translate.onclick = async () => {
     translate.disabled = true; translate.textContent = '已开始翻译…';
     try { await send({ type: 'aih-translate-page', target: field('target').value }); window.close(); }
-    catch (_error) { translate.disabled = false; translate.textContent = '翻译此页'; state.textContent = '此页面暂不可翻译，请刷新后重试'; }
+    catch { translate.disabled = false; translate.textContent = '翻译此页'; state.textContent = '此页面暂不可翻译，请刷新后重试'; }
   };
-  undo.onclick = async () => { try { await send({ type: 'aih-undo-page' }); } catch (_error) { /* page closed */ } await refresh(); };
+  undo.onclick = async () => { try { await send({ type: 'aih-undo-page' }); } catch { /* page closed */ } await refresh(); };
   field('subtitles').onchange = async () => {
     const result = await send({ type: 'aih-subtitles', action: field('subtitles').checked ? 'enable' : 'disable' }).catch(() => null);
     field('subtitles').checked = Boolean(result?.enabled);
     if (result?.enabled && !result.tracks) state.textContent = '此视频没有可读取的字幕轨';
   };
   const autoSite = field('auto-site'); let host = '';
-  try { host = new URL(tab.url).hostname; } catch (_error) { host = ''; }
+  try { host = new URL(tab.url).hostname; } catch { host = ''; }
   const siteState = await chrome.runtime.sendMessage({ type: 'aih-auto-site', action: 'get', host }).catch(() => null);
   autoSite.checked = Boolean(siteState?.enabled);
   autoSite.onchange = async () => {

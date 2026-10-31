@@ -216,7 +216,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'aih-auto-site') return false;
   (async () => {
     let host = String(message.host || '').trim().toLowerCase();
-    if (!host && sender.tab?.url) { try { host = new URL(sender.tab.url).hostname; } catch (_error) { host = ''; } }
+    if (!host && sender.tab?.url) { try { host = new URL(sender.tab.url).hostname; } catch { host = ''; } }
     const sites = await readAutoSites();
     if (!host || !/^[a-z0-9.-]{1,253}$/.test(host)) return sendResponse({ ok: false, enabled: false, sites });
     if (message.action === 'set') {

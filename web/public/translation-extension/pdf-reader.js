@@ -65,7 +65,7 @@ async function translateAll(jobs, mine) {
 
 async function open() {
   if (!/^(https?|file):/.test(fileUrl)) { status.textContent = '缺少 PDF 地址'; return; }
-  try { document.getElementById('title').textContent = decodeURIComponent(new URL(fileUrl).pathname.split('/').pop() || 'PDF'); } catch (_error) { /* keep default */ }
+  try { document.getElementById('title').textContent = decodeURIComponent(new URL(fileUrl).pathname.split('/').pop() || 'PDF'); } catch { /* keep default */ }
   const settings = await chrome.storage.sync.get({ target: 'zh-Hans' });
   target.value = settings.target;
   let pdf;

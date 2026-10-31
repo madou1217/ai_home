@@ -1,4 +1,4 @@
-/* global chrome, document, getSelection, requestAnimationFrame, matchMedia, Element */
+/* global chrome, document, getSelection, requestAnimationFrame, matchMedia, Element, window, Event, HTMLTextAreaElement, HTMLInputElement */
 (() => {
   const ROOT_ATTR = 'data-aih-translation-extension';
   let active = null;

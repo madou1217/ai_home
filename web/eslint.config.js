@@ -6,7 +6,9 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'src/.umi*/**']
+    // vendor/ holds unmodified third-party builds (pdf.js); they are pinned and
+    // checksummed in their README, not linted as project code.
+    ignores: ['dist/**', 'node_modules/**', 'src/.umi*/**', 'public/translation-extension/vendor/**']
   },
   js.configs.recommended,
   // package.json 的 `--ext ts,tsx` 在 flat config 下不生效，所以 .js/.cjs 同样会被

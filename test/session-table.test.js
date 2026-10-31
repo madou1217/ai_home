@@ -94,3 +94,15 @@ test('pane 名截断显示尾部；有原生会话 id 时优先原生 id', () =>
 test('空闲会话的状态列是 ○', () => {
   assert.equal(resolveRowCells({ ...ROW, live: false }).status, '○');
 });
+
+test('picker 行与列表用同一套列（选中行有 ❯ 标记）', () => {
+  const { formatSessionPickerRow } = require('../lib/cli/services/ai-cli/persistent-session-list');
+  const row = formatSessionPickerRow(ROW, true, { columns: 120 });
+  assert.ok(row.startsWith('❯ '));
+  const cells = row.slice(2).split(/ {2,}/).filter(Boolean);
+  assert.equal(cells[0], '●');
+  assert.equal(cells[1], 'claude');
+  assert.equal(cells[2], '#.aih-server');
+  assert.match(cells[3], /本地合并取代 AWS/);
+  assert.match(cells[4], /01a176a2/);
+});

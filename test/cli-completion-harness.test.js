@@ -211,3 +211,20 @@ test('aih ss <名字>：解析成 target，不再当成非法参数', () => {
   assert.equal(parsed.target, 'p-ai_home-1-ab');
   assert.deepEqual(parseGlobalSessionsArgs(['--list']), { ok: true, help: false, detail: true });
 });
+
+test('aih ss 前缀匹配：精确 > 唯一前缀 > 唯一描述；多义不猜', () => {
+  const { matchGlobalSessionTarget } = require('../lib/cli/services/ai-cli/persistent-session-list');
+  const rows = [
+    { name: 'p-ai_home-aaa-1', description: '本地合并取代 AWS' },
+    { name: 'p-ai_home-bbb-2', description: '近10天需求收敛' },
+    { name: 'p-other-ccc-3', description: '上游接口消耗' }
+  ];
+
+  assert.equal(matchGlobalSessionTarget(rows, 'p-ai_home-aaa-1').reason, 'exact');
+  assert.equal(matchGlobalSessionTarget(rows, 'p-ai_home-aaa').chosen.name, 'p-ai_home-aaa-1');
+  assert.equal(matchGlobalSessionTarget(rows, 'p-ai_home').reason, 'name-prefix-ambiguous');
+  assert.deepEqual(matchGlobalSessionTarget(rows, 'p-ai_home').ambiguous.map((row) => row.name), ['p-ai_home-aaa-1', 'p-ai_home-bbb-2']);
+  assert.equal(matchGlobalSessionTarget(rows, '上游').chosen.name, 'p-other-ccc-3');
+  assert.equal(matchGlobalSessionTarget(rows, 'nope').reason, 'not-found');
+  assert.equal(matchGlobalSessionTarget(rows, '').reason, 'empty');
+});

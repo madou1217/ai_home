@@ -10,7 +10,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const distDir = path.resolve(__dirname, '..', 'dist');
+// 构建先输出到暂存目录（AIH_WEB_OUT_DIR，见 build-locked.cjs），戳打在暂存目录里，替换后才生效。
+const distDir = path.resolve(__dirname, '..', process.env.AIH_WEB_OUT_DIR || 'dist');
 const swPath = path.join(distDir, 'sw.js');
 
 function main() {

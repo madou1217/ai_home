@@ -61,10 +61,11 @@ async function releaseLock() {
   if (pid === process.pid) await fs.rm(lockPath, { force: true });
 }
 
-function run(command, args) {
+function run(command, args, env = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: root,
+      env,
       stdio: 'inherit',
       shell: process.platform === 'win32'
     });
@@ -85,14 +86,65 @@ async function main() {
     // **等待式**串行锁（并发构建排队而不是直接失败）与 SW 缓存戳。
     // 两侧改动都保留：见本次合并提交说明（本地 5b5977b4 的串行锁+戳 / 远端 2a388382 的
     // 低内存适配 + 6b2aae63 的构建结束回收）。
-    await run(process.execPath, [path.join(root, 'scripts', 'build.cjs')]);
-    await run(process.execPath, [path.join(root, 'scripts', 'stamp-sw-cache.cjs')]);
+    //
+    // 产物原子替换：先构建到 dist.next，校验完整后再整体换上。构建失败 / OOM / 被杀时，
+    // 线上 dist 保持上一版不动 —— 此前 Umi 直接清空并写 dist，一次失败就让 Server 报
+    // 「Web UI not built」。
+    const staging = STAGING_DIR;
+    await fs.rm(path.join(root, staging), { recursive: true, force: true });
+    const env = { ...process.env, AIH_WEB_OUT_DIR: staging };
+    await run(process.execPath, [path.join(root, 'scripts', 'build.cjs')], env);
+    await run(process.execPath, [path.join(root, 'scripts', 'stamp-sw-cache.cjs')], env);
+    await verifyBuildOutput(path.join(root, staging));
+    await swapIntoPlace(path.join(root, staging), path.join(root, 'dist'));
+  } catch (error) {
+    await fs.rm(path.join(root, STAGING_DIR), { recursive: true, force: true }).catch(() => {});
+    throw error;
   } finally {
     await releaseLock();
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`web build: ${error.message}\n`);
-  process.exitCode = 1;
-});
+const STAGING_DIR = 'dist.next';
+
+/** 产物必须至少有 index.html、引用到的入口脚本都在、且有 sw.js。 */
+async function verifyBuildOutput(dir) {
+  const index = await fs.readFile(path.join(dir, 'index.html'), 'utf8').catch(() => '');
+  if (!index) throw new Error('build output has no index.html; keeping the current dist');
+  const scripts = [...index.matchAll(/src="(?:\/ui\/)?([^"?#]+\.js)"/g)].map((match) => match[1]);
+  if (scripts.length === 0) throw new Error('build output index.html references no scripts; keeping the current dist');
+  for (const script of scripts) {
+    await fs.access(path.join(dir, script)).catch(() => {
+      throw new Error(`build output is missing ${script}; keeping the current dist`);
+    });
+  }
+}
+
+/** dist → dist.prev，dist.next → dist（两次 rename，同一文件系统上是原子的），再删 dist.prev。 */
+async function swapIntoPlace(staging, target) {
+  const previous = `${target}.prev`;
+  await fs.rm(previous, { recursive: true, force: true });
+  let hadPrevious = false;
+  try {
+    await fs.rename(target, previous);
+    hadPrevious = true;
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') throw error;
+  }
+  try {
+    await fs.rename(staging, target);
+  } catch (error) {
+    if (hadPrevious) await fs.rename(previous, target).catch(() => {});
+    throw error;
+  }
+  await fs.rm(previous, { recursive: true, force: true });
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    process.stderr.write(`web build: ${error.message}\n`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { STAGING_DIR, swapIntoPlace, verifyBuildOutput };

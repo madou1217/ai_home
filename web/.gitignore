@@ -8,6 +8,8 @@ node_modules
 
 # Production
 /dist
+/dist.next
+/dist.prev
 /build
 
 # Misc

@@ -135,7 +135,7 @@ function run() {
     const text = String(chunk || '');
     stream.write(chunk);
     if (buildComplete || !/Build\s+index\.html/.test(text)) return;
-    const outputPath = path.resolve('dist', 'index.html');
+    const outputPath = path.resolve(process.env.AIH_WEB_OUT_DIR || 'dist', 'index.html');
     let hasFreshIndex = false;
     try {
       hasFreshIndex = fs.statSync(outputPath).mtimeMs >= buildStartedAt;

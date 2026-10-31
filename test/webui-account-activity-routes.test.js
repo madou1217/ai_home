@@ -160,3 +160,51 @@ test('探测与领取分键空间：探测完立刻领取不会被自己的防�
   const jobId = claimCtx.writes[0].payload.job.id;
   await waitFor(() => deps.accountActivityJobManager.getJob(jobId).status === 'succeeded');
 });
+
+test('探测正在跑时领取 409：只读也会打上游，并发就是自造 429', async () => {
+  const { acquireRun } = require('../lib/server/scheduled-run-guard');
+  const { activityProbeKey } = require('../lib/server/activity-run-keys');
+  const { deps, calls } = baseDeps();
+  const probeGuard = acquireRun(activityProbeKey('zcode', 'trial_plan'), { debounceMs: 0 });
+  assert.equal(probeGuard.ok, true);
+  try {
+    const ctx = createCtx({
+      method: 'POST',
+      pathname: '/v0/webui/accounts/activity/run',
+      body: { providers: ['zcode'], actionId: 'trial_plan' },
+      deps
+    });
+    await handleAccountActivityRequest(ctx);
+    assert.equal(ctx.writes[0].status, 409);
+    assert.equal(ctx.writes[0].payload.error, 'activity_probe_running');
+    assert.equal(calls.length, 0);
+    assert.equal(deps.accountActivityJobManager.listJobs().length, 0);
+  } finally {
+    probeGuard.release();
+  }
+});
+
+test('带参数指纹的领取在跑时探测也 409（不能只看裸键）', async () => {
+  const { acquireRun, runKey } = require('../lib/server/scheduled-run-guard');
+  const { activityClaimKey } = require('../lib/server/activity-run-keys');
+  const { deps } = baseDeps();
+  // 按参数领取的运行键带 #指纹；裸键检查会漏掉它，于是「边领边探」并发打上游。
+  const claimGuard = acquireRun(
+    runKey(activityClaimKey('zcode', 'trial_plan'), { accountRefs: ['acct_b'], planKind: 'weekend_build' }),
+    { debounceMs: 0 }
+  );
+  assert.equal(claimGuard.ok, true);
+  try {
+    const ctx = createCtx({
+      method: 'POST',
+      pathname: '/v0/webui/accounts/activity/probe',
+      body: { providers: ['zcode'], actionId: 'trial_plan' },
+      deps
+    });
+    await handleAccountActivityRequest(ctx);
+    assert.equal(ctx.writes[0].status, 409);
+    assert.equal(ctx.writes[0].payload.error, 'activity_already_running');
+  } finally {
+    claimGuard.release();
+  }
+});

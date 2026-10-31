@@ -293,6 +293,28 @@ WebUI 报 `全部 7 个账号失败：zcode_preview_missing_data ×5、zcode_pre
 修复前 7 个账号的「全部失败」= 4 个其实早就领到了 + 3 个采集环境解不出 JWT；
 没有任何一个账号真的需要重新领取。
 
+#### 4.0.1 `zcode_preview_failed:429` 的来源：并发，不是账号
+
+同一批账号（同一份 JWT、同一组头）做对照实验：
+
+| 请求方式 | 结果 |
+|---|---|
+| 串行，逐个发 | 2/2 → 200 |
+| 同时并发 4 个 | 4 个里 **3 个 429**，1 个 200 |
+
+即 429 是上游对**同一时刻多请求**的限流，与账号状态、凭据、app_version 都无关
+（429 的账号几分钟后单独复放即 200）。所以「边探测边领取」不是无害的重叠：
+探测虽然是只读 GET，一样会把自己的领取打成 429。
+
+代码侧原本只有**单向**互斥（探测会检查领取在跑，领取不检查探测），
+且探测检查的是裸键 `activity:<provider>:<actionId>`，而带参数的领取键是
+`…#<指纹>`、多 provider 批量还会用 `+` 连接 —— 于是「按账号领取」在跑时探测照样能进。
+现在两边共用 `lib/server/activity-run-keys.js` 的键构造与判断：
+
+- 探测在跑 → 领取返回 409 `activity_probe_running`；
+- 领取在跑（任何键形态）→ 探测返回 409 `activity_already_running`；
+- 计划任务撞上探测 → 记一条 `skipped`（`probe_in_flight`），不静默丢弃。
+
 ### 4.1 全量三通道矩阵（2026-10-30 15:05Z 复测，app_version 3.20.0）
 
 | 账号 | balance | preview | marketing/touch | 判定 |
@@ -370,6 +392,7 @@ WebUI 领取失败是两条独立缺陷叠加：
 | 已领取但未生效的套餐在 WebUI 不可见 | 额度探针产出结构化结论快照（`planGroups` + `account.planNames` + `pendingEffectiveAtMs`），界面显示「套餐未生效 · 10-30 23:00 起可用」 | `96acc06e` |
 | 只有 preview 一条发现通道，preview 恒空就永远「暂无可领」 | 补 marketing/touch 发现通道：preview 空/缺 data 时回落取投放里的 `claim_zcode_plan` plan_id | 本次 |
 | preview 缺 data 被当成故障 | 判读链改为 preview → 投放 → **balance**：preview 缺 data 是常态，空投放由 balance 区分「已领到 / 没活动」，只有三条通道都不可用才报 `zcode_preview_failed` | 本次（§4.0） |
+| 探测与领取可并发（只有单向互斥，且只认裸键） | 键构造收敛到 `lib/server/activity-run-keys.js`，双向互斥 + 覆盖带指纹/多 provider 键；计划任务撞探测记 `skipped` | 本次（§4.0.1） |
 
 发现通道的实现（`lib/account/activity-claim/zcode-plan.js`）：
 

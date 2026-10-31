@@ -108,3 +108,33 @@ test('计划任务保存：参数按 schema 归一，非法值拒绝并给出可
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('计划任务：探测正在跑 → 本次跳过（不并发打上游，也不静默丢弃）', async () => {
+  const { acquireRun } = require('../lib/server/scheduled-run-guard');
+  const { activityProbeKey } = require('../lib/server/activity-run-keys');
+  const { resetRuns } = require('../lib/server/scheduled-run-guard');
+  resetRuns();
+  const { deps, calls } = createDeps();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-stask-'));
+  // 模拟「用户正在探测」：占住探测键且不释放。
+  const probeGuard = acquireRun(activityProbeKey('zcode', 'trial_plan'), { debounceMs: 0 });
+  assert.equal(probeGuard.ok, true);
+  try {
+    const service = createScheduledTaskService({ fs, aiHomeDir: dir, deps });
+    const created = service.upsert({
+      eventId: 'activity:zcode:trial_plan',
+      eventParams: {},
+      schedule: { kind: 'daily', at: '20:00' }
+    });
+    const outcome = await service.runTask(created.task.id);
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.skipped, true);
+    assert.equal(outcome.reason, 'probe_in_flight');
+    assert.equal(calls.length, 0);
+    assert.equal(outcome.record.status, 'skipped');
+  } finally {
+    probeGuard.release();
+    resetRuns();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

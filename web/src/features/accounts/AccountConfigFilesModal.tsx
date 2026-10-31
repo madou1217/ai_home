@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Empty, Modal, Segmented, Select, Spin, Typography, message } from 'antd';
+import { Empty, Modal, Segmented, Spin, Tabs, Tooltip, Typography, message } from 'antd';
 import { CopyOutlined, EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
-import type { Account, AccountConfigFilesResponse } from '@/types';
+import type { Account, AccountConfigFile, AccountConfigFilesResponse } from '@/types';
 import { accountsAPI } from '@/services/api';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
@@ -12,6 +12,12 @@ const { Text } = Typography;
 interface AccountConfigFilesModalProps {
   account: Account | null;
   onClose: () => void;
+}
+
+// tab 标题用文件名（codex 的 auth.json / config.toml 一眼可辨），完整位置放 tooltip。
+function tabTitle(file: AccountConfigFile) {
+  if (file.source === 'store') return file.label;
+  return file.label.split('/').pop() || file.label;
 }
 
 function formatTime(ms: number) {
@@ -108,18 +114,7 @@ export default function AccountConfigFilesModal({ account, onClose }: AccountCon
         </div>
       )}
     >
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-        <Select
-          aria-label="选择配置文件"
-          style={{ minWidth: 320, flex: '1 1 320px' }}
-          value={selectedId || undefined}
-          placeholder="选择配置文件"
-          onChange={setSelectedId}
-          options={(data?.files || []).map((file) => ({
-            value: file.id,
-            label: `${file.source === 'store' ? '[账号库]' : '[投影]'} ${file.label}`
-          }))}
-        />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
         <Segmented
           value={mode}
           onChange={(value) => switchMode(value as 'redacted' | 'raw')}
@@ -129,6 +124,17 @@ export default function AccountConfigFilesModal({ account, onClose }: AccountCon
           ]}
         />
       </div>
+      {data && data.files.length > 0 ? (
+        <Tabs
+          activeKey={selectedId}
+          onChange={setSelectedId}
+          size="small"
+          items={data.files.map((file) => ({
+            key: file.id,
+            label: <Tooltip title={file.location}><span>{tabTitle(file)}</span></Tooltip>
+          }))}
+        />
+      ) : null}
       {error ? <InlineNote tone="warning">{error}</InlineNote> : null}
       {loading && !data ? (
         <div className="toolkit-loading"><Spin size="large" tip="正在读取账号配置" /></div>

@@ -113,7 +113,7 @@ test('幂等：重复执行（含并发式重复调用）都收敛到同一份�
 
   assert.equal(first.linked.length, 3);
   assert.equal(second.linked.length, 0);
-  assert.equal(second.unchanged.length, 4);
+  assert.equal(second.unchanged.length, 3);
   const canonical = path.join(home, '.codebuddy', 'projects');
   for (const dirName of ['.codebuddy-cn', '.workbuddy', '.workbuddy-ai']) {
     assert.equal(readRealpath(path.join(home, dirName, 'projects')), readRealpath(canonical));
@@ -131,4 +131,36 @@ test('读路径：不依赖物理归一，国内站也能看到国际站写的�
   const projects = readCodebuddyProjects('codebuddycn', { hostHomeDir: home });
   const ids = projects.flatMap((project) => project.sessions.map((session) => session.id));
   assert.deepEqual(ids, ['intl-9']);
+}));
+
+test('harness 配置同样只建链接：规范存储有 skills 时，各配置根都指过去', (t) => withHome(t, (home) => {
+  fs.mkdirSync(path.join(home, '.codebuddy', 'skills', 'aih-collab'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.codebuddy', 'skills', 'aih-collab', 'SKILL.md'), '# aih-collab\n');
+  fs.writeFileSync(path.join(home, '.codebuddy', 'AGENTS.md'), '# instructions\n');
+
+  const result = ensureFamilySessionLinks({ fs, path, platform: 'darwin', hostHomeDir: home });
+
+  assert.deepEqual(result.unresolved, []);
+  for (const dirName of ['.codebuddy-cn', '.workbuddy-ai', '.workbuddy']) {
+    assert.equal(fs.lstatSync(path.join(home, dirName, 'skills')).isSymbolicLink(), true, dirName);
+    assert.equal(
+      fs.readFileSync(path.join(home, dirName, 'skills', 'aih-collab', 'SKILL.md'), 'utf8'),
+      '# aih-collab\n'
+    );
+    assert.equal(fs.lstatSync(path.join(home, dirName, 'AGENTS.md')).isSymbolicLink(), true, dirName);
+  }
+}));
+
+test('harness 真实目录有内容时原样不动（不搬、不删、不复制）', (t) => withHome(t, (home) => {
+  fs.mkdirSync(path.join(home, '.codebuddy', 'skills', 'base'), { recursive: true });
+  const localSkill = path.join(home, '.codebuddy-cn', 'skills', 'local-only', 'SKILL.md');
+  fs.mkdirSync(path.dirname(localSkill), { recursive: true });
+  fs.writeFileSync(localSkill, '# local\n');
+
+  const result = ensureFamilySessionLinks({ fs, path, platform: 'darwin', hostHomeDir: home });
+
+  assert.ok(result.unresolved.includes(path.join(home, '.codebuddy-cn', 'skills')));
+  assert.equal(fs.lstatSync(path.join(home, '.codebuddy-cn', 'skills')).isSymbolicLink(), false);
+  assert.equal(fs.readFileSync(localSkill, 'utf8'), '# local\n');
+  assert.equal(fs.existsSync(path.join(home, '.codebuddy', 'skills', 'local-only')), false);
 }));

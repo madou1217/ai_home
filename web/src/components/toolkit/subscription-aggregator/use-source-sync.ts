@@ -117,7 +117,6 @@ export function useSourceSync(onJobFinished: () => void) {
       message.error(aggregatorErrorText(responseErrorCode(error), '同步订阅源失败'));
     }
     // syncingIds 每次渲染重算，这里按需读取即可。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleStart, jobs, pendingIds]);
 
   /** 全部同步：只同步已启用的源（停用的源服务端也会拒绝拉取）。 */
@@ -134,7 +133,6 @@ export function useSourceSync(onJobFinished: () => void) {
     } finally {
       if (mounted.current) setStartingAll(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleStart, jobs, pendingIds]);
 
   /** 保存 / 导入后服务端顺带起的任务，交给同一套状态追踪。 */

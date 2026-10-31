@@ -35,7 +35,6 @@ export default function LocalClientScan({ active, scanning, onScan, selected, on
   useEffect(() => {
     if (active && !scanned && !scanning) void runScan();
     // 只在第一次切到这个页签时自动扫描。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   const candidates = scan?.candidates || [];

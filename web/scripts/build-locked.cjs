@@ -18,7 +18,7 @@ async function readLockPid() {
     const value = await fs.readFile(lockPath, 'utf8');
     const pid = Number.parseInt(value.trim(), 10);
     return Number.isInteger(pid) && pid > 0 ? pid : null;
-  } catch (_error) {
+  } catch {
     return null;
   }
 }

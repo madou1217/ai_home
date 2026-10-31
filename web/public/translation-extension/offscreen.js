@@ -1,3 +1,4 @@
+/* global chrome, navigator */
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'aih-offscreen-clipboard-write') return false;
   const text = String(message.text || '');

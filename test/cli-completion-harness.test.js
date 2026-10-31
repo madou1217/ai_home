@@ -187,3 +187,27 @@ test('会话说明：标题始终存在（没有标题也要有占位与时间�
   assert.match(item.description, /无标题/);
   assert.match(item.description, /\d{4}-\d{2}-\d{2}/);
 });
+
+test('aih ss <TAB>：pane 名候选，注释带项目描述与运行状态', () => {
+  const ctx = context({
+    listPersistentSessions: () => ([
+      { name: 'p-ai_home-1-ab', description: '✳ 本地合并取代 AWS', live: true, here: true },
+      { name: 'p-other-2-cd', description: '列出上游接口', live: true, here: false }
+    ])
+  });
+  const items = resolveCompletion(['ss', ''], ctx);
+  assert.deepEqual(values(items).slice(0, 2), ['p-ai_home-1-ab', 'p-other-2-cd']);
+  assert.match(items[0].description, /当前目录/);
+  assert.match(items[0].description, /本地合并取代 AWS/);
+  assert.match(items[0].description, /运行中/);
+  // 子命令旗标仍然在
+  assert.ok(values(items).includes('--list'));
+});
+
+test('aih ss <名字>：解析成 target，不再当成非法参数', () => {
+  const { parseGlobalSessionsArgs } = require('../lib/cli/services/ai-cli/persistent-session-list');
+  const parsed = parseGlobalSessionsArgs(['p-ai_home-1-ab']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.target, 'p-ai_home-1-ab');
+  assert.deepEqual(parseGlobalSessionsArgs(['--list']), { ok: true, help: false, detail: true });
+});

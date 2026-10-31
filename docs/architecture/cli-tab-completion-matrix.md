@@ -26,6 +26,7 @@
 | `aih <cli> resume <标题片段>` | 标题命中的会话 id | 会话库 | id 是 UUID，记不住就按标题片段找 |
 | `aih <cli> fork <TAB>` | 同上 | 同上 | |
 | `aih resume <TAB>` | 最近会话 id（标题 · provider · 时间） | 会话库（45s 缓存） | 选中回车即续聊 |
+| `aih ss <TAB>` | 本机持久会话名（pane 名） | 持久会话注册表（静默采集） | 注释：◆ 当前目录 · 项目描述 · ● 运行中；选中即进入 |
 | `aih harness <TAB>` | pi / dsh / dsh-tui | `harness/catalog` 注册表 | 与实际能跑的集合同源 |
 | `aih harness pi --provider <TAB>` | 所有 provider | 合同（manifest） | |
 | `aih harness pi --provider X --account <TAB>` | X 的账号 id | 账号库 | 也支持 `--account codex:2` 简写 |
@@ -74,7 +75,7 @@ DB 类回退到项目路径）。输入编号 / id 前缀 / 标题片段都能�
 ## 下一步（按收益排序）
 
 1. **`--model <TAB>`**：按 provider 的模型目录给候选（现在只有 harness/CLI 的别名表，需要接入 model-catalog）。
-2. **`aih ss <TAB>`**：持久会话名（tmux/psmux pane 名）——需要把注册表读取做成静默 API（现在列表函数会打印表格）。
+2. ~~`aih ss <TAB>`：持久会话名~~ —— 已完成：`collectGlobalPersistentSessionRows` 静默采集，`aih ss <名字>` 直接进入。
 3. **`aih edge apply|plan <TAB>`**：frp / nginx / caddy 引擎名。
 4. **`aih harness <id> --model <TAB>`**：harness 别名（sonnet/haiku…）。
 5. **文件/路径位点**：`aih export <TAB>`、`aih import <TAB>`、`--rc-file <TAB>` 用 `compgen -f` 而非 aih 自己列。

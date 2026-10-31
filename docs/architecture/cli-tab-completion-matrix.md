@@ -29,6 +29,8 @@
 | `aih ss <TAB>` | 本机持久会话名（pane 名） | 持久会话注册表 + 标题缓存 | 注释：◆ 当前目录 · **标题** · provider · 多久前 · ● 运行中；选中即进入 |
 | `aih harness <TAB>` | pi / dsh / dsh-tui | `harness/catalog` 注册表 | 与实际能跑的集合同源 |
 
+> `aih ss` 的列表列与宽度规则见 `docs/architecture/persistent-session-table.md`（列：状态 / provider / 账号 / 会话名称 / 会话ID）。
+>
 > `aih ss <TAB>` 的性能取舍：完整采集要逐 socket 问 tmux（~2s），TAB 用不起，所以读**持久会话注册表**
 > （JSON，~5ms）+ `run/cache/complete/ss-rows.json` 里的标题缓存（真实跑过 `aih ss` 后写入，30 分钟 TTL）。
 > 没有缓存时标题退回项目目录名——按一次 `aih ss --list` 即可把标题补上。

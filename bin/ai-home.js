@@ -26,6 +26,40 @@ process.emitWarning = function patchedEmitWarning(warning, ...args) {
 // 而补全必须在一百毫秒内出结果。除这几个内部动词之外的一切照旧走 lib/cli/app。
 const INTERNAL_FAST_PATH_VERBS = new Set(['__complete', '__suggest', '__learn']);
 
+// `aih ss` / `aih sessions` 也走轻量路径：完整 CLI 组合根约 1.3s，而这两个命令
+// 只需要持久会话列表 + 选择器。只在注册表里已经有会话时生效 —— 注册表为空时可能是
+// 重启后需要 restore，那种情况交回完整 CLI（它会做懒恢复）。
+function tryPersistentSessionFastPath() {
+  const verb = process.argv[2];
+  if (verb !== 'ss' && verb !== 'sessions') return false;
+  const rest = process.argv.slice(3);
+  if (rest.some((token) => token === '--help' || token === '-h' || token === 'help')) return false;
+  try {
+    const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
+    const aiHomeDir = resolveAiHomeDir({ env: process.env });
+    if (!aiHomeDir) return false;
+    const entries = require('../lib/runtime/persistent-session-registry').listEntries(aiHomeDir, {});
+    if (!Array.isArray(entries) || entries.length === 0) return false;
+    const { runGlobalPersistentSessionsCommand } = require('../lib/cli/services/ai-cli/persistent-session-list');
+    const result = runGlobalPersistentSessionsCommand(rest, {
+      aiHomeDir,
+      processImpl: process,
+      fs: require('node:fs'),
+      consoleImpl: console
+    });
+    Promise.resolve(result).then(
+      (code) => { process.exitCode = Number.isInteger(code) ? code : 0; },
+      (error) => {
+        process.stderr.write(`[aih] sessions failed: ${(error && error.message) || error}\n`);
+        process.exitCode = 1;
+      }
+    );
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
 const fastPathVerb = process.argv[2];
 if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
   const complete = require('../lib/cli/complete');
@@ -36,6 +70,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else {
+} else if (!tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

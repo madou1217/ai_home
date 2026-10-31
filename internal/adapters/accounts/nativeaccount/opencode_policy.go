@@ -54,6 +54,11 @@ func openCodeIdentity(providerID string, native map[string]any) (accountcore.Nat
 				return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
 			}
 			subject, subjectOK := consistentAlias(record, "account_id", "accountId", "user_id", "userId", "id", "uuid")
+			if subjectOK && subject == "" {
+				// OpenCode Console 登录态的身份在 metadata 里（accountID: acc_…），顶层没有 id。
+				// 与 Node 侧 opencode-native-credential-sync 的身份种子同源。
+				subject, subjectOK = consistentAlias(object(record["metadata"]), "accountID", "accountId", "account_id")
+			}
 			if !subjectOK || subject == "" {
 				return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
 			}

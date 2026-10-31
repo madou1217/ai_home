@@ -45,14 +45,15 @@ func zcodeIdentity(providerID string, native map[string]any) (accountcore.Native
 		return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
 	}
 	values := []string{direct}
-	for _, key := range []string{"zcodejwttoken", "oauth:zai:access_token"} {
-		value, valid := tokenSubjectFromString(text(credentials[key]))
-		if !valid {
-			return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
-		}
-		if value != "" {
-			values = append(values, value)
-		}
+	// 只有 zcodejwttoken 的声明与 ZCode 用户 id 同一个 id 空间。z.ai 的
+	// oauth:zai:access_token 里 user_id 是 z.ai 平台的数字账号（JSON number），
+	// 与 ZCode 的 UUID 不是一回事 —— 拿它做一致性比对会把每个真实账号都判成无效。
+	value, valid := tokenSubjectFromString(text(credentials["zcodejwttoken"]))
+	if !valid {
+		return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
+	}
+	if value != "" {
+		values = append(values, value)
 	}
 	filtered := []string{}
 	for _, value := range values {

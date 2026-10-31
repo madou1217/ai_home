@@ -67,8 +67,11 @@ func clineIdentity(providerID string, native map[string]any) (accountcore.Native
 		return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
 	}
 	// 槽位里若自带 accountId 之类的身份声明，必须与 JWT 一致（防串号）。
+	// Cline 的 accountId 是 Cline 侧账号 id（usr-…），对应 JWT 的 external_id；
+	// sub 是 WorkOS 用户 id（user_…）。两者都算同一身份的合法声明。
+	external := firstText(claims, "external_id", "externalId")
 	for _, key := range []string{"accountId", "clineUserId", "userId"} {
-		if declared := firstText(auth, key); declared != "" && declared != subject {
+		if declared := firstText(auth, key); declared != "" && declared != subject && declared != external {
 			return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts
 		}
 	}

@@ -104,6 +104,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
     copyScope = event["copyScope"] as? String ?? "selection"
     serverPort = event["port"] as? Int ?? serverPort
     content.settingsTarget = defaultTarget
+    content.settingsReadingTheme = event["readingTheme"] as? String ?? "plain"
     content.settingsAutoCopy = autoCopy
     content.settingsExecutionTarget = event["executionTarget"] as? String ?? "aih-server"
     content.settingsShortcut = event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut

@@ -14,6 +14,13 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   private let configuredChatShortcutEnabled: Bool
   private let targetMenu = NSPopUpButton()
   private let autoCopy = NSButton(checkboxWithTitle: "翻译完成后自动复制", target: nil, action: nil)
+  private let themeMenu = NSPopUpButton()
+  /// Reading styles the native panel can render exactly; ids match the browser extension.
+  static let readingThemes: [(String, String)] = [
+    ("plain", "自然阅读"), ("underline-solid", "实线下划线"), ("underline-dashed", "虚线下划线"),
+    ("underline-dotted", "点线下划线"), ("underline-wavy", "波浪下划线"), ("soft", "柔和底色"),
+    ("hud", "HUD"), ("cyberpunk", "Cyberpunk")
+  ]
   private let executionMenu = NSPopUpButton()
   private let saveButton = NSButton(title: "保存", target: nil, action: nil)
   private let closeButton = NSButton(title: "取消", target: nil, action: nil)
@@ -26,7 +33,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   private var onClosed: (() -> Void)?
   private var serverTargetsByKey: [String: [String: Any]] = [:]
 
-  init(target: String, autoCopyEnabled: Bool, executionTarget: String, shortcut: String, chatShortcut: String, shortcutEnabled: Bool, chatShortcutEnabled: Bool, shortcutStatus: String = "", languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
+  init(target: String, readingTheme: String = "plain", autoCopyEnabled: Bool, executionTarget: String, shortcut: String, chatShortcut: String, shortcutEnabled: Bool, chatShortcutEnabled: Bool, shortcutStatus: String = "", languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
     self.emit = emit
     self.reducedMotion = reducedMotion
     self.configuredExecutionTarget = executionTarget
@@ -35,7 +42,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     self.configuredShortcutEnabled = shortcutEnabled
     self.configuredChatShortcutEnabled = chatShortcutEnabled
     self.onClosed = onClosed
-    window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 470), styleMask: [.titled, .closable], backing: .buffered, defer: false)
     super.init()
     window.title = "AIH 翻译设置"
     window.isReleasedWhenClosed = false
@@ -52,6 +59,12 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     if let index = targetMenu.itemArray.firstIndex(where: { $0.representedObject as? String == target }) { targetMenu.selectItem(at: index) }
     if targetMenu.selectedItem == nil { targetMenu.selectItem(at: 0) }
     autoCopy.state = autoCopyEnabled ? .on : .off
+    for (id, label) in TranslationSettingsWindow.readingThemes {
+      themeMenu.addItem(withTitle: label)
+      themeMenu.lastItem?.representedObject = id
+    }
+    themeMenu.selectItem(at: TranslationSettingsWindow.readingThemes.firstIndex(where: { $0.0 == readingTheme }) ?? 0)
+    themeMenu.setAccessibilityLabel("译文阅读样式")
     self.shortcutStatus.stringValue = shortcutStatus
     var options = serverTargets
     if let selectedServerTarget, !options.contains(where: { targetKey($0) == targetKey(selectedServerTarget) }) { options.insert(selectedServerTarget, at: 0) }
@@ -113,7 +126,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     let chatShortcutRow = NSStackView(views: [NSTextField(labelWithString: "Chat 快捷键"), NSView(), chatShortcutValue])
     shortcutRow.orientation = .horizontal
     shortcutRow.spacing = 8
-    let fields = NSStackView(views: [targetLabel, targetMenu, autoCopy, executionLabel, executionMenu, shortcutRow, shortcutEnabled, chatShortcutRow, chatShortcutEnabled, shortcutStatus])
+    let fields = NSStackView(views: [targetLabel, targetMenu, NSTextField(labelWithString: "译文阅读样式"), themeMenu, autoCopy, executionLabel, executionMenu, shortcutRow, shortcutEnabled, chatShortcutRow, chatShortcutEnabled, shortcutStatus])
     fields.orientation = .vertical
     fields.alignment = .leading
     fields.spacing = 10
@@ -132,6 +145,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
       stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 20),
       stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
       targetMenu.widthAnchor.constraint(equalToConstant: 240),
+      themeMenu.widthAnchor.constraint(equalToConstant: 240),
       executionMenu.widthAnchor.constraint(equalToConstant: 240),
       shortcutStatus.widthAnchor.constraint(equalTo: stack.widthAnchor)
     ])
@@ -168,6 +182,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     var patch: [String: Any] = [
       "target": targetMenu.selectedItem?.representedObject as? String ?? "zh-Hans",
       "autoCopy": autoCopy.state == .on,
+      "readingTheme": themeMenu.selectedItem?.representedObject as? String ?? "plain",
       "executionTarget": executionKey == "direct-provider" ? "direct-provider" : "aih-server"
     ]
     patch["shortcut"] = shortcutValue.stringValue

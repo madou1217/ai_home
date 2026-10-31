@@ -33,6 +33,7 @@ final class TranslationPanelContent {
   private var settingsWindow: TranslationSettingsWindow?
   var settingsHandler: (([String: Any]) -> Void)?
   var settingsTarget = "zh-Hans"
+  var settingsReadingTheme = "plain"
   var settingsAutoCopy = false
   var settingsExecutionTarget = "aih-server"
   var settingsShortcut = ShortcutRegistry.defaultTranslationShortcut
@@ -197,6 +198,39 @@ final class TranslationPanelContent {
     scroll.contentView.scroll(to: .zero)
   }
 
+  /// Reading style for the translation text (same ids as the browser extension's
+  /// reading-themes.js). Underlines/backgrounds are text attributes, so they wrap with
+  /// every line; frame-only styles fall back to plain here.
+  private func readingAttributes(_ paragraph: NSParagraphStyle) -> [NSAttributedString.Key: Any] {
+    var attributes: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: 16), .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph
+    ]
+    let underline: NSUnderlineStyle?
+    switch settingsReadingTheme {
+    case "underline-solid": underline = .single
+    case "underline-dashed": underline = [.single, .patternDash]
+    case "underline-dotted": underline = [.single, .patternDot]
+    case "underline-wavy": underline = [.thick, .patternDashDotDot]
+    default: underline = nil
+    }
+    if let underline = underline {
+      attributes[.underlineStyle] = underline.rawValue
+      attributes[.underlineColor] = NSColor.controlAccentColor.withAlphaComponent(0.7)
+    }
+    switch settingsReadingTheme {
+    case "soft": attributes[.backgroundColor] = NSColor.labelColor.withAlphaComponent(0.06)
+    case "hud":
+      attributes[.backgroundColor] = NSColor.systemTeal.withAlphaComponent(0.08)
+      attributes[.foregroundColor] = NSColor.labelColor
+    case "cyberpunk":
+      attributes[.backgroundColor] = NSColor.systemPurple.withAlphaComponent(0.08)
+      attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+      attributes[.underlineColor] = NSColor.systemPink.withAlphaComponent(0.6)
+    default: break
+    }
+    return attributes
+  }
+
   func setOutput(_ text: String) {
     // Append deltas without resetting the reader's selection or scroll position.
     let visibleOrigin = scroll.contentView.bounds.origin
@@ -205,10 +239,7 @@ final class TranslationPanelContent {
     paragraph.lineSpacing = 5
     paragraph.paragraphSpacing = 12
     paragraph.lineBreakMode = .byWordWrapping
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: NSFont.systemFont(ofSize: 16), .foregroundColor: NSColor.labelColor,
-      .paragraphStyle: paragraph
-    ]
+    let attributes = readingAttributes(paragraph)
     let previous = textView.string
     if text.hasPrefix(previous), let storage = textView.textStorage {
       storage.append(NSAttributedString(string: String(text.dropFirst(previous.count)), attributes: attributes))
@@ -381,6 +412,7 @@ final class TranslationPanelContent {
     guard let settingsHandler = settingsHandler else { return }
     let created = TranslationSettingsWindow(
       target: settingsTarget,
+      readingTheme: settingsReadingTheme,
       autoCopyEnabled: settingsAutoCopy,
       executionTarget: settingsExecutionTarget,
       shortcut: settingsShortcut,

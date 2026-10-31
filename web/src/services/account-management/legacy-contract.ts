@@ -23,7 +23,6 @@ export type AccountImportPayload =
   | { content: string; provider?: string }
   | {
       mode: 'upload';
-      uploadKind?: 'file' | 'folder';
       files: AccountImportUploadFile[];
       provider?: string;
     };

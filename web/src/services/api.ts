@@ -241,7 +241,7 @@ export interface AccountImportUploadFile {
 
 export type AccountImportPayload =
   | { content: string; provider?: string }
-  | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string };
+  | { mode: 'upload'; files: AccountImportUploadFile[]; provider?: string };
 
 // 认证来源链（本机导入能力）——服务端 lib/account/auth-sources.js 的解析结果形状。
 export interface ProviderAuthSourceSummary {

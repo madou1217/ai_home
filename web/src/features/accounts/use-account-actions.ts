@@ -393,7 +393,7 @@ export function useAccountActions({
     if (nextMode === importMode) return;
     setImportMode(nextMode);
     if (nextMode !== 'text') setImportText('');
-    // 文件 / 文件夹两种上传的 uploadKind 语义不同，切换模式时清空已选文件。
+    // 切换文件 / 粘贴时清空已选文件。
     setImportFileName('');
     setImportFiles([]);
   };
@@ -404,7 +404,7 @@ export function useAccountActions({
     try {
       const uploads = await readImportUploadFiles(files);
       setImportFiles(uploads);
-      setImportFileName(describeImportSelection(files, 'file'));
+      setImportFileName(describeImportSelection(files));
     } catch (error: any) {
       setImportFiles([]);
       setImportFileName('');
@@ -420,7 +420,7 @@ export function useAccountActions({
     setImportingAccounts(true);
     try {
       const payload = importMode === 'file'
-        ? { mode: 'upload' as const, uploadKind: 'file' as const, files: importFiles }
+        ? { mode: 'upload' as const, files: importFiles }
         : { content: importText };
       const result = await accountsAPI.import(payload);
       if (result.jobId) {

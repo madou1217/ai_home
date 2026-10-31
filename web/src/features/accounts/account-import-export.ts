@@ -56,14 +56,11 @@ export function formatImportJobProgress(job: AccountImportJob | null) {
  * 文件 / 文件夹上传：浏览器 File → 导入接口的 upload 负载
  * ------------------------------------------------------------------------ */
 
-export type ImportUploadKind = 'file' | 'folder';
-
 /** 文件选择器的 accept：aih 账号文件是 JSON。 */
 export const IMPORT_FILE_ACCEPT = '.json,application/json';
 
 interface ImportFileLike {
   name: string;
-  webkitRelativePath?: string;
   arrayBuffer: () => Promise<ArrayBuffer>;
 }
 
@@ -76,27 +73,18 @@ export function encodeBytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/**
- * 把选中的文件读成导入接口的 upload 条目：一律 base64（ZIP 是二进制，JSON 也走同一通道，
- * 服务端 normalizeUploadedFiles 统一解码）；文件夹上传保留 webkitRelativePath 目录结构。
- */
+/** 把选中的账号文件读成导入接口的 upload 条目（base64，由服务端统一解码）。 */
 export async function readImportUploadFiles(files: ArrayLike<ImportFileLike>) {
-  const list = Array.from(files);
-  return Promise.all(list.map(async (file) => ({
+  return Promise.all(Array.from(files).map(async (file) => ({
     name: file.name,
-    relativePath: String(file.webkitRelativePath || '').trim() || file.name,
     contentBase64: encodeBytesToBase64(new Uint8Array(await file.arrayBuffer())),
     encoding: 'base64' as const
   })));
 }
 
-/** 导入弹窗里「已选择 …」的展示名：单文件为文件名，文件夹为顶层目录名 + 文件数。 */
-export function describeImportSelection(files: ArrayLike<Pick<ImportFileLike, 'name' | 'webkitRelativePath'>>, kind: ImportUploadKind) {
+/** 导入弹窗里「已选择 …」的展示名。 */
+export function describeImportSelection(files: ArrayLike<Pick<ImportFileLike, 'name'>>) {
   const list = Array.from(files);
   if (list.length === 0) return '';
-  if (kind === 'folder') {
-    const root = String(list[0].webkitRelativePath || '').split('/')[0] || list[0].name;
-    return `${root}（${list.length} 个文件）`;
-  }
   return list.length === 1 ? list[0].name : `${list[0].name} 等 ${list.length} 个文件`;
 }

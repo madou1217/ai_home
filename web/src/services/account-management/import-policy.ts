@@ -31,7 +31,7 @@ function importTextFromPayload(payload: AccountImportPayload): {
 } {
   const providerHint = String(payload.provider || '').trim();
   if ('content' in payload) return { text: String(payload.content || ''), providerHint };
-  if (payload.uploadKind === 'folder' || payload.files.length !== 1) {
+  if (payload.files.length !== 1) {
     return unsupportedAccountOperation('account_management_bulk_import_unsupported');
   }
   const file = payload.files[0];

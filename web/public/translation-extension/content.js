@@ -425,6 +425,51 @@
     void translateSelection(gesture.item.text, gesture.item.rect, gesture.item.range);
   }, true);
 
+  // Input translation (沉浸式翻译 habit): in any text field, three spaces in a row replace
+  // what you typed with its translation into the configured target. Only plain text
+  // inputs, textareas and contenteditable; never password/email/number fields.
+  const INPUT_TRIGGER = '   ';
+  let inputBusy = false;
+  function editableTarget(node) {
+    if (!node || node.closest?.('[data-aih-translation-extension]')) return null;
+    if (node instanceof HTMLTextAreaElement) return node;
+    if (node instanceof HTMLInputElement && ['text', 'search', ''].includes(String(node.type || '').toLowerCase())) return node;
+    const editable = node.closest?.('[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"]');
+    return editable || null;
+  }
+  // contenteditable keeps trailing spaces as alternating NBSP / space; normalize so the
+  // triple-space trigger matches there too.
+  function readField(field) { return 'value' in field ? field.value : field.innerText.replace(/\u00a0/g, ' '); }
+  function writeField(field, text) {
+    field.focus();
+    if ('value' in field) {
+      // Native setter + input event so frameworks (React/Vue) see the change.
+      const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(field, text);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.setSelectionRange?.(text.length, text.length);
+    } else {
+      const range = document.createRange(); range.selectNodeContents(field);
+      const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      // execCommand keeps the editor's undo stack and its own change handling.
+      if (!document.execCommand('insertText', false, text)) field.textContent = text;
+    }
+  }
+  document.addEventListener('input', (event) => {
+    const field = editableTarget(event.target);
+    if (!field || inputBusy) return;
+    const value = readField(field);
+    if (!value.endsWith(INPUT_TRIGGER)) return;
+    const text = value.slice(0, -INPUT_TRIGGER.length).trim();
+    if (!text || text.length > 4000) return;
+    inputBusy = true;
+    const original = value.slice(0, -INPUT_TRIGGER.length);
+    writeField(field, `${original} …`);
+    void translateOne(text, 'selection', { operationId: ++operationSerial }).then((result) => {
+      writeField(field, result?.ok && result.text ? result.text : original);
+    }).finally(() => { inputBusy = false; });
+  }, true);
+
   const initialOperation = operationSerial;
   void pageState('get').then(async (result) => {
     if (result?.state && operationSerial === initialOperation && !active) { void translatePage(result.state.target || '', { restoring: true }); return; }

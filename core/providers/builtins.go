@@ -95,7 +95,9 @@ func builtinCodex() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "hooks.json",
-			Events:     []string{"SessionStart", "UserPromptSubmit", "Stop"},
+			// PermissionRequest / Interrupt feed the terminal title's "waiting for you"
+			// and "interrupted" frames (codex 0.166 hook engine; schema verified from the binary).
+			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Interrupt", "Stop"},
 		},
 		CLI: &CLIConfig{
 			Order:      4,
@@ -188,7 +190,9 @@ func builtinClaude() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "settings.json",
-			Events:     []string{"SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"},
+			// Notification (permission_prompt / idle_prompt / elicitation_dialog) and
+			// PermissionRequest feed the terminal title's "waiting for you" frame.
+			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd"},
 		},
 		CLI: &CLIConfig{
 			Order:      3,

@@ -53,6 +53,8 @@
         "events": [
           "SessionStart",
           "UserPromptSubmit",
+          "PermissionRequest",
+          "Interrupt",
           "Stop"
         ]
       },
@@ -421,6 +423,8 @@
         "events": [
           "SessionStart",
           "UserPromptSubmit",
+          "PermissionRequest",
+          "Notification",
           "Stop",
           "StopFailure",
           "SessionEnd"

@@ -79,6 +79,32 @@ final class SelectionReader {
     return false
   }
 
+  private static let controlRoles: Set<String> = [kAXMenuRole, kAXMenuItemRole, kAXMenuBarRole, kAXMenuBarItemRole,
+                                                    kAXButtonRole, kAXPopUpButtonRole, kAXToolbarRole, kAXSliderRole,
+                                                    kAXScrollBarRole, kAXCheckBoxRole, kAXRadioButtonRole]
+
+  private func isControlElement(_ element: AXUIElement) -> Bool {
+    AXUIElementSetMessagingTimeout(element, 0.1)
+    var ancestor: AXUIElement? = element
+    for _ in 0..<8 {
+      guard let node = ancestor else { break }
+      if SelectionReader.controlRoles.contains(axString(axValue(node, kAXRoleAttribute))) { return true }
+      ancestor = axElement(node, kAXParentAttribute)
+    }
+    return false
+  }
+
+  /// Whether a gesture that *starts* at this screen point (Quartz, top-left origin) is a
+  /// menu/control interaction. Must be asked at mouse-down: picking a menu item is a
+  /// press-drag-release, and by mouse-up the menu has closed, so a hit-test then lands on
+  /// the content underneath and any stale editor selection would be offered.
+  func gestureStartsOnControl(at point: CGPoint) -> Bool {
+    var hit: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(point.x), Float(point.y), &hit) == .success,
+          let element = hit else { return false }
+    return isControlElement(element)
+  }
+
   func read(explicit: Bool, application: NSRunningApplication? = nil, point: CGPoint? = nil) -> SelectedText? {
     lastOutcome = "no-focused-application"
     let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
@@ -88,20 +114,9 @@ final class SelectionReader {
     AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(quartzPoint.x), Float(quartzPoint.y), &hit)
     // Passive selection must originate in content, never in a menu/control
     // that happens to leave an older editor selection alive.
-    if !explicit, let hit = hit {
-      AXUIElementSetMessagingTimeout(hit, 0.1)
-      var ancestor: AXUIElement? = hit
-      let excludedRoles = [kAXMenuRole, kAXMenuItemRole, kAXMenuBarRole, kAXMenuBarItemRole,
-                           kAXButtonRole, kAXPopUpButtonRole, kAXToolbarRole, kAXSliderRole,
-                           kAXScrollBarRole, kAXCheckBoxRole, kAXRadioButtonRole]
-      for _ in 0..<8 {
-        guard let node = ancestor else { break }
-        if excludedRoles.contains(axString(axValue(node, kAXRoleAttribute))) {
-          lastOutcome = "control-interaction"
-          return nil
-        }
-        ancestor = axElement(node, kAXParentAttribute)
-      }
+    if !explicit, let hit = hit, isControlElement(hit) {
+      lastOutcome = "control-interaction"
+      return nil
     }
     var hitPID: pid_t = 0
     if let hit = hit { AXUIElementGetPid(hit, &hitPID) }

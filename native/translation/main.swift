@@ -22,6 +22,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var selectionToken = 0
   private var selectionMouseDown: CGPoint?
   private var selectionDragged = false
+  // Set at mouse-down when the gesture began on a menu / button / toolbar etc.
+  private var selectionStartedOnControl = false
   var selectionApplicationPID: pid_t = 0
   var activationObserver: NSObjectProtocol?
   var contextSelection: SelectedText?
@@ -159,6 +161,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         self.selectionToken += 1
         self.selectionMouseDown = event.cgEvent?.location
         self.selectionDragged = false
+        // Choosing a menu item is press-drag-release: the drag would otherwise count as a
+        // text selection, and by mouse-up the menu is gone. Decide at the gesture's start.
+        self.selectionStartedOnControl = event.cgEvent.map { self.reader.gestureStartsOnControl(at: $0.location) } ?? false
         self.panel.outsideClick()
       } else if event.type == .leftMouseDragged {
         if let start = self.selectionMouseDown, let point = event.cgEvent?.location {
@@ -169,9 +174,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
           && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
           && !self.selectionDragged
         let selectionGesture = directTranslation || self.selectionDragged || event.clickCount >= 2
+        let startedOnControl = self.selectionStartedOnControl
         self.selectionMouseDown = nil
         self.selectionDragged = false
-        guard selectionGesture else { return }
+        self.selectionStartedOnControl = false
+        guard selectionGesture, directTranslation || !startedOnControl else { return }
         emit(["type": "selection-state", "outcome": "mouse-up"])
         let token = self.selectionToken
         // 全局监听副本的 eventTargetUnixProcessID 指向本 helper，不能用来定位选词应用。

@@ -59,11 +59,13 @@
 站点降为二级标记。无后缀 = 国际站。详见
 `docs/architecture/codebuddy-family-credential-model.md` §12。
 
-CodeBuddy 家族在这条轴之上还有一层**数据面打通**：同一站点里 WorkBuddy 与 CodeBuddy 跑的是
-同一套 CodeBuddy Code runtime，因此**共用一份会话历史**（国内站 = `~/.workbuddy` +
-`~/.codebuddy-cn`；国际站 = `~/.workbuddy-ai` + `~/.codebuddy`），四个 Provider 都声明
-`session_history` 且用文件轮询读取。会话属于**产品而非账号**：账号投影里的 `projects` 是指向
-宿主**地区存储**的**软链接**（一份物理数据），aih 直接读宿主地区根，所以**切换选中账号不改变
+CodeBuddy 家族在这条轴之上还有一层**数据面打通**：四支客户端跑的是同一套 CodeBuddy Code
+runtime，因此**整个家族共用一份会话历史，不分地区**。规范存储是 `~/.codebuddy/projects`；
+`.codebuddy-cn` / `.workbuddy` / `.workbuddy-ai` 三个配置根下的 `projects` 都是指向它的
+软链接（`lib/runtime/codebuddy-family-session-store.js`，启动时幂等收敛，冲突则整根不动）。
+四个 Provider 都声明 `session_history` 且用文件轮询读取，原生 CLI 的 `--resume` 也因此
+能列到另一个地区写下的会话。会话属于**产品而非账号**：账号投影里的 `projects` 是指向宿主
+存储的**软链接**（一份物理数据），aih 直接读宿主根，所以**切换选中账号不改变
 可见历史**；对家族四员，session-store **绝不把投影里已有的会话复制或移动**进宿主（空目录才
 丢弃建链，有真实会话则 `unresolved` 交人决定）。家族里的 `codebuddy` / `codebuddycn` 可直接使用其 CLI；`workbuddy` / `workbuddycn`
 不声明独立 CLI，但 AIH 可从**对应已安装桌面 App 的内嵌 runtime**创建新会话并按 exact session id

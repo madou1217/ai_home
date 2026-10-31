@@ -15,6 +15,7 @@ import BranchParentLink from './BranchParentLink';
 import InteractionDock from './InteractionDock';
 import PlanImplementationPrompt from './PlanImplementationPrompt';
 import QueueDock from './QueueDock';
+import RuntimeTerminalDock from './RuntimeTerminalDock';
 import TaskDock from '@/components/chat/TaskDock';
 import { sameChecklist, selectActiveChecklist } from './timeline-checklist';
 import { BrowserFreshPlanRuntimePort } from './browser-fresh-plan-runtime-port';
@@ -141,6 +142,7 @@ export default function SessionWorkspace(props: Props) {
             onImplementFresh={implementFresh}
           /> : null}
           <InteractionDock store={props.controller.store} actions={actions} />
+          <RuntimeTerminalDock store={props.controller.store} />
           <ActiveChecklistDock store={props.controller.store} />
           <QueueDock store={props.controller.store} actions={actions} />
           <Composer

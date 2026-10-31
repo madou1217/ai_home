@@ -141,3 +141,14 @@ test('aih claim <provider> --account <TAB>：没有 --provider 也能就近认�
     ['1']
   );
 });
+
+test('会话候选支持按标题片段命中（id 记不住也能找到）', () => {
+  const items = resolveCompletion(['codex', 'resume', '跑'], context());
+  assert.deepEqual(values(items), ['aaaa-1111']);
+});
+
+test('aih harness --account codex:2 简写等价于 --provider codex --account 2', () => {
+  const parsed = parseHarnessArgs(['pi', '--account', 'codex:2']);
+  assert.equal(parsed.provider, 'codex');
+  assert.equal(parsed.account, '2');
+});

@@ -23,10 +23,11 @@
 | `aih <cli> <账号> <TAB>` | 动作（resume/fork/sessions/delete/…） | 声明表 | 常见输入顺序，账号之后仍给动作 |
 | `aih <cli> resume <TAB>` | 会话 id（标题 · 时间） | 会话库（带缓存） | |
 | `aih <cli> <账号> resume <TAB>` | 会话 id，**aih 活跃会话排最前** | 持久会话注册表 + 会话库 | 活跃项标 `● 活跃` |
+| `aih <cli> resume <标题片段>` | 标题命中的会话 id | 会话库 | id 是 UUID，记不住就按标题片段找 |
 | `aih <cli> fork <TAB>` | 同上 | 同上 | |
 | `aih harness <TAB>` | pi / dsh / dsh-tui | `harness/catalog` 注册表 | 与实际能跑的集合同源 |
 | `aih harness pi --provider <TAB>` | 所有 provider | 合同（manifest） | |
-| `aih harness pi --provider X --account <TAB>` | X 的账号 id | 账号库 | |
+| `aih harness pi --provider X --account <TAB>` | X 的账号 id | 账号库 | 也支持 `--account codex:2` 简写 |
 | `aih claim <provider> --account <TAB>` | 该 provider 账号 id | 账号库 | 没有 `--provider` 时就近认 provider |
 | `aih usage <TAB>` | stats/models/sessions/… | 声明表 | |
 | `aih node|fabric|native|mcp|skill|shell … <TAB>` | 下一层子命令 | `NESTED_SUBCOMMAND_TABLES` | 表里没有的层级让路给 shell |

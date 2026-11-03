@@ -16,17 +16,24 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  listDualFormatEndpoints,
   resolveOpenAICompatibleBaseUrl
 } = require('../lib/account/dual-format-endpoints');
 const {
   filterAccountsForUpstreamProtocol,
+  listUpstreamProtocolVariants,
   resolveUpstreamProtocolTarget
 } = require('../lib/account/upstream-protocol-variants');
 const {
+  readUpstreamProtocolHint
+} = require('../lib/server/upstream-protocol-hint');
+const {
   copyCandidatesToTarget,
+  formatCandidateLine,
   listProtocolChoiceCandidates,
   maybeOfferModelAliasProtocolChoice,
-  parseChoiceAnswer
+  parseChoiceAnswer,
+  reloadServerAccountsSync
 } = require('../lib/cli/services/ai-cli/model-alias-protocol-choice');
 const { buildProviderRuntimeEnv } = require('../lib/cli/services/ai-cli/provider-runtime-env');
 const { buildCodexProviderArgs } = require('../lib/cli/services/ai-cli/codex-provider-args');
@@ -312,4 +319,225 @@ test('选择解析：默认保持现状，1/2 对应两种策略', () => {
   assert.equal(parseChoiceAnswer('3'), 'keep');
   assert.equal(parseChoiceAnswer(''), 'keep');
   assert.equal(parseChoiceAnswer('nonsense'), 'keep');
+});
+
+test('端点表/变体表/提示头的边界输入都不猜', () => {
+  assert.equal(resolveOpenAICompatibleBaseUrl('not a url'), '');
+  assert.equal(resolveOpenAICompatibleBaseUrl('ftp://api.deepseek.com/anthropic'), '');
+  assert.equal(resolveOpenAICompatibleBaseUrl('https://api.deepseek.com/anthropic/extra'), '');
+  assert.equal(resolveOpenAICompatibleBaseUrl('https://api.deepseek.com/v1'), '');
+  const endpoints = listDualFormatEndpoints();
+  assert.ok(endpoints.some((entry) => entry.vendor === 'deepseek'));
+  endpoints[0].vendor = 'mutated';
+  assert.notEqual(listDualFormatEndpoints()[0].vendor, 'mutated', '列表必须是副本，不能改到内部表');
+  const variants = listUpstreamProtocolVariants();
+  assert.deepEqual(
+    variants.find((variant) => variant.provider === 'claude' && variant.protocol === 'openai_chat'),
+    {
+      provider: 'claude',
+      protocol: 'openai_chat',
+      upstreamPath: '/chat/completions',
+      hasCopyTarget: true
+    }
+  );
+  assert.deepEqual(filterAccountsForUpstreamProtocol(null, 'claude', 'openai_chat'), []);
+  assert.equal(resolveUpstreamProtocolTarget('claude', 'openai_chat', {}), null);
+  assert.equal(resolveUpstreamProtocolTarget('unknown', 'openai_chat', {}), null);
+});
+
+test('提示头：数组、大小写、非法值', () => {
+  assert.equal(readUpstreamProtocolHint({ 'X-Aih-Upstream-Protocol': ['openai_chat'] }), 'openai_chat');
+  assert.equal(readUpstreamProtocolHint({ 'x-aih-upstream-protocol': 'OpenAI_Chat' }), 'openai_chat');
+  assert.equal(readUpstreamProtocolHint({ 'x-aih-upstream-protocol': 'bad value' }), '');
+  assert.equal(readUpstreamProtocolHint({}), '');
+  assert.equal(readUpstreamProtocolHint(null), '');
+});
+
+test('钉选账号：accountRef 与 CLI 编号两种写法都能识别；不存在的编号不猜', (t) => {
+  const home = makeHome(t);
+  const registration = seedClaudeAccount(home, {
+    ANTHROPIC_AUTH_TOKEN: 'sk-deepseek-test-key',
+    ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic'
+  });
+  const byRef = listProtocolChoiceCandidates({
+    fs,
+    aiHomeDir: home,
+    rule: { target: 'deepseek-flash', provider: 'claude', account: registration.accountRef }
+  });
+  assert.equal(byRef.candidates.length, 1);
+  assert.equal(byRef.candidates[0].accountRef, registration.accountRef);
+  const byCli = listProtocolChoiceCandidates({
+    fs,
+    aiHomeDir: home,
+    rule: { target: 'deepseek-flash', provider: 'claude', account: String(registration.cliAccountId) }
+  });
+  assert.equal(byCli.candidates.length, 1);
+  assert.equal(
+    listProtocolChoiceCandidates({
+      fs,
+      aiHomeDir: home,
+      rule: { target: 'deepseek-flash', provider: 'claude', account: '999' }
+    }),
+    null
+  );
+});
+
+test('交互输入非法值会重试；选择 3 保持现状', (t) => {
+  const home = makeHome(t);
+  seedClaudeAccount(home, {
+    ANTHROPIC_AUTH_TOKEN: 'sk-deepseek-test-key',
+    ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic'
+  });
+  const processImpl = makeInteractiveProcess();
+  const rule = { source: '*', target: 'deepseek-flash', provider: 'claude' };
+  const writes = [];
+  const stderr = { write(value) { writes.push(String(value || '')); } };
+  const answers = ['x', '1'];
+  const adapted = maybeOfferModelAliasProtocolChoice({
+    rule,
+    cliName: 'codex',
+    fs,
+    aiHomeDir: home,
+    processImpl,
+    readLine: { question: () => answers.shift() },
+    stderr
+  });
+  assert.equal(adapted.upstreamProtocol, 'openai_chat');
+  assert.ok(writes.join('').includes('请输入 1、2 或 3'));
+
+  const kept = maybeOfferModelAliasProtocolChoice({
+    rule,
+    cliName: 'codex',
+    fs,
+    aiHomeDir: home,
+    processImpl,
+    readLine: { question: () => '3' },
+    stderr
+  });
+  assert.deepEqual(kept, { rule, upstreamProtocol: '' });
+});
+
+test('复制目标缺失/重载账号池的失败与成功路径', (t) => {
+  const home = makeHome(t);
+  const missing = copyCandidatesToTarget({ fs, aiHomeDir: home, info: { candidates: [] } });
+  assert.equal(missing.error, 'protocol_copy_target_unavailable');
+
+  assert.equal(reloadServerAccountsSync({}), false);
+  assert.equal(reloadServerAccountsSync({
+    fs,
+    aiHomeDir: home,
+    readServerConfig: () => { throw new Error('config_unreadable'); }
+  }), false);
+  assert.equal(reloadServerAccountsSync({
+    fs,
+    aiHomeDir: home,
+    readServerConfig: () => ({}),
+    spawnSync: () => { throw new Error('spawn_failed'); }
+  }), false);
+  assert.equal(reloadServerAccountsSync({
+    fs,
+    aiHomeDir: home,
+    readServerConfig: () => ({}),
+    spawnSync: () => ({ status: 1 })
+  }), false);
+
+  let payload = null;
+  const reloaded = reloadServerAccountsSync({
+    fs,
+    aiHomeDir: home,
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9527, managementKey: 'test-key' }),
+    spawnSync: (_command, _args, options) => {
+      payload = JSON.parse(options.input);
+      return { status: 0 };
+    }
+  });
+  assert.equal(reloaded, true);
+  assert.match(payload.url, /\/v0\/management\/reload$/);
+  assert.equal(payload.key, 'test-key');
+});
+
+test('交互连续非法输入三次后保持现状', (t) => {
+  const home = makeHome(t);
+  seedClaudeAccount(home, {
+    ANTHROPIC_AUTH_TOKEN: 'sk-deepseek-test-key',
+    ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic'
+  });
+  const processImpl = makeInteractiveProcess();
+  const rule = { source: '*', target: 'deepseek-flash', provider: 'claude' };
+  const result = maybeOfferModelAliasProtocolChoice({
+    rule,
+    cliName: 'codex',
+    fs,
+    aiHomeDir: home,
+    processImpl,
+    readLine: { question: () => 'x' },
+    stderr: { write() {} }
+  });
+  assert.deepEqual(result, { rule, upstreamProtocol: '' });
+});
+
+test('候选读取失败时静默保持现状', () => {
+  const rule = { target: 'deepseek-flash', provider: 'claude' };
+  const result = maybeOfferModelAliasProtocolChoice({
+    rule,
+    cliName: 'codex',
+    fs: {},
+    aiHomeDir: '/tmp/aih-nonexistent',
+    processImpl: { stdin: { isTTY: false }, env: {} },
+    readLine: null,
+    stderr: { write() {} }
+  });
+  assert.deepEqual(result, { rule, upstreamProtocol: '' });
+});
+
+test('账号库读取异常时静默保持现状（启动链路不能被打断）', () => {
+  const rule = { target: 'deepseek-flash', provider: 'claude' };
+  const throwingFs = new Proxy({}, {
+    get() { throw new Error('db_unreadable'); }
+  });
+  const result = maybeOfferModelAliasProtocolChoice({
+    rule,
+    cliName: 'codex',
+    fs: throwingFs,
+    aiHomeDir: '/tmp/aih-nonexistent',
+    processImpl: { stdin: { isTTY: false }, env: {} },
+    readLine: null,
+    stderr: { write() {} }
+  });
+  assert.deepEqual(result, { rule, upstreamProtocol: '' });
+});
+
+test('复制时无法推导身份返回 protocol_copy_failed', (t) => {
+  const home = makeHome(t);
+  const result = copyCandidatesToTarget({
+    fs,
+    aiHomeDir: home,
+    info: {
+      variant: {
+        copyTarget: {
+          provider: 'codex',
+          buildEnv: () => ({ OPENAI_API_KEY: '', OPENAI_BASE_URL: '' })
+        }
+      },
+      candidates: [{ source: {} }]
+    }
+  });
+  assert.equal(result.error, 'protocol_copy_failed');
+  assert.deepEqual(result.created, []);
+});
+
+test('不支持的 CLI / 空规则直接返回，候选行兼容无 CLI 编号的账号', () => {
+  assert.deepEqual(maybeOfferModelAliasProtocolChoice({ rule: null }), { rule: null, upstreamProtocol: '' });
+  const rule = { target: 'deepseek-flash', provider: 'claude' };
+  assert.deepEqual(
+    maybeOfferModelAliasProtocolChoice({ rule, cliName: 'claude' }),
+    { rule, upstreamProtocol: '' }
+  );
+  const line = formatCandidateLine({
+    provider: 'claude',
+    accountRef: 'acct_1234567890',
+    baseUrl: 'https://api.deepseek.com/anthropic',
+    openAIBaseUrl: 'https://api.deepseek.com/v1'
+  });
+  assert.ok(line.includes('acct_1234567'));
 });

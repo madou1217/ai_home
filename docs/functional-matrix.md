@@ -324,6 +324,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-041 | Go 真实协议验收夹具 | 真实 TCP Server + 一次性 `aih.db` + 只读原生 OAuth artifact；严格限制上游端点、官方 Header、模型、固定 marker 和请求数，校验源文件哈希不变，不打印凭据/reasoning/signature | 已实现（开发验收） | `internal/host/aihserver/live_{codex,claude}_*_test.go` |
 | GW-042 | Claude Native SSE 代理控制 | Native Relay 保持上游 SSE 字节不重编码，同时强制 `no-cache`、禁用 Nginx 缓冲并设置 `nosniff`；官方 `ping` 与 reasoning 块透传 | 已实现（真实验收） | `internal/transport/http/claudenativerelay/handler.go`、`handler_test.go` |
 | GW-043 | Claude 非原生客户端身份投影 | 只有 Handler 已判定为非原生的官方 OAuth 请求才补官方 system/Header；统一使用本机已核对 Claude Code 2.1.229 身份，真实原生请求旁路投影并保持原始 Header | 已实现（真实验收） | `internal/transport/http/claudenativerelay/official_client_body.go`、`internal/adapters/claude/messages/client_identity.go` |
+| GW-044 | 会话级上游协议适配 | `--model-alias claude.<model>` 指向双协议厂商的 Anthropic 端点时，CLI 询问「自动适配 / 复制到 codex」；自动适配把本次会话按 OpenAI Chat 直发厂商 OpenAI 端点（不新增账号），复制则落成可复用的 codex API Key 账号 | 已实现（端到端夹具） | `model-alias-protocol-choice.js`、`upstream-protocol-variants.js`、`dual-format-endpoints.js`、`upstream-endpoints-attempt.js` |
 
 ### 6.3 Go Refactor .1 路由与 ownership 基线
 

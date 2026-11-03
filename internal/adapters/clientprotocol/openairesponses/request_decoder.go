@@ -1,0 +1,191 @@
+package openairesponses
+
+import (
+	"encoding/json"
+
+	"github.com/madou1217/ai_home/core/inference"
+)
+
+// RequestDecoder 将 OpenAI Responses 请求 DTO 转换为 Canonical Request。
+type RequestDecoder struct{}
+
+// decodedRequest 同时保存 Canonical 请求和仅供 Responses 回程使用的协议投影。
+type decodedRequest struct {
+	canonical  inference.Request
+	projection responseProjection
+}
+
+// NewRequestDecoder 创建无状态、可并发复用的 Responses Request Decoder。
+func NewRequestDecoder() RequestDecoder {
+	return RequestDecoder{}
+}
+
+// Decode 严格解析一个完整 Responses JSON 请求。
+func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
+	decoded, err := RequestDecoder{}.decode(body)
+	if err != nil {
+		return inference.Request{}, err
+	}
+	return decoded.canonical, nil
+}
+
+// decode 只解析一次请求，同时建立 Canonical 与协议回显两个互不污染的投影。
+func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
+	wireRequest, err := decodeStrict[requestDTO](body, "$")
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	if err := validateSupportedRootFields(wireRequest); err != nil {
+		return decodedRequest{}, err
+	}
+	projection, err := newResponseProjection(wireRequest)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+
+	// 工具先于输入解码：Codex 0.158 把工具放在 additional_tools 输入项里，且
+	// custom_tool_call 需要已声明的 freeform 工具还原身份（见 freeform_decoder.go）。
+	additionalTools, err := collectAdditionalTools(wireRequest.Input)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	tools, webSearch, err := decodeRequestTools(wireRequest.Tools, additionalTools)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	messages, decodedInput, err := decodeRequestMessages(wireRequest, newFreeformToolIndex(tools))
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	toolChoice, err := decodeToolChoice(wireRequest.ToolChoice)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	reasoning, reasoningContext, err := decodeReasoning(wireRequest.Reasoning)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	structuredOutput, textVerbosity, err := decodeTextConfig(wireRequest.Text)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	continuation, err := decodeContinuation(wireRequest)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	includeEncryptedReasoning, err := decodeIncludes(wireRequest.Include)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	truncation, err := decodeTruncation(wireRequest.Truncation)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+
+	externalCallIDs := decodedInput.externalToolCallIDs(continuation != nil)
+	request, err := inference.NewRequest(inference.RequestInput{
+		ClientProtocol:            inference.ClientProtocolOpenAIResponses,
+		Model:                     wireRequest.Model,
+		Messages:                  messages,
+		Tools:                     tools,
+		WebSearch:                 webSearch,
+		ToolChoice:                toolChoice,
+		ParallelToolCalls:         wireRequest.ParallelToolCalls,
+		Reasoning:                 reasoning,
+		StructuredOutput:          structuredOutput,
+		Stream:                    wireRequest.Stream,
+		MaxOutputTokens:           valueOrZero(wireRequest.MaxOutputTokens),
+		Temperature:               wireRequest.Temperature,
+		TopP:                      wireRequest.TopP,
+		PromptCacheKey:            wireRequest.PromptCacheKey,
+		ClientMetadata:            wireRequest.ClientMetadata,
+		Store:                     wireRequest.Store,
+		IncludeEncryptedReasoning: includeEncryptedReasoning,
+		Truncation:                truncation,
+		TextVerbosity:             textVerbosity,
+		ReasoningContext:          reasoningContext,
+		Continuation:              continuation,
+		ExternalToolCallIDs:       externalCallIDs,
+	})
+	if err != nil {
+		return decodedRequest{}, invalidField("$")
+	}
+	return decodedRequest{
+		canonical:  request,
+		projection: projection,
+	}, nil
+}
+
+// decodeRequestMessages 合并 instructions 和 input，同时保留输入工具配对证据。
+func decodeRequestMessages(
+	wireRequest requestDTO,
+	freeformTools freeformToolIndex,
+) ([]inference.Message, decodedInput, error) {
+	instructions, err := decodeInstructions(wireRequest.Instructions)
+	if err != nil {
+		return nil, decodedInput{}, err
+	}
+	input, err := decodeInput(wireRequest.Input, freeformTools)
+	if err != nil {
+		return nil, decodedInput{}, err
+	}
+	messages := make([]inference.Message, 0, len(instructions)+len(input.messages))
+	messages = append(messages, instructions...)
+	messages = append(messages, input.messages...)
+	return messages, input, nil
+}
+
+// decodeInstructions 支持字符串形式的 Responses instructions。
+func decodeInstructions(raw json.RawMessage) ([]inference.Message, error) {
+	if !hasJSONValue(raw) {
+		return nil, nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return nil, unsupportedField("instructions")
+	}
+	content, err := inference.NewTextContent(text)
+	if err != nil {
+		return nil, invalidField("instructions")
+	}
+	message, err := inference.NewMessage(inference.RoleDeveloper, content)
+	if err != nil {
+		return nil, invalidField("instructions")
+	}
+	return []inference.Message{message}, nil
+}
+
+// validateSupportedRootFields 拒绝尚未建立共同 Canonical 语义的字段。
+func validateSupportedRootFields(wireRequest requestDTO) error {
+	if wireRequest.Background != nil && *wireRequest.Background {
+		return unsupportedField("background")
+	}
+	switch {
+	case hasJSONValue(wireRequest.ContextManagement):
+		return unsupportedField("context_management")
+	case hasJSONValue(wireRequest.PromptCacheOptions):
+		return unsupportedField("prompt_cache_options")
+	case wireRequest.PromptCacheRetention != nil:
+		return unsupportedField("prompt_cache_retention")
+	case wireRequest.SafetyIdentifier != nil:
+		return unsupportedField("safety_identifier")
+	case wireRequest.TopLogprobs != nil:
+		return unsupportedField("top_logprobs")
+	case wireRequest.MaxToolCalls != nil:
+		return unsupportedField("max_tool_calls")
+	case wireRequest.MaxOutputTokens != nil && *wireRequest.MaxOutputTokens == 0:
+		return invalidField("max_output_tokens")
+	default:
+		// service_tier / metadata 是 OpenAI 特有的调度或透传提示，
+		// 跨协议转码时静默丢弃——不进入 Canonical Request，也不拒绝客户端。
+		return nil
+	}
+}
+
+// valueOrZero 将可选 uint64 转为 Canonical Request 使用的零值缺省表示。
+func valueOrZero(value *uint64) uint64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}

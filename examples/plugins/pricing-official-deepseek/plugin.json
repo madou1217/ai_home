@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "aih.pricing.official.deepseek",
+  "version": "0.1.0",
+  "engines": {
+    "aih": ">=1.0.0",
+    "node": ">=22"
+  },
+  "runtime": "node",
+  "entry": "index.mjs",
+  "targets": [
+    "any"
+  ],
+  "contributes": [
+    {
+      "id": "aih.pricing.official.deepseek.catalog",
+      "capability": "pricing.catalog",
+      "version": 1
+    }
+  ],
+  "permissions": {
+    "network": [
+      "https://api-docs.deepseek.com"
+    ],
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "secrets": [],
+    "environment": []
+  }
+}

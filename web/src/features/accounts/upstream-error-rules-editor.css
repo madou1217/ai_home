@@ -1,0 +1,26 @@
+.upstream-error-matcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.upstream-error-matcher > .ant-form-item {
+  min-width: 0;
+}
+
+.upstream-error-matcher__source {
+  flex: 1 1 120px;
+}
+
+.upstream-error-matcher__operator {
+  flex: 1 1 100px;
+}
+
+.upstream-error-matcher__path {
+  flex: 1 1 150px;
+}
+
+.upstream-error-matcher__value {
+  flex: 2 1 160px;
+}

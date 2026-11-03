@@ -1,0 +1,634 @@
+/* =============================================================================
+ * AI Home — Design Tokens (Single Source of Truth)
+ * -----------------------------------------------------------------------------
+ * 视觉方向：Cyber HUD（极客 / 赛博朋克控制台），规范见 web/DESIGN.md。
+ * 默认深色 HUD（index.html 头部脚本在首帧前写入 data-theme），浅色为「日光 HUD」变体。
+ * 任何颜色 / 字号 / 间距 / 圆角 / 阴影 / 动效都应引用这里的 token，
+ * 禁止在组件里写魔法数字与硬编码颜色。
+ *
+ * 分层：
+ *   1. Primitive  原始刻度（--c-*, --space-*, --text-*, --hos-radius-* ...）
+ *   2. Semantic   语义别名（--color-bg / --color-text / --color-accent ...）
+ *   3. Domain     领域语义（provider 强调色、事件语义色）
+ *
+ * --hos-* 是历史命名（原 HarmonyOS 玻璃体系）。为避免大面积改引用而保留名字，
+ * 取值已并入本规范：玻璃表面 → 不透明表面，模糊 → none，弹性曲线 → 标准曲线，
+ * 灰阶 / 蓝色常量 → 语义别名（随深浅主题翻转）。新代码直接用语义层。
+ * ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---------------------------------------------------------------------------
+   * 0. 字阶（Typography Scale）— 桌面 8 级
+   * ------------------------------------------------------------------------ */
+  --hos-text-display: 28px;
+  --hos-text-h1: 20px;
+  --hos-text-h2: 16px;
+  --hos-text-h3: 14px;
+  --hos-text-body: 14px;
+  --hos-text-body-sm: 13px;
+  --hos-text-caption: 12px;
+  --hos-text-micro: 11px;
+
+  /* ---------------------------------------------------------------------------
+   * 1. PRIMITIVES — Color ramps
+   * 中性色为 zinc 系（无蓝偏），强调色为克制的蓝，主操作为墨色。
+   * ------------------------------------------------------------------------ */
+
+  /* Neutral (zinc) */
+  --c-neutral-0:  #ffffff;
+  --c-neutral-25: #f7fafc;
+  --c-neutral-50: #eef3f7;
+  --c-neutral-100:#e6edf3;
+  --c-neutral-150:#dce5ed;
+  --c-neutral-200:#cbd8e3;
+  --c-neutral-300:#aabdcd;
+  --c-neutral-400:#7f96aa;
+  --c-neutral-500:#4f6a83;
+  --c-neutral-600:#34506b;
+  --c-neutral-700:#233a52;
+  --c-neutral-800:#13233a;
+  --c-neutral-900:#07121f;
+  --c-neutral-950:#03080f;
+
+  /* Accent (restrained blue) — 历史名 brand */
+  --c-brand-soft:  rgba(0, 134, 160, 0.10);
+  --c-brand-500:   #00a3c2;
+  --c-brand-600:   #0086a0;
+  --c-brand-700:   #006d83;
+  --c-brand-900:   #004e5e;
+
+  /* Status hues */
+  --c-info-500:    #00a3c2;
+  --c-info-600:    #0086a0;
+  --c-success-500: #00a856;
+  --c-success-600: #00874a;
+  --c-warning-500: #b86e00;
+  --c-warning-600: #8f5500;
+  --c-danger-500:  #e0004c;
+  --c-danger-600:  #c20042;
+  --c-purple-500:  #8b5cf6;
+  --c-purple-600:  #7c3aed;
+  --c-teal-500:    #0d9488;
+
+  /* Provider brand hues（唯一的装饰色，仅用于图标 / 状态点 / 细进度条） */
+  --c-codex:   #10a37f;  /* OpenAI green */
+  --c-claude:  #d97757;  /* Anthropic coral */
+  --c-gemini:  #4285f4;  /* Google blue */
+  --c-agy:     #8b5cf6;  /* Antigravity purple */
+  --c-opencode: #52525b; /* OpenCode neutral */
+  --c-grok:    #00a3b8;  /* xAI cyan */
+  --c-qoder:   #6366f1;  /* Qoder indigo */
+  --c-qodercn: #8b5cf6;  /* Qoder CN violet */
+  --c-kimi:    #1a73e8;  /* Moonshot blue */
+  --c-kiro:    #f59e0b;  /* AWS orange */
+  --c-zcode:   #3b6ef5;  /* Z.ai blue */
+  --c-codebuddy: #0052d9; /* Tencent CodeBuddy blue */
+  --c-codebuddycn: #7a3ff2; /* Tencent CodeBuddy CN violet */
+  --c-workbuddy: #12b76a;   /* WorkBuddy (workbuddy.ai) green */
+  --c-workbuddycn: #f79009; /* WorkBuddy CN (workbuddy.cn) amber */
+  --c-cline:   #1c1c24;  /* Cline "Black Russian"（官方 favicon cline-outline.svg 的填充色） */
+
+  /* ---------------------------------------------------------------------------
+   * 2. PRIMITIVES — Typography
+   * 字体随包分发（@fontsource），不从外网 CDN 加载（桌面端 / 内网离线可用）。
+   * ------------------------------------------------------------------------ */
+  /* 数据与界面：JetBrains Mono（中文回落系统黑体）；展示标题：Orbitron；长文阅读：系统无衬线。
+   * 字体随包分发（@fontsource，见 app.tsx），不依赖外网 CDN。 */
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  --font-body: 'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', ui-monospace, monospace;
+  --font-display: 'Orbitron', 'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-prose: 'Inter', 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* 旧字阶别名，逐档指向 8 级字阶 */
+  --text-2xs: var(--hos-text-micro);   /* 11px */
+  --text-xs:  var(--hos-text-caption); /* 12px */
+  --text-sm:  var(--hos-text-caption); /* 12px */
+  --text-base:var(--hos-text-body-sm); /* 13px */
+  --text-md:  var(--hos-text-body);    /* 14px */
+  --text-lg:  var(--hos-text-h2);      /* 16px */
+  --text-xl:  var(--hos-text-h2);      /* 16px */
+  --text-2xl: var(--hos-text-h1);      /* 20px */
+  --text-3xl: 24px;
+  --text-4xl: var(--hos-text-display); /* 28px */
+
+  --leading-tight: 1.25;
+  --leading-snug:  1.4;
+  --leading-normal:1.55;
+  --leading-relaxed:1.7;
+
+  /* 标题 600、标签 500、正文 400；bold 收敛为 600，不用超粗 */
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+  --weight-bold:    600;
+  --weight-extrabold:700;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.12em;
+
+  /* ---------------------------------------------------------------------------
+   * 3. PRIMITIVES — Spacing scale (4px base)
+   * ------------------------------------------------------------------------ */
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  10px;
+  --space-6:  12px;
+  --space-7:  14px;
+  --space-8:  16px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 28px;
+  --space-16: 32px;
+  --space-20: 40px;
+  --space-24: 48px;
+  --space-32: 64px;
+
+  /* ---------------------------------------------------------------------------
+   * 4. PRIMITIVES — Elevation / Motion
+   * 卡片无阴影（靠描边分层）；阴影只给浮层。
+   * ------------------------------------------------------------------------ */
+  --elevation-1: 0 1px 2px rgba(7, 18, 31, 0.06);
+  --elevation-2: 0 2px 8px rgba(7, 18, 31, 0.08);
+  --elevation-3: 0 10px 28px rgba(7, 18, 31, 0.12), 0 0 0 1px rgba(0, 134, 160, 0.08);
+  --elevation-4: 0 20px 56px rgba(7, 18, 31, 0.18), 0 0 0 1px rgba(0, 134, 160, 0.10);
+  --ring-focus: 0 0 0 1px var(--color-accent), 0 0 0 4px rgba(0, 134, 160, 0.18);
+  --ring-focus-info: var(--ring-focus);
+
+  --motion-instant: 80ms;
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-slow: 240ms;
+  --motion-slower: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------------------------------------------------------------------------
+   * 5. PRIMITIVES — Z-index layers
+   * ------------------------------------------------------------------------ */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-drawer: 1000;
+  --z-overlay: 1100;
+  --z-modal: 1200;
+  --z-popover: 1300;
+  --z-toast: 1400;
+
+  /* ---------------------------------------------------------------------------
+   * 6. SEMANTIC — Surfaces / Text / Borders
+   * ------------------------------------------------------------------------ */
+  --color-bg: var(--c-neutral-50);
+  --color-bg-elevated: var(--c-neutral-0);
+  --color-surface: var(--c-neutral-0);
+  --color-surface-raised: var(--c-neutral-25);
+  --color-surface-muted: var(--c-neutral-100);
+  --color-surface-soft: var(--c-neutral-50);
+  --color-surface-sunken: var(--c-neutral-150);
+
+  --color-border: var(--c-neutral-200);
+  --color-border-strong: var(--c-neutral-300);
+  --color-border-subtle: rgba(7, 18, 31, 0.07);
+
+  /* 状态叠加层：悬浮高亮与进度/仪表轨道底。深浅色下反向。 */
+  --color-overlay-subtle: rgba(0, 134, 160, 0.03);
+  --color-overlay: rgba(0, 134, 160, 0.07);
+  --color-scrim: rgba(3, 8, 15, 0.45);
+
+  --color-text: var(--c-neutral-800);
+  --color-heading: var(--c-neutral-900);
+  --color-muted: var(--c-neutral-500);
+  --color-muted-strong: var(--c-neutral-600);
+  --color-faint: #6f879c;
+  --color-disabled: var(--c-neutral-300);
+
+  /* 主操作：墨色（深色主题翻转为近白） */
+  --color-ink: var(--c-neutral-900);
+  --color-ink-hover: var(--c-neutral-700);
+  --color-on-ink: var(--c-neutral-0);
+
+  /* 强调色：链接 / 选中 / Tab 指示 / 焦点 */
+  --color-accent: var(--c-brand-600);
+  --color-accent-hover: var(--c-brand-700);
+  --color-accent-soft: var(--c-brand-soft);
+  --color-on-accent: var(--c-neutral-0);
+
+  /* 历史别名：brand = accent */
+  --color-brand: var(--color-accent);
+  --color-brand-strong: var(--color-accent-hover);
+  --color-brand-soft: var(--color-accent-soft);
+  --color-on-brand: var(--color-on-accent);
+
+  /* Status semantics (fg + soft bg) */
+  --color-info: var(--color-accent);
+  --color-info-soft: var(--color-accent-soft);
+  --color-success: var(--c-success-600);
+  --color-success-soft: rgba(0, 135, 74, 0.10);
+  --color-warning: var(--c-warning-500);
+  --color-warning-soft: rgba(184, 110, 0, 0.11);
+  --color-danger: var(--c-danger-600);
+  --color-danger-soft: rgba(194, 0, 66, 0.09);
+  --color-attention: var(--c-warning-500);
+  --color-attention-soft: rgba(184, 110, 0, 0.11);
+  /* 账号健康色阶：成功率由高到低 绿 → 黄绿 → 黄 → 橙 → 红。色标集中在 90%~100%
+     （绝大多数时间桶落在这段），桶颜色在相邻色标间连续插值（features/account-status/health.ts）。 */
+  --health-scale-100: #00874a;
+  --health-scale-97: #3f9a1c;
+  --health-scale-95: #74a000;
+  --health-scale-90: #b08f00;
+  --health-scale-75: #c46a00;
+  --health-scale-50: #c4400c;
+  --health-scale-0: #c20042;
+
+  /* ---------------------------------------------------------------------------
+   * 7. DOMAIN — Provider accents
+   * ------------------------------------------------------------------------ */
+  --provider-codex: var(--c-codex);
+  --provider-codex-soft: rgba(16, 163, 127, 0.12);
+  --provider-claude: var(--c-claude);
+  --provider-claude-soft: rgba(217, 119, 87, 0.14);
+  --provider-gemini: var(--c-gemini);
+  --provider-gemini-soft: rgba(66, 133, 244, 0.12);
+  --provider-agy: var(--c-agy);
+  --provider-agy-soft: rgba(139, 92, 246, 0.12);
+  --provider-opencode: var(--c-opencode);
+  --provider-opencode-soft: rgba(82, 82, 91, 0.12);
+  --provider-grok: var(--c-grok);
+  --provider-grok-soft: rgba(0, 163, 184, 0.12);
+  --provider-qoder: var(--c-qoder);
+  --provider-qoder-soft: rgba(99, 102, 241, 0.12);
+  --provider-qodercn: var(--c-qodercn);
+  --provider-qodercn-soft: rgba(139, 92, 246, 0.12);
+  --provider-kimi: var(--c-kimi);
+  --provider-kimi-soft: rgba(26, 115, 232, 0.12);
+  --provider-kiro: var(--c-kiro);
+  --provider-kiro-soft: rgba(245, 158, 11, 0.14);
+  --provider-zcode: var(--c-zcode);
+  --provider-zcode-soft: rgba(59, 110, 245, 0.12);
+  --provider-codebuddy: var(--c-codebuddy);
+  --provider-codebuddy-soft: rgba(0, 82, 217, 0.12);
+  --provider-codebuddycn: var(--c-codebuddycn);
+  --provider-codebuddycn-soft: rgba(122, 63, 242, 0.12);
+  --provider-workbuddy: var(--c-workbuddy);
+  --provider-workbuddy-soft: rgba(18, 183, 106, 0.12);
+  --provider-workbuddycn: var(--c-workbuddycn);
+  --provider-workbuddycn-soft: rgba(247, 144, 9, 0.12);
+  --provider-cline: var(--c-cline);
+  --provider-cline-soft: rgba(28, 28, 36, 0.12);
+
+  /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
+  --provider-accent: var(--color-accent);
+  --provider-accent-soft: var(--color-accent-soft);
+
+  /* ---------------------------------------------------------------------------
+   * 8. DOMAIN — Event semantics
+   * 事件语义色只用于图标与状态徽章，不做左侧强调条。
+   * ------------------------------------------------------------------------ */
+  --event-radius: var(--hos-radius-sm, 8px);
+  --event-radius-sm: var(--hos-radius-xs, 6px);
+  --event-border: var(--color-border);
+  --event-bg: var(--color-surface);
+  --event-bg-muted: var(--color-surface-muted);
+  --event-header-gap: var(--space-4);
+  --event-pad-x: var(--space-6);
+  --event-pad-y: var(--space-4);
+
+  --event-tool: var(--c-neutral-600);
+  --event-tool-soft: rgba(82, 82, 91, 0.10);
+  --event-thinking: var(--c-purple-600);
+  --event-thinking-soft: rgba(124, 58, 237, 0.09);
+  --event-plan: var(--c-info-600);
+  --event-plan-soft: rgba(0, 134, 160, 0.09);
+  --event-goal: var(--c-teal-500);
+  --event-goal-soft: rgba(13, 148, 136, 0.09);
+  --event-memory: var(--c-warning-500);
+  --event-memory-soft: rgba(180, 83, 9, 0.09);
+  --event-notify: var(--c-info-600);
+  --event-notify-soft: rgba(0, 134, 160, 0.09);
+  --event-ask: var(--c-purple-600);
+  --event-ask-soft: rgba(124, 58, 237, 0.09);
+
+  /* ---------------------------------------------------------------------------
+   * 8c. DOMAIN — Status badge palette (solid tints)
+   * 徽章 / 标签 / 状态片的实底配色：底(bg) / 字(ink) / 边(bd)。
+   * ------------------------------------------------------------------------ */
+  --c-accent-blue:  var(--color-accent);
+  --c-accent-green: var(--color-success);
+
+  --tint-info:    #e3f6fa;  --ink-info:    #006d83;
+  --tint-success: #e2f7ec;  --ink-success: #00703c;  --bd-success: #9fdcbc;
+  --tint-warning: #fdf1dc;  --ink-warning: #8f5500;
+  --tint-danger:  #fde6ee;  --ink-danger:  #a8003a;  --bd-danger:  #f3b3c8;
+  --tint-neutral: #e6edf3;  --ink-neutral: #34506b;
+
+  /* ---------------------------------------------------------------------------
+   * 9. LAYOUT — Shell dimensions
+   * ------------------------------------------------------------------------ */
+  --layout-sidebar-w: 232px;
+  --layout-topbar-h: 56px;
+  --layout-topbar-h-mobile: 52px;
+  --layout-mobilenav-h: 60px;
+  --layout-page-max: 1560px;
+  --layout-chat-max: 860px;
+  --visual-viewport-height: 100dvh;
+
+  /* ---------------------------------------------------------------------------
+   * 10. HUD — 几何与光效（Cyber HUD 专属）
+   * ------------------------------------------------------------------------ */
+  --hud-chamfer: 10px;          /* 面板切角 */
+  --hud-chamfer-sm: 6px;        /* 小卡 / 按钮切角 */
+  --hud-tick: 10px;             /* 角标长度 */
+  --hud-tick-color: var(--color-accent);
+  --hud-panel-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  --hud-panel-blur: blur(10px);
+  --hud-grid-size: 32px;
+  --hud-grid-line: rgba(0, 134, 160, 0.06);
+  --hud-glow-accent: 0 0 16px rgba(0, 134, 160, 0.18);
+  --hud-text-glow: none;
+  --hud-text-glow-soft: none;
+  --hud-text-glow-success: none;
+  --hud-text-glow-warning: none;
+  --hud-text-glow-danger: none;
+  --hud-scanline: rgba(3, 8, 15, 0.10);
+}
+
+/* ===========================================================================
+ * BREAKPOINTS (文档化常量；CSS @media 无法读取变量)
+ *   xs 480 · sm 640 · md 768（移动/桌面切换）· lg 1024 · xl 1280 · 2xl 1560
+ * ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0ms;
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+    --motion-slower: 0ms;
+  }
+}
+
+/* ===========================================================================
+ * 移动端字号刻度（≤768px）—— 整体上调一档，输入框 ≥16px 防 iOS 缩放
+ * ========================================================================= */
+@media (max-width: 768px) {
+  :root {
+    --text-2xs: var(--hos-text-caption); /* 12px */
+    --text-xs:  var(--hos-text-caption); /* 12px */
+    --text-sm:  var(--hos-text-body-sm); /* 13px */
+    --text-base:15px;
+    --text-md:  15px;
+    --text-lg:  17px;
+    --text-xl:  18px;
+    --text-2xl: 22px;
+    --text-3xl: 26px;
+    --text-4xl: 30px;
+  }
+}
+
+/* =============================================================================
+ * 10b. 历史 --hos-* 命名（值并入 Cyber HUD 语义层）
+ * ========================================================================== */
+:root {
+  /* 圆角：按钮 / 输入 6、下拉 8、卡片 10、弹窗 12 */
+  /* HUD 以切角代替圆角：基础圆角收敛为 2–4px，面板轮廓由 clip-path 切角表达 */
+  --hos-radius-2xs: 2px;
+  --hos-radius-xs: 2px;
+  --hos-radius-10: 2px;
+  --hos-radius-sm: 3px;
+  --hos-radius-14: 2px;
+  --hos-radius-md: 4px;
+  --hos-radius-lg: 4px;
+  --hos-radius-xl: 4px;
+  --hos-radius-2xl: 6px;
+  --hos-radius-pill: 9999px;
+
+  /* 间距阶梯(4pt 基准,含半档) */
+  --hos-space-0-5: 2px;
+  --hos-space-1: 4px;
+  --hos-space-1-5: 6px;
+  --hos-space-2: 8px;
+  --hos-space-2-5: 10px;
+  --hos-space-3: 12px;
+  --hos-space-3-5: 14px;
+  --hos-space-4: 16px;
+  --hos-space-5: 20px;
+  --hos-space-6: 24px;
+  --hos-space-7: 28px;
+  --hos-space-8: 32px;
+  --hos-space-10: 40px;
+  --hos-space-12: 48px;
+
+  /* 常量色：--hos-white 仍为纯白（既用于「有色底上的白字」也曾被当表面用，
+   * 表面用法应改为 --color-surface）。其余灰阶 / 蓝色常量改为语义别名，随主题翻转。 */
+  --hos-white: #ffffff;
+  --hos-ink-50: var(--color-surface-muted);
+  --hos-ink-100: var(--color-border);
+  --hos-ink-200: var(--color-border);
+  --hos-ink-300: var(--color-border-strong);
+  --hos-ink-400: var(--color-faint);
+  --hos-ink-500: var(--color-muted);
+  --hos-ink-700: var(--color-text);
+  --hos-ink-900: var(--color-heading);
+  --hos-surface-dark-800: var(--color-text);
+  --hos-surface-dark-900: var(--color-heading);
+  --hos-blue-700: var(--color-accent);
+  --hos-blue-600: var(--color-accent);
+  --hos-blue-500: var(--color-accent);
+  --hos-orange-500: var(--c-claude);   /* 仅代表 Claude；UI 强调请用 --color-accent */
+  --hos-orange-600: var(--color-warning);
+  --hos-red-600: var(--color-danger);
+  --hos-red-500: var(--color-danger);
+  --hos-green-600: var(--color-success);
+  --hos-green-500: var(--color-success);
+  --hos-amber-500: var(--color-warning);
+  --hos-gray-600: var(--color-muted-strong);
+  --hos-gray-500: var(--color-muted);
+  --hos-gray-400: var(--color-faint);
+
+  /* 材质：不再使用毛玻璃。blur 为 none，玻璃底退化为不透明表面。 */
+  --hos-blur-subtle: none;
+  --hos-blur-card: none;
+  --hos-blur-floating: none;
+
+  --hos-glass-bg-subtle: var(--color-surface);
+  --hos-glass-bg-card: var(--color-surface);
+  --hos-glass-bg-floating: var(--color-surface-raised);
+  --hos-glass-bg-dark: var(--color-surface);
+
+  --hos-glass-border: 1px solid var(--color-border);
+  --hos-glass-border-subtle: 1px solid var(--color-border);
+  --hos-glass-border-dark: 1px solid var(--color-border);
+
+  --hos-shadow-card: none;
+  --hos-shadow-floating: var(--elevation-3);
+  --hos-shadow-glow-blue: none;
+  --hos-shadow-glow-purple: none;
+
+  /* 曲线：不做超调回弹 */
+  --hos-ease-spring: var(--ease-standard);
+  --hos-ease-smooth: var(--ease-standard);
+
+  /* 移动端（原 mobile-cards.css 全局 token）：统一到语义层 */
+  --hos-mobile-font: var(--font-body);
+  --hos-mobile-mono: var(--font-mono);
+  --hos-mobile-bg: var(--color-bg);
+  --hos-mobile-surface-2: var(--color-surface-raised);
+  --hos-mobile-ink-4: var(--color-faint);
+  --hos-mobile-line-2: var(--color-border);
+  --hos-mobile-run: var(--color-success);
+  --hos-mobile-radius: 4px;
+  --hos-mobile-shadow-xs: none;
+  --hos-mobile-shadow-sm: none;
+
+  /* 在线状态点 */
+  --hos-status-online: var(--color-success);
+  --hos-status-online-soft: var(--color-success-soft);
+
+  /* 语义桥接 */
+  --hos-bg: var(--color-bg);
+  --hos-surface: var(--color-surface);
+  --hos-surface-raised: var(--color-surface-raised);
+  --hos-surface-muted: var(--color-surface-muted);
+  --hos-border: var(--color-border);
+  --hos-border-strong: var(--color-border-strong);
+  --hos-text: var(--color-text);
+  --hos-heading: var(--color-heading);
+  --hos-muted: var(--color-muted);
+  --hos-muted-strong: var(--color-muted-strong);
+  --hos-primary-soft: var(--color-accent-soft);
+  --hos-shadow-soft: var(--elevation-2);
+}
+
+/* =============================================================================
+ * 11. 深色主题（与浅色同时设计）
+ * ========================================================================== */
+[data-theme='dark'],
+.dark-theme,
+body.dark {
+  color-scheme: dark;
+
+  /* Void Black 画布 + 深海军蓝面板 */
+  --color-bg: #05080e;
+  --color-bg-elevated: #0c1524;
+  --color-surface: #0a101a;
+  --color-surface-raised: #0c1524;
+  --color-surface-muted: #0e1a2a;
+  --color-surface-soft: #070c14;
+  --color-surface-sunken: #03060b;
+  --color-border: #15263d;
+  --color-border-strong: #23405f;
+  --color-border-subtle: rgba(0, 240, 255, 0.07);
+
+  /* Ice White/Blue 文本。规范 muted #5c7890 在 #0a101a 上仅 ~3.9:1，
+   * 因此它只用于 faint（标签 / 元信息）；正文次级色上调到 #7f9bb3（~6.3:1）。 */
+  --color-heading: #f2fbff;
+  --color-text: #e2f1f8;
+  --color-muted-strong: #a9c2d6;
+  --color-muted: #7f9bb3;
+  --color-faint: #5c7890;
+  --color-disabled: #3a5068;
+
+  --color-overlay-subtle: rgba(0, 240, 255, 0.03);
+  --color-overlay: rgba(0, 240, 255, 0.07);
+  --color-scrim: rgba(2, 4, 8, 0.78);
+
+  /* 主操作 = Electric Cyan 实底 + 虚空黑字 */
+  --color-ink: #00f0ff;
+  --color-ink-hover: #6ff7ff;
+  --color-on-ink: #05080e;
+
+  --color-accent: #00f0ff;
+  --color-accent-hover: #6ff7ff;
+  --color-accent-soft: rgba(0, 240, 255, 0.12);
+  --color-on-accent: #05080e;
+
+  /* 状态：Matrix Green / Amber / Rose */
+  --color-success: #00ff66;
+  --color-success-soft: rgba(0, 255, 102, 0.12);
+  --color-warning: #ffaa00;
+  --color-warning-soft: rgba(255, 170, 0, 0.13);
+  --color-danger: #ff0055;
+  --color-danger-soft: rgba(255, 0, 85, 0.14);
+  --color-attention: #ffaa00;
+  --color-attention-soft: rgba(255, 170, 0, 0.13);
+  --health-scale-100: #00ff66;
+  --health-scale-97: #7aff3d;
+  --health-scale-95: #c8ff1f;
+  --health-scale-90: #ffe100;
+  --health-scale-75: #ffaa00;
+  --health-scale-50: #ff6a00;
+  --health-scale-0: #ff0055;
+
+  --c-opencode: #a9c2d6;
+  /* Cline 记号近黑（#1C1C24），在深色画布上不可见；官方 favicon 的深色变体即 #f4f4f5。 */
+  --c-cline: #f4f4f5;
+  --event-tool: #7f9bb3;
+  --event-thinking: #c38bff;
+  --event-plan: #00f0ff;
+  --event-goal: #00ffc6;
+  --event-memory: #ffaa00;
+  --event-notify: #00f0ff;
+  --event-ask: #c38bff;
+  --event-plan-soft: rgba(0, 240, 255, 0.10);
+  --event-notify-soft: rgba(0, 240, 255, 0.10);
+
+  --tint-info: rgba(0, 240, 255, 0.12);
+  --ink-info: #7ff8ff;
+  --tint-success: rgba(0, 255, 102, 0.12);
+  --ink-success: #7dffb0;
+  --bd-success: rgba(0, 255, 102, 0.35);
+  --tint-warning: rgba(255, 170, 0, 0.14);
+  --ink-warning: #ffc95c;
+  --tint-danger: rgba(255, 0, 85, 0.14);
+  --ink-danger: #ff6b9a;
+  --bd-danger: rgba(255, 0, 85, 0.40);
+  --tint-neutral: rgba(92, 120, 144, 0.16);
+  --ink-neutral: #a9c2d6;
+
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --elevation-3: 0 0 0 1px rgba(0, 240, 255, 0.10), 0 12px 32px rgba(0, 0, 0, 0.65);
+  --elevation-4: 0 0 0 1px rgba(0, 240, 255, 0.22), 0 0 30px rgba(0, 240, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.75);
+  --ring-focus: 0 0 0 1px #00f0ff, 0 0 12px rgba(0, 240, 255, 0.45);
+  --ring-focus-info: var(--ring-focus);
+
+  --hud-panel-bg: rgba(10, 16, 26, 0.85);
+  --hud-grid-line: rgba(0, 240, 255, 0.035);
+  --hud-glow-accent: 0 0 18px rgba(0, 240, 255, 0.25);
+  --hud-text-glow: 0 0 10px rgba(0, 240, 255, 0.55);
+  --hud-text-glow-soft: 0 0 6px rgba(0, 240, 255, 0.28);
+  --hud-text-glow-success: 0 0 10px rgba(0, 255, 102, 0.5);
+  --hud-text-glow-warning: 0 0 10px rgba(255, 170, 0, 0.5);
+  --hud-text-glow-danger: 0 0 10px rgba(255, 0, 85, 0.55);
+  --hud-scanline: rgba(0, 0, 0, 0.28);
+}
+
+/* =============================================================================
+ * 12. 焦点（Accessibility Focus Rings）
+ * 只画在可交互控件上；对话框 / 抽屉容器（tabindex=-1）不画。
+ * ========================================================================== */
+:focus-visible {
+  outline: none;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="option"]:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus) !important;
+}

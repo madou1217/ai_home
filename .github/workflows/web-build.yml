@@ -1,0 +1,40 @@
+name: web-build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: web-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: web lint + build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Lint web
+        working-directory: web
+        run: npm run lint
+
+      - name: Build web
+        working-directory: web
+        run: npm run build

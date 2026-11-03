@@ -1,0 +1,1843 @@
+{
+  "id": "claude.settings",
+  "title": "Claude Code settings.json",
+  "source": "Claude Code Settings Reference",
+  "sourceUrl": "https://code.claude.com/docs/en/settings-reference",
+  "docsUrl": "https://code.claude.com/docs/en/settings-reference",
+  "verifiedCliVersion": "2.1.303",
+  "fields": [
+    {
+      "path": "advisorModel",
+      "type": "string",
+      "description": "Pick which model answers when Claude asks the advisor tool",
+      "default": "unset, so the advisor is off",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, one of the aliases \"fable\", \"opus\", or \"sonnet\", which resolve to Claude Code's current default version of that model family, or a full model ID such as \"claude-opus-5-5\""
+    },
+    {
+      "path": "agent",
+      "type": "string",
+      "description": "Start every session as a named subagent with its prompt, tools, and model",
+      "default": "unset, so the main thread runs as Claude Code's default agent",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, the name of a built-in or custom agent"
+    },
+    {
+      "path": "agentPushNotifEnabled",
+      "type": "string",
+      "description": "Let Claude send a push notification to your phone when it decides to",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    true: Claude can send a push notification to your phone when it decides one is worth sending    false: Claude doesn't send those notifications"
+    },
+    {
+      "path": "allowedHttpHookUrls",
+      "type": "array",
+      "description": "Limit which URLs HTTP hooks can target",
+      "default": "unset, so any URL is allowed",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "array of URL patterns, with * as a wildcard"
+    },
+    {
+      "path": "allowedMcpServers",
+      "type": "array",
+      "description": "Allowlist which MCP servers users can add",
+      "default": "unset, so every server is allowed; an empty array blocks every server users add",
+      "scope": "Any file",
+      "topic": "MCP",
+      "typeLabel": "array of objects, each with exactly one key: serverName, a string limited to letters, numbers, hyphens, and underscores; serverCommand, an array of the command and its arguments matched exactly; or serverUrl, a URL pattern with * wildcards"
+    },
+    {
+      "path": "alwaysThinkingEnabled",
+      "type": "string",
+      "description": "Turn extended thinking off for every session",
+      "default": "unset, so thinking is on for models that support it",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: no effect; thinking is already on    false: Claude Code turns extended thinking off for every session"
+    },
+    {
+      "path": "apiKeyHelper",
+      "type": "string",
+      "description": "Generate the API credential with your own command",
+      "default": "unset, so Claude Code doesn't run a helper",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, a shell command line",
+      "secret": true
+    },
+    {
+      "path": "askUserQuestionTimeout",
+      "type": "string",
+      "description": "Let an unanswered question auto-continue after idle time",
+      "default": "\"never\"",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of \"60s\", \"5m\", \"10m\", or \"never\""
+    },
+    {
+      "path": "appendPlugins",
+      "type": "array",
+      "description": "Run your organization's mods after every mod a user installs",
+      "default": "unset",
+      "scope": "User or managed",
+      "topic": "Plugins and skills",
+      "typeLabel": "array of plugin-name@marketplace-name strings"
+    },
+    {
+      "path": "attribution",
+      "type": "object",
+      "description": "Customize the attribution Claude Code adds to commits and pull requests",
+      "default": "unset, so Claude Code uses the standard attribution shown under each sub-key",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "object with commit and pr strings and a sessionUrl Boolean, or false to hide all attribution. The false value requires Claude Code v2.1.281 or later; earlier versions reject it and skip the whole user, project, or local settings file that holds it"
+    },
+    {
+      "path": "attribution.commit",
+      "type": "string",
+      "description": "Change or hide the trailer Claude Code adds to commits",
+      "default": "unset, so Claude Code adds Co-Authored-By: <name> <noreply@anthropic.com>. The name is the model in use when the commit…",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "string"
+    },
+    {
+      "path": "attribution.pr",
+      "type": "string",
+      "description": "Change or hide the attribution line in pull request descriptions",
+      "default": "unset, so Claude Code adds 🤖 Generated with Claude Code",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "string"
+    },
+    {
+      "path": "attribution.sessionUrl",
+      "type": "string",
+      "description": "Omit the claude.ai session link from cloud and Remote Control commits",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "Boolean    true: Claude Code appends the claude.ai session link when it commits or opens a pull request from a cloud or Remote Control session    false: Claude Code omits the link"
+    },
+    {
+      "path": "autoCompactEnabled",
+      "type": "string",
+      "description": "Turn automatic compaction off or on",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "Boolean    true: Claude Code compacts the conversation automatically when context approaches the limit    false: Claude Code doesn't compact automatically"
+    },
+    {
+      "path": "autoCompactWindow",
+      "type": "string",
+      "description": "Set how full the context gets before Claude Code compacts",
+      "default": "unset, so Claude Code picks a window tuned for your model",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "number of tokens, from 100000 to 1000000. Claude Code caps the value at your model's context window; the models overview lists each model's window"
+    },
+    {
+      "path": "autoContinueAtUsageLimit",
+      "type": "string",
+      "description": "Wait in the open session and continue the task automatically after a claude.ai usage limit resets",
+      "default": "true",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: after a claude.ai usage limit stops your session, Claude Code waits in the open session and continues the task automatically after the reset    false: Claude Code doesn't start the wait on its own. You can still start a wait yourself from the usage-limit options menu"
+    },
+    {
+      "path": "autoMemoryDirectory",
+      "type": "string",
+      "description": "Store auto memory in a directory you choose",
+      "default": "unset, so Claude Code uses ~/.claude/projects/<project>/memory/",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "string, an absolute or ~/-prefixed directory path"
+    },
+    {
+      "path": "autoMemoryEnabled",
+      "type": "string",
+      "description": "Turn auto memory off or on",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "Boolean    true: the same as unset; auto memory stays on unless something that outranks this key turns it off for the session, such as --bare, safe mode, or CLAUDE_CODE_DISABLE_AUTO_MEMORY    false: Claude doesn't read from or write to the auto memory directory"
+    },
+    {
+      "path": "autoMode",
+      "type": "object",
+      "description": "Add your own allow and deny rules to the auto mode classifier",
+      "default": "unset, so the classifier uses only its built-in rules",
+      "scope": "User or managed",
+      "topic": "Permission settings",
+      "typeLabel": "object with environment, allow, soft_deny, and hard_deny arrays of prose rules, plus the classifyAllShell Boolean"
+    },
+    {
+      "path": "autoMode.classifyAllShell",
+      "type": "string",
+      "description": "Send every shell command through the auto mode classifier, even ones a narrow allow rule matches",
+      "default": "false",
+      "scope": "User or managed",
+      "topic": "Permission settings",
+      "typeLabel": "Boolean    true: while auto mode is active, Claude Code sends every Bash and PowerShell command through the classifier and suspends your shell allow rules; outside auto mode the rules still apply    false: auto mode suspends only allow rules that could run arbitrary code, such as Bash() and Bash(python ); a command that any other allow rule matches skips the classifier unless it carries per-command allowed domains, and every other shell command goes through it"
+    },
+    {
+      "path": "autoScrollEnabled",
+      "type": "string",
+      "description": "Follow new output to the bottom in fullscreen rendering",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: the conversation follows new output to the bottom    false: you stay where you scrolled while Claude keeps working; permission prompts still appear below the transcript"
+    },
+    {
+      "path": "autoUpdatesChannel",
+      "type": "enum",
+      "description": "Follow the stable release channel instead of latest",
+      "options": [
+        "latest",
+        "stable"
+      ],
+      "default": "unset, so Claude Code follows \"latest\"",
+      "scope": "Any file",
+      "topic": "Updates and versioning",
+      "typeLabel": "string, one of:    \"latest\": updates follow the most recent release    \"stable\": updates follow a version that is typically about one week old and skips releases with major regressions"
+    },
+    {
+      "path": "availableModels",
+      "type": "array",
+      "description": "Restrict which models people can pick",
+      "default": "unset, so every model is available",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "array of model aliases or IDs"
+    },
+    {
+      "path": "awaySummaryEnabled",
+      "type": "string",
+      "description": "Turn off the session recap shown when you come back to the terminal",
+      "default": "unset, so the recap is on",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    true: you see a one-line session recap when you return after a few minutes away    false: Claude Code shows no recap"
+    },
+    {
+      "path": "awsAuthRefresh",
+      "type": "string",
+      "description": "Refresh expired Bedrock credentials in .aws with your own command",
+      "default": "unset, so Claude Code doesn't refresh AWS credentials for you",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, a shell command line"
+    },
+    {
+      "path": "awsCredentialExport",
+      "type": "string",
+      "description": "Supply Bedrock credentials as JSON from your own command",
+      "default": "unset, so Claude Code uses the ambient AWS credential chain",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, a shell command line",
+      "secret": true
+    },
+    {
+      "path": "axScreenReader",
+      "type": "string",
+      "description": "Render screen-reader friendly output",
+      "default": "unset, so screen-reader mode is off",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: Claude Code renders flat text without decorative borders or animations, using the classic renderer    false: Claude Code renders normally"
+    },
+    {
+      "path": "bashEditDiffEnabled",
+      "type": "boolean",
+      "description": "Record the files that changed while a Bash command ran in every permission mode",
+      "default": "unset, so Claude Code records changes in auto mode and bypassPermissions mode when it directs Claude to edit files thro…",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean"
+    },
+    {
+      "path": "bashOutputMaxChars",
+      "type": "string",
+      "description": "Set how much of a successful command's output Claude receives inline",
+      "default": "unset, so Claude receives up to 30,000 characters inline",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "number of characters, a positive integer. Claude Code clamps the value into the range 4000 to 128000"
+    },
+    {
+      "path": "claudeMdExcludes",
+      "type": "array",
+      "description": "Skip specific CLAUDE.md files when memory loads",
+      "default": "unset, so Claude Code loads every CLAUDE.md it finds",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "array of strings, each a glob pattern or absolute path"
+    },
+    {
+      "path": "cleanupPeriodDays",
+      "type": "string",
+      "description": "Choose how many days Claude Code keeps transcripts before deleting them",
+      "default": "30",
+      "scope": "Any file",
+      "topic": "Privacy and telemetry",
+      "typeLabel": "number of days, a whole number, minimum 1"
+    },
+    {
+      "path": "companyAnnouncements",
+      "type": "array",
+      "description": "Show your organization's announcements at startup",
+      "default": "unset, so no announcement shows",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "array of strings"
+    },
+    {
+      "path": "crossSessionInbound",
+      "type": "enum",
+      "description": "Choose whether Claude Code delivers messages from your other sessions, shows a notice without delivering them, or refuses them",
+      "options": [
+        "accept",
+        "hold",
+        "refuse"
+      ],
+      "default": "unset, so Claude Code decides per message",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, one of:    \"accept\": Claude Code delivers the message to Claude    \"hold\": Claude Code shows a notice for the message without delivering it   * \"refuse\": Claude Code drops the message"
+    },
+    {
+      "path": "defaultShell",
+      "type": "enum",
+      "description": "Choose whether Bash or PowerShell runs the shell commands you type with the ! prefix",
+      "options": [
+        "bash",
+        "powershell"
+      ],
+      "default": "\"bash\", or \"powershell\" on Windows when Bash isn't available",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of:    \"bash\": Claude Code runs your ! commands in Bash    \"powershell\": Claude Code runs your ! commands in PowerShell"
+    },
+    {
+      "path": "deniedMcpServers",
+      "type": "array",
+      "description": "Block specific MCP servers by URL, command, or name",
+      "default": "unset, so no server is blocked; an empty array also blocks nothing",
+      "scope": "Any file",
+      "topic": "MCP",
+      "typeLabel": "array of objects, each with exactly one key: serverName, a string, so a claude.ai connector's display name such as \"claude.ai Slack\" works; serverCommand, an array of the command and its arguments matched exactly; or serverUrl, a URL pattern with * wildcards"
+    },
+    {
+      "path": "desktopSessionCleanupPeriodDays",
+      "type": "string",
+      "description": "Set an age limit in days for Claude Desktop and Cowork transcripts",
+      "default": "0, which sets no age limit",
+      "scope": "User or managed",
+      "topic": "Privacy and telemetry",
+      "typeLabel": "number of days, a whole number, minimum 0"
+    },
+    {
+      "path": "dialogExpiry",
+      "type": "string",
+      "description": "Set how long Claude Code waits for Remote Control or an SDK host to answer a forwarded dialog before it cancels the dialog",
+      "default": "\"5m\"",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of \"60s\", \"5m\", \"10m\", or \"never\", which disables the deadline"
+    },
+    {
+      "path": "disableAgentView",
+      "type": "string",
+      "description": "Turn off background agents and agent view",
+      "default": "unset, so agent view is available",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "Boolean    true: Claude Code turns off claude agents, --bg, /background, and the on-demand supervisor    false: agent view is available"
+    },
+    {
+      "path": "disableAllHooks",
+      "type": "string",
+      "description": "Turn off hooks, a custom status line, and a custom @ file suggestion command at once",
+      "default": "unset, so hooks run",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "Boolean    true: Claude Code turns off hooks, any custom status line, and any custom file suggestion command    false: hooks, the status line, and the file suggestion command run"
+    },
+    {
+      "path": "disableArtifact",
+      "type": "string",
+      "description": "Deprecated; use enableArtifact to turn the Artifact tool off",
+      "default": "unset, so the tool follows your account's availability",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    true: Claude Code turns the Artifact tool off for every session the file applies to, and no other file turns it back on    false: ignored; to leave the tool on, remove the key",
+      "deprecated": true
+    },
+    {
+      "path": "disableAutoMode",
+      "type": "string",
+      "description": "Remove auto mode from the permission mode cycle",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "the string \"disable\""
+    },
+    {
+      "path": "disableBundledSkills",
+      "type": "string",
+      "description": "Turn off the skills and workflows included with Claude Code",
+      "default": "unset, so bundled skills load",
+      "scope": "Any file",
+      "topic": "Plugins and skills",
+      "typeLabel": "Boolean    true: Claude Code removes bundled skills and workflows and hides built-in commands such as /init from the model    false: bundled skills load"
+    },
+    {
+      "path": "disableClaudeAiConnectors",
+      "type": "string",
+      "description": "Turn off claude.ai connectors so Claude Code doesn't fetch them",
+      "default": "false, so Claude Code fetches your connectors",
+      "scope": "Any file",
+      "topic": "MCP",
+      "typeLabel": "Boolean    true: Claude Code neither fetches nor connects those connectors    false: the same as unset; Claude Code fetches your connectors unless another settings file or ENABLE_CLAUDEAI_MCP_SERVERS turns them off"
+    },
+    {
+      "path": "disableDeepLinkRegistration",
+      "type": "string",
+      "description": "Stop Claude Code from registering the claude-cli:// handler",
+      "default": "unset, so Claude Code registers the handler",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "the string \"disable\""
+    },
+    {
+      "path": "disabledMcpjsonServers",
+      "type": "array",
+      "description": "Reject specific servers from a project's .mcp.json",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "MCP",
+      "typeLabel": "array of strings, the server names as they appear in .mcp.json"
+    },
+    {
+      "path": "disableRemoteControl",
+      "type": "string",
+      "description": "Turn off Remote Control everywhere it can start",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    true: Claude Code refuses claude remote-control, the --remote-control flag, auto-start, and the in-session toggle    false: Remote Control stays available"
+    },
+    {
+      "path": "disableSkillShellExecution",
+      "type": "string",
+      "description": "Stop skills and custom commands from running inline shell",
+      "default": "unset, so inline shell runs",
+      "scope": "Any file",
+      "topic": "Plugins and skills",
+      "typeLabel": "Boolean    true: Claude Code replaces each inline shell command with [shell command execution disabled by policy] instead of running it    false: inline shell runs"
+    },
+    {
+      "path": "disableWorkflows",
+      "type": "string",
+      "description": "Turn dynamic workflows off for everyone; use enableWorkflows for yourself",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "Boolean    true: Claude Code turns off dynamic workflows and the bundled workflow commands for everyone your settings reach    false: the same as unset; whether workflows are on then follows enableWorkflows and your plan's default"
+    },
+    {
+      "path": "editorMode",
+      "type": "enum",
+      "description": "Use vim key bindings in the input prompt",
+      "options": [
+        "normal",
+        "vim"
+      ],
+      "default": "\"normal\"",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of:    \"normal\": standard key bindings in the prompt input    \"vim\": vim-style editing with NORMAL, INSERT, and VISUAL modes"
+    },
+    {
+      "path": "effortLevel",
+      "type": "enum",
+      "description": "Set a default effort level for models without a saved level of their own",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, one of:    \"low\": the least reasoning, for short, scoped, latency-sensitive tasks that aren't intelligence-sensitive    \"medium\": reduces token usage for cost-sensitive work that can trade off some intelligence    \"high\": balances token usage and intelligence    \"xhigh\": deeper reasoning at higher token spend"
+    },
+    {
+      "path": "emojiCompletionEnabled",
+      "type": "string",
+      "description": "Turn off :shortcode: emoji suggestions and replacement in the prompt input",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: Claude Code shows emoji suggestions after : and replaces a completed shortcode with its emoji    false: Claude Code neither suggests emoji nor replaces shortcodes"
+    },
+    {
+      "path": "enableAllProjectMcpServers",
+      "type": "string",
+      "description": "Approve every server in project .mcp.json files without a prompt",
+      "default": "unset, so Claude Code asks you to approve each server",
+      "scope": "Any file",
+      "topic": "MCP",
+      "typeLabel": "Boolean    true: Claude Code approves every MCP server defined in project .mcp.json files without a prompt    false: Claude Code asks you to approve each server. In a trusted folder, a false in a higher-precedence file overrides a true in a lower one; in a folder you haven't trusted, a true in any honored file is enough"
+    },
+    {
+      "path": "enableArtifact",
+      "type": "string",
+      "description": "Turn the Artifact tool off with a false in any file; no file can turn it back on",
+      "default": "unset, so the tool follows your account's availability",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    false: Claude Code turns the Artifact tool off for every session the file applies to    true: the same as leaving the key unset, because it never overrides a false from another file, from CLAUDE_CODE_DISABLE_ARTIFACT, or from your organization's admin setting"
+    },
+    {
+      "path": "enabledMcpjsonServers",
+      "type": "array",
+      "description": "Approve specific servers from a project's .mcp.json",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "MCP",
+      "typeLabel": "array of strings, the server names as they appear in .mcp.json"
+    },
+    {
+      "path": "enabledPlugins",
+      "type": "object",
+      "description": "Turn individual plugins on or off per scope",
+      "default": "unset, so each plugin follows its defaultEnabled value",
+      "scope": "Any file",
+      "topic": "Plugins and skills",
+      "typeLabel": "object mapping plugin-name@marketplace-name to a Boolean"
+    },
+    {
+      "path": "enableWorkflows",
+      "type": "string",
+      "description": "Turn dynamic workflows on or off against your plan's default",
+      "default": "unset, so workflows are on unless you're on the Pro plan, where they're off",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "Boolean    true: Claude Code turns dynamic workflows on for you    false: Claude Code turns dynamic workflows off for you"
+    },
+    {
+      "path": "enforceAvailableModels",
+      "type": "string",
+      "description": "Keep the /model Default choice inside your availableModels allowlist",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: when Default would resolve to a model outside availableModels, Claude Code resolves it to the first available model in the list    false: this key doesn't change how Default resolves"
+    },
+    {
+      "path": "env",
+      "type": "object",
+      "description": "Set environment variables for every session and its subprocesses",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "object mapping variable names to string values"
+    },
+    {
+      "path": "extraKnownMarketplaces",
+      "type": "object",
+      "description": "Register marketplaces for a repository or an organization",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Plugins and skills",
+      "typeLabel": "object mapping a marketplace name to an object with a source object and an optional autoUpdate Boolean"
+    },
+    {
+      "path": "fallbackModel",
+      "type": "array",
+      "description": "Name backup models for when the primary is overloaded",
+      "default": "unset, so a failed request isn't retried on another model",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "array of model aliases or IDs; \"default\" expands to the default model"
+    },
+    {
+      "path": "fastMode",
+      "type": "string",
+      "description": "Turn fast mode on for sessions where it's available",
+      "default": "unset, so fast mode is off",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: Claude Code turns fast mode on for sessions where it's available    false: fast mode stays off"
+    },
+    {
+      "path": "fastModePerSessionOptIn",
+      "type": "string",
+      "description": "Require people to turn fast mode on each session",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: a saved fastMode: true no longer turns fast mode on at session start, so each person runs /fast in each session they want it; a fastMode: true passed with --settings still counts for that session unless managed settings set this key    false: a saved fastMode: true turns fast mode on at the start of every later session"
+    },
+    {
+      "path": "feedbackDrafts",
+      "type": "enum",
+      "description": "Control whether Claude queues feedback drafts for you to review",
+      "options": [
+        "notify",
+        "quiet",
+        "off"
+      ],
+      "default": "\"notify\"",
+      "scope": "User or managed",
+      "topic": "Privacy and telemetry",
+      "typeLabel": "string, one of \"notify\", \"quiet\", or \"off\"    \"notify\": Claude Code shows a card above the prompt when Claude queues a draft, up to three cards in a session by default    \"quiet\": Claude drafts without a card. You see the count of queued drafts in the prompt footer and review them in /feedback   * \"off\": Claude Code removes the SendFeedback tool, so Claude can't queue drafts"
+    },
+    {
+      "path": "feedbackSurveyRate",
+      "type": "string",
+      "description": "Change how often the session quality survey appears",
+      "default": "unset, so Claude Code uses the rate Anthropic sets remotely, or its built-in rate of 0.005 on Amazon Bedrock, Google Cl…",
+      "scope": "Any file",
+      "topic": "Privacy and telemetry",
+      "typeLabel": "number between 0 and 1"
+    },
+    {
+      "path": "fileCheckpointingEnabled",
+      "type": "string",
+      "description": "Turn off or on the file snapshots that /rewind restores",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "Boolean    true: Claude Code snapshots files before each edit so /rewind can restore them    false: Claude Code doesn't snapshot files, so /rewind can't restore them"
+    },
+    {
+      "path": "fileSuggestion",
+      "type": "object",
+      "description": "Supply @ file autocomplete from your own command",
+      "default": "unset, so Claude Code uses the built-in file suggestion",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with type, always \"command\", and command, the shell command to run"
+    },
+    {
+      "path": "footerLinksRegexes",
+      "type": "array",
+      "description": "Make issue or review IDs in output into clickable links below the input box",
+      "default": "unset, so no badges render",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "array of objects, each with type set to \"regex\", a pattern regex, a url template, and an optional label; {name} placeholders in url and label are filled from named capture groups in pattern"
+    },
+    {
+      "path": "forceLoginGatewayUrl",
+      "type": "string",
+      "description": "Set the gateway URL the login screen connects to",
+      "default": "unset, so the Cloud gateway screen shows an error telling people to contact their IT administrator",
+      "scope": "User or managed",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, a full URL including the scheme"
+    },
+    {
+      "path": "forceLoginMethod",
+      "type": "enum",
+      "description": "Restrict login to claude.ai, Claude Console, or a cloud gateway",
+      "options": [
+        "claudeai",
+        "console",
+        "gateway"
+      ],
+      "default": "unset, so people pick a login method",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, one of:    \"claudeai\": only claude.ai accounts can log in    \"console\": only Claude Console accounts can log in   * \"gateway\": Claude Code sends people to a cloud gateway instead of a first-party login"
+    },
+    {
+      "path": "forceLoginOrgUUID",
+      "type": "string",
+      "description": "Pin claude.ai logins to your organization; only a managed source enforces it",
+      "default": "unset, so any organization can log in",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, one UUID, or array of strings, several UUIDs"
+    },
+    {
+      "path": "gcpAuthRefresh",
+      "type": "string",
+      "description": "Refresh Google Cloud credentials with your own command",
+      "default": "unset, so Claude Code's credential error tells you to run gcloud auth application-default login yourself",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, a shell command line"
+    },
+    {
+      "path": "hooks",
+      "type": "object",
+      "description": "Run your own commands as hooks at points in Claude Code's lifecycle",
+      "default": "unset, so no hooks run",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "object keyed by hook event; each value is an array of { \"matcher\", \"hooks\" } groups whose hooks entries have a type of \"command\", \"prompt\", \"agent\", \"http\", or \"mcp_tool\""
+    },
+    {
+      "path": "httpHookAllowedEnvVars",
+      "type": "array",
+      "description": "Limit which env vars HTTP hooks can put in headers",
+      "default": "unset, so each hook's own allowedEnvVars list applies",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "array of environment variable names"
+    },
+    {
+      "path": "idleCompaction",
+      "type": "string",
+      "description": "Stop Claude Code from compacting a long conversation while your terminal session is idle",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "Boolean    true: Claude Code compacts idle conversations that meet the conditions    false: Claude Code doesn't compact while your session is idle"
+    },
+    {
+      "path": "includeCoAuthoredBy",
+      "type": "string",
+      "description": "Deprecated; use attribution to hide or change commit and PR attribution",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "Boolean    true: the same as unset; Claude Code adds the commit trailer and the pull request attribution text    false: Claude Code omits both the commit trailer and the pull request attribution text, unless attribution sets commit or pr, in which case the attribution rules apply",
+      "deprecated": true
+    },
+    {
+      "path": "includeGitInstructions",
+      "type": "string",
+      "description": "Remove the built-in commit and PR instructions from Claude's context",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "Boolean    true: Claude Code includes its built-in commit and pull request workflow instructions and the git status snapshot. Cloud sessions never include the snapshot    false: Claude Code leaves both out"
+    },
+    {
+      "path": "inputNeededNotifEnabled",
+      "type": "string",
+      "description": "Get a push notification when Claude is waiting on you",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    true: you get a push notification on your phone when a permission prompt or question is waiting, while Remote Control is connected    false: Claude Code sends no such notifications"
+    },
+    {
+      "path": "isolatePeerMachines",
+      "type": "string",
+      "description": "Ask you before Claude messages one of your sessions on another machine",
+      "default": "unset, so cross-machine messages don't prompt",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "Boolean    true: Claude Code asks for your approval before Claude's SendMessage reaches one of your sessions beyond this machine    false: cross-machine messages don't prompt"
+    },
+    {
+      "path": "keybindingFlavor",
+      "type": "string",
+      "description": "Deprecated and has no effect; the word-editing shortcuts always follow readline conventions",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, \"classic\" or \"readline\"",
+      "deprecated": true
+    },
+    {
+      "path": "language",
+      "type": "string",
+      "description": "Have Claude respond in a language other than English",
+      "default": "unset; session titles then match the language of your conversation",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, any language name, such as \"japanese\", \"spanish\", or \"french\"; Claude Code doesn't validate it"
+    },
+    {
+      "path": "maxEffortLevel",
+      "type": "string",
+      "description": "Cap the effort level for every model or per model, on every provider",
+      "default": "unset, so no cap applies",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, one of \"low\", \"medium\", \"high\", \"xhigh\", or \"max\". A \"max\" value sets no cap"
+    },
+    {
+      "path": "maxProseWidth",
+      "type": "string",
+      "description": "Cap how wide the prose in Claude's responses runs in a wide terminal",
+      "default": "unset, so prose wraps at the terminal edge",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "number of terminal columns, a whole number, minimum 40. Claude Code ignores any other value"
+    },
+    {
+      "path": "minimumVersion",
+      "type": "string",
+      "description": "Keep auto-updates from installing anything below a version",
+      "default": "unset, so updates can install any version the channel offers",
+      "scope": "Any file",
+      "topic": "Updates and versioning",
+      "typeLabel": "string, a version number such as \"2.1.100\"; a value that isn't a valid version is ignored"
+    },
+    {
+      "path": "model",
+      "type": "string",
+      "description": "Change the model Claude Code starts with",
+      "default": "unset, so Claude Code uses your account's default model",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, a model alias or full model ID"
+    },
+    {
+      "path": "modelOverrides",
+      "type": "object",
+      "description": "Map model IDs to your provider's IDs, such as Bedrock ARNs",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "object mapping model ID to provider model ID"
+    },
+    {
+      "path": "modelPicker",
+      "type": "object",
+      "description": "Choose which models the /model picker lists, in your own order and with your own labels",
+      "default": "unset, so the picker shows the built-in lineup",
+      "scope": "User or managed",
+      "topic": "Model and responses",
+      "typeLabel": "object with an options array of rows and an optional replaceBuiltInOptions Boolean"
+    },
+    {
+      "path": "modelSettings",
+      "type": "object",
+      "description": "Keep a saved effort level or auto-compact window per model, or cap one model's effort",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "object mapping a model name to an object with any of these fields:    effortLevel: one of \"low\", \"medium\", \"high\", or \"xhigh\"    maxEffortLevel: the highest effort level the model may run at   * autoCompactWindow: a number of tokens from 100000 to 1000000, or \"auto\" for the window tuned for the model. /autocompact saves here. For that model, the value takes precedence over a top-level autoCompactWindow in the same settings file. Requires Claude Code v2.1.288 or later"
+    },
+    {
+      "path": "otelHeadersHelper",
+      "type": "string",
+      "description": "Generate rotating OpenTelemetry headers with your own command",
+      "default": "unset, so Claude Code adds no helper-generated headers",
+      "scope": "Any file",
+      "topic": "Authentication and providers",
+      "typeLabel": "string, an executable path or a shell command line"
+    },
+    {
+      "path": "outputStyle",
+      "type": "string",
+      "description": "Change Claude's role, tone, and output format with an output style",
+      "default": "unset, so Claude Code uses the default style",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, the name of a built-in or custom output style"
+    },
+    {
+      "path": "permissions",
+      "type": "object",
+      "description": "Set allow, ask, and deny rules and the starting permission mode",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "object with allow, ask, deny, additionalDirectories, blockReadsOutsideWorkingDirectories, defaultMode, disableBypassPermissionsMode, and disableAutoMode"
+    },
+    {
+      "path": "permissions.additionalDirectories",
+      "type": "array",
+      "description": "Give Claude file access to directories outside the current one",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "array of directory paths"
+    },
+    {
+      "path": "permissions.allow",
+      "type": "array",
+      "description": "Approve listed tool uses without a prompt",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "array of permission rule strings"
+    },
+    {
+      "path": "permissions.ask",
+      "type": "array",
+      "description": "Always prompt before listed tool uses",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "array of permission rule strings"
+    },
+    {
+      "path": "permissions.blockReadsOutsideWorkingDirectories",
+      "type": "string",
+      "description": "Make the file tools refuse reads outside the working directories in every permission mode",
+      "default": "unset, so reads outside the working directories follow your permission mode",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "Boolean    true: Claude's file tools refuse reads outside the working directories    false: the same as unset; the block still applies if another file sets true"
+    },
+    {
+      "path": "permissions.defaultMode",
+      "type": "enum",
+      "description": "Set the permission mode new sessions start in",
+      "options": [
+        "default",
+        "acceptEdits",
+        "plan",
+        "auto",
+        "dontAsk",
+        "bypassPermissions",
+        "manual"
+      ],
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "string, one of:    \"default\": Claude Code runs only reads without asking    \"acceptEdits\": Claude Code also runs file edits and common filesystem commands such as mkdir and mv without asking    \"plan\": Claude Code reads and plans but blocks edits until you approve a plan    \"auto\": Claude Code runs without routine prompts; before actions such as shell commands and network requests run, a background classifier checks that they align with your request    \"dontAsk\": Claude Code auto-denies every call that would otherwise prompt; file reads inside your working directories, other actions that need no approval, and pre-approved tools still run, apart from reads from network paths    \"bypassPermissions\": Claude Code runs everything without asking   * \"manual\": an alias for \"default\""
+    },
+    {
+      "path": "permissions.deny",
+      "type": "array",
+      "description": "Block listed tool uses, including reads of files that hold secrets",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "array of permission rule strings"
+    },
+    {
+      "path": "permissions.disableBypassPermissionsMode",
+      "type": "string",
+      "description": "Prevent anyone from entering bypassPermissions mode",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Permission settings",
+      "typeLabel": "the string \"disable\""
+    },
+    {
+      "path": "plansDirectory",
+      "type": "string",
+      "description": "Choose where plan mode writes plan files",
+      "default": "unset, so Claude Code uses ~/.claude/plans",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "string, a path relative to the project root"
+    },
+    {
+      "path": "pluginConfigs",
+      "type": "object",
+      "description": "Store the answers you gave a plugin's configuration dialog",
+      "default": "unset",
+      "scope": "User or managed",
+      "topic": "Plugins and skills",
+      "typeLabel": "object mapping a plugin ID to an object with an options field, mapping each option name to a string, number, Boolean, or array of strings, and an optional mcpServers field holding per-server user configuration values in the same shape"
+    },
+    {
+      "path": "preferredNotifChannel",
+      "type": "enum",
+      "description": "Choose a terminal bell or desktop notification for task completion",
+      "options": [
+        "auto",
+        "terminal_bell",
+        "iterm2",
+        "iterm2_with_bell",
+        "kitty",
+        "ghostty",
+        "notifications_disabled"
+      ],
+      "default": "\"auto\"",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "string, one of:    \"auto\": Claude Code sends a desktop notification in iTerm2, Ghostty, and Kitty, rings the bell in Terminal.app only when its audible bell is off, and does nothing elsewhere    \"terminal_bell\": Claude Code rings the bell character in any terminal    \"iterm2\": Claude Code sends an iTerm2 desktop notification    \"iterm2_with_bell\": Claude Code sends an iTerm2 desktop notification and rings the bell    \"kitty\": Claude Code sends a Kitty desktop notification    \"ghostty\": Claude Code sends a Ghostty desktop notification   * \"notifications_disabled\": Claude Code sends no notification"
+    },
+    {
+      "path": "prefersReducedMotion",
+      "type": "string",
+      "description": "Reduce or turn off spinner, shimmer, and flash animations",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: Claude Code reduces or turns off interface animations such as the spinner, shimmer, and flash effects    false: the same as unset; Claude Code shows its animations"
+    },
+    {
+      "path": "prependPlugins",
+      "type": "array",
+      "description": "Run your organization's mods before every mod a user installs",
+      "default": "unset",
+      "scope": "User or managed",
+      "topic": "Plugins and skills",
+      "typeLabel": "array of plugin-name@marketplace-name strings"
+    },
+    {
+      "path": "processWrapper",
+      "type": "string",
+      "description": "Run Claude Code's background processes through a corporate launcher on macOS and Linux",
+      "default": "unset, so background processes start unwrapped",
+      "scope": "User or managed",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, the launcher command as an argv prefix, such as an absolute path with optional arguments"
+    },
+    {
+      "path": "promptCacheTtl",
+      "type": "enum",
+      "description": "Choose the prompt cache lifetime for the main conversation",
+      "options": [
+        "5m",
+        "1h"
+      ],
+      "default": "unset, so each main-conversation request gets its default lifetime",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, one of:    \"5m\": the cache holds for five minutes    \"1h\": the cache holds for an hour"
+    },
+    {
+      "path": "promptSuggestionEnabled",
+      "type": "string",
+      "description": "Hide the grayed-out prompt suggestions in the input box",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: you see prompt suggestions in your prompt input    false: Claude Code hides prompt suggestions"
+    },
+    {
+      "path": "prUrlTemplate",
+      "type": "string",
+      "description": "Point PR links at an internal code-review tool instead of github.com",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Git and attribution",
+      "typeLabel": "string, a URL template using any of the five placeholders"
+    },
+    {
+      "path": "remote.defaultEnvironmentId",
+      "type": "string",
+      "description": "Pick the default cloud environment for claude --cloud; a self-hosted ccpool_ ID is read only from user and managed settings and --settings",
+      "default": "unset, so Claude Code uses the Anthropic-hosted environment when your list has one, and otherwise the first environment…",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "string, an environment ID such as env_... or ccpool_..."
+    },
+    {
+      "path": "remoteControlAtStartup",
+      "type": "string",
+      "description": "Connect Remote Control automatically when a session starts",
+      "default": "unset, so the auto-connect default applies",
+      "scope": "Any file",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "Boolean    true: Claude Code connects Remote Control automatically when each interactive session starts    false: Claude Code waits for /remote-control"
+    },
+    {
+      "path": "respectGitignore",
+      "type": "string",
+      "description": "Keep gitignored files out of the @ file picker",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: the @ file picker leaves out files that match .gitignore patterns    false: the @ file picker includes files that match .gitignore patterns"
+    },
+    {
+      "path": "respondToBashCommands",
+      "type": "string",
+      "description": "Stop Claude from responding after a ! shell command runs",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: Claude Code adds the command's output to the conversation and Claude replies to it    false: Claude Code adds the output to context without a reply"
+    },
+    {
+      "path": "sandbox",
+      "type": "object",
+      "description": "Isolate Bash commands from your filesystem and network on macOS, Linux, and WSL2",
+      "default": "unset, so Claude Code runs commands without a sandbox",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with enabled, failIfUnavailable, autoAllowBashIfSandboxed, excludedCommands, allowUnsandboxedCommands, enableWeakerNestedSandbox, enableWeakerNetworkIsolation, allowAppleEvents, bwrapPath, socatPath, ignoreViolations, and ripgrep, plus the filesystem, network, and credentials objects"
+    },
+    {
+      "path": "sandbox.allowAppleEvents",
+      "type": "string",
+      "description": "Let sandboxed commands send Apple Events on macOS",
+      "default": "false",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: sandboxed commands on macOS can send Apple Events    false: sandboxed commands on macOS can't send Apple Events, so open and osascript fail with error -600"
+    },
+    {
+      "path": "sandbox.allowUnsandboxedCommands",
+      "type": "string",
+      "description": "Let Claude retry a blocked command outside the sandbox, or forbid it",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude can retry a command outside the sandbox with the dangerouslyDisableSandbox parameter after the sandbox blocks it    false: Claude Code ignores that parameter, so while the sandbox is running, commands Claude runs are sandboxed unless they match an excludedCommands entry"
+    },
+    {
+      "path": "sandbox.autoAllowBashIfSandboxed",
+      "type": "string",
+      "description": "Run sandboxed commands without a permission prompt",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude Code runs sandboxed Bash commands without a permission prompt, except in the cases that Auto-allow mode describes; CLAUDE_CODE_SUBPROCESS_ENV_SCRUB turns auto-allow off    false: sandboxed commands go through the regular permission flow, so your allow rules and permission mode decide. The /sandbox Mode tab calls this regular permissions mode"
+    },
+    {
+      "path": "sandbox.credentials",
+      "type": "object",
+      "description": "Hide or mask credential files and variables inside the sandbox",
+      "default": "unset, so no credentials are protected",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with files, envVars, allowPlaintextInject, awsPairs, and sigv4",
+      "secret": true
+    },
+    {
+      "path": "sandbox.credentials.allowPlaintextInject",
+      "type": "string",
+      "description": "Let masked credentials reach plain HTTP services on trusted test networks",
+      "default": "false",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude Code allows mask substitution on plain HTTP requests as well as TLS-terminated HTTPS    false: Claude Code allows mask substitution only on TLS-terminated HTTPS",
+      "secret": true
+    },
+    {
+      "path": "sandbox.credentials.awsPairs",
+      "type": "array",
+      "description": "Link custom-named AWS key variables into one credential for re-signing",
+      "default": "unset, so only the conventional trio is paired",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of objects, each with accessKeyIdVar, secretAccessKeyVar, and optionally sessionTokenVar, naming sandbox.credentials.envVars entries",
+      "secret": true
+    },
+    {
+      "path": "sandbox.credentials.envVars",
+      "type": "array",
+      "description": "Unset or mask an environment variable inside the sandbox",
+      "default": "unset, so no environment variables are protected",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of objects, each with name and a mode of \"deny\" or \"mask\", plus the optional mask fields for environment variables",
+      "secret": true
+    },
+    {
+      "path": "sandbox.credentials.files",
+      "type": "array",
+      "description": "Block or mask reads of a credential file inside the sandbox",
+      "default": "unset, so no credential files are protected",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of objects, each with path and a mode of \"deny\" or \"mask\", plus the optional mask fields for files",
+      "secret": true
+    },
+    {
+      "path": "sandbox.credentials.sigv4",
+      "type": "object",
+      "description": "Choose whether streaming, presigned, or SigV4A AWS requests fail or pass through",
+      "options": [
+        "deny",
+        "passthrough"
+      ],
+      "default": "unset, so every form is \"deny\"",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with streaming, presigned, and sigv4a, each one of:    \"deny\": the proxy fails the request    \"passthrough\": the proxy forwards the request signed with the masked placeholder, so the tool receives AWS's own rejection",
+      "secret": true
+    },
+    {
+      "path": "sandbox.enabled",
+      "type": "string",
+      "description": "Turn on Bash sandboxing on macOS, Linux, and WSL2",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude Code sandboxes Bash commands    false: Bash commands run unsandboxed"
+    },
+    {
+      "path": "sandbox.enableWeakerNestedSandbox",
+      "type": "string",
+      "description": "Run the Linux sandbox inside an unprivileged container",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: the inner sandbox bind-mounts the container's existing /proc instead of mounting a fresh one    false: the sandbox mounts a fresh /proc, which doesn't work in an unprivileged Docker container"
+    },
+    {
+      "path": "sandbox.enableWeakerNetworkIsolation",
+      "type": "string",
+      "description": "Let gh, gcloud, and terraform verify TLS behind a MITM proxy inside the sandbox on macOS",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: sandboxed commands on macOS can reach com.apple.trustd.agent    false: sandboxed commands on macOS can't reach the system TLS trust service"
+    },
+    {
+      "path": "sandbox.excludedCommands",
+      "type": "array",
+      "description": "Name commands Claude Code can run outside the sandbox",
+      "default": "unset, so no command is excluded",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of command patterns"
+    },
+    {
+      "path": "sandbox.failIfUnavailable",
+      "type": "string",
+      "description": "Refuse to start when the sandbox can't, instead of running unsandboxed",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude Code exits with an error at startup when sandbox.enabled is true but the sandbox can't start    false: Claude Code runs commands unsandboxed when the sandbox can't start"
+    },
+    {
+      "path": "sandbox.filesystem",
+      "type": "object",
+      "description": "Control which paths sandboxed commands can read and write",
+      "default": "unset, so the default read and write boundaries apply",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with allowWrite, denyWrite, denyRead, and allowRead arrays, plus the allowManagedReadPathsOnly and disabled Booleans"
+    },
+    {
+      "path": "sandbox.filesystem.allowRead",
+      "type": "array",
+      "description": "Re-open reading inside a region denyRead blocks",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of path strings, using the sandbox path prefixes"
+    },
+    {
+      "path": "sandbox.filesystem.allowWrite",
+      "type": "array",
+      "description": "Add paths sandboxed commands can write to",
+      "default": "unset, so sandboxed commands can write to the working directory, the per-user temp directory, directories you've added …",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of path strings, using the sandbox path prefixes"
+    },
+    {
+      "path": "sandbox.filesystem.denyRead",
+      "type": "array",
+      "description": "Block sandboxed commands from reading specific paths",
+      "default": "unset, so sandboxed commands keep the default read access, which includes credential files such as ~/.aws/credentials",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of path strings, using the sandbox path prefixes"
+    },
+    {
+      "path": "sandbox.filesystem.denyWrite",
+      "type": "array",
+      "description": "Block sandboxed commands from writing to specific paths",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of path strings, using the sandbox path prefixes"
+    },
+    {
+      "path": "sandbox.filesystem.disabled",
+      "type": "string",
+      "description": "Turn off filesystem isolation while keeping network isolation",
+      "default": "false, so filesystem isolation stays on",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude Code skips filesystem isolation and keeps network isolation    false: filesystem isolation stays on"
+    },
+    {
+      "path": "sandbox.ignoreViolations",
+      "type": "object",
+      "description": "Silence violation reports for paths a command is expected to probe",
+      "default": "unset, so every violation is reported",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "object mapping a command substring to an array of violation substrings, usually paths"
+    },
+    {
+      "path": "sandbox.network",
+      "type": "object",
+      "description": "Control which hosts, ports, and sockets sandboxed commands reach",
+      "default": "unset, so no domains are pre-allowed and your permission mode decides what happens to each new host",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with the sub-keys below"
+    },
+    {
+      "path": "sandbox.network.allowAllUnixSockets",
+      "type": "string",
+      "description": "Let sandboxed commands connect to every Unix socket",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: sandboxed commands can connect to every Unix socket    false: the sandbox blocks Unix-socket connections: on macOS except the paths in allowUnixSockets, and on Linux and WSL2 through the seccomp filter when it's present"
+    },
+    {
+      "path": "sandbox.network.allowedDomains",
+      "type": "array",
+      "description": "Pre-allow domains so sandboxed commands don't prompt for them",
+      "default": "unset, so your permission mode decides what happens to each new host",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of strings, each a domain, wildcard pattern, or IP literal, with an optional :port suffix"
+    },
+    {
+      "path": "sandbox.network.allowLocalBinding",
+      "type": "string",
+      "description": "Let sandboxed commands listen on network ports and connect to localhost on macOS",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: sandboxed commands on macOS can listen on any local address and connect to any port on localhost    false: sandboxed commands on macOS can't listen on a port or connect directly to servers on localhost"
+    },
+    {
+      "path": "sandbox.network.allowMachLookup",
+      "type": "array",
+      "description": "Let macOS sandboxed tools like the iOS Simulator or Playwright reach their XPC services",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of strings, each a service name; a single trailing  matches a prefix, and \"\" alone matches every service"
+    },
+    {
+      "path": "sandbox.network.allowUnixSockets",
+      "type": "array",
+      "description": "List Unix socket paths sandboxed commands can use on macOS",
+      "default": "unset, so the macOS sandbox blocks every Unix socket",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of strings, each a socket path"
+    },
+    {
+      "path": "sandbox.network.deniedDomains",
+      "type": "array",
+      "description": "Block domains for sandboxed commands, even inside an allowed wildcard",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "array of strings, each a domain, wildcard pattern, or IP literal, with an optional :port suffix"
+    },
+    {
+      "path": "sandbox.network.httpProxyPort",
+      "type": "string",
+      "description": "Route sandbox HTTP traffic through your own proxy",
+      "default": "unset, so Claude Code runs its own proxy",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "number, a local TCP port"
+    },
+    {
+      "path": "sandbox.network.socksProxyPort",
+      "type": "string",
+      "description": "Route sandbox SOCKS traffic through your own proxy",
+      "default": "unset, so Claude Code runs its own proxy",
+      "scope": "Any file",
+      "topic": "Sandbox settings",
+      "typeLabel": "number, a local TCP port"
+    },
+    {
+      "path": "sandbox.network.strictAllowlist",
+      "type": "string",
+      "description": "Deny hosts outside the allowlist instead of prompting",
+      "default": "false",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "Boolean    true: Claude Code denies sandboxed commands access to hosts outside the allowlist    false: unless another trusted settings file sets true, Claude Code decides a host outside the allowlist by permission mode instead of denying it outright: in auto mode it checks the host against the command's per-command allowed domains, in dontAsk mode it denies, in bypassPermissions mode and in interactive terminal plan-mode sessions where bypass is available it allows, and otherwise it asks you"
+    },
+    {
+      "path": "sandbox.network.tlsTerminate",
+      "type": "object",
+      "description": "Have the sandbox proxy terminate TLS so it can read HTTPS requests",
+      "default": "unset, so the proxy doesn't terminate or inspect TLS",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with optional caCertPath and caKeyPath strings, each a file path"
+    },
+    {
+      "path": "sandbox.ripgrep",
+      "type": "object",
+      "description": "Use your own ripgrep binary inside the sandbox",
+      "default": "unset, so the sandbox uses the same ripgrep binary as Claude Code. That is the bundled binary unless you set USE_BUILTI…",
+      "scope": "User or managed",
+      "topic": "Sandbox settings",
+      "typeLabel": "object with command, the path to the ripgrep binary, and optional args, an array of arguments to prepend"
+    },
+    {
+      "path": "showClearContextOnPlanAccept",
+      "type": "string",
+      "description": "Show a \"clear context\" option on the plan accept screen",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: the plan approval menu gets a first option, Yes, clear context and …, that approves the plan and clears the conversation context    false: the plan approval menu shows no clear-context option"
+    },
+    {
+      "path": "showThinkingSummaries",
+      "type": "string",
+      "description": "See summaries of Claude's thinking instead of a collapsed stub",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: you see full thinking summaries when you expand thinking with Ctrl+O    false: the Anthropic API redacts thinking blocks and Claude Code shows a collapsed stub"
+    },
+    {
+      "path": "showTurnDuration",
+      "type": "string",
+      "description": "Hide the \"Cooked for\" duration after each response",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: you see the turn duration message after each response    false: Claude Code hides the turn duration message"
+    },
+    {
+      "path": "skillListingBudgetFraction",
+      "type": "string",
+      "description": "Reserve more or less context for the skill listing",
+      "default": "0.01, which reserves 1% of the context window",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "number, a fraction greater than 0 and at most 1"
+    },
+    {
+      "path": "skillListingMaxDescChars",
+      "type": "string",
+      "description": "Cap each skill's description length in the skill listing",
+      "default": "1536",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "typeLabel": "number of characters, a positive integer"
+    },
+    {
+      "path": "skillOverrides",
+      "type": "object",
+      "description": "Hide or collapse a skill without editing its SKILL.md",
+      "options": [
+        "on",
+        "name-only",
+        "user-invocable-only",
+        "off"
+      ],
+      "default": "unset, so every skill is \"on\"",
+      "scope": "Any file",
+      "topic": "Plugins and skills",
+      "typeLabel": "object mapping skill name to one of:    \"on\": Claude sees the skill and you can type /name    \"name-only\": Claude sees the skill by name without its description    \"user-invocable-only\": Claude doesn't see the skill, but you can still type /name    \"off\": Claude doesn't see the skill and /name is hidden from autocomplete"
+    },
+    {
+      "path": "skipAutoPermissionPrompt",
+      "type": "string",
+      "description": "Skip the one-time notice Claude Code shows when you first enter auto mode yourself rather than through the built-in default",
+      "default": "unset, so the notice appears once",
+      "scope": "User or managed",
+      "topic": "Permission settings",
+      "typeLabel": "Boolean    true: Claude Code skips the notice    false: the same as unset; the notice appears once unless another of these files sets true"
+    },
+    {
+      "path": "skipDangerousModePermissionPrompt",
+      "type": "string",
+      "description": "Skip the confirmation dialog before bypassPermissions mode",
+      "default": "unset, so the dialog appears",
+      "scope": "User, local, or managed",
+      "topic": "Permission settings",
+      "typeLabel": "Boolean    true: Claude Code skips the confirmation dialog before a session enters bypassPermissions mode    false: the same as unset; the dialog appears unless another of these files sets true"
+    },
+    {
+      "path": "skipWebFetchPreflight",
+      "type": "string",
+      "description": "Skip the WebFetch hostname check when Anthropic is unreachable",
+      "default": "unset, so the check runs before the first fetch to each hostname in a session",
+      "scope": "Any file",
+      "topic": "Privacy and telemetry",
+      "typeLabel": "Boolean    true: Claude Code skips the WebFetch domain safety check    false: the check runs before the first fetch to each hostname in a session, and again for a hostname whose earlier check was blocked or failed"
+    },
+    {
+      "path": "spellcheck",
+      "type": "object",
+      "description": "Underline misspelled words in the prompt input with a spell checker you install",
+      "default": "unset, so spell checking is off; checker defaults to \"auto\", the first of the three found on PATH; language defaults to…",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with enabled (Boolean), checker (\"aspell\", \"hunspell\", \"ispell\", or \"auto\"), language (string, passed to the checker as its dictionary name), and color (string, a terminal color name, #rrggbb, rgb(r,g,b), ansi256(n), or ansi:<name>)"
+    },
+    {
+      "path": "spinnerTipsEnabled",
+      "type": "string",
+      "description": "Hide tips in the spinner while Claude works",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: you see tips in the spinner while Claude is working    false: Claude Code hides spinner tips"
+    },
+    {
+      "path": "spinnerTipsOverride",
+      "type": "object",
+      "description": "Add your own tips to the spinner rotation, or replace the built-in tips",
+      "default": "unset, so Claude Code shows only the built-in tips",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with tips, tipsFile, label, and excludeDefault fields, each optional"
+    },
+    {
+      "path": "spinnerVerbs",
+      "type": "object",
+      "description": "Add or replace the verbs shown while a turn runs",
+      "options": [
+        "append",
+        "replace"
+      ],
+      "default": "unset, so Claude Code uses the built-in verbs",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with a verbs array of strings and mode, one of:    \"append\": Claude Code adds your verbs to the built-in set    \"replace\": Claude Code shows only your verbs"
+    },
+    {
+      "path": "sshConfigs",
+      "type": "array",
+      "description": "Add SSH connections to the Desktop environment dropdown",
+      "default": "unset",
+      "scope": "User or managed",
+      "topic": "Remote, desktop, and notifications",
+      "typeLabel": "array of objects, each with required id, name, and sshHost and optional sshPort and sshIdentityFile"
+    },
+    {
+      "path": "statusLine",
+      "type": "object",
+      "description": "Run your own command to render a status line below the prompt",
+      "default": "unset, so no status line",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with type set to \"command\" and a command string, plus optional padding as a number of characters, refreshInterval as a number of seconds, minimum 1, and hideVimModeIndicator as a Boolean"
+    },
+    {
+      "path": "subagentPromptCacheTtl",
+      "type": "enum",
+      "description": "Choose the prompt cache lifetime for subagents and other requests outside the main conversation",
+      "options": [
+        "5m",
+        "1h"
+      ],
+      "default": "unset, so each of these requests gets its default lifetime",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "string, one of:    \"5m\": the cache holds for five minutes    \"1h\": the cache holds for an hour"
+    },
+    {
+      "path": "subagentStatusLine",
+      "type": "object",
+      "description": "Rewrite rows in the subagent task display with your own command",
+      "default": "unset, so Claude Code renders the default rows",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with type set to \"command\" and a command string"
+    },
+    {
+      "path": "switchModelsOnFlag",
+      "type": "string",
+      "description": "Switch models automatically or pause when a safety classifier flags a request",
+      "default": "unset. Claude Code switches automatically, though it may ask first in an interactive session",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: Claude Code switches to the fallback model and continues    false: in an interactive session Claude Code pauses so you can choose between switching and editing the prompt; where no dialog can show, such as a -p run, the flagged request ends as an error"
+    },
+    {
+      "path": "syncClaudeAiPlugins",
+      "type": "string",
+      "description": "Stop loading the plugins enabled on your claude.ai account and stop downloading new ones",
+      "default": "unset, so sessions signed in with your claude.ai account sync your plugins",
+      "scope": "User, local, or managed",
+      "topic": "Plugins and skills",
+      "typeLabel": "Boolean    false: Claude Code stops downloading synced plugins and stops loading the ones already in ~/.claude/plugins/synced/. In user or managed settings, it also moves them to ~/.claude/plugins/.trash/    true: the same as unset"
+    },
+    {
+      "path": "syncClaudeAiSkills",
+      "type": "string",
+      "description": "Stop loading the skills enabled on your claude.ai account and stop downloading new ones",
+      "default": "unset, so sessions signed in with your claude.ai account sync your skills",
+      "scope": "User, local, or managed",
+      "topic": "Plugins and skills",
+      "typeLabel": "Boolean    false: Claude Code stops downloading synced skills and stops loading the ones already in ~/.claude/skills/synced/. In user or managed settings, it also moves them to ~/.claude/skills/.trash/    true: the same as unset"
+    },
+    {
+      "path": "syntaxHighlightingDisabled",
+      "type": "string",
+      "description": "Turn off syntax highlighting in diffs and code blocks",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: Claude Code turns off syntax highlighting in diffs, code blocks, and file previews    false: Claude Code highlights syntax"
+    },
+    {
+      "path": "taskOutputMaxChars",
+      "type": "string",
+      "description": "Removed in v2.1.277, together with the TaskOutput tool it sized",
+      "scope": "Any file",
+      "topic": "Memory and context",
+      "deprecated": true
+    },
+    {
+      "path": "teammateMode",
+      "type": "enum",
+      "description": "Choose how agent team teammates display",
+      "options": [
+        "in-process",
+        "auto",
+        "tmux",
+        "iterm2"
+      ],
+      "default": "\"in-process\"",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, one of:    \"in-process\": teammates run inside your main terminal pane    \"auto\": split panes when you're running inside tmux, or inside iTerm2 with it2 on your PATH or tmux installed; in-process otherwise    \"tmux\": split panes using tmux or iTerm2, detected from your terminal    \"iterm2\": iTerm2 native split panes through the it2 CLI"
+    },
+    {
+      "path": "terminalProgressBarEnabled",
+      "type": "string",
+      "description": "Hide the terminal progress bar in terminals that support it",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: you see the terminal progress bar in terminals that support it    false: Claude Code hides the terminal progress bar"
+    },
+    {
+      "path": "terminalTitleFromRename",
+      "type": "string",
+      "description": "Stop /rename and --name from changing the terminal tab title",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: the terminal tab title shows the session name you set    false: the tab keeps the title Claude Code generates from your conversation"
+    },
+    {
+      "path": "theme",
+      "type": "enum",
+      "description": "Pick the interface color theme, built-in or custom",
+      "options": [
+        "auto",
+        "dark",
+        "light",
+        "dark-daltonized",
+        "light-daltonized",
+        "dark-ansi",
+        "light-ansi"
+      ],
+      "default": "\"dark\"",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of:    \"auto\": matches your terminal's light or dark background    \"dark\": the dark theme    \"light\": the light theme    \"dark-daltonized\": the dark theme with colorblind-friendly colors    \"light-daltonized\": the light theme with colorblind-friendly colors    \"dark-ansi\": the dark theme using only your terminal's ANSI color palette    \"light-ansi\": the light theme using only your terminal's ANSI color palette    \"custom:<slug>\" or \"custom:<plugin-name>:<slug>\": a custom theme from ~/.claude/themes/ or a plugin"
+    },
+    {
+      "path": "timeFormat",
+      "type": "enum",
+      "description": "Show the times in the interface on a 12-hour or 24-hour clock, in UTC, or with a strftime pattern",
+      "options": [
+        "auto",
+        "12-hour",
+        "24-hour",
+        "24-hour-utc"
+      ],
+      "default": "\"auto\"",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of:    \"auto\": the same as unset; each time keeps its built-in format, which follows your locale on the turn duration message    \"12-hour\": a 12-hour clock    \"24-hour\": a 24-hour clock    \"24-hour-utc\": a 24-hour clock in UTC with Z after the minutes, such as 18:05Z; Claude Code ignores timeZone for this preset   * A strftime pattern such as \"%H:%M\": Claude Code writes each time with the pattern. Any value that contains a % is a pattern, and any other value outside the presets counts as \"auto\""
+    },
+    {
+      "path": "timeZone",
+      "type": "string",
+      "description": "Show the times in the interface in a time zone other than your system's",
+      "default": "unset, so times show in your system time zone",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, an IANA time zone name. When Claude Code doesn't recognize the name, it uses your system time zone"
+    },
+    {
+      "path": "tui",
+      "type": "enum",
+      "description": "Choose the fullscreen or classic terminal renderer",
+      "options": [
+        "default",
+        "fullscreen"
+      ],
+      "default": "unset, so Claude Code picks the renderer for you",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of:    \"default\": the classic main-screen renderer    \"fullscreen\": the flicker-free alt-screen renderer with virtualized scrollback"
+    },
+    {
+      "path": "ultracode",
+      "type": "string",
+      "description": "Have Claude plan a workflow for each substantive task without being asked",
+      "default": "unset, so ultracode is off",
+      "scope": "Any file",
+      "topic": "Model and responses",
+      "typeLabel": "Boolean    true: sessions start with ultracode on when dynamic workflows are enabled for you and your model supports xhigh    false: sessions start with ultracode off"
+    },
+    {
+      "path": "useAutoModeDuringPlan",
+      "type": "string",
+      "description": "Let the auto mode classifier review shell commands in plan mode; set false to get prompts instead",
+      "default": "true",
+      "scope": "User, local, or managed",
+      "topic": "Permission settings",
+      "typeLabel": "Boolean    true: the same as unset; when auto mode is available, the classifier reviews each shell command during planning instead of prompting you for it, except critical-path removals. A false in any of these files still turns it off    false: you get a permission prompt for every command outside the built-in read-only set"
+    },
+    {
+      "path": "verbose",
+      "type": "string",
+      "description": "Show full tool output instead of truncated summaries; viewMode takes precedence when both are set",
+      "default": "false",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: you see full tool output    false: you see truncated summaries of tool output"
+    },
+    {
+      "path": "viewMode",
+      "type": "enum",
+      "description": "Start every session in default, verbose, or focus view",
+      "options": [
+        "default",
+        "verbose",
+        "focus"
+      ],
+      "default": "unset, so the verbose setting and your last /focus choice apply",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "string, one of:    \"default\": the normal transcript with truncated tool output    \"verbose\": the transcript with full tool output   * \"focus\": only your last prompt, a one-line summary of tool calls with edit diffstats, and the final response. Focus view needs the fullscreen renderer"
+    },
+    {
+      "path": "vimInsertModeRemaps",
+      "type": "object",
+      "description": "Map a two-key INSERT-mode sequence such as jj to Escape",
+      "default": "unset",
+      "scope": "User or managed",
+      "topic": "Interface and terminal",
+      "typeLabel": "object mapping a two-character sequence to \"<Esc>\""
+    },
+    {
+      "path": "voice",
+      "type": "object",
+      "description": "Turn on voice dictation and pick hold or tap mode",
+      "options": [
+        "hold",
+        "tap"
+      ],
+      "default": "unset, so dictation is off; when enabled is true and mode is unset, Claude Code uses \"hold\"",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "object with enabled as a Boolean, autoSubmit as a Boolean that applies in hold mode only, and mode, one of:    \"hold\": you hold the dictation key while speaking and release it to stop    \"tap\": you tap the key once to start recording and again to send"
+    },
+    {
+      "path": "voiceEnabled",
+      "type": "string",
+      "description": "Turn on voice dictation with the older single-key form",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: voice dictation is on when you're logged in with a claude.ai account and your organization's policy allows voice, unless voice.enabled is set    false: voice dictation is off, unless voice.enabled is set"
+    },
+    {
+      "path": "wheelScrollAccelerationEnabled",
+      "type": "string",
+      "description": "Turn off mouse-wheel acceleration in fullscreen rendering",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Interface and terminal",
+      "typeLabel": "Boolean    true: Claude Code accelerates mouse-wheel scroll speed during fast scrolls    false: Claude Code scrolls at a constant rate per wheel notch"
+    },
+    {
+      "path": "workflowKeywordTriggerEnabled",
+      "type": "string",
+      "description": "Let the word ultracode in a prompt start a workflow; set false to type it without starting one",
+      "default": "true",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "Boolean    true: typing ultracode in a prompt triggers a dynamic workflow    false: you can type the word without triggering one"
+    },
+    {
+      "path": "workflowSizeGuideline",
+      "type": "enum",
+      "description": "Set the agent count Claude aims for in dynamic workflows",
+      "options": [
+        "unrestricted",
+        "small",
+        "medium",
+        "large"
+      ],
+      "default": "\"medium\", or \"small\" when you're signed in on a Pro plan with Claude Code v2.1.271 or later",
+      "scope": "Any file",
+      "topic": "Hooks and automation",
+      "typeLabel": "string, one of:    \"unrestricted\": no guideline, so Claude sizes the workflow to the task    \"small\": Claude aims for fewer than 5 agents    \"medium\": Claude aims for fewer than 10 agents    \"large\": Claude aims for fewer than 50 agents"
+    },
+    {
+      "path": "worktree",
+      "type": "object",
+      "description": "Configure how Claude Code creates git worktrees",
+      "default": "unset",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "object with baseRef, symlinkDirectories, sparsePaths, and bgIsolation"
+    },
+    {
+      "path": "worktree.baseRef",
+      "type": "enum",
+      "description": "Branch new worktrees from the remote default branch or your local HEAD",
+      "options": [
+        "fresh",
+        "head"
+      ],
+      "default": "\"fresh\"",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, one of:    \"fresh\": new worktrees branch from origin/<default-branch>    \"head\": new worktrees branch from your current local HEAD, including unpushed commits"
+    },
+    {
+      "path": "worktree.bgIsolation",
+      "type": "enum",
+      "description": "Let background sessions edit the working copy without a worktree",
+      "options": [
+        "worktree",
+        "none"
+      ],
+      "default": "\"worktree\"",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, one of:    \"worktree\": Claude Code blocks Edit and Write in the main checkout until the session calls EnterWorktree    \"none\": background jobs edit the working copy directly"
+    },
+    {
+      "path": "worktree.location",
+      "type": "string",
+      "description": "Choose where Desktop SSH sessions create their worktrees on a remote machine",
+      "default": "unset, so worktrees go inside the project",
+      "scope": "User",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "string, an absolute path or one that starts with ~/"
+    },
+    {
+      "path": "worktree.sparsePaths",
+      "type": "array",
+      "description": "Check out only the directories you need in each worktree",
+      "default": "unset, so each worktree checks out the whole tree",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "array of strings, directory paths relative to the repository root"
+    },
+    {
+      "path": "worktree.symlinkDirectories",
+      "type": "array",
+      "description": "Symlink large directories into each worktree instead of duplicating them",
+      "default": "unset, so Claude Code symlinks no directories",
+      "scope": "Any file",
+      "topic": "Agents, sessions, and worktrees",
+      "typeLabel": "array of strings, directory paths relative to the repository root"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

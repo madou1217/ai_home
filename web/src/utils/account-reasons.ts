@@ -1,0 +1,133 @@
+const CODEX_FREE_QUOTA_PENDING_MESSAGE = '当前 Free 账号未返回可计算的额度窗口，剩余额度未知。';
+const CODEX_TEAM_QUOTA_PENDING_MESSAGE = '当前 Team 账号未返回可计算的额度窗口，剩余额度未知。';
+
+const KNOWN_REASON_MESSAGES: Record<string, string> = {
+  billing_blocked: '上游报告余额不足或账单受限；网关定时放行一次试探请求复核，充值或恢复账单后自动解除（也可手动恢复调度）。',
+  quota_exhausted: '上游报告账号额度耗尽，新可信用量快照确认恢复后自动解除。',
+  // 选号时的额度门禁（lib/server/account-usage-gate.js）：按最新用量快照与「自动切换阈值」判定。
+  usage_exhausted: '账号额度已用完，暂不参与调度；后台用量刷新显示额度恢复后自动重新参与（手动启用不会绕过）。',
+  usage_below_server_threshold: '账号剩余额度已低于「自动切换阈值」换算出的下限，暂不参与调度；后台用量刷新显示额度回升后自动重新参与。',
+  permission_denied: '上游报告账号权限受限；限制解除后会在定时复核时自动解除（上游风控类限制需手动恢复调度）。',
+  // OAuth 账号已可参与推理（relay 前按描述符声明换取业务 token）。
+  // 保留该键只为兼容历史快照，文案改为说明「凭据不可用需重新登录」。
+  zcode_oauth_management_only: '该 ZCode OAuth 账号的登录凭据当前不可用，请在账号页重新登录。',
+  // Go Core 承接流量时记录的账号级硬阻塞（lib/server/go-runtime-overlay.js）：外部真相源更新后
+  // 立即解除；失败观察到的阻塞到复核时刻自动放行请求复核；额度类以新额度快照为准。
+  go_runtime_credentials_rejected: '上游拒绝了账号凭据；重新登录或更新凭据后立即恢复，否则到复核时刻自动重试。',
+  go_runtime_quota_exhausted: '上游报告账号额度耗尽，下一次额度快照确认恢复后自动解除。',
+  go_runtime_billing_blocked: '上游报告账单状态异常；到复核时刻自动放行请求复核，账单恢复后即解除。',
+  go_runtime_account_deactivated: '上游报告账号 / 工作区已停用；到复核时刻自动放行请求复核，账号恢复后即解除。',
+  go_runtime_policy_blocked: '上游策略拒绝该账号（地区 / 权限）；到复核时刻自动放行请求复核，策略恢复后即解除。',
+  auth_metadata_only: '当前只有账号元信息，尚未采到真实额度快照。请刷新用量后再判断是否真的耗尽。',
+  codex_free_plan_missing_rate_limits: CODEX_FREE_QUOTA_PENDING_MESSAGE,
+  codex_team_plan_missing_rate_limits: CODEX_TEAM_QUOTA_PENDING_MESSAGE,
+  codex_free_plan_pending_rate_limits: CODEX_FREE_QUOTA_PENDING_MESSAGE,
+  codex_team_plan_pending_rate_limits: CODEX_TEAM_QUOTA_PENDING_MESSAGE,
+  provider_returned_no_numeric_usage: '额度已查询，当前响应缺少可计算的剩余额度。',
+  // 额度来源给出的「不适用」结论（不是探测失败）：账号没有可消耗的额度池。
+  no_plan_balance: '当前账号没有生效的套餐（未订阅或已到期），不产生可计算的额度池。',
+  qoder_no_consumable_credits: '当前为 Qoder Free 档，没有 credits 额度池（上游恒报额度用尽），额度不适用；账号仍可用于免费模型。',
+  timeout: '额度查询超时。',
+  probe_exception: '额度查询过程中发生异常。',
+  probe_failed: '额度查询失败。',
+  probe_not_ok: '额度探测返回非成功结果。',
+  empty_parsed_snapshot: '上游返回了响应，但没有解析出可用额度。',
+  direct_json_parse_failed: '直连额度响应解析失败。',
+  direct_missing_rate_limits: '直连额度响应里缺少 rate limits。',
+  direct_request_failed: '直连额度请求失败。',
+  restored_expired_oauth_backup: '账号已从备份恢复，原登录凭据已过期，请重新登录。',
+  model_region_restricted: 'OpenCode 当前模型受区域/托管范围限制，不是账号认证失效；请切换模型或完成 workspace opt-in。'
+};
+
+function normalizeReason(reason?: string) {
+  return String(reason || '').trim();
+}
+
+// 「套餐已领取、额度还没生效」：zcode 额度探针把最早生效时间编码在 reason 里
+// （`plan_not_effective_yet:<ms>`，无时间时就是裸 reason）。它不是故障，账号照常
+// 可调度，只是额度池还没生成 —— 文案必须说清「已领到、什么时候生效」。
+function findPendingPlanEffectiveAt(reason: string) {
+  const match = reason.match(/^plan_not_effective_yet(?::(\d+))?$/i);
+  if (!match) return null;
+  return { effectiveAtMs: Number(match[1]) || 0 };
+}
+
+function formatLocalDateTime(ms: number) {
+  const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function findDirectHttpStatus(reason: string) {
+  const match = reason.match(/direct_http_status_([0-9]{3}|unknown)/i);
+  return match ? match[1].toUpperCase() : '';
+}
+
+function findHttpStatus(reason: string) {
+  const directStatus = findDirectHttpStatus(reason);
+  if (directStatus) {
+    return { source: '直连额度请求', status: directStatus };
+  }
+
+  const refreshMatch = reason.match(/refresh_http_([0-9]{3})/i);
+  if (refreshMatch) {
+    return { source: '刷新认证请求', status: refreshMatch[1] };
+  }
+
+  const genericMatch = reason.match(/\bhttp_([0-9]{3})\b/i);
+  if (genericMatch) {
+    return { source: '上游请求', status: genericMatch[1] };
+  }
+
+  return null;
+}
+
+export function isAuthInvalidReauthRequiredReason(reason?: string) {
+  return normalizeReason(reason).toLowerCase().includes('auth_invalid_reauth_required');
+}
+
+export function formatAccountIssueReason(reason?: string) {
+  const text = normalizeReason(reason);
+  if (!text) return '';
+
+  const lower = text.toLowerCase();
+  const httpStatus = findHttpStatus(text);
+
+  if (isAuthInvalidReauthRequiredReason(text)) {
+    if (httpStatus) {
+      return `账号认证已失效，${httpStatus.source}返回 HTTP ${httpStatus.status}。请重新登录或重新授权后再使用。`;
+    }
+    return '账号认证已失效，需要重新登录或重新授权后再使用。';
+  }
+
+  const pendingPlan = findPendingPlanEffectiveAt(text);
+  if (pendingPlan) {
+    const at = pendingPlan.effectiveAtMs > 0 ? formatLocalDateTime(pendingPlan.effectiveAtMs) : '';
+    return at
+      ? `套餐已领取但尚未生效，${at} 起可用；生效前不会产生额度池。`
+      : '套餐已领取但尚未生效（上游未给出生效时间）；生效前不会产生额度池。';
+  }
+
+  if (lower.includes('zcode_balance_parameter_error')) {
+    return 'ZCode 余额接口返回参数错误（业务码 3001），不是登录失效；请等待上游接口修复或刷新探测。';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(KNOWN_REASON_MESSAGES, text)) {
+    return KNOWN_REASON_MESSAGES[text];
+  }
+
+  if (httpStatus) {
+    return `${httpStatus.source}返回 HTTP ${httpStatus.status}。`;
+  }
+
+  if (lower.startsWith('app_server_exit_')) {
+    return `Codex app-server 退出：${text.replace(/^app_server_exit_/i, '')}。`;
+  }
+
+  if (lower.startsWith('spawn_error:')) {
+    return `额度探测进程启动失败：${text.replace(/^spawn_error:/i, '').trim()}`;
+  }
+
+  return text;
+}

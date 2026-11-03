@@ -1,0 +1,226 @@
+/* 模型卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青。 */
+.cardContainer {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-8);
+}
+
+.cardDisabled {
+  opacity: 0.6;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.titleArea {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.idLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.modelName {
+  overflow: hidden;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.copyBtn:hover {
+  background: var(--color-overlay);
+  color: var(--color-accent);
+}
+
+.providerBadge {
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+}
+
+.defaultStar {
+  color: var(--color-disabled);
+}
+
+.defaultStarActive {
+  color: var(--color-warning);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-warning) 70%, transparent));
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.capsuleTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* 能力 / 价格标签：HUD 中性标签（发丝框 + 等宽数值） */
+.metricCapsule {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  background: var(--tint-neutral);
+  color: var(--ink-neutral);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}
+
+.metricIcon {
+  color: var(--color-muted);
+}
+
+/* 目录元数据未知/过期：紧凑标签 + Tooltip，不使用整块告警。 */
+.catalogWarning {
+  color: var(--color-warning, var(--color-muted));
+}
+
+/* 价格胶囊：可编辑（semantic button），单位 = 每百万 token 美元 */
+.pricingCapsule {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 2px var(--space-3);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  background: var(--tint-neutral);
+  color: var(--ink-neutral);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.pricingCapsule:hover:not(:disabled) {
+  background: var(--color-overlay);
+}
+
+.pricingCapsule:disabled {
+  cursor: default;
+}
+
+/* 目录未收录价格时的可编辑占位：保持入口可见，但不伪装成已定价。 */
+.pricingUnknown {
+  color: var(--color-muted);
+}
+
+.pricingPair {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  row-gap: 2px;
+}
+
+.priceValue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.priceKind {
+  color: var(--color-faint);
+  font-size: 10px;
+}
+
+.priceAmount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 自定义价生效时：划线保留原价 */
+.priceBase {
+  color: var(--color-faint);
+  font-size: 10px;
+  text-decoration: line-through;
+}
+
+.pricingSource {
+  color: var(--color-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* 价格快照超过 14 天：只在来源标签上提示，不使用整块告警。 */
+.pricingSourceStale {
+  color: var(--color-warning, var(--color-muted));
+}
+
+.pricingEditIcon {
+  color: var(--color-accent);
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.statusState {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+.statusOnline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
+}
+
+.statusOffline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted);
+}

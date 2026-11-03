@@ -1,0 +1,206 @@
+/* 账号健康状态可视化 —— 共享视觉基元（状态条 / 立方体网格 / 图例）。
+ * 有数据的桶、可用率文字按成功率在健康色阶上连续着色（health.ts 的 healthColorForRate，
+ * 色标是 design-tokens.css 的 --health-scale-*）；这里只定义「无数据」的中性底色。
+ */
+
+.account-status-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+}
+
+.account-status-strip__bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  height: 26px;
+  border-radius: 1px;
+  background: var(--color-border);
+  cursor: default;
+}
+
+.account-status-strip--sm .account-status-strip__bar { height: 16px; }
+.account-status-strip--xs .account-status-strip__bar { height: 12px; border-radius: 0.5px; }
+.account-status-strip--fit { gap: 1px; }
+
+.account-status-strip__bar--none { background: var(--color-border); }
+
+.account-status-strip-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-faint);
+}
+
+.account-status-uptime {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.account-status-uptime--none { color: var(--color-faint); }
+
+/* GitHub 风格立方体网格：grid-auto-flow: column 按「列=周」铺列，行数固定 7（星期）。 */
+.account-status-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 10px);
+  gap: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.account-status-grid__cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-border);
+}
+
+.account-status-grid__cell--none { background: var(--color-border); opacity: .55; }
+
+/* 色阶图例 */
+.account-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.account-status-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.account-status-legend__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.account-status-legend__swatch--none { background: var(--color-border); }
+
+/* Popover 内的 24 小时条，独立一份尺寸，不影响表格列宽 */
+.account-status-popover { min-width: 260px; }
+.account-status-popover__title {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+}
+
+/* 桌面全局状态区：三段（日条 / 时条 / 立方体网格）纵向排布，KPI 一行 */
+.account-status-global {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.account-status-global__kpi {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.account-status-global__kpi-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.account-status-global__kpi-label {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.account-status-global__block-title {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+  letter-spacing: var(--tracking-caps, 0.02em);
+  text-transform: uppercase;
+}
+
+.account-status-unavailable {
+  font-size: 12px;
+  color: var(--color-faint);
+}
+
+/* 账号名一行的健康图标：按状态着色，悬停展开 90 天 + 24 小时明细 */
+.account-health-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.account-status-hover {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 300px;
+}
+
+.account-status-hover .account-status-popover__title + * { margin-bottom: 8px; }
+
+/* 移动端：整条自适应容器宽度，单元格随之收窄，禁止横向溢出 */
+.account-status-mobile-strip {
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 展开/收起按钮：箭头跟着状态转 180°，和内容的高度过渡同一条缓动。 */
+.accounts-global-status__toggle-icon {
+  transition: transform var(--motion-base) var(--ease-standard);
+}
+.accounts-global-status__toggle-icon.is-open {
+  transform: rotate(180deg);
+}
+
+/* 网格宿主只负责接 pointerover（提示层），网格本身仍保留原来的滚动/尺寸规则。 */
+.account-status-grid-host {
+  display: block;
+  min-width: 0;
+}
+
+/* 单实例悬浮提示（见 useHealthHoverTip）：portal 到 body，避免被表格/抽屉裁剪。
+ * 初始位置在屏幕外，useLayoutEffect 量到尺寸后再夹到视口内。 */
+.account-status-hover-tip {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  z-index: 1500;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--elevation-3);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
+
+.account-status-hover-tip__title {
+  font-family: var(--font-mono);
+  color: var(--color-heading);
+  margin-bottom: 2px;
+}
+
+.account-status-hover-tip__line {
+  color: var(--color-muted);
+}
+
+.account-status-hover-tip__line--failure {
+  color: var(--color-danger);
+}

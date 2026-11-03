@@ -1,0 +1,949 @@
+import { writeClipboardText } from '@/utils/clipboard';
+import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
+import LargePasteSettingCard from '@/features/chat-runtime/LargePasteSettingCard';
+import CaptureSettingsCard from '@/features/capture/CaptureSettingsCard';
+import InlineNote from '@/components/ui/InlineNote';
+import '@/components/settings/settings-shared.css';
+import '@/components/ui/kpi-strip.css';
+import { useState, useEffect } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
+import './Settings.css';
+import { ProCard, StatisticCard } from '@ant-design/pro-components';
+import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal } from 'antd';
+import { CopyOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { configAPI, serverProfilesAPI } from '@/services/api';
+import {
+  addControlPlaneProfilesChangeListener,
+  isControlPlaneManagementKeyConfigured,
+  isControlPlaneProfileRefreshable,
+  listControlPlaneProfiles,
+  removeControlPlaneProfile,
+  refreshControlPlaneProfileStates,
+  refreshControlPlaneDeviceState,
+  saveControlPlaneProfile,
+  summarizeControlPlaneProfiles
+} from '@/services/control-plane-profiles';
+import {
+  formatEndpointHintLabel,
+  normalizeEndpointHintWarnings,
+  resolveDefaultControlEndpoint
+} from '@/services/control-plane-endpoints';
+import { connectControlPlaneProfile } from '@/services/control-plane-profile-connection';
+import {
+  getActiveControlPlaneProfileId,
+  resolveStoredActiveControlPlaneProfile,
+  selectActiveControlPlaneProfile,
+  syncStoredActiveControlPlaneProfile
+} from '@/services/control-plane-selection';
+import type {
+  ServerConfig,
+  ControlPlaneEndpointHint,
+  ControlPlaneProfile
+} from '@/types';
+import Button from '@/components/ui/AppButton';
+import PageScaffold from '@/components/ui/PageScaffold';
+import PageHeaderActions from '@/components/ui/PageHeaderActions';
+import ModelAliases from './ModelAliases';
+import UpstreamErrorMappings from './UpstreamErrorMappings';
+import SshHostsPanel from './SshHostsPanel';
+import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
+import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
+import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
+import { buildServerRouteRows } from '@/services/server-route-presentation';
+import { buildAppHref } from '@/services/app-navigation';
+import {
+  SERVER_FORM_DEFAULTS,
+  SERVER_PORT_RULES,
+  USAGE_FIELD_RULES,
+  USAGE_FORM_DEFAULTS,
+  toUsageConfig,
+  toUsageFormValues,
+  type UsageFormValues
+} from '@/features/settings/settings-config';
+import { saveServerConfig } from '@/features/settings/save-server-config';
+import { useAppearanceSettings } from '@/features/settings/use-appearance-settings';
+import { useManagementRestart } from '@/features/settings/use-management-restart';
+
+type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
+  addonAfter: React.ReactNode;
+};
+
+const NumericAddonInput = ({ addonAfter, style, ...props }: NumericAddonInputProps) => (
+  <InputNumber {...props} addonAfter={addonAfter} style={{ width: '100%', ...style }} />
+);
+
+const renderControlEndpointHints = (
+  hints: ControlPlaneEndpointHint[],
+  warnings: string[],
+  onSelect: (endpoint: string) => void
+) => {
+  if (hints.length === 0) return null;
+  return (
+    <div className="settings-endpoint-hints">
+      <Space size={[6, 6]} wrap>
+        {hints.map((hint) => (
+          <Button
+            key={`${hint.source}:${hint.endpoint}`}
+            size="small"
+            type={hint.recommended ? 'primary' : 'default'}
+            icon={<LinkOutlined />}
+            htmlType="button"
+            onClick={() => onSelect(hint.endpoint)}
+          >
+            {formatEndpointHintLabel(hint)}
+          </Button>
+        ))}
+      </Space>
+      {warnings.length > 0 && (
+        <div className="settings-endpoint-warning">
+          {warnings.slice(0, 2).map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export type SettingsSectionKey = 'basic' | 'aliases' | 'upstream-errors' | 'control-planes' | 'ssh-hosts';
+
+interface SettingsProps {
+  section?: SettingsSectionKey;
+}
+
+interface SettingsSectionItem {
+  key: SettingsSectionKey;
+  label: string;
+  forceRender?: boolean;
+  children: ReactNode;
+  actions?: ReactNode;
+}
+
+const SETTINGS_PAGE_META = {
+  settings: {
+    code: 'CONFIG',
+    title: '设置',
+    eyebrow: '配置',
+    description: '管理 server、额度刷新和模型别名。'
+  },
+  basic: {
+    code: 'CONFIG',
+    title: '基础设置',
+    eyebrow: '配置',
+    description: '管理 server、额度刷新和本地服务参数。'
+  },
+  aliases: {
+    code: 'CONFIG',
+    title: '模型别名',
+    eyebrow: '配置',
+    description: '管理模型展示、路由和别名配置。'
+  },
+  'upstream-errors': {
+    code: 'ROUTE',
+    title: '上游异常映射',
+    eyebrow: '配置',
+    description: '将 Provider 的错误响应转换为标准账号运行状态。'
+  },
+  'control-planes': {
+    code: 'SERVER',
+    title: 'Server 管理',
+    eyebrow: 'Server',
+    description: '使用 Server URL 和 Management Key 管理 AIH Server。'
+  },
+  'ssh-hosts': {
+    code: 'SSH',
+    title: 'SSH 开发机',
+    eyebrow: 'SSH',
+    description: '管理 SSH 连接和可用于远端开发的工作区。'
+  }
+} as const;
+
+const getInitialSettingsTab = () => {
+  if (typeof window === 'undefined') return 'basic';
+  const params = new URLSearchParams(window.location.search);
+  const tab = String(params.get('tab') || '').trim();
+  return ['aliases', 'upstream-errors', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
+};
+
+const formatActiveControlPlaneLabel = (profile: ControlPlaneProfile | null) => {
+  if (!profile) return '未选择服务器';
+  return profile.name || profile.endpoint || profile.id;
+};
+
+const formatActiveControlPlaneEndpoint = (profile: ControlPlaneProfile | null) => {
+  if (!profile) return '请先添加 Server';
+  return profile.endpoint;
+};
+
+const getInitialControlPlaneProfiles = () => listControlPlaneProfiles();
+
+const getInitialActiveControlPlaneId = () => (
+  resolveStoredActiveControlPlaneProfile(listControlPlaneProfiles(), getActiveControlPlaneProfileId()).profileId
+);
+
+const Settings = ({ section }: SettingsProps) => {
+  const effectiveSection = section;
+  const [usageForm] = Form.useForm();
+  const [serverForm] = Form.useForm();
+  const [controlPlaneForm] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [serverSaving, setServerSaving] = useState(false);
+  const [controlPlaneSaving, setControlPlaneSaving] = useState(false);
+  const [checkingControlPlaneId, setCheckingControlPlaneId] = useState('');
+  const [controlPlaneProfiles, setControlPlaneProfiles] = useState<ControlPlaneProfile[]>(getInitialControlPlaneProfiles);
+  const [refreshingControlPlanes, setRefreshingControlPlanes] = useState(false);
+  const [activeControlPlaneId, setActiveControlPlaneId] = useState(getInitialActiveControlPlaneId);
+  const [controlPlaneAddModalOpen, setControlPlaneAddModalOpen] = useState(false);
+  const [authorizingControlPlaneId, setAuthorizingControlPlaneId] = useState('');
+  const [extraActions, setExtraActions] = useState<React.ReactNode>(null);
+  const [controlPlaneEndpointHints, setControlPlaneEndpointHints] = useState<ControlPlaneEndpointHint[]>([]);
+  const [controlPlaneEndpointWarnings, setControlPlaneEndpointWarnings] = useState<string[]>([]);
+  // 一键重启服务：restart + management watch 推送（与移动端设置共用）
+  const { restarting, restartNote: restartAlert, restartServer: handleRestartServer } = useManagementRestart();
+  // 动态壁纸（localStorage 持久化 + 启动恢复，见 app.tsx）、HUD 显示偏好（CRT / 音效）与主题：
+  // 与 HUD 顶栏开关共用同一份状态，逻辑在 features/settings 与移动端设置共用。
+  const {
+    hasCustomWallpaper,
+    wallpaperFileInputRef,
+    openWallpaperPicker,
+    handleWallpaperFileChange,
+    handleWallpaperClear,
+    hudPrefs,
+    setHudPrefs,
+    themeMode,
+    handleThemeModeChange
+  } = useAppearanceSettings();
+
+  // 复制页面上已展示的默认 Server URL（与 Models / ModelUsage 的复制交互一致）
+  const handleCopyServerEndpoint = async (endpoint: string) => {
+    try {
+      await writeClipboardText(endpoint);
+      message.success('Server URL 已复制');
+    } catch (error: unknown) {
+      message.error(`复制失败：${error instanceof Error ? error.message : '无法写入剪贴板'}`);
+    }
+  };
+
+  const syncControlPlaneProfiles = (profiles: ControlPlaneProfile[], preferredProfileId = '') => {
+    const resolution = preferredProfileId
+      ? selectActiveControlPlaneProfile(profiles, preferredProfileId)
+      : syncStoredActiveControlPlaneProfile(profiles);
+    setControlPlaneProfiles(profiles);
+    setActiveControlPlaneId(resolution.profileId);
+    return resolution;
+  };
+
+  const syncSavedControlPlaneProfiles = (preferredProfileId = '') => (
+    syncControlPlaneProfiles(listControlPlaneProfiles(), preferredProfileId)
+  );
+
+  const loadConfig = async () => {
+    setLoading(true);
+    try {
+      const [config, serverConfig] = await Promise.all([
+        configAPI.get(),
+        configAPI.getServer()
+      ]);
+      const endpointHintsPayload = await serverProfilesAPI.listEndpointHints()
+        .catch(() => ({ ok: false, endpoints: [], warnings: [] }));
+      const endpointHints = endpointHintsPayload.endpoints || [];
+      const defaultControlEndpoint = resolveDefaultControlEndpoint(endpointHints);
+      setControlPlaneEndpointHints(endpointHints);
+      setControlPlaneEndpointWarnings(normalizeEndpointHintWarnings(endpointHints, endpointHintsPayload.warnings));
+      usageForm.setFieldsValue(toUsageFormValues(config));
+      serverForm.setFieldsValue(serverConfig);
+      if (effectiveSection === 'control-planes') {
+        controlPlaneForm.setFieldsValue({
+          endpoint: defaultControlEndpoint,
+          name: '当前 Server'
+        });
+      }
+      syncSavedControlPlaneProfiles();
+    } catch (_error) {
+      syncSavedControlPlaneProfiles();
+      message.error('加载配置失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+  }, [effectiveSection]);
+
+  useEffect(() => addControlPlaneProfilesChangeListener(() => {
+    syncSavedControlPlaneProfiles(activeControlPlaneId);
+  }), [activeControlPlaneId]);
+
+  const handleSave = async (values: UsageFormValues) => {
+    setSaving(true);
+    try {
+      await configAPI.update(toUsageConfig(values));
+      message.success('保存额度配置成功');
+    } catch (_error) {
+      message.error('保存额度配置失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveServer = async (values: ServerConfig) => {
+    setServerSaving(true);
+    try {
+      const { saved, rotatedProfileId } = await saveServerConfig(values, activeControlPlaneProfile);
+      if (rotatedProfileId) {
+        syncSavedControlPlaneProfiles(rotatedProfileId);
+      }
+      serverForm.setFieldsValue({
+        ...saved,
+        apiKey: '',
+        managementKey: ''
+      });
+      message.success('保存服务配置成功');
+    } catch (error: any) {
+      message.error(error?.message || '保存服务配置失败');
+    } finally {
+      setServerSaving(false);
+    }
+  };
+
+  const openAddControlPlaneModal = () => {
+    setAuthorizingControlPlaneId('');
+    controlPlaneForm.setFieldsValue({
+      endpoint: resolveDefaultControlEndpoint(controlPlaneEndpointHints, ''),
+      name: 'AIH Server',
+      managementKey: ''
+    });
+    setControlPlaneAddModalOpen(true);
+  };
+
+  const openDiscoveredServerAuthorization = (profile: ControlPlaneProfile) => {
+    setAuthorizingControlPlaneId(profile.id);
+    controlPlaneForm.setFieldsValue({
+      endpoint: profile.endpoint,
+      name: profile.name,
+      managementKey: ''
+    });
+    setControlPlaneAddModalOpen(true);
+  };
+
+  const closeControlPlaneModal = () => {
+    setControlPlaneAddModalOpen(false);
+    setAuthorizingControlPlaneId('');
+  };
+
+  const handleSaveControlPlane = async (values: { endpoint?: string; name?: string; managementKey?: string }) => {
+    setControlPlaneSaving(true);
+    try {
+      const profile = await connectControlPlaneProfile({
+        profiles: controlPlaneProfiles,
+        profileId: authorizingControlPlaneId,
+        endpoint: values.endpoint,
+        name: values.name,
+        managementKey: values.managementKey
+      });
+      try {
+        await refreshControlPlaneDeviceState(profile);
+      } catch (error) {
+        await saveControlPlaneProfile({
+          name: profile.name,
+          endpoint: profile.endpoint,
+          descriptor: profile.descriptor,
+          state: 'degraded',
+          managementKey: profile.managementKey,
+          managementKeyConfigured: profile.managementKeyConfigured,
+          lastError: error instanceof Error ? error.message : 'server_refresh_failed'
+        });
+        await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
+        syncSavedControlPlaneProfiles();
+        throw error;
+      }
+      await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
+      syncSavedControlPlaneProfiles();
+      controlPlaneForm.setFieldsValue({
+        endpoint: profile.endpoint,
+        name: profile.name,
+        managementKey: ''
+      });
+      closeControlPlaneModal();
+      message.success('Server 已保存');
+    } catch (error: any) {
+      message.error(error?.message || 'Server 探测失败');
+    } finally {
+      setControlPlaneSaving(false);
+    }
+  };
+
+  const handleRefreshControlPlane = async (profile: ControlPlaneProfile) => {
+    setCheckingControlPlaneId(profile.id);
+    try {
+      if (!isControlPlaneManagementKeyConfigured(profile)) throw new Error('missing_management_key');
+      await refreshControlPlaneDeviceState(profile);
+      syncSavedControlPlaneProfiles();
+      message.success('Server 已同步');
+    } catch (error: any) {
+      await saveControlPlaneProfile({
+        name: profile.name,
+        endpoint: profile.endpoint,
+        descriptor: profile.descriptor,
+        state: isControlPlaneManagementKeyConfigured(profile) ? 'degraded' : 'offline',
+        managementKey: profile.managementKey,
+        managementKeyConfigured: profile.managementKeyConfigured,
+        lastError: error?.message || 'descriptor_failed'
+      });
+      syncSavedControlPlaneProfiles();
+      message.error(error?.message || 'Server 探测失败');
+    } finally {
+      setCheckingControlPlaneId('');
+    }
+  };
+
+  const handleRefreshAllControlPlanes = async () => {
+    setRefreshingControlPlanes(true);
+    try {
+      const result = await refreshControlPlaneProfileStates(controlPlaneProfiles);
+      syncControlPlaneProfiles(result.profiles, activeControlPlaneId);
+      if (result.refreshed === 0 && result.failed === 0) {
+        message.info('没有可同步的 Server');
+      } else if (result.failed > 0) {
+        message.warning(`已同步 ${result.refreshed} 个 Server，${result.failed} 个失败`);
+      } else {
+        message.success(`已同步 ${result.refreshed} 个 Server`);
+      }
+    } catch (error: any) {
+      message.error(error?.message || '同步 Server 失败');
+    } finally {
+      setRefreshingControlPlanes(false);
+    }
+  };
+
+  const handleRemoveControlPlane = async (profileId: string) => {
+    try {
+      syncControlPlaneProfiles(await removeControlPlaneProfile(profileId));
+      message.success('已移除 Server');
+    } catch (error: any) {
+      message.error(error?.message || '移除 Server 失败');
+    }
+  };
+
+  const handleSelectControlPlane = async (profileId: string) => {
+    try {
+      const resolution = await selectActiveControlPlaneProfile(controlPlaneProfiles, profileId);
+      setActiveControlPlaneId(resolution.profileId);
+      message.success('已设置默认 Server');
+    } catch (error: any) {
+      message.error(error?.message || '切换 Server 失败');
+    }
+  };
+
+  const serverRouteRows = buildServerRouteRows(controlPlaneProfiles);
+  const logicalControlPlaneProfiles = serverRouteRows.map((row) => row.profile);
+  const controlPlaneOverview = summarizeControlPlaneProfiles(logicalControlPlaneProfiles);
+  const refreshableControlPlaneCount = logicalControlPlaneProfiles.filter(isControlPlaneProfileRefreshable).length;
+  const activeControlPlaneProfile = logicalControlPlaneProfiles.find((profile) => profile.id === activeControlPlaneId) || null;
+
+  const basicSettingsContent = (
+    <div className="settings-grid">
+      <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
+        <div className="settings-panel-head">
+          <div>
+            <h2>AIH Server</h2>
+            <p>选择或切换当前连接的 AIH Server。</p>
+          </div>
+        </div>
+        <div className="settings-server-select-row">
+          <ControlPlaneProfileSelect className="settings-server-select-trigger" />
+        </div>
+      </ProCard>
+
+      <SettingsGroupCard
+        title="开发工具与应用管理"
+        description="已整合至全新「开发工具 (Toolkit)」页面，统一管理 AI CLI、环境、镜像源与代理。"
+      >
+        <SettingsItem
+          title="开发工具箱 (Toolkit)"
+          subtitle="统一管理 AI CLI、Node 环境、镜像源与代理"
+          action={
+            <Button type="primary" onClick={() => window.location.href = buildAppHref('/toolkit')}>
+              进入工具箱
+            </Button>
+          }
+        />
+      </SettingsGroupCard>
+
+      <LargePasteSettingCard />
+
+      <SettingsGroupCard
+        title="外观个性化"
+        description="自定义动态壁纸（自动萃取强调色并生成全局光晕背景）与 HUD 显示效果。"
+      >
+        <SettingsItem
+          title="自定义动态壁纸"
+          subtitle={hasCustomWallpaper ? '已应用自定义壁纸（≤2MB 图片）' : '选择一张图片作为全局背景'}
+          action={
+            <Button onClick={openWallpaperPicker}>
+              选择图片
+            </Button>
+          }
+        />
+        {hasCustomWallpaper && (
+          <SettingsItem
+            title="恢复默认背景"
+            subtitle="清除自定义壁纸与萃取的强调色"
+            danger
+            action={
+              <Button danger onClick={handleWallpaperClear}>
+                恢复默认
+              </Button>
+            }
+          />
+        )}
+        <div className="settings-hud-display" role="group" aria-label="HUD 显示">
+          <span className="settings-hud-display-label hud-label">HUD 显示</span>
+          <SettingsItem
+            title="CRT 扫描线"
+            subtitle="在界面上叠加 CRT 扫描线纹理"
+            action={
+              <Switch
+                size="small"
+                checked={hudPrefs.crt}
+                checkedChildren="ON"
+                unCheckedChildren="OFF"
+                aria-label="CRT 扫描线"
+                onChange={(checked) => setHudPrefs({ crt: checked })}
+              />
+            }
+          />
+          <SettingsItem
+            title="交互音效 SFX"
+            subtitle="点击与切换时播放 Web Audio 提示音"
+            action={
+              <Switch
+                size="small"
+                checked={hudPrefs.sfx}
+                checkedChildren="ON"
+                unCheckedChildren="MUTE"
+                aria-label="交互音效 SFX"
+                onChange={(checked) => setHudPrefs({ sfx: checked })}
+              />
+            }
+          />
+          <SettingsItem
+            title="主题"
+            subtitle={themeMode === 'dark' ? '深色 HUD（夜间）' : '日光 HUD（白天）'}
+            action={
+              <Switch
+                size="small"
+                checked={themeMode === 'dark'}
+                checkedChildren="深色"
+                unCheckedChildren="日光"
+                aria-label="主题 深色/日光"
+                onChange={handleThemeModeChange}
+              />
+            }
+          />
+        </div>
+        <input
+          ref={wallpaperFileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleWallpaperFileChange}
+        />
+      </SettingsGroupCard>
+
+      <CaptureSettingsCard />
+
+      <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
+        <div className="settings-panel-head">
+          <div>
+            <h2>账号调度</h2>
+            <p>控制额度阈值和后台刷新节奏。</p>
+          </div>
+        </div>
+        <Form
+          form={usageForm}
+          disabled={loading}
+          layout="vertical"
+          onFinish={handleSave}
+          initialValues={USAGE_FORM_DEFAULTS}
+        >
+          <Form.Item
+            name="threshold_pct"
+            label="自动切换阈值 (%)"
+            help="账号已用额度达到此百分比（剩余 ≤ 100 − 阈值）即退出调度、切到其它账号；后台用量刷新显示额度恢复后自动重新参与。对所有按账号计额度的账号生效。"
+            rules={USAGE_FIELD_RULES.threshold_pct}
+          >
+            <NumericAddonInput min={0} max={100} addonAfter="%" />
+          </Form.Item>
+
+          <Form.Item
+            name="active_refresh_interval"
+            label="活跃刷新间隔 (秒)"
+            help="正在使用的账号额度刷新间隔时间"
+            rules={USAGE_FIELD_RULES.active_refresh_interval}
+          >
+            <NumericAddonInput min={10} addonAfter="秒" />
+          </Form.Item>
+
+          <Form.Item
+            name="background_refresh_interval"
+            label="后台刷新间隔 (秒)"
+            help="未使用账号的额度刷新间隔时间"
+            rules={USAGE_FIELD_RULES.background_refresh_interval}
+          >
+            <NumericAddonInput min={60} addonAfter="秒" />
+          </Form.Item>
+
+          <Form.Item>
+            <Space className="settings-actions">
+              <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>
+                保存额度设置
+              </Button>
+              <Button onClick={loadConfig}>重置</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </ProCard>
+
+      <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
+        <div className="settings-panel-head">
+          <div>
+            <h2>服务配置</h2>
+            <p>管理监听地址、端口和本地接口密钥。</p>
+          </div>
+        </div>
+        <Form
+          form={serverForm}
+          disabled={loading}
+          layout="vertical"
+          onFinish={handleSaveServer}
+          initialValues={SERVER_FORM_DEFAULTS}
+        >
+          <InlineNote tone="info" className="settings-inline-alert">
+            开启开放网络后，Server 会监听 0.0.0.0。监听配置保存后，需要点击“一键重启服务”才会生效。
+          </InlineNote>
+          {restartAlert && (
+            <InlineNote
+              tone={restartAlert.type}
+              className="settings-inline-alert settings-restart-alert animate__animated animate__fadeIn animate__faster"
+            >
+              {restartAlert.message}
+            </InlineNote>
+          )}
+
+          <Form.Item
+            name="openNetwork"
+            label="开放网络访问"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="开放" unCheckedChildren="本机" />
+          </Form.Item>
+
+          <Form.Item shouldUpdate noStyle>
+            {() => {
+              const openNetwork = serverForm.getFieldValue('openNetwork');
+              return (
+                <Form.Item
+                  name="host"
+                  label="监听地址"
+                  help={openNetwork ? '开放网络时会自动使用 0.0.0.0' : '默认仅监听本机 127.0.0.1'}
+                >
+                  <Input disabled={openNetwork} placeholder="127.0.0.1" />
+                </Form.Item>
+              );
+            }}
+          </Form.Item>
+
+          <Form.Item
+            name="port"
+            label="端口"
+            rules={SERVER_PORT_RULES}
+          >
+            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item
+            name="apiKey"
+            label="API Key"
+            help="用于访问 /v1 接口的客户端密钥。留空保留当前配置。"
+          >
+            <Input.Password autoComplete="new-password" placeholder="例如 sk-local-xxxx" />
+          </Form.Item>
+
+          <Form.Item
+            name="managementKey"
+            label="Management Key"
+            help="用于访问 Server 管理接口的客户端密钥。留空保留当前配置。"
+          >
+            <Input.Password autoComplete="new-password" placeholder="输入新的 Management Key" />
+          </Form.Item>
+
+          <Form.Item>
+            <Space className="settings-actions">
+              <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={serverSaving}>
+                保存服务配置
+              </Button>
+              <Button icon={<ReloadOutlined />} onClick={handleRestartServer} loading={restarting}>
+                一键重启服务
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </ProCard>
+    </div>
+  );
+
+  const upstreamErrorMappingsContent = <UpstreamErrorMappings setActions={setExtraActions} />;
+
+  const controlPlanesActions = (
+    <PageHeaderActions
+      actions={[
+        {
+          key: 'refresh-all',
+          label: '同步全部',
+          icon: <ReloadOutlined />,
+          disabled: refreshableControlPlaneCount === 0,
+          loading: refreshingControlPlanes,
+          onClick: handleRefreshAllControlPlanes,
+        },
+        {
+          key: 'add',
+          label: '添加 Server',
+          icon: <PlusOutlined />,
+          primary: true,
+          onClick: openAddControlPlaneModal,
+        },
+      ]}
+    />
+  );
+
+  const controlPlanesContent = (
+    <div className="settings-control-plane-page">
+      <ProCard className="settings-panel hud-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 16 }}>
+        <p className="settings-control-plane-scope-copy">
+          默认 Server 用于无参数页面；点击“打开”会用显式 server 参数固定当前标签页，可同时操作多台 Server。
+        </p>
+        <div className="settings-control-plane-current hud-panel hud-panel--sm">
+          <div className="settings-control-plane-current-main">
+            <span className="hud-label">默认 Server</span>
+            <strong>{formatActiveControlPlaneLabel(activeControlPlaneProfile)}</strong>
+            <span className="settings-control-plane-endpoint">
+              <em>{formatActiveControlPlaneEndpoint(activeControlPlaneProfile)}</em>
+              {activeControlPlaneProfile?.endpoint ? (
+                <Button
+                  size="small"
+                  type="text"
+                  className="settings-copy-trigger"
+                  icon={<CopyOutlined />}
+                  aria-label="复制 Server URL"
+                  onClick={() => handleCopyServerEndpoint(activeControlPlaneProfile.endpoint)}
+                >
+                  COPY
+                </Button>
+              ) : null}
+            </span>
+          </div>
+          <div className="settings-control-plane-current-actions">
+            <Select
+              value={activeControlPlaneId || undefined}
+              placeholder="选择 Server"
+              disabled={controlPlaneProfiles.length === 0}
+              onChange={handleSelectControlPlane}
+              options={serverRouteRows.map((row) => ({
+                value: row.profile.id,
+                label: row.authorizationPending
+                  ? `${row.profile.name || row.profile.endpoint}（待授权）`
+                  : row.profile.name || row.profile.endpoint || row.profile.id,
+                disabled: row.authorizationPending
+              }))}
+            />
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={!activeControlPlaneProfile}
+              loading={checkingControlPlaneId === activeControlPlaneProfile?.id}
+              onClick={() => activeControlPlaneProfile && handleRefreshControlPlane(activeControlPlaneProfile)}
+            >
+              同步当前
+            </Button>
+          </div>
+        </div>
+
+        {/* 只保留运营指标，不展示内部协议和鉴权细节。 */}
+        <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
+          <StatisticCard statistic={{ title: '服务器', value: controlPlaneOverview.total }} />
+          <StatisticCard statistic={{ title: '可调度账号', value: controlPlaneOverview.schedulableAccounts }} />
+          <StatisticCard statistic={{ title: '会话', value: controlPlaneOverview.sessions }} />
+        </StatisticCard.Group>
+
+        <Tabs
+          className="settings-control-plane-manage-tabs"
+          items={[
+            {
+              key: 'profiles',
+              label: 'Server',
+              children: (
+                serverRouteRows.length === 0 ? (
+                  <div key="cp-empty" className="settings-control-plane-empty aih-fade-in">
+                    <InlineNote tone="info">暂无已保存 Server</InlineNote>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={openAddControlPlaneModal}
+                    >
+                      添加 Server
+                    </Button>
+                  </div>
+                ) : (
+                  <div key="cp-list" className="aih-fade-in">
+                    <ControlPlaneServerList
+                      rows={serverRouteRows}
+                      activeControlPlaneId={activeControlPlaneId}
+                      checkingControlPlaneId={checkingControlPlaneId}
+                      onSelect={handleSelectControlPlane}
+                      onRefresh={handleRefreshControlPlane}
+                      onRemove={handleRemoveControlPlane}
+                      onAuthorize={openDiscoveredServerAuthorization}
+                    />
+                  </div>
+                )
+              )
+            }
+          ]}
+        />
+      </ProCard>
+
+      <Modal
+        title={authorizingControlPlaneId ? '授权 Server' : '添加 Server'}
+        open={controlPlaneAddModalOpen}
+        width={760}
+        footer={null}
+        forceRender
+        onCancel={closeControlPlaneModal}
+      >
+        <Form
+          form={controlPlaneForm}
+          className="settings-form"
+          layout="vertical"
+          onFinish={handleSaveControlPlane}
+          initialValues={{
+            endpoint: '',
+            name: 'AIH Server'
+          }}
+        >
+          <div className="settings-form-panel hud-panel hud-panel--sm">
+                  <Form.Item
+                    name="endpoint"
+                    label="Server URL"
+                    help="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址。"
+                    rules={[{ required: true, message: '请输入 Server URL' }]}
+                  >
+                    <Input placeholder="https://aih.example.com" />
+                  </Form.Item>
+                  {renderControlEndpointHints(
+                    controlPlaneEndpointHints,
+                    controlPlaneEndpointWarnings,
+                    (endpoint) => controlPlaneForm.setFieldsValue({ endpoint })
+                  )}
+
+                  <Form.Item name="name" label="显示名称">
+                    <Input placeholder="Home AIH" />
+                  </Form.Item>
+
+          <Form.Item
+            name="managementKey"
+            label="Management Key"
+            help="可扫码填写；编辑已保存的 Server 时留空保留原 Key。"
+            rules={[{ required: !isControlPlaneManagementKeyConfigured(controlPlaneProfiles.find((profile) => profile.id === authorizingControlPlaneId) || null), message: '请输入 Management Key' }]}
+          >
+            <ManagementKeyInput
+              expectedEndpoint={authorizingControlPlaneId ? controlPlaneProfiles.find((profile) => profile.id === authorizingControlPlaneId)?.endpoint : undefined}
+              onCredentials={(credentials) => controlPlaneForm.setFieldsValue(credentials)}
+            />
+          </Form.Item>
+          </div>
+
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlaneSaving}>
+                      {authorizingControlPlaneId ? '授权并连接' : '探测并保存'}
+                    </Button>
+                  </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+
+  const sectionItems: SettingsSectionItem[] = [
+    {
+      key: 'basic',
+      label: '基础设置',
+      forceRender: true,
+      children: basicSettingsContent,
+    },
+    {
+      key: 'aliases',
+      label: '模型别名',
+      children: <ModelAliases setActions={setExtraActions} />,
+      actions: extraActions,
+    },
+    {
+      key: 'upstream-errors',
+      label: '上游异常映射',
+      children: upstreamErrorMappingsContent,
+      actions: extraActions,
+    },
+    {
+      key: 'control-planes',
+      label: 'Server',
+      forceRender: true,
+      children: controlPlanesContent,
+      actions: controlPlanesActions,
+    },
+    {
+      key: 'ssh-hosts',
+      label: 'SSH 开发机',
+      children: <SshHostsPanel setActions={setExtraActions} />,
+      actions: extraActions,
+    },
+  ];
+  const standaloneSection = effectiveSection ? sectionItems.find((item) => item.key === effectiveSection) : null;
+
+  if (standaloneSection) {
+    const meta = SETTINGS_PAGE_META[standaloneSection.key];
+    return (
+      <PageScaffold
+        code={meta.code}
+        title={meta.title}
+        subTitle={meta.description}
+        extra={standaloneSection.actions}
+        ghost
+        className="animate__animated animate__fadeIn animate__faster"
+      >
+        <div className="settings-section-content">
+          {standaloneSection.children}
+        </div>
+      </PageScaffold>
+    );
+  }
+
+  return (
+    <PageScaffold
+      code={SETTINGS_PAGE_META.settings.code}
+      title={SETTINGS_PAGE_META.settings.title}
+      subTitle={SETTINGS_PAGE_META.settings.description}
+      extra={extraActions}
+      ghost
+      className="animate__animated animate__fadeIn animate__faster"
+    >
+      {/* 移动端（< 768px）由 web/src/mobile/pages/MobileSettings 独立渲染，桌面页不挂载。 */}
+      <Tabs
+        className="settings-tabs"
+        defaultActiveKey={getInitialSettingsTab()}
+        items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases' || item.key === 'upstream-errors')}
+      />
+    </PageScaffold>
+  );
+};
+
+export default Settings;

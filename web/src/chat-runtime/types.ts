@@ -1,0 +1,280 @@
+import type { TimelineDetailByKind, TimelineMessageMetrics } from './timeline-details';
+import type { CapabilitySnapshot } from './capability-types';
+import type { ApprovalDecisionPayload, InteractionAnswerPayload, TurnSubmitPayload } from './command-payload-types';
+export type {
+  ApprovalDecisionPayload,
+  InteractionAnswer,
+  InteractionAnswerValue,
+  InteractionAnswerPayload,
+  TurnSubmitPayload,
+} from './command-payload-types';
+
+import type {
+  ApprovalInteractionPayload,
+  QuestionInteractionPayload,
+} from './interaction-types';
+export { QUESTION_ACTIONS } from './interaction-types';
+export type {
+  ApprovalChoice,
+  ApprovalChoiceIntent,
+  ApprovalInteractionPayload,
+  ApprovalInteractionPresentation,
+  InteractionAnnotation,
+  QuestionAction,
+  QuestionAnswerShape,
+  QuestionAutoResolution,
+  QuestionAutoResolutionExpiration,
+  QuestionAutoResolutionSnooze,
+  QuestionField,
+  QuestionFieldType,
+  QuestionInteractionPayload,
+  QuestionInteractionPresentation,
+  QuestionOption,
+  QuestionPresentationLink,
+} from './interaction-types';
+
+export type {
+  CapabilityDescriptor,
+  CapabilitySnapshot,
+  CapabilitySupport,
+  ChatCapabilityName,
+} from './capability-types';
+
+export const CHAT_RUNTIME_EVENT_SCHEMA = 'aih.chat.event.v1' as const;
+
+export type TimelineItemKind =
+  | 'message' | 'reasoning' | 'plan' | 'tool'
+  | 'shell' | 'diff' | 'file_change' | 'terminal'
+  | 'question' | 'approval' | 'subagent' | 'command'
+  | 'attachment' | 'artifact' | 'notice' | 'error';
+
+export type TimelineItemStatus = 'pending' | 'running' | 'waiting_input'
+  | 'completed' | 'failed' | 'cancelled' | 'unknown';
+
+export type TimelineDeltaChannel =
+  | 'summary' | 'content' | 'plan' | 'output' | 'diff' | 'progress';
+
+export interface TimelineDeltaDetail {
+  readonly channel: TimelineDeltaChannel;
+  readonly index?: number;
+}
+
+interface TimelineItemBase {
+  readonly id: string;
+  readonly turnId?: string;
+  readonly createdAt: number;
+  readonly updatedAt?: number;
+  readonly status: TimelineItemStatus;
+  readonly content?: string;
+}
+
+export type TimelineItem = {
+  [K in TimelineItemKind]: TimelineItemBase & {
+    readonly kind: K;
+    readonly detail: Readonly<TimelineDetailByKind[K]>;
+  };
+}[TimelineItemKind];
+
+export type SessionState = 'idle' | 'starting' | 'running' | 'waiting_input'
+  | 'interrupting' | 'completing' | 'recovering' | 'closed';
+export interface RuntimeBinding {
+  readonly provider?: string;
+  readonly runtimeId?: string;
+  readonly nativeSessionId?: string;
+  readonly fingerprint?: string;
+  readonly version?: string;
+  readonly runtimeGeneration?: number;
+}
+
+export interface ActiveTurn {
+  readonly turnId: string;
+  readonly runId?: string;
+  readonly clientUserMessageId?: string;
+  readonly nativeTurnId?: string;
+  readonly startedAt?: number;
+  readonly firstTokenAt?: number;
+  readonly metrics?: TimelineMessageMetrics;
+  readonly state: SessionState;
+}
+
+export interface FailedTurn {
+  readonly turnId: string;
+  readonly failedAt: number;
+  readonly error: { readonly code: string; readonly message?: string };
+  readonly retryable: boolean;
+  readonly outcomeUnknown?: boolean;
+}
+
+export type ChatGoalStatus = 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete';
+export interface ChatGoal {
+  readonly threadId: string;
+  readonly objective: string;
+  readonly status: ChatGoalStatus;
+  readonly tokenBudget: number | null;
+  readonly tokensUsed: number;
+  readonly timeUsedSeconds: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface SessionQueueEntry {
+  readonly queueId: string;
+  readonly sessionId: string;
+  readonly commandId: string;
+  readonly position: number;
+  readonly policy: 'after_tool_boundary' | 'after_turn';
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly status: 'queued' | 'leased' | 'running' | 'completed' | 'failed';
+  readonly leaseId?: string;
+  readonly boundaryItemId?: string;
+  readonly result?: unknown;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+interface PendingInteractionFields {
+  readonly interactionId: string;
+  readonly sessionId: string;
+  readonly itemId: string;
+  readonly revision: number;
+  readonly state: 'pending' | 'resolving' | 'answered' | 'expired';
+  readonly resolution?: unknown;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export type PendingInteraction =
+  | (PendingInteractionFields & {
+    readonly kind: 'question' | 'plan_confirmation';
+    readonly payload: QuestionInteractionPayload;
+  })
+  | (PendingInteractionFields & {
+    readonly kind: 'approval';
+    readonly payload: ApprovalInteractionPayload;
+  });
+export interface SessionSnapshot {
+  readonly sessionId: string;
+  readonly state: SessionState;
+  readonly throughSeq: number;
+  readonly runtimeBinding?: RuntimeBinding;
+  readonly capabilitySnapshot?: CapabilitySnapshot;
+  readonly activeTurn?: ActiveTurn;
+  readonly failedTurn?: FailedTurn;
+  readonly policy: Readonly<Record<string, unknown>>;
+  readonly queue: readonly SessionQueueEntry[];
+  readonly interactions: readonly PendingInteraction[];
+  readonly timeline: readonly TimelineItem[];
+  readonly timelineHasMore: boolean;
+  readonly timelineNextBefore: string | null;
+}
+
+export type ChatRuntimeCommandName =
+  | 'runtime.prewarm' | 'turn.submit' | 'turn.retry' | 'turn.regenerate' | 'session.fork' | 'turn.intervene' | 'turn.interrupt'
+  | 'queue.add' | 'queue.edit' | 'queue.remove' | 'queue.move' | 'queue.dispatch'
+  | 'interaction.answer' | 'approval.decide' | 'slash.execute' | 'session.policy.set'
+  | 'session.goal.set' | 'session.goal.get' | 'session.goal.clear';
+
+interface CommandPayloadByName {
+  'runtime.prewarm': Record<string, never>;
+  'turn.submit': TurnSubmitPayload;
+  'turn.retry': { sourceTurnId: string };
+  'turn.regenerate': { sourceItemId: string };
+  'session.fork': { sourceItemId: string };
+  'turn.intervene': { content: string; mode: 'steer_current' | 'after_tool_boundary' | 'after_turn_same_run' | 'replace_current' };
+  'turn.interrupt': { reason?: string };
+  'queue.add': { content: string; policy: 'after_tool_boundary' | 'after_turn' };
+  'queue.edit': { queueId: string; content: string };
+  'queue.remove': { queueId: string };
+  'queue.move': { queueId: string; beforeQueueId?: string };
+  'queue.dispatch': { queueId?: string };
+  'interaction.answer': InteractionAnswerPayload;
+  'approval.decide': ApprovalDecisionPayload;
+  'slash.execute': { name: string; arguments?: string };
+  'session.policy.set': { key: string; value: unknown };
+  'session.goal.set': { objective: string; tokenBudget?: number | null };
+  'session.goal.get': Record<string, never>;
+  'session.goal.clear': Record<string, never>;
+}
+
+export type ChatRuntimeCommand<N extends ChatRuntimeCommandName = ChatRuntimeCommandName> = {
+  [K in N]: {
+    readonly commandId: string;
+    readonly sessionId: string;
+    readonly type: K;
+    readonly payload: Readonly<CommandPayloadByName[K]>;
+  };
+}[N];
+
+export interface ChatRuntimeEventSource {
+  readonly provider: string;
+  readonly runtimeId: string;
+  readonly nativeEventId?: string;
+}
+
+interface StateProjectionPayload { state: SessionState; activeTurn?: ActiveTurn | null }
+interface RuntimeProjectionPayload {
+  runtimeBinding?: RuntimeBinding;
+  capabilitySnapshot?: CapabilitySnapshot;
+}
+interface RunDetachedPayload { reason: string }
+interface RunReattachedPayload { state: SessionState; nativeTurnId?: string }
+interface RunLostPayload { error: Readonly<Record<string, unknown>> }
+
+interface EventPayloadByType {
+  'session.created': { state: SessionState };
+  'session.runtime.bound': RuntimeProjectionPayload;
+  'session.runtime.rebound': RuntimeProjectionPayload;
+  'session.policy.changed': { policy: Readonly<Record<string, unknown>> };
+  'session.goal.updated': { goal: ChatGoal };
+  'session.goal.cleared': { goalId?: string };
+  'session.closed': Record<string, never>;
+  'session.snapshot.reset': SessionSnapshot;
+  'turn.queued': StateProjectionPayload;
+  'turn.started': StateProjectionPayload;
+  'turn.phase.changed': StateProjectionPayload;
+  'turn.metrics.updated': { metrics: TimelineMessageMetrics };
+  'turn.interrupt.requested': StateProjectionPayload;
+  'turn.interrupted': StateProjectionPayload;
+  'turn.completed': StateProjectionPayload;
+  'turn.failed': StateProjectionPayload & { error?: FailedTurn['error']; retryable?: boolean; outcomeUnknown?: boolean };
+  'queue.item.added': { entry: SessionQueueEntry };
+  'queue.item.updated': { entry: SessionQueueEntry };
+  'queue.item.moved': { queueId: string; beforeQueueId?: string };
+  'queue.item.removed': { queueId: string };
+  'queue.item.dispatched': { entry: SessionQueueEntry };
+  'timeline.item.started': { item: TimelineItem };
+  'timeline.item.delta': { itemId: string; chunk: string; detail?: TimelineDeltaDetail };
+  'timeline.item.updated': { item: TimelineItem };
+  'timeline.item.completed': { item: TimelineItem };
+  'interaction.requested': { interaction: PendingInteraction };
+  'interaction.updated': { interaction: PendingInteraction };
+  'interaction.resolved': { interaction: PendingInteraction };
+  'interaction.expired': { interaction: PendingInteraction };
+  'run.detached': RunDetachedPayload;
+  'run.reattached': RunReattachedPayload;
+  'run.adopted': StateProjectionPayload;
+  'run.lost': RunLostPayload;
+  'runtime.prewarm.started': RuntimeProjectionPayload;
+  'runtime.prewarm.ready': RuntimeProjectionPayload;
+  // `error` 是机器码（供重试判定与排障），`message` 是给用户看的一句话
+  // （内部 harness 码必须经服务端翻译，见 lib/server/chat-runtime/runtime-failure-copy.js）。
+  'runtime.prewarm.failed': { error: string; message?: string };
+  'stream.error': { error: string; message: string; retryable?: boolean };
+}
+
+export type ChatRuntimeEventType = keyof EventPayloadByType;
+export type ChatRuntimeEvent<T extends ChatRuntimeEventType = ChatRuntimeEventType> = {
+  [K in T]: {
+    readonly schema: typeof CHAT_RUNTIME_EVENT_SCHEMA;
+    readonly eventId: string;
+    readonly sessionId: string;
+    readonly seq: number;
+    readonly type: K;
+    readonly at: number;
+    readonly turnId?: string;
+    readonly runId?: string;
+    readonly itemId?: string;
+    readonly source: ChatRuntimeEventSource;
+    readonly payload: Readonly<EventPayloadByType[K]>;
+  };
+}[T];

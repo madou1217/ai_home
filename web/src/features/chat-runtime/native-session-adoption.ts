@@ -1,0 +1,130 @@
+import type { ChatRuntimeSession } from '@/chat-runtime';
+import type { Session } from '@/types';
+import { branchResultSession } from './message-operation';
+
+interface AdoptionContext {
+  readonly session: Session;
+  readonly projectPath?: string;
+}
+
+export interface ResolvedSessionAdoption {
+  readonly nativeSessionId: string;
+  readonly session: Session | null;
+}
+
+export function adoptDraftNativeSession(
+  context: AdoptionContext,
+  nativeSessionId: string,
+  now: number = Date.now(),
+): Session | null {
+  const nativeId = normalizedText(nativeSessionId);
+  if (!context.session.projectPath) {
+    return context.session.draft && context.session.runtimeSessionId && nativeId
+      ? { ...context.session, draft: false, updatedAt: now } : null;
+  }
+  if (!context.session.draft || !nativeId) return null;
+  return {
+    ...context.session,
+    id: nativeId,
+    draft: false,
+    updatedAt: now,
+    projectPath: adoptionProjectPath(context),
+  };
+}
+
+export function createFreshNativeSession(
+  context: AdoptionContext,
+  nativeSessionId: string,
+  now: number = Date.now(),
+): Session | null {
+  const nativeId = normalizedText(nativeSessionId);
+  if (!nativeId) return null;
+  return {
+    id: nativeId,
+    title: '新会话',
+    updatedAt: now,
+    provider: context.session.provider,
+    projectPath: adoptionProjectPath(context),
+    ...(context.session.projectDirName
+      ? { projectDirName: context.session.projectDirName }
+      : {}),
+    draft: false,
+  };
+}
+
+export function resolveNativeSessionAdoption(
+  current: Session,
+  resolved: ChatRuntimeSession,
+  fallbackProjectPath?: string,
+): ResolvedSessionAdoption | null {
+  if (resolved.provider !== current.provider) return null;
+  if (!current.projectPath) {
+    const resolvedTitle = meaningfulTitle(resolved.policy.title)
+      ? String(resolved.policy.title)
+      : current.title;
+    return {
+      nativeSessionId: resolved.sessionId,
+      session: current.runtimeSessionId === resolved.sessionId ? null : {
+        ...current, id: resolved.sessionId, runtimeSessionId: resolved.sessionId,
+        accountRef: resolved.executionAccountRef, draft: !resolved.runtimeBinding.nativeSessionId,
+        projectPath: undefined, projectDirName: undefined,
+        // A runtime snapshot can still carry the creation placeholder while the
+        // directory already has the real title from the first prompt. Preserve
+        // that title when adopting/reconnecting a chat session.
+        title: resolvedTitle,
+        // Resolving a legacy chat id materializes a canonical row and therefore
+        // has a fresh storage timestamp. That is an identity migration, not a
+        // new user message; retain the list timestamp while observing an
+        // existing session. Draft creation still gets the canonical timestamp.
+        updatedAt: current.draft ? resolved.updatedAt : current.updatedAt,
+      },
+    };
+  }
+  const nativeSessionId = resolveBoundNativeSessionId(current, resolved.runtimeBinding);
+  if (!nativeSessionId) return null;
+  if (resolved.policy.lineage) {
+    const branch = branchResultSession({ result: { session: resolved } });
+    const unchanged = current.runtimeSessionId === branch.runtimeSessionId
+      && current.accountRef === branch.accountRef && current.projectPath === branch.projectPath && !current.draft;
+    return { nativeSessionId, session: unchanged ? null : branch };
+  }
+  const unchanged = current.id === nativeSessionId && current.draft === false;
+  return {
+    nativeSessionId,
+    session: unchanged ? null : {
+      ...current,
+      id: nativeSessionId,
+      draft: false,
+      updatedAt: Math.max(current.updatedAt, resolved.updatedAt),
+      projectPath: resolved.projectPath || current.projectPath || fallbackProjectPath,
+      title: meaningfulTitle(resolved.policy.title) ? String(resolved.policy.title) : current.title,
+    },
+  };
+}
+
+function meaningfulTitle(value: unknown): boolean {
+  const title = String(value || '').trim();
+  return Boolean(title) && title !== '新会话' && title !== '新对话';
+}
+
+export function resolveBoundNativeSessionId(
+  session: Session,
+  runtimeBinding: Readonly<Record<string, unknown>>,
+): string {
+  const bound = typeof runtimeBinding.nativeSessionId === 'string'
+    ? runtimeBinding.nativeSessionId.trim()
+    : '';
+  if (session.draft) return bound;
+  if (bound && bound !== session.id) {
+    throw new Error('chat_runtime_native_session_mismatch');
+  }
+  return session.id.trim();
+}
+
+function adoptionProjectPath(context: AdoptionContext): string | undefined {
+  return context.session.projectPath || context.projectPath;
+}
+
+function normalizedText(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value).trim();
+}

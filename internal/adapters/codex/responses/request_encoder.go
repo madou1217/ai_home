@@ -1,0 +1,636 @@
+package responses
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/inference"
+)
+
+// encodeRequest 把 Canonical Request 无损映射为 Codex Responses JSON。
+func encodeRequest(
+	request inference.Request,
+	effectiveModel string,
+	authKind codexauth.AuthKind,
+	profile requestProfile,
+) ([]byte, error) {
+	// Codex 没有对话中途的工具增删：新增的工具并入请求级 tools，见 inference.FoldToolChanges。
+	request = request.FoldToolChanges()
+	if err := rejectUnsupportedRequest(request, authKind); err != nil {
+		return nil, err
+	}
+	input, err := encodeMessages(request.Messages(), freeformIdentities(request))
+	if err != nil {
+		return nil, err
+	}
+	tools, err := encodeTools(request)
+	if err != nil {
+		return nil, err
+	}
+	toolChoice, err := encodeToolChoice(request)
+	if err != nil {
+		return nil, err
+	}
+	reasoning, err := encodeReasoning(request)
+	if err != nil {
+		return nil, err
+	}
+	text, err := encodeStructuredOutput(request)
+	if err != nil {
+		return nil, err
+	}
+	if verbosity, found := request.TextVerbosity(); found {
+		if text == nil {
+			text = &textControlDTO{}
+		}
+		text.Verbosity = string(verbosity)
+	}
+	text = profile.projectText(text)
+	store, _ := request.Store()
+	parallelToolCalls, specified := request.ParallelToolCalls()
+	if !specified {
+		parallelToolCalls = true
+	}
+	include := make([]string, 0, 1)
+	if request.IncludeEncryptedReasoning() {
+		include = append(include, "reasoning.encrypted_content")
+	}
+	input, topLevelTools, parallelToolCalls, reasoning, include :=
+		profile.projectRequest(
+			input,
+			tools,
+			parallelToolCalls,
+			reasoning,
+			include,
+		)
+	wireRequest := requestDTO{
+		Model:             effectiveModel,
+		Input:             input,
+		Tools:             topLevelTools,
+		ToolChoice:        toolChoice,
+		ParallelToolCalls: parallelToolCalls,
+		Reasoning:         reasoning,
+		Store:             store,
+		Stream:            true,
+		Include:           include,
+		ClientMetadata:    request.ClientMetadata(),
+		Text:              text,
+	}
+	if promptCacheKey, found := request.PromptCacheKey(); found {
+		wireRequest.PromptCacheKey = &promptCacheKey
+	}
+	payload, err := json.Marshal(wireRequest)
+	if err != nil {
+		return nil, ErrUnsupportedRequest
+	}
+	return payload, nil
+}
+
+// rejectUnsupportedRequest 在发送网络请求前拒绝不能无损表达的 Canonical 字段。
+func rejectUnsupportedRequest(
+	request inference.Request,
+	authKind codexauth.AuthKind,
+) error {
+	allowCrossProtocolProjection := isCrossProtocolClient(
+		request.ClientProtocol(),
+	)
+	// Codex Responses 线协议没有输出上限字段，无法无损表达。
+	//
+	// 但 Anthropic Messages 的 max_tokens 是**必填**：claude 客户端没有「不发」
+	// 这个选项。继续按不支持拒绝，等于 claude 客户端永远无法使用 codex 账号——
+	// 整条跨协议路径不可用，代价远大于丢一个上限。
+	//
+	// 因此沿用 f162be1 的既定处理：目标协议无法表达的字段，跨协议时静默丢弃、
+	// 不拒绝客户端。同协议（codex 客户端）仍然拒绝——它本可以不发。
+	if request.MaxOutputTokens() != 0 && !allowCrossProtocolProjection {
+		return unsupported("max_output_tokens")
+	}
+	// Codex Responses 线协议没有采样参数和停止序列，无法无损表达。Claude、Chat、
+	// Gemini 客户端经常默认携带 temperature/top_p/top_k/stop，继续按不支持拒绝
+	// 等于这些客户端无法使用 codex 账号；与 Node 一致，跨协议时静默丢弃，同协议
+	// codex 客户端仍然拒绝——它本可以不发。
+	if _, found := request.Temperature(); found && !allowCrossProtocolProjection {
+		return unsupported("temperature")
+	}
+	if _, found := request.TopP(); found && !allowCrossProtocolProjection {
+		return unsupported("top_p")
+	}
+	if _, found := request.TopK(); found && !allowCrossProtocolProjection {
+		return unsupported("top_k")
+	}
+	if len(request.StopSequences()) != 0 && !allowCrossProtocolProjection {
+		return unsupported("stop_sequences")
+	}
+	// user_id 只用于客户端侧会话/计费关联，Codex Responses 没有等价字段。
+	// Claude、Chat 两个跨协议入口明确允许丢弃；未知或 Codex 同协议入口拒绝，
+	// 防止未来新增客户端协议未经审查就获得有损投影。
+	if _, found := request.UserID(); found && !allowCrossProtocolProjection {
+		return unsupported("user_id")
+	}
+	// Claude cache_control 只影响 Anthropic 的提示缓存布局，Codex Responses
+	// 没有等价断点；跨协议时保留正文、丢弃控制标记。
+	if len(request.PromptCacheBreakpoints()) != 0 &&
+		!allowCrossProtocolProjection {
+		return unsupported("prompt_cache_breakpoints")
+	}
+	// context_management 是 Claude 客户端控制字段，Codex 上游不能执行；跨协议
+	// 时由本 Adapter 明确丢弃，原生 Codex 请求仍保持严格边界。
+	if _, found := request.ContextManagement(); found && !allowCrossProtocolProjection {
+		return unsupported("context_management")
+	}
+	if _, found := request.Truncation(); found {
+		return unsupported("truncation")
+	}
+	if _, found := request.Continuation(); found {
+		return unsupported("continuation")
+	}
+	if store, found := request.Store(); found &&
+		store &&
+		authKind == codexauth.AuthKindOAuth {
+		return unsupported("store")
+	}
+	return nil
+}
+
+// isCrossProtocolClient 只识别已经完成字段投影审查的客户端协议。
+//
+// Gemini 入口同样是跨协议：它的请求被翻译成 Canonical 后再编码为 Responses，
+// 因此与 Anthropic / Chat Completions 走同一套字段投影规则。漏掉它会让 codex 上游
+// 把 Gemini 请求当成同协议客户端，套用更严格的字段校验，属于静默行为差异。
+func isCrossProtocolClient(protocol inference.ClientProtocolID) bool {
+	switch protocol {
+	case inference.ClientProtocolAnthropicMessages,
+		inference.ClientProtocolOpenAIChatCompletions,
+		inference.ClientProtocolGeminiGenerateContent:
+		return true
+	default:
+		return false
+	}
+}
+
+// encodeMessages 保持消息和内容块顺序，并在 Responses 顶层拆开工具与 reasoning 项。
+//
+// freeform 是请求中声明为 freeform 的工具身份；它们的调用与结果还原为 custom 项。
+func encodeMessages(
+	messages []inference.Message,
+	freeform map[inference.ToolIdentity]struct{},
+) ([]inputItemDTO, error) {
+	items := make([]inputItemDTO, 0, len(messages))
+	// customCallIDs 记录已编码为 custom_tool_call 的调用，结果项据此选择输出类型。
+	customCallIDs := make(map[string]struct{})
+	for messageIndex, message := range messages {
+		encoded, err := encodeMessage(message, freeform, customCallIDs)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%w: messages[%d]",
+				err,
+				messageIndex,
+			)
+		}
+		items = append(items, encoded...)
+	}
+	if len(items) == 0 {
+		return nil, ErrUnsupportedRequest
+	}
+	return items, nil
+}
+
+// encodeMessage 把一个 Canonical 消息按内容联合类型拆成一个或多个输入项。
+func encodeMessage(
+	message inference.Message,
+	freeform map[inference.ToolIdentity]struct{},
+	customCallIDs map[string]struct{},
+) ([]inputItemDTO, error) {
+	if !message.IsValid() {
+		return nil, ErrUnsupportedRequest
+	}
+	contents := message.Contents()
+	items := make([]inputItemDTO, 0, len(contents))
+	buffered := make([]contentItemDTO, 0, len(contents))
+	flushMessage := func() {
+		if len(buffered) == 0 {
+			return
+		}
+		items = append(items, inputItemDTO{
+			Type:    "message",
+			Role:    encodeMessageRole(message.Role()),
+			Content: buffered,
+			Phase:   string(message.Phase()),
+		})
+		buffered = nil
+	}
+	for index := 0; index < len(contents); index++ {
+		switch content := contents[index].(type) {
+		case inference.TextContent:
+			buffered = append(
+				buffered,
+				encodeTextContent(message.Role(), content),
+			)
+		case inference.RefusalContent:
+			buffered = append(buffered, contentItemDTO{
+				Type:    "refusal",
+				Refusal: content.Refusal(),
+			})
+		case inference.ImageContent:
+			wireContent, err := encodeImageContent(content)
+			if err != nil {
+				return nil, err
+			}
+			buffered = append(buffered, wireContent)
+		case inference.DocumentContent:
+			wireContent, err := encodeDocumentContent(content)
+			if err != nil {
+				return nil, err
+			}
+			buffered = append(buffered, wireContent)
+		case inference.ToolCallContent:
+			if message.Phase() != "" {
+				return nil, unsupported("message.phase")
+			}
+			flushMessage()
+			// 调用自带 freeform 标记（历史工具可能已不在本次请求声明），或按本次声明推断。
+			if _, custom := freeform[content.Identity()]; custom || content.Freeform() {
+				call, err := encodeFreeformCall(content)
+				if err != nil {
+					return nil, err
+				}
+				customCallIDs[content.CallID()] = struct{}{}
+				items = append(items, call)
+				continue
+			}
+			items = append(items, inputItemDTO{
+				Type:      "function_call",
+				Name:      content.Name(),
+				Namespace: toolNamespace(content.Identity()),
+				Arguments: string(content.Arguments()),
+				CallID:    content.CallID(),
+			})
+		case inference.ToolResultContent:
+			flushMessage()
+			output, err := encodeToolResult(content)
+			if err != nil {
+				return nil, err
+			}
+			outputType := "function_call_output"
+			if _, custom := customCallIDs[content.CallID()]; custom {
+				outputType = "custom_tool_call_output"
+			}
+			items = append(items, inputItemDTO{
+				Type:   outputType,
+				CallID: content.CallID(),
+				Output: output,
+			})
+		case inference.ReasoningContent:
+			if message.Phase() != "" {
+				return nil, unsupported("message.phase")
+			}
+			flushMessage()
+			reasoning, consumed, err := encodeReasoningContents(contents[index:])
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, reasoning)
+			index += consumed - 1
+		default:
+			return nil, ErrUnsupportedRequest
+		}
+	}
+	flushMessage()
+	return items, nil
+}
+
+// encodeMessageRole 把 Canonical system 约束投影为 Codex 接受的 developer
+// 角色；真实 ChatGPT Codex 端点会明确拒绝 input 中的 system 消息。
+func encodeMessageRole(role inference.Role) string {
+	if role == inference.RoleSystem {
+		return string(inference.RoleDeveloper)
+	}
+	return string(role)
+}
+
+// encodeTextContent 根据历史角色选择 input_text 或 output_text。
+func encodeTextContent(
+	role inference.Role,
+	content inference.TextContent,
+) contentItemDTO {
+	contentType := "input_text"
+	if role == inference.RoleAssistant {
+		contentType = "output_text"
+	}
+	return contentItemDTO{
+		Type: contentType,
+		Text: content.Text(),
+	}
+}
+
+// encodeReasoningContents 合并相邻摘要和加密连续性。
+func encodeReasoningContents(
+	contents []inference.Content,
+) (inputItemDTO, int, error) {
+	item := inputItemDTO{Type: "reasoning"}
+	summary := make([]reasoningSummaryDTO, 0)
+	item.Summary = &summary
+	consumed := 0
+	for _, candidate := range contents {
+		content, ok := candidate.(inference.ReasoningContent)
+		if !ok {
+			break
+		}
+		consumed++
+		switch content.ReasoningKind() {
+		case inference.ReasoningSummary:
+			summary = append(summary, reasoningSummaryDTO{
+				Type: "summary_text",
+				Text: content.Text(),
+			})
+		case inference.ReasoningEncrypted:
+			if item.EncryptedContent != "" {
+				return inputItemDTO{}, 0, unsupported(
+					"reasoning.encrypted_content",
+				)
+			}
+			item.EncryptedContent = content.EncryptedData()
+		case inference.ReasoningThinking:
+			return inputItemDTO{}, 0, unsupported("reasoning.thinking")
+		case inference.ReasoningRedacted:
+			return inputItemDTO{}, 0, unsupported("reasoning.redacted_thinking")
+		default:
+			return inputItemDTO{}, 0, ErrUnsupportedRequest
+		}
+	}
+	return item, consumed, nil
+}
+
+// encodeToolResult 保留文本、图片和文档结果；错误标记没有 Codex 原生字段。
+func encodeToolResult(content inference.ToolResultContent) (any, error) {
+	if content.IsError() {
+		return nil, unsupported("tool_result.is_error")
+	}
+	contents := content.Contents()
+	if len(contents) == 0 {
+		return "", nil
+	}
+	if len(contents) == 1 {
+		if text, ok := contents[0].(inference.TextContent); ok {
+			return text.Text(), nil
+		}
+	}
+	encoded := make([]contentItemDTO, len(contents))
+	for index, nested := range contents {
+		var (
+			wireContent contentItemDTO
+			err         error
+		)
+		switch typed := nested.(type) {
+		case inference.TextContent:
+			wireContent = contentItemDTO{
+				Type: "input_text",
+				Text: typed.Text(),
+			}
+		case inference.ImageContent:
+			wireContent, err = encodeImageContent(typed)
+		case inference.DocumentContent:
+			wireContent, err = encodeDocumentContent(typed)
+		default:
+			err = ErrUnsupportedRequest
+		}
+		if err != nil {
+			return nil, err
+		}
+		encoded[index] = wireContent
+	}
+	return encoded, nil
+}
+
+// encodeImageContent 编码 file_id、URL 或 Base64 data URL。
+func encodeImageContent(
+	content inference.ImageContent,
+) (contentItemDTO, error) {
+	encoded := contentItemDTO{
+		Type:   "input_image",
+		Detail: string(content.Detail()),
+	}
+	source := content.Source()
+	switch source.Kind() {
+	case inference.MediaSourceFileID:
+		encoded.FileID = source.Value()
+	case inference.MediaSourceURL:
+		encoded.ImageURL = source.Value()
+	case inference.MediaSourceBase64:
+		encoded.ImageURL = dataURL(source.MediaType(), source.Value())
+	default:
+		return contentItemDTO{}, unsupported("image.source")
+	}
+	return encoded, nil
+}
+
+// encodeDocumentContent 编码文件引用、远程 URL、Base64 或文本 data URL。
+func encodeDocumentContent(
+	content inference.DocumentContent,
+) (contentItemDTO, error) {
+	encoded := contentItemDTO{
+		Type:     "input_file",
+		Detail:   string(content.Detail()),
+		Filename: content.Title(),
+	}
+	source := content.Source()
+	switch source.Kind() {
+	case inference.MediaSourceFileID:
+		encoded.FileID = source.Value()
+	case inference.MediaSourceURL:
+		encoded.FileURL = source.Value()
+	case inference.MediaSourceBase64:
+		encoded.FileData = dataURL(source.MediaType(), source.Value())
+	case inference.MediaSourceText:
+		encoded.FileData = dataURL(
+			source.MediaType(),
+			base64.StdEncoding.EncodeToString([]byte(source.Value())),
+		)
+	default:
+		return contentItemDTO{}, unsupported("document.source")
+	}
+	return encoded, nil
+}
+
+// dataURL 生成不记录原始内容的标准 Base64 data URL。
+func dataURL(mediaType string, data string) string {
+	return "data:" + mediaType + ";base64," + data
+}
+
+// encodeTools 按首次出现顺序编码普通函数、namespace 和服务器侧搜索工具。
+func encodeTools(
+	request inference.Request,
+) ([]json.RawMessage, error) {
+	definitions := request.Tools()
+	items := make([]any, 0, len(definitions)+1)
+	namespaceIndexes := make(map[string]int)
+	for _, definition := range definitions {
+		var wireTool any
+		var err error
+		if format, freeform := definition.Freeform(); freeform {
+			wireTool, err = encodeFreeformTool(definition, format)
+		} else {
+			wireTool, err = encodeFunctionTool(definition)
+		}
+		if err != nil {
+			return nil, err
+		}
+		namespace, namespaced := definition.Namespace()
+		if !namespaced {
+			items = append(items, wireTool)
+			continue
+		}
+		itemIndex, found := namespaceIndexes[namespace]
+		if !found {
+			itemIndex = len(items)
+			namespaceIndexes[namespace] = itemIndex
+			items = append(items, &namespaceToolDTO{
+				Type:        "namespace",
+				Name:        namespace,
+				Description: definition.NamespaceDescription(),
+			})
+		}
+		group, ok := items[itemIndex].(*namespaceToolDTO)
+		if !ok || group.Description != definition.NamespaceDescription() {
+			return nil, unsupported("tools.namespace.description")
+		}
+		group.Tools = append(group.Tools, wireTool)
+	}
+	if webSearch, found := request.WebSearch(); found {
+		items = append(items, encodeWebSearchTool(webSearch))
+	}
+	tools := make([]json.RawMessage, len(items))
+	for index, item := range items {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			return nil, ErrUnsupportedRequest
+		}
+		tools[index] = encoded
+	}
+	return tools, nil
+}
+
+// encodeFunctionTool 编码一个函数工具并拒绝 Codex 无法表达的 Claude 执行提示。
+func encodeFunctionTool(definition inference.ToolDefinition) (toolDTO, error) {
+	if len(definition.AllowedCallers()) != 0 {
+		return toolDTO{}, unsupported("tools.allowed_callers")
+	}
+	if _, found := definition.EagerInputStreaming(); found {
+		return toolDTO{}, unsupported("tools.eager_input_streaming")
+	}
+	if len(definition.InputExamples()) != 0 {
+		return toolDTO{}, unsupported("tools.input_examples")
+	}
+	strict, _ := definition.Strict()
+	deferLoading, deferSpecified := definition.DeferLoading()
+	var deferValue *bool
+	if deferSpecified {
+		deferValue = &deferLoading
+	}
+	return toolDTO{
+		Type:         "function",
+		Name:         definition.Name(),
+		Description:  definition.Description(),
+		Strict:       strict,
+		DeferLoading: deferValue,
+		Parameters:   definition.InputSchema(),
+	}, nil
+}
+
+// encodeWebSearchTool 保留 Codex Responses 可以直接表达的搜索配置。
+func encodeWebSearchTool(tool inference.WebSearchTool) webSearchToolDTO {
+	wire := webSearchToolDTO{Type: "web_search"}
+	if externalWebAccess, specified := tool.ExternalWebAccess(); specified {
+		wire.ExternalWebAccess = &externalWebAccess
+	}
+	if allowedDomains := tool.AllowedDomains(); len(allowedDomains) != 0 {
+		wire.Filters = &webSearchFiltersDTO{AllowedDomains: allowedDomains}
+	}
+	if location, found := tool.Location(); found {
+		wire.UserLocation = &webSearchUserLocationDTO{
+			Type:     "approximate",
+			Country:  location.Country(),
+			Region:   location.Region(),
+			City:     location.City(),
+			Timezone: location.Timezone(),
+		}
+	}
+	return wire
+}
+
+// encodeToolChoice 映射默认 auto、字符串模式或命名 function。
+func encodeToolChoice(request inference.Request) (any, error) {
+	choice, found := request.ToolChoice()
+	if !found {
+		return "auto", nil
+	}
+	switch choice.Mode() {
+	case inference.ToolChoiceAuto,
+		inference.ToolChoiceNone,
+		inference.ToolChoiceRequired:
+		return string(choice.Mode()), nil
+	case inference.ToolChoiceNamed:
+		return namedToolChoiceDTO{
+			Type:      "function",
+			Name:      choice.Name(),
+			Namespace: toolNamespace(choice.Identity()),
+		}, nil
+	default:
+		return nil, ErrUnsupportedRequest
+	}
+}
+
+// toolNamespace 返回可直接用于 omitempty 的 namespace 字符串。
+func toolNamespace(identity inference.ToolIdentity) string {
+	namespace, _ := identity.Namespace()
+	return namespace
+}
+
+// encodeReasoning 把任意 Canonical reasoning 模式投影为 Codex effort。
+//
+// 此前只接受 effort 模式，其余一律 unsupported，导致 claude 客户端带 thinking
+// 调 codex 账号时整个请求失败——而真实 Claude Code 每次都发
+// thinking:{type:"adaptive"}，即这条路径此前完全不可用。budget 与 adaptive 都
+// 携带抽象 effort，投影不需要猜，见 projectReasoningEffort。
+func encodeReasoning(request inference.Request) (*reasoningDTO, error) {
+	config, found := request.Reasoning()
+	if !found {
+		return nil, nil
+	}
+	effort := projectReasoningEffort(config)
+	reasoningContext, _ := request.ReasoningContext()
+	if effort == "" && config.Summary() == "" && reasoningContext == "" {
+		return nil, nil
+	}
+	return &reasoningDTO{
+		Effort:  string(effort),
+		Summary: string(config.Summary()),
+		Context: string(reasoningContext),
+	}, nil
+}
+
+// encodeStructuredOutput 生成 Responses json_schema 文本控制。
+func encodeStructuredOutput(
+	request inference.Request,
+) (*textControlDTO, error) {
+	output, found := request.StructuredOutput()
+	if !found {
+		return nil, nil
+	}
+	return &textControlDTO{
+		Format: &textFormatDTO{
+			Type:        "json_schema",
+			Name:        output.Name(),
+			Description: output.Description(),
+			Schema:      output.Schema(),
+			Strict:      output.Strict(),
+		},
+	}, nil
+}
+
+// unsupported 返回只含稳定字段名、不含请求内容的错误。
+func unsupported(field string) error {
+	return fmt.Errorf("%w: %s", ErrUnsupportedRequest, field)
+}

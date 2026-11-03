@@ -1,0 +1,243 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 2,
+  "supportedProtocolVersions": {
+    "min": 2,
+    "max": 2
+  },
+  "sdkVersion": "0.1.0",
+  "gatewayRequest": {
+    "frozenTopLevel": [
+      "session_id",
+      "sessionId",
+      "session",
+      "conversation_id",
+      "thread_id",
+      "previous_response_id",
+      "response_id",
+      "store",
+      "prompt_cache_key"
+    ],
+    "frozenMetadata": [
+      "session_id",
+      "conversation_id",
+      "thread_id"
+    ]
+  },
+  "limits": {
+    "metadataBytes": 65536,
+    "payloadBytes": 4194304,
+    "bufferedBytes": 8454144,
+    "inflightCalls": 64,
+    "parkedCalls": 1024,
+    "invokeTimeoutMs": 10000,
+    "handshakeTimeoutMs": 2000,
+    "drainTimeoutMs": 10000,
+    "packageBytes": 134217728,
+    "packageMetadataBytes": 1048576,
+    "packageFiles": 1024
+  },
+  "runtimeDependencies": [
+    {
+      "name": "@deepseek-ai/cordis",
+      "version": "4.0.4",
+      "integrity": "sha512-obgyxqWAmFn3Re8kvsuUnyW+ihrz6eJCnJO4fh1cQzDtmPYz/zzVeUkH9R94I0OwSVOocK67Kgakm04j/oQXzg=="
+    },
+    {
+      "name": "@deepseek-ai/cosmokit",
+      "version": "1.8.5",
+      "integrity": "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="
+    },
+    {
+      "name": "@standard-schema/spec",
+      "version": "1.1.0",
+      "integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="
+    },
+    {
+      "name": "ajv",
+      "version": "8.20.0",
+      "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="
+    },
+    {
+      "name": "semver",
+      "version": "7.8.5",
+      "integrity": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="
+    }
+  ],
+  "hostServices": [
+    {
+      "name": "aih",
+      "version": "1.0.0"
+    }
+  ],
+  "messageKinds": [
+    "hello",
+    "hello.result",
+    "call",
+    "result",
+    "error",
+    "cancel"
+  ],
+  "errorCodes": [
+    "plugin_rpc_invalid",
+    "plugin_rpc_incompatible",
+    "plugin_rpc_unauthorized",
+    "plugin_rpc_metadata_limit",
+    "plugin_rpc_payload_limit",
+    "plugin_rpc_buffer_limit",
+    "plugin_rpc_inflight_limit",
+    "plugin_rpc_timeout",
+    "plugin_rpc_cancelled",
+    "plugin_rpc_closed",
+    "plugin_rpc_method_unknown",
+    "plugin_rpc_parent_unknown",
+    "plugin_next_called_twice",
+    "plugin_contribution_unknown",
+    "plugin_contribution_unavailable",
+    "plugin_generation_unknown"
+  ],
+  "capabilities": [
+    {
+      "id": "observe",
+      "version": 1,
+      "mode": "observer"
+    },
+    {
+      "id": "command",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "gateway.request",
+      "version": 1,
+      "mode": "waterfall"
+    },
+    {
+      "id": "gateway.route",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "gateway.account",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "gateway.attempt",
+      "version": 1,
+      "mode": "middleware"
+    },
+    {
+      "id": "model.catalog",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "pricing.catalog",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "pricing.quote",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "model.metadata",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "quota.probe",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "usage.scan",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "provider.descriptor",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "account.source",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "account.login",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "account.refresh",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "account.materialize",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "chat.prepare",
+      "version": 1,
+      "mode": "waterfall"
+    },
+    {
+      "id": "chat.beforeCommand",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "tool",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "approval",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "ui",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "provider",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "upstream",
+      "version": 1,
+      "mode": "terminal"
+    }
+  ],
+  "wireTypes": {
+    "Fault": {
+      "code": "string",
+      "message": "string"
+    },
+    "ProtocolRange": {
+      "min": "uint32",
+      "max": "uint32"
+    },
+    "Message": {
+      "kind": "string",
+      "protocolVersion": "uint32",
+      "id": "string",
+      "method?": "string",
+      "token?": "string",
+      "parent?": "string",
+      "deadline?": "int64",
+      "value?": "json",
+      "supported?": "ProtocolRange",
+      "error?": "Fault"
+    }
+  }
+}

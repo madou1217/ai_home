@@ -1,0 +1,77 @@
+.managed-app-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-3);
+  min-width: 280px;
+}
+
+.managed-app-account-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  min-width: 0;
+}
+
+.managed-app-account-name-text {
+  min-width: 0;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managed-app-account-muted {
+  margin-left: var(--hos-space-2);
+  color: var(--color-faint);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+}
+
+.managed-app-account-default-icon {
+  color: var(--color-warning);
+}
+
+/* 运行中：真实运行态（runningAccountPids 非空）→ 呼吸 LED + 等宽大写读数 */
+.managed-app-account-running-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+}
+
+.managed-app-account-runtime,
+.managed-app-account-runtime-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.managed-app-account-runtime-actions {
+  display: none;
+  gap: var(--hos-space-0-5);
+}
+
+.managed-app-account-row.is-running:hover .managed-app-account-running-label,
+.managed-app-account-row.is-running:focus-within .managed-app-account-running-label {
+  display: none;
+}
+
+.managed-app-account-row.is-running:hover .managed-app-account-runtime-actions,
+.managed-app-account-row.is-running:focus-within .managed-app-account-runtime-actions {
+  display: inline-flex;
+}
+
+@media (hover: none) {
+  .managed-app-account-row.is-running .managed-app-account-running-label {
+    display: none;
+  }
+
+  .managed-app-account-row.is-running .managed-app-account-runtime-actions {
+    display: inline-flex;
+  }
+}

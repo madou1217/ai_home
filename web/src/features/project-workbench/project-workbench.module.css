@@ -1,0 +1,643 @@
+.workbench {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--hos-bg);
+}
+
+.tabBar {
+  z-index: 2;
+  display: flex;
+  min-width: 0;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--hos-border);
+  background: var(--hos-surface-raised);
+}
+
+.tabScroller {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabScroller::-webkit-scrollbar { display: none; }
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  min-width: 84px;
+  max-width: 180px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hos-space-2);
+  padding: 0 var(--hos-space-3);
+  border: 0;
+  border-right: 1px solid var(--hos-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm);
+  letter-spacing: 0.02em;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.tab:hover { background: var(--color-overlay); color: var(--color-text); }
+.tabActive {
+  background: var(--hos-bg);
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+  text-shadow: var(--hud-text-glow-soft);
+}
+.tabActive::after {
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  left: 10px;
+  height: 2px;
+  border-radius: 0;
+  background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
+  /* 选中下划线从左侧长出来：切换标签时「跑到哪边」是连续的。 */
+  transform-origin: left center;
+  animation: tabUnderlineGrow var(--motion-base) var(--ease-emphasized);
+  content: '';
+}
+.tabLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tabClose {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  color: var(--color-faint);
+  font-size: var(--hos-text-micro);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.tabClose:hover { background: var(--color-accent-soft); color: var(--color-accent); }
+.addButton {
+  display: inline-flex;
+  width: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-left: 1px solid var(--hos-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.addButton:hover { background: var(--color-accent-soft); color: var(--color-accent); }
+
+.workspaceStage {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+.toolRegion,
+.chatRegion {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.chatRegion { flex-direction: column; }
+/* 工具区 ↔ 会话区互斥显隐（display 切换），显示方淡入一次，不做位移（同屏两栏不能滑动）。 */
+.regionVisible { display: flex; animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards; }
+.regionHidden {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.chatRegion > * { min-width: 0; min-height: 0; }
+
+.panelHost {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.panel {
+  position: absolute;
+  inset: 0;
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* 切标签只是「显示另一块已挂载面板」：淡入一次表达切换，不重挂面板（终端会话不中断）。 */
+.panelActive {
+  display: flex;
+  flex-direction: column;
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+@keyframes tabUnderlineGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.panel > :global(.ant-empty) { margin: auto; }
+.panel > :global([class*='shellTerminalPanel']) {
+  width: 100%;
+  height: 100% !important;
+  flex: 1;
+  border-top: 0;
+}
+
+.browserPanel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--hos-surface-muted);
+}
+.browserToolbar {
+  display: flex;
+  min-width: 0;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  gap: var(--hos-space-1);
+  padding: 0 var(--hos-space-2);
+  border-bottom: 1px solid var(--hos-border);
+  background: var(--hos-surface-raised);
+}
+.browserAddress { min-width: 120px; flex: 1; }
+.browserInlineError {
+  margin: var(--hos-space-2);
+  padding: 6px 10px;
+  border: 1px solid var(--color-danger, #d66);
+  color: var(--color-danger, #d66);
+  background: var(--color-surface-raised);
+  font-size: var(--hos-text-body-sm);
+}
+.browserStage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  justify-content: center;
+  padding: var(--hos-space-3);
+  overflow: auto;
+}
+.browserFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  border-radius: 0;
+  /* 内嵌网页的画布：浏览器默认页面底为白，刻意不随主题翻转。 */
+  background: var(--hos-white);
+}
+.browserFrameMobile { width: min(390px, 100%); }
+
+/* 文件面板：整栏文件树；点文件后预览全栏覆盖（树保持挂载，展开态不丢）。 */
+.filesPanel {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+.filesTree {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+/* 标签页/移动端宿主的兜底标题栏（三栏模式下不渲染，刷新入口在栏工具行）。 */
+.filesTreeHeader {
+  display: flex;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--hos-space-2) 0 var(--hos-space-3);
+  border-bottom: 1px solid var(--hos-border);
+}
+.filesTreeBody {
+  min-height: 0;
+  flex: 1;
+  padding: var(--hos-space-2) var(--hos-space-3);
+  overflow: auto;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm);
+}
+.filesCentered { display: flex; flex: 1; align-items: center; justify-content: center; }
+.filesPreviewOverlay {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--hos-surface-raised);
+  inset: 0;
+  /* 点文件后预览整栏盖住文件树：淡入一次，不做位移（覆盖层滑动会露出底下的树）。 */
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+.filesPreviewBar {
+  display: flex;
+  height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  gap: var(--hos-space-1);
+  padding: 0 var(--hos-space-2);
+  border-bottom: 1px solid var(--hos-border);
+}
+.filesPreviewName {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  color: var(--hos-muted);
+  font-size: var(--hos-text-caption);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesPreviewOverlay > :global([class*='filePreview']) { min-width: 0; min-height: 0; flex: 1; }
+.filesMobilePreview { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.filesMobilePreviewHeader {
+  display: flex;
+  height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+  padding: 0 var(--hos-space-2-5);
+  border-bottom: 1px solid var(--hos-border);
+}
+.filesMobilePreviewTitle { min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: var(--hos-text-body-sm); font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+
+.reviewPanel { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: minmax(230px, 30%) minmax(0, 1fr); overflow: hidden; }
+.reviewSidebar { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid var(--hos-border); overflow: hidden; }
+/* 标签页/移动端宿主的兜底标题栏（三栏模式下不渲染，分支 chip 在栏工具行）。 */
+.reviewHeader { display: flex; height: 36px; flex: 0 0 36px; align-items: center; justify-content: space-between; padding: 0 var(--hos-space-2) 0 var(--hos-space-3); border-bottom: 1px solid var(--hos-border); }
+.reviewBranch { display: flex; min-width: 0; align-items: center; gap: var(--hos-space-2); /* 归级:原 7px */ }
+.reviewBranch strong { overflow: hidden; font-family: var(--font-mono); color: var(--color-accent); text-overflow: ellipsis; white-space: nowrap; }
+.reviewUpstream { padding: var(--hos-space-1-5) var(--hos-space-3); border-bottom: 1px solid var(--hos-border); color: var(--color-faint); font-family: var(--font-mono); font-size: var(--hos-text-caption); }
+.reviewGroups { min-height: 0; flex: 1; overflow: auto; }
+.reviewGroupTitle { display: flex; align-items: center; justify-content: space-between; padding: var(--hos-space-2) var(--hos-space-3) var(--hos-space-1); color: var(--color-faint); font-family: var(--font-mono); font-size: var(--hos-text-micro); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
+.reviewFile { display: flex; width: 100%; min-width: 0; align-items: center; gap: var(--hos-space-2); padding: var(--hos-space-1-5) var(--hos-space-2-5) var(--hos-space-1-5) var(--hos-space-3-5); /* 归级:原 9px */ border: 0; background: transparent; color: var(--color-muted); cursor: pointer; text-align: left; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard); }
+.reviewFile:hover { background: var(--color-overlay); }
+/* HUD 选中：accent 弱底 + 青色内发丝框（不用竖条） */
+.reviewFileActive { background: var(--color-accent-soft); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent); }
+.reviewFile > span:nth-child(2) { min-width: 0; flex: 1; overflow: hidden; font-family: var(--hos-mobile-mono); font-size: var(--hos-text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.diffPane { display: flex; min-width: 0; min-height: 0; flex-direction: column; align-items: stretch; overflow: hidden; background: var(--color-surface-sunken); color: var(--color-text); }
+/* 未选文件的空态回到常规表面色。 */
+.diffPaneEmpty { background: var(--hos-surface-raised); color: inherit; }
+.diffPane > :global(.ant-empty), .diffPane > :global(.ant-spin) { margin: auto; }
+.diffHeader { display: flex; min-width: 0; height: 42px; flex: 0 0 42px; align-items: center; gap: var(--hos-space-2); padding: 0 var(--hos-space-3); border-bottom: 1px solid var(--color-border); overflow: hidden; font-family: var(--hos-mobile-mono); font-size: var(--hos-text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.diffContent { min-width: max-content; min-height: 0; flex: 1; margin: 0; padding: var(--hos-space-3) var(--hos-space-4) var(--hos-space-10); overflow: auto; font-family: var(--hos-mobile-mono); font-size: var(--hos-text-caption); line-height: 1.65; tab-size: 4; }
+.reviewMobileDiff { display: flex; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
+.reviewMobileDiff > .diffPane { display: flex; flex: 1; }
+
+@media (max-width: 767px) {
+  .tabBar { height: 40px; flex-basis: 40px; }
+  .tab { min-width: 76px; padding: 0 var(--hos-space-2-5); /* 归级:原 9px */ font-size: var(--hos-text-caption); }
+  .browserToolbar { height: auto; min-height: 36px; flex-basis: auto; flex-wrap: wrap; }
+  .browserAddress { order: 2; flex-basis: calc(100% - 52px); }
+  .browserStage { padding: 0; }
+  .browserFrame { border-radius: 0; }
+  .reviewPanel { display: flex; }
+  .reviewSidebar { width: 100%; border-right: 0; }
+  .diffPane { display: none; }
+}
+
+/* ── PC 三栏同屏布局（>= 768px）：左 文件/变更 · 中 会话 · 右 终端/变更/浏览器 ── */
+.columnsLayout {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.columnSide,
+.columnCenter {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.columnSide { background: var(--hos-surface-raised); }
+.columnCenter { background: var(--hos-bg); }
+.columnCenter > * { min-width: 0; min-height: 0; }
+
+/* 分隔条：6px 命中区 + 居中 1px 功能分隔线，悬停/拖动时仅 1px 细线高亮（禁大块强调）。 */
+.columnDivider {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+.columnDivider::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--hos-border);
+  content: '';
+  transition: background var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+.columnDivider:hover::after,
+.columnDivider:active::after {
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
+}
+
+/* 栏工具行（36px）：左侧 segmented 胶囊 tab，右侧内联当前面板动作区。 */
+.columnToolbar {
+  display: flex;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2);
+  padding: 0 var(--hos-space-2);
+  border-bottom: 1px solid var(--hos-border);
+}
+.columnTabs {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hos-space-0-5);
+  padding: var(--hos-space-0-5);
+  border: 1px solid var(--hos-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+}
+.columnTab {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  padding: 0 var(--hos-space-2-5);
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+.columnTab:hover { color: var(--color-accent); }
+/* HUD 分段选中：青色描边 + 弱底 + 文字辉光 */
+.columnTabActive {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+.columnToolbarActions {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--hos-space-1);
+}
+/* 分支等元信息 chip：caption 小胶囊，非大色块状态 Tag。 */
+.columnToolbarChip {
+  display: inline-flex;
+  height: 22px;
+  max-width: 140px;
+  align-items: center;
+  gap: var(--hos-space-1);
+  padding: 0 var(--hos-space-2);
+  border: 1px solid var(--hos-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  color: var(--hos-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: 500;
+}
+.columnToolbarChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.columnBody {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.columnBody > :global(.ant-empty) { margin: auto; }
+.columnPane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* 与标签页宿主同语义：切栏内页签只显示已挂载的另一块，淡入一次表达切换。 */
+.columnPaneActive {
+  display: flex;
+  flex-direction: column;
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+.columnPane > :global([class*='shellTerminalPanel']) {
+  width: 100%;
+  height: 100% !important;
+  flex: 1;
+  border-top: 0;
+}
+/* 终端嵌入栏内（compactChrome）：tab 条压缩为 32px 紧凑行，终端区充满剩余空间。 */
+.columnPane > :global([class*='shellTerminalPanel'][data-compact='true'] [class*='shellTerminalHeader']) {
+  height: 32px;
+  padding: 0 var(--hos-space-2);
+}
+/* 终端重开空态：columnBody 是普通块容器（非 flex），flex:1 不生效导致按钮贴顶；
+   改为绝对填充 + 双轴居中，让唯一的「打开终端」动作落在栏中央。 */
+.columnReopen { position: absolute; display: flex; align-items: center; justify-content: center; inset: 0; }
+/* 空态在 pane 内垂直居中（与 columnBody 直挂 Empty 的行为一致）。 */
+.columnPane > :global(.ant-empty) { margin: auto; }
+
+/* ── 栏可见性降级（窄容器）：栏保持挂载，只切换显隐/覆盖层，终端 PTY 不回收 ── */
+/* 策略隐藏：脱离网格但保持挂载（display:none 的 grid 子项不占轨道）。 */
+.columnHidden { display: none; }
+/* 显式重新打开：absolute 覆盖层，不占网格宽度；宽回阈值以上自动复位回网格。 */
+.columnOverlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: 85%;
+  box-shadow: var(--elevation-3);
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+.columnOverlayLeft { left: 0; border-right: 1px solid var(--hos-border); }
+.columnOverlayRight { right: 0; border-left: 1px solid var(--hos-border); }
+
+/* 栏被隐藏时贴边的紧凑展开入口（图标按钮，非状态装饰条）。 */
+.columnExpand {
+  position: absolute;
+  top: var(--hos-space-12);
+  z-index: 31;
+  display: flex;
+  width: 20px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--hos-border);
+  background: var(--hos-surface-raised);
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: var(--hos-text-caption);
+}
+/* 栏收起后贴边入口是条件挂载，出现时淡入，不平移（贴边元素位移会露缝）。 */
+.columnExpand {
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+.columnExpand:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--hos-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+.columnExpandLeft {
+  left: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+.columnExpandRight {
+  right: 0;
+  border-right: 0;
+  border-radius: 0;
+}
+
+/* ── 栏折叠态：收成 36px 栏头条（chevron + 纵向当前面板标签），面板保持挂载仅 CSS 隐藏 ── */
+.columnCollapsed { align-items: center; }
+/* 1px 功能性分隔线仅作栏与中栏的控件分界，非状态装饰。 */
+.columnCollapsedLeft { border-right: 1px solid var(--hos-border); }
+.columnCollapsedRight { border-left: 1px solid var(--hos-border); }
+.columnCollapsed .columnToolbar,
+.columnCollapsed .columnBody { display: none; }
+.columnRail {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--hos-space-2);
+  padding: var(--hos-space-2) 0;
+  /* 折叠态是 display 切换（栏头条整块出现），淡入一次衔接收起/展开。 */
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+.columnRailButton {
+  display: flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: var(--hos-text-caption);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.columnRailButton:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.columnRailLabel {
+  overflow: hidden;
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  font-size: var(--hos-text-caption);
+  writing-mode: vertical-rl;
+}
+
+/* Sessions 页签：只读会话列表容器，行样式复用 chat.module.css 的 sessionItem。 */
+.sessionsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--hos-space-3);
+}
+
+/* 侧栏宽度有限：变更面板由左右分栏改为上下堆叠（纯 CSS 适配，不动组件）。 */
+.columnPane .reviewPanel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 42%) minmax(0, 1fr); }
+.columnPane .reviewSidebar { border-right: 0; border-bottom: 1px solid var(--hos-border); }
+
+/* 每轮检查点（Review 侧栏底部） */
+.checkpointSection {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border, rgba(127, 127, 127, 0.2));
+}
+
+.checkpointRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.checkpointRow > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpointHint {
+  margin: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.checkpointConfirm ul {
+  max-height: 240px;
+  overflow: auto;
+  padding-left: 18px;
+}

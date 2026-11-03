@@ -1,0 +1,117 @@
+/* ============================================================================
+ * 移动端应用外壳（mobile app shell）
+ *
+ * 背景：本站是「同一套 Umi/antd-pro 应用、同一批路由」跑桌面 + 移动双端。桌面用
+ * ProLayout 的 side 布局（顶栏 logo + 左侧菜单）；但在手机上，ProLayout 的全局顶栏
+ * （汉堡 + logo，56px）会和各页自己的移动导航（如 Chat 的 .mobileNav「会话」栏）
+ * 叠成**双层顶栏**，白白吃掉 ~110px 且导航语义重复——这是移动端最主要的破坏点。
+ *
+ * 方案（对齐 design.reuse-antd-pro.md 第 2 章「侧边菜单 → 底部 Tab」）：
+ *   1) 移动端隐藏 ProLayout 全局顶栏，把竖向空间还给页面；
+ *   2) 跨页导航改由固定「底部 TabBar」（MobileTabBar）承接；
+ *   3) 页面内容区补上安全区 + 底部 TabBar 高度的留白。
+ *
+ * 断点用 767.98px（antd md = 768，与页面里的 !screens.md 判定一致）。
+ * ==========================================================================*/
+
+:root {
+  /* 底部 TabBar 视觉高度 + iPhone 底部 home 条安全区 */
+  --mobile-tabbar-h: 52px;
+  --mobile-tabbar-safe: calc(var(--mobile-tabbar-h) + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 767.98px) {
+  /* 0) 字体：沿用全站唯一字体栈（--font-body，见 DESIGN.md §3），不在移动端另换字体族。
+   *    这里只补手感层：去点击灰块、抗锯齿。 */
+  body {
+    font-family: var(--font-body);
+    /* 惯性滚动 + 去点击灰块，手感层通用底子 */
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 输入框字号 ≥16px：iOS Safari 聚焦时 <16px 会自动放大整页，体验破坏点 */
+  input, textarea, select {
+    font-size: max(16px, 1em);
+  }
+
+  /* 1) 干掉 ProLayout 全局顶栏（汉堡 + logo），消除双层顶栏。
+   *    fixedHeader 让它 position:fixed 并给 content 预留了 header 占位，一并回收。
+   *    兜底：不带 pro 类的 ant-layout-header 也一并隐藏（某些版本头部只有 ant-layout-header）。 */
+  .ant-pro-layout .ant-pro-layout-header,
+  .ant-pro-layout .ant-layout-header.ant-pro-layout-header,
+  .ant-pro-layout > .ant-layout > .ant-layout-header,
+  .ant-pro-layout .ant-layout-header:empty {
+    display: none !important;
+  }
+  .ant-pro-layout .ant-pro-layout-content.ant-pro-layout-has-header {
+    margin-block-start: 0 !important;
+    /* fixedHeader 下 content 还用 padding-block-start 给不可见顶栏留了占位，
+       不清零会在页面顶部留出一条 ~56px 纯黑缺口（会话页 fullBleed 上方那条）。 */
+    padding-block-start: 0 !important;
+  }
+
+  /* 2) 普通滚动页（.unified-page-wrapper）：顶部补刘海安全区、底部给 TabBar 让位。
+   *    Chat 是 fullBleed 全高布局、且对话态会隐藏 TabBar，自己管理安全区/留白，不走这里。 */
+  .unified-page-wrapper {
+    /* 画布 = --color-bg（与 body 同色）。min-height 让画布铺满整屏，
+       内容较短时不会在页面中段露出另一种底色的断层。 */
+    background: var(--hos-mobile-bg, var(--color-bg));
+    min-height: 100dvh;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top);
+    /* !important:unified.css 移动端用简写 padding:0 16px 16px 会把 bottom 重置成 16px,
+       导致最后一张卡片被固定 TabBar 遮住。这里强制底部留出 TabBar 安全高度。 */
+    padding-bottom: var(--mobile-tabbar-safe) !important;
+  }
+
+  /* 3) 底部导航与沉浸态由移动端 HUD 外壳（web/src/mobile/shell）接管，页面内容区不再为旧 TabBar 让位。 */
+  html[data-mobile-hud] { --mobile-tabbar-safe: 0px; }
+
+  /* 4) 页头统一规范(全站 PageScaffold 一致):
+   *    - 标题 + 副标题占左侧,竖排(标题独占一行完整显示、副标题换行折行);
+   *    - 操作区(extra)固定在右上角、与标题同处顶部一行,不再换行掉到副标题下方。
+   *    antd PageHeader 默认在窄屏会把 heading 整体 wrap 导致 extra 掉行,这里强制
+   *    heading 不换行、左侧可伸缩、extra 贴顶右对齐。 */
+  /* antd 用 emotion 双类(.css-xxxx)给 heading 设了 flex-wrap:wrap,特异性高于单类,
+     必须 !important 提权,否则 extra 会换行掉到副标题下方。 */
+  .ant-page-header-heading {
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+    gap: var(--hos-space-3, 12px);
+  }
+  .ant-page-header-heading-left {
+    flex: 1 1 auto !important;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: var(--hos-space-0-5, 2px);
+    margin: 0;
+  }
+  .ant-page-header-heading-title {
+    max-width: 100%;
+  }
+  .ant-page-header-heading-sub-title {
+    margin-inline-start: 0;
+    white-space: normal;
+  }
+  .ant-page-header-heading-extra {
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    white-space: nowrap;
+    align-self: flex-start;
+  }
+  /* 操作区内的图标按钮组保持一致间距 */
+  .ant-page-header-heading-extra .m-header-actions { gap: var(--hos-space-2, 8px); }
+}
+
+/* ============================================================================
+ * 移动端按钮:颜色 / 切角 / 辉光完全交给 styles/hud.css(主按钮 = 半透明青底 +
+ * 青框 + 辉光;默认按钮 = surface-raised + 发丝线,悬停转青),这里只补触控手感:
+ * 方角(图标按钮等不走切角的形态)与字体族。不再在移动端压掉 HUD 辉光。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .ant-btn {
+    border-radius: var(--hos-radius-xs, 2px);
+    font-family: var(--font-body);
+  }
+}

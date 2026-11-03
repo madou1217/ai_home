@@ -1,0 +1,287 @@
+import type { Settings as LayoutSettings } from "@ant-design/pro-components";
+import type { ReactNode } from "react";
+import { history, Link } from "@umijs/max";
+import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
+import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
+import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
+import MobileApp from "@/mobile/MobileApp";
+import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
+import TranslationFloatingPanel from "@/features/translation/TranslationFloatingPanel";
+import ChatMiniWindow from "@/features/chat-runtime/ChatMiniWindow";
+import HudEffects from "@/components/hud/HudEffects";
+import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
+import { resolveHudNavCode } from "@/components/hud/hud-nav";
+import {
+  installCatalogCacheInvalidation,
+  resolveCatalogStorageKey
+} from "@/components/chat/account-model-catalog-cache";
+import { resolveActiveServer } from "@/services/api";
+
+// 账号模型目录的失效订阅装在**应用入口**：它必须在任何页面都生效 —— 用户是在
+// 账号模型页增删模型的，而 chat 的模型缓存要在那时就被清掉（2026-10-23 用户反馈
+// 「手动新增的模型 chat 里不显示」）。装在 chat 页入口不够：账号页没有订阅，
+// 装在懒加载组件里更不够（未挂载就收不到）。
+installCatalogCacheInvalidation((targetKey) => {
+  let serverId = "local";
+  try {
+    serverId = resolveActiveServer()?.serverId || "local";
+  } catch (_error) {
+    serverId = "local";
+  }
+  return resolveCatalogStorageKey(serverId, targetKey);
+});
+// Cyber HUD 字体随包分发（不依赖外网 CDN）：JetBrains Mono 数据字体 + Orbitron 展示字体。
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
+import "@fontsource/jetbrains-mono/700.css";
+import "@fontsource/orbitron/500.css";
+import "@fontsource/orbitron/700.css";
+import "@fontsource/orbitron/900.css";
+import {
+  SERVER_SETUP_HREF,
+  SERVER_SETUP_TARGET,
+  canRenderWorkspace,
+  resolveServerProfileGateState,
+  shouldRedirectToServerSetup,
+} from "@/services/server-profile-gate";
+import { listControlPlaneProfiles } from "@/services/control-plane-profiles";
+import { getActiveControlPlaneProfileId } from "@/services/control-plane-selection";
+import {
+  buildServerScopedSearch,
+  getExplicitServerProfileId,
+} from "@/services/server-selection-scope";
+import { resolveAppRoutePathname } from "@/services/app-navigation";
+import { DynamicWallpaperEngine } from "@/services/dynamic-wallpaper-engine";
+import logo from "../../assets/brand/ai-home-app-icon.png";
+import { WebTerminalManagerProvider } from '@/features/web-terminal/web-terminal-context';
+import GlobalWebTerminalHost from '@/features/web-terminal/GlobalWebTerminalHost';
+
+// Go 账号 Preview 使用独立的管理端口，不依赖正式 Node Server profile。
+// 该开关只由 scripts/go-accounts-preview.js 注入，正式 Web 构建保持原有门禁。
+const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
+
+// ProLayout 的外壳 token 直接写 CSS 变量：它们只进入 CSS 值、不参与 antd 的派生计算，
+// 因此能随 data-theme 运行时翻转，与 design-tokens.css 保持同一来源（见 web/DESIGN.md §7）。
+const LAYOUT_TOKEN = {
+  bgLayout: "transparent",
+  colorTextAppListIcon: "var(--color-muted)",
+  sider: {
+    colorMenuBackground: "var(--color-surface)",
+    colorMenuItemDivider: "var(--color-border)",
+    colorTextMenu: "var(--color-muted-strong)",
+    colorTextMenuSecondary: "var(--color-muted)",
+    colorTextMenuSelected: "var(--color-heading)",
+    colorTextMenuActive: "var(--color-heading)",
+    colorTextMenuItemHover: "var(--color-heading)",
+    colorTextMenuTitle: "var(--color-heading)",
+    colorBgMenuItemHover: "var(--color-overlay)",
+    colorBgMenuItemSelected: "var(--color-surface-muted)",
+    colorBgMenuItemCollapsedElevated: "var(--color-surface-raised)",
+    colorTextCollapsedButton: "var(--color-muted)",
+    colorTextCollapsedButtonHover: "var(--color-heading)",
+    colorBgCollapsedButton: "var(--color-surface)",
+  },
+  header: {
+    heightLayoutHeader: 60,
+    colorBgHeader: "var(--hud-panel-bg)",
+    colorHeaderTitle: "var(--color-heading)",
+    colorBgMenuItemHover: "var(--color-overlay)",
+    colorTextRightActionsItem: "var(--color-muted)",
+  },
+  pageContainer: {
+    colorBgPageContainer: "transparent",
+  },
+};
+
+function resolveCurrentServerProfileGate() {
+  return resolveServerProfileGateState(
+    listControlPlaneProfiles(),
+    getActiveControlPlaneProfileId(),
+  );
+}
+
+function enforceServerProfileGate() {
+  if (isGoAccountsPreview) return;
+  const explicitProfileId = getExplicitServerProfileId();
+  if (explicitProfileId) {
+    const scopedSearch = buildServerScopedSearch(history.location.search, explicitProfileId);
+    if (scopedSearch !== history.location.search) {
+      history.replace({
+        // Umi history expects an app-relative pathname. Passing the browser
+        // pathname (`/ui/...`) makes it prepend `base` again as `/ui/ui/...`.
+        pathname: resolveAppRoutePathname(history.location.pathname),
+        search: scopedSearch,
+      });
+      return;
+    }
+  }
+  const gate = resolveCurrentServerProfileGate();
+  if (shouldRedirectToServerSetup(gate, history.location.pathname, history.location.search)) {
+    history.replace({
+      pathname: SERVER_SETUP_TARGET,
+      search: explicitProfileId
+        ? buildServerScopedSearch('', explicitProfileId)
+        : '',
+    });
+  }
+}
+
+// settings 会被 layout() 原样展开进 ProLayout 的 props（见下方 `...initialState?.settings`），
+// 所以它还可以带 siderWidth 这类 ProLayout prop——它不属于 ProSettings，但确实生效。
+type AppLayoutSettings = Partial<LayoutSettings> & { siderWidth?: number };
+
+export async function getInitialState(): Promise<{
+  settings?: AppLayoutSettings;
+}> {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/ui/sw.js').catch(() => {});
+    });
+  }
+  // 启动时恢复用户保存的动态壁纸（含色彩萃取的强调色光晕），无保存记录时静默跳过。
+  const savedWallpaper = DynamicWallpaperEngine.getSavedWallpaper();
+  if (savedWallpaper) DynamicWallpaperEngine.applyWallpaper(savedWallpaper);
+  return {
+    settings: {
+      // mix：通栏 HUD 顶栏（品牌 / 实时遥测 / CRT·音效开关）+ 左侧编号导航。
+      layout: "mix",
+      splitMenus: false,
+      navTheme: "light",
+      // 不在这里定义强调色：ProLayout 会用它再包一层 ConfigProvider，
+      // 盖掉 AntdThemeProvider 的主题化取值（深色下激活 Tab 会变成近黑压深底）。
+      // 强调色的唯一来源是 src/theme/antd-theme.ts。
+      contentWidth: "Fluid",
+      fixedHeader: true,
+      fixSiderbar: true,
+      siderWidth: 248,
+    },
+  };
+}
+
+// antd 的 token 体系必须整体跟随 data-theme，否则深色模式下按钮描边、次级文字、
+// 下拉项等仍取构建期的浅色值。包在最外层，让所有路由与 Layout 共用同一主题上下文。
+export function rootContainer(container: ReactNode) {
+  return (
+    <AntdThemeProvider>
+      <WebTerminalManagerProvider>
+        {container}
+        <GlobalWebTerminalHost />
+      </WebTerminalManagerProvider>
+      {/* CRT 扫描线 + Web Audio 微反馈：全局一次挂载，含 Server 配置页 */}
+      <HudEffects />
+    </AntdThemeProvider>
+  );
+}
+
+interface HudMenuItem {
+  path?: string;
+  isUrl?: boolean;
+  target?: string;
+  children?: unknown[];
+}
+
+// 侧栏菜单项：保留 ProLayout 默认渲染（图标 / 中文名），在前后补 HUD 编号与英文代号。
+function renderHudMenuLabel(item: HudMenuItem, dom: ReactNode) {
+  const code = resolveHudNavCode(item.path);
+  if (!code) return dom;
+  return (
+    <span className="hud-nav-item">
+      {code.no ? <span className="hud-nav-no">{code.no}</span> : null}
+      <span className="hud-nav-dom">{dom}</span>
+      <span className="hud-nav-code">{code.code}</span>
+    </span>
+  );
+}
+
+// 覆盖 menuItemRender 会顶掉 umi 默认实现里的 <Link> 包裹，菜单就再也不能切页；
+// 这里按 umi plugin-layout 的默认逻辑补回路由链接。
+function renderHudMenuItem(item: HudMenuItem, dom: ReactNode) {
+  const label = renderHudMenuLabel(item, dom);
+  if (item.isUrl || item.children || !item.path) return label;
+  return (
+    <Link to={item.path.replace("/*", "")} target={item.target}>
+      {label}
+    </Link>
+  );
+}
+
+export const layout = ({ initialState }: any) => {
+  if (isGoAccountsPreview) {
+    return {
+      logo,
+      title: "AI Home Go 账号 Preview",
+      menuDataRender: (menuData: any[]) => menuData,
+      childrenRender: (children: any) => children,
+      ...initialState?.settings,
+    };
+  }
+  return {
+    logo,
+    title: "AI Home",
+    token: LAYOUT_TOKEN,
+    headerTitleRender: () => <HudBrand logo={logo} />,
+    headerContentRender: () => (
+      <HudTelemetryBar enabled={!isGoAccountsPreview && resolveCurrentServerProfileGate().ready} />
+    ),
+    actionsRender: () => [<HudToggles key="hud-toggles" />],
+    menuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuItem(item, dom),
+    subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuLabel(item, dom),
+    onPageChange: enforceServerProfileGate,
+    menuDataRender: (menuData: any[]) => (
+      // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），
+      // 不随运行期健康快照（ready）抖动而隐藏。
+      isGoAccountsPreview || resolveCurrentServerProfileGate().configured ? menuData : []
+    ),
+    menuFooterRender: () => isGoAccountsPreview ? null : (
+      <div style={{ padding: "8px 12px" }}>
+        <ControlPlaneProfileSelect
+          size="compact"
+          manageHref={SERVER_SETUP_HREF}
+          emptyLabel="添加 Server"
+          manageLabel="配置服务器"
+          onChange={() => {
+            // 切换 server 后强制整页重载：所有数据页从新 server 重新取数，避免残留上一台的数据。
+            if (typeof window !== "undefined") window.location.reload();
+          }}
+        />
+      </div>
+    ),
+    childrenRender: (children: any) => {
+      const profileGate = resolveCurrentServerProfileGate();
+      // 与导入的 canRenderWorkspace() 同名会形成 TDZ 自引用（渲染时 Ji is not a function）；
+      // 这里保留导入的判定函数，局部结果单独命名。
+      const canRenderWorkspaceRoute = isGoAccountsPreview || canRenderWorkspace(
+        profileGate,
+        history.location.pathname,
+        history.location.search,
+      );
+      const canRenderDataPlane = isGoAccountsPreview || profileGate.ready;
+      return (
+        <>
+          {/* 页面级渲染兜底：单页 render 抛错不再整树卸载成白屏 */}
+          <AppErrorBoundary>
+            {/* 手机视口：MobileApp 按路由渲染独立的移动端 HUD 页面（web/src/mobile），桌面页不挂载 */}
+            <MobileApp workspaceEnabled={canRenderWorkspaceRoute} dataPlaneReady={canRenderDataPlane}>
+              {canRenderWorkspaceRoute ? children : null}
+            </MobileApp>
+          </AppErrorBoundary>
+          {canRenderDataPlane && <AppInstallTaskQueue />}
+          {/* 全局划词翻译浮层：选中任意页面文本即可翻译（可在 /translation 关闭） */}
+          {canRenderDataPlane && (
+            <AppErrorBoundary>
+              <TranslationFloatingPanel />
+            </AppErrorBoundary>
+          )}
+          {/* Chat 快速窗口挂在应用壳层，快捷键无需切换到 /ui/chat。 */}
+          {canRenderDataPlane && (
+            <AppErrorBoundary>
+              <ChatMiniWindow />
+            </AppErrorBoundary>
+          )}
+        </>
+      );
+    },
+    ...initialState?.settings,
+  };
+};

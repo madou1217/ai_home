@@ -1,0 +1,156 @@
+.micIdleBtn {
+  composes: inputToolbarBtn from './composer.module.css';
+}
+
+/* 录音态下让 .inputToolbarRight 撑满剩余空间，脉冲线才能填满 "+" 和计时器之间的空隙 */
+.toolbarRightRecording {
+  flex: 1 1 auto;
+}
+
+.recordingBar {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: var(--hos-space-1);
+}
+
+.recordingPulseLine {
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 24px;
+  background-image: repeating-linear-gradient(90deg, var(--color-border-strong) 0 6px, transparent 6px 12px);
+  background-size: 24px 100%;
+  animation: dictationPulse 1.1s linear infinite;
+}
+
+@keyframes dictationPulse {
+  from { background-position: 0 0; }
+  to { background-position: -24px 0; }
+}
+
+.recordingTimer {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--hos-text-body-sm);
+  color: var(--color-muted);
+}
+
+.stopDictationBtn {
+  composes: inputToolbarBtn from './composer.module.css';
+  flex: 0 0 auto;
+  background: var(--color-surface-muted);
+  border-color: var(--color-border-strong);
+}
+
+.stopDictationGlyph {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--hos-radius-xs); /* 归级:原 3px */
+  background: currentColor;
+}
+
+/* =============================================================================
+ * 录音条：不透明表面 + danger 细描边；声波与录音点是实时状态指示
+ * ========================================================================== */
+.recordingCapsuleHarmony {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--hos-space-1) var(--hos-space-3-5) var(--hos-space-1) var(--hos-space-2-5);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
+  animation: dictationFadeIn var(--motion-base) var(--ease-standard);
+}
+
+@keyframes dictationFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.recordingLiveDotHarmony {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-danger);
+  box-shadow: 0 0 6px var(--color-danger);
+  animation: hosLivePulse 1.6s var(--ease-in-out) infinite;
+  flex: 0 0 8px;
+}
+
+@keyframes hosLivePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.recordingWaveformHarmony {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1); /* 归级:原 3px */
+  height: 18px;
+  flex: 1 1 auto;
+}
+
+.waveBar {
+  flex: 1;
+  max-width: 3px;
+  height: 6px;
+  border-radius: var(--hos-radius-xs); /* 归级:原 2px */
+  background: var(--color-danger);
+  animation: hosWaveBounce 1s ease-in-out infinite;
+}
+
+.waveBar1 { animation-delay: 0.0s; }
+.waveBar2 { animation-delay: 0.15s; }
+.waveBar3 { animation-delay: 0.3s; }
+.waveBar4 { animation-delay: 0.45s; }
+.waveBar5 { animation-delay: 0.2s; }
+.waveBar6 { animation-delay: 0.35s; }
+
+@keyframes hosWaveBounce {
+  0%, 100% { height: 4px; opacity: 0.5; }
+  50% { height: 16px; opacity: 1; }
+}
+
+.recordingTimerHarmony {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-danger);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.stopDictationBtnHarmony {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  color: var(--color-danger);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+  flex: 0 0 26px;
+}
+
+.stopDictationBtnHarmony:hover {
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+}
+
+.stopGlyphHarmony {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--hos-radius-xs); /* 归级:原 2px */
+  background: currentColor;
+}

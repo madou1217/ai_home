@@ -1,0 +1,443 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { message, Progress } from 'antd';
+import {
+  CheckCircleOutlined,
+  CloseOutlined,
+  CopyOutlined,
+  ExclamationCircleOutlined,
+  LoadingOutlined,
+  ReloadOutlined,
+  RightOutlined
+} from '@ant-design/icons';
+import Button from '@/components/ui/AppButton';
+import ManagedAppAccountActions, {
+  type ManagedAppLaunchTarget
+} from '@/components/toolkit/ManagedAppAccountActions';
+import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
+import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
+import { accountsAPI, toolkitAPI } from '@/services/api';
+import { useWebUiTaskQueue, type WebUiTaskStreamStatus } from '@/services/webui-task-queue';
+import {
+  canRetryWebUiTask,
+  getAppInstallFailureReasons,
+  getAppInstallStatusPresentation,
+  getWebUiTaskSourceLabel,
+  mergeWebUiTaskQueueEntries
+} from '@/features/app-install/app-install-presentation';
+import type { Account, WebUiTask } from '@/types';
+import { writeClipboardText } from '@/utils/clipboard';
+import './AppInstallTaskQueue.css';
+import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
+
+function taskName(task: WebUiTask) {
+  if (task.taskName) return task.taskName;
+  if (task.kind === 'terminal') return `${task.provider || task.appId} 终端操作`;
+  return `${task.provider || task.appId} ${task.kind === 'desktop' ? 'Desktop' : 'CLI'} 安装`;
+}
+
+function taskAction(task: WebUiTask) {
+  if (task.kind === 'activity') return '领取';
+  if (task.action === 'install') return '安装';
+  if (task.action === 'update') return '更新';
+  if (task.action === 'uninstall') return '卸载';
+  if (task.kind === 'desktop') return '桌面端安装';
+  if (task.kind === 'cli') return 'CLI 安装';
+  return '后台操作';
+}
+
+// 队列分 tab：账号活动（签到 / 领臭鸡蛋）与安装卸载**同队列同页面**，但可分开看。
+// 判定按 `kind`/`source` 数据，不按名字猜。
+const ACTIVITY_SOURCES = new Set(['account-activity']);
+
+function isActivityTask(task: WebUiTask) {
+  return task.kind === 'activity' || ACTIVITY_SOURCES.has(String(task.source || ''));
+}
+
+type TaskQueueTab = 'all' | 'install' | 'activity';
+
+const TASK_QUEUE_TABS: Array<{ key: TaskQueueTab; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'install', label: '安装 / 卸载' },
+  { key: 'activity', label: '账号活动' }
+];
+
+function phaseLabel(task: WebUiTask) {
+  if (task.phase === 'queued') return '等待执行';
+  if (task.phase === 'completed') return '已完成';
+  if (task.phase === 'failed') return '执行失败';
+  return task.phase || '执行中';
+}
+
+function streamStatusLabel(status: WebUiTaskStreamStatus) {
+  if (status === 'connected') return 'SSE 实时连接';
+  if (status === 'reconnecting') return 'SSE 重连中 · 轮询兜底';
+  if (status === 'polling') return '轮询已同步';
+  if (status === 'offline') return '连接不可用 · 等待恢复';
+  return 'SSE 连接中';
+}
+
+function updatedLabel(timestamp: number) {
+  if (!timestamp) return '等待首次更新';
+  return `更新于 ${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+}
+
+export default function AppInstallTaskQueue() {
+  const adoptLaunchedTerminal = useAdoptLaunchedTerminal();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const knownTerminalTaskIdsRef = useRef<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<TaskQueueTab>('all');
+  const [dismissedTaskIds, setDismissedTaskIds] = useState<Set<string>>(new Set());
+  const [retryingTaskIds, setRetryingTaskIds] = useState<Set<string>>(new Set());
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [runningAccountPids, setRunningAccountPids] = useState<Record<string, number[]>>({});
+  const [runningCliAccountPids, setRunningCliAccountPids] = useState<Record<string, number[]>>({});
+  const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
+    app: ManagedAppLaunchTarget;
+    accountRef: string;
+  } | null>(null);
+
+  const { tasks, recentTasks, streamStatus } = useWebUiTaskQueue();
+  const visibleTasks = useMemo(
+    () => mergeWebUiTaskQueueEntries(tasks, recentTasks, dismissedTaskIds),
+    [dismissedTaskIds, recentTasks, tasks]
+  );
+  // tab 计数与过滤：账号活动（领取）与安装/卸载分开看，默认「全部」。
+  const activityTasks = useMemo(() => visibleTasks.filter(isActivityTask), [visibleTasks]);
+  const installTasks = useMemo(() => visibleTasks.filter((task) => !isActivityTask(task)), [visibleTasks]);
+  const tabTasks = activeTab === 'activity'
+    ? activityTasks
+    : activeTab === 'install'
+      ? installTasks
+      : visibleTasks;
+  const tabCount = (key: TaskQueueTab) => (
+    key === 'activity' ? activityTasks.length : key === 'install' ? installTasks.length : visibleTasks.length
+  );
+  // 队列分页：任务多时只渲染当前页（面板是浮层，不能无限长）；单页时不显示页码。
+  const [page, setPage] = useState(1);
+  const QUEUE_PAGE_SIZE = 8;
+  const pageCount = Math.max(1, Math.ceil(tabTasks.length / QUEUE_PAGE_SIZE));
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab]);
+  const pageTasks = useMemo(
+    () => tabTasks.slice((page - 1) * QUEUE_PAGE_SIZE, page * QUEUE_PAGE_SIZE),
+    [tabTasks, page]
+  );
+  const hasActiveTask = visibleTasks.some((task) => !getAppInstallStatusPresentation(task.status).terminal);
+  const hasFailedTask = visibleTasks.some((task) => String(task.status || '').toLowerCase() === 'failed');
+  const hasLaunchableTask = visibleTasks.some((task) => (
+    task.source === 'app-install'
+      && task.action === 'install'
+      && task.status === 'succeeded'
+      && (task.kind === 'desktop' || task.kind === 'cli')
+  ));
+
+  const refreshLaunchContext = useCallback(async () => {
+    const [accountResponse, entryResponse] = await Promise.all([
+      accountsAPI.list().catch(() => null),
+      accountsAPI.listAppEntries().catch(() => null)
+    ]);
+    if (accountResponse) setAccounts(accountResponse.accounts || []);
+    if (entryResponse) {
+      setRunningAccountPids(entryResponse.runningAccountPids || {});
+      setRunningCliAccountPids(entryResponse.runningCliAccountPids || {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hasLaunchableTask) void refreshLaunchContext();
+  }, [hasLaunchableTask, refreshLaunchContext]);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && rootRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('.ant-dropdown')) return;
+      setExpanded(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [expanded]);
+
+  useEffect(() => {
+    const nextTerminalIds = new Set(
+      visibleTasks
+        .filter((task) => getAppInstallStatusPresentation(task.status).terminal)
+        .map((task) => task.id)
+    );
+    const hasNewTerminalTask = [...nextTerminalIds]
+      .some((taskId) => !knownTerminalTaskIdsRef.current.has(taskId));
+    knownTerminalTaskIdsRef.current = nextTerminalIds;
+    if (hasNewTerminalTask) setExpanded(true);
+    if (!visibleTasks.length) setExpanded(false);
+  }, [visibleTasks]);
+
+  const dismissTask = (taskId: string) => {
+    setDismissedTaskIds((current) => new Set(current).add(taskId));
+  };
+
+  const retryTask = async (task: WebUiTask) => {
+    if (!canRetryWebUiTask(task) || retryingTaskIds.has(task.id)) return;
+    const action = task.action as 'install' | 'update' | 'uninstall';
+    const kind = task.kind === 'desktop' || task.kind === 'cli' || task.kind === 'ide'
+      ? task.kind
+      : undefined;
+    setRetryingTaskIds((current) => new Set(current).add(task.id));
+    try {
+      const response = task.source === 'terminal'
+        ? await toolkitAPI.executeTerminalAction(task.appId, action)
+        : task.source === 'environment'
+          ? await toolkitAPI.executeEnvironmentToolAction(task.appId, action)
+          : task.source === 'managed-tool'
+            ? await toolkitAPI.executeManagedToolAction(task.appId, action)
+            : await toolkitAPI.executeAppAction(task.appId, action, kind);
+      if (!response.ok || !response.job) throw new Error(response.error || '重试任务未创建');
+      dismissTask(task.id);
+      message.info(`${taskName(task)}已重新进入任务队列`);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : '重新提交失败';
+      message.error(reason);
+    } finally {
+      setRetryingTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(task.id);
+        return next;
+      });
+    }
+  };
+
+  const openManagedApp = async (app: ManagedAppLaunchTarget, accountRef?: string, unscoped = false) => {
+    const kind = app.type === 'desktop' ? 'desktop' : 'cli';
+    try {
+      const response = await toolkitAPI.openManagedApp(app.id, {
+        kind,
+        ...(accountRef ? { accountRef } : {}),
+        ...(unscoped ? { unscoped: true } : {})
+      });
+      if (!response.ok) throw new Error(response.message || response.error || '应用启动失败');
+      const inWebTerminal = adoptLaunchedTerminal(response, app.name);
+      message.success(inWebTerminal
+        ? `${app.name} 已在 Web Terminal 中打开`
+        : (response.status === 'already_running' ? `${app.name} 已在运行` : `${app.name} 已启动`));
+      if (response.egressWarning) {
+        message.warning(`ZCode 出口未生效：${response.egressWarning}`);
+      }
+      await refreshLaunchContext();
+    } catch (error: unknown) {
+      const responseData = typeof error === 'object' && error
+        ? (error as { response?: { data?: { error?: string; message?: string } } }).response?.data
+        : undefined;
+      const loginAction = kind === 'desktop' ? desktopLoginRequiredAction(error) : null;
+      if (loginAction && accountRef) {
+        setKimiDesktopLoginTarget({ app, accountRef });
+        if (loginAction.warn) message.warning(loginAction.message || `${app.name} 登录态需要重新托管`);
+        return;
+      }
+      message.error(responseData?.message || (error instanceof Error ? error.message : `${app.name} 启动失败`));
+    }
+  };
+
+  const closeManagedApp = async (app: ManagedAppLaunchTarget, accountRef: string) => {
+    const kind = app.type === 'desktop' ? 'desktop' : 'cli';
+    try {
+      const response = await toolkitAPI.openManagedApp(app.id, {
+        kind,
+        accountRef,
+        action: 'close'
+      });
+      if (!response.ok) throw new Error(response.message || response.error || '结束应用失败');
+      message.success(kind === 'desktop' ? 'Desktop 实例已结束' : '该账号的 CLI 会话已结束');
+      await refreshLaunchContext();
+    } catch (error: unknown) {
+      message.error(error instanceof Error ? error.message : `${app.name} 结束失败`);
+    }
+  };
+
+  if (!visibleTasks.length) return null;
+
+  return (
+    <div
+      ref={rootRef}
+      className={`webui-task-queue${expanded ? ' is-expanded' : ''}`}
+      data-task-count={visibleTasks.length}
+    >
+      <button
+        type="button"
+        className="webui-task-queue-trigger"
+        aria-expanded={expanded}
+        aria-label={expanded ? '收起后台任务队列' : `打开后台任务队列，共 ${visibleTasks.length} 个任务`}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="webui-task-queue-trigger-icon" aria-hidden="true">
+          {expanded
+            ? <CloseOutlined />
+            : hasActiveTask
+              ? <LoadingOutlined spin />
+              : hasFailedTask
+                ? <ExclamationCircleOutlined />
+                : <CheckCircleOutlined />}
+        </span>
+        <span className="webui-task-queue-count">{visibleTasks.length}</span>
+        <span className="webui-task-queue-trigger-label">{hasActiveTask ? '后台任务' : '任务结果'}</span>
+      </button>
+
+      <section
+        className="webui-task-queue-panel"
+        aria-label="后台任务队列"
+        aria-hidden={!expanded}
+        aria-live={expanded ? 'polite' : 'off'}
+      >
+        <header className="webui-task-queue-header">
+          <div>
+            <span className="webui-task-queue-kicker">BACKGROUND TASKS</span>
+            <strong>后台任务队列</strong>
+          </div>
+          <span className={`webui-task-queue-stream-status is-${streamStatus}`}>
+            <i aria-hidden="true" />
+            {streamStatusLabel(streamStatus)}
+          </span>
+        </header>
+        <div className="webui-task-queue-tabs" role="tablist" aria-label="任务类型">
+          {TASK_QUEUE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              className={`webui-task-queue-tab${activeTab === tab.key ? ' is-active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+              <span className="webui-task-queue-tab-count">{tabCount(tab.key)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="webui-task-queue-list">
+          {pageTasks.map((task) => {
+            const status = getAppInstallStatusPresentation(task.status);
+            const percent = status.tone === 'success'
+              ? 100
+              : Math.round(Number(task.progress?.percent || 0));
+            const failureReasons = status.tone === 'error' ? getAppInstallFailureReasons(task) : [];
+            const launchable = task.source === 'app-install'
+              && task.action === 'install'
+              && task.status === 'succeeded'
+              && (task.kind === 'desktop' || task.kind === 'cli');
+            const launchTarget: ManagedAppLaunchTarget | null = launchable ? {
+              id: task.appId,
+              name: taskName(task),
+              provider: task.provider as ManagedAppLaunchTarget['provider'],
+              type: task.kind as 'desktop' | 'cli'
+            } : null;
+            return (
+              <article className={`webui-task-queue-item is-${status.tone}`} key={task.id}>
+                <div className="webui-task-queue-item-heading">
+                  <strong title={taskName(task)}>{taskName(task)}</strong>
+                  <span>{status.label}</span>
+                </div>
+                <div className="webui-task-queue-item-meta">
+                  <span>{taskAction(task)}</span>
+                  <span>{phaseLabel(task)}</span>
+                  <span>{getWebUiTaskSourceLabel(task)}</span>
+                </div>
+                <Progress
+                  percent={percent}
+                  size="small"
+                  showInfo
+                  status={status.tone === 'success' ? 'success' : status.tone === 'error' ? 'exception' : 'active'}
+                />
+                <div className="webui-task-queue-item-detail">
+                  <span>{task.progress?.label || '等待状态更新'}</span>
+                  <span>{updatedLabel(Number(task.updatedAt || 0))}</span>
+                </div>
+                {failureReasons.length ? (
+                  <details className="webui-task-queue-failure">
+                    <summary>查看失败原因</summary>
+                    <ul>
+                      {failureReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                    </ul>
+                    <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => {
+                      void writeClipboardText(failureReasons.join('\n')).then(
+                        () => message.success('失败原因已复制'),
+                        () => message.error('复制失败，请手动选择失败原因')
+                      );
+                    }}>复制失败原因</Button>
+                  </details>
+                ) : null}
+                {status.terminal ? (
+                  <div className="webui-task-queue-item-actions">
+                    {launchTarget ? (
+                      <ManagedAppAccountActions
+                        app={launchTarget}
+                        accounts={accounts}
+                        runningAccountPids={runningAccountPids}
+                        runningCliAccountPids={runningCliAccountPids}
+                        buttonLabel="选择账号并打开"
+                        onOpen={openManagedApp}
+                        onClose={closeManagedApp}
+                      />
+                    ) : null}
+                    {canRetryWebUiTask(task) ? (
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={retryingTaskIds.has(task.id)}
+                        onClick={() => { void retryTask(task); }}
+                      >
+                        重新执行
+                      </Button>
+                    ) : null}
+                    <Button type="text" size="small" onClick={() => dismissTask(task.id)}>关闭结果</Button>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+        {pageCount > 1 ? (
+          <div className="webui-task-queue-pager">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            >
+              上一页
+            </button>
+            <span>{page} / {pageCount}（共 {tabTasks.length} 项）</span>
+            <button
+              type="button"
+              disabled={page >= pageCount}
+              onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+            >
+              下一页
+            </button>
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="webui-task-queue-collapse-hint"
+          onClick={() => setExpanded(false)}
+        >
+          点击其他区域自动收起 <RightOutlined aria-hidden="true" />
+        </button>
+      </section>
+      <KimiDesktopLoginModal
+        open={Boolean(kimiDesktopLoginTarget)}
+        accountRef={kimiDesktopLoginTarget?.accountRef || ''}
+        accountLabel={accounts.find((account) => account.accountRef === kimiDesktopLoginTarget?.accountRef)?.displayName || ''}
+        onClose={() => setKimiDesktopLoginTarget(null)}
+        onSuccess={() => {
+          const target = kimiDesktopLoginTarget;
+          setKimiDesktopLoginTarget(null);
+          if (target) void openManagedApp(target.app, target.accountRef);
+        }}
+      />
+    </div>
+  );
+}

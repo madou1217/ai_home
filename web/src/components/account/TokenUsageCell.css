@@ -1,0 +1,350 @@
+/* 列数由 TokenUsageCell 以内联变量传入，宽度和栅格都跟着它走。 */
+.token-usage-cell {
+  --token-usage-columns: 4;
+  --token-usage-slot: 46px;
+  /* 吸附/脱离动画时长与 TokenUsageCell.tsx 的 TOKEN_USAGE_TRANSITION_MS 对齐。
+     reduced-motion 下 design-tokens 会把 --motion-* 归零，这里自然跟着静止。 */
+  --token-usage-motion: var(--motion-slower, 420ms);
+  --token-usage-ease-snap: var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+  /* 不做超调回弹：脱离与吸附共用标准曲线（web/DESIGN.md §5） */
+  --token-usage-ease-detach: var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+
+  position: relative;
+  /* 折叠会让单元格宽度在 1~4 格之间变化，左对齐时柱子会跟着列的左边缘跳；
+     这里让它在列里水平居中，行高由表格统一给，垂直方向靠单元格自身的 middle 对齐。 */
+  display: flex;
+  width: calc(var(--token-usage-columns) * var(--token-usage-slot) + 2px);
+  min-width: calc(var(--token-usage-columns) * var(--token-usage-slot) + 2px);
+  margin-inline: auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
+  color: var(--color-text);
+  line-height: 1;
+  vertical-align: middle;
+  transition: width var(--token-usage-motion) var(--token-usage-ease-snap),
+    min-width var(--token-usage-motion) var(--token-usage-ease-snap);
+}
+
+.token-usage-chart {
+  position: relative;
+  width: 100%;
+  height: 38px;
+}
+
+.token-usage-chart-svg {
+  display: block;
+  width: 100%;
+  height: 38px;
+  overflow: visible;
+}
+
+.token-usage-baseline {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.token-usage-bar {
+  opacity: 0.58;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+/* 折叠发生在数据侧：一根柱子要么被吸进左邻，要么从左邻里脱离出来。
+   两个动画共用同一条位移轴（一个槽宽），只是方向和缓动相反，
+   所以视觉上是同一块量在"合并"和"分裂"，而不是凭空增删。 */
+.token-usage-bar-group {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.token-usage-bar-group--snapping {
+  animation: token-usage-snap var(--token-usage-motion) var(--token-usage-ease-snap) forwards;
+  pointer-events: none;
+}
+
+.token-usage-bar-group--detaching {
+  animation: token-usage-detach var(--token-usage-motion) var(--token-usage-ease-detach) both;
+}
+
+/* 中间某格被并掉时，右边的格子整体左移一个槽位；让它们滑过去，而不是瞬间跳位。 */
+.token-usage-bar-group--sliding {
+  animation: token-usage-slide-bar var(--token-usage-motion) var(--token-usage-ease-snap) both;
+}
+
+@keyframes token-usage-slide-bar {
+  from {
+    transform: translateX(calc(var(--token-usage-shift, 0) * 52px));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes token-usage-snap {
+  0% {
+    transform: translateX(0) scaleX(1) scaleY(1);
+    opacity: 1;
+  }
+  55% {
+    transform: translateX(-26px) scaleX(0.82) scaleY(1);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translateX(-52px) scaleX(0.28) scaleY(0.9);
+    opacity: 0;
+  }
+}
+
+/* --token-usage-detach-dir 决定新格子从哪一侧吐出来：-1 = 从左边更窄的窗口里裂开，
+   +1 = 从右边更宽的窗口里吐出来（日重新有量时就是这种）。 */
+@keyframes token-usage-detach {
+  0% {
+    transform: translateX(calc(var(--token-usage-detach-dir, -1) * 52px)) scaleX(0.28) scaleY(0.9);
+    opacity: 0;
+  }
+  45% {
+    transform: translateX(calc(var(--token-usage-detach-dir, -1) * 14px)) scaleX(0.86) scaleY(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(0) scaleX(1) scaleY(1);
+    opacity: 1;
+  }
+}
+
+.token-usage-bar--layer-back {
+  opacity: 0.62;
+}
+
+.token-usage-bar--layer-middle {
+  opacity: 0.78;
+}
+
+.token-usage-bar--layer-front {
+  opacity: 0.94;
+}
+
+.token-usage-bar--peak {
+  opacity: 1;
+}
+
+.token-usage-bar--zero {
+  opacity: 0.34;
+}
+
+.token-usage-bar--unknown {
+  fill: var(--color-faint);
+  opacity: 0.64;
+}
+
+.token-usage-tooltip {
+  display: grid;
+  min-width: 292px;
+  gap: var(--hos-space-1, 4px);
+}
+
+.token-usage-tooltip-overlay {
+  max-width: none;
+}
+
+.token-usage-tooltip-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 58px 72px;
+  align-items: center;
+  gap: var(--hos-space-2-5, 10px);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.token-usage-tooltip-header {
+  padding-bottom: var(--hos-space-1, 3px); /* 归级:原 3px */
+  /* HUD Tooltip 浮层是 --color-surface-raised（深浅主题各自翻转），表头用语义 token：
+     发丝线 + HUD 小标签（大写字距、faint）。 */
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.token-usage-tooltip-header span:not(:first-child),
+.token-usage-tooltip-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-usage-tooltip-note {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+}
+
+.token-usage-tooltip-model {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
+}
+
+.token-usage-tooltip-model > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.token-usage-tooltip-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 0; /* HUD 图例色块：方形（圆形只留给 LED） */
+}
+
+.token-usage-chart-hit-targets {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--token-usage-columns), 1fr);
+}
+
+.token-usage-chart-hit-target {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: help;
+  font: inherit;
+}
+
+.token-usage-chart-hit-target:hover,
+.token-usage-chart-hit-target:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+.token-usage-chart-hit-target:focus-visible {
+  box-shadow: inset 0 -2px 0 var(--color-accent), var(--ring-focus);
+}
+
+.token-usage-values,
+.token-usage-labels {
+  display: grid;
+  grid-template-columns: repeat(var(--token-usage-columns), minmax(0, 1fr));
+  text-align: center;
+}
+
+/* 字号写在条目上而不是容器上：离场的 ghost 脱离栅格单独定位，仍要拿到同一套排版。 */
+.token-usage-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-usage-value--peak {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
+}
+
+.token-usage-label {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  line-height: var(--leading-tight);
+  text-transform: uppercase;
+}
+
+.token-usage-value--detaching,
+.token-usage-label--detaching {
+  animation: token-usage-text-detach var(--token-usage-motion) var(--token-usage-ease-detach) both;
+}
+
+.token-usage-value--sliding,
+.token-usage-label--sliding {
+  animation: token-usage-text-slide var(--token-usage-motion) var(--token-usage-ease-snap) both;
+}
+
+@keyframes token-usage-text-slide {
+  from {
+    transform: translateX(calc(var(--token-usage-shift, 0) * var(--token-usage-slot)));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 数字和标签的离场副本：单元格宽度已经开始收窄，这一层仍停在旧槽位把旧值吸回左邻。 */
+.token-usage-ghost {
+  position: absolute;
+  top: 39px;
+  left: calc(var(--token-usage-ghost-index) * var(--token-usage-slot) + 1px);
+  display: grid;
+  width: var(--token-usage-slot);
+  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
+  text-align: center;
+  pointer-events: none;
+  animation: token-usage-text-snap var(--token-usage-motion) var(--token-usage-ease-snap) forwards;
+}
+
+@keyframes token-usage-text-snap {
+  0% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(calc(var(--token-usage-slot) * -1)) scale(0.72);
+    opacity: 0;
+  }
+}
+
+/* 文字比柱子挤：起点只挪 0.6 个槽，并且等邻居让开位置之后再淡入，避免两组数字叠在一起。 */
+@keyframes token-usage-text-detach {
+  0% {
+    transform: translateX(calc(var(--token-usage-detach-dir, -1) * var(--token-usage-slot) * 0.6)) scale(0.72);
+    opacity: 0;
+  }
+  38% {
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.token-usage-cell--empty {
+  display: block;
+  width: auto;
+  min-width: 0;
+  color: var(--color-faint);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .token-usage-cell {
+    --token-usage-slot: 52px;
+
+    width: calc(var(--token-usage-columns) * var(--token-usage-slot));
+    min-width: calc(var(--token-usage-columns) * var(--token-usage-slot));
+  }
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.token-usage-chart-hit-target {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}

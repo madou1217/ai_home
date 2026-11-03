@@ -1,0 +1,499 @@
+/* ============================================================================
+ * 移动端卡片 / 指标网格 —— 手机专属视觉底座(Cyber HUD,见 web/DESIGN.md §HUD)。
+ *
+ * 设计语言:半透明 HUD 面板 + 1px 发丝线、方角 / 切角(≤4px 圆角)、青色角标;
+ * 指标数值用 JetBrains Mono 粗体(--font-mono)+ 状态色辉光,小标签走 hud-label 语言;
+ * 数据等宽;青色(--color-accent)表达选中 / 按下。账号 / 用量 / 设置等页面的移动卡片全部
+ * 复用这里的类,从而一处定义、多页一致;深浅主题随语义 token 自动翻转。
+ *
+ * 铁律:任何用到这些类的区块都不得横向溢出(scrollWidth ≤ 视口宽)。卡片一律
+ * min-width:0 + 文本省略,保证窄屏不撑破。
+ * ==========================================================================*/
+
+/* 图标按钮原语已独立成文件（共享组件 PageHeaderActions 直接引它）；
+ * 这里保留 @import，既有引入 mobile-cards.css 的页面行为不变。 */
+@import './mobile-icon-button.css';
+
+/* 入场动画已移除:DESIGN.md §5 只允许颜色 / 描边过渡,不做位移入场。 */
+
+/* 卡片右上「更多」:幽灵图标按钮(40px 触控目标),点开原生底部操作表 */
+.m-card-more {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--hos-radius-xs, 2px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+    color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+.m-card-more:active { background: var(--color-accent-soft); color: var(--color-accent); }
+
+/* 原生底部操作表 / 筛选抽屉(替代 PC 下拉菜单):HUD 面板 —— 方角、半透明毛玻璃、
+ * 顶部青色边沿 + 微光;标题走 hud.css 的 Orbitron 青色抽屉标题。 */
+.m-action-sheet .ant-drawer-content,
+.m-filter-drawer .ant-drawer-content {
+  background: var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border-radius: 0;
+  border-top: 1px solid var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+.m-action-sheet .ant-drawer-header,
+.m-filter-drawer .ant-drawer-header {
+  border-bottom: 1px solid var(--color-border);
+}
+.m-action-sheet .ant-drawer-title,
+.m-filter-drawer .ant-drawer-title {
+  text-shadow: var(--hud-text-glow);
+}
+.m-action-sheet .ant-drawer-body { padding: var(--hos-space-2, 8px) var(--hos-space-4, 16px) calc(16px + env(safe-area-inset-bottom)); font-family: var(--font-body); }
+.m-sheet-list { display: flex; flex-direction: column; }
+.m-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-3-5, 14px);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--hos-space-3-5, 14px) var(--hos-space-2, 8px);
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: var(--text-md, 15px);
+  font-weight: var(--weight-medium, 500);
+  color: var(--color-heading);
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+    color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+.m-sheet-item + .m-sheet-item { border-top: 1px solid var(--color-border); }
+.m-sheet-item:active { background: var(--color-accent-soft); color: var(--color-accent); }
+.m-sheet-item.danger { color: var(--color-danger); }
+.m-sheet-item.danger:active { background: var(--color-danger-soft); color: var(--color-danger); }
+.m-sheet-item:disabled { color: var(--color-disabled); cursor: default; }
+.m-sheet-item:disabled:active { background: transparent; }
+.m-sheet-item.cancel {
+  justify-content: center;
+  color: var(--color-muted-strong);
+  margin-top: var(--hos-space-2-5, 10px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-raised);
+  letter-spacing: var(--tracking-caps, 0.12em);
+}
+.m-sheet-item.cancel:active { border-color: var(--color-accent); }
+.m-sheet-icon { display: inline-flex; font-size: 18px; }
+.m-sheet-divider { height: 8px; }
+
+/* 防止移动端全局样式把 antd Switch 压扁成一条线:锁定轨道尺寸 */
+.mobile-card .ant-switch,
+.mobile-card-foot .ant-switch,
+.ltcard-actions .ant-switch {
+  min-width: 48px;
+  height: 26px;
+  line-height: 24px;
+}
+.mobile-card .ant-switch .ant-switch-handle {
+  width: 22px;
+  height: 22px;
+  top: 2px;
+}
+.mobile-card .ant-switch.ant-switch-checked .ant-switch-handle {
+  inset-inline-start: calc(100% - 24px);
+}
+
+/* 原生筛选:主屏只放一个「筛选」按钮,选项收进底部抽屉 */
+.m-filterbar { display: flex; align-items: center; gap: var(--hos-space-2-5, 10px); margin-bottom: var(--hos-space-3, 12px); }
+.m-filter-btn {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2, 8px);
+  padding: var(--hos-space-2, 8px) var(--hos-space-3-5, 14px);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+  font-family: var(--font-body);
+  font-size: var(--text-md, 15px);
+  font-weight: var(--weight-medium, 500);
+  color: var(--color-heading);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+    border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+.m-filter-btn:active { background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-raised)); border-color: var(--color-accent); }
+.m-filter-btn .anticon { color: var(--color-accent); }
+.m-filter-summary {
+  min-width: 0;
+  color: var(--color-muted);
+  font-weight: var(--weight-regular, 400);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 抽屉内分组标题:hud-label 语言(大写字距、弱色小字) */
+.m-filter-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps, 0.12em);
+  text-transform: uppercase;
+  color: var(--color-faint);
+  margin: 0 0 var(--hos-space-3, 12px);
+}
+.m-filter-group-label:not(:first-child) { margin-top: var(--hos-space-5, 20px); }
+.m-filter-drawer .ant-drawer-body { font-family: var(--font-body); }
+.m-filter-drawer .ant-drawer-header { font-family: var(--font-body); }
+
+/* ---- 指标网格(替代 StatisticCard.Group)---- */
+.mobile-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hos-space-3, 12px);
+  margin-bottom: var(--hos-space-3, 12px);
+}
+.mobile-stat-grid[data-cols='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 指标块:小切角 HUD 面板 + 左上青色角标(同 hud-panel--sm) */
+.mobile-stat-tile {
+  --m-cut: var(--hud-chamfer-sm, 6px);
+  position: relative;
+  min-width: 0;
+  padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+  font-family: var(--font-body);
+  clip-path: polygon(
+    0 var(--m-cut), var(--m-cut) 0,
+    calc(100% - var(--m-cut)) 0, 100% var(--m-cut),
+    100% calc(100% - var(--m-cut)), calc(100% - var(--m-cut)) 100%,
+    var(--m-cut) 100%, 0 calc(100% - var(--m-cut))
+  );
+}
+.mobile-stat-tile::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--hud-tick, 10px);
+  height: var(--hud-tick, 10px);
+  border-top: 2px solid var(--hud-tick-color, var(--color-accent));
+  border-left: 2px solid var(--hud-tick-color, var(--color-accent));
+  pointer-events: none;
+}
+/* 指标名:hud-label 语言(大写字距、弱色小字) */
+.mobile-stat-label {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1-5, 6px);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps, 0.12em);
+  text-transform: uppercase;
+  color: var(--color-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 状态点 = LED:颜色由调用方 dotColor 给出(内联 color/background),辉光跟随 currentColor */
+.mobile-stat-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--hos-radius-pill, 50%);
+  box-shadow: 0 0 6px currentColor;
+}
+/* 主数值:等宽粗体 + 辉光(Orbitron 的 0 字形带斜杠方块,数值不用)。默认 heading 色 + 青色辉光;
+ * 调用方给了状态色(valueColor)时 → 同色辉光(仅深色 HUD;浅色 --hud-text-glow 为 none)。 */
+.mobile-stat-value {
+  margin-top: var(--hos-space-2, 8px);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  color: var(--color-heading);
+  text-shadow: var(--hud-text-glow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:is([data-theme='dark'], body.dark) .mobile-stat-value--tinted {
+  text-shadow: 0 0 10px color-mix(in srgb, currentColor 55%, transparent);
+}
+.mobile-stat-grid[data-cols='3'] .mobile-stat-value { font-size: 19px; }
+.mobile-stat-hint {
+  margin-top: var(--hos-space-1-5, 6px);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-regular, 400);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- 通用卡片列表 ---- */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-3, 12px);
+  /* 挂载淡入：首屏 / 移动端切换视图时整列出现不再硬切；
+   * 重排补间由 ListTable 的 useFlipReorder 逐卡 FLIP（data-flip-key）负责。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+
+/* 通用移动卡:方角 HUD 面板 + 左上 / 右下青色角标。
+ * 不用 clip-path 切角——卡片上有外扩的聚焦环 / 路由命中描边(box-shadow),切角会把它们裁掉。 */
+.mobile-card {
+  position: relative;
+  min-width: 0;
+  padding: var(--hos-space-4, 16px);
+  border-radius: 0;
+  /* 列表卡数量多,不叠毛玻璃(滚动时逐卡 backdrop-filter 在手机 GPU 上很贵) */
+  background: var(--hud-panel-bg);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+  font-family: var(--font-body);
+  transition: border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+    box-shadow var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+}
+.mobile-card::before,
+.mobile-card::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  width: var(--hud-tick, 10px);
+  height: var(--hud-tick, 10px);
+  pointer-events: none;
+}
+.mobile-card::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid var(--hud-tick-color, var(--color-accent));
+  border-left: 2px solid var(--hud-tick-color, var(--color-accent));
+}
+.mobile-card::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 2px solid var(--hud-tick-color, var(--color-accent));
+  border-bottom: 2px solid var(--hud-tick-color, var(--color-accent));
+}
+.mobile-card:active {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
+/* 卡片头:图标 + 主标题 + 右侧操作 */
+.mobile-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hos-space-3-5, 13px); /* 归级:原 13px */
+  min-width: 0;
+}
+.mobile-card-head-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--hos-radius-xs, 2px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-card-head-main {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
+  min-width: 0;
+  font-size: var(--text-md, 15px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-heading);
+}
+.mobile-card-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-card-subtitle {
+  margin-top: var(--hos-space-1, 3px); /* 归级:原 3px */
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-regular, 400);
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-card-head-action {
+  flex: none;
+  margin: -4px -6px 0 0;
+}
+
+/* 标签行 */
+.mobile-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
+  margin-top: var(--hos-space-3-5, 13px); /* 归级:原 13px */
+}
+.mobile-card-tags:empty {
+  display: none;
+}
+
+/* 元信息行(键值对):可换行、不溢出 */
+.mobile-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-3, 12px) var(--hos-space-5, 20px);
+  margin-top: var(--hos-space-3-5, 14px);
+}
+.mobile-card-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1, 3px); /* 归级:原 3px */
+  min-width: 0;
+}
+/* 键值标签:hud-label 语言;值:等宽数据 */
+.mobile-card-meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps, 0.12em);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+.mobile-card-meta-value {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body, 14px);
+  font-weight: var(--weight-medium, 500);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-heading);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 账号卡:状态 + 模型探测一行,用量快照一行 */
+.account-mobile-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2, 8px) var(--hos-space-4, 16px);
+  flex-wrap: wrap;
+  margin-top: var(--hos-space-3-5, 13px); /* 归级:原 13px */
+  font-size: var(--hos-text-body-sm, 13px);
+}
+.account-mobile-probe { cursor: pointer; }
+.account-mobile-usage { margin-top: var(--hos-space-3, 12px); }
+
+/* 卡片脚:分隔线 + 开关等主操作 */
+.mobile-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5, 10px);
+  margin-top: var(--hos-space-4, 15px); /* 归级:原 15px */
+  padding-top: var(--hos-space-3-5, 14px);
+  border-top: 1px dashed var(--color-border);
+}
+.mobile-card-foot-hint {
+  font-size: var(--hos-text-caption, 12px);
+  font-weight: var(--weight-regular, 400);
+  color: var(--color-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- ListTable 移动端通用卡片(任意表格自动降级:label 左 / value 右)---- */
+.ltcard-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--hos-space-3, 12px);
+  padding: var(--hos-space-1-5, 6px) 0;
+  min-width: 0;
+}
+.ltcard-row + .ltcard-row {
+  border-top: 1px solid var(--color-border-subtle);
+}
+.ltcard-label {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps, 0.12em);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+.ltcard-value {
+  min-width: 0;
+  font-family: var(--font-mono);
+  text-align: right;
+  font-size: var(--hos-text-body, 14px);
+  font-weight: var(--weight-regular, 400);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.ltcard-value .ant-space,
+.ltcard-value .ant-space-horizontal {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: var(--hos-space-1-5, 6px);
+}
+.ltcard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-2, 8px);
+  margin-top: var(--hos-space-3-5, 13px); /* 归级:原 13px */
+  padding-top: var(--hos-space-3-5, 13px); /* 归级:原 13px */
+  border-top: 1px dashed var(--color-border);
+}
+.ltcard-actions .ant-space,
+.ltcard-actions .ant-space-horizontal {
+  flex-wrap: wrap;
+  row-gap: var(--hos-space-2, 8px);
+}
+.ltcard-actions > span {
+  min-width: 0;
+  max-width: 100%;
+}
+.ltcard-title {
+  font-size: var(--text-md, 15px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-heading);
+  margin-bottom: var(--hos-space-1-5, 5px); /* 归级:原 5px */
+  overflow-wrap: anywhere;
+}

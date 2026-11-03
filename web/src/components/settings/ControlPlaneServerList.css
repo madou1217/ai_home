@@ -1,0 +1,210 @@
+/* Server 列表卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm）+ 1px 发丝线；
+ * 默认 Server = 青色描边 + 柔和辉光；状态用 HUD 标签 + LED；路由胶囊等宽。
+ * 强调色统一走 --color-accent（Claude 珊瑚色只代表 Claude）。 */
+.cp-server-list {
+  --cp-acc: var(--color-accent);
+  --cp-run: var(--color-success);
+  --cp-warn: var(--color-warning);
+  --cp-crit: var(--color-danger);
+  --cp-ink: var(--color-heading);
+  --cp-ink-2: var(--color-muted-strong);
+  --cp-ink-3: var(--color-muted);
+  --cp-line: var(--color-border);
+  --cp-surface: var(--color-surface);
+  --cp-radius: 0;
+
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.cp-server-card.ant-card {
+  min-width: 0;
+  box-shadow: none;
+}
+.cp-server-card.ant-card > .ant-card-body {
+  padding: var(--hos-space-4) var(--hos-space-5);
+}
+.cp-server-card--active.ant-card {
+  border-color: var(--color-accent) !important;
+  /* 面板有 clip-path 切角，外发光会被裁掉，改用内发光表达选中 */
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.cp-server-card-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5);
+}
+.cp-server-card-title {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: var(--hos-space-1-5);
+}
+.cp-server-card-name {
+  display: inline-block;
+  max-width: min(320px, 60vw);
+  overflow: hidden;
+  color: var(--cp-ink);
+  /* 用户自定义名称常含数字，不用 Orbitron（其 0 为斜杠方块）；等宽粗体 */
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.cp-server-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-2);
+  color: var(--cp-ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+}
+.cp-server-error {
+  overflow-wrap: anywhere;
+  color: var(--cp-crit);
+}
+.cp-server-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--hos-space-1-5);
+}
+
+/* 状态标签：HUD 标签 —— 状态色发丝框 + 弱底 + LED + 大写字距 */
+.cp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.cp-status-pill--ready {
+  background: var(--tint-success);
+  color: var(--ink-success);
+}
+.cp-status-pill--degraded {
+  background: var(--tint-warning);
+  color: var(--ink-warning);
+}
+.cp-status-pill--offline {
+  background: var(--tint-neutral);
+  color: var(--ink-neutral);
+}
+.cp-status-pill--pending {
+  background: var(--tint-info);
+  color: var(--ink-info);
+}
+.cp-key-configured {
+  flex: 0 0 auto;
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+/* 「默认」标记：强调色弱底小标签（与 setup 页「当前」一致），高度与 small 按钮对齐 */
+.cp-current-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--hos-text-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  box-shadow: var(--hud-glow-accent);
+}
+
+.cp-route-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1-5);
+  margin-top: var(--hos-space-3);
+}
+.cp-route-chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-3);
+  border: 1px solid var(--cp-line);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  color: var(--cp-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+}
+/* 健康度只由 LED 颜色表达；主路由用青色描边 */
+.cp-route-chip--primary {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--cp-line));
+}
+.cp-route-dot {
+  flex: 0 0 auto;
+}
+.cp-route-kind {
+  flex: 0 0 auto;
+  color: var(--cp-ink);
+  font-weight: var(--weight-semibold);
+}
+.cp-route-endpoint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-route-rtt {
+  flex: 0 0 auto;
+  color: var(--cp-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-server-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1) var(--hos-space-3);
+  margin-top: var(--hos-space-3);
+  padding-top: var(--hos-space-2-5);
+  border-top: 1px solid var(--cp-line);
+  color: var(--cp-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-regular);
+}
+.cp-server-card-footer b {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-shadow: var(--hud-text-glow);
+}
+.cp-footer-pending {
+  color: var(--cp-ink-3);
+  font-weight: var(--weight-regular);
+}

@@ -1,0 +1,85 @@
+import { providerNames } from '@/components/chat/ProviderIcon';
+import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
+import {
+  getAccountDisplayBadgeMeta,
+  getAccountPrimaryLabel,
+  getPlanTagLabels,
+  getQuotaStateMeta
+} from '@/features/accounts/AccountBadges';
+import { getAccountRef } from '@/features/accounts/account-model-catalog';
+import { formatQuotaReason, getEffectiveRemainingPct } from '@/features/accounts/account-state';
+import type { Account, ManagementAccountActivity } from '@/types';
+import { badgeStatusTone, ledClass, remainingTone } from './account-tones';
+import styles from '../MobileAccounts.module.css';
+
+interface Props {
+  record: Account;
+  activity: ManagementAccountActivity | null;
+  removing: boolean;
+  desktopRunning: boolean;
+}
+
+/**
+ * 无剩余百分比时占位符（「—」）的 title 口径：与桌面额度徽章同源（getQuotaStateMeta），
+ * 结论型「额度不适用」给出原因，探测类状态给出徽章文案 + 原因，不再笼统地说「额度未知」。
+ */
+export function quotaPlaceholderTitle(record: Pick<Account, 'apiKeyMode' | 'quotaStatus' | 'quotaReason'>) {
+  const meta = getQuotaStateMeta(record);
+  if (meta) {
+    const reason = formatQuotaReason(record.quotaReason);
+    return reason ? `${meta.label}：${reason}` : meta.label;
+  }
+  return record.apiKeyMode ? '额度由上游管理' : '额度未知';
+}
+
+/**
+ * 账号行（SwipeRow 内容）：Provider 活动图标 + 身份（与桌面同一脱敏标签）+ 平台 / 套餐 / 角色，
+ * 右侧状态 LED + 短标签与剩余额度细轨。其余字段在点按后的详情抽屉里。
+ */
+export default function AccountRowContent({ record, activity, removing, desktopRunning }: Props) {
+  const status = getAccountDisplayBadgeMeta(record);
+  const statusTone = badgeStatusTone(status.status);
+  const remaining = record.apiKeyMode ? null : getEffectiveRemainingPct(record);
+  const meta = [
+    providerNames[record.provider] || record.provider,
+    // 多套餐逐个列出（不再用 `A + B` 的拼接串，见 getPlanTagLabels）。
+    ...getPlanTagLabels(record),
+    record.isDefault ? '默认' : '',
+    record.isMobile ? 'APP' : '',
+    desktopRunning ? 'DESKTOP' : ''
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div
+      className={`${styles.row}${removing ? ` ${styles.rowRemoving}` : ''}`}
+      data-account-ref={getAccountRef(record)}
+    >
+      <span className="mhud-row__icon" aria-hidden="true">
+        <AccountActivityIcon provider={record.provider} activity={activity} size={20} />
+      </span>
+      <span className="mhud-row__main">
+        <span className="mhud-row__title">{getAccountPrimaryLabel(record)}</span>
+        <span className="mhud-row__meta">{meta}</span>
+      </span>
+      <span className="mhud-row__side">
+        <span className={`mhud-status mhud-tone--${statusTone}`}>
+          <span className={ledClass(statusTone)} aria-hidden="true" />
+          {status.label}
+        </span>
+        {remaining != null ? (
+          <span className={styles.quota}>
+            <span className={`mhud-tone--${remainingTone(remaining)}`}>{remaining.toFixed(0)}%</span>
+            <span className={`mhud-track ${styles.quotaTrack}`} aria-hidden="true">
+              <span
+                className={`mhud-track__fill mhud-bg--${remainingTone(remaining)}`}
+                style={{ width: `${Math.max(0, Math.min(100, remaining))}%` }}
+              />
+            </span>
+          </span>
+        ) : (
+          <span className={styles.quotaNone} title={quotaPlaceholderTitle(record)}>—</span>
+        )}
+      </span>
+    </div>
+  );
+}

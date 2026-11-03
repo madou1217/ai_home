@@ -1,0 +1,95 @@
+node_modules/
+.DS_Store
+/accounts/
+.claude/
+.spec-workflow/
+logs/
+*.log
+*.db
+*.db-shm
+*.db-wal
+gitleaks-report.json
+tmp/
+.aih/
+.antigravitycli/
+.ahr/
+.agents/
+
+# Documentation policy: keep root entry docs, the Web design-system spec,
+# and the current architecture docs.
+*.md
+!/AGENTS.md
+!/README.md
+!/web/DESIGN.md
+!/docs/
+!/docs/**
+# aih-collab built-in skill: runtime asset shipped with the CLI, not documentation.
+!/assets/provider-skills/
+!/assets/provider-skills/**
+
+# Generated bundles copied from external Codex/Electron builds.
+/app-session-*.js
+/app-session-*.js.map
+/main-*.js
+/main-*.js.map
+/workspace-root-drop-handler-*.js
+/workspace-root-drop-handler-*.js.map
+
+# Rust / TUI build artifacts
+**/target/
+**/*.pdb
+**/*.dSYM/
+**/dist/
+**/build/
+**/coverage/
+**/.cache/
+**/.turbo/
+**/.next/
+**/out/
+
+# Ignored as requested
+codex-auto-reg/
+/cli/
+ai-home*.zip
+output/
+
+# UmiJS temporary cache
+web/src/.umi/
+web/src/.umi-production/
+/.umi-production/
+
+# WebUI 终端运行时生成的 aih shim（见 webui-terminal-routes.js）
+.runtime-bin/
+
+# Local build artifacts.
+/bin/native/
+.tmp-mitm/
+
+# Local agent and browser-automation scratch artifacts.
+/.omo/
+/.playwright-*
+# 本地 agent 计划/报告产物；设计稿与计划仍在 docs/superpowers/ 下入库。
+/.superpowers/
+# GUI 测试取证截图（web-gui-tester skill 的本地证据目录）。
+gui-test-screenshots/
+# 本地 HTML 设计原型稿，不入库。
+prototypes/
+
+# Local code-index tool database (per-machine, never shared).
+/.codegraph/
+
+# 依赖锁文件不入库：各平台客户端本地 npm install 时重新生成，避免跨机器解析差异造成冲突。
+# CI 对应使用 npm install（无锁文件可 ci）。误用 pnpm 生成的锁文件同样忽略。
+package-lock.json
+web/package-lock.json
+pnpm-lock.yaml
+web/pnpm-lock.yaml
+
+# Windows 盘符路径。测试用 'C:\harness\.codex' 之类字面量模拟 win32 的 CODEX_HOME，
+# 在 POSIX 上 path.join 不解析反斜杠，一旦某条代码路径真去写这个"目录"，就会在仓库
+# 根下创建一个名字里带反斜杠的真实目录，永远不是正当内容。
+C:\\*
+
+# macOS Finder metadata: never track, even under the /docs/** exception above.
+.DS_Store
+**/.DS_Store

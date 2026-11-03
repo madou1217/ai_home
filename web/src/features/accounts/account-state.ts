@@ -1,0 +1,421 @@
+import type { Account, AccountAuthMode, AccountTokenUsage, AccountTokenUsageModel } from '@/types';
+import { formatAccountIssueReason } from '@/utils/account-reasons';
+import { isInternalAccountLabel } from '@/utils/account-labels';
+import { getAccountRef } from '@/features/accounts/account-model-catalog';
+import { getMinRemainingPct, hasRenderableScopes } from '@/components/account/quota-scopes';
+
+const ACCOUNT_RECOVERY_REASON_PREFIX = 'account_recovery_required:';
+
+// 账号显示状态推导 —— 纯函数模块。
+// 从 Accounts.tsx 抽取：账号状态、用量、认证方式的所有推导逻辑集中于此，
+// 组件/hook 只做展示与交互，禁止在组件内联重复推导。
+
+export function isClaudeAuthTokenMode(value?: string) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  return normalized === 'auth-token' || normalized === 'claude-code-token';
+}
+
+export function getClaudeCredentialMode(record?: Pick<Account, 'authMode' | 'authType' | 'credentialType'> | null): AccountAuthMode {
+  return isClaudeAuthTokenMode(record?.credentialType || record?.authType || record?.authMode)
+    ? 'auth-token'
+    : 'api-key';
+}
+
+export function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email' | 'baseUrl'>) {
+  if (record.apiKeyMode) {
+    return true; // API Key 账号始终展示复制按钮
+  }
+  return Boolean(String(record.email || '').trim());
+}
+
+export function hasBlockingRuntimeStatus(record: Pick<Account, 'runtimeStatus'>) {
+  const status = String(record.runtimeStatus || '').trim();
+  return Boolean(status && status !== 'healthy');
+}
+
+export function isAccountEnabled(record: Pick<Account, 'status'>) {
+  return String(record.status || 'up').trim().toLowerCase() !== 'down';
+}
+
+export function requiresAccountReauth(record: Pick<Account,
+  'apiKeyMode' | 'runtimeStatus' | 'runtimeReason'
+>) {
+  if (record.apiKeyMode) return false;
+  const runtimeStatus = String(record.runtimeStatus || '').trim().toLowerCase();
+  const runtimeReason = String(record.runtimeReason || '').trim().toLowerCase();
+  return runtimeStatus === 'auth_invalid'
+    || runtimeStatus === 'token_expired'
+    || runtimeReason === 'token_expired'
+    || runtimeReason.startsWith(ACCOUNT_RECOVERY_REASON_PREFIX);
+}
+
+export function reconcileAccountAfterReauthSuccess(accounts: Account[], accountRef: string) {
+  const targetAccountRef = String(accountRef || '').trim();
+  if (!targetAccountRef) return accounts;
+
+  let changed = false;
+  const next = accounts.map((account) => {
+    if (getAccountRef(account) !== targetAccountRef) return account;
+    changed = true;
+    return {
+      ...account,
+      status: 'up',
+      configured: true,
+      authPending: false,
+      authPendingStale: false,
+      runtimeStatus: undefined,
+      runtimeUntil: undefined,
+      runtimeReason: undefined,
+      schedulableStatus: undefined,
+      schedulableReason: undefined
+    };
+  });
+  return changed ? next : accounts;
+}
+
+export type AccountDisplayStateKind =
+  | 'healthy'
+  | 'reauth_required'
+  | 'exhausted'
+  | 'policy_blocked'
+  | 'runtime_blocked'
+  | 'disabled'
+  | 'unconfigured';
+
+export function canRefreshUsageAccount(record: Pick<Account,
+  'status' | 'configured' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType'
+  | 'runtimeStatus' | 'runtimeReason' | 'quotaStatus' | 'quotaReason' | 'schedulableStatus'
+>) {
+  // OAuth 已配置账号始终允许手动刷新用量,不再依赖已有额度状态。
+  if (requiresAccountReauth(record)) return false;
+  if (!record.configured || record.apiKeyMode) return false;
+  // 「额度不适用」分两种：结论型（有原因：未订阅/已到期/Free 档）仍允许手动重探——
+  // 续订后能立刻看到额度；结构性（无原因：provider 无额度能力）没有可刷新的额度，保持禁用。
+  if (String(record.quotaStatus || '').trim() === 'not_applicable') {
+    return Boolean(String(record.quotaReason || '').trim());
+  }
+  return true;
+}
+
+export function canReauthAccount(record: Pick<Account, 'apiKeyMode'>) {
+  return !record.apiKeyMode;
+}
+
+export function getReauthActionLabel(record: Pick<Account, 'configured' | 'authPending' | 'authPendingStale'>) {
+  if (record.authPending && !record.authPendingStale) return '继续授权';
+  if (!record.configured) return '重新授权';
+  return '重新登录';
+}
+
+export function canEditAccountConfig(record: Pick<Account, 'apiKeyMode'>) {
+  return Boolean(record.apiKeyMode);
+}
+
+/**
+ * 调度规则（账号级上游错误映射）入口 —— 只对「第三方/自建上游的 API Key 账号」开放。
+ * OAuth 登录态账号与指向厂商官方地址的账号返回标准错误码，内置启发式已覆盖，没有可对齐
+ * 的东西。判定由服务端给出（account.customUpstream，见
+ * lib/account/official-upstream-endpoint.js），客户端只消费结论，不自己解析主机名。
+ */
+export function canEditAccountRoutingRules(record: Pick<Account, 'apiKeyMode' | 'customUpstream'>) {
+  return Boolean(record.apiKeyMode && record.customUpstream);
+}
+
+/**
+ * 窗口激活（5h 滚动限额探测）入口 —— 支持哪些 provider 由服务端探测规格注册表回答
+ * （lib/server/window-activation/probe-specs.js），客户端只消费结论：新增 provider
+ * 加一条 spec 即可，不用改前端。
+ */
+export function canConfigureWindowActivation(record: Pick<Account, 'windowActivationSupported'>) {
+  return record.windowActivationSupported === true;
+}
+
+/**
+ * 账号活动（签到 / 领试用套餐）入口 —— 动作清单由服务端 provider 描述符下发
+ * （lib/providers/defs/<id>.js 的 activity 能力），客户端只消费结论：
+ * 没有动作 = 该 provider 没有可领活动，不显示入口。
+ */
+export function canRunAccountActivity(record: Pick<Account, 'activityActions'>) {
+  return Array.isArray(record.activityActions) && record.activityActions.length > 0;
+}
+
+/**
+ * 账号级强制恢复调度入口 —— 只在账号当前确实被运行态阻塞时出现。
+ * 与调度规则解耦：调度规则是「第三方上游错误码映射」（只对特定账号开放），恢复调度是
+ * 「人工确认外部条件已恢复」的运维动作，对所有被阻塞的账号都成立（登录态失效除外，
+ * 那个该走重新登录）。服务端会把运行态整体归零（evidence=manual_admin_clear）。
+ */
+export function canRestoreAccountScheduling(record: Account) {
+  if (!record.configured) return false;
+  if (requiresAccountReauth(record)) return false;
+  const state = getAccountDisplayState(record);
+  return state === 'runtime_blocked' || state === 'policy_blocked' || state === 'exhausted';
+}
+
+export function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct' | 'provider' | 'usageSnapshot'>) {
+  if (record.apiKeyMode) return false;
+  return getEffectiveRemainingPct(record) != null;
+}
+
+// 账号级剩余额度：**由额度展示行派生**（web/src/components/account/quota-scopes.ts），
+// 形态来自服务端下发的 entryShape —— 这里不再维护 kind 名单，口径与 CLI / 服务端同源。
+export function getUsageSnapshotRemainingPct(record: Pick<Account, 'usageSnapshot'>) {
+  return getMinRemainingPct(record.usageSnapshot);
+}
+
+export function getEffectiveRemainingPct(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
+  const snapshotRemaining = getUsageSnapshotRemainingPct(record);
+  if (snapshotRemaining != null) return snapshotRemaining;
+  // 有可渲染条目却没有数值（例如全部窗口都缺数字）时以快照为准，不回落到陈旧的账号级数字。
+  if (record.usageSnapshot && hasRenderableScopes(record.usageSnapshot)) return null;
+  if (record.remainingPct == null) return null;
+  const numeric = Number(record.remainingPct);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.max(0, Math.min(100, numeric));
+}
+
+export function getUsageSortValue(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
+  return getEffectiveRemainingPct(record) ?? -1;
+}
+
+export function formatQuotaReason(reason?: string) {
+  return formatAccountIssueReason(reason);
+}
+
+export function formatSchedulableReason(reason?: string) {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  if (text === 'codex_free_plan_below_server_min_remaining') {
+    return 'Free 账号剩余额度已低于当前账号切换阈值（按配置计算），已从 aih server 账号池排除，避免接近上限时继续使用导致会话中断。';
+  }
+  if (text === 'agy_access_token_required') {
+    return 'Antigravity OAuth token 在系统 keyring 中，aih server 不能安全读取；需要在账号环境中显式配置 AGY_ACCESS_TOKEN 后才会进入聊天/转发池。';
+  }
+  return formatAccountIssueReason(text);
+}
+
+export function getAccountDisplayState(record: Pick<Account,
+  'status' | 'configured' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType'
+  | 'runtimeStatus' | 'runtimeReason' | 'quotaStatus' | 'schedulableStatus'
+  | 'remainingPct' | 'provider' | 'usageSnapshot'
+>): AccountDisplayStateKind {
+  if (requiresAccountReauth(record)) return 'reauth_required';
+  if (!isAccountEnabled(record)) return 'disabled';
+  if (!record.configured) return 'unconfigured';
+  if (hasBlockingRuntimeStatus(record)) return 'runtime_blocked';
+  const effectiveRemainingPct = getEffectiveRemainingPct(record);
+  if (!record.apiKeyMode && effectiveRemainingPct != null && effectiveRemainingPct <= 0) return 'exhausted';
+  if (String(record.quotaStatus || '').trim() === 'exhausted') return 'exhausted';
+  if (String(record.schedulableStatus || '').trim() === 'blocked_by_policy') return 'policy_blocked';
+  // 只有已确认耗尽才影响调度；额度缺失、采集超时与解析失败在额度组件中独立展示。
+  // 增量记录暂未带 schedulableStatus 时，也不能把遥测缺失推断成账号异常。
+  return 'healthy';
+}
+
+// 仪表盘与账号页共用的「正常可用 N/M」聚合口径：分母为全部持久化账号，
+// 分子为 getAccountDisplayState 判定为 healthy 的账号数。两处都必须走这里，禁止各自内联统计。
+export function countHealthyAccounts(records: Array<Parameters<typeof getAccountDisplayState>[0]>) {
+  let healthy = 0;
+  records.forEach((record) => {
+    if (getAccountDisplayState(record) === 'healthy') healthy++;
+  });
+  return { total: records.length, healthy };
+}
+
+// 账号记录合并 —— 从 Accounts.tsx 抽取的快照/增量合并逻辑。
+// mergeAccountRecord 合并单条记录；mergeAccounts/mergeSingleAccount 合并列表。
+
+export function mergeAccountRecord(
+  current: Account,
+  incoming: Account,
+  options: { preserveLiveFields?: boolean } = {}
+): Account {
+  const fallbackDisplayName = incoming.accountRef;
+  const merged: Account = {
+    ...current,
+    ...incoming
+  };
+
+  if (merged.apiKeyMode) {
+    // API Key 没有 OAuth 用量，但网关返回的运行态与调度阻塞仍是权威事实。
+    // 切换认证类型时只接受新记录的状态，避免继承旧 OAuth 状态。
+    for (const key of ['runtimeStatus', 'runtimeUntil', 'runtimeReason', 'schedulableStatus', 'schedulableReason'] as const) {
+      if (!current.apiKeyMode && !Object.prototype.hasOwnProperty.call(incoming, key)) delete merged[key];
+    }
+    merged.usageSnapshot = null;
+    merged.remainingPct = null;
+    merged.quotaStatus = undefined;
+    merged.quotaReason = undefined;
+    return merged;
+  }
+
+  if (!merged.configured || merged.apiKeyMode) {
+    return merged;
+  }
+
+  if (!incoming.email && current.email) {
+    merged.email = current.email;
+  }
+  if (options.preserveLiveFields) {
+    if ((incoming.updatedAt == null || incoming.updatedAt <= 0) && current.updatedAt > 0) {
+      merged.updatedAt = current.updatedAt;
+    }
+    if ((incoming.lastUsedAt == null || incoming.lastUsedAt <= 0) && current.lastUsedAt && current.lastUsedAt > 0) {
+      merged.lastUsedAt = current.lastUsedAt;
+    }
+    if (!incoming.usageSnapshot && current.usageSnapshot) {
+      merged.usageSnapshot = current.usageSnapshot;
+    }
+    if ((incoming.remainingPct == null) && current.remainingPct != null) {
+      merged.remainingPct = current.remainingPct;
+    }
+    if (incoming.runtimeStatus == null && current.runtimeStatus != null) {
+      merged.runtimeStatus = current.runtimeStatus;
+    }
+    if (incoming.runtimeUntil == null && current.runtimeUntil != null) {
+      merged.runtimeUntil = current.runtimeUntil;
+    }
+    if (incoming.runtimeReason == null && current.runtimeReason != null) {
+      merged.runtimeReason = current.runtimeReason;
+    }
+    if (incoming.quotaStatus == null && current.quotaStatus != null) {
+      merged.quotaStatus = current.quotaStatus;
+    }
+    if (incoming.quotaReason == null && current.quotaReason != null) {
+      merged.quotaReason = current.quotaReason;
+    }
+    if (incoming.schedulableStatus == null && current.schedulableStatus != null) {
+      merged.schedulableStatus = current.schedulableStatus;
+    }
+    if (incoming.schedulableReason == null && current.schedulableReason != null) {
+      merged.schedulableReason = current.schedulableReason;
+    }
+  }
+  if (
+    (!incoming.planType || incoming.planType === 'oauth' || incoming.planType === 'pending')
+    && current.planType
+    && current.planType !== 'oauth'
+    && current.planType !== 'pending'
+  ) {
+    merged.planType = current.planType;
+  }
+  if ((!incoming.displayName || incoming.displayName === fallbackDisplayName || isInternalAccountLabel(incoming.displayName)) && current.displayName) {
+    merged.displayName = current.displayName;
+  }
+
+  return merged;
+}
+
+export function mergeAccounts(
+  current: Account[],
+  incoming: Account[],
+  options: { preserveLiveFields?: boolean } = {}
+): Account[] {
+  const currentMap = new Map<string, Account>(
+    current.map((account) => [getAccountRef(account), account])
+  );
+  const nextMap = new Map<string, Account>();
+  incoming.forEach((account) => {
+    const key = getAccountRef(account);
+    const previous = currentMap.get(key);
+    nextMap.set(key, previous ? mergeAccountRecord(previous, account, options) : account);
+  });
+  return Array.from(nextMap.values());
+}
+
+export function mergeSingleAccount(current: Account[], incoming: Account): Account[] {
+  const next = current.slice();
+  const key = getAccountRef(incoming);
+  const index = next.findIndex((account) => getAccountRef(account) === key);
+  if (index >= 0) {
+    next[index] = mergeAccountRecord(next[index], incoming);
+    return next;
+  }
+  next.push(incoming);
+  return next;
+}
+
+export interface AccountTokenUsageDelta {
+  provider?: string;
+  accountRef?: string;
+  model?: string;
+  tokens?: {
+    input?: number;
+    output?: number;
+    total?: number;
+  };
+}
+
+function normalizeTokenDelta(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
+}
+
+function createEmptyTokenUsageModel(model: string): AccountTokenUsageModel {
+  return {
+    model,
+    day: 0,
+    week: 0,
+    month: 0,
+    total: 0,
+    dayCostUsd: null,
+    weekCostUsd: null,
+    monthCostUsd: null,
+    totalCostUsd: null
+  };
+}
+
+/**
+ * 将一次已完成请求的 token 增量立即投影到账号卡片。
+ * 服务端周期扫描仍是最终校准来源，这里只做单调的前端乐观更新，避免等待扫描窗口。
+ */
+export function applyAccountTokenUsageDelta(
+  account: Account,
+  event: AccountTokenUsageDelta
+): Account {
+  if (
+    String(event.provider || '').trim().toLowerCase() !== String(account.provider || '').trim().toLowerCase()
+    || String(event.accountRef || '').trim() !== String(account.accountRef || '').trim()
+  ) {
+    return account;
+  }
+
+  const input = normalizeTokenDelta(event.tokens?.input);
+  const output = normalizeTokenDelta(event.tokens?.output);
+  const total = normalizeTokenDelta(event.tokens?.total) || input + output;
+  if (total <= 0) return account;
+
+  const current: AccountTokenUsage = account.tokenUsage || {
+    day: 0,
+    week: 0,
+    month: 0,
+    total: 0,
+    models: []
+  };
+  const modelName = String(event.model || '').trim();
+  const models = Array.isArray(current.models) ? current.models.map((model) => ({ ...model })) : [];
+  const model = modelName ? (models.find((item) => item.model === modelName) || null) : null;
+  const nextModel = model || (modelName ? createEmptyTokenUsageModel(modelName) : null);
+  if (nextModel) {
+    nextModel.day += total;
+    nextModel.week += total;
+    nextModel.month += total;
+    nextModel.total += total;
+    nextModel.dayCostUsd = null;
+    nextModel.weekCostUsd = null;
+    nextModel.monthCostUsd = null;
+    nextModel.totalCostUsd = null;
+    if (!model) models.push(nextModel);
+  }
+
+  return {
+    ...account,
+    tokenUsage: {
+      day: Number(current.day) + total,
+      week: Number(current.week) + total,
+      month: Number(current.month) + total,
+      total: Number(current.total) + total,
+      models
+    }
+  };
+}

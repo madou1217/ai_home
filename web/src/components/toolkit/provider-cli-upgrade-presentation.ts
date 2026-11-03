@@ -1,0 +1,332 @@
+// provider CLI 自动升级状态面的纯展示映射。
+//
+// 后端回的是闭环内部的枚举（reason/state 全是 snake_case 英文），面板要的是一句人话。
+// 映射放在这里而不是 .tsx 里，是为了能脱离 React 单测 —— 这些分支的取舍（什么算
+// 「要人管」、被拉黑的版本算不算「有新版」）是有业务含义的，不该埋在渲染函数里。
+
+import type {
+  ProviderCliUpgradeRecord,
+  ProviderCliUpgradeSchedulerState,
+  ProviderCliUpgradeStatusResponse
+} from '@/types';
+
+export type ProviderCliUpgradeTone = 'success' | 'warning' | 'error' | 'active' | 'neutral';
+
+export interface ProviderCliUpgradeRowPresentation {
+  provider: string;
+  statusLabel: string;
+  statusTone: ProviderCliUpgradeTone;
+  versionText: string;
+  reasonText: string;
+  channelLabel: string;
+  lastCheckText: string;
+  /** 需要人介入才会变好的状态：熔断、回滚、装/验失败。 */
+  attention: boolean;
+  /** 已熔断：可在界面上「验证并解除」。 */
+  canClearBroken: boolean;
+  /** 只有「查过且找不到命令」才是 false；没查过、读不到版本都不算未安装。 */
+  installed: boolean;
+  /**
+   * 真的存在可跟进的新版本。熔断/回滚行即使账本里 updateAvailable 仍为 true 也不算，
+   * 否则「有新版」会把「已经停在那儿等人工」的坏消息盖掉。
+   */
+  hasUpdate: boolean;
+  /** 调度器此刻正在给这个 provider 装新版本（卡片上更新图标转圈）。 */
+  applying: boolean;
+}
+
+const CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  standalone_release: '官方版本化安装',
+  npm_global: 'npm 全局',
+  vendor_selfupdate: '厂商自更新',
+  homebrew: 'Homebrew',
+  unknown: '未识别'
+});
+
+// 闭环每一轮对每个 provider 只会落一个 reason，这里要求全覆盖：漏掉的会原样显示英文，
+// 那正是「面板在骗人」的开始，所以宁可列长一点。
+const REASON_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  up_to_date: '已是最新版',
+  upgrade_available: '有新版可用',
+  apply_disabled: '仅检查，未安装',
+  awaiting_quiescence: '等待空闲确认',
+  deferred_busy: '该 CLI 正在使用，本轮推迟',
+  // lastDeferReason 的取值（tick 结论为空时显示它）。
+  busy: '该 CLI 正在使用，本轮推迟',
+  verified_pass: '升级完成并通过验证',
+  verified_inconclusive: '升级完成，验证未能确证',
+  verify_failed: '升级后验证失败',
+  rolled_back: '已回滚到上一个可用版本',
+  rollback_install_failed: '回滚安装失败',
+  rollback_verify_failed: '回滚后仍验证失败',
+  rollback_post_install_failed: '回滚后 hook 未能恢复',
+  rollback_plan_unavailable: '没有可用的回滚方案',
+  baseline_unhealthy: '当前版本本身验证不通过',
+  provider_broken: '已熔断，暂停自动升级',
+  global_disabled: '自动升级已全局关闭',
+  version_blocked: '目标版本已被拉黑',
+  user_pinned: '已被手动钉版本',
+  channel_not_pinnable: '当前安装渠道不支持钉版本',
+  channel_detect_failed: '安装渠道识别失败',
+  check_failed: '检查失败',
+  latest_version_unknown: '查不到远端版本',
+  latest_version_unparsable: '远端版本号无法解析',
+  latest_is_prerelease: '远端最新版是预发布版',
+  installed_version_unknown: '本地版本探测失败',
+  version_compare_failed: '版本比较失败',
+  known_good_not_rollbackable: '没有可回退的已验证版本',
+  soaking: '新版本静置观察中',
+  soak_pending_unknown_publish_time: '查不到发布时间，暂不跟进',
+  soak_unknown: '发布时间长期查不到',
+  upgrade_soaked_release: '升级到已静置满的稳定版',
+  missing_package_name: '该 CLI 没有 npm 包',
+  npm_plan_unavailable: '生成 npm 安装方案失败',
+  standalone_plan_unavailable: '生成官方安装方案失败',
+  invalid_version: '版本号非法',
+  apply_failed_lock_busy: '安装被占用（文件锁）',
+  apply_failed_network: '安装失败：网络不可达',
+  apply_failed_not_found: '安装失败：版本不存在',
+  apply_failed_hard_failure: '安装失败'
+});
+
+const ATTENTION_STATES = Object.freeze(['broken', 'rolled_back', 'baseline_unhealthy']);
+
+export function getUpgradeChannelLabel(channel?: string) {
+  const normalized = String(channel || '').trim();
+  if (!normalized) return '未检测';
+  return CHANNEL_LABELS[normalized] || normalized;
+}
+
+export function getUpgradeReasonLabel(reason?: string) {
+  const normalized = String(reason || '').trim();
+  if (!normalized) return '';
+  // 认不出来的一律原样显示：面板宁可露出内部枚举，也不该把未知状态粉饰成已知的那几种。
+  return REASON_LABELS[normalized] || normalized;
+}
+
+export function formatUpgradeTimestamp(at?: number, now: number = Date.now()) {
+  const value = Number(at) || 0;
+  if (value <= 0) return '从未';
+  const diff = Math.max(0, now - value);
+  const minute = 60 * 1000;
+  if (diff < minute) return '刚刚';
+  if (diff < 60 * minute) return `${Math.floor(diff / minute)} 分钟前`;
+  const hour = 60 * minute;
+  if (diff < 24 * hour) return `${Math.floor(diff / hour)} 小时前`;
+  return `${Math.floor(diff / (24 * hour))} 天前`;
+}
+
+export function formatUpgradeInterval(intervalMs?: number) {
+  const value = Number(intervalMs) || 0;
+  if (value <= 0) return '';
+  const hours = value / (60 * 60 * 1000);
+  if (hours >= 1) return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`;
+  return `${Math.max(1, Math.round(value / (60 * 1000)))} 分钟`;
+}
+
+/** 顶部那句话必须先说清「会不会动我的机器」——这是本功能最容易被误解的地方。 */
+export function getUpgradeModeSummary(
+  scheduler: ProviderCliUpgradeSchedulerState | null,
+  global?: { enabled: boolean; disabledReason: string }
+) {
+  if (global && global.enabled === false) {
+    const reason = getUpgradeReasonLabel(global.disabledReason);
+    return { label: '已全局停用', tone: 'error' as ProviderCliUpgradeTone, detail: reason || '需要人工恢复' };
+  }
+  if (!scheduler) {
+    return { label: '状态不可用', tone: 'neutral' as ProviderCliUpgradeTone, detail: '调度器未运行' };
+  }
+  if (!scheduler.enabled) {
+    return { label: '已关闭', tone: 'neutral' as ProviderCliUpgradeTone, detail: '不检查也不安装' };
+  }
+  const every = formatUpgradeInterval(scheduler.intervalMs);
+  const cadence = every ? `每 ${every}检查一次` : '按周期检查';
+  if (!scheduler.applyEnabled) {
+    return { label: '仅检查', tone: 'active' as ProviderCliUpgradeTone, detail: `${cadence}，不会安装任何版本` };
+  }
+  return { label: '自动升级', tone: 'success' as ProviderCliUpgradeTone, detail: `${cadence}，空闲时自动升级` };
+}
+
+export function formatUpgradeVersions(record: ProviderCliUpgradeRecord) {
+  const installed = String(record.installedVersion || '').trim();
+  const latest = String(record.latestVersion || '').trim();
+  if (!installed && !latest) return '未知';
+  if (!installed) return `远端 ${latest}`;
+  if (!latest || latest === installed) return installed;
+  return `${installed} → ${latest}`;
+}
+
+// 判定顺序即优先级：坏消息永远盖过好消息，「还没查过」不能被显示成「已是最新」。
+export function getProviderCliUpgradeRow(
+  record: ProviderCliUpgradeRecord,
+  scheduler: ProviderCliUpgradeSchedulerState | null,
+  now: number = Date.now()
+): ProviderCliUpgradeRowPresentation {
+  const reason = record.lastTickReason || record.lastDeferReason || '';
+  const base = {
+    provider: record.provider,
+    versionText: formatUpgradeVersions(record),
+    reasonText: getUpgradeReasonLabel(reason),
+    channelLabel: getUpgradeChannelLabel(record.channel),
+    lastCheckText: formatUpgradeTimestamp(record.lastCheckAt, now),
+    installed: true,
+    canClearBroken: false,
+    hasUpdate: false,
+    applying: Boolean(scheduler && scheduler.applyingProvider === record.provider)
+  };
+
+  if (record.enabled === false) {
+    return {
+      ...base,
+      statusLabel: '已熔断',
+      statusTone: 'error',
+      reasonText: getUpgradeReasonLabel(record.disabledReason) || base.reasonText,
+      attention: true,
+      canClearBroken: true
+    };
+  }
+  if (ATTENTION_STATES.includes(String(record.state || ''))) {
+    const labels: Record<string, string> = {
+      broken: '异常',
+      rolled_back: '已回滚',
+      baseline_unhealthy: '当前版本异常'
+    };
+    const broken = record.state === 'broken';
+    return {
+      ...base,
+      statusLabel: labels[String(record.state)] || '异常',
+      statusTone: record.state === 'rolled_back' ? 'warning' : 'error',
+      // 熔断后每轮 tick 的结论都只是 provider_broken，真正的原因在最后一次失败里。
+      reasonText: broken ? (getUpgradeReasonLabel(record.lastApplyError) || base.reasonText) : base.reasonText,
+      attention: true,
+      canClearBroken: broken
+    };
+  }
+  if (!Number(record.lastCheckAt)) {
+    return { ...base, statusLabel: '待首轮检查', statusTone: 'neutral', attention: false };
+  }
+  if (record.lastCheckError) {
+    return {
+      ...base,
+      statusLabel: '检查失败',
+      statusTone: 'warning',
+      reasonText: String(record.lastCheckError),
+      attention: false
+    };
+  }
+  if (reason === 'deferred_busy') {
+    return { ...base, statusLabel: '已推迟（忙）', statusTone: 'active', attention: false };
+  }
+  // 查过却连命令都找不到 = 这台机器没装：既谈不上「已是最新」，渠道结论（如不支持钉版本）也无从说起。
+  // 找得到命令但读不到版本是探测问题，不能说成「未安装」，更不能说成「已是最新」。
+  if (!String(record.installedVersion || '').trim()) {
+    if (!String(record.resolvedPath || '').trim()) {
+      return { ...base, installed: false, statusLabel: '未安装', statusTone: 'neutral', reasonText: '', channelLabel: '—', attention: false };
+    }
+    return { ...base, statusLabel: '版本未知', statusTone: 'warning', reasonText: '探测不到当前安装的版本', attention: false };
+  }
+  if (record.updateAvailable) {
+    // 有新版不再写标签：界面上由更新图标右上角的黄点表达，装的过程中换成转圈。
+    // statusLabel 留空是刻意的 —— 调用方据此不渲染这一行。
+    return {
+      ...base,
+      hasUpdate: true,
+      statusLabel: '',
+      statusTone: 'warning',
+      attention: false
+    };
+  }
+  return { ...base, statusLabel: '已是最新', statusTone: 'success', attention: false };
+}
+
+export function getProviderCliUpgradeRows(
+  status: ProviderCliUpgradeStatusResponse | null,
+  now: number = Date.now()
+): ProviderCliUpgradeRowPresentation[] {
+  if (!status || !Array.isArray(status.providers)) return [];
+  return status.providers.map((record) => getProviderCliUpgradeRow(record, status.scheduler, now));
+}
+
+/**
+ * 应用卡片要的那一份视角：账本行 + 卡片额外要展示的回退锚点与已拉黑版本。
+ *
+ * 版本闭环与「应用清单」是两份数据（一个在服务器账本里，一个来自本机探测），
+ * 合并只能按 provider 对齐。账本里没有这个 provider 就返回 null —— 卡片此时
+ * 什么升级结论都不显示，而不是显示「已是最新」（那是在编造好消息）。
+ */
+export interface ManagedAppUpgradeView {
+  provider: string;
+  statusLabel: string;
+  statusTone: ProviderCliUpgradeTone;
+  versionText: string;
+  reasonText: string;
+  channelLabel: string;
+  lastCheckText: string;
+  attention: boolean;
+  canClearBroken: boolean;
+  hasUpdate: boolean;
+  /** 调度器正在给这个 provider 装新版本。 */
+  applying: boolean;
+  knownGoodVersion: string;
+  blockedVersions: string[];
+}
+
+export function getManagedAppUpgradeView(
+  status: ProviderCliUpgradeStatusResponse | null,
+  provider: string,
+  now: number = Date.now()
+): ManagedAppUpgradeView | null {
+  const key = String(provider || '').trim();
+  if (!status || !key || !Array.isArray(status.providers)) return null;
+  const record = status.providers.find((item) => item.provider === key);
+  if (!record) return null;
+  const row = getProviderCliUpgradeRow(record, status.scheduler || null, now);
+  return {
+    provider: row.provider,
+    statusLabel: row.statusLabel,
+    statusTone: row.statusTone,
+    versionText: row.versionText,
+    reasonText: row.reasonText,
+    channelLabel: row.channelLabel,
+    lastCheckText: row.lastCheckText,
+    attention: row.attention,
+    canClearBroken: row.canClearBroken,
+    hasUpdate: row.hasUpdate,
+    applying: row.applying,
+    knownGoodVersion: String(record.knownGoodVersion || '').trim(),
+    blockedVersions: Array.isArray(record.blockedVersions) ? record.blockedVersions.map(String) : []
+  };
+}
+
+/** 「应用管理」按 provider 一次性建索引；逐个 provider 再扫一遍账本没有意义。 */
+export function getManagedAppUpgradeViews(
+  status: ProviderCliUpgradeStatusResponse | null,
+  now: number = Date.now()
+): Record<string, ManagedAppUpgradeView> {
+  const map: Record<string, ManagedAppUpgradeView> = {};
+  if (!status || !Array.isArray(status.providers)) return map;
+  for (const record of status.providers) {
+    const view = getManagedAppUpgradeView(status, record.provider, now);
+    if (view) map[view.provider] = view;
+  }
+  return map;
+}
+
+// 「验证并解除熔断」的结果文案。
+const CLEAR_BROKEN_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  cleared: '已解除熔断',
+  not_broken: '当前没有熔断',
+  verify_failed: '当前版本验证不通过，保持熔断',
+  verify_inconclusive: '当前版本未能确证可用，保持熔断',
+  installed_version_unknown: '探测不到当前安装的版本，保持熔断',
+  already_running: '后台正在检查升级，请稍后再试',
+  unknown_provider: '该 CLI 不在自动升级范围内',
+  scheduler_unavailable: '升级调度器未运行',
+  deps_unavailable: '升级调度器未就绪'
+});
+
+export function describeClearBrokenResult(result: { ok: boolean; reason: string; detail?: string; version?: string }) {
+  const label = CLEAR_BROKEN_LABELS[result.reason] || result.reason || '解除失败';
+  if (result.ok) return `${label}：${result.version || ''} 验证通过，已恢复自动升级`;
+  return result.detail ? `${label}（${result.detail}）` : label;
+}

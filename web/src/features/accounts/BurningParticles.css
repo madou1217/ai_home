@@ -1,0 +1,137 @@
+.burning-particles {
+  /* 刻意保留的「燃烧中」实时效果；白热核心取 --hos-white，暖色混入取 warning 与白的混色。 */
+  --burning-white: var(--hos-white);
+  --burning-hot: color-mix(in srgb, var(--color-warning) 45%, var(--hos-white));
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 4;
+  /* 粒子动画全部在自己的合成层里跑。否则每帧的 transform 变更会让浏览器
+     对整页做样式重算（实测每 10 秒 100~200 次），账号页因此明显掉帧。 */
+  contain: layout paint style;
+  isolation: isolate;
+}
+
+/* 燃烧点紧贴真实轨道端点；双层光核模拟火药捻子的白热爆点。 */
+.burning-particles::before {
+  content: '';
+  position: absolute;
+  left: var(--anchor);
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--hos-radius-pill, 50%);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--burning-white) 98%, transparent) 0 13%,
+    color-mix(in srgb, var(--core-color) 68%, var(--burning-hot)) 28%,
+    color-mix(in srgb, var(--core-color) 78%, transparent) 48%,
+    transparent 72%
+  );
+/* 不用 filter: drop-shadow：它会让该元素每帧重新栅格化，且强制脱离合成层。
+     box-shadow 由合成器绘制，效果接近但便宜得多。 */
+  box-shadow: 0 0 3px var(--core-color);
+  will-change: transform, opacity;
+  animation: burning-core-flash var(--core-duration, 0.28s) steps(2, end) var(--core-delay, 0s) infinite;
+}
+
+.burning-particles::after {
+  content: '';
+  position: absolute;
+  left: var(--anchor);
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 45% 55% 50% 48%;
+  transform: translate(-50%, -50%) rotate(18deg);
+  background: var(--burning-white);
+  box-shadow:
+    0 0 2px var(--burning-white),
+    0 0 5px color-mix(in srgb, var(--core-color) 58%, var(--burning-hot)),
+    0 0 9px var(--core-color);
+  will-change: transform, opacity;
+  animation: burning-core-jolt var(--jolt-duration, 0.18s) steps(2, end) var(--jolt-delay, 0s) infinite alternate;
+}
+
+/* 短促径向火星：条状高亮而非圆形上浮，避免出现“蒸汽”观感。 */
+.burning-particle {
+  position: absolute;
+  left: var(--anchor);
+  top: 50%;
+  width: var(--pw);
+  height: var(--ph);
+  border-radius: var(--hos-radius-pill, 999px);
+  transform-origin: left center;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--burning-white) 98%, transparent) 0 18%,
+    color-mix(in srgb, var(--pc) 72%, var(--burning-hot)) 42%,
+    var(--pc) 68%,
+    transparent 100%
+  );
+  /* 同 ::before：不用 filter（逐帧栅格化），用 box-shadow 交给合成器。 */
+  box-shadow: 0 0 2px var(--pc);
+  opacity: 0;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  animation: burning-spark-burst var(--dur) cubic-bezier(0.12, 0.72, 0.28, 1) var(--delay) infinite;
+}
+
+.burning-particle--ember {
+  border-radius: var(--hos-radius-pill, 50%);
+  background: radial-gradient(circle, var(--burning-white) 0 18%, var(--pc) 48%, transparent 78%);
+}
+
+@keyframes burning-spark-burst {
+  0% {
+    transform: translate(-50%, -50%) translate3d(0, 0, 0) rotate(var(--rot)) scale(0.25);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  58% {
+    transform: translate(-50%, -50%) translate3d(calc(var(--dx) * 0.72), calc(var(--dy) * 0.72), 0) rotate(var(--rot)) scale(1);
+    opacity: 0.96;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate3d(var(--dx), calc(var(--dy) + var(--fall)), 0) rotate(var(--rot)) scale(0.08);
+    opacity: 0;
+  }
+}
+
+@keyframes burning-core-flash {
+  0% {
+    opacity: 0.68;
+    transform: translate(-50%, -50%) scale(0.78) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.12) rotate(16deg);
+  }
+  100% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(0.9) rotate(-9deg);
+  }
+}
+
+@keyframes burning-core-jolt {
+  from {
+    transform: translate(-50%, -50%) rotate(4deg) scale(0.82);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(32deg) scale(1.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burning-particle,
+  .burning-particles::before,
+  .burning-particles::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+

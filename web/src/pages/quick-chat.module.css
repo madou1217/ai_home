@@ -1,0 +1,207 @@
+/* Chat 快捷唤起窗口（pages/QuickChat.tsx）的独立视觉：简约、安静、以阅读为主。
+ * 只在 [data-quick-chat] 作用域内重设 token —— 会话区沿用同一套组件，HUD 的网格 / 切角 / 角标 /
+ * 发光 / 展示字体在这里一律归零，主站 WebUI 不受影响。
+ * 颜色只表达语义（AGENTS.md / DESIGN.md 原则 3）：强调色只给可交互与选中。 */
+
+.shell {
+  /* —— token 重设：浅色 —— */
+  --color-bg: #fbfbfa;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-soft: #f4f4f2;
+  --color-surface-muted: #f1f1ef;
+  --color-surface-sunken: #f4f4f2;
+  --color-border: #e6e5e1;
+  --color-border-subtle: #efeeeb;
+  --color-border-strong: #d6d4cf;
+  --color-heading: #1c1c1a;
+  --color-text: #2b2b28;
+  --color-muted: #6b6a65;
+  --color-muted-strong: #55544f;
+  --color-faint: #8d8c86;
+  --color-accent: #2f6fde;
+  --color-accent-hover: #255bc0;
+  --color-accent-soft: color-mix(in srgb, #2f6fde 10%, transparent);
+  --hud-panel-bg: var(--color-surface);
+  --hud-panel-blur: none;
+  --hud-grid-size: 0px;
+  --hud-grid-line: transparent;
+  --hud-glow-accent: none;
+  --hud-text-glow: none;
+  --hud-text-glow-soft: none;
+  --hud-text-glow-success: none;
+  --hud-text-glow-warning: none;
+  --hud-text-glow-danger: none;
+  --hud-chamfer: 0px;
+  --hud-chamfer-sm: 0px;
+  --hud-tick: 0px;
+  --hud-tick-color: transparent;
+  --font-display: var(--font-prose);
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --qc-radius: 10px;
+  --qc-radius-sm: 7px;
+  --qc-topbar-h: 44px;
+  --qc-sidebar-w: 260px;
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* —— token 重设：深色（跟随 data-theme，宿主经 ?theme= 被动应用） —— */
+:global(:root[data-theme='dark']) .shell {
+  --color-bg: #1b1b1d;
+  --color-bg-elevated: #232326;
+  --color-surface: #232326;
+  --color-surface-raised: #2a2a2d;
+  --color-surface-soft: #26262a;
+  --color-surface-muted: #26262a;
+  --color-surface-sunken: #161618;
+  --color-border: #333337;
+  --color-border-subtle: #2c2c30;
+  --color-border-strong: #44444a;
+  --color-heading: #f2f2f0;
+  --color-text: #e4e4e1;
+  --color-muted: #a3a29d;
+  --color-muted-strong: #bdbcb7;
+  --color-faint: #85847f;
+  --color-accent: #6f9ef5;
+  --color-accent-hover: #8bb2f7;
+  --color-accent-soft: color-mix(in srgb, #6f9ef5 14%, transparent);
+}
+
+/* HUD 材质在作用域内彻底关掉：切角裁剪、角标伪元素、网格画布。 */
+.shell :global(*) {
+  clip-path: none !important;
+}
+.shell :global(.hud-panel)::before,
+.shell :global(.hud-panel)::after,
+.shell :global([class*='interactionCard'])::before,
+.shell :global([class*='interactionCard'])::after {
+  display: none !important;
+}
+.shell :global(.ant-btn) {
+  border-radius: var(--qc-radius-sm) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+/* —— 顶栏：模式切换 + 标题 + 新建 —— */
+.topbar {
+  flex: 0 0 var(--qc-topbar-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-heading);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.modeSwitch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.modeTab {
+  min-width: 52px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.modeTab:hover { color: var(--color-text); }
+.modeTab[data-active] {
+  background: var(--color-surface);
+  color: var(--color-heading);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 10%, transparent);
+}
+.modeTab:focus-visible,
+.iconButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.iconButton {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--qc-radius-sm);
+  background: transparent;
+  color: var(--color-muted-strong);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.iconButton:hover { background: var(--color-surface-muted); color: var(--color-heading); }
+
+/* —— 主体：侧栏 + 会话区 —— */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.sidebar {
+  flex: 0 0 var(--qc-sidebar-w);
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--color-border-subtle);
+  background: var(--color-bg);
+}
+.shell[data-layout='triple'] .sidebar { flex-basis: 240px; }
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+}
+.main > :global(*) { flex: 1 1 auto; min-height: 0; }
+
+/* 会话区里的 HUD 网格画布与面板底色在这里统一成平面。 */
+.main :global([data-runtime-workspace]) {
+  background: var(--color-bg) !important;
+  background-image: none !important;
+}
+
+.drawer :global(.ant-drawer-content) {
+  background: var(--color-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modeTab,
+  .iconButton { transition: none; }
+}

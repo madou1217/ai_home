@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "identity_scheme_version": 1,
+  "provider": "claude",
+  "kind": "oauth",
+  "seed_prefix": "oauth:claude:uuid:",
+  "source_field": "claudeAiOauth.account.uuid",
+  "normalization": "reject if the raw value is not already trimmed; require the UUID shape; lowercase",
+  "note": "Shared cross-language vectors. Both the Node and the Go suites read this file, so a divergence in the Claude OAuth identity vector fails a test instead of silently minting a second account for the same account. See docs/architecture/codex-oauth-identity-vector-adr.md.",
+  "vectors": [
+    {
+      "name": "a canonical lowercase uuid resolves",
+      "account_uuid": "1fb09d73-89ab-cdef-0123-456789abcdef",
+      "want_identity_seed": "oauth:claude:uuid:1fb09d73-89ab-cdef-0123-456789abcdef",
+      "want_account_ref": "acct_9605946ad43e4b73a52e"
+    },
+    {
+      "name": "an uppercase uuid is lowercased, not preserved",
+      "account_uuid": "1FB09D73-89AB-CDEF-0123-456789ABCDEF",
+      "want_identity_seed": "oauth:claude:uuid:1fb09d73-89ab-cdef-0123-456789abcdef",
+      "want_account_ref": "acct_9605946ad43e4b73a52e"
+    },
+    {
+      "name": "a mixed-case uuid is lowercased",
+      "account_uuid": "1Fb09D73-89ab-CDEF-0123-456789abcDEF",
+      "want_identity_seed": "oauth:claude:uuid:1fb09d73-89ab-cdef-0123-456789abcdef",
+      "want_account_ref": "acct_9605946ad43e4b73a52e"
+    },
+    {
+      "name": "an untrimmed uuid is rejected instead of being trimmed",
+      "account_uuid": " 1fb09d73-89ab-cdef-0123-456789abcdef ",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a non-uuid is rejected",
+      "account_uuid": "not-a-uuid",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a uuid with a wrong group length is rejected",
+      "account_uuid": "1fb09d73-89ab-cdef-0123-456789abcde",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "an empty uuid is rejected",
+      "account_uuid": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a uuid containing a colon is rejected",
+      "account_uuid": "1fb09d73-89ab-cdef-0123-45678:abcdef",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a uuid with a non-hex character is rejected",
+      "account_uuid": "1fb09d73-89ab-cdef-0123-456789abcdeZ",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "an email next to the uuid never becomes the identity",
+      "account_uuid": "1fb09d73-89ab-cdef-0123-456789abcdef",
+      "account_email": "user@example.com",
+      "want_identity_seed": "oauth:claude:uuid:1fb09d73-89ab-cdef-0123-456789abcdef",
+      "want_account_ref": "acct_9605946ad43e4b73a52e"
+    }
+  ]
+}

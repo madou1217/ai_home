@@ -1,0 +1,341 @@
+import AppKit
+import ApplicationServices
+
+func emit(_ event: [String: Any]) {
+  guard let bytes = try? JSONSerialization.data(withJSONObject: event), let text = String(data: bytes, encoding: .utf8) else { return }
+  print(text)
+  fflush(stdout)
+}
+
+final class TranslationApp: NSObject, NSApplicationDelegate {
+  let fullApp = CommandLine.arguments.contains("--full-app")
+  let reader = SelectionReader()
+  let panel = TranslationPanel(emit: emit)
+  let chatPanel = ChatPanel(emit: emit)
+  // ⌘⌥C / 「AIH Chat 选中内容」打开的是 WebUI chat/work 的快捷唤起壳；旧的原生
+  // ChatPanel 仅在拿不到本机 server 地址时兜底。
+  let quickChat = QuickChatWindow()
+  var quickChatAvailable = false
+  lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
+    guard let self = self else { return }
+    emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": message])
+    self.panel.content.showShortcutStatus(message)
+  }
+  var monitors: [Any] = []
+  var lastTrusted: Bool?
+  var selectionToken = 0
+  private var selectionMouseDown: CGPoint?
+  private var selectionDragged = false
+  // Set at mouse-down when the gesture began on a menu / button / toolbar etc.
+  private var selectionStartedOnControl = false
+  var selectionApplicationPID: pid_t = 0
+  var activationObserver: NSObjectProtocol?
+  var contextSelection: SelectedText?
+  let contextMenu = NSMenu()
+
+  // Reopening the bundle is an explicit user action, unlike the server-owned
+  // background launch. Give the hidden helper a discoverable window entry.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    if fullApp { panel.openSettings() }
+    else if quickChatAvailable { quickChat.show() }
+    else { chatPanel.openFromShortcut() }
+    return true
+  }
+
+  private func installApplicationMenu() {
+    // Accessory apps still need menu key equivalents for the native text
+    // responder chain (copy/paste/undo); editable NSTextViews alone are not enough.
+    let menu = NSMenu()
+    let appItem = NSMenuItem()
+    let appMenu = NSMenu(title: "AIH")
+    let services = NSMenu(title: "Services")
+    let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+    servicesItem.submenu = services
+    appMenu.addItem(servicesItem)
+    NSApp.servicesMenu = services
+    appItem.submenu = appMenu
+    menu.addItem(appItem)
+    let editItem = NSMenuItem()
+    let edit = NSMenu(title: "Edit")
+    for (title, action, key) in [
+      ("Undo", "undo:", "z"), ("Redo", "redo:", "Z"),
+      ("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+      ("Paste", "pasteAsPlainText:", "v"), ("Select All", "selectAll:", "a")
+    ] {
+      edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
+    }
+    editItem.submenu = edit
+    menu.addItem(editItem)
+    NSApp.mainMenu = menu
+  }
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    NSApp.setActivationPolicy(fullApp ? .regular : .accessory)
+    installApplicationMenu()
+    if fullApp {
+      panel.configure([
+        "target": "zh-Hans",
+        "autoCopy": false,
+        "executionTarget": "direct-provider",
+        "languages": [["label": "简体中文", "code": "zh-Hans"]],
+        "serverTargets": []
+      ])
+      panel.openSettings()
+    }
+    registerShortcuts()
+    // Register the same action as a macOS Services provider. This makes
+    // “AIH 翻译选中内容” available from Services in TextEdit, browsers and
+    // other AX-aware apps, while the global monitor below keeps the compact
+    // contextual menu available when the host app exposes no Services UI.
+    NSApp.servicesProvider = self
+    // Register the provider explicitly as well as assigning the app-level
+    // provider.  The helper is a dynamically built, hidden app under AIH's
+    // run directory; explicit registration makes the Services daemon bind the
+    // provider name to this live process instead of relying only on the bundle
+    // metadata discovered by LaunchServices.
+    // The legacy registration API uses a provider *name*, not the bundle
+    // identifier. Use the same human-readable name that LaunchServices shows
+    // for this helper so older Services hosts can resolve it as well.
+    NSRegisterServicesProvider(self, "AIH Translation")
+    NSUpdateDynamicServices()
+    contextMenu.autoenablesItems = false
+    if !fullApp { updateTrust() }
+    activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { [weak self] notification in
+      guard let self = self else { return }
+      let active = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+      if active?.processIdentifier != self.selectionApplicationPID {
+        self.selectionToken += 1
+        self.panel.hideTrigger()
+      }
+    }
+    Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+      if self?.fullApp != true && getppid() == 1 { NSApp.terminate(nil) }
+      if self?.fullApp != true { self?.updateTrust() }
+    }
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      while let line = readLine() {
+        guard line.utf8.count < 100000, let bytes = line.data(using: .utf8), let event = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { continue }
+        DispatchQueue.main.async { self?.receive(event) }
+      }
+      // A standalone app is not owned by a pipe. EOF only terminates the
+      // helper; the full app keeps its settings shell alive.
+      if self?.fullApp != true { DispatchQueue.main.async { NSApp.terminate(nil) } }
+    }
+  }
+
+  func registerShortcuts(translation: String = ShortcutRegistry.defaultTranslationShortcut,
+                         chat: String = ShortcutRegistry.defaultChatShortcut,
+                         translationEnabled: Bool = true,
+                         chatEnabled: Bool = true) {
+    _ = shortcutRegistry.update([
+      ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
+        self?.panel.openSettings()
+      },
+      ShortcutDescriptor(id: "translation", label: "翻译", shortcut: translation, enabled: translationEnabled) { [weak self] in
+        guard let self = self else { return }
+        let application = NSWorkspace.shared.frontmostApplication
+        if let selection = self.reader.read(explicit: true, application: application) {
+          self.panel.offer(selection, explicit: true)
+        }
+        emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication])
+      },
+      ShortcutDescriptor(id: "chat", label: "Chat", shortcut: chat, enabled: chatEnabled) { [weak self] in
+        guard let self else { return }
+        if self.quickChatAvailable { self.quickChat.toggle() } else { self.chatPanel.openFromShortcut() }
+      }
+    ])
+  }
+
+  func updateTrust() {
+    let trusted = AXIsProcessTrusted()
+    if trusted != lastTrusted {
+      lastTrusted = trusted
+      emit(["type": "status", "trusted": trusted])
+      monitors.forEach { NSEvent.removeMonitor($0) }
+      monitors = []
+      if trusted { installMonitors() }
+      else { panel.close() }
+    }
+  }
+
+  func installMonitors() {
+    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown, .rightMouseUp, .keyDown, .scrollWheel], handler: { [weak self] event in
+      guard let self = self else { return }
+      if event.type == .leftMouseDown {
+        self.selectionToken += 1
+        self.selectionMouseDown = event.cgEvent?.location
+        self.selectionDragged = false
+        // Choosing a menu item is press-drag-release: the drag would otherwise count as a
+        // text selection, and by mouse-up the menu is gone. Decide at the gesture's start.
+        self.selectionStartedOnControl = event.cgEvent.map { self.reader.gestureStartsOnControl(at: $0.location) } ?? false
+        self.panel.outsideClick()
+      } else if event.type == .leftMouseDragged {
+        if let start = self.selectionMouseDown, let point = event.cgEvent?.location {
+          self.selectionDragged = self.selectionDragged || hypot(point.x - start.x, point.y - start.y) >= 4
+        }
+      } else if event.type == .leftMouseUp {
+        let directTranslation = event.modifierFlags.contains(.control)
+          && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
+          && !self.selectionDragged
+        let selectionGesture = directTranslation || self.selectionDragged || event.clickCount >= 2
+        let startedOnControl = self.selectionStartedOnControl
+        self.selectionMouseDown = nil
+        self.selectionDragged = false
+        self.selectionStartedOnControl = false
+        guard selectionGesture, directTranslation || !startedOnControl else { return }
+        emit(["type": "selection-state", "outcome": "mouse-up"])
+        let token = self.selectionToken
+        // 全局监听副本的 eventTargetUnixProcessID 指向本 helper，不能用来定位选词应用。
+        let point = event.cgEvent?.location
+        let application = self.reader.applicationAt(point)
+        // Web pages own this explicit chord through the browser extension.
+        // The host descriptor avoids duplicate native and webpage requests.
+        if directTranslation, let application = application,
+           let bundleURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: application.bundleIdentifier ?? ""),
+           let types = Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]],
+           types.contains(where: { (($0["CFBundleURLSchemes"] as? [String]) ?? []).contains(where: { $0 == "http" || $0 == "https" }) }) {
+          return
+        }
+        self.selectionApplicationPID = application?.processIdentifier ?? 0
+        // CGEvent/AX 使用屏幕左上原点；AppKit 面板位置使用主屏左下原点。
+        let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let panelPoint = point.map { NSPoint(x: $0.x, y: primaryTop - $0.y) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+          guard token == self.selectionToken, AXIsProcessTrusted() else { return }
+          if let selection = self.reader.read(explicit: false, application: application, point: point) {
+            self.panel.offer(selection, explicit: directTranslation, point: panelPoint)
+          }
+          emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication,
+                "hitPID": self.reader.lastHitPID, "focusPID": self.reader.lastFocusedPID,
+                "x": self.reader.lastPoint.x, "y": self.reader.lastPoint.y])
+        }
+      } else if event.type == .rightMouseDown {
+        self.selectionMouseDown = nil
+        self.selectionDragged = false
+        self.selectionToken += 1
+        self.panel.hideTrigger()
+      } else if event.type == .rightMouseUp {
+        // Never replace the host application's right-click menu. Translation
+        // is exposed through Services and the explicit shortcut instead.
+        self.contextSelection = nil
+      } else if event.type == .scrollWheel {
+        self.selectionToken += 1
+        self.panel.hideTrigger()
+      }
+      else if event.type == .keyDown {
+        if event.keyCode == 53 {
+          self.selectionToken += 1
+          self.panel.close()
+        }
+        else if event.keyCode == 6,
+                event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
+          // Let the host editor handle its own undo first. If the AX write
+          // was not recorded by that editor, the panel restores its exact
+          // pre-replacement snapshot after the event has propagated.
+          let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+          self.panel.undoReplacementAfterHostShortcut(frontmostPID: pid)
+        }
+      }
+    }) { monitors.append(monitor) }
+    if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
+      if event.type == .keyDown && event.keyCode == 53 {
+        self?.selectionToken += 1
+        self?.panel.close()
+        return nil
+      }
+      return event
+    }) { monitors.append(monitor) }
+    emit(["type": "selection-state", "outcome": "monitors-\(monitors.count)"])
+  }
+
+
+  /// macOS Services entry point. The pasteboard is the authoritative text
+  /// payload; AX is only used to retain an editable range when the source app
+  /// exposes one, so Services can still work in apps with a partial AX tree.
+  @objc func translateSelectedText(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+    guard let raw = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+      error.pointee = "AIH 未收到可翻译的选中文本" as NSString
+      return
+    }
+    let application = NSWorkspace.shared.frontmostApplication
+    let observed = reader.read(explicit: true, application: application)
+    // Services owns the payload. AX may still expose an older selection; use
+    // it only to retain a replacement target when its text matches exactly.
+    let selection = observed?.text == raw
+      ? observed!
+      : SelectedText(text: raw, editable: false, element: nil, fullValue: raw, selectedRange: nil)
+    contextSelection = selection
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.contextSelection = nil
+      self.panel.offer(selection, explicit: true)
+    }
+  }
+
+  /// macOS Services entry point for Chat. The pasteboard carries only the
+  /// selected text; ChatPanel owns the JSONL request/session identity.
+  @objc func chatSelectedText(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+    guard let raw = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+      error.pointee = "AIH 未收到可发送到 Chat 的选中文本" as NSString
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if self.quickChatAvailable { self.quickChat.reference(text: raw, source: "macos-service") }
+      else { self.chatPanel.openFromService(text: raw) }
+    }
+  }
+
+  func receive(_ event: [String: Any]) {
+    switch event["type"] as? String {
+    case "hello":
+      let version = event["version"] as? Int ?? 1
+      if version == 1 {
+        emit(["version": 1, "type": "ready"])
+      } else {
+        emit(["version": 1, "type": "error", "code": "desktop_protocol_version_unsupported", "message": "桌面协议版本不受支持", "retryable": false])
+      }
+    case "configure":
+      panel.configure(event)
+      chatPanel.configure(event)
+      let quickOrigin = event["quickChatOrigin"] as? String ?? ""
+      quickChatAvailable = !quickOrigin.isEmpty
+      quickChat.configure(origin: quickOrigin, managementKey: event["quickChatKey"] as? String ?? "")
+      registerShortcuts(
+        translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
+        chat: event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut,
+        translationEnabled: event["shortcutEnabled"] as? Bool ?? true,
+        chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true
+      )
+      reader.serverPort = event["port"] as? Int ?? reader.serverPort
+    case "webui-focus":
+      reader.webUIFocusUntil = event["until"] as? Double ?? 0
+      // 心跳并非原生焦点的权威：后台/自动化页面仍可能上报聚焦。
+      // 取词前由真实 AX 窗口 URL/title 判断是否交还 WebUI。
+    case "request-permission":
+      _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+      // macOS 13+ uses the settings extension URL; the legacy preference-pane URL is the
+      // fallback. A freshly signed (ad-hoc) helper is not listed automatically on macOS 27,
+      // so also reveal the app bundle in Finder for drag-and-drop into the list.
+      let paneURLs = ["x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+                      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]
+      if let url = paneURLs.compactMap(URL.init(string:)).first { NSWorkspace.shared.open(url) }
+      NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    case "host-translate":
+      guard fullApp,
+            let text = event["text"] as? String,
+            let id = event["id"] as? String else { return }
+      panel.beginHostTranslation(text: text, target: event["target"] as? String ?? "zh-Hans", id: id)
+    case "chat.open", "chat.submit", "chat.stop", "chat.close", "chat.event", "chat.error":
+      chatPanel.receive(event)
+    default: panel.receive(event)
+    }
+  }
+}
+
+let app = NSApplication.shared
+let delegate = TranslationApp()
+app.delegate = delegate
+app.run()

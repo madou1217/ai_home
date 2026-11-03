@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "description": "Go static credential identities (core/accounts/codex/api_key.go, core/accounts/claude/static.go) mirrored by lib/account/go-bridge/go-static-account-ref.js. Expected values were produced by Go and are asserted by both sides.",
+  "vectors": [
+    {
+      "base_url": "",
+      "expect": {
+        "account_ref": "acct_79eee7f314ba7d3fdb11",
+        "base_url": "https://api.openai.com/v1",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-1"
+    },
+    {
+      "base_url": "https://api.openai.com/v1",
+      "expect": {
+        "account_ref": "acct_79eee7f314ba7d3fdb11",
+        "base_url": "https://api.openai.com/v1",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-1"
+    },
+    {
+      "base_url": "https://API.OpenAI.com:443/v1/",
+      "expect": {
+        "account_ref": "acct_79eee7f314ba7d3fdb11",
+        "base_url": "https://api.openai.com/v1",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-1"
+    },
+    {
+      "base_url": "http://127.0.0.1:8317/v1",
+      "expect": {
+        "account_ref": "acct_39741091db14db6b2b42",
+        "base_url": "http://127.0.0.1:8317/v1",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-2"
+    },
+    {
+      "base_url": "http://localhost:80/",
+      "expect": {
+        "account_ref": "acct_c3e63ab95b61f060a4aa",
+        "base_url": "http://localhost",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-2"
+    },
+    {
+      "base_url": "  https://relay.example.com/openai//  ",
+      "expect": {
+        "account_ref": "acct_b56f6881b28434afe22f",
+        "base_url": "https://relay.example.com/openai",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-2"
+    },
+    {
+      "base_url": "https://relay.example.com:8443/v1",
+      "expect": {
+        "account_ref": "acct_6270a9c556b64cfa1265",
+        "base_url": "https://relay.example.com:8443/v1",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-3"
+    },
+    {
+      "base_url": "https://[::1]:9000/v1",
+      "expect": {
+        "account_ref": "acct_a0e67ccb6592e420e231",
+        "base_url": "https://[::1]:9000/v1",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-3"
+    },
+    {
+      "base_url": "https://relay.example.com/v1?x=1",
+      "expect": {
+        "valid": false
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-3"
+    },
+    {
+      "base_url": "ftp://relay.example.com",
+      "expect": {
+        "valid": false
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-3"
+    },
+    {
+      "base_url": "https://user:pw@relay.example.com",
+      "expect": {
+        "valid": false
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": "sk-test-3"
+    },
+    {
+      "base_url": "",
+      "expect": {
+        "valid": false
+      },
+      "kind": "api_key",
+      "provider": "codex",
+      "secret": " sk-padded "
+    },
+    {
+      "base_url": "",
+      "expect": {
+        "account_ref": "acct_33e20d4215b2597b2cc0",
+        "base_url": "https://api.anthropic.com",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "claude",
+      "secret": "sk-ant-1"
+    },
+    {
+      "base_url": "https://api.anthropic.com/",
+      "expect": {
+        "account_ref": "acct_33e20d4215b2597b2cc0",
+        "base_url": "https://api.anthropic.com",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "claude",
+      "secret": "sk-ant-1"
+    },
+    {
+      "base_url": "https://open.bigmodel.cn/api/anthropic",
+      "expect": {
+        "account_ref": "acct_4bb31233c1413b499457",
+        "base_url": "https://open.bigmodel.cn/api/anthropic",
+        "valid": true
+      },
+      "kind": "api_key",
+      "provider": "claude",
+      "secret": "sk-ant-1"
+    },
+    {
+      "base_url": " https://api.anthropic.com",
+      "expect": {
+        "valid": false
+      },
+      "kind": "api_key",
+      "provider": "claude",
+      "secret": "sk-ant-1"
+    },
+    {
+      "base_url": "",
+      "expect": {
+        "account_ref": "acct_5bdd32ff466f56702f9a",
+        "base_url": "https://api.anthropic.com",
+        "valid": true
+      },
+      "kind": "auth_token",
+      "provider": "claude",
+      "secret": "tok-1"
+    },
+    {
+      "base_url": "https://gateway.example.com:443/anthropic/",
+      "expect": {
+        "account_ref": "acct_e307026876efa9df4c29",
+        "base_url": "https://gateway.example.com/anthropic",
+        "valid": true
+      },
+      "kind": "auth_token",
+      "provider": "claude",
+      "secret": "tok-1"
+    },
+    {
+      "base_url": "",
+      "expect": {
+        "valid": false
+      },
+      "kind": "auth_token",
+      "provider": "codex",
+      "secret": "tok-1"
+    }
+  ]
+}

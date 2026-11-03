@@ -1,0 +1,205 @@
+/* 账号卡片网格 —— Cyber HUD：卡片挂全局 .hud-panel.hud-panel--sm（切角 + 左上角标 + 悬停青边），
+ * 这里只写布局与内部排版；全部语义 token，深浅主题自动翻转。 */
+.gridContainer {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-6, 12px);
+  width: 100%;
+}
+
+.accountCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-7, 14px) var(--space-8, 16px);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 悬停：青色描边（.hud-panel:hover）+ 轻微青色外辉光 */
+.accountCard:hover {
+  box-shadow: var(--hud-glow-accent);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6, 12px);
+  margin-bottom: var(--space-6, 12px);
+}
+
+.avatarWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+}
+
+.accountInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.accountTitle {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.02em;
+  color: var(--color-heading);
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  min-width: 0;
+}
+
+.titleIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 4px);
+  flex: none;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.iconBtn:hover,
+.iconBtn:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+}
+
+/* 复制图标与列表行一致：默认隐藏，鼠标悬停卡片 / 键盘进入卡片时才出现。
+ * 固定占位只切换透明度，避免悬停造成标题行换行与卡片抖动。 */
+.accountCard .iconBtn {
+  opacity: 0;
+  pointer-events: none;
+}
+.accountCard:hover .iconBtn,
+.accountCard:focus-within .iconBtn,
+.accountCard .iconBtn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.accountSubtitle {
+  font-size: 12px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moreBtn {
+  flex: none;
+  align-self: flex-start;
+  color: var(--color-muted);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 10px);
+  margin-bottom: var(--space-6, 12px);
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  min-width: 0;
+}
+
+.tagGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 4px);
+  flex: none;
+}
+
+.planTag {
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 4px;
+}
+
+/* 额度 / Token 单元格按表格列宽设计，卡片里撑满卡宽 */
+.usageBlock,
+.metaRow {
+  min-width: 0;
+}
+
+.usageBlock :global(.usage-progress-effects),
+.metaRow > * {
+  width: 100%;
+  max-width: 100%;
+}
+
+.lastUsed {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.footerActions {
+  display: inline-flex;
+  gap: var(--space-4, 8px);
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  /* 同行卡片等高：内容贴顶，底栏贴底 */
+  margin-top: auto;
+  border-top: 1px dashed var(--color-border);
+  padding-top: var(--space-6, 12px);
+}
+
+.emptyGrid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  border-radius: 0;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 3%, transparent);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm, 13px);
+  letter-spacing: 0.04em;
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.iconBtn {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}

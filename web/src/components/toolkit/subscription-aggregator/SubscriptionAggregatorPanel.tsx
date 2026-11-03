@@ -1,0 +1,351 @@
+import { useEffect, useState } from 'react';
+import { Empty, List, Pagination, Popconfirm, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
+import {
+  ApartmentOutlined,
+  CloseOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EyeOutlined,
+  FormOutlined,
+  ImportOutlined,
+  LinkOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RetweetOutlined,
+  SyncOutlined,
+  UnorderedListOutlined
+} from '@ant-design/icons';
+import { StatisticCard } from '@ant-design/pro-components';
+import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import SectionCard from '@/components/ui/SectionCard';
+import '@/components/ui/kpi-strip.css';
+import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
+import {
+  aggregatorErrorText,
+  countEnabledPresets,
+  describeSourceOrigin,
+  describeSourceScope,
+  formatBytes,
+  formatExpire,
+  formatTraffic,
+  policyLabel
+} from './aggregator-presentation';
+import ImportProfileModal from './ImportProfileModal';
+import ManualNodeModal from './ManualNodeModal';
+import { manualNodeSaveInput } from './manual-nodes';
+import SourceNodesDrawer from './SourceNodesDrawer';
+import ProfileEditorDrawer from './ProfileEditorDrawer';
+import ProfilePreviewModal from './ProfilePreviewModal';
+import RecentPulls from './RecentPulls';
+import SourceEditorModal from './SourceEditorModal';
+import SubscriptionLinkField from './SubscriptionLinkField';
+import type { AggregatorProfile, AggregatorProfileInput, AggregatorSource } from './types';
+import { useSubscriptionAggregator } from './use-subscription-aggregator';
+import EdgePlanCard from '@/components/toolkit/edge-proxy/EdgePlanCard';
+import styles from './SubscriptionAggregator.module.css';
+
+const { Text } = Typography;
+
+// 订阅源多了以后一屏放不下（几十个源时列表会很长），分页显示。
+const SOURCE_PAGE_SIZE = 8;
+
+function totalTraffic(sources: AggregatorSource[]) {
+  const withInfo = sources.filter((source) => source.userInfo?.total);
+  if (!withInfo.length) return '—';
+  const used = withInfo.reduce((sum, source) => sum + Number(source.userInfo?.upload || 0) + Number(source.userInfo?.download || 0), 0);
+  const total = withInfo.reduce((sum, source) => sum + Number(source.userInfo?.total || 0), 0);
+  return `${formatBytes(used)} / ${formatBytes(total)}`;
+}
+
+/** 订阅聚合与分流：管理订阅源，把它们聚合成带策略组与分流规则的单个订阅链接。 */
+export default function SubscriptionAggregatorPanel() {
+  const state = useSubscriptionAggregator();
+  const { overview, loading, error, setError } = state;
+  const [sourceEditor, setSourceEditor] = useState<{ source: AggregatorSource | null } | null>(null);
+  const [editingProfile, setEditingProfile] = useState<AggregatorProfileInput | null>(null);
+  const [previewProfile, setPreviewProfile] = useState<AggregatorProfile | null>(null);
+  const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
+  const [nodesSourceId, setNodesSourceId] = useState('');
+  const [addingNode, setAddingNode] = useState(false);
+  const [sourcePage, setSourcePage] = useState(1);
+  const sources = overview?.sources || [];
+  const profiles = overview?.profiles || [];
+  const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
+  const enabledSources = sources.filter((source) => source.enabled);
+  const sourcePages = Math.max(1, Math.ceil(sources.length / SOURCE_PAGE_SIZE));
+  const pagedSources = sources.slice((sourcePage - 1) * SOURCE_PAGE_SIZE, sourcePage * SOURCE_PAGE_SIZE);
+
+  // 删除 / 停用后当前页可能已经不存在（例如删掉最后一页的唯一一条）。
+  useEffect(() => {
+    setSourcePage((current) => Math.min(current, Math.max(1, Math.ceil(sources.length / SOURCE_PAGE_SIZE))));
+  }, [sources.length]);
+
+  const createProfile = () => {
+    if (!overview) return;
+    const template = overview.catalog.defaultProfile;
+    setEditingProfile({ ...template, name: profiles.length ? `${template.name} ${profiles.length + 1}` : template.name });
+  };
+
+  return (
+    <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-aggregator-title">
+      <header className="toolkit-panel-header">
+        <div>
+          <div className="toolkit-panel-kicker">SUBSCRIPTION AGGREGATOR</div>
+          <h2 id="toolkit-aggregator-title">订阅聚合与分流</h2>
+          <p>把多个机场订阅和自建节点合并成一个订阅链接：统一过滤、改名、按地区编组，并带上分流规则。Clash、Stash、sing-box、Surge、Loon、Quantumult X、Shadowrocket 等直接订阅即可。</p>
+        </div>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void state.reload()}>重新读取</Button>
+      </header>
+
+      {error && (
+        <InlineNote
+          tone="error"
+          description={error}
+          className="toolkit-note-spaced"
+          action={<Button type="text" size="small" icon={<CloseOutlined />} aria-label="关闭" onClick={() => setError('')} />}
+        >
+          订阅聚合操作未完成
+        </InlineNote>
+      )}
+
+      {loading && !overview ? (
+        <div className="toolkit-loading"><Spin size="large" tip="正在读取订阅聚合配置" /></div>
+      ) : overview ? (
+        <>
+          <div className="toolkit-stat-row">
+            <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
+              <StatisticCard statistic={{ title: '订阅源', value: sources.length, icon: <LinkOutlined aria-hidden className="toolkit-kpi-icon" /> }} />
+              <StatisticCard statistic={{ title: '节点', value: totalNodes, icon: <ApartmentOutlined aria-hidden className="toolkit-kpi-icon" /> }} />
+              <StatisticCard statistic={{ title: '聚合订阅', value: profiles.length, icon: <RetweetOutlined aria-hidden className="toolkit-kpi-icon" /> }} />
+              <StatisticCard statistic={{ title: '流量（已用 / 总量）', value: totalTraffic(sources), icon: <SyncOutlined aria-hidden className="toolkit-kpi-icon" /> }} />
+            </StatisticCard.Group>
+          </div>
+
+          <SectionCard
+            title="订阅源"
+            className={styles.section}
+            extra={(
+              <Space wrap>
+                <Button
+                  icon={<SyncOutlined />}
+                  loading={state.syncingAll}
+                  disabled={!enabledSources.length || state.syncingAll}
+                  onClick={() => state.syncAllSources(enabledSources.map((source) => source.id))}
+                >
+                  {state.syncingAll ? '同步中' : '全部同步'}
+                </Button>
+                <Button icon={<FormOutlined />} onClick={() => setAddingNode(true)}>手动添加节点</Button>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setSourceEditor({ source: null })}>添加订阅</Button>
+              </Space>
+            )}
+          >
+            <List
+              dataSource={pagedSources}
+              locale={{ emptyText: <Empty description="还没有订阅源：添加机场订阅地址（可批量粘贴），扫描本机客户端，或粘贴自建节点" /> }}
+              renderItem={(source) => {
+                const traffic = formatTraffic(source.userInfo);
+                const syncing = state.syncingIds.has(source.id);
+                const last = state.lastResultFor(source.id);
+                return (
+                  <List.Item
+                    className={source.enabled ? undefined : styles.sourceDisabled}
+                    actions={[
+                      <Tooltip key="enabled" title={source.enabled ? '停用：节点保留，但不进聚合订阅与出口池' : '启用'}>
+                        <Switch
+                          size="small"
+                          checked={source.enabled}
+                          disabled={syncing}
+                          aria-label={`${source.enabled ? '停用' : '启用'} ${source.name}`}
+                          onChange={(checked) => void state.setSourceEnabled(source.id, checked)}
+                        />
+                      </Tooltip>,
+                      <Tooltip key="sync" title={!source.enabled ? '已停用，启用后才能同步' : syncing ? '同步中…' : source.kind === 'local' ? '重新解析本地内容' : '立即拉取订阅'}>
+                        <Button
+                          size="small"
+                          icon={<SyncOutlined spin={syncing} />}
+                          disabled={syncing || !source.enabled}
+                          aria-label={`同步 ${source.name}`}
+                          onClick={() => state.syncSource(source.id)}
+                        />
+                      </Tooltip>,
+                      <Tooltip key="nodes" title="节点与延迟">
+                        <Button size="small" icon={<UnorderedListOutlined />} aria-label={`查看 ${source.name} 的节点`} onClick={() => setNodesSourceId(source.id)} />
+                      </Tooltip>,
+                      <Button key="edit" size="small" icon={<EditOutlined />} aria-label={`编辑 ${source.name}`} onClick={() => setSourceEditor({ source })} />,
+                      <Popconfirm
+                        key="delete"
+                        title={`删除订阅源「${source.name}」？`}
+                        description="它的节点会从节点库移除，聚合订阅里也不再包含这些节点。"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => void state.deleteSource(source.id)}
+                      >
+                        <Button size="small" danger icon={<DeleteOutlined />} aria-label={`删除 ${source.name}`} />
+                      </Popconfirm>
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={(
+                        <Space size={8} wrap>
+                          <span>{source.name}</span>
+                          {!source.enabled && <Tag>已停用</Tag>}
+                          <Tag color={source.enabled ? 'blue' : undefined}>{source.nodeCount} 个节点</Tag>
+                          {traffic && <Tag>{traffic}</Tag>}
+                          {source.userInfo?.total ? <Tag>到期 {formatExpire(source.userInfo.expire)}</Tag> : null}
+                          {syncing && <Tag color="processing" icon={<SyncOutlined spin />}>同步中</Tag>}
+                          {!syncing && last?.state === 'failed' && (
+                            <Tooltip title={last.message || last.error}>
+                              <Tag color="error">上次同步失败：{aggregatorErrorText(last.error, '同步失败')}</Tag>
+                            </Tooltip>
+                          )}
+                        </Space>
+                      )}
+                      description={(
+                        <span className={styles.sourceMeta}>
+                          <Text type="secondary" code className={styles.sourceUrl} title={source.kind === 'local' ? undefined : '订阅参数已隐藏'}>
+                            {describeSourceOrigin(source)}
+                          </Text>
+                          <Text type="secondary">上次同步：{formatLastSynced(source.lastSyncedAt)}</Text>
+                        </span>
+                      )}
+                    />
+                  </List.Item>
+                );
+              }}
+            />
+            {sources.length > SOURCE_PAGE_SIZE && (
+              <div className={styles.pagination}>
+                <Pagination
+                  size="small"
+                  current={sourcePage}
+                  pageSize={SOURCE_PAGE_SIZE}
+                  total={sources.length}
+                  showSizeChanger={false}
+                  showTotal={(total) => `共 ${total} 个订阅源 · 第 ${sourcePage}/${sourcePages} 页`}
+                  onChange={setSourcePage}
+                />
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="聚合订阅"
+            className={styles.section}
+            extra={<Button type="primary" icon={<PlusOutlined />} onClick={createProfile}>新建聚合</Button>}
+          >
+            <List
+              dataSource={profiles}
+              locale={{
+                emptyText: (
+                  <Empty description="还没有聚合订阅：新建一个，把上面的订阅源合并成一个链接">
+                    <Button type="primary" icon={<PlusOutlined />} onClick={createProfile}>新建聚合订阅</Button>
+                  </Empty>
+                )
+              }}
+              renderItem={(profile) => (
+                <List.Item className={styles.profileItem}>
+                  <div className={styles.profileHead}>
+                    <Space size={8} wrap>
+                      <strong>{profile.name}</strong>
+                      <Tag color="blue">{profile.nodeCount ?? 0} 个节点</Tag>
+                      <Tag>{describeSourceScope(profile, sources.length)}</Tag>
+                      <Tag>规则组 {countEnabledPresets(profile)}</Tag>
+                      {profile.rules.custom.length > 0 && <Tag>自定义规则 {profile.rules.custom.length}</Tag>}
+                      <Tag>{profile.refreshHours ? `每 ${profile.refreshHours} 小时自动刷新` : '仅手动同步'}</Tag>
+                    </Space>
+                    <Space size={4} wrap>
+                      <Button size="small" type="primary" icon={<ImportOutlined />} onClick={() => setImportProfile(profile)}>导入</Button>
+                      <Button size="small" icon={<EyeOutlined />} onClick={() => setPreviewProfile(profile)}>预览</Button>
+                      <Button size="small" icon={<EditOutlined />} onClick={() => setEditingProfile(profile)}>编辑</Button>
+                      <Popconfirm
+                        title="重置订阅链接？"
+                        description="旧链接立即失效，已订阅的客户端需要换成新链接。"
+                        onConfirm={() => void state.rotateToken(profile.id)}
+                      >
+                        <Button size="small" icon={<RetweetOutlined />}>重置链接</Button>
+                      </Popconfirm>
+                      <Popconfirm
+                        title={`删除聚合订阅「${profile.name}」？`}
+                        description="订阅源和节点不受影响，只是这个链接失效。"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => void state.deleteProfile(profile.id)}
+                      >
+                        <Button size="small" danger icon={<DeleteOutlined />} aria-label={`删除 ${profile.name}`} />
+                      </Popconfirm>
+                    </Space>
+                  </div>
+                  <SubscriptionLinkField
+                    path={profile.subscriptionPath}
+                    name={profile.name}
+                    formats={overview.catalog.formats}
+                    clients={overview.catalog.clients}
+                  />
+                  <RecentPulls pulls={profile.recentPulls} formats={overview.catalog.formats} />
+                </List.Item>
+              )}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="客户端入口"
+            className={styles.section}
+          >
+            <Text type="secondary">
+              中转条目写的是 <Text code>socks5, &lt;地址&gt;, &lt;端口&gt;</Text>。想把入口放到 443 / 域名 /
+              VPS 上，先用 nginx 或 caddy 生成一次计划看看会写什么——这里只生成，不落盘。
+            </Text>
+            <div style={{ marginTop: 12 }}>
+              <EdgePlanCard
+                providers={['nginx', 'caddy']}
+                hint="写入、回滚与状态在「应用与集成 → 入口与转发」里做。"
+              />
+            </div>
+          </SectionCard>
+
+          <SourceEditorModal
+            open={Boolean(sourceEditor)}
+            source={sourceEditor?.source || null}
+            defaultUserAgent={overview.catalog.defaultUserAgent}
+            onClose={() => setSourceEditor(null)}
+            onSave={state.saveSource}
+            onSaveBatch={state.saveSources}
+            onScanLocal={state.scanLocalSources}
+            onImportLocal={state.importLocalSources}
+            scanning={state.scanning}
+          />
+          <ProfileEditorDrawer
+            open={Boolean(editingProfile)}
+            profile={editingProfile}
+            catalog={overview.catalog}
+            sources={sources}
+            manualNodeCount={overview.manualNodeCount}
+            onClose={() => setEditingProfile(null)}
+            onSave={async (input) => Boolean(await state.saveProfile(input))}
+          />
+          <ProfilePreviewModal
+            profile={previewProfile}
+            formats={overview.catalog.formats}
+            clients={overview.catalog.clients}
+            describePolicy={(policy) => policyLabel(policy, { catalog: overview.catalog, sources, groups: previewProfile?.groups.custom })}
+            onClose={() => setPreviewProfile(null)}
+          />
+          <ImportProfileModal profile={importProfile} formats={overview.catalog.formats} onClose={() => setImportProfile(null)} />
+          <SourceNodesDrawer
+            source={sources.find((source) => source.id === nodesSourceId) || null}
+            forms={overview.catalog.protocolForms || []}
+            onClose={() => setNodesSourceId('')}
+            onSaveSource={state.saveSource}
+          />
+          <ManualNodeModal
+            open={addingNode}
+            title="手动添加节点"
+            forms={overview.catalog.protocolForms || []}
+            initial={null}
+            onClose={() => setAddingNode(false)}
+            onSubmit={(node) => state.saveSource(manualNodeSaveInput(sources, node))}
+          />
+        </>
+      ) : null}
+    </section>
+  );
+}

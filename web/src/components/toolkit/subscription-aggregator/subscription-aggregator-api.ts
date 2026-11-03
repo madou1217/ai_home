@@ -1,0 +1,148 @@
+import api, { guardedWebUiEventSource } from '@/services/api';
+import type {
+  AggregatorDraftNode,
+  AggregatorLatency,
+  AggregatorNodeOption,
+  AggregatorProbeResult,
+  AggregatorSource,
+  AggregatorSourceNode,
+  AggregatorFormat,
+  AggregatorImportLinks,
+  AggregatorLocalClients,
+  AggregatorLocalImportResult,
+  AggregatorLocalScan,
+  AggregatorOverview,
+  AggregatorPreview,
+  AggregatorProfile,
+  AggregatorProfileInput,
+  AggregatorRelayStatus,
+  AggregatorRouteTrace,
+  AggregatorSourceInput,
+  AggregatorSourcePreview,
+  AggregatorSourceSaveResult,
+  AggregatorSyncStartResult
+} from './types';
+
+const BASE = '/webui/toolkit/subscription-aggregator';
+
+export const subscriptionAggregatorAPI = {
+  async overview() {
+    return (await api.get<AggregatorOverview>(BASE)).data;
+  },
+  async saveProfile(profile: AggregatorProfileInput) {
+    return (await api.post<{ ok: boolean; profile: AggregatorProfile }>(`${BASE}/profiles`, profile)).data;
+  },
+  async deleteProfile(profileId: string) {
+    return (await api.delete<{ ok: boolean }>(`${BASE}/profiles/${encodeURIComponent(profileId)}`)).data;
+  },
+  async rotateToken(profileId: string) {
+    return (await api.post<{ ok: boolean; profile: AggregatorProfile }>(`${BASE}/profiles/${encodeURIComponent(profileId)}/token`)).data;
+  },
+  /**
+   * client：模拟某个客户端（它的内核版本、视图等），预览结果就是它实际拿到的内容。
+   * relay：本机中转 —— 明确要求时服务端会先把 sing-box 边车拉起来，再把内核认不出的协议
+   * 改写成指向本地端口的 socks5 入口。
+   */
+  async preview(profileId: string, format: AggregatorFormat, client = '', options: { relay?: boolean } = {}) {
+    const params: Record<string, string> = { format };
+    if (client) params.client = client;
+    if (options.relay) params.relay = '1';
+    return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params })).data;
+  },
+  /** 本机中转能不能用（内核在哪、版本、有没有在跑）；不启动任何进程。 */
+  async relay() {
+    return (await api.get<AggregatorRelayStatus & { ok: boolean; local: boolean }>(`${BASE}/relay`)).data;
+  },
+  /** 编辑中（未保存）的配置会选中哪些节点：自建组勾选节点、实时匹配名称规则用。 */
+  async previewNodes(draft: Pick<AggregatorProfileInput, 'sources' | 'filter' | 'naming' | 'dedupe'>) {
+    return (await api.post<{ ok: boolean; nodes: AggregatorDraftNode[] }>(`${BASE}/profiles/nodes`, draft)).data;
+  },
+  /** 规则测试：编辑中的配置下，一个网址 / 域名 / IP 会命中哪条规则、走哪个组（第一次要下载规则集）。 */
+  async testRoute(profile: AggregatorProfileInput, target: string) {
+    return (await api.post<AggregatorRouteTrace>(`${BASE}/profiles/test-route`, { profile, target }, { timeout: 60000 })).data;
+  },
+  /** origin：订阅地址用的服务地址（扫码时选局域网地址）。 */
+  async importLinks(profileId: string, origin: string) {
+    return (await api.get<AggregatorImportLinks>(`${BASE}/profiles/${encodeURIComponent(profileId)}/import-links`, { params: { origin } })).data;
+  },
+  async localClients() {
+    return (await api.get<AggregatorLocalClients>(`${BASE}/local-clients`)).data;
+  },
+  async saveSource(source: AggregatorSourceInput) {
+    // 新增订阅会立即同步一次，给足上游抓取时间。
+    return (await api.post<AggregatorSourceSaveResult>(`${BASE}/sources`, source, { timeout: 60000 })).data;
+  },
+  /** 解析预览：粘贴或拖入的本地内容会识别成什么、导入哪些节点（不保存）。 */
+  async previewSource(content: string) {
+    return (await api.post<AggregatorSourcePreview>(`${BASE}/sources/preview`, { content }, { timeout: 30000 })).data;
+  },
+  /** 订阅源里的节点（节点表格）。 */
+  async sourceNodes(subscriptionId: string) {
+    return (await api.get<{ ok: boolean; nodes: AggregatorSourceNode[] }>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}/nodes`)).data;
+  },
+  /** 从服务器测 TCP 建连耗时；fresh 忽略几分钟内的缓存结果。 */
+  async measureLatency(subscriptionId: string, fresh = false) {
+    return (await api.post<{ ok: boolean; results: Record<string, AggregatorLatency> }>(
+      `${BASE}/sources/${encodeURIComponent(subscriptionId)}/latency`, { fresh }, { timeout: 120000 }
+    )).data;
+  },
+  /** 探针：只知道地址时猜协议（DNS、TCP、TLS、SOCKS5、HTTP CONNECT、SSH）。 */
+  async probe(host: string, ports: number[]) {
+    return (await api.post<AggregatorProbeResult>(`${BASE}/probe`, { host, ports }, { timeout: 120000 })).data;
+  },
+  /** 解析分享链接或配置，返回带全部字段的节点（填进手动节点表单）。 */
+  async parseNodes(content: string) {
+    return (await api.post<{ ok: boolean; format: string; nodes: Array<Record<string, unknown>>; skippedNodes: Array<{ name: string; reason: string }> }>(
+      `${BASE}/nodes/parse`, { content }
+    )).data;
+  },
+  /** 全部节点（含手动节点），只给「前置节点」选择器用；不含凭据。 */
+  async nodes() {
+    return (await api.get<{ ok: boolean; nodes: AggregatorNodeOption[] }>(`${BASE}/nodes`)).data;
+  },
+  /** 设置 / 清除某个节点的链式前置（chain 传空串即清除）。 */
+  async setNodeChain(nodeId: string, chain: string) {
+    return (await api.post<{ ok: boolean; node?: { id: string; name: string; chain: string }; error?: string }>(
+      `${BASE}/nodes/chain`, { nodeId, chain }
+    )).data;
+  },
+  async deleteSource(subscriptionId: string) {
+    return (await api.delete<{ ok: boolean; error?: string }>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}`)).data;
+  },
+  /** 启用 / 停用订阅源：停用后不进聚合、不进出口池、也不再自动刷新（节点保留）。 */
+  async setSourceEnabled(subscriptionId: string, enabled: boolean) {
+    return (await api.post<{ ok: boolean; subscription?: AggregatorSource; error?: string }>(
+      `${BASE}/sources/${encodeURIComponent(subscriptionId)}/enabled`, { enabled }
+    )).data;
+  },
+  /** 同步一个订阅源：立刻返回任务（202），结果经 watchSourceSync 推送。 */
+  async syncSource(subscriptionId: string) {
+    return (await api.post<AggregatorSyncStartResult>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}/sync`, {}, {
+      validateStatus: (status) => status < 500
+    })).data;
+  },
+  /** 同步一批订阅源（不传 = 全部）：立刻返回任务，不等上游。 */
+  async syncSources(ids: string[] = []) {
+    return (await api.post<AggregatorSyncStartResult>(`${BASE}/sources/sync`, { ids }, {
+      validateStatus: (status) => status < 500
+    })).data;
+  },
+  /** 同步任务的进度流（先一帧 snapshot，之后每次变化一帧 job）。 */
+  watchSourceSync(): EventSource {
+    return guardedWebUiEventSource(`/v0${BASE}/sources/sync/watch`);
+  },
+  /** 扫描本机代理客户端的配置文件（只读；只在 WebUI 与服务同一台机器时可用）。 */
+  async scanLocalSources() {
+    return (await api.get<AggregatorLocalScan>(`${BASE}/local-sources`, {
+      timeout: 30000,
+      validateStatus: (status) => status < 500
+    })).data;
+  },
+  /** 导入扫描到的订阅：先落库，节点拉取在后台任务里进行。 */
+  async importLocalSources(ids: string[]) {
+    return (await api.post<AggregatorLocalImportResult>(`${BASE}/local-sources/import`, { ids }, {
+      timeout: 30000,
+      validateStatus: (status) => status < 500
+    })).data;
+  }
+};

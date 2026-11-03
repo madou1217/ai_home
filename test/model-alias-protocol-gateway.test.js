@@ -19,8 +19,9 @@ const { handleUpstreamPassthrough } = require('../lib/server/upstream-endpoints'
 const { fetchWithTimeout } = require('../lib/server/http-utils');
 
 const ACCOUNT_REF = 'acct_aaaaaaaaaaaaaaaaaaaa';
+const OFFICIAL_ACCOUNT_REF = 'acct_bbbbbbbbbbbbbbbbbbbb';
 
-function createAccount() {
+function createAccount(overrides = {}) {
   return {
     accountRef: ACCOUNT_REF,
     provider: 'claude',
@@ -34,13 +35,22 @@ function createAccount() {
     consecutiveFailures: 0,
     successCount: 0,
     failCount: 0,
-    lastError: ''
+    lastError: '',
+    ...overrides
   };
 }
 
-function createState() {
+function createOfficialAccount() {
+  return createAccount({
+    accountRef: OFFICIAL_ACCOUNT_REF,
+    accessToken: 'sk-ant-official',
+    baseUrl: 'https://api.anthropic.com'
+  });
+}
+
+function createState(accounts = [createAccount()]) {
   return {
-    accounts: { claude: [createAccount()] },
+    accounts: { claude: accounts },
     metrics: {},
     strategy: 'random',
     cursors: {},
@@ -53,12 +63,26 @@ function createState() {
   };
 }
 
-function sseResponse() {
-  const chunks = [
-    'data: {"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"hello"},"finish_reason":null}]}\n\n',
-    'data: {"id":"x","object":"chat.completion.chunk","created":1,"model":"deepseek-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n'
-  ];
+function chatChunks(events) {
+  return events.map((event) => 'data: ' + JSON.stringify(event) + '\n\n').concat('data: [DONE]\n\n');
+}
+
+function sseResponse(chunks = chatChunks([
+  {
+    id: 'x',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'deepseek-flash',
+    choices: [{ index: 0, delta: { role: 'assistant', content: 'hello' }, finish_reason: null }]
+  },
+  {
+    id: 'x',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'deepseek-flash',
+    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }]
+  }
+])) {
   const stream = new ReadableStream({
     start(controller) {
       chunks.forEach((chunk) => controller.enqueue(new TextEncoder().encode(chunk)));
@@ -79,7 +103,7 @@ async function runRouterOnce(input) {
     seen.url = String(url);
     seen.headers = init && init.headers || {};
     seen.body = String(init && init.body || '');
-    return sseResponse();
+    return sseResponse(input.upstreamChunks);
   };
   const writes = [];
   let output = '';
@@ -97,7 +121,7 @@ async function runRouterOnce(input) {
   const deps = {
     parseAuthorizationBearer: () => '',
     writeJson: (_res, status, payload) => { writes.push({ status, payload }); },
-    readRequestBody: async () => Buffer.from(JSON.stringify({
+    readRequestBody: async () => Buffer.from(JSON.stringify(input.requestBody || {
       model: 'ignored',
       input: [{ role: 'user', content: 'hi' }],
       stream: true
@@ -149,7 +173,7 @@ async function runRouterOnce(input) {
       logRequests: false,
       maxAttempts: 1
     },
-    state: createState(),
+    state: createState(input.accounts),
     requiredClientKey: '',
     cooldownMs: 0,
     maxRequestBodyBytes: 1024 * 1024,
@@ -165,7 +189,7 @@ async function runRouterOnce(input) {
     globalThis.fetch = originalFetch;
     fs.rmSync(home, { recursive: true, force: true });
   }
-  return { seen, writes, output };
+  return { seen, writes, output, headers: res.headers };
 }
 
 test('自动适配：Responses 请求按 OpenAI Chat 发到厂商的 OpenAI 基址', async () => {
@@ -190,4 +214,75 @@ test('没有提示时保持原有 Anthropic 回落', async () => {
   assert.ok(Array.isArray(body.messages), 'Anthropic Messages 同样有 messages');
   assert.equal(body.max_tokens !== undefined, true);
   assert.equal(body.model, 'deepseek-flash');
+});
+
+test('协议提示只选能用 OpenAI 端点的账号：官方 Anthropic 账号必须被过滤', async () => {
+  // 官方账号放在池首：若少了协议过滤，chooseServerAccount 会先选它，URL 变成
+  // https://api.anthropic.com/v1/chat/completions（OpenAI 请求体打 Anthropic 端点）。
+  const { seen } = await runRouterOnce({
+    protocol: 'openai_chat',
+    accounts: [createOfficialAccount(), createAccount()]
+  });
+  assert.equal(seen.url, 'https://api.deepseek.com/v1/chat/completions');
+  assert.equal(seen.headers.authorization, 'Bearer sk-test-key');
+});
+
+test('工具调用回程转成 function_call，不出现 DSML 文本', async () => {
+  const toolChunks = chatChunks([
+    {
+      id: 'x',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'deepseek-flash',
+      choices: [{
+        index: 0,
+        delta: {
+          role: 'assistant',
+          tool_calls: [{
+            index: 0,
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'exec', arguments: '{"cmd":"pwd"}' }
+          }]
+        },
+        finish_reason: null
+      }]
+    },
+    {
+      id: 'x',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'deepseek-flash',
+      choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }]
+    }
+  ]);
+  const { seen, output } = await runRouterOnce({
+    protocol: 'openai_chat',
+    upstreamChunks: toolChunks,
+    requestBody: {
+      model: 'ignored',
+      input: 'run pwd',
+      stream: true,
+      tools: [{
+        type: 'function',
+        name: 'exec',
+        description: 'run a command',
+        parameters: {
+          type: 'object',
+          properties: { cmd: { type: 'string' } },
+          required: ['cmd']
+        }
+      }]
+    }
+  });
+  // 请求侧：Responses 的 tools 必须转成 Chat Completions 的 tools。
+  const upstreamBody = JSON.parse(seen.body);
+  assert.equal(upstreamBody.tools[0].type, 'function');
+  assert.equal(upstreamBody.tools[0].function.name, 'exec');
+  // 回程侧：tool_calls 必须变成 Responses 的 function_call，而不是正文里的文本标记。
+  assert.match(output, /"type":"function_call"/);
+  assert.match(output, /"name":"exec"/);
+  assert.match(output, /pwd/);
+  assert.equal(/DSML/i.test(output), false);
+  assert.equal(/response\.failed/.test(output), false);
 });

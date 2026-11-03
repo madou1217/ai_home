@@ -421,7 +421,15 @@ export function AuthProgressModal({
                     : (addJob.callbackCaptureStatus === 'manual_only' ? '需要手动粘贴回调地址' : '本地自动接收不可用')}
                 </InlineNote>
               ) : null}
-              {addJob.status === 'running' && !addJob.pluginLogin ? (
+              {addJob.sessionFlow && addJob.status === 'running' ? (
+                <InlineNote
+                  tone="info"
+                  description="这是服务端中介流程：授权完成后由 aih 轮询上游自动收尾。回调地址指向官方服务，不会回到本机，也不需要粘贴。"
+                >
+                  无需粘贴回调，授权完成后自动完成
+                </InlineNote>
+              ) : null}
+              {addJob.status === 'running' && !addJob.pluginLogin && !addJob.sessionFlow ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider, addJob.authStrategy).hint}</Text>
                   <Input.TextArea

@@ -11,8 +11,8 @@ import {
 import type { Account, ManagementAccountActivity, Provider } from '@/types';
 import AccountRefreshLogo from '@/features/accounts/AccountRefreshLogo';
 import AccountSubscriptionLines from '@/features/accounts/AccountSubscriptionLines';
+import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
 import {
-  getAccountPrimaryLabel,
   getAccountSecondaryLabel,
   getPlanTagColor,
   getPlanTagLabels,
@@ -88,7 +88,6 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   return (
     <div key="grid" ref={flipRef} className={`${styles.gridContainer} aih-fade-in`}>
       {accounts.map((acc) => {
-        const primaryLabel = getAccountPrimaryLabel(acc);
         const secondaryLabel = getAccountSecondaryLabel(acc);
         const lastUsed = formatTimeCell(acc.lastUsedAt);
         const requiresReauth = requiresAccountReauth(acc);
@@ -106,9 +105,9 @@ export const AccountCardGrid = memo(function AccountCardGrid({
               </div>
               <div className={styles.accountInfo}>
                 <div className={styles.titleRow}>
-                  <Tooltip title={primaryLabel} mouseEnterDelay={0.6}>
-                    <strong className={styles.accountTitle}>{primaryLabel}</strong>
-                  </Tooltip>
+                  <strong className={styles.accountTitle}>
+                    <RotatingAccountTitle record={acc} />
+                  </strong>
                   <span className={styles.titleIcons}>
                     {renderHealth(acc)}
                     {renderAccountRoleIcons(acc)}

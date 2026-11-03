@@ -58,6 +58,7 @@ import { providerNames } from '@/components/chat/ProviderIcon';
 import { getProviderFamily } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
+import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
 import {
   useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
@@ -662,7 +663,7 @@ export default function Accounts() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 24 }}>
               <div style={{ fontWeight: 600, minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {getAccountPrimaryLabel(record)}
+                <RotatingAccountTitle record={record} />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                 <AccountHealthIcon

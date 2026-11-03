@@ -48,6 +48,13 @@ const nodeRoutes = [
     icon: "schedule",
   },
   {
+    // peer 消息收件箱：`aih peer send` 发出的消息在 WebUI 里可见（只读）。
+    name: "消息收件箱",
+    path: "/peer-inbox",
+    component: "./PeerInbox",
+    icon: "mail",
+  },
+  {
     path: "/toolkit/install-guide",
     component: "./ToolkitInstallGuide",
     hideInMenu: true,

@@ -455,6 +455,8 @@ export interface Account {
    */
   gatewayTargetSupported?: boolean;
   quotaStatus?: string;
+  /** CLI 数字 ID（aih <cli> <id> 的参照）；服务端从内部 cliAccountId 映射而来。 */
+  displayId?: string;
   upstreamErrorRules?: UpstreamErrorRule[];
   upstreamErrorGroupIds?: string[];
   quotaReason?: string;
@@ -971,6 +973,8 @@ export interface AccountAddJob {
   userCode?: string;
   authorizationUrl?: string;
   redirectUri?: string;
+  /** 服务端中介流程（如 zcode cli-flow）：结果由服务端轮询上游取回，没有本机回调可粘贴。 */
+  sessionFlow?: boolean;
   oauthState?: string;
   browserCallbackForwardedAt?: number;
   callbackCaptureStatus?: string;

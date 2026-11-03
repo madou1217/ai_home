@@ -1612,7 +1612,16 @@ export function useAccountActions({
         return false;
       }
       if (code === 'account_auth_invalid') {
-        message.warning('账号认证已失效，请重新登录后再打开');
+        // 打开客户端时直接给**可操作的重新授权入口**，而不是只弹一条警告：
+        // 桌面端用 access_token，领取/余额用 zcodejwt，两者会分叉；这里以账号名
+        // 明确告诉用户要为哪个账号重新登录。
+        Modal.confirm({
+          title: '账号认证已失效',
+          content: `「${getAccountPrimaryLabel(record)}」的登录态已过期，需要重新登录后才能打开客户端。`,
+          okText: '重新登录',
+          cancelText: '取消',
+          onOk: () => handleReauth(record)
+        });
         return false;
       }
       const loginAction = kind === 'desktop' ? desktopLoginRequiredAction(error) : null;

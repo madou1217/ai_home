@@ -43,6 +43,7 @@ import {
 } from '@/features/accounts/AccountBadges';
 import { describeCodexSubscription, getCodexSubscription } from '@/features/accounts/codex-subscription';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
+import { getProviderSite, getProviderSiteLabel, isMultiSiteProvider } from '@/providers/catalog';
 import {
   canViewQuotaResetHistory,
   getCodexAppAccountActionMeta,
@@ -130,6 +131,9 @@ export default function AccountDetailSheet({
   const statusDetails = getAccountStatusDetailLines(record);
   const secondary = getAccountSecondaryLabel(record);
   const region = getAccountRegionMeta(record);
+  const providerSite = isMultiSiteProvider(record.provider)
+    ? getProviderSiteLabel(getProviderSite(record.provider))
+    : '';
   const kimiPlan = getKimiPlanSubscription(record);
   const kimiPlanUntil = kimiPlan ? formatPlanValidUntil(kimiPlan.validUntilMs) : '';
   const clinePlan = getClinePlanSubscription(record);
@@ -253,6 +257,7 @@ export default function AccountDetailSheet({
       )
     },
     ...(secondary ? [{ key: 'secondary', label: '标识', value: secondary }] : []),
+    ...(providerSite ? [{ key: 'provider-site', label: '站点', value: providerSite, mono: false }] : []),
     { key: 'provider', label: '平台', value: providerNames[record.provider] || record.provider, mono: false },
     {
       key: 'plan',

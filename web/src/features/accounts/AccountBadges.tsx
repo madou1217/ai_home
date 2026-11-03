@@ -11,6 +11,14 @@ import {
 import { formatAccountIssueReason } from '@/utils/account-reasons';
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
 import { getAccountIdentityLabel, getAccountSecondaryIdentity } from '@/utils/account-labels';
+import {
+  getFamilyLabel,
+  getProviderFamily,
+  getProviderMeta,
+  getProviderSite,
+  getProviderSiteLabel,
+  isMultiSiteProvider
+} from '@/providers/catalog';
 import { getRuntimeModelLines } from './runtime-models';
 
 // 账号行展示徽章与角色标签 —— 纯渲染组件模块。
@@ -40,14 +48,28 @@ export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region'
     // 未判定区域时不渲染标签（不要谎报一个区域）。
     return meta ? { ...meta, endpoint: '' } : null;
   }
-  if (record.provider !== 'kimi') return null;
-  if (record.region === 'china') {
-    return { color: 'blue', label: '中国区', endpoint: 'www.kimi.com' };
+  if (record.provider === 'kimi') {
+    if (record.region === 'china') {
+      return { color: 'blue', label: '中国区', endpoint: 'www.kimi.com' };
+    }
+    if (record.region === 'overseas') {
+      return { color: 'geekblue', label: '海外区', endpoint: 'www.kimi.ai' };
+    }
+    return { color: 'default', label: '区域未知', endpoint: '' };
   }
-  if (record.region === 'overseas') {
-    return { color: 'geekblue', label: '海外区', endpoint: 'www.kimi.ai' };
+  // 多站点产品（CodeBuddy 国际站/国内站、Qoder 等）：两站账号体系不互通，
+  // 列表按产品族聚合后必须用站点标签区分，否则同一产品会出现两行同名账号。
+  if (isMultiSiteProvider(record.provider)) {
+    const siteLabel = getProviderSiteLabel(getProviderSite(record.provider));
+    if (!siteLabel) return null;
+    const meta = getProviderMeta(record.provider);
+    return {
+      color: meta.tagColor || 'default',
+      label: siteLabel,
+      endpoint: meta.apiHost || ''
+    };
   }
-  return { color: 'default', label: '区域未知', endpoint: '' };
+  return null;
 }
 
 export type AccountBadgeStatus = 'success' | 'processing' | 'default' | 'error' | 'warning';
@@ -296,9 +318,11 @@ export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'regio
   if (!meta) return null;
   const detail = record.provider === 'zcode'
     ? `ZCode 服务区域：${meta.label}（凭据里的 oauth:active_provider）`
-    : (meta.endpoint
-      ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
-      : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。');
+    : record.provider === 'kimi'
+      ? (meta.endpoint
+        ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
+        : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。')
+      : `${getFamilyLabel(getProviderFamily(record.provider))} · ${meta.label}${meta.endpoint ? `（${meta.endpoint}）` : ''}：国内站与国际站账号体系不互通。`;
   return (
     <Tooltip title={detail}>
       <Tag color={meta.color} style={accountRoleTagStyle}>

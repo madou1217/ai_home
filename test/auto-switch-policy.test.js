@@ -4,10 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  LIMIT_SCAN_TAIL_LENGTH,
   MAX_COOLDOWN_MS,
   createAutoSwitchPolicy,
   detectRateLimitSignal,
   formatCooldownLabel,
+  mightContainRateLimitSignal,
   readRelativeResetMs
 } = require('../lib/cli/services/pty/auto-switch-policy');
 const { normalizeConfig, DEFAULTS } = require('../lib/usage/config-store');
@@ -17,6 +19,103 @@ const CODEBUDDY_429 = 'API Error: 429 usage exceeds frequency limit, please try 
   + 'your usage will reset at 2026-10-31 14:57:00 UTC+8';
 const CODEBUDDY_RESET_MS = Date.UTC(2026, 9, 31, 6, 57, 0);
 const BEFORE_RESET_MS = Date.UTC(2026, 9, 31, 5, 0, 0);
+
+// 英文折行矩阵专用：秒非零。半截匹配（`14:57`）会算出不同的时刻，
+// 矩阵才能同时守住「不丢信号」和「不提前定案」两件事。
+const CODEBUDDY_EN_WRAP_429 = 'API Error: 429 usage exceeds frequency limit, please try again later. '
+  + 'your usage will reset at 2026-10-31 14:57:21 UTC+8';
+const CODEBUDDY_EN_WRAP_RESET_MS = Date.UTC(2026, 9, 31, 6, 57, 21);
+
+// 2026-11-03 真机：codebuddycn 的 429 只有中文，没有 `429`、没有英文关键字。
+// 中文语序是「将在 <时刻> 重置」，时间戳在动词前面。
+const CODEBUDDY_ZH_429 = '您的使用量已超出频率限制，将在 2026-11-04 13:34:21 UTC+8 重置，'
+  + '您也可以切换其他模型继续使用。';
+const CODEBUDDY_ZH_RESET_MS = Date.UTC(2026, 10, 4, 5, 34, 21);
+const ZH_BEFORE_RESET_MS = Date.UTC(2026, 10, 3, 6, 0, 0);
+
+test('codebuddy 中文 429（时间戳在「重置」之前）也是换号信号', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_ZH_429, { nowMs: ZH_BEFORE_RESET_MS });
+  assert.ok(signal);
+  assert.equal(signal.kind, 'rate_limit');
+  assert.equal(signal.signature, 'codebuddy-zh-frequency-window');
+  assert.equal(signal.resetAtMs, CODEBUDDY_ZH_RESET_MS);
+});
+
+test('中文 429 被 TUI 换行拆开时仍能还原恢复时刻', () => {
+  const wrapped = '您的使用量已超出频率限制，将在\n  2026-11-04 13:34:21\n  UTC+8 重置，'
+    + '您也可以切换其他模型继续使用。';
+  const signal = detectRateLimitSignal(wrapped, { nowMs: ZH_BEFORE_RESET_MS });
+  assert.ok(signal);
+  assert.equal(signal.resetAtMs, CODEBUDDY_ZH_RESET_MS);
+});
+
+test('中文折行把「重置」拆成两半也不丢恢复时刻', () => {
+  // 中文 TUI 会在任意两个汉字之间折行；归一化后动词锚点就断了，但签名仍是强证据。
+  const wrapped = '您的使用量已超出频率限制，将在 2026-11-04 13:34:21 UTC+8 重\n置，'
+    + '您也可以切换其他模型继续使用。';
+  const signal = detectRateLimitSignal(wrapped, { nowMs: ZH_BEFORE_RESET_MS });
+  assert.ok(signal);
+  assert.equal(signal.resetAtMs, CODEBUDDY_ZH_RESET_MS);
+});
+
+test('中文 429 在任意汉字之间折行都不丢信号（全切点矩阵）', () => {
+  const chars = Array.from(CODEBUDDY_ZH_429);
+  for (let i = 1; i < chars.length; i += 1) {
+    const wrapped = chars.slice(0, i).join('') + '\n' + chars.slice(i).join('');
+    const signal = detectRateLimitSignal(wrapped, { nowMs: ZH_BEFORE_RESET_MS });
+    assert.ok(signal, `split at char ${i}`);
+    assert.equal(signal.resetAtMs, CODEBUDDY_ZH_RESET_MS, `split at char ${i}`);
+  }
+});
+
+test('分块到达（运行时逐帧累积尾部）在任意切点都能还原', () => {
+  // 复刻 observeRateLimitSignal：每帧都拼进 4KB 尾部，尾部命中关键字才判定。
+  // 按 chunk 单独过滤会漏判——签名可能正好被切在两段之间。
+  const stream = (chunks) => {
+    let tail = '';
+    for (const chunk of chunks) {
+      tail = (tail + chunk).slice(-LIMIT_SCAN_TAIL_LENGTH);
+      if (!mightContainRateLimitSignal(tail)) continue;
+      const signal = detectRateLimitSignal(tail, { nowMs: ZH_BEFORE_RESET_MS });
+      if (signal) return signal;
+    }
+    return null;
+  };
+  const chars = Array.from(CODEBUDDY_ZH_429);
+  for (let i = 1; i < chars.length; i += 1) {
+    const signal = stream([chars.slice(0, i).join(''), chars.slice(i).join('')]);
+    assert.ok(signal, `split at char ${i}`);
+  }
+  // 多段：签名、日期、秒、时区、动词分别被切开。
+  const chunks = [
+    '您的使',
+    '用量已超出频率限',
+    '制，将在 2026-11-0',
+    '4 13:34:2',
+    '1 UTC',
+    '+8 重',
+    '置，您也可以切换其他模型继续使用。'
+  ];
+  const signal = stream(chunks);
+  assert.ok(signal);
+  assert.equal(signal.resetAtMs, CODEBUDDY_ZH_RESET_MS);
+});
+
+test('中文 429 没有恢复时刻时不动手（交给用量阈值那条路）', () => {
+  assert.equal(detectRateLimitSignal('您的使用量已超出频率限制，请稍后再试。', { nowMs: ZH_BEFORE_RESET_MS }), null);
+});
+
+test('中文恢复时刻已经过去 = 历史日志，不是信号', () => {
+  assert.equal(detectRateLimitSignal(CODEBUDDY_ZH_429, { nowMs: CODEBUDDY_ZH_RESET_MS + 60_000 }), null);
+});
+
+test('前置过滤与签名名单同源：中文命中、普通正文不命中', () => {
+  assert.equal(mightContainRateLimitSignal(CODEBUDDY_ZH_429), true);
+  assert.equal(mightContainRateLimitSignal('您的额度已用尽，将在 2026-11-04 13:34:21 UTC+8 重置'), true);
+  assert.equal(mightContainRateLimitSignal('API Error: 429'), true);
+  assert.equal(mightContainRateLimitSignal('帮我看看这个组件为什么渲染两次'), false);
+  assert.equal(mightContainRateLimitSignal(''), false);
+});
 
 test('codebuddy 429 with an absolute reset time is a switch signal', () => {
   const signal = detectRateLimitSignal(CODEBUDDY_429, { nowMs: BEFORE_RESET_MS });
@@ -56,6 +155,73 @@ test('detection survives TUI line wrapping inside the message', () => {
   const signal = detectRateLimitSignal(wrapped, { nowMs: BEFORE_RESET_MS });
   assert.ok(signal);
   assert.equal(signal.resetAtMs, CODEBUDDY_RESET_MS);
+});
+
+test('英文 429 在任意字符之间折行都不丢信号且时刻正确（全切点矩阵）', () => {
+  const chars = Array.from(CODEBUDDY_EN_WRAP_429);
+  for (const indent of ['\n', '\n  ']) {
+    for (let i = 1; i < chars.length; i += 1) {
+      const wrapped = chars.slice(0, i).join('') + indent + chars.slice(i).join('');
+      const label = `split at char ${i} with ${JSON.stringify(indent)}`;
+      const signal = detectRateLimitSignal(wrapped, { nowMs: BEFORE_RESET_MS });
+      assert.ok(signal, label);
+      assert.equal(signal.resetAtMs, CODEBUDDY_EN_WRAP_RESET_MS, label);
+    }
+  }
+});
+
+test('英文 429 分块到达：半截时间戳等下一帧，最终时刻正确', () => {
+  // 复刻 observeRateLimitSignal + 200ms 静默窗口：每帧都拼进尾部并记下当帧结论；
+  // 运行时不在命中那一帧动手，定时器到点时拿**最新**尾部重判——所以断言最后那一帧。
+  const stream = (chunks) => {
+    let tail = '';
+    const frames = [];
+    for (const chunk of chunks) {
+      tail = (tail + chunk).slice(-LIMIT_SCAN_TAIL_LENGTH);
+      frames.push(mightContainRateLimitSignal(tail)
+        ? detectRateLimitSignal(tail, { nowMs: BEFORE_RESET_MS })
+        : null);
+    }
+    return { frames, final: detectRateLimitSignal(tail, { nowMs: BEFORE_RESET_MS }) };
+  };
+
+  const chars = Array.from(CODEBUDDY_EN_WRAP_429);
+  for (let i = 1; i < chars.length; i += 1) {
+    const { final } = stream([chars.slice(0, i).join(''), chars.slice(i).join('')]);
+    assert.ok(final, `split at char ${i}`);
+    assert.equal(final.resetAtMs, CODEBUDDY_EN_WRAP_RESET_MS, `split at char ${i}`);
+  }
+
+  // 秒被切掉：`14:57` 落在帧尾、既无时区也无动词——这一帧判不了，等下一帧。
+  const secondsAt = CODEBUDDY_EN_WRAP_429.indexOf(':21');
+  const halfSeconds = stream([
+    CODEBUDDY_EN_WRAP_429.slice(0, secondsAt),
+    CODEBUDDY_EN_WRAP_429.slice(secondsAt)
+  ]);
+  assert.equal(halfSeconds.frames[0], null);
+  assert.equal(halfSeconds.final.resetAtMs, CODEBUDDY_EN_WRAP_RESET_MS);
+
+  // `UTC` 先到、`+8` 后到：先到的那帧会被当成 0 偏移（差 8 小时），不能动手。
+  const utcAt = CODEBUDDY_EN_WRAP_429.indexOf('UTC');
+  const bareUtc = stream([
+    CODEBUDDY_EN_WRAP_429.slice(0, utcAt + 3),
+    CODEBUDDY_EN_WRAP_429.slice(utcAt + 3)
+  ]);
+  assert.ok(bareUtc.frames[0]);
+  assert.notEqual(bareUtc.frames[0].resetAtMs, CODEBUDDY_EN_WRAP_RESET_MS);
+  assert.equal(bareUtc.final.resetAtMs, CODEBUDDY_EN_WRAP_RESET_MS);
+
+  // 多段：签名、日期、秒、时区分别被切开。
+  const streamed = stream([
+    'API Error: 429 usage exceeds fre',
+    'quency limit, please try again later. your usage will reset at 2026-10-3',
+    '1 14:57',
+    ':21 UTC',
+    '+8'
+  ]);
+  assert.equal(streamed.frames[0], null);
+  assert.ok(streamed.final);
+  assert.equal(streamed.final.resetAtMs, CODEBUDDY_EN_WRAP_RESET_MS);
 });
 
 test('a far-future hint is clamped to the 24h cooldown ceiling', () => {

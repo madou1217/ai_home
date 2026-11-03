@@ -208,3 +208,45 @@ test('带参数指纹的领取在跑时探测也 409（不能只看裸键）', a
     claimGuard.release();
   }
 });
+
+test('单账号领取成功后立刻强制刷新额度（界面不再停在「无套餐」）', async () => {
+  const refreshes = [];
+  const { deps } = baseDeps({
+    ensureUsageSnapshotAsync: async (provider, accountRef, snapshot, options) => {
+      refreshes.push({ provider, accountRef, snapshot, options });
+    }
+  });
+  const ctx = createCtx({
+    method: 'POST',
+    pathname: '/v0/webui/accounts/zcode/acct_a/activity/trial_plan',
+    body: {},
+    deps
+  });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(ctx.writes[0].status, 200);
+  assert.equal(ctx.writes[0].payload.status, 'claimed');
+  assert.ok(await waitFor(() => refreshes.length === 1), '领取成功后应排一次额度刷新');
+  assert.deepEqual(
+    { provider: refreshes[0].provider, accountRef: refreshes[0].accountRef, force: refreshes[0].options && refreshes[0].options.forceRefresh },
+    { provider: 'zcode', accountRef: 'acct_a', force: true }
+  );
+});
+
+test('单账号领取失败不刷新额度（不向打上游的路径注入额外请求）', async () => {
+  const refreshes = [];
+  const { deps } = baseDeps({
+    runActivityClaim: async (input) => ({ provider: input.provider, accountRef: input.record.accountRef, status: 'error', error: 'zcode_captcha_rejected' }),
+    ensureUsageSnapshotAsync: async (...args) => { refreshes.push(args); }
+  });
+  const ctx = createCtx({
+    method: 'POST',
+    pathname: '/v0/webui/accounts/zcode/acct_a/activity/trial_plan',
+    body: {},
+    deps
+  });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(ctx.writes[0].payload.status, 'error');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(refreshes.length, 0);
+});
+

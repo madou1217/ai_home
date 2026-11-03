@@ -1,0 +1,86 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const protocol = require('../lib/desktop/translation/protocol');
+
+test('settings messages are versioned and right click never becomes a translation command', () => {
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'settings', action: 'save', patch: { target: 'zh-Hans' } }), {
+    version: 1, type: 'settings', action: 'save', patch: { target: 'zh-Hans' }
+  });
+  assert.equal(protocol.normalizeHelperEvent({ type: 'right-click', text: 'secret' }), null);
+});
+
+test('normalizes supported helper events and drops oversized or unknown payloads', () => {
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'cancel', id: 'req-1' }), {
+    version: 1, type: 'cancel', id: 'req-1'
+  });
+  assert.deepEqual(protocol.normalizeHelperEvent({
+    version: 1,
+    type: 'translate',
+    id: 'req-2',
+    text: 'hello',
+    target: 'zh-Hans',
+    targetPolicy: 'explicit'
+  }), {
+    version: 1,
+    type: 'translate',
+    id: 'req-2',
+    text: 'hello',
+    target: 'zh-Hans',
+    targetPolicy: 'explicit'
+  });
+  assert.equal(protocol.normalizeHelperEvent({ type: 'unknown', text: 'secret' }), null);
+  assert.equal(protocol.normalizeHelperEvent({ type: 'translate', text: 'x'.repeat(8001) }), null);
+});
+
+test('caps settings patch fields and removes text from settings events', () => {
+  const normalized = protocol.normalizeHelperEvent({
+    type: 'settings',
+    action: 'save',
+    patch: {
+      target: 'zh-Hans',
+      autoCopy: true,
+      copyScope: 'selection',
+      executionTarget: 'direct-provider',
+      text: 'secret',
+      oversized: 'x'.repeat(10000)
+    }
+  });
+  assert.deepEqual(normalized, {
+    version: 1,
+    type: 'settings',
+    action: 'save',
+    patch: {
+      target: 'zh-Hans',
+      autoCopy: true,
+      copyScope: 'selection',
+      executionTarget: 'direct-provider'
+    }
+  });
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'settings', action: 'close' }), {
+    version: 1, type: 'settings', action: 'close'
+  });
+});
+
+test('normalizes helper lifecycle events before service dispatch', () => {
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'status', trusted: true }), {
+    version: 1, type: 'status', trusted: true
+  });
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'selection-state', outcome: 'mouse-up', application: 'TextEdit' }), {
+    version: 1, type: 'selection-state', outcome: 'mouse-up', application: 'TextEdit'
+  });
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'server-target', origin: 'http://127.0.0.1:9527', label: '本机 AIH Server' }), {
+    version: 1, type: 'server-target', origin: 'http://127.0.0.1:9527', label: '本机 AIH Server'
+  });
+  assert.equal(protocol.normalizeHelperEvent({ type: 'status', trusted: 'yes' }), null);
+});
+
+test('passes Chat JSONL envelopes through the translation helper boundary', () => {
+  assert.deepEqual(protocol.normalizeHelperEvent({
+    type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', text: 'hello'
+  }), {
+    version: 1, type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', text: 'hello'
+  });
+  assert.equal(protocol.normalizeHelperEvent({ type: 'chat.submit', requestId: 'r', sessionId: 's', text: 'missing command' }), null);
+});

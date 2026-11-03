@@ -1,0 +1,62 @@
+.usage-progress-effects {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  vertical-align: top;
+}
+
+/* 仅真实活动的额度轨道加流光；账号级 running 不再广播给所有模型组。 */
+.usage-progress-track[data-burning-active="true"] .ant-progress-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.usage-progress-track[data-burning-active="true"] .ant-progress-bg::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* 活动流光（仅真实燃烧中的轨道）：刻意保留的实时活动效果，颜色取 --hos-white 混透明。 */
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--hos-white) 45%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: usage-progress-shimmer 1.4s linear infinite;
+  content: '';
+}
+
+@keyframes usage-progress-shimmer {
+  0% {
+    background-position: 180% 0;
+  }
+  100% {
+    background-position: -80% 0;
+  }
+}
+
+/* remainingPct 下降：进度条做一次短促提亮（只变颜色，不做缩放回弹） */
+.usage-progress-effects--pulsing .ant-progress-bg {
+  animation: usage-progress-damage var(--motion-slower, 320ms) var(--ease-standard);
+}
+
+@keyframes usage-progress-damage {
+  0% {
+    filter: brightness(1);
+  }
+  35% {
+    filter: brightness(1.18);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-progress-track[data-burning-active="true"] .ant-progress-bg::after,
+  .usage-progress-effects--pulsing .ant-progress-bg {
+    animation: none;
+  }
+}

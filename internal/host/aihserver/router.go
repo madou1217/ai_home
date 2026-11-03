@@ -1,0 +1,360 @@
+package aihserver
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountruntimeapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountusageeventsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
+	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
+	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
+	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
+	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
+)
+
+// systemStatusResponse 是公开存活和就绪检查的稳定响应。
+//
+// `/healthz` 只填 OK 与 Service，其余字段靠 omitempty 不出现，与 Node 的
+// `{ok:true, service:'aih-server'}` 逐字段一致。
+//
+// `/readyz` 是 Node 契约的**超集**：Node 的 `ok` / `service` / `ready` / `accounts` /
+// `gateway` 五个字段语义完全对齐（含 `gateway` 的 camelCase 键名），Go 额外的目录字段作为
+// 追加信息保留——追加对 Node 的消费方无害，而缺字段会让它们静默拿到相反结论。
+type systemStatusResponse struct {
+	OK      bool   `json:"ok"`
+	Service string `json:"service"`
+	Ready   *bool  `json:"ready,omitempty"`
+	// Accounts 是按 Provider 分组的启用账号数量；与 Node 一样覆盖**全部**受支持 Provider，
+	// 没有账号的 Provider 记 0 而不是省略。
+	Accounts map[string]int `json:"accounts,omitempty"`
+	Capabilities          []string              `json:"capabilities,omitempty"`
+	InferenceCatalogReady bool                  `json:"inference_catalog_ready,omitempty"`
+	InferenceCatalogStale bool                  `json:"inference_catalog_stale,omitempty"`
+	ModelCount            int                   `json:"model_count,omitempty"`
+	RouteCount            int                   `json:"route_count,omitempty"`
+}
+
+// catalogReadiness 是 Host 探针读取的低敏原子目录状态。
+type catalogReadiness struct {
+	ready      bool
+	stale      bool
+	modelCount int
+	routeCount int
+	// accounts 是按 Provider 分组的启用账号数量，已由 Composition Root 补齐全部 Provider。
+	accounts map[string]int
+}
+
+// systemErrorResponse 是 Host 级路由错误的稳定响应。
+type systemErrorResponse struct {
+	Error systemErrorView `json:"error"`
+}
+
+// systemErrorView 只暴露安全错误码和固定消息。
+type systemErrorView struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// newRouter 挂载系统、账号、推理和 Claude Native Relay 路由。
+func newRouter(handlers serverHandlers) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", handleHealth)
+	mux.HandleFunc("/readyz", func(
+		response http.ResponseWriter,
+		request *http.Request,
+	) {
+		handleReadiness(response, request, handlers.catalogStatus)
+	})
+	mux.Handle(accountsapi.NativeImportPath, handlers.accounts)
+	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
+	mux.Handle(accountsapi.AliasesPath+"/", handlers.accounts)
+	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
+	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
+	if handlers.accountOutcomes != nil {
+		mux.Handle(accountoutcomesapi.Path, handlers.accountOutcomes)
+	}
+	if handlers.accountRuntime != nil {
+		mux.Handle(accountruntimeapi.Path, handlers.accountRuntime)
+	}
+	if handlers.plugins.projection != nil {
+		mux.Handle(pluginapi.ProjectionPath, handlers.plugins.projection)
+	}
+	if handlers.accountUsageEvents != nil {
+		mux.Handle(accountusageeventsapi.Path, handlers.accountUsageEvents)
+	}
+	if handlers.usageStats != nil {
+		mux.Handle(usagestatsapi.Path, handlers.usageStats)
+	}
+	if handlers.usageModels != nil {
+		mux.Handle(usagestatsapi.ModelsPath, handlers.usageModels)
+	}
+	if handlers.usageSessions != nil {
+		mux.Handle(usagestatsapi.SessionsPath, handlers.usageSessions)
+	}
+	mux.Handle(modelsapi.Path, handlers.models)
+	// /v1/models/ 同时承载两条能力：单模型查询 GET /v1/models/{id}，
+	// 以及 Gemini 的 POST /v1/models/{model}:generateContent[Stream]。dispatcher 先按
+	// Gemini 的路径形态判断，避免 `:generateContent` 被单模型回显当成模型 ID 吞掉。
+	mux.Handle(modelsapi.PathPrefix, modelsDispatcher{
+		models: handlers.models,
+		gemini: handlers.gemini,
+	})
+	// /v1beta/models/ 只承载 Gemini：beta 前缀下没有单模型查询能力。
+	mux.Handle(geminiapi.BetaPathPrefix, handlers.gemini)
+	// /v1/blobs/{id}：取回被剥离出请求的图片字节，与其它 /v1 路由共用客户端密钥闸门。
+	//
+	// 挂载写成 `Path + "/"` 而不是直接引用 PathPrefix：路由采集器只把 `Ident.Ident + "/"`
+	// 这种形态识别为前缀挂载，否则会记成 exact，与 Node 的 prefix 身份对不上。
+	mux.Handle(blobsapi.Path+"/", handlers.blobs)
+	// /v1/messages/count_tokens：纯本地估算，必须先于 /v1/messages 之外单独挂载，
+	// 否则会被 Messages 入口当成推理请求。
+	mux.Handle(anthropicmessagesapi.CountTokensPath, handlers.tokenCount)
+	// /v1/images/*：图片生成与编辑，与其它 /v1 路由共用客户端密钥闸门。
+	mux.Handle(imagesapi.GenerationsPath, handlers.images)
+	mux.Handle(imagesapi.EditsPath, handlers.images)
+	mux.Handle(clientpropsapi.Path, handlers.clientProps)
+	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
+	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
+	// 优雅退出端点：嵌入方（Node 宿主）在停机时显式请求，而不是依赖进程信号——
+	// Windows 上 SIGTERM 实际是 TerminateProcess，进程内的关闭路径不会执行。
+	if handlers.shutdown != nil {
+		mux.Handle(shutdownapi.Path, handlers.shutdown)
+	}
+	// 模型别名投影：Node 在启动与别名变更后推送，Go 只读并编译进路由目录。
+	if handlers.modelAliases != nil {
+		mux.Handle(modelaliasapi.Path, handlers.modelAliases)
+	}
+	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只承接自己已能求值的账号。
+	if handlers.upstreamRules != nil {
+		mux.Handle(upstreamrulesapi.Path, handlers.upstreamRules)
+	}
+	if handlers.modelCatalog != nil {
+		mux.Handle(modelcatalogapi.Path, handlers.modelCatalog)
+	}
+	if handlers.managementStatus != nil {
+		mux.Handle(managementstatusapi.Path, handlers.managementStatus)
+	}
+	if handlers.managementMetrics != nil {
+		mux.Handle(managementmetricsapi.Path, handlers.managementMetrics)
+	}
+	mux.Handle(
+		clauderelayleaseapi.Path,
+		handlers.claudeRelayLeases,
+	)
+	// 推理入口先过插件 gateway.request 闸门（只对 Node 带代次头的请求生效；WebSocket 升级直通）。
+	mux.Handle(openairesponsesapi.Path, handlers.plugins.wrap("openai_responses", responsesDispatcher{
+		canonical:  handlers.inference,
+		nativeHTTP: handlers.codexResponsesHTTP,
+		websocket:  handlers.codexResponsesWS,
+		observe:    handlers.observeCodexClient,
+	}))
+	// chat completions 入口先过家族透传通道：能承载的家族请求（钉选 + 家族账号）由它
+	// 直连家族官方端点，其余（非家族模型、钉选到别的 Provider、本通道表达不了的请求）
+	// 由它内部交回 Canonical。未装配（含 router 单测）时保持 Canonical 直挂。
+	chatCompletions := handlers.familyRelay
+	if chatCompletions == nil {
+		chatCompletions = handlers.inference
+	}
+	mux.Handle(openaichatcompletionsapi.Path, handlers.plugins.wrap("openai_chat", chatCompletions))
+	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
+	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
+	//
+	// 此前按 Relay Token 分流，等于只有官方 Claude Code 能用无损路径；其它
+	// 客户端即使上游就是 claude 账号也被迫走 Canonical 重建——那是丢字段
+	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
+	// 的来源，且同协议下这些信息本来是 1:1 的。
+	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
+	mux.HandleFunc("/", handleRouteNotFound)
+	return mux
+}
+
+// handleHealth 返回不依赖账号数量的进程存活状态。
+func handleHealth(response http.ResponseWriter, request *http.Request) {
+	if !requireGet(response, request) {
+		return
+	}
+	writeSystemJSON(response, http.StatusOK, systemStatusResponse{
+		OK:      true,
+		Service: "aih-server",
+	})
+}
+
+// handleReadiness 报告「这个进程能不能真的服务请求」，并附带当前装配的稳定能力。
+//
+// 语义与 Node 的 `/readyz` 对齐，而不是按 Go 自己的目录健康重新定义：
+//
+//   - **状态码恒为 200**。Node 那边「HTTP 200 但 `ready=false`」是被文档依赖的诊断信号
+//     （节点活着、缺的是 provider 账号）。若这里改成
+//     503，同一条诊断会被读成「节点挂了」——结论反向。
+//   - `ready` = 至少一个 Provider 有启用账号（Node：`accounts.some(count>0)`）。
+//     「目录是否就绪」仍然可读，但走 `inference_catalog_ready` 这个追加字段。
+//   - `accounts` 是 Node 的契约字段，不能缺：诊断逻辑会从 `accounts` 推导
+//     `missing_provider_account:<provider>`。
+//
+// 账号数来自进程内索引，不是每次请求打 SQLite；这条性质是它能挂在未鉴权端点上的前提。
+func handleReadiness(
+	response http.ResponseWriter,
+	request *http.Request,
+	statusReader func() catalogReadiness,
+) {
+	if !requireGet(response, request) {
+		return
+	}
+	status := catalogReadiness{}
+	if statusReader != nil {
+		status = statusReader()
+	}
+	ready := hasEnabledProviderAccount(status.accounts)
+	writeSystemJSON(response, http.StatusOK, systemStatusResponse{
+		OK:       true,
+		Service:  "aih-server",
+		Ready:    &ready,
+		Accounts: status.accounts,
+		Capabilities: []string{
+			"account_management_v1",
+			"account_usage_v1",
+			"account_auth_jobs_v1",
+			"local_model_catalog_v1",
+			"canonical_inference_v1",
+			"codex_responses_websocket_v1",
+			"claude_relay_leases_v1",
+			"claude_native_relay_v1",
+		},
+		InferenceCatalogReady: status.ready,
+		InferenceCatalogStale: status.stale,
+		ModelCount:            status.modelCount,
+		RouteCount:            status.routeCount,
+	})
+}
+
+// hasEnabledProviderAccount 判断是否至少有一个 Provider 有启用账号。
+//
+// 与 Node 的 `Object.values(accounts).some((count) => count > 0)` 同构。
+func hasEnabledProviderAccount(accounts map[string]int) bool {
+	for _, count := range accounts {
+		if count > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// modelsDispatcher 让 /v1/models/ 子树按路径形态分流。
+//
+// 顺序很重要：Gemini 的 `:generateContent` 后缀必须先判定。单模型查询会把
+// `/v1/models/gemini-3.0-pro:generateContent` 当成一个合法模型 ID 并回显 200，
+// 一旦先走它，Gemini 入口就永远不可达且没有任何报错。
+type modelsDispatcher struct {
+	models http.Handler
+	gemini http.Handler
+}
+
+func (dispatcher modelsDispatcher) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if _, isGemini := geminiapi.ParseTarget(request.URL.Path); isGemini {
+		if dispatcher.gemini == nil {
+			handleRouteNotFound(response, request)
+			return
+		}
+		dispatcher.gemini.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.models == nil {
+		handleRouteNotFound(response, request)
+		return
+	}
+	dispatcher.models.ServeHTTP(response, request)
+}
+
+// responsesDispatcher 让同一个标准路径按 HTTP 或 WebSocket 传输分流。
+type responsesDispatcher struct {
+	canonical  http.Handler
+	nativeHTTP http.Handler
+	websocket  http.Handler
+	// observe 从已鉴权的真实 Codex 客户端学习客户端版本；可为空。
+	observe func(*http.Request)
+}
+
+func (dispatcher responsesDispatcher) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if dispatcher.observe != nil {
+		dispatcher.observe(request)
+	}
+	if codexresponsesws.IsUpgradeRequest(request) {
+		if dispatcher.websocket == nil {
+			handleRouteNotFound(response, request)
+			return
+		}
+		dispatcher.websocket.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.nativeHTTP != nil {
+		dispatcher.nativeHTTP.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.canonical == nil {
+		handleRouteNotFound(response, request)
+		return
+	}
+	dispatcher.canonical.ServeHTTP(response, request)
+}
+
+// handleRouteNotFound 返回 JSON 404，避免标准库默认纯文本泄漏合同差异。
+func handleRouteNotFound(response http.ResponseWriter, _ *http.Request) {
+	writeSystemJSON(response, http.StatusNotFound, systemErrorResponse{
+		Error: systemErrorView{
+			Code:    "route_not_found",
+			Message: "请求的资源不存在",
+		},
+	})
+}
+
+// requireGet 让系统探针只接受安全的 GET 和 HEAD。
+func requireGet(response http.ResponseWriter, request *http.Request) bool {
+	if request.Method == http.MethodGet || request.Method == http.MethodHead {
+		return true
+	}
+	response.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
+	writeSystemJSON(response, http.StatusMethodNotAllowed, systemErrorResponse{
+		Error: systemErrorView{
+			Code:    "method_not_allowed",
+			Message: "HTTP 方法不受支持",
+		},
+	})
+	return false
+}
+
+// writeSystemJSON 写入禁止缓存的 Host 级 JSON 响应。
+func writeSystemJSON(
+	response http.ResponseWriter,
+	status int,
+	payload any,
+) {
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(status)
+	_ = json.NewEncoder(response).Encode(payload)
+}

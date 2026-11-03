@@ -1,0 +1,968 @@
+{
+  "generatedAt": "2026-11-02T18:33:48.030Z",
+  "total": 75,
+  "publicEnvLimit": 10,
+  "public": [
+    "AIH_HOME_DIR",
+    "AIH_HOST_HOME",
+    "AIH_SERVER_HOST",
+    "AIH_SERVER_PORT",
+    "AIH_SERVER_API_KEY",
+    "AIH_SERVER_MANAGEMENT_KEY",
+    "AIH_SERVER_PROXY_URL",
+    "AIH_SERVER_NO_PROXY",
+    "AIH_MULTIPLEXER",
+    "AIH_NO_PERSIST"
+  ],
+  "nameConstants": {
+    "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
+    "AGY_USAGE_ENV": "AIH_AGY_USAGE",
+    "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
+    "CLINE_GATEWAY_ENV": "AIH_CLINE_GATEWAY",
+    "CLIPBOARD_CONTEXT_ENV": "AIH_SSH_CLIPBOARD",
+    "CLI_FEATURES_ENV": "AIH_CLI_FEATURES",
+    "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
+    "CODEX_FLAGS_ENV": "AIH_CODEX_FLAGS",
+    "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
+    "DISABLE_ENV": "AIH_NO_PERSIST",
+    "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
+    "EXTENSION_DIRS_ENV": "AIH_PROVIDER_EXTENSION_DIRS",
+    "GO_CORE_BIND_ENV": "AIH_GO_CORE_BIND",
+    "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
+    "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
+    "OPENCODE_CONTEXT_ENV": "AIH_OPENCODE_GATEWAY",
+    "PROFILE_ENV": "AIH_ZCODE_HARNESS_STORE",
+    "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
+    "RELAY_SETTINGS_ENV": "AIH_RELAY_SETTINGS",
+    "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
+    "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
+    "RUNTIME_USAGE_ENV": "AIH_RUNTIME_USAGE",
+    "SERVER_RESTART_ENV": "AIH_SERVER_RESTART",
+    "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
+    "SHIM_CONTEXT_ENV": "AIH_SSH_CLIP_SHIM_CONTEXT",
+    "ZCODE_CONTEXT_ENV": "AIH_ZCODE_CONTEXT"
+  },
+  "entries": [
+    {
+      "name": "AIH_HOST_HOME",
+      "category": "path",
+      "reads": 23,
+      "literals": 3,
+      "files": [
+        "lib/account/zcode-client-metadata.js",
+        "lib/cli/services/ai-cli/desktop-client-restart.js",
+        "lib/cli/services/ai-cli/provider-runtime-env.js",
+        "lib/cli/services/toolkit/tool-lifecycle/frpc-release-runner.js",
+        "lib/config/public-env.js",
+        "lib/runtime/host-home.js",
+        "lib/server/codex-app-server-endpoint.js",
+        "lib/server/codex-cli-hook.js",
+        "lib/server/codex-desktop-hook.js",
+        "lib/server/codex-project-registry.js",
+        "lib/server/native-session-chat-command.js",
+        "lib/server/native-session-chat-launch.js",
+        "lib/server/native-session-chat.js",
+        "lib/server/opencode-serve-runner.js",
+        "lib/server/webui-account-activity-routes.js",
+        "lib/server/webui-scheduled-task-routes.js",
+        "lib/sessions/session-reader-utils.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_PROXY_URL",
+      "category": "network",
+      "reads": 19,
+      "literals": 2,
+      "files": [
+        "lib/account/activity-claim/http.js",
+        "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
+        "lib/cli/services/usage/snapshot.js",
+        "lib/cli/services/usage/usage-snapshot-codex.js",
+        "lib/config/public-env.js",
+        "lib/server/args.js",
+        "lib/server/go-core-proxy-guard.js",
+        "lib/server/http-utils-utils.js",
+        "lib/server/server-config-schema.js",
+        "lib/usage/quota/probes/cline.js",
+        "lib/usage/quota/probes/qoder-family.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_NO_PROXY",
+      "category": "network",
+      "reads": 18,
+      "literals": 2,
+      "files": [
+        "lib/account/activity-claim/http.js",
+        "lib/cli/services/usage/snapshot.js",
+        "lib/cli/services/usage/usage-snapshot-codex.js",
+        "lib/config/public-env.js",
+        "lib/server/args.js",
+        "lib/server/go-core-proxy-guard.js",
+        "lib/server/http-utils-utils.js",
+        "lib/server/server-config-schema.js",
+        "lib/usage/quota/probes/cline.js",
+        "lib/usage/quota/probes/qoder-family.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_HOME_DIR",
+      "category": "path",
+      "reads": 16,
+      "literals": 4,
+      "files": [
+        "lib/cli/services/account/codex-rekey-reference-policy.js",
+        "lib/cli/services/ai-cli/desktop-client-restart.js",
+        "lib/cli/services/peer/scope.js",
+        "lib/config/public-env.js",
+        "lib/runtime/aih-home.js",
+        "lib/server/codex-desktop-account.js",
+        "lib/server/token-refresh-suppression-store.js",
+        "lib/server/webui-account-activity-routes.js",
+        "lib/server/webui-alias-pool-routes.js",
+        "lib/server/webui-model-context-routes.js",
+        "lib/server/webui-translation-routes.js",
+        "lib/server/webui-window-activation-routes.js",
+        "lib/server/webui-zcode-egress-routes.js",
+        "scripts/collect-env-flags.js",
+        "scripts/gateway-account-auth-smoke.js",
+        "scripts/provider-session-title-smoke.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_MANAGEMENT_KEY",
+      "category": "credential",
+      "reads": 11,
+      "literals": 2,
+      "files": [
+        "lib/cli/bootstrap/runtime-support-wiring.js",
+        "lib/config/public-env.js",
+        "lib/plugins/control/cli.js",
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js",
+        "scripts/cleanup-official-account-error-rules.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CODEX_GATEWAY_ACCOUNT_REF",
+      "category": "plumbing",
+      "reads": 6,
+      "literals": 5,
+      "files": [
+        "lib/cli/services/account/codex-rekey-reference-policy.js",
+        "lib/cli/services/ai-cli/codex-provider-args.js",
+        "lib/cli/services/ai-cli/provider-runtime-env.js",
+        "lib/runtime/multiplexer/tmux-session-env.js",
+        "lib/server/codex-app-server-endpoint.js",
+        "lib/server/codex-cli-startup-policy.js",
+        "lib/server/codex-default-cli-launcher.js",
+        "lib/server/codex-native-transport-policy.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_PORT",
+      "category": "network",
+      "reads": 6,
+      "literals": 2,
+      "files": [
+        "lib/config/public-env.js",
+        "lib/server/args.js",
+        "lib/server/opencode-plugin-hook-config.js",
+        "lib/server/server-config-schema.js",
+        "scripts/cleanup-official-account-error-rules.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_PROVIDER_ACCOUNT_REF",
+      "category": "plumbing",
+      "reads": 5,
+      "literals": 3,
+      "files": [
+        "lib/cli/services/account/codex-rekey-reference-policy.js",
+        "lib/cli/services/ai-cli/headless-runners/zcode-app-server-runner.js",
+        "lib/runtime/multiplexer/tmux-session-env.js",
+        "lib/runtime/provider-session-context.js",
+        "scripts/aih-codex-provider-auth.js"
+      ],
+      "aliasConstants": [
+        "PROVIDER_ACCOUNT_REF_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_BIN",
+      "category": "plumbing",
+      "reads": 4,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/usage/usage-snapshot-codex.js",
+        "lib/server/codex-client-version.js",
+        "lib/server/server.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_MODEL_ALIAS",
+      "category": "plumbing",
+      "reads": 4,
+      "literals": 0,
+      "files": [
+        "lib/cli/commands/ai-cli/router.js",
+        "lib/cli/services/ai-cli/codex-provider-args.js",
+        "lib/cli/services/ai-cli/launch-profile/opencode-strategy.js",
+        "lib/cli/services/ai-cli/provider-runtime-env.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_API_KEY",
+      "category": "credential",
+      "reads": 4,
+      "literals": 3,
+      "files": [
+        "lib/config/public-env.js",
+        "lib/server/args.js",
+        "lib/server/codex-gateway-connection.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_HOST",
+      "category": "network",
+      "reads": 4,
+      "literals": 2,
+      "files": [
+        "lib/config/public-env.js",
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js",
+        "scripts/cleanup-official-account-error-rules.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CLAUDE_USAGE_PROBE",
+      "category": "test",
+      "reads": 2,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/usage/snapshot.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CODEBUDDY_SITE",
+      "category": "plumbing",
+      "reads": 2,
+      "literals": 0,
+      "files": [
+        "lib/server/oauth-strategies/codebuddy.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CODEX_REMOTE_AUTH_TOKEN",
+      "category": "credential",
+      "reads": 2,
+      "literals": 3,
+      "files": [
+        "lib/cli/services/pty/pty-runtime-spawn.js",
+        "lib/server/codex-app-server-stdio-proxy-cliresume.js",
+        "lib/server/codex-default-cli-launcher.js",
+        "lib/server/codex-native-transport-policy.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CODEX_USAGE_PROBE",
+      "category": "test",
+      "reads": 2,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/usage/codex-probe-context.js",
+        "lib/cli/services/usage/usage-snapshot-codex.js"
+      ],
+      "aliasConstants": [
+        "CODEX_PROBE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_GATEWAY_API_KEY",
+      "category": "credential",
+      "reads": 2,
+      "literals": 0,
+      "files": [
+        "lib/server/codex-gateway-connection.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GEMINI_USAGE_PROBE",
+      "category": "test",
+      "reads": 2,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/usage/snapshot.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_HOME",
+      "category": "path",
+      "reads": 2,
+      "literals": 0,
+      "files": [
+        "scripts/prune-usage.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CLI_PATH",
+      "category": "path",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/server/autostart.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CODEX_GATEWAY_SESSION_KEY",
+      "category": "credential",
+      "reads": 1,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/ai-cli/codex-provider-args.js",
+        "lib/cli/services/ai-cli/relay/codex-relay-profile.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_ACCOUNT_SYNC",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 1,
+      "files": [
+        "lib/server/go-core-host.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_BINARY",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 1,
+      "files": [
+        "lib/server/go-core-host.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_CLIENT_KEY",
+      "category": "credential",
+      "reads": 1,
+      "literals": 1,
+      "files": [
+        "lib/server/go-core-host.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_DELEGATE_REFRESH",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 1,
+      "files": [
+        "lib/server/go-core-host.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_ENABLED",
+      "category": "flag",
+      "reads": 1,
+      "literals": 2,
+      "files": [
+        "lib/server/go-core-host.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_MANAGEMENT_KEY",
+      "category": "credential",
+      "reads": 1,
+      "literals": 1,
+      "files": [
+        "lib/server/go-core-host.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_ROUTES",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 2,
+      "files": [
+        "lib/server/go-core-host.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_PEER_SELF",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/peer/index.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RUNTIME_TOOLS_DIR",
+      "category": "path",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/runtime/native-cli-resolver.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_UPSTREAM_ERROR_RULES",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 3,
+      "files": [
+        "lib/cli/services/server/go-core-supervisor.js",
+        "lib/server/go-core-host.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SESSION_INTENT",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 3,
+      "files": [
+        "lib/cli/services/ai-cli/desktop-client-restart.js",
+        "lib/cli/services/ai-cli/provider-runtime-env.js",
+        "lib/runtime/multiplexer/tmux-session-env.js",
+        "lib/runtime/persistent-session.js"
+      ],
+      "aliasConstants": [
+        "SESSION_INTENT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_SSH_PASSWORD",
+      "category": "credential",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/server/ssh-remote-shell.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_TRACE",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/runtime/trace.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_UPSTREAM_ERROR_GROUP_IDS",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 2,
+      "files": [
+        "lib/account/official-account-rules-cleanup.js",
+        "lib/account/upstream-error-rules.js",
+        "lib/server/webui-account-live.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_UPSTREAM_ERROR_RULES",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 3,
+      "files": [
+        "lib/account/go-bridge/go-import-translator.js",
+        "lib/account/official-account-rules-cleanup.js",
+        "lib/account/upstream-error-rules.js",
+        "lib/server/webui-account-live.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_ACCOUNT_APP",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/runtime/provider-session-context.js"
+      ],
+      "aliasConstants": [
+        "ACCOUNT_APP_MARKER_ENV"
+      ]
+    },
+    {
+      "name": "AIH_AGY_USAGE",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/usage/agy-endpoints.js"
+      ],
+      "aliasConstants": [
+        "AGY_USAGE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CLAUDE_CREDENTIAL_TYPE",
+      "category": "credential",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/account/claude-credential.js",
+        "lib/cli/services/ai-cli/provider-runtime-env.js"
+      ],
+      "aliasConstants": [
+        "CLAUDE_CREDENTIAL_TYPE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CLI_FEATURES",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/config/cli-features.js"
+      ],
+      "aliasConstants": [
+        "CLI_FEATURES_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CLINE_GATEWAY",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/ai-cli/cline-gateway-context.js"
+      ],
+      "aliasConstants": [
+        "CLINE_GATEWAY_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/codex-app-server-hook-wrapper.js"
+      ],
+      "aliasConstants": [
+        "CODEX_APP_SERVER_PASSTHROUGH_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_FLAGS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 3,
+      "files": [
+        "lib/cli/services/pty/pty-runtime-launch.js",
+        "lib/runtime/codex-flags.js",
+        "lib/runtime/multiplexer/tmux-session-env.js"
+      ],
+      "aliasConstants": [
+        "CODEX_FLAGS_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
+      "category": "credential",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/codex-tui-local-app-server.js"
+      ],
+      "aliasConstants": [
+        "REMOTE_AUTH_TOKEN_ENV"
+      ]
+    },
+    {
+      "name": "AIH_EDGE_CONTEXT",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/toolkit/edge-proxy/edge-context.js"
+      ],
+      "aliasConstants": [
+        "EDGE_CONTEXT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_GEMINI_DIRECT_MCP_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "scripts/gemini-mcp-tool-loop-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GEMINI_MCP_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "scripts/gemini-mcp-tool-loop-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GEMINI_MCP_RESULT",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "scripts/gemini-mcp-tool-loop-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_GO_CORE_BIND",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/go-core-bind.js"
+      ],
+      "aliasConstants": [
+        "GO_CORE_BIND_ENV"
+      ]
+    },
+    {
+      "name": "AIH_IMAGE_API",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/account/go-bridge/go-import-translator.js",
+        "lib/server/upstream-account-profile.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_LAUNCH_CONTEXT",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/runtime/launch-context.js"
+      ],
+      "aliasConstants": [
+        "LAUNCH_CONTEXT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_MCP_DEMO_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "scripts/mcp-native-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_MULTIPLEXER",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/config/public-env.js",
+        "lib/runtime/multiplexer/types.js"
+      ],
+      "aliasConstants": [
+        "MULTIPLEXER_ENV"
+      ]
+    },
+    {
+      "name": "AIH_NATIVE_MCP_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 4,
+      "files": [
+        "scripts/claude-mcp-tool-loop-demo.js",
+        "scripts/cline-mcp-tool-loop-demo.js",
+        "scripts/codex-mcp-tool-loop-demo.js",
+        "scripts/opencode-mcp-tool-loop-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_NO_CHECKPOINT",
+      "category": "flag",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/workspace-checkpoints.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_NO_GIT",
+      "category": "flag",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/workspace-checkpoints.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_NO_PERSIST",
+      "category": "flag",
+      "reads": 0,
+      "literals": 4,
+      "files": [
+        "lib/config/public-env.js",
+        "lib/runtime/multiplexer/drivers/herdr-driver.js",
+        "lib/runtime/multiplexer/drivers/tmux-driver.js",
+        "lib/runtime/persistent-session.js"
+      ],
+      "aliasConstants": [
+        "DISABLE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_NO_REPO",
+      "category": "path",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/workspace-checkpoints.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_OPENCODE_GATEWAY",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/runtime/opencode-context.js"
+      ],
+      "aliasConstants": [
+        "OPENCODE_CONTEXT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_PLUGIN_DEMO_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 5,
+      "files": [
+        "scripts/gemini-resource-native-demo.js",
+        "scripts/native-plugin-use-demo.js",
+        "scripts/plugin-closure-demo.js",
+        "scripts/workbuddy-resource-native-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_PLUGIN_RECOVERED_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "scripts/plugin-closure-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_PROVIDER_EXTENSION_DIRS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/providers/extension-dirs.js"
+      ],
+      "aliasConstants": [
+        "EXTENSION_DIRS_ENV"
+      ]
+    },
+    {
+      "name": "AIH_RELAY_SETTINGS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 6,
+      "files": [
+        "lib/server/relay-settings.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": [
+        "RELAY_SETTINGS_ENV"
+      ]
+    },
+    {
+      "name": "AIH_RESOURCE_MCP_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 4,
+      "files": [
+        "scripts/workbuddy-mcp-tool-loop-demo.js",
+        "scripts/workbuddy-resource-native-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RESTORED",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/workspace-checkpoints.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RUNTIME_MARKER",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/runtime/multiplexer/tmux-session-env.js",
+        "lib/runtime/persistent-session.js"
+      ],
+      "aliasConstants": [
+        "RUNTIME_MARKER_ENV"
+      ]
+    },
+    {
+      "name": "AIH_RUNTIME_USAGE",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/cli/services/pty/pty-runtime-launch.js",
+        "lib/runtime/usage-settings.js"
+      ],
+      "aliasConstants": [
+        "RUNTIME_USAGE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_SERVER_RESTART",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/server-restart-context.js"
+      ],
+      "aliasConstants": [
+        "SERVER_RESTART_ENV"
+      ]
+    },
+    {
+      "name": "AIH_SKILL_DEMO_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 3,
+      "files": [
+        "scripts/gemini-resource-native-demo.js",
+        "scripts/workbuddy-resource-native-demo.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SSH_CLIP_SHIM_CONTEXT",
+      "category": "network",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/ssh-clipboard/shim-context.js"
+      ],
+      "aliasConstants": [
+        "SHIM_CONTEXT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_SSH_CLIPBOARD",
+      "category": "network",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/ssh-clipboard/clipboard-context.js"
+      ],
+      "aliasConstants": [
+        "CLIPBOARD_CONTEXT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_UPSTREAM_HEADERS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/account/go-bridge/go-import-translator.js",
+        "lib/server/upstream-account-profile.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_WEBUI_MCP_OK",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/webui-native-resource-routes.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_ZCODE_CONTEXT",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/runtime/zcode-context.js",
+        "lib/runtime/zcode-electron-captcha-hook.js"
+      ],
+      "aliasConstants": [
+        "ZCODE_CONTEXT_ENV"
+      ]
+    },
+    {
+      "name": "AIH_ZCODE_HARNESS_STORE",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/runtime/zcode-outbound-profile.js"
+      ],
+      "aliasConstants": [
+        "PROFILE_ENV"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,297 @@
+package codexresponseshttp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"time"
+
+	"github.com/madou1217/ai_home/application/accountcredentials"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/contracts/codex-relay"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
+	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
+	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+)
+
+var ErrNotNativeRoute = errors.New("native Responses route requires canonical conversion")
+
+type Selection struct {
+	AccountRef  accountcore.AccountRef
+	Credential  accountapp.Credential
+	Observation accountcredentials.CredentialObservation
+}
+
+type Cursor interface {
+	Next(context.Context) (Selection, bool, error)
+}
+type AccountSource interface {
+	Open(context.Context, string) (Cursor, error)
+}
+type Authorizer interface{ Authorized(*http.Request) bool }
+type Upstream interface {
+	RoundTripNative(context.Context, accountapp.Credential, []byte, http.Header, string) (*http.Response, error)
+}
+
+type Dependencies struct {
+	Authorizer     Authorizer
+	Accounts       AccountSource
+	Upstream       Upstream
+	Fallback       http.Handler
+	Attempts       inferencegateway.AttemptRecorder
+	Credentials    inferencegateway.CredentialObservationVerifier
+	ModelRefreshes inferencegateway.ModelRefreshScheduler
+	Clock          func() time.Time
+	// Rules 可选：账号自定义上游错误规则求值端口。为 nil 表示 Go 未承接该能力，
+	// 分类完全由内置观察器决定（与不接入规则时逐字节一致）。
+	Rules configured.Rules
+	// FailureLog 可选：请求以失败结束时收到一份低敏摘要（见 FailureReport）。
+	FailureLog func(FailureReport)
+}
+
+type Handler struct {
+	Dependencies
+	observed *inferencegateway.ObservedAttemptRecorder
+}
+
+func NewHandler(deps Dependencies) (*Handler, error) {
+	if deps.Authorizer == nil || deps.Accounts == nil || deps.Upstream == nil || deps.Fallback == nil || deps.Clock == nil || deps.ModelRefreshes == nil {
+		return nil, errors.New("native Responses dependencies are invalid")
+	}
+	observed, err := inferencegateway.NewObservedAttemptRecorder(deps.Attempts, deps.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	return &Handler{Dependencies: deps, observed: observed}, nil
+}
+
+func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if !handler.Authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeError(response, "unauthorized")
+		return
+	}
+	// 跳数上限（不是「有头即拒」）：跨机中转（本机网关 → 远程 server 网关）是正常拓扑，
+	// 只有超过上限才说明出现了 A→B→A 的环。见 responses.MaxNativeRelayHops。
+	if responses.NativeRelayHop(request.Header) > responses.MaxNativeRelayHops {
+		writeError(response, "infinite_loop_detected")
+		return
+	}
+	mediaType, _, _ := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if request.Method != http.MethodPost || request.URL.RawQuery != "" || mediaType != "application/json" {
+		handler.Fallback.ServeHTTP(response, request)
+		return
+	}
+	ctx, err := inferenceapi.ContextWithPinnedAccount(request)
+	if err != nil {
+		writeError(response, "invalid_account_ref")
+		return
+	}
+	payload, metadata, err := readRequest(request)
+	if err != nil {
+		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败，
+		// 交还前置宿主重放（例如压缩体由 Node 归一化后再进来）。
+		inferenceapi.MarkDecodeRejected(response)
+		writeError(response, "invalid_request_body")
+		return
+	}
+	trail := handler.newFailureTrail(metadata.Model)
+	cursor, err := handler.Accounts.Open(ctx, metadata.Model)
+	if errors.Is(err, ErrNotNativeRoute) {
+		request.Body = io.NopCloser(bytes.NewReader(payload))
+		handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
+		return
+	}
+	if err != nil || cursor == nil {
+		handler.fail(response, trail, "no_available_account")
+		return
+	}
+	// Go 的 native Responses 快路径没有插件尝试中间件（gateway.attempt 由 Canonical
+	// Coordinator 执行）：交还前置宿主执行同一代插件，而不是静默跳过它。
+	// 此时还没有联系上游、也没有写出任何字节，重放安全。
+	if inferenceapi.RequiresAttemptHandback(request.Context()) {
+		inferenceapi.MarkAttemptHandback(response)
+		writeError(response, "invalid_request_body")
+		return
+	}
+	// 整个请求（含流式交付）的总预算。10 分钟的旧上限会切断长推理流，
+	// 现在与流空闲策略共享同一个放宽后的总时长（见 G3）。
+	ctx, cancel := context.WithTimeout(ctx, inferenceapi.StreamTotalTimeout)
+	defer cancel()
+	var last *http.Response
+	var lastRef accountcore.AccountRef
+	contacted := false
+	defer func() {
+		if last != nil {
+			_ = last.Body.Close()
+		}
+	}()
+	for attempt := 0; attempt < 4; attempt++ {
+		selection, found, err := cursor.Next(ctx)
+		if err != nil || !found || ctx.Err() != nil {
+			break
+		}
+		route, err := runtimecore.NewModelRoute(selection.AccountRef, metadata.Model)
+		if err != nil || selection.Credential == nil || selection.Credential.ProviderID() != "codex" || !selection.Observation.IsValid() || selection.Observation.AccountRef() != selection.AccountRef || selection.Observation.ProviderID() != "codex" {
+			break
+		}
+		// ChatGPT 登录账号的上游只接受 codex CLI 形状的请求（见 nativeRequest.passthroughSafe）。
+		// 尚未联系上游时按「解码拒收」交回 Node 归一化（Go Canonical 编码器会直接拒收 store 等字段，
+		// 不能落到 Fallback）；已有账号试过就跳过这个账号，不把注定 400 的请求发出去。
+		if isStatelessCredential(selection.Credential) && !metadata.passthroughSafe() {
+			if !contacted {
+				inferenceapi.MarkDecodeRejected(response)
+				writeError(response, "invalid_request_body")
+				return
+			}
+			continue
+		}
+		contacted = true
+		attemptStarted := trail.now()
+		upstream, err := handler.Upstream.RoundTripNative(ctx, selection.Credential, payload, request.Header, request.Host)
+		if err != nil || upstream == nil || upstream.Body == nil {
+			if upstream != nil && upstream.Body != nil {
+				_ = upstream.Body.Close()
+			}
+			if request.Context().Err() != nil {
+				return
+			}
+			if err == nil {
+				err = io.ErrUnexpectedEOF
+			}
+			failure, classifyErr := attemptfailure.NewTransport(err)
+			if classifyErr == nil {
+				handler.recordFailure(ctx, route, selection, failure)
+			}
+			trail.attempt(selection.AccountRef, "transport", failure, err.Error(), attemptStarted)
+			continue
+		}
+		if last != nil {
+			_ = last.Body.Close()
+			last = nil
+		}
+		if upstream.StatusCode >= 200 && upstream.StatusCode < 300 {
+			failure := handler.probeResponse(upstream, metadata.Stream, string(selection.AccountRef))
+			if request.Context().Err() != nil {
+				_ = upstream.Body.Close()
+				return
+			}
+			if failure.IsValid() && failure.RuntimeKind() == runtimecore.FailureSafetyRejected {
+				handler.recordFailure(ctx, route, selection, failure)
+				_ = upstream.Body.Close()
+				trail.attempt(selection.AccountRef, "safety_rejected", failure, "", attemptStarted)
+				handler.fail(response, trail, "upstream_safety_rejected")
+				return
+			}
+			// HTTP 200 也可能在尚未输出内容时返回容量/额度错误。
+			// probeResponse 已限定可重放边界，沿用同模型选号与尝试预算；
+			// 保留最后一次原始响应，账号池耗尽时只交付它，不伪造成功。
+			if failure.IsValid() && failure.ResponseFailure().Retryable() {
+				handler.recordFailure(ctx, route, selection, failure)
+				trail.attempt(selection.AccountRef, "precommit_failure", failure, "", attemptStarted)
+				last, lastRef = upstream, selection.AccountRef
+				continue
+			}
+			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream)
+			_ = upstream.Body.Close()
+			return
+		}
+		prefix, readErr := io.ReadAll(io.LimitReader(upstream.Body, 1024*1024+1))
+		observedResponse := *upstream
+		observedResponse.Body = io.NopCloser(bytes.NewReader(prefix))
+		classification, classifyErr := configured.ClassifyWithRules(
+			handler.Rules,
+			string(selection.AccountRef),
+			upstream.StatusCode,
+			prefix,
+			func() (sharedfailure.Classification, error) {
+				return codexfailure.ObserveHTTP(&observedResponse, handler.Clock())
+			},
+		)
+		failure, failureErr := attemptfailure.New(classification)
+		retry := false
+		trail.attempt(selection.AccountRef, fmt.Sprintf("http_%d", upstream.StatusCode), failure, "", attemptStarted)
+		if classifyErr == nil && failureErr == nil {
+			handler.recordFailure(ctx, route, selection, failure)
+			if failure.RuntimeKind() == runtimecore.FailureSafetyRejected {
+				_ = upstream.Body.Close()
+				handler.fail(response, trail, "upstream_safety_rejected")
+				return
+			}
+			if failure.RuntimeKind() == runtimecore.FailureUpstreamEdgeRejected {
+				// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：交付网关 502，
+				// 不透传上游拦截页，也不换号（与 Node 的 edge policy 同语义）。
+				_ = upstream.Body.Close()
+				handler.fail(response, trail, "upstream_edge_rejected")
+				return
+			}
+			retry = failure.ResponseFailure().Retryable()
+		}
+		if readErr != nil || len(prefix) > 1024*1024 || !retry {
+			copyHeaders(response.Header(), upstream.Header)
+			setAccountHeaders(response, selection.AccountRef)
+			response.WriteHeader(upstream.StatusCode)
+			copyBody(response, io.MultiReader(bytes.NewReader(prefix), upstream.Body))
+			_ = upstream.Body.Close()
+			trail.finish(upstream.StatusCode, "upstream_status")
+			return
+		}
+		_ = upstream.Body.Close()
+		upstream.Body = io.NopCloser(bytes.NewReader(prefix))
+		last, lastRef = upstream, selection.AccountRef
+	}
+	if request.Context().Err() != nil {
+		return
+	}
+	if last != nil {
+		copyHeaders(response.Header(), last.Header)
+		setAccountHeaders(response, lastRef)
+		response.WriteHeader(last.StatusCode)
+		copyBody(response, last.Body)
+		trail.finish(last.StatusCode, "upstream_status")
+		return
+	}
+	if !contacted {
+		handler.fail(response, trail, "no_available_account")
+		return
+	}
+	handler.fail(response, trail, "upstream_temporarily_unavailable")
+}
+
+// fail 写出网关错误并汇报失败摘要。
+func (handler *Handler) fail(response http.ResponseWriter, trail *failureTrail, code string) {
+	writeError(response, code)
+	trail.finish(codexrelay.Error(code).Status, code)
+}
+
+func (handler *Handler) recordFailure(ctx context.Context, route runtimecore.ModelRoute, selection Selection, failure inferencegateway.AttemptFailure) {
+	recorded, _ := handler.observed.RecordFailure(ctx, route, selection.Observation, failure)
+	if recorded && failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
+		_ = handler.ModelRefreshes.ScheduleModelRefresh(ctx, selection.AccountRef, "codex")
+	}
+}
+
+func writeError(response http.ResponseWriter, code string) {
+	definition := codexrelay.Error(code)
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(definition.Status)
+	_ = json.NewEncoder(response).Encode(map[string]any{"error": map[string]any{"code": code, "message": definition.Message, "type": definition.Type, "param": nil}})
+}
+
+// isStatelessCredential 报告凭据是否指向不存储 response 的 ChatGPT Codex 上游。
+func isStatelessCredential(credential accountapp.Credential) bool {
+	_, oauth := credential.(*codexauth.OAuthAuth)
+	return oauth
+}

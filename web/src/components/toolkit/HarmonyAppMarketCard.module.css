@@ -1,0 +1,129 @@
+/* 应用市场卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青。 */
+.marketCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 160px;
+  padding: var(--space-8);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+
+.iconWrapper {
+  display: flex;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+}
+
+.fallbackIcon {
+  color: var(--color-muted-strong);
+  font-size: var(--text-3xl);
+}
+
+.titleInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.nameLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.appName {
+  overflow: hidden;
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appVersion {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.categoryTag {
+  width: fit-content;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--tint-neutral);
+  color: var(--ink-neutral);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-medium);
+}
+
+.description {
+  display: -webkit-box;
+  margin: 0 0 var(--space-7);
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-normal);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cardBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.installState {
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+}
+
+.installedBadge,
+.uninstalledBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+}
+
+.installedBadge {
+  color: var(--color-success);
+}
+
+.uninstalledBadge {
+  color: var(--color-muted);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+}
+
+.installBtn,
+.manageBtn {
+  min-width: 68px;
+  font-weight: var(--weight-medium) !important;
+}

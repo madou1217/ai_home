@@ -1,0 +1,174 @@
+/* =============================================================================
+ * KPI 条（web/DESIGN.md §6「KPI 条」/ §7.1）—— Cyber HUD 版本
+ * ========================================================================== */
+/* 容器本身挂全局 .hud-kpi-strip（hud.css：切角 + 青色角标 + 半透明底），
+ * 这里只负责网格布局与单元格发丝线：单元格用右 / 下 1px 内描影做分隔，
+ * 4 列 / 2x2 / 单列都自动正确（最外圈与容器描边重合）。 */
+.gridContainer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.widgetCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 4px);
+  min-width: 0;
+  padding: var(--space-7, 14px) var(--space-8, 16px);
+  background: transparent;
+  box-shadow: 1px 0 0 var(--color-border), 0 1px 0 var(--color-border);
+  transition: background-color var(--motion-fast, 120ms) var(--ease-standard);
+}
+
+.spanTwo {
+  grid-column: span 2;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.widgetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  min-width: 0;
+}
+
+/* 标签：全局 .hud-label（10px 大写字距、faint） */
+.widgetTitle {
+  line-height: var(--leading-snug, 1.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widgetIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--color-muted);
+  font-size: var(--hos-text-body, 14px);
+}
+
+.widgetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 2px);
+  min-width: 0;
+}
+
+/* 数值：全局 .hud-display（JetBrains Mono 粗体等宽数字）+ 按语义发光（.hud-glow-*） */
+.widgetValue {
+  font-size: 24px;
+  line-height: var(--leading-tight, 1.25);
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.valueSuccess {
+  color: var(--color-success);
+}
+
+.valueWarning {
+  color: var(--color-warning);
+}
+
+.valueDanger {
+  color: var(--color-danger);
+}
+
+.valueAccent {
+  color: var(--color-accent);
+}
+
+.widgetSubtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: var(--leading-snug, 1.4);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widgetFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  min-width: 0;
+  margin-top: var(--space-2, 4px);
+}
+
+/* 状态：全局 .hud-led 指示灯 + 状态色等宽短标签 */
+.statusDotWrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: 0.04em;
+  line-height: var(--leading-snug, 1.4);
+}
+
+.statusHealthy {
+  color: var(--color-success);
+}
+
+.statusWarning {
+  color: var(--color-warning);
+}
+
+.statusError {
+  color: var(--color-danger);
+}
+
+.statusNeutral {
+  color: var(--color-muted);
+}
+
+.trendText {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 2x2（<1024px） */
+@media (max-width: 1023px) {
+  .gridContainer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 单列（手机 ≤767px）：单元格之间为横向发丝线 */
+@media (max-width: 767px) {
+  .gridContainer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .spanTwo {
+    grid-column: span 1;
+  }
+  .widgetCard {
+    padding: var(--space-6, 12px) var(--space-8, 16px);
+  }
+}

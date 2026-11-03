@@ -1,0 +1,217 @@
+import { memo, useMemo, type ReactNode } from 'react';
+import {
+  CheckCircleOutlined,
+  CodeOutlined,
+  FileTextOutlined,
+  InfoCircleOutlined,
+  OrderedListOutlined,
+  QuestionCircleOutlined,
+  RobotOutlined,
+  ToolOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
+import EventBlock, {
+  type EventStatus,
+  type EventTone,
+} from '@/components/chat/EventBlock';
+import FileReferenceButton from '@/components/chat/FileReferenceButton';
+import MessageMarkdown from '@/components/chat/MessageMarkdown';
+import MessageBubble from '@/components/chat/MessageBubble';
+import ThinkingBlock from '@/components/chat/ThinkingBlock';
+import type { TimelineItem } from '@/chat-runtime';
+import type { Provider } from '@/types';
+import { CaptureIdentityBoundary } from '@/features/capture';
+import { getProviderLabel } from '@/components/chat/provider-registry';
+import { collectTimelineFileReferences } from './timeline-file-references';
+import { reasoningText } from './timeline-presentation';
+import { formatDurationLabel, formatTtftLabel } from '@/components/chat/message-metrics-format';
+import styles from './session-runtime.module.css';
+
+interface Props {
+  readonly item: TimelineItem;
+  readonly provider: Provider;
+  readonly projectPath: string;
+  readonly onOpenFile: (filePath: string) => void;
+  readonly mobile?: boolean;
+  readonly reasoningRunning?: boolean;
+  readonly progress?: ReactNode;
+  readonly onRetry?: () => void;
+  readonly onFork?: () => void;
+}
+
+function TimelineItemView({
+  item, provider, projectPath, onOpenFile, mobile = false, reasoningRunning = false, progress, onRetry, onFork,
+}: Props) {
+  const filePaths = useMemo(() => collectTimelineFileReferences(item), [item]);
+  if (item.kind === 'message') {
+    const messageContent = item.content ?? '';
+    return (
+      <CaptureIdentityBoundary provider={getProviderLabel(provider)} model={item.detail.model || ''}>
+        <MessageBubble
+          message={{
+            role: item.detail.role,
+            content: messageContent,
+            timestamp: item.updatedAt || item.createdAt,
+            model: item.detail.model,
+            effort: item.detail.effort,
+            metrics: item.detail.metrics,
+          }}
+          provider={provider}
+          session={{ projectPath }}
+          mobile={mobile}
+          anchorId={item.id}
+          progress={progress}
+          onRetry={onRetry}
+          onFork={onFork}
+        />
+      </CaptureIdentityBoundary>
+    );
+  }
+  if (item.kind === 'reasoning') {
+    const value = reasoningText(item);
+    if (!value.trim()) {
+      const label = reasoningRunning ? '正在思考…'
+        : item.status === 'failed' ? '思考失败'
+          : item.status === 'cancelled' ? '思考已取消' : '';
+      return label || progress ? (
+        <div className={styles.runtimeNotice} role="status" aria-live="polite" data-danger={item.status === 'failed'}>
+          {progress || label}
+        </div>
+      ) : null;
+    }
+    return (
+      <ThinkingBlock value={value} mobile={mobile} running={reasoningRunning}
+        meta={progress || (item.detail.metrics ? [
+          `用时 ${formatDurationLabel(item.detail.metrics.durationMs)}`,
+          item.detail.metrics.ttftMs === undefined ? '' : `首字 ${formatTtftLabel(item.detail.metrics.ttftMs)}`,
+        ].filter(Boolean).join(' · ') : undefined)} />
+    );
+  }
+
+  const presentation = eventPresentation(item);
+  return (
+    <>
+      <EventBlock
+        tone={presentation.tone}
+        icon={presentation.icon}
+        title={presentation.title}
+        preview={presentation.preview}
+        status={statusPresentation(item)}
+        defaultOpen={item.status === 'running' || item.status === 'waiting_input'}
+        dense={mobile}
+      >
+        {filePaths.length > 0 ? (
+          <div className={styles.fileReferences}>
+            {filePaths.map((filePath) => (
+              <FileReferenceButton
+                key={filePath}
+                path={filePath}
+                variant="tool"
+                onOpenFile={onOpenFile}
+              />
+            ))}
+          </div>
+        ) : null}
+        {item.status === 'unknown' ? <div className={styles.runtimeNotice} role="status">
+          执行结果未收到，无法确认是否完成。请先核对实际结果，再决定是否重试。
+        </div> : null}
+        {eventBody(item)}
+      </EventBlock>
+    </>
+  );
+}
+
+function eventPresentation(item: TimelineItem): {
+  title: string; preview?: string; tone: EventTone; icon: ReactNode;
+} {
+  switch (item.kind) {
+    case 'plan': return { title: '计划', preview: item.content, tone: 'plan', icon: <OrderedListOutlined /> };
+    case 'shell': return { title: '命令', preview: item.detail.command, tone: 'tool', icon: <CodeOutlined /> };
+    case 'tool': return { title: item.detail.name, preview: item.content, tone: 'tool', icon: <ToolOutlined /> };
+    case 'diff': return { title: '文件变更', preview: item.content, tone: 'tool', icon: <FileTextOutlined /> };
+    case 'file_change': return { title: '文件变更', preview: item.content || fileChangePaths(item.detail.changes), tone: 'tool', icon: <FileTextOutlined /> };
+    case 'question': return { title: '等待回答', preview: item.content, tone: 'ask', icon: <QuestionCircleOutlined /> };
+    case 'approval': return { title: '等待审批', preview: item.content, tone: 'ask', icon: <WarningOutlined /> };
+    case 'subagent': return { title: '子代理', preview: item.content, tone: 'tool', icon: <RobotOutlined /> };
+    case 'error': return { title: '运行错误', preview: item.content, tone: 'notify', icon: <WarningOutlined /> };
+    case 'notice': return { title: '运行提示', preview: item.content, tone: 'notify', icon: <InfoCircleOutlined /> };
+    default: return { title: kindLabel(item.kind), preview: item.content, tone: 'neutral', icon: <CheckCircleOutlined /> };
+  }
+}
+
+function eventBody(item: TimelineItem): ReactNode {
+  switch (item.kind) {
+    case 'plan':
+      return item.detail.steps?.length ? (
+        <ol className={styles.planSteps}>{item.detail.steps.map((step, index) => (
+          <li key={`${step.step}-${index}`} data-status={step.status}>{step.step}</li>
+        ))}</ol>
+      ) : <MessageMarkdown value={item.content || '计划内容尚未生成'} />;
+    case 'shell':
+      return <CodeDetail primary={item.detail.command} secondary={item.detail.output || item.content} />;
+    case 'tool':
+      return <CodeDetail primary={formatUnknown(item.detail.input)} secondary={formatUnknown(item.detail.result)} />;
+    case 'diff': return <CodeDetail primary={item.detail.patch || item.content || ''} />;
+    case 'file_change': return <CodeDetail primary={item.detail.diff || item.content || formatFileChanges(item.detail.changes)} />;
+    case 'artifact': return <div>{item.detail.name} · {item.detail.mimeType}</div>;
+    case 'attachment': return <div>{item.detail.name} · {item.detail.mimeType}</div>;
+    case 'terminal': return <pre className={styles.codeBlock}>{item.content || item.detail.stream}</pre>;
+    case 'subagent': return <div>{item.content || `代理 ${item.detail.agentId}`}</div>;
+    default: return <MessageMarkdown value={item.content || kindLabel(item.kind)} />;
+  }
+}
+
+function CodeDetail({ primary, secondary }: { primary: string; secondary?: string }) {
+  return (
+    <div className={styles.codeStack}>
+      {primary ? <pre className={styles.codeBlock}>{primary}</pre> : null}
+      {secondary ? <pre className={styles.codeOutput}>{secondary}</pre> : null}
+    </div>
+  );
+}
+
+function statusPresentation(item: TimelineItem): EventStatus {
+  const labels = {
+    pending: '等待', running: '运行中', waiting_input: '等待输入', completed: '完成',
+    failed: '失败', cancelled: '已取消', unknown: '结果未知',
+  } as const;
+  const tones = {
+    pending: 'neutral', running: 'running', waiting_input: 'attention', completed: 'success',
+    failed: 'failed', cancelled: 'cancelled', unknown: 'attention',
+  } as const;
+  return { label: labels[item.status], tone: tones[item.status], dot: item.status === 'running' };
+}
+
+// 收起时的预览：新记录没有合并后的 content，列出涉及的文件。
+function fileChangePaths(changes: readonly unknown[]): string {
+  return changes
+    .map((change) => (change && typeof change === 'object' ? (change as { path?: unknown }).path : undefined))
+    .filter((path): path is string => typeof path === 'string' && path.length > 0)
+    .join('  ');
+}
+
+// 新记录只在 changes[].diff 里存每个文件的 diff（旧记录另有合并后的 detail.diff / content）。
+function formatFileChanges(changes: readonly unknown[]): string {
+  const sections = changes.map((change) => {
+    if (!change || typeof change !== 'object') return formatUnknown(change);
+    const { path, diff } = change as { path?: unknown; diff?: unknown };
+    const header = typeof path === 'string' && path ? `--- ${path}` : '';
+    const body = typeof diff === 'string' ? diff : '';
+    return [header, body].filter(Boolean).join('\n');
+  }).filter(Boolean);
+  return sections.length > 0 ? sections.join('\n\n') : formatUnknown(changes);
+}
+
+function formatUnknown(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value, null, 2); } catch (_error) { return String(value); }
+}
+
+function kindLabel(kind: TimelineItem['kind']): string {
+  return ({
+    command: '命令', terminal: '终端', attachment: '附件', artifact: '产物',
+  } as Partial<Record<TimelineItem['kind'], string>>)[kind] || '运行事件';
+}
+
+export default memo(TimelineItemView);

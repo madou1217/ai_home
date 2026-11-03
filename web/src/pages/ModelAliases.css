@@ -1,0 +1,71 @@
+/* 模型别名（设置页内嵌）—— HUD 数据读数：别名 = 青色等宽，目标模型 = 等宽，
+ * 显示名为次级文字。 */
+.model-alias-name {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: 0.02em;
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+/* 目标模型列：一个别名组可能有多条记录，每条一行。
+ *
+ * **为什么还要 max-width**：antd 的 `column.width` 只是布局提示，表格默认
+ * 不是 fixed layout，所以一个 96 字符的模型名会把列从 320px 撑到 946px。
+ * 这里用 max-width + min-width:0 把实际占宽**真正**锁住，超出部分交给 ellipsis。
+ * 同时 flex 子项默认 min-width:auto 会让省略失效，每一层都要显式放开。 */
+.model-alias-target-list {
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1, 4px);
+  min-width: 0;
+}
+
+.model-alias-target {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hos-space-1-5, 6px);
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 模型 id 是这一列唯一会变长的部分：让它吸收全部剩余宽度并省略。
+ * `.ant-typography` 自带 display:block，这里改回 inline-block 才能参与 flex 收缩。 */
+.model-alias-target-id.ant-typography {
+  display: inline-block;
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
+
+/* 显示名与供应商是稳定的短标签：不收缩、不换行，宽度变化时优先保住它们。 */
+.model-alias-target-label {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  white-space: nowrap;
+}
+
+.model-alias-target-scope {
+  flex: 0 0 auto;
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  white-space: nowrap;
+}
+
+.model-alias-target-scope::before {
+  content: '·';
+  margin-right: var(--hos-space-1, 4px);
+}
+
+.model-alias-priority {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold, 600);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.ant-input.model-alias-mono-input {
+  font-family: var(--font-mono);
+}

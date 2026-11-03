@@ -1,0 +1,71 @@
+.token-drop-layer {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: calc(100% - 52px);
+  height: 42px;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 6;
+}
+
+.token-drop {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
+  font-family: var(--font-mono, monospace);
+  line-height: 1.1;
+  text-align: right;
+  white-space: nowrap;
+  will-change: transform, opacity;
+  animation: token-drop-rise 2.2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+.token-drop-tokens {
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-semibold, 600);
+  color: var(--ink-danger);
+  letter-spacing: -0.15px;
+  font-variant-numeric: tabular-nums;
+  /* 表面色描边：飘字压在进度条上时仍可读，深浅主题都成立（不用白色光晕） */
+  text-shadow: 0 1px 0 var(--color-surface), 0 -1px 0 var(--color-surface);
+}
+
+.token-drop-cost {
+  font-size: var(--hos-text-micro, 11px);
+  font-weight: var(--weight-medium, 500);
+  color: var(--ink-warning);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 var(--color-surface);
+}
+
+@keyframes token-drop-rise {
+  0% {
+    transform: rotate(var(--drop-rotate, 0deg)) translateY(0) scale(0.7);
+    opacity: 0;
+  }
+  8% {
+    transform: rotate(var(--drop-rotate, 0deg)) translateY(-4px) scale(1.02);
+    opacity: 1;
+  }
+  15% {
+    transform: rotate(var(--drop-rotate, 0deg)) translateY(-4px) scale(1);
+  }
+  70% {
+    transform: rotate(var(--drop-rotate, 0deg)) translateY(-26px) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--drop-rotate, 0deg)) translateY(-48px) scale(0.92);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token-drop {
+    animation: none;
+    opacity: 1;
+  }
+}

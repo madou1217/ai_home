@@ -1,0 +1,565 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: message-area */
+
+.messageArea {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-faint) 14%, transparent) transparent;
+}
+
+.messageArea::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.messageArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messageArea::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--hos-radius-pill);
+  background: color-mix(in srgb, var(--color-faint) 12%, transparent);
+  background-clip: content-box;
+}
+
+.messageArea:hover::-webkit-scrollbar-thumb,
+.messageArea::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-muted) 50%, transparent);
+  background-clip: content-box;
+}
+
+.messageArea {
+  scrollbar-color: transparent transparent;
+}
+
+.messageArea:hover {
+  scrollbar-color: color-mix(in srgb, var(--color-faint) 18%, transparent) transparent;
+}
+
+.messageArea::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.messageArea:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-faint) 18%, transparent);
+  background-clip: content-box;
+}
+
+.pendingTailRow {
+  max-width: var(--chat-content-width);
+  margin: var(--hos-space-0-5) 0 var(--hos-space-2) var(--chat-assistant-gutter);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  /* 等待态出现/结束是挂载/卸载，用淡入衔接，避免状态行硬闪 */
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+
+.pendingTailStatus {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  color: var(--color-faint);
+  font-size: var(--hos-text-body-sm);
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.pendingTailChar {
+  display: inline-block;
+  color: var(--color-disabled);
+  animation: pendingTextSweep 1.35s ease-in-out infinite;
+}
+
+@keyframes pendingTextSweep {
+  0%, 100% {
+    color: var(--color-faint);
+    opacity: 0.72;
+  }
+  45% {
+    color: var(--color-accent);
+    opacity: 1;
+  }
+  70% {
+    color: var(--color-accent);
+    opacity: 0.94;
+  }
+}
+
+/* 会话阅读区采用“安静技术文档”规范：固定内容宽度、轻 panel、无 provider 专属气泡色。 */
+.messageArea,
+.messageSurface {
+  --chat-content-width: 840px;
+  --chat-avatar-size: 32px;
+  --chat-avatar-gap: 12px;
+  --chat-assistant-gutter: calc(var(--chat-avatar-size) + var(--chat-avatar-gap));
+  --chat-thread-width: calc(var(--chat-content-width) + var(--chat-assistant-gutter));
+  /* 对齐设计 token（唯一来源 design-tokens.css），保证聊天面与 EventBlock 一致 */
+  --chat-text: var(--color-text);
+  --chat-muted: var(--color-muted);
+  --chat-muted-soft: var(--color-faint);
+  --chat-panel-bg: var(--color-surface);
+  --chat-panel-muted-bg: var(--color-surface-muted);
+  --chat-panel-border: var(--color-border);
+  --chat-panel-radius: 2px; /* HUD：会话面板统一方角 */
+  --chat-panel-padding: var(--space-7) var(--space-8);
+  --chat-panel-shadow: none;
+  --chat-message-font-size: var(--hos-text-h3);
+  --chat-message-line-height: 1.72;
+  --chat-meta-font-size: var(--text-sm);
+}
+
+.messageAreaMobile,
+.messageSurfaceMobile {
+  --chat-content-width: 100%;
+  --chat-assistant-gutter: 0px;
+  --chat-thread-width: 100%;
+  --chat-message-font-size: var(--hos-text-h3); /* 归级:原 16px */
+  --chat-message-line-height: 1.76;
+}
+
+/* ===== 消息区域 ===== */
+.messageArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--hos-space-7) var(--hos-space-6) var(--hos-space-6);
+  background: var(--color-surface-soft);
+  min-height: 0;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  touch-action: auto;
+}
+
+.messageAreaMobile {
+  padding: var(--hos-space-3-5) var(--hos-space-3) var(--hos-space-2);
+}
+
+.messageThread {
+  max-width: var(--chat-thread-width);
+  margin: 0 auto;
+}
+
+/* 回到底部 */
+.scrollBottomBtn {
+  position: sticky;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: var(--color-bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: 2px;
+  box-shadow: var(--elevation-3);
+  cursor: pointer;
+  color: var(--color-muted-strong);
+  z-index: var(--z-raised);
+  margin: 0 auto;
+  transition: border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+  /* 出现时从下沿抬起（关键帧里保留 translateX(-50%)，否则会丢掉居中） */
+  animation: chatScrollBtnIn var(--motion-base) var(--ease-emphasized) backwards;
+}
+
+@keyframes chatScrollBtnIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* 退场：隐藏前留 140ms（useCollapsePresence），按钮落回下沿再卸载 */
+.scrollBottomBtnLeaving {
+  pointer-events: none;
+  animation: chatScrollBtnOut 140ms var(--ease-standard) forwards;
+}
+
+@keyframes chatScrollBtnOut {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+}
+
+.scrollBottomBtn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: var(--elevation-3), var(--hud-glow-accent);
+}
+
+.queueDock {
+  --hud-cut: var(--hud-chamfer-sm);
+  position: relative;
+  padding: var(--hos-space-3) var(--hos-space-3-5);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  box-shadow: none;
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0, 100% 0,
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+}
+
+.queueDock::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
+.queueDockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-3);
+  padding: var(--hos-space-0-5) var(--hos-space-0-5) var(--hos-space-2-5);
+}
+
+.queueDockTitle {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.queueDockHint {
+  color: var(--color-faint);
+  font-size: var(--hos-text-caption);
+  line-height: 1.4;
+  text-align: right;
+}
+
+.queueItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "grip content"
+    "grip actions";
+  align-items: flex-start;
+  gap: var(--hos-space-1-5) var(--hos-space-2-5);
+  padding: var(--hos-space-2-5) 0;
+}
+
+.queueItem + .queueItem {
+  border-top: 1px solid var(--color-border);
+}
+
+.queueGrip {
+  grid-area: grip;
+  font-family: var(--font-mono);
+  color: var(--color-disabled);
+  font-size: var(--hos-text-caption);
+  letter-spacing: -1px;
+  user-select: none;
+  padding-top: var(--hos-space-1);
+}
+
+.queueContent {
+  grid-area: content;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.queuePreview {
+  display: block;
+  font-family: var(--font-prose);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.queueActions {
+  grid-area: actions;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.queueActionHintWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+}
+
+.queueActionHint {
+  font-family: var(--font-mono);
+  color: var(--color-faint);
+  font-size: var(--hos-text-caption);
+}
+
+.queueInfoBtn {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--color-disabled);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  padding: 0;
+}
+
+.queueInfoBtn:hover {
+  color: var(--color-muted);
+}
+
+.queueActionBtn {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  cursor: pointer;
+  padding: 0;
+}
+
+.queueActionBtn:hover {
+  color: var(--color-accent);
+}
+
+/* 旧 stopBtn 保留以防其他引用 */
+.emptyCenter {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcomeState {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--hos-space-6);
+  /* 空会话 / 新建会话时的欢迎语淡入上移，与消息线程的切入节奏一致 */
+  animation: global(aih-fade-up) var(--motion-slow) var(--ease-standard) backwards;
+}
+
+.welcomeTitle {
+  font-family: var(--font-display);
+  font-size: var(--hos-text-display); /* 归级:原 40px */
+  line-height: 1.2;
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent);
+  letter-spacing: 0.04em;
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.welcomeHint {
+  margin-top: var(--hos-space-3-5);
+  max-width: 420px;
+  font-size: var(--hos-text-body);
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+
+@media (max-width: 768px) {.pendingTailStatus {
+    font-size: var(--hos-text-body);
+  }.queueDockHint,
+.queueActionHint,
+.queueActionBtn {
+    font-size: var(--hos-text-body-sm);
+  }.queueDockTitle {
+    font-size: var(--hos-text-body);
+  }.messageAreaMobile {
+    background: var(--color-bg);
+    /* 横向留白加大到 16px,气泡不贴屏幕边;行间距更松 */
+    padding: var(--hos-space-4) var(--hos-space-4) var(--hos-space-3); /* 归级:原 18px */
+  }.pendingTailRow {
+    margin-left: var(--hos-space-2);
+    margin-bottom: var(--hos-space-2-5);
+  }.messageThread {
+    max-width: none;
+  }.queueDock {
+    padding: var(--hos-space-2) var(--hos-space-2-5);
+  }.queueDockHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--hos-space-1);
+  }.queueActions {
+    justify-content: flex-start;
+  }.welcomeTitle {
+    font-size: var(--hos-text-display); /* 归级:原 28px */
+  }.welcomeHint {
+    font-size: var(--hos-text-h3);
+    line-height: 1.75;
+    max-width: 320px;
+  }.welcomeState {
+    justify-content: flex-end;
+    padding: var(--hos-space-6) var(--hos-space-5) 10vh;
+  }
+}
+
+/* =============================================================================
+ * EmptyState 空状态卡片：surface + 发丝线，无投影 / 光晕
+ * ========================================================================== */
+.emptyContainerHarmony {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hos-space-8);
+  background: var(--color-bg);
+}
+
+.emptyCardHarmony {
+  /* 外层同时挂全局 .hud-panel（切角 + 角标 + 半透明底），这里只定布局 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 460px;
+  padding: var(--hos-space-10) var(--hos-space-8);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+  animation: harmonyFadeIn var(--motion-slow) var(--ease-standard);
+}
+
+@keyframes harmonyFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.emptyIconBadgeHarmony {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+  font-size: var(--hos-text-h1); /* 归级:原 26px */
+  margin-bottom: var(--hos-space-5);
+}
+
+/* HUD 标题：Orbitron + 青色辉光 */
+.emptyTitleHarmony {
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h2); /* 归级:原 20px */
+  font-weight: 700;
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+  margin: 0 0 var(--hos-space-2-5) 0;
+  letter-spacing: 0.05em;
+}
+
+.emptyDescHarmony {
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-body);
+  line-height: 1.6;
+  color: var(--color-muted);
+  margin: 0 0 var(--hos-space-6) 0;
+}
+
+.emptyDescHarmony code {
+  font-family: var(--font-mono);
+  padding: var(--hos-space-0-5) var(--hos-space-1-5);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  color: var(--color-accent);
+  font-size: var(--hos-text-caption);
+}
+
+/* 纯聊天空态的灵感指令 chip（原内联样式，收敛为 token） */
+.emptyPromptChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: center;
+  margin: var(--space-8) 0 var(--space-10);
+  max-width: 440px;
+}
+
+.emptyPromptChip {
+  padding: var(--space-3) var(--space-6);
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.emptyPromptChip:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+/* 空态主操作：沿用全局 HUD 主按钮（切角 + 青框），只定尺寸 */
+.emptyPrimaryBtn {
+  height: 40px !important;
+  padding: 0 var(--space-10) !important;
+  font-size: var(--hos-text-body) !important;
+  font-weight: var(--weight-medium) !important;
+}
+
+/* =============================================================================
+ * QueueDock 排队消息卡片
+ * ========================================================================== */
+.queueDock {
+  padding: var(--hos-space-2-5) var(--hos-space-3-5) !important;
+}
+
+.queueItem {
+  border-radius: 2px !important;
+  transition: background var(--motion-fast) var(--ease-standard) !important;
+}
+
+.queueItem:hover {
+  background: var(--color-overlay-subtle) !important;
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.queueInfoBtn,
+.queueActionBtn {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}

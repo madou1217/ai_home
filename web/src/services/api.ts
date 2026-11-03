@@ -1,0 +1,2901 @@
+import axios, { AxiosError } from 'axios';
+import { buildAppHref } from './app-navigation';
+import { collectAllSessionHistoryMessages } from './session-history-window.js';
+import { SessionRequestCoordinator } from './session-request-coordinator.js';
+import { openSharedWebUiEventSource } from './shared-watch';
+import {
+  guardedWebUiEventSource,
+  resolveActiveServer,
+  resolveWebUiManagementKey
+} from './webui-auth-transport';
+export {
+  fetchAuthorizedWebUiResource,
+  guardedWebUiEventSource,
+  resolveActiveServer,
+  resolveWebUiManagementKey
+} from './webui-auth-transport';
+import type {
+  Account,
+  AccountActivityJob,
+  AccountActivityResult,
+  ActivityParamField,
+  ActivityProbeResult,
+  UpstreamErrorRule,
+  UpstreamErrorMappingGroup,
+  AccountRefreshJob,
+  AccountRefreshUsageResponse,
+  CodexResetCreditsResponse,
+  CodexResetOperation,
+  CodexResetOperationResponse,
+  AccountRemovedEvent,
+  AccountsSnapshotRequestResponse,
+  AccountsListResponse,
+  AddAccountRequest,
+  AddAccountResponse,
+  AccountImportResponse,
+  AccountImportJob,
+  AccountAddJob,
+  UsageConfig,
+  ServerConfig,
+  ControlPlaneEndpointHintsResponse,
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  ChatStreamEvent,
+  ImageStudioModelsResponse,
+  ImageStudioDeleteSessionResponse,
+  ImageStudioRunInput,
+  ImageStudioRunResponse,
+  ImageStudioSessionResponse,
+  ImageStudioSessionsResponse,
+  TranslationDetectionResponse,
+  TranslationLanguagesResponse,
+  TranslationModelsResponse,
+  TranslationSettings,
+  TranslationSettingsResponse,
+  TranslationStreamEvent,
+  TranslationStreamRequest,
+  Provider,
+  SlashCommandsResponse,
+  ManagementStatus,
+  ManagementMetrics,
+  ManagementAccount,
+  ManagementAccountsResponse,
+  ManagementRestartEvent,
+  ManagementRestartResponse,
+  ModelUsageBreakdownResponse,
+  ModelUsageDashboardQueryCancelResponse,
+  ModelUsageDashboardQueryJob,
+  ModelUsageDashboardQueryResponse,
+  ModelUsageDashboardResponse,
+  ModelUsageModelsResponse,
+  ModelUsageQuery,
+  ModelUsageRequestDetailsResponse,
+  ModelUsageScanJob,
+  ModelUsageScanResponse,
+  ModelUsageSessionDetailResponse,
+  ModelUsageSessionsResponse,
+  ModelUsageStatsResponse,
+  WebUiOpenAIModelsResponse,
+  WebUiOpenAIModelsJob,
+  WebUiOpenAIModelsRefreshResponse,
+  WebUiModelsResponse,
+  ToolkitAppConfigResponse,
+  ManagedToolsResponse,
+  ManagedToolActionResponse,
+  ManagedToolServiceAction,
+  ManagedToolServiceLogsResponse,
+  ManagedToolServiceResponse,
+  ManagedToolLifecycleAction,
+  ToolkitToolConfigResponse,
+  AccountConfigFilesResponse,
+  ProviderConfigDetailResponse,
+  ProviderConfigExportResponse,
+  ProviderConfigHistoryEntryResponse,
+  ProviderConfigHistoryResponse,
+  ProviderConfigListResponse,
+  ProviderConfigSaveResponse,
+  ProviderConfigValidationResponse,
+  ManagedAppsResponse,
+  ManagedAppUpdateResponse,
+  ToolPermissionSettingsResponse,
+  ProviderCliUpgradeStatusResponse,
+  ProviderCliUpgradeClearBrokenResponse,
+  AccountAppLaunchResponse,
+  AccountEgressBindingInput,
+  AccountEgressAssignment,
+  AccountEgressRuntimeView,
+  AccountEgressResponse,
+  AccountWindowActivationSettingInput,
+  AccountWindowActivationResponse,
+  AppInstallJob,
+  WebUiTask,
+  ClientTerminalsResponse,
+  EnvironmentsResponse,
+  ToolkitTarget,
+  EnvironmentActionInput,
+  EnvironmentActionResponse,
+  EnvironmentGuideResponse,
+  EnvironmentLifecycleAction,
+  EnvironmentToolActionResponse,
+  MirrorsResponse,
+  ProxyStatusResponse,
+  ConnectivityResponse,
+  AggregatedProject,
+  ArchivedSession,
+  ArchivedSessionsResponse,
+  ProviderSessionLifecycleCapability,
+  SessionMessageBundle,
+  SessionEventsResponse,
+  SessionEventItem,
+  SshHostTestResult,
+  InteractivePrompt,
+  CustomPricing,
+  ScheduledTask,
+  ScheduledTaskSchedule,
+  ScheduledTaskSchedulePreview,
+  ScheduledTaskRecordsPage,
+  ScheduledTasksResponse,
+  Session
+} from '@/types';
+import type { AccountOutcomesResponse } from '@/features/account-status/types';
+
+const api = axios.create({
+  baseURL: '/v0',
+  timeout: 30000
+});
+
+function redirectToWebUiGate() {
+  try {
+    if (typeof window === 'undefined') return;
+    if ((window.location.pathname || '').includes('/server-setup')) return;
+    window.location.href = buildAppHref('/server-setup', 'gate=1');
+  } catch (_error) { /* ignore */ }
+}
+
+const SESSION_HISTORY_PAGE_LIMIT = 50;
+const sessionRequests = new SessionRequestCoordinator();
+
+api.interceptors.request.use((config) => {
+  // R2 鉴权门：为本 server 的请求附加 Management Key。
+  const gateToken = resolveWebUiManagementKey();
+  const active = resolveActiveServer();
+  if (gateToken || active.isRemote) {
+    const headers: any = config.headers ?? {};
+    const setHeader = (name: string, value: string) => {
+      if (typeof headers.set === 'function') { if (!headers.get?.(name)) headers.set(name, value); }
+      else if (!headers[name]) headers[name] = value;
+    };
+    if (gateToken) setHeader('Authorization', `Bearer ${gateToken}`);
+    // R1 薄壳：远端 server 时带上目标 id，本地 server 据此透明转发。
+    if (active.isRemote && active.serverId) setHeader('x-aih-server-id', active.serverId);
+    config.headers = headers;
+  }
+
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    // R2 鉴权门：缺少或无效 Management Key → 引导去 Server 设置页。
+    const response = error.response;
+    if ([401, 503].includes(Number(response?.status))
+      && (response?.data as { error?: unknown } | undefined)?.error === 'webui_unauthorized') {
+      redirectToWebUiGate();
+    }
+    return Promise.reject(error);
+  }
+);
+
+export function isSessionRequestCancelled(error: unknown) {
+  if (axios.isCancel(error)) return true;
+  const maybeError = error as { code?: string; message?: string };
+  return maybeError?.code === 'ERR_CANCELED'
+    || maybeError?.message === 'canceled'
+    || maybeError?.message === 'session_request_superseded';
+}
+
+/** 导出范围（provider / 单个账号）；不传 = 全部。 */
+export interface AccountExportScope {
+  provider?: string;
+  accountRef?: string;
+}
+export type KimiDesktopSessionStatus =
+  | 'STATUS_PENDING'
+  | 'STATUS_SCANNED'
+  | 'STATUS_SUCCESS'
+  | 'STATUS_EXPIRED';
+
+export interface KimiDesktopSessionStartResponse {
+  ok: boolean;
+  code?: string;
+  qrUrl?: string;
+  expiresAtMs?: number;
+  error?: string;
+}
+
+export interface KimiDesktopSessionPollResponse {
+  ok: boolean;
+  status?: KimiDesktopSessionStatus;
+  error?: string;
+}
+
+export interface AccountImportUploadFile {
+  name: string;
+  relativePath?: string;
+  content?: string;
+  contentBase64?: string;
+  encoding?: 'text' | 'base64';
+}
+
+export type AccountImportPayload =
+  | { content: string; provider?: string }
+  | { mode: 'upload'; files: AccountImportUploadFile[]; provider?: string };
+
+// 认证来源链（本机导入能力）——服务端 lib/account/auth-sources.js 的解析结果形状。
+export interface ProviderAuthSourceSummary {
+  id: string;
+  kind: 'local' | 'remote';
+  clientDependent: boolean;
+  requiresApp: string;
+  authMode: string;
+  handler: string;
+  description: string;
+  available: boolean;
+  installable: boolean;
+  reason: string;
+  /** 来源实现是否已把完整投影写好（true = 可不开登录任务直接建账号）。 */
+  directImport?: boolean;
+  /** 来源由外部账号插件提供且有 account.login 能力时，走 /plugin-login 入口。 */
+  pluginLogin?: boolean;
+}
+
+/** 外部账号插件的登录任务公开状态（不含任何凭据）。 */
+export interface PluginAccountLoginJob {
+  jobId: string;
+  provider: string;
+  sourceId: string;
+  authMode: string;
+  status: 'waiting_user' | 'success' | 'failed' | 'cancelled' | 'expired';
+  message: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  userCode: string;
+  authorizationUrl: string;
+  redirectUri: string;
+  intervalMs: number;
+  /** 插件是否接受用户粘贴授权码 / 回调地址 / token。 */
+  canSubmit?: boolean;
+  submitLabel?: string;
+  submitPlaceholder?: string;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
+  accountRef: string;
+  cliAccountId: string;
+  error: string;
+}
+
+export interface ProviderAuthMethodSources {
+  authMode: string;
+  sources: ProviderAuthSourceSummary[];
+  preferredSourceId: string;
+  installableSourceId: string;
+  localSourceAvailable: boolean;
+}
+
+export interface ProviderAuthSourcesResponse {
+  ok: boolean;
+  supported: boolean;
+  provider: string;
+  methods: ProviderAuthMethodSources[];
+  error?: string;
+}
+
+/** 单次请求完成的实时 token 消耗事件（服务端 recordModelUsage 钩子推送）。 */
+export interface TokenConsumedEvent {
+  provider: string;
+  accountRef: string;
+  model: string;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  occurredAt: number;
+}
+
+export function dispatchAccountsWatchPayload(payload: any, handlers: {
+  onSnapshot?: (payload: AccountsListResponse) => void;
+  onSnapshotRequested?: (payload: { requestedAt?: number; hydrating?: boolean }) => void;
+  onAccount?: (account: Account) => void;
+  onAccountRemoved?: (payload: AccountRemovedEvent) => void;
+  onHydrated?: (payload: { hydratedAt?: number }) => void;
+  onImportJob?: (job: AccountImportJob) => void;
+  onAuthJob?: (job: AccountAddJob) => void;
+  onAccountRefreshJob?: (job: AccountRefreshJob) => void;
+  onTokenConsumed?: (event: TokenConsumedEvent) => void;
+}) {
+  if (payload.type === 'snapshot') {
+    handlers.onSnapshot?.({
+      accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
+      hydrating: Boolean(payload.hydrating),
+      providerNativeCapabilities: payload.providerNativeCapabilities || {}
+    });
+    return;
+  }
+  if (payload.type === 'snapshot-requested') {
+    handlers.onSnapshotRequested?.({
+      requestedAt: Number(payload.requestedAt) || 0,
+      hydrating: Boolean(payload.hydrating)
+    });
+    return;
+  }
+  if (payload.type === 'account' && payload.account) {
+    handlers.onAccount?.(payload.account as Account);
+    return;
+  }
+  if (payload.type === 'account-removed') {
+    handlers.onAccountRemoved?.({
+      provider: String(payload.provider || '') as AccountRemovedEvent['provider'],
+      accountRef: String(payload.accountRef || ''),
+      reason: String(payload.reason || ''),
+      removedAt: Number(payload.removedAt) || 0
+    });
+    return;
+  }
+  if (payload.type === 'hydrated') {
+    handlers.onHydrated?.({
+      hydratedAt: Number(payload.hydratedAt) || 0
+    });
+    return;
+  }
+  if (payload.type === 'import-job' && payload.job) {
+    handlers.onImportJob?.(payload.job as AccountImportJob);
+    return;
+  }
+  if (payload.type === 'auth-job' && payload.job) {
+    handlers.onAuthJob?.(payload.job as AccountAddJob);
+    return;
+  }
+  if (payload.type === 'account-refresh-job' && payload.job) {
+    handlers.onAccountRefreshJob?.(payload.job as AccountRefreshJob);
+    return;
+  }
+  if (payload.type === 'token-consumed' && payload.accountRef) {
+    handlers.onTokenConsumed?.({
+      provider: String(payload.provider || ''),
+      accountRef: String(payload.accountRef || ''),
+      model: String(payload.model || ''),
+      tokens: {
+        input: Number(payload.tokens?.input) || 0,
+        output: Number(payload.tokens?.output) || 0,
+        total: Number(payload.tokens?.total) || 0
+      },
+      occurredAt: Number(payload.occurredAt) || Date.now()
+    });
+    return;
+  }
+}
+
+// 账号管理 API
+const buildAccountScopedPath = (provider: string, accountRef: string) => (
+  `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}`
+);
+const buildAccountEgressPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress`
+);
+const buildAccountEgressAssignmentPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress-assignment`
+);
+const buildAccountEgressRuntimePath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/egress-runtime`
+);
+const buildAccountWindowActivationPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/window-activation`
+);
+const buildAccountAliasPoolPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/alias-pool`
+);
+const buildAccountModelContextPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/model-context`
+);
+const buildProviderModelContextBulkPath = (provider: string) => (
+  `/webui/accounts/${encodeURIComponent(provider)}/model-context/bulk`
+);
+const buildAccountActivityPath = (provider: string, accountRef: string, actionId: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/activity/${encodeURIComponent(actionId)}`
+);
+
+export const accountsAPI = {
+  // 获取所有账号
+  list: async (): Promise<AccountsListResponse> => {
+    const response = await api.get<{ ok: boolean } & AccountsListResponse>('/webui/accounts');
+    return {
+      accounts: response.data.accounts,
+      hydrating: Boolean(response.data.hydrating),
+      providerNativeCapabilities: response.data.providerNativeCapabilities || {}
+    };
+  },
+
+  watch: (handlers: {
+    onSnapshot?: (payload: AccountsListResponse) => void;
+    onSnapshotRequested?: (payload: { requestedAt?: number; hydrating?: boolean }) => void;
+    onAccount?: (account: Account) => void;
+    onAccountRemoved?: (payload: AccountRemovedEvent) => void;
+    onHydrated?: (payload: { hydratedAt?: number }) => void;
+    onImportJob?: (job: AccountImportJob) => void;
+    onAuthJob?: (job: AccountAddJob) => void;
+    onAccountRefreshJob?: (job: AccountRefreshJob) => void;
+    onTokenConsumed?: (event: TokenConsumedEvent) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = openSharedWebUiEventSource('/v0/webui/accounts/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        dispatchAccountsWatchPayload(JSON.parse(String(event.data || '{}')), handlers);
+      } catch (_error) {
+        // Ignore malformed SSE frames.
+      }
+    };
+    eventSource.onerror = () => handlers.onError?.();
+
+    return {
+      close: () => eventSource.close()
+    };
+  },
+
+  // 添加新账号
+  add: async (payload: AddAccountRequest): Promise<AddAccountResponse> => {
+    const response = await api.post<AddAccountResponse>('/webui/accounts/add', payload);
+    return response.data;
+  },
+
+  getAddJob: async (jobId: string): Promise<AccountAddJob> => {
+    const response = await api.get<{ ok: boolean; job: AccountAddJob }>(`/webui/accounts/add/jobs/${jobId}`);
+    return response.data.job;
+  },
+
+  cancelAddJob: async (jobId: string) => {
+    const response = await api.post(`/webui/accounts/add/jobs/${jobId}/cancel`);
+    return response.data;
+  },
+
+  // P4 外部账号插件登录：来源、任务与凭据投影都由宿主托管，浏览器只拿公开状态。
+  startPluginLogin: async (provider: string, sourceId: string): Promise<PluginAccountLoginJob> => {
+    const response = await api.post<{ ok: boolean; job: PluginAccountLoginJob }>(
+      '/webui/accounts/plugin-login/start',
+      { provider, sourceId }
+    );
+    return response.data.job;
+  },
+
+  getPluginLoginJob: async (jobId: string): Promise<PluginAccountLoginJob> => {
+    const response = await api.get<{ ok: boolean; job: PluginAccountLoginJob }>(
+      `/webui/accounts/plugin-login/${jobId}`
+    );
+    return response.data.job;
+  },
+
+  submitPluginLogin: async (jobId: string, value: string): Promise<{ job: PluginAccountLoginJob; account?: unknown }> => {
+    const response = await api.post<{ ok: boolean; job: PluginAccountLoginJob; account?: unknown }>(
+      `/webui/accounts/plugin-login/${jobId}/submit`,
+      { value }
+    );
+    return response.data;
+  },
+
+  cancelPluginLoginJob: async (jobId: string) => {
+    const response = await api.post(`/webui/accounts/plugin-login/${jobId}/cancel`);
+    return response.data;
+  },
+
+  confirmCliInstall: async (jobId: string): Promise<AccountAddJob> => {
+    const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
+      `/webui/accounts/add/jobs/${jobId}/install`
+    );
+    return response.data.job;
+  },
+
+  completeBrowserCallback: async (jobId: string, callbackUrl: string): Promise<AccountAddJob> => {
+    const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
+      `/webui/accounts/add/jobs/${jobId}/callback`,
+      { callbackUrl }
+    );
+    return response.data.job;
+  },
+
+  // 从本机登录态完成登录任务（例如 Kiro IDE 的登录态）：不需要用户粘贴任何东西。
+  completeLocalAuthImport: async (jobId: string, sourceId: string): Promise<AccountAddJob> => {
+    const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
+      `/webui/accounts/add/jobs/${jobId}/local-import`,
+      { sourceId }
+    );
+    return response.data.job;
+  },
+
+  // 认证来源链：这台机器上每个认证方式现在能用哪些来源、能不能装（界面据此渲染，不自己判断环境）。
+  listProviderAuthSources: async (provider: string): Promise<ProviderAuthSourcesResponse> => {
+    const response = await api.get<ProviderAuthSourcesResponse>(
+      `/webui/accounts/provider-auth-sources?provider=${encodeURIComponent(provider)}`
+    );
+    return response.data;
+  },
+
+  // 从本机登录态**直接建账号**（不开登录任务）：给认证方式不经过登录任务的 provider 用
+  // （它们的本机登录态就是完整投影）。需要身份核验的来源会返回 auth_source_requires_login_job。
+  importLocalAuthSource: async (
+    provider: string,
+    sourceId: string,
+    options?: { aliasPoolParticipates?: boolean }
+  ): Promise<{ ok: boolean; accountRef?: string; cliAccountId?: number; sourceId?: string }> => {
+    const response = await api.post<{ ok: boolean; accountRef?: string; cliAccountId?: number; sourceId?: string }>(
+      '/webui/accounts/local-import',
+      { provider, sourceId, ...(options || {}) }
+    );
+    return response.data;
+  },
+
+  reauth: async (provider: string, accountRef: string): Promise<AddAccountResponse> => {
+    const response = await api.post<AddAccountResponse>(`/webui/accounts/${provider}/${accountRef}/reauth`);
+    return response.data;
+  },
+
+  refresh: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
+    const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh`);
+    return response.data;
+  },
+  refreshUsage: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
+    const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh-usage`);
+    return response.data;
+  },
+
+  /** 按需扫描本机已登录、尚未入库的账号并登记（CodeBuddy / WorkBuddy 家族与 Cline；同步循环的同一份逻辑）。 */
+  detectHostAccounts: async (): Promise<{
+    ok: boolean;
+    scanned: number;
+    updated: number;
+    registered: Array<{ accountRef: string; cliAccountId: string; created: boolean }>;
+    skipped: Array<{ reason: string }>;
+    accounts: Record<string, number>;
+  }> => {
+    const response = await api.post('/webui/accounts/detect');
+    return response.data;
+  },
+
+  listCodexResetCredits: async (accountRef: string): Promise<CodexResetCreditsResponse> => {
+    const response = await api.get<CodexResetCreditsResponse>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-credits`
+    );
+    return response.data;
+  },
+
+  consumeCodexResetCredit: async (
+    accountRef: string,
+    input: { operationId: string; inventoryVersion: string }
+  ): Promise<CodexResetOperationResponse> => {
+    const response = await api.post<CodexResetOperationResponse>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-credits/consume`,
+      input
+    );
+    return response.data;
+  },
+
+  getCodexResetOperation: async (
+    accountRef: string,
+    operationId: string
+  ): Promise<CodexResetOperation> => {
+    const response = await api.get<{ ok: boolean; operation: CodexResetOperation }>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-operations/${encodeURIComponent(operationId)}`
+    );
+    return response.data.operation;
+  },
+
+  reconcileCodexResetOperation: async (
+    accountRef: string,
+    operationId: string
+  ): Promise<CodexResetOperationResponse> => {
+    const response = await api.post<CodexResetOperationResponse>(
+      `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-operations/${encodeURIComponent(operationId)}/reconcile`
+    );
+    return response.data;
+  },
+
+  // 打开该账号的 Desktop 应用或新的 CLI 终端窗口
+  openApp: async (
+    provider: string,
+    accountRef: string,
+    kind: 'desktop' | 'cli',
+    action: 'open' | 'close' = 'open',
+    terminalId?: string,
+    workdir?: string,
+    options?: { harness?: string; model?: string; transport?: 'webui' | 'native'; sessionKey?: string }
+  ): Promise<AccountAppLaunchResponse> => {
+    const response = await api.post<AccountAppLaunchResponse>(
+      `/webui/accounts/${provider}/${accountRef}/open-app`,
+      {
+        kind,
+        action,
+        ...(terminalId ? { terminalId } : {}),
+        ...(workdir ? { workdir } : {}),
+        ...(options?.harness ? { harness: options.harness } : {}),
+        ...(options?.model ? { model: options.model } : {}),
+        ...(options?.transport ? { transport: options.transport } : {}),
+        ...(options?.sessionKey ? { sessionKey: options.sessionKey } : {})
+      }
+    );
+    return response.data;
+  },
+
+  getAccountEgress: async (provider: string, accountRef: string): Promise<AccountEgressResponse> => {
+    const response = await api.get<AccountEgressResponse>(
+      buildAccountEgressPath(provider, accountRef)
+    );
+    return response.data;
+  },
+
+  saveAccountEgress: async (
+    provider: string,
+    accountRef: string,
+    binding: AccountEgressBindingInput | null
+  ): Promise<AccountEgressResponse> => {
+    const response = await api.post<AccountEgressResponse>(
+      buildAccountEgressPath(provider, accountRef),
+      binding || {}
+    );
+    return response.data;
+  },
+
+  getAccountEgressRuntime: async (provider: string, accountRef: string): Promise<{
+    ok: boolean;
+    account: Account;
+    assignment: AccountEgressAssignment | null;
+    runtime: AccountEgressRuntimeView;
+  }> => {
+    const response = await api.get(buildAccountEgressRuntimePath(provider, accountRef));
+    return response.data;
+  },
+
+  saveAccountEgressAssignment: async (
+    provider: string,
+    accountRef: string,
+    assignment: AccountEgressAssignment
+  ): Promise<{ ok: boolean; assignment: AccountEgressAssignment; runtime: AccountEgressRuntimeView }> => {
+    const response = await api.put(buildAccountEgressAssignmentPath(provider, accountRef), assignment);
+    return response.data;
+  },
+
+  getAccountWindowActivation: async (
+    provider: string,
+    accountRef: string
+  ): Promise<AccountWindowActivationResponse> => {
+    const response = await api.get<AccountWindowActivationResponse>(
+      buildAccountWindowActivationPath(provider, accountRef)
+    );
+    return response.data;
+  },
+
+  getAccountAliasPool: async (
+    provider: string,
+    accountRef: string
+  ): Promise<{ ok: boolean; setting: { participates: boolean } }> => {
+    const response = await api.get<{ ok: boolean; setting: { participates: boolean } }>(
+      buildAccountAliasPoolPath(provider, accountRef)
+    );
+    return response.data;
+  },
+
+  saveAccountAliasPool: async (
+    provider: string,
+    accountRef: string,
+    setting: { participates: boolean }
+  ): Promise<{ ok: boolean; setting: { participates: boolean }; reloaded?: boolean }> => {
+    const response = await api.post<{ ok: boolean; setting: { participates: boolean }; reloaded?: boolean }>(
+      buildAccountAliasPoolPath(provider, accountRef),
+      setting
+    );
+    return response.data;
+  },
+
+  /** 账号 × 模型的上下文窗口：读生效值与来源、同类型账号、可选范围。 */
+  getAccountModelContext: async (
+    provider: string,
+    accountRef: string,
+    models: readonly string[] = []
+  ): Promise<{
+    ok: boolean;
+    models: Array<{ model: string; tokens: number; source: string; override: number }>;
+    sameTypeAccounts: Array<{ accountRef: string; credentialType: string; displayName: string; disabled?: boolean }>;
+    credentialType: string;
+    limits: { min: number; max: number };
+  }> => {
+    const query = models.length > 0 ? `?models=${encodeURIComponent(models.join(','))}` : '';
+    const response = await api.get(buildAccountModelContextPath(provider, accountRef) + query);
+    return response.data;
+  },
+
+  /** 设置单个账号的模型窗口；tokens 传 0/undefined 表示清除手动设置。 */
+  saveAccountModelContext: async (
+    provider: string,
+    accountRef: string,
+    input: { model: string; tokens?: number | null }
+  ): Promise<{ ok: boolean; overrides: Record<string, Record<string, number>> }> => {
+    const response = await api.post(buildAccountModelContextPath(provider, accountRef), input);
+    return response.data;
+  },
+
+  /** 同 provider 下多个账号（通常同类型）一次设置同一个模型的窗口。 */
+  saveAccountModelContextBulk: async (
+    provider: string,
+    input: { model: string; tokens?: number | null; accountRefs: readonly string[] }
+  ): Promise<{ ok: boolean; overrides: Record<string, Record<string, number>> }> => {
+    const response = await api.post(buildProviderModelContextBulkPath(provider), input);
+    return response.data;
+  },
+
+  saveAccountWindowActivation: async (
+    provider: string,
+    accountRef: string,
+    setting: AccountWindowActivationSettingInput
+  ): Promise<AccountWindowActivationResponse> => {
+    const response = await api.post<AccountWindowActivationResponse>(
+      buildAccountWindowActivationPath(provider, accountRef),
+      setting
+    );
+    return response.data;
+  },
+
+  getQuotaResetEvents: async (
+    provider: string,
+    accountRef: string,
+    limit?: number
+  ): Promise<{ ok: boolean; provider: string; accountRef: string; events: any[] }> => {
+    const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
+    const response = await api.get<{ ok: boolean; provider: string; accountRef: string; events: any[] }>(
+      `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-reset-events${query}`
+    );
+    return response.data;
+  },
+
+  getAccountConfigFiles: async (
+    provider: string,
+    accountRef: string,
+    mode: 'redacted' | 'raw' = 'redacted'
+  ): Promise<AccountConfigFilesResponse> => {
+    const response = await api.get<AccountConfigFilesResponse>(
+      `${buildAccountScopedPath(provider, accountRef)}/config-files?mode=${mode}`
+    );
+    return response.data;
+  },
+
+  startKimiDesktopSession: async (accountRef: string): Promise<KimiDesktopSessionStartResponse> => {
+    const response = await api.post<KimiDesktopSessionStartResponse>(
+      `/webui/accounts/kimi/${encodeURIComponent(accountRef)}/desktop-session/start`
+    );
+    return response.data;
+  },
+
+  pollKimiDesktopSession: async (
+    accountRef: string,
+    code: string
+  ): Promise<KimiDesktopSessionPollResponse> => {
+    const response = await api.post<KimiDesktopSessionPollResponse>(
+      `/webui/accounts/kimi/${encodeURIComponent(accountRef)}/desktop-session/poll`,
+      { code }
+    );
+    return response.data;
+  },
+
+  listTerminals: async (): Promise<ClientTerminalsResponse> => {
+    const response = await api.get<ClientTerminalsResponse>('/webui/terminals');
+    return response.data;
+  },
+
+  // 宿主机实测的各 Provider 桌面/CLI 入口可用性，附带桌面运行中的账号清单
+  listAppEntries: async (options: { refresh?: boolean } = {}): Promise<{
+    entries: Record<string, { desktop: boolean; cli: boolean }>;
+    capabilities: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean; label?: string; externalHarness?: boolean; interactiveKind?: string; managedAppId?: string }>;
+    serverRuntime?: boolean;
+    runningAccounts: string[];
+    runningAccountPids: Record<string, number[]>;
+    runningCliAccounts: string[];
+    runningCliAccountPids: Record<string, number[]>;
+  }> => {
+    const response = await api.get<{
+      ok: boolean;
+      entries: Record<string, { desktop: boolean; cli: boolean }>;
+      capabilities?: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean; label?: string; externalHarness?: boolean; interactiveKind?: string; managedAppId?: string }>;
+      runningAccounts?: string[];
+      runningAccountPids?: Record<string, number[]>;
+      runningCliAccounts?: string[];
+      runningCliAccountPids?: Record<string, number[]>;
+      serverRuntime?: boolean;
+  }>('/webui/app-entries', options.refresh ? { params: { refresh: '1' } } : undefined);
+    return {
+      entries: response.data.entries || {},
+      capabilities: response.data.capabilities || {},
+      runningAccounts: Array.isArray(response.data.runningAccounts) ? response.data.runningAccounts : [],
+      runningAccountPids: response.data.runningAccountPids || {},
+      runningCliAccounts: Array.isArray(response.data.runningCliAccounts) ? response.data.runningCliAccounts : [],
+      runningCliAccountPids: response.data.runningCliAccountPids || {},
+      serverRuntime: response.data.serverRuntime === true
+    };
+  },
+
+  requestSnapshot: async (): Promise<AccountsSnapshotRequestResponse> => {
+    const response = await api.post<AccountsSnapshotRequestResponse>('/webui/accounts/watch/snapshot');
+    return response.data;
+  },
+
+  updateStatus: async (provider: string, accountRef: string, status: 'up' | 'down'): Promise<Account> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/status`, { status });
+    return response.data.account;
+  },
+
+  updateAccount: async (provider: string, accountRef: string, data: { apiKey?: string; baseUrl?: string; authMode?: string; credentialType?: string; upstreamErrorRules?: UpstreamErrorRule[]; upstreamErrorGroupIds?: string[]; clearErrorBlock?: boolean }): Promise<{ ok: boolean; account: Account }> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/update`, data);
+    return response.data;
+  },
+  updateAccountRoutingRules: async (provider: string, accountRef: string, data: { upstreamErrorRules?: UpstreamErrorRule[]; upstreamErrorGroupIds?: string[]; clearErrorBlock?: boolean }): Promise<{ ok: boolean; account: Account }> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/routing-rules`, data);
+    return response.data;
+  },
+
+  /** 账号级强制恢复调度：人工覆盖，清空该账号的运行态阻塞（含余额/权限/额度类）。 */
+  restoreScheduling: async (provider: string, accountRef: string): Promise<{ ok: boolean; account: Account }> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/restore-scheduling`);
+    return response.data;
+  },
+
+  /** 执行账号活动（签到 / 领臭鸡蛋）：单账号单动作。 */
+  runAccountActivity: async (
+    provider: string,
+    accountRef: string,
+    actionId: string
+  ): Promise<AccountActivityResult & { ok: boolean }> => {
+    const response = await api.post<AccountActivityResult & { ok: boolean }>(
+      buildAccountActivityPath(provider, accountRef, actionId),
+      undefined,
+      // 领取可能包含无痕验证码（本机 Chrome 打开约 10–20s），不能吃默认 30s 超时。
+      { timeout: 180000 }
+    );
+    return response.data;
+  },
+
+  /** 开始一个供应商作用域的批量领取任务；立即返回 job，进度通过轮询查询。 */
+  startAccountActivityJob: async (input: {
+    providers: string[];
+    actionId: string;
+    /** 抽象参数（账号子集 / 类型），由服务端按描述符 schema 归一。 */
+    params?: Record<string, unknown>;
+  }): Promise<{
+    ok: boolean;
+    alreadyRunning?: boolean;
+    job: AccountActivityJob;
+  }> => {
+    const response = await api.post<{
+      ok: boolean;
+      alreadyRunning?: boolean;
+      job: AccountActivityJob;
+    }>('/webui/accounts/activity/run', input, {
+      // 只负责“开始”，真正执行在服务端后台，不需要长超时。
+      timeout: 30000
+    });
+    return response.data;
+  },
+
+  /**
+   * 只读探测：先发现「有什么可领、是什么类型」。
+   * 服务端逐账号串行打上游，账号多时会比较慢，给足超时。
+   */
+  probeAccountActivity: async (input: {
+    providers: string[];
+    actionId: string;
+  }): Promise<ActivityProbeResult> => {
+    const response = await api.post<ActivityProbeResult>(
+      '/webui/accounts/activity/probe',
+      input,
+      { timeout: 150000 }
+    );
+    return response.data;
+  },
+
+  /** 活动参数的候选值（账号来自凭据库，类型来自描述符声明）。 */
+  listActivityParamOptions: async (input: {
+    provider: string;
+    actionId: string;
+  }): Promise<{ ok: boolean; params: ActivityParamField[]; error?: string }> => {
+    const response = await api.get<{ ok: boolean; params: ActivityParamField[]; error?: string }>(
+      '/webui/accounts/activity/params',
+      { params: input }
+    );
+    return response.data;
+  },
+
+  /** 查询异步领取任务的进度与结果。 */
+  getAccountActivityJob: async (jobId: string): Promise<{
+    ok: boolean;
+    job: AccountActivityJob;
+  }> => {
+    const response = await api.get<{
+      ok: boolean;
+      job: AccountActivityJob;
+    }>(`/webui/accounts/activity/jobs/${encodeURIComponent(jobId)}`);
+    return response.data;
+  },
+
+  setDefault: async (provider: string, accountRef: string): Promise<Account> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/set-default`);
+    return response.data.account;
+  },
+
+  clearDefault: async (provider: string, accountRef: string): Promise<Account> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/clear-default`);
+    return response.data.account;
+  },
+
+  setMobile: async (provider: string, accountRef: string): Promise<Account> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/set-mobile`);
+    return response.data.account;
+  },
+
+  clearMobile: async (provider: string, accountRef: string): Promise<Account> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/clear-mobile`);
+    return response.data.account;
+  },
+
+  // 删除账号。force=true 表示用户已确认「终止占用该账号的会话后继续删除」。
+  delete: async (provider: string, accountRef: string, options?: { force?: boolean }) => {
+    const response = await api.delete(`/webui/accounts/${provider}/${accountRef}`, {
+      params: options?.force ? { force: 1 } : undefined
+    });
+    return response.data;
+  },
+
+  // 导出账号
+  export: async (scope: AccountExportScope = {}) => {
+    const response = await api.get('/webui/accounts/export', {
+      params: {
+        ...(scope.provider ? { provider: scope.provider } : {}),
+        ...(scope.accountRef ? { accountRef: scope.accountRef } : {})
+      },
+      responseType: 'blob'
+    });
+    const contentType = (response.headers['content-type'] as string) || 'application/json';
+    const url = URL.createObjectURL(new Blob([response.data], { type: contentType }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = response.headers['content-disposition']?.match(/filename="([^"]+)"/)?.[1] || 'aih-accounts.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    return undefined;
+  },
+
+  // 导入账号
+  import: async (data: AccountImportPayload): Promise<AccountImportResponse> => {
+    const response = await api.post<AccountImportResponse>('/webui/accounts/import', data);
+    return response.data;
+  },
+
+  getImportJob: async (jobId: string): Promise<AccountImportJob> => {
+    const response = await api.get<{ ok: boolean; job: AccountImportJob }>(`/webui/accounts/import/jobs/${jobId}`);
+    return response.data.job;
+  }
+};
+
+export const upstreamErrorMappingsAPI = {
+  getAll: async (): Promise<UpstreamErrorMappingGroup[]> => {
+    const response = await api.get<{ ok: boolean; groups: UpstreamErrorMappingGroup[] }>('/webui/upstream-error-mappings');
+    return response.data.groups || [];
+  },
+  create: async (group: Partial<UpstreamErrorMappingGroup>): Promise<UpstreamErrorMappingGroup> => {
+    const response = await api.post<{ ok: boolean; group: UpstreamErrorMappingGroup }>('/webui/upstream-error-mappings', group);
+    return response.data.group;
+  },
+  update: async (id: string, group: Partial<UpstreamErrorMappingGroup>): Promise<UpstreamErrorMappingGroup> => {
+    const response = await api.put<{ ok: boolean; group: UpstreamErrorMappingGroup }>(`/webui/upstream-error-mappings/${id}`, group);
+    return response.data.group;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/webui/upstream-error-mappings/${id}`);
+  },
+  toggle: async (id: string): Promise<UpstreamErrorMappingGroup> => {
+    const response = await api.post<{ ok: boolean; group: UpstreamErrorMappingGroup }>(`/webui/upstream-error-mappings/${id}/toggle`);
+    return response.data.group;
+  }
+};
+
+// 账号健康状态条（90 天 + 最近 24 小时结果桶）。Go 核心未就绪时后端回 503，
+// 这里吞掉那次 axios 错误、把响应体（{ok:false,error}）原样交给调用方，
+// 而不是抛出异常——状态区应静默隐藏，不该打断账号页其他数据的加载。
+export const accountOutcomesAPI = {
+  get: async (): Promise<AccountOutcomesResponse> => {
+    try {
+      const response = await api.get<AccountOutcomesResponse>('/webui/account-outcomes');
+      return response.data;
+    } catch (error) {
+      const axiosError = error as AxiosError<AccountOutcomesResponse>;
+      if (axiosError?.response?.data) return axiosError.response.data;
+      return { ok: false, error: 'account_outcomes_unavailable' };
+    }
+  }
+};
+
+function isTerminalAppInstallJob(job: AppInstallJob | null | undefined) {
+  return Boolean(job && ['succeeded', 'failed', 'cancelled'].includes(String(job.status || '').trim().toLowerCase()));
+}
+
+export async function startAppInstallJob(input: {
+  provider?: string;
+  kind?: 'cli' | 'desktop';
+  appId?: string;
+}): Promise<AppInstallJob> {
+  const response = await api.post<{ ok: boolean; job: AppInstallJob }>('/webui/app-install', input);
+  return response.data.job;
+}
+
+export async function getAppInstallJob(jobId: string): Promise<AppInstallJob> {
+  const response = await api.get<{ ok: boolean; job: AppInstallJob }>(`/webui/app-install/jobs/${encodeURIComponent(jobId)}`);
+  return response.data.job;
+}
+
+export async function listActiveWebUiTasks(): Promise<WebUiTask[]> {
+  const response = await api.get<{ ok: boolean; tasks?: WebUiTask[] }>('/webui/tasks');
+  return Array.isArray(response.data.tasks) ? response.data.tasks : [];
+}
+
+// ── 计划任务（含账号活动定时触发：签到 / 领臭鸡蛋）──
+export async function listScheduledTasks(): Promise<ScheduledTasksResponse> {
+  const response = await api.get<ScheduledTasksResponse>('/webui/scheduled-tasks');
+  return response.data;
+}
+
+export async function saveScheduledTask(
+  input: Partial<ScheduledTask> & { eventId: string; schedule: ScheduledTaskSchedule }
+): Promise<{ ok: boolean; task?: ScheduledTask; error?: string }> {
+  const response = await api.post<{ ok: boolean; task?: ScheduledTask; error?: string }>(
+    '/webui/scheduled-tasks',
+    input
+  );
+  return response.data;
+}
+
+export async function runScheduledTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const response = await api.post<{ ok: boolean; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/run`
+  );
+  return response.data;
+}
+
+export async function toggleScheduledTask(
+  taskId: string,
+  enabled: boolean
+): Promise<{ ok: boolean; task?: ScheduledTask; error?: string }> {
+  const response = await api.post<{ ok: boolean; task?: ScheduledTask; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/toggle`,
+    { enabled }
+  );
+  return response.data;
+}
+
+export async function deleteScheduledTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const response = await api.post<{ ok: boolean; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/delete`
+  );
+  return response.data;
+}
+
+export async function listScheduledTaskRecords(
+  days = 7,
+  taskId = '',
+  page: { limit?: number; offset?: number } = {}
+): Promise<ScheduledTaskRecordsPage> {
+  const response = await api.get<ScheduledTaskRecordsPage>(
+    '/webui/scheduled-tasks/records',
+    {
+      params: {
+        days,
+        ...(taskId ? { taskId } : {}),
+        ...(page.limit ? { limit: page.limit } : {}),
+        ...(page.offset ? { offset: page.offset } : {})
+      }
+    }
+  );
+  return response.data;
+}
+
+// 调度预览（校验 + 下次运行时间 + 中文解读）：解读逻辑只在服务端一处。
+export async function previewScheduledTaskSchedule(
+  schedule: ScheduledTaskSchedule
+): Promise<ScheduledTaskSchedulePreview> {
+  const response = await api.post<ScheduledTaskSchedulePreview>(
+    '/webui/scheduled-tasks/preview',
+    { schedule }
+  );
+  return response.data;
+}
+
+export function watchWebUiTasks(): EventSource {
+  return openSharedWebUiEventSource('/v0/webui/tasks/watch');
+}
+
+// SSE 是主通道，短轮询只作为断线期间的恢复手段；安装进程始终在服务端
+// 后台运行，不会被浏览器请求的生命周期阻塞。
+export function waitForAppInstallJob(
+  jobId: string,
+  onJob?: (job: AppInstallJob) => void
+): Promise<AppInstallJob> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const eventSource = guardedWebUiEventSource(
+      `/v0/webui/app-install/jobs/${encodeURIComponent(jobId)}/watch`
+    );
+    const pollTimer = setInterval(() => {
+      void getAppInstallJob(jobId).then((job) => {
+        onJob?.(job);
+        if (isTerminalAppInstallJob(job)) finish(job);
+      }).catch(() => {});
+    }, 2000);
+    const timeoutTimer = setTimeout(() => {
+      finish(null, new Error('app_install_watch_timeout'));
+    }, 30 * 60 * 1000);
+
+    const finish = (job: AppInstallJob | null, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(pollTimer);
+      clearTimeout(timeoutTimer);
+      eventSource.close();
+      if (error) reject(error);
+      else if (job) resolve(job);
+      else reject(new Error('app_install_job_missing'));
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}')) as { job?: AppInstallJob };
+        const job = payload.job;
+        if (!job) return;
+        onJob?.(job);
+        if (isTerminalAppInstallJob(job)) finish(job);
+      } catch (_error) {
+        // Ignore malformed heartbeat/frames; polling remains available.
+      }
+    };
+    eventSource.onerror = () => {
+      // EventSource reconnects itself. Do not fail the install because a single
+      // SSE connection dropped; the polling fallback keeps terminal state visible.
+    };
+    void getAppInstallJob(jobId).then((job) => {
+      onJob?.(job);
+      if (isTerminalAppInstallJob(job)) finish(job);
+    }).catch(() => {});
+  });
+}
+
+export interface ModelAlias {
+  id: string;
+  alias: string;
+  target: string;
+  provider: string;
+  targetProvider: string;
+  priority: number;
+  enabled: boolean;
+  description: string;
+  /**
+   * 仅用于提交：多选表单展开出的逐条记录（expandAliasSelections 产物）。
+   * 存储层不保留它，服务端也不返回。
+   */
+  records?: Array<Partial<ModelAlias>>;
+}
+
+export const modelAliasesAPI = {
+  getAll: async (): Promise<ModelAlias[]> => {
+    const response = await api.get<{ ok: boolean; aliases: ModelAlias[] }>('/webui/model-aliases');
+    return response.data.aliases || [];
+  },
+  create: async (alias: Partial<ModelAlias>): Promise<ModelAlias> => {
+    const response = await api.post<{ ok: boolean; alias: ModelAlias }>('/webui/model-aliases', alias);
+    return response.data.alias;
+  },
+  update: async (id: string, alias: Partial<ModelAlias>): Promise<ModelAlias> => {
+    const response = await api.put<{ ok: boolean; alias: ModelAlias }>(`/webui/model-aliases/${id}`, alias);
+    return response.data.alias;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/webui/model-aliases/${id}`);
+  },
+  toggle: async (id: string): Promise<ModelAlias> => {
+    const response = await api.post<{ ok: boolean; alias: ModelAlias }>(`/webui/model-aliases/${id}/toggle`);
+    return response.data.alias;
+  },
+  /** 可作为别名目标的 provider -> 模型：与服务端保存校验同源，下拉只列这些。 */
+  listTargets: async (): Promise<Record<string, string[]>> => {
+    const response = await api.get<{ ok: boolean; targets: Record<string, string[]> }>('/webui/model-aliases/targets');
+    return response.data.targets || {};
+  },
+  /** 原子替换一组记录：服务端先校验全部新记录再删旧写新；records 为空即删除这组。 */
+  replace: async (replaceIds: string[], records: Array<Partial<ModelAlias>>): Promise<ModelAlias[]> => {
+    const response = await api.post<{ ok: boolean; aliases: ModelAlias[] }>('/webui/model-aliases/replace', {
+      replaceIds,
+      records
+    });
+    return response.data.aliases || [];
+  }
+};
+
+export type FileTrustScope = 'file_directory' | 'parent_directory';
+
+export interface FileTrustCandidate {
+  scope: FileTrustScope;
+  path: string;
+  label: string;
+  description: string;
+}
+
+export interface FileAccessAuthorization {
+  required: boolean;
+  filePath: string;
+  candidates: FileTrustCandidate[];
+}
+
+export interface FileRequestError {
+  code: string;
+  message: string;
+  authorization?: FileAccessAuthorization;
+}
+
+interface FileMetadataResponse {
+  path: string;
+  size: number;
+  mtime: number;
+}
+
+export function parseFileRequestError(error: unknown): FileRequestError {
+  const source = error as {
+    message?: unknown;
+    response?: { data?: { error?: unknown; message?: unknown; authorization?: FileAccessAuthorization } };
+  };
+  const payload = source?.response?.data;
+  return {
+    code: String(payload?.error || 'file_request_failed'),
+    message: String(payload?.message || source?.message || '加载失败'),
+    ...(payload?.authorization ? { authorization: payload.authorization } : {})
+  };
+}
+
+export interface FileTreeEntry {
+  name: string;
+  type: 'directory' | 'file';
+  size?: number;
+  mtime: number;
+  hasChildren: boolean;
+}
+
+export interface FileTreeResponse {
+  path: string;
+  projectPath: string;
+  entries: FileTreeEntry[];
+  truncated: boolean;
+}
+
+// 本地文件系统 API
+export const fsAPI = {
+  tree: async (projectPath: string, path = ''): Promise<FileTreeResponse> => {
+    const response = await api.get('/webui/fs/tree', { params: { projectPath, path } });
+    return response.data;
+  },
+  read: async (path: string, projectPath?: string, source?: string): Promise<FileMetadataResponse & { content: string }> => {
+    // source 用于后端选择受控根目录，例如 Codex memory citation 不应按当前项目解析。
+    const response = await api.get('/webui/fs/read', { params: { path, projectPath, source } });
+    return response.data;
+  },
+  checkAccess: async (path: string, projectPath?: string, source?: string): Promise<FileMetadataResponse> => {
+    const response = await api.get('/webui/fs/access', { params: { path, projectPath, source } });
+    return response.data;
+  },
+  trust: async (path: string, scope: FileTrustScope, source?: string): Promise<{ trustedRoot: string; filePath: string }> => {
+    const response = await api.post('/webui/fs/trust', { path, scope, source });
+    return response.data;
+  }
+};
+
+export interface GitChangedFile {
+  path: string;
+  oldPath?: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  status: string;
+}
+
+export interface GitSummary {
+  branch: string;
+  upstream: string;
+  ahead: number;
+  behind: number;
+  files: GitChangedFile[];
+}
+
+export const gitReviewAPI = {
+  summary: async (projectPath: string): Promise<GitSummary> => {
+    const response = await api.get('/webui/git/summary', { params: { projectPath } });
+    return response.data;
+  },
+  diff: async (projectPath: string, path: string, staged = false): Promise<{ content: string; truncated: boolean }> => {
+    const response = await api.get('/webui/git/diff', { params: { projectPath, path, staged: staged ? 1 : 0 } });
+    return response.data;
+  }
+};
+
+export interface WorkspaceCheckpoint {
+  ref: string;
+  commit: string;
+  createdAt: number;
+  label: string;
+}
+
+// Work 会话每轮前的工作区检查点（本机 / 远程工作区同一机制）。
+export const workspaceCheckpointAPI = {
+  list: async (sessionId: string): Promise<{ checkpoints: WorkspaceCheckpoint[]; skipped?: string }> => {
+    const response = await api.get(`/webui/chat/sessions/${encodeURIComponent(sessionId)}/checkpoints`);
+    return response.data;
+  },
+  changes: async (sessionId: string, commit: string): Promise<{ files: Array<{ status: string; path: string }> }> => {
+    const response = await api.get(`/webui/chat/sessions/${encodeURIComponent(sessionId)}/checkpoints/changes`, { params: { commit } });
+    return response.data;
+  },
+  restore: async (sessionId: string, commit: string): Promise<{ restored: string; preRestore: string }> => {
+    const response = await api.post(`/webui/chat/sessions/${encodeURIComponent(sessionId)}/checkpoints/restore`, { commit });
+    return response.data;
+  },
+};
+
+// 配置管理 API
+export const configAPI = {
+  // 获取配置
+  get: async (): Promise<UsageConfig> => {
+    const response = await api.get<{ ok: boolean; config: UsageConfig }>('/webui/config');
+    return response.data.config;
+  },
+
+  // 更新配置
+  update: async (config: UsageConfig) => {
+    const response = await api.post('/webui/config', { config });
+    return response.data;
+  },
+
+  getServer: async (): Promise<ServerConfig> => {
+    const response = await api.get<{ ok: boolean; config: ServerConfig }>('/webui/server-config');
+    return response.data.config;
+  },
+
+  updateServer: async (config: Partial<ServerConfig>) => {
+    const response = await api.post<{ ok: boolean; config: ServerConfig }>('/webui/server-config', { config });
+    return response.data.config;
+  },
+
+  rotateManagementKey: async (managementKey: string, authorizationKey = '') => {
+    const response = await api.post<{
+      ok: boolean;
+      managementKeyConfigured: boolean;
+      rotatedAt: number;
+    }>('/webui/server-config/management-key/rotate', { managementKey }, {
+      ...(authorizationKey
+        ? { headers: { Authorization: `Bearer ${authorizationKey}` } }
+        : {})
+    });
+    return response.data;
+  }
+};
+
+export const serverProfilesAPI = {
+  listEndpointHints: async (): Promise<ControlPlaneEndpointHintsResponse> => {
+    const response = await api.get<ControlPlaneEndpointHintsResponse>('/webui/control-plane/endpoints');
+    return {
+      ok: response.data.ok,
+      endpoints: response.data.endpoints || [],
+      warnings: response.data.warnings || []
+    };
+  }
+};
+
+// 会话管理 API
+export const sessionsAPI = {
+  // 获取所有聚合项目
+    // 获取纯聊天会话列表
+  getChatSessions: async (): Promise<Session[]> => {
+    const response = await api.get<{ ok: boolean; sessions: Session[] }>('/webui/chat-sessions');
+    return response.data.sessions;
+  },
+
+  deleteChatSession: async (sessionId: string): Promise<boolean> => {
+    const response = await api.delete<{ ok: boolean; deleted: boolean }>(`/webui/chat-sessions/${encodeURIComponent(sessionId)}`);
+    return Boolean(response.data.deleted);
+  },
+  getAllProjects: async (): Promise<AggregatedProject[]> => {
+    const response = await api.get<{ ok: boolean; projects: AggregatedProject[] }>('/webui/projects');
+    return response.data.projects;
+  },
+
+  getProjectSessions: async (projectPath: string): Promise<AggregatedProject> => {
+    const params = new URLSearchParams({ projectPath });
+    const response = await api.get<{ ok: boolean; project: AggregatedProject }>(
+      `/webui/projects/sessions?${params.toString()}`
+    );
+    return response.data.project;
+  },
+
+  watchProjects: (handlers: {
+    onSnapshot?: (payload: { revision: number; updatedAt: number; projects: AggregatedProject[] }) => void;
+    onRuntime?: (runningSessionKeys: Set<string>) => void;
+    onConnected?: () => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = openSharedWebUiEventSource('/v0/webui/projects/watch');
+    eventSource.onopen = () => {
+      handlers.onConnected?.();
+    };
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}'));
+        if (payload.type === 'snapshot') {
+          handlers.onSnapshot?.({
+            revision: Number(payload.revision) || 0,
+            updatedAt: Number(payload.updatedAt) || 0,
+            projects: Array.isArray(payload.projects) ? payload.projects as AggregatedProject[] : []
+          });
+          return;
+        }
+        if (payload.type === 'runtime') {
+          handlers.onRuntime?.(new Set(
+            Array.isArray(payload.runningSessionKeys)
+              ? payload.runningSessionKeys.map((item: unknown) => String(item || ''))
+              : []
+          ));
+        }
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
+  },
+
+  requestProjectsSnapshot: async () => {
+    const response = await api.post('/webui/projects/watch/snapshot');
+    return response.data;
+  },
+
+  getSessionLifecycleCapabilities: async (): Promise<Partial<Record<Provider, ProviderSessionLifecycleCapability>>> => {
+    const response = await api.get<{
+      ok: boolean;
+      providers: Partial<Record<Provider, ProviderSessionLifecycleCapability>>;
+    }>('/webui/sessions/lifecycle-capabilities');
+    return response.data.providers || {};
+  },
+
+  // 归档会话：服务端只接受 provider + sessionId，不携带账号或客户端路径。
+  archiveSession: async (provider: string, sessionId: string) => {
+    const response = await api.post('/webui/sessions/archive', {
+      provider, sessionId
+    });
+    return response.data;
+  },
+
+  // 获取 session 的消息内容
+  getSessionMessages: async (provider: string, sessionId: string, projectDirName?: string, accountRef?: string): Promise<ChatMessage[]> => {
+    return collectAllSessionHistoryMessages((page: { before?: number }) => (
+      sessionsAPI.getSessionMessagesBundle(provider, sessionId, projectDirName, {
+        ...page,
+        limit: SESSION_HISTORY_PAGE_LIMIT,
+        accountRef
+      })
+    ));
+  },
+
+  getSessionMessagesBundle: async (
+    provider: string,
+    sessionId: string,
+    projectDirName?: string,
+    options: { before?: number; limit?: number; accountRef?: string } = {}
+  ): Promise<SessionMessageBundle> => {
+    const params = new URLSearchParams();
+    if (projectDirName) params.set('projectDirName', projectDirName);
+    if (options.accountRef) params.set('accountRef', options.accountRef);
+    if (Number.isInteger(options.before) && Number(options.before) >= 0) {
+      params.set('before', String(options.before));
+    }
+    params.set('limit', String(
+      Number.isInteger(options.limit) && Number(options.limit) > 0
+        ? options.limit
+        : SESSION_HISTORY_PAGE_LIMIT
+    ));
+    const query = params.toString();
+    const url = `/webui/sessions/${provider}/${sessionId}/messages${query ? `?${query}` : ''}`;
+    return sessionRequests.run(
+      `/v0${url}`,
+      async () => {
+        const response = await api.get<{
+          ok: boolean;
+          messages: ChatMessage[];
+          cursor: number;
+          start: number;
+          total: number;
+          hasMore: boolean;
+        }>(url);
+        return {
+          messages: response.data.messages || [],
+          cursor: Number(response.data.cursor) || 0,
+          start: Math.max(0, Number(response.data.start) || 0),
+          total: Math.max(0, Number(response.data.total) || 0),
+          hasMore: Boolean(response.data.hasMore)
+        };
+      }
+    );
+  },
+
+  // 惰性批量取「模型 + 最后消息预览」，只传当前展开分组的可见会话（≤40）。
+  getSessionPreviews: async (
+    sessions: Array<{ provider: string; id: string; projectDirName?: string }>
+  ): Promise<Array<{
+    provider: Provider;
+    id: string;
+    projectDirName?: string;
+    model?: string;
+    preview?: string;
+  }>> => {
+    if (!sessions || sessions.length === 0) return [];
+    const response = await api.post<{
+      ok: boolean;
+      previews?: Array<{
+        provider: Provider;
+        id: string;
+        projectDirName?: string;
+        model?: string;
+        preview?: string;
+      }>;
+    }>(
+      '/webui/sessions/previews',
+      { sessions }
+    );
+    return (response.data && response.data.previews) || [];
+  },
+
+  getSessionEvents: async (
+    provider: string,
+    sessionId: string,
+    cursor: number,
+    projectDirName?: string
+  ): Promise<{
+    events: SessionEventItem[];
+    cursor: number;
+    requiresSnapshot?: boolean;
+    hasAssistantToolCall?: boolean;
+  }> => {
+    const params = new URLSearchParams();
+    params.set('cursor', String(Math.max(0, Number(cursor) || 0)));
+    if (projectDirName) {
+      params.set('projectDirName', projectDirName);
+    }
+    const url = `/webui/sessions/${provider}/${sessionId}/events?${params.toString()}`;
+    return sessionRequests.run(
+      `/v0${url}`,
+      async () => {
+        const response = await api.get<SessionEventsResponse>(url);
+        return {
+          events: response.data.events || [],
+          cursor: Number(response.data.cursor) || 0,
+          requiresSnapshot: Boolean(response.data.requiresSnapshot),
+          hasAssistantToolCall: Boolean(response.data.hasAssistantToolCall)
+        };
+      }
+    );
+  },
+
+  // 该会话最近一次实际使用的模型（服务端持久化，跟随当前 server；无记录返回空）。
+  getLastModel: async (provider: string, sessionId: string): Promise<string> => {
+    if (!provider || !sessionId) return '';
+    try {
+      const response = await api.get<{ ok: boolean; model?: string }>(
+        `/webui/sessions/${provider}/${sessionId}/model`
+      );
+      return String(response.data?.model || '');
+    } catch {
+      return '';
+    }
+  },
+
+  // 获取原生归档和仍可恢复的历史归档。
+  getArchivedSessions: async (): Promise<ArchivedSessionsResponse> => {
+    const response = await api.get<{
+      ok: boolean;
+      archived: ArchivedSession[];
+      errors?: ArchivedSessionsResponse['errors'];
+    }>('/webui/sessions/archived');
+    return {
+      archived: response.data.archived || [],
+      errors: response.data.errors || []
+    };
+  },
+
+  // 还原归档会话
+  unarchiveSession: async (provider: string, sessionId: string, origin: ArchivedSession['origin']) => {
+    const response = await api.post('/webui/sessions/unarchive', {
+      provider, sessionId, origin
+    });
+    return response.data;
+  },
+
+  openProject: async (projectPath: string, name?: string) => {
+    const response = await api.post<{ ok: boolean; project: AggregatedProject }>('/webui/projects/open', {
+      projectPath,
+      name
+    });
+    return response.data.project;
+  },
+
+  removeProject: async (projectPath: string) => {
+    const response = await api.post('/webui/projects/remove', {
+      projectPath
+    });
+    return response.data;
+  },
+
+  pickProjectDirectory: async (): Promise<{ cancelled: boolean; project?: { path: string; name: string } }> => {
+    const response = await api.post<{ ok: boolean; cancelled: boolean; project?: { path: string; name: string } }>('/webui/projects/pick');
+    return {
+      cancelled: Boolean(response.data.cancelled),
+      project: response.data.project
+    };
+  },
+
+  browseProjectDirectory: async (subDir: string): Promise<any> => {
+    const response = await api.post('/webui/projects/browse', { subDir });
+    return response.data;
+  }
+};
+
+type ModelCatalogRequestOptions = {
+  accountRef?: string;
+};
+
+function appendModelCatalogParams(params: Record<string, string>, options: ModelCatalogRequestOptions) {
+  if (options.accountRef) params.accountRef = String(options.accountRef);
+}
+
+// 模型列表 API：provider 分组用于选择器，账号级结果用于展示真实探测状态。
+async function fetchWebUiModels(options: ModelCatalogRequestOptions = {}): Promise<WebUiModelsResponse> {
+  const params: Record<string, string> = {};
+  appendModelCatalogParams(params, options);
+  const response = await api.get<WebUiModelsResponse>('/webui/models', {
+    params: Object.keys(params).length > 0 ? params : undefined
+  });
+  return {
+    ...response.data,
+    models: response.data.models || {},
+    byAccountRef: response.data.byAccountRef || {},
+    selectableByAccountRef: response.data.selectableByAccountRef || {},
+    defaultByAccountRef: response.data.defaultByAccountRef || {},
+    errorsByAccountRef: response.data.errorsByAccountRef || {},
+    labels: response.data.labels || {}
+  };
+}
+
+export const modelsAPI = {
+  listCatalog: fetchWebUiModels,
+  listOpenAICompatible: async (options: ModelCatalogRequestOptions = {}): Promise<WebUiOpenAIModelsResponse> => {
+    const params: Record<string, string> = {};
+    appendModelCatalogParams(params, options);
+    const response = await api.get<WebUiOpenAIModelsResponse>('/webui/openai-models', {
+      params: Object.keys(params).length > 0 ? params : undefined
+    });
+    return {
+      ...response.data,
+      data: Array.isArray(response.data.data) ? response.data.data : [],
+      managedData: Array.isArray(response.data.managedData) ? response.data.managedData : [],
+      accounts: Array.isArray(response.data.accounts) ? response.data.accounts : [],
+      byProvider: response.data.byProvider || {},
+      byAccountRef: response.data.byAccountRef || {},
+      errorsByAccountRef: response.data.errorsByAccountRef || {}
+    };
+  },
+  createManualModel: async (payload: {
+    id: string;
+    provider: string;
+    accountRef: string;
+    description?: string;
+    enabled?: boolean;
+    customPricing?: CustomPricing | null;
+  }) => {
+    const response = await api.post('/webui/openai-models', payload);
+    return response.data;
+  },
+  updateModel: async (payload: {
+    id: string;
+    accountRef: string;
+    enabled?: boolean;
+    defaultModel?: boolean;
+    provider?: string;
+    description?: string;
+    // undefined = 不修改；null = 清空自定义价。
+    customPricing?: CustomPricing | null;
+  }) => {
+    const response = await api.patch('/webui/openai-models', payload);
+    return response.data;
+  },
+  deleteModel: async (payload: { id: string; accountRef: string; provider?: string }) => {
+    const response = await api.post('/webui/openai-models/delete', payload);
+    return response.data;
+  },
+  refreshOpenAICompatible: async (options: ModelCatalogRequestOptions = {}): Promise<WebUiOpenAIModelsRefreshResponse> => {
+    const params: Record<string, string> = {};
+    appendModelCatalogParams(params, options);
+    const response = await api.post<WebUiOpenAIModelsRefreshResponse>('/webui/openai-models/refresh', null, {
+      params: Object.keys(params).length > 0 ? params : undefined
+    });
+    return response.data;
+  },
+  watchOpenAICompatibleRefresh: (handlers: {
+    onJob?: (job: WebUiOpenAIModelsJob) => void;
+    onSnapshot?: (jobs: WebUiOpenAIModelsJob[]) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = guardedWebUiEventSource('/v0/webui/openai-models/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}'));
+        if (payload.type === 'model-catalog-job' && payload.job) {
+          handlers.onJob?.(payload.job as WebUiOpenAIModelsJob);
+        } else if (payload.type === 'model-catalog-snapshot') {
+          handlers.onSnapshot?.(Array.isArray(payload.jobs) ? payload.jobs as WebUiOpenAIModelsJob[] : []);
+        }
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
+  },
+  listByProvider: async (): Promise<Record<string, string[]>> => {
+    const response = await fetchWebUiModels();
+    return response.models || {};
+  }
+};
+
+// 聊天 API
+export interface ChatPasteSettings {
+  ok: boolean;
+  largePasteChars: number;
+  custom: boolean;
+  limits: { default: number; min: number; max: number };
+}
+
+/** 会话框大段粘贴转附件的阈值（与 `aih server config set --large-paste-chars` 同一配置）。 */
+export const chatPasteSettingsAPI = {
+  get: async (): Promise<ChatPasteSettings> => (await api.get<ChatPasteSettings>('/webui/chat/paste-settings')).data,
+  /** 传 null 恢复默认。 */
+  set: async (largePasteChars: number | null): Promise<ChatPasteSettings> => (
+    await api.post<ChatPasteSettings>('/webui/chat/paste-settings', { largePasteChars })
+  ).data,
+};
+
+export const chatAPI = {
+  // 发送聊天消息
+  send: async (
+    request: ChatRequest,
+    options: { timeoutMs?: number } = {}
+  ): Promise<ChatResponse> => {
+    const timeoutMs = Number(options.timeoutMs);
+    const response = await api.post<ChatResponse>('/webui/chat', request, {
+      timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined
+    });
+    return response.data;
+  },
+
+  sendStream: async (
+    request: ChatRequest,
+    options: {
+      signal?: AbortSignal;
+      onEvent?: (event: ChatStreamEvent) => void;
+    } = {}
+  ): Promise<void> => {
+    // 关键：聊天流必须跟随当前激活 server——裸 fetch 不走 axios 拦截器,需自带 x-aih-server-id,
+    // 否则远端视图里发消息会打到本地 server，拿远端 accountRef 去配本地账号会直接失败。
+    const activeServer = resolveActiveServer();
+    const gateToken = resolveWebUiManagementKey();
+    const response = await fetch('/v0/webui/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(gateToken ? { Authorization: `Bearer ${gateToken}` } : {}),
+        ...(activeServer.isRemote && activeServer.serverId
+          ? { 'x-aih-server-id': activeServer.serverId }
+          : {})
+      },
+      body: JSON.stringify(request),
+      signal: options.signal
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const data = await response.json();
+        errorMessage = data?.message || data?.error || errorMessage;
+      } catch (_error) {
+        const text = await response.text().catch(() => '');
+        if (text) errorMessage = text;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/event-stream')) {
+      const data = await response.json();
+      options.onEvent?.({
+        type: 'done',
+        content: data?.content || '',
+        provider: data?.provider,
+        accountRef: data?.accountRef,
+        gateway: Boolean(data?.gateway),
+        sessionId: data?.sessionId,
+        mode: data?.mode
+      });
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('stream_reader_unavailable');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const emitEvent = (rawBlock: string) => {
+      const dataLines = rawBlock
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim());
+      if (dataLines.length === 0) return;
+      const payload = dataLines.join('\n');
+      if (!payload || payload === '[DONE]') return;
+      const parsed = JSON.parse(payload) as ChatStreamEvent;
+      options.onEvent?.(parsed);
+      if (parsed.type === 'error') {
+        throw new Error(parsed.message || parsed.code || 'chat_stream_failed');
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 2);
+        if (block) emitEvent(block);
+        boundary = buffer.indexOf('\n\n');
+      }
+
+      if (done) break;
+    }
+
+    if (buffer.trim()) {
+      emitEvent(buffer.trim());
+    }
+  },
+
+  decideCliInstallConfirmation: async (
+    confirmationId: string,
+    decision: 'confirm' | 'cancel'
+  ): Promise<void> => {
+    await api.post(
+      `/webui/chat/cli-install-confirmations/${encodeURIComponent(confirmationId)}`,
+      { decision }
+    );
+  },
+
+  sendRunInput: async (runId: string, input: string, appendNewline = true, promptId = '') => {
+    const response = await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/input`, {
+      input,
+      appendNewline,
+      promptId
+    });
+    return response.data;
+  },
+
+  // 审批决策(P3):对挂起的权限请求回 allow/deny。
+  decideApproval: async (runId: string, approvalId: string, decision: 'allow' | 'deny', messageText = '') => {
+    const response = await api.post(
+      `/webui/chat/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}`,
+      { decision, message: messageText }
+    );
+    return response.data;
+  },
+
+  // mid-run 插话(P2c):运行中向当前 run 注入下一条 user 消息(claude native 支持,
+  // 同会话下一轮排队语义;不支持的 run 服务端返回 native_steer_unsupported)。
+  steerRun: async (runId: string, text: string) => {
+    const response = await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/input`, {
+      input: text,
+      mode: 'steer'
+    });
+    return response.data;
+  },
+
+  resizeRunTerminal: async (runId: string, cols: number, rows: number) => {
+    const response = await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/resize`, {
+      cols,
+      rows
+    });
+    return response.data;
+  },
+
+  // 列出某会话仍在服务端跑的 run（detached：刷新/断连后 run 未死）。
+  // 页面打开会话时据此恢复"运行中"状态与待回答的交互 prompt。
+  // mode 区分 'native-session'（默认）与 'api-proxy'；api-proxy run 携带 contentSnapshot（已累积内容快照）。
+  listActiveRuns: async (
+    sessionId: string,
+    provider?: string,
+    projectDirName?: string
+  ): Promise<Array<{ runId: string; provider: string; accountRef: string; sessionId: string; startedAt: number; interactionMode: string; activePrompt: InteractivePrompt | null; mode?: string; contentSnapshot?: string }>> => {
+    if (!sessionId) return [];
+    try {
+      const params: Record<string, string> = { sessionId };
+      if (provider) params.provider = provider;
+      if (projectDirName) params.projectDirName = projectDirName;
+      const response = await api.get<{ ok: boolean; runs: any[] }>('/webui/chat/runs', { params });
+      return Array.isArray(response.data?.runs) ? response.data.runs : [];
+    } catch {
+      return [];
+    }
+  },
+
+  // 【显式 stop】真正终止运行中的原生会话。仅关 SSE（controller.abort）是"被动断连"，服务端只
+  // detach 不 kill（长任务不被腰斩）；要真正停止必须调这个 abort 端点。
+  abortRun: async (runId: string) => {
+    if (!runId) return;
+    try {
+      await api.post(`/webui/chat/runs/${encodeURIComponent(runId)}/abort`, {});
+    } catch (_error) {
+      // 幂等：run 可能已完成/清理，忽略。
+    }
+  },
+
+  getSlashCommands: async (provider: string): Promise<SlashCommandsResponse> => {
+    const response = await api.get<SlashCommandsResponse>(`/webui/slash-commands?provider=${encodeURIComponent(provider)}`);
+    return response.data;
+  }
+};
+
+export const imageStudioAPI = {
+  listModels: async (): Promise<ImageStudioModelsResponse> => {
+    const response = await api.get<ImageStudioModelsResponse>('/webui/studio/image/models');
+    return response.data;
+  },
+
+  listSessions: async (): Promise<ImageStudioSessionsResponse> => {
+    const response = await api.get<ImageStudioSessionsResponse>('/webui/studio/image/sessions');
+    return response.data;
+  },
+
+  createSession: async (title = ''): Promise<ImageStudioSessionResponse> => {
+    const response = await api.post<ImageStudioSessionResponse>('/webui/studio/image/sessions', { title });
+    return response.data;
+  },
+
+  getSession: async (sessionId: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.get<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`
+    );
+    return response.data;
+  },
+
+  renameSession: async (sessionId: string, title: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.patch<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`,
+      { title }
+    );
+    return response.data;
+  },
+
+  deleteSession: async (sessionId: string): Promise<ImageStudioDeleteSessionResponse> => {
+    const response = await api.delete<ImageStudioDeleteSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}`
+    );
+    return response.data;
+  },
+
+  run: async (sessionId: string, input: ImageStudioRunInput): Promise<ImageStudioRunResponse> => {
+    const response = await api.post<ImageStudioRunResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/runs`,
+      input,
+      { timeout: 0 }
+    );
+    return response.data;
+  },
+
+  getAssetBlob: async (sessionId: string, assetId: string, mimeType: string): Promise<Blob> => {
+    const response = await api.get<ArrayBuffer>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/assets/${encodeURIComponent(assetId)}`,
+      { responseType: 'arraybuffer' }
+    );
+    return new Blob([response.data], { type: mimeType || 'image/png' });
+  }
+};
+
+// AI 翻译：默认设置 / 语言目录 / 语言检测 / 模型候选 / 流式翻译。
+//
+// 流式翻译必须用裸 fetch（与聊天流同因）：axios 会在浏览器里缓冲响应体，看不出增量。
+// 鉴权头与 server scope 也照抄聊天流，否则远端视图里翻译会打到本地 server。
+export const translationAPI = {
+  listProviders: async (): Promise<import('@/types').TranslationProviderOption[]> => {
+    const response = await api.get<{ providers: import('@/types').TranslationProviderOption[] }>('/webui/translation/providers');
+    return response.data.providers;
+  },
+  saveProvider: async (provider: string, config: Record<string, string>): Promise<import('@/types').TranslationProviderOption[]> => {
+    const response = await api.post<{ providers: import('@/types').TranslationProviderOption[] }>('/webui/translation/providers', { provider, config });
+    return response.data.providers;
+  },
+  getSystemStatus: async () => {
+    const response = await api.get<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system');
+    return response.data.system;
+  },
+  setSystemEnabled: async (enabled: boolean) => {
+    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { enabled });
+    return response.data.system;
+  },
+  requestSystemPermission: async () => {
+    await api.post('/webui/translation/system', { action: 'request-permission' });
+  },
+  setSystemExecutionTarget: async (executionTarget: 'aih-server' | 'direct-provider') => {
+    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { executionTarget });
+    return response.data.system;
+  },
+  setSystemServerTarget: async (target: { kind: 'aih-server'; label: string; origin: string; serverId?: string }, serverTargets?: Array<{ kind: 'aih-server'; label: string; origin: string; serverId?: string }>) => {
+    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { serverTarget: target, serverTargets });
+    return response.data.system;
+  },
+  getSettings: async (): Promise<TranslationSettingsResponse> => {
+    const response = await api.get<TranslationSettingsResponse>('/webui/translation/settings');
+    return response.data;
+  },
+
+  saveSettings: async (patch: Partial<TranslationSettings>): Promise<TranslationSettingsResponse> => {
+    const response = await api.post<TranslationSettingsResponse>('/webui/translation/settings', patch);
+    return response.data;
+  },
+
+  listLanguages: async (): Promise<TranslationLanguagesResponse> => {
+    const response = await api.get<TranslationLanguagesResponse>('/webui/translation/languages');
+    return response.data;
+  },
+
+  detect: async (text: string, options: { signal?: AbortSignal } = {}): Promise<TranslationDetectionResponse> => {
+    const response = await api.post<TranslationDetectionResponse>('/webui/translation/detect', { text }, {
+      signal: options.signal
+    });
+    return response.data;
+  },
+
+  listModels: async (): Promise<TranslationModelsResponse> => {
+    const response = await api.get<TranslationModelsResponse>('/webui/translation/models');
+    return response.data;
+  },
+
+  stream: async (
+    request: TranslationStreamRequest,
+    options: {
+      signal?: AbortSignal;
+      onEvent?: (event: TranslationStreamEvent) => void;
+    } = {}
+  ): Promise<void> => {
+    const activeServer = resolveActiveServer();
+    const gateToken = resolveWebUiManagementKey();
+    const response = await fetch('/v0/webui/translation/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(gateToken ? { Authorization: `Bearer ${gateToken}` } : {}),
+        ...(activeServer.isRemote && activeServer.serverId
+          ? { 'x-aih-server-id': activeServer.serverId }
+          : {})
+      },
+      body: JSON.stringify(request),
+      signal: options.signal
+    });
+
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      let code = '';
+      let details: Record<string, unknown> = {};
+      try {
+        const data = await response.json();
+        message = data?.detail || data?.error || message;
+        code = String(data?.error || '');
+        details = data && typeof data === 'object' ? data : {};
+      } catch (_error) {
+        const text = await response.text().catch(() => '');
+        if (text) message = text;
+      }
+      const error = new Error(message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
+      error.code = code;
+      error.status = response.status;
+      error.details = details;
+      throw error;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('translation_stream_unavailable');
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const emitBlock = (rawBlock: string) => {
+      const payload = rawBlock
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('\n');
+      if (!payload || payload === '[DONE]') return;
+      const parsed = JSON.parse(payload) as TranslationStreamEvent;
+      options.onEvent?.(parsed);
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 2);
+        if (block) emitBlock(block);
+        boundary = buffer.indexOf('\n\n');
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) emitBlock(buffer.trim());
+  }
+};
+
+// VSCode 风格底部终端：交互式 shell PTY（POST 写 + SSE 读）。//
+// 终端连的是「当前激活的 server」——本机激活就是本机的 shell，远端激活(如 AWS)就是那台机器的
+// shell（PTY 在目标 server 上创建，pickShell 用目标机的 process.platform，Windows/Mac/Linux 自动对）。
+// 这需要:①POST/SSE 都带 x-aih-server-id 指向目标 server；②本地代理把 SSE **边收边转**(见
+// webui-server-proxy 的流式分支),否则远端终端流会被缓冲成永远「连接中」。
+// fetch-stream 可以携带自定义头，Management Key 与 server-id 都不进入 URL。
+async function terminalPost(path: string, body: unknown): Promise<any> {
+  try {
+    const response = await api.post(`/webui/terminal/${path}`, body);
+    return response.data;
+  } catch (error) {
+    const response = (error as AxiosError<{ error?: string }>)?.response;
+    const status = Number(response?.status) || 0;
+    return { ok: false, error: response?.data?.error || (status ? `terminal_http_${status}` : 'terminal_request_failed') };
+  }
+}
+
+export const terminalAPI = {
+  open: async (
+    cols: number,
+    rows: number,
+    muxId?: string,
+    cwd?: string,
+    sessionKey?: string
+  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; error?: string }> =>
+    terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
+  input: (termId: string, data: string) => terminalPost('input', { termId, data }),
+  pasteImage: async (sessionKey: string, cwd: string | undefined, dataUrl: string): Promise<{
+    ok: boolean;
+    path?: string;
+    pasteText?: string;
+    cwd?: string;
+    error?: string;
+    message?: string;
+  }> => terminalPost('clipboard-image', { sessionKey, cwd, dataUrl }),
+  resize: (termId: string, cols: number, rows: number) => terminalPost('resize', { termId, cols, rows }),
+  close: (termId: string, sessionKey?: string): Promise<{ ok: boolean; error?: string }> =>
+    terminalPost('close', { termId, sessionKey }),
+  attach: async (sessionKey: string, muxId?: string): Promise<{
+    ok: boolean;
+    termId?: string;
+    sessionKey?: string;
+    muxId?: string;
+    cols?: number;
+    rows?: number;
+    cwd?: string;
+    shell?: string;
+    durable?: boolean;
+    error?: string;
+  }> => terminalPost('attach', { sessionKey, muxId }),
+  // 整个面板一条 SSE，承载所有 tab 的输出（帧带 termId），规避浏览器每域 ~6 连接上限。
+  // Management Key 与远端 server id 均通过 header 传递，不进入 URL。
+  openMuxStream: (muxId: string): EventSource => guardedWebUiEventSource(
+    `/v0/webui/terminal/mux?muxId=${encodeURIComponent(muxId)}`
+  )
+};
+
+// 管理 API
+export const managementAPI = {
+  // 获取服务器状态
+  status: async (): Promise<ManagementStatus> => {
+    const response = await api.get<ManagementStatus>('/webui/management/status');
+    return response.data;
+  },
+
+  // 获取服务器指标
+  metrics: async (): Promise<ManagementMetrics> => {
+    const response = await api.get<ManagementMetrics>('/webui/management/metrics');
+    return response.data;
+  },
+
+  accounts: async (): Promise<ManagementAccountsResponse> => {
+    const response = await api.get<ManagementAccountsResponse>('/webui/management/accounts');
+    return response.data;
+  },
+
+  watch: (handlers: {
+    onSnapshot?: (payload: {
+      status: ManagementStatus;
+      metrics: ManagementMetrics;
+      accounts: ManagementAccount[];
+    }) => void;
+    onRestart?: (payload: ManagementRestartEvent) => void;
+    onConnected?: () => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = openSharedWebUiEventSource('/v0/webui/management/watch');
+    eventSource.onopen = () => {
+      handlers.onConnected?.();
+    };
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}'));
+        if (payload.type === 'snapshot') {
+          handlers.onSnapshot?.({
+            status: payload.status as ManagementStatus,
+            metrics: payload.metrics as ManagementMetrics,
+            accounts: Array.isArray(payload.accounts) ? payload.accounts as ManagementAccount[] : []
+          });
+          return;
+        }
+        if (payload.type === 'restart') {
+          handlers.onRestart?.(payload as ManagementRestartEvent);
+        }
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
+  },
+
+  requestSnapshot: async () => {
+    const response = await api.post('/webui/management/watch/snapshot');
+    return response.data;
+  },
+
+  // 重新加载账号
+  reload: async () => {
+    const response = await api.post('/webui/management/reload');
+    return response.data;
+  },
+
+  // 清除冷却时间
+  clearCooldown: async () => {
+    const response = await api.post('/webui/management/cooldown/clear');
+    return response.data;
+  },
+
+  restart: async (): Promise<ManagementRestartResponse> => {
+    const response = await api.post<ManagementRestartResponse>('/webui/server/restart');
+    return response.data;
+  }
+};
+
+function buildModelUsageParams(query: ModelUsageQuery = {}) {
+  const params: Record<string, string | number> = {};
+  if (query.from) params.from = query.from;
+  if (query.to) params.to = query.to;
+  if (query.provider) params.provider = query.provider;
+  if (query.model) params.model = query.model;
+  if (query.sessionId) params.session_id = query.sessionId;
+  if (query.limit) params.limit = query.limit;
+  if (query.scan) params.scan = '1';
+  return params;
+}
+
+export const modelUsageAPI = {
+  startDashboardQuery: async (query: ModelUsageQuery = {}): Promise<ModelUsageDashboardQueryResponse> => {
+    const response = await api.post<ModelUsageDashboardQueryResponse>(
+      '/webui/management/usage/dashboard/query',
+      null,
+      { params: buildModelUsageParams(query) }
+    );
+    return response.data;
+  },
+
+  cancelDashboardQuery: async (jobId: string): Promise<ModelUsageDashboardQueryCancelResponse> => {
+    const response = await api.delete<ModelUsageDashboardQueryCancelResponse>(
+      `/webui/management/usage/dashboard/query/${encodeURIComponent(jobId)}`
+    );
+    return response.data;
+  },
+
+  watchDashboardQueries: (handlers: {
+    onJob?: (job: ModelUsageDashboardQueryJob) => void;
+    onSnapshot?: (jobs: ModelUsageDashboardQueryJob[]) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = guardedWebUiEventSource('/v0/webui/management/usage/dashboard/query/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        dispatchModelUsageDashboardQueryPayload(JSON.parse(String(event.data || '{}')), handlers);
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
+  },
+
+  dashboard: async (query: ModelUsageQuery = {}): Promise<ModelUsageDashboardResponse> => {
+    const response = await api.get<ModelUsageDashboardResponse>('/webui/management/usage/dashboard', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  stats: async (query: ModelUsageQuery = {}): Promise<ModelUsageStatsResponse> => {
+    const response = await api.get<ModelUsageStatsResponse>('/webui/management/usage/stats', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  models: async (query: ModelUsageQuery = {}): Promise<ModelUsageModelsResponse> => {
+    const response = await api.get<ModelUsageModelsResponse>('/webui/management/usage/models', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  sessions: async (query: ModelUsageQuery = {}): Promise<ModelUsageSessionsResponse> => {
+    const response = await api.get<ModelUsageSessionsResponse>('/webui/management/usage/sessions', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  requests: async (query: ModelUsageQuery = {}): Promise<ModelUsageRequestDetailsResponse> => {
+    const response = await api.get<ModelUsageRequestDetailsResponse>('/webui/management/usage/requests', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  breakdown: async (query: ModelUsageQuery): Promise<ModelUsageBreakdownResponse> => {
+    const response = await api.get<ModelUsageBreakdownResponse>('/webui/management/usage/breakdown', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  sessionDetail: async (query: ModelUsageQuery): Promise<ModelUsageSessionDetailResponse> => {
+    const response = await api.get<ModelUsageSessionDetailResponse>('/webui/management/usage/session-detail', {
+      params: buildModelUsageParams(query)
+    });
+    return response.data;
+  },
+
+  scan: async (provider?: ModelUsageQuery['provider']): Promise<ModelUsageScanResponse> => {
+    const response = await api.post<ModelUsageScanResponse>('/webui/management/usage/scan', null, {
+      params: provider ? { provider } : {}
+    });
+    return response.data;
+  },
+
+  watchScan: (handlers: {
+    onJob?: (job: ModelUsageScanJob) => void;
+    onSnapshot?: (jobs: ModelUsageScanJob[]) => void;
+    onError?: () => void;
+  }) => {
+    const eventSource = guardedWebUiEventSource('/v0/webui/management/usage/scan/watch');
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data || '{}'));
+        if (payload.type === 'usage-scan-job' && payload.job) {
+          handlers.onJob?.(payload.job as ModelUsageScanJob);
+        } else if (payload.type === 'usage-scan-snapshot') {
+          handlers.onSnapshot?.(Array.isArray(payload.jobs) ? payload.jobs as ModelUsageScanJob[] : []);
+        }
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
+    eventSource.onerror = () => {
+      handlers.onError?.();
+    };
+    return eventSource;
+  }
+};
+
+export function dispatchModelUsageDashboardQueryPayload(
+  payload: any,
+  handlers: {
+    onJob?: (job: ModelUsageDashboardQueryJob) => void;
+    onSnapshot?: (jobs: ModelUsageDashboardQueryJob[]) => void;
+  }
+) {
+  if (payload?.type === 'usage-dashboard-query-job' && payload.job) {
+    handlers.onJob?.(payload.job as ModelUsageDashboardQueryJob);
+    return;
+  }
+  if (payload?.type === 'usage-dashboard-query-snapshot') {
+    handlers.onSnapshot?.(
+      Array.isArray(payload.jobs) ? payload.jobs as ModelUsageDashboardQueryJob[] : []
+    );
+  }
+}
+
+export const sshHostsAPI = {
+  listConnections: async (): Promise<any[]> => {
+    const response = await api.get<{ ok: boolean; connections: any[] }>('/webui/ssh-connections');
+    return response.data.connections || [];
+  },
+  createConnection: async (payload: any): Promise<any> => {
+    const response = await api.post<{ ok: boolean; connection: any }>('/webui/ssh-connections', payload);
+    return response.data.connection;
+  },
+  updateConnection: async (id: string, payload: any): Promise<any> => {
+    const response = await api.put<{ ok: boolean; connection: any }>(`/webui/ssh-connections/${encodeURIComponent(id)}`, payload);
+    return response.data.connection;
+  },
+  deleteConnection: async (id: string): Promise<void> => {
+    await api.delete(`/webui/ssh-connections/${encodeURIComponent(id)}`);
+  },
+  testConnection: async (payload: any): Promise<SshHostTestResult> => {
+    const response = await api.post<{ ok: boolean; result: SshHostTestResult }>('/webui/ssh-connections/test', payload);
+    return response.data.result;
+  },
+  listWorkspaces: async (): Promise<any[]> => {
+    const response = await api.get<{ ok: boolean; workspaces: any[] }>('/webui/ssh-workspaces');
+    return response.data.workspaces || [];
+  },
+  createWorkspace: async (payload: any): Promise<any> => {
+    const response = await api.post<{ ok: boolean; workspace: any }>('/webui/ssh-workspaces', payload);
+    return response.data.workspace;
+  },
+  updateWorkspace: async (id: string, payload: any): Promise<any> => {
+    const response = await api.put<{ ok: boolean; workspace: any }>(`/webui/ssh-workspaces/${encodeURIComponent(id)}`, payload);
+    return response.data.workspace;
+  },
+  deleteWorkspace: async (id: string): Promise<void> => {
+    await api.delete(`/webui/ssh-workspaces/${encodeURIComponent(id)}`);
+  },
+  /** 各远程工作区的远端会话是否还活着（以 Server 端持久 PTY 为准，跨设备 / Server 重启一致）。 */
+  listWorkspaceSessions: async (): Promise<Array<{ workspaceId: string; sessionKey: string; alive: boolean }>> => {
+    const response = await api.get<{ ok: boolean; sessions: Array<{ workspaceId: string; sessionKey: string; alive: boolean }> }>('/webui/ssh-workspaces/sessions');
+    return response.data.sessions || [];
+  },
+  /** 在远程工作区目录里开（或复用）一个持久 Web Terminal；凭据只在 Server 侧使用。 */
+  listTunnels: async (): Promise<import('@/features/ssh-hosts/ssh-hosts-model').SshReverseTunnelStatus[]> => {
+    const response = await api.get('/webui/ssh-connections/tunnels');
+    return Array.isArray(response.data?.tunnels) ? response.data.tunnels : [];
+  },
+  openWorkspaceTerminal: async (id: string, payload: { cols?: number; rows?: number; fresh?: boolean; agent?: 'claude' | 'codex'; transport?: 'native' } = {}): Promise<{
+    ok: boolean; sessionKey: string; termId: string; reused: boolean; durable: boolean;
+    label: string; remoteRoot: string; host: string; agent?: string; transport?: string;
+  }> => {
+    const response = await api.post(`/webui/ssh-workspaces/${encodeURIComponent(id)}/terminal`, payload);
+    return response.data;
+  },
+  browseSshDirectory: async (payload: { connectionId: string; subDir: string }): Promise<any> => {
+    const response = await api.post<{ ok: boolean; currentDir: string; parentDir: string; directories: any[] }>('/webui/ssh-hosts/browse', payload);
+    return response.data;
+  }
+};
+
+export const toolkitAPI = {
+  getAihPlugins: async (): Promise<import('@/types').AihPluginReport> => {
+    const response = await api.get<import('@/types').AihPluginReport>('/plugins');
+    return response.data;
+  },
+  getAihPluginDoctor: async (): Promise<import('@/types').AihPluginDoctorReport> => {
+    const response = await api.get<import('@/types').AihPluginDoctorReport>('/plugins/doctor');
+    return response.data;
+  },
+  operateAihPlugin: async (action: 'enable' | 'disable' | 'uninstall', input: Record<string, unknown>) => {
+    const response = await api.post(`/plugins/${action}`, input);
+    return response.data;
+  },
+  runAihPluginDemo: async (): Promise<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }> => {
+    const response = await api.post<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }>('/plugins/demo', {});
+    return response.data;
+  },
+  getNativeResources: async (): Promise<import('@/types').NativeResourceReport> => {
+    const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
+    return response.data;
+  },
+  operateNativeResource: async (input: {
+    kind: import('@/types').NativeResourceKind;
+    action: import('@/types').NativeResourceAction;
+    id?: string;
+    provider?: string;
+    host?: string;
+    source?: string;
+    tool?: string;
+    args?: Record<string, unknown>;
+  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }> => {
+    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }>(
+      '/webui/toolkit/native-resources', input
+    );
+    return response.data;
+  },
+  // 只读：这条接口不触发任何检查或安装，纯粹回放账本与调度器状态。
+  getProviderCliUpgradeStatus: async (): Promise<ProviderCliUpgradeStatusResponse> => {
+    const response = await api.get<ProviderCliUpgradeStatusResponse>('/webui/provider-cli-upgrade');
+    return response.data;
+  },
+  // 验证当前 CLI 后解除熔断：要真起一次 CLI（codex 十几秒），放宽超时；
+  // 验证不通过/正忙是业务结论（422/409），按结果对象返回而不是抛错。
+  clearProviderCliUpgradeBroken: async (provider: string): Promise<ProviderCliUpgradeClearBrokenResponse> => {
+    const response = await api.post<ProviderCliUpgradeClearBrokenResponse>(
+      `/webui/provider-cli-upgrade/${encodeURIComponent(provider)}/clear-broken`,
+      {},
+      { timeout: 120000, validateStatus: (status) => status === 200 || status === 409 || status === 422 }
+    );
+    return response.data;
+  },
+  listApps: async (): Promise<ManagedAppsResponse> => {
+    const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
+    return response.data;
+  },
+  getAppPermissionSettings: async (appId: string): Promise<ToolPermissionSettingsResponse> => {
+    const response = await api.get<ToolPermissionSettingsResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/settings`
+    );
+    return response.data;
+  },
+  saveAppPermissionSettings: async (
+    appId: string,
+    payload: { maxPermission: boolean; applyToHost: boolean; permissionArgs?: string[]; sessionHook?: boolean }
+  ): Promise<ToolPermissionSettingsResponse> => {
+    const response = await api.put<ToolPermissionSettingsResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/settings`,
+      payload
+    );
+    return response.data;
+  },
+  checkAppUpdate: async (appId: string): Promise<ManagedAppUpdateResponse> => {
+    const response = await api.post<ManagedAppUpdateResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/check-update`, {}
+    );
+    return response.data;
+  },
+  listTerminals: async (): Promise<ClientTerminalsResponse> => {
+    const response = await api.get<ClientTerminalsResponse>('/webui/toolkit/terminals');
+    return response.data;
+  },
+  openTerminal: async (terminalId: string): Promise<{
+    ok: boolean;
+    status?: string;
+    terminalId?: string;
+    executable?: string;
+    pid?: number | null;
+    error?: string;
+  }> => {
+    const response = await api.post<{
+      ok: boolean;
+      status?: string;
+      terminalId?: string;
+      executable?: string;
+      pid?: number | null;
+      error?: string;
+    }>('/webui/toolkit/terminals/open', { terminalId });
+    return response.data;
+  },
+  planTerminalAction: async (terminalId: string, action: 'install' | 'update' | 'uninstall') => {
+    const response = await api.post<{ ok: boolean; terminalId?: string; action?: string; label?: string; command?: string; file?: string; args?: string[]; error?: string }>(
+      '/webui/toolkit/terminals/plan', { terminalId, action }
+    );
+    return response.data;
+  },
+  executeTerminalAction: async (terminalId: string, action: 'install' | 'update' | 'uninstall') => {
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: WebUiTask; error?: string }>(
+      '/webui/toolkit/terminals/execute', { terminalId, action, confirmed: true }
+    );
+    return response.data;
+  },
+  getTerminalJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/terminals/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
+  },
+  planAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide'): Promise<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; error?: string }> => {
+    const response = await api.post<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; error?: string }>(
+      '/webui/toolkit/apps/plan', { appId, action, kind }
+    );
+    return response.data;
+  },
+  executeAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide'): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string }> => {
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string }>(
+      '/webui/toolkit/apps/install', { appId, action, kind }
+    );
+    return response.data;
+  },
+  openManagedApp: async (appId: string, input: { kind: 'cli' | 'desktop'; accountRef?: string; unscoped?: boolean; action?: 'open' | 'close'; terminalId?: string }): Promise<AccountAppLaunchResponse> => {
+    const response = await api.post<AccountAppLaunchResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/open`, input
+    );
+    return response.data;
+  },
+  openManagedDesktopApp: async (appId: string): Promise<AccountAppLaunchResponse> => {
+    return toolkitAPI.openManagedApp(appId, { kind: 'desktop' });
+  },
+  installApp: async (provider: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }> => {
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; result?: any }>('/webui/toolkit/apps/install', { appId: provider, action: 'install' });
+    return response.data;
+  },
+  installHooks: async (providers: string[]): Promise<{ ok: boolean; results: any[] }> => {
+    const response = await api.post<{ ok: boolean; results: any[] }>('/webui/toolkit/apps/hooks', { providers });
+    return response.data;
+  },
+  uninstallHooks: async (providers: string[]): Promise<{ ok: boolean; results: any[] }> => {
+    const response = await api.post<{ ok: boolean; results: any[] }>('/webui/toolkit/apps/hooks', { providers, action: 'uninstall' });
+    return response.data;
+  },
+  getAppConfig: async (appId: string): Promise<ToolkitAppConfigResponse> => {
+    const response = await api.get<ToolkitAppConfigResponse>(`/webui/toolkit/apps/${encodeURIComponent(appId)}/config`);
+    return response.data;
+  },
+  saveAppConfig: async (appId: string, content: string, revision: string): Promise<ToolkitAppConfigResponse> => {
+    const response = await api.put<ToolkitAppConfigResponse>(`/webui/toolkit/apps/${encodeURIComponent(appId)}/config`, {
+      content,
+      revision
+    });
+    return response.data;
+  },
+  listTools: async (): Promise<ManagedToolsResponse> => {
+    const response = await api.get<ManagedToolsResponse>('/webui/toolkit/tools');
+    return response.data;
+  },
+  getToolConfig: async (toolId: string): Promise<ToolkitToolConfigResponse> => {
+    const response = await api.get<ToolkitToolConfigResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/config`);
+    return response.data;
+  },
+  saveToolConfig: async (toolId: string, content: string, revision: string, targetRevision: string): Promise<ToolkitToolConfigResponse> => {
+    const response = await api.put<ToolkitToolConfigResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/config`, {
+      content,
+      revision,
+      targetRevision
+    });
+    return response.data;
+  },
+  getToolService: async (toolId: string): Promise<ManagedToolServiceResponse> => {
+    const response = await api.get<ManagedToolServiceResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/service`);
+    return response.data;
+  },
+  controlToolService: async (toolId: string, action: ManagedToolServiceAction): Promise<ManagedToolServiceResponse> => {
+    const response = await api.post<ManagedToolServiceResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/service`, {
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  updateToolServiceSettings: async (
+    toolId: string,
+    settings: { autoStart?: boolean; autoRestart?: boolean }
+  ): Promise<ManagedToolServiceResponse> => {
+    const response = await api.put<ManagedToolServiceResponse>(
+      `/webui/toolkit/tools/${encodeURIComponent(toolId)}/service/settings`,
+      settings
+    );
+    return response.data;
+  },
+  createToolServiceConfig: async (toolId: string): Promise<ManagedToolServiceResponse> => {
+    const response = await api.post<ManagedToolServiceResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/service/config`, {});
+    return response.data;
+  },
+  getToolServiceLogs: async (toolId: string, lines = 200): Promise<ManagedToolServiceLogsResponse> => {
+    const response = await api.get<ManagedToolServiceLogsResponse>(
+      `/webui/toolkit/tools/${encodeURIComponent(toolId)}/service/logs`,
+      { params: { lines } }
+    );
+    return response.data;
+  },
+  planManagedToolAction: async (
+    toolId: string,
+    action: ManagedToolLifecycleAction
+  ): Promise<ManagedToolActionResponse> => {
+    const response = await api.post<ManagedToolActionResponse>('/webui/toolkit/tools/plan', {
+      toolId,
+      action
+    });
+    return response.data;
+  },
+  executeManagedToolAction: async (
+    toolId: string,
+    action: ManagedToolLifecycleAction
+  ): Promise<ManagedToolActionResponse> => {
+    const response = await api.post<ManagedToolActionResponse>('/webui/toolkit/tools/execute', {
+      toolId,
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  getManagedToolJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/tools/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
+  },
+  getEnvironments: async (target = 'local', options: { refresh?: boolean } = {}): Promise<EnvironmentsResponse> => {
+    const params: Record<string, string> = {};
+    if (target && target !== 'local') params.target = target;
+    if (options.refresh) params.refresh = '1';
+    const response = await api.get<EnvironmentsResponse>('/webui/toolkit/environments', { params });
+    return response.data;
+  },
+  getToolkitTargets: async (): Promise<ToolkitTarget[]> => {
+    const response = await api.get<{ ok: boolean; targets: ToolkitTarget[] }>('/webui/toolkit/environments/targets');
+    return response.data.targets || [];
+  },
+  getEnvironmentGuide: async (platform?: string): Promise<EnvironmentGuideResponse> => {
+    const response = await api.get<EnvironmentGuideResponse>('/webui/toolkit/environments/guide', {
+      params: platform ? { platform } : undefined
+    });
+    return response.data;
+  },
+  planEnvironmentToolAction: async (
+    toolId: string,
+    action: EnvironmentLifecycleAction,
+    target = 'local'
+  ): Promise<EnvironmentToolActionResponse> => {
+    const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/plan', {
+      toolId,
+      action,
+      target
+    });
+    return response.data;
+  },
+  executeEnvironmentToolAction: async (
+    toolId: string,
+    action: EnvironmentLifecycleAction,
+    target = 'local'
+  ): Promise<EnvironmentToolActionResponse> => {
+    const response = await api.post<EnvironmentToolActionResponse>('/webui/toolkit/environments/execute', {
+      toolId,
+      action,
+      target,
+      confirmed: true
+    });
+    return response.data;
+  },
+  getEnvironmentJob: async (jobId: string): Promise<WebUiTask> => {
+    const response = await api.get<{ ok: boolean; job: WebUiTask }>(
+      `/webui/toolkit/environments/jobs/${encodeURIComponent(jobId)}`
+    );
+    return response.data.job;
+  },
+  planEnvironmentAction: async (input: EnvironmentActionInput): Promise<EnvironmentActionResponse> => {
+    const response = await api.post<EnvironmentActionResponse>('/webui/toolkit/environments/plan', input);
+    return response.data;
+  },
+  executeEnvironmentAction: async (input: EnvironmentActionInput): Promise<EnvironmentActionResponse> => {
+    const response = await api.post<EnvironmentActionResponse>('/webui/toolkit/environments/execute', input);
+    return response.data;
+  },
+  getMirrors: async (): Promise<MirrorsResponse> => {
+    const response = await api.get<MirrorsResponse>('/webui/toolkit/mirrors');
+    return response.data;
+  },
+  setMirror: async (type: string, url: string): Promise<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }> => {
+    const response = await api.post<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }>('/webui/toolkit/mirrors/set', { type, url });
+    return response.data;
+  },
+  pingMirror: async (url: string): Promise<{ ok: boolean; latencyMs: number; statusCode?: number | null; measurement?: 'ttfb'; route?: 'direct'; error?: string | null }> => {
+    const response = await api.post<{ ok: boolean; latencyMs: number; error?: string }>('/webui/toolkit/mirrors/ping', { url });
+    return response.data;
+  },
+  getProxy: async (): Promise<ProxyStatusResponse> => {
+    const response = await api.get<ProxyStatusResponse>('/webui/toolkit/proxy');
+    return response.data;
+  },
+  setProxy: async (target: string, proxyUrl: string): Promise<{ ok: boolean; error?: string | null; message?: string; operations?: Array<{ key: string; ok: boolean; exitCode: number | null; stderr: string }> }> => {
+    const response = await api.post<{ ok: boolean }>('/webui/toolkit/proxy/set', { target, proxyUrl });
+    return response.data;
+  },
+  testConnectivity: async (params: { route?: 'direct' | 'proxy'; proxyUrl?: string } = {}): Promise<ConnectivityResponse> => {
+    const response = await api.get<ConnectivityResponse>('/webui/toolkit/connectivity', { params });
+    return response.data;
+  }
+};
+
+export const providerConfigAPI = {
+  // Provider 配置文件列表：只读目录/存在性，不探测 CLI 版本（避免一次请求 spawn 十几个进程）。
+  list: async (): Promise<ProviderConfigListResponse> => {
+    const response = await api.get<ProviderConfigListResponse>('/webui/toolkit/provider-configs');
+    return response.data;
+  },
+  get: async (provider: string, fileId: string): Promise<ProviderConfigDetailResponse> => {
+    const response = await api.get<ProviderConfigDetailResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}`
+    );
+    return response.data;
+  },
+  save: async (
+    provider: string,
+    fileId: string,
+    payload: { content: string; revision: string; note?: string }
+  ): Promise<ProviderConfigSaveResponse> => {
+    const response = await api.put<ProviderConfigSaveResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}`,
+      payload
+    );
+    return response.data;
+  },
+  validate: async (
+    provider: string,
+    fileId: string,
+    content: string
+  ): Promise<ProviderConfigValidationResponse> => {
+    const response = await api.post<ProviderConfigValidationResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/validate`,
+      { content }
+    );
+    return response.data;
+  },
+  history: async (provider: string, fileId: string): Promise<ProviderConfigHistoryResponse> => {
+    const response = await api.get<ProviderConfigHistoryResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history`
+    );
+    return response.data;
+  },
+  historyEntry: async (
+    provider: string,
+    fileId: string,
+    entryId: string
+  ): Promise<ProviderConfigHistoryEntryResponse> => {
+    const response = await api.get<ProviderConfigHistoryEntryResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history/${encodeURIComponent(entryId)}`
+    );
+    return response.data;
+  },
+  restore: async (
+    provider: string,
+    fileId: string,
+    entryId: string
+  ): Promise<ProviderConfigSaveResponse> => {
+    const response = await api.post<ProviderConfigSaveResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history/${encodeURIComponent(entryId)}/restore`,
+      {}
+    );
+    return response.data;
+  },
+  exportFile: async (
+    provider: string,
+    fileId: string,
+    mode: 'redacted' | 'raw'
+  ): Promise<ProviderConfigExportResponse> => {
+    const response = await api.get<ProviderConfigExportResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/export`,
+      { params: { mode } }
+    );
+    return response.data;
+  }
+};
+
+export default api;

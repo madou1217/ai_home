@@ -1,0 +1,463 @@
+.models-probe-status {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-2);
+  margin-bottom: var(--hos-space-4);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body-sm);
+  /* 探测失败是条件挂载的临时状态条：出现即淡入，刷新成功后消失不闪。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+.models-probe-status > .hud-led {
+  align-self: center;
+}
+.models-probe-status-message {
+  flex: 1 1 240px;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-probe-status-link,
+.models-probe-status-copy {
+  flex: 0 0 auto;
+  font-size: var(--hos-text-caption);
+}
+.models-live-refresh {
+  border-color: var(--color-border);
+}
+.models-live-refresh-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--hos-space-3);
+}
+.models-live-refresh-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+}
+.models-live-refresh-grid strong {
+  overflow: hidden;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-overflow: ellipsis;
+  text-shadow: var(--hud-text-glow);
+  white-space: nowrap;
+}
+/* 刷新任务状态着色：成功 / 失败按真实 job.status */
+.models-live-refresh--succeeded .models-live-refresh-grid > div:first-child strong {
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
+}
+.models-live-refresh--failed .models-live-refresh-grid > div:first-child strong {
+  color: var(--color-danger);
+  text-shadow: var(--hud-text-glow-danger);
+}
+.models-live-refresh p {
+  margin: var(--hos-space-2-5) 0 0;
+  color: var(--color-danger);
+  font-size: var(--hos-text-caption);
+}
+/* Provider 筛选：单行，横向滚动；右缘渐隐提示还有更多（mask，不是装饰渐变），
+ * 右侧留白保证滚到末尾时最后一项完整可见。 */
+.models-provider-scroll {
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+.models-provider-scroll::-webkit-scrollbar {
+  display: none;
+}
+.models-provider-scroll > .ant-segmented {
+  min-width: max-content;
+  margin-right: var(--space-12);
+}
+/* Provider 筛选 = HUD 分段：等宽小号字距，选中项青色描边 + 辉光 */
+.models-provider-scroll .ant-segmented,
+.models-provider-scroll .ant-segmented-item {
+  border-radius: 0 !important;
+}
+.models-provider-scroll .ant-segmented-item-label {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: 0.02em;
+}
+.models-provider-scroll .ant-segmented-item-selected {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
+  color: var(--color-accent) !important;
+  box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent) !important;
+}
+.models-provider-scroll .ant-segmented-thumb {
+  border-radius: 0 !important;
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
+}
+.models-search {
+  width: min(320px, 100%);
+}
+/* 账号模型行（ModelCapsuleCard）之间的行距 */
+.models-capsule-slot {
+  margin-bottom: var(--hos-space-3);
+}
+/* 账号筛选下拉：provider 图标 + 账号名 */
+.models-account-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+}
+/* 手动添加模型弹窗 */
+.models-manual-form {
+  margin-top: var(--hos-space-3);
+}
+.ant-input.models-mono-input {
+  font-family: var(--font-mono);
+}
+.models-account-filter {
+  width: min(360px, 100%);
+}
+.models-account-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-4);
+  padding: var(--hos-space-0-5) 0 var(--hos-space-4);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--hos-space-3-5);
+}
+.models-account-context-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+}
+.models-account-context-main > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+}
+.models-account-context-main strong,
+.models-account-context-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-account-context-main strong {
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+}
+.models-account-context-main span {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-regular);
+}
+.models-account-context-stats {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-regular);
+}
+.models-search :where(.ant-input-group) {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+}
+.models-search :where(.ant-input-affix-wrapper) {
+  flex: 1;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent;
+  box-shadow: none !important;
+}
+.models-search :where(.ant-input-group-addon) {
+  width: 44px;
+  border: 0;
+  background: transparent;
+}
+.models-search :where(.ant-input-search-button) {
+  width: 32px;
+  height: 28px;
+  margin-right: var(--hos-space-1);
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--color-muted-strong) !important;
+  box-shadow: none !important;
+}
+.models-search :where(.ant-input-search-button:hover) {
+  background: var(--color-overlay) !important;
+  color: var(--color-accent) !important;
+}
+.models-catalog-desc {
+  margin: 0 0 var(--hos-space-3-5);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+.models-list {
+  margin-top: var(--hos-space-3-5);
+}
+.models-list .paginated-list-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.models-model-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(220px, 1fr) 96px 176px;
+  align-items: center;
+  gap: var(--hos-space-3);
+  min-height: 76px;
+  padding: var(--hos-space-2-5) var(--hos-space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+}
+.models-model-row--disabled {
+  background: var(--color-surface-muted);
+}
+.models-model-row-main {
+  min-width: 0;
+}
+.models-model-title-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--hos-space-2);
+  min-height: 24px;
+}
+.models-model-title-line h3 {
+  flex: 0 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-model-row-tags {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  min-height: 22px;
+  margin-top: var(--hos-space-1-5);
+}
+.models-model-row p {
+  overflow: hidden;
+  margin: var(--hos-space-1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-model-row-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-2);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+}
+.models-model-row-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-2);
+}
+.models-model-default-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.models-model-default-control--active {
+  color: var(--color-success);
+}
+/* 全局模型行：组件挂 .hud-panel.hud-panel--sm（小切角 + 左上角标） */
+.models-global-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(220px, 1fr);
+  align-items: center;
+  gap: var(--hos-space-3-5);
+  min-height: 66px;
+  padding: var(--hos-space-3) var(--hos-space-3-5);
+}
+.models-global-row--disabled {
+  opacity: 0.62;
+}
+.models-global-main {
+  min-width: 0;
+}
+.models-global-title-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+}
+.models-global-title-line h3 {
+  flex: 1 1 180px;
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-global-providers {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-1);
+}
+.models-provider-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+  margin-inline-end: 0;
+}
+/* 复制图标紧跟在模型 ID 后面：固定占位，只切换透明度，避免 hover 造成 row 高度/换行抖动。 */
+.models-global-title-line .copy-icon-btn,
+.models-model-title-line .copy-icon-btn {
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+}
+.models-global-row:hover .models-global-title-line .copy-icon-btn,
+.models-model-row:hover .models-model-title-line .copy-icon-btn,
+.models-global-title-line .copy-icon-btn:focus-visible,
+.models-model-title-line .copy-icon-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.models-global-main p {
+  overflow: hidden;
+  margin: var(--hos-space-1) 0 0;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-regular);
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+@media (max-width: 768px) {.models-live-refresh-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+.models-account-context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+.models-account-context-stats {
+    flex-wrap: wrap;
+  }
+.models-model-row,
+.models-global-row {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+.models-model-row-state,
+.models-model-row-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+.models-model-title-line,
+.models-global-title-line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+.models-model-title-line {
+    align-items: center;
+    flex-direction: row;
+  }
+.models-global-providers {
+    width: 100%;
+  }
+
+}
+
+/* ============================================================================
+ * 账号模型管理 —— 移动端原生卡片:模型信息占整行,下方是 iOS 式带标签开关行
+ * (标签在左、开关在右、行间细分隔线),不再把文字塞进胶囊、也不再让开关一左一右飘着。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .models-model-row {
+    display: block !important;
+    padding: var(--hos-space-4) var(--hos-space-4) var(--hos-space-1-5) !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: 0 !important;
+    background: var(--hud-panel-bg) !important;
+    box-shadow: none;
+  }
+  .models-model-row-main { min-width: 0; }
+  .models-model-row p { margin: var(--hos-space-1-5) 0 0; font-size: var(--hos-text-body-sm); color: var(--color-muted); }
+
+  /* 开关区:与信息区之间一条分隔线,像卡片页脚 */
+  .models-model-row-controls {
+    margin-top: var(--hos-space-3);
+    border-top: 1px solid var(--color-border);
+  }
+  .models-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hos-space-3);
+    min-height: 46px;
+  }
+  .models-toggle-row + .models-toggle-row {
+    border-top: 1px solid var(--color-border);
+  }
+  .models-toggle-label {
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+    color: var(--color-heading);
+  }
+  .models-toggle-label--active { color: var(--color-accent); }
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.models-search :where(.ant-input-search-button) {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}

@@ -1,0 +1,1076 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: session-list */
+
+/* ===== 项目列表侧边栏 ===== */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebarContent {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+/* 首次无缓存加载时的骨架屏：模拟项目行（方形图标 + 名称），与列表节奏一致避免空白 */
+.sidebarSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-3-5);
+  padding: var(--hos-space-3) var(--hos-space-3) var(--hos-space-1);
+}
+
+.sidebarSkeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2-5);
+}
+
+.sidebarSkeletonRow :global(.ant-skeleton-input) {
+  min-width: 0;
+  height: 16px;
+}
+
+.sidebarContent::-webkit-scrollbar {
+  display: none;
+}
+
+.refreshBar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-1-5);
+  padding: var(--hos-space-2-5) var(--hos-space-3) var(--hos-space-2);
+  border-bottom: 1px solid var(--hos-border);
+  background: var(--hos-surface-raised);
+}
+
+.refreshBarMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hos-space-3-5);
+  padding: var(--hos-space-3) var(--hos-space-4) var(--hos-space-2-5); /* 归级:原 18px */
+  background: var(--color-surface);
+}
+
+.refreshBtn {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border: 1px solid var(--hos-border) !important;
+  background: var(--hos-surface) !important;
+  color: var(--hos-muted-strong) !important;
+  font-size: var(--hos-text-body-sm) !important;
+  border-radius: 2px !important; /* HUD：方角 */
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none !important;
+}
+
+.refreshBtn:hover {
+  border-color: var(--color-accent) !important;
+  background: var(--color-accent-soft) !important;
+  color: var(--color-accent) !important;
+}
+
+.refreshBtnMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remoteSessionsPanel {
+  --hud-cut: var(--hud-chamfer-sm);
+  position: relative;
+  flex-shrink: 0;
+  margin: var(--hos-space-2) var(--hos-space-2-5) var(--hos-space-2-5);
+  padding: var(--hos-space-2-5);
+  border: 1px solid var(--hos-border);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  box-shadow: none;
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0, 100% 0,
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+}
+
+.remoteSessionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5);
+  min-width: 0;
+}
+
+.remoteSessionsActions {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-1-5);
+}
+
+.remoteSessionsProfileSelect {
+  max-width: 158px;
+}
+
+.remoteSessionsProfileSelectControl {
+  width: 100%;
+}
+
+.remoteSessionsTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+  min-width: 0;
+}
+
+.remoteSessionsEyebrow {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.remoteSessionsTitle {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-soft);
+  font-size: var(--hos-text-body-sm);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionsRefresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  background: var(--color-surface-raised);
+  color: var(--hos-muted-strong);
+  cursor: pointer;
+}
+
+.remoteSessionsRefresh:hover:not(:disabled) {
+  border-color: var(--hos-border-strong);
+  background: var(--color-overlay);
+  color: var(--hos-heading);
+}
+
+.remoteSessionsRefresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.remoteNodeSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1); /* 归级:原 5px */
+  margin-top: var(--hos-space-2);
+  min-width: 0;
+}
+
+.remoteNodeOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  max-width: 100%;
+  min-height: 24px;
+  padding: var(--hos-space-0-5) var(--hos-space-2); /* 归级:原 3px */
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  background: var(--color-surface-raised);
+  color: var(--hos-muted-strong);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.remoteNodeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteNodeStatus {
+  flex: 0 0 auto;
+  font-size: var(--hos-text-micro);
+}
+
+.remoteNodeStatusOnline {
+  color: var(--color-success);
+}
+
+.remoteNodeStatusOffline {
+  color: var(--color-danger);
+}
+
+.remoteNodeStatusUnknown {
+  color: var(--hos-muted);
+}
+
+.remoteNodeOption:hover {
+  border-color: var(--hos-border-strong);
+  background: var(--color-overlay);
+  color: var(--hos-heading);
+}
+
+.remoteNodeOptionActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.remoteSessionsStats,
+.remoteSessionsSummaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1-5);
+  min-width: 0;
+}
+
+.remoteSessionsStats {
+  margin-top: var(--hos-space-2);
+}
+
+.remoteSessionsStats span,
+.remoteSessionsSummaryRow span {
+  max-width: 100%;
+  padding: var(--hos-space-0-5) var(--hos-space-1-5);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  background: var(--color-surface-muted);
+  color: var(--hos-muted-strong);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionsSummaryRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1); /* 归级:原 5px */
+  margin-top: var(--hos-space-1-5); /* 归级:原 7px */
+  min-width: 0;
+}
+
+.remoteSessionsNotice,
+.remoteSessionsWarning {
+  margin-top: var(--hos-space-2);
+  padding: var(--hos-space-1-5) var(--hos-space-2); /* 归级:原 7px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+
+.remoteSessionsNotice {
+  background: var(--color-surface-muted);
+  color: var(--hos-muted-strong);
+}
+
+.remoteSessionsWarning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.remoteSessionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+  margin-top: var(--hos-space-2);
+  min-width: 0;
+}
+
+.remoteSessionItem {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: var(--hos-space-1-5);
+  border: 0;
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  background: var(--color-surface-sunken);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.remoteSessionItem:hover {
+  background: var(--color-overlay);
+}
+
+.remoteSessionItemActive {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.remoteSessionProvider {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
+}
+
+.remoteSessionProvider img,
+.remoteSessionProvider [data-provider-icon-fallback] {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
+}
+
+.remoteSessionProviderRunning::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill);
+  background: var(--provider-accent);
+}
+
+.remoteSessionMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+  min-width: 0;
+}
+
+.remoteSessionTitle,
+.remoteSessionMeta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionTitle {
+  color: var(--hos-heading);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+}
+
+.remoteSessionMeta {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: 1.2;
+}
+
+.remoteSessionStatus,
+.remoteSessionTime {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: 1;
+}
+
+.remoteSessionStatus {
+  padding: var(--hos-space-0-5) var(--hos-space-1); /* 归级:原 3px、5px */
+  border-radius: 2px;
+  background: var(--color-surface-muted);
+  color: var(--hos-muted-strong);
+}
+
+.remoteSessionStatusRunning {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.remoteSessionTime {
+  color: var(--color-faint);
+}
+
+.remoteSessionStream {
+  margin-top: var(--hos-space-2-5);
+  padding-top: var(--hos-space-2); /* 归级:原 9px */
+  border-top: 1px solid var(--hos-border);
+  min-width: 0;
+}
+
+.remoteSessionStreamHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5);
+  min-width: 0;
+}
+
+.remoteSessionStreamTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+  min-width: 0;
+}
+
+.remoteSessionStreamEyebrow {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.remoteSessionStreamTitle {
+  color: var(--hos-heading);
+  font-size: var(--hos-text-caption);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteSessionStreamClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  padding: 0;
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  background: var(--color-surface-raised);
+  color: var(--hos-muted-strong);
+  cursor: pointer;
+}
+
+.remoteSessionStreamClose:hover {
+  border-color: var(--hos-border-strong);
+  background: var(--color-overlay);
+  color: var(--hos-heading);
+}
+
+.remoteSessionStreamEvents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-1-5);
+  max-height: 180px;
+  margin-top: var(--hos-space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+.remoteSessionStreamEvent {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
+  align-items: start;
+  min-width: 0;
+}
+
+.remoteSessionStreamRole {
+  padding-top: var(--hos-space-0-5);
+  font-family: var(--font-mono);
+  color: var(--color-faint);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.remoteSessionStreamEvent p {
+  margin: 0;
+  font-family: var(--font-prose);
+  color: var(--hos-text);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.remoteSessionStreamEventUser p {
+  color: var(--hos-heading);
+}
+
+.remoteSessionInputForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hos-space-1-5);
+  align-items: end;
+  margin-top: var(--hos-space-2);
+  min-width: 0;
+}
+
+.remoteSessionInput {
+  min-width: 0;
+}
+
+.remoteSessionInput :global(textarea) {
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+
+.projectItem {
+  position: relative;
+  min-height: 34px;
+  padding: var(--hos-space-1-5) var(--hos-space-8) var(--hos-space-1-5) var(--hos-space-3); /* 归级:原 7px、36px */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2);
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+  user-select: none;
+}
+
+.projectItem:hover {
+  background: var(--color-overlay);
+}
+
+.projectItemActive {
+  background: var(--color-surface-muted);
+}
+
+.projectItemActive .projectName {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.projectIcon {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--motion-base) var(--ease-standard);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.projectName {
+  /* HUD 项目标题：等宽 + 大写字距标签 */
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--hos-heading);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectName strong {
+  font-weight: var(--weight-semibold);
+}
+
+.projectProviders {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+  flex-shrink: 0;
+}
+
+.projectProviderBadge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--hos-radius-pill);
+  line-height: 0;
+}
+
+.projectProviderBadge img,
+.sessionProviderSlot img,
+.projectProviderBadge [data-provider-icon-fallback],
+.sessionProviderSlot [data-provider-icon-fallback] {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
+}
+
+.projectProviderRunning {
+  background: var(--provider-accent-soft);
+}
+
+.sessionList {
+  padding: var(--hos-space-0-5) var(--hos-space-2) var(--hos-space-1) var(--hos-space-6); /* 归级:原 26px */
+}
+
+.sessionItem {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 28px;
+  padding: var(--hos-space-1) var(--hos-space-8) var(--hos-space-1) var(--hos-space-2); /* 归级:原 34px */
+  cursor: pointer;
+  margin-bottom: var(--hos-space-0-5); /* 归级:原 1px */
+  border: 1px solid transparent;
+  border-radius: 2px; /* HUD：方角列表项 */
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.sessionItem:hover {
+  background: var(--color-overlay);
+  border-color: var(--color-border);
+}
+
+.sessionItemActive {
+  /* HUD 选中态：青色发丝框 + accent 弱底 + 左上角标（不用竖条，AGENTS.md） */
+  background: var(--color-accent-soft) !important;
+  border-color: color-mix(in srgb, var(--color-accent) 70%, transparent) !important;
+  box-shadow: var(--hud-glow-accent);
+}
+
+.sessionItemActive::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
+.sessionItemActive .sessionTitle {
+  color: var(--color-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.sessionItemRunning {
+  /* 运行态由 provider 图标角标的状态点表达，行本身不着色 */
+  background: transparent;
+}
+
+.sessionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.sessionProviderSlot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  line-height: 0;
+}
+
+.projectProviderRunning::after,
+.sessionProviderSlotRunning::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill);
+  /* 运行中 = HUD ok LED（与 .hud-led--ok.hud-led--live 同语义） */
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+  animation: sessionLedBreathe 1.6s ease-in-out infinite;
+}
+
+/* 运行中的 provider 图标保持轻量动效，用户能一眼区分活动会话；状态 LED
+   仍由时间列表达，图标自身不再叠加第二个圆点。 */
+.sessionProviderSlotRunning > img,
+.sessionProviderSlotRunning > [data-provider-icon-fallback] {
+  animation: sessionProviderPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes sessionProviderPulse {
+  0%, 100% { transform: scale(1); opacity: 0.88; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+@keyframes sessionLedBreathe {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projectProviderRunning::after,
+  .sessionProviderSlotRunning::after,
+  .sessionProviderSlotRunning > img,
+  .sessionProviderSlotRunning > [data-provider-icon-fallback] { animation: none; }
+}
+
+.sessionTitle {
+  display: flex;
+  align-items: center;
+  font-size: var(--hos-text-caption);
+  line-height: 1.25;
+  color: var(--hos-muted-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.sessionTime {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  padding-left: var(--hos-space-2);
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sessionItemRunning .sessionTime {
+  color: var(--color-success);
+}
+
+/* 归档按钮 */
+.archiveBtn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  color: var(--color-faint);
+  font-size: var(--hos-text-caption);
+  padding: 0;
+  flex-shrink: 0;
+  transform: translateY(-50%);
+}
+
+.archiveBtn:hover {
+  color: var(--color-danger);
+}
+
+.archiveBtn:disabled {
+  color: var(--color-disabled);
+  cursor: not-allowed;
+}
+
+.archiveBtn:disabled:hover {
+  color: var(--color-disabled);
+}
+
+.projectItem:hover .archiveBtn {
+  display: inline-flex;
+}
+
+.sessionItem:hover .archiveBtn {
+  display: inline-flex;
+}
+
+.sessionMore {
+  padding: var(--hos-space-1) var(--hos-space-3);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
+  color: var(--color-muted);
+  text-align: center;
+}
+
+/* 「展开更多 / 收起」：青色可交互文字，悬停辉光 */
+.sessionMoreAction {
+  cursor: pointer;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  transition: text-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.sessionMoreAction:hover {
+  text-shadow: var(--hud-text-glow);
+}
+
+.mobileConfirmModal :global(.ant-modal) {
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.mobileConfirmDescription {
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body);
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {.refreshBar {
+    padding: var(--hos-space-2) var(--hos-space-3) 0 0;
+    gap: var(--hos-space-2);
+    background: var(--color-surface);
+  }/* 单行头部：标题（左）+ 操作按钮（右）合成一行 iOS 式头部，替代「大标题独占一行 +
+   * 工具栏独占一行」的两行结构。粘顶 + 毛玻璃 + 顶部安全区，滚动时头部固定。 */.refreshBarMobile {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    justify-content: space-between;
+    gap: var(--hos-space-2);
+    padding: calc(env(safe-area-inset-top) + 10px) var(--hos-space-4) var(--hos-space-2-5);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }.refreshBarTitle {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-display);
+    /* 列表根视图大标题：对齐 .mobileNavTitleLarge 的 2xl / 600 */
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-heading);
+  }.refreshBtn {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    font-size: var(--hos-text-h3) !important;
+    border-radius: var(--hos-radius-xs) !important; /* 归级:原 9px */
+  }.refreshBtnMobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}/* 项目行:移动端卡片化(对齐 memory webui-mobile-shell「手机专属布局」铁律,
+     不再用 PC 贴边小行)。圆角卡 + 边框 + 横向 margin 形成卡片列,呼吸感更强。 */.projectItem {
+    margin: 0 var(--hos-space-3);
+    padding: var(--hos-space-3-5) var(--hos-space-12) var(--hos-space-3-5) var(--hos-space-4);
+    gap: var(--hos-space-2-5);
+    min-height: 52px;
+    border-radius: 2px;
+    background: var(--hud-panel-bg);
+    border: 1px solid var(--color-border);
+    /* 卡片之间留 8px 间距 */
+    margin-bottom: var(--hos-space-2);
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+    -webkit-tap-highlight-color: transparent;
+  }.projectItem:active {
+    background: var(--color-surface-muted);
+    border-color: var(--color-border-strong);
+  }.projectItemActive {
+    background: var(--color-accent-soft);
+    border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    box-shadow: var(--hud-glow-accent);
+  }/* 列表容器左右留白,卡片不贴屏幕边 */.sidebarContent {
+    padding: var(--hos-space-2-5) var(--hos-space-1) var(--hos-space-4);
+  }.projectName {
+    font-size: var(--hos-text-body); /* HUD 等宽大写标签：比正文略小以保持宽度 */
+    line-height: 1.4;
+  }.mobileConfirmModal :global(.ant-modal) {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px);
+    margin: 0 auto;
+  }.mobileConfirmModal :global(.ant-modal-content) {
+    border-radius: 0;
+    overflow: hidden;
+  }.mobileConfirmModal :global(.ant-modal-header) {
+    padding: var(--hos-space-4) var(--hos-space-4) var(--hos-space-2); /* 归级:原 18px */
+  }.mobileConfirmModal :global(.ant-modal-title) {
+    font-size: var(--hos-text-h2);
+    line-height: 1.4;
+  }.mobileConfirmModal :global(.ant-modal-body) {
+    padding: 0 var(--hos-space-4) var(--hos-space-2); /* 归级:原 18px */
+  }.mobileConfirmModal :global(.ant-modal-footer) {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--hos-space-2-5);
+    padding: var(--hos-space-3) var(--hos-space-4) 0; /* 归级:原 18px */
+  }.mobileConfirmModal :global(.ant-modal-footer .ant-btn) {
+    min-width: 72px;
+    height: 36px;
+    border-radius: var(--hos-radius-xs); /* 归级:原 10px */
+    font-size: var(--hos-text-body);
+  }/* 归档按钮：原本是实心灰方块（视觉重、像占位）。移动端无 hover，改为轻量描边、
+   * 透明底、静默色，只在需要时才显眼——让列表主体（项目名 + provider 图标）更突出。 */.archiveBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    right: 8px;
+    background-color: transparent;
+    color: var(--color-muted);
+    border-radius: var(--hos-radius-xs);
+    opacity: 0.55;
+  }.archiveBtn:active {
+    background-color: var(--color-surface-sunken);
+    opacity: 1;
+  }/* 会话子列表:缩进改用 margin 居中,子项也是轻量卡片(浅底+圆角),与项目卡视觉分层。 */.sessionList {
+    padding: var(--hos-space-1) var(--hos-space-3) var(--hos-space-1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--hos-space-1-5);
+  }.sessionItem {
+    padding: var(--hos-space-3) var(--hos-space-10) var(--hos-space-3) var(--hos-space-3-5); /* 归级:原 44px */
+    margin-bottom: 0;
+    min-height: 46px;
+    border-radius: 2px;
+    background: var(--color-surface-muted);
+    border: 1px solid transparent;
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+    -webkit-tap-highlight-color: transparent;
+  }.sessionItem:active {
+    background: var(--color-surface-sunken);
+  }.sessionTitle {
+    font-size: var(--hos-text-h3);
+    line-height: 1.4;
+  }.sessionTime {
+    font-size: var(--hos-text-caption);
+    color: var(--hos-muted);
+    margin-right: var(--hos-space-1);
+  }
+}
+
+/* 左侧会话项：HUD 方角行，悬停发丝框、选中青框 + accent 弱底 + 角标 */
+.sessionItem {
+  border-radius: 2px !important;
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard) !important;
+}
+
+/* =============================================================================
+ * 侧边栏与工作区卡片（不透明表面 + 发丝线）
+ * ========================================================================== */
+.projectListContainer {
+  background: var(--color-surface) !important;
+  border-right: 1px solid var(--color-border) !important;
+}
+
+.projectCard {
+  border-radius: 2px !important;
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: none !important;
+  transition: border-color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard) !important;
+}
+
+.projectCard:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)) !important;
+}
+
+/* =============================================================================
+ * 侧边栏统一顶栏 (Unified Sider Header)
+ * ========================================================================== */
+.sidebarUnifiedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2);
+  padding: var(--hos-space-2-5) var(--hos-space-3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.sidebarHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  /* 操作按钮不参与收缩：窄侧栏里被挤掉的只能是模式切换的留白，不能是按钮本身。 */
+  flex-shrink: 0;
+}
+
+.sidebarActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 设计规范:图标胶囊按钮 32px */
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body-sm);
+  cursor: pointer;
+  box-shadow: none;
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.sidebarActionBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sidebarActionBtn:not(:disabled):hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.refreshBtn,
+.remoteSessionsRefresh,
+.remoteNodeOption,
+.remoteSessionItem,
+.remoteSessionStreamClose,
+.archiveBtn {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+/* 远程工作区标记：项目文件在 SSH 开发机上（Work 渲染与本机一致，执行落到远端） */
+.projectRemoteBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--hos-space-1-5);
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--hos-accent, #3b82f6);
+  vertical-align: middle;
+}

@@ -1,0 +1,80 @@
+import type { Account, ManagedAppItem } from '@/types';
+import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
+
+const HOOK_REASON_LABELS: Record<string, string> = {
+  disabled: '即时刷新已禁用',
+  missing_events: '即时刷新配置不完整'
+};
+
+export function hasExistingAppConfig(app: ManagedAppItem) {
+  return Boolean(app.configExists && app.configName);
+}
+
+export function getAppHookStatusDetail(app: ManagedAppItem) {
+  if (!app.hookSupported || app.hookInstalled) return '';
+  const reasonKey = String(app.hookReason || '').trim();
+  const reason = HOOK_REASON_LABELS[reasonKey]
+    || (reasonKey ? `即时刷新状态：${reasonKey}` : '即时刷新尚未通过验证');
+  const missingEvents = (app.hookMissingEvents || [])
+    .map((event) => String(event || '').trim())
+    .filter(Boolean);
+  return [
+    reason,
+    missingEvents.length > 0 ? `缺少事件：${missingEvents.join('、')}` : ''
+  ].filter(Boolean).join('；');
+}
+
+/** 卡片与移动端共用诊断文案；常规版本状态留给原有读数和更新按钮。 */
+export function getManagedAppWarning(app: ManagedAppItem, upgrade?: ManagedAppUpgradeView | null) {
+  const upgradeWarning = Boolean(upgrade && (upgrade.attention || upgrade.statusTone === 'error'
+    || (app.installed && upgrade.statusTone === 'warning' && !upgrade.hasUpdate)));
+  return [
+    app.installed ? getAppHookStatusDetail(app) : '',
+    upgradeWarning ? [upgrade?.statusLabel, upgrade?.reasonText].filter(Boolean).join('：') : '',
+    upgradeWarning && upgrade?.blockedVersions.length ? `已拉黑版本：${upgrade.blockedVersions.join('、')}` : ''
+  ].filter(Boolean).join('\n');
+}
+
+/** 应用卡上的「当前版本」读数：未安装 / 未探测到 / 实测版本。 */
+export function getAppCurrentVersion(app: ManagedAppItem) {
+  return app.installed
+    ? (app.version && app.version !== '-' ? app.version : '未探测到')
+    : '未安装';
+}
+
+/**
+ * 「高级设置」入口的说明文字：它已经是 provider 配置的唯一入口（独立的
+ * Provider 配置面板已并入应用管理），所以入口本身必须说清里面有什么，
+ * 否则用户只会看到一支没有含义的铅笔。
+ */
+export function getAppAdvancedEntryLabel(
+  app: Pick<ManagedAppItem, 'type'>,
+  configFileCount: number
+) {
+  const fileCount = Math.max(0, Number(configFileCount) || 0);
+  const hasPermission = app.type === 'cli';
+  const parts = [
+    hasPermission ? '启动权限' : '',
+    fileCount > 0 ? `配置文件 ${fileCount} 个` : ''
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : '高级设置';
+}
+
+export function managedAppAccountLabel(account: Account) {
+  return String(account.displayName || account.email || account.accountRef || '未命名账号').trim();
+}
+
+export function managedAppAccountIsRunning(account: Account, runningPids: Record<string, number[]>) {
+  return Array.isArray(runningPids[account.accountRef])
+    && runningPids[account.accountRef].length > 0;
+}
+
+/** 同 Provider 账号：默认账号在前，其余按显示名排序。 */
+export function sortManagedAppAccounts(accounts: Account[], provider: string) {
+  return accounts
+    .filter((account) => account.provider === provider)
+    .sort((left, right) => {
+      if (Boolean(left.isDefault) !== Boolean(right.isDefault)) return left.isDefault ? -1 : 1;
+      return managedAppAccountLabel(left).localeCompare(managedAppAccountLabel(right), 'zh-CN');
+    });
+}

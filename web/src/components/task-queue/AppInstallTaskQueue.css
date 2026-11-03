@@ -1,0 +1,665 @@
+.webui-task-queue {
+  position: fixed;
+  right: clamp(16px, 2vw, 28px);
+  bottom: clamp(16px, 2vw, 28px);
+  z-index: 1200;
+  width: 52px;
+  height: 52px;
+  pointer-events: none;
+  transition: width var(--motion-base) var(--ease-standard), height var(--motion-base) var(--ease-standard);
+}
+
+.webui-task-queue-trigger,
+.webui-task-queue-panel {
+  pointer-events: auto;
+}
+
+.webui-task-queue-trigger {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hos-space-2);
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  overflow: hidden;
+  /* 浮动入口是主操作：墨色底（DESIGN.md §2.2），浮层阴影 elevation-3，不做光环脉冲 */
+  border: 1px solid var(--color-ink);
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-ink);
+  color: var(--color-on-ink);
+  box-shadow: var(--elevation-3);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    width var(--motion-base) var(--ease-standard),
+    height var(--motion-base) var(--ease-standard),
+    inset var(--motion-base) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.webui-task-queue-trigger:hover {
+  border-color: var(--color-ink-hover);
+  background: var(--color-ink-hover);
+}
+
+.webui-task-queue-trigger:focus-visible,
+.webui-task-queue-collapse-hint:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.webui-task-queue-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--hos-text-h2);
+}
+
+.webui-task-queue-count {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--hos-radius-pill);
+  background: color-mix(in srgb, var(--color-on-ink) 22%, transparent);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.webui-task-queue-trigger-label {
+  display: none;
+  white-space: nowrap;
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.webui-task-queue-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-3);
+  padding: var(--hos-space-4);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xl);
+  background: var(--color-surface-raised);
+  box-shadow: var(--elevation-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+
+.webui-task-queue.is-expanded {
+  width: min(440px, calc(100vw - 32px));
+  height: min(520px, calc(100vh - 32px));
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger {
+  inset: 12px 12px auto auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: var(--hos-radius-xs);
+  background: transparent;
+  color: var(--color-muted);
+  box-shadow: none;
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger:hover {
+  border-color: transparent;
+  background: var(--color-overlay);
+  color: var(--color-heading);
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger-icon {
+  color: inherit;
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-count,
+.webui-task-queue.is-expanded .webui-task-queue-trigger-label {
+  display: none;
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-panel {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.webui-task-queue-header {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--hos-space-1-5);
+  padding-right: var(--hos-space-10);
+}
+
+.webui-task-queue-header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+}
+
+.webui-task-queue-kicker {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+}
+
+.webui-task-queue-header strong {
+  color: var(--color-heading);
+  font-size: var(--hos-text-h3);
+}
+
+.webui-task-queue-header > span {
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+}
+
+.webui-task-queue-stream-status {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: var(--hos-space-1-5);
+  overflow-wrap: anywhere;
+}
+
+.webui-task-queue-stream-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-muted);
+}
+
+.webui-task-queue-stream-status.is-connected i {
+  background: var(--color-success);
+}
+
+.webui-task-queue-stream-status.is-reconnecting i,
+.webui-task-queue-stream-status.is-connecting i {
+  background: var(--color-warning);
+  animation: webui-task-queue-pulse-dot 1.6s ease-in-out infinite;
+}
+
+.webui-task-queue-stream-status.is-offline i {
+  background: var(--color-danger);
+}
+
+.webui-task-queue-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--hos-space-2);
+  overflow: auto;
+  padding-right: var(--hos-space-0-5);
+}
+
+/* 任务项：中性描边卡片；成功 / 失败只着色状态文字，不做整块彩底 */
+.webui-task-queue-item {
+  min-width: 0;
+  padding: var(--hos-space-2-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+}
+
+.webui-task-queue-item.is-success .webui-task-queue-item-heading > span {
+  color: var(--color-success);
+}
+
+.webui-task-queue-item.is-error .webui-task-queue-item-heading > span {
+  color: var(--color-danger);
+}
+
+.webui-task-queue-item-heading,
+.webui-task-queue-item-detail {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--hos-space-2);
+}
+
+.webui-task-queue-item-heading strong,
+.webui-task-queue-item-detail span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.webui-task-queue-item-heading strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.webui-task-queue-item-heading > span {
+  white-space: nowrap;
+}
+
+.webui-task-queue-item-detail {
+  color: var(--color-muted);
+  font-size: var(--hos-text-micro);
+}
+
+.webui-task-queue-item-detail span:last-child {
+  white-space: nowrap;
+}
+
+.webui-task-queue-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1-5);
+  margin-top: var(--hos-space-1);
+  color: var(--color-faint);
+  font-size: var(--hos-text-micro);
+}
+
+.webui-task-queue-item-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.webui-task-queue-item-meta span + span::before {
+  margin-right: var(--hos-space-1-5);
+  color: var(--color-border-strong);
+  content: '·';
+}
+
+.webui-task-queue-item .ant-progress {
+  width: 100%;
+  margin: var(--hos-space-2) 0 var(--hos-space-0-5);
+}
+
+.webui-task-queue-item .ant-progress-outer {
+  min-width: 0;
+}
+
+.webui-task-queue-item .ant-progress-text {
+  font-size: var(--hos-text-caption);
+}
+
+.webui-task-queue-failure {
+  margin-top: var(--hos-space-2);
+  color: var(--color-text);
+  font-size: var(--hos-text-caption);
+}
+
+.webui-task-queue-failure summary {
+  width: fit-content;
+  color: var(--color-danger);
+  cursor: pointer;
+}
+
+.webui-task-queue-failure ul {
+  display: grid;
+  gap: var(--hos-space-1);
+  margin: var(--hos-space-2) 0 0;
+  padding-left: var(--hos-space-5);
+}
+
+.webui-task-queue-failure li {
+  overflow-wrap: anywhere;
+}
+
+.webui-task-queue-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1);
+  margin-top: var(--hos-space-2);
+}
+
+.webui-task-queue-item-actions .ant-btn {
+  font-size: var(--hos-text-caption);
+}
+
+.webui-task-queue-collapse-hint {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--hos-space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: var(--hos-text-micro);
+  cursor: pointer;
+}
+
+/* 仅「连接中」状态点缓慢呼吸（DESIGN.md §5 允许的唯一循环动画） */
+@keyframes webui-task-queue-pulse-dot {
+  50% { opacity: .35; }
+}
+
+@media (max-width: 640px) {
+  .webui-task-queue {
+    right: 12px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .webui-task-queue.is-expanded {
+    width: calc(100vw - 24px);
+    height: min(520px, calc(100vh - 92px));
+  }
+
+  .webui-task-queue-item-detail {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--hos-space-0-5);
+  }
+
+  .webui-task-queue-item-detail span:last-child {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .webui-task-queue,
+  .webui-task-queue-trigger,
+  .webui-task-queue-panel {
+    transition: none;
+  }
+
+  .webui-task-queue-stream-status.is-reconnecting i,
+  .webui-task-queue-stream-status.is-connecting i {
+    animation: none;
+  }
+}
+
+/* ===========================================================================
+ * Cyber HUD：浮动入口 = 青色 HUD 按钮（半透明青底 + 青框 + 辉光）；展开面板 = 青色发丝框 +
+ * 角标；任务项方角，状态文字按真实状态发光；进度条为 3px 细轨。
+ * ========================================================================= */
+.webui-task-queue-trigger {
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-raised));
+  color: var(--color-accent);
+  box-shadow: var(--elevation-3), var(--hud-glow-accent);
+}
+
+.webui-task-queue-trigger:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.webui-task-queue-trigger-icon {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, currentColor 60%, transparent));
+}
+
+.webui-task-queue-count {
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.webui-task-queue-trigger-label {
+  letter-spacing: var(--tracking-wide);
+}
+
+.webui-task-queue-panel {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: 0;
+  box-shadow: var(--elevation-3), var(--hud-glow-accent);
+}
+
+.webui-task-queue-panel::before,
+.webui-task-queue-panel::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+}
+
+.webui-task-queue-panel::before {
+  top: 0;
+  left: 0;
+  border-top: 2px solid var(--hud-tick-color);
+  border-inline-start: 2px solid var(--hud-tick-color);
+}
+
+.webui-task-queue-panel::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid var(--hud-tick-color);
+  border-bottom: 2px solid var(--hud-tick-color);
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger {
+  border-radius: 0;
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger:hover {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-kicker {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-header strong {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.webui-task-queue-stream-status {
+  font-family: var(--font-mono);
+}
+
+.webui-task-queue-stream-status.is-connected i {
+  box-shadow: 0 0 6px var(--color-success);
+}
+
+.webui-task-queue-stream-status.is-reconnecting i,
+.webui-task-queue-stream-status.is-connecting i {
+  box-shadow: 0 0 6px var(--color-warning);
+}
+
+.webui-task-queue-stream-status.is-offline i {
+  box-shadow: 0 0 6px var(--color-danger);
+}
+
+.webui-task-queue-item {
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+
+.webui-task-queue-item:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
+.webui-task-queue-item.is-success .webui-task-queue-item-heading > span {
+  text-shadow: var(--hud-text-glow-success);
+}
+
+.webui-task-queue-item.is-error .webui-task-queue-item-heading > span {
+  text-shadow: var(--hud-text-glow-danger);
+}
+
+.webui-task-queue-item-meta,
+.webui-task-queue-item-detail {
+  font-family: var(--font-mono);
+}
+
+.webui-task-queue-item .ant-progress-inner,
+.webui-task-queue-item .ant-progress-bg {
+  border-radius: 0 !important;
+}
+
+.webui-task-queue-item .ant-progress-bg {
+  height: 3px !important;
+}
+
+.webui-task-queue-item .ant-progress-text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* 展开面板 / 任务项：HUD 切角（面板左上 + 右下，任务项小切角） */
+.webui-task-queue-panel {
+  --hud-cut: var(--hud-chamfer);
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
+    var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut))
+  );
+}
+
+.webui-task-queue-item {
+  --hud-cut: var(--hud-chamfer-sm);
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+}
+
+/* 状态读数：等宽大写遥测字；进行中 = 青色（成功 / 失败的着色见上方） */
+.webui-task-queue-item-heading > span {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.webui-task-queue-item-heading strong {
+  font-family: var(--font-mono);
+}
+
+.webui-task-queue-item .ant-progress-inner {
+  height: 3px;
+  background: var(--color-surface-sunken) !important;
+}
+
+.webui-task-queue-failure summary {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-danger);
+}
+
+.webui-task-queue-failure ul {
+  padding: var(--hos-space-2) var(--hos-space-2) var(--hos-space-2) var(--hos-space-5);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+}
+
+.webui-task-queue-collapse-hint {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.webui-task-queue-collapse-hint:hover {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-item.is-neutral .webui-task-queue-item-heading > span {
+  color: var(--color-faint);
+}
+
+/* 队列分 tab（安装/卸载 ↔ 账号活动）：紧凑行内切换，不用大块提示容器。 */
+.webui-task-queue-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1);
+  margin: var(--hos-space-1-5) 0;
+  padding: 2px;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--hos-radius-pill, 999px);
+  background: var(--color-surface-sunken, transparent);
+}
+
+.webui-task-queue-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+  padding: 3px var(--hos-space-2-5);
+  border: 0;
+  border-radius: var(--hos-radius-pill, 999px);
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.webui-task-queue-tab:hover {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-tab.is-active {
+  background: var(--color-accent-soft, var(--color-surface));
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.webui-task-queue-tab-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* 队列分页：任务多时只渲染当前页，翻页器只在多于一页时出现。 */
+.webui-task-queue-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2);
+  margin-top: var(--hos-space-1);
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.webui-task-queue-pager button {
+  padding: 2px var(--hos-space-2);
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--hos-radius-sm, 6px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.webui-task-queue-pager button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.webui-task-queue-collapse-hint {
+  transition:
+    color var(--motion-fast) var(--ease-standard);
+}

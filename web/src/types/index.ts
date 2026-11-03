@@ -1,0 +1,4145 @@
+import type { ProviderId } from '@/providers/catalog';
+import type { NetworkLayerStatus } from './proxy-pool';
+export * from './proxy-pool';
+
+// Provider 类型由 Go 核心生成，新增 Provider 不再手工修改 TypeScript 联合类型。
+export type Provider = ProviderId;
+
+export interface CodexUsageEntry {
+  bucket: string;
+  windowMinutes: number;
+  window: string;
+  // 服务端额度视图模型给出的展示标签（「5h」/「Credits」/「glm-5.3 1days」…）：
+  // 展示层不再按 provider 自己拼标签。
+  label?: string;
+  remainingPct: number | null;
+  resetIn: string;
+  resetAtMs: number;
+  // kimi 桌面端套餐统计并入的旁路条目标记（'gift' = 赠送额度，不计入账号级 min 剩余）。
+  category?: string;
+  // zcode_plan_balance 携带的绝对额度（unitType 为 'token' 时即 token 数）；
+  // 其余 provider 的 entries 不带这些字段。
+  totalUnits?: number | null;
+  usedUnits?: number | null;
+  remainingUnits?: number | null;
+  unitType?: string;
+}
+
+export interface GeminiUsageModel {
+  model: string;
+  // 服务端额度视图模型给出的展示标签（与 model 同名，统一展示层取值口径）。
+  label?: string;
+  remainingPct: number | null;
+  resetIn: string;
+  resetAtMs: number;
+  displayName?: string;
+  supportsThinking?: boolean;
+  supportsImages?: boolean;
+  maxTokens?: number | null;
+  maxOutputTokens?: number | null;
+}
+
+export interface AccountTokenUsageModel {
+  model: string;
+  day: number;
+  week: number;
+  month: number;
+  total: number;
+  dayCostUsd: number | null;
+  weekCostUsd: number | null;
+  monthCostUsd: number | null;
+  totalCostUsd: number | null;
+}
+
+export interface AccountTokenUsage {
+  day: number;
+  week: number;
+  month: number;
+  total: number;
+  models: AccountTokenUsageModel[];
+}
+
+export interface AccountModelSummary {
+  storedCount: number;
+  effectiveCount: number;
+  updatedAt: number;
+}
+
+export type AccountRegion = 'china' | 'overseas';
+
+/** 额度条目形态：由服务端按 provider 描述符下发，展示层据此渲染，不维护 kind 名单。 */
+export type QuotaEntryShape = 'window' | 'bucket' | 'models' | 'account';
+
+export interface QuotaSnapshotProvenance {
+  schemaVersion?: number;
+  /** 来源 id（探针/额度接口），例如 codex_app_server、qoder-account-api。 */
+  id?: string;
+  kind?: string;
+  authority?: number | null;
+  confidence?: number | null;
+  url?: string;
+  fetchedAt?: string;
+  expiresAt?: string;
+  capturedAt?: number | null;
+  stale?: boolean;
+}
+
+export type AccountUsageSnapshot =
+  {
+    /** 服务端额度视图模型给出的条目形态；老缓存记录可能缺省，展示层按结构兜底。 */
+    entryShape?: QuotaEntryShape;
+    /** 来源/年龄/stale（`quota.probe` 归一后写入；老缓存可能缺省）。 */
+    provenance?: QuotaSnapshotProvenance;
+  } & (
+  | {
+      kind: 'codex_oauth_status';
+      capturedAt: number;
+      account?: {
+        planType: string;
+        email: string;
+        upstreamAccountId: string;
+        organizationId: string;
+        // ChatGPT 订阅到期（OAuth id_token 声明快照）及其上次校验时间；0 表示未知。
+        subscriptionActiveUntilMs?: number;
+        subscriptionLastCheckedMs?: number;
+        // 额度接口实时确认 planType 的时间；0 表示本快照的套餐不是实时确认的。
+        planConfirmedAtMs?: number;
+      } | null;
+      entries: CodexUsageEntry[];
+      resetCreditsAvailableCount?: number;
+    }
+  | {
+      kind: 'claude_oauth_usage';
+      capturedAt: number;
+      account?: {
+        email: string;
+        fullName: string;
+        planType: string;
+      } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      kind: 'kimi_oauth_usage';
+      capturedAt: number;
+      account?: {
+        displayName: string;
+        userId: string;
+        phone: string;
+        planType: string;
+        planName?: string; // 订阅页品牌档：Andante/Moderato/Allegretto/Allegro
+        // 桌面端托管 session 读取的订阅套餐（名称/续费状态/有效期/配额重置日）
+        planSubscription?: {
+          name: string;
+          status: string;
+          validUntilMs: number;
+          resetAtMs: number;
+        } | null;
+      } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      kind: 'grok_credit_usage';
+      capturedAt: number;
+      account?: { email: string; planType: string; planName: string } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      kind: 'kiro_credit_usage';
+      capturedAt: number;
+      account?: { email: string; planType: string; planName: string } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      // 后端 lib/providers/defs/cline.js（quota.kind）+ lib/server/account-usage-view.js 的字段表。
+      kind: 'cline_pass_usage';
+      capturedAt: number;
+      account?: { userId: string; planName: string; periodStartMs: number | null; periodEndMs: number | null } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      kind: 'zcode_plan_balance';
+      capturedAt: number;
+      account?: {
+        planType: string; // 首个套餐名（兼容旧消费方；多套餐请用 planNames）
+        // 多套餐时**逐个**给出套餐名。展示层据此渲染多个标签，
+        // 不解析 `A + B` 拼接串（拼接串宽度不稳定且在窄列会被截断）。
+        planNames?: string[];
+        planIds?: string[]; // 推理端点按 plan_id 分叉（start-plan vs coding-plan）
+      } | null;
+      entries: CodexUsageEntry[]; // bucket = 模型 ID（billing/balance 的 capabilities model:*）
+      // 套餐分组：同账号可能**同时**有多个套餐（「领臭鸡蛋」是叠加一个新套餐，
+      // 各有独立额度池）。每个组的 entries 与顶层 entries 同构，只是限定在该套餐内。
+      // 界面据此按套餐分开渲染；缺失时退回扁平 entries（旧快照/其它 provider）。
+      planGroups?: Array<{
+        planGroupId: string;
+        planId: string;
+        name: string;
+        status: string;
+        endsAtMs: number;
+        // 套餐生效时间（entitlements[].effective_at，ms）。0 = 上游未给。
+        // 刚领到但还没生效的套餐 balances 为空，界面靠它说明「什么时候可用」。
+        effectiveAtMs?: number;
+        priority: number;
+        entries: CodexUsageEntry[];
+      }>;
+      // 快照里所有套餐都还没生效时的最早生效时间（ms，0 = 未知）。
+      // 由 zcode 额度探针在「plans 非空、balances 为空」时写入。
+      pendingEffectiveAtMs?: number;
+    }
+  | {
+      kind: 'gemini_oauth_stats';
+      capturedAt: number;
+      models: GeminiUsageModel[];
+    }
+  | {
+      kind: 'agy_code_assist_quota';
+      capturedAt: number;
+      account?: {
+        planType: string;
+        email: string;
+        subscriptionTier: string;
+        project: string;
+      } | null;
+      models: GeminiUsageModel[];
+      modelForwardingRules?: Record<string, string>;
+    }
+  | {
+      // CodeBuddy 家族四支（codebuddy / codebuddycn / workbuddy / workbuddycn）共用同一个
+      // kind：同地区 work/code 是同一个账号、同一份积分。
+      // entries[0] 是账户级聚合（无 category），其余是 category='detail' 的每包明细
+      // （activity / proTrialMon / freeMon …），单位见 unitType（实测为 credits）。
+      kind: 'codebuddy_credit_balance';
+      capturedAt: number;
+      // 仅当订阅码能映射到付费档位时才有（体验/试用包刻意不标档位）。
+      account?: {
+        planType: string;
+      } | null;
+      entries: CodexUsageEntry[];
+    }
+  );
+
+/**
+ * 账号活动动作（签到 / 领取试用套餐）。
+ * 由服务端从 provider 描述符的 `activity` 能力下发，前端只渲染，不判断 provider。
+ */
+export interface AccountActivityAction {
+  id: string;
+  label: string;
+  description?: string;
+  /** 是否支持只读探测（先看清有什么可领，再决定领什么）。 */
+  supportsProbe?: boolean;
+  /** 参数 schema；账号快照不下发，只有计划任务目录带。 */
+  params?: ActivityParamField[];
+}
+
+/** 活动参数的一个候选值（账号 / 类型 / 自定义枚举）。 */
+export interface ActivityParamOption {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+  hint?: string;
+}
+
+/**
+ * 活动参数的**抽象声明**：调度器只认 type，不认识 key 的语义。
+ * `account-refs` 的候选值来自服务端注入的账号端口，`enum` 来自声明或探测。
+ */
+export interface ActivityParamField {
+  key: string;
+  label: string;
+  type: 'account-refs' | 'enum' | 'string' | 'boolean' | string;
+  description?: string;
+  required?: boolean;
+  emptyMeans?: 'all' | 'any';
+  maxItems?: number;
+  options?: ActivityParamOption[];
+  optionsFrom?: 'kinds';
+  /** 候选值来源（params 接口回填）：declared / accounts / freeform / unavailable。 */
+  source?: string;
+  error?: string;
+}
+
+/** 只读探测结果：先发现「是什么类型的鸡蛋」。 */
+export interface ActivityProbeKind {
+  id: string;
+  label: string;
+  description?: string;
+  claimable?: boolean;
+  planIds?: string[];
+}
+
+export interface ActivityProbeResult {
+  ok: boolean;
+  provider?: string;
+  actionId?: string;
+  error?: string;
+  accounts?: Array<{
+    accountRef: string;
+    status: string;
+    error?: string;
+    discovery?: string;
+    plans?: AccountActivityPlan[];
+  }>;
+  plans?: Array<{
+    planId: string;
+    name?: string;
+    planKind?: string;
+    accounts: string[];
+  }>;
+  kinds?: ActivityProbeKind[];
+  summary?: AccountActivitySummary;
+  failures?: AccountActivityFailures;
+  truncated?: number;
+}
+
+export interface AccountActivityPlan {
+  planId?: string;
+  name?: string;
+  description?: string;
+  priority?: number;
+  status?: string;
+  startsAt?: string;
+  endsAt?: string;
+  /** 由 provider 描述符声明的分类规则派生（如 weekend_build / start_plan）。 */
+  planKind?: string;
+}
+
+/** 一次领取的执行结果（服务端 / CLI 同一形状）。 */
+export interface AccountActivityResult {
+  provider: string;
+  accountRef: string;
+  actionId?: string;
+  action?: string;
+  status: string;
+  error?: string;
+  /** 服务端归一后的错误码（去掉 `:401` 这类细节），用于分组与统计。 */
+  errorCode?: string;
+  message?: string;
+  code?: number | null;
+  auth?: boolean;
+  credits?: number;
+  claimed?: Array<Record<string, unknown>>;
+  plans?: AccountActivityPlan[];
+  plan?: AccountActivityPlan | null;
+  /** 前端补的展示名（服务端结果只带 accountRef）。 */
+  displayName?: string;
+}
+
+/** 批量领取的汇总计数。 */
+export interface AccountActivitySummary {
+  accounts: number;
+  claimed: number;
+  alreadyClaimed: number;
+  nothingClaimable: number;
+  notApplicable: number;
+  failed: number;
+  /** 正常结束的账号数（领到 / 已领过 / 暂无可领 / 不适用 / 跳过）。 */
+  succeeded?: number;
+  skipped?: number;
+  byStatus?: Record<string, number>;
+  failures?: AccountActivityFailures;
+  /** 按 plan 聚合：同一 plan 被几个账号领到 / 已领过。 */
+  claims?: Array<{
+    planId: string;
+    name?: string;
+    planKind?: string;
+    claimed: number;
+    alreadyClaimed: number;
+  }>;
+  /** 失败部分的人话摘要（服务端生成，前端不拼）。 */
+  errorSummary?: string;
+}
+
+/** 失败归因：按错误码分组 + 逐账号明细。 */
+export interface AccountActivityFailures {
+  total: number;
+  byCode: Array<{ code: string; count: number; accountRefs: string[] }>;
+  byAccount: Array<{ provider: string; accountRef: string; code: string; message: string }>;
+}
+
+/** 异步领取任务的进度（服务端后台串行执行）。 */
+export interface AccountActivityJobProgress {
+  total: number;
+  completed: number;
+  percent: number;
+  currentProvider?: string;
+  currentAccountRef?: string;
+}
+
+export type AccountActivityJobStatus = 'queued' | 'running' | 'succeeded' | 'partial' | 'failed';
+
+/**
+ * 一次批量领取任务。POST /activity/run 立即返回 job，页面随后轮询
+ * /activity/jobs/:id 直到 status 进入终态（succeeded / partial / failed）。
+ */
+export interface AccountActivityJob {
+  id: string;
+  providers: string[];
+  actionId: string;
+  actionLabel: string;
+  status: AccountActivityJobStatus;
+  phase: string;
+  progress: AccountActivityJobProgress;
+  results: AccountActivityResult[];
+  summary: AccountActivitySummary | null;
+  error?: string;
+  /** `all_accounts_failed` 旁边的结构化归因。 */
+  errorCode?: string;
+  errorSummary?: string;
+  failures?: AccountActivityFailures | null;
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+}
+
+export interface Account {
+  provider: Provider;
+  accountRef: string;
+  gateway?: false;
+  status: 'up' | 'down';
+  displayName: string;
+  configured: boolean;
+  apiKeyMode: boolean;
+  authMode?: string;
+  authType?: string;
+  credentialType?: string;
+  authPending?: boolean;
+  authPendingStale?: boolean;
+  authPendingAgeMs?: number;
+  isDefault?: boolean;
+  isMobile?: boolean;
+  remainingPct: number | null;
+  updatedAt: number;
+  lastUsedAt?: number | null;
+  planType: string; // free/pro/ultra/plus/team/business/api-key/oauth
+  planName?: string; // 订阅品牌档（如 kimi 的 Allegretto），展示优先于 planType
+  region?: AccountRegion; // 当前账号客户端实际生效区域（kimi 的网络区域：china/overseas）
+  /**
+   * zcode 的**服务区域**：`zai`（国际站）/ `bigmodel`（国内站）。
+   * 与上面的 region 语义不同（那是网络区域），因此单独一个字段。
+   * 用途：同一用户可能在两个区域都有账号、邮箱相同或被上游打码，
+   * 账号列表靠它区分（见 lib/account/zcode-account-region.js）。
+   */
+  zcodeRegion?: string;
+  email: string;
+  baseUrl?: string;
+  /**
+   * 服务端判定：该账号是否是「第三方/自建上游（new-api / one-api / 自建反代）的 API Key 账号」。
+   * 只有它为 true 才允许编辑调度规则（账号级上游错误映射）——OAuth 登录态账号与指向厂商
+   * 官方地址的账号返回标准错误码，没有可对齐的东西。判定唯一来源：
+   * lib/account/official-upstream-endpoint.js。
+   */
+  customUpstream?: boolean;
+  /**
+   * 服务端判定：该 provider 是否支持「窗口激活」（5h 滚动限额探测）。
+   * 判定唯一来源是探测规格注册表（lib/server/window-activation/probe-specs.js），
+   * 客户端只消费结论，不在前端维护 provider 清单。
+   */
+  windowActivationSupported?: boolean;
+  /**
+   * 账号是否进入「全局别名」的自动选号池。默认 true；false 时别名请求不会自动把这个账号
+   * 拉进候选（显式钉选/手动选择仍可用）。服务端运行池里的同一字段决定路由。
+   */
+  aliasPoolParticipates?: boolean;
+  /**
+   * 可执行的账号活动（签到 / 领取试用套餐）。
+   * 由服务端从 provider 描述符的 `activity` 能力下发：空 / 缺省 = 该 provider 没有可领活动，
+   * 前端据此决定是否显示入口（不维护 provider 清单）。
+   */
+  activityActions?: AccountActivityAction[];
+  /**
+   * 服务端判定：该 provider 能否由**网关**服务（HTTP relay，不依赖本机 CLI）。
+   * 判定唯一来源是 provider 描述符的 relay 能力（transport=http 且 clientDependent=false），
+   * 客户端只消费结论 —— 为 true 时给出「aih-server」目标，chat 模式即可走网关（无 CLI 冷启动）。
+   */
+  gatewayTargetSupported?: boolean;
+  quotaStatus?: string;
+  upstreamErrorRules?: UpstreamErrorRule[];
+  upstreamErrorGroupIds?: string[];
+  quotaReason?: string;
+  schedulableStatus?: string;
+  schedulableReason?: string;
+  runtimeStatus?: string;
+  runtimeUntil?: number;
+  runtimeReason?: string;
+  /** 只影响单个模型的运行态（Go 按账号+模型冷却 / 阻塞），账号整体仍可调度。 */
+  runtimeModels?: AccountRuntimeModel[];
+  usageSnapshot?: AccountUsageSnapshot | null;
+  modelSummary?: AccountModelSummary;
+  tokenUsage?: AccountTokenUsage | null;
+}
+
+export type UpstreamErrorKind = 'billing_blocked' | 'quota_exhausted' | 'auth_invalid' | 'permission_denied' | 'rate_limited' | 'service_unavailable';
+
+export interface UpstreamErrorRule {
+  name: string;
+  enabled: boolean;
+  statuses: number[];
+  matchers: Array<
+    | { field: 'code' | 'type' | 'message' | 'body'; pattern: string }
+    | { source: 'http_code' | 'body' | 'json'; operator: 'regex' | 'contains' | 'equals'; path?: string; value: string | number | boolean | null }
+  >;
+  kind: UpstreamErrorKind;
+}
+
+export interface UpstreamErrorMappingGroup {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  enabled: boolean;
+  rules: UpstreamErrorRule[];
+}
+
+export type GatewayAccount = Omit<Account, 'accountRef' | 'gateway'> & {
+  gateway: true;
+  accountRef?: never;
+};
+
+export type ChatAccount = Account | GatewayAccount;
+
+export interface ProviderNativeCapability {
+  provider: Provider;
+  config: {
+    envHomeKeys: string[];
+    userSettings: string[];
+    projectSettings: string[];
+    cliFlags: string[];
+  };
+  sessions: {
+    flags: string[];
+    nativeStore: string;
+  };
+  mcp: {
+    commands: string[];
+    configFiles: string[];
+  };
+  hooks: {
+    files: string[];
+    stopRequiresJsonStdout: boolean;
+  };
+  permissions: {
+    flags: string[];
+    modes: string[];
+  };
+}
+
+export type ProviderNativeCapabilityMap = Partial<Record<Provider, ProviderNativeCapability>>;
+
+export interface AccountsListResponse {
+  accounts: Account[];
+  hydrating: boolean;
+  providerNativeCapabilities: ProviderNativeCapabilityMap;
+}
+
+export interface AccountsSnapshotRequestResponse {
+  ok: boolean;
+  accepted: boolean;
+  alreadyRunning: boolean;
+  requestedAt: number;
+}
+
+export interface AccountRemovedEvent {
+  provider: Provider;
+  accountRef: string;
+  reason?: string;
+  removedAt?: number;
+}
+
+export interface AccountRefreshJob {
+  id: string;
+  provider: Provider;
+  accountRef: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  error?: string;
+  scope?: 'account';
+  /** 本次刷新里的轻探测成功并因此自动清掉了运行态阻塞（服务端门禁判定，客户端只展示）。 */
+  recovered?: boolean;
+  /**
+   * 部分失败：作业整体仍算成功（其它面已刷新），这些面没拿到。界面据此提示
+   * 「已刷新，但模型未成功」，而不是笼统报「刷新失败」。
+   */
+  failedBranches?: Array<'status' | 'models' | 'usage'>;
+  branches?: Partial<Record<'status' | 'models' | 'usage', {
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+    error?: string;
+  }>>;
+}
+
+export interface AccountRefreshUsageResponse {
+  ok: boolean;
+  accepted: boolean;
+  alreadyRunning: boolean;
+  job: AccountRefreshJob;
+}
+
+export type CodexResetCreditStatus =
+  | 'available'
+  | 'consuming'
+  | 'consumed'
+  | 'expired'
+  | 'missing'
+  | 'unknown';
+
+export interface CodexResetCredit {
+  accountRef: string;
+  creditId: string;
+  status: CodexResetCreditStatus;
+  grantedAt: number | null;
+  expiresAt: number | null;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  consumedAt: number | null;
+  consumedOperationId: string;
+  statusSource: string;
+}
+
+export type CodexResetOperationStatus =
+  | 'consuming'
+  | 'succeeded'
+  | 'no_effect'
+  | 'unknown';
+
+export type CodexResetOperationOutcome =
+  | 'reset'
+  | 'nothingToReset'
+  | 'noCredit'
+  | 'alreadyRedeemed'
+  | '';
+
+export interface CodexResetOperation {
+  operationId: string;
+  accountRef: string;
+  creditId: string;
+  inventoryVersion: string;
+  status: CodexResetOperationStatus;
+  outcome: CodexResetOperationOutcome;
+  requestedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  beforeCount: number;
+  afterCount: number | null;
+  errorCode: string;
+}
+
+export type CodexResetSelectionMode = 'local' | 'upstream' | 'none';
+
+export interface CodexResetCreditsResponse {
+  ok: boolean;
+  accountRef: string;
+  supported: boolean;
+  availableCount: number;
+  selectableCount: number;
+  /** local=本地挑最早过期卡；upstream=上游只给数量，由上游选卡；none=无可用卡 */
+  selectionMode?: CodexResetSelectionMode;
+  detailsComplete: boolean;
+  inventoryVersion: string;
+  capturedAt: number;
+  nextCreditId: string;
+  credits: CodexResetCredit[];
+  activeOperation: CodexResetOperation | null;
+}
+
+export interface CodexResetOperationResponse {
+  ok: boolean;
+  operation: CodexResetOperation;
+  reconciliationRequired: boolean;
+}
+
+export interface WebUiModelsResponse {
+  ok: boolean;
+  cached: boolean;
+  updatedAt: number;
+  source: string;
+  sources: number;
+  scannedAccounts: number;
+  firstError: string;
+  models: Record<string, string[]>;
+  byAccountRef: Record<string, string[]>;
+  selectableByAccountRef?: Record<string, string[]>;
+  defaultByAccountRef?: Record<string, string>;
+  errorsByAccountRef: Record<string, string>;
+  /**
+   * accountRef -> 上次真正探测上游的时刻（毫秒）。
+   * byAccountRef 不收录「探测成功但目录为空」的账号，所以单看 byAccountRef 无法区分
+   * 「探测过、没有模型」与「从未探测」——后者才该显示「待探测」。
+   */
+  accountProbedAt?: Record<string, number>;
+  /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
+  labels?: Record<string, Record<string, string>>;
+  metadata?: Record<string, ModelMetadata>;
+}
+
+export interface OpenAIModelItem {
+  id: string;
+  object: 'model';
+  created: number;
+  owned_by: string;
+}
+
+export interface ModelMetadata {
+  id: string;
+  providerId?: string;
+  baseModel?: string;
+  metadataSchemaVersion?: number;
+  metadataStatus?: 'resolved' | 'unknown';
+  metadataSource?: string;
+  metadataAuthority?: number;
+  metadataFetchedAt?: string;
+  metadataStale?: boolean;
+  source?: {
+    type: string;
+    id?: string;
+    kind?: string;
+    authority?: number;
+    confidence?: number;
+    repository?: string;
+    url?: string;
+    path?: string;
+    fetchedAt?: string;
+    stale?: boolean;
+  };
+  name?: string;
+  family?: string;
+  status?: string;
+  experimental?: boolean;
+  dates?: {
+    release?: string;
+    lastUpdated?: string;
+    knowledge?: string;
+  };
+  capabilities?: {
+    attachment?: boolean;
+    reasoning?: boolean;
+    reasoningOptions?: Array<{
+      type: string;
+      values?: string[];
+      min?: number;
+      max?: number;
+    }>;
+    toolCall?: boolean;
+    structuredOutput?: boolean;
+    temperature?: boolean;
+    openWeights?: boolean;
+  };
+  limits?: {
+    context?: number;
+    input?: number;
+    output?: number;
+  };
+  modalities?: {
+    input?: string[];
+    output?: string[];
+  };
+  cost?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    cacheWrite1h?: number;
+    inputAudio?: number;
+    outputAudio?: number;
+    tiers?: unknown[];
+    contextOver200k?: {
+      input?: number;
+      output?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+      cacheWrite1h?: number;
+    };
+  };
+  /** 价格来源与新鲜度（宿主合并后的投影；缺省 = 未知）。 */
+  pricing?: {
+    schemaVersion?: number;
+    status?: 'priced' | 'free' | 'unknown';
+    authority?: number;
+    stale?: boolean;
+    derived?: boolean;
+    derivedFrom?: string;
+    warnings?: Array<Record<string, unknown>>;
+    source?: {
+      id?: string;
+      kind?: string;
+      authority?: number;
+      confidence?: number;
+      url?: string;
+      license?: string;
+      fetchedAt?: string;
+      expiresAt?: string;
+    };
+  };
+  pricingSource?: string;
+  pricingAuthority?: number;
+  pricingFetchedAt?: string;
+  pricingStale?: boolean;
+  pricingStatus?: 'priced' | 'free' | 'unknown';
+  derivedFrom?: string;
+  interleaved?: {
+    field?: string;
+  };
+}
+
+export interface ManagedOpenAIModelItem extends OpenAIModelItem {
+  provider: Provider;
+  accountRef: string;
+  enabled: boolean;
+  manual: boolean;
+  defaultModel?: boolean;
+  source: string;
+  providers: Provider[];
+  description: string;
+  updatedAt: number;
+  metadata?: ModelMetadata;
+  // 账号自定义价格（每百万 token 美元）；undefined = 未设置，展示 models.dev 原价。
+  customPricing?: CustomPricing;
+}
+
+export interface CustomPricing {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+export interface WebUiOpenAIModelAccount {
+  provider: Provider;
+  accountRef: string;
+  displayName: string;
+  email?: string;
+  apiKeyMode?: boolean;
+  authType?: string;
+}
+
+export interface WebUiOpenAIModelsResponse {
+  ok: boolean;
+  endpoint: string;
+  cached: boolean;
+  updatedAt: number;
+  source: string;
+  sources: number;
+  scannedAccounts: number;
+  firstError: string;
+  accountScope?: {
+    accountRef?: string;
+  } | null;
+  data: OpenAIModelItem[];
+  managedData?: ManagedOpenAIModelItem[];
+  metadata?: Record<string, ModelMetadata>;
+  labels?: Record<string, Record<string, string>>;
+  accounts?: WebUiOpenAIModelAccount[];
+  byProvider: Record<string, string[]>;
+  byAccountRef: Record<string, string[]>;
+  errorsByAccountRef: Record<string, string>;
+  /** accountRef -> 上次探测时刻；语义同 WebUiModelsResponse.accountProbedAt。 */
+  accountProbedAt?: Record<string, number>;
+  settingsUpdatedAt?: number;
+}
+
+export type WebUiOpenAIModelsJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface WebUiOpenAIModelsJob {
+  id: string;
+  status: WebUiOpenAIModelsJobStatus;
+  accountScope?: WebUiOpenAIModelsResponse['accountScope'];
+  startedAt: number;
+  finishedAt: number;
+  catalog: WebUiOpenAIModelsResponse | null;
+  error: string;
+}
+
+export interface WebUiOpenAIModelsRefreshResponse {
+  ok: boolean;
+  accepted: boolean;
+  alreadyRunning: boolean;
+  scheduled?: boolean;
+  job: WebUiOpenAIModelsJob | null;
+}
+
+export interface AccountConfig {
+  apiKey?: string;
+  baseUrl?: string;
+  credentialType?: AccountAuthMode;
+  projectId?: string;
+  location?: string;
+}
+
+// 与 Go 契约的 authOptions 一一对应（core/providers/model.go 的 AuthMode）：
+// oauth-refresh-token 是 kiro 的 Kiro Desktop / social 导入模式，之前这里漏了，
+// 导致 AuthProgressModal 里判断该模式的分支被判成「不可能成立」。
+export type AccountAuthMode = 'api-key' | 'auth-token' | 'oauth-browser' | 'oauth-device' | 'oauth-refresh-token' | 'vertex-ai';
+
+export interface AddAccountRequest {
+  provider: Provider;
+  authMode: AccountAuthMode;
+  authStrategy?: string;
+  config?: AccountConfig;
+  replaceExisting?: boolean;
+  /**
+   * 新增账号时是否进入全局别名的自动选号池。缺省（或不传）＝参与；
+   * 显式 false 时服务端在建账号后立刻写入账号级偏好（账号级开关仍可再改）。
+   */
+  aliasPoolParticipates?: boolean;
+}
+
+export interface AddAccountResponse {
+  ok: boolean;
+  provider: Provider;
+  accountRef: string;
+  authMode: AccountAuthMode;
+  authStrategy?: string;
+  status: 'configured' | 'pending';
+  jobId?: string;
+  expiresAt?: number | null;
+  pollIntervalMs?: number | null;
+  authorizationUrl?: string;
+  redirectUri?: string;
+  callbackCaptureStatus?: string;
+  callbackListeningUrl?: string;
+  callbackCaptureError?: string;
+  authProgressState?: string;
+  setupPhase?: string;
+  installRequired?: boolean;
+}
+
+export interface AccountImportSummary {
+  imported: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  invalid: number;
+  failed: number;
+  total: number;
+  providers: Provider[];
+  accounts: Array<{
+    provider: Provider;
+    accountRef: string;
+    status: 'created' | 'updated';
+  }>;
+}
+
+export interface AccountImportResponse {
+  ok: boolean;
+  imported: number;
+  status?: 'queued' | 'running' | 'succeeded' | 'failed';
+  jobId?: string;
+  job?: AccountImportJob;
+  summary?: AccountImportSummary;
+  result?: unknown;
+}
+
+export interface AccountImportJob {
+  id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  mode: string;
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  summary?: AccountImportSummary;
+  result?: unknown;
+  error?: string;
+  logs?: string;
+  progress?: {
+    current: number;
+    total: number;
+    percent: number;
+    label?: string;
+  } | null;
+}
+
+export interface AccountAddJob {
+  id: string;
+  provider: Provider;
+  accountRef: string;
+  authMode: AccountAuthMode;
+  authStrategy?: string;
+  reauth?: boolean;
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired';
+  createdAt: number;
+  updatedAt: number;
+  lastOutputAt?: number;
+  expiresAt?: number | null;
+  pollIntervalMs?: number | null;
+  pid?: number | null;
+  exitCode: number | null;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  userCode?: string;
+  authorizationUrl?: string;
+  redirectUri?: string;
+  oauthState?: string;
+  browserCallbackForwardedAt?: number;
+  callbackCaptureStatus?: string;
+  callbackListeningUrl?: string;
+  callbackCaptureError?: string;
+  authProgressState?: string;
+  setupPhase?: string;
+  installRequired?: boolean;
+  installAttempts?: Array<{ id: string; label: string; ok: boolean; error?: string }>;
+  email?: string;
+  displayName?: string;
+  planType?: string;
+  /** 该任务由外部账号插件托管：回调/粘贴入口由插件自己轮询，宿主 UI 不提供内置提交。 */
+  pluginLogin?: boolean;
+  sourceId?: string;
+  /** 插件声明可接受 paste/submit 时的宿主文案；缺省不渲染提交框。 */
+  canSubmit?: boolean;
+  submitLabel?: string;
+  submitPlaceholder?: string;
+  logs: string;
+  error?: string;
+}
+
+export interface UsageConfig {
+  active_refresh_interval: string;
+  background_refresh_interval: string;
+  threshold_pct: number;
+}
+
+export interface ServerConfig {
+  host: string;
+  port: number;
+  apiKey: string;
+  managementKey: string;
+  apiKeyConfigured?: boolean;
+  managementKeyConfigured?: boolean;
+  openNetwork: boolean;
+}
+
+export interface ControlPlaneDescriptor {
+  ok: boolean;
+  service: 'aih-control-plane';
+  protocolVersion: number;
+  endpoint: string;
+  host: string;
+  port: number;
+  serverTime: string;
+  uptimeSec: number;
+  auth: {
+    managementKeyConfigured: boolean;
+  };
+  capabilities: {
+    nodeRpc: string[];
+    management: string[];
+    remoteManagement: boolean;
+    remoteInvite: boolean;
+    transports: string[];
+  };
+}
+
+export interface ControlPlaneDescriptorResponse {
+  ok: boolean;
+  rpc: 'control_plane.descriptor.read';
+  result: ControlPlaneDescriptor;
+}
+
+export interface ControlPlaneEndpointHint {
+  endpoint: string;
+  source: 'request' | 'lan' | 'configured';
+  label: string;
+  warning?: string;
+  recommended?: boolean;
+}
+
+export interface ControlPlaneEndpointHintsResponse {
+  ok: boolean;
+  endpoints: ControlPlaneEndpointHint[];
+  warnings: string[];
+}
+
+export interface ControlPlaneDeviceStatus {
+  ok: boolean;
+  service: 'aih-control-plane';
+  serverTime: string;
+  uptimeSec: number;
+  backend: string;
+  providerMode: string;
+  strategy: string;
+  totalAccounts: number;
+  activeAccounts: number;
+  cooldownAccounts: number;
+  statusTotals: Record<string, number>;
+  providers: Record<string, {
+    total: number;
+    active: number;
+    statuses: Record<string, number>;
+  }>;
+  queue: Record<string, {
+    name: string;
+    running: number;
+    queued: number;
+    maxConcurrency: number;
+    queueLimit: number;
+    totalScheduled: number;
+    totalRejected: number;
+  }>;
+  queueTotals: {
+    running: number;
+    queued: number;
+    totalScheduled: number;
+    totalRejected: number;
+  };
+  modelsCached: number;
+  modelsUpdatedAt: number;
+  modelRegistryUpdatedAt: number;
+  successRate: number;
+  timeoutRate: number;
+  totalRequests: number;
+}
+
+export interface ControlPlaneDeviceStatusResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.status';
+  result: {
+    status: ControlPlaneDeviceStatus;
+  };
+}
+
+export interface ControlPlaneDeviceAccountSummary {
+  total: number;
+  active: number;
+  byProvider: Record<string, number>;
+  byRuntimeStatus: Record<string, number>;
+  bySchedulableStatus: Record<string, number>;
+}
+
+export interface ControlPlaneDeviceAccount {
+  accountRef: string;
+  provider: Provider;
+  label: string;
+  status: 'up' | 'down';
+  authMode: 'oauth' | 'api-key';
+  planType: string;
+  runtimeStatus: string;
+  quotaStatus: string;
+  schedulableStatus: string;
+  remainingPct: number | null;
+  modelCooldownCount: number;
+  lastRefresh: number;
+  successCount: number;
+  failCount: number;
+}
+
+export interface ControlPlaneDeviceAccountsResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.accounts';
+  result: {
+    accounts: ControlPlaneDeviceAccount[];
+    summary: ControlPlaneDeviceAccountSummary;
+  };
+}
+
+export interface ControlPlaneDeviceSessionSummary {
+  total: number;
+  returned: number;
+  byProvider: Record<string, number>;
+  byStatus: Record<string, number>;
+  byProject: Record<string, number>;
+  recentlyUpdatedAt: number;
+}
+
+export interface ControlPlaneDeviceSession {
+  sessionRef: string;
+  projectRef: string;
+  provider: Provider;
+  title: string;
+  projectName: string;
+  status: 'idle' | 'running' | 'draft' | 'failed';
+  updatedAt: number;
+  startedAt: number;
+}
+
+export interface ControlPlaneDeviceSessionMessagesSummary {
+  total: number;
+  returned: number;
+  truncated: boolean;
+  cursor: number;
+}
+
+export interface ControlPlaneDeviceSessionMessagesResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.session_messages';
+  result: {
+    session: ControlPlaneDeviceSession;
+    messages: ChatMessage[];
+    summary: ControlPlaneDeviceSessionMessagesSummary;
+  };
+}
+
+export interface ControlPlaneDeviceNodeSessionMessagesResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.node_session_messages';
+  nodeId: string;
+  result: ControlPlaneDeviceSessionMessagesResponse['result'];
+}
+
+export interface ControlPlaneDeviceNodeSessionsResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.node_sessions';
+  nodeId: string;
+  result: ControlPlaneDeviceSessionsResponse['result'];
+}
+
+export interface ControlPlaneDeviceNodeSessionInputResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.node_session_input';
+  nodeId: string;
+  result: {
+    session: ControlPlaneDeviceSession;
+    accepted: boolean;
+    appendNewline: boolean;
+    promptId: string;
+  };
+}
+
+export type ControlPlaneDeviceSessionEvent =
+  | {
+      type: 'user_message';
+      timestamp: string;
+      content: string;
+    }
+  | {
+      type: 'assistant_text' | 'assistant_reasoning';
+      timestamp: string;
+      text: string;
+    };
+
+export interface ControlPlaneDeviceSessionEventsResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.session_events';
+  result: {
+    session: ControlPlaneDeviceSession;
+    events: ControlPlaneDeviceSessionEvent[];
+    cursor: number;
+    requiresSnapshot: boolean;
+    truncated: boolean;
+  };
+}
+
+export interface ControlPlaneDeviceSessionStreamFrame {
+  ok: boolean;
+  rpc: 'control_plane.device.session_stream';
+  type: 'events';
+  result: ControlPlaneDeviceSessionEventsResponse['result'];
+}
+
+export interface ControlPlaneDeviceNodeSessionStreamFrame {
+  ok: boolean;
+  rpc: 'control_plane.device.node_session_stream';
+  type: 'events';
+  nodeId: string;
+  result: ControlPlaneDeviceSessionEventsResponse['result'];
+}
+
+export interface ControlPlaneDeviceSessionsResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.sessions';
+  result: {
+    sessions: ControlPlaneDeviceSession[];
+    summary: ControlPlaneDeviceSessionSummary;
+  };
+}
+
+export interface ControlPlaneNodeTransportSummary {
+  id: string;
+  nodeId: string;
+  kind: RemoteNodeTransportKind;
+  status: string;
+  score: number;
+  latencyMs: number;
+  lastError: string;
+  disabled: boolean;
+  managedBy: string;
+  provider: string;
+  routeRole: RemoteNodeTransportRouteRole;
+  trustLevel: RemoteNodeTransportTrustLevel;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type RemoteNodeConnectionStatus = 'online' | 'offline' | 'unknown';
+
+export interface RemoteNodeConnection {
+  status: RemoteNodeConnectionStatus;
+  transportKind: RemoteNodeTransportKind | '';
+  transportId: string;
+  sessionId: string;
+  remoteAddress: string;
+  connectedAt: number;
+  lastSeenAt: number;
+}
+
+export interface ControlPlaneNodeSummary {
+  id: string;
+  name: string;
+  role: string;
+  endpointPolicy: string;
+  preferredTransports: RemoteNodeTransportKind[];
+  capabilities: string[];
+  fingerprint: string;
+  tags: string[];
+  disabled: boolean;
+  lastSeenAt: number;
+  connection: RemoteNodeConnection;
+  createdAt: number;
+  updatedAt: number;
+  transports: ControlPlaneNodeTransportSummary[];
+}
+
+export interface ControlPlaneDeviceNodesResponse {
+  ok: boolean;
+  rpc: 'control_plane.device.nodes';
+  result: {
+    nodes: ControlPlaneNodeSummary[];
+  };
+}
+
+export type ControlPlaneProfileState = 'ready' | 'degraded' | 'offline';
+
+export type ControlPlaneProfileConnectionMode = 'direct' | 'broker-proxy';
+
+export interface ControlPlaneProfileBroker {
+  brokerEndpoint: string;
+  serverId: string;
+  proxyEndpoint: string;
+}
+
+export type ServerAuthorizationState = 'authorized' | 'discovered-pending-auth';
+
+export type ServerRouteKind = 'direct' | 'relay-via-server';
+
+export type ServerRouteHealth = 'healthy' | 'degraded' | 'offline' | 'unknown';
+
+/**
+ * One reachable path to a logical Server. Credentials belong to the Server
+ * profile and must never be copied into a route.
+ */
+export interface ServerRoute {
+  id: string;
+  kind: ServerRouteKind;
+  endpoint: string;
+  viaServerId: string;
+  health: ServerRouteHealth;
+  rttMs: number;
+  failureRate: number;
+  consecutiveFailures: number;
+  lastCheckedAt: number;
+  lastSuccessAt: number;
+  lastFailureAt: number;
+  updatedAt: number;
+}
+
+export interface ControlPlaneProfile {
+  id: string;
+  /** Stable logical Server identity; unlike endpoint it does not change with the selected route. */
+  stableServerId: string;
+  name: string;
+  endpoint: string;
+  routes: ServerRoute[];
+  activeRouteId: string;
+  authorizationState: ServerAuthorizationState;
+  connectionMode: ControlPlaneProfileConnectionMode;
+  broker: ControlPlaneProfileBroker | null;
+  state: ControlPlaneProfileState;
+  /** Kept in browser storage for Browser/PWA clients. */
+  managementKey: string;
+  managementKeyConfigured: boolean;
+  nodes: ControlPlaneNodeSummary[];
+  nodeCount: number;
+  accountCount: number;
+  activeAccountCount: number;
+  schedulableAccountCount: number;
+  sessionCount: number;
+  lastNodeSyncAt: number;
+  lastStatusSyncAt: number;
+  lastAccountsSyncAt: number;
+  lastSessionsSyncAt: number;
+  descriptor: ControlPlaneDescriptor | null;
+  lastCheckedAt: number;
+  lastError: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+
+
+export type RemoteNodeTransportKind =
+  | 'direct'
+  | 'frp'
+  | 'ssh'
+  | 'tailscale'
+  | 'zerotier'
+  | 'wireguard'
+  | 'omr'
+  | 'mptcp'
+  | 'relay';
+
+export type RemoteNodeTransportRouteRole = 'data-plane' | 'bootstrap' | 'underlay';
+
+export type RemoteNodeTransportTrustLevel = 'managed' | 'verified' | 'external' | 'manual';
+
+export type RemoteNodeTransportLane = 'data-plane' | 'bootstrap' | 'underlay';
+
+export type RemoteNodeTransportEndpointMode = 'http' | 'relay' | 'manual' | 'none';
+
+export type RemoteNodeTransportDefaults = Partial<Record<RemoteNodeTransportKind, {
+  provider: string;
+  routeRole: RemoteNodeTransportRouteRole;
+  trustLevel: RemoteNodeTransportTrustLevel;
+}>>;
+
+export interface RemoteNodeTransportCatalogEntry {
+  kind: RemoteNodeTransportKind;
+  label: string;
+  provider: string;
+  defaultRouteRole: RemoteNodeTransportRouteRole;
+  defaultTrustLevel: RemoteNodeTransportTrustLevel;
+  lane: RemoteNodeTransportLane;
+  endpointMode: RemoteNodeTransportEndpointMode;
+  summary: string;
+}
+
+export type RemoteNodeTransportCatalog = Partial<Record<RemoteNodeTransportKind, RemoteNodeTransportCatalogEntry>>;
+
+export interface RemoteNodeTransportStrategy {
+  id: string;
+  title: string;
+  priority: number;
+  defaultTransport: RemoteNodeTransportKind;
+  provider: string;
+  lane: RemoteNodeTransportLane | '';
+  endpointMode: RemoteNodeTransportEndpointMode | '';
+  dataPlaneTransports: RemoteNodeTransportKind[];
+  bootstrapTransports: RemoteNodeTransportKind[];
+  underlayTransports: RemoteNodeTransportKind[];
+  summary: string;
+  constraints: string[];
+}
+
+export interface RemoteNodeTransport {
+  id: string;
+  nodeId: string;
+  kind: RemoteNodeTransportKind;
+  endpoint: string;
+  status: string;
+  score: number;
+  latencyMs: number;
+  lastError: string;
+  disabled: boolean;
+  managedBy: string;
+  provider: string;
+  routeRole: RemoteNodeTransportRouteRole;
+  trustLevel: RemoteNodeTransportTrustLevel;
+  setupHint?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RemoteNode {
+  id: string;
+  name: string;
+  role: string;
+  endpointPolicy: string;
+  preferredTransports: RemoteNodeTransportKind[];
+  capabilities: string[];
+  authRef: string;
+  fingerprint: string;
+  tags: string[];
+  disabled: boolean;
+  lastSeenAt: number;
+  connection: RemoteNodeConnection;
+  createdAt: number;
+  updatedAt: number;
+  transports: RemoteNodeTransport[];
+}
+
+export interface RemoteNodeSavePayload {
+  id: string;
+  name?: string;
+  endpoint?: string;
+  transportKind?: RemoteNodeTransportKind;
+  provider?: string;
+  routeRole?: RemoteNodeTransportRouteRole;
+  trustLevel?: RemoteNodeTransportTrustLevel;
+  setupHint?: string;
+  managementKey?: string;
+  preferredTransports?: RemoteNodeTransportKind[];
+  capabilities?: string[];
+  tags?: string[];
+  disabled?: boolean;
+}
+
+export interface RemoteNodeDefaults {
+  nodeId: string;
+  name: string;
+  transportKind: RemoteNodeTransportKind;
+  provider: string;
+  routeRole: RemoteNodeTransportRouteRole;
+  trustLevel: RemoteNodeTransportTrustLevel;
+  transportDefaults?: RemoteNodeTransportDefaults;
+  transportCatalog?: RemoteNodeTransportCatalog;
+  transportStrategies?: RemoteNodeTransportStrategy[];
+  preferredTransports: RemoteNodeTransportKind[];
+  capabilities: string[];
+  repoUrl?: string;
+  repoSubdir?: string;
+  repoDir?: string;
+}
+
+export interface RemoteNodeInvite {
+  id: string;
+  nodeId: string;
+  name: string;
+  role: string;
+  controlEndpoint: string;
+  endpointHint: string;
+  transportKind: RemoteNodeTransportKind;
+  provider: string;
+  routeRole: RemoteNodeTransportRouteRole;
+  trustLevel: RemoteNodeTransportTrustLevel;
+  setupHint: string;
+  preferredTransports: RemoteNodeTransportKind[];
+  capabilities: string[];
+  tags: string[];
+  createdAt: number;
+  expiresAt: number;
+  consumedAt: number;
+}
+
+export interface RemoteNodeInviteCreatePayload {
+  nodeId?: string;
+  name?: string;
+  role?: string;
+  controlEndpoint?: string;
+  endpointHint?: string;
+  transportKind?: RemoteNodeTransportKind;
+  provider?: string;
+  routeRole?: RemoteNodeTransportRouteRole;
+  trustLevel?: RemoteNodeTransportTrustLevel;
+  setupHint?: string;
+  preferredTransports?: RemoteNodeTransportKind[];
+  capabilities?: string[];
+  tags?: string[];
+  expiresInMs?: number;
+  bootstrapTarget?: RemoteNodeBootstrapTarget;
+  inviteUrl?: string;
+  repoUrl?: string;
+  repoSubdir?: string;
+  repoDir?: string;
+  probeSshTargets?: string[] | string;
+  probeTcpTargets?: string[] | string;
+  concurrency?: number;
+  timeoutMs?: number;
+  executeConcurrency?: number;
+  executeTimeoutMs?: number;
+}
+
+export interface RemoteNodeBootstrapApplyPayload extends RemoteNodeInviteCreatePayload {
+  execute: true;
+  confirm: 'execute';
+}
+
+export type RemoteNodeBootstrapTarget = 'linux' | 'darwin' | 'win32';
+export type RemoteNodeBootstrapScriptType = 'sh' | 'powershell';
+
+export interface RemoteNodeBootstrapScript {
+  type: RemoteNodeBootstrapScriptType;
+  command: string;
+  content: string;
+}
+
+export interface RemoteNodeProbeBootstrapScript extends RemoteNodeBootstrapScript {
+  target: RemoteNodeBootstrapTarget;
+  requiredInputs: string[];
+  warnings: string[];
+}
+
+export interface RemoteNodeBootstrapStep {
+  id: string;
+  title: string;
+  command: string;
+}
+
+export interface RemoteNodeBootstrapReadinessCheck {
+  id: string;
+  required: boolean;
+  status: 'provided' | 'target-derived' | 'checked-by-script' | 'placeholder' | 'planned' | 'disabled' | string;
+  message: string;
+}
+
+export interface RemoteNodeBootstrapPlan {
+  ok: boolean;
+  target: RemoteNodeBootstrapTarget;
+  channel: string;
+  transportKind: RemoteNodeTransportKind;
+  requiredInputs: string[];
+  prerequisites: string[];
+  readinessChecks?: RemoteNodeBootstrapReadinessCheck[];
+  transportGuidance: string[];
+  warnings: string[];
+  steps: RemoteNodeBootstrapStep[];
+  script: RemoteNodeBootstrapScript;
+  security: {
+    containsSecrets: boolean;
+    notes: string[];
+  };
+}
+
+export interface RemoteNodeBootstrapCreateResult {
+  plan: RemoteNodeBootstrapPlan;
+  script: RemoteNodeBootstrapScript;
+}
+
+export interface RemoteNodeBootstrapPlanResponse extends RemoteNodeBootstrapCreateResult {
+  ok: boolean;
+}
+
+export interface RemoteNodeInviteCreateResponse {
+  ok: boolean;
+  invite: RemoteNodeInvite;
+  code: string;
+  joinUrl: string;
+  warnings?: string[];
+  joinCommand?: string;
+  probeCommand?: string;
+  bootstrap?: RemoteNodeBootstrapCreateResult;
+}
+
+export interface RemoteNodeBootstrapManualCommand {
+  key: string;
+  label: string;
+  command: string;
+  note?: string;
+}
+
+export interface RemoteNodeBootstrapProbeAction {
+  channel: string;
+  generateScriptCommand: string;
+  remoteRunCommand?: string;
+  targetAction: string;
+  targetCommand: string;
+  manualCommands?: RemoteNodeBootstrapManualCommand[];
+  note: string;
+}
+
+export interface RemoteNodeBootstrapProbePort {
+  port: number;
+  open: boolean;
+  error: string;
+}
+
+export interface RemoteNodeBootstrapProbeSshResult {
+  kind: 'ssh';
+  target: string;
+  host: string;
+  user: string;
+  port: number;
+  status: 'reachable' | 'auth-required' | 'unreachable';
+  platform: string;
+  arch: string;
+  commands: Record<'node' | 'npm' | 'git' | 'aih', boolean>;
+  repo: {
+    checked: boolean;
+    present: boolean | null;
+    path: string;
+  };
+  stderr: string;
+  timedOut: boolean;
+  recommendation: string;
+  bootstrapTarget: RemoteNodeBootstrapTarget | '';
+  bootstrapCommand: string;
+  bootstrapAction: RemoteNodeBootstrapProbeAction;
+  bootstrapScript?: RemoteNodeProbeBootstrapScript | null;
+}
+
+export interface RemoteNodeBootstrapProbeTcpResult {
+  kind: 'tcp';
+  target: string;
+  host: string;
+  ports: RemoteNodeBootstrapProbePort[];
+  openPorts: number[];
+  accessMode: 'ssh' | 'winrm' | 'local-manual' | 'unreachable';
+  recommendation: string;
+  bootstrapTarget: RemoteNodeBootstrapTarget | '';
+  bootstrapCommand: string;
+  bootstrapAction: RemoteNodeBootstrapProbeAction;
+  bootstrapScript?: RemoteNodeProbeBootstrapScript | null;
+}
+
+export type RemoteNodeBootstrapProbeResult = RemoteNodeBootstrapProbeSshResult | RemoteNodeBootstrapProbeTcpResult;
+
+export interface RemoteNodeBootstrapProbeExecutionStep {
+  order: number;
+  priority: number;
+  status: 'ready' | 'manual' | 'needs-input' | 'blocked';
+  resultKey: string;
+  kind: 'ssh' | 'tcp' | '';
+  target: string;
+  channel: string;
+  title: string;
+  summary: string;
+  command: string;
+  manualCommands?: RemoteNodeBootstrapManualCommand[];
+  note: string;
+}
+
+export interface RemoteNodeBootstrapProbeReport {
+  ok: boolean;
+  concurrency: number;
+  timeoutMs: number;
+  repoDir: string;
+  results: RemoteNodeBootstrapProbeResult[];
+  executionPlan?: RemoteNodeBootstrapProbeExecutionStep[];
+  summary: {
+    total: number;
+    reachableSsh: number;
+    authRequiredSsh?: number;
+    sshPort: number;
+    winrm: number;
+    localManual: number;
+    unreachable: number;
+  };
+  warnings: string[];
+}
+
+export interface RemoteNodeBootstrapApplyAction {
+  order: number;
+  resultKey: string;
+  target: string;
+  title: string;
+  channel: string;
+  probeStatus: 'ready' | 'manual' | 'needs-input' | 'blocked' | string;
+  summary: string;
+  note: string;
+  command: string;
+  manualCommands?: RemoteNodeBootstrapManualCommand[];
+  executable: boolean;
+  executionState: 'dry-run' | 'manual' | 'needs-input' | 'blocked' | 'pending' | 'executed' | 'failed' | string;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}
+
+export interface RemoteNodeBootstrapApplyResult {
+  ok: boolean;
+  mode: 'dry-run' | 'execute';
+  executeTimeoutMs: number;
+  executeConcurrency: number;
+  plan: {
+    ok: boolean;
+    error?: string;
+    message?: string;
+    actions: RemoteNodeBootstrapApplyAction[];
+    summary: {
+      total: number;
+      executable: number;
+      dryRun: number;
+      executed: number;
+      failed: number;
+      manual: number;
+      needsInput: number;
+      blocked: number;
+    };
+    warnings: string[];
+  };
+}
+
+export type RemoteNodeBootstrapApplyPreview = RemoteNodeBootstrapApplyResult;
+
+export interface RemoteNodeBootstrapProbeResponse {
+  ok: boolean;
+  command: string;
+  applyCommand?: string;
+  applyExecuteCommand?: string;
+  apply?: RemoteNodeBootstrapApplyPreview;
+  report: RemoteNodeBootstrapProbeReport;
+}
+
+export interface RemoteNodeBootstrapApplyResponse {
+  ok: boolean;
+  command: string;
+  apply: RemoteNodeBootstrapApplyResult;
+  report: RemoteNodeBootstrapProbeReport;
+}
+
+export interface RemoteNodeManagementResult<TPayload = unknown> {
+  nodeId: string;
+  transport: Pick<RemoteNodeTransport, 'id' | 'kind' | 'endpoint'>;
+  status: number;
+  ok: boolean;
+  payload?: TPayload;
+}
+
+export interface RemoteNodeManagementResponse<TPayload = unknown> {
+  ok: boolean;
+  result?: RemoteNodeManagementResult<TPayload>;
+  error?: string;
+  message?: string;
+}
+
+export type RemoteNodeTestResponse = RemoteNodeManagementResponse;
+
+export type ManagementRestartStatus = 'queued' | 'starting' | 'started' | 'failed';
+
+export interface ManagementRestartEvent {
+  type: 'restart';
+  jobId: string;
+  status: ManagementRestartStatus;
+  createdAt: number;
+  updatedAt: number;
+  pid?: number;
+  appliedConfig?: Partial<ServerConfig>;
+  error?: string;
+  message?: string;
+}
+
+export interface ManagementRestartResponse {
+  ok: boolean;
+  accepted: boolean;
+  restarting: boolean;
+  job: ManagementRestartEvent;
+}
+
+export interface ChatMessageMetrics {
+  durationMs?: number;
+  ttftMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokensPerSec?: number;
+}
+
+// Toolkit Types
+export interface ManagedAppItem {
+  id: string;
+  name: string;
+  provider: string;
+  /** 宿主客户端身份；IDE 场景与 Provider 身份分开，便于一个宿主承载多个 Provider。 */
+  clientId?: string;
+  clientName?: string;
+  /** 当前宿主实际承载的 Provider 标识，顺序与卡片角标展示一致。 */
+  integrationProviders?: string[];
+  type: 'cli' | 'desktop' | 'ide';
+  /** 无账号宿主启动能力；由 Desktop 策略下发。 */
+  hostLaunchLabel?: string;
+  categories: string[];
+  binaryName: string;
+  cliPath: string;
+  configName: string;
+  configFormat: string;
+  configExists: boolean;
+  /** 该应用可管理的配置文件数量（来自 Provider 配置声明表）。 */
+  configFileCount?: number;
+  installed: boolean;
+  version: string;
+  versionSource?: {
+    type: 'npm' | 'homebrew_cask' | 'winget' | string;
+    packageName?: string;
+    cask?: string;
+    id?: string;
+  } | null;
+  latestVersion?: string | null;
+  updateAvailable?: boolean;
+  updateStatus?: 'unavailable' | 'unknown' | 'current' | 'available' | string;
+  pkg: string;
+  defaultModel: string;
+  supportedModels: string[];
+  hookSupported: boolean;
+  hookInstalled: boolean;
+  hookReason?: string;
+  hookMissingEvents?: string[];
+  syncMode: 'hook' | 'polling' | 'unavailable';
+  installAvailable?: boolean;
+  canUpdate?: boolean;
+  canUninstall?: boolean;
+}
+
+export interface ManagedAppsResponse {
+  ok: boolean;
+  total: number;
+  installedCount: number;
+  apps: ManagedAppItem[];
+}
+
+export interface ToolPermissionSettings {
+  maxPermission: boolean;
+  applyToHost: boolean;
+  /** WebUI 逐旗标选择的权限参数（`[]` = 用合同推导的默认最大权限）。 */
+  permissionArgs: string[];
+  updatedAt: number;
+}
+
+/** 目录里的一个权限旗标（服务端 describePermissionCatalog 下发）。 */
+export interface ToolPermissionFlagEntry {
+  flag: string;
+  aliases: string[];
+  group: string;
+  groupLabel: string;
+  /** none = 无值开关；value = 取值受限；list = 自由列表 */
+  value: 'none' | 'value' | 'list';
+  options: string[];
+  /** 中文说明；翻译管道未接入前等同英文原文的意译 */
+  description: string;
+  /** CLI --help 原文 */
+  descriptionEn: string;
+  /** 用法示例，例如 `codex -s danger-full-access` */
+  example: string;
+  /** 对应的配置文件写法（没有等价字段时为空串） */
+  configEquivalent: string;
+  note: string;
+}
+
+export interface ToolPermissionConflict {
+  a: string;
+  b: string;
+  message: string;
+}
+
+export interface ToolPermissionOverride {
+  by: string;
+  over: string;
+  message: string;
+}
+
+export interface ToolPermissionCatalog {
+  verifiedCliVersion: string;
+  groups: Record<string, string>;
+  flags: ToolPermissionFlagEntry[];
+  conflicts: ToolPermissionConflict[];
+  overrides: ToolPermissionOverride[];
+  subcommandsWithoutApprovalFlag: string[];
+  subcommandsBlockingPermissionOverrides: string[];
+}
+
+export interface ToolPermissionCapability {
+  maxSupported: boolean;
+  maxArgs: string[];
+  /** 不支持最大权限时的可读原因（已包含应用名）。 */
+  maxReason: string;
+  /** 全量权限参数目录：前端只渲染这份数据，不维护 provider 名单。 */
+  permissionCatalog: ToolPermissionCatalog;
+  hostSupported: boolean;
+  hostFileId: string;
+  hostDisplayPath: string;
+  hostExists: boolean;
+  hostWritable: boolean;
+  hostRequiresElevation: boolean;
+  hostReason: string;
+}
+
+export interface ToolPermissionSettingsResponse {
+  ok: boolean;
+  appId: string;
+  provider: string;
+  label: string;
+  settings: ToolPermissionSettings;
+  capability: ToolPermissionCapability;
+  hostApply?: {
+    supported: boolean;
+    applied: boolean;
+    changed: boolean;
+    fileId?: string;
+    displayPath?: string;
+    revision?: string;
+    reason?: string;
+  } | null;
+}
+
+// provider CLI 自动升级（只读状态面）。字段与 ~/.ai_home/run/provider-cli-upgrade.json
+// 的账本记录一一对应，服务端只做裁剪不做改写。
+export interface ProviderCliUpgradeRecord {
+  provider: string;
+  state?: string;
+  channel?: string;
+  enabled?: boolean;
+  disabledReason?: string;
+  installedVersion?: string;
+  latestVersion?: string;
+  targetVersion?: string;
+  knownGoodVersion?: string;
+  knownGoodRollbackable?: boolean;
+  baselineHealthy?: boolean | null;
+  updateAvailable?: boolean;
+  blockedVersions?: string[];
+  shadowedNpmInstall?: boolean;
+  resolvedPath?: string;
+  /** 当前渠道能否钉版本安装；不能则闭环只检查、从不自动升级。 */
+  pinnable?: boolean;
+  lastCheckAt?: number;
+  lastCheckError?: string;
+  lastApplyAt?: number;
+  lastApplyError?: string;
+  lastDeferReason?: string;
+  consecutiveFailures?: number;
+  consecutiveDefers?: number;
+  consecutiveQuiescentTicks?: number;
+  soakUnknownCount?: number;
+  lastTickState?: string;
+  lastTickReason?: string;
+  history?: Array<Record<string, unknown>>;
+}
+
+export interface ProviderCliUpgradeSchedulerState {
+  running?: boolean;
+  cycling?: boolean;
+  /** 此刻正在装新版本的 provider（逐个串行，最多一个）；空串 = 没在装。 */
+  applyingProvider?: string;
+  enabled?: boolean;
+  applyEnabled?: boolean;
+  intervalMs?: number;
+  startDelayMs?: number;
+  tickCount?: number;
+  providers?: string[];
+  lastError?: string;
+  lastResult?: {
+    at?: number;
+    reason?: string;
+    applyEnabled?: boolean;
+    providers?: Record<string, { state?: string; reason?: string }>;
+  } | null;
+}
+
+export interface ProviderCliUpgradeStatusResponse {
+  ok: boolean;
+  // 调度器只存在于 startLocalServer 起来的进程里，缺席时为 null（账本那半边仍然有效）。
+  scheduler: ProviderCliUpgradeSchedulerState | null;
+  global: { enabled: boolean; disabledReason: string };
+  providers: ProviderCliUpgradeRecord[];
+}
+
+// POST /v0/webui/provider-cli-upgrade/:provider/clear-broken：验证当前 CLI 后解除熔断。
+export interface ProviderCliUpgradeClearBrokenResponse {
+  ok: boolean;
+  // cleared | not_broken | verify_failed | verify_inconclusive | installed_version_unknown | already_running ...
+  reason: string;
+  detail: string;
+  version: string;
+  status?: ProviderCliUpgradeStatusResponse;
+}
+
+export interface ManagedAppUpdateResponse {
+  ok: boolean;
+  appId: string;
+  provider: string;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  status: 'unavailable' | 'unknown' | 'current' | 'available' | string;
+  error?: string;
+  message?: string;
+}
+
+export interface AccountAppLaunchResponse {
+  ok: boolean;
+  provider?: string;
+  accountRef?: string;
+  kind?: 'cli' | 'desktop' | string;
+  status?: string;
+  pid?: number | null;
+  pids?: number[];
+  terminalId?: string;
+  sessionKey?: string;
+  launchMode?: 'webui-pty' | 'interactive-task' | string;
+  /** Web Terminal 页签标题（launchMode 为 webui-pty 时由 Server 生成）。 */
+  sessionTitle?: string;
+  executable?: string;
+  installRequired?: boolean;
+  installAvailable?: boolean;
+  error?: string;
+  message?: string;
+  egressWarning?: string;
+}
+
+export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool' | 'direct';
+/** 已下线的历史出口模式（节点 / 分组）：只读展示，提示改绑。 */
+export type RetiredAccountEgressMode = 'node' | 'group';
+
+/** 出口池绑定的节点范围（全部 / 自建分组 / 自选节点，节点按出口身份记）。 */
+export interface AccountEgressPoolScope {
+  kind: 'all' | 'groups' | 'nodes';
+  groups: string[];
+  nodes: string[];
+}
+
+export type AccountEgressPoolStrategy = 'shared' | 'sticky' | 'session';
+
+export interface AccountEgressBinding {
+  mode: AccountEgressMode | RetiredAccountEgressMode;
+  proxyUrl: string;
+  updatedAt: number;
+  retired?: boolean;
+  nodeId?: string;
+  groupId?: string;
+  scope?: AccountEgressPoolScope;
+  strategy?: AccountEgressPoolStrategy;
+}
+
+export interface AccountEgressBindingInput {
+  mode: AccountEgressMode;
+  proxyUrl?: string;
+  scope?: AccountEgressPoolScope;
+  strategy?: AccountEgressPoolStrategy;
+}
+
+export interface AccountEgressApplyResult {
+  ok: boolean;
+  applied: boolean;
+  status?: 'applied' | 'cleared' | 'restarted';
+  restarted?: boolean;
+  pid?: number | null;
+  previousPids?: number[];
+  proxyServer?: string;
+  source?: string;
+  direct?: boolean;
+  rolledBack?: boolean;
+  rollbackError?: string;
+  error?: string;
+  reason?: string;
+}
+
+/** 绑定当前实际解析到的出口（不含连通性探测）。 */
+export interface AccountEgressResolvedTarget {
+  ok: boolean;
+  source?: string;
+  proxyServer?: string;
+  direct?: boolean;
+  error?: string;
+}
+
+export interface AccountEgressRuntimeStatus {
+  resolved: AccountEgressResolvedTarget | null;
+  desktopRunning: boolean;
+  desktopPid: number | null;
+}
+
+export interface AccountEgressAssignment {
+  accountRef: string;
+  poolGroupId?: string;
+  poolId?: string;
+  selectionMode: 'auto' | 'pinned';
+  pinnedNodeId?: string;
+  strategy: AccountEgressPoolStrategy;
+  scope: AccountEgressPoolScope;
+  fallbackPolicy?: string;
+  updatedAt?: number;
+}
+
+export interface AccountEgressRuntimeView {
+  accountRef: string;
+  assignment: AccountEgressAssignment | null;
+  lane: Record<string, unknown> | null;
+  node: Record<string, unknown> | null;
+  nodeId: string;
+  runtimeName: string;
+  proxyUrl: string;
+  exitIp: string;
+  evidence: Array<Record<string, unknown>>;
+  verdict: Record<string, unknown> | null;
+}
+
+export interface AccountEgressResponse {
+  ok: boolean;
+  binding: AccountEgressBinding | null;
+  apply?: AccountEgressApplyResult;
+  runtime?: AccountEgressRuntimeStatus | null;
+  runtimeError?: string;
+}
+
+/** 账号「窗口激活」设置：对 5h 滚动限额类账号定期发极小探测以推进窗口。 */
+export interface AccountWindowActivationSetting {
+  enabled: boolean;
+  /** null 表示跟随全局默认间隔。 */
+  intervalMs: number | null;
+}
+
+export interface AccountWindowActivationSettingInput {
+  enabled: boolean;
+  intervalMs?: number | null;
+}
+
+/**
+ * 「窗口激活」的全局闸门状态：逐账号开关之外还有一道全局 opt-in（默认关）。
+ * 两道闸门都开着才会真正探测，所以弹窗必须把全局状态显示出来。
+ */
+export interface AccountWindowActivationGlobalState {
+  /** 当前运行中是否生效；null 表示宿主未上报（旧版本 / 未装配）。 */
+  enabled: boolean | null;
+  /** 已保存到 server 配置的全局开关（重启后生效）。 */
+  savedEnabled: boolean;
+  /** 已保存设置与当前生效不一致 → 需重启 Server。 */
+  restartRequired: boolean;
+  /** 当前生效的全局默认间隔；null 表示未知。 */
+  defaultIntervalMs: number | null;
+  /** 当前生效的间隔下限；null 表示未知。 */
+  minIntervalMs: number | null;
+}
+
+/** 该账号最近一次窗口激活探测（0 / 空串表示还没有探测过）。 */
+export interface AccountWindowActivationProbeState {
+  at: number;
+  outcome: string;
+}
+
+/**
+ * 该账号的窗口状态（账本视图，与调度器决策同源）。
+ *
+ * kind:
+ *   open    窗口运行中（closeAtMs 在未来）→ 调度器一次都不探
+ *   closed  关窗时刻已过、等待续窗（closeAtMs 在过去）
+ *   absent  观察到「没有活跃窗口」（幻影 / 快照确认）→ 立刻补窗
+ *   unknown 观察不出窗口（快照缺失 / 该 provider 没有 resetAtMs）→ 按兜底间隔探测
+ */
+export interface AccountWindowActivationWindowState {
+  kind: 'open' | 'closed' | 'absent' | 'unknown' | string;
+  /** 窗口锚点（开窗时刻）；0 表示未知。 */
+  anchorAtMs: number;
+  /** 关窗时刻 = 锚点 + 窗口时长；0 表示未知。 */
+  closeAtMs: number;
+  /** 窗口时长（分钟）；0 表示未知。 */
+  windowMinutes: number;
+  /** 距关窗还剩多久（kind=open 时有意义）。 */
+  remainingMs: number;
+  /** 账本来源：snapshot=快照 / probe=我们的探测 / activity=用户自己的流量。 */
+  source: string;
+  /** 上次观察时刻（快照 capturedAt 或锚定时刻）。 */
+  observedAtMs: number;
+  /** 下一次动作时刻（kind=open 时是关窗后 + 时钟余量）。 */
+  nextActionAtMs: number;
+  /** 连续探测失败次数（>0 表示正在退避重试）。 */
+  probeFailureCount: number;
+  /** 最近一次判定（调度器为什么探 / 为什么没探）。 */
+  lastDecision: {
+    action: string;
+    reason: string;
+    at: number;
+  };
+}
+
+export interface AccountWindowActivationResponse {
+  ok: boolean;
+  provider: string;
+  accountRef: string;
+  setting: AccountWindowActivationSetting;
+  global?: AccountWindowActivationGlobalState;
+  lastProbe?: AccountWindowActivationProbeState;
+  window?: AccountWindowActivationWindowState;
+}
+
+// 兼容已发布的组件/API 类型名；新代码统一使用 AccountEgress*。
+export type ZcodeEgressMode = AccountEgressMode;
+export type ZcodeEgressBinding = AccountEgressBinding;
+export type ZcodeEgressBindingInput = AccountEgressBindingInput;
+export type ZcodeEgressApplyResult = AccountEgressApplyResult;
+export type ZcodeEgressRuntimeStatus = AccountEgressRuntimeStatus;
+export type ZcodeEgressResponse = AccountEgressResponse;
+
+export interface AppInstallJob {
+  id: string;
+  source?: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
+  taskName?: string;
+  appId: string;
+  provider: string;
+  kind: 'cli' | 'desktop' | 'terminal' | string;
+  action?: 'install' | 'update' | 'uninstall' | string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string;
+  phase: string;
+  progress: { percent: number; label: string };
+  attempts: Array<{ id: string; label: string; ok: boolean; error?: string }>;
+  result?: { installed: boolean; cliPath?: string; executablePath?: string } | null;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+}
+
+export interface WebUiTask extends AppInstallJob {
+  source: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
+  taskName: string;
+  /** 运行环境任务的执行目标（'local' | 'ssh:<connectionId>'）。 */
+  target?: string;
+}
+
+// ── 计划任务（含账号活动的定时触发：签到 / 领臭鸡蛋）──
+export type ScheduledTaskScheduleKind = 'daily' | 'weekly' | 'interval' | 'cron';
+
+export interface ScheduledTaskSchedule {
+  kind: ScheduledTaskScheduleKind;
+  /** daily / weekly 用：`HH:MM` */
+  at?: string;
+  /** weekly 用：0=周日 … 6=周六 */
+  weekday?: number;
+  /** interval 用 */
+  hours?: number;
+  minutes?: number;
+  /** cron 用：标准 5 段表达式（分 时 日 月 周） */
+  expression?: string;
+}
+
+export interface ScheduledTaskSchedulePreview {
+  ok: boolean;
+  schedule?: ScheduledTaskSchedule;
+  /** 中文解读（服务端算，前端不重复实现） */
+  label?: string;
+  nextRunAt?: number;
+  error?: string;
+}
+
+export interface ScheduledTaskEvent {
+  id: string;
+  kind: 'activity' | 'custom' | string;
+  label: string;
+  description?: string;
+  provider?: string;
+  actionId?: string;
+  available?: boolean;
+  /** 活动事件声明的参数（静态 schema，候选值按需再拉）。 */
+  params?: ActivityParamField[];
+  supportsProbe?: boolean;
+}
+
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  eventId: string;
+  eventLabel: string;
+  eventParams: Record<string, unknown>;
+  schedule: ScheduledTaskSchedule;
+  scheduleLabel: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt: number;
+  lastStatus: string;
+  lastSummary: string;
+  nextRunAt: number;
+  running: boolean;
+}
+
+export interface ScheduledTaskRecord {
+  id: string;
+  taskId: string;
+  taskName: string;
+  eventId: string;
+  eventLabel: string;
+  trigger: 'manual' | 'schedule' | string;
+  status: string;
+  summary: string;
+  error: string;
+  /** 失败归因的人话摘要（如「全部 3 个账号失败：zcode_captcha_rejected ×2」）。 */
+  errorSummary?: string;
+  startedAt: number;
+  finishedAt: number;
+}
+
+export interface ScheduledTaskRecordsPage {
+  ok: boolean;
+  records: ScheduledTaskRecord[];
+  days: number;
+  /** 时间窗内的总条数（真分页依据） */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface ScheduledTasksResponse {
+  ok: boolean;
+  tasks: ScheduledTask[];
+  events: ScheduledTaskEvent[];
+  tickIntervalMs: number;
+  recordRetentionDays: number;
+  schedulerRunning: boolean;
+  lastTickAt: number;
+}
+
+export type ToolkitLifecycleAction = 'install' | 'update' | 'uninstall';
+
+export type ClientPlatform = 'macos' | 'windows' | 'linux';
+
+export interface ClientTerminalItem {
+  id: string;
+  name: string;
+  description: string;
+  sourceUrl: string;
+  platform: ClientPlatform;
+  installed: boolean;
+  default: boolean;
+  executablePath: string;
+  canInstall: boolean;
+  canUpdate: boolean;
+  canUninstall: boolean;
+  canLaunch: boolean;
+  packageManager: string;
+  plans: Array<{ action: string; label: string; command: string }>;
+}
+
+export interface ClientTerminalsResponse {
+  ok: boolean;
+  platform: ClientPlatform;
+  homeDir?: string;
+  terminals: ClientTerminalItem[];
+}
+
+export interface ToolkitAppConfigResponse {
+  ok: boolean;
+  appId: string;
+  configName: string;
+  configFormat: string;
+  exists: boolean;
+  content: string;
+  revision: string;
+  writable: boolean;
+  requiresElevation: boolean;
+  elevated?: boolean;
+  size?: number;
+}
+
+export interface ProviderConfigFieldCompatibility {
+  state: 'ok' | 'deprecated' | 'unsupported' | string;
+  messages: string[];
+}
+
+export interface ProviderConfigSchemaField {
+  path: string;
+  type: string;
+  typeLabel?: string;
+  description: string;
+  options?: Array<string | number | boolean>;
+  default?: unknown;
+  scope?: string;
+  topic?: string;
+  deprecated?: boolean;
+  secret?: boolean;
+  since?: string;
+  removedIn?: string;
+  /** CLI 等价长旗标；只在该 CLI 自己的 `--help` 里确实出现时才下发。 */
+  cliFlag?: string;
+  /** 可直接复制的用法示例，例如 `codex --model <model>`。 */
+  cliSample?: string;
+  /** 字段出处（官方文档锚点）；后端从 schema 数据透传，可能为空。 */
+  sourceUrl?: string;
+  compatibility?: ProviderConfigFieldCompatibility;
+}
+
+export interface ProviderConfigSchemaWarning {
+  path: string;
+  state: string;
+  messages: string[];
+}
+
+export interface ProviderConfigSchema {
+  id: string;
+  title: string;
+  source: string;
+  sourceUrl: string;
+  docsUrl: string;
+  verifiedAt: string;
+  verifiedCliVersion: string;
+  sensitive: boolean;
+  fieldCount: number;
+  fields: ProviderConfigSchemaField[];
+  compatibilityWarnings: ProviderConfigSchemaWarning[];
+}
+
+export interface ProviderConfigCliInfo {
+  installed: boolean;
+  version: string;
+  path: string;
+}
+
+export interface ProviderConfigSchemaVersionStatus {
+  verified: string;
+  installed: string;
+  mismatch: boolean;
+  installedNewer?: boolean;
+  message: string;
+}
+
+export interface ProviderConfigFileSummary {
+  provider: string;
+  id: string;
+  label: string;
+  displayPath: string;
+  exists: boolean;
+  size: number;
+  modifiedAt: number;
+  format: string;
+  sensitive: boolean;
+  editable: boolean;
+  schemaId: string;
+  schemaTitle: string;
+  schemaFieldCount: number;
+  schemaVerifiedCliVersion: string;
+  description: string;
+  docsUrl: string;
+  canCreate: boolean;
+}
+
+export interface ProviderConfigFileDetail extends ProviderConfigFileSummary {
+  writable: boolean;
+  requiresElevation: boolean;
+}
+
+export interface ProviderConfigProvider {
+  id: string;
+  label: string;
+  cli: ProviderConfigCliInfo | null;
+  files: ProviderConfigFileSummary[];
+}
+
+export interface ProviderConfigListResponse {
+  ok: boolean;
+  providers: ProviderConfigProvider[];
+  total: number;
+}
+
+export interface ProviderConfigDetailResponse {
+  ok: boolean;
+  provider: string;
+  file: ProviderConfigFileDetail;
+  content: string;
+  revision: string;
+  size: number;
+  cli: ProviderConfigCliInfo;
+  schema: ProviderConfigSchema | null;
+  schemaVersion: ProviderConfigSchemaVersionStatus | null;
+  historyCount: number;
+  historyLimit: number;
+  docsUrl: string;
+  description: string;
+}
+
+export interface ProviderConfigValidationError {
+  message: string;
+  line: number;
+  column: number;
+}
+
+export interface ProviderConfigValidationResponse {
+  ok: boolean;
+  provider?: string;
+  fileId?: string;
+  format?: string;
+  valid: boolean;
+  errors: ProviderConfigValidationError[];
+  empty?: boolean;
+  skipped?: boolean;
+}
+
+export interface ProviderConfigSaveResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  revision: string;
+  size: number;
+  savedAt: number;
+  changed: boolean;
+  historyEntry: ProviderConfigHistoryEntry | null;
+  validation: ProviderConfigValidationResponse;
+}
+
+export interface ProviderConfigHistoryEntry {
+  id: string;
+  revision: string;
+  savedAt: number;
+  reason: string;
+  note: string;
+  size: number;
+  containsSecrets: boolean;
+}
+
+export interface ProviderConfigHistoryResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  entries: ProviderConfigHistoryEntry[];
+  limit: number;
+}
+
+export interface ProviderConfigHistoryEntryResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  entry: ProviderConfigHistoryEntry & { content: string };
+}
+
+export interface ProviderConfigExportResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  mode: 'raw' | 'redacted';
+  filename: string;
+  content: string;
+  redactedFields: string[];
+  parsed?: boolean;
+  sensitive: boolean;
+  warning: string;
+}
+
+
+export type ToolkitToolCategoryId = 'session-runtimes' | 'network-access' | 'edge-entry';
+
+export interface ToolkitToolCategory {
+  id: ToolkitToolCategoryId;
+  label: string;
+  description: string;
+}
+
+export interface ManagedToolItem {
+  id: string;
+  category: ToolkitToolCategoryId;
+  name: string;
+  role: string;
+  supported: boolean;
+  installed: boolean;
+  executablePath: string;
+  binaryName: string;
+  version: string;
+  serviceManager: string;
+  capabilities: string[];
+  runtimeInspectable: boolean;
+  running: boolean;
+  runningCount: number;
+  startupManaged: boolean;
+  startupSources: string[];
+  configName: string;
+  configFormat: string;
+  configSource: string;
+  configCount: number;
+  configAmbiguous: boolean;
+  configState: 'none' | 'single' | 'multiple' | 'unresolved' | 'token-managed';
+  configExists: boolean;
+  configWritable: boolean;
+  requiresElevation: boolean;
+  configEditable: boolean;
+  configNote?: string;
+  managedPath?: string;
+  managedBy: 'aih' | 'homebrew' | '' | string;
+  canInstall: boolean;
+  canUpdate: boolean;
+  canUninstall: boolean;
+  lifecycle: Record<ToolkitLifecycleAction, boolean>;
+  service?: ManagedToolService | null;
+}
+
+export type ManagedToolServiceAction = 'start' | 'stop' | 'restart';
+
+export interface ManagedToolService {
+  backend: 'homebrew' | 'aih' | string;
+  backendLabel?: string;
+  controllable: boolean;
+  state: 'running' | 'stopped' | 'backoff' | 'external' | 'error' | 'unknown' | string;
+  pid?: number;
+  startedAt?: number;
+  restarts?: number;
+  consecutiveFailures?: number;
+  nextRestartAt?: number;
+  exitCode?: number | null;
+  lastExit?: { code: number | null; signal: string | null; reason: string; at: number; uptimeMs: number } | null;
+  lastError?: string;
+  autoStart?: boolean;
+  autoRestart?: boolean;
+  settingsEditable?: boolean;
+  settingsNote?: string;
+  configReady?: boolean;
+  canCreateConfig?: boolean;
+  logAvailable?: boolean;
+  message?: string;
+  canStart?: boolean;
+  canStop?: boolean;
+  canRestart?: boolean;
+}
+
+export interface ManagedToolServiceResponse {
+  ok: boolean;
+  toolId?: string;
+  error?: string;
+  message?: string;
+  service?: ManagedToolService | null;
+}
+
+export interface ManagedToolServiceLogsResponse {
+  ok: boolean;
+  backend?: string;
+  lines: string[];
+}
+
+export interface ManagedToolsResponse {
+  ok: boolean;
+  platform: string;
+  categories: ToolkitToolCategory[];
+  total: number;
+  installedCount: number;
+  tools: ManagedToolItem[];
+}
+
+export interface ToolkitToolConfigResponse extends ToolkitAppConfigResponse {
+  toolId: string;
+  targetRevision: string;
+}
+
+export type ManagedToolLifecycleAction = ToolkitLifecycleAction;
+
+export interface ManagedToolPlan {
+  id: string;
+  toolId: string;
+  action: ManagedToolLifecycleAction;
+  label: string;
+  method: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  effect: string;
+  timeoutMs: number;
+  requiresConfirmation: boolean;
+  preview: string;
+}
+
+export interface ManagedToolActionResponse {
+  ok: boolean;
+  platform?: ClientPlatform;
+  action?: ManagedToolLifecycleAction;
+  label?: string;
+  tool?: Pick<ManagedToolItem, 'id' | 'name' | 'category'>;
+  plans?: ManagedToolPlan[];
+  job?: WebUiTask;
+  accepted?: boolean;
+  alreadyRunning?: boolean;
+  error?: string;
+  message?: string;
+}
+
+export interface EnvironmentCheatsheetCommand {
+  desc?: string;
+  label?: string;
+  cmd: string;
+  platform?: string;
+  method?: string;
+}
+
+export interface EnvironmentToolCheatsheet {
+  id: string;
+  name: string;
+  statusCmd?: string;
+  installGuide?: string;
+  recommended?: boolean;
+  platforms?: string[];
+  commands?: EnvironmentCheatsheetCommand[];
+  installCommands?: Array<{ platform?: string; method?: string; cmd: string }>;
+  uninstallCommands?: Array<{ method?: string; cmd: string }>;
+  commonCommands?: EnvironmentCheatsheetCommand[];
+}
+
+export interface EnvironmentInfo {
+  name: string;
+  scope?: string;
+  source?: string;
+  probeStatus?: 'available' | 'unavailable' | 'unset' | 'error';
+  currentVersion: string;
+  activePath: string;
+  packageManagers?: {
+    npm?: string | null;
+    pnpm?: string | null;
+    yarn?: string | null;
+    bun?: string | null;
+  };
+  pip?: string | null;
+  tools?: {
+    uv?: string | null;
+    poetry?: string | null;
+  };
+  versionManagers?: Array<{
+    name: string;
+    displayName?: string;
+    installed: boolean;
+    version?: string;
+    path?: string;
+    versions?: string[];
+  }>;
+  installedVersions?: string[];
+  cheatsheet?: {
+    versionManagers?: EnvironmentToolCheatsheet[];
+    packageManagers?: EnvironmentToolCheatsheet[];
+    virtualEnvironments?: EnvironmentToolCheatsheet[];
+  };
+}
+
+export interface EnvironmentActionInput {
+  manager: 'nvm' | 'fnm' | 'pyenv' | 'conda' | 'venv';
+  action: 'install' | 'uninstall' | 'default' | 'global' | 'create' | 'remove';
+  version?: string;
+  pythonVersion?: string;
+  name?: string;
+  path?: string;
+  confirmed?: boolean;
+}
+
+export interface EnvironmentActionPlan {
+  manager: EnvironmentActionInput['manager'];
+  action: EnvironmentActionInput['action'];
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  scope: string;
+  effect: string;
+  requiresConfirmation: boolean;
+  changesCallerShell: boolean;
+}
+
+export interface EnvironmentActionResponse {
+  ok: boolean;
+  error?: string | null;
+  message?: string;
+  plan?: EnvironmentActionPlan;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  timedOut?: boolean;
+  outputTruncated?: boolean;
+}
+
+export type EnvironmentLifecycleAction = ToolkitLifecycleAction;
+
+export interface EnvironmentRuntimeSummary {
+  name: string;
+  scope: string;
+  source: string;
+  probeStatus: 'available' | 'unavailable' | 'unset' | 'error' | string;
+  currentVersion: string;
+  activePath: string;
+  packageManagerVersion?: string;
+}
+
+export interface EnvironmentResourceItem {
+  id: string;
+  name: string;
+  runtime: string;
+  category: string;
+  description: string;
+  platform: ClientPlatform;
+  installed: boolean;
+  version: string;
+  executablePath: string;
+  managedVersions: string[];
+  canInstall: boolean;
+  canUpdate: boolean;
+  canUninstall: boolean;
+  lifecycle: Record<EnvironmentLifecycleAction, boolean>;
+}
+
+export interface EnvironmentToolPlan {
+  id: string;
+  toolId: string;
+  action: EnvironmentLifecycleAction;
+  label: string;
+  method: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  effect: string;
+  timeoutMs: number;
+  requiresConfirmation: boolean;
+  preview: string;
+}
+
+export interface EnvironmentToolActionResponse {
+  ok: boolean;
+  platform?: ClientPlatform;
+  action?: EnvironmentLifecycleAction;
+  label?: string;
+  tool?: Pick<EnvironmentResourceItem, 'id' | 'name' | 'runtime' | 'category'>;
+  plans?: EnvironmentToolPlan[];
+  job?: WebUiTask;
+  accepted?: boolean;
+  alreadyRunning?: boolean;
+  error?: string;
+  message?: string;
+}
+
+export interface EnvironmentGuideTask {
+  id: string;
+  toolId: string;
+  label: string;
+  category: 'install' | 'update' | 'uninstall' | 'configure' | 'use' | 'inspect';
+  template: string;
+  parameters: Array<{ key: string; label: string; placeholder: string }>;
+  method?: string;
+  source: 'lifecycle' | 'task';
+}
+
+export interface EnvironmentGuideTool {
+  id: string;
+  name: string;
+  runtime: string;
+  category: string;
+  description: string;
+  tasks: EnvironmentGuideTask[];
+}
+
+export interface EnvironmentGuideResponse {
+  ok: boolean;
+  platform: ClientPlatform;
+  currentPlatform: ClientPlatform;
+  platforms: Array<{ id: ClientPlatform; label: string }>;
+  tools: EnvironmentGuideTool[];
+}
+
+export interface EnvironmentRuntimePlugin {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+/** toolkit 执行目标：本机（AIH Server）或「SSH 开发机」里的一台远端机器。 */
+export interface ToolkitTarget {
+  kind: 'local' | 'ssh';
+  /** 'local' | 'ssh:<connectionId>' */
+  id: string;
+  label: string;
+  host?: string;
+  platform?: ClientPlatform;
+  arch?: string;
+  os?: string;
+}
+
+export interface EnvironmentsResponse {
+  ok: boolean;
+  platform: ClientPlatform;
+  /** 远端目标时返回目标描述（本机不返回）。 */
+  target?: ToolkitTarget;
+  stale?: boolean;
+  probedAt?: number;
+  runtimePlugins?: EnvironmentRuntimePlugin[];
+  runtimes: Record<string, EnvironmentRuntimeSummary | undefined>;
+  resources: EnvironmentResourceItem[];
+  installedCount: number;
+  total: number;
+  environments: {
+    node: EnvironmentInfo;
+    python: EnvironmentInfo;
+  };
+}
+
+export interface MirrorPreset {
+  id: string;
+  name: string;
+  url: string;
+  official: boolean;
+  active?: boolean;
+  speed?: string;
+  desc?: string;
+  guides?: MirrorGuide;
+}
+
+export interface MirrorGuide {
+  title: string;
+  sourceUrl?: string;
+  sourceHost?: string;
+  commands: Array<{
+    platform: string;
+    label: string;
+    cmd: string;
+  }>;
+}
+
+export interface MirrorKindInfo {
+  id: string;
+  name: string;
+  label: string;
+  settingLabel: string;
+}
+
+export interface MirrorKindStatus {
+  current: string;
+  presets: MirrorPreset[];
+  guides?: MirrorGuide;
+}
+
+/** 软件源由服务端插件提供：kinds 为有序清单，每个 kind 的状态以其 id 为键。 */
+export interface MirrorsResponse {
+  ok: boolean;
+  platform?: string;
+  kinds?: MirrorKindInfo[];
+  [kind: string]: MirrorKindStatus | MirrorKindInfo[] | string | boolean | undefined;
+}
+
+export interface SystemProxyInfo {
+  platform: string;
+  scope?: string;
+  source?: string;
+  probeStatus?: 'available' | 'unset' | 'error' | 'unsupported';
+  enabled: boolean;
+  httpProxy: string;
+  httpsProxy: string;
+  socksProxy: string;
+  bypassList?: string[];
+}
+
+export interface ProxyStatusResponse {
+  ok: boolean;
+  /** 网关转发上游实际使用的代理（服务端配置）；带凭据时 proxyUrl 为打码值。 */
+  gateway?: {
+    scope?: string;
+    source?: string;
+    probeStatus?: 'available' | 'unset';
+    proxyUrl: string;
+    redacted?: boolean;
+    noProxy: string;
+  };
+  env: {
+    scope?: string;
+    source?: string;
+    probeStatus?: 'available' | 'unset';
+    httpProxy: string;
+    httpsProxy: string;
+    allProxy: string;
+    noProxy: string;
+  };
+  system?: SystemProxyInfo;
+  /** 代理目标插件清单（Git、npm…），顺序即界面顺序。 */
+  toolTargets?: ProxyToolTarget[];
+  tools: Record<string, ToolProxyInfo | undefined>;
+}
+
+export interface ProxyToolTarget {
+  id: string;
+  name: string;
+  scopeLabel: string;
+}
+
+export interface ToolProxyInfo {
+  scope?: string;
+  source?: string;
+  probeStatus?: 'available' | 'unset' | 'error';
+  httpProxy: string;
+  httpsProxy: string;
+  scopedProxies?: Array<{ key: string; value: string }>;
+}
+
+export interface ConnectivityTargetResult {
+  id: string;
+  name: string;
+  url: string;
+  host: string;
+  reachable: boolean;
+  latencyMs: number;
+  statusCode?: number | null;
+  route?: 'direct' | 'proxy';
+  proxyUsed?: string | null;
+  error?: string | null;
+}
+
+export interface ConnectivityResponse {
+  ok: boolean;
+  testedAt: number;
+  route: 'direct' | 'proxy';
+  proxyUsed: string | null;
+  networkLayer?: NetworkLayerStatus;
+  error?: string;
+  results: ConnectivityTargetResult[];
+}
+
+export type NativeResourceKind = 'plugin' | 'skill' | 'mcp';
+export type NativeResourceAction = 'install' | 'enable' | 'disable' | 'remove' | 'test' | 'tools' | 'call' | 'demo';
+
+export interface NativeResourceManagedRecord {
+  kind: NativeResourceKind;
+  id: string;
+  provider?: string;
+  host?: string;
+  enabled?: boolean;
+  removed?: boolean;
+  target?: string;
+  mode?: string;
+  digest?: string;
+  projection?: string;
+  command?: string;
+  argCount?: number;
+  envKeys?: string[];
+}
+
+export interface NativeResourceCapability {
+  state: string;
+  reason?: string;
+  commands?: string[];
+  paths?: string[];
+  mode?: string;
+  adapter?: string;
+  projection?: { path?: string; format?: string; [key: string]: unknown };
+  managed: NativeResourceManagedRecord[];
+  demo: { source?: string; command: string; args?: string[] };
+}
+
+export interface NativeResourceProviderRow {
+  provider: string;
+  runtime: { available: boolean; version?: string; binary?: string; reason?: string; [key: string]: unknown };
+  resources: Record<NativeResourceKind, NativeResourceCapability>;
+}
+
+export interface NativeResourceHostRow {
+  host: string;
+  state: string;
+  reason?: string;
+  runtime?: { available?: boolean; versionObserved?: string; [key: string]: unknown };
+  resources: { plugin: NativeResourceCapability };
+}
+
+export interface NativeResourceReport {
+  ok: boolean;
+  source: string;
+  providers: NativeResourceProviderRow[];
+  hosts: NativeResourceHostRow[];
+  managed: Record<NativeResourceKind, NativeResourceManagedRecord[]>;
+  lifecycle: string[];
+  evidenceBoundary: string;
+}
+
+export interface NativeResourceDemoResult {
+  command: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AihPluginInstalled {
+  pluginId: string;
+  version: string;
+  digest: string;
+  installedAt: number;
+  signature?: { status?: string; keyId?: string; [key: string]: unknown };
+  permissions?: Record<string, unknown> | null;
+  contributes?: string[];
+}
+
+export interface AihPluginInstance {
+  instanceId: string;
+  pluginId: string;
+  version: string;
+  enabled: boolean;
+  configurationKeys?: string[];
+  permissionsAcceptedAt?: number | null;
+  updatedAt?: number;
+}
+
+export interface AihPluginReport {
+  ok: boolean;
+  revision: number;
+  installed: AihPluginInstalled[];
+  instances: AihPluginInstance[];
+  runtime?: Record<string, unknown> | null;
+}
+
+export interface AihPluginDoctorReport extends AihPluginReport {
+  issues?: Array<Record<string, unknown>>;
+  warnings?: Array<Record<string, unknown>>;
+  capabilities?: Record<string, number>;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  images?: string[];
+  pending?: boolean;
+  statusText?: string;
+  timestamp?: string | number;
+  model?: string;
+  /** 本轮实际生效的推理强度；没有档位概念的 provider 缺省（界面留空）。 */
+  effort?: string;
+  source?: 'codex-mobile';
+  metrics?: ChatMessageMetrics;
+}
+
+export interface QueuedChatMessage {
+  id: string;
+  content: string;
+  images?: string[];
+  documents?: import('../components/chat/attachment-files').ChatDocumentAttachment[];
+  createdAt: number;
+  mode?: 'after_turn' | 'after_tool_call';
+}
+
+export interface SessionMessageBundle {
+  messages: ChatMessage[];
+  cursor: number;
+  start: number;
+  total: number;
+  hasMore: boolean;
+}
+
+export interface SessionEventItem {
+  type: 'user_message' | 'assistant_text' | 'assistant_reasoning' | 'assistant_tool_call' | 'assistant_tool_result';
+  timestamp?: string;
+  content?: string;
+  text?: string;
+  images?: string[];
+  model?: string;
+  callId?: string;
+  source?: string;
+}
+
+export interface SessionEventsResponse {
+  ok: boolean;
+  events: SessionEventItem[];
+  cursor: number;
+  requiresSnapshot?: boolean;
+  hasAssistantToolCall?: boolean;
+}
+
+export type ChatRequest = {
+  messages: ChatMessage[];
+  provider: Provider;
+  model?: string;
+  stream?: boolean;
+  prompt?: string;
+  createSession?: boolean;
+  sessionId?: string;
+  projectDirName?: string;
+  projectPath?: string;
+  images?: string[];
+  documents?: import('../components/chat/attachment-files').ChatDocumentAttachment[];
+  // 会话级审批模式(P3):bypass(默认)/confirm(权限请求转 webUI 审批)/plan(计划模式+确认)。
+  approvalMode?: 'bypass' | 'confirm' | 'plan';
+  // 纯聊天 / 项目工作：后端 webui-chat-routes.js 的 requestedChatMode 读这个字段。
+  mode?: 'chat' | 'work';
+} & (
+  | { accountRef: string; gateway?: false }
+  | { gateway: true; accountRef?: never }
+);
+
+export interface ChatResponse {
+  ok: boolean;
+  accountRef?: string;
+  gateway?: boolean;
+  provider?: Provider;
+  sessionId?: string;
+  runId?: string;
+  mode?: 'native-session' | 'api-proxy';
+  model?: string;
+  content?: string;
+  error?: string;
+}
+
+export interface InteractivePromptOption {
+  value: string;
+  title: string;
+  description?: string;
+}
+
+export interface InteractivePrompt {
+  kind: 'plan-choice';
+  promptId: string;
+  question: string;
+  options: InteractivePromptOption[];
+  provider?: Provider | string;
+  runId?: string;
+}
+
+export interface ChatStreamEvent {
+  type: 'ready' | 'session-created' | 'delta' | 'thinking' | 'result' | 'done' | 'error' | 'terminal-output' | 'interactive-prompt' | 'interactive-prompt-cleared' | 'assistant_tool_call' | 'assistant_tool_result' | 'retry-status' | 'cli-install-confirmation' | 'cli-install-progress';
+  delta?: string;
+  thinking?: string;
+  content?: string;
+  text?: string;
+  prompt?: InteractivePrompt;
+  promptId?: string;
+  reason?: string;
+  phase?: 'scheduled' | 'reconnecting' | 'recovered';
+  source?: 'upstream-api' | 'provider-runtime' | 'transport';
+  attempt?: number;
+  maxAttempts?: number;
+  retryAfterMs?: number;
+  retryAt?: number;
+  status?: number;
+  message?: string;
+  code?: string;
+  ts?: string;
+  elapsedMs?: number;
+  firstTokenElapsedMs?: number | null;
+  totalElapsedMs?: number;
+  runId?: string;
+  provider?: Provider;
+  model?: string;
+  accountRef?: string;
+  gateway?: boolean;
+  sessionId?: string;
+  mode?: 'native-session' | 'api-proxy';
+  interactionMode?: 'default' | 'terminal';
+  slashCommand?: string;
+  installPhase?: 'installing' | 'plan-succeeded' | 'plan-failed' | 'installed' | 'failed' | 'cancelled';
+  confirmationId?: string;
+  countdownMs?: number;
+  expiresAt?: number;
+  planId?: string;
+  planLabel?: string;
+}
+
+export interface NativeSlashCommand {
+  command: string;
+  description: string;
+  argumentHint?: string;
+  aliases: string[];
+  source?: string;
+}
+
+export interface ManagementQueueSnapshot {
+  name: string;
+  running: number;
+  queued: number;
+  maxConcurrency: number;
+  queueLimit: number;
+  totalScheduled: number;
+  totalRejected: number;
+}
+
+export interface ManagementProviderStatus {
+  total: number;
+  active: number;
+  statuses: Record<string, number>;
+}
+
+export interface ManagementStatus {
+  ok: boolean;
+  backend: string;
+  host: string;
+  port: number;
+  apiKeyConfigured: boolean;
+  providerMode: string;
+  strategy: string;
+  totalAccounts: number;
+  activeAccounts: number;
+  cooldownAccounts: number;
+  statusTotals: Record<string, number>;
+  providers: Record<string, ManagementProviderStatus>;
+  sessionAffinity: Record<string, number>;
+  queue: Record<string, ManagementQueueSnapshot>;
+  modelsCached: number;
+  modelsUpdatedAt: number;
+  modelRegistryUpdatedAt: number;
+  successRate: number;
+  timeoutRate: number;
+  totalRequests: number;
+  uptimeSec: number;
+}
+
+export interface ManagementAccountActivity {
+  provider: string;
+  accountRef: string;
+  /** 真正在干活的量：网关 attempt 的 in-flight + 原生会话回合。终端只是开着不算。 */
+  inFlight: number;
+  /** 原生 CLI 会话（不经网关）当前是否有回合在跑。 */
+  sessionTurnActive?: boolean;
+  /** aih 托管的持久 CLI 会话是否存活（所有 provider 通用，含无 hook 的 provider）。 */
+  runtimeActive?: boolean;
+  /** 有人正坐在终端里（attached），只用于展示，不计入 inFlight。 */
+  runtimeServing?: boolean;
+  /** 存活的持久 CLI 会话数。 */
+  runtimeSessions?: number;
+  /** 其中「用户正在其中」（attached）的会话数。 */
+  runtimeAttached?: number;
+  rate: number;
+  activeModels?: string[];
+  lastActivityAt: number;
+  updatedAt: number;
+}
+
+export interface ManagementMetrics {
+  ok: boolean;
+  totalRequests: number;
+  totalSuccess: number;
+  totalFailures: number;
+  totalTimeouts: number;
+  successRate: number;
+  timeoutRate: number;
+  routeCounts: Record<string, number>;
+  providerCounts: Record<string, number>;
+  providerSuccess: Record<string, number>;
+  providerFailures: Record<string, number>;
+  queue: Record<string, ManagementQueueSnapshot>;
+  accountActivity?: Record<string, ManagementAccountActivity>;
+  lastErrors: Array<{
+    at?: string;
+    provider?: string;
+    accountLabel?: string;
+    attemptedCount?: number;
+    accountRef?: string;
+    attemptedAccountRefs?: string[];
+    model?: string;
+    requestedModel?: string;
+    effectiveModel?: string;
+    clientProtocol?: string;
+    familyProvider?: string;
+    effectiveProvider?: string;
+    aliasTarget?: string;
+    aliasMatched?: boolean;
+    sessionId?: string;
+    sessionKey?: string;
+    projectPath?: string;
+    projectDirName?: string;
+    route?: string;
+    message?: string;
+    error?: string;
+    detail?: string;
+    reason?: string;
+  }>;
+}
+
+export interface ManagementAccount {
+  provider: Provider;
+  accountRef: string;
+  email?: string;
+  baseUrl?: string;
+  planType?: string;
+  remainingPct: number | null;
+  configured?: boolean;
+  apiKeyMode?: boolean;
+  usageSnapshot?: AccountUsageSnapshot | null;
+  hasAccessToken: boolean;
+  hasRefreshToken: boolean;
+  cooldownUntil: number;
+  lastRefresh: number;
+  consecutiveFailures: number;
+  successCount: number;
+  failCount: number;
+  lastError: string;
+  runtimeStatus?: string;
+  runtimeUntil?: number;
+  runtimeReason?: string;
+}
+
+export interface AccountRuntimeModel {
+  model: string;
+  /** 等待的恢复事件：model_catalog / usage_snapshot / policy_snapshot。 */
+  blocks: string[];
+  cooldownKind?: string;
+  cooldownUntil?: number;
+}
+
+export interface ManagementAccountsResponse {
+  ok: boolean;
+  accounts: ManagementAccount[];
+}
+
+export interface ModelUsageDateRange {
+  from: string;
+  to: string;
+}
+
+export interface ModelUsageQuery {
+  from?: string;
+  to?: string;
+  provider?: Provider | '';
+  model?: string;
+  sessionId?: string;
+  limit?: number;
+  scan?: boolean;
+}
+
+export interface ModelUsageStats {
+  totalCalls: number;
+  totalSessions: number;
+  totalPrompts: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+}
+
+export interface ModelUsageMetricTotals {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  cacheHitRate: number | null;
+}
+
+export interface ModelUsageModelRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  model: string;
+  accountCount: number;
+  unattributedCalls: number;
+}
+
+export interface ModelUsageSessionRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  sessionId: string;
+  project: string;
+  cwd: string;
+  gitBranch: string;
+  startedAtMs: number;
+  updatedAtMs: number;
+  promptCount: number;
+  accountCount: number;
+  unattributedCalls: number;
+}
+
+export interface ModelUsageSessionDetailRow extends ModelUsageModelRow {
+  sessionId: string;
+}
+
+export interface ModelUsageTrendPoint extends ModelUsageMetricTotals {
+  bucketStartMs: number;
+}
+
+export interface ModelUsageTrend {
+  fromMs: number;
+  toMs: number;
+  bucketMs: number;
+  points: ModelUsageTrendPoint[];
+}
+
+export interface ModelUsageAccountModelRow extends ModelUsageMetricTotals {
+  provider: Provider;
+  model: string;
+}
+
+export interface ModelUsageAccountRow extends ModelUsageMetricTotals {
+  accountRef: string;
+  accountProvider: Provider | '';
+  modelCount: number;
+  models: ModelUsageAccountModelRow[];
+}
+
+export interface ModelUsageBreakdownSummary extends ModelUsageMetricTotals {
+  accountCount: number;
+  unattributedCalls: number;
+}
+
+export interface ModelUsageStatsResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  stats: ModelUsageStats;
+}
+
+export interface ModelUsageModelsResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  models: ModelUsageModelRow[];
+}
+
+export interface ModelUsageSessionsResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  sessions: ModelUsageSessionRow[];
+}
+
+export interface ModelUsageDashboardData {
+  stats: ModelUsageStats;
+  models: ModelUsageModelRow[];
+  sessions: ModelUsageSessionRow[];
+  modelOptions: ModelUsageModelRow[];
+  trend: ModelUsageTrend;
+}
+
+export interface ModelUsageDashboardResponse extends ModelUsageDashboardData {
+  ok: boolean;
+  range: ModelUsageDateRange;
+}
+
+export type ModelUsageDashboardQueryStatus =
+  | 'queued'
+  | 'preparing'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export interface ModelUsageDashboardQueryJob {
+  id: string;
+  status: ModelUsageDashboardQueryStatus;
+  query: ModelUsageQuery;
+  startedAt: number;
+  finishedAt: number;
+  completedShards: number;
+  totalShards: number;
+  dashboard: ModelUsageDashboardData | null;
+  error: string;
+}
+
+export interface ModelUsageDashboardQueryResponse {
+  ok: boolean;
+  accepted: boolean;
+  job: ModelUsageDashboardQueryJob;
+}
+
+export interface ModelUsageDashboardQueryCancelResponse {
+  ok: boolean;
+  cancelled: boolean;
+  job: ModelUsageDashboardQueryJob;
+}
+
+export interface ModelUsageSessionDetailResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  session: ModelUsageSessionDetailRow[];
+}
+
+export interface ModelUsageRequestRow {
+  requestId: string;
+  provider: Provider | '';
+  model: string;
+  reasoningEffort: string;
+  endpoint: string;
+  clientIp: string;
+  requestType: 'stream' | 'sync' | '';
+  billingMode: 'token' | '';
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  timestampMs: number;
+  statusCode: number;
+  errorCode: string;
+  errorMessage: string;
+}
+
+export interface ModelUsageRequestDetailsResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  usage: ModelUsageRequestRow[];
+  errors: ModelUsageRequestRow[];
+}
+
+export interface ModelUsageBreakdownResponse {
+  ok: boolean;
+  range: ModelUsageDateRange;
+  summary: ModelUsageBreakdownSummary;
+  models: ModelUsageModelRow[];
+  accounts: ModelUsageAccountRow[];
+}
+
+export interface ModelUsageScanProviderResult {
+  files: number;
+  records: number;
+  prompts: number;
+  skipped: number;
+  reason?: string;
+}
+
+export interface ModelUsageScanResult {
+  files: number;
+  records: number;
+  prompts: number;
+  skipped: number;
+  providers: Partial<Record<Provider, ModelUsageScanProviderResult>>;
+}
+
+export interface ModelUsageScanResponse {
+  ok: boolean;
+  accepted?: boolean;
+  alreadyRunning?: boolean;
+  job?: ModelUsageScanJob;
+  result?: ModelUsageScanResult;
+}
+
+export type ModelUsageScanJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface ModelUsageScanJob {
+  id: string;
+  status: ModelUsageScanJobStatus;
+  provider: Provider | '';
+  startedAt: number;
+  finishedAt: number;
+  result: ModelUsageScanResult | null;
+  error: string;
+}
+
+export interface SlashCommandsResponse {
+  ok: boolean;
+  provider: string;
+  commands: NativeSlashCommand[];
+  /** Native interactive CLIs may accept provider/plugin slash commands absent from the catalog. */
+  slashPassthrough?: boolean;
+}
+
+export interface Session {
+  id: string;
+  runtimeSessionId?: string;
+  title: string;
+  updatedAt: number;
+  provider: Provider;
+  accountRef?: string;
+  projectDirName?: string; // Claude 专用：项目目录名
+  projectPath?: string;
+  draft?: boolean;
+  status?: string;
+  model?: string;   // 会话最近使用的模型（快照可选带上，用于列表展示）
+  preview?: string; // 最后一条消息的简短预览（快照可选带上）
+}
+
+export interface ProviderInfo {
+  provider: Provider;
+  accountRef: string;
+}
+
+export interface AggregatedProject {
+  id: string;
+  name: string;
+  path: string;
+  providers: Provider[]; // 简化为 provider 数组
+  sessions: Session[]; // 聚合会话（后端只下发最近 N 条，见 sessionTotal）
+  sessionTotal?: number; // 该项目会话总数（可能 > sessions.length，超出部分未下发）
+  manual?: boolean;
+  addedAt?: number;
+  /** 远程工作区（SSH 开发机上的目录）：path 是 Server 本机的影子目录，文件在远端。 */
+  remote?: RemoteProjectDescriptor;
+}
+
+export interface RemoteProjectDescriptor {
+  workspaceId: string;
+  connectionId: string;
+  host: string;
+  hostLabel?: string;
+  remoteRoot: string;
+}
+
+export interface ArchivedSession {
+  id: string;
+  title: string;
+  provider: Provider;
+  projectPath?: string;
+  projectDirName?: string;
+  origin: 'native' | 'legacy';
+  canUnarchive: boolean;
+  updatedAt: number;
+  archivedAt?: number;
+}
+
+export interface SessionLifecycleOperationCapability {
+  support: 'native' | 'unsupported';
+  available: boolean;
+  reason?: string;
+}
+
+export interface ProviderSessionLifecycleCapability {
+  provider?: Provider;
+  workflowAvailable: boolean;
+  reason?: string;
+  operations: {
+    archive: SessionLifecycleOperationCapability;
+    listArchived: SessionLifecycleOperationCapability;
+    unarchive: SessionLifecycleOperationCapability;
+  };
+}
+
+export interface ArchivedSessionListError {
+  provider: string;
+  code: string;
+  message: string;
+}
+
+export interface ArchivedSessionsResponse {
+  archived: ArchivedSession[];
+  errors: ArchivedSessionListError[];
+}
+
+export interface SshHost {
+  id: string;
+  label: string;
+  sshTarget: string;
+  remoteRoot: string;
+  createdAt: number;
+}
+
+export interface SshHostTestResult {
+  status: 'reachable' | 'auth-required' | 'unreachable';
+  target: string;
+  stderr?: string;
+  accessMode?: string;
+  platform?: string;
+  arch?: string;
+  commands?: {
+    node?: boolean;
+    npm?: boolean;
+    git?: boolean;
+    aih?: boolean;
+  };
+  repo?: {
+    present?: boolean;
+  };
+  recommendation?: string;
+}
+
+export interface ImageStudioModelCapabilities {
+  generation: boolean;
+  edit: boolean;
+  mask: boolean;
+  multiple: boolean;
+  size: boolean;
+  quality: boolean;
+  responseFormat: boolean;
+  maxInputImages: number;
+  background: boolean;
+  outputFormat: boolean;
+  outputCompression: boolean;
+  moderation: boolean;
+}
+
+export interface ImageStudioModel {
+  key: string;
+  id: string;
+  label: string;
+  provider: string;
+  providerLabel: string;
+  priority: number;
+  source: string;
+  capabilities: ImageStudioModelCapabilities;
+  qualityOptions?: string[];
+  accountCount: number;
+  availableAccountCount: number;
+  unavailableReasons?: Array<{
+    reason: string;
+    count: number;
+  }>;
+}
+
+export type ImageStudioRevisionStatus = 'running' | 'succeeded' | 'failed';
+export type ImageStudioRevisionMode = 'generation' | 'edit';
+
+export interface ImageStudioRevisionError {
+  code: string;
+  message: string;
+  statusCode: number;
+}
+
+export interface ImageStudioRevision {
+  id: string;
+  parentRevisionId: string;
+  mode: ImageStudioRevisionMode;
+  prompt: string;
+  provider: string;
+  model: string;
+  modelKey: string;
+  parameters: {
+    n: number;
+    size: string;
+    quality: string;
+    background: string;
+    outputFormat: string;
+    outputCompression: number | null;
+    moderation: string;
+  };
+  sourceAssetIds: string[];
+  maskAssetId: string;
+  outputAssetIds: string[];
+  status: ImageStudioRevisionStatus;
+  createdAt: number;
+  completedAt: number;
+  accountRef: string;
+  error: ImageStudioRevisionError | null;
+}
+
+export interface ImageStudioAsset {
+  id: string;
+  revisionId: string;
+  role: 'source' | 'mask' | 'output';
+  mimeType: string;
+  byteLength: number;
+  createdAt: number;
+  revisedPrompt?: string;
+  url: string;
+}
+
+export interface ImageStudioSession {
+  version: number;
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  activeRevisionId: string;
+  revisions: ImageStudioRevision[];
+  assets: ImageStudioAsset[];
+}
+
+export interface ImageStudioSessionSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  revisionCount: number;
+  assetCount: number;
+  activeRevisionId: string;
+  latestStatus: ImageStudioRevisionStatus | '';
+  latestModel: string;
+  latestProvider: string;
+  previewAssetId: string;
+  previewMimeType: string;
+  previewUrl: string;
+}
+
+export interface ImageStudioModelsResponse {
+  ok: boolean;
+  models: ImageStudioModel[];
+  defaultModelKey: string;
+}
+
+export interface ImageStudioSessionsResponse {
+  ok: boolean;
+  sessions: ImageStudioSessionSummary[];
+}
+
+export interface ImageStudioSessionResponse {
+  ok: boolean;
+  session: ImageStudioSession;
+}
+
+export interface ImageStudioDeleteSessionResponse {
+  ok: boolean;
+  deletedSessionId: string;
+}
+
+export interface ImageStudioRunInput {
+  mode: ImageStudioRevisionMode;
+  modelKey: string;
+  prompt: string;
+  parentRevisionId?: string;
+  sources?: Array<{
+    assetId?: string;
+    image?: string;
+  }>;
+  maskAssetId?: string;
+  mask?: string;
+  n?: number;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  output_compression?: number;
+  moderation?: string;
+}
+
+export interface ImageStudioRunResponse extends ImageStudioSessionResponse {
+  revisionId: string;
+}
+
+// ---------------------------------------------------------------------------
+// AI 翻译（/translation 页面 + 全局选区悬浮翻译）
+// ---------------------------------------------------------------------------
+
+export interface TranslationLanguage {
+  code: string;
+  label: string;
+  english: string;
+  native: string;
+}
+
+export interface TranslationLanguagesResponse {
+  ok: boolean;
+  languages: TranslationLanguage[];
+  auto: string;
+}
+
+export interface TranslationSettings {
+  /** 'auto' = 自动检测源语言 */
+  source: string;
+  target: string;
+  /** 空串 = 未显式设置，由服务端按模型目录兜底 */
+  model: string;
+  provider: string;
+  /** Effective desktop translation lane. */
+  executionTarget: 'aih-server' | 'direct-provider';
+  systemEnabled: boolean;
+  targetPolicy: 'saved' | 'explicit' | 'confirm' | 'same-language';
+  autoCopy: boolean;
+  copyScope: 'selection' | 'page' | 'all';
+  routes: TranslationRoutePreference[];
+  updatedAt: number;
+}
+
+export interface TranslationRoutePreference {
+  id: string;
+  /** Translation engine id; gateway account provider is kept in modelProvider. */
+  provider: string;
+  model: string;
+  modelProvider?: string;
+  enabled: boolean;
+  priority: number;
+  operations: Array<'selection' | 'batch' | 'page' | 'replace'>;
+}
+
+export interface TranslationProviderField {
+  label: string;
+  secret?: boolean;
+  required?: boolean;
+  format?: 'url';
+  defaultValue?: string;
+  placeholder?: string;
+}
+
+export interface TranslationProviderOption {
+  id: string;
+  label: string;
+  operations: TranslationRoutePreference['operations'];
+  capabilities: { streaming?: boolean; detection?: boolean; glossary?: boolean; formality?: boolean };
+  auth: { modes: string[]; required: boolean; fields: string[] };
+  config: {
+    fields: string[];
+    fieldDefinitions?: Record<string, TranslationProviderField>;
+    modelSource?: 'gateway' | 'service';
+    defaultModel?: string;
+  };
+  metadata: { access?: string; accessLabel?: string; accessDescription?: string };
+  executable: boolean;
+  configured: boolean;
+  missingFields: string[];
+  secretConfigured: Record<string, boolean>;
+  values: Record<string, string>;
+}
+
+export interface TranslationSettingsResponse {
+  ok: boolean;
+  settings: TranslationSettings;
+  autoDetectedModel: string;
+  autoDetectedProvider: string;
+}
+
+export interface TranslationModelOption {
+  id: string;
+  provider: string;
+  providerLabel: string;
+  source: string;
+  origin: string;
+  availableAccountCount: number;
+}
+
+export interface TranslationModelsResponse {
+  ok: boolean;
+  models: TranslationModelOption[];
+  defaultModel: string;
+  defaultProvider: string;
+}
+
+export interface TranslationDetectionResponse {
+  ok: boolean;
+  code: string;
+  label: string;
+  confidence: 'high' | 'medium' | 'low';
+  script: string;
+}
+
+export interface TranslationGlossaryEntry {
+  source: string;
+  target: string;
+}
+
+export interface TranslationStreamRequest {
+  text: string;
+  source?: string;
+  target?: string | null;
+  targetPolicy?: 'saved' | 'explicit' | 'confirm' | 'same-language';
+  routes?: TranslationRoutePreference[];
+  operation?: 'selection' | 'batch' | 'page' | 'replace';
+  model?: string;
+  provider?: string;
+  glossary?: TranslationGlossaryEntry[];
+  formality?: 'formal' | 'casual';
+}
+
+export type TranslationStreamEvent =
+  | {
+    type: 'attempt_start' | 'attempt_success' | 'attempt_failure';
+    attempt: number;
+    routeId: string;
+    provider: string;
+    modelProvider?: string;
+    model: string;
+    retryable?: boolean;
+    code?: string;
+    status?: number;
+  }
+  | {
+    type: 'start';
+    from: string;
+    fromLabel: string;
+    detected: string;
+    detectedLabel: string;
+    detectionConfidence: 'high' | 'medium' | 'low';
+    to: string;
+    toLabel: string;
+    model: string;
+    provider: string;
+  }
+  | { type: 'delta'; content: string }
+  | { type: 'done'; text: string; usage: Record<string, unknown> | null; elapsedMs: number; route?: TranslationRoutePreference | null }
+  | {
+    type: 'error';
+    code: string;
+    message: string;
+    status: number;
+    partialText: string;
+    elapsedMs: number;
+  };
+
+export interface SystemTranslationStatus {
+  supported: boolean;
+  enabled: boolean;
+  status: 'disabled' | 'unsupported' | 'starting' | 'running' | 'permission-required' | 'error';
+  detail: string;
+  platform?: 'darwin' | 'win32' | 'linux' | string;
+  captureModes?: string[];
+  permission?: string;
+  shortcut?: string;
+  executionTarget?: 'aih-server' | 'direct-provider';
+  executionTargets?: TranslationExecutionTarget[];
+  serverTarget?: { kind: 'aih-server'; label: string; origin: string; serverId?: string };
+  serverTargets?: Array<{ kind: 'aih-server'; label: string; origin: string; serverId?: string }>;
+}
+
+export interface TranslationExecutionTargetProvider {
+  id: string;
+  label: string;
+  available: boolean;
+  configured: boolean;
+  operations: TranslationRoutePreference['operations'];
+  streaming: boolean;
+}
+
+export interface TranslationExecutionTarget {
+  id: string;
+  label: string;
+  available: boolean;
+  configured: boolean;
+  capabilities: {
+    streaming?: boolean;
+    operations?: TranslationRoutePreference['operations'];
+  };
+  providers?: TranslationExecutionTargetProvider[];
+}
+
+/** 账号配置查看：服务端声明的只读文件（凭据记录 / 解码后的凭据库 / 运行时投影文件）。 */
+export interface AccountConfigFile {
+  id: string;
+  label: string;
+  source: 'store' | 'projection';
+  location: string;
+  format: string;
+  content: string;
+  redactedFields: string[];
+  updatedAt: number;
+  size?: number;
+}
+
+export interface AccountConfigFilesResponse {
+  ok: boolean;
+  provider: string;
+  accountRef: string;
+  mode: 'redacted' | 'raw';
+  runtimeDirExists: boolean;
+  files: AccountConfigFile[];
+}

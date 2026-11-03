@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIH 翻译设置</title><link rel="stylesheet" href="options.css"></head>
+<body><main>
+<header><img class="mark" src="ai-home-logo.png" alt="AIHome" width="44" height="44"><div><h1>翻译，随处可用</h1><p>AIH Translation</p></div><span class="badge">浏览器扩展</span></header>
+<section id="page-actions" class="page-actions" aria-labelledby="page-heading" hidden>
+<div class="section-title"><h2 id="page-heading">当前页面</h2><span id="page-state" role="status"></span></div>
+<div class="page-buttons"><button id="translate-page" class="primary" type="button">翻译此页</button><button id="undo-page" class="secondary" type="button" hidden>显示原文</button></div>
+<label class="toggle-row" for="subtitles" id="subtitles-row" hidden><span>双语视频字幕<small>在原字幕下方显示译文（支持带字幕轨的网页视频）</small></span><input id="subtitles" type="checkbox" role="switch"></label>
+<label class="toggle-row" for="auto-site"><span>总是翻译此网站<small>打开这个网站的页面时自动整页翻译</small></span><input id="auto-site" type="checkbox" role="switch"></label>
+<p class="help">快捷键 Alt+A 翻译 / 还原当前页面；在任意输入框里连按三次空格，可把刚输入的文字替换为译文。</p>
+</section>
+<form id="settings-form">
+<section aria-labelledby="connection-heading">
+<div class="section-title"><h2 id="connection-heading">服务连接</h2><span id="connection-state" role="status">尚未连接</span></div>
+<label for="endpoint">AIH Server</label><input id="endpoint" type="url" required placeholder="http://127.0.0.1:9527" spellcheck="false" autocomplete="url">
+<label for="token">管理密钥 <span>仅保存在此浏览器</span></label><div class="password-field"><input id="token" type="password" autocomplete="new-password" placeholder="输入此 Server 的管理密钥"><button id="toggle-token" type="button" aria-label="显示管理密钥" aria-pressed="false">显示</button></div>
+<p class="help">连接本地或远程 AIH Server。密钥不会同步到浏览器账号。</p>
+</section>
+<section aria-labelledby="model-heading">
+<div class="section-title"><h2 id="model-heading">翻译模型</h2><button id="refresh-models" class="text-button" type="button">刷新模型</button></div>
+<label class="sr-only" for="model">选择翻译模型</label><select id="model"><option value="">使用 Server 默认模型</option><option value="manual">手动指定模型…</option></select>
+<div id="manual-fields" hidden><label for="manual-model">模型 ID</label><input id="manual-model" placeholder="输入完整模型 ID" spellcheck="false"><label for="manual-provider">Provider <span>可选，由 Server 自动路由</span></label><input id="manual-provider" placeholder="Provider 标识" spellcheck="false"></div>
+<p id="model-status" class="help" role="status">连接后显示此 Server 已配置的模型。</p>
+</section>
+<section aria-labelledby="reading-heading"><h2 id="reading-heading">阅读偏好</h2>
+<div class="columns"><div><label for="target">译为</label><select id="target"><option value="zh-Hans">简体中文</option><option value="zh-Hant">繁體中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="es">Español</option></select></div><div><label for="mode">网页呈现</label><select id="mode"><option value="side-by-side">保留原文与译文</option><option value="replace">替换原文</option></select></div></div>
+<label for="concurrency">同时翻译段数 <span>每段独立生成和显示</span></label><select id="concurrency"><option value="1">1（顺序）</option><option value="2">2</option><option value="3" selected>3（推荐）</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select>
+<label for="theme">译文阅读效果 <span>只作用于 AIH 译文，不改变原网页</span></label><select id="theme" aria-describedby="theme-description"></select>
+<p id="theme-description" class="help"></p>
+<div class="preview-heading"><span>阅读预览</span><span>与网页使用同一主题</span></div>
+<div id="theme-preview" class="theme-preview" aria-label="译文主题预览"></div>
+<label class="toggle-row" for="autoCopy"><span>完成后自动复制<small>整页翻译全部完成后复制</small></span><input id="autoCopy" type="checkbox" role="switch"></label>
+</section>
+<section aria-labelledby="cache-heading">
+<div class="section-title"><h2 id="cache-heading">本机阅读缓存</h2><button id="clear-cache" class="text-button" type="button">清除缓存</button></div>
+<p id="cache-status" class="help" role="status">正在读取缓存…</p>
+<p class="help">刷新后继续已翻译的页面。译文仅保存在此浏览器，保留 7 天；清除后也会移除页面恢复记录。</p>
+</section>
+<footer><span id="status" role="status" aria-live="polite">设置仅影响之后发起的翻译</span><button id="save" class="primary" type="submit">保存设置</button></footer>
+</form><p class="shortcut">选中文字后右键翻译 · 整页翻译可停止或撤回</p>
+</main><script src="reading-themes.js"></script><script src="options.js"></script></body></html>

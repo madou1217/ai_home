@@ -1,0 +1,724 @@
+/**
+ * 此文件由 `go run ./cmd/provider-manifest` 自动生成。
+ * 人工修改会在 Provider 合同校验中失败；请编辑 `core/providers/builtins.go`。
+ */
+
+export const PROVIDER_DEFINITIONS = [
+  {
+    "id": "codex",
+    "family": "codex",
+    "site": "global",
+    "label": "ChatGPT",
+    "short": "GPT",
+    "terminalIcon": "◎",
+    "terminalIconAsset": "assets/provider-icons/codex.png",
+    "accentVar": "var(--provider-codex)",
+    "softVar": "var(--provider-codex-soft)",
+    "tagColor": "green",
+    "apiHost": "api.openai.com",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "quota_usage",
+      "session_runtime",
+      "gateway_profile",
+      "session_history",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "ChatGPT / OpenAI 登录",
+        "description": "打开授权链接，授权后把回调地址提交给 WebUI。"
+      },
+      {
+        "value": "oauth-device",
+        "label": "设备码登录",
+        "description": "仅在账号支持 device auth 时使用，适合远程环境。"
+      },
+      {
+        "value": "api-key",
+        "label": "OpenAI 密钥",
+        "description": "绑定 OPENAI_API_KEY / OPENAI_BASE_URL。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "gemini",
+    "family": "gemini",
+    "site": "global",
+    "label": "Gemini",
+    "short": "GM",
+    "terminalIcon": "✦",
+    "terminalIconAsset": "assets/provider-icons/gemini.png",
+    "accentVar": "var(--provider-gemini)",
+    "softVar": "var(--provider-gemini-soft)",
+    "tagColor": "blue",
+    "apiHost": "generativelanguage.googleapis.com",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "quota_usage",
+      "session_history",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "Google 登录 (已停用)",
+        "description": "Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity。",
+        "disabled": true,
+        "disabledReason": "Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity"
+      },
+      {
+        "value": "api-key",
+        "label": "Gemini 密钥",
+        "description": "绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。"
+      },
+      {
+        "value": "vertex-ai",
+        "label": "Vertex AI",
+        "description": "Google Cloud Vertex AI 认证 (暂未接入，先占位)。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": false
+    }
+  },
+  {
+    "id": "claude",
+    "family": "claude",
+    "site": "global",
+    "label": "Claude",
+    "short": "CL",
+    "terminalIcon": "◇",
+    "terminalIconAsset": "assets/provider-icons/claude.png",
+    "accentVar": "var(--provider-claude)",
+    "softVar": "var(--provider-claude-soft)",
+    "tagColor": "orange",
+    "apiHost": "api.anthropic.com",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "quota_usage",
+      "session_runtime",
+      "gateway_profile",
+      "session_history",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "Claude 登录",
+        "description": "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"
+      },
+      {
+        "value": "api-key",
+        "label": "Anthropic 密钥",
+        "description": "绑定 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL。"
+      },
+      {
+        "value": "auth-token",
+        "label": "Claude Code Token",
+        "description": "绑定 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "agy",
+    "family": "agy",
+    "site": "global",
+    "label": "Antigravity",
+    "short": "AGY",
+    "terminalIcon": "▲",
+    "terminalIconAsset": "assets/provider-icons/agy.png",
+    "accentVar": "var(--provider-agy)",
+    "softVar": "var(--provider-agy-soft)",
+    "tagColor": "purple",
+    "apiHost": "daily-cloudcode-pa.googleapis.com",
+    "capabilities": [
+      "model_catalog",
+      "quota_usage",
+      "session_runtime",
+      "session_history",
+      "usage_scan"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "strategy": "aih-google-oauth",
+        "label": "Antigravity 直连 Google 登录",
+        "description": "由 AI Home 直接完成 Google OAuth，不需要安装 Antigravity CLI。"
+      },
+      {
+        "value": "oauth-browser",
+        "strategy": "native-cli",
+        "label": "Antigravity CLI 登录",
+        "description": "使用 Antigravity CLI 原生 Google 登录流程。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "opencode",
+    "family": "opencode",
+    "site": "global",
+    "label": "OpenCode",
+    "short": "OC",
+    "terminalIcon": "⌘",
+    "terminalIconAsset": "assets/provider-icons/opencode.png",
+    "accentVar": "var(--provider-opencode)",
+    "softVar": "var(--provider-opencode-soft)",
+    "tagColor": "default",
+    "apiHost": "opencode.ai",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "session_runtime",
+      "gateway_profile",
+      "session_history",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "strategy": "opencode:device",
+        "label": "OpenCode Console 登录（设备码）",
+        "description": "官方 CLI 设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"
+      },
+      {
+        "value": "api-key",
+        "label": "OpenCode 密钥",
+        "description": "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "grok",
+    "family": "grok",
+    "site": "global",
+    "label": "Grok",
+    "short": "GK",
+    "terminalIcon": "⚡",
+    "terminalIconAsset": "assets/provider-icons/grok.png",
+    "accentVar": "var(--provider-grok)",
+    "softVar": "var(--provider-grok-soft)",
+    "tagColor": "cyan",
+    "apiHost": "api.x.ai",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "quota_usage",
+      "session_history",
+      "account_session_store",
+      "usage_scan"
+    ],
+    "authOptions": [
+      {
+        "value": "api-key",
+        "label": "xAI 密钥",
+        "description": "绑定 XAI_API_KEY / XAI_BASE_URL。"
+      },
+      {
+        "value": "oauth-browser",
+        "label": "Grok 登录",
+        "description": "使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": false
+    }
+  },
+  {
+    "id": "qoder",
+    "family": "qoder",
+    "site": "global",
+    "label": "Qoder",
+    "short": "QD",
+    "terminalIcon": "◆",
+    "terminalIconAsset": "assets/provider-icons/qoder.png",
+    "accentVar": "var(--provider-qoder)",
+    "softVar": "var(--provider-qoder-soft)",
+    "tagColor": "blue",
+    "apiHost": "qoder.com",
+    "capabilities": [
+      "model_catalog",
+      "session_history",
+      "account_session_store",
+      "usage_scan"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "Qoder 登录",
+        "description": "使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。"
+      },
+      {
+        "value": "api-key",
+        "label": "Qoder Personal Access Token",
+        "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "qodercn",
+    "family": "qoder",
+    "site": "cn",
+    "label": "Qoder CN",
+    "short": "QCN",
+    "terminalIcon": "◇",
+    "terminalIconAsset": "assets/provider-icons/qodercn.png",
+    "accentVar": "var(--provider-qodercn)",
+    "softVar": "var(--provider-qodercn-soft)",
+    "tagColor": "purple",
+    "apiHost": "qoder.com.cn",
+    "capabilities": [
+      "model_catalog",
+      "session_history",
+      "account_session_store",
+      "usage_scan"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "Qoder CN 登录",
+        "description": "使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。"
+      },
+      {
+        "value": "api-key",
+        "label": "Qoder CN Personal Access Token",
+        "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "kimi",
+    "family": "kimi",
+    "site": "global",
+    "label": "Kimi",
+    "short": "KM",
+    "terminalIcon": "☾",
+    "terminalIconAsset": "assets/provider-icons/kimi.png",
+    "accentVar": "var(--provider-kimi)",
+    "softVar": "var(--provider-kimi-soft)",
+    "tagColor": "geekblue",
+    "apiHost": "api.moonshot.cn",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "quota_usage",
+      "usage_scan",
+      "gateway_profile",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "api-key",
+        "label": "Moonshot 密钥",
+        "description": "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"
+      },
+      {
+        "value": "oauth-browser",
+        "label": "Kimi Code 登录",
+        "description": "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "kiro",
+    "family": "kiro",
+    "site": "global",
+    "label": "Kiro",
+    "short": "KR",
+    "terminalIcon": "⬡",
+    "terminalIconAsset": "assets/provider-icons/kiro.png",
+    "accentVar": "var(--provider-kiro)",
+    "softVar": "var(--provider-kiro-soft)",
+    "tagColor": "volcano",
+    "apiHost": "kiro.dev",
+    "capabilities": [
+      "model_catalog",
+      "session_history",
+      "account_session_store",
+      "quota_usage",
+      "usage_scan"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-device",
+        "label": "OAuth 登录",
+        "description": "Builder ID / Google / GitHub 账号：选定登录方式后再获取授权链接（设备码授权，任意设备都能完成，不需要本地 kiro CLI）。"
+      },
+      {
+        "value": "oauth-refresh-token",
+        "label": "Kiro Desktop / refresh_token",
+        "description": "Kiro Desktop（Google / GitHub）账号：粘贴 Kiro IDE 的 refresh_token 完成导入。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "zcode",
+    "family": "zcode",
+    "site": "global",
+    "label": "ZCode",
+    "short": "ZC",
+    "terminalIcon": "◈",
+    "terminalIconAsset": "assets/provider-icons/zcode.png",
+    "accentVar": "var(--provider-zcode)",
+    "softVar": "var(--provider-zcode-soft)",
+    "tagColor": "geekblue",
+    "apiHost": "z.ai",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "session_history",
+      "quota_usage",
+      "usage_scan"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "strategy": "zai:cli-flow",
+        "label": "ZCode 登录（Z.AI 国际站 · 官方 CLI 流程）",
+        "description": "chat.z.ai 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+      },
+      {
+        "value": "oauth-browser",
+        "strategy": "bigmodel:cli-flow",
+        "label": "ZCode 登录（BigModel 国内站 · 官方 CLI 流程）",
+        "description": "bigmodel.cn 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+      },
+      {
+        "value": "oauth-browser",
+        "strategy": "zai:custom-scheme",
+        "label": "ZCode 登录（Z.AI 国际站 · zcode:// 回调）",
+        "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
+      },
+      {
+        "value": "oauth-browser",
+        "strategy": "bigmodel:custom-scheme",
+        "label": "ZCode 登录（BigModel 国内站 · zcode:// 回调）",
+        "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
+      },
+      {
+        "value": "api-key",
+        "label": "Z.ai 密钥",
+        "description": "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "codebuddy",
+    "family": "codebuddy",
+    "site": "global",
+    "label": "CodeBuddy",
+    "short": "CB",
+    "terminalIcon": "❖",
+    "terminalIconAsset": "assets/provider-icons/codebuddy.png",
+    "accentVar": "var(--provider-codebuddy)",
+    "softVar": "var(--provider-codebuddy-soft)",
+    "tagColor": "blue",
+    "apiHost": "codebuddy.ai",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "session_history",
+      "quota_usage",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "CodeBuddy 登录",
+        "description": "使用 CodeBuddy Code 原生浏览器登录流程（首次启动选择国内站 / 国际站 / 企业域名）。"
+      },
+      {
+        "value": "api-key",
+        "label": "CodeBuddy 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（非交互模式固定使用该密钥）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "codebuddycn",
+    "family": "codebuddy",
+    "site": "cn",
+    "label": "CodeBuddy CN",
+    "short": "CBCN",
+    "terminalIcon": "✦",
+    "terminalIconAsset": "assets/provider-icons/codebuddycn.png",
+    "accentVar": "var(--provider-codebuddycn)",
+    "softVar": "var(--provider-codebuddycn-soft)",
+    "tagColor": "purple",
+    "apiHost": "copilot.tencent.com",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "session_history",
+      "quota_usage",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "CodeBuddy CN 登录",
+        "description": "使用 CodeBuddy Code 原生登录流程并选择国内站（copilot.tencent.com）。"
+      },
+      {
+        "value": "api-key",
+        "label": "CodeBuddy CN 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "workbuddy",
+    "family": "workbuddy",
+    "site": "global",
+    "label": "WorkBuddy",
+    "short": "WB",
+    "terminalIcon": "◉",
+    "terminalIconAsset": "assets/provider-icons/workbuddy.png",
+    "accentVar": "var(--provider-workbuddy)",
+    "softVar": "var(--provider-workbuddy-soft)",
+    "tagColor": "green",
+    "apiHost": "workbuddy.cn",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "session_history",
+      "quota_usage",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "WorkBuddy 登录",
+        "description": "使用 WorkBuddy 原生浏览器登录流程（国际站 workbuddy.ai 账号体系）。"
+      },
+      {
+        "value": "api-key",
+        "label": "WorkBuddy 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（国际站不要固定 CODEBUDDY_INTERNET_ENVIRONMENT）。"
+      }
+    ],
+    "clients": {
+      "cli": false,
+      "desktop": true
+    }
+  },
+  {
+    "id": "workbuddycn",
+    "family": "workbuddy",
+    "site": "cn",
+    "label": "WorkBuddy CN",
+    "short": "WBCN",
+    "terminalIcon": "◍",
+    "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
+    "accentVar": "var(--provider-workbuddycn)",
+    "softVar": "var(--provider-workbuddycn-soft)",
+    "tagColor": "gold",
+    "apiHost": "copilot.tencent.com",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "session_history",
+      "quota_usage",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "WorkBuddy CN 登录",
+        "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+      },
+      {
+        "value": "api-key",
+        "label": "WorkBuddy CN 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+      }
+    ],
+    "clients": {
+      "cli": false,
+      "desktop": true
+    }
+  },
+  {
+    "id": "cline",
+    "family": "cline",
+    "site": "global",
+    "label": "Cline",
+    "short": "CLN",
+    "terminalIcon": "⟡",
+    "terminalIconAsset": "assets/provider-icons/cline.png",
+    "accentVar": "var(--provider-cline)",
+    "softVar": "var(--provider-cline-soft)",
+    "tagColor": "magenta",
+    "apiHost": "cline.bot",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog",
+      "gateway_profile",
+      "session_history",
+      "account_session_store",
+      "session_runtime",
+      "usage_scan",
+      "acp_session"
+    ],
+    "authOptions": [
+      {
+        "value": "api-key",
+        "label": "Cline API Key",
+        "description": "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"
+      },
+      {
+        "value": "oauth-browser",
+        "label": "Cline Pass 登录",
+        "description": "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": false
+    }
+  }
+] as const;
+
+/** Provider 的稳定字符串身份。 */
+export type ProviderId = (typeof PROVIDER_DEFINITIONS)[number]['id'];
+
+/** Provider 归属的产品站点。 */
+export type ProviderSite = (typeof PROVIDER_DEFINITIONS)[number]['site'];
+
+/** 产品族标识：同一产品族的国内站/国际站共享它。 */
+export type ProviderFamily = (typeof PROVIDER_DEFINITIONS)[number]['family'];
+
+/** Client 支持的账号认证方式。 */
+export type ProviderAuthMode = (typeof PROVIDER_DEFINITIONS)[number]['authOptions'][number]['value'];
+
+/** Client 展示的一条账号认证选项。 */
+export interface ProviderAuthOption {
+  readonly value: ProviderAuthMode;
+  readonly strategy?: string;
+  readonly label: string;
+  readonly description: string;
+  readonly disabled?: boolean;
+  readonly disabledReason?: string;
+}
+
+/** Client 使用的 Provider 展示元数据。 */
+export interface ProviderCatalogEntry {
+  readonly id: ProviderId;
+  readonly family: ProviderFamily;
+  readonly site: ProviderSite;
+  readonly label: string;
+  readonly short: string;
+  readonly terminalIcon: string;
+  readonly terminalIconAsset: string;
+  readonly accentVar: string;
+  readonly softVar: string;
+  readonly tagColor: string;
+  /** 默认 API 域名（展示用，见 Presentation.APIHost）。 */
+  readonly apiHost?: string;
+  readonly capabilities: readonly string[];
+  readonly clients: { readonly cli: boolean; readonly desktop: boolean };
+}
+
+/** 按产品顺序排列的 Provider ID。 */
+export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) => definition.id));
+
+/** 由同一生成源构建的 Provider 展示目录。 */
+export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
+  PROVIDER_DEFINITIONS.map((definition) => [definition.id, {
+    id: definition.id,
+    family: definition.family,
+    site: definition.site,
+    label: definition.label,
+    short: definition.short,
+    terminalIcon: definition.terminalIcon,
+    terminalIconAsset: definition.terminalIconAsset,
+    accentVar: definition.accentVar,
+    softVar: definition.softVar,
+    tagColor: definition.tagColor,
+    apiHost: definition.apiHost,
+    capabilities: definition.capabilities,
+    clients: definition.clients,
+  }]),
+) as unknown as Readonly<Record<ProviderId, ProviderCatalogEntry>>);
+
+/** 账号添加界面直接消费的认证选项目录。 */
+export const PROVIDER_AUTH_OPTIONS = Object.freeze(Object.fromEntries(
+  PROVIDER_DEFINITIONS.map((definition) => [definition.id, definition.authOptions]),
+) as unknown as Readonly<Record<ProviderId, readonly ProviderAuthOption[]>>);
+
+/** 未知 Provider 的安全展示回退。 */
+export const PROVIDER_FALLBACK = {
+  "id": "codex",
+  "label": "AI",
+  "short": "AI",
+  "terminalIcon": "◌",
+  "terminalIconAsset": "web/src/assets/brand/ai-home-mark.png",
+  "accentVar": "var(--color-brand)",
+  "softVar": "var(--color-brand-soft)",
+  "tagColor": "blue",
+  "family": "codex",
+  "site": "global",
+  "capabilities": [],
+  "clients": {
+    "cli": false,
+    "desktop": false
+  }
+} as const satisfies ProviderCatalogEntry;

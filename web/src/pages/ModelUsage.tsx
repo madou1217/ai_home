@@ -1,0 +1,949 @@
+import { writeClipboardText } from '@/utils/clipboard';
+import './ModelUsage.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  DatePicker,
+  Segmented,
+  Select,
+  Space,
+  Tabs,
+  Tooltip,
+  Typography,
+  message
+} from 'antd';
+import { ProColumns } from '@ant-design/pro-components';
+import {
+  CopyOutlined,
+  EyeOutlined,
+  ReloadOutlined,
+  SyncOutlined
+} from '@ant-design/icons';
+import dayjs, { Dayjs } from 'dayjs';
+import { accountsAPI, modelUsageAPI } from '@/services/api';
+import type {
+  Account,
+  ModelUsageBreakdownResponse,
+  ModelUsageDashboardQueryJob,
+  ModelUsageModelRow,
+  ModelUsageQuery,
+  ModelUsageRequestRow,
+  ModelUsageScanJob,
+  ModelUsageSessionRow,
+  ModelUsageStats,
+  ModelUsageTrend,
+  Provider
+} from '@/types';
+import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import Button from '@/components/ui/AppButton';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
+import UsageTrendChart from '@/features/model-usage/UsageTrendChart';
+import UsageModelMixChart from '@/features/model-usage/UsageModelMixChart';
+import RequestDetailsSection from '@/features/model-usage/RequestDetailsSection';
+import UsageBreakdownDrawer, {
+  type UsageBreakdownTarget
+} from '@/features/model-usage/UsageBreakdownDrawer';
+import {
+  calculateCacheHitRate,
+  formatAccountScope,
+  formatCacheRate,
+  formatCost,
+  formatModelShortName,
+  formatTokens,
+  getCacheTokens
+} from '@/features/model-usage/model-usage-presentation';
+import {
+  EMPTY_USAGE_STATS,
+  EMPTY_USAGE_TREND,
+  USAGE_RANGE_OPTIONS,
+  USAGE_REQUEST_DETAIL_LIMIT,
+  buildUsageRangeByMode as buildRangeByMode,
+  canScanUsageProvider,
+  formatUsageDate as formatDate,
+  formatUsageDateTime as formatDateTime,
+  formatUsageTime as formatTime,
+  isUsageDashboardQueryActive as isDashboardQueryActive,
+  isUsageScanJobActive as isScanJobActive,
+  type UsageProviderFilter,
+  type UsageRangeMode
+} from '@/features/model-usage/model-usage-query';
+
+const { RangePicker } = DatePicker;
+const { Text } = Typography;
+
+type ProviderFilter = UsageProviderFilter;
+type RangeMode = UsageRangeMode;
+
+const REQUEST_DETAIL_LIMIT = USAGE_REQUEST_DETAIL_LIMIT;
+
+// Segmented 无法分组，所以这里逐个 Provider 平铺，靠 providerNames 的站点后缀
+// （"WorkBuddy · 国际站" / "WorkBuddy · 国内站"）区分同族站点。用量是按真实
+// Provider 结算的，筛选轴不能收敛到产品族。
+const PROVIDER_OPTIONS: Array<{ label: string; value: ProviderFilter }> = [
+  { label: '全部', value: '' },
+  ...providerIds.map((provider) => ({ label: providerNames[provider], value: provider }))
+];
+
+const RANGE_OPTIONS = USAGE_RANGE_OPTIONS;
+
+const emptyStats: ModelUsageStats = EMPTY_USAGE_STATS;
+
+const emptyTrend: ModelUsageTrend = EMPTY_USAGE_TREND;
+
+function formatProvider(provider: Provider) {
+  return (
+    <Space size={6}>
+      <ProviderIcon provider={provider} size={14} />
+      <span>{providerNames[provider] || provider}</span>
+    </Space>
+  );
+}
+
+function renderAccountScope(accountCount: number, unattributedCalls: number) {
+  const value = formatAccountScope(accountCount, unattributedCalls);
+  if (unattributedCalls <= 0) return value;
+  return (
+    <Tooltip title="未归属部分缺少可审计账号证据，不按默认账号、时间或调度结果猜测。">
+      <span>{value}</span>
+    </Tooltip>
+  );
+}
+
+// 切页回来不该每次都从空白骨架开始：按查询条件记住上一份成功的看板快照（只在内存里，
+// 刷新页面即丢），重新进入时先直接显示它，再在后台静默刷新（stale-while-revalidate）。
+type DashboardSnapshot = {
+  stats: ModelUsageStats;
+  models: ModelUsageModelRow[];
+  sessions: ModelUsageSessionRow[];
+  modelOptions: ModelUsageModelRow[];
+  trend: ModelUsageTrend;
+};
+const dashboardSnapshotCache = new Map<string, DashboardSnapshot>();
+const DASHBOARD_SNAPSHOT_CACHE_LIMIT = 12;
+
+function rememberDashboardSnapshot(key: string, snapshot: DashboardSnapshot) {
+  dashboardSnapshotCache.delete(key);
+  dashboardSnapshotCache.set(key, snapshot);
+  while (dashboardSnapshotCache.size > DASHBOARD_SNAPSHOT_CACHE_LIMIT) {
+    const oldest = dashboardSnapshotCache.keys().next().value;
+    if (oldest === undefined) break;
+    dashboardSnapshotCache.delete(oldest);
+  }
+}
+
+// 缓存键不能含 buildQuery 的 `to`（精确到当前秒，每次进页都不同）：
+// 预设范围按「范围模式 + 筛选」记；自定义范围再带上用户选的起止。
+function dashboardSnapshotKey(rangeMode: RangeMode, range: [Dayjs, Dayjs], provider: ProviderFilter, model: string) {
+  const span = rangeMode === 'custom' ? `${formatDateTime(range[0])}~${formatDateTime(range[1])}` : rangeMode;
+  return `${span}|${provider}|${model.trim()}`;
+}
+
+function renderCacheTokens(row: {
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}) {
+  return (
+    <Tooltip title={`读取 ${formatTokens(row.cacheReadInputTokens)} · 写入 ${formatTokens(row.cacheCreationInputTokens)}`}>
+      <span>{formatTokens(getCacheTokens(row))}</span>
+    </Tooltip>
+  );
+}
+
+function getSessionKey(row: ModelUsageSessionRow) {
+  return `${row.provider}:${row.sessionId}`;
+}
+
+function getRequestDetailsError(error: unknown) {
+  const requestError = error as {
+    message?: string;
+    response?: { data?: { message?: string } };
+  };
+  return requestError?.response?.data?.message
+    || requestError?.message
+    || '加载请求明细失败';
+}
+
+function buildQuery(
+  range: [Dayjs, Dayjs],
+  rangeMode: RangeMode,
+  provider: ProviderFilter,
+  model: string,
+  limit = 50,
+  scan = false
+): ModelUsageQuery {
+  const includeStartTime = rangeMode === 'hour' || rangeMode === 'custom';
+  return {
+    from: includeStartTime ? formatDateTime(range[0]) : formatDate(range[0]),
+    to: formatDateTime(range[1]),
+    provider,
+    model: model.trim(),
+    limit,
+    scan
+  };
+}
+
+// 移动端（< 768px）由 web/src/mobile/pages/MobileUsage.tsx 独立渲染，本页只承担桌面布局。
+export default function ModelUsage() {
+  const [rangeMode, setRangeMode] = useState<RangeMode>('today');
+  const [usageTab, setUsageTab] = useState<'model' | 'session'>('model');
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => buildRangeByMode('today'));
+  const [provider, setProvider] = useState<ProviderFilter>('');
+  const [model, setModel] = useState('');
+  const [modelOptions, setModelOptions] = useState<ModelUsageModelRow[]>(() => (
+    dashboardSnapshotCache.get(dashboardSnapshotKey('today', buildRangeByMode('today'), '', ''))?.modelOptions || []
+  ));
+  const initialSnapshot = dashboardSnapshotCache.get(dashboardSnapshotKey('today', buildRangeByMode('today'), '', ''));
+  const [stats, setStats] = useState<ModelUsageStats>(initialSnapshot?.stats || emptyStats);
+  const [models, setModels] = useState<ModelUsageModelRow[]>(initialSnapshot?.models || []);
+  const [sessions, setSessions] = useState<ModelUsageSessionRow[]>(initialSnapshot?.sessions || []);
+  const [requestUsage, setRequestUsage] = useState<ModelUsageRequestRow[]>([]);
+  const [requestErrors, setRequestErrors] = useState<ModelUsageRequestRow[]>([]);
+  const [requestDetailsRequested, setRequestDetailsRequested] = useState(false);
+  const [requestDetailsLoading, setRequestDetailsLoading] = useState(false);
+  const [requestDetailsError, setRequestDetailsError] = useState('');
+  const [trend, setTrend] = useState<ModelUsageTrend>(initialSnapshot?.trend || emptyTrend);
+  const [accountsByRef, setAccountsByRef] = useState<Map<string, Account>>(() => new Map());
+  const [loading, setLoading] = useState(false);
+  const [hasDashboardSnapshot, setHasDashboardSnapshot] = useState(Boolean(initialSnapshot));
+  const [dashboardLoadError, setDashboardLoadError] = useState('');
+  const [dashboardQueryJob, setDashboardQueryJob] = useState<ModelUsageDashboardQueryJob | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanJob, setScanJob] = useState<ModelUsageScanJob | null>(null);
+  const [breakdownTarget, setBreakdownTarget] = useState<UsageBreakdownTarget | null>(null);
+  const [breakdown, setBreakdown] = useState<ModelUsageBreakdownResponse | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
+  const completedScanJobIdsRef = useRef<Set<string>>(new Set());
+  const completedDashboardQueryIdsRef = useRef<Set<string>>(new Set());
+  const dashboardQueryJobsRef = useRef<Map<string, ModelUsageDashboardQueryJob>>(new Map());
+  const activeDashboardQueryIdRef = useRef('');
+  const activeDashboardQueryQuietRef = useRef(true);
+  const loadSequenceRef = useRef(0);
+  const quietNextLoadRef = useRef(true);
+  const refreshAfterScanRef = useRef<() => void>(() => {});
+  const breakdownSequenceRef = useRef(0);
+  const requestDetailsSequenceRef = useRef(0);
+
+  const query = useMemo(() => buildQuery(range, rangeMode, provider, model, 50), [model, provider, range, rangeMode]);
+  const snapshotKey = useMemo(() => dashboardSnapshotKey(rangeMode, range, provider, model), [model, provider, range, rangeMode]);
+  const snapshotKeyRef = useRef(snapshotKey);
+  snapshotKeyRef.current = snapshotKey;
+
+  const beginUsageTransition = useCallback((quiet = false) => {
+    quietNextLoadRef.current = quiet;
+    setLoading(true);
+    setDashboardLoadError('');
+    setDashboardQueryJob(null);
+    breakdownSequenceRef.current += 1;
+    setBreakdownTarget(null);
+    setBreakdown(null);
+    setBreakdownLoading(false);
+  }, []);
+
+  const cancelDashboardQuery = useCallback((jobId: string) => {
+    if (!jobId) return;
+    void modelUsageAPI.cancelDashboardQuery(jobId).catch(() => {});
+  }, []);
+
+  const applyDashboardQueryJob = useCallback((job: ModelUsageDashboardQueryJob) => {
+    if (!job.id || job.id !== activeDashboardQueryIdRef.current) return;
+    setDashboardQueryJob(job);
+    if (job.dashboard) {
+      const snapshot: DashboardSnapshot = {
+        stats: job.dashboard.stats || emptyStats,
+        models: job.dashboard.models || [],
+        sessions: job.dashboard.sessions || [],
+        modelOptions: job.dashboard.modelOptions || [],
+        trend: job.dashboard.trend || emptyTrend
+      };
+      setStats(snapshot.stats);
+      setModels(snapshot.models);
+      setSessions(snapshot.sessions);
+      setModelOptions(snapshot.modelOptions);
+      setTrend(snapshot.trend);
+      setHasDashboardSnapshot(true);
+      setDashboardLoadError('');
+      if (!isDashboardQueryActive(job)) rememberDashboardSnapshot(snapshotKeyRef.current, snapshot);
+    }
+    if (isDashboardQueryActive(job)) {
+      setLoading(true);
+      return;
+    }
+    setLoading(false);
+    if (job.status === 'succeeded') {
+      setDashboardLoadError('');
+      return;
+    }
+    if (job.status !== 'failed' || completedDashboardQueryIdsRef.current.has(job.id)) return;
+    completedDashboardQueryIdsRef.current.add(job.id);
+    const errorMessage = job.error || '加载模型用量失败';
+    setDashboardLoadError(errorMessage);
+    if (!activeDashboardQueryQuietRef.current) {
+      message.error(errorMessage);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    accountsAPI.list()
+      .then((response) => {
+        if (!active) return;
+        setAccountsByRef(new Map(response.accounts.map((account) => [account.accountRef, account])));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const handleDashboardQueryJob = useCallback((job: ModelUsageDashboardQueryJob) => {
+    if (!job.id) return;
+    dashboardQueryJobsRef.current.set(job.id, job);
+    applyDashboardQueryJob(job);
+  }, [applyDashboardQueryJob]);
+
+  useEffect(() => {
+    const watcher = modelUsageAPI.watchDashboardQueries({
+      onJob: handleDashboardQueryJob,
+      onSnapshot: (jobs) => {
+        jobs.forEach((job) => dashboardQueryJobsRef.current.set(job.id, job));
+        const activeJob = dashboardQueryJobsRef.current.get(activeDashboardQueryIdRef.current);
+        if (activeJob) applyDashboardQueryJob(activeJob);
+      }
+    });
+    return () => {
+      watcher.close();
+      const activeJobId = activeDashboardQueryIdRef.current;
+      activeDashboardQueryIdRef.current = '';
+      cancelDashboardQuery(activeJobId);
+    };
+  }, [applyDashboardQueryJob, cancelDashboardQuery, handleDashboardQueryJob]);
+
+  const loadUsage = useCallback(async (
+    nextQuery: ModelUsageQuery,
+    options: { quiet?: boolean } = {}
+  ) => {
+    const loadSequence = loadSequenceRef.current + 1;
+    loadSequenceRef.current = loadSequence;
+    const previousJobId = activeDashboardQueryIdRef.current;
+    activeDashboardQueryIdRef.current = '';
+    cancelDashboardQuery(previousJobId);
+    activeDashboardQueryQuietRef.current = options.quiet !== false;
+    setDashboardQueryJob(null);
+    setDashboardLoadError('');
+    setBreakdownTarget(null);
+    setBreakdown(null);
+    setLoading(true);
+    try {
+      const response = await modelUsageAPI.startDashboardQuery({ ...nextQuery, scan: false });
+      if (loadSequence !== loadSequenceRef.current) {
+        cancelDashboardQuery(response.job?.id || '');
+        return;
+      }
+      const jobId = response.job?.id || '';
+      activeDashboardQueryIdRef.current = jobId;
+      const latestJob = dashboardQueryJobsRef.current.get(jobId) || response.job;
+      if (latestJob) {
+        dashboardQueryJobsRef.current.set(jobId, latestJob);
+        applyDashboardQueryJob(latestJob);
+      }
+    } catch (error: any) {
+      if (loadSequence !== loadSequenceRef.current) return;
+      const errorMessage = error?.response?.data?.message || error?.message || '加载模型用量失败';
+      setDashboardLoadError(errorMessage);
+      if (!options.quiet) message.error(errorMessage);
+      setLoading(false);
+    }
+  }, [applyDashboardQueryJob, cancelDashboardQuery]);
+
+  useEffect(() => {
+    const cached = dashboardSnapshotCache.get(snapshotKey);
+    if (cached) {
+      setStats(cached.stats);
+      setModels(cached.models);
+      setSessions(cached.sessions);
+      setModelOptions(cached.modelOptions);
+      setTrend(cached.trend);
+      setHasDashboardSnapshot(true);
+    }
+    const quiet = quietNextLoadRef.current;
+    quietNextLoadRef.current = true;
+    loadUsage(query, { quiet });
+  }, [loadUsage, query, refreshRevision, snapshotKey]);
+
+  useEffect(() => {
+    requestDetailsSequenceRef.current += 1;
+    setRequestDetailsRequested(false);
+    setRequestDetailsLoading(false);
+    setRequestDetailsError('');
+    setRequestUsage([]);
+    setRequestErrors([]);
+  }, [query, refreshRevision]);
+
+  const loadRequestDetails = useCallback(async () => {
+    const requestSequence = requestDetailsSequenceRef.current + 1;
+    requestDetailsSequenceRef.current = requestSequence;
+    setRequestDetailsRequested(true);
+    setRequestDetailsLoading(true);
+    setRequestDetailsError('');
+    setRequestUsage([]);
+    setRequestErrors([]);
+    try {
+      const response = await modelUsageAPI.requests({ ...query, limit: REQUEST_DETAIL_LIMIT });
+      if (requestSequence !== requestDetailsSequenceRef.current) return;
+      setRequestUsage(response.usage || []);
+      setRequestErrors(response.errors || []);
+    } catch (error: unknown) {
+      if (requestSequence !== requestDetailsSequenceRef.current) return;
+      setRequestDetailsError(getRequestDetailsError(error));
+    } finally {
+      if (requestSequence === requestDetailsSequenceRef.current) {
+        setRequestDetailsLoading(false);
+      }
+    }
+  }, [query]);
+
+  const handleRangeChange = (value: null | [Dayjs | null, Dayjs | null]) => {
+    if (!value || !value[0] || !value[1]) return;
+    beginUsageTransition();
+    setRangeMode('custom');
+    setRange([value[0], value[1]]);
+    setModel('');
+  };
+
+  const handleRangeModeChange = (value: RangeMode) => {
+    beginUsageTransition();
+    setRangeMode(value);
+    setModel('');
+    if (value !== 'custom') {
+      setRange(buildRangeByMode(value));
+    }
+  };
+
+  const handleProviderChange = (value: ProviderFilter) => {
+    beginUsageTransition();
+    setProvider(value);
+    setModel('');
+  };
+
+  const handleModelChange = (value: string | undefined) => {
+    beginUsageTransition();
+    setModel(String(value || ''));
+  };
+
+  const requestUsageRefresh = useCallback((quiet: boolean) => {
+    beginUsageTransition(quiet);
+    if (rangeMode !== 'custom') setRange(buildRangeByMode(rangeMode));
+    setRefreshRevision((current) => current + 1);
+  }, [beginUsageTransition, rangeMode]);
+
+  const handleRefreshUsage = () => requestUsageRefresh(false);
+
+  refreshAfterScanRef.current = () => requestUsageRefresh(true);
+
+  const handleScanJobUpdate = useCallback((job: ModelUsageScanJob) => {
+    setScanJob(job);
+
+    if (job.status !== 'succeeded' && job.status !== 'failed') return;
+    if (!job.id || completedScanJobIdsRef.current.has(job.id)) return;
+    completedScanJobIdsRef.current.add(job.id);
+
+    if (job.status === 'succeeded') {
+      message.success('扫描完成');
+      refreshAfterScanRef.current();
+      return;
+    }
+
+    message.error(job.error || '扫描模型用量失败');
+  }, []);
+
+  useEffect(() => {
+    const watcher = modelUsageAPI.watchScan({
+      onSnapshot: (jobs) => {
+        const sorted = [...jobs].sort((left, right) => {
+          const leftAt = Number(left.finishedAt || left.startedAt || 0);
+          const rightAt = Number(right.finishedAt || right.startedAt || 0);
+          return rightAt - leftAt;
+        });
+        const latest = sorted.find(isScanJobActive) || sorted[0] || null;
+        if (!latest) return;
+        setScanJob(latest);
+      },
+      onJob: handleScanJobUpdate
+    });
+    return () => {
+      watcher.close();
+    };
+  }, [handleScanJobUpdate]);
+
+  const handleScan = async () => {
+    if (!canScanUsageProvider(provider)) return;
+    setScanning(true);
+    try {
+      const response = await modelUsageAPI.scan(provider);
+      if (response.job) {
+        setScanJob(response.job);
+      }
+      message.info(response.alreadyRunning ? '扫描已在进行' : '扫描已开始');
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '扫描模型用量失败');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const openBreakdown = useCallback(async (target: UsageBreakdownTarget) => {
+    if (loading) return;
+    const sequence = breakdownSequenceRef.current + 1;
+    breakdownSequenceRef.current = sequence;
+    setBreakdownTarget(target);
+    setBreakdown(null);
+    setBreakdownLoading(true);
+    try {
+      const response = await modelUsageAPI.breakdown({
+        ...query,
+        provider: target.row.provider,
+        model: target.kind === 'model' ? target.row.model : query.model,
+        sessionId: target.kind === 'session' ? target.row.sessionId : '',
+        limit: 500
+      });
+      if (sequence === breakdownSequenceRef.current) setBreakdown(response);
+    } catch (error: any) {
+      if (sequence === breakdownSequenceRef.current) {
+        message.error(error?.response?.data?.message || error?.message || '加载用量分量失败');
+      }
+    } finally {
+      if (sequence === breakdownSequenceRef.current) setBreakdownLoading(false);
+    }
+  }, [loading, query]);
+
+  const closeBreakdown = () => {
+    breakdownSequenceRef.current += 1;
+    setBreakdownTarget(null);
+    setBreakdown(null);
+    setBreakdownLoading(false);
+  };
+
+  const copySessionId = async (sessionId: string) => {
+    const value = String(sessionId || '').trim();
+    if (!value) return;
+    try {
+      await writeClipboardText(value);
+      message.success('会话 ID 已复制');
+    } catch {
+      message.error('复制失败');
+    }
+  };
+
+  const modelColumns: ProColumns<ModelUsageModelRow>[] = [
+    {
+      title: 'Provider',
+      dataIndex: 'provider',
+      width: 124,
+      render: (value) => formatProvider(value as Provider)
+    },
+    {
+      title: '模型',
+      dataIndex: 'model',
+      width: 220,
+      ellipsis: true,
+      // ProTable passes the already-rendered cell node as the first argument
+      // to render. For a string field that node is an object, so coercing it
+      // produces the visible "[object Object]". Read the canonical value from
+      // the row instead.
+      render: (_, row) => {
+        const fullName = String(row.model || '').trim();
+        if (!fullName) return '-';
+        return <Tooltip title={fullName}>{formatModelShortName(fullName)}</Tooltip>;
+      }
+    },
+    {
+      title: '账号',
+      key: 'accounts',
+      width: 138,
+      render: (_, row) => renderAccountScope(row.accountCount, row.unattributedCalls)
+    },
+    {
+      title: '调用',
+      dataIndex: 'calls',
+      width: 78,
+      align: 'right'
+    },
+    {
+      title: 'Input',
+      dataIndex: 'inputTokens',
+      width: 96,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: 'Output',
+      dataIndex: 'outputTokens',
+      width: 96,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: 'Cache',
+      key: 'cache',
+      width: 96,
+      align: 'right',
+      render: (_, row) => renderCacheTokens(row)
+    },
+    {
+      title: '缓存率',
+      dataIndex: 'cacheHitRate',
+      width: 88,
+      align: 'right',
+      render: (value) => formatCacheRate(value as number | null)
+    },
+    {
+      title: 'Tokens',
+      dataIndex: 'totalTokens',
+      width: 100,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: '成本',
+      dataIndex: 'costUsd',
+      width: 96,
+      align: 'right',
+      render: (value) => formatCost(Number(value))
+    },
+    {
+      title: '',
+      key: 'action',
+      width: 52,
+      align: 'center',
+      render: (_, row) => (
+        <Button
+          aria-label={`查看 ${row.model || '未知模型'} 的账号分量`}
+          icon={<EyeOutlined />}
+          size="small"
+          onClick={() => void openBreakdown({ kind: 'model', row })}
+        />
+      )
+    }
+  ];
+
+  const sessionColumns: ProColumns<ModelUsageSessionRow>[] = [
+    {
+      title: 'Provider',
+      dataIndex: 'provider',
+      width: 124,
+      render: (value) => formatProvider(value as Provider)
+    },
+    {
+      title: '会话',
+      dataIndex: 'sessionId',
+      width: 250,
+      ellipsis: true,
+      render: (value) => (
+        <span className="usage-session-cell">
+          <span className="usage-session-id" title={String(value || '')}>{value}</span>
+          <Tooltip title="复制会话 ID">
+            <Button
+              className="copy-icon-btn"
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copySessionId(String(value || ''))}
+            />
+          </Tooltip>
+        </span>
+      )
+    },
+    {
+      title: '项目',
+      dataIndex: 'project',
+      width: 150,
+      ellipsis: true,
+      render: (value) => value || '-'
+    },
+    {
+      title: '账号',
+      key: 'accounts',
+      width: 138,
+      render: (_, row) => renderAccountScope(row.accountCount, row.unattributedCalls)
+    },
+    {
+      title: '调用',
+      dataIndex: 'calls',
+      width: 78,
+      align: 'right'
+    },
+    {
+      title: 'Input',
+      dataIndex: 'inputTokens',
+      width: 96,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: 'Output',
+      dataIndex: 'outputTokens',
+      width: 96,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: 'Cache',
+      key: 'cache',
+      width: 96,
+      align: 'right',
+      render: (_, row) => renderCacheTokens(row)
+    },
+    {
+      title: '缓存率',
+      dataIndex: 'cacheHitRate',
+      width: 88,
+      align: 'right',
+      render: (value) => formatCacheRate(value as number | null)
+    },
+    {
+      title: 'Tokens',
+      dataIndex: 'totalTokens',
+      width: 100,
+      align: 'right',
+      render: (value) => formatTokens(Number(value))
+    },
+    {
+      title: '成本',
+      dataIndex: 'costUsd',
+      width: 96,
+      align: 'right',
+      render: (value) => formatCost(Number(value))
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'updatedAtMs',
+      width: 124,
+      render: (value) => formatTime(Number(value))
+    },
+    {
+      title: '',
+      key: 'action',
+      width: 56,
+      align: 'center',
+      render: (_, row) => (
+        <Button
+          aria-label="查看会话账号与模型分量"
+          icon={<EyeOutlined />}
+          size="small"
+          onClick={() => void openBreakdown({ kind: 'session', row })}
+        />
+      )
+    }
+  ];
+
+  const modelSelectOptions = useMemo(() => {
+    const grouped = new Map<string, Set<Provider>>();
+    modelOptions.forEach((item) => {
+      const modelName = String(item.model || '').trim();
+      if (!modelName) return;
+      if (!grouped.has(modelName)) grouped.set(modelName, new Set());
+      grouped.get(modelName)?.add(item.provider);
+    });
+    return Array.from(grouped.entries())
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([modelName, providers]) => {
+        const suffix = provider
+          ? ''
+          : ` · ${Array.from(providers).map((item) => providerNames[item] || item).join('/')}`;
+        return {
+          label: `${formatModelShortName(modelName)}${suffix}`,
+          title: modelName,
+          value: modelName
+        };
+      });
+  }, [modelOptions, provider]);
+
+  const totalCacheTokens = getCacheTokens(stats);
+  const overallCacheHitRate = calculateCacheHitRate(stats);
+  const dashboardProgress = dashboardQueryJob && dashboardQueryJob.totalShards > 0
+    ? `${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
+    : '';
+  const dashboardStatusText = loading
+    ? [
+      hasDashboardSnapshot ? '正在切换数据范围' : '正在加载模型用量',
+      dashboardProgress ? `已汇总 ${dashboardProgress}` : ''
+    ].filter(Boolean).join(' · ')
+    : dashboardLoadError
+      ? hasDashboardSnapshot ? '切换失败，仍显示上一次成功快照' : '加载失败，请重试'
+      : '';
+  const dashboardBodyClassName = [
+    'usage-dashboard-body',
+    loading ? 'usage-dashboard-body--loading' : '',
+    loading && hasDashboardSnapshot ? 'usage-dashboard-body--refreshing' : '',
+    dashboardLoadError ? 'usage-dashboard-body--error' : ''
+  ].filter(Boolean).join(' ');
+
+  return (
+    <PageScaffold ghost
+      code="USAGE"
+      title="模型用量统计"
+      subTitle="监控 Tokens、会话、模型调用频次和估算成本。"
+      extra={[
+        <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
+          刷新
+        </Button>,
+        <Tooltip key="scan" title={canScanUsageProvider(provider) ? '同步本地用量' : '用量随请求自动记录，点击刷新查看'}>
+          <span><Button type="primary" icon={<SyncOutlined />} onClick={handleScan}
+            disabled={!canScanUsageProvider(provider)} loading={scanning || isScanJobActive(scanJob)}>扫描</Button></span>
+        </Tooltip>
+      ]}
+    >
+      <div className={dashboardBodyClassName} aria-busy={loading}>
+      <div
+        className={`usage-query-progress${dashboardStatusText ? ' usage-query-progress--visible' : ''}${dashboardLoadError && !loading ? ' usage-query-progress--error' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {loading ? <SyncOutlined spin aria-hidden /> : null}
+        {dashboardStatusText ? (
+          <Text type={dashboardLoadError && !loading ? 'danger' : 'secondary'}>
+            {dashboardStatusText}
+          </Text>
+        ) : null}
+      </div>
+
+      <section className="usage-kpi-rail" aria-label="核心用量指标">
+        <div className="usage-kpi-item usage-kpi-item--primary">
+          <span>总 Tokens</span>
+          <strong>{formatTokens(stats.totalTokens)}</strong>
+          <small>{stats.totalCalls} 次调用 · {stats.totalSessions} 个会话</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>Input</span>
+          <strong>{formatTokens(stats.inputTokens)}</strong>
+          <small>未含缓存读写</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>Output</span>
+          <strong>{formatTokens(stats.outputTokens)}</strong>
+          <small>推理 {formatTokens(stats.reasoningOutputTokens)}</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>Cache</span>
+          <strong>{formatTokens(totalCacheTokens)}</strong>
+          <small>读 {formatTokens(stats.cacheReadInputTokens)} · 写 {formatTokens(stats.cacheCreationInputTokens)}</small>
+        </div>
+        <div className="usage-kpi-item">
+          <span>缓存率</span>
+          <strong>{formatCacheRate(overallCacheHitRate)}</strong>
+          <small>读取 / 全部输入侧 Tokens</small>
+        </div>
+        <div className="usage-kpi-item usage-kpi-item--cost">
+          <span>估算成本</span>
+          <strong>{formatCost(stats.totalCostUsd)}</strong>
+          <small>USD · 按当前价格快照</small>
+        </div>
+      </section>
+
+      <SectionCard bordered >
+        <Space size={12} wrap className="usage-filter-space">
+          <Segmented
+            value={rangeMode}
+            options={RANGE_OPTIONS}
+            onChange={(value) => handleRangeModeChange(value as RangeMode)}
+          />
+          {rangeMode === 'custom' ? (
+            <RangePicker
+              value={range}
+              onChange={handleRangeChange}
+              allowClear={false}
+              disabledDate={(current) => Boolean(current && current > dayjs().endOf('day'))}
+              showTime={{ format: 'HH:mm' }}
+              format="YYYY-MM-DD HH:mm"
+            />
+          ) : null}
+          <div className="usage-provider-scroll">
+            <Segmented
+              value={provider}
+              options={PROVIDER_OPTIONS}
+              onChange={(value) => handleProviderChange(value as ProviderFilter)}
+            />
+          </div>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="全部模型"
+            value={model || undefined}
+            onChange={handleModelChange}
+            style={{ width: 260 }}
+            options={modelSelectOptions}
+          />
+          <Button icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
+            查询
+          </Button>
+        </Space>
+      </SectionCard>
+
+      <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
+        <div className="usage-insight-grid">
+          <UsageTrendChart trend={trend} />
+          <UsageModelMixChart
+            models={models}
+            onSelectModel={(row) => void openBreakdown({ kind: 'model', row })}
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard className="usage-results-card">
+        <Tabs
+          activeKey={usageTab}
+          onChange={(key) => setUsageTab(key as 'model' | 'session')}
+          items={[
+            {
+              key: 'model',
+              label: '按模型',
+              children: (
+                <ListTable<ModelUsageModelRow>
+                  loading={loading && models.length === 0}
+                  rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
+                  columns={modelColumns}
+                  dataSource={models}
+                  scroll={{ x: 1280 }}
+                />
+              )
+            },
+            {
+              key: 'session',
+              label: '按会话',
+              children: (
+                <ListTable<ModelUsageSessionRow>
+                  loading={loading && sessions.length === 0}
+                  rowKey={getSessionKey}
+                  columns={sessionColumns}
+                  dataSource={sessions}
+                  scroll={{ x: 1560 }}
+                />
+              )
+            }
+          ]}
+        />
+      </SectionCard>
+
+      <RequestDetailsSection
+        usage={requestUsage}
+        errors={requestErrors}
+        requested={requestDetailsRequested}
+        loading={requestDetailsLoading}
+        error={requestDetailsError}
+        limit={REQUEST_DETAIL_LIMIT}
+        onRequest={() => void loadRequestDetails()}
+      />
+
+      <UsageBreakdownDrawer
+        target={breakdownTarget}
+        data={breakdown}
+        loading={breakdownLoading}
+        accountsByRef={accountsByRef}
+        onClose={closeBreakdown}
+      />
+      </div>
+    </PageScaffold>
+  );
+}

@@ -1,0 +1,221 @@
+import type { ChatAccount, Provider, Session } from '@/types';
+import { chatRuntimeProviders } from './runtime-provider-registry';
+import {
+  AIH_SERVER_PROVIDERS,
+  GATEWAY_RUNTIME_SCOPE,
+  chatAccountIdentity,
+  isAihServerAccount,
+  isGatewaySelectionScope,
+  makeAihServerAccount,
+} from '@/components/chat/aih-server-account';
+
+export type ApprovalMode = 'bypass' | 'confirm' | 'plan';
+
+export interface SessionRuntimeTarget {
+  readonly provider: string;
+  readonly executionAccountRef: string;
+  readonly projectPath: string;
+  readonly nativeSessionId?: string;
+  readonly sessionId?: string;
+  readonly chatSessionId?: string;
+  readonly readOnly?: boolean;
+  readonly policy: Readonly<{ approvalMode: ApprovalMode }>;
+}
+
+export type SessionRuntimeTargetResolution =
+  | { readonly status: 'pending' }
+  | { readonly status: 'ready'; readonly target: SessionRuntimeTarget }
+  | { readonly status: 'blocked'; readonly reason: RuntimeTargetBlockReason };
+
+export type RuntimeTargetBlockReason =
+  | 'account_required'
+  | 'provider_mismatch'
+  | 'runtime_provider_unsupported';
+
+interface ResolveTargetInput {
+  readonly session: Session;
+  readonly account: ChatAccount | null;
+  readonly projectPath?: string;
+  readonly approvalMode: ApprovalMode;
+}
+
+export function usesCanonicalSessionRuntime(
+  session: Session | null,
+  account?: ChatAccount | null,
+): boolean {
+  if (!session) return false;
+  // Chat / Work 只看 projectPath：空 = 纯聊天（canonical chat 运行时），非空 = 项目工作区。
+  if (!session.projectPath) return true;
+  const descriptor = chatRuntimeProviders.resolve(session.provider);
+  if (!descriptor) return false;
+  // A persisted native session can always be opened as a read-only observer.
+  // Account discovery is asynchronous on deep links; requiring it here would
+  // route the session to the legacy surface before the bound credential arrives.
+  return account === undefined || Boolean(
+    account && descriptor.acceptsAccount(account),
+  ) || Boolean(session.accountRef && !session.draft);
+}
+
+export function resolveSessionRuntimeTarget(
+  input: ResolveTargetInput,
+): SessionRuntimeTargetResolution {
+  const projectPath = String(input.projectPath || input.session.projectPath || '').trim();
+  if (!projectPath) return resolveChatTarget(input);
+  const descriptor = chatRuntimeProviders.resolve(input.session.provider);
+  if (!descriptor) return blocked('runtime_provider_unsupported');
+  const boundAccountRef = String(input.session.accountRef || '').trim();
+  const selectedAccount = input.account;
+  const selectedCompatible = Boolean(
+    selectedAccount
+    && selectedAccount.provider === input.session.provider
+    && descriptor.acceptsAccount(selectedAccount),
+  );
+  if (!selectedCompatible && !boundAccountRef) return blocked('account_required');
+  if (selectedAccount && selectedAccount.provider !== input.session.provider && !boundAccountRef) {
+    return blocked('provider_mismatch');
+  }
+  const observer = Boolean(boundAccountRef && (!selectedCompatible
+    || selectedAccount?.accountRef !== boundAccountRef));
+
+  return {
+    status: 'ready',
+    target: {
+      provider: input.session.provider,
+      executionAccountRef: boundAccountRef || String((selectedAccount as ChatAccount).accountRef || ''),
+      projectPath,
+      ...(!input.session.draft ? { nativeSessionId: input.session.id } : {}),
+      ...(input.session.runtimeSessionId ? { sessionId: input.session.runtimeSessionId } : {}),
+      ...(observer ? { readOnly: true } : {}),
+      policy: { approvalMode: effectiveApprovalMode(input.session.provider, input.approvalMode) },
+    },
+  };
+}
+
+// 逐项审批不可用时的默认回落（与服务端审批策略表 native-approval-transports 同源）。
+// 只做「更严格」方向的回落：zcode 的确认弹在 ZCode Desktop，WebUI 默认改用计划模式。
+// agy / grok 没有可用的审批通道，**不**静默放宽成直接执行（那是用户没选过的权限降级）：
+// 保持 confirm，服务端明确拒绝并给原因，审批菜单里不可用项置灰写明原因，由用户显式选择。
+export function effectiveApprovalMode(provider: string, mode: ApprovalMode): ApprovalMode {
+  if (provider === 'zcode' && mode === 'confirm') return 'plan';
+  return mode;
+}
+
+export function runtimeAccountsForSession(
+  session: Session,
+  accounts: readonly ChatAccount[],
+): readonly ChatAccount[] {
+  if (!session.projectPath) {
+    return withGatewayAccounts(accounts, session.provider);
+  }
+  // Work 草稿还没绑定原生会话，provider 只是默认值：列出所有可运行 provider 的账号，
+  // 换到别的 provider 时由调用方按新 provider 重建草稿（见 resolveChatAccountChange）。
+  if (session.draft) {
+    return accounts.filter((account) => {
+      const candidate = chatRuntimeProviders.resolve(account.provider);
+      return Boolean(candidate && candidate.acceptsAccount(account));
+    });
+  }
+  const descriptor = chatRuntimeProviders.resolve(session.provider);
+  if (!descriptor) return [];
+  return accounts.filter((account) => descriptor.acceptsAccount(account));
+}
+
+/**
+ * 在真实账号后追加「aih-server(全部账号+别名)」目标 —— **全局唯一一条，跨 provider 通用**。
+ *
+ * 它代表「不钉账号、也不钉 provider，由网关按模型 id 挑号」；选中后模型列表就是整个
+ * server 的目录（服务端对网关作用域返回全局池，见 chat-harness-model-reader 的
+ * isGatewayRuntimeScope 分支），harness 请求也不写 X-Provider 钉选头
+ * （见 chat-harness-gateway 的 runtimeConfigRevision v6）。所以它本来就与 provider 无关。
+ *
+ * 2026-10-21 收敛：此前每个 provider 一条（`gateway:<provider>`），本机 15 个 provider
+ * 就是 15 条同名条目 —— 既是视觉噪音，也让人误以为要按 provider 选。
+ *
+ * 何时追加：只要**任一**账号声明 `gatewayTargetSupported`（描述符 relay 能力：
+ * transport=http 且不依赖本机客户端），或**任一** provider 有 `gateway_profile` 能力，
+ * 就有可用的池。判定来自服务端结论，前端不维护 provider 清单。
+ *
+ * 注意判定是**全局**的，不看会话 provider：网关目标代表「整个 server 的池」，会话
+ * provider 只是它默认带的上下文。此前按会话 provider 判，会让「会话 provider 恰好没有池」
+ * 时条目直接消失 —— 与「跨 provider 通用」自相矛盾。
+ *
+ * @param provider 会话自己的 provider —— 只写进目标对象供 harness 目录命名与元数据解析，
+ *   不参与「有没有池」的判定，也不进标识。
+ */
+export function withGatewayAccounts(
+  accounts: readonly ChatAccount[],
+  provider?: Provider | null,
+): readonly ChatAccount[] {
+  const gatewayCapable = accounts.some((account) => account.gatewayTargetSupported === true);
+  if (!gatewayCapable && !AIH_SERVER_PROVIDERS.length) return accounts;
+  // provider 缺省时退回首个账号的 provider（仅用于目标对象的上下文，不影响标识）。
+  const context = String(provider || '').trim() || String(accounts[0]?.provider || '').trim();
+  if (!context) return accounts;
+  return [...accounts, makeAihServerAccount(context as Provider)];
+}
+
+/**
+ * 换账号时该做什么。三种结果：
+ * - `ignore`：目标没变（网关目标按裸 `gateway` 比较，与 provider 无关）。
+ * - `retarget`：**同 provider** 且已有服务端会话 → 换执行凭据、会话不变（服务端 open 时 rebind，
+ *   时间线保留、harness 换账号并回填历史）。
+ * - `new-session`：跨 provider（协议不同）或还没有服务端会话（草稿）→ 按原行为新建。
+ *
+ * 注意：选网关目标**不是**跨 provider —— 会话 provider 不变，只是不钉账号。所以它命中
+ * retarget（有服务端会话时）而不是 new-session。
+ */
+export type ChatAccountChangeAction = 'ignore' | 'retarget' | 'new-session';
+
+export function resolveChatAccountChange(input: {
+  readonly projectPath?: string;
+  readonly provider: Provider;
+  readonly accountRef?: string;
+  readonly draft?: boolean;
+  readonly runtimeSessionId?: string;
+  readonly account: ChatAccount;
+}): ChatAccountChangeAction {
+  const identity = chatAccountIdentity(input.account);
+  // 网关目标按**归一化**比较：存量会话列里是旧后缀（`gateway:opencode`），新标识是裸
+  // `gateway`。直接比字符串会把「同一个网关目标」判成变化，从而触发一次无谓的 retarget
+  // （改写会话列 + 重建 pane）。两者都指同一个全局池，视为没变。
+  if (sameChatTarget(input.accountRef, identity)) return 'ignore';
+  if (String(input.projectPath || '').trim()) return 'new-session';
+  // 网关目标不携带 provider 语义（全局池），不算跨 provider。
+  if (!isAihServerAccount(input.account) && input.provider !== input.account.provider) return 'new-session';
+  if (input.draft || !input.runtimeSessionId) return 'new-session';
+  return 'retarget';
+}
+
+/** 两个目标标识是否指同一个目标（网关目标兼容旧 `gateway:<provider>` 后缀）。 */
+function sameChatTarget(left?: string | null, right?: string | null): boolean {
+  const a = String(left || '').trim();
+  const b = String(right || '').trim();
+  if (a === b) return true;
+  return isGatewaySelectionScope(a) && isGatewaySelectionScope(b);
+}
+
+function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResolution {
+  const account = input.account;
+  // chat 没有账号区别（2026-11-02）：harness 是 aih 自己的全局目录，账号只决定这次请求
+  // 走哪个账号池路由，不决定会话作用域。所以 chat 目标恒为网关作用域——换账号继续聊同一个
+  // 会话时不换 home、不换 thread，也不需要 history 回填。
+  // 会话 provider 保持原值（harness 目录命名与模型元数据解析仍要用它）。
+  if (account && !isAihServerAccount(account) && account.provider !== input.session.provider) {
+    return blocked('provider_mismatch');
+  }
+  return {
+    status: 'ready',
+    target: {
+      provider: input.session.provider,
+      executionAccountRef: GATEWAY_RUNTIME_SCOPE,
+      projectPath: '',
+      ...(input.session.runtimeSessionId || !input.session.draft
+        ? { chatSessionId: input.session.runtimeSessionId || input.session.id } : {}),
+      policy: { approvalMode: 'confirm' },
+    },
+  };
+}
+
+function blocked(reason: RuntimeTargetBlockReason): SessionRuntimeTargetResolution {
+  return { status: 'blocked', reason };
+}

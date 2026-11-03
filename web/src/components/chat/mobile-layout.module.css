@@ -1,0 +1,199 @@
+/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: mobile-layout */
+
+/* ============================================================================
+ * 移动端导航栈（iOS 风格：列表页 ⇄ 对话页 push/pop，取代抽屉）
+ * ========================================================================== */
+.mobileStack {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.mobileScreen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-bg);
+  transition: transform var(--motion-slow) var(--ease-emphasized);
+  will-change: transform;
+}
+
+/* 列表页：被对话页覆盖时轻微视差后退 */
+.mobileScreenBehind {
+  transform: translateX(-22%);
+}
+
+/* 对话页：默认停在右侧屏外，激活时滑入 */
+.mobileScreenChat {
+  transform: translateX(100%);
+  /* push 进来的页面只用一条发丝线分界，不投阴影 */
+  box-shadow: -1px 0 0 var(--color-border);
+  z-index: var(--z-raised);
+}
+
+.mobileScreenActive {
+  transform: translateX(0);
+}
+
+.mobileScreenBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 列表屏（导航栈根视图）：底部为 MobileTabBar 让位，最后一条会话不被遮住。
+ * 对话屏（.mobileScreenChat）进入沉浸态、TabBar 已隐藏，不需要此留白。 */
+.mobileScreen:not(.mobileScreenChat) .mobileScreenBody {
+  padding-bottom: var(--mobile-tabbar-safe);
+}
+
+/* 顶部导航条（不透明 surface + 底部发丝线 + 安全区）——高 56px、横向留白加大。
+ * ProLayout 顶栏高度已回收，顶部有充足垂直空间，不再压缩。 */
+.mobileNav {
+  position: relative;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-6) var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mobileNavSide {
+  flex: none;
+  min-width: 76px;
+  display: flex;
+  align-items: center;
+}
+
+.mobileNavSide:last-child {
+  justify-content: flex-end;
+}
+
+.mobileNavTitleLarge {
+  flex: 1;
+  font-family: var(--font-display);
+  /* iOS large-title：2xl / 600；HUD 青色辉光 */
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.mobileNavCenter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.mobileNavTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--color-heading);
+}
+
+.mobileNavBadge {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+}
+
+.mobileNavBadge img,
+.mobileNavBadge [data-provider-icon-fallback] {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
+}
+
+.mobileNavBadgeRunning::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill);
+  /* 运行中 = HUD ok LED */
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+  animation: mobileLedBreathe 1.6s ease-in-out infinite;
+}
+
+@keyframes mobileLedBreathe {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileNavBadgeRunning::after { animation: none; }
+}
+
+.mobileBack {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-0-5); /* 归级:原 1px */
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-accent);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobileBack:active { opacity: 0.45; }
+
+.mobileBack svg { font-size: var(--text-xl); }
+
+.mobileNavAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--hos-radius-xs);
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-heading);
+  font-size: var(--text-lg);
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.mobileNavAction:active { background: var(--color-accent-soft); color: var(--color-accent); }
+
+/* 动效补齐（styles/motion.css 约定）：触屏按下态此前是硬切，这里只过渡颜色/透明度（paint-only），
+ * 120ms 内跟手；prefers-reduced-motion 下 --motion-* 归零，全局层再兜底。 */
+.mobileBack {
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}

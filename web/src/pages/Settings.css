@@ -1,0 +1,1012 @@
+/* Settings 现在统一走 PageScaffold(.unified-page-wrapper) 布局，
+ * 不再需要 .settings-page 自带的 padding/gap（已由全局 unified.css 提供）。 */
+.settings-section-content {
+  min-width: 0;
+}
+/* .settings-panel 使用框架 ProCard，并挂全局 .hud-panel：切角 + 青色角标 + 半透明 HUD 底，
+ * 发丝线描边，悬停描边转青（见 styles/hud.css）。这里只去掉 ProCard 自带阴影。 */
+.ant-pro-card.settings-panel {
+  box-shadow: none;
+}
+.settings-tabs.ant-tabs {
+  min-width: 0;
+}
+.settings-tabs > .ant-tabs-nav {
+  margin-bottom: var(--hos-space-3-5);
+}
+.settings-tabs > .ant-tabs-nav::before {
+  border-color: var(--color-border);
+}
+.settings-tabs .ant-tabs-tab {
+  padding: var(--hos-space-2-5) 0;
+  font-weight: var(--weight-medium);
+}
+.settings-grid {
+  display: grid;
+  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hos-space-4);
+}
+.settings-panel {
+  min-width: 0;
+}
+.settings-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hos-space-3);
+  margin-bottom: var(--hos-space-4);
+}
+.settings-panel-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  line-height: 1.3;
+  text-shadow: var(--hud-text-glow-soft);
+}
+/* HUD 面板标题的发光方块前缀，与 SectionCard 标题一致 */
+.settings-panel-head h2::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+.settings-panel-head p {
+  margin: var(--hos-space-1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.55;
+}
+.settings-actions {
+  display: flex;
+  gap: var(--hos-space-2-5);
+  padding-top: var(--hos-space-1);
+}
+.settings-actions .ant-btn {
+  min-width: 136px;
+}
+.settings-invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-2-5);
+}
+.settings-invite-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hos-space-2-5);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  padding: var(--hos-space-2-5);
+}
+.settings-control-plane-actions {
+  justify-content: flex-end;
+}
+.settings-control-plane-error {
+  color: var(--color-danger) !important;
+}
+.settings-control-plane-page {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-3-5);
+}
+.settings-control-plane-shell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-3-5);
+}
+.settings-control-plane-scope-copy {
+  margin: 0 0 var(--space-6);
+  color: var(--color-muted);
+  font-size: var(--hos-text-body-sm);
+  line-height: 1.6;
+}
+.settings-control-plane-current {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hos-space-3);
+  align-items: center;
+  padding: var(--hos-space-3);
+  margin-bottom: var(--space-6);
+}
+.settings-control-plane-current-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+}
+.settings-control-plane-current-main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-heading);
+  /* Server 名是用户数据（常含数字），用等宽粗体而非 Orbitron（其 0 为斜杠方块） */
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-h2);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  text-shadow: var(--hud-text-glow-soft);
+  white-space: nowrap;
+}
+/* 默认 Server 的 URL：等宽路由胶囊 */
+.settings-control-plane-current-main em {
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-control-plane-endpoint {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+.settings-copy-trigger.ant-btn {
+  flex: none;
+  height: 22px;
+  padding: 0 var(--space-3);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-caps);
+}
+.settings-copy-trigger.ant-btn:hover {
+  color: var(--color-accent) !important;
+}
+/* 外观个性化 → HUD 显示开关组（CRT / SFX / 主题） */
+.settings-hud-display {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-4);
+}
+.settings-hud-display-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-accent);
+}
+.settings-hud-display-label::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 45%, transparent), transparent);
+}
+.settings-control-plane-current-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--hos-space-2);
+}
+.settings-control-plane-current-actions .ant-select {
+  width: 260px;
+  max-width: 100%;
+}
+.settings-public-entry-card {
+  min-width: 0;
+}
+.settings-public-entry-mode {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+}
+.settings-public-entry-mode strong {
+  color: var(--color-heading);
+  font-size: var(--hos-text-body);
+  font-weight: var(--weight-semibold);
+}
+.settings-public-entry-mode p {
+  margin: 0 0 var(--hos-space-2-5);
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.5;
+}
+.settings-public-entry-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hos-space-3);
+  margin-top: var(--hos-space-3-5);
+}
+.settings-public-entry-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1-5);
+}
+.settings-public-entry-field > span {
+  color: var(--color-muted-strong);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+}
+.settings-public-entry-field .ant-select {
+  width: 100%;
+}
+.settings-public-entry-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-3);
+  margin-top: var(--hos-space-3-5);
+}
+.settings-public-entry-status-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2);
+  margin-top: var(--hos-space-3-5);
+}
+.settings-public-entry-status {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hos-space-1) var(--hos-space-3);
+  align-items: center;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--hos-space-2);
+}
+.settings-public-entry-status-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+}
+.settings-public-entry-status-main strong {
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm);
+}
+.settings-public-entry-status-main span,
+.settings-public-entry-status-meta span {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+}
+.settings-public-entry-status-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-public-entry-status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--hos-space-1);
+}
+.settings-public-entry-status-meta .ant-tag {
+  margin-inline-end: 0;
+}
+.settings-public-entry-tag.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.settings-public-entry-status-main span {
+  font-family: var(--font-mono);
+}
+.settings-public-entry-mode strong {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-wide);
+}
+.settings-public-entry-error {
+  grid-column: 1 / -1;
+  color: var(--color-danger);
+  font-size: var(--hos-text-caption);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 767px) {
+  .settings-public-entry-fields {
+    grid-template-columns: 1fr;
+  }
+  .settings-public-entry-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .settings-public-entry-status {
+    grid-template-columns: 1fr;
+  }
+  .settings-public-entry-status-meta {
+    justify-content: flex-start;
+  }
+}
+.settings-control-plane-manage-tabs > .ant-tabs-nav {
+  margin-bottom: var(--hos-space-3);
+}
+.settings-control-plane-empty {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5);
+}
+.settings-join-command {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-muted);
+  padding: var(--hos-space-2-5);
+}
+.settings-join-command-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5);
+}
+.settings-join-command-head strong {
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+}
+.settings-join-command pre {
+  overflow-x: auto;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  padding: var(--hos-space-2-5);
+  font-size: var(--hos-text-caption);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.settings-join-body {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: var(--hos-space-2-5);
+  align-items: stretch;
+}
+.settings-join-qr {
+  display: grid;
+  min-height: 176px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+}
+.settings-join-detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2);
+}
+.settings-join-code {
+  overflow-wrap: anywhere;
+  border: 1px dashed var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface);
+  color: var(--color-heading);
+  padding: var(--hos-space-2) var(--hos-space-2-5);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+.settings-probe-panel {
+  gap: var(--hos-space-2-5);
+}
+.settings-bootstrap-plan-panel {
+  gap: var(--hos-space-2-5);
+}
+.settings-bootstrap-readiness {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--hos-space-2);
+}
+.settings-bootstrap-readiness-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+  padding: var(--hos-space-2) var(--hos-space-2-5);
+}
+.settings-bootstrap-readiness-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2);
+}
+.settings-bootstrap-readiness-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-bootstrap-readiness-item span {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.settings-bootstrap-plan-steps {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2-5);
+}
+.settings-bootstrap-plan-step {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1-5);
+}
+.settings-bootstrap-plan-step-head {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--hos-space-2);
+  align-items: center;
+}
+.settings-bootstrap-plan-step-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.settings-bootstrap-guidance {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+  padding: var(--hos-space-2) var(--hos-space-2-5);
+}
+.settings-bootstrap-guidance span {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+.settings-probe-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1-5);
+}
+.settings-probe-results {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.settings-probe-result {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2);
+  border-top: 1px solid var(--color-border);
+  padding: var(--hos-space-2-5) 0 0;
+}
+.settings-probe-result:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.settings-probe-execution-plan {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-muted);
+  padding: var(--hos-space-2-5);
+}
+.settings-probe-apply-plan {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-muted);
+  padding: var(--hos-space-2-5);
+}
+.settings-probe-execution-plan > strong {
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+}
+.settings-probe-execution-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-2);
+}
+.settings-probe-execution-step {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hos-space-1-5) var(--hos-space-2-5);
+  align-items: start;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--hos-space-2);
+}
+.settings-probe-execution-step:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.settings-probe-execution-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--hos-space-2);
+}
+.settings-probe-execution-order {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-accent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+.settings-probe-execution-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+}
+.settings-probe-execution-copy strong,
+.settings-probe-execution-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.settings-probe-execution-copy strong {
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+}
+.settings-probe-execution-copy span {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+}
+.settings-probe-execution-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--hos-space-1);
+}
+.settings-manual-command-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1);
+}
+.settings-manual-command-list--compact {
+  flex: 1 1 100%;
+  align-items: flex-end;
+}
+.settings-manual-command-item {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--hos-space-1) var(--hos-space-1-5);
+}
+.settings-manual-command-item span {
+  max-width: 280px;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.settings-probe-execution-step p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+.settings-probe-execution-log {
+  grid-column: 1 / -1;
+  max-height: 120px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+  padding: var(--hos-space-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.settings-probe-execution-log--error {
+  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+}
+.settings-probe-result-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hos-space-2-5);
+}
+.settings-probe-result-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-probe-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1-5) var(--hos-space-2-5);
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+.settings-probe-note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+/* 行内提示（InlineNote）在表单顶部的间距；不做整块彩底。 */
+.settings-inline-alert {
+  margin-bottom: var(--space-8);
+}
+.settings-warning-list {
+  margin: 0;
+  padding-left: var(--hos-space-4);
+  line-height: 1.5;
+}
+.settings-warning-list li + li {
+  margin-top: var(--hos-space-1);
+}
+.settings-restart-alert {
+  margin-top: calc(var(--space-4) * -1);
+}
+.settings-derived-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--hos-space-2);
+  margin: 0 0 var(--hos-space-4);
+}
+.settings-derived-cell {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-muted);
+  padding: var(--hos-space-2) var(--hos-space-2-5);
+}
+.settings-derived-cell span {
+  display: block;
+  margin-bottom: var(--hos-space-1);
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+}
+.settings-derived-cell strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-caption);
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+}
+.settings-endpoint-hints {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-1-5);
+  margin: -12px 0 var(--hos-space-4);
+}
+.settings-endpoint-hints .ant-btn {
+  max-width: 100%;
+  font-family: var(--font-mono);
+}
+.settings-endpoint-hints .ant-btn > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-endpoint-warning {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--hos-space-0-5);
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: 1.45;
+}
+.settings-advanced-fields {
+  margin: -2px 0 var(--hos-space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  padding: 0 var(--hos-space-2-5) var(--hos-space-2-5);
+}
+.settings-advanced-fields summary {
+  cursor: pointer;
+  padding: var(--hos-space-2-5) 0;
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-semibold);
+}
+.settings-advanced-fields .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+.settings-panel .ant-form-item {
+  margin-bottom: var(--hos-space-4);
+}
+.settings-panel .ant-form-item-label > label {
+  color: var(--color-heading);
+  font-weight: var(--weight-medium);
+  /* HUD 表单标签：小号字距，与弹窗表单（.settings-form）一致 */
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+}
+/* 帮助文字占用 antd 的 item margin 区域；显式留出上 4 / 下 8 的间距，
+ * 避免与下一个字段标签相撞。 */
+.settings-panel .ant-form-item-explain,
+.settings-panel .ant-form-item-extra {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-4);
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-normal);
+}
+.settings-panel .ant-table-wrapper {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+
+@media (max-width: 1080px) {.settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+}
+
+@media (max-width: 767px) {
+.settings-tabs > .ant-tabs-nav {
+    overflow: hidden;
+  }
+.settings-tabs .ant-tabs-nav-list {
+    width: 100%;
+  }
+.settings-tabs .ant-tabs-tab {
+    flex: 1;
+    justify-content: center;
+    margin: 0;
+  }
+.settings-panel:not(.ant-pro-card) {
+    padding: var(--hos-space-3-5);
+  }
+.settings-panel-head {
+    gap: var(--hos-space-2-5);
+    margin-bottom: var(--hos-space-3-5);
+  }
+.settings-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+.settings-derived-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-control-plane-current {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-control-plane-filterbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+.settings-control-plane-current-actions {
+    justify-content: flex-start;
+  }
+.settings-control-plane-current-actions .ant-select,
+.settings-control-plane-current-actions .ant-btn,
+.settings-control-plane-filterbar .ant-select {
+    width: 100%;
+  }
+.settings-actions .ant-btn {
+    width: 100%;
+    min-width: 0;
+  }
+.settings-join-body {
+    grid-template-columns: 1fr;
+  }
+.settings-invite-item,
+.settings-control-plane-item,
+.settings-control-plane-auth-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-node-meta,
+.settings-control-plane-actions {
+    justify-content: flex-start;
+  }
+.settings-probe-execution-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.settings-probe-execution-meta {
+    justify-content: flex-start;
+  }
+.settings-manual-command-list--compact {
+    align-items: flex-start;
+  }
+.settings-manual-command-item {
+    justify-content: flex-start;
+  }
+.settings-manual-command-item span {
+    text-align: left;
+  }
+
+}
+
+@media (max-width: 480px) {.settings-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+}/* ===== Settings Server management v3 ===== */
+.settings-panel {
+  box-shadow: none;
+}
+/* ===== Settings Remote Nodes Layout Optimizations ===== */
+.settings-remote-nodes-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-4);
+}
+
+/* 设置页 AIH Server 选择器：普通 32px 控件外观（描边 + surface 底）。 */
+.settings-server-select-row {
+  margin-top: var(--space-6);
+}
+.settings-server-select-trigger {
+  width: 100% !important;
+  max-width: 320px;
+}
+.settings-server-select-trigger [class*="trigger"] {
+  display: flex !important;
+  width: 100% !important;
+  height: 36px !important;
+  padding: 0 var(--space-6) !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--color-border) !important;
+  background: var(--color-surface-sunken) !important;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body) !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  box-shadow: none !important;
+  transition: border-color var(--motion-fast) var(--ease-standard) !important;
+}
+.settings-server-select-trigger [class*="trigger"]:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border)) !important;
+}
+@media (max-width: 767px) {
+  .settings-server-select-trigger {
+    max-width: 100% !important;
+  }
+  .settings-server-select-trigger [class*="trigger"] {
+    height: 44px !important;
+  }
+}
+
+/* ============================================================================
+ * 移动端「原生设置」布局:摒弃 PC 的「标签在上 + 竖排表单 + 保存按钮」,
+ * 改成 iOS 式分组卡片 + 一行一项(标签左、控件右)。
+ * ==========================================================================*/
+@media (max-width: 767.98px) {
+  .ant-pro-card.settings-panel {
+    box-shadow: none;
+    margin-bottom: var(--space-6);
+  }
+  .ant-pro-card.settings-panel > .ant-pro-card-body { padding: var(--hos-space-1-5) var(--hos-space-4) var(--hos-space-3-5) !important; }
+  .settings-panel .settings-panel-head { padding: var(--hos-space-3) 0 var(--hos-space-1-5); }
+  .settings-panel .settings-panel-head h2 { font-size: var(--hos-text-h3); margin: 0; }
+  .settings-panel .settings-panel-head p { font-size: var(--hos-text-body-sm); color: var(--color-muted); margin: var(--space-1) 0 0; }
+
+  /* 表单项 → 原生设置行 */
+  .settings-panel form .ant-form-item {
+    margin: 0;
+    padding: var(--hos-space-3-5) 0;
+    border-top: 1px solid var(--color-border);
+  }
+  .settings-panel form .ant-form-item:first-of-type { border-top: none; }
+  .settings-grid { grid-template-columns: 1fr !important; width: 100%; }
+  .settings-panel form .ant-form-item .ant-form-item-row {
+    flex-flow: row nowrap !important;
+    align-items: center;
+    gap: var(--hos-space-3-5);
+  }
+  .settings-panel form .ant-form-item-label {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .settings-panel form .ant-form-item-label > label {
+    height: auto;
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+    color: var(--color-heading);
+  }
+  .settings-panel form .ant-form-item-label > label::after { display: none; }
+  .settings-panel form .ant-form-item-control {
+    flex: 0 0 150px !important;
+    width: 150px !important;
+    max-width: 150px !important;
+    min-width: 0 !important;
+  }
+  .settings-panel form .ant-form-item-control-input,
+  .settings-panel form .ant-form-item-control-input-content {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* 关键:带 addonAfter 的 InputNumber 外层是 group-wrapper,必须一并锁 100%,
+     否则它按自然宽度撑开、把步进器顶到视口外造成横向溢出 */
+  .settings-panel form .ant-form-item-control .ant-input-number-group-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input-number-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input-number,
+  .settings-panel form .ant-form-item-control .ant-input-number-affix-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input-affix-wrapper,
+  .settings-panel form .ant-form-item-control .ant-input,
+  .settings-panel form .ant-form-item-control .ant-select {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* 行内不再显示大段帮助文字(原生设置里靠标题/上下文表达) */
+  .settings-panel form .ant-form-item-explain,
+  .settings-panel form .ant-form-item-extra { display: none; }
+
+  /* 保存/重置 → 整宽主操作,独占一行、无分隔线 */
+  .settings-panel form .ant-form-item:has(.settings-actions) {
+    border-top: none;
+    padding-top: var(--hos-space-4);
+  }
+  .settings-panel form .ant-form-item:has(.settings-actions) .ant-form-item-control { width: 100%; max-width: none; flex: 1; }
+  .settings-actions { width: 100%; display: flex; gap: var(--hos-space-2-5); }
+  .settings-actions .ant-btn { flex: 1; height: 44px; }
+}

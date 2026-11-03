@@ -1,0 +1,36 @@
+import { writeClipboardText } from '@/utils/clipboard';
+import { message } from 'antd';
+
+export function getErrorMessage(error: unknown, fallback: string) {
+  const candidate = error as {
+    message?: string;
+    response?: { data?: { message?: string; error?: string } };
+  };
+  return candidate?.response?.data?.message
+    || candidate?.response?.data?.error
+    || candidate?.message
+    || fallback;
+}
+
+export function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export async function copyText(value: string, successMessage: string) {
+  try {
+    await writeClipboardText(value);
+    message.success(successMessage);
+  } catch {
+    message.error('无法访问剪贴板，请手动复制');
+  }
+}
+
+export function formatLastSynced(timestamp: number | null) {
+  if (!timestamp) return '尚未同步';
+  return new Date(timestamp).toLocaleString();
+}

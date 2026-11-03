@@ -1,0 +1,721 @@
+// Package accountrouting 负责从紧凑账号候选中征召一个当前可用的账号。
+//
+// 该应用层只组合候选读取、运行态资格和凭据可用化，不认识 SQLite、HTTP、
+// Provider SDK、usage 存储或具体运行态实现。
+package accountrouting
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/madou1217/ai_home/application/accountcredentials"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
+)
+
+const (
+	// MaxExcludedAccounts 限制跨尝试排除集合，固定小数组避免热路径 Map。
+	MaxExcludedAccounts = 4
+)
+
+var (
+	// ErrInvalidDependencies 表示征召器缺少模型候选、运行态或凭据端口。
+	ErrInvalidDependencies = errors.New("账号征召器依赖无效")
+	// ErrInvalidRequest 表示 Provider、真实模型或上下文无效。
+	ErrInvalidRequest = errors.New("账号征召请求无效")
+	// ErrInvalidCandidateSnapshot 表示候选源违反了快照、Provider 或身份合同。
+	ErrInvalidCandidateSnapshot = errors.New("账号征召候选快照无效")
+	// ErrInvalidResolvedCredential 表示凭据解析结果不属于候选账号。
+	ErrInvalidResolvedCredential = errors.New("账号征召凭据无效")
+	// ErrInvalidRuntimeEligibility 表示运行态端口返回了不完整的资格值。
+	ErrInvalidRuntimeEligibility = errors.New("账号征召运行态资格无效")
+	// ErrInvalidCredentialTransport 表示调用方没有提供当前上游协议的凭据传输策略。
+	ErrInvalidCredentialTransport = errors.New("账号征召凭据传输策略无效")
+	// ErrNoRoutableAccount 表示当前候选快照没有可直接交给上游的账号。
+	ErrNoRoutableAccount = errors.New("没有可征召账号")
+)
+
+// CandidateSource 提供已经按 Provider、模型和启用状态筛选的不可变候选快照。
+type CandidateSource interface {
+	// LoadRoutingCandidates 返回当前原子发布的完整本地候选快照。
+	LoadRoutingCandidates(
+		ctx context.Context,
+		providerID string,
+		modelID runtimecore.ModelID,
+	) (*accountapp.RoutingCandidates, error)
+}
+
+// CredentialResolver 把候选账号凭据解析为当前可直接使用的版本。
+type CredentialResolver interface {
+	// ResolveObservedCredentialBinding 延迟读取凭据，并从同一快照返回低敏观察。
+	ResolveObservedCredentialBinding(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (
+		accountapp.CredentialBinding,
+		accountcredentials.CredentialObservation,
+		error,
+	)
+}
+
+// CredentialTransportPolicy 判断领域凭据能否由当前上游协议安全承载。
+//
+// 该策略只表达本地协议兼容性，不执行网络请求，也不改变账号运行态。
+type CredentialTransportPolicy interface {
+	// SupportsCredential 返回当前 Adapter 是否可以直接使用该凭据。
+	SupportsCredential(credential accountapp.Credential) bool
+}
+
+// RuntimeEligibilitySource 提供账号与真实模型元组的当前运行态资格。
+type RuntimeEligibilitySource interface {
+	// CheckEligibility 在读取凭据前判断硬阻塞或模型 cooldown。
+	CheckEligibility(
+		ctx context.Context,
+		route runtimecore.ModelRoute,
+	) (runtimecore.Eligibility, error)
+}
+
+// Dependencies 声明征召器所需的四个最小应用端口。
+type Dependencies struct {
+	// Candidates 负责从本地模型倒排读取启用账号的不可变紧凑快照。
+	Candidates CandidateSource
+	// Runtime 负责在敏感凭据读取前排除运行态不可用元组。
+	Runtime RuntimeEligibilitySource
+	// Credentials 负责单账号凭据读取和必要刷新。
+	Credentials CredentialResolver
+	// Weights 提供账号剩余额度；为空时所有账号按等概率参与随机选号。
+	Weights AccountWeightSource
+	// Strategy 是选号策略；零值非法，必须由调用方显式解析。
+	Strategy SelectionStrategy
+}
+
+// Request 是经过 Provider 注册表校验的征召请求。
+type Request struct {
+	providerID    string
+	modelID       runtimecore.ModelID
+	pinnedAccount accountcore.AccountRef
+	excluded      [MaxExcludedAccounts]accountcore.AccountRef
+	excludedCount uint8
+	// sessionKey 是客户端会话标识；非空时启用会话亲和。
+	sessionKey string
+	// preserveAffinity 表示该请求携带必须同账号续接的加密推理链，绑定账号即使仅被
+	// （账号,模型）软冷却挡住也要硬性优先（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
+	preserveAffinity bool
+}
+
+// NewRequest 规范化 Provider，并校验别名解析后的真实模型。
+//
+// modelID 必须是别名解析后的真实上游模型，不能使用客户端模型别名。
+func NewRequest(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+) (Request, error) {
+	return newRequest(catalog, providerID, modelID, "", nil)
+}
+
+// NewRequestExcluding 创建普通公平征召请求，并跳过当前调用已经尝试的账号。
+//
+// 排除集合有固定上限且必须去重；该能力只用于响应尚未提交前的失败换号，
+// 不能与固定账号请求组合。
+func NewRequestExcluding(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+	excluded []accountcore.AccountRef,
+) (Request, error) {
+	return newRequest(catalog, providerID, modelID, "", excluded)
+}
+
+// NewPinnedRequest 创建只允许征召指定稳定账号的请求。
+//
+// 固定账号仍必须存在于目标 Provider、模型的启用候选快照中，并继续经过运行态、
+// 凭据和传输能力校验；任何失败都不得回退到同池其他账号。
+func NewPinnedRequest(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+	accountRef accountcore.AccountRef,
+) (Request, error) {
+	if !accountRef.IsValid() {
+		return Request{}, ErrInvalidRequest
+	}
+	return newRequest(catalog, providerID, modelID, accountRef, nil)
+}
+
+// newRequest 统一普通征召和固定账号征召的 Provider、模型校验。
+func newRequest(
+	catalog *providers.Catalog,
+	providerID string,
+	modelID string,
+	pinnedAccount accountcore.AccountRef,
+	excluded []accountcore.AccountRef,
+) (Request, error) {
+	if catalog == nil {
+		return Request{}, ErrInvalidRequest
+	}
+	canonicalProviderID, found := catalog.CanonicalID(providerID)
+	if !found {
+		return Request{}, ErrInvalidRequest
+	}
+	runtimeModelID, err := runtimecore.NewModelID(modelID)
+	if err != nil {
+		return Request{}, errors.Join(ErrInvalidRequest, err)
+	}
+	if len(excluded) > MaxExcludedAccounts ||
+		(pinnedAccount.IsValid() && len(excluded) > 0) {
+		return Request{}, ErrInvalidRequest
+	}
+	request := Request{
+		providerID:    canonicalProviderID,
+		modelID:       runtimeModelID,
+		pinnedAccount: pinnedAccount,
+		excludedCount: uint8(len(excluded)),
+	}
+	for index, accountRef := range excluded {
+		if !accountRef.IsValid() || request.excludesBefore(accountRef, index) {
+			return Request{}, ErrInvalidRequest
+		}
+		request.excluded[index] = accountRef
+	}
+	return request, nil
+}
+
+// ProviderID 返回规范 Provider ID。
+func (request Request) ProviderID() string {
+	return request.providerID
+}
+
+// ModelID 返回别名解析后的真实上游模型 ID。
+func (request Request) ModelID() runtimecore.ModelID {
+	return request.modelID
+}
+
+// PinnedAccount 返回请求唯一允许的账号；普通公平征召返回 false。
+func (request Request) PinnedAccount() (accountcore.AccountRef, bool) {
+	return request.pinnedAccount, request.pinnedAccount.IsValid()
+}
+
+// WithSessionAffinity 返回附带会话亲和信息的请求副本。
+//
+// sessionKey 为空时不改变请求；preserve 只对携带加密推理链的续接请求为真。
+func (request Request) WithSessionAffinity(
+	sessionKey string,
+	preserve bool,
+) Request {
+	if sessionKey == "" {
+		return request
+	}
+	request.sessionKey = sessionKey
+	request.preserveAffinity = preserve
+	return request
+}
+
+// isValid 防止零值或跨层篡改请求进入候选端口。
+func (request Request) isValid() bool {
+	if request.ProviderID() == "" ||
+		!request.ModelID().IsValid() ||
+		request.excludedCount > MaxExcludedAccounts ||
+		(request.pinnedAccount != "" && !request.pinnedAccount.IsValid()) ||
+		(request.pinnedAccount.IsValid() && request.excludedCount > 0) {
+		return false
+	}
+	for index := 0; index < int(request.excludedCount); index++ {
+		accountRef := request.excluded[index]
+		if !accountRef.IsValid() || request.excludesBefore(accountRef, index) {
+			return false
+		}
+	}
+	return true
+}
+
+// excludesBefore 在线性固定小数组中检查重复或候选排除。
+func (request Request) excludesBefore(
+	accountRef accountcore.AccountRef,
+	limit int,
+) bool {
+	for index := 0; index < limit; index++ {
+		if request.excluded[index] == accountRef {
+			return true
+		}
+	}
+	return false
+}
+
+// excludes 判断当前候选是否已经在同一调用中失败过。
+func (request Request) excludes(accountRef accountcore.AccountRef) bool {
+	return request.excludesBefore(accountRef, int(request.excludedCount))
+}
+
+// Result 保存一次征召的账号、凭据和本次扫描进度。
+type Result struct {
+	account         accountapp.RoutingAccount
+	binding         accountapp.CredentialBinding
+	observation     accountcredentials.CredentialObservation
+	examined        int
+	sourceExhausted bool
+}
+
+// Account 返回本次选中的紧凑账号投影。
+func (result Result) Account() accountapp.RoutingAccount {
+	return result.account
+}
+
+// Binding 返回已经按候选账号复核的稳定凭据绑定。
+func (result Result) Binding() accountapp.CredentialBinding {
+	return result.binding
+}
+
+// CredentialObservation 返回解析该凭据时看到的持久化时间，不包含秘密。
+func (result Result) CredentialObservation() accountcredentials.CredentialObservation {
+	return result.observation
+}
+
+// Credential 返回稳定绑定中的当前 Provider 凭据。
+func (result Result) Credential() accountapp.Credential {
+	return result.binding.Credential()
+}
+
+// Examined 返回本次实际尝试解析凭据的候选数量。
+func (result Result) Examined() int {
+	return result.examined
+}
+
+// SourceExhausted 表示当前请求固定的候选快照已经扫描完毕。
+func (result Result) SourceExhausted() bool {
+	return result.sourceExhausted
+}
+
+// Recruiter 编排本地模型候选、运行态和凭据可用化。
+type Recruiter struct {
+	candidates  CandidateSource
+	runtime     RuntimeEligibilitySource
+	credentials CredentialResolver
+	weights     AccountWeightSource
+	strategy    SelectionStrategy
+	scheduler   *FairRoundRobinScheduler
+	// affinity 保存 (Provider, 会话键) -> 账号的粘性绑定。
+	affinity *SessionAffinity
+	// randomIntN 是加权随机的可注入随机源；生产使用全局随机源。
+	randomIntN func(int) int
+	// now 是会话亲和 TTL 的时钟；生产使用 time.Now。
+	now func() time.Time
+}
+
+// RecruitmentSession 固定一次请求的候选快照、轮转起点和扫描位置。
+//
+// 一个 Session 最多访问快照中的每个位置一次，因此无需请求级 Map 或 Set
+// 也能保证同一请求不会重复调用同一账号。
+type RecruitmentSession struct {
+	recruiter       *Recruiter
+	request         Request
+	transport       CredentialTransportPolicy
+	candidates      *accountapp.RoutingCandidates
+	pinned          bool
+	pinnedCandidate accountapp.RoutingAccount
+	pinnedFound     bool
+	start           int
+	offset          int
+	softCooldown    softCooldownFallback
+	// affinityAccount 是本次会话命中的绑定账号；无效表示未命中会话亲和。
+	affinityAccount accountcore.AccountRef
+	// order 是账号偏好重排后的扫描顺序（见 preference.go）；为 nil 时按环形起点扫描。
+	order []int
+}
+
+// NewRecruiter 创建不缓存凭据、按已解析策略选号的账号征召器。
+//
+// Strategy 必须由调用方通过 ParseSelectionStrategy 显式解析后传入：空值与未知值都
+// 直接失败，绝不静默取默认值。这样「默认策略改变」会变成构造期错误，而不是让调用方
+// 在毫不知情的情况下换一套选号行为。
+func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
+	if dependencies.Candidates == nil ||
+		dependencies.Runtime == nil ||
+		dependencies.Credentials == nil {
+		return nil, ErrInvalidDependencies
+	}
+	strategy := dependencies.Strategy
+	if !strategy.IsValid() {
+		return nil, errors.Join(
+			ErrInvalidDependencies,
+			ErrUnknownSelectionStrategy,
+		)
+	}
+	return &Recruiter{
+		candidates:  dependencies.Candidates,
+		runtime:     dependencies.Runtime,
+		credentials: dependencies.Credentials,
+		weights:     dependencies.Weights,
+		strategy:    strategy,
+		scheduler:   &FairRoundRobinScheduler{},
+		affinity:    NewSessionAffinity(),
+		randomIntN:  defaultRandomIntN,
+		now:         time.Now,
+	}, nil
+}
+
+// Strategy 返回当前生效的选号策略。
+func (recruiter *Recruiter) Strategy() SelectionStrategy {
+	if recruiter == nil {
+		return ""
+	}
+	return recruiter.strategy
+}
+
+// Begin 固定当前路由快照并为本请求分配公平的环形扫描起点。
+func (recruiter *Recruiter) Begin(
+	ctx context.Context,
+	request Request,
+	transport CredentialTransportPolicy,
+) (*RecruitmentSession, error) {
+	if recruiter == nil ||
+		recruiter.candidates == nil ||
+		recruiter.runtime == nil ||
+		recruiter.credentials == nil ||
+		recruiter.scheduler == nil {
+		return nil, ErrInvalidDependencies
+	}
+	if ctx == nil || !request.isValid() {
+		return nil, ErrInvalidRequest
+	}
+	if transport == nil {
+		return nil, ErrInvalidCredentialTransport
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	candidates, err := recruiter.candidates.LoadRoutingCandidates(
+		ctx,
+		request.ProviderID(),
+		request.ModelID(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("读取账号征召候选失败: %w", err)
+	}
+	if candidates == nil {
+		return nil, ErrInvalidCandidateSnapshot
+	}
+	session := &RecruitmentSession{
+		recruiter:  recruiter,
+		request:    request,
+		transport:  transport,
+		candidates: candidates,
+	}
+	if accountRef, pinned := request.PinnedAccount(); pinned {
+		session.pinned = true
+		session.pinnedCandidate, session.pinnedFound = candidates.FindByRef(accountRef)
+		return session, nil
+	}
+	session.start = recruiter.startPosition(request, candidates)
+	affinityOffset, affinityAccount, hasAffinity := recruiter.affinityLookup(
+		request,
+		candidates,
+	)
+	session.affinityAccount = affinityAccount
+	if err := session.preferredOrder(ctx, affinityOffset, hasAffinity); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// affinityLookup 返回会话键绑定账号在当前候选中的下标与账号引用。
+//
+// 绑定账号已不在候选（账号被删除/禁用/换池）或没有绑定时返回未命中，调用方照常按
+// 策略起点扫描并重新绑定。
+func (recruiter *Recruiter) affinityLookup(
+	request Request,
+	candidates *accountapp.RoutingCandidates,
+) (int, accountcore.AccountRef, bool) {
+	if recruiter.affinity == nil || request.sessionKey == "" {
+		return 0, "", false
+	}
+	bound, found := recruiter.affinity.Lookup(
+		request.ProviderID(),
+		request.sessionKey,
+		recruiter.now(),
+	)
+	if !found {
+		return 0, "", false
+	}
+	for index := 0; index < candidates.Len(); index++ {
+		candidate, ok := candidates.At(index)
+		if ok && candidate.Ref() == bound {
+			return index, bound, true
+		}
+	}
+	return 0, "", false
+}
+
+// startPosition 按当前策略返回环形扫描起点。
+//
+// round-robin 使用 Provider、模型的公平票号；random 使用剩余额度加权随机。两者都只
+// 决定起点，候选快照与资格判定完全一致。
+func (recruiter *Recruiter) startPosition(
+	request Request,
+	candidates *accountapp.RoutingCandidates,
+) int {
+	if recruiter.strategy == StrategyRandom {
+		return weightedStart(candidates, recruiter.weights, recruiter.randomIntN)
+	}
+	return recruiter.scheduler.NextStart(
+		request.ProviderID(),
+		request.ModelID(),
+		candidates.Len(),
+	)
+}
+
+// Recruit 从新建会话中返回首个当前可用账号。
+//
+// 单账号缺失凭据、需要重新认证、刷新被拒绝或刷新暂时失败时继续检查下一候选；
+// 凭据不能由当前 Adapter 承载时也只跳过该账号，不写入 cooldown 或硬阻塞；
+// 未分类的存储、解码和合同错误立即失败，避免静默掩盖系统问题。
+func (recruiter *Recruiter) Recruit(
+	ctx context.Context,
+	request Request,
+	transport CredentialTransportPolicy,
+) (Result, error) {
+	session, err := recruiter.Begin(ctx, request, transport)
+	if err != nil {
+		return Result{}, err
+	}
+	return session.Next(ctx)
+}
+
+// Next 从固定快照的上次位置继续，返回下一个可直接调用的不同账号。
+func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
+	if session == nil ||
+		session.recruiter == nil ||
+		session.transport == nil ||
+		session.candidates == nil ||
+		!session.request.isValid() ||
+		ctx == nil {
+		return Result{}, ErrInvalidRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	progress := Result{}
+	for {
+		offset, scanning := session.nextScanPosition()
+		if !scanning {
+			break
+		}
+		candidate, found := session.candidateAt(offset)
+		if !found {
+			return progress, ErrInvalidCandidateSnapshot
+		}
+		progress.examined++
+		progress.sourceExhausted = session.scanExhausted()
+		if !validCandidate(candidate, session.request.ProviderID()) {
+			return progress, ErrInvalidCandidateSnapshot
+		}
+		if session.request.excludes(candidate.Ref()) {
+			continue
+		}
+		route, routeErr := candidateModelRoute(candidate, session.request.ModelID())
+		if routeErr != nil {
+			return progress, routeErr
+		}
+		eligibility, eligibilityErr := session.recruiter.runtimeEligibility(ctx, route)
+		if eligibilityErr != nil {
+			return progress, eligibilityErr
+		}
+		if !session.admits(eligibility, offset, candidate) {
+			continue
+		}
+		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
+			ctx,
+			candidate.Ref(),
+		)
+		if resolveErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return progress, ctxErr
+			}
+			if isAccountUnavailable(resolveErr) {
+				continue
+			}
+			return progress, fmt.Errorf(
+				"解析账号征召凭据失败: %w",
+				resolveErr,
+			)
+		}
+		if !credentialMatchesCandidate(candidate, binding, observation) {
+			return progress, ErrInvalidResolvedCredential
+		}
+		credential := binding.Credential()
+		if !session.transport.SupportsCredential(credential) {
+			continue
+		}
+		progress.account = candidate
+		progress.binding = binding
+		progress.observation = observation
+		session.bindAffinity(candidate.Ref())
+		return progress, nil
+	}
+	progress.sourceExhausted = true
+	return progress, ErrNoRoutableAccount
+}
+
+// bindAffinity 把本次选中的账号记为该会话键的绑定。
+//
+// 绑定发生在选号成功、上游调用之前（与 Node 一致）；同会话的后续请求据此续接同一账号。
+func (session *RecruitmentSession) bindAffinity(accountRef accountcore.AccountRef) {
+	if session.pinned || session.request.sessionKey == "" {
+		return
+	}
+	session.recruiter.affinity.Bind(
+		session.request.ProviderID(),
+		session.request.sessionKey,
+		accountRef,
+		session.recruiter.now(),
+	)
+}
+
+// candidateCount 返回当前会话可检查的候选数量；固定账号最多为一。
+func (session *RecruitmentSession) candidateCount() int {
+	if session.pinned {
+		if session.pinnedFound {
+			return 1
+		}
+		return 0
+	}
+	return session.candidates.Len()
+}
+
+// candidateAt 统一普通环形快照和固定账号单元素视图，不复制候选切片。
+func (session *RecruitmentSession) candidateAt(offset int) (accountapp.RoutingAccount, bool) {
+	if session.pinned {
+		return session.pinnedCandidate, session.pinnedFound && offset == 0
+	}
+	if session.order != nil {
+		if offset < 0 || offset >= len(session.order) {
+			return accountapp.RoutingAccount{}, false
+		}
+		return session.candidates.At(session.order[offset])
+	}
+	index := (session.start + offset) % session.candidates.Len()
+	return session.candidates.At(index)
+}
+
+// runtimeEligibility 在读取敏感凭据前检查账号与真实模型元组。
+//
+// 返回完整资格值而非布尔：调用方必须能区分「软冷却」与凭据/额度/策略硬阻塞，
+// 只有前者可以被逃生阀放行。
+func (recruiter *Recruiter) runtimeEligibility(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+) (runtimecore.Eligibility, error) {
+	eligibility, err := recruiter.runtime.CheckEligibility(ctx, route)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return runtimecore.Eligibility{}, ctxErr
+		}
+		return runtimecore.Eligibility{}, fmt.Errorf("读取账号征召运行态失败: %w", err)
+	}
+	if !eligibility.IsValid() {
+		return runtimecore.Eligibility{}, ErrInvalidRuntimeEligibility
+	}
+	return eligibility, nil
+}
+
+// admits 判定该候选能否继续解析凭据。
+//
+// 仅因软冷却被拦下的候选会被记入逃生阀，等整轮扫描落空后重放；硬阻塞直接跳过。
+// 携带加密推理链的续接请求会硬性优先其绑定账号：该账号只要不是硬阻塞，即使仅被
+// （账号,模型）软冷却挡住也放行（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
+func (session *RecruitmentSession) admits(
+	eligibility runtimecore.Eligibility,
+	offset int,
+	candidate accountapp.RoutingAccount,
+) bool {
+	if eligibility.Eligible() {
+		return true
+	}
+	if eligibility.Status() != runtimecore.EligibilityModelCooldown {
+		return false
+	}
+	// An upstream throttle is not a local transport hiccup. Preserve its
+	// backoff even when every account is cooling or affinity is requested.
+	switch eligibility.FailureKind() {
+	case runtimecore.FailureRateLimited, runtimecore.FailureModelOverloaded:
+		return false
+	}
+	if session.softCooldown.bypassesCooldown() {
+		return true
+	}
+	if session.request.preserveAffinity &&
+		session.affinityAccount.IsValid() &&
+		candidate.Ref() == session.affinityAccount {
+		return true
+	}
+	session.softCooldown.deferCandidate(offset)
+	return false
+}
+
+// nextScanPosition 先按公平起点走完快照，再重放被软冷却延后的位置。
+func (session *RecruitmentSession) nextScanPosition() (int, bool) {
+	if session.offset < session.candidateCount() {
+		offset := session.offset
+		session.offset++
+		return offset, true
+	}
+	return session.softCooldown.nextDeferred()
+}
+
+// scanExhausted 表示快照已走完且没有待重放的候选。
+func (session *RecruitmentSession) scanExhausted() bool {
+	return session.offset >= session.candidateCount() &&
+		!session.softCooldown.hasPending()
+}
+
+// candidateModelRoute 创建运行态和模型权限端口共享的精确元组键。
+func candidateModelRoute(
+	candidate accountapp.RoutingAccount,
+	modelID runtimecore.ModelID,
+) (runtimecore.ModelRoute, error) {
+	route, err := runtimecore.NewModelRoute(
+		candidate.Ref(),
+		modelID.String(),
+	)
+	if err != nil {
+		return runtimecore.ModelRoute{}, ErrInvalidCandidateSnapshot
+	}
+	return route, nil
+}
+
+// validCandidate 复核候选源返回的 Provider、身份和 CLI 别名。
+func validCandidate(
+	candidate accountapp.RoutingAccount,
+	providerID string,
+) bool {
+	return candidate.Ref().IsValid() &&
+		candidate.ProviderID() == providerID &&
+		candidate.CLIAccountID().IsValid()
+}
+
+// credentialMatchesCandidate 防止错误缓存或适配器把其他账号凭据交给当前请求。
+func credentialMatchesCandidate(
+	candidate accountapp.RoutingAccount,
+	binding accountapp.CredentialBinding,
+	observation accountcredentials.CredentialObservation,
+) bool {
+	return binding.IsValid() &&
+		binding.AccountRef() == candidate.Ref() &&
+		binding.ProviderID() == candidate.ProviderID() &&
+		observation.IsValid() &&
+		observation.AccountRef() == candidate.Ref() &&
+		observation.ProviderID() == candidate.ProviderID()
+}
+
+// isAccountUnavailable 只允许明确的单账号凭据故障进入候选降级。
+func isAccountUnavailable(err error) bool {
+	return errors.Is(err, accountapp.ErrCredentialNotFound) ||
+		errors.Is(err, accountapp.ErrCredentialConflict) ||
+		errors.Is(err, accountcredentials.ErrRefreshUnavailable) ||
+		errors.Is(err, accountcredentials.ErrRefreshRejected) ||
+		errors.Is(err, accountcredentials.ErrReauthenticationRequired)
+}

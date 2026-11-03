@@ -1,0 +1,591 @@
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { message } from 'antd';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
+  StarFilled,
+  StopOutlined
+} from '@ant-design/icons';
+import ProviderIcon from '@/components/chat/ProviderIcon';
+import {
+  getAppCurrentVersion,
+  getManagedAppWarning,
+  hasExistingAppConfig,
+  managedAppAccountIsRunning,
+  managedAppAccountLabel,
+  sortManagedAppAccounts
+} from '@/components/toolkit/managed-app-presentation';
+import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
+import { APP_CATEGORIES, useManagedApps } from '@/components/toolkit/use-managed-apps';
+import { describeClearBrokenResult, type ManagedAppUpgradeView } from '@/components/toolkit/provider-cli-upgrade-presentation';
+import { useProviderCliUpgrade } from '@/components/toolkit/use-provider-cli-upgrade';
+import ToolkitWarningDot from '@/components/toolkit/ToolkitWarningDot';
+import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
+import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
+import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
+import { renderAccountRegionTag } from '@/features/accounts/AccountBadges';
+import MobileBoot from '@/mobile/MobileBoot';
+import {
+  DetailSheet,
+  EmptySignal,
+  HudChips,
+  HudSection,
+  KeyValue,
+  MonoList,
+  SwipeRow,
+  TelemetryGrid,
+  TelemetryTile
+} from '@/mobile/ui';
+import type { HudTone, SwipeAction } from '@/mobile/ui';
+import { toolkitAPI } from '@/services/api';
+import type { Account, ManagedAppItem } from '@/types';
+import { ActionButton, InlineError, Note, PanelToolbar, StatusText, TaskStatus } from './toolkit-parts';
+import styles from '../MobileToolkit.module.css';
+import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
+
+const TYPE_CODES: Record<ManagedAppItem['type'], string> = {
+  cli: 'CLI',
+  desktop: 'DESKTOP',
+  ide: 'IDE'
+};
+
+/** 自动升级 tone → 移动端 HUD tone；一处映射，卡片与详情共用。 */
+const UPGRADE_HUD_TONES: Record<ManagedAppUpgradeView['statusTone'], HudTone> = {
+  success: 'ok',
+  warning: 'warn',
+  error: 'err',
+  active: 'info',
+  neutral: 'muted'
+};
+
+function canLaunch(app: ManagedAppItem) {
+  return app.installed && (app.type === 'cli' || app.type === 'desktop');
+}
+
+/** 与桌面卡片同一条判定：CLI 都有启动权限，Desktop/IDE 只有登记了配置文件才可进入。 */
+function canOpenAdvanced(app: ManagedAppItem) {
+  return app.type === 'cli' || Math.max(0, Number(app.configFileCount) || 0) > 0;
+}
+
+/** 应用管理：清单 + 左滑生命周期操作 + 详情抽屉 + 选择账号打开。 */
+export default function AppsPanel() {
+  const adoptLaunchedTerminal = useAdoptLaunchedTerminal();
+  const {
+    data,
+    accounts,
+    runningAccountPids,
+    runningCliAccountPids,
+    loading,
+    error,
+    installingHooks,
+    checkingUpdates,
+    hookReadyCount,
+    hookSupportedCount,
+    fetchApps,
+    refreshRunningApps,
+    activeTaskFor,
+    busyActionFor,
+    checkAppUpdate,
+    runAppAction,
+    installHooks,
+    uninstallHooks
+  } = useManagedApps();
+  const {
+    error: upgradeError,
+    fetchStatus: fetchUpgradeStatus,
+    mode: upgradeMode,
+    byProvider: upgradeByProvider,
+    updatable: upgradeUpdatable,
+    attention: upgradeAttention,
+    clearingProvider,
+    clearBroken
+  } = useProviderCliUpgrade();
+  const [category, setCategory] = useState('ALL');
+  const [detailId, setDetailId] = useState('');
+  const [launchId, setLaunchId] = useState('');
+  const [advancedAppId, setAdvancedAppId] = useState('');
+  const [clearResult, setClearResult] = useState<{ provider: string; ok: boolean; text: string } | null>(null);
+  const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{ app: ManagedAppItem; accountRef: string } | null>(null);
+
+  const filteredApps = useMemo(() => {
+    if (!data) return [];
+    return category === 'ALL'
+      ? data.apps
+      : data.apps.filter((app) => app.categories.includes(category));
+  }, [category, data]);
+
+  const detailApp = data?.apps.find((app) => app.id === detailId) || null;
+  const launchApp = data?.apps.find((app) => app.id === launchId) || null;
+  const advancedApp = data?.apps.find((app) => app.id === advancedAppId) || null;
+  /** 自动升级账本只对 CLI 成立；Desktop/IDE 由各自的更新渠道负责，卡片上不冒充。 */
+  const upgradeFor = (app: ManagedAppItem): ManagedAppUpgradeView | null => (
+    app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null
+  );
+
+  const handleClearBroken = async (provider: string) => {
+    const result = await clearBroken(provider);
+    setClearResult({ provider, ok: result.ok, text: describeClearBrokenResult(result) });
+  };
+
+  const runningPidsFor = (app: ManagedAppItem) => (app.type === 'desktop' ? runningAccountPids : runningCliAccountPids);
+  const hasRunningAccount = (app: ManagedAppItem) => sortManagedAppAccounts(accounts, app.provider)
+    .some((account) => managedAppAccountIsRunning(account, runningPidsFor(app)));
+
+  const openManagedApp = async (app: ManagedAppItem, accountRef?: string, unscoped = false) => {
+    const kind = app.type === 'desktop' ? 'desktop' : 'cli';
+    try {
+      const response = await toolkitAPI.openManagedApp(app.id, {
+        kind,
+        ...(accountRef ? { accountRef } : {}),
+        ...(unscoped ? { unscoped: true } : {})
+      });
+      if (!response.ok) throw new Error(response.message || response.error || '桌面应用启动失败');
+      const inWebTerminal = adoptLaunchedTerminal(response, app.name);
+      message.success(inWebTerminal
+        ? `${app.name} 已在 Web Terminal 中打开`
+        : (response.status === 'already_running' ? `${app.name} 的该账号实例已在运行` : `${app.name} 已启动`));
+      if (response.egressWarning) {
+        message.warning(`ZCode 出口未生效：${response.egressWarning}`);
+      }
+      await refreshRunningApps();
+    } catch (requestFailure: unknown) {
+      const loginAction = kind === 'desktop' ? desktopLoginRequiredAction(requestFailure) : null;
+      if (loginAction && accountRef) {
+        setKimiDesktopLoginTarget({ app, accountRef });
+        if (loginAction.warn) message.warning(loginAction.message || `${app.name} 登录态需要重新托管`);
+        return;
+      }
+      message.error(requestError(requestFailure, `${app.name} 启动失败`));
+    }
+  };
+
+  const closeManagedApp = async (app: ManagedAppItem, accountRef: string) => {
+    const kind = app.type === 'desktop' ? 'desktop' : 'cli';
+    try {
+      const response = await toolkitAPI.openManagedApp(app.id, {
+        kind,
+        accountRef,
+        action: 'close'
+      });
+      if (!response.ok) throw new Error(response.message || response.error || '结束应用失败');
+      message.success(kind === 'desktop' ? 'Desktop 实例已结束' : '该账号的 CLI 会话已结束');
+      await refreshRunningApps();
+    } catch (requestFailure: unknown) {
+      message.error(requestError(requestFailure, kind === 'desktop' ? '结束 Desktop 失败' : '结束 CLI 会话失败'));
+    }
+  };
+
+  const lifecycleActions = (app: ManagedAppItem): SwipeAction[] => {
+    const busy = Boolean(busyActionFor(app));
+    const checking = Boolean(checkingUpdates[app.id]);
+    const actions: SwipeAction[] = [];
+    if (canLaunch(app)) {
+      actions.push({
+        key: 'open',
+        label: '打开',
+        icon: <PlayCircleOutlined />,
+        tone: 'primary',
+        disabled: busy,
+        onAction: () => setLaunchId(app.id)
+      });
+    }
+    if (!app.installed && app.installAvailable) {
+      actions.push({
+        key: 'install',
+        label: '安装',
+        icon: <DownloadOutlined />,
+        tone: 'primary',
+        disabled: busy,
+        onAction: () => void runAppAction(app, 'install')
+      });
+    }
+    if (app.installed) {
+      actions.push({
+        key: 'update',
+        label: checking ? '检查中' : '更新',
+        icon: <ReloadOutlined />,
+        disabled: busy || checking || app.canUpdate === false,
+        onAction: () => void checkAppUpdate(app)
+      });
+      actions.push({
+        key: 'uninstall',
+        label: '卸载',
+        icon: <DeleteOutlined />,
+        tone: 'danger',
+        disabled: busy || app.canUninstall === false,
+        onAction: () => void runAppAction(app, 'uninstall')
+      });
+    }
+    return actions;
+  };
+
+  const rowStatus = (app: ManagedAppItem) => {
+    const task = activeTaskFor(app);
+    if (task) return <TaskStatus task={task} />;
+    const busy = busyActionFor(app);
+    if (busy) return <StatusText tone="info" live>准备中</StatusText>;
+    if (!app.installed) return <StatusText tone="muted">未安装</StatusText>;
+    if (canLaunch(app) && hasRunningAccount(app)) return <StatusText tone="ok" live>运行中</StatusText>;
+    return <StatusText tone="ok">已安装</StatusText>;
+  };
+
+  if (loading && !data) return <MobileBoot label="PROBING APPS" />;
+
+  return (
+    <>
+      <PanelToolbar
+        status={data ? `当前显示 ${filteredApps.length} 项` : null}
+        refreshLabel="重新探测"
+        refreshing={loading}
+        onRefresh={() => { void fetchApps(); void fetchUpgradeStatus(); }}
+      />
+
+      {error ? <InlineError title="应用清单读取失败" detail={error} onRetry={() => { void fetchApps(); }} retrying={loading} /> : null}
+      {upgradeError ? <InlineError title="升级状态读取失败" detail={upgradeError} onRetry={() => { void fetchUpgradeStatus(); }} retrying={false} /> : null}
+
+      {data ? (
+        <>
+          <TelemetryGrid>
+            <TelemetryTile label="实测应用" value={data.total} unit="个" tone="info" sub="来自当前主机的应用清单" />
+            <TelemetryTile
+              label="已安装"
+              value={data.installedCount}
+              unit={`/ ${data.total}`}
+              tone={data.installedCount ? 'ok' : 'muted'}
+              led
+              sub={`${data.total - data.installedCount} 个未安装`}
+            />
+            <TelemetryTile
+              wide
+              label="即时刷新"
+              value={hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount}` : '无需启用'}
+              unit={hookSupportedCount ? '个 CLI 已启用' : undefined}
+              tone={hookSupportedCount === 0 ? 'muted' : hookReadyCount === hookSupportedCount ? 'ok' : 'warn'}
+              led={hookSupportedCount > 0}
+              sub="新回合写入本地会话后可立即在 WebUI 看到"
+            />
+            <TelemetryTile
+              wide
+              label="CLI 自动升级"
+              value={upgradeMode.label}
+              tone={upgradeAttention ? 'err' : UPGRADE_HUD_TONES[upgradeMode.tone]}
+              led
+              sub={upgradeAttention
+                ? `${upgradeAttention} 个异常需要人工确认 · ${upgradeMode.detail}`
+                : upgradeUpdatable
+                  ? `${upgradeUpdatable} 个有新版 · ${upgradeMode.detail}`
+                  : upgradeMode.detail}
+            />
+          </TelemetryGrid>
+
+          <HudChips
+            ariaLabel="应用分类"
+            value={category}
+            onChange={setCategory}
+            items={APP_CATEGORIES.map((item) => ({ key: item.value, label: item.label }))}
+          />
+
+          <HudSection title="应用清单" code="APPS" count={filteredApps.length}>
+            {filteredApps.length ? (
+              <MonoList ariaLabel="应用清单">
+                {filteredApps.map((app) => (
+                  <SwipeRow
+                    key={app.id}
+                    actions={lifecycleActions(app)}
+                    onTap={() => setDetailId(app.id)}
+                    ariaLabel={`${app.name} 详情`}
+                  >
+                    <span className="mhud-row__icon"><ProviderIcon provider={app.provider} size={20} fallbackLabel={app.provider.slice(0, 3).toUpperCase()} /></span>
+                    <span className="mhud-row__main">
+                      <span className="mhud-row__title">{app.name}</span>
+                      <span className="mhud-row__meta">{TYPE_CODES[app.type]} · {getAppCurrentVersion(app)}</span>
+                    </span>
+                    <span className="mhud-row__side">
+                      <ToolkitWarningDot warning={getManagedAppWarning(app, upgradeFor(app))} />
+                      {rowStatus(app)}
+                    </span>
+                  </SwipeRow>
+                ))}
+              </MonoList>
+            ) : (
+              <EmptySignal description="当前分类没有应用" />
+            )}
+          </HudSection>
+        </>
+      ) : null}
+
+      <DetailSheet
+        open={Boolean(detailApp)}
+        onClose={() => setDetailId('')}
+        code={detailApp ? `APP // ${TYPE_CODES[detailApp.type]}` : 'APP'}
+        title={detailApp?.name || '应用'}
+        footer={detailApp ? <AppSheetFooter
+          app={detailApp}
+          busy={Boolean(busyActionFor(detailApp))}
+          busyAction={busyActionFor(detailApp)}
+          checking={Boolean(checkingUpdates[detailApp.id])}
+          hasUpdate={Boolean(upgradeFor(detailApp)?.hasUpdate)}
+          applying={Boolean(upgradeFor(detailApp)?.applying)}
+          onOpen={() => setLaunchId(detailApp.id)}
+          onInstall={() => void runAppAction(detailApp, 'install')}
+          onUpdate={() => void checkAppUpdate(detailApp)}
+          onUninstall={() => void runAppAction(detailApp, 'uninstall')}
+        /> : null}
+      >
+        {detailApp ? (
+          <AppDetail
+            app={detailApp}
+            status={rowStatus(detailApp)}
+            upgrade={upgradeFor(detailApp)}
+            clearResult={clearResult}
+            busy={Boolean(busyActionFor(detailApp))}
+            clearingUpgrade={clearingProvider === detailApp.provider}
+            onOpenAdvanced={() => setAdvancedAppId(detailApp.id)}
+            onClearBroken={() => void handleClearBroken(detailApp.provider)}
+          />
+        ) : null}
+      </DetailSheet>
+
+      <AppAdvancedSettingsModal
+        open={Boolean(advancedApp)}
+        app={advancedApp}
+        busy={Boolean(advancedApp && busyActionFor(advancedApp))}
+        installingHooks={installingHooks}
+        onInstallHooks={(provider) => void installHooks([provider])}
+        onUninstallHooks={(provider) => void uninstallHooks([provider])}
+        onClose={() => setAdvancedAppId('')}
+      />
+
+      <DetailSheet
+        open={Boolean(launchApp)}
+        onClose={() => setLaunchId('')}
+        code="LAUNCH // ACCOUNT"
+        title={launchApp ? `选择账号打开 ${launchApp.name}` : '选择账号'}
+        footer={launchApp && (launchApp.type === 'cli' || launchApp.hostLaunchLabel) ? (
+          <ActionButton
+            icon={<PlusOutlined />}
+            label={launchApp.hostLaunchLabel || '无账号新开 CLI'}
+            disabled={Boolean(busyActionFor(launchApp))}
+            onClick={() => {
+              setLaunchId('');
+              void openManagedApp(launchApp, undefined, true);
+            }}
+          />
+        ) : null}
+      >
+        {launchApp ? (
+          <AccountLauncher
+            app={launchApp}
+            accounts={accounts}
+            runningPids={runningPidsFor(launchApp)}
+            disabled={Boolean(busyActionFor(launchApp))}
+            onOpen={(accountRef) => {
+              setLaunchId('');
+              void openManagedApp(launchApp, accountRef);
+            }}
+            onClose={(accountRef) => void closeManagedApp(launchApp, accountRef)}
+          />
+        ) : null}
+      </DetailSheet>
+
+      <KimiDesktopLoginModal
+        open={Boolean(kimiDesktopLoginTarget)}
+        accountRef={kimiDesktopLoginTarget?.accountRef || ''}
+        accountLabel={accounts.find((account) => account.accountRef === kimiDesktopLoginTarget?.accountRef)?.displayName || ''}
+        onClose={() => setKimiDesktopLoginTarget(null)}
+        onSuccess={() => {
+          const target = kimiDesktopLoginTarget;
+          setKimiDesktopLoginTarget(null);
+          if (target) void openManagedApp(target.app, target.accountRef);
+        }}
+      />
+    </>
+  );
+}
+
+function AppDetail({ app, status, upgrade, clearResult, busy, clearingUpgrade, onOpenAdvanced, onClearBroken }: {
+  app: ManagedAppItem;
+  status: ReactNode;
+  upgrade: ManagedAppUpgradeView | null;
+  clearResult: { provider: string; ok: boolean; text: string } | null;
+  busy: boolean;
+  clearingUpgrade: boolean;
+  onOpenAdvanced: () => void;
+  onClearBroken: () => void;
+}) {
+  const warning = getManagedAppWarning(app, upgrade);
+  const rows = [
+    { key: 'status', label: '状态', value: status },
+    { key: 'version', label: '当前版本', value: getAppCurrentVersion(app), tone: app.installed ? undefined : 'muted' as const },
+    ...(app.installed ? [{ key: 'path', label: '程序路径', value: app.cliPath || '未探测到' }] : []),
+    ...(hasExistingAppConfig(app) ? [{ key: 'config', label: '配置', value: `${app.configName} 已存在` }] : []),
+  ];
+  return (
+    <div className={styles.sheetStack}>
+      <KeyValue rows={rows} />
+      {upgrade?.canClearBroken ? (
+        <div className={styles.sheetBlock}>
+          <p className={styles.prose}>已熔断：自动升级对该 CLI 暂停。「验证并解除」会用升级同一套验证检查当前安装的版本（可能需要十几秒），通过才解除；不会安装任何东西。</p>
+          <ActionButton
+            icon={<SafetyCertificateOutlined />}
+            label="验证并解除熔断"
+            loading={clearingUpgrade}
+            disabled={busy || clearingUpgrade}
+            onClick={onClearBroken}
+          />
+        </div>
+      ) : null}
+      {clearResult?.provider === app.provider ? (
+        <Note tone={clearResult.ok ? 'info' : 'err'}>{clearResult.text}</Note>
+      ) : null}
+      {canOpenAdvanced(app) ? (
+        <div className={styles.sheetBlock}>
+          <p className={styles.prose}>
+            {app.type === 'cli'
+              ? '启动权限与配置文件（含历史、恢复与脱敏导出）。'
+              : '管理该应用的配置文件（含历史、恢复与脱敏导出）。'}
+          </p>
+          <ActionButton icon={<SettingOutlined />} label="高级设置" disabled={busy} onClick={onOpenAdvanced} />
+        </div>
+      ) : null}
+      {warning ? <div className={styles.sheetBlock}><ToolkitWarningDot warning={warning} /></div> : null}
+    </div>
+  );
+}
+
+function AppSheetFooter({ app, busy, busyAction, checking, hasUpdate, applying, onOpen, onInstall, onUpdate, onUninstall }: {
+  app: ManagedAppItem;
+  busy: boolean;
+  busyAction?: string;
+  checking: boolean;
+  /** 自动升级账本里有可跟进的新版：更新按钮图标挂黄点。 */
+  hasUpdate?: boolean;
+  /** 调度器正在装这个 provider：按钮转圈取代黄点。 */
+  applying?: boolean;
+  onOpen: () => void;
+  onInstall: () => void;
+  onUpdate: () => void;
+  onUninstall: () => void;
+}) {
+  if (!app.installed) {
+    return app.installAvailable ? (
+      <ActionButton icon={<DownloadOutlined />} label="安装" tone="primary" loading={busyAction === 'install'} disabled={busy} onClick={onInstall} />
+    ) : (
+      <span className={styles.footerNote}>当前主机不提供自动安装</span>
+    );
+  }
+  return (
+    <>
+      {canLaunch(app) ? (
+        <ActionButton icon={<PlayCircleOutlined />} label="打开" tone="primary" disabled={busy} onClick={onOpen} />
+      ) : null}
+      <ActionButton
+        icon={<ReloadOutlined />}
+        label={applying ? '升级中' : '更新'}
+        dot={Boolean(hasUpdate) && !applying && !checking && !busy}
+        loading={applying || checking || busyAction === 'update'}
+        disabled={busy || checking || applying || app.canUpdate === false}
+        onClick={onUpdate}
+      />
+      <ActionButton
+        icon={<DeleteOutlined />}
+        label="卸载"
+        tone="danger"
+        loading={busyAction === 'uninstall'}
+        disabled={busy || app.canUninstall === false}
+        onClick={onUninstall}
+      />
+    </>
+  );
+}
+
+/** 与桌面账号下拉同一套规则：默认账号在前；未配置且未运行的账号不可打开；运行中可结束 / CLI 可新开会话。 */
+function AccountLauncher({ app, accounts, runningPids, disabled, onOpen, onClose }: {
+  app: ManagedAppItem;
+  accounts: Account[];
+  runningPids: Record<string, number[]>;
+  disabled: boolean;
+  onOpen: (accountRef: string) => void;
+  onClose: (accountRef: string) => void;
+}) {
+  const kind = app.type === 'desktop' ? 'desktop' : 'cli';
+  const providerAccounts = sortManagedAppAccounts(accounts, app.provider);
+  const defaultAccount = providerAccounts.find((account) => account.isDefault && account.configured);
+  const ordered = defaultAccount
+    ? [defaultAccount, ...providerAccounts.filter((account) => account.accountRef !== defaultAccount.accountRef)]
+    : providerAccounts;
+
+  if (!ordered.length) {
+    return (
+      <EmptySignal
+        title="NO ACCOUNT"
+        description={app.hostLaunchLabel ? `可使用下方「${app.hostLaunchLabel}」。`
+          : kind === 'desktop' ? '暂无可用账号' : '当前 Provider 没有账号，可使用下方「无账号新开 CLI」。'}
+      />
+    );
+  }
+
+  return (
+    <div className={styles.accountList} role="list" aria-label={`${app.name} 可用账号`}>
+      {ordered.map((account) => {
+        const running = managedAppAccountIsRunning(account, runningPids);
+        const label = managedAppAccountLabel(account);
+        const isDefault = account.accountRef === defaultAccount?.accountRef;
+        const openable = account.configured || running;
+        return (
+          <div key={account.accountRef} className={styles.accountRow} role="listitem">
+            <button
+              type="button"
+              className={styles.accountMain}
+              disabled={disabled || !openable}
+              onClick={() => onOpen(account.accountRef)}
+              aria-label={`用 ${label} 打开 ${app.name}`}
+            >
+              <span className={styles.accountName}>
+                {isDefault ? <StarFilled className={styles.accountStar} aria-hidden="true" /> : null}
+                {isDefault ? '默认账号 · ' : ''}{label}
+              </span>
+              <span className={styles.accountMeta}>
+                {running ? <StatusText tone="ok" live>运行中</StatusText> : null}
+                {!account.configured ? <StatusText tone="muted">未配置</StatusText> : null}
+                {renderAccountRegionTag(account)}
+              </span>
+            </button>
+            {running ? (
+              <span className={styles.accountActions}>
+                <button
+                  type="button"
+                  className={`${styles.miniButton} ${styles.miniButton_danger}`}
+                  disabled={disabled}
+                  aria-label={`结束 ${label} 的${kind === 'desktop' ? '桌面实例' : '全部 CLI 会话'}`}
+                  onClick={() => onClose(account.accountRef)}
+                >
+                  <StopOutlined />
+                  <span>结束</span>
+                </button>
+                {kind === 'cli' ? (
+                  <button
+                    type="button"
+                    className={styles.miniButton}
+                    disabled={disabled}
+                    aria-label={`为 ${label} 新开 CLI 会话`}
+                    onClick={() => onOpen(account.accountRef)}
+                  >
+                    <PlusOutlined />
+                    <span>新开</span>
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

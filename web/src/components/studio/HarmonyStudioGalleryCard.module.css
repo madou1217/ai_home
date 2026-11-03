@@ -1,0 +1,120 @@
+/* 画廊卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青（无位移 / 缩放）。 */
+.galleryCard {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.imageContainer {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-sunken);
+  cursor: pointer;
+}
+
+.imagePreview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 悬停遮罩压在图片上：使用主题 scrim，淡入淡出 */
+.imageOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-scrim);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+.galleryCard:hover .imageOverlay {
+  opacity: 1;
+}
+
+.previewBtn {
+  box-shadow: var(--elevation-2);
+}
+
+.aspectBadge {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-4);
+}
+
+/* 压在图片上的比例标签：固定深色半透明底 + 白字（有意例外，不随主题翻转） */
+.ratioTag {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--c-neutral-950) 60%, transparent);
+  font-family: var(--font-mono);
+  color: var(--hos-white);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-medium);
+}
+
+.cardContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-8);
+}
+
+.titleLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.titleText {
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-body);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelTag {
+  margin: 0;
+  border: none;
+  border-radius: var(--hos-radius-2xs);
+  background: var(--tint-info);
+  color: var(--ink-info);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-medium);
+}
+
+.promptText {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.timestamp {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-variant-numeric: tabular-nums;
+}

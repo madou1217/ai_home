@@ -1,0 +1,2854 @@
+{
+  "schemaVersion": 2,
+  "generatedFrom": "core/providers/builtins.go",
+  "providers": [
+    {
+      "id": "codex",
+      "family": "codex",
+      "site": "global",
+      "presentation": {
+        "id": "codex",
+        "label": "ChatGPT",
+        "short": "GPT",
+        "terminalIcon": "◎",
+        "terminalIconAsset": "assets/provider-icons/codex.png",
+        "accentVar": "var(--provider-codex)",
+        "softVar": "var(--provider-codex-soft)",
+        "tagColor": "green",
+        "apiHost": "api.openai.com"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "quota_usage",
+        "session_runtime",
+        "gateway_profile",
+        "session_history",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "ChatGPT / OpenAI 登录",
+          "description": "打开授权链接，授权后把回调地址提交给 WebUI。"
+        },
+        {
+          "value": "oauth-device",
+          "label": "设备码登录",
+          "description": "仅在账号支持 device auth 时使用，适合远程环境。"
+        },
+        {
+          "value": "api-key",
+          "label": "OpenAI 密钥",
+          "description": "绑定 OPENAI_API_KEY / OPENAI_BASE_URL。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "hook",
+        "adapter": "json_hooks",
+        "targetKind": "hooks.json",
+        "events": [
+          "SessionStart",
+          "UserPromptSubmit",
+          "PermissionRequest",
+          "Interrupt",
+          "Stop"
+        ]
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 4,
+        "globalDir": ".codex",
+        "configFile": "config.toml",
+        "loginArgs": [
+          "login"
+        ],
+        "pkg": "@openai/codex",
+        "envKeys": [
+          "OPENAI_API_KEY",
+          "OPENAI_BASE_URL"
+        ],
+        "desktopClient": {
+          "userDataEnvKey": "CODEX_ELECTRON_USER_DATA_PATH",
+          "macos": {
+            "clientName": "ChatGPT",
+            "execNames": [
+              "ChatGPT",
+              "Codex"
+            ],
+            "pathIncludes": [
+              "/ChatGPT.app/Contents/MacOS/",
+              "/Codex.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.openai.codex",
+            "installPaths": [
+              "/Applications/ChatGPT.app",
+              "{hostHomeDir}/Applications/ChatGPT.app",
+              "/Applications/Codex.app",
+              "{hostHomeDir}/Applications/Codex.app"
+            ]
+          },
+          "windows": {
+            "clientName": "ChatGPT",
+            "processNames": [
+              "ChatGPT.exe",
+              "Codex.exe"
+            ],
+            "execNames": [
+              "ChatGPT.exe",
+              "Codex.exe"
+            ]
+          }
+        },
+        "headless": {
+          "triggerSubcommands": [
+            "exec"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CODEX_HOME"
+          ],
+          "userSettings": [
+            "config.toml"
+          ],
+          "projectSettings": [
+            ".codex/config.toml"
+          ],
+          "cliFlags": [
+            "--profile",
+            "--config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "resume",
+            "fork"
+          ],
+          "nativeStore": "state_*.sqlite"
+        },
+        "mcp": {
+          "projection": {
+            "path": "config.toml",
+            "format": "toml-stdio"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            "config.toml"
+          ]
+        },
+        "plugins": {
+          "adapter": "codex-marketplace",
+          "commands": [
+            "plugin"
+          ],
+          "paths": null,
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [
+            "hooks.json"
+          ],
+          "stopRequiresJsonStdout": true
+        },
+        "permissions": {
+          "flags": [
+            "--sandbox",
+            "--ask-for-approval"
+          ],
+          "modes": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ]
+        }
+      },
+      "credentials": {
+        "vendorId": "openai",
+        "apiKeyEnv": [
+          "OPENAI_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "OPENAI_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "canonical"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "gemini",
+      "family": "gemini",
+      "site": "global",
+      "presentation": {
+        "id": "gemini",
+        "label": "Gemini",
+        "short": "GM",
+        "terminalIcon": "✦",
+        "terminalIconAsset": "assets/provider-icons/gemini.png",
+        "accentVar": "var(--provider-gemini)",
+        "softVar": "var(--provider-gemini-soft)",
+        "tagColor": "blue",
+        "apiHost": "generativelanguage.googleapis.com"
+      },
+      "gateway": "deprecated",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "quota_usage",
+        "session_history",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "Google 登录 (已停用)",
+          "description": "Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity。",
+          "disabled": true,
+          "disabledReason": "Google 已关闭 Gemini CLI 个人版登录，请改用 Gemini API Key 或 Antigravity"
+        },
+        {
+          "value": "api-key",
+          "label": "Gemini 密钥",
+          "description": "绑定 GEMINI_API_KEY 或 GOOGLE_API_KEY。"
+        },
+        {
+          "value": "vertex-ai",
+          "label": "Vertex AI",
+          "description": "Google Cloud Vertex AI 认证 (暂未接入，先占位)。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "hook",
+        "adapter": "json_hooks",
+        "targetKind": "settings.json",
+        "events": [
+          "SessionStart",
+          "BeforeAgent",
+          "AfterAgent",
+          "SessionEnd"
+        ]
+      },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
+      "cli": {
+        "order": 2,
+        "globalDir": ".gemini",
+        "configFile": "settings.json",
+        "loginArgs": [
+          "auth"
+        ],
+        "pkg": "@google/gemini-cli",
+        "envKeys": [
+          "GEMINI_API_KEY",
+          "GOOGLE_API_KEY"
+        ]
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "GEMINI_CLI_SYSTEM_SETTINGS_PATH"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [
+            ".gemini/settings.json"
+          ],
+          "cliFlags": [
+            "--model",
+            "--approval-mode",
+            "--policy",
+            "--admin-policy"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--resume",
+            "--session-id",
+            "--list-sessions",
+            "--session-file"
+          ],
+          "nativeStore": "sessions"
+        },
+        "mcp": {
+          "projection": {
+            "path": "settings.json",
+            "format": "json-command"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            "settings.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "gemini-extension",
+          "commands": [
+            "extensions"
+          ],
+          "paths": [
+            "extensions"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": [
+            "skills"
+          ],
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [
+            "settings.json"
+          ],
+          "stopRequiresJsonStdout": true
+        },
+        "permissions": {
+          "flags": [
+            "--approval-mode",
+            "--policy",
+            "--admin-policy"
+          ],
+          "modes": [
+            "default",
+            "auto_edit",
+            "yolo",
+            "plan"
+          ]
+        }
+      },
+      "credentials": {
+        "vendorId": "gemini",
+        "apiKeyEnv": [
+          "GEMINI_API_KEY",
+          "GOOGLE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "GEMINI_BASE_URL",
+          "GOOGLE_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": false,
+          "reason": "Go 无 gemini 直连上游（gemini-* 模型经 agy 的 Code Assist 服务，agy 已声明 canonical）"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "claude",
+      "family": "claude",
+      "site": "global",
+      "presentation": {
+        "id": "claude",
+        "label": "Claude",
+        "short": "CL",
+        "terminalIcon": "◇",
+        "terminalIconAsset": "assets/provider-icons/claude.png",
+        "accentVar": "var(--provider-claude)",
+        "softVar": "var(--provider-claude-soft)",
+        "tagColor": "orange",
+        "apiHost": "api.anthropic.com"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "quota_usage",
+        "session_runtime",
+        "gateway_profile",
+        "session_history",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "Claude 登录",
+          "description": "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"
+        },
+        {
+          "value": "api-key",
+          "label": "Anthropic 密钥",
+          "description": "绑定 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL。"
+        },
+        {
+          "value": "auth-token",
+          "label": "Claude Code Token",
+          "description": "绑定 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "hook",
+        "adapter": "json_hooks",
+        "targetKind": "settings.json",
+        "events": [
+          "SessionStart",
+          "UserPromptSubmit",
+          "PermissionRequest",
+          "Notification",
+          "Stop",
+          "StopFailure",
+          "SessionEnd"
+        ]
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 3,
+        "globalDir": ".claude",
+        "configFile": "settings.json",
+        "loginArgs": [
+          "setup-token"
+        ],
+        "pkg": "@anthropic-ai/claude-code",
+        "envKeys": [
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_AUTH_TOKEN",
+          "ANTHROPIC_BASE_URL"
+        ],
+        "desktopClient": {
+          "reloadsHostAuth": false,
+          "userDataEnvKey": "CLAUDE_USER_DATA_DIR",
+          "macos": {
+            "clientName": "Claude",
+            "execNames": [
+              "Claude"
+            ],
+            "pathIncludes": [
+              "/Claude.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.anthropic.claudefordesktop",
+            "installPaths": [
+              "/Applications/Claude.app",
+              "{hostHomeDir}/Applications/Claude.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Claude",
+            "processNames": [
+              "Claude.exe"
+            ],
+            "execNames": [
+              "Claude.exe"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "-p",
+            "--print"
+          ],
+          "stdinFlags": [
+            "--input-format=stream-json"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CLAUDE_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [
+            ".claude/settings.json",
+            ".claude/settings.local.json"
+          ],
+          "cliFlags": [
+            "--settings",
+            "--setting-sources"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id",
+            "--fork-session"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "projection": {
+            "path": ".claude.json",
+            "format": "json-stdio"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            ".mcp.json",
+            ".claude.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "claude-skills-dir",
+          "commands": null,
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [
+            "settings.json",
+            "plugins/hooks.json"
+          ],
+          "stopRequiresJsonStdout": true
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
+      "credentials": {
+        "vendorId": "anthropic",
+        "apiKeyEnv": [
+          "ANTHROPIC_API_KEY"
+        ],
+        "authTokenEnv": [
+          "ANTHROPIC_AUTH_TOKEN"
+        ],
+        "baseUrlEnv": [
+          "ANTHROPIC_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "canonical"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "agy",
+      "family": "agy",
+      "site": "global",
+      "presentation": {
+        "id": "agy",
+        "label": "Antigravity",
+        "short": "AGY",
+        "terminalIcon": "▲",
+        "terminalIconAsset": "assets/provider-icons/agy.png",
+        "accentVar": "var(--provider-agy)",
+        "softVar": "var(--provider-agy-soft)",
+        "tagColor": "purple",
+        "apiHost": "daily-cloudcode-pa.googleapis.com"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "model_catalog",
+        "quota_usage",
+        "session_runtime",
+        "session_history",
+        "usage_scan"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "strategy": "aih-google-oauth",
+          "label": "Antigravity 直连 Google 登录",
+          "description": "由 AI Home 直接完成 Google OAuth，不需要安装 Antigravity CLI。"
+        },
+        {
+          "value": "oauth-browser",
+          "strategy": "native-cli",
+          "label": "Antigravity CLI 登录",
+          "description": "使用 Antigravity CLI 原生 Google 登录流程。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "hook",
+        "adapter": "agy_named_hooks",
+        "targetKind": "hooks.json",
+        "events": [
+          "PreInvocation",
+          "PostInvocation",
+          "Stop"
+        ]
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 1,
+        "globalDir": ".gemini",
+        "configSubDir": "antigravity-cli",
+        "configFile": "hooks.json",
+        "loginArgs": [],
+        "pkg": "",
+        "envKeys": [
+          "AGY_ACCESS_TOKEN",
+          "GOOGLE_OAUTH_ACCESS_TOKEN"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Antigravity",
+            "execNames": [
+              "Antigravity"
+            ],
+            "pathIncludes": [
+              "/Antigravity.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/Antigravity.app",
+              "{hostHomeDir}/Applications/Antigravity.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Antigravity",
+            "processNames": [
+              "Antigravity.exe"
+            ],
+            "execNames": [
+              "Antigravity.exe"
+            ]
+          },
+          "linux": {
+            "clientName": "Antigravity",
+            "execNames": [
+              "antigravity",
+              "agy"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "--print"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "HOME"
+          ],
+          "userSettings": [
+            ".gemini/antigravity-cli/settings.json"
+          ],
+          "projectSettings": [
+            ".agents/settings.json"
+          ],
+          "cliFlags": [
+            "--sandbox",
+            "--conversation",
+            "--continue"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--conversation"
+          ],
+          "nativeStore": "workspace-scoped conversations"
+        },
+        "mcp": {
+          "projection": {
+            "path": "mcp_config.json",
+            "format": "json-command"
+          },
+          "commands": [
+            "/mcp"
+          ],
+          "configFiles": [
+            ".gemini/antigravity-cli/mcp_config.json",
+            ".agents/mcp_config.json"
+          ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "pathBase": "host-home",
+          "commands": null,
+          "paths": [
+            ".gemini/GEMINI.md"
+          ],
+          "mode": "projection-only"
+        },
+        "hooks": {
+          "files": [
+            ".gemini/config/hooks.json",
+            ".agents/hooks.json",
+            ".gemini/config/plugins/*/hooks.json",
+            ".gemini/antigravity-cli/plugins/*/hooks.json"
+          ],
+          "stopRequiresJsonStdout": true
+        },
+        "permissions": {
+          "flags": [
+            "--sandbox",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "allow",
+            "ask",
+            "deny"
+          ]
+        }
+      },
+      "credentials": {
+        "vendorId": "antigravity"
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "canonical"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "opencode",
+      "family": "opencode",
+      "site": "global",
+      "presentation": {
+        "id": "opencode",
+        "label": "OpenCode",
+        "short": "OC",
+        "terminalIcon": "⌘",
+        "terminalIconAsset": "assets/provider-icons/opencode.png",
+        "accentVar": "var(--provider-opencode)",
+        "softVar": "var(--provider-opencode-soft)",
+        "tagColor": "default",
+        "apiHost": "opencode.ai"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "session_runtime",
+        "gateway_profile",
+        "session_history",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "strategy": "opencode:device",
+          "label": "OpenCode Console 登录（设备码）",
+          "description": "官方 CLI 设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"
+        },
+        {
+          "value": "api-key",
+          "label": "OpenCode 密钥",
+          "description": "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "hook",
+        "adapter": "opencode_plugin",
+        "targetKind": "plugin.js",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 5,
+        "globalDir": ".config/opencode",
+        "configFile": "opencode.json",
+        "loginArgs": [
+          "auth",
+          "login"
+        ],
+        "pkg": "@opencode/cli",
+        "envKeys": [
+          "OPENCODE_API_KEY",
+          "OPENCODE_BASE_URL"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "OpenCode",
+            "execNames": [
+              "OpenCode"
+            ],
+            "pathIncludes": [
+              "/OpenCode.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/OpenCode.app",
+              "{hostHomeDir}/Applications/OpenCode.app"
+            ]
+          },
+          "windows": {
+            "clientName": "OpenCode",
+            "processNames": [
+              "OpenCode.exe"
+            ],
+            "execNames": [
+              "OpenCode.exe"
+            ]
+          },
+          "linux": {
+            "clientName": "OpenCode",
+            "execNames": [
+              "OpenCode",
+              "opencode-desktop"
+            ]
+          }
+        },
+        "headless": {
+          "triggerSubcommands": [
+            "run"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "OPENCODE_CONFIG",
+            "OPENCODE_CONFIG_DIR",
+            "OPENCODE_CONFIG_CONTENT"
+          ],
+          "userSettings": [
+            "opencode.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--agent"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--session",
+            "--fork"
+          ],
+          "nativeStore": "opencode.db"
+        },
+        "mcp": {
+          "projection": {
+            "path": ".config/opencode/opencode.json",
+            "pathBase": "host-home",
+            "format": "json-opencode",
+            "alternatives": [
+              ".config/opencode/opencode.jsonc"
+            ]
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            "opencode.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "opencode-local",
+          "pathBase": "host-home",
+          "commands": null,
+          "paths": [
+            "plugin"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "pathBase": "host-home",
+          "commands": null,
+          "paths": [
+            ".config/opencode/AGENTS.md"
+          ],
+          "mode": "projection-only"
+        },
+        "hooks": {
+          "files": [
+            "plugin/aih-session-hook.js"
+          ],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--auto"
+          ],
+          "modes": [
+            "auto"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "OPENCODE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "OPENCODE_BASE_URL"
+        ],
+        "cliRequiresAuthFile": true
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "grok",
+      "family": "grok",
+      "site": "global",
+      "presentation": {
+        "id": "grok",
+        "label": "Grok",
+        "short": "GK",
+        "terminalIcon": "⚡",
+        "terminalIconAsset": "assets/provider-icons/grok.png",
+        "accentVar": "var(--provider-grok)",
+        "softVar": "var(--provider-grok-soft)",
+        "tagColor": "cyan",
+        "apiHost": "api.x.ai"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "quota_usage",
+        "session_history",
+        "account_session_store",
+        "usage_scan"
+      ],
+      "authOptions": [
+        {
+          "value": "api-key",
+          "label": "xAI 密钥",
+          "description": "绑定 XAI_API_KEY / XAI_BASE_URL。"
+        },
+        {
+          "value": "oauth-browser",
+          "label": "Grok 登录",
+          "description": "使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "hook",
+        "adapter": "json_hooks",
+        "targetKind": "hooks.json",
+        "events": [
+          "SessionStart",
+          "UserPromptSubmit",
+          "Stop",
+          "StopFailure",
+          "SessionEnd"
+        ]
+      },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
+      "cli": {
+        "order": 6,
+        "globalDir": ".grok",
+        "configFile": "settings.json",
+        "loginArgs": [
+          "login",
+          "--oauth"
+        ],
+        "binaryName": "grok",
+        "pkg": "",
+        "envKeys": [
+          "GROK_HOME",
+          "XAI_API_KEY",
+          "XAI_BASE_URL"
+        ],
+        "headless": {
+          "triggerFlags": [
+            "--single"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "GROK_HOME"
+          ],
+          "userSettings": [
+            "config.toml"
+          ],
+          "projectSettings": [
+            ".grok/config.toml"
+          ],
+          "cliFlags": [
+            "--model",
+            "--permission-mode"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "sessions"
+        },
+        "mcp": {
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            ".grok/mcp.json"
+          ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": [
+            ".grok/hooks.json"
+          ],
+          "stopRequiresJsonStdout": true
+        },
+        "permissions": {
+          "flags": [
+            "--sandbox",
+            "--permission-mode"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "auto",
+            "dontAsk",
+            "bypassPermissions",
+            "plan"
+          ]
+        }
+      },
+      "credentials": {
+        "vendorId": "xai",
+        "apiKeyEnv": [
+          "XAI_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "XAI_BASE_URL"
+        ],
+        "cliRequiresAuthFile": true
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "qoder",
+      "family": "qoder",
+      "site": "global",
+      "presentation": {
+        "id": "qoder",
+        "label": "Qoder",
+        "short": "QD",
+        "terminalIcon": "◆",
+        "terminalIconAsset": "assets/provider-icons/qoder.png",
+        "accentVar": "var(--provider-qoder)",
+        "softVar": "var(--provider-qoder-soft)",
+        "tagColor": "blue",
+        "apiHost": "qoder.com"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "model_catalog",
+        "session_history",
+        "account_session_store",
+        "usage_scan"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "Qoder 登录",
+          "description": "使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。"
+        },
+        {
+          "value": "api-key",
+          "label": "Qoder Personal Access Token",
+          "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 7,
+        "globalDir": ".qoder",
+        "configFile": "config.json",
+        "configAtProjectionRoot": true,
+        "loginArgs": [
+          "login"
+        ],
+        "binaryName": "qodercli",
+        "pkg": "@qoder-ai/qodercli",
+        "configDirFlag": "--config-dir",
+        "installRegion": "global",
+        "envKeys": [
+          "QODER_PERSONAL_ACCESS_TOKEN"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Qoder",
+            "execNames": [
+              "Qoder"
+            ],
+            "pathIncludes": [
+              "/Qoder IDE.app/Contents/MacOS/",
+              "/Qoder.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.qoder.ide",
+            "installPaths": [
+              "/Applications/Qoder IDE.app",
+              "{hostHomeDir}/Applications/Qoder IDE.app",
+              "/Applications/Qoder.app",
+              "{hostHomeDir}/Applications/Qoder.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Qoder",
+            "processNames": [
+              "Qoder.exe",
+              "Qoder IDE.exe"
+            ],
+            "execNames": [
+              "Qoder.exe",
+              "Qoder IDE.exe"
+            ],
+            "displayNames": [
+              "Qoder IDE"
+            ]
+          },
+          "linux": {
+            "clientName": "Qoder",
+            "execNames": [
+              "qoder",
+              "Qoder"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "--print"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": null,
+          "userSettings": null,
+          "projectSettings": null,
+          "cliFlags": null
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--fork-session"
+          ],
+          "nativeStore": ""
+        },
+        "mcp": {
+          "commands": null,
+          "configFiles": null
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": null,
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "accept_edits",
+            "auto",
+            "bypass_permissions",
+            "dont_ask"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "QODER_PERSONAL_ACCESS_TOKEN"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": false,
+          "reason": "qoder 的推理只能经本机 CLI headless 执行，Go 服务端无此条件"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "qodercn",
+      "family": "qoder",
+      "site": "cn",
+      "presentation": {
+        "id": "qodercn",
+        "label": "Qoder CN",
+        "short": "QCN",
+        "terminalIcon": "◇",
+        "terminalIconAsset": "assets/provider-icons/qodercn.png",
+        "accentVar": "var(--provider-qodercn)",
+        "softVar": "var(--provider-qodercn-soft)",
+        "tagColor": "purple",
+        "apiHost": "qoder.com.cn"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "model_catalog",
+        "session_history",
+        "account_session_store",
+        "usage_scan"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "Qoder CN 登录",
+          "description": "使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。"
+        },
+        {
+          "value": "api-key",
+          "label": "Qoder CN Personal Access Token",
+          "description": "绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 8,
+        "globalDir": ".qoder-cn",
+        "configFile": "config.json",
+        "configAtProjectionRoot": true,
+        "loginArgs": [
+          "login"
+        ],
+        "binaryName": "qoderclicn",
+        "pkg": "",
+        "configDirFlag": "--config-dir",
+        "installRegion": "cn",
+        "envKeys": [
+          "QODER_PERSONAL_ACCESS_TOKEN"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Qoder CN",
+            "execNames": [
+              "Qoder CN",
+              "QoderCN"
+            ],
+            "pathIncludes": [
+              "/Qoder CN IDE.app/Contents/MacOS/",
+              "/Qoder.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.aliyun.lingma.ide",
+            "installPaths": [
+              "/Applications/Qoder CN IDE.app",
+              "{hostHomeDir}/Applications/Qoder CN IDE.app",
+              "/Applications/Qoder.app",
+              "{hostHomeDir}/Applications/Qoder.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Qoder CN",
+            "processNames": [
+              "QoderCN.exe",
+              "Qoder CN.exe",
+              "Qoder CN IDE.exe"
+            ],
+            "execNames": [
+              "QoderCN.exe",
+              "Qoder CN.exe",
+              "Qoder CN IDE.exe"
+            ],
+            "displayNames": [
+              "Qoder CN IDE"
+            ]
+          },
+          "linux": {
+            "clientName": "Qoder CN",
+            "execNames": [
+              "qoder-cn",
+              "qodercn",
+              "Qoder CN",
+              "QoderCN"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "--print"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": null,
+          "userSettings": null,
+          "projectSettings": null,
+          "cliFlags": null
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--fork-session"
+          ],
+          "nativeStore": ""
+        },
+        "mcp": {
+          "commands": null,
+          "configFiles": null
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": null,
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "accept_edits",
+            "auto",
+            "bypass_permissions",
+            "dont_ask"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "QODER_PERSONAL_ACCESS_TOKEN"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": false,
+          "reason": "qodercn 的推理只能经本机 CLI headless 执行，Go 服务端无此条件"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "kimi",
+      "family": "kimi",
+      "site": "global",
+      "presentation": {
+        "id": "kimi",
+        "label": "Kimi",
+        "short": "KM",
+        "terminalIcon": "☾",
+        "terminalIconAsset": "assets/provider-icons/kimi.png",
+        "accentVar": "var(--provider-kimi)",
+        "softVar": "var(--provider-kimi-soft)",
+        "tagColor": "geekblue",
+        "apiHost": "api.moonshot.cn"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "quota_usage",
+        "usage_scan",
+        "gateway_profile",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "api-key",
+          "label": "Moonshot 密钥",
+          "description": "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"
+        },
+        {
+          "value": "oauth-browser",
+          "label": "Kimi Code 登录",
+          "description": "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "unavailable",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 9,
+        "globalDir": ".kimi-code",
+        "configFile": "config.toml",
+        "loginArgs": [
+          "login"
+        ],
+        "pkg": "@moonshot-ai/kimi-code",
+        "envKeys": [
+          "MOONSHOT_API_KEY",
+          "KIMI_BASE_URL",
+          "KIMI_CODE_HOME"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Kimi",
+            "execNames": [
+              "Kimi"
+            ],
+            "pathIncludes": [
+              "/Kimi.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/Kimi.app",
+              "{hostHomeDir}/Applications/Kimi.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Kimi",
+            "processNames": [
+              "Kimi.exe"
+            ],
+            "execNames": [
+              "Kimi.exe"
+            ]
+          }
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "KIMI_CODE_HOME"
+          ],
+          "userSettings": [
+            "config.toml"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--plan"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "-c",
+            "-C",
+            "/sessions"
+          ],
+          "nativeStore": "sessions"
+        },
+        "mcp": {
+          "commands": [],
+          "configFiles": []
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--auto",
+            "--yolo"
+          ],
+          "modes": [
+            "manual",
+            "yolo",
+            "auto"
+          ]
+        }
+      },
+      "credentials": {
+        "vendorId": "moonshot",
+        "apiKeyEnv": [
+          "MOONSHOT_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "KIMI_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "kiro",
+      "family": "kiro",
+      "site": "global",
+      "presentation": {
+        "id": "kiro",
+        "label": "Kiro",
+        "short": "KR",
+        "terminalIcon": "⬡",
+        "terminalIconAsset": "assets/provider-icons/kiro.png",
+        "accentVar": "var(--provider-kiro)",
+        "softVar": "var(--provider-kiro-soft)",
+        "tagColor": "volcano",
+        "apiHost": "kiro.dev"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "model_catalog",
+        "session_history",
+        "account_session_store",
+        "quota_usage",
+        "usage_scan"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-device",
+          "label": "OAuth 登录",
+          "description": "Builder ID / Google / GitHub 账号：选定登录方式后再获取授权链接（设备码授权，任意设备都能完成，不需要本地 kiro CLI）。"
+        },
+        {
+          "value": "oauth-refresh-token",
+          "label": "Kiro Desktop / refresh_token",
+          "description": "Kiro Desktop（Google / GitHub）账号：粘贴 Kiro IDE 的 refresh_token 完成导入。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 10,
+        "globalDir": ".kiro",
+        "configFile": "config.json",
+        "loginArgs": [
+          "login",
+          "--license",
+          "free",
+          "--use-device-flow"
+        ],
+        "binaryName": "kiro-cli",
+        "pkg": "",
+        "envKeys": [
+          "KIRO_HOME",
+          "KIRO_TEST_DB_PATH",
+          "KIRO_API_KEY"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "Kiro",
+            "execNames": [
+              "kiro_cli_desktop",
+              "Kiro"
+            ],
+            "pathIncludes": [
+              "/Kiro CLI.app/Contents/MacOS/",
+              "/Kiro.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/Kiro CLI.app",
+              "{hostHomeDir}/Applications/Kiro CLI.app",
+              "/Applications/Kiro.app",
+              "{hostHomeDir}/Applications/Kiro.app"
+            ]
+          },
+          "windows": {
+            "clientName": "Kiro",
+            "processNames": [
+              "Kiro.exe"
+            ],
+            "execNames": [
+              "Kiro.exe"
+            ],
+            "displayNames": [
+              "Kiro"
+            ]
+          },
+          "linux": {
+            "clientName": "Kiro",
+            "execNames": [
+              "kiro",
+              "Kiro"
+            ]
+          }
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "KIRO_HOME"
+          ],
+          "userSettings": [
+            "settings/mcp.json"
+          ],
+          "projectSettings": [
+            ".kiro/settings/mcp.json"
+          ],
+          "cliFlags": [
+            "--model",
+            "--effort"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "/rewind",
+            "/chat new"
+          ],
+          "nativeStore": "data.sqlite3"
+        },
+        "mcp": {
+          "projection": {
+            "path": "settings/mcp.json",
+            "format": "json-command"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            "settings/mcp.json"
+          ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--trust-all-tools",
+            "--trust-tools"
+          ],
+          "modes": []
+        }
+      },
+      "credentials": {
+        "vendorId": "kiro"
+      },
+      "relayHosts": {
+        "go": {
+          "supported": false,
+          "reason": "Go 无 kiro 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "zcode",
+      "family": "zcode",
+      "site": "global",
+      "presentation": {
+        "id": "zcode",
+        "label": "ZCode",
+        "short": "ZC",
+        "terminalIcon": "◈",
+        "terminalIconAsset": "assets/provider-icons/zcode.png",
+        "accentVar": "var(--provider-zcode)",
+        "softVar": "var(--provider-zcode-soft)",
+        "tagColor": "geekblue",
+        "apiHost": "z.ai"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "session_history",
+        "quota_usage",
+        "usage_scan"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "strategy": "zai:cli-flow",
+          "label": "ZCode 登录（Z.AI 国际站 · 官方 CLI 流程）",
+          "description": "chat.z.ai 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+        },
+        {
+          "value": "oauth-browser",
+          "strategy": "bigmodel:cli-flow",
+          "label": "ZCode 登录（BigModel 国内站 · 官方 CLI 流程）",
+          "description": "bigmodel.cn 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+        },
+        {
+          "value": "oauth-browser",
+          "strategy": "zai:custom-scheme",
+          "label": "ZCode 登录（Z.AI 国际站 · zcode:// 回调）",
+          "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
+        },
+        {
+          "value": "oauth-browser",
+          "strategy": "bigmodel:custom-scheme",
+          "label": "ZCode 登录（BigModel 国内站 · zcode:// 回调）",
+          "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
+        },
+        {
+          "value": "api-key",
+          "label": "Z.ai 密钥",
+          "description": "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "unavailable",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 11,
+        "globalDir": ".zcode",
+        "loginArgs": [
+          "login"
+        ],
+        "binaryName": "zcode",
+        "pkg": "",
+        "envKeys": [
+          "ZCODE_API_KEY",
+          "ZCODE_BASE_URL",
+          "ZCODE_DATA_BASE_DIR"
+        ],
+        "desktopClient": {
+          "macos": {
+            "clientName": "ZCode",
+            "execNames": [
+              "ZCode"
+            ],
+            "pathIncludes": [
+              "/ZCode.app/Contents/MacOS/"
+            ],
+            "installPaths": [
+              "/Applications/ZCode.app",
+              "{hostHomeDir}/Applications/ZCode.app"
+            ]
+          },
+          "windows": {
+            "clientName": "ZCode",
+            "processNames": [
+              "ZCode.exe"
+            ],
+            "execNames": [
+              "ZCode.exe"
+            ]
+          },
+          "linux": {
+            "clientName": "ZCode",
+            "execNames": [
+              "zcode"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "-p",
+            "--prompt"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "ZCODE_DATA_BASE_DIR"
+          ],
+          "userSettings": [
+            "provider_config.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--cwd",
+            "--mode",
+            "--resume",
+            "--continue",
+            "--prompt"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--resume",
+            "--continue"
+          ],
+          "nativeStore": "cli/db/db.sqlite"
+        },
+        "mcp": {
+          "commands": null,
+          "configFiles": null
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": null,
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--mode"
+          ],
+          "modes": [
+            "build",
+            "edit",
+            "plan",
+            "yolo",
+            "guarded"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "ZCODE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "ZCODE_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": false,
+          "reason": "Go 无 zcode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "codebuddy",
+      "family": "codebuddy",
+      "site": "global",
+      "presentation": {
+        "id": "codebuddy",
+        "label": "CodeBuddy",
+        "short": "CB",
+        "terminalIcon": "❖",
+        "terminalIconAsset": "assets/provider-icons/codebuddy.png",
+        "accentVar": "var(--provider-codebuddy)",
+        "softVar": "var(--provider-codebuddy-soft)",
+        "tagColor": "blue",
+        "apiHost": "codebuddy.ai"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "session_history",
+        "quota_usage",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "CodeBuddy 登录",
+          "description": "使用 CodeBuddy Code 原生浏览器登录流程（首次启动选择国内站 / 国际站 / 企业域名）。"
+        },
+        {
+          "value": "api-key",
+          "label": "CodeBuddy 密钥",
+          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（非交互模式固定使用该密钥）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 12,
+        "globalDir": ".codebuddy",
+        "configFile": "settings.json",
+        "loginArgs": [],
+        "binaryName": "codebuddy",
+        "pkg": "@tencent-ai/codebuddy-code",
+        "envKeys": [
+          "CODEBUDDY_API_KEY",
+          "CODEBUDDY_BASE_URL",
+          "CODEBUDDY_AUTH_TOKEN",
+          "CODEBUDDY_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_CONFIG_DIR"
+        ],
+        "desktopClient": {
+          "reloadsHostAuth": false,
+          "macos": {
+            "clientName": "CodeBuddy",
+            "execNames": [
+              "Electron"
+            ],
+            "pathIncludes": [
+              "/CodeBuddy.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.tencent.codebuddy",
+            "installPaths": [
+              "/Applications/CodeBuddy.app",
+              "{hostHomeDir}/Applications/CodeBuddy.app"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "-p",
+            "--print"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "projection": {
+            "path": ".mcp.json",
+            "format": "json-stdio"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            ".mcp.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "native-marketplace",
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "codebuddycn",
+      "family": "codebuddy",
+      "site": "cn",
+      "presentation": {
+        "id": "codebuddycn",
+        "label": "CodeBuddy CN",
+        "short": "CBCN",
+        "terminalIcon": "✦",
+        "terminalIconAsset": "assets/provider-icons/codebuddycn.png",
+        "accentVar": "var(--provider-codebuddycn)",
+        "softVar": "var(--provider-codebuddycn-soft)",
+        "tagColor": "purple",
+        "apiHost": "copilot.tencent.com"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "session_history",
+        "quota_usage",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "CodeBuddy CN 登录",
+          "description": "使用 CodeBuddy Code 原生登录流程并选择国内站（copilot.tencent.com）。"
+        },
+        {
+          "value": "api-key",
+          "label": "CodeBuddy CN 密钥",
+          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": true
+      },
+      "cli": {
+        "order": 13,
+        "globalDir": ".codebuddy-cn",
+        "configFile": "settings.json",
+        "loginArgs": [],
+        "binaryName": "codebuddy",
+        "pkg": "@tencent-ai/codebuddy-code",
+        "installRegion": "cn",
+        "envKeys": [
+          "CODEBUDDY_API_KEY",
+          "CODEBUDDY_BASE_URL",
+          "CODEBUDDY_AUTH_TOKEN",
+          "CODEBUDDY_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_CONFIG_DIR"
+        ],
+        "desktopClient": {
+          "reloadsHostAuth": false,
+          "macos": {
+            "clientName": "CodeBuddy CN",
+            "execNames": [
+              "Electron"
+            ],
+            "pathIncludes": [
+              "/CodeBuddy CN.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.tencent.codebuddycn",
+            "installPaths": [
+              "/Applications/CodeBuddy CN.app",
+              "{hostHomeDir}/Applications/CodeBuddy CN.app"
+            ]
+          }
+        },
+        "headless": {
+          "triggerFlags": [
+            "-p",
+            "--print"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "runtime": {
+          "handler": "native-cli",
+          "entry": "",
+          "env": {
+            "CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
+            "CODEBUDDY_INTERNET_ENVIRONMENT": "internal"
+          }
+        },
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "projection": {
+            "path": ".mcp.json",
+            "format": "json-stdio"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            ".mcp.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "native-marketplace",
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "workbuddy",
+      "family": "workbuddy",
+      "site": "global",
+      "presentation": {
+        "id": "workbuddy",
+        "label": "WorkBuddy",
+        "short": "WB",
+        "terminalIcon": "◉",
+        "terminalIconAsset": "assets/provider-icons/workbuddy.png",
+        "accentVar": "var(--provider-workbuddy)",
+        "softVar": "var(--provider-workbuddy-soft)",
+        "tagColor": "green",
+        "apiHost": "workbuddy.cn"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "session_history",
+        "quota_usage",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "WorkBuddy 登录",
+          "description": "使用 WorkBuddy 原生浏览器登录流程（国际站 workbuddy.ai 账号体系）。"
+        },
+        {
+          "value": "api-key",
+          "label": "WorkBuddy 密钥",
+          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（国际站不要固定 CODEBUDDY_INTERNET_ENVIRONMENT）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": false,
+        "desktop": true
+      },
+      "cli": {
+        "order": 14,
+        "globalDir": ".workbuddy-ai",
+        "configFile": "settings.json",
+        "loginArgs": [],
+        "pkg": "",
+        "envKeys": [
+          "WORKBUDDY_CONFIG_DIR",
+          "WORKBUDDY_USER_DATA_DIR",
+          "CODEBUDDY_CONFIG_DIR",
+          "CODEBUDDY_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_API_KEY",
+          "CODEBUDDY_BASE_URL",
+          "CODEBUDDY_AUTH_TOKEN"
+        ],
+        "desktopClient": {
+          "reloadsHostAuth": false,
+          "userDataEnvKey": "WORKBUDDY_USER_DATA_DIR",
+          "macos": {
+            "clientName": "WorkBuddy AI",
+            "execNames": [
+              "Electron"
+            ],
+            "pathIncludes": [
+              "/WorkBuddy AI.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.workbuddy.workbuddy-ai",
+            "installPaths": [
+              "/Applications/WorkBuddy AI.app",
+              "{hostHomeDir}/Applications/WorkBuddy AI.app"
+            ]
+          }
+        }
+      },
+      "nativeBoundary": {
+        "runtime": {
+          "handler": "desktop-node",
+          "entry": "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+          "env": {
+            "CODEBUDDY_FORCE_LITE_WB_BUNDLE": "1"
+          }
+        },
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "projection": {
+            "path": ".codebuddy.json",
+            "format": "json-stdio"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            ".codebuddy.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "native-marketplace",
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "workbuddycn",
+      "family": "workbuddy",
+      "site": "cn",
+      "presentation": {
+        "id": "workbuddycn",
+        "label": "WorkBuddy CN",
+        "short": "WBCN",
+        "terminalIcon": "◍",
+        "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
+        "accentVar": "var(--provider-workbuddycn)",
+        "softVar": "var(--provider-workbuddycn-soft)",
+        "tagColor": "gold",
+        "apiHost": "copilot.tencent.com"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "session_history",
+        "quota_usage",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "oauth-browser",
+          "label": "WorkBuddy CN 登录",
+          "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+        },
+        {
+          "value": "api-key",
+          "label": "WorkBuddy CN 密钥",
+          "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "polling",
+        "events": []
+      },
+      "clients": {
+        "cli": false,
+        "desktop": true
+      },
+      "cli": {
+        "order": 15,
+        "globalDir": ".workbuddy",
+        "configFile": "settings.json",
+        "loginArgs": [],
+        "pkg": "",
+        "envKeys": [
+          "WORKBUDDY_CONFIG_DIR",
+          "WORKBUDDY_USER_DATA_DIR",
+          "CODEBUDDY_CONFIG_DIR",
+          "CODEBUDDY_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_API_KEY",
+          "CODEBUDDY_BASE_URL",
+          "CODEBUDDY_AUTH_TOKEN"
+        ],
+        "desktopClient": {
+          "reloadsHostAuth": false,
+          "userDataEnvKey": "WORKBUDDY_USER_DATA_DIR",
+          "macos": {
+            "clientName": "WorkBuddy",
+            "execNames": [
+              "Electron"
+            ],
+            "pathIncludes": [
+              "/WorkBuddy.app/Contents/MacOS/"
+            ],
+            "bundleId": "com.tencent.workbuddy.mac",
+            "installPaths": [
+              "/Applications/WorkBuddy.app",
+              "{hostHomeDir}/Applications/WorkBuddy.app"
+            ]
+          }
+        }
+      },
+      "nativeBoundary": {
+        "runtime": {
+          "handler": "desktop-node",
+          "entry": "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+          "env": {
+            "CODEBUDDY_FORCE_LITE_WB_BUNDLE": "1"
+          }
+        },
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "projection": {
+            "path": ".codebuddy.json",
+            "format": "json-stdio"
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            ".codebuddy.json"
+          ]
+        },
+        "plugins": {
+          "adapter": "native-marketplace",
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
+        ]
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    },
+    {
+      "id": "cline",
+      "family": "cline",
+      "site": "global",
+      "presentation": {
+        "id": "cline",
+        "label": "Cline",
+        "short": "CLN",
+        "terminalIcon": "⟡",
+        "terminalIconAsset": "assets/provider-icons/cline.png",
+        "accentVar": "var(--provider-cline)",
+        "softVar": "var(--provider-cline-soft)",
+        "tagColor": "magenta",
+        "apiHost": "cline.bot"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog",
+        "gateway_profile",
+        "session_history",
+        "account_session_store",
+        "session_runtime",
+        "usage_scan",
+        "acp_session"
+      ],
+      "authOptions": [
+        {
+          "value": "api-key",
+          "label": "Cline API Key",
+          "description": "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"
+        },
+        {
+          "value": "oauth-browser",
+          "label": "Cline Pass 登录",
+          "description": "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "unavailable",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
+      "cli": {
+        "order": 16,
+        "globalDir": ".cline",
+        "loginArgs": [
+          "auth"
+        ],
+        "binaryName": "cline",
+        "pkg": "cline",
+        "envKeys": [
+          "CLINE_DIR",
+          "CLINE_DATA_DIR",
+          "CLINE_API_KEY",
+          "CLINE_API_BASE_URL"
+        ],
+        "headless": {
+          "triggerFlags": [
+            "--json"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CLINE_DIR",
+            "CLINE_DATA_DIR"
+          ],
+          "userSettings": [
+            "data/settings/providers.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--config",
+            "--data-dir"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--id"
+          ],
+          "nativeStore": "data/db/sessions.db"
+        },
+        "mcp": {
+          "projection": {
+            "path": "data/settings/cline_mcp_settings.json",
+            "format": "json-cline",
+            "accountScoped": true
+          },
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            "data/settings/cline_mcp_settings.json"
+          ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [],
+          "modes": []
+        }
+      },
+      "credentials": {
+        "vendorId": "cline",
+        "apiKeyEnv": [
+          "CLINE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CLINE_API_BASE_URL"
+        ],
+        "cliRequiresAuthFile": true
+      },
+      "relayHosts": {
+        "go": {
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
+        },
+        "node": {
+          "supported": true,
+          "channel": "relay"
+        }
+      }
+    }
+  ],
+  "fallback": {
+    "id": "codex",
+    "label": "AI",
+    "short": "AI",
+    "terminalIcon": "◌",
+    "terminalIconAsset": "web/src/assets/brand/ai-home-mark.png",
+    "accentVar": "var(--color-brand)",
+    "softVar": "var(--color-brand-soft)",
+    "tagColor": "blue"
+  }
+}

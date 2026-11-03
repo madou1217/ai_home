@@ -156,16 +156,17 @@ async function runRouterOnce(input) {
     }),
     pushModelCatalogProjection() {}
   };
+  const pathname = input.pathname || '/v1/responses';
   const headers = {
     'content-type': 'application/json',
     'x-aih-model-alias': '*=claude.deepseek-flash',
     ...(input.protocol ? { 'x-aih-upstream-protocol': input.protocol } : {})
   };
   const ctx = {
-    req: { headers, url: '/v1/responses', on() {}, once() {} },
+    req: { headers, url: pathname, on() {}, once() {} },
     res,
     method: 'POST',
-    pathname: '/v1/responses',
+    pathname,
     options: {
       backend: 'codex-adapter',
       upstreamTimeoutMs: 5000,
@@ -285,4 +286,23 @@ test('工具调用回程转成 function_call，不出现 DSML 文本', async () 
   assert.match(output, /pwd/);
   assert.equal(/DSML/i.test(output), false);
   assert.equal(/response\.failed/.test(output), false);
+});
+
+test('OpenAI Chat 客户端同样被改道到厂商的 OpenAI 端点', async () => {
+  const { seen, output } = await runRouterOnce({
+    protocol: 'openai_chat',
+    pathname: '/v1/chat/completions',
+    requestBody: {
+      model: 'deepseek-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true
+    }
+  });
+  assert.equal(seen.url, 'https://api.deepseek.com/v1/chat/completions');
+  const body = JSON.parse(seen.body);
+  assert.equal(body.messages[0].content, 'hi');
+  assert.equal(seen.headers.authorization, 'Bearer sk-test-key');
+  // Chat 客户端直接拿 Chat SSE（不经 Responses 渲染器）。
+  assert.match(output, /"content":"hello"/);
+  assert.equal(seen.headers['x-aih-upstream-protocol'], undefined);
 });

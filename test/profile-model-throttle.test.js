@@ -14,6 +14,7 @@ const path = require('node:path');
 const {
   formatRecoveryClock,
   listActiveModelThrottles,
+  buildThrottleBadgeVariants,
   formatModelThrottleBadge
 } = require('../lib/cli/services/profile/model-throttle');
 const { createProfileListService } = require('../lib/cli/services/profile/list');
@@ -46,33 +47,33 @@ test('生效中的模型冷却按恢复时刻排序，过期的丢弃', () => {
   );
 });
 
-test('同一账号多个模型限流：全部列出，当天只给 HH:MM', () => {
-  const badge = formatModelThrottleBadge(runtimeState(
+test('单个模型限流：一条精简徽章，当天只给 HH:MM', () => {
+  const badges = buildThrottleBadgeVariants(runtimeState(
     { 'deepseek-v4.1-flash': at(14, 29) },
     { 'deepseek-v4.1-flash': { kind: 'model_quota_exhausted', count: 1, expiresAt: at(14, 29) } }
-  ), NOW);
-  assert.equal(badge, '\x1b[33m[模型限流: deepseek-v4.1-flash 至 14:29]\x1b[0m');
+  ), null, NOW);
+  assert.deepEqual(badges, ['\x1b[33m[限流: deepseek-v4.1-flash 至 14:29]\x1b[0m']);
 });
 
 test('跨天恢复补上日期，避免看起来像"已经过去的时刻"', () => {
-  const badge = formatModelThrottleBadge(runtimeState(
+  const badges = buildThrottleBadgeVariants(runtimeState(
     { 'gemini-3.8-flash': at(0, 10, 5) },
     { 'gemini-3.8-flash': { kind: 'rate_limited', count: 1, expiresAt: at(15, 0) } }
-  ), NOW);
-  assert.match(badge, /gemini-3\.8-flash 至 11-05 00:10/);
+  ), null, NOW);
+  assert.match(badges[0], /限流: gemini-3\.8-flash 至 11-05 00:10/);
   assert.equal(formatRecoveryClock(at(0, 10, 5), NOW), '11-05 00:10');
 });
 
-test('非限流类原因说"模型受限"，不冒称限流', () => {
-  const badge = formatModelThrottleBadge(runtimeState(
+test('非限流类原因说"受限"，不冒称限流', () => {
+  const badges = buildThrottleBadgeVariants(runtimeState(
     { 'gemini-3.8-flash': at(13, 0) },
     { 'gemini-3.8-flash': { kind: 'account_tier_model_denied', count: 1, expiresAt: at(13, 0) } }
-  ), NOW);
-  assert.match(badge, /模型受限: gemini-3\.8-flash/);
-  assert.ok(!badge.includes('模型限流'));
+  ), null, NOW);
+  assert.match(badges[0], /受限: gemini-3\.8-flash 至 13:00/);
+  assert.ok(!badges.join('').includes('限流'));
 });
 
-test('模型很多时只列最早的三个并给出总数', () => {
+test('多个模型限流：拆成多条候选（交给展示层轮换，不再堆在一行）', () => {
   const cooldowns = {};
   const streaks = {};
   ['m1', 'm2', 'm3', 'm4', 'm5'].forEach((model, index) => {
@@ -80,19 +81,32 @@ test('模型很多时只列最早的三个并给出总数', () => {
     cooldowns[model] = until;
     streaks[model] = { kind: 'rate_limited', count: 1, expiresAt: at(15, 0) };
   });
-  const badge = formatModelThrottleBadge(runtimeState(cooldowns, streaks), NOW);
-  assert.match(badge, /m1 至 13:00/);
-  assert.match(badge, /m3 至 13:02/);
-  assert.ok(!badge.includes('m4'));
-  assert.match(badge, /等 5 个模型/);
+  const badges = buildThrottleBadgeVariants(runtimeState(cooldowns, streaks), null, NOW);
+  assert.equal(badges.length, 5);
+  assert.match(badges[0], /限流: m1 至 13:00/);
+  assert.match(badges[4], /限流: m5 至 13:04/);
+});
+
+test('账号级限流也显示，且排在具体模型之前（与 WebUI rate_limited 对齐）', () => {
+  const badges = buildThrottleBadgeVariants(
+    runtimeState(
+      { 'deepseek-v4.1-flash': at(14, 29) },
+      { 'deepseek-v4.1-flash': { kind: 'rate_limited', count: 1, expiresAt: at(14, 29) } }
+    ),
+    { status: 'rate_limited', until: at(12, 30) },
+    NOW
+  );
+  assert.match(badges[0], /限流: 账号 至 12:30/);
+  assert.match(badges[1], /限流: deepseek-v4\.1-flash 至 14:29/);
 });
 
 test('没有冷却 / 数据残缺时不渲染徽章', () => {
+  assert.deepEqual(buildThrottleBadgeVariants(null, null, NOW), []);
+  assert.deepEqual(buildThrottleBadgeVariants({}, null, NOW), []);
+  assert.deepEqual(buildThrottleBadgeVariants(runtimeState({}), null, NOW), []);
+  assert.deepEqual(buildThrottleBadgeVariants(runtimeState({ 'x': at(11, 0) }), null, NOW), []);
+  assert.deepEqual(buildThrottleBadgeVariants('not-an-object', null, NOW), []);
   assert.equal(formatModelThrottleBadge(null, NOW), '');
-  assert.equal(formatModelThrottleBadge({}, NOW), '');
-  assert.equal(formatModelThrottleBadge(runtimeState({}), NOW), '');
-  assert.equal(formatModelThrottleBadge(runtimeState({ 'x': at(11, 0) }), NOW), '');
-  assert.equal(formatModelThrottleBadge('not-an-object', NOW), '');
 });
 
 function tempHome(t) {
@@ -151,7 +165,7 @@ test('aih <provider> ls 的每一行带上模型限流徽章', async (t) => {
 
   const row = lines.find((line) => line.includes('Account ID:'));
   assert.ok(row, `account row missing: ${lines.join(' | ')}`);
-  assert.match(row, /\[模型限流: deepseek-v4\.1-flash 至 14:29\]/);
+  assert.match(row, /\[限流: deepseek-v4\.1-flash 至 14:29\]/);
 });
 
 test('没有模型冷却的账号不会多出徽章', async (t) => {
@@ -198,5 +212,5 @@ test('没有模型冷却的账号不会多出徽章', async (t) => {
 
   const row = lines.find((line) => line.includes('Account ID:'));
   assert.ok(row, `account row missing: ${lines.join(' | ')}`);
-  assert.ok(!row.includes('模型限流'));
+  assert.ok(!row.includes('[限流:'));
 });

@@ -83,7 +83,7 @@ function createHarness(lines, options = {}) {
     rows: options.rows || 40,
     write: (chunk) => writes.push(String(chunk))
   };
-  const processObj = { platform: 'linux', stdout, stdin: {}, on() {}, off() {}, exit() {} };
+  const processObj = { platform: 'linux', stdout, stdin: { isTTY: true }, on() {}, off() {}, exit() {} };
   const state = { lines: lines.slice() };
   const animator = runAnimatedList({
     lineCount: state.lines.length,
@@ -172,7 +172,7 @@ test('运行中更新某行：屏幕仍然逐行对齐，不产生重复行', as
 
   const before = harness.writes.length;
   harness.state.lines[3] = 'Account ID: 1 (cb) [Remaining: 91.0%]';
-  await sleep(900);
+  await sleep(2200);
   harness.writes.slice(before).forEach((chunk) => harness.screen.feed(chunk));
 
   const expected = renderExpectation(harness.state.lines);

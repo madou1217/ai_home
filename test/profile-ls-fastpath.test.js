@@ -131,7 +131,7 @@ test('先出列表、后补数据：第一帧早于任何凭据/用量读取', a
     stdout: { isTTY: true, write: (chunk) => writes.push(String(chunk)), columns: 120 },
     stderr: { write() {} },
     // 没有 resume()：动画定时器 unref，测试进程能自己退出。
-    stdin: {},
+    stdin: { isTTY: true },
     on() {}, off() {}, exit() {},
     env: {}
   };

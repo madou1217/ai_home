@@ -28,7 +28,7 @@ function createHarness(initialLines, options = {}) {
   const processObj = {
     platform: 'linux',
     stdout,
-    stdin: {},
+    stdin: { isTTY: true },
     on() {},
     off() {},
     exit() {}
@@ -71,7 +71,7 @@ test('只重写变化的行：不整屏清，也不动未变化的行', async (t
 
   const before = harness.writes.length;
   harness.state.lines[1] = 'row-1-updated';
-  await sleep(900);
+  await sleep(2200);
 
   const delta = harness.writes.slice(before).join('');
   assert.ok(delta.length > 0, '内容变化后应重绘');
@@ -113,7 +113,7 @@ test('列表比屏幕高时只更新可见行，不整屏重写', async (t) => {
   // 第 1 行已滚进回滚缓冲区（改不到），第 9 行还在屏幕上。
   harness.state.lines[0] = 'row-0-offscreen';
   harness.state.lines[8] = 'row-8-visible';
-  await sleep(900);
+  await sleep(2200);
 
   const delta = harness.writes.slice(before).join('');
   const frames = [...delta.matchAll(/\x1b\[4;1H([\s\S]*?)\x1b\[K/g)].map((match) => match[1]);
@@ -135,7 +135,7 @@ test('变化行有多米诺特效：字符被逐个推倒，最后落成新文�
   const before = harness.writes.length;
   const updated = 'row-1-updated-content-after-refresh';
   harness.state.lines[1] = updated;
-  await sleep(700);
+  await sleep(2200);
 
   const delta = harness.writes.slice(before).join('');
   // 抖动期间必须出现多米诺字符（| / \ 三态）。
@@ -159,7 +159,7 @@ test('转圈前缀一直在变也不打断多米诺：波浪必须扫到行尾',
   const before = harness.writes.length;
   const updated = 'row-1-updated-content-that-is-long-enough';
   harness.state.lines[1] = updated;
-  await sleep(1200);
+  await sleep(2600);
 
   const delta = harness.writes.slice(before).join('');
   const rowTexts = [...delta.matchAll(/\x1b\[2;1H([\s\S]*?)\x1b\[K/g)].map((match) => match[1]);
@@ -172,6 +172,50 @@ test('转圈前缀一直在变也不打断多米诺：波浪必须扫到行尾',
   assert.ok(positions.length >= 3, `应该出现多帧波浪，实际 ${positions.length}`);
   assert.ok(Math.max(...positions) - Math.min(...positions) >= 10, `波浪应扫过整行，实际位置 ${positions.join(',')}`);
   assert.equal(rowTexts[rowTexts.length - 1].slice(4), updated, '最后一帧必须是干净的新文本');
+});
+
+test('stdin 不是 TTY 时不做动画（没人能退出 = 孤儿进程）', () => {
+  const writes = [];
+  const animator = runAnimatedList({
+    lineCount: 2,
+    renderLine: (prefix, index) => `${prefix}row-${index}`,
+    readActivity: () => new Map(),
+    activityOfRow: () => null,
+    processObj: {
+      platform: 'linux',
+      stdout: { isTTY: true, columns: 80, rows: 20, write: (chunk) => writes.push(String(chunk)) },
+      stdin: { isTTY: false },
+      on() {}, off() {}, exit() {}
+    },
+    keepAlive: false
+  });
+  assert.equal(animator, null, 'stdin 非 TTY 必须返回 null（走一次性输出）');
+  assert.equal(writes.length, 0);
+});
+
+test('终端挂断（SIGHUP）要正常收尾退出，不能留后台进程', () => {
+  const handlers = new Map();
+  let exited = false;
+  const animator = runAnimatedList({
+    lineCount: 2,
+    renderLine: (prefix, index) => `${prefix}row-${index}`,
+    readActivity: () => new Map(),
+    activityOfRow: () => null,
+    processObj: {
+      platform: 'linux',
+      stdout: { isTTY: true, columns: 80, rows: 20, write() {} },
+      stdin: { isTTY: true },
+      on: (name, handler) => handlers.set(name, handler),
+      off: (name) => handlers.delete(name),
+      exit() {}
+    },
+    keepAlive: false
+  });
+  animator.onQuit(() => { exited = true; });
+  assert.equal(typeof handlers.get('SIGHUP'), 'function', '必须监听 SIGHUP');
+  handlers.get('SIGHUP')();
+  assert.equal(exited, true, 'SIGHUP 应触发退出回调');
+  animator.stop();
 });
 
 test('每行必须单行化并截断：内嵌换行 / 超宽都会让绝对定位串行', () => {

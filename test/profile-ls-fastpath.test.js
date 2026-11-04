@@ -93,16 +93,16 @@ Module._load = function (request, parent, isMain) {
 };
 `, 'utf8');
 
-  runCli({
-    home,
-    aiHomeDir,
-    args: ['codebuddy', 'ls'],
-    env: {
-      NODE_OPTIONS: `--require=${guard}`,
-      AIH_LS_GUARD_MARKER: marker
-    }
-  });
+  const guardedEnv = {
+    NODE_OPTIONS: `--require=${guard}`,
+    AIH_LS_GUARD_MARKER: marker
+  };
+  runCli({ home, aiHomeDir, args: ['codebuddy', 'ls'], env: guardedEnv });
   assert.equal(fs.existsSync(marker), false, 'ls 不应加载完整组合根');
+
+  // provider 目录查询同样是热路径（`aih provider ls` 是最常用的发现入口）。
+  runCli({ home, aiHomeDir, args: ['provider', 'ls'], env: guardedEnv });
+  assert.equal(fs.existsSync(marker), false, 'provider ls 不应加载完整组合根');
 });
 
 test('先出列表、后补数据：第一帧早于任何凭据/用量读取', (t) => {
@@ -191,4 +191,96 @@ test('先出列表、后补数据：第一帧早于任何凭据/用量读取', (
       resolve();
     }, 200);
   });
+});
+
+function stripAnsi(text) {
+  return String(text).replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+function runCliResult({ home, aiHomeDir, args, env = {} }) {
+  try {
+    return { status: 0, stdout: runCli({ home, aiHomeDir, args, env }), stderr: '' };
+  } catch (error) {
+    return {
+      status: typeof error.status === 'number' ? error.status : 1,
+      stdout: String(error.stdout || ''),
+      stderr: String(error.stderr || '')
+    };
+  }
+}
+
+test('provider 位通配：*buddy* / *buddy 按作用域列账号，且与 --scope 等价', (t) => {
+  const home = tempHome(t);
+  const aiHomeDir = path.join(home, '.ai_home');
+  seedAccount(aiHomeDir, 'codebuddy', 'CB One');
+  seedAccount(aiHomeDir, 'codebuddycn', 'CB CN');
+  seedAccount(aiHomeDir, 'workbuddy', 'WB One');
+  seedAccount(aiHomeDir, 'workbuddycn', 'WB CN');
+  seedAccount(aiHomeDir, 'codex', 'Codex One');
+
+  const globbed = runCli({ home, aiHomeDir, args: ['*buddy*', 'ls'] });
+  assert.match(globbed, /codebuddy/);
+  assert.match(globbed, /codebuddycn/);
+  assert.match(globbed, /workbuddy/);
+  assert.match(globbed, /workbuddycn/);
+  assert.doesNotMatch(globbed, /codex/, '通配符必须真的过滤，不能退化成全量');
+
+  // 同一份名单的两种写法必须逐字节一致。
+  const scoped = runCli({ home, aiHomeDir, args: ['ls', '--scope', 'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'] });
+  assert.equal(globbed, scoped);
+
+  const suffix = runCli({ home, aiHomeDir, args: ['*buddy', 'ls'] });
+  assert.match(suffix, /codebuddy/);
+  assert.match(suffix, /workbuddy/);
+  assert.doesNotMatch(suffix, /codebuddycn/);
+
+  // 轻量入口与完整 CLI 必须给同一份输出（两份装配不能漂移）。
+  const full = runCli({ home, aiHomeDir, args: ['*buddy*', 'ls'], env: { AIH_DISABLE_LS_FASTPATH: '1' } });
+  assert.equal(globbed, full);
+});
+
+test('provider 位通配匹配不到时报错，不退化成全量列表', (t) => {
+  const home = tempHome(t);
+  const aiHomeDir = path.join(home, '.ai_home');
+  seedAccount(aiHomeDir, 'codebuddy', 'CB One');
+
+  const result = runCliResult({ home, aiHomeDir, args: ['buddy*', 'ls'] });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No provider matches "buddy\*"/);
+  assert.match(result.stderr, /Did you mean "\*buddy\*"/);
+  assert.equal(result.stdout.trim(), '', '报错时不能顺手打出全量账号');
+
+  const badScope = runCliResult({ home, aiHomeDir, args: ['ls', '--scope', 'nope'] });
+  assert.equal(badScope.status, 1);
+  assert.match(badScope.stderr, /Known providers/);
+});
+
+test('aih provider ls 列出 provider 目录与账号数', (t) => {
+  const home = tempHome(t);
+  const aiHomeDir = path.join(home, '.ai_home');
+  seedAccount(aiHomeDir, 'codebuddy', 'CB One');
+  seedAccount(aiHomeDir, 'codebuddy', 'CB Two');
+  seedAccount(aiHomeDir, 'workbuddy', 'WB One');
+
+  const all = stripAnsi(runCli({ home, aiHomeDir, args: ['provider', 'ls'] }));
+  assert.match(all, /codebuddy\s+2 accounts/);
+  assert.match(all, /workbuddy\s+1 account/);
+  assert.match(all, /workbuddycn\s+0 accounts/);
+  assert.match(all, /no native CLI/, '没有原生 CLI 的 provider 要标出来');
+
+  const filtered = stripAnsi(runCli({ home, aiHomeDir, args: ['provider', 'ls', '*buddy*'] }));
+  assert.match(filtered, /codebuddy/);
+  assert.match(filtered, /workbuddycn/);
+  assert.doesNotMatch(filtered, /codex/);
+
+  const json = JSON.parse(runCli({ home, aiHomeDir, args: ['provider', 'ls', '--json'] }));
+  assert.equal(json.ok, true);
+  assert.ok(json.providers.some((row) => row.provider === 'codebuddy' && row.accounts === 2));
+
+  // 轻量入口与完整 CLI 必须给同一份输出。
+  for (const args of [['provider', 'ls'], ['provider', 'ls', '*buddy*'], ['provider', 'ls', '--json']]) {
+    const fast = runCli({ home, aiHomeDir, args });
+    const full = runCli({ home, aiHomeDir, args, env: { AIH_DISABLE_LS_FASTPATH: '1' } });
+    assert.equal(fast, full, `${args.join(' ')} 的两条路径输出必须一致`);
+  }
 });

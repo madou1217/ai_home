@@ -11,15 +11,13 @@ const assert = require('node:assert/strict');
 const {
   isProviderPattern,
   matchProviderPattern,
+  matchProviderSelector,
   resolveProviderScope,
   parseProviderScopeArgs,
   describeScopeMiss
 } = require('../lib/cli/services/profile/provider-scope');
 const { resolveLsRequest } = require('../lib/cli/services/profile/ls-request');
-const {
-  listAccountProviders,
-  isSupportedAiCli
-} = require('../lib/cli/services/ai-cli/provider-registry');
+const { listAccountProviders } = require('../lib/cli/services/ai-cli/provider-registry');
 
 const PROVIDERS = listAccountProviders();
 const BUDDY = ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'];
@@ -39,6 +37,19 @@ test('通配符：大小写不敏感，全名精确匹配不被通配抢走', ()
   assert.equal(isProviderPattern('codex'), false);
   assert.equal(isProviderPattern('code*'), true);
   assert.equal(isProviderPattern('code?'), true);
+});
+
+test('选择器：不带通配符的名字按子串匹配（zsh 不会提前展开）', () => {
+  assert.deepEqual(matchProviderSelector('buddy', PROVIDERS), BUDDY);
+  assert.deepEqual(matchProviderSelector('budd', PROVIDERS), BUDDY);
+  assert.deepEqual(matchProviderSelector('cn', PROVIDERS), ['qodercn', 'codebuddycn', 'workbuddycn']);
+  // 全名优先：qoder 不能因为 qodercn 含它就把两个都算上。
+  assert.deepEqual(matchProviderSelector('qoder', PROVIDERS), ['qoder']);
+  assert.deepEqual(matchProviderSelector('CodeBuddy', PROVIDERS), ['codebuddy']);
+  // 单字符子串会命中半个表，不像过滤更像手滑，直接不给。
+  assert.deepEqual(matchProviderSelector('a', PROVIDERS), []);
+  // 通配符语义保持严格：前缀没命中就是没命中。
+  assert.deepEqual(matchProviderSelector('buddy*', PROVIDERS), []);
 });
 
 test('resolveProviderScope：并集去重、未命中单独返回', () => {
@@ -76,13 +87,14 @@ test('describeScopeMiss：报错带上可选值，前缀写错时给出更宽松
   assert.match(plain, /Known providers: .*codebuddy/);
   assert.doesNotMatch(plain, /Did you mean/);
 
+  // 建议里不带 *：zsh 会在 aih 之前展开它，照抄回去只会再报一次错。
   const hinted = describeScopeMiss(['buddy*'], PROVIDERS);
-  assert.match(hinted, /Did you mean "\*buddy\*"/);
+  assert.match(hinted, /Did you mean "buddy" \(no quotes or wildcards needed\)/);
   assert.match(hinted, /codebuddy, codebuddycn, workbuddy, workbuddycn/);
 });
 
 function plan(tokens) {
-  return resolveLsRequest(tokens, { providerNames: PROVIDERS, isSupportedCli: isSupportedAiCli });
+  return resolveLsRequest(tokens, { providerNames: PROVIDERS });
 }
 
 test('resolveLsRequest：全量 / 单 provider / 账号 id', () => {
@@ -95,22 +107,31 @@ test('resolveLsRequest：全量 / 单 provider / 账号 id', () => {
   });
 });
 
-test('resolveLsRequest：通配符与 --scope 是同一个语义的两个入口', () => {
+test('resolveLsRequest：子串、通配、--scope 是同一个语义的三个入口', () => {
+  const bare = plan(['buddy', 'ls']);
   const globbed = plan(['*buddy*', 'ls']);
   const scoped = plan(['ls', '--scope', ...BUDDY]);
+  assert.deepEqual(bare.providers, BUDDY);
   assert.deepEqual(globbed.providers, BUDDY);
   assert.deepEqual(scoped.providers, BUDDY);
+  assert.equal(bare.filterId, null);
   assert.equal(globbed.filterId, null);
   assert.equal(scoped.filterId, null);
 
   assert.deepEqual(plan(['*buddy', 'ls']).providers, ['codebuddy', 'workbuddy']);
   assert.deepEqual(plan(['*buddy*', 'ls', '7']).filterId, '7');
+  assert.deepEqual(plan(['buddy', 'ls', '7']).filterId, '7');
+  // 通配符语义不受子串影响：buddy* 仍然是前缀匹配，一个都不中。
+  assert.equal(plan(['buddy*', 'ls']).action, 'error');
 });
 
 test('resolveLsRequest：匹配不到就报错，不退化成全量列表', () => {
   const missing = plan(['buddy*', 'ls']);
   assert.equal(missing.action, 'error');
-  assert.match(missing.message, /Did you mean "\*buddy\*"/);
+  assert.match(missing.message, /Did you mean "buddy"/);
+  // 子串也找不到时交回上层（外部 harness 的 `aih pi ls` 走这条路），不要抢它的错误。
+  assert.equal(plan(['buddyy', 'ls']).action, 'none');
+  assert.equal(plan(['pi', 'ls']).action, 'none');
 
   const unknownScope = plan(['ls', '--scope', 'nope']);
   assert.equal(unknownScope.action, 'error');

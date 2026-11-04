@@ -218,7 +218,10 @@ test('provider 位通配：*buddy* / *buddy 按作用域列账号，且与 --sco
   seedAccount(aiHomeDir, 'workbuddycn', 'WB CN');
   seedAccount(aiHomeDir, 'codex', 'Codex One');
 
+  // 不带通配符的子串写法：zsh 不会提前展开，用户不用记着加引号。
+  const bare = runCli({ home, aiHomeDir, args: ['buddy', 'ls'] });
   const globbed = runCli({ home, aiHomeDir, args: ['*buddy*', 'ls'] });
+  assert.equal(bare, globbed, '子串与通配必须给同一份输出');
   assert.match(globbed, /codebuddy/);
   assert.match(globbed, /codebuddycn/);
   assert.match(globbed, /workbuddy/);
@@ -247,7 +250,8 @@ test('provider 位通配匹配不到时报错，不退化成全量列表', (t) =
   const result = runCliResult({ home, aiHomeDir, args: ['buddy*', 'ls'] });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /No provider matches "buddy\*"/);
-  assert.match(result.stderr, /Did you mean "\*buddy\*"/);
+  // 建议必须是不带 * 的写法：照抄带 * 的建议在 zsh 里只会再报一次错。
+  assert.match(result.stderr, /Did you mean "buddy" \(no quotes or wildcards needed\)/);
   assert.equal(result.stdout.trim(), '', '报错时不能顺手打出全量账号');
 
   const badScope = runCliResult({ home, aiHomeDir, args: ['ls', '--scope', 'nope'] });

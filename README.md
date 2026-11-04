@@ -118,6 +118,8 @@ aih provider capabilities --json      # 各 provider 的资源边界与缺口
 aih claim --dry-run                   # 每日签到 / 活动福利：先看有什么可领
 ```
 
+`aih ls` 在终端里是交互式的：`/` 进入筛选（边打边缩小，按整行文字和 provider 名匹配），`Enter` 保留筛选，`Esc` 清空筛选，`q` / `Esc` 退出。筛选输入态里 `q` 是普通字符（否则搜不了 qoder）。
+
 ## 导入导出
 
 ```bash

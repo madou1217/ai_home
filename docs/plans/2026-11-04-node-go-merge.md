@@ -133,6 +133,20 @@
 >    验证：`go test` 三个包全绿；隔离实例（真实库副本）PUT→`rate_limited` + 60s 阻塞、
 >    批量读回、非法文档 400、`state:null` 同事务删除两张表；真机 v16 迁移成功
 >    （`user_version=16`，`account_runtime_states` 已建）。
+> 25. **运行态读写切到 Go 的内存/持久化双层（2026-11-05）**：服务端的
+>    `account_state_index` 不再写 `account_state.runtime_state` 列；运行态由
+>    `lib/server/go-runtime-state-store.js` 持有（进程内 Map 为热路径权威值，
+>    每次写入异步 `PUT /runtime-state` 给 Go，失败条目按 60s 窗口重试）。
+>    启动时 `hydrate()` 从 `account_runtime_states` 回填，崩溃/重启不丢；
+>    读取按「内存 → Go 文档 → 旧列」优先级合并，旧列只作迁移兜底。
+>    CLI 不再直写运行态列：`state-service` 经 `state-index-client` 的
+>    `POST /v0/management/state-index/runtime-state` 交给服务端统一落库并推送；
+>    CLI 读侧用 `go-runtime-state-reader`（aih.db 只读 + 1s 快照）看到同一份文档。
+>    `go-runtime-state-report.js` 已删除，`go-account-sync` 的 `syncRuntimeStates`
+>    改为「旧列引导 + store.flush 重试」。
+>    验证：store/index/CLI 漏斗单测全绿；隔离 Go 实例上 set→flush→
+>    `rate_limited`、重建 store 后 hydrate 回填、clear→Go 行消失；
+>    相关 Node 用例 63 项全绿。
 
 ## 0. 结论先行
 
@@ -442,10 +456,12 @@ Node 进程（过渡期，逐渐缩小）
 
 两个看似可继续「删 Node」的入口，实际被上游依赖卡住，先记录清楚，避免下一轮重复尝试：
 
-1. **`account_state.runtime_state` 写入不能先删**。Node 的选号器在请求热路径上同步读这份状态；
-   Go 的 `account_runtime_blocks` 是 15 秒同步的镜像。先删 Node 写入会让阻塞/解除晚一个同步周期，
-   属于调度行为回退。正确顺序是：Go 成为这些路由的选号执行方（或 Node 同步读 Go 的本地库并承担
-   Go 写延迟）之后，再删 Node 写入。当前双写是稳定态，不是临时妥协。
+1. ✅ **`account_state.runtime_state` 写入已切换（2026-11-05，切片 25）**。
+   原阻塞是「选号器在请求热路径同步读这份状态，而 Go 的 blocks 是 15 秒镜像」。
+   解法不是让 Node 每请求读 Go 的库，而是双层：进程内 Map 持有本进程最新值（写后立即可读），
+   Go 是跨进程/跨重启的持久化真相；读取按「内存 → Go 文档 → 旧列」合并。
+   Node 服务端不再写本地 `runtime_state` 列，CLI 写入经服务端管理接口汇入同一漏斗。
+   剩余：旧列仍保留一版作为回滚快照，删除列需要 app-state.db 的一次性迁移与回滚计划。
 2. **模型目录不能按 Provider 直接搬**。Go 的 `account_models` 目前覆盖 8 个 Provider
    （codebuddy 家族、codex、agy、qoder、cline），缺 zcode / kiro / claude / opencode；
    根因是 Go 解不开这些 Provider 的凭据（zcode `enc:v1`、kiro 形态），模型发现无法在 Go 内完成。

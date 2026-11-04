@@ -20,7 +20,8 @@ const {
   pickDeclaredProviderRule,
   readDeclaredProviderIds,
   readPersonalModelId,
-  resolveProviderRule
+  resolveProviderRule,
+  zcodeHeadlessRunner
 } = require('../lib/cli/services/ai-cli/headless-runners/zcode-app-server-runner');
 const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
@@ -134,4 +135,51 @@ test('模型挑选：无启用规则时用 defaultModelSelection（providerId �
   assert.equal(readPersonalModelId(fs, personal, 'account:zai-individual-coding-plan'), '');
   // 配置缺失/损坏时不抛错，交给调用方的内置规则回落。
   assert.equal(readPersonalModelId(fs, path.join(root, 'missing.json'), 'account:zai-start-plan'), '');
+});
+
+// native 首跑对「没有 providerRules / identity」的账号是纯浪费：standalone 必然报
+// "Select a model before sending a message"，再换路。shouldPrefer 用这两个事实
+// 直接选 app-server（2026-11-04 账号 1/12 真机）。
+function seedNativeResolutionFixture(rules, credentials) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-prefer-'));
+  const v2 = path.join(root, '.zcode', 'v2');
+  fs.mkdirSync(v2, { recursive: true });
+  fs.writeFileSync(path.join(v2, 'provider_config.json'), JSON.stringify({
+    schemaVersion: 1,
+    config: { providerConfigRules: { providerRules: rules } }
+  }), 'utf8');
+  fs.writeFileSync(path.join(v2, 'credentials.json'), JSON.stringify(credentials), 'utf8');
+  return root;
+}
+
+function preferFor(root) {
+  return zcodeHeadlessRunner.shouldPrefer({
+    env: { ZCODE_DATA_BASE_DIR: root },
+    deps: {}
+  });
+}
+
+test('shouldPrefer：无 providerRules 且无 identity 键时直接走 app-server（账号 12 形态）', () => {
+  const root = seedNativeResolutionFixture([], {
+    'account-provider:account:bigmodel-individual-coding-plan:auth-source': 'oauth',
+    'oauth:bigmodel:access_token': 'tok'
+  });
+  assert.equal(preferFor(root), true);
+});
+
+test('shouldPrefer：有 providerRules 时保留 native 先行', () => {
+  const root = seedNativeResolutionFixture([{ providerId: 'account:zai-start-plan', config: {} }], {});
+  assert.equal(preferFor(root), false);
+});
+
+test('shouldPrefer：有 identity 键时保留 native 先行（账号 11 形态）', () => {
+  const root = seedNativeResolutionFixture([], {
+    'account-provider:account:zai-start-plan:identity': 'id'
+  });
+  assert.equal(preferFor(root), false);
+});
+
+test('shouldPrefer：投影文件缺失时不擅自改路（保持 native 先行）', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-prefer-missing-'));
+  assert.equal(preferFor(root), false);
 });

@@ -4,23 +4,8 @@ const { markAccountAppProcess } = require('../lib/runtime/account-app-process-ma
 
 markAccountAppProcess(process);
 
-const SQLITE_EXPERIMENTAL_WARNING_RE = /SQLite is an experimental feature/i;
-const originalEmitWarning = process.emitWarning.bind(process);
-
-process.emitWarning = function patchedEmitWarning(warning, ...args) {
-  const warningMessage = typeof warning === 'string'
-    ? warning
-    : String((warning && warning.message) || '');
-  const warningType = typeof warning === 'string'
-    ? String(args[0] || '')
-    : String((warning && warning.name) || args[0] || '');
-
-  if (warningType === 'ExperimentalWarning' && SQLITE_EXPERIMENTAL_WARNING_RE.test(warningMessage)) {
-    return;
-  }
-
-  return originalEmitWarning(warning, ...args);
-};
+// TUI 靠绝对行号重绘：任何写到 stderr 的杂音都会让整屏串行（见注释）。
+require('../lib/runtime/sqlite-warning-filter').installSqliteWarningFilter(process);
 
 // 终端集成（TAB 补全 / 拼写建议）走**轻量路径**：完整 CLI 组合根要装配所有命令（实测约 1.3s），
 // 而补全必须在一百毫秒内出结果。除这几个内部动词之外的一切照旧走 lib/cli/app。

@@ -262,6 +262,30 @@ cooldownMentioned / titleNotice / processAlive` 全为 true。
   跨站；启动时用**目标 provider** 的投影目录与站点环境，入口二进制不变。标题、
   用量缓存、运行态写入都跟随 `activeProvider`，不会把 CN 账号记到国际站。
 
+### 模型切换后的换号（2026-11-04）
+
+CodeBuddy 家族 CLI 在 TUI 内 `/model` 切模型后，CLI 会把新模型写回共享
+`settings.json`（非 session 作用域）。此前 `--model` 永远优先，导致：
+
+- 标题、429 的 (账号,模型) 冷却键仍用启动时的旧模型；
+- 换号把旧 `--model` 原样传给新账号，用户的模型选择被静默回退；
+- codebuddy ↔ codebuddycn 目录不同（`gpt-6.1-sol` 仅国际站、`step-5-preview`
+  仅国内站），跨站换号可能把目标站没有的模型带过去，第一次请求才报
+  `service info not found`。
+
+现在的口径（`lib/cli/services/pty/active-model.js`）：
+
+1. 用 tracker 观察 `settings.json.model` 的**变化**：变化过就压过启动参数，
+   没变化时 `--model` 仍然优先（不让配置里的旧值顶掉显式启动参数）。
+2. 任何换号都先把「当前模型」重新写进续接参数，避免旧 `--model` 回退模型。
+3. 家族换号（同站/跨站）按目标账号目录适配：当前模型支持 → 保留；否则 → 该站在本进程内
+   上次用过的模型；再否则 → 目标站默认档位（`default-model` / `primary-model` /
+   `balanced-model` / `fast-model`）。目录未知时 fail-open，不猜。
+4. 发生模型替换时打印一行原因，用户可在目标会话内继续 `/model`。
+
+回归守卫：`test/codebuddy-family-switch-model.test.js`（真实两站目录、四种
+`--model` 写法、`--` 透传区、目录未知/无替代项）。
+
 ### 换号体验（同次修订）
 
 | 问题 | 修法 |

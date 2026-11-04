@@ -169,10 +169,17 @@ acct_04a193ed26f71e4619c5（codebuddy）  → balanced-model       ← 目录第
 
 修复后的取值顺序（`lib/cli/services/pty/pty-runtime-run.js` 的 `resolveActiveModelLabel`）：
 
-1. `--model` / `-m`：本次会话的显式选择；
-2. 会话状态里 harness 自报的 `model`（`statusline` 事件带回的 `model.id`/`display_name`）；
-3. harness 自己的配置：`settings.json.model` / `config.toml`（`lib/harness/harness-current-model.js`）；
-4. 都读不到 → 标题少一段，**不写假模型名**。
+1. **运行中 `/model` 切出来的模型**（仅 CodeBuddy 家族）：CLI 会把新模型写回共享
+   `settings.json`；`lib/cli/services/pty/active-model.js` 的 tracker 只认「值发生变化」，
+   所以它压过启动参数，而启动参数和配置里的历史值谁新谁旧不靠猜；
+2. `--model` / `-m`：本次会话的显式选择；
+3. 会话状态里 harness 自报的 `model`（`statusline` 事件带回的 `model.id`/`display_name`）；
+4. harness 自己的配置：`settings.json.model` / `config.toml`（`lib/harness/harness-current-model.js`）；
+5. 都读不到 → 标题少一段，**不写假模型名**。
+
+家族换号（同站/跨站）还会按目标账号的模型目录适配：当前模型支持就
+原样带过去；否则优先恢复该站上次用过的模型，再退到目标站默认档位（`default-model` /
+`primary-model` / `balanced-model` / `fast-model`）。目录未知时 fail-open，不猜替代项。
 
 上表「aih 现在的读法」一列就是逐个 provider 落地的结果。
 

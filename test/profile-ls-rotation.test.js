@@ -47,7 +47,7 @@ test('轮换相位：同一时间片内稳定，跨片递增 1；不同账号相
   assert.ok(new Set(flips).size >= 3, `不同账号应错开翻页时刻，实际 ${new Set(flips).size} 种`);
 });
 
-function buildService(t, { isTTY, writes, checkStatus }) {
+function buildService(t, { isTTY, writes, checkStatus, runtimeState }) {
   const aiHomeDir = tempHome(t);
   const account = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codebuddy',
@@ -61,7 +61,7 @@ function buildService(t, { isTTY, writes, checkStatus }) {
     displayName: 'Rotation Demo',
     remainingPct: 50
   });
-  index.upsertRuntimeState(account.accountRef, 'codebuddy', {}, {
+  index.upsertRuntimeState(account.accountRef, 'codebuddy', runtimeState || {}, {
     status: 'up',
     configured: true,
     displayName: 'Rotation Demo'
@@ -116,6 +116,48 @@ test('TTY：一次只显示一条用量，按时间轮换', async (t) => {
   assert.match(all, /\[Remaining: A\]/, '应出现第一条候选');
   assert.match(all, /\[Remaining: B\]/, '应轮换到第二条候选');
   assert.ok(!all.includes('A / B'), 'TTY 全程都不该出现合并形态');
+});
+
+async function capturePipedRow(service) {
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    const listed = service.listProfiles('codebuddy');
+    assert.equal(listed.interactive, false);
+    await listed.done;
+  } finally {
+    console.log = originalLog;
+  }
+  return lines.find((line) => line.includes('Account ID:'));
+}
+
+test('认证失效不再重复：[认证失效] 徽章之外不再贴 [Auth: expired]', async (t) => {
+  const service = buildService(t, {
+    isTTY: false,
+    checkStatus: () => ({
+      configured: true,
+      accountName: 'Demo',
+      runtimeStatus: 'auth_invalid',
+      runtimeReason: 'zcode_access_token_expired'
+    })
+  });
+  const row = await capturePipedRow(service);
+  assert.match(row, /认证失效/);
+  assert.ok(!row.includes('Auth: expired'), `不应重复认证失效：${row}`);
+  assert.ok(!/\[Runtime:/.test(row), `不应再有运行态兜底标签：${row}`);
+});
+
+test('账号级限流只出现一次：[限流: 账号 至 …]，不再叠 [Runtime: rate limited]', async (t) => {
+  const until = Date.now() + 3600 * 1000;
+  const service = buildService(t, {
+    isTTY: false,
+    runtimeState: { rateLimitUntil: until },
+    checkStatus: () => ({ configured: true, accountName: 'Demo' })
+  });
+  const row = await capturePipedRow(service);
+  assert.match(row, /\[限流: 账号 至 /);
+  assert.ok(!/Runtime: rate limited/.test(row), `不应重复限流原因：${row}`);
 });
 
 test('TTY：身份按 WebUI 优先级（邮箱 → 手机 → 昵称）轮换', async (t) => {

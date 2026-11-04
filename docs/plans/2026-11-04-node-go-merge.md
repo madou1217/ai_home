@@ -162,6 +162,12 @@
 >    真机：5 个 kiro 账号全部从 0 个模型变为各 5 个（deepseek-3.2 / glm-5 /
 >    minimax-m2.1 / minimax-m2.5 / qwen3-coder-next），与 Node 自己的发现结果逐条一致；
 >    其中 4 个账号的 access token 已过期，由 Go 刷新并写回后完成发现。
+> 27. **OpenCode 模型目录两条腿 + OAuth 发现（2026-11-05）**：
+>    `internal/adapters/opencode/modelcatalog` 从只探 Go 订阅腿改为同时探
+>    `zen/go/v1/models`（`opencode-go/` 前缀）与 `zen/v1/models`（`opencode/` 前缀）并取并集，
+>    单腿失败保留另一腿结果；凭据在 api-key 之外接受 OAuth 的 `access` 令牌
+>    （**仅发现**，推理仍只走 api-key，边界留在 opencoderelay）。
+>    真机：OAuth opencode 账号从 0 个模型变为 68 个；另一个 `auth.codex` 占位账号仍按不支持处理。
 
 ## 0. 结论先行
 

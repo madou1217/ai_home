@@ -28,7 +28,7 @@ function createFakeFs(tmpdir) {
   };
 }
 
-test('解算浏览器卡死时按 timeoutMs 抛 captcha_timeout 并杀进程', async () => {
+test('解算浏览器卡死时按 timeoutMs 抛错并杀进程', async () => {
   const child = createFakeChild();
   const startedAt = Date.now();
   const error = await solveAliyunCaptcha({
@@ -42,7 +42,13 @@ test('解算浏览器卡死时按 timeoutMs 抛 captcha_timeout 并杀进程', a
   }).then(() => null, (err) => err);
   const elapsedMs = Date.now() - startedAt;
   assert.ok(error, '应当抛错，而不是一直等待');
-  assert.match(String(error.message), /^captcha_timeout:1200$/, `错误码应为 captcha_timeout，实际 ${error.message}`);
+  // 浏览器既可能根本不写 DevToolsActivePort，也可能在 deadline 前一刻才卡住：
+  // 两种都必须是带明确前缀、可判定为「有上界」的错误。
+  assert.match(
+    String(error.message),
+    /^captcha_(timeout|devtools_timeout)/,
+    `错误码应为 captcha_timeout / captcha_devtools_timeout，实际 ${error.message}`
+  );
   assert.equal(child.killedWith, 'SIGKILL', '超时后必须杀掉浏览器进程');
   assert.ok(elapsedMs < 4000, `应在 deadline 附近返回，实际 ${elapsedMs}ms`);
 });

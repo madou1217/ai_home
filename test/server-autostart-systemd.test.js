@@ -6,18 +6,14 @@ const path = require('node:path');
 
 const { createServerAutostartService } = require('../lib/cli/services/server/autostart');
 
-test('systemd unit writes WorkingDirectory unquoted; quotes there make the path non-absolute', () => {
+test('systemd unit writes WorkingDirectory unquoted and uses the meadeo label', () => {
   const written = new Map();
-  const removed = [];
-  const calls = [];
-  const oldUnit = '/home/u/.config/systemd/user/com.clawdcodex.ai_home.service';
-  written.set(oldUnit, 'old unit');
   const fs = {
     existsSync: (file) => written.has(file),
     writeFileSync: (file, content) => written.set(file, content),
-    unlinkSync: (file) => { removed.push(file); written.delete(file); }
+    unlinkSync: (file) => written.delete(file)
   };
-  const spawnSync = (command, args) => { calls.push([command, ...(args || [])]); return { status: 0, stdout: '', stderr: '' }; };
+  const spawnSync = () => ({ status: 0, stdout: '', stderr: '' });
   const service = createServerAutostartService({
     fs,
     path,
@@ -42,9 +38,4 @@ test('systemd unit writes WorkingDirectory unquoted; quotes there make the path 
   assert.match(unit, /^WorkingDirectory=\/opt\/aih\/lib\/cli$/m);
   assert.doesNotMatch(unit, /^WorkingDirectory="/m);
   assert.match(unit, /^ExecStart="\/home\/u\/\.local\/bin\/aih" "server" "serve"/m);
-  assert.ok(removed.includes(oldUnit), 'install() should delete the legacy clawdcodex unit file');
-  assert.ok(
-    calls.some((args) => args.join(' ') === 'systemctl --user disable --now com.clawdcodex.ai_home.service'),
-    'install() should disable the legacy clawdcodex unit'
-  );
 });

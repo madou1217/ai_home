@@ -56,10 +56,6 @@ test('Windows autostart writes the meadeo startup script when the folder is writ
   assert.ok(startup, 'new brand startup script should be written');
   assert.equal(status.type, 'windows-startup');
   assert.equal(status.label, 'com.meadeo.ai_home');
-  assert.ok(
-    calls.some((args) => args.join(' ') === 'schtasks /Delete /TN com.clawdcodex.ai_home /F'),
-    'legacy brand scheduled task should be removed'
-  );
   assert.equal(
     calls.some((args) => args.join(' ') === 'schtasks /Delete /TN com.meadeo.ai_home /F'),
     false,

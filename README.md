@@ -182,7 +182,6 @@ aih server config set --client-key <key>
   - macOS：`~/Library/LaunchAgents/com.meadeo.ai_home.plist`（launchd 直接运行 `aih`）
   - Linux：`~/.config/systemd/user/com.meadeo.ai_home.service`（用户级 systemd；无人登录时也要运行，需要启用 linger）
   - Windows：`com.meadeo.ai_home`（默认 Startup VBS；受控文件夹拒绝写 `.vbs` 时自动降级为 ONLOGON 计划任务，运行 `~/.ai_home/run/aih-server-serve.cmd`）
-  - 旧 label（`com.clawdcodex.ai_home`、`com.aih.server`、`aih-server`）在 `server autostart install` 时会自动停用并清理。
 
 ### 模型别名与调度
 

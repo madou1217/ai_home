@@ -125,7 +125,7 @@ npm run deploy:server -- --ssh user@host --ssh-port 22009 --target win32-x64 \
 | `--ssh-port <n>` | SSH 端口，默认 22；ssh / scp 会分别使用正确的端口旗标 |
 | `--artifact <path>` | 已构建的单文件包；不传则从 `--ref` 建临时 worktree 现场构建 |
 | `--install-dir <path>` | 启动器安装目录（默认 `~/.local/bin`，Windows 为 `%LOCALAPPDATA%\aih`） |
-| `--unit <name>` | systemd user unit，默认 `com.clawdcodex.ai_home`（与 `server autostart install` 一致） |
+| `--unit <name>` | systemd user unit，默认 `com.meadeo.ai_home`（与 `server autostart install` 一致） |
 | `--no-restart` | 只替换启动器，不重装/重启自启动单元 |
 | `--skip-go-build` | 本地构建时不带 Go Core（Node 接管全部路由） |
 | `--dry-run` | 只打印上传路径与安装脚本；配合 `--artifact` 时完全不连远端 |

@@ -179,9 +179,10 @@ aih server config set --client-key <key>
 - **代码更新**：源码有变化时，`aih server status` 会显示 `stale`，执行 `aih server restart` 生效。运行中的请求不会被自动打断。
 - **生命周期命令**：`start` / `restart` / `stop` / `status` 管理单实例，不接收端口参数，使用已保存的 Server 配置。
 - **自启位置**：
-  - macOS：`~/Library/LaunchAgents/com.clawdcodex.ai_home.plist`（launchd 直接运行 `aih`）
-  - Linux：`~/.config/systemd/user/com.clawdcodex.ai_home.service`（用户级 systemd；无人登录时也要运行，需要启用 linger）
-  - Windows：启动文件夹里的 `com.clawdcodex.ai_home.vbs`（远程 / 计划任务拉起用 `~/.ai_home/run/aih-server-start.cmd`）
+  - macOS：`~/Library/LaunchAgents/com.meadeo.ai_home.plist`（launchd 直接运行 `aih`）
+  - Linux：`~/.config/systemd/user/com.meadeo.ai_home.service`（用户级 systemd；无人登录时也要运行，需要启用 linger）
+  - Windows：`com.meadeo.ai_home`（默认 Startup VBS；受控文件夹拒绝写 `.vbs` 时自动降级为 ONLOGON 计划任务，运行 `~/.ai_home/run/aih-server-serve.cmd`）
+  - 旧 label（`com.clawdcodex.ai_home`、`com.aih.server`、`aih-server`）在 `server autostart install` 时会自动停用并清理。
 
 ### 模型别名与调度
 

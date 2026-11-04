@@ -29,7 +29,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULTS = Object.freeze({
   ref: 'origin/main',
   upload: 'rsync',
-  unit: 'com.clawdcodex.ai_home',
+  unit: 'com.meadeo.ai_home',
   port: 9527,
   sshPort: 22,
   readyTimeoutSec: 60
@@ -455,6 +455,7 @@ if ($Restart -eq '1') {
     }
   }
   & $Target server autostart install | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "[remote] server autostart install failed (exit $LASTEXITCODE)" }
   # SSH / 计划任务的子进程会随会话结束被杀；WMI 创建的进程挂在 WmiPrvSE 下，
   # 断开 SSH 后仍然存活，这是远程启动 Windows 服务的确定做法。
   $ServeCommand = '"' + $Target + '" server serve --host 127.0.0.1 --port ' + $Port

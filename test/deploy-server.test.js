@@ -65,6 +65,7 @@ test('binary install scripts replace the launcher and restart the service; no so
   assert.match(windows, /\$ProgressPreference = 'SilentlyContinue'/);
   assert.match(windows, /Join-Path \$env:USERPROFILE \$Artifact/);
   assert.match(windows, /Invoke-CimMethod -ClassName Win32_Process/);
+  assert.match(windows, /server autostart install failed/);
   assert.match(windows, /Get-NetTCPConnection -LocalPort \$Port/);
   assert.match(windows, /server autostart install/);
   assert.match(windows, /Invoke-WebRequest/);
@@ -74,7 +75,7 @@ test('binary install scripts replace the launcher and restart the service; no so
 
 test('systemd unit name defaults to the launcher autostart label', () => {
   const options = parseArgs(['--ssh', 'u@h']);
-  assert.equal(options.unit, 'com.clawdcodex.ai_home');
+  assert.equal(options.unit, 'com.meadeo.ai_home');
   const linux = buildLinuxInstallScript(options, '/tmp/aih-1.0.0-linux-x64.run', '1.0.0', parseTarget('linux-x64'));
   assert.match(linux, /UNIT="\$4"/);
 });

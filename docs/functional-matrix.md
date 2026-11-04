@@ -243,6 +243,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | CLI-017 | tmux 透明配置 | 自动 | status off、latest window size、escape-time 0；前台 create 不使用 `-A/-D` | 稳定 | `persistent-session.js` |
 | CLI-018 | 重启恢复 registry | 自动、Server 启动、`aih ss` | 只记录 addressing metadata；重启后 detached 重建并复用正常启动链和 provider-native resume | 稳定 | `persistent-session-registry.js`、`persistent-session-restore.js` |
 | CLI-019 | 持久化 gate/逃生开关 | 自动、`AIH_NO_PERSIST=1` | 仅 tmux 可用、TTY、非登录流、非嵌套时启用；否则 direct spawn | 稳定 | `persistent-session-runtime.js` |
+| CLI-020 | 空闲会话回收 | `aih ss`、`aih <provider> sessions`、`aih server` 每 30 分钟 | 空闲超过 1 天（`AIH_SESSION_IDLE_TTL_MINUTES`，默认 1440）回收；空闲会话最多 10 个（`AIH_SESSION_MAX_IDLE`），超出按最久未活动淘汰（LRU）。attached 永不回收；最近激活取输出与附着/交互时间的较大值，激活后重新计时 | 稳定 | `persistent-session-reaper.js`、`persistent-session-janitor.js` |
 | CLI-020 | Windows tmux-compatible 探测 | Windows | 优先 psmux，其次 MSYS2/Cygwin/Path tmux；无引擎时降级并显示安装提示 | 受限，待 Windows 真机验证 | `persistent-session.js` |
 | CLI-021 | Provider PTY runtime | 本地 CLI/Web legacy chat | 双向输入、resize、退出码、运行状态、环境隔离 | 稳定 | `lib/cli/services/pty/runtime.js`、`lib/runtime/pty-launch.js` |
 | CLI-022 | 底部 Shell drawer/terminal | CLI overlay、Web workbench | 启动独立 shell PTY；Web 支持多 tab、重启、resize、共享 mux SSE | 稳定 | `web/src/components/chat/ShellTerminalPanel.tsx` |

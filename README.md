@@ -297,6 +297,7 @@ aih claude fork              # 从最近一段分叉出新会话（原对话不�
 aih ss                       # 所有工具的会话总览（--list 只预览）
 ```
 
+- **空闲回收**：打开 `aih ss` / `aih <cli> sessions` 时，以及 `aih server` 每 30 分钟，会回收空闲会话。空闲超过 1 天（`AIH_SESSION_IDLE_TTL_MINUTES`，默认 1440）直接释放；空闲会话最多保留 10 个（`AIH_SESSION_MAX_IDLE`），超出按最久未活动优先淘汰。有客户端附着的会话永不回收；「最近激活」取输出与附着/交互时间的较大值，所以差一分钟到期时被打开会重新计时。`AIH_SESSION_REAP=0` 关闭回收。
 - **跨 provider 续聊**：`aih resume [关键词]` 不指定 CLI，按标题过滤后直接续；`--provider` / `--account` 收窄范围，`--limit` 控制条数，`--json` 给脚本用。
 - **选择器标记**：`●` 表示正被别处占用，`○` 表示空闲。
 - **长参数**：`-S`、`-R`、`-M` 是 aih 自己的开关，对应 `--session`、`--aih-resume`、`--aih-mirror`；它们不会吞掉原生的 `--resume` 等参数。

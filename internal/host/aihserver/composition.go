@@ -334,7 +334,7 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
 	}
-	management, err := accountapp.NewManagement(store, store, store, store, time.Now)
+	management, err := accountapp.NewManagement(store, store, store, store, store, time.Now)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}

@@ -126,14 +126,14 @@ func (handler *Handler) handleAccountUIState(
 
 func newAccountUIStateView(state accountcore.UIState) accountUIStateView {
 	return accountUIStateView{
-		AccountRef:  state.AccountRef().String(),
-		Status:      state.Status(),
-		DisplayName: state.DisplayName(),
-		AuthMode:    state.AuthMode(),
+		AccountRef:   state.AccountRef().String(),
+		Status:       state.Status(),
+		DisplayName:  state.DisplayName(),
+		AuthMode:     state.AuthMode(),
 		APIKeyMode:   state.APIKeyMode(),
 		Configured:   state.Configured(),
 		OauthPending: state.OauthPending(),
 		BaseURL:      state.BaseURL(),
-		UpdatedAt:   formatTime(state.UpdatedAt()),
+		UpdatedAt:    formatTime(state.UpdatedAt()),
 	}
 }

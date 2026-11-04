@@ -88,6 +88,8 @@ const (
 	memberResourceUIState
 	// memberResourceRuntimeBlock 是账号级失败阻塞（Node 观察、Go 存储）。
 	memberResourceRuntimeBlock
+	// memberResourceRuntimeState 是完整运行态文档（Node 事件转移后写入）。
+	memberResourceRuntimeState
 	// 导出类资源：具体格式由 export_formats.go 的注册表决定，
 	// 不再为每种格式加一个枚举值（加/删格式只改注册表）。
 	memberResourceExport
@@ -134,6 +136,8 @@ func parseMemberResource(path string) (memberResource, error) {
 		kind = memberResourceUIState
 	case len(parts) == 2 && parts[1] == "runtime-block":
 		kind = memberResourceRuntimeBlock
+	case len(parts) == 2 && parts[1] == "runtime-state":
+		kind = memberResourceRuntimeState
 	case len(parts) == 2 && parts[1] == "export":
 		// 裸 `export` 默认走第一个注册格式（与注册表顺序一致）。
 		if len(exportFormats) == 0 {

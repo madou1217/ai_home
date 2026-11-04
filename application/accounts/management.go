@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 // ErrInvalidManagementDependencies 表示账号管理用例没有完整的查询、写入或时钟依赖。
@@ -49,6 +49,29 @@ type AccountBlockStore interface {
 	) ([]runtimecore.AccountBlock, error)
 }
 
+// AccountStateStore 是账号级运行态文档的读写端口。
+//
+// Node 的 state-service 在每次事件转移后把完整 runtime_state 推给 Go；
+// Go 持久化并派生状态，后续读取方（账号页、CLI）以这里为准。
+type AccountStateStore interface {
+	ReplaceAccountState(
+		ctx context.Context,
+		state runtimecore.AccountState,
+		block *runtimecore.AccountBlock,
+	) error
+	DeleteAccountState(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) error
+	ListAccountStates(
+		ctx context.Context,
+	) ([]runtimecore.AccountState, error)
+	GetAccountState(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (runtimecore.AccountState, error)
+}
+
 // Clock 返回账号生命周期命令使用的业务时间。
 type Clock func() time.Time
 
@@ -60,6 +83,7 @@ type Management struct {
 	lifecycle AccountLifecycleStore
 	uiStates  AccountUIStateStore
 	blocks    AccountBlockStore
+	states    AccountStateStore
 	clock     Clock
 }
 
@@ -69,9 +93,11 @@ func NewManagement(
 	lifecycle AccountLifecycleStore,
 	uiStates AccountUIStateStore,
 	blocks AccountBlockStore,
+	states AccountStateStore,
 	clock Clock,
 ) (*Management, error) {
-	if overviews == nil || lifecycle == nil || uiStates == nil || blocks == nil || clock == nil {
+	if overviews == nil || lifecycle == nil || uiStates == nil ||
+		blocks == nil || states == nil || clock == nil {
 		return nil, ErrInvalidManagementDependencies
 	}
 	return &Management{
@@ -79,6 +105,7 @@ func NewManagement(
 		lifecycle: lifecycle,
 		uiStates:  uiStates,
 		blocks:    blocks,
+		states:    states,
 		clock:     clock,
 	}, nil
 }
@@ -200,4 +227,51 @@ func (management *Management) ListAccountBlocks(
 		return nil, ErrInvalidOverview
 	}
 	return management.blocks.ListAccountBlocks(ctx)
+}
+
+// ReplaceAccountState 覆盖账号运行态文档；派生状态由读取方按当前时间计算。
+func (management *Management) ReplaceAccountState(
+	ctx context.Context,
+	state runtimecore.AccountState,
+) error {
+	if management == nil || ctx == nil || !state.IsValid() {
+		return runtimecore.ErrInvalidAccountState
+	}
+	block, hasBlock := state.DeriveBlock()
+	if !hasBlock {
+		return management.states.ReplaceAccountState(ctx, state, nil)
+	}
+	return management.states.ReplaceAccountState(ctx, state, &block)
+}
+
+// DeleteAccountState 删除账号运行态文档（账号恢复 healthy 且无任何残留时）。
+func (management *Management) DeleteAccountState(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) error {
+	if management == nil || ctx == nil || !accountRef.IsValid() {
+		return runtimecore.ErrInvalidAccountState
+	}
+	return management.states.DeleteAccountState(ctx, accountRef)
+}
+
+// GetAccountState 读取单个账号的运行态文档。
+func (management *Management) GetAccountState(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (runtimecore.AccountState, error) {
+	if management == nil || ctx == nil || !accountRef.IsValid() {
+		return runtimecore.AccountState{}, runtimecore.ErrInvalidAccountState
+	}
+	return management.states.GetAccountState(ctx, accountRef)
+}
+
+// ListAccountStates 返回全部账号运行态文档。
+func (management *Management) ListAccountStates(
+	ctx context.Context,
+) ([]runtimecore.AccountState, error) {
+	if management == nil || ctx == nil {
+		return nil, runtimecore.ErrInvalidAccountState
+	}
+	return management.states.ListAccountStates(ctx)
 }

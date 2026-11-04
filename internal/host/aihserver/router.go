@@ -92,6 +92,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.AccountQuotaStateCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.AccountUIStateCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.AccountRuntimeBlockCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountRuntimeStateCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {

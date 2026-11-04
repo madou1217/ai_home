@@ -115,6 +115,24 @@
 >    建��账号编辑/状态接口的 `buildPersistedAccountState` 也改为 Go 优先
 >    （`readGoUIStates` + 1 秒缓存）。**但列还不能删**：`isPendingOauthStateRow` 仍用
 >    `stateRow.authMode` 判定 OAuth 待登录，删除前要把这段判定迁走。
+> 24. **账号运行态文档进 Go（2026-11-05）**：`aih.db` v16 新增 `account_runtime_states`
+>    （`account_ref` / `state_json` / `updated_at_ms`），保存 Node `account_state.runtime_state`
+>    的完整 JSON；`PUT/GET /v1/management/accounts/{ref}/runtime-state` 与批量
+>    `GET /v1/management/account-runtime-states` 上线。写入与派生在同一事务里：
+>    `core/accountruntime.AccountState.DeriveStatus` 复刻 Node `deriveAccountRuntimeStatus`
+>    的优先级（routingBlock → auth_invalid → rate_limited → overloaded → transient_network →
+>    service_unavailable → upstream_error → cooldownUntil → healthy），
+>    `DeriveBlock` 把 Node 失败词映射成 Go `FailureKind` 并物化 `account_runtime_blocks`，
+>    文档消失时同事务清掉阻塞。
+>    Node 侧：`state-service` 每次事件转移后经 `go-runtime-state-report` 推完整文档
+>    （`recordRuntimeFailure` / `clearRuntimeBlock` 的所有持久化分支），`go-account-sync`
+>    每轮按内容指纹补推；`go-runtime-block-report.js` 与其映射测试已删除，
+>    `syncRuntimeBlocks` 改为 `syncRuntimeStates`。账号页的 `go-runtime-overlay`
+>    新增 `runtimeState` 通道：Go 文档不早于本地 `stateInfo.updatedAt` 时直接采用 Go 的
+>    status/until/reason（Node 本地推导保留为 Go 不可用时的兜底）。
+>    验证：`go test` 三个包全绿；隔离实例（真实库副本）PUT→`rate_limited` + 60s 阻塞、
+>    批量读回、非法文档 400、`state:null` 同事务删除两张表；真机 v16 迁移成功
+>    （`user_version=16`，`account_runtime_states` 已建）。
 
 ## 0. 结论先行
 

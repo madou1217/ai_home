@@ -14,8 +14,8 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/gemini"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
@@ -78,6 +78,21 @@ type Management interface {
 	ListAccountBlocks(
 		ctx context.Context,
 	) ([]runtimecore.AccountBlock, error)
+	ReplaceAccountState(
+		ctx context.Context,
+		state runtimecore.AccountState,
+	) error
+	DeleteAccountState(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) error
+	GetAccountState(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (runtimecore.AccountState, error)
+	ListAccountStates(
+		ctx context.Context,
+	) ([]runtimecore.AccountState, error)
 }
 
 // ModelManagement 是账号模型子资源依赖的最小查询和命令端口。
@@ -344,6 +359,8 @@ func (handler *Handler) ServeHTTP(
 		handler.handleAccountUIStates(response, request)
 	case request.URL.Path == AccountRuntimeBlockCollectionPath:
 		handler.handleAccountRuntimeBlocks(response, request)
+	case request.URL.Path == AccountRuntimeStateCollectionPath:
+		handler.handleAccountRuntimeStates(response, request)
 	case request.URL.Path == CollectionPath+"/export",
 		request.URL.Path == CollectionPath+"/export/aih-accounts":
 		handler.handleAccountsExport(response, request)
@@ -414,6 +431,8 @@ func (handler *Handler) handleMember(
 		handler.handleAccountUIState(response, request, accountRef)
 	case memberResourceRuntimeBlock:
 		handler.handleAccountRuntimeBlock(response, request, accountRef)
+	case memberResourceRuntimeState:
+		handler.handleAccountRuntimeState(response, request, accountRef)
 	case memberResourceUsageRefresh:
 		handler.handleAccountUsageRefresh(response, request, accountRef)
 	case memberResourceExport:

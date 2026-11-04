@@ -53,6 +53,7 @@ import (
 	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
 	opencodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/opencode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	zcodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/zcode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -1473,6 +1474,11 @@ func newModelDiscovery(
 		if kiroErr != nil {
 			return nil, fmt.Errorf("创建 kiro 模型目录源失败: %w", kiroErr)
 		}
+		// zcode 的目录来自 plan 计费接口（余额 + 活动预览回退），需要客户端元数据头。
+		zcodeSource, zcodeErr := zcodemodelcatalog.New(client)
+		if zcodeErr != nil {
+			return nil, fmt.Errorf("创建 zcode 模型目录源失败: %w", zcodeErr)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
@@ -1481,6 +1487,7 @@ func newModelDiscovery(
 			grokSource,
 			opencodeSource,
 			kiroSource,
+			zcodeSource,
 		}
 		strategies = append(strategies, familySources...)
 	}

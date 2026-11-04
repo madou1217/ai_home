@@ -168,6 +168,18 @@
 >    单腿失败保留另一腿结果；凭据在 api-key 之外接受 OAuth 的 `access` 令牌
 >    （**仅发现**，推理仍只走 api-key，边界留在 opencoderelay）。
 >    真机：OAuth opencode 账号从 0 个模型变为 68 个；另一个 `auth.codex` 占位账号仍按不支持处理。
+> 28. **zcode 模型目录落 Go（2026-11-05）**：`internal/adapters/zcode/modelcatalog`
+>    用凭据里的 `credentials.zcodejwttoken` 调 plan 计费接口：先读
+>    `billing/balance` 的 `data.balances[].capabilities`（`model:*`），
+>    为空时回退 `billing/preview` 的 `plans[].entitlements[].capabilities`（「领臭鸡蛋」
+>    类账号的模型只在预览里）。客户端元数据头与 Node 同口径：`X-Device-Mid` 由账号
+>    身份种子派生稳定 UUID，另带 `X-ZCode-App-Version` / `X-Platform` /
+>    `X-Release-Channel` 等；只暴露 glm*/codegeex*/zcode* 裸命名空间（伙伴命名空间
+>    会被 bigmodel 判 400）。真机：8 个 zcode 账号中 5 个拿到目录
+>    （4 个 `glm-5.3-flash`、1 个 `glm-5.3`+`glm-5.3-flash`），其余 3 个上游余额与
+>    预览都为空，与直接探测结果一致。
+>    覆盖度更新：kiro 25、opencode 68、zcode 5 个账号有目录；claude 两个第三方代理
+>    不实现 `/v1/models`，仍是 0。
 
 ## 0. 结论先行
 

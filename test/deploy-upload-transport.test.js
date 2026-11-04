@@ -90,11 +90,12 @@ test('续传通道的重试次数多于不续传通道：前者每次都在前�
 test('上传完要对长度：--append 不校验内容，长度不符必须删掉重来而不是接着追加', () => {
   const source = fs.readFileSync(SCRIPT, 'utf8');
   assert.ok(source.includes('uploaded size mismatch'), '缺少长度校验');
-  assert.ok(source.includes('remoteArchiveSize'), '缺少远端长度探测');
+  assert.ok(source.includes('remoteArtifactSize'), '缺少远端长度探测');
 });
 
 test('源码守卫：main 里只经 uploadArchive 上传，不再直接 run scp', () => {
   const source = fs.readFileSync(SCRIPT, 'utf8');
-  assert.ok(source.includes('uploadArchive(options, archive, remoteArchive)'), '主流程应调用 uploadArchive');
+  assert.ok(source.includes('uploadArchive(options, resolved.artifact, remoteArtifact'), '主流程应调用 uploadArchive');
   assert.ok(!/run\('scp'/.test(source), '不应再出现硬编码的 run(\'scp\')');
+  assert.ok(!/npm install --/.test(source), '二进制部署不应在远端执行 npm install');
 });

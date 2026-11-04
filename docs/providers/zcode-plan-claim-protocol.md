@@ -494,3 +494,29 @@ starts_at / ends_at / entitlements`，**没有 type**；而营销投放通道（
 `status: nothing_claimable` + `reason: plan_kind_unavailable:<kind>` —— 这是**结论不是故障**，
 定时任务不该因为活动换代而报警。
 
+
+## 10. 2026-11-03 复核：上游开始校验验证码（F001 与交互式分支）
+
+§2.3 / §5 的「上游不校验」结论**已失效**：2026-11-03 真机上裸领（不带任何
+`X-Aliyun-Captcha-*` 头）稳定返回 `400 {"code":3007,"msg":"captcha verify failed"}`。
+WebUI 的兜底解算随之从「可选」变成必经步骤。
+
+真机观测到两类结果：
+
+| 解算方式 | 结果 |
+|---|---|
+| `startTracelessVerification()`（旧实现） | 部分账号稳定 `verifyResult:false`、`verifyCode:F001`（连续 3 次），换账号则成功 |
+| init + 可信点击 `#aih-captcha-button`（交互式） | 同一账号一次成功，`success` 直接返回 280 字符 `captchaVerifyParam` |
+
+桌面端从 3.17.x 起也在 hook 里把 `startTracelessVerification` 隐藏（`forceInteractive = true`），
+改走原生 button-click 分支 —— 与本机实测一致。**因此 aliyun-captcha 改为交互式优先，
+8 秒无结果再回退无痕验证**；点击必须用 CDP `Input.dispatchMouseEvent`（可信事件），
+且按钮要有真实尺寸/层级（零尺寸按钮会让点击落到页面别的元素上，SDK 收不到 click）。
+
+另：计划任务的 30 分钟 `task_timeout` 有两个独立成因，均已修复 ——
+
+1. 批量结果 `partial` 不是轮询认识的终态 → 永远等不到结束（`scheduled-task-events.js`）；
+2. 进程重启后状态文件里的 `running:true` 没人清 → `runNow` 永远 `task_running`
+   （`scheduled-task-service.js` 启动时归零）。
+
+

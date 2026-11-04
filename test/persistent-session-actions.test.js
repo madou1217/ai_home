@@ -716,3 +716,29 @@ test('claude：pane 标题不可读（只有 spinner）时才去会话库补标�
   assert.ok(opened > 0, '标题不可读时必须读会话库');
   assert.equal(out[0].agentTitle, '干净标题');
 });
+
+test('关闭会话时同步删掉注册表条目（否则下次 aih ss 会把它恢复回来）', (t) => {
+  const { closePersistentSession } = require('../lib/cli/services/ai-cli/persistent-session-list');
+  const registry = require('../lib/runtime/persistent-session-registry');
+  const { deriveSocket } = require('../lib/runtime/persistent-session');
+  const dir = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-close-registry-'));
+  t.after(() => nodeFs.rmSync(dir, { recursive: true, force: true }));
+  const accountRef = 'acct_0123456789abcdef0123';
+  const socket = deriveSocket('codex', accountRef);
+  registry.writeEntry(dir, {
+    provider: 'codex',
+    accountRef,
+    runtimeScope: accountRef,
+    socket,
+    session: 's-demo',
+    cwd: dir
+  });
+  assert.equal(registry.listEntries(dir).length, 1);
+
+  const result = closePersistentSession(
+    { cliName: 'codex', accountRef, targetSession: 's-demo' },
+    { fs: nodeFs, aiHomeDir: dir, spawnSync: () => ({ status: 0 }), resolveCliPath: () => 'tmux' }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(registry.listEntries(dir).length, 0);
+});

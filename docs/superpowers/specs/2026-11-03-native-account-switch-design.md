@@ -107,13 +107,32 @@ AIH_RUNTIME_USAGE=auto_switch=1[,auto_switch_remaining=100] aih agy 1   # 只影
    - 同一账号 30s 内只尝试一次（900ms 的用量节拍会重复看到同一个数字）。
 2. **429 且上游给了恢复时刻**（`observeRateLimitSignal`，从 PTY 输出尾部识别）
    - 认的写法：`usage exceeds frequency limit`、`API Error: 429`、`429 … rate limit`、
-     `RESOURCE_EXHAUSTED`、`AI credits balance is too low`、`quota exceeded`。
-   - **必须能解析出恢复时刻**才换：绝对时刻（`your usage will reset at 2026-10-31 14:57:00 UTC+8`）
-     或相对提示（`try again in 2 hours` / `retry after 300`）。没有时刻的 429 是短促限流，
+     `RESOURCE_EXHAUSTED`、`AI credits balance is too low`、`quota exceeded`，
+     以及 **codebuddycn 的中文文案**（2026-11-03 真机补）：
+     `您的使用量已超出频率限制，将在 2026-11-04 13:34:21 UTC+8 重置，您也可以切换其他模型继续使用。`
+     中文签名（`使用量已超出频率限制` / `额度已用尽` 等）与英文同权；前置过滤与签名名单
+     同源（`mightContainRateLimitSignal`），不再两处各写一份。
+   - **必须能解析出恢复时刻**才换：绝对时刻（`your usage will reset at 2026-10-31 14:57:00 UTC+8`、
+     中文语序 `将在 2026-11-04 13:34:21 UTC+8 重置`）或相对提示
+     （`try again in 2 hours` / `retry after 300`）。没有时刻的 429 是短促限流，
      换号只会白折腾，交给额度那条路。
+   - **中文折行**：中文 TUI 会在任意两个汉字之间折行，同一段文字按两个视图匹配——
+     空白压成单空格（英文签名）与去换行（`使\n用`→`使用`、`重\n置`→`重置`）。
+     签名命中时允许退化为「取带**数字偏移**的裸时刻」；裸 `UTC` 可能只是 `UTC+8`
+     的前缀，不能按 0 偏移提前解析。
+   - **分块到达**：尾部扫描**逐帧累积**（4KB 上限，空闲 10s 清空），不再按单个 chunk
+     过滤——签名和时刻可能被切在两段里，任何一段单独看都不含完整关键字。
+     2026-11-04 矩阵实测：按 chunk 过滤 35/59 漏判；逐帧累积 59/59，随机 5000 组
+     多段切分 0 漏判、0 错时刻。
+   - **半截时间戳不定案**：一帧以 `14:57` 结尾（秒还在下一帧）时视为未完成；以裸 `UTC`
+     结尾时也不能按 0 偏移先算（`UTC+8` 的 `+8` 可能还在下一帧）。判定层取最长完整匹配，
+     运行时命中后再等 **200ms 静默窗口**，用最新尾部重判才动手。英文 119 个切点
+     （换行 / 换行+缩进）全部正确，随机 3000 组 0 错时刻。
    - 恢复时刻离现在不足 60s 不换；超过 24h 的提示按 24h 封顶。
    - 命中后记一条 (账号, 模型) 冷却，换号选目标时跳过仍在冷却里的账号（两个账号互相 429 时
      不会来回弹）。
+   - 没有可切换目标时提示**原因**（`2 个限流中、1 个额度耗尽`，见
+     `lib/cli/services/pty/switch-rejection-format.js`），不再只写「没有可切换的账号」。
 
 两条触发最终都调用同一个 `switchToAccount`，因此续接、标题播报、等待文案与手动换号完全一致。
 
@@ -130,9 +149,22 @@ AIH_RUNTIME_USAGE=auto_switch=1[,auto_switch_remaining=100] aih agy 1   # 只影
 - `test/terminal-title-notice.test.js`：notice 覆盖轮播帧、优先于错误图标、TTL 到点退场、被 CLI 抢标题后重写。
 - `test/account-switch-shortcut.test.js`：Ctrl-Alt-A 的三种终端编码，普通输入不误触。
 - `test/auto-switch-policy.test.js`：429 信号（绝对/相对恢复时刻、无时刻不算、已过期不算、
-  换行拆分仍能识别、24h 封顶）、误判面（裸 rate limit / 用户口吻不算）、阈值换算
-  （缺省跟随 `threshold_pct`、显式 0、会话内覆盖）、冷却表（按 (账号,模型) 键控、过期自清、
-  模型未知按账号级、不回退）。
+  换行拆分仍能识别、**中文文案与中文语序**、中文折行拆散「重置」、24h 封顶）、误判面
+  （裸 rate limit / 用户口吻不算）、**中英文全切点折行矩阵**（每个字符位置各插一次
+  `\n` 与 `\n  `，断言信号不丢且 `resetAtMs` 精确）、**分块到达**（逐帧累积尾部；
+  `14:57` 半截帧判不了、`UTC|+8` 半截帧会差 8 小时，最终帧必须正确）、阈值换算
+  （缺省跟随 `threshold_pct`、显式 0、会话内覆盖）、冷却表（按 (账号,模型) 键控、
+  过期自清、模型未知按账号级、不回退）。
+- `test/retry-hints-reset-at.test.js`：恢复时刻解析（英文语序、中文语序、缺省/显式时区、
+  没有动词的日期不算、`allowBareTimestamp` 只在限流签名命中时启用、半截时间戳
+  `complete=false`、`UTC` 与 `+8` 分开时取最长匹配）。
+- `test/switch-rejection-format.test.js`：拒绝原因机器码 → 人话、未知状态保留、
+  换号失败时用同一套过滤条件（当前账号 + 冷却中）取原因、选号器抛错不崩。
+- `test/healthy-account-selector.test.js`：额度/运行态/冷却/模型目录/时间过期/未知额度。
+- `test/account-selection-healthy.test.js`：CLI 选号与 CodeBuddy 家族跨站取号。
+- `test/provider-family-pool.test.js`：可互换 provider 的白名单与目标格式。
+- `test/switch-draft.test.js`：草稿保留、取消键、括号粘贴、回放时机。
+- `test/switch-screen.test.js`：非 TTY 不写序列；TTY 的隐藏/同步/恢复只发生一次。
 
 真机 E2E（会用一个真实账号跑一次极短回合）：
 
@@ -185,8 +217,62 @@ node scripts/e2e-account-switch.js --provider codebuddy --from 5 --auto --remain
 
 ```bash
 node scripts/e2e-account-switch-limit.js --provider codebuddy --from 1 --yes
+# codebuddycn 的中文 429（`--lang zh` 打印真机文案：将在 <ts> UTC+8 重置）
+node scripts/e2e-account-switch-limit.js --provider codebuddycn --from 1 --lang zh --yes
 ```
 
 2026-11-03 结果：`{firstSwitch: true, firstTarget: "7", secondSwitch: true, targets: ["7","4"],
 coolingSkipped: true, cooldownMentioned: true, titleNotice: true, processAlive: true}` ——
 第二次换号跳过了仍在冷却里的 1 号，没有来回弹。
+
+2026-11-03 中文真机文案回归（修复前该文案**完全不被识别**，只能等下一次用户消息触发的
+额度路径）：
+
+| 场景 | 结果 |
+| --- | --- |
+| codebuddycn `--lang zh` 1→3→4 | `{firstSwitch: true, secondSwitch: true, coolingSkipped: true, titleNotice: true, processAlive: true}` |
+| codebuddy `--lang en` 1→2→3 | 同上，英文路径无回归 |
+
+2026-11-04 加入 200ms 静默窗口与半截时间戳保护后复跑：codebuddycn 1→3→4、
+codebuddy 1→2→3，两次都是 `firstSwitch / secondSwitch / coolingSkipped /
+cooldownMentioned / titleNotice / processAlive` 全为 true。
+
+## 健康取号（2026-11-03 二次修订）
+
+换号目标与「账号 id 写错时的启动回退」共用同一个封装：
+`lib/account/healthy-account-selector.js`。
+
+- **每次现算，不缓存结论。** 健康度按调用时刻重求：生命周期、运行态
+  （auth / 429 / overload / 网络 / 5xx / routingBlock）、账号冷却、
+  (账号, 模型) 冷却、额度（remainingPct / 后台阈值 / usage gate）、模型目录。
+  持久化里的 `until` 到期即恢复，加载池时的旧结论不参与最终判定。
+- **指定模型时是「优先」不是硬过滤。** 目录里明确有该模型的账号排最前，目录未知
+  的居中，明确不支持的排最后；`requireModel: true` 的调用方才硬排除
+  （server 池已有自己的强证据排除）。这保证「模型写错/别名不在目录里」时不会
+  把整池账号判空。
+- **排序**：健康 → 模型可服务 → OAuth 优先于 API Key → 剩余额度高 → 负载低 →
+  连续失败少 → 当前 provider 优先 → 稳定 id。未知额度取中性 50，不当作耗尽。
+- **入口复用**：
+  - `lib/cli/services/account/selection.js` 的 `getNextHealthyAccount`（CLI 原生换号、
+    启动回退）；
+  - `aih <provider> <不存在的 id>`：不再引导创建该 id，直接取一个健康账号启动；
+  - 自动换号 / 429 换号 / 手动 Ctrl-Alt-A / auth 失效提示。
+- **家族互通**：`codebuddy` 与 `codebuddycn` 共用同一个 npm 包与同一份会话存储
+  （`lib/account/provider-family-pool.js` 只登记这一对可互换 CLI）。换号目标可以
+  跨站；启动时用**目标 provider** 的投影目录与站点环境，入口二进制不变。标题、
+  用量缓存、运行态写入都跟随 `activeProvider`，不会把 CN 账号记到国际站。
+
+### 换号体验（同次修订）
+
+| 问题 | 修法 |
+| --- | --- |
+| 正在输入的内容丢失 | `switch-draft.js` 旁路记录最后一次回车之后的**原始输入**（退格/方向键/括号粘贴原样保留；Ctrl+C/D/单独 Esc 视为取消，不回放）。新 PTY 首帧后 250ms 写回。 |
+| 屏闪严重 | 旧 PTY 标记 `aihRetired`，其退出序列不再转发；换号期间隐藏光标 + 开启 DECSET 2026 同步输出，新 TUI 首帧到达后 60ms 结束；不再绘制启动转圈。 |
+| 换号后直接退出 | 旧 PTY 的 `onExit` 以 `aihRetired` 为准，与 `isSwapping` 窗口解耦——新进程起来后旧进程晚到的退出不会再触发 aih 退出。目标启动失败时先回退原账号，仍失败才以明确错误退出。 |
+
+**触发时机**：429 那一行进入 PTY 输出后，检测器先等 **200ms 静默窗口**（让折行 /
+分块补齐半截时间戳），随后立即换号（再 250ms 杀旧进程），不等下一次用户输入。
+已经提交、被上游拒绝的那条消息不会自动重发——它已经在会话里，续接后可以重试；
+草稿回放只负责「还没按回车的内容」。`Auto-switch: 1 -> 3` 与
+`resuming … session …` 两行是用户判断「换没换、接没接上」的依据。
+

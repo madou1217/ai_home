@@ -12,6 +12,7 @@
 // 依旧要求 --yes：它会动真实账号的投影目录与 tmux 会话。
 //
 // 用法：node scripts/e2e-account-switch-limit.js --provider codebuddy --from 1 --yes
+//      node scripts/e2e-account-switch-limit.js --provider codebuddycn --from 1 --lang zh --yes
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -28,6 +29,9 @@ function readArg(name, fallback) {
 
 const provider = readArg('provider', 'codebuddy');
 const fromId = readArg('from', '1');
+// 语言：en = `API Error: 429 … reset at <ts> UTC`；zh = codebuddycn 真机文案
+// `您的使用量已超出频率限制，将在 <ts> UTC+8 重置 …`（时间戳在动词前面）。
+const lang = readArg('lang', 'en').toLowerCase() === 'zh' ? 'zh' : 'en';
 const confirmed = process.argv.includes('--yes') || process.env.AIH_E2E_ACCOUNT_SWITCH === '1';
 
 if (!confirmed) {
@@ -58,14 +62,20 @@ for (const name of ['.codebuddy', '.codebuddy-cn', '.workbuddy', '.workbuddy-ai'
 }
 
 // 恢复时刻取 10 分钟后：超过「不足一分钟不值得换号」的门槛，又不会锁太久。
+const resetCommand = lang === 'zh'
+  ? "RESET=$(TZ=Asia/Shanghai date -v+10M '+%Y-%m-%d %H:%M:%S' 2>/dev/null || TZ=Asia/Shanghai date -d '+10 minutes' '+%Y-%m-%d %H:%M:%S')"
+  : "RESET=$(date -u -v+10M '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -u -d '+10 minutes' '+%Y-%m-%d %H:%M:%S')";
+const limitLine = lang === 'zh'
+  ? "您的使用量已超出频率限制，将在 %s UTC+8 重置，您也可以切换其他模型继续使用。"
+  : 'API Error: 429 usage exceeds frequency limit, please try again later. your usage will reset at %s UTC';
 fs.writeFileSync(fakeCli, [
   '#!/bin/sh',
-  "RESET=$(date -u -v+10M '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -u -d '+10 minutes' '+%Y-%m-%d %H:%M:%S')",
-  "printf 'API Error: 429 usage exceeds frequency limit, please try again later. your usage will reset at %s UTC\\r\\n' \"$RESET\"",
+  resetCommand,
+  `printf '${limitLine}\\r\\n' "$RESET"`,
   // 每 5 秒重放一次：真实 TUI 也会反复重绘错误帧；同时让「换号后新进程立刻打的
   // 那一句」即使落在 250ms 的换号窗口里被丢掉，也还有下一次机会。
   'while :; do',
-  "  printf 'API Error: 429 usage exceeds frequency limit, please try again later. your usage will reset at %s UTC\\r\\n' \"$RESET\"",
+  `  printf '${limitLine}\\r\\n' "$RESET"`,
   '  sleep 5',
   'done',
   ''
@@ -139,6 +149,7 @@ function cleanupPersistentSessions() {
     const targets = all.map((line) => (line.match(/-> (\d+)/) || [])[1]);
     const report = {
       provider,
+      lang,
       mode: '429-synthetic',
       from: first[1] || fromId,
       firstTarget: first[2] || '',

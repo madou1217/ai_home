@@ -1,0 +1,57 @@
+/* peer 消息收件箱：正文等宽、长文本可折叠；状态色沿用 antd Tag。 */
+.peer-inbox-page {
+  padding: 16px;
+}
+
+.peer-inbox-time,
+.peer-inbox-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary, #8c8c8c);
+}
+
+.peer-inbox-party {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.peer-inbox-body {
+  margin-bottom: 0 !important;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.peer-inbox-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.peer-inbox-detail-label {
+  display: inline-block;
+  min-width: 76px;
+  color: var(--color-text-secondary, #8c8c8c);
+}
+
+.peer-inbox-error {
+  color: var(--color-error, #ff4d4f);
+  font-family: var(--font-mono);
+}
+
+.peer-inbox-raw {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-fill-quaternary, rgba(0, 0, 0, 0.03));
+  border-radius: 2px;
+}

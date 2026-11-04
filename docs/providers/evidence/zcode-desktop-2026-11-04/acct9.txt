@@ -1,0 +1,91 @@
+### #9 (未登录) (acct_cf38e720d4aeb8a7934c)
+########## open acct9 ##########
+===== [before] 00:36:23 acct9 (acct_cf38e720d4aeb8a7934c) instance=ZCode-3e7eac91 =====
+-- server.log lines=    2989
+-- desktop processes:
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_cf38e720d4aeb8a7934c/.zcode/v2/logs/2026-11-04.log lines=     201
+-- credentials:
+   acct_cf38e720d4aeb8a7934c no-credentials
+-- windows:
+-- open request
+{
+  "ok": true,
+  "provider": "zcode",
+  "accountRef": "acct_cf38e720d4aeb8a7934c",
+  "kind": "desktop",
+  "status": "launched",
+  "pid": 26708,
+  "terminalId": "",
+  "sessionKey": "",
+  "launchMode": "",
+  "executable": "/Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/MacOS/ZCode",
+  "pids": []
+}
+-- process up after 0 s
+-- app log auth tail:
+   [2026-11-04 00:36:28.379] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.367] [pid:26724] [zcode-host] [rpc:call] oauth.restoreCachedSessionState OK (5.1ms)
+   [2026-11-04 00:36:28.413] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.412] [pid:26724] [zcode-host] [rpc:call] oauth.getActiveProvider OK (2.6ms)
+   [2026-11-04 00:36:28.498] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.497] [pid:26724] [provider-runtime][trace:Provider Registry 已就绪] {"configRevision":"[\"zcode-builtin:43:5d81f55ac756f61c289197ad6fa3fd2ff7ce2a0ca73ff1ec1ef823230193c4a3\",\"2915b997aefbd6c7fe8ccfc871
+   [2026-11-04 00:36:28.499] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.499] [pid:26724] [zcode-host] [rpc:call] credential.load OK (0.1ms)
+   [2026-11-04 00:36:28.499] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.499] [pid:26724] [zcode-host] [rpc:call] credential.load OK (0.2ms)
+   [2026-11-04 00:36:28.500] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.499] [pid:26724] [zcode-agent-service] provider/model 尚未就绪，ZCode agent 保持未启动 {"providerCount":0,"revision":"model-selection:1","workspaceKey":"/Users/model/.ai_home/run/auth-projections/zcode/acct_cf
+   [2026-11-04 00:36:28.500] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.499] [pid:26724] [zcode-agent-service] ZCode agent 等待 provider/model 就绪 {"durationMs":164,"message":"当前没有可用的模型供应商和模型，请先登录或配置 API Key。","workspaceKey":"/Users/model/.ai_home/run/auth-projections/zcode
+   [2026-11-04 00:36:28.500] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.500] [pid:26724] [zcode-host] ZCode agent warmup waiting for provider/model (local host init (1/1)) workspace=/Users/model/.ai_home/run/auth-projections/zcode/acct_cf38e720d4aeb8a7934c/.zcode/workspa
+   [2026-11-04 00:36:28.513] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.513] [pid:26724] [zcode-host] [rpc:call] oauth.getProviders OK (0.0ms)
+   [2026-11-04 00:36:28.514] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.513] [pid:26724] [zcode-host] [rpc:call] oauth.getProviders OK (0.0ms)
+   [2026-11-04 00:36:28.514] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.514] [pid:26724] [zcode-host] [rpc:call] oauth.getActiveProvider OK (0.2ms)
+   [2026-11-04 00:36:28.515] [info] [pid:26708] [main] [host-log] (local-1) [host] [2026-11-04 00:36:28.514] [pid:26724] [zcode-host] [rpc:call] oauth.getActiveProvider OK (0.2ms)
+-- screenshot(window 5861) /tmp/aih-desktop-acct9.png
+===== [after] 00:36:37 acct9 (acct_cf38e720d4aeb8a7934c) instance=ZCode-3e7eac91 =====
+-- server.log lines=    2991
+-- desktop processes:
+   26708 28850       00:12 ZCode-3e7eac91 
+   26716     1       00:12 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/Electron Framework.framework/Helpers/chrome_crashp
+   26719 26708       00:12 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper --typ
+   26720 26708       00:12 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper --typ
+   26723 26708       00:11 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper (Renderer).app/Contents/MacOS/ZCode H
+   27069 26708       00:09 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper --typ
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_cf38e720d4aeb8a7934c/.zcode/v2/logs/2026-11-04.log lines=     369
+-- credentials:
+   acct_cf38e720d4aeb8a7934c no-credentials
+-- windows:
+   5861	ZCode	360,76,1200,800	ZCode
+########## close acct9 ##########
+===== [before] 00:36:38 acct9 (acct_cf38e720d4aeb8a7934c) instance=ZCode-3e7eac91 =====
+-- server.log lines=    2991
+-- desktop processes:
+   26708 28850       00:13 ZCode-3e7eac91 
+   26716     1       00:13 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/Electron Framework.framework/Helpers/chrome_crashp
+   26719 26708       00:13 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper --typ
+   26720 26708       00:13 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper --typ
+   26723 26708       00:12 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper (Renderer).app/Contents/MacOS/ZCode H
+   27069 26708       00:10 /Users/model/.ai_home/run/zcode-shadow/462e2867ea3362ed/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper --typ
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_cf38e720d4aeb8a7934c/.zcode/v2/logs/2026-11-04.log lines=     369
+-- credentials:
+   acct_cf38e720d4aeb8a7934c no-credentials
+-- windows:
+   5861	ZCode	360,76,1200,800	ZCode
+-- close request
+{
+  "ok": true,
+  "provider": "zcode",
+  "accountRef": "acct_cf38e720d4aeb8a7934c",
+  "kind": "desktop",
+  "status": "closed",
+  "pid": null,
+  "terminalId": "",
+  "sessionKey": "",
+  "launchMode": "",
+  "executable": "",
+  "pids": [
+    26708
+  ]
+}
+-- still running after 20s, force kill
+===== [after] 00:37:02 acct9 (acct_cf38e720d4aeb8a7934c) instance=ZCode-3e7eac91 =====
+-- server.log lines=    3001
+-- desktop processes:
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_cf38e720d4aeb8a7934c/.zcode/v2/logs/2026-11-04.log lines=     390
+-- credentials:
+   acct_cf38e720d4aeb8a7934c no-credentials
+-- windows:

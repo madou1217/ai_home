@@ -1,0 +1,59 @@
+### #8 旅行者2115 (acct_9fe1dc026eaec225df33)
+########## open acct8 ##########
+===== [before] 00:33:09 acct8 (acct_9fe1dc026eaec225df33) instance=ZCode-bbf774fb =====
+-- server.log lines=    2923
+-- desktop processes:
+/tmp/aih-desktop-probe.sh: line 21: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log: No such file or directory
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log lines=0
+-- credentials:
+   {"acct":"acct_9fe1dc026eaec225df33","provider":"","uiKey":"","shape":"","tokenLen":0,"keys":0}
+-- windows:
+-- open request
+{
+  "ok": false,
+  "error": "account_auth_invalid",
+  "message": "account_auth_invalid"
+}
+-- process up after 0 s
+-- app log auth tail:
+-- screenshot(full) /tmp/aih-desktop-acct8.png
+===== [after] 00:33:21 acct8 (acct_9fe1dc026eaec225df33) instance=ZCode-bbf774fb =====
+-- server.log lines=    2926
+-- desktop processes:
+/tmp/aih-desktop-probe.sh: line 21: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log: No such file or directory
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log lines=0
+-- credentials:
+   {"acct":"acct_9fe1dc026eaec225df33","provider":"","uiKey":"","shape":"","tokenLen":0,"keys":0}
+-- windows:
+########## close acct8 ##########
+===== [before] 00:33:22 acct8 (acct_9fe1dc026eaec225df33) instance=ZCode-bbf774fb =====
+-- server.log lines=    2926
+-- desktop processes:
+/tmp/aih-desktop-probe.sh: line 21: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log: No such file or directory
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log lines=0
+-- credentials:
+   {"acct":"acct_9fe1dc026eaec225df33","provider":"","uiKey":"","shape":"","tokenLen":0,"keys":0}
+-- windows:
+-- close request
+{
+  "ok": true,
+  "provider": "zcode",
+  "accountRef": "acct_9fe1dc026eaec225df33",
+  "kind": "desktop",
+  "status": "not_running",
+  "pid": null,
+  "terminalId": "",
+  "sessionKey": "",
+  "launchMode": "",
+  "executable": "",
+  "pids": []
+}
+-- still running after 20s, force kill
+===== [after] 00:33:45 acct8 (acct_9fe1dc026eaec225df33) instance=ZCode-bbf774fb =====
+-- server.log lines=    2928
+-- desktop processes:
+/tmp/aih-desktop-probe.sh: line 21: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log: No such file or directory
+-- app log: /Users/model/.ai_home/run/auth-projections/zcode/acct_9fe1dc026eaec225df33/.zcode/v2/logs/2026-11-04.log lines=0
+-- credentials:
+   {"acct":"acct_9fe1dc026eaec225df33","provider":"","uiKey":"","shape":"","tokenLen":0,"keys":0}
+-- windows:

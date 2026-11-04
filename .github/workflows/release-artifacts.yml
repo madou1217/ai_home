@@ -27,6 +27,11 @@ jobs:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # workflow_dispatch 时按输入的 tag 检出，保证 release-check 能看到 tag ref。
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
@@ -55,7 +60,10 @@ jobs:
         run: npm run web:build
 
       - name: Build every platform artifact
-        run: node scripts/package/build-release.js --targets all --skip-web-build --with-go
+        run: node scripts/package/build-release.js --targets all --skip-web-build --with-go --require-tag
+
+      - name: Verify release tag and artifact checksums
+        run: node scripts/release-check.js --tag "${RELEASE_TAG}" --no-head --require-artifacts
 
       - name: Smoke the Linux artifact
         run: |

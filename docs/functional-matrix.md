@@ -202,6 +202,7 @@ CPA、sub2api 或正式 AIH 数据。
 | XFER-020 | 导入分阶段进度 | 旧 Node CLI/Web | hash、解压和批量处理进度实现保留，但 G1 单份导入不复用 | 历史内部能力 | `renderStageProgress`、`unified-import.js` |
 | XFER-021 | Codex bulk token/importer | 正式 Node 统一导入内部路径 | 代码与正式 Node 调用边界保持现状；Go Preview 不复用 | 正式 Node 内部能力 | `lib/cli/services/ai-cli/codex-bulk-import.js` |
 | XFER-022 | age/RSA/password/legacy crypto | 当前只有 service 与测试接线 | 加解密函数、age 安装提示和旧 envelope 解密存在，但普通 export 当前只生成 ZIP，未确认公开参数入口 | 未暴露/兼容 | `lib/cli/services/backup/crypto.js`、`test/backup.crypto.password-file.test.js` |
+| XFER-030 | 远程账号自动备份 | `aih backup add/list/run/status/restore` | 本机原生账号记录按内容哈希增量推到一台或多台 SSH 机器；账号生命周期事件自动触发，周期补备份；远端清单 + 单账号文件，恢复走同一导入器；配置不存密码，首次连接记录主机指纹 | 已实现（SSH） | `lib/account/backup/`、`lib/cli/commands/backup/router.js`、`docs/architecture/remote-account-backup.md` |
 | XFER-023 | Go 单账号 sub2api 导出 | `GET /v1/management/accounts/{account_ref}/export` | 只导出 Codex/Claude 当前账号凭据和可选公开资料；固定 `version: 1`，不含本地 ID、模型、usage 或运行态 | 已实现（重构路径） | `application/accounts/export.go`、`internal/adapters/accounts/sub2api/`、`internal/transport/http/accountsapi/handler.go` |
 | XFER-024 | Go 单账号 sub2api 导入 | `POST /v1/management/account-imports/sub2api` | 直接接收一个 `sub2api-data` 文档；只允许 Codex/Claude，严格归一已确认同义字段并拒绝冲突、未知版本、批量、代理或本地身份；账号原子提交后立即返回，首次模型目录异步维护 | 已实现（G1） | `internal/adapters/accounts/sub2api/decoder.go`、`internal/transport/http/accountsapi/sub2api_import.go`、`application/accounts/model_refresh_lifecycle.go` |
 | XFER-025 | Go 单账号 CLIProxyAPI auth 导出 | `GET /v1/management/accounts/{account_ref}/export/cliproxyapi` | 直接输出可放入 CPA `auth-dir` 的 Codex/Claude 单 OAuth JSON；API Key 属于 CPA 配置而非 auth 文件，Claude setup-token/Auth Token 也不伪装成该格式 | 已实现（重构路径） | `internal/adapters/accounts/cliproxyapi/`、`internal/transport/http/accountsapi/handler.go` |
@@ -242,6 +243,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | CLI-017 | tmux 透明配置 | 自动 | status off、latest window size、escape-time 0；前台 create 不使用 `-A/-D` | 稳定 | `persistent-session.js` |
 | CLI-018 | 重启恢复 registry | 自动、Server 启动、`aih ss` | 只记录 addressing metadata；重启后 detached 重建并复用正常启动链和 provider-native resume | 稳定 | `persistent-session-registry.js`、`persistent-session-restore.js` |
 | CLI-019 | 持久化 gate/逃生开关 | 自动、`AIH_NO_PERSIST=1` | 仅 tmux 可用、TTY、非登录流、非嵌套时启用；否则 direct spawn | 稳定 | `persistent-session-runtime.js` |
+| CLI-020 | 空闲会话回收 | `aih ss`、`aih <provider> sessions`、`aih server` 每 30 分钟 | 空闲超过 1 天（`AIH_SESSION_IDLE_TTL_MINUTES`，默认 1440）回收；空闲会话最多 10 个（`AIH_SESSION_MAX_IDLE`），超出按最久未活动淘汰（LRU）。attached 永不回收；最近激活取输出与附着/交互时间的较大值，激活后重新计时 | 稳定 | `persistent-session-reaper.js`、`persistent-session-janitor.js` |
 | CLI-020 | Windows tmux-compatible 探测 | Windows | 优先 psmux，其次 MSYS2/Cygwin/Path tmux；无引擎时降级并显示安装提示 | 受限，待 Windows 真机验证 | `persistent-session.js` |
 | CLI-021 | Provider PTY runtime | 本地 CLI/Web legacy chat | 双向输入、resize、退出码、运行状态、环境隔离 | 稳定 | `lib/cli/services/pty/runtime.js`、`lib/runtime/pty-launch.js` |
 | CLI-022 | 底部 Shell drawer/terminal | CLI overlay、Web workbench | 启动独立 shell PTY；Web 支持多 tab、重启、resize、共享 mux SSE | 稳定 | `web/src/components/chat/ShellTerminalPanel.tsx` |
@@ -324,6 +326,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-041 | Go 真实协议验收夹具 | 真实 TCP Server + 一次性 `aih.db` + 只读原生 OAuth artifact；严格限制上游端点、官方 Header、模型、固定 marker 和请求数，校验源文件哈希不变，不打印凭据/reasoning/signature | 已实现（开发验收） | `internal/host/aihserver/live_{codex,claude}_*_test.go` |
 | GW-042 | Claude Native SSE 代理控制 | Native Relay 保持上游 SSE 字节不重编码，同时强制 `no-cache`、禁用 Nginx 缓冲并设置 `nosniff`；官方 `ping` 与 reasoning 块透传 | 已实现（真实验收） | `internal/transport/http/claudenativerelay/handler.go`、`handler_test.go` |
 | GW-043 | Claude 非原生客户端身份投影 | 只有 Handler 已判定为非原生的官方 OAuth 请求才补官方 system/Header；统一使用本机已核对 Claude Code 2.1.229 身份，真实原生请求旁路投影并保持原始 Header | 已实现（真实验收） | `internal/transport/http/claudenativerelay/official_client_body.go`、`internal/adapters/claude/messages/client_identity.go` |
+| GW-044 | 会话级上游协议适配 | `--model-alias claude.<model>` 指向双协议厂商的 Anthropic 端点时，CLI 询问「自动适配 / 复制到 codex」；自动适配把本次会话按 OpenAI Chat 直发厂商 OpenAI 端点（不新增账号），复制则落成可复用的 codex API Key 账号 | 已实现（端到端夹具） | `model-alias-protocol-choice.js`、`upstream-protocol-variants.js`、`dual-format-endpoints.js`、`upstream-endpoints-attempt.js` |
 
 ### 6.3 Go Refactor .1 路由与 ownership 基线
 

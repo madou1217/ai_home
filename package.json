@@ -21,6 +21,8 @@
     "pkg:build": "node scripts/package/build-release.js",
     "pkg:host": "node scripts/package/build-release.js --targets host --skip-web-build",
     "pkg:smoke": "node scripts/package/smoke.js",
+    "release:tag": "node scripts/release-tag.js",
+    "release:check": "node scripts/release-check.js",
     "go-cli:preview": "node scripts/go-accounts-preview.js cli",
     "go-preview:help": "node scripts/go-accounts-preview.js help",
     "go-preview:server": "node scripts/go-accounts-preview.js server",

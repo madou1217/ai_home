@@ -79,6 +79,11 @@ npm link          # 把 aih 命令装到 PATH，指向这份源码
 ```bash
 aih ls                                # 所有工具的账号与状态
 aih codex ls                          # 某个工具的账号
+aih buddy ls                          # provider 位模糊匹配（子串，不用加引号）
+aih budd ls                           # 同上：budd → codebuddy / codebuddycn / workbuddy / workbuddycn
+aih '*buddy*' ls                      # 通配写法（zsh 会先展开 *，必须加引号）
+aih ls --scope codebuddy workbuddy    # 等价写法：显式列 provider（也可用逗号）
+aih provider ls                       # provider 目录：各自多少账号、有没有原生 CLI
 
 aih codex login                       # 新增账号并登录（浏览器）
 aih codex login --no-browser          # 无浏览器 / 设备码登录

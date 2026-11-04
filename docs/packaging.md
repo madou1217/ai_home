@@ -111,6 +111,10 @@ npm run deploy:server -- --ssh ubuntu@host \
 # Windows（OpenSSH 远程）
 npm run deploy:server -- --ssh Administrator@winhost --target win32-x64 \
   --artifact dist/release/aih-1.0.0-win32-x64.exe
+
+# 非 22 端口的 SSH（例如 22008 / 22009）
+npm run deploy:server -- --ssh user@host --ssh-port 22009 --target win32-x64 \
+  --artifact dist/release/aih-1.0.0-win32-x64.exe
 ```
 
 常用参数：
@@ -118,15 +122,20 @@ npm run deploy:server -- --ssh Administrator@winhost --target win32-x64 \
 | 参数 | 说明 |
 |---|---|
 | `--target <platform-arch>` | `linux-x64` / `linux-arm64` / `win32-x64` / `win32-arm64` / `darwin-x64` / `darwin-arm64`；默认探测远端 |
+| `--ssh-port <n>` | SSH 端口，默认 22；ssh / scp 会分别使用正确的端口旗标 |
 | `--artifact <path>` | 已构建的单文件包；不传则从 `--ref` 建临时 worktree 现场构建 |
 | `--install-dir <path>` | 启动器安装目录（默认 `~/.local/bin`，Windows 为 `%LOCALAPPDATA%\aih`） |
+| `--unit <name>` | systemd user unit，默认 `com.clawdcodex.ai_home`（与 `server autostart install` 一致） |
 | `--no-restart` | 只替换启动器，不重装/重启自启动单元 |
 | `--skip-go-build` | 本地构建时不带 Go Core（Node 接管全部路由） |
 | `--dry-run` | 只打印上传路径与安装脚本；配合 `--artifact` 时完全不连远端 |
 
 远端流程：停旧服务 → 替换启动器 → `aih server autostart install`（把 systemd /
-Windows Startup 指向新启动器）→ 重启 → 轮询 `/readyz` → 打印 `aih help` 首行。
-任何一步失败都会以非零退出，不会留下半更新的服务。
+Windows Startup 指向新启动器）→ 启动 → 轮询 `/readyz` → 打印启动器结果。
+启动前会清理占用服务端口的**非本启动器**旧进程（例如历史源码部署残留），避免
+`/readyz` 被旧服务假通过。Linux 用 systemd user unit 常驻；Windows 用 WMI 创建
+`aih.exe server serve`（挂在 WmiPrvSE 下，断开 SSH 后仍存活）。任何一步失败都会
+以非零退出，不会留下半更新的服务。
 
 ## 单文件启动器
 

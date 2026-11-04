@@ -101,7 +101,7 @@ function tempHome(t) {
   return dir;
 }
 
-test('aih <provider> ls 的每一行带上模型限流徽章', (t) => {
+test('aih <provider> ls 的每一行带上模型限流徽章', async (t) => {
   const aiHomeDir = tempHome(t);
   const account = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codebuddy',
@@ -142,7 +142,9 @@ test('aih <provider> ls 的每一行带上模型限流徽章', (t) => {
   const originalLog = console.log;
   console.log = (...args) => lines.push(args.join(' '));
   try {
-    assert.deepEqual(service.listProfiles('codebuddy'), { interactive: false });
+    const listed = service.listProfiles('codebuddy');
+    assert.equal(listed.interactive, false);
+    await listed.done;
   } finally {
     console.log = originalLog;
   }
@@ -152,7 +154,7 @@ test('aih <provider> ls 的每一行带上模型限流徽章', (t) => {
   assert.match(row, /\[模型限流: deepseek-v4\.1-flash 至 14:29\]/);
 });
 
-test('没有模型冷却的账号不会多出徽章', (t) => {
+test('没有模型冷却的账号不会多出徽章', async (t) => {
   const aiHomeDir = tempHome(t);
   const account = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codebuddy',
@@ -189,7 +191,7 @@ test('没有模型冷却的账号不会多出徽章', (t) => {
   const originalLog = console.log;
   console.log = (...args) => lines.push(args.join(' '));
   try {
-    service.listProfiles('codebuddy');
+    await service.listProfiles('codebuddy').done;
   } finally {
     console.log = originalLog;
   }

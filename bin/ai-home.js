@@ -71,6 +71,18 @@ function tryPersistentSessionFastPath() {
   }
 }
 
+// `aih ls` / `aih <provider> ls` 同样走轻量路径：列表第一帧只依赖账号索引，
+// 没必要为了它装配 server / webui / chat-runtime 全套（实测组合根 1.3s 起步）。
+// 任何异常都返回 false，交回完整 CLI 兜底。
+function tryLsFastPath() {
+  try {
+    const { tryRunLsFastPath } = require('../lib/cli/services/profile/ls-fastpath');
+    return tryRunLsFastPath({ processObj: process, argv: process.argv });
+  } catch (_error) {
+    return false;
+  }
+}
+
 const fastPathVerb = process.argv[2];
 if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
   const complete = require('../lib/cli/complete');
@@ -81,6 +93,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryPersistentSessionFastPath()) {
+} else if (!tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

@@ -138,6 +138,14 @@ test('bigmodel cli-flow：poll 返回 ready 后必须写出 credentials.json，�
   assert.match(String(job.logs || ''), /BigModel access_token \+ ZCode JWT/);
   // 落盘的必须是原始 access_token（没有被不存在的业务 token 覆盖）。
   assert.equal(decryptZcodeCredentialValue(credentials['oauth:bigmodel:access_token']), 'oauth-bigmodel-1');
+  // user_info 必须是桌面端 `loadUserProfile` 认识的形状（id/username/displayName），
+  // 不能是上游原样 `{user_id,name}`：bigmodel 没有旧格式兜底，原样写会让桌面端
+  // 判定「未登录」，打开就要求重新登录（2026-11-03 真机）。
+  const userInfo = JSON.parse(decryptZcodeCredentialValue(credentials['oauth:bigmodel:user_info']));
+  assert.equal(userInfo.id, 'user-1');
+  assert.equal(userInfo.username, '测试账号');
+  assert.equal(userInfo.displayName, '测试账号');
+  assert.equal(userInfo.rawProfile.zcodeProfileSchemaVersion, 2);
 
   assert.equal(job.status, 'failed');
   assert.match(String(job.error || ''), /test_stop_after_write/);

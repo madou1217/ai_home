@@ -38,7 +38,7 @@ function createHarness(initialLines, options = {}) {
     lineCount: state.lines.length,
     renderLine: (prefix, index) => `${prefix}${state.lines[index] || ''}`,
     readActivity: () => new Map(),
-    activityOfRow: () => null,
+    activityOfRow: options.activityOfRow || (() => null),
     processObj,
     keepAlive: false,
     refreshLines: options.refreshLines ? () => options.refreshLines(state) : null,
@@ -145,4 +145,31 @@ test('变化行有多米诺特效：字符被逐个推倒，最后落成新文�
   assert.ok(rowTexts.length >= 2, `变化行应该有过渡帧，实际 ${rowTexts.length}`);
   assert.equal(rowTexts[rowTexts.length - 1], `  - ${updated}`, '最后一帧必须是干净的新文本');
   assert.ok(rowTexts.some((text) => text !== `  - ${updated}`), '中间帧应处于特效状态');
+});
+
+test('转圈前缀一直在变也不打断多米诺：波浪必须扫到行尾', async (t) => {
+  // 复现 2026-11-04 真机 bug：账号在转圈时前缀每帧都变，旧实现把它当成"目标变了"，
+  // 每帧重新起波 → 特效卡在行首几个字符。
+  const harness = createHarness(['row-0', 'row-1-original-long-content-here', 'row-2'], {
+    activityOfRow: () => ({ accountRef: 'acct_x', inFlight: 1, rate: 6 })
+  });
+  t.after(() => harness.animator.stop());
+  await sleep(150);
+
+  const before = harness.writes.length;
+  const updated = 'row-1-updated-content-that-is-long-enough';
+  harness.state.lines[1] = updated;
+  await sleep(1200);
+
+  const delta = harness.writes.slice(before).join('');
+  const rowTexts = [...delta.matchAll(/\x1b\[2;1H([\s\S]*?)\x1b\[K/g)].map((match) => match[1]);
+  assert.ok(rowTexts.length >= 3, `应该有多个过渡帧，实际 ${rowTexts.length}`);
+
+  // 波浪位置（'/|' 出现的列）必须一路右移，而不是停在行首。
+  const positions = rowTexts
+    .map((text) => text.indexOf('/|'))
+    .filter((position) => position >= 0);
+  assert.ok(positions.length >= 3, `应该出现多帧波浪，实际 ${positions.length}`);
+  assert.ok(Math.max(...positions) - Math.min(...positions) >= 10, `波浪应扫过整行，实际位置 ${positions.join(',')}`);
+  assert.equal(rowTexts[rowTexts.length - 1].slice(4), updated, '最后一帧必须是干净的新文本');
 });

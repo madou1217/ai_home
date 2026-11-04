@@ -121,7 +121,7 @@ Provider 定义不能包含：
 
 品牌 SVG、真正的认证实现、上游协议实现和模型路由仍是独立能力，不应伪装成“加一条定义就自动实现”。没有专用品牌图标时 Client 使用统一回退图标。
 
-## 7. `clawdcodex` 复用结论
+## 7. 外部 Rust 参考仓复用结论
 
 可复用的是设计原则，不直接复制实现：
 
@@ -135,7 +135,7 @@ Provider 定义不能包含：
 - 其 `ProviderKind` 与 Rust accounts 领域直接耦合，不能作为 AI Home 的跨语言唯一真相。
 - 直接引入会让 Go 与 Rust 同时维护 Provider 核心，产生本次重构正要消除的双定义。
 
-因此本阶段只采用 Thin Provider、Capability Registry 和 Adapter 分离思想；`clawdcodex` 不成为编译依赖或代码来源。
+因此本阶段只采用 Thin Provider、Capability Registry 和 Adapter 分离思想；该参考仓不成为编译依赖或代码来源。
 
 ## 8. 使用的设计模式
 

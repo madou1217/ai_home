@@ -117,6 +117,8 @@ function tempHome(t) {
 
 test('aih <provider> ls 的每一行带上模型限流徽章', async (t) => {
   const aiHomeDir = tempHome(t);
+  // 用相对时间：写死 "今天 14:29" 会随时间流逝而过期，过了那个点用例必红（假失败）。
+  const until = Date.now() + 90 * 60 * 1000;
   const account = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codebuddy',
     identitySeed: 'demo:model-throttle'
@@ -127,8 +129,8 @@ test('aih <provider> ls 的每一行带上模型限流徽章', async (t) => {
     account.accountRef,
     'codebuddy',
     runtimeState(
-      { 'deepseek-v4.1-flash': at(14, 29) },
-      { 'deepseek-v4.1-flash': { kind: 'model_quota_exhausted', count: 1, expiresAt: at(14, 29) } }
+      { 'deepseek-v4.1-flash': until },
+      { 'deepseek-v4.1-flash': { kind: 'model_quota_exhausted', count: 1, expiresAt: until } }
     ),
     { status: 'up', configured: true, displayName: 'demo' }
   );
@@ -165,7 +167,11 @@ test('aih <provider> ls 的每一行带上模型限流徽章', async (t) => {
 
   const row = lines.find((line) => line.includes('Account ID:'));
   assert.ok(row, `account row missing: ${lines.join(' | ')}`);
-  assert.match(row, /\[限流: deepseek-v4\.1-flash 至 14:29\]/);
+  const expectedClock = formatRecoveryClock(until);
+  assert.ok(
+    row.includes(`[限流: deepseek-v4.1-flash 至 ${expectedClock}]`),
+    `徽章时间应等于恢复时刻 ${expectedClock}：${row}`
+  );
 });
 
 test('没有模型冷却的账号不会多出徽章', async (t) => {

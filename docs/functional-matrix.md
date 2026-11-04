@@ -18,7 +18,7 @@
 - OpenAI/Anthropic/Gemini 兼容网关、Management API、WebUI API。
 - React WebUI、响应式移动端视图和 PWA manifest。
 - tmux/PTY、会话读取、账号隔离、后台刷新、诊断及发布工具。
-- 同级 `../clawdcodex` 只做只读可复用性核对，不计入 AI Home 已交付功能。
+- 同级外部 Rust 参考仓只做只读可复用性核对（该参考仓已不在当前工作区），不计入 AI Home 已交付功能。
 
 以下内容不计为 AI Home 自研功能：
 
@@ -630,19 +630,19 @@ Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输
 把不变量加入相应 Go 领域/适配器合同和定向测试；不得复制 Node 的补丁形态、缓存 shape
 或双写路径。
 
-## 15. `clawdcodex` 可复用性初判
+## 15. 外部 Rust 参考仓可复用性初判（历史）
 
 ### 15.1 结论
 
 **可以拿来用，但只能作为 Rust 核心迁移的候选底座/代码来源，不能整体替换当前 AI Home。**
 
-`../clawdcodex` 是 Rust workspace，不是只有研究文档。当前 workspace 包含 `accounts`、`providers`、`config-sync`、`context`、`hooks`、`policy`、`sessions`、`runtime`、`terminal`、`storage`、`node`、`server`、`cli`，另有 TypeScript Web。它已具备账号维护、ai_home 导入、SQLite repository、Codex/Claude session discovery/sync/snapshot，以及 OpenAI Chat、OpenAI Responses、Claude Messages 的 API Key relay 最小闭环。
+该参考仓是 Rust workspace，不是只有研究文档。当前 workspace 包含 `accounts`、`providers`、`config-sync`、`context`、`hooks`、`policy`、`sessions`、`runtime`、`terminal`、`storage`、`node`、`server`、`cli`，另有 TypeScript Web。它已具备账号维护、ai_home 导入、SQLite repository、Codex/Claude session discovery/sync/snapshot，以及 OpenAI Chat、OpenAI Responses、Claude Messages 的 API Key relay 最小闭环。该参考仓原位于同级目录，现已不在当前工作区；本节保留为历史评估，不再作为当前迁移依据。
 
 但它当前明确没有覆盖 AI Home 的完整能力：10 provider 全链、tmux 精确会话语义、完整 Web 会话工作台、完整 usage/billing，以及多种 OAuth/协议 bridge。其验收文档还明确列出 OAuth bridge streaming、完整 typed event timeline、Gemini Native、native session usage、完整 billing 与多 agent 等未完成项。
 
 ### 15.2 候选复用矩阵
 
-| `clawdcodex` 模块/能力 | 可复用方向 | 复用判断 | 必须先补的契约 |
+| 参考仓模块/能力 | 可复用方向 | 复用判断 | 必须先补的契约 |
 |---|---|---|---|
 | `crates/storage` | SQLite repository、migration、transaction 边界 | 高候选 | 对齐 AI Home `accountRef`、现有数据导入/回滚与并发语义 |
 | `crates/accounts` | 账号 CRUD、软停用、API Key rotate、公开 DTO | 高候选 | 不能用其账号 ID 替换 `accountRef`；补齐 OAuth、default/mobile、额度与 provider metadata |
@@ -664,7 +664,7 @@ Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输
 5. Go 更适合独立 daemon、网络/并发运维组件；Rust 更适合本地核心、协议、存储与 runtime。具体归属要在下一阶段逐能力评估，不能先按语言偏好硬拆。
 6. 保留 WebUI 的部分统一为 TypeScript，但先消除 canonical/legacy 重复职责，再做语言迁移；机械 `.js → .ts` 不等于重构完成。
 
-证据：`../clawdcodex/Cargo.toml`、`../clawdcodex/docs/planning/current-acceptance.md`。核对时该仓库已有用户未提交文档修改，本次未修改、未清理这些内容。
+证据：原参考仓的 `Cargo.toml` 与 `docs/planning/current-acceptance.md`。核对时该仓库已有用户未提交文档修改，本次未修改、未清理这些内容。
 
 ## 16. 后续维护规则
 

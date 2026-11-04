@@ -43,12 +43,12 @@ type systemStatusResponse struct {
 	Ready   *bool  `json:"ready,omitempty"`
 	// Accounts 是按 Provider 分组的启用账号数量；与 Node 一样覆盖**全部**受支持 Provider，
 	// 没有账号的 Provider 记 0 而不是省略。
-	Accounts map[string]int `json:"accounts,omitempty"`
-	Capabilities          []string              `json:"capabilities,omitempty"`
-	InferenceCatalogReady bool                  `json:"inference_catalog_ready,omitempty"`
-	InferenceCatalogStale bool                  `json:"inference_catalog_stale,omitempty"`
-	ModelCount            int                   `json:"model_count,omitempty"`
-	RouteCount            int                   `json:"route_count,omitempty"`
+	Accounts              map[string]int `json:"accounts,omitempty"`
+	Capabilities          []string       `json:"capabilities,omitempty"`
+	InferenceCatalogReady bool           `json:"inference_catalog_ready,omitempty"`
+	InferenceCatalogStale bool           `json:"inference_catalog_stale,omitempty"`
+	ModelCount            int            `json:"model_count,omitempty"`
+	RouteCount            int            `json:"route_count,omitempty"`
 }
 
 // catalogReadiness 是 Host 探针读取的低敏原子目录状态。
@@ -83,9 +83,15 @@ func newRouter(handlers serverHandlers) http.Handler {
 		handleReadiness(response, request, handlers.catalogStatus)
 	})
 	mux.Handle(accountsapi.NativeImportPath, handlers.accounts)
+	mux.Handle(accountsapi.NativeImportPath+"/", handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
 	mux.Handle(accountsapi.AliasesPath+"/", handlers.accounts)
+	mux.Handle(accountsapi.AccountUsageCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountUsageDocumentCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountQuotaStateCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountUIStateCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountRuntimeBlockCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {

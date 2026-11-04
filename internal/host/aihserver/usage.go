@@ -99,8 +99,9 @@ func newUsageComposition(
 		return nil, err
 	}
 	service, err := usageapp.NewService(usageapp.Dependencies{
-		Catalog: dependencies.catalog,
-		Store:   dependencies.store,
+		Catalog:   dependencies.catalog,
+		Store:     dependencies.store,
+		Documents: dependencies.store,
 		Credentials: usageCredentialSnapshots{
 			resolver: dependencies.credentials,
 			store:    dependencies.store,

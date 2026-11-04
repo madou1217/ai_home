@@ -77,10 +77,17 @@ type memberResourceKind uint8
 const (
 	memberResourceAccount memberResourceKind = iota + 1
 	memberResourceCredential
+	memberResourceCredentialEdit
 	memberResourceModels
 	memberResourceModelRefresh
 	memberResourceUsage
 	memberResourceUsageRefresh
+	// memberResourceUsageDocument 是采集方原样写入的完整 Provider 快照文档。
+	memberResourceUsageDocument
+	// memberResourceUIState 是账号页展示状态（Node 写入、Go 存储）。
+	memberResourceUIState
+	// memberResourceRuntimeBlock 是账号级失败阻塞（Node 观察、Go 存储）。
+	memberResourceRuntimeBlock
 	// 导出类资源：具体格式由 export_formats.go 的注册表决定，
 	// 不再为每种格式加一个枚举值（加/删格式只改注册表）。
 	memberResourceExport
@@ -111,6 +118,8 @@ func parseMemberResource(path string) (memberResource, error) {
 	case len(parts) == 1:
 	case len(parts) == 2 && parts[1] == "credential":
 		kind = memberResourceCredential
+	case len(parts) == 3 && parts[1] == "credential" && parts[2] == "edit":
+		kind = memberResourceCredentialEdit
 	case len(parts) == 2 && parts[1] == "models":
 		kind = memberResourceModels
 	case len(parts) == 3 && parts[1] == "models" && parts[2] == "refresh":
@@ -119,6 +128,12 @@ func parseMemberResource(path string) (memberResource, error) {
 		kind = memberResourceUsage
 	case len(parts) == 3 && parts[1] == "usage" && parts[2] == "refresh":
 		kind = memberResourceUsageRefresh
+	case len(parts) == 2 && parts[1] == "usage-document":
+		kind = memberResourceUsageDocument
+	case len(parts) == 2 && parts[1] == "ui-state":
+		kind = memberResourceUIState
+	case len(parts) == 2 && parts[1] == "runtime-block":
+		kind = memberResourceRuntimeBlock
 	case len(parts) == 2 && parts[1] == "export":
 		// 裸 `export` 默认走第一个注册格式（与注册表顺序一致）。
 		if len(exportFormats) == 0 {

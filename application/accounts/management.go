@@ -6,6 +6,7 @@ import (
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
 
 // ErrInvalidManagementDependencies 表示账号管理用例没有完整的查询、写入或时钟依赖。
@@ -21,6 +22,33 @@ type AccountLifecycleStore interface {
 	) (accountcore.Account, error)
 }
 
+// AccountUIStateStore 是账号页展示状态的读写端口。
+type AccountUIStateStore interface {
+	ReplaceAccountUIState(
+		ctx context.Context,
+		state accountcore.UIState,
+	) error
+	ListAccountUIStates(
+		ctx context.Context,
+	) ([]accountcore.UIState, error)
+}
+
+// AccountBlockStore 是账号级失败阻塞的读写端口。
+type AccountBlockStore interface {
+	ReplaceAccountBlock(
+		ctx context.Context,
+		block runtimecore.AccountBlock,
+	) error
+	DeleteAccountBlock(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		kind runtimecore.FailureKind,
+	) error
+	ListAccountBlocks(
+		ctx context.Context,
+	) ([]runtimecore.AccountBlock, error)
+}
+
 // Clock 返回账号生命周期命令使用的业务时间。
 type Clock func() time.Time
 
@@ -30,6 +58,8 @@ type Clock func() time.Time
 type Management struct {
 	overviews AccountOverviewStore
 	lifecycle AccountLifecycleStore
+	uiStates  AccountUIStateStore
+	blocks    AccountBlockStore
 	clock     Clock
 }
 
@@ -37,14 +67,18 @@ type Management struct {
 func NewManagement(
 	overviews AccountOverviewStore,
 	lifecycle AccountLifecycleStore,
+	uiStates AccountUIStateStore,
+	blocks AccountBlockStore,
 	clock Clock,
 ) (*Management, error) {
-	if overviews == nil || lifecycle == nil || clock == nil {
+	if overviews == nil || lifecycle == nil || uiStates == nil || blocks == nil || clock == nil {
 		return nil, ErrInvalidManagementDependencies
 	}
 	return &Management{
 		overviews: overviews,
 		lifecycle: lifecycle,
+		uiStates:  uiStates,
+		blocks:    blocks,
 		clock:     clock,
 	}, nil
 }
@@ -112,4 +146,58 @@ func (management *Management) SetAccountEnabled(
 		enabled,
 		management.clock(),
 	)
+}
+
+// ReplaceAccountUIState 覆盖账号页展示状态。
+func (management *Management) ReplaceAccountUIState(
+	ctx context.Context,
+	state accountcore.UIState,
+) error {
+	if management == nil || ctx == nil || !state.IsValid() {
+		return accountcore.ErrInvalidUIState
+	}
+	return management.uiStates.ReplaceAccountUIState(ctx, state)
+}
+
+// ListAccountUIStates 返回全部账号展示状态。
+func (management *Management) ListAccountUIStates(
+	ctx context.Context,
+) ([]accountcore.UIState, error) {
+	if management == nil || ctx == nil {
+		return nil, ErrInvalidOverview
+	}
+	return management.uiStates.ListAccountUIStates(ctx)
+}
+
+// ReplaceAccountBlock 写入一条账号级失败阻塞。
+func (management *Management) ReplaceAccountBlock(
+	ctx context.Context,
+	block runtimecore.AccountBlock,
+) error {
+	if management == nil || ctx == nil || !block.IsValid() {
+		return runtimecore.ErrInvalidAccountBlock
+	}
+	return management.blocks.ReplaceAccountBlock(ctx, block)
+}
+
+// DeleteAccountBlock 删除账号指定失败类型的阻塞。
+func (management *Management) DeleteAccountBlock(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	kind runtimecore.FailureKind,
+) error {
+	if management == nil || ctx == nil || !accountRef.IsValid() {
+		return runtimecore.ErrInvalidAccountBlock
+	}
+	return management.blocks.DeleteAccountBlock(ctx, accountRef, kind)
+}
+
+// ListAccountBlocks 返回全部账号级阻塞。
+func (management *Management) ListAccountBlocks(
+	ctx context.Context,
+) ([]runtimecore.AccountBlock, error) {
+	if management == nil || ctx == nil {
+		return nil, ErrInvalidOverview
+	}
+	return management.blocks.ListAccountBlocks(ctx)
 }

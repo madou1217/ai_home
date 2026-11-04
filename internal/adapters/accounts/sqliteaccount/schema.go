@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 9
+	SchemaVersion = 14
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -54,3 +54,28 @@ var SchemaV8 string
 //
 //go:embed schema_v9.sql
 var SchemaV9 string
+
+// SchemaV10 增加账号 ref 与静态密钥指纹的删除墓碑。
+//
+//go:embed schema_v10.sql
+var SchemaV10 string
+
+// SchemaV11 保存采集方生产的完整 Provider 额度快照文档（WebUI 展示真相）。
+//
+//go:embed schema_v11.sql
+var SchemaV11 string
+
+// SchemaV12 在快照文档上物化账号级额度状态，供 Node 服务端与 CLI 共同读取。
+//
+//go:embed schema_v12.sql
+var SchemaV12 string
+
+// SchemaV13 保存账号页展示状态（status / displayName / authMode / baseUrl）。
+//
+//go:embed schema_v13.sql
+var SchemaV13 string
+
+// SchemaV14 保存账号级失败阻塞（auth_invalid / rate_limited / permission_denied）。
+//
+//go:embed schema_v14.sql
+var SchemaV14 string

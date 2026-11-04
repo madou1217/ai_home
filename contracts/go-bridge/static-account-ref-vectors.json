@@ -5,7 +5,7 @@
     {
       "base_url": "",
       "expect": {
-        "account_ref": "acct_79eee7f314ba7d3fdb11",
+        "account_ref": "acct_2f0e2aa21518a12b0b67",
         "base_url": "https://api.openai.com/v1",
         "valid": true
       },
@@ -16,7 +16,7 @@
     {
       "base_url": "https://api.openai.com/v1",
       "expect": {
-        "account_ref": "acct_79eee7f314ba7d3fdb11",
+        "account_ref": "acct_2f0e2aa21518a12b0b67",
         "base_url": "https://api.openai.com/v1",
         "valid": true
       },
@@ -27,7 +27,7 @@
     {
       "base_url": "https://API.OpenAI.com:443/v1/",
       "expect": {
-        "account_ref": "acct_79eee7f314ba7d3fdb11",
+        "account_ref": "acct_2f0e2aa21518a12b0b67",
         "base_url": "https://api.openai.com/v1",
         "valid": true
       },
@@ -38,7 +38,7 @@
     {
       "base_url": "http://127.0.0.1:8317/v1",
       "expect": {
-        "account_ref": "acct_39741091db14db6b2b42",
+        "account_ref": "acct_ed338bffe8f5dab2bd96",
         "base_url": "http://127.0.0.1:8317/v1",
         "valid": true
       },
@@ -49,7 +49,7 @@
     {
       "base_url": "http://localhost:80/",
       "expect": {
-        "account_ref": "acct_c3e63ab95b61f060a4aa",
+        "account_ref": "acct_5265d732e2c2fc4e385c",
         "base_url": "http://localhost",
         "valid": true
       },
@@ -60,7 +60,7 @@
     {
       "base_url": "  https://relay.example.com/openai//  ",
       "expect": {
-        "account_ref": "acct_b56f6881b28434afe22f",
+        "account_ref": "acct_71851c8ee051950e5e7c",
         "base_url": "https://relay.example.com/openai",
         "valid": true
       },
@@ -71,7 +71,7 @@
     {
       "base_url": "https://relay.example.com:8443/v1",
       "expect": {
-        "account_ref": "acct_6270a9c556b64cfa1265",
+        "account_ref": "acct_09319d29b64370dc12b3",
         "base_url": "https://relay.example.com:8443/v1",
         "valid": true
       },
@@ -82,7 +82,7 @@
     {
       "base_url": "https://[::1]:9000/v1",
       "expect": {
-        "account_ref": "acct_a0e67ccb6592e420e231",
+        "account_ref": "acct_c282bd98fb02f43ba5b4",
         "base_url": "https://[::1]:9000/v1",
         "valid": true
       },
@@ -129,7 +129,7 @@
     {
       "base_url": "",
       "expect": {
-        "account_ref": "acct_33e20d4215b2597b2cc0",
+        "account_ref": "acct_ecd4e83bac534254ee6d",
         "base_url": "https://api.anthropic.com",
         "valid": true
       },
@@ -140,7 +140,7 @@
     {
       "base_url": "https://api.anthropic.com/",
       "expect": {
-        "account_ref": "acct_33e20d4215b2597b2cc0",
+        "account_ref": "acct_ecd4e83bac534254ee6d",
         "base_url": "https://api.anthropic.com",
         "valid": true
       },
@@ -151,7 +151,7 @@
     {
       "base_url": "https://open.bigmodel.cn/api/anthropic",
       "expect": {
-        "account_ref": "acct_4bb31233c1413b499457",
+        "account_ref": "acct_1643271d4902383764b6",
         "base_url": "https://open.bigmodel.cn/api/anthropic",
         "valid": true
       },
@@ -171,7 +171,7 @@
     {
       "base_url": "",
       "expect": {
-        "account_ref": "acct_5bdd32ff466f56702f9a",
+        "account_ref": "acct_9b8edb8d50fefae2d4e5",
         "base_url": "https://api.anthropic.com",
         "valid": true
       },
@@ -182,7 +182,7 @@
     {
       "base_url": "https://gateway.example.com:443/anthropic/",
       "expect": {
-        "account_ref": "acct_e307026876efa9df4c29",
+        "account_ref": "acct_1703decd9c17bf58e129",
         "base_url": "https://gateway.example.com/anthropic",
         "valid": true
       },

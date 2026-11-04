@@ -84,7 +84,8 @@ func newCredentialBinding(identityNamespace string, rawSecret string, rawBaseURL
 		return staticCredential{}, err
 	}
 	digest := sha256.Sum256([]byte(secret))
-	fingerprint := hex.EncodeToString(digest[:])
+	// 与 Node 的静态账号身份公式逐字节一致：sha256 十六进制前 16 位。
+	fingerprint := hex.EncodeToString(digest[:])[:16]
 	return staticCredential{
 		secret:       newSecretValue(secret),
 		baseURL:      baseURL,

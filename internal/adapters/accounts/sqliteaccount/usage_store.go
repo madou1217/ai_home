@@ -264,6 +264,15 @@ func clearCredentialUsage(
 	); err != nil {
 		return fmt.Errorf("清理旧凭据额度快照失败: %w", err)
 	}
+	// 展示文档与归一化条目同源：旧凭据主体采到的 Provider 快照同样必须失效，
+	// 否则账号页会在重登后继续显示上一个身份的套餐/用量。
+	if _, err := connection.ExecContext(
+		ctx,
+		"DELETE FROM account_usage_snapshots WHERE account_ref = ?",
+		accountRef.String(),
+	); err != nil {
+		return fmt.Errorf("清理旧凭据额度文档失败: %w", err)
+	}
 	return nil
 }
 

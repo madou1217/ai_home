@@ -393,6 +393,17 @@ export interface AccountActivityJob {
   finishedAt?: number | null;
 }
 
+/**
+ * 账号的一个可展示身份项。
+ *
+ * `type` 只是身份类别（nickName / phone / email / name …），消费方按 `value` 展示；
+ * 新增类别不需要改结构，也不需要改轮播组件。
+ */
+export interface AccountDisplayName {
+  type: string;
+  value: string;
+}
+
 export interface Account {
   provider: Provider;
   accountRef: string;
@@ -404,6 +415,11 @@ export interface Account {
   authMode?: string;
   authType?: string;
   credentialType?: string;
+  /**
+   * 账号类型/登录方式（目前 kiro 下发 google / github / builder / idc / desktop）。
+   * 只用于标签展示，**不参与 displayNames/title**；展示名仍然优先邮箱。
+   */
+  loginType?: string;
   authPending?: boolean;
   authPendingStale?: boolean;
   authPendingAgeMs?: number;
@@ -422,7 +438,17 @@ export interface Account {
    * 账号列表靠它区分（见 lib/account/zcode-account-region.js）。
    */
   zcodeRegion?: string;
+  /**
+   * 主邮箱（既有 UI 直接消费的兼容字段）。可轮播的完整身份列表请用 displayNames，
+   * 不要再往 Account 上添加 phone / uin 之类的独立字段。
+   */
   email: string;
+  /**
+   * 可轮播的身份项：服务端按展示顺序组好，数组顺序就是轮播顺序。
+   * 新增身份类型（uin、员工号、企业名…）只需在服务端多 push 一项，不需要改这个结构。
+   * 旧服务端没有该字段时，轮播组件回退到 displayName / email。
+   */
+  displayNames?: AccountDisplayName[];
   baseUrl?: string;
   /**
    * 服务端判定：该账号是否是「第三方/自建上游（new-api / one-api / 自建反代）的 API Key 账号」。

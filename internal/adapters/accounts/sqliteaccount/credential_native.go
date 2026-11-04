@@ -2,9 +2,14 @@ package sqliteaccount
 
 import (
 	"encoding/json"
+	"os"
+	"os/user"
+	"runtime"
+
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
 	"reflect"
 )
 
@@ -39,7 +44,17 @@ func (codec nativeCredentialCodec) Decode(authKind, authMode string, payload []b
 	if err := decodeCredentialJSON(payload, &document); err != nil {
 		return nil, err
 	}
-	credential, err := nativeaccount.NewDecoder().DecodeNativeAuth(codec.providerID, document.NativeAuth)
+	nativeAuth := document.NativeAuth
+	if codec.providerID == "zcode" {
+		// 桌面端把凭据写成 enc:v1:<nonce>.<tag>.<ciphertext>；Go 在本机按同一公式
+		// 派生密钥解密后再交给 Provider decoder，跨机导入的密文解不开时按空值处理。
+		decrypted, err := decryptZcodeNativeAuth(nativeAuth)
+		if err != nil {
+			return nil, ErrInvalidCredential
+		}
+		nativeAuth = decrypted
+	}
+	credential, err := nativeaccount.NewDecoder().DecodeNativeAuth(codec.providerID, nativeAuth)
 	if err != nil || credential == nil || credential.ProviderID() != codec.providerID {
 		return nil, ErrInvalidCredential
 	}
@@ -61,4 +76,51 @@ func nativeStoredAuthKind(authKind string) string {
 
 type nativeCredentialV1 struct {
 	NativeAuth json.RawMessage `json:"native_auth_json"`
+}
+
+// decryptZcodeNativeAuth 递归解密 zcode 原生凭据里的 enc:v1 字符串。
+func decryptZcodeNativeAuth(raw json.RawMessage) (json.RawMessage, error) {
+	secret := currentZcodeSecret()
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	decrypted := decryptZcodeValue(value, secret)
+	return json.Marshal(decrypted)
+}
+
+func decryptZcodeValue(value any, secret string) any {
+	switch typed := value.(type) {
+	case string:
+		if !zcodecred.IsEncrypted(typed) {
+			return typed
+		}
+		plaintext, ok := zcodecred.DecryptValue(typed, secret)
+		if !ok {
+			return ""
+		}
+		return plaintext
+	case map[string]any:
+		for key, item := range typed {
+			typed[key] = decryptZcodeValue(item, secret)
+		}
+		return typed
+	case []any:
+		for index, item := range typed {
+			typed[index] = decryptZcodeValue(item, secret)
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+// currentZcodeSecret 复刻 Node 的密钥来源：环境变量优先，否则本机三元组派生。
+func currentZcodeSecret() string {
+	username := ""
+	if current, err := user.Current(); err == nil {
+		username = current.Username
+	}
+	homeDir, _ := os.UserHomeDir()
+	return zcodecred.ResolveSecret(os.Getenv(zcodecred.SecretEnv), runtime.GOOS, homeDir, username)
 }

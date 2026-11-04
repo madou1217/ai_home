@@ -141,6 +141,7 @@ import {
   getPlanTagColor,
   getPlanTagLabel,
   renderAccountDisplayBadge,
+  renderAccountLoginTypeTag,
   renderAccountRegionTag,
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
@@ -708,6 +709,7 @@ export default function Accounts() {
                 {getPlanTagLabel(record)}
               </Tag>
               {renderAccountRegionTag(record)}
+              {renderAccountLoginTypeTag(record)}
               {renderEgressBadge(record)}
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && desktopSupported ? (

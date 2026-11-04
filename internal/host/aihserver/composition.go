@@ -334,7 +334,7 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
 	}
-	management, err := accountapp.NewManagement(store, store, time.Now)
+	management, err := accountapp.NewManagement(store, store, store, store, time.Now)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
@@ -604,18 +604,19 @@ func newHandlers(
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 会话用量 Handler 失败: %w", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:         management,
-		Models:             recoveringModelManagement,
-		Usage:              usage.service,
-		Deletion:           deleter,
-		Defaults:           providerDefaults,
-		Selections:         launchAccountSelector,
-		CredentialRotation: modelRefreshingCredentialRotator,
-		Registrar:          scheduledRegistrar,
-		Importer:           accountImporter,
-		StaticCredentials:  credentialFactory,
-		NativeAccounts:     decoder,
-		Authorizer:         authorizer,
+		Management:          management,
+		Models:              recoveringModelManagement,
+		Usage:               usage.service,
+		Deletion:            deleter,
+		Defaults:            providerDefaults,
+		Selections:          launchAccountSelector,
+		CredentialRotation:  modelRefreshingCredentialRotator,
+		Registrar:           scheduledRegistrar,
+		Importer:            accountImporter,
+		StaticCredentials:   credentialFactory,
+		NativeAccounts:      decoder,
+		CredentialSnapshots: store,
+		Authorizer:          authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)

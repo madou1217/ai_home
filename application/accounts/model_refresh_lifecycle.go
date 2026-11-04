@@ -62,6 +62,11 @@ type StaticCredentialRotationService interface {
 		accountRef accountcore.AccountRef,
 		replacement Credential,
 	) (accountcore.Account, error)
+	Edit(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		edit StaticCredentialEdit,
+	) (accountcore.Account, error)
 }
 
 // RegistrationModelRefreshDecorator 在注册事务提交后异步维护首次模型快照。
@@ -186,6 +191,28 @@ func (decorator *StaticCredentialRotationModelRefreshDecorator) Rotate(
 		return accountcore.Account{}, ErrInvalidModelRefreshLifecycleRequest
 	}
 	account, err := decorator.next.Rotate(ctx, accountRef, replacement)
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	return rescheduleCommittedAccountModelRefresh(
+		ctx,
+		decorator.scheduler,
+		account,
+		accountRef,
+	)
+}
+
+// Edit 复用 Rotate 的提交后模型刷新链；凭据构造在下游用例完成。
+func (decorator *StaticCredentialRotationModelRefreshDecorator) Edit(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	edit StaticCredentialEdit,
+) (accountcore.Account, error) {
+	if decorator == nil || decorator.next == nil || decorator.scheduler == nil ||
+		ctx == nil || !accountRef.IsValid() {
+		return accountcore.Account{}, ErrInvalidModelRefreshLifecycleRequest
+	}
+	account, err := decorator.next.Edit(ctx, accountRef, edit)
 	if err != nil {
 		return accountcore.Account{}, err
 	}

@@ -17,6 +17,7 @@ import {
   getPlanTagColor,
   getPlanTagLabels,
   renderAccountDisplayBadge,
+  renderAccountLoginTypeTag,
   renderAccountRegionTag,
   renderAccountRoleIcons,
 } from '@/features/accounts/AccountBadges';
@@ -147,6 +148,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                     <Tag key={label} color={getPlanTagColor(acc)} className={styles.planTag}>{label}</Tag>
                   ))}
                   {renderAccountRegionTag(acc)}
+                  {renderAccountLoginTypeTag(acc)}
                   {renderExtraTags ? renderExtraTags(acc) : null}
                 </span>
               </div>

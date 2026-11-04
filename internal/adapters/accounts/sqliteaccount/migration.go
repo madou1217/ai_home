@@ -95,6 +95,43 @@ var expectedSchemaColumns = map[string][]string{
 		"reasoning_tokens",
 		"total_tokens",
 	},
+	"account_tombstones": {
+		"tombstone_key",
+		"account_ref",
+		"provider_id",
+		"kind",
+		"fingerprint",
+		"created_at_ms",
+	},
+	"account_usage_snapshots": {
+		"account_ref",
+		"provider_id",
+		"kind",
+		"source",
+		"captured_at_ms",
+		"payload_json",
+		"quota_status",
+		"quota_reason",
+		"remaining_bps",
+		"has_numeric_remaining",
+	},
+	"account_ui_state": {
+		"account_ref",
+		"status",
+		"display_name",
+		"auth_mode",
+		"api_key_mode",
+		"base_url",
+		"updated_at_ms",
+	},
+	"account_runtime_blocks": {
+		"account_ref",
+		"kind",
+		"scope",
+		"reason",
+		"observed_at_ms",
+		"until_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -154,6 +191,11 @@ var forwardMigrations = []string{
 	SchemaV7,
 	SchemaV8,
 	SchemaV9,
+	SchemaV10,
+	SchemaV11,
+	SchemaV12,
+	SchemaV13,
+	SchemaV14,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
@@ -289,6 +331,10 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 		"idx_account_credentials_credential_ref",
 		"idx_account_models_effective",
 		"idx_account_runtime_state_cooldown",
+		"idx_account_tombstones_ref",
+		"idx_account_tombstones_key",
+		"idx_account_usage_snapshots_provider",
+		"idx_account_runtime_blocks_until",
 	} {
 		var indexCount int
 		const indexSQL = `

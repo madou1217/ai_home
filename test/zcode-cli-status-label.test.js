@@ -35,10 +35,15 @@ test('旧 zai 扁平 user_info 与归一化形状得到一致展示名与稳定�
   }));
   const normalized = describeZcodeAccountStatus(nativeAuth({
     'oauth:active_provider': 'zai',
-    'oauth:zai:user_info': JSON.stringify({ id: 'u-1', username: '旅行者0378', displayName: '旅行者0378' })
+    'oauth:zai:user_info': JSON.stringify({
+      id: 'u-1', username: '旅行者0378', displayName: '旅行者0378',
+      rawProfile: { user_id: 'u-1', email: '13150310378@phone.local', name: '旅行者0378' }
+    })
   }));
-  assert.equal(legacy.accountName, '旅行者0378');
-  assert.equal(normalized.accountName, '旅行者0378');
+  // 手机号账号的 displayName 是「昵称 + 手机尾号」；两种形状都去掉尾号，
+  // 完整手机号留给 displayNames 的 phone 项展示。
+  assert.equal(legacy.accountName, '旅行者');
+  assert.equal(normalized.accountName, '旅行者');
   assert.equal(legacy.identityKey, 'u-1');
   assert.equal(normalized.identityKey, 'u-1');
 });

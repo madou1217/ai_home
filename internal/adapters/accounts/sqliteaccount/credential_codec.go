@@ -41,9 +41,10 @@ func newCredentialRegistry() credentialRegistry {
 		codexCredentialCodec{},
 		claudeCredentialCodec{},
 		agyCredentialCodec{},
+		geminiCredentialCodec{native: nativeCredentialCodec{providerID: "gemini"}},
 	}
 	for _, providerID := range []string{
-		"gemini", "opencode", "grok", "qoder", "qodercn", "kimi", "kiro", "zcode",
+		"opencode", "grok", "qoder", "qodercn", "kimi", "kiro", "zcode", "cline",
 		"codebuddy", "codebuddycn", "workbuddy", "workbuddycn",
 	} {
 		codecs = append(codecs, nativeCredentialCodec{providerID: providerID})

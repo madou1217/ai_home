@@ -313,6 +313,36 @@ const accountRoleTagStyle: React.CSSProperties = {
   marginInlineEnd: 0
 };
 
+// 账号类型/登录方式（目前 kiro）：只做标签，不参与标题。值由服务端 loginType 下发：
+// google / github / builder / idc / desktop。
+const ACCOUNT_LOGIN_TYPE_META: Record<string, { color: string; label: string; detail: string }> = {
+  google: { color: 'blue', label: 'Google', detail: 'Kiro 使用 Google 登录' },
+  github: { color: 'default', label: 'GitHub', detail: 'Kiro 使用 GitHub 登录' },
+  builder: { color: 'orange', label: 'Builder', detail: 'Kiro 使用 AWS Builder ID 登录' },
+  idc: { color: 'purple', label: 'IdC', detail: 'Kiro 使用 IAM Identity Center 登录' },
+  desktop: { color: 'cyan', label: 'Desktop', detail: 'Kiro Desktop 登录' }
+};
+
+export function getAccountLoginTypeMeta(record: Pick<Account, 'loginType'>) {
+  return ACCOUNT_LOGIN_TYPE_META[String(record.loginType || '').trim().toLowerCase()] || null;
+}
+
+export function getAccountLoginTypeLabel(record: Pick<Account, 'loginType'>) {
+  return getAccountLoginTypeMeta(record)?.label || '';
+}
+
+export function renderAccountLoginTypeTag(record: Pick<Account, 'loginType'>) {
+  const meta = getAccountLoginTypeMeta(record);
+  if (!meta) return null;
+  return (
+    <Tooltip title={meta.detail}>
+      <Tag color={meta.color} style={accountRoleTagStyle}>
+        {meta.label}
+      </Tag>
+    </Tooltip>
+  );
+}
+
 export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'region' | 'zcodeRegion'>) {
   const meta = getAccountRegionMeta(record);
   if (!meta) return null;

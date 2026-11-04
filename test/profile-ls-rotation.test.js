@@ -47,7 +47,7 @@ test('轮换相位：同一时间片内稳定，跨片递增 1；不同账号相
   assert.ok(new Set(flips).size >= 3, `不同账号应错开翻页时刻，实际 ${new Set(flips).size} 种`);
 });
 
-function buildService(t, { isTTY, writes }) {
+function buildService(t, { isTTY, writes, checkStatus }) {
   const aiHomeDir = tempHome(t);
   const account = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codebuddy',
@@ -90,7 +90,7 @@ function buildService(t, { isTTY, writes }) {
     listPageSize: 50,
     rotateIntervalMs: 120,
     getAccountStateIndex: () => index,
-    checkStatus: () => ({ configured: true, accountName: 'Rotation Demo' }),
+    checkStatus: checkStatus || (() => ({ configured: true, accountName: 'Rotation Demo' })),
     formatUsageLabel: () => '\x1b[36m[Remaining: A / B]\x1b[0m',
     formatUsageLabelVariants: () => [
       '\x1b[36m[Remaining: A]\x1b[0m',
@@ -116,6 +116,34 @@ test('TTY：一次只显示一条用量，按时间轮换', async (t) => {
   assert.match(all, /\[Remaining: A\]/, '应出现第一条候选');
   assert.match(all, /\[Remaining: B\]/, '应轮换到第二条候选');
   assert.ok(!all.includes('A / B'), 'TTY 全程都不该出现合并形态');
+});
+
+test('TTY：身份按 WebUI 优先级（邮箱 → 手机 → 昵称）轮换', async (t) => {
+  const writes = [];
+  const service = buildService(t, {
+    isTTY: true,
+    writes,
+    checkStatus: () => ({
+      configured: true,
+      accountName: '昵称甲',
+      nickname: '昵称甲',
+      phone: '13800000000',
+      email: 'a@b.com'
+    })
+  });
+  service.listProfiles('codebuddy');
+  await sleep(800);
+
+  const plain = writes.join('').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  const seq = [];
+  for (const match of plain.matchAll(/\(([^()]*)\)/g)) {
+    const value = match[1];
+    if (value.includes('/|') || value.includes('\ / |')) continue;
+    if (!seq.length || seq[seq.length - 1] !== value) seq.push(value);
+  }
+  assert.ok(seq.includes('a@b.com'), `缺少邮箱：${seq.join(',')}`);
+  assert.ok(seq.includes('13800000000'), `缺少手机号：${seq.join(',')}`);
+  assert.ok(seq.includes('昵称甲'), `缺少昵称：${seq.join(',')}`);
 });
 
 test('管道输出：保持全量一行，不轮换', async (t) => {

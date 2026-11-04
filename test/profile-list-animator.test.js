@@ -11,7 +11,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { runAnimatedList } = require('../lib/cli/services/profile/account-list-animator');
+const { runAnimatedList, toScreenLine } = require('../lib/cli/services/profile/account-list-animator');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -172,4 +172,17 @@ test('转圈前缀一直在变也不打断多米诺：波浪必须扫到行尾',
   assert.ok(positions.length >= 3, `应该出现多帧波浪，实际 ${positions.length}`);
   assert.ok(Math.max(...positions) - Math.min(...positions) >= 10, `波浪应扫过整行，实际位置 ${positions.join(',')}`);
   assert.equal(rowTexts[rowTexts.length - 1].slice(4), updated, '最后一帧必须是干净的新文本');
+});
+
+test('每行必须单行化并截断：内嵌换行 / 超宽都会让绝对定位串行', () => {
+  assert.equal(toScreenLine('a\nb', 80), 'a b');
+  assert.equal(toScreenLine('a\r\nb', 80), 'a b');
+
+  const long = 'x'.repeat(100);
+  const cut = toScreenLine(long, 10).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  assert.equal(cut.length, 10, '超宽行必须截到终端宽度内');
+
+  const colored = '\x1b[36m' + 'y'.repeat(50) + '\x1b[0m';
+  const coloredCut = toScreenLine(colored, 8).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  assert.equal(coloredCut.length, 8, 'ANSI 不占宽度');
 });

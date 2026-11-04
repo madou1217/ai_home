@@ -60,6 +60,11 @@ test('Windows autostart writes the meadeo startup script when the folder is writ
     calls.some((args) => args.join(' ') === 'schtasks /Delete /TN com.clawdcodex.ai_home /F'),
     'legacy brand scheduled task should be removed'
   );
+  assert.equal(
+    calls.some((args) => args.join(' ') === 'schtasks /Delete /TN com.meadeo.ai_home /F'),
+    false,
+    'install must not delete the current task that may be hosting the running server'
+  );
 });
 
 test('Windows autostart falls back to an ONLOGON scheduled task when .vbs is denied', () => {

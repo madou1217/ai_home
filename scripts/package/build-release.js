@@ -50,6 +50,7 @@ function usage() {
   --skip-sfx              不生成单文件自解压产物
   --skip-archives         不生成 tar.gz / zip
   --keep-work             保留中间目录（便于排错）
+  --require-tag           只允许在干净的 v<version> tag 上构建（CI 用）
   --list-targets          列出支持的目标
   -h, --help              显示帮助`);
 }
@@ -66,6 +67,7 @@ function parseArgs(argv) {
     skipSfx: false,
     skipArchives: false,
     keepWork: false,
+    requireTag: false,
     nodeRuntimeDir: '',
     npmRegistry: process.env.AIH_PKG_NPM_REGISTRY || '',
     listTargets: false,
@@ -91,6 +93,7 @@ function parseArgs(argv) {
     else if (arg === '--skip-sfx') options.skipSfx = true;
     else if (arg === '--skip-archives') options.skipArchives = true;
     else if (arg === '--keep-work') options.keepWork = true;
+    else if (arg === '--require-tag') options.requireTag = true;
     else if (arg === '--list-targets') options.listTargets = true;
     else if (arg === '-h' || arg === '--help') options.help = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -221,6 +224,20 @@ async function buildTarget(options) {
   return { target, baseName, bundleRoot, artifacts, buildInfo: finalized.buildInfo };
 }
 
+function assertTaggedRelease(repositoryRoot, version) {
+  const git = (args) => {
+    const result = spawnSync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8' });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed`);
+    return String(result.stdout || '').trim();
+  };
+  const status = git(['status', '--porcelain']);
+  if (status) throw new Error('--require-tag needs a clean working tree');
+  const described = spawnSync('git', ['-C', repositoryRoot, 'describe', '--tags', '--exact-match', 'HEAD'], { encoding: 'utf8' });
+  const tag = described.status === 0 ? String(described.stdout || '').trim() : '';
+  if (tag !== `v${version}`) throw new Error(`--require-tag: HEAD is ${tag || 'untagged'}, expected v${version}`);
+}
+
 async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -235,6 +252,7 @@ async function main(argv = process.argv.slice(2)) {
   const repositoryRoot = REPOSITORY_ROOT;
   const version = String(options.version || readVersion(repositoryRoot)).trim();
   if (!version) throw new Error('version is required');
+  if (options.requireTag) assertTaggedRelease(repositoryRoot, version);
   const targets = parseTargets(options.targets);
   if (options.nodeRuntimeDir && targets.length > 1) {
     throw new Error('--node-runtime-dir can only be used with a single target');
@@ -308,6 +326,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  assertTaggedRelease,
   buildTarget,
   ensureWebDist,
   main,

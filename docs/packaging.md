@@ -94,6 +94,40 @@ Expand-Archive aih-1.0.0-win32-x64.zip -DestinationPath .
 
 安装包只包含程序；账号、配置、会话投影仍在 `~/.ai_home`（Windows 为 `%USERPROFILE%\.ai_home`）。删除或升级程序不会动账号数据；彻底清理需自行删除该目录。
 
+## 部署到远端服务器（二进制部署）
+
+`scripts/deploy-server.js` 只部署**单文件发行包**，不再上传源码、不再在远端执行
+`npm install`。远端只保留一个启动器（Linux `~/.local/bin/aih`，Windows
+`%LOCALAPPDATA%\aih\aih.exe`），数据目录仍是 `~/.ai_home`。
+
+```bash
+# Linux / AWS：自动探测远端平台，从 origin/main 的干净 worktree 构建并部署
+npm run deploy:server -- --ssh ubuntu@host
+
+# 直接使用已构建好的发行包（CI 产物 / 本机 dist/release）
+npm run deploy:server -- --ssh ubuntu@host \
+  --artifact dist/release/aih-1.0.0-linux-x64.run
+
+# Windows（OpenSSH 远程）
+npm run deploy:server -- --ssh Administrator@winhost --target win32-x64 \
+  --artifact dist/release/aih-1.0.0-win32-x64.exe
+```
+
+常用参数：
+
+| 参数 | 说明 |
+|---|---|
+| `--target <platform-arch>` | `linux-x64` / `linux-arm64` / `win32-x64` / `win32-arm64` / `darwin-x64` / `darwin-arm64`；默认探测远端 |
+| `--artifact <path>` | 已构建的单文件包；不传则从 `--ref` 建临时 worktree 现场构建 |
+| `--install-dir <path>` | 启动器安装目录（默认 `~/.local/bin`，Windows 为 `%LOCALAPPDATA%\aih`） |
+| `--no-restart` | 只替换启动器，不重装/重启自启动单元 |
+| `--skip-go-build` | 本地构建时不带 Go Core（Node 接管全部路由） |
+| `--dry-run` | 只打印上传路径与安装脚本；配合 `--artifact` 时完全不连远端 |
+
+远端流程：停旧服务 → 替换启动器 → `aih server autostart install`（把 systemd /
+Windows Startup 指向新启动器）→ 重启 → 轮询 `/readyz` → 打印 `aih help` 首行。
+任何一步失败都会以非零退出，不会留下半更新的服务。
+
 ## 单文件启动器
 
 - 解包目录：`${AIH_PKG_DIR:-${AIH_HOME_DIR:-~/.ai_home}/pkg}/<version>-<target>-<sha8>/`
@@ -143,6 +177,9 @@ Wine 不实现 ConPTY，所以终端功能不能用 Wine 验证；`node-pty` 的
 ## 发布
 
 `.github/workflows/release-artifacts.yml` 在推送 `v*` 标签时构建全部目标，上传 workflow artifact，并附加到对应的 GitHub Release。标签必须与 `package.json` 的版本一致。
+
+发版流程（版本提升 → 提交 → 打 tag → 推送 → CI 打包）见 `docs/releasing.md`：
+`npm run release:tag -- --bump patch`。只有 tag 会触发打包；本地 `npm run pkg:build` 仅用于验证。
 
 ## 已知限制
 

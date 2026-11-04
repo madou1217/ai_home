@@ -2,104 +2,74 @@
 'use strict';
 
 /**
- * 把已推送的提交部署到远端 aih server（单目录原地更新）。
+ * 把 aih 的**二进制发行包**部署到远端（Linux / Windows），不再上传源码、不再远端 npm install。
  *
- * 远端布局：代码 <remote-dir>（默认 ~/ai_home，内含 node_modules、.node-runtime、data），
- * 数据 ~/.ai_home；systemd user 单元负责启停。不创建任何版本目录或缓存目录。
+ * 产物就是 scripts/package/build-release.js 生成的单文件启动器：
+ *   Linux   aih-<version>-<target>.run   （自带 Node + 依赖 + WebUI）
+ *   Windows aih-<version>-<target>.exe
  *
- * 流程：
- *   1. 本机从 <ref>（默认 origin/main）建临时 worktree，构建前端，打包（不含 .git / node_modules），
- *      从不打包工作区——工作区里可能有其它会话未提交的改动。
- *   2. 远端解到临时目录 → 依赖有变化则在临时目录安装 → 用远端 node 预检加载 → 通过后才
- *      rsync --delete 覆盖代码（保留 node_modules / .node-runtime / data）、原子替换 node_modules。
- *   3. 重启服务，轮询 /readyz，检查崩溃重启次数；临时文件全部清理。
+ * 远端只做三件事：停旧服务 → 替换启动器 → 用新启动器重装/重启自启动单元。
+ * 数据目录始终是远端 ~/.ai_home，部署不会碰它。
  *
  * 用法：
- *   node scripts/deploy-server.js --ssh ubuntu@host --ssh-key ~/.ssh/key.pem
- *   （SSH 目标只用命令行；--dry-run 只打印步骤）
+ *   node scripts/deploy-server.js --ssh ubuntu@host
+ *   node scripts/deploy-server.js --ssh ubuntu@host --artifact dist/release/aih-1.0.0-linux-x64.run
+ *   node scripts/deploy-server.js --ssh Administrator@winhost --target win32-x64
+ *
+ * 不传 --artifact 时，脚本会从 --ref 建临时 worktree 并现场构建目标平台的单文件包；
+ * 传 --artifact 则直接使用 CI / 本机已经构建好的包。
  */
 
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const crypto = require('node:crypto');
-const { buildGoServer } = require('./build-go-server');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULTS = Object.freeze({
   ref: 'origin/main',
   upload: 'rsync',
-  remoteDir: '~/ai_home',
   unit: 'aih-server',
   port: 9527,
   readyTimeoutSec: 60
 });
-// 远端 uname 到 Go 构建目标的映射。部署到错平台的二进制会让 Go Core 永远起不来，
-// 因此默认按远端真实平台交叉编译，而不是假定 linux-x64。
-const GOOS_BY_UNAME = Object.freeze({ linux: 'linux', darwin: 'darwin' });
-const GOARCH_BY_UNAME = Object.freeze({ x86_64: 'x64', amd64: 'x64', aarch64: 'arm64', arm64: 'arm64' });
-const TAR_EXCLUDES = Object.freeze([
-  './.git',
-  './node_modules',
-  './web/node_modules',
-  './web/src/.umi',
-  './web/src/.umi-production',
-  '._*',
-  '.DS_Store'
-]);
-// 远端保留、不随代码同步的路径（相对 remote-dir）。
-const REMOTE_PRESERVED = Object.freeze(['node_modules', '.node-runtime', 'data', 'DEPLOYED_GIT_HEAD']);
-// 跳过 Go 构建时必须一并保留远端 bin/native：`rsync --delete` 会在归档里没有该目录时
-// 删掉远端正在运行的 Go 二进制，服务随后起不来。
-const REMOTE_PRESERVED_WITHOUT_GO = Object.freeze([...REMOTE_PRESERVED, 'bin/native']);
-const WEB_BUILD_MANIFEST = '.aih-build.json';
-
-/** 按本次运行是否携带 Go 构件，决定 rsync 的保留名单。 */
-function remotePreserved(options = {}) {
-  return options.skipGoBuild ? REMOTE_PRESERVED_WITHOUT_GO : REMOTE_PRESERVED;
-}
-
-/**
- * 把远端 `uname -s -m` 的输出解析成 Go 构建目标。
- *
- * 认不出来（含 Windows 的 MINGW/MSYS/CYGWIN 与未知架构）时返回 null，由调用方失败关闭：
- * 宁可不部署，也不能把一个错平台的二进制推上去。
- */
-function parseRemoteGoTarget(output) {
-  const fields = String(output || '').trim().split(/\s+/);
-  if (fields.length < 2) return null;
-  const osName = fields[0].toLowerCase();
-  const goos = osName.startsWith('mingw') || osName.startsWith('msys') || osName.startsWith('cygwin')
-    ? 'windows'
-    : GOOS_BY_UNAME[osName];
-  const goarch = GOARCH_BY_UNAME[fields[1].toLowerCase()];
-  return goos && goarch ? { platform: goos === 'windows' ? 'win32' : goos, arch: goarch } : null;
-}
+const TARGETS = Object.freeze({
+  'linux-x64': Object.freeze({ platform: 'linux', arch: 'x64', label: 'Linux x64' }),
+  'linux-arm64': Object.freeze({ platform: 'linux', arch: 'arm64', label: 'Linux arm64' }),
+  'win32-x64': Object.freeze({ platform: 'win32', arch: 'x64', label: 'Windows x64' }),
+  'win32-arm64': Object.freeze({ platform: 'win32', arch: 'arm64', label: 'Windows arm64' }),
+  'darwin-x64': Object.freeze({ platform: 'darwin', arch: 'x64', label: 'macOS Intel' }),
+  'darwin-arm64': Object.freeze({ platform: 'darwin', arch: 'arm64', label: 'macOS Apple Silicon' })
+});
+const WINDOWS_ARCH = Object.freeze({ AMD64: 'x64', X86_64: 'x64', ARM64: 'arm64', AARCH64: 'arm64' });
+const UNAME_OS = Object.freeze({ linux: 'linux', darwin: 'darwin' });
+const UNAME_ARCH = Object.freeze({ x86_64: 'x64', amd64: 'x64', aarch64: 'arm64', arm64: 'arm64' });
 
 function showHelp() {
-  console.log(`AIH server deploy (single directory, in place)
+  console.log(`AIH binary deploy (single-file package, no source upload)
 
 Usage:
-  node scripts/deploy-server.js --ssh <user@host> [--ssh-key <pem>] [options]
+  node scripts/deploy-server.js --ssh <user@host> [options]
 
 Options:
-  --ssh <user@host>      SSH target (required)
-  --ssh-key <pem>        SSH identity file
-  --ref <git ref>        Pushed commit to deploy, default ${DEFAULTS.ref}
-  --remote-dir <path>    Remote code directory, default ${DEFAULTS.remoteDir}
-  --unit <name>          systemd user unit, default ${DEFAULTS.unit}
-  --port <n>             Server port for the readiness check, default ${DEFAULTS.port}
-  --go-target <t>        Go Core build target <platform>-<arch>, default: probe the remote
-                         (linux-x64 / linux-arm64 / win32-x64 / darwin-arm64)
-  --skip-web-build       Skip local Umi build (use --web-dist for a prebuilt artifact)
-  --web-dist <path>      Copy a prebuilt web/dist from this machine (for example a Mac mini build)
-  --upload <t>           Upload transport: ${Object.keys(UPLOAD_TRANSPORTS).join(' | ')}, default ${DEFAULTS.upload}
-                         (rsync resumes with --partial --append-verify; scp restarts each retry)
-  --skip-go-build        Do not cross-compile Go Core; keep the remote bin/native as is
-  --no-restart           Update files only
-  --dry-run              Print the steps without changing anything
-  -h, --help             Show this help`);
+  --ssh <user@host>       SSH target (required)
+  --ssh-key <pem>         SSH identity file
+  --ref <git ref>         Pushed commit to build from, default ${DEFAULTS.ref}
+  --artifact <path>       Prebuilt aih-<version>-<target>.run/.exe (skips the local build)
+  --target <platform-arch> linux-x64 | linux-arm64 | win32-x64 | win32-arm64 | darwin-x64 | darwin-arm64
+                          default: probe the remote (uname / cmd ver)
+  --install-dir <path>    Where the aih launcher lives
+                          Linux/macOS default: ~/.local/bin ; Windows default: %LOCALAPPDATA%\\aih
+  --unit <name>           systemd user unit, default ${DEFAULTS.unit}
+  --port <n>              Server port for the readiness check, default ${DEFAULTS.port}
+  --upload <t>            Upload transport: ${Object.keys(UPLOAD_TRANSPORTS).join(' | ')}, default ${DEFAULTS.upload}
+                          (Windows remotes always use scp)
+  --web-dist <path>       Use a prebuilt web/dist when building locally
+  --skip-go-build         Do not build Go Core into the package (Node still serves every route)
+  --no-restart            Install the launcher only; do not touch the service
+  --dry-run               Print the steps without changing anything
+  --keep-work             Keep the temporary worktree used for the build
+  -h, --help              Show this help`);
 }
 
 function parseArgs(argv, env = process.env) {
@@ -107,12 +77,14 @@ function parseArgs(argv, env = process.env) {
     ssh: '',
     sshKey: '',
     ...DEFAULTS,
-    goTarget: '',
-    skipWebBuild: false,
+    artifact: '',
+    target: '',
+    installDir: '',
     webDist: '',
     skipGoBuild: false,
     restart: true,
     dryRun: false,
+    keepWork: false,
     help: false
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -127,28 +99,28 @@ function parseArgs(argv, env = process.env) {
     else if (arg === '--ssh') options.ssh = next();
     else if (arg === '--ssh-key') options.sshKey = next();
     else if (arg === '--ref') options.ref = next();
-    else if (arg === '--remote-dir') options.remoteDir = next();
+    else if (arg === '--artifact') options.artifact = next();
+    else if (arg === '--target') options.target = next();
+    else if (arg === '--install-dir' || arg === '--remote-dir') options.installDir = next();
     else if (arg === '--unit') options.unit = next();
     else if (arg === '--port') options.port = Number(next());
-    else if (arg === '--go-target') options.goTarget = next();
     else if (arg === '--upload') options.upload = next();
-    else if (arg === '--skip-web-build') options.skipWebBuild = true;
     else if (arg === '--web-dist') options.webDist = next();
     else if (arg === '--skip-go-build') options.skipGoBuild = true;
     else if (arg === '--no-restart') options.restart = false;
     else if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--keep-work') options.keepWork = true;
     else throw new Error(`unknown option: ${arg}`);
   }
   if (!options.help) {
+    if (!options.ssh) options.ssh = String(env.AIH_DEPLOY_SSH || '').trim();
     if (!options.ssh) throw new Error('missing --ssh (or AIH_DEPLOY_SSH)');
     if (!/^[A-Za-z0-9._-]+$/.test(options.unit)) throw new Error('invalid --unit');
     if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) throw new Error('invalid --port');
-    if (!/^[~A-Za-z0-9._/-]+$/.test(options.remoteDir)) throw new Error('invalid --remote-dir');
-    if (options.goTarget && !/^[a-z0-9]+-[a-z0-9]+$/.test(options.goTarget)) throw new Error('invalid --go-target');
+    if (options.target && !TARGETS[options.target]) throw new Error(`invalid --target (expected ${Object.keys(TARGETS).join('|')})`);
     if (!UPLOAD_TRANSPORTS[options.upload]) throw new Error(`invalid --upload (expected ${Object.keys(UPLOAD_TRANSPORTS).join('|')})`);
-    if (options.goTarget && options.skipGoBuild) throw new Error('--go-target and --skip-go-build are mutually exclusive');
-    if (options.webDist && !options.skipWebBuild) throw new Error('--web-dist requires --skip-web-build');
-    if (options.skipWebBuild && !options.webDist) throw new Error('--skip-web-build requires --web-dist <path>; web/dist is not tracked in git');
+    if (options.installDir && !/^[~A-Za-z0-9._/:-]+$/.test(options.installDir)) throw new Error('invalid --install-dir');
+    if (options.webDist && !fs.existsSync(path.resolve(options.webDist))) throw new Error('--web-dist does not exist');
   }
   return options;
 }
@@ -157,10 +129,8 @@ function shQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-// 远端路径里的 ~ 交给远端 shell 展开（只允许出现在开头）。
-function remotePath(value) {
-  const text = String(value);
-  return text.startsWith('~/') ? `"$HOME"/${shQuote(text.slice(2))}` : shQuote(text);
+function psQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
 }
 
 function run(command, args, options = {}) {
@@ -184,17 +154,12 @@ function sshArgs(options) {
   ];
 }
 
-/** rsync 的 -e 只吃一个字符串，空格分隔；带空格的参数（密钥路径）要自己加引号。 */
 function sshCommandLine(options) {
   return ['ssh', ...sshArgs(options)]
     .map((token) => (/\s/.test(token) ? shQuote(token) : token))
     .join(' ');
 }
 
-/**
- * 续传旗标要按本机 rsync 的**实现**选：macOS 自带的是 openrsync，只认 `--append`，
- * 不认 GNU 的 `--append-verify`（直接 unrecognized option 退出）。探测一次后缓存。
- */
 let rsyncAppendFlagCache = '';
 function rsyncAppendFlag() {
   if (rsyncAppendFlagCache) return rsyncAppendFlagCache;
@@ -204,21 +169,12 @@ function rsyncAppendFlag() {
   return rsyncAppendFlagCache;
 }
 
-/**
- * 上传通道注册表：把「怎么把归档送到远端」和「怎么重试」拆开。
- *
- * 通道只管拼命令行（args），重试由 uploadArchive 统一负责，加新通道不用碰主流程。
- *   - rsync：--partial --append-verify，断点续传。慢链路（上行几十 KB/s）上这是唯一
- *     能跑完的通道——scp 一次断掉就得从头再来，30MB 归档永远传不完。
- *   - scp：最省事，远端没有 rsync 时用它；代价是每次重试都从头传。
- */
 const UPLOAD_TRANSPORTS = Object.freeze({
   rsync: Object.freeze({
     name: 'rsync',
     label: 'rsync（断点续传）',
     command: 'rsync',
     resumable: true,
-    // 续传每次都在前进，所以值得多试；断掉的连接只损失最后一小段。
     maxAttempts: 20,
     args(options, localPath, remotePath) {
       return ['-q', '--partial', rsyncAppendFlag(), '-e', sshCommandLine(options), localPath, `${options.ssh}:${remotePath}`];
@@ -229,7 +185,6 @@ const UPLOAD_TRANSPORTS = Object.freeze({
     label: 'scp（不续传）',
     command: 'scp',
     resumable: false,
-    // 不续传，重试等于从头再来，多试没有意义。
     maxAttempts: 3,
     args(options, localPath, remotePath) {
       return ['-q', ...sshArgs(options), localPath, `${options.ssh}:${remotePath}`];
@@ -237,17 +192,137 @@ const UPLOAD_TRANSPORTS = Object.freeze({
   })
 });
 
-/** 远端临时归档的字节数；取不到按 0 算（远端可能还没有这个文件）。 */
-function remoteArchiveSize(options, remotePath) {
-  const output = run(
-    'ssh',
-    [...sshArgs(options), options.ssh, `stat -c %s ${shQuote(remotePath)} 2>/dev/null || echo 0`],
-    { capture: true }
-  );
+function isWindowsTarget(target) {
+  return Boolean(target && target.platform === 'win32');
+}
+
+function targetKey(target) {
+  return `${target.platform}-${target.arch}`;
+}
+
+function parseTarget(value) {
+  const key = String(value || '').trim();
+  return TARGETS[key] ? { ...TARGETS[key], key } : null;
+}
+
+function parseRemoteTarget(output) {
+  const fields = String(output || '').trim().split(/\s+/);
+  if (fields.length < 2) return null;
+  const osName = fields[0].toLowerCase();
+  if (/^(mingw|msys|cygwin)/.test(osName)) return parseTarget(`win32-${UNAME_ARCH[fields[1].toLowerCase()] || 'x64'}`);
+  const platform = UNAME_OS[osName];
+  const arch = UNAME_ARCH[fields[1].toLowerCase()];
+  return platform && arch ? parseTarget(`${platform}-${arch}`) : null;
+}
+
+function probeRemoteTarget(options) {
+  if (options.target) return parseTarget(options.target);
+  try {
+    const uname = run('ssh', [...sshArgs(options), options.ssh, 'uname -s -m'], { capture: true });
+    const parsed = parseRemoteTarget(uname);
+    if (parsed) return parsed;
+  } catch (_error) { /* Windows OpenSSH 默认 shell 可能没有 uname */ }
+  try {
+    const ver = run('ssh', [...sshArgs(options), options.ssh, 'cmd /c ver'], { capture: true });
+    if (/Microsoft Windows/i.test(ver)) {
+      const archText = run('ssh', [...sshArgs(options), options.ssh, 'cmd /c echo %PROCESSOR_ARCHITECTURE%'], { capture: true });
+      const arch = WINDOWS_ARCH[String(archText).trim().toUpperCase()] || 'x64';
+      return parseTarget(`win32-${arch}`);
+    }
+  } catch (_error) { /* 交给下面的失败关闭 */ }
+  throw new Error('cannot probe the remote target; pass --target <platform-arch>');
+}
+
+function inferTargetFromArtifact(file) {
+  const name = path.basename(String(file || ''));
+  const match = name.match(/^aih-(.+)-(linux|win32|darwin)-(x64|arm64)\.(run|exe)$/);
+  if (!match) return null;
+  return { target: parseTarget(`${match[2]}-${match[3]}`), version: match[1], extension: match[4] };
+}
+
+function defaultInstallDir(target) {
+  return isWindowsTarget(target) ? '%LOCALAPPDATA%\\aih' : '~/.local/bin';
+}
+
+function resolveArtifactTarget(options, target) {
+  const inferred = options.artifact ? inferTargetFromArtifact(options.artifact) : null;
+  if (options.artifact) {
+    if (!inferred) throw new Error('--artifact must be aih-<version>-<platform>-<arch>.run/.exe');
+    if (inferred.target.key !== targetKey(target)) {
+      throw new Error(`artifact target ${inferred.target.key} does not match deploy target ${targetKey(target)}`);
+    }
+    return inferred;
+  }
+  return null;
+}
+
+function readVersion(repositoryRoot) {
+  return String(require(path.join(repositoryRoot, 'package.json')).version || '').trim();
+}
+
+function buildArtifact(options, sha, target) {
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-deploy-worktree-'));
+  fs.rmSync(worktree, { recursive: true, force: true });
+  run('git', ['worktree', 'add', '--detach', worktree, sha]);
+  try {
+    for (const link of ['node_modules', path.join('web', 'node_modules')]) {
+      const source = path.join(REPO_ROOT, link);
+      if (fs.existsSync(source)) fs.symlinkSync(source, path.join(worktree, link));
+    }
+    if (options.webDist) {
+      fs.rmSync(path.join(worktree, 'web', 'dist'), { recursive: true, force: true });
+      fs.cpSync(path.resolve(options.webDist), path.join(worktree, 'web', 'dist'), { recursive: true, force: true });
+    }
+    const version = readVersion(worktree);
+    const outDir = path.join(worktree, 'dist', 'release');
+    const args = [
+      path.join(worktree, 'scripts', 'package', 'build-release.js'),
+      '--targets', targetKey(target),
+      '--out', outDir
+    ];
+    if (!options.skipGoBuild) args.push('--with-go');
+    if (options.webDist) args.push('--skip-web-build');
+    console.log(`[local] building ${version} for ${targetKey(target)} …`);
+    run(process.execPath, args, { cwd: worktree });
+    const suffix = isWindowsTarget(target) ? '.exe' : '.run';
+    const built = path.join(outDir, `aih-${version}-${targetKey(target)}${suffix}`);
+    if (!fs.existsSync(built)) throw new Error(`build did not produce ${built}`);
+    const staged = path.join(os.tmpdir(), `aih-deploy-${sha.slice(0, 8)}-${process.pid}${suffix}`);
+    fs.copyFileSync(built, staged);
+    return { artifact: staged, version, target };
+  } finally {
+    for (const link of ['node_modules', path.join('web', 'node_modules')]) {
+      try { fs.unlinkSync(path.join(worktree, link)); } catch (_error) { /* not created */ }
+    }
+    if (!options.keepWork) {
+      spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: REPO_ROOT, stdio: 'ignore' });
+      fs.rmSync(worktree, { recursive: true, force: true });
+    } else {
+      console.log(`[local] worktree kept: ${worktree}`);
+    }
+  }
+}
+
+function remoteArtifactPath(options, target, version) {
+  const suffix = isWindowsTarget(target) ? '.exe' : '.run';
+  const name = `aih-${version}-${targetKey(target)}${suffix}`;
+  return isWindowsTarget(target) ? name : `/tmp/${name}`;
+}
+
+function remoteArtifactSize(options, remotePath, target) {
+  if (isWindowsTarget(target)) {
+    const output = run('ssh', [
+      ...sshArgs(options), options.ssh,
+      'powershell', '-NoProfile', '-Command',
+      `if (Test-Path -LiteralPath ${psQuote(remotePath)}) { (Get-Item -LiteralPath ${psQuote(remotePath)}).Length } else { 0 }`
+    ], { capture: true });
+    return Number(String(output).trim()) || 0;
+  }
+  const output = run('ssh', [...sshArgs(options), options.ssh, `stat -c %s ${shQuote(remotePath)} 2>/dev/null || echo 0`], { capture: true });
   return Number(output) || 0;
 }
 
-function uploadArchive(options, localPath, remotePath) {
+function uploadArchive(options, localPath, remotePath, target) {
   const transport = UPLOAD_TRANSPORTS[options.upload];
   if (!transport) throw new Error(`unknown upload transport: ${options.upload}`);
   const expected = fs.statSync(localPath).size;
@@ -255,12 +330,12 @@ function uploadArchive(options, localPath, remotePath) {
     let failure;
     try {
       run(transport.command, transport.args(options, localPath, remotePath));
-      // --append 只对长度不对内容：长度不符说明续传的起点是坏的，删掉重来，
-      // 否则下一轮会从错误的偏移继续追加，产出解不开的归档。
-      const actual = remoteArchiveSize(options, remotePath);
+      const actual = remoteArtifactSize(options, remotePath, target);
       if (actual === expected) return transport.name;
       failure = new Error(`uploaded size mismatch (local ${expected}, remote ${actual})`);
-      run('ssh', [...sshArgs(options), options.ssh, `rm -f ${shQuote(remotePath)}`], { capture: true });
+      if (!isWindowsTarget(target)) {
+        run('ssh', [...sshArgs(options), options.ssh, `rm -f ${shQuote(remotePath)}`], { capture: true });
+      }
     } catch (error) {
       failure = error;
     }
@@ -270,202 +345,95 @@ function uploadArchive(options, localPath, remotePath) {
   }
 }
 
-/**
- * 远端执行脚本（经 ssh 的 stdin 交给 bash -s）。参数只经 bash 位置参数传入，
- * 不使用 pkill -f / pgrep -f：它们会匹配到 ssh 会话自己的命令行而把会话杀掉。
- */
-function buildRemoteScript(options) {
-  const preserved = remotePreserved(options).map((item) => `--exclude ${shQuote(`/${item}`)}`).join(' ');
+function buildLinuxInstallScript(options, artifact, version, target) {
+  const installDir = options.installDir || defaultInstallDir(target);
+  const restart = options.restart;
   return `set -euo pipefail
-ARCHIVE="$1"; SHA="$2"
-DIR=${remotePath(options.remoteDir)}
-NODE_BIN="$(dirname "$(ls -d "$DIR"/.node-runtime/*/bin/node 2>/dev/null | sort -V | tail -n1)")"
-if [ ! -x "$NODE_BIN/node" ]; then NODE_BIN="$DIR/.node-runtime/node-v22.16.0-linux-x64/bin"; fi
-if [ ! -x "$NODE_BIN/node" ]; then echo "remote node runtime missing under $DIR/.node-runtime" >&2; rm -f "$ARCHIVE"; exit 2; fi
-STAGE="$(mktemp -d "\${TMPDIR:-/tmp}/aih-deploy.XXXXXX")"
-cleanup() { rm -rf "$STAGE" "$ARCHIVE"; }
-trap cleanup EXIT
-tar -xzf "$ARCHIVE" -C "$STAGE"
-if [ ! -f "$STAGE/web/dist/.aih-build.json" ]; then
-  echo "[remote] web artifact manifest missing; build with npm run build or pass --web-dist from a verified build" >&2
-  exit 3
+ARTIFACT="$1"; VERSION="$2"; INSTALL_DIR="$3"; UNIT="$4"; PORT="$5"; RESTART="$6"
+INSTALL_DIR="\${INSTALL_DIR/#~/$HOME}"
+mkdir -p "$INSTALL_DIR"
+chmod +x "$ARTIFACT"
+PREV="$INSTALL_DIR/aih.prev"
+if [ -x "$INSTALL_DIR/aih" ]; then
+  cp -p "$INSTALL_DIR/aih" "$PREV" 2>/dev/null || true
+  "$INSTALL_DIR/aih" server stop >/dev/null 2>&1 || true
 fi
-WEB_ARTIFACT="$($NODE_BIN/node -e "const fs=require('fs'); const crypto=require('crypto'); const path=require('path'); const dir=process.argv[1]; const manifest=JSON.parse(fs.readFileSync(path.join(dir,'.aih-build.json'),'utf8')); const rows=[]; const walk=(base,rel='')=>{ for(const e of fs.readdirSync(base,{withFileTypes:true})){ const p=path.join(base,e.name), r=rel ? rel+'/'+e.name : e.name; if(e.isDirectory()) walk(p,r); else if(e.isFile() && r!=='.aih-build.json'){ const b=fs.readFileSync(p); rows.push(r+'\\0'+b.length+'\\0'+crypto.createHash('sha256').update(b).digest('hex')+'\\n'); } else if(e.isSymbolicLink()) throw new Error('symlink:'+r); } }; walk(dir); rows.sort(); const digest=crypto.createHash('sha256').update(rows.join('')).digest('hex'); process.stdout.write(JSON.stringify({source_sha:String(manifest.source_sha||''),artifact_sha256:digest}));" "$STAGE/web/dist")"
-WEB_SOURCE_SHA="$($NODE_BIN/node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(p.source_sha);" "$WEB_ARTIFACT")"
-WEB_ARTIFACT_SHA="$($NODE_BIN/node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(p.artifact_sha256);" "$WEB_ARTIFACT")"
-WEB_DECLARED_SHA="$($NODE_BIN/node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(p.artifact_sha256 || ''));" "$STAGE/web/dist/.aih-build.json")"
-if [ "$WEB_SOURCE_SHA" != "$SHA" ] || [ -z "$WEB_DECLARED_SHA" ] || [ "$WEB_ARTIFACT_SHA" != "$WEB_DECLARED_SHA" ]; then
-  echo "[remote] web artifact verification failed (source_sha=$WEB_SOURCE_SHA artifact_sha256=$WEB_ARTIFACT_SHA declared=$WEB_DECLARED_SHA deploy_sha=$SHA)" >&2
-  exit 3
+rollback() {
+  trap - ERR
+  if [ -f "$PREV" ]; then
+    mv -f "$PREV" "$INSTALL_DIR/aih"
+    systemctl --user restart "$UNIT" >/dev/null 2>&1 || true
+  fi
+}
+trap rollback ERR
+mv -f "$ARTIFACT" "$INSTALL_DIR/aih"
+chmod 0755 "$INSTALL_DIR/aih"
+echo "[remote] installed $INSTALL_DIR/aih ($VERSION)"
+if [ "$RESTART" = "1" ]; then
+  export AIH_CLI_PATH="$INSTALL_DIR/aih"
+  export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  "$INSTALL_DIR/aih" server autostart install
+  systemctl --user restart "$UNIT"
+  READY=0
+  for _ in $(seq 1 ${options.readyTimeoutSec}); do
+    if curl -fsS -m 3 "http://127.0.0.1:\${PORT}/readyz" 2>/dev/null | grep -q '"ok": *true'; then READY=1; break; fi
+    sleep 1
+  done
+  echo "[remote] active=$(systemctl --user is-active "$UNIT") $(systemctl --user show "$UNIT" -p NRestarts)"
+  if [ "$READY" != 1 ]; then echo "[remote] readyz did not answer ok" >&2; exit 4; fi
+  echo "[remote] readyz ok"
 fi
-echo "[remote] web artifact verified sha256=\${WEB_ARTIFACT_SHA:0:12}"
-echo "[remote] previous: $(cat "$DIR/DEPLOYED_GIT_HEAD" 2>/dev/null || echo unknown)"
-
-DEPS_CHANGED=0
-# 只看运行时依赖是否变化（scripts 等字段变化不需要重装）。
-if [ ! -d "$DIR/node_modules" ] || [ ! -f "$DIR/package.json" ] || ! "$NODE_BIN/node" -e "
-  const pick = (file) => { const p = require(file); return JSON.stringify([p.dependencies || {}, p.optionalDependencies || {}]); };
-  process.exit(pick(process.argv[1]) === pick(process.argv[2]) ? 0 : 1);
-" "$STAGE/package.json" "$DIR/package.json"; then DEPS_CHANGED=1; fi
-if [ "$DEPS_CHANGED" = 1 ]; then
-  echo "[remote] dependencies changed -> npm install in staging"
-  (cd "$STAGE" && PATH="$NODE_BIN:$PATH" npm install --ignore-scripts --omit=dev --no-audit --no-fund --loglevel=error)
-else
-  ln -s "$DIR/node_modules" "$STAGE/node_modules"
-fi
-
-echo "[remote] preflight load"
-if ! PREFLIGHT="$(cd "$STAGE" && "$NODE_BIN/node" -e "require('./lib/server/server.js');require('./lib/server/web-ui-router.js')" 2>&1)"; then
-  echo "$PREFLIGHT" | tail -n 20 >&2
-  echo "[remote] preflight failed; nothing changed" >&2
-  exit 3
-fi
-
-echo "[remote] sync code -> $DIR"
-rsync -a --delete ${preserved} "$STAGE"/ "$DIR"/
-if [ "$DEPS_CHANGED" = 1 ]; then
-  rm -rf "$DIR/node_modules.next" "$DIR/node_modules.prev"
-  mv "$STAGE/node_modules" "$DIR/node_modules.next"
-  if [ -d "$DIR/node_modules" ]; then mv "$DIR/node_modules" "$DIR/node_modules.prev"; fi
-  mv "$DIR/node_modules.next" "$DIR/node_modules"
-  rm -rf "$DIR/node_modules.prev"
-fi
-echo "$SHA" > "$DIR/DEPLOYED_GIT_HEAD"
-
-${options.restart ? `export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-echo "[remote] restart ${options.unit}"
-systemctl --user restart ${shQuote(options.unit)}
-READY=0
-for _ in $(seq 1 ${options.readyTimeoutSec}); do
-  if curl -fsS -m 3 "http://127.0.0.1:${options.port}/readyz" 2>/dev/null | grep -q '"ok": *true'; then READY=1; break; fi
-  sleep 1
-done
-echo "[remote] active=$(systemctl --user is-active ${shQuote(options.unit)}) $(systemctl --user show ${shQuote(options.unit)} -p NRestarts)"
-if [ "$READY" != 1 ]; then echo "[remote] readyz did not answer ok" >&2; exit 4; fi
-echo "[remote] readyz ok"` : 'echo "[remote] restart skipped (--no-restart)"'}
-echo "[remote] deployed: $SHA"
+rm -f "$PREV"
+trap - ERR
+"$INSTALL_DIR/aih" help | head -n 1
 `;
 }
 
-/**
- * 解析本次部署要交叉编译的 Go 目标。
- *
- * 显式 `--go-target` 优先；否则探测远端真实平台。探测失败一律失败关闭——猜一个平台
- * 会把起不来的二进制推上去，而带上一个空 bin/native 的归档会顺带删掉远端现有的那个。
- */
-function resolveGoTarget(options) {
-  if (options.goTarget) {
-    const [platform, arch] = options.goTarget.split('-');
-    return { platform, arch };
+function buildWindowsInstallScript(options, artifact, version, target) {
+  const installDir = options.installDir || defaultInstallDir(target);
+  const restart = options.restart;
+  return `$ErrorActionPreference = 'Stop'
+$Artifact = ${psQuote(artifact)}
+$Version = ${psQuote(version)}
+$InstallDir = ${psQuote(installDir)}.Replace('%LOCALAPPDATA%', $env:LOCALAPPDATA)
+$Restart = ${restart ? '1' : '0'}
+$Unit = ${psQuote(options.unit)}
+$Port = ${options.port}
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+$Target = Join-Path $InstallDir 'aih.exe'
+if (Test-Path -LiteralPath $Target) {
+  try { & $Target server stop 2>$null | Out-Null } catch {}
+  Move-Item -Force -LiteralPath $Target -Destination "$Target.old"
+}
+Move-Item -Force -LiteralPath $Artifact -Destination $Target
+Write-Output "[remote] installed $Target ($Version)"
+if ($Restart -eq '1') {
+  $env:AIH_CLI_PATH = $Target
+  & $Target server autostart install | Out-Null
+  & $Target server restart | Out-Null
+  $Ready = 0
+  for ($i = 0; $i -lt ${options.readyTimeoutSec}; $i += 1) {
+    try {
+      $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Uri "http://127.0.0.1:$Port/readyz"
+      if ($response.Content -match '"ok"\\s*:\\s*true') { $Ready = 1; break }
+    } catch {}
+    Start-Sleep -Seconds 1
   }
-  let output = '';
-  try {
-    output = run('ssh', [...sshArgs(options), options.ssh, 'uname -s -m'], { capture: true });
-  } catch (error) {
-    throw new Error(`cannot probe the remote Go target (${error.message}); pass --go-target <platform>-<arch> or --skip-go-build`);
-  }
-  const target = parseRemoteGoTarget(output);
-  if (!target) {
-    throw new Error(`unsupported remote Go target ${JSON.stringify(output.trim())}; pass --go-target <platform>-<arch> or --skip-go-build`);
-  }
-  return target;
+  if ($Ready -ne 1) { throw '[remote] readyz did not answer ok' }
+  Write-Output '[remote] readyz ok'
+}
+& $Target help | Select-Object -First 1
+`;
 }
 
-
-function digestWebDist(distDir) {
-  const records = [];
-  const walk = (directory, prefix = '') => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) walk(absolute, relative);
-      else if (entry.isFile()) {
-        const content = fs.readFileSync(absolute);
-        records.push({ relative, bytes: content.length, sha256: crypto.createHash('sha256').update(content).digest('hex') });
-      } else if (entry.isSymbolicLink()) {
-        throw new Error(`web dist contains unsupported symlink: ${relative}`);
-      }
-    }
-  };
-  walk(distDir);
-  // 必须按 UTF-16 码元排序，不能用 localeCompare：后者是**语言相关**的（ICU 主级
-  // 比较忽略大小写），同一个 dist 在不同 locale 的机器上会算出不同摘要；而且远端的
-  // 校验脚本用的是默认 sort（码元序），两边对不上会让 web 工件校验永远失败。
-  // 实测分歧：'translation-extension/README.md' 码元序在 'ai-home-logo.png' 之前，
-  // localeCompare 则相反。
-  records.sort((a, b) => (a.relative < b.relative ? -1 : a.relative > b.relative ? 1 : 0));
-  const input = records.map((item) => `${item.relative}\0${item.bytes}\0${item.sha256}\n`).join('');
-  return {
-    artifact_sha256: crypto.createHash('sha256').update(input).digest('hex'),
-    file_count: records.length
-  };
-}
-
-function prepareWebDist(worktree, options, sourceSha) {
-  const distDir = path.join(worktree, 'web', 'dist');
-  if (options.webDist) {
-    const source = path.resolve(options.webDist);
-    if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
-      throw new Error(`--web-dist must point to an existing directory: ${source}`);
-    }
-    fs.rmSync(distDir, { recursive: true, force: true });
-    fs.cpSync(source, distDir, { recursive: true, force: true, dereference: true });
+function resolveDeployTarget(options) {
+  if (options.target) return probeRemoteTarget(options);
+  if (options.dryRun && options.artifact) {
+    const inferred = inferTargetFromArtifact(options.artifact);
+    if (!inferred) throw new Error('--artifact must be aih-<version>-<platform>-<arch>.run/.exe');
+    return inferred.target;
   }
-  if (!fs.existsSync(distDir) || !fs.statSync(distDir).isDirectory()) {
-    throw new Error('web build did not produce web/dist; build on a capable machine and pass --web-dist');
-  }
-  const manifestPath = path.join(distDir, WEB_BUILD_MANIFEST);
-  if (fs.existsSync(manifestPath)) {
-    let existing;
-    try { existing = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch { throw new Error(`invalid ${WEB_BUILD_MANIFEST} in web/dist`); }
-    if (existing.source_sha && existing.source_sha !== sourceSha) {
-      throw new Error(`web artifact source_sha ${existing.source_sha} does not match deploy ref ${sourceSha}`);
-    }
-  }
-  fs.rmSync(manifestPath, { force: true });
-  const digest = digestWebDist(distDir);
-  fs.writeFileSync(manifestPath, `${JSON.stringify({ schema_version: 1, source_sha: sourceSha, ...digest }, null, 2)}\n`);
-  return digest;
-}
-
-function buildLocalArchive(options, sha) {
-  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-deploy-worktree-'));
-  const archive = path.join(os.tmpdir(), `aih-deploy-${sha.slice(0, 8)}-${process.pid}.tgz`);
-  fs.rmSync(worktree, { recursive: true, force: true });
-  run('git', ['worktree', 'add', '--detach', worktree, sha]);
-  try {
-    if (!options.skipWebBuild) {
-      fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(worktree, 'node_modules'));
-      fs.symlinkSync(path.join(REPO_ROOT, 'web', 'node_modules'), path.join(worktree, 'web', 'node_modules'));
-      console.log('[local] building web …');
-      run('npm', ['run', 'build'], { cwd: path.join(worktree, 'web'), capture: true });
-      prepareWebDist(worktree, options, sha);
-    } else {
-      const digest = prepareWebDist(worktree, options, sha);
-      console.log(`[local] using prebuilt web/dist (${digest.file_count} files, sha256 ${digest.artifact_sha256.slice(0, 12)})`);
-    }
-    if (!options.skipGoBuild) {
-      // bin/native 是 gitignore 的，worktree 里本来就没有：必须在这里产出远端平台的
-      // 二进制，否则归档不带 Go Core，远端只能继续跑旧的（或什么都没有）。
-      const target = resolveGoTarget(options);
-      console.log(`[local] building Go Core for ${target.platform}-${target.arch} …`);
-      const built = buildGoServer({ repositoryRoot: worktree, platform: target.platform, arch: target.arch });
-      console.log(`[local] Go Core: ${path.relative(worktree, built.output)} (sha256 ${built.stamp.binary_sha256.slice(0, 12)})`);
-    } else {
-      console.log('[local] Go Core build skipped; the remote bin/native is preserved');
-    }
-    run('tar', [
-      '--format', 'ustar', '--no-xattrs',
-      ...TAR_EXCLUDES.flatMap((item) => ['--exclude', item]),
-      '-czf', archive, '.'
-    ], { cwd: worktree, env: { COPYFILE_DISABLE: '1' } });
-    return archive;
-  } finally {
-    for (const link of ['node_modules', path.join('web', 'node_modules')]) {
-      try { fs.unlinkSync(path.join(worktree, link)); } catch (_error) { /* not created */ }
-    }
-    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: REPO_ROOT, stdio: 'ignore' });
-  }
+  return probeRemoteTarget(options);
 }
 
 function main(argv = process.argv.slice(2)) {
@@ -474,34 +442,54 @@ function main(argv = process.argv.slice(2)) {
     showHelp();
     return;
   }
-  if (options.ref.startsWith('origin/')) run('git', ['fetch', '--quiet', 'origin']);
-  const sha = run('git', ['rev-parse', '--verify', `${options.ref}^{commit}`], { capture: true });
-  const pushed = run('git', ['branch', '-r', '--contains', sha], { capture: true });
-  if (!pushed) throw new Error(`${options.ref} (${sha.slice(0, 8)}) is not on any pushed branch; push it first`);
-  console.log(`[local] deploying ${sha.slice(0, 8)} (${options.ref}) to ${options.ssh}:${options.remoteDir}`);
+  const target = resolveDeployTarget(options);
+  if (isWindowsTarget(target) && options.upload !== 'scp') options.upload = 'scp';
 
-  if (options.skipWebBuild && !options.webDist) {
-    throw new Error('--skip-web-build requires --web-dist <path>; web/dist is not tracked in git');
+  let sha = '';
+  if (!options.artifact) {
+    if (options.ref.startsWith('origin/')) run('git', ['fetch', '--quiet', 'origin']);
+    sha = run('git', ['rev-parse', '--verify', `${options.ref}^{commit}`], { capture: true });
+    const pushed = run('git', ['branch', '-r', '--contains', sha], { capture: true });
+    if (!pushed) throw new Error(`${options.ref} (${sha.slice(0, 8)}) is not on any pushed branch; push it first`);
   }
-  const remoteScript = buildRemoteScript(options);
-  const remoteArchive = `/tmp/aih-deploy-${sha.slice(0, 8)}.tgz`;
+
+  const inferred = resolveArtifactTarget(options, target);
+  const resolved = options.artifact
+    ? { artifact: path.resolve(options.artifact), version: inferred.version, target }
+    : buildArtifact(options, sha, target);
+  const remoteArtifact = remoteArtifactPath(options, target, resolved.version);
+  const script = isWindowsTarget(target)
+    ? buildWindowsInstallScript(options, remoteArtifact, resolved.version, target)
+    : buildLinuxInstallScript(options, remoteArtifact, resolved.version, target);
+
+  console.log(`[local] deploying ${resolved.version} (${targetKey(target)}) to ${options.ssh}`);
+  console.log(`[local] artifact: ${resolved.artifact} (${(fs.statSync(resolved.artifact).size / 1024 / 1024).toFixed(1)} MB)`);
   if (options.dryRun) {
-    const go = options.skipGoBuild
-      ? 'keeping the remote bin/native'
-      : `cross-compiling Go Core for ${options.goTarget || 'the probed remote target'}`;
-    console.log(`[dry-run] would build ${options.skipWebBuild ? 'without' : 'with'} web build, ${go}, upload to ${remoteArchive} via ${UPLOAD_TRANSPORTS[options.upload].label} and run:\n${remoteScript}`);
+    console.log(`[dry-run] would upload to ${remoteArtifact} via ${UPLOAD_TRANSPORTS[options.upload].label} and run:\n${script}`);
+    if (!options.artifact) fs.rmSync(resolved.artifact, { force: true });
     return;
   }
 
-  const archive = buildLocalArchive(options, sha);
   try {
     const transport = UPLOAD_TRANSPORTS[options.upload];
-    console.log(`[local] uploading ${(fs.statSync(archive).size / 1024 / 1024).toFixed(1)} MB via ${transport.label}`);
-    // 上传可安全重试（覆盖同名临时文件，rsync 还会从断点续）；远端执行不重试，失败由预检/回报决定。
-    uploadArchive(options, archive, remoteArchive);
-    run('ssh', [...sshArgs(options), options.ssh, 'bash', '-s', '--', remoteArchive, sha], { input: remoteScript });
+    console.log(`[local] uploading via ${transport.label}`);
+    uploadArchive(options, resolved.artifact, remoteArtifact, target);
+    if (isWindowsTarget(target)) {
+      run('ssh', [
+        ...sshArgs(options), options.ssh,
+        'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', '-'
+      ], { input: script });
+    } else {
+      run('ssh', [
+        ...sshArgs(options), options.ssh,
+        'bash', '-s', '--', remoteArtifact, resolved.version,
+        options.installDir || defaultInstallDir(target), options.unit, String(options.port),
+        options.restart ? '1' : '0'
+      ], { input: script });
+    }
+    console.log(`[local] deployed ${resolved.version} (${targetKey(target)})`);
   } finally {
-    fs.rmSync(archive, { force: true });
+    if (!options.artifact) fs.rmSync(resolved.artifact, { force: true });
   }
 }
 
@@ -516,19 +504,20 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULTS,
-  REMOTE_PRESERVED,
-  REMOTE_PRESERVED_WITHOUT_GO,
-  TAR_EXCLUDES,
-  buildRemoteScript,
-  digestWebDist,
-  rsyncAppendFlag,
-  uploadArchive,
-  prepareWebDist,
-  WEB_BUILD_MANIFEST,
+  TARGETS,
   UPLOAD_TRANSPORTS,
+  buildLinuxInstallScript,
+  buildWindowsInstallScript,
+  inferTargetFromArtifact,
+  isWindowsTarget,
   parseArgs,
-  parseRemoteGoTarget,
-  remotePath,
-  remotePreserved,
-  shQuote
+  parseRemoteTarget,
+  parseTarget,
+  remoteArtifactPath,
+  resolveDeployTarget,
+  rsyncAppendFlag,
+  shQuote,
+  targetKey,
+  uploadArchive
 };
+

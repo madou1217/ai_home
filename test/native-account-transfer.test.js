@@ -18,6 +18,9 @@ const {
   parseNativeImportDocument
 } = require('../lib/account/native-account-transfer');
 const { buildWebExport } = require('../lib/server/webui-account-routes-export');
+const { createAccountRuntimeEventHub } = require('../lib/server/account-runtime-event-hub');
+const { setAccountLifecycleHub } = require('../lib/server/account-lifecycle-bus');
+const { ACCOUNT_LIFECYCLE_CHANGED } = require('../lib/server/account-lifecycle-event-types');
 
 function home(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-transfer-'));
@@ -82,14 +85,25 @@ test('re-importing the same file never creates duplicates', (t) => {
   assert.equal(self.summary.unchanged, 1);
 });
 
-test('a changed credential for the same identity updates the existing account', (t) => {
+test('a changed credential for the same identity updates the existing account and publishes updated', (t) => {
   const source = home(t);
   const account = seedApiKeyAccount(source, 'codex', 'sk-test-dddddddddddddddddddd');
   const doc = buildNativeExportDocument({ fs, aiHomeDir: source }).document;
   doc.accounts[0].env.OPENAI_WIRE_API = 'responses';
+
+  const events = [];
+  const hub = createAccountRuntimeEventHub();
+  hub.on(ACCOUNT_LIFECYCLE_CHANGED, (event) => events.push(event));
+  setAccountLifecycleHub(hub);
+  t.after(() => setAccountLifecycleHub(null));
+
   const result = importNativeAccounts({ fs, aiHomeDir: source, input: JSON.stringify(doc) });
   assert.equal(result.summary.updated, 1);
   assert.equal(result.accounts[0].accountRef, account.accountRef);
+  assert.deepEqual(
+    events.map(({ action, accountRef, source: eventSource }) => ({ action, accountRef, source: eventSource })),
+    [{ action: 'updated', accountRef: account.accountRef, source: 'native_account_import' }]
+  );
 });
 
 test('single-account and provider-scoped export', (t) => {

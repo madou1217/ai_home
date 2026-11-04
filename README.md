@@ -136,6 +136,21 @@ aih codebuddy detect                          # 扫描本机已登录账号（Co
 - **sub2api 元数据**：`notes`、`proxy_key`、`priority`、`concurrency` 等字段会保存下来，再次导出 sub2api 时原样带回。
 - **账号编号**：aih 内部用 `accountRef` 唯一标识账号，CLI 里的数字 ID 只是别名。导入到另一台机器时会重新分配数字。
 
+### 远程自动备份（SSH）
+
+```bash
+aih backup add me@backup-host             # 添加目标，可加多个
+aih backup add me@vps2 --key ~/.ssh/id_ed25519 --remote-dir ~/aih-backup
+aih backup list                           # 目标与最近一次结果
+aih backup run                            # 立即备份（默认只传变化的账号）
+aih backup restore me@backup-host --dry-run
+```
+
+- 账号新增 / 导入（含同身份换凭据）/ 删除 / 启停后由 `aih server` 自动增量备份；token 刷新按 `interval`（默认 360 分钟）周期补跑，事件去抖 30 秒。
+- 增量按账号内容 sha256 比对，未变化的账号不重传；远端按 `accounts/<provider>/<acct_…>.json` 存放，`manifest.json` 记录版本与删除墓碑。
+- 密码只从 `--password-env` 指定的环境变量读取，不落盘；首次连接记录主机指纹（TOFU），之后不匹配直接拒绝。
+- 设计细节见 [docs/architecture/remote-account-backup.md](docs/architecture/remote-account-backup.md)。
+
 ## AIH Server（内置网关）
 
 ```bash
@@ -250,6 +265,16 @@ aih server remove home
 手机可在 Management Key 输入框旁点「扫描二维码」，识别终端里的凭据二维码，填入地址和密钥后再提交。二维码包含完整管理密钥，只应展示给你信任的设备。`--qr` 默认从监听配置和可用网卡选择地址；公网、HTTPS 或 VPN 地址可用 `--qr-url` 指定。终端二维码需要足够的窗口宽度；过长的自定义密钥可能超过二维码容量，仍可手动输入。
 
 普通配置更新和空白输入会保留已有 Management Key。清理密钥会关闭管理面，必须显式执行 `aih server config set --clear-management-key --confirm-clear-management-key`，随后重启生效。诊断和页面验收应使用隔离数据目录，保留用户正在使用的密钥；不要临时替换后再清空。
+
+部署到远端服务器（二进制，不在远端装依赖）：
+
+```bash
+npm run pkg:build -- --targets linux-x64           # 产出 dist/release/aih-<version>-linux-x64.run
+npm run deploy:server -- --ssh me@host --artifact dist/release/aih-<version>-linux-x64.run
+npm run deploy:server -- --ssh me@host --artifact <包> --dry-run  # 只打印上传路径与安装脚本，不连远端
+```
+
+安装脚本会停旧服务、把上一版留成 `aih.prev`、换上新二进制、`aih server autostart install` 后重启并轮询 `/readyz`，失败自动回滚。Windows 目标自动改用 `scp` + PowerShell。细节见 [docs/packaging.md](docs/packaging.md)。
 
 > `aih codex` 等使用的内置 `.aih-server` 是 provider 的启动 profile，和这里保存的远程 Server 是两回事。
 

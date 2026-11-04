@@ -84,7 +84,7 @@ function buildService(t, { isTTY, writes, checkStatus, runtimeState }) {
       write: (chunk) => { if (writes) writes.push(String(chunk)); }
     },
     stderr: { write() {} },
-    stdin: {},
+    stdin: { isTTY },
     on() {}, off() {}, exit() {},
     env: {}
   };

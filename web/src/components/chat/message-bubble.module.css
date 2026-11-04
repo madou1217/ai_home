@@ -609,7 +609,9 @@
 .messageMetaRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-4);
+  row-gap: 2px;
   min-height: 26px;
   margin-top: var(--space-3);
   color: var(--color-faint);
@@ -623,7 +625,17 @@
 }
 
 .messageMetaRowAssistant {
+  position: relative;
   justify-content: flex-start;
+}
+
+/* 助手元信息行可能换行；操作条不再占文档流（占流会挤压 model/provider）。
+   绝对定位到行尾空白处，悬停时也不推高后续内容。 */
+.messageMetaRowAssistant .messageMetaActions {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  margin-left: 0;
 }
 
 .messageTime {
@@ -634,11 +646,15 @@
 .messageMetaDetails {
   display: inline-flex;
   align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   min-width: 0;
   gap: var(--space-3);
+  row-gap: 2px;
 }
 
 .messageModel {
+  flex: 0 0 auto;
   max-width: min(320px, 52vw);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -658,23 +674,23 @@
 }
 
 .messageMetricSlot {
-  display: inline-grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: inline-flex;
   align-items: center;
-  flex: 0 1 42ch;
-  width: min(42ch, 100%);
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 42ch;
-  overflow: hidden;
+  max-width: none;
+  overflow: visible;
 }
 
 .messageMetricValue {
   min-width: 0;
   display: flex;
   align-items: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  white-space: normal;
+  overflow: visible;
 }
 
 .messageMetaProgress {
@@ -683,6 +699,7 @@
 }
 
 .messageMetaActions {
+  flex: 0 0 auto;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--motion-base) var(--ease-standard);

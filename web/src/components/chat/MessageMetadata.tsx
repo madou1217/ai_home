@@ -116,40 +116,31 @@ export default function MessageMetadata({
           </span>
         ) : null}
         {hasMetricSlot ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className={styles.messageMetricSlot}>
-              <span className={styles.messageMetricValue}>
-                {progressLabel ? (
-                  <span className={`${styles.messageMetricItem} ${styles.messageMetaProgress}`}>{progressLabel}</span>
-                ) : (
-                  <>
-                    {durationLabel ? (
-                      <span className={styles.messageMetricItem} title={metrics?.durationMs === undefined ? undefined : `总用时 ${metrics.durationMs}ms`}>
-                        用时 {durationLabel}
-                      </span>
-                    ) : null}
-                    {ttftLabel ? (
-                      <>
-                        <span aria-hidden="true"> · </span>
-                        <span className={styles.messageMetricItem} title={metrics?.ttftMs === undefined ? undefined : `首个思考或正文输出耗时 ${metrics.ttftMs}ms`}>
-                          首字 {ttftLabel}
-                        </span>
-                      </>
-                    ) : null}
-                    {tpsLabel ? (
-                      <>
-                        <span aria-hidden="true"> · </span>
-                        <span className={styles.messageMetricItem} title={metrics?.outputTokens === undefined ? undefined : `输出 ${metrics.outputTokens} tokens`}>
-                          {tpsLabel}
-                        </span>
-                      </>
-                    ) : null}
-                  </>
-                )}
-              </span>
+          <span className={styles.messageMetricSlot}>
+            <span className={styles.messageMetricValue}>
+              {progressLabel ? (
+                <span className={`${styles.messageMetricItem} ${styles.messageMetaProgress}`}>{progressLabel}</span>
+              ) : (
+                <>
+                  {durationLabel ? (
+                    <span className={styles.messageMetricItem} title={metrics?.durationMs === undefined ? undefined : `总用时 ${metrics.durationMs}ms`}>
+                      用时 {durationLabel}
+                    </span>
+                  ) : null}
+                  {ttftLabel ? (
+                    <span className={styles.messageMetricItem} title={metrics?.ttftMs === undefined ? undefined : `首个思考或正文输出耗时 ${metrics.ttftMs}ms`}>
+                      首字 {ttftLabel}
+                    </span>
+                  ) : null}
+                  {tpsLabel ? (
+                    <span className={styles.messageMetricItem} title={metrics?.outputTokens === undefined ? undefined : `输出 ${metrics.outputTokens} tokens`}>
+                      {tpsLabel}
+                    </span>
+                  ) : null}
+                </>
+              )}
             </span>
-          </>
+          </span>
         ) : null}
       </div>
       <div className={`${styles.messageMetaActions} ${actionsVisible ? styles.messageMetaActionsVisible : ''}`}>

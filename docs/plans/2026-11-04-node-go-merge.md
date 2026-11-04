@@ -147,6 +147,21 @@
 >    验证：store/index/CLI 漏斗单测全绿；隔离 Go 实例上 set→flush→
 >    `rate_limited`、重建 store 后 hydrate 回填、clear→Go 行消失；
 >    相关 Node 用例 63 项全绿。
+> 26. **kiro 模型目录 + 令牌刷新落 Go（2026-11-05）**：
+>    `core/accounts/kiro` 解析两种 kiro 原生凭据（oidc / desktop），提供过期判定、
+>    刷新结果回写（`WithGrant` 会重算 `identityEvidence.tokenBinding`，身份种子不变）；
+>    `internal/adapters/kiro/modelcatalog` 走控制面 ListAvailableModels（V3 按套餐，
+>    失败回落 V2），凭据缺 `profileArn` 时先用 ListAvailableProfiles 解析唯一 profile，
+>    列不出则用官方 CLI 的 Builder-ID 固定 ARN，企业多 profile 不替用户选择（只走 V2）；
+>    `internal/adapters/accounts/kirocred` 用 refresh_token 走 AWS SSO OIDC / Kiro Desktop
+>    两种刷新端点，成功后按凭据版本 CAS 落库，冲突时回读胜出的快照。
+>    `ModelManagement` 新增可选 `ModelCredentialRefresher`，发现前刷新。
+>    **同时修掉一个静默失效**：刷新队列原来是一张手写 Provider 表（codex/claude/agy + 透传），
+>    与发现注册表不同源，导致新加的 kiro 永远不会被周期重扫（账号在池里、目录一直为空）。
+>    现在 `modelRefreshProviderConcurrency` 直接由 `ModelDiscovery.ProviderIDs()` 派生。
+>    真机：5 个 kiro 账号全部从 0 个模型变为各 5 个（deepseek-3.2 / glm-5 /
+>    minimax-m2.1 / minimax-m2.5 / qwen3-coder-next），与 Node 自己的发现结果逐条一致；
+>    其中 4 个账号的 access token 已过期，由 Go 刷新并写回后完成发现。
 
 ## 0. 结论先行
 

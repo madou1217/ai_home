@@ -110,6 +110,16 @@ func (discovery *ModelDiscovery) DiscoverModels(
 	return NormalizeDiscoveredModels(values)
 }
 
+// ModelCredentialRefresher 在模型发现前把过期的 OAuth 凭据刷新并 CAS 落库。
+//
+// 可选端口：装配为 nil 时表示该部署不做凭据刷新（例如只读预览）。
+type ModelCredentialRefresher interface {
+	RefreshCredential(
+		ctx context.Context,
+		snapshot CredentialSnapshot,
+	) (CredentialSnapshot, error)
+}
+
 // AccountCredentialSnapshotReader 是模型刷新读取当前规范凭据及 CAS 版本的最小端口。
 type AccountCredentialSnapshotReader interface {
 	GetCredentialSnapshot(
@@ -123,6 +133,7 @@ type ModelManagement struct {
 	credentials AccountCredentialSnapshotReader
 	models      AccountModelStore
 	discovery   *ModelDiscovery
+	refresher   ModelCredentialRefresher
 	clock       Clock
 }
 
@@ -131,6 +142,7 @@ func NewModelManagement(
 	credentials AccountCredentialSnapshotReader,
 	models AccountModelStore,
 	discovery *ModelDiscovery,
+	refresher ModelCredentialRefresher,
 	clock Clock,
 ) (*ModelManagement, error) {
 	if credentials == nil || models == nil || discovery == nil || clock == nil {
@@ -140,6 +152,7 @@ func NewModelManagement(
 		credentials: credentials,
 		models:      models,
 		discovery:   discovery,
+		refresher:   refresher,
 		clock:       clock,
 	}, nil
 }
@@ -173,6 +186,13 @@ func (management *ModelManagement) RefreshAccountModels(
 	if !credentialSnapshot.IsValid() ||
 		credentialSnapshot.AccountRef() != accountRef {
 		return nil, ErrInvalidAccountModel
+	}
+	// kiro 这类 OAuth 账号的 access token 会过期；先刷新再发现，否则上游直接 403。
+	if management.refresher != nil {
+		credentialSnapshot, err = management.refresher.RefreshCredential(ctx, credentialSnapshot)
+		if err != nil {
+			return nil, err
+		}
 	}
 	models, err := management.discovery.DiscoverModels(
 		ctx,

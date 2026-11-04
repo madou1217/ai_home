@@ -27,7 +27,6 @@ import (
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
@@ -36,6 +35,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/deletionprojection"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -48,6 +48,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	kiromodelcatalog "github.com/madou1217/ai_home/internal/adapters/kiro/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
 	opencodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/opencode/modelcatalog"
@@ -346,10 +347,23 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建启动账号解析用例失败: %w", err)
 	}
+	// kiro 的 OAuth 凭据在发现前刷新；刷新走纯 HTTP 并 CAS 回写。
+	kiroRefresher, err := kirocred.New(
+		store,
+		&http.Client{
+			Timeout:       modelCatalogHTTPTimeout,
+			CheckRedirect: rejectOAuthRedirect,
+		},
+		time.Now,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 凭据刷新器失败: %w", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
 		modelDiscovery,
+		kiroRefresher,
 		time.Now,
 	)
 	if err != nil {
@@ -381,7 +395,7 @@ func newHandlers(
 		accountapp.ModelRefreshCoordinatorOptions{
 			Catalog:             catalog,
 			Refresher:           recoveringModelManagement,
-			ProviderConcurrency: modelRefreshProviderConcurrency(),
+			ProviderConcurrency: modelRefreshProviderConcurrency(modelDiscovery.ProviderIDs()),
 			RefreshTimeout:      modelRefreshTimeout,
 			BaseBackoff:         modelRefreshBaseBackoff,
 			MaxBackoff:          modelRefreshMaxBackoff,
@@ -1373,23 +1387,21 @@ func newResponsesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 }
 
-// modelRefreshProviderConcurrency 声明拥有独立刷新队列的 Provider 及其并发。
+// modelRefreshProviderConcurrency 按已装配的模型发现策略声明刷新队列。
+//
+// 队列必须与发现策略同源：只写在发现注册表里、没有队列的 Provider 永远不会被
+// 周期重扫（静默失效：账号在池里、模型目录一直为空）。
 //
 // Canonical 三支各一条队列；家族四支的刷新形态是同一个 HTTP 目录端点
 // （internal/adapters/codebuddyfamily/modelcatalog），同样各占一条、并发 1。
 // 漏登记的代价是静默的：账号不会被扫描/首次恢复刷新，模型目录永远为空。
-func modelRefreshProviderConcurrency() map[string]int {
-	concurrency := map[string]int{
-		string(inference.ProviderCodex):  modelRefreshConcurrency,
-		string(inference.ProviderClaude): modelRefreshConcurrency,
-		string(inference.ProviderAgy):    modelRefreshConcurrency,
-	}
-	// 透传通道服务的 Provider 同样要有刷新队列，且与目录构建共用同一份声明。
-	//
-	// 为什么必须显式列：队列只在协调器构造时按这张表建立，**没有队列的 Provider 永远
-	// 不会被重扫**——表现是静默的（账号在池里、模型目录一直为空、请求被判成
-	// model_not_routable 交还 Node），等于透传通道白接。
+func modelRefreshProviderConcurrency(providerIDs []string) map[string]int {
+	concurrency := make(map[string]int, len(providerIDs)+3)
+	// 透传通道服务的 Provider 即使暂时没有发现策略也要有队列（目录可能由别名/投影补）。
 	for _, providerID := range relayProviderIDs() {
+		concurrency[providerID] = modelRefreshConcurrency
+	}
+	for _, providerID := range providerIDs {
 		concurrency[providerID] = modelRefreshConcurrency
 	}
 	return concurrency
@@ -1455,6 +1467,12 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 opencode 模型目录源失败: %w", err)
 		}
+		// kiro 的目录走控制面 ListAvailableModels（V3 按套餐，V2 兜底）；
+		// access token 过期时由 kirocred.Refresher 在发现前刷新。
+		kiroSource, kiroErr := kiromodelcatalog.New(client)
+		if kiroErr != nil {
+			return nil, fmt.Errorf("创建 kiro 模型目录源失败: %w", kiroErr)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
@@ -1462,6 +1480,7 @@ func newModelDiscovery(
 			kimiSource,
 			grokSource,
 			opencodeSource,
+			kiroSource,
 		}
 		strategies = append(strategies, familySources...)
 	}

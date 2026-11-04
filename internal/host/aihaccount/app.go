@@ -147,6 +147,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 		store,
 		store,
 		discovery,
+		// 本地账号 CLI 的模型刷新不做凭据刷新：过期时由服务端刷新后回写。
+		nil,
 		time.Now,
 	)
 	if err != nil {

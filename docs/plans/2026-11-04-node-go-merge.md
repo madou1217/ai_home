@@ -196,6 +196,15 @@
 >      gemini `acct_7205` 是 enabled=0 的 Vertex 导出占位（指向本机网关，不进路由池）。
 >      这四类在 Node 侧同样没有可发现目录。
 >    覆盖结果：启用账号中只剩上述三个占位/无凭据账号没有目录。
+> 30. **gemini 模型目录落 Go（2026-11-05）**：新增 `internal/adapters/gemini/modelcatalog`，
+>    对 Vertex 占位/网关号（`*gemini.VertexAuth`）按 `base_url` 读 `/v1/models`（OpenAI 风格）
+>    并回退 `/models`（Gemini 风格，`models/` 前缀自动剥除）；登录态 code-assist
+>    账号需要 loadCodeAssist/fetchAvailableModels 预检，仍返回「凭据形态不支持」。
+>    隔离实例（真实库副本）上对 `acct_720524e8` 显式 `POST .../models/refresh` 成功返回
+>    **184 个模型**；真机上该账号是 enabled=0 的 Vertex 导出占位（指向本机网关），
+>    周期重扫会跳过它，因此线上仍显示 0，这是设计边界而不是缺口。
+>    **至此每个有 models 策略的 Provider 都有 Go 发现器**：codex/claude/agy/kimi/grok/
+>    opencode/codebuddy 家族/kiro/zcode/gemini/cline/qoder。
 
 ## 0. 结论先行
 

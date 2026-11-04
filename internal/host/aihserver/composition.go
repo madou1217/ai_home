@@ -46,6 +46,7 @@ import (
 	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
+	geminimodelcatalog "github.com/madou1217/ai_home/internal/adapters/gemini/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	kiromodelcatalog "github.com/madou1217/ai_home/internal/adapters/kiro/modelcatalog"
@@ -1479,6 +1480,11 @@ func newModelDiscovery(
 		if zcodeErr != nil {
 			return nil, fmt.Errorf("创建 zcode 模型目录源失败: %w", zcodeErr)
 		}
+		// gemini 的 Vertex 占位/网关号直接读 base_url 的 /v1/models。
+		geminiSource, geminiErr := geminimodelcatalog.New(client)
+		if geminiErr != nil {
+			return nil, fmt.Errorf("创建 gemini 模型目录源失败: %w", geminiErr)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
@@ -1488,6 +1494,7 @@ func newModelDiscovery(
 			opencodeSource,
 			kiroSource,
 			zcodeSource,
+			geminiSource,
 		}
 		strategies = append(strategies, familySources...)
 	}

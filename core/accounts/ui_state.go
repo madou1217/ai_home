@@ -18,6 +18,7 @@ type UIStateInput struct {
 	DisplayName string
 	AuthMode    string
 	APIKeyMode  bool
+	Configured  bool
 	BaseURL     string
 	UpdatedAt   time.Time
 }
@@ -28,9 +29,11 @@ type UIState struct {
 	status      string
 	displayName string
 	authMode    string
-	apiKeyMode  bool
-	baseURL     string
-	updatedAt   time.Time
+	apiKeyMode   bool
+	configured   bool
+	oauthPending bool
+	baseURL      string
+	updatedAt    time.Time
 }
 
 // NewUIState 校验字段长度与时间后创建展示状态。
@@ -55,13 +58,15 @@ func NewUIState(input UIStateInput) (UIState, error) {
 		return UIState{}, ErrInvalidUIState
 	}
 	return UIState{
-		accountRef:  input.AccountRef,
-		status:      status,
-		displayName: displayName,
-		authMode:    authMode,
-		apiKeyMode:  input.APIKeyMode,
-		baseURL:     baseURL,
-		updatedAt:   updatedAt,
+		accountRef:   input.AccountRef,
+		status:       status,
+		displayName:  displayName,
+		authMode:     authMode,
+		apiKeyMode:   input.APIKeyMode,
+		configured:   input.Configured,
+		oauthPending: !input.Configured && !input.APIKeyMode && IsOauthAuthMode(authMode),
+		baseURL:      baseURL,
+		updatedAt:    updatedAt,
 	}, nil
 }
 
@@ -80,6 +85,12 @@ func (state UIState) AuthMode() string { return state.authMode }
 // APIKeyMode 表示账号是否使用静态密钥。
 func (state UIState) APIKeyMode() bool { return state.apiKeyMode }
 
+// Configured 表示账号是否已经具备可用凭据。
+func (state UIState) Configured() bool { return state.configured }
+
+// OauthPending 表示账号已创建但 OAuth 登录尚未完成（由 Go 统一判定并物化）。
+func (state UIState) OauthPending() bool { return state.oauthPending }
+
 // BaseURL 返回账号自定义上游地址。
 func (state UIState) BaseURL() string { return state.baseURL }
 
@@ -94,6 +105,7 @@ func (state UIState) IsValid() bool {
 		DisplayName: state.displayName,
 		AuthMode:    state.authMode,
 		APIKeyMode:  state.apiKeyMode,
+		Configured:  state.configured,
 		BaseURL:     state.baseURL,
 		UpdatedAt:   state.updatedAt,
 	})

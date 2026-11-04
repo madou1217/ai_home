@@ -22,9 +22,10 @@ func (store *Store) ReplaceAccountUIState(
 	result, err := store.db.ExecContext(
 		ctx,
 		`INSERT INTO account_ui_state (
-			account_ref, status, display_name, auth_mode, api_key_mode, base_url, updated_at_ms
+			account_ref, status, display_name, auth_mode, api_key_mode, base_url, updated_at_ms,
+			configured, oauth_pending
 		)
-		SELECT ?, ?, ?, ?, ?, ?, ?
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
 		 WHERE EXISTS (SELECT 1 FROM accounts WHERE account_ref = ?)
 		ON CONFLICT(account_ref) DO UPDATE SET
 			status = excluded.status,
@@ -32,7 +33,9 @@ func (store *Store) ReplaceAccountUIState(
 			auth_mode = excluded.auth_mode,
 			api_key_mode = excluded.api_key_mode,
 			base_url = excluded.base_url,
-			updated_at_ms = excluded.updated_at_ms`,
+			updated_at_ms = excluded.updated_at_ms,
+			configured = excluded.configured,
+			oauth_pending = excluded.oauth_pending`,
 		state.AccountRef().String(),
 		state.Status(),
 		state.DisplayName(),
@@ -40,6 +43,8 @@ func (store *Store) ReplaceAccountUIState(
 		boolToInt(state.APIKeyMode()),
 		state.BaseURL(),
 		state.UpdatedAt().UnixMilli(),
+		boolToInt(state.Configured()),
+		boolToInt(state.OauthPending()),
 		state.AccountRef().String(),
 	)
 	if err != nil {
@@ -67,7 +72,8 @@ func (store *Store) ListAccountUIStates(
 	}
 	rows, err := store.db.QueryContext(
 		ctx,
-		`SELECT account_ref, status, display_name, auth_mode, api_key_mode, base_url, updated_at_ms
+		`SELECT account_ref, status, display_name, auth_mode, api_key_mode, base_url, updated_at_ms,
+		        configured, oauth_pending
 		   FROM account_ui_state
 		  ORDER BY account_ref`,
 	)
@@ -80,7 +86,7 @@ func (store *Store) ListAccountUIStates(
 	states := make([]accountcore.UIState, 0, 16)
 	for rows.Next() {
 		var accountRef, status, displayName, authMode, baseURL string
-		var apiKeyMode int
+		var apiKeyMode, configured, oauthPending int
 		var updatedAtMS int64
 		if err := rows.Scan(
 			&accountRef,
@@ -90,6 +96,8 @@ func (store *Store) ListAccountUIStates(
 			&apiKeyMode,
 			&baseURL,
 			&updatedAtMS,
+			&configured,
+			&oauthPending,
 		); err != nil {
 			return nil, fmt.Errorf("读取账号展示状态失败: %w", err)
 		}
@@ -103,6 +111,7 @@ func (store *Store) ListAccountUIStates(
 			DisplayName: displayName,
 			AuthMode:    authMode,
 			APIKeyMode:  apiKeyMode == 1,
+			Configured:  configured == 1,
 			BaseURL:     baseURL,
 			UpdatedAt:   timeFromUnixMilli(updatedAtMS),
 		})

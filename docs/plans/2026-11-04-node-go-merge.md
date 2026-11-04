@@ -374,7 +374,9 @@ Node 进程（过渡期，逐渐缩小）
 > 2026-11-05 盘点。`account_ui_state` 的写投影与批量读已就位（v13），但 `status` 仍由 Node
 > 推导；直接把读取切到 Go 只会拿到 15 秒前的副本，必须先搬推导。
 
-0. ✅ OAuth 待登录判定已落 Go：`core/accounts/oauth_pending.go`
+0. ✅ OAuth 待登录判定已落 Go 并物化：`aih.db` v15 的 `account_ui_state`
+   增加 `configured` / `oauth_pending`；Node 的 `isPendingOauthStateRow` 优先读物化值。
+   `core/accounts/oauth_pending.go`
    （`IsOauthAuthMode` / `ResolveOauthPendingState` / `ResolveOauthJobDeadline`，
    含 5 分钟兜底与 20 分钟浏览器窗口的表驱动测试）。下一步把 Node
    `oauth-pending-state.js` 的调用改为读 Go 输出。

@@ -123,6 +123,8 @@ var expectedSchemaColumns = map[string][]string{
 		"api_key_mode",
 		"base_url",
 		"updated_at_ms",
+		"configured",
+		"oauth_pending",
 	},
 	"account_runtime_blocks": {
 		"account_ref",
@@ -196,6 +198,7 @@ var forwardMigrations = []string{
 	SchemaV12,
 	SchemaV13,
 	SchemaV14,
+	SchemaV15,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

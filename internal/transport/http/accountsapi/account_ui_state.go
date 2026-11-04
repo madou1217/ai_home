@@ -11,18 +11,21 @@ type replaceUIStateRequest struct {
 	DisplayName string `json:"display_name"`
 	AuthMode    string `json:"auth_mode"`
 	APIKeyMode  bool   `json:"api_key_mode"`
+	Configured  bool   `json:"configured"`
 	BaseURL     string `json:"base_url"`
 	UpdatedAt   string `json:"updated_at"`
 }
 
 type accountUIStateView struct {
-	AccountRef  string `json:"account_ref"`
-	Status      string `json:"status"`
-	DisplayName string `json:"display_name"`
-	AuthMode    string `json:"auth_mode"`
-	APIKeyMode  bool   `json:"api_key_mode"`
-	BaseURL     string `json:"base_url"`
-	UpdatedAt   string `json:"updated_at"`
+	AccountRef   string `json:"account_ref"`
+	Status       string `json:"status"`
+	DisplayName  string `json:"display_name"`
+	AuthMode     string `json:"auth_mode"`
+	APIKeyMode   bool   `json:"api_key_mode"`
+	Configured   bool   `json:"configured"`
+	OauthPending bool   `json:"oauth_pending"`
+	BaseURL      string `json:"base_url"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 type accountUIStateResponse struct {
@@ -88,6 +91,7 @@ func (handler *Handler) handleAccountUIState(
 			DisplayName: input.DisplayName,
 			AuthMode:    input.AuthMode,
 			APIKeyMode:  input.APIKeyMode,
+			Configured:  input.Configured,
 			BaseURL:     input.BaseURL,
 			UpdatedAt:   updatedAt,
 		})
@@ -126,8 +130,10 @@ func newAccountUIStateView(state accountcore.UIState) accountUIStateView {
 		Status:      state.Status(),
 		DisplayName: state.DisplayName(),
 		AuthMode:    state.AuthMode(),
-		APIKeyMode:  state.APIKeyMode(),
-		BaseURL:     state.BaseURL(),
+		APIKeyMode:   state.APIKeyMode(),
+		Configured:   state.Configured(),
+		OauthPending: state.OauthPending(),
+		BaseURL:      state.BaseURL(),
 		UpdatedAt:   formatTime(state.UpdatedAt()),
 	}
 }

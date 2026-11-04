@@ -381,3 +381,137 @@ func validModelCatalogID(model string) bool {
 	parsed, err := runtimecore.NewModelID(model)
 	return err == nil && parsed.String() == model
 }
+
+// openAIModelListDTO 是第三方 Anthropic 兼容代理常见的 OpenAI 风格清单。
+type openAIModelListDTO struct {
+	Data []struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Model string `json:"model"`
+	} `json:"data"`
+	Models []struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Model string `json:"model"`
+	} `json:"models"`
+}
+
+// fetchOpenAICompatibleCatalog 是 Anthropic 分页目录失败后的兼容回退。
+//
+// 大量第三方代理（DeepSeek 的 /anthropic、企业网关）只提供 OpenAI 风格的
+// GET /v1/models：{object,data:[{id,...}]}，没有 has_more/first_id/last_id。
+// 先试 base 自带路径，再试 origin 根路径；只接受非空、可去重的清单。
+func fetchOpenAICompatibleCatalog(
+	ctx context.Context,
+	client HTTPClient,
+	auth modelCatalogAuth,
+) ([]string, error) {
+	if ctx == nil || client == nil {
+		return nil, ErrInvalidDependencies
+	}
+	for _, endpoint := range openAIModelEndpoints(auth.baseURL) {
+		models, err := fetchOpenAIModelList(ctx, client, auth, endpoint)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			continue
+		}
+		return models, nil
+	}
+	return nil, ErrModelCatalogUnavailable
+}
+
+// openAIModelEndpoints 生成回退候选：base 优先，其次 origin 根路径。
+func openAIModelEndpoints(baseURL string) []string {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil
+	}
+	base := strings.TrimRight(parsed.String(), "/")
+	candidates := []string{base + "/v1/models", base + "/models"}
+	if path := strings.TrimRight(parsed.EscapedPath(), "/"); path != "" {
+		origin := parsed.Scheme + "://" + parsed.Host
+		candidates = append(candidates, origin+"/v1/models", origin+"/models")
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	endpoints := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		endpoints = append(endpoints, candidate)
+	}
+	return endpoints
+}
+
+func fetchOpenAIModelList(
+	ctx context.Context,
+	client HTTPClient,
+	auth modelCatalogAuth,
+	endpoint string,
+) ([]string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, ErrInvalidInvocation
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set(auth.headerName, auth.headerValue)
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, ErrModelCatalogUnavailable
+	}
+	if response == nil || response.Body == nil {
+		closeResponse(response)
+		return nil, ErrInvalidModelCatalog
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		drainModelCatalogResponse(response.Body)
+		return nil, fmt.Errorf("%w: status=%d", ErrModelCatalogUnavailable, response.StatusCode)
+	}
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maxModelCatalogPageBytes+1))
+	if err != nil || len(payload) == 0 || len(payload) > maxModelCatalogPageBytes {
+		return nil, ErrInvalidModelCatalog
+	}
+	defer clear(payload)
+	var document openAIModelListDTO
+	if json.Unmarshal(payload, &document) != nil {
+		return nil, ErrInvalidModelCatalog
+	}
+	entries := document.Data
+	if len(entries) == 0 {
+		entries = document.Models
+	}
+	seen := make(map[string]struct{}, len(entries))
+	models := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		id := strings.TrimSpace(firstModelID(entry.ID, entry.Model, entry.Name))
+		if !validModelCatalogID(id) {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		models = append(models, id)
+		if len(models) > maxModelCatalogModels {
+			return nil, ErrInvalidModelCatalog
+		}
+	}
+	if len(models) == 0 {
+		return nil, ErrInvalidModelCatalog
+	}
+	sort.Strings(models)
+	return models, nil
+}
+
+func firstModelID(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}

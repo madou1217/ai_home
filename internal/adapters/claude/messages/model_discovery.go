@@ -49,6 +49,12 @@ func (source *ModelCatalogSource) DiscoverModels(
 	}
 	catalog, err := fetchModelCatalog(ctx, source.client, auth)
 	if err != nil {
+		// 第三方 Anthropic 兼容代理通常没有分页目录，只提供 OpenAI 风格的 /v1/models；
+		// 先按同一凭据在 base / origin 上探测，再决定是否把原始错误抛给调用方。
+		models, fallbackErr := fetchOpenAICompatibleCatalog(ctx, source.client, auth)
+		if fallbackErr == nil {
+			return models, nil
+		}
 		return nil, err
 	}
 	return append([]string(nil), catalog.models...), nil

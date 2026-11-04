@@ -30,9 +30,11 @@ import (
 )
 
 const (
-	providerID       = "zcode"
-	balanceURL       = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance"
-	previewURL       = "https://zcode.z.ai/api/v1/zcode-plan/billing/preview"
+	providerID = "zcode"
+	balanceURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance"
+	previewURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/preview"
+	// paas 目录：登录态账号的 z.ai access token 仍可列出通用模型（Node 的同款兜底）。
+	paasModelsURL    = "https://api.z.ai/api/coding/paas/v4/models"
 	seedAppVersion   = "3.16.3"
 	maxResponseBytes = 1 << 20
 	requestTimeout   = 10 * time.Second
@@ -51,11 +53,12 @@ type HTTPClient interface {
 
 // Source 是 zcode 的模型发现策略。
 type Source struct {
-	client     HTTPClient
-	balanceURL string
-	previewURL string
-	appVersion string
-	platform   string
+	client        HTTPClient
+	balanceURL    string
+	previewURL    string
+	paasModelsURL string
+	appVersion    string
+	platform      string
 }
 
 var _ accountapp.ProviderModelDiscoverer = (*Source)(nil)
@@ -66,11 +69,12 @@ func New(client HTTPClient) (*Source, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Source{
-		client:     client,
-		balanceURL: balanceURL,
-		previewURL: previewURL,
-		appVersion: seedAppVersion,
-		platform:   runtime.GOOS + "-" + runtime.GOARCH,
+		client:        client,
+		balanceURL:    balanceURL,
+		previewURL:    previewURL,
+		paasModelsURL: paasModelsURL,
+		appVersion:    seedAppVersion,
+		platform:      runtime.GOOS + "-" + runtime.GOARCH,
 	}, nil
 }
 
@@ -101,7 +105,51 @@ func (source *Source) DiscoverModels(
 	if err == nil && len(models) > 0 {
 		return models, nil
 	}
-	return source.previewModels(ctx, headers)
+	if models, err = source.previewModels(ctx, headers); err == nil && len(models) > 0 {
+		return models, nil
+	}
+	// 余额与活动都为空时，用 z.ai 登录态 access token 列一次通用目录。
+	if paasToken := bigmodelToken(native.Payload()); paasToken != "" {
+		return source.paasModels(ctx, paasToken)
+	}
+	return nil, ErrEmptyCatalog
+}
+
+func (source *Source) paasModels(ctx context.Context, token string) ([]string, error) {
+	payload, err := source.get(ctx, source.paasModelsURL, map[string]string{
+		"Authorization": "Bearer " + token,
+		"Accept":        "application/json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var document struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(payload, &document) != nil {
+		return nil, ErrEmptyCatalog
+	}
+	seen := make(map[string]struct{}, len(document.Data))
+	models := make([]string, 0, len(document.Data))
+	for _, item := range document.Data {
+		id := strings.TrimSpace(item.ID)
+		if !routable(id) {
+			continue
+		}
+		key := strings.ToLower(id)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		models = append(models, id)
+	}
+	if len(models) == 0 {
+		return nil, ErrEmptyCatalog
+	}
+	sort.Strings(models)
+	return models, nil
 }
 
 func (source *Source) headers(identitySeed string, token string) map[string]string {
@@ -264,6 +312,25 @@ func zcodeJWT(payload []byte) (string, error) {
 		return "", ErrUnsupportedCredential
 	}
 	return strings.TrimSpace(token), nil
+}
+
+// bigmodelToken 读取 z.ai 登录态的 access token（paas 目录兜底凭据）。
+func bigmodelToken(payload []byte) string {
+	var document struct {
+		Credentials map[string]json.RawMessage `json:"credentials"`
+	}
+	if json.Unmarshal(payload, &document) != nil || document.Credentials == nil {
+		return ""
+	}
+	raw, exists := document.Credentials["oauth:bigmodel:access_token"]
+	if !exists {
+		return ""
+	}
+	var token string
+	if json.Unmarshal(raw, &token) != nil {
+		return ""
+	}
+	return strings.TrimSpace(token)
 }
 
 func capabilityModelIDs(capabilities []string) []string {

@@ -180,6 +180,22 @@
 >    预览都为空，与直接探测结果一致。
 >    覆盖度更新：kiro 25、opencode 68、zcode 5 个账号有目录；claude 两个第三方代理
 >    不实现 `/v1/models`，仍是 0。
+> 29. **剩余模型提供方覆盖（2026-11-05）**：
+>    - **claude 第三方 Anthropic 兼容代理**：Anthropic 分页目录失败后，按同一凭据回退
+>      OpenAI 风格的 `GET {base|origin}/v1/models` 与 `/models`（`internal/adapters/claude/messages`
+>      的 `fetchOpenAICompatibleCatalog`）。DeepSeek 的 `/anthropic` 代理本身没有
+>      `/anthropic/v1/models`，但 origin 的 `/v1/models` 返回 `{object,data:[{id}]}`。
+>      真机：`acct_9ebdea56` 从 0 → 2 个模型（deepseek-flash / deepseek-v4-pro）；
+>      另一个 claude 账号 enabled=0，不参与重扫。
+>    - **zcode paas 兜底**：余额与活动预览都为空时，用 `credentials["oauth:bigmodel:access_token"]`
+>      读 `https://api.z.ai/api/coding/paas/v4/models`。真机：`acct_d88d9008` 从 0 → 12 个
+>      （glm-4.5 … glm-5.3）。
+>    - **剩余空目录均与 Node 同源、非 Go 缺口**：
+>      opencode `acct_e9b5` 的凭据是 `auth.codex` 占位（dummy，无 opencode token）；
+>      zcode `acct_ae47` / `acct_4dbc` 没有 `oauth:bigmodel:access_token` 且余额/预览为空；
+>      gemini `acct_7205` 是 enabled=0 的 Vertex 导出占位（指向本机网关，不进路由池）。
+>      这四类在 Node 侧同样没有可发现目录。
+>    覆盖结果：启用账号中只剩上述三个占位/无凭据账号没有目录。
 
 ## 0. 结论先行
 

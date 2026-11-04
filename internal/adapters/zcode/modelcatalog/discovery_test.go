@@ -13,11 +13,20 @@ import (
 
 func zcodeCredential(t *testing.T, token string) accountapp.Credential {
 	t.Helper()
+	return zcodeCredentialWithPaasToken(t, token, "")
+}
+
+func zcodeCredentialWithPaasToken(t *testing.T, token string, paasToken string) accountapp.Credential {
+	t.Helper()
 	identity, err := accountcore.NewNativeSubjectIdentity("zcode", "user-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := []byte(`{"credentials":{"zcodejwttoken":"` + token + `"}}`)
+	credentials := `"zcodejwttoken":"` + token + `"`
+	if paasToken != "" {
+		credentials += `,"oauth:bigmodel:access_token":"` + paasToken + `"`
+	}
+	payload := []byte(`{"credentials":{` + credentials + `}}`)
 	credential, err := accountcore.NewNativeCredential(identity, payload)
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +48,7 @@ func testZcodeSource(t *testing.T, handler func(path string, request *http.Reque
 	}
 	source.balanceURL = server.URL + "/balance"
 	source.previewURL = server.URL + "/preview"
+	source.paasModelsURL = server.URL + "/paas/models"
 	return source
 }
 
@@ -93,6 +103,33 @@ func TestDiscoverModelsReportsEmptyCatalog(t *testing.T) {
 	})
 	if _, err := source.DiscoverModels(context.Background(), zcodeCredential(t, "jwt-test")); err != ErrEmptyCatalog {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDiscoverModelsFallsBackToPaasCatalog(t *testing.T) {
+	t.Parallel()
+	source := testZcodeSource(t, func(path string, request *http.Request) (int, string) {
+		switch {
+		case strings.HasSuffix(path, "/balance"):
+			return http.StatusOK, `{"code":0,"data":{"balances":[]}}`
+		case strings.HasSuffix(path, "/preview"):
+			return http.StatusOK, `{"code":0,"data":{"plans":[]}}`
+		default:
+			if request.Header.Get("Authorization") != "Bearer paas-token" {
+				t.Errorf("authorization = %q", request.Header.Get("Authorization"))
+			}
+			return http.StatusOK, `{"data":[{"id":"glm-5.2"},{"id":"gpt-5"},{"id":"glm-5.2"}]}`
+		}
+	})
+	models, err := source.DiscoverModels(
+		context.Background(),
+		zcodeCredentialWithPaasToken(t, "jwt-test", "paas-token"),
+	)
+	if err != nil {
+		t.Fatalf("DiscoverModels() error = %v", err)
+	}
+	if len(models) != 1 || models[0] != "glm-5.2" {
+		t.Fatalf("models = %v", models)
 	}
 }
 

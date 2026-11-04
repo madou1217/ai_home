@@ -4,7 +4,8 @@
 //   1. `/` 进入输入态；输入态里 `q` 是字符（否则搜不了 qoder），Enter 保留查询，
 //      Esc 清空并退出输入态，Ctrl+C 退出；
 //   2. 普通模式下 `q` 退出；有筛选时 Esc 先清筛选，再按一次才退出；
-//   3. 裁行按 provider 整块：只留下"至少有一个账号命中"的块，命中不到给一行提示。
+//   3. 裁行逐行判断：没命中的账号丢掉；provider 头只在下面还有命中时保留；
+//      一个都没命中时给一行提示，而不是空白屏。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,7 +17,7 @@ function row(kind, text, meta = null) {
   return { kind, text, meta, render: (prefix = '') => `${prefix}${kind}:${text}` };
 }
 
-test('filterListRows：按 provider 整块保留，标题只在有块存活时保留', () => {
+test('filterListRows：provider 头只在下面有命中时保留，标题只在有块存活时保留', () => {
   const rows = [
     row('spacer', ''),
     row('title', 'overview'),
@@ -189,4 +190,25 @@ test('状态行：交互态先给按键提示，`/` 之后变成输入提示并�
   } finally {
     harness.animator.stop();
   }
+});
+
+test('filterListRows：命中 provider 里没命中的账号也要丢掉（逐行裁，不是整块留）', () => {
+  const rows = [
+    row('spacer', ''),
+    row('title', 'overview'),
+    row('provider', 'codebuddy'),
+    row('account', 'codebuddy 1 madou1217@gmail.com'),
+    row('account', 'codebuddy 2 270577450@qq.com'),
+    row('account', 'codebuddy 3 270577450@qq.com'),
+    row('provider', 'codex'),
+    row('account', 'codex 1 someone@qq.com')
+  ];
+  const kept = filterListRows(rows, 'qq.com');
+  assert.deepEqual(kept.map((r) => r.text), [
+    '', 'overview',
+    'codebuddy',
+    'codebuddy 2 270577450@qq.com',
+    'codebuddy 3 270577450@qq.com',
+    'codex', 'codex 1 someone@qq.com'
+  ]);
 });

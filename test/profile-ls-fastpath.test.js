@@ -105,7 +105,7 @@ Module._load = function (request, parent, isMain) {
   assert.equal(fs.existsSync(marker), false, 'provider ls 不应加载完整组合根');
 });
 
-test('先出列表、后补数据：第一帧早于任何凭据/用量读取', (t) => {
+test('先出列表、后补数据：第一帧早于任何凭据/用量读取', async (t) => {
   const aiHomeDir = tempHome(t);
   const account = registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codebuddy',
@@ -180,17 +180,19 @@ test('先出列表、后补数据：第一帧早于任何凭据/用量读取', (
   assert.match(firstFrame, /\[Remaining: 61\.0%\]/);
   assert.equal(enrichCalls.length, 0, '补算必须排在第一帧之后');
 
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // 增量重绘会把一帧拆成多段写，断言要看整段输出。
-      const all = writes.join('');
-      assert.ok(enrichCalls.length >= 1, '第一帧之后应当发起补算');
-      assert.match(all, /Enriched Name/);
-      assert.match(all, /Credits: 61\.0%/);
-      assert.equal(listed.interactive, true);
-      resolve();
-    }, 200);
-  });
+  // 补算是异步的（setImmediate → 请求 → 下一帧重绘），机器繁忙时 200ms 不够；
+  // 用轮询等结果，避免"跑得快就绿、跑得慢就红"的假失败。
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (writes.join('').includes('Enriched Name')) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  // 增量重绘会把一帧拆成多段写，断言要看整段输出。
+  const all = writes.join('');
+  assert.ok(enrichCalls.length >= 1, '第一帧之后应当发起补算');
+  assert.match(all, /Enriched Name/);
+  assert.match(all, /Credits: 61\.0%/);
+  assert.equal(listed.interactive, true);
 });
 
 function stripAnsi(text) {

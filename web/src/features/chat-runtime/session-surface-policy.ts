@@ -196,18 +196,21 @@ function sameChatTarget(left?: string | null, right?: string | null): boolean {
 
 function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResolution {
   const account = input.account;
-  // chat 没有账号区别（2026-11-02）：harness 是 aih 自己的全局目录，账号只决定这次请求
-  // 走哪个账号池路由，不决定会话作用域。所以 chat 目标恒为网关作用域——换账号继续聊同一个
-  // 会话时不换 home、不换 thread，也不需要 history 回填。
+  // chat 的 harness home 是全局的，但**执行作用域有两种并存**（2026-11-04）：
+  //   - 选了具体账号 → 单账号直连（服务端写 X-Account-Ref/X-Provider，用该账号凭据）；
+  //   - 选 aih-server / 未选 → 网关池化（不钉账号，由网关在池里挑）。
   // 会话 provider 保持原值（harness 目录命名与模型元数据解析仍要用它）。
   if (account && !isAihServerAccount(account) && account.provider !== input.session.provider) {
     return blocked('provider_mismatch');
   }
+  const executionAccountRef = account
+    ? chatAccountIdentity(account) || GATEWAY_RUNTIME_SCOPE
+    : GATEWAY_RUNTIME_SCOPE;
   return {
     status: 'ready',
     target: {
       provider: input.session.provider,
-      executionAccountRef: GATEWAY_RUNTIME_SCOPE,
+      executionAccountRef,
       projectPath: '',
       ...(input.session.runtimeSessionId || !input.session.draft
         ? { chatSessionId: input.session.runtimeSessionId || input.session.id } : {}),

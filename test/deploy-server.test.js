@@ -62,6 +62,7 @@ test('binary install scripts replace the launcher and restart the service; no so
   const windowsOptions = parseArgs(['--ssh', 'u@h', '--target', 'win32-x64']);
   const windows = buildWindowsInstallScript(windowsOptions, 'aih-1.0.0-win32-x64.exe', '1.0.0', parseTarget('win32-x64'));
   assert.match(windows, /%LOCALAPPDATA%/);
+  assert.match(windows, /\$ProgressPreference = 'SilentlyContinue'/);
   assert.match(windows, /Join-Path \$env:USERPROFILE \$Artifact/);
   assert.match(windows, /Invoke-CimMethod -ClassName Win32_Process/);
   assert.match(windows, /Get-NetTCPConnection -LocalPort \$Port/);

@@ -424,6 +424,7 @@ function buildWindowsInstallScript(options, artifact, version, target) {
   const installDir = options.installDir || defaultInstallDir(target);
   const restart = options.restart;
   return `$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $Artifact = ${psQuote(artifact)}
 if (-not [System.IO.Path]::IsPathRooted($Artifact)) { $Artifact = Join-Path $env:USERPROFILE $Artifact }
 $Version = ${psQuote(version)}

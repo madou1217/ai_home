@@ -8,6 +8,8 @@ import (
 	"syscall"
 )
 
+func prepareConsole() {}
+
 func launch(dest string) error {
 	node := filepath.Join(dest, "runtime", "bin", "node")
 	entry := filepath.Join(dest, "bin", "ai-home.js")

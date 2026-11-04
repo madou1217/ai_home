@@ -182,10 +182,11 @@ test('先出列表、后补数据：第一帧早于任何凭据/用量读取', (
 
   return new Promise((resolve) => {
     setTimeout(() => {
-      const latest = writes[writes.length - 1] || '';
+      // 增量重绘会把一帧拆成多段写，断言要看整段输出。
+      const all = writes.join('');
       assert.ok(enrichCalls.length >= 1, '第一帧之后应当发起补算');
-      assert.match(latest, /Enriched Name/);
-      assert.match(latest, /Credits: 61\.0%/);
+      assert.match(all, /Enriched Name/);
+      assert.match(all, /Credits: 61\.0%/);
       assert.equal(listed.interactive, true);
       resolve();
     }, 200);

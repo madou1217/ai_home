@@ -11,8 +11,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
-  ROTATE_INTERVAL_MS,
-  rotationTick,
+  ROTATE_STEP_MS,
+  rotationTurn,
   createProfileListService
 } = require('../lib/cli/services/profile/list');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
@@ -28,23 +28,31 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test('轮换相位：同一时间片内稳定，跨片递增 1；不同账号相位错开', () => {
-  const now = 1_700_000_000_000;
-  const first = rotationTick('codebuddy:acct_a', now, 5000);
-  assert.equal(rotationTick('codebuddy:acct_a', now + 1, 5000), first);
-  assert.equal(rotationTick('codebuddy:acct_a', now + 5000, 5000), first + 1);
-  assert.equal(ROTATE_INTERVAL_MS, 5000);
+test('轮换调度：全局节拍轮流，每个节拍最多一个账号换内容', () => {
+  assert.equal(ROTATE_STEP_MS, 1500);
+  const count = 5;
+  const turnAt = (step) => Array.from({ length: count }, (_v, slot) => rotationTurn({
+    slot,
+    rotatingCount: count,
+    stepMs: 1000,
+    startedAt: 0,
+    nowMs: step * 1000
+  }));
 
-  // 不同 key 的相位不同 → 翻页时刻错开（不是整屏同一刻一起跳）。
-  const keys = Array.from({ length: 12 }, (_v, index) => `codebuddy:acct_${index}`);
-  const flips = keys.map((key) => {
-    const base = rotationTick(key, now, 5000);
-    for (let delta = 1; delta <= 5000; delta += 1) {
-      if (rotationTick(key, now + delta, 5000) !== base) return delta;
-    }
-    return 0;
-  });
-  assert.ok(new Set(flips).size >= 3, `不同账号应错开翻页时刻，实际 ${new Set(flips).size} 种`);
+  // 首屏全部展示下标 0；之后每一拍正好一个账号 +1。
+  assert.deepEqual(turnAt(0), [0, 0, 0, 0, 0]);
+  let previous = turnAt(0);
+  for (let step = 1; step <= count * 3; step += 1) {
+    const current = turnAt(step);
+    const changed = current.filter((value, index) => value !== previous[index]);
+    assert.equal(changed.length, 1, `第 ${step} 拍应正好一个账号换内容，实际 ${changed.length}`);
+    previous = current;
+  }
+
+  // 每个账号每 count 拍才轮到自己一次。
+  assert.equal(turnAt(1)[0], 1);
+  assert.equal(turnAt(count)[0], 1);
+  assert.equal(turnAt(count + 1)[0], 2);
 });
 
 function buildService(t, { isTTY, writes, checkStatus, runtimeState }) {
@@ -88,7 +96,7 @@ function buildService(t, { isTTY, writes, checkStatus, runtimeState }) {
     aiHomeDir,
     cliConfigs: { codebuddy: {} },
     listPageSize: 50,
-    rotateIntervalMs: 120,
+    rotateStepMs: 120,
     getAccountStateIndex: () => index,
     checkStatus: checkStatus || (() => ({ configured: true, accountName: 'Rotation Demo' })),
     formatUsageLabel: () => '\x1b[36m[Remaining: A / B]\x1b[0m',

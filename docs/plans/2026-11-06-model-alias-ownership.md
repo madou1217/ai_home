@@ -133,3 +133,9 @@ CRUD 用例与格式/目标校验、WebUI 契约接口（列表/新建/更新/�
 
 下一个大块（需要产品/运维决定）：给 Go 分配推理路由（AIH_GO_CORE_ROUTES），
 让 usage_ledger 真正增长——这是 WebUI 用量/额度页切流的前置条件。
+**真机 UI 验收受阻（2026-11-06）**：WebUI 的「连接 Server」流程会调用
+/v0/node-rpc/device-status，而本仓库的 lib 与 Go 都没有实现这个接口（web/src 期望、后端缺失），
+因此浏览器停在连接页、无法进入别名页。这与别名迁移无关，是前端/后端版本不一致的既有问题。
+替代验证：用管理密钥直接打 WebUI 契约的五个接口（create/list/update/toggle/delete）全部通过，
+Go 侧 generation 32→38、双库对账 aliases_in_sync。
+

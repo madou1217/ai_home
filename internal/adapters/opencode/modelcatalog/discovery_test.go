@@ -98,7 +98,7 @@ func TestDiscoverModelsAcceptsOAuthAccessToken(t *testing.T) {
 	source := testSource(t, func(path string, request *http.Request) (int, string) {
 		seen = append(seen, request.Header.Get("Authorization"))
 		if path == "/zen/go/v1/models" {
-			return http.StatusUnauthorized, `{}`
+			return http.StatusOK, `{"data":[{"id":"go-model"}]}`
 		}
 		return http.StatusOK, `{"data":[{"id":"free-model"}]}`
 	})
@@ -106,7 +106,7 @@ func TestDiscoverModelsAcceptsOAuthAccessToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverModels() error = %v", err)
 	}
-	if len(models) != 1 || models[0] != "opencode/free-model" {
+	if strings.Join(models, ",") != "opencode-go/go-model,opencode/free-model" {
 		t.Fatalf("models = %v", models)
 	}
 	for _, authorization := range seen {
@@ -116,7 +116,7 @@ func TestDiscoverModelsAcceptsOAuthAccessToken(t *testing.T) {
 	}
 }
 
-func TestDiscoverModelsToleratesOneFailedLeg(t *testing.T) {
+func TestDiscoverModelsFailsClosedWhenOneLegFails(t *testing.T) {
 	t.Parallel()
 	source := testSource(t, func(path string, _ *http.Request) (int, string) {
 		if path == "/zen/go/v1/models" {
@@ -124,12 +124,14 @@ func TestDiscoverModelsToleratesOneFailedLeg(t *testing.T) {
 		}
 		return http.StatusOK, `{"data":[{"id":"free-model"}]}`
 	})
+	// 单腿失败 = 只看到半份目录。必须失败让刷新重试，不能把并集的一半当结论写进
+	// account_models——那会让另一半模型静默从路由里消失（本机实测少了 41 个）。
 	models, err := source.DiscoverModels(context.Background(), apiKeyCredential(t))
-	if err != nil {
-		t.Fatalf("DiscoverModels() error = %v", err)
+	if err == nil {
+		t.Fatalf("单腿失败应返回错误，实际 models = %v", models)
 	}
-	if len(models) != 1 || models[0] != "opencode/free-model" {
-		t.Fatalf("models = %v", models)
+	if len(models) != 0 {
+		t.Fatalf("失败时不应返回部分目录: %v", models)
 	}
 }
 

@@ -95,8 +95,11 @@ func (source *Source) DiscoverModels(
 	token = strings.TrimSpace(token)
 	seen := make(map[string]struct{}, 32)
 	models := make([]string, 0, 32)
+	// 两条腿必须都成功：目录是并集，任何一条腿失败都说明我们只看到了半份目录。
+	// 曾经这里「一条腿成功就返回部分并集」，结果某账号少了 41 个 opencode/* 模型却被
+	// 当成完整目录写进 account_models（模型静默从路由里消失）。宁可失败让刷新重试，
+	// 也不要把半份目录当结论。
 	var firstErr error
-	succeeded := false
 	for _, leg := range source.legs {
 		ids, legErr := source.fetch(ctx, leg, token)
 		if legErr != nil {
@@ -105,7 +108,6 @@ func (source *Source) DiscoverModels(
 			}
 			continue
 		}
-		succeeded = true
 		for _, id := range ids {
 			if _, exists := seen[id]; exists {
 				continue
@@ -114,7 +116,7 @@ func (source *Source) DiscoverModels(
 			models = append(models, id)
 		}
 	}
-	if !succeeded {
+	if firstErr != nil {
 		return nil, firstErr
 	}
 	if len(models) == 0 {

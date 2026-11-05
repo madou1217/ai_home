@@ -23,7 +23,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | **agy** | `node` `N:server/oauth-strategies/agy.js`；Go 仅刷新 `G:adapters/accountauth/agyoauth/refresh.go` | `both` `G:adapters/agy/codeassist` · `N:providers/defs/agy.js` | `go` `G:adapters/agy/usage`；`N:providers/defs/agy.js` quota=false | `both` `G:adapters/agy/codeassist`（canonical）· `N:server/agy-cli-transport.js` | `node` `N:account/account-removal.js` | `none` | `node` `N:runtime/client-terminal.js` |
 | **claude** | `both` `G:adapters/accountauth/claudeoauth` · `N:server/oauth-strategies/claude.js` | `both` `G:adapters/claude/messages` · `N:providers/defs/claude.js` | `both` `G:adapters/claude/usage` · `N:usage/provider-usage/claude.js` | `both` `G:adapters/claude/messages` + `G:transport/http/claudenativerelay` · `N:server/provider-protocol-routing.js` | `both` `G:adapters/accounts/deletionprojection` · `N:account/account-removal.js` | `none` | `both` `G:adapters/claude/clilaunch` + `G:runtime/providercli` · `N:runtime/client-terminal.js` `N:runtime/acp-layouts.js` |
-| **cline** | `node` `N:account/cline-credentials.js` `N:account/cline-native-credential-sync.js` | `node` `N:providers/defs/cline.js`（静态 `N:server/cline-models.js`） | `go` `G:adapters/cline/usage`；`N:providers/defs/cline.js` quota=false | `both` `G:transport/http/clinerelay` · `N:server/upstream-endpoints-transport-general.js` | `node` `N:account/account-removal.js` | `none` | `node` `N:runtime/acp-layouts.js`（ACP 已登记） |
+| **cline** | `node` `N:account/cline-credentials.js` `N:account/cline-native-credential-sync.js` | `go` `G:adapters/cline/modelcatalog`（静态清单）· `N:providers/defs/cline.js`（只读 Go `account_models`） | `go` `G:adapters/cline/usage`；`N:providers/defs/cline.js` quota=false | `both` `G:transport/http/clinerelay` · `N:server/upstream-endpoints-transport-general.js` | `node` `N:account/account-removal.js` | `none` | `node` `N:runtime/acp-layouts.js`（ACP 已登记） |
 | **codebuddy** | `node` `N:server/oauth-strategies/codebuddy.js` | `both` `G:adapters/codebuddyfamily/modelcatalog` · `N:providers/defs/_shared/codebuddy-family.js` | `go` `G:adapters/codebuddyfamily/usage`；`N:providers/defs/_shared/codebuddy-family.js` quota=false | `both` `G:transport/http/codebuddyfamilyrelay`（仅 chat_completions）· `N:server/upstream-endpoints-transport-general.js` | `node` `N:account/account-removal.js` | `none` | `node` `N:runtime/acp-layouts.js` |
 | **codebuddycn** | `node` 同上（同 `_shared` 描述符） | `both` 同上 | `go` `G:adapters/codebuddyfamily/usage` | `both` 同上 | `node` 同上 | `node` `N:account/activity-claim/workbuddy-daily.js` | `node` 同上 |
 | **codex** | `both` `G:adapters/accountauth/codexoauth` · `N:server/oauth-strategies/codex.js` | `both` `G:adapters/codex/responses` · `N:providers/defs/codex.js` | `both` `G:adapters/codex/usage` · `N:usage/provider-usage/codex.js` | `both` `G:transport/http/codexresponseshttp` + `G:transport/http/codexresponsesws` · `N:server/codex-adapter.js` | `both` `G:adapters/accounts/deletionprojection` · `N:account/account-removal.js` | `none` | `both` `G:adapters/codex/clilaunch` + `G:runtime/providercli` · `N:runtime/client-terminal.js` `N:runtime/acp-layouts.js` |
@@ -31,7 +31,7 @@
 | **grok** | `node` `N:account/grok-auth-profile.js` + 通用 CLI 登录作业 | `both` `G:adapters/openaicompat/modelcatalog`（仅 API Key）· `N:providers/defs/grok.js` | `node` `N:usage/provider-usage/grok.js` | `both` `G:transport/http/grokrelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
 | **kimi** | `node` `N:account/kimi-auth.js` + 通用 CLI 登录作业 | `both` `G:adapters/openaicompat/modelcatalog` · `N:providers/defs/kimi.js` | `node` `N:usage/provider-usage/kimi.js` | `both` `G:transport/http/kimirelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **kiro** | `node` `N:account/kiro-device-login.js` `N:account/kiro-native-login.js` | `both` `G:adapters/kiro/modelcatalog` · `N:providers/defs/kiro.js` | `go` `G:adapters/kiro/usage`；`N:providers/defs/kiro.js` quota=false | `node` `N:server/kiro-chat-transport.js`；Go 无上游适配器（`C:providers/builtins.go:538`） | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
-| **opencode** | `node` `N:server/oauth-strategies/opencode.js`（设备码） | `both` `G:adapters/opencode/modelcatalog` · `N:providers/defs/opencode.js` | `none` 两侧均无额度接口（`C:providers/builtins.go` 未声明 quota，Node quota=false） | `both` `G:transport/http/opencoderelay`（仅 official API Key）· `N:server/opencode-free-cli-transport.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
+| **opencode** | `node` `N:server/oauth-strategies/opencode.js`（设备码） | `go` `G:adapters/opencode/modelcatalog`（Zen + Go 双腿）· `N:providers/defs/opencode.js`（只读 Go `account_models`） | `none` 两侧均无额度接口（`C:providers/builtins.go` 未声明 quota，Node quota=false） | `both` `G:transport/http/opencoderelay`（仅 official API Key）· `N:server/opencode-free-cli-transport.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **qoder** | `node` `N:account/qoder-auth-metadata.js` + 通用 CLI 登录作业 | `both` `G:adapters/qoder/modelcatalog`（wasm 签名）· `N:providers/defs/qoder.js` | `go` `G:adapters/qoder/usage`；`N:providers/defs/qoder.js` quota=false | `node` `N:server/qoder-http-transport.js` `N:server/qoder-cli-transport.js`；Go `G:transport/http/qoderrelay` **已写未接线** | `node` 同上 | `node` `N:account/activity-claim/qoder-daily.js` | `node` `N:runtime/acp-layouts.js` |
 | **qodercn** | `node` 同上（CN 变体） | `both` `G:adapters/qoder/modelcatalog`（CN 区域）· `N:providers/defs/qodercn.js` | `go` `G:adapters/qoder/usage` | `node` 同上 | `node` 同上 | `node` 同上（区域主机不同） | `node` 同上 |
 | **workbuddy** | `node` 家族宿主扫描 `N:account/host-account-sync/` | `both` `G:adapters/codebuddyfamily/modelcatalog` · `N:providers/defs/workbuddy.js` | `go` `G:adapters/codebuddyfamily/usage` | `both` `G:transport/http/codebuddyfamilyrelay` | `node` 同上 | `none`（国际站无签到） | `node` `N:runtime/acp-layouts.js` |
@@ -45,13 +45,13 @@
 | 能力 | go | both | node | none |
 | --- | ---: | ---: | ---: | ---: |
 | 登录/OAuth 作业 | 0 | 2 | 14 | 0 |
-| 模型目录发现 | 0 | 15 | 1 | 0 |
+| 模型目录发现 | 2 | 14 | 0 | 0 |
 | 额度采集 | 10 | 2 | 3 | 1 |
 | 推理 relay | 0 | 11 | 5 | 0 |
 | 账号删除/宿主清理 | 0 | 2 | 14 | 0 |
 | 活动签到 | 0 | 0 | 5 | 11 |
 | 会话/PTY/SSH | 0 | 2 | 14 | 0 |
-| **合计** | **10** | **34** | **56** | **12** |
+| **合计** | **12** | **33** | **55** | **12** |
 
 ## 3. 关键观察
 
@@ -60,7 +60,7 @@
 3. **relay 有 5 个 `node`：gemini、kiro、zcode、qoder、qodercn。** 其中 qoder/qodercn 的 Go 实现已完成但没挂链，是唯一「沉没成本」项；其余四家是 Go 确实没有上游适配器（`C:providers/builtins.go` 里带 reason 的 node-only）。
 4. **登录的 14 个 `node` 不等于 14 套实现。** Node 侧是通用 CLI 作业框架（`N:server/web-account-auth.js` + `N:server/oauth-strategies/*`），Provider 只提供策略/提示词。迁移时应拆成「作业框架持久化」与「Provider 策略」两块，而不是逐家搬。
 5. **活动与会话的 `node` 是设计选择，不是欠账。** 活动依赖本机 Chrome + 阿里云验证码（强风控），PTY/SSH 是宿主级能力（计划 P5）。短期迁 Go 的收益低于风险。
-6. **cline 是唯一 `models=node` 的格子**，但它是纯静态清单（`N:server/cline-models.js`），迁移成本最低，适合作为「补齐最后 1/16」的收尾。
+6. **模型目录已 16/16 由 Go 产出**（2026-11-05）：cline 的静态清单与 opencode 的双腿并集都落到 `account_models`。Node 侧只保留一条 `transport: local` 的 `go-account-models` 策略读 Go，不再有任何出网/CLI 探测策略（见 `lib/providers/model-ownership.js`）。
 7. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

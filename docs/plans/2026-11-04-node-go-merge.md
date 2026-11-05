@@ -701,6 +701,7 @@ Node 进程（过渡期，逐渐缩小）
 | cline 额度采集 | 待真机 | 两个 cline 账号 enabled=0 | 启用一个后显式 refresh，确认 5h/7d/30d 三个窗口 |
 | agy 额度采集 | 待真机 | 6 个账号 enabled=0 且 token 自 2026-10-24 过期 | 重新登录一个 agy 账号后 refresh |
 | kimi / grok 模型目录 | 待真机 | 本机没有账号 | 有账号后看 account_models 是否出现 |
+| cline 模型目录（Go 静态清单） | 待真机 | 两个 cline 账号在 Go 里 enabled=0，Go 不会刷新它们 | 启用一个后确认 account_models 出现 14 条 cline-pass/*，且 WebUI scoped 目录数 = Go |
 | ~~qoder 模型目录~~ | ✅ 2026-11-05 真机 | 已迁 Go（wasm 签名 + 15 个模型） | — |
 | qoder relay（推理） | 待真机 | 本机 Free 账号连续 3 次上游 500（已停手）；未接线 | 用付费账号跑 TestLiveRelayProbe 一次，通过后挂 ProviderChain |
 

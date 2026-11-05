@@ -827,6 +827,42 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - **WebUI 合并层**：采用 Go 的 `accountProbedAt`（与 Node 取大）与错误（成功即清空旧错误）。
 - 真机：opencode 109、codebuddy 26、全量 209，`source=remote`。
 
-下一阶段（Phase 2）：按 provider 把 Node 的 `models.supported` 关掉并删探测链。
-每个 provider 独立提交，验证口径 = 该 provider 所有账号的 scoped 目录数与
-`/v1/management/account-models` 完全相等；建议从 opencode / cline 开始，最后 codex/claude。
+
+## Phase 2 第一批：opencode / cline 的 Node 探测链退役（2026-11-05）
+
+### 形态
+
+- **归属唯一真值源**：`lib/providers/model-ownership.js` 的 `GO_MODEL_OWNERS` +
+  `goOwnedModels(id)`。descriptor 的 `models` 能力由它派生，不手写策略。
+- **单策略**：`handler: 'go-account-models'`、`transport: 'local'`。Go 是本机服务，
+  这份目录既不出网也不依赖客户端；`local` 让它在账号出口解析**之前**执行，
+  出口配置异常不会拖垮目录读取。
+- **实现**：`lib/server/model-discovery/go-account-models.js` 读
+  `GET /v1/management/account-models`，并做 Node↔Go accountRef 翻译。
+- **删除的探测链**：`opencode-models` / `cline-static-catalog` 两个 handler；
+  `http-utils` 里按 provider 名的 opencode 分支；`opencode-server-client` 的
+  `probeOpenCodeCatalog` / `fetchOpenCodeModels`。
+- **不回退**：`fetchModelsForAccount` 对 Go 接管的 Provider 不再落到通用探测/原生 CLI；
+  Go 读不到时抛 `go_model_catalog_unavailable`（缓存层保留上一份目录，不把账号判成
+  「没有模型」）。
+- **本地兜底退役**：`account.availableModels`、描述符目录、目录缓存不再参与 Go 接管
+  Provider 的目录（停用的 cline 账号曾因此残留 2 条历史模型）。
+- **账号引用翻译**：同步链接缺失时按**恒等**（两侧 ref 相同），不再返回空串。
+  修复前 opencode 的 API Key 账号读不到 Go 目录（WebUI 显示 0 个模型）。
+
+### 真机（2026-11-05，Node 9527 / Go 19550）
+
+- opencode OAuth 账号（Node `acct_5339…` → Go `acct_84c6…`）：109，与 Go
+  `account-models` 一致，`source=remote`。
+- opencode API Key 账号（`acct_e9b5…`，两侧同 ref）：109（修复前 0）。
+- cline 两个账号在 Go 里 `enabled=0`，Go 未刷新目录：scoped 目录为空，只剩手工模型
+  设置。静态清单 14 条由 Go 单测锁定；**启用账号后补一次真机验收**。
+- 回归守卫：`test/model-ownership.test.js`（10 项：descriptor 派生、无出网策略、
+  不出网读取、Go 读不到时抛错、本地兜底不进目录、ref 恒等翻译）。
+
+### 下一步
+
+- 其余 Provider 按同一形状退役（gemini / kiro / zcode / …）：只改 descriptor 一行 +
+  删对应 handler，不动派发路径。
+- codex / claude 最后（仍有 CLI 与特殊目录逻辑）。
+- cline 启用账号后验证 scoped 目录 = 14 = `/v1/management/account-models`。

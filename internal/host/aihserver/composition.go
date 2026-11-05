@@ -469,17 +469,21 @@ func newHandlers(
 		}
 		staticCredentialStrategies = append(staticCredentialStrategies, strategy)
 	}
+	// 两处解析器（WebUI/账号域与推理）共用同一份刷新策略集合：
+	// 新增 Provider 只改这一处调用，不再维护两份字面量列表。
+	credentialRefreshStrategies := func(oauth ...accountcredentials.RefreshStrategy) []accountcredentials.RefreshStrategy {
+		return append(oauth, staticCredentialStrategies...)
+	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
 			Store: store,
 			Strategies: append(
-				[]accountcredentials.RefreshStrategy{
+				credentialRefreshStrategies(
 					codexProvider,
 					claudeProvider,
 					agyProvider,
 					kimiProvider,
-				},
-				staticCredentialStrategies...,
+				),
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
@@ -774,13 +778,12 @@ func newHandlers(
 			models:         recoveringModelManagement,
 			modelRefreshes: modelRefresh,
 			credentialRefresh: append(
-				[]accountcredentials.RefreshStrategy{
+				credentialRefreshStrategies(
 					codexProvider,
 					claudeProvider,
 					agyProvider,
 					kimiProvider,
-				},
-				staticCredentialStrategies...,
+				),
 			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			authorizer:                clientAuthorizer,

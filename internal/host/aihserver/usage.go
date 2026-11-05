@@ -10,22 +10,10 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
-	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
-	codebuddyfamilyusage "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/usage"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
-	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
-	geminiusage "github.com/madou1217/ai_home/internal/adapters/gemini/usage"
-	kimiusage "github.com/madou1217/ai_home/internal/adapters/kimi/usage"
-	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
-	qoderusage "github.com/madou1217/ai_home/internal/adapters/qoder/usage"
-	zcodeusage "github.com/madou1217/ai_home/internal/adapters/zcode/usage"
 )
 
 const (
@@ -96,73 +84,14 @@ func newUsageComposition(
 			CheckRedirect: rejectOAuthRedirect,
 		}
 	}
-	var codexVersions clientversion.Source = clientversion.Static(codexidentity.Floor)
-	if dependencies.codexVersions != nil {
-		codexVersions = dependencies.codexVersions
-	}
-	codexStrategy, err := codexusage.NewWithClientVersion(client, codexVersions)
-	if err != nil {
-		return nil, err
-	}
-	claudeStrategy, err := claudeusage.New(client)
-	if err != nil {
-		return nil, err
-	}
-	// kiro 的额度是 GetUsageLimits 的 CREDIT 资源；过期 token 由 kirocred 先刷新。
-	kiroStrategy, err := kirousage.New(client)
-	if err != nil {
-		return nil, err
-	}
-	// agy 的额度按模型计；凭据刷新由 credential resolver 的 agy 策略完成。
-	agyStrategy, err := agyusage.New(client)
-	if err != nil {
-		return nil, err
-	}
-	// zcode 的额度是 plan 余额（与模型目录同一 balance 接口）。
-	zcodeStrategy, err := zcodeusage.New(client)
-	if err != nil {
-		return nil, err
-	}
-	// cline 的额度来自 plan + usage-limits 两个端点。
-	clineStrategy, err := clineusage.New(client)
-	if err != nil {
-		return nil, err
-	}
-	// gemini 的额度来自 v1internal:retrieveUserQuota（模型桶，无窗口时长）。
-	geminiStrategy, err := geminiusage.New(client)
-	if err != nil {
-		return nil, err
-	}
-	// kimi 的 /usages 需要设备头；token 过期由 resolver 的 kimioauth 刷新。
-	kimiStrategy, err := kimiusage.New(client, kimiusage.Options{
-		ClientVersion: kimiClientVersion(),
-		Host: kimiidentity.HostFacts{
-			HostName:    hostNameOrEmpty(),
-			DeviceModel: hostDeviceModelOrEmpty(),
-			OSVersion:   hostOSVersionOrEmpty(),
-		},
+	strategies, providerConcurrency, err := buildUsageProviderStrategies(usageProviderContext{
+		client:        client,
+		codexVersions: dependencies.codexVersions,
+		store:         dependencies.store,
+		clock:         dependencies.clock,
 	})
 	if err != nil {
 		return nil, err
-	}
-	// Qoder 家族两个区域共用同一账号面协议；凭据是 CLI 的 opaque blob 时由
-	// qodercred 用厂商 wasm 解密出 token（Node 侧同为 cli_wasm 来源）。
-	qoderStrategies := make([]usageapp.ProviderStrategy, 0, 2)
-	for _, providerID := range []string{"qoder", "qodercn"} {
-		strategy, strategyErr := qoderusage.New(client, providerID)
-		if strategyErr != nil {
-			return nil, strategyErr
-		}
-		qoderStrategies = append(qoderStrategies, strategy)
-	}
-	// CodeBuddy 家族四支共用同一账单协议，按 Provider 各注册一条策略。
-	familyStrategies := make([]usageapp.ProviderStrategy, 0, 4)
-	for _, providerID := range []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"} {
-		strategy, strategyErr := codebuddyfamilyusage.New(client, providerID)
-		if strategyErr != nil {
-			return nil, strategyErr
-		}
-		familyStrategies = append(familyStrategies, strategy)
 	}
 	kiroRefresher, err := kirocred.New(dependencies.store, client, dependencies.clock)
 	if err != nil {
@@ -176,49 +105,25 @@ func newUsageComposition(
 			resolver: dependencies.credentials,
 			store:    dependencies.store,
 		},
-		Models:  dependencies.models,
-		Runtime: dependencies.runtime,
-		Strategies: append(append([]usageapp.ProviderStrategy{
-			codexStrategy,
-			claudeStrategy,
-			kiroStrategy,
-			agyStrategy,
-			zcodeStrategy,
-			clineStrategy,
-			geminiStrategy,
-			kimiStrategy,
-		}, qoderStrategies...), familyStrategies...),
-		Refresher: kiroRefresher,
-		Clock:     dependencies.clock,
+		Models:     dependencies.models,
+		Runtime:    dependencies.runtime,
+		Strategies: strategies,
+		Refresher:  kiroRefresher,
+		Clock:      dependencies.clock,
 	})
 	if err != nil {
 		return nil, err
 	}
 	coordinator, err := usageapp.NewCoordinator(usageapp.CoordinatorOptions{
-		Catalog:   dependencies.catalog,
-		Refresher: service,
-		ProviderConcurrency: map[string]int{
-			"codex":       usageProviderConcurrency,
-			"claude":      usageProviderConcurrency,
-			"kiro":        usageProviderConcurrency,
-			"agy":         usageProviderConcurrency,
-			"zcode":       usageProviderConcurrency,
-			"codebuddy":   usageProviderConcurrency,
-			"codebuddycn": usageProviderConcurrency,
-			"workbuddy":   usageProviderConcurrency,
-			"workbuddycn": usageProviderConcurrency,
-			"cline":       usageProviderConcurrency,
-			"gemini":      usageProviderConcurrency,
-			"kimi":        usageProviderConcurrency,
-			"qoder":       usageProviderConcurrency,
-			"qodercn":     usageProviderConcurrency,
-		},
-		RefreshTimeout:  usageRefreshTimeout,
-		RefreshInterval: usageRefreshInterval,
-		StaggerWindow:   usageRefreshStagger,
-		BaseBackoff:     usageRefreshBaseBackoff,
-		MaxBackoff:      usageRefreshMaxBackoff,
-		Clock:           dependencies.clock,
+		Catalog:             dependencies.catalog,
+		Refresher:           service,
+		ProviderConcurrency: providerConcurrency,
+		RefreshTimeout:      usageRefreshTimeout,
+		RefreshInterval:     usageRefreshInterval,
+		StaggerWindow:       usageRefreshStagger,
+		BaseBackoff:         usageRefreshBaseBackoff,
+		MaxBackoff:          usageRefreshMaxBackoff,
+		Clock:               dependencies.clock,
 	})
 	if err != nil {
 		return nil, err

@@ -25,6 +25,8 @@ var (
 type Service struct {
 	store     *Store
 	providers map[string]struct{}
+	// targets 可选：判断目标模型是否真的可路由（见 TargetCatalog）。
+	targets TargetCatalog
 }
 
 // NewService 创建别名写服务。providerIDs 用于把未知作用域 Provider 归一到 all，
@@ -101,6 +103,9 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Record, 
 		return Record{}, 0, err
 	}
 	records := service.List()
+	if err := service.validateTarget(records, record, ""); err != nil {
+		return Record{}, 0, err
+	}
 	if err := service.assertUnique(records, record.Alias, record.ScopeProvider(), ""); err != nil {
 		return Record{}, 0, err
 	}
@@ -158,6 +163,9 @@ func (service *Service) Update(ctx context.Context, id string, input UpdateInput
 		return Record{}, 0, ErrInvalidAlias
 	}
 	if err := ValidateAliasPattern(updated.Alias); err != nil {
+		return Record{}, 0, err
+	}
+	if err := service.validateTarget(records, updated, id); err != nil {
 		return Record{}, 0, err
 	}
 	if err := service.assertUnique(records, updated.Alias, updated.ScopeProvider(), id); err != nil {
@@ -366,6 +374,53 @@ func ValidateAliasPattern(alias string) error {
 	}
 	if len([]rune(strings.TrimSuffix(trimmed, "*"))) < 2 {
 		return ErrInvalidAliasWildcard
+	}
+	return nil
+}
+
+// ErrUnknownAliasTarget 表示目标既不是已有别名，也不在任何 Provider 的目录里。
+var ErrUnknownAliasTarget = errors.New("别名目标不存在")
+
+// TargetCatalog 判断某个目标模型是否真的可路由。
+//
+// provider 为空表示「不限 Provider」（别名的 targetProvider=auto）：只要任一 Provider
+// 能接这个模型就算存在。返回 false 时写用例会拒绝保存。
+// 返回值 decided=false 表示「没有足够信息判断」，此时放行：
+// 目录里没有这个 Provider（例如它只有展示模型、或当前没有可用账号）时，
+// 拒绝会误伤合法目标。只有拿到该 Provider 的目标清单才做判定。
+type TargetCatalog func(provider, target string) (found bool, decided bool)
+
+// withTargetCatalog 设置目标校验器；nil 表示不校验（只做形状与重名校验）。
+func (service *Service) SetTargetCatalog(catalog TargetCatalog) {
+	service.targets = catalog
+}
+
+// validateTarget 校验别名目标：要么指向已有别名，要么在目标 Provider 的目录里。
+//
+// 为什么必须有这一步：别名写错一个字不会报错，只会在请求时静默不命中——
+// 用户看到的是「模型不存在」，实际是别名没配上。Node 侧一直有这道校验，
+// Go 接手写入口之前必须补齐，否则翻转等于放宽了写入约束。
+func (service *Service) validateTarget(records []Record, record Record, skipID string) error {
+	trimmed := strings.TrimSpace(record.Target)
+	if trimmed == "" {
+		return ErrInvalidAlias
+	}
+	for _, existing := range records {
+		if existing.ID != skipID && existing.Alias == trimmed {
+			return nil
+		}
+	}
+	if service.targets == nil {
+		return nil
+	}
+	provider := record.ResolvedTargetProvider()
+	if provider == TargetProviderAuto {
+		// auto 目标可以落在任何 Provider 上，而「所有 Provider 的清单」本身不完整
+		// （只有展示模型的 Provider 不在里面），所以这里不做判定。
+		return nil
+	}
+	if found, decided := service.targets(provider, trimmed); decided && !found {
+		return ErrUnknownAliasTarget
 	}
 	return nil
 }

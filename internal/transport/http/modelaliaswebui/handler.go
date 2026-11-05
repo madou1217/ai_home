@@ -288,6 +288,8 @@ func writeServiceError(response http.ResponseWriter, err error) {
 		writeError(response, http.StatusNotFound, "alias_not_found", "别名不存在")
 	case errors.Is(err, modelalias.ErrDuplicateAlias):
 		writeError(response, http.StatusConflict, "alias_conflict", "同作用域下已存在同名别名")
+	case errors.Is(err, modelalias.ErrUnknownAliasTarget):
+		writeError(response, http.StatusBadRequest, "alias_target_not_found", "目标模型不在任何 Provider 的目录里")
 	case errors.Is(err, modelalias.ErrInvalidAliasWildcard):
 		writeError(response, http.StatusBadRequest, "invalid_alias_wildcard", "通配别名只能有一个 *，且必须在末尾、前缀至少 2 个字符")
 	case errors.Is(err, modelalias.ErrInvalidAlias), errors.Is(err, modelalias.ErrInvalidProjection):

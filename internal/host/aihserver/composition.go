@@ -921,6 +921,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型别名写服务失败: %w", err)
 	}
+	// 目标校验与 /targets 用同一份目录数据：写入口和下拉选项必须看到同一批模型，
+	// 否则会出现「下拉里有、保存时说没有」。
+	aliasService.SetTargetCatalog(func(provider, target string) (bool, bool) {
+		models, listErr := inference.models.ListRoutableModels(context.Background())
+		if listErr != nil {
+			// 目录不可用时不做判定：不能因为还没构建完就拒绝保存别名。
+			return true, false
+		}
+		list, known := groupAliasTargets(models)[provider]
+		if !known {
+			// 这个 Provider 不在路由目录里（只有展示模型 / 当前无可用账号）：
+			// 没有证据，放行。
+			return true, false
+		}
+		for _, model := range list {
+			if model == target {
+				return true, true
+			}
+		}
+		return false, true
+	})
 	modelAliasesWebUIHandler, err := modelaliaswebui.NewHandler(modelaliaswebui.Dependencies{
 		Authorizer: authorizer,
 		Service:    aliasService,

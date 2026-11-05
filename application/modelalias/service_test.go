@@ -289,3 +289,61 @@ func TestServiceReplaceGroupRejectsBadWildcard(t *testing.T) {
 		t.Fatalf("error = %v, want ErrInvalidAliasWildcard", err)
 	}
 }
+
+// 目标校验：拼错一个字母不该被静默接受——请求时只会表现为「模型不存在」。
+func TestServiceRejectsUnknownTarget(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	service.SetTargetCatalog(func(provider, target string) (bool, bool) {
+		if provider != "zcode" {
+			return true, false
+		}
+		return target == "glm-5.3-flash", true
+	})
+	_, _, err := service.Create(context.Background(), CreateInput{Alias: "my-glm", Target: "glm-5.3-flsh", TargetProvider: "zcode"})
+	if !errors.Is(err, ErrUnknownAliasTarget) {
+		t.Fatalf("error = %v, want ErrUnknownAliasTarget", err)
+	}
+	if len(service.List()) != 0 {
+		t.Fatal("非法目标被写入")
+	}
+	if _, _, err := service.Create(context.Background(), CreateInput{Alias: "my-glm", Target: "glm-5.3-flash", TargetProvider: "zcode"}); err != nil {
+		t.Fatalf("正确目标被拒绝: %v", err)
+	}
+}
+
+// 目录里没有这个 Provider 时不做判定：只有展示模型 / 当前无可用账号的 Provider
+// 不在路由目录里，拒绝会误伤合法目标。
+func TestServiceSkipsTargetCheckForUnknownProvider(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	service.SetTargetCatalog(func(provider, target string) (bool, bool) {
+		return false, false
+	})
+	if _, _, err := service.Create(context.Background(), CreateInput{Alias: "a", Target: "anything", TargetProvider: "zcode"}); err != nil {
+		t.Fatalf("未知 Provider 应放行: %v", err)
+	}
+}
+
+// targetProvider=auto 不做判定（目标可能落在没有目标清单的 Provider 上）。
+func TestServiceSkipsTargetCheckForAutoProvider(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	service.SetTargetCatalog(func(provider, target string) (bool, bool) {
+		return false, true
+	})
+	if _, _, err := service.Create(context.Background(), CreateInput{Alias: "a", Target: "glm-5.3-flash"}); err != nil {
+		t.Fatalf("auto 应放行: %v", err)
+	}
+}
+
+// 别名指向别名是合法的（链式），不该被目录校验拦下。
+func TestServiceAllowsAliasTargetPointingToAlias(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	service.SetTargetCatalog(func(provider, target string) (bool, bool) {
+		return target == "glm-5.3-flash", true
+	})
+	if _, _, err := service.Create(context.Background(), CreateInput{Alias: "base", Target: "glm-5.3-flash", TargetProvider: "zcode"}); err != nil {
+		t.Fatalf("创建基础别名失败: %v", err)
+	}
+	if _, _, err := service.Create(context.Background(), CreateInput{Alias: "alias2", Target: "base", TargetProvider: "zcode"}); err != nil {
+		t.Fatalf("指向已有别名被拒绝: %v", err)
+	}
+}

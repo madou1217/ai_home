@@ -105,6 +105,11 @@ export default function AccountQuota() {
     label: scope.label || scope.quotaKey,
     value: scope.quotaKey
   })), [currentDimension]);
+  // 多个 scope 但标签一样时，下拉选不出区别，不如直接合并展示。
+  const distinctScopeLabels = useMemo(
+    () => new Set(scopeOptions.map((option) => option.label)).size,
+    [scopeOptions]
+  );
 
   const summary = data?.summary;
   const usageSummary = data?.usageSummary;
@@ -283,7 +288,7 @@ export default function AccountQuota() {
             options={QUOTA_RANGE_OPTIONS}
             onChange={(value) => setRangeDays(Number(value))}
           />
-          {!isUsageView && scopeOptions.length > 1 ? (
+          {!isUsageView && scopeOptions.length > 1 && distinctScopeLabels > 1 ? (
             <Select
               value={scopeKey || undefined}
               options={scopeOptions}

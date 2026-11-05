@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
+	zcodeusage "github.com/madou1217/ai_home/internal/adapters/zcode/usage"
 )
 
 const (
@@ -111,6 +112,11 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// zcode 的额度是 plan 余额（与模型目录同一 balance 接口）。
+	zcodeStrategy, err := zcodeusage.New(client)
+	if err != nil {
+		return nil, err
+	}
 	kiroRefresher, err := kirocred.New(dependencies.store, client, dependencies.clock)
 	if err != nil {
 		return nil, err
@@ -130,6 +136,7 @@ func newUsageComposition(
 			claudeStrategy,
 			kiroStrategy,
 			agyStrategy,
+			zcodeStrategy,
 		},
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
@@ -145,6 +152,7 @@ func newUsageComposition(
 			"claude": usageProviderConcurrency,
 			"kiro":   usageProviderConcurrency,
 			"agy":    usageProviderConcurrency,
+			"zcode":  usageProviderConcurrency,
 		},
 		RefreshTimeout:  usageRefreshTimeout,
 		RefreshInterval: usageRefreshInterval,

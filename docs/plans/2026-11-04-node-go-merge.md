@@ -269,6 +269,23 @@
 >    上游探测无法复现；单测覆盖了 loadCodeAssist→fetchAvailableModels、403 回退、
 >    内部模型过滤、快照与文档形状。`lib/server/agy-usage-snapshot.js` 里失败触发的
 >    Node 兜底探针仍在，等该链路整体切换后再删。
+> 35. **zcode 额度采集迁 Go（2026-11-05）**：新增 `internal/adapters/zcode/usage`：
+>    GET `billing/balance`（Bearer `zcodeJwtToken` + `X-Device-Mid` 等客户端头 +
+>    `app_version`），把 `data.balances[]` 映射成账号级 window 条目
+>    （bucket 取首个 `model:*` capability，窗口按 `period` 或 period_start/end 推导，
+>    remaining 优先用上游 remaining_units）。
+>    三类结论都保留：余额非空 → 正常条目；`plans` 与 `balances` 都是显式空数组 →
+>    「没有套餐」（写一条 remaining 未知的条目清掉旧权重，文档 entries 为空）；
+>    `plans` 非空、`balances` 为空 → 「套餐已领取未生效」，文档带 `pendingEffectiveAtMs`。
+>    展示文档 `schemaVersion=2`、`kind=zcode_plan_balance`，entries 保留 total/used/remaining
+>    原始单位、planId/planGroupId/planName/planStatus/planEndsAt，account 带
+>    planType/planNames/planIds。
+>    复用 `zcode/modelcatalog` 导出的 `ClientHeaders` / `JWTFromPayload` / `SeedAppVersion`，
+>    避免两套客户端元数据漂移。协调器加入 zcode。
+>    Node 侧：`lib/providers/defs/zcode.js` 的 quota 策略改为 `supported:false`。
+>    真机：重启后 Go 已分别刷新「无套餐」账号（文档 entries=0）与有套餐账号
+>    （GLM Coding Plan，3 条 entries），按 30s 错峰逐个推进。
+>    未迁：Node 的 BigModel coding-plan 附加额度（5h/每周/MCP），它是附加信息，后续可补。
 
 ## 0. 结论先行
 

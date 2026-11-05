@@ -34,8 +34,9 @@ const (
 	balanceURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance"
 	previewURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/preview"
 	// paas 目录：登录态账号的 z.ai access token 仍可列出通用模型（Node 的同款兜底）。
-	paasModelsURL    = "https://api.z.ai/api/coding/paas/v4/models"
-	seedAppVersion   = "3.16.3"
+	paasModelsURL = "https://api.z.ai/api/coding/paas/v4/models"
+	// SeedAppVersion 是 zcode 客户端元数据里的兜底版本号（与桌面端种子一致）。
+	SeedAppVersion   = "3.16.3"
 	maxResponseBytes = 1 << 20
 	requestTimeout   = 10 * time.Second
 )
@@ -73,7 +74,7 @@ func New(client HTTPClient) (*Source, error) {
 		balanceURL:    balanceURL,
 		previewURL:    previewURL,
 		paasModelsURL: paasModelsURL,
-		appVersion:    seedAppVersion,
+		appVersion:    SeedAppVersion,
 		platform:      runtime.GOOS + "-" + runtime.GOARCH,
 	}, nil
 }
@@ -151,6 +152,15 @@ func (source *Source) paasModels(ctx context.Context, token string) ([]string, e
 	sort.Strings(models)
 	return models, nil
 }
+
+// ClientHeaders 返回 zcode 计费/目录接口共用的客户端元数据头。
+// 额度与模型目录必须发同一套头，否则会被判 400 code=3001。
+func ClientHeaders(identitySeed string, token string) map[string]string {
+	return (&Source{appVersion: SeedAppVersion, platform: runtime.GOOS + "-" + runtime.GOARCH}).headers(identitySeed, token)
+}
+
+// JWTFromPayload 读取凭据里的长期 zcodeJwtToken。
+func JWTFromPayload(payload []byte) (string, error) { return zcodeJWT(payload) }
 
 func (source *Source) headers(identitySeed string, token string) map[string]string {
 	return map[string]string{

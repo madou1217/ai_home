@@ -224,6 +224,24 @@
 >    - 最终覆盖（真机）：所有**启用**账号都有目录；剩余 0 行只有 claude/gemini 两个
 >      enabled=0 的占位，以及两个 zai token 已过期、余额/预览皆空的 zcode 账号
 >      （Node 同样无目录，需要重新登录）。
+> 32. **kiro 额度采集迁 Go（2026-11-05）**：新增 `internal/adapters/kiro/usage`，
+>    按 Node 的协议调 `AmazonCodeWhispererService.GetUsageLimits`
+>    （`POST https://codewhisperer.<region>.amazonaws.com/`，query 与 body 同形：
+>    `origin=CLI` / `resourceType=AGENTIC_REQUEST` / `isEmailRequired=true` /
+>    可选 `profileArn`）。响应取 `usageBreakdownList` 里 `resourceType=CREDIT` 的资源，
+>    折算剩余基点写 `account_usage`，同时产出与 Node 同形、`schemaVersion=2` 的
+>    `account_usage_snapshots` 文档（`kind=kiro_credit_usage`，account.email/planName/planType，
+>    entries 保留 total/used/remaining 原始单位与 resetAtMs）。
+>    额度应用层新增可选 `CredentialRefresher`（探测前用 `kirocred` 刷新过期 token 并沿用
+>    CAS 版本）与 `ProviderSnapshotStrategy`（一次采集同时产出快照与展示文档）。
+>    协调器把 kiro 加入刷新队列。
+>    Node 侧删除：`lib/providers/defs/kiro.js` 的 quota 策略改为 `supported:false`
+>    （只读 Go 文档），`lib/cli/services/usage/snapshot.js` 里未被使用的探针实例移除，
+>    `lib/cli/services/usage/kiro-quota-probe.js` 删除；展示名所需的邮箱由 Go 文档的
+>    `account.email` 提供。
+>    验证：隔离实例显式刷新写入了正确文档（KIRO FREE / 50 credits / 97.7%）；
+>    真机重启后 5 个 kiro 账号全部产生 `account_usage` 行与快照文档；
+>    Node 相关用例 33 项全绿。
 
 ## 0. 结论先行
 

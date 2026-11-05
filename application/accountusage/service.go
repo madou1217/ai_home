@@ -145,6 +145,31 @@ type ProviderStrategy interface {
 	MatchesModelFamily(scopeKey string, modelID runtimecore.ModelID) bool
 }
 
+// CredentialRefresher 在探测前刷新过期的 OAuth 凭据（可选端口）。
+//
+// kiro 这类账号的 access token 会过期；额度探测与模型发现共用同一个刷新器，
+// 刷新成功后 CAS 落库，探测使用新凭据并沿用新的凭据版本。
+type CredentialRefresher interface {
+	RefreshCredential(
+		ctx context.Context,
+		snapshot accountapp.CredentialSnapshot,
+	) (accountapp.CredentialSnapshot, error)
+}
+
+// ProviderSnapshotStrategy 让策略在一次采集里同时产出展示文档（可选）。
+//
+// 归一化 Snapshot 只保存路由事实（剩余基点/窗口），WebUI 的 Provider 专属视图
+// 需要原始单位（total/used/credits）；放在同一次请求里返回，避免二次采集。
+type ProviderSnapshotStrategy interface {
+	ProviderStrategy
+	FetchUsageWithDocument(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		credential accountapp.Credential,
+		capturedAt time.Time,
+	) (usagecore.Snapshot, *usagecore.Document, error)
+}
+
 // Clock 返回额度采集和陈旧判断使用的业务时间。
 type Clock func() time.Time
 
@@ -157,7 +182,9 @@ type Dependencies struct {
 	Models      AccountModelReader
 	Runtime     RuntimeProjection
 	Strategies  []ProviderStrategy
-	Clock       Clock
+	// Refresher 可选：为需要刷新 OAuth 凭据的 Provider 在探测前续期。
+	Refresher CredentialRefresher
+	Clock     Clock
 }
 
 // ReadResult 是管理 API 读取的当前快照和陈旧状态。
@@ -196,6 +223,7 @@ type Service struct {
 	models      AccountModelReader
 	runtime     RuntimeProjection
 	strategies  map[string]ProviderStrategy
+	refresher   CredentialRefresher
 	clock       Clock
 	flights     refreshFlightGroup
 }
@@ -352,6 +380,17 @@ func (service *Service) refreshCurrent(
 		credentialSnapshot.AccountRef() != accountRef {
 		return ReadResult{}, ErrInvalidSnapshot
 	}
+	// 过期的 OAuth 凭据先刷新：刷新的 CAS 版本同时用于后面的快照写入。
+	if service.refresher != nil {
+		refreshed, refreshErr := service.refresher.RefreshCredential(ctx, credentialSnapshot)
+		if refreshErr != nil {
+			return ReadResult{}, refreshErr
+		}
+		if !refreshed.IsValid() || refreshed.AccountRef() != accountRef {
+			return ReadResult{}, ErrInvalidSnapshot
+		}
+		credentialSnapshot = refreshed
+	}
 	credential := credentialSnapshot.Credential()
 	providerID, found := service.catalog.CanonicalID(credential.ProviderID())
 	if !found || providerID != credential.ProviderID() {
@@ -365,12 +404,25 @@ func (service *Service) refreshCurrent(
 	if err != nil {
 		return ReadResult{}, err
 	}
-	snapshot, err := strategy.FetchUsage(
-		ctx,
-		accountRef,
-		credential,
-		capturedAt,
+	var (
+		snapshot usagecore.Snapshot
+		document *usagecore.Document
 	)
+	if extended, ok := strategy.(ProviderSnapshotStrategy); ok {
+		snapshot, document, err = extended.FetchUsageWithDocument(
+			ctx,
+			accountRef,
+			credential,
+			capturedAt,
+		)
+	} else {
+		snapshot, err = strategy.FetchUsage(
+			ctx,
+			accountRef,
+			credential,
+			capturedAt,
+		)
+	}
 	if err != nil {
 		return ReadResult{}, err
 	}
@@ -386,6 +438,12 @@ func (service *Service) refreshCurrent(
 		credentialSnapshot.UpdatedAt(),
 	); err != nil {
 		return ReadResult{}, err
+	}
+	// 展示文档与归一化事实同源同刻：先落文档，再刷新物化额度状态。
+	if document != nil {
+		if err := service.ReplaceDocument(ctx, *document); err != nil {
+			return ReadResult{}, err
+		}
 	}
 	if call == nil {
 		return ReadResult{}, ErrInvalidRequest

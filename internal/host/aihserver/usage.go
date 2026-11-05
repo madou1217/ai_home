@@ -11,11 +11,13 @@ import (
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
+	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
 )
 
 const (
@@ -98,6 +100,15 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// kiro 的额度是 GetUsageLimits 的 CREDIT 资源；过期 token 由 kirocred 先刷新。
+	kiroStrategy, err := kirousage.New(client)
+	if err != nil {
+		return nil, err
+	}
+	kiroRefresher, err := kirocred.New(dependencies.store, client, dependencies.clock)
+	if err != nil {
+		return nil, err
+	}
 	service, err := usageapp.NewService(usageapp.Dependencies{
 		Catalog:   dependencies.catalog,
 		Store:     dependencies.store,
@@ -111,8 +122,10 @@ func newUsageComposition(
 		Strategies: []usageapp.ProviderStrategy{
 			codexStrategy,
 			claudeStrategy,
+			kiroStrategy,
 		},
-		Clock: dependencies.clock,
+		Refresher: kiroRefresher,
+		Clock:     dependencies.clock,
 	})
 	if err != nil {
 		return nil, err
@@ -123,6 +136,7 @@ func newUsageComposition(
 		ProviderConcurrency: map[string]int{
 			"codex":  usageProviderConcurrency,
 			"claude": usageProviderConcurrency,
+			"kiro":   usageProviderConcurrency,
 		},
 		RefreshTimeout:  usageRefreshTimeout,
 		RefreshInterval: usageRefreshInterval,

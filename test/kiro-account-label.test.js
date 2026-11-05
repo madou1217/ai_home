@@ -12,7 +12,6 @@ const assert = require('node:assert/strict');
 const { describeKiroAccount, resolveKiroLoginType } = require('../lib/account/kiro-account-label');
 const { createKiroIdentityEvidence } = require('../lib/account/kiro-identity');
 const { buildAccountDisplayNames, cleanOauthDisplayName } = require('../lib/server/account-display-identity');
-const { createKiroQuotaProbe } = require('../lib/cli/services/usage/kiro-quota-probe');
 
 const AUTH = Object.freeze({
   access_token: 'access-token',
@@ -70,55 +69,4 @@ test('Kiro (Google) / Kiro (AWS Builder ID) 不会被当成展示身份', () => 
     displayName: 'Kiro (Google)',
     email: ''
   }), []);
-});
-
-function makeKiroRecord(document) {
-  const evidence = createKiroIdentityEvidence(AUTH, document, 1000);
-  return {
-    accountRef: 'acct_kiro_label_test',
-    provider: 'kiro',
-    nativeAuthUpdatedAt: 1000,
-    nativeAuth: {
-      auth: { ...AUTH },
-      identityEvidence: evidence,
-      userInfo: {}
-    }
-  };
-}
-
-test('kiro 用量探测成功后把 GetUsageLimits 的邮箱补进 userInfo（CAS）', async () => {
-  const document = {
-    userInfo: { userId: 'user-1', email: 'user@example.com' },
-    usageBreakdownList: [{
-      resourceType: 'CREDIT',
-      currentUsageWithPrecision: 10,
-      usageLimitWithPrecision: 100
-    }],
-    subscriptionInfo: { type: 'Q_DEVELOPER_STANDALONE_PRO', subscriptionTitle: 'Pro' },
-    nextDateReset: 1700003600
-  };
-  const record = makeKiroRecord(document);
-  let written = null;
-  let writtenRef = '';
-  const probe = createKiroQuotaProbe({
-    fs: {},
-    aiHomeDir: '/tmp/kiro-label-test',
-    readAccountCredentialRecord: () => record,
-    ensureFreshKiroGrant: async () => ({ record, refreshed: false }),
-    fetchKiroUsageLimits: async () => document,
-    persistKiroIdentityEvidence: () => ({ persisted: false }),
-    compareAndSwapAccountNativeAuth: (_fs, _home, accountRef, _old, next) => {
-      writtenRef = accountRef;
-      written = next;
-      return true;
-    },
-    now: () => 1000,
-    fetchWithTimeout: async () => { throw new Error('unexpected network'); },
-    resolveAccountEgressRequestOptions: async () => ({ ok: true, options: {} })
-  });
-  const result = await probe.probe('acct_kiro_label_test', 5000);
-  assert.ok(result.snapshot, JSON.stringify(result));
-  assert.equal(writtenRef, 'acct_kiro_label_test');
-  assert.equal(written.userInfo.email, 'user@example.com');
-  assert.equal(written.identityEvidence.subject, record.nativeAuth.identityEvidence.subject);
 });

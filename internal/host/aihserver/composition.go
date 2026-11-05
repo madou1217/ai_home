@@ -31,6 +31,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/kimioauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
@@ -43,8 +44,8 @@ import (
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
 	clinemodelcatalog "github.com/madou1217/ai_home/internal/adapters/cline/modelcatalog"
+	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	geminimodelcatalog "github.com/madou1217/ai_home/internal/adapters/gemini/modelcatalog"
@@ -416,6 +417,11 @@ func newHandlers(
 		Timeout:       oauthHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
 	}
+	// kimi access_token 只有 15 分钟，刷新走 auth.kimi.com 的 form 合同（与 CLI 一致）。
+	kimiProvider, err := kimioauth.New(oauthClient, kimioauth.Options{ClientVersion: kimiClientVersion()})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 kimi OAuth Refresh Strategy 失败: %w", err)
+	}
 	codexProvider, err := codexoauth.New(oauthClient, time.Now)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Codex OAuth Strategy 失败: %w", err)
@@ -471,6 +477,7 @@ func newHandlers(
 					codexProvider,
 					claudeProvider,
 					agyProvider,
+					kimiProvider,
 				},
 				staticCredentialStrategies...,
 			),
@@ -771,6 +778,7 @@ func newHandlers(
 					codexProvider,
 					claudeProvider,
 					agyProvider,
+					kimiProvider,
 				},
 				staticCredentialStrategies...,
 			),
@@ -1507,17 +1515,17 @@ func newModelDiscovery(
 			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
 		}
 		// cline 是静态规范清单（不联网、不依赖客户端），与 Node 的 KNOWN_CLINE_MODELS 同源。
-	clineSource := clinemodelcatalog.New()
-	// qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
-	qoderSources := make([]accountapp.ProviderModelDiscoverer, 0, 2)
-	for _, providerID := range []string{"qoder", "qodercn"} {
-		source, sourceErr := qodermodelcatalog.New(client, providerID)
-		if sourceErr != nil {
-			return nil, fmt.Errorf("创建 qoder 模型目录源失败(%s): %w", providerID, sourceErr)
+		clineSource := clinemodelcatalog.New()
+		// qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
+		qoderSources := make([]accountapp.ProviderModelDiscoverer, 0, 2)
+		for _, providerID := range []string{"qoder", "qodercn"} {
+			source, sourceErr := qodermodelcatalog.New(client, providerID)
+			if sourceErr != nil {
+				return nil, fmt.Errorf("创建 qoder 模型目录源失败(%s): %w", providerID, sourceErr)
+			}
+			qoderSources = append(qoderSources, source)
 		}
-		qoderSources = append(qoderSources, source)
-	}
-	opencodeSource, err := opencodemodelcatalog.New(client)
+		opencodeSource, err := opencodemodelcatalog.New(client)
 		if err != nil {
 			return nil, fmt.Errorf("创建 opencode 模型目录源失败: %w", err)
 		}

@@ -10,6 +10,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -17,10 +18,11 @@ import (
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
-	geminiusage "github.com/madou1217/ai_home/internal/adapters/gemini/usage"
 	codebuddyfamilyusage "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/usage"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
+	geminiusage "github.com/madou1217/ai_home/internal/adapters/gemini/usage"
+	kimiusage "github.com/madou1217/ai_home/internal/adapters/kimi/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
 	qoderusage "github.com/madou1217/ai_home/internal/adapters/qoder/usage"
 	zcodeusage "github.com/madou1217/ai_home/internal/adapters/zcode/usage"
@@ -131,6 +133,18 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// kimi 的 /usages 需要设备头；token 过期由 resolver 的 kimioauth 刷新。
+	kimiStrategy, err := kimiusage.New(client, kimiusage.Options{
+		ClientVersion: kimiClientVersion(),
+		Host: kimiidentity.HostFacts{
+			HostName:    hostNameOrEmpty(),
+			DeviceModel: hostDeviceModelOrEmpty(),
+			OSVersion:   hostOSVersionOrEmpty(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
 	// Qoder 家族两个区域共用同一账号面协议；凭据是 CLI 的 opaque blob 时由
 	// qodercred 用厂商 wasm 解密出 token（Node 侧同为 cli_wasm 来源）。
 	qoderStrategies := make([]usageapp.ProviderStrategy, 0, 2)
@@ -172,6 +186,7 @@ func newUsageComposition(
 			zcodeStrategy,
 			clineStrategy,
 			geminiStrategy,
+			kimiStrategy,
 		}, qoderStrategies...), familyStrategies...),
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
@@ -194,6 +209,7 @@ func newUsageComposition(
 			"workbuddycn": usageProviderConcurrency,
 			"cline":       usageProviderConcurrency,
 			"gemini":      usageProviderConcurrency,
+			"kimi":        usageProviderConcurrency,
 			"qoder":       usageProviderConcurrency,
 			"qodercn":     usageProviderConcurrency,
 		},

@@ -179,12 +179,12 @@ func discoveryAccessToken(credential accountapp.Credential) (string, error) {
 	if json.Unmarshal(native.Payload(), &document) != nil {
 		return "", ErrUnsupportedCredential
 	}
+	// 只把 API Key 当目录探测令牌；**不要**回退到 OAuth access token。
+	// 真机实测：Zen 端点收到登录态 token 时只返回该账号有权的子集（39 个），匿名请求才给
+	// 全量目录（80 个）。Node 侧的目录探测对这类账号同样不带登录态，Go 带上去会少 41 个
+	// opencode/* 模型。
 	for _, upstream := range []string{"opencode-go", "opencode"} {
-		entry := document.Auth[upstream]
-		if token := strings.TrimSpace(entry.Key); token != "" {
-			return token, nil
-		}
-		if token := strings.TrimSpace(entry.Access); token != "" {
+		if token := strings.TrimSpace(document.Auth[upstream].Key); token != "" {
 			return token, nil
 		}
 	}

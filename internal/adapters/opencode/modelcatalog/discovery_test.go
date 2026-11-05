@@ -92,7 +92,7 @@ func TestDiscoverModelsUnionsBothLegs(t *testing.T) {
 	}
 }
 
-func TestDiscoverModelsAcceptsOAuthAccessToken(t *testing.T) {
+func TestDiscoverModelsProbesAnonymouslyForOAuthCredentials(t *testing.T) {
 	t.Parallel()
 	var seen []string
 	source := testSource(t, func(path string, request *http.Request) (int, string) {
@@ -109,13 +109,13 @@ func TestDiscoverModelsAcceptsOAuthAccessToken(t *testing.T) {
 	if strings.Join(models, ",") != "opencode-go/go-model,opencode/free-model" {
 		t.Fatalf("models = %v", models)
 	}
+	// 登录态 token 不能当目录探测令牌：Zen 收到它只返回账号有权子集（实测 39 vs 匿名 80）。
 	for _, authorization := range seen {
-		if authorization != "Bearer st-oauth" {
-			t.Fatalf("authorization = %q", authorization)
+		if authorization != "" {
+			t.Fatalf("OAuth 凭据不应发送 Authorization，实际 %q", authorization)
 		}
 	}
 }
-
 func TestDiscoverModelsFailsClosedWhenOneLegFails(t *testing.T) {
 	t.Parallel()
 	source := testSource(t, func(path string, _ *http.Request) (int, string) {

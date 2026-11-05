@@ -13,13 +13,14 @@ import (
 )
 
 type fakeService struct {
-	records    []modelalias.Record
-	generation int64
-	err        error
-	lastCreate modelalias.CreateInput
-	lastUpdate modelalias.UpdateInput
-	lastID     string
-	lastEnable *bool
+	records     []modelalias.Record
+	generation  int64
+	err         error
+	lastCreate  modelalias.CreateInput
+	lastUpdate  modelalias.UpdateInput
+	lastID      string
+	lastEnable  *bool
+	lastReplace modelalias.ReplaceGroupInput
 }
 
 func (fake *fakeService) List() []modelalias.Record { return fake.records }
@@ -47,6 +48,14 @@ func (fake *fakeService) Delete(_ context.Context, id string) (int64, error) {
 		return 0, fake.err
 	}
 	return 3, nil
+}
+
+func (fake *fakeService) ReplaceGroup(_ context.Context, input modelalias.ReplaceGroupInput) ([]modelalias.Record, int64, error) {
+	fake.lastReplace = input
+	if fake.err != nil {
+		return nil, 0, fake.err
+	}
+	return []modelalias.Record{{ID: "new1", Alias: "a", Target: "b"}}, 5, nil
 }
 
 func (fake *fakeService) SetEnabled(_ context.Context, id string, enabled bool) (int64, error) {
@@ -236,5 +245,40 @@ func TestHandlerSkipsRefreshWhenWriteFails(t *testing.T) {
 	do(handler, http.MethodDelete, Path+"/id1", "")
 	if refreshes != 0 {
 		t.Fatalf("失败写入触发了 %d 次刷新", refreshes)
+	}
+}
+
+func TestHandlerReplaceGroupPassesIDsAndRecords(t *testing.T) {
+	service := &fakeService{}
+	handler := newHandler(t, service, true)
+	recorder := do(handler, http.MethodPost, Path+"/replace", `{"replaceIds":["old1"],"records":[{"alias":"a","target":"b","priority":2}]}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if len(service.lastReplace.ReplaceIDs) != 1 || service.lastReplace.ReplaceIDs[0] != "old1" {
+		t.Fatalf("replaceIds = %v", service.lastReplace.ReplaceIDs)
+	}
+	if len(service.lastReplace.Records) != 1 || service.lastReplace.Records[0].Alias != "a" {
+		t.Fatalf("records = %+v", service.lastReplace.Records)
+	}
+	if service.lastReplace.Records[0].Priority != 2 {
+		t.Fatalf("priority = %d", service.lastReplace.Records[0].Priority)
+	}
+	payload := decode(t, recorder)
+	aliases, ok := payload["aliases"].([]any)
+	if !ok || len(aliases) != 1 {
+		t.Fatalf("aliases = %v", payload["aliases"])
+	}
+	if payload["generation"].(float64) != 5 {
+		t.Fatalf("generation = %v", payload["generation"])
+	}
+}
+
+func TestHandlerReplaceGroupRejectsMissingFields(t *testing.T) {
+	handler := newHandler(t, &fakeService{}, true)
+	// records 里缺 target：整组拒绝，不能只写一半。
+	recorder := do(handler, http.MethodPost, Path+"/replace", `{"replaceIds":[],"records":[{"alias":"a"}]}`)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
 	}
 }

@@ -242,3 +242,89 @@ func generateAliasID() string {
 	}
 	return hex.EncodeToString(buffer[:])
 }
+
+// ReplaceGroupInput 是「按 id 集合整体替换」的输入。
+//
+// 为什么需要整组替换而不是逐条改：WebUI 的一条别名可以对应多个目标（同一 alias 多行），
+// 编辑时前端提交的是「整组的新样子」。逐条 diff 会在中途失败时留下半组记录，
+// 表现为「别名指向一半旧目标一半新目标」。
+type ReplaceGroupInput struct {
+	ReplaceIDs []string
+	Records    []CreateInput
+}
+
+// ReplaceGroup 删除 replaceIDs 指向的记录、追加新记录，并返回新建的那批。
+func (service *Service) ReplaceGroup(
+	ctx context.Context,
+	input ReplaceGroupInput,
+) ([]Record, int64, error) {
+	if service == nil || service.store == nil {
+		return nil, 0, ErrInvalidProjection
+	}
+	replaced := make(map[string]struct{}, len(input.ReplaceIDs))
+	for _, id := range input.ReplaceIDs {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			replaced[trimmed] = struct{}{}
+		}
+	}
+	records := service.List()
+	kept := make([]Record, 0, len(records))
+	for _, record := range records {
+		if _, drop := replaced[record.ID]; drop {
+			continue
+		}
+		kept = append(kept, record)
+	}
+	created := make([]Record, 0, len(input.Records))
+	for _, item := range input.Records {
+		enabled := true
+		if item.Enabled != nil {
+			enabled = *item.Enabled
+		}
+		record := Record{
+			ID:             generateAliasID(),
+			Alias:          strings.TrimSpace(item.Alias),
+			Target:         strings.TrimSpace(item.Target),
+			Provider:       service.normalizeScope(item.Provider),
+			TargetProvider: strings.TrimSpace(item.TargetProvider),
+			Priority:       item.Priority,
+			Enabled:        &enabled,
+			Description:    strings.TrimSpace(item.Description),
+		}
+		if !record.IsValid() {
+			return nil, 0, ErrInvalidAlias
+		}
+		created = append(created, record)
+	}
+	// 唯一性在「保留 + 新建」整体上检查：分组替换最容易出的错就是把一条记录改成
+	// 与组外记录同名，逐条校验看不出来。
+	combined := append(append([]Record(nil), kept...), created...)
+	seen := make(map[string]struct{}, len(combined))
+	for _, record := range combined {
+		key := record.ScopeProvider() + "\u0000" + record.Alias
+		if _, duplicate := seen[key]; duplicate {
+			return nil, 0, ErrDuplicateAlias
+		}
+		seen[key] = struct{}{}
+	}
+	generation, err := service.store.Replace(combined)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(created) == 0 {
+		return nil, generation, nil
+	}
+	return service.recordsTail(len(created)), generation, nil
+}
+
+// recordsTail 返回集合末尾 n 条（ReplaceGroup 刚追加的就是它们）。
+func (service *Service) recordsTail(count int) []Record {
+	records := service.store.Snapshot().Records()
+	if count <= 0 || len(records) == 0 {
+		return nil
+	}
+	if count > len(records) {
+		count = len(records)
+	}
+	return append([]Record(nil), records[len(records)-count:]...)
+}

@@ -181,3 +181,65 @@ func TestServiceUpdateReturnsNormalizedRecord(t *testing.T) {
 		t.Fatalf("targetProvider = %q, want auto（空值应归一到 auto）", updated.TargetProvider)
 	}
 }
+
+// 组替换：删掉 replaceIds、追加新记录，新记录必须拿到新 id 并补默认值。
+func TestServiceReplaceGroupDropsAndAppends(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	first, _, _ := service.Create(context.Background(), CreateInput{Alias: "old", Target: "x", Provider: "codex"})
+	created, generation, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+		ReplaceIDs: []string{first.ID},
+		Records:    []CreateInput{{Alias: "new", Target: "y", Provider: "codex"}},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGroup() error = %v", err)
+	}
+	if len(created) != 1 || created[0].Alias != "new" {
+		t.Fatalf("created = %+v", created)
+	}
+	if created[0].ID == first.ID || created[0].ID == "" {
+		t.Fatalf("新记录必须拿新 id，got %q", created[0].ID)
+	}
+	if created[0].TargetProvider != TargetProviderAuto || created[0].Enabled == nil {
+		t.Fatalf("新记录没有补默认值: %+v", created[0])
+	}
+	if generation != 2 {
+		t.Fatalf("generation = %d, want 2", generation)
+	}
+	remaining := service.List()
+	if len(remaining) != 1 || remaining[0].Alias != "new" {
+		t.Fatalf("替换后 = %+v", remaining)
+	}
+}
+
+// records 为空即删除整组（WebUI 删除聚合行时就是这个语义）。
+func TestServiceReplaceGroupWithNoRecordsDeletes(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	first, _, _ := service.Create(context.Background(), CreateInput{Alias: "a", Target: "x"})
+	if _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+		ReplaceIDs: []string{first.ID},
+	}); err != nil {
+		t.Fatalf("ReplaceGroup() error = %v", err)
+	}
+	if len(service.List()) != 0 {
+		t.Fatalf("仍有 %d 条", len(service.List()))
+	}
+}
+
+// 新建记录与「保留下来的记录」重名要整体拒绝：逐条校验看不出跨组的冲突。
+func TestServiceReplaceGroupRejectsDuplicateAcrossGroups(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	keep, _, _ := service.Create(context.Background(), CreateInput{Alias: "dup", Target: "x", Provider: "codex"})
+	drop, _, _ := service.Create(context.Background(), CreateInput{Alias: "other", Target: "y", Provider: "codex"})
+	_, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+		ReplaceIDs: []string{drop.ID},
+		Records:    []CreateInput{{Alias: "dup", Target: "z", Provider: "codex"}},
+	})
+	if !errors.Is(err, ErrDuplicateAlias) {
+		t.Fatalf("error = %v, want ErrDuplicateAlias", err)
+	}
+	// 失败后集合必须原样：keep 还在，drop 没被删。
+	if len(service.List()) != 2 {
+		t.Fatalf("失败后被改写: %+v", service.List())
+	}
+	_ = keep
+}

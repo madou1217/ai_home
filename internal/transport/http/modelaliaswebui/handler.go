@@ -35,6 +35,7 @@ type Service interface {
 	Update(ctx context.Context, id string, input modelalias.UpdateInput) (modelalias.Record, int64, error)
 	Delete(ctx context.Context, id string) (int64, error)
 	SetEnabled(ctx context.Context, id string, enabled bool) (int64, error)
+	ReplaceGroup(ctx context.Context, input modelalias.ReplaceGroupInput) ([]modelalias.Record, int64, error)
 }
 
 // Dependencies 汇总别名 CRUD 的依赖。
@@ -108,6 +109,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.update(response, request, parts[0])
 	case len(parts) == 1 && request.Method == http.MethodDelete:
 		handler.remove(response, request, parts[0])
+	case len(parts) == 1 && parts[0] == "replace" && request.Method == http.MethodPost:
+		handler.replaceGroup(response, request)
 	case len(parts) == 2 && parts[1] == "enabled" && request.Method == http.MethodPost:
 		handler.setEnabled(response, request, parts[0])
 	default:
@@ -198,6 +201,62 @@ func (handler *Handler) setEnabled(response http.ResponseWriter, request *http.R
 	}
 	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "generation": generation})
+}
+
+// replaceGroupPayload 是整组替换的请求体：删掉 replaceIds，再追加 records。
+type replaceGroupPayload struct {
+	ReplaceIDs []string       `json:"replaceIds"`
+	Records    []aliasPayload `json:"records"`
+}
+
+// replaceGroup 处理「同一别名的多条记录整体替换」。
+//
+// 与逐条改的差别在原子性：WebUI 编辑一条别名时提交的是整组的新样子，
+// 中途失败会留下「一半旧目标一半新目标」的状态。
+func (handler *Handler) replaceGroup(response http.ResponseWriter, request *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(request.Body, maxBodyBytes+1))
+	if err != nil || int64(len(body)) > maxBodyBytes {
+		writeError(response, http.StatusBadRequest, "invalid_alias", "请求体无效")
+		return
+	}
+	var payload replaceGroupPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_alias", "请求体不是合法 JSON")
+		return
+	}
+	inputs := make([]modelalias.CreateInput, 0, len(payload.Records))
+	for _, record := range payload.Records {
+		if record.Alias == nil || record.Target == nil {
+			writeError(response, http.StatusBadRequest, "invalid_alias", "别名与目标不能为空")
+			return
+		}
+		inputs = append(inputs, modelalias.CreateInput{
+			Alias:          *record.Alias,
+			Target:         *record.Target,
+			Provider:       valueOr(record.Provider),
+			TargetProvider: valueOr(record.TargetProvider),
+			Priority:       int32OrZero(record.Priority),
+			Enabled:        record.Enabled,
+			Description:    valueOr(record.Description),
+		})
+	}
+	created, generation, err := handler.service.ReplaceGroup(request.Context(), modelalias.ReplaceGroupInput{
+		ReplaceIDs: payload.ReplaceIDs,
+		Records:    inputs,
+	})
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	if created == nil {
+		created = []modelalias.Record{}
+	}
+	handler.refreshCatalog(request.Context())
+	writeJSON(response, http.StatusOK, map[string]any{
+		"ok":         true,
+		"aliases":    created,
+		"generation": generation,
+	})
 }
 
 func writeServiceError(response http.ResponseWriter, err error) {

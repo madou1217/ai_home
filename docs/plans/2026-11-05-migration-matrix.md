@@ -155,3 +155,31 @@
 - qoder 凭据解密 / 模型目录、cline 静态目录、§7 状态转移纯函数均已落 Go。
 - 下一批候选：qoder relay 接线（需付费账号验收）、gemini/kimi 额度（本机无可用账号）、
   P3 静态托管、§7-d 读路径切换。
+
+## 附：两个候选切片的复核结论（2026-11-05）
+
+### §7-d 状态读路径切 Go：现在没有收益，先别做
+
+Go 的 `account_ui_state.status` 就是 Node 每轮同步推上去的副本（`lib/server/go-account-sync.js`
+的 `syncUIStates`，周期约 15s）。**切读只会把「本进程即时值」换成「≤15s 前的副本」**，
+在线/离线判定、可调度性、WebUI 状态条都会引入延迟，语义收益为零。
+
+Node 侧读点（切换时必须逐条改，供以后做「推导迁 Go」时对照）：
+- `lib/account/state-service.js:180`、`lib/account/query-service.js:28`
+- `lib/server/webui-account-live.js:1268`、`:1561`；`webui-account-routes-state.js:103`
+- 热路径：`lib/server/account-selector.js:70`、`lib/account/healthy-account-selector.js:151`、
+  `lib/server/accounts.js:415`
+- 进程外：`lib/cli/services/usage/account-runtime.js:74`、`profile/list.js:280`
+
+结论：先迁**推导**（§7-c 的 `core/accounts/status_transition.go` 已就绪），再做双读比对，
+最后才切读。
+
+### P3 静态托管：`/ui/*` 可以迁，但前置是前门切流
+
+Node 的静态实现很简单（`lib/server/web-ui-router.js` 的 `serveStaticFile`）：读 `web/dist`、
+目录补 `index.html`、`/assets/` 或已知扩展名缺失返回 404、其余 SPA fallback、
+带内容哈希的资源 `immutable`、其余 `no-store`，无 gzip/ETag。
+
+Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node（9527），
+把 `/ui/*` 交给 Go 只会在 Node 上多一跳，**没有收益**；真正该做的是 P4/P5 的前门切流，
+到那时静态托管跟着一起搬。

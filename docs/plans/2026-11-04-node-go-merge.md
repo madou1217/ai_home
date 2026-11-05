@@ -330,7 +330,8 @@
 >      直接报错），所以 qoder/qodercn 必须登记 `staticcredential`（声明永不刷新）。
 >      这也解释了此前 cline/kiro/zcode 的显式 refresh 一直 500：它们的 Go 用量事实实际是
 >      Node 探针推进来的（`go-account-sync` 的 usage facts/documents 通道），不是 Go 自己采的。
->      本轮只登记 qoder 双区，避免替 Node 接管其余 Provider 的采集节奏。
+>      补登记后已验证：kiro（1 条 credits，97.7% 剩余）、zcode（8 个账号全部 200，
+>      有套餐 2 条 entries / 无套餐 1 条 unknown→pending）；cline 两个账号 enabled=0 未联调。
 >    - 真机（本机唯一 qoder 账号，Free）：重启后 `POST .../usage/refresh` 返回 200；
 >      文档 `kind=qoder_credit_usage`、`coverage.tokenSource=cli_wasm`、
 >      `notApplicable=true / reason=qoder_no_consumable_credits`，快照 1 条 unknown 条目、

@@ -279,12 +279,19 @@ func TestOAuthJobsForwardMigrationFromV16(t *testing.T) {
 	store := openOAuthJobStoreAt(t, aiHomeDir)
 	ctx := context.Background()
 	// 把全新库降回「v16 但还没有 oauth_jobs」的形态，模拟真实升级路径。
-	// v18 的采样表同样要回退，否则前向迁移会撞到已存在的表。
+	// v18 的采样表与 v19 的账本 / 检测表同样要回退，否则前向迁移会撞到已存在的表。
 	if _, err := store.db.ExecContext(ctx, "DROP TABLE oauth_jobs"); err != nil {
 		t.Fatalf("drop oauth_jobs error = %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, "DROP TABLE account_quota_window_samples"); err != nil {
-		t.Fatalf("drop account_quota_window_samples error = %v", err)
+	for _, table := range []string{
+		"account_quota_window_samples",
+		"account_quota_window_ledger",
+		"account_quota_detector_state",
+		"account_quota_reset_events",
+	} {
+		if _, err := store.db.ExecContext(ctx, "DROP TABLE "+table); err != nil {
+			t.Fatalf("drop %s error = %v", table, err)
+		}
 	}
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 16"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)

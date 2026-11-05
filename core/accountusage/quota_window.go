@@ -1,6 +1,7 @@
 package accountusage
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -98,6 +99,7 @@ type QuotaWindow struct {
 	AnchorAtMS         int64    `json:"anchor_at_ms"`
 	CloseAtMS          int64    `json:"close_at_ms"`
 	ScheduledCloseAtMS int64    `json:"scheduled_close_at_ms"`
+	Truncated          bool     `json:"truncated"`
 	Live               bool     `json:"live"`
 	RemainingStartPct  *float64 `json:"remaining_start_pct"`
 	RemainingEndPct    *float64 `json:"remaining_end_pct"`
@@ -110,7 +112,10 @@ type QuotaWindow struct {
 	ObservedToMS       int64    `json:"observed_to_ms"`
 	Source             string   `json:"source"`
 	Confidence         string   `json:"confidence"`
+	ResetKind          string   `json:"reset_kind"`
+	Classification     string   `json:"classification"`
 	PlanType           string   `json:"plan_type"`
+	ApproximateClose   bool     `json:"approximate_close"`
 	AnchorEstimated    bool     `json:"anchor_estimated"`
 }
 
@@ -133,6 +138,8 @@ func IsPhantomSample(capturedAtMS, resetAtMS, windowMinutes int64) bool {
 // BuildQuotaWindowsInput 是窗口重建的全部输入。
 type BuildQuotaWindowsInput struct {
 	Samples       []QuotaWindowSample
+	ResetEvents   []QuotaResetEvent
+	Ledger        *QuotaWindowLedger
 	Current       *CurrentQuotaWindow
 	WindowMinutes int64
 	QuotaKey      string
@@ -142,15 +149,24 @@ type BuildQuotaWindowsInput struct {
 }
 
 type quotaWindowGroup struct {
-	closeAtMS  int64
-	anchorAtMS int64
-	samples    []QuotaWindowSample
+	key                   string
+	closeAtMS             int64
+	anchorAtMS            int64
+	samples               []QuotaWindowSample
+	event                 *QuotaResetEvent
+	truncated             bool
+	anchorEstimated       bool
+	approximateClose      bool
+	ledgerBacked          bool
+	ledgerAnchorEstimated bool
 }
 
 // BuildQuotaWindows 按 expectedResetAtMs 分组重建窗口。
 //
 // 只有真实样本能开窗；整组都是幻影的分组会被丢弃（F3）。
-// Current 只用于补一个「仍在进行、还没有样本」的窗口，不会凭空造出已关闭的窗口。
+// 重置事件可以把一个窗口截断在回血时刻，也可以在没有任何样本时单独成窗；
+// 账本则补一个「仍在进行、还没有样本」的窗口。已关闭的窗口必须有样本或事件
+// 背书，不凭空造窗。
 func BuildQuotaWindows(input BuildQuotaWindowsInput) []QuotaWindow {
 	windowMinutes := input.WindowMinutes
 	if windowMinutes <= 0 {
@@ -168,7 +184,8 @@ func BuildQuotaWindows(input BuildQuotaWindowsInput) []QuotaWindow {
 		rangeFromMS = rangeToMS - 30*24*60*60*1000
 	}
 
-	groups := make(map[int64]*quotaWindowGroup, len(input.Samples))
+	groups := make(map[string]*quotaWindowGroup, len(input.Samples))
+	// ---- 1. 按 expectedResetAtMs 分组，组内剔除幻影 ----
 	for _, sample := range input.Samples {
 		if sample.WindowMinutes != windowMinutes {
 			continue
@@ -180,13 +197,15 @@ func BuildQuotaWindows(input BuildQuotaWindowsInput) []QuotaWindow {
 		if sample.ExpectedResetAtMS <= 0 || sample.CapturedAtMS <= 0 {
 			continue
 		}
-		group := groups[sample.ExpectedResetAtMS]
+		key := fmt.Sprintf("w:%d", sample.ExpectedResetAtMS)
+		group := groups[key]
 		if group == nil {
 			group = &quotaWindowGroup{
+				key:        key,
 				closeAtMS:  sample.ExpectedResetAtMS,
 				anchorAtMS: sample.ExpectedResetAtMS - windowMS,
 			}
-			groups[sample.ExpectedResetAtMS] = group
+			groups[key] = group
 		}
 		// 幻影样本不参与任何计算：它既不能证明窗口存在，也不能代表额度消耗。
 		if IsPhantomSample(sample.CapturedAtMS, sample.ExpectedResetAtMS, windowMinutes) {
@@ -194,25 +213,106 @@ func BuildQuotaWindows(input BuildQuotaWindowsInput) []QuotaWindow {
 		}
 		group.samples = append(group.samples, sample)
 	}
-	for closeAtMS, group := range groups {
+	for key, group := range groups {
 		if len(group.samples) == 0 {
-			delete(groups, closeAtMS)
+			delete(groups, key)
+		}
+	}
+
+	// ---- 2. 挂重置事件 ----
+	for index := range input.ResetEvents {
+		event := &input.ResetEvents[index]
+		if !quotaResetEventMatches(event, windowMinutes, quotaKey) {
+			continue
+		}
+		occurredAtMS := event.OccurredAtMS
+		if occurredAtMS <= 0 {
+			occurredAtMS = event.DetectedAtMS
+		}
+		if occurredAtMS <= 0 {
+			continue
+		}
+		exact := findQuotaWindowGroup(groups, func(group *quotaWindowGroup) bool {
+			return absInt64(group.closeAtMS-occurredAtMS) <= ResetMatchToleranceMS
+		})
+		if exact != nil {
+			if exact.event == nil {
+				exact.event = event
+			}
+			continue
+		}
+		containing := findQuotaWindowGroup(groups, func(group *quotaWindowGroup) bool {
+			return group.anchorAtMS <= occurredAtMS && occurredAtMS < group.closeAtMS
+		})
+		if containing != nil {
+			if containing.event == nil {
+				containing.event = event
+			}
+			if event.EventKind == QuotaResetKindReplenishment {
+				// 提前回血：旧窗口在回血时刻结束，新窗口等下一个真实请求再锚定。
+				containing.truncated = true
+				containing.approximateClose = true
+			}
+			continue
+		}
+		isReplenishment := event.EventKind == QuotaResetKindReplenishment
+		key := "e:" + event.EventKey
+		groups[key] = &quotaWindowGroup{
+			key:        key,
+			closeAtMS:  occurredAtMS,
+			anchorAtMS: occurredAtMS - windowMS,
+			event:      event,
+			// replenishment 的 occurredAt 是「发现时刻」，真实关窗可能更早一个采集间隔；
+			// cycle_rollover 的 occurredAt 是计划关窗时刻，锚点因此是精确的。
+			anchorEstimated:  isReplenishment,
+			approximateClose: isReplenishment,
+		}
+	}
+
+	// ---- 3. 合并当前窗口账本 ----
+	// 只合并同一窗口长度的账本：账本只有一份，切到别的维度时必须跳过，
+	// 否则会把 5h 的活跃窗口错画进 7 天图。
+	if input.Ledger != nil {
+		ledger := NormalizeQuotaWindowLedger(*input.Ledger)
+		if ledger.WindowMinutes == windowMinutes && ledger.CloseAtMS > 0 {
+			match := findQuotaWindowGroup(groups, func(group *quotaWindowGroup) bool {
+				return absInt64(group.closeAtMS-ledger.CloseAtMS) <= ResetMatchToleranceMS
+			})
+			if match != nil {
+				match.ledgerBacked = true
+				match.ledgerAnchorEstimated = ledger.Source == QuotaLedgerSourceActivity
+			} else if ledger.CloseAtMS > nowMS {
+				group := &quotaWindowGroup{
+					key:                   "l:ledger",
+					closeAtMS:             ledger.CloseAtMS,
+					anchorAtMS:            ledger.CloseAtMS - windowMS,
+					ledgerBacked:          true,
+					ledgerAnchorEstimated: ledger.Source == QuotaLedgerSourceActivity,
+				}
+				if ledger.AnchorAtMS > 0 {
+					group.anchorAtMS = ledger.AnchorAtMS
+				}
+				groups[group.key] = group
+			}
 		}
 	}
 
 	// 当前快照窗口：能对齐已有分组就标记为 live；对不上且仍在未来，才补一个空窗口。
+	// 已有活跃账本时不再用快照补窗：账本才是「当前窗口」的权威记录，
+	// 否则账本与快照的 reset 相差超过容差时会画出两个同时进行的窗口。
 	if current := input.Current; current != nil &&
 		current.WindowMinutes == windowMinutes &&
 		current.ResetAtMS > 0 {
-		matched := false
-		for _, group := range groups {
-			if absInt64(group.closeAtMS-current.ResetAtMS) <= ResetMatchToleranceMS {
-				matched = true
-				break
-			}
-		}
-		if !matched && current.ResetAtMS > nowMS {
-			groups[current.ResetAtMS] = &quotaWindowGroup{
+		matched := findQuotaWindowGroup(groups, func(group *quotaWindowGroup) bool {
+			return absInt64(group.closeAtMS-current.ResetAtMS) <= ResetMatchToleranceMS
+		})
+		if matched == nil && current.ResetAtMS > nowMS &&
+			findQuotaWindowGroup(groups, func(group *quotaWindowGroup) bool {
+				return group.ledgerBacked && group.closeAtMS > nowMS
+			}) == nil {
+			key := fmt.Sprintf("w:%d", current.ResetAtMS)
+			groups[key] = &quotaWindowGroup{
+				key:        key,
 				closeAtMS:  current.ResetAtMS,
 				anchorAtMS: current.ResetAtMS - windowMS,
 			}
@@ -242,12 +342,52 @@ func BuildQuotaWindows(input BuildQuotaWindowsInput) []QuotaWindow {
 	return clipped
 }
 
+// quotaResetEventMatches 判断事件能否归到当前维度。
+//
+// 老事件可能没有 window_minutes：这时只有 quotaKey 也能定位维度（同一个 quotaKey
+// 不会同时对应 5h 和 7d）。两者都没有的事件无法归维，宁可少一个窗口，
+// 也不要把 5h 的重置画进 7 天图。
+func quotaResetEventMatches(
+	event *QuotaResetEvent,
+	windowMinutes int64,
+	quotaKey string,
+) bool {
+	eventQuotaKey := strings.TrimSpace(event.QuotaKey)
+	if quotaKey != "" && eventQuotaKey != "" && eventQuotaKey != quotaKey {
+		return false
+	}
+	if event.WindowMinutes > 0 {
+		return event.WindowMinutes == windowMinutes
+	}
+	return quotaKey != "" && eventQuotaKey == quotaKey
+}
+
+func findQuotaWindowGroup(
+	groups map[string]*quotaWindowGroup,
+	predicate func(group *quotaWindowGroup) bool,
+) *quotaWindowGroup {
+	for _, group := range groups {
+		if predicate(group) {
+			return group
+		}
+	}
+	return nil
+}
+
 func buildQuotaWindowRow(
 	group *quotaWindowGroup,
 	windowMinutes int64,
 	nowMS int64,
 ) QuotaWindow {
-	closeAtMS := group.closeAtMS
+	scheduledCloseAtMS := group.closeAtMS
+	occurredAtMS := int64(0)
+	if group.event != nil {
+		occurredAtMS = group.event.OccurredAtMS
+	}
+	closeAtMS := scheduledCloseAtMS
+	if group.truncated && occurredAtMS > 0 {
+		closeAtMS = occurredAtMS
+	}
 	live := closeAtMS > nowMS
 
 	samples := make([]QuotaWindowSample, len(group.samples))
@@ -262,6 +402,10 @@ func buildQuotaWindowRow(
 		last = &samples[len(samples)-1]
 	}
 
+	var eventEndPct *float64
+	if group.event != nil {
+		eventEndPct = group.event.PreviousRemainingPct
+	}
 	var remainingStartPct, remainingEndPct, remainingMinPct *float64
 	for index := range samples {
 		pct := samples[index].RemainingPct
@@ -274,13 +418,22 @@ func buildQuotaWindowRow(
 			remainingMinPct = &copied
 		}
 	}
+	// 事件里的 previousRemainingPct 是重置前最后一次观测，比我们自己的最后一条样本更新。
+	if eventEndPct != nil {
+		value := *eventEndPct
+		remainingEndPct = &value
+		if remainingMinPct == nil || value < *remainingMinPct {
+			copied := value
+			remainingMinPct = &copied
+		}
+	}
+	if remainingEndPct == nil && last != nil && last.RemainingPct != nil {
+		value := *last.RemainingPct
+		remainingEndPct = &value
+	}
 	if first != nil && first.RemainingPct != nil {
 		value := *first.RemainingPct
 		remainingStartPct = &value
-	}
-	if last != nil && last.RemainingPct != nil {
-		value := *last.RemainingPct
-		remainingEndPct = &value
 	}
 
 	// 新窗口的起点必然是满额：消耗 = 100 - 窗口末剩余。
@@ -293,10 +446,13 @@ func buildQuotaWindowRow(
 		peakConsumedPct = clampPercent(100 - *remainingMinPct)
 	}
 
-	startEstimated := first == nil ||
+	startEstimated := group.anchorEstimated ||
+		first == nil ||
 		first.CapturedAtMS-group.anchorAtMS > StartCoverageToleranceMS
 	var endCovered bool
-	if last == nil {
+	if group.event != nil {
+		endCovered = true
+	} else if last == nil {
 		endCovered = false
 	} else if live {
 		endCovered = nowMS-last.CapturedAtMS <= EndCoverageToleranceMS
@@ -308,8 +464,12 @@ func buildQuotaWindowRow(
 	confidence := "medium"
 	switch {
 	case len(samples) == 0:
-		// 只有当前快照背书、没有任何样本的窗口。
-		source = "live"
+		// 只有事件或当前快照背书、没有任何样本的窗口。
+		if live {
+			source = "live"
+		} else {
+			source = "reset"
+		}
 		confidence = "low"
 	case startEstimated || !endCovered:
 		source = "reconstructed"
@@ -328,7 +488,8 @@ func buildQuotaWindowRow(
 	row := QuotaWindow{
 		AnchorAtMS:         group.anchorAtMS,
 		CloseAtMS:          closeAtMS,
-		ScheduledCloseAtMS: group.closeAtMS,
+		ScheduledCloseAtMS: scheduledCloseAtMS,
+		Truncated:          group.truncated,
 		Live:               live,
 		RemainingStartPct:  remainingStartPct,
 		RemainingEndPct:    remainingEndPct,
@@ -340,6 +501,12 @@ func buildQuotaWindowRow(
 		Source:             source,
 		Confidence:         confidence,
 		PlanType:           planType,
+		ApproximateClose:   group.approximateClose,
+		AnchorEstimated:    group.anchorEstimated || group.ledgerAnchorEstimated,
+	}
+	if group.event != nil {
+		row.ResetKind = group.event.EventKind
+		row.Classification = group.event.Classification
 	}
 	if first != nil {
 		row.ObservedFromMS = first.CapturedAtMS

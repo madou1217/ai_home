@@ -260,3 +260,172 @@ func TestQuotaWindowDimensionsAreCopied(t *testing.T) {
 		t.Fatalf("调用方修改返回值不应影响包级维度")
 	}
 }
+
+func TestBuildQuotaWindowsTruncatesAtEarlyReplenishment(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := testMS(base)
+	const hour = int64(60 * 60 * 1000)
+	samples := []QuotaWindowSample{
+		{QuotaKey: "rate_limit:primary", WindowMinutes: 300, RemainingPct: pct(100), ExpectedResetAtMS: baseMS + 5*hour, CapturedAtMS: baseMS + 10*60*1000},
+		{QuotaKey: "rate_limit:primary", WindowMinutes: 300, RemainingPct: pct(20), ExpectedResetAtMS: baseMS + 5*hour, CapturedAtMS: baseMS + 3*hour},
+	}
+	events := []QuotaResetEvent{{
+		EventKey:                  "event-1",
+		QuotaKey:                  "rate_limit:primary",
+		WindowMinutes:             300,
+		EventKind:                 QuotaResetKindReplenishment,
+		Classification:            "early_inferred",
+		PreviousRemainingPct:      pct(20),
+		PreviousExpectedResetAtMS: baseMS + 5*hour,
+		OccurredAtMS:              baseMS + 3*hour + 10*60*1000,
+		DetectedAtMS:              baseMS + 3*hour + 10*60*1000,
+	}}
+	windows := BuildQuotaWindows(BuildQuotaWindowsInput{
+		Samples:       samples,
+		ResetEvents:   events,
+		WindowMinutes: 300,
+		QuotaKey:      "rate_limit:primary",
+		RangeFromMS:   baseMS - hour,
+		RangeToMS:     baseMS + 24*hour,
+		NowMS:         baseMS + 24*hour,
+	})
+	if len(windows) != 1 {
+		t.Fatalf("窗口数量 = %d, want 1: %+v", len(windows), windows)
+	}
+	window := windows[0]
+	if !window.Truncated || !window.ApproximateClose {
+		t.Fatalf("提前回血必须截断窗口: %+v", window)
+	}
+	if window.CloseAtMS != baseMS+3*hour+10*60*1000 {
+		t.Fatalf("close = %d, want 回血时刻", window.CloseAtMS)
+	}
+	if window.ScheduledCloseAtMS != baseMS+5*hour {
+		t.Fatalf("scheduled close = %d, want 原定关窗时刻", window.ScheduledCloseAtMS)
+	}
+	if window.ConsumedPct == nil || *window.ConsumedPct != 80 {
+		t.Fatalf("consumed = %v, want 80", window.ConsumedPct)
+	}
+	if window.ResetKind != QuotaResetKindReplenishment || window.Classification != "early_inferred" {
+		t.Fatalf("reset kind/classification = %q/%q", window.ResetKind, window.Classification)
+	}
+}
+
+func TestBuildQuotaWindowsResetOnlyEvent(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := testMS(base)
+	const hour = int64(60 * 60 * 1000)
+	events := []QuotaResetEvent{{
+		EventKey:                  "event-2",
+		QuotaKey:                  "rate_limit:primary",
+		WindowMinutes:             300,
+		EventKind:                 QuotaResetKindReplenishment,
+		Classification:            "early_inferred",
+		PreviousRemainingPct:      pct(5),
+		PreviousExpectedResetAtMS: baseMS + 5*hour,
+		OccurredAtMS:              baseMS + 2*hour,
+		DetectedAtMS:              baseMS + 2*hour,
+	}}
+	windows := BuildQuotaWindows(BuildQuotaWindowsInput{
+		ResetEvents:   events,
+		WindowMinutes: 300,
+		QuotaKey:      "rate_limit:primary",
+		RangeFromMS:   baseMS - hour,
+		RangeToMS:     baseMS + 24*hour,
+		NowMS:         baseMS + 24*hour,
+	})
+	if len(windows) != 1 {
+		t.Fatalf("只有事件也要成窗，得到 %d 个", len(windows))
+	}
+	window := windows[0]
+	if window.Source != "reset" || window.Confidence != "low" {
+		t.Fatalf("source/confidence = %q/%q, want reset/low", window.Source, window.Confidence)
+	}
+	if !window.AnchorEstimated || !window.ApproximateClose {
+		t.Fatalf("回血事件锚点必须是估算值: %+v", window)
+	}
+	if window.ConsumedPct == nil || *window.ConsumedPct != 95 {
+		t.Fatalf("consumed = %v, want 95", window.ConsumedPct)
+	}
+}
+
+func TestBuildQuotaWindowsLedgerLiveWindowWithoutSamples(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := testMS(base)
+	const hour = int64(60 * 60 * 1000)
+	ledger := QuotaWindowLedger{
+		WindowMinutes: 300,
+		AnchorAtMS:    baseMS + hour,
+		CloseAtMS:     baseMS + 6*hour,
+		Source:        QuotaLedgerSourceActivity,
+		ObservedAtMS:  baseMS + hour,
+	}
+	windows := BuildQuotaWindows(BuildQuotaWindowsInput{
+		Ledger:        &ledger,
+		WindowMinutes: 300,
+		QuotaKey:      "rate_limit:primary",
+		RangeFromMS:   baseMS - hour,
+		RangeToMS:     baseMS + 24*hour,
+		NowMS:         baseMS + 2*hour,
+	})
+	if len(windows) != 1 {
+		t.Fatalf("账本中的活跃窗口必须出现，得到 %d 个", len(windows))
+	}
+	window := windows[0]
+	if !window.Live || window.Source != "live" {
+		t.Fatalf("window = %+v, want live", window)
+	}
+	if window.AnchorAtMS != baseMS+hour || window.CloseAtMS != baseMS+6*hour {
+		t.Fatalf("anchor/close = %d/%d", window.AnchorAtMS, window.CloseAtMS)
+	}
+	if !window.AnchorEstimated {
+		t.Fatalf("activity 来源的账本窗口锚点必须是估算值: %+v", window)
+	}
+}
+
+func TestBuildQuotaWindowsLedgerDoesNotInventClosedWindow(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := testMS(base)
+	const hour = int64(60 * 60 * 1000)
+	ledger := QuotaWindowLedger{
+		WindowMinutes: 300,
+		AnchorAtMS:    baseMS - 5*hour,
+		CloseAtMS:     baseMS - hour,
+		Source:        QuotaLedgerSourceSnapshot,
+		ObservedAtMS:  baseMS - 5*hour,
+	}
+	windows := BuildQuotaWindows(BuildQuotaWindowsInput{
+		Ledger:        &ledger,
+		WindowMinutes: 300,
+		QuotaKey:      "rate_limit:primary",
+		RangeFromMS:   baseMS - 24*hour,
+		RangeToMS:     baseMS + 24*hour,
+		NowMS:         baseMS,
+	})
+	if len(windows) != 0 {
+		t.Fatalf("已关闭的账本窗口没有样本/事件背书时不能造窗: %+v", windows)
+	}
+}
+
+func TestBuildQuotaWindowsLedgerOnlyAppliesToSameWindowLength(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := testMS(base)
+	const hour = int64(60 * 60 * 1000)
+	ledger := QuotaWindowLedger{
+		WindowMinutes: 300,
+		AnchorAtMS:    baseMS,
+		CloseAtMS:     baseMS + 5*hour,
+		Source:        QuotaLedgerSourceSnapshot,
+		ObservedAtMS:  baseMS,
+	}
+	windows := BuildQuotaWindows(BuildQuotaWindowsInput{
+		Ledger:        &ledger,
+		WindowMinutes: 10080,
+		QuotaKey:      "rate_limit:primary",
+		RangeFromMS:   baseMS - hour,
+		RangeToMS:     baseMS + 24*hour,
+		NowMS:         baseMS + hour,
+	})
+	if len(windows) != 0 {
+		t.Fatalf("5h 账本不能画进 7 天维度: %+v", windows)
+	}
+}

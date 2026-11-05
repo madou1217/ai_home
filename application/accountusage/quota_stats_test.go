@@ -71,6 +71,40 @@ func (fake *fakeQuotaSnapshots) GetUsageSnapshot(
 	return fake.snapshot, fake.err
 }
 
+type fakeQuotaLedger struct {
+	ledger usagecore.QuotaWindowLedger
+	has    bool
+}
+
+func (fake *fakeQuotaLedger) GetQuotaWindowLedger(
+	context.Context,
+	string,
+) (usagecore.QuotaWindowLedger, bool, error) {
+	return fake.ledger, fake.has, nil
+}
+
+type fakeQuotaEvents struct {
+	events []usagecore.QuotaResetEvent
+	scopes []usagecore.QuotaWindowScope
+}
+
+func (fake *fakeQuotaEvents) ListQuotaResetEvents(
+	context.Context,
+	string,
+	string,
+	int64,
+	int64,
+) ([]usagecore.QuotaResetEvent, error) {
+	return fake.events, nil
+}
+
+func (fake *fakeQuotaEvents) ListQuotaResetEventScopes(
+	context.Context,
+	string,
+) ([]usagecore.QuotaWindowScope, error) {
+	return fake.scopes, nil
+}
+
 func testAccountRef(t *testing.T) accountcore.AccountRef {
 	t.Helper()
 	accountRef, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
@@ -90,9 +124,24 @@ func newQuotaStatsService(
 	now time.Time,
 ) *QuotaStatsService {
 	t.Helper()
+	return newQuotaStatsServiceWith(t, samples, usage, &fakeQuotaLedger{}, &fakeQuotaEvents{}, snapshots, now)
+}
+
+func newQuotaStatsServiceWith(
+	t *testing.T,
+	samples *fakeQuotaSamples,
+	usage *fakeQuotaUsage,
+	ledger *fakeQuotaLedger,
+	events *fakeQuotaEvents,
+	snapshots *fakeQuotaSnapshots,
+	now time.Time,
+) *QuotaStatsService {
+	t.Helper()
 	service, err := NewQuotaStatsService(QuotaStatsDependencies{
 		Samples:   samples,
 		Usage:     usage,
+		Ledger:    ledger,
+		Events:    events,
 		Snapshots: snapshots,
 		Clock:     func() time.Time { return now },
 	})
@@ -411,5 +460,101 @@ func TestQuotaStatsIgnoresPhantomCurrentSnapshot(t *testing.T) {
 	}
 	if result.Current != nil {
 		t.Fatalf("幻影 reset 不能当成当前窗口: %+v", result.Current)
+	}
+}
+
+func TestQuotaStatsFallsBackToLedgerForCurrent(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := base.UnixMilli()
+	const hour = int64(60 * 60 * 1000)
+	// 维度由事件提供（没有样本），current 必须回落到账本，而不是快照或 null。
+	samples := &fakeQuotaSamples{}
+	events := &fakeQuotaEvents{
+		scopes: []usagecore.QuotaWindowScope{
+			{QuotaKey: "rate_limit:primary", WindowLabel: "5h", WindowMinutes: 300},
+		},
+	}
+	ledger := &fakeQuotaLedger{
+		has: true,
+		ledger: usagecore.QuotaWindowLedger{
+			WindowMinutes: 300,
+			AnchorAtMS:    baseMS,
+			CloseAtMS:     baseMS + 5*hour,
+			Source:        usagecore.QuotaLedgerSourceSnapshot,
+			ObservedAtMS:  baseMS,
+		},
+	}
+	snapshots := &fakeQuotaSnapshots{err: ErrSnapshotNotFound}
+	service := newQuotaStatsServiceWith(t, samples, &fakeQuotaUsage{}, ledger, events, snapshots, base.Add(time.Hour))
+
+	result, err := service.BuildQuotaStats(context.Background(), QuotaStatsQuery{
+		AccountRef:    testAccountRef(t),
+		WindowMinutes: 300,
+		RangeDays:     30,
+	})
+	if err != nil {
+		t.Fatalf("BuildQuotaStats() error = %v", err)
+	}
+	if result.Current == nil {
+		t.Fatal("current 不应为空：账本记录了活跃窗口")
+	}
+	if result.Current.ResetAtMS != baseMS+5*hour {
+		t.Fatalf("current.reset = %d, want 账本关窗时刻", result.Current.ResetAtMS)
+	}
+	if result.Current.RemainingPct != nil {
+		t.Fatalf("账本没有剩余额度，current.remaining 必须保持未知: %v", *result.Current.RemainingPct)
+	}
+	if result.Current.CapturedAtMS != baseMS {
+		t.Fatalf("current.captured = %d, want 账本观察时刻", result.Current.CapturedAtMS)
+	}
+}
+
+func TestQuotaStatsDimensionFromResetEvents(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := base.UnixMilli()
+	const hour = int64(60 * 60 * 1000)
+	samples := &fakeQuotaSamples{}
+	events := &fakeQuotaEvents{
+		scopes: []usagecore.QuotaWindowScope{
+			{QuotaKey: "rate_limit:primary", WindowLabel: "5h", WindowMinutes: 300, LastCapturedAtMS: baseMS + 2*hour},
+		},
+		events: []usagecore.QuotaResetEvent{{
+			EventKey:                  "event-1",
+			QuotaKey:                  "rate_limit:primary",
+			WindowMinutes:             300,
+			EventKind:                 usagecore.QuotaResetKindReplenishment,
+			Classification:            "early_inferred",
+			PreviousRemainingPct:      float64Ptr(10),
+			PreviousExpectedResetAtMS: baseMS + 5*hour,
+			OccurredAtMS:              baseMS + 2*hour,
+			DetectedAtMS:              baseMS + 2*hour,
+		}},
+	}
+	snapshots := &fakeQuotaSnapshots{err: ErrSnapshotNotFound}
+	service := newQuotaStatsServiceWith(t, samples, &fakeQuotaUsage{}, &fakeQuotaLedger{}, events, snapshots, base.Add(6*time.Hour))
+
+	result, err := service.BuildQuotaStats(context.Background(), QuotaStatsQuery{
+		AccountRef:    testAccountRef(t),
+		WindowMinutes: 300,
+		RangeDays:     30,
+	})
+	if err != nil {
+		t.Fatalf("BuildQuotaStats() error = %v", err)
+	}
+	if !result.Dimensions[0].Available {
+		t.Fatalf("重置事件必须让 5h 维度可用: %+v", result.Dimensions[0])
+	}
+	if result.Dimensions[0].DataState != "pending" {
+		t.Fatalf("data state = %q, want pending", result.Dimensions[0].DataState)
+	}
+	if len(result.Windows) != 1 {
+		t.Fatalf("只有事件也要出窗，得到 %d 个", len(result.Windows))
+	}
+	window := result.Windows[0]
+	if window.Source != "reset" || window.CloseAtMS != baseMS+2*hour {
+		t.Fatalf("window = %+v, want source=reset close=回血时刻", window)
+	}
+	if result.Summary.LastResetAtMS != baseMS+2*hour {
+		t.Fatalf("summary.last_reset = %d, want 回血时刻", result.Summary.LastResetAtMS)
 	}
 }

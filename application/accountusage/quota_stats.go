@@ -53,10 +53,35 @@ type QuotaWindowUsageStore interface {
 	) ([]usagecore.QuotaWindowUsage, error)
 }
 
+// QuotaWindowLedgerStore 提供账号级窗口账本（当前窗口的锚点与关窗时刻）。
+type QuotaWindowLedgerStore interface {
+	GetQuotaWindowLedger(
+		ctx context.Context,
+		accountRef string,
+	) (usagecore.QuotaWindowLedger, bool, error)
+}
+
+// QuotaResetEventStore 提供额度重置事件（自然滚动 / 提前回血）。
+type QuotaResetEventStore interface {
+	ListQuotaResetEvents(
+		ctx context.Context,
+		accountRef string,
+		quotaKey string,
+		fromMS int64,
+		toMS int64,
+	) ([]usagecore.QuotaResetEvent, error)
+	ListQuotaResetEventScopes(
+		ctx context.Context,
+		accountRef string,
+	) ([]usagecore.QuotaWindowScope, error)
+}
+
 // QuotaStatsDependencies 是额度统计服务的全部端口。
 type QuotaStatsDependencies struct {
 	Samples   QuotaWindowSampleStore
 	Usage     QuotaWindowUsageStore
+	Ledger    QuotaWindowLedgerStore
+	Events    QuotaResetEventStore
 	Snapshots SnapshotStore
 	Clock     Clock
 }
@@ -65,6 +90,8 @@ type QuotaStatsDependencies struct {
 type QuotaStatsService struct {
 	samples   QuotaWindowSampleStore
 	usage     QuotaWindowUsageStore
+	ledger    QuotaWindowLedgerStore
+	events    QuotaResetEventStore
 	snapshots SnapshotStore
 	clock     Clock
 }
@@ -73,6 +100,8 @@ type QuotaStatsService struct {
 func NewQuotaStatsService(dependencies QuotaStatsDependencies) (*QuotaStatsService, error) {
 	if dependencies.Samples == nil ||
 		dependencies.Usage == nil ||
+		dependencies.Ledger == nil ||
+		dependencies.Events == nil ||
 		dependencies.Snapshots == nil ||
 		dependencies.Clock == nil {
 		return nil, ErrQuotaStatsUnavailable
@@ -80,6 +109,8 @@ func NewQuotaStatsService(dependencies QuotaStatsDependencies) (*QuotaStatsServi
 	return &QuotaStatsService{
 		samples:   dependencies.Samples,
 		usage:     dependencies.Usage,
+		ledger:    dependencies.Ledger,
+		events:    dependencies.Events,
 		snapshots: dependencies.Snapshots,
 		clock:     dependencies.Clock,
 	}, nil
@@ -152,6 +183,7 @@ type QuotaStatsSummary struct {
 	MinConsumedPct      *float64 `json:"min_consumed_pct"`
 	AvgTokensPerWindow  *int64   `json:"avg_tokens_per_window"`
 	AvgCostUSDPerWindow *float64 `json:"avg_cost_usd_per_window"`
+	LastResetAtMS       int64    `json:"last_reset_at_ms"`
 	NextCloseAtMS       int64    `json:"next_close_at_ms"`
 }
 
@@ -204,12 +236,20 @@ func (service *QuotaStatsService) BuildQuotaStats(
 	if err != nil {
 		return QuotaStatsResult{}, err
 	}
-	// 维度可用性 = 采样 ∪ 当前快照：账号刚接入、还没有样本时也要先显示窗口维度。
+	// 维度可用性 = 采样 ∪ 重置事件 ∪ 当前快照：任一出现该窗口长度即可用。
+	eventScopes, err := service.events.ListQuotaResetEventScopes(ctx, accountRef)
+	if err != nil {
+		return QuotaStatsResult{}, err
+	}
 	snapshot, hasSnapshot, err := service.usageSnapshot(ctx, query.AccountRef)
 	if err != nil {
 		return QuotaStatsResult{}, err
 	}
-	dimensions := buildQuotaStatsDimensions(scopes, snapshotQuotaScopes(snapshot, hasSnapshot))
+	dimensions := buildQuotaStatsDimensions(
+		scopes,
+		eventScopes,
+		snapshotQuotaScopes(snapshot, hasSnapshot),
+	)
 	dimension, ok := pickQuotaStatsDimension(dimensions, query.WindowMinutes)
 	if !ok {
 		return QuotaStatsResult{}, ErrInvalidQuotaStatsQuery
@@ -247,14 +287,41 @@ func (service *QuotaStatsService) BuildQuotaStats(
 	if err != nil {
 		return QuotaStatsResult{}, err
 	}
+	// 事件与样本取同一时间范围；老事件可能没有 window_minutes，重建时按 quotaKey 兜底。
+	resetEvents, err := service.events.ListQuotaResetEvents(
+		ctx,
+		accountRef,
+		scope.QuotaKey,
+		rangeFromMS-windowMS,
+		nowMS,
+	)
+	if err != nil {
+		return QuotaStatsResult{}, err
+	}
+	ledger, hasLedger, err := service.ledger.GetQuotaWindowLedger(ctx, accountRef)
+	if err != nil {
+		return QuotaStatsResult{}, err
+	}
 	// 快照窗口仍用于「补一个还没样本的活跃窗口」；API 的 current 另有优先级。
 	currentWindow := currentQuotaWindowFromSnapshot(snapshot, hasSnapshot, scope.QuotaKey, dimension.WindowMinutes)
-	// 与 Node 的 pickCurrent 同序：最新样本 → 快照。幻影样本不参与（F3），
+	// 与 Node 的 pickCurrent 同序：最新样本 → 账本 → 快照。幻影样本不参与（F3），
 	// 否则空闲账号会把「读取时刻 + 窗口时长」的幻影 reset 当成当前窗口。
-	result.Current = pickQuotaStatsCurrent(samples, currentWindow, dimension.WindowMinutes)
+	result.Current = pickQuotaStatsCurrent(
+		samples,
+		ledger,
+		hasLedger,
+		currentWindow,
+		dimension.WindowMinutes,
+	)
 
+	var ledgerInput *usagecore.QuotaWindowLedger
+	if hasLedger {
+		ledgerInput = &ledger
+	}
 	windows := usagecore.BuildQuotaWindows(usagecore.BuildQuotaWindowsInput{
 		Samples:       samples,
+		ResetEvents:   resetEvents,
+		Ledger:        ledgerInput,
 		Current:       currentWindow,
 		WindowMinutes: dimension.WindowMinutes,
 		QuotaKey:      scope.QuotaKey,
@@ -263,7 +330,7 @@ func (service *QuotaStatsService) BuildQuotaStats(
 		NowMS:         nowMS,
 	})
 	if len(windows) == 0 {
-		if len(samples) == 0 {
+		if len(samples) == 0 && len(resetEvents) == 0 {
 			result.EmptyReason = "no_samples"
 		} else {
 			result.EmptyReason = "no_windows_in_range"
@@ -366,12 +433,16 @@ func currentQuotaWindowFromSnapshot(
 	return nil
 }
 
-// pickQuotaStatsCurrent 按 Node 的口径选「当前」：最新样本优先，其次当前快照。
+// pickQuotaStatsCurrent 按 Node 的口径选「当前」：最新样本 → 账本 → 当前快照。
 //
 // 样本比快照更接近真实观测时刻：快照可能落后于最新样本，甚至在账号只由 Node 采集时
 // 缺失。幻影样本会被跳过——那只是上游按读取时刻现算出来的假 reset。
+// 账本在样本之后、快照之前：它记的是上一次真实观察到的窗口，样本被裁剪后仍能
+// 给出「窗口何时关闭」，而快照在空闲期只会报幻影。
 func pickQuotaStatsCurrent(
 	samples []usagecore.QuotaWindowSample,
+	ledger usagecore.QuotaWindowLedger,
+	hasLedger bool,
 	snapshot *usagecore.CurrentQuotaWindow,
 	windowMinutes int64,
 ) *QuotaStatsCurrent {
@@ -387,6 +458,17 @@ func pickQuotaStatsCurrent(
 			RemainingPct: sample.RemainingPct,
 			ResetAtMS:    sample.ExpectedResetAtMS,
 			CapturedAtMS: sample.CapturedAtMS,
+		}
+	}
+	if hasLedger {
+		normalized := usagecore.NormalizeQuotaWindowLedger(ledger)
+		if normalized.WindowMinutes == windowMinutes && normalized.CloseAtMS > 0 {
+			// 账本只有锚点与关窗时刻，没有剩余额度：保持未知，不伪造 0%。
+			return &QuotaStatsCurrent{
+				RemainingPct: nil,
+				ResetAtMS:    normalized.CloseAtMS,
+				CapturedAtMS: normalized.ObservedAtMS,
+			}
 		}
 	}
 	if snapshot == nil {
@@ -442,6 +524,7 @@ func snapshotQuotaScopes(
 
 func buildQuotaStatsDimensions(
 	scopes []usagecore.QuotaWindowScope,
+	eventScopes []usagecore.QuotaWindowScope,
 	syntheticScopes []usagecore.QuotaWindowScope,
 ) []QuotaStatsDimension {
 	dimensions := make([]QuotaStatsDimension, 0, 3)
@@ -471,6 +554,26 @@ func buildQuotaStatsDimensions(
 			if scope.SampleCount > 0 {
 				hasSamples = true
 			}
+		}
+		// 有重置事件、但还没采到样本的窗口：维度同样可用。
+		// 老事件缺 window_minutes（0）无法归维，与 Node 一样跳过。
+		for _, scope := range eventScopes {
+			if scope.WindowMinutes != dimension.WindowMinutes {
+				continue
+			}
+			if _, exists := seen[scope.QuotaKey]; exists {
+				continue
+			}
+			label := strings.TrimSpace(scope.WindowLabel)
+			if label == "" {
+				label = dimension.Label
+			}
+			item.Scopes = append(item.Scopes, QuotaStatsScope{
+				QuotaKey:         scope.QuotaKey,
+				Label:            label,
+				LastCapturedAtMS: scope.LastCapturedAtMS,
+			})
+			seen[scope.QuotaKey] = struct{}{}
 		}
 		// 当前快照里有、但还没采到样本的窗口：只贡献「维度可用」，
 		// 样本数保持 0，前端据此显示「等待采样」而不是「无此维度」。
@@ -566,6 +669,13 @@ func summarizeQuotaStatsWindows(windows []QuotaStatsWindow) QuotaStatsSummary {
 	summary.TotalTokens = totalTokens
 	summary.RequestCount = totalRequests
 	summary.NextCloseAtMS = nextCloseAtMS
+	// 最近一次重置 = 最后一个带 resetKind 的窗口的关窗时刻（窗口已按锚点升序）。
+	for index := len(windows) - 1; index >= 0; index-- {
+		if windows[index].ResetKind != "" {
+			summary.LastResetAtMS = windows[index].CloseAtMS
+			break
+		}
+	}
 	summary.CoveredWindowCount = len(consumed)
 	if len(consumed) > 0 {
 		sum := 0.0

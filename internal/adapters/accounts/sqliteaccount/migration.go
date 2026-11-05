@@ -160,6 +160,47 @@ var expectedSchemaColumns = map[string][]string{
 		"plan_type",
 		"created_at_ms",
 	},
+	"account_quota_window_ledger": {
+		"account_ref",
+		"window_minutes",
+		"anchor_at_ms",
+		"close_at_ms",
+		"source",
+		"observed_at_ms",
+		"updated_at_ms",
+	},
+	"account_quota_detector_state": {
+		"account_ref",
+		"quota_key",
+		"provider_id",
+		"last_remaining_pct",
+		"last_expected_reset_at_ms",
+		"last_captured_at_ms",
+		"is_armed",
+		"rearm_generation",
+		"exhausted_at_ms",
+		"updated_at_ms",
+	},
+	"account_quota_reset_events": {
+		"event_id",
+		"event_key",
+		"account_ref",
+		"provider_id",
+		"quota_key",
+		"window_label",
+		"window_minutes",
+		"event_kind",
+		"classification",
+		"cause",
+		"previous_remaining_pct",
+		"current_remaining_pct",
+		"previous_expected_reset_at_ms",
+		"exhausted_at_ms",
+		"occurred_at_ms",
+		"detected_at_ms",
+		"early_duration_ms",
+		"created_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -228,6 +269,7 @@ var forwardMigrations = []string{
 	SchemaV16,
 	SchemaV17,
 	SchemaV18,
+	SchemaV19,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

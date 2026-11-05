@@ -643,6 +643,8 @@ func newHandlers(
 	quotaStatsService, err := usageapp.NewQuotaStatsService(usageapp.QuotaStatsDependencies{
 		Samples:   store,
 		Usage:     store,
+		Ledger:    store,
+		Events:    store,
 		Snapshots: store,
 		Clock:     time.Now,
 	})

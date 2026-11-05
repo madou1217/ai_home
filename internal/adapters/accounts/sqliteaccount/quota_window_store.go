@@ -51,11 +51,6 @@ func (store *Store) insertQuotaWindowSamples(
 		if entry.Kind() != usagecore.KindWindow {
 			continue
 		}
-		windowMinutes := entry.WindowSeconds() / 60
-		resetAt := entry.ResetAt()
-		if windowMinutes <= 0 || resetAt.IsZero() {
-			continue
-		}
 		bucket := strings.TrimSpace(entry.Bucket())
 		if bucket == "" {
 			continue
@@ -64,19 +59,40 @@ func (store *Store) insertQuotaWindowSamples(
 		if windowLabel == "" {
 			windowLabel = bucket
 		}
-		var remainingPct any
+		var remainingPct *float64
 		if basisPoints, known := entry.RemainingBasisPoints(); known {
-			remainingPct = float64(basisPoints) / 100
+			value := float64(basisPoints) / 100
+			remainingPct = &value
+		}
+		expectedResetAtMS := int64(0)
+		if resetAt := entry.ResetAt(); !resetAt.IsZero() {
+			expectedResetAtMS = resetAt.UnixMilli()
+		}
+		observation := usagecore.QuotaWindowSample{
+			QuotaKey:          "rate_limit:" + bucket,
+			WindowLabel:       windowLabel,
+			WindowMinutes:     entry.WindowSeconds() / 60,
+			RemainingPct:      remainingPct,
+			ExpectedResetAtMS: expectedResetAtMS,
+			CapturedAtMS:      capturedAtMS,
+		}
+		// 检测器看到所有窗口观测（含幻影、含没有 reset 值的），与 Node 一致：
+		// 重置判定只依赖剩余比例的跳变，窗口长度只是事件的展示字段。
+		if err := store.advanceQuotaDetector(ctx, transaction, snapshot, observation); err != nil {
+			return err
+		}
+		if observation.WindowMinutes <= 0 || observation.ExpectedResetAtMS <= 0 {
+			continue
 		}
 		if _, err := prepared.ExecContext(
 			ctx,
 			snapshot.AccountRef().String(),
 			snapshot.ProviderID(),
-			"rate_limit:"+bucket,
-			windowLabel,
-			windowMinutes,
-			remainingPct,
-			resetAt.UnixMilli(),
+			observation.QuotaKey,
+			observation.WindowLabel,
+			observation.WindowMinutes,
+			nullableFloat(remainingPct),
+			observation.ExpectedResetAtMS,
 			capturedAtMS,
 			capturedBucket,
 			capturedAtMS,

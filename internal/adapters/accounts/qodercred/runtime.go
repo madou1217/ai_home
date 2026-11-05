@@ -199,6 +199,11 @@ func (runtime *SigningRuntime) PrepareRequest(
 	if free := module.ExportedFunction("__wbg_requestresult_free"); free != nil {
 		defer func() { _, _ = free.Call(context.Background(), uint64(resultPtr), 0) }()
 	}
+	return runtime.readRequestResult(ctx, module, resultPtr)
+}
+
+// readRequestResult 读取 RequestResult 三件套（url/headers/body）。
+func (runtime *SigningRuntime) readRequestResult(ctx context.Context, module api.Module, resultPtr uint32) (PreparedRequest, error) {
 	url, err := readRequestString(ctx, module, resultPtr, "requestresult_url")
 	if err != nil {
 		return PreparedRequest{}, err
@@ -212,6 +217,71 @@ func (runtime *SigningRuntime) PrepareRequest(
 		return PreparedRequest{}, err
 	}
 	return PreparedRequest{URL: url, Headers: headers, Body: body}, nil
+}
+
+// PrepareInferRequest 让 wasm 为推理请求生成完整 URL、签名头与**自定义编码的请求体**。
+//
+// 返回的 Body 不是明文 JSON：客户端还要 zstd(level 1) 压缩并带 Content-Encoding: zstd。
+func (runtime *SigningRuntime) PrepareInferRequest(
+	ctx context.Context,
+	contextID uint32,
+	endpoint, bodyJSON, modelKey, modelSource string,
+) (PreparedRequest, error) {
+	module, err := runtime.acquire()
+	if err != nil {
+		return PreparedRequest{}, err
+	}
+	defer runtime.mu.Unlock()
+	endpointPtr, endpointLen, err := writeString(ctx, module, mallocOf(module), endpoint)
+	if err != nil {
+		return PreparedRequest{}, err
+	}
+	bodyPtr, bodyLen, err := writeString(ctx, module, mallocOf(module), bodyJSON)
+	if err != nil {
+		return PreparedRequest{}, err
+	}
+	modelPtr, modelLen, err := writeString(ctx, module, mallocOf(module), modelKey)
+	if err != nil {
+		return PreparedRequest{}, err
+	}
+	sourcePtr, sourceLen, err := writeString(ctx, module, mallocOf(module), modelSource)
+	if err != nil {
+		return PreparedRequest{}, err
+	}
+	addToStack := module.ExportedFunction("__wbindgen_add_to_stack_pointer")
+	prepareFn := module.ExportedFunction("qodercontext_prepareInferRequest")
+	if addToStack == nil || prepareFn == nil {
+		return PreparedRequest{}, ErrWasmMissing
+	}
+	ret, err := callWithRet(ctx, addToStack, func(ret uint32) error {
+		_, callErr := prepareFn.Call(
+			ctx,
+			uint64(ret),
+			uint64(contextID),
+			uint64(endpointPtr), uint64(endpointLen),
+			uint64(bodyPtr), uint64(bodyLen),
+			uint64(modelPtr), uint64(modelLen),
+			uint64(sourcePtr), uint64(sourceLen),
+		)
+		return callErr
+	})
+	if err != nil {
+		if hint := runtime.throwHint(); hint != "" {
+			return PreparedRequest{}, fmt.Errorf("%w: %s", err, hint)
+		}
+		return PreparedRequest{}, err
+	}
+	resultPtr, errPtr, failed, readErr := readTriple(module, ret)
+	if readErr != nil {
+		return PreparedRequest{}, readErr
+	}
+	if failed != 0 {
+		return PreparedRequest{}, runtime.stateError(errPtr)
+	}
+	if free := module.ExportedFunction("__wbg_requestresult_free"); free != nil {
+		defer func() { _, _ = free.Call(context.Background(), uint64(resultPtr), 0) }()
+	}
+	return runtime.readRequestResult(ctx, module, resultPtr)
 }
 
 // DecryptServerResponse 解密被编码的服务端响应体。

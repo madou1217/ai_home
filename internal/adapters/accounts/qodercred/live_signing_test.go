@@ -66,6 +66,19 @@ func TestLiveSigningRuntime(t *testing.T) {
 			t.Fatalf("出现空头名: %#v", prepared.Headers)
 		}
 	}
+
+	// 推理签名：wasm 会把明文 body 改写成自定义编码串（还需要 zstd 压缩才上线）。
+	inferBody := `{"request_id":"r1","stream":true,"chat_task":"FREE_INPUT","messages":[{"role":"user","content":"ping"}],"tools":[],"parameters":{"max_tokens":8},"business":{"product":"cli","version":"` + version + `","type":"agent"}}`
+	infer, err := runtime.PrepareInferRequest(ctx, contextID, "https://openapi.qoder.sh", inferBody, "auto", "auto")
+	if err != nil {
+		t.Fatalf("PrepareInferRequest 失败: %v", err)
+	}
+	if !strings.HasPrefix(infer.URL, "https://") || len(infer.Headers) < 2 || infer.Body == "" {
+		t.Fatalf("推理签名结果不完整: url=%q headers=%d bodyLen=%d", infer.URL, len(infer.Headers), len(infer.Body))
+	}
+	if infer.Body == inferBody {
+		t.Fatal("推理 body 没有被 wasm 改写（仍是明文 JSON）")
+	}
 }
 
 // signingVersion 从安装布局读 CLI 版本（version.txt 优先，其次二进制后缀）。

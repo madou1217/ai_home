@@ -151,6 +151,8 @@ type attemptOutcome struct {
 	rewritten RewriteResult
 	// provider 是本次尝试实际使用的 Provider（用于服务归属响应头）。
 	provider string
+	// providerImpl 是本次尝试解析出的 Provider 变体；响应阶段用它取可选扩展点。
+	providerImpl Provider
 	// credentialUnfit 表示账号凭据无法由透传承载（非原生凭据）。
 	credentialUnfit bool
 	// retryAccount 表示该失败可以换账号重试。
@@ -543,11 +545,12 @@ func (handler *Handler) attemptRelay(
 		// 成功也要记账：否则运行态与仪表盘看不到这个账号在工作。
 		handler.recordSuccess(request.Context(), route, observation)
 		return attemptOutcome{
-			response:    upstreamResponse,
-			route:       route,
-			observation: observation,
-			rewritten:   rewritten,
-			provider:    provider.ID(),
+			response:     upstreamResponse,
+			route:        route,
+			observation:  observation,
+			rewritten:    rewritten,
+			provider:     provider.ID(),
+			providerImpl: provider,
 		}, false
 	}
 	retry, edgeRejected := handler.recordHTTPFailure(request.Context(), provider, route, observation, upstreamResponse)
@@ -629,6 +632,13 @@ func (handler *Handler) writeResponse(
 		response.Header().Set("Cache-Control", "no-cache")
 		response.Header().Set("X-Accel-Buffering", "no")
 		response.Header().Set("X-Content-Type-Options", "nosniff")
+	}
+	// Provider 可选接管响应（例如 qoder 的 SSE 信封需要拆包后再交给客户端）。
+	if transformer, ok := outcome.providerImpl.(ResponseTransformer); ok {
+		if handled, err := transformer.TransformResponse(response, upstreamResponse, stream); handled {
+			_ = err
+			return
+		}
 	}
 	response.WriteHeader(upstreamResponse.StatusCode)
 	_ = copyStreaming(response, upstreamResponse.Body)

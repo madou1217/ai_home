@@ -703,3 +703,20 @@ Node 进程（过渡期，逐渐缩小）
 
 纪律：同一台机器上 qoder 相关请求（尤其带签名的）不要连续重试；一次改动只跑 1–2 次，
 失败先看单元测试与假 HTTP，不要用真机结果当调试探针。
+
+> 40. **qoder relay 迁 Go（传输核心完成，未接线；2026-11-05）**：
+>    - `qodercred` 补 `qodercontext_prepareInferRequest`（推理 body 编码 + URL/20 个签名头）。
+>    - 新增 `internal/transport/http/qoderrelay`：
+>      `body.go`（Node buildQoderHttpRequestBody 的等价实现，含 transcript/tools/parameters/
+>      model_config）、`sse.go`（外层 {body:"<chunk>"} 信封拆包 + model 对齐）、
+>      `provider.go`（Resolve/RewriteRequest/Endpoint/DecorateUpstream/TransformResponse）。
+>      请求流程：目录缓存 → BuildBody → wasm 编码 → zstd(level 1) → POST；
+>      推理端点用布局表 `endpoints.inference`（api3.qoder.sh / gateway.qoder.com.cn），
+>      并把 `Cosy-MachineToken/MachineType` 覆盖成 umid-cache.json 里的真实设备令牌
+>      （wasm 只给 36 字符占位，不覆盖会 500）。
+>    - `relaycore` 新增可选 `ResponseTransformer` 扩展点（Provider 自己消费成功响应）。
+>    - 单测全绿（body/sse/provider，假 signer + httptest，不依赖真机）。
+>    - **真机未通过**：本机唯一 qoder 账号是 Free，连续 3 次上游 500（已按频率纪律停手），
+>      无法判断是账号额度/套餐还是线协议差异。**因此没有接线**（组合根与 ProviderChain
+>      保持原样），接线适配器 `internal/host/aihserver/qoder_relay_account_source.go`
+>      已备好；验证通过后再挂链。

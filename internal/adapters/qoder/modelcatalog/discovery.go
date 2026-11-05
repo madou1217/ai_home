@@ -16,12 +16,15 @@ package modelcatalog
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -71,6 +74,19 @@ var decryptNative = qodercred.DecryptNativeRaw
 // resolveVersion 读取客户端版本；测试里替换成固定值。
 var resolveVersion = qodercred.CLIVersion
 
+// Entry 是目录条目的完整事实（推理请求的 model_config 只能从这里派生）。
+type Entry struct {
+	Key            string
+	DisplayName    string
+	Format         string
+	Source         string
+	IsVl           bool
+	IsReasoning    bool
+	IsDefault      bool
+	MaxInputTokens int
+	ThinkingConfig map[string]any
+}
+
 // Source 是 qoder / qodercn 的模型发现策略。
 type Source struct {
 	client     HTTPClient
@@ -107,6 +123,31 @@ func (source *Source) DiscoverModels(
 	ctx context.Context,
 	credential accountapp.Credential,
 ) ([]string, error) {
+	entries, err := source.Entries(ctx, credential)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		key := strings.ToLower(entry.DisplayName)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, entry.DisplayName)
+	}
+	if len(names) == 0 {
+		return nil, ErrEmptyCatalog
+	}
+	return names, nil
+}
+
+// Entries 读取账号可见的完整目录条目（推理请求要用 is_reasoning / max_input_tokens 等）。
+func (source *Source) Entries(
+	ctx context.Context,
+	credential accountapp.Credential,
+) ([]Entry, error) {
 	if source == nil || source.client == nil || ctx == nil || credential == nil {
 		return nil, ErrInvalidDependencies
 	}
@@ -151,11 +192,43 @@ func (source *Source) DiscoverModels(
 	if err != nil {
 		return nil, err
 	}
-	names := normalizeNames(catalog, defaultScene)
-	if len(names) == 0 {
+	entries := normalizeEntries(catalog, defaultScene)
+	if len(entries) == 0 {
 		return nil, ErrEmptyCatalog
 	}
-	return names, nil
+	storeCachedEntries(cacheKey(source.providerID, payload), entries)
+	return entries, nil
+}
+
+// entriesCache 让推理 relay 能在请求热路径上同步拿到目录条目。
+//
+// 目录发现是异步 HTTP，而 relay 的 RewriteRequest 是同步的；进程内缓存由周期刷新
+// 填充，冷启动时 relay 直接 fail-closed 交还 Node，等下一轮刷新后自然接管。
+var (
+	entriesCacheMu sync.RWMutex
+	entriesCache   = map[string][]Entry{}
+)
+
+// CachedEntries 返回最近一次成功发现缓存下来的条目。
+func CachedEntries(providerID string, native map[string]any) ([]Entry, bool) {
+	entriesCacheMu.RLock()
+	defer entriesCacheMu.RUnlock()
+	entries, ok := entriesCache[cacheKey(providerID, native)]
+	return entries, ok
+}
+
+func storeCachedEntries(key string, entries []Entry) {
+	entriesCacheMu.Lock()
+	defer entriesCacheMu.Unlock()
+	if len(entriesCache) > 64 {
+		entriesCache = map[string][]Entry{}
+	}
+	entriesCache[key] = entries
+}
+
+func cacheKey(providerID string, native map[string]any) string {
+	digest := sha256.Sum256([]byte(providerID + "\x00" + text(native["credentials"]) + "\x00" + text(native["machineId"])))
+	return hex.EncodeToString(digest[:])
 }
 
 // fetch 用签名后的 URL 与请求头发一次 GET。
@@ -217,6 +290,27 @@ type catalogEntry struct {
 	DisplayName string
 }
 
+// normalizeEntries 复刻 Node normalizeCatalogEntry 的字段与过滤规则。
+func normalizeEntries(payload map[string]any, scene string) []Entry {
+	raw := payload[scene]
+	if raw == nil {
+		raw = payload[defaultScene]
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	entries := make([]Entry, 0, len(items))
+	for _, item := range items {
+		entry, ok := normalizeEntry(item)
+		if !ok {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 // normalizeNames 复刻 Node normalizeCatalogEntry 的过滤与展示名规则。
 func normalizeNames(payload map[string]any, scene string) []string {
 	raw := payload[scene]
@@ -245,20 +339,61 @@ func normalizeNames(payload map[string]any, scene string) []string {
 	return names
 }
 
-func normalizeEntry(raw any) (catalogEntry, bool) {
+// normalizeEntry 按 Node normalizeCatalogEntry 的默认值与顺序归一化。
+func normalizeEntry(raw any) (Entry, bool) {
 	object, ok := raw.(map[string]any)
 	if !ok {
-		return catalogEntry{}, false
+		return Entry{}, false
 	}
 	key := text(object["key"])
 	if key == "" {
-		return catalogEntry{}, false
+		return Entry{}, false
 	}
-	displayName := text(object["display_name"])
-	if displayName == "" {
-		displayName = key
+	entry := Entry{
+		Key:         key,
+		DisplayName: text(object["display_name"]),
+		Format:      text(object["format"]),
+		Source:      text(object["source"]),
+		// 客户端默认值：缺省 false（Node 侧是 ?? false），不是 true。
+		IsVl:           object["is_vl"] == true,
+		IsReasoning:    object["is_reasoning"] == true,
+		IsDefault:      object["is_default"] == true,
+		MaxInputTokens: positiveInt(object["max_input_tokens"]),
 	}
-	return catalogEntry{Key: key, DisplayName: displayName}, true
+	if entry.DisplayName == "" {
+		entry.DisplayName = key
+	}
+	if entry.Format == "" {
+		entry.Format = "openai"
+	}
+	if entry.Source == "" {
+		entry.Source = "system"
+	}
+	if entry.MaxInputTokens == 0 {
+		entry.MaxInputTokens = defaultMaxInputTokens
+	}
+	if thinking, ok := object["thinking_config"].(map[string]any); ok {
+		entry.ThinkingConfig = thinking
+	}
+	return entry, true
+}
+
+func positiveInt(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		if typed > 0 {
+			return int(typed)
+		}
+	case int:
+		if typed > 0 {
+			return typed
+		}
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil && parsed > 0 {
+			return int(parsed)
+		}
+	}
+	return 0
 }
 
 func text(value any) string {

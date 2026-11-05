@@ -860,9 +860,28 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - 回归守卫：`test/model-ownership.test.js`（10 项：descriptor 派生、无出网策略、
   不出网读取、Go 读不到时抛错、本地兜底不进目录、ref 恒等翻译）。
 
+### 第二批：家族四支 / kiro / qoder 双端（2026-11-05）
+
+- **codebuddy / codebuddycn / workbuddy / workbuddycn**：`_shared/codebuddy-family.js` 的
+  HTTP（`/v3/config`）与本地 CLI（`--help`）两条策略一起退役；删除
+  `lib/account/codebuddy-family-model-discovery.js`、`lib/server/workbuddy-model-discovery.js`
+  与 `native-cli-model-discovery` 的 `codebuddy-help` 分支。
+- **kiro**：HTTP（ListAvailableModels）与 CLI 兜底退役，删除 `lib/account/kiro-model-discovery.js`。
+- **qoder / qodercn**：HTTP（WASM 签名目录）与 CLI 兜底退役；`qoder-model-catalog` 仅保留
+  与推理传输共用的目录读取（`readQoderModelCatalog` 等）。
+- **两处 UX 修正**：
+  - `mergeGoCatalogResult` 在覆盖 `errorsByAccount` 后重算 `firstError`——否则账号恢复后
+    页面仍显示旧探测错误（实测重启后 kiro 已正常仍报 `go_model_catalog_reader_missing`）。
+  - scoped 空目录不再写入 3 秒响应缓存——启动早期 Go 未 ready 时的那一次空结果会被
+    轮询反复续期（实测 opencode API Key 账号持续显示 0 个模型）。
+- **真机**：qoder 15、kiro 5×5、codebuddy 26×N、opencode 109/109，全部
+  `source=remote`、`errorsByAccountRef` 为空，与 `/v1/management/account-models` 相同。
+- 说明：Go 的 opencode 目录在刷新窗口内会短暂为空（模型行被整体替换），WebUI 如实反映；
+  这不是 Node 探测问题，属于 Go 侧刷新策略，后续单独观察。
+
 ### 下一步
 
-- 其余 Provider 按同一形状退役（gemini / kiro / zcode / …）：只改 descriptor 一行 +
-  删对应 handler，不动派发路径。
+- 剩余 Provider：gemini / zcode / agy / kimi / grok（前四家本机账号停用或缺失，
+  等启用后按同一形状退役）。
 - codex / claude 最后（仍有 CLI 与特殊目录逻辑）。
 - cline 启用账号后验证 scoped 目录 = 14 = `/v1/management/account-models`。

@@ -47,6 +47,19 @@ test('Go 有数据时覆盖 byAccount，保留 Node 的探测时刻/标签/路�
   assert.equal(merged.source, 'remote');
 });
 
+test('Go 成功覆盖后旧 firstError 不再残留', () => {
+  const local = localResult();
+  local.firstError = 'go_model_catalog_unavailable:go_model_catalog_reader_missing';
+  const merged = mergeGoCatalogResult(local, {
+    updatedAt: 2000,
+    byAccount: { acct_a: ['go-model-1'], acct_b: ['go-model-b'] },
+    errorsByAccount: {},
+    source: 'remote'
+  }, null);
+  assert.equal(merged.firstError, '', 'Go 覆盖了出错的账号后，摘要必须重算');
+  assert.deepEqual(merged.errorsByAccount, {});
+});
+
 test('账号作用域只覆盖目标账号', () => {
   const merged = mergeGoCatalogResult(localResult(), {
     ...remoteResult(),

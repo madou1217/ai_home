@@ -891,6 +891,11 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - **停用账号的本地目录**：`getWebUiCatalogResult` 在 Go 正常作答后，丢弃 Go 没有返回的
   Go 接管账号的本地缓存（`dropGoOwnedLocalEntries`）；Go 不可达（null）时仍保留快照兜底。
   这样停用账号不会永远显示上一次 Node 探测的历史目录。
+
+- **注入点回归**：`server.js` 的 `fetchModelsForAccountWithRefresh` 曾漏掉最后一跳的
+  `withGoModelSource`，所有 Go 接管 Provider 都以 `go_model_catalog_reader_missing` 失败，
+  `/v0/management/models` 从 178 个模型变成 0（WebUI 走合并层看不出来）。已抽成纯函数
+  `lib/server/go-model-source-options.js` 并加单测（`test/go-model-source-options.test.js`）。
 - **真机对比**（43 个账号，逐账号 scoped vs Go `account_models`）：
   - 35 个账号完全一致；
   - 6 个 agy 账号 `enabled=0` 不在运行池：页面不展示目录（Go 有 12 条），符合既有行为；

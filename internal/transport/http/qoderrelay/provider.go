@@ -324,6 +324,11 @@ func (provider *Provider) TransformResponse(
 	if upstream == nil {
 		return false, nil
 	}
+	// 非 2xx 的错误正文不是 SSE（真实 4xx/5xx 是 JSON 错误体）：交给 Handler 原样转发，
+	// 否则拆包会把整段正文丢掉，客户端只看到状态码 + 空 body。
+	if upstream.StatusCode < http.StatusOK || upstream.StatusCode >= http.StatusMultipleChoices {
+		return false, nil
+	}
 	if streaming {
 		response.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 		response.Header().Del("Content-Length")
@@ -348,6 +353,12 @@ func (provider *Provider) TransformResponse(
 	_, _ = response.Write(aggregated.Payload)
 	return true, nil
 }
+
+// UpstreamStatusCode 实现 relaycore 的上游错误契约。
+func (err *StreamError) UpstreamStatusCode() int { return err.StatusCode }
+
+// UpstreamErrorCode 实现 relaycore 的上游错误契约。
+func (err *StreamError) UpstreamErrorCode() string { return err.Code }
 
 // compressBody 用 zstd level 1 压缩（与官方客户端一致）。
 func compressBody(body string) ([]byte, error) {

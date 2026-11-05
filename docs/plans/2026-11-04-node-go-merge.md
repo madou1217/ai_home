@@ -301,6 +301,16 @@
 >    `lib/providers/defs/_shared/codebuddy-family.js` 的 quota 改为 `supported:false`。
 >    真机：重启后 **15/15 家族账号**在 ~80s 内全部产生快照文档（3–5 条 entries，
 >    付费账号带 planType），account_usage 15 条。
+> 37. **cline 额度迁 Go；qoder 因凭据加密回退（2026-11-05）**：
+>    - **cline**：新增 `internal/adapters/cline/usage`（plan + usage-limits 两个端点），
+>      产出 `cline_pass_usage` 快照与 schemaVersion=2 文档；协调器加入 cline，
+>      Node descriptor quota 改为 `supported:false`。本机两个 cline 账号 enabled=0，
+>      周期重扫会跳过，未做真机联调（单测覆盖 happy path / 无额度 / HTTP 错误）。
+>    - **qoder：回退**。并行 agent 已写出 `internal/adapters/qoder/usage`，但真机凭据的
+>      `native_auth_json.credentials` 是 Node 的加密串（sym-v1，平台派生密钥），
+>      Go 解析失败 → 显式 refresh 返回 500。已移除 Go 策略与队列，恢复 qoder/qodercn
+>      的 Node 探针（Node 能解密）。前置：把 qoder 的 sym-v1 解密迁到 Go。
+>    - **kimi / grok**：本机没有对应账号，暂不端口化（避免无真机验证的投机实现）。
 
 ## 0. 结论先行
 

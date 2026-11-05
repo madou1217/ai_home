@@ -16,6 +16,7 @@ import (
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
 	codebuddyfamilyusage "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/usage"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
@@ -118,6 +119,11 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// cline 的额度来自 plan + usage-limits 两个端点。
+	clineStrategy, err := clineusage.New(client)
+	if err != nil {
+		return nil, err
+	}
 	// CodeBuddy 家族四支共用同一账单协议，按 Provider 各注册一条策略。
 	familyStrategies := make([]usageapp.ProviderStrategy, 0, 4)
 	for _, providerID := range []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"} {
@@ -147,6 +153,7 @@ func newUsageComposition(
 			kiroStrategy,
 			agyStrategy,
 			zcodeStrategy,
+			clineStrategy,
 		}, familyStrategies...),
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
@@ -167,6 +174,7 @@ func newUsageComposition(
 			"codebuddycn": usageProviderConcurrency,
 			"workbuddy":   usageProviderConcurrency,
 			"workbuddycn": usageProviderConcurrency,
+			"cline":       usageProviderConcurrency,
 		},
 		RefreshTimeout:  usageRefreshTimeout,
 		RefreshInterval: usageRefreshInterval,

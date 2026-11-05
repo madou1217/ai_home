@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 21
+	SchemaVersion = 22
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -117,3 +117,11 @@ var SchemaV20 string
 //
 //go:embed schema_v21.sql
 var SchemaV21 string
+
+// SchemaV22 保存 Go 自有的模型别名表与代次。
+//
+// 别名所有权最终要迁到 Go：这张表让 Go 重启后能自己恢复，而不是等 Node 再推一次。
+// generation 单调递增，路由编译靠它判断快照新旧。
+//
+//go:embed schema_v22.sql
+var SchemaV22 string

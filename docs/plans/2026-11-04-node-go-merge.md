@@ -721,3 +721,13 @@ Node 进程（过渡期，逐渐缩小）
 >      无法判断是账号额度/套餐还是线协议差异。**因此没有接线**（组合根与 ProviderChain
 >      保持原样），接线适配器 `internal/host/aihserver/qoder_relay_account_source.go`
 >      已备好；验证通过后再挂链。
+
+> 41. **OAuth 作业公开快照持久化（2026-11-05）**：
+>    - aih.db v17 新增 `oauth_jobs`；`accountauth.Service` 每次状态迁移同步落快照，
+>      `Rehydrate` 启动时把 pending/processing 标成 expired（state/PKCE 只在内存，
+>      重启后无法继续）；`GetJob` 内存缺失时回落存储。
+>    - Go 新增 `GET /v1/management/oauth-jobs[/{id}]` 与 `PUT /v1/management/oauth-jobs/{id}`。
+>    - Node 侧 `web-ui-router` 的 `onJobChanged` 把 12 类 Provider 的 Job 投影成公开快照
+>      推给 Go（running→pending、succeeded→completed，去重 + dirty 重试 + 启动 hydrate）。
+>    - 真机：PUT pending → GET 200 → 重启后同一 Job 变 expired 且仍可查。
+>    - 未做：WebUI 在内存缺失时主动读 Go 的 GET（当前只有写路径与 Go 查询接口）。

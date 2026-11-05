@@ -135,6 +135,14 @@
     Go 挂掉会让 Node 的 `/healthz` 失败，编排器进而重启 Node——把「子进程故障」
     放大成「整机重启」，且反过来杀掉 Go。这是依赖倒置，不是迁移进度问题。
     `/readyz` 的 `accounts` 字段还存在数据归属分叉，真要划转得先统一个数源。
+12. **别名（model alias）所有权正在迁 Go（2026-11-06）。** 详见
+    `docs/plans/2026-11-06-model-alias-ownership.md`。已完成：Go 侧 schema v22/v23
+    （model_alias + generation + display_models_json）、仓储端口与落库、启动恢复、
+    CRUD 用例、`/v1/management/webui/model-aliases` 契约接口、写入后立即触发目录重建、
+    Node 侧影子对账（只读，不改变响应）。真机已验证：推送落库、重启恢复、CRUD 全链路 200。
+    未完成：Node 写路径切到 Go（当前 Node 仍是 owner，重推投影会整体覆盖 Go 的表）、
+    组替换（`/replace`）、目标候选（`/targets`）。
+    注意：**在 Node 停止重推之前，Go 侧写入会被下一次推送覆盖**——这是切片 C 的前提。
 11. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

@@ -41,23 +41,14 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
-	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	clinemodelcatalog "github.com/madou1217/ai_home/internal/adapters/cline/modelcatalog"
-	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
-	geminimodelcatalog "github.com/madou1217/ai_home/internal/adapters/gemini/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
-	kiromodelcatalog "github.com/madou1217/ai_home/internal/adapters/kiro/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
-	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
-	opencodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/opencode/modelcatalog"
-	qodermodelcatalog "github.com/madou1217/ai_home/internal/adapters/qoder/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
-	zcodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/zcode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -1461,7 +1452,8 @@ func modelRefreshProviderConcurrency(providerIDs []string) map[string]int {
 	return concurrency
 }
 
-// newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。
+// newModelDiscovery 创建生产模型目录源（见 model_providers.go 注册表），
+// 或使用测试显式注入的策略。
 func newModelDiscovery(
 	catalog *providers.Catalog,
 	injected []accountapp.ProviderModelDiscoverer,
@@ -1475,93 +1467,16 @@ func newModelDiscovery(
 			Timeout:       modelCatalogHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
 		}
-		codexSource, err := codexresponses.NewModelCatalogSourceWithClientVersion(client, codexVersions)
-		if err != nil {
-			return nil, fmt.Errorf("创建 Codex 模型目录源失败: %w", err)
-		}
-		claudeSource, err := claudemessages.NewModelCatalogSource(client)
-		if err != nil {
-			return nil, fmt.Errorf("创建 Claude 模型目录源失败: %w", err)
-		}
-		agySource, err := agycodeassist.NewModelCatalogSourceWithWireModels(client, agyModelWires)
-		if err != nil {
-			return nil, fmt.Errorf("创建 AGY 模型目录源失败: %w", err)
-		}
-		familySources, err := codebuddyfamilymodelcatalog.NewModelCatalogSources(client)
-		if err != nil {
-			return nil, fmt.Errorf("创建家族模型目录源失败: %w", err)
-		}
-		// kimi / grok 的透传通道已接入（见 relaycore），但账号的**模型目录**要单独发现：
-		// 没有目录，Go 就不知道这两个 Provider 有哪些模型可路由，请求会被判成
-		// model_not_routable 交还 Node —— 等于通道白接。
-		//
-		// 两者都是标准 OpenAI 兼容端点（GET {base}/models），因此共用同一实现，
-		// 差异只在端点与凭据取法。
-		kimiSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
-			ProviderID:  kimirelay.ProviderID,
-			Endpoint:    kimirelay.KimiCodeBaseURL + openaicompatmodelcatalog.ModelsPath,
-			Token:       kimirelay.AccessTokenFromCredential,
-			Descriptors: modalityRegistrar,
+		built, err := buildModelProviderSources(modelProviderContext{
+			client:            client,
+			codexVersions:     codexVersions,
+			agyModelWires:     agyModelWires,
+			modalityRegistrar: modalityRegistrar,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("创建 kimi 模型目录源失败: %w", err)
+			return nil, err
 		}
-		grokSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
-			ProviderID: grokrelay.ProviderID,
-			Endpoint:   grokrelay.DefaultBaseURL + openaicompatmodelcatalog.ModelsPath,
-			Token:      grokrelay.AccessTokenFromCredential,
-			// grok 的 GET /models 只认 API Key：OAuth 账号会被 403，因此明确跳过
-			// （那些账号的目录只能靠本地 CLI，Go 服务端没有 —— 这是能力边界，不是缺陷）。
-			SupportsCredential: grokrelay.SupportsHTTPModelDiscovery,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
-		}
-		// cline 是静态规范清单（不联网、不依赖客户端），与 Node 的 KNOWN_CLINE_MODELS 同源。
-		clineSource := clinemodelcatalog.New()
-		// qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
-		qoderSources := make([]accountapp.ProviderModelDiscoverer, 0, 2)
-		for _, providerID := range []string{"qoder", "qodercn"} {
-			source, sourceErr := qodermodelcatalog.New(client, providerID)
-			if sourceErr != nil {
-				return nil, fmt.Errorf("创建 qoder 模型目录源失败(%s): %w", providerID, sourceErr)
-			}
-			qoderSources = append(qoderSources, source)
-		}
-		opencodeSource, err := opencodemodelcatalog.New(client)
-		if err != nil {
-			return nil, fmt.Errorf("创建 opencode 模型目录源失败: %w", err)
-		}
-		// kiro 的目录走控制面 ListAvailableModels（V3 按套餐，V2 兜底）；
-		// access token 过期时由 kirocred.Refresher 在发现前刷新。
-		kiroSource, kiroErr := kiromodelcatalog.New(client)
-		if kiroErr != nil {
-			return nil, fmt.Errorf("创建 kiro 模型目录源失败: %w", kiroErr)
-		}
-		// zcode 的目录来自 plan 计费接口（余额 + 活动预览回退），需要客户端元数据头。
-		zcodeSource, zcodeErr := zcodemodelcatalog.New(client)
-		if zcodeErr != nil {
-			return nil, fmt.Errorf("创建 zcode 模型目录源失败: %w", zcodeErr)
-		}
-		// gemini 的 Vertex 占位/网关号直接读 base_url 的 /v1/models。
-		geminiSource, geminiErr := geminimodelcatalog.New(client)
-		if geminiErr != nil {
-			return nil, fmt.Errorf("创建 gemini 模型目录源失败: %w", geminiErr)
-		}
-		strategies = []accountapp.ProviderModelDiscoverer{
-			codexSource,
-			claudeSource,
-			agySource,
-			kimiSource,
-			grokSource,
-			opencodeSource,
-			kiroSource,
-			zcodeSource,
-			geminiSource,
-		}
-		strategies = append(strategies, familySources...)
-		strategies = append(strategies, qoderSources...)
-		strategies = append(strategies, clineSource)
+		strategies = built
 	}
 	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)
 	if err != nil {

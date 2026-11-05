@@ -88,9 +88,13 @@
     ③ 已完成（2026-11-06）：`QueryQuotaWindowUsage` 改为按 (窗口, Provider, 模型) 聚合并保留
     明细，`QuotaStatsService` 接 `QuotaWindowPricer` 逐模型计价；窗口内任一模型无定价即整窗
     「未知」，空窗口是确定的 0 元。定价快照与模型用量接口共用同一份缓存，两个页面口径一致。
-    下一步：④ `/v0/webui/accounts/:provider/:ref/quota-stats` 前门切 Go——Node 侧只剩
-    camelCase 契约映射与 `provider/:ref` 校验，切完可删除 `webui-account-quota-stats-routes.js`
-    里的本地计算（`buildAccountQuotaStats` 及其三条依赖）。
+    ④ 已完成（2026-11-06）：`/v0/webui/accounts/:provider/:ref/quota-stats` 前门切 Go。
+    Node 只保留账号校验、参数翻译、snake→camel 契约映射；**没有本地回落**（回落等于保留
+    第二套算法，口径分叉就再也对不上），Go 不可用直接 503 `go_core_required`。
+    契约映射集中在新模块 `lib/server/quota-stats-go-contract.js`，不做逐字段白名单——
+    Go 的窗口结构与 `web/src/types/index.ts` 的 `QuotaStatsWindowRow` 一一对应，
+    测试逐字段断言这 26 个键都还在。
+    注意：`lib/account/quota-window-stats.js` 仍被 `model-usage-*` 使用，不能整文件删除。
 9. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

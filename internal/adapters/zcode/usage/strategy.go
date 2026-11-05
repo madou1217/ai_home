@@ -244,31 +244,20 @@ func decodeDocument(payload []byte) (balanceDocument, error) {
 	return document, nil
 }
 
-// zcodePlanTypes 与 Node lib/account/quota-reset/zcode-strategy.js 的词汇表一致：
-// 只有落在这些官方档位里的名字才算可识别套餐，未知名字保持未知。
-var zcodePlanTypes = map[string]struct{}{
-	"free":             {},
-	"start":            {},
-	"start_plan":       {},
-	"zcode_start_plan": {},
-	"standard":         {},
-	"pro":              {},
-	"advanced":         {},
-	"team":             {},
-	"enterprise":       {},
-}
-
-// planType 取第一个非空套餐名并归一；没有套餐或名字不在词汇表里返回空。
+// planType 取第一个非空套餐名并归一。
+//
+// 不维护档位清单：上游新增套餐原样通过，只排除明确不是套餐的
+// 鉴权模式与占位值；未知档位不该被静默丢掉。
 func (document balanceDocument) planType() string {
 	for _, plan := range document.Data.Plans {
 		token := usagecore.NormalizePlanToken(plan.Name)
 		if token == "" {
 			continue
 		}
-		if _, known := zcodePlanTypes[token]; known {
-			return token
+		if !usagecore.IsPlanToken(token) {
+			return ""
 		}
-		return ""
+		return token
 	}
 	return ""
 }

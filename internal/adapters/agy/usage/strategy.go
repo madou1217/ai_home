@@ -338,23 +338,25 @@ func inferWindowSeconds(resetAt time.Time, capturedAt time.Time) int64 {
 }
 
 // snapshotPlanType 与 Node lib/account/quota-reset/agy-strategy.js 同判据：
-// 只认 ultra / pro / free 三档，未知返回空（展示文档的 normalizePlanType
-// 会回落成 oauth，那不是套餐，不能写进快照）。
+// 上游档位名带前后缀时按关键字归类，其余原样通过（不维护档位清单）。
+// 未知档位只有「不是套餐」的鉴权模式才落空；展示文档的 normalizePlanType
+// 会回落成 oauth，那不是套餐，不能写进快照。
 func snapshotPlanType(rawTier string) string {
-	lower := strings.ToLower(strings.TrimSpace(rawTier))
-	switch {
-	case lower == "":
+	token := usagecore.NormalizePlanToken(rawTier)
+	if !usagecore.IsPlanToken(token) {
 		return ""
-	case strings.Contains(lower, "ultra"):
+	}
+	switch {
+	case strings.Contains(token, "ultra"):
 		return "ultra"
-	case strings.Contains(lower, "pro"):
+	case strings.Contains(token, "pro"):
 		return "pro"
-	case strings.Contains(lower, "starter"),
-		strings.Contains(lower, "free"),
-		strings.Contains(lower, "default"):
+	case strings.Contains(token, "starter"),
+		strings.Contains(token, "free"),
+		strings.Contains(token, "default"):
 		return "free"
 	default:
-		return ""
+		return token
 	}
 }
 

@@ -167,3 +167,33 @@ func TestFetchUsageRejectsBusinessError(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+// 套餐不维护档位清单：上游新增套餐名原样通过，只排除非套餐值。
+func TestPlanTypeKeepsUnknownPlans(t *testing.T) {
+	t.Parallel()
+	build := func(names ...string) balanceDocument {
+		var document balanceDocument
+		for _, name := range names {
+			document.Data.Plans = append(document.Data.Plans, planRow{Name: name})
+		}
+		return document
+	}
+	cases := []struct {
+		name     string
+		document balanceDocument
+		want     string
+	}{
+		{name: "官方档位", document: build("ZCode Start Plan"), want: "zcode_start_plan"},
+		{name: "新档位原样通过", document: build("Fable Max"), want: "fable_max"},
+		{name: "跳过空名", document: build("", "Team"), want: "team"},
+		{name: "非套餐值", document: build("oauth"), want: ""},
+		{name: "没有套餐", document: build(), want: ""},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := testCase.document.planType(); got != testCase.want {
+				t.Fatalf("planType() = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}

@@ -482,29 +482,14 @@ func decodeUsage(body []byte) (usageResponse, error) {
 	return response, nil
 }
 
-// kimiPlanTypes 与 Node lib/account/quota-reset/kimi-strategy.js 的词汇表一致。
-var kimiPlanTypes = map[string]struct{}{
-	"free":         {},
-	"basic":        {},
-	"level_1":      {},
-	"level1":       {},
-	"intermediate": {},
-	"allegretto":   {},
-	"level_2":      {},
-	"level2":       {},
-	"advanced":     {},
-	"allegro":      {},
-	"level_3":      {},
-	"level3":       {},
-}
-
-// normalizePlanType 只保留 Node 词汇表里的档位；未知档位保持未知。
+// normalizePlanType 只做归一，不维护档位清单：上游新增会员等级原样通过，
+// 只排除明确不是套餐的鉴权模式与占位值。
 func normalizePlanType(rawLevel string) string {
 	token := usagecore.NormalizePlanToken(rawLevel)
-	if _, known := kimiPlanTypes[token]; known {
-		return token
+	if !usagecore.IsPlanToken(token) {
+		return ""
 	}
-	return ""
+	return token
 }
 
 // planType 把内部枚举 LEVEL_INTERMEDIATE 换成展示用的 intermediate。

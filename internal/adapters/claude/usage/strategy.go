@@ -470,9 +470,12 @@ func profilePlanType(profile profilePayload) string {
 	case profile.Account.HasClaudePro:
 		return "pro"
 	}
-	organizationType := strings.ToLower(strings.TrimSpace(profile.Organization.OrganizationType))
-	organizationType = strings.TrimPrefix(organizationType, "claude_")
-	token := usagecore.NormalizePlanToken(organizationType)
+	// 先归一（小写、分隔符折叠）再去 claude_ 前缀：这样 "claude_team" 与
+	// "Claude Team" 都能落到 team，与 Node claude-quota-shape 同序。
+	token := strings.TrimPrefix(
+		usagecore.NormalizePlanToken(profile.Organization.OrganizationType),
+		"claude_",
+	)
 	if !usagecore.IsPlanToken(token) {
 		return ""
 	}

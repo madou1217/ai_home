@@ -175,3 +175,26 @@ func TestMatchesModelFamilyIsExact(t *testing.T) {
 		t.Fatal("unexpected prefix match")
 	}
 }
+
+// 套餐不维护档位清单：已知档位按关键字归类，新档位原样通过。
+func TestSnapshotPlanType(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "Google AI Ultra", want: "ultra"},
+		{raw: "Pro", want: "pro"},
+		{raw: "Starter", want: "free"},
+		{raw: "Free", want: "free"},
+		{raw: "Gemini Fable", want: "gemini_fable"},
+		{raw: "oauth", want: ""},
+		{raw: "unknown", want: ""},
+		{raw: "", want: ""},
+	}
+	for _, testCase := range cases {
+		if got := snapshotPlanType(testCase.raw); got != testCase.want {
+			t.Fatalf("snapshotPlanType(%q) = %q, want %q", testCase.raw, got, testCase.want)
+		}
+	}
+}

@@ -95,6 +95,54 @@ test('snapshots without a usable capture time or source are not facts', () => {
   assert.equal(buildUsageFacts({ kind: 'codex_oauth_status', capturedAt: 1000 }), null);
 });
 
+test('explicit model_family entries reach Go even when marked detail', () => {
+  // claude 的模型族周额度：带 scope/scopeKey，category=detail 只表示
+  // 「不参与 Node 的账号级阻塞」，仍要作为模型族事实推给 Go。
+  const facts = buildUsageFacts({
+    schemaVersion: 2,
+    kind: 'claude_oauth_usage',
+    source: 'claude_oauth_usage',
+    capturedAt: 1762300000000,
+    entries: [
+      { bucket: 'five_hour', remainingPct: 50, windowMinutes: 300 },
+      {
+        bucket: 'seven_day_fable',
+        remainingPct: 0,
+        windowMinutes: 10080,
+        scope: 'model_family',
+        scopeKey: 'fable',
+        category: 'detail'
+      }
+    ]
+  }, { provider: 'claude' });
+
+  const accountEntries = facts.entries.filter((entry) => entry.scope === 'account');
+  assert.equal(accountEntries.length, 1);
+  assert.equal(accountEntries[0].bucket, 'five_hour');
+
+  const family = facts.entries.find((entry) => entry.scope === 'model_family');
+  assert.ok(family, '模型族条目必须进 Go');
+  assert.equal(family.scope_key, 'fable');
+  assert.equal(family.bucket, 'seven_day_fable');
+  assert.equal(family.availability, 'exhausted');
+  assert.equal(family.window_seconds, 604800);
+});
+
+test('detail entries without a family declaration are still ignored', () => {
+  const facts = buildUsageFacts({
+    schemaVersion: 2,
+    kind: 'kimi_oauth_usage',
+    source: 'kimi_usage_api',
+    capturedAt: 1762300000000,
+    entries: [
+      { bucket: 'monthly', remainingPct: 55 },
+      { bucket: 'detail:pack', remainingPct: 0, category: 'detail' }
+    ]
+  }, { provider: 'kimi' });
+  assert.equal(facts.entries.length, 1);
+  assert.equal(facts.entries[0].bucket, 'monthly');
+});
+
 test('plan type is normalized with the provider quota strategy', () => {
   const snapshot = {
     schemaVersion: 2,

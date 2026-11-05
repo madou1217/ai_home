@@ -366,3 +366,24 @@ func TestFetchUsageAPIKeyModeIsNotApplicable(t *testing.T) {
 		t.Fatalf("API Key 账号不该发请求: %#v", requests())
 	}
 }
+
+// 套餐不维护档位清单：上游新增会员等级原样通过，只排除非套餐值。
+func TestNormalizePlanTypeKeepsUnknownTiers(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "LEVEL_INTERMEDIATE", want: "level_intermediate"},
+		{raw: "allegretto", want: "allegretto"},
+		{raw: "Brand New Tier", want: "brand_new_tier"},
+		{raw: "oauth", want: ""},
+		{raw: "pending", want: ""},
+		{raw: "", want: ""},
+	}
+	for _, testCase := range cases {
+		if got := normalizePlanType(testCase.raw); got != testCase.want {
+			t.Fatalf("normalizePlanType(%q) = %q, want %q", testCase.raw, got, testCase.want)
+		}
+	}
+}

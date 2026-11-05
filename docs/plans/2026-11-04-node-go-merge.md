@@ -112,7 +112,7 @@
 >    物化值（Go 更新较新时），displayName 仍由 Node 按 baseUrl 推导（直接覆盖曾出现错名）；
 >    `status` 仍走 Node 实时推导。真机 38 账号比对：apiKeyMode 全一致，authMode 仅在
 >    Node 状态本身为 NULL 的账号上有差异，UI 用 `||` 回退保持原值。
->    建��账号编辑/状态接口的 `buildPersistedAccountState` 也改为 Go 优先
+>    建好账号编辑/状态接口的 `buildPersistedAccountState` 也改为 Go 优先
 >    （`readGoUIStates` + 1 秒缓存）。**但列还不能删**：`isPendingOauthStateRow` 仍用
 >    `stateRow.authMode` 判定 OAuth 待登录，删除前要把这段判定迁走。
 > 24. **账号运行态文档进 Go（2026-11-05）**：`aih.db` v16 新增 `account_runtime_states`
@@ -697,7 +697,7 @@ Node 进程（过渡期，逐渐缩小）
 | --- | --- | --- | --- |
 | qoder 付费档额度 | 待真机 | 本机唯一 qoder 账号是 Free（total=0，落 notApplicable） | 换付费账号后 POST /v1/management/accounts/{ref}/usage/refresh，确认 entries 带 total/used/remaining 且 remainingPct = 100 - 使用率 |
 | kimi 额度采集 | 待真机 | 本机无 kimi 账号 | 有账号后显式 refresh，确认 /usages 与 /me 字段 |
-| gemini 额度采集 | 待真机 | 本�� 1 个 gemini 账号 enabled=0 | 启用后显式 refresh，确认 models[] 桶与 remainingPct |
+| gemini 额度采集 | 待真机 | 本机 1 个 gemini 账号 enabled=0 | 启用后显式 refresh，确认 models[] 桶与 remainingPct |
 | cline 额度采集 | 待真机 | 两个 cline 账号 enabled=0 | 启用一个后显式 refresh，确认 5h/7d/30d 三个窗口 |
 | agy 额度采集 | 待真机 | 6 个账号 enabled=0 且 token 自 2026-10-24 过期 | 重新登录一个 agy 账号后 refresh |
 | kimi / grok 模型目录 | 待真机 | 本机没有账号 | 有账号后看 account_models 是否出现 |

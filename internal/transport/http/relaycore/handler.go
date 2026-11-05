@@ -634,9 +634,16 @@ func (handler *Handler) writeResponse(
 		response.Header().Set("X-Content-Type-Options", "nosniff")
 	}
 	// Provider 可选接管响应（例如 qoder 的 SSE 信封需要拆包后再交给客户端）。
+	//
+	// 交接后错误不能再被吞掉：非流式在写 header 之前失败时，客户端会收到 200 + 空 body，
+	// 看起来像「成功但没回答」；流式已写出 header 时，至少要补一帧 OpenAI 兼容的 error，
+	// 否则上游的额度/限流原因只存在于被丢弃的 error 里。
 	if transformer, ok := outcome.providerImpl.(ResponseTransformer); ok {
-		if handled, err := transformer.TransformResponse(response, upstreamResponse, stream); handled {
-			_ = err
+		tracker := &trackingResponseWriter{ResponseWriter: response}
+		if handled, err := transformer.TransformResponse(tracker, upstreamResponse, stream); handled {
+			if err != nil {
+				writeTransformerError(response, tracker, err, stream)
+			}
 			return
 		}
 	}
@@ -756,6 +763,86 @@ func copyResponseHeaders(destination, source http.Header) {
 		for _, value := range values {
 			destination.Add(canonical, value)
 		}
+	}
+}
+
+// trackingResponseWriter 记录是否已经向客户端写过 header/正文。
+//
+// 供应商接管响应后出错时，这个状态决定还能不能改状态码：已写 header 就只能补 SSE 错误帧。
+type trackingResponseWriter struct {
+	http.ResponseWriter
+	wroteHeader bool
+	wroteBody   bool
+}
+
+func (writer *trackingResponseWriter) WriteHeader(statusCode int) {
+	writer.wroteHeader = true
+	writer.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (writer *trackingResponseWriter) Write(payload []byte) (int, error) {
+	writer.wroteHeader = true
+	if len(payload) > 0 {
+		writer.wroteBody = true
+	}
+	return writer.ResponseWriter.Write(payload)
+}
+
+func (writer *trackingResponseWriter) Flush() {
+	if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// transformerError 是 Provider 可以实现的错误契约：把上游状态码与错误码带给网关。
+type transformerError interface {
+	UpstreamStatusCode() int
+	UpstreamErrorCode() string
+}
+
+// writeTransformerError 把接管响应的失败映射成客户端可理解的错误。
+//
+// 未写 header：按上游语义给 429/502 + JSON 错误体。
+// 已写 header：流式补一帧 error + [DONE]，非流式只能结束（正文已经发出，无法回滚）。
+func writeTransformerError(
+	response http.ResponseWriter,
+	tracker *trackingResponseWriter,
+	err error,
+	stream bool,
+) {
+	status := http.StatusBadGateway
+	code := "relay_upstream_error"
+	message := "上游返回错误"
+	if typed, ok := err.(transformerError); ok {
+		switch typed.UpstreamStatusCode() {
+		case http.StatusTooManyRequests:
+			status = http.StatusTooManyRequests
+		case http.StatusUnauthorized, http.StatusForbidden:
+			status = http.StatusBadGateway
+		}
+		if value := strings.TrimSpace(typed.UpstreamErrorCode()); value != "" {
+			code = value
+		}
+		message = err.Error()
+	}
+	if !tracker.wroteHeader {
+		writeRelayError(response, status, code, message)
+		return
+	}
+	if !stream {
+		return
+	}
+	// 流已经开了：只能补错误帧，保证客户端拿到明确失败而不是无声截断。
+	payload, marshalErr := json.Marshal(map[string]any{
+		"error": map[string]any{"code": code, "message": message},
+	})
+	if marshalErr != nil {
+		return
+	}
+	_, _ = response.Write([]byte("data: " + string(payload) + "\n\n"))
+	_, _ = response.Write([]byte("data: [DONE]\n\n"))
+	if flusher, ok := response.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
 

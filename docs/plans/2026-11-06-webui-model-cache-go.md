@@ -815,3 +815,18 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
   Go `acct_84c6…`）。合并层必须做 ref 翻译，否则目录挂到页面上不存在的 key。
   修复后真机 `GET /v0/webui/openai-models?accountRef=acct_533999af0033f08d6106` 返回 120 条，
   其中 `opencode/` 80 + `opencode-go/` 29 = Go 的 109 个目录，与 Node 探测口径一致。
+
+## 附：Phase 2 前置已完成（2026-11-05）
+
+- **探测事实落库**：aih.db v21 `account_model_probes`（attempt/error/source/model_count）。
+  `ModelManagement.RefreshAccountModels` 成功写 `remote + len(discovered)`，失败写稳定错误码
+  （timeout/discovery_* 等）并保留 `last_model_count`；`context.Canceled` 跳过、写事实用
+  `WithoutCancel`，超时失败也能落盘。
+- **批量端点**：`/v1/management/account-models` 增加 `last_attempt_at_ms/last_error_code/
+  last_error_message/last_source/last_model_count`；只返回「有模型或有探测事实」的账号。
+- **WebUI 合并层**：采用 Go 的 `accountProbedAt`（与 Node 取大）与错误（成功即清空旧错误）。
+- 真机：opencode 109、codebuddy 26、全量 209，`source=remote`。
+
+下一阶段（Phase 2）：按 provider 把 Node 的 `models.supported` 关掉并删探测链。
+每个 provider 独立提交，验证口径 = 该 provider 所有账号的 scoped 目录数与
+`/v1/management/account-models` 完全相等；建议从 opencode / cline 开始，最后 codex/claude。

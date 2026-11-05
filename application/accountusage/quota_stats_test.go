@@ -258,6 +258,121 @@ func TestQuotaStatsReportsNoWindowsInRange(t *testing.T) {
 	}
 }
 
+func newQuotaStatsSnapshot(
+	t *testing.T,
+	accountRef accountcore.AccountRef,
+	capturedAt time.Time,
+	windowSeconds int64,
+	resetAt time.Time,
+	remainingPct float64,
+) usagecore.Snapshot {
+	t.Helper()
+	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: accountRef,
+		ProviderID: "codex",
+		Source:     "codex_read_rate_limits",
+		CapturedAt: capturedAt,
+		Entries: []usagecore.EntryInput{{
+			Bucket:               "primary",
+			Kind:                 usagecore.KindWindow,
+			Scope:                usagecore.ScopeAccount,
+			HasRemaining:         true,
+			RemainingBasisPoints: uint16(remainingPct * 100),
+			WindowSeconds:        windowSeconds,
+			ResetAt:              resetAt,
+			Availability:         usagecore.AvailabilityAvailable,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshot() error = %v", err)
+	}
+	return snapshot
+}
+
+func TestQuotaStatsPrefersLatestSampleForCurrent(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := base.UnixMilli()
+	const hour = int64(60 * 60 * 1000)
+	accountRef := testAccountRef(t)
+	samples := &fakeQuotaSamples{
+		scopes: []usagecore.QuotaWindowScope{
+			{QuotaKey: "rate_limit:primary", WindowMinutes: 300, SampleCount: 2, LastCapturedAtMS: baseMS + 7*hour},
+		},
+		samples: []usagecore.QuotaWindowSample{
+			{QuotaKey: "rate_limit:primary", WindowMinutes: 300, RemainingPct: float64Ptr(99), ExpectedResetAtMS: baseMS + 11*hour, CapturedAtMS: baseMS + 6*hour + 10*60_000},
+			{QuotaKey: "rate_limit:primary", WindowMinutes: 300, RemainingPct: float64Ptr(60), ExpectedResetAtMS: baseMS + 11*hour, CapturedAtMS: baseMS + 7*hour},
+		},
+	}
+	// 快照比最新样本更旧：当前值必须取样本的 60%，而不是快照的 88%。
+	snapshot := newQuotaStatsSnapshot(t, accountRef, base.Add(90*time.Minute), 300*60, base.Add(11*time.Hour), 88)
+	service := newQuotaStatsService(t, samples, &fakeQuotaUsage{}, &fakeQuotaSnapshots{snapshot: snapshot}, base.Add(8*time.Hour))
+
+	result, err := service.BuildQuotaStats(context.Background(), QuotaStatsQuery{AccountRef: accountRef})
+	if err != nil {
+		t.Fatalf("BuildQuotaStats() error = %v", err)
+	}
+	if result.Current == nil {
+		t.Fatalf("Current 不应为空")
+	}
+	if result.Current.RemainingPct == nil || *result.Current.RemainingPct != 60 {
+		t.Fatalf("Current.RemainingPct = %v, want 60（最新样本优先）", result.Current.RemainingPct)
+	}
+	if result.Current.CapturedAtMS != baseMS+7*hour {
+		t.Fatalf("Current.CapturedAtMS = %d, want %d", result.Current.CapturedAtMS, baseMS+7*hour)
+	}
+}
+
+func TestQuotaStatsSkipsPhantomSampleForCurrent(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	baseMS := base.UnixMilli()
+	const hour = int64(60 * 60 * 1000)
+	samples := &fakeQuotaSamples{
+		scopes: []usagecore.QuotaWindowScope{
+			{QuotaKey: "rate_limit:primary", WindowMinutes: 300, SampleCount: 2, LastCapturedAtMS: baseMS + 6*hour},
+		},
+		samples: []usagecore.QuotaWindowSample{
+			{QuotaKey: "rate_limit:primary", WindowMinutes: 300, RemainingPct: float64Ptr(80), ExpectedResetAtMS: baseMS + 5*hour, CapturedAtMS: baseMS + 10*60_000},
+			// 最新一条是幻影（锚点≈采集时刻），不能当成当前窗口。
+			{QuotaKey: "rate_limit:primary", WindowMinutes: 300, RemainingPct: float64Ptr(100), ExpectedResetAtMS: baseMS + 11*hour, CapturedAtMS: baseMS + 6*hour + 30_000},
+		},
+	}
+	service := newQuotaStatsService(t, samples, &fakeQuotaUsage{}, &fakeQuotaSnapshots{err: ErrSnapshotNotFound}, base.Add(7*time.Hour))
+
+	result, err := service.BuildQuotaStats(context.Background(), QuotaStatsQuery{AccountRef: testAccountRef(t)})
+	if err != nil {
+		t.Fatalf("BuildQuotaStats() error = %v", err)
+	}
+	if result.Current == nil || result.Current.RemainingPct == nil || *result.Current.RemainingPct != 80 {
+		t.Fatalf("幻影样本必须跳过，Current = %+v", result.Current)
+	}
+}
+
+func TestQuotaStatsDimensionFromSnapshotOnly(t *testing.T) {
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	accountRef := testAccountRef(t)
+	// 窗口在 2 小时前锚定、3 小时后关窗；快照采集于 1 小时前 → 真实窗口，不是幻影。
+	snapshot := newQuotaStatsSnapshot(t, accountRef, base.Add(-time.Hour), 300*60, base.Add(3*time.Hour), 88)
+	service := newQuotaStatsService(t, &fakeQuotaSamples{}, &fakeQuotaUsage{}, &fakeQuotaSnapshots{snapshot: snapshot}, base)
+
+	result, err := service.BuildQuotaStats(context.Background(), QuotaStatsQuery{AccountRef: accountRef})
+	if err != nil {
+		t.Fatalf("BuildQuotaStats() error = %v", err)
+	}
+	dimension := result.Dimensions[0]
+	if !dimension.Available || dimension.DataState != "pending" {
+		t.Fatalf("只有快照时维度应可用且为 pending: %+v", dimension)
+	}
+	if len(dimension.Scopes) != 1 || !dimension.Scopes[0].Synthetic {
+		t.Fatalf("scope 应为 synthetic: %+v", dimension.Scopes)
+	}
+	if result.Current == nil || result.Current.RemainingPct == nil || *result.Current.RemainingPct != 88 {
+		t.Fatalf("Current 应回落到快照: %+v", result.Current)
+	}
+	if len(result.Windows) != 1 || !result.Windows[0].Live {
+		t.Fatalf("当前窗口应出现在图里: %+v", result.Windows)
+	}
+}
+
 func TestQuotaStatsIgnoresPhantomCurrentSnapshot(t *testing.T) {
 	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
 	baseMS := base.UnixMilli()

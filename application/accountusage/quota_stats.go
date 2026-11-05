@@ -107,6 +107,8 @@ type QuotaStatsScope struct {
 	Label            string `json:"label"`
 	SampleCount      int64  `json:"sample_count"`
 	LastCapturedAtMS int64  `json:"last_captured_at_ms"`
+	// Synthetic 表示该 scope 只来自当前快照，还没有任何采样。
+	Synthetic bool `json:"synthetic"`
 }
 
 // QuotaStatsDimension 是一个窗口长度维度的可用性。
@@ -202,7 +204,12 @@ func (service *QuotaStatsService) BuildQuotaStats(
 	if err != nil {
 		return QuotaStatsResult{}, err
 	}
-	dimensions := buildQuotaStatsDimensions(scopes)
+	// 维度可用性 = 采样 ∪ 当前快照：账号刚接入、还没有样本时也要先显示窗口维度。
+	snapshot, hasSnapshot, err := service.usageSnapshot(ctx, query.AccountRef)
+	if err != nil {
+		return QuotaStatsResult{}, err
+	}
+	dimensions := buildQuotaStatsDimensions(scopes, snapshotQuotaScopes(snapshot, hasSnapshot))
 	dimension, ok := pickQuotaStatsDimension(dimensions, query.WindowMinutes)
 	if !ok {
 		return QuotaStatsResult{}, ErrInvalidQuotaStatsQuery
@@ -240,17 +247,11 @@ func (service *QuotaStatsService) BuildQuotaStats(
 	if err != nil {
 		return QuotaStatsResult{}, err
 	}
-	currentWindow, err := service.currentQuotaWindow(ctx, query.AccountRef, scope.QuotaKey, dimension.WindowMinutes)
-	if err != nil {
-		return QuotaStatsResult{}, err
-	}
-	if currentWindow != nil {
-		result.Current = &QuotaStatsCurrent{
-			RemainingPct: currentWindow.RemainingPct,
-			ResetAtMS:    currentWindow.ResetAtMS,
-			CapturedAtMS: currentWindow.CapturedAtMS,
-		}
-	}
+	// 快照窗口仍用于「补一个还没样本的活跃窗口」；API 的 current 另有优先级。
+	currentWindow := currentQuotaWindowFromSnapshot(snapshot, hasSnapshot, scope.QuotaKey, dimension.WindowMinutes)
+	// 与 Node 的 pickCurrent 同序：最新样本 → 快照。幻影样本不参与（F3），
+	// 否则空闲账号会把「读取时刻 + 窗口时长」的幻影 reset 当成当前窗口。
+	result.Current = pickQuotaStatsCurrent(samples, currentWindow, dimension.WindowMinutes)
 
 	windows := usagecore.BuildQuotaWindows(usagecore.BuildQuotaWindowsInput{
 		Samples:       samples,
@@ -307,18 +308,30 @@ func (service *QuotaStatsService) BuildQuotaStats(
 	return result, nil
 }
 
-func (service *QuotaStatsService) currentQuotaWindow(
+// usageSnapshot 读取当前额度快照；没有快照是正常状态（账号刚接入）。
+func (service *QuotaStatsService) usageSnapshot(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
-	quotaKey string,
-	windowMinutes int64,
-) (*usagecore.CurrentQuotaWindow, error) {
+) (usagecore.Snapshot, bool, error) {
 	snapshot, err := service.snapshots.GetUsageSnapshot(ctx, accountRef)
 	if err != nil {
 		if errors.Is(err, ErrSnapshotNotFound) {
-			return nil, nil
+			return usagecore.Snapshot{}, false, nil
 		}
-		return nil, err
+		return usagecore.Snapshot{}, false, err
+	}
+	return snapshot, true, nil
+}
+
+// currentQuotaWindowFromSnapshot 从当前快照里取出仍在进行的窗口（幻影不算）。
+func currentQuotaWindowFromSnapshot(
+	snapshot usagecore.Snapshot,
+	hasSnapshot bool,
+	quotaKey string,
+	windowMinutes int64,
+) *usagecore.CurrentQuotaWindow {
+	if !hasSnapshot {
+		return nil
 	}
 	capturedAtMS := snapshot.CapturedAt().UnixMilli()
 	for _, entry := range snapshot.Entries() {
@@ -348,12 +361,89 @@ func (service *QuotaStatsService) currentQuotaWindow(
 			value := float64(basisPoints) / 100
 			current.RemainingPct = &value
 		}
-		return current, nil
+		return current
 	}
-	return nil, nil
+	return nil
 }
 
-func buildQuotaStatsDimensions(scopes []usagecore.QuotaWindowScope) []QuotaStatsDimension {
+// pickQuotaStatsCurrent 按 Node 的口径选「当前」：最新样本优先，其次当前快照。
+//
+// 样本比快照更接近真实观测时刻：快照可能落后于最新样本，甚至在账号只由 Node 采集时
+// 缺失。幻影样本会被跳过——那只是上游按读取时刻现算出来的假 reset。
+func pickQuotaStatsCurrent(
+	samples []usagecore.QuotaWindowSample,
+	snapshot *usagecore.CurrentQuotaWindow,
+	windowMinutes int64,
+) *QuotaStatsCurrent {
+	for index := len(samples) - 1; index >= 0; index-- {
+		sample := samples[index]
+		if sample.ExpectedResetAtMS <= 0 || sample.CapturedAtMS <= 0 {
+			continue
+		}
+		if usagecore.IsPhantomSample(sample.CapturedAtMS, sample.ExpectedResetAtMS, windowMinutes) {
+			continue
+		}
+		return &QuotaStatsCurrent{
+			RemainingPct: sample.RemainingPct,
+			ResetAtMS:    sample.ExpectedResetAtMS,
+			CapturedAtMS: sample.CapturedAtMS,
+		}
+	}
+	if snapshot == nil {
+		return nil
+	}
+	return &QuotaStatsCurrent{
+		RemainingPct: snapshot.RemainingPct,
+		ResetAtMS:    snapshot.ResetAtMS,
+		CapturedAtMS: snapshot.CapturedAtMS,
+	}
+}
+
+// snapshotQuotaScopes 把当前快照里的窗口条目投影成「仅用于维度可用性」的 scope。
+func snapshotQuotaScopes(
+	snapshot usagecore.Snapshot,
+	hasSnapshot bool,
+) []usagecore.QuotaWindowScope {
+	if !hasSnapshot {
+		return nil
+	}
+	type scopeKey struct {
+		quotaKey      string
+		windowMinutes int64
+	}
+	seen := make(map[scopeKey]struct{}, 4)
+	scopes := make([]usagecore.QuotaWindowScope, 0, 4)
+	for _, entry := range snapshot.Entries() {
+		if entry.Kind() != usagecore.KindWindow {
+			continue
+		}
+		windowMinutes := entry.WindowSeconds() / 60
+		if windowMinutes <= 0 || entry.ResetAt().IsZero() {
+			continue
+		}
+		quotaKey := "rate_limit:" + strings.TrimSpace(entry.Bucket())
+		key := scopeKey{quotaKey: quotaKey, windowMinutes: windowMinutes}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		label := strings.TrimSpace(entry.LimitName())
+		if label == "" {
+			label = entry.Bucket()
+		}
+		scopes = append(scopes, usagecore.QuotaWindowScope{
+			QuotaKey:      quotaKey,
+			WindowLabel:   label,
+			WindowMinutes: windowMinutes,
+		})
+	}
+	return scopes
+}
+
+func buildQuotaStatsDimensions(
+	scopes []usagecore.QuotaWindowScope,
+	syntheticScopes []usagecore.QuotaWindowScope,
+) []QuotaStatsDimension {
 	dimensions := make([]QuotaStatsDimension, 0, 3)
 	for _, dimension := range usagecore.QuotaWindowDimensions() {
 		item := QuotaStatsDimension{
@@ -362,6 +452,7 @@ func buildQuotaStatsDimensions(scopes []usagecore.QuotaWindowScope) []QuotaStats
 			Scopes:        []QuotaStatsScope{},
 		}
 		hasSamples := false
+		seen := make(map[string]struct{}, len(scopes))
 		for _, scope := range scopes {
 			if scope.WindowMinutes != dimension.WindowMinutes {
 				continue
@@ -376,9 +467,30 @@ func buildQuotaStatsDimensions(scopes []usagecore.QuotaWindowScope) []QuotaStats
 				SampleCount:      scope.SampleCount,
 				LastCapturedAtMS: scope.LastCapturedAtMS,
 			})
+			seen[scope.QuotaKey] = struct{}{}
 			if scope.SampleCount > 0 {
 				hasSamples = true
 			}
+		}
+		// 当前快照里有、但还没采到样本的窗口：只贡献「维度可用」，
+		// 样本数保持 0，前端据此显示「等待采样」而不是「无此维度」。
+		for _, scope := range syntheticScopes {
+			if scope.WindowMinutes != dimension.WindowMinutes {
+				continue
+			}
+			if _, exists := seen[scope.QuotaKey]; exists {
+				continue
+			}
+			label := strings.TrimSpace(scope.WindowLabel)
+			if label == "" {
+				label = dimension.Label
+			}
+			item.Scopes = append(item.Scopes, QuotaStatsScope{
+				QuotaKey:  scope.QuotaKey,
+				Label:     label,
+				Synthetic: true,
+			})
+			seen[scope.QuotaKey] = struct{}{}
 		}
 		item.Available = len(item.Scopes) > 0
 		switch {

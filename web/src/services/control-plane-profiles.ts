@@ -75,7 +75,6 @@ function sharedProfileAuthHeaders(): Record<string, string> {
   const managementKey = resolveWebUiManagementKey();
   return managementKey ? { authorization: `Bearer ${managementKey}` } : {};
 }
-const DEFAULT_DESCRIPTOR_TIMEOUT_MS = 8000;
 const DEFAULT_DEVICE_REQUEST_TIMEOUT_MS = 10000;
 const CURRENT_CONTROL_PLANE_PROFILE_NAME = '当前 Server';
 

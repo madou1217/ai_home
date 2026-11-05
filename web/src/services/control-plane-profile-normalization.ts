@@ -1,7 +1,6 @@
 'use strict';
 
 import {
-  buildControlPlaneHttpUrl,
   normalizeControlPlaneEndpoint,
 } from './control-plane-api-client';
 

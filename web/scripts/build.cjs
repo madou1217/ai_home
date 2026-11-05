@@ -126,7 +126,7 @@ function releaseBuildLockSafely(releaseLock) {
  * （2026-11-02 的发布就是这么把失败吞掉、继续往后走的）。现在只有「子进程 exit 0」和
  * 「我们自己按计划收掉的空闲子进程」算成功，其余一律失败。
  */
-function resolveBuildExitCode({ buildComplete, code, signal, terminating }) {
+function resolveBuildExitCode({ buildComplete, code, terminating }) {
   if (code === 0) return 0;
   if (buildComplete && terminating) return 0;
   return 1;

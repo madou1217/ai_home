@@ -1,0 +1,1648 @@
+{
+  "generatedFrom": "lib/usage/model-usage-pricing.js + lib/usage/model-usage-identity.js",
+  "providerIds": [
+    "codex",
+    "gemini",
+    "claude",
+    "agy",
+    "opencode",
+    "grok",
+    "qoder",
+    "qodercn",
+    "kimi",
+    "kiro",
+    "zcode",
+    "codebuddy",
+    "codebuddycn",
+    "workbuddy",
+    "workbuddycn",
+    "cline"
+  ],
+  "catalog": {
+    "openai/gpt-5.1": {
+      "inputCostPerToken": 0.00000125,
+      "outputCostPerToken": 0.00001
+    },
+    "anthropic/claude-sonnet-4-5": {
+      "inputCostPerToken": 0.000003,
+      "outputCostPerToken": 0.000015,
+      "cacheReadInputTokenCost": 3e-7,
+      "cacheCreationInputTokenCost": 0.00000375
+    },
+    "anthropic/claude-opus-4-6": {
+      "inputCostPerToken": 0.000015,
+      "outputCostPerToken": 0.000075,
+      "reasoningOutputTokenCost": 0.00009
+    },
+    "google/gemini-3.5-flash": {
+      "inputCostPerToken": 3e-7,
+      "outputCostPerToken": 0.0000025
+    },
+    "opencode-go/glm-5": {
+      "inputCostPerToken": 6e-7,
+      "outputCostPerToken": 0.0000022
+    },
+    "opencode/glm-5": {
+      "inputCostPerToken": 9e-7,
+      "outputCostPerToken": 0.0000033
+    },
+    "cline-pass/deepseek-v4-flash": {
+      "inputCostPerToken": 2.8e-7,
+      "outputCostPerToken": 4.2e-7
+    },
+    "tiered/model-a": {
+      "inputCostPerToken": 0.000001,
+      "outputCostPerToken": 0.000002,
+      "contextCostTiers": [
+        {
+          "size": 200000,
+          "inputCostPerToken": 0.000002,
+          "outputCostPerToken": 0.000004
+        },
+        {
+          "size": 100000,
+          "inputCostPerToken": 0.0000015
+        }
+      ]
+    },
+    "zero/free-model": {
+      "inputCostPerToken": 0,
+      "outputCostPerToken": 0
+    },
+    "tier-only/model-b": {
+      "contextCostTiers": [
+        {
+          "size": 1000,
+          "inputCostPerToken": 0.000005
+        }
+      ]
+    }
+  },
+  "matches": [
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "attributed": false,
+      "executionProvider": "codex",
+      "modelId": "openai/gpt-5.1",
+      "modelIds": [
+        "openai/gpt-5.1"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "openai/gpt-5.1"
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "attributed": false,
+      "executionProvider": "codex",
+      "modelId": "gpt-5.1",
+      "modelIds": [
+        "gpt-5.1"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "openai/gpt-5.1"
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "attributed": false,
+      "executionProvider": "opencode",
+      "modelId": "GPT-5.1",
+      "modelIds": [
+        "gpt-5.1"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "openai/gpt-5.1"
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "attributed": true,
+      "executionProvider": "codex",
+      "modelId": "gpt-5.1",
+      "modelIds": [
+        "gpt-5.1"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "openai/gpt-5.1"
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "attributed": false,
+      "executionProvider": "claude",
+      "modelId": "claude-sonnet-4.5",
+      "modelIds": [
+        "claude-sonnet-4.5",
+        "claude-sonnet-4-5"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "anthropic/claude-sonnet-4-5"
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "attributed": false,
+      "executionProvider": "claude",
+      "modelId": "claude-sonnet-4-5",
+      "modelIds": [
+        "claude-sonnet-4-5"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "anthropic/claude-sonnet-4-5"
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "attributed": false,
+      "executionProvider": "claude",
+      "modelId": "claude-opus-4-6-thinking",
+      "modelIds": [
+        "claude-opus-4-6"
+      ],
+      "providerPrefixes": [
+        "anthropic/",
+        "github-copilot/"
+      ],
+      "matchedModel": "anthropic/claude-opus-4-6"
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "attributed": false,
+      "executionProvider": "gemini",
+      "modelId": "gemini-3-flash-agent",
+      "modelIds": [
+        "gemini-3.5-flash",
+        "gemini-3-5-flash"
+      ],
+      "providerPrefixes": [
+        "google/",
+        "google-vertex/",
+        "github-copilot/"
+      ],
+      "matchedModel": "google/gemini-3.5-flash"
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "attributed": false,
+      "executionProvider": "agy",
+      "modelId": "gemini-default",
+      "modelIds": [
+        "gemini-3.5-flash",
+        "gemini-3-5-flash"
+      ],
+      "providerPrefixes": [
+        "google/",
+        "google-vertex/",
+        "github-copilot/"
+      ],
+      "matchedModel": "google/gemini-3.5-flash"
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "attributed": false,
+      "executionProvider": "agy",
+      "modelId": "gemini-3.5-flash",
+      "modelIds": [
+        "gemini-3.5-flash",
+        "gemini-3-5-flash"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "google/gemini-3.5-flash"
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "attributed": false,
+      "executionProvider": "cline",
+      "modelId": "cline-pass/deepseek-v4.1-flash",
+      "modelIds": [
+        "cline-pass/deepseek-v4-flash"
+      ],
+      "providerPrefixes": [
+        "cline-pass/"
+      ],
+      "matchedModel": "cline-pass/deepseek-v4-flash"
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "attributed": false,
+      "executionProvider": "opencode",
+      "modelId": "glm-5",
+      "modelIds": [
+        "glm-5"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "opencode-go/glm-5"
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "attributed": true,
+      "executionProvider": "opencode",
+      "modelId": "glm-5",
+      "modelIds": [
+        "glm-5"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "opencode-go/glm-5"
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "attributed": false,
+      "executionProvider": "",
+      "modelId": "tiered/model-a",
+      "modelIds": [
+        "tiered/model-a"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "tiered/model-a"
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "attributed": false,
+      "executionProvider": "",
+      "modelId": "zero/free-model",
+      "modelIds": [
+        "zero/free-model"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "zero/free-model"
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "attributed": false,
+      "executionProvider": "",
+      "modelId": "tier-only/model-b",
+      "modelIds": [
+        "tier-only/model-b"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": "tier-only/model-b"
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "attributed": false,
+      "executionProvider": "claude",
+      "modelId": "unknown/not-in-catalog",
+      "modelIds": [
+        "unknown/not-in-catalog"
+      ],
+      "providerPrefixes": [],
+      "matchedModel": null
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "attributed": false,
+      "executionProvider": "claude",
+      "modelId": "",
+      "modelIds": [],
+      "providerPrefixes": [],
+      "matchedModel": null
+    }
+  ],
+  "costs": [
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1625
+    },
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1975
+    },
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.3225
+    },
+    {
+      "model": "openai/gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1625
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1975
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.3225
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1625
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1975
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.3225
+    },
+    {
+      "model": "GPT-5.1",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.00625
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1625
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.1975
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0.3225
+    },
+    {
+      "model": "codex.gpt-5.1",
+      "provider": "",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "openai/gpt-5.1",
+      "costUsd": 0
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.0105
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.0111
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.012225
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.345
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.465
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.765
+    },
+    {
+      "model": "claude-sonnet-4.5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.0105
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.0111
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.012225
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.345
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.465
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0.765
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "anthropic/claude-sonnet-4-5",
+      "costUsd": 0
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 0.0525
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 0.0525
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 0.0525
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 1.785
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 2.325
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 3.825
+    },
+    {
+      "model": "claude-opus-4-6-thinking",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "anthropic/claude-opus-4-6",
+      "costUsd": 0
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0395
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0475
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0775
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "provider": "gemini",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0395
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0475
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0775
+    },
+    {
+      "model": "gemini-default",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.00155
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0395
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0475
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0.0775
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "agy",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "google/gemini-3.5-flash",
+      "costUsd": 0
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0.00049
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0.00049
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0.00049
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0.0273
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0.04242
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0.07042
+    },
+    {
+      "model": "cline-pass/deepseek-v4.1-flash",
+      "provider": "cline",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "cline-pass/deepseek-v4-flash",
+      "costUsd": 0
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0017
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0017
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0017
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.065
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0922
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.1522
+    },
+    {
+      "model": "glm-5",
+      "provider": "opencode",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0017
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0017
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0017
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.065
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.0922
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0.1522
+    },
+    {
+      "model": "opencode.glm-5",
+      "provider": "codex",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "opencode-go/glm-5",
+      "costUsd": 0
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0.002
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0.002
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0.002
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0.1
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0.227
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0.504
+    },
+    {
+      "model": "tiered/model-a",
+      "provider": "",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "tiered/model-a",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "zero/free-model",
+      "provider": "",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "zero/free-model",
+      "costUsd": 0
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 0.005
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 0.005
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 0.005
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 0.45
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 0.75
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 1.25
+    },
+    {
+      "model": "tier-only/model-b",
+      "provider": "",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": "tier-only/model-b",
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "unknown/not-in-catalog",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 500,
+        "cacheReadInputTokens": 2000,
+        "cacheCreationInputTokens": 300
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 90000,
+        "outputTokens": 1000,
+        "reasoningOutputTokens": 4000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 150000,
+        "outputTokens": 1000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 250000,
+        "outputTokens": 1000
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    },
+    {
+      "model": "",
+      "provider": "claude",
+      "usage": {
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "matchedModel": null,
+      "costUsd": 0
+    }
+  ]
+}

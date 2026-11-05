@@ -783,15 +783,17 @@ func installConformanceFakes(t *testing.T, signer *conformanceSigner) {
 	cliVersion = func(string, qodercred.Options) string { return "1.1.81" }
 
 	signerMu.Lock()
-	previousCache := signerCache
 	signerCache = map[string]Signer{}
 	signerMu.Unlock()
 
 	t.Cleanup(func() {
 		newSigner, cachedEntries = previousSigner, previousEntries
 		decryptNative, cliVersion = previousDecrypt, previousVersion
+		// 收尾留空而不是恢复旧表：signerFor 的缓存按 providerID 常驻，别的用例换掉
+		// newSigner 却不会清它。恢复旧条目会让下一轮（-count>1）拿到上一轮的 signer，
+		// 表现为对方的 NewContext 调用数恒为 0。
 		signerMu.Lock()
-		signerCache = previousCache
+		signerCache = map[string]Signer{}
 		signerMu.Unlock()
 	})
 }

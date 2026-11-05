@@ -186,9 +186,9 @@ type Provider struct {
 	providerID string
 	credential accountapp.Credential
 	// 以下是 RewriteRequest 产出、Endpoint/DecorateUpstream 消费的请求级状态。
-	url         string
-	headers     map[string]string
-	compressed  []byte
+	url          string
+	headers      map[string]string
+	compressed   []byte
 	requestModel string
 }
 

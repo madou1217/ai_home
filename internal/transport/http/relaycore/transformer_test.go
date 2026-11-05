@@ -15,8 +15,8 @@ type fakeTransformerError struct {
 	message string
 }
 
-func (err fakeTransformerError) Error() string          { return err.message }
-func (err fakeTransformerError) UpstreamStatusCode() int { return err.status }
+func (err fakeTransformerError) Error() string             { return err.message }
+func (err fakeTransformerError) UpstreamStatusCode() int   { return err.status }
 func (err fakeTransformerError) UpstreamErrorCode() string { return err.code }
 
 // 未写 header：按上游语义给 429 + JSON 错误体，绝不是 200 空 body。

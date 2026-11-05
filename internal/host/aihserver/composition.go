@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/upstreamrules"
@@ -72,6 +73,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelaliaswebui"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
@@ -129,6 +131,8 @@ type serverHandlers struct {
 	shutdown http.Handler
 	// modelAliases 接收 Node 推送的模型别名投影（/v1/management/model-aliases）。
 	modelAliases http.Handler
+	// modelAliasesWebUI 提供别名 CRUD 的 WebUI 契约（/v1/management/webui/model-aliases）。
+	modelAliasesWebUI http.Handler
 	// upstreamRules 接收 Node 推送的账号自定义上游错误规则投影
 	// （/v1/management/upstream-error-rules）。
 	upstreamRules http.Handler
@@ -911,6 +915,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建生产推理组合失败: %w", err)
 	}
 	// 别名投影管理接口：Node 推送后立即重建目录，让 applied_generation 追平。
+	// 别名 CRUD：与投影接口共用同一个 Store 和代次，写进去立刻参与路由编译。
+	aliasService, err := modelalias.NewService(inference.modelAliases, providerIDs(catalog))
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建模型别名写服务失败: %w", err)
+	}
+	modelAliasesWebUIHandler, err := modelaliaswebui.NewHandler(authorizer, aliasService)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建模型别名 WebUI 接口失败: %w", err)
+	}
 	modelAliasesHandler, err := modelaliasapi.NewHandler(modelaliasapi.Dependencies{
 		Authorizer:  authorizer,
 		Store:       inference.modelAliases,
@@ -1337,6 +1352,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		familyRelay:        familyRelayHandler,
 		shutdown:           shutdownHandler,
 		modelAliases:       modelAliasesHandler,
+		modelAliasesWebUI:  modelAliasesWebUIHandler,
 		upstreamRules:      upstreamRulesHandler,
 		modelCatalog:       modelCatalogHandler,
 		managementStatus:   managementStatusHandler,

@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelaliaswebui"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
@@ -158,6 +159,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 模型别名投影：Node 在启动与别名变更后推送，Go 只读并编译进路由目录。
 	if handlers.modelAliases != nil {
 		mux.Handle(modelaliasapi.Path, handlers.modelAliases)
+	}
+	if handlers.modelAliasesWebUI != nil {
+		mux.Handle(modelaliaswebui.Path, handlers.modelAliasesWebUI)
 	}
 	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只承接自己已能求值的账号。
 	if handlers.upstreamRules != nil {

@@ -40,7 +40,10 @@ WebUI 的 6 类路由里有三件 Node 独有能力：
 CRUD 用例已完成：Service 的 Create/Update/Delete/SetEnabled，同作用域重名拒绝
 （跨作用域允许同名），未知 Provider 归一到 all，全部走「读集合 → 改一条 → 整体替换」，
 复用同一套校验与代次推进。
-剩余：WebUI 契约接口（Go 侧 /v0/webui/model-aliases 系列 + Node 代理），然后才进 B。
+WebUI 契约接口已完成：Go 侧 /v1/management/webui/model-aliases（GET 列表 / POST 新建 /
+PUT 更新 / DELETE 删除 / POST {id}/enabled 启停），错误映射 400/404/409，空列表返回 []
+而不是 null。已挂进 Go 路由，用管理密钥可直接调用。
+剩余：Node 代理 + 只读灰度；写入后触发目录重建（目前只在下次推送/刷新时生效）。
 
 - 新增 internal/adapters/accounts/sqliteaccount/model_alias_store.go：在 aih.db 建表
   （model_alias：id/alias/target/provider/target_provider/priority/enabled/description/updated_at_ms），

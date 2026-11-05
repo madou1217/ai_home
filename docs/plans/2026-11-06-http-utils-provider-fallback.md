@@ -35,7 +35,7 @@
 
 ```
 620  async function fetchModelsForAccount(options, account, timeoutMs = 8000) {
-621    const provider = String(account && account.provider || 'codex')...   // ← 相邻硬编码，见 §7.3
+621    const provider = String(account && account.provider || 'codex')...   // ← 相邻硬编码，见 §9
 629    // ① local 通道先跑（不依赖出网）
 629    discoverProviderModelsViaStrategies(provider, account, { transports: ['local'] })
 634    if (命中) return
@@ -119,11 +119,11 @@ zcode     zcode-http-models[http:login]    zcode-generic-models[http:api-key]
 
 **① 706–708 opencode**
 - 条件 O1：接受「第一次探测失败后不再立即重试」。链上 `opencode-http-models` 是唯一且无 mode 限制的策略，覆盖 login 与 api-key。
-- 条件 O2：明确删除后的回落目标。删掉后链失败 → CLI（无规格，返回 null）→ **744 通用探测**。opencode 没有 OpenAI 兼容的 `/v1/models`，744 大概率抛错而不是返回目录。**因此 O2 必须与 744 的处置一起决定**（见 §5.4）。
+- 条件 O2：明确删除后的回落目标。删掉后链失败 → CLI（无规格，返回 null）→ **744 通用探测**。opencode 没有 OpenAI 兼容的 `/v1/models`，744 大概率抛错而不是返回目录。**因此 O2 必须与 744 的处置一起决定**（见 §4.4）。
 - 若不满足 O2：保留 706，或把 744 改成「链上已有 http 策略且全部失败时直接抛 `describeModelStrategyFailure`」。
 
 **② 709–722 zcode**
-- 条件 Z1：登录态无 jwt 时，链上 handler 必须继续抛 `terminal`（现状已满足，`http-handlers.js:79-95`）。
+- 条件 Z1：登录态无 jwt 时，链上 handler 必须继续抛 `terminal`（现状已满足，`http-handlers.js:67-85`）。
 - 条件 Z2：**「有 jwt 但目录为空」必须保留返回 `[]` 的语义**。这是本次最容易被忽略的一条：`fetchZcodePlanBalanceModels` 在 balance 无模型时会走 `fetchZcodePreviewModels`，而 preview 的 `catch` 返回 `[]`（`http-utils-zcode.js:154,175-177`）。链上会把它记成 `empty_catalog` 并返回 null；旧分支因为 `[]` 是 truthy 而直接 `return []`。删掉后同一场景会落到 744，对 OAuth 账号拼出推理端点 URL 并抛错。
   - 满足方式：给策略加 `emptyAuthoritative: true`（或让 handler 返回 `{ models: [], resolved: true }`），由门面直接返回 `[]`，不继续下探、不落 744。
   - 附带修掉一个既有缺陷：preview 的网络错误被吞成 `[]`，等于把「探测失败」伪装成「账号零模型」。乘这次改动把「异常」与「空」分开。
@@ -135,7 +135,7 @@ zcode     zcode-http-models[http:login]    zcode-generic-models[http:api-key]
 
 **④ 727–738 codex**
 - 条件 X1：接受不再立即重试。链上 `codex-http-models`（login）与 `codex-generic-models`（api-key）已覆盖两种模式，参数与 732 逐项相同。
-- 条件 X2：确认 `shouldRejectEmptyRemoteModels`（`provider-model-discovery.js:161-168`）的上游保护仍然成立 —— 它把 codex 的空目录一律当探测失败、保留上次绑定。旧分支的第二次探测是这层保护的补充，删掉后依赖它单独生效。
+- 条件 X2：确认 `shouldRejectEmptyRemoteModels`（`provider-model-discovery.js:155-162`）的上游保护仍然成立 —— 它把 codex 的空目录一律当探测失败、保留上次绑定。旧分支的第二次探测是这层保护的补充，删掉后依赖它单独生效。
 - 条件 X3：codex 是网关默认 provider，必须排在 opencode 之后单独提交。
 
 **⑤ 739–741 code-assist**

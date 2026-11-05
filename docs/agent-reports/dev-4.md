@@ -14,7 +14,7 @@
 | 位置 | 原判断 | 实测判定 | 证据 |
 | --- | --- | --- | --- |
 | 706–708 `opencode` | 硬编码兜底 | **重复探测**，非独立策略 | `fetchOpenCodeModels` 就是 `probeOpenCodeCatalog().models`（`opencode-server-client.js:393-396`）；链上 `opencode-models` handler 已调用同一函数 |
-| 709–722 `zcode` | 硬编码兜底 | **登录态不可达**；api-key 条件恒假 | `zcode-plan-models` handler 在无目录时抛 `terminal: true`，`model-discovery/index.js:100` 直接上抛 |
+| 709–722 `zcode` | 硬编码兜底 | **登录态不可达**；api-key 条件恒假 | `zcode-plan-models` handler 在无目录时抛 `terminal: true`，`model-discovery/index.js:95` 直接上抛 |
 | 723–726 `claude` | 硬编码兜底 | **纯死变量** | `claudeAuthTokenProxy` 全文件只出现在 726，从未被读；同逻辑真实位置是 `generic-models-probe.js:97` |
 | 727–738 `codex` | 硬编码兜底 | **重复探测** | `codex-native-models` handler 的入参与 732 逐项相同（同一 `requestOptions`、同一 `fetchWithTimeout`） |
 | 739–741 code-assist | 硬编码兜底 | **重复探测**（对 `oauth-personal` 账号） | `code-assist-models` handler 已调用 `fetchGeminiCodeAssistModels(deps.requestOptions, account, timeoutMs)`，与 740 完全相同 |

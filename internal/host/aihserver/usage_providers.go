@@ -21,6 +21,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
 	geminiusage "github.com/madou1217/ai_home/internal/adapters/gemini/usage"
+	grokusage "github.com/madou1217/ai_home/internal/adapters/grok/usage"
 	kimiusage "github.com/madou1217/ai_home/internal/adapters/kimi/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
 	qoderusage "github.com/madou1217/ai_home/internal/adapters/qoder/usage"
@@ -56,6 +57,7 @@ func usageProviderModules() []usageProviderModule {
 		{id: "zcode", build: buildZcodeUsage},
 		{id: "cline", build: buildClineUsage},
 		{id: "gemini", build: buildGeminiUsage},
+		{id: "grok", build: buildGrokUsage},
 		{id: "kimi", build: buildKimiUsage},
 		{id: "qoder", build: buildQoderUsage},
 		{id: "codebuddy-family", build: buildCodebuddyFamilyUsage},
@@ -116,6 +118,14 @@ func buildClineUsage(context usageProviderContext) ([]usageapp.ProviderStrategy,
 
 func buildGeminiUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
 	strategy, err := geminiusage.New(context.client)
+	if err != nil {
+		return nil, err
+	}
+	return []usageapp.ProviderStrategy{strategy}, nil
+}
+
+func buildGrokUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
+	strategy, err := grokusage.New(context.client)
 	if err != nil {
 		return nil, err
 	}

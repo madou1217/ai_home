@@ -502,12 +502,15 @@ func newHandlers(
 	// 缺一条策略，凭据解析就直接失败，额度协调器与显式 refresh 都会 500。
 	// kiro / zcode / cline 的 Node 探针早已下线（descriptor quota.supported=false），
 	// 没有静态策略时它们的 Go 采集根本跑不起来，只能靠 Node 进程的旧连接推数据。
+	// grok 同理：Go 侧没有 OAuth 刷新实现，token 由 Node 的 token-refresh-daemon 续期后
+	// 经 go-account-sync 推进来；不登记静态策略，凭据解析与额度采集都会直接失败。
 	staticCredentialProviders := append(
 		append([]string{}, codebuddyfamilyrelay.FamilyProviders...),
 		"qoder",
 		"qodercn",
 		"zcode",
 		"cline",
+		"grok",
 	)
 	staticCredentialStrategies := make(
 		[]accountcredentials.RefreshStrategy,

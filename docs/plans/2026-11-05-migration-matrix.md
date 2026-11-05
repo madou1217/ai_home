@@ -28,8 +28,8 @@
 | **codebuddycn** | `node` 同上（同 `_shared` 描述符） | `both` 同上 | `go` `G:adapters/codebuddyfamily/usage` | `both` 同上 | `node` 同上 | `node` `N:account/activity-claim/workbuddy-daily.js` | `node` 同上 |
 | **codex** | `both` `G:adapters/accountauth/codexoauth` · `N:server/oauth-strategies/codex.js` | `go` `G:adapters/codex/responses` · `N:providers/defs/codex.js`（只读 Go） | `both` `G:adapters/codex/usage` · `N:usage/provider-usage/codex.js` | `both` `G:transport/http/codexresponseshttp` + `G:transport/http/codexresponsesws` · `N:server/codex-adapter.js` | `both` `G:adapters/accounts/deletionprojection` · `N:account/account-removal.js` | `none` | `both` `G:adapters/codex/clilaunch` + `G:runtime/providercli` · `N:runtime/client-terminal.js` `N:runtime/acp-layouts.js` |
 | **gemini** | `node` `N:server/oauth-strategies/gemini.js`（OAuth 登录已在描述符停用；刷新 `N:server/gemini-token-refresh.js` 仍在 Node） | `go` `G:adapters/gemini/modelcatalog` · `N:providers/defs/gemini.js`（只读 Go） | `go` `G:adapters/gemini/usage`（`retrieveUserQuota`）；`N:providers/defs/gemini.js` quota=false | `node` `N:server/upstream-endpoints-transport-code-assist-gemini.js`（**provider 已 `GatewayDeprecated`**，只服务遗留账号/API Key；不迁） | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
-| **grok** | `node` `N:account/grok-auth-profile.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog`（仅 API Key）· `N:providers/defs/grok.js`（只读 Go） | `node` `N:usage/provider-usage/grok.js` | `both` `G:transport/http/grokrelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
-| **kimi** | `node` `N:account/kimi-auth.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog` · `N:providers/defs/kimi.js`（只读 Go） | `node` `N:usage/provider-usage/kimi.js` | `both` `G:transport/http/kimirelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
+| **grok** | `node` `N:account/grok-auth-profile.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog`（仅 API Key）· `N:providers/defs/grok.js`（只读 Go） | `go` `G:adapters/grok/usage`；`N:providers/defs/grok.js` quota=false（token 由 Node 刷新守护进程续期） | `both` `G:transport/http/grokrelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
+| **kimi** | `node` `N:account/kimi-auth.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog` · `N:providers/defs/kimi.js`（只读 Go） | `go` `G:adapters/kimi/usage`；`N:providers/defs/kimi.js` quota=false | `both` `G:transport/http/kimirelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **kiro** | `node` `N:account/kiro-device-login.js` `N:account/kiro-native-login.js` | `go` `G:adapters/kiro/modelcatalog` · `N:providers/defs/kiro.js`（只读 Go） | `go` `G:adapters/kiro/usage`；`N:providers/defs/kiro.js` quota=false | `go` `G:transport/http/kirorelay`（CodeWhisperer event-stream + 事务刷新）；仅原生凭据 | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
 | **opencode** | `node` `N:server/oauth-strategies/opencode.js`（设备码） | `go` `G:adapters/opencode/modelcatalog`（Zen + Go 双腿）· `N:providers/defs/opencode.js`（只读 Go `account_models`） | `none` 两侧均无额度接口（`C:providers/builtins.go` 未声明 quota，Node quota=false） | `both` `G:transport/http/opencoderelay`（仅 official API Key）· `N:server/opencode-free-cli-transport.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **qoder** | `node` `N:account/qoder-auth-metadata.js` + 通用 CLI 登录作业 | `go` `G:adapters/qoder/modelcatalog`（wasm 签名）· `N:providers/defs/qoder.js`（只读 Go） | `go` `G:adapters/qoder/usage`；`N:providers/defs/qoder.js` quota=false | `go` `G:transport/http/qoderrelay`（WASM 签名 + zstd；排队 → 429 + `Retry-After`，SSE 首帧记账前判定）；静态凭据/CLI 账号交还 Node | `node` 同上 | `node` `N:account/activity-claim/qoder-daily.js` | `node` `N:runtime/acp-layouts.js` |
@@ -45,18 +45,18 @@
 | 能力 | go | both | node | none |
 | --- | ---: | ---: | ---: | ---: |
 | 登录/OAuth 作业 | 0 | 2 | 14 | 0 |
-| 模型目录发现 | 16 | 0 | 0 | 0 |
-| 额度采集 | 10 | 2 | 3 | 1 |
-| 推理 relay | 4 | 11 | 1 | 0 |
+| 模型目录发现 | 14 | 2 | 0 | 0 |
+| 额度采集 | 13 | 2 | 0 | 1 |
+| 推理 relay | 5 | 10 | 1 | 0 |
 | 账号删除/宿主清理 | 0 | 2 | 14 | 0 |
 | 活动签到 | 0 | 0 | 5 | 11 |
 | 会话/PTY/SSH | 0 | 2 | 14 | 0 |
-| **合计** | **30** | **19** | **51** | **12** |
+| **合计** | **32** | **20** | **48** | **12** |
 
 ## 3. 关键观察
 
-1. **Go 强在账号面，弱在宿主面。** 模型发现 15/16、额度 12/16 已由 Go 产出；删除清理、活动、PTY/SSH 几乎仍全在 Node。迁移的主战场已经从「协议适配」转到「宿主交互」。
-2. **额度是唯一出现 `go`-only 的能力（10 个）。** 模式已经跑通：Go 写 `account_usage` / `account_usage_snapshots`，Node 描述符 `quota.supported=false` 只读文档。新增 Provider 应直接复制这条链路，不要再写 Node 探针。
+1. **Go 强在账号面，弱在宿主面。** 模型发现 16/16（14 go + 2 both）、额度 15/16 已由 Go 产出；删除清理、活动、PTY/SSH 几乎仍全在 Node。迁移的主战场已经从「协议适配」转到「宿主交互」。
+2. **额度是唯一出现 `go`-only 的能力（13 个）。** 模式已经跑通：Go 写 `account_usage` / `account_usage_snapshots`，Node 描述符 `quota.supported=false` 只读文档。新增 Provider 应直接复制这条链路，不要再写 Node 探针。
 3. **relay 只有 gemini 还是 `node`（2026-11-06）。** kiro / zcode / qoder / qodercn 已全部由 Go 承接；gemini 是 Go 确实没有上游适配器的一家（`C:providers/builtins.go` 里带 reason 的 node-only），且 `gemini-*` 模型多经 agy 的 Code Assist 线路可用。
 4. **登录的 14 个 `node` 不等于 14 套实现。** Node 侧是通用 CLI 作业框架（`N:server/web-account-auth.js` + `N:server/oauth-strategies/*`），Provider 只提供策略/提示词。迁移时应拆成「作业框架持久化」与「Provider 策略」两块，而不是逐家搬。
 5. **活动与会话的 `node` 是设计选择，不是欠账。** 活动依赖本机 Chrome + 阿里云验证码（强风控），PTY/SSH 是宿主级能力（计划 P5）。短期迁 Go 的收益低于风险。
@@ -222,3 +222,17 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **qoder relay 契约测试**：httptest 假上游端到端覆盖 zstd/签名头/umid/推理主机/SSE 拆包/
   非流式聚合/错误信封/非 2xx 原样转发，coverage 76.6%（含 -race）。
 - **回归体检**：HEAD 全绿（Go 61 包 / Node 1556 用例）；工作区红点均为当时的在途改动。
+
+### 2026-11-05 深夜：额度面收口（grok）
+
+- **grok 额度迁 Go**：`G:adapters/grok/usage` 注册进 `usageProviderModules`；Node 描述符改
+  `goOwnedQuota('grok')`，`GO_QUOTA_OWNERS` 登记 `v1/billing?format=credits`。
+- **凭据刷新按既有口径处理**：Go 没有 grok OAuth 刷新实现，grok 与 kiro/zcode/cline 一样登记
+  `staticcredential`（声明「永不刷新」）。token 由 Node 的 `token-refresh-daemon`
+  （`token-refresh-strategies.js` 的 `grok` 策略）续期，经 `go-account-sync` 推进 Go；
+  缺这条策略时凭据解析会直接 `ErrRefreshStrategyNotFound`，额度与 relay 都跑不起来。
+- **矩阵同步**：kimi 行一并更正（早已是 Go 采集，此前漏改）；统计表按 16 行重新核对。
+- **验证**：`go test ./internal/adapters/grok/usage/...`、
+  `go test ./internal/host/aihserver -run TestUsageProviderRegistryCoversExpectedProviders`、
+  `node --test test/quota-ownership.test.js` 全绿。
+- **待真机**：本机无 grok 账号（§5.1），额度采集只能用 httptest 固定响应验证，不能写成「已真机验收」。

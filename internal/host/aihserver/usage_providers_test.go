@@ -21,7 +21,7 @@ func TestUsageProviderRegistryCoversExpectedProviders(t *testing.T) {
 		t.Fatalf("buildUsageProviderStrategies() error = %v", err)
 	}
 	expected := []string{
-		"codex", "claude", "kiro", "agy", "zcode", "cline", "gemini", "kimi",
+		"codex", "claude", "kiro", "agy", "zcode", "cline", "gemini", "grok", "kimi",
 		"qoder", "qodercn", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn",
 	}
 	got := make([]string, 0, len(strategies))

@@ -743,6 +743,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 会话用量 Handler 失败: %w", err)
 	}
+	// 窗口统计与模型用量共用同一份定价快照：两处口径必须一致，否则同一账号
+	// 在「模型用量」和「额度统计」两个页面会显示不同的成本。
+	windowPricer, err := usagepricing.NewWindowPricer(costCalculator)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建额度窗口定价端口失败: %w", err)
+	}
 	quotaStatsService, err := usageapp.NewQuotaStatsService(usageapp.QuotaStatsDependencies{
 		Samples:   store,
 		Usage:     store,
@@ -750,6 +756,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Events:    store,
 		Snapshots: store,
 		Clock:     time.Now,
+		Pricer:    windowPricer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建额度统计服务失败: %w", err)

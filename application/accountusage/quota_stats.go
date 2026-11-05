@@ -77,6 +77,19 @@ type QuotaResetEventStore interface {
 }
 
 // QuotaStatsDependencies 是额度统计服务的全部端口。
+// QuotaWindowPricer 把窗口内某个模型的 token 明细换算成美元成本。
+//
+// 第二个返回值为 false 表示该模型没有定价：调用方必须把成本标成「未知」，
+// 不能当成 0——否则「没查到价格」会显示成「免费」。
+type QuotaWindowPricer interface {
+	CostFor(
+		ctx context.Context,
+		provider string,
+		model string,
+		usage usagecore.QuotaWindowModelUsage,
+	) (float64, bool)
+}
+
 type QuotaStatsDependencies struct {
 	Samples   QuotaWindowSampleStore
 	Usage     QuotaWindowUsageStore
@@ -84,6 +97,8 @@ type QuotaStatsDependencies struct {
 	Events    QuotaResetEventStore
 	Snapshots SnapshotStore
 	Clock     Clock
+	// Pricer 为空表示没有成本口径，统计仍然可用（cost_supported=false）。
+	Pricer QuotaWindowPricer
 }
 
 // QuotaStatsService 编排「维度可用性 → 选 scope → 窗口重建 → 用量聚合 → 汇总」。
@@ -94,6 +109,7 @@ type QuotaStatsService struct {
 	events    QuotaResetEventStore
 	snapshots SnapshotStore
 	clock     Clock
+	pricer    QuotaWindowPricer
 }
 
 // NewQuotaStatsService 创建额度统计服务；任一端口缺失都失败关闭。
@@ -113,6 +129,7 @@ func NewQuotaStatsService(dependencies QuotaStatsDependencies) (*QuotaStatsServi
 		events:    dependencies.Events,
 		snapshots: dependencies.Snapshots,
 		clock:     dependencies.Clock,
+		pricer:    dependencies.Pricer,
 	}, nil
 }
 
@@ -359,20 +376,55 @@ func (service *QuotaStatsService) BuildQuotaStats(
 		usageByIndex[usage.Index] = usage
 	}
 
+	result.CostSupported = service.pricer != nil
 	rows := make([]QuotaStatsWindow, 0, len(windows))
 	for _, window := range windows {
 		usage := usageByIndex[window.Index]
+		cost, costKnown := service.priceWindowUsage(ctx, usage)
 		rows = append(rows, QuotaStatsWindow{
 			QuotaWindow:  window,
 			Tokens:       usage.Tokens,
-			CostUSD:      nil,
-			CostKnown:    false,
+			CostUSD:      cost,
+			CostKnown:    costKnown,
 			RequestCount: usage.RequestCount,
 		})
 	}
 	result.Windows = rows
 	result.Summary = summarizeQuotaStatsWindows(rows)
+	if !result.CostSupported {
+		// 没有定价口径时，汇总里的 0 会被读成「确实免费」；统一置空。
+		result.Summary.CostKnown = false
+		result.Summary.TotalCostUSD = nil
+		result.Summary.AvgCostUSDPerWindow = nil
+	}
 	return result, nil
+}
+
+// priceWindowUsage 汇总一个窗口内各模型的成本。
+//
+// 与 Node 同口径：窗口里只要有一个模型没有定价，整个窗口的成本就是「未知」。
+// 部分已知的合计会低估成本，比没有数字更危险。
+func (service *QuotaStatsService) priceWindowUsage(
+	ctx context.Context,
+	usage usagecore.QuotaWindowUsage,
+) (*float64, bool) {
+	if service.pricer == nil {
+		return nil, false
+	}
+	if len(usage.Models) == 0 {
+		// 窗口内没有请求：0 元是确定的事实，不是「未知」。
+		zero := 0.0
+		return &zero, true
+	}
+	total := 0.0
+	for _, model := range usage.Models {
+		cost, known := service.pricer.CostFor(ctx, model.Provider, model.Model, model)
+		if !known {
+			return nil, false
+		}
+		total += cost
+	}
+	return &total, true
 }
 
 // usageSnapshot 读取当前额度快照；没有快照是正常状态（账号刚接入）。
@@ -697,6 +749,29 @@ func summarizeQuotaStatsWindows(windows []QuotaStatsWindow) QuotaStatsSummary {
 	if len(windows) > 0 {
 		average := totalTokens / int64(len(windows))
 		summary.AvgTokensPerWindow = &average
+	}
+	// 成本汇总与 Node 同口径：只有「有请求的窗口」参与已知性判断——
+	// 空窗口没有成本事实，不该把整份汇总拖成未知。
+	costKnown := true
+	for _, window := range windows {
+		if window.Tokens > 0 && !window.CostKnown {
+			costKnown = false
+			break
+		}
+	}
+	summary.CostKnown = costKnown
+	if costKnown {
+		total := 0.0
+		for _, window := range windows {
+			if window.CostUSD != nil {
+				total += *window.CostUSD
+			}
+		}
+		summary.TotalCostUSD = &total
+		if len(windows) > 0 {
+			average := total / float64(len(windows))
+			summary.AvgCostUSDPerWindow = &average
+		}
 	}
 	return summary
 }

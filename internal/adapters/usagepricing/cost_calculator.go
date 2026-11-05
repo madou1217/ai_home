@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/usageledger"
 )
 
@@ -58,9 +59,9 @@ type ModelCostCalculator struct {
 	interval    time.Duration
 	now         func() time.Time
 
-	mu       sync.Mutex
-	snapshot *PricingSnapshot
-	loadedAt time.Time
+	mu          sync.Mutex
+	snapshot    *PricingSnapshot
+	lastAttempt time.Time
 }
 
 // NewModelCostCalculator 创建成本计算器；providerIDs 来自 Provider 目录真值源。
@@ -115,14 +116,50 @@ func (calculator *ModelCostCalculator) snapshotFor(ctx context.Context) *Pricing
 	calculator.mu.Lock()
 	defer calculator.mu.Unlock()
 	now := calculator.now()
-	if calculator.snapshot != nil && now.Sub(calculator.loadedAt) < calculator.interval {
+	// 失败也要记时间：否则定价表读不到时，每个窗口的每个模型都会重试一次，
+	// 把一次故障放大成 N 次查询。
+	if !calculator.lastAttempt.IsZero() && now.Sub(calculator.lastAttempt) < calculator.interval {
 		return calculator.snapshot
 	}
+	calculator.lastAttempt = now
 	raw, err := calculator.loader.LoadModelPricing(ctx)
 	if err != nil {
+		calculator.snapshot = nil
 		return nil
 	}
 	calculator.snapshot = NewPricingSnapshot(calculator.providerIDs, ParseCatalog(raw))
-	calculator.loadedAt = now
 	return calculator.snapshot
+}
+
+// WindowPricer 让同一个定价快照同时服务窗口统计（逐模型计价）。
+type WindowPricer struct {
+	calculator *ModelCostCalculator
+}
+
+// NewWindowPricer 用已建好的计算器构造窗口定价端口；共用缓存，避免两套目录。
+func NewWindowPricer(calculator *ModelCostCalculator) (*WindowPricer, error) {
+	if calculator == nil {
+		return nil, ErrInvalidDependencies
+	}
+	return &WindowPricer{calculator: calculator}, nil
+}
+
+// CostFor 实现 accountusage.QuotaWindowPricer。
+func (pricer *WindowPricer) CostFor(
+	ctx context.Context,
+	provider string,
+	model string,
+	usage usagecore.QuotaWindowModelUsage,
+) (float64, bool) {
+	snapshot := pricer.calculator.snapshotFor(ctx)
+	if snapshot == nil {
+		return 0, false
+	}
+	return snapshot.CostFor(provider, model, Usage{
+		InputTokens:              usage.InputTokens,
+		OutputTokens:             usage.OutputTokens,
+		CacheReadInputTokens:     usage.CacheReadInputTokens,
+		CacheCreationInputTokens: usage.CacheCreationInputTokens,
+		ReasoningOutputTokens:    usage.ReasoningOutputTokens,
+	})
 }

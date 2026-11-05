@@ -85,8 +85,12 @@
     fail-soft 返回空目录（全新安装不该 500）；`reasoning_output_token_cost` 的 0 还原成「未声明」。
     ② `usagestatsapi` 的 models 响应补 `cost_usd`/`cost_known`/`cost_supported`，成本计算器通过
     接口注入；目录按 5 分钟缓存，读表失败只降级成本、不影响统计。
-    下一步：③ `/v0/webui/accounts/:provider/:ref/quota-stats` 前门切 Go——Go 的 `quota_stats`
-    还需要把窗口用量接上定价（现在 `QuotaStatsWindow.CostUSD` 恒为 null，`CostSupported=false`）。
+    ③ 已完成（2026-11-06）：`QueryQuotaWindowUsage` 改为按 (窗口, Provider, 模型) 聚合并保留
+    明细，`QuotaStatsService` 接 `QuotaWindowPricer` 逐模型计价；窗口内任一模型无定价即整窗
+    「未知」，空窗口是确定的 0 元。定价快照与模型用量接口共用同一份缓存，两个页面口径一致。
+    下一步：④ `/v0/webui/accounts/:provider/:ref/quota-stats` 前门切 Go——Node 侧只剩
+    camelCase 契约映射与 `provider/:ref` 校验，切完可删除 `webui-account-quota-stats-routes.js`
+    里的本地计算（`buildAccountQuotaStats` 及其三条依赖）。
 9. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

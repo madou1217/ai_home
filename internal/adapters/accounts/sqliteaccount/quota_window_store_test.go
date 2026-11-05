@@ -311,3 +311,69 @@ func TestReplaceUsageSnapshotRecordsPlanType(t *testing.T) {
 		t.Fatalf("sample plan type = %q, want pro", samples[0].PlanType)
 	}
 }
+
+// 窗口用量必须保留「按 Provider + 模型」的明细：成本只能按模型单价算，
+// 只有总额就无法定价。
+func TestQueryQuotaWindowUsageKeepsModelBreakdown(t *testing.T) {
+	store, accountRef := openUsageDocumentStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	const hour = int64(60 * 60 * 1000)
+
+	insert := func(provider, model string, occurredAtMS int64, input, output, cached, cacheWrite, reasoning, total int64) {
+		t.Helper()
+		const statement = `
+			INSERT INTO usage_ledger (
+				account_ref, provider_id, model_id, session_id, occurred_at_ms,
+				input_tokens, output_tokens, cached_input_tokens,
+				cache_write_input_tokens, reasoning_tokens, total_tokens
+			) VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?)`
+		if _, err := store.db.ExecContext(
+			ctx, statement, accountRef.String(), provider, model, occurredAtMS,
+			input, output, cached, cacheWrite, reasoning, total,
+		); err != nil {
+			t.Fatalf("insert usage_ledger error = %v", err)
+		}
+	}
+	// 账本有 CHECK(total_tokens = input_tokens + output_tokens)，缓存与推理明细不计入该式。
+	insert("codex", "gpt-5.1", base.UnixMilli(), 100, 50, 10, 5, 0, 150)
+	insert("codex", "gpt-5.1", base.UnixMilli()+1000, 20, 10, 0, 0, 0, 30)
+	insert("claude", "claude-sonnet-4-5", base.UnixMilli()+2000, 7, 3, 1, 0, 2, 10)
+
+	usages, err := store.QueryQuotaWindowUsage(ctx, accountRef.String(), []usagecore.QuotaWindowRange{
+		{Index: 0, StartMS: base.UnixMilli(), EndMS: base.UnixMilli() + hour},
+	})
+	if err != nil {
+		t.Fatalf("QueryQuotaWindowUsage() error = %v", err)
+	}
+	if len(usages) != 1 {
+		t.Fatalf("窗口数 = %d, want 1", len(usages))
+	}
+	usage := usages[0]
+	if usage.Tokens != 190 || usage.RequestCount != 3 {
+		t.Fatalf("窗口汇总 = %+v, want 190 tokens / 3 requests", usage)
+	}
+	if len(usage.Models) != 2 {
+		t.Fatalf("模型明细 = %d 条, want 2: %+v", len(usage.Models), usage.Models)
+	}
+	byModel := map[string]usagecore.QuotaWindowModelUsage{}
+	for _, model := range usage.Models {
+		byModel[model.Provider+"/"+model.Model] = model
+	}
+	codex, ok := byModel["codex/gpt-5.1"]
+	if !ok {
+		t.Fatalf("缺少 codex 明细: %+v", usage.Models)
+	}
+	if codex.InputTokens != 120 || codex.OutputTokens != 60 ||
+		codex.CacheReadInputTokens != 10 || codex.CacheCreationInputTokens != 5 ||
+		codex.Tokens != 180 || codex.RequestCount != 2 {
+		t.Fatalf("codex 明细 = %+v", codex)
+	}
+	claude, ok := byModel["claude/claude-sonnet-4-5"]
+	if !ok {
+		t.Fatalf("缺少 claude 明细: %+v", usage.Models)
+	}
+	if claude.ReasoningOutputTokens != 2 || claude.Tokens != 10 {
+		t.Fatalf("claude 明细 = %+v", claude)
+	}
+}

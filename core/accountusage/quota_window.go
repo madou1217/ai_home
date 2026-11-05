@@ -86,11 +86,29 @@ type QuotaWindowRange struct {
 	EndMS   int64
 }
 
+// QuotaWindowModelUsage 是窗口内某个模型的 token 明细。
+//
+// 为什么需要按模型拆：成本 = Σ(token × 该模型单价)，没有这个明细就只能给出总额，
+// 无法定价。Provider 参与匹配（同一个模型名在不同 Provider 下可能是不同目录键）。
+type QuotaWindowModelUsage struct {
+	Provider                 string
+	Model                    string
+	InputTokens              int64
+	OutputTokens             int64
+	CacheReadInputTokens     int64
+	CacheCreationInputTokens int64
+	ReasoningOutputTokens    int64
+	Tokens                   int64
+	RequestCount             int64
+}
+
 // QuotaWindowUsage 是一个窗口区间内的推理用量。
 type QuotaWindowUsage struct {
 	Index        int
 	Tokens       int64
 	RequestCount int64
+	// Models 是按模型拆开的明细；为空表示窗口内没有请求。
+	Models []QuotaWindowModelUsage
 }
 
 // QuotaWindow 是一个重建出来的真实窗口。

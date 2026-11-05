@@ -278,12 +278,19 @@ func (store *Store) QueryQuotaWindowUsage(
 	builder.WriteString(`
 		)
 		SELECT w.idx,
+		       u.provider_id,
+		       u.model_id,
+		       COALESCE(SUM(u.input_tokens), 0),
+		       COALESCE(SUM(u.output_tokens), 0),
+		       COALESCE(SUM(u.cached_input_tokens), 0),
+		       COALESCE(SUM(u.cache_write_input_tokens), 0),
+		       COALESCE(SUM(u.reasoning_tokens), 0),
 		       COALESCE(SUM(u.total_tokens), 0) AS tokens,
 		       COUNT(u.usage_id) AS request_count
 		FROM usage_ledger AS u
 		JOIN w ON u.occurred_at_ms >= w.start_ms AND u.occurred_at_ms < w.end_ms
 		WHERE u.account_ref = ? AND u.occurred_at_ms >= ? AND u.occurred_at_ms < ?
-		GROUP BY w.idx
+		GROUP BY w.idx, u.provider_id, u.model_id
 		ORDER BY w.idx`)
 	parameters = append(parameters, accountRef, minStartMS, maxEndMS)
 	rows, err := store.db.QueryContext(ctx, builder.String(), parameters...)
@@ -293,16 +300,50 @@ func (store *Store) QueryQuotaWindowUsage(
 	defer func() {
 		_ = rows.Close()
 	}()
-	usages := make([]usagecore.QuotaWindowUsage, 0, len(windows))
+	// 一行是一个 (窗口, Provider, 模型)；按窗口折回去，并把模型明细留在结构里供定价。
+	byIndex := make(map[int]*usagecore.QuotaWindowUsage, len(windows))
+	order := make([]int, 0, len(windows))
 	for rows.Next() {
-		var usage usagecore.QuotaWindowUsage
-		if err := rows.Scan(&usage.Index, &usage.Tokens, &usage.RequestCount); err != nil {
+		var (
+			index                                         int
+			provider                                      string
+			model                                         string
+			input, output, cacheRead, cacheCreate, reason int64
+			tokens, requests                              int64
+		)
+		if err := rows.Scan(
+			&index, &provider, &model,
+			&input, &output, &cacheRead, &cacheCreate, &reason,
+			&tokens, &requests,
+		); err != nil {
 			return nil, fmt.Errorf("读取窗口用量失败: %w", err)
 		}
-		usages = append(usages, usage)
+		usage, exists := byIndex[index]
+		if !exists {
+			usage = &usagecore.QuotaWindowUsage{Index: index}
+			byIndex[index] = usage
+			order = append(order, index)
+		}
+		usage.Tokens += tokens
+		usage.RequestCount += requests
+		usage.Models = append(usage.Models, usagecore.QuotaWindowModelUsage{
+			Provider:                 provider,
+			Model:                    model,
+			InputTokens:              input,
+			OutputTokens:             output,
+			CacheReadInputTokens:     cacheRead,
+			CacheCreationInputTokens: cacheCreate,
+			ReasoningOutputTokens:    reason,
+			Tokens:                   tokens,
+			RequestCount:             requests,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("遍历窗口用量失败: %w", err)
+	}
+	usages := make([]usagecore.QuotaWindowUsage, 0, len(order))
+	for _, index := range order {
+		usages = append(usages, *byIndex[index])
 	}
 	return usages, nil
 }

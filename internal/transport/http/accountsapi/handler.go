@@ -257,7 +257,9 @@ type Dependencies struct {
 	NativeAccounts      NativeAccountDecoder
 	Sub2APIAccounts     Sub2APIAccountDecoder
 	CredentialSnapshots CredentialSnapshotReader
-	Authorizer          Authorizer
+	// AccountModels 是批量模型关系的只读端口，可为空（未装配时 503，WebUI 回落本地缓存）。
+	AccountModels AccountModelReader
+	Authorizer    Authorizer
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
@@ -275,6 +277,7 @@ type Handler struct {
 	staticCredentials   StaticCredentialFactory
 	native              NativeAccountDecoder
 	credentialSnapshots CredentialSnapshotReader
+	accountModels       AccountModelReader
 	authorizer          Authorizer
 }
 
@@ -310,6 +313,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		staticCredentials:   dependencies.StaticCredentials,
 		native:              dependencies.NativeAccounts,
 		credentialSnapshots: dependencies.CredentialSnapshots,
+		accountModels:       dependencies.AccountModels,
 		authorizer:          dependencies.Authorizer,
 	}, nil
 }
@@ -353,6 +357,8 @@ func (handler *Handler) ServeHTTP(
 		handler.handleLaunchSelection(response, request)
 	case strings.HasPrefix(request.URL.Path, DefaultsPath+"/"):
 		handler.handleProviderDefault(response, request)
+	case request.URL.Path == AccountModelsCollectionPath:
+		handler.handleAccountModelsCollection(response, request)
 	case request.URL.Path == AccountUsageCollectionPath:
 		handler.handleAccountUsageCollection(response, request)
 	case request.URL.Path == AccountUsageDocumentCollectionPath:

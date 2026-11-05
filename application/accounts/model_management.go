@@ -240,3 +240,13 @@ func (management *ModelManagement) SetManualModelPolicy(
 		updatedAt,
 	)
 }
+
+// AccountModelSet 是批量读取时单个账号的模型关系。
+//
+// 放在应用层而不是适配器里：WebUI 的批量读（一次拿全部账号的目录）需要一个与存储
+// 实现无关的类型，否则入站适配器要反向依赖 sqlite 适配器。
+type AccountModelSet struct {
+	AccountRef accountcore.AccountRef
+	ProviderID string
+	Models     []AccountModel
+}

@@ -14,6 +14,73 @@ import (
 
 var _ accountapp.AccountModelStore = (*Store)(nil)
 
+// ListAllAccountModels 一次读出全部账号的模型关系（按账号、模型 ID 排序）。
+func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.AccountModelSet, error) {
+	const query = `
+		SELECT m.account_ref, a.provider_id, m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms
+		FROM account_models m
+		JOIN accounts a ON a.account_ref = m.account_ref
+		ORDER BY m.account_ref, m.model_id`
+	rows, err := store.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("查询全量账号模型关系失败: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+	sets := make([]accountapp.AccountModelSet, 0)
+	index := make(map[string]int)
+	for rows.Next() {
+		var (
+			accountRefText string
+			providerID     string
+			modelIDText    string
+			upstream       bool
+			manualPolicy   string
+			updatedAtMS    int64
+		)
+		if err := rows.Scan(
+			&accountRefText,
+			&providerID,
+			&modelIDText,
+			&upstream,
+			&manualPolicy,
+			&updatedAtMS,
+		); err != nil {
+			return nil, fmt.Errorf("读取全量账号模型关系失败: %w", err)
+		}
+		accountRef, err := accountcore.ParseAccountRef(accountRefText)
+		if err != nil {
+			return nil, ErrIncompatibleDatabase
+		}
+		policy, err := accountapp.ParseModelManualPolicy(manualPolicy)
+		if err != nil {
+			return nil, ErrIncompatibleDatabase
+		}
+		model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
+			AccountRef:        accountRef,
+			ModelID:           modelIDText,
+			UpstreamAvailable: upstream,
+			ManualPolicy:      policy,
+			UpdatedAt:         time.UnixMilli(updatedAtMS).UTC(),
+		})
+		if err != nil {
+			return nil, ErrIncompatibleDatabase
+		}
+		position, exists := index[accountRefText]
+		if !exists {
+			position = len(sets)
+			index[accountRefText] = position
+			sets = append(sets, accountapp.AccountModelSet{AccountRef: accountRef, ProviderID: providerID})
+		}
+		sets[position].Models = append(sets[position].Models, model)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历全量账号模型关系失败: %w", err)
+	}
+	return sets, nil
+}
+
 // ListAccountModels 返回按模型 ID 排序的完整自动发现与人工覆盖关系。
 func (store *Store) ListAccountModels(
 	ctx context.Context,

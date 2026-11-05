@@ -667,7 +667,9 @@ func newHandlers(
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
 		CredentialSnapshots: store,
-		Authorizer:          authorizer,
+		// 批量模型关系：WebUI 模型缓存读 Go 的入口（一次 JOIN，不做 N 次请求）。
+		AccountModels: store,
+		Authorizer:    authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)

@@ -114,3 +114,19 @@ lib/server/alias-go-owner.js（Node 只维护读投影，写成功后从 Go 拉�
 - 不新增 AIH_* 环境变量；开关走命令行/配置。
 - 上游枚举（Provider、模型族）不写白名单，按规则归一后放行。
 - 删除前先有替代路径：C 完成后才删 Node 的 store 与展开逻辑。
+
+## 6. 当前状态与续做清单（2026-11-06 收尾）
+
+已完成并在真机验证过的：Go 侧 schema v22/v23（含 display_models_json）、仓储与启动恢复、
+CRUD 用例与格式/目标校验、WebUI 契约接口（列表/新建/更新/删除/启停/整组替换/目标候选）、
+写入后触发目录重建；Node 侧影子对账、双库对账脚本、写入口切换、停推守卫。
+
+激活方式（都需要重启 Node 进程，我没在运行中的服务上操作）：
+1. 重启 aih server —— 写入口切换 + 停推守卫生效；
+2. 之后跑 node scripts/compare-model-aliases.js，应仍为 aliases_in_sync；
+3. WebUI 逐个点一遍新建/编辑/启停/删除，确认与翻转前一致。
+
+回滚：停用 Go Core（写请求 503，读走 Node 本地投影）。
+
+下一个大块（需要产品/运维决定）：给 Go 分配推理路由（AIH_GO_CORE_ROUTES），
+让 usage_ledger 真正增长——这是 WebUI 用量/额度页切流的前置条件。

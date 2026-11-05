@@ -53,6 +53,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
 	opencodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/opencode/modelcatalog"
+	qodermodelcatalog "github.com/madou1217/ai_home/internal/adapters/qoder/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	zcodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/zcode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
@@ -1484,7 +1485,16 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
 		}
-		opencodeSource, err := opencodemodelcatalog.New(client)
+		// qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
+	qoderSources := make([]accountapp.ProviderModelDiscoverer, 0, 2)
+	for _, providerID := range []string{"qoder", "qodercn"} {
+		source, sourceErr := qodermodelcatalog.New(client, providerID)
+		if sourceErr != nil {
+			return nil, fmt.Errorf("创建 qoder 模型目录源失败(%s): %w", providerID, sourceErr)
+		}
+		qoderSources = append(qoderSources, source)
+	}
+	opencodeSource, err := opencodemodelcatalog.New(client)
 		if err != nil {
 			return nil, fmt.Errorf("创建 opencode 模型目录源失败: %w", err)
 		}
@@ -1516,6 +1526,7 @@ func newModelDiscovery(
 			geminiSource,
 		}
 		strategies = append(strategies, familySources...)
+		strategies = append(strategies, qoderSources...)
 	}
 	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)
 	if err != nil {

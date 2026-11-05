@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 	"time"
 
 	"github.com/tetratelabs/wazero"
@@ -150,6 +151,9 @@ func encodeI32(value int32) uint64 {
 type hostState struct {
 	values []any
 	next   int
+	// lastThrow 记录 wasm 侧 throw 的消息：Rust panic 在 wasm 里往往紧跟一条
+	// unreachable 指令，trap 本身不带原因，只能靠这里还原。
+	lastThrow string
 }
 
 func newHostState() *hostState {
@@ -221,6 +225,9 @@ func (state *hostState) register(ctx context.Context, runtime wazero.Runtime) er
 	define := func(name string, params, results []api.ValueType, fn hostFunc) {
 		builder.NewFunctionBuilder().
 			WithGoModuleFunction(api.GoModuleFunc(func(_ context.Context, module api.Module, stack []uint64) {
+				if os.Getenv("AIH_QODER_DEBUG") != "" && name != "__wbg_now_88621c9c9a4f3ffc" {
+					fmt.Fprintf(os.Stderr, "qoder-host %s args=%v\n", name, stack)
+				}
 				fn(module, stack)
 			}), params, results).
 			Export(name)
@@ -276,26 +283,29 @@ func (state *hostState) register(ctx context.Context, runtime wazero.Runtime) er
 		_ = stack
 	})
 	// 下面五个 accessor 都带一个 self 参数（wasm-bindgen 把 JS 对象当参数传）。
+	// getrandom 会先探测运行环境（globalThis/self/window/crypto/process/require），
+	// 任何一步判成「不存在」都会走 Rust panic → unreachable。所以这些 accessor 必须
+	// 返回 object/function 类型的占位符，不能返回字符串或 nil。
 	define("__wbg_crypto_38df2bab126b63dc", i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add("crypto"))
+		stack[0] = uint64(state.add(hostObject{kind: "crypto"}))
 	})
 	define("__wbg_msCrypto_bd5a034af96bcba6", i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add("crypto"))
+		stack[0] = uint64(state.add(hostObject{kind: "crypto"}))
 	})
 	define("__wbg_process_44c7a14e11e9f69e", i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add(map[string]any{}))
+		stack[0] = uint64(state.add(hostObject{kind: "process"}))
 	})
 	define("__wbg_versions_276b2795b1c6a219", i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add(map[string]any{}))
+		stack[0] = uint64(state.add(hostObject{kind: "versions"}))
 	})
 	define("__wbg_node_84ea875411254db1", i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add(""))
+		stack[0] = uint64(state.add("22.0.0"))
 	})
 	define("__wbg_require_b4edbdcf3e2a1ef0", noParams, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add(nil))
+		stack[0] = uint64(state.add(hostObject{kind: "function"}))
 	})
 	define("__wbg_call_d578befcc3145dee", i32i32i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add(nil))
+		stack[0] = uint64(state.add(hostObject{kind: "object"}))
 	})
 	define("__wbg_new_with_length_9cedd08484b73942", i32, oneI32, func(_ api.Module, stack []uint64) {
 		stack[0] = uint64(state.add(make([]byte, uint32(stack[0]))))
@@ -346,7 +356,7 @@ func (state *hostState) register(ctx context.Context, runtime wazero.Runtime) er
 		stack[0] = math.Float64bits(float64(time.Now().UnixMilli()))
 	})
 	staticAccessor := func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(state.add("global"))
+		stack[0] = uint64(state.add(hostObject{kind: "global"}))
 	}
 	define("__wbg_static_accessor_GLOBAL_THIS_a1248013d790bf5f", noParams, oneI32, staticAccessor)
 	define("__wbg_static_accessor_SELF_24f78b6d23f286ea", noParams, oneI32, staticAccessor)
@@ -356,7 +366,7 @@ func (state *hostState) register(ctx context.Context, runtime wazero.Runtime) er
 	})
 	define("__wbg___wbindgen_throw_81fc77679af83bc6", i32i32, nil, func(module api.Module, stack []uint64) {
 		// 不能从 host 抛异常穿过 wasm；记录消息由上层转成错误。
-		state.takeError(state.add(readStringValue(module, uint32(stack[0]), uint32(stack[1]))))
+		state.lastThrow = readStringValue(module, uint32(stack[0]), uint32(stack[1]))
 	})
 	define("__wbg_Error_2e59b1b37a9a34c3", i32i32, oneI32, func(module api.Module, stack []uint64) {
 		message := readStringValue(module, uint32(stack[0]), uint32(stack[1]))
@@ -369,7 +379,8 @@ func (state *hostState) register(ctx context.Context, runtime wazero.Runtime) er
 		stack[0] = uint64(boolValue(isString(state.get(uint32(stack[0])))))
 	})
 	define("__wbg___wbindgen_is_function_49868bde5eb1e745", i32, oneI32, func(_ api.Module, stack []uint64) {
-		stack[0] = uint64(boolValue(false))
+		object, ok := state.get(uint32(stack[0])).(hostObject)
+		stack[0] = boolValue(ok && object.kind == "function")
 	})
 	define("__wbg___wbindgen_is_undefined_c0cca72b82b86f4d", i32, oneI32, func(_ api.Module, stack []uint64) {
 		stack[0] = uint64(boolValue(state.get(uint32(stack[0])) == nil))
@@ -400,9 +411,13 @@ func fillRandomSlice(bytes []byte) {
 	_, _ = rand.Read(bytes)
 }
 
+// hostObject 是 JS 对象的占位符：只需要类型判定（typeof === "object"/"function"），
+// 属性访问都走各自的专用 import。
+type hostObject struct{ kind string }
+
 func isObject(value any) bool {
 	switch value.(type) {
-	case map[string]any, []byte:
+	case map[string]any, []byte, hostObject:
 		return true
 	default:
 		return false

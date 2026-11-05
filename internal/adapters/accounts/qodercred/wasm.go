@@ -120,6 +120,27 @@ func candidateBinaries(provider string, options Options) []string {
 	return result
 }
 
+// CLIVersion 返回安装布局里的客户端版本：version.txt 优先，其次二进制名后缀。
+//
+// wasm 的 newContext 需要它参与客户端指纹；空版本会让签名头缺字段。
+func CLIVersion(provider string, options Options) string {
+	candidates := candidateBinaries(provider, options)
+	if len(candidates) == 0 {
+		return ""
+	}
+	dir := filepath.Dir(candidates[0])
+	if data, err := os.ReadFile(filepath.Join(dir, "version.txt")); err == nil {
+		if value := strings.TrimSpace(string(data)); value != "" {
+			return value
+		}
+	}
+	name := filepath.Base(candidates[0])
+	if index := strings.LastIndex(name, "-"); index >= 0 && index+1 < len(name) {
+		return strings.TrimSpace(name[index+1:])
+	}
+	return ""
+}
+
 func normalizeProvider(provider string) string {
 	if strings.EqualFold(strings.TrimSpace(provider), "qodercn") {
 		return "qodercn"

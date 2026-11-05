@@ -337,6 +337,19 @@
 >      `notApplicable=true / reason=qoder_no_consumable_credits`，快照 1 条 unknown 条目、
 >      quota_status=pending（未被判成 exhausted）。首次解密 ~120ms（含 167MB 二进制扫描），
 >      之后走缓存。付费档路径只有单测覆盖（本机没有付费 qoder 账号），已登记到 §9 待真机验证。
+> 39. **qoder 模型目录迁 Go（2026-11-05）**：在 qodercred 里补「完整运行时」
+>    （`qodercontext_new` / `prepareRequest` / `requestresult_*` /
+>    `decrypt_server_response` / `model_cache_decrypt`），解密与签名用**独立实例**
+>    （Node 实测同实例先 decrypt 再 newContext 会 trap）。新增
+>    `internal/adapters/qoder/modelcatalog`：解密 opaque 登录态 → 新建上下文 → 签出
+>    `GET /api/v2/model/list?Encode=1` → 明文 JSON 优先、失败再 wasm 解密 → 按
+>    scene=assistant 归一化出展示名。组合根注册 qoder/qodercn 两个源。
+>    真机（**只打一次**，签名请求有风控代价）：**15 个模型**
+>    （Auto / Cantus / DeepSeek-Flash / DeepSeek-V4-Pro / Efficient / Fast /
+>    GLM-5.3 / GLM-5.3-Flash / Kimi-K2.8-Preview / Kimi-K3.1-Pro /
+>    MiniMax-M3.1-Flash / Qwen3.8-Flash / Qwen3.8-Max / Sonus / Ultimate），
+>    `account_models.upstream_available` 全部翻真。Node 侧 qoder 的 `models` 能力
+>    暂保留（还有 CLI/宿主路径在读），等观察期后再关。
 
 ## 0. 结论先行
 
@@ -686,7 +699,7 @@ Node 进程（过渡期，逐渐缩小）
 | cline 额度采集 | 待真机 | 两个 cline 账号 enabled=0 | 启用一个后显式 refresh，确认 5h/7d/30d 三个窗口 |
 | agy 额度采集 | 待真机 | 6 个账号 enabled=0 且 token 自 2026-10-24 过期 | 重新登录一个 agy 账号后 refresh |
 | kimi / grok 模型目录 | 待真机 | 本机没有账号 | 有账号后看 account_models 是否出现 |
-| qoder 模型目录 | 待真机 | 依赖 wasm 签名运行时（正在迁） | 目录发现一次，核对 is_reasoning/is_vl/max_input_tokens |
+| ~~qoder 模型目录~~ | ✅ 2026-11-05 真机 | 已迁 Go（wasm 签名 + 15 个模型） | — |
 
 纪律：同一台机器上 qoder 相关请求（尤其带签名的）不要连续重试；一次改动只跑 1–2 次，
 失败先看单元测试与假 HTTP，不要用真机结果当调试探针。

@@ -42,6 +42,10 @@ var (
 	cacheMu    sync.Mutex
 	cacheOrder []string
 	cacheValue = map[string]Identity{}
+
+	rawCacheMu sync.Mutex
+	rawOrder   []string
+	rawCache   = map[string]string{}
 )
 
 // DecryptNative 解密 native_auth_json 里的 opaque credentials。
@@ -68,6 +72,41 @@ func DecryptNative(provider string, native map[string]any, options Options) (Ide
 	}
 	storeIdentity(key, identity)
 	return identity.clone(), true
+}
+
+// DecryptNativeRaw 返回 opaque 凭据的**原始明文**。
+//
+// 签名运行时（newContext）需要 CLI 写出的原始 JSON：重新 marshal 会改变字段顺序，
+// 而 wasm 侧会把它当作指纹输入。
+func DecryptNativeRaw(provider string, native map[string]any, options Options) (string, bool) {
+	blob := text(native["credentials"])
+	machineID := text(native["machineId"])
+	if !IsOpaqueCredential(blob) || machineID == "" || len(machineID) < 16 {
+		return "", false
+	}
+	key := cacheKey(provider, blob, machineID)
+	rawCacheMu.Lock()
+	cached, ok := rawCache[key]
+	rawCacheMu.Unlock()
+	if ok {
+		return cached, true
+	}
+	plaintext, err := DecryptBlob(provider, blob, machineID, options)
+	if err != nil || strings.TrimSpace(plaintext) == "" {
+		return "", false
+	}
+	rawCacheMu.Lock()
+	if _, exists := rawCache[key]; !exists {
+		rawOrder = append(rawOrder, key)
+	}
+	rawCache[key] = plaintext
+	for len(rawOrder) > cacheLimit {
+		oldest := rawOrder[0]
+		rawOrder = rawOrder[1:]
+		delete(rawCache, oldest)
+	}
+	rawCacheMu.Unlock()
+	return plaintext, true
 }
 
 // DecryptBlob 用厂商 CLI 内嵌的 wasm 解密单个 base64 密文。

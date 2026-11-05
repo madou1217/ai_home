@@ -219,7 +219,7 @@
 
 | 文件 | 行数 | 引用证据 | 风险 | 说明 |
 | --- | ---: | --- | --- | --- |
-| `lib/server/agy-cli-transport.js` | 5 | **零引用**；内容只有 `module.exports = Object.freeze({ removed: true })` | **安全删**（清理 tombstone） | 旧的 agy CLI transport 占位，不是本次 Go 迁移产物 |
+| `lib/server/agy-cli-transport.js` | 5 | **零引用**；内容只有 `module.exports = Object.freeze({ removed: true })` | **已删除（2026-11-06）** | 旧的 agy CLI transport 占位，不是本次 Go 迁移产物 |
 | `lib/server/account-model-denial.js` | 114 | **零引用**；注释说应被 `provider-model-discovery` 使用，但实际没有任何 require | **需人工确认** | 账号级“实测不能用某模型”的负面事实登记簿；当前未接线，可能是漏接而非废弃 |
 
 ## 8. 复现方法

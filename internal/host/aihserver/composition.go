@@ -44,6 +44,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
+	clinemodelcatalog "github.com/madou1217/ai_home/internal/adapters/cline/modelcatalog"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	geminimodelcatalog "github.com/madou1217/ai_home/internal/adapters/gemini/modelcatalog"
@@ -1485,7 +1486,9 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
 		}
-		// qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
+		// cline 是静态规范清单（不联网、不依赖客户端），与 Node 的 KNOWN_CLINE_MODELS 同源。
+	clineSource := clinemodelcatalog.New()
+	// qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
 	qoderSources := make([]accountapp.ProviderModelDiscoverer, 0, 2)
 	for _, providerID := range []string{"qoder", "qodercn"} {
 		source, sourceErr := qodermodelcatalog.New(client, providerID)
@@ -1527,6 +1530,7 @@ func newModelDiscovery(
 		}
 		strategies = append(strategies, familySources...)
 		strategies = append(strategies, qoderSources...)
+		strategies = append(strategies, clineSource)
 	}
 	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)
 	if err != nil {

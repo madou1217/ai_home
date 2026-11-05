@@ -433,10 +433,17 @@ func newHandlers(
 	//
 	// Qoder 额度 refresh 走的就是这条链路：凭据是 CLI 的 opaque blob，token 由
 	// qodercred 用厂商 wasm 解密，不需要（也没有）Go 侧 OAuth 刷新。
+	// 这里列的是「Go 已有采集/转发能力、但 Token 刷新仍归 Node 或厂商 CLI」的 Provider：
+	// 缺一条策略，凭据解析就直接失败，额度协调器与显式 refresh 都会 500。
+	// kiro / zcode / cline 的 Node 探针早已下线（descriptor quota.supported=false），
+	// 没有静态策略时它们的 Go 采集根本跑不起来，只能靠 Node 进程的旧连接推数据。
 	staticCredentialProviders := append(
 		append([]string{}, codebuddyfamilyrelay.FamilyProviders...),
 		"qoder",
 		"qodercn",
+		"kiro",
+		"zcode",
+		"cline",
 	)
 	staticCredentialStrategies := make(
 		[]accountcredentials.RefreshStrategy,

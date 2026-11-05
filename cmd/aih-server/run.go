@@ -67,6 +67,7 @@ func run(
 		ModelDiscoverers:           runtime.models,
 		DelegateCredentialRefresh:  config.delegateCredentialRefresh,
 		UpstreamErrorRuleProviders: config.upstreamErrorRuleProviders,
+		WebDir:                     config.webDir,
 		RequestShutdown:            runtime.requestShutdown,
 		ErrorLog: log.New(
 			runtime.stderr,

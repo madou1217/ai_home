@@ -38,6 +38,8 @@ type commandConfig struct {
 	// upstreamErrorRuleProviders 由 AIH_SERVER_UPSTREAM_ERROR_RULES 声明（逗号分隔）。
 	// 缺省为空：Go 不承接任何账号的自定义错误规则，Node 继续自己执行规则。
 	upstreamErrorRuleProviders []string
+	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui（过渡期 Node 仍在服务）。
+	webDir string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -60,6 +62,8 @@ func loadCommandConfig(
 	flags.SetOutput(runtime.stderr)
 	flags.StringVar(&host, "host", host, "监听地址；当前只允许 loopback")
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")
+	var webDir string
+	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
 	flags.Usage = func() {
 		writeUsage(runtime.stderr, flags)
 	}
@@ -101,6 +105,7 @@ func loadCommandConfig(
 		clientKey:                  clientKey,
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
+		webDir:                     strings.TrimSpace(webDir),
 	}, nil
 }
 

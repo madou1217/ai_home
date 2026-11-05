@@ -27,6 +27,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -75,6 +76,11 @@ type systemErrorView struct {
 // newRouter 挂载系统、账号、推理和 Claude Native Relay 路由。
 func newRouter(handlers serverHandlers) http.Handler {
 	mux := http.NewServeMux()
+	// /ui 与 /ui/ 同时挂：/ui 需要 302 到带斜杠的地址（相对路径基准不同）。
+	if handlers.webUI != nil {
+		mux.Handle("/ui", handlers.webUI)
+		mux.Handle(webuiassets.Prefix, handlers.webUI)
+	}
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/readyz", func(
 		response http.ResponseWriter,

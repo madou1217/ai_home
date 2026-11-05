@@ -123,6 +123,8 @@ type serverHandlers struct {
 	accountRuntime http.Handler
 	// accountUsageEvents 是成功尝试 token 用量事件的增量只读管理接口。
 	accountUsageEvents http.Handler
+	// webUI 托管 Web UI 构建产物（/ui/*）；nil 表示不由 Go 承接。
+	webUI http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats    http.Handler
 	usageModels   http.Handler
@@ -160,6 +162,10 @@ type serverAccountRuntime interface {
 // New 装配 Provider Catalog、aih.db、账号用例、OAuth Strategy 和 HTTP 入站适配器。
 func New(ctx context.Context, options Options) (*Server, error) {
 	if err := validateOptions(options); err != nil {
+		return nil, err
+	}
+	webUI, err := newWebUIHandler(options.WebDir)
+	if err != nil {
 		return nil, err
 	}
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
@@ -289,6 +295,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	handlers.webUI = webUI
 	resources = append(resources, codexVersions, outcomeRecorder, store)
 	return newServer(
 		withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers))),

@@ -73,6 +73,9 @@ type Options struct {
 	// 丢弃，Node 继续自己执行规则——接入前后行为完全一致。只有在失败分类点也接好了
 	// 该 Provider 的规则求值后，才可以把 Provider 加进来。
 	UpstreamErrorRuleProviders []string
+	// WebDir 是 Web UI 构建产物目录（web/dist）。为空表示不托管 /ui，
+	// 由 Node 宿主继续服务——过渡期的默认值。
+	WebDir string
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
 	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
 	//

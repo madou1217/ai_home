@@ -696,6 +696,7 @@ Node 进程（过渡期，逐渐缩小）
 | 项 | 状态 | 缺什么 | 验证方式（一次即可） |
 | --- | --- | --- | --- |
 | qoder 付费档额度 | 待真机 | 本机唯一 qoder 账号是 Free（total=0，落 notApplicable） | 换付费账号后 POST /v1/management/accounts/{ref}/usage/refresh，确认 entries 带 total/used/remaining 且 remainingPct = 100 - 使用率 |
+| kimi 额度采集 | 待真机 | 本机无 kimi 账号 | 有账号后显式 refresh，确认 /usages 与 /me 字段 |
 | gemini 额度采集 | 待真机 | 本�� 1 个 gemini 账号 enabled=0 | 启用后显式 refresh，确认 models[] 桶与 remainingPct |
 | cline 额度采集 | 待真机 | 两个 cline 账号 enabled=0 | 启用一个后显式 refresh，确认 5h/7d/30d 三个窗口 |
 | agy 额度采集 | 待真机 | 6 个账号 enabled=0 且 token 自 2026-10-24 过期 | 重新登录一个 agy 账号后 refresh |

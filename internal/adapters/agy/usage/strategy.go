@@ -122,6 +122,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 			ScopeKey:             model.id,
 			HasRemaining:         true,
 			RemainingBasisPoints: model.remainingBasisPoints,
+			WindowSeconds:        inferWindowSeconds(model.resetAt, capturedAt),
 			ResetAt:              model.resetAt,
 			Availability:         model.availability,
 		})
@@ -321,6 +322,18 @@ type quotaModel struct {
 	maxTokens            *float64
 	maxOutputTokens      *float64
 	availability         usagecore.Availability
+}
+
+// inferWindowSeconds 按「重置时间距今 > 6 小时」区分周窗口与 5h 窗口。
+//
+// agy 的 quotaInfo 只给 remainingFraction 与 resetTime，没有窗口长度；
+// 这与 Node lib/account/quota-reset/agy-strategy.js 的判据一致（> 360 分钟 = 周）。
+// 没有这个推断，采样会因 windowSeconds=0 被跳过，agy 的窗口统计永远是空的。
+func inferWindowSeconds(resetAt time.Time, capturedAt time.Time) int64 {
+	if resetAt.After(capturedAt) && resetAt.Sub(capturedAt) > 6*time.Hour {
+		return int64(7 * 24 * 60 * 60)
+	}
+	return int64(5 * 60 * 60)
 }
 
 func parseQuotaModels(payload []byte) ([]quotaModel, bool) {

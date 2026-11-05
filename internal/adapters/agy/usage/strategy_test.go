@@ -57,9 +57,9 @@ func TestFetchUsageBuildsModelSnapshotAndDocument(t *testing.T) {
 			raw, _ := io.ReadAll(request.Body)
 			_ = json.Unmarshal(raw, &fetchBody)
 			_, _ = response.Write([]byte(`{"models":{
-				"claude-sonnet-4-5":{"quotaInfo":{"remainingFraction":0.5,"resetTime":"2026-11-06T00:00:00Z"},"displayName":"Sonnet","supportsThinking":true},
-				"chat_internal":{"quotaInfo":{"remainingFraction":0.1,"resetTime":"2026-11-06T00:00:00Z"}},
-				"gemini-3-pro":{"quotaInfo":{"remainingFraction":0.0,"resetTime":"2026-11-06T00:00:00Z"}}
+				"claude-sonnet-4-5":{"quotaInfo":{"remainingFraction":0.5,"resetTime":"2027-01-15T13:00:00Z"},"displayName":"Sonnet","supportsThinking":true},
+				"chat_internal":{"quotaInfo":{"remainingFraction":0.1,"resetTime":"2027-01-15T13:00:00Z"}},
+				"gemini-3-pro":{"quotaInfo":{"remainingFraction":0.0,"resetTime":"2027-01-22T08:00:00Z"}}
 			}}`))
 		default:
 			response.WriteHeader(http.StatusNotFound)
@@ -93,6 +93,14 @@ func TestFetchUsageBuildsModelSnapshotAndDocument(t *testing.T) {
 	}
 	if string(entries[1].Availability()) != "exhausted" {
 		t.Fatalf("gemini availability = %v", entries[1].Availability())
+	}
+	// 窗口长度由 reset 距离推断：5h → 18000s，7 天 → 604800s。
+	// 缺这个字段时采样会被跳过，agy 的窗口统计永远为空。
+	if entries[0].WindowSeconds() != 5*60*60 {
+		t.Fatalf("claude window seconds = %d, want 18000", entries[0].WindowSeconds())
+	}
+	if entries[1].WindowSeconds() != 7*24*60*60 {
+		t.Fatalf("gemini window seconds = %d, want 604800", entries[1].WindowSeconds())
 	}
 
 	var payload map[string]any

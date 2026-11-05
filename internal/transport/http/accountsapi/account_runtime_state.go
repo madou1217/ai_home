@@ -1,6 +1,7 @@
 package accountsapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -93,6 +94,7 @@ func (handler *Handler) handleAccountRuntimeState(
 				writeApplicationError(response, err)
 				return
 			}
+			handler.syncRuntimeEligibility(request.Context(), accountRef, nil)
 			writeJSON(response, http.StatusOK, runtimeStateResponse{Data: runtimeStateView{
 				AccountRef: accountRef.String(),
 				Status:     "healthy",
@@ -113,6 +115,9 @@ func (handler *Handler) handleAccountRuntimeState(
 			writeApplicationError(response, err)
 			return
 		}
+		// 持久化成功后立即投影到内存征召索引：Node 推来的 auth_invalid 要能挡住路由，
+		// 不能等到下一次重启才生效。
+		handler.syncRuntimeEligibility(request.Context(), accountRef, &state)
 		writeJSON(response, http.StatusOK, runtimeStateResponse{
 			Data: newRuntimeStateView(state, time.Now()),
 		})
@@ -128,6 +133,28 @@ func (handler *Handler) handleAccountRuntimeState(
 	default:
 		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPut)
 		writeMethodNotAllowed(response)
+	}
+}
+
+// syncRuntimeEligibility 把运行态文档（或删除事件）投影到征召资格索引。
+//
+// 失败只记日志：文档已经落库，下一次启动会重新投影；这里不能让管理写请求失败。
+func (handler *Handler) syncRuntimeEligibility(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	state *runtimecore.AccountState,
+) {
+	if handler == nil || handler.runtimeStates == nil {
+		return
+	}
+	var err error
+	if state == nil {
+		err = handler.runtimeStates.ClearAccountState(ctx, accountRef)
+	} else {
+		err = handler.runtimeStates.ApplyAccountState(ctx, *state)
+	}
+	if err != nil {
+		logServerError("sync_runtime_eligibility", err)
 	}
 }
 

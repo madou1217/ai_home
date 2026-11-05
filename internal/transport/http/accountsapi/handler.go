@@ -259,7 +259,18 @@ type Dependencies struct {
 	CredentialSnapshots CredentialSnapshotReader
 	// AccountModels 是批量模型关系的只读端口，可为空（未装配时 503，WebUI 回落本地缓存）。
 	AccountModels AccountModelReader
+	// RuntimeStates 把持久化运行态投影到征召资格索引，可为空（纯管理端点/测试）。
+	RuntimeStates RuntimeStateApplier
 	Authorizer    Authorizer
+}
+
+// RuntimeStateApplier 把持久化的账号运行态投影到征召资格索引。
+//
+// 账号 enabled 只表示用户意图；auth_invalid / cooldown 等阻塞走这里，路由判定
+// 才能是 enabled && 无有效阻塞（见 docs/plans/2026-11-06-account-enable-unification.md）。
+type RuntimeStateApplier interface {
+	ApplyAccountState(ctx context.Context, state runtimecore.AccountState) error
+	ClearAccountState(ctx context.Context, accountRef accountcore.AccountRef) error
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
@@ -278,6 +289,7 @@ type Handler struct {
 	native              NativeAccountDecoder
 	credentialSnapshots CredentialSnapshotReader
 	accountModels       AccountModelReader
+	runtimeStates       RuntimeStateApplier
 	authorizer          Authorizer
 }
 
@@ -314,6 +326,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		native:              dependencies.NativeAccounts,
 		credentialSnapshots: dependencies.CredentialSnapshots,
 		accountModels:       dependencies.AccountModels,
+		runtimeStates:       dependencies.RuntimeStates,
 		authorizer:          dependencies.Authorizer,
 	}, nil
 }

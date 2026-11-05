@@ -37,6 +37,9 @@ WebUI 的 6 类路由里有三件 Node 独有能力：
 - Node 每次 PUT 投影都会落库；Go 启动时 Restore 从库恢复，不再依赖 Node 再推一次。
 - 真机演练：用生产 aih.db 的**副本**跑 v21→v22，43 个账号原样保留、新表为空
   （AIH_REAL_DB=... go test -run TestUpgradeRealDatabaseCopy）。
+- **真机已上线验证（2026-11-06）**：重建并重启 Go core 后，`user_version=22`、43 个账号
+  原样保留，`model_alias` 里落下 2 条 Node 推送的别名（id 8 位十六进制、position 0/1、
+  enabled 0/1 与 Node 一致）——推送 → 落库 → 保序整条链路在生产库上跑通。
 CRUD 用例已完成：Service 的 Create/Update/Delete/SetEnabled，同作用域重名拒绝
 （跨作用域允许同名），未知 Provider 归一到 all，全部走「读集合 → 改一条 → 整体替换」，
 复用同一套校验与代次推进。

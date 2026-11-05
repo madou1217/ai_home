@@ -128,6 +128,13 @@
     遗留：`lib/account/quota-window-stats.js` 与 `quota-window-reconstruction.js` 现在
     **只剩 `test/quota-window-reconstruction.test.js` 一个调用方**；Go 的窗口重建已经在跑，
     等切流落地后这两个文件与那份测试可以一起删（约 988 行）。
+11. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
+    真机对比：两侧 `/healthz` 都是 200 且 body 除空白外一致；`/readyz` 都是 200，
+    但 `accounts` 计数来自各自的库（Node: codex 1/gemini 1…，Go: agy 0/cline 2/codebuddy 7…）。
+    即使 body 一致也**不该划转**：Node 是 Go 的监督者，若把 liveness 代理到 Go，
+    Go 挂掉会让 Node 的 `/healthz` 失败，编排器进而重启 Node——把「子进程故障」
+    放大成「整机重启」，且反过来杀掉 Go。这是依赖倒置，不是迁移进度问题。
+    `/readyz` 的 `accounts` 字段还存在数据归属分叉，真要划转得先统一个数源。
 9. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

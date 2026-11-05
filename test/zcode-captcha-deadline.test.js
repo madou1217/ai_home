@@ -38,7 +38,9 @@ test('解算浏览器卡死时按 timeoutMs 抛错并杀进程', async () => {
     timeoutMs: 1200,
     executablePath: '/bin/echo',
     fs: createFakeFs('/tmp/aih-captcha-test'),
-    spawnImpl: () => child
+    spawnImpl: () => child,
+    // 关掉解算冷却：本文件只关心「有没有上界」，不要为冷却多等 8 秒。
+    minIntervalMs: 0
   }).then(() => null, (err) => err);
   const elapsedMs = Date.now() - startedAt;
   assert.ok(error, '应当抛错，而不是一直等待');

@@ -63,27 +63,20 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/clinerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
-	"github.com/madou1217/ai_home/internal/transport/http/grokrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
-	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
-	"github.com/madou1217/ai_home/internal/transport/http/kirorelay"
 	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/opencoderelay"
-	"github.com/madou1217/ai_home/internal/transport/http/qoderrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/zcoderelay"
 )
 
 const (
@@ -1078,97 +1071,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			err,
 		)
 	}
-	// cline 透传：与家族共用 chat completions 入口，但服务的是 cline 账号。
-	// 它是 relaycore「多数派零覆盖」的验证用例——上游就是标准 OpenAI 兼容端点。
-	clineRelayAccounts, err := newProviderRelayAccountSource(
-		clinerelay.ProviderID,
-		catalog,
-		inference.recruiter,
-		clineRelayTransportPolicy{},
-	)
+	// 单 Provider 透传模块：账号来源与 Provider 变体由同一张注册表构造（见 relay_modules.go）。
+	relayModules, err := buildRelayModules(relayBuildContext{
+		Catalog:   catalog,
+		Recruiter: inference.recruiter,
+		AIHomeDir: aiHomeDir,
+	})
 	if err != nil {
 		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 cline 透传账号来源失败: %w", err)
-	}
-	// grok 透传：与 cline 同属「多数派零覆盖」（标准 OpenAI 端点，无硬约束）。
-	grokRelayAccounts, err := newProviderRelayAccountSource(
-		grokrelay.ProviderID,
-		catalog,
-		inference.recruiter,
-		grokRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 grok 透传账号来源失败: %w", err)
-	}
-	// kimi 透传：两处差异（设备指纹头 + 请求体字段翻译），且都**依赖账号**，
-	// 因此它的 Provider 是「按账号组装」的适配器（见 kimi_relay_provider.go）。
-	kimiRelayAccounts, err := newProviderRelayAccountSource(
-		kimirelay.ProviderID,
-		catalog,
-		inference.recruiter,
-		kimiRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 kimi 透传账号来源失败: %w", err)
-	}
-	// qoder 透传：WASM 签名 + zstd 请求体，两个区域各一条账号来源。凭据策略只认
-	// 原生登录态（静态 API Key 没有签名材料），其余形态交回 Canonical。
-	qoderRelayAccounts, err := newProviderRelayAccountSource(
-		qoderrelay.QoderProviderID,
-		catalog,
-		inference.recruiter,
-		qoderRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 qoder 透传账号来源失败: %w", err)
-	}
-	qoderCNRelayAccounts, err := newProviderRelayAccountSource(
-		qoderrelay.QoderCNProviderID,
-		catalog,
-		inference.recruiter,
-		qoderRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 qodercn 透传账号来源失败: %w", err)
-	}
-	// kiro 透传：CodeWhisperer 流式 RPC（Coral content-type + event-stream）。
-	kiroRelayAccounts, err := newProviderRelayAccountSource(
-		kirorelay.ProviderID,
-		catalog,
-		inference.recruiter,
-		kiroRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 透传账号来源失败: %w", err)
-	}
-	// zcode 透传：端点/鉴权按套餐与区域分流，请求体需要官方 harness；宿主事实由
-	// loadZcodeHostFacts 读取（读不到时 fail-soft，与 Node 行为一致）。
-	zcodeRelayAccounts, err := newProviderRelayAccountSource(
-		zcoderelay.ProviderID,
-		catalog,
-		inference.recruiter,
-		zcodeRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 zcode 透传账号来源失败: %w", err)
-	}
-	// OpenCode 官方 API Key 透传：只承接 native api-key 凭据。OAuth/CLI/free-tier
-	// 语义依赖 Node 客户端，凭据策略会把它们留在 Node。
-	opencodeRelayAccounts, err := newProviderRelayAccountSource(
-		opencoderelay.ProviderID,
-		catalog,
-		inference.recruiter,
-		opencodeRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 opencode 透传账号来源失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
 	// 同一入口上挂多个透传 Provider：**一个** relaycore.Handler + ProviderChain
 	// + 合并的账号来源。
@@ -1179,15 +1090,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
 		codebuddyfamilyrelay.Dependencies{
 			Accounts: relaycore.NewAccountSourceChain(
-				clineRelayAccounts,
-				grokRelayAccounts,
-				kimiRelayAccounts,
-				opencodeRelayAccounts,
-				qoderRelayAccounts,
-				qoderCNRelayAccounts,
-				zcodeRelayAccounts,
-				kiroRelayAccounts,
-				familyRelayAccounts,
+				append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
 			),
 			Fallback:    inference.handler,
 			Credentials: credentials,
@@ -1196,15 +1099,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Clock:       time.Now,
 			// 同一入口上还要服务 cline / grok / kimi：把它们的 Provider 接进链里。
 			// kimi 的 Provider 是「按账号组装」的适配器（设备指纹依赖账号）。
-			ExtraProviders: []relaycore.Provider{
-				clinerelay.NewProvider(""),
-				grokrelay.NewProvider(""),
-				newKimiRelayProvider(kimiClientVersion()),
-				opencoderelay.NewProvider(),
-				qoderrelay.NewProvider(),
-				zcoderelay.NewProvider(loadZcodeHostFacts(aiHomeDir)),
-				kirorelay.NewProvider(),
-			},
+			ExtraProviders: relayModuleProviders(relayModules),
 		},
 	)
 	if err != nil {

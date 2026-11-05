@@ -49,6 +49,10 @@ PUT 更新 / DELETE 删除 / POST {id}/enabled 启停），错误映射 400/404/
 影子对账已就位：WebUI 列表路由在返回 Node 数据后，异步拉 Go 的副本做比较
 （missing / extra / changed，按 (alias, provider) 对齐），结果交给可选的
 onAliasShadowResult 观察者；不 await、不改变响应、Go 不可用时静默跳过。
+目标候选已完成：Go 的 `/targets` 从当前已发布的路由目录按 Provider 聚合（去重 + 升序），
+真机返回 8 个 Provider（claude 2 / cline 16 / codebuddy 26 / codex 18 / kiro 5 …）。
+目录尚未构建时返回 503 而不是空表，让前端能区分「暂时没有」与「还没就绪」。
+
 剩余：Node 代理的写路径灰度。
 
 ### C 的可执行清单（客户端已就绪）

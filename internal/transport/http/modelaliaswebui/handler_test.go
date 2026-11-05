@@ -282,3 +282,34 @@ func TestHandlerReplaceGroupRejectsMissingFields(t *testing.T) {
 		t.Fatalf("status = %d, want 400", recorder.Code)
 	}
 }
+
+func TestHandlerListsTargets(t *testing.T) {
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    &fakeService{},
+		Targets:    func() map[string][]string { return map[string][]string{"codex": {"gpt-5.1"}} },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	recorder := do(handler, http.MethodGet, Path+"/targets", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	payload := decode(t, recorder)
+	targets, ok := payload["targets"].(map[string]any)
+	if !ok {
+		t.Fatalf("targets = %v", payload["targets"])
+	}
+	if len(targets["codex"].([]any)) != 1 {
+		t.Fatalf("codex targets = %v", targets["codex"])
+	}
+}
+
+// 目录还没构建完时返回 503 而不是空表：让前端能区分「暂时没有」与「还没就绪」。
+func TestHandlerTargetsUnavailable(t *testing.T) {
+	handler := newHandler(t, &fakeService{}, true)
+	if recorder := do(handler, http.MethodGet, Path+"/targets", ""); recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", recorder.Code)
+	}
+}

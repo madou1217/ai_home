@@ -925,6 +925,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Authorizer: authorizer,
 		Service:    aliasService,
 		Refresh:    inference.catalogRefresh.Refresh,
+		// 目标候选来自当前已发布的路由目录：没有目录时返回空表（接口 200），
+		// 而不是让前端把「还没构建完」当成服务不可用。
+		Targets: func() map[string][]string {
+			models, listErr := inference.models.ListRoutableModels(context.Background())
+			if listErr != nil {
+				return nil
+			}
+			return groupAliasTargets(models)
+		},
 	})
 	if err != nil {
 		_ = inference.Close()

@@ -47,12 +47,18 @@ type Dependencies struct {
 	// 为什么刷新失败不报错：别名已经安全落库，下一次目录构建仍会带上它；
 	// 把刷新失败报成写失败会让用户以为没保存，反而去重复操作。
 	Refresh func(context.Context) error
+	// Targets 返回「各 Provider 当前可用的目标模型」；为 nil 时该接口返回 unavailable。
+	//
+	// 为什么用函数而不是直接依赖目录包：传输层只需要一张现成的表，
+	// 让它知道目录怎么构建会把两层耦合在一起。
+	Targets func() map[string][]string
 }
 
 type Handler struct {
 	authorizer Authorizer
 	service    Service
 	refresh    func(context.Context) error
+	targets    func() map[string][]string
 }
 
 func NewHandler(dependencies Dependencies) (*Handler, error) {
@@ -63,6 +69,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer: dependencies.Authorizer,
 		service:    dependencies.Service,
 		refresh:    dependencies.Refresh,
+		targets:    dependencies.Targets,
 	}, nil
 }
 
@@ -109,6 +116,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.update(response, request, parts[0])
 	case len(parts) == 1 && request.Method == http.MethodDelete:
 		handler.remove(response, request, parts[0])
+	case len(parts) == 1 && parts[0] == "targets" && request.Method == http.MethodGet:
+		handler.listTargets(response)
 	case len(parts) == 1 && parts[0] == "replace" && request.Method == http.MethodPost:
 		handler.replaceGroup(response, request)
 	case len(parts) == 2 && parts[1] == "enabled" && request.Method == http.MethodPost:
@@ -201,6 +210,19 @@ func (handler *Handler) setEnabled(response http.ResponseWriter, request *http.R
 	}
 	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "generation": generation})
+}
+
+// listTargets 返回各 Provider 可选的别名目标。
+func (handler *Handler) listTargets(response http.ResponseWriter) {
+	if handler.targets == nil {
+		writeError(response, http.StatusServiceUnavailable, "targets_unavailable", "目标模型列表不可用")
+		return
+	}
+	targets := handler.targets()
+	if targets == nil {
+		targets = map[string][]string{}
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "targets": targets})
 }
 
 // replaceGroupPayload 是整组替换的请求体：删掉 replaceIds，再追加 records。

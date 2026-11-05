@@ -145,6 +145,13 @@
     读投影；`/targets` 仍由 Node 算）。既有 9 条 Node 路径测试原样通过，另有 8 条 Go 归属
     用例与 1 条真机用例（默认跳过）。
     待办：**重启 Node 后真机验收六个操作**；在那之前线上仍走旧实现。
+13. **控制面设备接口是 Node 侧新增的只读面（2026-11-06）。**
+    /v0/node-rpc/device-{status,nodes,accounts,sessions,node-sessions,session-messages,node-session-messages}
+    此前前端在调、后端从来没实现，导致 WebUI 连接页永远停在 404。现已用 Management Key 鉴权补齐，
+    数据来自 Node 的 state / 运行时会话库。**它不是迁移产物**：等账户与会话面迁到 Go 之后，
+    这些接口应当改为读 Go，届时 Node 只保留路由壳。
+    真机：status/nodes/accounts/sessions 均 200，会话消息按 detail.role 映射后同一会话 9 条。
+
 11. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

@@ -121,8 +121,12 @@ func TestServiceUpdateAndDeleteMissing(t *testing.T) {
 func TestServiceDeleteAndToggle(t *testing.T) {
 	service := newTestService(t, &fakeRepository{})
 	record, _, _ := service.Create(context.Background(), CreateInput{Alias: "a", Target: "x"})
-	if _, err := service.SetEnabled(context.Background(), record.ID, false); err != nil {
+	toggled, _, err := service.SetEnabled(context.Background(), record.ID, false)
+	if err != nil {
 		t.Fatalf("SetEnabled() error = %v", err)
+	}
+	if toggled.ID != record.ID || toggled.IsEnabled() {
+		t.Fatalf("toggle 返回的记录不对: %+v", toggled)
 	}
 	if service.List()[0].IsEnabled() {
 		t.Fatal("停用没有生效")
@@ -186,7 +190,7 @@ func TestServiceUpdateReturnsNormalizedRecord(t *testing.T) {
 func TestServiceReplaceGroupDropsAndAppends(t *testing.T) {
 	service := newTestService(t, &fakeRepository{})
 	first, _, _ := service.Create(context.Background(), CreateInput{Alias: "old", Target: "x", Provider: "codex"})
-	created, generation, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+	created, generation, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
 		ReplaceIDs: []string{first.ID},
 		Records:    []CreateInput{{Alias: "new", Target: "y", Provider: "codex"}},
 	})
@@ -215,7 +219,7 @@ func TestServiceReplaceGroupDropsAndAppends(t *testing.T) {
 func TestServiceReplaceGroupWithNoRecordsDeletes(t *testing.T) {
 	service := newTestService(t, &fakeRepository{})
 	first, _, _ := service.Create(context.Background(), CreateInput{Alias: "a", Target: "x"})
-	if _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+	if _, _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
 		ReplaceIDs: []string{first.ID},
 	}); err != nil {
 		t.Fatalf("ReplaceGroup() error = %v", err)
@@ -230,7 +234,7 @@ func TestServiceReplaceGroupRejectsDuplicateAcrossGroups(t *testing.T) {
 	service := newTestService(t, &fakeRepository{})
 	keep, _, _ := service.Create(context.Background(), CreateInput{Alias: "dup", Target: "x", Provider: "codex"})
 	drop, _, _ := service.Create(context.Background(), CreateInput{Alias: "other", Target: "y", Provider: "codex"})
-	_, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+	_, _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
 		ReplaceIDs: []string{drop.ID},
 		Records:    []CreateInput{{Alias: "dup", Target: "z", Provider: "codex"}},
 	})
@@ -279,7 +283,7 @@ func TestServiceCreateRejectsBadWildcard(t *testing.T) {
 
 func TestServiceReplaceGroupRejectsBadWildcard(t *testing.T) {
 	service := newTestService(t, &fakeRepository{})
-	if _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+	if _, _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
 		Records: []CreateInput{{Alias: "x*", Target: "y"}},
 	}); !errors.Is(err, ErrInvalidAliasWildcard) {
 		t.Fatalf("error = %v, want ErrInvalidAliasWildcard", err)

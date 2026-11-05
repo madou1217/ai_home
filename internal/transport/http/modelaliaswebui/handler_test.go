@@ -50,21 +50,21 @@ func (fake *fakeService) Delete(_ context.Context, id string) (int64, error) {
 	return 3, nil
 }
 
-func (fake *fakeService) ReplaceGroup(_ context.Context, input modelalias.ReplaceGroupInput) ([]modelalias.Record, int64, error) {
+func (fake *fakeService) ReplaceGroup(_ context.Context, input modelalias.ReplaceGroupInput) ([]modelalias.Record, int64, int, error) {
 	fake.lastReplace = input
 	if fake.err != nil {
-		return nil, 0, fake.err
+		return nil, 0, 0, fake.err
 	}
-	return []modelalias.Record{{ID: "new1", Alias: "a", Target: "b"}}, 5, nil
+	return []modelalias.Record{{ID: "new1", Alias: "a", Target: "b"}}, 5, 2, nil
 }
 
-func (fake *fakeService) SetEnabled(_ context.Context, id string, enabled bool) (int64, error) {
+func (fake *fakeService) SetEnabled(_ context.Context, id string, enabled bool) (modelalias.Record, int64, error) {
 	fake.lastID = id
 	fake.lastEnable = &enabled
 	if fake.err != nil {
-		return 0, fake.err
+		return modelalias.Record{}, 0, fake.err
 	}
-	return 4, nil
+	return modelalias.Record{ID: id, Alias: "a", Target: "b", Enabled: &enabled}, 4, nil
 }
 
 type stubAuthorizer struct{ allowed bool }
@@ -160,8 +160,14 @@ func TestHandlerUpdateDeleteToggleRouting(t *testing.T) {
 		t.Fatalf("update 路由错误: id=%q input=%+v", service.lastID, service.lastUpdate)
 	}
 
-	if recorder := do(handler, http.MethodPost, Path+"/abcd1234/enabled", `{"enabled":false}`); recorder.Code != http.StatusOK {
-		t.Fatalf("toggle status = %d", recorder.Code)
+	toggleRecorder := do(handler, http.MethodPost, Path+"/abcd1234/enabled", `{"enabled":false}`)
+	if toggleRecorder.Code != http.StatusOK {
+		t.Fatalf("toggle status = %d", toggleRecorder.Code)
+	}
+	// Node 的 toggle 响应带 alias，前端用它就地更新那一行；只给代次会逼前端再拉一次列表。
+	toggled := decode(t, toggleRecorder)
+	if toggled["alias"] == nil {
+		t.Fatalf("toggle 响应缺少 alias: %v", toggled)
 	}
 	if service.lastEnable == nil || *service.lastEnable {
 		t.Fatalf("toggle 未传递 false: %v", service.lastEnable)
@@ -271,6 +277,10 @@ func TestHandlerReplaceGroupPassesIDsAndRecords(t *testing.T) {
 	}
 	if payload["generation"].(float64) != 5 {
 		t.Fatalf("generation = %v", payload["generation"])
+	}
+	// removed 与 Node 同义：被删掉的旧记录数，前端用它提示「已替换几条」。
+	if payload["removed"].(float64) != 2 {
+		t.Fatalf("removed = %v, want 2", payload["removed"])
 	}
 }
 

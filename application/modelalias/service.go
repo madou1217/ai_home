@@ -194,10 +194,12 @@ func (service *Service) Delete(ctx context.Context, id string) (int64, error) {
 	return service.store.Replace(remaining)
 }
 
-// SetEnabled 只切换启停，保留其余字段。
-func (service *Service) SetEnabled(ctx context.Context, id string, enabled bool) (int64, error) {
-	_, generation, err := service.Update(ctx, id, UpdateInput{Enabled: &enabled})
-	return generation, err
+// SetEnabled 只切换启停，保留其余字段，并返回切换后的记录。
+//
+// 返回记录而不是只返回代次：WebUI 的 toggle 响应里带 alias，前端用它就地更新那一行；
+// 只给代次会逼前端再发一次列表请求。
+func (service *Service) SetEnabled(ctx context.Context, id string, enabled bool) (Record, int64, error) {
+	return service.Update(ctx, id, UpdateInput{Enabled: &enabled})
 }
 
 // normalizeScope 把未知 Provider 归一到 all（与 Node 同口径）。
@@ -263,9 +265,9 @@ type ReplaceGroupInput struct {
 func (service *Service) ReplaceGroup(
 	ctx context.Context,
 	input ReplaceGroupInput,
-) ([]Record, int64, error) {
+) ([]Record, int64, int, error) {
 	if service == nil || service.store == nil {
-		return nil, 0, ErrInvalidProjection
+		return nil, 0, 0, ErrInvalidProjection
 	}
 	replaced := make(map[string]struct{}, len(input.ReplaceIDs))
 	for _, id := range input.ReplaceIDs {
@@ -298,10 +300,10 @@ func (service *Service) ReplaceGroup(
 			Description:    strings.TrimSpace(item.Description),
 		}
 		if !record.IsValid() {
-			return nil, 0, ErrInvalidAlias
+			return nil, 0, 0, ErrInvalidAlias
 		}
 		if err := ValidateAliasPattern(record.Alias); err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		created = append(created, record)
 	}
@@ -312,18 +314,19 @@ func (service *Service) ReplaceGroup(
 	for _, record := range combined {
 		key := record.ScopeProvider() + "\u0000" + record.Alias
 		if _, duplicate := seen[key]; duplicate {
-			return nil, 0, ErrDuplicateAlias
+			return nil, 0, 0, ErrDuplicateAlias
 		}
 		seen[key] = struct{}{}
 	}
 	generation, err := service.store.Replace(combined)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
+	removed := len(records) - len(kept)
 	if len(created) == 0 {
-		return nil, generation, nil
+		return nil, generation, removed, nil
 	}
-	return service.recordsTail(len(created)), generation, nil
+	return service.recordsTail(len(created)), generation, removed, nil
 }
 
 // recordsTail 返回集合末尾 n 条（ReplaceGroup 刚追加的就是它们）。

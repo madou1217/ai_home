@@ -34,8 +34,8 @@ type Service interface {
 	Create(ctx context.Context, input modelalias.CreateInput) (modelalias.Record, int64, error)
 	Update(ctx context.Context, id string, input modelalias.UpdateInput) (modelalias.Record, int64, error)
 	Delete(ctx context.Context, id string) (int64, error)
-	SetEnabled(ctx context.Context, id string, enabled bool) (int64, error)
-	ReplaceGroup(ctx context.Context, input modelalias.ReplaceGroupInput) ([]modelalias.Record, int64, error)
+	SetEnabled(ctx context.Context, id string, enabled bool) (modelalias.Record, int64, error)
+	ReplaceGroup(ctx context.Context, input modelalias.ReplaceGroupInput) ([]modelalias.Record, int64, int, error)
 }
 
 // Dependencies 汇总别名 CRUD 的依赖。
@@ -203,13 +203,13 @@ func (handler *Handler) setEnabled(response http.ResponseWriter, request *http.R
 		writeError(response, http.StatusBadRequest, "invalid_alias", "缺少 enabled")
 		return
 	}
-	generation, err := handler.service.SetEnabled(request.Context(), id, *payload.Enabled)
+	record, generation, err := handler.service.SetEnabled(request.Context(), id, *payload.Enabled)
 	if err != nil {
 		writeServiceError(response, err)
 		return
 	}
 	handler.refreshCatalog(request.Context())
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "generation": generation})
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "alias": record, "generation": generation})
 }
 
 // listTargets 返回各 Provider 可选的别名目标。
@@ -262,7 +262,7 @@ func (handler *Handler) replaceGroup(response http.ResponseWriter, request *http
 			Description:    valueOr(record.Description),
 		})
 	}
-	created, generation, err := handler.service.ReplaceGroup(request.Context(), modelalias.ReplaceGroupInput{
+	created, generation, removed, err := handler.service.ReplaceGroup(request.Context(), modelalias.ReplaceGroupInput{
 		ReplaceIDs: payload.ReplaceIDs,
 		Records:    inputs,
 	})
@@ -276,6 +276,7 @@ func (handler *Handler) replaceGroup(response http.ResponseWriter, request *http
 	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":         true,
+		"removed":    removed,
 		"aliases":    created,
 		"generation": generation,
 	})

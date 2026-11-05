@@ -296,3 +296,21 @@ test('样本缺口导致起点/末端未覆盖时降级为 reconstructed', () =>
   // 消耗仍按「起点满额」算，不拿第一个样本当起点
   assert.equal(windows[0].consumedPct, 50);
 });
+
+test('剩余额度未知（NULL）不能当成 0% 剩余', () => {
+  const closeAtMs = BASE + 5 * HOUR;
+  const { windows } = build({
+    samples: [
+      sample(BASE + 10 * MINUTE, closeAtMs, null),
+      sample(BASE + HOUR, closeAtMs, null)
+    ],
+    nowMs: BASE + 2 * HOUR
+  });
+  assert.equal(windows.length, 1);
+  assert.equal(windows[0].sampleCount, 2);
+  assert.equal(windows[0].remainingStartPct, null);
+  assert.equal(windows[0].remainingEndPct, null);
+  // Number(null) === 0 会把「未知」算成「消耗 100%」，这里必须是未知
+  assert.equal(windows[0].consumedPct, null);
+  assert.equal(windows[0].peakConsumedPct, null);
+});

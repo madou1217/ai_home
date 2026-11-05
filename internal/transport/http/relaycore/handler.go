@@ -542,6 +542,39 @@ func (handler *Handler) attemptRelay(
 	}
 	if upstreamResponse.StatusCode >= http.StatusOK &&
 		upstreamResponse.StatusCode < http.StatusMultipleChoices {
+		// 200 + 业务错误体（zcode 的 code 1005 等）：必须在记录成功**之前**判定，
+		// 否则账号会被记成健康、客户端却收到错误。只对 JSON 响应嗅探，SSE 成功流不能被读走。
+		if classifier, ok := provider.(BusinessFailureClassifier); ok && isJSONContentType(upstreamResponse.Header) {
+			originalBody := upstreamResponse.Body
+			prefix, readErr := io.ReadAll(io.LimitReader(originalBody, sharedfailure.MaxErrorPayloadBytes+1))
+			if readErr == nil {
+				upstreamResponse.Body = &replayReadCloser{
+					Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
+					Closer: originalBody,
+				}
+				if classification, failed := classifier.ClassifyBusinessFailure(
+					upstreamResponse.StatusCode,
+					upstreamResponse.Header,
+					prefix,
+				); failed {
+					retry := handler.recordClassification(request.Context(), route, observation, classification)
+					closeUpstreamResponse(upstreamResponse)
+					status := http.StatusBadGateway
+					if classification.Kind() == runtimecore.FailureQuotaExhausted {
+						status = http.StatusTooManyRequests
+					}
+					return attemptOutcome{
+						route:        route,
+						retryAccount: retry,
+						failure: relayFailure{
+							status:  status,
+							code:    "upstream_business_failure",
+							message: "上游返回业务错误",
+						},
+					}, retry
+				}
+			}
+		}
 		// 成功也要记账：否则运行态与仪表盘看不到这个账号在工作。
 		handler.recordSuccess(request.Context(), route, observation)
 		return attemptOutcome{
@@ -686,6 +719,14 @@ func (handler *Handler) recordTransportFailure(
 // 边缘拒绝（与账号无关，调用方应合成网关 502 而不是透传拦截页）」。
 //
 // 观察器必须看到原始正文：按上限预读一次，再用 MultiReader 把同样的字节交付给调用方。
+// isJSONContentType 只对 JSON 响应做业务失败嗅探（SSE 成功流不能提前读）。
+func isJSONContentType(header http.Header) bool {
+	if header == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(header.Get("Content-Type")), "json")
+}
+
 func (handler *Handler) recordHTTPFailure(
 	ctx context.Context,
 	provider Provider,

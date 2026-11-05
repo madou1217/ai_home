@@ -50,7 +50,6 @@ import { formatImportJobProgress } from '@/features/accounts/account-import-expo
 import {
   canConfigureWindowActivation,
   canEditAccountConfig,
-  canEditAccountRoutingRules,
   canReauthAccount,
   canRestoreAccountScheduling,
   canRunAccountActivity,
@@ -275,9 +274,6 @@ export default function MobileAccounts(_props: MobilePageProps) {
         icon: <SyncOutlined />,
         onAction: () => { void actions.handleReauth(record); }
       });
-    }
-    if (canEditAccountRoutingRules(record)) {
-      list.push({ key: 'routing-rules', label: '调度规则', icon: <CodeOutlined />, onAction: () => actions.handleRoutingRules(record) });
     }
     if (canRestoreAccountScheduling(record)) {
       list.push({

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Modal, Timeline, Tag, Spin, Empty, Typography, Space, Button } from 'antd';
-import { HistoryOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
+import { Timeline, Tag, Spin, Empty, Typography, Button } from 'antd';
+import { ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import type { Account } from '@/types';
 import { accountsAPI } from '@/services/api';
 import './account-overlays.css';
@@ -29,10 +29,10 @@ export interface QuotaResetEvent {
   currentPlanType?: string | null;
 }
 
-interface AccountQuotaResetHistoryModalProps {
+interface AccountQuotaResetHistoryPanelProps {
   account: Account | null;
-  open: boolean;
-  onClose: () => void;
+  /** 面板可见性由外层控制（重置弹窗的 Tab 激活状态）。 */
+  active: boolean;
 }
 
 function formatTime(timestampMs: number): string {
@@ -65,11 +65,10 @@ function formatDuration(ms: number): string {
   return parts.join('') || '1分钟内';
 }
 
-export default function AccountQuotaResetHistoryModal({
+export function AccountQuotaResetHistoryPanel({
   account,
-  open,
-  onClose
-}: AccountQuotaResetHistoryModalProps) {
+  active
+}: AccountQuotaResetHistoryPanelProps) {
   const [loading, setLoading] = useState(false);
   const [events, setEvents] = useState<QuotaResetEvent[]>([]);
 
@@ -91,36 +90,21 @@ export default function AccountQuotaResetHistoryModal({
   };
 
   useEffect(() => {
-    if (open && account) {
+    if (active && account) {
       void fetchEvents();
     } else {
       setEvents([]);
     }
-  }, [open, account?.provider, account?.accountRef]);
-
-  const title = (
-    <Space>
-      <HistoryOutlined />
-      <span>配额重置历史记录 - {account?.displayName || account?.email || account?.accountRef}</span>
-    </Space>
-  );
+  }, [active, account?.provider, account?.accountRef]);
 
   return (
-    <Modal
-      title={title}
-      open={open}
-      onCancel={onClose}
-      footer={[
-        <Button key="refresh" icon={<ReloadOutlined />} onClick={fetchEvents} loading={loading}>
+    <div className="quota-reset-history">
+      <div className="quota-reset-history__toolbar">
+        <Text type="secondary">只记录检测到的重置事件；按发生时间倒序。</Text>
+        <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void fetchEvents()}>
           刷新
-        </Button>,
-        <Button key="close" type="primary" onClick={onClose}>
-          关闭
         </Button>
-      ]}
-      width={640}
-      destroyOnClose
-    >
+      </div>
       <Spin spinning={loading}>
         <div className="quota-reset-history-scroll">
           {events.length === 0 ? (
@@ -199,6 +183,6 @@ export default function AccountQuotaResetHistoryModal({
           )}
         </div>
       </Spin>
-    </Modal>
+    </div>
   );
 }

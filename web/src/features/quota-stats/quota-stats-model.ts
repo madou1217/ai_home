@@ -8,17 +8,8 @@ import type {
 // 额度统计页的纯展示逻辑：标签、时间格式、指标取值、空态文案。
 // 窗口语义全部由服务端算好，这里不重新推导边界。
 
-export interface QuotaDimensionOption {
-  label: string;
-  value: number;
-}
-
-export const QUOTA_DIMENSION_OPTIONS: QuotaDimensionOption[] = [
-  { label: '5h', value: 300 },
-  { label: '7天', value: 10080 },
-  { label: '30天', value: 43200 }
-];
-
+// 维度不写死：各账号的窗口长度由服务端从自身数据派生（5h / 12h / 7天 / 30天…），
+// 页面直接渲染 data.dimensions 的 label/available，新增档位无需改前端。
 export const QUOTA_RANGE_OPTIONS = [
   { label: '7 天', value: 7 },
   { label: '30 天', value: 30 },
@@ -97,15 +88,19 @@ export function getResetKindLabel(window: QuotaStatsWindowRow) {
 }
 
 export function getQuotaEmptyDescription(reason: string | null | undefined) {
-  if (reason === 'dimension_unavailable') return '该账号没有这个窗口期';
+  if (reason === 'snapshot_only') return '该账号没有窗口期';
+  if (reason === 'dimension_unavailable') return '暂无窗口数据';
   if (reason === 'no_samples') return '还没有窗口数据';
   if (reason === 'no_windows_in_range') return '所选范围内没有窗口';
   return '暂无窗口数据';
 }
 
 export function getQuotaEmptyHint(reason: string | null | undefined) {
+  if (reason === 'snapshot_only') {
+    return 'API Key / 积分型额度不按窗口推进；上方「当前剩余」来自最新一次快照。';
+  }
   if (reason === 'dimension_unavailable') {
-    return '额度窗口只对订阅制账号存在；API Key 账号没有上游窗口。';
+    return '该账号还没有窗口期数据；API Key / 积分型额度不按窗口推进，有额度快照时会直接显示当前剩余。';
   }
   return '历史窗口由重置事件与用量记录尽力重建；采样从本版本起连续记录。';
 }

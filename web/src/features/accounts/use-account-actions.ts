@@ -230,9 +230,6 @@ export function useAccountActions({
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = React.useState(false);
   const [editingAccount, setEditingAccount] = React.useState<Account | null>(null);
-  const [routingRulesForm] = Form.useForm();
-  const [routingRulesAccount, setRoutingRulesAccount] = React.useState<Account | null>(null);
-  const [routingRulesSubmitting, setRoutingRulesSubmitting] = React.useState(false);
   const [importModalVisible, setImportModalVisible] = React.useState(false);
   const [importMode, setImportMode] = React.useState<ImportMode>('file');
   const [importText, setImportText] = React.useState('');
@@ -244,8 +241,8 @@ export function useAccountActions({
   const [exportingAccounts, setExportingAccounts] = React.useState(false);
   const [cliPickerAccount, setCliPickerAccount] = React.useState<Account | null>(null);
   const [kimiDesktopLoginRequest, setKimiDesktopLoginRequest] = React.useState<KimiDesktopLoginRequest | null>(null);
-  const [codexResetAccount, setCodexResetAccount] = React.useState<Account | null>(null);
-  const [quotaResetHistoryAccount, setQuotaResetHistoryAccount] = React.useState<Account | null>(null);
+  // 「重置」是一个入口两个 Tab（重置额度 / 重置历史），所以只存一个账号。
+  const [resetCenterAccount, setResetCenterAccount] = React.useState<Account | null>(null);
   const [accountEgressAccount, setAccountEgressAccount] = React.useState<Account | null>(null);
   const [accountWindowActivationAccount, setAccountWindowActivationAccount] = React.useState<Account | null>(null);
   const [cliTerminals, setCliTerminals] = React.useState<ClientTerminalItem[]>([]);
@@ -532,43 +529,6 @@ export function useAccountActions({
         }
       }
     });
-  };
-
-  const handleRoutingRules = (record: Account) => {
-    if (!canEditAccountRoutingRules(record)) {
-      message.warning('调度规则只用于第三方/自建上游：官方地址与登录态账号返回厂商标准错误码。');
-      return;
-    }
-    setRoutingRulesAccount(record);
-    routingRulesForm.setFieldsValue({
-      upstreamErrorRules: normalizeUpstreamErrorRulesForForm(record.upstreamErrorRules),
-      upstreamErrorGroupIds: record.upstreamErrorGroupIds || [],
-      clearErrorBlock: false
-    });
-  };
-
-  const handleRoutingRulesSubmit = async (): Promise<boolean> => {
-    try {
-      const values = await routingRulesForm.validateFields();
-      if (!routingRulesAccount) return false;
-      setRoutingRulesSubmitting(true);
-      const res = await accountsAPI.updateAccountRoutingRules(routingRulesAccount.provider, routingRulesAccount.accountRef, {
-        upstreamErrorRules: values.upstreamErrorRules || [],
-        upstreamErrorGroupIds: values.upstreamErrorGroupIds || [],
-        clearErrorBlock: values.clearErrorBlock === true
-      });
-      if (!res.ok) return false;
-      message.success('调度规则已更新');
-      setAccounts((prev) => mergeSingleAccount(prev, res.account));
-      setRoutingRulesAccount(null);
-      return true;
-    } catch (error: any) {
-      if (error?.errorFields) return false;
-      message.error(error?.response?.data?.message || '调度规则更新失败');
-      return false;
-    } finally {
-      setRoutingRulesSubmitting(false);
-    }
   };
 
   const handleImportJobUpdate = React.useCallback((job: AccountImportJob) => {
@@ -1898,7 +1858,6 @@ export function useAccountActions({
     // 行级操作
     copyAccountEmail,
     handleEdit,
-    handleRoutingRules,
     handleRestoreScheduling,
     handleReauth,
     confirmDeleteAccount,
@@ -1924,8 +1883,7 @@ export function useAccountActions({
     importJob,
     // 弹窗目标
     setKimiDesktopLoginRequest,
-    setCodexResetAccount,
-    setQuotaResetHistoryAccount,
+    setResetCenterAccount,
     accountEgressAccount,
     setAccountEgressAccount,
     accountWindowActivationAccount,
@@ -1964,13 +1922,6 @@ export function useAccountActions({
         credentialModeChanged: isEditCredentialModeChanged,
         onClose: () => setEditModalVisible(false),
         onSubmit: handleEditSubmit
-      },
-      routingRules: {
-        account: routingRulesAccount,
-        form: routingRulesForm,
-        submitting: routingRulesSubmitting,
-        onClose: () => setRoutingRulesAccount(null),
-        onSubmit: handleRoutingRulesSubmit
       },
       authProgress: {
         open: authProgressVisible,
@@ -2054,14 +2005,10 @@ export function useAccountActions({
           if (request?.openAfterLogin) void handleOpenApp(request.account, 'desktop');
         }
       },
-      codexReset: {
-        account: codexResetAccount,
-        onClose: () => setCodexResetAccount(null),
+      resetCenter: {
+        account: resetCenterAccount,
+        onClose: () => setResetCenterAccount(null),
         onAvailableCountChange: updateCodexResetAvailableCount
-      },
-      quotaResetHistory: {
-        account: quotaResetHistoryAccount,
-        onClose: () => setQuotaResetHistoryAccount(null)
       }
     }
   };

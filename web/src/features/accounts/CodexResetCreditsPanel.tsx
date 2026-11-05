@@ -1,4 +1,4 @@
-import { Button, Empty, Modal, Popconfirm, Spin, Typography, message } from 'antd';
+import { Button, Empty, Popconfirm, Spin, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { accountsAPI } from '@/services/api';
@@ -20,15 +20,18 @@ import {
   readCodexResetPendingOperationId,
   writeCodexResetPendingOperationId
 } from './codex-reset-credit-model';
-import './CodexResetCreditsModal.css';
+import './CodexResetCreditsPanel.css';
 
 const OPERATION_POLL_MS = 1_500;
 
-interface CodexResetCreditsModalProps {
-  open: boolean;
+interface CodexResetCreditsPanelProps {
   account: Account | null;
+  /** 面板可见性由外层（重置弹窗的 Tab）控制：加载与轮询随 active 启停。 */
+  active: boolean;
   onClose: () => void;
   onAvailableCountChange: (accountRef: string, availableCount: number) => void;
+  /** 重置/核对进行中时通知外层禁止关闭，避免中途卸载丢掉轮询。 */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 type OperationRecoveryStatus = 'idle' | 'checking' | 'blocked' | 'reuse';
@@ -62,12 +65,13 @@ function emitOutcome(operation: CodexResetOperation) {
   message[outcome.level](outcome.text);
 }
 
-export function CodexResetCreditsModal({
-  open,
+export function CodexResetCreditsPanel({
+  active,
   account,
   onClose,
-  onAvailableCountChange
-}: CodexResetCreditsModalProps) {
+  onAvailableCountChange,
+  onBusyChange
+}: CodexResetCreditsPanelProps) {
   const accountRef = account?.accountRef || '';
   const [inventory, setInventory] = useState<CodexResetCreditsResponse | null>(null);
   const [recoveredOperation, setRecoveredOperation] = useState<CodexResetOperation | null>(null);
@@ -218,7 +222,7 @@ export function CodexResetCreditsModal({
     setConsuming(false);
     setReconciling(false);
     setRecoveryStatus('idle');
-    if (!open || !accountRef) return undefined;
+    if (!active || !accountRef) return undefined;
 
     const initialize = async () => {
       setLoading(true);
@@ -236,7 +240,7 @@ export function CodexResetCreditsModal({
     return () => {
       if (generationRef.current === generation) generationRef.current += 1;
     };
-  }, [accountRef, loadInventory, open, queryPendingOperation]);
+  }, [accountRef, active, loadInventory, queryPendingOperation]);
 
   const inventoryOperation = inventory?.activeOperation || null;
   const activeOperation = pendingOperationId
@@ -246,7 +250,7 @@ export function CodexResetCreditsModal({
     : inventoryOperation || recoveredOperation;
 
   useEffect(() => {
-    if (!open || !accountRef || activeOperation?.status !== 'consuming') return undefined;
+    if (!active || !accountRef || activeOperation?.status !== 'consuming') return undefined;
     const generation = generationRef.current;
     let stopped = false;
     const poll = async () => {
@@ -280,12 +284,12 @@ export function CodexResetCreditsModal({
     };
   }, [
     accountRef,
+    active,
     activeOperation?.operationId,
     activeOperation?.status,
     clearPendingOperation,
     handleTerminalOperation,
     loadInventory,
-    open,
     setActiveOperation
   ]);
 
@@ -452,6 +456,10 @@ export function CodexResetCreditsModal({
     consuming: consumeRequestPending,
     reconciling: reconciling || recoveryStatus === 'checking'
   });
+  // 关闭按钮在外层 Modal：把锁定状态抬上去，重置/核对中不允许关闭。
+  useEffect(() => {
+    onBusyChange?.(!closeAllowed);
+  }, [closeAllowed, onBusyChange]);
   const handleClose = () => {
     if (closeAllowed) onClose();
   };
@@ -511,70 +519,63 @@ export function CodexResetCreditsModal({
     </Popconfirm>
   );
 
-  return (
-    <Modal
-      className="codex-reset-credits-modal"
-      open={open}
-      title="重置额度"
-      width={560}
-      destroyOnHidden
-      closable={closeAllowed}
-      maskClosable={closeAllowed}
-      keyboard={closeAllowed}
-      onCancel={handleClose}
-      footer={footerAction}
-    >
-      {loading ? (
-        <div className="codex-reset-credits__loading"><Spin /></div>
-      ) : inventory ? (
-        <div className="codex-reset-credits">
-          {statusText ? (
-            <Typography.Text
-              type={statusType}
-              className="codex-reset-credits__status"
-              role="status"
-            >
-              <span
-                className={`hud-led hud-led--${statusType === 'warning' ? 'warn' : 'info'}${consumeRequestPending || recoveryStatus === 'checking' ? ' hud-led--live' : ''}`}
-                aria-hidden="true"
-              />
-              {statusText}
-            </Typography.Text>
-          ) : null}
+  const body = loading ? (
+    <div className="codex-reset-credits__loading"><Spin /></div>
+  ) : inventory ? (
+    <div className="codex-reset-credits">
+      {statusText ? (
+        <Typography.Text
+          type={statusType}
+          className="codex-reset-credits__status"
+          role="status"
+        >
+          <span
+            className={`hud-led hud-led--${statusType === 'warning' ? 'warn' : 'info'}${consumeRequestPending || recoveryStatus === 'checking' ? ' hud-led--live' : ''}`}
+            aria-hidden="true"
+          />
+          {statusText}
+        </Typography.Text>
+      ) : null}
 
-          <div className="codex-reset-credits__table-wrap hud-panel hud-panel--sm">
-            <table className="codex-reset-credits__table">
-              <thead>
-                <tr>
-                  <th scope="col">序号</th>
-                  <th scope="col">过期时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {availableCredits.length > 0 ? availableCredits.map((credit: CodexResetCredit, index) => (
-                  <tr key={credit.creditId}>
-                    <td>{index + 1}</td>
-                    <td>{credit.expiresAt === null ? '永不过期' : formatChinaDateTime(credit.expiresAt)}</td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={2} className="codex-reset-credits__empty">
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={upstreamSelection
-                          ? `上游未返回卡片明细（可用 ${inventory.availableCount} 张）`
-                          : '暂无可用重置额度'}
-                      />
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无法读取重置额度" />
-      )}
-    </Modal>
+      <div className="codex-reset-credits__table-wrap hud-panel hud-panel--sm">
+        <table className="codex-reset-credits__table">
+          <thead>
+            <tr>
+              <th scope="col">序号</th>
+              <th scope="col">过期时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {availableCredits.length > 0 ? availableCredits.map((credit: CodexResetCredit, index) => (
+              <tr key={credit.creditId}>
+                <td>{index + 1}</td>
+                <td>{credit.expiresAt === null ? '永不过期' : formatChinaDateTime(credit.expiresAt)}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={2} className="codex-reset-credits__empty">
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={upstreamSelection
+                      ? `上游未返回卡片明细（可用 ${inventory.availableCount} 张）`
+                      : '暂无可用重置额度'}
+                  />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  ) : (
+    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无法读取重置额度" />
+  );
+
+  // 嵌在「重置」弹窗的 Tab 里：没有自己的遮罩和标题，动作按钮收在内容底部。
+  return (
+    <div className="codex-reset-credits-panel">
+      {body}
+      <div className="codex-reset-credits-panel__footer">{footerAction}</div>
+    </div>
   );
 }

@@ -4,18 +4,6 @@
   gap: var(--hos-space-2-5, 10px);
 }
 
-.codex-reset-credits-modal .ant-modal-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--hos-space-2, 8px);
-}
-
-.codex-reset-credits-modal .ant-modal-footer > .ant-btn,
-.codex-reset-credits-modal .ant-modal-footer > span {
-  margin-inline-start: 0;
-}
-
 .codex-reset-credits__loading {
   display: grid;
   min-height: 260px;
@@ -93,19 +81,22 @@
 }
 
 @media (max-width: 640px) {
-  .codex-reset-credits-modal .ant-modal-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .codex-reset-credits-modal .ant-modal-footer > .ant-btn,
-  .codex-reset-credits-modal .ant-modal-footer > span,
-  .codex-reset-credits-modal .ant-modal-footer > span > .ant-btn {
-    width: 100%;
-  }
-
   .codex-reset-credits__table th,
   .codex-reset-credits__table td {
     padding: var(--hos-space-2-5, 9px) var(--hos-space-2-5, 10px); /* 归级:原 9px */
+  }
+}
+
+/* 嵌进「重置」弹窗的 Tab 时，动作按钮从 Modal footer 移进内容底部，右对齐。 */
+.codex-reset-credits-panel__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hos-space-2, 8px);
+  margin-top: var(--hos-space-4, 16px);
+}
+
+@media (max-width: 640px) {
+  .codex-reset-credits-panel__footer > .ant-btn {
+    flex: 1;
   }
 }

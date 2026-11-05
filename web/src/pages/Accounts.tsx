@@ -43,7 +43,6 @@ import {
   GlobalOutlined,
   QrcodeOutlined,
   UndoOutlined,
-  HistoryOutlined,
   ReloadOutlined,
   ClockCircleOutlined,
   BranchesOutlined,
@@ -67,7 +66,6 @@ import {
   canConfigureWindowActivation,
   canCopyAccountEmail,
   canEditAccountConfig,
-  canEditAccountRoutingRules,
   canReauthAccount,
   canRestoreAccountScheduling,
   getAccountDisplayState,
@@ -245,7 +243,6 @@ export default function Accounts() {
     refreshingAccountRefs,
     copyAccountEmail,
     handleEdit,
-    handleRoutingRules,
     handleRestoreScheduling,
     handleReauth,
     confirmDeleteAccount,
@@ -267,8 +264,7 @@ export default function Accounts() {
     hasActiveImportJob,
     importJob,
     setKimiDesktopLoginRequest,
-    setCodexResetAccount,
-    setQuotaResetHistoryAccount,
+    setResetCenterAccount,
     accountEgressAccount,
     setAccountEgressAccount,
     accountWindowActivationAccount,
@@ -531,25 +527,24 @@ export default function Accounts() {
         disabled: codexAppAction.disabled
       });
     }
-    if (isCodexOAuthResetEligible(record)) {
+    // 重置额度与重置历史合并成一个入口，弹窗内 Tab 切换：同一件事不占两行菜单。
+    const canResetCredits = isCodexOAuthResetEligible(record);
+    const canViewResetHistory = canViewQuotaResetHistory(record);
+    if (canResetCredits || canViewResetHistory) {
       menuItems.push({
-        key: 'codex-reset-credits',
-        label: formatCodexResetMenuLabel(record),
+        key: 'reset-center',
+        label: canResetCredits && canViewResetHistory
+          ? '重置额度 / 历史'
+          : (canResetCredits ? formatCodexResetMenuLabel(record) : '重置历史记录'),
         icon: <UndoOutlined />
       });
     }
-    if (canViewQuotaResetHistory(record)) {
-      menuItems.push({
-        key: 'quota-reset-history',
-        label: '重置历史记录',
-        icon: <HistoryOutlined />
-      });
-      menuItems.push({
-        key: 'quota-stats',
-        label: '额度统计',
-        icon: <BarChartOutlined />
-      });
-    }
+    // 额度统计对所有账号可见：API Key / 积分型账号没有窗口期，页面展示最新快照的当前额度。
+    menuItems.push({
+      key: 'quota-stats',
+      label: '额度统计',
+      icon: <BarChartOutlined />
+    });
     if (canReauthAccount(record)) {
       menuItems.push({ key: 'reauth', label: getReauthActionLabel(record), icon: <SyncOutlined /> });
     }
@@ -558,9 +553,6 @@ export default function Accounts() {
     }
     menuItems.push({ key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> });
     menuItems.push({ key: 'export-account', label: '导出此账号', icon: <ExportOutlined /> });
-    if (canEditAccountRoutingRules(record)) {
-      menuItems.push({ key: 'routing-rules', label: '编辑调度规则', icon: <CodeOutlined /> });
-    }
     if (canRestoreAccountScheduling(record)) {
       menuItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
     }
@@ -588,12 +580,8 @@ export default function Accounts() {
     if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'config-files' && key !== 'export-account') return;
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
-    if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
-      setCodexResetAccount(record);
-      return;
-    }
-    if (key === 'quota-reset-history') {
-      setQuotaResetHistoryAccount(record);
+    if (key === 'reset-center') {
+      setResetCenterAccount(record);
       return;
     }
     if (key === 'quota-stats') {
@@ -602,10 +590,6 @@ export default function Accounts() {
     }
     if (key === 'reauth') { handleReauth(record); return; }
     if (key === 'edit' && canEditAccountConfig(record)) { handleEdit(record); return; }
-    if (key === 'routing-rules') {
-      if (canEditAccountRoutingRules(record)) handleRoutingRules(record);
-      return;
-    }
     if (key === 'restore-scheduling') { handleRestoreScheduling(record); return; }
     if (key.startsWith('activity:')) {
       void runOneReward(record, key.slice('activity:'.length));

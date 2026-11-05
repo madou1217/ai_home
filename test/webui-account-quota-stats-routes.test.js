@@ -131,17 +131,60 @@ test('非 GET 405，且带 no-store 头', async (t) => {
   assert.equal(ctx.headers['cache-control'], 'no-store');
 });
 
-test('非法 window 400', async (t) => {
+test('window 只做正整数校验：任意档位放行，负数/小数/非数字 400', async (t) => {
   const dir = tmp(t);
   seed(dir, { withSamples: false });
+
+  const accepted = createCtx({
+    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    query: '?window=720',
+    dir
+  });
+  await handleWebUiAccountQuotaStatsRoutes(accepted);
+  assert.equal(accepted.writes[0].status, 200);
+
+  for (const raw of ['-5', '0.5', 'abc']) {
+    const rejected = createCtx({
+      pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+      query: `?window=${raw}`,
+      dir
+    });
+    await handleWebUiAccountQuotaStatsRoutes(rejected);
+    assert.equal(rejected.writes[0].status, 400, `window=${raw} 应被拒绝`);
+    assert.equal(rejected.writes[0].payload.error, 'invalid_quota_window');
+  }
+});
+
+test('维度从账号数据派生：12h 账号只显示自己的 12h 维度', async (t) => {
+  const dir = tmp(t);
+  seed(dir, { withSamples: false });
+  const db = openAppStateDatabase(fs, dir, { createIfMissing: true });
+  ensureQuotaWindowTables(db);
+  const anchor = NOW - 8 * HOUR;
+  insertQuotaWindowSample(db, ACCOUNT_REF, PROVIDER, {
+    quotaKey: 'rate_limit:12h',
+    windowLabel: '12h',
+    windowMinutes: 720,
+    remainingPct: 80,
+    expectedResetAtMs: anchor + 12 * HOUR,
+    capturedAt: anchor + MINUTE,
+    planType: 'plus'
+  });
+  db.close();
+
   const ctx = createCtx({
     pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: '?window=123',
+    query: `?to=${NOW}`,
     dir
   });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
-  assert.equal(ctx.writes[0].status, 400);
-  assert.equal(ctx.writes[0].payload.error, 'invalid_quota_window');
+
+  const payload = ctx.writes[0].payload;
+  assert.equal(ctx.writes[0].status, 200);
+  assert.equal(payload.windowMinutes, 720);
+  assert.deepEqual(payload.dimensions.map((dimension) => dimension.windowMinutes), [720]);
+  assert.equal(payload.dimensions[0].label, '12h');
+  assert.equal(payload.dimensions[0].available, true);
 });
 
 test('rangeDays 超上限夹到 90', async (t) => {
@@ -175,12 +218,11 @@ test('正常返回两个窗口：一个已关闭、一个实时，维度可用�
   assert.equal(payload.windowMinutes, 300);
   assert.equal(payload.scope.quotaKey, 'rate_limit:primary');
 
-  const fiveHour = payload.dimensions.find((dimension) => dimension.windowMinutes === 300);
-  const weekly = payload.dimensions.find((dimension) => dimension.windowMinutes === 10080);
-  assert.equal(fiveHour.available, true);
-  assert.equal(fiveHour.dataState, 'ready');
-  assert.equal(weekly.available, false);
-  assert.equal(weekly.dataState, 'empty');
+  // 维度只列账号真实有的窗口长度：没有 7天/30天 数据就不该出现（更不该显示成 disabled）。
+  assert.deepEqual(payload.dimensions.map((dimension) => dimension.windowMinutes), [300]);
+  assert.equal(payload.dimensions[0].available, true);
+  assert.equal(payload.dimensions[0].dataState, 'ready');
+  assert.equal(payload.dimensions[0].label, '5h');
 
   assert.equal(payload.windows.length, 2);
   assert.equal(payload.windows[0].consumedPct, 50);

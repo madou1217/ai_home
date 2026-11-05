@@ -17,7 +17,6 @@ import QuotaWindowChart from '@/features/quota-stats/QuotaWindowChart';
 import QuotaWindowTable from '@/features/quota-stats/QuotaWindowTable';
 import { useQuotaStats } from '@/features/quota-stats/use-quota-stats';
 import {
-  QUOTA_DIMENSION_OPTIONS,
   QUOTA_RANGE_OPTIONS,
   formatQuotaClock,
   formatQuotaPct
@@ -36,7 +35,9 @@ export default function AccountQuota() {
   const provider = String(routeParams.provider || '').trim().toLowerCase();
   const accountRef = String(routeParams.accountRef || '').trim();
 
-  const [windowMinutes, setWindowMinutes] = useState(300);
+  // 0 = 未指定，让服务端按该账号实际有的维度选一个：首屏只发一次请求，
+  // 12h / 722 分钟这类非标准窗口不会被固定传 300 的旧逻辑挡一次。
+  const [windowMinutes, setWindowMinutes] = useState(0);
   const [rangeDays, setRangeDays] = useState(30);
   const [scopeKey, setScopeKey] = useState('');
 
@@ -48,16 +49,16 @@ export default function AccountQuota() {
     rangeDays
   });
 
-  // 首屏可能落在「这个账号没有 5h 窗口」上：自动切到第一个可用维度。
-  // 不可用项在 Segmented 里是 disabled，所以用户不会主动切进死胡同。
+  // 首屏未指定维度（0）时以服务端选中的维度为准，不回写 state —— 回写会多打一次同样的请求。
+  const activeWindowMinutes = windowMinutes || data?.windowMinutes || 0;
+
+  // 手动切到某个维度后如果它变得不可用（数据被清空等），自动落到第一个可用维度。
   useEffect(() => {
-    if (!data) return;
+    if (!data || !windowMinutes) return;
     const selected = data.dimensions.find((dimension) => dimension.windowMinutes === windowMinutes);
     if (selected?.available) return;
     const fallback = data.dimensions.find((dimension) => dimension.available);
-    if (fallback && fallback.windowMinutes !== windowMinutes) {
-      setWindowMinutes(fallback.windowMinutes);
-    }
+    if (fallback) setWindowMinutes(fallback.windowMinutes);
   }, [data, windowMinutes]);
 
   // 服务端可能因为 scope 不存在而回落到该维度第一个 scope，这里把选择器同步过去。
@@ -70,20 +71,20 @@ export default function AccountQuota() {
       setScopeKey(nextKey);
       return;
     }
-    const selected = data.dimensions.find((dimension) => dimension.windowMinutes === windowMinutes);
+    const selected = data.dimensions.find((dimension) => dimension.windowMinutes === activeWindowMinutes);
     if (!nextKey && scopeKey && selected?.available) setScopeKey('');
-  }, [data, scopeKey, windowMinutes]);
+  }, [activeWindowMinutes, data, scopeKey]);
 
-  const dimensionOptions = useMemo(() => QUOTA_DIMENSION_OPTIONS.map((option) => {
-    const dimension = data?.dimensions.find((item) => item.windowMinutes === option.value);
-    return {
-      ...option,
-      label: dimension && !dimension.available ? `${option.label}（无）` : option.label,
-      disabled: Boolean(dimension && !dimension.available)
-    };
-  }), [data]);
+  // 维度由服务端按账号数据派生，前端只做渲染：账号有几个窗口长度就显示几个，
+  // 不补「（无）」的固定档位，也不假设一定有 5h / 7天 / 30天。
+  const dimensionOptions = useMemo(() => (data?.dimensions || []).map((dimension) => ({
+    label: dimension.label,
+    value: dimension.windowMinutes,
+    disabled: !dimension.available
+  })), [data]);
+  const hasDimension = dimensionOptions.some((option) => !option.disabled);
 
-  const currentDimension = data?.dimensions.find((item) => item.windowMinutes === windowMinutes);
+  const currentDimension = data?.dimensions.find((item) => item.windowMinutes === activeWindowMinutes);
   const scopeOptions = useMemo(() => (currentDimension?.scopes || []).map((scope) => ({
     label: scope.label || scope.quotaKey,
     value: scope.quotaKey
@@ -105,7 +106,11 @@ export default function AccountQuota() {
       title={`额度统计 · ${provider || '账号'}`}
       subTitle={(
         <Tooltip title={accountRef}>
-          <span>{shortenAccountRef(accountRef)} · 按窗口期统计额度消耗、Tokens 与成本</span>
+          <span>
+            {shortenAccountRef(accountRef)} · {data?.emptyReason === 'snapshot_only'
+              ? '无窗口期，仅显示最新快照剩余额度'
+              : '按窗口期统计额度消耗、Tokens 与成本'}
+          </span>
         </Tooltip>
       )}
       extra={isMobile ? (
@@ -152,7 +157,7 @@ export default function AccountQuota() {
           <small>
             {current?.resetAtMs
               ? `下次关窗 ${formatQuotaClock(current.resetAtMs)}`
-              : '暂无活跃窗口'}
+              : (data?.emptyReason === 'snapshot_only' ? '无窗口期 · 最新快照' : '暂无活跃窗口')}
           </small>
         </div>
         <div className="usage-kpi-item">
@@ -188,16 +193,18 @@ export default function AccountQuota() {
 
       <SectionCard bordered>
         <Space size={12} wrap className="quota-stats-toolbar">
-          <Segmented
-            value={windowMinutes}
-            options={dimensionOptions}
-            onChange={(value) => {
-              // 换维度时清掉 scope：不同窗口长度的 quotaKey 不通用，
-              // 留着旧值会让服务端多走一次「scope 不存在」的空请求。
-              setScopeKey('');
-              setWindowMinutes(Number(value));
-            }}
-          />
+          {hasDimension ? (
+            <Segmented
+              value={activeWindowMinutes}
+              options={dimensionOptions}
+              onChange={(value) => {
+                // 换维度时清掉 scope：不同窗口长度的 quotaKey 不通用，
+                // 留着旧值会让服务端多走一次「scope 不存在」的空请求。
+                setScopeKey('');
+                setWindowMinutes(Number(value));
+              }}
+            />
+          ) : null}
           <Segmented
             value={rangeDays}
             options={QUOTA_RANGE_OPTIONS}
@@ -221,7 +228,7 @@ export default function AccountQuota() {
       <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
         <QuotaWindowChart
           windows={data?.windows || []}
-          windowMinutes={windowMinutes}
+          windowMinutes={activeWindowMinutes}
           emptyReason={data?.emptyReason || null}
         />
       </SectionCard>

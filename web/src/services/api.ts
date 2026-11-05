@@ -857,10 +857,6 @@ export const accountsAPI = {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/update`, data);
     return response.data;
   },
-  updateAccountRoutingRules: async (provider: string, accountRef: string, data: { upstreamErrorRules?: UpstreamErrorRule[]; upstreamErrorGroupIds?: string[]; clearErrorBlock?: boolean }): Promise<{ ok: boolean; account: Account }> => {
-    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/routing-rules`, data);
-    return response.data;
-  },
 
   /** 账号级强制恢复调度：人工覆盖，清空该账号的运行态阻塞（含余额/权限/额度类）。 */
   restoreScheduling: async (provider: string, accountRef: string): Promise<{ ok: boolean; account: Account }> => {

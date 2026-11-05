@@ -1,15 +1,13 @@
 import type { ChangeEvent } from 'react';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import DirectoryPickerDialog from '@/features/chat-workspace/DirectoryPickerDialog';
-import AccountQuotaResetHistoryModal from '@/features/accounts/AccountQuotaResetHistoryModal';
+import { AccountResetModal } from '@/features/accounts/AccountResetModal';
 import { AccountAppInstallModal } from '@/features/accounts/AccountAppInstallModal';
 import { AccountAppInstallResultModal } from '@/features/accounts/AccountAppInstallResultModal';
 import { AddAccountModal } from '@/features/accounts/AddAccountModal';
 import { AuthProgressModal } from '@/features/accounts/AuthProgressModal';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
-import { CodexResetCreditsModal } from '@/features/accounts/CodexResetCreditsModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
-import { AccountRoutingRulesModal } from '@/features/accounts/AccountRoutingRulesModal';
 import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
@@ -19,7 +17,7 @@ import type { AccountActions } from '@/features/accounts/use-account-actions';
 
 /**
  * 账号页的业务弹窗栈（添加 / 授权进度 / 编辑凭据 / 导入 / 应用安装 / CLI 终端选择 /
- * 服务端目录 / Kimi 桌面托管登录 / Codex 重置额度 / 额度重置历史）。
+ * 服务端目录 / Kimi 桌面托管登录 / 重置（额度 + 历史））。
  * 桌面 Accounts.tsx 与移动端 MobileAccounts 共用；状态全部来自 useAccountActions。
  * 出口设置弹窗（AccountEgressModal）由页面自己渲染。
  */
@@ -27,14 +25,12 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
   const {
     add,
     edit,
-    routingRules,
     authProgress,
     import: importFlow,
     appInstall,
     cliPicker,
     kimiDesktopLogin,
-    codexReset,
-    quotaResetHistory
+    resetCenter
   } = actions.modals;
 
   const onPickFiles = (event: ChangeEvent<HTMLInputElement>) => {
@@ -81,14 +77,6 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         credentialModeChanged={edit.credentialModeChanged}
         onClose={edit.onClose}
         onSubmit={edit.onSubmit}
-      />
-
-      <AccountRoutingRulesModal
-        account={routingRules.account}
-        form={routingRules.form}
-        submitting={routingRules.submitting}
-        onClose={routingRules.onClose}
-        onSubmit={routingRules.onSubmit}
       />
 
       <AddAccountModal
@@ -189,16 +177,10 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         onClose={kimiDesktopLogin.onClose}
         onSuccess={kimiDesktopLogin.onSuccess}
       />
-      <CodexResetCreditsModal
-        open={Boolean(codexReset.account)}
-        account={codexReset.account}
-        onClose={codexReset.onClose}
-        onAvailableCountChange={codexReset.onAvailableCountChange}
-      />
-      <AccountQuotaResetHistoryModal
-        open={Boolean(quotaResetHistory.account)}
-        account={quotaResetHistory.account}
-        onClose={quotaResetHistory.onClose}
+      <AccountResetModal
+        account={resetCenter.account}
+        onClose={resetCenter.onClose}
+        onAvailableCountChange={resetCenter.onAvailableCountChange}
       />
     </>
   );

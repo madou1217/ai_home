@@ -524,8 +524,16 @@
 }
 
 /* -----------------------------------------------------------------------------
- * 8. 配额重置历史（AccountQuotaResetHistoryModal）：时间线条目 = 发丝线分隔的读数行
+ * 8. 配额重置历史（AccountQuotaResetHistoryPanel）：时间线条目 = 发丝线分隔的读数行
  * -------------------------------------------------------------------------- */
+.quota-reset-history__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
 .quota-reset-history-scroll {
   max-height: 60vh;
   overflow-y: auto;

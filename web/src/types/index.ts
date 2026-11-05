@@ -139,7 +139,7 @@ export interface AccountQuotaStatsResponse {
   current: { remainingPct: number | null; resetAtMs: number; capturedAtMs: number } | null;
   summary: QuotaStatsSummary;
   windows: QuotaStatsWindowRow[];
-  emptyReason: 'dimension_unavailable' | 'no_samples' | 'no_windows_in_range' | null;
+  emptyReason: 'dimension_unavailable' | 'snapshot_only' | 'no_samples' | 'no_windows_in_range' | null;
 }
 
 export interface AccountQuotaStatsQuery {

@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import { Switch } from 'antd';
 import {
   ApiOutlined,
+  BarChartOutlined,
   CheckCircleOutlined,
   CopyOutlined,
   DesktopOutlined,
   GlobalOutlined,
-  HistoryOutlined,
   MobileOutlined,
   QrcodeOutlined,
   ReloadOutlined,
@@ -24,7 +24,6 @@ import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import type { TokenDropEvent } from '@/features/accounts/useTokenDropEvents';
 import {
   canCopyAccountEmail,
-  canEditAccountRoutingRules,
   canRefreshUsageAccount,
   canRestoreAccountScheduling,
   isAccountEnabled,
@@ -150,14 +149,6 @@ export default function AccountDetailSheet({
   };
 
   const sheetActions: SheetAction[] = [];
-  if (canEditAccountRoutingRules(record)) {
-    sheetActions.push({
-      key: 'routing-rules',
-      label: '编辑调度规则',
-      icon: <ApiOutlined />,
-      onClick: closeThen(() => actions.handleRoutingRules(record))
-    });
-  }
   if (canRestoreAccountScheduling(record)) {
     sheetActions.push({
       key: 'restore-scheduling',
@@ -211,22 +202,26 @@ export default function AccountDetailSheet({
         onClick: () => { void actions.handleSetMobile(record); }
       });
     }
-    if (isCodexOAuthResetEligible(record)) {
+    // 重置额度与重置历史合并成一个入口（弹窗内 Tab 切换）。
+    const canResetCredits = isCodexOAuthResetEligible(record);
+    const canViewResetHistory = canViewQuotaResetHistory(record);
+    if (canResetCredits || canViewResetHistory) {
       sheetActions.push({
-        key: 'codex-reset-credits',
-        label: formatCodexResetMenuLabel(record),
+        key: 'reset-center',
+        label: canResetCredits && canViewResetHistory
+          ? '重置额度 / 历史'
+          : (canResetCredits ? formatCodexResetMenuLabel(record) : '重置历史记录'),
         icon: <UndoOutlined />,
-        onClick: closeThen(() => actions.setCodexResetAccount(record))
+        onClick: closeThen(() => actions.setResetCenterAccount(record))
       });
     }
-    if (canViewQuotaResetHistory(record)) {
-      sheetActions.push({
-        key: 'quota-reset-history',
-        label: '重置历史记录',
-        icon: <HistoryOutlined />,
-        onClick: closeThen(() => actions.setQuotaResetHistoryAccount(record))
-      });
-    }
+    // 额度统计对所有账号可见：没有窗口期的账号展示最新快照的当前额度。
+    sheetActions.push({
+      key: 'quota-stats',
+      label: '额度统计',
+      icon: <BarChartOutlined />,
+      onClick: closeThen(() => actions.openQuotaStats(record))
+    });
     sheetActions.push({
       key: 'account-egress',
       label: '出口设置',

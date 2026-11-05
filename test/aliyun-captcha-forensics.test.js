@@ -13,6 +13,13 @@
 //
 // 所以这三件事任何一件被改回去都会静默退化成"全部账号验证失败"，
 // 而单测里没有浏览器，只能在启动参数、页面注入表达式、点击轨迹三处设防。
+//
+// 2026-11-05 第二起事故：解算窗口一启动就弹「A keychain cannot be found to
+// store "Chrome."」，SecurityAgent 常驻，解算 90s 超时。真机 `security
+// list-keychains` 只有 System.keychain、`security default-keychain -d user`
+// 直接报 "A default keychain could not be found"，Chrome 建新 profile 时无处
+// 存放 "Chrome Safe Storage"，于是卡在弹窗上。加 `--use-mock-keychain` 后
+// A/B/A 对照：不带 → 每次新起 SecurityAgent；带 → 0 次，端到端 15s 出参。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -37,6 +44,22 @@ test('Chrome 必须有头，不能回到 headless', () => {
   // Windows/Linux 上 --window-position 有效；macOS 会忽略它，改由 CDP 在加载后移窗。
   assert.ok(args.includes('--window-position=-3000,-3000'), '支持的平台先把窗口放到屏幕外');
   assert.ok(args.includes('--user-data-dir=/tmp/profile-x'), '必须用独立 profile');
+});
+
+test('必须用 mock keychain，不能碰系统钥匙串', () => {
+  const args = buildCaptchaLaunchArgs('/tmp/profile-x');
+  // 2026-11-05：本机没有登录钥匙串，Chrome 建 profile 时弹
+  // 「A keychain cannot be found to store "Chrome."」并把解算卡死 90s。
+  // --use-mock-keychain 是 Chromium 官方测试开关，只在进程内生成临时密钥。
+  assert.ok(
+    args.includes('--use-mock-keychain'),
+    '缺了它就会弹钥匙串对话框，解算直接超时'
+  );
+  assert.equal(
+    args.some((a) => a.startsWith('--password-store=')),
+    false,
+    'mock keychain 已足够；不要再叠 password-store，避免影响 profile 行为'
+  );
 });
 
 test('控件用 embed 模式渲染，并强制交互式', () => {

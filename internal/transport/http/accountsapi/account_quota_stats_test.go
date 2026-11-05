@@ -155,6 +155,27 @@ func TestHandleAccountQuotaStatsMapsInvalidQueryTo400(t *testing.T) {
 	}
 }
 
+type allowAllQuotaStatsAuthorizer struct{}
+
+func (allowAllQuotaStatsAuthorizer) Authorized(*http.Request) bool { return true }
+
+func TestServeHTTPDispatchesQuotaStatsMember(t *testing.T) {
+	handler := &Handler{
+		quotaStats: &fakeQuotaStats{result: usageapp.QuotaStatsResult{WindowMinutes: 300}},
+		authorizer: allowAllQuotaStatsAuthorizer{},
+	}
+	request := httptest.NewRequest(
+		http.MethodGet,
+		CollectionPath+"/acct_0123456789abcdef0123/quota-stats?window=300",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandleAccountQuotaStatsMapsUnknownErrorTo500(t *testing.T) {
 	handler := &Handler{quotaStats: &fakeQuotaStats{err: errors.New("boom")}}
 	request := httptest.NewRequest(

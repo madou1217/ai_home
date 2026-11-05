@@ -194,3 +194,12 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - 漂移守卫：`test/status-dual-read-fixture.test.js`，Node 行为一变夹具就过期报红。
 - 已验证断言有效：把夹具里一个时间戳改 1ms，Go 测试立刻报字段级差异。
 - 下一步：把线上账号的真实事件序列接进同一比对（观察期），再切 §7-d 读路径。
+
+### 线上事件接入（2026-11-05）
+
+- Node 生产侧把三类状态事件写成 JSONL：`<aiHomeDir>/observability/status-events.jsonl`
+  （失败策略 / 清除证据 / 整份替换），5MiB 轮转、best-effort、`AIH_STATUS_EVENT_JOURNAL=0` 可关。
+- `cmd/status-oracle` 是 Go 侧的 JSONL oracle（复用 `ApplyStatusEvent`），
+  `scripts/status-dual-read-replay.js` 按账号分组后用 Node 真值与 oracle 逐步比对。
+- 用法：`node scripts/status-dual-read-replay.js --fail-on-divergence`（观察期可挂定时任务）。
+- 真机链路已验证：合成 journal（2 账号 4 步）→ `divergences=0`。

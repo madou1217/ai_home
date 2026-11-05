@@ -261,7 +261,9 @@ type Dependencies struct {
 	AccountModels AccountModelReader
 	// RuntimeStates 把持久化运行态投影到征召资格索引，可为空（纯管理端点/测试）。
 	RuntimeStates RuntimeStateApplier
-	Authorizer    Authorizer
+	// ProbeStates 持久化 Node 推送的额度探针结果；可为空（该端点返回 503）。
+	ProbeStates ProbeStateWriter
+	Authorizer  Authorizer
 }
 
 // RuntimeStateApplier 把持久化的账号运行态投影到征召资格索引。
@@ -287,6 +289,7 @@ type Handler struct {
 	importer            Importer
 	staticCredentials   StaticCredentialFactory
 	native              NativeAccountDecoder
+	probeStates         ProbeStateWriter
 	credentialSnapshots CredentialSnapshotReader
 	accountModels       AccountModelReader
 	runtimeStates       RuntimeStateApplier
@@ -324,6 +327,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		importer:            dependencies.Importer,
 		staticCredentials:   dependencies.StaticCredentials,
 		native:              dependencies.NativeAccounts,
+		probeStates:         dependencies.ProbeStates,
 		credentialSnapshots: dependencies.CredentialSnapshots,
 		accountModels:       dependencies.AccountModels,
 		runtimeStates:       dependencies.RuntimeStates,
@@ -456,6 +460,8 @@ func (handler *Handler) handleMember(
 		handler.handleAccountUIState(response, request, accountRef)
 	case memberResourceRuntimeBlock:
 		handler.handleAccountRuntimeBlock(response, request, accountRef)
+	case memberResourceProbe:
+		handler.handleAccountProbe(response, request, resource.accountRef)
 	case memberResourceRuntimeState:
 		handler.handleAccountRuntimeState(response, request, accountRef)
 	case memberResourceUsageRefresh:

@@ -285,6 +285,7 @@ var forwardMigrations = []string{
 	SchemaV21,
 	SchemaV22,
 	SchemaV23,
+	SchemaV24,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

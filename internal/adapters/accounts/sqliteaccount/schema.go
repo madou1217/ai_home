@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 23
+	SchemaVersion = 24
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -130,3 +130,8 @@ var SchemaV22 string
 //
 //go:embed schema_v23.sql
 var SchemaV23 string
+
+// SchemaV24 保存账号额度探针的最近结果（由 Node 执行并推送）。
+//
+//go:embed schema_v24.sql
+var SchemaV24 string

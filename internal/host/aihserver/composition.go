@@ -787,7 +787,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		AccountModels: store,
 		// 运行态写入后立即投影到征召资格索引。
 		RuntimeStates: accountRuntime,
-		Authorizer:    authorizer,
+		// 探针由 Node 执行后推送，Go 只落库并在账号视图里回读。
+		ProbeStates: accountProbeStateStore{store: store},
+		Authorizer:  authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)

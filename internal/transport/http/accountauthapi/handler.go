@@ -42,13 +42,25 @@ type Authorizer interface {
 
 // Dependencies 集中声明 OAuth Job HTTP 入站适配器依赖。
 type Dependencies struct {
-	Jobs       Jobs
+	Jobs Jobs
+	// JobRecords 是持久化 Job 快照的只读端口，可为空。
+	//
+	// 做成可选字段而不是必填：现有组合根按 keyed literal 构造 Handler，
+	// 新增必填依赖会让所有调用点（含测试替身）同时失效；未装配时
+	// /v1/management/oauth-jobs 明确返回 503，写接口不受影响。
+	JobRecords JobReader
+	// JobWrites 是持久化 Job 快照的写入端口，可为空（未装配时 PUT 返回 503）。
+	//
+	// Node 仍是 12 类 Provider 的登录执行者：它把公开快照推进来，Go 只保存与查询。
+	JobWrites JobWriter
 	Authorizer Authorizer
 }
 
 // Handler 负责鉴权、路由、DTO 和错误映射，不读取数据库或凭据。
 type Handler struct {
 	jobs       Jobs
+	records    JobReader
+	jobWrites  JobWriter
 	authorizer Authorizer
 }
 
@@ -59,6 +71,8 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}
 	return &Handler{
 		jobs:       dependencies.Jobs,
+		records:    dependencies.JobRecords,
+		jobWrites:  dependencies.JobWrites,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -78,6 +92,30 @@ func (handler *Handler) ServeHTTP(
 			"unauthorized",
 			"需要有效的 Management Key",
 		)
+		return
+	}
+	// 先分发持久化快照集合，再走内存 Job 集合：两者路径互不为前缀，
+	// 但显式排序能避免以后新增前缀匹配时把只读读成写。
+	if request.URL.Path == JobsPath {
+		handler.handleJobCollection(response, request)
+		return
+	}
+	if strings.HasPrefix(request.URL.Path, JobsPath+"/") {
+		jobID, err := parseJobRecordPath(request.URL.Path)
+		if err != nil {
+			writeAPIError(
+				response,
+				http.StatusBadRequest,
+				"invalid_job_path",
+				"OAuth Job 资源路径无效",
+			)
+			return
+		}
+		if request.Method == http.MethodPut {
+			handler.handleJobUpsert(response, request, jobID)
+			return
+		}
+		handler.handleJobRecord(response, request, jobID)
 		return
 	}
 	if request.URL.Path == CollectionPath {

@@ -134,6 +134,18 @@ var expectedSchemaColumns = map[string][]string{
 		"observed_at_ms",
 		"until_ms",
 	},
+	"oauth_jobs": {
+		"job_id",
+		"provider_id",
+		"purpose",
+		"target_ref",
+		"status",
+		"created_at_ms",
+		"expires_at_ms",
+		"updated_at_ms",
+		"error_code",
+		"error_message",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -200,6 +212,7 @@ var forwardMigrations = []string{
 	SchemaV14,
 	SchemaV15,
 	SchemaV16,
+	SchemaV17,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
@@ -339,6 +352,8 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 		"idx_account_tombstones_key",
 		"idx_account_usage_snapshots_provider",
 		"idx_account_runtime_blocks_until",
+		"idx_oauth_jobs_provider_status",
+		"idx_oauth_jobs_updated_at",
 	} {
 		var indexCount int
 		const indexSQL = `

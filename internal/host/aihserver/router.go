@@ -140,6 +140,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(clientpropsapi.Path, handlers.clientProps)
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
+	// 持久化 Job 快照与内存 Job 分开挂载：两条路径生命周期不同（见 accountauthapi.JobsPath）。
+	mux.Handle(accountauthapi.JobsPath, handlers.accountAuth)
+	mux.Handle(accountauthapi.JobsPath+"/", handlers.accountAuth)
 	// 优雅退出端点：嵌入方（Node 宿主）在停机时显式请求，而不是依赖进程信号——
 	// Windows 上 SIGTERM 实际是 TerminateProcess，进程内的关闭路径不会执行。
 	if handlers.shutdown != nil {

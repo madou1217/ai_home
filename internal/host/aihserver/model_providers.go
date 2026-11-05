@@ -11,6 +11,7 @@ package aihserver
 // 这类一个模块返回多条源的，模块内返回顺序同样固定。
 
 import (
+	stdcontext "context"
 	"fmt"
 	"net/http"
 
@@ -30,6 +31,7 @@ import (
 	zcodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/zcode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/transport/http/grokrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
+	"github.com/madou1217/ai_home/internal/transport/http/qoderrelay"
 )
 
 // modelProviderContext 是模型目录源的装配上下文。
@@ -170,14 +172,25 @@ func buildCodebuddyFamilyModelProviders(context modelProviderContext) ([]account
 // qoder 的目录要客户端 wasm 签名，签名运行时在 qodercred（wazero）。
 func buildQoderModelProviders(context modelProviderContext) ([]accountapp.ProviderModelDiscoverer, error) {
 	sources := make([]accountapp.ProviderModelDiscoverer, 0, 2)
+	byProvider := make(map[string]*qodermodelcatalog.Source, 2)
 	for _, providerID := range []string{"qoder", "qodercn"} {
 		source, err := qodermodelcatalog.New(context.client, providerID)
 		if err != nil {
 			// 两个区域共用同一模块，错误里保留具体 Provider，便于定位是哪个区失败。
 			return nil, fmt.Errorf("%s: %w", providerID, err)
 		}
+		byProvider[providerID] = source
 		sources = append(sources, source)
 	}
+	// relay 的目录缓存写入方是模型发现；冷启动/刷新失败时按需现算，避免把
+	// 「目录还没准备好」当成客户端的 invalid_relay_request。
+	qoderrelay.SetEntriesLoader(func(providerID string, credential accountapp.Credential) ([]qodermodelcatalog.Entry, error) {
+		source := byProvider[providerID]
+		if source == nil {
+			return nil, qoderrelay.ErrModelCatalogUnavailable
+		}
+		return source.Entries(stdcontext.Background(), credential)
+	})
 	return sources, nil
 }
 

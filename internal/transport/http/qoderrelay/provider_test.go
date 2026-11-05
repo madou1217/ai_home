@@ -48,6 +48,9 @@ func installFakes(t *testing.T) *fakeSigner {
 	signer := &fakeSigner{url: "https://openapi.qoder.sh"}
 	previousSigner, previousEntries := newSigner, cachedEntries
 	previousDecrypt, previousVersion := decryptNative, cliVersion
+	// signerFor 有进程级缓存：不清掉会复用上一个用例的 fake（NewContext 计数对不上）。
+	previousSignerCache := signerCache
+	signerCache = map[string]Signer{}
 	newSigner = func(string) (Signer, error) { return signer, nil }
 	cachedEntries = func(string, map[string]any) ([]modelcatalog.Entry, bool) {
 		return []modelcatalog.Entry{{
@@ -67,6 +70,7 @@ func installFakes(t *testing.T) *fakeSigner {
 		cachedEntries = previousEntries
 		decryptNative = previousDecrypt
 		cliVersion = previousVersion
+		signerCache = previousSignerCache
 	})
 	return signer
 }

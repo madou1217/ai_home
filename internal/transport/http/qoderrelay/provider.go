@@ -153,6 +153,18 @@ type Signer interface {
 	FreeContext(contextID uint32)
 }
 
+// EntriesLoader 在进程内目录缓存缺失时按凭据现算条目。
+//
+// 目录缓存的写入方是模型发现（DiscoverModels → Entries）；进程刚启动、或刷新遇到
+// SQLITE_BUSY 时缓存可能是空的。此时 relay 不能直接判客户端请求无效。
+type EntriesLoader func(providerID string, credential accountapp.Credential) ([]modelcatalog.Entry, error)
+
+// loadEntries 由组合根注入；nil 表示只读缓存（测试默认）。
+var loadEntries EntriesLoader
+
+// SetEntriesLoader 注入按需加载器（组合根调用一次）。
+func SetEntriesLoader(loader EntriesLoader) { loadEntries = loader }
+
 var (
 	signerMu    sync.Mutex
 	signerCache = map[string]Signer{}
@@ -231,6 +243,13 @@ func (provider *Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, 
 		return relaycore.RewriteResult{}, ErrUnsupportedCredential
 	}
 	entries, ok := cachedEntries(provider.providerID, payload)
+	if (!ok || len(entries) == 0) && loadEntries != nil {
+		// 冷启动/目录刷新失败（例如 SQLITE_BUSY）时缓存为空：按凭据现算一次，
+		// 不能把「目录还没准备好」当成客户端的 invalid_relay_request。
+		if loaded, err := loadEntries(provider.providerID, provider.credential); err == nil && len(loaded) > 0 {
+			entries, ok = loaded, true
+		}
+	}
 	if !ok || len(entries) == 0 {
 		return relaycore.RewriteResult{}, ErrModelCatalogUnavailable
 	}

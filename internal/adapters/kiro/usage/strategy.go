@@ -205,13 +205,6 @@ func (document usageDocument) credit() (creditBreakdown, bool) {
 	return creditBreakdown{}, false
 }
 
-func (document usageDocument) resetAt() time.Time {
-	if reset := firstAmount(document.NextDateReset); reset != nil && *reset > 0 {
-		return time.Unix(int64(*reset), 0).UTC()
-	}
-	return time.Time{}
-}
-
 func firstAmount(values ...*float64) *float64 {
 	for _, value := range values {
 		if value != nil && !math.IsNaN(*value) && !math.IsInf(*value, 0) && *value >= 0 {
@@ -363,11 +356,35 @@ func usageEndpoint(region string) (string, error) {
 	if region == "" {
 		region = kiro.DefaultRegion
 	}
+	// 与 Node 的 /^[a-z]{2}-[a-z]+-\d$/ 同口径：region 只能拼进固定主机名。
+	if !validRegion(region) {
+		return "", ErrInvalidResponse
+	}
 	parsed, err := url.Parse("https://codewhisperer." + region + ".amazonaws.com/")
 	if err != nil || parsed.Host == "" {
 		return "", ErrInvalidResponse
 	}
 	return parsed.String(), nil
+}
+
+func validRegion(region string) bool {
+	parts := strings.Split(region, "-")
+	if len(parts) != 3 || len(parts[0]) != 2 || len(parts[1]) == 0 {
+		return false
+	}
+	for _, part := range parts[:2] {
+		for _, character := range part {
+			if character < 'a' || character > 'z' {
+				return false
+			}
+		}
+	}
+	for _, character := range parts[2] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func closeResponse(response *http.Response) {

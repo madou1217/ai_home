@@ -468,13 +468,11 @@ func newHandlers(
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
 			Store: store,
-			Strategies: append(
-				credentialRefreshStrategies(
-					codexProvider,
-					claudeProvider,
-					agyProvider,
-					kimiProvider,
-				),
+			Strategies: credentialRefreshStrategies(
+				codexProvider,
+				claudeProvider,
+				agyProvider,
+				kimiProvider,
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
@@ -770,13 +768,11 @@ func newHandlers(
 			strategy:       selectionStrategy,
 			models:         recoveringModelManagement,
 			modelRefreshes: modelRefresh,
-			credentialRefresh: append(
-				credentialRefreshStrategies(
-					codexProvider,
-					claudeProvider,
-					agyProvider,
-					kimiProvider,
-				),
+			credentialRefresh: credentialRefreshStrategies(
+				codexProvider,
+				claudeProvider,
+				agyProvider,
+				kimiProvider,
 			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			authorizer:                clientAuthorizer,

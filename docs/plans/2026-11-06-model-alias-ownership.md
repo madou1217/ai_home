@@ -29,6 +29,12 @@ WebUI 的 6 类路由里有三件 Node 独有能力：
 ## 3. 三个切片
 
 ### A. Go 拥有持久化与 CRUD（不改任何现有行为）
+
+进度（2026-11-06）：存储层已完成 —— schema v22（model_alias + model_alias_meta）、
+ListModelAliases / ReplaceModelAliases（整体替换 + generation 单调递增）/ ModelAliasGeneration，
+单测覆盖顺序、显式 disabled、非法记录不产生半写。**尚未接线**：没有写者之前若让 Go 启动时
+从空表加载，会把 Node 推来的投影清空，所以加载与 CRUD 要一起上。
+
 - 新增 internal/adapters/accounts/sqliteaccount/model_alias_store.go：在 aih.db 建表
   （model_alias：id/alias/target/provider/target_provider/priority/enabled/description/updated_at_ms），
   实现 List/Create/Update/Delete/Replace，并维护单调递增 generation。

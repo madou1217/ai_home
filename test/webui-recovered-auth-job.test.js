@@ -98,3 +98,18 @@ test('GET /v0/webui/accounts/add/jobs/:id 两边都没有时仍然 404', async (
   assert.equal(status, 404);
   assert.equal(payload.error, 'job_not_found');
 });
+
+test('createAuthJobStoreForDeps 装配 Go 推送与查询（防再次漏 import）', async () => {
+  const { createAuthJobStoreForDeps } = __private;
+  const pushed = [];
+  const store = createAuthJobStoreForDeps({
+    goCoreSync: {
+      pushOAuthJob: async (record) => { pushed.push(record.job_id); return { ok: true, status: 200 }; },
+      listOAuthJobs: async () => ({ ok: true, data: [] })
+    }
+  });
+  assert.equal(typeof store.record, 'function');
+  store.record({ id: 'job-z', provider: 'zcode', status: 'running', createdAt: 1, updatedAt: 2 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(pushed, ['job-z']);
+});

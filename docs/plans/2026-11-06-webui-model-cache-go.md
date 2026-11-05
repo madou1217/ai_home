@@ -811,6 +811,7 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - 注入点：`server.js` 的 `buildWebUiDeps()`（不是 `handleWebUIRequest` 的另一个 ctx 字面量）。
 - 真机验证：scoped 请求 `acct_04a193ed26f71e4619c5` 的 `merged byAccount` = 26，
   与 `GET /v1/management/account-models?account_ref=…` 完全一致；此前该值是本地缓存值。
-- **发现的 Phase 2 前置**：`acct_84c6cff29b1b83d7506f`（opencode，Go 侧 109 个模型）
-  不在 Node WebUI 的 43 个账号池里（`/v0/webui/accounts` 缺失），因此切读后页面仍看不到它的目录。
-  这是账号同步缺口，不是模型读路径问题；Phase 2 退役 Node 探测前必须先让它进入账号池。
+- **已修**：该账号并不是「不在账号池」，而是两侧 accountRef 不同（Node `acct_5339…` vs
+  Go `acct_84c6…`）。合并层必须做 ref 翻译，否则目录挂到页面上不存在的 key。
+  修复后真机 `GET /v0/webui/openai-models?accountRef=acct_533999af0033f08d6106` 返回 120 条，
+  其中 `opencode/` 80 + `opencode-go/` 29 = Go 的 109 个目录，与 Node 探测口径一致。

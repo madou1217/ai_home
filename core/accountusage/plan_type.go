@@ -5,6 +5,32 @@ import (
 	"unicode"
 )
 
+// nonPlanAuthModes 是「不是套餐」的鉴权模式与占位值，
+// 与 Node lib/account/quota-reset/base-strategy.js 的 NON_PLAN_AUTH_MODES 同集合。
+// 键是归一后的形式（小写、分隔符折叠成下划线）。
+var nonPlanAuthModes = map[string]struct{}{
+	"oauth":         {},
+	"oauth_browser": {},
+	"oauth_device":  {},
+	"api_key":       {},
+	"apikey":        {},
+	"pending":       {},
+	"unknown":       {},
+}
+
+// IsPlanToken 判断归一后的 token 是不是真正的套餐值。
+//
+// 空串、鉴权模式（oauth / api_key …）与占位值（pending / unknown）都不算套餐。
+// 它只排除「明确不是套餐」的值，不维护套餐清单：上游新增档位（fable 等）
+// 原样通过，不需要改代码。
+func IsPlanToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	_, reserved := nonPlanAuthModes[token]
+	return !reserved
+}
+
 // NormalizePlanToken 把 Provider 的套餐展示名归一成小写 token：
 // 去掉首尾空白，连续空白或连字符折叠成一个下划线（"Pro Plus" → "pro_plus"）。
 //

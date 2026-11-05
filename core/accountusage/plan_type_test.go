@@ -80,6 +80,31 @@ func TestSnapshotRejectsInvalidPlanType(t *testing.T) {
 	}
 }
 
+func TestIsPlanToken(t *testing.T) {
+	cases := []struct {
+		token string
+		want  bool
+	}{
+		{token: "pro", want: true},
+		{token: "fable", want: true},
+		{token: "pro_plus", want: true},
+		{token: "some_new_tier", want: true},
+		{token: "oauth", want: false},
+		{token: "oauth_browser", want: false},
+		{token: "oauth_device", want: false},
+		{token: "api_key", want: false},
+		{token: "apikey", want: false},
+		{token: "pending", want: false},
+		{token: "unknown", want: false},
+		{token: "", want: false},
+	}
+	for _, testCase := range cases {
+		if got := IsPlanToken(testCase.token); got != testCase.want {
+			t.Fatalf("IsPlanToken(%q) = %v, want %v", testCase.token, got, testCase.want)
+		}
+	}
+}
+
 func TestNormalizePlanName(t *testing.T) {
 	cases := []struct {
 		raw  string

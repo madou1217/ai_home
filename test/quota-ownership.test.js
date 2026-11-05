@@ -13,6 +13,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { GO_QUOTA_OWNERS, goOwnedQuota, isGoOwnedQuota } = require('../lib/providers/quota-ownership');
+const { hasQuotaProvider, listQuotaSnapshotProviders, resolveEntryShapeByKind } = require('../lib/usage/quota');
+const { normalizeAccountUsageSnapshot } = require('../lib/server/account-usage-view');
+const { getMinRemainingPctFromUsageSnapshot } = require('../lib/account/usage-remaining');
 
 const DEFS_DIR = path.join(__dirname, '..', 'lib', 'providers', 'defs');
 
@@ -59,6 +62,54 @@ test('goOwnedQuota 对未登记 Provider 直接抛错', () => {
   assert.equal(isGoOwnedQuota('codex'), false);
   assert.equal(isGoOwnedQuota('CODEX'), false);
   assert.equal(isGoOwnedQuota('kiro'), true);
+});
+
+// 迁移只改 supported:false 会把 kind/entryShape 丢掉，WebUI 账号列表的剩余额度
+// 整列变成 Unknown（2026-11-05 实测 13 个 Go 采集的 Provider 全部中招）。
+// 这条守卫把「归属」和「展示契约」绑在一起：登记进表的 Provider 必须能被渲染。
+test('Go 接管的 Provider 必须保留展示契约，且能被 WebUI 反查', () => {
+  const snapshotProviders = new Set(listQuotaSnapshotProviders());
+  const seenKinds = new Set();
+  for (const providerID of Object.keys(GO_QUOTA_OWNERS)) {
+    const quota = goOwnedQuota(providerID);
+    assert.ok(quota.kind, providerID + ' 缺少快照 kind，Node 无法渲染 Go 产出的额度');
+    assert.ok(quota.shape, providerID + ' 缺少 shape');
+    assert.ok(quota.entryShape, providerID + ' 缺少 entryShape');
+    assert.equal(
+      resolveEntryShapeByKind(quota.kind),
+      quota.entryShape,
+      providerID + ' 的 kind 没有被 kind→entryShape 索引收录'
+    );
+    assert.ok(
+      snapshotProviders.has(providerID),
+      providerID + ' 不在 listQuotaSnapshotProviders() 里，账号页不会读它的快照'
+    );
+    assert.equal(
+      hasQuotaProvider(providerID),
+      true,
+      providerID + ' 的 hasQuotaProvider() 仍为 false，deriveQuotaState 会把额度判成 not_applicable'
+    );
+
+    if (seenKinds.has(quota.kind)) continue;
+    seenKinds.add(quota.kind);
+    const snapshot = quota.entryShape === 'models'
+      ? {
+          schemaVersion: 2,
+          kind: quota.kind,
+          capturedAt: Date.now(),
+          models: [{ model: 'fixture-model', remainingPct: 42 }]
+        }
+      : {
+          schemaVersion: 2,
+          kind: quota.kind,
+          capturedAt: Date.now(),
+          entries: [{ bucket: 'fixture-bucket', remainingPct: 42, windowMinutes: 300 }]
+        };
+    const normalized = normalizeAccountUsageSnapshot(snapshot);
+    assert.ok(normalized, providerID + ' 的 Go 形状快照被 WebUI payload 丢弃');
+    assert.equal(normalized.kind, quota.kind);
+    assert.equal(getMinRemainingPctFromUsageSnapshot(normalized), 42);
+  }
 });
 
 test('家族四支共用同一份派生结果', () => {

@@ -254,6 +254,21 @@
 >      `New()` 的 `GoBaseURL→opencode-go/` / `ZenBaseURL→opencode/` 映射断言；
 >      claude 补显式端点「只请求一次」的用例。
 >    验证：三个包测试全绿，真机重启后覆盖与 kiro 额度行数不变。
+> 34. **agy 额度采集迁 Go（2026-11-05）**：新增 `internal/adapters/agy/usage`：
+>    `POST {base}/v1internal:loadCodeAssist`（`metadata.ideType=ANTIGRAVITY`）取 project
+>    与套餐 tier，再 `POST {base}/v1internal:fetchAvailableModels`（带 project；403 时回退
+>    空对象重试）读 `models[*].quotaInfo.remainingFraction/resetTime`。额度按模型计：
+>    每个模型一条 `model_family` 条目（bucket/scopeKey=模型 ID），可用性按剩余比例
+>    标 available/exhausted；同时产出 `schemaVersion=2` 的 `agy_code_assist_quota` 文档
+>    （account email/planType/subscriptionTier/project + models[] 的剩余比例、resetIn、
+>    展示名与能力标记 + modelForwardingRules）。
+>    凭据刷新复用 credential resolver 里已有的 `agyoauth` 策略（无需新增 Refresher）；
+>    协调器把 agy 加入刷新队列。
+>    Node 侧：`lib/providers/defs/agy.js` 的 quota 策略改为 `supported:false`（只读 Go 文档）。
+>    **验证边界**：本机 6 个 agy 账号全部 enabled=0 且 access token 自 2026-10-24 起过期，
+>    上游探测无法复现；单测覆盖了 loadCodeAssist→fetchAvailableModels、403 回退、
+>    内部模型过滤、快照与文档形状。`lib/server/agy-usage-snapshot.js` 里失败触发的
+>    Node 兜底探针仍在，等该链路整体切换后再删。
 
 ## 0. 结论先行
 

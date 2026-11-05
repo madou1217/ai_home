@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
@@ -105,6 +106,11 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// agy 的额度按模型计；凭据刷新由 credential resolver 的 agy 策略完成。
+	agyStrategy, err := agyusage.New(client)
+	if err != nil {
+		return nil, err
+	}
 	kiroRefresher, err := kirocred.New(dependencies.store, client, dependencies.clock)
 	if err != nil {
 		return nil, err
@@ -123,6 +129,7 @@ func newUsageComposition(
 			codexStrategy,
 			claudeStrategy,
 			kiroStrategy,
+			agyStrategy,
 		},
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
@@ -137,6 +144,7 @@ func newUsageComposition(
 			"codex":  usageProviderConcurrency,
 			"claude": usageProviderConcurrency,
 			"kiro":   usageProviderConcurrency,
+			"agy":    usageProviderConcurrency,
 		},
 		RefreshTimeout:  usageRefreshTimeout,
 		RefreshInterval: usageRefreshInterval,

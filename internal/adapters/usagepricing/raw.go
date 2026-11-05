@@ -39,7 +39,9 @@ var camelToSnakeKeys = map[string]string{
 	"cacheCreationInputTokenCost": "cache_creation_input_token_cost",
 	"reasoningOutputTokenCost":    "reasoning_output_token_cost",
 	"contextCostTiers":            "context_cost_tiers",
-	"contextSize":                 "size",
+	// 分档大小有三种历史写法，全归一到 size。
+	"contextSize":  "size",
+	"context_size": "size",
 }
 
 // UnmarshalJSON 同时接受 camelCase 与 snake_case 键。

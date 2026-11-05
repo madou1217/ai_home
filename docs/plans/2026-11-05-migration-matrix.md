@@ -81,10 +81,12 @@
     `lib/usage/model-usage-{identity,pricing,resolver}.js`，而 Go 的 `usage_ledger` 只有 token 明细。
     已完成：计费归属 + 定价引擎迁到 `internal/adapters/usagepricing`（18 条归属 + 126 条成本
     由 Node 出真值的对照夹具，变异验证过）。
-    下一步：① `sqliteaccount` 读 `model_usage_pricing`（`context_cost_tiers_json` 是 JSON 文本，
-    `reasoning_output_token_cost` 在表里是 NOT NULL DEFAULT 0，读回时 0 要当「未声明」）；
-    ② `usagestatsapi` 的 models 响应补 `cost_usd`/`cost_known`（用接口注入，不让传输层依赖适配器）；
-    ③ 才轮到 WebUI 前门切流。
+    已完成（2026-11-06）：① `sqliteaccount.LoadModelPricing` 读表，`model_usage_pricing` 不存在时
+    fail-soft 返回空目录（全新安装不该 500）；`reasoning_output_token_cost` 的 0 还原成「未声明」。
+    ② `usagestatsapi` 的 models 响应补 `cost_usd`/`cost_known`/`cost_supported`，成本计算器通过
+    接口注入；目录按 5 分钟缓存，读表失败只降级成本、不影响统计。
+    下一步：③ `/v0/webui/accounts/:provider/:ref/quota-stats` 前门切 Go——Go 的 `quota_stats`
+    还需要把窗口用量接上定价（现在 `QuotaStatsWindow.CostUSD` 恒为 null，`CostSupported=false`）。
 9. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

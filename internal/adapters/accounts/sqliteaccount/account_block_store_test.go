@@ -7,8 +7,8 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 func TestAccountBlockRoundTripAndDelete(t *testing.T) {

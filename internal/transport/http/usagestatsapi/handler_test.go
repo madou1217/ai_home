@@ -77,7 +77,7 @@ func TestHandlerRejectsUnauthorizedAndInvalidRange(t *testing.T) {
 
 func TestModelsHandlerReturnsProviderModelFacts(t *testing.T) {
 	source := &testSource{models: []usageledger.ModelStats{{Provider: "codex", Model: "gpt-6.1-sol", Calls: 2, AccountCount: 1, TotalTokens: 20}}}
-	handler, err := NewModelsHandler(testAuthorizer(true), source)
+	handler, err := NewModelsHandler(testAuthorizer(true), source, nil)
 	if err != nil {
 		t.Fatalf("NewModelsHandler() error = %v", err)
 	}

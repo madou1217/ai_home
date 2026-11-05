@@ -51,6 +51,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -729,7 +730,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量统计 Handler 失败: %w", err)
 	}
-	usageModelsHandler, err := usagestatsapi.NewModelsHandler(authorizer, store)
+	// 成本口径：定价表由 Node 维护，Go 只读；表不存在时成本标为「未知」而不是 0 元。
+	costCalculator, err := usagepricing.NewModelCostCalculator(store, providerIDs(catalog))
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量成本计算器失败: %w", err)
+	}
+	usageModelsHandler, err := usagestatsapi.NewModelsHandler(authorizer, store, costCalculator)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 模型用量 Handler 失败: %w", err)
 	}

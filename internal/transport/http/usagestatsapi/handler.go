@@ -34,9 +34,25 @@ type ModelsSource interface {
 	QueryUsageModels(context.Context, usageledger.Query) ([]usageledger.ModelStats, error)
 }
 
+// ModelCostCalculator 为一批模型用量补充成本。
+//
+// 为什么是批接口：定价目录要读一整张表，按行调用会把一次查询放大成 N 次。
+// 第二个返回值表示定价目录是否可用——不可用时成本是「未知」，不是「0 元」。
+type ModelCostCalculator interface {
+	Costs(context.Context, []usageledger.ModelStats) ([]float64, []bool, bool)
+}
+
 type ModelsHandler struct {
 	authorizer Authorizer
 	source     ModelsSource
+	cost       ModelCostCalculator
+}
+
+// modelUsageRow 是模型用量行的对外形状：原字段打平，成本按行追加。
+type modelUsageRow struct {
+	usageledger.ModelStats
+	CostUSD   *float64 `json:"cost_usd"`
+	CostKnown bool     `json:"cost_known"`
 }
 
 type SessionsSource interface {
@@ -55,11 +71,15 @@ func NewHandler(authorizer Authorizer, source Source) (*Handler, error) {
 	return &Handler{authorizer: authorizer, source: source}, nil
 }
 
-func NewModelsHandler(authorizer Authorizer, source ModelsSource) (*ModelsHandler, error) {
+func NewModelsHandler(
+	authorizer Authorizer,
+	source ModelsSource,
+	cost ModelCostCalculator,
+) (*ModelsHandler, error) {
 	if authorizer == nil || source == nil {
 		return nil, usageledger.ErrInvalidQuery
 	}
-	return &ModelsHandler{authorizer: authorizer, source: source}, nil
+	return &ModelsHandler{authorizer: authorizer, source: source, cost: cost}, nil
 }
 
 func NewSessionsHandler(authorizer Authorizer, source SessionsSource) (*SessionsHandler, error) {
@@ -121,11 +141,45 @@ func (handler *ModelsHandler) ServeHTTP(response http.ResponseWriter, request *h
 		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "usage_models_failed", "message": "用量模型统计不可用"}})
 		return
 	}
+	rows, costSupported := handler.enrichWithCost(request, models)
 	writeJSON(response, http.StatusOK, map[string]any{
-		"ok":     true,
-		"range":  map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
-		"models": models,
+		"ok":             true,
+		"range":          map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
+		"models":         rows,
+		"cost_supported": costSupported,
 	})
+}
+
+// enrichWithCost 给每行补成本；任何一行没有定价就标 cost_known=false，
+// 让前端能区分「确实为 0」与「没有价格口径」。
+func (handler *ModelsHandler) enrichWithCost(
+	request *http.Request,
+	models []usageledger.ModelStats,
+) ([]modelUsageRow, bool) {
+	// 空结果保持 null，不把契约从 null 改成 []。
+	if models == nil {
+		return nil, false
+	}
+	rows := make([]modelUsageRow, len(models))
+	for index, row := range models {
+		rows[index] = modelUsageRow{ModelStats: row}
+	}
+	if handler.cost == nil || len(models) == 0 {
+		return rows, false
+	}
+	costs, known, supported := handler.cost.Costs(request.Context(), models)
+	if !supported || len(costs) != len(rows) || len(known) != len(rows) {
+		return rows, false
+	}
+	for index := range rows {
+		if !known[index] {
+			continue
+		}
+		value := costs[index]
+		rows[index].CostUSD = &value
+		rows[index].CostKnown = true
+	}
+	return rows, true
 }
 
 func (handler *SessionsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {

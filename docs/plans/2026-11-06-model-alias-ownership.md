@@ -30,10 +30,14 @@ WebUI 的 6 类路由里有三件 Node 独有能力：
 
 ### A. Go 拥有持久化与 CRUD（不改任何现有行为）
 
-进度（2026-11-06）：存储层已完成 —— schema v22（model_alias + model_alias_meta）、
-ListModelAliases / ReplaceModelAliases（整体替换 + generation 单调递增）/ ModelAliasGeneration，
-单测覆盖顺序、显式 disabled、非法记录不产生半写。**尚未接线**：没有写者之前若让 Go 启动时
-从空表加载，会把 Node 推来的投影清空，所以加载与 CRUD 要一起上。
+进度（2026-11-06）：**存储 + 接线已完成**。
+- schema v22：model_alias（带 position 保序）+ model_alias_meta（generation）。
+- 仓储端口 modelalias.Repository（Load/Save），sqliteaccount 实现；Store 有仓储时
+  先落库再发布内存，代次用仓储返回值（重启不从头计数）。
+- Node 每次 PUT 投影都会落库；Go 启动时 Restore 从库恢复，不再依赖 Node 再推一次。
+- 真机演练：用生产 aih.db 的**副本**跑 v21→v22，43 个账号原样保留、新表为空
+  （AIH_REAL_DB=... go test -run TestUpgradeRealDatabaseCopy）。
+剩余：CRUD 用例（Create/Update/Delete/目标替换）与 WebUI 契约接口，然后才进 B。
 
 - 新增 internal/adapters/accounts/sqliteaccount/model_alias_store.go：在 aih.db 建表
   （model_alias：id/alias/target/provider/target_provider/priority/enabled/description/updated_at_ms），

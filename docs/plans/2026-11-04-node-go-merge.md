@@ -336,7 +336,7 @@
 >      文档 `kind=qoder_credit_usage`、`coverage.tokenSource=cli_wasm`、
 >      `notApplicable=true / reason=qoder_no_consumable_credits`，快照 1 条 unknown 条目、
 >      quota_status=pending（未被判成 exhausted）。首次解密 ~120ms（含 167MB 二进制扫描），
->      之后走缓存。付费档路径只有单测覆盖（本机没有付费 qoder 账号）。
+>      之后走缓存。付费档路径只有单测覆盖（本机没有付费 qoder 账号），已登记到 §9 待真机验证。
 
 ## 0. 结论先行
 
@@ -674,3 +674,19 @@ Node 进程（过渡期，逐渐缩小）
     额度事实应走 `collected=true`。真正缺的是 zcode 的 usage/model **策略**，不是刷新。
 - 再谈模型目录与 Node 写入的删除；
 - WebUI 账号页/静态托管/Chat/PTY/SSH/插件按 P3–P5 单独排期。
+
+## 9. 待真机验证（显式标记）
+
+这些分支已实现且有单测，但本机缺少对应账号/套餐，**未做真机验证**。不要当成「已验证」，
+也不要为了补验证去频繁打上游（风控/额度代价）：
+
+| 项 | 状态 | 缺什么 | 验证方式（一次即可） |
+| --- | --- | --- | --- |
+| qoder 付费档额度 | 待真机 | 本机唯一 qoder 账号是 Free（total=0，落 notApplicable） | 换付费账号后 POST /v1/management/accounts/{ref}/usage/refresh，确认 entries 带 total/used/remaining 且 remainingPct = 100 - 使用率 |
+| cline 额度采集 | 待真机 | 两个 cline 账号 enabled=0 | 启用一个后显式 refresh，确认 5h/7d/30d 三个窗口 |
+| agy 额度采集 | 待真机 | 6 个账号 enabled=0 且 token 自 2026-10-24 过期 | 重新登录一个 agy 账号后 refresh |
+| kimi / grok 模型目录 | 待真机 | 本机没有账号 | 有账号后看 account_models 是否出现 |
+| qoder 模型目录 | 待真机 | 依赖 wasm 签名运行时（正在迁） | 目录发现一次，核对 is_reasoning/is_vl/max_input_tokens |
+
+纪律：同一台机器上 qoder 相关请求（尤其带签名的）不要连续重试；一次改动只跑 1–2 次，
+失败先看单元测试与假 HTTP，不要用真机结果当调试探针。

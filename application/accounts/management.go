@@ -12,8 +12,12 @@ import (
 // ErrInvalidManagementDependencies 表示账号管理用例没有完整的查询、写入或时钟依赖。
 var ErrInvalidManagementDependencies = errors.New("账号管理依赖无效")
 
-// AccountLifecycleStore 是账号管理命令需要的最小生命周期写入端口。
+// AccountLifecycleStore 是账号管理命令需要的最小生命周期读写端口。
 type AccountLifecycleStore interface {
+	GetByRef(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (accountcore.Account, error)
 	SetEnabled(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
@@ -75,16 +79,37 @@ type AccountStateStore interface {
 // Clock 返回账号生命周期命令使用的业务时间。
 type Clock func() time.Time
 
+// ManagementOptions 声明账号管理命令的可选副作用。
+//
+// 副作用由调用方显式注入：用例只依赖调度端口，不依赖具体刷新协调器，也不在
+// 未配置时自行创建后台任务。
+type ManagementOptions struct {
+	// ModelRefresh 在账号由停用切到启用后投递一次模型刷新；为空表示不触发。
+	ModelRefresh ModelRefreshScheduler
+	// ModelRefreshObserver 接收投递失败；异步刷新结果由协调器自己的观察端口上报。
+	ModelRefreshObserver func(
+		accountRef accountcore.AccountRef,
+		providerID string,
+		err error,
+	)
+}
+
 // Management 编排账号管理查询和生命周期命令。
 //
 // 注册、凭据刷新、删除和导入导出属于独立用例，不应继续增加到该类型。
 type Management struct {
-	overviews AccountOverviewStore
-	lifecycle AccountLifecycleStore
-	uiStates  AccountUIStateStore
-	blocks    AccountBlockStore
-	states    AccountStateStore
-	clock     Clock
+	overviews            AccountOverviewStore
+	lifecycle            AccountLifecycleStore
+	uiStates             AccountUIStateStore
+	blocks               AccountBlockStore
+	states               AccountStateStore
+	clock                Clock
+	modelRefresh         ModelRefreshScheduler
+	modelRefreshObserver func(
+		accountRef accountcore.AccountRef,
+		providerID string,
+		err error,
+	)
 }
 
 // NewManagement 使用细粒度端口创建账号管理用例。
@@ -95,18 +120,21 @@ func NewManagement(
 	blocks AccountBlockStore,
 	states AccountStateStore,
 	clock Clock,
+	options ManagementOptions,
 ) (*Management, error) {
 	if overviews == nil || lifecycle == nil || uiStates == nil ||
 		blocks == nil || states == nil || clock == nil {
 		return nil, ErrInvalidManagementDependencies
 	}
 	return &Management{
-		overviews: overviews,
-		lifecycle: lifecycle,
-		uiStates:  uiStates,
-		blocks:    blocks,
-		states:    states,
-		clock:     clock,
+		overviews:            overviews,
+		lifecycle:            lifecycle,
+		uiStates:             uiStates,
+		blocks:               blocks,
+		states:               states,
+		clock:                clock,
+		modelRefresh:         options.ModelRefresh,
+		modelRefreshObserver: options.ModelRefreshObserver,
 	}, nil
 }
 
@@ -159,6 +187,10 @@ func (management *Management) GetAccountOverviewByCLIAccountID(
 }
 
 // SetAccountEnabled 使用应用时钟原子更新用户启停状态。
+//
+// 账号由停用切到启用时投递一次模型刷新：账号重新进入可路由门后，模型目录可能
+// 仍是停用前的旧快照。投递放在用例里而不是各个调用方，CLI、API 与 Node 对账
+// 三条入口自动获得同一行为；投递失败只观察，不影响启停结果。
 func (management *Management) SetAccountEnabled(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
@@ -167,12 +199,49 @@ func (management *Management) SetAccountEnabled(
 	if !accountRef.IsValid() {
 		return accountcore.Account{}, accountcore.ErrInvalidAccountRef
 	}
-	return management.lifecycle.SetEnabled(
+	wasEnabled := false
+	if enabled {
+		current, err := management.lifecycle.GetByRef(ctx, accountRef)
+		if err != nil {
+			return accountcore.Account{}, err
+		}
+		wasEnabled = current.Enabled()
+	}
+	account, err := management.lifecycle.SetEnabled(
 		ctx,
 		accountRef,
 		enabled,
 		management.clock(),
 	)
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	if enabled && !wasEnabled {
+		management.scheduleModelRefresh(ctx, account)
+	}
+	return account, nil
+}
+
+// scheduleModelRefresh 投递启用后的模型刷新；失败只上报观察端口。
+func (management *Management) scheduleModelRefresh(
+	ctx context.Context,
+	account accountcore.Account,
+) {
+	if management.modelRefresh == nil {
+		return
+	}
+	err := management.modelRefresh.ScheduleModelRefresh(
+		ctx,
+		account.Ref(),
+		account.ProviderID(),
+	)
+	if err != nil && management.modelRefreshObserver != nil {
+		management.modelRefreshObserver(
+			account.Ref(),
+			account.ProviderID(),
+			err,
+		)
+	}
 }
 
 // ReplaceAccountUIState 覆盖账号页展示状态。

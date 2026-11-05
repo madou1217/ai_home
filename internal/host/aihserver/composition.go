@@ -331,10 +331,6 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
 	}
-	management, err := accountapp.NewManagement(store, store, store, store, store, time.Now)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
-	}
 	providerDefaults, err := accountapp.NewProviderDefaults(catalog, store, time.Now)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Provider 默认账号用例失败: %w", err)
@@ -405,6 +401,34 @@ func newHandlers(
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号模型异步刷新协调器失败: %w", err)
+	}
+	// 启用即刷新复用同一个协调器：账号从停用切到启用时投递一次，合并与重试
+	// 仍由 Provider 队列负责；投递失败只记录，不回滚启停。
+	management, err := accountapp.NewManagement(
+		store,
+		store,
+		store,
+		store,
+		store,
+		time.Now,
+		accountapp.ManagementOptions{
+			ModelRefresh: modelRefresh,
+			ModelRefreshObserver: func(
+				accountRef accountcore.AccountRef,
+				providerID string,
+				err error,
+			) {
+				errorLog.Printf(
+					"账号启用后投递模型刷新失败 account=%s provider=%s: %v",
+					accountRef,
+					providerID,
+					err,
+				)
+			},
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,

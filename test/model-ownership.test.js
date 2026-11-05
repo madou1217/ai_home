@@ -85,10 +85,12 @@ test('上游探测 handler 已删除（opencode / cline 不再由 Node 探测）
 });
 
 test('goOwnedModels 对未登记 Provider 直接抛错', () => {
-  assert.throws(() => goOwnedModels('codex'), /不是 Go 发现/);
-  assert.equal(isGoOwnedModels('codex'), false);
+  assert.throws(() => goOwnedModels('plugin-unknown'), /不是 Go 发现/);
+  assert.equal(isGoOwnedModels('plugin-unknown'), false);
   assert.equal(isGoOwnedModels('OPENCODE'), true);
   assert.equal(isGoOwnedModels('cline'), true);
+  assert.equal(isGoOwnedModels('codex'), true);
+  assert.equal(isGoOwnedModels('claude'), true);
 });
 
 function goCatalogResponse(accountRef, provider, models) {

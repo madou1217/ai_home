@@ -879,9 +879,27 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - 说明：Go 的 opencode 目录在刷新窗口内会短暂为空（模型行被整体替换），WebUI 如实反映；
   这不是 Node 探测问题，属于 Go 侧刷新策略，后续单独观察。
 
+### 第三批：收尾（16/16）
+
+- **agy / gemini / kimi / grok / zcode / codex / claude** 全部改为 `goOwnedModels(id)`。
+- 删除最后一批 Node 探测实现：`codex-native-models`、`code-assist-models`、`native-cli`
+  三个 handler；`http-utils` 的 codex / code-assist 兜底分支与本地 CLI 兜底；
+  `lib/server/native-cli-model-discovery.js` 整文件删除；`describeNativeCliFallbackFailure`
+  一并删除（CLI 策略已全部退役）。
+- `fetchModelsForAccount` 现在只剩两条路径：Go 接管（唯一策略）与「无策略时的通用
+  /models 探测」（插件 Provider 用）。派发路径不再出现任何内置 provider 名。
+- **停用账号的本地目录**：`getWebUiCatalogResult` 在 Go 正常作答后，丢弃 Go 没有返回的
+  Go 接管账号的本地缓存（`dropGoOwnedLocalEntries`）；Go 不可达（null）时仍保留快照兜底。
+  这样停用账号不会永远显示上一次 Node 探测的历史目录。
+- **真机对比**（43 个账号，逐账号 scoped vs Go `account_models`）：
+  - 35 个账号完全一致；
+  - 6 个 agy 账号 `enabled=0` 不在运行池：页面不展示目录（Go 有 12 条），符合既有行为；
+  - 2 个 cline 账号 `enabled=0`：页面只显示手工模型设置（Go 无目录）。启用后由 Go 刷新。
+- **待真机**：kimi / grok / gemini / cline 的目录要等对应账号可用后验证；
+  codex / claude / agy / zcode / qoder / kiro / 家族已用现网账号验证过条数。
+
 ### 下一步
 
-- 剩余 Provider：gemini / zcode / agy / kimi / grok（前四家本机账号停用或缺失，
-  等启用后按同一形状退役）。
-- codex / claude 最后（仍有 CLI 与特殊目录逻辑）。
-- cline 启用账号后验证 scoped 目录 = 14 = `/v1/management/account-models`。
+- 模型目录迁移到此收口；后续 Provider 新增只改 descriptor 一行
+  （`models: goOwnedModels(id)`）+ 在 Go 注册目录源。
+- 停用账号的目录展示策略（是否在启用前也读 Go）留待产品确认。

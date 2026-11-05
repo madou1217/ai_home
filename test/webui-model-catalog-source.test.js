@@ -47,6 +47,32 @@ test('Go 有数据时覆盖 byAccount，保留 Node 的探测时刻/标签/路�
   assert.equal(merged.source, 'remote');
 });
 
+test('Go 接管的 Provider：Go 没有条目的账号不再显示本地历史目录', () => {
+  const { __private: { dropGoOwnedLocalEntries } } = require('../lib/server/webui-model-catalog-source');
+  // 16 家内置 Provider 现在全部由 Go 接管；这里用一个插件 Provider 验证「非 Go 接管仍保留」。
+  const state = {
+    accounts: {
+      cline: [{ accountRef: 'acct_cline_1' }],
+      'plugin-demo': [{ accountRef: 'acct_plugin_1' }]
+    }
+  };
+  const local = { byAccount: { acct_cline_1: ['stale/cline'], acct_plugin_1: ['plugin-model'] } };
+  const dropped = dropGoOwnedLocalEntries(state, local, { byAccount: { acct_other: ['x'] } }, null);
+  assert.equal(Object.prototype.hasOwnProperty.call(dropped.byAccount, 'acct_cline_1'), false);
+  assert.deepEqual(dropped.byAccount.acct_plugin_1, ['plugin-model']);
+});
+
+test('Go 读不到（null）时保留本地快照；Go 明确答复为空则丢弃', () => {
+  const { __private: { dropGoOwnedLocalEntries } } = require('../lib/server/webui-model-catalog-source');
+  const state = { accounts: { cline: [{ accountRef: 'acct_cline_1' }] } };
+  const local = { byAccount: { acct_cline_1: ['stale/cline'] } };
+  // null = Go 不可达/失败：保留上一份快照兜底。
+  assert.equal(dropGoOwnedLocalEntries(state, local, null, null), local);
+  // 200 + 空 byAccount = Go 明确说「这个账号没有目录」：本地历史目录必须丢弃。
+  const dropped = dropGoOwnedLocalEntries(state, local, { byAccount: {} }, null);
+  assert.equal(Object.prototype.hasOwnProperty.call(dropped.byAccount, 'acct_cline_1'), false);
+});
+
 test('Go 成功覆盖后旧 firstError 不再残留', () => {
   const local = localResult();
   local.firstError = 'go_model_catalog_unavailable:go_model_catalog_reader_missing';

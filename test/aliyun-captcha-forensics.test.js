@@ -43,7 +43,8 @@ test('Chrome 必须有头，不能回到 headless', () => {
   assert.equal(args.includes('--headless=new'), false, '不能回到 headless：实测必 F001');
   assert.equal(args.some((a) => a.startsWith('--headless')), false, '不能出现任何 headless 开关');
   // Windows/Linux 上 --window-position 有效；macOS 会忽略它，改由 CDP 在加载后移窗。
-  assert.ok(args.includes('--window-position=-3000,-3000'), '支持的平台先把窗口放到屏幕外');
+  // 停到屏幕**下方**：macOS 垂直方向只留工作区底边那 120px，暴露面比贴左边小得多。
+  assert.ok(args.includes('--window-position=-3000,3000'), '支持的平台先把窗口放到屏幕外');
   assert.ok(args.includes('--user-data-dir=/tmp/profile-x'), '必须用独立 profile');
 });
 
@@ -190,7 +191,11 @@ test('移窗只移动、不最小化（最小化会冻结渲染进程）', async
   assert.equal(moved, true);
   assert.equal(calls[0].method, 'Browser.getWindowForTarget');
   assert.equal(calls[1].method, 'Browser.setWindowBounds');
-  assert.deepEqual(calls[1].params, { windowId: 42, bounds: { left: -3000, top: -3000 } });
+  assert.deepEqual(
+    calls[1].params,
+    { windowId: 42, bounds: { left: -3000, top: 3000 } },
+    '停到屏幕下方：macOS 垂直只留工作区底边，暴露面 40×120（贴左边是 40×700）'
+  );
   assert.equal(
     calls.some((call) => call.params && call.params.bounds && call.params.bounds.windowState),
     false,

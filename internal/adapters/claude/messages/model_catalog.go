@@ -177,8 +177,14 @@ func modelCatalogCandidates(baseURL string) []string {
 		return nil
 	}
 	base := strings.TrimRight(parsed.String(), "/")
-	candidates := []string{base + "/models", base + "/v1/models"}
-	if path := strings.TrimRight(parsed.EscapedPath(), "/"); path != "" {
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	// 与 Node 的 pathStyle 一致：base 已经以 /vN 结尾时只拼 /models，
+	// 否则同时试 /models 与 /v1/models。
+	candidates := []string{base + "/models"}
+	if !endsWithVersionSegment(path) {
+		candidates = append(candidates, base+"/v1/models")
+	}
+	if path != "" {
 		origin := parsed.Scheme + "://" + parsed.Host
 		candidates = append(candidates, origin+"/v1/models", origin+"/models")
 	}
@@ -192,6 +198,23 @@ func modelCatalogCandidates(baseURL string) []string {
 		endpoints = append(endpoints, candidate)
 	}
 	return endpoints
+}
+
+// endsWithVersionSegment 判断路径是否已经带 API 版本段（如 /v1、/v1beta）。
+func endsWithVersionSegment(path string) bool {
+	last := path
+	if index := strings.LastIndex(path, "/"); index >= 0 {
+		last = path[index+1:]
+	}
+	if len(last) < 2 || last[0] != 'v' {
+		return false
+	}
+	for _, character := range last[1:] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // fetchCatalogAt 读取单个候选端点的目录；Anthropic 分页形状会继续翻页。

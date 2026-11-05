@@ -22,8 +22,12 @@ func TestModelCatalogCandidatesFollowNodeOrder(t *testing.T) {
 	if strings.Join(endpoints, ",") != strings.Join(expected, ",") {
 		t.Fatalf("endpoints = %v", endpoints)
 	}
-	// 已是 origin 时只保留 base 两个候选。
-	if got := modelCatalogCandidates("https://proxy.example.com/v1"); len(got) != 3 {
+	// base 已带版本段时不再拼 /v1/models；origin 候选与 base 去重。
+	got := modelCatalogCandidates("https://proxy.example.com/v1")
+	if strings.Join(got, ",") != "https://proxy.example.com/v1/models,https://proxy.example.com/models" {
+		t.Fatalf("versioned endpoints = %v", got)
+	}
+	if got := modelCatalogCandidates("https://proxy.example.com"); len(got) != 2 {
 		t.Fatalf("origin endpoints = %v", got)
 	}
 }

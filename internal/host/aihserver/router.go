@@ -161,7 +161,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 		mux.Handle(modelaliasapi.Path, handlers.modelAliases)
 	}
 	if handlers.modelAliasesWebUI != nil {
+		// 不带尾斜杠的 pattern 只匹配精确路径；子路径（/{id}、/{id}/enabled）必须
+		// 另外挂 Path + "/"，否则 DELETE/PUT 会落到兜底的 route_not_found。
 		mux.Handle(modelaliaswebui.Path, handlers.modelAliasesWebUI)
+		mux.Handle(modelaliaswebui.Path+"/", handlers.modelAliasesWebUI)
 	}
 	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只承接自己已能求值的账号。
 	if handlers.upstreamRules != nil {

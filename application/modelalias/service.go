@@ -78,6 +78,10 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Record, 
 	if service == nil || service.store == nil {
 		return Record{}, 0, ErrInvalidProjection
 	}
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
 	record := Record{
 		ID:             generateAliasID(),
 		Alias:          strings.TrimSpace(input.Alias),
@@ -85,8 +89,10 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Record, 
 		Provider:       service.normalizeScope(input.Provider),
 		TargetProvider: strings.TrimSpace(input.TargetProvider),
 		Priority:       input.Priority,
-		Enabled:        input.Enabled,
-		Description:    strings.TrimSpace(input.Description),
+		// enabled 显式落成布尔：Node 的契约里它是 true/false，存成 null 会让
+		// 前端拿到第三种状态（"未设置"），而语义上「未设置」就是启用。
+		Enabled:     &enabled,
+		Description: strings.TrimSpace(input.Description),
 	}
 	if !record.IsValid() {
 		return Record{}, 0, ErrInvalidAlias
@@ -99,7 +105,18 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Record, 
 	if err != nil {
 		return Record{}, 0, err
 	}
-	return record, generation, nil
+	// 返回「存进去之后读回来的样子」：Store 会补全 provider/targetProvider 的默认值，
+	// 直接返回入参会和随后的列表接口对不上（前端刚创建就看到空字段）。
+	return service.lastRecord(), generation, nil
+}
+
+// lastRecord 返回当前集合的最后一条；Create 刚追加的就是它。
+func (service *Service) lastRecord() Record {
+	records := service.store.Snapshot().Records()
+	if len(records) == 0 {
+		return Record{}
+	}
+	return records[len(records)-1]
 }
 
 // Update 修改一条别名；找不到时报 ErrAliasNotFound。
@@ -145,7 +162,16 @@ func (service *Service) Update(ctx context.Context, id string, input UpdateInput
 	if err != nil {
 		return Record{}, 0, err
 	}
-	return updated, generation, nil
+	return service.recordAt(index), generation, nil
+}
+
+// recordAt 返回替换后同一位置上的记录（Store 可能补全默认值）。
+func (service *Service) recordAt(index int) Record {
+	records := service.store.Snapshot().Records()
+	if index < 0 || index >= len(records) {
+		return Record{}
+	}
+	return records[index]
 }
 
 // Delete 删除一条别名。

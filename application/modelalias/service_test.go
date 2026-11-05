@@ -149,3 +149,35 @@ func TestServiceCreateDoesNotPublishWhenSaveFails(t *testing.T) {
 		t.Fatalf("失败后内存被改写: %d 条", len(service.List()))
 	}
 }
+
+// 返回值必须是「读回来的样子」：Store 会补 provider/targetProvider 默认值，
+// 返回入参会让前端刚创建就看到空字段（真机上就出现过 targetProvider=""）。
+func TestServiceCreateReturnsNormalizedRecord(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	record, _, err := service.Create(context.Background(), CreateInput{Alias: "a", Target: "x"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if record.Provider != ScopeAll {
+		t.Fatalf("provider = %q, want all", record.Provider)
+	}
+	if record.TargetProvider != TargetProviderAuto {
+		t.Fatalf("targetProvider = %q, want auto", record.TargetProvider)
+	}
+	if record.Enabled == nil || !*record.Enabled {
+		t.Fatalf("enabled = %v, want 显式 true", record.Enabled)
+	}
+}
+
+func TestServiceUpdateReturnsNormalizedRecord(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	record, _, _ := service.Create(context.Background(), CreateInput{Alias: "a", Target: "x"})
+	empty := ""
+	updated, _, err := service.Update(context.Background(), record.ID, UpdateInput{TargetProvider: &empty})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.TargetProvider != TargetProviderAuto {
+		t.Fatalf("targetProvider = %q, want auto（空值应归一到 auto）", updated.TargetProvider)
+	}
+}

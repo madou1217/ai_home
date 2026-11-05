@@ -727,6 +727,11 @@ Node 进程（过渡期，逐渐缩小）
 >    - **真机注意**：首次「qoder 排队」响应实际由 Node 服务（当时 manifest 还没重新生成）。
 >      当前这台机器的账号带 **egress 绑定**，Node 会以 `account_egress` 交还自己处理；
 >      Go 侧要承接这类账号，必须先支持**按账号出口**（下一步）。
+>    - **2026-11-06 出口豁免**：账号绑 `direct`（显式直连）且 Go **没有全局代理**时，
+>      Go 的行为与 direct 一致，不再交还 Node（见 `lib/server/account-egress-go-scope.js`）。
+>      真机：zcode `acct_6738…` 的 `glm-5.3-flash` 请求由 Go 的 zcode relay 承接并返回
+>      chat completion；`/readyz` 的 `account_egress` 计数为 0。url/pool/system/retired
+>      仍交还 Node。
 
 > 41. **OAuth 作业公开快照持久化（2026-11-05）**：
 >    - aih.db v17 新增 `oauth_jobs`；`accountauth.Service` 每次状态迁移同步落快照，

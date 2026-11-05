@@ -17,6 +17,7 @@ import (
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
+	geminiusage "github.com/madou1217/ai_home/internal/adapters/gemini/usage"
 	codebuddyfamilyusage "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/usage"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
@@ -125,6 +126,11 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// gemini 的额度来自 v1internal:retrieveUserQuota（模型桶，无窗口时长）。
+	geminiStrategy, err := geminiusage.New(client)
+	if err != nil {
+		return nil, err
+	}
 	// Qoder 家族两个区域共用同一账号面协议；凭据是 CLI 的 opaque blob 时由
 	// qodercred 用厂商 wasm 解密出 token（Node 侧同为 cli_wasm 来源）。
 	qoderStrategies := make([]usageapp.ProviderStrategy, 0, 2)
@@ -165,6 +171,7 @@ func newUsageComposition(
 			agyStrategy,
 			zcodeStrategy,
 			clineStrategy,
+			geminiStrategy,
 		}, qoderStrategies...), familyStrategies...),
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
@@ -186,6 +193,7 @@ func newUsageComposition(
 			"workbuddy":   usageProviderConcurrency,
 			"workbuddycn": usageProviderConcurrency,
 			"cline":       usageProviderConcurrency,
+			"gemini":      usageProviderConcurrency,
 			"qoder":       usageProviderConcurrency,
 			"qodercn":     usageProviderConcurrency,
 		},

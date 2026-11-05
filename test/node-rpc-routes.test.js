@@ -47,8 +47,8 @@ test('device-accounts 汇总按 Provider 与运行态分组', () => {
   assert.equal(claude.status, 'down');
 });
 
-test('device-sessions 跳过没有 id 的记录并给出摘要', () => {
-  const result = buildDeviceSessions('/nonexistent-home', null);
+test('device-sessions 跳过没有 id 的记录并给出摘要', async () => {
+  const result = await buildDeviceSessions('/nonexistent-home', null);
   assert.ok(Array.isArray(result.sessions));
   assert.equal(typeof result.summary.total, 'number');
 });

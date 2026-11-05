@@ -94,3 +94,34 @@ test('snapshots without a usable capture time or source are not facts', () => {
   assert.equal(buildUsageFacts({ kind: 'codex_oauth_status', source: 'x', capturedAt: 0 }), null);
   assert.equal(buildUsageFacts({ kind: 'codex_oauth_status', capturedAt: 1000 }), null);
 });
+
+test('plan type is normalized with the provider quota strategy', () => {
+  const snapshot = {
+    schemaVersion: 2,
+    kind: 'codebuddy_billing',
+    source: 'codebuddy_billing',
+    capturedAt: 1762300000000,
+    account: { planType: 'Pro Plus' },
+    entries: [{ bucket: 'primary', remainingPct: 80 }]
+  };
+  // 家族在 Node 侧走默认策略：只小写，不折叠分隔符。
+  assert.equal(buildUsageFacts(snapshot, { provider: 'codebuddy' }).plan_type, 'pro plus');
+  // 没有 provider 就无法判定词表，宁可留空也不猜。
+  assert.equal(buildUsageFacts(snapshot).plan_type, '');
+  // 不是套餐的鉴权模式必须落空串，不能变成套餐。
+  assert.equal(
+    buildUsageFacts(
+      { ...snapshot, account: { planType: 'oauth' } },
+      { provider: 'codex' }
+    ).plan_type,
+    ''
+  );
+  // 超长套餐名一律当未知：Go 的列约束会让整次同步失败，不能带过去。
+  assert.equal(
+    buildUsageFacts(
+      { ...snapshot, account: { planType: 'x'.repeat(70) } },
+      { provider: 'codebuddy' }
+    ).plan_type,
+    ''
+  );
+});

@@ -111,8 +111,13 @@
     **部署要点（踩过）**：必须用 `npm run go:build`（`node scripts/build-go-server.js`）。
     直接 `go build -o bin/native/...` 出来的二进制没有 build stamp，supervisor 会以
     `go_core_build_mismatch` 拒绝启动，表现为「杀掉 core 后一直起不来」。
-    2026-11-06 已用官方脚本重建并重启成功（healthz 200）；账本按真实流量结算，
-    空闲时段仍会是 0，验证时要用一次真实推理再看。
+    2026-11-06 已用官方脚本重建并重启成功（healthz 200）。
+    **真机已验证**：直连 Go 发一次 `glm-5.3-flash`（zcode）后，`usage_ledger` 立刻出现一行
+    `zcode / 1083 input / 1 output`——旁路解析、记录构造、账号校验、SQL 写入整条链路通。
+    **已知缺口**：kiro 同样返回 200，却没有账本行。原因是 kiro 的上游是二进制
+    AWS event-stream，用量在 metering 帧里，由 `kirorelay.FrameDecoder` 解析；而旁路扫描器
+    只认 SSE/`data:` 与整段 JSON。下一步：给 Provider 加「用量上报」扩展点，让已经解析了
+    帧的 transformer 把 usage 交出来，而不是再解析一遍原始字节。
     校验判据（可直接跑）：
     ```bash
     sqlite3 ~/.ai_home/aih.db "select count(*) from usage_ledger;"

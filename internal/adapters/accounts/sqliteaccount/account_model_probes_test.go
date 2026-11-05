@@ -158,8 +158,12 @@ func TestAccountModelProbesForwardMigrationFromV20(t *testing.T) {
 	); err != nil {
 		t.Fatalf("插入账号失败: %v", err)
 	}
-	if _, err := store.db.ExecContext(ctx, "DROP TABLE account_model_probes"); err != nil {
-		t.Fatalf("drop account_model_probes error = %v", err)
+	// 回退到 v20 的夹具必须是**真正的 v20 结构**：v22 新增的别名表也要一起删，
+	// 否则重放 v23 的 ALTER TABLE ADD COLUMN 会撞上「列已存在」。
+	for _, table := range []string{"account_model_probes", "model_alias", "model_alias_meta"} {
+		if _, err := store.db.ExecContext(ctx, "DROP TABLE IF EXISTS "+table); err != nil {
+			t.Fatalf("drop %s error = %v", table, err)
+		}
 	}
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 20"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)

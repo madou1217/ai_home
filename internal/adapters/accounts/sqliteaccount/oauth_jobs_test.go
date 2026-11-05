@@ -290,6 +290,10 @@ func TestOAuthJobsForwardMigrationFromV16(t *testing.T) {
 		"account_quota_detector_state",
 		"account_quota_reset_events",
 		"account_model_probes",
+		// v22/v23 新增的别名表也必须回退：夹具要代表真正的 v16 结构，
+		// 否则重放 v23 的 ALTER TABLE ADD COLUMN 会撞上「列已存在」。
+		"model_alias",
+		"model_alias_meta",
 	} {
 		if _, err := store.db.ExecContext(ctx, "DROP TABLE "+table); err != nil {
 			t.Fatalf("drop %s error = %v", table, err)

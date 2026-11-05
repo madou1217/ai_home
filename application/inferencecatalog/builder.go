@@ -47,6 +47,9 @@ type Builder struct {
 	// relayProviders 声明由独立透传通道执行、不进 Canonical 路由目录的 Provider。
 	// 键是账号目录里的 Provider ID（字符串），不经过 Canonical 的封闭 Provider 集合。
 	relayProviders map[string]struct{}
+	// nodeOnlyProviders 声明 Go 没有推理上游、只能由 Node 服务的 Provider。
+	// 它们的模型不进 Go 的目录（Go 不认识 → 请求交还 Node），也不能让整个快照构建失败。
+	nodeOnlyProviders map[string]struct{}
 	// aliases 是 Node 推送的模型别名投影；为空表示 Go 不做别名改写（全部交还 Node）。
 	aliases *modelalias.Store
 }
@@ -105,7 +108,14 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	rules := make([]inferencegateway.RouteRule, 0, len(models))
 	identities := make(map[ruleIdentity]struct{}, len(models))
 	routedModels := make([]accountapp.RoutableModel, 0, len(models))
+	displayModels := make([]accountapp.RoutableModel, 0, len(models))
 	for _, model := range models {
+		if builder.isNodeOnlyModel(model) {
+			// Node-only Provider：Go 不认识这些模型，请求会因「模型不可路由」交还 Node。
+			// 不能在这里报错——否则一个 kiro 模型就能让整个 Go 路由目录构建失败。
+			continue
+		}
+		displayModels = append(displayModels, model)
 		if builder.isRelayModel(model) {
 			// 透传通道执行的模型进入展示目录与账号路由索引，但不编译 Canonical
 			// 执行规则：通道选择由入口挂载决定，出现规则反而会制造第二处真相。
@@ -128,7 +138,7 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 			return nil, fmt.Errorf("%w: %w", ErrInvalidProviderRoute, err)
 		}
 	}
-	display := uniqueModels(models)
+	display := uniqueModels(displayModels)
 	displayOnly := countDisplayOnlyModels(display, routedModels)
 	return newSnapshot(routes, display, len(rules), displayOnly, compilation), nil
 }
@@ -152,6 +162,22 @@ func (builder *Builder) WithRelayProviders(providers ...string) *Builder {
 	return builder
 }
 
+// WithNodeOnlyProviders 声明只能由 Node 服务的 Provider（Go 无上游适配器）。
+//
+// 与 relayProviders 的区别：透传通道是 Go 能服务、只是不走 Canonical；node-only
+// 是 Go 根本服务不了。两类都必须显式声明——未声明的 Provider 缺 Factory 仍是硬错误。
+func (builder *Builder) WithNodeOnlyProviders(providers ...string) *Builder {
+	if builder == nil {
+		return builder
+	}
+	registry := make(map[string]struct{}, len(providers))
+	for _, providerID := range providers {
+		registry[providerID] = struct{}{}
+	}
+	builder.nodeOnlyProviders = registry
+	return builder
+}
+
 // validateRelayProviders 拒绝空 Provider ID：静默忽略会让「声明的透传通道」
 // 和「实际跳过的模型」悄悄不一致。
 func (builder *Builder) validateRelayProviders() error {
@@ -160,7 +186,21 @@ func (builder *Builder) validateRelayProviders() error {
 			return ErrInvalidBuilder
 		}
 	}
+	for providerID := range builder.nodeOnlyProviders {
+		if strings.TrimSpace(providerID) == "" {
+			return ErrInvalidBuilder
+		}
+	}
 	return nil
+}
+
+// isNodeOnlyModel 判断该模型是否只能由 Node 服务（Go 不编译、不路由）。
+func (builder *Builder) isNodeOnlyModel(model accountapp.RoutableModel) bool {
+	if builder == nil || len(builder.nodeOnlyProviders) == 0 {
+		return false
+	}
+	_, nodeOnly := builder.nodeOnlyProviders[model.ProviderID()]
+	return nodeOnly
 }
 
 // isRelayModel 判断该模型是否由声明的透传通道执行。
@@ -212,7 +252,12 @@ func (builder *Builder) buildRule(
 	providerID := inference.ProviderID(model.ProviderID())
 	factory := builder.factories[providerID]
 	if factory == nil {
-		return inferencegateway.RouteRule{}, ErrProviderRouteFactoryNotFound
+		// 带上 Provider：只有「Factory 不存在」时不知道是谁，排查只能靠猜。
+		return inferencegateway.RouteRule{}, fmt.Errorf(
+			"%w: %s",
+			ErrProviderRouteFactoryNotFound,
+			providerID,
+		)
 	}
 	route, err := factory.BuildRoute(model.ModelID())
 	if err != nil {

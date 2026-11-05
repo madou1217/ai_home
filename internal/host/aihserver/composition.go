@@ -76,6 +76,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/opencoderelay"
+	"github.com/madou1217/ai_home/internal/transport/http/qoderrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
@@ -1054,6 +1055,28 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 kimi 透传账号来源失败: %w", err)
 	}
+	// qoder 透传：WASM 签名 + zstd 请求体，两个区域各一条账号来源。凭据策略只认
+	// 原生登录态（静态 API Key 没有签名材料），其余形态交回 Canonical。
+	qoderRelayAccounts, err := newProviderRelayAccountSource(
+		qoderrelay.QoderProviderID,
+		catalog,
+		inference.recruiter,
+		qoderRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 qoder 透传账号来源失败: %w", err)
+	}
+	qoderCNRelayAccounts, err := newProviderRelayAccountSource(
+		qoderrelay.QoderCNProviderID,
+		catalog,
+		inference.recruiter,
+		qoderRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 qodercn 透传账号来源失败: %w", err)
+	}
 	// OpenCode 官方 API Key 透传：只承接 native api-key 凭据。OAuth/CLI/free-tier
 	// 语义依赖 Node 客户端，凭据策略会把它们留在 Node。
 	opencodeRelayAccounts, err := newProviderRelayAccountSource(
@@ -1079,6 +1102,8 @@ func newHandlers(
 				grokRelayAccounts,
 				kimiRelayAccounts,
 				opencodeRelayAccounts,
+				qoderRelayAccounts,
+				qoderCNRelayAccounts,
 				familyRelayAccounts,
 			),
 			Fallback:    inference.handler,
@@ -1093,6 +1118,7 @@ func newHandlers(
 				grokrelay.NewProvider(""),
 				newKimiRelayProvider(kimiClientVersion()),
 				opencoderelay.NewProvider(),
+				qoderrelay.NewProvider(),
 			},
 		},
 	)

@@ -720,10 +720,12 @@ Node 进程（过渡期，逐渐缩小）
 >      （wasm 只给 36 字符占位，不覆盖会 500）。
 >    - `relaycore` 新增可选 `ResponseTransformer` 扩展点（Provider 自己消费成功响应）。
 >    - 单测全绿（body/sse/provider，假 signer + httptest，不依赖真机）。
->    - **真机未通过**：本机唯一 qoder 账号是 Free，连续 3 次上游 500（已按频率纪律停手），
->      无法判断是账号额度/套餐还是线协议差异。**因此没有接线**（组合根与 ProviderChain
->      保持原样），接线适配器 `internal/host/aihserver/qoder_relay_account_source.go`
->      已备好；验证通过后再挂链。
+>    - **已接线（2026-11-06）**：qoder/qodercn 进 ProviderChain 与账号来源，
+>      `core/providers/builtins.go` 的 relay host 改为 Go（`gateway.openai.chat_completions`）。
+>      真机：Free 账号 pinned 请求到达 Go 通道，返回 qoder 自己的
+>      `qoder_resource_limit`（「上游排队，约 30 秒后重试」）——签名/请求体/上游路径全部打通；
+>      Free 套餐不提供可用模型（`model not allowed`）是账号限制，不是线协议问题。
+>      静态凭据/CLI 账号仍由 `qoderRelayTransportPolicy` 交还 Node。
 
 > 41. **OAuth 作业公开快照持久化（2026-11-05）**：
 >    - aih.db v17 新增 `oauth_jobs`；`accountauth.Service` 每次状态迁移同步落快照，

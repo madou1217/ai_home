@@ -366,7 +366,7 @@ func builtinQoder() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
-		RelayHosts:   relayHostsNodeOnly("qoder 的推理只能经本机 CLI headless 执行，Go 服务端无此条件"),
+		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		// usage_scan：扫描本地会话历史（projects/<project>/<session>.jsonl）建立会话/prompt
 		// 索引，并在 assistant 记录带 usage 时统计 token。**2026-10-15 在 Windows 真机核实：
 		// qoder CLI 1.1.2 的会话 JSONL 不写 usage**，因此 token 用量的实际来源是运行时——
@@ -435,7 +435,7 @@ func builtinQoderCN() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
-		RelayHosts:   relayHostsNodeOnly("qodercn 的推理只能经本机 CLI headless 执行，Go 服务端无此条件"),
+		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
@@ -973,7 +973,7 @@ func builtinWorkbuddy() Definition {
 func builtinWorkbuddyCN() Definition {
 	reloadsHostAuth := false
 	return Definition{
-		ID:             "workbuddycn",
+		ID: "workbuddycn",
 		// WorkBuddy CN owns the same embedded CodeBuddy runtime as WorkBuddy AI,
 		// but uses the domestic provider's HOME/config root and auth projection.
 		// Keep the native boundary aligned with the actual WorkBuddy app bundle:

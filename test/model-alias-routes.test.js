@@ -107,3 +107,83 @@ test('replace route with no records deletes the whole group in one request', asy
   const listed = await call('GET', '/v0/webui/model-aliases');
   assert.deepEqual(listed.payload.aliases, []);
 });
+
+// 下面几条是「翻转前」的行为快照：create/update/delete/toggle 的响应形状与状态变更。
+// 之后把写路径切到 Go 时，这些断言必须保持不变——它们就是契约本身。
+
+test('create 返回新别名并补默认作用域', async (t) => {
+  const { call } = createRouteHarness(t);
+  const created = await call('POST', '/v0/webui/model-aliases', {
+    alias: 'my-glm',
+    target: 'glm-5.3-flash',
+    targetProvider: 'zcode'
+  });
+  assert.equal(created.statusCode, 200, JSON.stringify(created.payload));
+  assert.ok(created.payload.alias.id);
+  assert.equal(created.payload.alias.alias, 'my-glm');
+  // 未指定 provider 时按 all 作用域落库。
+  assert.equal(created.payload.alias.provider, 'all');
+
+  const listed = await call('GET', '/v0/webui/model-aliases');
+  assert.deepEqual(listed.payload.aliases.map((row) => row.alias), ['my-glm']);
+});
+
+test('create 缺字段时 400', async (t) => {
+  const { call } = createRouteHarness(t);
+  const created = await call('POST', '/v0/webui/model-aliases', { alias: 'only-alias' });
+  assert.equal(created.statusCode, 400);
+  assert.equal(created.payload.error, 'missing_fields');
+});
+
+test('update 改字段后列表随之变化', async (t) => {
+  const { call } = createRouteHarness(t);
+  const created = await call('POST', '/v0/webui/model-aliases/replace', {
+    replaceIds: [],
+    records: [{ alias: 'my-glm', target: 'glm-5.3-flash', targetProvider: 'zcode' }]
+  });
+  const [record] = created.payload.aliases;
+
+  const updated = await call('PUT', '/v0/webui/model-aliases/' + record.id, {
+    alias: 'my-glm',
+    target: 'GLM-5.3-Flash',
+    targetProvider: 'qoder',
+    priority: 5
+  });
+  assert.equal(updated.statusCode, 200, JSON.stringify(updated.payload));
+
+  const listed = await call('GET', '/v0/webui/model-aliases');
+  const row = listed.payload.aliases.find((alias) => alias.id === record.id);
+  assert.equal(row.target, 'GLM-5.3-Flash');
+  assert.equal(row.targetProvider, 'qoder');
+  assert.equal(row.priority, 5);
+});
+
+test('toggle 翻转启用状态', async (t) => {
+  const { call } = createRouteHarness(t);
+  const created = await call('POST', '/v0/webui/model-aliases/replace', {
+    replaceIds: [],
+    records: [{ alias: 'my-glm', target: 'glm-5.3-flash', targetProvider: 'zcode' }]
+  });
+  const [record] = created.payload.aliases;
+  const toggled = await call('POST', '/v0/webui/model-aliases/' + record.id + '/toggle');
+  assert.equal(toggled.statusCode, 200, JSON.stringify(toggled.payload));
+  const listed = await call('GET', '/v0/webui/model-aliases');
+  assert.equal(listed.payload.aliases[0].enabled, false);
+});
+
+test('delete 移除记录，未知 id 返回 404', async (t) => {
+  const { call } = createRouteHarness(t);
+  const created = await call('POST', '/v0/webui/model-aliases/replace', {
+    replaceIds: [],
+    records: [{ alias: 'my-glm', target: 'glm-5.3-flash', targetProvider: 'zcode' }]
+  });
+  const [record] = created.payload.aliases;
+  const removed = await call('DELETE', '/v0/webui/model-aliases/' + record.id);
+  assert.equal(removed.statusCode, 200, JSON.stringify(removed.payload));
+  const listed = await call('GET', '/v0/webui/model-aliases');
+  assert.deepEqual(listed.payload.aliases, []);
+
+  const missing = await call('DELETE', '/v0/webui/model-aliases/deadbeef');
+  assert.equal(missing.statusCode, 404);
+});
+

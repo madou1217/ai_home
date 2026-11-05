@@ -58,7 +58,10 @@ lib/server/alias-go-owner.js（Node 只维护读投影，写成功后从 Go 拉�
 /targets 仍由 Node 计算（基于能力索引，覆盖比 Go 的路由目录更广）。
 翻转条件是「Go Core 已启用」而不是开关：写入口只有一份，Go 不可用时写请求 503、
 读走本地投影（最后一次一致的数据），不会退回翻转前的旧事实。
-**注意**：Node 进程重启后生效；回滚方式 = 停用 Go Core（写入会 503，需同步恢复 Node 写路径）。
+**已于 2026-11-06 重启生效**：重启时发现并用真实 home 启动了服务（accounts=35、api_key=configured），
+重启前后 Go 的 model_alias_meta.generation 停在 32、2 条别名不变、日志无推送记录，
+双库对账 aliases_in_sync —— 说明写入口切 Go 与停推守卫都已生效。
+回滚方式 = 停用 Go Core（写入会 503，需同步恢复 Node 写路径）。
 剩余：真机六操作验收（重启 Node 后）与删除 Node 侧 store。
 
 ### C 的可执行清单（客户端已就绪）

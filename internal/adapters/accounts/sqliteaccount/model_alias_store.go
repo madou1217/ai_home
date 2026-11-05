@@ -3,7 +3,9 @@ package sqliteaccount
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/modelalias"
@@ -18,7 +20,8 @@ func (store *Store) ListModelAliases(ctx context.Context) ([]modelalias.Record, 
 		return nil, 0, modelalias.ErrInvalidProjection
 	}
 	const query = `
-		SELECT id, alias, target, provider, target_provider, priority, enabled, description
+		SELECT id, alias, target, provider, target_provider, priority, enabled, description,
+		       display_models_json
 		FROM model_alias ORDER BY position`
 	rows, err := store.db.QueryContext(ctx, query)
 	if err != nil {
@@ -28,17 +31,20 @@ func (store *Store) ListModelAliases(ctx context.Context) ([]modelalias.Record, 
 	records := make([]modelalias.Record, 0, 32)
 	for rows.Next() {
 		var (
-			record  modelalias.Record
-			enabled int
+			record    modelalias.Record
+			enabled   int
+			displayJS string
 		)
 		if err := rows.Scan(
 			&record.ID, &record.Alias, &record.Target, &record.Provider,
 			&record.TargetProvider, &record.Priority, &enabled, &record.Description,
+			&displayJS,
 		); err != nil {
 			return nil, 0, fmt.Errorf("读取模型别名行失败: %w", err)
 		}
 		value := enabled != 0
 		record.Enabled = &value
+		record.DisplayModels = decodeDisplayModels(displayJS)
 		records = append(records, record)
 	}
 	if err := rows.Err(); err != nil {
@@ -74,8 +80,8 @@ func (store *Store) ReplaceModelAliases(
 	const statement = `
 		INSERT INTO model_alias (
 			id, alias, target, provider, target_provider, priority, enabled,
-			description, created_at_ms, updated_at_ms, position
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			description, created_at_ms, updated_at_ms, position, display_models_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	prepared, err := transaction.PrepareContext(ctx, statement)
 	if err != nil {
 		return 0, fmt.Errorf("准备模型别名写入失败: %w", err)
@@ -94,7 +100,7 @@ func (store *Store) ReplaceModelAliases(
 			ctx,
 			record.ID, record.Alias, record.Target, record.ScopeProvider(),
 			record.ResolvedTargetProvider(), record.Priority, enabled,
-			record.Description, now, now, index,
+			record.Description, now, now, index, encodeDisplayModels(record.DisplayModels),
 		); err != nil {
 			return 0, fmt.Errorf("写入模型别名失败: %w", err)
 		}
@@ -144,4 +150,29 @@ func modelAliasGenerationIn(ctx context.Context, reader generationReader) (int64
 		return 0, fmt.Errorf("读取别名代次失败: %w", err)
 	}
 	return generation, nil
+}
+
+// encodeDisplayModels 把展示名单序列化成 JSON；空名单存 "[]"。
+func encodeDisplayModels(models []string) string {
+	if len(models) == 0 {
+		return "[]"
+	}
+	encoded, err := json.Marshal(models)
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
+}
+
+// decodeDisplayModels 解析展示名单；坏数据按空名单处理（比让整个恢复失败好）。
+func decodeDisplayModels(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "[]" {
+		return nil
+	}
+	var models []string
+	if err := json.Unmarshal([]byte(trimmed), &models); err != nil {
+		return nil
+	}
+	return models
 }

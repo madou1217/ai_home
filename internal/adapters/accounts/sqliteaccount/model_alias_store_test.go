@@ -105,3 +105,45 @@ func TestModelAliasListOnEmptyStore(t *testing.T) {
 		t.Fatalf("空表 = %d 条 / generation %d, want 0/0", len(records), generation)
 	}
 }
+
+// 通配别名的展示名单必须落库：只存在内存里的话，重启后从库恢复会丢掉整份名单，
+// 模型目录在 Node 再推一次之前会少一批可展示型号。
+func TestModelAliasDisplayModelsRoundTrip(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	display := []string{"claude-opus-5", "claude-sonnet-4-6", "claude-haiku-5-5"}
+	if _, err := store.ReplaceModelAliases(ctx, []modelalias.Record{
+		{ID: "a1", Alias: "claude-*", Target: "claude-sonnet-4-6", DisplayModels: display},
+	}); err != nil {
+		t.Fatalf("ReplaceModelAliases() error = %v", err)
+	}
+	records, _, err := store.ListModelAliases(ctx)
+	if err != nil {
+		t.Fatalf("ListModelAliases() error = %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %d, want 1", len(records))
+	}
+	got := records[0].DisplayModels
+	if len(got) != len(display) {
+		t.Fatalf("displayModels = %v, want %v", got, display)
+	}
+	for index := range display {
+		if got[index] != display[index] {
+			t.Fatalf("displayModels[%d] = %q, want %q", index, got[index], display[index])
+		}
+	}
+}
+
+// 没有展示名单的普通别名读回来必须是 nil，而不是空切片（契约上 omitempty）。
+func TestModelAliasWithoutDisplayModelsStaysNil(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	if _, err := store.ReplaceModelAliases(ctx, []modelalias.Record{{ID: "a1", Alias: "a", Target: "b"}}); err != nil {
+		t.Fatalf("ReplaceModelAliases() error = %v", err)
+	}
+	records, _, _ := store.ListModelAliases(ctx)
+	if records[0].DisplayModels != nil {
+		t.Fatalf("displayModels = %v, want nil", records[0].DisplayModels)
+	}
+}

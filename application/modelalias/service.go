@@ -97,6 +97,9 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Record, 
 	if !record.IsValid() {
 		return Record{}, 0, ErrInvalidAlias
 	}
+	if err := ValidateAliasPattern(record.Alias); err != nil {
+		return Record{}, 0, err
+	}
 	records := service.List()
 	if err := service.assertUnique(records, record.Alias, record.ScopeProvider(), ""); err != nil {
 		return Record{}, 0, err
@@ -153,6 +156,9 @@ func (service *Service) Update(ctx context.Context, id string, input UpdateInput
 	}
 	if !updated.IsValid() {
 		return Record{}, 0, ErrInvalidAlias
+	}
+	if err := ValidateAliasPattern(updated.Alias); err != nil {
+		return Record{}, 0, err
 	}
 	if err := service.assertUnique(records, updated.Alias, updated.ScopeProvider(), id); err != nil {
 		return Record{}, 0, err
@@ -294,6 +300,9 @@ func (service *Service) ReplaceGroup(
 		if !record.IsValid() {
 			return nil, 0, ErrInvalidAlias
 		}
+		if err := ValidateAliasPattern(record.Alias); err != nil {
+			return nil, 0, err
+		}
 		created = append(created, record)
 	}
 	// 唯一性在「保留 + 新建」整体上检查：分组替换最容易出的错就是把一条记录改成
@@ -327,4 +336,33 @@ func (service *Service) recordsTail(count int) []Record {
 		count = len(records)
 	}
 	return append([]Record(nil), records[len(records)-count:]...)
+}
+
+// ErrInvalidAliasWildcard 表示通配别名的 * 位置或前缀不合法。
+var ErrInvalidAliasWildcard = errors.New("通配别名格式无效")
+
+// ValidateAliasPattern 校验别名本身的形状（与 Node 的 validateAliasPattern 同口径）。
+//
+// 规则：非空；要么不含 *，要么**只有一个且必须在末尾**、前缀至少 2 个字符。
+// 为什么只在前缀长度上设限：单字符前缀（如 "g*"）会匹配到几乎所有模型，
+// 用户几乎总是想要 "gpt*" 之类；拦下来比让路由被意外捕获更安全。
+//
+// 只用于写用例，不用于 Store.Replace：推送路径整体拒绝的代价太大，
+// 一条历史脏数据就能让整份投影作废。
+func ValidateAliasPattern(alias string) error {
+	trimmed := strings.TrimSpace(alias)
+	if trimmed == "" {
+		return ErrInvalidAlias
+	}
+	starCount := strings.Count(trimmed, "*")
+	if starCount == 0 {
+		return nil
+	}
+	if starCount > 1 || !strings.HasSuffix(trimmed, "*") {
+		return ErrInvalidAliasWildcard
+	}
+	if len([]rune(strings.TrimSuffix(trimmed, "*"))) < 2 {
+		return ErrInvalidAliasWildcard
+	}
+	return nil
 }

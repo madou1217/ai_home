@@ -243,3 +243,45 @@ func TestServiceReplaceGroupRejectsDuplicateAcrossGroups(t *testing.T) {
 	}
 	_ = keep
 }
+
+func TestValidateAliasPattern(t *testing.T) {
+	cases := []struct {
+		alias string
+		want  error
+	}{
+		{"fast", nil},
+		{"", ErrInvalidAlias},
+		{"   ", ErrInvalidAlias},
+		{"claude-*", nil},
+		{"a*", ErrInvalidAliasWildcard},   // 前缀太短
+		{"*", ErrInvalidAliasWildcard},    // 只有 *
+		{"a*b", ErrInvalidAliasWildcard},  // * 不在末尾
+		{"a*b*", ErrInvalidAliasWildcard}, // 多个 *
+		{"gpt-5.1-coding-*", nil},
+	}
+	for _, testCase := range cases {
+		err := ValidateAliasPattern(testCase.alias)
+		if !errors.Is(err, testCase.want) && err != testCase.want {
+			t.Fatalf("ValidateAliasPattern(%q) = %v, want %v", testCase.alias, err, testCase.want)
+		}
+	}
+}
+
+func TestServiceCreateRejectsBadWildcard(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	if _, _, err := service.Create(context.Background(), CreateInput{Alias: "a*b", Target: "x"}); !errors.Is(err, ErrInvalidAliasWildcard) {
+		t.Fatalf("error = %v, want ErrInvalidAliasWildcard", err)
+	}
+	if len(service.List()) != 0 {
+		t.Fatal("非法别名被写入")
+	}
+}
+
+func TestServiceReplaceGroupRejectsBadWildcard(t *testing.T) {
+	service := newTestService(t, &fakeRepository{})
+	if _, _, err := service.ReplaceGroup(context.Background(), ReplaceGroupInput{
+		Records: []CreateInput{{Alias: "x*", Target: "y"}},
+	}); !errors.Is(err, ErrInvalidAliasWildcard) {
+		t.Fatalf("error = %v, want ErrInvalidAliasWildcard", err)
+	}
+}

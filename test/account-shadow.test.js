@@ -68,3 +68,16 @@ test('accountRef 翻译函数生效', () => {
   );
   assert.equal(diff.equal, true);
 });
+
+//
+// Vertex 占位账号在 Go 侧被刻意置为 disabled（见 go-account-sync 的 enabled 计算），
+// 不能算作分歧。
+test('vertex 占位账号的 enabled 差异被忽略', () => {
+  const diff = compareAccountSets(
+    [nodeRow({ provider: 'gemini', status: 'up' })],
+    [goRow({ provider_id: 'gemini', enabled: false, auth_kind: 'vertex_ai' })],
+    null
+  );
+  assert.deepEqual(diff.enabledMismatch, []);
+  assert.equal(diff.equal, true);
+});

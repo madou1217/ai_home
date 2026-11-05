@@ -855,8 +855,11 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - opencode OAuth 账号（Node `acct_5339…` → Go `acct_84c6…`）：109，与 Go
   `account-models` 一致，`source=remote`。
 - opencode API Key 账号（`acct_e9b5…`，两侧同 ref）：109（修复前 0）。
-- cline 两个账号在 Go 里 `enabled=0`，Go 未刷新目录：scoped 目录为空，只剩手工模型
-  设置。静态清单 14 条由 Go 单测锁定；**启用账号后补一次真机验收**。
+- cline：在 Go 里把 `acct_0176…` 置为 `enabled=1` 后 `POST /models/refresh`，`account_models`
+  得到 **14 条 `upstream_available=1`**，与 `KNOWN_CLINE_MODELS` 逐条相同；另有 2 条手工模型
+  （`upstream_available=0`）。WebUI scoped = 16、`missing=[]`、`firstError` 空。
+  **遗留**：Node 的账号启停只在 codex/claude 上会写 Go 的 `enabled`；其他 Provider 的
+  WebUI「启用」只改 Node 运行态，Go 仍是 `enabled=0`、不会刷新目录（cline 就因此一直是空）。
 - 回归守卫：`test/model-ownership.test.js`（10 项：descriptor 派生、无出网策略、
   不出网读取、Go 读不到时抛错、本地兜底不进目录、ref 恒等翻译）。
 

@@ -78,6 +78,9 @@ onAliasShadowResult 观察者；不 await、不改变响应、Go 不可用时静
   优先级排序、启停、替换目标。
 
 ### B. 双读写 + 漂移检测
+
+取证工具（已完成）：`scripts/compare-model-aliases.js` 直接比两张表（不依赖 UI 访问），
+退出码 0/2，可作为翻转闸门；真机当前 Node 2 条 / Go 2 条，aliases_in_sync。
 - Node 每次写别名时同时 PUT 给 Go（复用现有投影推送）；Go 每次写也回推 Node。
 - 加漂移检查：比较两边 (alias, target, enabled, priority) 集合，不一致就告警并以 Go
   为准重推。跑一晚无漂移才进入 C。

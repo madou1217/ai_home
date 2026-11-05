@@ -730,4 +730,5 @@ Node 进程（过渡期，逐渐缩小）
 >    - Node 侧 `web-ui-router` 的 `onJobChanged` 把 12 类 Provider 的 Job 投影成公开快照
 >      推给 Go（running→pending、succeeded→completed，去重 + dirty 重试 + 启动 hydrate）。
 >    - 真机：PUT pending → GET 200 → 重启后同一 Job 变 expired 且仍可查。
->    - 未做：WebUI 在内存缺失时主动读 Go 的 GET（当前只有写路径与 Go 查询接口）。
+>    - WebUI 已接：GET /v0/webui/accounts/add/jobs/:id 在内存缺失时回落到 Go 快照，
+>      返回 recovered=true 的只读视图（completed→succeeded，pending/processing→expired）。

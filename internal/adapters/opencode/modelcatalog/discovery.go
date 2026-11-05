@@ -86,10 +86,13 @@ func (source *Source) DiscoverModels(
 	if credential.ProviderID() != opencoderelay.ProviderID {
 		return nil, ErrProviderMismatch
 	}
+	// 与 Node 一致：没有 opencode 密钥时两个官方端点仍可匿名探测（免费模型）。
+	// 只有凭据归属不符才是硬错误。
 	token, err := discoveryAccessToken(credential)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrUnsupportedCredential) {
 		return nil, err
 	}
+	token = strings.TrimSpace(token)
 	seen := make(map[string]struct{}, 32)
 	models := make([]string, 0, 32)
 	var firstErr error
@@ -131,7 +134,9 @@ func (source *Source) fetch(
 		return nil, ErrInvalidDependencies
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 	response, err := source.client.Do(request)
 	if err != nil {
 		return nil, err

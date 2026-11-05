@@ -205,6 +205,25 @@
 >    周期重扫会跳过它，因此线上仍显示 0，这是设计边界而不是缺口。
 >    **至此每个有 models 策略的 Provider 都有 Go 发现器**：codex/claude/agy/kimi/grok/
 >    opencode/codebuddy 家族/kiro/zcode/gemini/cline/qoder。
+> 31. **模型目录保真修正（2026-11-05，审计后）**：
+>    - **opencode 匿名探测**：没有 opencode 密钥的账号（`auth.codex` 占位）也要探两个官方端点
+>      ——Node 的行为是「有 key 才加 Authorization，否则匿名」。Go 之前直接报
+>      「凭据形态不支持」；现在匿名请求，两个 leg 仍按 `opencode-go/` / `opencode/` 并集。
+>      真机：`acct_e9b5` 从 0 → **109 个模型**，与 Node 的 byAccount 快照一致；
+>      opencode 覆盖变为 2/2。
+>    - **claude 候选循环统一**：按 Node 的候选顺序（`<base>/models` → `<base>/v1/models` →
+>      `<origin>/v1/models` → `<origin>/models`）逐个探测，每个候选只发一次请求，
+>      同一份响应同时按 Anthropic 分页与 OpenAI `{data:[{id}]}` 形状解析；
+>      所有候选失败时错误里带上每个端点与状态码（401/429/超时不再被报成
+>      404 media_type=missing）；每个候选都带 `anthropic-version`。
+>      删除了 `fetchModelCatalogPage` / `buildModelsRequest` / 旧的
+>      `fetchOpenAICompatibleCatalog`（被候选循环取代）。
+>    - **gemini 占位保护**：`*gemini.VertexAuth` 的 `Placeholder()` 或 loopback base_url
+>      直接拒绝，避免显式 refresh 把本机网关的整份目录灌进 account_models。
+>      占位账号仍然 enabled=0、不进路由池。
+>    - 最终覆盖（真机）：所有**启用**账号都有目录；剩余 0 行只有 claude/gemini 两个
+>      enabled=0 的占位，以及两个 zai token 已过期、余额/预览皆空的 zcode 账号
+>      （Node 同样无目录，需要重新登录）。
 
 ## 0. 结论先行
 

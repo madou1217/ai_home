@@ -132,13 +132,30 @@ func TestDiscoverModelsToleratesOneFailedLeg(t *testing.T) {
 	}
 }
 
-func TestDiscoverModelsRejectsUnsupportedCredential(t *testing.T) {
+func TestDiscoverModelsProbesAnonymouslyWithoutOpenCodeKey(t *testing.T) {
 	t.Parallel()
-	source := testSource(t, func(string, *http.Request) (int, string) {
-		return http.StatusOK, `{}`
+	var authorizations []string
+	source := testSource(t, func(path string, request *http.Request) (int, string) {
+		authorizations = append(authorizations, request.Header.Get("Authorization"))
+		if path == "/zen/go/v1/models" {
+			return http.StatusOK, `{"data":[{"id":"beam-free"}]}`
+		}
+		return http.StatusOK, `{"data":[{"id":"free-model"}]}`
 	})
-	if _, err := source.DiscoverModels(context.Background(), codexShapedCredential(t)); err != ErrUnsupportedCredential {
-		t.Fatalf("error = %v", err)
+	models, err := source.DiscoverModels(context.Background(), codexShapedCredential(t))
+	if err != nil {
+		t.Fatalf("DiscoverModels() error = %v", err)
+	}
+	if strings.Join(models, ",") != "opencode-go/beam-free,opencode/free-model" {
+		t.Fatalf("models = %v", models)
+	}
+	if len(authorizations) != 2 {
+		t.Fatalf("requests = %d", len(authorizations))
+	}
+	for _, authorization := range authorizations {
+		if authorization != "" {
+			t.Fatalf("authorization = %q, want empty", authorization)
+		}
 	}
 }
 

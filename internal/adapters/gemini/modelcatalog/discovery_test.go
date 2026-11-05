@@ -18,7 +18,7 @@ func vertexCredential(t *testing.T, baseURL string) accountapp.Credential {
 		Location:    "global",
 		APIKey:      "aih_client_test",
 		BaseURL:     baseURL,
-		Placeholder: true,
+		Placeholder: false,
 	})
 	if err != nil {
 		t.Fatalf("NewVertexAuth() error = %v", err)
@@ -42,6 +42,7 @@ func TestDiscoverModelsReadsOpenAIStyleList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	source.allowLoopback = true
 	models, err := source.DiscoverModels(context.Background(), vertexCredential(t, server.URL))
 	if err != nil {
 		t.Fatalf("DiscoverModels() error = %v", err)
@@ -68,12 +69,45 @@ func TestDiscoverModelsFallsBackToGeminiStyleList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	source.allowLoopback = true
 	models, err := source.DiscoverModels(context.Background(), vertexCredential(t, server.URL))
 	if err != nil {
 		t.Fatalf("DiscoverModels() error = %v", err)
 	}
 	if strings.Join(models, ",") != "gemini-2.5-flash,gemini-2.5-pro" {
 		t.Fatalf("models = %v", models)
+	}
+}
+
+func TestDiscoverModelsRejectsPlaceholderCredential(t *testing.T) {
+	t.Parallel()
+	auth, err := gemini.NewVertexAuth(gemini.VertexInput{
+		ProjectID:   "vertex-placeholder-project",
+		Location:    "global",
+		APIKey:      "aih_client_test",
+		BaseURL:     "https://gateway.example.com",
+		Placeholder: true,
+	})
+	if err != nil {
+		t.Fatalf("NewVertexAuth() error = %v", err)
+	}
+	source, err := New(http.DefaultClient)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := source.DiscoverModels(context.Background(), auth); err != ErrUnsupportedCredential {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDiscoverModelsRejectsLoopbackBaseURL(t *testing.T) {
+	t.Parallel()
+	source, err := New(http.DefaultClient)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := source.DiscoverModels(context.Background(), vertexCredential(t, "http://127.0.0.1:9527")); err != ErrUnsupportedCredential {
+		t.Fatalf("error = %v", err)
 	}
 }
 

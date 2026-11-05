@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -38,7 +39,11 @@ type HTTPClient interface {
 }
 
 // Source 是 gemini 的模型发现策略。
-type Source struct{ client HTTPClient }
+type Source struct {
+	client HTTPClient
+	// allowLoopback 仅供测试：生产必须拒绝指向本机网关的 base_url。
+	allowLoopback bool
+}
 
 var _ accountapp.ProviderModelDiscoverer = (*Source)(nil)
 
@@ -68,9 +73,17 @@ func (source *Source) DiscoverModels(
 	if !ok || vertex == nil {
 		return nil, ErrUnsupportedCredential
 	}
+	// 占位账号没有可路由的上游：它的 base_url 是本机网关，刷新会把整份网关目录
+	// 灌进 account_models。语义上直接拒绝，不依赖 enabled=0 的约定。
+	if vertex.Placeholder() {
+		return nil, ErrUnsupportedCredential
+	}
 	base := strings.TrimRight(strings.TrimSpace(vertex.BaseURL()), "/")
 	token := strings.TrimSpace(vertex.APIKey())
 	if base == "" || token == "" {
+		return nil, ErrUnsupportedCredential
+	}
+	if !source.allowLoopback && isLoopbackBase(base) {
 		return nil, ErrUnsupportedCredential
 	}
 	for _, endpoint := range []string{base + "/v1/models", base + "/models"} {
@@ -154,6 +167,19 @@ func parseModels(payload []byte) []string {
 	}
 	sort.Strings(models)
 	return models
+}
+
+// isLoopbackBase 拒绝把本机网关当成上游（Node 的 infinite_loop_detected 同款保护）。
+func isLoopbackBase(baseURL string) bool {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "::1" || host == "0.0.0.0" {
+		return true
+	}
+	return strings.HasPrefix(host, "127.")
 }
 
 func firstNonEmpty(values ...string) string {

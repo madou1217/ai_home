@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -20,6 +21,8 @@ var (
 	ErrInvalidAccountModel = errors.New("账号模型关系无效")
 	// ErrInvalidDiscoveredModels 表示远端模型发现结果为空、重复或超过安全上限。
 	ErrInvalidDiscoveredModels = errors.New("账号模型发现结果无效")
+	// ErrInvalidModelProbe 表示探测事实缺少合法账号、时间或成功/失败字段。
+	ErrInvalidModelProbe = errors.New("账号模型探测事实无效")
 )
 
 // AccountModelStore 是账号模型查询、自动发现替换和人工覆盖的持久化端口。
@@ -46,6 +49,75 @@ type AccountModelStore interface {
 		policy ModelManualPolicy,
 		updatedAt time.Time,
 	) ([]AccountModel, error)
+}
+
+const (
+	// MaxModelProbeErrorMessageLength 是探测错误消息的持久化上限。
+	//
+	// 上游错误可能带整段响应正文；稳定错误码已经表达分类，消息只需要足够定位的
+	// 前缀，因此按字符（不是字节）截断，避免中文错误被切坏。
+	MaxModelProbeErrorMessageLength = 300
+	// ModelProbeSourceRemote 表示最近一次探测真实命中了上游目录。
+	ModelProbeSourceRemote = "remote"
+	// ModelProbeSourceError 表示最近一次探测失败，目录仍是上一次成功的快照。
+	ModelProbeSourceError = "error"
+)
+
+// ModelProbeRecord 是一次账号模型探测的结果事实。
+//
+// 探测与目录快照分开记录：刷新失败时目录保持不变，但「什么时候试过、为什么失败」
+// 必须可读，否则 WebUI 只能把旧目录当成最新结果。
+type ModelProbeRecord struct {
+	// AccountRef 是探测所属的稳定账号身份。
+	AccountRef accountcore.AccountRef
+	// AttemptedAt 是本次探测发生的 UTC 毫秒时刻。
+	AttemptedAt time.Time
+	// Succeeded 区分成功与失败；失败时 ModelCount 必须为 0。
+	Succeeded bool
+	// Source 是本次探测结果来源（remote / error）。
+	Source string
+	// ModelCount 是本次成功探测得到的模型数量。
+	ModelCount int
+	// ErrorCode 是稳定的失败分类；成功时为空。
+	ErrorCode string
+	// ErrorMessage 是截断后的失败消息；成功时为空。
+	ErrorMessage string
+	// UpdatedAt 是这条事实的写入时刻（UTC 毫秒）。
+	UpdatedAt time.Time
+}
+
+// IsValid 校验探测事实的字段范围与成功/失败互斥关系。
+func (record ModelProbeRecord) IsValid() bool {
+	if !record.AccountRef.IsValid() ||
+		record.ModelCount < 0 ||
+		record.ModelCount > MaxDiscoveredModelsPerAccount {
+		return false
+	}
+	attemptedAt, attemptedErr := normalizeModelTime(record.AttemptedAt)
+	updatedAt, updatedErr := normalizeModelTime(record.UpdatedAt)
+	if attemptedErr != nil ||
+		updatedErr != nil ||
+		!attemptedAt.Equal(record.AttemptedAt) ||
+		!updatedAt.Equal(record.UpdatedAt) {
+		return false
+	}
+	if record.Succeeded {
+		return record.Source == ModelProbeSourceRemote &&
+			record.ErrorCode == "" &&
+			record.ErrorMessage == ""
+	}
+	return record.Source == ModelProbeSourceError &&
+		record.ModelCount == 0 &&
+		record.ErrorCode != "" &&
+		len(record.ErrorCode) <= 64 &&
+		utf8.RuneCountInString(record.ErrorMessage) <= MaxModelProbeErrorMessageLength
+}
+
+// ModelProbeRecorder 记录每次探测的结果事实。
+//
+// 独立于 AccountModelStore：记录失败只影响可观测性，不能回滚已经提交的目录快照。
+type ModelProbeRecorder interface {
+	RecordModelProbe(ctx context.Context, record ModelProbeRecord) error
 }
 
 // ModelManualPolicy 表达人工维护相对上游发现结果的唯一覆盖策略。

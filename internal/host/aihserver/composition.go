@@ -360,6 +360,8 @@ func newHandlers(
 		store,
 		modelDiscovery,
 		kiroRefresher,
+		// 探测事实与目录快照落在同一 aih.db，WebUI 批量读一次 JOIN 取齐。
+		store,
 		time.Now,
 	)
 	if err != nil {

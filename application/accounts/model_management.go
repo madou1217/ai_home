@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -134,6 +135,7 @@ type ModelManagement struct {
 	models      AccountModelStore
 	discovery   *ModelDiscovery
 	refresher   ModelCredentialRefresher
+	probes      ModelProbeRecorder
 	clock       Clock
 }
 
@@ -143,9 +145,14 @@ func NewModelManagement(
 	models AccountModelStore,
 	discovery *ModelDiscovery,
 	refresher ModelCredentialRefresher,
+	probes ModelProbeRecorder,
 	clock Clock,
 ) (*ModelManagement, error) {
-	if credentials == nil || models == nil || discovery == nil || clock == nil {
+	if credentials == nil ||
+		models == nil ||
+		discovery == nil ||
+		probes == nil ||
+		clock == nil {
 		return nil, ErrInvalidModelManagementDependencies
 	}
 	return &ModelManagement{
@@ -153,6 +160,7 @@ func NewModelManagement(
 		models:      models,
 		discovery:   discovery,
 		refresher:   refresher,
+		probes:      probes,
 		clock:       clock,
 	}, nil
 }
@@ -169,6 +177,10 @@ func (management *ModelManagement) ListAccountModels(
 }
 
 // RefreshAccountModels 读取当前凭据并全量刷新上游发现部分。
+//
+// 这是唯一真正执行 DiscoverModels 的位置，因此也在这里记录探测事实：成功的目录
+// 替换提交后写 remote 与模型数；任何一步失败都写 error 事实。用独立事实表记录是
+// 因为失败时目录快照保持不变，只有探测表能表达「最近一次尝试失败了」。
 func (management *ModelManagement) RefreshAccountModels(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
@@ -181,37 +193,143 @@ func (management *ModelManagement) RefreshAccountModels(
 		accountRef,
 	)
 	if err != nil {
+		management.recordModelProbeFailure(ctx, accountRef, err)
 		return nil, err
 	}
 	if !credentialSnapshot.IsValid() ||
 		credentialSnapshot.AccountRef() != accountRef {
-		return nil, ErrInvalidAccountModel
+		err = ErrInvalidAccountModel
+		management.recordModelProbeFailure(ctx, accountRef, err)
+		return nil, err
 	}
 	// kiro 这类 OAuth 账号的 access token 会过期；先刷新再发现，否则上游直接 403。
 	if management.refresher != nil {
 		credentialSnapshot, err = management.refresher.RefreshCredential(ctx, credentialSnapshot)
 		if err != nil {
+			management.recordModelProbeFailure(ctx, accountRef, err)
 			return nil, err
 		}
 	}
-	models, err := management.discovery.DiscoverModels(
+	discovered, err := management.discovery.DiscoverModels(
 		ctx,
 		credentialSnapshot.Credential(),
 	)
 	if err != nil {
+		management.recordModelProbeFailure(ctx, accountRef, err)
 		return nil, err
 	}
 	updatedAt, err := normalizeModelTime(management.clock())
 	if err != nil {
+		management.recordModelProbeFailure(ctx, accountRef, err)
 		return nil, err
 	}
-	return management.models.ReplaceDiscoveredModelsIfCredentialVersion(
+	snapshot, err := management.models.ReplaceDiscoveredModelsIfCredentialVersion(
 		ctx,
 		accountRef,
-		models,
+		discovered,
 		credentialSnapshot.UpdatedAt(),
 		updatedAt,
 	)
+	if err != nil {
+		management.recordModelProbeFailure(ctx, accountRef, err)
+		return nil, err
+	}
+	management.recordModelProbeSuccess(ctx, accountRef, len(discovered), updatedAt)
+	return snapshot, nil
+}
+
+// recordModelProbeSuccess 在目录替换提交后写入成功事实。
+//
+// 计数取本次发现结果而不是返回的完整关系快照：后者还包含人工 force_enable 的模型，
+// 不代表上游目录的真实大小。
+func (management *ModelManagement) recordModelProbeSuccess(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	modelCount int,
+	updatedAt time.Time,
+) {
+	management.recordModelProbe(ctx, ModelProbeRecord{
+		AccountRef:  accountRef,
+		AttemptedAt: updatedAt,
+		Succeeded:   true,
+		Source:      ModelProbeSourceRemote,
+		ModelCount:  modelCount,
+		UpdatedAt:   updatedAt,
+	})
+}
+
+// recordModelProbeFailure 写入失败事实；取消不是探测结论（关停/换代），直接跳过。
+func (management *ModelManagement) recordModelProbeFailure(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	cause error,
+) {
+	if management == nil || management.probes == nil || cause == nil ||
+		errors.Is(cause, context.Canceled) {
+		return
+	}
+	attemptedAt, err := normalizeModelTime(management.clock())
+	if err != nil {
+		return
+	}
+	management.recordModelProbe(ctx, ModelProbeRecord{
+		AccountRef:   accountRef,
+		AttemptedAt:  attemptedAt,
+		Succeeded:    false,
+		Source:       ModelProbeSourceError,
+		ErrorCode:    modelProbeErrorCode(cause),
+		ErrorMessage: truncateModelProbeMessage(cause.Error()),
+		UpdatedAt:    attemptedAt,
+	})
+}
+
+// recordModelProbe 落盘一次探测事实。
+//
+// 写事实不能反过来改变刷新结论：探测已经成功时，观测写入失败不应让协调器重试并
+// 放大上游压力；探测已经失败时，调用方拿到的仍应是原始错误。因此这里显式忽略
+// 写入错误。刷新上下文可能已因超时取消（正是要记录的失败），写入必须脱离取消信号。
+func (management *ModelManagement) recordModelProbe(
+	ctx context.Context,
+	record ModelProbeRecord,
+) {
+	if management == nil || management.probes == nil || ctx == nil {
+		return
+	}
+	_ = management.probes.RecordModelProbe(context.WithoutCancel(ctx), record)
+}
+
+// modelProbeErrorCode 把刷新失败归类成稳定的短代码。
+//
+// 只映射已知哨兵；未知错误统一 refresh_failed，绝不把上游文案写进代码，否则读侧
+// 无法稳定分支，也容易把凭据或 URL 带去别的系统。
+func modelProbeErrorCode(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, ErrModelDiscoveryUnsupported):
+		return "discovery_unsupported"
+	case errors.Is(err, ErrModelDiscoveryFailed):
+		return "discovery_failed"
+	case errors.Is(err, ErrInvalidDiscoveredModels):
+		return "invalid_catalog"
+	case errors.Is(err, ErrCredentialConflict):
+		return "credential_conflict"
+	case errors.Is(err, ErrCredentialNotFound):
+		return "credential_missing"
+	case errors.Is(err, ErrAccountNotFound):
+		return "account_not_found"
+	default:
+		return "refresh_failed"
+	}
+}
+
+// truncateModelProbeMessage 按字符截断错误消息，避免整段响应正文进入数据库。
+func truncateModelProbeMessage(message string) string {
+	runes := []rune(message)
+	if len(runes) <= MaxModelProbeErrorMessageLength {
+		return message
+	}
+	return string(runes[:MaxModelProbeErrorMessageLength])
 }
 
 // SetManualModelPolicy 设置一个真实模型的人工覆盖策略。
@@ -249,4 +367,14 @@ type AccountModelSet struct {
 	AccountRef accountcore.AccountRef
 	ProviderID string
 	Models     []AccountModel
+	// LastAttemptAt 是最近一次模型探测时刻；零值表示这个账号从未探测过。
+	LastAttemptAt time.Time
+	// LastErrorCode / LastErrorMessage 是最近一次探测的失败事实；成功后清空。
+	LastErrorCode    string
+	LastErrorMessage string
+	// LastSource 是最近一次探测的结果来源（remote / error）；空值表示从未探测。
+	LastSource string
+	// LastModelCount 是最近一次成功探测得到的模型数量；失败时保留上一次的值，
+	// 因为失败不会改变 account_models 里已有的目录快照。
+	LastModelCount int
 }

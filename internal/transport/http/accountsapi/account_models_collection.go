@@ -21,10 +21,19 @@ type AccountModelReader interface {
 }
 
 // accountModelSetView 是单个账号的模型关系投影。
+//
+// 探测字段与模型列表同层：WebUI 拿到一行就能判断「从未探测（attempt=0）」、
+// 「探测失败（error 非空）」「成功但目录为空（attempt>0、无错误、models=[]）」，
+// 不需要再按账号补请求。
 type accountModelSetView struct {
-	AccountRef string             `json:"account_ref"`
-	ProviderID string             `json:"provider_id"`
-	Models     []accountModelView `json:"models"`
+	AccountRef       string             `json:"account_ref"`
+	ProviderID       string             `json:"provider_id"`
+	Models           []accountModelView `json:"models"`
+	LastAttemptAtMS  int64              `json:"last_attempt_at_ms"`
+	LastErrorCode    string             `json:"last_error_code"`
+	LastErrorMessage string             `json:"last_error_message"`
+	LastSource       string             `json:"last_source"`
+	LastModelCount   int                `json:"last_model_count"`
 }
 
 type accountModelsCollectionResponse struct {
@@ -70,10 +79,20 @@ func (handler *Handler) handleAccountModelsCollection(
 				continue
 			}
 		}
+		// 零值时间不能直接 UnixMilli()：它会得到一个负数，WebUI 会当成一次真实探测。
+		var lastAttemptAtMS int64
+		if !set.LastAttemptAt.IsZero() {
+			lastAttemptAtMS = set.LastAttemptAt.UnixMilli()
+		}
 		items = append(items, accountModelSetView{
-			AccountRef: set.AccountRef.String(),
-			ProviderID: set.ProviderID,
-			Models:     newAccountModelViews(set.Models),
+			AccountRef:       set.AccountRef.String(),
+			ProviderID:       set.ProviderID,
+			Models:           newAccountModelViews(set.Models),
+			LastAttemptAtMS:  lastAttemptAtMS,
+			LastErrorCode:    set.LastErrorCode,
+			LastErrorMessage: set.LastErrorMessage,
+			LastSource:       set.LastSource,
+			LastModelCount:   set.LastModelCount,
 		})
 	}
 	writeJSON(response, http.StatusOK, accountModelsCollectionResponse{Data: items})

@@ -13,14 +13,25 @@ import (
 )
 
 var _ accountapp.AccountModelStore = (*Store)(nil)
+var _ accountapp.ModelProbeRecorder = (*Store)(nil)
 
-// ListAllAccountModels 一次读出全部账号的模型关系（按账号、模型 ID 排序）。
+// ListAllAccountModels 一次读出有事实可讲的账号的模型关系与探测事实。
+//
+// 以 accounts 为驱动表做 LEFT JOIN，但只保留「有模型」或「有探测事实」的账号：
+// 从 account_models 出发会让「探测过但目录为空」的账号消失；反过来无条件返回全部
+// 账号也不对——WebUI 合并缓存时会把「无模型且无错误」当成已确认为空，从而清掉旧目录。
+// 两样都没有的账号属于「未知」，留在账号列表里，不在这里伪造空结果。
 func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.AccountModelSet, error) {
 	const query = `
-		SELECT m.account_ref, a.provider_id, m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms
-		FROM account_models m
-		JOIN accounts a ON a.account_ref = m.account_ref
-		ORDER BY m.account_ref, m.model_id`
+		SELECT a.account_ref, a.provider_id,
+		       m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms,
+		       p.last_attempt_at_ms, p.last_error_code, p.last_error_message,
+		       p.last_source, p.last_model_count
+		FROM accounts AS a
+		LEFT JOIN account_models AS m ON m.account_ref = a.account_ref
+		LEFT JOIN account_model_probes AS p ON p.account_ref = a.account_ref
+		WHERE m.account_ref IS NOT NULL OR p.account_ref IS NOT NULL
+		ORDER BY a.account_ref, m.model_id`
 	rows, err := store.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("查询全量账号模型关系失败: %w", err)
@@ -34,10 +45,15 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 		var (
 			accountRefText string
 			providerID     string
-			modelIDText    string
-			upstream       bool
-			manualPolicy   string
-			updatedAtMS    int64
+			modelIDText    sql.NullString
+			upstream       sql.NullBool
+			manualPolicy   sql.NullString
+			modelUpdatedAt sql.NullInt64
+			attemptAtMS    sql.NullInt64
+			errorCode      sql.NullString
+			errorMessage   sql.NullString
+			source         sql.NullString
+			modelCount     sql.NullInt64
 		)
 		if err := rows.Scan(
 			&accountRefText,
@@ -45,7 +61,12 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 			&modelIDText,
 			&upstream,
 			&manualPolicy,
-			&updatedAtMS,
+			&modelUpdatedAt,
+			&attemptAtMS,
+			&errorCode,
+			&errorMessage,
+			&source,
+			&modelCount,
 		); err != nil {
 			return nil, fmt.Errorf("读取全量账号模型关系失败: %w", err)
 		}
@@ -53,25 +74,46 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 		if err != nil {
 			return nil, ErrIncompatibleDatabase
 		}
-		policy, err := accountapp.ParseModelManualPolicy(manualPolicy)
+		position, exists := index[accountRefText]
+		if !exists {
+			set := accountapp.AccountModelSet{
+				AccountRef:       accountRef,
+				ProviderID:       providerID,
+				LastErrorCode:    errorCode.String,
+				LastErrorMessage: errorMessage.String,
+				LastSource:       source.String,
+			}
+			if attemptAtMS.Valid {
+				attemptedAt := time.UnixMilli(attemptAtMS.Int64).UTC()
+				if !validPersistedTimestamp(attemptedAt) ||
+					modelCount.Int64 < 0 ||
+					modelCount.Int64 > accountapp.MaxDiscoveredModelsPerAccount {
+					return nil, ErrIncompatibleDatabase
+				}
+				set.LastAttemptAt = attemptedAt
+				set.LastModelCount = int(modelCount.Int64)
+			}
+			position = len(sets)
+			index[accountRefText] = position
+			sets = append(sets, set)
+		}
+		// LEFT JOIN 对无模型账号返回一行 NULL，跳过模型构造但保留探测事实。
+		if !modelIDText.Valid {
+			continue
+		}
+		policy, err := accountapp.ParseModelManualPolicy(manualPolicy.String)
 		if err != nil {
 			return nil, ErrIncompatibleDatabase
 		}
 		model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
 			AccountRef:        accountRef,
-			ModelID:           modelIDText,
-			UpstreamAvailable: upstream,
+			ModelID:           modelIDText.String,
+			UpstreamAvailable: upstream.Bool,
 			ManualPolicy:      policy,
-			UpdatedAt:         time.UnixMilli(updatedAtMS).UTC(),
+			UpdatedAt:         time.UnixMilli(modelUpdatedAt.Int64).UTC(),
 		})
 		if err != nil {
 			return nil, ErrIncompatibleDatabase
-		}
-		position, exists := index[accountRefText]
-		if !exists {
-			position = len(sets)
-			index[accountRefText] = position
-			sets = append(sets, accountapp.AccountModelSet{AccountRef: accountRef, ProviderID: providerID})
 		}
 		sets[position].Models = append(sets[position].Models, model)
 	}
@@ -80,6 +122,78 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 	}
 	return sets, nil
 }
+
+// RecordModelProbe 追加或更新一个账号的最近一次探测事实。
+//
+// provider_id 从 accounts 派生而不是由调用方传入：探测可能在读取凭据前就失败，
+// 调用方此时并不知道 Provider；账号也不存在时 INSERT ... SELECT 自然不写入，
+// 不会把并发删除的账号重新变出来。
+func (store *Store) RecordModelProbe(
+	ctx context.Context,
+	record accountapp.ModelProbeRecord,
+) error {
+	if store == nil || store.db == nil || ctx == nil || !record.IsValid() {
+		return accountapp.ErrInvalidModelProbe
+	}
+	statement := recordModelProbeFailureSQL
+	if record.Succeeded {
+		statement = recordModelProbeSuccessSQL
+	}
+	_, err := store.db.ExecContext(
+		ctx,
+		statement,
+		record.AccountRef.String(),
+		record.AttemptedAt.UnixMilli(),
+		record.ErrorCode,
+		record.ErrorMessage,
+		record.Source,
+		record.ModelCount,
+		record.UpdatedAt.UnixMilli(),
+		record.AccountRef.String(),
+	)
+	if err != nil {
+		return fmt.Errorf("写入账号模型探测事实失败: %w", err)
+	}
+	return nil
+}
+
+// recordModelProbeSuccessSQL 成功时覆盖来源、计数并清空错误。
+const recordModelProbeSuccessSQL = `
+	INSERT INTO account_model_probes (
+		account_ref, provider_id, last_attempt_at_ms, last_error_code,
+		last_error_message, last_source, last_model_count, updated_at_ms
+	)
+	SELECT ?, a.provider_id, ?, ?, ?, ?, ?, ?
+	FROM accounts AS a
+	WHERE a.account_ref = ?
+	ON CONFLICT (account_ref) DO UPDATE SET
+		provider_id = excluded.provider_id,
+		last_attempt_at_ms = excluded.last_attempt_at_ms,
+		last_error_code = '',
+		last_error_message = '',
+		last_source = excluded.last_source,
+		last_model_count = excluded.last_model_count,
+		updated_at_ms = excluded.updated_at_ms`
+
+// recordModelProbeFailureSQL 失败时只更新时刻与错误。
+//
+// 特意不写 last_model_count：目录快照没有被替换，计数必须继续描述上一份成功快照，
+// 否则 WebUI 会把「刷新失败但旧目录还在」显示成空目录。
+const recordModelProbeFailureSQL = `
+	INSERT INTO account_model_probes (
+		account_ref, provider_id, last_attempt_at_ms, last_error_code,
+		last_error_message, last_source, last_model_count, updated_at_ms
+	)
+	SELECT ?, a.provider_id, ?, ?, ?, ?, ?, ?
+	FROM accounts AS a
+	WHERE a.account_ref = ?
+	ON CONFLICT (account_ref) DO UPDATE SET
+		provider_id = excluded.provider_id,
+		last_attempt_at_ms = excluded.last_attempt_at_ms,
+		last_error_code = excluded.last_error_code,
+		last_error_message = excluded.last_error_message,
+		last_source = excluded.last_source,
+		updated_at_ms = excluded.updated_at_ms`
 
 // ListAccountModels 返回按模型 ID 排序的完整自动发现与人工覆盖关系。
 func (store *Store) ListAccountModels(

@@ -51,6 +51,16 @@ var expectedSchemaColumns = map[string][]string{
 		"manual_policy",
 		"updated_at_ms",
 	},
+	"account_model_probes": {
+		"account_ref",
+		"provider_id",
+		"last_attempt_at_ms",
+		"last_error_code",
+		"last_error_message",
+		"last_source",
+		"last_model_count",
+		"updated_at_ms",
+	},
 	"account_usage": {
 		"account_ref",
 		"limit_id",
@@ -272,6 +282,7 @@ var forwardMigrations = []string{
 	SchemaV18,
 	SchemaV19,
 	SchemaV20,
+	SchemaV21,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

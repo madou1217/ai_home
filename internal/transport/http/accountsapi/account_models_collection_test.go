@@ -72,6 +72,58 @@ func TestAccountModelsCollectionFiltersByProvider(t *testing.T) {
 	}
 }
 
+// TestAccountModelsCollectionProjectsProbeFacts 覆盖探测字段的 JSON 投影：
+// 探测时刻用毫秒数下发，错误、来源和计数与模型列表同层；从未探测的账号保留零值，
+// WebUI 才能把「没有探测过」和「探测失败」分开。
+func TestAccountModelsCollectionProjectsProbeFacts(t *testing.T) {
+	probed := buildModelSet(t, "acct_0123456789abcdef0123", "codex", "gpt-5", accountapp.ModelPolicyInherit)
+	probed.LastAttemptAt = time.UnixMilli(1_790_000_000_500).UTC()
+	probed.LastErrorCode = "discovery_failed"
+	probed.LastErrorMessage = "上游 403"
+	probed.LastSource = "error"
+	probed.LastModelCount = 3
+	never := buildModelSet(t, "acct_ffffffffffffffffffff", "claude", "claude-sonnet", accountapp.ModelPolicyInherit)
+	handler := &Handler{accountModels: fakeAccountModelReader{sets: []accountapp.AccountModelSet{probed, never}}}
+	request := httptest.NewRequest(http.MethodGet, AccountModelsCollectionPath, nil)
+	recorder := httptest.NewRecorder()
+	handler.handleAccountModelsCollection(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Data []struct {
+			AccountRef       string `json:"account_ref"`
+			LastAttemptAtMS  int64  `json:"last_attempt_at_ms"`
+			LastErrorCode    string `json:"last_error_code"`
+			LastErrorMessage string `json:"last_error_message"`
+			LastSource       string `json:"last_source"`
+			LastModelCount   int    `json:"last_model_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if len(payload.Data) != 2 {
+		t.Fatalf("账号数 = %d, want 2", len(payload.Data))
+	}
+	first := payload.Data[0]
+	if first.LastAttemptAtMS != 1_790_000_000_500 ||
+		first.LastErrorCode != "discovery_failed" ||
+		first.LastErrorMessage != "上游 403" ||
+		first.LastSource != "error" ||
+		first.LastModelCount != 3 {
+		t.Fatalf("探测投影 = %#v", first)
+	}
+	second := payload.Data[1]
+	if second.LastAttemptAtMS != 0 ||
+		second.LastErrorCode != "" ||
+		second.LastErrorMessage != "" ||
+		second.LastSource != "" ||
+		second.LastModelCount != 0 {
+		t.Fatalf("从未探测账号应为零值: %#v", second)
+	}
+}
+
 func TestAccountModelsCollectionWithoutReaderReturns503(t *testing.T) {
 	handler := &Handler{}
 	request := httptest.NewRequest(http.MethodGet, AccountModelsCollectionPath, nil)

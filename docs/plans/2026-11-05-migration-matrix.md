@@ -203,3 +203,17 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `scripts/status-dual-read-replay.js` 按账号分组后用 Node 真值与 oracle 逐步比对。
 - 用法：`node scripts/status-dual-read-replay.js --fail-on-divergence`（观察期可挂定时任务）。
 - 真机链路已验证：合成 journal（2 账号 4 步）→ `divergences=0`。
+
+### 2026-11-05 晚：并行团队合入结果
+
+- **gemini 额度已迁 Go 并接线**（`internal/adapters/gemini/usage`，Node descriptor 改
+  `quota.supported:false`；本机账号 enabled=0，§9 待真机）。
+- **kimi 额度包已实现但未接线**：Go 侧没有 kimi token 刷新，且 kimi 未登记凭据刷新策略；
+  直接接会让过期 token 从「Node 刷新成功」退化成「Go 每次失败」。待刷新迁移后与
+  `staticcredential` 一起接。
+- **qoder relay 两个接线前缺陷已修**：relaycore 不再丢弃 `TransformResponse` 的 error
+  （未写 header → 429/502 JSON；已写 header 流式 → error 帧 + [DONE]）；qoder 对非 2xx
+  返回 `false,nil` 交回 Handler 原样转发错误正文。
+- **qoder relay 契约测试**：httptest 假上游端到端覆盖 zstd/签名头/umid/推理主机/SSE 拆包/
+  非流式聚合/错误信封/非 2xx 原样转发，coverage 76.6%（含 -race）。
+- **回归体检**：HEAD 全绿（Go 61 包 / Node 1556 用例）；工作区红点均为当时的在途改动。

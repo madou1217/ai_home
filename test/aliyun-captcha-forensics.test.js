@@ -29,6 +29,7 @@ const {
   buildCaptchaLaunchArgs,
   buildCaptchaExpression,
   dispatchHumanClick,
+  ensurePageTarget,
   launchCaptchaBrowser,
   moveCaptchaWindowOffscreen,
   resolveMacAppBundle,
@@ -44,6 +45,52 @@ test('Chrome 必须有头，不能回到 headless', () => {
   // Windows/Linux 上 --window-position 有效；macOS 会忽略它，改由 CDP 在加载后移窗。
   assert.ok(args.includes('--window-position=-3000,-3000'), '支持的平台先把窗口放到屏幕外');
   assert.ok(args.includes('--user-data-dir=/tmp/profile-x'), '必须用独立 profile');
+});
+
+test('必须无窗口启动，窗口由 CDP 在后台建', () => {
+  const args = buildCaptchaLaunchArgs('/tmp/profile-x');
+  // 2026-11-05：带窗口启动会先在屏幕中间闪一下（Chrome 最小窗口 500×375，
+  // --window-position 在 macOS 上被忽略），还可能把 Chrome 顶到前台抢焦点。
+  assert.ok(args.includes('--no-startup-window'), '必须无窗口启动');
+  assert.equal(
+    args.some((a) => a === 'about:blank' || /^https?:/.test(a)),
+    false,
+    '不能带 URL：带 URL 就会建启动窗口，前功尽弃'
+  );
+});
+
+test('建窗时不能把页面当后台页（会稳定 F001）', async () => {
+  const calls = [];
+  const cdp = {
+    send: async (method, params) => {
+      calls.push({ method, params });
+      if (method === 'Target.getTargets') return { targetInfos: [{ type: 'service_worker' }] };
+      if (method === 'Target.createTarget') return { targetId: 'target-1' };
+      return {};
+    }
+  };
+  const page = await ensurePageTarget(cdp);
+  assert.equal(page.targetId, 'target-1');
+  const created = calls.find((call) => call.method === 'Target.createTarget');
+  assert.deepEqual(
+    created.params,
+    { url: 'about:blank', newWindow: true },
+    'background:true 会让页面变成后台页，实测连续 F001'
+  );
+});
+
+test('已有页签时不再另开窗口', async () => {
+  const calls = [];
+  const cdp = {
+    send: async (method, params) => {
+      calls.push({ method, params });
+      if (method === 'Target.getTargets') return { targetInfos: [{ type: 'page', targetId: 'existing' }] };
+      return {};
+    }
+  };
+  const page = await ensurePageTarget(cdp);
+  assert.equal(page.targetId, 'existing');
+  assert.equal(calls.some((call) => call.method === 'Target.createTarget'), false);
 });
 
 test('必须用 mock keychain，不能碰系统钥匙串', () => {

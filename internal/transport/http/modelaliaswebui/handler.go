@@ -37,16 +37,40 @@ type Service interface {
 	SetEnabled(ctx context.Context, id string, enabled bool) (int64, error)
 }
 
+// Dependencies 汇总别名 CRUD 的依赖。
+type Dependencies struct {
+	Authorizer Authorizer
+	Service    Service
+	// Refresh 触发一次路由目录重建，让写入立刻生效；为 nil 时只落库，等下次刷新。
+	//
+	// 为什么刷新失败不报错：别名已经安全落库，下一次目录构建仍会带上它；
+	// 把刷新失败报成写失败会让用户以为没保存，反而去重复操作。
+	Refresh func(context.Context) error
+}
+
 type Handler struct {
 	authorizer Authorizer
 	service    Service
+	refresh    func(context.Context) error
 }
 
-func NewHandler(authorizer Authorizer, service Service) (*Handler, error) {
-	if authorizer == nil || service == nil {
+func NewHandler(dependencies Dependencies) (*Handler, error) {
+	if dependencies.Authorizer == nil || dependencies.Service == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: authorizer, service: service}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		service:    dependencies.Service,
+		refresh:    dependencies.Refresh,
+	}, nil
+}
+
+// refreshCatalog 在写入成功后让新别名立刻参与路由；失败静默（见 Dependencies.Refresh）。
+func (handler *Handler) refreshCatalog(ctx context.Context) {
+	if handler.refresh == nil {
+		return
+	}
+	_ = handler.refresh(ctx)
 }
 
 // aliasPayload 是创建/更新的请求体；指针字段用于区分「未提供」与「显式零值」。
@@ -122,6 +146,7 @@ func (handler *Handler) create(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
+	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "alias": record, "generation": generation})
 }
 
@@ -143,6 +168,7 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
+	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "alias": record, "generation": generation})
 }
 
@@ -152,6 +178,7 @@ func (handler *Handler) remove(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
+	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "generation": generation})
 }
 
@@ -169,6 +196,7 @@ func (handler *Handler) setEnabled(response http.ResponseWriter, request *http.R
 		writeServiceError(response, err)
 		return
 	}
+	handler.refreshCatalog(request.Context())
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "generation": generation})
 }
 

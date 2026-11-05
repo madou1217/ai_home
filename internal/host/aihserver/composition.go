@@ -921,7 +921,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型别名写服务失败: %w", err)
 	}
-	modelAliasesWebUIHandler, err := modelaliaswebui.NewHandler(authorizer, aliasService)
+	modelAliasesWebUIHandler, err := modelaliaswebui.NewHandler(modelaliaswebui.Dependencies{
+		Authorizer: authorizer,
+		Service:    aliasService,
+		Refresh:    inference.catalogRefresh.Refresh,
+	})
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型别名 WebUI 接口失败: %w", err)

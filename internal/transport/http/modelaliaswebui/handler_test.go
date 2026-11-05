@@ -3,6 +3,7 @@ package modelaliaswebui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -63,7 +64,10 @@ func (stub stubAuthorizer) Authorized(*http.Request) bool { return stub.allowed 
 
 func newHandler(t *testing.T, service Service, allowed bool) *Handler {
 	t.Helper()
-	handler, err := NewHandler(stubAuthorizer{allowed: allowed}, service)
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: allowed},
+		Service:    service,
+	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
@@ -181,5 +185,56 @@ func TestHandlerRejectsUnsupportedMethod(t *testing.T) {
 	handler := newHandler(t, &fakeService{}, true)
 	if recorder := do(handler, http.MethodPatch, Path, ""); recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", recorder.Code)
+	}
+}
+
+// 写入成功后必须触发一次目录重建：否则「改了别名但要等下次刷新才生效」，
+// 用户会以为没保存。
+func TestHandlerRefreshesCatalogAfterWrites(t *testing.T) {
+	service := &fakeService{}
+	refreshes := 0
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    service,
+		Refresh:    func(context.Context) error { refreshes++; return nil },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	do(handler, http.MethodPost, Path, `{"alias":"a","target":"b"}`)
+	do(handler, http.MethodPut, Path+"/id1", `{"priority":1}`)
+	do(handler, http.MethodPost, Path+"/id1/enabled", `{"enabled":false}`)
+	do(handler, http.MethodDelete, Path+"/id1", "")
+	if refreshes != 4 {
+		t.Fatalf("刷新次数 = %d, want 4", refreshes)
+	}
+}
+
+// 刷新失败不能让写请求失败：别名已经落库，下一次构建仍会带上它。
+func TestHandlerRefreshFailureDoesNotFailWrite(t *testing.T) {
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    &fakeService{},
+		Refresh:    func(context.Context) error { return errors.New("refresh failed") },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	if recorder := do(handler, http.MethodPost, Path, `{"alias":"a","target":"b"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+}
+
+// 服务报错时不能刷新（没有变化可应用）。
+func TestHandlerSkipsRefreshWhenWriteFails(t *testing.T) {
+	refreshes := 0
+	handler, _ := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    &fakeService{err: modelalias.ErrAliasNotFound},
+		Refresh:    func(context.Context) error { refreshes++; return nil },
+	})
+	do(handler, http.MethodDelete, Path+"/id1", "")
+	if refreshes != 0 {
+		t.Fatalf("失败写入触发了 %d 次刷新", refreshes)
 	}
 }

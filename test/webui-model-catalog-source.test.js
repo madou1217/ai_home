@@ -111,3 +111,24 @@ test('ref 翻译后再按 Node 作用域过滤', () => {
   assert.deepEqual(merged.byAccount.acct_a, ['go-a']);
   assert.deepEqual(merged.byAccount.acct_b, ['b-model']);
 });
+
+test('探测时刻与错误以 Go 为准（错误清空也要同步）', () => {
+  const merged = mergeGoCatalogResult(
+    {
+      ...localResult(),
+      errorsByAccount: { acct_a: 'old_failure' },
+      accountProbedAt: { acct_a: 100 }
+    },
+    {
+      updatedAt: 3000,
+      byAccount: { acct_go_a: ['m1'] },
+      errorsByAccount: {},
+      accountProbedAt: { acct_go_a: 2000 }
+    },
+    null,
+    (goRef) => (goRef === 'acct_go_a' ? 'acct_a' : '')
+  );
+  assert.equal(merged.accountProbedAt.acct_a, 2000);
+  // Go 这次成功（无错误）→ 旧错误必须清掉，否则页面一直显示失败。
+  assert.equal(merged.errorsByAccount.acct_a, undefined);
+});

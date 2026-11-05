@@ -195,3 +195,15 @@ test('Go 接管的 Provider 不采用 Node 的本地目录兜底', async () => {
   });
   assert.equal(catalogSurface.includes('stale/legacy-model'), false, '本地历史目录不得进入 Go 接管的目录');
 });
+
+test('管理 API 的 ref 必须翻译成 Go ref（rekey 后两侧不同）', () => {
+  const { __private: { managementGoRef } } = require('../lib/server/go-core-host');
+  const resolve = (ref) => (ref === 'acct_node_1' ? 'acct_go_1' : '');
+  assert.equal(managementGoRef('acct_node_1', resolve), 'acct_go_1');
+  // 翻译不到时按恒等回落（两侧 ref 相同是常态）。
+  assert.equal(managementGoRef('acct_same', resolve), 'acct_same');
+  assert.equal(managementGoRef('', resolve), '');
+  assert.equal(managementGoRef(null, resolve), '');
+  // 没有翻译器（同步关闭）也是恒等。
+  assert.equal(managementGoRef('acct_same', null), 'acct_same');
+});

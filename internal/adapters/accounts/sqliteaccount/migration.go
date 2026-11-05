@@ -146,6 +146,20 @@ var expectedSchemaColumns = map[string][]string{
 		"error_code",
 		"error_message",
 	},
+	"account_quota_window_samples": {
+		"sample_id",
+		"account_ref",
+		"provider_id",
+		"quota_key",
+		"window_label",
+		"window_minutes",
+		"remaining_pct",
+		"expected_reset_at_ms",
+		"captured_at_ms",
+		"captured_bucket",
+		"plan_type",
+		"created_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -213,6 +227,7 @@ var forwardMigrations = []string{
 	SchemaV15,
 	SchemaV16,
 	SchemaV17,
+	SchemaV18,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

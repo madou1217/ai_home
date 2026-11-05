@@ -102,6 +102,9 @@ func (store *Store) replaceUsageSnapshot(
 	if err := insertUsageEntries(ctx, transaction, snapshot); err != nil {
 		return err
 	}
+	// 采样与当前快照同事务：先写当前值，再留一条历史事实，避免两者不一致。
+	// 采样是附加事实，写失败不能让额度快照本身失败（与 Node 侧一致）。
+	_ = store.insertQuotaWindowSamples(ctx, transaction, snapshot)
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("提交账号额度替换事务失败: %w", err)
 	}

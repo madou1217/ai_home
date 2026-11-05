@@ -82,6 +82,8 @@ const (
 	memberResourceModelRefresh
 	memberResourceUsage
 	memberResourceUsageRefresh
+	// memberResourceQuotaStats 是按窗口期（5h / 7 天 / 30 天）的额度统计。
+	memberResourceQuotaStats
 	// memberResourceUsageDocument 是采集方原样写入的完整 Provider 快照文档。
 	memberResourceUsageDocument
 	// memberResourceUIState 是账号页展示状态（Node 写入、Go 存储）。
@@ -130,6 +132,8 @@ func parseMemberResource(path string) (memberResource, error) {
 		kind = memberResourceUsage
 	case len(parts) == 3 && parts[1] == "usage" && parts[2] == "refresh":
 		kind = memberResourceUsageRefresh
+	case len(parts) == 2 && parts[1] == "quota-stats":
+		kind = memberResourceQuotaStats
 	case len(parts) == 2 && parts[1] == "usage-document":
 		kind = memberResourceUsageDocument
 	case len(parts) == 2 && parts[1] == "ui-state":

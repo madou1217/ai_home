@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/madou1217/ai_home/core/providers"
 	_ "modernc.org/sqlite"
@@ -40,6 +41,8 @@ type Store struct {
 	//
 	// 该锁不参与账号征召或 /v1/models 读取，只保证事务提交顺序与索引发布顺序一致。
 	routingWrites sync.Mutex
+	// quotaPruneAtMS 是上一次额度采样清理的时刻，限频用，不需要严格精确。
+	quotaPruneAtMS atomic.Int64
 }
 
 // Open 创建或校验 aih.db，并返回可并发使用的账号 Store。

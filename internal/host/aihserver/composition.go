@@ -640,10 +640,20 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 会话用量 Handler 失败: %w", err)
 	}
+	quotaStatsService, err := usageapp.NewQuotaStatsService(usageapp.QuotaStatsDependencies{
+		Samples:   store,
+		Usage:     store,
+		Snapshots: store,
+		Clock:     time.Now,
+	})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建额度统计服务失败: %w", err)
+	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              recoveringModelManagement,
 		Usage:               usage.service,
+		QuotaStats:          quotaStatsService,
 		Deletion:            deleter,
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,

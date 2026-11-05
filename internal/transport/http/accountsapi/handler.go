@@ -245,6 +245,7 @@ type Dependencies struct {
 	Management          Management
 	Models              ModelManagement
 	Usage               UsageManagement
+	QuotaStats          QuotaStatsManagement
 	Deletion            AccountDeletion
 	Defaults            ProviderDefaultManagement
 	Selections          LaunchAccountSelection
@@ -264,6 +265,7 @@ type Handler struct {
 	management          Management
 	models              ModelManagement
 	usage               UsageManagement
+	quotaStats          QuotaStatsManagement
 	deletion            AccountDeletion
 	defaults            ProviderDefaultManagement
 	selections          LaunchAccountSelection
@@ -281,6 +283,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Management == nil ||
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
+		dependencies.QuotaStats == nil ||
 		dependencies.Deletion == nil ||
 		dependencies.Defaults == nil ||
 		dependencies.Selections == nil ||
@@ -297,6 +300,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		management:          dependencies.Management,
 		models:              dependencies.Models,
 		usage:               dependencies.Usage,
+		quotaStats:          dependencies.QuotaStats,
 		deletion:            dependencies.Deletion,
 		defaults:            dependencies.Defaults,
 		selections:          dependencies.Selections,
@@ -425,6 +429,8 @@ func (handler *Handler) handleMember(
 		handler.handleAccountModelRefresh(response, request, accountRef)
 	case memberResourceUsage:
 		handler.handleAccountUsage(response, request, accountRef)
+	case memberResourceQuotaStats:
+		handler.handleAccountQuotaStats(response, request, accountRef)
 	case memberResourceUsageDocument:
 		handler.handleAccountUsageDocument(response, request, accountRef)
 	case memberResourceUIState:

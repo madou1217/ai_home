@@ -50,6 +50,7 @@ import {
   FieldNumberOutlined,
   GiftOutlined,
   FileSearchOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
@@ -258,6 +259,7 @@ export default function Accounts() {
     openCliWithDefaultTerminal,
     guardAccountLaunch,
     openModelManagement,
+    openQuotaStats,
     openAddAccountModal,
     openImportModal,
     handleExport,
@@ -542,6 +544,11 @@ export default function Accounts() {
         label: '重置历史记录',
         icon: <HistoryOutlined />
       });
+      menuItems.push({
+        key: 'quota-stats',
+        label: '额度统计',
+        icon: <BarChartOutlined />
+      });
     }
     if (canReauthAccount(record)) {
       menuItems.push({ key: 'reauth', label: getReauthActionLabel(record), icon: <SyncOutlined /> });
@@ -587,6 +594,10 @@ export default function Accounts() {
     }
     if (key === 'quota-reset-history') {
       setQuotaResetHistoryAccount(record);
+      return;
+    }
+    if (key === 'quota-stats') {
+      openQuotaStats(record);
       return;
     }
     if (key === 'reauth') { handleReauth(record); return; }

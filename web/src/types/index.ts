@@ -59,6 +59,96 @@ export interface AccountTokenUsage {
   models: AccountTokenUsageModel[];
 }
 
+/** 额度统计：图表指标。 */
+export type QuotaWindowMetric = 'percent' | 'tokens' | 'cost';
+/** 窗口证据来源：真实采样 / 仅重置事件 / 覆盖不全的重建 / 当前账本。 */
+export type QuotaWindowSource = 'sample' | 'reset' | 'reconstructed' | 'live';
+export type QuotaWindowConfidence = 'high' | 'medium' | 'low';
+
+export interface QuotaWindowScope {
+  quotaKey: string;
+  label: string;
+  sampleCount: number;
+  lastCapturedAtMs: number;
+  /** 只在当前快照里出现过、还没有采样的 scope。 */
+  synthetic?: boolean;
+}
+
+export interface QuotaWindowDimension {
+  windowMinutes: number;
+  label: string;
+  available: boolean;
+  dataState: 'ready' | 'pending' | 'empty';
+  scopes: QuotaWindowScope[];
+}
+
+export interface QuotaStatsWindowRow {
+  index: number;
+  anchorAtMs: number;
+  closeAtMs: number;
+  scheduledCloseAtMs: number;
+  truncated: boolean;
+  live: boolean;
+  remainingStartPct: number | null;
+  remainingEndPct: number | null;
+  remainingMinPct: number | null;
+  consumedPct: number | null;
+  peakConsumedPct: number | null;
+  startEstimated: boolean;
+  sampleCount: number;
+  observedFromMs: number;
+  observedToMs: number;
+  tokens: number;
+  costUsd: number | null;
+  costKnown: boolean;
+  requestCount: number;
+  source: QuotaWindowSource;
+  confidence: QuotaWindowConfidence;
+  resetKind: 'cycle_rollover' | 'replenishment' | '';
+  classification: 'natural' | 'early_inferred' | 'plan_upgrade' | '';
+  planType: string;
+  approximateClose: boolean;
+  anchorEstimated: boolean;
+}
+
+export interface QuotaStatsSummary {
+  windowCount: number;
+  coveredWindowCount: number;
+  totalTokens: number;
+  totalCostUsd: number | null;
+  costKnown: boolean;
+  requestCount: number;
+  avgConsumedPct: number | null;
+  maxConsumedPct: number | null;
+  minConsumedPct: number | null;
+  avgTokensPerWindow: number | null;
+  avgCostUsdPerWindow: number | null;
+  lastResetAtMs: number;
+  nextCloseAtMs: number;
+}
+
+export interface AccountQuotaStatsResponse {
+  ok: boolean;
+  provider: Provider;
+  accountRef: string;
+  generatedAtMs: number;
+  range: { fromMs: number; toMs: number; rangeDays: number };
+  dimensions: QuotaWindowDimension[];
+  windowMinutes: number;
+  scope: QuotaWindowScope | null;
+  current: { remainingPct: number | null; resetAtMs: number; capturedAtMs: number } | null;
+  summary: QuotaStatsSummary;
+  windows: QuotaStatsWindowRow[];
+  emptyReason: 'dimension_unavailable' | 'no_samples' | 'no_windows_in_range' | null;
+}
+
+export interface AccountQuotaStatsQuery {
+  window?: number;
+  scope?: string;
+  rangeDays?: number;
+  to?: number;
+}
+
 export interface AccountModelSummary {
   storedCount: number;
   effectiveCount: number;

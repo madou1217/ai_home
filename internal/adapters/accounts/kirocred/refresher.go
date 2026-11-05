@@ -218,3 +218,43 @@ func (refresher *Refresher) requestGrant(
 	}
 	return grant, nil
 }
+
+// Refresh 只做协议刷新，不写库：返回身份不变的新领域凭据。
+//
+// 供 credential resolver 的 RefreshStrategy 使用（写回与 CAS 由 resolver 负责）。
+// 与 RefreshCredential 的差别只有「不碰存储」。
+func (refresher *Refresher) Refresh(
+	ctx context.Context,
+	credential accountapp.Credential,
+) (accountapp.Credential, error) {
+	if refresher == nil || ctx == nil {
+		return nil, ErrInvalidDependencies
+	}
+	native, ok := credential.(*accountcore.NativeCredential)
+	if !ok || native == nil || native.ProviderID() != kiro.ProviderID {
+		return credential, nil
+	}
+	parsed, err := kiro.ParseCredential(native.Payload())
+	if err != nil {
+		return nil, err
+	}
+	if parsed.IsAccessTokenFresh(refresher.clock().UTC()) {
+		return native, nil
+	}
+	if !parsed.CanRefresh() {
+		return nil, ErrCannotRefresh
+	}
+	grant, err := refresher.refresh(ctx, parsed)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := parsed.WithGrant(grant)
+	if err != nil {
+		return nil, err
+	}
+	refreshed, err := nativeaccount.NewDecoder().DecodeNativeAuth(kiro.ProviderID, payload)
+	if err != nil || refreshed == nil {
+		return nil, accountapp.ErrInvalidCredentialReplacement
+	}
+	return refreshed, nil
+}

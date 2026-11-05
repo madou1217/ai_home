@@ -535,7 +535,7 @@ func builtinKiro() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
-		RelayHosts:   relayHostsNodeOnly("Go 无 kiro 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
+		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		// usage_scan：kiro-cli 的会话写在宿主共享的 ~/.kiro/sessions/<sha256(cwd)[:16]>/sess_*/messages.jsonl，
 		// 每次模型请求一条 contextUsage（上下文占用百分比）、每轮一条 usage_summary（credits + status），
 		// 2026-10-19 实测 kiro-cli 2.32。token 没有原生字段，按「百分比 × 模型 maxInputTokens」估算；

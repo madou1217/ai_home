@@ -599,6 +599,23 @@ func (handler *Handler) writeResponse(
 	if len(outcome.rewritten.Degradations) > 0 {
 		response.Header().Set(DegradationHeader, strings.Join(outcome.rewritten.Degradations, ","))
 	}
+	// Provider 可选接管响应（例如 qoder 的 SSE 信封、kiro 的二进制 event-stream）。
+	//
+	// 必须先于默认聚合：默认聚合把上游当 SSE 解析，遇到非 SSE 协议（kiro）会产出
+	// 空的 chat.completion（model="unknown"），把真实响应洗成「模型没说话」。
+	//
+	// 交接后错误不能再被吞掉：非流式在写 header 之前失败时，客户端会收到 200 + 空 body，
+	// 看起来像「成功但没回答」；流式已写出 header 时，至少要补一帧 OpenAI 兼容的 error，
+	// 否则上游的额度/限流原因只存在于被丢弃的 error 里。
+	if transformer, ok := outcome.providerImpl.(ResponseTransformer); ok {
+		tracker := &trackingResponseWriter{ResponseWriter: response}
+		if handled, err := transformer.TransformResponse(tracker, upstreamResponse, stream); handled {
+			if err != nil {
+				writeTransformerError(response, tracker, err, stream)
+			}
+			return
+		}
+	}
 	// 只有「客户端要非流式」且「上游是成功响应」才聚合。
 	//
 	// 上游错误响应绝不能进聚合器：那是一段 JSON 错误正文，按 SSE 解析会产出空的
@@ -632,20 +649,6 @@ func (handler *Handler) writeResponse(
 		response.Header().Set("Cache-Control", "no-cache")
 		response.Header().Set("X-Accel-Buffering", "no")
 		response.Header().Set("X-Content-Type-Options", "nosniff")
-	}
-	// Provider 可选接管响应（例如 qoder 的 SSE 信封需要拆包后再交给客户端）。
-	//
-	// 交接后错误不能再被吞掉：非流式在写 header 之前失败时，客户端会收到 200 + 空 body，
-	// 看起来像「成功但没回答」；流式已写出 header 时，至少要补一帧 OpenAI 兼容的 error，
-	// 否则上游的额度/限流原因只存在于被丢弃的 error 里。
-	if transformer, ok := outcome.providerImpl.(ResponseTransformer); ok {
-		tracker := &trackingResponseWriter{ResponseWriter: response}
-		if handled, err := transformer.TransformResponse(tracker, upstreamResponse, stream); handled {
-			if err != nil {
-				writeTransformerError(response, tracker, err, stream)
-			}
-			return
-		}
 	}
 	response.WriteHeader(upstreamResponse.StatusCode)
 	_ = copyStreaming(response, upstreamResponse.Body)

@@ -33,6 +33,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/kimioauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/kirooauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
@@ -70,6 +71,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
+	"github.com/madou1217/ai_home/internal/transport/http/kirorelay"
 	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
@@ -376,6 +378,12 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 凭据刷新器失败: %w", err)
 	}
+	// kiro 的 access token 会过期：推理已由 Go 承接，凭据解析必须能刷新，
+	// 否则 relay 拿着过期 token 打上游（真机 403 AccessDeniedException）。
+	kiroProvider, err := kirooauth.New(kiroRefresher)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 凭据刷新策略失败: %w", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -491,7 +499,6 @@ func newHandlers(
 		append([]string{}, codebuddyfamilyrelay.FamilyProviders...),
 		"qoder",
 		"qodercn",
-		"kiro",
 		"zcode",
 		"cline",
 	)
@@ -524,6 +531,7 @@ func newHandlers(
 				claudeProvider,
 				agyProvider,
 				kimiProvider,
+				kiroProvider,
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
@@ -826,6 +834,7 @@ func newHandlers(
 				claudeProvider,
 				agyProvider,
 				kimiProvider,
+				kiroProvider,
 			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			authorizer:                clientAuthorizer,
@@ -1081,6 +1090,17 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 qodercn 透传账号来源失败: %w", err)
 	}
+	// kiro 透传：CodeWhisperer 流式 RPC（Coral content-type + event-stream）。
+	kiroRelayAccounts, err := newProviderRelayAccountSource(
+		kirorelay.ProviderID,
+		catalog,
+		inference.recruiter,
+		kiroRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 透传账号来源失败: %w", err)
+	}
 	// zcode 透传：端点/鉴权按套餐与区域分流，请求体需要官方 harness；宿主事实由
 	// loadZcodeHostFacts 读取（读不到时 fail-soft，与 Node 行为一致）。
 	zcodeRelayAccounts, err := newProviderRelayAccountSource(
@@ -1121,6 +1141,7 @@ func newHandlers(
 				qoderRelayAccounts,
 				qoderCNRelayAccounts,
 				zcodeRelayAccounts,
+				kiroRelayAccounts,
 				familyRelayAccounts,
 			),
 			Fallback:    inference.handler,
@@ -1137,6 +1158,7 @@ func newHandlers(
 				opencoderelay.NewProvider(),
 				qoderrelay.NewProvider(),
 				zcoderelay.NewProvider(loadZcodeHostFacts(aiHomeDir)),
+				kirorelay.NewProvider(),
 			},
 		},
 	)

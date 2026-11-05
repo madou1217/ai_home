@@ -8,6 +8,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/grokrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
+	"github.com/madou1217/ai_home/internal/transport/http/kirorelay"
 	"github.com/madou1217/ai_home/internal/transport/http/opencoderelay"
 	"github.com/madou1217/ai_home/internal/transport/http/qoderrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/zcoderelay"
@@ -54,6 +55,7 @@ func relayProviderIDs() []string {
 		qoderrelay.QoderProviderID,
 		qoderrelay.QoderCNProviderID,
 		zcoderelay.ProviderID,
+		kirorelay.ProviderID,
 	)
 	return providers
 }

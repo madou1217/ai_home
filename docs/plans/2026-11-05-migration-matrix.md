@@ -30,13 +30,13 @@
 | **gemini** | `node` `N:server/oauth-strategies/gemini.js` | `go` `G:adapters/gemini/modelcatalog` · `N:providers/defs/gemini.js`（只读 Go） | `node` `N:usage/provider-usage/gemini.js`；Go 无策略 | `node` `N:server/upstream-endpoints-transport-code-assist-gemini.js`；Go 无直连上游 | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **grok** | `node` `N:account/grok-auth-profile.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog`（仅 API Key）· `N:providers/defs/grok.js`（只读 Go） | `node` `N:usage/provider-usage/grok.js` | `both` `G:transport/http/grokrelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
 | **kimi** | `node` `N:account/kimi-auth.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog` · `N:providers/defs/kimi.js`（只读 Go） | `node` `N:usage/provider-usage/kimi.js` | `both` `G:transport/http/kimirelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
-| **kiro** | `node` `N:account/kiro-device-login.js` `N:account/kiro-native-login.js` | `go` `G:adapters/kiro/modelcatalog` · `N:providers/defs/kiro.js`（只读 Go） | `go` `G:adapters/kiro/usage`；`N:providers/defs/kiro.js` quota=false | `node` `N:server/kiro-chat-transport.js`；Go 无上游适配器（`C:providers/builtins.go:538`） | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
+| **kiro** | `node` `N:account/kiro-device-login.js` `N:account/kiro-native-login.js` | `go` `G:adapters/kiro/modelcatalog` · `N:providers/defs/kiro.js`（只读 Go） | `go` `G:adapters/kiro/usage`；`N:providers/defs/kiro.js` quota=false | `go` `G:transport/http/kirorelay`（CodeWhisperer event-stream + 事务刷新）；仅原生凭据 | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
 | **opencode** | `node` `N:server/oauth-strategies/opencode.js`（设备码） | `go` `G:adapters/opencode/modelcatalog`（Zen + Go 双腿）· `N:providers/defs/opencode.js`（只读 Go `account_models`） | `none` 两侧均无额度接口（`C:providers/builtins.go` 未声明 quota，Node quota=false） | `both` `G:transport/http/opencoderelay`（仅 official API Key）· `N:server/opencode-free-cli-transport.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **qoder** | `node` `N:account/qoder-auth-metadata.js` + 通用 CLI 登录作业 | `go` `G:adapters/qoder/modelcatalog`（wasm 签名）· `N:providers/defs/qoder.js`（只读 Go） | `go` `G:adapters/qoder/usage`；`N:providers/defs/qoder.js` quota=false | `go` `G:transport/http/qoderrelay`（WASM 签名 + zstd）；静态凭据/CLI 账号交还 Node | `node` 同上 | `node` `N:account/activity-claim/qoder-daily.js` | `node` `N:runtime/acp-layouts.js` |
 | **qodercn** | `node` 同上（CN 变体） | `go` `G:adapters/qoder/modelcatalog`（CN 区域）· `N:providers/defs/qodercn.js`（只读 Go） | `go` `G:adapters/qoder/usage` | `node` 同上 | `node` 同上 | `node` 同上（区域主机不同） | `node` 同上 |
 | **workbuddy** | `node` 家族宿主扫描 `N:account/host-account-sync/` | `go` `G:adapters/codebuddyfamily/modelcatalog` · `N:providers/defs/workbuddy.js`（只读 Go） | `go` `G:adapters/codebuddyfamily/usage` | `both` `G:transport/http/codebuddyfamilyrelay` | `node` 同上 | `none`（国际站无签到） | `node` `N:runtime/acp-layouts.js` |
 | **workbuddycn** | `node` 同上 | `both` 同上 | `go` 同上 | `both` 同上 | `node` 同上 | `node` `N:account/activity-claim/workbuddy-daily.js` | `node` 同上 |
-| **zcode** | `node` `N:server/oauth-strategies/zcode.js`（cli-flow / custom-scheme） | `go` `G:adapters/zcode/modelcatalog` · `N:providers/defs/zcode.js`（只读 Go） | `go` `G:adapters/zcode/usage`；`N:providers/defs/zcode.js` quota=false | `node` `N:server/provider-protocol-routing.js`（anthropic passthrough）；Go 无上游适配器（`C:providers/builtins.go:591`） | `node` 同上 | `node` `N:account/activity-claim/zcode-plan.js` | `node` `N:runtime/client-terminal.js` |
+| **zcode** | `node` `N:server/oauth-strategies/zcode.js`（cli-flow / custom-scheme） | `go` `G:adapters/zcode/modelcatalog` · `N:providers/defs/zcode.js`（只读 Go） | `go` `G:adapters/zcode/usage`；`N:providers/defs/zcode.js` quota=false | `go` `G:transport/http/zcoderelay`（harness + 双鉴权）；静态凭据/CLI 账号交还 Node | `node` 同上 | `node` `N:account/activity-claim/zcode-plan.js` | `node` `N:runtime/client-terminal.js` |
 
 ## 2. 规模与分布
 
@@ -47,11 +47,11 @@
 | 登录/OAuth 作业 | 0 | 2 | 14 | 0 |
 | 模型目录发现 | 16 | 0 | 0 | 0 |
 | 额度采集 | 10 | 2 | 3 | 1 |
-| 推理 relay | 2 | 11 | 3 | 0 |
+| 推理 relay | 4 | 11 | 1 | 0 |
 | 账号删除/宿主清理 | 0 | 2 | 14 | 0 |
 | 活动签到 | 0 | 0 | 5 | 11 |
 | 会话/PTY/SSH | 0 | 2 | 14 | 0 |
-| **合计** | **28** | **19** | **53** | **12** |
+| **合计** | **30** | **19** | **51** | **12** |
 
 ## 3. 关键观察
 

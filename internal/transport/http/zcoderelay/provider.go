@@ -15,6 +15,8 @@ const ProviderID = "zcode"
 //
 // 这些值来自本机 zcode 客户端安装目录，由接线层读取后注入；传输层不认识文件布局。
 type HostFacts struct {
+	// AIHomeDir 用于派生账号级稳定 device mid（读不到桌面端遗留文件时的兜底）。
+	AIHomeDir     string
 	AppVersion    string
 	DeviceMid     string
 	OSVersion     string
@@ -58,6 +60,9 @@ func (provider *Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provi
 	variant := &Provider{
 		BaseProvider: relaycore.NewBaseProvider(ProviderID, ""),
 		host:         provider.host,
+	}
+	if variant.host.DeviceMid == "" {
+		variant.host.DeviceMid = DeriveDeviceMid(variant.host.AIHomeDir, input.AccountRef)
 	}
 	facts, err := ExtractFacts(input.Credential)
 	if err != nil {

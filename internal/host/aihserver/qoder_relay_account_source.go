@@ -1,8 +1,8 @@
 package aihserver
 
 import (
-	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/transport/http/qoderrelay"
 )
 

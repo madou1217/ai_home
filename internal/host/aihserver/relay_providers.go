@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
 	"github.com/madou1217/ai_home/internal/transport/http/opencoderelay"
 	"github.com/madou1217/ai_home/internal/transport/http/qoderrelay"
+	"github.com/madou1217/ai_home/internal/transport/http/zcoderelay"
 )
 
 // relayProviderIDs 是「由透传通道直接服务」的 Provider 集合的唯一声明处。
@@ -52,6 +53,7 @@ func relayProviderIDs() []string {
 		opencoderelay.ProviderID,
 		qoderrelay.QoderProviderID,
 		qoderrelay.QoderCNProviderID,
+		zcoderelay.ProviderID,
 	)
 	return providers
 }

@@ -588,7 +588,7 @@ func builtinZcode() Definition {
 		// 只能开 Desktop。
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
-		RelayHosts:   relayHostsNodeOnly("Go 无 zcode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
+		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			// 两个**正交维度**，策略名是 `<区域>:<流程>`：

@@ -81,6 +81,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/zcoderelay"
 )
 
 const (
@@ -257,6 +258,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		ctx,
 		catalog,
 		store,
+		options.AIHomeDir,
 		modelDiscovery,
 		accountRuntime,
 		accountRuntime,
@@ -298,6 +300,8 @@ func newHandlers(
 	ctx context.Context,
 	catalog *providers.Catalog,
 	store *sqliteaccount.Store,
+	// aiHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
+	aiHomeDir string,
 	modelDiscovery *accountapp.ModelDiscovery,
 	accountRuntime serverAccountRuntime,
 	// imageUsage 记录生图的 token 用量（与推理路径同一个用量管道）；为 nil 时不记账。
@@ -1077,6 +1081,18 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 qodercn 透传账号来源失败: %w", err)
 	}
+	// zcode 透传：端点/鉴权按套餐与区域分流，请求体需要官方 harness；宿主事实由
+	// loadZcodeHostFacts 读取（读不到时 fail-soft，与 Node 行为一致）。
+	zcodeRelayAccounts, err := newProviderRelayAccountSource(
+		zcoderelay.ProviderID,
+		catalog,
+		inference.recruiter,
+		zcodeRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 zcode 透传账号来源失败: %w", err)
+	}
 	// OpenCode 官方 API Key 透传：只承接 native api-key 凭据。OAuth/CLI/free-tier
 	// 语义依赖 Node 客户端，凭据策略会把它们留在 Node。
 	opencodeRelayAccounts, err := newProviderRelayAccountSource(
@@ -1104,6 +1120,7 @@ func newHandlers(
 				opencodeRelayAccounts,
 				qoderRelayAccounts,
 				qoderCNRelayAccounts,
+				zcodeRelayAccounts,
 				familyRelayAccounts,
 			),
 			Fallback:    inference.handler,
@@ -1119,6 +1136,7 @@ func newHandlers(
 				newKimiRelayProvider(kimiClientVersion()),
 				opencoderelay.NewProvider(),
 				qoderrelay.NewProvider(),
+				zcoderelay.NewProvider(loadZcodeHostFacts(aiHomeDir)),
 			},
 		},
 	)

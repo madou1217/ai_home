@@ -43,7 +43,10 @@ CRUD 用例已完成：Service 的 Create/Update/Delete/SetEnabled，同作用�
 WebUI 契约接口已完成：Go 侧 /v1/management/webui/model-aliases（GET 列表 / POST 新建 /
 PUT 更新 / DELETE 删除 / POST {id}/enabled 启停），错误映射 400/404/409，空列表返回 []
 而不是 null。已挂进 Go 路由，用管理密钥可直接调用。
-剩余：Node 代理 + 只读灰度；写入后触发目录重建（目前只在下次推送/刷新时生效）。
+影子对账已就位：WebUI 列表路由在返回 Node 数据后，异步拉 Go 的副本做比较
+（missing / extra / changed，按 (alias, provider) 对齐），结果交给可选的
+onAliasShadowResult 观察者；不 await、不改变响应、Go 不可用时静默跳过。
+剩余：Node 代理的写路径灰度；写入后触发目录重建（目前只在下次推送/刷新时生效）。
 
 - 新增 internal/adapters/accounts/sqliteaccount/model_alias_store.go：在 aih.db 建表
   （model_alias：id/alias/target/provider/target_provider/priority/enabled/description/updated_at_ms），

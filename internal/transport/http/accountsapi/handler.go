@@ -855,8 +855,15 @@ func (handler *Handler) listAccounts(
 	if hasMore && len(overviews) > 0 {
 		nextAfterRef = overviews[len(overviews)-1].Account().Ref().String()
 	}
+	views := newAccountViews(overviews)
+	// 探针结果单独读一次再贴上去：列表是高频接口，逐账号查询会放大成 N 次。
+	if reader, ok := handler.probeStates.(ProbeStateReader); ok && reader != nil {
+		if states, err := reader.LoadProbeStates(request.Context()); err == nil {
+			views = attachProbeStates(views, states)
+		}
+	}
 	writeJSON(response, http.StatusOK, accountListResponse{
-		Data: newAccountViews(overviews),
+		Data: views,
 		Page: pageView{
 			Limit:        visibleLimit,
 			HasMore:      hasMore,

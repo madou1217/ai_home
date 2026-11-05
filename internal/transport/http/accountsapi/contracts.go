@@ -152,8 +152,17 @@ type accountView struct {
 	ProfileUpdatedAt string                    `json:"profile_updated_at,omitempty"`
 	ModelSummary     *accountModelSummaryView  `json:"model_summary"`
 	UsageSnapshot    *accountUsageSnapshotView `json:"usage_snapshot"`
-	CreatedAt        string                    `json:"created_at"`
-	UpdatedAt        string                    `json:"updated_at"`
+	// Probe 是最近一次额度探针结果（Node 执行后推送），为空表示从未探测。
+	Probe     *accountProbeView `json:"probe,omitempty"`
+	CreatedAt string            `json:"created_at"`
+	UpdatedAt string            `json:"updated_at"`
+}
+
+// accountProbeView 是最近一次额度探针结果。
+type accountProbeView struct {
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+	CheckedAt string `json:"checked_at"`
 }
 
 // accountModelSummaryView 证明账号已有持久化模型关系，并给出当前有效数量。

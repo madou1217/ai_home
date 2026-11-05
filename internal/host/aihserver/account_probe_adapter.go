@@ -28,3 +28,25 @@ func (adapter accountProbeStateStore) UpsertProbeState(
 		CheckedAtMS: state.CheckedAtMS,
 	})
 }
+
+// LoadProbeStates 实现账号列表的读取端口。
+func (adapter accountProbeStateStore) LoadProbeStates(
+	ctx context.Context,
+) (map[string]accountsapi.ProbeState, error) {
+	if adapter.store == nil {
+		return map[string]accountsapi.ProbeState{}, nil
+	}
+	states, err := adapter.store.LoadProbeStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]accountsapi.ProbeState, len(states))
+	for ref, state := range states {
+		out[ref] = accountsapi.ProbeState{
+			Status:      state.Status,
+			Error:       state.Error,
+			CheckedAtMS: state.CheckedAtMS,
+		}
+	}
+	return out, nil
+}

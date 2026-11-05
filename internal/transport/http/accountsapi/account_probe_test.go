@@ -78,3 +78,22 @@ func TestAccountProbeRejectsInvalidBody(t *testing.T) {
 		t.Fatalf("status = %d, want 400", recorder.Code)
 	}
 }
+
+func TestAttachProbeStates(t *testing.T) {
+	views := []accountView{
+		{AccountRef: "acct_0123456789abcdef0123"},
+		{AccountRef: "acct_ffffffffffffffffffff"},
+	}
+	attached := attachProbeStates(views, map[string]ProbeState{
+		"acct_0123456789abcdef0123": {Status: "ok", CheckedAtMS: 1000},
+	})
+	if attached[0].Probe == nil || attached[0].Probe.Status != "ok" {
+		t.Fatalf("第一个账号应带 probe: %+v", attached[0].Probe)
+	}
+	if attached[1].Probe != nil {
+		t.Fatalf("没有探针结果的账号不应带 probe: %+v", attached[1].Probe)
+	}
+	if attachProbeStates(views, nil)[0].Probe != nil {
+		t.Fatal("空状态表不应改动视图")
+	}
+}

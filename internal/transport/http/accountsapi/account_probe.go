@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -19,6 +20,40 @@ type ProbeState struct {
 // ProbeStateWriter 持久化探针结果；为 nil 时该端点返回 503。
 type ProbeStateWriter interface {
 	UpsertProbeState(ctx context.Context, accountRef string, state ProbeState) error
+}
+
+// ProbeStateReader 读取全部探针结果；为 nil 时账号列表不带 probe 字段。
+//
+// 读写分开声明：投递端点只需要写，列表只需要读，测试替身各实现一半即可。
+type ProbeStateReader interface {
+	LoadProbeStates(ctx context.Context) (map[string]ProbeState, error)
+}
+
+// attachProbeStates 把探针结果贴到账号视图上（只读，失败静默）。
+func attachProbeStates(views []accountView, states map[string]ProbeState) []accountView {
+	if len(states) == 0 {
+		return views
+	}
+	// 复制一份再改：入参可能来自调用方复用的切片，就地修改会把它一起改掉。
+	copied := make([]accountView, len(views))
+	copy(copied, views)
+	views = copied
+	for index := range views {
+		state, ok := states[views[index].AccountRef]
+		if !ok {
+			continue
+		}
+		checkedAt := ""
+		if state.CheckedAtMS > 0 {
+			checkedAt = time.UnixMilli(state.CheckedAtMS).UTC().Format(time.RFC3339Nano)
+		}
+		views[index].Probe = &accountProbeView{
+			Status:    state.Status,
+			Error:     state.Error,
+			CheckedAt: checkedAt,
+		}
+	}
+	return views
 }
 
 const maxProbePayloadBytes = 16 * 1024

@@ -40,6 +40,10 @@ type Runtime struct {
 	// accountFailures / modelFailures 保存上游失败观察到的硬阻塞，到复核时刻失效。
 	accountFailures map[accountcore.AccountRef]failureBlock
 	modelFailures   map[runtimecore.ModelRoute]failureBlock
+	// persistedFailures 保存由持久化账号运行态（Node 观察后推来的 auth_invalid 等）
+	// 推导出的阻塞。它们与上游失败同构：到文档里的 until 失效，下一次请求重新验证。
+	// 单独一张表是为了整份替换某个账号的状态时，不会误清 Go 自己观察到的失败。
+	persistedFailures map[accountcore.AccountRef]failureBlock
 	// remaining 保存账号由最新额度快照推导出的剩余额度基点；无额度信息的账号不占条目。
 	remaining map[accountcore.AccountRef]uint16
 }
@@ -85,13 +89,14 @@ func NewWithStore(
 		return nil, errors.Join(ErrInvalidDependencies, err)
 	}
 	return &Runtime{
-		clock:           clock,
-		cooldowns:       cooldowns,
-		accountBlocks:   make(map[accountcore.AccountRef]blockSet),
-		modelBlocks:     make(map[runtimecore.ModelRoute]blockSet),
-		accountFailures: make(map[accountcore.AccountRef]failureBlock),
-		modelFailures:   make(map[runtimecore.ModelRoute]failureBlock),
-		remaining:       make(map[accountcore.AccountRef]uint16),
+		clock:             clock,
+		cooldowns:         cooldowns,
+		accountBlocks:     make(map[accountcore.AccountRef]blockSet),
+		modelBlocks:       make(map[runtimecore.ModelRoute]blockSet),
+		accountFailures:   make(map[accountcore.AccountRef]failureBlock),
+		modelFailures:     make(map[runtimecore.ModelRoute]failureBlock),
+		persistedFailures: make(map[accountcore.AccountRef]failureBlock),
+		remaining:         make(map[accountcore.AccountRef]uint16),
 	}, nil
 }
 
@@ -119,6 +124,7 @@ func (runtime *Runtime) CheckEligibility(
 	blocks := runtime.accountBlocks[route.AccountRef()] |
 		runtime.modelBlocks[route] |
 		runtime.accountFailures[route.AccountRef()].activeAt(now) |
+		runtime.persistedFailures[route.AccountRef()].activeAt(now) |
 		runtime.modelFailures[route].activeAt(now)
 	runtime.mu.RUnlock()
 	if eligibility, blocked := blocks.eligibility(); blocked {
@@ -189,6 +195,58 @@ func (runtime *Runtime) RecordFailure(
 	default:
 		return ErrInvalidRequest
 	}
+}
+
+// ApplyAccountState 把持久化的账号运行态文档投影为内存征召阻塞。
+//
+// 这些状态由 Node 侧观察后推给 Go（auth_invalid / cooldown / ...）。它们不是 Go 自己
+// 观测到的失败，但必须参与征召：否则「用户启用 + 凭据失效」的账号会被 Go 继续调度。
+// 整份替换该账号的持久化阻塞（而不是按位合并）：文档本身就是当前唯一真相。
+func (runtime *Runtime) ApplyAccountState(
+	ctx context.Context,
+	state runtimecore.AccountState,
+) error {
+	if runtime == nil || ctx == nil || !state.IsValid() {
+		return ErrInvalidRequest
+	}
+	accountRef := state.AccountRef()
+	block, hasBlock := state.DeriveBlock()
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if !hasBlock || block.Scope() != runtimecore.BlockScopeAccount {
+		delete(runtime.persistedFailures, accountRef)
+		return nil
+	}
+	directive, err := runtimecore.NewBlockDirective(block.Kind(), block.Scope())
+	if err != nil {
+		delete(runtime.persistedFailures, accountRef)
+		return nil
+	}
+	definition, ok := definitionForRecovery(directive.RecoveryTrigger())
+	if !ok {
+		delete(runtime.persistedFailures, accountRef)
+		return nil
+	}
+	runtime.persistedFailures[accountRef] = failureBlock{}.observe(
+		definition.block,
+		runtime.clock(),
+		block.Until(),
+	)
+	return nil
+}
+
+// ClearAccountState 删除持久化运行态对应的内存阻塞（账号文档被删除时）。
+func (runtime *Runtime) ClearAccountState(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) error {
+	if runtime == nil || ctx == nil || !accountRef.IsValid() {
+		return ErrInvalidRequest
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	delete(runtime.persistedFailures, accountRef)
+	return nil
 }
 
 // ClearAccountBlock 在账号真相源更新成功后精确清除对应阻塞位。

@@ -64,6 +64,10 @@ func (runtime *Runtime) RuntimeSnapshot() []runtimeapp.AccountView {
 	for accountRef, failure := range runtime.accountFailures {
 		accountBlocks[accountRef] |= failure.activeAt(now)
 	}
+	// 持久化运行态（Node 推来的 auth_invalid 等）也要出现在账号页的阻塞投影里。
+	for accountRef, failure := range runtime.persistedFailures {
+		accountBlocks[accountRef] |= failure.activeAt(now)
+	}
 	modelBlocks := make(map[runtimecore.ModelRoute]blockSet, len(runtime.modelBlocks))
 	for route, blocks := range runtime.modelBlocks {
 		modelBlocks[route] |= blocks

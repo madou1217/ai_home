@@ -26,6 +26,7 @@ import (
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
@@ -146,6 +147,10 @@ type serverAccountRuntime interface {
 	usageapp.RuntimeProjection
 	// accountrouting.AccountWeightSource 提供加权随机选号所需的剩余额度。
 	accountrouting.AccountWeightSource
+	// 持久化运行态 → 征召资格：账号 enabled 只表示用户意图，auth_invalid 等
+	// 运行态阻塞必须单独参与征召（见 docs/plans/2026-11-06-account-enable-unification.md）。
+	ApplyAccountState(ctx context.Context, state runtimecore.AccountState) error
+	ClearAccountState(ctx context.Context, accountRef accountcore.AccountRef) error
 }
 
 // New 装配 Provider Catalog、aih.db、账号用例、OAuth Strategy 和 HTTP 入站适配器。
@@ -195,6 +200,21 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = codexVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号运行态失败: %w", err)
+	}
+	// 启动时把持久化的账号运行态投影进征召索引：Node 推来的 auth_invalid 阻塞
+	// 不能因为进程重启就消失。读失败直接失败启动——带着未知阻塞跑路由更危险。
+	seededStates, seedErr := store.ListAccountStates(ctx)
+	if seedErr != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("加载账号运行态失败: %w", seedErr)
+	}
+	for _, state := range seededStates {
+		if seedErr := inMemoryRuntime.ApplyAccountState(ctx, state); seedErr != nil {
+			_ = codexVersions.Close()
+			_ = store.Close()
+			return nil, fmt.Errorf("投影账号运行态失败: %w", seedErr)
+		}
 	}
 	outcomeRecorder, err := newAccountOutcomeRecorder(ctx, store, options.ErrorLog)
 	if err != nil {
@@ -693,6 +713,8 @@ func newHandlers(
 		CredentialSnapshots: store,
 		// 批量模型关系：WebUI 模型缓存读 Go 的入口（一次 JOIN，不做 N 次请求）。
 		AccountModels: store,
+		// 运行态写入后立即投影到征召资格索引。
+		RuntimeStates: accountRuntime,
 		Authorizer:    authorizer,
 	})
 	if err != nil {

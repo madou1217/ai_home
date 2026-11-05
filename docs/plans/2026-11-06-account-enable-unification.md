@@ -7,7 +7,8 @@
 > **2026-11-06 已落地 Phase 1**（`77e075e5` 导入日志与 cline 重认证、`2696f252` 启停统一写 Go +
 > 对账解耦、`65bcc54e` 启用即刷新），cline import 500 的根因也一并修掉。
 > 实测：WebUI 关闭 cline → Go `enabled=0`；打开 → `enabled=1` 并自动刷新目录（14 条）。
-> 遗留：Phase 2 语义拆分未做；停用账号的目录展示策略待产品确认。
+> **Phase 2 也已落地**（见 4.2）：`enabled` 只表示用户意图，运行态阻塞单独参与征召。
+> 遗留：停用账号的目录展示策略待产品确认。
 
 ## 0. 结论先行
 
@@ -136,6 +137,27 @@
   测试 `management_test.go`。
 - 真机：WebUI down→Go 0、up→Go 1；刷新后 cline 仍 14 条 upstream + 2 条手工；
   `go test ./...` 与 `node --test test/*.test.js` 全绿。
+
+## 4.2 Phase 2 实施记录（2026-11-06）
+
+已落地「enabled = 用户意图，运行态阻塞独立参与征召」：
+
+- **Go 征召**：`inmemory.Runtime` 新增 `persistedFailures`（独立于 Go 自己观察到的失败），
+  `ApplyAccountState` / `ClearAccountState` 把运行态文档投影成阻塞；`CheckEligibility` 与
+  `RuntimeSnapshot` 都纳入。阻塞随文档里的 `until` 失效（下一次请求即复核）。
+- **接线**：`accountsapi` 的 `PUT/DELETE /accounts/{ref}/runtime-state` 落库后立即调用
+  `RuntimeStateApplier`；启动时 composition 从 `ListAccountStates` 全量投影，
+  进程重启不会丢掉阻塞。
+- **Node 语义**：`codex-auth-invalid-reconciler` 的 retain 只写运行态，不再把
+  `account_state.status` 改 down；恢复也不再翻回 up。`account_state.status` 从此只表示
+  用户意图。
+- **历史数据归一**：`createAccountStateIndex` 启动时把「status=down + runtime_state 里
+  有 `account_recovery_required:` 证据」的行改回 up（阻塞保留），用户手动停用的 down 不动。
+- **真机**（zcode `acct_6738…`）：PUT auth_invalid 运行态 → `enabled=1` 且快照出现
+  `credentials_updated` 阻塞；重启后阻塞仍在（启动投影生效）；清空运行态 →
+  阻塞消失、`enabled` 仍为 1。
+- **测试**：`persisted_state_test.go`（阻塞生效/到期/清除）、`account-enable-phase2.test.js`
+  （retain 不写 status、启动归一幂等）。
 
 ## 5. 不做的事
 

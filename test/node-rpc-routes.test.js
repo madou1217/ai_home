@@ -8,6 +8,7 @@ const {
   buildDeviceStatus,
   buildDeviceAccounts,
   buildDeviceSessions,
+  buildSessionMessages,
   handleNodeRpcRoutes
 } = require('../lib/server/node-rpc-routes');
 
@@ -103,4 +104,50 @@ test('device-status 返回 rpc 信封与 result.status', async () => {
 test('非 node-rpc 路径不处理', async () => {
   const { ctx } = createCtx({ path: '/v0/webui/models' });
   assert.equal(await handleNodeRpcRoutes(ctx), false);
+});
+
+//
+// 会话消息：运行时优先于落盘。真机上大多数会话只在运行时里，
+// 只查落盘会出现「列表里有、点进去 404」。
+test('buildSessionMessages 优先读运行时会话', () => {
+  const runtime = {
+    store: {
+      getSession: (id) => (id === 's1'
+        ? { id: 's1', project: '/p/demo', provider: 'codex', title: 'demo', updatedAt: 10, createdAt: 5,
+            messages: [
+              { role: 'user', content: 'hi' },
+              { role: 'assistant', content: 'hello' },
+              { role: 'tool', content: 'ignored' }
+            ] }
+        : null)
+    }
+  };
+  const result = buildSessionMessages('', runtime, 's1', 0);
+  assert.ok(result);
+  assert.equal(result.messages.length, 2, '非 user/assistant 消息应被过滤');
+  assert.equal(result.summary.total, 2);
+  assert.equal(result.session.projectRef, '/p/demo');
+});
+
+test('buildSessionMessages 支持 limit 截断并标记 truncated', () => {
+  const runtime = {
+    store: {
+      getSession: () => ({
+        id: 's1', messages: [
+          { role: 'user', content: 'a' },
+          { role: 'user', content: 'b' },
+          { role: 'user', content: 'c' }
+        ]
+      })
+    }
+  };
+  const result = buildSessionMessages('', runtime, 's1', 2);
+  assert.equal(result.messages.length, 2);
+  assert.equal(result.summary.truncated, true);
+  assert.equal(result.summary.total, 3);
+});
+
+test('buildSessionMessages 找不到会话时返回 null', () => {
+  assert.equal(buildSessionMessages('', null, 'missing', 0), null);
+  assert.equal(buildSessionMessages('', null, '', 0), null);
 });

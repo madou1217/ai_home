@@ -140,9 +140,11 @@
     （model_alias + generation + display_models_json）、仓储端口与落库、启动恢复、
     CRUD 用例、`/v1/management/webui/model-aliases` 契约接口、写入后立即触发目录重建、
     Node 侧影子对账（只读，不改变响应）。真机已验证：推送落库、重启恢复、CRUD 全链路 200。
-    未完成：Node 写路径切到 Go（当前 Node 仍是 owner，重推投影会整体覆盖 Go 的表）、
-    组替换（`/replace`）、目标候选（`/targets`）。
-    注意：**在 Node 停止重推之前，Go 侧写入会被下一次推送覆盖**——这是切片 C 的前提。
+    已完成（2026-11-06）：组替换（`/replace`）、目标候选（`/targets`）、目标存在性校验、
+    以及**切片 C：写入口切到 Go**（Go Core 可用时列表与五个写操作全走 Go，Node 只维护
+    读投影；`/targets` 仍由 Node 算）。既有 9 条 Node 路径测试原样通过，另有 8 条 Go 归属
+    用例与 1 条真机用例（默认跳过）。
+    待办：**重启 Node 后真机验收六个操作**；在那之前线上仍走旧实现。
 11. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

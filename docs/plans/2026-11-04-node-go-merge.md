@@ -700,6 +700,7 @@ Node 进程（过渡期，逐渐缩小）
 | agy 额度采集 | 待真机 | 6 个账号 enabled=0 且 token 自 2026-10-24 过期 | 重新登录一个 agy 账号后 refresh |
 | kimi / grok 模型目录 | 待真机 | 本机没有账号 | 有账号后看 account_models 是否出现 |
 | ~~qoder 模型目录~~ | ✅ 2026-11-05 真机 | 已迁 Go（wasm 签名 + 15 个模型） | — |
+| qoder relay（推理） | 待真机 | 本机 Free 账号连续 3 次上游 500（已停手）；未接线 | 用付费账号跑 TestLiveRelayProbe 一次，通过后挂 ProviderChain |
 
 纪律：同一台机器上 qoder 相关请求（尤其带签名的）不要连续重试；一次改动只跑 1–2 次，
 失败先看单元测试与假 HTTP，不要用真机结果当调试探针。

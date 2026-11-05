@@ -78,3 +78,36 @@ test('Go 目录全为空数组时来源不升级为 remote', () => {
   assert.equal(merged.source, 'local');
   assert.equal(merged.errorsByAccount.acct_a, 'empty_catalog');
 });
+
+test('Go ref 与 Node ref 不同：目录挂到 Node ref 上', () => {
+  const merged = mergeGoCatalogResult(
+    localResult(),
+    { updatedAt: 2500, byAccount: { acct_go_other: ['go-1', 'go-2'] }, errorsByAccount: {} },
+    null,
+    (goRef) => (goRef === 'acct_go_other' ? 'acct_a' : '')
+  );
+  // 页面只认 Node ref：挂到 acct_a 才能被 buildCatalogModelEntries 用上。
+  assert.deepEqual(merged.byAccount.acct_a, ['go-1', 'go-2']);
+  assert.equal(merged.byAccount.acct_go_other, undefined);
+});
+
+test('映射不到 Node ref 的 Go 账号直接跳过', () => {
+  const merged = mergeGoCatalogResult(
+    localResult(),
+    { byAccount: { acct_unknown: ['x'] }, errorsByAccount: {} },
+    null,
+    () => ''
+  );
+  assert.deepEqual(merged.byAccount, localResult().byAccount);
+});
+
+test('ref 翻译后再按 Node 作用域过滤', () => {
+  const merged = mergeGoCatalogResult(
+    localResult(),
+    { byAccount: { acct_go_a: ['go-a'], acct_go_b: ['go-b'] }, errorsByAccount: {} },
+    { accountRef: 'acct_a' },
+    (goRef) => (goRef === 'acct_go_a' ? 'acct_a' : 'acct_b')
+  );
+  assert.deepEqual(merged.byAccount.acct_a, ['go-a']);
+  assert.deepEqual(merged.byAccount.acct_b, ['b-model']);
+});

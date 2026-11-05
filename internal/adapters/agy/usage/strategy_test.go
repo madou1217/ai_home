@@ -81,6 +81,10 @@ func TestFetchUsageBuildsModelSnapshotAndDocument(t *testing.T) {
 	if fetchBody["project"] != "proj-1" {
 		t.Fatalf("fetch body = %#v", fetchBody)
 	}
+	// paidTier.name = "Pro" → 归一为 pro（与 Node agy reset strategy 同词表）。
+	if snapshot.PlanType() != "pro" {
+		t.Fatalf("plan type = %q, want pro", snapshot.PlanType())
+	}
 	entries := snapshot.Entries()
 	if len(entries) != 2 {
 		t.Fatalf("entries = %d", len(entries))

@@ -195,6 +195,9 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		entries: entries,
 		account: mergeAccount(identity, response.planType()),
 	}
+	// 免费档没有 /usages 档位，套餐名只能来自 /me 的 user_level_name
+	// （与 Node noPaidPlanAccount 写 account.planType 同源）。
+	planType := normalizePlanType(response.planType())
 	if len(entries) == 0 {
 		if !identity.isFreePlan() {
 			// 有付费档却解析不出条目：字段缺失（上游形状变了），按失败上报而不是写空结论。
@@ -202,6 +205,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		}
 		result.notApplicable = true
 		result.account = noPaidPlanAccount(identity)
+		planType = normalizePlanType(strings.ToLower(identity.planName))
 	}
 
 	snapshotEntries := make([]usagecore.EntryInput, 0, len(result.entries)+1)
@@ -216,6 +220,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		AccountRef: accountRef,
 		ProviderID: providerID,
 		Source:     sourceID,
+		PlanType:   planType,
 		CapturedAt: capturedAt,
 		Entries:    snapshotEntries,
 	})
@@ -475,6 +480,31 @@ func decodeUsage(body []byte) (usageResponse, error) {
 		return usageResponse{}, ErrInvalidResponse
 	}
 	return response, nil
+}
+
+// kimiPlanTypes 与 Node lib/account/quota-reset/kimi-strategy.js 的词汇表一致。
+var kimiPlanTypes = map[string]struct{}{
+	"free":         {},
+	"basic":        {},
+	"level_1":      {},
+	"level1":       {},
+	"intermediate": {},
+	"allegretto":   {},
+	"level_2":      {},
+	"level2":       {},
+	"advanced":     {},
+	"allegro":      {},
+	"level_3":      {},
+	"level3":       {},
+}
+
+// normalizePlanType 只保留 Node 词汇表里的档位；未知档位保持未知。
+func normalizePlanType(rawLevel string) string {
+	token := usagecore.NormalizePlanToken(rawLevel)
+	if _, known := kimiPlanTypes[token]; known {
+		return token
+	}
+	return ""
 }
 
 // planType 把内部枚举 LEVEL_INTERMEDIATE 换成展示用的 intermediate。

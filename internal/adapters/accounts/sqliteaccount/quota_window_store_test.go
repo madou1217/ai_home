@@ -264,3 +264,50 @@ func TestQuotaWindowSamplesCascadeWithAccountDelete(t *testing.T) {
 		t.Fatalf("账号删除后样本应级联删除，剩余 %d 条", len(samples))
 	}
 }
+
+func TestReplaceUsageSnapshotRecordsPlanType(t *testing.T) {
+	store, accountRef := openUsageDocumentStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	resetAt := base.Add(5 * time.Hour)
+	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: accountRef,
+		ProviderID: "codex",
+		Source:     "codex_read_rate_limits",
+		PlanType:   "pro",
+		CapturedAt: base.Add(10 * time.Minute),
+		Entries:    []usagecore.EntryInput{windowEntry("primary", 300, resetAt, 80)},
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshot() error = %v", err)
+	}
+	if err := store.ReplaceUsageSnapshot(ctx, snapshot); err != nil {
+		t.Fatalf("ReplaceUsageSnapshot() error = %v", err)
+	}
+
+	loaded, err := store.GetUsageSnapshot(ctx, accountRef)
+	if err != nil {
+		t.Fatalf("GetUsageSnapshot() error = %v", err)
+	}
+	if loaded.PlanType() != "pro" {
+		t.Fatalf("snapshot plan type = %q, want pro", loaded.PlanType())
+	}
+
+	samples, err := store.ListQuotaWindowSamples(
+		ctx,
+		accountRef.String(),
+		"",
+		300,
+		0,
+		base.Add(24*time.Hour).UnixMilli(),
+	)
+	if err != nil {
+		t.Fatalf("ListQuotaWindowSamples() error = %v", err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("样本数 = %d, want 1", len(samples))
+	}
+	if samples[0].PlanType != "pro" {
+		t.Fatalf("sample plan type = %q, want pro", samples[0].PlanType)
+	}
+}

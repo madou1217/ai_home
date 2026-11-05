@@ -211,6 +211,10 @@ func TestFetchUsageMapsCreditsPool(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatalf("requests = %#v", seen)
 	}
+	// plan_tier_name = "Pro Trial" → pro_trial。
+	if snapshot.PlanType() != "pro_trial" {
+		t.Fatalf("plan type = %q, want pro_trial", snapshot.PlanType())
+	}
 	for _, request := range seen {
 		if request.authorization != "Bearer oauth-token" || request.accept != "application/json" {
 			t.Fatalf("request headers = %#v", request)

@@ -37,7 +37,7 @@ func (store *Store) insertQuotaWindowSamples(
 			account_ref, provider_id, quota_key, window_label, window_minutes,
 			remaining_pct, expected_reset_at_ms, captured_at_ms, captured_bucket,
 			plan_type, created_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (account_ref, quota_key, window_minutes, captured_bucket)
 		DO NOTHING`
 	prepared, err := transaction.PrepareContext(ctx, statement)
@@ -95,6 +95,7 @@ func (store *Store) insertQuotaWindowSamples(
 			observation.ExpectedResetAtMS,
 			capturedAtMS,
 			capturedBucket,
+			snapshot.PlanType(),
 			capturedAtMS,
 		); err != nil {
 			return fmt.Errorf("写入额度窗口采样失败: %w", err)

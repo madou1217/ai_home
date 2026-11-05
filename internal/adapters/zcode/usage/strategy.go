@@ -131,6 +131,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		AccountRef: accountRef,
 		ProviderID: providerID,
 		Source:     sourceID,
+		PlanType:   document.planType(),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -241,6 +242,35 @@ func decodeDocument(payload []byte) (balanceDocument, error) {
 		return balanceDocument{}, ErrInvalidResponse
 	}
 	return document, nil
+}
+
+// zcodePlanTypes 与 Node lib/account/quota-reset/zcode-strategy.js 的词汇表一致：
+// 只有落在这些官方档位里的名字才算可识别套餐，未知名字保持未知。
+var zcodePlanTypes = map[string]struct{}{
+	"free":             {},
+	"start":            {},
+	"start_plan":       {},
+	"zcode_start_plan": {},
+	"standard":         {},
+	"pro":              {},
+	"advanced":         {},
+	"team":             {},
+	"enterprise":       {},
+}
+
+// planType 取第一个非空套餐名并归一；没有套餐或名字不在词汇表里返回空。
+func (document balanceDocument) planType() string {
+	for _, plan := range document.Data.Plans {
+		token := usagecore.NormalizePlanToken(plan.Name)
+		if token == "" {
+			continue
+		}
+		if _, known := zcodePlanTypes[token]; known {
+			return token
+		}
+		return ""
+	}
+	return ""
 }
 
 func (document balanceDocument) entries(capturedAt time.Time) []usagecore.EntryInput {

@@ -13,6 +13,7 @@ func TestBuildUsageSnapshotMapsWindowEntry(t *testing.T) {
 	}
 	snapshot, err := buildUsageSnapshot(ref, "codex", replaceUsageRequest{
 		Source:     "quota_probe",
+		PlanType:   "pro",
 		CapturedAt: "1793000000000",
 		Entries: []replaceUsageEntry{{
 			Bucket:               "primary",
@@ -29,6 +30,9 @@ func TestBuildUsageSnapshotMapsWindowEntry(t *testing.T) {
 	}
 	if !snapshot.IsValid() || snapshot.AccountRef() != ref || snapshot.ProviderID() != "codex" {
 		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	if snapshot.PlanType() != "pro" {
+		t.Fatalf("plan type = %q", snapshot.PlanType())
 	}
 	if len(snapshot.Entries()) != 1 {
 		t.Fatalf("entries = %#v", snapshot.Entries())

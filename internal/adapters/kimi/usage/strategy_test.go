@@ -137,6 +137,10 @@ func TestFetchUsageMapsWindowsAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchUsageWithDocument() error = %v", err)
 	}
+	// membership.level = LEVEL_INTERMEDIATE → intermediate。
+	if snapshot.PlanType() != "intermediate" {
+		t.Fatalf("plan type = %q, want intermediate", snapshot.PlanType())
+	}
 
 	records := requests()
 	if len(records) != 2 || records[0].path != "/usages" || records[1].path != "/me" {
@@ -273,6 +277,10 @@ func TestFetchUsageFreePlanIsConclusion(t *testing.T) {
 	account := payload["account"].(map[string]any)
 	if account["planName"] != "Free" || account["planType"] != "free" {
 		t.Fatalf("account = %#v", account)
+	}
+	// 免费档的套餐同样要进快照：它来自 /me，不是猜的。
+	if snapshot.PlanType() != "free" {
+		t.Fatalf("snapshot plan type = %q, want free", snapshot.PlanType())
 	}
 }
 

@@ -113,6 +113,10 @@ func TestFetchUsageBuildsSnapshotAndDocument(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d", len(entries))
 	}
+	// subscriptionInfo.type = Q_DEVELOPER_STANDALONE_PRO → pro。
+	if snapshot.PlanType() != "pro" {
+		t.Fatalf("plan type = %q, want pro", snapshot.PlanType())
+	}
 	bps, has := entries[0].RemainingBasisPoints()
 	if !has || bps != 8750 {
 		t.Fatalf("remaining = %d / %v", bps, has)

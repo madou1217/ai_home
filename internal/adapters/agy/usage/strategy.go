@@ -131,6 +131,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		AccountRef: accountRef,
 		ProviderID: agy.ProviderID,
 		Source:     sourceID,
+		PlanType:   snapshotPlanType(tier),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -334,6 +335,27 @@ func inferWindowSeconds(resetAt time.Time, capturedAt time.Time) int64 {
 		return int64(7 * 24 * 60 * 60)
 	}
 	return int64(5 * 60 * 60)
+}
+
+// snapshotPlanType 与 Node lib/account/quota-reset/agy-strategy.js 同判据：
+// 只认 ultra / pro / free 三档，未知返回空（展示文档的 normalizePlanType
+// 会回落成 oauth，那不是套餐，不能写进快照）。
+func snapshotPlanType(rawTier string) string {
+	lower := strings.ToLower(strings.TrimSpace(rawTier))
+	switch {
+	case lower == "":
+		return ""
+	case strings.Contains(lower, "ultra"):
+		return "ultra"
+	case strings.Contains(lower, "pro"):
+		return "pro"
+	case strings.Contains(lower, "starter"),
+		strings.Contains(lower, "free"),
+		strings.Contains(lower, "default"):
+		return "free"
+	default:
+		return ""
+	}
 }
 
 func parseQuotaModels(payload []byte) ([]quotaModel, bool) {

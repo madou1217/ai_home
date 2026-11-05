@@ -85,6 +85,7 @@ func decodeUsageResult(document []byte) (UsageResult, error) {
 			AccountRef string `json:"account_ref"`
 			ProviderID string `json:"provider_id"`
 			Source     string `json:"source"`
+			PlanType   string `json:"plan_type"`
 			CapturedAt string `json:"captured_at"`
 			Stale      bool   `json:"stale"`
 			Entries    []struct {
@@ -142,6 +143,7 @@ func decodeUsageResult(document []byte) (UsageResult, error) {
 		AccountRef: accountRef,
 		ProviderID: response.Data.ProviderID,
 		Source:     response.Data.Source,
+		PlanType:   response.Data.PlanType,
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})

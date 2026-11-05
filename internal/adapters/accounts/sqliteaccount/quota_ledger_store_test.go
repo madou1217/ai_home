@@ -159,9 +159,17 @@ func TestQuotaStatsEndToEndFromSnapshots(t *testing.T) {
 	base := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
 	now := base.Add(2 * time.Hour)
 
-	first := newQuotaSnapshot(t, accountRef, base.Add(10*time.Minute),
-		windowEntry("primary", 300, base.Add(5*time.Hour), 20),
-	)
+	first, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: accountRef,
+		ProviderID: "codex",
+		Source:     "codex_read_rate_limits",
+		PlanType:   "pro",
+		CapturedAt: base.Add(10 * time.Minute),
+		Entries:    []usagecore.EntryInput{windowEntry("primary", 300, base.Add(5*time.Hour), 20)},
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshot() error = %v", err)
+	}
 	if err := store.ReplaceUsageSnapshot(ctx, first); err != nil {
 		t.Fatalf("ReplaceUsageSnapshot(first) error = %v", err)
 	}
@@ -204,6 +212,9 @@ func TestQuotaStatsEndToEndFromSnapshots(t *testing.T) {
 	}
 	if window.ConsumedPct == nil || *window.ConsumedPct != 80 {
 		t.Fatalf("consumed = %v, want 80", window.ConsumedPct)
+	}
+	if window.PlanType != "pro" {
+		t.Fatalf("window plan type = %q, want pro（快照 → 采样 → 窗口）", window.PlanType)
 	}
 	if result.Summary.LastResetAtMS != base.Add(time.Hour).UnixMilli() {
 		t.Fatalf("summary.last_reset = %d", result.Summary.LastResetAtMS)

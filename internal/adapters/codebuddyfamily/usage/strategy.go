@@ -161,10 +161,17 @@ func (strategy *Strategy) FetchUsageWithDocument(
 	if aggregate == nil {
 		return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, ErrInvalidResponse)
 	}
+	planType := ""
+	if summary.Data.IsPaidUser {
+		planType = usagecore.NormalizePlanName(
+			paidPlanLabel(summary.Data.SubscriptionPackageCode),
+		)
+	}
 	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
 		AccountRef: accountRef,
 		ProviderID: strategy.providerID,
 		Source:     sourceID,
+		PlanType:   planType,
 		CapturedAt: capturedAt,
 		Entries:    []usagecore.EntryInput{*aggregate},
 	})

@@ -121,6 +121,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		AccountRef: accountRef,
 		ProviderID: kiro.ProviderID,
 		Source:     sourceID,
+		PlanType:   documentPlanType(document),
 		CapturedAt: capturedAt,
 		Entries:    []usagecore.EntryInput{entry},
 	})
@@ -240,6 +241,15 @@ func (credit creditBreakdown) entry(resetAt time.Time) (usagecore.EntryInput, fl
 	return entry, pct, nil
 }
 
+// documentPlanType 把 Kiro 的订阅枚举（Q_DEVELOPER_STANDALONE_PRO）归一成 pro。
+// 快照与展示文档共用同一份推导，避免两处口径分叉。
+func documentPlanType(document usageDocument) string {
+	return usagecore.NormalizePlanToken(strings.TrimPrefix(
+		strings.TrimSpace(document.SubscriptionInfo.Type),
+		"Q_DEVELOPER_STANDALONE_",
+	))
+}
+
 // buildDocumentPayload 生成与 Node kiro 快照同形的展示文档（schemaVersion=2）。
 func buildDocumentPayload(
 	document usageDocument,
@@ -252,10 +262,7 @@ func buildDocumentPayload(
 	if !credit.resetAt.IsZero() {
 		resetAtMS = credit.resetAt.UnixMilli()
 	}
-	planType := strings.ToLower(strings.TrimPrefix(
-		strings.TrimSpace(document.SubscriptionInfo.Type),
-		"Q_DEVELOPER_STANDALONE_",
-	))
+	planType := documentPlanType(document)
 	payload := map[string]any{
 		"schemaVersion": schemaVersion,
 		"kind":          documentKind,

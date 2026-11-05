@@ -65,6 +65,7 @@ var expectedSchemaColumns = map[string][]string{
 		"reset_at_ms",
 		"source",
 		"captured_at_ms",
+		"plan_type",
 	},
 	"account_defaults": {
 		"provider_id",
@@ -270,6 +271,7 @@ var forwardMigrations = []string{
 	SchemaV17,
 	SchemaV18,
 	SchemaV19,
+	SchemaV20,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

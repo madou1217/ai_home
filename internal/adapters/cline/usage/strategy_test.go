@@ -235,6 +235,10 @@ func TestFetchUsageBuildsSnapshotAndDocument(t *testing.T) {
 	if snapshot.Source() != sourceID || snapshot.ProviderID() != clineProviderID {
 		t.Fatalf("snapshot source = %q provider = %q", snapshot.Source(), snapshot.ProviderID())
 	}
+	// plan.displayName = "Cline Pass" → cline_pass。
+	if snapshot.PlanType() != "cline_pass" {
+		t.Fatalf("plan type = %q, want cline_pass", snapshot.PlanType())
+	}
 
 	// 快照按 bucket 排序：30days / 5h / 7days。
 	entries := snapshot.Entries()

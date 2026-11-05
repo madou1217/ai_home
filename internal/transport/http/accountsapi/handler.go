@@ -707,6 +707,7 @@ func buildUsageSnapshot(
 		AccountRef: accountRef,
 		ProviderID: providerID,
 		Source:     input.Source,
+		PlanType:   input.PlanType,
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})

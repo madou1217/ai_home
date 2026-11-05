@@ -69,6 +69,10 @@ func TestFetchUsageMapsBalances(t *testing.T) {
 	if seen.URL.Query().Get("app_version") == "" {
 		t.Fatalf("query = %s", seen.URL.RawQuery)
 	}
+	// plans[0].name = "ZCode Start Plan" → zcode_start_plan（Node 词表内的档位）。
+	if snapshot.PlanType() != "zcode_start_plan" {
+		t.Fatalf("plan type = %q, want zcode_start_plan", snapshot.PlanType())
+	}
 	entries := snapshot.Entries()
 	if len(entries) != 1 || entries[0].Bucket() != "glm-5.3" {
 		t.Fatalf("entries = %#v", entries)

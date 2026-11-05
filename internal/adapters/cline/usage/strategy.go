@@ -170,6 +170,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 		AccountRef: accountRef,
 		ProviderID: clineProviderID,
 		Source:     sourceID,
+		PlanType:   usagecore.NormalizePlanToken(probe.plan.planName),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})

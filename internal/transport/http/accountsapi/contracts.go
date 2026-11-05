@@ -78,6 +78,7 @@ type editCredentialRequest struct {
 // Go 不再要求能解析该账号的当前凭据；Go 自己的探针必须留空以启用凭据 CAS。
 type replaceUsageRequest struct {
 	Source     string              `json:"source"`
+	PlanType   string              `json:"plan_type"`
 	CapturedAt string              `json:"captured_at"`
 	Collected  bool                `json:"collected"`
 	Entries    []replaceUsageEntry `json:"entries"`
@@ -224,6 +225,7 @@ type accountUsageView struct {
 	AccountRef   string                  `json:"account_ref"`
 	ProviderID   string                  `json:"provider_id"`
 	Source       string                  `json:"source"`
+	PlanType     string                  `json:"plan_type"`
 	CapturedAt   string                  `json:"captured_at"`
 	CapturedAtMS int64                   `json:"captured_at_ms"`
 	Stale        bool                    `json:"stale"`
@@ -361,6 +363,7 @@ func newAccountUsageResponse(result usageapp.ReadResult) accountUsageResponse {
 		AccountRef:   snapshot.AccountRef().String(),
 		ProviderID:   snapshot.ProviderID(),
 		Source:       snapshot.Source(),
+		PlanType:     snapshot.PlanType(),
 		CapturedAt:   formatTime(snapshot.CapturedAt()),
 		CapturedAtMS: snapshot.CapturedAt().UnixMilli(),
 		Stale:        result.Stale(),

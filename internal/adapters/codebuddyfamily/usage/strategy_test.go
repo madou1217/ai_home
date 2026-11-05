@@ -10,6 +10,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 func testAccountRef(t *testing.T) accountcore.AccountRef {
@@ -63,6 +64,10 @@ func TestFetchUsageAggregatesPackagesAndKeepsDetails(t *testing.T) {
 	if seen.Header.Get("Authorization") != "Bearer access-token" || seen.Header.Get("X-User-Id") != "u1" ||
 		seen.Header.Get("X-Domain") != "www.codebuddy.ai" || seen.Header.Get("User-Agent") != probeUserAgent {
 		t.Fatalf("headers = %#v", seen.Header)
+	}
+	// 付费包 TCACA_code_002_ → "Pro" → pro。
+	if snapshot.PlanType() != "pro" {
+		t.Fatalf("plan type = %q, want pro", snapshot.PlanType())
 	}
 	entries := snapshot.Entries()
 	if len(entries) != 1 {
@@ -135,5 +140,26 @@ func TestFetchUsageMapsHTTPFailures(t *testing.T) {
 		context.Background(), testAccountRef(t), testFamilyCredential(t, "codebuddycn"), time.Now().UTC(),
 	); err == nil {
 		t.Fatal("expected an error")
+	}
+}
+
+// 家族在 Node 侧仍走默认配额策略（只小写、不折叠分隔符），
+// 所以多词套餐必须落成 "pro plus"，不能是 "pro_plus"。
+func TestPaidPlanLabelKeepsNodeDefaultPlanSpelling(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		code string
+		want string
+	}{
+		{code: "TCACA_code_002_20260101", want: "pro"},
+		{code: "TCACA_code_005_20260101", want: "pro plus"},
+		{code: "TCACA_code_039_20260101", want: ""}, // 体验包不算付费档位
+		{code: "", want: ""},
+	}
+	for _, testCase := range cases {
+		got := usagecore.NormalizePlanName(paidPlanLabel(testCase.code))
+		if got != testCase.want {
+			t.Fatalf("paidPlanLabel(%q) = %q, want %q", testCase.code, got, testCase.want)
+		}
 	}
 }

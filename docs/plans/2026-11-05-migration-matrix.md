@@ -66,6 +66,15 @@
    `inferencecatalog.Build` 失败（启动日志 `Provider 路由 Factory 不存在: kiro`）。
    现在 `WithNodeOnlyProviders`（名单从 Catalog 派生）会跳过它们，请求按「模型不可路由」
    交还 Node；未声明的 Provider 缺 Factory 仍是硬错误。
+9. **`gateway.models.list` 是最后一个 `node_owned` 的数据面条目（2026-11-06）。**
+   其余 gateway 条目（responses / chat_completions / messages / gemini / images / blobs）
+   都已是 `go_owned`，`resolveGoOwnedEntryIds` 的「目录必须等全部推理条目」前置条件已满足，
+   但**不能据此直接划转**：Go 的目录只含 Go 能路由的模型，而 `relayHosts[go].supported=false`
+   的 Provider（当前只有 gemini）以及自定义账号的模型仍只在 Node 侧。
+   划转判据用 `node scripts/compare-model-catalog.js --go <go url> --allow-node-only gemini`：
+   退出码 0 才可以改 manifest，2 表示存在未预期的 node-only 模型。脚本需要两端的 client key
+   （`AIH_SERVER_API_KEY`），本机当前拿不到运行中服务的 key，因此**尚未做真机差集**。
+   已知规模：Go 的 `account_models` 现有 210 个去重模型（749 行，只读查询 `aih.db`）。
 8. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

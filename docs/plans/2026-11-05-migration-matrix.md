@@ -101,6 +101,11 @@
     流结束/关闭时结算一次；用量只解析 OpenAI 与 Anthropic 两种主流形态，
     多帧取最大值、缓存大于输入时并入输入，解析不到就**不记**（不猜）。
     仍需验证：重建 Go 二进制并重启 core 后，`usage_ledger` 应开始增长。
+    **部署要点（踩过）**：必须用 `npm run go:build`（`node scripts/build-go-server.js`）。
+    直接 `go build -o bin/native/...` 出来的二进制没有 build stamp，supervisor 会以
+    `go_core_build_mismatch` 拒绝启动，表现为「杀掉 core 后一直起不来」。
+    2026-11-06 已用官方脚本重建并重启成功（healthz 200）；账本按真实流量结算，
+    空闲时段仍会是 0，验证时要用一次真实推理再看。
     校验判据（可直接跑）：
     ```bash
     sqlite3 ~/.ai_home/aih.db "select count(*) from usage_ledger;"

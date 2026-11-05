@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -170,16 +171,25 @@ func parseModels(payload []byte) []string {
 }
 
 // isLoopbackBase 拒绝把本机网关当成上游（Node 的 infinite_loop_detected 同款保护）。
+//
+// 不能只比对字面主机名：localhost.、[::1]、[::ffff:127.0.0.1]、
+// [0:0:0:0:0:0:0:1] 都是同一个本机地址，必须按 IP 语义判定。
 func isLoopbackBase(baseURL string) bool {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return false
 	}
-	host := strings.ToLower(parsed.Hostname())
-	if host == "localhost" || host == "::1" || host == "0.0.0.0" {
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
 		return true
 	}
-	return strings.HasPrefix(host, "127.")
+	if address := net.ParseIP(host); address != nil {
+		return address.IsLoopback() || address.IsUnspecified()
+	}
+	return false
 }
 
 func firstNonEmpty(values ...string) string {

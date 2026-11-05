@@ -106,8 +106,44 @@ func TestDiscoverModelsRejectsLoopbackBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if _, err := source.DiscoverModels(context.Background(), vertexCredential(t, "http://127.0.0.1:9527")); err != ErrUnsupportedCredential {
-		t.Fatalf("error = %v", err)
+	for _, baseURL := range []string{
+		"http://127.0.0.1:9527",
+		"http://localhost:9527",
+		"http://localhost.:9527",
+		"http://[::1]:9527",
+		"http://[0:0:0:0:0:0:0:1]:9527",
+		"http://[::ffff:127.0.0.1]:9527",
+		"http://0.0.0.0:9527",
+		"http://127.1.2.3:9527",
+	} {
+		if _, err := source.DiscoverModels(context.Background(), vertexCredential(t, baseURL)); err != ErrUnsupportedCredential {
+			t.Fatalf("base %s error = %v", baseURL, err)
+		}
+	}
+}
+
+func TestIsLoopbackBaseSemantics(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		"http://localhost",
+		"http://localhost.:9527",
+		"http://127.0.0.1",
+		"http://[::1]:9527",
+		"http://[::ffff:7f00:1]:9527",
+		"http://0.0.0.0",
+	} {
+		if !isLoopbackBase(value) {
+			t.Fatalf("isLoopbackBase(%q) = false", value)
+		}
+	}
+	for _, value := range []string{
+		"https://gateway.example.com",
+		"http://192.168.1.10:9527",
+		"https://models.example.com/v1",
+	} {
+		if isLoopbackBase(value) {
+			t.Fatalf("isLoopbackBase(%q) = true", value)
+		}
 	}
 }
 

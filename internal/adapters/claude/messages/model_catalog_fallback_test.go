@@ -32,6 +32,50 @@ func TestModelCatalogCandidatesFollowNodeOrder(t *testing.T) {
 	}
 }
 
+func TestModelCatalogCandidatesKeepExplicitModelsEndpoint(t *testing.T) {
+	t.Parallel()
+	base := "https://gateway.example.com/anthropic/v1/models"
+	endpoints := modelCatalogCandidates(base)
+	if len(endpoints) == 0 || endpoints[0] != base {
+		t.Fatalf("endpoints = %v", endpoints)
+	}
+	for _, endpoint := range endpoints {
+		if strings.Contains(endpoint, "/models/models") || strings.Contains(endpoint, "/models/v1/models") {
+			t.Fatalf("endpoint was re-suffixed: %s", endpoint)
+		}
+	}
+}
+
+func TestFetchModelCatalogUsesExplicitEndpointOnce(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests++
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/anthropic/v1/models" {
+			response.WriteHeader(http.StatusNotFound)
+			_, _ = response.Write([]byte(`{"ok":false}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"data":[{"id":"claude-proxy-1"}],"has_more":false,"first_id":"claude-proxy-1","last_id":"claude-proxy-1"}`))
+	}))
+	defer server.Close()
+	catalog, err := fetchModelCatalog(
+		context.Background(),
+		server.Client(),
+		modelCatalogAuth{baseURL: server.URL + "/anthropic/v1/models", headerName: "x-api-key", headerValue: "sk-test"},
+	)
+	if err != nil {
+		t.Fatalf("fetchModelCatalog() error = %v", err)
+	}
+	if len(catalog.models) != 1 || catalog.models[0] != "claude-proxy-1" {
+		t.Fatalf("models = %v", catalog.models)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
 func TestFetchCatalogAtAcceptsOpenAIShapeOnce(t *testing.T) {
 	t.Parallel()
 	requests := 0

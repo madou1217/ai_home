@@ -178,11 +178,18 @@ func modelCatalogCandidates(baseURL string) []string {
 	}
 	base := strings.TrimRight(parsed.String(), "/")
 	path := strings.TrimRight(parsed.EscapedPath(), "/")
-	// 与 Node 的 pathStyle 一致：base 已经以 /vN 结尾时只拼 /models，
-	// 否则同时试 /models 与 /v1/models。
-	candidates := []string{base + "/models"}
-	if !endsWithVersionSegment(path) {
-		candidates = append(candidates, base+"/v1/models")
+	// base 本身就是 Models 端点（显式 /models 结尾）：先原样请求，再试 origin。
+	// 这与重构前的 modelsEndpoint 行为一致，避免把端点拼成 /models/models。
+	candidates := make([]string, 0, 4)
+	if strings.HasSuffix(strings.ToLower(path), "/models") {
+		candidates = append(candidates, base)
+	} else {
+		// 与 Node 的 pathStyle 一致：base 已经以 /vN 结尾时只拼 /models，
+		// 否则同时试 /models 与 /v1/models。
+		candidates = append(candidates, base+"/models")
+		if !endsWithVersionSegment(path) {
+			candidates = append(candidates, base+"/v1/models")
+		}
 	}
 	if path != "" {
 		origin := parsed.Scheme + "://" + parsed.Host

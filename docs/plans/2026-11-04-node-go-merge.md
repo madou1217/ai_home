@@ -242,6 +242,18 @@
 >    验证：隔离实例显式刷新写入了正确文档（KIRO FREE / 50 credits / 97.7%）；
 >    真机重启后 5 个 kiro 账号全部产生 `account_usage` 行与快照文档；
 >    Node 相关用例 33 项全绿。
+> 33. **模型目录评审修复（2026-11-05，对抗评审后）**：
+>    - **显式 Models 端点**：`base_url` 本身以 `/models` 结尾时（如
+>      `https://gateway/anthropic/v1/models`），候选列表第一个就是该端点本身，
+>      不再拼成 `/models/models`；重构前 `modelsEndpoint` 支持这种配置，回退后保证不丢。
+>    - **loopback 语义**：`isLoopbackBase` 改用 `net.ParseIP` + `IsLoopback/IsUnspecified`
+>      并去掉主机名尾部点，覆盖 `localhost.`、`[::1]`、`[::ffff:127.0.0.1]`、
+>      `[0:0:0:0:0:0:0:1]`、`0.0.0.0` —— 之前只比对字面量，这些写法会绕过占位保护
+>      并把账号 Key 发到本机网关。
+>    - **回归守卫**：gemini 补 8 种 loopback 写法的表驱动用例；opencode 补
+>      `New()` 的 `GoBaseURL→opencode-go/` / `ZenBaseURL→opencode/` 映射断言；
+>      claude 补显式端点「只请求一次」的用例。
+>    验证：三个包测试全绿，真机重启后覆盖与 kiro 额度行数不变。
 
 ## 0. 结论先行
 

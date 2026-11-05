@@ -10,6 +10,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/transport/http/opencoderelay"
 )
 
 func apiKeyCredential(t *testing.T) accountapp.Credential {
@@ -156,6 +157,23 @@ func TestDiscoverModelsProbesAnonymouslyWithoutOpenCodeKey(t *testing.T) {
 		if authorization != "" {
 			t.Fatalf("authorization = %q, want empty", authorization)
 		}
+	}
+}
+
+func TestNewMapsOfficialLegsToNamespaces(t *testing.T) {
+	t.Parallel()
+	source, err := New(http.DefaultClient)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if len(source.legs) != 2 {
+		t.Fatalf("legs = %d", len(source.legs))
+	}
+	if source.legs[0].baseURL != opencoderelay.GoBaseURL || source.legs[0].prefix != goModelPrefix {
+		t.Fatalf("go leg = %#v", source.legs[0])
+	}
+	if source.legs[1].baseURL != opencoderelay.ZenBaseURL || source.legs[1].prefix != zenModelPrefix {
+		t.Fatalf("zen leg = %#v", source.legs[1])
 	}
 }
 

@@ -49,7 +49,19 @@ PUT 更新 / DELETE 删除 / POST {id}/enabled 启停），错误映射 400/404/
 影子对账已就位：WebUI 列表路由在返回 Node 数据后，异步拉 Go 的副本做比较
 （missing / extra / changed，按 (alias, provider) 对齐），结果交给可选的
 onAliasShadowResult 观察者；不 await、不改变响应、Go 不可用时静默跳过。
-剩余：Node 代理的写路径灰度；写入后触发目录重建（目前只在下次推送/刷新时生效）。
+剩余：Node 代理的写路径灰度。
+
+### C 的可执行清单（客户端已就绪）
+
+1. Node 宿主已提供 `createModelAlias / updateModelAlias / deleteModelAlias /
+   setModelAliasEnabled / replaceModelAliases`（门面已登记），路由翻转时直接调用。
+2. 翻转顺序必须是：**先停 Node 的重推**，再切写路径。
+   `notifyGoCoreProjection(ctx, 'modelAliases')` 是整体推送，切完后它会用 Node 的旧副本
+   覆盖 Go 的新写入——真机上已经观察到探针别名被重启后的推送冲掉。
+3. 停推之后，Node 的 state 改为「写完从 Go 拉一次列表」维持读投影；启动时同样从 Go 读。
+4. Go 不可用时写请求返回 503，不做本地写（单写者原则）。
+5. 验收：WebUI 六个操作逐个真机验证；重启 Node 后别名不丢；
+   `git grep "notifyGoCoreProjection(ctx, 'modelAliases')"` 为空。
 
 - 新增 internal/adapters/accounts/sqliteaccount/model_alias_store.go：在 aih.db 建表
   （model_alias：id/alias/target/provider/target_provider/priority/enabled/description/updated_at_ms），

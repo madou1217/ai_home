@@ -20,8 +20,10 @@ const (
 	MaxEntriesPerSnapshot = 64
 	maxIdentifierLength   = 128
 	maxDisplayNameLength  = 256
-	maxWindowSeconds      = int64(10 * 366 * 24 * 60 * 60)
-	maxPersistedUnixMS    = int64(253_402_300_799_999)
+	// maxPlanTypeLength 与 account_usage / account_quota_window_samples 的列约束一致。
+	maxPlanTypeLength  = 64
+	maxWindowSeconds   = int64(10 * 366 * 24 * 60 * 60)
+	maxPersistedUnixMS = int64(253_402_300_799_999)
 )
 
 var (
@@ -227,6 +229,9 @@ type SnapshotInput struct {
 	AccountRef accountcore.AccountRef
 	ProviderID string
 	Source     string
+	// PlanType 是 Provider 归一后的套餐标识（小写 token），未知为空。
+	// 它属于账号级事实：同一快照的所有条目共享同一个套餐。
+	PlanType   string
 	CapturedAt time.Time
 	Entries    []EntryInput
 }
@@ -236,6 +241,7 @@ type Snapshot struct {
 	accountRef accountcore.AccountRef
 	providerID string
 	source     string
+	planType   string
 	capturedAt time.Time
 	entries    []Entry
 }
@@ -244,12 +250,15 @@ type Snapshot struct {
 func NewSnapshot(input SnapshotInput) (Snapshot, error) {
 	providerID := strings.TrimSpace(input.ProviderID)
 	source := strings.TrimSpace(input.Source)
+	planType := strings.TrimSpace(input.PlanType)
 	capturedAt, capturedValid := normalizeRequiredTime(input.CapturedAt)
 	if !input.AccountRef.IsValid() ||
 		input.ProviderID != providerID ||
 		!validIdentifier(providerID) ||
 		input.Source != source ||
 		!validIdentifier(source) ||
+		input.PlanType != planType ||
+		!validOptionalPlanType(planType) ||
 		!capturedValid ||
 		len(input.Entries) == 0 ||
 		len(input.Entries) > MaxEntriesPerSnapshot {
@@ -279,6 +288,7 @@ func NewSnapshot(input SnapshotInput) (Snapshot, error) {
 		accountRef: input.AccountRef,
 		providerID: providerID,
 		source:     source,
+		planType:   planType,
 		capturedAt: capturedAt,
 		entries:    entries,
 	}, nil
@@ -297,6 +307,11 @@ func (snapshot Snapshot) ProviderID() string {
 // Source 返回 Adapter 声明的稳定采集来源。
 func (snapshot Snapshot) Source() string {
 	return snapshot.source
+}
+
+// PlanType 返回 Provider 归一后的套餐标识；空字符串表示未知。
+func (snapshot Snapshot) PlanType() string {
+	return snapshot.planType
 }
 
 // CapturedAt 返回整个快照的 UTC 毫秒采集时间。
@@ -363,6 +378,7 @@ func (snapshot Snapshot) IsValid() bool {
 		AccountRef: snapshot.accountRef,
 		ProviderID: snapshot.providerID,
 		Source:     snapshot.source,
+		PlanType:   snapshot.planType,
 		CapturedAt: snapshot.capturedAt,
 		Entries:    inputs,
 	})
@@ -419,6 +435,17 @@ func validIdentifier(value string) bool {
 		return false
 	}
 	return true
+}
+
+// validOptionalPlanType 允许空字符串（套餐未知），否则必须是已去空白、
+// 长度受限、无控制字符的合法 UTF-8。套餐的具体取值由各 Provider Adapter 归一。
+func validOptionalPlanType(value string) bool {
+	if value == "" {
+		return true
+	}
+	return len(value) <= maxPlanTypeLength &&
+		utf8.ValidString(value) &&
+		strings.IndexFunc(value, unicode.IsControl) < 0
 }
 
 // validScopeKey 确保账号级不伪装模型族，模型族也不能缺少身份。

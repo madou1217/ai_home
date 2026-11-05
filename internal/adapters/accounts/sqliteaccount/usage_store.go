@@ -102,6 +102,12 @@ func (store *Store) replaceUsageSnapshot(
 	if err := insertUsageEntries(ctx, transaction, snapshot); err != nil {
 		return err
 	}
+	// 采样与当前快照同事务：先写当前值，再留一条历史事实，避免两者不一致。
+	// 采样是附加事实，写失败不能让额度快照本身失败（与 Node 侧一致）。
+	_ = store.insertQuotaWindowSamples(ctx, transaction, snapshot)
+	// 窗口账本同样与快照同事务：它是「当前窗口」的派生事实，
+	// 单调不回退，写失败只影响统计页的兜底展示。
+	_ = store.upsertQuotaWindowLedger(ctx, transaction, snapshot)
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("提交账号额度替换事务失败: %w", err)
 	}
@@ -126,7 +132,7 @@ func (store *Store) GetUsageSnapshot(
 		SELECT a.provider_id,
 		       u.limit_id, u.limit_name, u.bucket, u.kind, u.scope, u.scope_key,
 		       u.remaining_bps, u.availability, u.window_seconds, u.reset_at_ms,
-		       u.source, u.captured_at_ms
+		       u.source, u.captured_at_ms, u.plan_type
 		FROM account_usage AS u
 		JOIN accounts AS a ON a.account_ref = u.account_ref
 		WHERE u.account_ref = ?
@@ -139,7 +145,7 @@ func (store *Store) GetUsageSnapshot(
 		_ = rows.Close()
 	}()
 
-	var providerID, source string
+	var providerID, source, planType string
 	var capturedAtMS int64
 	entries := make([]usagecore.EntryInput, 0, 8)
 	for rows.Next() {
@@ -151,9 +157,11 @@ func (store *Store) GetUsageSnapshot(
 			providerID = metadata.providerID
 			source = metadata.source
 			capturedAtMS = metadata.capturedAtMS
+			planType = metadata.planType
 		} else if providerID != metadata.providerID ||
 			source != metadata.source ||
-			capturedAtMS != metadata.capturedAtMS {
+			capturedAtMS != metadata.capturedAtMS ||
+			planType != metadata.planType {
 			return usagecore.Snapshot{}, ErrIncompatibleDatabase
 		}
 		entries = append(entries, entry)
@@ -168,6 +176,7 @@ func (store *Store) GetUsageSnapshot(
 		AccountRef: accountRef,
 		ProviderID: providerID,
 		Source:     source,
+		PlanType:   planType,
 		CapturedAt: time.UnixMilli(capturedAtMS).UTC(),
 		Entries:    entries,
 	})
@@ -181,6 +190,7 @@ func (store *Store) GetUsageSnapshot(
 type usageMetadata struct {
 	providerID   string
 	source       string
+	planType     string
 	capturedAtMS int64
 }
 
@@ -204,6 +214,7 @@ func scanUsageEntry(row rowScanner) (usagecore.EntryInput, usageMetadata, error)
 		&resetAtMS,
 		&metadata.source,
 		&metadata.capturedAtMS,
+		&metadata.planType,
 	); err != nil {
 		return usagecore.EntryInput{}, usageMetadata{},
 			fmt.Errorf("读取账号额度条目失败: %w", err)
@@ -264,6 +275,15 @@ func clearCredentialUsage(
 	); err != nil {
 		return fmt.Errorf("清理旧凭据额度快照失败: %w", err)
 	}
+	// 展示文档与归一化条目同源：旧凭据主体采到的 Provider 快照同样必须失效，
+	// 否则账号页会在重登后继续显示上一个身份的套餐/用量。
+	if _, err := connection.ExecContext(
+		ctx,
+		"DELETE FROM account_usage_snapshots WHERE account_ref = ?",
+		accountRef.String(),
+	); err != nil {
+		return fmt.Errorf("清理旧凭据额度文档失败: %w", err)
+	}
 	return nil
 }
 
@@ -277,8 +297,8 @@ func insertUsageEntries(
 		INSERT INTO account_usage (
 			account_ref, limit_id, limit_name, bucket, kind, scope, scope_key,
 			remaining_bps, availability, window_seconds, reset_at_ms,
-			source, captured_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			source, captured_at_ms, plan_type
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	prepared, err := transaction.PrepareContext(ctx, statement)
 	if err != nil {
 		return fmt.Errorf("准备账号额度写入失败: %w", err)
@@ -302,6 +322,7 @@ func insertUsageEntries(
 			nullableTime(entry.ResetAt()),
 			snapshot.Source(),
 			snapshot.CapturedAt().UnixMilli(),
+			snapshot.PlanType(),
 		); err != nil {
 			return fmt.Errorf("写入账号额度条目失败: %w", err)
 		}

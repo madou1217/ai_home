@@ -60,7 +60,10 @@ test('keeps an existing real configDir untouched', () => {
 
     prepare(makeCtx(root, 'codebuddy'));
 
-    assert.equal(fs.readFileSync(marker, 'utf8'), '{"keep":true}');
+    const saved = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    assert.equal(saved.keep, true, '既有 settings 键必须保留');
+    assert.match(JSON.stringify(saved.hooks || {}), /codebuddy-image-paste-hook/,
+      'CodeBuddy 启动时应装上粘贴图片 hook');
     assert.equal(fs.lstatSync(configDir).isSymbolicLink(), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -6,7 +6,9 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 // writeInvalidQuery 输出稳定的查询参数错误合同。
@@ -82,6 +84,20 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			http.StatusNotFound,
 			"usage_not_found",
 			"账号还没有成功额度快照",
+		)
+	case errors.Is(err, runtimecore.ErrInvalidAccountBlock):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_runtime_block",
+			"账号运行态阻塞无效",
+		)
+	case errors.Is(err, usagecore.ErrInvalidDocument):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_usage_document",
+			"账号额度快照文档无效",
 		)
 	case errors.Is(err, usageapp.ErrUsageUnsupported):
 		writeAPIError(
@@ -222,6 +238,13 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			http.StatusConflict,
 			"credential_not_found",
 			"账号缺少可用凭据",
+		)
+	case errors.Is(err, accountapp.ErrStaticCredentialEditIncomplete):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_static_credential_edit",
+			"编辑静态凭据需要完整密钥",
 		)
 	case errors.Is(err, accountapp.ErrStaticCredentialRotationUnsupported):
 		writeAPIError(

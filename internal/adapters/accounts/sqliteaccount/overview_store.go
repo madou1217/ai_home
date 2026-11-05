@@ -54,12 +54,14 @@ const accountOverviewSelectSQL = `
 	           'window_seconds', bounded_usage.window_seconds,
 	           'reset_at_ms', bounded_usage.reset_at_ms,
 	           'source', bounded_usage.source,
-	           'captured_at_ms', bounded_usage.captured_at_ms
+	           'captured_at_ms', bounded_usage.captured_at_ms,
+	           'plan_type', bounded_usage.plan_type
 	         ))
 	         FROM (
 	           SELECT u.limit_id, u.limit_name, u.bucket, u.kind, u.scope,
 	                  u.scope_key, u.remaining_bps, u.availability,
-	                  u.window_seconds, u.reset_at_ms, u.source, u.captured_at_ms
+	                  u.window_seconds, u.reset_at_ms, u.source, u.captured_at_ms,
+	                  u.plan_type
 	           FROM account_usage AS u
 	           WHERE u.account_ref = a.account_ref
 	           ORDER BY u.limit_id, u.bucket
@@ -268,6 +270,7 @@ type overviewUsageEntryDocument struct {
 	ResetAtMS     *int64 `json:"reset_at_ms"`
 	Source        string `json:"source"`
 	CapturedAtMS  int64  `json:"captured_at_ms"`
+	PlanType      string `json:"plan_type"`
 }
 
 // restoreOverviewUsageSnapshot 恢复最多 64 条额度事实；第 65 行只用于发现不兼容数据库。
@@ -288,8 +291,9 @@ func restoreOverviewUsageSnapshot(
 	entries := make([]usagecore.EntryInput, 0, len(persisted))
 	source := persisted[0].Source
 	capturedAtMS := persisted[0].CapturedAtMS
+	planType := persisted[0].PlanType
 	for _, row := range persisted {
-		if row.Source != source || row.CapturedAtMS != capturedAtMS {
+		if row.Source != source || row.CapturedAtMS != capturedAtMS || row.PlanType != planType {
 			return usagecore.Snapshot{}, false, ErrIncompatibleDatabase
 		}
 		entry := usagecore.EntryInput{
@@ -320,6 +324,7 @@ func restoreOverviewUsageSnapshot(
 		AccountRef: account.Ref(),
 		ProviderID: account.ProviderID(),
 		Source:     source,
+		PlanType:   planType,
 		CapturedAt: time.UnixMilli(capturedAtMS).UTC(),
 		Entries:    entries,
 	})

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "manifest_id": "ai-home-route-ownership-2026-08-24",
-  "baseline_date": "2026-10-28",
+  "baseline_date": "2026-11-05",
   "source_revision": {
     "git_commit": "9f675867e9e2f1e4c8dcf488c09f429850d49caa",
     "collection_script": "scripts/collect-gateway-routes.js",
@@ -51,19 +51,19 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 297,
-      "endpoint_records": 286,
-      "unique_endpoint_patterns": 220,
-      "unique_http_endpoint_patterns": 218,
+      "route_records": 298,
+      "endpoint_records": 287,
+      "unique_endpoint_patterns": 221,
+      "unique_http_endpoint_patterns": 219,
       "unique_websocket_endpoint_patterns": 4,
       "guard_records": 11,
       "fallback_records": 0
     },
     "go": {
-      "route_records": 38,
-      "endpoint_records": 37,
-      "unique_endpoint_patterns": 36,
-      "unique_http_endpoint_patterns": 36,
+      "route_records": 48,
+      "endpoint_records": 47,
+      "unique_endpoint_patterns": 46,
+      "unique_http_endpoint_patterns": 46,
       "unique_websocket_endpoint_patterns": 1,
       "guard_records": 0,
       "fallback_records": 1

@@ -17,7 +17,6 @@ const {
   nativeExportFileName,
   parseNativeImportDocument
 } = require('../lib/account/native-account-transfer');
-const { buildWebExport } = require('../lib/server/webui-account-routes-export');
 const { createAccountRuntimeEventHub } = require('../lib/server/account-runtime-event-hub');
 const { setAccountLifecycleHub } = require('../lib/server/account-lifecycle-bus');
 const { ACCOUNT_LIFECYCLE_CHANGED } = require('../lib/server/account-lifecycle-event-types');
@@ -117,19 +116,6 @@ test('single-account and provider-scoped export', (t) => {
   assert.equal(buildNativeExportDocument({ fs, aiHomeDir: source, providers: ['claude'] }).exported, 1);
   const missing = buildNativeExportDocument({ fs, aiHomeDir: source, accountRefs: ['acct_00000000000000000000'] });
   assert.deepEqual(missing.skipped.map((s) => s.reason), ['account_not_found']);
-});
-
-test('web export route: scope params, legacy formats rejected, unknown account 404', (t) => {
-  const source = home(t);
-  const a = seedApiKeyAccount(source, 'codex', 'sk-test-gggggggggggggggggggg');
-  const url = (query) => new URL(`http://x/v0/webui/accounts/export${query}`);
-  assert.equal(buildWebExport({ fs, aiHomeDir: source, url: url('') }).exported, 1);
-  assert.equal(buildWebExport({ fs, aiHomeDir: source, url: url(`?accountRef=${a.accountRef}`) }).exported, 1);
-  assert.equal(buildWebExport({ fs, aiHomeDir: source, url: url('?provider=claude') }).exported, 0);
-  for (const legacy of ['cliproxyapi', 'antigravity', 'sub2api']) {
-    assert.equal(buildWebExport({ fs, aiHomeDir: source, url: url(`?format=${legacy}`) }).error, 'unsupported_export_format');
-  }
-  assert.equal(buildWebExport({ fs, aiHomeDir: source, url: url('?accountRef=acct_00000000000000000000') }).error, 'account_not_found');
 });
 
 test('machine-bound zcode encryption is decrypted on export and re-encrypted locally on import', (t) => {

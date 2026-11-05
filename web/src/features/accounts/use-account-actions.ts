@@ -1883,6 +1883,12 @@ export function useAccountActions({
     navigate(`/accounts/${encodeURIComponent(record.provider)}/${encodeURIComponent(record.accountRef)}/models`);
   }, [navigate]);
 
+  // 额度统计：窗口由服务端按活跃点重建，页面只负责展示。
+  const openQuotaStats = React.useCallback((record: Account) => {
+    if (requiresAccountReauth(record)) return;
+    navigate(`/accounts/${encodeURIComponent(record.provider)}/${encodeURIComponent(record.accountRef)}/quota`);
+  }, [navigate]);
+
   return {
     serverRuntime,
     // 行级状态
@@ -1908,6 +1914,7 @@ export function useAccountActions({
     openCliWithDefaultTerminal,
     guardAccountLaunch,
     openModelManagement,
+    openQuotaStats,
     // 页面级操作
     openAddAccountModal,
     openImportModal,

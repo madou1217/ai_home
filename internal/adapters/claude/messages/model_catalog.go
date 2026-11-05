@@ -130,7 +130,11 @@ func newModelCatalogAuth(
 	}, nil
 }
 
-// fetchModelCatalog 读取完整分页目录，不发送 Messages 推理请求。
+// fetchModelCatalog 依次探测候选端点，第一个返回非空目录的端点胜出。
+//
+// 候选顺序复刻 Node 的 generic-models-probe：<base>/models、<base>/v1/models，
+// 再由 origin 根路径兜底。每个候选只发一次请求，响应同时按 Anthropic 分页形状
+// 与 OpenAI 形状解析 —— 第三方代理常见的 {object,data:[{id}]} 不会先失败再重试。
 func fetchModelCatalog(
 	ctx context.Context,
 	client HTTPClient,
@@ -139,42 +143,226 @@ func fetchModelCatalog(
 	if ctx == nil || client == nil {
 		return modelCatalog{}, ErrInvalidDependencies
 	}
+	candidates := modelCatalogCandidates(auth.baseURL)
+	failures := make([]string, 0, len(candidates))
+	for _, endpoint := range candidates {
+		models, err := fetchCatalogAt(ctx, client, auth, endpoint)
+		if err != nil {
+			failures = append(failures, endpoint+" -> "+err.Error())
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return modelCatalog{}, ctxErr
+			}
+			continue
+		}
+		if len(models) == 0 {
+			continue
+		}
+		return modelCatalog{models: models}, nil
+	}
+	if len(failures) == 0 {
+		return modelCatalog{}, ErrModelCatalogUnavailable
+	}
+	// 错误里带上每个候选的端点与原因：401/429/超时不能再被报成 404。
+	return modelCatalog{}, fmt.Errorf(
+		"%w: %s",
+		ErrModelCatalogUnavailable,
+		strings.Join(failures, " | "),
+	)
+}
+
+// modelCatalogCandidates 复刻 Node 的候选顺序（base 优先，其次 origin 根路径）。
+func modelCatalogCandidates(baseURL string) []string {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil
+	}
+	base := strings.TrimRight(parsed.String(), "/")
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	// base 本身就是 Models 端点（显式 /models 结尾）：先原样请求，再试 origin。
+	// 这与重构前的 modelsEndpoint 行为一致，避免把端点拼成 /models/models。
+	candidates := make([]string, 0, 4)
+	if strings.HasSuffix(strings.ToLower(path), "/models") {
+		candidates = append(candidates, base)
+	} else {
+		// 与 Node 的 pathStyle 一致：base 已经以 /vN 结尾时只拼 /models，
+		// 否则同时试 /models 与 /v1/models。
+		candidates = append(candidates, base+"/models")
+		if !endsWithVersionSegment(path) {
+			candidates = append(candidates, base+"/v1/models")
+		}
+	}
+	if path != "" {
+		origin := parsed.Scheme + "://" + parsed.Host
+		candidates = append(candidates, origin+"/v1/models", origin+"/models")
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	endpoints := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		endpoints = append(endpoints, candidate)
+	}
+	return endpoints
+}
+
+// endsWithVersionSegment 判断路径是否已经带 API 版本段（如 /v1、/v1beta）。
+func endsWithVersionSegment(path string) bool {
+	last := path
+	if index := strings.LastIndex(path, "/"); index >= 0 {
+		last = path[index+1:]
+	}
+	if len(last) < 2 || last[0] != 'v' {
+		return false
+	}
+	for _, character := range last[1:] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// fetchCatalogAt 读取单个候选端点的目录；Anthropic 分页形状会继续翻页。
+func fetchCatalogAt(
+	ctx context.Context,
+	client HTTPClient,
+	auth modelCatalogAuth,
+	endpoint string,
+) ([]string, error) {
+	payload, err := fetchCatalogPayload(ctx, client, auth, endpoint, "")
+	if err != nil {
+		return nil, err
+	}
+	page, anthropicShape := decodeAnthropicCatalogPage(payload)
+	if anthropicShape {
+		return collectAnthropicPages(ctx, client, auth, endpoint, page)
+	}
+	models := parseOpenAIModels(payload)
+	if len(models) == 0 {
+		return nil, ErrInvalidModelCatalog
+	}
+	return models, nil
+}
+
+func collectAnthropicPages(
+	ctx context.Context,
+	client HTTPClient,
+	auth modelCatalogAuth,
+	endpoint string,
+	first modelCatalogPageDTO,
+) ([]string, error) {
 	models := make([]string, 0, modelCatalogPageLimit)
 	seenModels := make(map[string]struct{}, modelCatalogPageLimit)
 	seenCursors := make(map[string]struct{}, maxModelCatalogPages)
+	page := first
 	cursor := ""
 	for range maxModelCatalogPages {
-		page, err := fetchModelCatalogPage(ctx, client, auth, cursor)
-		if err != nil {
-			return modelCatalog{}, err
-		}
 		for _, entry := range *page.Data {
-			if !validModelCatalogID(entry.ID) ||
-				len(models) >= maxModelCatalogModels {
-				return modelCatalog{}, ErrInvalidModelCatalog
+			if !validModelCatalogID(entry.ID) || len(models) >= maxModelCatalogModels {
+				return nil, ErrInvalidModelCatalog
 			}
 			if _, found := seenModels[entry.ID]; found {
-				return modelCatalog{}, ErrInvalidModelCatalog
+				return nil, ErrInvalidModelCatalog
 			}
 			seenModels[entry.ID] = struct{}{}
 			models = append(models, entry.ID)
 		}
 		if !*page.HasMore {
 			sort.Strings(models)
-			return modelCatalog{models: models}, nil
+			return models, nil
 		}
-		if page.LastID == nil ||
-			!validModelCatalogID(*page.LastID) ||
-			len(*page.Data) == 0 {
-			return modelCatalog{}, ErrInvalidModelCatalog
+		if page.LastID == nil || !validModelCatalogID(*page.LastID) || len(*page.Data) == 0 {
+			return nil, ErrInvalidModelCatalog
 		}
 		cursor = *page.LastID
 		if _, found := seenCursors[cursor]; found {
-			return modelCatalog{}, ErrInvalidModelCatalog
+			return nil, ErrInvalidModelCatalog
 		}
 		seenCursors[cursor] = struct{}{}
+		payload, err := fetchCatalogPayload(ctx, client, auth, endpoint, cursor)
+		if err != nil {
+			return nil, err
+		}
+		next, ok := decodeAnthropicCatalogPage(payload)
+		if !ok {
+			return nil, ErrInvalidModelCatalog
+		}
+		page = next
 	}
-	return modelCatalog{}, ErrInvalidModelCatalog
+	return nil, ErrInvalidModelCatalog
+}
+
+// fetchCatalogPayload 执行一次 GET 并返回 JSON 正文。
+func fetchCatalogPayload(
+	ctx context.Context,
+	client HTTPClient,
+	auth modelCatalogAuth,
+	endpoint string,
+	cursor string,
+) ([]byte, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, ErrInvalidInvocation
+	}
+	query := parsed.Query()
+	query.Set("limit", strconv.Itoa(modelCatalogPageLimit))
+	if cursor != "" {
+		query.Set("after_id", cursor)
+	}
+	parsed.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, ErrInvalidInvocation
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("anthropic-version", anthropicVersion)
+	request.Header.Set(auth.headerName, auth.headerValue)
+	if auth.oauthBeta {
+		request.Header.Set("anthropic-beta", betaOAuth)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		closeResponse(response)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, ErrModelCatalogUnavailable
+	}
+	if response == nil || response.Body == nil {
+		closeResponse(response)
+		return nil, ErrInvalidModelCatalog
+	}
+	defer response.Body.Close()
+	mediaType := classifyModelCatalogMediaType(response.Header.Get("Content-Type"))
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		drainModelCatalogResponse(response.Body)
+		return nil, fmt.Errorf(
+			"%w: status=%d media_type=%s",
+			ErrModelCatalogUnavailable,
+			response.StatusCode,
+			mediaType,
+		)
+	}
+	if mediaType != "application/json" {
+		drainModelCatalogResponse(response.Body)
+		return nil, fmt.Errorf("%w: media_type=%s", ErrInvalidModelCatalog, mediaType)
+	}
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maxModelCatalogPageBytes+1))
+	if err != nil || len(payload) == 0 || len(payload) > maxModelCatalogPageBytes {
+		clear(payload)
+		return nil, ErrInvalidModelCatalog
+	}
+	return payload, nil
+}
+
+func decodeAnthropicCatalogPage(payload []byte) (modelCatalogPageDTO, bool) {
+	page, err := decodeModelCatalogPage(payload)
+	if err != nil {
+		return modelCatalogPageDTO{}, false
+	}
+	return page, true
 }
 
 // modelIdentityDTO 是 Models API 条目的最小账号权限投影。
@@ -188,109 +376,6 @@ type modelCatalogPageDTO struct {
 	HasMore *bool               `json:"has_more"`
 	FirstID *string             `json:"first_id"`
 	LastID  *string             `json:"last_id"`
-}
-
-// fetchModelCatalogPage 执行并严格解码一页 Claude 模型目录。
-func fetchModelCatalogPage(
-	ctx context.Context,
-	client HTTPClient,
-	auth modelCatalogAuth,
-	cursor string,
-) (modelCatalogPageDTO, error) {
-	request, err := buildModelsRequest(ctx, auth, cursor)
-	if err != nil {
-		return modelCatalogPageDTO{}, err
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		closeResponse(response)
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return modelCatalogPageDTO{}, ctxErr
-		}
-		return modelCatalogPageDTO{}, ErrModelCatalogUnavailable
-	}
-	if response == nil || response.Body == nil {
-		closeResponse(response)
-		return modelCatalogPageDTO{}, ErrInvalidModelCatalog
-	}
-	defer response.Body.Close()
-
-	mediaType := classifyModelCatalogMediaType(
-		response.Header.Get("Content-Type"),
-	)
-	if response.StatusCode < http.StatusOK ||
-		response.StatusCode >= http.StatusMultipleChoices {
-		drainModelCatalogResponse(response.Body)
-		// 只带状态码与分类后的媒体类型：账号导入失败时必须能区分
-		// 401/403/429/5xx，同时不把上游错误正文写进错误链。
-		return modelCatalogPageDTO{}, fmt.Errorf(
-			"%w: status=%d media_type=%s",
-			ErrModelCatalogUnavailable,
-			response.StatusCode,
-			mediaType,
-		)
-	}
-	if mediaType != "application/json" {
-		drainModelCatalogResponse(response.Body)
-		return modelCatalogPageDTO{}, fmt.Errorf(
-			"%w: media_type=%s",
-			ErrInvalidModelCatalog,
-			mediaType,
-		)
-	}
-	payload, err := io.ReadAll(io.LimitReader(
-		response.Body,
-		maxModelCatalogPageBytes+1,
-	))
-	if err != nil ||
-		len(payload) == 0 ||
-		len(payload) > maxModelCatalogPageBytes {
-		clear(payload)
-		return modelCatalogPageDTO{}, ErrInvalidModelCatalog
-	}
-	defer clear(payload)
-	return decodeModelCatalogPage(payload)
-}
-
-// buildModelsRequest 创建只把凭据写入目标 Header 的 GET 请求。
-func buildModelsRequest(
-	ctx context.Context,
-	auth modelCatalogAuth,
-	cursor string,
-) (*http.Request, error) {
-	if ctx == nil {
-		return nil, ErrInvalidInvocation
-	}
-	endpoint, err := modelsEndpoint(auth.baseURL)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, ErrInvalidInvocation
-	}
-	query := parsed.Query()
-	query.Set("limit", strconv.Itoa(modelCatalogPageLimit))
-	if cursor != "" {
-		query.Set("after_id", cursor)
-	}
-	parsed.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		parsed.String(),
-		nil,
-	)
-	if err != nil {
-		return nil, ErrInvalidInvocation
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("anthropic-version", anthropicVersion)
-	request.Header.Set(auth.headerName, auth.headerValue)
-	if auth.oauthBeta {
-		request.Header.Set("anthropic-beta", betaOAuth)
-	}
-	return request, nil
 }
 
 // modelsEndpoint 同时支持 host、带 /v1 的基址和显式 Models 端点。
@@ -380,4 +465,60 @@ func drainModelCatalogResponse(body io.Reader) {
 func validModelCatalogID(model string) bool {
 	parsed, err := runtimecore.NewModelID(model)
 	return err == nil && parsed.String() == model
+}
+
+// openAIModelListDTO 是第三方 Anthropic 兼容代理常见的 OpenAI 风格清单。
+type openAIModelListDTO struct {
+	Data []struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Model string `json:"model"`
+	} `json:"data"`
+	Models []struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Model string `json:"model"`
+	} `json:"models"`
+}
+
+// parseOpenAIModels 解析 {data:[{id}]} 或 {models:[{id|name}]} 形状。
+func parseOpenAIModels(payload []byte) []string {
+	var document openAIModelListDTO
+	if json.Unmarshal(payload, &document) != nil {
+		return nil
+	}
+	entries := document.Data
+	if len(entries) == 0 {
+		entries = document.Models
+	}
+	seen := make(map[string]struct{}, len(entries))
+	models := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		id := strings.TrimSpace(firstModelID(entry.ID, entry.Model, entry.Name))
+		if !validModelCatalogID(id) {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		models = append(models, id)
+		if len(models) > maxModelCatalogModels {
+			return nil
+		}
+	}
+	if len(models) == 0 {
+		return nil
+	}
+	sort.Strings(models)
+	return models
+}
+
+func firstModelID(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

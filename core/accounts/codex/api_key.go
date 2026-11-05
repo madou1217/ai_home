@@ -48,7 +48,9 @@ func NewAPIKeyAuth(input APIKeyInput) (*APIKeyAuth, error) {
 	}
 
 	digest := sha256.Sum256([]byte(apiKey))
-	fingerprint := hex.EncodeToString(digest[:])
+	// 与 Node 的静态账号身份公式逐字节一致：sha256 十六进制前 16 位。
+	// 完整 64 位哈希会让同一个 key+base URL 在两端派生出不同的 accountRef。
+	fingerprint := hex.EncodeToString(digest[:])[:16]
 	return &APIKeyAuth{
 		apiKey:       newSecretValue(apiKey),
 		baseURL:      baseURL,

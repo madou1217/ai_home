@@ -122,6 +122,12 @@ const nodeRoutes = [
     hideInMenu: true,
   },
   {
+    // 账号额度统计：按窗口期（5h / 7天 / 30天）看额度消耗与用量。
+    path: "/accounts/:provider/:accountRef/quota",
+    component: "./AccountQuota",
+    hideInMenu: true,
+  },
+  {
     path: "*",
     redirect: "/dashboard",
   }

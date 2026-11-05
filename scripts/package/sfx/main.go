@@ -34,6 +34,7 @@ type marker struct {
 }
 
 func main() {
+	prepareConsole()
 	// Docker 在 ARM 上用 QEMU 跑 amd64 时，Go 的 GC 会触发
 	// "marked free object in span" 崩溃；解包是一次性的 I/O 密集型操作，
 	// 峰值内存只有载荷本身的大小，关掉 GC 不会造成压力。

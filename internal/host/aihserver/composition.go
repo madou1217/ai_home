@@ -27,30 +27,27 @@ import (
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/kimioauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/deletionprojection"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
-	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
-	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
-	opencodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/opencode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
@@ -334,7 +331,7 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号重新认证用例失败: %w", err)
 	}
-	management, err := accountapp.NewManagement(store, store, time.Now)
+	management, err := accountapp.NewManagement(store, store, store, store, store, time.Now)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
@@ -346,10 +343,25 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建启动账号解析用例失败: %w", err)
 	}
+	// kiro 的 OAuth 凭据在发现前刷新；刷新走纯 HTTP 并 CAS 回写。
+	kiroRefresher, err := kirocred.New(
+		store,
+		&http.Client{
+			Timeout:       modelCatalogHTTPTimeout,
+			CheckRedirect: rejectOAuthRedirect,
+		},
+		time.Now,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 凭据刷新器失败: %w", err)
+	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
 		modelDiscovery,
+		kiroRefresher,
+		// 探测事实与目录快照落在同一 aih.db，WebUI 批量读一次 JOIN 取齐。
+		store,
 		time.Now,
 	)
 	if err != nil {
@@ -381,7 +393,7 @@ func newHandlers(
 		accountapp.ModelRefreshCoordinatorOptions{
 			Catalog:             catalog,
 			Refresher:           recoveringModelManagement,
-			ProviderConcurrency: modelRefreshProviderConcurrency(),
+			ProviderConcurrency: modelRefreshProviderConcurrency(modelDiscovery.ProviderIDs()),
 			RefreshTimeout:      modelRefreshTimeout,
 			BaseBackoff:         modelRefreshBaseBackoff,
 			MaxBackoff:          modelRefreshMaxBackoff,
@@ -398,6 +410,11 @@ func newHandlers(
 		Timeout:       oauthHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
 	}
+	// kimi access_token 只有 15 分钟，刷新走 auth.kimi.com 的 form 合同（与 CLI 一致）。
+	kimiProvider, err := kimioauth.New(oauthClient, kimioauth.Options{ClientVersion: kimiClientVersion()})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 kimi OAuth Refresh Strategy 失败: %w", err)
+	}
 	codexProvider, err := codexoauth.New(oauthClient, time.Now)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Codex OAuth Strategy 失败: %w", err)
@@ -410,32 +427,54 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 AGY OAuth Refresh Strategy 失败: %w", err)
 	}
-	// 家族四支没有 Go 侧刷新实现（Token 刷新由 Node 宿主完成并同步进凭据库），但
-	// 凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式登记静态策略
-	// （声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合同样登记，
-	// 避免家族账号在两条解析链上出现「一条能读、一条读不到」的分叉。
-	familyCredentialStrategies := make([]accountcredentials.RefreshStrategy, 0, len(codebuddyfamilyrelay.FamilyProviders))
-	for _, providerID := range codebuddyfamilyrelay.FamilyProviders {
+	// 家族四支与 Qoder 双区没有 Go 侧刷新实现（Token 刷新由 Node 宿主/官方 CLI 完成并
+	// 同步进凭据库），但凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式
+	// 登记静态策略（声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合
+	// 同样登记，避免这些账号在两条解析链上出现「一条能读、一条读不到」的分叉。
+	//
+	// Qoder 额度 refresh 走的就是这条链路：凭据是 CLI 的 opaque blob，token 由
+	// qodercred 用厂商 wasm 解密，不需要（也没有）Go 侧 OAuth 刷新。
+	// 这里列的是「Go 已有采集/转发能力、但 Token 刷新仍归 Node 或厂商 CLI」的 Provider：
+	// 缺一条策略，凭据解析就直接失败，额度协调器与显式 refresh 都会 500。
+	// kiro / zcode / cline 的 Node 探针早已下线（descriptor quota.supported=false），
+	// 没有静态策略时它们的 Go 采集根本跑不起来，只能靠 Node 进程的旧连接推数据。
+	staticCredentialProviders := append(
+		append([]string{}, codebuddyfamilyrelay.FamilyProviders...),
+		"qoder",
+		"qodercn",
+		"kiro",
+		"zcode",
+		"cline",
+	)
+	staticCredentialStrategies := make(
+		[]accountcredentials.RefreshStrategy,
+		0,
+		len(staticCredentialProviders),
+	)
+	for _, providerID := range staticCredentialProviders {
 		strategy, err := staticcredential.New(providerID)
 		if err != nil {
 			return serverHandlers{}, nil, fmt.Errorf(
-				"创建家族静态凭据策略失败(%s): %w",
+				"创建静态凭据策略失败(%s): %w",
 				providerID,
 				err,
 			)
 		}
-		familyCredentialStrategies = append(familyCredentialStrategies, strategy)
+		staticCredentialStrategies = append(staticCredentialStrategies, strategy)
+	}
+	// 两处解析器（WebUI/账号域与推理）共用同一份刷新策略集合：
+	// 新增 Provider 只改这一处调用，不再维护两份字面量列表。
+	credentialRefreshStrategies := func(oauth ...accountcredentials.RefreshStrategy) []accountcredentials.RefreshStrategy {
+		return append(oauth, staticCredentialStrategies...)
 	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
 			Store: store,
-			Strategies: append(
-				[]accountcredentials.RefreshStrategy{
-					codexProvider,
-					claudeProvider,
-					agyProvider,
-				},
-				familyCredentialStrategies...,
+			Strategies: credentialRefreshStrategies(
+				codexProvider,
+				claudeProvider,
+				agyProvider,
+				kimiProvider,
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
@@ -603,19 +642,34 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 会话用量 Handler 失败: %w", err)
 	}
+	quotaStatsService, err := usageapp.NewQuotaStatsService(usageapp.QuotaStatsDependencies{
+		Samples:   store,
+		Usage:     store,
+		Ledger:    store,
+		Events:    store,
+		Snapshots: store,
+		Clock:     time.Now,
+	})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建额度统计服务失败: %w", err)
+	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:         management,
-		Models:             recoveringModelManagement,
-		Usage:              usage.service,
-		Deletion:           deleter,
-		Defaults:           providerDefaults,
-		Selections:         launchAccountSelector,
-		CredentialRotation: modelRefreshingCredentialRotator,
-		Registrar:          scheduledRegistrar,
-		Importer:           accountImporter,
-		StaticCredentials:  credentialFactory,
-		NativeAccounts:     decoder,
-		Authorizer:         authorizer,
+		Management:          management,
+		Models:              recoveringModelManagement,
+		Usage:               usage.service,
+		QuotaStats:          quotaStatsService,
+		Deletion:            deleter,
+		Defaults:            providerDefaults,
+		Selections:          launchAccountSelector,
+		CredentialRotation:  modelRefreshingCredentialRotator,
+		Registrar:           scheduledRegistrar,
+		Importer:            accountImporter,
+		StaticCredentials:   credentialFactory,
+		NativeAccounts:      decoder,
+		CredentialSnapshots: store,
+		// 批量模型关系：WebUI 模型缓存读 Go 的入口（一次 JOIN，不做 N 次请求）。
+		AccountModels: store,
+		Authorizer:    authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
@@ -630,14 +684,22 @@ func newHandlers(
 		Reauth:     scheduledReauthenticator,
 		Clock:      time.Now,
 		GenerateID: accountauth.NewRandomJobID,
+		// 公开快照落 aih.db：重启后仍能查询 Job 状态；未完成 Job 由 Rehydrate 标成 expired
+		// （state/PKCE 只在内存，重启后无法继续，冒充 pending 会让前端一直等）。
+		JobStore: store,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)
+	}
+	if err := jobs.Rehydrate(ctx); err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("恢复 OAuth Job 快照失败: %w", err)
 	}
 	accountAuthHandler, err := accountauthapi.NewHandler(
 		accountauthapi.Dependencies{
 			Jobs:       jobs,
 			Authorizer: authorizer,
+			JobRecords: store,
+			JobWrites:  store,
 		},
 	)
 	if err != nil {
@@ -708,13 +770,11 @@ func newHandlers(
 			strategy:       selectionStrategy,
 			models:         recoveringModelManagement,
 			modelRefreshes: modelRefresh,
-			credentialRefresh: append(
-				[]accountcredentials.RefreshStrategy{
-					codexProvider,
-					claudeProvider,
-					agyProvider,
-				},
-				familyCredentialStrategies...,
+			credentialRefresh: credentialRefreshStrategies(
+				codexProvider,
+				claudeProvider,
+				agyProvider,
+				kimiProvider,
 			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			authorizer:                clientAuthorizer,
@@ -1372,29 +1432,28 @@ func newResponsesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 }
 
-// modelRefreshProviderConcurrency 声明拥有独立刷新队列的 Provider 及其并发。
+// modelRefreshProviderConcurrency 按已装配的模型发现策略声明刷新队列。
+//
+// 队列必须与发现策略同源：只写在发现注册表里、没有队列的 Provider 永远不会被
+// 周期重扫（静默失效：账号在池里、模型目录一直为空）。
 //
 // Canonical 三支各一条队列；家族四支的刷新形态是同一个 HTTP 目录端点
 // （internal/adapters/codebuddyfamily/modelcatalog），同样各占一条、并发 1。
 // 漏登记的代价是静默的：账号不会被扫描/首次恢复刷新，模型目录永远为空。
-func modelRefreshProviderConcurrency() map[string]int {
-	concurrency := map[string]int{
-		string(inference.ProviderCodex):  modelRefreshConcurrency,
-		string(inference.ProviderClaude): modelRefreshConcurrency,
-		string(inference.ProviderAgy):    modelRefreshConcurrency,
-	}
-	// 透传通道服务的 Provider 同样要有刷新队列，且与目录构建共用同一份声明。
-	//
-	// 为什么必须显式列：队列只在协调器构造时按这张表建立，**没有队列的 Provider 永远
-	// 不会被重扫**——表现是静默的（账号在池里、模型目录一直为空、请求被判成
-	// model_not_routable 交还 Node），等于透传通道白接。
+func modelRefreshProviderConcurrency(providerIDs []string) map[string]int {
+	concurrency := make(map[string]int, len(providerIDs)+3)
+	// 透传通道服务的 Provider 即使暂时没有发现策略也要有队列（目录可能由别名/投影补）。
 	for _, providerID := range relayProviderIDs() {
+		concurrency[providerID] = modelRefreshConcurrency
+	}
+	for _, providerID := range providerIDs {
 		concurrency[providerID] = modelRefreshConcurrency
 	}
 	return concurrency
 }
 
-// newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。
+// newModelDiscovery 创建生产模型目录源（见 model_providers.go 注册表），
+// 或使用测试显式注入的策略。
 func newModelDiscovery(
 	catalog *providers.Catalog,
 	injected []accountapp.ProviderModelDiscoverer,
@@ -1408,61 +1467,16 @@ func newModelDiscovery(
 			Timeout:       modelCatalogHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
 		}
-		codexSource, err := codexresponses.NewModelCatalogSourceWithClientVersion(client, codexVersions)
-		if err != nil {
-			return nil, fmt.Errorf("创建 Codex 模型目录源失败: %w", err)
-		}
-		claudeSource, err := claudemessages.NewModelCatalogSource(client)
-		if err != nil {
-			return nil, fmt.Errorf("创建 Claude 模型目录源失败: %w", err)
-		}
-		agySource, err := agycodeassist.NewModelCatalogSourceWithWireModels(client, agyModelWires)
-		if err != nil {
-			return nil, fmt.Errorf("创建 AGY 模型目录源失败: %w", err)
-		}
-		familySources, err := codebuddyfamilymodelcatalog.NewModelCatalogSources(client)
-		if err != nil {
-			return nil, fmt.Errorf("创建家族模型目录源失败: %w", err)
-		}
-		// kimi / grok 的透传通道已接入（见 relaycore），但账号的**模型目录**要单独发现：
-		// 没有目录，Go 就不知道这两个 Provider 有哪些模型可路由，请求会被判成
-		// model_not_routable 交还 Node —— 等于通道白接。
-		//
-		// 两者都是标准 OpenAI 兼容端点（GET {base}/models），因此共用同一实现，
-		// 差异只在端点与凭据取法。
-		kimiSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
-			ProviderID:  kimirelay.ProviderID,
-			Endpoint:    kimirelay.KimiCodeBaseURL + openaicompatmodelcatalog.ModelsPath,
-			Token:       kimirelay.AccessTokenFromCredential,
-			Descriptors: modalityRegistrar,
+		built, err := buildModelProviderSources(modelProviderContext{
+			client:            client,
+			codexVersions:     codexVersions,
+			agyModelWires:     agyModelWires,
+			modalityRegistrar: modalityRegistrar,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("创建 kimi 模型目录源失败: %w", err)
+			return nil, err
 		}
-		grokSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
-			ProviderID: grokrelay.ProviderID,
-			Endpoint:   grokrelay.DefaultBaseURL + openaicompatmodelcatalog.ModelsPath,
-			Token:      grokrelay.AccessTokenFromCredential,
-			// grok 的 GET /models 只认 API Key：OAuth 账号会被 403，因此明确跳过
-			// （那些账号的目录只能靠本地 CLI，Go 服务端没有 —— 这是能力边界，不是缺陷）。
-			SupportsCredential: grokrelay.SupportsHTTPModelDiscovery,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
-		}
-		opencodeSource, err := opencodemodelcatalog.New(client)
-		if err != nil {
-			return nil, fmt.Errorf("创建 opencode 模型目录源失败: %w", err)
-		}
-		strategies = []accountapp.ProviderModelDiscoverer{
-			codexSource,
-			claudeSource,
-			agySource,
-			kimiSource,
-			grokSource,
-			opencodeSource,
-		}
-		strategies = append(strategies, familySources...)
+		strategies = built
 	}
 	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)
 	if err != nil {

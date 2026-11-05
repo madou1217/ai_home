@@ -2,6 +2,7 @@ import { providerNames } from '@/components/chat/ProviderIcon';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import {
   getAccountDisplayBadgeMeta,
+  getAccountLoginTypeLabel,
   getAccountPrimaryLabel,
   getPlanTagLabels,
   getQuotaStateMeta
@@ -42,6 +43,8 @@ export default function AccountRowContent({ record, activity, removing, desktopR
   const remaining = record.apiKeyMode ? null : getEffectiveRemainingPct(record);
   const meta = [
     providerNames[record.provider] || record.provider,
+    // 账号类型/登录方式（kiro: Google / GitHub / Builder…）：只放 meta 行，不占标题。
+    getAccountLoginTypeLabel(record),
     // 多套餐逐个列出（不再用 `A + B` 的拼接串，见 getPlanTagLabels）。
     ...getPlanTagLabels(record),
     record.isDefault ? '默认' : '',

@@ -11,11 +11,9 @@ import (
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
-	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
 )
 
 const (
@@ -86,49 +84,46 @@ func newUsageComposition(
 			CheckRedirect: rejectOAuthRedirect,
 		}
 	}
-	var codexVersions clientversion.Source = clientversion.Static(codexidentity.Floor)
-	if dependencies.codexVersions != nil {
-		codexVersions = dependencies.codexVersions
-	}
-	codexStrategy, err := codexusage.NewWithClientVersion(client, codexVersions)
+	strategies, providerConcurrency, err := buildUsageProviderStrategies(usageProviderContext{
+		client:        client,
+		codexVersions: dependencies.codexVersions,
+		store:         dependencies.store,
+		clock:         dependencies.clock,
+	})
 	if err != nil {
 		return nil, err
 	}
-	claudeStrategy, err := claudeusage.New(client)
+	kiroRefresher, err := kirocred.New(dependencies.store, client, dependencies.clock)
 	if err != nil {
 		return nil, err
 	}
 	service, err := usageapp.NewService(usageapp.Dependencies{
-		Catalog: dependencies.catalog,
-		Store:   dependencies.store,
+		Catalog:   dependencies.catalog,
+		Store:     dependencies.store,
+		Documents: dependencies.store,
 		Credentials: usageCredentialSnapshots{
 			resolver: dependencies.credentials,
 			store:    dependencies.store,
 		},
-		Models:  dependencies.models,
-		Runtime: dependencies.runtime,
-		Strategies: []usageapp.ProviderStrategy{
-			codexStrategy,
-			claudeStrategy,
-		},
-		Clock: dependencies.clock,
+		Models:     dependencies.models,
+		Runtime:    dependencies.runtime,
+		Strategies: strategies,
+		Refresher:  kiroRefresher,
+		Clock:      dependencies.clock,
 	})
 	if err != nil {
 		return nil, err
 	}
 	coordinator, err := usageapp.NewCoordinator(usageapp.CoordinatorOptions{
-		Catalog:   dependencies.catalog,
-		Refresher: service,
-		ProviderConcurrency: map[string]int{
-			"codex":  usageProviderConcurrency,
-			"claude": usageProviderConcurrency,
-		},
-		RefreshTimeout:  usageRefreshTimeout,
-		RefreshInterval: usageRefreshInterval,
-		StaggerWindow:   usageRefreshStagger,
-		BaseBackoff:     usageRefreshBaseBackoff,
-		MaxBackoff:      usageRefreshMaxBackoff,
-		Clock:           dependencies.clock,
+		Catalog:             dependencies.catalog,
+		Refresher:           service,
+		ProviderConcurrency: providerConcurrency,
+		RefreshTimeout:      usageRefreshTimeout,
+		RefreshInterval:     usageRefreshInterval,
+		StaggerWindow:       usageRefreshStagger,
+		BaseBackoff:         usageRefreshBaseBackoff,
+		MaxBackoff:          usageRefreshMaxBackoff,
+		Clock:               dependencies.clock,
 	})
 	if err != nil {
 		return nil, err

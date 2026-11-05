@@ -86,6 +86,19 @@ type Provider interface {
 	) (sharedfailure.Classification, error)
 }
 
+// ResponseTransformer 是可选的响应扩展点：Provider 自己消费上游成功响应。
+//
+// 多数 Provider 的上游就是标准 OpenAI SSE，交给 Handler 的默认聚合/透传即可；只有
+// 上游信封与 OpenAI 不一致（例如 qoder 的 {body:"<chunk json>"} 外层）时才实现它。
+// handled=false 表示本次不接管，Handler 继续走默认路径。
+type ResponseTransformer interface {
+	TransformResponse(
+		response http.ResponseWriter,
+		upstream *http.Response,
+		streaming bool,
+	) (handled bool, err error)
+}
+
 // RewriteResult 是请求体改写的结论：既给出新请求体，也给出「本次改写丢掉了什么」。
 //
 // 默认实现（不改写）返回 Body 为入参、其余字段零值。

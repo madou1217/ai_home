@@ -53,6 +53,11 @@ type StaticCredentialRotationService interface {
 		accountRef accountcore.AccountRef,
 		replacement accountapp.Credential,
 	) (accountcore.Account, error)
+	Edit(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		edit accountapp.StaticCredentialEdit,
+	) (accountcore.Account, error)
 }
 
 // RegistrationDecorator 在账号事务成功后发出一次异步额度刷新信号。
@@ -201,6 +206,31 @@ func (decorator *StaticCredentialRotationDecorator) Rotate(
 		return accountcore.Account{}, ErrInvalidRequest
 	}
 	account, err := decorator.next.Rotate(ctx, accountRef, replacement)
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	return rescheduleCommittedUsageRefresh(
+		ctx,
+		decorator.scheduler,
+		account,
+		accountRef,
+	)
+}
+
+// Edit 复用 Rotate 的提交后额度刷新链；凭据构造在下游用例完成。
+func (decorator *StaticCredentialRotationDecorator) Edit(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	edit accountapp.StaticCredentialEdit,
+) (accountcore.Account, error) {
+	if decorator == nil ||
+		decorator.next == nil ||
+		decorator.scheduler == nil ||
+		ctx == nil ||
+		!accountRef.IsValid() {
+		return accountcore.Account{}, ErrInvalidRequest
+	}
+	account, err := decorator.next.Edit(ctx, accountRef, edit)
 	if err != nil {
 		return accountcore.Account{}, err
 	}

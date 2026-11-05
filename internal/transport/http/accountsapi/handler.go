@@ -8,11 +8,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/gemini"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 )
 
@@ -54,6 +59,40 @@ type Management interface {
 		accountRef accountcore.AccountRef,
 		enabled bool,
 	) (accountcore.Account, error)
+	ReplaceAccountUIState(
+		ctx context.Context,
+		state accountcore.UIState,
+	) error
+	ListAccountUIStates(
+		ctx context.Context,
+	) ([]accountcore.UIState, error)
+	ReplaceAccountBlock(
+		ctx context.Context,
+		block runtimecore.AccountBlock,
+	) error
+	DeleteAccountBlock(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		kind runtimecore.FailureKind,
+	) error
+	ListAccountBlocks(
+		ctx context.Context,
+	) ([]runtimecore.AccountBlock, error)
+	ReplaceAccountState(
+		ctx context.Context,
+		state runtimecore.AccountState,
+	) error
+	DeleteAccountState(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) error
+	GetAccountState(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (runtimecore.AccountState, error)
+	ListAccountStates(
+		ctx context.Context,
+	) ([]runtimecore.AccountState, error)
 }
 
 // ModelManagement 是账号模型子资源依赖的最小查询和命令端口。
@@ -84,6 +123,26 @@ type UsageManagement interface {
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 	) (usageapp.ReadResult, error)
+	ReplaceUsage(
+		ctx context.Context,
+		snapshot usagecore.Snapshot,
+	) error
+	ReplaceCollectedUsage(
+		ctx context.Context,
+		snapshot usagecore.Snapshot,
+	) error
+	ReplaceDocument(
+		ctx context.Context,
+		document usagecore.Document,
+	) error
+	ListDocuments(
+		ctx context.Context,
+		query usageapp.DocumentQuery,
+	) ([]usagecore.Document, error)
+	ReplaceDocumentQuotaState(
+		ctx context.Context,
+		state usageapp.DocumentQuotaState,
+	) error
 }
 
 // AccountDeletion 是账号成员资源依赖的独立删除用例端口。
@@ -123,6 +182,11 @@ type StaticCredentialRotation interface {
 		accountRef accountcore.AccountRef,
 		replacement accountapp.Credential,
 	) (accountcore.Account, error)
+	Edit(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		edit accountapp.StaticCredentialEdit,
+	) (accountcore.Account, error)
 }
 
 // AccountExporter 是账号成员导出资源依赖的单账号 JSON 输出端口。
@@ -161,6 +225,14 @@ type NativeAccountDecoder interface {
 	) (accountapp.Credential, accountapp.PublicProfile, error)
 }
 
+// CredentialSnapshotReader 是导出入口按 AccountRef 读取当前凭据的最小端口。
+type CredentialSnapshotReader interface {
+	GetCredentialSnapshot(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (accountapp.CredentialSnapshot, error)
+}
+
 // Sub2APIAccountDecoder 是标准迁移 JSON 导入依赖的最小反腐端口。
 type Sub2APIAccountDecoder interface {
 	DecodeAccount(
@@ -170,36 +242,43 @@ type Sub2APIAccountDecoder interface {
 
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
-	Management         Management
-	Models             ModelManagement
-	Usage              UsageManagement
-	Deletion           AccountDeletion
-	Defaults           ProviderDefaultManagement
-	Selections         LaunchAccountSelection
-	CredentialRotation StaticCredentialRotation
-	Sub2APIExporter    AccountExporter
-	Registrar          Registrar
-	Importer           Importer
-	StaticCredentials  StaticCredentialFactory
-	NativeAccounts     NativeAccountDecoder
-	Sub2APIAccounts    Sub2APIAccountDecoder
-	Authorizer         Authorizer
+	Management          Management
+	Models              ModelManagement
+	Usage               UsageManagement
+	QuotaStats          QuotaStatsManagement
+	Deletion            AccountDeletion
+	Defaults            ProviderDefaultManagement
+	Selections          LaunchAccountSelection
+	CredentialRotation  StaticCredentialRotation
+	Sub2APIExporter     AccountExporter
+	Registrar           Registrar
+	Importer            Importer
+	StaticCredentials   StaticCredentialFactory
+	NativeAccounts      NativeAccountDecoder
+	Sub2APIAccounts     Sub2APIAccountDecoder
+	CredentialSnapshots CredentialSnapshotReader
+	// AccountModels 是批量模型关系的只读端口，可为空（未装配时 503，WebUI 回落本地缓存）。
+	AccountModels AccountModelReader
+	Authorizer    Authorizer
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
 type Handler struct {
-	management         Management
-	models             ModelManagement
-	usage              UsageManagement
-	deletion           AccountDeletion
-	defaults           ProviderDefaultManagement
-	selections         LaunchAccountSelection
-	credentialRotation StaticCredentialRotation
-	registrar          Registrar
-	importer           Importer
-	staticCredentials  StaticCredentialFactory
-	native             NativeAccountDecoder
-	authorizer         Authorizer
+	management          Management
+	models              ModelManagement
+	usage               UsageManagement
+	quotaStats          QuotaStatsManagement
+	deletion            AccountDeletion
+	defaults            ProviderDefaultManagement
+	selections          LaunchAccountSelection
+	credentialRotation  StaticCredentialRotation
+	registrar           Registrar
+	importer            Importer
+	staticCredentials   StaticCredentialFactory
+	native              NativeAccountDecoder
+	credentialSnapshots CredentialSnapshotReader
+	accountModels       AccountModelReader
+	authorizer          Authorizer
 }
 
 // NewHandler 创建依赖完整且默认失败关闭的账号 HTTP Handler。
@@ -207,6 +286,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Management == nil ||
 		dependencies.Models == nil ||
 		dependencies.Usage == nil ||
+		dependencies.QuotaStats == nil ||
 		dependencies.Deletion == nil ||
 		dependencies.Defaults == nil ||
 		dependencies.Selections == nil ||
@@ -215,22 +295,26 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Importer == nil ||
 		dependencies.StaticCredentials == nil ||
 		dependencies.NativeAccounts == nil ||
+		dependencies.CredentialSnapshots == nil ||
 		dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		management:         dependencies.Management,
-		models:             dependencies.Models,
-		usage:              dependencies.Usage,
-		deletion:           dependencies.Deletion,
-		defaults:           dependencies.Defaults,
-		selections:         dependencies.Selections,
-		credentialRotation: dependencies.CredentialRotation,
-		registrar:          dependencies.Registrar,
-		importer:           dependencies.Importer,
-		staticCredentials:  dependencies.StaticCredentials,
-		native:             dependencies.NativeAccounts,
-		authorizer:         dependencies.Authorizer,
+		management:          dependencies.Management,
+		models:              dependencies.Models,
+		usage:               dependencies.Usage,
+		quotaStats:          dependencies.QuotaStats,
+		deletion:            dependencies.Deletion,
+		defaults:            dependencies.Defaults,
+		selections:          dependencies.Selections,
+		credentialRotation:  dependencies.CredentialRotation,
+		registrar:           dependencies.Registrar,
+		importer:            dependencies.Importer,
+		staticCredentials:   dependencies.StaticCredentials,
+		native:              dependencies.NativeAccounts,
+		credentialSnapshots: dependencies.CredentialSnapshots,
+		accountModels:       dependencies.AccountModels,
+		authorizer:          dependencies.Authorizer,
 	}, nil
 }
 
@@ -261,6 +345,8 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	switch {
+	case request.URL.Path == NativeImportPath+"/aih-accounts":
+		handler.handleAihAccountsImport(response, request)
 	case request.URL.Path == NativeImportPath:
 		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:
@@ -271,6 +357,23 @@ func (handler *Handler) ServeHTTP(
 		handler.handleLaunchSelection(response, request)
 	case strings.HasPrefix(request.URL.Path, DefaultsPath+"/"):
 		handler.handleProviderDefault(response, request)
+	case request.URL.Path == AccountModelsCollectionPath:
+		handler.handleAccountModelsCollection(response, request)
+	case request.URL.Path == AccountUsageCollectionPath:
+		handler.handleAccountUsageCollection(response, request)
+	case request.URL.Path == AccountUsageDocumentCollectionPath:
+		handler.handleAccountUsageDocuments(response, request)
+	case request.URL.Path == AccountQuotaStateCollectionPath:
+		handler.handleAccountQuotaStates(response, request)
+	case request.URL.Path == AccountUIStateCollectionPath:
+		handler.handleAccountUIStates(response, request)
+	case request.URL.Path == AccountRuntimeBlockCollectionPath:
+		handler.handleAccountRuntimeBlocks(response, request)
+	case request.URL.Path == AccountRuntimeStateCollectionPath:
+		handler.handleAccountRuntimeStates(response, request)
+	case request.URL.Path == CollectionPath+"/export",
+		request.URL.Path == CollectionPath+"/export/aih-accounts":
+		handler.handleAccountsExport(response, request)
 	case strings.HasPrefix(request.URL.Path, CollectionPath+"/"):
 		handler.handleMember(response, request)
 	default:
@@ -324,12 +427,24 @@ func (handler *Handler) handleMember(
 		handler.handleAccountMember(response, request, accountRef)
 	case memberResourceCredential:
 		handler.handleAccountCredential(response, request, accountRef)
+	case memberResourceCredentialEdit:
+		handler.handleAccountCredentialEdit(response, request, accountRef)
 	case memberResourceModels:
 		handler.handleAccountModels(response, request, accountRef)
 	case memberResourceModelRefresh:
 		handler.handleAccountModelRefresh(response, request, accountRef)
 	case memberResourceUsage:
 		handler.handleAccountUsage(response, request, accountRef)
+	case memberResourceQuotaStats:
+		handler.handleAccountQuotaStats(response, request, accountRef)
+	case memberResourceUsageDocument:
+		handler.handleAccountUsageDocument(response, request, accountRef)
+	case memberResourceUIState:
+		handler.handleAccountUIState(response, request, accountRef)
+	case memberResourceRuntimeBlock:
+		handler.handleAccountRuntimeBlock(response, request, accountRef)
+	case memberResourceRuntimeState:
+		handler.handleAccountRuntimeState(response, request, accountRef)
 	case memberResourceUsageRefresh:
 		handler.handleAccountUsageRefresh(response, request, accountRef)
 	case memberResourceExport:
@@ -414,6 +529,53 @@ func (handler *Handler) handleAccountCredential(
 	)
 }
 
+// handleAccountCredentialEdit 应用 WebUI 形态的编辑（空密钥/未带地址沿用当前值）。
+func (handler *Handler) handleAccountCredentialEdit(
+	response http.ResponseWriter,
+	request *http.Request,
+	accountRef accountcore.AccountRef,
+) {
+	if request.Method != http.MethodPut {
+		response.Header().Set("Allow", http.MethodPut)
+		writeMethodNotAllowed(response)
+		return
+	}
+	if rejectUnexpectedQuery(response, request) {
+		return
+	}
+	var input editCredentialRequest
+	if err := decodeJSONRequest(response, request, &input); err != nil {
+		writeRequestDecodeError(response, err)
+		return
+	}
+	if _, err := handler.credentialRotation.Edit(
+		request.Context(),
+		accountRef,
+		accountapp.StaticCredentialEdit{
+			APIKey:         input.APIKey,
+			BaseURL:        input.BaseURL,
+			IncludeBaseURL: input.IncludeBaseURL,
+			AuthKind:       input.AuthKind,
+		},
+	); err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	updated, err := handler.management.GetAccountOverview(
+		request.Context(),
+		accountRef,
+	)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(
+		response,
+		http.StatusOK,
+		accountResponse{Data: newAccountView(updated)},
+	)
+}
+
 // handleAccountExport 返回一个不缓存、不包含本地身份的标准附件。
 func (handler *Handler) handleAccountExport(
 	response http.ResponseWriter,
@@ -452,12 +614,41 @@ func (handler *Handler) handleAccountUsage(
 	request *http.Request,
 	accountRef accountcore.AccountRef,
 ) {
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeMethodNotAllowed(response)
+	if rejectUnexpectedQuery(response, request) {
 		return
 	}
-	if rejectUnexpectedQuery(response, request) {
+	switch request.Method {
+	case http.MethodGet:
+	case http.MethodPut:
+		overview, err := handler.management.GetAccountOverview(
+			request.Context(),
+			accountRef,
+		)
+		if err != nil {
+			writeApplicationError(response, err)
+			return
+		}
+		var input replaceUsageRequest
+		if err := decodeJSONRequest(response, request, &input); err != nil {
+			writeRequestDecodeError(response, err)
+			return
+		}
+		snapshot, err := buildUsageSnapshot(accountRef, overview.Account().ProviderID(), input)
+		if err != nil {
+			writeAPIError(response, http.StatusBadRequest, "invalid_usage_snapshot", "额度快照无效")
+			return
+		}
+		if err := handler.replaceUsageSnapshot(
+			request.Context(),
+			snapshot,
+			input.Collected,
+		); err != nil {
+			writeApplicationError(response, err)
+			return
+		}
+	default:
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPut)
+		writeMethodNotAllowed(response)
 		return
 	}
 	result, err := handler.usage.GetUsage(request.Context(), accountRef)
@@ -466,6 +657,81 @@ func (handler *Handler) handleAccountUsage(
 		return
 	}
 	writeJSON(response, http.StatusOK, newAccountUsageResponse(result))
+}
+
+// replaceUsageSnapshot 区分「Go 自己的探针」与「采集方已确认」两条写入语义：
+// 前者必须能解析当前凭据并做 CAS，后者已由采集方完成代次门禁。
+func (handler *Handler) replaceUsageSnapshot(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+	collected bool,
+) error {
+	if collected {
+		return handler.usage.ReplaceCollectedUsage(ctx, snapshot)
+	}
+	return handler.usage.ReplaceUsage(ctx, snapshot)
+}
+
+// buildUsageSnapshot 把 HTTP DTO 转成领域快照；未知枚举/越界数值 fail-closed。
+func buildUsageSnapshot(
+	accountRef accountcore.AccountRef,
+	providerID string,
+	input replaceUsageRequest,
+) (usagecore.Snapshot, error) {
+	capturedAt, err := parseUsageTime(input.CapturedAt)
+	if err != nil {
+		return usagecore.Snapshot{}, err
+	}
+	entries := make([]usagecore.EntryInput, 0, len(input.Entries))
+	for _, entry := range input.Entries {
+		if entry.RemainingBasisPoints < 0 || entry.RemainingBasisPoints > 10000 {
+			return usagecore.Snapshot{}, errInvalidQuery
+		}
+		resetAt := time.Time{}
+		if strings.TrimSpace(entry.ResetAt) != "" {
+			parsed, parseErr := parseUsageTime(entry.ResetAt)
+			if parseErr != nil {
+				return usagecore.Snapshot{}, parseErr
+			}
+			resetAt = parsed
+		}
+		entries = append(entries, usagecore.EntryInput{
+			LimitID:              entry.LimitID,
+			LimitName:            entry.LimitName,
+			Bucket:               entry.Bucket,
+			Kind:                 usagecore.Kind(entry.Kind),
+			Scope:                usagecore.Scope(entry.Scope),
+			ScopeKey:             entry.ScopeKey,
+			HasRemaining:         entry.HasRemaining,
+			RemainingBasisPoints: uint16(entry.RemainingBasisPoints),
+			WindowSeconds:        entry.WindowSeconds,
+			ResetAt:              resetAt,
+			Availability:         usagecore.Availability(entry.Availability),
+		})
+	}
+	return usagecore.NewSnapshot(usagecore.SnapshotInput{
+		AccountRef: accountRef,
+		ProviderID: providerID,
+		Source:     input.Source,
+		PlanType:   input.PlanType,
+		CapturedAt: capturedAt,
+		Entries:    entries,
+	})
+}
+
+func parseUsageTime(value string) (time.Time, error) {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return time.Time{}, errInvalidQuery
+	}
+	if millis, err := strconv.ParseInt(text, 10, 64); err == nil {
+		return time.UnixMilli(millis).UTC(), nil
+	}
+	parsed, err := time.Parse(time.RFC3339, text)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed.UTC(), nil
 }
 
 // handleAccountUsageRefresh 显式请求一次上游刷新并返回已持久化快照。
@@ -617,13 +883,26 @@ func (handler *Handler) createAccount(
 		writeRequestDecodeError(response, err)
 		return
 	}
-	credential, err := handler.staticCredentials.BuildStatic(
-		input.ProviderID,
-		input.Auth.Kind,
-		input.Auth.APIKey,
-		input.Auth.AuthToken,
-		input.Auth.BaseURL,
-	)
+	var credential accountapp.Credential
+	var err error
+	if input.Auth.Kind == gemini.AuthKindVertex {
+		credential, err = handler.staticCredentials.BuildVertex(
+			input.ProviderID,
+			input.Auth.ProjectID,
+			input.Auth.Location,
+			input.Auth.APIKey,
+			input.Auth.BaseURL,
+			input.Auth.Placeholder,
+		)
+	} else {
+		credential, err = handler.staticCredentials.BuildStatic(
+			input.ProviderID,
+			input.Auth.Kind,
+			input.Auth.APIKey,
+			input.Auth.AuthToken,
+			input.Auth.BaseURL,
+		)
+	}
 	if err != nil {
 		writeStaticCredentialInputError(response, err)
 		return

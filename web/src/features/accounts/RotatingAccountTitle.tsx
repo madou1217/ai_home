@@ -3,6 +3,7 @@
 import React from 'react';
 import { Tooltip, message } from 'antd';
 import type { Account } from '@/types';
+import { buildAccountTitleItems } from './account-title-items';
 
 // 账号标题的「多身份轮播」。
 //
@@ -13,25 +14,12 @@ import type { Account } from '@/types';
 //   * 鼠标移入暂停，移出恢复；
 //   * 点击复制当前文本；
 //   * 按住左右拖拽切换上一项/下一项（超过 32px 才算拖拽，避免误触）。
+//
+// 轮播项的生成规则在 ./account-title-items（纯 TS，便于 node --test 直接覆盖）。
+export { buildAccountTitleItems } from './account-title-items';
 
 const ROTATE_INTERVAL_MS = 4000;
 const DRAG_STEP_PX = 32;
-
-export function buildAccountTitleItems(record: Account): string[] {
-  const items: string[] = [];
-  const push = (value: string) => {
-    const text = String(value || '').trim();
-    if (text && !items.includes(text)) items.push(text);
-  };
-  push(record.displayId ? `#${record.displayId}` : '');
-  const name = String(record.displayName || '').trim();
-  push(name);
-  const email = String(record.email || '').trim();
-  const phone = /^(\d{6,})@phone\.local$/i.exec(email);
-  if (phone) push(phone[1]);
-  if (email && email !== name) push(email);
-  return items;
-}
 
 interface RotatingAccountTitleProps {
   record: Account;

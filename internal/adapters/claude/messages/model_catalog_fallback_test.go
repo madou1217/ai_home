@@ -1,0 +1,204 @@
+package messages
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
+)
+
+func TestModelCatalogCandidatesFollowNodeOrder(t *testing.T) {
+	t.Parallel()
+	endpoints := modelCatalogCandidates("https://api.deepseek.com/anthropic")
+	expected := []string{
+		"https://api.deepseek.com/anthropic/models",
+		"https://api.deepseek.com/anthropic/v1/models",
+		"https://api.deepseek.com/v1/models",
+		"https://api.deepseek.com/models",
+	}
+	if strings.Join(endpoints, ",") != strings.Join(expected, ",") {
+		t.Fatalf("endpoints = %v", endpoints)
+	}
+	// base 已带版本段时不再拼 /v1/models；origin 候选与 base 去重。
+	got := modelCatalogCandidates("https://proxy.example.com/v1")
+	if strings.Join(got, ",") != "https://proxy.example.com/v1/models,https://proxy.example.com/models" {
+		t.Fatalf("versioned endpoints = %v", got)
+	}
+	if got := modelCatalogCandidates("https://proxy.example.com"); len(got) != 2 {
+		t.Fatalf("origin endpoints = %v", got)
+	}
+}
+
+func TestModelCatalogCandidatesKeepExplicitModelsEndpoint(t *testing.T) {
+	t.Parallel()
+	base := "https://gateway.example.com/anthropic/v1/models"
+	endpoints := modelCatalogCandidates(base)
+	if len(endpoints) == 0 || endpoints[0] != base {
+		t.Fatalf("endpoints = %v", endpoints)
+	}
+	for _, endpoint := range endpoints {
+		if strings.Contains(endpoint, "/models/models") || strings.Contains(endpoint, "/models/v1/models") {
+			t.Fatalf("endpoint was re-suffixed: %s", endpoint)
+		}
+	}
+}
+
+func TestFetchModelCatalogUsesExplicitEndpointOnce(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests++
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/anthropic/v1/models" {
+			response.WriteHeader(http.StatusNotFound)
+			_, _ = response.Write([]byte(`{"ok":false}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"data":[{"id":"claude-proxy-1"}],"has_more":false,"first_id":"claude-proxy-1","last_id":"claude-proxy-1"}`))
+	}))
+	defer server.Close()
+	catalog, err := fetchModelCatalog(
+		context.Background(),
+		server.Client(),
+		modelCatalogAuth{baseURL: server.URL + "/anthropic/v1/models", headerName: "x-api-key", headerValue: "sk-test"},
+	)
+	if err != nil {
+		t.Fatalf("fetchModelCatalog() error = %v", err)
+	}
+	if len(catalog.models) != 1 || catalog.models[0] != "claude-proxy-1" {
+		t.Fatalf("models = %v", catalog.models)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
+func TestFetchCatalogAtAcceptsOpenAIShapeOnce(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.URL.Path != "/anthropic/v1/models" {
+			response.Header().Set("Content-Type", "application/json")
+			response.WriteHeader(http.StatusNotFound)
+			_, _ = response.Write([]byte(`{"ok":false}`))
+			return
+		}
+		if request.Header.Get("x-api-key") != "sk-test" {
+			t.Errorf("x-api-key = %q", request.Header.Get("x-api-key"))
+		}
+		if request.Header.Get("anthropic-version") != anthropicVersion {
+			t.Errorf("anthropic-version = %q", request.Header.Get("anthropic-version"))
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"object":"list","data":[{"id":"deepseek-flash"},{"id":"deepseek-v4-pro"},{"id":"deepseek-flash"}]}`))
+	}))
+	defer server.Close()
+	models, err := fetchCatalogAt(
+		context.Background(),
+		server.Client(),
+		modelCatalogAuth{baseURL: server.URL + "/anthropic", headerName: "x-api-key", headerValue: "sk-test"},
+		server.URL+"/anthropic/v1/models",
+	)
+	if err != nil {
+		t.Fatalf("fetchCatalogAt() error = %v", err)
+	}
+	if strings.Join(models, ",") != "deepseek-flash,deepseek-v4-pro" {
+		t.Fatalf("models = %v", models)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
+func TestFetchModelCatalogFallsBackToOrigin(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v1/models", "/models":
+			_, _ = response.Write([]byte(`{"object":"list","data":[{"id":"deepseek-flash"}]}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+			_, _ = response.Write([]byte(`{"ok":false}`))
+		}
+	}))
+	defer server.Close()
+	catalog, err := fetchModelCatalog(
+		context.Background(),
+		server.Client(),
+		modelCatalogAuth{baseURL: server.URL + "/anthropic", headerName: "x-api-key", headerValue: "sk-test"},
+	)
+	if err != nil {
+		t.Fatalf("fetchModelCatalog() error = %v", err)
+	}
+	if strings.Join(catalog.models, ",") != "deepseek-flash" {
+		t.Fatalf("models = %v", catalog.models)
+	}
+}
+
+func TestFetchModelCatalogReportsEveryCandidate(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusUnauthorized)
+		_, _ = response.Write([]byte(`{"error":"unauthorized"}`))
+	}))
+	defer server.Close()
+	_, err := fetchModelCatalog(
+		context.Background(),
+		server.Client(),
+		modelCatalogAuth{baseURL: server.URL + "/anthropic", headerName: "x-api-key", headerValue: "sk-test"},
+	)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	message := err.Error()
+	for _, endpoint := range modelCatalogCandidates(server.URL + "/anthropic") {
+		if !strings.Contains(message, endpoint) {
+			t.Fatalf("error does not mention %s: %s", endpoint, message)
+		}
+	}
+	if !strings.Contains(message, "status=401") {
+		t.Fatalf("error does not carry the status: %s", message)
+	}
+	if strings.Contains(message, "media_type=missing") {
+		t.Fatalf("error still reports a missing media type: %s", message)
+	}
+}
+
+func TestDiscoverModelsFallsBackForProxyPrefix(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v1/models", "/models":
+			_, _ = response.Write([]byte(`{"object":"list","data":[{"id":"deepseek-flash"}]}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+			_, _ = response.Write([]byte(`{"ok":false}`))
+		}
+	}))
+	defer server.Close()
+	auth, err := claudeauth.NewAPIKeyAuth(claudeauth.APIKeyInput{
+		BaseURL: server.URL + "/anthropic",
+		APIKey:  "sk-test",
+	})
+	if err != nil {
+		t.Fatalf("NewAPIKeyAuth() error = %v", err)
+	}
+	source, err := NewModelCatalogSource(server.Client())
+	if err != nil {
+		t.Fatalf("NewModelCatalogSource() error = %v", err)
+	}
+	models, err := source.DiscoverModels(context.Background(), auth)
+	if err != nil {
+		t.Fatalf("DiscoverModels() error = %v", err)
+	}
+	if len(models) != 1 || models[0] != "deepseek-flash" {
+		t.Fatalf("models = %v", models)
+	}
+}

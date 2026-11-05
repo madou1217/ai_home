@@ -29,8 +29,9 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULTS = Object.freeze({
   ref: 'origin/main',
   upload: 'rsync',
-  unit: 'aih-server',
+  unit: 'com.meadeo.ai_home',
   port: 9527,
+  sshPort: 22,
   readyTimeoutSec: 60
 });
 const TARGETS = Object.freeze({
@@ -53,6 +54,7 @@ Usage:
 
 Options:
   --ssh <user@host>       SSH target (required)
+  --ssh-port <n>          SSH port, default ${DEFAULTS.sshPort}
   --ssh-key <pem>         SSH identity file
   --ref <git ref>         Pushed commit to build from, default ${DEFAULTS.ref}
   --artifact <path>       Prebuilt aih-<version>-<target>.run/.exe (skips the local build)
@@ -76,8 +78,7 @@ function parseArgs(argv, env = process.env) {
   const options = {
     ssh: '',
     sshKey: '',
-    ...DEFAULTS,
-    artifact: '',
+    ...DEFAULTS,    artifact: '',
     target: '',
     installDir: '',
     webDist: '',
@@ -97,6 +98,7 @@ function parseArgs(argv, env = process.env) {
     };
     if (arg === '-h' || arg === '--help') options.help = true;
     else if (arg === '--ssh') options.ssh = next();
+    else if (arg === '--ssh-port') options.sshPort = Number(next());
     else if (arg === '--ssh-key') options.sshKey = next();
     else if (arg === '--ref') options.ref = next();
     else if (arg === '--artifact') options.artifact = next();
@@ -115,6 +117,7 @@ function parseArgs(argv, env = process.env) {
   if (!options.help) {
     if (!options.ssh) options.ssh = String(env.AIH_DEPLOY_SSH || '').trim();
     if (!options.ssh) throw new Error('missing --ssh (or AIH_DEPLOY_SSH)');
+    if (!Number.isInteger(options.sshPort) || options.sshPort < 1 || options.sshPort > 65535) throw new Error('invalid --ssh-port');
     if (!/^[A-Za-z0-9._-]+$/.test(options.unit)) throw new Error('invalid --unit');
     if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) throw new Error('invalid --port');
     if (options.target && !TARGETS[options.target]) throw new Error(`invalid --target (expected ${Object.keys(TARGETS).join('|')})`);
@@ -131,6 +134,13 @@ function shQuote(value) {
 
 function psQuote(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+// Windows PowerShell 的 `-Command -` 按行执行 stdin，遇到多行 if/try/for 块会静默
+// 什么都不做（退出码仍是 0）。部署脚本全是块结构，必须整段编码后一次性交给
+// -EncodedCommand，才能保证脚本按一个整体执行并拿到真实退出码。
+function encodePowerShellCommand(script) {
+  return Buffer.from(String(script || ''), 'utf16le').toString('base64');
 }
 
 function run(command, args, options = {}) {
@@ -150,6 +160,17 @@ function sshArgs(options) {
   return [
     '-o', 'BatchMode=yes',
     '-o', 'ConnectTimeout=20',
+    ...(options.sshPort && Number(options.sshPort) !== 22 ? ['-p', String(options.sshPort)] : []),
+    ...(options.sshKey ? ['-i', options.sshKey.replace(/^~(?=\/)/, os.homedir())] : [])
+  ];
+}
+
+// scp 的端口旗标是 -P（-p 在 scp 里是保留时间戳），不能复用 sshArgs。
+function scpArgs(options) {
+  return [
+    '-o', 'BatchMode=yes',
+    '-o', 'ConnectTimeout=20',
+    ...(options.sshPort && Number(options.sshPort) !== 22 ? ['-P', String(options.sshPort)] : []),
     ...(options.sshKey ? ['-i', options.sshKey.replace(/^~(?=\/)/, os.homedir())] : [])
   ];
 }
@@ -187,7 +208,7 @@ const UPLOAD_TRANSPORTS = Object.freeze({
     resumable: false,
     maxAttempts: 3,
     args(options, localPath, remotePath) {
-      return ['-q', ...sshArgs(options), localPath, `${options.ssh}:${remotePath}`];
+      return ['-q', ...scpArgs(options), localPath, `${options.ssh}:${remotePath}`];
     }
   })
 });
@@ -372,6 +393,16 @@ echo "[remote] installed $INSTALL_DIR/aih ($VERSION)"
 if [ "$RESTART" = "1" ]; then
   export AIH_CLI_PATH="$INSTALL_DIR/aih"
   export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  # 旧源码部署可能留下一个不属于本启动器的 9527 监听者；它会让 readyz 假通过。
+  if command -v ss >/dev/null 2>&1; then
+    STALE_PID=$(ss -ltnp "sport = :$PORT" 2>/dev/null | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | head -n 1)
+    if [ -n "$STALE_PID" ]; then
+      STALE_CMD=$(tr '\\0' ' ' < "/proc/$STALE_PID/cmdline" 2>/dev/null || true)
+      case "$STALE_CMD" in
+        *ai-home*|*aih*server*serve*) kill "$STALE_PID" 2>/dev/null || true; sleep 1 ;;
+      esac
+    fi
+  fi
   "$INSTALL_DIR/aih" server autostart install
   systemctl --user restart "$UNIT"
   READY=0
@@ -393,7 +424,9 @@ function buildWindowsInstallScript(options, artifact, version, target) {
   const installDir = options.installDir || defaultInstallDir(target);
   const restart = options.restart;
   return `$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $Artifact = ${psQuote(artifact)}
+if (-not [System.IO.Path]::IsPathRooted($Artifact)) { $Artifact = Join-Path $env:USERPROFILE $Artifact }
 $Version = ${psQuote(version)}
 $InstallDir = ${psQuote(installDir)}.Replace('%LOCALAPPDATA%', $env:LOCALAPPDATA)
 $Restart = ${restart ? '1' : '0'}
@@ -409,8 +442,25 @@ Move-Item -Force -LiteralPath $Artifact -Destination $Target
 Write-Output "[remote] installed $Target ($Version)"
 if ($Restart -eq '1') {
   $env:AIH_CLI_PATH = $Target
+  # 旧源码部署可能留下一个不属于本启动器的 9527 监听者；它会让 readyz 假通过。
+  # 只清理占用本端口的非本启动器进程，避免新包“部署成功”但实际仍跑着旧代码。
+  $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($Listener -and $Listener.OwningProcess) {
+    $Owner = Get-Process -Id $Listener.OwningProcess -ErrorAction SilentlyContinue
+    $OwnerPath = ''
+    try { $OwnerPath = [string]$Owner.Path } catch {}
+    if ($OwnerPath -and $OwnerPath -ne $Target) {
+      Stop-Process -Id $Listener.OwningProcess -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 1
+    }
+  }
   & $Target server autostart install | Out-Null
-  & $Target server restart | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "[remote] server autostart install failed (exit $LASTEXITCODE)" }
+  # SSH / 计划任务的子进程会随会话结束被杀；WMI 创建的进程挂在 WmiPrvSE 下，
+  # 断开 SSH 后仍然存活，这是远程启动 Windows 服务的确定做法。
+  $ServeCommand = '"' + $Target + '" server serve --host 127.0.0.1 --port ' + $Port
+  $Created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $ServeCommand }
+  if ($Created.ReturnValue -ne 0) { throw "[remote] could not start the packaged server (Win32_Process=$($Created.ReturnValue))" }
   $Ready = 0
   for ($i = 0; $i -lt ${options.readyTimeoutSec}; $i += 1) {
     try {
@@ -422,7 +472,9 @@ if ($Restart -eq '1') {
   if ($Ready -ne 1) { throw '[remote] readyz did not answer ok' }
   Write-Output '[remote] readyz ok'
 }
-& $Target help | Select-Object -First 1
+& $Target help | Out-Null
+Write-Output '[remote] launcher ok'
+exit 0
 `;
 }
 
@@ -477,8 +529,9 @@ function main(argv = process.argv.slice(2)) {
     if (isWindowsTarget(target)) {
       run('ssh', [
         ...sshArgs(options), options.ssh,
-        'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', '-'
-      ], { input: script });
+        'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+        '-EncodedCommand', encodePowerShellCommand(script)
+      ]);
     } else {
       run('ssh', [
         ...sshArgs(options), options.ssh,
@@ -508,6 +561,7 @@ module.exports = {
   UPLOAD_TRANSPORTS,
   buildLinuxInstallScript,
   buildWindowsInstallScript,
+  encodePowerShellCommand,
   inferTargetFromArtifact,
   isWindowsTarget,
   parseArgs,
@@ -516,7 +570,9 @@ module.exports = {
   remoteArtifactPath,
   resolveDeployTarget,
   rsyncAppendFlag,
+  scpArgs,
   shQuote,
+  sshArgs,
   targetKey,
   uploadArchive
 };

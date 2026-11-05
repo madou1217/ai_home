@@ -24,10 +24,13 @@ type createAccountRequest struct {
 
 // createAccountAuthDTO 显式区分 API Key 与 Claude Auth Token。
 type createAccountAuthDTO struct {
-	Kind      string `json:"kind"`
-	APIKey    string `json:"api_key"`
-	AuthToken string `json:"auth_token"`
-	BaseURL   string `json:"base_url"`
+	Kind        string `json:"kind"`
+	APIKey      string `json:"api_key"`
+	AuthToken   string `json:"auth_token"`
+	BaseURL     string `json:"base_url"`
+	ProjectID   string `json:"project_id"`
+	Location    string `json:"location"`
+	Placeholder bool   `json:"placeholder"`
 }
 
 // updateAccountRequest 是账号基础资源当前允许修改的字段。
@@ -58,6 +61,71 @@ type updateCredentialAuthDTO struct {
 	APIKey    string `json:"api_key"`
 	AuthToken string `json:"auth_token"`
 	BaseURL   string `json:"base_url"`
+}
+
+// editCredentialRequest 是 WebUI 形态的静态凭据编辑 DTO：空 api_key 沿用当前密钥，
+// include_base_url=false 沿用当前地址。
+type editCredentialRequest struct {
+	APIKey         string `json:"api_key"`
+	BaseURL        string `json:"base_url"`
+	IncludeBaseURL bool   `json:"include_base_url"`
+	AuthKind       string `json:"auth_kind"`
+}
+
+// replaceUsageRequest 是外部采集的完整额度快照。
+//
+// Collected=true 表示采集方已完成凭据代次门禁（Node 的 go-account-sync），
+// Go 不再要求能解析该账号的当前凭据；Go 自己的探针必须留空以启用凭据 CAS。
+type replaceUsageRequest struct {
+	Source     string              `json:"source"`
+	PlanType   string              `json:"plan_type"`
+	CapturedAt string              `json:"captured_at"`
+	Collected  bool                `json:"collected"`
+	Entries    []replaceUsageEntry `json:"entries"`
+}
+
+type replaceUsageEntry struct {
+	LimitID              string `json:"limit_id"`
+	LimitName            string `json:"limit_name"`
+	Bucket               string `json:"bucket"`
+	Kind                 string `json:"kind"`
+	Scope                string `json:"scope"`
+	ScopeKey             string `json:"scope_key"`
+	HasRemaining         bool   `json:"has_remaining"`
+	RemainingBasisPoints int    `json:"remaining_basis_points"`
+	WindowSeconds        int64  `json:"window_seconds"`
+	ResetAt              string `json:"reset_at"`
+	Availability         string `json:"availability"`
+}
+
+// replaceUsageDocumentRequest 是采集方写入的完整 Provider 快照文档。
+// Payload 原样保存：字段语义属于 Provider，Go 只校验它是 JSON 对象。
+type replaceUsageDocumentRequest struct {
+	Kind       string          `json:"kind"`
+	Source     string          `json:"source"`
+	CapturedAt string          `json:"captured_at"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
+// usageDocumentView 原样返回快照文档；列表请求可省略 payload 只做对账。
+type usageDocumentView struct {
+	AccountRef   string          `json:"account_ref"`
+	ProviderID   string          `json:"provider_id"`
+	Kind         string          `json:"kind"`
+	Source       string          `json:"source"`
+	CapturedAt   string          `json:"captured_at"`
+	CapturedAtMS int64           `json:"captured_at_ms"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
+}
+
+// usageDocumentResponse 是单账号文档的成功 envelope。
+type usageDocumentResponse struct {
+	Data usageDocumentView `json:"data"`
+}
+
+// usageDocumentListResponse 是文档集合的成功 envelope。
+type usageDocumentListResponse struct {
+	Data []usageDocumentView `json:"data"`
 }
 
 // updateAccountModelRequest 是单个账号模型人工策略更新 DTO。
@@ -154,12 +222,14 @@ type accountModelListResponse struct {
 
 // accountUsageView 是账号最近一次成功额度快照的完整非敏感投影。
 type accountUsageView struct {
-	AccountRef string                  `json:"account_ref"`
-	ProviderID string                  `json:"provider_id"`
-	Source     string                  `json:"source"`
-	CapturedAt string                  `json:"captured_at"`
-	Stale      bool                    `json:"stale"`
-	Entries    []accountUsageEntryView `json:"entries"`
+	AccountRef   string                  `json:"account_ref"`
+	ProviderID   string                  `json:"provider_id"`
+	Source       string                  `json:"source"`
+	PlanType     string                  `json:"plan_type"`
+	CapturedAt   string                  `json:"captured_at"`
+	CapturedAtMS int64                   `json:"captured_at_ms"`
+	Stale        bool                    `json:"stale"`
+	Entries      []accountUsageEntryView `json:"entries"`
 }
 
 // accountUsageEntryView 保留 Provider 额度维度和显式可空数值。
@@ -290,12 +360,14 @@ func newAccountModelViews(models []accountapp.AccountModel) []accountModelView {
 func newAccountUsageResponse(result usageapp.ReadResult) accountUsageResponse {
 	snapshot := result.Snapshot()
 	return accountUsageResponse{Data: accountUsageView{
-		AccountRef: snapshot.AccountRef().String(),
-		ProviderID: snapshot.ProviderID(),
-		Source:     snapshot.Source(),
-		CapturedAt: formatTime(snapshot.CapturedAt()),
-		Stale:      result.Stale(),
-		Entries:    newAccountUsageEntryViews(snapshot.Entries()),
+		AccountRef:   snapshot.AccountRef().String(),
+		ProviderID:   snapshot.ProviderID(),
+		Source:       snapshot.Source(),
+		PlanType:     snapshot.PlanType(),
+		CapturedAt:   formatTime(snapshot.CapturedAt()),
+		CapturedAtMS: snapshot.CapturedAt().UnixMilli(),
+		Stale:        result.Stale(),
+		Entries:      newAccountUsageEntryViews(snapshot.Entries()),
 	}}
 }
 

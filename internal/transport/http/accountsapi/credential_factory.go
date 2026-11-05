@@ -6,6 +6,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/accounts/gemini"
 )
 
 var (
@@ -25,6 +26,14 @@ type StaticCredentialFactory interface {
 		apiKey string,
 		authToken string,
 		baseURL string,
+	) (accountapp.Credential, error)
+	BuildVertex(
+		providerID string,
+		projectID string,
+		location string,
+		apiKey string,
+		baseURL string,
+		placeholder bool,
 	) (accountapp.Credential, error)
 }
 
@@ -114,6 +123,31 @@ func (factory *BuiltinStaticCredentialFactory) BuildStatic(
 	default:
 		return nil, ErrUnsupportedStaticAuthKind
 	}
+}
+
+// BuildVertex 只支持 Gemini Vertex 占位凭据；其他 Provider 一律拒绝。
+func (factory *BuiltinStaticCredentialFactory) BuildVertex(
+	providerID string,
+	projectID string,
+	location string,
+	apiKey string,
+	baseURL string,
+	placeholder bool,
+) (accountapp.Credential, error) {
+	if factory == nil || providerID != gemini.ProviderID {
+		return nil, ErrUnsupportedProvider
+	}
+	credential, err := gemini.NewVertexAuth(gemini.VertexInput{
+		ProjectID:   projectID,
+		Location:    location,
+		APIKey:      apiKey,
+		BaseURL:     baseURL,
+		Placeholder: placeholder,
+	})
+	if err != nil {
+		return nil, ErrInvalidStaticCredentialInput
+	}
+	return credential, nil
 }
 
 // buildCodexAPIKeyCredential 通过 Codex 领域构造器校验 API Key。

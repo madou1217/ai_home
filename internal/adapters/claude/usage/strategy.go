@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,10 +24,15 @@ import (
 const (
 	officialBaseURL = "https://api.anthropic.com"
 	usagePath       = "/api/oauth/usage"
+	profilePath     = "/api/oauth/profile"
 	sourceID        = "claude_oauth_usage"
 	oauthBeta       = "oauth-2025-04-20"
 	claudeUserAgent = "claude-code/2.1.88"
 	maxResponseBody = 1 << 20
+	// profileTimeout 是补套餐用的 best-effort 请求上限：它失败不能拖慢或拖垮额度采集。
+	profileTimeout = 5 * time.Second
+	// familyBucketPrefix 是模型族周额度的键前缀（seven_day_opus / seven_day_fable…）。
+	familyBucketPrefix = "seven_day_"
 )
 
 var (
@@ -61,20 +67,23 @@ func (*Strategy) ProviderID() string {
 	return claudeauth.ProviderID
 }
 
-// MatchesModelFamily 使用 Claude 官方额度键中的 opus/sonnet 模型族。
+// nonFamilyBuckets 是同样以 seven_day_ 开头、但不属于模型族的账号级键。
+var nonFamilyBuckets = map[string]struct{}{
+	"seven_day":            {},
+	"seven_day_oauth_apps": {},
+}
+
+// MatchesModelFamily 按额度键里的族名做包含匹配，不维护族名清单：
+// 上游新增模型族（fable 等）时自动生效，不需要改代码。
 func (*Strategy) MatchesModelFamily(
 	scopeKey string,
 	modelID runtimecore.ModelID,
 ) bool {
-	value := strings.ToLower(modelID.String())
-	switch scopeKey {
-	case "opus":
-		return strings.Contains(value, "opus")
-	case "sonnet":
-		return strings.Contains(value, "sonnet")
-	default:
+	family := strings.ToLower(strings.TrimSpace(scopeKey))
+	if family == "" {
 		return false
 	}
+	return strings.Contains(strings.ToLower(modelID.String()), family)
 }
 
 // FetchUsage 使用受支持 Bearer 凭据读取完整 Claude 当前额度。
@@ -130,6 +139,7 @@ func (strategy *Strategy) FetchUsage(
 		AccountRef: accountRef,
 		ProviderID: claudeauth.ProviderID,
 		Source:     sourceID,
+		PlanType:   strategy.fetchPlanType(ctx, baseURL, token),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -173,8 +183,20 @@ func newRequest(
 	baseURL string,
 	token string,
 ) (*http.Request, error) {
-	endpoint, err := usageEndpoint(baseURL)
+	endpoint, err := oauthEndpoint(baseURL, usagePath)
 	if err != nil || token == "" {
+		return nil, ErrInvalidResponse
+	}
+	return newGET(ctx, endpoint, token)
+}
+
+// newGET 创建带 OAuth Header 的 GET 请求。
+func newGET(
+	ctx context.Context,
+	endpoint string,
+	token string,
+) (*http.Request, error) {
+	if token == "" {
 		return nil, ErrInvalidResponse
 	}
 	request, err := http.NewRequestWithContext(
@@ -193,8 +215,8 @@ func newRequest(
 	return request, nil
 }
 
-// usageEndpoint 在账号规范 Base URL 后精确追加 OAuth usage 路径。
-func usageEndpoint(baseURL string) (string, error) {
+// oauthEndpoint 在账号规范 Base URL 后精确追加 OAuth 路径。
+func oauthEndpoint(baseURL string, path string) (string, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil ||
 		parsed.Scheme == "" ||
@@ -203,19 +225,110 @@ func usageEndpoint(baseURL string) (string, error) {
 		parsed.Fragment != "" {
 		return "", ErrInvalidResponse
 	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + usagePath
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + path
 	parsed.RawPath = ""
 	return parsed.String(), nil
 }
 
 // usagePayload 对应 Claude Code services/api/usage.ts 的完整当前字段。
+//
+// 模型族周额度不写死族名：任何 seven_day_<family> 键都会成为一条 model_family
+// 条目，上游新增模型族（fable 等）时不需要改这里。
 type usagePayload struct {
-	FiveHour          *rateLimit  `json:"five_hour"`
-	SevenDay          *rateLimit  `json:"seven_day"`
-	SevenDayOAuthApps *rateLimit  `json:"seven_day_oauth_apps"`
-	SevenDayOpus      *rateLimit  `json:"seven_day_opus"`
-	SevenDaySonnet    *rateLimit  `json:"seven_day_sonnet"`
-	ExtraUsage        *extraUsage `json:"extra_usage"`
+	FiveHour          *rateLimit
+	SevenDay          *rateLimit
+	SevenDayOAuthApps *rateLimit
+	ExtraUsage        *extraUsage
+	// Families 按族名索引（opus / sonnet / fable …），键已去掉 seven_day_ 前缀。
+	Families map[string]*rateLimit
+}
+
+// UnmarshalJSON 逐键解码：已知键走固定字段（形状不对就报错），
+// 其余 seven_day_<family> 归入 Families（形状不认识只丢这一族，不影响整次采集）。
+func (payload *usagePayload) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var err error
+	if payload.FiveHour, err = decodeRateLimit(fields["five_hour"]); err != nil {
+		return err
+	}
+	if payload.SevenDay, err = decodeRateLimit(fields["seven_day"]); err != nil {
+		return err
+	}
+	if payload.SevenDayOAuthApps, err = decodeRateLimit(fields["seven_day_oauth_apps"]); err != nil {
+		return err
+	}
+	if payload.ExtraUsage, err = decodeExtraUsage(fields["extra_usage"]); err != nil {
+		return err
+	}
+	for key, value := range fields {
+		family, isFamily := familyFromBucket(key)
+		if !isFamily {
+			continue
+		}
+		limit, err := decodeRateLimit(value)
+		if err != nil || limit == nil {
+			continue
+		}
+		if payload.Families == nil {
+			payload.Families = make(map[string]*rateLimit, 2)
+		}
+		payload.Families[family] = limit
+	}
+	return nil
+}
+
+// familyFromBucket 从额度键里取出模型族名；账号级键与非法族名返回 false。
+//
+// 族名必须是 usagecore 允许的 scope_key（小写标识符），否则整条快照会被拒绝：
+// 一个上游新增的怪键不应该让整次采集失败，直接忽略它。
+func familyFromBucket(bucket string) (string, bool) {
+	if _, accountScoped := nonFamilyBuckets[bucket]; accountScoped {
+		return "", false
+	}
+	if !strings.HasPrefix(bucket, familyBucketPrefix) {
+		return "", false
+	}
+	family := strings.TrimPrefix(bucket, familyBucketPrefix)
+	if family == "" || len(family) > 128 {
+		return "", false
+	}
+	for _, char := range family {
+		switch {
+		case char >= 'a' && char <= 'z':
+		case char >= '0' && char <= '9':
+		case char == '_', char == '.', char == ':', char == '-':
+		default:
+			return "", false
+		}
+	}
+	return family, true
+}
+
+// decodeRateLimit 解析单个额度对象；缺失与 null 按「上游没给」处理。
+func decodeRateLimit(data json.RawMessage) (*rateLimit, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return nil, nil
+	}
+	var limit rateLimit
+	if err := json.Unmarshal(data, &limit); err != nil {
+		return nil, ErrInvalidResponse
+	}
+	return &limit, nil
+}
+
+// decodeExtraUsage 解析 extra usage；缺失与 null 按「上游没给」处理。
+func decodeExtraUsage(data json.RawMessage) (*extraUsage, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return nil, nil
+	}
+	var extra extraUsage
+	if err := json.Unmarshal(data, &extra); err != nil {
+		return nil, ErrInvalidResponse
+	}
+	return &extra, nil
 }
 
 type rateLimit struct {
@@ -243,20 +356,31 @@ func decodePayload(body io.Reader) (usagePayload, error) {
 	return payload, nil
 }
 
+// windowDefinition 是一条待构造的窗口条目。
+type windowDefinition struct {
+	bucket        string
+	limit         *rateLimit
+	scope         usagecore.Scope
+	scopeKey      string
+	windowSeconds int64
+}
+
 // entries 按官方字段顺序构造账号级、模型族级和 extra usage 条目。
 func (payload usagePayload) entries() ([]usagecore.EntryInput, error) {
-	definitions := []struct {
-		bucket        string
-		limit         *rateLimit
-		scope         usagecore.Scope
-		scopeKey      string
-		windowSeconds int64
-	}{
+	definitions := []windowDefinition{
 		{"five_hour", payload.FiveHour, usagecore.ScopeAccount, "", 5 * 60 * 60},
 		{"seven_day", payload.SevenDay, usagecore.ScopeAccount, "", 7 * 24 * 60 * 60},
 		{"seven_day_oauth_apps", payload.SevenDayOAuthApps, usagecore.ScopeAccount, "", 7 * 24 * 60 * 60},
-		{"seven_day_opus", payload.SevenDayOpus, usagecore.ScopeModelFamily, "opus", 7 * 24 * 60 * 60},
-		{"seven_day_sonnet", payload.SevenDaySonnet, usagecore.ScopeModelFamily, "sonnet", 7 * 24 * 60 * 60},
+	}
+	// 模型族按族名排序，保证同一份响应每次产出相同顺序。
+	for _, family := range sortedFamilies(payload.Families) {
+		definitions = append(definitions, windowDefinition{
+			familyBucketPrefix + family,
+			payload.Families[family],
+			usagecore.ScopeModelFamily,
+			family,
+			7 * 24 * 60 * 60,
+		})
 	}
 	var entries []usagecore.EntryInput
 	for _, definition := range definitions {
@@ -283,6 +407,89 @@ func (payload usagePayload) entries() ([]usagecore.EntryInput, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+// profilePayload 是 /api/oauth/profile 里与套餐相关的字段。
+type profilePayload struct {
+	Account struct {
+		HasClaudeMax bool `json:"has_claude_max"`
+		HasClaudePro bool `json:"has_claude_pro"`
+	} `json:"account"`
+	Organization struct {
+		OrganizationType string `json:"organization_type"`
+	} `json:"organization"`
+}
+
+// fetchPlanType 是 best-effort：失败、超时或形状不认识都返回空，不影响额度快照。
+func (strategy *Strategy) fetchPlanType(
+	ctx context.Context,
+	baseURL string,
+	token string,
+) string {
+	endpoint, err := oauthEndpoint(baseURL, profilePath)
+	if err != nil {
+		return ""
+	}
+	profileCtx, cancel := context.WithTimeout(ctx, profileTimeout)
+	defer cancel()
+	request, err := newGET(profileCtx, endpoint, token)
+	if err != nil {
+		return ""
+	}
+	response, err := strategy.client.Do(request)
+	if err != nil || response == nil || response.Body == nil {
+		return ""
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+	if response.StatusCode < http.StatusOK ||
+		response.StatusCode >= http.StatusMultipleChoices {
+		return ""
+	}
+	document, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody+1))
+	if err != nil || len(document) == 0 || len(document) > maxResponseBody {
+		return ""
+	}
+	var profile profilePayload
+	if err := json.Unmarshal(document, &profile); err != nil {
+		return ""
+	}
+	return profilePlanType(profile)
+}
+
+// profilePlanType 从 profile 推导套餐。
+//
+// 不维护套餐清单：organization_type 去掉 claude_ 前缀就是档位名
+// （claude_team → team、claude_fable → fable），上游新增档位不需要改代码。
+// has_claude_max / has_claude_pro 是上游自己的布尔结论，优先于组织类型。
+func profilePlanType(profile profilePayload) string {
+	switch {
+	case profile.Account.HasClaudeMax:
+		return "max"
+	case profile.Account.HasClaudePro:
+		return "pro"
+	}
+	// 先归一（小写、分隔符折叠）再去 claude_ 前缀：这样 "claude_team" 与
+	// "Claude Team" 都能落到 team，与 Node claude-quota-shape 同序。
+	token := strings.TrimPrefix(
+		usagecore.NormalizePlanToken(profile.Organization.OrganizationType),
+		"claude_",
+	)
+	if !usagecore.IsPlanToken(token) {
+		return ""
+	}
+	return token
+}
+
+// sortedFamilies 返回排序后的模型族名，保证条目顺序稳定。
+func sortedFamilies(families map[string]*rateLimit) []string {
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // newWindowEntry 把 Claude 使用率转换为整数剩余基点。

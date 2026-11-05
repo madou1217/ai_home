@@ -25,7 +25,7 @@ const (
 // clientSystemIdentity 是官方 CLI 每次请求的首个 system 块。
 //
 // 取自官方源码 cli/src/constants/prompts.ts:452（本机 Claude Code 快照与
-// clawdcodex 参考仓一致）。官方在其后追加 CWD/Date 两行会话上下文，那属于
+// 外部 Rust 参考仓一致）。官方在其后追加 CWD/Date 两行会话上下文，那属于
 // 本地环境事实，跨协议调用没有等价语义，因此只保留身份行本身，不自造字段。
 const clientSystemIdentity = "You are Claude Code, Anthropic's official CLI for Claude."
 

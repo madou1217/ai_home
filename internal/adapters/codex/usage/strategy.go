@@ -126,6 +126,7 @@ func (strategy *Strategy) FetchUsage(
 		AccountRef: accountRef,
 		ProviderID: codexauth.ProviderID,
 		Source:     sourceID,
+		PlanType:   snapshotPlanType(auth.PlanType()),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -136,6 +137,19 @@ func (strategy *Strategy) FetchUsage(
 		)
 	}
 	return snapshot, nil
+}
+
+// snapshotPlanType 把 ID Token 的套餐 claim 归一成快照里的套餐 token。
+//
+// 不维护套餐清单：上游新增档位（go / pro_lite / 以后的新名字）原样通过，
+// 只排除明确不是套餐的鉴权模式与占位值。不用 PlanFamily 顶替——它把 team
+// 归成 business，会让窗口统计的套餐值与 Node 分叉。
+func snapshotPlanType(rawPlan string) string {
+	token := usagecore.NormalizePlanToken(rawPlan)
+	if !usagecore.IsPlanToken(token) {
+		return ""
+	}
+	return token
 }
 
 // newRequest 复制官方 Codex 客户端所需的最小认证与身份 Header。

@@ -43,6 +43,12 @@ var (
 
 // SnapshotStore 提供账号当前额度的原子全量替换和点查。
 type SnapshotStore interface {
+	// ReplaceUsageSnapshot 在一个事务中替换同账号的全部当前额度条目。
+	// 只用于采集方已按自己的代次门禁确认过的快照（见 ReplaceCollectedUsage）。
+	ReplaceUsageSnapshot(
+		ctx context.Context,
+		snapshot usagecore.Snapshot,
+	) error
 	// ReplaceUsageSnapshotIfCredentialVersion 只在采集使用的凭据仍是当前代次时，
 	// 在一个事务中替换同账号的全部当前额度条目。
 	ReplaceUsageSnapshotIfCredentialVersion(
@@ -55,6 +61,42 @@ type SnapshotStore interface {
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 	) (usagecore.Snapshot, error)
+}
+
+// UsageDocumentStore 保存采集方生产的完整 Provider 快照文档。
+//
+// 文档是 WebUI 的直接渲染输入，Go 只校验身份与 JSON 形状，不解释 Provider 字段；
+// 归一化的可调度事实仍走 SnapshotStore，两者由同一次采集写入。
+type UsageDocumentStore interface {
+	// ReplaceUsageDocument 覆盖账号当前文档；更旧的采集时间不得覆盖新文档。
+	ReplaceUsageDocument(
+		ctx context.Context,
+		document usagecore.Document,
+	) error
+	// ListUsageDocuments 按 Provider / 账号过滤返回文档全集。
+	ListUsageDocuments(
+		ctx context.Context,
+		query DocumentQuery,
+	) ([]usagecore.Document, error)
+	// ReplaceUsageDocumentQuotaState 更新文档上的物化额度状态。
+	ReplaceUsageDocumentQuotaState(
+		ctx context.Context,
+		state DocumentQuotaState,
+	) error
+}
+
+// DocumentQuotaState 是物化在快照文档上的账号级额度状态。
+type DocumentQuotaState struct {
+	AccountRef accountcore.AccountRef
+	Status     string
+	Reason     string
+	Remaining  usagecore.Remaining
+}
+
+// DocumentQuery 过滤账号快照文档；空过滤表示全部。
+type DocumentQuery struct {
+	Providers   []string
+	AccountRefs []accountcore.AccountRef
 }
 
 // CredentialSnapshotResolver 返回完成必要 OAuth 刷新后的当前凭据快照。
@@ -103,6 +145,31 @@ type ProviderStrategy interface {
 	MatchesModelFamily(scopeKey string, modelID runtimecore.ModelID) bool
 }
 
+// CredentialRefresher 在探测前刷新过期的 OAuth 凭据（可选端口）。
+//
+// kiro 这类账号的 access token 会过期；额度探测与模型发现共用同一个刷新器，
+// 刷新成功后 CAS 落库，探测使用新凭据并沿用新的凭据版本。
+type CredentialRefresher interface {
+	RefreshCredential(
+		ctx context.Context,
+		snapshot accountapp.CredentialSnapshot,
+	) (accountapp.CredentialSnapshot, error)
+}
+
+// ProviderSnapshotStrategy 让策略在一次采集里同时产出展示文档（可选）。
+//
+// 归一化 Snapshot 只保存路由事实（剩余基点/窗口），WebUI 的 Provider 专属视图
+// 需要原始单位（total/used/credits）；放在同一次请求里返回，避免二次采集。
+type ProviderSnapshotStrategy interface {
+	ProviderStrategy
+	FetchUsageWithDocument(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		credential accountapp.Credential,
+		capturedAt time.Time,
+	) (usagecore.Snapshot, *usagecore.Document, error)
+}
+
 // Clock 返回额度采集和陈旧判断使用的业务时间。
 type Clock func() time.Time
 
@@ -110,11 +177,14 @@ type Clock func() time.Time
 type Dependencies struct {
 	Catalog     *providers.Catalog
 	Store       SnapshotStore
+	Documents   UsageDocumentStore
 	Credentials CredentialSnapshotResolver
 	Models      AccountModelReader
 	Runtime     RuntimeProjection
 	Strategies  []ProviderStrategy
-	Clock       Clock
+	// Refresher 可选：为需要刷新 OAuth 凭据的 Provider 在探测前续期。
+	Refresher CredentialRefresher
+	Clock     Clock
 }
 
 // ReadResult 是管理 API 读取的当前快照和陈旧状态。
@@ -148,10 +218,12 @@ func (result ReadResult) Stale() bool {
 type Service struct {
 	catalog     *providers.Catalog
 	store       SnapshotStore
+	documents   UsageDocumentStore
 	credentials CredentialSnapshotResolver
 	models      AccountModelReader
 	runtime     RuntimeProjection
 	strategies  map[string]ProviderStrategy
+	refresher   CredentialRefresher
 	clock       Clock
 	flights     refreshFlightGroup
 }
@@ -160,6 +232,7 @@ type Service struct {
 func NewService(dependencies Dependencies) (*Service, error) {
 	if dependencies.Catalog == nil ||
 		dependencies.Store == nil ||
+		dependencies.Documents == nil ||
 		dependencies.Credentials == nil ||
 		dependencies.Models == nil ||
 		dependencies.Runtime == nil ||
@@ -183,6 +256,7 @@ func NewService(dependencies Dependencies) (*Service, error) {
 	return &Service{
 		catalog:     dependencies.Catalog,
 		store:       dependencies.Store,
+		documents:   dependencies.Documents,
 		credentials: dependencies.Credentials,
 		models:      dependencies.Models,
 		runtime:     dependencies.Runtime,
@@ -306,6 +380,17 @@ func (service *Service) refreshCurrent(
 		credentialSnapshot.AccountRef() != accountRef {
 		return ReadResult{}, ErrInvalidSnapshot
 	}
+	// 过期的 OAuth 凭据先刷新：刷新的 CAS 版本同时用于后面的快照写入。
+	if service.refresher != nil {
+		refreshed, refreshErr := service.refresher.RefreshCredential(ctx, credentialSnapshot)
+		if refreshErr != nil {
+			return ReadResult{}, refreshErr
+		}
+		if !refreshed.IsValid() || refreshed.AccountRef() != accountRef {
+			return ReadResult{}, ErrInvalidSnapshot
+		}
+		credentialSnapshot = refreshed
+	}
 	credential := credentialSnapshot.Credential()
 	providerID, found := service.catalog.CanonicalID(credential.ProviderID())
 	if !found || providerID != credential.ProviderID() {
@@ -319,12 +404,25 @@ func (service *Service) refreshCurrent(
 	if err != nil {
 		return ReadResult{}, err
 	}
-	snapshot, err := strategy.FetchUsage(
-		ctx,
-		accountRef,
-		credential,
-		capturedAt,
+	var (
+		snapshot usagecore.Snapshot
+		document *usagecore.Document
 	)
+	if extended, ok := strategy.(ProviderSnapshotStrategy); ok {
+		snapshot, document, err = extended.FetchUsageWithDocument(
+			ctx,
+			accountRef,
+			credential,
+			capturedAt,
+		)
+	} else {
+		snapshot, err = strategy.FetchUsage(
+			ctx,
+			accountRef,
+			credential,
+			capturedAt,
+		)
+	}
 	if err != nil {
 		return ReadResult{}, err
 	}
@@ -340,6 +438,12 @@ func (service *Service) refreshCurrent(
 		credentialSnapshot.UpdatedAt(),
 	); err != nil {
 		return ReadResult{}, err
+	}
+	// 展示文档与归一化事实同源同刻：先落文档，再刷新物化额度状态。
+	if document != nil {
+		if err := service.ReplaceDocument(ctx, *document); err != nil {
+			return ReadResult{}, err
+		}
 	}
 	if call == nil {
 		return ReadResult{}, ErrInvalidRequest
@@ -357,6 +461,75 @@ func (service *Service) refreshCurrent(
 		return ReadResult{}, errors.Join(ErrRuntimeProjection, err)
 	}
 	return NewReadResult(snapshot, false)
+}
+
+// ReplaceUsageSnapshot 接受外部采集的完整额度快照，按当前凭据代次 CAS 落库，
+// 并在提交后投影运行态阻塞。Node 的 quota 探测迁入 Go 时走这个入口。
+func (service *Service) ReplaceUsage(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+) error {
+	if service == nil ||
+		service.store == nil ||
+		service.credentials == nil ||
+		ctx == nil ||
+		!snapshot.IsValid() {
+		return ErrInvalidRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	credentialSnapshot, err := service.credentials.ResolveCredentialSnapshot(
+		ctx,
+		snapshot.AccountRef(),
+	)
+	if err != nil {
+		return err
+	}
+	if !credentialSnapshot.IsValid() ||
+		credentialSnapshot.AccountRef() != snapshot.AccountRef() ||
+		credentialSnapshot.Credential().ProviderID() != snapshot.ProviderID() {
+		return ErrInvalidSnapshot
+	}
+	if err := service.store.ReplaceUsageSnapshotIfCredentialVersion(
+		ctx,
+		snapshot,
+		credentialSnapshot.UpdatedAt(),
+	); err != nil {
+		return err
+	}
+	if strategy := service.strategies[snapshot.ProviderID()]; strategy != nil {
+		if err := service.projectRuntime(ctx, snapshot, strategy); err != nil {
+			return err
+		}
+	}
+	return service.refreshDocumentQuotaState(ctx, snapshot.AccountRef())
+}
+
+// ReplaceCollectedUsage 保存采集方已确认的归一化额度快照。
+//
+// 与 ReplaceUsage 的差异：不要求 Go 能解析该账号的当前凭据。采集方（Node）在写入前
+// 已用自有的凭据代次门禁排除了过期快照；Go 只做账号存在性与 Provider 一致性校验。
+// Go 自己的探针路径仍走 ReplaceUsage 的凭据 CAS。
+func (service *Service) ReplaceCollectedUsage(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+) error {
+	if service == nil || service.store == nil || ctx == nil || !snapshot.IsValid() {
+		return ErrInvalidRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := service.store.ReplaceUsageSnapshot(ctx, snapshot); err != nil {
+		return err
+	}
+	if strategy := service.strategies[snapshot.ProviderID()]; strategy != nil {
+		if err := service.projectRuntime(ctx, snapshot, strategy); err != nil {
+			return err
+		}
+	}
+	return service.refreshDocumentQuotaState(ctx, snapshot.AccountRef())
 }
 
 // projectRuntime 只把明确耗尽的窗口投影为账号或模型族 quota block。

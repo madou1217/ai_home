@@ -59,6 +59,96 @@ export interface AccountTokenUsage {
   models: AccountTokenUsageModel[];
 }
 
+/** 额度统计：图表指标。 */
+export type QuotaWindowMetric = 'percent' | 'tokens' | 'cost';
+/** 窗口证据来源：真实采样 / 仅重置事件 / 覆盖不全的重建 / 当前账本。 */
+export type QuotaWindowSource = 'sample' | 'reset' | 'reconstructed' | 'live';
+export type QuotaWindowConfidence = 'high' | 'medium' | 'low';
+
+export interface QuotaWindowScope {
+  quotaKey: string;
+  label: string;
+  sampleCount: number;
+  lastCapturedAtMs: number;
+  /** 只在当前快照里出现过、还没有采样的 scope。 */
+  synthetic?: boolean;
+}
+
+export interface QuotaWindowDimension {
+  windowMinutes: number;
+  label: string;
+  available: boolean;
+  dataState: 'ready' | 'pending' | 'empty';
+  scopes: QuotaWindowScope[];
+}
+
+export interface QuotaStatsWindowRow {
+  index: number;
+  anchorAtMs: number;
+  closeAtMs: number;
+  scheduledCloseAtMs: number;
+  truncated: boolean;
+  live: boolean;
+  remainingStartPct: number | null;
+  remainingEndPct: number | null;
+  remainingMinPct: number | null;
+  consumedPct: number | null;
+  peakConsumedPct: number | null;
+  startEstimated: boolean;
+  sampleCount: number;
+  observedFromMs: number;
+  observedToMs: number;
+  tokens: number;
+  costUsd: number | null;
+  costKnown: boolean;
+  requestCount: number;
+  source: QuotaWindowSource;
+  confidence: QuotaWindowConfidence;
+  resetKind: 'cycle_rollover' | 'replenishment' | '';
+  classification: 'natural' | 'early_inferred' | 'plan_upgrade' | '';
+  planType: string;
+  approximateClose: boolean;
+  anchorEstimated: boolean;
+}
+
+export interface QuotaStatsSummary {
+  windowCount: number;
+  coveredWindowCount: number;
+  totalTokens: number;
+  totalCostUsd: number | null;
+  costKnown: boolean;
+  requestCount: number;
+  avgConsumedPct: number | null;
+  maxConsumedPct: number | null;
+  minConsumedPct: number | null;
+  avgTokensPerWindow: number | null;
+  avgCostUsdPerWindow: number | null;
+  lastResetAtMs: number;
+  nextCloseAtMs: number;
+}
+
+export interface AccountQuotaStatsResponse {
+  ok: boolean;
+  provider: Provider;
+  accountRef: string;
+  generatedAtMs: number;
+  range: { fromMs: number; toMs: number; rangeDays: number };
+  dimensions: QuotaWindowDimension[];
+  windowMinutes: number;
+  scope: QuotaWindowScope | null;
+  current: { remainingPct: number | null; resetAtMs: number; capturedAtMs: number } | null;
+  summary: QuotaStatsSummary;
+  windows: QuotaStatsWindowRow[];
+  emptyReason: 'dimension_unavailable' | 'no_samples' | 'no_windows_in_range' | null;
+}
+
+export interface AccountQuotaStatsQuery {
+  window?: number;
+  scope?: string;
+  rangeDays?: number;
+  to?: number;
+}
+
 export interface AccountModelSummary {
   storedCount: number;
   effectiveCount: number;
@@ -393,6 +483,17 @@ export interface AccountActivityJob {
   finishedAt?: number | null;
 }
 
+/**
+ * 账号的一个可展示身份项。
+ *
+ * `type` 只是身份类别（nickName / phone / email / name …），消费方按 `value` 展示；
+ * 新增类别不需要改结构，也不需要改轮播组件。
+ */
+export interface AccountDisplayName {
+  type: string;
+  value: string;
+}
+
 export interface Account {
   provider: Provider;
   accountRef: string;
@@ -404,6 +505,11 @@ export interface Account {
   authMode?: string;
   authType?: string;
   credentialType?: string;
+  /**
+   * 账号类型/登录方式（目前 kiro 下发 google / github / builder / idc / desktop）。
+   * 只用于标签展示，**不参与 displayNames/title**；展示名仍然优先邮箱。
+   */
+  loginType?: string;
   authPending?: boolean;
   authPendingStale?: boolean;
   authPendingAgeMs?: number;
@@ -422,7 +528,17 @@ export interface Account {
    * 账号列表靠它区分（见 lib/account/zcode-account-region.js）。
    */
   zcodeRegion?: string;
+  /**
+   * 主邮箱（既有 UI 直接消费的兼容字段）。可轮播的完整身份列表请用 displayNames，
+   * 不要再往 Account 上添加 phone / uin 之类的独立字段。
+   */
   email: string;
+  /**
+   * 可轮播的身份项：服务端按展示顺序组好，数组顺序就是轮播顺序。
+   * 新增身份类型（uin、员工号、企业名…）只需在服务端多 push 一项，不需要改这个结构。
+   * 旧服务端没有该字段时，轮播组件回退到 displayName / email。
+   */
+  displayNames?: AccountDisplayName[];
   baseUrl?: string;
   /**
    * 服务端判定：该账号是否是「第三方/自建上游（new-api / one-api / 自建反代）的 API Key 账号」。

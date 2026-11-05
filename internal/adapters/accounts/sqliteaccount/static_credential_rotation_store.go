@@ -10,6 +10,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/accounts/gemini"
 )
 
 var _ accountapp.StaticCredentialRotationStore = (*Store)(nil)
@@ -184,6 +185,8 @@ func supportsStaticCredentialRotation(
 	case claude.ProviderID:
 		return authKind == claude.AuthKindAPIKey.String() ||
 			authKind == claude.AuthKindAuthToken.String()
+	case gemini.ProviderID:
+		return authKind == gemini.AuthKindVertex
 	default:
 		return false
 	}

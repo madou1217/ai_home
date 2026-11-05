@@ -43,12 +43,12 @@ type systemStatusResponse struct {
 	Ready   *bool  `json:"ready,omitempty"`
 	// Accounts 是按 Provider 分组的启用账号数量；与 Node 一样覆盖**全部**受支持 Provider，
 	// 没有账号的 Provider 记 0 而不是省略。
-	Accounts map[string]int `json:"accounts,omitempty"`
-	Capabilities          []string              `json:"capabilities,omitempty"`
-	InferenceCatalogReady bool                  `json:"inference_catalog_ready,omitempty"`
-	InferenceCatalogStale bool                  `json:"inference_catalog_stale,omitempty"`
-	ModelCount            int                   `json:"model_count,omitempty"`
-	RouteCount            int                   `json:"route_count,omitempty"`
+	Accounts              map[string]int `json:"accounts,omitempty"`
+	Capabilities          []string       `json:"capabilities,omitempty"`
+	InferenceCatalogReady bool           `json:"inference_catalog_ready,omitempty"`
+	InferenceCatalogStale bool           `json:"inference_catalog_stale,omitempty"`
+	ModelCount            int            `json:"model_count,omitempty"`
+	RouteCount            int            `json:"route_count,omitempty"`
 }
 
 // catalogReadiness 是 Host 探针读取的低敏原子目录状态。
@@ -83,9 +83,16 @@ func newRouter(handlers serverHandlers) http.Handler {
 		handleReadiness(response, request, handlers.catalogStatus)
 	})
 	mux.Handle(accountsapi.NativeImportPath, handlers.accounts)
+	mux.Handle(accountsapi.NativeImportPath+"/", handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.CollectionPath+"/", handlers.accounts)
 	mux.Handle(accountsapi.AliasesPath+"/", handlers.accounts)
+	mux.Handle(accountsapi.AccountUsageCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountUsageDocumentCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountQuotaStateCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountUIStateCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountRuntimeBlockCollectionPath, handlers.accounts)
+	mux.Handle(accountsapi.AccountRuntimeStateCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {
@@ -133,6 +140,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(clientpropsapi.Path, handlers.clientProps)
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
+	// 持久化 Job 快照与内存 Job 分开挂载：两条路径生命周期不同（见 accountauthapi.JobsPath）。
+	mux.Handle(accountsapi.AccountModelsCollectionPath, handlers.accounts)
+	mux.Handle(accountauthapi.JobsPath, handlers.accountAuth)
+	mux.Handle(accountauthapi.JobsPath+"/", handlers.accountAuth)
 	// 优雅退出端点：嵌入方（Node 宿主）在停机时显式请求，而不是依赖进程信号——
 	// Windows 上 SIGTERM 实际是 TerminateProcess，进程内的关闭路径不会执行。
 	if handlers.shutdown != nil {

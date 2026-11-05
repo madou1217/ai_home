@@ -18,7 +18,7 @@
 - OpenAI/Anthropic/Gemini 兼容网关、Management API、WebUI API。
 - React WebUI、响应式移动端视图和 PWA manifest。
 - tmux/PTY、会话读取、账号隔离、后台刷新、诊断及发布工具。
-- 同级 `../clawdcodex` 只做只读可复用性核对，不计入 AI Home 已交付功能。
+- 同级外部 Rust 参考仓只做只读可复用性核对（该参考仓已不在当前工作区），不计入 AI Home 已交付功能。
 
 以下内容不计为 AI Home 自研功能：
 
@@ -171,6 +171,7 @@ runtime，因此**整个家族共用一份会话历史，不分地区**。规范
 | ACC-054 | 首次模型异步恢复 | Server 启动/background | 创建/导入不等待模型；按 Provider 隔离队列合并同账号任务。重启后以 AccountRef keyset、每批 256 条扫描“有凭据但无上游模型快照”的账号并重新入队，不读凭据 JSON、不做 N+1 | 已实现（自动化验收） | `application/accounts/model_refresh_coordinator.go`、`initial_model_refresh_recovery.go`、`internal/host/aihserver/initial_model_refresh_recovery.go` |
 | ACC-055 | WebUI Go 账号控制面 Preview | 独立 `http://127.0.0.1:19528/ui/accounts` | 仅 Codex/Claude；Preview 页面经 `/v1/management` 操作临时 Go Server，支持添加、启停、默认、单账号模型目录查看/刷新、inherit/force_enable/force_disable 策略维护、模型刷新失败保留 LKG/未知语义和删除闭环；默认 `/accounts`、`web/src/services/api.ts` 和正式 Server 继续走 Node，不双写；真实 Codex/Claude Provider 验收已通过 | 已实现（Preview，真实 Provider 通过，未切正式入口） | `web/src/services/account-management/`、`web/src/pages/AccountsGoPreview.tsx`、`web/src/services/account-management/preview.ts`、`internal/host/aihserver/live_*test.go` |
 | ACC-056 | Go Preview 进程隔离 | `go-preview:server/web`、`go-cli:preview` | 固定 Go 19527、UI 19528 与系统临时 `AIH_HOME`；启动前探测端口，正式 `bin/ai-home.js`、`postinstall`、默认 Web 路由保持 Node。当前无正式 Go sidecar 或发行切流 | 已实现（隔离门禁） | `scripts/go-accounts-preview.js`、`test/go-preview-isolation.test.js`、`web/config/routes.ts` |
+| ACC-057 | Go 账号窗口期额度统计 | `GET /v1/management/accounts/{account_ref}/quota-stats?window=300\|10080\|43200&scope=...&range_days=1..90` | 按 F1–F4 从采样重建真实窗口（锚点=关窗后首个真实请求、幻影 reset 剔除），按半开区间聚合 `usage_ledger` 的 tokens/请求数；窗口账本（锚点/关窗时刻/来源，单调不回退）补当前窗口与仅账本的活跃窗口；重置事件（自然滚动/提前回血）可截断窗口或单独成窗。套餐（`plan_type`，aih.db v20）由各 Provider 归一后随快照与采样落库，未知留空；codex 取 ID Token 的 `chatgpt_plan_type`，claude 取 `/api/oauth/profile`（布尔结论优先，否则 organization_type 去 `claude_` 前缀）。模型族不枚举：任意 `seven_day_<family>` 都是 model_family 条目（fable 等新族零改动），Node 与 Go 同口径。Node 推送 facts 时按 Provider 策略带 `plan_type` 与模型族条目。Go 账本无定价，成本明确标记为不可用（`cost_known=false`、`cost_usd=null`），不伪造 0。WebUI 页面仍走 Node，未接正式入口 | 已实现（Go Preview） | `core/accountusage/quota_window.go`、`core/accountusage/quota_ledger.go`、`core/accountusage/quota_reset_detector.go`、`application/accountusage/quota_stats.go`、`internal/transport/http/accountsapi/account_quota_stats.go` |
 
 ## 4. 导入、导出与迁移
 
@@ -630,19 +631,19 @@ Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输
 把不变量加入相应 Go 领域/适配器合同和定向测试；不得复制 Node 的补丁形态、缓存 shape
 或双写路径。
 
-## 15. `clawdcodex` 可复用性初判
+## 15. 外部 Rust 参考仓可复用性初判（历史）
 
 ### 15.1 结论
 
 **可以拿来用，但只能作为 Rust 核心迁移的候选底座/代码来源，不能整体替换当前 AI Home。**
 
-`../clawdcodex` 是 Rust workspace，不是只有研究文档。当前 workspace 包含 `accounts`、`providers`、`config-sync`、`context`、`hooks`、`policy`、`sessions`、`runtime`、`terminal`、`storage`、`node`、`server`、`cli`，另有 TypeScript Web。它已具备账号维护、ai_home 导入、SQLite repository、Codex/Claude session discovery/sync/snapshot，以及 OpenAI Chat、OpenAI Responses、Claude Messages 的 API Key relay 最小闭环。
+该参考仓是 Rust workspace，不是只有研究文档。当前 workspace 包含 `accounts`、`providers`、`config-sync`、`context`、`hooks`、`policy`、`sessions`、`runtime`、`terminal`、`storage`、`node`、`server`、`cli`，另有 TypeScript Web。它已具备账号维护、ai_home 导入、SQLite repository、Codex/Claude session discovery/sync/snapshot，以及 OpenAI Chat、OpenAI Responses、Claude Messages 的 API Key relay 最小闭环。该参考仓原位于同级目录，现已不在当前工作区；本节保留为历史评估，不再作为当前迁移依据。
 
 但它当前明确没有覆盖 AI Home 的完整能力：10 provider 全链、tmux 精确会话语义、完整 Web 会话工作台、完整 usage/billing，以及多种 OAuth/协议 bridge。其验收文档还明确列出 OAuth bridge streaming、完整 typed event timeline、Gemini Native、native session usage、完整 billing 与多 agent 等未完成项。
 
 ### 15.2 候选复用矩阵
 
-| `clawdcodex` 模块/能力 | 可复用方向 | 复用判断 | 必须先补的契约 |
+| 参考仓模块/能力 | 可复用方向 | 复用判断 | 必须先补的契约 |
 |---|---|---|---|
 | `crates/storage` | SQLite repository、migration、transaction 边界 | 高候选 | 对齐 AI Home `accountRef`、现有数据导入/回滚与并发语义 |
 | `crates/accounts` | 账号 CRUD、软停用、API Key rotate、公开 DTO | 高候选 | 不能用其账号 ID 替换 `accountRef`；补齐 OAuth、default/mobile、额度与 provider metadata |
@@ -664,7 +665,7 @@ Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输
 5. Go 更适合独立 daemon、网络/并发运维组件；Rust 更适合本地核心、协议、存储与 runtime。具体归属要在下一阶段逐能力评估，不能先按语言偏好硬拆。
 6. 保留 WebUI 的部分统一为 TypeScript，但先消除 canonical/legacy 重复职责，再做语言迁移；机械 `.js → .ts` 不等于重构完成。
 
-证据：`../clawdcodex/Cargo.toml`、`../clawdcodex/docs/planning/current-acceptance.md`。核对时该仓库已有用户未提交文档修改，本次未修改、未清理这些内容。
+证据：原参考仓的 `Cargo.toml` 与 `docs/planning/current-acceptance.md`。核对时该仓库已有用户未提交文档修改，本次未修改、未清理这些内容。
 
 ## 16. 后续维护规则
 

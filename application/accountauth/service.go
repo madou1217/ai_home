@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -28,7 +30,10 @@ type jobRecord struct {
 	retainedUntil time.Time
 }
 
-// Service 是并发安全、有界且只存在于内存中的 OAuth Job 编排器。
+// Service 是并发安全、有界的 OAuth Job 编排器。
+//
+// Job 的私有 Flow 只存在于内存；公开快照在 jobStore 非空时同步落库，
+// 使进程重启后仍能查到终态结果。
 type Service struct {
 	mu         sync.Mutex
 	providers  map[string]OAuthProvider
@@ -39,6 +44,7 @@ type Service struct {
 	reauth     Reauthenticator
 	clock      Clock
 	generateID IDGenerator
+	jobStore   JobStore
 	settings   serviceSettings
 }
 
@@ -94,6 +100,7 @@ func newService(
 		reauth:     dependencies.Reauth,
 		clock:      dependencies.Clock,
 		generateID: dependencies.GenerateID,
+		jobStore:   dependencies.JobStore,
 		settings:   settings,
 	}, nil
 }
@@ -170,6 +177,7 @@ func (service *Service) Start(
 	}
 	service.jobs[jobID] = &jobRecord{job: job, flow: flow}
 	service.activeJobs[request.ProviderID] = jobID
+	service.persistJobLocked(job, now)
 	return StartResult{
 		job:              job,
 		authorizationURL: flow.AuthorizationURL(),
@@ -193,16 +201,70 @@ func (service *Service) checkStartCapacity(providerID string) error {
 }
 
 // Get 返回当前 Job 的公开快照，并惰性执行过期和终态清理。
+//
+// 该方法是 HTTP 端口要求的无 context 形式，内部委托给 GetJob。
 func (service *Service) Get(jobID string) (Job, error) {
+	return service.GetJob(context.Background(), jobID)
+}
+
+// GetJob 返回 Job 的公开快照；内存中已经清理的终态回落到持久化快照。
+func (service *Service) GetJob(ctx context.Context, jobID string) (Job, error) {
 	now := service.now()
 	service.mu.Lock()
-	defer service.mu.Unlock()
 	service.expireAndPruneLocked(now)
 	record, found := service.jobs[jobID]
+	var job Job
+	if found {
+		job = record.job
+	}
+	// 先释放锁再读库：存储实现涉及磁盘 IO，不能让它阻塞其他 Job 的状态迁移。
+	service.mu.Unlock()
+	if found {
+		return job, nil
+	}
+	return service.getStoredJob(ctx, jobID)
+}
+
+// getStoredJob 在内存未命中时读取持久化快照。
+func (service *Service) getStoredJob(ctx context.Context, jobID string) (Job, error) {
+	if service.jobStore == nil {
+		return Job{}, ErrJobNotFound
+	}
+	record, found, err := service.jobStore.GetJob(ctx, jobID)
+	if err != nil {
+		// 存储故障不能伪装成「Job 不存在」：那会让客户端误以为可以重新发起，
+		// 也会掩盖真实的 aih.db 故障。
+		return Job{}, fmt.Errorf("读取 OAuth Job 快照失败: %w", err)
+	}
 	if !found {
 		return Job{}, ErrJobNotFound
 	}
-	return record.job, nil
+	job := jobFromRecord(record)
+	if !job.IsTerminal() {
+		// pending/processing 的 state、PKCE 与 Flow 只存在于上一个进程的内存里，
+		// 重启后不可能再完成；返回它们只会让客户端无限等待。
+		return Job{}, ErrJobNotFound
+	}
+	return job, nil
+}
+
+// Rehydrate 在进程启动时收敛上一次运行遗留的 Job。
+//
+// state、PKCE verifier 与 OAuthFlow 只存在于内存，重启后这些 Job 无法再接受回调；
+// 因此必须把 pending/processing 从「等待中」改成 expired，避免客户端继续轮询一个
+// 永远不会推进的 Job。存储返回的更新条数只用于日志，不参与控制流。
+func (service *Service) Rehydrate(ctx context.Context) error {
+	if service.jobStore == nil {
+		return nil
+	}
+	expired, err := service.jobStore.ExpirePendingJobs(ctx, service.now())
+	if err != nil {
+		return fmt.Errorf("收敛遗留 OAuth Job 失败: %w", err)
+	}
+	if expired > 0 {
+		log.Printf("accountauth: 已将 %d 个遗留 OAuth Job 标记为过期", expired)
+	}
+	return nil
 }
 
 // Complete 唯一领取回调，换取官方 artifact，并复用统一账号注册链。
@@ -251,6 +313,7 @@ func (service *Service) Complete(
 	record.job.cliAccountID = account.CLIAccountID()
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, claimed.providerID)
+	service.persistJobLocked(record.job, now)
 	return record.job, nil
 }
 
@@ -298,6 +361,7 @@ func (service *Service) Cancel(jobID string) (Job, error) {
 	record.flow = nil
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, record.job.providerID)
+	service.persistJobLocked(record.job, now)
 	return record.job, nil
 }
 
@@ -327,6 +391,9 @@ func (service *Service) claimPendingJob(
 	}
 	record.flow = nil
 	record.job.status = StatusProcessing
+	// 领取回调是跨进程可见的分界点：先落 processing，崩溃后重启才能把它收敛为 expired，
+	// 而不是让客户端以为 Job 还在等待回调。
+	service.persistJobLocked(record.job, now)
 	return claimed, nil
 }
 
@@ -345,7 +412,23 @@ func (service *Service) failJob(jobID string, code string) Job {
 	record.job.failureCode = code
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, record.job.providerID)
+	service.persistJobLocked(record.job, now)
 	return record.job
+}
+
+// persistJobLocked 把当前公开快照写入持久化存储。
+//
+// 调用方必须持有 service.mu：这样落库顺序与内存状态迁移顺序一致，迟到的
+// pending/processing 快照不会覆盖已经写入的终态。
+// 写失败只记日志：可查询性是增强能力，OAuth 主流程不能因为存储故障而失败。
+func (service *Service) persistJobLocked(job Job, now time.Time) {
+	if service.jobStore == nil {
+		return
+	}
+	// 使用后台 context：状态迁移已经在内存生效，落库不应跟随请求取消而放弃。
+	if err := service.jobStore.UpsertJob(context.Background(), job.snapshot(now)); err != nil {
+		log.Printf("accountauth: 写入 OAuth Job 快照失败 job=%s: %v", job.id, err)
+	}
 }
 
 // expireAndPruneLocked 把超时 pending Job 标记为 expired，并删除超过保留期的终态。
@@ -359,6 +442,7 @@ func (service *Service) expireAndPruneLocked(now time.Time) {
 			record.flow = nil
 			record.retainedUntil = now.Add(service.settings.terminalRetention)
 			delete(service.activeJobs, record.job.providerID)
+			service.persistJobLocked(record.job, now)
 		}
 		if record.job.IsTerminal() &&
 			!record.retainedUntil.IsZero() &&

@@ -21,7 +21,7 @@ set/get/clear 控制面已接通。历史验收段落保留当时的范围和结
 | Pi | `4bd3f48df0b14c82e8df2640645e94f82f125f44` | `packages/coding-agent/src/core/session-manager.ts` 的 `branch/createBranchedSession`：保留原路径、独立持久分支；`agent-session.ts` 的 `_checkCompaction`：模型窗口、压缩后的旧 usage 隔离、溢出最多恢复一次；会话级 system prompt |
 | Codex | `968835997714baaff199cfed5f89a2c65d8ca77d` | `codex-rs/app-server-protocol/src/protocol/v2/thread.rs`：fork 按回合、rollback、原始 Responses items 注入；执行器负责流、原生历史和压缩 |
 
-参考仓库位于相邻 clawdcodex 的 `reference/repos/`。只更新远端引用并用 `git show <commit>:<path>` 读取，没有覆盖其工作区。上述为源码版本，不声明等同于 npm 分发或本机运行版本；本机协议另以 native 测试验证。
+参考仓库原位于相邻目录的 `reference/repos/`（该仓库已不在当前工作区）。只更新远端引用并用 `git show <commit>:<path>` 读取，没有覆盖其工作区。上述为源码版本，不声明等同于 npm 分发或本机运行版本；本机协议另以 native 测试验证。
 
 ## ADR：AIH 掌握会话语义，执行器可以替换
 

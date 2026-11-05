@@ -147,6 +147,10 @@ func New(ctx context.Context, options Options) (*App, error) {
 		store,
 		store,
 		discovery,
+		// 本地账号 CLI 的模型刷新不做凭据刷新：过期时由服务端刷新后回写。
+		nil,
+		// CLI 刷新同样写探测事实，WebUI 与服务端读到同一条结果。
+		store,
 		time.Now,
 	)
 	if err != nil {

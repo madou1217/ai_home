@@ -64,6 +64,8 @@ test('native 输出命中签名时自动换路到 runner，退出码取 runner',
   const native = spawns[0];
   assert.equal(native.command, LAUNCH.command, '首跑必须是 native 命令');
   native.child.stderr.emit('data', 'Error: Select a model before sending a message (traceId: x)\n');
+  // 未捕获异常的压缩 bundle 源码墙（几百 KB）——换路场景必须被扣下，不泼给用户。
+  native.child.stderr.emit('data', '    deps: ${_}}`,"params")};let i={keyword:"dependencies"...splitDependencies...};\n');
   native.child.emit('close', 1);
   assert.equal(spawns.length, 2, '签名命中后应换路重跑一次');
   const fallback = spawns[1];
@@ -75,8 +77,12 @@ test('native 输出命中签名时自动换路到 runner，退出码取 runner',
 
   assert.equal(exit.exitCode, 0);
   assert.ok(chunks.some(([stream, text]) => stream === 'out' && text === '答案正文\n'));
-  // native 的 stderr 已流出（诚实透出失败），stdout 保持干净由 runner 填答案。
-  assert.ok(chunks.some(([stream, text]) => stream === 'err' && text.includes('Select a model')));
+  // 一行简明原因（含首行与 traceId）替代源码墙。
+  const notice = chunks.find(([stream, text]) => stream === 'err' && text.includes('自动改走'));
+  assert.ok(notice, '应有换路提示行');
+  assert.ok(notice[1].includes('Select a model'), '提示行带 native 失败原因');
+  assert.ok(notice[1].startsWith('[aih]'), '提示行是 aih 所有行');
+  assert.ok(!chunks.some(([stream, text]) => stream === 'err' && text.includes('splitDependencies')), '压缩源码墙不外泼');
 });
 
 test('换路子进程的 stdout 流给同一 onData，失败不再二次换路', async () => {
@@ -102,7 +108,7 @@ test('换路子进程的 stdout 流给同一 onData，失败不再二次换路',
   assert.ok(chunks.some(([stream, text]) => stream === 'out' && text === '答案正文\n'));
 });
 
-test('未命中签名（普通失败）不换路，退出码原样透出', async () => {
+test('未命中签名（普通失败）不换路：扣住的 stderr 在退出前原样回放', async () => {
   const runner = {
     id: 'fake',
     shouldPrefer: () => false,
@@ -114,13 +120,18 @@ test('未命中签名（普通失败）不换路，退出码原样透出', async
   const done = collect(handle);
   const native = spawns[0];
   native.child.stderr.emit('data', 'Error: something else went wrong\n');
+  native.child.stderr.emit('data', 'detail line 2\n');
   native.child.emit('close', 3);
-  const { exit } = await done;
+  const { chunks, exit } = await done;
   assert.equal(spawns.length, 1, '签名未命中不换路');
   assert.equal(exit.exitCode, 3);
+  // 不换路 = 行为不变：扣住的 stderr 在退出前按序回放。
+  const stderrText = chunks.filter(([stream]) => stream === 'err').map(([, text]) => text).join('');
+  assert.ok(stderrText.includes('Error: something else went wrong'), stderrText);
+  assert.ok(stderrText.includes('detail line 2'), stderrText);
 });
 
-test('headlessRunner=native 时不换路', async () => {
+test('headlessRunner=native 时不换路，stderr 照常直通', async () => {
   const runner = {
     id: 'fake',
     shouldPrefer: () => false,
@@ -135,9 +146,10 @@ test('headlessRunner=native 时不换路', async () => {
   const native = spawns[0];
   native.child.stderr.emit('data', 'Select a model before sending a message\n');
   native.child.emit('close', 1);
-  const { exit } = await done;
+  const { chunks, exit } = await done;
   assert.equal(spawns.length, 1, 'native 逃生门关闭换路');
   assert.equal(exit.exitCode, 1);
+  assert.ok(chunks.some(([stream, text]) => stream === 'err' && text.includes('Select a model')), 'native 模式 stderr 直通');
 });
 
 test('headlessRunner=app-server 强制模式首跑就是 runner 垫片，失败不二次换路', async () => {

@@ -24,6 +24,8 @@ import type {
   UpstreamErrorMappingGroup,
   AccountRefreshJob,
   AccountRefreshUsageResponse,
+  AccountQuotaStatsQuery,
+  AccountQuotaStatsResponse,
   CodexResetCreditsResponse,
   CodexResetOperation,
   CodexResetOperationResponse,
@@ -754,6 +756,24 @@ export const accountsAPI = {
     const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
     const response = await api.get<{ ok: boolean; provider: string; accountRef: string; events: any[] }>(
       `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-reset-events${query}`
+    );
+    return response.data;
+  },
+
+  /** 按窗口期的额度统计（5h / 7天 / 30天），窗口由服务端按活跃点重建。 */
+  getQuotaStats: async (
+    provider: string,
+    accountRef: string,
+    query: AccountQuotaStatsQuery = {}
+  ): Promise<AccountQuotaStatsResponse> => {
+    const params: Record<string, string | number> = {};
+    if (query.window) params.window = query.window;
+    if (query.scope) params.scope = query.scope;
+    if (query.rangeDays) params.rangeDays = query.rangeDays;
+    if (query.to) params.to = query.to;
+    const response = await api.get<AccountQuotaStatsResponse>(
+      `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-stats`,
+      { params }
     );
     return response.data;
   },

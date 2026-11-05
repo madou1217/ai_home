@@ -249,4 +249,7 @@ type Dependencies struct {
 	Reauth     Reauthenticator
 	Clock      Clock
 	GenerateID IDGenerator
+	// JobStore 持久化 Job 公开快照；为 nil 时退化为只存在于内存的旧行为，
+	// 这样尚未接入 aih.db 的宿主（如 aih CLI）不必立刻提供存储实现。
+	JobStore JobStore
 }

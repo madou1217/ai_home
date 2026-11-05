@@ -121,7 +121,7 @@ function buildClaudePrompt(scope) {
     '请基于真实工程约束输出严格 JSON，不要 markdown。',
     '技术栈：React/Vite/AntD WebUI，入口 /ui。',
     '工程约束：必须使用 Tailwind CSS v4 减少样式样板，必须使用 animate.css 作为入场/强调动效库。',
-    '品牌标识：com.clawdcodex.ai_home；命令统一使用 aih。',
+    '品牌标识：com.meadeo.ai_home；命令统一使用 aih。',
     '用户要求：现代产品级，不是旧后台，不是黑绿终端，不是白底 SaaS，不是紫色 AI 模板。',
     'PC 与 H5 必须是两套交互规范和组件结构，不允许只是 CSS 缩放。',
     '规范结构必须正式覆盖：设计原则、设计语言、配色方案、字体、间距、按钮、输入框、选择器、反馈、动效、UX、UE、PC、H5、验收。',

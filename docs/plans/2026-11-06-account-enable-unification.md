@@ -4,6 +4,11 @@
 > 起因：cline 账号在 WebUI 显示 `up`，Go `accounts.enabled` 却是 0，模型目录因此一直为空；
 > 真机验证 14 条静态清单时必须手工 `PATCH enabled=true` 才生效。
 
+> **2026-11-06 已落地 Phase 1**（`77e075e5` 导入日志与 cline 重认证、`2696f252` 启停统一写 Go +
+> 对账解耦、`65bcc54e` 启用即刷新），cline import 500 的根因也一并修掉。
+> 实测：WebUI 关闭 cline → Go `enabled=0`；打开 → `enabled=1` 并自动刷新目录（14 条）。
+> 遗留：Phase 2 语义拆分未做；停用账号的目录展示策略待产品确认。
+
 ## 0. 结论先行
 
 现状不是「没有同步」，而是**三条链路各自为政**：
@@ -66,14 +71,22 @@
 - 位置放在 Go 而不是 Node：CLI/API/同步三条入口都受益，Node 不需要知道刷新细节。
 - 失败不影响启用结果（异步、可观察），但要写日志/观测。
 
-### 2.4 修 cline import 500（阻塞项）
+### 2.4 修 cline import 500（阻塞项）—— 已修
 
 - 真机：`POST /v1/management/account-imports`（cline native 凭据）返回
   `500 internal_error`；同步每轮都失败，`state.rejectedImports` 不缓存（不是终态错误）。
-- 需要拿到 Go 侧真实错误：当前 handler 把细节吞成 `internal_error`，
-  建议在 `writeApplicationError` 里对 5xx 记录 `error_id + error` 到日志（不回给客户端）。
-- 大概率是 cline native 凭据 codec 没覆盖该字段组合（两个账号都是 `auth_kind=oauth`、
-  3.3KB native JSON）；修好前 cline 的凭据更新一直不落 Go。
+- **根因（2026-11-06，靠 5xx 日志定位）**：
+  1. `supportsReauthentication` 的 `oauth + native_auth_json` 白名单漏了 `cline`；
+  2. 补进白名单后暴露第二层：cline 原生凭据**没有代际事实**，重认证被判
+     `account_import_generation_unordered`。
+- 修法：
+  - 5xx 兜底写服务端日志（`accountsapi: <operation>: <error>`，600 字符截断）；
+    native_import 额外记录 provider 与 artifact 数量；
+  - 白名单补 `cline`；
+  - `nativeGenerations` 增加 cline：取 `lastUsedProvider` 槽位的 accessToken iat
+    （先剥 `workos:` 前缀），回退 `expiresAt`；只取一个槽位避免部分序；
+  - `ErrReauthenticationUnsupported` 映射 409 `account_reauth_unsupported`。
+- 真机：两个 cline 账号导入 200，Go `enabled` 由同步置 1。
 
 ### 2.5 守卫与验收
 
@@ -110,6 +123,19 @@
 | 启用触发刷新打上游 | 复用协调器的 Provider 并发/退避；Free/无额度账号失败可观察，不回滚启用 |
 | 自动 retain 与用户意图混淆 | Phase 1 明确 `enabled` = 可路由门，文档写清；Phase 2 拆分 |
 | cline import 修复引入凭据格式回归 | 先加 Go 解析单测（现有 native JSON 夹具），再改 codec |
+
+## 4.1 实施记录（2026-11-06）
+
+- Go 导入错误日志 + cline 重认证：`error_log.go`、`reauthentication_store.go`、
+  `generation_policy.go`，测试 `error_log_test.go`/`reauthentication_support_test.go`/
+  `cline_generation_test.go`。
+- Node 启停统一写 Go + 对账解耦：`webui-account-routes.js`、`go-account-sync.js`、
+  `go-core-host.js`（新增 `managementGoRef` 翻译），测试 `webui-account-status-go.test.js`/
+  `go-account-sync-enable.test.js`。
+- Go 启用即刷新：`application/accounts/management.go` + `composition.go`，
+  测试 `management_test.go`。
+- 真机：WebUI down→Go 0、up→Go 1；刷新后 cline 仍 14 条 upstream + 2 条手工；
+  `go test ./...` 与 `node --test test/*.test.js` 全绿。
 
 ## 5. 不做的事
 

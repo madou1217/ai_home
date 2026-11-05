@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -57,6 +58,26 @@ func nativeGenerations(provider string, native map[string]any) []accountcore.Nat
 	case "zcode":
 		auth := object(native["credentials"])
 		return jwtGeneration("zcode.access.iat", firstText(auth, "zcodejwttoken", "oauth:zai:access_token"))
+	case "cline":
+		// cline 的同一份 token 会在 cline / cline-pass 两个 provider 槽位各存一份。
+		// 只取 lastUsedProvider 指向的那一份：两份不同步时会产生「一新一旧」的部分序，
+		// 让原本有效的更新被判成不可比较（ErrReauthenticationGenerationUnordered）。
+		authRoot := object(native["auth"])
+		providers := object(authRoot["providers"])
+		entry := object(providers[firstText(authRoot, "lastUsedProvider")])
+		if entry == nil {
+			entry = object(providers["cline-pass"])
+		}
+		if entry == nil {
+			entry = object(providers["cline"])
+		}
+		auth := object(object(entry["settings"])["auth"])
+		// accessToken 是 `workos:<JWT>`（前缀属于 wire 格式），解声明前必须剥掉。
+		token := strings.TrimPrefix(firstText(auth, "accessToken", "access_token"), clineAccessTokenPrefix)
+		if value := jwtGeneration("cline.access.iat", token); len(value) != 0 {
+			return value
+		}
+		return expiryGeneration("cline.expires_at", auth["expiresAt"])
 	default:
 		return nil
 	}

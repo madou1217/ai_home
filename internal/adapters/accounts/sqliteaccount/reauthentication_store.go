@@ -275,7 +275,10 @@ func supportsReauthentication(
 	case claude.ProviderID:
 		return authKind == claude.AuthKindOAuth.String() &&
 			authMode == claude.OAuthModeRefreshable.String()
-	case "gemini", "opencode", "grok", "qoder", "qodercn", "kimi", "kiro", "zcode", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	// cline 与下面这些 Provider 同一形态（oauth + native_auth_json）：漏登记会让
+	// 账号同步每次重新导入都 500（ErrReauthenticationUnsupported），
+	// 连带 enabled/default 的对账被跳过。2026-11-06 真机 cline 即为此。
+	case "gemini", "opencode", "grok", "qoder", "qodercn", "kimi", "kiro", "zcode", "cline", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return authKind == "oauth" && authMode == "native_auth_json"
 	default:
 		return false

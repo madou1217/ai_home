@@ -114,10 +114,11 @@
     2026-11-06 已用官方脚本重建并重启成功（healthz 200）。
     **真机已验证**：直连 Go 发一次 `glm-5.3-flash`（zcode）后，`usage_ledger` 立刻出现一行
     `zcode / 1083 input / 1 output`——旁路解析、记录构造、账号校验、SQL 写入整条链路通。
-    **已知缺口**：kiro 同样返回 200，却没有账本行。原因是 kiro 的上游是二进制
-    AWS event-stream，用量在 metering 帧里，由 `kirorelay.FrameDecoder` 解析；而旁路扫描器
-    只认 SSE/`data:` 与整段 JSON。下一步：给 Provider 加「用量上报」扩展点，让已经解析了
-    帧的 transformer 把 usage 交出来，而不是再解析一遍原始字节。
+    **kiro 没有账本行不是 bug**：它的上游（二进制 AWS event-stream）只给 `meteringEvent`
+    的 credits，**没有任何 token 用量帧**——`kirorelay/sse.go` 的注释写明了「usage 只能按字符
+    估算，这里不算，宁可不给也不编造」。所以 kiro 的 token 统计在 Go 侧天然缺失，
+    要补只能做估算，那会污染成本口径；当前决定是**保持不记**。
+    需要 token 的 Provider 必须自己在上游响应里带用量（SSE/JSON 由旁路扫描器解析）。
     校验判据（可直接跑）：
     ```bash
     sqlite3 ~/.ai_home/aih.db "select count(*) from usage_ledger;"

@@ -94,8 +94,13 @@
     `aih.db` 里 `usage_ledger` = 0 行，而 Node 的 `app-state.db.model_usage_records` 有
     1,229,000+ 行（codex 7.6e5 / claude 1.6e5 …）。照此切换，额度页的 tokens 与成本会
     全部变成 0——比不切更糟，所以整条切流（含门面项 `getQuotaStats`）已回滚。
-    解锁条件：Go 每个成功推理都真正写 `usage_ledger`（`account_outcomes.go:RecordSuccess`
-    已接线，需查为什么线上 0 行：二进制版本 / `success.Usage()` / 实际流量仍走 Node）。
+    解锁条件：Go 每个成功推理都真正写 `usage_ledger`。已定位到根因（2026-11-06）：
+    **透传通道（relaycore）从来没有上报过用量**——`recordSuccess` 只记「成功」，
+    `NewAttemptSuccess(clock)` 不带 `WithUsage`，所以 cline/grok/kimi/opencode/qoder/
+    zcode/kiro 全部不落账。修复：relaycore 在响应交付时挂一个旁路解析（`usageTee`），
+    流结束/关闭时结算一次；用量只解析 OpenAI 与 Anthropic 两种主流形态，
+    多帧取最大值、缓存大于输入时并入输入，解析不到就**不记**（不猜）。
+    仍需验证：重建 Go 二进制并重启 core 后，`usage_ledger` 应开始增长。
     校验判据（可直接跑）：
     ```bash
     sqlite3 ~/.ai_home/aih.db "select count(*) from usage_ledger;"

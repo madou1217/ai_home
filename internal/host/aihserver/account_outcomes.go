@@ -63,6 +63,40 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 	return err
 }
 
+// RecordAttemptUsage 记录一条透传请求的真实用量。
+//
+// 与 RecordSuccess 的用量部分同义，但不触发运行态状态机：成功记账在首个字节前
+// 就已完成（账号健康不能等整条流），这里只补 token 事实。
+func (runtime outcomeRecordingRuntime) RecordAttemptUsage(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	usage inference.Usage,
+) error {
+	if !route.IsValid() || !usage.IsValid() || usage.TotalTokens() == 0 {
+		return nil
+	}
+	at := time.Now()
+	runtime.usage.Append(route.AccountRef(), route.ModelID().String(), at, usage)
+	if runtime.usageLedger == nil || runtime.accounts == nil {
+		return nil
+	}
+	success, err := inferencegateway.NewAttemptSuccess(at)
+	if err != nil {
+		return err
+	}
+	record, err := buildUsageLedgerRecord(ctx, runtime.accounts, route, success.WithUsage(usage))
+	if err != nil {
+		if runtime.errorLog != nil {
+			runtime.errorLog.Printf("构造 Go token 用量记录失败（本次推理不受影响）: %v", err)
+		}
+		return err
+	}
+	if err = runtime.usageLedger.AppendUsageRecord(ctx, record); err != nil && runtime.errorLog != nil {
+		runtime.errorLog.Printf("写入 Go token 用量账本失败（本次推理不受影响）: %v", err)
+	}
+	return err
+}
+
 // RecordFailure 记账后按失败类型计数。
 func (runtime outcomeRecordingRuntime) RecordFailure(
 	ctx context.Context,

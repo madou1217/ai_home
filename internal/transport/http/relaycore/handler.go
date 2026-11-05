@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
@@ -82,6 +83,11 @@ type Dependencies struct {
 	MaxRequestBodyBytes int64
 	// UnavailableMessage 是「本通道不可用」时的客户端文案；为空时用默认。
 	UnavailableMessage string
+	// Usage 记录真实 token 用量；为空时该通道不产生用量事实。
+	//
+	// 为什么必须单独注入：成功记账在首个字节交付前完成（账号健康不能等整条流），
+	// 而用量只能等流结束才知道——两件事的时机不同，不能塞进同一个调用。
+	Usage UsageRecorder
 }
 
 // Handler 编排账号选择、请求改写、上游透传与响应回写。
@@ -98,6 +104,7 @@ type Handler struct {
 	clock               func() time.Time
 	maxRequestBodyBytes int64
 	unavailableMessage  string
+	usage               UsageRecorder
 }
 
 // NewHandler 创建默认失败关闭的透传通道。
@@ -136,6 +143,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		clock:               dependencies.Clock,
 		maxRequestBodyBytes: limit,
 		unavailableMessage:  message,
+		usage:               dependencies.Usage,
 	}, nil
 }
 
@@ -686,6 +694,9 @@ func (handler *Handler) writeResponse(
 	stream bool,
 ) {
 	upstreamResponse := outcome.response
+	// 先包旁路解析再挂 defer：defer 在注册时就固定了 receiver，
+	// 之后替换 Body 的话关的会是原对象，结算永远不会触发。
+	upstreamResponse.Body = handler.trackUsage(request.Context(), outcome.route, upstreamResponse.Body)
 	defer upstreamResponse.Body.Close()
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
 	if outcome.retryAccount {
@@ -751,6 +762,38 @@ func (handler *Handler) writeResponse(
 	}
 	response.WriteHeader(upstreamResponse.StatusCode)
 	_ = copyStreaming(response, upstreamResponse.Body)
+}
+
+// trackUsage 给响应体挂上用量旁路解析；没有用量端口时原样返回。
+//
+// 抽成独立方法是为了能直接单测「有没有真的挂上」——挂不上等于账本永远为空，
+// 而这不会产生任何错误，只会在统计页表现为「Go 承接的请求没有用量」。
+func (handler *Handler) trackUsage(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	body io.ReadCloser,
+) io.ReadCloser {
+	if handler.usage == nil || body == nil {
+		return body
+	}
+	return newUsageTee(body, func(usage inference.Usage) {
+		handler.recordUsage(ctx, route, usage)
+	})
+}
+
+// recordUsage 结算一条透传请求的 token 用量。
+//
+// 失败只影响统计，不影响客户端已经收到的响应，因此写库错误在这里吞掉。
+func (handler *Handler) recordUsage(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	usage inference.Usage,
+) {
+	if handler.usage == nil || !usage.IsValid() {
+		return
+	}
+	// 流结束时请求可能已经取消；用量是事实，不能因为客户端断开就丢掉。
+	_ = handler.usage.RecordAttemptUsage(context.WithoutCancel(ctx), route, usage)
 }
 
 // recordSuccess 记录一次成功尝试（成功也要记，否则运行态看不到账号在工作）。

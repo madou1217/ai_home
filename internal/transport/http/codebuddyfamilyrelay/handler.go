@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
@@ -65,6 +65,8 @@ type Dependencies struct {
 	// 同一客户端入口可以挂多个透传 Provider：它们各自服务自己那批账号。链按账号
 	// 所属 Provider 分派差异面，账号来源由调用方合并（见 relaycore.AccountSourceChain）。
 	ExtraProviders []relaycore.Provider
+	// Usage 记录真实 token 用量；为空时本入口不产生用量事实。
+	Usage relaycore.UsageRecorder
 }
 
 // Handler 是家族透传通道。
@@ -98,6 +100,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		// 家族四支共用同一份上游约束，请求体上限与 Node 宿主默认一致。
 		MaxRequestBodyBytes: MaxRequestBodyBytes,
 		UnavailableMessage:  "家族透传当前不可用",
+		Usage:               dependencies.Usage,
 	})
 	if err != nil {
 		return nil, err

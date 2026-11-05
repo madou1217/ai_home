@@ -263,6 +263,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		AIHomeDir:                  options.AIHomeDir,
 		ModelDiscovery:             modelDiscovery,
 		Runtime:                    accountRuntime,
+		AttemptUsage:               accountRuntime,
 		ImageUsage:                 accountRuntime,
 		ImageOutcomes:              accountRuntime,
 		DeletionGuard:              deletionGuard,
@@ -313,6 +314,8 @@ type handlerDependencies struct {
 	ModelDiscovery *accountapp.ModelDiscovery
 	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
 	Runtime serverAccountRuntime
+	// AttemptUsage 记录透传通道的真实 token 用量（由运行态装饰器实现）。
+	AttemptUsage relaycore.UsageRecorder
 	// ImageUsage 记录生图的 token 用量（与推理路径同一个用量管道）；为 nil 时不记账。
 	ImageUsage imagesapi.UsageRecorder
 	// ImageOutcomes 记录生图成功（账号页最近成功 + 清 cooldown）；为 nil 时不记录。
@@ -348,6 +351,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	aiHomeDir := dependencies.AIHomeDir
 	modelDiscovery := dependencies.ModelDiscovery
 	accountRuntime := dependencies.Runtime
+	attemptUsage := dependencies.AttemptUsage
 	imageUsage := dependencies.ImageUsage
 	imageOutcomes := dependencies.ImageOutcomes
 	deletionGuard := dependencies.DeletionGuard
@@ -1113,6 +1117,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			// 同一入口上还要服务 cline / grok / kimi：把它们的 Provider 接进链里。
 			// kimi 的 Provider 是「按账号组装」的适配器（设备指纹依赖账号）。
 			ExtraProviders: relayModuleProviders(relayModules),
+			// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
+			Usage: attemptUsage,
 		},
 	)
 	if err != nil {

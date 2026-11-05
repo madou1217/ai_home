@@ -6,8 +6,8 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	familyfailure "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/upstreamfailure"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 

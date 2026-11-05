@@ -126,6 +126,7 @@ func (strategy *Strategy) FetchUsage(
 		AccountRef: accountRef,
 		ProviderID: codexauth.ProviderID,
 		Source:     sourceID,
+		PlanType:   snapshotPlanType(auth.PlanType()),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -136,6 +137,35 @@ func (strategy *Strategy) FetchUsage(
 		)
 	}
 	return snapshot, nil
+}
+
+// codexPlanTypes 与 Node lib/account/quota-reset/codex-strategy.js 的词汇表一致：
+// 只有这些官方档位才会进快照，未知值保持未知（不拿 PlanFamily 顶替——
+// PlanFamily 把 team 归成 business，会让窗口统计的套餐值和 Node 分叉）。
+var codexPlanTypes = map[string]struct{}{
+	"free":                            {},
+	"go":                              {},
+	"plus":                            {},
+	"prolite":                         {},
+	"pro_lite":                        {},
+	"pro":                             {},
+	"team":                            {},
+	"self_serve_business_usage_based": {},
+	"business":                        {},
+	"enterprise_cbp_usage_based":      {},
+	"enterprise":                      {},
+	"hc":                              {},
+	"edu":                             {},
+	"education":                       {},
+}
+
+// snapshotPlanType 把 ID Token 的套餐 claim 归一成快照里的套餐 token。
+func snapshotPlanType(rawPlan string) string {
+	token := usagecore.NormalizePlanToken(rawPlan)
+	if _, known := codexPlanTypes[token]; known {
+		return token
+	}
+	return ""
 }
 
 // newRequest 复制官方 Codex 客户端所需的最小认证与身份 Header。

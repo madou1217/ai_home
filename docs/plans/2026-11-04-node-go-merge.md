@@ -311,6 +311,31 @@
 >      Go 解析失败 → 显式 refresh 返回 500。已移除 Go 策略与队列，恢复 qoder/qodercn
 >      的 Node 探针（Node 能解密）。前置：把 qoder 的 sym-v1 解密迁到 Go。
 >    - **kimi / grok**：本机没有对应账号，暂不端口化（避免无真机验证的投机实现）。
+> 38. **qoder 凭据解密迁 Go（2026-11-05）**：
+>    - 术语纠正：qoder 的 `native_auth_json.credentials` **不是** WorkBuddy 的 sym-v1 信封，
+>      而是 Qoder CLI 自己写的 opaque blob —— 只有 CLI 内嵌的 `qoder_auth_wasm_bg.wasm`
+>      能解（导出 `credential_storage_decrypt`，密钥 = machineId 前 16 字符；内部是
+>      AES-256-GCM + HKDF-SHA256，且 base64 解码也在 wasm 里）。
+>    - 新增 `internal/adapters/accounts/qodercred`：按安装布局找 `~/.qoder/bin/qodercli/qodercli-*`
+>      （qodercn 走 `.qoder-cn/qoderclicn`），在 Bun 单文件二进制里按 `AGFzbQ` 扫描 base64
+>      内嵌 wasm，用 **wazero（纯 Go，无 CGO）** 实例化并复刻 wasm-bindgen 的 import 宿主。
+>      每次解密建独立实例（共享编译缓存），避免 wasm-bindgen 堆引用串号；结果按
+>      provider+machineId+credential 摘要缓存 32 条。任何一步失败都 fail-open（ok=false），
+>      不影响账号既有行为。
+>    - 新增 `internal/adapters/qoder/usage`（port `lib/usage/quota/probes/qoder-family.js`）：
+>      三个账号面 GET，token 顺序 = PAT → 可读登录态 → qodercred 解密；Free(total=0) 落
+>      「未知比例条目 + 文档 notApplicable=true」，绝不算成 0 剩余。Node 的
+>      `lib/providers/defs/qoder.js` / `qodercn.js` quota 改为 `supported:false`。
+>    - **凭据解析器要求每个 Provider 都有一条 RefreshStrategy**（`readResolutionState` 缺策略
+>      直接报错），所以 qoder/qodercn 必须登记 `staticcredential`（声明永不刷新）。
+>      这也解释了此前 cline/kiro/zcode 的显式 refresh 一直 500：它们的 Go 用量事实实际是
+>      Node 探针推进来的（`go-account-sync` 的 usage facts/documents 通道），不是 Go 自己采的。
+>      本轮只登记 qoder 双区，避免替 Node 接管其余 Provider 的采集节奏。
+>    - 真机（本机唯一 qoder 账号，Free）：重启后 `POST .../usage/refresh` 返回 200；
+>      文档 `kind=qoder_credit_usage`、`coverage.tokenSource=cli_wasm`、
+>      `notApplicable=true / reason=qoder_no_consumable_credits`，快照 1 条 unknown 条目、
+>      quota_status=pending（未被判成 exhausted）。首次解密 ~120ms（含 167MB 二进制扫描），
+>      之后走缓存。付费档路径只有单测覆盖（本机没有付费 qoder 账号）。
 
 ## 0. 结论先行
 
@@ -498,7 +523,11 @@ Node 进程（过渡期，逐渐缩小）
 4. 切换：Go 打开 `aih.db` 作为唯一写库；Node 以只读连接打开同一文件，或改走 Go API。
 5. 回滚：保留 `app-state.db` 切换前快照；失败时恢复快照并重启 Node 旧进程。
 
-**`enc:v1` 前置条件**：Node 的部分 zcode/qoder native 字段用本机密钥加密（`platform:homedir:username` 派生），迁移必须在原 HOME/用户名下执行，或先由 Node 解密成明文再写入 Go；否则 Go 拿到的是不可用密文。这一步必须在退役 Node 前完成。
+**`enc:v1` 前置条件**：Node 的部分 zcode native 字段用本机密钥加密（`platform:homedir:username` 派生），迁移必须在原 HOME/用户名下执行，或先由 Node 解密成明文再写入 Go；否则 Go 拿到的是不可用密文。这一步必须在退役 Node 前完成。
+
+> 2026-11-05 更正：qoder **不属于** `enc:v1` 这一类。它的 `credentials` 是 CLI 自己写的 opaque
+> blob，密钥来自同目录 `machineId` 前 16 字符，解密逻辑在厂商 wasm 里；Go 已用 wazero 复刻
+> （`internal/adapters/accounts/qodercred`），所以 qoder 不再依赖 Node 的解密器。
 
 **三个必须先拍板的决策**：
 

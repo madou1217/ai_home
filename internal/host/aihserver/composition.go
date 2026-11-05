@@ -426,21 +426,33 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 AGY OAuth Refresh Strategy 失败: %w", err)
 	}
-	// 家族四支没有 Go 侧刷新实现（Token 刷新由 Node 宿主完成并同步进凭据库），但
-	// 凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式登记静态策略
-	// （声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合同样登记，
-	// 避免家族账号在两条解析链上出现「一条能读、一条读不到」的分叉。
-	familyCredentialStrategies := make([]accountcredentials.RefreshStrategy, 0, len(codebuddyfamilyrelay.FamilyProviders))
-	for _, providerID := range codebuddyfamilyrelay.FamilyProviders {
+	// 家族四支与 Qoder 双区没有 Go 侧刷新实现（Token 刷新由 Node 宿主/官方 CLI 完成并
+	// 同步进凭据库），但凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式
+	// 登记静态策略（声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合
+	// 同样登记，避免这些账号在两条解析链上出现「一条能读、一条读不到」的分叉。
+	//
+	// Qoder 额度 refresh 走的就是这条链路：凭据是 CLI 的 opaque blob，token 由
+	// qodercred 用厂商 wasm 解密，不需要（也没有）Go 侧 OAuth 刷新。
+	staticCredentialProviders := append(
+		append([]string{}, codebuddyfamilyrelay.FamilyProviders...),
+		"qoder",
+		"qodercn",
+	)
+	staticCredentialStrategies := make(
+		[]accountcredentials.RefreshStrategy,
+		0,
+		len(staticCredentialProviders),
+	)
+	for _, providerID := range staticCredentialProviders {
 		strategy, err := staticcredential.New(providerID)
 		if err != nil {
 			return serverHandlers{}, nil, fmt.Errorf(
-				"创建家族静态凭据策略失败(%s): %w",
+				"创建静态凭据策略失败(%s): %w",
 				providerID,
 				err,
 			)
 		}
-		familyCredentialStrategies = append(familyCredentialStrategies, strategy)
+		staticCredentialStrategies = append(staticCredentialStrategies, strategy)
 	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
@@ -451,7 +463,7 @@ func newHandlers(
 					claudeProvider,
 					agyProvider,
 				},
-				familyCredentialStrategies...,
+				staticCredentialStrategies...,
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
@@ -731,7 +743,7 @@ func newHandlers(
 					claudeProvider,
 					agyProvider,
 				},
-				familyCredentialStrategies...,
+				staticCredentialStrategies...,
 			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			authorizer:                clientAuthorizer,

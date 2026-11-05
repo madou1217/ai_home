@@ -21,6 +21,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
+	qoderusage "github.com/madou1217/ai_home/internal/adapters/qoder/usage"
 	zcodeusage "github.com/madou1217/ai_home/internal/adapters/zcode/usage"
 )
 
@@ -124,6 +125,16 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// Qoder 家族两个区域共用同一账号面协议；凭据是 CLI 的 opaque blob 时由
+	// qodercred 用厂商 wasm 解密出 token（Node 侧同为 cli_wasm 来源）。
+	qoderStrategies := make([]usageapp.ProviderStrategy, 0, 2)
+	for _, providerID := range []string{"qoder", "qodercn"} {
+		strategy, strategyErr := qoderusage.New(client, providerID)
+		if strategyErr != nil {
+			return nil, strategyErr
+		}
+		qoderStrategies = append(qoderStrategies, strategy)
+	}
 	// CodeBuddy 家族四支共用同一账单协议，按 Provider 各注册一条策略。
 	familyStrategies := make([]usageapp.ProviderStrategy, 0, 4)
 	for _, providerID := range []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"} {
@@ -147,14 +158,14 @@ func newUsageComposition(
 		},
 		Models:  dependencies.models,
 		Runtime: dependencies.runtime,
-		Strategies: append([]usageapp.ProviderStrategy{
+		Strategies: append(append([]usageapp.ProviderStrategy{
 			codexStrategy,
 			claudeStrategy,
 			kiroStrategy,
 			agyStrategy,
 			zcodeStrategy,
 			clineStrategy,
-		}, familyStrategies...),
+		}, qoderStrategies...), familyStrategies...),
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
 	})
@@ -175,6 +186,8 @@ func newUsageComposition(
 			"workbuddy":   usageProviderConcurrency,
 			"workbuddycn": usageProviderConcurrency,
 			"cline":       usageProviderConcurrency,
+			"qoder":       usageProviderConcurrency,
+			"qodercn":     usageProviderConcurrency,
 		},
 		RefreshTimeout:  usageRefreshTimeout,
 		RefreshInterval: usageRefreshInterval,

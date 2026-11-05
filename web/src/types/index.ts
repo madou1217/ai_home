@@ -127,19 +127,51 @@ export interface QuotaStatsSummary {
   nextCloseAtMs: number;
 }
 
+export type QuotaStatsGranularity = 'window' | 'day' | 'week';
+
+export interface QuotaUsageBucket {
+  index: number;
+  startMs: number;
+  endMs: number;
+  bucketStartMs: number;
+  tokens: number;
+  costUsd: number | null;
+  costKnown: boolean;
+  requestCount: number;
+}
+
+export interface QuotaUsageSummary {
+  bucketCount: number;
+  totalTokens: number;
+  totalCostUsd: number | null;
+  costKnown: boolean;
+  requestCount: number;
+  avgTokensPerBucket: number | null;
+  avgCostUsdPerBucket: number | null;
+}
+
 export interface AccountQuotaStatsResponse {
   ok: boolean;
   provider: Provider;
   accountRef: string;
   generatedAtMs: number;
   range: { fromMs: number; toMs: number; rangeDays: number };
+  granularity: QuotaStatsGranularity;
   dimensions: QuotaWindowDimension[];
   windowMinutes: number;
   scope: QuotaWindowScope | null;
   current: { remainingPct: number | null; resetAtMs: number; capturedAtMs: number } | null;
   summary: QuotaStatsSummary;
+  usageBuckets: QuotaUsageBucket[];
+  usageSummary: QuotaUsageSummary | null;
   windows: QuotaStatsWindowRow[];
-  emptyReason: 'dimension_unavailable' | 'snapshot_only' | 'no_samples' | 'no_windows_in_range' | null;
+  emptyReason:
+    | 'dimension_unavailable'
+    | 'snapshot_only'
+    | 'no_samples'
+    | 'no_windows_in_range'
+    | 'no_usage_in_range'
+    | null;
 }
 
 export interface AccountQuotaStatsQuery {
@@ -147,6 +179,7 @@ export interface AccountQuotaStatsQuery {
   scope?: string;
   rangeDays?: number;
   to?: number;
+  granularity?: QuotaStatsGranularity;
 }
 
 export interface AccountModelSummary {

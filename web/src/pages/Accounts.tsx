@@ -551,26 +551,34 @@ export default function Accounts() {
     if (canEditAccountConfig(record)) {
       menuItems.push({ key: 'edit', label: '编辑配置', icon: <EditOutlined /> });
     }
-    menuItems.push({ key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> });
-    menuItems.push({ key: 'export-account', label: '导出此账号', icon: <ExportOutlined /> });
+    // 低频/只读动作收进「更多」：菜单第一屏只留角色、额度、登录与编辑。
+    const moreItems: MenuProps['items'] = [
+      { key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> },
+      { key: 'export-account', label: '导出此账号', icon: <ExportOutlined /> }
+    ];
     if (canRestoreAccountScheduling(record)) {
-      menuItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
+      moreItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
     }
-    // 账号活动（签到 / 领臭鸡蛋）：动作来自服务端下发的 activityActions，
-    // 前端不判断 provider（新增 provider 只加描述符）。
-    for (const action of record.activityActions || []) {
-      menuItems.push({
-        key: `activity:${action.id}`,
-        label: action.label,
-        icon: <GiftOutlined />
-      });
-    }
-    menuItems.push({ key: 'account-egress', label: '出口设置', icon: <GlobalOutlined /> });
+    moreItems.push({ key: 'account-egress', label: '出口设置', icon: <GlobalOutlined /> });
     if (canConfigureWindowActivation(record)) {
-      menuItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
+      moreItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
     }
-    menuItems.push({ key: 'alias-pool', label: '别名选号', icon: <BranchesOutlined /> });
-    menuItems.push({ key: 'model-context', label: '上下文窗口', icon: <FieldNumberOutlined /> });
+    moreItems.push({ key: 'alias-pool', label: '别名选号', icon: <BranchesOutlined /> });
+    moreItems.push({ key: 'model-context', label: '上下文窗口', icon: <FieldNumberOutlined /> });
+    menuItems.push({ key: 'more', label: '更多', icon: <MoreOutlined />, children: moreItems });
+
+    // 账号活动（签到 / 领臭鸡蛋）：动作来自服务端下发的 activityActions，
+    // 前端不判断 provider（新增 provider 只加描述符）。多个活动收进子菜单。
+    const activityItems: MenuProps['items'] = (record.activityActions || []).map((action) => ({
+      key: `activity:${action.id}`,
+      label: action.label,
+      icon: <GiftOutlined />
+    }));
+    if (activityItems.length === 1 && activityItems[0]) {
+      menuItems.push(activityItems[0]);
+    } else if (activityItems.length > 1) {
+      menuItems.push({ key: 'activities', label: '账号活动', icon: <GiftOutlined />, children: activityItems });
+    }
     menuItems.push({ type: 'divider' });
     menuItems.push({ key: 'delete', label: '删除账号', danger: true, icon: <DeleteOutlined /> });
     return menuItems;

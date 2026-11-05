@@ -771,6 +771,7 @@ export const accountsAPI = {
     if (query.scope) params.scope = query.scope;
     if (query.rangeDays) params.rangeDays = query.rangeDays;
     if (query.to) params.to = query.to;
+    if (query.granularity) params.granularity = query.granularity;
     const response = await api.get<AccountQuotaStatsResponse>(
       `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-stats`,
       { params }

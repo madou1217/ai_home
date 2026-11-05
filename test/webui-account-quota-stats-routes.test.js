@@ -240,13 +240,14 @@ test('没有该窗口长度的数据时返回 dimension_unavailable', async (t) 
   seed(dir, { withSamples: false });
   const ctx = createCtx({
     pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: '?window=10080',
+    query: '?window=10080&granularity=window',
     dir
   });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
 
   const { status, payload } = ctx.writes[0];
   assert.equal(status, 200);
+  assert.equal(payload.granularity, 'window');
   assert.equal(payload.emptyReason, 'dimension_unavailable');
   assert.deepEqual(payload.windows, []);
   assert.equal(payload.summary.windowCount, 0);
@@ -297,4 +298,91 @@ test('注入了用量服务时把 tokens 合并进窗口', async (t) => {
   assert.equal(payload.summary.totalTokens, 3000);
   assert.equal(payload.summary.totalCostUsd, 0.5);
   assert.equal(payload.summary.requestCount, 6);
+});
+
+test('granularity=day 按自然日聚合用量，不依赖窗口样本', async (t) => {
+  const dir = tmp(t);
+  seed(dir, { withSamples: false });
+  const seen = [];
+  const deps = {
+    modelUsageService: {
+      getAccountQuotaWindowUsage: (query) => {
+        seen.push(query);
+        return query.windows.map((window) => ({
+          index: window.index,
+          tokens: 500,
+          costUsd: 0.5,
+          costKnown: true,
+          requestCount: 2
+        }));
+      }
+    }
+  };
+  const ctx = createCtx({
+    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    query: `?granularity=day&rangeDays=1&to=${NOW}`,
+    dir,
+    deps
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+
+  const payload = ctx.writes[0].payload;
+  assert.equal(ctx.writes[0].status, 200);
+  assert.equal(payload.granularity, 'day');
+  assert.equal(payload.emptyReason, null);
+  assert.equal(seen.length, 1);
+  // 1 天范围跨了两个自然日（起点在当天中途），所以是两个部分日桶。
+  assert.equal(payload.usageBuckets.length, 2);
+  assert.equal(payload.usageBuckets[0].tokens, 500);
+  assert.equal(payload.usageSummary.totalTokens, 1000);
+  assert.equal(payload.usageSummary.totalCostUsd, 1);
+  assert.equal(payload.usageSummary.requestCount, 4);
+});
+
+test('granularity=week 按自然周聚合，30 天范围得到 4–6 个桶', async (t) => {
+  const dir = tmp(t);
+  seed(dir, { withSamples: false });
+  const ctx = createCtx({
+    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    query: `?granularity=week&rangeDays=30&to=${NOW}`,
+    dir
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+
+  const payload = ctx.writes[0].payload;
+  assert.equal(ctx.writes[0].status, 200);
+  assert.equal(payload.granularity, 'week');
+  assert.ok(payload.usageBuckets.length >= 4 && payload.usageBuckets.length <= 6);
+  // 周桶必须从本地周一零点开始（getDay(): 0=周日, 1=周一）。
+  assert.equal(new Date(payload.usageBuckets[0].bucketStartMs).getDay(), 1);
+  assert.equal(new Date(payload.usageBuckets[0].bucketStartMs).getHours(), 0);
+});
+
+test('未指定粒度且没有窗口明细时自动给日统计', async (t) => {
+  const dir = tmp(t);
+  seed(dir, { withSamples: false });
+  const ctx = createCtx({
+    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    query: `?to=${NOW}`,
+    dir
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+
+  const payload = ctx.writes[0].payload;
+  assert.equal(ctx.writes[0].status, 200);
+  assert.equal(payload.granularity, 'day');
+  assert.equal(payload.emptyReason, 'no_usage_in_range');
+});
+
+test('非法 granularity 400', async (t) => {
+  const dir = tmp(t);
+  seed(dir, { withSamples: false });
+  const ctx = createCtx({
+    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    query: '?granularity=hour',
+    dir
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].status, 400);
+  assert.equal(ctx.writes[0].payload.error, 'invalid_quota_granularity');
 });

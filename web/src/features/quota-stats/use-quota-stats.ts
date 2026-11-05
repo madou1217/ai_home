@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { accountsAPI } from '@/services/api';
-import type { AccountQuotaStatsResponse } from '@/types';
+import type { AccountQuotaStatsResponse, QuotaStatsGranularity } from '@/types';
 
 export interface UseQuotaStatsOptions {
   provider: string;
@@ -9,6 +9,8 @@ export interface UseQuotaStatsOptions {
   windowMinutes: number;
   scopeKey: string;
   rangeDays: number;
+  /** 空字符串 = 由服务端按账号能力自动选（有窗口明细看窗口，否则给日统计）。 */
+  granularity: QuotaStatsGranularity | '';
 }
 
 export interface UseQuotaStatsResult {
@@ -31,7 +33,7 @@ function readErrorMessage(error: unknown) {
  *   · 用递增序号丢弃过期响应 —— 快速切换维度时，慢请求不能覆盖新结果。
  */
 export function useQuotaStats(options: UseQuotaStatsOptions): UseQuotaStatsResult {
-  const { provider, accountRef, windowMinutes, scopeKey, rangeDays } = options;
+  const { provider, accountRef, windowMinutes, scopeKey, rangeDays, granularity } = options;
   const [data, setData] = useState<AccountQuotaStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,8 @@ export function useQuotaStats(options: UseQuotaStatsOptions): UseQuotaStatsResul
       const response = await accountsAPI.getQuotaStats(provider, accountRef, {
         window: windowMinutes || undefined,
         scope: scopeKey || undefined,
-        rangeDays
+        rangeDays,
+        granularity: granularity || undefined
       });
       if (sequenceRef.current !== sequence) return;
       setData(response);
@@ -57,7 +60,7 @@ export function useQuotaStats(options: UseQuotaStatsOptions): UseQuotaStatsResul
     } finally {
       if (sequenceRef.current === sequence) setLoading(false);
     }
-  }, [accountRef, provider, rangeDays, scopeKey, windowMinutes]);
+  }, [accountRef, granularity, provider, rangeDays, scopeKey, windowMinutes]);
 
   useEffect(() => {
     void reload();

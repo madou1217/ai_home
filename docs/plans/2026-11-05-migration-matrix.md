@@ -75,6 +75,16 @@
    退出码 0 才可以改 manifest，2 表示存在未预期的 node-only 模型。脚本需要两端的 client key
    （`AIH_SERVER_API_KEY`），本机当前拿不到运行中服务的 key，因此**尚未做真机差集**。
    已知规模：Go 的 `account_models` 现有 210 个去重模型（749 行，只读查询 `aih.db`）。
+10. **WebUI 额度统计（`/v0/webui/accounts/:provider/:ref/quota-stats`）卡在成本口径（2026-11-06）。**
+    Go 侧的窗口重建、维度选择、汇总全部已就绪（`application/accountusage/quota_stats.go`），
+    唯一缺口是 `cost_usd`：Node 的成本来自 `model_usage_pricing` 表 +
+    `lib/usage/model-usage-{identity,pricing,resolver}.js`，而 Go 的 `usage_ledger` 只有 token 明细。
+    已完成：计费归属 + 定价引擎迁到 `internal/adapters/usagepricing`（18 条归属 + 126 条成本
+    由 Node 出真值的对照夹具，变异验证过）。
+    下一步：① `sqliteaccount` 读 `model_usage_pricing`（`context_cost_tiers_json` 是 JSON 文本，
+    `reasoning_output_token_cost` 在表里是 NOT NULL DEFAULT 0，读回时 0 要当「未声明」）；
+    ② `usagestatsapi` 的 models 响应补 `cost_usd`/`cost_known`（用接口注入，不让传输层依赖适配器）；
+    ③ 才轮到 WebUI 前门切流。
 9. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

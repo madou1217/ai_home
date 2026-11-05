@@ -286,6 +286,21 @@
 >    真机：重启后 Go 已分别刷新「无套餐」账号（文档 entries=0）与有套餐账号
 >    （GLM Coding Plan，3 条 entries），按 30s 错峰逐个推进。
 >    未迁：Node 的 BigModel coding-plan 附加额度（5h/每周/MCP），它是附加信息，后续可补。
+> 36. **CodeBuddy 家族额度采集迁 Go（2026-11-05）**：新增
+>    `internal/adapters/codebuddyfamily/usage`，按发行版域名 POST
+>    `/billing/meter/get-user-resource-summary`（Bearer accessToken、`X-User-Id`、
+>    `X-Domain`、`User-Agent: CodeBuddy/1.0 (ai-home)`）。`Packages[]` 的
+>    CycleTotal/Remain/UsedCapacity 折成积分条目：
+>    **归一化快照只放一条聚合条目**（sum(remain)/sum(total)），明细包只进展示文档
+>    （`category:'detail'`）——否则一个用尽的赠包会把账号级 min(remaining) 拖成 0，
+>    健康账号被误判耗尽。`Packages=[]` 且 `TotalCredits=0` 是确定的 0 积分
+>    （exhausted），不是未知；付费档位只在 `IsPaidUser=true` 时按
+>    `SubscriptionPackageCode` 映射。
+>    四个 Provider 各注册一条策略（codebuddy/codebuddycn/workbuddy/workbuddycn），
+>    协调器加入四个刷新队列；Node 的共享描述符
+>    `lib/providers/defs/_shared/codebuddy-family.js` 的 quota 改为 `supported:false`。
+>    真机：重启后 **15/15 家族账号**在 ~80s 内全部产生快照文档（3–5 条 entries，
+>    付费账号带 planType），account_usage 15 条。
 
 ## 0. 结论先行
 

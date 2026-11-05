@@ -16,6 +16,7 @@ import (
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	codebuddyfamilyusage "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/usage"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
@@ -117,6 +118,15 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	// CodeBuddy 家族四支共用同一账单协议，按 Provider 各注册一条策略。
+	familyStrategies := make([]usageapp.ProviderStrategy, 0, 4)
+	for _, providerID := range []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"} {
+		strategy, strategyErr := codebuddyfamilyusage.New(client, providerID)
+		if strategyErr != nil {
+			return nil, strategyErr
+		}
+		familyStrategies = append(familyStrategies, strategy)
+	}
 	kiroRefresher, err := kirocred.New(dependencies.store, client, dependencies.clock)
 	if err != nil {
 		return nil, err
@@ -131,13 +141,13 @@ func newUsageComposition(
 		},
 		Models:  dependencies.models,
 		Runtime: dependencies.runtime,
-		Strategies: []usageapp.ProviderStrategy{
+		Strategies: append([]usageapp.ProviderStrategy{
 			codexStrategy,
 			claudeStrategy,
 			kiroStrategy,
 			agyStrategy,
 			zcodeStrategy,
-		},
+		}, familyStrategies...),
 		Refresher: kiroRefresher,
 		Clock:     dependencies.clock,
 	})
@@ -148,11 +158,15 @@ func newUsageComposition(
 		Catalog:   dependencies.catalog,
 		Refresher: service,
 		ProviderConcurrency: map[string]int{
-			"codex":  usageProviderConcurrency,
-			"claude": usageProviderConcurrency,
-			"kiro":   usageProviderConcurrency,
-			"agy":    usageProviderConcurrency,
-			"zcode":  usageProviderConcurrency,
+			"codex":       usageProviderConcurrency,
+			"claude":      usageProviderConcurrency,
+			"kiro":        usageProviderConcurrency,
+			"agy":         usageProviderConcurrency,
+			"zcode":       usageProviderConcurrency,
+			"codebuddy":   usageProviderConcurrency,
+			"codebuddycn": usageProviderConcurrency,
+			"workbuddy":   usageProviderConcurrency,
+			"workbuddycn": usageProviderConcurrency,
 		},
 		RefreshTimeout:  usageRefreshTimeout,
 		RefreshInterval: usageRefreshInterval,

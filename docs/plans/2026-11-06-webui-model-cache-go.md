@@ -827,6 +827,87 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 - **WebUI 合并层**：采用 Go 的 `accountProbedAt`（与 Node 取大）与错误（成功即清空旧错误）。
 - 真机：opencode 109、codebuddy 26、全量 209，`source=remote`。
 
-下一阶段（Phase 2）：按 provider 把 Node 的 `models.supported` 关掉并删探测链。
-每个 provider 独立提交，验证口径 = 该 provider 所有账号的 scoped 目录数与
-`/v1/management/account-models` 完全相等；建议从 opencode / cline 开始，最后 codex/claude。
+
+## Phase 2 第一批：opencode / cline 的 Node 探测链退役（2026-11-05）
+
+### 形态
+
+- **归属唯一真值源**：`lib/providers/model-ownership.js` 的 `GO_MODEL_OWNERS` +
+  `goOwnedModels(id)`。descriptor 的 `models` 能力由它派生，不手写策略。
+- **单策略**：`handler: 'go-account-models'`、`transport: 'local'`。Go 是本机服务，
+  这份目录既不出网也不依赖客户端；`local` 让它在账号出口解析**之前**执行，
+  出口配置异常不会拖垮目录读取。
+- **实现**：`lib/server/model-discovery/go-account-models.js` 读
+  `GET /v1/management/account-models`，并做 Node↔Go accountRef 翻译。
+- **删除的探测链**：`opencode-models` / `cline-static-catalog` 两个 handler；
+  `http-utils` 里按 provider 名的 opencode 分支；`opencode-server-client` 的
+  `probeOpenCodeCatalog` / `fetchOpenCodeModels`。
+- **不回退**：`fetchModelsForAccount` 对 Go 接管的 Provider 不再落到通用探测/原生 CLI；
+  Go 读不到时抛 `go_model_catalog_unavailable`（缓存层保留上一份目录，不把账号判成
+  「没有模型」）。
+- **本地兜底退役**：`account.availableModels`、描述符目录、目录缓存不再参与 Go 接管
+  Provider 的目录（停用的 cline 账号曾因此残留 2 条历史模型）。
+- **账号引用翻译**：同步链接缺失时按**恒等**（两侧 ref 相同），不再返回空串。
+  修复前 opencode 的 API Key 账号读不到 Go 目录（WebUI 显示 0 个模型）。
+
+### 真机（2026-11-05，Node 9527 / Go 19550）
+
+- opencode OAuth 账号（Node `acct_5339…` → Go `acct_84c6…`）：109，与 Go
+  `account-models` 一致，`source=remote`。
+- opencode API Key 账号（`acct_e9b5…`，两侧同 ref）：109（修复前 0）。
+- cline：在 Go 里把 `acct_0176…` 置为 `enabled=1` 后 `POST /models/refresh`，`account_models`
+  得到 **14 条 `upstream_available=1`**，与 `KNOWN_CLINE_MODELS` 逐条相同；另有 2 条手工模型
+  （`upstream_available=0`）。WebUI scoped = 16、`missing=[]`、`firstError` 空。
+  **遗留**：Node 的账号启停只在 codex/claude 上会写 Go 的 `enabled`；其他 Provider 的
+  WebUI「启用」只改 Node 运行态，Go 仍是 `enabled=0`、不会刷新目录（cline 就因此一直是空）。
+- 回归守卫：`test/model-ownership.test.js`（10 项：descriptor 派生、无出网策略、
+  不出网读取、Go 读不到时抛错、本地兜底不进目录、ref 恒等翻译）。
+
+### 第二批：家族四支 / kiro / qoder 双端（2026-11-05）
+
+- **codebuddy / codebuddycn / workbuddy / workbuddycn**：`_shared/codebuddy-family.js` 的
+  HTTP（`/v3/config`）与本地 CLI（`--help`）两条策略一起退役；删除
+  `lib/account/codebuddy-family-model-discovery.js`、`lib/server/workbuddy-model-discovery.js`
+  与 `native-cli-model-discovery` 的 `codebuddy-help` 分支。
+- **kiro**：HTTP（ListAvailableModels）与 CLI 兜底退役，删除 `lib/account/kiro-model-discovery.js`。
+- **qoder / qodercn**：HTTP（WASM 签名目录）与 CLI 兜底退役；`qoder-model-catalog` 仅保留
+  与推理传输共用的目录读取（`readQoderModelCatalog` 等）。
+- **两处 UX 修正**：
+  - `mergeGoCatalogResult` 在覆盖 `errorsByAccount` 后重算 `firstError`——否则账号恢复后
+    页面仍显示旧探测错误（实测重启后 kiro 已正常仍报 `go_model_catalog_reader_missing`）。
+  - scoped 空目录不再写入 3 秒响应缓存——启动早期 Go 未 ready 时的那一次空结果会被
+    轮询反复续期（实测 opencode API Key 账号持续显示 0 个模型）。
+- **真机**：qoder 15、kiro 5×5、codebuddy 26×N、opencode 109/109，全部
+  `source=remote`、`errorsByAccountRef` 为空，与 `/v1/management/account-models` 相同。
+- 说明：Go 的 opencode 目录在刷新窗口内会短暂为空（模型行被整体替换），WebUI 如实反映；
+  这不是 Node 探测问题，属于 Go 侧刷新策略，后续单独观察。
+
+### 第三批：收尾（16/16）
+
+- **agy / gemini / kimi / grok / zcode / codex / claude** 全部改为 `goOwnedModels(id)`。
+- 删除最后一批 Node 探测实现：`codex-native-models`、`code-assist-models`、`native-cli`
+  三个 handler；`http-utils` 的 codex / code-assist 兜底分支与本地 CLI 兜底；
+  `lib/server/native-cli-model-discovery.js` 整文件删除；`describeNativeCliFallbackFailure`
+  一并删除（CLI 策略已全部退役）。
+- `fetchModelsForAccount` 现在只剩两条路径：Go 接管（唯一策略）与「无策略时的通用
+  /models 探测」（插件 Provider 用）。派发路径不再出现任何内置 provider 名。
+- **停用账号的本地目录**：`getWebUiCatalogResult` 在 Go 正常作答后，丢弃 Go 没有返回的
+  Go 接管账号的本地缓存（`dropGoOwnedLocalEntries`）；Go 不可达（null）时仍保留快照兜底。
+  这样停用账号不会永远显示上一次 Node 探测的历史目录。
+
+- **注入点回归**：`server.js` 的 `fetchModelsForAccountWithRefresh` 曾漏掉最后一跳的
+  `withGoModelSource`，所有 Go 接管 Provider 都以 `go_model_catalog_reader_missing` 失败，
+  `/v0/management/models` 从 178 个模型变成 0（WebUI 走合并层看不出来）。已抽成纯函数
+  `lib/server/go-model-source-options.js` 并加单测（`test/go-model-source-options.test.js`）。
+- **真机对比**（43 个账号，逐账号 scoped vs Go `account_models`）：
+  - 35 个账号完全一致；
+  - 6 个 agy 账号 `enabled=0` 不在运行池：页面不展示目录（Go 有 12 条），符合既有行为；
+  - 2 个 cline 账号 `enabled=0`：页面只显示手工模型设置（Go 无目录）。启用后由 Go 刷新。
+- **待真机**：kimi / grok / gemini / cline 的目录要等对应账号可用后验证；
+  codex / claude / agy / zcode / qoder / kiro / 家族已用现网账号验证过条数。
+
+### 下一步
+
+- 模型目录迁移到此收口；后续 Provider 新增只改 descriptor 一行
+  （`models: goOwnedModels(id)`）+ 在 Go 注册目录源。
+- 停用账号的目录展示策略（是否在启用前也读 Go）留待产品确认。

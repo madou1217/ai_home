@@ -2,7 +2,7 @@
 //
 // 上游 GET https://api.cline.bot/api/v1/models 返回 462 条 OpenRouter 风格的伙伴
 // 命名空间 ID，**不含 cline-pass/***；原样透出会把模型误判给 claude 等 provider。
-// 因此对外的目录 = 官方 SDK 的推荐清单（已逐条对 /chat/completions 实测可���），
+// 因此对外的目录 = 官方 SDK 的推荐清单（已逐条对 /chat/completions 实测可用），
 // 与 Node lib/server/cline-models.js 同源。
 //
 // 刻意排除 cline-free/*：那条命名空间在本网关的 API 面上一律 403。

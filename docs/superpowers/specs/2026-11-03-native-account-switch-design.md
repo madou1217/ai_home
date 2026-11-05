@@ -296,7 +296,24 @@ CodeBuddy 家族 CLI 在 TUI 内 `/model` 切模型后，CLI 会把新模型写�
 
 **触发时机**：429 那一行进入 PTY 输出后，检测器先等 **200ms 静默窗口**（让折行 /
 分块补齐半截时间戳），随后立即换号（再 250ms 杀旧进程），不等下一次用户输入。
-已经提交、被上游拒绝的那条消息不会自动重发——它已经在会话里，续接后可以重试；
-草稿回放只负责「还没按回车的内容」。`Auto-switch: 1 -> 3` 与
-`resuming … session …` 两行是用户判断「换没换、接没接上」的依据。
+`Auto-switch: 1 -> 3` 与 `resuming … session …` 两行是用户判断「换没换、接没接上」的依据。
+
+### 换号后的收尾（2026-11-05）
+
+429 打断的那一轮以前要用户自己再发一次 `continue`，而且换号只杀掉了 tmux 客户端，
+旧会话和里面的 provider 进程留在后台——换几次号就多几个空闲 codebuddy。
+
+1. **旧持久会话退休**（`persistent-session-retire.js`）。`aih <cli>` 的 PTY 子进程是
+   tmux **客户端**，`kill()` 只断客户端。启动时把「这次进的是哪个会话、是不是本次新建的」
+   （`persistentSessionInfo`）挂在 pty 上；换号时先读 `session_attached`（必须在 kill
+   客户端之前读），新进程起来后再 `kill-session`。只退休 `owned`（本次 `new-session`
+   创建的）且附着数 ≤ 1 的会话：reattach / takeover / mirror 进入的是用户已有会话，
+   有别的客户端在看时也不动，留给 `aih ss` 的空闲回收。
+2. **自动继续**（`switch-continue.js`）。仅 429 触发的换号：新 TUI 首帧后 700ms 把一条
+   普通用户消息 `continue` 写进新 PTY（文字与回车分两次写，避免被当成粘贴），用户不必
+   再在会话里手敲。有草稿时让位给草稿回放；没续接上（新开对话）时不发；超时 15s 放弃。
+   对 TUI 而言这条消息与用户亲手输入完全一致，模型会接着做被打断的那一轮。
+
+回归守卫：`test/persistent-session-retire.test.js`、`test/switch-continue.test.js`、
+`test/persistent-session-launch-info.test.js`。
 

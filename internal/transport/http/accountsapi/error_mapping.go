@@ -225,6 +225,15 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"account_import_generation_unordered",
 			"无法证明导入凭据比当前凭据更新",
 		)
+	case errors.Is(err, accountapp.ErrReauthenticationUnsupported):
+		// 这是能力边界（凭据形态不支持原地替换），不是服务端异常：给 409 让调用方
+		// 按终态处理，而不是每轮都当成可重试的 500（2026-11-06 cline 同步一直重试）。
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"account_reauth_unsupported",
+			"账号凭据不支持原地重新认证",
+		)
 	case errors.Is(err, accountapp.ErrCLIAccountIDExhausted):
 		writeAPIError(
 			response,
@@ -300,6 +309,8 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"账号数据无效",
 		)
 	default:
+		// 未映射 = 真正的服务端异常：把原始错误写进日志（客户端仍只看到稳定文案）。
+		logServerError("internal_error", err)
 		writeAPIError(
 			response,
 			http.StatusInternalServerError,

@@ -3,6 +3,7 @@ package accountsapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -49,6 +50,12 @@ func (handler *Handler) handleNativeImport(
 		profile,
 	)
 	if err != nil {
+		// 带上 Provider 与 artifact 数量：这两项足以定位是哪个 Provider 的解码/导入失败，
+		// 又不包含任何凭据内容。
+		logServerError(
+			fmt.Sprintf("native_import provider=%s artifacts=%d", input.ProviderID, len(input.Artifacts)),
+			err,
+		)
 		writeApplicationError(response, err)
 		return
 	}

@@ -1,18 +1,19 @@
 # WebUI 模型缓存切换到 Go account_models（2026-11-06）
 
 > 状态：方案（只读分析，未改代码、未提交）
-> 基线：`main` @ `a6c25ea1`；工作区另有其它并行任务的未提交改动，均不属于本方案
+> 基线：`main` @ `75eda502`（分析时 `a6c25ea1`；`75eda502` 由并发任务修复 opencode 双腿完整性，并把本方案一并提交）
+> 说明：本文档的实测数字来自 `a6c25ea1` 时的数据库状态；`75eda502` 只改了 opencode 发现策略，不回填存量行
 > 目标：WebUI 的模型目录读取从 Node 探测快照切到 Go `aih.db.account_models`，前端响应形状不变
 > 非目标：不改 Go 推理路由；不在 Phase 1 退役 Node 探测；不改 Node→Go 的公共 model-catalog 投影
 
 ## 0. 结论（可执行答案）
 
 1. **切换点不在前端，也不在 `webui-model-cache.js` 内部**，而在三个读入口对 `catalogResult` 生产者的调用：`webui-openai-model-routes.js:607`、`webui-openai-model-routes.js:881`、`webui-project-routes.js:182`。把 `getWebUiModelsCache()` 换成返回同一 `catalogResult` 形状的 Go 投影读取器，下游 `buildCatalogModelEntries` / `buildManagedModelItems` / `buildModelAccountRefProjection` 全部不动。
-2. **必须先做 Go 侧五件前置**：Node→Go 账号 ref 映射、批量读端点、探测事实（last_attempt/last_error/last_model_count/source）、目录 generation、多腿目录的 incomplete 语义。缺任何一项都会产生可见回归，见 §2.4。
+2. **必须先做 Go 侧五件前置**：Node→Go 账号 ref 映射、批量读端点、探测事实（last_attempt/last_error/last_model_count/source）、目录 generation、多腿目录的 incomplete 语义。其中多腿完整性已由 `75eda502` 采用 fail-closed 关闭（见 §2.4 P0-4）；其余四件仍未落地。缺任何一项都会产生可见回归。
 3. **不能只切管理页**：`GET /v0/webui/openai-models`（模型管理页）与 `GET /v0/webui/models`（会话/项目模型选择器）必须同源；只切一个会让两个页面看到不同模型集合。
 4. **不能顺手删 Node 探测**：`state.webUiModelsCache` 同时服务 Node 推理路由、`/v1/models`、别名预检、CLI 补全、Claude harness 的 context window。本方案 Phase 1 只切 WebUI 管理面读取，Node 探测保留为回退与对照。
 5. **缓存失效以 Go 为真值**：Node 只保留「短 TTL 投影 + ETag + 首屏持久化投影」；Go 侧后台重扫/路由未命中刷新通过 generation 条件 GET 被动发现，不要求 Go 反向通知 Node。
-6. **本机实测不是零差异**：43 个账号里 29 个模型集合完全一致；13 个账号 Go 已覆盖而 Node 快照没有（净 +92 个模型）；1 个 opencode 账号 Go 少 41 个 `opencode/*` 模型（单腿失败被当成完整目录）。切换前必须把这个负数修到 0，见 §4.1。
+6. **本机实测不是零差异**：43 个账号里 29 个模型集合完全一致；13 个账号 Go 已覆盖而 Node 快照没有（净 +92 个模型）；1 个 opencode 账号 Go 少 41 个 `opencode/*` 模型（单腿失败被当成完整目录，已由 `75eda502` 改为 fail-closed）。存量行仍要等一次成功刷新回填，切换门禁见 §5 Step 9。
 
 ## 1. 现状调用链
 
@@ -119,7 +120,7 @@ Go 侧**没有**的东西（与本方案直接相关）：
 1. 没有「上次探测时刻 / 上次错误 / 上次是否为空」的持久化事实。刷新失败只写 `go-core.log`（`composition.go:1305` 的 observer）。
 2. 没有目录 generation/版本号，无法给 Node 做条件 GET。
 3. 没有批量读取所有账号模型的端点；现有只有逐账号 GET。
-4. 没有「目录残缺」语义：`ProviderModelDiscoverer` 只返回 `[]string, error`。opencode 两条腿只成功一条时，代码会返回部分集合（`internal/adapters/opencode/modelcatalog/discovery.go` 的 `succeeded` 分支），随后 `ReplaceDiscoveredModels` 用部分集合整体替换，**丢掉另一条腿的旧模型**。
+4. 当前 HEAD 的 opencode 已改为 fail-closed：两条腿任意一条失败就返回错误，不再把部分并集写进 `account_models`（`75eda502`）。在这之前，`succeeded` 分支会把半份目录整体替换，本机实测丢过 41 个 `opencode/*` 模型。`ProviderModelDiscoverer` 接口本身仍不携带 incomplete 语义；如果将来要「一条腿成功也更新另一条腿」，需要 §2.4 P0-4 的可选接口。
 5. 重扫只覆盖 `enabled = 1` 的账号（`model_refresh_sweep_store.go:15-24`、`initial_model_refresh_recovery_store.go:16-30`）。
 
 ### 1.5 两条链不要混
@@ -358,9 +359,11 @@ CREATE TABLE account_model_probes (
 
 Node 用 generation 做 ETag 和投影缓存键；这样即使删除了一行旧模型、`MAX(updated_at_ms)` 没变，也能被发现。
 
-#### P0-4 多腿目录的 incomplete 语义
+#### P0-4 多腿目录的 incomplete 语义（已由 `75eda502` 关闭，Phase 1 不需要再实现）
 
-不要改 `ProviderModelDiscoverer` 的全局签名（16 个 Provider 都要改，违背「新增 Provider 不改公共文件」的既有约束）。加一个可选接口：
+`75eda502` 选择的是更简单的方案：opencode 两条腿任意一条失败就返回错误，整次刷新失败并保留旧行，不再用半份并集替换。这满足「不把残缺目录当结论」的要求；代价是一条腿抖动时整次刷新要等下次重试。
+
+如果以后希望「一条腿成功也更新另一条腿」，再考虑下面的可选接口（不要改 `ProviderModelDiscoverer` 的全局签名，16 个 Provider 都要改，违背「新增 Provider 不改公共文件」的既有约束）：
 
 ```go
 type ProviderModelDiscovererWithCompleteness interface {
@@ -376,10 +379,12 @@ type ModelDiscoveryResult struct {
 
 只有 opencode 实现它：两条腿都成功 → `Complete=true`；只成功一条 → `Complete=false`，`Reason=opencode_catalog_incomplete(<leg>)`。`ModelDiscovery` 发现 strategy 实现该接口时优先调用；否则按原接口调用并视为 `Complete=true`。
 
-`ModelManagement.RefreshAccountModels` 把 `Complete` 传给 store：
+只有实现该接口的 strategy 才需要返回 `Complete`；`ModelManagement.RefreshAccountModels` 可以按 `Complete` 决定是否整体替换：
 
 - `Complete=true`：沿用现在的「清空旧 upstream 标记 → upsert 新集合 → 删除 inherit 且缺失的行」。
-- `Complete=false`：只 upsert 本次返回的模型，**不删除**未返回的旧行；把 `last_incomplete=1`。这样一条腿临时失败不会把目录从 109 缩到 68。
+- `Complete=false`：只 upsert 本次返回的模型，**不删除**未返回的旧行；把 `last_incomplete=1`。
+
+Phase 1 以 fail-closed 为准，不需要 `Complete=false` 的部分写入路径；这段是未来选项。
 
 #### P0-5 Node→Go ref 映射
 
@@ -475,7 +480,7 @@ Node 侧现成的 `goCoreHost.goRefsByNodeRef()`（`go-core-host.js:154-161`）�
 
 ### 3.5 回滚
 
-拟新增配置项 `modelCatalogSource: 'node' | 'go'`（`lib/server/server-config-schema.js` 注册，flag `--model-catalog-source`；未实现前用 `deps.modelCatalogSource` 注入做测试）。
+拟新增配置项 `modelCatalogSource: 'node' | 'go'`（`lib/server/server-config-schema.js` 注册，flag `--model-catalog-source`；未实现前用 `deps.modelCatalogSource` 注入做测试）。不新增任何 Go 侧 `AIH_*` 环境变量；Go 只提供服务端事实，开关属于 Node 宿主配置。
 
 - Phase 1 默认 `node`，Go 路径先影子运行/双读；
 - Phase 2 默认 `go`，保留 `node` 回滚；
@@ -498,7 +503,7 @@ Node 侧现成的 `goCoreHost.goRefsByNodeRef()`（`go-core-host.js:154-161`）�
 | # | 风险 | 证据 | 缓解 | 守卫 |
 | --- | --- | --- | --- | --- |
 | 1 | Node↔Go ref 不一致导致账号丢失/孤儿 | 本机 43 对 43，5 个 ref 不同；`go-account-sync:state.links` 43 条 | 适配器用 `goRefsByNodeRef` 建反向表并 fan-out | 单测覆盖 5 个真实映射 + 多对一；上线前断言「未映射 Node 账号 = 0」 |
-| 2 | opencode 单腿失败被当作完整目录，目录从 109 缩到 68 | 实测 41 个缺失全是 `opencode/*`；opencode 代码 `succeeded` 分支 | P0-4：completeness 信号 + 不完整不删除旧行 | 双读脚本对 opencode 账号断言「缺失 = 0」；Go 单测覆盖一条腿 503 |
+| 2 | opencode 单腿失败被当作完整目录，目录从 109 缩到 68 | 实测 41 个缺失全是 `opencode/*`；`75eda502` 已改为 fail-closed | 已修复；存量 68 行需一次成功刷新回填 | 双读脚本对 opencode 账号断言「缺失 = 0」；Go 单测已覆盖一条腿 503 |
 | 3 | 没有探测错误/空目录事实，UI 丢失「探测失败/未发现模型」 | Go 只有日志；2 个 enabled zcode 账号 0 行，日志报 `zcode 模型目录为空` | P0-2 探测事实表 | Go store 单测 + Node 映射单测 |
 | 4 | settings 与 Go policy 15 秒同步窗口，开关会「弹回去」 | `go-account-sync.js:35` 默认 15 秒 | 写路径 write-through + settings 显式值优先 | 路由测试：PATCH 后 1 秒查 Go policy；失败路径标 dirty |
 | 5 | 只切管理页导致两个页面目录不一致 | `/v0/webui/openai-models` 与 `/v0/webui/models` 是两个入口 | 两个入口共用同一适配器 | 快照测试：同账号两接口的 `byAccountRef` 交集/差集为 0 |
@@ -586,7 +591,7 @@ console.log({ identical, goAheadModels: goAhead, nodeAheadModels: nodeAhead });
 EOF
 ```
 
-当前基线应为：`mismatches=5`、`unmappedNodeRefs=0`、`identical=29`、`goAheadModels=92`、`nodeAheadModels=41`（opencode）。切换门禁：`nodeAheadModels=0`，且每一处差异都能在报告里解释。
+当前基线应为：`mismatches=5`、`unmappedNodeRefs=0`、`identical=29`、`goAheadModels=92`。`nodeAheadModels` 在 opencode 存量行刷新前仍可能是 41；`75eda502` 修复后只要成功刷新一次，就应变成 0。切换门禁：`nodeAheadModels=0`，且每一处差异都能在报告里解释。
 
 ### Step 2：Go 存储与探测事实
 
@@ -717,7 +722,7 @@ grep '账号模型' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | tail -2
 ref 完全一致：38/43；5 个通过 links 映射
 模型集合一致：29/43
 Go 领先：13 个账号，92 个模型（agy 6×12、cline 2×2、zcode 12+4×1）
-Node 领先：0（opencode 修复前为 1 个账号 / 41 个模型）
+Node 领先：0（`75eda502` 前为 1 个账号 / 41 个模型；修复后需一次成功刷新把 68 行回填到 109+）
 未映射 Node 账号：0
 Go 无模型行且 enabled=1：2 个 zcode（均有 last_error_code，页面显示探测失败/未发现）
 ```
@@ -728,7 +733,7 @@ Go 无模型行且 enabled=1：2 个 zcode（均有 last_error_code，页面显�
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| Phase 0 | Go：探测事实表、generation、批量端点、incomplete、单测 | 上述 Go 测试全绿；批量端点对 43 账号返回 680 行且 `ETag` 稳定 |
+| Phase 0 | Go：探测事实表、generation、批量端点（incomplete 已由 `75eda502` 关闭）、单测 | 上述 Go 测试全绿；批量端点对 43 账号返回 680 行且 `ETag` 稳定 |
 | Phase 1 | Node：适配器、三个读入口、写路径 write-through、双读脚本、特性开关（默认 node） | Step 4–7 全绿；双读报告 `Node 领先 = 0` |
 | Phase 2 | 默认切 `go`，观察 1 周；保留 `node` 回滚与 Node 快照 | 页面条数与 Go 行一致；无 500；回滚演练成功 |
 | Phase 3 | 把 Node 路由缓存也改为 Go 投影；退役 Node 探测/快照；迁移 CLI/harness 的 context limits | 独立方案，不在本次范围 |
@@ -798,3 +803,14 @@ grep '账号模型刷新' "${AIH_HOME_DIR:-$HOME/.ai_home}/logs/go-core.log" | t
 ```
 
 这说明：Go 侧已经有失败事实，但没有持久化到可读模型；P0-2 的价值不是「新增日志」，而是把日志里的事实变成 UI 可读字段。
+
+## 附：Phase 1 接线后的真机核对（2026-11-05）
+
+- 接线方式：`webui-model-catalog-source.js` 在 `getWebUiModelsCache` 之上做有界合并，
+  Go 有数据的账号覆盖 `byAccount`；`models`/`accountProbedAt`/`labels` 仍用 Node 的（Phase 1 不动路由证据）。
+- 注入点：`server.js` 的 `buildWebUiDeps()`（不是 `handleWebUIRequest` 的另一个 ctx 字面量）。
+- 真机验证：scoped 请求 `acct_04a193ed26f71e4619c5` 的 `merged byAccount` = 26，
+  与 `GET /v1/management/account-models?account_ref=…` 完全一致；此前该值是本地缓存值。
+- **发现的 Phase 2 前置**：`acct_84c6cff29b1b83d7506f`（opencode，Go 侧 109 个模型）
+  不在 Node WebUI 的 43 个账号池里（`/v0/webui/accounts` 缺失），因此切读后页面仍看不到它的目录。
+  这是账号同步缺口，不是模型读路径问题；Phase 2 退役 Node 探测前必须先让它进入账号池。

@@ -238,3 +238,30 @@
 - 模型：`internal/host/aihserver/composition.go` 的 `newModelDiscovery`（约 1438–1528 行）
 - 凭据：`internal/adapters/accounts/{qodercred,zcodecred}`
 - 迁移记录：`docs/plans/2026-11-04-node-go-merge.md` §32–§39
+
+
+## 2026-11-06 追加删除
+
+按「basename 在全部 js/ts/tsx/json/mjs/cjs 里出现 0 次」严格扫描后删除（每次均验证 CLI
+入口可正常 require、相关测试全绿）：
+
+| 文件 | 行数 | 说明 |
+| --- | --- | --- |
+| `lib/server/account-model-denial.js` | 114 | 账号级「实测用不了这个模型」登记簿，随 Provider 迁移失效 |
+| `lib/server/device-fingerprint-mask.js` | 78 | 设备指纹收敛模式表 |
+| `lib/server/sse-json-stream.js` | 89 | SSE 分块解码工具 |
+| `lib/server/webui-archived-cache.js` | 296 | 归档快照缓存 |
+| `lib/cli/commands/server-router.js` `tool-router.js` | — | 被 root router 取代的旧命令 |
+| `lib/cli/services/account/rekey-{readonly-snapshot,rehearsal-copy}.js` | — | rekey 一次性脚本 |
+| `lib/cli/services/ai-cli/native-cli-install-strategies.js` | — | 安装策略表 |
+| `lib/cli/services/toolkit/env-manager.js` | — | 环境变量管理器 |
+| `lib/cli/services/usage/grok-quota-probe.js` | — | 死构造删除后失引用 |
+| `lib/plugins/runtime/{capability-pipeline,host-adapter}.js` | — | 插件运行时适配器 |
+| `lib/server/provider-cli-upgrade/hook-survival.js` | — | hook 存活探测 |
+| `lib/session/{codex-session-stream,global-source}.js` | — | 会话流与全局源 |
+| `lib/usage/threshold-switch.js` | — | 阈值切换 |
+| `lib/account/grok-endpoints.js` | 9 | grok 账单端点常量（额度已迁 Go） |
+| `lib/cli/services/usage/grok-billing-grpc.js` | 136 | grok proto3 账单解码器 |
+
+合计约 2200 行（含本轮之前的死 require、探针与墓碑）。
+

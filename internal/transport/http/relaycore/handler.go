@@ -166,6 +166,8 @@ type relayFailure struct {
 	status  int
 	code    string
 	message string
+	// header 是必须随错误一起交付的响应头（Provider 的呈现，例如 Retry-After）。
+	header http.Header
 }
 
 // closeResponse 释放该结果持有的上游连接。
@@ -251,7 +253,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			// 内部换号标记只能由当前 Server 生成，不能信任上游同名 Header。
 			response.Header().Set(gatewaycontract.RetryAccountHeader, gatewaycontract.RetryAccountValue)
 		}
-		writeRelayError(response, failure.status, failure.code, failure.message)
+		writeRelayFailure(response, failure)
 		return
 	}
 	handler.writeResponse(response, request, outcome, stream)
@@ -346,6 +348,88 @@ func writeRelayError(response http.ResponseWriter, status int, code string, mess
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(status)
 	_, _ = response.Write(payload)
+}
+
+// writeRelayFailure 交付网关自有错误，含 Provider 要求的响应头。
+func writeRelayFailure(response http.ResponseWriter, failure relayFailure) {
+	for name, values := range failure.header {
+		response.Header().Del(name)
+		for _, value := range values {
+			response.Header().Add(name, value)
+		}
+	}
+	writeRelayError(response, failure.status, failure.code, failure.message)
+}
+
+// classifyBusinessFailure 在记账前嗅探「2xx 但业务失败」的响应。
+//
+// 两种协议形态分开处理：JSON 错误体可以整段读；SSE 只能读首个事件，且必须回放。
+func classifyBusinessFailure(
+	provider Provider,
+	response *http.Response,
+) (sharedfailure.Classification, bool) {
+	if response == nil || response.Body == nil {
+		return sharedfailure.Classification{}, false
+	}
+	switch {
+	case isJSONContentType(response.Header):
+		classifier, ok := provider.(BusinessFailureClassifier)
+		if !ok {
+			return sharedfailure.Classification{}, false
+		}
+		original := response.Body
+		prefix, readErr := io.ReadAll(io.LimitReader(original, sharedfailure.MaxErrorPayloadBytes+1))
+		response.Body = &replayReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(prefix), original),
+			Closer: original,
+		}
+		if readErr != nil {
+			return sharedfailure.Classification{}, false
+		}
+		return classifier.ClassifyBusinessFailure(response.StatusCode, response.Header, prefix)
+	case isEventStreamContentType(response.Header):
+		classifier, ok := provider.(StreamBusinessFailureClassifier)
+		if !ok {
+			return sharedfailure.Classification{}, false
+		}
+		original := response.Body
+		consumed, event, truncated, peekErr := peekFirstSSEEvent(
+			original,
+			sharedfailure.MaxErrorPayloadBytes,
+		)
+		response.Body = &replayReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(consumed), original),
+			Closer: original,
+		}
+		if truncated || peekErr != nil || len(event) == 0 {
+			return sharedfailure.Classification{}, false
+		}
+		return classifier.ClassifyStreamBusinessFailure(response.StatusCode, response.Header, event)
+	default:
+		return sharedfailure.Classification{}, false
+	}
+}
+
+// businessFailureOutcome 记账并构造交付形态：状态码/错误码/响应头都可由 Provider 定制。
+func (handler *Handler) businessFailureOutcome(
+	ctx context.Context,
+	provider Provider,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	classification sharedfailure.Classification,
+) (attemptOutcome, bool) {
+	retry := handler.recordClassification(ctx, route, observation, classification)
+	presentation := businessFailurePresentation(provider, classification)
+	return attemptOutcome{
+		route:        route,
+		retryAccount: retry,
+		failure: relayFailure{
+			status:  presentation.StatusCode,
+			code:    presentation.Code,
+			message: presentation.Message,
+			header:  presentation.Header,
+		},
+	}, retry
 }
 
 // closeUpstreamResponse 关闭上游响应体（允许 nil）。
@@ -542,38 +626,20 @@ func (handler *Handler) attemptRelay(
 	}
 	if upstreamResponse.StatusCode >= http.StatusOK &&
 		upstreamResponse.StatusCode < http.StatusMultipleChoices {
-		// 200 + 业务错误体（zcode 的 code 1005 等）：必须在记录成功**之前**判定，
-		// 否则账号会被记成健康、客户端却收到错误。只对 JSON 响应嗅探，SSE 成功流不能被读走。
-		if classifier, ok := provider.(BusinessFailureClassifier); ok && isJSONContentType(upstreamResponse.Header) {
-			originalBody := upstreamResponse.Body
-			prefix, readErr := io.ReadAll(io.LimitReader(originalBody, sharedfailure.MaxErrorPayloadBytes+1))
-			if readErr == nil {
-				upstreamResponse.Body = &replayReadCloser{
-					Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
-					Closer: originalBody,
-				}
-				if classification, failed := classifier.ClassifyBusinessFailure(
-					upstreamResponse.StatusCode,
-					upstreamResponse.Header,
-					prefix,
-				); failed {
-					retry := handler.recordClassification(request.Context(), route, observation, classification)
-					closeUpstreamResponse(upstreamResponse)
-					status := http.StatusBadGateway
-					if classification.Kind() == runtimecore.FailureQuotaExhausted {
-						status = http.StatusTooManyRequests
-					}
-					return attemptOutcome{
-						route:        route,
-						retryAccount: retry,
-						failure: relayFailure{
-							status:  status,
-							code:    "upstream_business_failure",
-							message: "上游返回业务错误",
-						},
-					}, retry
-				}
-			}
+		// 200 + 业务失败（zcode 的 code 1005、qoder 的排队信封等）：必须在记录成功
+		// **之前**判定，否则账号会被记成健康、客户端却收到错误。
+		//
+		// JSON 读整段、SSE 只读首个事件：后者不能等流结束，否则「首 token 延迟」会变成
+		// 「整段延迟」；两种路径读走的字节都会原样回放给下游 transformer。
+		if classification, failed := classifyBusinessFailure(provider, upstreamResponse); failed {
+			closeUpstreamResponse(upstreamResponse)
+			return handler.businessFailureOutcome(
+				request.Context(),
+				provider,
+				route,
+				observation,
+				classification,
+			)
 		}
 		// 成功也要记账：否则运行态与仪表盘看不到这个账号在工作。
 		handler.recordSuccess(request.Context(), route, observation)
@@ -725,6 +791,13 @@ func isJSONContentType(header http.Header) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(header.Get("Content-Type")), "json")
+}
+
+func isEventStreamContentType(header http.Header) bool {
+	if header == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(header.Get("Content-Type")), "text/event-stream")
 }
 
 func (handler *Handler) recordHTTPFailure(

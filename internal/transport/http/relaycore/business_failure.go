@@ -3,6 +3,7 @@ package relaycore
 import (
 	"net/http"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
@@ -19,4 +20,83 @@ type BusinessFailureClassifier interface {
 		header http.Header,
 		body []byte,
 	) (sharedfailure.Classification, bool)
+}
+
+// StreamBusinessFailureClassifier 是流式响应的业务失败判定。
+//
+// 为什么不能复用 BusinessFailureClassifier：SSE 成功流的正文是逐帧产生的，
+// 读整段等于把「首 token 延迟」变成「整段延迟」。这里只交付**首个事件**（已按 SSE
+// 规范切好），判定方既能拿到完整信封、又不必等流结束；relaycore 会把读走的字节
+// 原样回放，下游 transformer 看到的仍是同一条流。
+type StreamBusinessFailureClassifier interface {
+	// ClassifyStreamBusinessFailure 返回 ok=true 表示首个事件已经是失败，而不是数据。
+	ClassifyStreamBusinessFailure(
+		statusCode int,
+		header http.Header,
+		firstEvent []byte,
+	) (sharedfailure.Classification, bool)
+}
+
+// BusinessFailurePresentation 是业务失败交付给客户端的完整形态。
+type BusinessFailurePresentation struct {
+	// StatusCode 为 0 时使用 relaycore 的默认映射。
+	StatusCode int
+	// Code 为空时使用 upstream_business_failure。
+	Code string
+	// Message 为空时使用默认文案。
+	Message string
+	// Header 是必须随响应交付的额外头（例如 Retry-After）。
+	Header http.Header
+}
+
+// BusinessFailurePresenter 让 Provider 决定业务失败怎么交付给客户端。
+//
+// 为什么不让 relaycore 按错误码硬编码：同一个 kind 下各 Provider 的客户端契约不同
+// （qoder 排队是 429 + qoder_resource_limit + Retry-After；zcode 额度是 429 +
+// upstream_business_failure）。Provider 知道自己的协议形状，relaycore 只负责
+// 判定与记账的时机。
+type BusinessFailurePresenter interface {
+	PresentBusinessFailure(classification sharedfailure.Classification) BusinessFailurePresentation
+}
+
+// businessFailurePresentation 合并 Provider 的呈现与 relaycore 的兜底。
+func businessFailurePresentation(
+	provider Provider,
+	classification sharedfailure.Classification,
+) BusinessFailurePresentation {
+	fallback := defaultBusinessFailurePresentation(classification)
+	presenter, ok := provider.(BusinessFailurePresenter)
+	if !ok {
+		return fallback
+	}
+	presented := presenter.PresentBusinessFailure(classification)
+	if presented.StatusCode == 0 {
+		presented.StatusCode = fallback.StatusCode
+	}
+	if presented.Code == "" {
+		presented.Code = fallback.Code
+	}
+	if presented.Message == "" {
+		presented.Message = fallback.Message
+	}
+	return presented
+}
+
+// defaultBusinessFailurePresentation 是「Provider 没表态」时的统一呈现。
+//
+// 可重试的容量/限流类失败回 429（客户端库按 429 退避），其余回 502：
+// 把它们洗成 200 或 500 都会让客户端做出错误的重试决策。
+func defaultBusinessFailurePresentation(classification sharedfailure.Classification) BusinessFailurePresentation {
+	status := http.StatusBadGateway
+	switch classification.Kind() {
+	case runtimecore.FailureQuotaExhausted,
+		runtimecore.FailureRateLimited,
+		runtimecore.FailureModelOverloaded:
+		status = http.StatusTooManyRequests
+	}
+	return BusinessFailurePresentation{
+		StatusCode: status,
+		Code:       "upstream_business_failure",
+		Message:    "上游返回业务错误",
+	}
 }

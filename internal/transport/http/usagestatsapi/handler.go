@@ -90,70 +90,29 @@ func NewSessionsHandler(authorizer Authorizer, source SessionsSource) (*Sessions
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if !handler.authorizer.Authorized(request) {
-		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeJSON(response, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "需要管理密钥"}})
-		return
-	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"code": "method_not_allowed", "message": "只支持 GET"}})
-		return
-	}
-	query, err := parseQuery(request)
-	if err != nil {
-		writeJSON(response, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_query", "message": "时间范围无效"}})
-		return
-	}
-	stats, err := handler.source.QueryUsageStats(request.Context(), query)
-	if err != nil {
-		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "usage_stats_failed", "message": "用量统计不可用"}})
-		return
-	}
-	writeJSON(response, http.StatusOK, map[string]any{
-		"ok": true,
-		"range": map[string]string{
-			"from": query.From.Format(time.RFC3339Nano),
-			"to":   query.To.Format(time.RFC3339Nano),
-		},
-		"stats": stats,
-	})
+	serveUsageQuery(response, request, handler.authorizer, "usage_stats_failed", "用量统计不可用",
+		func(ctx context.Context, query usageledger.Query) (map[string]any, error) {
+			stats, err := handler.source.QueryUsageStats(ctx, query)
+			return map[string]any{"stats": stats}, err
+		})
 }
 
 func (handler *ModelsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if !handler.authorizer.Authorized(request) {
-		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeJSON(response, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "需要管理密钥"}})
-		return
-	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"code": "method_not_allowed", "message": "只支持 GET"}})
-		return
-	}
-	query, err := parseQuery(request)
-	if err != nil {
-		writeJSON(response, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_query", "message": "时间范围无效"}})
-		return
-	}
-	models, err := handler.source.QueryUsageModels(request.Context(), query)
-	if err != nil {
-		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "usage_models_failed", "message": "用量模型统计不可用"}})
-		return
-	}
-	rows, costSupported := handler.enrichWithCost(request, models)
-	writeJSON(response, http.StatusOK, map[string]any{
-		"ok":             true,
-		"range":          map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
-		"models":         rows,
-		"cost_supported": costSupported,
-	})
+	serveUsageQuery(response, request, handler.authorizer, "usage_models_failed", "用量模型统计不可用",
+		func(ctx context.Context, query usageledger.Query) (map[string]any, error) {
+			models, err := handler.source.QueryUsageModels(ctx, query)
+			if err != nil {
+				return nil, err
+			}
+			rows, costSupported := handler.enrichWithCost(ctx, models)
+			return map[string]any{"models": rows, "cost_supported": costSupported}, nil
+		})
 }
 
 // enrichWithCost 给每行补成本；任何一行没有定价就标 cost_known=false，
 // 让前端能区分「确实为 0」与「没有价格口径」。
 func (handler *ModelsHandler) enrichWithCost(
-	request *http.Request,
+	ctx context.Context,
 	models []usageledger.ModelStats,
 ) ([]modelUsageRow, bool) {
 	// 空结果保持 null，不把契约从 null 改成 []。
@@ -167,7 +126,7 @@ func (handler *ModelsHandler) enrichWithCost(
 	if handler.cost == nil || len(models) == 0 {
 		return rows, false
 	}
-	costs, known, supported := handler.cost.Costs(request.Context(), models)
+	costs, known, supported := handler.cost.Costs(ctx, models)
 	if !supported || len(costs) != len(rows) || len(known) != len(rows) {
 		return rows, false
 	}
@@ -183,31 +142,11 @@ func (handler *ModelsHandler) enrichWithCost(
 }
 
 func (handler *SessionsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if !handler.authorizer.Authorized(request) {
-		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeJSON(response, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "需要管理密钥"}})
-		return
-	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"code": "method_not_allowed", "message": "只支持 GET"}})
-		return
-	}
-	query, err := parseQuery(request)
-	if err != nil {
-		writeJSON(response, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_query", "message": "时间范围无效"}})
-		return
-	}
-	sessions, err := handler.source.QueryUsageSessions(request.Context(), query)
-	if err != nil {
-		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "usage_sessions_failed", "message": "用量会话统计不可用"}})
-		return
-	}
-	writeJSON(response, http.StatusOK, map[string]any{
-		"ok":       true,
-		"range":    map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
-		"sessions": sessions,
-	})
+	serveUsageQuery(response, request, handler.authorizer, "usage_sessions_failed", "用量会话统计不可用",
+		func(ctx context.Context, query usageledger.Query) (map[string]any, error) {
+			sessions, err := handler.source.QueryUsageSessions(ctx, query)
+			return map[string]any{"sessions": sessions}, err
+		})
 }
 
 func parseQuery(request *http.Request) (usageledger.Query, error) {
@@ -251,4 +190,47 @@ func writeJSON(response http.ResponseWriter, status int, body any) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(body)
+}
+
+// serveUsageQuery 是三个用量接口共用的前置流程：鉴权 → 方法 → 解析范围 → 取数 → 写出。
+//
+// 为什么合并：这三段原本逐字重复，改一次错误码要改三遍；更糟的是新增一个接口很容易
+// 漏掉其中一步（例如忘了设 WWW-Authenticate）。失败码与文案由调用方给，其余一致。
+func serveUsageQuery(
+	response http.ResponseWriter,
+	request *http.Request,
+	authorizer Authorizer,
+	failureCode string,
+	failureMessage string,
+	build func(context.Context, usageledger.Query) (map[string]any, error),
+) {
+	if authorizer == nil || !authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(response, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "需要管理密钥"}})
+		return
+	}
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"code": "method_not_allowed", "message": "只支持 GET"}})
+		return
+	}
+	query, err := parseQuery(request)
+	if err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_query", "message": "时间范围无效"}})
+		return
+	}
+	payload, err := build(request.Context(), query)
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": failureCode, "message": failureMessage}})
+		return
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["ok"] = true
+	payload["range"] = map[string]string{
+		"from": query.From.Format(time.RFC3339Nano),
+		"to":   query.To.Format(time.RFC3339Nano),
+	}
+	writeJSON(response, http.StatusOK, payload)
 }

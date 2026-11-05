@@ -142,3 +142,33 @@ Canonical 征召遇到官方 OAuth 时只推进稳定账号游标并继续下一
 
 KISS/YAGNI 决定暂不加入持久化目录、通用事件总线、IoC 容器、动态插件或预测式模型
 别名。
+
+## 8. 2026-11-06 复核：`gateway.models.list` 的划转条件
+
+结论：**技术上已具备划转条件，只差一次双端实测差集**（需要运行中服务的 client key，
+本机当前拿不到）。
+
+已核实的事实：
+
+1. Node 把**完整公共目录投影**推给 Go：Go 就绪后（`lib/server/go-core-host.js:493-495`）、
+   目录缓存刷新后（`lib/server/v1-router.js:1490`）；客户端见
+   `lib/account/go-bridge/go-management-client.js:77`。
+2. Go 优先用投影，投影缺失才回落本地可路由索引：`internal/transport/http/modelsapi/handler.go:59-63`
+   （`CatalogReader`），并且 `projection_test.go` 已锁住「投影里的 node-only 模型优先于本地」。
+3. `owned_by` 与 Node 同一张厂商表：`internal/transport/http/modelsapi/owner.go`
+   （incl. `opencode-go/` 先于 `opencode/` 的分支顺序）。
+4. models.dev 元数据快照一致：`npm run models:check` → SDK 0.0.109 / 560 models / 232 providers。
+5. canary 通道已可用：`resolveGoOwnedEntryIds(manifest, ['gateway.models.list'])` 无 errors，
+   `canaryIds` 含该条目；开关是 `--go-core-routes gateway.models.list`
+   （或 `AIH_GO_CORE_ROUTES`，见 `lib/server/go-core-host.js:49`）。
+6. manifest 的目录前置守卫（目录必须等全部推理条目）已满足：其余 gateway 条目都是 `go_owned`。
+
+未做的一步（划转判据）：真机差集。
+
+```bash
+node scripts/compare-model-catalog.js --node http://127.0.0.1:9527 \
+  --node-key <client key> --go <go url> --go-key <client key> --allow-node-only gemini
+```
+
+退出码 0 才把 manifest 的 `production_owner`/`migration_state` 改为 `go`/`go_owned`
+并删掉 `blockers`；退出码 2 说明还存在未预期的 node-only 模型，必须先查清来源。

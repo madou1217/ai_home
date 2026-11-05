@@ -53,7 +53,13 @@ onAliasShadowResult 观察者；不 await、不改变响应、Go 不可用时静
 真机返回 8 个 Provider（claude 2 / cline 16 / codebuddy 26 / codex 18 / kiro 5 …）。
 目录尚未构建时返回 503 而不是空表，让前端能区分「暂时没有」与「还没就绪」。
 
-剩余：Node 代理的写路径灰度。
+**切片 C 已实现（2026-11-06）**：Go Core 可用时，别名的列表与五个写操作全部走
+lib/server/alias-go-owner.js（Node 只维护读投影，写成功后从 Go 拉一次列表写回本地库）；
+/targets 仍由 Node 计算（基于能力索引，覆盖比 Go 的路由目录更广）。
+翻转条件是「Go Core 已启用」而不是开关：写入口只有一份，Go 不可用时写请求 503、
+读走本地投影（最后一次一致的数据），不会退回翻转前的旧事实。
+**注意**：Node 进程重启后生效；回滚方式 = 停用 Go Core（写入会 503，需同步恢复 Node 写路径）。
+剩余：真机六操作验收（重启 Node 后）与删除 Node 侧 store。
 
 ### C 的可执行清单（客户端已就绪）
 

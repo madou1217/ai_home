@@ -72,9 +72,16 @@
    但**不能据此直接划转**：Go 的目录只含 Go 能路由的模型，而 `relayHosts[go].supported=false`
    的 Provider（当前只有 gemini）以及自定义账号的模型仍只在 Node 侧。
    划转判据用 `node scripts/compare-model-catalog.js --go <go url> --allow-node-only gemini`：
-   退出码 0 才可以改 manifest，2 表示存在未预期的 node-only 模型。脚本需要两端的 client key
-   （`AIH_SERVER_API_KEY`），本机当前拿不到运行中服务的 key，因此**尚未做真机差集**。
-   已知规模：Go 的 `account_models` 现有 210 个去重模型（749 行，只读查询 `aih.db`）。
+   退出码 0 才可以改 manifest，2 表示存在未预期的 node-only 模型。
+   **2026-11-06 已做真机差集并划转**：Node 215 / Go 215，双向差集为空，退出码 0
+   （`catalog_can_move`）。字段级也一致：`data[].{id,object,created,owned_by,aih_modalities}`、
+   顶层 `{object,data}`。manifest 已把 `gateway.models.list` 改为 `go_owned`、清空 blockers。
+   两端 key 来自运行中的 Go 进程环境（`AIH_SERVER_API_KEY` / `AIH_SERVER_MANAGEMENT_KEY`），
+   不再需要人工提供。
+   **同时发现**：Go 的推理前门在这套部署里没有接管任何路由——直连 Go 的
+   `/v1/chat/completions` 返回 503 `inference_unavailable`，所以 `usage_ledger` 一直是 0，
+   `account_outcomes` 最新桶也停在两小时前。要让用量/额度真正落到 Go，必须先给
+   `AIH_GO_CORE_ROUTES` 分配推理入口；在那之前所有「Go 承接流量」的验证都只能靠单测。
 10. **WebUI 额度统计（`/v0/webui/accounts/:provider/:ref/quota-stats`）卡在成本口径（2026-11-06）。**
     Go 侧的窗口重建、维度选择、汇总全部已就绪（`application/accountusage/quota_stats.go`），
     唯一缺口是 `cost_usd`：Node 的成本来自 `model_usage_pricing` 表 +

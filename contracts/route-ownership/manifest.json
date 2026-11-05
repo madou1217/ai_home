@@ -176,14 +176,12 @@
           "path": "/v1/models"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "stable",
       "cutover_blocking": true,
-      "blockers": [
-        "models.dev snapshot and account catalog ownership still require migration gate"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/v1-router.js",
         "internal/transport/http/modelsapi",

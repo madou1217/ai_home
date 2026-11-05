@@ -262,34 +262,34 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号投影删除准备边界失败: %w", err)
 	}
-	handlers, resources, err := newHandlers(
-		ctx,
-		catalog,
-		store,
-		options.AIHomeDir,
-		modelDiscovery,
-		accountRuntime,
-		accountRuntime,
-		accountRuntime,
-		deletionGuard,
-		deletionPreparation,
-		options.ManagementKey,
-		options.ClientKey,
-		options.RequestShutdown,
-		options.InferenceHTTPClient,
-		options.WebSocketHTTPClient,
-		options.UsageHTTPClient,
-		options.RelayHTTPClient,
-		options.ErrorLog,
-		newMessagesDecodeErrorObserver(options.ErrorLog),
-		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
-		options.DelegateCredentialRefresh,
-		options.UpstreamErrorRuleProviders,
-		codexVersions,
-		agyModelWires,
-		modelModalities,
-		codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
-	)
+	handlers, resources, err := newHandlers(handlerDependencies{
+		Context:                    ctx,
+		Catalog:                    catalog,
+		Store:                      store,
+		AIHomeDir:                  options.AIHomeDir,
+		ModelDiscovery:             modelDiscovery,
+		Runtime:                    accountRuntime,
+		ImageUsage:                 accountRuntime,
+		ImageOutcomes:              accountRuntime,
+		DeletionGuard:              deletionGuard,
+		DeletionPreparation:        deletionPreparation,
+		ManagementKey:              options.ManagementKey,
+		ClientKey:                  options.ClientKey,
+		RequestShutdown:            options.RequestShutdown,
+		InferenceClient:            options.InferenceHTTPClient,
+		WebSocketHTTPClient:        options.WebSocketHTTPClient,
+		UsageClient:                options.UsageHTTPClient,
+		RelayHTTPClient:            options.RelayHTTPClient,
+		ErrorLog:                   options.ErrorLog,
+		DecodeErrors:               newMessagesDecodeErrorObserver(options.ErrorLog),
+		UpstreamDecodeErrors:       newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
+		DelegateCredentialRefresh:  options.DelegateCredentialRefresh,
+		UpstreamErrorRuleProviders: options.UpstreamErrorRuleProviders,
+		CodexVersions:              codexVersions,
+		AGYModelWires:              agyModelWires,
+		ModelModalities:            modelModalities,
+		RouteObserver:              codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
+	})
 	if err != nil {
 		_ = codexVersions.Close()
 		_ = store.Close()
@@ -304,41 +304,76 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	), nil
 }
 
+// handlerDependencies 汇总 newHandlers 的全部输入。
+//
+// 为什么是结构体而不是位置参数：这里曾经有 26 个位置参数，其中同一个运行态对象连续
+// 占了三格（运行态 / 生图用量 / 生图结果）。新增一个 Provider 能力时，少写一个参数或
+// 调换两个同类型参数都会**静默**把依赖接到错误的端口上——三个同类型参数编译器不会报错。
+// 具名字段把这类错误变成编译错误，也让新增依赖的 diff 只有一行。
+type handlerDependencies struct {
+	Context context.Context
+	Catalog *providers.Catalog
+	Store   *sqliteaccount.Store
+	// AIHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
+	AIHomeDir      string
+	ModelDiscovery *accountapp.ModelDiscovery
+	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
+	Runtime serverAccountRuntime
+	// ImageUsage 记录生图的 token 用量（与推理路径同一个用量管道）；为 nil 时不记账。
+	ImageUsage imagesapi.UsageRecorder
+	// ImageOutcomes 记录生图成功（账号页最近成功 + 清 cooldown）；为 nil 时不记录。
+	ImageOutcomes             imagesapi.ImageOutcomes
+	DeletionGuard             accountapp.DeletionGuard
+	DeletionPreparation       accountapp.DeletionPreparation
+	ManagementKey             func() string
+	ClientKey                 func() string
+	RequestShutdown           func()
+	InferenceClient           InferenceHTTPClient
+	WebSocketHTTPClient       *http.Client
+	UsageClient               UsageHTTPClient
+	RelayHTTPClient           InferenceHTTPClient
+	ErrorLog                  *log.Logger
+	DecodeErrors              func(error)
+	UpstreamDecodeErrors      func(error)
+	DelegateCredentialRefresh bool
+	// UpstreamErrorRuleProviders 声明 Go 已接入规则求值的 Provider；空表示能力关闭。
+	UpstreamErrorRuleProviders []string
+	CodexVersions              *clientversion.Resolver
+	AGYModelWires              *agycodeassist.ModelWireStore
+	ModelModalities            *modelsdev.Index
+	// RouteObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
+	RouteObserver codexresponsesws.RouteObserver
+}
+
 // newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
-func newHandlers(
-	ctx context.Context,
-	catalog *providers.Catalog,
-	store *sqliteaccount.Store,
-	// aiHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
-	aiHomeDir string,
-	modelDiscovery *accountapp.ModelDiscovery,
-	accountRuntime serverAccountRuntime,
-	// imageUsage 记录生图的 token 用量（与推理路径同一个用量管道）；为 nil 时不记账。
-	imageUsage imagesapi.UsageRecorder,
-	// imageOutcomes 记录生图成功（账号页最近成功 + 清 cooldown）；为 nil 时不记录。
-	imageOutcomes imagesapi.ImageOutcomes,
-	deletionGuard accountapp.DeletionGuard,
-	deletionPreparation accountapp.DeletionPreparation,
-	managementKey func() string,
-	clientKey func() string,
-	// requestShutdown 为空时不装配关闭端点，见 Options.RequestShutdown。
-	requestShutdown func(),
-	inferenceClient InferenceHTTPClient,
-	webSocketHTTPClient *http.Client,
-	usageClient UsageHTTPClient,
-	relayHTTPClient InferenceHTTPClient,
-	errorLog *log.Logger,
-	decodeErrors func(error),
-	upstreamDecodeErrors func(error),
-	delegateCredentialRefresh bool,
-	// upstreamErrorRuleProviders 声明 Go 已接入规则求值的 Provider；空表示能力关闭。
-	upstreamErrorRuleProviders []string,
-	codexVersions *clientversion.Resolver,
-	agyModelWires *agycodeassist.ModelWireStore,
-	modelModalities *modelsdev.Index,
-	// routeObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
-	routeObserver codexresponsesws.RouteObserver,
-) (_ serverHandlers, _ []io.Closer, resultErr error) {
+func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Closer, resultErr error) {
+	// 局部别名让下面这段长流水线保持原有可读性；新增依赖只需在结构体里加字段。
+	ctx := dependencies.Context
+	catalog := dependencies.Catalog
+	store := dependencies.Store
+	aiHomeDir := dependencies.AIHomeDir
+	modelDiscovery := dependencies.ModelDiscovery
+	accountRuntime := dependencies.Runtime
+	imageUsage := dependencies.ImageUsage
+	imageOutcomes := dependencies.ImageOutcomes
+	deletionGuard := dependencies.DeletionGuard
+	deletionPreparation := dependencies.DeletionPreparation
+	managementKey := dependencies.ManagementKey
+	clientKey := dependencies.ClientKey
+	requestShutdown := dependencies.RequestShutdown
+	inferenceClient := dependencies.InferenceClient
+	webSocketHTTPClient := dependencies.WebSocketHTTPClient
+	usageClient := dependencies.UsageClient
+	relayHTTPClient := dependencies.RelayHTTPClient
+	errorLog := dependencies.ErrorLog
+	decodeErrors := dependencies.DecodeErrors
+	upstreamDecodeErrors := dependencies.UpstreamDecodeErrors
+	delegateCredentialRefresh := dependencies.DelegateCredentialRefresh
+	upstreamErrorRuleProviders := dependencies.UpstreamErrorRuleProviders
+	codexVersions := dependencies.CodexVersions
+	agyModelWires := dependencies.AGYModelWires
+	modelModalities := dependencies.ModelModalities
+	routeObserver := dependencies.RouteObserver
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
 	defer func() {

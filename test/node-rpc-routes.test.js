@@ -151,3 +151,39 @@ test('buildSessionMessages 找不到会话时返回 null', () => {
   assert.equal(buildSessionMessages('', null, 'missing', 0), null);
   assert.equal(buildSessionMessages('', null, '', 0), null);
 });
+
+//
+// 时间线条目的角色在 detail.role，不在顶层 role —— 写错就成了「消息永远为空」。
+test('buildSessionMessages 从 detail.role 识别角色', () => {
+  const runtime = {
+    store: {
+      getSession: () => ({ sessionId: 's1' }),
+      readTimeline: () => ({
+        items: [
+          { id: 'i1', kind: 'message', content: 'hi', detail: { role: 'user' }, createdAt: 1 },
+          { id: 'i2', kind: 'message', content: 'hello', detail: { role: 'assistant' }, createdAt: 2 },
+          { id: 'i3', kind: 'reasoning', content: 'thinking', detail: {} },
+          { id: 'i4', kind: 'notice', content: 'note' }
+        ]
+      })
+    }
+  };
+  const result = buildSessionMessages('', runtime, 's1', 0);
+  assert.equal(result.messages.length, 2);
+  assert.equal(result.messages[0].role, 'user');
+  assert.equal(result.messages[1].role, 'assistant');
+});
+
+test('debug=1 时附带条目形状且不含正文', () => {
+  const runtime = {
+    store: {
+      getSession: () => ({ sessionId: 's1' }),
+      readTimeline: () => ({ items: [{ id: 'i1', kind: 'message', content: 'secret', detail: { role: 'user' } }] })
+    }
+  };
+  const result = buildSessionMessages('', runtime, 's1', 0, true);
+  assert.equal(result.debug.itemCount, 1);
+  assert.deepEqual(result.debug.kinds, ['message']);
+  assert.ok(result.debug.keyShapes[0].includes('kind'));
+  assert.ok(!JSON.stringify(result.debug).includes('secret'), '诊断不能泄漏正文');
+});

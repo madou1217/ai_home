@@ -88,13 +88,23 @@
     ③ 已完成（2026-11-06）：`QueryQuotaWindowUsage` 改为按 (窗口, Provider, 模型) 聚合并保留
     明细，`QuotaStatsService` 接 `QuotaWindowPricer` 逐模型计价；窗口内任一模型无定价即整窗
     「未知」，空窗口是确定的 0 元。定价快照与模型用量接口共用同一份缓存，两个页面口径一致。
-    ④ 已完成（2026-11-06）：`/v0/webui/accounts/:provider/:ref/quota-stats` 前门切 Go。
-    Node 只保留账号校验、参数翻译、snake→camel 契约映射；**没有本地回落**（回落等于保留
-    第二套算法，口径分叉就再也对不上），Go 不可用直接 503 `go_core_required`。
-    契约映射集中在新模块 `lib/server/quota-stats-go-contract.js`，不做逐字段白名单——
-    Go 的窗口结构与 `web/src/types/index.ts` 的 `QuotaStatsWindowRow` 一一对应，
-    测试逐字段断言这 26 个键都还在。
-    注意：`lib/account/quota-window-stats.js` 仍被 `model-usage-*` 使用，不能整文件删除。
+    ④ **切流已回滚（2026-11-06），原因是数据面还没就位。**
+    切过去的实现做过一轮：Node 只保留账号校验、参数翻译与 snake→camel 契约映射，
+    Go 不可用返回 503（不留第二套算法）。但真机核对发现 **Go 的 `usage_ledger` 是空的**：
+    `aih.db` 里 `usage_ledger` = 0 行，而 Node 的 `app-state.db.model_usage_records` 有
+    1,229,000+ 行（codex 7.6e5 / claude 1.6e5 …）。照此切换，额度页的 tokens 与成本会
+    全部变成 0——比不切更糟，所以整条切流（含门面项 `getQuotaStats`）已回滚。
+    解锁条件：Go 每个成功推理都真正写 `usage_ledger`（`account_outcomes.go:RecordSuccess`
+    已接线，需查为什么线上 0 行：二进制版本 / `success.Usage()` / 实际流量仍走 Node）。
+    校验判据（可直接跑）：
+    ```bash
+    sqlite3 ~/.ai_home/aih.db "select count(*) from usage_ledger;"
+    sqlite3 ~/.ai_home/app-state.db "select provider, count(*) from model_usage_records group by provider;"
+    ```
+    切流前两边的量级必须可比，否则先补账本再谈前门。
+    遗留：`lib/account/quota-window-stats.js` 与 `quota-window-reconstruction.js` 现在
+    **只剩 `test/quota-window-reconstruction.test.js` 一个调用方**；Go 的窗口重建已经在跑，
+    等切流落地后这两个文件与那份测试可以一起删（约 988 行）。
 9. **删除的 `both` 只覆盖 codex/claude。** Go 的 `deletionprojection` 只处理这两家的凭据 artifact 与投影（`G:adapters/accounts/deletionprojection/resources.go` 按 provider 分支），进程/tmux/keychain/桌面 hook 仍只有 Node 有。
 
 ## 4. nextSlices（4 条，按 价值÷风险 排序）

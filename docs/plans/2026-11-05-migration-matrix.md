@@ -146,3 +146,12 @@
 - 未做真机调用；账号状态引用 `docs/plans/2026-11-04-node-go-merge.md` §9 的既有结论，未重新读库核对。
 - Node 的 relay 判定以 `provider-protocol-routing.js` 与各 `*-transport.js` 的存在为准；通用网关 `upstream-endpoints-transport-general.js` 覆盖未单列协议的 Provider。
 - 若后续新增/删除 Provider 适配器，本表需要同步更新；建议只改对应行，并在提交说明里写明「矩阵哪一格变了」。
+
+
+## 附：2026-11-05 当日进度
+
+- OAuth 作业快照：Go 持久化（aih.db v17）+ Node 推送 + WebUI 读取回落，已真机验证
+  （PUT → 重启 → WebUI 200 recovered=true）。
+- qoder 凭据解密 / 模型目录、cline 静态目录、§7 状态转移纯函数均已落 Go。
+- 下一批候选：qoder relay 接线（需付费账号验收）、gemini/kimi 额度（本机无可用账号）、
+  P3 静态托管、§7-d 读路径切换。

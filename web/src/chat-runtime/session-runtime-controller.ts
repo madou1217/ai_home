@@ -248,6 +248,12 @@ export class SessionRuntimeController {
       await this.startTask;
       return;
     }
+    if (state === 'resyncing') {
+      // 重同步只补快照，不阻塞用户发送；等这一轮快照落地即可下发，避免 30s 等待。
+      if (!this.resyncTask) throw new Error('chat_runtime_connection_not_ready');
+      await this.resyncTask;
+      return;
+    }
     await this.waitForConnected();
   }
 

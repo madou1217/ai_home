@@ -7,7 +7,8 @@ const path = require('node:path');
 
 // 回归守卫（2026-11-06）：连接阶段允许先输入。
 // 旧实现 dispatch 在非 connected 时直接 reject，composer 只能看不能发；
-// 现在 connecting 等首屏快照（startTask）完成即可下发，重连/重同步仍等 connected。
+// 现在 connecting 等首屏快照（startTask）完成即可下发；resyncing 等补快照的 resyncTask；
+// 只有重连（SSE 断了）仍等 connected。
 test('connecting keeps the composer interactive and dispatches after the snapshot', () => {
   const presentation = fs.readFileSync(
     path.join(__dirname, '../web/src/features/chat-runtime/session-connection-presentation.ts'),
@@ -32,4 +33,12 @@ test('connecting keeps the composer interactive and dispatches after the snapsho
   );
   assert.match(readyBody, /state === 'connecting'/);
   assert.match(readyBody, /await this\.startTask/);
+
+  // 重新同步不再锁输入，也不再显示「操作已暂停」横幅；命令等这一轮快照完成。
+  const resyncStart = presentation.indexOf('resyncing: {');
+  const resyncBlock = presentation.slice(resyncStart, presentation.indexOf('\n  },\n', resyncStart));
+  assert.match(resyncBlock, /interactive: true/);
+  assert.doesNotMatch(resyncBlock, /notice:/);
+  assert.match(readyBody, /state === 'resyncing'/);
+  assert.match(readyBody, /await this\.resyncTask/);
 });

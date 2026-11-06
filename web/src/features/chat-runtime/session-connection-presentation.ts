@@ -95,8 +95,8 @@ const PRESENTATION_BY_STATE: Readonly<
     notice: '实时连接已中断，恢复前会话操作已暂停。',
   },
   resyncing: {
-    interactive: false,
+    // 重同步只影响快照新鲜度，不锁输入：消息可以先写，命令等这一轮快照完成后再下发。
+    interactive: true,
     label: '正在同步',
-    notice: '会话状态可能已过期，重新同步完成前操作已暂停。',
   },
 };

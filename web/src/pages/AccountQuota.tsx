@@ -94,11 +94,17 @@ export default function AccountQuota() {
   })), [data]);
   const hasWindowDetails = Boolean(data?.dimensions.some((dimension) => dimension.available));
 
-  const granularityOptions = useMemo(() => [
-    { label: '窗口', value: 'window', disabled: Boolean(data) && !hasWindowDetails },
-    { label: '日', value: 'day' },
-    { label: '周', value: 'week' }
-  ], [data, hasWindowDetails]);
+  // 账号根本产不出窗口维度（积分/余额型 Provider）时连「窗口」都不出现；
+  // 有维度但还没采样时保留入口并置灰，让用户知道这个账号本来有窗口期。
+  const hasWindowDimensions = Boolean(data && data.dimensions.length > 0);
+  const granularityOptions = useMemo(() => {
+    const options: Array<{ label: string; value: QuotaStatsGranularity; disabled?: boolean }> = [];
+    if (!data || hasWindowDimensions) {
+      options.push({ label: '窗口', value: 'window', disabled: Boolean(data) && !hasWindowDetails });
+    }
+    options.push({ label: '日', value: 'day' }, { label: '周', value: 'week' });
+    return options;
+  }, [data, hasWindowDimensions, hasWindowDetails]);
 
   const currentDimension = data?.dimensions.find((item) => item.windowMinutes === activeWindowMinutes);
   const scopeOptions = useMemo(() => (currentDimension?.scopes || []).map((scope) => ({

@@ -413,6 +413,14 @@ func TestLoginFlowTable(t *testing.T) {
 				if job.CLIAccountID().Int64() != serviceCLIAccountID {
 					t.Fatalf("Job.CLIAccountID() = %d, want %d", job.CLIAccountID().Int64(), serviceCLIAccountID)
 				}
+				wantAccount := accountauth.Account{
+					Email:       "accountauth@example.com",
+					DisplayName: "accountauth@example.com",
+					PlanType:    "plus",
+				}
+				if job.Account() != wantAccount {
+					t.Fatalf("Job.Account() = %#v, want %#v", job.Account(), wantAccount)
+				}
 				stored, getErr := service.GetJob(ctx, start.Job().ID())
 				if getErr != nil || stored.Status() != accountauth.StatusCompleted {
 					t.Fatalf("GetJob() = (%q, %v), want completed", stored.Status(), getErr)
@@ -431,6 +439,7 @@ func TestLoginFlowTable(t *testing.T) {
 				if replay.Status() != job.Status() ||
 					replay.AccountRef() != job.AccountRef() ||
 					replay.CLIAccountID() != job.CLIAccountID() ||
+					replay.Account() != job.Account() ||
 					replay.FailureCode() != job.FailureCode() {
 					t.Fatalf(
 						"第二次 Complete() 回放 = %+v, want %+v",
@@ -446,6 +455,46 @@ func TestLoginFlowTable(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCompleteKeepsLoginWithoutDisplayClaims 证明展示字段缺失只留空、不阻断登录。
+func TestCompleteKeepsLoginWithoutDisplayClaims(t *testing.T) {
+	ctx := context.Background()
+	body := serviceTokenBody(t, map[string]string{
+		"id_token": serviceJWT(`{"sub":"user-accountauth-test",` +
+			`"https://api.openai.com/auth":{"chatgpt_user_id":"user-accountauth-test","chatgpt_account_id":"ws_accountauth_test"}}`),
+		"access_token":  serviceJWT(`{"sub":"user-accountauth-test","exp":4102444800}`),
+		"refresh_token": serviceJWT(`{"sub":"user-accountauth-test","exp":4102444800}`),
+	})
+	upstream := &fakeTokenUpstream{status: http.StatusOK, body: body}
+	server := httptest.NewServer(http.HandlerFunc(upstream.serve))
+	t.Cleanup(server.Close)
+
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	registrar := &recordingRegistrar{catalog: catalog, now: serviceNow()}
+	service := newTestService(t, newRewritingClient(t, server), registrar)
+
+	start, err := service.Start(ctx, accountauth.StartRequest{ProviderID: "codex"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	state := authorizationState(t, start.AuthorizationURL())
+	job, err := service.Complete(ctx, start.Job().ID(), validServiceCallback(state))
+	if err != nil {
+		t.Fatalf("Complete() error = %v, want nil", err)
+	}
+	if job.Status() != accountauth.StatusCompleted || registrar.calls != 1 {
+		t.Fatalf("登录未完成: status=%q registrations=%d", job.Status(), registrar.calls)
+	}
+	if job.Account() != (accountauth.Account{}) {
+		t.Fatalf("Job.Account() = %#v, want 零值", job.Account())
+	}
+	if job.AccountRef() == "" {
+		t.Fatal("缺展示 claim 不应影响 account_ref")
 	}
 }
 

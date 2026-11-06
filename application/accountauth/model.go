@@ -91,7 +91,19 @@ type Job struct {
 	finishedAt   time.Time
 	accountRef   accountcore.AccountRef
 	cliAccountID accountcore.CLIAccountID
-	failureCode  string
+	// account 是成功登录后可直接展示的账号字段；失败或未完成时为零值。
+	account     Account
+	failureCode string
+}
+
+// Account 是 OAuth 登录成功后可直接展示的公开账号字段。
+//
+// JSON 字段名与 Node 登录 Job 快照保持一致（email / displayName / planType）；
+// 全部字段允许为空，缺失 claim 不能阻断登录。
+type Account struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	PlanType    string `json:"planType"`
 }
 
 // ID 返回随机生成的 OAuth Job ID。
@@ -149,6 +161,11 @@ func (job Job) FailureCode() string {
 	return job.failureCode
 }
 
+// Account 返回登录成功时解析出的公开账号字段；其它状态返回零值。
+func (job Job) Account() Account {
+	return job.account
+}
+
 // IsTerminal 判断状态是否已经不再接受任何变化。
 //
 // 终态判定同时被服务、持久化适配器和 Node 快照入站三处使用，集中在这里
@@ -193,6 +210,13 @@ type OAuthProvider interface {
 type OAuthFlow interface {
 	AuthorizationURL() string
 	Exchange(ctx context.Context, callback string) ([]byte, error)
+}
+
+// AccountClaimsProvider 是 OAuthFlow 的可选扩展：Flow 在 Exchange 之后可直接
+// 提供从上游 ID Token 解析出的公开账号字段。未实现时登录照常完成，Job.Account
+// 回落到账号解码器给出的公开资料。
+type AccountClaimsProvider interface {
+	AccountClaims() Account
 }
 
 // StartRequest 是创建 OAuth Job 的应用命令。

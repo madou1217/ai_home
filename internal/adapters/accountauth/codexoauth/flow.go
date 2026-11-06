@@ -24,11 +24,23 @@ type flow struct {
 	authorization string
 	verifier      string
 	state         string
+	// account 是 Exchange 从 ID Token 解析出的公开账号字段；不含凭据。
+	account accountauth.Account
 }
 
 // AuthorizationURL 返回一次性 Codex 官方授权地址。
 func (flow *flow) AuthorizationURL() string {
 	return flow.authorization
+}
+
+// AccountClaims 返回 Exchange 从 ID Token 解析出的公开账号字段。
+//
+// 在 Exchange 之前调用返回零值；这些字段只用于登录结果展示，不参与身份派生。
+func (flow *flow) AccountClaims() accountauth.Account {
+	if flow == nil {
+		return accountauth.Account{}
+	}
+	return flow.account
 }
 
 // Exchange 校验完整回调 URL、换取 Token，并生成标准 auth.json artifact。
@@ -54,6 +66,8 @@ func (flow *flow) Exchange(
 	if err != nil {
 		return nil, accountauth.ErrProviderRejected
 	}
+	// 展示字段缺失不阻断登录：解码失败时 account 保持零值。
+	flow.account = decodeIDTokenAccount(tokens.IDToken)
 	authJSON, err := authfile.Encode(auth)
 	if err != nil {
 		return nil, accountauth.ErrInvalidArtifacts

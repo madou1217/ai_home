@@ -298,6 +298,16 @@ func TestExchangeTable(t *testing.T) {
 			if testCase.wantAccountID != "" {
 				assertLoginAuthJSON(t, artifacts, testCase.wantAccountID)
 				assertLoginTokenForm(t, recorder.form, verifier)
+				// 同一份 id_token 的公开 claim 必须进入登录结果；auth_json 仍只写
+				// tokens.account_id，与 Node 的 buildCodexAuthJsonFromTokenResponse 一致。
+				wantClaims := accountauth.Account{
+					Email:       "codex-login@example.com",
+					DisplayName: "codex-login@example.com",
+					PlanType:    "plus",
+				}
+				if got := loginFlow.AccountClaims(); got != wantClaims {
+					t.Fatalf("AccountClaims() = %#v, want %#v", got, wantClaims)
+				}
 			}
 		})
 	}

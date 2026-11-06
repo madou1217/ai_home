@@ -341,6 +341,9 @@ func (service *Service) Complete(
 		return service.failJob(jobID, failureCode(err)), err
 	}
 	defer clearBytes(artifacts)
+	// ID Token 的公开字段先取一份：账号解码器可能只返回资料子集，
+	// 这里保留上游原始 claim 作为缺失字段的回落来源。
+	claims := flowAccountClaims(claimed.flow)
 	credential, profile, err := service.decoder.Decode(
 		claimed.providerID,
 		artifacts,
@@ -370,11 +373,49 @@ func (service *Service) Complete(
 	record.job.finishedAt = now
 	record.job.accountRef = account.Ref()
 	record.job.cliAccountID = account.CLIAccountID()
+	record.job.account = mergePublicAccount(claims, profile)
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, claimed.providerID)
 	finishProcessingLocked(record)
 	service.persistJobLocked(record.job, now)
 	return record.job, nil
+}
+
+// flowAccountClaims 读取 OAuthFlow 可选的 ID Token 账号字段。
+//
+// 未实现该可选端口的 Provider（例如 Claude）返回零值，不影响登录主流程。
+func flowAccountClaims(flow OAuthFlow) Account {
+	provider, ok := flow.(AccountClaimsProvider)
+	if !ok {
+		return Account{}
+	}
+	return provider.AccountClaims()
+}
+
+// mergePublicAccount 用账号解码器确认的公开资料覆盖 ID Token 快照字段。
+//
+// 解码器给出的 email / 套餐来自同一份可信 artifact，优先级更高；ID Token 只在
+// 对应字段缺失时补位。Node 的 Codex Job 在缺少名称时把 email 当作 displayName，
+// 这里保持同一表现，避免两端登录结果出现不同展示。
+func mergePublicAccount(claims Account, profile accountapp.PublicProfile) Account {
+	if profile != nil {
+		if value := strings.TrimSpace(profile.Email()); value != "" {
+			claims.Email = value
+		}
+		if value := strings.TrimSpace(profile.SubscriptionRaw()); value != "" {
+			claims.PlanType = value
+		}
+		if value := strings.TrimSpace(profile.DisplayName()); value != "" {
+			claims.DisplayName = value
+		}
+	}
+	claims.Email = strings.TrimSpace(claims.Email)
+	claims.DisplayName = strings.TrimSpace(claims.DisplayName)
+	claims.PlanType = strings.TrimSpace(claims.PlanType)
+	if claims.DisplayName == "" {
+		claims.DisplayName = claims.Email
+	}
+	return claims
 }
 
 // persistAccount 按 Job 意图选择新账号注册或同账号原子重新认证。

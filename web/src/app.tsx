@@ -16,6 +16,7 @@ import {
   resolveCatalogStorageKey
 } from "@/components/chat/account-model-catalog-cache";
 import { resolveActiveServer } from "@/services/api";
+import { bootstrapLocalControlPlaneProfile } from "@/services/control-plane-profiles";
 
 // 账号模型目录的失效订阅装在**应用入口**：它必须在任何页面都生效 —— 用户是在
 // 账号模型页增删模型的，而 chat 的模型缓存要在那时就被清掉（2026-10-23 用户反馈
@@ -134,6 +135,9 @@ type AppLayoutSettings = Partial<LayoutSettings> & { siderWidth?: number };
 export async function getInitialState(): Promise<{
   settings?: AppLayoutSettings;
 }> {
+  // 本机页面在 localStorage 被清空后自动取回 profile + Management Key（仅 loopback 生效）。
+  // 必须在首次渲染前完成：Server 门禁读的是 localStorage，晚一步就会先闪「未连接」。
+  await bootstrapLocalControlPlaneProfile().catch(() => null);
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/ui/sw.js').catch(() => {});

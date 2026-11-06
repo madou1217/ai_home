@@ -1,4 +1,4 @@
-import { resolveWebUiManagementKey } from './webui-auth-transport';
+import { resolveWebUiManagementKey, isSameServerOrigin } from './webui-auth-transport';
 import type {
   ControlPlaneDescriptor,
   ControlPlaneDeviceStatus,
@@ -315,6 +315,50 @@ export async function syncSharedControlPlaneProfiles(options: { fetchImpl?: type
     profiles: merged,
     activeProfileId: shared.activeProfileId
   };
+}
+
+const LOCAL_BOOTSTRAP_API_PATH = '/v0/webui/control-plane/bootstrap';
+
+/**
+ * bootstrapLocalControlPlaneProfile 在「当前 origin 没有可用 Key」时向本机服务取回
+ * 本机 profile（endpoint + 当前 Management Key）。
+ *
+ * 为什么需要它：共享 profile 同步本身要带 Key，Key 又只存在当前 origin 的 localStorage。
+ * 浏览器/PWA 清掉站点存储后，客户端就再也读不到服务端已经存着的 profile，页面永远停在
+ * 「未连接」。服务端只对 loopback 页面开放这个入口（见 webui-auth-gate 的窄口规则），
+ * 局域网/远端客户端仍然必须自带 Key。
+ */
+export async function bootstrapLocalControlPlaneProfile(
+  options: { fetchImpl?: typeof fetch } = {}
+): Promise<ControlPlaneProfile | null> {
+  if (typeof window === 'undefined') return null;
+  // 已有可用 Key 说明 profile 正常，不覆盖用户当前选择。
+  if (resolveWebUiManagementKey()) return null;
+  const fetcher = options.fetchImpl || getSharedProfileFetch();
+  if (!fetcher) return null;
+  // 首次渲染在等这一步：服务不可达时必须很快放弃，不能把页面卡住。
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 1500) : null;
+  try {
+    const response = await fetcher(LOCAL_BOOTSTRAP_API_PATH, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+      ...(controller ? { signal: controller.signal } : {})
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as SharedControlPlaneProfilesResponse;
+    if (!payload || payload.ok !== true) return null;
+    const profile = normalizeProfile(payload.profile);
+    if (!profile || !profile.managementKey) return null;
+    // 只接受与当前页面同源的 profile（localhost / 127.0.0.1 视为同源）。
+    if (!isSameServerOrigin(profile.endpoint, window.location.origin)) return null;
+    return saveControlPlaneProfile(profile);
+  } catch (_error) {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function parseProfileIdsFromStorageValue(value: string | null): string[] {

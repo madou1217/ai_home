@@ -263,7 +263,9 @@ type Dependencies struct {
 	RuntimeStates RuntimeStateApplier
 	// ProbeStates 持久化 Node 推送的额度探针结果；可为空（该端点返回 503）。
 	ProbeStates ProbeStateWriter
-	Authorizer  Authorizer
+	// RoutingExclusions 保存 Node 标记的账号级 Go 路由排除；可为空（该端点返回 503）。
+	RoutingExclusions RoutingExclusionWriter
+	Authorizer        Authorizer
 }
 
 // RuntimeStateApplier 把持久化的账号运行态投影到征召资格索引。
@@ -290,6 +292,7 @@ type Handler struct {
 	staticCredentials   StaticCredentialFactory
 	native              NativeAccountDecoder
 	probeStates         ProbeStateWriter
+	routingExclusions   RoutingExclusionWriter
 	credentialSnapshots CredentialSnapshotReader
 	accountModels       AccountModelReader
 	runtimeStates       RuntimeStateApplier
@@ -328,6 +331,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		staticCredentials:   dependencies.StaticCredentials,
 		native:              dependencies.NativeAccounts,
 		probeStates:         dependencies.ProbeStates,
+		routingExclusions:   dependencies.RoutingExclusions,
 		credentialSnapshots: dependencies.CredentialSnapshots,
 		accountModels:       dependencies.AccountModels,
 		runtimeStates:       dependencies.RuntimeStates,
@@ -462,6 +466,8 @@ func (handler *Handler) handleMember(
 		handler.handleAccountRuntimeBlock(response, request, accountRef)
 	case memberResourceProbe:
 		handler.handleAccountProbe(response, request, resource.accountRef)
+	case memberResourceRouting:
+		handler.handleAccountRouting(response, request, accountRef)
 	case memberResourceRuntimeState:
 		handler.handleAccountRuntimeState(response, request, accountRef)
 	case memberResourceUsageRefresh:

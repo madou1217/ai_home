@@ -38,11 +38,22 @@ type routeSlot struct {
 	candidates atomic.Pointer[accountapp.RoutingCandidates]
 }
 
-// indexedRoutingAccount 保存账号启停状态及排序后的有效模型正排。
+// indexedRoutingAccount 保存账号启停状态、Go 路由排除及排序后的有效模型正排。
 type indexedRoutingAccount struct {
 	account accountapp.RoutingAccount
 	enabled bool
-	models  []runtimecore.ModelID
+	// excluded 是 Node 标记的账号级路由排除（自定义上游账号），优先级高于 enabled：
+	// 用户启用的账号仍可能因为 Go 服务不了它的上游而必须留在候选之外。
+	excluded bool
+	models   []runtimecore.ModelID
+}
+
+// serves 判断该账号当前是否会进入 Go 的路由候选和模型目录。
+//
+// 候选与目录都从同一份倒排派生，只在这一处判定「算不算可服务」，
+// 两处就不可能对同一个账号给出不同答案。
+func (entry indexedRoutingAccount) serves() bool {
+	return entry.enabled && !entry.excluded
 }
 
 // routingIndexKey 是 Provider 与真实模型组成的倒排键。
@@ -52,11 +63,17 @@ type routingIndexKey struct {
 }
 
 // loadRoutingIndex 从公开账号字段和模型关系构建启动时唯一完整快照。
+//
+// 路由排除在这里一并读入并直接决定账号是否进入倒排，因此启动快照与
+// SetRoutingExclusion 之后的增量状态完全同构：候选查询和 /v1/models 目录
+// 都只是这份倒排的投影，不需要各自再过滤一次（各自过滤迟早会漏掉一处）。
 func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error) {
 	const query = `
 		SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
+		       COALESCE(e.excluded, 0),
 		       m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms
 		FROM accounts AS a
+		LEFT JOIN account_routing_exclusions AS e ON e.account_ref = a.account_ref
 		LEFT JOIN account_models AS m ON m.account_ref = a.account_ref
 		ORDER BY a.account_ref, m.model_id`
 	rows, err := store.db.QueryContext(ctx, query)
@@ -71,10 +88,11 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	var currentRef accountcore.AccountRef
 	var current accountapp.RoutingAccount
 	var currentEnabled bool
+	var currentExcluded bool
 	var currentModels []runtimecore.ModelID
 	flush := func() {
 		if currentRef.IsValid() {
-			index.replaceAccountDataLocked(current, currentEnabled, currentModels)
+			index.replaceAccountDataLocked(current, currentEnabled, currentExcluded, currentModels)
 		}
 	}
 	for rows.Next() {
@@ -83,6 +101,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			providerID     string
 			cliAccountID   int64
 			enabled        bool
+			excluded       bool
 			modelIDText    sql.NullString
 			upstream       sql.NullBool
 			manualPolicy   sql.NullString
@@ -93,6 +112,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			&providerID,
 			&cliAccountID,
 			&enabled,
+			&excluded,
 			&modelIDText,
 			&upstream,
 			&manualPolicy,
@@ -117,6 +137,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			currentRef = accountRef
 			current = account
 			currentEnabled = enabled
+			currentExcluded = excluded
 		}
 		if !modelIDText.Valid {
 			if upstream.Valid || manualPolicy.Valid || updatedAtMS.Valid {
@@ -185,16 +206,20 @@ func (index *routingIndex) replaceAccountAndPublishLocked(
 ) {
 	models = index.effectiveModels(account.ProviderID(), models)
 	affected := make(map[routingIndexKey]struct{}, len(models))
-	if previous, found := index.accounts[account.Ref()]; found && previous.enabled {
-		for _, modelID := range previous.models {
-			key := routingIndexKey{
-				providerID: previous.account.ProviderID(),
-				modelID:    modelID,
+	excluded := false
+	if previous, found := index.accounts[account.Ref()]; found {
+		excluded = previous.excluded
+		if previous.serves() {
+			for _, modelID := range previous.models {
+				key := routingIndexKey{
+					providerID: previous.account.ProviderID(),
+					modelID:    modelID,
+				}
+				affected[key] = struct{}{}
 			}
-			affected[key] = struct{}{}
 		}
 	}
-	if enabled {
+	if enabled && !excluded {
 		for _, modelID := range models {
 			affected[routingIndexKey{
 				providerID: account.ProviderID(),
@@ -202,18 +227,22 @@ func (index *routingIndex) replaceAccountAndPublishLocked(
 			}] = struct{}{}
 		}
 	}
-	index.replaceAccountDataLocked(account, enabled, models)
+	index.replaceAccountDataLocked(account, enabled, excluded, models)
 	index.publishSnapshotsLocked(affected)
 }
 
 // replaceAccountDataLocked 只更新正排和倒排数据，供启动批量构建避免逐账号发布。
+//
+// excluded 只影响这次写入之后是否入倒排；清理旧倒排必须按 previous 的状态判定，
+// 否则「刚被排除的账号」会把上一次的倒排条目永久留在候选里。
 func (index *routingIndex) replaceAccountDataLocked(
 	account accountapp.RoutingAccount,
 	enabled bool,
+	excluded bool,
 	models []runtimecore.ModelID,
 ) {
 	models = index.effectiveModels(account.ProviderID(), models)
-	if previous, found := index.accounts[account.Ref()]; found && previous.enabled {
+	if previous, found := index.accounts[account.Ref()]; found && previous.serves() {
 		for _, modelID := range previous.models {
 			key := routingIndexKey{
 				providerID: previous.account.ProviderID(),
@@ -228,12 +257,14 @@ func (index *routingIndex) replaceAccountDataLocked(
 			}
 		}
 	}
-	index.accounts[account.Ref()] = indexedRoutingAccount{
-		account: account,
-		enabled: enabled,
-		models:  append([]runtimecore.ModelID(nil), models...),
+	entry := indexedRoutingAccount{
+		account:  account,
+		enabled:  enabled,
+		excluded: excluded,
+		models:   append([]runtimecore.ModelID(nil), models...),
 	}
-	if !enabled {
+	index.accounts[account.Ref()] = entry
+	if !entry.serves() {
 		return
 	}
 	for _, modelID := range models {
@@ -294,7 +325,7 @@ func (index *routingIndex) setSynthesizedModelSource(source synthesizedModelSour
 		if len(merged) == len(entry.models) {
 			continue
 		}
-		index.replaceAccountDataLocked(entry.account, entry.enabled, merged)
+		index.replaceAccountDataLocked(entry.account, entry.enabled, entry.excluded, merged)
 	}
 	index.publishAllSnapshots()
 	index.mu.Unlock()
@@ -342,6 +373,59 @@ func (index *routingIndex) setAccount(
 	index.notifyRoutableModelsChanged()
 }
 
+// setRoutingExcluded 切换账号的 Go 路由排除并重新发布受影响的倒排快照。
+//
+// 不复用 replaceAccountAndPublishLocked：后者按 map 里已保存的 excluded 计算受影响集合，
+// 而本次改的正是这个字段——先改后算会漏发布旧倒排条目，被排除的账号还能被选中一轮。
+func (index *routingIndex) setRoutingExcluded(
+	accountRef accountcore.AccountRef,
+	excluded bool,
+) bool {
+	if index == nil || !accountRef.IsValid() {
+		return false
+	}
+	index.mu.Lock()
+	current, found := index.accounts[accountRef]
+	if !found {
+		index.mu.Unlock()
+		return false
+	}
+	if current.excluded == excluded {
+		index.mu.Unlock()
+		return true
+	}
+	affected := make(map[routingIndexKey]struct{}, len(current.models))
+	if current.serves() {
+		for _, modelID := range current.models {
+			key := routingIndexKey{
+				providerID: current.account.ProviderID(),
+				modelID:    modelID,
+			}
+			affected[key] = struct{}{}
+			index.reverse[key] = removeRoutingAccount(index.reverse[key], accountRef)
+			if len(index.reverse[key]) == 0 {
+				delete(index.reverse, key)
+			}
+		}
+	}
+	current.excluded = excluded
+	index.accounts[accountRef] = current
+	if current.serves() {
+		for _, modelID := range current.models {
+			key := routingIndexKey{
+				providerID: current.account.ProviderID(),
+				modelID:    modelID,
+			}
+			affected[key] = struct{}{}
+			index.reverse[key] = insertRoutingAccount(index.reverse[key], current.account)
+		}
+	}
+	index.publishSnapshotsLocked(affected)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
+	return true
+}
+
 // deleteAccount 删除账号正排，并原子发布其全部受影响倒排快照。
 func (index *routingIndex) deleteAccount(
 	accountRef accountcore.AccountRef,
@@ -356,7 +440,7 @@ func (index *routingIndex) deleteAccount(
 		return
 	}
 	affected := make(map[routingIndexKey]struct{}, len(current.models))
-	if current.enabled {
+	if current.serves() {
 		for _, modelID := range current.models {
 			key := routingIndexKey{
 				providerID: current.account.ProviderID(),
@@ -538,7 +622,7 @@ func (index *routingIndex) countByProvider() map[string]int {
 	defer index.mu.RUnlock()
 	counts := make(map[string]int, len(index.accounts))
 	for _, indexed := range index.accounts {
-		if !indexed.enabled {
+		if !indexed.serves() {
 			continue
 		}
 		counts[indexed.account.ProviderID()]++

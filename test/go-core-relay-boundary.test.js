@@ -51,7 +51,7 @@ function explainPinnedRelayWithStaleRuntimeBlock() {
   });
 }
 
-function explainUnpinnedRelay() {
+function explainUnpinnedRelay(routableModels = [MODEL]) {
   const account = customRelayAccount();
   return explainGoRouteDeferral({
     entryId: ENTRY,
@@ -61,7 +61,7 @@ function explainUnpinnedRelay() {
     },
     egressBoundRefs: () => new Set(),
     goAcceptedErrorRuleRefs: () => new Set(),
-    goRoutableModelIds: () => new Set([MODEL])
+    goRoutableModelIds: () => new Set(routableModels)
   });
 }
 
@@ -103,12 +103,20 @@ test('a stale Go quota overlay cannot make a custom relay pin unusable before No
   });
 });
 
-test('an unpinned pool containing a custom remote upstream also stays on Node', () => {
-  const decision = explainUnpinnedRelay();
+// 池级判定已删除：自定义上游账号改由 Go 的路由排除（go-account-sync 按账号推送）
+// 保证不会被选中，同池里的官方账号因此能正常交给 Go —— 这正是用量账本长期为空的解药。
+test('an unpinned pool of custom remote upstream accounts no longer blocks the Go route', () => {
+  assert.deepEqual(explainUnpinnedRelay(), {
+    defer: false,
+    reason: ''
+  });
+});
 
-  assert.deepEqual(decision, {
+// 剩下的兜底在模型目录上：Go 不列出被排除账号承载的模型，这类请求仍交还 Node。
+test('a model only carried by excluded custom upstream accounts still falls back on model_not_routable', () => {
+  assert.deepEqual(explainUnpinnedRelay([]), {
     defer: true,
-    reason: 'custom_upstream_node_only'
+    reason: 'model_not_routable'
   });
 });
 
@@ -124,7 +132,7 @@ test('custom upstream deferral is a stable readyz fallback reason', () => {
 });
 
 // 生图入口：Go 有独立的完整实现，池门判据换成「承载者都有 Go 的图片实现」。
-// 旧口径下这两个用例都会交还 Node（custom_upstream_node_only / pool_has_non_go_servable_provider），
+// 旧口径下这两个用例都会交还 Node（pool_has_non_go_servable_provider），
 // 结果就是 /v1/images/* 在真机上永远走不到 Go（2026-11-01 实测：Go 进程全程没有上游连接）。
 const IMAGE_ENTRY = 'gateway.images.generations';
 const IMAGE_MODEL = 'gpt-image-2';

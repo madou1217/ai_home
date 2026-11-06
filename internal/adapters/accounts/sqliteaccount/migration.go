@@ -212,6 +212,12 @@ var expectedSchemaColumns = map[string][]string{
 		"early_duration_ms",
 		"created_at_ms",
 	},
+	"account_routing_exclusions": {
+		"account_ref",
+		"excluded",
+		"reason",
+		"updated_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -286,6 +292,7 @@ var forwardMigrations = []string{
 	SchemaV22,
 	SchemaV23,
 	SchemaV24,
+	SchemaV25,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

@@ -22,6 +22,9 @@ const (
 	clientID          = "app_EMoamEEZ73f0CkXaXp7hrann" // gitleaks:allow -- Codex 官方公开 OAuth Client ID。
 	redirectURI       = "http://localhost:1455/auth/callback"
 	oauthScope        = "openid profile email offline_access api.connectors.read api.connectors.invoke"
+	// refreshScope 必须与 Node 的 refresh 请求一致：包含 openid，服务端才会在
+	// refresh 响应里继续返回 id_token；否则订阅到期等 id_token 快照字段永远不更新。
+	refreshScope = "openid profile email offline_access"
 )
 
 // Clock 返回生成官方 auth.json last_refresh 所需的当前时间。

@@ -53,10 +53,12 @@ func (provider *Provider) Refresh(
 		ClientID     string `json:"client_id"`
 		GrantType    string `json:"grant_type"`
 		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
 	}{
 		ClientID:     clientID,
 		GrantType:    "refresh_token",
 		RefreshToken: auth.RefreshToken(),
+		Scope:        refreshScope,
 	})
 	if err != nil {
 		return nil, accountcredentials.ErrInvalidRefreshResult

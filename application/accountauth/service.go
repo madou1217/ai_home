@@ -28,6 +28,10 @@ type jobRecord struct {
 	job           Job
 	flow          OAuthFlow
 	retainedUntil time.Time
+	// done 在 pending 被改写成 processing 时创建、进入终态时关闭。
+	// 同一 Job 的并发 Complete 靠它等待唯一执行者的终态结果，
+	// 而不是把「已在处理」误报成 job_not_pending。
+	done chan struct{}
 }
 
 // Service 是并发安全、有界的 OAuth Job 编排器。
@@ -268,15 +272,24 @@ func (service *Service) Rehydrate(ctx context.Context) error {
 }
 
 // Complete 唯一领取回调，换取官方 artifact，并复用统一账号注册链。
+//
+// 该方法对同一 Job 的重复调用是幂等的：只有 pending 的第一次调用会真正执行
+// token 交换与账号写入；已 completed 的 Job 直接回放 account_ref、
+// cli_account_id 等既有结果，已 failed 的 Job 回放同一失败码，都不会产生第二次
+// 副作用。网络重试、浏览器重复命中回调都依赖这个语义。
 func (service *Service) Complete(
 	ctx context.Context,
 	jobID string,
 	callback string,
 ) (Job, error) {
-	claimed, err := service.claimPendingJob(jobID)
+	claim, err := service.claimCompletion(ctx, jobID)
 	if err != nil {
 		return Job{}, err
 	}
+	if !claim.claimed {
+		return claim.replay, nil
+	}
+	claimed := claim.job
 	artifacts, err := claimed.flow.Exchange(ctx, callback)
 	if err != nil {
 		return service.failJob(jobID, failureCode(err)), err
@@ -313,6 +326,7 @@ func (service *Service) Complete(
 	record.job.cliAccountID = account.CLIAccountID()
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, claimed.providerID)
+	finishProcessingLocked(record)
 	service.persistJobLocked(record.job, now)
 	return record.job, nil
 }
@@ -365,36 +379,103 @@ func (service *Service) Cancel(jobID string) (Job, error) {
 	return record.job, nil
 }
 
-// claimPendingJob 原子把 pending Job 转成 processing，并立即移除容器中的私有 Flow。
-func (service *Service) claimPendingJob(
+// completionClaim 是一次 Complete 状态 CAS 的结果。
+//
+// claimed 为 true 表示当前调用者把 pending 改写成 processing，成为唯一执行者；
+// 否则 replay 是已有终态快照，调用者直接返回它，不碰 token 端点也不写账号。
+type completionClaim struct {
+	job     claimedJob
+	replay  Job
+	claimed bool
+}
+
+// claimCompletion 在 service.mu 内按 Job 状态做比较并交换。
+//
+// 状态机只有一条写入边：pending → processing。completed / failed 是回放分支，
+// processing 则等待唯一执行者关闭 done。这样两个并发 Complete 只有一个能拿到
+// Flow 并执行副作用，另一个在 done 关闭后读取同一份终态快照。
+func (service *Service) claimCompletion(
+	ctx context.Context,
 	jobID string,
-) (claimedJob, error) {
+) (completionClaim, error) {
 	now := service.now()
 	service.mu.Lock()
-	defer service.mu.Unlock()
 	service.expireAndPruneLocked(now)
 	record, found := service.jobs[jobID]
 	if !found {
-		return claimedJob{}, ErrJobNotFound
+		service.mu.Unlock()
+		return completionClaim{}, ErrJobNotFound
 	}
-	if record.job.status == StatusExpired {
-		return claimedJob{}, ErrJobExpired
+	switch record.job.status {
+	case StatusCompleted, StatusFailed:
+		// 失败也要幂等回放：客户端重试不该改变结果。第一次失败已经收敛成
+		// 稳定 failure_code，再次返回同一个错误会让调用方以为发生了新失败，
+		// 也无法保证原始错误在所有重试路径上可重建；统一回放终态快照，
+		// 让调用方像 Get 一样读 Status/FailureCode。
+		replay := record.job
+		service.mu.Unlock()
+		return completionClaim{replay: replay}, nil
+	case StatusProcessing:
+		done := record.done
+		service.mu.Unlock()
+		if done == nil {
+			// 没有等待信号的 processing 只可能来自旧版本内存状态，无法安全跟随。
+			return completionClaim{}, ErrJobNotPending
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return completionClaim{}, ctx.Err()
+		}
+		service.mu.Lock()
+		if !record.job.IsTerminal() {
+			service.mu.Unlock()
+			return completionClaim{}, ErrJobNotPending
+		}
+		replay := record.job
+		service.mu.Unlock()
+		return completionClaim{replay: replay}, nil
+	case StatusPending:
+		if record.flow == nil {
+			service.mu.Unlock()
+			return completionClaim{}, ErrJobNotPending
+		}
+		claimed := claimedJob{
+			flow:       record.flow,
+			providerID: record.job.providerID,
+			purpose:    record.job.purpose,
+			targetRef:  record.job.targetRef,
+		}
+		record.flow = nil
+		record.job.status = StatusProcessing
+		if record.done == nil {
+			record.done = make(chan struct{})
+		}
+		// 领取回调是跨进程可见的分界点：先落 processing，崩溃后重启才能把它收敛为 expired，
+		// 而不是让客户端以为 Job 还在等待回调。
+		service.persistJobLocked(record.job, now)
+		service.mu.Unlock()
+		return completionClaim{job: claimed, claimed: true}, nil
+	case StatusExpired:
+		service.mu.Unlock()
+		return completionClaim{}, ErrJobExpired
+	default:
+		// cancelled 不是可回放的登录结果：它从未开始换取凭据。
+		service.mu.Unlock()
+		return completionClaim{}, ErrJobNotPending
 	}
-	if record.job.status != StatusPending || record.flow == nil {
-		return claimedJob{}, ErrJobNotPending
+}
+
+// finishProcessingLocked 唤醒等待同一 Job 的并发 Complete。
+//
+// 调用方必须持有 service.mu 且已经写入终态，这样被唤醒的调用者读到的
+// 一定是 completed/failed，而不会看到半成品。
+func finishProcessingLocked(record *jobRecord) {
+	if record.done == nil {
+		return
 	}
-	claimed := claimedJob{
-		flow:       record.flow,
-		providerID: record.job.providerID,
-		purpose:    record.job.purpose,
-		targetRef:  record.job.targetRef,
-	}
-	record.flow = nil
-	record.job.status = StatusProcessing
-	// 领取回调是跨进程可见的分界点：先落 processing，崩溃后重启才能把它收敛为 expired，
-	// 而不是让客户端以为 Job 还在等待回调。
-	service.persistJobLocked(record.job, now)
-	return claimed, nil
+	close(record.done)
+	record.done = nil
 }
 
 // failJob 把 processing Job 收敛为不含内部错误文本的 failed 终态。
@@ -412,6 +493,7 @@ func (service *Service) failJob(jobID string, code string) Job {
 	record.job.failureCode = code
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, record.job.providerID)
+	finishProcessingLocked(record)
 	service.persistJobLocked(record.job, now)
 	return record.job
 }

@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -325,10 +327,9 @@ func TestLoginFlowTable(t *testing.T) {
 			wantRegistrations: 0,
 		},
 		{
-			// 缺口（锁现状）：同一个 Job 的第二次 Complete 当前返回
-			// ErrJobNotPending，而不是幂等地返回已完成的 Job。浏览器重复
-			// 命中回调或客户端重试时会把成功登录报告成错误；切流前必须
-			// 改成幂等（已 completed 的 Job 直接回放终态结果）。
+			// 重复回调必须幂等回放：浏览器重复命中回调或客户端网络重试
+			// 不应再次交换 Token 或重复注册账号；第二次 Complete 直接返回
+			// 第一次的终态快照（account_ref / cli_account_id 等字段不变）。
 			name:              "duplicate_callback",
 			status:            http.StatusOK,
 			body:              fullBody,
@@ -421,8 +422,23 @@ func TestLoginFlowTable(t *testing.T) {
 			}
 
 			if testCase.completeTwice {
-				if _, repeatErr := service.Complete(ctx, start.Job().ID(), testCase.callback(state)); !errors.Is(repeatErr, accountauth.ErrJobNotPending) {
-					t.Fatalf("第二次 Complete() error = %v, want %v", repeatErr, accountauth.ErrJobNotPending)
+				replay, repeatErr := service.Complete(
+					ctx,
+					start.Job().ID(),
+					testCase.callback(state),
+				)
+				if repeatErr != nil {
+					t.Fatalf("第二次 Complete() error = %v, want nil（终态回放）", repeatErr)
+				}
+				if replay.Status() != job.Status() ||
+					replay.AccountRef() != job.AccountRef() ||
+					replay.CLIAccountID() != job.CLIAccountID() ||
+					replay.FailureCode() != job.FailureCode() {
+					t.Fatalf(
+						"第二次 Complete() 回放 = %+v, want %+v",
+						replay,
+						job,
+					)
 				}
 				if upstream.calls != testCase.wantTokenCalls {
 					t.Fatalf("第二次回调后 token 调用 = %d, want %d", upstream.calls, testCase.wantTokenCalls)
@@ -432,5 +448,187 @@ func TestLoginFlowTable(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// gatedTokenUpstream 把 token 交换挂在 release 之前，用来构造
+// 「唯一执行者仍处于 processing、第二个 Complete 已经到达」的并发时序。
+type gatedTokenUpstream struct {
+	body    string
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func newGatedTokenUpstream(body string) *gatedTokenUpstream {
+	return &gatedTokenUpstream{
+		body:    body,
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+}
+
+func (upstream *gatedTokenUpstream) serve(w http.ResponseWriter, _ *http.Request) {
+	upstream.calls.Add(1)
+	select {
+	case upstream.started <- struct{}{}:
+	default:
+	}
+	<-upstream.release
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, upstream.body)
+}
+
+// newCodexLoginFixture 组装真实 codex Provider、httptest token 端点与记录型注册器。
+func newCodexLoginFixture(
+	t *testing.T,
+	handler http.Handler,
+) (*accountauth.Service, *recordingRegistrar) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	registrar := &recordingRegistrar{catalog: catalog, now: serviceNow()}
+	return newTestService(t, newRewritingClient(t, server), registrar), registrar
+}
+
+// TestCompleteReplaysFailedJobWithSameCode 验证失败终态也是幂等回放：
+// 第二次 Complete 不再调用 token 端点，返回与第一次相同的 failure_code。
+func TestCompleteReplaysFailedJobWithSameCode(t *testing.T) {
+	ctx := context.Background()
+	upstream := &fakeTokenUpstream{status: http.StatusServiceUnavailable}
+	service, registrar := newCodexLoginFixture(
+		t,
+		http.HandlerFunc(upstream.serve),
+	)
+
+	start, err := service.Start(ctx, accountauth.StartRequest{ProviderID: "codex"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	callback := validServiceCallback(
+		authorizationState(t, start.AuthorizationURL()),
+	)
+	first, err := service.Complete(ctx, start.Job().ID(), callback)
+	if !errors.Is(err, accountauth.ErrProviderUnavailable) {
+		t.Fatalf("第一次 Complete() error = %v, want %v", err, accountauth.ErrProviderUnavailable)
+	}
+	if first.Status() != accountauth.StatusFailed ||
+		first.FailureCode() != "provider_unavailable" {
+		t.Fatalf("第一次 Complete() = %+v", first)
+	}
+
+	replay, err := service.Complete(ctx, start.Job().ID(), callback)
+	if err != nil {
+		t.Fatalf("失败终态回放不应重新报错: %v", err)
+	}
+	if replay.Status() != accountauth.StatusFailed ||
+		replay.FailureCode() != first.FailureCode() ||
+		!replay.FinishedAt().Equal(first.FinishedAt()) {
+		t.Fatalf("失败终态回放 = %+v, want %+v", replay, first)
+	}
+	if upstream.calls != 1 {
+		t.Fatalf("第二次 Complete() 重新调用了 token 端点: calls = %d", upstream.calls)
+	}
+	if registrar.calls != 0 {
+		t.Fatalf("失败回放不应注册账号: calls = %d", registrar.calls)
+	}
+}
+
+// TestCompleteIsIdempotentForConcurrentCalls 验证两个并发 Complete 只有一个
+// 执行 token 交换与账号注册，另一个等待后拿到完全一致的终态快照。
+func TestCompleteIsIdempotentForConcurrentCalls(t *testing.T) {
+	ctx := context.Background()
+	upstream := newGatedTokenUpstream(serviceTokenBody(t, serviceTokens()))
+	service, registrar := newCodexLoginFixture(
+		t,
+		http.HandlerFunc(upstream.serve),
+	)
+
+	start, err := service.Start(ctx, accountauth.StartRequest{ProviderID: "codex"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	jobID := start.Job().ID()
+	callback := validServiceCallback(
+		authorizationState(t, start.AuthorizationURL()),
+	)
+
+	type completeResult struct {
+		job accountauth.Job
+		err error
+	}
+	results := make(chan completeResult, 2)
+	complete := func() {
+		job, completeErr := service.Complete(ctx, jobID, callback)
+		results <- completeResult{job: job, err: completeErr}
+	}
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		complete()
+	}()
+	select {
+	case <-upstream.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("第一个 Complete 没有进入 token 交换")
+	}
+
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		complete()
+	}()
+	// 唯一执行者仍被挂起时，第二个调用必须等待，而不是提前返回 job_not_pending。
+	select {
+	case early := <-results:
+		t.Fatalf(
+			"第二个 Complete 在唯一执行者完成前返回: job=%+v err=%v",
+			early.job,
+			early.err,
+		)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(upstream.release)
+	wait.Wait()
+	close(results)
+
+	var completed []accountauth.Job
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("Complete() error = %v", result.err)
+		}
+		completed = append(completed, result.job)
+	}
+	if len(completed) != 2 {
+		t.Fatalf("Complete() 返回 %d 个结果, want 2", len(completed))
+	}
+	for _, job := range completed {
+		if job.Status() != accountauth.StatusCompleted {
+			t.Fatalf("Job.Status() = %q, want completed", job.Status())
+		}
+		if job.AccountRef() != registrar.account.Ref() {
+			t.Fatalf("Job.AccountRef() = %q, want %q", job.AccountRef(), registrar.account.Ref())
+		}
+		if job.CLIAccountID() != registrar.account.CLIAccountID() {
+			t.Fatalf("Job.CLIAccountID() = %d, want %d", job.CLIAccountID(), registrar.account.CLIAccountID())
+		}
+	}
+	if completed[0].AccountRef() != completed[1].AccountRef() ||
+		completed[0].CLIAccountID() != completed[1].CLIAccountID() ||
+		!completed[0].FinishedAt().Equal(completed[1].FinishedAt()) {
+		t.Fatalf("并发 Complete 结果不一致: %+v / %+v", completed[0], completed[1])
+	}
+	if upstream.calls.Load() != 1 {
+		t.Fatalf("token 端点调用次数 = %d, want 1", upstream.calls.Load())
+	}
+	if registrar.calls != 1 {
+		t.Fatalf("注册次数 = %d, want 1", registrar.calls)
 	}
 }

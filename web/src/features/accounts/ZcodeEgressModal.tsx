@@ -37,6 +37,8 @@ interface AccountEgressFormValues {
 interface AccountEgressModalProps {
   account: Account | null;
   onClose: () => void;
+  /** 嵌在「运行设置」的 Tab 里：不渲染自己的 Modal，动作收在面板底部。 */
+  embedded?: boolean;
 }
 
 const DEFAULT_POOL_SELECTION: PoolSelection = { scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'shared' };
@@ -103,7 +105,7 @@ function EgressHint({ title, children }: { title: string; children: ReactNode })
   );
 }
 
-export function AccountEgressModal({ account, onClose }: AccountEgressModalProps) {
+export function AccountEgressModal({ account, onClose, embedded = false }: AccountEgressModalProps) {
   const [form] = Form.useForm<AccountEgressFormValues>();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -318,39 +320,8 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
   const runtimeDescription = describeRuntimeStatus(runtime);
   const resolvedEndpoint = runtime?.resolved?.ok ? runtime.resolved.proxyServer : '';
 
-  return (
-    <Modal
-      open={Boolean(account)}
-      title={account ? `出口设置 · ${getAccountPrimaryLabel(account)}` : '账号出口设置'}
-      width={mode === 'pool' ? 780 : 640}
-      destroyOnHidden
-      maskClosable={!submitting}
-      onCancel={onClose}
-      footer={[
-        <Button
-          key="clear"
-          danger
-          disabled={!binding || loading}
-          loading={submitting}
-          onClick={() => void clearBinding()}
-        >
-          解除绑定
-        </Button>,
-        <Button key="cancel" disabled={submitting} onClick={onClose}>
-          关闭
-        </Button>,
-        <Button
-          key="save"
-          type="primary"
-          loading={submitting}
-          disabled={loading}
-          onClick={() => void saveBinding()}
-        >
-          保存并应用
-        </Button>
-      ]}
-    >
-      <Spin spinning={loading}>
+  const content = (
+    <Spin spinning={loading}>
         {binding?.mode === 'pool' || mode === 'pool' ? <AccountEgressRuntimePanel runtime={accountRuntimeView} loading={loading} /> : null}
         <div className="egress-runtime hud-panel hud-panel--sm">
           <span className={`egress-runtime-state egress-runtime-state--${runtimeDescription.state}`}>
@@ -467,7 +438,68 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             ) : null}
           </div>
         </Form>
-      </Spin>
+    </Spin>
+  );
+
+  if (embedded) {
+    return (
+      <div>
+        {content}
+        <div className="account-panel-actions">
+          <Button
+            danger
+            disabled={!binding || loading}
+            loading={submitting}
+            onClick={() => void clearBinding()}
+          >
+            解除绑定
+          </Button>
+          <Button
+            type="primary"
+            loading={submitting}
+            disabled={loading}
+            onClick={() => void saveBinding()}
+          >
+            保存并应用
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Modal
+      open={Boolean(account)}
+      title={account ? `出口设置 · ${getAccountPrimaryLabel(account)}` : '账号出口设置'}
+      width={mode === 'pool' ? 780 : 640}
+      destroyOnHidden
+      maskClosable={!submitting}
+      onCancel={onClose}
+      footer={[
+        <Button
+          key="clear"
+          danger
+          disabled={!binding || loading}
+          loading={submitting}
+          onClick={() => void clearBinding()}
+        >
+          解除绑定
+        </Button>,
+        <Button key="cancel" disabled={submitting} onClick={onClose}>
+          关闭
+        </Button>,
+        <Button
+          key="save"
+          type="primary"
+          loading={submitting}
+          disabled={loading}
+          onClick={() => void saveBinding()}
+        >
+          保存并应用
+        </Button>
+      ]}
+    >
+      {content}
     </Modal>
   );
 }

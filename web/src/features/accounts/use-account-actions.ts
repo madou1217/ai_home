@@ -1920,6 +1920,11 @@ export function useAccountActions({
         showRoutingRules: editingAccount ? canEditAccountRoutingRules(editingAccount) : false,
         effectiveAuthMode: effectiveEditAuthMode,
         credentialModeChanged: isEditCredentialModeChanged,
+        account: editingAccount,
+        onExport: editingAccount
+          ? () => void handleExport({ accountRef: editingAccount.accountRef })
+          : undefined,
+        exporting: exportingAccounts,
         onClose: () => setEditModalVisible(false),
         onSubmit: handleEditSubmit
       },

@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { message } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
-  ClockCircleOutlined,
   CodeOutlined,
+  SettingOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
@@ -36,8 +36,7 @@ import { getProviderFamily } from '@/providers/catalog';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
-import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
-import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
+import { AccountRuntimeSettingsModal } from '@/features/accounts/AccountRuntimeSettingsModal';
 import { useAccountsSnapshot } from '@/features/accounts/useAccountsSnapshot';
 import type { UseAccountsSnapshotHandlers } from '@/features/accounts/useAccountsSnapshot';
 import { useModelCatalog } from '@/features/accounts/useModelCatalog';
@@ -48,7 +47,6 @@ import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
 import { formatImportJobProgress } from '@/features/accounts/account-import-export';
 import {
-  canConfigureWindowActivation,
   canEditAccountConfig,
   canReauthAccount,
   canRestoreAccountScheduling,
@@ -139,6 +137,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
   const [filterStatus, setFilterStatus] = useState<AccountFilterValue>('all');
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [runtimeSettingsAccount, setRuntimeSettingsAccount] = useState<Account | null>(null);
   const routeTarget = useMemo(() => parseAccountRouteTarget(location.search), [location.search]);
   const handledRouteTargetRef = useRef('');
 
@@ -294,14 +293,13 @@ export default function MobileAccounts(_props: MobilePageProps) {
         });
       }
     }
-    if (canConfigureWindowActivation(record)) {
-      list.push({
-        key: 'window-activation',
-        label: '窗口激活',
-        icon: <ClockCircleOutlined />,
-        onAction: () => actions.setAccountWindowActivationAccount(record)
-      });
-    }
+    // 出口、窗口激活、别名选号、上下文窗口合并成一个「运行设置」入口。
+    list.push({
+      key: 'runtime-settings',
+      label: '运行设置',
+      icon: <SettingOutlined />,
+      onAction: () => setRuntimeSettingsAccount(record)
+    });
     list.push({
       key: 'export-account',
       label: '导出',
@@ -493,6 +491,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
         drops={tokenDrops}
         modelProbe={selectedAccount ? getModelProbeView(selectedAccount) : null}
         onRefreshModels={(record) => { void refreshAccountModelCatalog(record); }}
+        onOpenRuntimeSettings={(record) => setRuntimeSettingsAccount(record)}
         accountOutcomesData={accountOutcomes.data}
         accountOutcomesUnavailable={accountOutcomes.unavailable}
         accountOutcomesLoading={accountOutcomes.loading}
@@ -504,13 +503,10 @@ export default function MobileAccounts(_props: MobilePageProps) {
         onExport={(scope) => { void actions.handleExport(scope); }}
       />
       <AccountFlowModals actions={actions} />
-      <AccountEgressModal
-        account={actions.accountEgressAccount}
-        onClose={() => actions.setAccountEgressAccount(null)}
-      />
-      <AccountWindowActivationModal
-        account={actions.accountWindowActivationAccount}
-        onClose={() => actions.setAccountWindowActivationAccount(null)}
+      <AccountRuntimeSettingsModal
+        account={runtimeSettingsAccount}
+        models={runtimeSettingsAccount ? getAccountModelProbe(runtimeSettingsAccount, modelCatalog).models : []}
+        onClose={() => setRuntimeSettingsAccount(null)}
       />
     </MobilePage>
   );

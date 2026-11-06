@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Empty, Modal, Segmented, Spin, Tabs, Tooltip, Typography, message } from 'antd';
-import { CopyOutlined, EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CopyOutlined, EyeInvisibleOutlined, EyeOutlined, ExportOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { Account, AccountConfigFile, AccountConfigFilesResponse } from '@/types';
 import { accountsAPI } from '@/services/api';
 import Button from '@/components/ui/AppButton';
@@ -12,6 +12,15 @@ const { Text } = Typography;
 interface AccountConfigFilesModalProps {
   account: Account | null;
   onClose: () => void;
+  onExport?: () => void;
+  exporting?: boolean;
+}
+
+interface AccountConfigFilesPanelProps {
+  account: Account | null;
+  /** 有值才显示「导出账号」：配置文件与导出都是「把这台账号的设置拿走」，放在同一个面板里。 */
+  onExport?: () => void;
+  exporting?: boolean;
 }
 
 // tab 标题用文件名（codex 的 auth.json / config.toml 一眼可辨），完整位置放 tooltip。
@@ -25,11 +34,13 @@ function formatTime(ms: number) {
 }
 
 /**
- * 账号配置文件只读查看：复用 toolkit 的 ConfigCodeEditor（只读模式）。
- * 文件列表完全由服务端声明（凭据记录、解码后的凭据库、运行时投影文件），前端不认 provider。
- * 默认脱敏；「显示原文」需要二次确认。
+ * 账号配置文件只读查看 + 导出。文件列表完全由服务端声明（凭据记录、解码后的凭据库、
+ * 运行时投影文件），前端不认 provider。默认脱敏；「显示原文」需要二次确认。
+ *
+ * 单独抽成 Panel，是为了既能独立成弹窗（OAuth 账号），也能作为「账号配置」弹窗里的
+ * 一个 Tab（API Key 账号与编辑表单合并）。
  */
-export default function AccountConfigFilesModal({ account, onClose }: AccountConfigFilesModalProps) {
+export function AccountConfigFilesPanel({ account, onExport, exporting }: AccountConfigFilesPanelProps) {
   const [mode, setMode] = useState<'redacted' | 'raw'>('redacted');
   const [data, setData] = useState<AccountConfigFilesResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,20 +112,23 @@ export default function AccountConfigFilesModal({ account, onClose }: AccountCon
   };
 
   return (
-    <Modal
-      open={Boolean(account)}
-      onCancel={onClose}
-      width={1000}
-      title={account ? `${account.displayName || accountRef} 账号配置` : '账号配置'}
-      footer={(
-        <div className="toolkit-header-actions">
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load(mode)}>刷新</Button>
-          <Button icon={<CopyOutlined />} disabled={!selected} onClick={() => void copySelected()}>复制当前文件</Button>
-          <Button type="primary" onClick={onClose}>关闭</Button>
-        </div>
-      )}
-    >
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+    <>
+      <div className="account-config-toolbar">
+        <Button
+          icon={<ReloadOutlined />}
+          loading={loading}
+          onClick={() => void load(mode)}
+        >
+          刷新
+        </Button>
+        <Button icon={<CopyOutlined />} disabled={!selected} onClick={() => void copySelected()}>
+          复制当前文件
+        </Button>
+        {onExport ? (
+          <Button icon={<ExportOutlined />} loading={exporting} onClick={onExport}>
+            导出账号
+          </Button>
+        ) : null}
         <Segmented
           value={mode}
           onChange={(value) => switchMode(value as 'redacted' | 'raw')}
@@ -164,6 +178,25 @@ export default function AccountConfigFilesModal({ account, onClose }: AccountCon
           </Spin>
         </>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * 账号配置只读弹窗：OAuth 账号没有编辑表单，但仍可查看与导出配置。
+ * API Key 账号在「编辑配置」弹窗里用同一个 Panel 作为 Tab，菜单不再为「查看配置文件」
+ * 和「导出账号」各留一行。
+ */
+export default function AccountConfigFilesModal({ account, onClose, onExport, exporting }: AccountConfigFilesModalProps) {
+  return (
+    <Modal
+      open={Boolean(account)}
+      onCancel={onClose}
+      width={1000}
+      title={account ? `${account.displayName || account.accountRef} 账号配置` : '账号配置'}
+      footer={<Button type="primary" onClick={onClose}>关闭</Button>}
+    >
+      <AccountConfigFilesPanel account={account} onExport={onExport} exporting={exporting} />
     </Modal>
   );
 }

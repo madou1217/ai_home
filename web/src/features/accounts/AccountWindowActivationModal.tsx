@@ -24,6 +24,8 @@ interface AccountWindowActivationFormValues {
 interface AccountWindowActivationModalProps {
   account: Account | null;
   onClose: () => void;
+  /** 嵌在「运行设置」的 Tab 里：不渲染自己的 Modal，保存后也不关闭外层。 */
+  embedded?: boolean;
 }
 
 const MS_PER_MINUTE = 60 * 1000;
@@ -51,7 +53,7 @@ function msToMinutes(value: number | null | undefined): number | undefined {
   return Math.round(value / MS_PER_MINUTE);
 }
 
-export function AccountWindowActivationModal({ account, onClose }: AccountWindowActivationModalProps) {
+export function AccountWindowActivationModal({ account, onClose, embedded = false }: AccountWindowActivationModalProps) {
   const [form] = Form.useForm<AccountWindowActivationFormValues>();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -144,7 +146,7 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
       } else {
         message.success(values.enabled ? '已开启窗口激活' : '已关闭窗口激活');
       }
-      onClose();
+      if (!embedded) onClose();
     } catch (error: any) {
       const code = error?.response?.data?.error;
       message.error(code ? `保存窗口激活设置失败：${code}` : error?.message || '保存窗口激活设置失败');
@@ -153,24 +155,8 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
     }
   };
 
-  return (
-    <Modal
-      open={Boolean(account)}
-      title={account ? `窗口激活 · ${getAccountPrimaryLabel(account)}` : '窗口激活'}
-      width={560}
-      destroyOnHidden
-      maskClosable={!submitting}
-      onCancel={onClose}
-      footer={[
-        <Button key="cancel" disabled={submitting} onClick={onClose}>
-          取消
-        </Button>,
-        <Button key="save" type="primary" loading={submitting} disabled={loading} onClick={() => void save()}>
-          保存
-        </Button>
-      ]}
-    >
-      <Spin spinning={loading}>
+  const content = (
+    <Spin spinning={loading}>
         <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
           <Space size={8} wrap>
             <Tag color={GLOBAL_TONE_COLORS[globalView.tone]}>{globalView.label}</Tag>
@@ -210,7 +196,40 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
             <InputNumber min={minIntervalMinutes} step={30} style={{ width: 200 }} addonAfter="分钟" placeholder="跟随默认" />
           </Form.Item>
         </Form>
-      </Spin>
+    </Spin>
+  );
+
+  if (embedded) {
+    return (
+      <div>
+        {content}
+        <div className="account-panel-actions">
+          <Button type="primary" loading={submitting} disabled={loading} onClick={() => void save()}>
+            保存
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Modal
+      open={Boolean(account)}
+      title={account ? `窗口激活 · ${getAccountPrimaryLabel(account)}` : '窗口激活'}
+      width={560}
+      destroyOnHidden
+      maskClosable={!submitting}
+      onCancel={onClose}
+      footer={[
+        <Button key="cancel" disabled={submitting} onClick={onClose}>
+          取消
+        </Button>,
+        <Button key="save" type="primary" loading={submitting} disabled={loading} onClick={() => void save()}>
+          保存
+        </Button>
+      ]}
+    >
+      {content}
     </Modal>
   );
 }

@@ -1,6 +1,9 @@
-import { Checkbox, Form, Input, Radio, Space, Tabs } from 'antd';
+import { useEffect, useState } from 'react';
+import { Button, Checkbox, Form, Input, Radio, Space, Tabs } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
+import type { Account } from '@/types';
 import './account-overlays.css';
+import { AccountConfigFilesPanel } from './AccountConfigFilesModal';
 import { UpstreamErrorRulesEditor } from './UpstreamErrorRulesEditor';
 
 interface EditAccountModalProps {
@@ -12,6 +15,10 @@ interface EditAccountModalProps {
   showRoutingRules: boolean;
   effectiveAuthMode: string;
   credentialModeChanged: boolean;
+  /** 正在编辑的账号：提供后追加只读「配置文件」Tab，并把导出收进同一个弹窗。 */
+  account?: Account | null;
+  onExport?: () => void;
+  exporting?: boolean;
   onClose: () => void;
   onSubmit: () => Promise<boolean>;
 }
@@ -24,9 +31,21 @@ export function EditAccountModal({
   showRoutingRules,
   effectiveAuthMode,
   credentialModeChanged,
+  account,
+  onExport,
+  exporting,
   onClose,
   onSubmit
 }: EditAccountModalProps) {
+  const [activeTab, setActiveTab] = useState('credential');
+  // 每次重新打开回到凭据 Tab：上次停在「配置文件」不意味着这次也要看文件。
+  useEffect(() => {
+    if (open) setActiveTab('credential');
+  }, [open]);
+  const closeAndReset = () => {
+    onClose();
+    form.resetFields();
+  };
   // 可编辑项按用途分组，弹窗不再一路平铺到底。
   // forceRender 必须开：隐藏 Tab 里的 Form.Item 也要挂载，否则「切换认证方式后密钥必填」
   // 这类校验在提交时会被跳过。
@@ -84,7 +103,15 @@ export function EditAccountModal({
           <Checkbox>余额或权限已恢复，手动清除账号异常阻塞</Checkbox>
         </Form.Item>
       )
-    }
+    },
+    // 配置文件与导出都是「看这台账号的配置」，和编辑放在同一弹窗里，菜单不再各占一行。
+    ...(account ? [{
+      key: 'files',
+      label: '配置文件',
+      children: (
+        <AccountConfigFilesPanel account={account} onExport={onExport} exporting={exporting} />
+      )
+    }] : [])
   ];
 
   return (
@@ -99,19 +126,26 @@ export function EditAccountModal({
       }}
       form={form}
       layout="vertical"
-      // 调度规则编辑器的规则表在 960px 下才排得开；没有该 Tab 时保持紧凑。
-      width={showRoutingRules ? 960 : 600}
+      // 调度规则编辑器的规则表与配置文件编辑器都需要 960px；没有这些 Tab 时保持紧凑。
+      width={showRoutingRules || account ? 960 : 600}
       onFinish={async () => {
         return onSubmit();
       }}
-      submitter={{
+      submitter={activeTab === 'files' ? {
+        // 配置文件 Tab 是只读的：此时不提供「保存」，避免误提交凭据表单。
+        render: () => [<Button key="close" onClick={closeAndReset}>关闭</Button>],
+      } : {
         searchConfig: {
           submitText: '保存',
           resetText: '取消',
         },
       }}
     >
-      <Tabs items={tabItems} />
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={tabItems}
+      />
     </ModalForm>
   );
 }

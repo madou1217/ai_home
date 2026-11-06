@@ -79,6 +79,8 @@ interface Props {
   drops: TokenDropEvent[];
   modelProbe: AccountModelProbeView | null;
   onRefreshModels: (record: Account) => void;
+  /** 桌面「运行设置」的移动端入口：出口 / 窗口激活 / 别名选号 / 上下文窗口。 */
+  onOpenRuntimeSettings: (record: Account) => void;
   accountOutcomesData: AccountOutcomesData | null;
   accountOutcomesUnavailable: boolean;
   accountOutcomesLoading: boolean;
@@ -114,6 +116,7 @@ export default function AccountDetailSheet({
   drops,
   modelProbe,
   onRefreshModels,
+  onOpenRuntimeSettings,
   accountOutcomesData,
   accountOutcomesUnavailable,
   accountOutcomesLoading
@@ -222,11 +225,12 @@ export default function AccountDetailSheet({
       icon: <BarChartOutlined />,
       onClick: closeThen(() => actions.openQuotaStats(record))
     });
+    // 同类项合并：出口 / 窗口激活 / 别名选号 / 上下文窗口统一走「运行设置」。
     sheetActions.push({
-      key: 'account-egress',
-      label: '出口设置',
+      key: 'runtime-settings',
+      label: '运行设置',
       icon: <GlobalOutlined />,
-      onClick: closeThen(() => actions.setAccountEgressAccount(record))
+      onClick: closeThen(() => onOpenRuntimeSettings(record))
     });
   }
 

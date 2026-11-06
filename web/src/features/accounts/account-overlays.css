@@ -788,3 +788,25 @@
     flex-direction: column;
   }
 }
+
+/* -----------------------------------------------------------------------------
+ * 9. 合并弹窗的内嵌面板：工具栏与底部动作行。
+ *    「账号配置」「运行设置」把同类动作收进一个弹窗的 Tab，面板不再各自带 Modal 外壳。
+ * -------------------------------------------------------------------------- */
+.account-config-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.account-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}

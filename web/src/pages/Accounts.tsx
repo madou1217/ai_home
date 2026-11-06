@@ -37,17 +37,14 @@ import {
   ExportOutlined,
   ImportOutlined,
   MobileOutlined,
-  EditOutlined,
   CodeOutlined,
   DesktopOutlined,
   GlobalOutlined,
   QrcodeOutlined,
   UndoOutlined,
   ReloadOutlined,
-  ClockCircleOutlined,
-  BranchesOutlined,
-  FieldNumberOutlined,
   GiftOutlined,
+  SettingOutlined,
   FileSearchOutlined,
   BarChartOutlined,
 } from '@ant-design/icons';
@@ -63,7 +60,6 @@ import {
   useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
 import {
-  canConfigureWindowActivation,
   canCopyAccountEmail,
   canEditAccountConfig,
   canReauthAccount,
@@ -121,11 +117,8 @@ import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { useAccountAppEntries } from '@/features/accounts/use-account-app-entries';
 import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
-import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
-import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
-import { AccountAliasPoolModal } from '@/features/accounts/AccountAliasPoolModal';
 import AccountConfigFilesModal from '@/features/accounts/AccountConfigFilesModal';
-import { AccountModelContextModal } from '@/features/accounts/AccountModelContextModal';
+import { AccountRuntimeSettingsModal } from '@/features/accounts/AccountRuntimeSettingsModal';
 import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
 import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
 import AccountEgressBulkPicker from '@/features/egress-upstream/AccountEgressBulkPicker';
@@ -264,11 +257,7 @@ export default function Accounts() {
     hasActiveImportJob,
     importJob,
     setKimiDesktopLoginRequest,
-    setResetCenterAccount,
-    accountEgressAccount,
-    setAccountEgressAccount,
-    accountWindowActivationAccount,
-    setAccountWindowActivationAccount
+    setResetCenterAccount
   } = accountActions;
 
   // 账号出口摘要：列表 / 卡片上的出口徽标与「批量设置出口」共用（见 features/egress-upstream）。
@@ -282,14 +271,13 @@ export default function Accounts() {
   const [rewardsResults, setRewardsResults] = useState<AccountActivityResult[]>([]);
   const [rewardsJob, setRewardsJob] = useState<AccountActivityJob | null>(null);
   const rewardsPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [aliasPoolAccount, setAliasPoolAccount] = useState<Account | null>(null);
   const [configFilesAccount, setConfigFilesAccount] = useState<Account | null>(null);
-  const [modelContextAccount, setModelContextAccount] = useState<Account | null>(null);
+  const [runtimeSettingsAccount, setRuntimeSettingsAccount] = useState<Account | null>(null);
 
   const renderEgressBadge = (record: Account) => (
     <AccountEgressBadge
       entry={egressSummary.byAccount.get(getAccountRef(record))}
-      onOpen={() => setAccountEgressAccount(record)}
+      onOpen={() => setRuntimeSettingsAccount(record)}
     />
   );
 
@@ -507,7 +495,7 @@ export default function Accounts() {
     if (requiresAccountReauth(record)) {
       return [
         { key: 'reauth', label: '重新登录', icon: <SyncOutlined /> },
-        { key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> }
+        { key: 'account-config', label: '账号配置', icon: <FileSearchOutlined /> }
       ];
     }
     const menuItems: MenuProps['items'] = [];
@@ -548,24 +536,16 @@ export default function Accounts() {
     if (canReauthAccount(record)) {
       menuItems.push({ key: 'reauth', label: getReauthActionLabel(record), icon: <SyncOutlined /> });
     }
-    if (canEditAccountConfig(record)) {
-      menuItems.push({ key: 'edit', label: '编辑配置', icon: <EditOutlined /> });
-    }
-    // 低频/只读动作收进「更多」：菜单第一屏只留角色、额度、登录与编辑。
-    const moreItems: MenuProps['items'] = [
-      { key: 'config-files', label: '查看配置文件', icon: <FileSearchOutlined /> },
-      { key: 'export-account', label: '导出此账号', icon: <ExportOutlined /> }
-    ];
+    // 同类项合并：编辑、查看配置文件与导出都是「这台账号的配置」，合成一个入口。
+    // API Key 账号直接打开编辑弹窗（内含配置文件 Tab）；OAuth 账号没有可编辑凭据，
+    // 打开只读的配置文件面板。
+    menuItems.push({ key: 'account-config', label: '账号配置', icon: <FileSearchOutlined /> });
+    // 出口、窗口激活、别名选号、上下文窗口改的都是「这个账号怎么跑」，合成一个入口，
+    // 弹窗内用 Tab 切换；不再用「更多」子菜单让一个动作占一行。
+    menuItems.push({ key: 'runtime-settings', label: '运行设置', icon: <SettingOutlined /> });
     if (canRestoreAccountScheduling(record)) {
-      moreItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
+      menuItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
     }
-    moreItems.push({ key: 'account-egress', label: '出口设置', icon: <GlobalOutlined /> });
-    if (canConfigureWindowActivation(record)) {
-      moreItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
-    }
-    moreItems.push({ key: 'alias-pool', label: '别名选号', icon: <BranchesOutlined /> });
-    moreItems.push({ key: 'model-context', label: '上下文窗口', icon: <FieldNumberOutlined /> });
-    menuItems.push({ key: 'more', label: '更多', icon: <MoreOutlined />, children: moreItems });
 
     // 账号活动（签到 / 领臭鸡蛋）：动作来自服务端下发的 activityActions，
     // 前端不判断 provider（新增 provider 只加描述符）。多个活动收进子菜单。
@@ -585,7 +565,7 @@ export default function Accounts() {
   };
 
   const handleAccountMenuClick = (record: Account, key: string) => {
-    if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'config-files' && key !== 'export-account') return;
+    if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'account-config') return;
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
     if (key === 'reset-center') {
@@ -597,34 +577,19 @@ export default function Accounts() {
       return;
     }
     if (key === 'reauth') { handleReauth(record); return; }
-    if (key === 'edit' && canEditAccountConfig(record)) { handleEdit(record); return; }
+    if (key === 'account-config') {
+      // 需重新登录的账号只允许只读查看，不能进编辑表单。
+      if (!requiresAccountReauth(record) && canEditAccountConfig(record)) handleEdit(record);
+      else setConfigFilesAccount(record);
+      return;
+    }
     if (key === 'restore-scheduling') { handleRestoreScheduling(record); return; }
     if (key.startsWith('activity:')) {
       void runOneReward(record, key.slice('activity:'.length));
       return;
     }
-    if (key === 'account-egress') {
-      setAccountEgressAccount(record);
-      return;
-    }
-    if (key === 'window-activation') {
-      setAccountWindowActivationAccount(record);
-      return;
-    }
-    if (key === 'export-account') {
-      void handleExport({ accountRef: record.accountRef });
-      return;
-    }
-    if (key === 'config-files') {
-      setConfigFilesAccount(record);
-      return;
-    }
-    if (key === 'alias-pool') {
-      setAliasPoolAccount(record);
-      return;
-    }
-    if (key === 'model-context') {
-      setModelContextAccount(record);
+    if (key === 'runtime-settings') {
+      setRuntimeSettingsAccount(record);
       return;
     }
     if (key === 'delete') {
@@ -1273,13 +1238,6 @@ export default function Accounts() {
       </SectionCard>
 
       <AccountFlowModals actions={accountActions} />
-      <AccountEgressModal
-        account={accountEgressAccount}
-        onClose={() => {
-          setAccountEgressAccount(null);
-          void egressSummary.reload();
-        }}
-      />
       <AccountEgressBulkPicker
         open={bulkEgressOpen}
         view={egressSummary.view}
@@ -1289,22 +1247,19 @@ export default function Accounts() {
           if (changed) void egressSummary.reload();
         }}
       />
-      <AccountWindowActivationModal
-        account={accountWindowActivationAccount}
-        onClose={() => setAccountWindowActivationAccount(null)}
-      />
       <AccountConfigFilesModal
         account={configFilesAccount}
         onClose={() => setConfigFilesAccount(null)}
+        onExport={configFilesAccount ? () => void handleExport({ accountRef: configFilesAccount.accountRef }) : undefined}
+        exporting={exportingAccounts}
       />
-      <AccountAliasPoolModal
-        account={aliasPoolAccount}
-        onClose={() => setAliasPoolAccount(null)}
-      />
-      <AccountModelContextModal
-        account={modelContextAccount}
-        models={modelContextAccount ? getAccountModelProbe(modelContextAccount, modelCatalog).models : []}
-        onClose={() => setModelContextAccount(null)}
+      <AccountRuntimeSettingsModal
+        account={runtimeSettingsAccount}
+        models={runtimeSettingsAccount ? getAccountModelProbe(runtimeSettingsAccount, modelCatalog).models : []}
+        onClose={() => {
+          setRuntimeSettingsAccount(null);
+          void egressSummary.reload();
+        }}
       />
       <AccountActivityModal
         open={rewardsOpen}

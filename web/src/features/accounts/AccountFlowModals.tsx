@@ -75,6 +75,9 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         showRoutingRules={edit.showRoutingRules}
         effectiveAuthMode={edit.effectiveAuthMode}
         credentialModeChanged={edit.credentialModeChanged}
+        account={edit.account}
+        onExport={edit.onExport}
+        exporting={edit.exporting}
         onClose={edit.onClose}
         onSubmit={edit.onSubmit}
       />

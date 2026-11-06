@@ -25,6 +25,8 @@ interface AccountModelContextModalProps {
   /** 该账号当前可服务的模型 id（来自账号模型目录）。 */
   models?: readonly string[];
   onClose: () => void;
+  /** 嵌在「运行设置」的 Tab 里：不渲染自己的 Modal。 */
+  embedded?: boolean;
 }
 
 /** 来源标签：让「这个窗口值从哪来」一眼可见 —— 用户要求值必须有数据支撑。 */
@@ -51,7 +53,7 @@ const TYPE_LABELS: Record<string, string> = {
  * 设置时可勾选同 provider 下的**同类型账号**一并应用 —— 同套餐的 OAuth 账号通常窗口一致，
  * 逐个设置是纯重复劳动；但账号始终可选，不做「默默全改」。
  */
-export function AccountModelContextModal({ account, models = [], onClose }: AccountModelContextModalProps) {
+export function AccountModelContextModal({ account, models = [], onClose, embedded = false }: AccountModelContextModalProps) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [rows, setRows] = useState<ModelContextRow[]>([]);
@@ -132,19 +134,8 @@ export function AccountModelContextModal({ account, models = [], onClose }: Acco
     setDraftTokens(row.override > 0 ? row.override : (row.tokens > 0 ? row.tokens : null));
   };
 
-  return (
-    <Modal
-      open={Boolean(account)}
-      title={account ? `上下文窗口 · ${getAccountPrimaryLabel(account)}` : '上下文窗口'}
-      width={760}
-      destroyOnHidden
-      maskClosable={!submitting}
-      onCancel={onClose}
-      footer={[
-        <Button key="close" disabled={submitting} onClick={onClose}>关闭</Button>
-      ]}
-    >
-      <Spin spinning={loading}>
+  const content = (
+    <Spin spinning={loading}>
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           <Space size={8} wrap>
             <Typography.Text type="secondary">
@@ -263,7 +254,24 @@ export function AccountModelContextModal({ account, models = [], onClose }: Acco
             上游不声明窗口时无法自动获取
           </InlineNote>
         </Space>
-      </Spin>
+    </Spin>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <Modal
+      open={Boolean(account)}
+      title={account ? `上下文窗口 · ${getAccountPrimaryLabel(account)}` : '上下文窗口'}
+      width={760}
+      destroyOnHidden
+      maskClosable={!submitting}
+      onCancel={onClose}
+      footer={[
+        <Button key="close" disabled={submitting} onClick={onClose}>关闭</Button>
+      ]}
+    >
+      {content}
     </Modal>
   );
 }

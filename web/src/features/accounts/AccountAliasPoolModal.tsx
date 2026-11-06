@@ -8,6 +8,8 @@ import './account-overlays.css';
 interface AccountAliasPoolModalProps {
   account: Account | null;
   onClose: () => void;
+  /** 嵌在「运行设置」的 Tab 里：不渲染自己的 Modal，保存后也不关闭外层。 */
+  embedded?: boolean;
 }
 
 /**
@@ -16,7 +18,7 @@ interface AccountAliasPoolModalProps {
  * 只控制全局别名的自动选号：关闭后仍可被显式钉选（x-account-ref）或手动选择使用。
  * 状态保存在服务端（account:alias-pool:<ref>），写入后立即重载运行池。
  */
-export function AccountAliasPoolModal({ account, onClose }: AccountAliasPoolModalProps) {
+export function AccountAliasPoolModal({ account, onClose, embedded = false }: AccountAliasPoolModalProps) {
   const [form] = Form.useForm<{ participates: boolean }>();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -61,7 +63,7 @@ export function AccountAliasPoolModal({ account, onClose }: AccountAliasPoolModa
       } else {
         message.success(values.participates ? '已加入别名自动选号池' : '已退出别名自动选号池');
       }
-      onClose();
+      if (!embedded) onClose();
     } catch (error: any) {
       const code = error?.response?.data?.error;
       message.error(code ? `保存别名选号设置失败：${code}` : error?.message || '保存别名选号设置失败');
@@ -69,6 +71,42 @@ export function AccountAliasPoolModal({ account, onClose }: AccountAliasPoolModa
       setSubmitting(false);
     }
   };
+
+  const content = (
+    <Spin spinning={loading}>
+      <Space direction="vertical" size={6} style={{ marginBottom: 16 }}>
+        <Space size={8} wrap>
+          <Tag color={participates ? 'success' : 'default'}>
+            {participates ? '参与自动选号' : '不参与自动选号'}
+          </Tag>
+          <Typography.Text type="secondary">
+            全局别名命中模型时，网关是否自动把这个账号拉进候选池。
+          </Typography.Text>
+        </Space>
+        <Typography.Text type="secondary">
+          关闭后仍可用账号位显式启动或手动选择；显式钉选不受影响。
+        </Typography.Text>
+      </Space>
+      <Form form={form} layout="vertical" initialValues={{ participates: true }}>
+        <Form.Item name="participates" label="进入别名自动选号池" valuePropName="checked">
+          <Switch checkedChildren="参与" unCheckedChildren="不参与" />
+        </Form.Item>
+      </Form>
+    </Spin>
+  );
+
+  if (embedded) {
+    return (
+      <div>
+        {content}
+        <div className="account-panel-actions">
+          <Button type="primary" loading={submitting} disabled={loading} onClick={() => void save()}>
+            保存
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Modal
@@ -87,26 +125,7 @@ export function AccountAliasPoolModal({ account, onClose }: AccountAliasPoolModa
         </Button>
       ]}
     >
-      <Spin spinning={loading}>
-        <Space direction="vertical" size={6} style={{ marginBottom: 16 }}>
-          <Space size={8} wrap>
-            <Tag color={participates ? 'success' : 'default'}>
-              {participates ? '参与自动选号' : '不参与自动选号'}
-            </Tag>
-            <Typography.Text type="secondary">
-              全局别名命中模型时，网关是否自动把这个账号拉进候选池。
-            </Typography.Text>
-          </Space>
-          <Typography.Text type="secondary">
-            关闭后仍可用账号位显式启动或手动选择；显式钉选不受影响。
-          </Typography.Text>
-        </Space>
-        <Form form={form} layout="vertical" initialValues={{ participates: true }}>
-          <Form.Item name="participates" label="进入别名自动选号池" valuePropName="checked">
-            <Switch checkedChildren="参与" unCheckedChildren="不参与" />
-          </Form.Item>
-        </Form>
-      </Spin>
+      {content}
     </Modal>
   );
 }

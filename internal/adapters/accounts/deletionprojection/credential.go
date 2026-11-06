@@ -2,6 +2,7 @@ package deletionprojection
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -310,6 +311,7 @@ func reconcileKiroCredential(
 		return fmt.Errorf("当前 kiro 凭据无法计算 tokenBinding")
 	}
 	selected := current
+	selectedDatabasePath := ""
 	for _, root := range roots {
 		relativePath := credentialArtifactPath(spec, root.kind)
 		if len(relativePath) == 0 {
@@ -342,7 +344,7 @@ func reconcileKiroCredential(
 		if candidateBinding == selectedBinding {
 			continue
 		}
-		candidate, err := decodeKiroProjectionCredential(selected, auth.Raw)
+		candidate, err := decodeKiroProjectionCredential(selected, auth.Raw, nil)
 		if err != nil {
 			return err
 		}
@@ -365,18 +367,54 @@ func reconcileKiroCredential(
 		if newer {
 			selected = candidate
 			selectedBinding = candidateBinding
+			selectedDatabasePath = databasePath
 		}
 	}
 	if selected == current {
 		return nil
 	}
-	return preparer.replaceCredential(ctx, snapshot, selected)
+	if selectedDatabasePath == "" {
+		return fmt.Errorf("投影 kiro 凭据缺少数据库路径")
+	}
+	// 采纳与快照必须来自同一时刻：ReadAuth 与 VACUUM INTO 之间存在并发刷新窗口，
+	// 若快照里的 grant 已经变了就失败关闭，等下一次删除重新判定。
+	databaseSnapshot, err := kirodb.ReadSnapshot(ctx, selectedDatabasePath)
+	if err != nil {
+		return err
+	}
+	if !databaseSnapshot.AuthFound || len(databaseSnapshot.Database) == 0 {
+		return fmt.Errorf("投影 kiro 凭据在采纳期间发生变化")
+	}
+	var snapshotAuth map[string]json.RawMessage
+	if json.Unmarshal(databaseSnapshot.Auth.Raw, &snapshotAuth) != nil || snapshotAuth == nil {
+		return fmt.Errorf("投影 kiro 凭据结构无效")
+	}
+	if kirodb.TokenBinding(snapshotAuth) != selectedBinding {
+		return fmt.Errorf("投影 kiro 凭据在采纳期间发生变化")
+	}
+	adopted, err := decodeKiroProjectionCredential(
+		current,
+		databaseSnapshot.Auth.Raw,
+		databaseSnapshot.Database,
+	)
+	if err != nil {
+		return err
+	}
+	if adopted.IdentitySeed() != current.IdentitySeed() ||
+		adopted.AuthKind() != current.AuthKind() {
+		return fmt.Errorf("投影 kiro 凭据身份不一致")
+	}
+	return preparer.replaceCredential(ctx, snapshot, adopted)
 }
 
-// decodeKiroProjectionCredential 用数据库现有载荷做底，只替换 auth 并重绑证据。
+// decodeKiroProjectionCredential 用数据库现有载荷做底，替换 auth、database 并重绑证据。
+//
+// database 必须与 auth 来自同一份快照：Node materialize 以 nativeAuth.database
+// 作为重建投影的来源，只改 auth 会让下一次投影重新写入旧 token。
 func decodeKiroProjectionCredential(
 	current *accountcore.NativeCredential,
 	auth json.RawMessage,
+	database []byte,
 ) (*accountcore.NativeCredential, error) {
 	envelope := make(map[string]json.RawMessage)
 	if err := json.Unmarshal(current.Payload(), &envelope); err != nil || envelope == nil {
@@ -387,6 +425,13 @@ func decodeKiroProjectionCredential(
 		return nil, fmt.Errorf("投影 kiro 凭据结构无效")
 	}
 	envelope["auth"] = auth
+	if len(database) > 0 {
+		encodedDatabase, err := json.Marshal(base64.StdEncoding.EncodeToString(database))
+		if err != nil {
+			return nil, fmt.Errorf("投影 kiro 数据库快照无法编码")
+		}
+		envelope["database"] = encodedDatabase
+	}
 	// tokenBinding 绑定 endpoint+access+refresh；换 token 后必须重算，
 	// 与 Node 刷新路径（persistKiroIdentityEvidence）和 Go kirocred 的语义一致。
 	if !kiro.RebindIdentityEvidence(envelope, authObject) {

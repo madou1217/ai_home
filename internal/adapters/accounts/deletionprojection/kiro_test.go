@@ -3,6 +3,7 @@ package deletionprojection_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,6 +76,55 @@ func kiroNativePayload(t *testing.T, access, refresh, expiresAt string) string {
 	return string(encoded)
 }
 
+// kiroNativePayloadWithDatabase 在标准 kiro 凭据上附加一份 base64 SQLite 快照，
+// 模拟导入时 nativeAuth.database 已经存在旧库的账号。
+func kiroNativePayloadWithDatabase(t *testing.T, access, refresh, expiresAt string, database []byte) string {
+	t.Helper()
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(kiroNativePayload(t, access, refresh, expiresAt)), &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(database) > 0 {
+		encoded, err := json.Marshal(base64.StdEncoding.EncodeToString(database))
+		if err != nil {
+			t.Fatal(err)
+		}
+		document["database"] = encoded
+	}
+	payload, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(payload)
+}
+
+// kiroPayloadSnapshotAuth 从 native_auth_json 取出 database 快照并读回 token，
+// 直接模拟 Node materialize 使用 payload.database 的路径。
+func kiroPayloadSnapshotAuth(t *testing.T, payload []byte) kirodb.Auth {
+	t.Helper()
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &document); err != nil {
+		t.Fatal(err)
+	}
+	var encoded string
+	if raw, exists := document["database"]; !exists || json.Unmarshal(raw, &encoded) != nil || encoded == "" {
+		t.Fatal("凭据缺少 database 快照")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("database 快照不是 base64: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "snapshot.sqlite3")
+	if err := os.WriteFile(path, decoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auth, found, err := kirodb.ReadAuth(context.Background(), path)
+	if err != nil || !found {
+		t.Fatalf("读取 database 快照失败: found=%v err=%v", found, err)
+	}
+	return auth
+}
+
 func createKiroDatabase(t *testing.T, root string, rows map[string]string) {
 	t.Helper()
 	if err := os.MkdirAll(root, 0o700); err != nil {
@@ -137,6 +187,7 @@ func kiroAuthRow(access, refresh, expiresAt string) string {
 type kiroDeletionRun struct {
 	account     accountcore.Account
 	credentials *memoryCredentialStore
+	preparer    *deletionprojection.Preparer
 	root        string
 	hostHome    string
 	hostBefore  hostSnapshot
@@ -144,6 +195,16 @@ type kiroDeletionRun struct {
 }
 
 func runKiroDeletion(t *testing.T, storedPayload string, rows map[string]string) kiroDeletionRun {
+	t.Helper()
+	return runKiroDeletionWith(t, storedPayload, rows, nil)
+}
+
+func runKiroDeletionWith(
+	t *testing.T,
+	storedPayload string,
+	rows map[string]string,
+	decorate func(root string),
+) kiroDeletionRun {
 	t.Helper()
 	ctx := context.Background()
 	aiHome := realDir(t)
@@ -154,6 +215,9 @@ func runKiroDeletion(t *testing.T, storedPayload string, rows map[string]string)
 	root := projectionRoot(aiHome, "kiro", account.Ref().String())
 	createKiroDatabase(t, root, rows)
 	writeKiroProjectionExtras(t, root)
+	if decorate != nil {
+		decorate(root)
+	}
 	writeKiroHost(t, hostHome)
 	hostBefore := snapshotTree(t, hostHome)
 
@@ -176,6 +240,7 @@ func runKiroDeletion(t *testing.T, storedPayload string, rows map[string]string)
 	return kiroDeletionRun{
 		account:     account,
 		credentials: credentials,
+		preparer:    preparer,
 		root:        root,
 		hostHome:    hostHome,
 		hostBefore:  hostBefore,
@@ -312,5 +377,74 @@ func TestKiroDeletionFailsClosedWhenGenerationsNotComparable(t *testing.T) {
 	}
 	if _, err := os.Lstat(run.root); err != nil {
 		t.Fatalf("失败时投影应保留, lstat err = %v", err)
+	}
+}
+
+// TestKiroDeletionFailureAfterAdoptKeepsNewSnapshot 复现「adopt 成功但删投影失败」：
+// 第一次删除把新 token 采纳进 payload 后，把投影根设为不可写让 os.RemoveAll 失败。
+// 此时 payload.database 必须已经是新快照，否则下一次 materialize 会用旧库盖掉新 token；
+// 第二次删除读到同一个 binding 时应跳过 CAS，只完成删除。
+func TestKiroDeletionFailureAfterAdoptKeepsNewSnapshot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root 不受目录写权限限制，无法制造删除失败")
+	}
+	oldRoot := t.TempDir()
+	createKiroDatabase(t, oldRoot, map[string]string{
+		"kirocli:odic:token": kiroAuthRow("old-access", "old-refresh", "2026-01-01T00:00:00.000Z"),
+	})
+	oldDatabase, err := os.ReadFile(filepath.Join(oldRoot, "data.sqlite3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := runKiroDeletionWith(t,
+		kiroNativePayloadWithDatabase(t, "old-access", "old-refresh", "2026-01-01T00:00:00.000Z", oldDatabase),
+		map[string]string{
+			"kirocli:odic:token": kiroAuthRow("new-access", "new-refresh", "2026-01-01T01:00:00.000Z"),
+		},
+		func(root string) {
+			if err := os.Chmod(root, 0o500); err != nil {
+				t.Fatal(err)
+			}
+		},
+	)
+	t.Cleanup(func() {
+		_ = os.Chmod(run.root, 0o700)
+	})
+	if run.err == nil {
+		t.Fatal("删除应在清理投影阶段失败")
+	}
+	if _, err := os.Lstat(run.root); err != nil {
+		t.Fatalf("失败时投影应保留, lstat err = %v", err)
+	}
+	// 失败必须发生在 data.sqlite3 被删掉之前，否则第二次删除无法验证「同 binding 跳过 CAS」。
+	if _, err := os.Stat(filepath.Join(run.root, "data.sqlite3")); err != nil {
+		t.Fatalf("删除失败不应带走凭据数据库: %v", err)
+	}
+	if run.credentials.replacements != 1 {
+		t.Fatalf("首次删除应采纳一次, replacements = %d", run.credentials.replacements)
+	}
+	current := run.credentials.snapshot.Credential().(*accountcore.NativeCredential)
+	auth := kiroPayloadSnapshotAuth(t, current.Payload())
+	if !strings.Contains(string(auth.Raw), "new-access") || strings.Contains(string(auth.Raw), "old-access") {
+		t.Fatalf("adopt 后 database 快照仍是旧 token: %s", auth.Raw)
+	}
+
+	if err := os.Chmod(run.root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := run.preparer.PrepareAccountDeletion(context.Background(), run.account); err != nil {
+		t.Fatalf("第二次删除失败: %v", err)
+	}
+	if run.credentials.replacements != 1 {
+		t.Fatalf("第二次删除不应重复 CAS, replacements = %d", run.credentials.replacements)
+	}
+	if _, err := os.Lstat(run.root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("第二次删除后投影应消失, lstat err = %v", err)
+	}
+	current = run.credentials.snapshot.Credential().(*accountcore.NativeCredential)
+	auth = kiroPayloadSnapshotAuth(t, current.Payload())
+	if !strings.Contains(string(auth.Raw), "new-access") {
+		t.Fatalf("第二次删除后 database 快照丢失新 token: %s", auth.Raw)
 	}
 }

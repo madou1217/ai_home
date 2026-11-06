@@ -391,3 +391,215 @@ func TestGeminiAndGrokDeletionWriteTombstoneAndAllowExplicitImport(t *testing.T)
 		})
 	}
 }
+
+// jwtWithSubject 生成带 sub 的 JWT；cline / opencode 的身份都从 sub 派生。
+func jwtWithSubject(seconds int64, subject string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(
+		`{"iat":%d,"exp":%d,"sub":%q}`,
+		seconds,
+		seconds+3600,
+		subject,
+	)))
+	return header + "." + payload + ".signature"
+}
+
+// clineProvidersDocument 是 providers.json 的整库形态；入库前必须收窄。
+func clineProvidersDocument(accessToken, refreshToken string, expiresAt int64) string {
+	return fmt.Sprintf(
+		`{"version":1,"lastUsedProvider":"cline","providers":{"cline":{"settings":{"auth":{"accessToken":%q,"refreshToken":%q,"expiresAt":%d}}}}}`,
+		accessToken,
+		refreshToken,
+		expiresAt,
+	)
+}
+
+func clineNativePayload(accessToken, refreshToken string) string {
+	return fmt.Sprintf(`{"auth":%s}`, clineProvidersDocument(accessToken, refreshToken, 1_700_000_000_000))
+}
+
+// openCodeAuthFile 是 ~/.local/share/opencode/auth.json 的落盘形态。
+func openCodeAuthFile(access, refresh, accountID string) string {
+	return fmt.Sprintf(
+		`{"opencode":{"type":"oauth","access":%q,"refresh":%q,"metadata":{"accountID":%q}}}`,
+		access,
+		refresh,
+		accountID,
+	)
+}
+
+func openCodeNativePayload(access, refresh, accountID string) string {
+	return fmt.Sprintf(`{"auth":%s}`, openCodeAuthFile(access, refresh, accountID))
+}
+
+func qoderNativePayload(credentials string) string {
+	return fmt.Sprintf(
+		`{"credentials":%q,"machineId":"11111111-2222-3333-4444-555555555555","userInfo":{"uid":"0f1e2d3c-0000-4000-8000-000000000002","email":"q@example.com"}}`,
+		credentials,
+	)
+}
+
+// TestFileSystemProviderDeletionOnlyRemovesProjection 覆盖本批四家的真实落点：
+// 删除后投影根消失，宿主同名文件逐字节不变；可比较代际的 cline/opencode
+// 采纳投影里的新凭据，qoder 家族在代际不可比较时保持库内版本（fail-closed）。
+func TestFileSystemProviderDeletionOnlyRemovesProjection(t *testing.T) {
+	const hostMachineID = "11111111-2222-3333-4444-555555555555"
+	tests := []struct {
+		provider         string
+		stored           string
+		projection       func(t *testing.T, root string)
+		hostPath         []string
+		hostContent      string
+		wantReplacements int
+		assertPayload    func(t *testing.T, payload string)
+	}{
+		{
+			provider: "cline",
+			stored: clineNativePayload(
+				"workos:"+jwtWithSubject(1_700_000_000, "user_cline"),
+				"old-refresh",
+			),
+			projection: func(t *testing.T, root string) {
+				writeFile(t, filepath.Join(root, ".cline", "data", "settings", "providers.json"),
+					fmt.Sprintf(
+						`{"version":1,"lastUsedProvider":"cline","providers":{"cline":{"settings":{"auth":{"accessToken":"workos:%s","refreshToken":"new-refresh","expiresAt":1700003600000}}},"anthropic":{"settings":{"apiKey":"foreign-secret"}}}}`,
+						jwtWithSubject(1_700_000_100, "user_cline"),
+					))
+				writeFile(t, filepath.Join(root, ".cline", "data", "secrets.json"),
+					`{"apiKey":"account-secret"}`)
+			},
+			hostPath:         []string{".cline", "data", "settings", "providers.json"},
+			hostContent:      `{"providers":{"cline":{"settings":{"apiKey":"host-key"}}}}`,
+			wantReplacements: 1,
+			assertPayload: func(t *testing.T, payload string) {
+				t.Helper()
+				if !strings.Contains(payload, "new-refresh") {
+					t.Fatalf("cline 未采纳投影里的新 refresh token: %s", payload)
+				}
+				if strings.Contains(payload, "foreign-secret") || strings.Contains(payload, "account-secret") {
+					t.Fatalf("cline 投影收窄失败，混入了其它槽位/CLI 密钥: %s", payload)
+				}
+			},
+		},
+		{
+			provider: "opencode",
+			stored: openCodeNativePayload(
+				jwtWithSubject(1_700_000_000, "acc_1"),
+				"old-refresh",
+				"acc_1",
+			),
+			projection: func(t *testing.T, root string) {
+				canonical := filepath.Join(root, ".local", "share", "opencode", "auth.json")
+				writeFile(t, canonical, openCodeAuthFile(
+					jwtWithSubject(1_700_000_100, "acc_1"),
+					"new-refresh",
+					"acc_1",
+				))
+				// XDG 桥接目录里是指向 canonical 的软链；删除只能摘链接，不能跟过去。
+				bridge := filepath.Join(root, ".local", "share", "aih-opencode-runtime", "opencode", "auth.json")
+				if err := os.MkdirAll(filepath.Dir(bridge), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(canonical, bridge); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(root, ".config", "opencode", "auth.json"),
+					openCodeAuthFile(jwtWithSubject(1_600_000_000, "acc_1"), "backup-refresh", "acc_1"))
+			},
+			hostPath:         []string{".local", "share", "opencode", "auth.json"},
+			hostContent:      `{"opencode":{"type":"api","key":"host-key"}}`,
+			wantReplacements: 1,
+			assertPayload: func(t *testing.T, payload string) {
+				t.Helper()
+				if !strings.Contains(payload, "new-refresh") || strings.Contains(payload, "backup-refresh") {
+					t.Fatalf("opencode 应采用 canonical auth.json 而不是旧备份: %s", payload)
+				}
+			},
+		},
+		{
+			provider: "qoder",
+			stored:   qoderNativePayload("opaque-old"),
+			projection: func(t *testing.T, root string) {
+				writeFile(t, filepath.Join(root, ".auth", "user"), "opaque-new")
+				writeFile(t, filepath.Join(root, ".auth", "machine_id"), hostMachineID)
+				writeFile(t, filepath.Join(root, ".cache", "dns-cache.json"), `{"hosts":{}}`)
+			},
+			hostPath:         []string{".qoder", ".auth", "user"},
+			hostContent:      "host-opaque-credential",
+			wantReplacements: 0,
+			assertPayload: func(t *testing.T, payload string) {
+				t.Helper()
+				if !strings.Contains(payload, "opaque-old") {
+					t.Fatalf("qoder 代际不可比较时不应改写库内凭据: %s", payload)
+				}
+			},
+		},
+		{
+			provider: "qodercn",
+			stored:   qoderNativePayload("opaque-cn-old"),
+			projection: func(t *testing.T, root string) {
+				writeFile(t, filepath.Join(root, ".auth", "user"), "opaque-cn-new")
+				writeFile(t, filepath.Join(root, ".auth", "machine_id"), hostMachineID)
+			},
+			hostPath:         []string{".qoder-cn", ".auth", "user"},
+			hostContent:      "host-opaque-cn-credential",
+			wantReplacements: 0,
+			assertPayload: func(t *testing.T, payload string) {
+				t.Helper()
+				if !strings.Contains(payload, "opaque-cn-old") {
+					t.Fatalf("qodercn 代际不可比较时不应改写库内凭据: %s", payload)
+				}
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.provider, func(t *testing.T) {
+			ctx := context.Background()
+			aiHome := realDir(t)
+			hostHome := realDir(t)
+			catalog := mustCatalog(t)
+
+			stored := mustNativeCredential(t, testCase.provider, testCase.stored)
+			account := mustAccount(t, catalog, stored)
+			root := projectionRoot(aiHome, testCase.provider, account.Ref().String())
+			testCase.projection(t, root)
+
+			hostFile := filepath.Join(append([]string{hostHome}, testCase.hostPath...)...)
+			writeFile(t, hostFile, testCase.hostContent)
+			beforeHost := readFile(t, hostFile)
+
+			snapshot, err := accountapp.NewCredentialSnapshot(
+				account.Ref(), testCase.provider, stored, time.UnixMilli(1000).UTC(),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			credentials := &memoryCredentialStore{snapshot: snapshot}
+			preparer, err := deletionprojection.New(deletionprojection.Options{
+				AIHomeDir:   aiHome,
+				HostHomeDir: hostHome,
+				Credentials: credentials,
+				Clock:       func() time.Time { return time.UnixMilli(2000).UTC() },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := preparer.PrepareAccountDeletion(ctx, account); err != nil {
+				t.Fatalf("删除准备失败: %v", err)
+			}
+
+			if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("投影应被删除, lstat err = %v", err)
+			}
+			if readFile(t, hostFile) != beforeHost {
+				t.Fatalf("宿主 %s 被修改", filepath.Join(testCase.hostPath...))
+			}
+			if credentials.replacements != testCase.wantReplacements {
+				t.Fatalf("CAS 采纳次数 = %d, want %d", credentials.replacements, testCase.wantReplacements)
+			}
+			current := credentials.snapshot.Credential().(*accountcore.NativeCredential)
+			testCase.assertPayload(t, string(current.Payload()))
+		})
+	}
+}

@@ -25,21 +25,24 @@ test('codex/claude 未启用 Go Core 时 fail-closed', () => {
   }
 });
 
-test('gemini/grok 未启用 Go Core 时回落本地删除', () => {
-  for (const provider of ['gemini', 'grok']) {
+test('非 required 的已接入 Provider 未启用 Go Core 时回落本地删除', () => {
+  for (const provider of ['gemini', 'grok', 'cline', 'opencode', 'qoder', 'qodercn']) {
     assert.equal(resolveGoDeletionMode(provider, null), 'local_fallback');
     assert.equal(resolveGoDeletionMode(provider, disabledGoHost), 'local_fallback');
   }
 });
 
-test('Go Core 启用时已切换的四家都走 Go', () => {
-  for (const provider of ['codex', 'claude', 'gemini', 'grok']) {
+test('Go Core 启用时已接入的八家都走 Go', () => {
+  for (const provider of [
+    'codex', 'claude', 'gemini', 'grok',
+    'cline', 'opencode', 'qoder', 'qodercn'
+  ]) {
     assert.equal(resolveGoDeletionMode(provider, enabledGoHost), 'go');
   }
 });
 
 test('未接入 Go 的 Provider 继续走本地删除', () => {
-  for (const provider of ['agy', 'opencode', 'kimi', 'kiro', 'zcode', 'cline']) {
+  for (const provider of ['agy', 'kimi', 'kiro', 'zcode']) {
     assert.equal(resolveGoDeletionMode(provider, enabledGoHost), 'local');
   }
 });

@@ -74,3 +74,44 @@ func TestProjectionSpecsDeclareCredentialAndRoot(t *testing.T) {
 		}
 	}
 }
+
+// TestPureFileSystemProviderBatchRegistration 固定本批接入的边界：
+// cline/opencode/qoder/qodercn 已注册规格，不能同时留在 node-only 名单；
+// kiro 留在 Node 的原因必须点名 SQLite 解析缺口，不能写「暂未迁移」。
+func TestPureFileSystemProviderBatchRegistration(t *testing.T) {
+	for _, providerID := range []string{
+		providerCline, providerOpencode, providerQoder, providerQoderCN,
+	} {
+		if _, found := projectionSpecFor(providerID); !found {
+			t.Errorf("%s 应注册删除投影规格", providerID)
+		}
+		if reason, nodeOnly := nodeOnlyDeletionReasons[providerID]; nodeOnly {
+			t.Errorf("%s 已接入 Go，却仍在 node-only 名单: %s", providerID, reason)
+		}
+	}
+	reason, found := nodeOnlyDeletionReasons["kiro"]
+	if !found {
+		t.Fatal("kiro 必须留在 node-only 名单")
+	}
+	if !strings.Contains(reason, "SQLite") || !strings.Contains(reason, "adopt+CAS") {
+		t.Errorf("kiro 的 node-only 原因必须写明 SQLite 凭据解析与 adopt+CAS 缺口，实际 %q", reason)
+	}
+}
+
+// TestCredentialArtifactsArePrivateProjectionPaths 是「多落点」守卫：
+// 每个凭据 artifact 必须也被同一投影根的私有路径覆盖。漏一条，删除时
+// 它就会被当成 Provider 资源迁回宿主，或者留在投影里形成残留凭据。
+func TestCredentialArtifactsArePrivateProjectionPaths(t *testing.T) {
+	for providerID, spec := range projectionSpecs {
+		for _, artifact := range spec.credential.artifacts {
+			rootSpec := spec.roots[artifact.rootKind]
+			if classifyPrivatePath(artifact.segments, rootSpec.privateArtifacts) != projectionEntryPrivate {
+				t.Errorf(
+					"%s 的凭据 artifact %s 未被私有路径覆盖",
+					providerID,
+					strings.Join(artifact.segments, "/"),
+				)
+			}
+		}
+	}
+}

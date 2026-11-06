@@ -276,7 +276,11 @@ func decodeProjectionNativeCredential(
 			missingRequired = true
 			continue
 		}
-		envelope[artifact.field] = document
+		encoded, err := encodeCredentialArtifact(artifact, document)
+		if err != nil {
+			return nil, false, err
+		}
+		envelope[artifact.field] = encoded
 		found = true
 	}
 	if missingRequired {
@@ -301,6 +305,48 @@ func decodeProjectionNativeCredential(
 		return nil, false, fmt.Errorf("投影原生凭据类型无效")
 	}
 	return credential, true, nil
+}
+
+// credentialArtifactNormalizerFunc 收窄一个整库凭据文档。
+type credentialArtifactNormalizerFunc func([]byte) ([]byte, error)
+
+// credentialArtifactNormalizers 是收窄策略的实现表；新增 Provider 只加枚举与实现。
+var credentialArtifactNormalizers = map[credentialArtifactNormalizer]credentialArtifactNormalizerFunc{
+	normalizeClineProviders: nativeaccount.SanitizeClineProvidersDocument,
+}
+
+// encodeCredentialArtifact 把投影文件转成 native_auth_json 里的字段值。
+//
+// json 文档原样嵌入（最终 json.Marshal 会拒绝非法文档）；text 先编码成 JSON 字符串，
+// 不能直接塞 RawMessage——qoder 的 .auth/user 是 opaque blob，不是合法 JSON。
+func encodeCredentialArtifact(
+	artifact credentialArtifact,
+	document []byte,
+) (json.RawMessage, error) {
+	if artifact.normalize != normalizeNone {
+		normalize, found := credentialArtifactNormalizers[artifact.normalize]
+		if !found {
+			return nil, fmt.Errorf("投影凭据收窄策略不存在")
+		}
+		normalized, err := normalize(document)
+		if err != nil {
+			return nil, fmt.Errorf("投影凭据无法收窄")
+		}
+		document = normalized
+	}
+	switch artifact.format {
+	case credentialArtifactText:
+		encoded, err := json.Marshal(string(document))
+		if err != nil {
+			return nil, fmt.Errorf("投影凭据文本无法编码")
+		}
+		return encoded, nil
+	default:
+		if !json.Valid(document) {
+			return nil, fmt.Errorf("投影凭据文档无效")
+		}
+		return json.RawMessage(document), nil
+	}
 }
 
 // sameNativeGeneration 判断两份凭据是否来自同一代签发。

@@ -55,6 +55,28 @@ type credentialSpec struct {
 	artifacts []credentialArtifact
 }
 
+// credentialArtifactFormat 决定投影文件如何嵌入 native_auth_json。
+//
+// json 直接作为 JSON 值；text 作为 JSON 字符串（qoder 的 .auth/user、
+// machine_id 是纯文本/opaque blob，不是 JSON 文档）。
+type credentialArtifactFormat uint8
+
+const (
+	credentialArtifactJSON credentialArtifactFormat = iota
+	credentialArtifactText
+)
+
+// credentialArtifactNormalizer 声明投影文档入库前必须做的收窄。
+//
+// 表驱动：核心代码只按枚举查实现，不按 Provider 名分支。cline 的
+// providers.json 是跨 Provider 的整库，直接入库会把别人的明文密钥抄进本账号。
+type credentialArtifactNormalizer uint8
+
+const (
+	normalizeNone credentialArtifactNormalizer = iota
+	normalizeClineProviders
+)
+
 // credentialArtifact 是投影根内的一个凭据文件。
 type credentialArtifact struct {
 	rootKind projectionKind
@@ -62,6 +84,9 @@ type credentialArtifact struct {
 	field    string
 	segments []string
 	optional bool
+	format   credentialArtifactFormat
+	// normalize 在嵌入 envelope 前收窄整库文档（cline 的 providers.json）。
+	normalize credentialArtifactNormalizer
 }
 
 // projectionSpecs 是 Provider 删除投影的唯一注册点。
@@ -148,6 +173,124 @@ var projectionSpecs = map[string]providerProjectionSpec{
 			},
 		},
 	},
+	providerCline: {
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {
+				// cline 的 CLINE_DIR / CLINE_DATA_DIR 都钉在投影根里：settings/providers.json、
+				// secrets.json、日志、缓存和会话软链全在 .cline 树下。它们都是这份一次性投影的
+				// 私有状态；会话软链随投影删除只会摘掉链接，不会动宿主那批会话文件。
+				//
+				// 多落点必须显式列出：providers.json 是跨 Provider 的整库，secrets.json 又是
+				// CLI 自己的 API Key 仓，漏掉任何一个都会在投影里留下残留凭据。
+				privateArtifacts: []privateProjectionPath{
+					{segments: []string{".cline"}, subtree: true},
+					{segments: []string{"Library", "Keychains"}, subtree: true},
+					{segments: []string{"electron-user-data"}, subtree: true},
+				},
+				// 无 resourceMappings：只删账号投影，宿主 ~/.cline 不改。
+			},
+		},
+		credential: credentialSpec{
+			mode: credentialNativeGeneration,
+			artifacts: []credentialArtifact{
+				{
+					rootKind:  projectionKindAccount,
+					field:     "auth",
+					segments:  []string{".cline", "data", "settings", "providers.json"},
+					normalize: normalizeClineProviders,
+				},
+			},
+		},
+	},
+	providerOpencode: {
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {
+				// opencode 的认证有三个落点：XDG 数据根的 canonical auth.json、
+				// XDG 桥接目录里指向它的软链，以及旧布局留在配置根的 auth.json 备份。
+				// 三个都必须按私有路径处理：漏掉 canonical 或备份会把凭据当资源迁回宿主，
+				// 漏掉桥接软链会在投影里留下指向已删文件的悬空链接。
+				//
+				// .local / .config 下的其余条目都是共享数据的软链或本账号一次性缓存，
+				// 整棵随投影删除即可，宿主目录不会变化。
+				privateArtifacts: []privateProjectionPath{
+					{segments: []string{".local"}, subtree: true},
+					{segments: []string{".config"}, subtree: true},
+					{segments: []string{"Library", "Keychains"}, subtree: true},
+					{segments: []string{"electron-user-data"}, subtree: true},
+				},
+				// 无 resourceMappings：只删账号投影，宿主共享数据不改。
+			},
+		},
+		credential: credentialSpec{
+			mode: credentialNativeGeneration,
+			artifacts: []credentialArtifact{
+				// 备份先声明、canonical 后声明：两份同时存在时 canonical 覆盖备份，
+				// 不能反过来用旧备份顶掉当前登录态。
+				{
+					rootKind: projectionKindAccount,
+					field:    "auth",
+					segments: []string{".config", "opencode", "auth.json"},
+					optional: true,
+				},
+				{
+					rootKind: projectionKindAccount,
+					field:    "auth",
+					segments: []string{".local", "share", "opencode", "auth.json"},
+				},
+			},
+		},
+	},
+	providerQoder:   qoderProjectionSpec(),
+	providerQoderCN: qoderProjectionSpec(),
+}
+
+// qoderProjectionSpec 返回 Qoder 两个区域共用的投影规格。
+//
+// 两家的 --config-dir 布局完全相同（只有可执行文件与宿主根 .qoder/.qoder-cn 不同，
+// 宿主根不参与删除投影），所以规格只保持一份，避免双区漂移。
+func qoderProjectionSpec() providerProjectionSpec {
+	return providerProjectionSpec{
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {
+				// Qoder 把登录态拆在多个落点：.auth/user（encrypted 或 opaque）、
+				// .auth/machine_id（WASM 解密密钥）和 .cache/dns-cache.json（账号面缓存）。
+				// 多落点必须显式列出：只列 .auth 会漏掉 dns-cache，只列 user 会把
+				// machine_id 当资源迁回宿主，二者都会留下或带走账号凭据。
+				privateArtifacts: []privateProjectionPath{
+					{segments: []string{".auth"}, subtree: true},
+					{segments: []string{".cache"}, subtree: true},
+					{segments: []string{"logs"}, subtree: true},
+					{segments: []string{"Library", "Keychains"}, subtree: true},
+					{segments: []string{"electron-user-data"}, subtree: true},
+				},
+				// 无 resourceMappings：只删账号投影，宿主 ~/.qoder(-cn) 不改。
+			},
+		},
+		credential: credentialSpec{
+			mode: credentialNativeGeneration,
+			artifacts: []credentialArtifact{
+				{
+					rootKind: projectionKindAccount,
+					field:    "credentials",
+					segments: []string{".auth", "user"},
+					format:   credentialArtifactText,
+				},
+				{
+					rootKind: projectionKindAccount,
+					field:    "machineId",
+					segments: []string{".auth", "machine_id"},
+					optional: true,
+					format:   credentialArtifactText,
+				},
+				{
+					rootKind: projectionKindAccount,
+					field:    "dnsCache",
+					segments: []string{".cache", "dns-cache.json"},
+					optional: true,
+				},
+			},
+		},
+	}
 }
 
 // nodeOnlyDeletionReasons 记录尚未注册投影规格的 Provider 为什么仍留在 Node。
@@ -156,13 +299,9 @@ var projectionSpecs = map[string]providerProjectionSpec{
 // 测试都会失败。新增 Provider 时必须二选一，不能让删除流程沉默地拒绝它。
 var nodeOnlyDeletionReasons = map[string]string{
 	"agy":         "伪 HOME 投影与 gemini 共用 ~/.gemini，且有常驻 language server，删除仍由 Node 处理",
-	"opencode":    "认证分布在 XDG 桥接目录和 provider shared store，只删投影的边界尚未验证",
 	"kimi":        "KIMI_CODE_HOME 投影包含账号视图的 session_index.jsonl，删除仍由 Node 处理",
-	"kiro":        "凭据投影包含 IDE SQLite 数据库，删除仍由 Node 处理",
+	"kiro":        "凭据是 data.sqlite3 二进制库：auth/identityEvidence 由 Node 解析 SQLite 并调用 GetUsageLimits 派生，Go 侧没有该库的 adopt+CAS 解析器",
 	"zcode":       "凭据是加密多文件且桌面数据根共享，删除仍由 Node 处理",
-	"cline":       "providers.json 是跨 Provider 的整库文件，删除仍由 Node 处理",
-	"qoder":       "认证 artifact 与 native root 分离，删除仍由 Node 处理",
-	"qodercn":     "认证 artifact 与 native root 分离，删除仍由 Node 处理",
 	"codebuddy":   "登录态是宿主共享的加密文件，删除仍由 Node 处理",
 	"codebuddycn": "登录态是宿主共享的加密文件，删除仍由 Node 处理",
 	"workbuddy":   "登录态是宿主共享的加密文件，删除仍由 Node 处理",

@@ -25,10 +25,14 @@ var (
 )
 
 const (
-	providerCodex  = "codex"
-	providerClaude = "claude"
-	providerGemini = "gemini"
-	providerGrok   = "grok"
+	providerCodex    = "codex"
+	providerClaude   = "claude"
+	providerGemini   = "gemini"
+	providerGrok     = "grok"
+	providerCline    = "cline"
+	providerOpencode = "opencode"
+	providerQoder    = "qoder"
+	providerQoderCN  = "qodercn"
 )
 
 // Clock 返回凭据 CAS 使用的当前业务时间。

@@ -107,6 +107,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "invalid_request_body")
 		return
 	}
+	// 原样透传前先剥掉上游解析不了的引用（item id 前缀、store:false 的断点、
+	// 换号后无法解密的 reasoning）。见 sanitizeNativePayload 的说明。
+	payload = sanitizeNativePayload(payload)
 	trail := handler.newFailureTrail(metadata.Model)
 	cursor, err := handler.Accounts.Open(ctx, metadata.Model)
 	if errors.Is(err, ErrNotNativeRoute) {

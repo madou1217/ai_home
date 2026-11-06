@@ -94,12 +94,19 @@ Node 账号行（`/v0/webui/accounts`）目前 34 个字段，按来源分三类
 因此切片 C 的覆盖层保留 Node 的这 20 个字段，Go 只提供事实。
 
 **已落地（2026-11-06）**：字段来源写成数据表 `lib/server/account-row-sources.js`
-（39 项，39 = Go 判定 6 + Go 投影 Node 直读 4 + Node 独有 29），装配器
-`assembleAccountRow` 只用 Go 有值且语义等价的字段覆盖，其余原样保留；
+（39 项，2026-11-06 已推进到 **Go 判定 7 + Go 投影 Node 直读 4 + Node 独有 28**），
+装配器 `assembleAccountRow` 只用 Go 有值且语义等价的字段覆盖，其余原样保留；
 对拍器 `scripts/compare-account-rows.js` 在真机上跑出 **43 行 × 39 字段零差异**
 （`row_identical=true field_mismatch=0`，退出码 0）。回退项固定为
 `displayName / planType / email`（Go 的 profiles 为空），两条已禁用 agy 账号的
 Node 快照停在 10-24（Go 无快照），按告警列出、不阻断。
+
+**翻转的判据（踩过才写下来的）**：只有「值在两侧稳定一致」的字段能翻。
+`isDefault` 翻到 Go（用户操作才变）；`quotaStatus/quotaReason` **不翻**——Go 在持续
+采集，实时值比 Node 缓存的行新，真机两轮影子对账就抓到同一账号一个 `exhausted`
+一个 `pending`，翻转会让零差异门禁被正常采集抖动打红。Go 的视图仍然带上这两个字段
+（`quota_status/quota_reason/remaining_bps/has_numeric_remaining/quota_captured_at`），
+等读取侧改成「以 Go 的采集时间为主键」再启用。
 
 装配器已在运行时影子对账里当守卫用（`assembledChanged` 必须为 0），但**还没有**
 接到 `/v0/webui/accounts` 的响应路径：那一步需要同步拿 Go 事实，异步缓存会让

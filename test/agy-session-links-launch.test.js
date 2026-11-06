@@ -57,22 +57,35 @@ function seedAgyProjection(home) {
   const storeSessions = path.join(home, '.agy', 'sessions');
   fs.mkdirSync(storeSessions, { recursive: true });
   fs.writeFileSync(path.join(storeSessions, 'old.jsonl'), '{}\n');
-  return { projectionRoot, sessionsDir, external };
+
+  // 再放一个**声明**的会话条目（agy: brain）做同样的活链接形态：
+  // 启动时伪 HOME 一律降级为 warnings，不能因为声明的目录也卡住聊天。
+  const brainDir = path.join(toolDir, 'brain');
+  fs.mkdirSync(brainDir, { recursive: true });
+  fs.writeFileSync(path.join(brainDir, 'local.json'), '{}\n');
+  fs.symlinkSync(external, path.join(brainDir, 'link-out'));
+  const storeBrain = path.join(home, '.agy', 'brain');
+  fs.mkdirSync(storeBrain, { recursive: true });
+  fs.writeFileSync(path.join(storeBrain, 'old.json'), '{}\n');
+
+  return { projectionRoot, sessionsDir, brainDir, external };
 }
 
 test('agy 启动对账不再把伪 HOME 里的 sessions 当成未对账缺口', (t) => {
   const home = makeHome(t);
-  const { sessionsDir, external } = seedAgyProjection(home);
+  const { sessionsDir, brainDir, external } = seedAgyProjection(home);
   const service = makeService(home);
 
-  // 全量对账（删除账号/清理投影）：sessions 里有活链接，必须继续 fail-closed。
+  // 全量对账（删除账号/清理投影）：活链接不能被跟随或删除，必须继续 fail-closed。
   const full = service.ensureSessionStoreLinks('agy', ACCOUNT_REF, {});
-  assert.deepEqual(full.unresolved, ['sessions']);
+  assert.equal(full.unresolved.includes('sessions'), true);
+  assert.equal(full.unresolved.includes('brain'), true);
 
-  // 启动对账：只认 Provider 声明的 brain / conversations；sessions 原样留在投影里。
+  // 启动对账：伪 HOME 的残余降级为 warnings，聊天不再被阻断。
   const launch = service.ensureSessionStoreLinks('agy', ACCOUNT_REF, { sessionLinksOnly: true });
-  assert.equal(launch.unresolved, undefined, 'launch 不应再因 sessions 阻断聊天');
+  assert.equal(launch.unresolved, undefined, 'launch 不应再因伪 HOME 残余阻断聊天');
   assert.equal(fs.lstatSync(path.join(sessionsDir, 'link-out')).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(path.join(brainDir, 'link-out')).isSymbolicLink(), true);
   assert.equal(fs.readFileSync(external, 'utf8'), 'keep-me');
 });
 

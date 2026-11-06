@@ -59,6 +59,9 @@ const (
 	credentialCodexOAuth
 	credentialClaudeOAuth
 	credentialNativeGeneration
+	// credentialKiroSQLite 从账号投影里的 data.sqlite3 读取 kiro CLI 的
+	// auth_kv，再按 nativeaccount 的 kiro 形状重建凭据。
+	credentialKiroSQLite
 )
 
 // credentialSpec 声明一个 Provider 的凭据投影文件与收敛语义。
@@ -260,6 +263,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 	providerWorkbuddy:   codebuddyFamilyProjectionSpec(),
 	providerWorkbuddyCN: codebuddyFamilyProjectionSpec(),
 	providerKimi:        kimiProjectionSpec(),
+	providerKiro:        kiroProjectionSpec(),
 }
 
 // qoderProjectionSpec 返回 Qoder 两个区域共用的投影规格。
@@ -364,13 +368,49 @@ func kimiProjectionSpec() providerProjectionSpec {
 	}
 }
 
+// kiroProjectionSpec 是 kiro 的删除规格。
+//
+// kiro 的账号目录是一份一次性私有运行目录，Node 删除时直接 rm -rf 整根；
+// Go 侧整根声明为 privateRoot。调研到的私有落点如下（全部随根删除）：
+//   - data.sqlite3 及 -wal/-shm/-journal（CLI 的 auth_kv 与本地会话）；
+//   - .aih-kiro-auth-binding（上一次投影的 grant 指纹）；
+//   - electron-user-data/**（桌面 Chromium profile）；
+//   - tmp/**、.config/**、.local/**（KIRO_HOME 指向宿主 ~/.kiro，这些只是
+//     运行期私有目录）；
+//   - Library/Application Support/kiro-cli/**（内含指向 data.sqlite3 的 file
+//     symlink）与 Library/Keychains/**。
+//
+// 宿主 ~/.kiro、~/Library/Application Support/kiro-cli 是原生 CLI 自己的数据，
+// 不经账号投影共享；整根删除只会移除账号副本或指回宿主的链接。
+//
+// 凭据：data.sqlite3 是二进制 SQLite，不能走 JSON artifact 路径。删除前由
+// reconcileKiroCredential 只读解析 auth_kv，按 Node 的 tokenBinding 判断是否同代，
+// 再用 credential-origin 的 expires_at/iat 做代际排序；不可比较时 fail-closed。
+func kiroProjectionSpec() providerProjectionSpec {
+	return providerProjectionSpec{
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {
+				// 整根都是一次性私有运行目录：Node 删除时就是 rm -rf 整个账号目录，
+				// 且 kiro 的 projectionRoots 为空（没有任何条目要迁回宿主）。
+				// 未列名的新客户端文件也只属于这份投影，不能因此拒绝删除。
+				privateRoot: true,
+			},
+		},
+		credential: credentialSpec{
+			mode: credentialKiroSQLite,
+			artifacts: []credentialArtifact{
+				{rootKind: projectionKindAccount, field: "auth", segments: []string{"data.sqlite3"}},
+			},
+		},
+	}
+}
+
 // nodeOnlyDeletionReasons 记录尚未注册投影规格的 Provider 为什么仍留在 Node。
 //
 // 守卫测试会遍历 Provider 目录：既没有规格、也不在这张表里，或原因为空，
 // 测试都会失败。新增 Provider 时必须二选一，不能让删除流程沉默地拒绝它。
 var nodeOnlyDeletionReasons = map[string]string{
 	"agy":   "伪 HOME 投影与 gemini 共用 ~/.gemini，且删除前必须停掉常驻的暖机 language server 池，只有 Node 能做进程级停机",
-	"kiro":  "凭据是 data.sqlite3 二进制库：tokenBinding 与 auth/identityEvidence 由 Node 解析 SQLite 并调用 GetUsageLimits 派生，Go 侧没有该库的 adopt+CAS 解析器",
 	"zcode": "凭据是 enc:v1 加密的多文件库，且桌面数据根由桥/影子 App 共享，Go 侧既无法比较代际也无法安全迁移",
 }
 

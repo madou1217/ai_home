@@ -131,11 +131,33 @@ func TestDeletionOnlyProviderBatchRegistration(t *testing.T) {
 	}
 }
 
+// TestKiroDeletionRegistration 固定 kiro 的接入边界：投影整根私有，
+// data.sqlite3 走独立的 SQLite 凭据模式，且不能再留在 node-only 名单。
+func TestKiroDeletionRegistration(t *testing.T) {
+	spec, found := projectionSpecFor(providerKiro)
+	if !found {
+		t.Fatal("kiro 应注册删除投影规格")
+	}
+	if reason, nodeOnly := nodeOnlyDeletionReasons[providerKiro]; nodeOnly {
+		t.Fatalf("kiro 已接入 Go，却仍在 node-only 名单: %s", reason)
+	}
+	rootSpec, found := spec.roots[projectionKindAccount]
+	if !found || !rootSpec.privateRoot {
+		t.Fatal("kiro 的账号投影应整根私有")
+	}
+	if spec.credential.mode != credentialKiroSQLite {
+		t.Fatalf("kiro 的凭据模式 = %d, want credentialKiroSQLite", spec.credential.mode)
+	}
+	if len(spec.credential.artifacts) != 1 ||
+		!segmentsEqual(spec.credential.artifacts[0].segments, []string{"data.sqlite3"}) {
+		t.Fatalf("kiro 的凭据 artifact 应唯一指向 data.sqlite3: %+v", spec.credential.artifacts)
+	}
+}
+
 // TestNodeOnlyDeletionReasonsNameConcreteGaps 要求留在 Node 的 Provider 写清
 // 具体缺口：泛泛的「删除仍由 Node 处理」无法让后来的人判断何时可以迁过来。
 func TestNodeOnlyDeletionReasonsNameConcreteGaps(t *testing.T) {
 	cases := map[string][]string{
-		"kiro":  {"SQLite", "tokenBinding", "adopt+CAS"},
 		"zcode": {"enc:v1", "桥", "影子"},
 		"agy":   {"暖机", "language server"},
 	}
@@ -160,6 +182,10 @@ func TestCredentialArtifactsArePrivateProjectionPaths(t *testing.T) {
 	for providerID, spec := range projectionSpecs {
 		for _, artifact := range spec.credential.artifacts {
 			rootSpec := spec.roots[artifact.rootKind]
+			// 整根私有已经覆盖根下所有条目，包括凭据 artifact 本身。
+			if rootSpec.privateRoot {
+				continue
+			}
 			if classifyPrivatePath(artifact.segments, rootSpec.privateArtifacts) != projectionEntryPrivate {
 				t.Errorf(
 					"%s 的凭据 artifact %s 未被私有路径覆盖",

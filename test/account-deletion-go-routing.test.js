@@ -23,7 +23,7 @@ const { writeAccountCredentials } = require('../lib/server/account-credential-st
 // 本轮新接入 Go 删除的 Provider。名单只用于断言覆盖范围，路由判定本身读
 // GO_DELETION_PROVIDERS，不在测试里维护第二份分流名单。
 const NEWLY_GO_ROUTED_PROVIDERS = Object.freeze([
-  'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'kimi'
+  'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'kimi', 'kiro'
 ]);
 // 走 Go 但允许回落本地删除的 Provider：运行态测试直接从 GO_DELETION_PROVIDERS
 // 派生，Go 侧新增一家时自动纳入，不需要在测试里补名单。
@@ -158,14 +158,14 @@ test('Go Core 启用时已接入的 Provider 都走 Go', () => {
   }
 });
 
-test('codebuddy 家族与 kimi 已进入 Go 删除名单', () => {
+test('codebuddy 家族、kimi 与 kiro 已进入 Go 删除名单', () => {
   for (const provider of NEWLY_GO_ROUTED_PROVIDERS) {
     assert.ok(GO_DELETION_PROVIDERS.includes(provider), `${provider} 不在 GO_DELETION_PROVIDERS`);
   }
 });
 
 test('未接入 Go 的 Provider 继续走本地删除', () => {
-  for (const provider of ['agy', 'kiro', 'zcode']) {
+  for (const provider of ['agy', 'zcode']) {
     assert.equal(resolveGoDeletionMode(provider, enabledGoHost), 'local');
   }
 });

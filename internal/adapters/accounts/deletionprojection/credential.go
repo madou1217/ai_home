@@ -15,6 +15,8 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/accounts/kiro"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/kirodb"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/claude/securestorage"
 	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
@@ -64,6 +66,7 @@ var credentialReconcilers = map[credentialMode]credentialReconciler{
 	credentialCodexOAuth:       reconcileCodexCredential,
 	credentialClaudeOAuth:      reconcileClaudeCredential,
 	credentialNativeGeneration: reconcileNativeCredential,
+	credentialKiroSQLite:       reconcileKiroCredential,
 }
 
 // reconcileNoCredential 是不采纳凭据的显式实现：投影里的凭据文件随投影一起
@@ -263,6 +266,163 @@ func reconcileNativeCredential(
 	return preparer.replaceCredential(ctx, snapshot, selected)
 }
 
+// reconcileKiroCredential 从投影 data.sqlite3 的 auth_kv 回收 kiro token。
+//
+// 判定分两步，缺一不可：
+//  1. 同代判定用 Node 的 tokenBinding 同口径：sha256(JSON.stringify([endpoint,
+//     access, refresh]))。Node 用它判断“这份 grant 是否已经落过库”；binding
+//     相同就不再改写，避免把 expires_at 的序列化差异当成新 token。
+//  2. binding 不同才需要排序。tokenBinding 是哈希，本身不可排序，因此继续用
+//     nativeaccount 已注册的 kiro 代际事实（access token 的 JWT iat，否则
+//     expires_at）做偏序比较。缺代际、代际集合不一致或同代不同内容时一律
+//     返回错误（fail-closed），绝不猜“新的覆盖旧的”。
+func reconcileKiroCredential(
+	preparer *Preparer,
+	ctx context.Context,
+	snapshot accountapp.CredentialSnapshot,
+	roots []projectionRoot,
+	spec credentialSpec,
+) error {
+	current, valid := snapshot.Credential().(*accountcore.NativeCredential)
+	if !valid || current == nil {
+		for _, root := range roots {
+			for _, artifact := range spec.artifacts {
+				if artifact.rootKind != root.kind {
+					continue
+				}
+				_, found, err := regularFilePath(root.path, artifact.segments)
+				if err != nil {
+					return err
+				}
+				if found {
+					return fmt.Errorf("静态凭据账号存在 kiro 凭据数据库")
+				}
+			}
+		}
+		return nil
+	}
+	currentAuth, err := kiroAuthObject(current.Payload())
+	if err != nil {
+		return err
+	}
+	selectedBinding := kirodb.TokenBinding(currentAuth)
+	if selectedBinding == "" {
+		return fmt.Errorf("当前 kiro 凭据无法计算 tokenBinding")
+	}
+	selected := current
+	for _, root := range roots {
+		relativePath := credentialArtifactPath(spec, root.kind)
+		if len(relativePath) == 0 {
+			continue
+		}
+		databasePath, found, err := regularFilePath(root.path, relativePath)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		auth, found, err := kirodb.ReadAuth(ctx, databasePath)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		var candidateAuth map[string]json.RawMessage
+		if json.Unmarshal(auth.Raw, &candidateAuth) != nil || candidateAuth == nil {
+			return fmt.Errorf("投影 kiro 凭据结构无效")
+		}
+		candidateBinding := kirodb.TokenBinding(candidateAuth)
+		if candidateBinding == "" {
+			return fmt.Errorf("投影 kiro 凭据无法计算 tokenBinding")
+		}
+		// Node 的同一份 grant 指纹相同：数据库已经持有这份 token，不做无意义的
+		// 字节替换（也避免 generation 只差格式时被误判成冲突）。
+		if candidateBinding == selectedBinding {
+			continue
+		}
+		candidate, err := decodeKiroProjectionCredential(selected, auth.Raw)
+		if err != nil {
+			return err
+		}
+		if candidate.IdentitySeed() != current.IdentitySeed() ||
+			candidate.AuthKind() != current.AuthKind() {
+			return fmt.Errorf("投影 kiro 凭据身份不一致")
+		}
+		if len(candidate.Generations()) == 0 || len(selected.Generations()) == 0 {
+			return fmt.Errorf("投影 kiro 凭据代际无法比较")
+		}
+		// 代际相同但字节不同（例如同一秒内重签）无法证明更新，沿用现有语义：
+		// 保留数据库版本，不做 CAS。
+		if sameNativeGeneration(candidate, selected) {
+			continue
+		}
+		newer, ordered := candidate.NewerThan(selected)
+		if !ordered {
+			return fmt.Errorf("投影 kiro 凭据代际无法比较")
+		}
+		if newer {
+			selected = candidate
+			selectedBinding = candidateBinding
+		}
+	}
+	if selected == current {
+		return nil
+	}
+	return preparer.replaceCredential(ctx, snapshot, selected)
+}
+
+// decodeKiroProjectionCredential 用数据库现有载荷做底，只替换 auth 并重绑证据。
+func decodeKiroProjectionCredential(
+	current *accountcore.NativeCredential,
+	auth json.RawMessage,
+) (*accountcore.NativeCredential, error) {
+	envelope := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(current.Payload(), &envelope); err != nil || envelope == nil {
+		return nil, fmt.Errorf("当前 kiro 凭据文档无效")
+	}
+	var authObject map[string]json.RawMessage
+	if json.Unmarshal(auth, &authObject) != nil || authObject == nil {
+		return nil, fmt.Errorf("投影 kiro 凭据结构无效")
+	}
+	envelope["auth"] = auth
+	// tokenBinding 绑定 endpoint+access+refresh；换 token 后必须重算，
+	// 与 Node 刷新路径（persistKiroIdentityEvidence）和 Go kirocred 的语义一致。
+	if !kiro.RebindIdentityEvidence(envelope, authObject) {
+		return nil, fmt.Errorf("投影 kiro 凭据无法绑定身份证据")
+	}
+	document, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("投影 kiro 凭据文档无效")
+	}
+	decoded, err := nativeaccount.NewDecoder().DecodeNativeAuth("kiro", document)
+	if err != nil {
+		return nil, fmt.Errorf("投影原生凭据无效")
+	}
+	credential, valid := decoded.(*accountcore.NativeCredential)
+	if !valid || credential == nil {
+		return nil, fmt.Errorf("投影原生凭据类型无效")
+	}
+	return credential, nil
+}
+
+func kiroAuthObject(payload []byte) (map[string]json.RawMessage, error) {
+	var document map[string]json.RawMessage
+	if json.Unmarshal(payload, &document) != nil || document == nil {
+		return nil, fmt.Errorf("当前 kiro 凭据文档无效")
+	}
+	raw, exists := document["auth"]
+	if !exists {
+		return nil, fmt.Errorf("当前 kiro 凭据缺少 auth")
+	}
+	var auth map[string]json.RawMessage
+	if json.Unmarshal(raw, &auth) != nil || auth == nil {
+		return nil, fmt.Errorf("当前 kiro 凭据 auth 无效")
+	}
+	return auth, nil
+}
+
 // decodeProjectionNativeCredential 把投影里的凭据文件重建成 native_auth_json。
 //
 // 以数据库现有载荷为底：投影只覆盖自己声明的字段，像 gemini 的 google_accounts
@@ -446,31 +606,9 @@ func (preparer *Preparer) replaceCredential(
 }
 
 func readBoundedRegularFile(root string, segments []string) ([]byte, bool, error) {
-	if err := assertPlainDirectory(root); err != nil {
-		return nil, false, err
-	}
-	current := root
-	for index, segment := range segments {
-		if segment == "" || segment == "." || segment == ".." || filepath.Base(segment) != segment {
-			return nil, false, ErrInvalidRequest
-		}
-		current = filepath.Join(current, segment)
-		info, err := os.Lstat(current)
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, false, nil
-		}
-		if err != nil {
-			return nil, false, err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, false, fmt.Errorf("凭据 artifact 路径包含 symlink")
-		}
-		if index < len(segments)-1 && !info.IsDir() {
-			return nil, false, fmt.Errorf("凭据 artifact 父级不是目录")
-		}
-		if index == len(segments)-1 && !info.Mode().IsRegular() {
-			return nil, false, fmt.Errorf("凭据 artifact 不是普通文件")
-		}
+	current, found, err := regularFilePath(root, segments)
+	if err != nil || !found {
+		return nil, found, err
 	}
 	file, err := os.Open(current)
 	if err != nil {
@@ -487,6 +625,41 @@ func readBoundedRegularFile(root string, segments []string) ([]byte, bool, error
 		return nil, false, fmt.Errorf("凭据 artifact 大小无效")
 	}
 	return document, true, nil
+}
+
+// regularFilePath 只做路径校验，不读取内容。
+//
+// kiro 的 data.sqlite3 可能远大于凭据 artifact 上限（会话也在同一个库里），
+// 因此 SQLite 读取必须先拿到路径再由 kirodb 以只读连接查询，不能走
+// readBoundedRegularFile 的整文件读取。
+func regularFilePath(root string, segments []string) (string, bool, error) {
+	if err := assertPlainDirectory(root); err != nil {
+		return "", false, err
+	}
+	current := root
+	for index, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." || filepath.Base(segment) != segment {
+			return "", false, ErrInvalidRequest
+		}
+		current = filepath.Join(current, segment)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", false, fmt.Errorf("凭据 artifact 路径包含 symlink")
+		}
+		if index < len(segments)-1 && !info.IsDir() {
+			return "", false, fmt.Errorf("凭据 artifact 父级不是目录")
+		}
+		if index == len(segments)-1 && !info.Mode().IsRegular() {
+			return "", false, fmt.Errorf("凭据 artifact 不是普通文件")
+		}
+	}
+	return current, true, nil
 }
 
 func codexAPIKeyBaseURL(auth codex.Auth) string {

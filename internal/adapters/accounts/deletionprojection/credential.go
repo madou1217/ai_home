@@ -2,6 +2,7 @@ package deletionprojection
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/claude/securestorage"
 	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
 )
@@ -35,20 +37,40 @@ func (preparer *Preparer) reconcileCredential(
 		return fmt.Errorf("凭据快照与账号不一致")
 	}
 
-	switch account.ProviderID() {
-	case providerCodex:
-		return preparer.reconcileCodexCredential(ctx, snapshot, roots)
-	case providerClaude:
-		return preparer.reconcileClaudeCredential(snapshot, roots)
-	default:
+	spec, found := projectionSpecFor(account.ProviderID())
+	if !found {
 		return fmt.Errorf("Provider 凭据收敛策略不存在")
 	}
+	// 按规格里的凭据模式查表，不按 Provider 名分支：新增 Provider 只需要
+	// 在规格表里声明文件和模式，这里不再打开。
+	reconcile, found := credentialReconcilers[spec.credential.mode]
+	if !found {
+		return fmt.Errorf("Provider 凭据收敛策略不存在")
+	}
+	return reconcile(preparer, ctx, snapshot, roots, spec.credential)
 }
 
-func (preparer *Preparer) reconcileCodexCredential(
+// credentialReconciler 是凭据收敛模式的实现表。
+type credentialReconciler func(
+	*Preparer,
+	context.Context,
+	accountapp.CredentialSnapshot,
+	[]projectionRoot,
+	credentialSpec,
+) error
+
+var credentialReconcilers = map[credentialMode]credentialReconciler{
+	credentialCodexOAuth:       reconcileCodexCredential,
+	credentialClaudeOAuth:      reconcileClaudeCredential,
+	credentialNativeGeneration: reconcileNativeCredential,
+}
+
+func reconcileCodexCredential(
+	preparer *Preparer,
 	ctx context.Context,
 	snapshot accountapp.CredentialSnapshot,
 	roots []projectionRoot,
+	spec credentialSpec,
 ) error {
 	current, valid := snapshot.Credential().(codex.Auth)
 	if !valid || current == nil {
@@ -56,9 +78,9 @@ func (preparer *Preparer) reconcileCodexCredential(
 	}
 	candidates := make([]codex.Auth, 0, len(roots))
 	for _, root := range roots {
-		relativePath := []string{".codex", "auth.json"}
-		if root.kind == projectionKindCodexDesktop {
-			relativePath = []string{"auth.json"}
+		relativePath := credentialArtifactPath(spec, root.kind)
+		if len(relativePath) == 0 {
+			continue
 		}
 		document, found, err := readBoundedRegularFile(root.path, relativePath)
 		if err != nil {
@@ -103,17 +125,21 @@ func (preparer *Preparer) reconcileCodexCredential(
 	}
 }
 
-func (preparer *Preparer) reconcileClaudeCredential(
+func reconcileClaudeCredential(
+	_ *Preparer,
+	_ context.Context,
 	snapshot accountapp.CredentialSnapshot,
 	roots []projectionRoot,
+	spec credentialSpec,
 ) error {
 	current, valid := snapshot.Credential().(*claude.OAuthAuth)
 	if !valid || current == nil {
 		for _, root := range roots {
-			_, found, err := readBoundedRegularFile(
-				root.path,
-				[]string{".claude", ".credentials.json"},
-			)
+			relativePath := credentialArtifactPath(spec, root.kind)
+			if len(relativePath) == 0 {
+				continue
+			}
+			_, found, err := readBoundedRegularFile(root.path, relativePath)
 			if err != nil {
 				return err
 			}
@@ -125,10 +151,11 @@ func (preparer *Preparer) reconcileClaudeCredential(
 	}
 
 	for _, root := range roots {
-		document, found, err := readBoundedRegularFile(
-			root.path,
-			[]string{".claude", ".credentials.json"},
-		)
+		relativePath := credentialArtifactPath(spec, root.kind)
+		if len(relativePath) == 0 {
+			continue
+		}
+		document, found, err := readBoundedRegularFile(root.path, relativePath)
 		if err != nil {
 			return err
 		}
@@ -148,6 +175,153 @@ func (preparer *Preparer) reconcileClaudeCredential(
 		}
 	}
 	return nil
+}
+
+// reconcileNativeCredential 从投影回收 gemini/grok 这类原生凭据。
+//
+// 只有投影里的代际证据（gemini 的 expiry_date、grok 的 access token iat）
+// 能证明比数据库更新时才 CAS 采纳；代际相同视为同一份凭据，不做无意义的
+// 字节级替换；代际不可比较时失败关闭，避免把旧凭据写回新账号。
+func reconcileNativeCredential(
+	preparer *Preparer,
+	ctx context.Context,
+	snapshot accountapp.CredentialSnapshot,
+	roots []projectionRoot,
+	spec credentialSpec,
+) error {
+	current, valid := snapshot.Credential().(*accountcore.NativeCredential)
+	if !valid || current == nil {
+		for _, root := range roots {
+			for _, artifact := range spec.artifacts {
+				if artifact.rootKind != root.kind {
+					continue
+				}
+				_, found, err := readBoundedRegularFile(root.path, artifact.segments)
+				if err != nil {
+					return err
+				}
+				if found {
+					return fmt.Errorf("静态凭据账号存在原生凭据投影")
+				}
+			}
+		}
+		return nil
+	}
+
+	selected := current
+	for _, root := range roots {
+		candidate, found, err := decodeProjectionNativeCredential(
+			root,
+			spec,
+			current,
+			snapshot.ProviderID(),
+		)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		if candidate.IdentitySeed() != current.IdentitySeed() ||
+			candidate.AuthKind() != current.AuthKind() {
+			return fmt.Errorf("投影原生凭据身份不一致")
+		}
+		if sameNativeGeneration(candidate, selected) {
+			continue
+		}
+		newer, ordered := candidate.NewerThan(selected)
+		if !ordered {
+			return fmt.Errorf("投影原生凭据代际无法比较")
+		}
+		if newer {
+			selected = candidate
+		}
+	}
+	if selected == current {
+		return nil
+	}
+	return preparer.replaceCredential(ctx, snapshot, selected)
+}
+
+// decodeProjectionNativeCredential 把投影里的凭据文件重建成 native_auth_json。
+//
+// 以数据库现有载荷为底：投影只覆盖自己声明的字段，像 gemini 的 google_accounts
+// 缺失时仍能保留已入库的邮箱身份，避免把可选文件缺失误判成身份丢失。
+func decodeProjectionNativeCredential(
+	root projectionRoot,
+	spec credentialSpec,
+	current *accountcore.NativeCredential,
+	providerID string,
+) (*accountcore.NativeCredential, bool, error) {
+	envelope := make(map[string]json.RawMessage)
+	if payload := current.Payload(); len(payload) > 0 {
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			return nil, false, fmt.Errorf("当前原生凭据文档无效")
+		}
+	}
+	found := false
+	missingRequired := false
+	for _, artifact := range spec.artifacts {
+		if artifact.rootKind != root.kind {
+			continue
+		}
+		document, exists, err := readBoundedRegularFile(root.path, artifact.segments)
+		if err != nil {
+			return nil, false, err
+		}
+		if !exists {
+			if artifact.optional {
+				continue
+			}
+			missingRequired = true
+			continue
+		}
+		envelope[artifact.field] = document
+		found = true
+	}
+	if missingRequired {
+		if !found {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("投影原生凭据不完整")
+	}
+	if !found {
+		return nil, false, nil
+	}
+	document, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, false, fmt.Errorf("投影原生凭据文档无效")
+	}
+	decoded, err := nativeaccount.NewDecoder().DecodeNativeAuth(providerID, document)
+	if err != nil {
+		return nil, false, fmt.Errorf("投影原生凭据无效")
+	}
+	credential, valid := decoded.(*accountcore.NativeCredential)
+	if !valid || credential == nil {
+		return nil, false, fmt.Errorf("投影原生凭据类型无效")
+	}
+	return credential, true, nil
+}
+
+// sameNativeGeneration 判断两份凭据是否来自同一代签发。
+// 代际相同但序列化字节不同时只保留数据库版本，不触发 CAS。
+func sameNativeGeneration(left, right *accountcore.NativeCredential) bool {
+	leftGenerations := left.Generations()
+	rightGenerations := right.Generations()
+	if len(leftGenerations) != len(rightGenerations) {
+		return false
+	}
+	values := make(map[string]int64, len(rightGenerations))
+	for _, item := range rightGenerations {
+		values[item.Scope] = item.Value
+	}
+	for _, item := range leftGenerations {
+		value, found := values[item.Scope]
+		if !found || value != item.Value {
+			return false
+		}
+	}
+	return true
 }
 
 func selectNewestCodexOAuth(

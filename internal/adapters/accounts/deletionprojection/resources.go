@@ -21,7 +21,10 @@ const (
 )
 
 type projectionEntry struct {
-	kind        projectionEntryKind
+	kind projectionEntryKind
+	// hostRoot 是目标目录相对宿主 HOME 的前缀（如 .codex）。
+	hostRoot []string
+	// destination 是目标目录相对 hostRoot 的剩余路径。
 	destination []string
 }
 
@@ -99,8 +102,10 @@ func (preparer *Preparer) reconcileProjectionEntry(
 		}
 		return nil
 	case projectionEntryResource:
-		destinationRoot := filepath.Join(preparer.hostHomeDir, "."+account.ProviderID())
-		if err := ensureSafeDirectory(preparer.hostHomeDir, []string{"." + account.ProviderID()}); err != nil {
+		destinationRoot := filepath.Join(
+			append([]string{preparer.hostHomeDir}, classification.hostRoot...)...,
+		)
+		if err := ensureSafeDirectory(preparer.hostHomeDir, classification.hostRoot); err != nil {
 			return err
 		}
 		destinationPath := filepath.Join(
@@ -117,41 +122,29 @@ func classifyProjectionEntry(
 	kind projectionKind,
 	relative []string,
 ) projectionEntry {
-	if kind == projectionKindCodexDesktop {
-		if providerID != providerCodex {
-			return projectionEntry{kind: projectionEntryUnknown}
-		}
-		if classifyPrivatePath(relative, codexDesktopPrivatePaths()) != projectionEntryUnknown {
-			return projectionEntry{kind: classifyPrivatePath(relative, codexDesktopPrivatePaths())}
-		}
-		return projectionEntry{
-			kind:        projectionEntryResource,
-			destination: append([]string(nil), relative...),
-		}
-	}
-
-	var mappingRoot string
-	var privatePaths []privateProjectionPath
-	switch providerID {
-	case providerCodex:
-		mappingRoot = ".codex"
-		privatePaths = codexAccountPrivatePaths()
-	case providerClaude:
-		mappingRoot = ".claude"
-		privatePaths = claudeAccountPrivatePaths()
-	default:
+	spec, found := projectionSpecFor(providerID)
+	if !found {
 		return projectionEntry{kind: projectionEntryUnknown}
 	}
-	if privateKind := classifyPrivatePath(relative, privatePaths); privateKind != projectionEntryUnknown {
+	rootSpec, found := spec.roots[kind]
+	if !found {
+		return projectionEntry{kind: projectionEntryUnknown}
+	}
+	if privateKind := classifyPrivatePath(relative, rootSpec.privateArtifacts); privateKind != projectionEntryUnknown {
 		return projectionEntry{kind: privateKind}
 	}
-	if len(relative) == 1 && relative[0] == mappingRoot {
-		return projectionEntry{kind: projectionEntryContainer}
-	}
-	if len(relative) > 1 && relative[0] == mappingRoot {
+	for _, mapping := range rootSpec.resourceMappings {
+		if !hasSegmentPrefix(relative, mapping.from) {
+			continue
+		}
+		remainder := relative[len(mapping.from):]
+		if len(remainder) == 0 {
+			return projectionEntry{kind: projectionEntryContainer}
+		}
 		return projectionEntry{
 			kind:        projectionEntryResource,
-			destination: append([]string(nil), relative[1:]...),
+			hostRoot:    append([]string(nil), mapping.to...),
+			destination: append([]string(nil), remainder...),
 		}
 	}
 	return projectionEntry{kind: projectionEntryUnknown}

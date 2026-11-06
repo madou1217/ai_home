@@ -27,6 +27,8 @@ var (
 const (
 	providerCodex  = "codex"
 	providerClaude = "claude"
+	providerGemini = "gemini"
+	providerGrok   = "grok"
 )
 
 // Clock 返回凭据 CAS 使用的当前业务时间。
@@ -93,7 +95,9 @@ func (preparer *Preparer) PrepareAccountDeletion(
 	if len(roots) == 0 {
 		return nil
 	}
-	if account.ProviderID() != providerCodex && account.ProviderID() != providerClaude {
+	// 投影合同是表驱动的：没有注册规格的 Provider 不能被删除流程半途处理。
+	// 新增 Provider 时先补规格，或把它写进 nodeOnlyDeletionReasons 并留在 Node。
+	if _, found := projectionSpecFor(account.ProviderID()); !found {
 		return preparationFailure("Provider 投影合同未注册", nil)
 	}
 	if err := preparer.reconcileCredential(ctx, account, roots); err != nil {
@@ -140,6 +144,7 @@ func (preparer *Preparer) findProjectionRoots(
 ) ([]projectionRoot, error) {
 	providerID := account.ProviderID()
 	accountRef := account.Ref().String()
+	spec, hasSpec := projectionSpecFor(providerID)
 	candidates := []projectionRoot{{
 		path: filepath.Join(
 			preparer.aiHomeDir,
@@ -150,16 +155,17 @@ func (preparer *Preparer) findProjectionRoots(
 		),
 		kind: projectionKindAccount,
 	}}
-	if providerID == providerCodex {
-		candidates = append(candidates, projectionRoot{
-			path: filepath.Join(
-				preparer.aiHomeDir,
-				"run",
-				"codex-desktop",
-				accountRef,
-			),
-			kind: projectionKindCodexDesktop,
-		})
+	// 额外的固定投影根也来自规格表：这里不再按 Provider 名判断是否存在
+	// Codex Desktop 这类旁路投影。未注册的 Provider 只探标准投影根，
+	// 让「没有投影 → 无操作」的既有语义保持不变。
+	if hasSpec {
+		for _, extra := range spec.extraRoots {
+			segments := append([]string{preparer.aiHomeDir}, extra.prefix...)
+			candidates = append(candidates, projectionRoot{
+				path: filepath.Join(append(segments, accountRef)...),
+				kind: extra.kind,
+			})
+		}
 	}
 
 	roots := make([]projectionRoot, 0, len(candidates))

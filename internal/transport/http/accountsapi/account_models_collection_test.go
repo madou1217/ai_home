@@ -14,12 +14,23 @@ import (
 
 // fakeAccountModelReader 返回固定的批量模型关系。
 type fakeAccountModelReader struct {
-	sets []accountapp.AccountModelSet
-	err  error
+	sets        []accountapp.AccountModelSet
+	generation  int64
+	updatedAtMS int64
+	stamp       accountapp.AccountModelCatalogStamp
+	err         error
 }
 
-func (reader fakeAccountModelReader) ListAllAccountModels(context.Context) ([]accountapp.AccountModelSet, error) {
-	return reader.sets, reader.err
+func (reader fakeAccountModelReader) ListAllAccountModels(context.Context) (accountapp.AccountModelCatalog, error) {
+	return accountapp.AccountModelCatalog{
+		Sets:        reader.sets,
+		Generation:  reader.generation,
+		UpdatedAtMS: reader.updatedAtMS,
+	}, reader.err
+}
+
+func (reader fakeAccountModelReader) AccountModelCatalogStamp(context.Context) (accountapp.AccountModelCatalogStamp, error) {
+	return reader.stamp, reader.err
 }
 
 func buildModelSet(t *testing.T, ref, provider, model string, policy accountapp.ModelManualPolicy) accountapp.AccountModelSet {
@@ -131,5 +142,86 @@ func TestAccountModelsCollectionWithoutReaderReturns503(t *testing.T) {
 	handler.handleAccountModelsCollection(recorder, request)
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", recorder.Code)
+	}
+}
+
+// TestAccountModelsCollectionExposesCatalogFingerprint 覆盖空表、单行、多行三种
+// 批量投影：generation 与 updated_at_ms 必须来自同一次读取，并且空表是 0 而不是
+// 当前时间。Node 的条件刷新依赖这两个字段判断「是否还要整份拉取」。
+func TestAccountModelsCollectionExposesCatalogFingerprint(t *testing.T) {
+	single := buildModelSet(t, "acct_0123456789abcdef0123", "codex", "gpt-5", accountapp.ModelPolicyInherit)
+	multiFirst := buildModelSet(t, "acct_0123456789abcdef0123", "codex", "gpt-5", accountapp.ModelPolicyInherit)
+	multiSecond := buildModelSet(t, "acct_ffffffffffffffffffff", "claude", "claude-sonnet", accountapp.ModelPolicyInherit)
+	cases := []struct {
+		name        string
+		sets        []accountapp.AccountModelSet
+		generation  int64
+		updatedAtMS int64
+		wantRows    int
+	}{
+		{name: "empty", sets: nil, generation: 0, updatedAtMS: 0, wantRows: 0},
+		{name: "single", sets: []accountapp.AccountModelSet{single}, generation: 1_790_000_000_001, updatedAtMS: 1_790_000_000_000, wantRows: 1},
+		{name: "multiple", sets: []accountapp.AccountModelSet{multiFirst, multiSecond}, generation: 1_790_000_000_502, updatedAtMS: 1_790_000_000_500, wantRows: 2},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			handler := &Handler{accountModels: fakeAccountModelReader{
+				sets:        item.sets,
+				generation:  item.generation,
+				updatedAtMS: item.updatedAtMS,
+			}}
+			request := httptest.NewRequest(http.MethodGet, AccountModelsCollectionPath, nil)
+			recorder := httptest.NewRecorder()
+			handler.handleAccountModelsCollection(recorder, request)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				Data        []json.RawMessage `json:"data"`
+				Generation  int64             `json:"generation"`
+				UpdatedAtMS int64             `json:"updated_at_ms"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("解析响应失败: %v", err)
+			}
+			if len(payload.Data) != item.wantRows {
+				t.Fatalf("data 行数 = %d, want %d", len(payload.Data), item.wantRows)
+			}
+			if payload.Generation != item.generation || payload.UpdatedAtMS != item.updatedAtMS {
+				t.Fatalf("指纹 = generation %d / updated_at_ms %d, want %d / %d",
+					payload.Generation, payload.UpdatedAtMS, item.generation, item.updatedAtMS)
+			}
+		})
+	}
+}
+
+// TestAccountModelsCollectionMetaOnlyReturnsStamp 覆盖条件刷新的轻量探测：
+// meta_only=1 只回指纹与空 data，不返回账号行，也不能被过滤参数解析拒绝。
+func TestAccountModelsCollectionMetaOnlyReturnsStamp(t *testing.T) {
+	handler := &Handler{accountModels: fakeAccountModelReader{
+		sets: []accountapp.AccountModelSet{
+			buildModelSet(t, "acct_0123456789abcdef0123", "codex", "gpt-5", accountapp.ModelPolicyInherit),
+		},
+		stamp: accountapp.AccountModelCatalogStamp{Generation: 42, UpdatedAtMS: 1_790_000_000_000},
+	}}
+	request := httptest.NewRequest(http.MethodGet, AccountModelsCollectionPath+"?meta_only=1", nil)
+	recorder := httptest.NewRecorder()
+	handler.handleAccountModelsCollection(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Data        []json.RawMessage `json:"data"`
+		Generation  int64             `json:"generation"`
+		UpdatedAtMS int64             `json:"updated_at_ms"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if len(payload.Data) != 0 {
+		t.Fatalf("meta_only 不应返回账号行, got %d", len(payload.Data))
+	}
+	if payload.Generation != 42 || payload.UpdatedAtMS != 1_790_000_000_000 {
+		t.Fatalf("指纹 = %d / %d", payload.Generation, payload.UpdatedAtMS)
 	}
 }

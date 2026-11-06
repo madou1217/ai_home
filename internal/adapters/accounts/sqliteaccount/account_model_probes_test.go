@@ -39,10 +39,11 @@ func TestRecordModelProbeRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordModelProbe(success) error = %v", err)
 	}
-	sets, err := store.ListAllAccountModels(ctx)
+	catalog, err := store.ListAllAccountModels(ctx)
 	if err != nil {
 		t.Fatalf("ListAllAccountModels() error = %v", err)
 	}
+	sets := catalog.Sets
 	if len(sets) != 1 {
 		t.Fatalf("账号数 = %d, want 1", len(sets))
 	}
@@ -66,10 +67,11 @@ func TestRecordModelProbeRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordModelProbe(failure) error = %v", err)
 	}
-	sets, err = store.ListAllAccountModels(ctx)
+	catalog, err = store.ListAllAccountModels(ctx)
 	if err != nil {
 		t.Fatalf("ListAllAccountModels() after failure error = %v", err)
 	}
+	sets = catalog.Sets
 	assertProbe(t, sets[0], secondAttempt, accountapp.ModelProbeSourceError,
 		"discovery_failed", failureMessage, 7)
 
@@ -85,10 +87,11 @@ func TestRecordModelProbeRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordModelProbe(second success) error = %v", err)
 	}
-	sets, err = store.ListAllAccountModels(ctx)
+	catalog, err = store.ListAllAccountModels(ctx)
 	if err != nil {
 		t.Fatalf("ListAllAccountModels() after second success error = %v", err)
 	}
+	sets = catalog.Sets
 	assertProbe(t, sets[0], thirdAttempt, accountapp.ModelProbeSourceRemote, "", "", 2)
 
 	var providerID string

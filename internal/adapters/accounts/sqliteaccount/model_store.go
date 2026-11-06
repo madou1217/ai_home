@@ -21,7 +21,7 @@ var _ accountapp.ModelProbeRecorder = (*Store)(nil)
 // 从 account_models 出发会让「探测过但目录为空」的账号消失；反过来无条件返回全部
 // 账号也不对——WebUI 合并缓存时会把「无模型且无错误」当成已确认为空，从而清掉旧目录。
 // 两样都没有的账号属于「未知」，留在账号列表里，不在这里伪造空结果。
-func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.AccountModelSet, error) {
+func (store *Store) ListAllAccountModels(ctx context.Context) (accountapp.AccountModelCatalog, error) {
 	const query = `
 		SELECT a.account_ref, a.provider_id,
 		       m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms,
@@ -32,9 +32,25 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 		LEFT JOIN account_model_probes AS p ON p.account_ref = a.account_ref
 		WHERE m.account_ref IS NOT NULL OR p.account_ref IS NOT NULL
 		ORDER BY a.account_ref, m.model_id`
-	rows, err := store.db.QueryContext(ctx, query)
+	if store == nil || store.db == nil || ctx == nil {
+		return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
+	}
+	// 指纹与 data 必须来自同一个读快照：否则并发写入会让 Node 拿到「新 generation +
+	// 旧目录」，条件刷新会一直误判为没有变化。
+	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("查询全量账号模型关系失败: %w", err)
+		return accountapp.AccountModelCatalog{}, fmt.Errorf("开始账号模型读取事务失败: %w", err)
+	}
+	defer func() {
+		_ = transaction.Rollback()
+	}()
+	stamp, err := readAccountModelCatalogStamp(ctx, transaction)
+	if err != nil {
+		return accountapp.AccountModelCatalog{}, err
+	}
+	rows, err := transaction.QueryContext(ctx, query)
+	if err != nil {
+		return accountapp.AccountModelCatalog{}, fmt.Errorf("查询全量账号模型关系失败: %w", err)
 	}
 	defer func() {
 		_ = rows.Close()
@@ -68,11 +84,11 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 			&source,
 			&modelCount,
 		); err != nil {
-			return nil, fmt.Errorf("读取全量账号模型关系失败: %w", err)
+			return accountapp.AccountModelCatalog{}, fmt.Errorf("读取全量账号模型关系失败: %w", err)
 		}
 		accountRef, err := accountcore.ParseAccountRef(accountRefText)
 		if err != nil {
-			return nil, ErrIncompatibleDatabase
+			return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
 		}
 		position, exists := index[accountRefText]
 		if !exists {
@@ -88,7 +104,7 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 				if !validPersistedTimestamp(attemptedAt) ||
 					modelCount.Int64 < 0 ||
 					modelCount.Int64 > accountapp.MaxDiscoveredModelsPerAccount {
-					return nil, ErrIncompatibleDatabase
+					return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
 				}
 				set.LastAttemptAt = attemptedAt
 				set.LastModelCount = int(modelCount.Int64)
@@ -103,7 +119,7 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 		}
 		policy, err := accountapp.ParseModelManualPolicy(manualPolicy.String)
 		if err != nil {
-			return nil, ErrIncompatibleDatabase
+			return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
 		}
 		model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
 			AccountRef:        accountRef,
@@ -113,14 +129,82 @@ func (store *Store) ListAllAccountModels(ctx context.Context) ([]accountapp.Acco
 			UpdatedAt:         time.UnixMilli(modelUpdatedAt.Int64).UTC(),
 		})
 		if err != nil {
-			return nil, ErrIncompatibleDatabase
+			return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
 		}
 		sets[position].Models = append(sets[position].Models, model)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历全量账号模型关系失败: %w", err)
+		return accountapp.AccountModelCatalog{}, fmt.Errorf("遍历全量账号模型关系失败: %w", err)
 	}
-	return sets, nil
+	if err := rows.Close(); err != nil {
+		return accountapp.AccountModelCatalog{}, fmt.Errorf("关闭全量账号模型关系游标失败: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return accountapp.AccountModelCatalog{}, fmt.Errorf("提交账号模型读取事务失败: %w", err)
+	}
+	return accountapp.AccountModelCatalog{
+		Sets:        sets,
+		Generation:  stamp.Generation,
+		UpdatedAtMS: stamp.UpdatedAtMS,
+	}, nil
+}
+
+// accountModelCatalogStampReader 让普通连接与读事务共用同一段聚合查询。
+type accountModelCatalogStampReader interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// readAccountModelCatalogStamp 计算目录指纹。
+//
+// generation = max(updated_at_ms) + 行数。所有现有写路径（替换发现结果、人工策略、
+// 探测事实、账号级联删除）都会改变这两个输入之一：
+//   - 正常写入把 updated_at_ms 推到写入时刻，generation 单调前进；
+//   - 同一毫秒内的增删、或级联删除（MAX 不变但行数少了）由行数项区分。
+//
+// 它不是数据库序列，因此不保证跨「行数减少且 MAX 未前进」的场景严格单调；
+// 读取方必须把 generation 变小也当成「需要重新拉取」。
+func readAccountModelCatalogStamp(
+	ctx context.Context,
+	reader accountModelCatalogStampReader,
+) (accountapp.AccountModelCatalogStamp, error) {
+	const query = `
+		SELECT
+			COALESCE((SELECT MAX(updated_at_ms) FROM account_models), 0),
+			(SELECT COUNT(*) FROM account_models),
+			COALESCE((SELECT MAX(updated_at_ms) FROM account_model_probes), 0),
+			(SELECT COUNT(*) FROM account_model_probes)`
+	var (
+		modelUpdatedAtMS int64
+		modelRowCount    int64
+		probeUpdatedAtMS int64
+		probeRowCount    int64
+	)
+	if err := reader.QueryRowContext(ctx, query).Scan(
+		&modelUpdatedAtMS,
+		&modelRowCount,
+		&probeUpdatedAtMS,
+		&probeRowCount,
+	); err != nil {
+		return accountapp.AccountModelCatalogStamp{}, fmt.Errorf("读取账号模型目录代次失败: %w", err)
+	}
+	updatedAtMS := modelUpdatedAtMS
+	if probeUpdatedAtMS > updatedAtMS {
+		updatedAtMS = probeUpdatedAtMS
+	}
+	return accountapp.AccountModelCatalogStamp{
+		Generation:  updatedAtMS + modelRowCount + probeRowCount,
+		UpdatedAtMS: updatedAtMS,
+	}, nil
+}
+
+// AccountModelCatalogStamp 只读取目录指纹，供条件刷新做轻量探测。
+func (store *Store) AccountModelCatalogStamp(
+	ctx context.Context,
+) (accountapp.AccountModelCatalogStamp, error) {
+	if store == nil || store.db == nil || ctx == nil {
+		return accountapp.AccountModelCatalogStamp{}, ErrIncompatibleDatabase
+	}
+	return readAccountModelCatalogStamp(ctx, store.db)
 }
 
 // RecordModelProbe 追加或更新一个账号的最近一次探测事实。

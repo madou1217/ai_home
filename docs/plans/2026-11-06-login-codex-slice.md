@@ -59,3 +59,88 @@ Go 侧同一条链已完整实现（尽管 Node 从不调用）：
 - Go 的 Complete 同步等 token+注册（oauth client 10s 超时，composition.go:88）：Node 转发超时必须 >10s，
   否则 Go 已 claim 而失败，且 `job_not_pending` 不可重试；
 - Go 注册完成到 Node adoption 之间账号页查不到账号 → 切片必须包含「主动 reconcile」。
+
+## Begin 半程验证（2026-11-06 22:52–22:56 CST）
+
+> 只验 Begin：不打开浏览器、不完成授权、不消耗账号；未改 Go 代码。
+
+### 命令链路
+
+1. 开关：`app-state.db` 的 `config:server` 原本没有 `codexBrowserAuthViaGo`（缺省 false）。
+   用 node:sqlite 备份原值后置为 true，其它键逐字节保留：
+   ```
+   原值 = <absent>；original sha256 = 3ba3255c58a5d7a490e36999fd9c8b3a81ec85b1e5c0ee38e76f8b45172f55ae
+   ```
+2. 重启网关（沿用原参数，`HOME=/Users/model`、`AIH_HOME_DIR=/Users/model/.ai_home`）：
+   ```
+   launchctl remove com.meadeo.aih-server
+   launchctl submit -l com.meadeo.aih-server -o <server.log> -e <server.log> -- /bin/bash -lc      'export HOME=/Users/model AIH_HOME_DIR=/Users/model/.ai_home; cd <repo>;       exec node lib/cli/app.js server serve --host 0.0.0.0 --port 9527       --no-proxy localhost,127.0.0.1,0.0.0.0,192.168.31.57 --models-probe-accounts 8 --window-activation'
+   ```
+   `/healthz` 在 9s 内 200；`/readyz` 的 `go_core.state=ready`（pid 25253）。
+3. Begin（管理密钥走 `Authorization: Bearer`）：
+   ```
+   POST /v0/webui/accounts/add
+   {"provider":"codex","authMode":"oauth-browser"}
+
+   200 {"ok":true,"status":"pending","jobId":"95128ca4-12bc-4400-9647-e1e59ca2549f",
+        "authorizationUrl":"","callbackCaptureStatus":"starting"}
+   ```
+   1s 后 `GET /v0/webui/accounts/add/jobs/<nodeJobId>` 已带 `authorizationUrl`，
+   `authProgressState=auth_url_ready`，job 日志出现 `Go OAuth Job 已创建：e6190a97…`。
+
+### URL 关键参数对照（Go: internal/adapters/accountauth/codexoauth/provider.go）
+
+| 参数 | Begin 实际值 | Go 常量/写法 | 结果 |
+| --- | --- | --- | --- |
+| authorize endpoint | `https://auth.openai.com/oauth/authorize` | 同值 | PASS |
+| client_id | `app_EMoamEEZ73f0CkXaXp7hrann` | 同值 | PASS |
+| redirect_uri | `http://localhost:1455/auth/callback` | 同值 | PASS |
+| code_challenge_method | `S256` | 同值 | PASS |
+| originator | `codex_cli_rs` | 同值 | PASS |
+| state | 43 字符 base64url，解码 32B（`z0eUYQsj…`） | `GenerateState(random, 32)` | PASS |
+| code_challenge | 43 字符 base64url | `GeneratePKCE(random, 64)` 的 S256 | PASS |
+
+state 来源判定：Node 在 `useGoAuthJob` 分支把 `state` 置空（web-account-auth.js:1093），
+Begin 响应初始 `authorizationUrl` 为空，URL 来自 Go 返回的 `authorization_url`；Node 侧没有生成
+PKCE/state 的代码路径。另注：`originator=codex_cli_rs` 与 Go 一致，但仍是本文档 §3 风险 1 的
+待统一项（Node 旧路径用 `Codex Desktop`），本次只验证未切换。
+
+### Go job 是否落下
+
+Node 没有 `/v1/management/account-auth-jobs` 中转路由，直接用 Go 子进程的 management key
+直连 `127.0.0.1:<go-port>` 查询（不打印密钥）：
+
+```
+GET /v1/management/account-auth-jobs/e6190a97...
+200 {"status":"pending","provider_id":"codex","created_at":"2026-11-06T14:53:01.876118Z",
+     "expires_at":"2026-11-06T15:03:01.876118Z"}
+```
+
+job id `e6190a97…` 与 Node 日志中的 `_goAuthJobId` 一致，创建时间与 Node job 同一秒。
+
+### 取消与 pending 释放
+
+```
+POST /v0/webui/accounts/add/jobs/95128ca4.../cancel
+200 {"ok":true,"job":{"status":"cancelled","authProgressState":"cancelled"}}
+
+GET go /v1/management/account-auth-jobs/e6190a97...
+200 {"status":"cancelled","failure_code":"cancelled","finished_at":"2026-11-06T14:53:42.178428Z"}
+```
+
+随后立即第二次 Begin，未被 `active_job_exists` 拦截：
+
+```
+POST /v0/webui/accounts/add -> {"ok":true,"status":"pending","jobId":"ca64acc7-..."}
+job 日志 -> Go OAuth Job 已创建：1f2eea15...
+取消后 Go 查询 -> {"status":"cancelled","failure_code":"cancelled"}
+```
+
+### 复原确认
+
+- 用备份原值写回 `config:server`，`restoredExactly=true`，sha256 回到
+  `3ba3255c…f55ae`，`codexBrowserAuthViaGo` 键不存在（恢复缺省 false）；
+- 原参数再次 `launchctl remove + submit`，`/healthz` 200（8s 内），`go_core.state=ready`；
+- 只读探测旧路径：`GET /v0/webui/accounts` 200、32 个账号、codex 1 个；未发起任何新登录；
+- 临时备份/脚本/响应文件已删除；未打开浏览器、未完成授权、未消耗账号、未改 Go 代码、
+  未 `git add` / `git commit`。

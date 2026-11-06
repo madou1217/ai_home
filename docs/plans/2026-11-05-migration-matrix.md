@@ -168,10 +168,19 @@
     - 同时修掉 Go 承接后暴露的响应保真度回归：Anthropic 上游转 OpenAI 的非流式与流式
       两条路径（model 回落请求模型、content、tool_calls、usage、[DONE]）。
 
-    **遗留（下一步）**：`/v1/models` 从 205 掉到 186——Go 的公开目录按「可路由模型」
-    构建，被排除的 4 个账号的 19 个模型不再列出，但它们仍由 Node 经 `model_not_routable`
-    承接。修法是把「目录」与「可路由」拆开：目录用 Node 推送的完整投影（205），
-    `routable_model_ids` 继续只含 Go 能路由的 186，交还判定仍读后者。
+    **2026-11-06 收尾：排除判据从「自定义上游」改成「Go 服务不了」**（`42c75940`）。
+    - 自定义上游的 codex/claude 走 canonical 通道，适配器会用账号自己的 base_url → 交给 Go；
+      只有「自定义上游 + 仅 relay 通道」才排除（relay 端点是发行版硬编码）。
+    - 每进程首圈强制对齐排除表：排除是派生事实，重启后旧 `excluded=1` 必须被清掉。
+    - 池门判据从「承载者全为 relay」改成「承载者全为 Go 可服务」——否则池里有一个
+      gemini 账号就把 claude/codex/agy 的 canonical 模型全留在 Node。
+    - 真机：`/v1/models` 回到 **205**（claude 17 / gpt-codex 17 / gemini 21）；
+      `claude-sonnet-4-6` 请求由 Go 承接，`usage_ledger` 5 → 6；
+      排除表只剩 1 个账号（gemini 占位账户：`VERTEX_AI_PLACEHOLDER=true`、base_url 指向
+      本机 9527，本身没有真实上游）。
+    - **最后一个刻意例外**：钉选请求（`x-account-ref`）命中自定义上游时仍交还 Node。
+      钉选是独占路由，Go 按头直打该账号，路由排除对它无效；要放开得先确认 Go 的
+      canonical 钉选语义与 Node 一致（CLI 启动路径大量使用钉选）。
 
 10b. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
     真机对比：两侧 `/healthz` 都是 200 且 body 除空白外一致；`/readyz` 都是 200，

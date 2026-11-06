@@ -360,3 +360,20 @@ hasModelCacheSync false
 运行：`HOME=/Users/model node --test test/webui-model*.test.js test/account-*.test.js test/source-encoding.test.js`
 （153 passed / 0 failed）。
 
+### 9.5 真机验证：旧调度器已退役（2026-11-07，verify-scheduler-retired）
+
+按原参数重启（launchd `com.meadeo.aih-server`，`HOME=/Users/model`、`AIH_HOME_DIR=/Users/model/.ai_home`，
+`--host 0.0.0.0 --port 9527 --no-proxy localhost,127.0.0.1,0.0.0.0,192.168.31.57 --models-probe-accounts 8 --window-activation`）。
+Node pid 38581，Go pid 38934；`/healthz` 200，`/readyz` 200、`go_core.state=ready`、`accounts_synced=true`。
+
+| 断言 | 结果 |
+| --- | --- |
+| a. 模型页数据 | `/v0/webui/models` 200（419,328 B），10 个 provider；`/v0/webui/accounts` 32 个账号 / 11 个 provider；`byAccountRef=30`、`errorsByAccountRef=3`。provider 模型数与重启前逐项一致：codebuddy 26、claude 5、workbuddycn 20、workbuddy 26、qoder 15、codebuddycn 21、zcode 2、opencode 110、codex 35、cline 16。 |
+| b. 旧轮询痕迹 | 重启后累计 112 行日志；`webui-model-refresh`=0、`probe-index`=0、`WebUI 模型探测`=0、`requestWebUiModelProbe`=0、`touchWebUiModelActivity`=0、`model-probe-index`=0、`模型探测`=0。60s 观察窗口只有 health / UI access / `reverse_tunnel_retry`。 |
+| c. 账号无损编辑触发刷新 | 对 codex `acct_c016fd7eee0f64163068` 做 status up→up 的无损写入（`POST /v0/management/state-index/operational-status`，200 / `updated:true`）；Go metrics 的 `/v1/management/accounts/<ref>/models/refresh` 路径 +1（server.log 19:13:07.913Z 记录该次触发），没有额外 timer。 |
+| d. Go 不可用时降级 | SIGSTOP Go pid 38934 后同样触发一次：约 30s（15×2s 轮询）后 Node 判超时并把该账号 `accountUpdatedAt` 删除；持久化快照的 `byAccount[<ref>]` 仍为 31 个模型（`auto` / `claude-haiku-4.5` / `claude-opus-4-6-thinking` 等）。SIGCONT 后 `/readyz` 200、`go_core` 恢复 ready；Go 日志在 19:14:45 记录 `context canceled`，与 Node 30s 超时一致。 |
+
+结论：未发现旧调度器的残留轮询；两次显式触发各产生 1 次 Go `models/refresh`（Go metrics 该路径最终计数 2），
+Go 不可用时只清 `accountUpdatedAt`、不清 `byAccount`。最终 `/healthz` 200、`/readyz` 200、`go_core=ready`，
+`/v0/webui/models` 200，网关健康。
+

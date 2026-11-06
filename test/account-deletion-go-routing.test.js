@@ -116,10 +116,11 @@ function createGoHost(mode) {
   };
 }
 
-async function deleteViaRoute({ dir, provider, goHost }) {
+async function deleteViaRoute({ dir, provider, goHost, force = false, extraCtx = {} }) {
   const writes = [];
-  const url = new URL(`http://127.0.0.1/v0/webui/accounts/${provider}/${ACCOUNT_REF}`);
+  const url = new URL(`http://127.0.0.1/v0/webui/accounts/${provider}/${ACCOUNT_REF}${force ? '?force=1' : ''}`);
   const ctx = {
+    ...extraCtx,
     pathname: url.pathname,
     url,
     req: { url: url.pathname + url.search },
@@ -184,6 +185,46 @@ test('Node 删除名单与 Go projectionSpecs 完全一致', () => {
   assert.deepEqual(
     [...GO_DELETION_PROVIDERS].sort(),
     readGoProjectionProviders()
+  );
+});
+
+test('required_unavailable 在 release 之前拒绝：强杀占用者的事一步都不做', async (t) => {
+  const dir = makeAiHome(t);
+  seedAccount(dir, 'codex');
+  const { host, calls } = createGoHost('disabled');
+  const aborted = [];
+  const unregistered = [];
+  const run = {
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    runId: 'run-1',
+    sessionId: 'session-1',
+    abort: () => aborted.push('run-1')
+  };
+
+  // force=1 表示用户已经确认「终止占用者并继续删除」；但 Go Core 不可用时删除
+  // 根本无法落库，顺序必须是先 503、后 release（绝不能先杀再拒）。
+  const result = await deleteViaRoute({
+    dir,
+    provider: 'codex',
+    goHost: host,
+    force: true,
+    extraCtx: {
+      listNativeChatRuns: () => [run],
+      getNativeChatRun: (runId) => (runId === run.runId ? run : null),
+      unregisterNativeChatRun: (runId) => unregistered.push(runId),
+      listDesktopInstances: () => []
+    }
+  });
+
+  assert.equal(result.status, 503);
+  assert.equal(result.payload.error, 'go_core_required');
+  assert.deepEqual(aborted, [], '不得在确认删除无法执行之前终止会话');
+  assert.deepEqual(unregistered, [], '不得注销运行中的会话');
+  assert.deepEqual(calls, []);
+  assert.ok(
+    resolveAccountRef(fs, dir, ACCOUNT_REF, { bestEffort: true }),
+    '账号行不应被删除'
   );
 });
 

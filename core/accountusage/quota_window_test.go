@@ -250,14 +250,22 @@ func TestBuildQuotaWindowsIgnoresOtherWindowLengthsAndKeys(t *testing.T) {
 	}
 }
 
-func TestQuotaWindowDimensionsAreCopied(t *testing.T) {
-	dimensions := QuotaWindowDimensions()
-	if len(dimensions) != 3 {
-		t.Fatalf("维度数量 = %d, want 3", len(dimensions))
+func TestFormatQuotaWindowLabel(t *testing.T) {
+	cases := map[int64]string{
+		300:   "5h",
+		10080: "7天",
+		43200: "30天",
+		720:   "12h",
+		724:   "12h4m",
+		1440:  "1天",
+		1500:  "1天1h",
+		45:    "45分钟",
+		0:     "当前额度",
 	}
-	dimensions[0].Label = "changed"
-	if QuotaWindowDimensions()[0].Label != "5h" {
-		t.Fatalf("调用方修改返回值不应影响包级维度")
+	for minutes, want := range cases {
+		if got := FormatQuotaWindowLabel(minutes); got != want {
+			t.Fatalf("FormatQuotaWindowLabel(%d) = %q, want %q", minutes, got, want)
+		}
 	}
 }
 

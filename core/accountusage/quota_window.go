@@ -38,17 +38,36 @@ type QuotaWindowDimension struct {
 	Label         string
 }
 
-var quotaWindowDimensions = []QuotaWindowDimension{
-	{WindowMinutes: 300, Label: "5h"},
-	{WindowMinutes: 10080, Label: "7days"},
-	{WindowMinutes: 43200, Label: "30days"},
-}
-
-// QuotaWindowDimensions 返回统计维度的副本，避免调用方改到包级变量。
-func QuotaWindowDimensions() []QuotaWindowDimension {
-	dimensions := make([]QuotaWindowDimension, len(quotaWindowDimensions))
-	copy(dimensions, quotaWindowDimensions)
-	return dimensions
+// FormatQuotaWindowLabel 把窗口长度渲染成可读标签，与 Node 的 formatWindowLabel 同口径。
+//
+// 不维护档位白名单：各 Provider 的窗口本来就不同（5h / 12h / 1天 / 7天 / 30天），
+// 上游随时会新增档位，写死一份表就等于每加一档都要改代码。固定档位只用习惯叫法，
+// 其余按天/时/分推导。
+func FormatQuotaWindowLabel(windowMinutes int64) string {
+	switch {
+	case windowMinutes <= 0:
+		return "当前额度"
+	case windowMinutes == 300:
+		return "5h"
+	case windowMinutes == 10080:
+		return "7天"
+	case windowMinutes == 43200:
+		return "30天"
+	}
+	days := windowMinutes / 1440
+	hours := (windowMinutes % 1440) / 60
+	restMinutes := windowMinutes % 60
+	switch {
+	case days > 0 && hours > 0:
+		return fmt.Sprintf("%d天%dh", days, hours)
+	case days > 0:
+		return fmt.Sprintf("%d天", days)
+	case hours > 0 && restMinutes > 0:
+		return fmt.Sprintf("%dh%dm", hours, restMinutes)
+	case hours > 0:
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%d分钟", restMinutes)
 }
 
 // QuotaWindowSample 是一次额度观测落库后的样本行。

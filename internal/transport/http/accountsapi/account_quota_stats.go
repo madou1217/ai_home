@@ -9,8 +9,10 @@ import (
 
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
+
+// maxQuotaStatsWindowMinutes 是窗口期的上界（366 天），只防荒谬值。
+const maxQuotaStatsWindowMinutes = 366 * 24 * 60
 
 // QuotaStatsManagement 提供按窗口期的额度统计。
 type QuotaStatsManagement interface {
@@ -79,12 +81,14 @@ func parseQuotaStatsQuery(
 	}
 	if raw := strings.TrimSpace(values.Get("window")); raw != "" {
 		windowMinutes, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || !isQuotaStatsDimension(windowMinutes) {
+		// 只挡脏参数（非整数 / 非正 / 荒谬值），不维护档位白名单：
+		// 上游随时新增 12h、1天 这类窗口，写死档位会让新维度直接 400。
+		if err != nil || windowMinutes <= 0 || windowMinutes > maxQuotaStatsWindowMinutes {
 			writeAPIError(
 				response,
 				http.StatusBadRequest,
 				"invalid_quota_stats_query",
-				"窗口长度只支持 300 / 10080 / 43200 分钟",
+				"窗口期必须是正整数分钟数",
 			)
 			return usageapp.QuotaStatsQuery{}, false
 		}
@@ -110,10 +114,5 @@ func parseQuotaStatsQuery(
 }
 
 func isQuotaStatsDimension(windowMinutes int64) bool {
-	for _, dimension := range usagecore.QuotaWindowDimensions() {
-		if dimension.WindowMinutes == windowMinutes {
-			return true
-		}
-	}
-	return false
+	return windowMinutes > 0 && windowMinutes <= maxQuotaStatsWindowMinutes
 }

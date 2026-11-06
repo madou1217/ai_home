@@ -386,3 +386,44 @@ test('非法 granularity 400', async (t) => {
   assert.equal(ctx.writes[0].status, 400);
   assert.equal(ctx.writes[0].payload.error, 'invalid_quota_granularity');
 });
+
+test('账号没有窗口证据时用 provider 声明的泛范围，且维度标记为不可用', async (t) => {
+  const dir = tmp(t);
+  seed(dir, { withSamples: false });
+  const ctx = createCtx({
+    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    query: `?to=${NOW}`,
+    dir
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+
+  const payload = ctx.writes[0].payload;
+  // codex 声明 5h + 周窗口（descriptor.quota.stats.windows），不再凭空多出 30 天。
+  assert.deepEqual(payload.dimensions.map((dimension) => dimension.windowMinutes), [300, 10080]);
+  assert.deepEqual(payload.dimensions.map((dimension) => dimension.available), [false, false]);
+  assert.equal(payload.granularity, 'day');
+});
+
+test('provider 没声明窗口且账号没证据：不给窗口维度', async (t) => {
+  const dir = tmp(t);
+  const db = openAppStateDatabase(fs, dir, { createIfMissing: true });
+  ensureAccountRefsTable(db);
+  db.prepare(`
+    INSERT INTO account_refs (account_ref, provider, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+  `).run(ACCOUNT_REF, 'kiro', 1, 1);
+  ensureQuotaWindowTables(db);
+  db.close();
+
+  const ctx = createCtx({
+    pathname: `/v0/webui/accounts/kiro/${ACCOUNT_REF}/quota-stats`,
+    query: `?to=${NOW}`,
+    dir
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+
+  const payload = ctx.writes[0].payload;
+  assert.deepEqual(payload.dimensions, []);
+  assert.equal(payload.granularity, 'day');
+  assert.equal(payload.emptyReason, 'no_usage_in_range');
+});

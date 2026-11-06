@@ -234,7 +234,11 @@ func TestQuotaStatsFallsBackToFirstAvailableDimension(t *testing.T) {
 	if len(result.Windows) != 1 {
 		t.Fatalf("窗口数 = %d, want 1", len(result.Windows))
 	}
-	if result.Dimensions[0].DataState != "empty" || result.Dimensions[1].DataState != "ready" {
+	// 维度只来自账号数据：没有 5h/30天 的样本就不该凭空出现这两个维度。
+	if len(result.Dimensions) != 1 || result.Dimensions[0].WindowMinutes != 10080 {
+		t.Fatalf("维度 = %+v, want 只有 10080", result.Dimensions)
+	}
+	if result.Dimensions[0].DataState != "ready" {
 		t.Fatalf("维度状态 = %+v", result.Dimensions)
 	}
 }
@@ -274,8 +278,9 @@ func TestQuotaStatsReportsDimensionUnavailable(t *testing.T) {
 	if result.EmptyReason != "dimension_unavailable" {
 		t.Fatalf("EmptyReason = %q", result.EmptyReason)
 	}
-	if len(result.Dimensions) != 3 || result.Dimensions[0].Available {
-		t.Fatalf("维度 = %+v", result.Dimensions)
+	// 没有样本、快照也拿不到 → 一个维度都不该造出来（以前会回落到写死的 5h/7天/30天）。
+	if len(result.Dimensions) != 0 {
+		t.Fatalf("维度 = %+v, want 空", result.Dimensions)
 	}
 	if result.Windows == nil || len(result.Windows) != 0 {
 		t.Fatalf("Windows 应为空切片而不是 null: %+v", result.Windows)

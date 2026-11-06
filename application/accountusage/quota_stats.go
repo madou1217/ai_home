@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -269,7 +270,19 @@ func (service *QuotaStatsService) BuildQuotaStats(
 	)
 	dimension, ok := pickQuotaStatsDimension(dimensions, query.WindowMinutes)
 	if !ok {
-		return QuotaStatsResult{}, ErrInvalidQuotaStatsQuery
+		// 显式点名了一个不存在的维度 = 参数无效；一个维度都没有 = 这个账号没有窗口期
+		// （积分/余额型），返回空结果让页面走日/周统计，而不是报错。
+		if query.WindowMinutes != 0 {
+			return QuotaStatsResult{}, ErrInvalidQuotaStatsQuery
+		}
+		return QuotaStatsResult{
+			GeneratedAtMS: nowMS,
+			Range:         QuotaStatsRange{FromMS: rangeFromMS, ToMS: nowMS, RangeDays: rangeDays},
+			Dimensions:    []QuotaStatsDimension{},
+			Summary:       QuotaStatsSummary{},
+			Windows:       []QuotaStatsWindow{},
+			EmptyReason:   "dimension_unavailable",
+		}, nil
 	}
 
 	result := QuotaStatsResult{
@@ -579,26 +592,45 @@ func buildQuotaStatsDimensions(
 	eventScopes []usagecore.QuotaWindowScope,
 	syntheticScopes []usagecore.QuotaWindowScope,
 ) []QuotaStatsDimension {
-	dimensions := make([]QuotaStatsDimension, 0, 3)
-	for _, dimension := range usagecore.QuotaWindowDimensions() {
+	// 维度从「样本 ∪ 重置事件 ∪ 当前快照」实际出现的窗口长度派生，不维护固定档位表：
+	// 不同 Provider 的窗口不同，同一 Provider 的不同套餐也不同（部分 Plus 没有 5h）。
+	minutes := make([]int64, 0, 4)
+	seenMinutes := make(map[int64]struct{}, 4)
+	for _, group := range [][]usagecore.QuotaWindowScope{scopes, eventScopes, syntheticScopes} {
+		for _, scope := range group {
+			if scope.WindowMinutes <= 0 {
+				continue
+			}
+			if _, exists := seenMinutes[scope.WindowMinutes]; exists {
+				continue
+			}
+			seenMinutes[scope.WindowMinutes] = struct{}{}
+			minutes = append(minutes, scope.WindowMinutes)
+		}
+	}
+	sort.Slice(minutes, func(left, right int) bool { return minutes[left] < minutes[right] })
+
+	dimensions := make([]QuotaStatsDimension, 0, len(minutes))
+	for _, windowMinutes := range minutes {
+		label := usagecore.FormatQuotaWindowLabel(windowMinutes)
 		item := QuotaStatsDimension{
-			WindowMinutes: dimension.WindowMinutes,
-			Label:         dimension.Label,
+			WindowMinutes: windowMinutes,
+			Label:         label,
 			Scopes:        []QuotaStatsScope{},
 		}
 		hasSamples := false
 		seen := make(map[string]struct{}, len(scopes))
 		for _, scope := range scopes {
-			if scope.WindowMinutes != dimension.WindowMinutes {
+			if scope.WindowMinutes != windowMinutes {
 				continue
 			}
-			label := strings.TrimSpace(scope.WindowLabel)
-			if label == "" {
-				label = dimension.Label
+			scopeLabel := strings.TrimSpace(scope.WindowLabel)
+			if scopeLabel == "" {
+				scopeLabel = label
 			}
 			item.Scopes = append(item.Scopes, QuotaStatsScope{
 				QuotaKey:         scope.QuotaKey,
-				Label:            label,
+				Label:            scopeLabel,
 				SampleCount:      scope.SampleCount,
 				LastCapturedAtMS: scope.LastCapturedAtMS,
 			})
@@ -610,19 +642,19 @@ func buildQuotaStatsDimensions(
 		// 有重置事件、但还没采到样本的窗口：维度同样可用。
 		// 老事件缺 window_minutes（0）无法归维，与 Node 一样跳过。
 		for _, scope := range eventScopes {
-			if scope.WindowMinutes != dimension.WindowMinutes {
+			if scope.WindowMinutes != windowMinutes {
 				continue
 			}
 			if _, exists := seen[scope.QuotaKey]; exists {
 				continue
 			}
-			label := strings.TrimSpace(scope.WindowLabel)
-			if label == "" {
-				label = dimension.Label
+			scopeLabel := strings.TrimSpace(scope.WindowLabel)
+			if scopeLabel == "" {
+				scopeLabel = label
 			}
 			item.Scopes = append(item.Scopes, QuotaStatsScope{
 				QuotaKey:         scope.QuotaKey,
-				Label:            label,
+				Label:            scopeLabel,
 				LastCapturedAtMS: scope.LastCapturedAtMS,
 			})
 			seen[scope.QuotaKey] = struct{}{}
@@ -630,19 +662,19 @@ func buildQuotaStatsDimensions(
 		// 当前快照里有、但还没采到样本的窗口：只贡献「维度可用」，
 		// 样本数保持 0，前端据此显示「等待采样」而不是「无此维度」。
 		for _, scope := range syntheticScopes {
-			if scope.WindowMinutes != dimension.WindowMinutes {
+			if scope.WindowMinutes != windowMinutes {
 				continue
 			}
 			if _, exists := seen[scope.QuotaKey]; exists {
 				continue
 			}
-			label := strings.TrimSpace(scope.WindowLabel)
-			if label == "" {
-				label = dimension.Label
+			scopeLabel := strings.TrimSpace(scope.WindowLabel)
+			if scopeLabel == "" {
+				scopeLabel = label
 			}
 			item.Scopes = append(item.Scopes, QuotaStatsScope{
 				QuotaKey:  scope.QuotaKey,
-				Label:     label,
+				Label:     scopeLabel,
 				Synthetic: true,
 			})
 			seen[scope.QuotaKey] = struct{}{}

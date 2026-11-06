@@ -66,8 +66,10 @@ func TestParseQuotaStatsQueryAcceptsValidParams(t *testing.T) {
 
 func TestParseQuotaStatsQueryRejectsInvalidParams(t *testing.T) {
 	cases := []string{
-		"window=123",
+		"window=0",
+		"window=-5",
 		"window=abc",
+		"window=999999999",
 		"range_days=0",
 		"range_days=91",
 		"unknown=1",

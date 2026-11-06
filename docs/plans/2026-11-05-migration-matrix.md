@@ -178,9 +178,12 @@
       `claude-sonnet-4-6` 请求由 Go 承接，`usage_ledger` 5 → 6；
       排除表只剩 1 个账号（gemini 占位账户：`VERTEX_AI_PLACEHOLDER=true`、base_url 指向
       本机 9527，本身没有真实上游）。
-    - **最后一个刻意例外**：钉选请求（`x-account-ref`）命中自定义上游时仍交还 Node。
-      钉选是独占路由，Go 按头直打该账号，路由排除对它无效；要放开得先确认 Go 的
-      canonical 钉选语义与 Node 一致（CLI 启动路径大量使用钉选）。
+    - 钉选请求（`x-account-ref`）命中自定义上游时，canonical 通道也已交给 Go
+      （`66e2838f`）：CLI 启动路径大量使用钉选，留在 Node 会让这批流量永远走不到 Go。
+      只剩 relay 通道的自定义上游钉选仍在 Node（端点硬编码）。
+      顺带修掉一个真机 400：Node 渲染 `custom_tool_call` 时沿用上游的 `fc_` id，
+      客户端回传后上游按类型校验前缀（expected `ctc`）；Go 的 codex 编码器不发 item id，
+      这条链路天然免疫。
 
 10b. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
     真机对比：两侧 `/healthz` 都是 200 且 body 除空白外一致；`/readyz` 都是 200，

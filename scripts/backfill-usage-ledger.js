@@ -75,7 +75,26 @@ async function main() {
   // 额度统计页是按账号看数据，这些历史本来就不会出现在页面上。
   const goDb = new DatabaseSync(GO_DB, { readOnly: true });
   const accounts = new Set(goDb.prepare('select account_ref from accounts').all().map((row) => String(row.account_ref)));
+  // 账号 ref 在迁移中被 rekey/合并过：历史用量按旧的 Node ref 记账，直接按原样导入
+  // 会因外键失败丢掉整段历史（真机：zcode 账号 13 条近 7 天记录全丢）。这里用同步状态
+  // 里的 links 把 Node ref 翻译成 Go ref，再按 Go 现存的账号过滤。
+  const stateDb = new DatabaseSync(APP_STATE, { readOnly: true });
+  const linksRow = stateDb.prepare("select value from app_kv where key='go-account-sync:state'").get();
+  stateDb.close();
+  const links = linksRow && linksRow.value ? JSON.parse(linksRow.value).links || {} : {};
+  // 切流时间点：Go 自己开始记账的第一条（source_key='' 是实时行）。此后的请求
+  // Go 已经记过，再从 Node 导入就是重复计数（真机：codex 账号虚高 4.3%，80 条重复）。
+  // 每个账号的切流点各自不同：Go 从哪一刻开始为该账号记账，就以那一刻为界。
+  // 全局最小时间会把「别的账号早就切了、这个账号还没切」的窗口一起排掉（真机：codex 少 14%）。
+  const liveSince = new Map();
+  for (const row of goDb.prepare("select account_ref, min(occurred_at_ms) as since from usage_ledger where source_key = '' group by account_ref").all()) {
+    liveSince.set(String(row.account_ref), Number(row.since) || 0);
+  }
   goDb.close();
+  const goRefFor = (nodeRef) => {
+    const link = links[nodeRef];
+    return link && link.goRef ? String(link.goRef) : String(nodeRef);
+  };
   const db = new DatabaseSync(APP_STATE, { readOnly: true });
   let cursor = 0;
   let total = 0;
@@ -99,7 +118,13 @@ async function main() {
       total += rows.length;
       const events = rows
         .map(toEvent)
-        .filter((event) => event.source_key !== 'node:' && accounts.has(event.account_ref));
+        .map((event) => ({ ...event, account_ref: goRefFor(event.account_ref) }))
+        .filter((event) => {
+          if (event.source_key === 'node:' || !accounts.has(event.account_ref)) return false;
+          // 该账号在 Go 里已有实时记账的起点；此前才需要从 Node 补历史。
+          const cutoff = liveSince.get(event.account_ref) || 0;
+          return !cutoff || event.occurred_at_ms < cutoff;
+        });
       if (!options.dryRun && events.length > 0) {
         const response = await fetch(ENDPOINT, {
           method: 'POST',

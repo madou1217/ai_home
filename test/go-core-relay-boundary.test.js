@@ -51,6 +51,26 @@ function explainPinnedRelayWithStaleRuntimeBlock() {
   });
 }
 
+// relay 通道（codebuddy 等）的自定义上游：端点写死在发行版里，Go 不能忠实转发。
+function explainPinnedRelayChannel() {
+  const account = {
+    accountRef: ACCOUNT_REF,
+    provider: 'codebuddy',
+    apiKeyMode: true,
+    baseUrl: 'http://relay.example.com/v1',
+    status: 'up'
+  };
+  return explainGoRouteDeferral({
+    entryId: 'gateway.openai.chat_completions',
+    model: 'DeepSeek-V4-Pro',
+    pinnedAccountRef: ACCOUNT_REF,
+    state: { accounts: { codebuddy: [account] } },
+    egressBoundRefs: () => new Set(),
+    goAcceptedErrorRuleRefs: () => new Set(),
+    goRoutableModelIds: () => new Set(['DeepSeek-V4-Pro'])
+  });
+}
+
 function explainUnpinnedRelay(routableModels = [MODEL]) {
   const account = customRelayAccount();
   return explainGoRouteDeferral({
@@ -87,17 +107,22 @@ function explainPinnedOfficialApiKey() {
   });
 }
 
-test('custom remote upstream accounts stay on Node instead of Go native quota state', () => {
-  const decision = explainPinnedRelay();
-
-  assert.deepEqual(decision, {
-    defer: true,
-    reason: 'custom_upstream_node_only'
+test('canonical 通道的自定义上游钉选交给 Go（适配器用账号自己的 base_url）', () => {
+  assert.deepEqual(explainPinnedRelay(), {
+    defer: false,
+    reason: ''
   });
 });
 
-test('a stale Go quota overlay cannot make a custom relay pin unusable before Node handles it', () => {
+test('陈旧的 Go 运行态叠加层不会让 canonical 钉选被判不可用', () => {
   assert.deepEqual(explainPinnedRelayWithStaleRuntimeBlock(), {
+    defer: false,
+    reason: ''
+  });
+});
+
+test('relay 通道的自定义上游钉选仍留在 Node（端点硬编码）', () => {
+  assert.deepEqual(explainPinnedRelayChannel(), {
     defer: true,
     reason: 'custom_upstream_node_only'
   });

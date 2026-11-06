@@ -165,6 +165,13 @@ func TestAccountModelProbesForwardMigrationFromV20(t *testing.T) {
 			t.Fatalf("drop %s error = %v", table, err)
 		}
 	}
+	// v26 给 usage_ledger 加了幂等导入键（列 + 部分唯一索引），夹具要代表 v20 结构。
+	if _, err := store.db.ExecContext(ctx, "DROP INDEX IF EXISTS idx_usage_ledger_source_key"); err != nil {
+		t.Fatalf("drop idx_usage_ledger_source_key error = %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, "ALTER TABLE usage_ledger DROP COLUMN source_key"); err != nil {
+		t.Fatalf("drop usage_ledger.source_key error = %v", err)
+	}
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 20"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)
 	}

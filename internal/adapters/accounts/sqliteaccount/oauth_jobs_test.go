@@ -302,6 +302,14 @@ func TestOAuthJobsForwardMigrationFromV16(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, "ALTER TABLE account_usage DROP COLUMN plan_type"); err != nil {
 		t.Fatalf("drop account_usage.plan_type error = %v", err)
 	}
+	// v26 给 usage_ledger 加了幂等导入键（列 + 部分唯一索引）；夹具代表真正的 v16
+	// 结构，回退时一并去掉，否则重放 v26 会撞上「列已存在」。
+	if _, err := store.db.ExecContext(ctx, "DROP INDEX IF EXISTS idx_usage_ledger_source_key"); err != nil {
+		t.Fatalf("drop idx_usage_ledger_source_key error = %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, "ALTER TABLE usage_ledger DROP COLUMN source_key"); err != nil {
+		t.Fatalf("drop usage_ledger.source_key error = %v", err)
+	}
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 16"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)
 	}

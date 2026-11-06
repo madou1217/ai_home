@@ -105,6 +105,7 @@ var expectedSchemaColumns = map[string][]string{
 		"cache_write_input_tokens",
 		"reasoning_tokens",
 		"total_tokens",
+		"source_key",
 	},
 	"account_tombstones": {
 		"tombstone_key",
@@ -293,6 +294,7 @@ var forwardMigrations = []string{
 	SchemaV23,
 	SchemaV24,
 	SchemaV25,
+	SchemaV26,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

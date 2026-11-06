@@ -122,7 +122,9 @@ type serverHandlers struct {
 	// webUI 托管 Web UI 构建产物（/ui/*）；nil 表示不由 Go 承接。
 	webUI http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
-	usageStats    http.Handler
+	usageStats http.Handler
+	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
+	usageImport   http.Handler
 	usageModels   http.Handler
 	usageSessions http.Handler
 	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
@@ -750,6 +752,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	usageSessionsHandler, err := usagestatsapi.NewSessionsHandler(authorizer, store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 会话用量 Handler 失败: %w", err)
+	}
+	usageImportHandler, err := usagestatsapi.NewImportHandler(authorizer, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量导入 Handler 失败: %w", err)
 	}
 	// 窗口统计与模型用量共用同一份定价快照：两处口径必须一致，否则同一账号
 	// 在「模型用量」和「额度统计」两个页面会显示不同的成本。
@@ -1385,6 +1391,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		usageStats:         usageStatsHandler,
 		usageModels:        usageModelsHandler,
 		usageSessions:      usageSessionsHandler,
+		usageImport:        usageImportHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
 		familyRelay:        familyRelayHandler,

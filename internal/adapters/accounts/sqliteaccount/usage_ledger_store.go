@@ -3,6 +3,7 @@ package sqliteaccount
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -162,3 +163,73 @@ var _ interface {
 	QueryUsageModels(context.Context, usageledger.Query) ([]usageledger.ModelStats, error)
 	QueryUsageSessions(context.Context, usageledger.Query) ([]usageledger.SessionStats, error)
 } = (*Store)(nil)
+
+// ImportUsageEvents 批量导入 Node 的历史 token 事实。
+//
+// 用 INSERT OR IGNORE 而不是 UPSERT：唯一键是 source_key，其它约束（账号外键、token
+// 不变量）失败时同样应当跳过——历史数据里可能有已删除账号的行，一条坏行不能让整批
+// 导入失败。返回值 imported 是真正写入的行数，skipped 包含重复与不合法行。
+func (store *Store) ImportUsageEvents(
+	ctx context.Context,
+	events []usageledger.ImportEvent,
+) (imported int, skipped int, err error) {
+	if store == nil || store.db == nil || ctx == nil {
+		return 0, 0, usageledger.ErrInvalidRecord
+	}
+	store.routingWrites.Lock()
+	defer store.routingWrites.Unlock()
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("开启用量导入事务失败: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	statement, err := tx.PrepareContext(ctx, `
+		INSERT OR IGNORE INTO usage_ledger (
+			account_ref, provider_id, model_id, session_id, occurred_at_ms,
+			input_tokens, output_tokens, cached_input_tokens,
+			cache_write_input_tokens, reasoning_tokens, total_tokens, source_key
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, 0, fmt.Errorf("准备用量导入语句失败: %w", err)
+	}
+	defer func() { _ = statement.Close() }()
+	for _, event := range events {
+		if !event.IsValid() {
+			skipped++
+			continue
+		}
+		result, execErr := statement.ExecContext(
+			ctx,
+			event.AccountRef.String(),
+			strings.ToLower(strings.TrimSpace(event.Provider)),
+			strings.TrimSpace(event.Model),
+			strings.TrimSpace(event.SessionID),
+			event.OccurredAt.UTC().UnixMilli(),
+			event.InputTokens,
+			event.OutputTokens,
+			event.CachedInputTokens,
+			event.CacheWriteInputTokens,
+			event.ReasoningTokens,
+			event.TotalTokens,
+			strings.TrimSpace(event.SourceKey),
+		)
+		if execErr != nil {
+			skipped++
+			continue
+		}
+		affected, affErr := result.RowsAffected()
+		if affErr != nil || affected == 0 {
+			skipped++
+			continue
+		}
+		imported++
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("提交用量导入事务失败: %w", err)
+	}
+	return imported, skipped, nil
+}

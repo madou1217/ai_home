@@ -81,7 +81,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
-	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 )
 
@@ -140,9 +139,6 @@ type serverHandlers struct {
 	modelAliases http.Handler
 	// modelAliasesWebUI 提供别名 CRUD 的 WebUI 契约（/v1/management/webui/model-aliases）。
 	modelAliasesWebUI http.Handler
-	// upstreamRules 接收 Node 推送的账号自定义上游错误规则投影
-	// （/v1/management/upstream-error-rules）。
-	upstreamRules http.Handler
 	// upstreamMappingGroups 是 Go 自有的上游错误映射组 CRUD
 	// （/v1/management/upstream-error-mapping-groups）。
 	upstreamMappingGroups http.Handler
@@ -1046,14 +1042,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建管理指标 Handler 失败: %w", err)
 	}
-	upstreamRulesHandler, err := upstreamrulesapi.NewHandler(upstreamrulesapi.Dependencies{
-		Authorizer: authorizer,
-		Service:    upstreamRulesService,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则投影接口失败: %w", err)
-	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1442,7 +1430,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		shutdown:              shutdownHandler,
 		modelAliases:          modelAliasesHandler,
 		modelAliasesWebUI:     modelAliasesWebUIHandler,
-		upstreamRules:         upstreamRulesHandler,
 		upstreamMappingGroups: upstreamMappingHandler,
 		accountRules:          accountRulesHandler,
 		modelCatalog:          modelCatalogHandler,

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
@@ -15,7 +14,7 @@ import (
 // 编译期确认：适配器满足账号规则持久化端口。
 var _ rulesapp.Repository = (*UpstreamErrorRuleRepository)(nil)
 
-// UpstreamErrorRuleRepository 把账号级规则、组挂载与兼容投影落到 aih.db。
+// UpstreamErrorRuleRepository 把账号级规则与组挂载落到 aih.db。
 //
 // 单独一个适配器而不是把方法挂到 Store 上：账号规则只服务管理链路与上游失败求值，
 // 与账号生命周期保持单向依赖，也方便单独测试。
@@ -55,7 +54,6 @@ func (repository *UpstreamErrorRuleRepository) AccountProvider(
 func (repository *UpstreamErrorRuleRepository) Load(
 	ctx context.Context,
 	accountRef string,
-	source rulesapp.Source,
 ) (rulesapp.Record, bool, error) {
 	if !repository.available(ctx) {
 		return rulesapp.Record{}, false, rulesapp.ErrServiceUnavailable
@@ -65,7 +63,7 @@ func (repository *UpstreamErrorRuleRepository) Load(
 		return rulesapp.Record{}, false, fmt.Errorf("开始账号规则读取事务失败: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	records, err := loadRuleRecords(ctx, transaction, source, accountRef)
+	records, err := loadRuleRecords(ctx, transaction, accountRef)
 	if err != nil {
 		return rulesapp.Record{}, false, err
 	}
@@ -79,33 +77,10 @@ func (repository *UpstreamErrorRuleRepository) Load(
 	return record, true, nil
 }
 
-// List 实现账号规则持久化端口。
-func (repository *UpstreamErrorRuleRepository) List(
-	ctx context.Context,
-	source rulesapp.Source,
-) ([]rulesapp.Record, error) {
-	if !repository.available(ctx) {
-		return nil, rulesapp.ErrServiceUnavailable
-	}
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("开始账号规则读取事务失败: %w", err)
-	}
-	defer func() { _ = transaction.Rollback() }()
-	records, err := loadRuleRecords(ctx, transaction, source, "")
-	if err != nil {
-		return nil, err
-	}
-	if err := transaction.Commit(); err != nil {
-		return nil, fmt.Errorf("提交账号规则读取事务失败: %w", err)
-	}
-	return sortedRecords(records), nil
-}
-
 // ReplaceAccount 实现账号规则持久化端口。
 //
-// 同一事务里清掉该账号的兼容投影：账号级配置一旦写入，它就是唯一有效来源，旧投影
-// 必须消失，否则用户在界面清空规则后旧的生效规则还会复活。
+// 同一事务里先删掉该账号的全部规则行：历史兼容投影可能留下 source=projection 的行，
+// 账号级配置写入后它就是唯一有效来源，旧行必须消失。
 func (repository *UpstreamErrorRuleRepository) ReplaceAccount(
 	ctx context.Context,
 	record rulesapp.Record,
@@ -170,41 +145,6 @@ func (repository *UpstreamErrorRuleRepository) ReplaceAccount(
 	return nil
 }
 
-// ReplaceProjection 实现账号规则持久化端口。
-func (repository *UpstreamErrorRuleRepository) ReplaceProjection(
-	ctx context.Context,
-	records []rulesapp.Record,
-) error {
-	if !repository.available(ctx) {
-		return rulesapp.ErrServiceUnavailable
-	}
-	repository.store.ruleWrites.Lock()
-	defer repository.store.ruleWrites.Unlock()
-
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("开始兼容投影写入事务失败: %w", err)
-	}
-	defer func() { _ = transaction.Rollback() }()
-	if _, err := transaction.ExecContext(
-		ctx,
-		"DELETE FROM account_upstream_error_rule WHERE source = ?",
-		rulesapp.SourceProjection,
-	); err != nil {
-		return fmt.Errorf("清理兼容投影失败: %w", err)
-	}
-	for _, record := range records {
-		record.Source = rulesapp.SourceProjection
-		if err := insertAccountRules(ctx, transaction, record, rulesapp.SourceProjection); err != nil {
-			return err
-		}
-	}
-	if err := transaction.Commit(); err != nil {
-		return fmt.Errorf("提交兼容投影写入失败: %w", err)
-	}
-	return nil
-}
-
 // DeleteAccountRules 实现账号规则持久化端口。
 func (repository *UpstreamErrorRuleRepository) DeleteAccountRules(
 	ctx context.Context,
@@ -248,7 +188,7 @@ func (repository *UpstreamErrorRuleRepository) ListAccountRefs(ctx context.Conte
 		return nil, rulesapp.ErrServiceUnavailable
 	}
 	const query = `
-		SELECT account_ref FROM account_upstream_error_rule
+		SELECT account_ref FROM account_upstream_error_rule WHERE source = 'account'
 		UNION
 		SELECT account_ref FROM account_upstream_error_group
 		ORDER BY account_ref`
@@ -283,7 +223,6 @@ func (repository *UpstreamErrorRuleRepository) available(ctx context.Context) bo
 func loadRuleRecords(
 	ctx context.Context,
 	querier mappingQuerier,
-	source rulesapp.Source,
 	onlyRef string,
 ) (map[string]rulesapp.Record, error) {
 	ruleQuery := `
@@ -291,7 +230,7 @@ func loadRuleRecords(
 		FROM account_upstream_error_rule r
 		JOIN accounts a ON a.account_ref = r.account_ref
 		WHERE r.source = ?`
-	arguments := []any{string(source)}
+	arguments := []any{string(rulesapp.SourceAccount)}
 	if onlyRef != "" {
 		ruleQuery += " AND r.account_ref = ?"
 		arguments = append(arguments, onlyRef)
@@ -316,7 +255,6 @@ func loadRuleRecords(
 			record = rulesapp.Record{
 				AccountRef: ref,
 				Provider:   provider,
-				Source:     source,
 				GroupIDs:   []string{},
 				Rules:      []rulescore.Rule{},
 			}
@@ -339,9 +277,6 @@ func loadRuleRecords(
 	}
 	_ = rows.Close()
 
-	if source != rulesapp.SourceAccount {
-		return records, nil
-	}
 	groupQuery := `
 		SELECT g.account_ref, a.provider_id, g.position, g.group_id
 		FROM account_upstream_error_group g
@@ -371,7 +306,6 @@ func loadRuleRecords(
 			record = rulesapp.Record{
 				AccountRef: ref,
 				Provider:   provider,
-				Source:     source,
 				GroupIDs:   []string{},
 				Rules:      []rulescore.Rule{},
 			}
@@ -386,20 +320,6 @@ func loadRuleRecords(
 		return nil, fmt.Errorf("遍历账号组挂载失败: %w", err)
 	}
 	return records, nil
-}
-
-// sortedRecords 把 map 转成按账号引用排序的切片。
-func sortedRecords(records map[string]rulesapp.Record) []rulesapp.Record {
-	refs := make([]string, 0, len(records))
-	for ref := range records {
-		refs = append(refs, ref)
-	}
-	sort.Strings(refs)
-	result := make([]rulesapp.Record, 0, len(refs))
-	for _, ref := range refs {
-		result = append(result, records[ref])
-	}
-	return result
 }
 
 // insertAccountRules 在事务内写入一个来源的全部规则。

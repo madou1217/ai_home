@@ -51,19 +51,19 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 299,
-      "endpoint_records": 288,
-      "unique_endpoint_patterns": 222,
-      "unique_http_endpoint_patterns": 220,
+      "route_records": 302,
+      "endpoint_records": 292,
+      "unique_endpoint_patterns": 226,
+      "unique_http_endpoint_patterns": 224,
       "unique_websocket_endpoint_patterns": 4,
-      "guard_records": 11,
+      "guard_records": 10,
       "fallback_records": 0
     },
     "go": {
-      "route_records": 53,
-      "endpoint_records": 52,
-      "unique_endpoint_patterns": 51,
-      "unique_http_endpoint_patterns": 51,
+      "route_records": 54,
+      "endpoint_records": 53,
+      "unique_endpoint_patterns": 52,
+      "unique_http_endpoint_patterns": 52,
       "unique_websocket_endpoint_patterns": 1,
       "guard_records": 0,
       "fallback_records": 1

@@ -1,7 +1,6 @@
 'use strict';
 
-// 账号级规则推送的契约：只推账号自身规则 + 挂载组 id；已拼装有效规则只作为
-// 双写开关下的兼容投影单独推送，不能混在账号级载荷里。
+// 账号级规则推送的契约：只推账号自身规则 + 挂载组 id，不推已拼装的有效规则。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -22,14 +21,13 @@ function rule(name, kind = 'rate_limited') {
 }
 
 function createHost(options = {}) {
-  const calls = { put: [], deleted: [], compat: [] };
+  const calls = { put: [], deleted: [] };
   let putAttempts = 0;
   const host = createGoCoreHost({
     settings: {
       enabled: false,
       accountSync: false,
-      routes: [],
-      upstreamRulesCompat: options.compat === true
+      routes: []
     },
     manifest: { entries: [] },
     log: { log() {}, error() {} },
@@ -68,19 +66,6 @@ function createHost(options = {}) {
       deleteAccountUpstreamErrorRules: async (accountRef) => {
         calls.deleted.push(accountRef);
         return { ok: true, status: 200, data: { deleted: true } };
-      },
-      pushUpstreamErrorRules: async (accounts) => {
-        calls.compat.push(accounts);
-        return {
-          ok: true,
-          status: 200,
-          data: {
-            generation: 5,
-            accepted_account_refs: accounts.map((account) => account.account_ref),
-            dropped: [],
-            mismatched_account_refs: [ACCOUNT_REF]
-          }
-        };
       }
     })
   });
@@ -114,36 +99,7 @@ test('默认只推账号级规则：不带已拼装的有效规则', async () =>
   assert.deepEqual(calls.put[0].payload.rules.map((item) => item.name), ['own']);
   // 旧引用必须清掉，否则 Node 清空规则后 Go 还会继续执行旧配置。
   assert.deepEqual(calls.deleted, [OLD_GO_REF]);
-  // 兼容投影默认不推。
-  assert.equal(calls.compat.length, 0);
   assert.equal(host.acceptedUpstreamErrorRuleRefs().has(ACCOUNT_REF), true);
-});
-
-test('打开双写开关时才额外推整份有效规则，并记录对拍差异', async () => {
-  const { host, calls } = createHost({
-    compat: true,
-    accounts: [{
-      accountRef: ACCOUNT_REF,
-      provider: 'codex',
-      env: { AIH_UPSTREAM_ERROR_RULES: JSON.stringify([rule('own')]) }
-    }],
-    pools: {
-      codex: [{
-        accountRef: ACCOUNT_REF,
-        provider: 'codex',
-        upstreamErrorRules: [rule('from-group'), rule('own')]
-      }]
-    },
-    existingRefs: [ACCOUNT_REF]
-  });
-
-  await host.pushUpstreamErrorRules();
-
-  assert.equal(calls.put.length, 1);
-  assert.equal(calls.compat.length, 1);
-  assert.deepEqual(calls.compat[0][0].rules.map((item) => item.name), ['from-group', 'own']);
-  const status = host.status();
-  assert.deepEqual(status.upstreamErrorRulesCompat.mismatched, [ACCOUNT_REF]);
 });
 
 test('瞬时失败不记指纹，下一轮会重试', async () => {

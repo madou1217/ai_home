@@ -156,8 +156,7 @@ var SchemaV27 string
 
 // SchemaV28 保存账号级上游错误规则与映射组挂载关系。
 //
-// 规则、挂载、兼容投影三者在同一张规则表里用 source 区分：账号级配置读取时要和
-// 映射组拼装，兼容投影是已经拼装好的有效规则，不能再展开一次。
+// source 列保留历史兼容投影的隔离标记；投影写入已移除，新数据只写 account。
 //
 //go:embed schema_v28.sql
 var SchemaV28 string

@@ -47,10 +47,10 @@ type Store struct {
 	// deferred 事务在并发写升级时容易返回 BUSY 而不是干净的版本冲突；进程内先
 	// 串行化，冲突判定就只剩版本比较，行为可预期。跨进程仍由 WHERE version=? 兜底。
 	mappingWrites sync.Mutex
-	// ruleWrites 串行化账号规则与兼容投影的写事务。
+	// ruleWrites 串行化账号规则的写事务。
 	//
-	// 兼容投影是整表替换，账号级配置是逐账号替换，两者会同时读写同一张表；进程内
-	// 串行化让「先删后插」的事务不会与另一条写路径交错，跨进程仍由 SQLite 事务兜底。
+	// 同一账号的规则与组挂载要在「先删后插」的事务里保持一致；进程内串行化让两条
+	// 账号写路径不会交错，跨进程仍由 SQLite 事务兜底。
 	ruleWrites sync.Mutex
 	// quotaPruneAtMS 是上一次额度采样清理的时刻，限频用，不需要严格精确。
 	quotaPruneAtMS atomic.Int64

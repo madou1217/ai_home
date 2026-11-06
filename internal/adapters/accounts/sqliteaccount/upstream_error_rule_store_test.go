@@ -208,54 +208,6 @@ func TestReplaceAccountRemovesPreviousConfiguration(t *testing.T) {
 	}
 }
 
-// 兼容投影是「已拼装有效规则」：读取时不再展开组；账号级写入后投影立即失效。
-func TestProjectionFallsBackAndIsClearedByAccountWrite(t *testing.T) {
-	ctx := context.Background()
-	store, _, _, refs := openRoutingExclusionStore(t)
-	mapping := newMappingService(t, store)
-	group := createRuleGroup(t, mapping, "组", "codex", namedRule(t, "group-rule"))
-	rules := newRuleService(t, store)
-	if _, err := rules.ReplaceProjection(ctx, []rulesapp.ProjectionAccount{{
-		AccountRef: refs[0].String(),
-		Provider:   "codex",
-		Rules:      []rulescore.Rule{namedRule(t, "projection-rule")},
-	}}); err != nil {
-		t.Fatalf("ReplaceProjection() error = %v", err)
-	}
-	projected, err := rules.Effective(ctx, refs[0].String())
-	if err != nil {
-		t.Fatalf("Effective() error = %v", err)
-	}
-	if projected.Source != rulesapp.SourceProjection ||
-		!equalNames(ruleNames(projected.EffectiveRules), []string{"projection-rule"}) {
-		t.Fatalf("兼容投影 = %+v", projected)
-	}
-	if _, err := rules.ReplaceAccount(ctx, refs[0].String(), rulesapp.AccountInput{
-		GroupIDs: []string{group.ID()},
-		Rules:    []rulescore.Rule{namedRule(t, "account-own")},
-	}); err != nil {
-		t.Fatalf("ReplaceAccount() error = %v", err)
-	}
-	account, err := rules.Effective(ctx, refs[0].String())
-	if err != nil {
-		t.Fatalf("Effective() error = %v", err)
-	}
-	if account.Source != rulesapp.SourceAccount ||
-		!equalNames(ruleNames(account.EffectiveRules), []string{"group-rule", "account-own"}) {
-		t.Fatalf("账号级配置 = %+v", account)
-	}
-	var projectionCount int
-	if err := store.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM account_upstream_error_rule WHERE account_ref = ? AND source = 'projection'",
-		refs[0].String(),
-	).Scan(&projectionCount); err != nil {
-		t.Fatalf("统计兼容投影失败: %v", err)
-	}
-	if projectionCount != 0 {
-		t.Fatalf("兼容投影未清理: %d", projectionCount)
-	}
-}
-
 func TestDeleteAccountRulesIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store, _, _, refs := openRoutingExclusionStore(t)

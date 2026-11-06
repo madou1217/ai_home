@@ -162,3 +162,34 @@ test('技能目录按子项并集后建链（不复制、不覆盖，实体只�
   assert.equal(fs.lstatSync(path.join(home, '.codebuddy-cn', 'skills')).isSymbolicLink(), true);
   assert.equal(fs.readFileSync(path.join(home, '.codebuddy', 'skills', 'local-only', 'SKILL.md'), 'utf8'), '# local\n');
 }));
+
+// 回归守卫（2026-11-06）：标题缓存上限必须高于家族会话文件总数。
+// 上限 256 时，本机 codebuddy + codebuddy-cn 的 340+ 个会话会让缓存每轮都驱逐一批，
+// 下一轮再整份重读（单个 98MB JSONL ≈ 7s），主线程被周期性打满、WebUI 全部接口卡死。
+// 判据：冷读一次后，热读不应再打开任何 .jsonl。
+test('标题缓存容量覆盖家族会话总数：热刷新不再重读会话文件', (t) => withHome(t, (home) => {
+  const { readCodebuddyProjects } = require('../lib/sessions/session-reader-codebuddy');
+  const sessionCount = 300;
+  for (let index = 0; index < sessionCount; index += 1) {
+    writeSession(home, '.codebuddy', 'proj-cache', `session-${index}`, [
+      JSON.stringify({ id: `u${index}`, timestamp: Date.now(), type: 'message', role: 'user', content: [{ type: 'input_text', text: `hi ${index}` }] }),
+      JSON.stringify({ id: `t${index}`, timestamp: Date.now(), type: 'ai-title', aiTitle: `title ${index}` })
+    ].join('\n') + '\n');
+  }
+
+  const sessions = readCodebuddyProjects('codebuddy', { hostHomeDir: home })
+    .flatMap((project) => project.sessions);
+  assert.equal(sessions.length, sessionCount);
+
+  // reader 用 fs-extra（不是 node:fs），必须打同一个对象上的方法。
+  const readerFs = require('fs-extra');
+  const originalOpenSync = readerFs.openSync;
+  let jsonlOpens = 0;
+  readerFs.openSync = function countingOpenSync(file, ...rest) {
+    if (String(file).endsWith('.jsonl')) jsonlOpens += 1;
+    return originalOpenSync.call(readerFs, file, ...rest);
+  };
+  t.after(() => { readerFs.openSync = originalOpenSync; });
+  readCodebuddyProjects('codebuddy', { hostHomeDir: home });
+  assert.equal(jsonlOpens, 0, '热刷新重读了会话文件：标题缓存容量不足以覆盖家族会话总数');
+}));

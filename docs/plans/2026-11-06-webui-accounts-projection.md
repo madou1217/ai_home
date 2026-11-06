@@ -1,7 +1,7 @@
 # WebUI 账号页投影迁 Go：切分方案
 
 日期：2026-11-06
-状态：方案（未实施）
+状态：切片 A/B 已落地；切片 C 列表与 watch 已接线，剩 UI 逐 Tab 验收
 
 ## 1. 现状
 
@@ -58,6 +58,18 @@ webui-account-live.js 里有三类 Node 独有事实：
 
 真机验证（2026-11-06 10:42 重启后）：43 行 `goAssembled=true`，`row_identical=true`、
 `field_mismatch=0`，服务日志无 `[aih:account-shadow]` 告警（即装配未改动任何一行）。
+
+**watch 与列表同口径（2026-11-06）**：`/v0/webui/accounts/watch` 的 SSE 与 WebSocket
+首帧 snapshot 也走 `assembleAccountListWithGo`；增量 `account` 事件与 `refreshLiveAccountRecord`
+的单账号响应走新增的 `assembleAccountRowWithGo`（按 Node ref 调 `GET /v1/management/accounts/{ref}`，
+Go 侧负责 ref 翻译）。三点取舍：
+
+1. **不缓存 Go 事实**：启停/凭据编辑后立刻可能发事件，用旧缓存装配会把新值覆盖回去（回弹）。
+   单账号取数的失败冷却与列表共用（5s），Go 抖动时事件原样用 Node 行。
+2. **先装配再开流**：若先开 SSE 再异步装配，期间的事件会先于 snapshot 到达、随后被旧
+   snapshot 覆盖；WebSocket 同样在装配完成后才挂 watcher。
+3. **token 用量事件不装配**：只改 `tokenUsage`（Node 独有字段），逐次打 Go 会把热路径变成
+   N+1；hydration 在无人监听时也跳过装配（首轮会让每个账号都变一次）。
 
 ## 3.5 前门翻转的字段来源（2026-11-06 盘点，切片 B 收尾时补）
 

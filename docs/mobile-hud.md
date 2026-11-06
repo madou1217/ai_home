@@ -478,7 +478,7 @@ MobilePage
 - `managementAPI.restart` / `watch`, through the shared `useManagementRestart`
 - `rotateManagementKey`, through the shared `saveServerConfig`
 - the control-plane selection services (the same ones `ControlPlaneProfileSelect` uses)
-- `DynamicWallpaperEngine`, `useHudPreferences` and `applyThemeMode`, through the shared `useAppearanceSettings`
+- `useHudPreferences` and `applyThemeMode`, through the shared `useAppearanceSettings`
 - `modelAliasesAPI.getAll` / `create` / `update` / `delete` / `toggle` and `modelsAPI.listCatalog`, through the shared `useModelAliases`
 
 **Component tree**

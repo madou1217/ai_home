@@ -1,7 +1,6 @@
 import {
   CloudServerOutlined,
   DesktopOutlined,
-  PictureOutlined,
   PlusOutlined,
   ReloadOutlined,
   RightOutlined,
@@ -208,21 +207,8 @@ export default function BasicSettingsPanel() {
       </HudSection>
 
       <HudSection title="外观个性化" code="DISPLAY">
-        <p className={styles.groupDesc}>自定义动态壁纸（自动萃取强调色并生成全局光晕背景）与 HUD 显示效果。</p>
+        <p className={styles.groupDesc}>HUD 显示效果与主题。</p>
         <div className={styles.group}>
-          <SettingRow
-            title="自定义动态壁纸"
-            subtitle={appearance.hasCustomWallpaper ? '已应用自定义壁纸（≤2MB 图片）' : '选择一张图片作为全局背景'}
-            control={<HudIconButton icon={<PictureOutlined />} label="选择图片" showLabel onClick={appearance.openWallpaperPicker} />}
-          />
-          {appearance.hasCustomWallpaper ? (
-            <SettingRow
-              title="恢复默认背景"
-              subtitle="清除自定义壁纸与萃取的强调色"
-              danger
-              control={<HudIconButton icon={<UndoOutlined />} label="恢复默认" tone="danger" showLabel onClick={appearance.handleWallpaperClear} />}
-            />
-          ) : null}
           <div className={styles.groupLabel} role="presentation">HUD 显示</div>
           <SettingRow
             title="CRT 扫描线"
@@ -264,13 +250,6 @@ export default function BasicSettingsPanel() {
             )}
           />
         </div>
-        <input
-          ref={appearance.wallpaperFileInputRef}
-          type="file"
-          accept="image/*"
-          className={styles.hiddenInput}
-          onChange={appearance.handleWallpaperFileChange}
-        />
       </HudSection>
 
       <HudSection title="账号调度" code="QUOTA">

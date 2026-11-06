@@ -71,9 +71,6 @@
   border-top: 1px solid var(--color-border);
 }
 
-.hiddenInput {
-  display: none;
-}
 
 /* 当前 Server 卡 */
 .serverLine {

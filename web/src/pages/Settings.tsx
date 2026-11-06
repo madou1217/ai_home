@@ -201,14 +201,9 @@ const Settings = ({ section }: SettingsProps) => {
   const [controlPlaneEndpointWarnings, setControlPlaneEndpointWarnings] = useState<string[]>([]);
   // 一键重启服务：restart + management watch 推送（与移动端设置共用）
   const { restarting, restartNote: restartAlert, restartServer: handleRestartServer } = useManagementRestart();
-  // 动态壁纸（localStorage 持久化 + 启动恢复，见 app.tsx）、HUD 显示偏好（CRT / 音效）与主题：
-  // 与 HUD 顶栏开关共用同一份状态，逻辑在 features/settings 与移动端设置共用。
+  // HUD 显示偏好（CRT / 音效）与主题：与 HUD 顶栏开关共用同一份状态，
+  // 逻辑在 features/settings 与移动端设置共用。
   const {
-    hasCustomWallpaper,
-    wallpaperFileInputRef,
-    openWallpaperPicker,
-    handleWallpaperFileChange,
-    handleWallpaperClear,
     hudPrefs,
     setHudPrefs,
     themeMode,
@@ -476,29 +471,8 @@ const Settings = ({ section }: SettingsProps) => {
 
       <SettingsGroupCard
         title="外观个性化"
-        description="自定义动态壁纸（自动萃取强调色并生成全局光晕背景）与 HUD 显示效果。"
+        description="HUD 显示效果与主题。"
       >
-        <SettingsItem
-          title="自定义动态壁纸"
-          subtitle={hasCustomWallpaper ? '已应用自定义壁纸（≤2MB 图片）' : '选择一张图片作为全局背景'}
-          action={
-            <Button onClick={openWallpaperPicker}>
-              选择图片
-            </Button>
-          }
-        />
-        {hasCustomWallpaper && (
-          <SettingsItem
-            title="恢复默认背景"
-            subtitle="清除自定义壁纸与萃取的强调色"
-            danger
-            action={
-              <Button danger onClick={handleWallpaperClear}>
-                恢复默认
-              </Button>
-            }
-          />
-        )}
         <div className="settings-hud-display" role="group" aria-label="HUD 显示">
           <span className="settings-hud-display-label hud-label">HUD 显示</span>
           <SettingsItem
@@ -544,13 +518,6 @@ const Settings = ({ section }: SettingsProps) => {
             }
           />
         </div>
-        <input
-          ref={wallpaperFileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleWallpaperFileChange}
-        />
       </SettingsGroupCard>
 
       <CaptureSettingsCard />

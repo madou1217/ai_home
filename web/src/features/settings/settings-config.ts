@@ -3,7 +3,7 @@ import type { ManagementRestartEvent, ServerConfig, UsageConfig } from '@/types'
 
 /**
  * 设置页（/settings 基础设置）的纯数据层：表单默认值、校验规则、刷新间隔换算、
- * 服务配置提交载荷、重启状态文案、壁纸文件校验。桌面 Settings.tsx 与移动端 MobileSettings 共用。
+ * 服务配置提交载荷、重启状态文案。桌面 Settings.tsx 与移动端 MobileSettings 共用。
  */
 
 export interface UsageFormValues {
@@ -127,12 +127,3 @@ export function describeRestartState(event: ManagementRestartEvent | null, resta
   };
 }
 
-/** dataUrl 持久化在 localStorage，限制原图体积避免撑爆配额。 */
-export const WALLPAPER_MAX_BYTES = 2 * 1024 * 1024;
-
-/** 返回校验失败的提示文案；通过时返回空串。 */
-export function validateWallpaperFile(file: Pick<File, 'type' | 'size'>): string {
-  if (!String(file.type || '').startsWith('image/')) return '请选择图片文件';
-  if (file.size > WALLPAPER_MAX_BYTES) return '图片不能超过 2MB';
-  return '';
-}

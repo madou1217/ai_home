@@ -53,7 +53,6 @@ import {
   getExplicitServerProfileId,
 } from "@/services/server-selection-scope";
 import { resolveAppRoutePathname } from "@/services/app-navigation";
-import { DynamicWallpaperEngine } from "@/services/dynamic-wallpaper-engine";
 import logo from "../../assets/brand/ai-home-app-icon.png";
 import { WebTerminalManagerProvider } from '@/features/web-terminal/web-terminal-context';
 import GlobalWebTerminalHost from '@/features/web-terminal/GlobalWebTerminalHost';
@@ -143,9 +142,6 @@ export async function getInitialState(): Promise<{
       navigator.serviceWorker.register('/ui/sw.js').catch(() => {});
     });
   }
-  // 启动时恢复用户保存的动态壁纸（含色彩萃取的强调色光晕），无保存记录时静默跳过。
-  const savedWallpaper = DynamicWallpaperEngine.getSavedWallpaper();
-  if (savedWallpaper) DynamicWallpaperEngine.applyWallpaper(savedWallpaper);
   return {
     settings: {
       // mix：通栏 HUD 顶栏（品牌 / 实时遥测 / CRT·音效开关）+ 左侧编号导航。

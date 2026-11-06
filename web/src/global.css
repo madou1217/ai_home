@@ -22,24 +22,18 @@ html, body {
   color: var(--color-text);
 }
 
-/* 画布：赛博网格叠在（可选的）自定义壁纸之上。壁纸被画布色 90% 覆盖，
- * 只作为淡背景，不穿透面板、不影响文字对比度。 */
+/* 画布：赛博网格直接叠在画布色上。 */
 body {
   background-image:
     linear-gradient(to right, var(--hud-grid-line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--hud-grid-line) 1px, transparent 1px),
-    linear-gradient(
-      color-mix(in srgb, var(--color-bg) 90%, transparent),
-      color-mix(in srgb, var(--color-bg) 90%, transparent)
-    ),
-    var(--hos-custom-wallpaper, none);
-  background-size: var(--hud-grid-size) var(--hud-grid-size), var(--hud-grid-size) var(--hud-grid-size), cover, cover;
-  background-position: 0 0, 0 0, center, center;
-  background-repeat: repeat, repeat, no-repeat, no-repeat;
+    linear-gradient(to bottom, var(--hud-grid-line) 1px, transparent 1px);
+  background-size: var(--hud-grid-size) var(--hud-grid-size), var(--hud-grid-size) var(--hud-grid-size);
+  background-position: 0 0, 0 0;
+  background-repeat: repeat, repeat;
   background-attachment: fixed;
 }
 
-/* ProLayout 外壳：透明底，让画布色 / 壁纸统一 */
+/* ProLayout 外壳：透明底，让画布色统一 */
 .ant-pro-basicLayout,
 .ant-pro-layout .ant-layout {
   background: transparent !important;

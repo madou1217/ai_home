@@ -314,27 +314,35 @@ details[open]::details-content {
  * 卡顿时更长；实测下拉/选择/弹窗点击后 250~330ms 才开始出现）。
  * 这里只把**下拉类**弹层（dropdown / select / cascader / picker / auto-complete，
  * 都用 slide-up / slide-down）在 prepare/start 阶段就挂上同一组进场 keyframes，
- * 点击即开始播放。时长、曲线、终态与 antd 原动画一致，离场不改。 */
+ * 点击即开始播放。时长、曲线、终态与 antd 原动画一致，离场不改。
+ *
+ * -active 必须一起列出：rc-motion 在 prepare/start 之后会追加 -active，antd 的 active 规则
+ * 会换回自己的 animation-name，动画从 0 重播 —— 菜单会先淡入一小截、突然归零、再淡入一次
+ * （2026-11-06 账号操作菜单「点一下会闪」的根因）。保持同一个 animation-name 才能续播。 */
 .ant-slide-up-appear.ant-slide-up-appear-prepare,
 .ant-slide-up-appear.ant-slide-up-appear-start,
+.ant-slide-up-appear.ant-slide-up-appear-active,
 .ant-slide-up-enter.ant-slide-up-enter-prepare,
-.ant-slide-up-enter.ant-slide-up-enter-start {
-  animation-name: aih-popup-slide-in;
-  animation-duration: var(--motion-base);
-  animation-timing-function: var(--ease-standard);
-  animation-fill-mode: both;
-  animation-play-state: running;
+.ant-slide-up-enter.ant-slide-up-enter-start,
+.ant-slide-up-enter.ant-slide-up-enter-active {
+  animation-name: aih-popup-slide-in !important;
+  animation-duration: var(--motion-base) !important;
+  animation-timing-function: var(--ease-standard) !important;
+  animation-fill-mode: both !important;
+  animation-play-state: running !important;
   transform-origin: 0% 0%;
 }
 .ant-slide-down-appear.ant-slide-down-appear-prepare,
 .ant-slide-down-appear.ant-slide-down-appear-start,
+.ant-slide-down-appear.ant-slide-down-appear-active,
 .ant-slide-down-enter.ant-slide-down-enter-prepare,
-.ant-slide-down-enter.ant-slide-down-enter-start {
-  animation-name: aih-popup-slide-in;
-  animation-duration: var(--motion-base);
-  animation-timing-function: var(--ease-standard);
-  animation-fill-mode: both;
-  animation-play-state: running;
+.ant-slide-down-enter.ant-slide-down-enter-start,
+.ant-slide-down-enter.ant-slide-down-enter-active {
+  animation-name: aih-popup-slide-in !important;
+  animation-duration: var(--motion-base) !important;
+  animation-timing-function: var(--ease-standard) !important;
+  animation-fill-mode: both !important;
+  animation-play-state: running !important;
   transform-origin: 0% 100%;
 }
 @keyframes aih-popup-slide-in {

@@ -81,3 +81,54 @@ test('vertex 占位账号的 enabled 差异被忽略', () => {
   assert.deepEqual(diff.enabledMismatch, []);
   assert.equal(diff.equal, true);
 });
+
+test('auth_mode 两侧都有值时比较', () => {
+  const diff = compareAccountSets(
+    [nodeRow({ authMode: 'oauth' })],
+    [goRow({ auth_mode: 'api_key' })],
+    null
+  );
+  assert.deepEqual(diff.fieldMismatch, [
+    { accountRef: 'acct_a', field: 'auth_mode', node: 'oauth', go: 'api_key' }
+  ]);
+  assert.equal(diff.equal, false);
+
+  // 一侧为空视为「无法判定」，不报差异（Go 未写凭据形态时不该刷屏）。
+  const skipped = compareAccountSets([nodeRow({ authMode: 'oauth' })], [goRow()], null);
+  assert.deepEqual(skipped.fieldMismatch, []);
+  assert.equal(skipped.equal, true);
+});
+
+test('额度快照的有无与采集时间要一致', () => {
+  const missing = compareAccountSets(
+    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000, entries: [] } })],
+    [goRow()],
+    null
+  );
+  assert.deepEqual(missing.fieldMismatch, [
+    { accountRef: 'acct_a', field: 'usage_snapshot', node: 'present', go: 'missing' }
+  ]);
+
+  const stale = compareAccountSets(
+    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000 } })],
+    [goRow({ usage_snapshot: { captured_at: '2026-11-06T02:00:00Z' } })],
+    null
+  );
+  assert.equal(stale.fieldMismatch.length, 1);
+  assert.equal(stale.fieldMismatch[0].field, 'usage_captured_at');
+});
+
+test('快照采集时间在 1 秒内视为同一份', () => {
+  const diff = compareAccountSets(
+    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000 } })],
+    [goRow({ usage_snapshot: { captured_at: new Date(1730000000500).toISOString() } })],
+    null
+  );
+  assert.deepEqual(diff.fieldMismatch, []);
+  assert.equal(diff.equal, true);
+});
+
+test('两侧都没有快照时不报差异', () => {
+  const diff = compareAccountSets([nodeRow()], [goRow()], null);
+  assert.deepEqual(diff.fieldMismatch, []);
+});

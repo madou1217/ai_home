@@ -158,8 +158,20 @@
     3. 池级判定改成看「Go 可调度集合」，而不是「池里有没有自定义上游」；
        模型只被自定义上游账号承载时，Go 目录本来就不会列它，走 `model_not_routable` 交还。
 
-    这是**行为改变**（谁服务真实流量），不是纯重构：做之前必须先确认 Go 的透传对这批账号
-    不写本地额度状态、不做失败记账（图片管线已有先例）。在那之前，额度页继续两路合并。
+    **2026-11-06 已落地并真机验证**（`18de34f0` + `694e8f2c`）：
+    - Go schema v25 `account_routing_exclusions` + `PUT /v1/management/accounts/{ref}/routing`；
+      倒排索引建索引时排除，路由候选与目录同源；
+    - Node 同步推 4 个 custom upstream 账号（codex 1 / claude 2 / gemini 1），签名去重；
+      池级 `custom_upstream_node_only` 删除（钉选分支保留）；
+    - 真机：`/v1/chat/completions` 的请求由 **Go** 承接，`usage_ledger` 1 → 5 行，
+      `node_fallbacks` 只剩 `go_not_forwarding` 1 次（启动窗口）；
+    - 同时修掉 Go 承接后暴露的响应保真度回归：Anthropic 上游转 OpenAI 的非流式与流式
+      两条路径（model 回落请求模型、content、tool_calls、usage、[DONE]）。
+
+    **遗留（下一步）**：`/v1/models` 从 205 掉到 186——Go 的公开目录按「可路由模型」
+    构建，被排除的 4 个账号的 19 个模型不再列出，但它们仍由 Node 经 `model_not_routable`
+    承接。修法是把「目录」与「可路由」拆开：目录用 Node 推送的完整投影（205），
+    `routable_model_ids` 继续只含 Go 能路由的 186，交还判定仍读后者。
 
 10b. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
     真机对比：两侧 `/healthz` 都是 200 且 body 除空白外一致；`/readyz` 都是 200，

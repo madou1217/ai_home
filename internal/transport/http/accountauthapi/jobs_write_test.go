@@ -76,6 +76,93 @@ func TestPutOAuthJobUpsertsSnapshot(t *testing.T) {
 	}
 }
 
+func TestPutOAuthJobMapsTerminalAccountFields(t *testing.T) {
+	writer := &fakeJobWriter{}
+	handler := newWriteTestHandler(t, writer)
+	created := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	finished := created.Add(75 * time.Second)
+	encoded, _ := json.Marshal(map[string]any{
+		"provider_id":    "codex",
+		"purpose":        "register",
+		"status":         "completed",
+		"created_at":     created.Format(time.RFC3339),
+		"updated_at":     finished.Format(time.RFC3339),
+		"expires_at":     created.Add(10 * time.Minute).Format(time.RFC3339),
+		"account_ref":    "acct_0123456789abcdef0123",
+		"cli_account_id": 42,
+		"finished_at":    finished.Format(time.RFC3339),
+	})
+	request := httptest.NewRequest(http.MethodPut, JobsPath+"/job-1", bytes.NewReader(encoded))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if writer.record.AccountRef != "acct_0123456789abcdef0123" ||
+		writer.record.CLIAccountID != 42 ||
+		!writer.record.FinishedAt.Equal(finished) {
+		t.Fatalf("终态账号字段映射不对: %#v", writer.record)
+	}
+}
+
+// 待办快照即使带了账号字段也不能落成结果：账号结果只在终态成立。
+func TestPutOAuthJobPendingDropsTerminalAccountFields(t *testing.T) {
+	writer := &fakeJobWriter{}
+	handler := newWriteTestHandler(t, writer)
+	created := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	encoded, _ := json.Marshal(map[string]any{
+		"provider_id":    "codex",
+		"purpose":        "register",
+		"status":         "pending",
+		"created_at":     created.Format(time.RFC3339),
+		"updated_at":     created.Format(time.RFC3339),
+		"expires_at":     created.Add(10 * time.Minute).Format(time.RFC3339),
+		"account_ref":    "acct_0123456789abcdef0123",
+		"cli_account_id": 42,
+		"finished_at":    created.Format(time.RFC3339),
+	})
+	request := httptest.NewRequest(http.MethodPut, JobsPath+"/job-1", bytes.NewReader(encoded))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if writer.record.AccountRef != "" ||
+		writer.record.CLIAccountID != 0 ||
+		!writer.record.FinishedAt.IsZero() {
+		t.Fatalf("pending 不应带终态账号字段: %#v", writer.record)
+	}
+}
+
+func TestPutOAuthJobRejectsInvalidTerminalFields(t *testing.T) {
+	cases := map[string]map[string]any{
+		"finished_at 非法": {
+			"status": "completed", "finished_at": "not-a-time",
+		},
+		"cli_account_id 为负": {
+			"status": "completed", "cli_account_id": -1,
+		},
+	}
+	for name, fields := range cases {
+		writer := &fakeJobWriter{}
+		handler := newWriteTestHandler(t, writer)
+		body := map[string]any{"provider_id": "codex", "purpose": "register"}
+		for key, value := range fields {
+			body[key] = value
+		}
+		encoded, _ := json.Marshal(body)
+		request := httptest.NewRequest(http.MethodPut, JobsPath+"/job-1", bytes.NewReader(encoded))
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400", name, recorder.Code)
+		}
+		if writer.calls != 0 {
+			t.Fatalf("%s: 非法请求不应写库", name)
+		}
+	}
+}
+
 func TestPutOAuthJobRejectsInvalidStatus(t *testing.T) {
 	writer := &fakeJobWriter{}
 	handler := newWriteTestHandler(t, writer)

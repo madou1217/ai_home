@@ -30,6 +30,12 @@ type jobRecordInput struct {
 	UpdatedAt    string `json:"updated_at"`
 	ErrorCode    string `json:"error_code"`
 	ErrorMessage string `json:"error_message"`
+	// AccountRef 是成功完成后的稳定账号引用；只有 completed 快照携带。
+	AccountRef string `json:"account_ref"`
+	// CLIAccountID 是成功完成后分配的数字别名；0 表示尚未分配。
+	CLIAccountID int64 `json:"cli_account_id"`
+	// FinishedAt 是进入终态的时间（RFC3339）；活动快照不携带。
+	FinishedAt string `json:"finished_at"`
 }
 
 // handleJobUpsert 接收 Node 推送的 Job 公开快照。
@@ -106,6 +112,22 @@ func jobRecordFromInput(jobID string, input jobRecordInput) (accountauth.JobReco
 	if err != nil {
 		return accountauth.JobRecord{}, errInvalidJobRecord("expires_at 无效")
 	}
+	finishedAt, err := parseJobTime(input.FinishedAt, time.Time{})
+	if err != nil {
+		return accountauth.JobRecord{}, errInvalidJobRecord("finished_at 无效")
+	}
+	if input.CLIAccountID < 0 {
+		return accountauth.JobRecord{}, errInvalidJobRecord("cli_account_id 不能为负数")
+	}
+	accountRef := strings.TrimSpace(input.AccountRef)
+	cliAccountID := input.CLIAccountID
+	// 账号结果只在终态成立：Node 不会给 pending/processing 推送这三个字段，
+	// 这里再归一一次，避免迟到的活动快照把已落库的终态结果带成空值。
+	if !status.IsTerminal() {
+		accountRef = ""
+		cliAccountID = 0
+		finishedAt = time.Time{}
+	}
 	return accountauth.JobRecord{
 		ID:           jobID,
 		ProviderID:   providerID,
@@ -115,6 +137,9 @@ func jobRecordFromInput(jobID string, input jobRecordInput) (accountauth.JobReco
 		CreatedAt:    createdAt,
 		ExpiresAt:    expiresAt,
 		UpdatedAt:    updatedAt,
+		FinishedAt:   finishedAt,
+		AccountRef:   accountRef,
+		CLIAccountID: cliAccountID,
 		ErrorCode:    strings.TrimSpace(input.ErrorCode),
 		ErrorMessage: strings.TrimSpace(input.ErrorMessage),
 	}, nil

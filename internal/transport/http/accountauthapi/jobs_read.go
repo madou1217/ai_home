@@ -54,6 +54,10 @@ type jobRecordView struct {
 	UpdatedAt    string `json:"updated_at"`
 	ErrorCode    string `json:"error_code,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
+	// 终态账号结果与 Node 的命名保持一致；活动快照不输出这三个键。
+	AccountRef   string `json:"account_ref,omitempty"`
+	CLIAccountID int64  `json:"cli_account_id,omitempty"`
+	FinishedAt   string `json:"finished_at,omitempty"`
 }
 
 // jobRecordResponse 是单条 Job 快照的成功 envelope，与现有 Job 查询保持一致。
@@ -208,6 +212,9 @@ func newJobRecordView(record accountauth.JobRecord) jobRecordView {
 		UpdatedAt:    formatTime(record.UpdatedAt),
 		ErrorCode:    record.ErrorCode,
 		ErrorMessage: record.ErrorMessage,
+		AccountRef:   record.AccountRef,
+		CLIAccountID: record.CLIAccountID,
+		FinishedAt:   formatOptionalTime(record.FinishedAt),
 	}
 }
 

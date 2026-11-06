@@ -28,6 +28,9 @@ const (
 	//
 	// Job 的生命周期是「同一行反复改状态」，因此必须是 upsert 而不是 insert：
 	// 调用方不需要先查存在性，重启恢复后的重放也能保持幂等。
+	//
+	// 终态结果列只在来者是终态时覆盖：迟到的 pending/processing 推送
+	// （例如重启前遗留的 dirty 重放）不能把已落库的账号结果抹成空值。
 	upsertOAuthJobSQL = `
 		INSERT INTO oauth_jobs (` + oauthJobColumns + `)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -41,9 +44,12 @@ const (
 			updated_at_ms = excluded.updated_at_ms,
 			error_code = excluded.error_code,
 			error_message = excluded.error_message,
-			account_ref = excluded.account_ref,
-			cli_account_id = excluded.cli_account_id,
-			finished_at_ms = excluded.finished_at_ms`
+			account_ref = CASE
+				WHEN ? THEN oauth_jobs.account_ref ELSE excluded.account_ref END,
+			cli_account_id = CASE
+				WHEN ? THEN oauth_jobs.cli_account_id ELSE excluded.cli_account_id END,
+			finished_at_ms = CASE
+				WHEN ? THEN oauth_jobs.finished_at_ms ELSE excluded.finished_at_ms END`
 
 	getOAuthJobSQL = `
 		SELECT ` + oauthJobColumns + `
@@ -106,8 +112,13 @@ func (store *Store) UpsertJob(ctx context.Context, record accountauth.JobRecord)
 	var finishedAtMS int64
 	if !record.FinishedAt.IsZero() {
 		finishedAtMS = record.FinishedAt.UnixMilli()
-	} else if isTerminalJobStatus(record.Status) {
+	} else if record.Status.IsTerminal() {
 		finishedAtMS = updatedAt.UnixMilli()
+	}
+	// 非终态快照不携带账号结果，冲突时保留已有终态值。
+	preserveTerminalResult := 0
+	if !record.Status.IsTerminal() {
+		preserveTerminalResult = 1
 	}
 	if _, err := store.db.ExecContext(
 		ctx,
@@ -125,6 +136,9 @@ func (store *Store) UpsertJob(ctx context.Context, record accountauth.JobRecord)
 		record.AccountRef,
 		record.CLIAccountID,
 		finishedAtMS,
+		preserveTerminalResult,
+		preserveTerminalResult,
+		preserveTerminalResult,
 	); err != nil {
 		return fmt.Errorf("写入 OAuth Job 快照失败: %w", err)
 	}
@@ -272,19 +286,6 @@ func scanOAuthJobRecord(scanner rowScanner) (accountauth.JobRecord, error) {
 	record.UpdatedAt = timeFromUnixMilli(updatedAtMS)
 	record.FinishedAt = timeFromUnixMilli(finishedAtMS)
 	return record, nil
-}
-
-// isTerminalJobStatus 判断快照状态是否已经进入终态。
-func isTerminalJobStatus(status accountauth.Status) bool {
-	switch status {
-	case accountauth.StatusCompleted,
-		accountauth.StatusFailed,
-		accountauth.StatusCancelled,
-		accountauth.StatusExpired:
-		return true
-	default:
-		return false
-	}
 }
 
 // 编译期确认适配器实现了应用层端口，端口后续增删方法时这里先红。

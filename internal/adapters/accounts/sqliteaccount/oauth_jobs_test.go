@@ -93,6 +93,40 @@ func TestOAuthJobUpsertIsIdempotentAndOverwrites(t *testing.T) {
 	}
 }
 
+// 迟到的 pending 快照只能推进状态与时间，不能把已落库的终态结果抹成空值。
+func TestOAuthJobPendingUpsertKeepsTerminalResultColumns(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	completed := newOAuthJobRecord("job-terminal-guard", accountauth.StatusCompleted, createdAt)
+	completed.UpdatedAt = createdAt.Add(time.Minute)
+	completed.FinishedAt = createdAt.Add(time.Minute)
+	completed.AccountRef = "acct_0123456789abcdef0123"
+	completed.CLIAccountID = 42
+	if err := store.UpsertJob(ctx, completed); err != nil {
+		t.Fatalf("UpsertJob() completed error = %v", err)
+	}
+
+	stale := newOAuthJobRecord("job-terminal-guard", accountauth.StatusPending, createdAt)
+	stale.UpdatedAt = createdAt.Add(2 * time.Minute)
+	if err := store.UpsertJob(ctx, stale); err != nil {
+		t.Fatalf("UpsertJob() pending error = %v", err)
+	}
+
+	record, found, err := store.GetJob(ctx, completed.ID)
+	if err != nil || !found {
+		t.Fatalf("GetJob() = %v, %v", found, err)
+	}
+	if record.Status != accountauth.StatusPending || !record.UpdatedAt.Equal(stale.UpdatedAt) {
+		t.Fatalf("非终态列未按最后一次写入更新: %#v", record)
+	}
+	if record.AccountRef != completed.AccountRef ||
+		record.CLIAccountID != completed.CLIAccountID ||
+		!record.FinishedAt.Equal(completed.FinishedAt) {
+		t.Fatalf("pending 覆盖了终态结果列: %#v", record)
+	}
+}
+
 func TestOAuthJobUpsertRejectsIncompleteRecord(t *testing.T) {
 	store := openOAuthJobStore(t)
 	ctx := context.Background()

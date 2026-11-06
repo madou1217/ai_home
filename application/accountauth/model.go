@@ -149,14 +149,22 @@ func (job Job) FailureCode() string {
 	return job.failureCode
 }
 
-// IsTerminal 判断 Job 是否已经不再接受任何状态变化。
-func (job Job) IsTerminal() bool {
-	switch job.status {
+// IsTerminal 判断状态是否已经不再接受任何变化。
+//
+// 终态判定同时被服务、持久化适配器和 Node 快照入站三处使用，集中在这里
+// 才能保证「哪些状态允许携带账号结果」只有一个答案。
+func (status Status) IsTerminal() bool {
+	switch status {
 	case StatusCompleted, StatusFailed, StatusCancelled, StatusExpired:
 		return true
 	default:
 		return false
 	}
+}
+
+// IsTerminal 判断 Job 是否已经不再接受任何状态变化。
+func (job Job) IsTerminal() bool {
+	return job.status.IsTerminal()
 }
 
 // StartResult 把一次性授权 URL 与不含敏感参数拆开的 Job 快照一起返回。

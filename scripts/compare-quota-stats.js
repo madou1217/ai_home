@@ -40,6 +40,24 @@ function readConfig() {
   }
 }
 
+// Go 的原始结果：维度是 snake_case，token 只在 windows[] 里（按窗口长度聚合）。
+function goDimensionRows(payload) {
+  const dimensions = Array.isArray(payload && payload.dimensions) ? payload.dimensions : [];
+  const windows = Array.isArray(payload && payload.windows) ? payload.windows : [];
+  return dimensions.map((dimension) => {
+    const minutes = Number(dimension.window_minutes) || 0;
+    const tokens = windows
+      .filter((window) => (Number(window.window_minutes) || Number(window.windowMinutes) || 0) === minutes)
+      .reduce((sum, window) => sum + (Number(window.tokens) || 0), 0);
+    return {
+      windowMinutes: minutes,
+      available: Boolean(dimension.available),
+      dataState: String(dimension.data_state || ''),
+      tokens
+    };
+  });
+}
+
 function dimensionRows(payload) {
   const dimensions = Array.isArray(payload && payload.dimensions) ? payload.dimensions : [];
   return dimensions.map((dimension) => ({
@@ -57,7 +75,6 @@ async function main() {
   const config = readConfig();
   // Go 的 management key 是 Node 每次启动生成的（不落盘）；本地对拍时用
   // --key 或 AIH_GO_MANAGEMENT_KEY 传入，与 Node 传给 Go 的那份一致。
-  const goKey = options.key || process.env.AIH_GO_MANAGEMENT_KEY || '';
   const goRef = (config.links[options.ref] && config.links[options.ref].goRef) || options.ref;
   const nodeResponse = await fetch(
     NODE_BASE + '/v0/webui/accounts/' + encodeURIComponent(options.provider) + '/' + encodeURIComponent(options.ref)
@@ -65,17 +82,17 @@ async function main() {
     { headers: { authorization: 'Bearer ' + config.mgmt } }
   );
   const goResponse = await fetch(
-    GO_BASE + '/v1/management/accounts/' + encodeURIComponent(goRef)
-    + '/quota-stats?range_days=' + options.days,
-    { headers: { authorization: 'Bearer ' + goKey } }
+    NODE_BASE + '/v0/webui/accounts/' + encodeURIComponent(options.provider) + '/' + encodeURIComponent(options.ref)
+    + '/quota-stats?range_days=' + options.days + '&format=go',
+    { headers: { authorization: 'Bearer ' + config.mgmt } }
   );
   if (!nodeResponse.ok || !goResponse.ok) {
     throw new Error('请求失败 node=' + nodeResponse.status + ' go=' + goResponse.status);
   }
   const nodePayload = await nodeResponse.json();
-  const goPayload = (await goResponse.json()).data || {};
+  const goPayload = (await goResponse.json()).go || {};
   const nodeRows = dimensionRows(nodePayload);
-  const goRows = dimensionRows(goPayload);
+  const goRows = goDimensionRows(goPayload);
   console.log('account', options.ref, '→ go', goRef, 'days', options.days);
   console.log('node 维度', JSON.stringify(nodeRows));
   console.log('go   维度', JSON.stringify(goRows));

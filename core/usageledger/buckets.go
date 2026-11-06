@@ -70,12 +70,16 @@ func AggregateBuckets(records []Record, query Query, granularity string) []Bucke
 	}
 	provider := strings.TrimSpace(strings.ToLower(query.Provider))
 	model := strings.TrimSpace(query.Model)
+	accountRef := strings.TrimSpace(query.AccountRef.String())
 	buckets := make(map[int64]*BucketStats)
 	for _, record := range records {
 		if !record.IsValid() || record.OccurredAt().Before(query.From) || record.OccurredAt().After(query.To) {
 			continue
 		}
 		if provider != "" && record.Provider() != provider || model != "" && record.Model() != model {
+			continue
+		}
+		if accountRef != "" && record.AccountRef().String() != accountRef {
 			continue
 		}
 		start := BucketStart(record.OccurredAt(), normalized)

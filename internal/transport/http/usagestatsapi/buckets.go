@@ -3,7 +3,9 @@ package usagestatsapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/usageledger"
 )
 
@@ -39,6 +41,14 @@ func (handler *BucketsHandler) ServeHTTP(response http.ResponseWriter, request *
 		"invalid_usage_query",
 		"用量查询参数无效",
 		func(ctx context.Context, query usageledger.Query) (map[string]any, error) {
+			// account_ref 可选：额度统计页按账号看，传了就只统计该账号。
+			if raw := strings.TrimSpace(request.URL.Query().Get("account_ref")); raw != "" {
+				ref, err := accountcore.ParseAccountRef(raw)
+				if err != nil {
+					return nil, usageledger.ErrInvalidQuery
+				}
+				query.AccountRef = ref
+			}
 			buckets, err := handler.source.QueryUsageBuckets(ctx, query, granularity)
 			if err != nil {
 				return nil, err

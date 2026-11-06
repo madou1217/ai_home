@@ -79,9 +79,15 @@ type Query struct {
 	To       time.Time
 	Provider string
 	Model    string
+	// AccountRef 非空时只统计该账号：额度统计页是**按账号**看的，
+	// 没有这一项就只能拿整库数据拼页面（会把别的账号用量算进来）。
+	AccountRef accountcore.AccountRef
 }
 
 func (query Query) Validate() error {
+	if query.AccountRef != "" && !query.AccountRef.IsValid() {
+		return ErrInvalidQuery
+	}
 	if query.From.IsZero() || query.To.IsZero() ||
 		query.From.Location() != time.UTC || query.To.Location() != time.UTC ||
 		query.To.Before(query.From) {

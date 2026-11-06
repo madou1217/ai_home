@@ -62,6 +62,10 @@ export function useSessionRuntime(
       (session) => {
         if (!disposed) onSessionResolvedRef.current?.(session);
       },
+      (error) => {
+        // 工作区已经先渲染；首屏快照失败时再用错误态替换，避免整屏空等。
+        if (!disposed) setConnection({ phase: 'error', failure: runtimeFailure(error) });
+      },
     ).then(
       (opened) => {
         controller = opened;
@@ -85,6 +89,7 @@ export async function openSessionRuntime(
   target: SessionRuntimeTarget,
   api: ChatRuntimeApi,
   onSessionResolved?: (session: ChatRuntimeSession) => void,
+  onStartError?: (error: unknown) => void,
 ): Promise<SessionRuntimeController> {
   let session: ChatRuntimeSession;
   let readOnly = Boolean(target.readOnly);
@@ -114,14 +119,16 @@ export async function openSessionRuntime(
     visibilitySource: typeof document === 'undefined' ? undefined : document,
   });
   Object.defineProperty(controller, 'readOnly', { value: readOnly, enumerable: false });
-  try {
-    await controller.start();
-    onSessionResolved?.(session);
-    return controller;
-  } catch (error) {
-    controller.dispose();
-    throw error;
-  }
+  // 先把控制器交给工作区，快照在后台加载：慢快照只让时间线晚到，不会让整页停在
+  // 「正在连接原生运行时…」；首屏失败再通过 onStartError 切错误态。
+  void controller.start().then(
+    () => onSessionResolved?.(session),
+    (error: unknown) => {
+      controller.dispose();
+      onStartError?.(error);
+    },
+  );
+  return controller;
 }
 
 function isActiveSessionState(state: ChatRuntimeSession['state']): boolean {

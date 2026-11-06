@@ -80,9 +80,10 @@ const PRESENTATION_BY_STATE: Readonly<
   Record<SessionConnectionState, SessionConnectionPresentation>
 > = {
   connecting: {
-    interactive: false,
+    // 连接期间不再锁住输入：消息可以先写、先回显，命令在 startTask 完成后才真正下发。
+    // 这样慢快照/慢网络只影响数据到达时间，不会让整个工作区变成「操作已暂停」。
+    interactive: true,
     label: '正在连接',
-    notice: '正在建立实时连接，连接完成前操作已暂停。',
   },
   connected: {
     interactive: true,

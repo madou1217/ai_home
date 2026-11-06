@@ -218,14 +218,16 @@ function WorkspaceHeader({
     now,
   );
   const meta = `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
-  if (mobile && chat && projection.state === 'idle' && connection.interactive) return null;
+  // 连接状态优先于会话状态：connecting 现在也允许输入，但徽标仍要告诉用户数据还在路上。
+  const connectionPending = projection.connectionState !== 'connected';
+  if (mobile && chat && projection.state === 'idle' && !connectionPending) return null;
   return (
     <header className={styles.workspaceHeader}>
       <div className={styles.workspaceHeaderMain}>
         {!mobile ? <strong className={styles.workspaceTitle} title={title}>{title}</strong> : null}
         <Badge
-          status={connection.interactive ? STATE_BADGE[projection.state] : CONNECTION_BADGE[projection.connectionState]}
-          text={stateLabel}
+          status={connectionPending ? CONNECTION_BADGE[projection.connectionState] : STATE_BADGE[projection.state]}
+          text={connectionPending ? connection.label : stateLabel}
           className={styles.workspaceStateBadge}
         />
       </div>

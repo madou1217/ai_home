@@ -1,4 +1,4 @@
-import { Spin } from 'antd';
+import { Badge, Spin } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { ChatRuntimeSession } from '@/chat-runtime';
 import type { ChatAccount, Provider, Session } from '@/types';
@@ -10,7 +10,8 @@ import type {
 } from './session-surface-policy';
 import { runtimeFailurePresentation } from './session-connection-presentation';
 import { useSessionRuntime } from './use-session-runtime';
-import styles from './runtime-state.module.css';
+import runtimeStyles from './runtime-state.module.css';
+import styles from './session-runtime.module.css';
 
 interface Props {
   readonly resolution: SessionRuntimeTargetResolution;
@@ -60,8 +61,54 @@ export default function SessionRuntimeSurface(props: Props) {
       />
     );
   }
-
+  if (connection.phase === 'pending' || connection.phase === 'connecting') {
+    return (
+      <RuntimeConnectingShell
+        title={props.title}
+        mobile={props.mobile}
+        chat={!runtimeTarget?.projectPath}
+        label={connection.phase === 'pending' ? '正在读取会话策略' : '正在连接运行时'}
+      />
+    );
+  }
   return <RuntimeConnectionState connection={connection} />;
+}
+
+/**
+ * 连接中的占位外壳：先给出与工作区一致的标题/结构，而不是整屏 Spin。
+ * 会话创建通常只有几十毫秒；慢的时候用户至少看到的是「这个会话」而不是一个空白等待页。
+ */
+function RuntimeConnectingShell({
+  title,
+  mobile,
+  chat,
+  label,
+}: {
+  readonly title: string;
+  readonly mobile?: boolean;
+  readonly chat: boolean;
+  readonly label: string;
+}) {
+  return (
+    <main className={styles.workspace} data-runtime-workspace="true" data-runtime-connecting="true">
+      <header className={styles.workspaceHeader}>
+        <div className={styles.workspaceHeaderMain}>
+          {!mobile ? <strong className={styles.workspaceTitle} title={title}>{title}</strong> : null}
+          <Badge status="processing" text={label} className={styles.workspaceStateBadge} />
+        </div>
+        {!chat ? <div className={styles.workspaceHeaderMeta}>正在准备运行时</div> : null}
+      </header>
+      <div className={styles.timelineFrame}>
+        <div className={styles.connectingTimeline} role="status" aria-live="polite">
+          <Spin size="small" />
+          <span>{label}…</span>
+        </div>
+      </div>
+      <div className={styles.workspaceDock}>
+        <div className={styles.connectingDock} aria-hidden="true" />
+      </div>
+    </main>
+  );
 }
 
 function RuntimeConnectionState({
@@ -84,7 +131,7 @@ function RuntimeConnectionState({
     />;
   }
   return (
-    <div className={styles.runtimeState}>
+    <div className={runtimeStyles.runtimeState}>
       <Spin size="large" />
       <strong>{connection.phase === 'pending' ? '正在读取会话策略…' : '正在连接原生运行时…'}</strong>
     </div>
@@ -99,7 +146,7 @@ interface RuntimeStateProps {
 
 function RuntimeState(props: RuntimeStateProps) {
   return (
-    <div className={styles.runtimeState}>
+    <div className={runtimeStyles.runtimeState}>
       <strong role="status">{props.title}</strong>
       <span>{props.description}</span>
       {props.retry ? <Button type="primary" onClick={props.retry}>重试 AIH Chat Runtime</Button> : null}

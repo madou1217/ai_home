@@ -65,12 +65,12 @@ export class SessionRuntimeController {
     return this.startTask;
   }
 
-  dispatch<N extends ChatRuntimeCommandName>(
+  async dispatch<N extends ChatRuntimeCommandName>(
     input: SessionCommandInput<N>,
   ): Promise<ChatRuntimeCommandResult> {
-    if (this.store.getConnectionState() !== 'connected') {
-      return Promise.reject(new Error('chat_runtime_connection_not_ready'));
-    }
+    // 首屏连接（快照 + 事件流）期间允许用户先发送：等 startTask 完成再下发，
+    // 避免把「正在连接」变成输入禁用。重连/重同步仍等回到 connected，避免用旧状态写。
+    await this.waitUntilDispatchReady();
     const command = { ...input, sessionId: this.sessionId } as ChatRuntimeCommand;
     return this.api.dispatchCommand(this.sessionId, command);
   }
@@ -234,6 +234,43 @@ export class SessionRuntimeController {
     stream.onmessage = null;
     stream.onerror = null;
     stream.close();
+  }
+
+  /**
+   * 首屏 connecting 等 startTask（快照）完成即可下发；重连/重同步必须等 connected。
+   * 超时只拒绝这一条命令，不改变连接状态，重连逻辑仍按自己的节奏继续。
+   */
+  private async waitUntilDispatchReady(): Promise<void> {
+    const state = this.store.getConnectionState();
+    if (state === 'connected') return;
+    if (state === 'connecting') {
+      if (!this.startTask) throw new Error('chat_runtime_connection_not_ready');
+      await this.startTask;
+      return;
+    }
+    await this.waitForConnected();
+  }
+
+  private waitForConnected(timeoutMs = 30_000): Promise<void> {
+    if (this.store.getConnectionState() === 'connected') return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let unsubscribe = (): void => {};
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        if (timer) clearTimeout(timer);
+        if (error) reject(error);
+        else resolve();
+      };
+      unsubscribe = this.store.subscribe(() => {
+        if (this.store.getConnectionState() === 'connected') finish();
+      });
+      timer = setTimeout(() => finish(new Error('chat_runtime_connection_not_ready')), timeoutMs);
+      if (this.store.getConnectionState() === 'connected') finish();
+    });
   }
 
   private resumeEventStream(): void {

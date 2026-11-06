@@ -216,3 +216,96 @@ onlyGo(0)= onlySnapshot(0)=
 - 建议：现在可以默认开启 `harnessModelsViaGo`（发布需包含本次 Go 二进制）；保留现有回落语义。
   若在意首次回落的一致性，切换默认前先触发一次快照刷新。
 
+## 8. 模型缓存 go-batch 对拍（2026-11-07 01:05–01:10 +08）
+
+> 任务代号 verify-model-cache-go-batch。只读对拍：未改 Go / Node 代码、未发起推理、未删账号、未 `git add` / `git commit`。
+> 目的：真机把 `config:server.modelCacheSync` 切到 `go-batch`，比较 `state.webUiModelsCache` 的 `byAccount` / `byProvider`
+> 与 Go `account-models` 的 effective 集，验证 30 秒补同步与单飞，最后恢复原值。
+
+### 8.1 开关原值与开启
+
+`config:server` 原本**没有** `modelCacheSync` 键（缺省 `scheduler`）：
+
+```
+rawLen 919  sha256 3ba3255c58a5d7a490e36999fd9c8b3a81ec85b1e5c0ee38e76f8b45172f55ae
+hasModelCacheSync false
+```
+
+备份原文本后只写 `modelCacheSync='go-batch'`（其它键逐键深比较 `deepDiffs=0`），写入值
+sha256 `ded23421…5976d`。按原参数重启（`HOME=/Users/model`、`AIH_HOME_DIR=/Users/model/.ai_home`，
+端口 9527，`--models-probe-accounts 8 --window-activation`）：Node 45131 / Go 45485；
+`/healthz` 200（第 3 次探测），`/readyz` 为 `ready=true`、`go_core.state=ready`、`accounts_synced=true`。
+
+启动后批量同步写出快照 `cache:webui-models-snapshot.json`：`updatedAt=1793984738125`
+（2026-11-06T17:05:38.125Z，约在 listen / Go ready 后 1 秒），`source=remote`、
+`byAccount=30`、`scannedAccounts=30`。
+
+### 8.2 byAccount / byProvider 对拍
+
+数据源：
+- Node：`state.webUiModelsCache` 的持久化形态（`cache:webui-models-snapshot.json`，每次 go-batch 同步由
+  `writePersistedWebUiModelsCache(deps, nextCache)` 原样写出，即同一次 `nextCache`）；
+- Go：`GET 127.0.0.1:19550/v1/management/account-models`（用 Go 子进程环境里的 Management Key，不打印密钥），
+  按 `go-account-sync:state.links` 的 `goRef → nodeRef` 翻回页面 ref。
+
+30 个账号逐账号比较结果：
+
+- **全量关系集 diff=0**：30/30 个账号的 Node `byAccount` 与 Go `models` 全集逐项相同；`unmappedGoRefs=0`、
+  `nodeOnlyAccounts=0`、`goOnlyAccounts=0`。
+- **effective 集**：27/30 个账号逐项相同；3 个账号 Node 多出 `effective=false` 的行，**没有任何 effective
+  模型缺失**（所有账号 `onlyGoEffective=[]`）：
+
+| 账号 | provider | Node byAccount | Go 全量 | Go effective | Node 多出的非 effective 行 |
+| --- | --- | ---: | ---: | ---: | --- |
+| `acct_103a82d5fbd9e9cedd16` | qoder | 15 | 15 | 9 | Auto, Cantus, Efficient, Fast, Sonus, Ultimate（6） |
+| `acct_229f9ffa9b05e70467dd` | codebuddy | 26 | 26 | 18 | balanced-model, default-model, fast-model, glm-5.2, grok-4.7, hy3, hy4-preview, primary-model（8） |
+| `acct_cb6a07c689c8d46432e6` | workbuddy | 26 | 26 | 18 | balanced-model, default-model, fast-model, glm-5.2, hy3, hy4-preview, minimax-m3.1-flash, primary-model（8） |
+
+byProvider 聚合（只看 Go 接管的 Provider）：9/10 个 Provider 完全一致；唯一差异是 qoder
+（Node 15 / Go effective 9，`onlyNode=6`，即上表 6 个非 effective 模型）。全局并集
+Node 205 / Go effective 199，`onlyGo=0`、`onlyNode=6`。
+
+这 6 个 qoder 模型本来就是 Node 快照里的停用行（第 2 节记录的 205 = Go 199 + 6 个停用 qoder），
+不是 go-batch 新引入的。差异来源是 **WebUI 缓存的口径是全量关系快照**（停用/人工行要能在模型管理页
+看见并编辑），不是 effective 路由目录；页面的 `selectableByAccountRef` 会按 `model-catalog-settings`
+过滤：同一时刻 `/v0/webui/models` 的 qoder `byAccountRef=15`，`selectable=9`，6 个停用模型均不在可选集里。
+
+### 8.3 30 秒补同步与单飞
+
+用 Go 的 `GET /v1/management/metrics` 的 `route_counts["/v1/management/account-models"]` 作为
+「整池读取次数」的计数器（每次 Node 批量同步恰好发一次全量 GET），配合快照 `updatedAt`：
+
+| 场景 | 结果 | account-models 增量 | 快照 updatedAt |
+| --- | --- | ---: | --- |
+| 距上次同步 164970ms，首次 `GET /v0/webui/model-aliases/targets` | 200, 49ms, targets=10 providers | **+1** | 1793984738125 → 1793984903121 |
+| 紧接着第二次 targets（30 秒内） | 200, 8ms | **0** | 不变 |
+| 再等 31142ms 后，两个 targets 并发 | 均 200（71ms / 34ms） | **+1** | 1793984903121 → 1793984934196（只前进一次） |
+
+即：超过 30 秒会补一次同步且不报错；30 秒窗口内命中内存快照；并发请求共享同一个
+`sync.running`，只向 Go 拉一次（单飞）。
+
+### 8.4 复原
+
+把备份的原始文本写回 `config:server`：
+
+```
+restoredExact=true  rawLen 919  sha256 3ba3255c58a5d7a490e36999fd9c8b3a81ec85b1e5c0ee38e76f8b45172f55ae
+hasModelCacheSync false
+```
+
+按原参数再次重启：Node 51333 / Go 51688；`/healthz` 200（第 3 次探测），`/readyz` 第 2 次为
+`ready=true` / `go_core.state=ready` / `accounts_synced=true`。模型页
+`GET /v0/webui/models` 200（10 个 Provider、`byAccountRef=30`，qoder `selectable=9`），
+`GET /v0/webui/accounts` 200（32 个账号）。配置文本与备份逐字节相同，`modelCacheSync` 键不存在，
+开关回到缺省的 scheduler。
+
+### 8.5 结论
+
+- go-batch 的**全量关系快照**与 Go `account-models` 逐账号逐项一致（30/30，diff=0），byProvider 9/10 一致；
+  唯一差异是 6 个 `effective=false` 的 qoder 行，属于 WebUI 缓存刻意保留的停用行，且被可选集过滤。
+- 30 秒补同步、30 秒内不重复拉取、并发单飞均验证通过；Go 失败时不抛错（沿用旧快照的语义未变）。
+- 建议默认改 `go-batch`，但验收口径应写成「**全量关系集 diff=0**」；如果坚持按 Go effective 口径要求
+  byAccount 逐账号 diff=0，则当前实现不满足（会多出停用行），需要另行决定是否让 WebUI 缓存丢弃
+  停用/人工行——那会改变模型管理页的可见性，不建议在未确认前顺手改。
+
+

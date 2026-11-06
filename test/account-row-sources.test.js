@@ -118,7 +118,7 @@ test('Go 没写身份字段时保留 Node 值（account_profiles 目前为空）
   assert.equal(assembled.email, node.email);
   assert.equal(assembled.planType, node.planType);
   assert.deepEqual(countFallbacks(goRow({ display_name: '', email: '', subscription_kind: '' })),
-    ['displayName', 'planType', 'email']);
+    ['displayName', 'isDefault', 'planType', 'email']);
 });
 
 test('Vertex 占位账号的 status 不被 Go 的 enabled=false 覆盖', () => {
@@ -163,4 +163,29 @@ test('go-projected 字段不参与 Go 视图覆盖（Node 已直读 Go 物化状
   assert.equal(assembled.remainingPct, 10);
   assert.equal(assembled.quotaStatus, 'exhausted');
   assert.ok(!GO_ASSEMBLED_FIELDS.some((entry) => entry.field === 'remainingPct'));
+});
+
+test('默认账号与额度状态以 Go 为准', () => {
+  const node = nodeRow({ isDefault: false, quotaStatus: 'pending', quotaReason: '' });
+  const assembled = assembleAccountRow(node, goRow({
+    is_default: true,
+    quota_status: 'exhausted',
+    quota_reason: 'usage_exhausted'
+  }));
+  assert.equal(assembled.isDefault, true);
+  // 额度状态是持续采集的字段，仍由 Node 渲染（见来源表注释）。
+  assert.equal(assembled.quotaStatus, 'pending');
+  assert.equal(assembled.quotaReason, '');
+
+  // Go 没有额度状态时同样保留 Node（Node-only Provider 的账号）。
+  const kept = assembleAccountRow(node, goRow({ is_default: false }));
+  assert.equal(kept.quotaStatus, 'pending');
+  assert.equal(kept.quotaReason, '');
+
+  // Go 有状态但没有原因：不影响行形状。
+  const cleared = assembleAccountRow(
+    nodeRow({}),
+    goRow({ quota_status: 'available', quota_reason: '' })
+  );
+  assert.equal(cleared.quotaReason, '');
 });

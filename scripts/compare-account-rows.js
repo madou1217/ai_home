@@ -141,7 +141,11 @@ function buildGoFacts(goDb) {
       SELECT a.account_ref, a.provider_id, a.enabled,
              c.auth_kind, c.auth_mode,
              p.display_name, p.email, p.subscription_kind,
-             s.captured_at_ms
+             s.captured_at_ms, s.quota_status, s.quota_reason,
+             EXISTS (
+               SELECT 1 FROM account_defaults d
+               WHERE d.provider_id = a.provider_id AND d.account_ref = a.account_ref
+             ) AS is_default
         FROM accounts a
         LEFT JOIN account_credentials c ON c.account_ref = a.account_ref
         LEFT JOIN account_profiles p ON p.account_ref = a.account_ref
@@ -162,7 +166,10 @@ function buildGoFacts(goDb) {
         subscription_kind: String(row.subscription_kind || ''),
         usage_snapshot: Number(row.captured_at_ms) > 0
           ? { captured_at: new Date(Number(row.captured_at_ms)).toISOString() }
-          : null
+          : null,
+        is_default: Number(row.is_default) === 1,
+        quota_status: String(row.quota_status || ''),
+        quota_reason: String(row.quota_reason || '')
       });
     }
     return index;

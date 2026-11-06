@@ -77,6 +77,11 @@ type AccountOverviewInput struct {
 	ModelSummary     AccountModelSummary
 	HasUsageSnapshot bool
 	UsageSnapshot    usagecore.Snapshot
+	// IsDefault 表示该账号是所属 Provider 的默认启动账号（account_defaults 里有行）。
+	IsDefault bool
+	// QuotaState 是 Go 物化的账号额度状态（account_usage_snapshots 的标量列），
+	// 供账号行直接消费，不必再让调用方直读 Go 的库。
+	QuotaState AccountQuotaState
 }
 
 // AccountOverview 是账号列表使用的无敏感数据只读投影。
@@ -95,6 +100,8 @@ type AccountOverview struct {
 	modelSummary     AccountModelSummary
 	hasUsageSnapshot bool
 	usageSnapshot    usagecore.Snapshot
+	isDefault        bool
+	quotaState       AccountQuotaState
 }
 
 // NewAccountOverview 校验基础账号和可选凭据、资料标量。
@@ -121,6 +128,8 @@ func NewAccountOverview(input AccountOverviewInput) (AccountOverview, error) {
 		modelSummary:     input.ModelSummary,
 		hasUsageSnapshot: input.HasUsageSnapshot,
 		usageSnapshot:    input.UsageSnapshot,
+		isDefault:        input.IsDefault,
+		quotaState:       input.QuotaState,
 	}, nil
 }
 
@@ -178,6 +187,81 @@ func (overview AccountOverview) SubscriptionRaw() string {
 func (overview AccountOverview) ProfileUpdatedAt() time.Time {
 	return overview.profileUpdatedAt
 }
+
+// IsDefault 表示该账号是所属 Provider 的默认启动账号。
+func (overview AccountOverview) IsDefault() bool {
+	return overview.isDefault
+}
+
+// QuotaState 返回 Go 物化的额度状态；账号还没有任何额度快照时 found 为 false。
+func (overview AccountOverview) QuotaState() (state AccountQuotaState, found bool) {
+	return overview.quotaState, overview.quotaState.found
+}
+
+// AccountQuotaStateInput 是额度物化状态的公开标量。
+type AccountQuotaStateInput struct {
+	Found               bool
+	Status              string
+	Reason              string
+	RemainingBPS        int
+	HasNumericRemaining bool
+	CapturedAt          time.Time
+}
+
+// AccountQuotaState 是账号行消费的额度状态（available/exhausted/pending/not_applicable）。
+type AccountQuotaState struct {
+	found               bool
+	status              string
+	reason              string
+	remainingBPS        int
+	hasNumericRemaining bool
+	capturedAt          time.Time
+}
+
+// NewAccountQuotaState 校验物化额度状态：没有快照时只能是零值，
+// 有快照时状态与采集时间必须成立，剩余额度按 basis points 落在 [0,10000]。
+func NewAccountQuotaState(input AccountQuotaStateInput) (AccountQuotaState, error) {
+	if !input.Found {
+		if input.Status != "" || input.Reason != "" || input.RemainingBPS != 0 ||
+			input.HasNumericRemaining || !input.CapturedAt.IsZero() {
+			return AccountQuotaState{}, ErrInvalidOverview
+		}
+		return AccountQuotaState{}, nil
+	}
+	status := strings.ToLower(strings.TrimSpace(input.Status))
+	if status == "" || input.CapturedAt.IsZero() {
+		return AccountQuotaState{}, ErrInvalidOverview
+	}
+	if input.RemainingBPS < 0 || input.RemainingBPS > 10000 {
+		return AccountQuotaState{}, ErrInvalidOverview
+	}
+	return AccountQuotaState{
+		found:               true,
+		status:              status,
+		reason:              strings.TrimSpace(input.Reason),
+		remainingBPS:        input.RemainingBPS,
+		hasNumericRemaining: input.HasNumericRemaining,
+		capturedAt:          input.CapturedAt.UTC(),
+	}, nil
+}
+
+// IsFound 表示账号已有物化额度状态。
+func (state AccountQuotaState) IsFound() bool { return state.found }
+
+// Status 返回额度状态枚举。
+func (state AccountQuotaState) Status() string { return state.status }
+
+// Reason 返回额度状态的解释（如 provider_returned_no_numeric_usage）。
+func (state AccountQuotaState) Reason() string { return state.reason }
+
+// RemainingBPS 返回剩余额度百分比 × 100。
+func (state AccountQuotaState) RemainingBPS() int { return state.remainingBPS }
+
+// HasNumericRemaining 表示 remainingBPS 是可用的数值而不是缺省 0。
+func (state AccountQuotaState) HasNumericRemaining() bool { return state.hasNumericRemaining }
+
+// CapturedAt 返回额度状态的计算时间。
+func (state AccountQuotaState) CapturedAt() time.Time { return state.capturedAt }
 
 // ModelSummary 返回账号当前持久化模型关系的有界汇总。
 func (overview AccountOverview) ModelSummary() AccountModelSummary {

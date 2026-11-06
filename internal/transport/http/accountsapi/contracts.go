@@ -150,8 +150,16 @@ type accountView struct {
 	SubscriptionRaw  string                    `json:"subscription_raw"`
 	WorkspaceID      string                    `json:"workspace_id,omitempty"`
 	ProfileUpdatedAt string                    `json:"profile_updated_at,omitempty"`
+	IsDefault        bool                      `json:"is_default"`
 	ModelSummary     *accountModelSummaryView  `json:"model_summary"`
 	UsageSnapshot    *accountUsageSnapshotView `json:"usage_snapshot"`
+	// 额度物化状态：Go 直接从 account_usage_snapshots 的标量列给出，
+	// 调用方不必再直读 Go 的库（切片 C：账号行少一次本地查询）。
+	QuotaStatus         string `json:"quota_status,omitempty"`
+	QuotaReason         string `json:"quota_reason,omitempty"`
+	RemainingBPS        int    `json:"remaining_bps"`
+	HasNumericRemaining bool   `json:"has_numeric_remaining"`
+	QuotaCapturedAt     string `json:"quota_captured_at,omitempty"`
 	// Probe 是最近一次额度探针结果（Node 执行后推送），为空表示从未探测。
 	Probe     *accountProbeView `json:"probe,omitempty"`
 	CreatedAt string            `json:"created_at"`
@@ -314,6 +322,14 @@ func newAccountView(overview accountapp.AccountOverview) accountView {
 			Entries:    newAccountUsageEntryViews(usageSnapshot.Entries()),
 		}
 	}
+	if quotaState, found := overview.QuotaState(); found {
+		view.QuotaStatus = quotaState.Status()
+		view.QuotaReason = quotaState.Reason()
+		view.RemainingBPS = quotaState.RemainingBPS()
+		view.HasNumericRemaining = quotaState.HasNumericRemaining()
+		view.QuotaCapturedAt = formatTime(quotaState.CapturedAt())
+	}
+	view.IsDefault = overview.IsDefault()
 	return view
 }
 

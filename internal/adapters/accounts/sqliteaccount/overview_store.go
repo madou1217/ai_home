@@ -67,10 +67,21 @@ const accountOverviewSelectSQL = `
 	           ORDER BY u.limit_id, u.bucket
 	           LIMIT 65
 	         ) AS bounded_usage
-	       ), '[]')
+	       ), '[]'),
+	       EXISTS (
+	         SELECT 1 FROM account_defaults AS d
+	         WHERE d.provider_id = a.provider_id AND d.account_ref = a.account_ref
+	       ),
+	       s.account_ref IS NOT NULL,
+	       COALESCE(s.quota_status, ''),
+	       COALESCE(s.quota_reason, ''),
+	       COALESCE(s.remaining_bps, 0),
+	       COALESCE(s.has_numeric_remaining, 0),
+	       COALESCE(s.captured_at_ms, 0)
 	FROM accounts AS a
 	LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
-	LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref`
+	LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref
+	LEFT JOIN account_usage_snapshots AS s ON s.account_ref = a.account_ref`
 
 // accountOverviewSQL 是账号管理列表及查询计划验证的 keyset SQL 合同。
 const accountOverviewSQL = accountOverviewSelectSQL + `
@@ -164,6 +175,9 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 	var input accountapp.AccountOverviewInput
 	var profileUpdatedAtMS int64
 	var modelSummaryJSON, usageSnapshotJSON string
+	var isDefault, hasQuotaSnapshot, hasNumericRemaining int64
+	var quotaStatus, quotaReason string
+	var remainingBPS, quotaCapturedAtMS int64
 	if err := row.Scan(
 		&record.accountRef,
 		&record.providerID,
@@ -183,6 +197,13 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		&input.WorkspaceID,
 		&modelSummaryJSON,
 		&usageSnapshotJSON,
+		&isDefault,
+		&hasQuotaSnapshot,
+		&quotaStatus,
+		&quotaReason,
+		&remainingBPS,
+		&hasNumericRemaining,
+		&quotaCapturedAtMS,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return accountapp.AccountOverview{}, accountapp.ErrAccountNotFound
@@ -208,6 +229,21 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 	}
 	input.HasUsageSnapshot = hasUsageSnapshot
 	input.UsageSnapshot = usageSnapshot
+	input.IsDefault = isDefault != 0
+	quotaInput := accountapp.AccountQuotaStateInput{
+		Found:               hasQuotaSnapshot != 0,
+		Status:              quotaStatus,
+		Reason:              quotaReason,
+		RemainingBPS:        int(remainingBPS),
+		HasNumericRemaining: hasNumericRemaining != 0,
+	}
+	if quotaInput.Found {
+		quotaInput.CapturedAt = time.UnixMilli(quotaCapturedAtMS).UTC()
+	}
+	input.QuotaState, err = accountapp.NewAccountQuotaState(quotaInput)
+	if err != nil {
+		return accountapp.AccountOverview{}, ErrIncompatibleDatabase
+	}
 	if input.HasProfile {
 		input.ProfileUpdatedAt = time.UnixMilli(profileUpdatedAtMS).UTC()
 	}

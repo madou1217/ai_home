@@ -11,15 +11,24 @@ require('../lib/runtime/sqlite-warning-filter').installSqliteWarningFilter(proce
 // 而补全必须在一百毫秒内出结果。除这几个内部动词之外的一切照旧走 lib/cli/app。
 const INTERNAL_FAST_PATH_VERBS = new Set(['__complete', '__suggest', '__learn']);
 
-// `aih ss` / `aih sessions` 也走轻量路径：完整 CLI 组合根约 1.3s，而这两个命令
-// 只需要持久会话列表 + 选择器。只在注册表里已经有会话时生效 —— 注册表为空时可能是
-// 重启后需要 restore，那种情况交回完整 CLI（它会做懒恢复）。
+// `aih ss --list` / `--detail` 也走轻量路径：完整 CLI 组合根约 2s，而纯列表
+// 只需要持久会话注册表。只在注册表里已经有会话时生效 —— 注册表为空时可能是重启后
+// 需要 restore，那种情况交回完整 CLI（它会做懒恢复）。
+//
+// 交互选择器与 `aih ss <名字>` 必须走完整 CLI：真正进入会话需要 PTY 运行时
+// （runCliPty 只在组合根里装配），快路径拿不到它，Enter 只会报
+// 「PTY runtime is unavailable」（2026-11-06 用户多次遇到）。
 function tryPersistentSessionFastPath() {
   const verb = process.argv[2];
   if (verb !== 'ss' && verb !== 'sessions') return false;
   const rest = process.argv.slice(3);
   if (rest.some((token) => token === '--help' || token === '-h' || token === 'help')) return false;
   try {
+    const {
+      isGlobalSessionListOnlyRequest,
+      runGlobalPersistentSessionsCommand
+    } = require('../lib/cli/services/ai-cli/persistent-session-list');
+    if (!isGlobalSessionListOnlyRequest(rest)) return false;
     const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
     const { resolveUnprojectedHostHomeDir } = require('../lib/runtime/host-home');
     // 在会话里（HOME 是账号投影）也要看到宿主的会话：shell drawer 里跑 aih ss 是常见用法。
@@ -30,7 +39,6 @@ function tryPersistentSessionFastPath() {
     if (!aiHomeDir) return false;
     const entries = require('../lib/runtime/persistent-session-registry').listEntries(aiHomeDir, {});
     if (!Array.isArray(entries) || entries.length === 0) return false;
-    const { runGlobalPersistentSessionsCommand } = require('../lib/cli/services/ai-cli/persistent-session-list');
     const result = runGlobalPersistentSessionsCommand(rest, {
       aiHomeDir,
       processImpl: process,

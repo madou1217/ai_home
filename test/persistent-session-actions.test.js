@@ -4,11 +4,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   describePickerRow,
   parseSessionPickerKey,
-  runPickerRowAction
+  runPickerRowAction,
+  isGlobalSessionListOnlyRequest,
+  enterGlobalPersistentSession
 } = require('../lib/cli/services/ai-cli/persistent-session-list');
 const { copyText } = require('../lib/runtime/clipboard-copy');
 
@@ -741,4 +745,49 @@ test('关闭会话时同步删掉注册表条目（否则下次 aih ss 会把它
   );
   assert.equal(result.ok, true);
   assert.equal(registry.listEntries(dir).length, 0);
+});
+
+// 回归守卫（2026-11-06）：aih ss 的轻量快路径只能处理纯列表/详情。
+// 交互选择器和 aih ss <名字> 需要完整 CLI 的 PTY 运行时；快路径没有 runCliPty，
+// 用户按 Enter 会稳定得到「PTY runtime is unavailable」。
+test('只有纯列表/详情走 ss 快路径，交互与直接进入交回完整 CLI', () => {
+  assert.equal(isGlobalSessionListOnlyRequest([]), false);
+  assert.equal(isGlobalSessionListOnlyRequest(['p-ai_home-1z0bk3-mvrpesos-104k']), false);
+  assert.equal(isGlobalSessionListOnlyRequest(['--refresh']), false);
+  assert.equal(isGlobalSessionListOnlyRequest(['--help']), false);
+  assert.equal(isGlobalSessionListOnlyRequest(['--list']), true);
+  assert.equal(isGlobalSessionListOnlyRequest(['-l']), true);
+  assert.equal(isGlobalSessionListOnlyRequest(['-vv']), true);
+  assert.equal(isGlobalSessionListOnlyRequest(['details']), true);
+
+  // 接线回归：bin 的轻量路径必须先问这个判据，交互请求直接交回完整 CLI。
+  const bin = fs.readFileSync(path.join(__dirname, '../bin/ai-home.js'), 'utf8');
+  assert.match(bin, /if \(!isGlobalSessionListOnlyRequest\(rest\)\) return false;/);
+});
+
+test('进入会话：写 target/mirror intent，并把账号与原生 id 交给 runCliPty', () => {
+  const env = {};
+  const calls = [];
+  const row = {
+    live: true,
+    cliName: 'claude',
+    cliAccountId: '20',
+    accountRef: 'acct_9ebdea56fc395a8086b4',
+    targetSession: 'p-ai_home-1z0bk3-mvrpesos-104k',
+    agentSessionId: 'a56c9c4f-547d-4f6e-84d0-d77d513e2a57',
+    path: '/Users/model/projects/feature/ai_home'
+  };
+  const entered = enterGlobalPersistentSession(row, {
+    processImpl: { env, cwd: () => row.path, chdir: () => {} },
+    runCliPty: (...args) => { calls.push(args); }
+  });
+  assert.equal(entered, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 4), ['claude', row.accountRef, [], false]);
+  assert.equal(calls[0][4].cliAccountId, '20');
+  assert.match(String(env.AIH_SESSION_INTENT), /target=p-ai_home-1z0bk3-mvrpesos-104k/);
+  assert.match(String(env.AIH_SESSION_INTENT), /mirror=1/);
+
+  // 没有 PTY 运行时就是快路径的失败形态：必须显式返回 false，由调用方切完整 CLI。
+  assert.equal(enterGlobalPersistentSession(row, { processImpl: { env: {} } }), false);
 });

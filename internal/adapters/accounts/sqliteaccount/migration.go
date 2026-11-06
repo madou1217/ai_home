@@ -219,6 +219,22 @@ var expectedSchemaColumns = map[string][]string{
 		"reason",
 		"updated_at_ms",
 	},
+	"upstream_error_mapping_group": {
+		"id",
+		"name",
+		"description",
+		"provider",
+		"enabled",
+		"position",
+		"version",
+		"created_at_ms",
+		"updated_at_ms",
+	},
+	"upstream_error_mapping_rule": {
+		"group_id",
+		"position",
+		"rule_json",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -295,6 +311,7 @@ var forwardMigrations = []string{
 	SchemaV24,
 	SchemaV25,
 	SchemaV26,
+	SchemaV27,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

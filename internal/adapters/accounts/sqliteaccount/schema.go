@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 26
+	SchemaVersion = 27
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -145,3 +145,11 @@ var SchemaV25 string
 //
 //go:embed schema_v26.sql
 var SchemaV26 string
+
+// SchemaV27 保存上游错误映射组与组内规则条目。
+//
+// 独立成表而不是复用 app-state：映射组的写入口归 Go，需要行级版本 CAS 与级联
+// 删除，这两件事 JSON 文档存储都给不了（详见 migration 注释）。
+//
+//go:embed schema_v27.sql
+var SchemaV27 string

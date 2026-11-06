@@ -309,3 +309,54 @@ hasModelCacheSync false
   停用/人工行——那会改变模型管理页的可见性，不建议在未确认前顺手改。
 
 
+
+
+## 9. 调度器退役（2026-11-07）
+
+> 任务代号 retire-model-scheduler。只改 Node 的 `lib/**` 与 `test/**`；Go 的
+> `POST /v1/management/accounts/{ref}/models/refresh` 已存在，未改 Go。未 `git add` / `git commit`。
+
+### 9.1 删除的文件与逻辑
+
+- `lib/server/model-probe-index.js` 删除。删除前全仓库 `grep` 确认只有
+  `lib/server/webui-model-refresh-scheduler.js` 引用它（docs 里的历史记录除外）。
+- `lib/server/webui-model-refresh-scheduler.js` 删除旧调度器的全部实现：
+  到期时间轮分桶 / 最小堆索引、优先级插队（`requestWebUiModelProbe`）、活跃窗口
+  （`touchWebUiModelActivity`）、启动补课、`setTimeout` 轮询与错误退避。
+  文件保留为薄门面：`ensureWebUiModelRefreshScheduler` + `triggerWebUiModelRefreshSoon`。
+- `server.js` 删除停服时清理旧调度器 timer 的分支；生命周期监听器不再传
+  `requestModelProbe`，改为把 `(provider, accountRef)` 直接交给刷新入口。
+
+### 9.2 triggerWebUiModelRefreshSoon 的新行为
+
+- **账号级（带 ref）**：经 host 的 `refreshAccountModels` 调 Go 的
+  `POST /v1/management/accounts/{ref}/models/refresh`（Node ref 由 host 翻成 Go ref）。
+- **Go 不可用 / 返回失败**：对失败账号调用 `markWebUiModelsCacheStale`——只清
+  `accountUpdatedAt`，保留已发现目录，让账号回到「待探测」；等下一次 go-batch
+  批量同步或按需探测补回。
+- **全局（不带 ref）**：go-batch 下立即单飞批量读一次 Go（`scheduleNext: false`，
+  不接管 6 小时节奏）；legacy 下把运行池账号全部标成 stale。
+- 任何分支都不创建定时器；go-batch 的 6 小时节奏只由
+  `ensureWebUiModelCacheGoSync` 负责。
+
+### 9.3 legacy 语义
+
+- `config:server.modelCacheSync` 仍接受 `'scheduler'`（枚举值保留用于配置回退），
+  但内部映射为「不做定时轮询、仅按需 stale」：启动与 WebUI 请求都不排 timer，
+  模型目录靠持久化快照 + 显式/按需刷新。
+- 默认值仍是 `go-batch`；`server-config-schema` 的默认值与说明已同步。
+
+### 9.4 守卫测试
+
+`test/webui-model-refresh-scheduler.test.js`：
+
+- legacy 的 `ensure`：`setTimeout` / `setInterval` 调用数为 0，且不初始化任何调度状态；
+- go-batch 的 `ensure`：只有 1 个启动后的批量同步 timer（< 5s），没有 setInterval；
+- `trigger`（带 ref / 全局 / Go 不可用）：都不排定时器；Go 成功只调一次刷新，
+  Go 不可用时清掉 `accountUpdatedAt` 且保留 `byAccount`；
+- host 封装发出的是 `POST …/models/refresh`，Go 未就绪返回 `null`；
+- `model-probe-index.js` 已不可解析。
+
+运行：`HOME=/Users/model node --test test/webui-model*.test.js test/account-*.test.js test/source-encoding.test.js`
+（153 passed / 0 failed）。
+

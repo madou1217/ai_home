@@ -98,7 +98,9 @@ test('editing a linked codex base URL rotates the Go credential in place', async
   });
 
   const result = await sync.reconcile();
-  const pushed = calls.filter((call) => call.path.startsWith('/v1/management/accounts'));
+  // 路由排除是派生投影（每轮询首圈强制对齐一次），不属于「账号写入」，这里只数账号写入。
+  const pushed = calls.filter((call) => call.path.startsWith('/v1/management/accounts')
+    && !call.path.endsWith('/routing'));
   assert.equal(pushed.length, 1, 'only one write may reach Go');
   assert.equal(pushed[0].method, 'PUT');
   assert.equal(pushed[0].path, `/v1/management/accounts/${GO_OLD_REF}/credential`);
@@ -140,7 +142,8 @@ test('a stale Go projection with the same static key is never adopted as a new a
   const result = await sync.reconcile();
   assert.equal(result.adopted, 0, 'editing must not derive a new Node account');
   assert.equal(result.skippedStaticDuplicates, 1);
-  assert.equal(calls.filter((call) => call.path.startsWith('/v1/management/accounts')).length, 0);
+  assert.equal(calls.filter((call) => call.path.startsWith('/v1/management/accounts')
+    && !call.path.endsWith('/routing')).length, 0);
   sync.stop && sync.stop();
 });
 

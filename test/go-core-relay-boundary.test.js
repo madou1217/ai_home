@@ -179,3 +179,50 @@ test('an image request whose carrier has no Go image implementation still stays 
   });
 });
 
+
+// 池门（模型级收窄）：池里存在 Go 服务不了的 Provider（gemini）时，判据是
+// 「这个模型的承载者是否全都能被 Go 服务」，不再要求「全为 relay 通道」。
+// 旧口径会让 claude / codex / agy 的 canonical 模型在池里有 gemini 账号时全部留在 Node
+// （2026-11-06 真机：claude 请求不增长 usage_ledger）。
+const CHAT_ENTRY = 'gateway.openai.chat_completions';
+
+function chatDeferralInput(carrierProviders) {
+  const accountByRef = new Map();
+  const refs = [];
+  carrierProviders.forEach((provider, index) => {
+    const ref = 'acct_chat_' + index;
+    refs.push(ref);
+    accountByRef.set(ref, { accountRef: ref, provider });
+  });
+  return {
+    entryId: CHAT_ENTRY,
+    model: 'claude-sonnet-4-6',
+    state: {
+      accounts: {
+        claude: [{ accountRef: 'acct_claude', provider: 'claude', status: 'up' }],
+        gemini: [{ accountRef: 'acct_gemini', provider: 'gemini', status: 'up' }]
+      },
+      modelAccountIndex: {
+        builtAt: 1,
+        modelToAccounts: new Map([['claude-sonnet-4-6', refs]]),
+        accountByRef
+      }
+    },
+    egressBoundRefs: () => new Set(),
+    goAcceptedErrorRuleRefs: () => new Set()
+  };
+}
+
+test('canonical 模型只由 Go 能服务的 Provider 承载时继续交给 Go（池里有 gemini 也放行）', () => {
+  assert.deepEqual(explainGoRouteDeferral(chatDeferralInput(['claude'])), {
+    defer: false,
+    reason: ''
+  });
+});
+
+test('模型承载者包含 Go 服务不了的 Provider 时仍交还 Node', () => {
+  assert.deepEqual(explainGoRouteDeferral(chatDeferralInput(['claude', 'gemini'])), {
+    defer: true,
+    reason: 'pool_has_non_go_servable_provider'
+  });
+});

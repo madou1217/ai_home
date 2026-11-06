@@ -65,9 +65,19 @@ Node 账号行（`/v0/webui/accounts`）目前 34 个字段，按来源分三类
 `proxy.meadeo.com`），两者语义不同；把标签写进 picture 会让 ref 反算失败或写错行。
 该表当前为空也不是 bug——这些 Provider 的 native decoder 不产出 profile。
 
-因此切片 C 的覆盖层保留 Node 的这 20 个字段，Go 只提供事实。下一步是把上表第二列
-实现成纯函数（输入 Go 视图 + Node 记录 → 当前行形状），用现有 43 个账号做零差异对拍，
-再给 `/v0/webui/accounts` 加开关。
+因此切片 C 的覆盖层保留 Node 的这 20 个字段，Go 只提供事实。
+
+**已落地（2026-11-06）**：字段来源写成数据表 `lib/server/account-row-sources.js`
+（39 项，39 = Go 判定 6 + Go 投影 Node 直读 4 + Node 独有 29），装配器
+`assembleAccountRow` 只用 Go 有值且语义等价的字段覆盖，其余原样保留；
+对拍器 `scripts/compare-account-rows.js` 在真机上跑出 **43 行 × 39 字段零差异**
+（`row_identical=true field_mismatch=0`，退出码 0）。回退项固定为
+`displayName / planType / email`（Go 的 profiles 为空），两条已禁用 agy 账号的
+Node 快照停在 10-24（Go 无快照），按告警列出、不阻断。
+
+装配器已在运行时影子对账里当守卫用（`assembledChanged` 必须为 0），但**还没有**
+接到 `/v0/webui/accounts` 的响应路径：那一步需要同步拿 Go 事实，异步缓存会让
+启停开关回弹，留到前门翻转时随开关一起做。
 
 **切片 B 的真机边界（2026-11-06）**：探针推送只对「Node 亲自探测」的账号有内容，
 而 Node 现在只探 `claude` / `codex`（其余 13 个 Provider 的额度都已 Go 接管，

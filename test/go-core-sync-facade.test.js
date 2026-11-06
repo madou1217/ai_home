@@ -38,8 +38,9 @@ test('WebUI 路由调用的每个 goCoreSync 方法都在门面清单里', () =>
   // 真值源：扫路由里真正出现的调用。手写一份期望清单只是把同一个错误抄两遍。
   // 少一个方法的后果是运行期 undefined——请求静默 503，最容易在
   // 「切完流忘了加门面」时出现。
-  // 扫所有 X.y 形式，再看 X 是不是 goCoreSync 的别名——比动态拼正则更不容易写错。
-  const memberPattern = /([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)/g;
+  // 只看**方法调用** X.y(...)：属性访问（如 deleteAccount 返回值上的 .ok/.status）
+  // 不是门面方法，误判会逼着生产代码为了绕开检查而改名。
+  const memberPattern = /([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\(/g;
   const aliasPattern = /const\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*goCoreSync[^;\n]*/g;
   const used = new Map();
   for (const name of fs.readdirSync(SERVER_DIR)) {

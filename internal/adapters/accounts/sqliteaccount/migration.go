@@ -235,6 +235,17 @@ var expectedSchemaColumns = map[string][]string{
 		"position",
 		"rule_json",
 	},
+	"account_upstream_error_rule": {
+		"account_ref",
+		"source",
+		"position",
+		"rule_json",
+	},
+	"account_upstream_error_group": {
+		"account_ref",
+		"position",
+		"group_id",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -312,6 +323,7 @@ var forwardMigrations = []string{
 	SchemaV25,
 	SchemaV26,
 	SchemaV27,
+	SchemaV28,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
@@ -453,6 +465,7 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 		"idx_account_runtime_blocks_until",
 		"idx_oauth_jobs_provider_status",
 		"idx_oauth_jobs_updated_at",
+		"idx_account_upstream_error_group_group",
 	} {
 		var indexCount int
 		const indexSQL = `

@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 27
+	SchemaVersion = 28
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -153,3 +153,11 @@ var SchemaV26 string
 //
 //go:embed schema_v27.sql
 var SchemaV27 string
+
+// SchemaV28 保存账号级上游错误规则与映射组挂载关系。
+//
+// 规则、挂载、兼容投影三者在同一张规则表里用 source 区分：账号级配置读取时要和
+// 映射组拼装，兼容投影是已经拼装好的有效规则，不能再展开一次。
+//
+//go:embed schema_v28.sql
+var SchemaV28 string

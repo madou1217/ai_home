@@ -6,6 +6,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
+	accountrulesapi "github.com/madou1217/ai_home/internal/transport/http/accountrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountusageeventsapi"
@@ -26,6 +27,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
+	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
@@ -172,9 +174,22 @@ func newRouter(handlers serverHandlers) http.Handler {
 		mux.Handle(modelaliaswebui.Path, handlers.modelAliasesWebUI)
 		mux.Handle(modelaliaswebui.Path+"/", handlers.modelAliasesWebUI)
 	}
-	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只承接自己已能求值的账号。
+	// 账号自定义上游错误规则投影（兼容旧 Node）：Go 只承接自己已能求值的账号。
 	if handlers.upstreamRules != nil {
 		mux.Handle(upstreamrulesapi.Path, handlers.upstreamRules)
+	}
+	// 账号级规则：路径带 {ref} 通配，必须用「方法 + 模式」注册，才能在
+	// /v1/management/accounts/ 的既有前缀路由之前精确命中。
+	if handlers.accountRules != nil {
+		mux.Handle("GET "+accountrulesapi.CollectionPath, handlers.accountRules)
+		mux.Handle("GET "+accountrulesapi.MemberPattern, handlers.accountRules)
+		mux.Handle("PUT "+accountrulesapi.MemberPattern, handlers.accountRules)
+		mux.Handle("DELETE "+accountrulesapi.MemberPattern, handlers.accountRules)
+	}
+	// 上游错误映射组：集合与成员是两个 pattern，不带尾斜杠只匹配精确路径。
+	if handlers.upstreamMappingGroups != nil {
+		mux.Handle(upstreammappingapi.Path, handlers.upstreamMappingGroups)
+		mux.Handle(upstreammappingapi.Path+"/", handlers.upstreamMappingGroups)
 	}
 	if handlers.modelCatalog != nil {
 		mux.Handle(modelcatalogapi.Path, handlers.modelCatalog)

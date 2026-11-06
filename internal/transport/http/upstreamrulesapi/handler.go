@@ -1,14 +1,16 @@
-// Package upstreamrulesapi 是 Go 接收 Node 账号自定义上游错误规则投影的管理接口。
+// Package upstreamrulesapi 是旧版「有效规则投影」的兼容管理接口。
 //
-// Node 控制面是规则与错误映射分组的唯一 owner：它在账号或分组变更后把每个账号的
-// 有效规则整体推给 Go，Go 只读这份投影并在分类上游失败时使用。本包只做 HTTP
-// 边界与接受结果回传，不解释规则语义（识别在 core/upstreamrules）。
+// 新写入口是账号级接口（/v1/management/accounts/{ref}/upstream-error-rules），本接口
+// 只服务于尚未升级的 Node：它推送的已经是拼装好的有效规则，Go 不再展开映射组，
+// 而是把这份快照作为兼容投影保存。账号级配置存在时优先于兼容投影，因此双写期不会
+// 互相覆盖。
 //
-//	PUT /v1/management/upstream-error-rules  整体替换，返回已接受的账号引用与丢弃原因
+//	PUT /v1/management/upstream-error-rules  整体替换兼容投影，返回接受结果与对拍差异
 //	GET /v1/management/upstream-error-rules  只读诊断
 package upstreamrulesapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,13 +20,13 @@ import (
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
 )
 
-// Path 是 Node 推送账号规则投影的管理路径。
+// Path 是旧版规则投影的管理路径。
 const Path = "/v1/management/upstream-error-rules"
 
 // maxProjectionBytes 限制一次投影推送的正文大小。
 const maxProjectionBytes = 1 << 20
 
-// ErrInvalidDependencies 表示 Handler 缺少投影存储或鉴权。
+// ErrInvalidDependencies 表示 Handler 缺少服务或鉴权。
 var ErrInvalidDependencies = errors.New("上游错误规则投影 Handler 依赖无效")
 
 // Authorizer 是管理密钥鉴权端口。
@@ -32,26 +34,34 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+// Service 是兼容投影用例端口（由 application/upstreamrules.Service 实现）。
+type Service interface {
+	ReplaceProjection(ctx context.Context, accounts []rulesapp.ProjectionAccount) (rulesapp.ProjectionResult, error)
+	Snapshot(ctx context.Context) ([]rulesapp.Record, error)
+	Generation() int64
+	SupportedProviders() []string
+}
+
 // Dependencies 集中声明规则投影管理接口的依赖。
 type Dependencies struct {
 	Authorizer Authorizer
-	Store      *rulesapp.Store
+	Service    Service
 }
 
-// Handler 接收 Node 的账号规则投影推送。
+// Handler 接收旧版 Node 的账号规则投影推送。
 type Handler struct {
 	authorizer Authorizer
-	store      *rulesapp.Store
+	service    Service
 }
 
 // NewHandler 创建账号规则投影管理接口。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Authorizer == nil || dependencies.Store == nil {
+	if dependencies.Authorizer == nil || dependencies.Service == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
 		authorizer: dependencies.Authorizer,
-		store:      dependencies.Store,
+		service:    dependencies.Service,
 	}, nil
 }
 
@@ -86,12 +96,13 @@ type rulesView struct {
 	AcceptedAccountRefs []string      `json:"accepted_account_refs"`
 	Dropped             []dropView    `json:"dropped"`
 	SupportedProviders  []string      `json:"supported_providers"`
+	MismatchedRefs      []string      `json:"mismatched_account_refs"`
 	Accounts            []accountView `json:"accounts,omitempty"`
 }
 
 // ServeHTTP 只接受 Management Key 鉴权过的 GET 与 PUT。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if handler == nil || handler.authorizer == nil || handler.store == nil {
+	if handler == nil || handler.authorizer == nil || handler.service == nil {
 		writeError(response, http.StatusServiceUnavailable, "upstream_rules_unavailable", "账号规则投影不可用")
 		return
 	}
@@ -102,7 +113,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	switch request.Method {
 	case http.MethodGet:
-		writeView(response, http.StatusOK, handler.view(nil, true))
+		handler.view(response, request, nil, true)
 	case http.MethodPut:
 		handler.put(response, request)
 	default:
@@ -111,7 +122,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 }
 
-// put 校验并整体替换投影，然后回传接受结果。
+// put 校验并整体替换兼容投影，然后回传接受结果。
 func (handler *Handler) put(response http.ResponseWriter, request *http.Request) {
 	var push pushRequest
 	decoder := json.NewDecoder(io.LimitReader(request.Body, maxProjectionBytes))
@@ -120,53 +131,64 @@ func (handler *Handler) put(response http.ResponseWriter, request *http.Request)
 		writeError(response, http.StatusBadRequest, "invalid_projection", "账号规则投影格式无效")
 		return
 	}
-	accounts := make([]rulesapp.AccountRules, 0, len(push.Accounts))
+	accounts := make([]rulesapp.ProjectionAccount, 0, len(push.Accounts))
 	for _, account := range push.Accounts {
-		accounts = append(accounts, rulesapp.NewAccountRules(
-			account.AccountRef,
-			account.Provider,
-			account.Rules,
-		))
+		accounts = append(accounts, rulesapp.ProjectionAccount{
+			AccountRef: account.AccountRef,
+			Provider:   account.Provider,
+			Rules:      account.Rules,
+		})
 	}
-	result, err := handler.store.Replace(accounts)
+	result, err := handler.service.ReplaceProjection(request.Context(), accounts)
 	if err != nil {
 		// 整体拒绝：保留原投影，避免部分应用让某些账号失去异常语义。
 		writeError(response, http.StatusBadRequest, "invalid_projection", err.Error())
 		return
 	}
-	writeView(response, http.StatusOK, handler.view(result.Dropped, false))
+	writeView(response, http.StatusOK, rulesView{
+		Generation:          result.Generation,
+		AcceptedAccountRefs: nonNilStrings(result.Accepted),
+		Dropped:             dropViews(result.Dropped),
+		SupportedProviders:  nonNilStrings(handler.service.SupportedProviders()),
+		MismatchedRefs:      nonNilStrings(result.Mismatched),
+	})
 }
 
-// view 汇总当前投影与接受结果。
-//
-// dropped 只在推送响应里出现：它是本次推送的判定结果，不是投影的持久状态。
-func (handler *Handler) view(drops []rulesapp.Drop, includeAccounts bool) rulesView {
-	snapshot := handler.store.Snapshot()
+// view 汇总当前兼容投影与接受结果。
+func (handler *Handler) view(
+	response http.ResponseWriter,
+	request *http.Request,
+	drops []rulesapp.Drop,
+	includeAccounts bool,
+) {
+	records, err := handler.service.Snapshot(request.Context())
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "upstream_rules_unavailable", "账号规则投影不可用")
+		return
+	}
 	view := rulesView{
-		Generation:          handler.store.Generation(),
-		AcceptedAccountRefs: make([]string, 0, len(snapshot)),
+		Generation:          handler.service.Generation(),
+		AcceptedAccountRefs: make([]string, 0, len(records)),
 		Dropped:             dropViews(drops),
-		SupportedProviders:  handler.store.SupportedProviders(),
+		SupportedProviders:  nonNilStrings(handler.service.SupportedProviders()),
+		MismatchedRefs:      []string{},
 	}
-	if view.SupportedProviders == nil {
-		view.SupportedProviders = []string{}
-	}
-	for _, account := range snapshot {
-		view.AcceptedAccountRefs = append(view.AcceptedAccountRefs, account.AccountRef())
+	for _, record := range records {
+		view.AcceptedAccountRefs = append(view.AcceptedAccountRefs, record.AccountRef)
 		if !includeAccounts {
 			continue
 		}
-		rules := account.Rules()
+		rules := record.Rules
 		if rules == nil {
 			rules = []rulescore.Rule{}
 		}
 		view.Accounts = append(view.Accounts, accountView{
-			AccountRef: account.AccountRef(),
-			Provider:   account.Provider(),
+			AccountRef: record.AccountRef,
+			Provider:   record.Provider,
 			Rules:      rules,
 		})
 	}
-	return view
+	writeView(response, http.StatusOK, view)
 }
 
 // dropViews 把被丢弃的账号投影转换为响应结构；始终返回非 nil 切片。
@@ -176,6 +198,14 @@ func dropViews(drops []rulesapp.Drop) []dropView {
 		views = append(views, dropView{AccountRef: drop.AccountRef, Reason: drop.Reason})
 	}
 	return views
+}
+
+// nonNilStrings 保证 JSON 里是 [] 而不是 null。
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func writeView(response http.ResponseWriter, status int, view rulesView) {

@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -56,6 +57,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
+	accountrulesapi "github.com/madou1217/ai_home/internal/transport/http/accountrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountusageeventsapi"
@@ -78,6 +80,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
+	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 )
@@ -140,6 +143,11 @@ type serverHandlers struct {
 	// upstreamRules 接收 Node 推送的账号自定义上游错误规则投影
 	// （/v1/management/upstream-error-rules）。
 	upstreamRules http.Handler
+	// upstreamMappingGroups 是 Go 自有的上游错误映射组 CRUD
+	// （/v1/management/upstream-error-mapping-groups）。
+	upstreamMappingGroups http.Handler
+	// accountRules 是账号级上游错误规则（/v1/management/accounts/{ref}/upstream-error-rules）。
+	accountRules http.Handler
 	// modelCatalog 接收 Node 的全局公共模型目录投影；不参与 Go 路由选号。
 	modelCatalog      http.Handler
 	managementStatus  http.Handler
@@ -884,18 +892,29 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("解析账号选号策略失败: %w", err)
 	}
-	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只持有可求值的规则集合。
-	// 能力集合为空时 Go 不承接任何账号，投影全部被丢弃、Node 继续自己执行规则。
+	// 映射组是 Go 自己的写入口：组与规则落 aih.db，Node 的账号级规则链路不参与。
+	// 它同时是账号规则拼装的组来源，因此必须先于规则服务创建。
+	upstreamMappingService, err := upstreammappingapp.NewService(
+		sqliteaccount.NewUpstreamErrorMappingRepository(store),
+		providerIDs(catalog),
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建上游错误映射组服务失败: %w", err)
+	}
+	// 账号级上游错误规则：规则与组挂载落 aih.db，有效规则由 Go 拼装。
+	// 能力集合为空时 Go 不承接任何账号，账号仍由 Node 承接。
 	//
 	// 必须在推理组合之前创建：分类点（Canonical Adapter 与原生传输 Handler）在
 	// 装配时就注入同一个求值端口，避免出现「投影已接收但没有任何分类点使用它」。
-	upstreamRulesStore, err := upstreamrules.NewStore(upstreamrules.Options{
+	upstreamRulesService, err := upstreamrules.NewService(upstreamrules.Options{
+		Repository:         sqliteaccount.NewUpstreamErrorRuleRepository(store),
+		Groups:             upstreamMappingService,
 		SupportedProviders: upstreamErrorRuleProviders,
 	})
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则投影失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则服务失败: %w", err)
 	}
-	upstreamRuleEvaluator := configured.NewEvaluator(upstreamRulesStore)
+	upstreamRuleEvaluator := configured.NewEvaluator(upstreamRulesService)
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
@@ -1029,11 +1048,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	upstreamRulesHandler, err := upstreamrulesapi.NewHandler(upstreamrulesapi.Dependencies{
 		Authorizer: authorizer,
-		Store:      upstreamRulesStore,
+		Service:    upstreamRulesService,
 	})
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则投影接口失败: %w", err)
+	}
+	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
+		Authorizer: authorizer,
+		Service:    upstreamRulesService,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建账号级上游错误规则接口失败: %w", err)
+	}
+	upstreamMappingHandler, err := upstreammappingapi.NewHandler(upstreammappingapi.Dependencies{
+		Authorizer: authorizer,
+		Service:    upstreamMappingService,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建上游错误映射组接口失败: %w", err)
 	}
 	claudeGatewayPolicy, err := transportpolicy.NewGatewayPolicy(
 		inference.claudeUpstream,
@@ -1380,38 +1415,40 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	plugins := newPluginHandlers(authorizer, clientAuthorizer, accountProviderResolver(store))
 	return serverHandlers{
-		plugins:            plugins,
-		accounts:           accountsHandler,
-		accountAuth:        accountAuthHandler,
-		clientProps:        clientPropsHandler,
-		models:             modelsHandler,
-		blobs:              blobsHandler,
-		images:             imageHandler,
-		tokenCount:         tokenCountHandler,
-		inference:          inference.handler,
-		gemini:             inference.gemini,
-		codexResponsesWS:   webSocketHandler,
-		codexResponsesHTTP: codexHTTPHandler,
-		observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
-		accountOutcomes:    accountOutcomesHandler,
-		accountRuntime:     accountRuntimeHandler,
-		accountUsageEvents: accountUsageEventsHandler,
-		usageStats:         usageStatsHandler,
-		usageModels:        usageModelsHandler,
-		usageSessions:      usageSessionsHandler,
-		usageImport:        usageImportHandler,
-		usageBuckets:       usageBucketsHandler,
-		claudeRelayLeases:  relayLeaseHandler,
-		claudeNativeRelay:  nativeRelayHandler,
-		familyRelay:        familyRelayHandler,
-		shutdown:           shutdownHandler,
-		modelAliases:       modelAliasesHandler,
-		modelAliasesWebUI:  modelAliasesWebUIHandler,
-		upstreamRules:      upstreamRulesHandler,
-		modelCatalog:       modelCatalogHandler,
-		managementStatus:   managementStatusHandler,
-		managementMetrics:  managementMetricsHandler,
-		metrics:            metrics,
+		plugins:               plugins,
+		accounts:              accountsHandler,
+		accountAuth:           accountAuthHandler,
+		clientProps:           clientPropsHandler,
+		models:                modelsHandler,
+		blobs:                 blobsHandler,
+		images:                imageHandler,
+		tokenCount:            tokenCountHandler,
+		inference:             inference.handler,
+		gemini:                inference.gemini,
+		codexResponsesWS:      webSocketHandler,
+		codexResponsesHTTP:    codexHTTPHandler,
+		observeCodexClient:    observeCodexClientVersion(codexVersions, clientAuthorizer),
+		accountOutcomes:       accountOutcomesHandler,
+		accountRuntime:        accountRuntimeHandler,
+		accountUsageEvents:    accountUsageEventsHandler,
+		usageStats:            usageStatsHandler,
+		usageModels:           usageModelsHandler,
+		usageSessions:         usageSessionsHandler,
+		usageImport:           usageImportHandler,
+		usageBuckets:          usageBucketsHandler,
+		claudeRelayLeases:     relayLeaseHandler,
+		claudeNativeRelay:     nativeRelayHandler,
+		familyRelay:           familyRelayHandler,
+		shutdown:              shutdownHandler,
+		modelAliases:          modelAliasesHandler,
+		modelAliasesWebUI:     modelAliasesWebUIHandler,
+		upstreamRules:         upstreamRulesHandler,
+		upstreamMappingGroups: upstreamMappingHandler,
+		accountRules:          accountRulesHandler,
+		modelCatalog:          modelCatalogHandler,
+		managementStatus:      managementStatusHandler,
+		managementMetrics:     managementMetricsHandler,
+		metrics:               metrics,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{

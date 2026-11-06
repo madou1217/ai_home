@@ -128,7 +128,22 @@
     遗留：`lib/account/quota-window-stats.js` 与 `quota-window-reconstruction.js` 现在
     **只剩 `test/quota-window-reconstruction.test.js` 一个调用方**；Go 的窗口重建已经在跑，
     等切流落地后这两个文件与那份测试可以一起删（约 988 行）。
-10. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
+10. **推理前门其实已经划转，但本机流量全部交还 Node（2026-11-06 实测）。**
+    manifest 里 15 个 gateway 条目全部是 `go_owned`，Go core ready 并持有 13 条路由；
+    `/readyz` 的 `go_core.node_fallbacks` 可用于判断「Node 还在承接多少已划转路由」。实测：
+    - 一次 `/v1/chat/completions`（model=glm-5.3-flash）走完 Node 的 zcode 重试（3 个账号
+      `1005 exceed quota limit`）后落到 codebuddy 账号成功返回；
+    - 同一请求前后 `usage_ledger` 保持 1 行不变，`node_fallbacks.total` +1，
+      原因从 `custom_upstream_node_only` 1→2。
+    结论：**本机账号大多是自定义上游（proxy.meadeo.com 这类 base_url）**，而
+    `explainGoRouteDeferral` 对 custom upstream 一律交还 Node（Node 负责 403/404 与池回退语义），
+    所以「Go 已划转推理」在这套部署上等于「一条也不走 Go」，`usage_ledger` 因此长期为空，
+    依赖它的额度统计切流也就无从谈起。
+    解锁条件：要么 Go 承接 custom upstream 的生命周期与错误语义，要么承认这类账号的用量
+    继续由 Node 记账、额度页继续按两路合并。不要再拿「路由表已 go_owned」当作
+    「Go 在承接流量」的证据——判据只看 `node_fallbacks` 与 `usage_ledger`。
+
+10b. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
     真机对比：两侧 `/healthz` 都是 200 且 body 除空白外一致；`/readyz` 都是 200，
     但 `accounts` 计数来自各自的库（Node: codex 1/gemini 1…，Go: agy 0/cline 2/codebuddy 7…）。
     即使 body 一致也**不该划转**：Node 是 Go 的监督者，若把 liveness 代理到 Go，

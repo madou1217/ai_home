@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 28
+	SchemaVersion = 29
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -160,3 +160,10 @@ var SchemaV27 string
 //
 //go:embed schema_v28.sql
 var SchemaV28 string
+
+// SchemaV29 给 oauth_jobs 补终态结果列（account_ref / cli_account_id / finished_at）。
+//
+// 终态回放要跨重启可用，账号结果不能只活在内存保留期里。
+//
+//go:embed schema_v29.sql
+var SchemaV29 string

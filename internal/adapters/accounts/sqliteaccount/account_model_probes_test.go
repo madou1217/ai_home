@@ -165,6 +165,16 @@ func TestAccountModelProbesForwardMigrationFromV20(t *testing.T) {
 			t.Fatalf("drop %s error = %v", table, err)
 		}
 	}
+	// v29 给 oauth_jobs 加了终态结果列；夹具代表真正的 v20 结构，回退前先删掉，
+	// 否则重放 v29 的 ALTER TABLE ADD COLUMN 会撞上「列已存在」。
+	for _, column := range []string{"account_ref", "cli_account_id", "finished_at_ms"} {
+		if _, err := store.db.ExecContext(
+			ctx,
+			"ALTER TABLE oauth_jobs DROP COLUMN "+column,
+		); err != nil {
+			t.Fatalf("drop oauth_jobs.%s error = %v", column, err)
+		}
+	}
 	// v26 给 usage_ledger 加了幂等导入键（列 + 部分唯一索引），夹具要代表 v20 结构。
 	if _, err := store.db.ExecContext(ctx, "DROP INDEX IF EXISTS idx_usage_ledger_source_key"); err != nil {
 		t.Fatalf("drop idx_usage_ledger_source_key error = %v", err)

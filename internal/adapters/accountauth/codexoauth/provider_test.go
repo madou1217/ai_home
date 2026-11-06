@@ -248,16 +248,14 @@ func TestExchangeTable(t *testing.T) {
 			wantTokenCalls: 1,
 		},
 		{
+			// 上游 200 但只给 access+refresh 是合同破坏，不是暂时故障：
+			// 必须返回不可重试的 provider_rejected，重试不会有不同结果。
 			name:           "missing_id_token",
 			status:         http.StatusOK,
 			body:           missingIDTokenBody,
 			callback:       validLoginCallback,
 			wantTokenCalls: 1,
-			// 缺口（锁现状）：上游只给 access+refresh 时被归类为
-			// provider_unavailable，和网络故障同码。切流前应改成
-			// provider_rejected / invalid_artifacts，避免把上游合同
-			// 破坏误判为可重试故障。
-			wantErr: accountauth.ErrProviderUnavailable,
+			wantErr:        accountauth.ErrProviderRejected,
 		},
 	}
 

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 // memoryJobStore 是测试用的 JobStore：用内存 map 模拟 aih.db，
@@ -134,23 +136,36 @@ var testNow = time.Date(2026, time.November, 5, 10, 0, 0, 0, time.UTC)
 
 type fakeOAuthProvider struct {
 	providerID string
+	// exchangeErr 让失败终态测试可控，不需要真实的上游服务。
+	exchangeErr error
+	// beginCalls 记录创建 OAuth Flow 的次数：回放终态绝不能新增 Flow，
+	// 否则就意味着又走了一次 token 交换。
+	beginCalls *atomic.Int32
 }
 
 func (provider fakeOAuthProvider) ProviderID() string { return provider.providerID }
 
 func (provider fakeOAuthProvider) Begin(context.Context) (OAuthFlow, error) {
+	if provider.beginCalls != nil {
+		provider.beginCalls.Add(1)
+	}
 	return fakeOAuthFlow{
 		authorizationURL: "https://example.test/authorize?provider=" + provider.providerID,
+		exchangeErr:      provider.exchangeErr,
 	}, nil
 }
 
 type fakeOAuthFlow struct {
 	authorizationURL string
+	exchangeErr      error
 }
 
 func (flow fakeOAuthFlow) AuthorizationURL() string { return flow.authorizationURL }
 
 func (flow fakeOAuthFlow) Exchange(context.Context, string) ([]byte, error) {
+	if flow.exchangeErr != nil {
+		return nil, flow.exchangeErr
+	}
 	return []byte("artifacts"), nil
 }
 
@@ -200,6 +215,8 @@ func (decoder fakeDecoder) Decode(
 
 type fakeRegistrar struct {
 	onRegister func()
+	// account 非零时作为注册结果返回，用于验证终态里的 account_ref / cli_account_id。
+	account accountcore.Account
 }
 
 func (registrar fakeRegistrar) Register(
@@ -210,7 +227,7 @@ func (registrar fakeRegistrar) Register(
 	if registrar.onRegister != nil {
 		registrar.onRegister()
 	}
-	return accountcore.Account{}, nil
+	return registrar.account, nil
 }
 
 type fakeReauth struct{}
@@ -237,6 +254,8 @@ type testOptions struct {
 	decoder   NativeAccountDecoder
 	registrar Registrar
 	clock     *testClock
+	// providers 为空时使用默认的无副作用 fake Provider。
+	providers []OAuthProvider
 }
 
 func newTestService(t *testing.T, options testOptions) *Service {
@@ -253,12 +272,16 @@ func newTestService(t *testing.T, options testOptions) *Service {
 	if registrar == nil {
 		registrar = fakeRegistrar{}
 	}
-	var sequence int
-	service, err := newService(Dependencies{
-		Providers: []OAuthProvider{
+	providers := options.providers
+	if providers == nil {
+		providers = []OAuthProvider{
 			fakeOAuthProvider{providerID: "codex"},
 			fakeOAuthProvider{providerID: "claude"},
-		},
+		}
+	}
+	var sequence int
+	service, err := newService(Dependencies{
+		Providers: providers,
 		Decoder:   decoder,
 		Registrar: registrar,
 		Reauth:    fakeReauth{},
@@ -583,5 +606,185 @@ func TestServiceWithoutJobStoreKeepsWorking(t *testing.T) {
 		ErrJobNotFound,
 	) {
 		t.Fatalf("未知 Job 的 Get() error = %v", err)
+	}
+}
+
+// testRegisteredAccount 返回字段完整的账号，用于断言终态结果字段真的落库。
+func testRegisteredAccount(t *testing.T) accountcore.Account {
+	t.Helper()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	account, err := accountcore.RestoreAccount(catalog, accountcore.RestoreAccountInput{
+		Ref:          "acct_0123456789abcdef0123",
+		ProviderID:   "codex",
+		CLIAccountID: 42,
+		Enabled:      true,
+		CreatedAt:    testNow,
+		UpdatedAt:    testNow,
+	})
+	if err != nil {
+		t.Fatalf("RestoreAccount() error = %v", err)
+	}
+	return account
+}
+
+// TestCompleteReplaysPersistedCompletedJobAfterRestart 验证重启后 Complete
+// 直接回放 aih.db 里的成功终态：account_ref / cli_account_id / finished_at
+// 与重启前一致，且不会重新创建 OAuth Flow 或注册账号。
+func TestCompleteReplaysPersistedCompletedJobAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryJobStore()
+	clock := newTestClock(testNow)
+	var beginCalls atomic.Int32
+	codexProvider := fakeOAuthProvider{
+		providerID: "codex",
+		beginCalls: &beginCalls,
+	}
+	registered := testRegisteredAccount(t)
+	first := newTestService(t, testOptions{
+		store:     store,
+		clock:     clock,
+		registrar: fakeRegistrar{account: registered},
+		providers: []OAuthProvider{codexProvider, fakeOAuthProvider{providerID: "claude"}},
+	})
+
+	start, err := first.Start(ctx, StartRequest{ProviderID: "codex"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	jobID := start.Job().ID()
+	completed, err := first.Complete(ctx, jobID, "code=test")
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	record, found, err := store.GetJob(ctx, jobID)
+	if err != nil || !found {
+		t.Fatalf("GetJob() found = %v, err = %v", found, err)
+	}
+	if record.AccountRef != registered.Ref().String() ||
+		record.CLIAccountID != registered.CLIAccountID().Int64() ||
+		!record.FinishedAt.Equal(completed.FinishedAt()) {
+		t.Fatalf("终态快照缺少账号结果: %+v", record)
+	}
+
+	// 模拟重启：新 Service 的内存为空，只能从 aih.db 回放。
+	var registrations int
+	restarted := newTestService(t, testOptions{
+		store: store,
+		clock: clock,
+		registrar: fakeRegistrar{onRegister: func() {
+			registrations++
+		}},
+		providers: []OAuthProvider{codexProvider, fakeOAuthProvider{providerID: "claude"}},
+	})
+	replay, err := restarted.Complete(ctx, jobID, "code=ignored")
+	if err != nil {
+		t.Fatalf("重启后的 Complete() error = %v, want nil（终态回放）", err)
+	}
+	if replay.Status() != completed.Status() ||
+		replay.AccountRef() != completed.AccountRef() ||
+		replay.CLIAccountID() != completed.CLIAccountID() ||
+		replay.FailureCode() != completed.FailureCode() ||
+		!replay.FinishedAt().Equal(completed.FinishedAt()) {
+		t.Fatalf("重启回放 = %+v, want %+v", replay, completed)
+	}
+	if registrations != 0 {
+		t.Fatalf("重启回放重复注册了 %d 次", registrations)
+	}
+	if beginCalls.Load() != 1 {
+		t.Fatalf("重启回放创建了新的 OAuth Flow: begin calls = %d, want 1", beginCalls.Load())
+	}
+}
+
+// TestCompleteReplaysPersistedFailedJobAfterRestart 验证失败终态跨重启回放：
+// 返回同一 failure_code 与完成时间，不重新换 token、不注册账号。
+func TestCompleteReplaysPersistedFailedJobAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryJobStore()
+	clock := newTestClock(testNow)
+	var beginCalls atomic.Int32
+	codexProvider := fakeOAuthProvider{
+		providerID:  "codex",
+		exchangeErr: fmt.Errorf("upstream down: %w", ErrProviderUnavailable),
+		beginCalls:  &beginCalls,
+	}
+	first := newTestService(t, testOptions{
+		store:     store,
+		clock:     clock,
+		providers: []OAuthProvider{codexProvider, fakeOAuthProvider{providerID: "claude"}},
+	})
+
+	start, err := first.Start(ctx, StartRequest{ProviderID: "codex"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	jobID := start.Job().ID()
+	failed, err := first.Complete(ctx, jobID, "code=test")
+	if !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("Complete() error = %v, want %v", err, ErrProviderUnavailable)
+	}
+	if failed.Status() != StatusFailed || failed.FailureCode() != "provider_unavailable" {
+		t.Fatalf("失败终态 = %+v", failed)
+	}
+
+	var registrations int
+	restarted := newTestService(t, testOptions{
+		store: store,
+		clock: clock,
+		registrar: fakeRegistrar{onRegister: func() {
+			registrations++
+		}},
+		providers: []OAuthProvider{codexProvider, fakeOAuthProvider{providerID: "claude"}},
+	})
+	replay, err := restarted.Complete(ctx, jobID, "code=ignored")
+	if err != nil {
+		t.Fatalf("重启后的失败回放 error = %v, want nil", err)
+	}
+	if replay.Status() != StatusFailed ||
+		replay.FailureCode() != failed.FailureCode() ||
+		!replay.FinishedAt().Equal(failed.FinishedAt()) {
+		t.Fatalf("失败回放 = %+v, want %+v", replay, failed)
+	}
+	if registrations != 0 {
+		t.Fatalf("失败回放注册了 %d 次", registrations)
+	}
+	if beginCalls.Load() != 1 {
+		t.Fatalf("失败回放创建了新的 OAuth Flow: begin calls = %d, want 1", beginCalls.Load())
+	}
+}
+
+// TestCompleteDoesNotResumePersistedPendingJob 保证重启后不能拿旧回调继续
+// 一个 pending 快照：Flow 已丢失，继续只会产生不可控的第二次副作用。
+func TestCompleteDoesNotResumePersistedPendingJob(t *testing.T) {
+	store := newMemoryJobStore()
+	var beginCalls atomic.Int32
+	store.seed(JobRecord{
+		ID:         "legacy-pending",
+		ProviderID: "codex",
+		Purpose:    PurposeRegister,
+		Status:     StatusPending,
+		CreatedAt:  testNow,
+		ExpiresAt:  testNow.Add(DefaultJobTTL),
+		UpdatedAt:  testNow,
+	})
+	service := newTestService(t, testOptions{
+		store: store,
+		providers: []OAuthProvider{
+			fakeOAuthProvider{providerID: "codex", beginCalls: &beginCalls},
+			fakeOAuthProvider{providerID: "claude"},
+		},
+	})
+
+	if _, err := service.Complete(context.Background(), "legacy-pending", "code=test"); !errors.Is(
+		err,
+		ErrJobNotFound,
+	) {
+		t.Fatalf("Complete() error = %v, want %v", err, ErrJobNotFound)
+	}
+	if beginCalls.Load() != 0 {
+		t.Fatalf("pending 回放创建了新的 OAuth Flow: begin calls = %d", beginCalls.Load())
 	}
 }

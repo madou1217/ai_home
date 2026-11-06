@@ -341,17 +341,15 @@ func TestLoginFlowTable(t *testing.T) {
 			wantAccountID:     serviceAccountID,
 		},
 		{
-			// 缺口（锁现状）：上游只给 access+refresh 时 exchangeTokens 把
-			// 缺失 id_token 归类为 ErrProviderUnavailable，和网络故障同码。
-			// 这会把上游合同破坏伪装成可重试故障，切流前应改成
-			// provider_rejected / invalid_artifacts。
+			// 上游只给 access+refresh 是合同破坏：归类为不可重试的
+			// provider_rejected，重试不会让上游补上 id_token。
 			name:              "missing_id_token",
 			status:            http.StatusOK,
 			body:              missingIDTokenBody,
 			callback:          validServiceCallback,
-			wantErr:           accountauth.ErrProviderUnavailable,
+			wantErr:           accountauth.ErrProviderRejected,
 			wantStatus:        accountauth.StatusFailed,
-			wantFailure:       "provider_unavailable",
+			wantFailure:       "provider_rejected",
 			wantTokenCalls:    1,
 			wantRegistrations: 0,
 		},

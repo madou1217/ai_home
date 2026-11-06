@@ -20,7 +20,8 @@ var ErrInvalidOAuthJobRecord = errors.New("OAuth Job 快照无效")
 const oauthJobColumns = `
 	job_id, provider_id, purpose, target_ref, status,
 	created_at_ms, expires_at_ms, updated_at_ms,
-	error_code, error_message`
+	error_code, error_message,
+	account_ref, cli_account_id, finished_at_ms`
 
 const (
 	// upsertOAuthJobSQL 以 job_id 为唯一键覆盖写入。
@@ -29,7 +30,7 @@ const (
 	// 调用方不需要先查存在性，重启恢复后的重放也能保持幂等。
 	upsertOAuthJobSQL = `
 		INSERT INTO oauth_jobs (` + oauthJobColumns + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (job_id) DO UPDATE SET
 			provider_id = excluded.provider_id,
 			purpose = excluded.purpose,
@@ -39,7 +40,10 @@ const (
 			expires_at_ms = excluded.expires_at_ms,
 			updated_at_ms = excluded.updated_at_ms,
 			error_code = excluded.error_code,
-			error_message = excluded.error_message`
+			error_message = excluded.error_message,
+			account_ref = excluded.account_ref,
+			cli_account_id = excluded.cli_account_id,
+			finished_at_ms = excluded.finished_at_ms`
 
 	getOAuthJobSQL = `
 		SELECT ` + oauthJobColumns + `
@@ -67,7 +71,8 @@ const (
 		UPDATE oauth_jobs
 		   SET status = ?,
 		       updated_at_ms = ?,
-		       error_code = ?
+		       error_code = ?,
+		       finished_at_ms = ?
 		 WHERE status IN (?, ?)`
 )
 
@@ -96,6 +101,14 @@ func (store *Store) UpsertJob(ctx context.Context, record accountauth.JobRecord)
 	if updatedAt.IsZero() {
 		updatedAt = record.CreatedAt
 	}
+	// finished_at_ms 只对终态有意义。调用方未显式给出时用 updatedAt 兜底：
+	// 否则零时间会被写成负数毫秒，违反列约束。
+	var finishedAtMS int64
+	if !record.FinishedAt.IsZero() {
+		finishedAtMS = record.FinishedAt.UnixMilli()
+	} else if isTerminalJobStatus(record.Status) {
+		finishedAtMS = updatedAt.UnixMilli()
+	}
 	if _, err := store.db.ExecContext(
 		ctx,
 		upsertOAuthJobSQL,
@@ -109,6 +122,9 @@ func (store *Store) UpsertJob(ctx context.Context, record accountauth.JobRecord)
 		updatedAt.UnixMilli(),
 		record.ErrorCode,
 		record.ErrorMessage,
+		record.AccountRef,
+		record.CLIAccountID,
+		finishedAtMS,
 	); err != nil {
 		return fmt.Errorf("写入 OAuth Job 快照失败: %w", err)
 	}
@@ -211,6 +227,7 @@ func (store *Store) ExpirePendingJobs(
 		string(accountauth.StatusExpired),
 		now.UnixMilli(),
 		string(accountauth.StatusExpired),
+		now.UnixMilli(),
 		string(accountauth.StatusPending),
 		string(accountauth.StatusProcessing),
 	)
@@ -230,7 +247,7 @@ func (store *Store) ExpirePendingJobs(
 func scanOAuthJobRecord(scanner rowScanner) (accountauth.JobRecord, error) {
 	var record accountauth.JobRecord
 	var purpose, status string
-	var createdAtMS, expiresAtMS, updatedAtMS int64
+	var createdAtMS, expiresAtMS, updatedAtMS, finishedAtMS int64
 	if err := scanner.Scan(
 		&record.ID,
 		&record.ProviderID,
@@ -242,6 +259,9 @@ func scanOAuthJobRecord(scanner rowScanner) (accountauth.JobRecord, error) {
 		&updatedAtMS,
 		&record.ErrorCode,
 		&record.ErrorMessage,
+		&record.AccountRef,
+		&record.CLIAccountID,
+		&finishedAtMS,
 	); err != nil {
 		return accountauth.JobRecord{}, err
 	}
@@ -250,7 +270,21 @@ func scanOAuthJobRecord(scanner rowScanner) (accountauth.JobRecord, error) {
 	record.CreatedAt = timeFromUnixMilli(createdAtMS)
 	record.ExpiresAt = timeFromUnixMilli(expiresAtMS)
 	record.UpdatedAt = timeFromUnixMilli(updatedAtMS)
+	record.FinishedAt = timeFromUnixMilli(finishedAtMS)
 	return record, nil
+}
+
+// isTerminalJobStatus 判断快照状态是否已经进入终态。
+func isTerminalJobStatus(status accountauth.Status) bool {
+	switch status {
+	case accountauth.StatusCompleted,
+		accountauth.StatusFailed,
+		accountauth.StatusCancelled,
+		accountauth.StatusExpired:
+		return true
+	default:
+		return false
+	}
 }
 
 // 编译期确认适配器实现了应用层端口，端口后续增删方法时这里先红。

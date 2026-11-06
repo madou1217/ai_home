@@ -231,25 +231,71 @@ func (service *Service) GetJob(ctx context.Context, jobID string) (Job, error) {
 
 // getStoredJob 在内存未命中时读取持久化快照。
 func (service *Service) getStoredJob(ctx context.Context, jobID string) (Job, error) {
-	if service.jobStore == nil {
-		return Job{}, ErrJobNotFound
-	}
-	record, found, err := service.jobStore.GetJob(ctx, jobID)
+	job, found, err := service.loadStoredJob(ctx, jobID)
 	if err != nil {
-		// 存储故障不能伪装成「Job 不存在」：那会让客户端误以为可以重新发起，
-		// 也会掩盖真实的 aih.db 故障。
-		return Job{}, fmt.Errorf("读取 OAuth Job 快照失败: %w", err)
+		return Job{}, err
 	}
 	if !found {
 		return Job{}, ErrJobNotFound
 	}
-	job := jobFromRecord(record)
 	if !job.IsTerminal() {
 		// pending/processing 的 state、PKCE 与 Flow 只存在于上一个进程的内存里，
 		// 重启后不可能再完成；返回它们只会让客户端无限等待。
 		return Job{}, ErrJobNotFound
 	}
 	return job, nil
+}
+
+// loadStoredJob 读取持久化快照并还原公开 Job。
+//
+// 存储故障不能伪装成「Job 不存在」：那会让客户端误以为可以重新发起，
+// 也会掩盖真实的 aih.db 故障。
+func (service *Service) loadStoredJob(
+	ctx context.Context,
+	jobID string,
+) (Job, bool, error) {
+	if service.jobStore == nil {
+		return Job{}, false, nil
+	}
+	record, found, err := service.jobStore.GetJob(ctx, jobID)
+	if err != nil {
+		return Job{}, false, fmt.Errorf("读取 OAuth Job 快照失败: %w", err)
+	}
+	if !found {
+		return Job{}, false, nil
+	}
+	return jobFromRecord(record), true, nil
+}
+
+// replayStoredCompletion 在内存未命中时按持久化终态回放 Complete。
+//
+// 关键约束：这里只读终态快照，绝不重新调用 token 端点或注册账号。
+// 重启后 OAuthFlow 已经消失，任何「再试一次换取」都会变成第二次副作用。
+func (service *Service) replayStoredCompletion(
+	ctx context.Context,
+	jobID string,
+) (completionClaim, error) {
+	job, found, err := service.loadStoredJob(ctx, jobID)
+	if err != nil {
+		return completionClaim{}, err
+	}
+	if !found {
+		return completionClaim{}, ErrJobNotFound
+	}
+	switch job.status {
+	case StatusCompleted, StatusFailed:
+		// succeeded 回放 account_ref / cli_account_id，failed 回放同一 failure_code。
+		return completionClaim{replay: job}, nil
+	case StatusExpired:
+		return completionClaim{}, ErrJobExpired
+	case StatusCancelled:
+		// cancelled 从未换取凭据，不是可回放的登录结果。
+		return completionClaim{}, ErrJobNotPending
+	default:
+		// pending/processing：Flow 只存在于上一个进程，重启后无法继续；
+		// 返回 not found，避免客户端拿旧回调无限等待。
+		return completionClaim{}, ErrJobNotFound
+	}
 }
 
 // Rehydrate 在进程启动时收敛上一次运行遗留的 Job。
@@ -404,7 +450,9 @@ func (service *Service) claimCompletion(
 	record, found := service.jobs[jobID]
 	if !found {
 		service.mu.Unlock()
-		return completionClaim{}, ErrJobNotFound
+		// 内存未命中时回落到 aih.db：重启或超过进程内保留期后，
+		// 已经落库的终态仍要能按原结果回放。
+		return service.replayStoredCompletion(ctx, jobID)
 	}
 	switch record.job.status {
 	case StatusCompleted, StatusFailed:

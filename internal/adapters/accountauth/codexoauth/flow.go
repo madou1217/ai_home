@@ -123,10 +123,15 @@ func (flow *flow) exchangeTokens(
 		response.Body,
 		maxTokenBodyBytes,
 		&tokens,
-	); err != nil ||
-		!validSecret(tokens.IDToken) ||
-		!validSecret(tokens.AccessToken) ||
-		!validSecret(tokens.RefreshToken) {
+	); err != nil {
+		return tokenResponse{}, accountauth.ErrProviderUnavailable
+	}
+	// 200 但缺 id_token 不是暂时故障：上游合同不会因为重试而补齐，
+	// 因此归类为不可重试的 provider_rejected，而不是可重试的 unavailable。
+	if !validSecret(tokens.IDToken) {
+		return tokenResponse{}, accountauth.ErrProviderRejected
+	}
+	if !validSecret(tokens.AccessToken) || !validSecret(tokens.RefreshToken) {
 		return tokenResponse{}, accountauth.ErrProviderUnavailable
 	}
 	return tokens, nil

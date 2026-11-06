@@ -83,6 +83,10 @@ func TestOAuthJobUpsertIsIdempotentAndOverwrites(t *testing.T) {
 	if record.Status != accountauth.StatusCompleted || !record.UpdatedAt.Equal(finishedAt) {
 		t.Fatalf("record after upsert = %#v", record)
 	}
+	// 调用方没给 FinishedAt 时，终态行用 UpdatedAt 兜底（Node 推送路径依赖这一点）。
+	if !record.FinishedAt.Equal(finishedAt) {
+		t.Fatalf("FinishedAt after upsert = %s, want %s", record.FinishedAt, finishedAt)
+	}
 	records, _ = store.ListJobs(ctx, false)
 	if len(records) != 1 {
 		t.Fatalf("records after status change = %d, want 1", len(records))
@@ -135,6 +139,9 @@ func TestOAuthJobTerminalSnapshotSurvivesRestart(t *testing.T) {
 	failed.ErrorCode = "provider_rejected"
 	failed.ErrorMessage = "上游拒绝授权"
 	failed.UpdatedAt = createdAt.Add(2 * time.Minute)
+	failed.FinishedAt = createdAt.Add(2 * time.Minute)
+	failed.AccountRef = "acct_0123456789abcdef0123"
+	failed.CLIAccountID = 42
 	if err := store.UpsertJob(ctx, failed); err != nil {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
@@ -152,6 +159,12 @@ func TestOAuthJobTerminalSnapshotSurvivesRestart(t *testing.T) {
 		record.ErrorCode != "provider_rejected" ||
 		record.ErrorMessage != "上游拒绝授权" {
 		t.Fatalf("record after restart = %#v", record)
+	}
+	// 终态结果列必须一起跨重启：只留状态码而不留账号结果，回放仍然是不完整的。
+	if record.AccountRef != failed.AccountRef ||
+		record.CLIAccountID != failed.CLIAccountID ||
+		!record.FinishedAt.Equal(failed.FinishedAt) {
+		t.Fatalf("terminal result after restart = %#v", record)
 	}
 	if !record.CreatedAt.Equal(createdAt) || !record.UpdatedAt.Equal(failed.UpdatedAt) {
 		t.Fatalf("times after restart = %s / %s", record.CreatedAt, record.UpdatedAt)
@@ -239,8 +252,14 @@ func TestOAuthJobExpirePendingJobsMarksUnfinishedOnly(t *testing.T) {
 		if record.Status != accountauth.StatusExpired || record.ErrorCode != "expired" {
 			t.Fatalf("%s after expire = %#v", id, record)
 		}
-		if !record.UpdatedAt.Equal(restartAt) {
-			t.Fatalf("%s updatedAt = %s, want %s", id, record.UpdatedAt, restartAt)
+		if !record.UpdatedAt.Equal(restartAt) || !record.FinishedAt.Equal(restartAt) {
+			t.Fatalf(
+				"%s updatedAt/finishedAt = %s / %s, want %s",
+				id,
+				record.UpdatedAt,
+				record.FinishedAt,
+				restartAt,
+			)
 		}
 	}
 	completed, _, err := store.GetJob(ctx, "job-completed")
@@ -336,6 +355,74 @@ func TestOAuthJobsForwardMigrationFromV16(t *testing.T) {
 	)
 	if err := upgraded.UpsertJob(ctx, record); err != nil {
 		t.Fatalf("UpsertJob() after migration error = %v", err)
+	}
+}
+
+// TestOAuthJobsTerminalColumnsForwardMigrationFromV28 验证 v29 可回放：
+// 把 oauth_jobs 退回 v28 的列结构（保留既有行），再让 Open 重放 v29，
+// 旧行必须原样保留，新列以默认值补齐，之后可以正常写入终态结果。
+func TestOAuthJobsTerminalColumnsForwardMigrationFromV28(t *testing.T) {
+	aiHomeDir := t.TempDir()
+	store := openOAuthJobStoreAt(t, aiHomeDir)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	legacy := newOAuthJobRecord("job-v28", accountauth.StatusFailed, createdAt)
+	legacy.ErrorCode = "provider_rejected"
+	legacy.UpdatedAt = createdAt.Add(time.Minute)
+	if err := store.UpsertJob(ctx, legacy); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	// 夹具必须代表真正的 v28 结构，否则重放 v29 会撞上「列已存在」。
+	for _, column := range []string{"account_ref", "cli_account_id", "finished_at_ms"} {
+		if _, err := store.db.ExecContext(
+			ctx,
+			"ALTER TABLE oauth_jobs DROP COLUMN "+column,
+		); err != nil {
+			t.Fatalf("drop oauth_jobs.%s error = %v", column, err)
+		}
+	}
+	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 28"); err != nil {
+		t.Fatalf("rewind user_version error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	upgraded := openOAuthJobStoreAt(t, aiHomeDir)
+	var version int
+	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatalf("read user_version error = %v", err)
+	}
+	if version != SchemaVersion {
+		t.Fatalf("user_version after upgrade = %d, want %d", version, SchemaVersion)
+	}
+	record, found, err := upgraded.GetJob(ctx, legacy.ID)
+	if err != nil || !found {
+		t.Fatalf("GetJob() after upgrade = %v, %v", found, err)
+	}
+	if record.Status != accountauth.StatusFailed || record.ErrorCode != "provider_rejected" {
+		t.Fatalf("legacy row after upgrade = %#v", record)
+	}
+	// 旧行没有终态结果列，迁移后以默认值补齐。
+	if record.AccountRef != "" || record.CLIAccountID != 0 || !record.FinishedAt.IsZero() {
+		t.Fatalf("legacy terminal columns = %#v", record)
+	}
+
+	record.AccountRef = "acct_0123456789abcdef0123"
+	record.CLIAccountID = 42
+	record.FinishedAt = legacy.UpdatedAt
+	if err := upgraded.UpsertJob(ctx, record); err != nil {
+		t.Fatalf("UpsertJob() after upgrade error = %v", err)
+	}
+	reloaded, _, err := upgraded.GetJob(ctx, legacy.ID)
+	if err != nil {
+		t.Fatalf("GetJob() reloaded error = %v", err)
+	}
+	if reloaded.AccountRef != record.AccountRef ||
+		reloaded.CLIAccountID != record.CLIAccountID ||
+		!reloaded.FinishedAt.Equal(record.FinishedAt) {
+		t.Fatalf("terminal columns after upgrade = %#v", reloaded)
 	}
 }
 

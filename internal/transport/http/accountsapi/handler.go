@@ -265,7 +265,9 @@ type Dependencies struct {
 	ProbeStates ProbeStateWriter
 	// RoutingExclusions 保存 Node 标记的账号级 Go 路由排除；可为空（该端点返回 503）。
 	RoutingExclusions RoutingExclusionWriter
-	Authorizer        Authorizer
+	// TokenUsage 是按账号的 token 用量读端口；可为空（该端点返回 503）。
+	TokenUsage TokenUsageManagement
+	Authorizer Authorizer
 }
 
 // RuntimeStateApplier 把持久化的账号运行态投影到征召资格索引。
@@ -296,6 +298,7 @@ type Handler struct {
 	credentialSnapshots CredentialSnapshotReader
 	accountModels       AccountModelReader
 	runtimeStates       RuntimeStateApplier
+	tokenUsage          TokenUsageManagement
 	authorizer          Authorizer
 }
 
@@ -335,6 +338,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		credentialSnapshots: dependencies.CredentialSnapshots,
 		accountModels:       dependencies.AccountModels,
 		runtimeStates:       dependencies.RuntimeStates,
+		tokenUsage:          dependencies.TokenUsage,
 		authorizer:          dependencies.Authorizer,
 	}, nil
 }
@@ -472,6 +476,8 @@ func (handler *Handler) handleMember(
 		handler.handleAccountRuntimeState(response, request, accountRef)
 	case memberResourceUsageRefresh:
 		handler.handleAccountUsageRefresh(response, request, accountRef)
+	case memberResourceTokenUsage:
+		handler.handleAccountTokenUsage(response, request, accountRef)
 	case memberResourceExport:
 		// 导出格式由注册表决定（export_formats.go）：这里只按解析出的格式取策略，
 		// 不再为每种格式写一条 case。

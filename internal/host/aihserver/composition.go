@@ -782,10 +782,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建额度统计服务失败: %w", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:          management,
-		Models:              recoveringModelManagement,
-		Usage:               usage.service,
-		QuotaStats:          quotaStatsService,
+		Management: management,
+		Models:     recoveringModelManagement,
+		Usage:      usage.service,
+		QuotaStats: quotaStatsService,
+		// 账号行的 token 用量直接读 Go 账本：与用量页同一份事实，不再回 Node 现算。
+		TokenUsage:          store,
 		Deletion:            deleter,
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,

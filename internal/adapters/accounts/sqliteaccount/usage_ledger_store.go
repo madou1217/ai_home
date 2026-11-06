@@ -50,6 +50,12 @@ func (store *Store) QueryUsageStats(ctx context.Context, query usageledger.Query
 	}
 	where := "occurred_at_ms >= ? AND occurred_at_ms <= ?"
 	args := []any{query.From.UnixMilli(), query.To.UnixMilli()}
+	// AccountRef 与 provider/model 一样是 Query 上的既有过滤条件：
+	// 额度统计页按账号看，没这一步就会把别的账号的用量也算进来。
+	if accountRef := query.AccountRef.String(); accountRef != "" {
+		where += " AND account_ref = ?"
+		args = append(args, accountRef)
+	}
 	if provider := normalizeUsageFilter(query.Provider); provider != "" {
 		where += " AND provider_id = ?"
 		args = append(args, provider)
@@ -102,6 +108,12 @@ func (store *Store) readUsageRecords(ctx context.Context, query usageledger.Quer
 	}
 	where := "occurred_at_ms >= ? AND occurred_at_ms <= ?"
 	args := []any{query.From.UnixMilli(), query.To.UnixMilli()}
+	// 账号过滤同样下推到 SQL：usage_ledger 已有 (account_ref, occurred_at_ms)
+	// 复合索引，账号行刷新时不能把整库历史都读进内存再逐条丢。
+	if accountRef := query.AccountRef.String(); accountRef != "" {
+		where += " AND account_ref = ?"
+		args = append(args, accountRef)
+	}
 	if provider := normalizeUsageFilter(query.Provider); provider != "" {
 		where += " AND provider_id = ?"
 		args = append(args, provider)

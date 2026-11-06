@@ -143,6 +143,24 @@
     继续由 Node 记账、额度页继续按两路合并。不要再拿「路由表已 go_owned」当作
     「Go 在承接流量」的证据——判据只看 `node_fallbacks` 与 `usage_ledger`。
 
+10c. **custom upstream 交还 Node 是**池级**决定，本机因此 100% 交还（2026-11-06 复核）。**
+    `poolHasCustomUpstreamAccount` 只要池里**任意一个**账号是自定义上游，整条入口就交还 Node；
+    代码注释写明理由：未钉选请求可能回落到池里任意 Provider 的账号，而划转后 Go 没有 Node 回落。
+    本机实测：43 个账号里只有 4 个是自定义上游（codex 1 / claude 2 / gemini 1），
+    其余 39 个（zcode 8、codebuddy 7+5、kiro 5、agy 6、cline 2…）都是官方端点——
+    **却因为那 4 个账号，全部推理都留在 Node**。
+
+    要把这 39 个账号的流量交给 Go，只能走「Go 能给自定义上游账号做透传」：
+    1. Go 有一个账号级 `routing_excluded`（或 `passthrough`）事实，不进核心账号实体，
+       放侧表 + 管理端点；
+    2. Node 把 custom upstream 账号标上，Go 的路由索引与推理目录都跳过它们，
+       这样「Go 可调度集合」里不再有它服务不了的账号；
+    3. 池级判定改成看「Go 可调度集合」，而不是「池里有没有自定义上游」；
+       模型只被自定义上游账号承载时，Go 目录本来就不会列它，走 `model_not_routable` 交还。
+
+    这是**行为改变**（谁服务真实流量），不是纯重构：做之前必须先确认 Go 的透传对这批账号
+    不写本地额度状态、不做失败记账（图片管线已有先例）。在那之前，额度页继续两路合并。
+
 10b. **`/healthz` 与 `/readyz` 应该保持 Node 所有（2026-11-06 复核）。**
     真机对比：两侧 `/healthz` 都是 200 且 body 除空白外一致；`/readyz` 都是 200，
     但 `accounts` 计数来自各自的库（Node: codex 1/gemini 1…，Go: agy 0/cline 2/codebuddy 7…）。

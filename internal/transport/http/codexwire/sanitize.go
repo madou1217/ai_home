@@ -1,4 +1,4 @@
-package codexresponseshttp
+package codexwire
 
 import (
 	"encoding/json"
@@ -10,8 +10,7 @@ import (
 //
 // 为什么必须按类型校验：上游会按 item 类型复核 id 前缀，类型与前缀不匹配时直接
 // 400 invalid_id_prefix（真机：custom_tool_call 携带上游给的 fc_ id，报
-// "Expected an ID that begins with 'ctc'"）。网关在渲染响应时可能按 freeform 工具
-// 改写过 item 类型，客户端回传的就是这种「类型与 id 前缀不一致」的历史。
+// "Expected an ID that begins with 'ctc'"）。
 var itemIDPrefixByType = map[string]string{
 	"message":                 "msg_",
 	"reasoning":               "rs_",
@@ -21,7 +20,7 @@ var itemIDPrefixByType = map[string]string{
 	"custom_tool_call_output": "ctco_",
 }
 
-// sanitizeNativePayload 在把请求体原样转给上游前，剥掉上游无法解析的引用。
+// SanitizeRequestPayload 在把客户端请求转发给上游前，剥掉上游无法解析的引用。
 //
 // 与 Node 的 convertOpenAIResponsesToCodexPayload 同一口径：
 //  1. store:false 时上游不持久化任何 item，previous_response_id 与所有 item id 都
@@ -31,8 +30,9 @@ var itemIDPrefixByType = map[string]string{
 //  3. reasoning.encrypted_content 只能用生成它的账号私钥解密，换号必然 400
 //     invalid_encrypted_content。
 //
-// 任何解析失败都原样返回——这条路径是「原样透传」，不能因为清洗逻辑把正常请求打坏。
-func sanitizeNativePayload(payload []byte) []byte {
+// HTTP 与 WebSocket 两条入站路径都必须过这一层（codex CLI 默认走 WS，漏掉 WS 就会
+// 复现 invalid_id_prefix）。解析失败原样返回——这是透传路径，清洗不能打坏正常请求。
+func SanitizeRequestPayload(payload []byte) []byte {
 	if len(payload) == 0 {
 		return payload
 	}
@@ -55,7 +55,7 @@ func sanitizeNativePayload(payload []byte) []byte {
 		}
 	}
 	if rawInput, found := root["input"]; found {
-		if sanitized, inputChanged := sanitizeNativeInput(rawInput, storeDisabled); inputChanged {
+		if sanitized, inputChanged := sanitizeInput(rawInput, storeDisabled); inputChanged {
 			root["input"] = sanitized
 			changed = true
 		}
@@ -70,7 +70,7 @@ func sanitizeNativePayload(payload []byte) []byte {
 	return encoded
 }
 
-func sanitizeNativeInput(raw json.RawMessage, storeDisabled bool) (json.RawMessage, bool) {
+func sanitizeInput(raw json.RawMessage, storeDisabled bool) (json.RawMessage, bool) {
 	var items []json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return raw, false

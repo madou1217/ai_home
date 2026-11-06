@@ -1,4 +1,4 @@
-package codexresponseshttp
+package codexwire
 
 import (
 	"encoding/json"
@@ -37,7 +37,7 @@ func TestSanitizeNativePayloadDropsMismatchedItemID(t *testing.T) {
 		{"type":"message","role":"user","id":"msg_keep","content":[{"type":"input_text","text":"hi"}]},
 		{"type":"custom_tool_call","id":"` + legacyFcID + `","call_id":"call_1","name":"shell","input":"ls"}
 	]}`)
-	sanitized := sanitizeNativePayload(payload)
+	sanitized := SanitizeRequestPayload(payload)
 	items := decodeItems(t, sanitized)
 	if got := itemString(t, items[1], "id"); got != "" {
 		t.Fatalf("custom_tool_call 的错误前缀 id 应被剥掉，实际 %q", got)
@@ -52,7 +52,7 @@ func TestSanitizeNativePayloadDropsMismatchedItemID(t *testing.T) {
 
 func TestSanitizeNativePayloadKeepsMatchingPrefix(t *testing.T) {
 	payload := []byte(`{"input":[{"type":"function_call","id":"fc_ok","call_id":"call_1","name":"f","arguments":"{}"}]}`)
-	items := decodeItems(t, sanitizeNativePayload(payload))
+	items := decodeItems(t, SanitizeRequestPayload(payload))
 	if got := itemString(t, items[0], "id"); got != "fc_ok" {
 		t.Fatalf("function_call 的 fc_ id 应保留，实际 %q", got)
 	}
@@ -62,7 +62,7 @@ func TestSanitizeNativePayloadStoreFalseDropsAllIDs(t *testing.T) {
 	payload := []byte(`{"store":false,"previous_response_id":"resp_prev","input":[
 		{"type":"message","role":"user","id":"msg_keep","content":[{"type":"input_text","text":"hi"}]}
 	]}`)
-	sanitized := sanitizeNativePayload(payload)
+	sanitized := SanitizeRequestPayload(payload)
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(sanitized, &root); err != nil {
 		t.Fatalf("decode root: %v", err)
@@ -78,7 +78,7 @@ func TestSanitizeNativePayloadStoreFalseDropsAllIDs(t *testing.T) {
 
 func TestSanitizeNativePayloadDropsEncryptedReasoning(t *testing.T) {
 	payload := []byte(`{"input":[{"type":"reasoning","id":"rs_ok","encrypted_content":"cipher","summary":[]}]}`)
-	items := decodeItems(t, sanitizeNativePayload(payload))
+	items := decodeItems(t, SanitizeRequestPayload(payload))
 	if _, found := items[0]["encrypted_content"]; found {
 		t.Fatal("跨账号可解密的 encrypted_content 必须剥掉")
 	}
@@ -89,14 +89,14 @@ func TestSanitizeNativePayloadDropsEncryptedReasoning(t *testing.T) {
 
 func TestSanitizeNativePayloadLeavesUnparsableBodyAlone(t *testing.T) {
 	payload := []byte("not json")
-	if string(sanitizeNativePayload(payload)) != string(payload) {
+	if string(SanitizeRequestPayload(payload)) != string(payload) {
 		t.Fatal("解析失败必须原样返回，不能把正常透传打坏")
 	}
 }
 
 func TestSanitizeNativePayloadNoopKeepsBytes(t *testing.T) {
 	payload := []byte(`{"input":[{"type":"message","role":"user","id":"msg_ok","content":[]}]}`)
-	if string(sanitizeNativePayload(payload)) != string(payload) {
+	if string(SanitizeRequestPayload(payload)) != string(payload) {
 		t.Fatal("无需清洗的请求应逐字节保持不变")
 	}
 }

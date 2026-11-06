@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 	"io"
 	"net/http"
 	"strings"
@@ -331,7 +332,7 @@ func (handler *Handler) ServeHTTP(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		normalizeClientFrameModel(firstFrame, firstRequest.Model),
+		prepareClientFrame(firstFrame, firstRequest.Model),
 	); err != nil {
 		handler.recordTransportFailure(
 			route,
@@ -526,7 +527,7 @@ func (handler *Handler) switchModel(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		normalizeClientFrameModel(frame, model),
+		prepareClientFrame(frame, model),
 	); err != nil {
 		handler.recordTransportFailure(route, selection.CredentialObservation(), err)
 		_ = upstream.CloseNow()
@@ -685,6 +686,14 @@ func parseClientFrame(payload []byte, boundModel ...string) (clientRequestEnvelo
 // normalizeClientFrameModel restores the connection-bound model for a later
 // response.create that omitted it. The upstream Codex endpoint still expects
 // the concrete model in every request body.
+// prepareClientFrame 是「出站前唯一准备点」：补模型名 + 剥掉上游解析不了的引用。
+//
+// codex CLI 默认走 WebSocket，HTTP 侧那次清洗覆盖不到 WS，所以两条入站路径都必须
+// 过 codexwire.SanitizeRequestPayload（见该函数的注释）。
+func prepareClientFrame(payload []byte, model string) []byte {
+	return codexwire.SanitizeRequestPayload(normalizeClientFrameModel(payload, model))
+}
+
 func normalizeClientFrameModel(payload []byte, model string) []byte {
 	bound := strings.TrimSpace(model)
 	if bound == "" {

@@ -5,8 +5,10 @@ const assert = require('node:assert/strict');
 
 const {
   fetchGoAccountRows,
+  fetchGoAccountRow,
   assembleAccountList,
   assembleAccountListWithGo,
+  assembleAccountRowWithGo,
   resetGoAccountRowsState
 } = require('../lib/server/account-row-live');
 
@@ -164,4 +166,68 @@ test('Vertex 占位账号的 status 仍沿用 Node', async () => {
   );
   assert.equal(result.accounts[0].status, 'up');
   assert.equal(result.changed, 0);
+});
+
+// --- 单账号装配（watch 增量事件 / 单账号响应） ---
+
+function singleHost(response) {
+  const calls = [];
+  return {
+    calls,
+    isEnabled: () => true,
+    getManagementAccount: async (ref) => {
+      calls.push(ref);
+      return response;
+    }
+  };
+}
+
+test('单账号：按 Node ref 取 Go 事实并装配', async () => {
+  resetGoAccountRowsState();
+  const host = singleHost({ ok: true, data: goRow({ account_ref: 'acct_node1', enabled: false }) });
+  const row = await assembleAccountRowWithGo({ goCoreSync: host }, nodeRow());
+  assert.deepEqual(host.calls, ['acct_node1']);
+  assert.equal(row.status, 'down');
+});
+
+test('单账号：取不到 Go 事实时原样返回 Node 行', async () => {
+  resetGoAccountRowsState();
+  const rows = nodeRow();
+  assert.deepEqual(await assembleAccountRowWithGo({}, rows), rows);
+  assert.deepEqual(
+    await assembleAccountRowWithGo({ goCoreSync: singleHost({ ok: false, errorCode: 'go_core_unavailable' }) }, rows),
+    rows
+  );
+});
+
+test('单账号：Go core 关闭时不发请求', async () => {
+  resetGoAccountRowsState();
+  const calls = [];
+  const host = {
+    isEnabled: () => false,
+    getManagementAccount: async (ref) => {
+      calls.push(ref);
+      return { ok: true, data: goRow() };
+    }
+  };
+  const row = await assembleAccountRowWithGo({ goCoreSync: host }, nodeRow());
+  assert.equal(row.status, 'up');
+  assert.deepEqual(calls, []);
+});
+
+test('单账号：一次失败进入冷却，后续调用不再打 Go', async () => {
+  resetGoAccountRowsState();
+  const calls = [];
+  const host = {
+    isEnabled: () => true,
+    getManagementAccount: async (ref) => {
+      calls.push(ref);
+      return { ok: false, errorCode: 'go_core_unavailable' };
+    }
+  };
+  await fetchGoAccountRow(host, 'acct_node1');
+  const second = await fetchGoAccountRow(host, 'acct_node2');
+  assert.equal(second.ok, false);
+  assert.equal(second.errorCode, 'go_core_cooldown');
+  assert.deepEqual(calls, ['acct_node1']);
 });

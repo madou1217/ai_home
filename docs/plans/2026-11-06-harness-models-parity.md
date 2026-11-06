@@ -137,3 +137,82 @@ NULL
 - 建议先重新构建并部署 Go 二进制（包含 `generation`/`updated_at_ms` 与 `meta_only=1`），
   再按本文步骤复跑一次：确认第二次及后续读取的 `generation` 非空、目录仍与 Go effective 一致，
   且 Go 停止时回落快照不报错，再考虑默认开启。
+
+## 7. 追补验证：`meta_only` 条件刷新（2026-11-06 23:36–23:39）
+
+> 任务代号 harness-meta-only-verify。Go 已按 `daa7e407` 重建（`bin/native/darwin-arm64/aih-server`
+> 23:31，`strings … | grep -c meta_only` = 1）。本节仍为只读验证：未发起推理、未改 Go/Node 代码、未提交。
+
+### 7.1 开关原值与开启
+
+`config:server.harnessModelsViaGo` 仍是缺省（键不存在，原文本 sha256 `3ba3255c…f55ae`）。
+置 true（写入值 sha256 `dd2a8251…cf75`，其它键逐键不变）后，按第 1 节同一条
+`launchctl remove + submit` 重启：Node 75360 / Go 75770；`/healthz` 200（第 16 次探测）、
+`/readyz` `ready=true`、`go_core.state=ready`。
+
+### 7.2 第二次读走 `meta_only` 的直接证据
+
+Go 没有 management 请求访问日志：`~/.ai_home/logs/go-core.log` 只有启动/探测错误，没有请求行，
+因此按 2b 用 harness 导出函数 + 记录真实请求路径。直连运行中的 Go：
+
+```
+full:        status=200 dataAccounts=30 effectiveRows=629 uniqueModels=199
+             generation=1793979339589 updated_at_ms=1793979338908
+meta_only=1: status=200 dataAccounts=0  generation=1793979339589 updated_at_ms=1793979338908
+```
+
+`createChatHarnessGoModelSource` 连调两次，注入的 `readAccountModels` 记录每次路径：
+
+```
+#1 calls=["/v1/management/account-models"]
+#2 newCalls=["/v1/management/account-models?meta_only=1"]
+   accounts=30 effectiveRows=629 generation=1793979339589
+   second.byAccount === first.byAccount: true
+```
+
+即第二次只取指纹、没有整份拉取。实时服务（开关 true）再按来源确认：两个 gateway 会话的
+composer catalog 都是 199 个模型，与 Go effective 并集逐项比较 `onlyGo(0)=`、`onlyLive(0)=`，
+`live==goUnion: true`。
+
+### 7.3 Go 停止时的回落
+
+第一次 `SIGSTOP 75770` 时快照仍是旧的那份：
+
+```
+go /healthz -> timeout
+新 gateway 会话 catalog: 200, 2075ms, models=206
+onlyBaseline(0)=
+onlyFallback(7)=glm-4.5,glm-4.5-air,glm-4.6,glm-4.7,glm-5-turbo,glm-5.1,glm-5.3-flashx-legal
+```
+
+这 7 个是旧快照里的 stale 行；回落本身触发了后台刷新（`cache:webui-models-snapshot.json`
+15:38:03 更新）。刷新后快照并集 205 = Go 199 + 6 个已停用的 qoder 模型
+（Auto/Cantus/Efficient/Fast/Sonus/Ultimate），按 `model-catalog-settings` 过滤后 199。
+
+快照收敛后重测（开关仍 true；`readServerConfig` 按请求实时读库，未再重启）：
+
+```
+Go up #1/#2: 200, 199 models, sameSet=true
+SIGSTOP -> catalog: 200, 2032ms, models=199, sameSet=true
+onlyGo(0)= onlySnapshot(0)=
+```
+
+`SIGCONT` 后 `/readyz` 立即回到 `go_core.state=ready`、`restarts=0`。
+
+### 7.4 复原
+
+- 原文本写回，`restoredExact=true`、`harnessModelsViaGo` 键不存在、`deepDiffs=0`；最终原始
+  文本 sha256 回到 `3ba3255c…f55ae`。
+- 已按原参数重启：Node 79920 / Go 80304；`/healthz` 200（第 15 次探测）、`/readyz`
+  `ready=true`、`restarts=0`；`GET /v0/webui/accounts` 200、32 个账号。
+- 开关关闭时 composer catalog 199，与 Go 并集一致（205 快照减去 6 个停用 qoder 模型）。
+
+### 7.5 结论
+
+- 已拿到直接证据：第二次及后续读只发 `meta_only=1`，返回空 `data` + 同一 generation，不整份拉取；
+  实时目录与 Go effective 并集逐项相同。
+- 回落：Go `SIGSTOP` 时 catalog 仍 200；快照收敛后与 Go 集合逐项相同（199）。首次回落可能短暂
+  返回旧快照的 7 个 stale GLM 模型，后台刷新后消失。
+- 建议：现在可以默认开启 `harnessModelsViaGo`（发布需包含本次 Go 二进制）；保留现有回落语义。
+  若在意首次回落的一致性，切换默认前先触发一次快照刷新。
+

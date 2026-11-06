@@ -205,9 +205,14 @@ func (service *Service) Delete(ctx context.Context, id string, version *int64) e
 	return service.repository.Delete(ctx, parsed, version)
 }
 
-// assertProvider 校验目标 Provider 已在注册表里。
+// assertProvider 只做「能作为 Provider 标识」的形态校验，**不查注册表**。
+//
+// 为什么放开：Node 侧从来只做小写归一（不校验是否存在），存量组里可能有已下线
+// Provider（agy 早期账号、临时 relay 名）。按注册表拒绝会让这些组连编辑都存不回去，
+// 属于把上游枚举写成白名单——与仓库既定的「枚举不硬编码」原则冲突。
+// 形态由值对象保证（小写 + [a-z0-9_-]{1,64} + 默认 all），这里只守住空值。
 func (service *Service) assertProvider(provider string) error {
-	if _, ok := service.providers[provider]; !ok {
+	if strings.TrimSpace(provider) == "" {
 		return mappingcore.ErrUnknownProvider
 	}
 	return nil

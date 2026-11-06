@@ -190,18 +190,36 @@ func TestServiceCreateNormalizesProviderAndPersists(t *testing.T) {
 	}
 }
 
-func TestServiceCreateRejectsUnknownProvider(t *testing.T) {
+// Provider 不在注册表里也允许保存：Node 侧从来只做归一，存量组可能引用
+// 已下线 Provider（见 assertProvider 的注释）。只有空值算非法。
+func TestServiceCreateAcceptsUnregisteredProvider(t *testing.T) {
 	service, repository := newService(t)
-	_, err := service.Create(context.Background(), CreateInput{
-		Name:     "未知",
+	group, err := service.Create(context.Background(), CreateInput{
+		Name:     "已下线 Provider",
 		Provider: "not-registered",
 		Rules:    []rulescore.Rule{testRule(t)},
 	})
-	if !errors.Is(err, mappingcore.ErrUnknownProvider) {
-		t.Fatalf("Create() error = %v, want ErrUnknownProvider", err)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
 	}
-	if repository.createCalls != 0 {
-		t.Fatal("非法 Provider 不应触达存储")
+	if group.Provider() != "not-registered" || repository.createCalls != 1 {
+		t.Fatalf("provider/calls = %q/%d", group.Provider(), repository.createCalls)
+	}
+}
+
+func TestServiceCreateRejectsEmptyProvider(t *testing.T) {
+	service, repository := newService(t)
+	_, err := service.Create(context.Background(), CreateInput{
+		Name:     "空 Provider",
+		Provider: "",
+		Rules:    []rulescore.Rule{testRule(t)},
+	})
+	// 空值由值对象回落为 all，不会走到 assertProvider；这里锁住「不报错、落 all」。
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if repository.createCalls != 1 {
+		t.Fatal("默认 all 应当落库")
 	}
 }
 

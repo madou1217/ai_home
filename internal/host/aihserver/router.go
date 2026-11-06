@@ -126,6 +126,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.usageImport != nil {
 		mux.Handle(usagestatsapi.ImportPath, handlers.usageImport)
 	}
+	if handlers.usageBuckets != nil {
+		mux.Handle(usagestatsapi.BucketsPath, handlers.usageBuckets)
+	}
 	mux.Handle(modelsapi.Path, handlers.models)
 	// /v1/models/ 同时承载两条能力：单模型查询 GET /v1/models/{id}，
 	// 以及 Gemini 的 POST /v1/models/{model}:generateContent[Stream]。dispatcher 先按

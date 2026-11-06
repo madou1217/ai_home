@@ -124,7 +124,9 @@ type serverHandlers struct {
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats http.Handler
 	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
-	usageImport   http.Handler
+	usageImport http.Handler
+	// usageBuckets 是按日/周聚合的 token 桶（额度统计页图表）。
+	usageBuckets  http.Handler
 	usageModels   http.Handler
 	usageSessions http.Handler
 	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
@@ -756,6 +758,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	usageImportHandler, err := usagestatsapi.NewImportHandler(authorizer, store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量导入 Handler 失败: %w", err)
+	}
+	usageBucketsHandler, err := usagestatsapi.NewBucketsHandler(authorizer, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量桶 Handler 失败: %w", err)
 	}
 	// 窗口统计与模型用量共用同一份定价快照：两处口径必须一致，否则同一账号
 	// 在「模型用量」和「额度统计」两个页面会显示不同的成本。
@@ -1392,6 +1398,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		usageModels:        usageModelsHandler,
 		usageSessions:      usageSessionsHandler,
 		usageImport:        usageImportHandler,
+		usageBuckets:       usageBucketsHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
 		familyRelay:        familyRelayHandler,

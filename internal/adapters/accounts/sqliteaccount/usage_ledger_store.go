@@ -233,3 +233,19 @@ func (store *Store) ImportUsageEvents(
 	}
 	return imported, skipped, nil
 }
+
+// QueryUsageBuckets 按 UTC 日/周聚合账本事实（图表用）。
+func (store *Store) QueryUsageBuckets(
+	ctx context.Context,
+	query usageledger.Query,
+	granularity string,
+) ([]usageledger.BucketStats, error) {
+	if usageledger.NormalizeBucketGranularity(granularity) == "" {
+		return nil, usageledger.ErrInvalidQuery
+	}
+	records, err := store.readUsageRecords(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return usageledger.AggregateBuckets(records, query, granularity), nil
+}

@@ -231,3 +231,32 @@ test('单账号：一次失败进入冷却，后续调用不再打 Go', async ()
   assert.equal(second.errorCode, 'go_core_cooldown');
   assert.deepEqual(calls, ['acct_node1']);
 });
+
+test('单账号：404（账号不在 Go）不触发全局冷却，列表仍可装配', async () => {
+  resetGoAccountRowsState();
+  const host = {
+    isEnabled: () => true,
+    getManagementAccount: async () => ({ ok: false, status: 404, errorCode: 'account_not_found' }),
+    listManagementAccounts: async () => ({ ok: true, data: [goRow()], page: null })
+  };
+  const missing = await fetchGoAccountRow(host, 'acct_gemini');
+  assert.equal(missing.ok, false);
+  const list = await fetchGoAccountRows(host);
+  assert.equal(list.ok, true);
+});
+
+test('单账号：5xx 进入冷却，后续不再打 Go', async () => {
+  resetGoAccountRowsState();
+  const calls = [];
+  const host = {
+    isEnabled: () => true,
+    getManagementAccount: async (ref) => {
+      calls.push(ref);
+      return { ok: false, status: 502, errorCode: 'http_502' };
+    }
+  };
+  await fetchGoAccountRow(host, 'acct_node1');
+  const second = await fetchGoAccountRow(host, 'acct_node2');
+  assert.equal(second.errorCode, 'go_core_cooldown');
+  assert.deepEqual(calls, ['acct_node1']);
+});

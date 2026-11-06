@@ -66,6 +66,7 @@ test('已有输出后换号：自动向新账号续写 continue，不重发原�
     if (calls.length === 1) {
       return {
         done: (async () => {
+          input.onEvent({ type: 'session-created', sessionId: 'sess-1' });
           input.onEvent({ type: 'delta', delta: '部分输出' });
           throw new Error(RATE_LIMITED);
         })()
@@ -87,6 +88,9 @@ test('已有输出后换号：自动向新账号续写 continue，不重发原�
   assert.equal(calls[1].prompt, 'continue');
   assert.deepEqual(calls[1].imagePaths, []);
   assert.equal(calls[1].accountRef, 'acct_secondary');
+  // 第一次尝试创建了原生会话 → 续写必须用 resume 形态接上同一个 thread。
+  assert.equal(calls[0].launchProfile.isResume, false);
+  assert.equal(calls[1].launchProfile.isResume, true);
   assert.ok(
     noticeTexts(events).some((text) => text.includes('已换账号继续本轮')),
     `missing retry notice: ${JSON.stringify(noticeTexts(events))}`

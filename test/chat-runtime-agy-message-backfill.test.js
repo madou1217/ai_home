@@ -49,6 +49,18 @@ function seed(db) {
   emit(7, 'timeline.item.completed', 'turn-c', 'agy_message_agent_123_abc_0', {
     item: { id: 'agy_message_agent_123_abc_0', kind: 'message', status: 'completed', turnId: 'turn-c', content: 'C' },
   });
+  insert.run(
+    'evt-native-turn', SESSION_ID, 8, 'v1', 'turn.phase.changed', 8, 'turn-a', 'run-turn-a', null,
+    JSON.stringify({ activeTurn: { turnId: 'turn-a', nativeTurnId: 'native-turn-a' } }),
+  );
+  db.prepare(`
+    INSERT INTO chat_runtime_native_thread_items (
+      session_id, native_thread_id, native_turn_id, item_id, item_json, raw_message_id, ordinal
+    ) VALUES (?, ?, ?, ?, ?, NULL, 1)
+  `).run(
+    SESSION_ID, 'thread-1', 'native-turn-a', 'agy_message',
+    JSON.stringify({ type: 'agentMessage', id: 'agy_message', text: 'A' }),
+  );
 }
 
 function readEvents(db) {
@@ -67,8 +79,8 @@ test('启动迁移按 turn 拆分旧 agy_message，且不改写新 id、可重�
     let db = openChatRuntimeDatabase({ fs, aiHomeDir: root });
     try {
       const events = readEvents(db);
-      const a = events.filter((event) => event.turn_id === 'turn-a');
-      const b = events.filter((event) => event.turn_id === 'turn-b');
+      const a = events.filter((event) => event.turn_id === 'turn-a' && event.type.startsWith('timeline.'));
+      const b = events.filter((event) => event.turn_id === 'turn-b' && event.type.startsWith('timeline.'));
       assert.deepEqual(a.map((event) => event.item_id), [
         'agy_message_legacy_turn-a_0',
         'agy_message_legacy_turn-a_0',
@@ -90,6 +102,12 @@ test('启动迁移按 turn 拆分旧 agy_message，且不改写新 id、可重�
       ]);
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM chat_runtime_migrations WHERE id = ?')
         .get('agy_message_item_id_v1').n, 1);
+      const nativeRow = db.prepare(`
+        SELECT item_id, item_json FROM chat_runtime_native_thread_items
+        WHERE session_id = ? AND native_turn_id = 'native-turn-a'
+      `).get(SESSION_ID);
+      assert.equal(nativeRow.item_id, 'agy_message_legacy_turn-a_0');
+      assert.equal(JSON.parse(nativeRow.item_json).id, 'agy_message_legacy_turn-a_0');
     } finally {
       db.close();
     }
@@ -97,9 +115,9 @@ test('启动迁移按 turn 拆分旧 agy_message，且不改写新 id、可重�
     db = openChatRuntimeDatabase({ fs, aiHomeDir: root });
     try {
       const events = readEvents(db);
-      assert.equal(events.filter((event) => event.turn_id === 'turn-a').every(
+      assert.equal(events.filter((event) => event.turn_id === 'turn-a' && event.type.startsWith('timeline.')).every(
         (event) => event.item_id === 'agy_message_legacy_turn-a_0'), true);
-      assert.equal(events.filter((event) => event.turn_id === 'turn-b').every(
+      assert.equal(events.filter((event) => event.turn_id === 'turn-b' && event.type.startsWith('timeline.')).every(
         (event) => event.item_id === 'agy_message_legacy_turn-b_0'), true);
     } finally {
       db.close();

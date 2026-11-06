@@ -52,7 +52,7 @@ type Dependencies struct {
 	// JobWrites 是持久化 Job 快照的写入端口，可为空（未装配时 PUT 返回 503）。
 	//
 	// Node 仍是 12 类 Provider 的登录执行者：它把公开快照推进来，Go 只保存与查询。
-	JobWrites JobWriter
+	JobWrites  JobWriter
 	Authorizer Authorizer
 }
 

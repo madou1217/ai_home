@@ -69,11 +69,11 @@ type Attempt struct {
 
 // Result 是链式查询的结论。
 type Result struct {
-	OK         bool
-	Record     Record
-	Providers  []string // 实际贡献了字段的 provider（按顺序）
-	Attempts   []Attempt
-	Error      string // OK=false 时的原因
+	OK        bool
+	Record    Record
+	Providers []string // 实际贡献了字段的 provider（按顺序）
+	Attempts  []Attempt
+	Error     string // OK=false 时的原因
 }
 
 // Lookup 沿链查询一个 IP。永不 panic：任何 provider 出错都记进 Attempts 并切下一个。
@@ -83,8 +83,8 @@ func Lookup(providers []Provider, ip string) Result {
 		return Result{Error: "invalid_ip"}
 	}
 	var (
-		merged  Record
-		used    []string
+		merged   Record
+		used     []string
 		attempts []Attempt
 	)
 	for _, provider := range providers {

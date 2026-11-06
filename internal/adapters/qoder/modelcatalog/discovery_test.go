@@ -41,7 +41,7 @@ func (signer *fakeSigner) DecryptServerResponse(context.Context, string) (string
 	return signer.decrypted, nil
 }
 
-func (*fakeSigner) FreeContext(uint32) {}
+func (*fakeSigner) FreeContext(uint32)    {}
 func (*fakeSigner) Close(context.Context) {}
 
 // withFakes 安装假签名器与假解密；测试结束自动恢复。

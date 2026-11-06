@@ -65,7 +65,7 @@ func (adapter *Adapter) RoundTripNative(ctx context.Context, credential accounta
 			request.Header.Set(name, value)
 		}
 	}
-// 递增而不是写死 1：对端据此判断这条链还能不能再往下转（见 MaxNativeRelayHops）。
+	// 递增而不是写死 1：对端据此判断这条链还能不能再往下转（见 MaxNativeRelayHops）。
 	request.Header.Set(NativeHopHeader, strconv.Itoa(NativeRelayHop(header)+1))
 	return adapter.client.Do(request)
 }

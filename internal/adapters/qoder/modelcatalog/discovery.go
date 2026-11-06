@@ -4,7 +4,7 @@
 //   - GET {base}/api/v2/model/list?Encode=1，base 为 openapi.qoder.sh（国内站
 //     openapi.qoder.com.cn）；
 //   - 请求必须由客户端 wasm 签名：newContext(machineId, cliVersion, 登录态明文)
-//     + prepareRequest(endpoint, path, "GET", "auth") 产出完整 URL 与 18 个签名头；
+//   - prepareRequest(endpoint, path, "GET", "auth") 产出完整 URL 与 18 个签名头；
 //   - 响应通常是明文 JSON（content-type application/json），被编码时才用
 //     decrypt_server_response；
 //   - 目录按 scene 分组（默认 assistant），条目里的 is_reasoning/is_vl/

@@ -76,6 +76,11 @@ type AggregateOptions struct {
 	// FallbackIDPrefix 是上游没给 id 时的兜底前缀（各 Provider 不同，故可注入）。
 	// 为空时用 "chatcmpl"。
 	FallbackIDPrefix string
+	// RequestedModel 是客户端请求的模型名。
+	//
+	// 上游没在正文里声明 model 时用它兜底：客户端拿到的 model 必须能回答
+	// 「这是哪个模型答的」，写死 "unknown" 会把真实身份让位给占位值。
+	RequestedModel string
 }
 
 // AggregateSSE 把上游 SSE 文本聚合成一个非流式 `chat.completion`。
@@ -88,8 +93,14 @@ type AggregateOptions struct {
 // 解析刻意**逐字段宽容**：与 Node 侧同口径——单个字段类型不符不应当让整条流作废。
 //
 // 这是**协议形状**的聚合，与具体 Provider 无关：任何 OpenAI chat completions 形态的
-// 上游都产出同样的 SSE，因此只有一份实现。
+// 上游都产出同样的 SSE，因此只有一份实现。Anthropic 事件流由同包的
+// aggregateAnthropicSSE 承接——它说另一套协议，但入口和客户端协议不变。
 func AggregateSSE(sse []byte, options AggregateOptions) AggregatedCompletion {
+	// 先判协议再解析：把 Anthropic 事件当 OpenAI chunk 读得不到任何 choices，
+	// 只会产出一条 model 为空、content 为空、无 usage 的假响应。
+	if aggregated, ok := aggregateAnthropicSSE(sse, options); ok {
+		return aggregated
+	}
 	clock := options.Clock
 	result := AggregatedCompletion{}
 	accumulators := map[int]*toolCallAccumulator{}
@@ -166,6 +177,11 @@ func AggregateSSE(sse []byte, options AggregateOptions) AggregatedCompletion {
 	}
 	if created == 0 {
 		created = NowMillis(clock) / 1000
+	}
+	if model == "" {
+		// 上游没声明模型时先回落客户端请求的模型；两者都没有才用占位值，
+		// 保证字段始终存在（缺少 model 的响应在部分客户端会被判成协议错误）。
+		model = strings.TrimSpace(options.RequestedModel)
 	}
 	if model == "" {
 		model = "unknown"

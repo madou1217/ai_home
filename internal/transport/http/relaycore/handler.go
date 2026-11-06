@@ -369,6 +369,45 @@ func writeRelayFailure(response http.ResponseWriter, failure relayFailure) {
 	writeRelayError(response, failure.status, failure.code, failure.message)
 }
 
+// nonStreamPayload 把上游 2xx 正文整理成非流式客户端要的 JSON。
+//
+// 从前这里无条件按 SSE 解析：纯 JSON 正文里没有 data: 行，聚合器于是产出
+// model="unknown"、content 为空、无 usage 的 chat.completion——把「模型其实回答了」
+// 洗成空响应（真机：zcode + glm-5.3-flash，账本记到 1083/4 而响应里没有 usage）。
+//
+// 现在的分派：
+//   - 事件流 → 按协议聚合（OpenAI chunk 或 Anthropic 事件）；
+//   - 完整 JSON → Anthropic Message 转换成 OpenAI 形态（客户端在这个入口上期待它），
+//     其余原样交付——同协议 chat.completion 已经是最终形态，重建只会丢字段。
+func nonStreamPayload(
+	header http.Header,
+	payload []byte,
+	options AggregateOptions,
+) []byte {
+	if !isSSEPayload(header, payload) {
+		if converted, ok := aggregateAnthropicMessage(payload, options); ok {
+			return converted.Payload
+		}
+		return payload
+	}
+	return AggregateSSE(payload, options).Payload
+}
+
+// writeAggregatedPayload 交付非流式 JSON 正文（聚合结果或上游原样正文）。
+//
+// 抽成一处是为了让两条路径共用同一套交付头：非流式响应与 Canonical 同口径，
+// 推理结果一律不可缓存；Content-Length 必须重算，否则上游那份（可能是压缩后的长度）
+// 会让客户端读不满。
+func writeAggregatedPayload(response http.ResponseWriter, status int, payload []byte) {
+	response.Header().Del("Content-Length")
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if response.Header().Get("Cache-Control") == "" {
+		response.Header().Set("Cache-Control", "no-store")
+	}
+	response.WriteHeader(status)
+	_, _ = response.Write(payload)
+}
+
 // classifyBusinessFailure 在记账前嗅探「2xx 但业务失败」的响应。
 //
 // 两种协议形态分开处理：JSON 错误体可以整段读；SSE 只能读首个事件，且必须回放。
@@ -685,8 +724,9 @@ func (handler *Handler) attemptRelay(
 
 // writeResponse 把上游响应交付给客户端。
 //
-// 客户端要非流式而上游只给流时在这里聚合；流式则逐字节透传并逐事件刷新
-// ——上游的富字段（reasoning_content / function_call / extra_fields）因此原样保留。
+// 客户端要非流式而上游只给流时在这里聚合；流式按**上游协议**分派：OpenAI 兼容上游
+// 逐字节透传并逐事件刷新（reasoning_content / function_call / extra_fields 等富字段
+// 因此原样保留），Anthropic 事件流交给 stream_anthropic.go 做事件级转换。
 func (handler *Handler) writeResponse(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -739,28 +779,41 @@ func (handler *Handler) writeResponse(
 			writeRelayError(response, http.StatusBadGateway, "relay_upstream_unavailable", "上游响应读取失败")
 			return
 		}
-		aggregated := AggregateSSE(payload, AggregateOptions{Clock: handler.clock})
-		if len(aggregated.Payload) == 0 {
+		payload = nonStreamPayload(
+			upstreamResponse.Header,
+			payload,
+			AggregateOptions{
+				Clock: handler.clock,
+				// 本次尝试的模型就是客户端请求的模型：上游漏声明 model 时的兜底来源。
+				RequestedModel: outcome.route.ModelID().String(),
+			},
+		)
+		if len(payload) == 0 {
 			writeRelayError(response, http.StatusBadGateway, "relay_upstream_unavailable", "上游响应为空")
 			return
 		}
-		response.Header().Del("Content-Length")
-		response.Header().Set("Content-Type", "application/json; charset=utf-8")
-		// 非流式聚合结果与 Canonical 的非流式响应同口径：推理响应一律不可缓存。
-		if response.Header().Get("Cache-Control") == "" {
-			response.Header().Set("Cache-Control", "no-store")
-		}
-		response.WriteHeader(upstreamResponse.StatusCode)
-		_, _ = response.Write(aggregated.Payload)
+		writeAggregatedPayload(response, upstreamResponse.StatusCode, payload)
 		return
 	}
-	if upstreamResponse.StatusCode >= http.StatusOK &&
-		upstreamResponse.StatusCode < http.StatusMultipleChoices {
+	success := upstreamResponse.StatusCode >= http.StatusOK &&
+		upstreamResponse.StatusCode < http.StatusMultipleChoices
+	if success {
 		response.Header().Set("Cache-Control", "no-cache")
 		response.Header().Set("X-Accel-Buffering", "no")
 		response.Header().Set("X-Content-Type-Options", "nosniff")
 	}
 	response.WriteHeader(upstreamResponse.StatusCode)
+	if success {
+		// 流式成功响应按**上游协议**分派：Anthropic 事件流必须逐事件转成 OpenAI
+		// chunk（否则客户端收到 event: message_start，完全解析不了），OpenAI 兼容
+		// 上游保持逐字节透传。错误响应不走这里——它是另一套形态，原样交付才能让
+		// 客户端看到真实的 403/429 原因。
+		writeUpstreamStream(response, upstreamResponse.Body, AggregateOptions{
+			Clock:          handler.clock,
+			RequestedModel: outcome.route.ModelID().String(),
+		})
+		return
+	}
 	_ = copyStreaming(response, upstreamResponse.Body)
 }
 

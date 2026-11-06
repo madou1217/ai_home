@@ -65,8 +65,10 @@ test('Kiro (Google) / Kiro (AWS Builder ID) 不会被当成展示身份', () => 
     email: 'user@example.com'
   }), [{ type: 'email', value: 'user@example.com' }]);
 
+  // 有真身份时 Provider 标签不出现；完全没有邮箱/手机号时它降级为兜底标题
+  // （见 0ad57cf5：空白标题比一个「Kiro (Google)」更糟）。
   assert.deepEqual(buildAccountDisplayNames({
     displayName: 'Kiro (Google)',
     email: ''
-  }), []);
+  }), [{ type: 'nickName', value: 'Kiro (Google)' }]);
 });

@@ -82,40 +82,66 @@ test('vertex 占位账号的 enabled 差异被忽略', () => {
   assert.equal(diff.equal, true);
 });
 
-test('auth_mode 两侧都有值时比较', () => {
+test('鉴权字段不按字面比较（Node 与 Go 是两套词表）', () => {
+  // Node authMode=oauth / api-key，Go auth_kind=oauth|api_key / auth_mode=''|consumer；
+  // 直接比会每轮都假警（实测 opencode 在 Go 是 api_key，在 Node 却不是 apiKeyMode）。
   const diff = compareAccountSets(
-    [nodeRow({ authMode: 'oauth' })],
-    [goRow({ auth_mode: 'api_key' })],
+    [nodeRow({ authMode: 'oauth', apiKeyMode: false })],
+    [goRow({ auth_mode: 'consumer', auth_kind: 'oauth' })],
+    null
+  );
+  assert.deepEqual(diff.fieldMismatch, []);
+  assert.equal(diff.equal, true);
+});
+
+test('身份字段只在 Go 有值时比较', () => {
+  const diff = compareAccountSets(
+    [nodeRow({ displayName: 'Node 名' })],
+    [goRow({ display_name: 'Go 名' })],
     null
   );
   assert.deepEqual(diff.fieldMismatch, [
-    { accountRef: 'acct_a', field: 'auth_mode', node: 'oauth', go: 'api_key' }
+    { accountRef: 'acct_a', field: 'displayName', node: 'Node 名', go: 'Go 名' }
   ]);
   assert.equal(diff.equal, false);
 
-  // 一侧为空视为「无法判定」，不报差异（Go 未写凭据形态时不该刷屏）。
-  const skipped = compareAccountSets([nodeRow({ authMode: 'oauth' })], [goRow()], null);
+  // Go 的 account_profiles 目前为空：这是缺口不是漂移。
+  const skipped = compareAccountSets([nodeRow()], [goRow({ display_name: '' })], null);
   assert.deepEqual(skipped.fieldMismatch, []);
   assert.equal(skipped.equal, true);
 });
 
-test('额度快照的有无与采集时间要一致', () => {
-  const missing = compareAccountSets(
-    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000, entries: [] } })],
+test('Node 快照比 Go 新才算漂移（Go 更新是采集时延）', () => {
+  // Node 比 Go 新 10 分钟：Node 还在自己产出快照，翻页后会丢数据。
+  const nodeAhead = compareAccountSets(
+    [nodeRow({ usageSnapshot: { capturedAt: 1730000600000 } })],
+    [goRow({ usage_snapshot: { captured_at: new Date(1730000000000).toISOString() } })],
+    null
+  );
+  assert.equal(nodeAhead.fieldMismatch.length, 1);
+  assert.equal(nodeAhead.fieldMismatch[0].field, 'usageSnapshot.capturedAt');
+
+  // Go 比 Node 新 4 分钟：Go 在持续采集，Node 等下一轮同步，不是差异。
+  const goAhead = compareAccountSets(
+    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000 } })],
+    [goRow({ usage_snapshot: { captured_at: new Date(1730000240000).toISOString() } })],
+    null
+  );
+  assert.deepEqual(goAhead.fieldMismatch, []);
+  assert.equal(goAhead.equal, true);
+});
+
+test('只有一侧有快照不算差异（展示口径不同 / Node 遗留缓存）', () => {
+  const nodeOnly = compareAccountSets(
+    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000 } })],
     [goRow()],
     null
   );
-  assert.deepEqual(missing.fieldMismatch, [
-    { accountRef: 'acct_a', field: 'usage_snapshot', node: 'present', go: 'missing' }
-  ]);
+  assert.deepEqual(nodeOnly.fieldMismatch, []);
+  assert.equal(nodeOnly.equal, true);
 
-  const stale = compareAccountSets(
-    [nodeRow({ usageSnapshot: { capturedAt: 1730000000000 } })],
-    [goRow({ usage_snapshot: { captured_at: '2026-11-06T02:00:00Z' } })],
-    null
-  );
-  assert.equal(stale.fieldMismatch.length, 1);
-  assert.equal(stale.fieldMismatch[0].field, 'usage_captured_at');
+  const goOnly = compareAccountSets([nodeRow()], [goRow({ usage_snapshot: { captured_at: '2026-11-06T02:00:00Z' } })], null);
+  assert.deepEqual(goOnly.fieldMismatch, []);
 });
 
 test('快照采集时间在 1 秒内视为同一份', () => {

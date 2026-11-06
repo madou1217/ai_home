@@ -43,7 +43,21 @@ webui-account-live.js 里有三类 Node 独有事实：
 ### C. 前门翻转
 - /v0/webui/accounts 改为转发 Go 视图并叠加 Node 覆盖层，Node 只保留 state 供 CLI 使用；
 - watch 事件载荷同步换形状；
-- 验收：账号页 6 个 Tab 逐个真机对比，字段零差异；停 Go 时 503（不回落旧投影）。
+- 验收：账号页 6 个 Tab 逐个真机对比，字段零差异。
+
+**落地进展（2026-11-06）**：列表响应已接入 `assembleAccountListWithGo`
+（`lib/server/account-row-live.js`），每次请求**同步**取一次 Go 账号视图再装配，
+响应新增 `goAssembled` 标志。两个与原计划的偏离及理由：
+
+1. **不返回 503，改为降级到 Node 行。** 原计划的 503 是针对「整行都由 Go 提供」的场景；
+   现在装配只覆盖 6 个字段，Node 行本身完整，硬 503 会把 Go 的一次抖动放大成「账号页打不开」。
+   取数失败/超时（1200ms）/未启用时原样返回 Node 行并置 `goAssembled=false`，失败后冷却 5s。
+2. **不为列表加正向缓存。** 启停按钮已经同步写 Go（Phase 1），若读侧用 60s 影子缓存，
+   点完「停用」会回弹。这里每次请求打一次本地管理接口（43 行），实测不影响首屏。
+   影子对账仍拿**装配前**的 Node 行比较，否则 `assembledChanged` 永远为 0、守卫失效。
+
+真机验证（2026-11-06 10:42 重启后）：43 行 `goAssembled=true`，`row_identical=true`、
+`field_mismatch=0`，服务日志无 `[aih:account-shadow]` 告警（即装配未改动任何一行）。
 
 ## 3.5 前门翻转的字段来源（2026-11-06 盘点，切片 B 收尾时补）
 

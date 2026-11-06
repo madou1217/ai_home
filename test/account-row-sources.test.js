@@ -189,3 +189,41 @@ test('默认账号与额度状态以 Go 为准', () => {
   );
   assert.equal(cleared.quotaReason, '');
 });
+
+test('每个字段都写明判定理由，且与 source 不矛盾', () => {
+  const allowed = {
+    go: 'go-fact',
+    'go-projected': 'go-computed'
+  };
+  for (const entry of ACCOUNT_ROW_FIELDS) {
+    assert.ok(entry.reason, entry.field + ' 缺少判定理由');
+    if (allowed[entry.source]) {
+      assert.equal(entry.reason, allowed[entry.source], entry.field + ' 的 source/reason 不一致');
+    } else {
+      assert.ok(String(entry.reason).startsWith('node-') || entry.reason === 'row-key' || entry.reason === 'credential-vocabulary',
+        entry.field + ' 的 Node 判定理由不属于已知类别: ' + entry.reason);
+    }
+  }
+});
+
+test('来源分布：Go 判定 7 / Go 计算 4 / Node 独有 28', () => {
+  const counts = {};
+  for (const entry of ACCOUNT_ROW_FIELDS) counts[entry.source] = (counts[entry.source] || 0) + 1;
+  assert.deepEqual(counts, { go: 7, 'go-projected': 4, node: 28 });
+  const reasons = {};
+  for (const entry of ACCOUNT_ROW_FIELDS) reasons[entry.reason] = (reasons[entry.reason] || 0) + 1;
+  assert.deepEqual(reasons, {
+    'go-fact': 7,
+    'go-computed': 4,
+    'row-key': 1,
+    'credential-vocabulary': 3,
+    'node-capability': 6,
+    'node-config': 2,
+    'node-state-time': 1,
+    'node-derived-identity': 4,
+    'node-usage': 1,
+    'node-oauth': 3,
+    'node-derived-state': 2,
+    'node-runtime': 5
+  });
+});

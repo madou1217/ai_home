@@ -101,6 +101,28 @@ Node 账号行（`/v0/webui/accounts`）目前 34 个字段，按来源分三类
 `displayName / planType / email`（Go 的 profiles 为空），两条已禁用 agy 账号的
 Node 快照停在 10-24（Go 无快照），按告警列出、不阻断。
 
+### 3.6 剩余 28 个 Node 字段的判定（2026-11-06）
+
+来源表里每个字段都带 `reason`（代码即判据）。按理由分十类，逐类说明为什么还不能迁、什么条件能解锁：
+
+| reason | 字段 | 为什么不迁 | 解锁条件 |
+| --- | --- | --- | --- |
+| `row-key` | accountRef | 行主键，Node 侧命名；Go ref 与 Node ref 可能不同（静态账号按密钥派生），覆盖会让行失去引用 | 不迁（翻译层永远在 Node） |
+| `credential-vocabulary` | apiKeyMode, authMode, baseUrl | Go 的 `auth_kind/auth_mode` 是另一套词表（`api_key / oauth / vertex_ai` 对 `api-key / consumer / opencode-auth / oauth`），opencode 在 Go 是 api_key、在 Node 却不是 apiKeyMode；baseUrl 的提取规则按 Provider 不同 | Go 存「Node 展示词表」而不是自己派生 |
+| `node-derived-identity` | displayNames, planName, loginType, zcodeRegion | 轮播身份、套餐名、登录方式、zcode 区域都来自 Node 的凭据解析（nativeAuth / user_info），Go 没有对应解析器 | 身份解析迁 Go（且要先解决与 account_profiles「派生身份」的语义冲突） |
+| `node-config` | upstreamErrorRules, upstreamErrorGroupIds | 用户在 WebUI 配的调度规则，存在 Node app-state；Go 只承接执行 | 规则编辑入口迁 Go |
+| `node-capability` | isMobile, customUpstream, windowActivationSupported, aliasPoolParticipates, activityActions, gatewayTargetSupported | Provider 能力/运行池开关，判定来自 Node 的 descriptor 与注册表（probe-spec、activity、relay 能力） | 能力目录整体迁 Go 前不拆 |
+| `node-state-time` | updatedAt | Node 的「状态/记录更新时间」与 Go `accounts.updated_at` 不同口径（实测差几分钟到十几分钟） | 两端口径统一 |
+| `node-usage` | tokenUsage | Node 的 `model_usage_records` 有 122 万行；Go 的 `usage_ledger` 只记 Go 承接流量的部分（当前接近空） | Go 真正承接推理流量后按量级可比再切 |
+| `node-oauth` | authPending, authPendingStale, authPendingAgeMs | 登录作业在 Node 执行，Go 只持久化 job 快照；pending 与年龄属于作业调度方 | 登录作业框架迁 Go |
+| `node-derived-state` | schedulableStatus, schedulableReason | 由 enabled + runtime + quota 派生，且含 Provider 级 override（agy 的 refresh_token 要求等） | 派生规则整体迁 Go |
+| `node-runtime` | lastUsedAt, runtimeStatus, runtimeUntil, runtimeReason, runtimeModels | 运行池是 Node 的事实源，Go 里的运行态是 Node 推上去的镜像——翻转会变成自引用 | 运行态写入口迁 Go |
+
+`go-computed` 的 4 个字段（remainingPct / usageSnapshot / quotaStatus / quotaReason）数据已经在 Go，
+卡的是**时机**：Go 持续采集，实时值比 Node 缓存的行新。解锁条件是把比较口径改成
+「以 Go 的 `captured_at` 为主键」——谁新用谁，零差异门禁也随之从「逐字节相同」改成
+「同一采集时刻相同」。
+
 **翻转的判据（踩过才写下来的）**：只有「值在两侧稳定一致」的字段能翻。
 `isDefault` 翻到 Go（用户操作才变）；`quotaStatus/quotaReason` **不翻**——Go 在持续
 采集，实时值比 Node 缓存的行新，真机两轮影子对账就抓到同一账号一个 `exhausted`

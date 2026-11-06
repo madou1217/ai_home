@@ -205,7 +205,12 @@ async function main() {
     total: ACCOUNT_ROW_FIELDS.length,
     goCompared: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'go').length,
     nodeOnly: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'node').length,
-    goProjected: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'go-projected').length
+    goProjected: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'go-projected').length,
+    // 判定理由分布：Node 独有字段按原因归类，避免「看着能迁」反复翻烧。
+    reasons: ACCOUNT_ROW_FIELDS.reduce((acc, entry) => {
+      acc[entry.reason] = (acc[entry.reason] || 0) + 1;
+      return acc;
+    }, {})
   };
   const mismatches = [];
   const fallbacks = new Map();
@@ -274,6 +279,8 @@ async function main() {
     console.log('row_identical=' + report.rowIdentical + ' field_mismatch=' + report.mismatchCount);
     console.log('覆盖: 共 ' + report.coverage.total + ' 字段 = Go 判定 ' + report.coverage.goCompared +
       ' + Go 投影(Node 直读) ' + report.coverage.goProjected + ' + Node 独有 ' + report.coverage.nodeOnly);
+    console.log('判定理由: ' + Object.entries(report.coverage.reasons)
+      .map(([reason, count]) => reason + '=' + count).join(' '));
     for (const [field, stat] of Object.entries(report.fieldStats)) {
       console.log('  ' + field.padEnd(20) + ' mismatch=' + stat.mismatch);
     }

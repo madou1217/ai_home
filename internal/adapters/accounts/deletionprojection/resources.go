@@ -130,6 +130,11 @@ func classifyProjectionEntry(
 	if !found {
 		return projectionEntry{kind: projectionEntryUnknown}
 	}
+	// 伪 HOME 镜像投影整根都是账号私有：共享项是指回宿主的链接，删链接即可；
+	// 其余条目只属于这份一次性投影，没有可迁回宿主的资源。
+	if rootSpec.privateRoot {
+		return projectionEntry{kind: projectionEntryPrivate}
+	}
 	if privateKind := classifyPrivatePath(relative, rootSpec.privateArtifacts); privateKind != projectionEntryUnknown {
 		return projectionEntry{kind: privateKind}
 	}

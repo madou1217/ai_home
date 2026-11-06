@@ -60,9 +60,29 @@ type credentialReconciler func(
 ) error
 
 var credentialReconcilers = map[credentialMode]credentialReconciler{
+	credentialNone:             reconcileNoCredential,
 	credentialCodexOAuth:       reconcileCodexCredential,
 	credentialClaudeOAuth:      reconcileClaudeCredential,
 	credentialNativeGeneration: reconcileNativeCredential,
+}
+
+// reconcileNoCredential 是不采纳凭据的显式实现：投影里的凭据文件随投影一起
+// 删除，数据库里的登录态保持不变。
+//
+// 这些 Provider 的凭据要么是加密格式（CodeBuddy 家族的 .info），要么 Node 删除
+// 时本来就不采纳（kimi native credentials）。Go 侧无法比较代际时强行采纳，等于
+// 把删号变成隐式换号，因此这里只校验规格没有反过来声明待采纳文件。
+func reconcileNoCredential(
+	_ *Preparer,
+	_ context.Context,
+	_ accountapp.CredentialSnapshot,
+	_ []projectionRoot,
+	spec credentialSpec,
+) error {
+	if len(spec.artifacts) != 0 {
+		return fmt.Errorf("不采纳凭据的规格不应声明凭据 artifact")
+	}
+	return nil
 }
 
 func reconcileCodexCredential(

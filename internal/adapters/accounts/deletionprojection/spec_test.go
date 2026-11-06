@@ -54,12 +54,29 @@ func TestProjectionSpecsDeclareCredentialAndRoot(t *testing.T) {
 			t.Errorf("%s 没有声明任何投影根", providerID)
 			continue
 		}
-		if len(spec.credential.artifacts) == 0 {
+		// credentialNone 是显式的「删除时不采纳凭据」：它不应该再声明待采纳文件，
+		// 否则规格和实现会表达两个相反的意图。
+		if spec.credential.mode == credentialNone {
+			if len(spec.credential.artifacts) != 0 {
+				t.Errorf("%s 声明了不采纳凭据却仍列出 artifact", providerID)
+			}
+		} else if len(spec.credential.artifacts) == 0 {
 			t.Errorf("%s 没有声明任何凭据 artifact", providerID)
 			continue
 		}
 		if _, found := credentialReconcilers[spec.credential.mode]; !found {
 			t.Errorf("%s 的凭据模式 %d 没有实现", providerID, spec.credential.mode)
+		}
+		for kind, rootSpec := range spec.roots {
+			// 整根私有表示没有任何条目会迁移到宿主；再声明映射会自相矛盾。
+			if rootSpec.privateRoot && len(rootSpec.resourceMappings) != 0 {
+				t.Errorf("%s 的投影根 %d 同时声明整根私有和资源映射", providerID, kind)
+			}
+			// 整根私有已覆盖全部条目，再列 privateArtifacts 只会让人误以为
+			// 存在不随投影删除的路径。
+			if rootSpec.privateRoot && len(rootSpec.privateArtifacts) != 0 {
+				t.Errorf("%s 的投影根 %d 整根私有却仍声明私有路径", providerID, kind)
+			}
 		}
 		for _, artifact := range spec.credential.artifacts {
 			if _, found := spec.roots[artifact.rootKind]; !found {
@@ -75,9 +92,8 @@ func TestProjectionSpecsDeclareCredentialAndRoot(t *testing.T) {
 	}
 }
 
-// TestPureFileSystemProviderBatchRegistration 固定本批接入的边界：
-// cline/opencode/qoder/qodercn 已注册规格，不能同时留在 node-only 名单；
-// kiro 留在 Node 的原因必须点名 SQLite 解析缺口，不能写「暂未迁移」。
+// TestPureFileSystemProviderBatchRegistration 固定纯文件系统 Provider 的接入边界：
+// cline/opencode/qoder/qodercn 已注册规格，不能同时留在 node-only 名单。
 func TestPureFileSystemProviderBatchRegistration(t *testing.T) {
 	for _, providerID := range []string{
 		providerCline, providerOpencode, providerQoder, providerQoderCN,
@@ -89,12 +105,51 @@ func TestPureFileSystemProviderBatchRegistration(t *testing.T) {
 			t.Errorf("%s 已接入 Go，却仍在 node-only 名单: %s", providerID, reason)
 		}
 	}
-	reason, found := nodeOnlyDeletionReasons["kiro"]
-	if !found {
-		t.Fatal("kiro 必须留在 node-only 名单")
+}
+
+// TestDeletionOnlyProviderBatchRegistration 固定本批「只删投影、不 adopt 凭据」
+// 的边界：家族四支与 kimi 已注册整根私有规格，不能同时留在 node-only 名单。
+func TestDeletionOnlyProviderBatchRegistration(t *testing.T) {
+	for _, providerID := range []string{
+		providerCodebuddy, providerCodebuddyCN, providerWorkbuddy, providerWorkbuddyCN, providerKimi,
+	} {
+		spec, found := projectionSpecFor(providerID)
+		if !found {
+			t.Errorf("%s 应注册删除投影规格", providerID)
+			continue
+		}
+		if reason, nodeOnly := nodeOnlyDeletionReasons[providerID]; nodeOnly {
+			t.Errorf("%s 已接入 Go，却仍在 node-only 名单: %s", providerID, reason)
+		}
+		rootSpec, found := spec.roots[projectionKindAccount]
+		if !found || !rootSpec.privateRoot {
+			t.Errorf("%s 的账号投影应整根私有", providerID)
+		}
+		if spec.credential.mode != credentialNone {
+			t.Errorf("%s 的凭据模式 = %d, want credentialNone", providerID, spec.credential.mode)
+		}
 	}
-	if !strings.Contains(reason, "SQLite") || !strings.Contains(reason, "adopt+CAS") {
-		t.Errorf("kiro 的 node-only 原因必须写明 SQLite 凭据解析与 adopt+CAS 缺口，实际 %q", reason)
+}
+
+// TestNodeOnlyDeletionReasonsNameConcreteGaps 要求留在 Node 的 Provider 写清
+// 具体缺口：泛泛的「删除仍由 Node 处理」无法让后来的人判断何时可以迁过来。
+func TestNodeOnlyDeletionReasonsNameConcreteGaps(t *testing.T) {
+	cases := map[string][]string{
+		"kiro":  {"SQLite", "tokenBinding", "adopt+CAS"},
+		"zcode": {"enc:v1", "桥", "影子"},
+		"agy":   {"暖机", "language server"},
+	}
+	for providerID, keywords := range cases {
+		reason, found := nodeOnlyDeletionReasons[providerID]
+		if !found {
+			t.Errorf("%s 必须留在 node-only 名单", providerID)
+			continue
+		}
+		for _, keyword := range keywords {
+			if !strings.Contains(reason, keyword) {
+				t.Errorf("%s 的 node-only 原因缺少 %q，实际 %q", providerID, keyword, reason)
+			}
+		}
 	}
 }
 

@@ -33,6 +33,12 @@ const (
 	providerOpencode = "opencode"
 	providerQoder    = "qoder"
 	providerQoderCN  = "qodercn"
+	// CodeBuddy 家族四支与 kimi 的投影都是伪 HOME 镜像，凭据只删不采纳。
+	providerCodebuddy   = "codebuddy"
+	providerCodebuddyCN = "codebuddycn"
+	providerWorkbuddy   = "workbuddy"
+	providerWorkbuddyCN = "workbuddycn"
+	providerKimi        = "kimi"
 )
 
 // Clock 返回凭据 CAS 使用的当前业务时间。

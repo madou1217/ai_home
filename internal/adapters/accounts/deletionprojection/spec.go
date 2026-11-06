@@ -17,6 +17,14 @@ type providerProjectionSpec struct {
 
 // projectionRootSpec 是一个投影根内部的分类规则。
 type projectionRootSpec struct {
+	// privateRoot 表示投影根整体都是账号私有一次状态（伪 HOME 镜像）：根下每个
+	// 条目都随投影删除，不向宿主迁移任何东西。共享缓存/会话在投影里本身就是
+	// 指回宿主的链接，删链接不影响宿主；未列名的 logs、traces、cli-home 之类
+	// 也只属于这一份一次性投影。
+	//
+	// 这类 Provider 的私有资产太多且会随客户端版本增加，逐条枚举迟早漏掉一条
+	// 而让删除 fail-closed；整根声明与 Node 的 rm -rf 语义一致，也不会误迁宿主。
+	privateRoot bool
 	// privateArtifacts 命中后不迁移，随投影根一起删除。
 	privateArtifacts []privateProjectionPath
 	// resourceMappings 把投影内的相对前缀映射到宿主 HOME 下的目录。
@@ -43,7 +51,11 @@ type projectionRootLocation struct {
 type credentialMode uint8
 
 const (
-	credentialNone credentialMode = iota
+	// credentialUnset 是零值：漏写 mode 的规格不能被当成「无需收敛」静默通过。
+	credentialUnset credentialMode = iota
+	// credentialNone 显式声明「删除投影时不采纳凭据」。用于凭据格式在 Go 侧
+	// 无法比较代际、或 Node 现状本来就不采纳的 Provider。
+	credentialNone
 	credentialCodexOAuth
 	credentialClaudeOAuth
 	credentialNativeGeneration
@@ -242,6 +254,12 @@ var projectionSpecs = map[string]providerProjectionSpec{
 	},
 	providerQoder:   qoderProjectionSpec(),
 	providerQoderCN: qoderProjectionSpec(),
+
+	providerCodebuddy:   codebuddyFamilyProjectionSpec(),
+	providerCodebuddyCN: codebuddyFamilyProjectionSpec(),
+	providerWorkbuddy:   codebuddyFamilyProjectionSpec(),
+	providerWorkbuddyCN: codebuddyFamilyProjectionSpec(),
+	providerKimi:        kimiProjectionSpec(),
 }
 
 // qoderProjectionSpec 返回 Qoder 两个区域共用的投影规格。
@@ -293,19 +311,67 @@ func qoderProjectionSpec() providerProjectionSpec {
 	}
 }
 
+// codebuddyFamilyProjectionSpec 是 CodeBuddy 家族四支（codebuddy / codebuddycn /
+// workbuddy / workbuddycn）共用的删除规格。
+//
+// 四支客户端的投影布局同构（见 lib/runtime/codebuddy-family-layouts.js）：启动时
+// 把宿主 HOME 里与账号无关的缓存、CLI 根做成指回宿主的链接，账号态则写成真实
+// 文件。因此整个投影根就是一份一次性伪 HOME，删除时整棵丢弃即可，宿主
+// ~/.codebuddy*、~/Library/Application Support/CodeBuddy* 逐字节不变。
+//
+// 账号私有落点（调研结论，全部随投影删除，绝不迁回宿主）：
+//   - Library/Application Support/CodeBuddyExtension/Data/Public/auth/
+//     {Tencent-Cloud.coding-copilot.info, workbuddy-desktop.info, workbuddy-desktop-ai.info}
+//   - electron-user-data/**（桌面端 Chromium profile 与加密副本）
+//   - .workbuddy-key-fallback/**
+//   - .codebuddy*/sessions/**、.codebuddy*/.mcp.json、.codebuddy*/diagnostics/**
+//   - Library/Keychains/**
+//   - Library/Application Support/CodeBuddyExtension/{Cache,Logs}/**
+//
+// 不做凭据 adopt：与 Node 现状一致（Node 删除时同样不采纳投影里的 .info），
+// 且家族 .info 是加密格式，Go 侧没有可比较的代际证据，无法判断该不该覆盖
+// 数据库里的登录态；直接随投影删除是唯一安全语义。
+func codebuddyFamilyProjectionSpec() providerProjectionSpec {
+	return providerProjectionSpec{
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {privateRoot: true},
+		},
+		credential: credentialSpec{mode: credentialNone},
+	}
+}
+
+// kimiProjectionSpec 是 kimi 的删除规格。
+//
+// KIMI_CODE_HOME 钉在投影根的 .kimi-code 下，桌面端另有 electron-user-data。
+// 账号私有落点（全部随投影删除）：
+//   - .kimi-code/credentials/kimi-code.json（native 凭据）
+//   - .kimi-code/device_id
+//   - .kimi-code/config.toml
+//   - .kimi-code/session_index.jsonl（按账号重写的投影视图；迁回会盖掉宿主 canonical 索引）
+//   - electron-user-data/**
+//
+// .kimi-code/sessions 等共享目录在投影里是指回宿主的链接，删链接不会动宿主。
+//
+// 不做凭据 adopt：kimi 的 credentials 虽然是 native 格式，但 Node 删除时同样
+// 不采纳；Go 侧也没有「删除时用投影覆盖数据库」的既有语义，强行采纳会把
+// 一次删号变成一次隐式换号。
+func kimiProjectionSpec() providerProjectionSpec {
+	return providerProjectionSpec{
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {privateRoot: true},
+		},
+		credential: credentialSpec{mode: credentialNone},
+	}
+}
+
 // nodeOnlyDeletionReasons 记录尚未注册投影规格的 Provider 为什么仍留在 Node。
 //
 // 守卫测试会遍历 Provider 目录：既没有规格、也不在这张表里，或原因为空，
 // 测试都会失败。新增 Provider 时必须二选一，不能让删除流程沉默地拒绝它。
 var nodeOnlyDeletionReasons = map[string]string{
-	"agy":         "伪 HOME 投影与 gemini 共用 ~/.gemini，且有常驻 language server，删除仍由 Node 处理",
-	"kimi":        "KIMI_CODE_HOME 投影包含账号视图的 session_index.jsonl，删除仍由 Node 处理",
-	"kiro":        "凭据是 data.sqlite3 二进制库：auth/identityEvidence 由 Node 解析 SQLite 并调用 GetUsageLimits 派生，Go 侧没有该库的 adopt+CAS 解析器",
-	"zcode":       "凭据是加密多文件且桌面数据根共享，删除仍由 Node 处理",
-	"codebuddy":   "登录态是宿主共享的加密文件，删除仍由 Node 处理",
-	"codebuddycn": "登录态是宿主共享的加密文件，删除仍由 Node 处理",
-	"workbuddy":   "登录态是宿主共享的加密文件，删除仍由 Node 处理",
-	"workbuddycn": "登录态是宿主共享的加密文件，删除仍由 Node 处理",
+	"agy":   "伪 HOME 投影与 gemini 共用 ~/.gemini，且删除前必须停掉常驻的暖机 language server 池，只有 Node 能做进程级停机",
+	"kiro":  "凭据是 data.sqlite3 二进制库：tokenBinding 与 auth/identityEvidence 由 Node 解析 SQLite 并调用 GetUsageLimits 派生，Go 侧没有该库的 adopt+CAS 解析器",
+	"zcode": "凭据是 enc:v1 加密的多文件库，且桌面数据根由桥/影子 App 共享，Go 侧既无法比较代际也无法安全迁移",
 }
 
 // projectionSpecFor 是删除流程查询 Provider 规格的唯一入口。

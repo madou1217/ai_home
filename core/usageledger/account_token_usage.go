@@ -17,29 +17,51 @@ type AccountTokenUsageWindows struct {
 	MonthStart time.Time
 }
 
-// ResolveAccountTokenUsageWindows 以 anchor 为右端点切出 day/week/month 的起点。
+// 时区偏移（分钟）的合法范围：-720（UTC-12）..840（UTC+14），
+// 覆盖现实中所有民用时区；越界视为调用方参数错误而不是钳制。
+const (
+	MinTZOffsetMinutes = -720
+	MaxTZOffsetMinutes = 840
+)
+
+// ResolveAccountTokenUsageWindows 以 anchor 为右端点、在 tzOffsetMinutes 这个
+// 本地时区下切出 day/week/month 的起点，返回的起点都是 UTC 瞬时。
 //
-// 时间边界全部按 UTC 计算：
-//   - day：anchor 所在 UTC 自然日的 00:00；
-//   - week：该自然日所在周的周一 00:00（ISO 周，与 Node 的 (getDay()+6)%7 同一边界）；
-//   - month：该月 1 日 00:00。
+// 语义是「本地时间 = UTC + tzOffsetMinutes」：
+//   - day：本地当日 00:00；
+//   - week：本地本周一 00:00（与 Node 的 (getDay()+6)%7 同一边界）；
+//   - month：本地本月 1 日 00:00。
 //
-// 为什么固定 UTC 而不是跟 Node 一样用本地时区：usage_ledger 里的 occurred_at_ms
-// 是 UTC 事实，本地时区边界会随部署机时区变化——同一份账本在 UTC+8 的机器上
-// 「今天」从 16:00 UTC 起算，在 UTC 的机器上从 00:00 起算，账号行的日/周/月
-// 数字会跟着机器漂移。账本既然是 UTC，窗口就必须用 UTC 切。
+// 先把 anchor 平移到固定偏移的 Local 里取年月日，再换算回 UTC 瞬时，
+// 这样账本（occurred_at_ms 存 UTC 毫秒）不需要任何时区转换，窗口却按
+// 用户看到的日历切分。
+//
+// 为什么用偏移而不是 IANA 时区：Node 侧只持有本地偏移（getTimezoneOffset），
+// 没有时区名可传；而且 IANA 需要 tzdata——Go 在 Windows、精简容器镜像里默认
+// 可能取不到，历史/未来边界还会随时区库版本变化，同一份账本在不同机器上算出
+// 不同的「今天」。固定偏移无依赖、可复现，也便于单测。
+// 代价是夏令时切换当天不跟随本地日历，但 Node 侧传入的同样是当日生效的偏移，
+// 两端口径保持一致。
+//
 // total 没有起点（从账本最早一条算起），由查询的 from 限定，
 // 与 Node 的 totalStartMs = 0 一致。
-func ResolveAccountTokenUsageWindows(anchor time.Time) AccountTokenUsageWindows {
-	utc := anchor.UTC()
-	dayStart := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
-	// time.Weekday: Sunday=0；转成「距离本周一几天」，与 BucketStart 同口径。
-	offset := (int(dayStart.Weekday()) + 6) % 7
-	return AccountTokenUsageWindows{
-		DayStart:   dayStart,
-		WeekStart:  dayStart.AddDate(0, 0, -offset),
-		MonthStart: time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC),
+func ResolveAccountTokenUsageWindows(
+	anchor time.Time,
+	tzOffsetMinutes int,
+) (AccountTokenUsageWindows, error) {
+	if tzOffsetMinutes < MinTZOffsetMinutes || tzOffsetMinutes > MaxTZOffsetMinutes {
+		return AccountTokenUsageWindows{}, ErrInvalidQuery
 	}
+	// 固定偏移的 Location：它只做日期算术，不带任何夏令时规则。
+	local := anchor.UTC().In(time.FixedZone("local", tzOffsetMinutes*60))
+	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+	// time.Weekday: Sunday=0；转成「距离本周一几天」，与 BucketStart 同口径。
+	weekdayOffset := (int(dayStart.Weekday()) + 6) % 7
+	return AccountTokenUsageWindows{
+		DayStart:   dayStart.UTC(),
+		WeekStart:  dayStart.AddDate(0, 0, -weekdayOffset).UTC(),
+		MonthStart: time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, local.Location()).UTC(),
+	}, nil
 }
 
 // AccountTokenUsageModel 是单个模型的用量。

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -11,12 +13,23 @@ import (
 )
 
 // TokenUsageManagement 提供按账号、按窗口起点的 token 用量读取。
+//
+// tzOffsetMinutes 表达调用方的本地时区偏移（本地时间 = UTC + 偏移），
+// 只影响 day/week/month 的边界，账本与查询区间始终是 UTC。
 type TokenUsageManagement interface {
 	QueryAccountTokenUsage(
 		ctx context.Context,
 		query usageledger.Query,
+		tzOffsetMinutes int,
 	) (usageledger.AccountTokenUsage, error)
 }
+
+// tokenUsageTZOffsetParam 是时区偏移的 query 参数名。
+//
+// 为什么传偏移而不是 IANA 时区名：Node 侧只有 getTimezoneOffset() 拿到的本地偏移，
+// 没有可传的时区名；而 IANA 需要 tzdata（Windows、精简容器镜像里可能缺失），
+// 历史/未来边界还会随库版本变化。固定偏移无外部依赖，两端算出的日历一致。
+const tokenUsageTZOffsetParam = "tz_offset_minutes"
 
 // accountTokenUsageModelView 逐字段对齐 Node 的模型条目
 // （lib/usage/account-token-usage.js 的 normalizeAccountTokenUsageValue）：
@@ -85,11 +98,11 @@ func (handler *Handler) handleAccountTokenUsage(
 		writeMethodNotAllowed(response)
 		return
 	}
-	query, ok := parseAccountTokenUsageQuery(response, request, accountRef)
+	query, tzOffsetMinutes, ok := parseAccountTokenUsageQuery(response, request, accountRef)
 	if !ok {
 		return
 	}
-	usage, err := handler.tokenUsage.QueryAccountTokenUsage(request.Context(), query)
+	usage, err := handler.tokenUsage.QueryAccountTokenUsage(request.Context(), query, tzOffsetMinutes)
 	if err != nil {
 		if errors.Is(err, usageledger.ErrInvalidQuery) {
 			writeAPIError(
@@ -108,27 +121,45 @@ func (handler *Handler) handleAccountTokenUsage(
 	})
 }
 
-// parseAccountTokenUsageQuery 解析 from/to，未传时默认扫描全部历史并锚定当前时刻。
+// parseAccountTokenUsageQuery 解析 from/to/tz_offset_minutes，未传 from 时扫描全部
+// 历史，未传 to 时锚定当前时刻，未传 tz_offset_minutes 时按 UTC（偏移 0）。
 //
 // 语义与 usagestatsapi.parseQuery 一致：from/to 可以写 2006-01-02（from 取当天
 // 00:00、to 取当天 23:59:59.999999999），也可以写 RFC3339Nano；两者都归一到 UTC。
-// 这里的 to 同时是窗口锚点（见 store 注释），所以「今天/本周/本月」随 to 移动。
+// 这里的 to 同时是窗口锚点（见 store 注释），所以「今天/本周/本月」随 to 移动；
+// 偏移再把这三个边界挪到调用方本地日历上。
 func parseAccountTokenUsageQuery(
 	response http.ResponseWriter,
 	request *http.Request,
 	accountRef accountcore.AccountRef,
-) (usageledger.Query, bool) {
+) (usageledger.Query, int, bool) {
 	values := request.URL.Query()
 	for key, entries := range values {
-		if (key != "from" && key != "to") || len(entries) != 1 {
+		if (key != "from" && key != "to" && key != tokenUsageTZOffsetParam) ||
+			len(entries) != 1 {
 			writeAPIError(
 				response,
 				http.StatusBadRequest,
 				"invalid_token_usage_query",
 				"token 用量查询参数无效",
 			)
-			return usageledger.Query{}, false
+			return usageledger.Query{}, 0, false
 		}
+	}
+	// 缺省 0 = UTC，与老调用方（还没传偏移）保持同一口径。
+	tzOffsetMinutes := 0
+	if values.Has(tokenUsageTZOffsetParam) {
+		parsed, err := parseTokenUsageTZOffset(values.Get(tokenUsageTZOffsetParam))
+		if err != nil {
+			writeAPIError(
+				response,
+				http.StatusBadRequest,
+				"invalid_token_usage_query",
+				"tz_offset_minutes 无效",
+			)
+			return usageledger.Query{}, 0, false
+		}
+		tzOffsetMinutes = parsed
 	}
 	// 默认从账本最早一条算起（1970-01-01，等价于 Node 的 totalStartMs=0），
 	// 终点取当前时刻：不传参数就是账号行要的「今天/本周/本月/累计」。
@@ -143,7 +174,7 @@ func parseAccountTokenUsageQuery(
 				"invalid_token_usage_query",
 				"from 时间格式无效",
 			)
-			return usageledger.Query{}, false
+			return usageledger.Query{}, 0, false
 		}
 		from = parsed
 	}
@@ -156,7 +187,7 @@ func parseAccountTokenUsageQuery(
 				"invalid_token_usage_query",
 				"to 时间格式无效",
 			)
-			return usageledger.Query{}, false
+			return usageledger.Query{}, 0, false
 		}
 		to = parsed
 	}
@@ -168,9 +199,22 @@ func parseAccountTokenUsageQuery(
 			"invalid_token_usage_query",
 			"时间范围无效",
 		)
-		return usageledger.Query{}, false
+		return usageledger.Query{}, 0, false
 	}
-	return query, true
+	return query, tzOffsetMinutes, true
+}
+
+// parseTokenUsageTZOffset 解析 tz_offset_minutes：必须是有符号十进制整数，
+// 且落在 [-720, 840]。用偏移而不是 IANA 时区名的原因见 tokenUsageTZOffsetParam。
+func parseTokenUsageTZOffset(raw string) (int, error) {
+	offset, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, errInvalidQuery
+	}
+	if offset < usageledger.MinTZOffsetMinutes || offset > usageledger.MaxTZOffsetMinutes {
+		return 0, errInvalidQuery
+	}
+	return offset, nil
 }
 
 // parseTokenUsageTime 复刻 usagestatsapi 的时间解析语义（日期按天、否则 RFC3339Nano）。

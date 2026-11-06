@@ -73,7 +73,7 @@ func TestQueryAccountTokenUsageSplitsDayWeekMonthAtUTCBoundaries(t *testing.T) {
 	anchor := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	usage, err := store.QueryAccountTokenUsage(ctx, usageledger.Query{
 		From: time.UnixMilli(0).UTC(), To: anchor, AccountRef: refA,
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("QueryAccountTokenUsage() error = %v", err)
 	}
@@ -97,7 +97,7 @@ func TestQueryAccountTokenUsageSplitsDayWeekMonthAtUTCBoundaries(t *testing.T) {
 	// from 也裁掉 total：只统计本周一之后的记录时，10 月那条不再计入累计。
 	clipped, err := store.QueryAccountTokenUsage(ctx, usageledger.Query{
 		From: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC), To: anchor, AccountRef: refA,
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("QueryAccountTokenUsage(clipped) error = %v", err)
 	}
@@ -106,6 +106,80 @@ func TestQueryAccountTokenUsageSplitsDayWeekMonthAtUTCBoundaries(t *testing.T) {
 	}
 	if len(clipped.Models) != 2 {
 		t.Fatalf("clipped models = %#v, want 2", clipped.Models)
+	}
+}
+
+// TestQueryAccountTokenUsageSplitsWindowsByTZOffset 验证偏移确实作用到窗口边界：
+// 本地 +08 的「今天」从 2026-11-05T16:00Z 起算，同一份账本在 offset=0 下该记录
+// 仍属于昨天。账本本身始终是 UTC 毫秒，偏移只挪边界。
+func TestQueryAccountTokenUsageSplitsWindowsByTZOffset(t *testing.T) {
+	ctx := context.Background()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	store, err := Open(ctx, OpenOptions{AIHomeDir: t.TempDir(), Catalog: catalog})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ref, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	account, err := accountcore.RestoreAccount(catalog, accountcore.RestoreAccountInput{
+		Ref: ref, ProviderID: "codex", CLIAccountID: accountcore.CLIAccountID(1), Enabled: true,
+		CreatedAt: time.UnixMilli(100).UTC(), UpdatedAt: time.UnixMilli(100).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("RestoreAccount() error = %v", err)
+	}
+	if err := store.Create(ctx, account); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	appendUsage := func(occurredAt time.Time, tokens uint64) {
+		usage, usageErr := inference.NewUsage(inference.UsageInput{InputTokens: tokens})
+		if usageErr != nil {
+			t.Fatalf("NewUsage() error = %v", usageErr)
+		}
+		record, recordErr := usageledger.NewRecord(usageledger.RecordInput{
+			AccountRef: ref, Provider: "codex", Model: "m-offset",
+			OccurredAt: occurredAt.UTC(), Usage: usage,
+		})
+		if recordErr != nil {
+			t.Fatalf("NewRecord() error = %v", recordErr)
+		}
+		if appendErr := store.AppendUsageRecord(ctx, record); appendErr != nil {
+			t.Fatalf("AppendUsageRecord() error = %v", appendErr)
+		}
+	}
+	// 第二秒之差跨越本地零点（+08 的 2026-11-06 00:00 = 2026-11-05T16:00Z）。
+	appendUsage(time.Date(2026, 11, 5, 15, 59, 0, 0, time.UTC), 100)
+	appendUsage(time.Date(2026, 11, 5, 16, 0, 0, 0, time.UTC), 10)
+
+	anchor := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	query := usageledger.Query{From: time.UnixMilli(0).UTC(), To: anchor, AccountRef: ref}
+
+	utcUsage, err := store.QueryAccountTokenUsage(ctx, query, 0)
+	if err != nil {
+		t.Fatalf("QueryAccountTokenUsage(offset=0) error = %v", err)
+	}
+	if utcUsage.Day != 0 || utcUsage.Week != 110 || utcUsage.Month != 110 || utcUsage.Total != 110 {
+		t.Fatalf("offset=0 usage = %#v, want day=0 week=110 month=110 total=110", utcUsage)
+	}
+
+	localUsage, err := store.QueryAccountTokenUsage(ctx, query, 480)
+	if err != nil {
+		t.Fatalf("QueryAccountTokenUsage(offset=480) error = %v", err)
+	}
+	if localUsage.Day != 10 || localUsage.Week != 110 || localUsage.Month != 110 || localUsage.Total != 110 {
+		t.Fatalf("offset=480 usage = %#v, want day=10 week=110 month=110 total=110", localUsage)
+	}
+
+	// 越界偏移在存储层也要拒绝，而不是悄悄退回 UTC。
+	if _, err := store.QueryAccountTokenUsage(ctx, query, 841); err != usageledger.ErrInvalidQuery {
+		t.Fatalf("QueryAccountTokenUsage(offset=841) error = %v, want ErrInvalidQuery", err)
 	}
 }
 
@@ -122,7 +196,7 @@ func TestQueryAccountTokenUsageRequiresAccountRef(t *testing.T) {
 	defer store.Close()
 	_, err = store.QueryAccountTokenUsage(ctx, usageledger.Query{
 		From: time.UnixMilli(0).UTC(), To: time.Now().UTC(),
-	})
+	}, 0)
 	if err != usageledger.ErrInvalidQuery {
 		t.Fatalf("error = %v, want ErrInvalidQuery", err)
 	}

@@ -15,9 +15,13 @@ import (
 //
 // to 同时是窗口锚点：调用方用 to 表达「截至此刻的今天/本周/本月」，
 // 这样回看历史日期时也能得到那一天的日/周/月，而不是永远按当前时间切。
+//
+// tzOffsetMinutes 是调用方的本地偏移（本地时间 = UTC + 偏移），窗口按该偏移下的
+// 日历切分；账本仍是 UTC 毫秒，偏移只影响边界换算。越界偏移返回 ErrInvalidQuery。
 func (store *Store) QueryAccountTokenUsage(
 	ctx context.Context,
 	query usageledger.Query,
+	tzOffsetMinutes int,
 ) (usageledger.AccountTokenUsage, error) {
 	// 这是按账号的端点：没有 AccountRef 就会把整库用量算进一个账号，
 	// 宁可报无效查询也不返回看起来合理的错数。
@@ -31,6 +35,9 @@ func (store *Store) QueryAccountTokenUsage(
 	if err != nil {
 		return usageledger.AccountTokenUsage{}, err
 	}
-	windows := usageledger.ResolveAccountTokenUsageWindows(query.To)
+	windows, err := usageledger.ResolveAccountTokenUsageWindows(query.To, tzOffsetMinutes)
+	if err != nil {
+		return usageledger.AccountTokenUsage{}, err
+	}
 	return usageledger.AggregateAccountTokenUsage(records, query, windows), nil
 }

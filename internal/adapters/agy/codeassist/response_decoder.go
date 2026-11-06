@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/core/inference"
@@ -77,6 +78,7 @@ type usageMetadata struct {
 
 func newResponseDecoder(
 	model string,
+	responseID string,
 	emit inferencegateway.EventSink,
 	mappers ...toolNameMapper,
 ) *responseDecoder {
@@ -84,11 +86,15 @@ func newResponseDecoder(
 	if len(mappers) > 0 {
 		names = mappers[0]
 	}
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = "agy_response"
+	}
 	return &responseDecoder{
 		toolNames:  names,
 		model:      model,
 		emit:       emit,
-		responseID: "agy_response",
+		responseID: responseID,
 		toolCalls:  make(map[string]decodedToolCall),
 	}
 }
@@ -174,11 +180,15 @@ func (decoder *responseDecoder) start() error {
 	return decoder.emitEvent(event)
 }
 
+// messageItemID 必须跨 turn 唯一：同一个 responseID 内按输出序号区分，
+// 不同 responseID 之间也不能复用。旧实现每轮第一条消息都叫 agy_message，
+// 聊天 timeline 按 item id 去重，会把新回复合并到旧位置，页面看起来像没有回复。
 func (decoder *responseDecoder) messageItemID() string {
-	if decoder.messageIndex == 0 {
-		return "agy_message"
-	}
-	return fmt.Sprintf("agy_message_%d", decoder.messageIndex)
+	return fmt.Sprintf(
+		"agy_message_%s_%d",
+		strings.ReplaceAll(decoder.responseID, "/", "_"),
+		decoder.messageIndex,
+	)
 }
 
 func (decoder *responseDecoder) appendText(text string) error {

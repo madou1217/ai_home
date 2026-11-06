@@ -142,7 +142,7 @@ func (adapter *Adapter) Execute(
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}
-	decoder := newResponseDecoder(invocation.Route().EffectiveModel(), emit, names)
+	decoder := newResponseDecoder(invocation.Route().EffectiveModel(), requestID, emit, names)
 	reader, err := sharedsse.NewReader(response.Body)
 	if err != nil {
 		return malformedAttempt()

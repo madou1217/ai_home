@@ -20,6 +20,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { createSessionStoreService } = require('../lib/cli/services/session-store');
+const { reconcileProviderResources } = require('../lib/runtime/provider-resource-reconciliation');
 
 const ACCOUNT_REF = 'acct_agy000000000000001';
 
@@ -84,6 +85,13 @@ test('agy 启动对账不再把伪 HOME 里的 sessions 当成未对账缺口', 
   // 启动对账：伪 HOME 的残余降级为 warnings，聊天不再被阻断。
   const launch = service.ensureSessionStoreLinks('agy', ACCOUNT_REF, { sessionLinksOnly: true });
   assert.equal(launch.unresolved, undefined, 'launch 不应再因伪 HOME 残余阻断聊天');
+  // 聊天启动实际走这个包装：它只检查 unresolved，warnings 不会抛。
+  assert.doesNotThrow(() => reconcileProviderResources(
+    service.ensureSessionStoreLinks,
+    'agy',
+    ACCOUNT_REF,
+    { sessionLinksOnly: true }
+  ));
   assert.equal(fs.lstatSync(path.join(sessionsDir, 'link-out')).isSymbolicLink(), true);
   assert.equal(fs.lstatSync(path.join(brainDir, 'link-out')).isSymbolicLink(), true);
   assert.equal(fs.readFileSync(external, 'utf8'), 'keep-me');

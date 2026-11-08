@@ -48,6 +48,11 @@ func NewStrategy(refresher Refresher) (*Strategy, error) {
 	return &Strategy{refresher: refresher}, nil
 }
 
+// RefreshesDespiteDelegation 让本策略不受宿主「独占刷新」开关约束。
+//
+// 三家 Node 实现已删除：宿主不再拥有它们的刷新权，继续委托等于无人刷新。
+func (*Strategy) RefreshesDespiteDelegation() bool { return true }
+
 // ProviderID 返回底层策略的规范 Provider。
 func (strategy *Strategy) ProviderID() string {
 	if strategy == nil || strategy.refresher == nil {

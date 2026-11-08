@@ -42,6 +42,21 @@ var (
 	ErrCredentialNotRefreshable = errors.New("账号凭据不可刷新")
 )
 
+// RefreshDelegationExempt 表示该策略即使宿主声明独占刷新，也必须由本进程刷新。
+//
+// 边界：宿主委托只覆盖「宿主仍在维护的 Provider」。当某个 Provider 的刷新实现已经
+// 从宿主删除（例如 gemini / grok / cline 已迁 Go），它就不能再受委托开关影响，
+// 否则两侧都不刷新，Token 到期后整条链路静默失效。
+type RefreshDelegationExempt interface {
+	RefreshesDespiteDelegation() bool
+}
+
+// refreshDelegationExempt 判断策略是否不受宿主委托约束。
+func refreshDelegationExempt(strategy RefreshStrategy) bool {
+	exempt, ok := strategy.(RefreshDelegationExempt)
+	return ok && exempt.RefreshesDespiteDelegation()
+}
+
 // RefreshStrategy 封装一个 Provider 的可刷新凭据识别、过期时间和官方刷新协议。
 type RefreshStrategy interface {
 	// ProviderID 返回策略唯一支持的规范 Provider。
@@ -209,7 +224,7 @@ func (resolver *Resolver) resolve(
 	if err != nil {
 		return credentialResolution{}, err
 	}
-	if !due || resolver.refreshDelegated {
+	if !due || (resolver.refreshDelegated && !refreshDelegationExempt(strategy)) {
 		return currentResolution(snapshot), nil
 	}
 	now, err := resolver.currentTime()

@@ -378,3 +378,23 @@ type AccountModelSet struct {
 	// 因为失败不会改变 account_models 里已有的目录快照。
 	LastModelCount int
 }
+
+// AccountModelCatalog 是一次批量读取的完整结果：账号模型关系 + 目录指纹。
+//
+// 指纹与 data 在同一次读事务里取得，调用方可以把它当成「这一份 data 的版本号」：
+// 相同 generation 表示两次读取之间 account_models / account_model_probes 没有发生
+// 可观察的写入，可以跳过重新拉取与重建。
+type AccountModelCatalog struct {
+	Sets        []AccountModelSet
+	Generation  int64
+	UpdatedAtMS int64
+}
+
+// AccountModelCatalogStamp 是只读目录指纹（不返回账号/模型行）。
+//
+// 条件刷新只要知道「有没有变」时使用它，避免为了拿 generation 把整份目录
+// 序列化到 HTTP 响应里。
+type AccountModelCatalogStamp struct {
+	Generation  int64
+	UpdatedAtMS int64
+}

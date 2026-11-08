@@ -54,7 +54,6 @@ test('正常映射：byAccount / accountSource / updatedAt / 错误与探测时�
   ];
   let captured = null;
   const reader = createGoModelCatalogReader({
-    now: () => NOW,
     call: async (method, path) => {
       captured = { method, path };
       return managementResponse(accounts, { generation: 7, updated_at_ms: NOW - 10 });
@@ -80,7 +79,9 @@ test('正常映射：byAccount / accountSource / updatedAt / 错误与探测时�
     zcode: ['glm-5.3']
   });
   assert.equal(result.updatedAt, NOW - 10);
+  assert.equal(result.updatedAtMs, NOW - 10);
   assert.equal(result.generation, 7);
+  assert.equal(result.generationKnown, true);
   assert.equal(result.cached, true);
   assert.equal(result.scannedAccounts, 3);
   assert.deepEqual(result.accountProbedAt, {
@@ -97,7 +98,6 @@ test('正常映射：byAccount / accountSource / updatedAt / 错误与探测时�
 
 test('空数据：返回空结果，不是失败', async () => {
   const reader = createGoModelCatalogReader({
-    now: () => NOW,
     call: async () => managementResponse([], { generation: 9, updated_at_ms: 12345 })
   });
 
@@ -108,6 +108,7 @@ test('空数据：返回空结果，不是失败', async () => {
   assert.deepEqual(result.accountSource, {});
   assert.deepEqual(result.models, {});
   assert.equal(result.updatedAt, 12345);
+  assert.equal(result.updatedAtMs, 12345);
   assert.equal(result.generation, 9);
   assert.equal(result.source, 'empty');
   assert.equal(result.sourceCount, 0);
@@ -119,7 +120,6 @@ test('空数据：返回空结果，不是失败', async () => {
 
 test('直接 JSON：updatedAt 回退到模型最大 updated_at_ms', async () => {
   const reader = createGoModelCatalogReader({
-    now: () => NOW,
     call: async () => rawResponse([
       {
         account_ref: 'acct_a',
@@ -132,6 +132,7 @@ test('直接 JSON：updatedAt 回退到模型最大 updated_at_ms', async () => 
   const result = await reader.read();
 
   assert.equal(result.updatedAt, NOW - 20);
+  assert.equal(result.updatedAtMs, NOW - 20);
   assert.equal(result.generation, 3);
   assert.deepEqual(result.byAccount, { acct_a: ['gpt-6'] });
 });
@@ -160,7 +161,7 @@ test('503 / 网络失败 / 无效 payload 返回 null', async () => {
     }
   ];
   for (const item of cases) {
-    const reader = createGoModelCatalogReader({ call: item.call, now: () => NOW });
+    const reader = createGoModelCatalogReader({ call: item.call });
     assert.equal(await reader.read(), null, item.name);
   }
 });
@@ -168,7 +169,6 @@ test('503 / 网络失败 / 无效 payload 返回 null', async () => {
 test('provider/account 过滤参数透传，accountRef 去重', async () => {
   let captured = null;
   const reader = createGoModelCatalogReader({
-    now: () => NOW,
     call: async (method, path) => {
       captured = { method, path };
       return managementResponse([], { updated_at_ms: 1 });
@@ -196,7 +196,6 @@ test('provider/account 过滤参数透传，accountRef 去重', async () => {
 
 test('缺少 last_source 时按模型推导 source', async () => {
   const reader = createGoModelCatalogReader({
-    now: () => NOW,
     call: async () => managementResponse([
       {
         account_ref: 'acct_a',
@@ -226,4 +225,43 @@ test('缺少 last_source 时按模型推导 source', async () => {
     acct_b: 'empty',
     acct_c: 'empty'
   });
+});
+
+test('没有 Go 时间戳时 updatedAtMs 为 0，不再回落到 now()', async () => {
+  const reader = createGoModelCatalogReader({
+    call: async () => managementResponse([
+      {
+        account_ref: 'acct_a',
+        provider_id: 'codex',
+        models: [{ model_id: 'gpt-6' }]
+      }
+    ])
+  });
+
+  const result = await reader.read();
+
+  assert.equal(result.updatedAtMs, 0);
+  assert.equal(result.updatedAt, 0);
+  assert.equal(result.generation, 0);
+  assert.equal(result.generationKnown, false);
+});
+
+test('metaOnly: 只请求 meta_only=1，并解析 generation / updated_at_ms', async () => {
+  let captured = null;
+  const reader = createGoModelCatalogReader({
+    call: async (method, path) => {
+      captured = { method, path };
+      return managementResponse([], { generation: 12, updated_at_ms: NOW - 3 });
+    }
+  });
+
+  const result = await reader.read({ metaOnly: true });
+
+  assert.equal(captured.method, 'GET');
+  assert.equal(captured.path, '/v1/management/account-models?meta_only=1');
+  assert.equal(result.generation, 12);
+  assert.equal(result.generationKnown, true);
+  assert.equal(result.updatedAtMs, NOW - 3);
+  assert.deepEqual(result.byAccount, {});
+  assert.equal(result.source, 'empty');
 });

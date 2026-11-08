@@ -4,7 +4,7 @@
 //   * 一次 account-models 读整池，写回既有快照形状（byAccount/errorsByAccount/accountUpdatedAt/byProvider）；
 //   * 别名读取前 30 秒节流；
 //   * Go 失败保留旧缓存；
-//   * 开关为 scheduler（默认）时旧调度器行为不变。
+//   * 开关为 scheduler（legacy）时不创建任何后台调度器。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -197,7 +197,7 @@ test('Go 失败保留旧缓存且不抛错', async () => {
   if (state.webUiModelCacheGoSync.timer) clearTimeout(state.webUiModelCacheGoSync.timer);
 });
 
-test('开关为 scheduler（默认）时旧调度器行为不变，不碰 Go', () => {
+test('开关为 scheduler（legacy）时不创建任何后台调度器，也不读 Go', () => {
   const state = makeState();
   state.webUiModelsCache.updatedAt = 50000;
   state.webUiModelsCache.accountUpdatedAt = { acct_aaaaaaaaaaaaaaaaaaaa: 50000, acct_bbbbbbbbbbbbbbbbbbbb: 50000, acct_cccccccccccccccccccc: 50000 };
@@ -217,11 +217,9 @@ test('开关为 scheduler（默认）时旧调度器行为不变，不碰 Go', (
   assert.equal(resolveWebUiModelCacheSyncMode(ctx), 'scheduler');
   ensureWebUiModelRefreshScheduler(ctx);
 
-  assert.equal(goCalls, 0, 'scheduler 模式不能读 Go');
-  assert.ok(state.webUiModelRefreshScheduler, '旧调度器状态必须照旧创建');
-  assert.ok(state.webUiModelRefreshScheduler.timer, '旧调度器必须照旧排下一次 tick');
-  assert.equal(state.webUiModelCacheGoSync, undefined, 'scheduler 模式不能初始化 go-batch 状态');
-  clearTimeout(state.webUiModelRefreshScheduler.timer);
+  assert.equal(goCalls, 0, 'legacy 模式不能读 Go');
+  assert.equal(state.webUiModelRefreshScheduler, undefined, '旧调度器状态不再创建');
+  assert.equal(state.webUiModelCacheGoSync, undefined, 'legacy 模式不能初始化 go-batch 定时器');
 });
 
 test('go-batch 模式下启动入口只排批量同步，不创建旧调度器 timer', () => {

@@ -13,6 +13,7 @@ const {
   handleDeleteAccountRequest
 } = require('../lib/server/webui-account-routes');
 const { PROVIDER_STORAGE_POLICIES } = require('../lib/runtime/provider-storage-policy');
+const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 const { openAppStateDatabase } = require('../lib/server/app-state-store');
 const {
   ensureAccountRefsTable,
@@ -280,4 +281,34 @@ test('可回落 Provider：Go 删除失败返回 502 且不落本地删除', asy
       `${provider} 的账号行不应被删除`
     );
   }
+});
+test('承接方事实位：Go 模式跳过 Node 的投影删除，回落本地删除仍删', async (t) => {
+  // 假 Go 只回报成功、不动文件系统：投影还在就说明 Node 没有重复删第二次。
+  const goDir = makeAiHome(t);
+  seedAccount(goDir, 'codebuddy');
+  const goProjection = path.join(resolveAccountRuntimeDir(goDir, 'codebuddy', ACCOUNT_REF), 'home');
+  fs.mkdirSync(goProjection, { recursive: true });
+  const go = createGoHost('ok');
+
+  const goResult = await deleteViaRoute({ dir: goDir, provider: 'codebuddy', goHost: go.host });
+
+  assert.equal(goResult.status, 200);
+  assert.ok(fs.existsSync(goProjection), 'Go 承接时 Node 不应再删投影');
+
+  const localDir = makeAiHome(t);
+  seedAccount(localDir, 'codebuddy');
+  const localProjection = path.join(resolveAccountRuntimeDir(localDir, 'codebuddy', ACCOUNT_REF), 'home');
+  fs.mkdirSync(localProjection, { recursive: true });
+  const local = createGoHost('disabled');
+
+  // Node 承接时资源对账是删除前的一步；对账本身另有测试，这里给它一个空实现。
+  const localResult = await deleteViaRoute({
+    dir: localDir,
+    provider: 'codebuddy',
+    goHost: local.host,
+    extraCtx: { ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }) }
+  });
+
+  assert.equal(localResult.status, 200);
+  assert.equal(fs.existsSync(localProjection), false, 'Node 承接时仍由 Node 删除投影');
 });

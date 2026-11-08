@@ -181,6 +181,12 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err := validateOptions(options); err != nil {
 		return nil, err
 	}
+	// 前门反代只构造一次：既做未识别路由的兜底，也做「Go 目录里没有该模型」时的
+	// 推理回落上游。构造失败直接失败启动，避免半开的前门。
+	frontDoor, err := newFrontDoorFromOptions(options)
+	if err != nil {
+		return nil, err
+	}
 	webUI, err := newWebUIHandler(options.WebDir)
 	if err != nil {
 		return nil, err
@@ -281,6 +287,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	handlers, resources, err := newHandlers(handlerDependencies{
 		Context:                    ctx,
+		FrontDoor:                  frontDoor,
 		Catalog:                    catalog,
 		Store:                      store,
 		AIHomeDir:                  options.AIHomeDir,
@@ -314,12 +321,6 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	handlers.webUI = webUI
-	frontDoor, err := newFrontDoorFromOptions(options)
-	if err != nil {
-		_ = codexVersions.Close()
-		_ = store.Close()
-		return nil, err
-	}
 	handlers.frontDoor = frontDoor
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
 	if err != nil {
@@ -361,8 +362,10 @@ func New(ctx context.Context, options Options) (*Server, error) {
 // 具名字段把这类错误变成编译错误，也让新增依赖的 diff 只有一行。
 type handlerDependencies struct {
 	Context context.Context
-	Catalog *providers.Catalog
-	Store   *sqliteaccount.Store
+	// FrontDoor 是公开前门的上游入口；非空时推理目录缺失的模型交还宿主。
+	FrontDoor http.Handler
+	Catalog   *providers.Catalog
+	Store     *sqliteaccount.Store
 	// AIHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
 	AIHomeDir      string
 	ModelDiscovery *accountapp.ModelDiscovery
@@ -996,6 +999,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		ctx,
 		inferenceCompositionDependencies{
 			catalog:        catalog,
+			frontDoorProxy: dependencies.FrontDoor,
 			store:          store,
 			runtime:        accountRuntime,
 			weights:        accountRuntime,

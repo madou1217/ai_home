@@ -36,6 +36,25 @@ func NewRouteCatalog(rules ...RouteRule) (*RouteCatalog, error) {
 	return catalog, nil
 }
 
+// HasModel 判断目录是否有任何规则覆盖该模型（不区分客户端协议）。
+//
+// 前门用它区分两种失败：模型根本不在 Go 目录（交还宿主）与模型在目录但没有
+// 可用账号（保留 503）。只按模型名判断，不读取账号或运行态。
+func (catalog *RouteCatalog) HasModel(model string) bool {
+	if catalog == nil || model == "" {
+		return false
+	}
+	if len(catalog.exact[model]) > 0 {
+		return true
+	}
+	for _, rule := range catalog.wildcards {
+		if rule.matchesModel(model) {
+			return true
+		}
+	}
+	return false
+}
+
 // Resolve 按精确组、通配符组和能力约束生成有界执行计划。
 func (catalog *RouteCatalog) Resolve(
 	ctx context.Context,

@@ -19,8 +19,8 @@
 | 事项 | 当前阻塞（含已推进） | 解除条件 |
 | --- | --- | --- |
 | 登录完整验收（codex） | 仍缺一次真人授权的 Complete。**「地区 403」更正为网络层现象**：`curl` 直连 `auth.openai.com` 返回 `cf-mitigated: challenge`（Cloudflare 人机挑战，不是地区封禁页），直连 `chatgpt.com` 超时、经本机 SOCKS（`127.0.0.1:1080`）返回 200；headless Chrome 仍停在 challenge，需要真浏览器。Begin 半程已真机通过，Complete 已有 18 条单测 + v29 幂等回放 | 用真浏览器（走系统 SOCKS）完成一次真实登录，核对 accounts/credentials 入库与二次登录不新增 |
-| relay mux 迁 Go | 已推进：只读评估完成（`db07d511`），S 切片 = 首字节分流 + SOCKS5 认证 + CONNECT 透传 + UDP ASSOCIATE，验收标准已写明。仍阻塞：9527 由 Node 持有（`lsof` 2026-11-08 仍为 node pid 38581），Go 侧无 socks5 实现（`internal/` 全量 grep 无命中），P3 前门无代码/提交 | 先做 P3 前门让 Go 持 listener；同时补 relay golden 用例（全仓仍为零） |
-| activity 签到迁 Go | 阻塞条件已变：原「并发 agent 正在改」过期——该线最后写入 2026-11-06 20:10，此后无改动；当前仍是 5 个修改态文件 + 未跟踪 `pacing.js`，未提交 | 该线提交或放弃后（或明确授权我接管这批改动），再评估 qoder/workbuddy 纯 HTTP 子集 |
+| relay mux 迁 Go | 已推进：只读评估完成（`db07d511`），S 切片 = 首字节分流 + SOCKS5 认证 + CONNECT 透传 + UDP ASSOCIATE，验收标准已写明。仍阻塞：9527 由 Node 持有（`lsof` 2026-11-08 复测 pid 76568，重启后 pid 会变；端口归属未变），Go 侧无 socks5 实现（`internal/` 全量 grep 无命中），P3 前门无代码/提交 | 先做 P3 前门让 Go 持 listener；同时补 relay golden 用例（全仓仍为零） |
+| activity 签到迁 Go | 阻塞条件已变：原「并发 agent 正在改」过期——该线最后写入 2026-11-06 20:10，此后无改动；当前仍是 13 个修改态文件 + 4 个未跟踪（含 `pacing.js`、`account-activity-identity.js`），共 17 个，未提交 | 该线提交或放弃后（或明确授权我接管这批改动），再评估 qoder/workbuddy 纯 HTTP 子集 |
 
 ## 3. 不建议做
 

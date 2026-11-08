@@ -1,12 +1,14 @@
 'use strict';
 
-// login-slice-wiring：Codex 浏览器登录接 Go account-auth-jobs 的状态机守卫。
+// login-slice-wiring：Go account-auth-jobs 的状态机守卫。
 //
-// 这里全部用假 Go client（不碰真实 token 端点、不绑 1455、不写账号库），验证四件事：
-//   1. 开关关闭时行为与接线前一致：本地生成 PKCE/state，一次 Go 调用都没有；
-//   2. Begin 成功 → 用 Go 的 authorization_url，失败 → Go 错误码原样成为 job 失败原因；
-//   3. 回调成功 → 用 Go 的 account_ref / cli_account_id 收尾，并主动对账恰好一次；
-//   4. 同一身份二次登录 → 假 store 里仍然只有一个账号（Node 不再自己注册一次）。
+// 这里全部用假 Go client（不碰真实 token 端点、不绑 1455、不写账号库），验证：
+//   1. codex 开关关闭时行为与接线前一致：本地生成 PKCE/state，一次 Go 调用都没有；
+//   2. zcode 不受 codex 开关影响：固定调用 Go，Node 不生成 PKCE/state；
+//   3. Begin 成功 → 用 Go 的 authorization_url，失败 → Go 错误码原样成为 job 失败原因；
+//   4. 回调成功 → 用 Go 的 account_ref / cli_account_id 收尾，并主动对账恰好一次；
+//   5. 同一身份二次登录 → 假 store 里仍然只有一个账号（Node 不再自己注册一次）；
+//   6. zcode 的完整 zcode:// 回调原样转发，reauth 把目标账号交给 Go。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,6 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { createAuthJobManager } = require('../lib/server/web-account-auth');
 const {
   createGoAuthJobsOption,
@@ -24,6 +27,9 @@ const {
 const GO_JOB_ID = '1'.repeat(32);
 const GO_AUTH_URL = 'https://auth.openai.com/oauth/authorize?response_type=code&client_id=go&state=go-state';
 const GO_CALLBACK_URL = 'http://localhost:1455/auth/callback?code=go-code&state=go-state';
+// zcode 的授权入口由 Go 按区域拼装，回调是自定义协议（Node 侧没有 loopback）。
+const ZCODE_GO_AUTH_URL = 'https://chat.z.ai/api/oauth/authorize?response_type=code&client_id=zcode&redirect_uri=zcode%3A%2F%2Foauth%2Fcallback&state=zcode-state';
+const ZCODE_CALLBACK_URL = 'zcode://oauth/callback?code=zcode-code&state=zcode-state';
 
 function createTempAiHome(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-auth-job-'));
@@ -83,7 +89,7 @@ function createFakeGoAuthJobs(options = {}) {
           job_id: jobId,
           provider_id: 'codex',
           status: 'pending',
-          authorization_url: GO_AUTH_URL,
+          authorization_url: options.authorizationUrl || GO_AUTH_URL,
           expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString()
         }
       };
@@ -126,7 +132,7 @@ function createFakeGoAuthJobs(options = {}) {
   return {
     state,
     goAuthJobs: {
-      enabled: true,
+      codexEnabled: options.codexEnabled !== false,
       client,
       reconcile: async () => {
         state.reconciles += 1;
@@ -150,7 +156,7 @@ function createManager(t, aiHomeDir, goAuthJobs) {
 test('开关关闭：不调用 Go，仍由本地生成 PKCE 与 state', async (t) => {
   const aiHomeDir = createTempAiHome(t);
   const { state, goAuthJobs } = createFakeGoAuthJobs();
-  const manager = createManager(t, aiHomeDir, { ...goAuthJobs, enabled: false });
+  const manager = createManager(t, aiHomeDir, { ...goAuthJobs, codexEnabled: false });
 
   const started = manager.startOauthJob('codex', 'oauth-browser');
   assert.ok(started.authorizationUrl.includes('code_challenge='), '旧路径必须带 PKCE challenge');
@@ -309,6 +315,152 @@ test('取消：释放 Go 侧 pending Job，避免下一次 Begin 撞 active_job_
   assert.equal(state.jobs.get(GO_JOB_ID).status, 'cancelled');
 });
 
+test('zcode add：codex 开关关闭也固定调用 Go，本地不生成 PKCE/state', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const { state, goAuthJobs } = createFakeGoAuthJobs({
+    authorizationUrl: ZCODE_GO_AUTH_URL,
+    codexEnabled: false
+  });
+  const manager = createManager(t, aiHomeDir, { ...goAuthJobs, codexEnabled: false });
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser', { authStrategy: 'zai:custom-scheme' });
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.authorizationUrl ? current : null;
+  });
+
+  assert.equal(state.calls.start, 1, 'zcode 必须调用 Go，且不受 codex 开关影响');
+  assert.deepEqual(state.lastStartInput, { providerId: 'zcode', targetAccountRef: '' });
+  assert.equal(job.authorizationUrl, ZCODE_GO_AUTH_URL, '授权链接必须来自 Go');
+  assert.equal(job._goAuthJobWired, true);
+  assert.equal(job._goAuthJobId, GO_JOB_ID);
+  assert.equal(job.redirectUri, 'zcode://oauth/callback');
+  assert.equal(job._codeVerifier, '', 'PKCE verifier 只在 Go 进程内');
+  assert.equal(job.oauthState, '', 'state 校验以 Go 为权威');
+  assert.equal(job.callbackCaptureStatus, 'manual_only', '自定义协议没有可监听的 loopback');
+});
+
+test('zcode 回调：完整 zcode:// 地址原样交给 Go，按 Go 的 account_ref 收尾', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const { state, goAuthJobs } = createFakeGoAuthJobs({ authorizationUrl: ZCODE_GO_AUTH_URL });
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser', { authStrategy: 'zai:custom-scheme' });
+  await waitFor(() => manager.getJob(started.jobId).authorizationUrl);
+
+  const result = await manager.completeBrowserOauthCallback(started.jobId, ZCODE_CALLBACK_URL);
+  assert.equal(result.ok, true);
+  assert.equal(state.calls.complete, 1);
+  assert.equal(state.lastCallback, ZCODE_CALLBACK_URL, 'Node 不解析、不裁剪，整段回调交给 Go');
+
+  const job = manager.getJob(started.jobId);
+  assert.equal(job.status, 'succeeded', `job 应成功，实际 ${job.status}: ${job.error}`);
+  assert.equal(job.accountRef, 'acct_' + '1'.padStart(22, '0'));
+  assert.equal(job.cliAccountId, 1);
+  assert.equal(state.reconciles, 1, '收尾后必须主动对账一次（不等 15s）');
+});
+
+test('zcode 回调失败：Go 错误码按既有 retryable 语义返回', async (t) => {
+  for (const [errorCode, expectedRetryable] of [['provider_rejected', false], ['provider_unavailable', true]]) {
+    const aiHomeDir = createTempAiHome(t);
+    const { goAuthJobs } = createFakeGoAuthJobs({
+      authorizationUrl: ZCODE_GO_AUTH_URL,
+      completeResponse: { ok: false, status: 502, errorCode }
+    });
+    const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+    const started = manager.startOauthJob('zcode', 'oauth-browser', { authStrategy: 'zai:custom-scheme' });
+    await waitFor(() => manager.getJob(started.jobId).authorizationUrl);
+    const result = await manager.completeBrowserOauthCallback(started.jobId, ZCODE_CALLBACK_URL);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, errorCode);
+    assert.equal(result.retryable, expectedRetryable);
+    const job = manager.getJob(started.jobId);
+    assert.equal(job.status, 'failed');
+    assert.equal(job.error, errorCode);
+  }
+});
+
+test('zcode reauth：目标账号作为 target_account_ref 交给 Go', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const { state, goAuthJobs } = createFakeGoAuthJobs({ authorizationUrl: ZCODE_GO_AUTH_URL });
+  const registered = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'zcode',
+    identitySeed: 'oauth:zcode:reauth-subject'
+  });
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser', { accountRef: registered.accountRef });
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current._goAuthJobId ? current : null;
+  });
+
+  assert.equal(job.reauth, true);
+  assert.deepEqual(state.lastStartInput, {
+    providerId: 'zcode',
+    targetAccountRef: registered.accountRef
+  });
+});
+
+test('zcode 跨端引用：reauth 目标送 Go 键，完成后 account_ref 翻回 Node 键', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const nodeRef = 'acct_' + '2'.padStart(22, '0');
+  const { state, goAuthJobs } = createFakeGoAuthJobs({
+    authorizationUrl: ZCODE_GO_AUTH_URL,
+    completeResponse: {
+      ok: true,
+      status: 200,
+      data: {
+        job_id: GO_JOB_ID,
+        status: 'completed',
+        account_ref: 'go-ref-1',
+        cli_account_id: 7
+      }
+    }
+  });
+  const registered = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'zcode',
+    identitySeed: 'oauth:zcode:region|reauth-subject'
+  });
+  const manager = createManager(t, aiHomeDir, {
+    ...goAuthJobs,
+    resolveGoAccountRef: (ref) => (ref === registered.accountRef ? 'go-target-ref' : ref),
+    resolveNodeAccountRef: (goRef) => (goRef === 'go-ref-1' ? nodeRef : goRef)
+  });
+
+  const started = manager.startOauthJob('zcode', 'oauth-browser', { accountRef: registered.accountRef });
+  await waitFor(() => manager.getJob(started.jobId).authorizationUrl);
+  assert.deepEqual(state.lastStartInput, {
+    providerId: 'zcode',
+    targetAccountRef: 'go-target-ref'
+  });
+
+  const result = await manager.completeBrowserOauthCallback(started.jobId, ZCODE_CALLBACK_URL);
+  assert.equal(result.ok, true);
+  assert.equal(manager.getJob(started.jobId).accountRef, nodeRef, '收尾必须用 Node 账号键');
+});
+
+test('zcode 在 Go 门面缺失时明确失败，不悄悄回退到 CLI', (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const manager = createManager(t, aiHomeDir, null);
+  assert.throws(
+    () => manager.startOauthJob('zcode', 'oauth-browser'),
+    (error) => error && error.code === 'go_auth_job_unavailable'
+  );
+});
+
+test('zcode 的 Node 策略已删除，注册表不再 require 它', () => {
+  const strategyFile = path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', 'zcode.js');
+  assert.equal(fs.existsSync(strategyFile), false, 'zcode.js 必须已删除');
+  const registry = fs.readFileSync(
+    path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', 'index.js'),
+    'utf8'
+  );
+  assert.equal(registry.includes("require('./zcode')"), false, '注册表不能留下 zcode 依赖');
+});
+
 test('失败映射：Go 错误码优先，5xx 与无响应可重试，4xx 不可重试', () => {
   assert.deepEqual(toGoAuthJobFailure(null), {
     ok: false,
@@ -324,20 +476,23 @@ test('失败映射：Go 错误码优先，5xx 与无响应可重试，4xx 不可
   assert.equal(isGoAuthJobFailureRetryable('', 400), false);
 });
 
-test('开关解析：默认关闭；config 打开且 Go 门面可用才启用', () => {
-  const disabled = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: false }) });
-  assert.equal(disabled.enabled, false);
-  assert.equal(disabled.client, null);
-
-  const noGoCore = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: true }) });
-  assert.equal(noGoCore.enabled, false, '没有 Go 门面时退回旧路径，不能把登录卡死');
-
+test('开关解析：client 始终装配（zcode 需要），codexEnabled 只表达 codex 开关', () => {
   const goCoreSync = {
     startAccountAuthJob: async () => null,
     completeAccountAuthJob: async () => null,
     cancelAccountAuthJob: async () => null
   };
+  const disabled = createGoAuthJobsOption({
+    readServerConfig: () => ({ codexBrowserAuthViaGo: false }),
+    goCoreSync
+  });
+  assert.equal(disabled.codexEnabled, false);
+  assert.ok(disabled.client, 'zcode 固定走 Go，开关关闭时也必须有 client');
+
+  const noGoCore = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: true }) });
+  assert.equal(noGoCore.client, null, '没有 Go 门面时不能假装能承接登录');
+
   const enabled = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: true }), goCoreSync });
-  assert.equal(enabled.enabled, true);
+  assert.equal(enabled.codexEnabled, true);
   assert.equal(enabled.reconcile, null, '未装配对账时只能是 null，不能调用不存在的方法');
 });

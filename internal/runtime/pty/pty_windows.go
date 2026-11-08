@@ -67,3 +67,11 @@ func (session *conPtySession) Wait() error {
 	}
 	return session.command.Wait()
 }
+
+// Kill 强制结束子进程；ConPTY 的 Close 不保证子进程已退出。
+func (session *conPtySession) Kill() error {
+	if session == nil || session.command == nil || session.command.Process == nil {
+		return ErrUnsupportedPlatform
+	}
+	return session.command.Process.Kill()
+}

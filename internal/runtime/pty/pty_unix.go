@@ -61,3 +61,11 @@ func (session *unixSession) Wait() error {
 	}
 	return session.process.Wait()
 }
+
+// Kill 强制结束子进程；Close 只关闭 PTY 主端，不保证子进程已退出。
+func (session *unixSession) Kill() error {
+	if session == nil || session.process == nil || session.process.Process == nil {
+		return ErrInvalidSpec
+	}
+	return session.process.Process.Kill()
+}

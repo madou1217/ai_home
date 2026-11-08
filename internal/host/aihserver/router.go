@@ -113,6 +113,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.accountRuntime != nil {
 		mux.Handle(accountruntimeapi.Path, handlers.accountRuntime)
 	}
+	if handlers.plugins.list != nil {
+		mux.Handle(pluginapi.InventoryPath, handlers.plugins.list)
+	}
 	if handlers.plugins.projection != nil {
 		mux.Handle(pluginapi.ProjectionPath, handlers.plugins.projection)
 	}

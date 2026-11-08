@@ -135,6 +135,26 @@ func (registry *Registry) Get(generation int64) (Projection, bool) {
 	return projection, ok
 }
 
+// Snapshots 一次取回全部存活代次的不可变副本（按代次升序）。
+//
+// 与「先 Generations() 再逐个 Get()」相比，单次读锁保证诊断视图不会跨一次
+// Replace 取到混合代次——列表一致性检查必须看同一瞬间的投影。
+func (registry *Registry) Snapshots() []Projection {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	snapshots := make([]Projection, 0, len(registry.generations))
+	for _, projection := range registry.generations {
+		snapshots = append(snapshots, Projection{
+			Generation:    projection.Generation,
+			Contributions: append([]Contribution(nil), projection.Contributions...),
+		})
+	}
+	sort.Slice(snapshots, func(left, right int) bool {
+		return snapshots[left].Generation < snapshots[right].Generation
+	})
+	return snapshots
+}
+
 // Generations 返回当前存活的代次（升序）。
 func (registry *Registry) Generations() []int64 {
 	registry.mu.RLock()

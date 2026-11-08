@@ -7,6 +7,7 @@ import (
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/plugincontrol"
 	adapterplugins "github.com/madou1217/ai_home/internal/adapters/pluginruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
@@ -18,8 +19,10 @@ import (
 type pluginHandlers struct {
 	gate       *pluginapi.RequestGate
 	projection http.Handler
-	invoker    *adapterplugins.HostInvoker
-	observer   *appplugins.Observer
+	// list 是只读插件清单：控制面事实来自 Node 的 app-state.db，运行态来自 projection。
+	list     http.Handler
+	invoker  *adapterplugins.HostInvoker
+	observer *appplugins.Observer
 }
 
 // newPluginHandlers 组装插件接入；依赖无效时返回禁用状态（路由不包闸门、不挂管理接口），
@@ -28,6 +31,7 @@ func newPluginHandlers(
 	managementAuthorizer pluginapi.Authorizer,
 	clientAuthorizer pluginapi.Authorizer,
 	describe appplugins.AccountDescriber,
+	aiHomeDir string,
 ) pluginHandlers {
 	registry := appplugins.NewRegistry()
 	invoker := adapterplugins.NewHostInvoker(registry)
@@ -42,7 +46,15 @@ func newPluginHandlers(
 		observer.Close()
 		return pluginHandlers{}
 	}
-	return pluginHandlers{gate: gate, projection: projection, invoker: invoker, observer: observer}
+	handlers := pluginHandlers{gate: gate, projection: projection, invoker: invoker, observer: observer}
+	// 只读清单依赖 Node 的 app-state.db。数据目录不可解析时只少挂这条路由，
+	// 投影推送与推理闸门照常工作——列表问题不能拖垮插件数据面。
+	if reader, err := plugincontrol.NewReader(aiHomeDir); err == nil {
+		if list, err := pluginapi.NewInventoryHandler(managementAuthorizer, reader, registry); err == nil {
+			handlers.list = list
+		}
+	}
+	return handlers
 }
 
 // accountProviderResolver 用无敏感的账号管理投影描述账号：Provider（观察事件）与认证形态（账号偏好候选）。

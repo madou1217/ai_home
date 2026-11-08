@@ -1,0 +1,7220 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/dump-session-chat-parity-cases.js",
+  "platform": "darwin",
+  "nowMs": 1755000000000,
+  "start": [
+    {
+      "name": "codex headless full",
+      "provider": "codex",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codex",
+        "args": [
+          "exec",
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+          "-c",
+          "mcp_servers={}",
+          "-m",
+          "m1",
+          "-i",
+          "/tmp/a.png",
+          "-i",
+          "/tmp/b.PNG",
+          "-C",
+          "/proj",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "codex interactive full",
+      "provider": "codex",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codex",
+        "args": [
+          "-m",
+          "m1",
+          "-i",
+          "/tmp/a.png",
+          "-i",
+          "/tmp/b.PNG",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "codex headless minimal",
+      "provider": "codex",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "codex",
+        "args": [
+          "exec",
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+          "-c",
+          "mcp_servers={}",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "codex interactive minimal",
+      "provider": "codex",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "codex",
+        "args": []
+      }
+    },
+    {
+      "name": "codex headless empty prompt",
+      "provider": "codex",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "claude headless full",
+      "provider": "claude",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "claude",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+          "--session-id",
+          "sid-1",
+          "--input-format",
+          "stream-json"
+        ]
+      }
+    },
+    {
+      "name": "claude interactive full",
+      "provider": "claude",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "claude",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "claude headless minimal",
+      "provider": "claude",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "claude",
+        "args": [
+          "--print",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+          "--input-format",
+          "stream-json"
+        ]
+      }
+    },
+    {
+      "name": "claude interactive minimal",
+      "provider": "claude",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "claude",
+        "args": []
+      }
+    },
+    {
+      "name": "claude headless empty prompt",
+      "provider": "claude",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "gemini headless full",
+      "provider": "gemini",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": [
+          "--session-id",
+          "sid-1",
+          "--prompt-interactive",
+          "hi there",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "gemini interactive full",
+      "provider": "gemini",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": [
+          "--session-id",
+          "sid-1",
+          "--prompt-interactive",
+          "hi there",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "gemini headless minimal",
+      "provider": "gemini",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": [
+          "--prompt-interactive",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "gemini interactive minimal",
+      "provider": "gemini",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": []
+      }
+    },
+    {
+      "name": "gemini headless empty prompt",
+      "provider": "gemini",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "agy headless full",
+      "provider": "agy",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--print",
+          "hi there",
+          "--dangerously-skip-permissions"
+        ]
+      }
+    },
+    {
+      "name": "agy interactive full",
+      "provider": "agy",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--print",
+          "hi there",
+          "--dangerously-skip-permissions"
+        ]
+      }
+    },
+    {
+      "name": "agy headless minimal",
+      "provider": "agy",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--print",
+          "x",
+          "--dangerously-skip-permissions"
+        ]
+      }
+    },
+    {
+      "name": "agy interactive minimal",
+      "provider": "agy",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--print",
+          "",
+          "--dangerously-skip-permissions"
+        ]
+      }
+    },
+    {
+      "name": "agy headless empty prompt",
+      "provider": "agy",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "opencode headless full",
+      "provider": "opencode",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "run",
+          "--format",
+          "json",
+          "--dangerously-skip-permissions",
+          "--model",
+          "m1",
+          "--standalone",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "opencode interactive full",
+      "provider": "opencode",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "--model",
+          "m1",
+          "--prompt",
+          "hi there",
+          "--standalone"
+        ]
+      }
+    },
+    {
+      "name": "opencode headless minimal",
+      "provider": "opencode",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "run",
+          "--format",
+          "json",
+          "--dangerously-skip-permissions",
+          "--standalone",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "opencode interactive minimal",
+      "provider": "opencode",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "--standalone"
+        ]
+      }
+    },
+    {
+      "name": "opencode headless empty prompt",
+      "provider": "opencode",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "grok headless full",
+      "provider": "grok",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "hi there",
+          "--output-format",
+          "streaming-json",
+          "--session-id",
+          "sid-1",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "grok interactive full",
+      "provider": "grok",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "hi there",
+          "--output-format",
+          "streaming-json",
+          "--session-id",
+          "sid-1",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "grok headless minimal",
+      "provider": "grok",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "x",
+          "--output-format",
+          "streaming-json"
+        ]
+      }
+    },
+    {
+      "name": "grok interactive minimal",
+      "provider": "grok",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "",
+          "--output-format",
+          "streaming-json"
+        ]
+      }
+    },
+    {
+      "name": "grok headless empty prompt",
+      "provider": "grok",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "zcode headless full",
+      "provider": "zcode",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "zcode interactive full",
+      "provider": "zcode",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "zcode headless minimal",
+      "provider": "zcode",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "zcode interactive minimal",
+      "provider": "zcode",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "zcode headless empty prompt",
+      "provider": "zcode",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "qoder headless full",
+      "provider": "qoder",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "qoder interactive full",
+      "provider": "qoder",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "qoder headless minimal",
+      "provider": "qoder",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "qoder interactive minimal",
+      "provider": "qoder",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": []
+      }
+    },
+    {
+      "name": "qoder headless empty prompt",
+      "provider": "qoder",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "qodercn headless full",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "qodercn interactive full",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "qodercn headless minimal",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "qodercn interactive minimal",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": []
+      }
+    },
+    {
+      "name": "qodercn headless empty prompt",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "cline headless full",
+      "provider": "cline",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "--model",
+          "m1",
+          "--json",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "cline interactive full",
+      "provider": "cline",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "--model",
+          "m1",
+          "-i"
+        ]
+      }
+    },
+    {
+      "name": "cline headless minimal",
+      "provider": "cline",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "--json",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "cline interactive minimal",
+      "provider": "cline",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "-i"
+        ]
+      }
+    },
+    {
+      "name": "cline headless empty prompt",
+      "provider": "cline",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "codebuddy headless full",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "codebuddy interactive full",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "codebuddy headless minimal",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "codebuddy interactive minimal",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": []
+      }
+    },
+    {
+      "name": "codebuddy headless empty prompt",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "codebuddycn headless full",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "codebuddycn interactive full",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "codebuddycn headless minimal",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "codebuddycn interactive minimal",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": []
+      }
+    },
+    {
+      "name": "codebuddycn headless empty prompt",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "workbuddy headless full",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "workbuddy interactive full",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "workbuddy headless minimal",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "workbuddy interactive minimal",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": []
+      }
+    },
+    {
+      "name": "workbuddy headless empty prompt",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "workbuddycn headless full",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "workbuddycn interactive full",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--session-id",
+          "sid-1",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "workbuddycn headless minimal",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "x"
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "workbuddycn interactive minimal",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": []
+      }
+    },
+    {
+      "name": "workbuddycn headless empty prompt",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "kimi headless full",
+      "provider": "kimi",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "kimi interactive full",
+      "provider": "kimi",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "kimi headless minimal",
+      "provider": "kimi",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "kimi interactive minimal",
+      "provider": "kimi",
+      "options": {
+        "prompt": "",
+        "interactiveCli": true
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "kimi headless empty prompt",
+      "provider": "kimi",
+      "options": {
+        "prompt": "   "
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "agy image model rejected",
+      "provider": "agy",
+      "options": {
+        "prompt": "draw",
+        "model": "gemini-3.1-flash-image"
+      },
+      "error": {
+        "code": "agy_image_model_unsupported",
+        "message": "agy CLI does not support image generation model gemini-3.1-flash-image"
+      }
+    },
+    {
+      "name": "agy nano banana rejected",
+      "provider": "agy",
+      "options": {
+        "prompt": "draw",
+        "model": "nano-banana"
+      },
+      "error": {
+        "code": "agy_image_model_unsupported",
+        "message": "agy CLI does not support image generation model nano-banana"
+      }
+    },
+    {
+      "name": "unknown provider",
+      "provider": "unknown",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "native_session_start_unsupported",
+        "message": "native_session_start_unsupported"
+      }
+    },
+    {
+      "name": "opencode v1 layout",
+      "provider": "opencode",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": false,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "env": {
+        "AIH_OPENCODE_GATEWAY": "runLayout=v1"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "run",
+          "--format",
+          "json",
+          "--dangerously-skip-permissions",
+          "--model",
+          "m1",
+          "--dir",
+          "/proj",
+          "hi there"
+        ]
+      }
+    },
+    {
+      "name": "opencode v2 pinned",
+      "provider": "opencode",
+      "options": {
+        "prompt": "hi there",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png",
+          " /tmp/b.PNG ",
+          ""
+        ],
+        "interactiveCli": true,
+        "projectPath": "/proj",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "env": {
+        "AIH_OPENCODE_GATEWAY": "runLayout=v2"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "--model",
+          "m1",
+          "--prompt",
+          "hi there",
+          "--standalone"
+        ]
+      }
+    }
+  ],
+  "resume": [
+    {
+      "name": "codex resume headless full",
+      "provider": "codex",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codex",
+        "args": [
+          "exec",
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+          "-c",
+          "mcp_servers={}",
+          "resume",
+          "-m",
+          "m1",
+          "-i",
+          "/tmp/a.png",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "codex resume interactive full",
+      "provider": "codex",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codex",
+        "args": [
+          "resume",
+          "-m",
+          "m1",
+          "-i",
+          "/tmp/a.png",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "codex resume headless minimal",
+      "provider": "codex",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "codex",
+        "args": [
+          "exec",
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+          "-c",
+          "mcp_servers={}",
+          "resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "codex resume missing session id",
+      "provider": "codex",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "codex resume empty prompt",
+      "provider": "codex",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "claude resume headless full",
+      "provider": "claude",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "claude",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+          "--input-format",
+          "stream-json",
+          "--resume",
+          "sid-1"
+        ]
+      }
+    },
+    {
+      "name": "claude resume interactive full",
+      "provider": "claude",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "claude",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "claude resume headless minimal",
+      "provider": "claude",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "claude",
+        "args": [
+          "--print",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+          "--input-format",
+          "stream-json",
+          "--resume",
+          "s"
+        ]
+      }
+    },
+    {
+      "name": "claude resume missing session id",
+      "provider": "claude",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "claude resume empty prompt",
+      "provider": "claude",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "gemini resume headless full",
+      "provider": "gemini",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": [
+          "--resume",
+          "sid-1",
+          "--prompt-interactive",
+          "continue please",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "gemini resume interactive full",
+      "provider": "gemini",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": [
+          "--resume",
+          "sid-1",
+          "--prompt-interactive",
+          "continue please",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "gemini resume headless minimal",
+      "provider": "gemini",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "gemini",
+        "args": [
+          "--resume",
+          "s",
+          "--prompt-interactive",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "gemini resume missing session id",
+      "provider": "gemini",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "gemini resume empty prompt",
+      "provider": "gemini",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "agy resume headless full",
+      "provider": "agy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--conversation",
+          "sid-1",
+          "--dangerously-skip-permissions",
+          "--print",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "agy resume interactive full",
+      "provider": "agy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--conversation",
+          "sid-1",
+          "--dangerously-skip-permissions",
+          "--print",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "agy resume headless minimal",
+      "provider": "agy",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "agy",
+        "args": [
+          "--conversation",
+          "s",
+          "--dangerously-skip-permissions",
+          "--print",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "agy resume missing session id",
+      "provider": "agy",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "agy resume empty prompt",
+      "provider": "agy",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "opencode resume headless full",
+      "provider": "opencode",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "run",
+          "--format",
+          "json",
+          "--dangerously-skip-permissions",
+          "--session",
+          "sid-1",
+          "--model",
+          "m1",
+          "--standalone",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "opencode resume interactive full",
+      "provider": "opencode",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "--model",
+          "m1",
+          "--session",
+          "sid-1",
+          "--standalone"
+        ]
+      }
+    },
+    {
+      "name": "opencode resume headless minimal",
+      "provider": "opencode",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "run",
+          "--format",
+          "json",
+          "--dangerously-skip-permissions",
+          "--session",
+          "s",
+          "--standalone",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "opencode resume missing session id",
+      "provider": "opencode",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "opencode resume empty prompt",
+      "provider": "opencode",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "grok resume headless full",
+      "provider": "grok",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "continue please",
+          "--output-format",
+          "streaming-json",
+          "--resume",
+          "sid-1",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "grok resume interactive full",
+      "provider": "grok",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "continue please",
+          "--output-format",
+          "streaming-json",
+          "--resume",
+          "sid-1",
+          "--model",
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "grok resume headless minimal",
+      "provider": "grok",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "grok",
+        "args": [
+          "--single",
+          "x",
+          "--output-format",
+          "streaming-json",
+          "--resume",
+          "s"
+        ]
+      }
+    },
+    {
+      "name": "grok resume missing session id",
+      "provider": "grok",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "grok resume empty prompt",
+      "provider": "grok",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "zcode resume headless full",
+      "provider": "zcode",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "zcode resume interactive full",
+      "provider": "zcode",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "zcode resume headless minimal",
+      "provider": "zcode",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "zcode resume missing session id",
+      "provider": "zcode",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "zcode resume empty prompt",
+      "provider": "zcode",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "qoder resume headless full",
+      "provider": "qoder",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "qoder resume interactive full",
+      "provider": "qoder",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "qoder resume headless minimal",
+      "provider": "qoder",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "qoder",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "qoder resume missing session id",
+      "provider": "qoder",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "qoder resume empty prompt",
+      "provider": "qoder",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "qodercn resume headless full",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "qodercn resume interactive full",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "qodercn resume headless minimal",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "qodercn",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "qodercn resume missing session id",
+      "provider": "qodercn",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "qodercn resume empty prompt",
+      "provider": "qodercn",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "cline resume headless full",
+      "provider": "cline",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "--model",
+          "m1",
+          "--id",
+          "sid-1",
+          "--json",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "cline resume interactive full",
+      "provider": "cline",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "--model",
+          "m1",
+          "--id",
+          "sid-1",
+          "-i"
+        ]
+      }
+    },
+    {
+      "name": "cline resume headless minimal",
+      "provider": "cline",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "cline",
+        "args": [
+          "--id",
+          "s",
+          "--json",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "cline resume missing session id",
+      "provider": "cline",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "cline resume empty prompt",
+      "provider": "cline",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "codebuddy resume headless full",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "codebuddy resume interactive full",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "codebuddy resume headless minimal",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "codebuddy",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "codebuddy resume missing session id",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "codebuddy resume empty prompt",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "codebuddycn resume headless full",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "codebuddycn resume interactive full",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "codebuddycn resume headless minimal",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "codebuddycn",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "codebuddycn resume missing session id",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "codebuddycn resume empty prompt",
+      "provider": "codebuddycn",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "workbuddy resume headless full",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "workbuddy resume interactive full",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "workbuddy resume headless minimal",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "workbuddy",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "workbuddy resume missing session id",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "workbuddy resume empty prompt",
+      "provider": "workbuddy",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "workbuddycn resume headless full",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "workbuddycn resume interactive full",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": [
+          "--model",
+          "m1",
+          "--resume",
+          "sid-1",
+          "continue please"
+        ]
+      }
+    },
+    {
+      "name": "workbuddycn resume headless minimal",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "result": {
+        "commandName": "workbuddycn",
+        "args": [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--resume",
+          "s",
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "workbuddycn resume missing session id",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "missing_session_id",
+        "message": "missing_session_id"
+      }
+    },
+    {
+      "name": "workbuddycn resume empty prompt",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "empty_prompt",
+        "message": "empty_prompt"
+      }
+    },
+    {
+      "name": "kimi resume headless full",
+      "provider": "kimi",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "kimi resume interactive full",
+      "provider": "kimi",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "kimi resume headless minimal",
+      "provider": "kimi",
+      "options": {
+        "prompt": "x",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "kimi resume missing session id",
+      "provider": "kimi",
+      "options": {
+        "prompt": "x"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "kimi resume empty prompt",
+      "provider": "kimi",
+      "options": {
+        "prompt": " ",
+        "sessionId": "s"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    },
+    {
+      "name": "family ide project rejected",
+      "provider": "codebuddy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "ide-abc",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "CodeBuddy IDE 会话使用独立存储，请在官方 Desktop 中续聊；WebUI 已同步其历史与用量。"
+      }
+    },
+    {
+      "name": "family index.json rejected",
+      "provider": "workbuddycn",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/x/index.json",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "CodeBuddy IDE 会话使用独立存储，请在官方 Desktop 中续聊；WebUI 已同步其历史与用量。"
+      }
+    },
+    {
+      "name": "agy resume image model",
+      "provider": "agy",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "gemini-3.1-flash-image",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "agy_image_model_unsupported",
+        "message": "agy CLI does not support image generation model gemini-3.1-flash-image"
+      }
+    },
+    {
+      "name": "opencode resume v1",
+      "provider": "opencode",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": true,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "env": {
+        "AIH_OPENCODE_GATEWAY": "runLayout=v1"
+      },
+      "result": {
+        "commandName": "opencode",
+        "args": [
+          "--model",
+          "m1",
+          "--session",
+          "sid-1"
+        ]
+      }
+    },
+    {
+      "name": "unknown resume provider",
+      "provider": "unknown",
+      "options": {
+        "prompt": "continue please",
+        "sessionId": "sid-1",
+        "model": "m1",
+        "imagePaths": [
+          "/tmp/a.png"
+        ],
+        "interactiveCli": false,
+        "projectDirName": "proj-dir",
+        "sessionPath": "/sessions/sid-1.jsonl",
+        "cliPath": "/nonexistent/opencode"
+      },
+      "error": {
+        "code": "native_session_resume_unsupported",
+        "message": "native_session_resume_unsupported"
+      }
+    }
+  ],
+  "shell": {
+    "quote": [
+      {
+        "value": "",
+        "expect": "''"
+      },
+      {
+        "value": "it's ok",
+        "expect": "'it'\\''s ok'"
+      },
+      {
+        "value": "plain",
+        "expect": "'plain'"
+      },
+      {
+        "value": "a'b'c",
+        "expect": "'a'\\''b'\\''c'"
+      }
+    ],
+    "socket": [
+      {
+        "value": "run-abc_DEF:1234567890",
+        "expect": "aih-run-runabcDEF123"
+      },
+      {
+        "value": "",
+        "expect": "aih-run-unknown"
+      },
+      {
+        "value": "!!!",
+        "expect": "aih-run-unknown"
+      },
+      {
+        "value": "abcdefghijklmnop",
+        "expect": "aih-run-abcdefghijkl"
+      }
+    ],
+    "inner": [
+      {
+        "command": "/usr/bin/claude",
+        "args": [
+          "--print",
+          "it's ok"
+        ],
+        "expect": "'/usr/bin/claude' '--print' 'it'\\''s ok'"
+      }
+    ],
+    "runShell": [
+      {
+        "inner": "echo hi",
+        "logPath": "/tmp/log file.txt",
+        "expect": "{ echo hi ; } > '/tmp/log file.txt' 2>&1; printf '\\n__AIH_RUN_EXIT:%s\\n' \"$?\" >> '/tmp/log file.txt'"
+      }
+    ],
+    "claudeShell": [
+      {
+        "messageFile": "/tmp/a b.jsonl",
+        "command": "/bin/claude",
+        "args": [
+          "--print"
+        ],
+        "expect": "cat '/tmp/a b.jsonl' - | '/bin/claude' '--print'"
+      }
+    ]
+  },
+  "streamJson": [
+    {
+      "name": "text only",
+      "prompt": "hello",
+      "images": [],
+      "expect": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}\n"
+    },
+    {
+      "name": "text with blank prompt",
+      "prompt": "   ",
+      "images": [],
+      "expect": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"   \"}]}}\n"
+    },
+    {
+      "name": "empty prompt",
+      "prompt": "",
+      "images": [],
+      "expect": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\"}]}}\n"
+    },
+    {
+      "name": "with images",
+      "prompt": "look",
+      "images": [
+        {
+          "mediaType": "image/png",
+          "data": "QUJD"
+        },
+        {
+          "mediaType": "image/jpeg",
+          "data": "REVG"
+        }
+      ],
+      "expect": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"QUJD\"}},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/jpeg\",\"data\":\"REVG\"}}]}}\n"
+    }
+  ],
+  "mediaType": [
+    {
+      "value": "/tmp/a.png",
+      "expect": "image/png"
+    },
+    {
+      "value": "/tmp/a.JPG",
+      "expect": "image/jpeg"
+    },
+    {
+      "value": "/tmp/a.jpeg",
+      "expect": "image/jpeg"
+    },
+    {
+      "value": "/tmp/a.gif",
+      "expect": "image/gif"
+    },
+    {
+      "value": "/tmp/a.webp",
+      "expect": "image/webp"
+    },
+    {
+      "value": "/tmp/a.bmp",
+      "expect": "image/png"
+    },
+    {
+      "value": "png",
+      "expect": "image/png"
+    },
+    {
+      "value": "",
+      "expect": "image/png"
+    }
+  ],
+  "misc": {
+    "configDirArgs": [
+      {
+        "name": "qoder with dir",
+        "provider": "qoder",
+        "args": [
+          "--model",
+          "m"
+        ],
+        "runtimeDir": "/runtime/dir",
+        "expect": [
+          "--config-dir",
+          "/runtime/dir",
+          "--model",
+          "m"
+        ]
+      },
+      {
+        "name": "qodercn with dir",
+        "provider": "qodercn",
+        "args": [
+          "--model",
+          "m"
+        ],
+        "runtimeDir": "/runtime/dir",
+        "expect": [
+          "--config-dir",
+          "/runtime/dir",
+          "--model",
+          "m"
+        ]
+      },
+      {
+        "name": "codex with dir",
+        "provider": "codex",
+        "args": [
+          "--model",
+          "m"
+        ],
+        "runtimeDir": "/runtime/dir",
+        "expect": [
+          "--model",
+          "m"
+        ]
+      },
+      {
+        "name": "claude with dir",
+        "provider": "claude",
+        "args": [
+          "--model",
+          "m"
+        ],
+        "runtimeDir": "/runtime/dir",
+        "expect": [
+          "--model",
+          "m"
+        ]
+      },
+      {
+        "name": "unknown with dir",
+        "provider": "unknown",
+        "args": [
+          "--model",
+          "m"
+        ],
+        "runtimeDir": "/runtime/dir",
+        "expect": [
+          "--model",
+          "m"
+        ]
+      },
+      {
+        "name": "already has flag",
+        "provider": "qoder",
+        "args": [
+          "--config-dir",
+          "/x"
+        ],
+        "runtimeDir": "/runtime/dir",
+        "expect": [
+          "--config-dir",
+          "/x"
+        ]
+      },
+      {
+        "name": "empty dir",
+        "provider": "qoder",
+        "args": [],
+        "runtimeDir": "  ",
+        "expect": []
+      }
+    ],
+    "runsHome": [
+      {
+        "name": "injected",
+        "injected": "/injected",
+        "env": {},
+        "homeDir": "/home/test",
+        "expect": "/injected"
+      },
+      {
+        "name": "host home env",
+        "injected": "",
+        "env": {
+          "AIH_HOST_HOME": "/host-home"
+        },
+        "homeDir": "/home/test",
+        "expect": "/host-home/.ai_home"
+      },
+      {
+        "name": "fallback home",
+        "injected": "",
+        "env": {},
+        "homeDir": "/home/test",
+        "expect": "/home/test/.ai_home"
+      }
+    ],
+    "multiplexer": [
+      {
+        "name": "claude i=false p=darwin env=auto avail=true",
+        "provider": "claude",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": true
+      },
+      {
+        "name": "claude i=false p=darwin env=off avail=true",
+        "provider": "claude",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=false p=darwin env=auto avail=false",
+        "provider": "claude",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=false p=win32 env=auto avail=true",
+        "provider": "claude",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=false p=win32 env=off avail=true",
+        "provider": "claude",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=false p=win32 env=auto avail=false",
+        "provider": "claude",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=true p=darwin env=auto avail=true",
+        "provider": "claude",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=true p=darwin env=off avail=true",
+        "provider": "claude",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=true p=darwin env=auto avail=false",
+        "provider": "claude",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=true p=win32 env=auto avail=true",
+        "provider": "claude",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=true p=win32 env=off avail=true",
+        "provider": "claude",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "claude i=true p=win32 env=auto avail=false",
+        "provider": "claude",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=false p=darwin env=auto avail=true",
+        "provider": "codex",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": true
+      },
+      {
+        "name": "codex i=false p=darwin env=off avail=true",
+        "provider": "codex",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=false p=darwin env=auto avail=false",
+        "provider": "codex",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=false p=win32 env=auto avail=true",
+        "provider": "codex",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=false p=win32 env=off avail=true",
+        "provider": "codex",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=false p=win32 env=auto avail=false",
+        "provider": "codex",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=true p=darwin env=auto avail=true",
+        "provider": "codex",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=true p=darwin env=off avail=true",
+        "provider": "codex",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=true p=darwin env=auto avail=false",
+        "provider": "codex",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=true p=win32 env=auto avail=true",
+        "provider": "codex",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=true p=win32 env=off avail=true",
+        "provider": "codex",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "codex i=true p=win32 env=auto avail=false",
+        "provider": "codex",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=false p=darwin env=auto avail=true",
+        "provider": "opencode",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": true
+      },
+      {
+        "name": "opencode i=false p=darwin env=off avail=true",
+        "provider": "opencode",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=false p=darwin env=auto avail=false",
+        "provider": "opencode",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=false p=win32 env=auto avail=true",
+        "provider": "opencode",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=false p=win32 env=off avail=true",
+        "provider": "opencode",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=false p=win32 env=auto avail=false",
+        "provider": "opencode",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=true p=darwin env=auto avail=true",
+        "provider": "opencode",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=true p=darwin env=off avail=true",
+        "provider": "opencode",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=true p=darwin env=auto avail=false",
+        "provider": "opencode",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=true p=win32 env=auto avail=true",
+        "provider": "opencode",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=true p=win32 env=off avail=true",
+        "provider": "opencode",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "opencode i=true p=win32 env=auto avail=false",
+        "provider": "opencode",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=false p=darwin env=auto avail=true",
+        "provider": "agy",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": true
+      },
+      {
+        "name": "agy i=false p=darwin env=off avail=true",
+        "provider": "agy",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=false p=darwin env=auto avail=false",
+        "provider": "agy",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=false p=win32 env=auto avail=true",
+        "provider": "agy",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=false p=win32 env=off avail=true",
+        "provider": "agy",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=false p=win32 env=auto avail=false",
+        "provider": "agy",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=true p=darwin env=auto avail=true",
+        "provider": "agy",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=true p=darwin env=off avail=true",
+        "provider": "agy",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=true p=darwin env=auto avail=false",
+        "provider": "agy",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=true p=win32 env=auto avail=true",
+        "provider": "agy",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=true p=win32 env=off avail=true",
+        "provider": "agy",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "agy i=true p=win32 env=auto avail=false",
+        "provider": "agy",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=false p=darwin env=auto avail=true",
+        "provider": "gemini",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=false p=darwin env=off avail=true",
+        "provider": "gemini",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=false p=darwin env=auto avail=false",
+        "provider": "gemini",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=false p=win32 env=auto avail=true",
+        "provider": "gemini",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=false p=win32 env=off avail=true",
+        "provider": "gemini",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=false p=win32 env=auto avail=false",
+        "provider": "gemini",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=true p=darwin env=auto avail=true",
+        "provider": "gemini",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=true p=darwin env=off avail=true",
+        "provider": "gemini",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=true p=darwin env=auto avail=false",
+        "provider": "gemini",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=true p=win32 env=auto avail=true",
+        "provider": "gemini",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=true p=win32 env=off avail=true",
+        "provider": "gemini",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "gemini i=true p=win32 env=auto avail=false",
+        "provider": "gemini",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=false p=darwin env=auto avail=true",
+        "provider": "cline",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=false p=darwin env=off avail=true",
+        "provider": "cline",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=false p=darwin env=auto avail=false",
+        "provider": "cline",
+        "interactiveCli": false,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=false p=win32 env=auto avail=true",
+        "provider": "cline",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=false p=win32 env=off avail=true",
+        "provider": "cline",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=false p=win32 env=auto avail=false",
+        "provider": "cline",
+        "interactiveCli": false,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": false,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=true p=darwin env=auto avail=true",
+        "provider": "cline",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=true p=darwin env=off avail=true",
+        "provider": "cline",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=true p=darwin env=auto avail=false",
+        "provider": "cline",
+        "interactiveCli": true,
+        "platform": "darwin",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "darwin",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=true p=win32 env=auto avail=true",
+        "provider": "cline",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=true p=win32 env=off avail=true",
+        "provider": "cline",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "off",
+        "available": true,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "off",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": true
+          }
+        },
+        "expect": false
+      },
+      {
+        "name": "cline i=true p=win32 env=auto avail=false",
+        "provider": "cline",
+        "interactiveCli": true,
+        "platform": "win32",
+        "multiplexerEnv": "",
+        "available": false,
+        "options": {
+          "interactiveCli": true,
+          "platform": "win32",
+          "multiplexerEnv": "",
+          "multiplexerBinding": {
+            "name": "tmux",
+            "available": false
+          }
+        },
+        "expect": false
+      }
+    ],
+    "openCodeLayout": [
+      {
+        "env": "runLayout=v1",
+        "expect": {
+          "id": "v1",
+          "directoryFlag": "--dir",
+          "standaloneFlag": "",
+          "pwdDirectory": false
+        }
+      },
+      {
+        "env": "runLayout=v2",
+        "expect": {
+          "id": "v2",
+          "directoryFlag": "",
+          "standaloneFlag": "--standalone",
+          "pwdDirectory": true
+        }
+      },
+      {
+        "env": "runLayout=bad",
+        "expect": {
+          "id": "v2",
+          "directoryFlag": "",
+          "standaloneFlag": "--standalone",
+          "pwdDirectory": true
+        }
+      },
+      {
+        "env": "",
+        "expect": {
+          "id": "v2",
+          "directoryFlag": "",
+          "standaloneFlag": "--standalone",
+          "pwdDirectory": true
+        }
+      },
+      {
+        "env": "baseUrl=http%3A%2F%2Fx,runLayout=v1",
+        "expect": {
+          "id": "v1",
+          "directoryFlag": "--dir",
+          "standaloneFlag": "",
+          "pwdDirectory": false
+        }
+      }
+    ]
+  },
+  "transport": {
+    "cases": [
+      {
+        "provider": "codex",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "codex",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "claude",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "claude",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "gemini",
+        "isResume": false,
+        "expect": {
+          "mode": "pty-transcript",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "gemini",
+        "isResume": true,
+        "expect": {
+          "mode": "pty-transcript",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "agy",
+        "isResume": false,
+        "expect": {
+          "mode": "pty-transcript",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "agy",
+        "isResume": true,
+        "expect": {
+          "mode": "pty-transcript",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "opencode",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "opencode",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "grok",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "grok",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "zcode",
+        "isResume": false,
+        "expect": {
+          "mode": "desktop-session",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "zcode",
+        "isResume": true,
+        "expect": {
+          "mode": "desktop-session",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "qoder",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": true
+        }
+      },
+      {
+        "provider": "qoder",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": true
+        }
+      },
+      {
+        "provider": "qodercn",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": true
+        }
+      },
+      {
+        "provider": "qodercn",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": true
+        }
+      },
+      {
+        "provider": "cline",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "cline",
+        "isResume": true,
+        "expect": {
+          "mode": "acp-session",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "codebuddy",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "codebuddy",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "codebuddycn",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "codebuddycn",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "isResume": false,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "isResume": true,
+        "expect": {
+          "mode": "headless-stream",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "kimi",
+        "isResume": false,
+        "expect": {
+          "mode": "pty-transcript",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      },
+      {
+        "provider": "kimi",
+        "isResume": true,
+        "expect": {
+          "mode": "pty-transcript",
+          "promptDelivery": "argv",
+          "streamUsage": false
+        }
+      }
+    ],
+    "tmuxRunProviders": [
+      "claude",
+      "codex",
+      "opencode",
+      "agy"
+    ],
+    "cliGenerated": [
+      {
+        "provider": "codex",
+        "expect": false
+      },
+      {
+        "provider": "claude",
+        "expect": false
+      },
+      {
+        "provider": "gemini",
+        "expect": false
+      },
+      {
+        "provider": "agy",
+        "expect": true
+      },
+      {
+        "provider": "opencode",
+        "expect": false
+      },
+      {
+        "provider": "grok",
+        "expect": false
+      },
+      {
+        "provider": "zcode",
+        "expect": false
+      },
+      {
+        "provider": "qoder",
+        "expect": false
+      },
+      {
+        "provider": "qodercn",
+        "expect": false
+      },
+      {
+        "provider": "cline",
+        "expect": true
+      },
+      {
+        "provider": "codebuddy",
+        "expect": false
+      },
+      {
+        "provider": "codebuddycn",
+        "expect": false
+      },
+      {
+        "provider": "workbuddy",
+        "expect": false
+      },
+      {
+        "provider": "workbuddycn",
+        "expect": false
+      },
+      {
+        "provider": "kimi",
+        "expect": false
+      }
+    ]
+  },
+  "failure": [
+    {
+      "name": "plain error",
+      "provider": "codex",
+      "errorLike": {
+        "message": "tool crashed"
+      },
+      "expect": {
+        "code": "native_session_failed",
+        "message": "tool crashed",
+        "retryAnotherAccount": false
+      }
+    },
+    {
+      "name": "rate limited in details",
+      "provider": "codex",
+      "errorLike": {
+        "code": "native_session_failed",
+        "message": "native_session_failed",
+        "details": {
+          "provider": "codex",
+          "detail": "429 Too Many Requests"
+        }
+      },
+      "expect": {
+        "code": "upstream_rate_limited",
+        "message": "当前账号已触发上游限流或额度上限",
+        "retryAnotherAccount": true
+      }
+    },
+    {
+      "name": "rate limited message",
+      "provider": "claude",
+      "errorLike": {
+        "message": "upstream said rate_limit exceeded"
+      },
+      "expect": {
+        "code": "upstream_rate_limited",
+        "message": "当前账号已触发上游限流或额度上限",
+        "retryAnotherAccount": true
+      }
+    },
+    {
+      "name": "gemini permission",
+      "provider": "gemini",
+      "errorLike": {
+        "message": "rpc error: PERMISSION_DENIED"
+      },
+      "expect": {
+        "code": "gemini_permission_denied",
+        "message": "当前 Gemini 账号无权限（PERMISSION_DENIED）",
+        "retryAnotherAccount": true
+      }
+    },
+    {
+      "name": "cline credits",
+      "provider": "cline",
+      "errorLike": {
+        "message": "Insufficient balance. Your Cline Credits balance is $0.00"
+      },
+      "expect": {
+        "code": "cline_insufficient_credits",
+        "message": "当前 Cline 账号额度不足（Cline Credits 余额为 0），请换账号或充值",
+        "retryAnotherAccount": true
+      }
+    },
+    {
+      "name": "agy eligibility",
+      "provider": "agy",
+      "errorLike": {
+        "message": "Eligibility check failed: not available in your location"
+      },
+      "expect": {
+        "code": "agy_region_not_eligible",
+        "message": "该 agy 账号在当前地区不可用（Antigravity 地区资格限制），请换账号或调整出口",
+        "retryAnotherAccount": true
+      }
+    },
+    {
+      "name": "quota exceeded",
+      "provider": "qoder",
+      "errorLike": {
+        "message": "exceeded your current quota"
+      },
+      "expect": {
+        "code": "upstream_rate_limited",
+        "message": "当前账号已触发上游限流或额度上限",
+        "retryAnotherAccount": true
+      }
+    },
+    {
+      "name": "custom code",
+      "provider": "codex",
+      "errorLike": {
+        "code": "boom",
+        "message": "   "
+      },
+      "expect": {
+        "code": "boom",
+        "message": "native_session_failed",
+        "retryAnotherAccount": false
+      }
+    },
+    {
+      "name": "empty with exit code",
+      "provider": "codex",
+      "errorLike": {},
+      "options": {
+        "exitCode": 7
+      },
+      "expect": {
+        "code": "native_session_failed",
+        "message": "native_session_failed_exit_7",
+        "retryAnotherAccount": false
+      }
+    },
+    {
+      "name": "empty no exit code",
+      "provider": "codex",
+      "errorLike": {},
+      "options": {},
+      "expect": {
+        "code": "native_session_failed",
+        "message": "native_session_failed",
+        "retryAnotherAccount": false
+      }
+    },
+    {
+      "name": "string-ish message",
+      "provider": "claude",
+      "errorLike": {
+        "message": "plain failure"
+      },
+      "expect": {
+        "code": "native_session_failed",
+        "message": "plain failure",
+        "retryAnotherAccount": false
+      }
+    }
+  ],
+  "blocker": [
+    {
+      "output": "Eligibility check failed: Your current account is not eligible for Antigravity",
+      "expect": null
+    },
+    {
+      "output": "Request failed: 401 Unauthorized - invalid api key",
+      "expect": {
+        "provider": "claude",
+        "status": "auth_invalid",
+        "reason": "upstream_401",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 1755000030000,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "upstream_401",
+          "lastFailureKind": "auth_invalid",
+          "lastFailureReason": "upstream_401",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 1755000030000,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0
+        },
+        "message": "Request failed: 401 Unauthorized - invalid api key"
+      }
+    },
+    {
+      "output": "Error: Incorrect API key provided",
+      "expect": {
+        "provider": "claude",
+        "status": "auth_invalid",
+        "reason": "upstream_401",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 1755000030000,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "upstream_401",
+          "lastFailureKind": "auth_invalid",
+          "lastFailureReason": "upstream_401",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 1755000030000,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0
+        },
+        "message": "Error: Incorrect API key provided"
+      }
+    },
+    {
+      "output": "oauth token_expired",
+      "expect": {
+        "provider": "claude",
+        "status": "auth_invalid",
+        "reason": "auth_invalid_reauth_required",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 1755000030000,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "auth_invalid_reauth_required",
+          "lastFailureKind": "auth_invalid",
+          "lastFailureReason": "auth_invalid_reauth_required",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 1755000030000,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0
+        },
+        "message": "oauth token_expired"
+      }
+    },
+    {
+      "output": "refresh token invalid_grant",
+      "expect": {
+        "provider": "claude",
+        "status": "auth_invalid",
+        "reason": "auth_invalid_reauth_required",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 1755000030000,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "auth_invalid_reauth_required",
+          "lastFailureKind": "auth_invalid",
+          "lastFailureReason": "auth_invalid_reauth_required",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 1755000030000,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0
+        },
+        "message": "refresh token invalid_grant"
+      }
+    },
+    {
+      "output": "Not logged in - Please run /login",
+      "expect": {
+        "provider": "claude",
+        "status": "auth_invalid",
+        "reason": "claude_not_logged_in",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 1755000030000,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "claude_not_logged_in",
+          "lastFailureKind": "auth_invalid",
+          "lastFailureReason": "claude_not_logged_in",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 1755000030000,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0
+        },
+        "message": "Not logged in - Please run /login"
+      }
+    },
+    {
+      "output": "not signed in. Signing in...",
+      "expect": null
+    },
+    {
+      "output": "Please select login method:\n  > Google OAuth\n  > GitHub",
+      "expect": null
+    },
+    {
+      "output": "processed 14012 tokens",
+      "expect": null
+    },
+    {
+      "output": "\u001b[31m401\u001b[0m Unauthorized: token has expired   ",
+      "expect": {
+        "provider": "claude",
+        "status": "auth_invalid",
+        "reason": "upstream_401",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 1755000030000,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "upstream_401",
+          "lastFailureKind": "auth_invalid",
+          "lastFailureReason": "upstream_401",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 1755000030000,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0
+        },
+        "message": "401 Unauthorized: token has expired"
+      }
+    },
+    {
+      "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expect": null
+    },
+    {
+      "output": "Eligibility check failed: nope",
+      "provider": "agy",
+      "expect": {
+        "provider": "agy",
+        "status": "permission_denied",
+        "reason": "agy_region_not_eligible",
+        "source": "native_session_terminal_output",
+        "runtimeState": {
+          "cooldownUntil": 0,
+          "consecutiveFailures": 1,
+          "successCount": 0,
+          "failCount": 1,
+          "lastError": "agy_region_not_eligible",
+          "lastFailureKind": "permission_denied",
+          "lastFailureReason": "agy_region_not_eligible",
+          "lastFailureAt": 1755000000000,
+          "lastSuccessAt": 0,
+          "rateLimitUntil": 0,
+          "authInvalidUntil": 0,
+          "overloadUntil": 0,
+          "networkUntil": 0,
+          "serviceUnavailableUntil": 0,
+          "upstreamErrorUntil": 0,
+          "routingBlock": {
+            "kind": "permission_denied",
+            "reason": "agy_region_not_eligible",
+            "observedAt": 1755000000000,
+            "until": 1755000030000
+          }
+        },
+        "message": "Eligibility check failed: nope"
+      }
+    }
+  ],
+  "environment": {
+    "strips": [
+      {
+        "name": "strip account scoped",
+        "base": {
+          "HOME": "/host/home",
+          "USERPROFILE": "/host/home",
+          "PATH": "/usr/bin",
+          "OPENAI_API_KEY": "host-key",
+          "openai_base_url": "http://host",
+          "ANTHROPIC_AUTH_TOKEN": "host-token",
+          "CLAUDE_CONFIG_DIR": "/host/.claude",
+          "CODEBUDDY_CONFIG_DIR": "/host/.codebuddy",
+          "KEEP_ME": "yes"
+        },
+        "expect": {
+          "HOME": "/host/home",
+          "USERPROFILE": "/host/home",
+          "PATH": "/usr/bin",
+          "CLAUDE_CONFIG_DIR": "/host/.claude",
+          "KEEP_ME": "yes"
+        }
+      }
+    ],
+    "scoped": [
+      {
+        "name": "build account scoped",
+        "base": {
+          "HOME": "/host/home",
+          "USERPROFILE": "/host/home",
+          "PATH": "/usr/bin",
+          "OPENAI_API_KEY": "host-key",
+          "openai_base_url": "http://host",
+          "ANTHROPIC_AUTH_TOKEN": "host-token",
+          "CLAUDE_CONFIG_DIR": "/host/.claude",
+          "CODEBUDDY_CONFIG_DIR": "/host/.codebuddy",
+          "KEEP_ME": "yes"
+        },
+        "account": {
+          "OPENAI_API_KEY": "acct-key",
+          "AIH_MODEL_ALIAS": "m"
+        },
+        "expect": {
+          "HOME": "/host/home",
+          "USERPROFILE": "/host/home",
+          "PATH": "/usr/bin",
+          "CLAUDE_CONFIG_DIR": "/host/.claude",
+          "KEEP_ME": "yes",
+          "OPENAI_API_KEY": "acct-key",
+          "AIH_MODEL_ALIAS": "m"
+        }
+      }
+    ],
+    "projection": [
+      {
+        "provider": "codex",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "codex",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "codex",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codex",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codex",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENAI_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "codex",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENAI_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "codex",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENAI_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codex",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENAI_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "claude",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "claude",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "claude",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "claude",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "claude",
+        "variant": "api key",
+        "accountEnv": {
+          "ANTHROPIC_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "claude",
+        "variant": "api key",
+        "accountEnv": {
+          "ANTHROPIC_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "claude",
+        "variant": "api key",
+        "accountEnv": {
+          "ANTHROPIC_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "claude",
+        "variant": "api key",
+        "accountEnv": {
+          "ANTHROPIC_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "gemini",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "gemini",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "gemini",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "gemini",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "gemini",
+        "variant": "api key",
+        "accountEnv": {
+          "GEMINI_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "gemini",
+        "variant": "api key",
+        "accountEnv": {
+          "GEMINI_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "gemini",
+        "variant": "api key",
+        "accountEnv": {
+          "GEMINI_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "gemini",
+        "variant": "api key",
+        "accountEnv": {
+          "GEMINI_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "agy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "agy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "agy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "agy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "opencode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "opencode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "opencode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "opencode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "opencode",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENCODE_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "opencode",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENCODE_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "opencode",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENCODE_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "opencode",
+        "variant": "api key",
+        "accountEnv": {
+          "OPENCODE_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "grok",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "grok",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "grok",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "grok",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "grok",
+        "variant": "api key",
+        "accountEnv": {
+          "XAI_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "grok",
+        "variant": "api key",
+        "accountEnv": {
+          "XAI_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "grok",
+        "variant": "api key",
+        "accountEnv": {
+          "XAI_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "grok",
+        "variant": "api key",
+        "accountEnv": {
+          "XAI_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "zcode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "zcode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "zcode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "zcode",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "zcode",
+        "variant": "api key",
+        "accountEnv": {
+          "ZCODE_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "zcode",
+        "variant": "api key",
+        "accountEnv": {
+          "ZCODE_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "zcode",
+        "variant": "api key",
+        "accountEnv": {
+          "ZCODE_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "zcode",
+        "variant": "api key",
+        "accountEnv": {
+          "ZCODE_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qoder",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "qoder",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "qoder",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qoder",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qoder",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "qoder",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "qoder",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qoder",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qodercn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "qodercn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "qodercn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qodercn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qodercn",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "qodercn",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "qodercn",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "qodercn",
+        "variant": "api key",
+        "accountEnv": {
+          "QODER_PERSONAL_ACCESS_TOKEN": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "cline",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "cline",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "cline",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "cline",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "cline",
+        "variant": "api key",
+        "accountEnv": {
+          "CLINE_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "cline",
+        "variant": "api key",
+        "accountEnv": {
+          "CLINE_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "cline",
+        "variant": "api key",
+        "accountEnv": {
+          "CLINE_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "cline",
+        "variant": "api key",
+        "accountEnv": {
+          "CLINE_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "codebuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddy",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "workbuddycn",
+        "variant": "api key",
+        "accountEnv": {
+          "CODEBUDDY_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "kimi",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {},
+        "expect": true
+      },
+      {
+        "provider": "kimi",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "kimi",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "kimi",
+        "variant": "empty",
+        "accountEnv": {},
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "kimi",
+        "variant": "api key",
+        "accountEnv": {
+          "MOONSHOT_API_KEY": "key"
+        },
+        "flags": {},
+        "expect": false
+      },
+      {
+        "provider": "kimi",
+        "variant": "api key",
+        "accountEnv": {
+          "MOONSHOT_API_KEY": "key"
+        },
+        "flags": {
+          "isLogin": true
+        },
+        "expect": true
+      },
+      {
+        "provider": "kimi",
+        "variant": "api key",
+        "accountEnv": {
+          "MOONSHOT_API_KEY": "key"
+        },
+        "flags": {
+          "gateway": true
+        },
+        "expect": false
+      },
+      {
+        "provider": "kimi",
+        "variant": "api key",
+        "accountEnv": {
+          "MOONSHOT_API_KEY": "key"
+        },
+        "flags": {
+          "authRelayed": true
+        },
+        "expect": false
+      }
+    ],
+    "scopes": [
+      {
+        "provider": "claude",
+        "projectionDir": "/proj/claude/ref",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/claude/ref"
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "/proj/claude/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/claude/ref"
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "/proj/claude/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "claude",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "/proj/opencode/ref",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/opencode/ref"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "/proj/opencode/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/opencode/ref"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "/proj/opencode/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "opencode",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "/proj/workbuddy/ref",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/workbuddy/ref/cli-home"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "/proj/workbuddy/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/workbuddy/ref"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "/proj/workbuddy/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "workbuddy",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "/proj/workbuddycn/ref",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/workbuddycn/ref/cli-home"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "/proj/workbuddycn/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/workbuddycn/ref"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "/proj/workbuddycn/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "workbuddycn",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "/proj/gemini/ref",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/gemini/ref"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "/proj/gemini/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/gemini/ref"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "/proj/gemini/ref",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/proj/cli-home"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "/proj/cli-home",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {},
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": true,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true,
+          "relayKeepsAccountSandbox": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": ""
+        }
+      },
+      {
+        "provider": "gemini",
+        "projectionDir": "",
+        "accountEnv": {},
+        "flags": {
+          "gateway": true
+        },
+        "expect": {
+          "hostHomeDir": "/host/home",
+          "projectionRequired": false,
+          "runtimeDir": "/host/home"
+        }
+      }
+    ],
+    "gemini": [
+      {
+        "accountEnv": {},
+        "expect": {}
+      },
+      {
+        "accountEnv": {
+          "GEMINI_BASE_URL": "http://gw"
+        },
+        "expect": {
+          "GOOGLE_GEMINI_BASE_URL": "http://gw"
+        }
+      },
+      {
+        "accountEnv": {
+          "VERTEX_AI_PROJECT_ID": "p",
+          "VERTEX_AI_LOCATION": "us",
+          "GEMINI_BASE_URL": "http://gw"
+        },
+        "expect": {
+          "GOOGLE_GENAI_USE_VERTEXAI": "true",
+          "GOOGLE_VERTEX_BASE_URL": "http://gw",
+          "GOOGLE_CLOUD_PROJECT": "p",
+          "GOOGLE_CLOUD_LOCATION": "us"
+        }
+      },
+      {
+        "accountEnv": {
+          "VERTEX_AI_PROJECT_ID": "p",
+          "VERTEX_AI_PLACEHOLDER": "true",
+          "GEMINI_BASE_URL": "http://gw"
+        },
+        "expect": {
+          "GOOGLE_GENAI_USE_VERTEXAI": "true",
+          "GOOGLE_VERTEX_BASE_URL": "http://gw",
+          "GOOGLE_GEMINI_BASE_URL": "http://gw"
+        }
+      },
+      {
+        "accountEnv": {
+          "GOOGLE_GENAI_USE_VERTEXAI": "TRUE"
+        },
+        "expect": {
+          "GOOGLE_GENAI_USE_VERTEXAI": "true"
+        }
+      }
+    ],
+    "extra": [
+      {
+        "provider": "gemini",
+        "accountEnv": {
+          "GEMINI_BASE_URL": "http://gw"
+        },
+        "expect": {
+          "GEMINI_CLI_TRUST_WORKSPACE": "true",
+          "GOOGLE_GEMINI_BASE_URL": "http://gw"
+        }
+      },
+      {
+        "provider": "claude",
+        "accountEnv": {
+          "GEMINI_BASE_URL": "http://gw"
+        },
+        "expect": {}
+      }
+    ],
+    "hostHome": [
+      {
+        "injected": "/injected",
+        "env": {},
+        "platform": "darwin",
+        "expect": "/injected"
+      },
+      {
+        "injected": "",
+        "env": {
+          "AIH_HOST_HOME": "/aih-home"
+        },
+        "platform": "darwin",
+        "expect": "/aih-home"
+      },
+      {
+        "injected": "",
+        "env": {
+          "HOME": "/env-home"
+        },
+        "platform": "darwin",
+        "expect": "/env-home"
+      },
+      {
+        "injected": "/x/.codex",
+        "env": {},
+        "platform": "darwin",
+        "expect": "/x"
+      }
+    ],
+    "authModes": [
+      {
+        "value": "api_key",
+        "expect": {
+          "configured": true,
+          "authMode": "api_key",
+          "apiKeyMode": true
+        }
+      },
+      {
+        "value": "auth-token",
+        "expect": {
+          "configured": true,
+          "authMode": "auth-token",
+          "apiKeyMode": true
+        }
+      },
+      {
+        "value": "oauth-browser",
+        "expect": {
+          "configured": true,
+          "authMode": "oauth-browser",
+          "apiKeyMode": false
+        }
+      },
+      {
+        "value": "",
+        "expect": {
+          "configured": true
+        }
+      },
+      {
+        "value": "weird",
+        "expect": {
+          "configured": true,
+          "authMode": "weird",
+          "apiKeyMode": false
+        }
+      }
+    ]
+  }
+}

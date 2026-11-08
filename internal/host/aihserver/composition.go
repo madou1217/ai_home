@@ -1485,7 +1485,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
-	plugins := newPluginHandlers(authorizer, clientAuthorizer, accountProviderResolver(store))
+	plugins := newPluginHandlers(authorizer, clientAuthorizer, accountProviderResolver(store), aiHomeDir)
 	return serverHandlers{
 		plugins:               plugins,
 		accounts:              accountsHandler,

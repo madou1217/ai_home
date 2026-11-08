@@ -29,6 +29,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 )
 
@@ -102,6 +103,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.AccountRuntimeBlockCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.AccountRuntimeStateCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
+	if handlers.webuiAccounts != nil {
+		mux.Handle(webuiaccountsapi.Path, handlers.webuiAccounts)
+	}
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {
 		mux.Handle(accountoutcomesapi.Path, handlers.accountOutcomes)

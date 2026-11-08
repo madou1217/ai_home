@@ -88,6 +88,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 
 const (
@@ -131,6 +132,8 @@ type serverHandlers struct {
 	webUI http.Handler
 	// frontDoor 是公开端口的兜底反代；nil 表示不接管公开端口。
 	frontDoor http.Handler
+	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
+	webuiAccounts http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats http.Handler
 	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
@@ -318,6 +321,30 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	handlers.frontDoor = frontDoor
+	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
+	if err != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("创建账号页读模型鉴权失败: %w", err)
+	}
+	webuiAccountsSource, err := webuiaccountsapi.OpenSQLiteSource(webuiaccountsapi.SQLiteOptions{AIHomeDir: options.AIHomeDir})
+	if err != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("打开账号页读模型数据源失败: %w", err)
+	}
+	webuiAccountsHandler, err := webuiaccountsapi.NewHandler(webuiaccountsapi.Dependencies{
+		Authorizer: webuiAccountsAuthorizer,
+		Source:     webuiAccountsSource,
+	})
+	if err != nil {
+		_ = webuiAccountsSource.Close()
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("创建账号页读模型接口失败: %w", err)
+	}
+	resources = append(resources, webuiAccountsSource)
+	handlers.webuiAccounts = webuiAccountsHandler
 	resources = append(resources, codexVersions, outcomeRecorder, store)
 	return newServer(
 		withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers))),

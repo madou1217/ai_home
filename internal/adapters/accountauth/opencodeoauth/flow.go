@@ -13,35 +13,25 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthutil"
 )
 
-// PollStatus 是一次设备码轮询的归一状态。
-//
-// 词汇与 Node 的会话轮询驱动一致：pending / slow_down / ready / failed / expired；
-// 调用方只按状态推进（pending 继续、slow_down 拉长间隔、ready 落账号）。
-type PollStatus string
+// PollStatus 直接复用应用层的设备码词汇：Job 编排只认 accountauth.DevicePoll，
+// 适配器内保留短名便于表达轮询分支。
+type PollStatus = accountauth.DeviceStatus
 
 const (
 	// PollPending 表示用户还没完成授权。
-	PollPending PollStatus = "pending"
+	PollPending = accountauth.DevicePending
 	// PollSlowDown 表示轮询过快，应按 Interval 退避。
-	PollSlowDown PollStatus = "slow_down"
+	PollSlowDown = accountauth.DeviceSlowDown
 	// PollReady 表示授权完成，Artifacts 可交给账号注册链。
-	PollReady PollStatus = "ready"
+	PollReady = accountauth.DeviceReady
 	// PollFailed 表示上游明确拒绝（access_denied 等）。
-	PollFailed PollStatus = "failed"
+	PollFailed = accountauth.DeviceFailed
 	// PollExpired 表示设备码已过期，需要重新发起。
-	PollExpired PollStatus = "expired"
+	PollExpired = accountauth.DeviceExpired
 )
 
-// PollResult 是一次轮询的结果。
-type PollResult struct {
-	Status PollStatus
-	// Artifacts 只在 ready 时非空：native_auth_json envelope。
-	Artifacts []byte
-	// Account 是 ready 时可直接展示的账号字段。
-	Account accountauth.Account
-	// Interval 是下一次轮询的建议间隔；slow_down 后会变大。
-	Interval time.Duration
-}
+// PollResult 是一次轮询的结果（与应用层 DevicePoll 同构）。
+type PollResult = accountauth.DevicePoll
 
 // ErrAuthorizationPending 表示设备授权尚未完成（Exchange 单次轮询的返回值）。
 var ErrAuthorizationPending = errors.New("OpenCode 设备授权尚未完成")
@@ -61,11 +51,21 @@ type flow struct {
 	interval      time.Duration
 	// terminal 缓存终态：轮询是幂等的，重复 Poll 不再打上游。
 	terminal *PollResult
+	// claims 是 ready 时从 Console 身份派生的公开账号字段。
+	claims accountauth.Account
 }
 
 // AuthorizationURL 返回浏览器验证地址（verification_uri_complete）。
 func (flow *flow) AuthorizationURL() string {
 	return flow.authorization
+}
+
+// AccountClaims 返回 ready 之后可直接展示的公开账号字段。
+func (flow *flow) AccountClaims() accountauth.Account {
+	if flow == nil {
+		return accountauth.Account{}
+	}
+	return flow.claims
 }
 
 // UserCode 返回需要用户核对/输入的设备码。
@@ -218,10 +218,11 @@ func (flow *flow) materialize(
 	if err != nil {
 		return PollResult{}, err
 	}
+	flow.claims = accountauth.Account{Email: user.Email, DisplayName: user.Email}
 	return flow.finish(PollResult{
 		Status:    PollReady,
 		Artifacts: artifacts,
-		Account:   accountauth.Account{Email: user.Email, DisplayName: user.Email},
+		Account:   flow.claims,
 	}), nil
 }
 

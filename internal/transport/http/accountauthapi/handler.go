@@ -176,6 +176,7 @@ func (handler *Handler) handleCollection(
 		Data: startJobView{
 			jobView:          newJobView(result.Job()),
 			AuthorizationURL: result.AuthorizationURL(),
+			UserCode:         result.UserCode(),
 		},
 	})
 }

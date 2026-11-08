@@ -32,6 +32,8 @@ type jobRecord struct {
 	// 同一 Job 的并发 Complete 靠它等待唯一执行者的终态结果，
 	// 而不是把「已在处理」误报成 job_not_pending。
 	done chan struct{}
+	// stop 只在设备码轮询 Job 上创建；进入终态时关闭，后台轮询随之退出。
+	stop chan struct{}
 }
 
 // Service 是并发安全、有界的 OAuth Job 编排器。
@@ -157,16 +159,18 @@ func (service *Service) Start(
 	now := service.now()
 
 	service.mu.Lock()
-	defer service.mu.Unlock()
 	service.expireAndPruneLocked(now)
 	if _, active := service.activeJobs[request.ProviderID]; active {
+		service.mu.Unlock()
 		return StartResult{}, ErrActiveJobExists
 	}
 	service.evictTerminalJobsLocked()
 	if len(service.jobs) >= service.settings.maxJobs {
+		service.mu.Unlock()
 		return StartResult{}, ErrJobCapacity
 	}
 	if _, duplicated := service.jobs[jobID]; duplicated {
+		service.mu.Unlock()
 		return StartResult{}, ErrInvalidDependencies
 	}
 	job := Job{
@@ -178,12 +182,28 @@ func (service *Service) Start(
 		createdAt:  now,
 		expiresAt:  now.Add(service.settings.jobTTL),
 	}
-	service.jobs[jobID] = &jobRecord{job: job, flow: flow}
+	record := &jobRecord{job: job, flow: flow}
+	// 设备码没有回调：只有后台轮询能推进 Job，stop 负责在终态时让它退出。
+	deviceFlow, isDevice := flow.(DeviceFlow)
+	if isDevice {
+		record.stop = make(chan struct{})
+	}
+	service.jobs[jobID] = record
 	service.activeJobs[request.ProviderID] = jobID
 	service.persistJobLocked(job, now)
+	stop := record.stop
+	service.mu.Unlock()
+	if isDevice {
+		go service.pollDeviceJob(jobID, deviceFlow, stop)
+	}
+	userCode := ""
+	if codeProvider, ok := flow.(DeviceCodeProvider); ok {
+		userCode = strings.TrimSpace(codeProvider.UserCode())
+	}
 	return StartResult{
 		job:              job,
 		authorizationURL: flow.AuthorizationURL(),
+		userCode:         userCode,
 	}, nil
 }
 
@@ -339,6 +359,18 @@ func (service *Service) Complete(
 	if err != nil {
 		return service.failJob(jobID, failureCode(err)), err
 	}
+	return service.finishClaim(ctx, claimed, artifacts)
+}
+
+// finishClaim 把官方 artifact 写入账号，并把 processing Job 收敛为终态。
+//
+// 回调型流程（Exchange）与设备码轮询（Poll ready）拿到 artifact 之后的
+// 路径完全一致：解码 → 注册或原地 reauth → 终态快照落库。
+func (service *Service) finishClaim(
+	ctx context.Context,
+	claimed claimedJob,
+	artifacts []byte,
+) (Job, error) {
 	defer clearBytes(artifacts)
 	// ID Token 的公开字段先取一份：账号解码器可能只返回资料子集，
 	// 这里保留上游原始 claim 作为缺失字段的回落来源。
@@ -348,7 +380,7 @@ func (service *Service) Complete(
 		artifacts,
 	)
 	if err != nil {
-		failed := service.failJob(jobID, "invalid_artifacts")
+		failed := service.failJob(claimed.jobID, "invalid_artifacts")
 		return failed, errors.Join(ErrInvalidArtifacts, err)
 	}
 	account, err := service.persistAccount(
@@ -358,13 +390,13 @@ func (service *Service) Complete(
 		profile,
 	)
 	if err != nil {
-		return service.failJob(jobID, accountWriteFailureCode(err)), err
+		return service.failJob(claimed.jobID, accountWriteFailureCode(err)), err
 	}
 
 	now := service.now()
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	record, found := service.jobs[jobID]
+	record, found := service.jobs[claimed.jobID]
 	if !found || record.job.status != StatusProcessing {
 		return Job{}, ErrJobNotFound
 	}
@@ -375,6 +407,7 @@ func (service *Service) Complete(
 	record.job.account = mergePublicAccount(claims, profile)
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, claimed.providerID)
+	stopPollingLocked(record)
 	finishProcessingLocked(record)
 	service.persistJobLocked(record.job, now)
 	return record.job, nil
@@ -461,6 +494,7 @@ func (service *Service) Cancel(jobID string) (Job, error) {
 	record.flow = nil
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, record.job.providerID)
+	stopPollingLocked(record)
 	service.persistJobLocked(record.job, now)
 	return record.job, nil
 }
@@ -529,6 +563,7 @@ func (service *Service) claimCompletion(
 			return completionClaim{}, ErrJobNotPending
 		}
 		claimed := claimedJob{
+			jobID:      record.job.id,
 			flow:       record.flow,
 			providerID: record.job.providerID,
 			purpose:    record.job.purpose,
@@ -581,9 +616,146 @@ func (service *Service) failJob(jobID string, code string) Job {
 	record.job.failureCode = code
 	record.retainedUntil = now.Add(service.settings.terminalRetention)
 	delete(service.activeJobs, record.job.providerID)
+	stopPollingLocked(record)
 	finishProcessingLocked(record)
 	service.persistJobLocked(record.job, now)
 	return record.job
+}
+
+// stopPollingLocked 停止设备码后台轮询；只对正在轮询的 Job 生效。
+//
+// 调用方必须持有 service.mu：close 与置 nil 必须原子，否则重复终态迁移
+// 会 close 同一通道而 panic。
+func stopPollingLocked(record *jobRecord) {
+	if record == nil || record.stop == nil {
+		return
+	}
+	close(record.stop)
+	record.stop = nil
+}
+
+// expireJobLocked 把等待中的 Job 收敛为过期终态。
+func (service *Service) expireJobLocked(record *jobRecord, now time.Time) {
+	record.job.status = StatusExpired
+	record.job.finishedAt = now
+	record.job.failureCode = "expired"
+	record.flow = nil
+	record.retainedUntil = now.Add(service.settings.terminalRetention)
+	delete(service.activeJobs, record.job.providerID)
+	stopPollingLocked(record)
+	service.persistJobLocked(record.job, now)
+}
+
+// expireJob 在设备码轮询发现设备码过期时收敛 Job。
+func (service *Service) expireJob(jobID string) {
+	now := service.now()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	record, found := service.jobs[jobID]
+	if !found || record.job.status != StatusPending {
+		return
+	}
+	service.expireJobLocked(record, now)
+}
+
+// deviceJobPending 判断设备码 Job 是否仍在等待授权；到期时就地收敛为 expired。
+func (service *Service) deviceJobPending(jobID string) bool {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	record, found := service.jobs[jobID]
+	if !found || record.job.status != StatusPending {
+		return false
+	}
+	now := service.now()
+	if !now.Before(record.job.expiresAt) {
+		service.expireJobLocked(record, now)
+		return false
+	}
+	return true
+}
+
+// completeDeviceJob 把 Poll ready 的 artifact 交给统一账号写入链。
+//
+// 用户在轮询返回 ready 的同时取消 Job 是合法竞态：claimCompletion 拿不到
+// pending 就放弃，artifact 当场清零，不产生半个账号。
+func (service *Service) completeDeviceJob(
+	ctx context.Context,
+	jobID string,
+	artifacts []byte,
+) {
+	claim, err := service.claimCompletion(ctx, jobID)
+	if err != nil || !claim.claimed {
+		clearBytes(artifacts)
+		return
+	}
+	if len(artifacts) == 0 {
+		service.failJob(jobID, "invalid_artifacts")
+		return
+	}
+	if _, err := service.finishClaim(ctx, claim.job, artifacts); err != nil {
+		log.Printf("accountauth: 设备码登录写入账号失败 job=%s: %v", jobID, err)
+	}
+}
+
+// pollDeviceJob 在后台推进设备码授权，直到完成、失败、过期或被取消。
+//
+// 网络错误不终止 Job：设备码的有效期本身就是上限，短暂断网后继续轮询即可；
+// 只有上游明确拒绝才立刻收敛为 failed，避免界面无限等待。
+func (service *Service) pollDeviceJob(
+	jobID string,
+	flow DeviceFlow,
+	stop <-chan struct{},
+) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	interval := flow.PollInterval()
+	if interval <= 0 {
+		interval = time.Second
+	}
+	for {
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if !service.deviceJobPending(jobID) {
+			return
+		}
+		result, err := flow.Poll(ctx)
+		if err != nil {
+			if errors.Is(err, ErrProviderRejected) {
+				service.failJob(jobID, failureCode(err))
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			continue
+		}
+		if result.Interval > 0 {
+			interval = result.Interval
+		}
+		switch result.Status {
+		case DeviceReady:
+			service.completeDeviceJob(ctx, jobID, result.Artifacts)
+			return
+		case DeviceFailed:
+			service.failJob(jobID, "provider_rejected")
+			return
+		case DeviceExpired:
+			service.expireJob(jobID)
+			return
+		}
+	}
 }
 
 // persistJobLocked 把当前公开快照写入持久化存储。
@@ -606,13 +778,7 @@ func (service *Service) expireAndPruneLocked(now time.Time) {
 	for jobID, record := range service.jobs {
 		if record.job.status == StatusPending &&
 			!now.Before(record.job.expiresAt) {
-			record.job.status = StatusExpired
-			record.job.finishedAt = now
-			record.job.failureCode = "expired"
-			record.flow = nil
-			record.retainedUntil = now.Add(service.settings.terminalRetention)
-			delete(service.activeJobs, record.job.providerID)
-			service.persistJobLocked(record.job, now)
+			service.expireJobLocked(record, now)
 		}
 		if record.job.IsTerminal() &&
 			!record.retainedUntil.IsZero() &&
@@ -732,6 +898,7 @@ func accountWriteFailureCode(err error) string {
 
 // claimedJob 是 processing 阶段唯一消费者持有的不可变执行上下文。
 type claimedJob struct {
+	jobID      string
 	flow       OAuthFlow
 	providerID string
 	purpose    Purpose

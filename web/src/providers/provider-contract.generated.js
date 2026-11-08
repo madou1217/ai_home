@@ -197,10 +197,10 @@ export const PROVIDER_DEFINITIONS = [
     ],
     "authOptions": [
       {
-        "value": "oauth-browser",
+        "value": "oauth-device",
         "strategy": "opencode:device",
         "label": "OpenCode Console 登录（设备码）",
-        "description": "官方 CLI 设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"
+        "description": "官方设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"
       },
       {
         "value": "api-key",

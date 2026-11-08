@@ -124,11 +124,17 @@ func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, err
 	if err := decodePayload(response, &payload); err != nil {
 		return nil, err
 	}
+	// Console 当前返回的是相对地址（/console/device?user_code=…），必须先补成
+	// 浏览器能直接打开的绝对地址，否则界面上是一段点不开的路径。
+	authorization, err := resolveVerificationURL(provider.server, payload.VerificationURIComplete)
+	if err != nil {
+		return nil, accountauth.ErrProviderRejected
+	}
 	// 设备码、用户码、验证地址三者缺一即无法完成登录；短周期直接拒绝，
 	// 不要让界面显示一个永远轮询不动的任务。
 	if !validSecret(payload.DeviceCode) ||
 		!validSecret(payload.UserCode) ||
-		!validVerificationURL(payload.VerificationURIComplete) ||
+		!validVerificationURL(authorization) ||
 		payload.ExpiresIn <= 0 {
 		return nil, accountauth.ErrProviderRejected
 	}
@@ -138,7 +144,7 @@ func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, err
 		server:        provider.server,
 		deviceCode:    payload.DeviceCode,
 		userCode:      payload.UserCode,
-		authorization: payload.VerificationURIComplete,
+		authorization: authorization,
 		expiresAt:     now.Add(time.Duration(payload.ExpiresIn) * time.Second),
 		interval:      normalizeInterval(payload.Interval),
 	}, nil
@@ -232,6 +238,31 @@ func validServer(raw string) bool {
 		parsed.User == nil &&
 		parsed.RawQuery == "" &&
 		parsed.Fragment == ""
+}
+
+// resolveVerificationURL 把上游返回的验证地址补成绝对地址。
+//
+// 2026-11-08 实测 Console 返回的 verification_uri_complete 是
+// "/console/device?user_code=…"：没有 scheme/host，直接展示给用户打不开。
+// 相对地址以 Console 服务器为基准解析；已是绝对地址的原样保留。
+func resolveVerificationURL(server string, raw string) (string, error) {
+	reference, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return "", accountauth.ErrProviderRejected
+	}
+	if reference.IsAbs() {
+		return reference.String(), nil
+	}
+	base, err := url.Parse(server)
+	if err != nil {
+		return "", accountauth.ErrProviderRejected
+	}
+	// 以目录语义解析：/console 作为基准目录必须带尾斜杠，
+	// 才能让 "device?x" 落在 /console/ 下；绝对路径引用不受影响。
+	base.Path = strings.TrimSuffix(base.Path, "/") + "/"
+	base.RawQuery = ""
+	base.Fragment = ""
+	return base.ResolveReference(reference).String(), nil
 }
 
 // validVerificationURL 校验验证地址是浏览器可直接打开的绝对地址。

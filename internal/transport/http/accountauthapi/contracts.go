@@ -32,10 +32,13 @@ type jobView struct {
 	FailureCode      string `json:"failure_code,omitempty"`
 }
 
-// startJobView 只在创建响应中增加一次性授权 URL。
+// startJobView 只在创建响应中增加一次性授权 URL 与设备码。
 type startJobView struct {
 	jobView
 	AuthorizationURL string `json:"authorization_url"`
+	// UserCode 只对设备码流程非空：用户在验证页核对/输入的短码，
+	// 不是凭据，也不参与换码。
+	UserCode string `json:"user_code,omitempty"`
 }
 
 // jobResponse 是查询、回调和取消共享的成功 envelope。

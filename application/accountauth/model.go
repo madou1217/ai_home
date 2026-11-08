@@ -188,6 +188,7 @@ func (job Job) IsTerminal() bool {
 type StartResult struct {
 	job              Job
 	authorizationURL string
+	userCode         string
 }
 
 // Job 返回新建 Job 的公开快照。
@@ -198,6 +199,11 @@ func (result StartResult) Job() Job {
 // AuthorizationURL 返回只在创建响应中交付的官方授权地址。
 func (result StartResult) AuthorizationURL() string {
 	return result.authorizationURL
+}
+
+// UserCode 返回设备码流程需要用户在验证页核对的短码；回调型流程为空。
+func (result StartResult) UserCode() string {
+	return result.userCode
 }
 
 // OAuthProvider 是 Provider OAuth 开始阶段的策略端口。
@@ -217,6 +223,54 @@ type OAuthFlow interface {
 // 回落到账号解码器给出的公开资料。
 type AccountClaimsProvider interface {
 	AccountClaims() Account
+}
+
+// DeviceStatus 是设备码（RFC 8628）轮询的归一状态。
+//
+// 词汇与 Node 的设备流驱动一致：pending 继续、slow_down 拉长间隔、ready 交产物；
+// failed / expired 是终态，不再轮询。
+type DeviceStatus string
+
+const (
+	// DevicePending 表示用户还没有完成授权。
+	DevicePending DeviceStatus = "pending"
+	// DeviceSlowDown 表示轮询过快，应按 Interval 退避。
+	DeviceSlowDown DeviceStatus = "slow_down"
+	// DeviceReady 表示授权完成，Artifacts 可交给账号注册链。
+	DeviceReady DeviceStatus = "ready"
+	// DeviceFailed 表示上游明确拒绝（access_denied 等）。
+	DeviceFailed DeviceStatus = "failed"
+	// DeviceExpired 表示设备码已过期，需要重新发起。
+	DeviceExpired DeviceStatus = "expired"
+)
+
+// DevicePoll 是一次设备码轮询的结果。
+//
+// Account 只在 ready 时非空，供 Job 快照直接展示；账号写入仍以 Artifacts 为准。
+type DevicePoll struct {
+	Status    DeviceStatus
+	Artifacts []byte
+	Account   Account
+	// Interval 非零时覆盖下一次轮询间隔（slow_down 之后会变大）。
+	Interval time.Duration
+}
+
+// DeviceFlow 是设备码流程：没有浏览器回调，只能按上游给出的间隔轮询。
+//
+// Service 在 Start 之后为这类 Flow 启动后台轮询；授权完成后走与回调型流程
+// 完全相同的账号写入与终态路径。Exchange 仍满足 OAuthFlow 端口，只服务于
+// 单次轮询语义，正常调用方应当使用 Poll。
+type DeviceFlow interface {
+	OAuthFlow
+	// PollInterval 返回当前建议的轮询间隔。
+	PollInterval() time.Duration
+	// Poll 执行一次轮询。
+	Poll(ctx context.Context) (DevicePoll, error)
+}
+
+// DeviceCodeProvider 是设备码流程的可选展示端口：把用户码交给界面核对。
+type DeviceCodeProvider interface {
+	UserCode() string
 }
 
 // StartRequest 是创建 OAuth Job 的应用命令。

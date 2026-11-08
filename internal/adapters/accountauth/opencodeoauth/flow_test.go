@@ -352,3 +352,26 @@ func TestSelectOrganization(t *testing.T) {
 		t.Fatalf("空列表必须返回 nil")
 	}
 }
+
+// Console 实测返回的是相对验证地址：Begin 必须补成绝对地址，界面才能直接打开。
+func TestBeginResolvesRelativeVerificationURL(t *testing.T) {
+	fake := newFakeConsole(t)
+	fake.deviceCodePayload = `{"device_code":"d","user_code":"ABCD-1234","verification_uri_complete":"/console/device?user_code=ABCD-1234","expires_in":600,"interval":5}`
+	now := time.Date(2026, time.November, 8, 10, 0, 0, 0, time.UTC)
+	provider, err := newProvider(providerOptions{
+		client: fake.server.Client(),
+		clock:  func() time.Time { return now },
+		server: fake.server.URL,
+	})
+	if err != nil {
+		t.Fatalf("newProvider() error = %v", err)
+	}
+	flowValue, err := provider.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin() error = %v", err)
+	}
+	want := fake.server.URL + "/console/device?user_code=ABCD-1234"
+	if flowValue.AuthorizationURL() != want {
+		t.Fatalf("AuthorizationURL() = %q, want %q", flowValue.AuthorizationURL(), want)
+	}
+}

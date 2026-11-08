@@ -90,6 +90,7 @@ function createFakeGoAuthJobs(options = {}) {
           provider_id: 'codex',
           status: 'pending',
           authorization_url: options.authorizationUrl || GO_AUTH_URL,
+          ...(options.userCode ? { user_code: options.userCode } : {}),
           expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString()
         }
       };
@@ -127,6 +128,31 @@ function createFakeGoAuthJobs(options = {}) {
       const job = state.jobs.get(jobId);
       if (job && job.status === 'pending') job.status = 'cancelled';
       return { ok: true, status: 200, data: { job_id: jobId, status: 'cancelled' } };
+    },
+    // 设备码作业的状态快照：默认一直 pending；给了 deviceCompletion 时
+    // 第一次读取就返回 completed，等价于用户在浏览器里完成了授权。
+    // 宿主里 status 是 getOAuthJob 的语义别名（见 web-account-auth-go-jobs），
+    // 测试直接构造 client 时两个名字都要在。
+    async status(jobId) {
+      return client.getOAuthJob(jobId);
+    },
+    async getOAuthJob(jobId) {
+      state.calls.status = (state.calls.status || 0) + 1;
+      const job = state.jobs.get(jobId);
+      if (options.deviceCompletion && job && job.status === 'pending') {
+        job.status = 'completed';
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            job_id: jobId,
+            status: 'completed',
+            account_ref: options.deviceCompletion.accountRef,
+            cli_account_id: options.deviceCompletion.cliAccountId
+          }
+        };
+      }
+      return { ok: true, status: 200, data: { job_id: jobId, status: job ? job.status : 'pending' } };
     }
   };
   return {
@@ -451,14 +477,16 @@ test('zcode 在 Go 门面缺失时明确失败，不悄悄回退到 CLI', (t) =>
   );
 });
 
-test('zcode 的 Node 策略已删除，注册表不再 require 它', () => {
-  const strategyFile = path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', 'zcode.js');
-  assert.equal(fs.existsSync(strategyFile), false, 'zcode.js 必须已删除');
+test('zcode / opencode 的 Node 策略已删除，注册表不再 require 它们', () => {
   const registry = fs.readFileSync(
     path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', 'index.js'),
     'utf8'
   );
-  assert.equal(registry.includes("require('./zcode')"), false, '注册表不能留下 zcode 依赖');
+  for (const provider of ['zcode', 'opencode']) {
+    const strategyFile = path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', provider + '.js');
+    assert.equal(fs.existsSync(strategyFile), false, provider + '.js 必须已删除');
+    assert.equal(registry.includes("require('./" + provider + "')"), false, provider + ' 不能留在策略注册表');
+  }
 });
 
 test('失败映射：Go 错误码优先，5xx 与无响应可重试，4xx 不可重试', () => {
@@ -480,7 +508,9 @@ test('开关解析：client 始终装配（zcode 需要），codexEnabled 只表
   const goCoreSync = {
     startAccountAuthJob: async () => null,
     completeAccountAuthJob: async () => null,
-    cancelAccountAuthJob: async () => null
+    cancelAccountAuthJob: async () => null,
+    // 设备码作业靠它读终态；宿主门面必须四个方法齐全才算可用。
+    getOAuthJob: async () => null
   };
   const disabled = createGoAuthJobsOption({
     readServerConfig: () => ({ codexBrowserAuthViaGo: false }),
@@ -495,4 +525,44 @@ test('开关解析：client 始终装配（zcode 需要），codexEnabled 只表
   const enabled = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: true }), goCoreSync });
   assert.equal(enabled.codexEnabled, true);
   assert.equal(enabled.reconcile, null, '未装配对账时只能是 null，不能调用不存在的方法');
+});
+
+// opencode 的设备码登录：Node 只申请作业、展示 user_code，然后轮询 Go 快照。
+// 设备码没有回调，complete 一次都不该被调用；授权完成时账号已由 Go 写入，
+// Node 只把 account_ref 映射回本地键并触发一次对账。
+test('opencode add：固定走 Go 设备码作业，轮询快照收尾且不提交回调', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const opencodeAuthUrl = 'https://opencode.ai/console/device?user_code=ABCD-1234';
+  const completedAccountRef = 'acct_' + '7'.padStart(22, '0');
+  const { state, goAuthJobs } = createFakeGoAuthJobs({
+    authorizationUrl: opencodeAuthUrl,
+    userCode: 'ABCD-1234',
+    deviceCompletion: { accountRef: completedAccountRef, cliAccountId: 3 }
+  });
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+  const started = manager.startOauthJob('opencode', 'oauth-device', { authStrategy: 'opencode:device' });
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.userCode ? current : null;
+  });
+  assert.equal(state.calls.start, 1, 'opencode 必须调用 Go');
+  assert.deepEqual(state.lastStartInput, { providerId: 'opencode', targetAccountRef: '' });
+  assert.equal(job.authMode, 'oauth-device', '设备码作业必须如实标记 authMode');
+  assert.equal(job.userCode, 'ABCD-1234');
+  assert.equal(job.verificationUriComplete, opencodeAuthUrl);
+  assert.equal(job._codeVerifier, '', 'PKCE 只在 Go 进程内');
+  assert.equal(job.oauthState, '', 'state 只在 Go 进程内');
+  assert.equal(job._goDeviceFlow, true);
+  assert.equal(job.callbackCaptureStatus, '', '设备码流程不启动回调监听');
+
+  const finished = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.status !== 'running' ? current : null;
+  }, 6000);
+  assert.equal(finished.status, 'succeeded', `job 应成功，实际 ${finished.status}: ${finished.error}`);
+  assert.equal(finished.accountRef, completedAccountRef);
+  assert.equal(finished.cliAccountId, 3);
+  assert.equal(state.calls.complete, 0, '设备码没有回调，不能调用 complete');
+  assert.equal(state.reconciles, 1, '收尾后必须主动对账一次');
 });

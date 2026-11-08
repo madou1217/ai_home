@@ -57,10 +57,20 @@
 | session chat（peer） | `internal/runtime/providercli/sessionchat`：命令/环境/失败分类 + 对拍夹具 | 对拍 7220 行夹具 |
 | 插件清单（peer） | `pluginapi.InventoryPath` 只读清单（控制面读 app-state.db） | 全包测试 |
 
-### 前门切流的最后一个门
+### 前门推理回落（2026-11-08 已实现）
 
-前门「能代理」已验证，但**还不能切线上 9527**：Go 目前对「自己路由不了的模型」（当前只有
-gemini，以及自定义账号）直接返回 503，不会转给 Node；切流后 Node 不再是前门，这类请求会真正失败。
-切流前置：在 Go 的推理入口识别「模型不在 Go 路由目录」并把请求反代回 Node（复用 frontdoor 的
-上游与 X-AIH-Peer 语义），再打开 `--front-door`。
+`internal/host/inferencehttp/fallback.go` 在三个 Canonical 入口与 Gemini 入口前做一次模型探测：
+
+- 只读请求体前缀（128KB）提取 `model`；Gemini 从路径 `/models/{model}:generateContent` 提取；
+  探测后把字节原样回填，处理器仍读到完整请求体。
+- `AtomicCatalog.HasModel` 判断 Go 目录是否覆盖该模型；**只有目录里完全没有**时才把请求交给
+  Node 前门上游，并写 `x-aih-route-owner: node`，避免 Node 再按条目转回 Go 形成回路。
+- 目录里有模型但暂时没有可用账号时保持 Go 的 503，不回落（与 Node 的 no_available_account 同义）。
+
+验证：5 条中间件单测（未知模型/已知模型/无 model/non-JSON/Gemini 路径/32KB 以上请求体回填）；
+真机前门实例（19621 → Node 9527）用 `zzz-unknown-model` 得到与 Node 逐字节相同的
+`no_available_account` 响应，而已知模型 `GLM-5.3-Flash` 仍返回 Go 自己的错误形状。
+
+边界：目录里存在、但只有 Node 能路由的模型（例如账号级 RoutingExclusion）不会回落——这类
+需要一个「账号排除」判断，留给切流时按实际账号集验证。
 

@@ -480,7 +480,7 @@ test('zcode / opencode 的 Node 策略已删除，注册表不再 require 它们
     path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', 'index.js'),
     'utf8'
   );
-  for (const provider of ['zcode', 'opencode']) {
+  for (const provider of ['zcode', 'opencode', 'claude']) {
     const strategyFile = path.join(__dirname, '..', 'lib', 'server', 'oauth-strategies', provider + '.js');
     assert.equal(fs.existsSync(strategyFile), false, provider + '.js 必须已删除');
     assert.equal(registry.includes("require('./" + provider + "')"), false, provider + ' 不能留在策略注册表');
@@ -561,4 +561,22 @@ test('opencode add：固定走 Go 设备码作业，轮询快照收尾且不提�
   assert.equal(finished.cliAccountId, 3);
   assert.equal(state.calls.complete, 0, '设备码没有回调，不能调用 complete');
   assert.equal(state.reconciles, 1, '收尾后必须主动对账一次');
+});
+
+// claude 浏览器登录同样固定走 Go：本地不再生成 PKCE/state，也不做换码。
+test('claude add：固定走 Go，本地不生成 PKCE/state', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const { state, goAuthJobs } = createFakeGoAuthJobs();
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+  const started = manager.startOauthJob('claude', 'oauth-browser');
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.authorizationUrl ? current : null;
+  });
+  assert.equal(state.calls.start, 1, 'claude 必须调用 Go');
+  assert.equal(job._goAuthJobWired, true, 'claude 必须走 Go 作业');
+  assert.equal(job.oauthState, '', 'state 由 Go 生成与校验');
+  assert.equal(job._codeVerifier, '', 'PKCE verifier 只在 Go 进程内');
+  assert.equal(job.redirectUri, 'http://localhost:54545/callback', 'loopback 端口与 Node 生产路径一致');
 });

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,6 +41,11 @@ type commandConfig struct {
 	upstreamErrorRuleProviders []string
 	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui（过渡期 Node 仍在服务）。
 	webDir string
+	// frontDoorUpstream 是公开端口兜底反代的上游（Node 回环地址）；
+	// 非空时允许绑定非 loopback 地址。
+	frontDoorUpstream string
+	// frontDoorToken 是写给 Node 的前门共享标记。
+	frontDoorToken string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -64,6 +70,10 @@ func loadCommandConfig(
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")
 	var webDir string
 	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
+	var frontDoorUpstream string
+	flags.StringVar(&frontDoorUpstream, "front-door-upstream", "", "公开端口兜底反代上游（如 http://127.0.0.1:9528）；非空时允许绑定公开地址")
+	var frontDoorToken string
+	flags.StringVar(&frontDoorToken, "front-door-token", "", "前门共享标记，写入 X-AIH-Front-Door")
 	flags.Usage = func() {
 		writeUsage(runtime.stderr, flags)
 	}
@@ -74,8 +84,15 @@ func loadCommandConfig(
 		return commandConfig{}, errInvalidCommandConfig
 	}
 	host = strings.TrimSpace(host)
-	if !isLoopbackHost(host) {
+	frontDoorUpstream = strings.TrimSpace(frontDoorUpstream)
+	if frontDoorUpstream == "" && !isLoopbackHost(host) {
 		return commandConfig{}, errNonLoopbackHost
+	}
+	if frontDoorUpstream != "" && !isLoopbackHost(host) {
+		// 公开监听必须有前门兜底，否则未识别路由会直接 404，等于把 WebUI 关掉。
+		if _, err := url.Parse(frontDoorUpstream); err != nil {
+			return commandConfig{}, errInvalidCommandConfig
+		}
 	}
 	if port < 0 || port > 65535 {
 		return commandConfig{}, errInvalidCommandConfig
@@ -106,6 +123,8 @@ func loadCommandConfig(
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
+		frontDoorUpstream:          frontDoorUpstream,
+		frontDoorToken:             strings.TrimSpace(frontDoorToken),
 	}, nil
 }
 

@@ -76,6 +76,11 @@ type Options struct {
 	// WebDir 是 Web UI 构建产物目录（web/dist）。为空表示不托管 /ui，
 	// 由 Node 宿主继续服务——过渡期的默认值。
 	WebDir string
+	// FrontDoorUpstream 是公开端口兜底反代的上游地址（Node 回环监听）。
+	// 非空时本进程可绑定公开地址，未识别的路由原样转给 Node。
+	FrontDoorUpstream string
+	// FrontDoorToken 是写给 Node 的前门共享标记，用于证明请求来自 Go 前门。
+	FrontDoorToken string
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
 	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
 	//

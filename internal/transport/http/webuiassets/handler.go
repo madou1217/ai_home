@@ -6,6 +6,8 @@
 //   - Node 在进程内维护 immutable 资源的字节缓存，因为 fs.readFileSync 会阻塞事件循环；
 //     Go 侧不需要：读文件走系统调用，页缓存由内核管理，再叠一层只会多一份内存。
 //   - 非 GET/HEAD 返回 405，而不是把 POST 当成静态请求处理。
+//   - 所有响应都带 X-Content-Type-Options: nosniff（Node 的 /ui 分支没设）；
+//     构建产物靠扩展名声明类型，缺了它浏览器会自行嗅探。
 package webuiassets
 
 import (
@@ -14,6 +16,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -86,40 +89,48 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		http.Redirect(response, request, Prefix, http.StatusFound)
 		return
 	}
-	relative := strings.TrimPrefix(request.URL.Path, Prefix)
-	relative = strings.TrimPrefix(path.Clean("/"+relative), "/")
+	// 判静态资源要保留尾斜杠：Node 的 path.normalize 不会吃掉 '/assets/' 的结尾，
+	// path.Clean 会，于是 /ui/assets/ 会被误判成非资源并回落 SPA。
+	requestRelative := strings.TrimPrefix(request.URL.Path, Prefix)
+	// 判定还必须用**请求路径**，不能等补齐 index.html 之后再判：Node 先判定后拼接，
+	// 于是 /ui/accounts/（目录式路由）走 SPA，而 /ui/assets/ 仍是 404。
+	staticAsset := isStaticAssetRequest(requestRelative)
+
+	relative := strings.TrimPrefix(path.Clean("/"+requestRelative), "/")
 	if relative == "" || relative == "." {
 		relative = indexFile
-	} else if strings.HasSuffix(request.URL.Path, "/") {
+	} else if strings.HasSuffix(requestRelative, "/") {
 		relative = path.Join(relative, indexFile)
 	}
-	handler.serveFile(response, request, relative)
+	handler.serveFile(response, request, relative, staticAsset)
 }
 
 // serveFile 解析目标文件并写出；缺失时按资源类型决定 404 还是 SPA fallback。
-func (handler *Handler) serveFile(response http.ResponseWriter, request *http.Request, relative string) {
+func (handler *Handler) serveFile(response http.ResponseWriter, request *http.Request, relative string, staticAsset bool) {
 	target, ok := handler.resolve(relative)
 	if !ok {
-		if isStaticAssetRequest(relative) {
+		if staticAsset {
 			// 静态资源缺失不能回落 index.html：浏览器会把 HTML 当 JS/CSS 加载，
 			// 报错信息从「404」变成看不懂的语法错误。
-			writePlain(response, http.StatusNotFound, "Static asset not found")
+			writePlain(response, request, http.StatusNotFound, "Static asset not found")
 			return
 		}
 		target, ok = handler.resolve(indexFile)
 		if !ok {
-			writePlain(response, http.StatusNotFound, notBuiltMessage)
+			writePlain(response, request, http.StatusNotFound, notBuiltMessage)
 			return
 		}
 	}
 	content, err := fs.ReadFile(handler.files, target)
 	if err != nil {
-		writePlain(response, http.StatusInternalServerError, "Internal Server Error")
+		writePlain(response, request, http.StatusInternalServerError, "Internal Server Error")
 		return
 	}
 	header := response.Header()
 	header.Set("Content-Type", contentTypeFor(target))
 	header.Set("X-Content-Type-Options", "nosniff")
+	// 与 Node 的 res.end(buffer) 一致：提前给出长度，HEAD 才有意义。
+	header.Set("Content-Length", strconv.Itoa(len(content)))
 	if isImmutable(target) {
 		header.Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
@@ -176,9 +187,16 @@ func contentTypeFor(filePath string) string {
 	return "application/octet-stream"
 }
 
-func writePlain(response http.ResponseWriter, status int, message string) {
-	response.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	response.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+// writePlain 写出纯文本错误响应；HEAD 只回头部，与其他路径语义一致。
+func writePlain(response http.ResponseWriter, request *http.Request, status int, message string) {
+	header := response.Header()
+	header.Set("Content-Type", "text/plain; charset=utf-8")
+	header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Content-Length", strconv.Itoa(len(message)))
 	response.WriteHeader(status)
+	if request.Method == http.MethodHead {
+		return
+	}
 	_, _ = response.Write([]byte(message))
 }

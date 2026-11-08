@@ -68,6 +68,8 @@ func run(
 		DelegateCredentialRefresh:  config.delegateCredentialRefresh,
 		UpstreamErrorRuleProviders: config.upstreamErrorRuleProviders,
 		WebDir:                     config.webDir,
+		FrontDoorUpstream:          config.frontDoorUpstream,
+		FrontDoorToken:             config.frontDoorToken,
 		RequestShutdown:            runtime.requestShutdown,
 		ErrorLog: log.New(
 			runtime.stderr,

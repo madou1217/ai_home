@@ -33,10 +33,16 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/clineoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/geminioauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/grokoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/kimioauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/kirooauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/opencodeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/zcodeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/deletionprojection"
@@ -123,6 +129,8 @@ type serverHandlers struct {
 	accountUsageEvents http.Handler
 	// webUI 托管 Web UI 构建产物（/ui/*）；nil 表示不由 Go 承接。
 	webUI http.Handler
+	// frontDoor 是公开端口的兜底反代；nil 表示不接管公开端口。
+	frontDoor http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats http.Handler
 	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
@@ -303,6 +311,13 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	handlers.webUI = webUI
+	frontDoor, err := newFrontDoorFromOptions(options)
+	if err != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, err
+	}
+	handlers.frontDoor = frontDoor
 	resources = append(resources, codexVersions, outcomeRecorder, store)
 	return newServer(
 		withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers))),
@@ -536,6 +551,32 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 AGY OAuth Refresh Strategy 失败: %w", err)
 	}
+	// gemini / grok / cline 的刷新已迁 Go：三家只做协议交换，到期判断与 CAS 写回
+	// 由 accountcredentials.Resolver 统一负责。
+	geminiProvider, err := geminioauth.New(oauthClient, geminioauth.Options{})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Gemini OAuth Refresh Strategy 失败: %w", err)
+	}
+	grokProvider, err := grokoauth.New(oauthClient, grokoauth.Options{})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Grok OAuth Refresh Strategy 失败: %w", err)
+	}
+	clineProvider, err := clineoauth.New(oauthClient, clineoauth.Options{})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Cline OAuth Refresh Strategy 失败: %w", err)
+	}
+	geminiStrategy, err := tokenrefresh.NewStrategy(geminiProvider)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Gemini 刷新策略失败: %w", err)
+	}
+	grokStrategy, err := tokenrefresh.NewStrategy(grokProvider)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Grok 刷新策略失败: %w", err)
+	}
+	clineStrategy, err := tokenrefresh.NewStrategy(clineProvider)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Cline 刷新策略失败: %w", err)
+	}
 	// 家族四支与 Qoder 双区没有 Go 侧刷新实现（Token 刷新由 Node 宿主/官方 CLI 完成并
 	// 同步进凭据库），但凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式
 	// 登记静态策略（声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合
@@ -554,8 +595,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		"qoder",
 		"qodercn",
 		"zcode",
-		"cline",
-		"grok",
 	)
 	staticCredentialStrategies := make(
 		[]accountcredentials.RefreshStrategy,
@@ -587,6 +626,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 				agyProvider,
 				kimiProvider,
 				kiroProvider,
+				geminiStrategy,
+				grokStrategy,
+				clineStrategy,
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
@@ -814,10 +856,22 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
 	}
+	// zcode（自定义协议）与 opencode（设备码）的登录已迁 Go；Node 侧策略文件删除后
+	// 仍然由同一个 Job 框架提供 Begin/Complete 与终态落库。
+	zcodeOAuth, err := zcodeoauth.New(oauthClient)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 zcode 登录策略失败: %w", err)
+	}
+	opencodeOAuth, err := opencodeoauth.New(oauthClient, time.Now)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 opencode 登录策略失败: %w", err)
+	}
 	jobs, err := accountauth.NewService(accountauth.Dependencies{
 		Providers: []accountauth.OAuthProvider{
 			codexProvider,
 			claudeProvider,
+			zcodeOAuth,
+			opencodeOAuth,
 		},
 		Decoder:    decoder,
 		Registrar:  scheduledRegistrar,

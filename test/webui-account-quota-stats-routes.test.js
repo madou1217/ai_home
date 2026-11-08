@@ -1,7 +1,12 @@
 'use strict';
 
-// 额度统计路由：鉴权/方法/参数边界 + 正常返回形状。
-// 窗口重建的算法细节在 test/quota-window-reconstruction.test.js，这里只测接线。
+// 额度统计路由：切流后只做账号校验 / 参数翻译 / Go 调用 / 契约映射。
+//
+// 这里锁四类行为：
+//   · 账号与参数边界（404 / 400 / 405），Go 不会被无意义地打到；
+//   · Go 不可用**必须 503**，不能回落到第二套算法（总账第 9 条的回滚原因）；
+//   · 请求参数确实按 Go 的契约翻译（window / range_days / scope / granularity）；
+//   · 日/周视图的桶形状（index、bucketStartMs、costKnown）与空态。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,18 +17,11 @@ const path = require('node:path');
 const { openAppStateDatabase } = require('../lib/server/app-state-store');
 const { ensureAccountRefsTable } = require('../lib/server/account-ref-store');
 const {
-  ensureQuotaWindowTables,
-  insertQuotaWindowSample
-} = require('../lib/account/quota-window-store');
-const {
   handleWebUiAccountQuotaStatsRoutes
 } = require('../lib/server/webui-account-quota-stats-routes');
 
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
 const PROVIDER = 'codex';
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const NOW = Date.UTC(2026, 10, 5, 12, 0, 0);
 
 function tmp(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-stats-route-'));
@@ -31,55 +29,81 @@ function tmp(t) {
   return dir;
 }
 
-function seed(dir, { withSamples = true } = {}) {
+function seed(dir, provider = PROVIDER) {
   const db = openAppStateDatabase(fs, dir, { createIfMissing: true });
   ensureAccountRefsTable(db);
   db.prepare(`
     INSERT INTO account_refs (account_ref, provider, created_at, updated_at)
     VALUES (?, ?, ?, ?)
-  `).run(ACCOUNT_REF, PROVIDER, 1, 1);
-  ensureQuotaWindowTables(db);
-
-  if (withSamples) {
-    const closedAnchor = NOW - 6 * HOUR;
-    const closedAt = closedAnchor + 5 * HOUR;
-    const liveAnchor = NOW - 30 * MINUTE;
-    const liveCloseAt = liveAnchor + 5 * HOUR;
-    const write = (capturedAtMs, expectedResetAtMs, remainingPct) => insertQuotaWindowSample(
-      db,
-      ACCOUNT_REF,
-      PROVIDER,
-      {
-        quotaKey: 'rate_limit:primary',
-        windowLabel: '5h',
-        windowMinutes: 300,
-        remainingPct,
-        expectedResetAtMs,
-        capturedAt: capturedAtMs,
-        planType: 'plus'
-      }
-    );
-    write(closedAnchor + 5 * MINUTE, closedAt, 100);
-    write(closedAnchor + 2 * HOUR, closedAt, 70);
-    write(closedAt - 5 * MINUTE, closedAt, 50);
-    write(liveAnchor + 5 * MINUTE, liveCloseAt, 100);
-    write(liveAnchor + 20 * MINUTE, liveCloseAt, 90);
-  }
+  `).run(ACCOUNT_REF, provider, 1, 1);
   db.close();
+}
+
+function goWindowStats(overrides = {}) {
+  return {
+    generatedAtMs: 1000,
+    range: { fromMs: 0, toMs: 1000, rangeDays: 30 },
+    dimensions: [
+      {
+        windowMinutes: 300,
+        label: '5h',
+        available: true,
+        dataState: 'ready',
+        scopes: [{ quotaKey: 'rate_limit:primary', label: '5h', sampleCount: 2, lastCapturedAtMs: 900, synthetic: false }]
+      }
+    ],
+    windowMinutes: 300,
+    scope: { quotaKey: 'rate_limit:primary', label: '5h', sampleCount: 2, lastCapturedAtMs: 900, synthetic: false },
+    current: { remainingPct: 40, resetAtMs: 2000, capturedAtMs: 900 },
+    summary: {
+      windowCount: 1,
+      coveredWindowCount: 1,
+      totalTokens: 3000,
+      totalCostUsd: 0.5,
+      costKnown: true,
+      requestCount: 6,
+      avgConsumedPct: 60,
+      maxConsumedPct: 60,
+      minConsumedPct: 60,
+      avgTokensPerWindow: 3000,
+      avgCostUsdPerWindow: 0.5,
+      lastResetAtMs: 0,
+      nextCloseAtMs: 2000
+    },
+    windows: [{ index: 0, anchorAtMs: 1000, closeAtMs: 2000, consumedPct: 60, tokens: 3000 }],
+    emptyReason: null,
+    costSupported: true,
+    ...overrides
+  };
+}
+
+function createGoHost(overrides = {}) {
+  const calls = { quota: [], buckets: [] };
+  const host = {
+    getAccountQuotaStats: async (ref, query) => {
+      calls.quota.push({ ref, query });
+      const value = overrides.quota;
+      return typeof value === 'function' ? value(ref, query) : (value || { ok: true, data: goWindowStats() });
+    },
+    getUsageBuckets: async (ref, query) => {
+      calls.buckets.push({ ref, query });
+      const value = overrides.buckets;
+      return typeof value === 'function' ? value(ref, query) : (value || { ok: true, data: { buckets: [] } });
+    }
+  };
+  if (overrides.withoutBuckets) delete host.getUsageBuckets;
+  return { host, calls };
 }
 
 function createCtx({ method = 'GET', pathname, query = '', dir, deps = {} }) {
   const writes = [];
   const headers = {};
-  const url = new URL(`http://127.0.0.1${pathname}${query}`);
   return {
     method,
     pathname,
-    url,
+    url: new URL(`http://127.0.0.1${pathname}${query}`),
     req: { url: `${pathname}${query}` },
-    res: {
-      setHeader: (name, value) => { headers[name] = value; }
-    },
+    res: { setHeader: (name, value) => { headers[name] = value; } },
     fs,
     aiHomeDir: dir,
     deps,
@@ -89,43 +113,45 @@ function createCtx({ method = 'GET', pathname, query = '', dir, deps = {} }) {
   };
 }
 
+function accountPath(provider = PROVIDER, accountRef = ACCOUNT_REF) {
+  return `/v0/webui/accounts/${provider}/${accountRef}/quota-stats`;
+}
+
 test('不匹配的路径返回 false，不消费请求', async () => {
-  const ctx = createCtx({ pathname: '/v0/webui/accounts/codex/' + ACCOUNT_REF + '/other' });
+  const ctx = createCtx({ pathname: accountPath() + '/other' });
   assert.equal(await handleWebUiAccountQuotaStatsRoutes(ctx), false);
   assert.equal(ctx.writes.length, 0);
 });
 
-test('未知账号 404', async (t) => {
+test('未知账号 404，且不调用 Go', async (t) => {
   const dir = tmp(t);
-  seed(dir, { withSamples: false });
+  seed(dir);
+  const { host, calls } = createGoHost();
   const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/acct_ffffffffffffffffffff/quota-stats`,
-    dir
+    pathname: accountPath(PROVIDER, 'acct_ffffffffffffffffffff'),
+    dir,
+    deps: { goCoreSync: host }
   });
   assert.equal(await handleWebUiAccountQuotaStatsRoutes(ctx), true);
   assert.equal(ctx.writes[0].status, 404);
   assert.equal(ctx.writes[0].payload.error, 'account_not_found');
+  assert.equal(calls.quota.length, 0);
 });
 
 test('provider 与账号不符 404', async (t) => {
   const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/claude/${ACCOUNT_REF}/quota-stats`,
-    dir
-  });
+  seed(dir);
+  const { host } = createGoHost();
+  const ctx = createCtx({ pathname: accountPath('claude'), dir, deps: { goCoreSync: host } });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
   assert.equal(ctx.writes[0].status, 404);
 });
 
 test('非 GET 405，且带 no-store 头', async (t) => {
   const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    method: 'POST',
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    dir
-  });
+  seed(dir);
+  const { host } = createGoHost();
+  const ctx = createCtx({ method: 'POST', pathname: accountPath(), dir, deps: { goCoreSync: host } });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
   assert.equal(ctx.writes[0].status, 405);
   assert.equal(ctx.headers['cache-control'], 'no-store');
@@ -133,80 +159,75 @@ test('非 GET 405，且带 no-store 头', async (t) => {
 
 test('window 只做正整数校验：任意档位放行，负数/小数/非数字 400', async (t) => {
   const dir = tmp(t);
-  seed(dir, { withSamples: false });
-
+  seed(dir);
+  const { host, calls } = createGoHost();
   const accepted = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+    pathname: accountPath(),
     query: '?window=720',
-    dir
+    dir,
+    deps: { goCoreSync: host }
   });
   await handleWebUiAccountQuotaStatsRoutes(accepted);
   assert.equal(accepted.writes[0].status, 200);
+  assert.equal(calls.quota[0].query.windowMinutes, 720);
 
-  for (const raw of ['-5', '0.5', 'abc']) {
+  for (const raw of ['-5', '0.5', 'abc', '0']) {
     const rejected = createCtx({
-      pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
+      pathname: accountPath(),
       query: `?window=${raw}`,
-      dir
+      dir,
+      deps: { goCoreSync: host }
     });
     await handleWebUiAccountQuotaStatsRoutes(rejected);
     assert.equal(rejected.writes[0].status, 400, `window=${raw} 应被拒绝`);
     assert.equal(rejected.writes[0].payload.error, 'invalid_quota_window');
   }
+  assert.equal(calls.quota.length, 1, '参数非法的请求不该打到 Go');
 });
 
-test('维度从账号数据派生：12h 账号只显示自己的 12h 维度', async (t) => {
-  const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const db = openAppStateDatabase(fs, dir, { createIfMissing: true });
-  ensureQuotaWindowTables(db);
-  const anchor = NOW - 8 * HOUR;
-  insertQuotaWindowSample(db, ACCOUNT_REF, PROVIDER, {
-    quotaKey: 'rate_limit:12h',
-    windowLabel: '12h',
-    windowMinutes: 720,
-    remainingPct: 80,
-    expectedResetAtMs: anchor + 12 * HOUR,
-    capturedAt: anchor + MINUTE,
-    planType: 'plus'
-  });
-  db.close();
-
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?to=${NOW}`,
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-
-  const payload = ctx.writes[0].payload;
-  assert.equal(ctx.writes[0].status, 200);
-  assert.equal(payload.windowMinutes, 720);
-  assert.deepEqual(payload.dimensions.map((dimension) => dimension.windowMinutes), [720]);
-  assert.equal(payload.dimensions[0].label, '12h');
-  assert.equal(payload.dimensions[0].available, true);
-});
-
-test('rangeDays 超上限夹到 90', async (t) => {
-  const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: '?rangeDays=999',
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-  assert.equal(ctx.writes[0].status, 200);
-  assert.equal(ctx.writes[0].payload.range.rangeDays, 90);
-});
-
-test('正常返回两个窗口：一个已关闭、一个实时，维度可用性正确', async (t) => {
+test('非法 granularity 400', async (t) => {
   const dir = tmp(t);
   seed(dir);
+  const { host } = createGoHost();
   const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?window=300&rangeDays=1&to=${NOW}`,
-    dir
+    pathname: accountPath(),
+    query: '?granularity=hour',
+    dir,
+    deps: { goCoreSync: host }
+  });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].status, 400);
+  assert.equal(ctx.writes[0].payload.error, 'invalid_quota_granularity');
+});
+
+test('Go 未装配时 503，不回落到本地算法', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const ctx = createCtx({ pathname: accountPath(), dir, deps: {} });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].status, 503);
+  assert.equal(ctx.writes[0].payload.error, 'go_core_unavailable');
+});
+
+test('Go 返回失败时 503，并把 Go 的错误码透出', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const { host } = createGoHost({ quota: { ok: false, status: 500, errorCode: 'quota_stats_unavailable' } });
+  const ctx = createCtx({ pathname: accountPath(), dir, deps: { goCoreSync: host } });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].status, 503);
+  assert.equal(ctx.writes[0].payload.error, 'quota_stats_unavailable');
+});
+
+test('窗口视图：参数按 Go 契约翻译，响应 snake→camel 且不请求时间桶', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const { host, calls } = createGoHost();
+  const ctx = createCtx({
+    pathname: accountPath(),
+    query: '?window=300&range_days=7&scope=rate_limit%3Aprimary',
+    dir,
+    deps: { goCoreSync: host }
   });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
 
@@ -215,215 +236,133 @@ test('正常返回两个窗口：一个已关闭、一个实时，维度可用�
   assert.equal(payload.ok, true);
   assert.equal(payload.provider, PROVIDER);
   assert.equal(payload.accountRef, ACCOUNT_REF);
+  assert.equal(payload.granularity, 'window');
   assert.equal(payload.windowMinutes, 300);
-  assert.equal(payload.scope.quotaKey, 'rate_limit:primary');
+  assert.equal(payload.range.rangeDays, 30);
+  assert.equal(payload.summary.totalTokens, 3000);
+  assert.equal(payload.summary.costKnown, true);
+  assert.equal(payload.windows.length, 1);
+  assert.deepEqual(payload.usageBuckets, [], '窗口视图不该带日周桶');
+  assert.equal(payload.usageSummary, null);
 
-  // 维度只列账号真实有的窗口长度：没有 7天/30天 数据就不该出现（更不该显示成 disabled）。
-  assert.deepEqual(payload.dimensions.map((dimension) => dimension.windowMinutes), [300]);
-  assert.equal(payload.dimensions[0].available, true);
-  assert.equal(payload.dimensions[0].dataState, 'ready');
-  assert.equal(payload.dimensions[0].label, '5h');
-
-  assert.equal(payload.windows.length, 2);
-  assert.equal(payload.windows[0].consumedPct, 50);
-  assert.equal(payload.windows[0].live, false);
-  assert.equal(payload.windows[1].consumedPct, 10);
-  assert.equal(payload.windows[1].live, true);
-  assert.equal(payload.summary.windowCount, 2);
-  assert.equal(payload.summary.avgConsumedPct, 30);
-  assert.equal(payload.emptyReason, null);
-  assert.equal(ctx.headers['cache-control'], 'no-store');
+  assert.deepEqual(calls.quota[0], {
+    ref: ACCOUNT_REF,
+    query: { windowMinutes: 300, rangeDays: 7, scope: 'rate_limit:primary' }
+  });
+  assert.equal(calls.buckets.length, 0);
 });
 
-test('没有该窗口长度的数据时返回 dimension_unavailable', async (t) => {
+test('rangeDays 超上限夹到 90，range_days 与 rangeDays 等价', async (t) => {
   const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: '?window=10080&granularity=window',
-    dir
+  seed(dir);
+  const { host, calls } = createGoHost();
+  for (const query of ['?rangeDays=999', '?range_days=999']) {
+    const ctx = createCtx({ pathname: accountPath(), query, dir, deps: { goCoreSync: host } });
+    await handleWebUiAccountQuotaStatsRoutes(ctx);
+    assert.equal(ctx.writes[0].status, 200);
+  }
+  assert.deepEqual(calls.quota.map((call) => call.query.rangeDays), [90, 90]);
+});
+
+test('未指定粒度且没有可用窗口时给日统计，并接 Go 的时间桶', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const { host, calls } = createGoHost({
+    quota: { ok: true, data: goWindowStats({ dimensions: [], windowMinutes: 0, scope: null, windows: [], emptyReason: 'dimension_unavailable' }) },
+    buckets: {
+      ok: true,
+      data: {
+        buckets: [
+          { index: 0, start_ms: 100, end_ms: 200, bucket_start_ms: 100, tokens: 500, request_count: 2 },
+          { index: 1, start_ms: 200, end_ms: 300, bucket_start_ms: 200, tokens: 0, request_count: 0 }
+        ]
+      }
+    }
   });
+  const ctx = createCtx({ pathname: accountPath(), query: '?rangeDays=7', dir, deps: { goCoreSync: host } });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
 
   const { status, payload } = ctx.writes[0];
   assert.equal(status, 200);
-  assert.equal(payload.granularity, 'window');
-  assert.equal(payload.emptyReason, 'dimension_unavailable');
-  assert.deepEqual(payload.windows, []);
-  assert.equal(payload.summary.windowCount, 0);
-});
-
-test('未指定 window 时回落到第一个可用维度', async (t) => {
-  const dir = tmp(t);
-  seed(dir);
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?to=${NOW}`,
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-  assert.equal(ctx.writes[0].status, 200);
-  assert.equal(ctx.writes[0].payload.windowMinutes, 300);
-});
-
-test('注入了用量服务时把 tokens 合并进窗口', async (t) => {
-  const dir = tmp(t);
-  seed(dir);
-  const seen = [];
-  const deps = {
-    modelUsageService: {
-      getAccountQuotaWindowUsage: (query) => {
-        seen.push(query);
-        return query.windows.map((window) => ({
-          index: window.index,
-          tokens: 1000 * (window.index + 1),
-          costUsd: 0.25,
-          costKnown: true,
-          requestCount: 3
-        }));
-      }
-    }
-  };
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?window=300&rangeDays=1&to=${NOW}`,
-    dir,
-    deps
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-
-  const payload = ctx.writes[0].payload;
-  assert.equal(seen.length, 1);
-  assert.deepEqual(payload.windows.map((window) => window.tokens), [1000, 2000]);
-  assert.equal(payload.summary.totalTokens, 3000);
-  assert.equal(payload.summary.totalCostUsd, 0.5);
-  assert.equal(payload.summary.requestCount, 6);
-});
-
-test('granularity=day 按自然日聚合用量，不依赖窗口样本', async (t) => {
-  const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const seen = [];
-  const deps = {
-    modelUsageService: {
-      getAccountQuotaWindowUsage: (query) => {
-        seen.push(query);
-        return query.windows.map((window) => ({
-          index: window.index,
-          tokens: 500,
-          costUsd: 0.5,
-          costKnown: true,
-          requestCount: 2
-        }));
-      }
-    }
-  };
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?granularity=day&rangeDays=1&to=${NOW}`,
-    dir,
-    deps
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-
-  const payload = ctx.writes[0].payload;
-  assert.equal(ctx.writes[0].status, 200);
   assert.equal(payload.granularity, 'day');
-  assert.equal(payload.emptyReason, null);
-  assert.equal(seen.length, 1);
-  // 1 天范围跨了两个自然日（起点在当天中途），所以是两个部分日桶。
   assert.equal(payload.usageBuckets.length, 2);
-  assert.equal(payload.usageBuckets[0].tokens, 500);
-  assert.equal(payload.usageSummary.totalTokens, 1000);
-  assert.equal(payload.usageSummary.totalCostUsd, 1);
-  assert.equal(payload.usageSummary.requestCount, 4);
+  assert.deepEqual(payload.usageBuckets[0], {
+    index: 0,
+    startMs: 100,
+    endMs: 200,
+    bucketStartMs: 100,
+    tokens: 500,
+    costUsd: null,
+    costKnown: false,
+    requestCount: 2
+  });
+  assert.equal(payload.usageSummary.bucketCount, 2);
+  assert.equal(payload.usageSummary.totalTokens, 500);
+  assert.equal(payload.usageSummary.totalCostUsd, null);
+  assert.equal(payload.usageSummary.costKnown, false);
+  // 日视图里 Go 的窗口空态不能冒充「没有用量」。
+  assert.equal(payload.emptyReason, null);
+
+  assert.equal(calls.buckets.length, 1);
+  assert.equal(calls.buckets[0].ref, ACCOUNT_REF);
+  assert.equal(calls.buckets[0].query.granularity, 'day');
+  const spanDays = (Date.parse(calls.buckets[0].query.toISO) - Date.parse(calls.buckets[0].query.fromISO)) / 86400000;
+  assert.ok(spanDays > 6.9 && spanDays < 7.1, `桶区间应覆盖 7 天，实际 ${spanDays}`);
 });
 
-test('granularity=week 按自然周聚合，30 天范围得到 4–6 个桶', async (t) => {
+test('日视图没有任何用量时 emptyReason=no_usage_in_range', async (t) => {
   const dir = tmp(t);
-  seed(dir, { withSamples: false });
+  seed(dir);
+  const { host } = createGoHost({
+    quota: { ok: true, data: goWindowStats({ dimensions: [], windowMinutes: 0, scope: null }) },
+    buckets: { ok: true, data: { buckets: [{ index: 0, start_ms: 100, end_ms: 200, bucket_start_ms: 100, tokens: 0, request_count: 0 }] } }
+  });
   const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?granularity=week&rangeDays=30&to=${NOW}`,
-    dir
+    pathname: accountPath(),
+    query: '?granularity=day',
+    dir,
+    deps: { goCoreSync: host }
   });
   await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].payload.emptyReason, 'no_usage_in_range');
+  assert.equal(ctx.writes[0].payload.usageSummary.totalTokens, 0);
+});
 
-  const payload = ctx.writes[0].payload;
+test('时间桶接口失败时 503，不返回半个响应', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const { host } = createGoHost({
+    quota: { ok: true, data: goWindowStats({ dimensions: [], windowMinutes: 0, scope: null }) },
+    buckets: { ok: false, status: 500, errorCode: 'usage_buckets_failed' }
+  });
+  const ctx = createCtx({ pathname: accountPath(), query: '?granularity=day', dir, deps: { goCoreSync: host } });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].status, 503);
+  assert.equal(ctx.writes[0].payload.error, 'usage_buckets_failed');
+});
+
+test('时间桶方法缺失时 503（Go 版本落后于 Node）', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const { host } = createGoHost({
+    quota: { ok: true, data: goWindowStats({ dimensions: [], windowMinutes: 0, scope: null }) },
+    withoutBuckets: true
+  });
+  const ctx = createCtx({ pathname: accountPath(), query: '?granularity=day', dir, deps: { goCoreSync: host } });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
+  assert.equal(ctx.writes[0].status, 503);
+  assert.equal(ctx.writes[0].payload.error, 'go_core_unavailable');
+});
+
+test('format=go 原样返回 Go 结果，供对拍取证', async (t) => {
+  const dir = tmp(t);
+  seed(dir);
+  const { host, calls } = createGoHost();
+  const ctx = createCtx({ pathname: accountPath(), query: '?format=go', dir, deps: { goCoreSync: host } });
+  await handleWebUiAccountQuotaStatsRoutes(ctx);
   assert.equal(ctx.writes[0].status, 200);
-  assert.equal(payload.granularity, 'week');
-  assert.ok(payload.usageBuckets.length >= 4 && payload.usageBuckets.length <= 6);
-  // 周桶必须从本地周一零点开始（getDay(): 0=周日, 1=周一）。
-  assert.equal(new Date(payload.usageBuckets[0].bucketStartMs).getDay(), 1);
-  assert.equal(new Date(payload.usageBuckets[0].bucketStartMs).getHours(), 0);
-});
-
-test('未指定粒度且没有窗口明细时自动给日统计', async (t) => {
-  const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?to=${NOW}`,
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-
-  const payload = ctx.writes[0].payload;
-  assert.equal(ctx.writes[0].status, 200);
-  assert.equal(payload.granularity, 'day');
-  assert.equal(payload.emptyReason, 'no_usage_in_range');
-});
-
-test('非法 granularity 400', async (t) => {
-  const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: '?granularity=hour',
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-  assert.equal(ctx.writes[0].status, 400);
-  assert.equal(ctx.writes[0].payload.error, 'invalid_quota_granularity');
-});
-
-test('账号没有窗口证据时用 provider 声明的泛范围，且维度标记为不可用', async (t) => {
-  const dir = tmp(t);
-  seed(dir, { withSamples: false });
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/${PROVIDER}/${ACCOUNT_REF}/quota-stats`,
-    query: `?to=${NOW}`,
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-
-  const payload = ctx.writes[0].payload;
-  // codex 声明 5h + 周窗口（descriptor.quota.stats.windows），不再凭空多出 30 天。
-  assert.deepEqual(payload.dimensions.map((dimension) => dimension.windowMinutes), [300, 10080]);
-  assert.deepEqual(payload.dimensions.map((dimension) => dimension.available), [false, false]);
-  assert.equal(payload.granularity, 'day');
-});
-
-test('provider 没声明窗口且账号没证据：不给窗口维度', async (t) => {
-  const dir = tmp(t);
-  const db = openAppStateDatabase(fs, dir, { createIfMissing: true });
-  ensureAccountRefsTable(db);
-  db.prepare(`
-    INSERT INTO account_refs (account_ref, provider, created_at, updated_at)
-    VALUES (?, ?, ?, ?)
-  `).run(ACCOUNT_REF, 'kiro', 1, 1);
-  ensureQuotaWindowTables(db);
-  db.close();
-
-  const ctx = createCtx({
-    pathname: `/v0/webui/accounts/kiro/${ACCOUNT_REF}/quota-stats`,
-    query: `?to=${NOW}`,
-    dir
-  });
-  await handleWebUiAccountQuotaStatsRoutes(ctx);
-
-  const payload = ctx.writes[0].payload;
-  assert.deepEqual(payload.dimensions, []);
-  assert.equal(payload.granularity, 'day');
-  assert.equal(payload.emptyReason, 'no_usage_in_range');
+  assert.equal(ctx.writes[0].payload.ok, true);
+  assert.equal(ctx.writes[0].payload.go.summary.totalTokens, 3000);
+  assert.equal(ctx.writes[0].payload.go.usageBuckets, undefined);
+  assert.equal(calls.buckets.length, 0);
 });

@@ -32,3 +32,35 @@
 
 - 临时 git worktree：`/private/tmp/aih-del-order-wt2` 目录仍在；`/private/tmp/aih-baseline-zcode`、`/private/tmp/aih-head` 目录已不存在（`git worktree list` 标 prunable），可只清元数据，删除仍需人工授权。
 - 工作区有 65 个脏文件（多条并发线，较 11-06 未变），后续提交一律 pathspec。
+
+## 5. 2026-11-08 会战：并行切片落地
+
+> 方式：10 个 workflow subagent + 5 个 aih peer（独立 worktree）。所有切片合并后在 main 上跑
+> `go test ./...` 与相关 Node 用例。提交：`ebf1072d` / `7f0fdafd` / `4f6c...`（见 git log）。
+
+| 切片 | 结果 | 验证 |
+| --- | --- | --- |
+| P3 前门反代 | `internal/host/aihserver/frontdoor.go`：剥离伪造转发头、X-AIH-Peer、SSE 逐帧、WS 透传、502 JSON | 6 个单测；真机 A/B（Go 19601 → Node 9527）：路径/状态码全等，/ui 字节 hash 一致，无 key 401 |
+| P3 前门开关 | `--front-door-listen` 第二监听 + Node 回环退回；`--front-door` 配置默认关 | 双监听真机验证；参数合同 2 例 |
+| /ui 静态托管 | Go 与 Node serveStaticFile 语义对齐（尾斜杠/资源 404/SPA/HEAD/Content-Length） | 33 条 parity 子测试 + 7 条穿越防护 |
+| 令牌刷新 | gemini / grok / cline 迁 Go；Node 策略表删三项、删 gemini/cline 模块；委托开关只覆盖宿主仍维护的 Provider | 15 条契约子测试；委托豁免单测；Node 73 项 |
+| 登录策略 | zcode（自定义协议）/ opencode（设备码）迁 Go 并注册进 Job 框架 | 全量单测；登录服务允许四家 Provider |
+| relay mux | SOCKS5 服务端（RFC1928/1929 + UDP 关联登记）+ 首字节分流 | 20 例 + `-race`；变异验证 |
+| UDP 前端 | 共享 socket、两张表、首报锁定、歧义丢弃、120s 回收、BND 改写 | 21 子例 |
+| 账号删除清理 | `internal/adapters/accountremoval`（投影目录/会话探测三态/防穿越） | 临时目录 + 假 tmux probe |
+| 账号页读模型 | `GET /v1/management/webui/accounts`（camelCase、分页、缺表 fail-soft、derived_by=go_partial） | sqlite fixture + 对拍脚本 |
+| 额度统计切流 | Node quota-stats 全量走 Go；删除第二套窗口算法 921 行 | 23 项 Node 用例；真机 200 |
+| 账号写路由清点 | 删除 58 处零引用绑定与 0 调用方守卫 | 4 项新用例 |
+| chat 竖切（peer） | `internal/transport/http/webuichatapi`：命令/信封/上游/SSE | 全包测试 |
+| 终端会话（peer） | `internal/runtime/terminalsession`：create/attach/write/resize/kill/回放 | 全包测试 |
+| SSH 宿主（peer） | `internal/adapters/sshhost`：hostkey/identity/probe/shell/supervisor | 全包测试 |
+| session chat（peer） | `internal/runtime/providercli/sessionchat`：命令/环境/失败分类 + 对拍夹具 | 对拍 7220 行夹具 |
+| 插件清单（peer） | `pluginapi.InventoryPath` 只读清单（控制面读 app-state.db） | 全包测试 |
+
+### 前门切流的最后一个门
+
+前门「能代理」已验证，但**还不能切线上 9527**：Go 目前对「自己路由不了的模型」（当前只有
+gemini，以及自定义账号）直接返回 503，不会转给 Node；切流后 Node 不再是前门，这类请求会真正失败。
+切流前置：在 Go 的推理入口识别「模型不在 Go 路由目录」并把请求反代回 Node（复用 frontdoor 的
+上游与 X-AIH-Peer 语义），再打开 `--front-door`。
+

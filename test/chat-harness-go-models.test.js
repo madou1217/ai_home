@@ -54,13 +54,12 @@ function pendingProbe() {
   return new Promise(() => {});
 }
 
-test('switch on: gateway catalog comes from Go effective rows with Go→Node ref translation', async () => {
+test('Go 优先：gateway catalog comes from Go effective rows with Go→Node ref translation', async () => {
   const state = gatewayState({ [NODE_REF]: ['snapshot-model'] });
   let requestedPath = '';
   let probes = 0;
   const readModels = createChatHarnessModelReader({
     getState: () => state,
-    readServerConfig: () => ({ harnessModelsViaGo: true }),
     nodeAccountRefFor: (ref) => (ref === GO_REF ? NODE_REF : ref),
     readGoAccountModels: async (path) => {
       if (isStampPath(path)) return goStampResponse(1, 1);
@@ -91,14 +90,13 @@ test('switch on: gateway catalog comes from Go effective rows with Go→Node ref
   assert.equal(probes, 0);
 });
 
-test('switch on: Go 503 falls back to the local snapshot', async () => {
+test('Go 优先：Go 503 falls back to the local snapshot', async () => {
   const state = gatewayState({ [NODE_REF]: ['snapshot-model'] });
   state.webUiModelsCache.updatedAt = 1;
   state.webUiModelsCache.signature = 'stale';
   let goReads = 0;
   const readModels = createChatHarnessModelReader({
     getState: () => state,
-    readServerConfig: () => ({ harnessModelsViaGo: true }),
     nodeAccountRefFor: (ref) => ref,
     readGoAccountModels: async () => {
       goReads += 1;
@@ -113,50 +111,11 @@ test('switch on: Go 503 falls back to the local snapshot', async () => {
   assert.equal(goReads, 1);
 });
 
-test('switch off: golden response is unchanged and Go is never read', async () => {
+test('Go 优先：Go with no effective rows falls back to the local snapshot', async () => {
   const state = gatewayState({ [NODE_REF]: ['snapshot-model'] });
   let goReads = 0;
   const readModels = createChatHarnessModelReader({
     getState: () => state,
-    readServerConfig: () => ({ harnessModelsViaGo: false }),
-    nodeAccountRefFor: (ref) => ref,
-    readGoAccountModels: async () => {
-      goReads += 1;
-      return goAccountModelsResponse([]);
-    },
-    fetchModelsForAccount: pendingProbe
-  });
-
-  const models = await readModels('zcode', 'gateway');
-
-  assert.deepEqual(models, ['snapshot-model']);
-  assert.equal(goReads, 0);
-});
-
-test('switch defaults off when no config reader is wired', async () => {
-  const state = gatewayState({ [NODE_REF]: ['snapshot-model'] });
-  let goReads = 0;
-  const readModels = createChatHarnessModelReader({
-    getState: () => state,
-    readGoAccountModels: async () => {
-      goReads += 1;
-      return goAccountModelsResponse([]);
-    },
-    fetchModelsForAccount: pendingProbe
-  });
-
-  const models = await readModels('zcode', 'gateway');
-
-  assert.deepEqual(models, ['snapshot-model']);
-  assert.equal(goReads, 0);
-});
-
-test('switch on: Go with no effective rows falls back to the local snapshot', async () => {
-  const state = gatewayState({ [NODE_REF]: ['snapshot-model'] });
-  let goReads = 0;
-  const readModels = createChatHarnessModelReader({
-    getState: () => state,
-    readServerConfig: () => ({ harnessModelsViaGo: true }),
     nodeAccountRefFor: (ref) => ref,
     readGoAccountModels: async (path) => {
       goReads += 1;

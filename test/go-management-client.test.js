@@ -102,6 +102,40 @@ test('getModelCatalog uses the read-only management contract without a request b
   assert.equal(call.init.body, undefined);
 });
 
+test('getPluginInventory uses the read-only plugin inventory contract', async () => {
+  let call;
+  const inventory = {
+    ok: true,
+    readOnly: true,
+    source: 'node-app-state',
+    revision: 4,
+    installed: [],
+    instances: [],
+    runtime: { activeGeneration: 0, generations: [], retiringGenerations: [], contributions: [], instances: [] },
+    consistency: { ok: true, issues: [] }
+  };
+  const client = createGoManagementClient({
+    baseUrl: 'http://go.local',
+    managementKey: 'management-secret',
+    fetchImpl: async (url, init) => {
+      call = { url, init };
+      // 清单接口没有 data 信封，客户端应把整个响应体当成 data。
+      return response(200, inventory);
+    }
+  });
+
+  const result = await client.getPluginInventory();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data, inventory);
+  assert.equal(call.url, 'http://go.local/v1/management/plugins');
+  assert.equal(call.init.method, 'GET');
+  assert.equal(call.init.body, undefined);
+  assert.equal(call.init.headers.authorization, 'Bearer management-secret');
+  assert.equal(Object.hasOwn(call.init.headers, 'content-type'), false);
+});
+
 test('management status and metrics use read-only Go shadow contracts', async () => {
   const calls = [];
   const client = createGoManagementClient({

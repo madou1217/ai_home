@@ -132,7 +132,7 @@ func TestBeginBuildsOfficialAuthorizationURL(t *testing.T) {
 		"code_challenge_method":      "S256",
 		"id_token_add_organizations": "true",
 		"codex_cli_simplified_flow":  "true",
-		"originator":                 "codex_cli_rs",
+		"originator":                 "Codex Desktop",
 		"state":                      loginFlow.state,
 	}
 	query := parsed.Query()

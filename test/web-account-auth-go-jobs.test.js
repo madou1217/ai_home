@@ -158,7 +158,6 @@ function createFakeGoAuthJobs(options = {}) {
   return {
     state,
     goAuthJobs: {
-      codexEnabled: options.codexEnabled !== false,
       client,
       reconcile: async () => {
         state.reconciles += 1;
@@ -179,21 +178,21 @@ function createManager(t, aiHomeDir, goAuthJobs) {
   });
 }
 
-test('开关关闭：不调用 Go，仍由本地生成 PKCE 与 state', async (t) => {
+test('codex add：固定走 Go，本地不生成 PKCE/state', async (t) => {
   const aiHomeDir = createTempAiHome(t);
   const { state, goAuthJobs } = createFakeGoAuthJobs();
-  const manager = createManager(t, aiHomeDir, { ...goAuthJobs, codexEnabled: false });
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
 
   const started = manager.startOauthJob('codex', 'oauth-browser');
-  assert.ok(started.authorizationUrl.includes('code_challenge='), '旧路径必须带 PKCE challenge');
-  assert.ok(started.authorizationUrl.includes('state='), '旧路径必须带本地 state');
-  const job = manager.getJob(started.jobId);
-  assert.equal(job._goAuthJobWired, undefined, '旧路径不应带上 Go 作业字段');
-  assert.notEqual(job.oauthState, '');
-  assert.equal(state.calls.start, 0, '开关关闭时不能发起任何 Go 调用');
-
-  manager.cancelJob(started.jobId);
-  assert.equal(state.calls.cancel, 0);
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.authorizationUrl ? current : null;
+  });
+  assert.equal(state.calls.start, 1, 'codex 必须调用 Go');
+  assert.equal(job._goAuthJobWired, true, 'codex 必须走 Go 作业');
+  assert.equal(job.oauthState, '', 'state 由 Go 生成与校验');
+  assert.equal(job._codeVerifier, '', 'PKCE verifier 只在 Go 进程内');
+  assert.equal(job.authorizationUrl, GO_AUTH_URL, '授权链接必须来自 Go');
 });
 
 test('Begin 成功：authorization_url 与 job_id 都来自 Go，本地不留 state/verifier', async (t) => {
@@ -341,13 +340,12 @@ test('取消：释放 Go 侧 pending Job，避免下一次 Begin 撞 active_job_
   assert.equal(state.jobs.get(GO_JOB_ID).status, 'cancelled');
 });
 
-test('zcode add：codex 开关关闭也固定调用 Go，本地不生成 PKCE/state', async (t) => {
+test('zcode add：固定调用 Go，本地不生成 PKCE/state', async (t) => {
   const aiHomeDir = createTempAiHome(t);
   const { state, goAuthJobs } = createFakeGoAuthJobs({
-    authorizationUrl: ZCODE_GO_AUTH_URL,
-    codexEnabled: false
+    authorizationUrl: ZCODE_GO_AUTH_URL
   });
-  const manager = createManager(t, aiHomeDir, { ...goAuthJobs, codexEnabled: false });
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
 
   const started = manager.startOauthJob('zcode', 'oauth-browser', { authStrategy: 'zai:custom-scheme' });
   const job = await waitFor(() => {
@@ -504,7 +502,7 @@ test('失败映射：Go 错误码优先，5xx 与无响应可重试，4xx 不可
   assert.equal(isGoAuthJobFailureRetryable('', 400), false);
 });
 
-test('开关解析：client 始终装配（zcode 需要），codexEnabled 只表达 codex 开关', () => {
+test('Go 门面解析：四个方法齐全才装配，缺一个就是 null', () => {
   const goCoreSync = {
     startAccountAuthJob: async () => null,
     completeAccountAuthJob: async () => null,
@@ -512,19 +510,17 @@ test('开关解析：client 始终装配（zcode 需要），codexEnabled 只表
     // 设备码作业靠它读终态；宿主门面必须四个方法齐全才算可用。
     getOAuthJob: async () => null
   };
-  const disabled = createGoAuthJobsOption({
-    readServerConfig: () => ({ codexBrowserAuthViaGo: false }),
-    goCoreSync
-  });
-  assert.equal(disabled.codexEnabled, false);
-  assert.ok(disabled.client, 'zcode 固定走 Go，开关关闭时也必须有 client');
+  const option = createGoAuthJobsOption({ goCoreSync });
+  assert.ok(option.client, '门面齐全时必须有 client');
+  assert.equal(option.reconcile, null, '未装配对账时只能是 null，不能调用不存在的方法');
 
-  const noGoCore = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: true }) });
+  const noGoCore = createGoAuthJobsOption({});
   assert.equal(noGoCore.client, null, '没有 Go 门面时不能假装能承接登录');
 
-  const enabled = createGoAuthJobsOption({ readServerConfig: () => ({ codexBrowserAuthViaGo: true }), goCoreSync });
-  assert.equal(enabled.codexEnabled, true);
-  assert.equal(enabled.reconcile, null, '未装配对账时只能是 null，不能调用不存在的方法');
+  const partial = createGoAuthJobsOption({
+    goCoreSync: { startAccountAuthJob: async () => null }
+  });
+  assert.equal(partial.client, null, '方法不全不能装配');
 });
 
 // opencode 的设备码登录：Node 只申请作业、展示 user_code，然后轮询 Go 快照。

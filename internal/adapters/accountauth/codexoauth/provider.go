@@ -134,7 +134,9 @@ func (provider *Provider) buildAuthorizationURL(
 	query.Set("id_token_add_organizations", "true")
 	query.Set("codex_cli_simplified_flow", "true")
 	query.Set("state", state)
-	query.Set("originator", "codex_cli_rs")
+	// 与 Node 生产路径（lib/server/web-account-auth-oauth-urls.js）保持一致：
+	// 切流前后上游看到的 originator 必须是同一个值，否则套餐/权益可能变化。
+	query.Set("originator", "Codex Desktop")
 	parsed.RawQuery = query.Encode()
 	return parsed.String(), nil
 }

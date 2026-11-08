@@ -588,6 +588,7 @@ test('agy add（直连）：固定走 Go，本地不生成 PKCE/state，也不�
   const manager = createManager(t, aiHomeDir, goAuthJobs);
 
   const started = manager.startOauthJob('agy', 'oauth-browser', { authStrategy: 'aih-google-oauth' });
+  assert.equal(started.authProgressState, 'starting', 'Go 作业不能用 CLI 策略的 awaiting_login_method 初始态');
   const job = await waitFor(() => {
     const current = manager.getJob(started.jobId);
     return current && current.authorizationUrl ? current : null;

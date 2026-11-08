@@ -90,9 +90,8 @@ func newService(
 		}
 		providerRegistry[providerID] = provider
 	}
-	if len(providerRegistry) != 2 ||
-		providerRegistry["codex"] == nil ||
-		providerRegistry["claude"] == nil {
+	// 基线 Provider 必须存在（账号注册/重登的主链路）；其余登录流程按注册表增量接入。
+	if providerRegistry["codex"] == nil || providerRegistry["claude"] == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Service{
@@ -651,7 +650,14 @@ func (service *Service) now() time.Time {
 
 // isSupportedProvider 固定当前已研究完成的 OAuth Provider 边界。
 func isSupportedProvider(providerID string) bool {
-	return providerID == "codex" || providerID == "claude"
+	// 这里列的是「Go 已有完整登录流程实现」的 Provider；不是上游枚举，新增一家必须
+	// 同时提供 Begin/Complete 与 artifacts 解码测试，所以保持显式集合而不是通配。
+	switch providerID {
+	case "codex", "claude", "zcode", "opencode":
+		return true
+	default:
+		return false
+	}
 }
 
 // validAuthorizationURL 拒绝非 HTTPS 或缺少主机的 Provider 授权地址。

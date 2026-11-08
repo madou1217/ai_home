@@ -25,7 +25,7 @@ const (
 var (
 	// ErrInvalidDependencies 表示 OAuth Job 服务缺少必要端口或配置。
 	ErrInvalidDependencies = errors.New("OAuth Job 服务依赖无效")
-	// ErrUnsupportedProvider 表示当前只允许 Codex、Claude OAuth。
+	// ErrUnsupportedProvider 表示该 Provider 还没有 Go 侧登录流程实现。
 	ErrUnsupportedProvider = errors.New("OAuth Provider 不受支持")
 	// ErrActiveJobExists 表示同一 Provider 已有活动 OAuth Job。
 	ErrActiveJobExists = errors.New("provider 已有活动 OAuth Job")

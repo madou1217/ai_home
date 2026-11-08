@@ -46,6 +46,9 @@ type commandConfig struct {
 	frontDoorUpstream string
 	// frontDoorToken 是写给 Node 的前门共享标记。
 	frontDoorToken string
+	// frontDoorListen 是公开端口的第二个监听地址（如 0.0.0.0:9527）；
+	// 非空时与私有监听并存，同一份 mux 同时对外服务。
+	frontDoorListen string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -74,6 +77,8 @@ func loadCommandConfig(
 	flags.StringVar(&frontDoorUpstream, "front-door-upstream", "", "公开端口兜底反代上游（如 http://127.0.0.1:9528）；非空时允许绑定公开地址")
 	var frontDoorToken string
 	flags.StringVar(&frontDoorToken, "front-door-token", "", "前门共享标记，写入 X-AIH-Front-Door")
+	var frontDoorListen string
+	flags.StringVar(&frontDoorListen, "front-door-listen", "", "公开端口的第二监听地址（如 0.0.0.0:9527）；为空表示不接管公开端口")
 	flags.Usage = func() {
 		writeUsage(runtime.stderr, flags)
 	}
@@ -125,6 +130,7 @@ func loadCommandConfig(
 		webDir:                     strings.TrimSpace(webDir),
 		frontDoorUpstream:          frontDoorUpstream,
 		frontDoorToken:             strings.TrimSpace(frontDoorToken),
+		frontDoorListen:            strings.TrimSpace(frontDoorListen),
 	}, nil
 }
 

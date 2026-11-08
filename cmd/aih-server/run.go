@@ -88,12 +88,21 @@ func run(
 	if err != nil {
 		return fmt.Errorf("监听 Go Server 地址失败: %w", err)
 	}
+	// 公开前门是第二个监听：私有端点（Node 监督/管理客户端）保持不变，
+	// 前门只多开一个 listener，共用同一份 mux 与同一份鉴权。
+	var publicListener net.Listener
+	if config.frontDoorListen != "" {
+		publicListener, err = runtime.listen(ctx, "tcp", config.frontDoorListen)
+		if err != nil {
+			return fmt.Errorf("监听前门地址失败: %w", err)
+		}
+	}
 	_, _ = fmt.Fprintf(
 		runtime.stdout,
 		"aih-server listening on http://%s\n",
 		listener.Addr().String(),
 	)
-	return serveUntilCanceled(ctx, server, listener)
+	return serveUntilCanceled(ctx, server, listener, publicListener)
 }
 
 // serveUntilCanceled 协调 HTTP Serve 和有界优雅关闭。
@@ -101,11 +110,17 @@ func serveUntilCanceled(
 	ctx context.Context,
 	server *aihserver.Server,
 	listener net.Listener,
+	publicListener net.Listener,
 ) error {
-	serveErrors := make(chan error, 1)
+	serveErrors := make(chan error, 2)
 	go func() {
 		serveErrors <- server.Serve(listener)
 	}()
+	if publicListener != nil {
+		go func() {
+			serveErrors <- server.Serve(publicListener)
+		}()
+	}
 	select {
 	case err := <-serveErrors:
 		return err
@@ -117,6 +132,9 @@ func serveUntilCanceled(
 		defer cancel()
 		shutdownErr := server.Shutdown(shutdownCtx)
 		serveErr := <-serveErrors
+		if publicListener != nil {
+			serveErr = errors.Join(serveErr, <-serveErrors)
+		}
 		return errors.Join(shutdownErr, serveErr)
 	}
 }

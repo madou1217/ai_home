@@ -1,6 +1,6 @@
 'use strict';
 
-// 七家 Provider 的「登录完成」校验器（web-account-auth-oauth-tokens.js）。
+// 仍由 Node CLI 登录的 Provider「登录完成」校验器（web-account-auth-oauth-tokens.js）。
 //
 // 这些函数决定 WebUI / CLI 登录作业在不看 PTY 输出、只查磁盘时「算不算登录成功」：
 //   - 文件在 ≠ 完成：token 字段不全（例如只有 refresh_token、没有 access_token，
@@ -26,7 +26,7 @@ function withTemp(fn) {
   }
 }
 
-// dirKey：这份凭据挂在 configDir 还是 runtimeDir 下（只有 opencode 是后者）。
+// dirKey：这份凭据挂在 configDir 还是 runtimeDir 下。
 const CASES = [
   {
     provider: 'codex',
@@ -37,19 +37,6 @@ const CASES = [
       JSON.stringify({ tokens: { access_token: 'a' } }),          // 缺 refresh
       JSON.stringify({ tokens: null }),                            // tokens 不是对象
       JSON.stringify({})                                           // 完全没 tokens
-    ]
-  },
-  {
-    provider: 'claude',
-    dirKey: 'configDir',
-    file: ['.credentials.json'],
-    valid: [
-      JSON.stringify({ claudeAiOauth: { accessToken: 'a' } }),
-      JSON.stringify({ claude_ai_oauth: { access_token: 'a' } })   // 旧拼写
-    ],
-    invalid: [
-      JSON.stringify({ claudeAiOauth: { refreshToken: 'r' } }),
-      JSON.stringify({})
     ]
   },
   {
@@ -70,21 +57,6 @@ const CASES = [
     invalid: [
       JSON.stringify({ token: { access_token: '   ' } }),          // 全空白
       JSON.stringify({ token: 'not-an-object' }),
-      JSON.stringify({})
-    ]
-  },
-  {
-    provider: 'opencode',
-    dirKey: 'runtimeDir',
-    file: ['.local', 'share', 'opencode', 'auth.json'],
-    valid: [
-      JSON.stringify({ openai: { key: 'k' } }),
-      JSON.stringify({ opencode: { accessToken: 'a' } }),
-      JSON.stringify({ 'opencode-go': { refresh_token: 'r' } })
-    ],
-    invalid: [
-      JSON.stringify({ openai: { key: '   ' } }),
-      JSON.stringify({ openai: 'not-a-record' }),
       JSON.stringify({})
     ]
   },
@@ -152,17 +124,6 @@ for (const item of CASES) {
     }
   });
 }
-
-test('opencode：读的是 runtimeDir 下的 XDG 数据目录，不是 configDir', () => {
-  withTemp((root) => {
-    const runtimeDir = path.join(root, 'rt');
-    const configDir = path.join(root, 'cfg');
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'auth.json'), JSON.stringify({ openai: { key: 'k' } }));
-    // 只写在 configDir 里不算：opencode 的 auth.json 在数据目录。
-    assert.equal(hasOauthCompletionArtifacts({ provider: 'opencode', runtimeDir, configDir }, fs), false);
-  });
-});
 
 test('grok：多档档案只认「其中一档有可用字段」，不是看有没有别的档', () => {
   const { hasGrokOauthTokens } = require('../lib/server/web-account-auth-oauth-tokens');

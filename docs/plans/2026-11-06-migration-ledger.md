@@ -45,7 +45,7 @@
 | 登录策略 | zcode（自定义协议）/ opencode（设备码）迁 Go 并注册进 Job 框架 | 全量单测；登录服务允许四家 Provider |
 | relay mux | SOCKS5 服务端（RFC1928/1929 + UDP 关联登记）+ 首字节分流 | 20 例 + `-race`；变异验证 |
 | UDP 前端 | 共享 socket、两张表、首报锁定、歧义丢弃、120s 回收、BND 改写 | 21 子例 |
-| 账号删除清理 | `internal/adapters/accountremoval`（投影目录/会话探测三态/防穿越） | 临时目录 + 假 tmux probe |
+| 账号删除清理 | internal/adapters/accountremoval 已替换 persistentsessionguard（旧包删除），DeletionGuard 走同一接口；投影目录/会话探测三态/防穿越 | 临时目录 + 假 tmux probe；隔离实例建号→DELETE 204→行归零 |
 | 账号页读模型 | `GET /v1/management/webui/accounts`（camelCase、分页、缺表 fail-soft、derived_by=go_partial） | sqlite fixture + 对拍脚本 |
 | 额度统计切流 | Node quota-stats 全量走 Go；删除第二套窗口算法 921 行 | 23 项 Node 用例；真机 200 |
 | 账号写路由清点 | 删除 58 处零引用绑定与 0 调用方守卫 | 4 项新用例 |

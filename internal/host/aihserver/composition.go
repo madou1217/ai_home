@@ -43,12 +43,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/zcodeoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountremoval"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/deletionprojection"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
@@ -257,7 +257,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		errorLog:             options.ErrorLog,
 		quotaRefresh:         newQuotaFailureRefresh(store, time.Now, options.ErrorLog),
 	}
-	deletionGuard, err := persistentsessionguard.New(options.AIHomeDir)
+	deletionGuard, err := accountremoval.New(accountremoval.Options{AIHomeDir: options.AIHomeDir})
 	if err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号持久会话删除保护失败: %w", err)

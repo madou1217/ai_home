@@ -1,6 +1,7 @@
 # Node → Go 迁移总账（2026-11-06）
 
 > 触发条件：没有「可立即做」的切片时停止循环。以下状态都经过真机或单测验证，未验证的会明确标注。
+> 最近复核：2026-11-08（`lsof`、`git status/worktree`、`curl` 与 headless Chrome 逐条取证）。
 
 ## 1. 已迁并在跑（有验证）
 
@@ -13,13 +14,13 @@
 | 用量账本 + 额度统计 | `d4921e1d` / `9ba446da` / `b15ee7bc` / `6fe60a33` / `57475482` / `2e020e7b` / `e5be550d` / `c620fccb` | 历史 4.7 万行导入（幂等）；按账号切流点去重；Node 承接流量增量推送；对拍 claude/zcode 全等、codex −0.30%、codebuddy −0.24%；行字段 32/32 走 Go |
 | 模型目录 | `c93bde07` / `caaf84c8` / `eedd5b93` / `4d6ed03f` / `b9665fde` / `b6610f59` / `03be8575` | harness 第二次读命中 `meta_only`（已取证）；缓存全量关系集 30/30 diff=0；旧调度器退役后四项真机验证（无残留轮询、编辑触发走 Go、Go 停只置 stale） |
 
-## 2. 被阻塞（附条件）
+## 2. 阻塞与解除进度（逐条复核于 2026-11-08）
 
-| 事项 | 阻塞条件 | 解除方式 |
+| 事项 | 当前阻塞（含已推进） | 解除条件 |
 | --- | --- | --- |
-| 登录完整验收 | 本机 `auth.openai.com` 403（地区限制） | 换可达网络的环境走一次真实登录，核对 accounts/credentials 入库与二次登录不新增 |
-| relay mux 迁 Go | **9527 仍由 Node 持有**（`lsof` 实测 pid 38581 node） | 先做 P3 前门（Go 持 listener）；另需先补 relay golden 用例（全仓目前为零） |
-| activity 签到迁 Go | 并发 agent 正在改（14 个脏文件） | 等该线落定后再评估 qoder/workbuddy 纯 HTTP 子集 |
+| 登录完整验收（codex） | 仍缺一次真人授权的 Complete。**「地区 403」更正为网络层现象**：`curl` 直连 `auth.openai.com` 返回 `cf-mitigated: challenge`（Cloudflare 人机挑战，不是地区封禁页），直连 `chatgpt.com` 超时、经本机 SOCKS（`127.0.0.1:1080`）返回 200；headless Chrome 仍停在 challenge，需要真浏览器。Begin 半程已真机通过，Complete 已有 18 条单测 + v29 幂等回放 | 用真浏览器（走系统 SOCKS）完成一次真实登录，核对 accounts/credentials 入库与二次登录不新增 |
+| relay mux 迁 Go | 已推进：只读评估完成（`db07d511`），S 切片 = 首字节分流 + SOCKS5 认证 + CONNECT 透传 + UDP ASSOCIATE，验收标准已写明。仍阻塞：9527 由 Node 持有（`lsof` 2026-11-08 仍为 node pid 38581），Go 侧无 socks5 实现（`internal/` 全量 grep 无命中），P3 前门无代码/提交 | 先做 P3 前门让 Go 持 listener；同时补 relay golden 用例（全仓仍为零） |
+| activity 签到迁 Go | 阻塞条件已变：原「并发 agent 正在改」过期——该线最后写入 2026-11-06 20:10，此后无改动；当前仍是 5 个修改态文件 + 未跟踪 `pacing.js`，未提交 | 该线提交或放弃后（或明确授权我接管这批改动），再评估 qoder/workbuddy 纯 HTTP 子集 |
 
 ## 3. 不建议做
 
@@ -29,5 +30,5 @@
 
 ## 4. 遗留技术债（与迁移无关但已知）
 
-- 临时 git worktree 三个残留（`/private/tmp/aih-del-order-wt2` 等），删除命令需人工授权。
-- 工作区有 65 个脏文件（多条并发线），后续提交一律 pathspec。
+- 临时 git worktree：`/private/tmp/aih-del-order-wt2` 目录仍在；`/private/tmp/aih-baseline-zcode`、`/private/tmp/aih-head` 目录已不存在（`git worktree list` 标 prunable），可只清元数据，删除仍需人工授权。
+- 工作区有 65 个脏文件（多条并发线，较 11-06 未变），后续提交一律 pathspec。

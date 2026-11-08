@@ -39,6 +39,7 @@ func newFallbackProbe(catalog ModelCatalog) (http.Handler, *fallbackProbe) {
 func serveFallback(t *testing.T, handler http.Handler, method, path, contentType, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer test")
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
@@ -103,5 +104,16 @@ func TestFallbackRestoresBodyBeyondProbeWindow(t *testing.T) {
 	}
 	if len(probe.upstreamBody) != len(body) || probe.upstreamBody != body {
 		t.Fatalf("body length = %d, want %d", len(probe.upstreamBody), len(body))
+	}
+}
+
+func TestFallbackSkipsBodyProbeWithoutCredential(t *testing.T) {
+	handler, probe := newFallbackProbe(fakeModelCatalog{})
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{\"model\":\"gemini-2.5-pro\"}"))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if probe.nextCalls != 1 || probe.upstreamCalls != 0 {
+		t.Fatalf("next=%d upstream=%d", probe.nextCalls, probe.upstreamCalls)
 	}
 }

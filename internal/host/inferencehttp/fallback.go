@@ -59,6 +59,13 @@ func (fallback *modelFallback) wrap(next http.Handler) http.Handler {
 			next.ServeHTTP(response, request)
 			return
 		}
+		// 没带凭据的请求不探测请求体：鉴权在各自的 Handler 里，先读 128KB 会让
+		// 未认证流量产生不必要的工作量。
+		if strings.TrimSpace(request.Header.Get("Authorization")) == "" {
+			next.ServeHTTP(response, request)
+			return
+		}
+
 		model := probeRequestModel(request)
 		if model == "" || fallback.catalog.HasModel(model) {
 			next.ServeHTTP(response, request)

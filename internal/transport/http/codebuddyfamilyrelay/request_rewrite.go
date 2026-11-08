@@ -14,15 +14,14 @@
 //  3. `messages[0].role` 必须是 `system`（否则 400 first message is not system prompt）；
 //  4. 必须带真实客户端 User-Agent（脚本 UA 被网关 403 code 10085）。
 //
-// **当前进度（2026-10-15）**：已完成并通过测试的是两件不依赖其它模块的事——
-//   - `request_rewrite.go`：四条硬约束改写 + tool_choice 翻译（与 Node 侧
-//     lib/account/codebuddy-family-inference.js 同语义，结论字段一一对应）；
-//   - `aggregate.go`：客户端要非流式时的 SSE 聚合（上游只给流，约束 2）。
-//
-// **尚未接线**（本包目前没有调用方，路由仍由 Node 承载）：HTTP Handler（账号选择、
-// 凭据取 token、上游请求、重试、响应回写、尝试记账、用量观察）、composition/router
-// 注册，以及 Node 侧 `GO_INFERENCE_PROVIDERS` 与守卫测试的同步。在接线完成之前，
-// `go-core-route-deferral` 会把家族请求继续交还 Node（见 lib/server/go-core-servable-providers.js）。
+// **接线状态（2026-11-08）**：已由 composition 构造、router 挂在 chat completions 入口，
+// 家族四支在 `contracts/providers/manifest.json` 的 relayHosts.go 里声明 supported=true，
+// Node 的 `go-core-servable-providers` 据此把家族请求交给 Go。Handler 复用
+// relaycore 的账号选择/重试/改写/记账骨架，本包只保留家族差异面：
+//   - `request_rewrite.go`：四条硬约束改写 + tool_choice 翻译；
+//   - `aggregate.go`：客户端要非流式时的 SSE 聚合（上游只给流，约束 2）；
+//   - `handler.go`：契约不满足或没有可透传账号时交回 Canonical（Fallback）。
+// 回归护栏见 `handler_test.go`：构造依赖、零值 503、方法/路径/正文交还、请求体原样重放。
 package codebuddyfamilyrelay
 
 import (

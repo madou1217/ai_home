@@ -580,3 +580,22 @@ test('claude add：固定走 Go，本地不生成 PKCE/state', async (t) => {
   assert.equal(job._codeVerifier, '', 'PKCE verifier 只在 Go 进程内');
   assert.equal(job.redirectUri, 'http://localhost:54545/callback', 'loopback 端口与 Node 生产路径一致');
 });
+
+// agy 直连 Google 登录固定走 Go；native-cli 模式仍保留 CLI 策略。
+test('agy add（直连）：固定走 Go，本地不生成 PKCE/state，也不监听回调', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const { state, goAuthJobs } = createFakeGoAuthJobs();
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+  const started = manager.startOauthJob('agy', 'oauth-browser', { authStrategy: 'aih-google-oauth' });
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.authorizationUrl ? current : null;
+  });
+  assert.equal(state.calls.start, 1, 'agy 直连必须调用 Go');
+  assert.equal(job._goAuthJobWired, true, 'agy 直连必须走 Go 作业');
+  assert.equal(job.oauthState, '', 'state 由 Go 生成与校验');
+  assert.equal(job._codeVerifier, '', '直连流程不使用本地 PKCE');
+  assert.equal(job.redirectUri, 'http://localhost:51121/oauth-callback', '回调地址与 Node 原行为一致');
+  assert.equal(job.callbackCaptureStatus, '', '不监听 51121，用户手填回调');
+});

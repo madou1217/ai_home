@@ -819,7 +819,7 @@ func isSupportedProvider(providerID string) bool {
 	// 这里列的是「Go 已有完整登录流程实现」的 Provider；不是上游枚举，新增一家必须
 	// 同时提供 Begin/Complete 与 artifacts 解码测试，所以保持显式集合而不是通配。
 	switch providerID {
-	case "codex", "claude", "zcode", "opencode":
+	case "codex", "claude", "zcode", "opencode", "agy":
 		return true
 	default:
 		return false

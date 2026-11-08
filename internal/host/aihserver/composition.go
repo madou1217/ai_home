@@ -874,8 +874,13 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
 	}
-	// zcode（自定义协议）与 opencode（设备码）的登录已迁 Go；Node 侧策略文件删除后
-	// 仍然由同一个 Job 框架提供 Begin/Complete 与终态落库。
+	// codex/claude 浏览器登录、zcode（自定义协议）、opencode（设备码）与 agy
+	// （Google 直连）的登录都已迁 Go；Node 侧策略文件删除后仍由同一个 Job 框架
+	// 提供 Begin/Complete 与终态落库。
+	agyLogin, err := agyoauth.NewLogin(oauthClient, time.Now)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 agy 登录策略失败: %w", err)
+	}
 	zcodeOAuth, err := zcodeoauth.New(oauthClient)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 zcode 登录策略失败: %w", err)
@@ -890,6 +895,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			claudeProvider,
 			zcodeOAuth,
 			opencodeOAuth,
+			agyLogin,
 		},
 		Decoder:    decoder,
 		Registrar:  scheduledRegistrar,

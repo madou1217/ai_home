@@ -141,21 +141,6 @@ func (rule RouteRule) IsValid() bool {
 	return err == nil && restored == rule
 }
 
-// matchesModel 判断规则是否覆盖该模型，不区分客户端协议作用域。
-//
-// 用途只有一个：前门判断「Go 的目录里到底有没有这个模型」。协议/能力是否可表达
-// 由 Resolve 决定，这里不能替它下结论。
-func (rule RouteRule) matchesModel(model string) bool {
-	switch rule.matchKind {
-	case routeMatchExact:
-		return rule.pattern == model
-	case routeMatchPrefix:
-		return strings.HasPrefix(model, rule.prefix)
-	default:
-		return false
-	}
-}
-
 // matches 判断规则是否接受当前模型且满足客户端作用域。
 func (rule RouteRule) matches(
 	model string,

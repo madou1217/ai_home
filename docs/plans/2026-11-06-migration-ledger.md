@@ -19,7 +19,7 @@
 | 事项 | 当前阻塞（含已推进） | 解除条件 |
 | --- | --- | --- |
 | 登录完整验收（codex） | 仍缺一次真人授权的 Complete。**「地区 403」更正为网络层现象**：`curl` 直连 `auth.openai.com` 返回 `cf-mitigated: challenge`（Cloudflare 人机挑战，不是地区封禁页），直连 `chatgpt.com` 超时、经本机 SOCKS（`127.0.0.1:1080`）返回 200；headless Chrome 仍停在 challenge，需要真浏览器。Begin 半程已真机通过，Complete 已有 18 条单测 + v29 幂等回放 | 用真浏览器（走系统 SOCKS）完成一次真实登录，核对 accounts/credentials 入库与二次登录不新增 |
-| relay mux 迁 Go | 已推进：只读评估完成（`db07d511`），S 切片 = 首字节分流 + SOCKS5 认证 + CONNECT 透传 + UDP ASSOCIATE，验收标准已写明。仍阻塞：9527 由 Node 持有（`lsof` 2026-11-08 复测 pid 76568，重启后 pid 会变；端口归属未变），Go 侧无 socks5 实现（`internal/` 全量 grep 无命中），P3 前门无代码/提交 | 先做 P3 前门让 Go 持 listener；同时补 relay golden 用例（全仓仍为零） |
+| relay mux 迁 Go | 代码已就绪（internal/adapters/socks5 / relaymux / relayudp，含 golden 与 -race），未接线。仍阻塞：9527 由 Node 持有，Go 没有入口 listener；用户名到回环端口的映射仍在 Node | Go 需要先成为外部入口（或由 Node 把 relay 端口流量转给 Go），再补凭据映射 |
 | activity 签到迁 Go | 阻塞条件已变：原「并发 agent 正在改」过期——该线最后写入 2026-11-06 20:10，此后无改动；当前仍是 13 个修改态文件 + 4 个未跟踪（含 `pacing.js`、`account-activity-identity.js`），共 17 个，未提交 | 该线提交或放弃后（或明确授权我接管这批改动），再评估 qoder/workbuddy 纯 HTTP 子集 |
 
 ## 3. 不建议做
@@ -40,8 +40,6 @@
 
 | 切片 | 结果 | 验证 |
 | --- | --- | --- |
-| P3 前门反代 | `internal/host/aihserver/frontdoor.go`：剥离伪造转发头、X-AIH-Peer、SSE 逐帧、WS 透传、502 JSON | 6 个单测；真机 A/B（Go 19601 → Node 9527）：路径/状态码全等，/ui 字节 hash 一致，无 key 401 |
-| P3 前门开关 | `--front-door-listen` 第二监听 + Node 回环退回；`--front-door` 配置默认关 | 双监听真机验证；参数合同 2 例 |
 | /ui 静态托管 | Go 与 Node serveStaticFile 语义对齐（尾斜杠/资源 404/SPA/HEAD/Content-Length） | 33 条 parity 子测试 + 7 条穿越防护 |
 | 令牌刷新 | gemini / grok / cline 迁 Go；Node 策略表删三项、删 gemini/cline 模块；委托开关只覆盖宿主仍维护的 Provider | 15 条契约子测试；委托豁免单测；Node 73 项 |
 | 登录策略 | zcode（自定义协议）/ opencode（设备码）迁 Go 并注册进 Job 框架 | 全量单测；登录服务允许四家 Provider |
@@ -56,21 +54,3 @@
 | SSH 宿主（peer） | `internal/adapters/sshhost`：hostkey/identity/probe/shell/supervisor | 全包测试 |
 | session chat（peer） | `internal/runtime/providercli/sessionchat`：命令/环境/失败分类 + 对拍夹具 | 对拍 7220 行夹具 |
 | 插件清单（peer） | `pluginapi.InventoryPath` 只读清单（控制面读 app-state.db） | 全包测试 |
-
-### 前门推理回落（2026-11-08 已实现）
-
-`internal/host/inferencehttp/fallback.go` 在三个 Canonical 入口与 Gemini 入口前做一次模型探测：
-
-- 只读请求体前缀（128KB）提取 `model`；Gemini 从路径 `/models/{model}:generateContent` 提取；
-  探测后把字节原样回填，处理器仍读到完整请求体。
-- `AtomicCatalog.HasModel` 判断 Go 目录是否覆盖该模型；**只有目录里完全没有**时才把请求交给
-  Node 前门上游，并写 `x-aih-route-owner: node`，避免 Node 再按条目转回 Go 形成回路。
-- 目录里有模型但暂时没有可用账号时保持 Go 的 503，不回落（与 Node 的 no_available_account 同义）。
-
-验证：5 条中间件单测（未知模型/已知模型/无 model/non-JSON/Gemini 路径/32KB 以上请求体回填）；
-真机前门实例（19621 → Node 9527）用 `zzz-unknown-model` 得到与 Node 逐字节相同的
-`no_available_account` 响应，而已知模型 `GLM-5.3-Flash` 仍返回 Go 自己的错误形状。
-
-边界：目录里存在、但只有 Node 能路由的模型（例如账号级 RoutingExclusion）不会回落——这类
-需要一个「账号排除」判断，留给切流时按实际账号集验证。
-

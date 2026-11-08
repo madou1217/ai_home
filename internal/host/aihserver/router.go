@@ -229,13 +229,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
 	// 的来源，且同协议下这些信息本来是 1:1 的。
 	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
-	// 公开端口由 Go 持有时，未识别的路由原样交给回环上的 Node；
-	// 没有配置前门时保持 JSON 404。
-	if handlers.frontDoor != nil {
-		mux.Handle("/", handlers.frontDoor)
-	} else {
-		mux.HandleFunc("/", handleRouteNotFound)
-	}
+	mux.HandleFunc("/", handleRouteNotFound)
 	return mux
 }
 

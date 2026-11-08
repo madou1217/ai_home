@@ -40,10 +40,6 @@ type Dependencies struct {
 	ResponsesDecodeErrorObserver func(error)
 	// MaxBodyBytes 为零时由各协议 Handler 使用安全默认值。
 	MaxBodyBytes int64
-	// ModelCatalog 判断 Go 目录是否覆盖某个模型；与 ModelFallback 同时提供才启用回落。
-	ModelCatalog ModelCatalog
-	// ModelFallback 是宿主（Node）入口：目录里没有的模型原样交给它处理。
-	ModelFallback http.Handler
 }
 
 // Module 是推理 HTTP 组合模块暴露的入口集合。
@@ -121,15 +117,7 @@ func New(dependencies Dependencies) (Module, error) {
 	router.Handle(openairesponsesapi.Path, responses)
 	router.Handle(openaichatcompletionsapi.Path, chat)
 	router.Handle(anthropicmessagesapi.Path, messages)
-	// 前门模式下，Go 目录里完全没有的模型（gemini / 自定义账号）交还宿主；
-	// 目录里存在的模型即使暂时没有可用账号，也保持 Go 的 503 语义，不回落。
-	var moduleRouter http.Handler = router
-	var moduleGemini http.Handler = geminiHandler
-	if fallback := newModelFallback(dependencies.ModelCatalog, dependencies.ModelFallback); fallback != nil {
-		moduleRouter = fallback.wrap(router)
-		moduleGemini = fallback.wrap(geminiHandler)
-	}
-	return Module{Router: moduleRouter, Gemini: moduleGemini}, nil
+	return Module{Router: router, Gemini: geminiHandler}, nil
 }
 
 // newProtocolRegistry 创建只读且可并发共享的客户端协议策略注册表。

@@ -7,7 +7,6 @@
 
 | 编号 | 切片 | 独占文件（其他人不得修改） | 交付 |
 | --- | --- | --- | --- |
-| S1 | 前门 + 静态托管 | `internal/host/aihserver/frontdoor*.go`、`router.go`、`options.go`、`cmd/aih-server/config.go`、`lib/cli/services/server/go-core-supervisor.js`、`lib/server/go-core-host.js`、`lib/server/management-key-auth.js`、`internal/transport/http/webuiassets/*` | Go 持公开端口、未识别路由反代 Node、/ui 由 Go 托管；Node 绑回环 |
 | S2 | 令牌刷新收口 | `internal/adapters/accountauth/{gemini,grok,cline}oauth/*`、`internal/host/aihserver/credential_refresh*.go`、`lib/server/token-refresh-strategies.js`、删除 `lib/server/{gemini,grok,cline}-token-refresh.js` | 三家刷新迁 Go，Node 策略表删三项 |
 | S3 | 登录策略 | `internal/adapters/accountauth/{zcode,opencode}oauth/*`、`lib/server/oauth-strategies/{zcode,opencode}.js` | 两家登录走 Go 作业框架，删 Node 策略 |
 | S4 | relay mux | `internal/adapters/relaymux/*`、`internal/adapters/socks5/*` | SOCKS5 服务端 + 首字节分流 + UDP 关联，golden 单测 |

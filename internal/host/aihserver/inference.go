@@ -103,8 +103,6 @@ type inferenceCompositionDependencies struct {
 	upstreamRules configured.Rules
 	// componentLog 记录不影响启动的组件级失败（如初次目录刷新）；可为空。
 	componentLog *log.Logger
-	// frontDoorProxy 是公开前门的上游入口；非空时，目录里没有的模型交还 Node。
-	frontDoorProxy http.Handler
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -240,8 +238,6 @@ func newInferenceComposition(
 		Clock:                        dependencies.clock,
 		MessagesDecodeErrorObserver:  dependencies.decodeErrors,
 		ResponsesDecodeErrorObserver: dependencies.responsesDecodeErrors,
-		ModelCatalog:                 activeCatalog,
-		ModelFallback:                dependencies.frontDoorProxy,
 	})
 	if err != nil {
 		return nil, err

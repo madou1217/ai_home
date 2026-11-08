@@ -218,20 +218,6 @@ func (catalog *AtomicCatalog) Resolve(
 	return snapshot.Resolve(ctx, request)
 }
 
-// HasModel 判断当前快照是否覆盖该模型。
-//
-// 尚未发布快照时返回 false：失败关闭的目录不应该让前门把请求留在 Go。
-func (catalog *AtomicCatalog) HasModel(model string) bool {
-	if catalog == nil {
-		return false
-	}
-	snapshot := catalog.current.Load()
-	if snapshot == nil || snapshot.routes == nil || !snapshot.isValid() {
-		return false
-	}
-	return snapshot.routes.HasModel(model)
-}
-
 // ResolveProtocolRoute 从同一个原子快照解析原生线协议路由。
 func (catalog *AtomicCatalog) ResolveProtocolRoute(
 	ctx context.Context,

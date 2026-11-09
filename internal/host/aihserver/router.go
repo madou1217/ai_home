@@ -31,6 +31,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
+	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -105,6 +106,11 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	if handlers.webuiAccounts != nil {
 		mux.Handle(webuiaccountsapi.Path, handlers.webuiAccounts)
+	}
+	// 应用启动权限设置：路径带 {appId} 通配，必须用「方法 + 模式」注册，且只挂 GET——
+	// PUT 仍在 Node 的 /v0/webui/toolkit/apps/{appId}/settings。
+	if handlers.webuiToolSettings != nil {
+		mux.Handle("GET "+webuitoolsettingsapi.Path+"/{appId}/settings", handlers.webuiToolSettings)
 	}
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {

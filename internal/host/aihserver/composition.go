@@ -89,6 +89,7 @@ import (
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
 const (
@@ -132,6 +133,8 @@ type serverHandlers struct {
 	webUI http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
 	webuiAccounts http.Handler
+	// webuiToolSettings 是应用启动权限设置的只读模型（GET 固定读 Go）。
+	webuiToolSettings http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats http.Handler
 	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
@@ -305,6 +308,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		AGYModelWires:              agyModelWires,
 		ModelModalities:            modelModalities,
 		RouteObserver:              codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
+		HostHomeDir:                hostHomeDir,
 	})
 	if err != nil {
 		_ = codexVersions.Close()
@@ -385,6 +389,8 @@ type handlerDependencies struct {
 	ModelModalities            *modelsdev.Index
 	// RouteObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
 	RouteObserver codexresponsesws.RouteObserver
+	// HostHomeDir 是宿主 CLI 配置文件所在家目录；工具权限设置的 host* 探测需要它。
+	HostHomeDir string
 }
 
 // newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
@@ -1123,6 +1129,23 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建管理指标 Handler 失败: %w", err)
 	}
+	// 应用启动权限设置的只读模型：设置记录直读 app-state.db，能力/目录来自 Provider 合同。
+	// 写入口仍在 Node，本接口只服务 GET（见包注释）。
+	toolSettingsSource, err := webuitoolsettingsapi.OpenSettingsSource(aiHomeDir)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建工具启动权限设置数据源失败: %w", err)
+	}
+	webuiToolSettingsHandler, err := webuitoolsettingsapi.NewHandler(webuitoolsettingsapi.Dependencies{
+		Authorizer:  authorizer,
+		Providers:   catalog,
+		Settings:    toolSettingsSource,
+		HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建工具启动权限设置接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1514,6 +1537,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		upstreamMappingGroups: upstreamMappingHandler,
 		accountRules:          accountRulesHandler,
 		modelCatalog:          modelCatalogHandler,
+		webuiToolSettings:     webuiToolSettingsHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

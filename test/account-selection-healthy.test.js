@@ -160,3 +160,22 @@ test('no healthy account returns null instead of a disabled one', () => {
   });
   assert.equal(service.getNextHealthyAccount('codebuddy', '1'), null);
 });
+test('family 选号优先当前站点，再考虑跨站高额度', () => {
+  const service = createService({
+    records: {
+      codebuddy: [
+        { provider: 'codebuddy', accountRef: ref(1), cliAccountId: '1' }
+      ],
+      codebuddycn: [
+        { provider: 'codebuddycn', accountRef: 'acct_cn' + '0'.repeat(17) + '2', cliAccountId: '2' }
+      ]
+    },
+    derived: {
+      [ref(1)]: { remainingPct: 100, schedulableStatus: 'schedulable' },
+      ['acct_cn' + '0'.repeat(17) + '2']: { remainingPct: 70, schedulableStatus: 'schedulable' }
+    }
+  });
+  const target = service.getNextHealthyAccount('codebuddycn', '', { family: true });
+  assert.equal(target.provider, 'codebuddycn');
+  assert.equal(target.cliAccountId, '2');
+});

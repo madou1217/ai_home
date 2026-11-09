@@ -37,6 +37,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
@@ -148,6 +149,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// SSH 工作区终端状态：GET 固定读 Go（探测 Go 自己的 tmux 会话）。
 	if handlers.webuiSSHSessions != nil {
 		mux.Handle("GET "+webuisshapi.WorkspaceSessionsPath, handlers.webuiSSHSessions)
+	}
+	// server 配置：GET 固定读 Go（公开视图，密钥隐藏）；POST 写配置仍在 Node。
+	if handlers.webuiServerConfig != nil {
+		mux.Handle("GET "+webuiserverconfigapi.Path, handlers.webuiServerConfig)
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。

@@ -95,6 +95,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
@@ -160,6 +161,8 @@ type serverHandlers struct {
 	webuiSSHWorkspaces http.Handler
 	// webuiSSHSessions 是 SSH 工作区持久终端状态的只读模型（探测复用终端 tmux store）。
 	webuiSSHSessions http.Handler
+	// webuiServerConfig 是 server 配置的公开只读视图（密钥隐藏）。
+	webuiServerConfig http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1286,6 +1289,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 工作区终端状态接口失败: %w", err)
 	}
+	serverConfigSource, err := webuiserverconfigapi.OpenSource(aiHomeDir)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 server 配置数据源失败: %w", err)
+	}
+	webuiServerConfigHandler, err := webuiserverconfigapi.NewHandler(webuiserverconfigapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      serverConfigSource,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 server 配置接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1715,6 +1731,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiSSH:              webuiSSHHandler,
 		webuiSSHWorkspaces:    webuiSSHWorkspacesHandler,
 		webuiSSHSessions:      webuiSSHSessionsHandler,
+		webuiServerConfig:     webuiServerConfigHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

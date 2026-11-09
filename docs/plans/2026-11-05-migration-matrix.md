@@ -461,6 +461,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   远端工作区补 `run/remote-workspaces/<id>` 影子目录；终端状态在 Go 内按 `remote-ws:<id>`
   探测同一个 tmux store，不再由 Node 逐个 workspace 发 N 次请求。Node 三条 GET 固定代理、
   Go 不可用 503，增删改与终端创建仍在 Node。
+- **server 配置 GET 切 Go**：Go 新增 `GET /v1/management/webui/server-config`，只读
+  app-state.db 的 `config:server`，复刻 Node `sanitizeServerConfig` 的默认值/夹取/归一化，并按
+  `toPublicServerConfig` 隐藏 apiKey/managementKey（保留 configured 标志）。两侧共用
+  `test/fixtures/server-config-sanitize-cases.json` 对拍；Node GET 固定代理、Go 不可用 503，
+  POST 写配置仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

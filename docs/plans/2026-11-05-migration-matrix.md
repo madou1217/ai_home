@@ -414,6 +414,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `account_refs` 校验账号归属；Node 路由改为代理，无本地回退。特意不复用 Go 的 accounts 表做
   存在性校验——真机 13 个事件账号里有 4 个不在 Go 账号投影中，用 Go 表会误判 404。
   真机：200（真实事件）/ 404（未知 ref）/ 401（无密钥）。
+- **别名池设置 GET 切 Go**（`62d65d0c`）：`GET /v1/management/webui/accounts/{provider}/{ref}/alias-pool`
+  读取 app-state.db 的 `account:alias-pool:<ref>`，并用同一份库的 `account_refs` 校验归属；
+  POST（写设置 + 运行池重载）仍在 Node。顺手抽出共享只读包 `internal/adapters/appstate`
+  （只读打开 / app_kv / 账号归属），并删除 Node 里已被 Go 取代的 `listAccountQuotaResetEvents`。
+  真机：显式 false → 200、无记录 → true、Provider 不匹配 → 409、未知账号 → 404、无密钥 → 401。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

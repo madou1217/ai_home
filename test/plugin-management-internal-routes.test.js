@@ -175,6 +175,19 @@ test('internal/prepare：缺少管理密钥 401', async () => {
   session.cleanup();
 });
 
+test('internal/prepare：回环 + Go Core 引导密钥也能通过（与 Server key 分离）', async () => {
+  const session = createSession();
+  const result = await call(session, {
+    pathname: '/v0/plugins/internal/prepare',
+    body: prepareBody(),
+    authorization: 'go-core-boot-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' }
+  });
+  assert.equal(result.writes[0].status, 200);
+  assert.ok(result.writes[0].payload.ticket);
+  session.cleanup();
+});
+
 test('internal/prepare：候选被拒返回原错误码与 diagnostics', async () => {
   const session = createSession({ supervisor: createSupervisor({ reject: true }) });
   const result = await call(session, { pathname: '/v0/plugins/internal/prepare', body: prepareBody() });

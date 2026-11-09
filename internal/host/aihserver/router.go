@@ -32,6 +32,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
@@ -112,6 +113,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// PUT 仍在 Node 的 /v0/webui/toolkit/apps/{appId}/settings。
 	if handlers.webuiToolSettings != nil {
 		mux.Handle("GET "+webuitoolsettingsapi.Path+"/{appId}/settings", handlers.webuiToolSettings)
+	}
+	// 账号额度重置历史：只读 Go 模型，数据源仍是 Node 的 app-state.db。
+	if handlers.webuiQuotaReset != nil {
+		mux.Handle("GET "+webuiquotaresetapi.Path+"/{provider}/{accountRef}/quota-reset-events", handlers.webuiQuotaReset)
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。

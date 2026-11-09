@@ -195,6 +195,123 @@ func encodeState(state plugincontrol.State) ([]byte, error) {
 	return json.Marshal(document)
 }
 
+// Commit 以「候选原文」为唯一事实提交一次控制状态变更（P1 的 enable/disable 写入口）。
+//
+// 与 Update 的区别：mutator 不在 Go 执行，候选由 Node 计算后原样传入；Go 只做
+// CAS、结构/操作边界校验与落盘，绝不重排或丢弃未建模字段（artifact/directory/
+// permissionsFingerprint/createdAt/generations 等）。
+func (store *Store) Commit(
+	ctx context.Context,
+	operation plugincontrol.Operation,
+	expectedRevision int64,
+	candidate []byte,
+) (int64, error) {
+	if store == nil || len(candidate) == 0 {
+		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	lease, err := accountmaintenance.Acquire(ctx, store.aiHomeDir)
+	if err != nil {
+		return 0, err
+	}
+	defer lease.Close()
+
+	// enable/disable 必须已有库与表；install 沿用 Node 的建库建表语义。
+	if operation != plugincontrol.OperationInstall {
+		if _, statErr := os.Stat(store.databasePath); statErr != nil {
+			return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+		}
+	}
+	database, err := sql.Open("sqlite", store.databasePath)
+	if err != nil {
+		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	database.SetMaxOpenConns(1)
+	database.SetMaxIdleConns(1)
+	defer func() { _ = database.Close() }()
+	connection, err := database.Conn(ctx)
+	if err != nil {
+		return 0, mapStateError(err)
+	}
+	defer func() { _ = connection.Close() }()
+	for _, pragma := range []string{
+		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMS),
+		fmt.Sprintf("PRAGMA journal_size_limit = %d", walSizeLimitBytes),
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA foreign_keys = ON",
+	} {
+		if _, err := connection.ExecContext(ctx, pragma); err != nil {
+			return 0, mapStateError(err)
+		}
+	}
+	var journalMode string
+	if err := connection.QueryRowContext(ctx, "PRAGMA journal_mode = WAL").Scan(&journalMode); err != nil {
+		return 0, mapStateError(err)
+	}
+	hardenDatabaseFiles(store.databasePath)
+	if operation == plugincontrol.OperationInstall {
+		if _, err := connection.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS app_kv (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL,
+				updated_at INTEGER NOT NULL
+			)
+		`); err != nil {
+			return 0, mapStateError(err)
+		}
+		hardenDatabaseFiles(store.databasePath)
+	}
+	if _, err := connection.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return 0, mapStateError(err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = connection.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+
+	var currentRaw []byte
+	currentRevision := int64(0)
+	var encoded string
+	readErr := connection.QueryRowContext(ctx,
+		"SELECT value FROM app_kv WHERE key = ?", ControlStateKey).Scan(&encoded)
+	switch {
+	case errors.Is(readErr, sql.ErrNoRows):
+		if operation != plugincontrol.OperationInstall {
+			return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+		}
+	case readErr != nil:
+		if strings.Contains(strings.ToLower(readErr.Error()), "no such table") {
+			return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+		}
+		return 0, mapStateError(readErr)
+	default:
+		currentRaw = []byte(encoded)
+		decoded, decodeErr := decodeState(currentRaw)
+		if decodeErr != nil {
+			return 0, decodeErr
+		}
+		currentRevision = decoded.Revision
+	}
+	if currentRevision != expectedRevision {
+		return 0, &plugincontrol.RevisionConflictError{Current: currentRevision}
+	}
+	if err := plugincontrol.ValidateCandidate(currentRaw, candidate, operation, expectedRevision); err != nil {
+		return 0, err
+	}
+	if _, err := connection.ExecContext(ctx, `
+		INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, ControlStateKey, string(candidate), nowMillis()); err != nil {
+		return 0, mapStateError(err)
+	}
+	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
+		return 0, mapStateError(err)
+	}
+	committed = true
+	return expectedRevision + 1, nil
+}
+
 func decodeState(data []byte) (plugincontrol.State, error) {
 	if len(data) == 0 || len(data) > maxStateBytes {
 		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateInvalid, "")

@@ -99,6 +99,7 @@ func newPluginControlHandler(authorizer pluginapi.Authorizer, aiHomeDir string) 
 	handler, err := plugincontrolapi.NewHandler(plugincontrolapi.Dependencies{
 		Authorizer: authorizer,
 		Installer:  installer,
+		Committer:  store,
 	})
 	if err != nil {
 		return nil

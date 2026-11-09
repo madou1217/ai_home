@@ -30,6 +30,10 @@ const (
 	InstallPath = "/v1/management/plugins/install"
 	// UninstallPath 卸载一个已安装版本。
 	UninstallPath = "/v1/management/plugins/uninstall"
+	// StatePath 以候选原文提交一次控制状态变更（enable/disable 使用）。
+	StatePath = "/v1/management/plugins/state/commit"
+	// maxStateBodyBytes 覆盖候选文档上限（4MB）与 JSON 包装。
+	maxStateBodyBytes = 5 << 20
 	// maxBodyBytes 与 Node 插件路由的 MAX_BODY_BYTES（256KB）一致。
 	maxBodyBytes = 256 * 1024
 	// HostVersionHeader / NodeVersionHeader 是 Node 代理 install 时给出的宿主事实。
@@ -49,16 +53,24 @@ type Installer interface {
 	Uninstall(ctx context.Context, input plugincontrol.UninstallInput) (plugincontrol.UninstallResult, error)
 }
 
+// StateCommitter 接收 Node 计算好的候选状态并做 CAS 写入。
+type StateCommitter interface {
+	Commit(ctx context.Context, operation plugincontrol.Operation, expectedRevision int64, candidate []byte) (int64, error)
+}
+
 // Dependencies 汇总管理接口依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	Installer  Installer
+	// Committer 为空时只关闭 state/commit 路由；install/uninstall 不受影响。
+	Committer StateCommitter
 }
 
-// Handler 处理安装与卸载。
+// Handler 处理安装、卸载与状态提交。
 type Handler struct {
 	authorizer Authorizer
 	installer  Installer
+	committer  StateCommitter
 }
 
 // NewHandler 创建管理接口；依赖缺失时拒绝装配。
@@ -66,7 +78,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Installer == nil {
 		return nil, errors.New("插件安装接口依赖无效")
 	}
-	return &Handler{authorizer: dependencies.Authorizer, installer: dependencies.Installer}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		installer:  dependencies.Installer,
+		committer:  dependencies.Committer,
+	}, nil
 }
 
 // ServeHTTP 按路径分派；两条路径都只接受 POST。
@@ -85,6 +101,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.install(response, request)
 	case UninstallPath:
 		handler.uninstall(response, request)
+	case StatePath:
+		handler.stateCommit(response, request)
 	default:
 		writeError(response, http.StatusNotFound, "not_found", "")
 	}
@@ -251,6 +269,78 @@ func headerOr(request *http.Request, name string, fallback string) string {
 // writeControlError 復刻 Node writeError 的状态码分类：
 // not_installed → 404；version_conflict / in_use / revision_conflict → 409；
 // 维护或状态不可用 → 503；其余输入/校验错误 → 400。
+type stateCommitPayload struct {
+	Operation        string          `json:"operation"`
+	ExpectedRevision json.RawMessage `json:"expectedRevision"`
+	Candidate        json.RawMessage `json:"candidate"`
+}
+
+// stateCommit 接收 Node 计算好的候选并做权威 CAS 写入。
+//
+// 不在这里重算 configSchema/权限指纹：候选语义属于 Node；Go 只验证结构与操作边界，
+// 并按原始字节落盘。
+func (handler *Handler) stateCommit(response http.ResponseWriter, request *http.Request) {
+	if !requireMethod(response, request, http.MethodPost) {
+		return
+	}
+	if handler.committer == nil {
+		writeDomainError(response, http.StatusServiceUnavailable, "plugin_state_unavailable", "插件状态写入不可用")
+		return
+	}
+	if request.Body == nil {
+		writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "请求体不是合法 JSON")
+		return
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, maxStateBodyBytes)
+	document, err := io.ReadAll(request.Body)
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "控制状态文档过大")
+		} else {
+			writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "请求体读取失败")
+		}
+		return
+	}
+	var payload stateCommitPayload
+	if err := json.Unmarshal(document, &payload); err != nil {
+		writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "请求体不是合法 JSON")
+		return
+	}
+	operation, ok := plugincontrol.ParseOperation(strings.TrimSpace(payload.Operation))
+	if !ok {
+		writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "未知 operation")
+		return
+	}
+	expected, revisionErr := parseExpectedRevision(payload.ExpectedRevision)
+	if revisionErr != nil || expected == nil {
+		writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "expectedRevision 必须是整数")
+		return
+	}
+	if len(payload.Candidate) == 0 || !json.Valid(payload.Candidate) {
+		writeDomainError(response, http.StatusBadRequest, "plugin_state_invalid", "candidate 必须是 JSON 对象")
+		return
+	}
+	revision, commitErr := handler.committer.Commit(request.Context(), operation, *expected, payload.Candidate)
+	if commitErr != nil {
+		var conflict *plugincontrol.RevisionConflictError
+		if errors.As(commitErr, &conflict) {
+			writeJSON(response, http.StatusConflict, struct {
+				OK       bool   `json:"ok"`
+				Error    string `json:"error"`
+				Revision int64  `json:"revision"`
+			}{OK: false, Error: plugincontrol.CodeRevisionConflict, Revision: conflict.Current})
+			return
+		}
+		writeControlError(response, commitErr)
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		OK       bool  `json:"ok"`
+		Revision int64 `json:"revision"`
+	}{OK: true, Revision: revision})
+}
+
 func writeControlError(response http.ResponseWriter, err error) {
 	coded, ok := pluginerr.From(err)
 	if !ok {

@@ -49,6 +49,7 @@ func main() {
 	handler, err := plugincontrolapi.NewHandler(plugincontrolapi.Dependencies{
 		Authorizer: staticAuthorizer{key: key},
 		Installer:  installer,
+		Committer:  store,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "handler:", err)
@@ -74,6 +75,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(plugincontrolapi.InstallPath, handler)
 	mux.Handle(plugincontrolapi.UninstallPath, handler)
+	mux.Handle(plugincontrolapi.StatePath, handler)
 	mux.Handle(pluginapi.InventoryPath, inventory)
 	fmt.Printf("LISTEN=%s\n", listener.Addr().String())
 	os.Stdout.Sync()

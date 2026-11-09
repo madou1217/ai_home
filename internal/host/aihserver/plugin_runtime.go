@@ -4,13 +4,17 @@ import (
 	"context"
 	"net/http"
 
+	plugincontrol "github.com/madou1217/ai_home/application/plugincontrol"
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/plugincontrol"
+	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
+	pluginstatereader "github.com/madou1217/ai_home/internal/adapters/plugincontrol"
 	adapterplugins "github.com/madou1217/ai_home/internal/adapters/pluginruntime"
+	"github.com/madou1217/ai_home/internal/adapters/pluginstatestore"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
+	"github.com/madou1217/ai_home/internal/transport/http/plugincontrolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 )
 
@@ -24,7 +28,10 @@ type pluginHandlers struct {
 	list http.Handler
 	// trust 是发布者信任根的读/写/撤销。信任根是文件型写面，写入口收敛到 Go；
 	// Node 的 install 校验仍直接读同一个文件，所以这里只改文件的写入方。
-	trust    http.Handler
+	trust http.Handler
+	// control 是插件安装/卸载。制品校验、状态 CAS 与文件清理都在 Go；
+	// 启用/停用仍由 Node 的 plugin runtime 负责。
+	control  http.Handler
 	invoker  *adapterplugins.HostInvoker
 	observer *appplugins.Observer
 }
@@ -53,7 +60,7 @@ func newPluginHandlers(
 	handlers := pluginHandlers{gate: gate, projection: projection, invoker: invoker, observer: observer}
 	// 只读清单依赖 Node 的 app-state.db。数据目录不可解析时只少挂这条路由，
 	// 投影推送与推理闸门照常工作——列表问题不能拖垮插件数据面。
-	if reader, err := plugincontrol.NewReader(aiHomeDir); err == nil {
+	if reader, err := pluginstatereader.NewReader(aiHomeDir); err == nil {
 		if list, err := pluginapi.NewInventoryHandler(managementAuthorizer, reader, registry); err == nil {
 			handlers.list = list
 		}
@@ -65,7 +72,38 @@ func newPluginHandlers(
 	}); err == nil {
 		handlers.trust = trust
 	}
+	handlers.control = newPluginControlHandler(managementAuthorizer, aiHomeDir)
 	return handlers
+}
+
+// newPluginControlHandler 组装安装/卸载管理接口。
+//
+// 依赖不完整时只少挂这两条路由（返回 404 而不是永远 500）；Node 代理拿不到
+// 路由时会把错误留给调用方，不会回落到本地安装——回落会让状态写入方分叉。
+func newPluginControlHandler(authorizer pluginapi.Authorizer, aiHomeDir string) http.Handler {
+	if authorizer == nil || len(aiHomeDir) == 0 {
+		return nil
+	}
+	acceptor, err := pluginartifact.NewAcceptor(aiHomeDir)
+	if err != nil {
+		return nil
+	}
+	store, err := pluginstatestore.NewStore(aiHomeDir)
+	if err != nil {
+		return nil
+	}
+	installer, err := plugincontrol.NewInstaller(aiHomeDir, acceptor, store)
+	if err != nil {
+		return nil
+	}
+	handler, err := plugincontrolapi.NewHandler(plugincontrolapi.Dependencies{
+		Authorizer: authorizer,
+		Installer:  installer,
+	})
+	if err != nil {
+		return nil
+	}
+	return handler
 }
 
 // accountProviderResolver 用无敏感的账号管理投影描述账号：Provider（观察事件）与认证形态（账号偏好候选）。

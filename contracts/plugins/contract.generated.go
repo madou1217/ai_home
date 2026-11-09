@@ -71,3 +71,36 @@ type Message struct {
 	Supported       *ProtocolRange  `json:"supported,omitempty"`
 	Error           *Fault          `json:"error,omitempty"`
 }
+
+type Capability struct {
+	ID      string `json:"id"`
+	Version int    `json:"version"`
+	Mode    string `json:"mode"`
+}
+
+var Capabilities = []Capability{
+	{ID: "observe", Version: 1, Mode: "observer"},
+	{ID: "command", Version: 1, Mode: "terminal"},
+	{ID: "gateway.request", Version: 1, Mode: "waterfall"},
+	{ID: "gateway.route", Version: 1, Mode: "serial"},
+	{ID: "gateway.account", Version: 1, Mode: "serial"},
+	{ID: "gateway.attempt", Version: 1, Mode: "middleware"},
+	{ID: "model.catalog", Version: 1, Mode: "terminal"},
+	{ID: "pricing.catalog", Version: 1, Mode: "collect"},
+	{ID: "pricing.quote", Version: 1, Mode: "collect"},
+	{ID: "model.metadata", Version: 1, Mode: "collect"},
+	{ID: "quota.probe", Version: 1, Mode: "serial"},
+	{ID: "usage.scan", Version: 1, Mode: "collect"},
+	{ID: "provider.descriptor", Version: 1, Mode: "collect"},
+	{ID: "account.source", Version: 1, Mode: "collect"},
+	{ID: "account.login", Version: 1, Mode: "terminal"},
+	{ID: "account.refresh", Version: 1, Mode: "terminal"},
+	{ID: "account.materialize", Version: 1, Mode: "terminal"},
+	{ID: "chat.prepare", Version: 1, Mode: "waterfall"},
+	{ID: "chat.beforeCommand", Version: 1, Mode: "serial"},
+	{ID: "tool", Version: 1, Mode: "terminal"},
+	{ID: "approval", Version: 1, Mode: "serial"},
+	{ID: "ui", Version: 1, Mode: "terminal"},
+	{ID: "provider", Version: 1, Mode: "terminal"},
+	{ID: "upstream", Version: 1, Mode: "terminal"},
+}

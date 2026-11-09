@@ -1,0 +1,246 @@
+// Package pluginstatestore 是 plugins.control.v1 的 SQLite 事务存储。
+//
+// 事务边界与 Node state-store.js 一致：BEGIN IMMEDIATE → 读当前文档 → CAS 检查
+// expectedRevision → mutator → revision+1 → UPSERT。区别只在进入事务前多了一层
+// run/maintenance/access.sqlite 的读租约，维护期间写入 fail closed。
+package pluginstatestore
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"github.com/madou1217/ai_home/application/plugincontrol"
+	"github.com/madou1217/ai_home/internal/adapters/accountmaintenance"
+	"github.com/madou1217/ai_home/internal/pluginerr"
+)
+
+const (
+	// ControlStateKey 是 Node 插件控制面在 app_kv 里的键。
+	ControlStateKey = "plugins.control.v1"
+	// DatabaseFileName 是 Node app-state-store 的数据库文件名。
+	DatabaseFileName = "app-state.db"
+	// maxStateBytes 与 application/pluginruntime.MaxControlStateBytes 一致。
+	maxStateBytes = 4 << 20
+	// busyTimeoutMS 与 Node DEFAULT_BUSY_TIMEOUT_MS 一致。
+	busyTimeoutMS = 5000
+	// walSizeLimitBytes 与 Node WAL_SIZE_LIMIT_BYTES 一致。
+	walSizeLimitBytes = 64 * 1024 * 1024
+	privateFileMode   = 0o600
+)
+
+// Store 在 Node 的 app-state.db 上执行插件控制状态写事务。
+type Store struct {
+	aiHomeDir    string
+	databasePath string
+}
+
+// NewStore 创建状态存储；空数据根拒绝创建。
+func NewStore(aiHomeDir string) (*Store, error) {
+	root := strings.TrimSpace(aiHomeDir)
+	if root == "" {
+		return nil, pluginerr.New(plugincontrol.CodeStateUnavailable, "缺少 aiHomeDir")
+	}
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return nil, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	return &Store{aiHomeDir: absolute, databasePath: filepath.Join(absolute, DatabaseFileName)}, nil
+}
+
+// DatabasePath 返回 app-state.db 路径（诊断用）。
+func (store *Store) DatabasePath() string {
+	if store == nil {
+		return ""
+	}
+	return store.databasePath
+}
+
+// Update 在维护读租约与 SQLite 事务内完成一次 CAS 写回。
+func (store *Store) Update(
+	ctx context.Context,
+	mutate func(*plugincontrol.State) error,
+	expectedRevision *int64,
+) (plugincontrol.State, error) {
+	if store == nil || mutate == nil {
+		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	lease, err := accountmaintenance.Acquire(ctx, store.aiHomeDir)
+	if err != nil {
+		return plugincontrol.EmptyState(), err
+	}
+	defer lease.Close()
+	database, err := sql.Open("sqlite", store.databasePath)
+	if err != nil {
+		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	database.SetMaxOpenConns(1)
+	database.SetMaxIdleConns(1)
+	defer func() { _ = database.Close() }()
+	connection, err := database.Conn(ctx)
+	if err != nil {
+		return plugincontrol.EmptyState(), mapStateError(err)
+	}
+	defer func() { _ = connection.Close() }()
+	for _, pragma := range []string{
+		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMS),
+		fmt.Sprintf("PRAGMA journal_size_limit = %d", walSizeLimitBytes),
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA foreign_keys = ON",
+	} {
+		if _, err := connection.ExecContext(ctx, pragma); err != nil {
+			return plugincontrol.EmptyState(), mapStateError(err)
+		}
+	}
+	var journalMode string
+	if err := connection.QueryRowContext(ctx, "PRAGMA journal_mode = WAL").Scan(&journalMode); err != nil {
+		return plugincontrol.EmptyState(), mapStateError(err)
+	}
+	hardenDatabaseFiles(store.databasePath)
+	if _, err := connection.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS app_kv (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		)
+	`); err != nil {
+		return plugincontrol.EmptyState(), mapStateError(err)
+	}
+	hardenDatabaseFiles(store.databasePath)
+	if _, err := connection.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return plugincontrol.EmptyState(), mapStateError(err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = connection.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+	current := plugincontrol.EmptyState()
+	var encoded string
+	err = connection.QueryRowContext(ctx,
+		"SELECT value FROM app_kv WHERE key = ?", ControlStateKey).Scan(&encoded)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		current = plugincontrol.EmptyState()
+	case err != nil:
+		return plugincontrol.EmptyState(), mapStateError(err)
+	default:
+		decoded, decodeErr := decodeState([]byte(encoded))
+		if decodeErr != nil {
+			return plugincontrol.EmptyState(), decodeErr
+		}
+		current = decoded
+	}
+	if expectedRevision != nil && current.Revision != *expectedRevision {
+		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeRevisionConflict, "")
+	}
+	next := current.Clone()
+	if err := mutate(&next); err != nil {
+		return plugincontrol.EmptyState(), err
+	}
+	next = next.Normalize()
+	next.Revision = current.Revision + 1
+	serialized, err := json.Marshal(next)
+	if err != nil {
+		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateInvalid, "")
+	}
+	if _, err := connection.ExecContext(ctx, `
+		INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, ControlStateKey, string(serialized), nowMillis()); err != nil {
+		return plugincontrol.EmptyState(), mapStateError(err)
+	}
+	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
+		return plugincontrol.EmptyState(), mapStateError(err)
+	}
+	committed = true
+	return next, nil
+}
+
+func decodeState(data []byte) (plugincontrol.State, error) {
+	if len(data) == 0 || len(data) > maxStateBytes {
+		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateInvalid, "")
+	}
+	if !json.Valid(data) {
+		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateInvalid, "")
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(data, &document); err != nil {
+		// JSON 合法但不是对象：Node 的 normalizeState 会把它当空文档。
+		return plugincontrol.EmptyState(), nil
+	}
+	state := plugincontrol.EmptyState()
+	state.Installed = decodeRawArray(document["installed"])
+	state.Instances = decodeRawArray(document["instances"])
+	state.Generations = decodeRawArray(document["generations"])
+	state.Revision = decodeNonNegativeInteger(document["revision"])
+	state.ActiveGeneration = decodeNonNegativeInteger(document["activeGeneration"])
+	return state, nil
+}
+
+func decodeRawArray(raw json.RawMessage) []json.RawMessage {
+	if len(raw) == 0 {
+		return []json.RawMessage{}
+	}
+	var values []json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return []json.RawMessage{}
+	}
+	if values == nil {
+		return []json.RawMessage{}
+	}
+	return values
+}
+
+func decodeNonNegativeInteger(raw json.RawMessage) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err != nil {
+		return 0
+	}
+	parsed, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || parsed < 0 || parsed > math.MaxInt64 || parsed != math.Trunc(parsed) {
+		return 0
+	}
+	return int64(parsed)
+}
+
+func mapStateError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if coded, ok := pluginerr.From(err); ok {
+		return coded
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "database is locked") || strings.Contains(message, "sqlite_busy") {
+		return pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	return pluginerr.New(plugincontrol.CodeStateUnavailable, err.Error())
+}
+
+func hardenDatabaseFiles(databasePath string) {
+	for _, file := range []string{databasePath, databasePath + "-wal", databasePath + "-shm"} {
+		if _, err := os.Stat(file); err != nil {
+			continue
+		}
+		_ = os.Chmod(file, privateFileMode)
+	}
+}
+
+func nowMillis() int64 {
+	return time.Now().UnixMilli()
+}

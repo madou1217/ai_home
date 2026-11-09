@@ -26,6 +26,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
+	"github.com/madou1217/ai_home/internal/transport/http/plugincontrolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
@@ -146,6 +147,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	if handlers.plugins.projection != nil {
 		mux.Handle(pluginapi.ProjectionPath, handlers.plugins.projection)
+	}
+	// 插件安装/卸载：制品生命周期（接受、签名、清单、CAS、文件清理）都在 Go。
+	// 启用/停用/doctor/list 仍是 Node / Node 只读清单。
+	if handlers.plugins.control != nil {
+		mux.Handle(plugincontrolapi.InstallPath, handlers.plugins.control)
+		mux.Handle(plugincontrolapi.UninstallPath, handlers.plugins.control)
 	}
 	// 插件发布者信任根：三条都是管理密钥路径，写操作（trust/untrust）已收敛到 Go。
 	if handlers.plugins.trust != nil {

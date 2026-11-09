@@ -31,12 +31,15 @@ test('store: unset means default, stored values are clamped to at least 50', () 
   assert.equal(resolveLargePasteChars(sanitizeServerConfig({ largePasteChars: 10 })), 50);
 });
 
-function call(aiHomeDir, method, body) {
+function call(aiHomeDir, method, body, goResponse) {
   const req = new PassThrough();
   req.method = method;
   req.headers = {};
   let response;
-  const ctx = { req, res: {}, fs, aiHomeDir, writeJson: (_res, status, payload) => { response = { status, payload }; } };
+  const deps = goResponse === undefined ? {} : {
+    goCoreSync: { getChatPasteSettings: async () => goResponse }
+  };
+  const ctx = { req, res: {}, fs, aiHomeDir, deps, writeJson: (_res, status, payload) => { response = { status, payload }; } };
   const pending = handleChatPasteRequest(ctx);
   req.end(body === undefined ? '' : JSON.stringify(body));
   return pending.then(() => response);
@@ -49,7 +52,15 @@ test('WebUI route reads and writes the same server config key the CLI uses', asy
   writeServerConfig({ maxAttempts: 7 }, { fs, aiHomeDir });
 
   assert.equal(matchChatPasteRoute('GET', '/v0/webui/chat/paste-settings'), true);
-  assert.deepEqual((await call(aiHomeDir, 'GET')).payload.largePasteChars, 200);
+  // GET 固定读 Go：Node 不再本地解析默认值。
+  const goSettings = {
+    ok: true,
+    status: 200,
+    data: { ok: true, largePasteChars: 200, custom: false, limits: { default: 200, min: 50, max: 100000 } }
+  };
+  assert.equal((await call(aiHomeDir, 'GET', undefined, goSettings)).payload.largePasteChars, 200);
+  assert.equal((await call(aiHomeDir, 'GET', undefined, { ok: false, status: 0 })).status, 503);
+  assert.equal((await call(aiHomeDir, 'GET')).status, 503);
 
   const saved = await call(aiHomeDir, 'POST', { largePasteChars: 60 });
   assert.equal(saved.status, 200);

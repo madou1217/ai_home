@@ -447,6 +447,10 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   prepare/activate/discard 只接受回环 + 引导密钥，30s TTL 单发布锁。Node 侧不保留本地写入兜底。
   同日删除 `control.install/uninstall` 的本地实现（安装/卸载唯一写者已在 Go），控制面只剩
   enable/disable、诊断与期望状态；`state-store.update` 仅作为无 Go 依赖的单测回退保留。
+- **会话框大段粘贴阈值 GET 切 Go**：Go 新增 `GET /v1/management/webui/chat/paste-settings`，
+  只读 app-state.db 的 `config:server`（与 `aih server config set --large-paste-chars` 同键），
+  默认值/上下限与 `contracts/chat-attachments.json` 同源；Node GET 固定代理、Go 不可用 503，
+  POST（写配置）仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

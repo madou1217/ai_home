@@ -93,6 +93,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
@@ -147,6 +148,8 @@ type serverHandlers struct {
 	webuiQuotaReset http.Handler
 	// webuiAliasPool 是账号是否参与别名自动选号池的只读设置。
 	webuiAliasPool http.Handler
+	// webuiChatPaste 是会话框大段粘贴转附件阈值的只读设置（数据源是 Node app-state.db）。
+	webuiChatPaste http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1212,6 +1215,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建别名池设置接口失败: %w", err)
 	}
+	chatPasteSource, err := webuichatpasteapi.OpenSource(aiHomeDir)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建粘贴设置数据源失败: %w", err)
+	}
+	webuiChatPasteHandler, err := webuichatpasteapi.NewHandler(webuichatpasteapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      chatPasteSource,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建粘贴设置接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1636,6 +1652,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiToolSettings:     webuiToolSettingsHandler,
 		webuiQuotaReset:       webuiQuotaResetHandler,
 		webuiAliasPool:        webuiAliasPoolHandler,
+		webuiChatPaste:        webuiChatPasteHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

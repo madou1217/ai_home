@@ -288,7 +288,7 @@
 | 凭据策略必须成对登记 | 每个 Provider 都要有 `RefreshStrategy`，否则 `ResolveCredential` 报「账号凭据刷新策略不存在」，额度 refresh 与后台协调器都 500 | 新增 Go 额度策略时必须同时登记 `staticcredential`（cline/kiro/zcode/qoder 的既有教训） |
 | Node 写入仍是账号主入口 | WebUI/CLI 登录、导入、删除仍走 Node，经 `go-account-sync` 15s 对账进 Go | 任何「Go 直写账号」的改动都要考虑与同步器的代次仲裁 |
 
-### 5.5 Chat relay 能力快照缺陷（2026-11-09，已修）
+### 5.5 Chat relay 能力快照缺陷（2026-11-09，机制已修；UI 模型落库待补）
 
 | 项 | 内容 |
 | --- | --- |

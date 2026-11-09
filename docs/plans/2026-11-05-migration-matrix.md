@@ -451,6 +451,9 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   只读 app-state.db 的 `config:server`（与 `aih server config set --large-paste-chars` 同键），
   默认值/上下限与 `contracts/chat-attachments.json` 同源；Node GET 固定代理、Go 不可用 503，
   POST（写配置）仍在 Node。
+- **全局用量配置 GET 切 Go**：Go 新增 `GET /v1/management/webui/config`，只读 app-state.db 的
+  `config:usage`，复刻 Node `normalizeConfig`（间隔白名单、阈值 1..100、自动换号开关与剩余
+  百分比夹取）；Node GET 固定代理、Go 不可用 503，POST 写配置仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

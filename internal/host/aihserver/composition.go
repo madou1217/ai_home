@@ -97,6 +97,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
 )
 
 const (
@@ -150,6 +151,8 @@ type serverHandlers struct {
 	webuiAliasPool http.Handler
 	// webuiChatPaste 是会话框大段粘贴转附件阈值的只读设置（数据源是 Node app-state.db）。
 	webuiChatPaste http.Handler
+	// webuiUsageConfig 是全局用量配置的只读模型（数据源是 Node app-state.db）。
+	webuiUsageConfig http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1228,6 +1231,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建粘贴设置接口失败: %w", err)
 	}
+	usageConfigSource, err := webuiusageconfigapi.OpenSource(aiHomeDir)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建用量配置数据源失败: %w", err)
+	}
+	webuiUsageConfigHandler, err := webuiusageconfigapi.NewHandler(webuiusageconfigapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      usageConfigSource,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建用量配置接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1653,6 +1669,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiQuotaReset:       webuiQuotaResetHandler,
 		webuiAliasPool:        webuiAliasPoolHandler,
 		webuiChatPaste:        webuiChatPasteHandler,
+		webuiUsageConfig:      webuiUsageConfigHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

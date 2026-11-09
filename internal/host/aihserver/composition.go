@@ -89,6 +89,7 @@ import (
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
@@ -139,6 +140,8 @@ type serverHandlers struct {
 	webuiToolSettings http.Handler
 	// webuiQuotaReset 是账号额度重置历史的只读模型（数据源仍是 Node 的 app-state.db）。
 	webuiQuotaReset http.Handler
+	// webuiAliasPool 是账号是否参与别名自动选号池的只读设置。
+	webuiAliasPool http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1170,7 +1173,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	})
 	if err != nil {
 		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建工具启动权限设置接口失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建额度重置历史接口失败: %w", err)
+	}
+	aliasPoolSource, err := webuialiaspoolapi.OpenSource(aiHomeDir)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建别名池设置数据源失败: %w", err)
+	}
+	webuiAliasPoolHandler, err := webuialiaspoolapi.NewHandler(webuialiaspoolapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      aliasPoolSource,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建别名池设置接口失败: %w", err)
 	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
@@ -1594,6 +1610,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		modelCatalog:          modelCatalogHandler,
 		webuiToolSettings:     webuiToolSettingsHandler,
 		webuiQuotaReset:       webuiQuotaResetHandler,
+		webuiAliasPool:        webuiAliasPoolHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

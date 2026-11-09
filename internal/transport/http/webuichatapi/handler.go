@@ -28,6 +28,11 @@ import (
 const (
 	// CollectionPath 是 WebUI Chat 会话集合前缀，与 Node webui-chat-runtime-routes 一致。
 	CollectionPath = "/v0/webui/chat/sessions/"
+	// ManagementCollectionPath 是 Node 轮次执行调用本切片的内部入口。
+	//
+	// 浏览器路由仍由 Node 拥有（202 + 独立 SSE 的语义不能变），所以 Go 不使用浏览器
+	// 路径，而是挂在管理前缀下，只接受带 Management Key 的内部调用。
+	ManagementCollectionPath = "/v1/management/webui/chat/sessions/"
 	// DefaultMaxBodyBytes 与 Node readJsonBody 的默认上限一致（1MB）。
 	DefaultMaxBodyBytes int64 = 1024 * 1024
 	// DefaultMaxAttempts 与 relaycore 的上游尝试上限一致：账号池很大时不设上限
@@ -57,6 +62,14 @@ type HTTPClient = relaycore.HTTPClient
 // UsageRecorder 接收一次请求的真实 token 用量（复用 relaycore 的记账端口）。
 type UsageRecorder = relaycore.UsageRecorder
 
+// Authorizer 校验内部调用方的管理凭据。
+//
+// 本切片挂在管理前缀下，任何能访问 loopback 的进程都能伪造一轮对话（消耗账号额度），
+// 因此鉴权是必需依赖而不是可选装饰：装配期缺它必须失败，而不是运行期放行。
+type Authorizer interface {
+	Authorized(*http.Request) bool
+}
+
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。
 var ErrInvalidDependencies = errors.New("WebUI Chat HTTP Handler 依赖无效")
 
@@ -65,6 +78,12 @@ var ErrInvalidDependencies = errors.New("WebUI Chat HTTP Handler 依赖无效")
 // 除 Usage 外全部必需：缺任何一项都无法在失败时给出确定的结论，因此宁可装配期报错，
 // 也不要运行期静默降级。
 type Dependencies struct {
+	// Authorizer 校验管理凭据（必需）。
+	Authorizer Authorizer
+	// PathPrefix 覆盖指令入口前缀；为空时用 CollectionPath。
+	//
+	// 生产接线挂 ManagementCollectionPath，测试与历史兼容路径用默认值。
+	PathPrefix string
 	// Accounts 按调度顺序提供候选账号（生产接线复用 relaycore.AccountSourceChain）。
 	Accounts AccountSource
 	// Credentials 读取目标账号的 Provider 归属与凭据。
@@ -91,6 +110,8 @@ type Dependencies struct {
 
 // Handler 编排一次 turn.submit：校验指令、征召账号、请求上游、回写 SSE、结算用量。
 type Handler struct {
+	authorizer        Authorizer
+	commandPath       string
 	accounts          AccountSource
 	credentials       CredentialResolver
 	provider          relaycore.Provider
@@ -106,7 +127,8 @@ type Handler struct {
 
 // NewHandler 创建默认失败关闭的 WebUI Chat 切片。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Accounts == nil ||
+	if dependencies.Authorizer == nil ||
+		dependencies.Accounts == nil ||
 		dependencies.Credentials == nil ||
 		dependencies.Provider == nil ||
 		dependencies.Client == nil ||
@@ -137,7 +159,16 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if newID == nil {
 		newID = newIdentifier
 	}
+	commandPath := dependencies.PathPrefix
+	if commandPath == "" {
+		commandPath = CollectionPath
+	}
+	if !strings.HasSuffix(commandPath, "/") {
+		return nil, ErrInvalidDependencies
+	}
 	return &Handler{
+		authorizer:        dependencies.Authorizer,
+		commandPath:       commandPath,
 		accounts:          dependencies.Accounts,
 		credentials:       dependencies.Credentials,
 		provider:          dependencies.Provider,
@@ -152,13 +183,22 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}, nil
 }
 
-// ServeHTTP 处理 POST /v0/webui/chat/sessions/{sessionId}/commands。
+// ServeHTTP 处理 POST <PathPrefix>{sessionId}/commands。
+//
+// 生产接线的前缀是 ManagementCollectionPath：浏览器仍走 Node 的 /v0/webui/chat/*，
+// 由 Node 的轮次执行把指令转发到这里。
 //
 // 与 Node 的差异：Node 先返回 202 再由另一条 SSE 连接交付事件；这里把两条连接合成
 // 一条，因此凡是「还没向客户端写过字节」的失败都以 JSON 错误返回（与 Node 路由错误
 // 的形状一致），写过之后才改用 turn.failed 事件。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	sessionID, matched := matchCommandPath(request.URL.Path)
+	if !handler.authorizer.Authorized(request) {
+		writeRouteError(response, newRouteError(
+			http.StatusUnauthorized, "chat_runtime_unauthorized", "管理凭据无效", nil,
+		))
+		return
+	}
+	sessionID, matched := matchCommandPath(request.URL.Path, handler.commandPath)
 	if !matched {
 		writeRouteError(response, newRouteError(
 			http.StatusNotFound, "chat_runtime_route_not_found", "没有这个聊天路由", nil,
@@ -719,15 +759,21 @@ func (turn *turnState) metrics(
 
 // buildUpstreamBody 构造一次 OpenAI chat.completions 流式请求。
 //
-// 无历史：本切片不持有会话，只带本轮正文。接会话后要在这里补 messages 历史，
-// 否则多轮对话在模型看来永远是第一轮。
+// 会话事实（历史消息）由 Node 随指令带来：本切片不持有会话，不能猜也不能补；
+// 调用方没带 messages 时退化成只发本轮正文，保持旧行为。
 func buildUpstreamBody(command turnCommand) []byte {
+	messages := make([]map[string]string, 0, len(command.Messages)+1)
+	if len(command.Messages) > 0 {
+		for _, message := range command.Messages {
+			messages = append(messages, map[string]string{"role": message.Role, "content": message.Content})
+		}
+	} else {
+		messages = append(messages, map[string]string{"role": "user", "content": command.Content})
+	}
 	body := map[string]any{
-		"model": command.Model,
-		"messages": []map[string]string{
-			{"role": "user", "content": command.Content},
-		},
-		"stream": true,
+		"model":    command.Model,
+		"messages": messages,
+		"stream":   true,
 		// include_usage 让上游在最后一帧带上用量；没有它就没法记账。
 		"stream_options": map[string]any{"include_usage": true},
 	}
@@ -954,12 +1000,12 @@ func writeRouteError(response http.ResponseWriter, routeErr *routeError) {
 	_, _ = response.Write(body)
 }
 
-// matchCommandPath 从路径里取出会话标识：/v0/webui/chat/sessions/{sessionId}/commands。
-func matchCommandPath(path string) (string, bool) {
-	if !strings.HasPrefix(path, CollectionPath) {
+// matchCommandPath 从路径里取出会话标识：<prefix>{sessionId}/commands。
+func matchCommandPath(path string, prefix string) (string, bool) {
+	if !strings.HasPrefix(path, prefix) {
 		return "", false
 	}
-	rest := strings.TrimPrefix(path, CollectionPath)
+	rest := strings.TrimPrefix(path, prefix)
 	sessionPart, suffix, found := strings.Cut(rest, "/")
 	if !found || suffix != "commands" || sessionPart == "" {
 		return "", false

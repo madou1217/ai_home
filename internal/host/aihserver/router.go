@@ -31,6 +31,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
+	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
@@ -112,6 +113,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.webuiToolSettings != nil {
 		mux.Handle("GET "+webuitoolsettingsapi.Path+"/{appId}/settings", handlers.webuiToolSettings)
 	}
+	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
+	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。
+	mountWebUIChat(mux, handlers.webUIChat)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {
 		mux.Handle(accountoutcomesapi.Path, handlers.accountOutcomes)
@@ -372,6 +376,17 @@ func (dispatcher responsesDispatcher) ServeHTTP(
 		return
 	}
 	dispatcher.canonical.ServeHTTP(response, request)
+}
+
+// mountWebUIChat 只在装配方提供了 Handler 时挂载内部聊天入口。
+//
+// nil 表示本进程没有聊天能力（例如只跑账号管理的嵌入形态）；此时保持 404，
+// 而不是挂一个空 Handler 让调用方收到 500。
+func mountWebUIChat(mux *http.ServeMux, handler http.Handler) {
+	if handler == nil {
+		return
+	}
+	mux.Handle(webuichatapi.ManagementCollectionPath, handler)
 }
 
 // handleRouteNotFound 返回 JSON 404，避免标准库默认纯文本泄漏合同差异。

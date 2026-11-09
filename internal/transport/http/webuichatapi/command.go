@@ -14,7 +14,19 @@ const (
 	commandTypeTurnSubmit = "turn.submit"
 	// maxTurnAttachments 与 Node normalizeAttachmentIds 的上限一致。
 	maxTurnAttachments = 8
+	// maxTurnMessages / maxTurnMessagesBytes 限制调用方带来的会话历史。
+	//
+	// 本切片不持有会话，多轮上下文只能由 Node 每次带上；没有上限时一份超大历史会
+	// 绕过 1MB 请求体上限之外的所有约束，直接压给上游。
+	maxTurnMessages      = 200
+	maxTurnMessagesBytes = 512 * 1024
 )
+
+// chatMessage 是上游 chat.completions 的一条历史消息。
+type chatMessage struct {
+	Role    string
+	Content string
+}
 
 // turnCommand 是校验通过的一次 turn.submit。
 type turnCommand struct {
@@ -23,6 +35,9 @@ type turnCommand struct {
 	Model           string
 	ReasoningEffort string
 	AttachmentIDs   []string
+	// Messages 是本轮要发给上游的完整消息序列（system + 历史 + 本轮用户消息）。
+	// 为空时退化成「只带本轮正文」，与没有会话存储时的旧行为一致。
+	Messages []chatMessage
 }
 
 // decodeTurnSubmit 按 Node normalizeCommand + normalizeTurnSubmit 的口径校验指令信封。
@@ -93,10 +108,15 @@ func decodeTurnSubmit(document []byte) (turnCommand, *routeError) {
 			statusUnprocessableEntity, "chat_turn_content_required", "本轮既没有正文也没有附件", nil,
 		)
 	}
+	messages, messagesError := decodeMessages(payload["messages"])
+	if messagesError != nil {
+		return turnCommand{}, messagesError
+	}
 	command := turnCommand{
 		CommandID:     commandID,
 		Content:       content,
 		AttachmentIDs: attachments,
+		Messages:      messages,
 	}
 	for key, target := range map[string]*string{
 		"model":           &command.Model,
@@ -127,6 +147,74 @@ func modelControlError(key string) *routeError {
 		"模型控制字段不能为空",
 		map[string]any{"key": key},
 	)
+}
+
+// decodeMessages 校验调用方带来的历史消息；缺席时返回 nil（退化为单条用户消息）。
+//
+// 为什么消息不是「可选自由格式」：上游只会接受 system/user/assistant 三种角色，
+// 未知角色在部分 Provider 上会被静默忽略，表现为「历史丢了一半」却没有任何报错。
+func decodeMessages(raw json.RawMessage) ([]chatMessage, *routeError) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, newRouteError(
+			statusUnprocessableEntity, "chat_turn_messages_invalid",
+			"历史消息必须是对象数组", nil,
+		)
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	if len(items) > maxTurnMessages {
+		return nil, newRouteError(
+			statusUnprocessableEntity, "chat_turn_messages_invalid",
+			"历史消息数量超过上限", map[string]any{"limit": maxTurnMessages},
+		)
+	}
+	total := 0
+	messages := make([]chatMessage, 0, len(items))
+	for _, item := range items {
+		fields, ok := relaycore.DecodeRawObject(item)
+		if !ok {
+			return nil, newRouteError(
+				statusUnprocessableEntity, "chat_turn_messages_invalid",
+				"历史消息必须是对象数组", nil,
+			)
+		}
+		role := requiredText(fields["role"])
+		if role != "system" && role != "user" && role != "assistant" {
+			return nil, newRouteError(
+				statusUnprocessableEntity, "chat_turn_messages_invalid",
+				"历史消息角色不受支持", map[string]any{"role": role},
+			)
+		}
+		content, ok := textValue(fields["content"])
+		if !ok || strings.TrimSpace(content) == "" {
+			return nil, newRouteError(
+				statusUnprocessableEntity, "chat_turn_messages_invalid",
+				"历史消息正文不能为空", map[string]any{"role": role},
+			)
+		}
+		total += len(content)
+		if total > maxTurnMessagesBytes {
+			return nil, newRouteError(
+				statusUnprocessableEntity, "chat_turn_messages_invalid",
+				"历史消息正文超过上限", map[string]any{"limit": maxTurnMessagesBytes},
+			)
+		}
+		messages = append(messages, chatMessage{Role: role, Content: content})
+	}
+	// 上游要求最后一轮是用户输入；否则模型看到的是「上一条回答」，本轮问题反而只在
+	// content 字段里，调用方一旦拼错顺序就会得到驴唇不对马嘴的回答。
+	if messages[len(messages)-1].Role != "user" {
+		return nil, newRouteError(
+			statusUnprocessableEntity, "chat_turn_messages_invalid",
+			"历史消息的最后一条必须是用户消息", nil,
+		)
+	}
+	return messages, nil
 }
 
 // decodeAttachmentIDs 复刻 Node normalizeAttachmentIds：数组、去空白、不重复、上限 8。

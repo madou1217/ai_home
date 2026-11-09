@@ -231,6 +231,11 @@ func (client *testClient) sent() ([]*http.Request, []string) {
 	return requests, bodies
 }
 
+// allowAllAuthorizer 让包内用例专注业务合同；鉴权本身在 manage 前缀的装配用例里覆盖。
+type allowAllAuthorizer struct{}
+
+func (allowAllAuthorizer) Authorized(*http.Request) bool { return true }
+
 // rig 是一套可观测的 Handler 依赖。
 type rig struct {
 	handler     *Handler
@@ -254,6 +259,7 @@ func newRig(
 	attempts := &testAttempts{}
 	usage := &testUsage{}
 	dependencies := Dependencies{
+		Authorizer:  allowAllAuthorizer{},
 		Accounts:    accounts,
 		Credentials: credentials,
 		Provider:    newTestProvider("https://upstream.test/v1/chat/completions"),
@@ -283,10 +289,16 @@ func newRig(
 	}
 }
 
-// post 发一条 turn.submit。headers 是额外的请求头（如钉选账号）。
+// post 发一条 turn.submit 到默认路径。headers 是额外的请求头（如钉选账号）。
 func (testRig *rig) post(t *testing.T, body string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodPost, commandPath, strings.NewReader(body))
+	return testRig.postPath(t, commandPath, body, headers)
+}
+
+// postPath 发一条 turn.submit 到指定路径（用于前缀与内部入口用例）。
+func (testRig *rig) postPath(t *testing.T, path string, body string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}

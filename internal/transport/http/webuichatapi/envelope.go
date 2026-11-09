@@ -6,8 +6,9 @@
 //	GET  /v0/webui/chat/sessions/{id}/events    → aih.chat.event.v1 SSE
 //
 // 本包把其中「一次 turn.submit 从入站、账号征召、上游增量到 SSE 回写」这一段竖切到
-// Go：同一个入口直接以 SSE 交付本轮事件，不再经会话邮箱与事件表。这样一来，前端拿到
-// 的事件信封、字段与语义仍与 Node 一致，但轮次没有持久化与重放能力（见 REPORT.md）。
+// Go：Node 的轮次执行调用 ManagementCollectionPath，本包直接以 SSE 交付本轮事件，
+// 由 Node 翻译成既有 canonical 事件后再进会话事件表。浏览器路由因此不需要改指 Go，
+// 202 + 独立 SSE 的语义保持不变。
 package webuichatapi
 
 import (

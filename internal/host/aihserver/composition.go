@@ -89,6 +89,7 @@ import (
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
@@ -135,6 +136,8 @@ type serverHandlers struct {
 	webuiAccounts http.Handler
 	// webuiToolSettings 是应用启动权限设置的只读模型（GET 固定读 Go）。
 	webuiToolSettings http.Handler
+	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
+	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats http.Handler
 	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
@@ -1328,6 +1331,34 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			err,
 		)
 	}
+	// 内部聊天入口：Node 的轮次执行（session-actor 的 turn.submit）把本轮指令发到这里，
+	// 由 Go 完成账号征召、上游请求、改流与记账；事件流由 Node 翻译成既有 canonical 形状。
+	//
+	// 账号来源与 Provider 链与家族透传通道同一批对象：能走家族/透传 Provider 的会话本
+	// 切片就能服务，服务不了的账号在 Go 侧显式报错，而不是悄悄回落另一条推理路径。
+	webUIChatHandler, err := newWebUIChatHandler(webuichatapi.Dependencies{
+		Authorizer: authorizer,
+		Accounts: relaycore.NewAccountSourceChain(
+			append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
+		),
+		Credentials: credentials,
+		Provider: relaycore.NewProviderChain(
+			append(
+				relayModuleProviders(relayModules),
+				codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
+					ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
+				}),
+			)...,
+		),
+		Client:   relayClient,
+		Attempts: accountRuntime,
+		Usage:    attemptUsage,
+		Clock:    time.Now,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建内部聊天 Handler 失败: %w", err)
+	}
 	if webSocketHTTPClient == nil {
 		webSocketHTTPClient = &http.Client{
 			CheckRedirect: rejectOAuthRedirect,
@@ -1526,6 +1557,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		codexResponsesWS:      webSocketHandler,
 		codexResponsesHTTP:    codexHTTPHandler,
 		observeCodexClient:    observeCodexClientVersion(codexVersions, clientAuthorizer),
+		webUIChat:             webUIChatHandler,
 		accountOutcomes:       accountOutcomesHandler,
 		accountRuntime:        accountRuntimeHandler,
 		accountUsageEvents:    accountUsageEventsHandler,
@@ -1567,6 +1599,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		usage,
 		modelRefresh,
 	}, nil
+}
+
+// newWebUIChatHandler 把内部聊天入口装配在管理前缀上。
+//
+// 单独成函数是为了让「缺依赖必须装配期失败」有直接的测试落点：传入的端口少一个，
+// 返回的 error 必须非空，而不是在第一次真实对话时才失败。
+func newWebUIChatHandler(dependencies webuichatapi.Dependencies) (http.Handler, error) {
+	dependencies.PathPrefix = webuichatapi.ManagementCollectionPath
+	return webuichatapi.NewHandler(dependencies)
 }
 
 // newModelRefreshObserver 记录账号模型异步刷新失败的低敏事实。

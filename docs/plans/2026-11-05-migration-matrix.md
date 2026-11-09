@@ -435,13 +435,18 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   Ed25519 签名与信任根、清单校验（schema 由 `contracts/plugins` 生成）；`G:adapters/pluginstatestore`
   在 maintenance 读租约下对 app-state 的 `plugins.control.v1` 做 CAS 写入并保留未建模字段；
   `G:transport/http/plugincontrolapi` 暴露 install/uninstall；Node 两路由改代理，audit 仍 Node。
-  enable/disable 仍 Node（见 `docs/plans/2026-11-09-plugin-lifecycle-boundary.md` 的 P1/P2 方案）。
   已知收窄：内置 JSON Schema/semver 子集，插件 configSchema 用到未实现关键字会 fail closed。
 - **插件 enable/disable 状态写入切 Go**（`447bf882` + `2939883e`）：Node 保留 runtime 的
   prepare→commit→activate 编排；Go 新增 `POST /v1/management/plugins/state/commit`，按候选原文做
   CAS + 结构/operation 边界校验（enable/disable 不得改 installed、install 不得改 instances 等），
   并在 maintenance 租约下原样落盘。Node `state-store.commitRemote` 固定调 Go，Go 不可用即
   `plugin_state_unavailable`，不本地兜底写。候选语义（configSchema、权限指纹）仍在 Node。
+- **插件 enable/disable 入口切 Go**（`489dedd3` + `8481131f` + `c768ac3b`）：Go 新增
+  `POST /v1/management/plugins/instances/{id}/enable|disable`，按「读 revision → Node prepare 票据 →
+  Go CAS commit → Node activate」编排；Node `/v0/plugins/enable|disable` 改为代理，内部
+  prepare/activate/discard 只接受回环 + 引导密钥，30s TTL 单发布锁。Node 侧不保留本地写入兜底。
+  同日删除 `control.install/uninstall` 的本地实现（安装/卸载唯一写者已在 Go），控制面只剩
+  enable/disable、诊断与期望状态；`state-store.update` 仅作为无 Go 依赖的单测回退保留。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

@@ -95,3 +95,12 @@ test('control.disable：候选提交带 operation=disable', async () => {
   const instance = getState().instances.find((item) => item.instanceId === 'echo');
   assert.equal(instance.enabled, false);
 });
+
+// 回归守卫：install/uninstall 的唯一写者已在 Go，Node 控制面不得再暴露本地写入。
+// 旧实现一旦被加回来，这里会立刻变红——避免再次出现「双写」或「Go 不可用时本地兜底」。
+test('control 不再暴露本地 install/uninstall（写入口只有 Go）', () => {
+  const { control } = createControl();
+  assert.equal(Object.prototype.hasOwnProperty.call(control, 'install'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(control, 'uninstall'), false);
+  assert.equal(typeof control.store.update, 'function', 'state-store.update 仅保留给 commitRemote 的本地测试回退，不对外暴露写用例');
+});

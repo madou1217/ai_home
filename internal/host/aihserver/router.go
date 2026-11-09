@@ -153,6 +153,8 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.plugins.control != nil {
 		mux.Handle(plugincontrolapi.InstallPath, handlers.plugins.control)
 		mux.Handle(plugincontrolapi.UninstallPath, handlers.plugins.control)
+		// enable/disable 的候选 CAS 提交：Node 计算候选，Go 是唯一写者。
+		mux.Handle(plugincontrolapi.StatePath, handlers.plugins.control)
 	}
 	// 插件发布者信任根：三条都是管理密钥路径，写操作（trust/untrust）已收敛到 Go。
 	if handlers.plugins.trust != nil {

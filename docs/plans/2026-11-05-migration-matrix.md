@@ -431,6 +431,12 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   Node 三路由改代理并保留 audit；CLI `aih plugin trust` 仍直写同一文件。真机 trust→list→untrust 通过。
 - **Chat 能力快照机制修复**（`d4175129`）：能力按当前 `policy.model` 的路由目标动态求值，`/snapshot`
   与命令目录都读动态值；真实 UI 仍需把选中的模型写进 `session.policy.set` 才能完整生效（见 §5.5）。
+- **插件安装/卸载切 Go**（`c42d2c02`）：`G:adapters/pluginartifact` 解析 .aih-plugin、逐文件 sha256、
+  Ed25519 签名与信任根、清单校验（schema 由 `contracts/plugins` 生成）；`G:adapters/pluginstatestore`
+  在 maintenance 读租约下对 app-state 的 `plugins.control.v1` 做 CAS 写入并保留未建模字段；
+  `G:transport/http/plugincontrolapi` 暴露 install/uninstall；Node 两路由改代理，audit 仍 Node。
+  enable/disable 仍 Node（见 `docs/plans/2026-11-09-plugin-lifecycle-boundary.md` 的 P1/P2 方案）。
+  已知收窄：内置 JSON Schema/semver 子集，插件 configSchema 用到未实现关键字会 fail closed。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

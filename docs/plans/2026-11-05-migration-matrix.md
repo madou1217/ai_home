@@ -437,6 +437,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `G:transport/http/plugincontrolapi` 暴露 install/uninstall；Node 两路由改代理，audit 仍 Node。
   enable/disable 仍 Node（见 `docs/plans/2026-11-09-plugin-lifecycle-boundary.md` 的 P1/P2 方案）。
   已知收窄：内置 JSON Schema/semver 子集，插件 configSchema 用到未实现关键字会 fail closed。
+- **插件 enable/disable 状态写入切 Go**（`447bf882` + `2939883e`）：Node 保留 runtime 的
+  prepare→commit→activate 编排；Go 新增 `POST /v1/management/plugins/state/commit`，按候选原文做
+  CAS + 结构/operation 边界校验（enable/disable 不得改 installed、install 不得改 instances 等），
+  并在 maintenance 租约下原样落盘。Node `state-store.commitRemote` 固定调 Go，Go 不可用即
+  `plugin_state_unavailable`，不本地兜底写。候选语义（configSchema、权限指纹）仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

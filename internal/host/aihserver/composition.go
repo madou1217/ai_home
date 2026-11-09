@@ -156,6 +156,8 @@ type serverHandlers struct {
 	webuiUsageConfig http.Handler
 	// webuiSSH 是 SSH 连接列表的只读模型（密码/私钥脱敏，写入口仍在 Node）。
 	webuiSSH http.Handler
+	// webuiSSHWorkspaces 是 SSH 工作区列表的只读模型（远端工作区补影子目录）。
+	webuiSSHWorkspaces http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1260,6 +1262,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 连接接口失败: %w", err)
 	}
+	webuiSSHWorkspacesHandler, err := webuisshapi.NewWorkspacesHandler(
+		webuisshapi.Dependencies{Authorizer: authorizer},
+		sshSource,
+		aiHomeDir,
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 工作区接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1687,6 +1698,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiChatPaste:        webuiChatPasteHandler,
 		webuiUsageConfig:      webuiUsageConfigHandler,
 		webuiSSH:              webuiSSHHandler,
+		webuiSSHWorkspaces:    webuiSSHWorkspacesHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

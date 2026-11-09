@@ -54,3 +54,50 @@ test('Go 不可用（status 0）时 503', async () => {
   const result = await call({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
   assert.equal(result.status, 503);
 });
+
+async function callWorkspaces(goResponse) {
+  let response;
+  const deps = {
+    fs: {},
+    readRequestBody: async () => Buffer.alloc(0),
+    spawnImpl: () => {},
+    homeDir: '/tmp',
+    writeJson: (_res, status, payload) => { response = { status, payload }; }
+  };
+  if (goResponse !== undefined) {
+    deps.goCoreSync = { getSshWorkspaces: async () => goResponse };
+  }
+  const ctx = {
+    method: 'GET',
+    pathname: '/v0/webui/ssh-workspaces',
+    res: {},
+    aiHomeDir: '/tmp/ai-home',
+    deps
+  };
+  const handled = await handleWebUiSshHostRoutes(ctx);
+  assert.equal(handled, true);
+  return response;
+}
+
+test('SSH 工作区：Go 返回列表时原样透传', async () => {
+  const data = {
+    ok: true,
+    workspaces: [
+      { id: 'ws_0123456789abcdef', projectPath: '/tmp/ai-home/run/remote-workspaces/ws_0123456789abcdef' }
+    ]
+  };
+  const result = await callWorkspaces({ ok: true, status: 200, data });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.payload, data);
+});
+
+test('SSH 工作区：缺少 Go 宿主时 503', async () => {
+  const result = await callWorkspaces();
+  assert.equal(result.status, 503);
+  assert.equal(result.payload.error, 'go_core_unavailable');
+});
+
+test('SSH 工作区：Go 不可用时 503', async () => {
+  const result = await callWorkspaces({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
+  assert.equal(result.status, 503);
+});

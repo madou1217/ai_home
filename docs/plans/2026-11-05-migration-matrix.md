@@ -288,6 +288,18 @@
 | 凭据策略必须成对登记 | 每个 Provider 都要有 `RefreshStrategy`，否则 `ResolveCredential` 报「账号凭据刷新策略不存在」，额度 refresh 与后台协调器都 500 | 新增 Go 额度策略时必须同时登记 `staticcredential`（cline/kiro/zcode/qoder 的既有教训） |
 | Node 写入仍是账号主入口 | WebUI/CLI 登录、导入、删除仍走 Node，经 `go-account-sync` 15s 对账进 Go | 任何「Go 直写账号」的改动都要考虑与同步器的代次仲裁 |
 
+### 5.5 Chat relay 能力快照缺陷（2026-11-09，已知未修）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 模型只由 relay Provider 承载的聊天会话，轮次实际由 Go 执行；但前端拿到的能力快照仍是旧 Node codex 驱动的上限，会显示 Go 轮次不产出/不执行的入口（tools、approval、reasoning、plan 等）。请求本身能成功，属于 **UI 语义与真实能力不一致**。 |
+| 根因 | `lib/server/chat-runtime-composition.js` 在 chat 分支统一传 `capabilities: codexCapabilities(runtime)`；`lib/server/chat-runtime/capability-routed-driver.js` 的 `createCapabilityRoutedChatDriverEntry` 把它原样作为会话级快照返回。`lib/server/chat-runtime-actor-registry.js:168` 在 actor 解析时取一次，之后不随轮次重建。 |
+| 为什么不能按模型简单切 | 同一会话可以在 canonical / relay 模型之间切换；按「当前模型」生成快照会在切模型后立即过期，而 TurnLifecycle 与前端都把 `capabilitySnapshot` 当会话级只读。 |
+| 影响面 | `web/src/features/chat-runtime/composer-policy.ts` 与 `use-composer-controller.ts` 按快照渲染 `turn.steer`、`turn.queue`、`slashCommands`、审批与工具入口；Go 轮次只产出 timeline 文本增量，没有 reasoning 条目、工具调用、plan 与 compact。 |
+| 为什么当时不修 | 改成「按会话当前模型选快照」只是把过期点从切模型前移到切模型后；正确做法需要把能力拆层并让投影随路由目标刷新，牵动前端与 actor 生命周期，超出该切片。 |
+| 修法方向 | 能力快照拆成「会话级静态能力 + 逐轮路由目标能力」两层：静态层保留队列/中断等 Node 侧真实能力，路由层由本轮 driver 提供；或让 `capabilitySnapshot` 随模型变更重建 actor/投影，并由前端隐藏 `support=unsupported` 的条目。 |
+| 验收判据 | relay-only 会话不显示 tools/approval/reasoning/plan 等 Go 不产出的入口；切回 canonical 模型后这些入口恢复；请求结果与事件流不受影响。 |
+
 ## 6. 证据边界
 
 - 本矩阵按**代码路径与接线**判定，不以单测通过或计划文档的「已完成」字样替代。
@@ -392,8 +404,8 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   轮次推理按**能力**路由——只有模型候选 Provider 在 chat_completions 入口都是 relay 通道时才走
   Go 内部入口 `POST /v1/management/webui/chat/sessions/{id}/commands`；canonical（codex/claude/
   agy/gemini）、附件、slash/compact 仍走旧 Node 驱动。Go 承接账号征召、上游请求、改流、失败
-  分类与用量记账。已知：relay-only 会话的能力快照仍沿用 codex 上限（UI 会显示 reasoning/tools，
-  但 Go 轮次不产出这些事件）。
+  分类与用量记账。已知缺陷：relay-only 会话的能力快照仍沿用 codex 上限（UI 会显示
+  reasoning/tools，但 Go 轮次不产出这些事件），根因、影响与修法见 §5.5。
 - **应用启动权限设置 GET 切 Go**（`c3b88b7d`）：`GET /v1/management/webui/tool-apps/{appId}/settings`
   直接读 app-state.db 的 `toolkit:tool-permission-settings` 并组装 capability/权限目录；Node
   GET 固定代理，PUT 仍留 Node（宿主配置写入依赖 Provider 配置工作台）。真机 200；未登记 app 400。

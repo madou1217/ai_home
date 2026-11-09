@@ -299,6 +299,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		Catalog:                    catalog,
 		Store:                      store,
 		AIHomeDir:                  options.AIHomeDir,
+		NodeBaseURL:                options.NodeBaseURL,
 		ModelDiscovery:             modelDiscovery,
 		Runtime:                    accountRuntime,
 		AttemptUsage:               accountRuntime,
@@ -373,7 +374,9 @@ type handlerDependencies struct {
 	Catalog *providers.Catalog
 	Store   *sqliteaccount.Store
 	// AIHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
-	AIHomeDir      string
+	AIHomeDir string
+	// NodeBaseURL 是 Node 回环地址；插件实例启停回调 Node 内部协议时需要。
+	NodeBaseURL    string
 	ModelDiscovery *accountapp.ModelDiscovery
 	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
 	Runtime serverAccountRuntime
@@ -414,6 +417,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	catalog := dependencies.Catalog
 	store := dependencies.Store
 	aiHomeDir := dependencies.AIHomeDir
+	nodeBaseURL := dependencies.NodeBaseURL
 	modelDiscovery := dependencies.ModelDiscovery
 	accountRuntime := dependencies.Runtime
 	attemptUsage := dependencies.AttemptUsage
@@ -1595,7 +1599,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
-	plugins := newPluginHandlers(authorizer, clientAuthorizer, accountProviderResolver(store), aiHomeDir)
+	plugins := newPluginHandlers(authorizer, clientAuthorizer, accountProviderResolver(store), aiHomeDir, nodeBaseURL, managementKey)
 	return serverHandlers{
 		plugins:               plugins,
 		accounts:              accountsHandler,

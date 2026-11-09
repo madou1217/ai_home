@@ -62,6 +62,7 @@ func run(
 	clientKey := config.clientKey
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
+		NodeBaseURL:                config.nodeBaseURL,
 		ManagementKey:              func() string { return managementKey },
 		ClientKey:                  func() string { return clientKey },
 		ModelDiscoverers:           runtime.models,

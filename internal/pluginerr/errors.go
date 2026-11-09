@@ -7,9 +7,12 @@ package pluginerr
 import "errors"
 
 // Error 是带稳定错误码的插件领域错误。
+//
+// Diagnostics 只用于候选被拒等需要回传宿主诊断的场景；普通错误保持为空。
 type Error struct {
-	Code    string
-	Message string
+	Code        string
+	Message     string
+	Diagnostics []any
 }
 
 // Error 实现 error；Message 为空时回落到 Code（Node PluginError 的默认行为）。

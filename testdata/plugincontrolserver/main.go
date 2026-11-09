@@ -13,6 +13,7 @@ import (
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
 	pluginstatereader "github.com/madou1217/ai_home/internal/adapters/plugincontrol"
+	"github.com/madou1217/ai_home/internal/adapters/plugincontrolclient"
 	"github.com/madou1217/ai_home/internal/adapters/pluginstatestore"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/plugincontrolapi"
@@ -46,11 +47,29 @@ func main() {
 		fmt.Fprintln(os.Stderr, "installer:", err)
 		os.Exit(2)
 	}
-	handler, err := plugincontrolapi.NewHandler(plugincontrolapi.Dependencies{
+	dependencies := plugincontrolapi.Dependencies{
 		Authorizer: staticAuthorizer{key: key},
 		Installer:  installer,
 		Committer:  store,
-	})
+	}
+	// P2：可选接上 Node 内部发布协议，跑 enable/disable 的端到端。
+	if nodeURL := os.Getenv("AIH_PLUGIN_TEST_NODE_URL"); nodeURL != "" {
+		client, clientErr := plugincontrolclient.New(plugincontrolclient.Options{
+			BaseURL:       nodeURL,
+			ManagementKey: func() string { return key },
+		})
+		if clientErr != nil {
+			fmt.Fprintln(os.Stderr, "node client:", clientErr)
+			os.Exit(2)
+		}
+		operator, operatorErr := plugincontrol.NewInstanceOperator(store, store, client)
+		if operatorErr != nil {
+			fmt.Fprintln(os.Stderr, "operator:", operatorErr)
+			os.Exit(2)
+		}
+		dependencies.Operator = operator
+	}
+	handler, err := plugincontrolapi.NewHandler(dependencies)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "handler:", err)
 		os.Exit(2)
@@ -76,6 +95,10 @@ func main() {
 	mux.Handle(plugincontrolapi.InstallPath, handler)
 	mux.Handle(plugincontrolapi.UninstallPath, handler)
 	mux.Handle(plugincontrolapi.StatePath, handler)
+	if os.Getenv("AIH_PLUGIN_TEST_NODE_URL") != "" {
+		mux.Handle("POST "+plugincontrolapi.InstancesPath+"/{instanceId}/enable", handler)
+		mux.Handle("POST "+plugincontrolapi.InstancesPath+"/{instanceId}/disable", handler)
+	}
 	mux.Handle(pluginapi.InventoryPath, inventory)
 	fmt.Printf("LISTEN=%s\n", listener.Addr().String())
 	os.Stdout.Sync()

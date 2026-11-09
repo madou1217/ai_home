@@ -66,6 +66,61 @@ func (store *Store) DatabasePath() string {
 	return store.databasePath
 }
 
+// CurrentRevision 读取当前控制状态 revision，用于实例启停的预检。
+//
+// enable/disable 要求库与 app_kv 表已存在；缺任何一个都返回 plugin_state_unavailable，
+// 与 Commit 的写入门槛一致，避免先准备候选再因为缺库丢弃。
+func (store *Store) CurrentRevision(ctx context.Context) (int64, error) {
+	if store == nil || ctx == nil {
+		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	lease, err := accountmaintenance.Acquire(ctx, store.aiHomeDir)
+	if err != nil {
+		return 0, err
+	}
+	defer lease.Close()
+	if _, statErr := os.Stat(store.databasePath); statErr != nil {
+		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	database, err := sql.Open("sqlite", store.databasePath)
+	if err != nil {
+		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	database.SetMaxOpenConns(1)
+	database.SetMaxIdleConns(1)
+	defer func() { _ = database.Close() }()
+	connection, err := database.Conn(ctx)
+	if err != nil {
+		return 0, mapStateError(err)
+	}
+	defer func() { _ = connection.Close() }()
+	if _, err := connection.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMS)); err != nil {
+		return 0, mapStateError(err)
+	}
+	var tables int
+	if err := connection.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_kv'").Scan(&tables); err != nil {
+		return 0, mapStateError(err)
+	}
+	if tables == 0 {
+		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	var encoded string
+	switch err := connection.QueryRowContext(ctx,
+		"SELECT value FROM app_kv WHERE key = ?", ControlStateKey).Scan(&encoded); {
+	case errors.Is(err, sql.ErrNoRows):
+		return 0, nil
+	case err != nil:
+		return 0, mapStateError(err)
+	default:
+		decoded, decodeErr := decodeState([]byte(encoded))
+		if decodeErr != nil {
+			return 0, decodeErr
+		}
+		return decoded.Revision, nil
+	}
+}
+
 // Update 在维护读租约与 SQLite 事务内完成一次 CAS 写回。
 func (store *Store) Update(
 	ctx context.Context,

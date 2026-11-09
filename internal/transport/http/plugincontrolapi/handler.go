@@ -32,6 +32,8 @@ const (
 	UninstallPath = "/v1/management/plugins/uninstall"
 	// StatePath 以候选原文提交一次控制状态变更（enable/disable 使用）。
 	StatePath = "/v1/management/plugins/state/commit"
+	// InstancesPath 是实例启停前缀：POST /instances/{instanceId}/enable|disable。
+	InstancesPath = "/v1/management/plugins/instances"
 	// maxStateBodyBytes 覆盖候选文档上限（4MB）与 JSON 包装。
 	maxStateBodyBytes = 5 << 20
 	// maxBodyBytes 与 Node 插件路由的 MAX_BODY_BYTES（256KB）一致。
@@ -58,12 +60,19 @@ type StateCommitter interface {
 	Commit(ctx context.Context, operation plugincontrol.Operation, expectedRevision int64, candidate []byte) (int64, error)
 }
 
+// InstanceOperator 是实例启停用例（读 revision → Node prepare → CAS → activate）。
+type InstanceOperator interface {
+	Apply(ctx context.Context, operation plugincontrol.Operation, instanceID string, input json.RawMessage, expectedRevision *int64) (plugincontrol.InstanceResult, error)
+}
+
 // Dependencies 汇总管理接口依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	Installer  Installer
 	// Committer 为空时只关闭 state/commit 路由；install/uninstall 不受影响。
 	Committer StateCommitter
+	// Operator 为空时只关闭实例启停路由；Node 代理会得到 404（不回落到本地写）。
+	Operator InstanceOperator
 }
 
 // Handler 处理安装、卸载与状态提交。
@@ -71,6 +80,7 @@ type Handler struct {
 	authorizer Authorizer
 	installer  Installer
 	committer  StateCommitter
+	operator   InstanceOperator
 }
 
 // NewHandler 创建管理接口；依赖缺失时拒绝装配。
@@ -82,6 +92,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer: dependencies.Authorizer,
 		installer:  dependencies.Installer,
 		committer:  dependencies.Committer,
+		operator:   dependencies.Operator,
 	}, nil
 }
 
@@ -104,6 +115,11 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	case StatePath:
 		handler.stateCommit(response, request)
 	default:
+		instanceID, operation, matched := parseInstancePath(request.URL.Path)
+		if matched {
+			handler.instanceOperation(response, request, instanceID, operation)
+			return
+		}
 		writeError(response, http.StatusNotFound, "not_found", "")
 	}
 }
@@ -218,6 +234,106 @@ func floatRevision(value float64) (*int64, error) {
 	}
 	converted := int64(value)
 	return &converted, nil
+}
+
+// parseInstancePath 解析 /instances/{instanceId}/enable|disable。
+// 不用 ServeMux 的 PathValue，是为了让 handler 单测可以直接构造请求。
+func parseInstancePath(path string) (string, plugincontrol.Operation, bool) {
+	prefix := InstancesPath + "/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	for _, candidate := range []struct {
+		suffix    string
+		operation plugincontrol.Operation
+	}{
+		{suffix: "/enable", operation: plugincontrol.OperationEnable},
+		{suffix: "/disable", operation: plugincontrol.OperationDisable},
+	} {
+		if !strings.HasSuffix(rest, candidate.suffix) {
+			continue
+		}
+		instanceID := strings.TrimSuffix(rest, candidate.suffix)
+		if instanceID == "" || strings.Contains(instanceID, "/") {
+			return "", "", false
+		}
+		return instanceID, candidate.operation, true
+	}
+	return "", "", false
+}
+
+// instanceOperation 接收 Go 的公开启停请求：路径里的 instanceId 是权威值，
+// body 里的同名字段被覆盖；配置、权限与默认值仍由 Node prepare 校验。
+func (handler *Handler) instanceOperation(
+	response http.ResponseWriter,
+	request *http.Request,
+	instanceID string,
+	operation plugincontrol.Operation,
+) {
+	if !requireMethod(response, request, http.MethodPost) {
+		return
+	}
+	if handler.operator == nil {
+		writeDomainError(response, http.StatusServiceUnavailable, plugincontrol.CodeStateUnavailable, "插件状态写入不可用")
+		return
+	}
+	input, ok := decodeInstanceInput(response, request)
+	if !ok {
+		return
+	}
+	encodedID, err := json.Marshal(instanceID)
+	if err != nil {
+		writeDomainError(response, http.StatusBadRequest, "plugin_request_invalid", "instanceId 非法")
+		return
+	}
+	input["instanceId"] = encodedID
+	expected, revisionErr := parseExpectedRevision(input["expectedRevision"])
+	if revisionErr != nil {
+		writeDomainError(response, http.StatusBadRequest, plugincontrol.CodeStateInvalid, "expectedRevision 必须是整数")
+		return
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		writeDomainError(response, http.StatusBadRequest, "plugin_request_invalid", "请求体不是合法 JSON")
+		return
+	}
+	result, err := handler.operator.Apply(request.Context(), operation, instanceID, payload, expected)
+	if err != nil {
+		writeControlError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		OK bool `json:"ok"`
+		plugincontrol.InstanceResult
+	}{OK: true, InstanceResult: result})
+}
+
+// decodeInstanceInput 读取启停 body；空 body 视为 {}（disable 只靠路径参数）。
+func decodeInstanceInput(response http.ResponseWriter, request *http.Request) (map[string]json.RawMessage, bool) {
+	if request.Body == nil {
+		return map[string]json.RawMessage{}, true
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, maxBodyBytes)
+	document, err := io.ReadAll(request.Body)
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeDomainError(response, http.StatusBadRequest, "plugin_request_too_large", "请求体过大")
+		} else {
+			writeDomainError(response, http.StatusBadRequest, "plugin_request_invalid", "请求体不是合法 JSON")
+		}
+		return nil, false
+	}
+	if len(bytes.TrimSpace(document)) == 0 {
+		return map[string]json.RawMessage{}, true
+	}
+	var input map[string]json.RawMessage
+	if err := json.Unmarshal(document, &input); err != nil || input == nil {
+		writeDomainError(response, http.StatusBadRequest, "plugin_request_invalid", "请求体必须是 JSON 对象")
+		return nil, false
+	}
+	return input, true
 }
 
 func requireMethod(response http.ResponseWriter, request *http.Request, method string) bool {
@@ -342,6 +458,19 @@ func (handler *Handler) stateCommit(response http.ResponseWriter, request *http.
 }
 
 func writeControlError(response http.ResponseWriter, err error) {
+	// RevisionConflictError 不是 pluginerr.Error（它带 Current revision 供调用方重读）；
+	// 实例端点仍然返回与 Node 一致的 409 + plugin_revision_conflict。
+	var conflict *plugincontrol.RevisionConflictError
+	if errors.As(err, &conflict) {
+		diagnostics := []any{}
+		writeJSON(response, http.StatusConflict, errorView{
+			OK:          false,
+			Error:       plugincontrol.CodeRevisionConflict,
+			Message:     plugincontrol.CodeRevisionConflict,
+			Diagnostics: &diagnostics,
+		})
+		return
+	}
 	coded, ok := pluginerr.From(err)
 	if !ok {
 		writeDomainError(response, http.StatusBadRequest, "plugin_error", err.Error())
@@ -349,15 +478,27 @@ func writeControlError(response http.ResponseWriter, err error) {
 	}
 	status := http.StatusBadRequest
 	switch coded.Code {
-	case plugincontrol.CodeNotInstalled:
+	case plugincontrol.CodeNotInstalled, plugincontrol.CodeInstanceUnknown:
 		status = http.StatusNotFound
-	case plugincontrol.CodeVersionConflict, plugincontrol.CodeInUse, plugincontrol.CodeRevisionConflict:
+	case plugincontrol.CodeVersionConflict, plugincontrol.CodeInUse, plugincontrol.CodeRevisionConflict,
+		plugincontrol.CodePublishBusy, plugincontrol.CodeTicketUnknown, plugincontrol.CodeTicketExpired:
 		status = http.StatusConflict
 	case "account_maintenance_busy", "account_maintenance_in_progress",
-		plugincontrol.CodeStateUnavailable, "plugin_runtime_unavailable", "plugin_runtime_inactive":
+		plugincontrol.CodeStateUnavailable, plugincontrol.CodeRuntimeUnavailable,
+		"plugin_runtime_inactive":
 		status = http.StatusServiceUnavailable
 	}
-	writeDomainError(response, status, coded.Code, coded.Error())
+	// 候选被拒时把宿主诊断带回调用方；其它错误保持空数组，形状与 Node writeError 一致。
+	diagnostics := coded.Diagnostics
+	if diagnostics == nil {
+		diagnostics = []any{}
+	}
+	writeJSON(response, status, errorView{
+		OK:          false,
+		Error:       coded.Code,
+		Message:     coded.Error(),
+		Diagnostics: &diagnostics,
+	})
 }
 
 type errorView struct {

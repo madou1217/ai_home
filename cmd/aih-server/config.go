@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,6 +41,8 @@ type commandConfig struct {
 	upstreamErrorRuleProviders []string
 	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui（过渡期 Node 仍在服务）。
 	webDir string
+	// nodeBaseURL 是 Node 宿主的回环管理地址（监督器注入）。为空时不挂实例启停路由。
+	nodeBaseURL string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -64,6 +67,8 @@ func loadCommandConfig(
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")
 	var webDir string
 	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
+	var nodeBaseURL string
+	flags.StringVar(&nodeBaseURL, "node-base-url", "", "Node 宿主回环地址；由 Go Core 监督器注入，不面向用户")
 	flags.Usage = func() {
 		writeUsage(runtime.stderr, flags)
 	}
@@ -97,6 +102,10 @@ func loadCommandConfig(
 	if err != nil {
 		return commandConfig{}, err
 	}
+	nodeBaseURL = strings.TrimSpace(nodeBaseURL)
+	if nodeBaseURL != "" && !isLoopbackBaseURL(nodeBaseURL) {
+		return commandConfig{}, errInvalidCommandConfig
+	}
 	return commandConfig{
 		host:                       host,
 		port:                       port,
@@ -106,7 +115,25 @@ func loadCommandConfig(
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
+		nodeBaseURL:                nodeBaseURL,
 	}, nil
+}
+
+// isLoopbackBaseURL 只接受 http + loopback 的 Node 地址：管理密钥不能发到远端。
+func isLoopbackBaseURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
+		return false
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // envUpstreamErrorRuleProviders 严格解析已接入规则求值的 Provider 列表。

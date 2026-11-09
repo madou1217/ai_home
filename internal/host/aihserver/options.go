@@ -76,6 +76,9 @@ type Options struct {
 	// WebDir 是 Web UI 构建产物目录（web/dist）。为空表示不托管 /ui，
 	// 由 Node 宿主继续服务——过渡期的默认值。
 	WebDir string
+	// NodeBaseURL 是 Node 宿主的回环地址（由 Go Core 监督器注入）。
+	// 插件实例启停的 prepare/activate/discard 要回调 Node；为空时只少挂这两条路由。
+	NodeBaseURL string
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
 	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
 	//

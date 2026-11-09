@@ -224,8 +224,8 @@ Go 在 prepare 之后崩溃，Node 到期自动 `dispose` 候选并释放，状�
 
 - 通用不变量：`schemaVersion == 1`；`revision == expectedRevision + 1`；实例 id 匹配 `^[a-z0-9][a-z0-9._-]{0,127}$`；
   每个实例的 `pluginId@version` 能唯一解析到 installed；无重复 instanceId；`enabled` 实例的配置是 JSON 对象；
-  声明了权限的插件，`permissionsAcceptedFingerprint` 必须等于 installed 的 `permissionsFingerprint`（**只做字符串比较，
-  不重算**，见 §7）；文档 ≤ 4MB。
+  声明了权限的插件，`permissionsAcceptedFingerprint` 必须等于 installed 的 `permissionsFingerprint`（**启停只比较存储值，
+  不重算**；存储值由 install 侧按 Node 字段序计算，见 §7）；文档 ≤ 4MB。
 
 验收：
 
@@ -294,6 +294,7 @@ Go 在 prepare 之后崩溃，Node 到期自动 `dispose` 候选并释放，状�
 | --- | --- | --- |
 | 两个写者 | revision 回退、lost update | 单写者开关；Node 写入路径直接报错；Go store 只暴露一个入口 |
 | 未知字段被吃掉 | 卸载找不到 `artifact`、权限门失效（`permissionsFingerprint` 丢）、`createdAt` 重置 | 候选**原样字节落盘**，只替换 `revision` |
+| 权限指纹复刻偏差 | Go 与 Node 算出的 `permissionsFingerprint` 不同，已确认的权限被判成未确认 | 固定字段序（network→filesystem{read,write}→secrets→environment）+ `SetEscapeHTML(false)` + 跨语言对拍；启停只比较存储值 |
 | 审计重复 | 一次 enable 两条 audit | 审计只由一侧写：P1 仍 Node，P2 移到 Go；切换时删掉另一侧 |
 | 两套错误语义 | CLI 看到 `http_400` 而不是领域码 | Go 端点返回与 Node `writeError` 同名的码与状态映射（409/404/400/503） |
 | 读快照过期 | 列表显示旧 revision | 写后 Go 的清单必须读同一个 store（不能再用 `immutable=1`，见 6.3） |
@@ -342,7 +343,7 @@ Go 在 prepare 之后崩溃，Node 到期自动 `dispose` 候选并释放，状�
 | catalog alias 求值 | 在 prepare 阶段调用宿主，结果进 Node 目录视图 | 留 Node |
 | 观察队列、失败计数、status/diagnostics | 进程内运行态 | 留 Node |
 | 投影推送与 ack | Node 是代次 owner，Go 只消费 | 方向保持 Node → Go |
-| 权限指纹算法 | `JSON.stringify(manifest.permissions)` 依赖 JS 属性插入序；Go 的 map 序列化会排序，换算法会让存量 `permissionsAcceptedFingerprint` 全部失效 | **指纹仍由 Node 计算**；Go 只做字符串比较 |
+| 权限指纹算法 | `JSON.stringify(manifest.permissions)` 依赖 JS 属性插入序与不转义 HTML；Go 的 map 序列化会排序，复刻不完整会让存量 `permissionsAcceptedFingerprint` 全部失效 | **存储值由 install 侧计算**（固定字段序 + `SetEscapeHTML(false)` + 跨语言对拍，plugin-artifact 83733557 已用 17+10 fixture 与 Node 真实实现比对）；**启停只比较存储值，不重算** |
 | `configSchema` 校验与默认值（Ajv `useDefaults`） | Go 没有等价实现；重写会改变默认值语义与报错文案 | 留 Node；Go 只要求配置是 JSON 对象 |
 | `manifest` 全量校验 | 同上，属于插件合同 | 留 Node |
 
@@ -355,7 +356,7 @@ Go 的职责是「这份候选能不能成为唯一事实」——CAS、结构�
 | --- | --- | --- | --- |
 | R1 | 双写导致 revision 回退 | Node 在 Go 失败后本地兜底写 | 开关打开后 Node 写入直接报错；集成测试构造 Go 503 断言本地未写 |
 | R2 | 未知字段丢失 | Go 用 `ControlState` 结构体重序列化 | 候选按原始字节落盘 + round-trip 断言 |
-| R3 | 权限门失效 | 指纹算法被搬到 Go | 指纹留在 Node；Go 只比较字符串 |
+| R3 | 权限门失效 | 指纹复刻不完整（字段序/HTML 转义） | 固定字段序 + `SetEscapeHTML(false)` + 跨语言对拍；启停只比较存储值 |
 | R4 | 维护期并发写 | Go 绕过 gate/lease | P0 实现同一套 gate + SHARED 租约；维护期提交返回 `account_maintenance_in_progress` |
 | R5 | 读失败被当成空集合 | 任意一次 `desiredPlugins()` 抛错 → `[]` → 恢复路径停宿主 | P1 保持本地读；若未来改远程读，先改成 `{ok,plugins}` 并让 recover 在 `ok=false` 时保持现状 |
 | R6 | 发布锁死锁（B+） | Go 在 prepare 后崩溃 | ticket TTL 30s；Node 到期 dispose 并释放；Go 启动时清理自己的未完成操作 |

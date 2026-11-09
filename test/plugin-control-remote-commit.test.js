@@ -51,11 +51,15 @@ function createControl(options = {}) {
       return next;
     }
   };
+  let ticketSeq = 0;
   const runtime = {
-    publish: async (plugins, commit) => {
-      const committed = commit ? await commit() : null;
-      return { committed, generation: 1, state: plugins.length ? 'active' : 'idle' };
-    }
+    // P2：控制面只负责候选与宿主准备，提交后由 activate 切换代次。
+    prepare: async () => {
+      ticketSeq += 1;
+      return { ticket: `ticket-${ticketSeq}`, generation: ticketSeq, contributions: [] };
+    },
+    activate: async (_ticket, revision) => ({ generation: ticketSeq, state: 'active', revision }),
+    discard: async () => ({ ok: true })
   };
   const control = createPluginControl({
     aiHomeDir: '/tmp/plugin-control-test',

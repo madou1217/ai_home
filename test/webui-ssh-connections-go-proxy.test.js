@@ -101,3 +101,50 @@ test('SSH 工作区：Go 不可用时 503', async () => {
   const result = await callWorkspaces({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
   assert.equal(result.status, 503);
 });
+
+async function callWorkspaceSessions(goResponse) {
+  let response;
+  const deps = {
+    fs: {},
+    readRequestBody: async () => Buffer.alloc(0),
+    spawnImpl: () => {},
+    homeDir: '/tmp',
+    writeJson: (_res, status, payload) => { response = { status, payload }; }
+  };
+  if (goResponse !== undefined) {
+    deps.goCoreSync = { getSshWorkspaceSessions: async () => goResponse };
+  }
+  const ctx = {
+    method: 'GET',
+    pathname: '/v0/webui/ssh-workspaces/sessions',
+    res: {},
+    aiHomeDir: '/tmp/ai-home',
+    deps
+  };
+  const handled = await handleWebUiSshHostRoutes(ctx);
+  assert.equal(handled, true);
+  return response;
+}
+
+test('SSH 工作区终端状态：Go 返回列表时原样透传', async () => {
+  const data = {
+    ok: true,
+    sessions: [
+      { workspaceId: 'ws_0123456789abcdef', sessionKey: 'remote-ws:ws_0123456789abcdef', alive: true }
+    ]
+  };
+  const result = await callWorkspaceSessions({ ok: true, status: 200, data });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.payload, data);
+});
+
+test('SSH 工作区终端状态：缺少 Go 宿主时 503', async () => {
+  const result = await callWorkspaceSessions();
+  assert.equal(result.status, 503);
+  assert.equal(result.payload.error, 'go_core_unavailable');
+});
+
+test('SSH 工作区终端状态：Go 不可用时 503', async () => {
+  const result = await callWorkspaceSessions({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
+  assert.equal(result.status, 503);
+});

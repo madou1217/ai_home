@@ -158,6 +158,8 @@ type serverHandlers struct {
 	webuiSSH http.Handler
 	// webuiSSHWorkspaces 是 SSH 工作区列表的只读模型（远端工作区补影子目录）。
 	webuiSSHWorkspaces http.Handler
+	// webuiSSHSessions 是 SSH 工作区持久终端状态的只读模型（探测复用终端 tmux store）。
+	webuiSSHSessions http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -797,10 +799,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
 		ExitRetention: 250 * time.Millisecond,
 	})
+	// 同一个 tmux 探测实例同时服务 WebUI 终端与 SSH 工作区状态，避免两套实现漂移。
+	terminalDurable := webuiterminalapi.NewTmuxStore()
 	webUITerminalHandler, err := webuiterminalapi.NewHandler(webuiterminalapi.Dependencies{
 		Authorizer: authorizer,
 		Sessions:   terminalService,
-		Durable:    webuiterminalapi.NewTmuxStore(),
+		Durable:    terminalDurable,
 	})
 	if err != nil {
 		_ = terminalService.Close()
@@ -1271,6 +1275,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 工作区接口失败: %w", err)
 	}
+	webuiSSHSessionsHandler, err := webuisshapi.NewSessionsHandler(
+		webuisshapi.Dependencies{Authorizer: authorizer},
+		sshSource,
+		func(sessionKey string) string {
+			return string(terminalDurable.Probe(sessionKey).State)
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 工作区终端状态接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1699,6 +1714,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiUsageConfig:      webuiUsageConfigHandler,
 		webuiSSH:              webuiSSHHandler,
 		webuiSSHWorkspaces:    webuiSSHWorkspacesHandler,
+		webuiSSHSessions:      webuiSSHSessionsHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

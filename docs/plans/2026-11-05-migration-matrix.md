@@ -454,11 +454,13 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **全局用量配置 GET 切 Go**：Go 新增 `GET /v1/management/webui/config`，只读 app-state.db 的
   `config:usage`，复刻 Node `normalizeConfig`（间隔白名单、阈值 1..100、自动换号开关与剩余
   百分比夹取）；Node GET 固定代理、Go 不可用 503，POST 写配置仍在 Node。
-- **SSH 连接/工作区列表 GET 切 Go**：Go 新增 `GET /v1/management/webui/ssh-connections` 与
-  `GET /v1/management/webui/ssh-workspaces`。前者只读 `ssh_connections` 并复刻 Node 脱敏
-  （password/privateKey 有值 → `******`，无值 → 空串，其它字段含 identityFile 与未知字段原样
-  保留）；后者只读 `ssh_workspaces`，`ws_<16hex>` 远端工作区补 `run/remote-workspaces/<id>`
-  影子目录。Node 两条 GET 固定代理、Go 不可用 503，增删改仍在 Node。
+- **SSH 连接/工作区/终端状态 GET 切 Go**：Go 新增 `GET /v1/management/webui/ssh-connections`、
+  `GET /v1/management/webui/ssh-workspaces` 与 `GET .../ssh-workspaces/sessions`。连接列表只读
+  `ssh_connections` 并复刻 Node 脱敏（password/privateKey 有值 → `******`，无值 → 空串，其它
+  字段含 identityFile 与未知字段原样保留）；工作区列表只读 `ssh_workspaces`，`ws_<16hex>`
+  远端工作区补 `run/remote-workspaces/<id>` 影子目录；终端状态在 Go 内按 `remote-ws:<id>`
+  探测同一个 tmux store，不再由 Node 逐个 workspace 发 N 次请求。Node 三条 GET 固定代理、
+  Go 不可用 503，增删改与终端创建仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

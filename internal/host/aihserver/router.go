@@ -145,6 +145,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.webuiSSHWorkspaces != nil {
 		mux.Handle("GET "+webuisshapi.WorkspacesPath, handlers.webuiSSHWorkspaces)
 	}
+	// SSH 工作区终端状态：GET 固定读 Go（探测 Go 自己的 tmux 会话）。
+	if handlers.webuiSSHSessions != nil {
+		mux.Handle("GET "+webuisshapi.WorkspaceSessionsPath, handlers.webuiSSHSessions)
+	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。
 	mountWebUIChat(mux, handlers.webUIChat)

@@ -421,6 +421,16 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   POST（写设置 + 运行池重载）仍在 Node。顺手抽出共享只读包 `internal/adapters/appstate`
   （只读打开 / app_kv / 账号归属），并删除 Node 里已被 Go 取代的 `listAccountQuotaResetEvents`。
   真机：显式 false → 200、无记录 → true、Provider 不匹配 → 409、未知账号 → 404、无密钥 → 401。
+- **WebUI 终端切 Go**（`59311dfb`）：`open/attach/mux/input/resize/close` 六端点 + clipboard-image
+  全部由 `G:transport/http/webuiterminalapi` 驱动真实 PTY；Node `webui-terminal-routes` 只做管理密钥后的
+  反代，删除了 terminal-output-batcher / replay / persistence / clipboard 四个 Node 模块；tmux 持久化
+  socket 语义原样搬到 Go。真机：open → input `echo A11H_OK` → mux 收到输出 → close 全 200。
+  边界：Go Core 未就绪时终端一律 503（无 Node 本地回退）。
+- **插件信任根切 Go**（`df9626ef`）：`GET /v1/management/plugins/trusted` 与 `POST .../trust|untrust`
+  读写 `<aiHomeDir>/plugins/trusted-keys.json`（SPKI PEM 归一、keyId=sha256 前 24、0600/0700、原子写）；
+  Node 三路由改代理并保留 audit；CLI `aih plugin trust` 仍直写同一文件。真机 trust→list→untrust 通过。
+- **Chat 能力快照机制修复**（`d4175129`）：能力按当前 `policy.model` 的路由目标动态求值，`/snapshot`
+  与命令目录都读动态值；真实 UI 仍需把选中的模型写进 `session.policy.set` 才能完整生效（见 §5.5）。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

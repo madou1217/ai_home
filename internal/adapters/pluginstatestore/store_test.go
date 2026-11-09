@@ -154,8 +154,8 @@ func TestNormalizesLegacyDocument(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &document); err != nil {
 		t.Fatalf("状态不是合法 JSON: %v", err)
 	}
-	if _, present := document["extra"]; present {
-		t.Fatalf("未知顶层字段应被丢弃（与 Node normalizeState 一致）: %s", raw)
+	if document["extra"] != "drop-me" {
+		t.Fatalf("未知顶层字段应原样保留: %s", raw)
 	}
 }
 

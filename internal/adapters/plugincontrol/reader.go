@@ -122,24 +122,17 @@ func hasAppKVTable(ctx context.Context, db *sql.DB) (bool, error) {
 	return count > 0, nil
 }
 
-// openReadOnly 打开只读连接。
+// openReadOnly 打开普通只读连接（mode=ro），绝不使用 immutable=1。
 //
-// 先按 mode=ro 打开；如果失败且没有 -wal 文件，再用 immutable=1 重试。
-// immutable 会忽略 WAL，只在“确认没有未合并 WAL”这个前提下使用才安全；
-// 有 WAL 时必须坚持普通只读连接，宁可失败也不能读到过期快照。
+// immutable 会忽略 WAL：只要 Node 或 Go 的写者还持有未合并的 WAL，读到的就是
+// 过期快照。列表必须看到刚提交的 revision，因此宁可让这次读取失败（上层 503），
+// 也不返回旧状态。
 func openReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
-	db, err := openAndPing(ctx, databasePath, false)
-	if err == nil {
-		return db, nil
-	}
-	if _, statErr := os.Stat(databasePath + "-wal"); statErr == nil {
-		return nil, err
-	}
-	return openAndPing(ctx, databasePath, true)
+	return openAndPing(ctx, databasePath)
 }
 
-func openAndPing(ctx context.Context, databasePath string, immutable bool) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", buildReadOnlyDSN(databasePath, immutable))
+func openAndPing(ctx context.Context, databasePath string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", buildReadOnlyDSN(databasePath))
 	if err != nil {
 		return nil, err
 	}
@@ -153,16 +146,13 @@ func openAndPing(ctx context.Context, databasePath string, immutable bool) (*sql
 	return db, nil
 }
 
-func buildReadOnlyDSN(databasePath string, immutable bool) string {
+func buildReadOnlyDSN(databasePath string) string {
 	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
 	query := fileURL.Query()
 	query.Set("mode", "ro")
 	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", databaseBusyTimeoutMS))
 	// query_only 是第二道保险：即使驱动忽略 mode=ro，也不允许本连接写入。
 	query.Add("_pragma", "query_only(1)")
-	if immutable {
-		query.Set("immutable", "1")
-	}
 	fileURL.RawQuery = query.Encode()
 	return fileURL.String()
 }

@@ -84,6 +84,10 @@ type State struct {
 	Instances        []json.RawMessage `json:"instances"`
 	Generations      []json.RawMessage `json:"generations"`
 	ActiveGeneration int64             `json:"activeGeneration"`
+
+	// Extra 保存 Go 不认识的顶层字段。Node 后续版本可能新增字段；
+	// install/uninstall 写回时必须原样带上，不能因为当前 Go 不认识就删掉。
+	Extra map[string]json.RawMessage `json:"-"`
 }
 
 // EmptyState 与 Node EMPTY_STATE 一致。
@@ -93,6 +97,7 @@ func EmptyState() State {
 		Installed:     []json.RawMessage{},
 		Instances:     []json.RawMessage{},
 		Generations:   []json.RawMessage{},
+		Extra:         map[string]json.RawMessage{},
 	}
 }
 
@@ -115,6 +120,9 @@ func (state State) Normalize() State {
 	if normalized.ActiveGeneration < 0 {
 		normalized.ActiveGeneration = 0
 	}
+	if normalized.Extra == nil {
+		normalized.Extra = map[string]json.RawMessage{}
+	}
 	return normalized
 }
 
@@ -124,6 +132,10 @@ func (state State) Clone() State {
 	cloned.Installed = cloneRawMessages(state.Installed)
 	cloned.Instances = cloneRawMessages(state.Instances)
 	cloned.Generations = cloneRawMessages(state.Generations)
+	cloned.Extra = make(map[string]json.RawMessage, len(state.Extra))
+	for key, value := range state.Extra {
+		cloned.Extra[key] = append(json.RawMessage(nil), value...)
+	}
 	return cloned
 }
 

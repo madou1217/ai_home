@@ -2,6 +2,7 @@ package plugincontrol_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -281,4 +282,113 @@ func TestUninstallNeverDeletesOutsidePluginRoot(t *testing.T) {
 		t.Fatalf("越界路径不得被删除: %v", err)
 	}
 	_ = strings.TrimSpace("")
+}
+
+// TestInstallPreservesUnmodeledStateFields 锁住「不把整份状态解码成 Go 子集再写回」：
+// Node 写入的 artifact/directory/permissionsFingerprint/createdAt/generations/
+// activeGeneration 以及 Go 不认识的字段，install/uninstall 后必须原样保留。
+func TestInstallPreservesUnmodeledStateFields(t *testing.T) {
+	_, store, home := newTestInstaller(t)
+	legacyRecord := `{"pluginId":"legacy","version":"0.9.0","digest":"legacy-digest","artifact":"/x/legacy.aih-plugin","directory":"/x/legacy","manifest":{"pluginId":"legacy","version":"0.9.0","entry":"index.mjs"},"installedAt":111,"signature":{"status":"signed","keyId":"old"},"permissionsFingerprint":"fingerprint-legacy","futureRecordField":"keep"}`
+	legacyInstance := `{"instanceId":"legacy","pluginId":"legacy","version":"0.9.0","enabled":true,"configuration":{"token":"secret"},"createdAt":222,"permissionsAcceptedAt":333,"permissionsAcceptedFingerprint":"fingerprint-legacy","futureInstanceField":"keep"}`
+	legacyGeneration := `{"id":7,"instances":["legacy"]}`
+	if _, err := store.Update(context.Background(), func(state *plugincontrol.State) error {
+		state.Installed = append(state.Installed, json.RawMessage(legacyRecord))
+		state.Instances = append(state.Instances, json.RawMessage(legacyInstance))
+		state.Generations = append(state.Generations, json.RawMessage(legacyGeneration))
+		state.ActiveGeneration = 7
+		state.Extra = map[string]json.RawMessage{"futureTopLevel": json.RawMessage(`{"keep":true}`)}
+		return nil
+	}, nil); err != nil {
+		t.Fatalf("写入存量状态失败: %v", err)
+	}
+	newPlugin := &fakeAcceptor{pluginID: "aih.test.new", version: "1.0.0", digest: "new-digest", rootDir: home}
+	newInstaller, err := plugincontrol.NewInstaller(home, newPlugin, store)
+	if err != nil {
+		t.Fatalf("创建安装器失败: %v", err)
+	}
+	if _, err := newInstaller.Install(context.Background(), "/tmp/x", plugincontrol.AcceptOptions{}); err != nil {
+		t.Fatalf("安装新插件失败: %v", err)
+	}
+	assertStatePreserved(t, home, legacyRecord, legacyInstance, legacyGeneration, 7)
+	if _, err := newInstaller.Uninstall(context.Background(), plugincontrol.UninstallInput{PluginID: "aih.test.new", Version: "1.0.0"}); err != nil {
+		t.Fatalf("卸载新插件失败: %v", err)
+	}
+	assertStatePreserved(t, home, legacyRecord, legacyInstance, legacyGeneration, 7)
+}
+
+func assertStatePreserved(t *testing.T, home string, legacyRecord string, legacyInstance string, legacyGeneration string, activeGeneration float64) {
+	t.Helper()
+	database, err := sql.Open("sqlite", filepath.Join(home, "app-state.db"))
+	if err != nil {
+		t.Fatalf("打开 app-state.db 失败: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	var encoded string
+	if err := database.QueryRow("SELECT value FROM app_kv WHERE key = 'plugins.control.v1'").Scan(&encoded); err != nil {
+		t.Fatalf("读取控制状态失败: %v", err)
+	}
+	var document struct {
+		Installed        []json.RawMessage `json:"installed"`
+		Instances        []json.RawMessage `json:"instances"`
+		Generations      []json.RawMessage `json:"generations"`
+		ActiveGeneration float64           `json:"activeGeneration"`
+		FutureTopLevel   json.RawMessage   `json:"futureTopLevel"`
+	}
+	if err := json.Unmarshal([]byte(encoded), &document); err != nil {
+		t.Fatalf("解析控制状态失败: %v", err)
+	}
+	recordFound := false
+	for _, raw := range document.Installed {
+		var record map[string]any
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatalf("解析 installed 记录失败: %v", err)
+		}
+		if record["pluginId"] != "legacy" {
+			continue
+		}
+		recordFound = true
+		var expected map[string]any
+		if err := json.Unmarshal([]byte(legacyRecord), &expected); err != nil {
+			t.Fatalf("解析期望记录失败: %v", err)
+		}
+		assertMapsEqual(t, record, expected, "installed 记录")
+	}
+	if !recordFound {
+		t.Fatalf("存量 installed 记录丢失: %s", encoded)
+	}
+	var instance map[string]any
+	if err := json.Unmarshal(document.Instances[0], &instance); err != nil {
+		t.Fatalf("解析 instances 失败: %v", err)
+	}
+	var expectedInstance map[string]any
+	if err := json.Unmarshal([]byte(legacyInstance), &expectedInstance); err != nil {
+		t.Fatalf("解析期望实例失败: %v", err)
+	}
+	assertMapsEqual(t, instance, expectedInstance, "instances 记录")
+	if len(document.Generations) != 1 || string(document.Generations[0]) != legacyGeneration {
+		t.Fatalf("generations 未原样保留: %s", document.Generations)
+	}
+	if document.ActiveGeneration != activeGeneration {
+		t.Fatalf("activeGeneration = %v, want %v", document.ActiveGeneration, activeGeneration)
+	}
+	var extra map[string]any
+	if err := json.Unmarshal(document.FutureTopLevel, &extra); err != nil || extra["keep"] != true {
+		t.Fatalf("未知顶层字段未原样保留: %s (%v)", document.FutureTopLevel, err)
+	}
+}
+
+func assertMapsEqual(t *testing.T, actual map[string]any, expected map[string]any, label string) {
+	t.Helper()
+	for key, value := range expected {
+		actualValue, present := actual[key]
+		if !present {
+			t.Fatalf("%s 丢失字段 %s: %+v", label, key, actual)
+		}
+		actualJSON, _ := json.Marshal(actualValue)
+		expectedJSON, _ := json.Marshal(value)
+		if string(actualJSON) != string(expectedJSON) {
+			t.Fatalf("%s 字段 %s 被改写: %s != %s", label, key, actualJSON, expectedJSON)
+		}
+	}
 }

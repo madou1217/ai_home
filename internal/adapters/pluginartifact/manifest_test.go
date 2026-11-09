@@ -206,8 +206,8 @@ func TestValidateManifestNormalizesPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("合法权限被拒绝: %v", err)
 	}
-	permissions := normalized["permissions"].(map[string]any)
-	if len(permissions["environment"].([]any)) != 0 {
+	permissions := normalized["permissions"].(normalizedPermissions)
+	if len(permissions.Environment) != 0 {
 		t.Fatalf("environment 应补为空数组: %+v", permissions)
 	}
 	fingerprint := PermissionFingerprint(normalized)

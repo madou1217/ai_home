@@ -257,6 +257,22 @@ func validNetworkPermission(value string) bool {
 	return parsed.Path == "" || parsed.Path == "/"
 }
 
+// filesystemPermissions / normalizedPermissions 的字段声明顺序就是 Node
+// normalizePermissions 的 JSON.stringify 属性序：network、filesystem{read,write}、
+// secrets、environment。permissionsFingerprint 是对这段 JSON 取 sha256，
+// 用 map 序列化会按字典序排列，指纹就会与 Node 分叉。
+type filesystemPermissions struct {
+	Read  []string `json:"read"`
+	Write []string `json:"write"`
+}
+
+type normalizedPermissions struct {
+	Network     []string              `json:"network"`
+	Filesystem  filesystemPermissions `json:"filesystem"`
+	Secrets     []string              `json:"secrets"`
+	Environment []string              `json:"environment"`
+}
+
 func normalizeManifest(input map[string]any) map[string]any {
 	normalized := make(map[string]any, len(input))
 	for key, value := range input {
@@ -266,22 +282,36 @@ func normalizeManifest(input map[string]any) map[string]any {
 	if !ok {
 		return normalized
 	}
-	filesystem, _ := permissions["filesystem"].(map[string]any)
-	normalized["permissions"] = map[string]any{
-		"network": stringSlice(permissions["network"]),
-		"filesystem": map[string]any{
-			"read":  stringSlice(filesystem["read"]),
-			"write": stringSlice(filesystem["write"]),
-		},
-		"secrets":     stringSlice(permissions["secrets"]),
-		"environment": stringSlice(permissions["environment"]),
+	document, ok := permissionDocument(permissions)
+	if !ok {
+		return normalized
 	}
+	normalized["permissions"] = document
 	return normalized
 }
 
-func stringSlice(value any) []any {
+func permissionDocument(value any) (normalizedPermissions, bool) {
+	switch typed := value.(type) {
+	case normalizedPermissions:
+		return typed, true
+	case map[string]any:
+		filesystem, _ := typed["filesystem"].(map[string]any)
+		return normalizedPermissions{
+			Network: stringValues(typed["network"]),
+			Filesystem: filesystemPermissions{
+				Read:  stringValues(filesystem["read"]),
+				Write: stringValues(filesystem["write"]),
+			},
+			Secrets:     stringValues(typed["secrets"]),
+			Environment: stringValues(typed["environment"]),
+		}, true
+	}
+	return normalizedPermissions{}, false
+}
+
+func stringValues(value any) []string {
 	items, _ := value.([]any)
-	result := make([]any, 0, len(items))
+	result := make([]string, 0, len(items))
 	for _, item := range items {
 		if text, ok := item.(string); ok {
 			result = append(result, text)
@@ -322,17 +352,24 @@ func nodeArchName(goarch string) string {
 	}
 }
 
-// PermissionFingerprint 与 Node permissionFingerprint 同构：
-// sha256(JSON.stringify(manifest.permissions)).slice(0, 16)。
+// PermissionFingerprint 与 Node permissionFingerprint 逐字节一致：
+// sha256(JSON.stringify(normalizePermissions(input))).slice(0, 16)。
 //
-// 必须用「不转义 HTML」的编码：Node 的 JSON.stringify 不会把 < > & 写成 <，
-// 而 Go 默认会；指纹一旦分叉，enable 时会把已确认的权限判成未确认。
+// 两个约束缺一不可：
+//   - 字段顺序必须是 network、filesystem{read,write}、secrets、environment；
+//   - 必须不转义 HTML（Node 的 JSON.stringify 不会把 < > & 写成 \u003c）。
+//
+// 任何一条不满足，enable 时会把已确认的权限判成未确认。
 func PermissionFingerprint(manifest map[string]any) string {
 	permissions, present := manifest["permissions"]
 	if !present || permissions == nil {
 		return ""
 	}
-	encoded, err := encodeJSONNoEscape(permissions)
+	document, ok := permissionDocument(permissions)
+	if !ok {
+		return ""
+	}
+	encoded, err := encodeJSONNoEscape(document)
 	if err != nil {
 		return ""
 	}

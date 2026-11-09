@@ -151,7 +151,7 @@ func (store *Store) Update(
 	}
 	next = next.Normalize()
 	next.Revision = current.Revision + 1
-	serialized, err := json.Marshal(next)
+	serialized, err := encodeState(next)
 	if err != nil {
 		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateInvalid, "")
 	}
@@ -166,6 +166,33 @@ func (store *Store) Update(
 	}
 	committed = true
 	return next, nil
+}
+
+// encodeState 逐字段写回，保留 Extra 的原始 JSON；已知字段仍按 Node 的顶层形状输出。
+func encodeState(state plugincontrol.State) ([]byte, error) {
+	document := map[string]json.RawMessage{}
+	fields := map[string]any{
+		"schemaVersion":    state.SchemaVersion,
+		"revision":         state.Revision,
+		"installed":        state.Installed,
+		"instances":        state.Instances,
+		"generations":      state.Generations,
+		"activeGeneration": state.ActiveGeneration,
+	}
+	for key, value := range fields {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		document[key] = encoded
+	}
+	for key, value := range state.Extra {
+		if knownTopLevelField(key) {
+			continue
+		}
+		document[key] = append(json.RawMessage(nil), value...)
+	}
+	return json.Marshal(document)
 }
 
 func decodeState(data []byte) (plugincontrol.State, error) {
@@ -186,7 +213,21 @@ func decodeState(data []byte) (plugincontrol.State, error) {
 	state.Generations = decodeRawArray(document["generations"])
 	state.Revision = decodeNonNegativeInteger(document["revision"])
 	state.ActiveGeneration = decodeNonNegativeInteger(document["activeGeneration"])
+	for key, value := range document {
+		if knownTopLevelField(key) {
+			continue
+		}
+		state.Extra[key] = append(json.RawMessage(nil), value...)
+	}
 	return state, nil
+}
+
+func knownTopLevelField(key string) bool {
+	switch key {
+	case "schemaVersion", "revision", "installed", "instances", "generations", "activeGeneration":
+		return true
+	}
+	return false
 }
 
 func decodeRawArray(raw json.RawMessage) []json.RawMessage {

@@ -251,13 +251,19 @@ func TestAcceptSignedArtifact(t *testing.T) {
 		t.Fatal("有权限声明时指纹不能为空")
 	}
 	// permissions 归一：缺省的 environment 补空数组，供 Node 的指纹与 enable 复用。
-	permissions, _ := accepted.ManifestValue["permissions"].(map[string]any)
-	if _, present := permissions["environment"]; !present {
-		t.Fatalf("permissions.environment 未归一: %+v", permissions)
+	permissions, ok := accepted.ManifestValue["permissions"].(normalizedPermissions)
+	if !ok || permissions.Environment == nil {
+		t.Fatalf("permissions.environment 未归一: %+v", accepted.ManifestValue["permissions"])
 	}
 	encoded, _ := json.Marshal(accepted.ManifestValue)
-	if strings.Contains(string(encoded), "environment\":[]") == false {
+	if !strings.Contains(string(encoded), "\"environment\":[]") {
 		t.Fatalf("归一后的清单缺少 environment: %s", encoded)
+	}
+	// 指纹必须按 Node 的字段序计算：network、filesystem、secrets、environment。
+	canonical := `{"network":["https://api.example.com"],"filesystem":{"read":["state"],"write":[]},"secrets":["api_key"],"environment":[]}`
+	digest := sha256.Sum256([]byte(canonical))
+	if accepted.PermissionsFingerprint != hex.EncodeToString(digest[:])[:16] {
+		t.Fatalf("权限指纹与 Node 字段序不一致: %s", accepted.PermissionsFingerprint)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	adapterplugins "github.com/madou1217/ai_home/internal/adapters/pluginruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 )
 
 // pluginHandlers 是 Go 数据面的插件接入：Node 推送投影的管理接口与推理入口的 gateway.request 闸门。
@@ -20,7 +21,10 @@ type pluginHandlers struct {
 	gate       *pluginapi.RequestGate
 	projection http.Handler
 	// list 是只读插件清单：控制面事实来自 Node 的 app-state.db，运行态来自 projection。
-	list     http.Handler
+	list http.Handler
+	// trust 是发布者信任根的读/写/撤销。信任根是文件型写面，写入口收敛到 Go；
+	// Node 的 install 校验仍直接读同一个文件，所以这里只改文件的写入方。
+	trust    http.Handler
 	invoker  *adapterplugins.HostInvoker
 	observer *appplugins.Observer
 }
@@ -53,6 +57,13 @@ func newPluginHandlers(
 		if list, err := pluginapi.NewInventoryHandler(managementAuthorizer, reader, registry); err == nil {
 			handlers.list = list
 		}
+	}
+	// 信任根接口与清单一样只依赖管理密钥和数据目录；数据目录不可用时只少挂这三条路由。
+	if trust, err := webuiplugintrustapi.NewHandler(webuiplugintrustapi.Dependencies{
+		Authorizer: managementAuthorizer,
+		AIHomeDir:  aiHomeDir,
+	}); err == nil {
+		handlers.trust = trust
 	}
 	return handlers
 }

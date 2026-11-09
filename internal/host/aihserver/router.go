@@ -33,6 +33,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
@@ -145,6 +146,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	if handlers.plugins.projection != nil {
 		mux.Handle(pluginapi.ProjectionPath, handlers.plugins.projection)
+	}
+	// 插件发布者信任根：三条都是管理密钥路径，写操作（trust/untrust）已收敛到 Go。
+	if handlers.plugins.trust != nil {
+		mux.Handle(webuiplugintrustapi.TrustedPath, handlers.plugins.trust)
+		mux.Handle(webuiplugintrustapi.TrustPath, handlers.plugins.trust)
+		mux.Handle(webuiplugintrustapi.UntrustPath, handlers.plugins.trust)
 	}
 	if handlers.accountUsageEvents != nil {
 		mux.Handle(accountusageeventsapi.Path, handlers.accountUsageEvents)

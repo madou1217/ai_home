@@ -435,6 +435,15 @@ function createService(context, journal, traces, clients) {
     endpoint: context.endpoint,
     getProfileDir: () => context.layout.profileDir,
     codexClientFactory: createRecordingClientFactory(context.endpoint, journal, clients),
+    // 本冒烟只验证 canonical Codex 驱动：模型是 codex 且没有模型索引，能力路由
+    // 一律交还 Node。装配期仍要求聊天推理端口存在，所以给一个明确失败的实现——
+    // 万一某轮被误路由到 Go，冒烟会以 chat_inference_not_available_in_smoke 失败，
+    // 而不是悄悄跑到另一条推理路径。
+    chatInference: {
+      streamTurn: async () => {
+        throw new Error('chat_inference_not_available_in_smoke');
+      }
+    },
     appendServerLog(trace) {
       traces.push(trace);
     }

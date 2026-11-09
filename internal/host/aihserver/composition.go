@@ -895,6 +895,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 opencode 登录策略失败: %w", err)
 	}
+	// kiro 的 Builder ID 设备码登录同样固定走 Go：Node 只展示 user_code 与验证地址。
+	kiroLogin, err := kirooauth.NewLogin(oauthClient, time.Now)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 登录策略失败: %w", err)
+	}
 	jobs, err := accountauth.NewService(accountauth.Dependencies{
 		Providers: []accountauth.OAuthProvider{
 			codexProvider,
@@ -902,6 +907,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			zcodeOAuth,
 			opencodeOAuth,
 			agyLogin,
+			kiroLogin,
 		},
 		Decoder:    decoder,
 		Registrar:  scheduledRegistrar,

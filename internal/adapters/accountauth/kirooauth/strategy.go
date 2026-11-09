@@ -1,10 +1,14 @@
-// Package kirooauth 把 kiro 的令牌刷新接入账号凭据解析器。
+// Package kirooauth 承接 kiro 的两条账号链路：
 //
-// 为什么需要：kiro 的 access token 是会过期的（AWS SSO / desktop grant）。Go 承接
-// kiro 推理后，如果凭据解析仍走 staticcredential（声明永不刷新），relay 会拿着过期
-// token 打上游，得到 403 AccessDeniedException——真机 2026-11-06 就是这样。
+//   - 刷新策略（strategy.go）：把 AWS SSO OIDC / desktop 的令牌刷新接入账号凭据解析器。
+//     为什么需要：kiro 的 access token 是会过期的（AWS SSO / desktop grant）。Go 承接
+//     kiro 推理后，如果凭据解析仍走 staticcredential（声明永不刷新），relay 会拿着过期
+//     token 打上游，得到 403 AccessDeniedException——真机 2026-11-06 就是这样。
+//     刷新只做协议交换；写回与 CAS 由 accountcredentials.Resolver 负责。
 //
-// 本策略只做协议刷新；写回与 CAS 由 accountcredentials.Resolver 负责。
+//   - 登录策略（login.go）：AWS SSO OIDC Builder ID 的设备码（RFC 8628）登录。
+//     产出与 Node 从 data.sqlite3 投影出的 native_auth_json 逐字段同构，身份证据来自
+//     GetUsageLimits 的 userInfo.userId。
 package kirooauth
 
 import (

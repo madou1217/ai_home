@@ -89,5 +89,8 @@ test('服务端按显式 loginProvider 选协议：builder-id 不会被当成 so
 
   const authJob = read('lib/server/web-account-auth.js');
   assert.match(authJob, /_kiroLoginProvider: normalizeKiroLoginProvider\(jobOptions\.loginProvider\)/);
-  assert.match(authJob, /等待 Builder ID 完成 AWS SSO OIDC 设备码授权/);
+  // Builder ID 已固定由 Go 承接：Node 不再自己跑 AWS SSO OIDC 设备码。
+  assert.match(authJob, /nativeOauth = KIRO_GO_DEVICE_OAUTH/);
+  assert.doesNotMatch(authJob, /等待 Builder ID 完成 AWS SSO OIDC 设备码授权/);
+  assert.doesNotMatch(authJob, /beginKiroDeviceLogin|pollKiroDeviceLogin/);
 });

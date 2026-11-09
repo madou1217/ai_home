@@ -167,11 +167,12 @@ function createFakeGoAuthJobs(options = {}) {
   };
 }
 
-function createManager(t, aiHomeDir, goAuthJobs) {
+function createManager(t, aiHomeDir, goAuthJobs, options = {}) {
   return createAuthJobManager({
     fs,
     aiHomeDir,
     goAuthJobs,
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     // 不绑真实 1455：回调由测试直接喂给 completeBrowserOauthCallback。
     startLoopbackCallbackServerImpl: () => ({ close() {} }),
     onJobChanged: () => {}
@@ -561,6 +562,80 @@ test('opencode add：固定走 Go 设备码作业，轮询快照收尾且不提�
   assert.equal(finished.cliAccountId, 3);
   assert.equal(state.calls.complete, 0, '设备码没有回调，不能调用 complete');
   assert.equal(state.reconciles, 1, '收尾后必须主动对账一次');
+});
+
+// kiro 的 Builder ID 设备码登录固定走 Go；social（Google / GitHub）仍留在 Node。
+// 这条用例锁住两件事：Go 的 user_code 被原样展示，且 complete 一次都不调用。
+test('kiro add（Builder ID）：固定走 Go 设备码作业，轮询快照收尾且不提交回调', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const kiroAuthUrl = 'https://view.awsapps.com/start/#/device?user_code=KIRO-1234';
+  const completedAccountRef = 'acct_' + '8'.padStart(22, '0');
+  const { state, goAuthJobs } = createFakeGoAuthJobs({
+    authorizationUrl: kiroAuthUrl,
+    userCode: 'KIRO-1234',
+    deviceCompletion: { accountRef: completedAccountRef, cliAccountId: 5 }
+  });
+  const manager = createManager(t, aiHomeDir, goAuthJobs);
+
+  // UI 的 Builder ID 选项把 loginProvider 归一成空串，必须路由到 Go。
+  const started = manager.startOauthJob('kiro', 'oauth-device', { loginProvider: 'builder-id' });
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.userCode ? current : null;
+  });
+  assert.equal(state.calls.start, 1, 'kiro Builder ID 必须调用 Go');
+  assert.deepEqual(state.lastStartInput, { providerId: 'kiro', targetAccountRef: '' });
+  assert.equal(job.authMode, 'oauth-device', '设备码作业必须如实标记 authMode');
+  assert.equal(job.userCode, 'KIRO-1234');
+  assert.equal(job.verificationUriComplete, kiroAuthUrl);
+  assert.equal(job._codeVerifier, '', 'PKCE 只在 Go 进程内');
+  assert.equal(job.oauthState, '', 'state 只在 Go 进程内');
+  assert.equal(job._goDeviceFlow, true);
+  assert.equal(job.callbackCaptureStatus, '', '设备码流程不启动回调监听');
+
+  const finished = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.status !== 'running' ? current : null;
+  }, 6000);
+  assert.equal(finished.status, 'succeeded', `job 应成功，实际 ${finished.status}: ${finished.error}`);
+  assert.equal(finished.accountRef, completedAccountRef);
+  assert.equal(finished.cliAccountId, 5);
+  assert.equal(state.calls.complete, 0, '设备码没有回调，不能调用 complete');
+  assert.equal(state.reconciles, 1, '收尾后必须主动对账一次');
+});
+
+// social 是另一套协议：loginProvider=Google 时绝不能落到 Go 的 Builder ID 作业上。
+test('kiro add（Google social）：仍走 Node 设备流，不调用 Go', async (t) => {
+  const aiHomeDir = createTempAiHome(t);
+  const { state, goAuthJobs } = createFakeGoAuthJobs();
+  const socialAuthUrl = 'https://prod.us-east-1.auth.desktop.kiro.dev/device?user_code=SOCIAL-1234';
+  const fetchImpl = async (url) => ({
+    status: 200,
+    async json() {
+      return String(url).endsWith('/oauth/device/authorization')
+        ? {
+          deviceCode: 'social-device-1',
+          userCode: 'SOCIAL-1234',
+          verificationUri: 'https://prod.us-east-1.auth.desktop.kiro.dev/device',
+          verificationUriComplete: socialAuthUrl,
+          expiresInMilliseconds: 600000,
+          intervalInMilliseconds: 60000
+        }
+        : { status: 'authorization_pending' };
+    }
+  });
+  const manager = createManager(t, aiHomeDir, goAuthJobs, { fetchImpl });
+
+  const started = manager.startOauthJob('kiro', 'oauth-device', { loginProvider: 'Google' });
+  const job = await waitFor(() => {
+    const current = manager.getJob(started.jobId);
+    return current && current.userCode ? current : null;
+  });
+  assert.equal(state.calls.start, 0, 'social 不能调用 Go 的 Builder ID 作业');
+  assert.equal(job.userCode, 'SOCIAL-1234');
+  assert.equal(job.verificationUriComplete, socialAuthUrl);
+  assert.equal(job._goDeviceFlow, undefined, 'social 不是 Go 设备码作业');
+  manager.cancelJob(started.jobId);
 });
 
 // claude 浏览器登录同样固定走 Go：本地不再生成 PKCE/state，也不做换码。

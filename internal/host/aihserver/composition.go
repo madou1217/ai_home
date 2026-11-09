@@ -61,6 +61,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
 	accountrulesapi "github.com/madou1217/ai_home/internal/transport/http/accountrulesapi"
@@ -92,6 +94,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
@@ -134,6 +137,8 @@ type serverHandlers struct {
 	accountUsageEvents http.Handler
 	// webUI 托管 Web UI 构建产物（/ui/*）；nil 表示不由 Go 承接。
 	webUI http.Handler
+	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
+	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
 	webuiAccounts http.Handler
 	// webuiToolSettings 是应用启动权限设置的只读模型（GET 固定读 Go）。
@@ -770,6 +775,21 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
+	}
+	// WebUI 终端：PTY 会话、回放缓冲与 mux SSE 全部由 Go 承接，Node 只做管理密钥后的反代。
+	// ExitRetention 对齐 Node「退出后 250ms 清理」的语义：否则连续开关终端会让已退出
+	// 会话在保留期内继续占住 24 个会话名额。
+	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
+		ExitRetention: 250 * time.Millisecond,
+	})
+	webUITerminalHandler, err := webuiterminalapi.NewHandler(webuiterminalapi.Dependencies{
+		Authorizer: authorizer,
+		Sessions:   terminalService,
+		Durable:    webuiterminalapi.NewTmuxStore(),
+	})
+	if err != nil {
+		_ = terminalService.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 WebUI 终端接口失败: %w", err)
 	}
 	// 优雅退出端点只在嵌入方提供退出回调时装配：没有接收方的端点等于没有，
 	// 而 Windows 上信号路径根本不执行（见 shutdownapi）。
@@ -1591,6 +1611,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		codexResponsesHTTP:    codexHTTPHandler,
 		observeCodexClient:    observeCodexClientVersion(codexVersions, clientAuthorizer),
 		webUIChat:             webUIChatHandler,
+		webUITerminal:         webUITerminalHandler,
 		accountOutcomes:       accountOutcomesHandler,
 		accountRuntime:        accountRuntimeHandler,
 		accountUsageEvents:    accountUsageEventsHandler,
@@ -1633,6 +1654,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		inference,
 		usage,
 		modelRefresh,
+		terminalService,
+		webUITerminalHandler,
 	}, nil
 }
 

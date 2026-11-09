@@ -34,6 +34,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 )
 
@@ -126,6 +127,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。
 	mountWebUIChat(mux, handlers.webUIChat)
+	// WebUI 终端：Node 把 /v0/webui/terminal/* 原样反代到这里。
+	// 前缀注册同时覆盖 /open、/mux 等子路径；不带尾斜杠的那条是给潜在的空路径兜底。
+	if handlers.webUITerminal != nil {
+		mux.Handle(webuiterminalapi.Prefix, handlers.webUITerminal)
+		mux.Handle(webuiterminalapi.Prefix+"/", handlers.webUITerminal)
+	}
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {
 		mux.Handle(accountoutcomesapi.Path, handlers.accountOutcomes)

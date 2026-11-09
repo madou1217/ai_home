@@ -439,6 +439,12 @@ func (service *Service) Reap() []string {
 	return removed
 }
 
+// Close 让 Service 满足 io.Closer：宿主停机时统一走 Shutdown。
+func (service *Service) Close() error {
+	service.Shutdown()
+	return nil
+}
+
 // Shutdown 关闭服务并终止所有会话；之后 Create 返回 ErrServiceClosed。
 func (service *Service) Shutdown() {
 	if service == nil {

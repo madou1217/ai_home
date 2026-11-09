@@ -9,7 +9,6 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { writeJsonValue } = require('../lib/server/app-state-store');
 const { backoffDelay, runRemoteSupervisor, shouldReconnect } = require('../lib/server/ssh-remote-supervisor');
-const { detachedLauncher } = require('../lib/server/webui-terminal-persistence');
 const { handleWebUiSshHostRoutes } = require('../lib/server/webui-ssh-host-routes');
 
 function home(t) {
@@ -110,19 +109,8 @@ test('pasted private keys exist only while connecting and are wiped after every 
   assert.deepEqual(fs.readdirSync(path.join(aiHomeDir, 'run', 'ssh-remote')), [], 'nothing left on disk');
 });
 
-test('under systemd the persistent tmux is launched in its own scope so it survives a server restart', () => {
-  const original = process.platform;
-  Object.defineProperty(process, 'platform', { value: 'linux' });
-  try {
-    const launcher = detachedLauncher({ INVOCATION_ID: 'abc', XDG_RUNTIME_DIR: '/run/user/1000' });
-    assert.equal(launcher.file, 'systemd-run');
-    assert.deepEqual(launcher.prefix, ['--user', '--scope', '--quiet', '--collect']);
-    assert.equal(detachedLauncher({}), null, 'not under systemd: launch directly');
-  } finally {
-    Object.defineProperty(process, 'platform', { value: original });
-  }
-  assert.equal(detachedLauncher({ INVOCATION_ID: 'abc' }) === null || process.platform === 'linux', true);
-});
+// systemd 下 tmux 走独立 scope 的行为已随终端会话迁到 Go
+// （见 internal/transport/http/webuiterminalapi 的 detachedLauncher 测试）。
 
 function call(aiHomeDir, method, pathname, body, deps = {}) {
   const req = new PassThrough(); req.method = method; req.headers = {};
@@ -161,7 +149,7 @@ test('session status comes from the server-side PTY, so any device sees the same
   const aiHomeDir = home(t);
   seed(aiHomeDir);
   const res = await call(aiHomeDir, 'GET', '/v0/webui/ssh-workspaces/sessions', null, {
-    terminalPersistence: { probe: (key) => ({ state: key === 'remote-ws:ws_0123456789abcdef' ? 'alive' : 'missing' }) }
+    probeTerminalSession: (key) => ({ state: key === 'remote-ws:ws_0123456789abcdef' ? 'alive' : 'missing' })
   });
   assert.equal(res.status, 200);
   assert.deepEqual(res.payload.sessions, [{ workspaceId: 'ws_0123456789abcdef', sessionKey: 'remote-ws:ws_0123456789abcdef', alive: true }]);

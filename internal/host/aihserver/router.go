@@ -37,6 +37,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
@@ -135,6 +136,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 全局用量配置：GET 固定读 Go；POST（写 config:usage）仍在 Node。
 	if handlers.webuiUsageConfig != nil {
 		mux.Handle("GET "+webuiusageconfigapi.Path, handlers.webuiUsageConfig)
+	}
+	// SSH 连接列表：GET 固定读 Go（脱敏）；增删改仍在 Node。
+	if handlers.webuiSSH != nil {
+		mux.Handle("GET "+webuisshapi.Path, handlers.webuiSSH)
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。

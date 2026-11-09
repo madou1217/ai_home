@@ -1,0 +1,56 @@
+'use strict';
+
+// GET /v0/webui/ssh-connections 固定读 Go：脱敏后的连接列表由 Go 产出。
+// 这里锁住代理契约：成功透传、Go 不可用 503、不本地读 ssh_connections。
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { handleWebUiSshHostRoutes } = require('../lib/server/webui-ssh-host-routes');
+
+async function call(goResponse) {
+  let response;
+  const deps = {
+    fs: {},
+    readRequestBody: async () => Buffer.alloc(0),
+    spawnImpl: () => {},
+    homeDir: '/tmp',
+    writeJson: (_res, status, payload) => { response = { status, payload }; }
+  };
+  if (goResponse !== undefined) {
+    deps.goCoreSync = { getSshConnections: async () => goResponse };
+  }
+  const ctx = {
+    method: 'GET',
+    pathname: '/v0/webui/ssh-connections',
+    res: {},
+    aiHomeDir: '/tmp/ai-home',
+    deps
+  };
+  const handled = await handleWebUiSshHostRoutes(ctx);
+  assert.equal(handled, true);
+  return response;
+}
+
+test('Go 返回脱敏列表时原样透传', async () => {
+  const data = {
+    ok: true,
+    connections: [
+      { id: 'c1', label: 'prod', host: '10.0.0.1', port: 22, password: '******', privateKey: '' }
+    ]
+  };
+  const result = await call({ ok: true, status: 200, data });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.payload, data);
+});
+
+test('缺少 Go 宿主时 503，不本地读连接表', async () => {
+  const result = await call();
+  assert.equal(result.status, 503);
+  assert.equal(result.payload.error, 'go_core_unavailable');
+});
+
+test('Go 不可用（status 0）时 503', async () => {
+  const result = await call({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
+  assert.equal(result.status, 503);
+});

@@ -95,6 +95,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
@@ -153,6 +154,8 @@ type serverHandlers struct {
 	webuiChatPaste http.Handler
 	// webuiUsageConfig 是全局用量配置的只读模型（数据源是 Node app-state.db）。
 	webuiUsageConfig http.Handler
+	// webuiSSH 是 SSH 连接列表的只读模型（密码/私钥脱敏，写入口仍在 Node）。
+	webuiSSH http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1244,6 +1247,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建用量配置接口失败: %w", err)
 	}
+	sshSource, err := webuisshapi.OpenSource(aiHomeDir)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 连接数据源失败: %w", err)
+	}
+	webuiSSHHandler, err := webuisshapi.NewHandler(webuisshapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      sshSource,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 连接接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1670,6 +1686,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiAliasPool:        webuiAliasPoolHandler,
 		webuiChatPaste:        webuiChatPasteHandler,
 		webuiUsageConfig:      webuiUsageConfigHandler,
+		webuiSSH:              webuiSSHHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

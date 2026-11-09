@@ -30,7 +30,7 @@
 | **gemini** | `node` `N:server/oauth-strategies/gemini.js`（OAuth 登录已在描述符停用；刷新 `N:server/gemini-token-refresh.js` 仍在 Node） | `go` `G:adapters/gemini/modelcatalog` · `N:providers/defs/gemini.js`（只读 Go） | `go` `G:adapters/gemini/usage`（`retrieveUserQuota`）；`N:providers/defs/gemini.js` quota=false | `node` `N:server/upstream-endpoints-transport-code-assist-gemini.js`（**provider 已 `GatewayDeprecated`**，只服务遗留账号/API Key；不迁） | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **grok** | `node` `N:account/grok-auth-profile.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog`（仅 API Key）· `N:providers/defs/grok.js`（只读 Go） | `go` `G:adapters/grok/usage`；`N:providers/defs/grok.js` quota=false（token 由 Node 刷新守护进程续期） | `both` `G:transport/http/grokrelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
 | **kimi** | `node` `N:account/kimi-auth.js` + 通用 CLI 登录作业 | `go` `G:adapters/openaicompat/modelcatalog` · `N:providers/defs/kimi.js`（只读 Go） | `go` `G:adapters/kimi/usage`；`N:providers/defs/kimi.js` quota=false | `both` `G:transport/http/kimirelay` · `N:server/upstream-endpoints-transport-general.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
-| **kiro** | `node` `N:account/kiro-device-login.js` `N:account/kiro-native-login.js` | `go` `G:adapters/kiro/modelcatalog` · `N:providers/defs/kiro.js`（只读 Go） | `go` `G:adapters/kiro/usage`；`N:providers/defs/kiro.js` quota=false | `go` `G:transport/http/kirorelay`（CodeWhisperer event-stream + 事务刷新）；仅原生凭据 | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
+| **kiro** | `both` `G:adapters/accountauth/kirooauth/login.go`（Builder ID 设备码固定走 Go，含 GetUsageLimits 身份证据）· `N:account/kiro-device-login.js`（CLI `--device-code`、Google/GitHub social 设备流、refreshToken 导入） | `go` `G:adapters/kiro/modelcatalog` · `N:providers/defs/kiro.js`（只读 Go） | `go` `G:adapters/kiro/usage`；`N:providers/defs/kiro.js` quota=false | `go` `G:transport/http/kirorelay`（CodeWhisperer event-stream + 事务刷新）；仅原生凭据 | `node` 同上 | `none` | `node` `N:runtime/client-terminal.js` |
 | **opencode** | `go` `G:adapters/accountauth/opencodeoauth`（Console 设备码；Node 策略已删除） | `go` `G:adapters/opencode/modelcatalog`（Zen + Go 双腿）· `N:providers/defs/opencode.js`（只读 Go `account_models`） | `none` 两侧均无额度接口（`C:providers/builtins.go` 未声明 quota，Node quota=false） | `both` `G:transport/http/opencoderelay`（仅 official API Key）· `N:server/opencode-free-cli-transport.js` | `node` 同上 | `none` | `node` `N:runtime/acp-layouts.js` |
 | **qoder** | `node` `N:account/qoder-auth-metadata.js` + 通用 CLI 登录作业 | `go` `G:adapters/qoder/modelcatalog`（wasm 签名）· `N:providers/defs/qoder.js`（只读 Go） | `go` `G:adapters/qoder/usage`；`N:providers/defs/qoder.js` quota=false | `go` `G:transport/http/qoderrelay`（WASM 签名 + zstd；排队 → 429 + `Retry-After`，SSE 首帧记账前判定）；静态凭据/CLI 账号交还 Node | `node` 同上 | `node` `N:account/activity-claim/qoder-daily.js` | `node` `N:runtime/acp-layouts.js` |
 | **qodercn** | `node` 同上（CN 变体） | `go` `G:adapters/qoder/modelcatalog`（CN 区域）· `N:providers/defs/qodercn.js`（只读 Go） | `go` `G:adapters/qoder/usage` | `go` 同上（同一 Handler，按账号选 CN 端点） | `node` 同上 | `node` 同上（区域主机不同） | `node` 同上 |
@@ -379,3 +379,24 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `go test ./internal/host/aihserver -run TestUsageProviderRegistryCoversExpectedProviders`、
   `node --test test/quota-ownership.test.js` 全绿。
 - **待真机**：本机无 grok 账号（§5.1），额度采集只能用 httptest 固定响应验证，不能写成「已真机验收」。
+
+### 2026-11-09：登录 / 聊天 / 工具设置三条切片
+
+- **kiro Builder ID 设备码登录迁 Go**（`370e87f1`）：`G:adapters/accountauth/kirooauth/login.go`
+  走 AWS SSO OIDC registerClient → startDeviceAuthorization → createToken 轮询，并用
+  GetUsageLimits 的 userInfo.userId 生成 identityEvidence；artifact 同时带 auth_kv 的
+  `database`（base64 sqlite），否则 Node 启动链路会判 missing_projection。WebUI 固定走 Go
+  设备码作业；CLI `--device-code` 与 Google/GitHub social、refreshToken 导入仍在 Node。
+  真机：begin 201（user_code + view.awsapps.com），cancel 200。
+- **WebUI Chat turn.submit 接 Go**（`4eaac584` + `7be119d3`）：Node 保留会话/队列/202+独立 SSE，
+  轮次推理按**能力**路由——只有模型候选 Provider 在 chat_completions 入口都是 relay 通道时才走
+  Go 内部入口 `POST /v1/management/webui/chat/sessions/{id}/commands`；canonical（codex/claude/
+  agy/gemini）、附件、slash/compact 仍走旧 Node 驱动。Go 承接账号征召、上游请求、改流、失败
+  分类与用量记账。已知：relay-only 会话的能力快照仍沿用 codex 上限（UI 会显示 reasoning/tools，
+  但 Go 轮次不产出这些事件）。
+- **应用启动权限设置 GET 切 Go**（`c3b88b7d`）：`GET /v1/management/webui/tool-apps/{appId}/settings`
+  直接读 app-state.db 的 `toolkit:tool-permission-settings` 并组装 capability/权限目录；Node
+  GET 固定代理，PUT 仍留 Node（宿主配置写入依赖 Provider 配置工作台）。真机 200；未登记 app 400。
+- **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
+  为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
+  `deletionprojection/credential.go:540`；本次未修、未提交该文件。

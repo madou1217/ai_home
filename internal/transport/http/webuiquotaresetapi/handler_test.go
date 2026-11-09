@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	_ "modernc.org/sqlite"
 )
 
@@ -49,7 +50,7 @@ func newTestHandler(t *testing.T, source EventSource) http.Handler {
 func seedAppState(t *testing.T) string {
 	t.Helper()
 	directory := t.TempDir()
-	databasePath := filepath.Join(directory, appStateDatabaseFileName)
+	databasePath := filepath.Join(directory, appstate.DatabaseFileName)
 	db, err := sql.Open("sqlite", databasePath)
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)

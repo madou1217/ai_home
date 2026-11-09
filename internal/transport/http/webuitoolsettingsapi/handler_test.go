@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 type allowAll struct{}
@@ -70,7 +71,7 @@ func decodeSettings(t *testing.T, recorder *httptest.ResponseRecorder) settingsR
 
 func writeAppStateSettings(t *testing.T, aiHomeDir string, value string) {
 	t.Helper()
-	dbPath := filepath.Join(aiHomeDir, appStateDatabaseFileName)
+	dbPath := filepath.Join(aiHomeDir, appstate.DatabaseFileName)
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
@@ -265,7 +266,7 @@ func TestSettingsSourceMissingAndCorruptFiles(t *testing.T) {
 	}
 
 	brokenDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(brokenDir, appStateDatabaseFileName), []byte("not a database"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(brokenDir, appstate.DatabaseFileName), []byte("not a database"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	broken, err := OpenSettingsSource(brokenDir)

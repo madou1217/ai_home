@@ -5,19 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
-	_ "modernc.org/sqlite"
-)
-
-// 数据源与 Node 的 quota-reset-store 完全一致：app-state.db 的同名表。
-const (
-	appStateDatabaseFileName = "app-state.db"
-	resetEventsTable         = "account_quota_reset_events"
-	databaseBusyTimeoutMS    = 5000
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。
@@ -37,11 +28,11 @@ func OpenSource(aiHomeDir string) (*Source, error) {
 	if root == "" {
 		return nil, ErrInvalidSource
 	}
-	absolute, err := filepath.Abs(root)
+	databasePath, err := appstate.DatabasePath(root)
 	if err != nil {
 		return nil, ErrInvalidSource
 	}
-	return &Source{databasePath: filepath.Join(absolute, appStateDatabaseFileName)}, nil
+	return &Source{databasePath: databasePath}, nil
 }
 
 // Read 返回某账号最近的重置事件（按 occurred_at_ms、id 倒序）。
@@ -65,7 +56,7 @@ func (source *Source) Read(
 	if err != nil || !info.Mode().IsRegular() {
 		return nil, nil
 	}
-	db, err := openReadOnly(ctx, source.databasePath)
+	db, err := appstate.OpenReadOnly(ctx, source.databasePath)
 	if err != nil {
 		return nil, fmt.Errorf("打开 app-state.db 失败: %w", err)
 	}
@@ -183,45 +174,6 @@ func nullableText(valid bool, value string) *string {
 	return &copied
 }
 
-func openReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
-	db, err := openAndPing(ctx, databasePath, false)
-	if err == nil {
-		return db, nil
-	}
-	// 有 -wal 时不能按 immutable 打开：会读不到未合并的页。
-	if _, statErr := os.Stat(databasePath + "-wal"); statErr == nil {
-		return nil, err
-	}
-	return openAndPing(ctx, databasePath, true)
-}
-
-func openAndPing(ctx context.Context, databasePath string, immutable bool) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", buildReadOnlyDSN(databasePath, immutable))
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return db, nil
-}
-
-func buildReadOnlyDSN(databasePath string, immutable bool) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
-	query := fileURL.Query()
-	query.Set("mode", "ro")
-	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", databaseBusyTimeoutMS))
-	query.Add("_pragma", "query_only(1)")
-	if immutable {
-		query.Set("immutable", "1")
-	}
-	fileURL.RawQuery = query.Encode()
-	return fileURL.String()
-}
-
 // LookupProvider 从同一份 app-state.db 的 account_refs 读取账号归属。
 //
 // 为什么不用 Go 的 accounts 表：额度重置历史是 Node 的检测器写的，事件里的
@@ -232,35 +184,8 @@ func (source *Source) LookupProvider(
 	ctx context.Context,
 	accountRef string,
 ) (string, bool, error) {
-	reference := strings.TrimSpace(accountRef)
-	if source == nil || source.databasePath == "" || reference == "" || ctx == nil {
+	if source == nil {
 		return "", false, nil
 	}
-	info, err := os.Stat(source.databasePath)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
-	}
-	if err != nil || !info.Mode().IsRegular() {
-		return "", false, nil
-	}
-	db, err := openReadOnly(ctx, source.databasePath)
-	if err != nil {
-		return "", false, fmt.Errorf("打开 app-state.db 失败: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-	var provider string
-	err = db.QueryRowContext(ctx,
-		`SELECT provider FROM account_refs WHERE account_ref = ?`,
-		reference,
-	).Scan(&provider)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return "", false, nil
-		}
-		return "", false, fmt.Errorf("读取账号归属失败: %w", err)
-	}
-	return provider, true, nil
+	return appstate.LookupAccountProvider(ctx, source.databasePath, accountRef)
 }

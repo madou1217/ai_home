@@ -2,25 +2,20 @@ package webuitoolsettingsapi
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 // 工具启动权限设置存在 Node 的 app-state.db（app_kv）里，与 CLI 启动时读的是同一行。
 // 这里只读，不建库、不建表、不写回：写入口仍在 Node（PUT /v0/webui/toolkit/apps/:id/settings）。
 const (
-	appStateDatabaseFileName  = "app-state.db"
 	toolPermissionSettingsKey = "toolkit:tool-permission-settings"
-	databaseBusyTimeoutMS     = 5000
 )
 
 // ErrInvalidSettingsSource 表示缺少 AIH 数据根目录。
@@ -56,11 +51,11 @@ func OpenSettingsSource(aiHomeDir string) (*SettingsSource, error) {
 	if root == "" {
 		return nil, ErrInvalidSettingsSource
 	}
-	absolute, err := filepath.Abs(root)
+	databasePath, err := appstate.DatabasePath(root)
 	if err != nil {
 		return nil, ErrInvalidSettingsSource
 	}
-	return &SettingsSource{databasePath: filepath.Join(absolute, appStateDatabaseFileName)}, nil
+	return &SettingsSource{databasePath: databasePath}, nil
 }
 
 // Read 返回某 Provider 的设置记录。
@@ -81,7 +76,7 @@ func (source *SettingsSource) Read(ctx context.Context, provider string) ToolPer
 	if err != nil || !info.Mode().IsRegular() {
 		return fallback
 	}
-	db, err := openReadOnly(ctx, source.databasePath)
+	db, err := appstate.OpenReadOnly(ctx, source.databasePath)
 	if err != nil {
 		return fallback
 	}
@@ -202,43 +197,4 @@ func normalizeUpdatedAt(value any) int64 {
 	default:
 		return 0
 	}
-}
-
-func openReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
-	db, err := openAndPing(ctx, databasePath, false)
-	if err == nil {
-		return db, nil
-	}
-	if _, statErr := os.Stat(databasePath + "-wal"); statErr == nil {
-		return nil, err
-	}
-	return openAndPing(ctx, databasePath, true)
-}
-
-func openAndPing(ctx context.Context, databasePath string, immutable bool) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", buildReadOnlyDSN(databasePath, immutable))
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return db, nil
-}
-
-func buildReadOnlyDSN(databasePath string, immutable bool) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
-	query := fileURL.Query()
-	query.Set("mode", "ro")
-	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", databaseBusyTimeoutMS))
-	// query_only 是第二道保险：即使驱动忽略 mode=ro，也不允许本连接写入。
-	query.Add("_pragma", "query_only(1)")
-	if immutable {
-		query.Set("immutable", "1")
-	}
-	fileURL.RawQuery = query.Encode()
-	return fileURL.String()
 }

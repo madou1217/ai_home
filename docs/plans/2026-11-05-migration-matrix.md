@@ -497,10 +497,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `account:alias-pool:<ref>`（`{participates, updatedAt}`，单事务 upsert）；Node 路由只做参数
   预校验、代理与写成功后的运行池重载（响应补 `reloaded`）。账号创建时的默认偏好
   （`alias-pool-preference.js`）仍由 Node 写同一键。
-- **窗口激活写入切 Go**：Go 新增 `POST /v1/management/webui/accounts/{provider}/{ref}/window-activation`，
-  单事务写 `account:window-activation:<ref>`（`{enabled, intervalMs, updatedAt}`）；Node 保留
-  provider/间隔校验与写后读回，响应里的调度器/账本视图仍由 Node 组装。间隔下限由 Node
-  以运行态 `minIntervalMs` 随请求下发，Go 夹取到 [1h, 365d]。
+- **窗口激活读写切 Go**：Go 新增 `GET|POST /v1/management/webui/accounts/{provider}/{ref}/window-activation`。
+  写路径单事务写 `account:window-activation:<ref>`（`{enabled, intervalMs, updatedAt}`）；读路径
+  返回设置 + `lastProbe` + 窗口账本视图（open/closed/absent/unknown）。Node 保留 provider/
+  间隔校验、在 GET 与 POST 响应里合并全局调度器状态；间隔下限由 Node 以运行态
+  `minIntervalMs` 随请求下发，Go 夹取到 [1h, 365d]。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

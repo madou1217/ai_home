@@ -38,7 +38,19 @@ async function call(options = {}) {
       saveWindowActivationConfig: async (provider, accountRef, payload) => {
         calls.push({ provider, accountRef, payload });
         return options.goResponse;
-      }
+      },
+      getWindowActivation: async () => ({
+        ok: true,
+        status: 200,
+        data: {
+          ok: true,
+          provider: 'codex',
+          accountRef: ACCOUNT_REF,
+          setting: { enabled: true, intervalMs: 7200000 },
+          lastProbe: { at: 0, outcome: '' },
+          window: { kind: 'unknown' }
+        }
+      })
     };
   }
   const ctx = {
@@ -80,4 +92,65 @@ test('窗口激活 POST：间隔低于下限 400，不调用 Go', async () => {
   assert.equal(result.captured.status, 400);
   assert.equal(result.captured.payload.error, 'invalid_interval_ms');
   assert.equal(result.calls.length, 0);
+});
+
+async function callGet(options = {}) {
+  const aiHomeDir = options.aiHomeDir || setup();
+  const calls = [];
+  let captured;
+  const deps = {
+    readServerConfig: () => ({}),
+    getWindowActivationState: () => null
+  };
+  if (options.goResponse !== undefined) {
+    deps.goCoreSync = {
+      getWindowActivation: async (provider, accountRef) => {
+        calls.push({ provider, accountRef });
+        return options.goResponse;
+      }
+    };
+  }
+  const ctx = {
+    method: 'GET',
+    req: { method: 'GET' },
+    pathname: '/v0/webui/accounts/codex/' + ACCOUNT_REF + '/window-activation',
+    url: new URL('http://127.0.0.1/v0/webui/accounts/codex/' + ACCOUNT_REF + '/window-activation'),
+    fs,
+    aiHomeDir,
+    deps,
+    res: {},
+    writeJson: (_res, status, payload) => { captured = { status, payload }; }
+  };
+  const handled = await handleWindowActivationRequest(ctx);
+  return { handled, captured, calls };
+}
+
+test('窗口激活 GET：Go 返回设置与账本，Node 合并 global', async () => {
+  const data = {
+    ok: true,
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    setting: { enabled: true, intervalMs: 7200000 },
+    lastProbe: { at: 123, outcome: 'ok' },
+    window: { kind: 'open', closeAtMs: 456, remainingMs: 1000 }
+  };
+  const result = await callGet({ goResponse: { ok: true, status: 200, data } });
+  assert.equal(result.captured.status, 200);
+  assert.deepEqual(result.captured.payload.setting, data.setting);
+  assert.deepEqual(result.captured.payload.window, data.window);
+  assert.equal(result.captured.payload.global.enabled, null);
+  assert.deepEqual(result.calls[0], { provider: 'codex', accountRef: ACCOUNT_REF });
+});
+
+test('窗口激活 GET：Go 的 409 透传', async () => {
+  const data = { ok: false, error: 'account_provider_mismatch' };
+  const result = await callGet({ goResponse: { ok: false, status: 409, data } });
+  assert.equal(result.captured.status, 409);
+  assert.deepEqual(result.captured.payload, data);
+});
+
+test('窗口激活 GET：缺少 Go 宿主时 503', async () => {
+  const result = await callGet();
+  assert.equal(result.captured.status, 503);
+  assert.equal(result.captured.payload.error, 'go_core_unavailable');
 });

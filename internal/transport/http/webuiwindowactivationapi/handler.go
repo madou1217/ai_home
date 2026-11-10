@@ -73,15 +73,19 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodPost {
-		response.Header().Set("Allow", http.MethodPost)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 POST")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(request.PathValue("provider")))
 	accountRef := strings.TrimSpace(request.PathValue("accountRef"))
 	if provider == "" || accountRef == "" {
 		writeError(response, http.StatusBadRequest, "invalid_account_path", "")
+		return
+	}
+	if request.Method == http.MethodGet {
+		handler.readWindowActivation(response, request, provider, accountRef)
 		return
 	}
 	ctx := request.Context()

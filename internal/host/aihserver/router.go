@@ -172,6 +172,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	// 账号窗口激活：写固定走 Go；读仍由 Node 组装调度器状态。
 	if handlers.webuiWindowActivation != nil {
+		mux.Handle("GET "+webuiwindowactivationapi.Path+"/{provider}/{accountRef}/window-activation", handlers.webuiWindowActivation)
 		mux.Handle("POST "+webuiwindowactivationapi.Path+"/{provider}/{accountRef}/window-activation", handlers.webuiWindowActivation)
 	}
 	// 账号上下文窗口：读写都固定走 Go。

@@ -2,6 +2,7 @@ package webuiusageconfigapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
@@ -28,4 +29,12 @@ func (source *Source) ReadUsageConfig(ctx context.Context) (string, bool, error)
 		return "", false, nil
 	}
 	return appstate.ReadKV(ctx, source.databasePath, usageConfigKey)
+}
+
+// WriteUsageConfig 以规范化后的整份配置 upsert config:usage。
+func (source *Source) WriteUsageConfig(ctx context.Context, value string) error {
+	if source == nil {
+		return nil
+	}
+	return appstate.WriteKV(ctx, source.databasePath, usageConfigKey, value, time.Now().UnixMilli())
 }

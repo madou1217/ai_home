@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { handleGetUsageConfigRequest } = require('../lib/server/webui-config-routes');
+const { handleGetUsageConfigRequest, handleSetUsageConfigRequest } = require('../lib/server/webui-config-routes');
 
 async function call(goResponse) {
   let response;
@@ -47,4 +47,45 @@ test('缺少 Go 宿主时 503，不回退本地配置', async () => {
 test('Go 不可用（status 0）时 503，不本地兜底', async () => {
   const result = await call({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
   assert.equal(result.status, 503);
+});
+
+async function callWrite(options = {}) {
+  let captured;
+  let forwarded = null;
+  const deps = options.goResponse === undefined ? {} : {
+    goCoreSync: {
+      setUsageConfig: async (config) => {
+        forwarded = config;
+        return options.goResponse;
+      }
+    }
+  };
+  const ctx = {
+    res: {},
+    deps,
+    readRequestBody: async () => Buffer.from(options.body === undefined ? '{"config":{"threshold_pct":80}}' : options.body, 'utf8'),
+    writeJson: (_res, status, payload) => { captured = { status, payload }; }
+  };
+  await handleSetUsageConfigRequest(ctx);
+  return { captured, forwarded };
+}
+
+test('用量配置 POST：写 Go 并透传 ok', async () => {
+  const result = await callWrite({ goResponse: { ok: true, status: 200, data: { ok: true } } });
+  assert.equal(result.captured.status, 200);
+  assert.deepEqual(result.captured.payload, { ok: true });
+  assert.deepEqual(result.forwarded, { threshold_pct: 80 });
+});
+
+test('用量配置 POST：Go 的 400 透传', async () => {
+  const data = { ok: false, error: 'invalid_payload' };
+  const result = await callWrite({ goResponse: { ok: false, status: 400, data } });
+  assert.equal(result.captured.status, 400);
+  assert.deepEqual(result.captured.payload, data);
+});
+
+test('用量配置 POST：缺少 Go 宿主时 503', async () => {
+  const result = await callWrite();
+  assert.equal(result.captured.status, 503);
+  assert.equal(result.captured.payload.error, 'go_core_unavailable');
 });

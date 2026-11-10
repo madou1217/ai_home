@@ -140,9 +140,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 		mux.Handle("GET "+webuichatpasteapi.Path, handlers.webuiChatPaste)
 		mux.Handle("POST "+webuichatpasteapi.Path, handlers.webuiChatPaste)
 	}
-	// 全局用量配置：GET 固定读 Go；POST（写 config:usage）仍在 Node。
+	// 全局用量配置：读写都固定走 Go。
 	if handlers.webuiUsageConfig != nil {
 		mux.Handle("GET "+webuiusageconfigapi.Path, handlers.webuiUsageConfig)
+		mux.Handle("POST "+webuiusageconfigapi.Path, handlers.webuiUsageConfig)
 	}
 	// SSH 连接列表：GET 固定读 Go（脱敏）；增删改仍在 Node。
 	if handlers.webuiSSH != nil {

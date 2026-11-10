@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -19,13 +20,25 @@ type fakeAuthorizer struct{ allowed bool }
 func (fake fakeAuthorizer) Authorized(*http.Request) bool { return fake.allowed }
 
 type fakeStore struct {
-	raw   string
-	found bool
-	err   error
+	raw      string
+	found    bool
+	err      error
+	written  *string
+	writeErr error
 }
 
 func (fake fakeStore) ReadUsageConfig(context.Context) (string, bool, error) {
 	return fake.raw, fake.found, fake.err
+}
+
+func (fake fakeStore) WriteUsageConfig(_ context.Context, value string) error {
+	if fake.writeErr != nil {
+		return fake.writeErr
+	}
+	if fake.written != nil {
+		*fake.written = value
+	}
+	return nil
 }
 
 func newHandler(t *testing.T, store Store) http.Handler {
@@ -141,9 +154,9 @@ func TestAuthorizationAndMethod(t *testing.T) {
 		t.Fatalf("unauthorized status = %d", recorder.Code)
 	}
 	recorder = httptest.NewRecorder()
-	newHandler(t, fakeStore{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, nil))
+	newHandler(t, fakeStore{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodPut, Path, nil))
 	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST status = %d", recorder.Code)
+		t.Fatalf("PUT status = %d", recorder.Code)
 	}
 }
 
@@ -176,3 +189,47 @@ func TestSourceReadsSameKeyAsNode(t *testing.T) {
 }
 
 func intPtr(value int) *int { return &value }
+
+func postUsageConfig(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(body)))
+	return recorder
+}
+
+func TestWriteNormalizesAndPersists(t *testing.T) {
+	written := ""
+	handler := newHandler(t, fakeStore{written: &written})
+	recorder := postUsageConfig(t, handler, "{\"config\":{\"active_refresh_interval\":\"3m\",\"background_refresh_interval\":\"hourly\",\"threshold_pct\":120,\"auto_switch\":\"on\",\"auto_switch_remaining_pct\":-1}}")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	var stored map[string]any
+	if err := json.Unmarshal([]byte(written), &stored); err != nil {
+		t.Fatalf("written = %q: %v", written, err)
+	}
+	if stored["active_refresh_interval"] != "3m" || stored["background_refresh_interval"] != "1h" {
+		t.Fatalf("intervals = %#v", stored)
+	}
+	if stored["threshold_pct"] != float64(100) || stored["auto_switch"] != true || stored["auto_switch_remaining_pct"] != float64(0) {
+		t.Fatalf("stored = %#v", stored)
+	}
+}
+
+func TestWriteRejectsMissingConfigAndInvalidJSON(t *testing.T) {
+	handler := newHandler(t, fakeStore{})
+	for _, body := range []string{"{}", "{\"config\":null}", "{"} {
+		recorder := postUsageConfig(t, handler, body)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("body %s status = %d", body, recorder.Code)
+		}
+	}
+}
+
+func TestWriteFailure(t *testing.T) {
+	handler := newHandler(t, fakeStore{writeErr: errors.New("boom")})
+	recorder := postUsageConfig(t, handler, "{\"config\":{}}")
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}

@@ -452,9 +452,10 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   写路径在 `BEGIN IMMEDIATE` 事务里只合并 `largePasteChars`，其它设置与密钥原样保留；
   默认值/上下限与 `contracts/chat-attachments.json` 同源。Node GET/POST 固定代理、
   Go 不可用 503。
-- **全局用量配置 GET 切 Go**：Go 新增 `GET /v1/management/webui/config`，只读 app-state.db 的
-  `config:usage`，复刻 Node `normalizeConfig`（间隔白名单、阈值 1..100、自动换号开关与剩余
-  百分比夹取）；Node GET 固定代理、Go 不可用 503，POST 写配置仍在 Node。
+- **全局用量配置读写切 Go**：Go 新增 `GET|POST /v1/management/webui/config`，读 app-state.db
+  的 `config:usage`，复刻 Node `normalizeConfig`（间隔白名单、阈值 1..100、自动换号开关与
+  剩余百分比夹取）；POST 把规范化后的整份配置落库。Node GET/POST 固定代理、Go 不可用 503。
+  CLI 的 `updateConfig` 仍由 Node 写同一键（读改写在 Node 侧）。
 - **SSH 连接/工作区/终端状态 GET 切 Go**：Go 新增 `GET /v1/management/webui/ssh-connections`、
   `GET /v1/management/webui/ssh-workspaces` 与 `GET .../ssh-workspaces/sessions`。连接列表只读
   `ssh_connections` 并复刻 Node 脱敏（password/privateKey 有值 → `******`，无值 → 空串，其它

@@ -32,9 +32,10 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Store 读取 Node 的 config:usage 原文。
+// Store 读写 Node 的 config:usage。
 type Store interface {
 	ReadUsageConfig(ctx context.Context) (string, bool, error)
+	WriteUsageConfig(ctx context.Context, value string) error
 }
 
 // Dependencies 汇总只读依赖。
@@ -77,7 +78,7 @@ type errorView struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ServeHTTP 只接受 GET。
+// ServeHTTP 接受 GET/POST：GET 读规范化配置，POST 写规范化配置。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.store == nil {
 		writeError(response, http.StatusServiceUnavailable, "usage_config_unavailable", "用量配置服务不可用")
@@ -88,9 +89,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
+		return
+	}
+	if request.Method == http.MethodPost {
+		handler.writeConfig(response, request)
 		return
 	}
 	raw, found, err := handler.store.ReadUsageConfig(request.Context())
@@ -104,6 +109,33 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	writeJSON(response, http.StatusOK, responseView{OK: true, Config: config})
+}
+
+// writeConfig 处理 POST：与 Node 一致，把 payload.config 规范化后整份写入。
+func (handler *Handler) writeConfig(response http.ResponseWriter, request *http.Request) {
+	var payload map[string]any
+	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1024*1024))
+	if err := decoder.Decode(&payload); err != nil || payload == nil {
+		writeError(response, http.StatusBadRequest, "invalid_payload", "")
+		return
+	}
+	raw, exists := payload["config"]
+	if !exists || raw == nil {
+		writeError(response, http.StatusBadRequest, "invalid_payload", "")
+		return
+	}
+	input, _ := raw.(map[string]any)
+	config := normalizeConfigMap(input)
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "set_config_failed", "")
+		return
+	}
+	if err := handler.store.WriteUsageConfig(request.Context(), string(encoded)); err != nil {
+		writeError(response, http.StatusInternalServerError, "set_config_failed", "")
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true})
 }
 
 func defaultConfig() ConfigView {
@@ -126,8 +158,13 @@ func normalizeConfig(raw string, found bool) (ConfigView, error) {
 	if err := json.Unmarshal([]byte(raw), &input); err != nil {
 		return ConfigView{}, err
 	}
+	return normalizeConfigMap(input), nil
+}
+
+func normalizeConfigMap(input map[string]any) ConfigView {
+	config := defaultConfig()
 	if input == nil {
-		return config, nil
+		return config
 	}
 	active := firstValue(input, "active_refresh_interval", "activeRefreshInterval")
 	config.ActiveRefreshInterval = normalizeInterval(active, map[string]string{"1m": "1m", "3m": "3m"}, defaultActiveInterval)
@@ -142,7 +179,7 @@ func normalizeConfig(raw string, found bool) (ConfigView, error) {
 	if value, ok := firstValueOK(input, "auto_switch_remaining_pct", "autoSwitchRemainingPct"); ok {
 		config.AutoSwitchRemainingPct = normalizeRemaining(value)
 	}
-	return config, nil
+	return config
 }
 
 // firstValue 对齐 Node 的 `a || b`：先取真值，再取另一个。

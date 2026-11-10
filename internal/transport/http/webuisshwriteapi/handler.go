@@ -12,7 +12,8 @@
 //
 // 与 Node 对齐：id 为 conn_ + 16 位十六进制；PUT 缺省字段保持原值；
 // password / privateKey 传入掩码 ****** 视为「未修改」；非当前 authType 的凭据
-// 写空；删除时清空其它连接对本条的 egressConnectionId。
+// 写空；删除时清空其它连接对本条的 egressConnectionId，并在同一事务里级联
+// 删除 ssh_workspaces 中连接指向本条的工作区（无关工作区原样保留）。
 //
 // 刻意更严：路径 id 必须匹配 conn_[a-f0-9]{16}；host / user 做字符集校验并禁止
 // 以 - 开头（防 ssh 选项注入）；port 必须 1–65535；已有 ssh_connections 非法
@@ -52,9 +53,13 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Store 在 BEGIN IMMEDIATE 事务里读改写 ssh_connections。
+// Store 在 BEGIN IMMEDIATE 事务里读改写 app_kv。
+//
+// 新增 / 编辑只动 ssh_connections；删除连接要连带清掉关联工作区，
+// 因此单独暴露一个双键事务入口，保证两行要么都改、要么都不改。
 type Store interface {
 	UpdateConnections(ctx context.Context, mutate func(current string, found bool) (string, error)) error
+	DeleteConnectionAndWorkspaces(ctx context.Context, mutate func(connections KV, workspaces KV) (string, string, error)) error
 }
 
 // Dependencies 汇总写入依赖。
@@ -266,13 +271,13 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 }
 
 func (handler *Handler) remove(response http.ResponseWriter, request *http.Request, id string) {
-	err := handler.store.UpdateConnections(request.Context(), func(current string, found bool) (string, error) {
-		connections, failure := decodeConnections(current, found)
+	err := handler.store.DeleteConnectionAndWorkspaces(request.Context(), func(connections KV, workspaces KV) (string, string, error) {
+		list, failure := decodeConnections(connections.Value, connections.Found)
 		if failure != nil {
-			return "", failure
+			return "", "", failure
 		}
-		next := make([]map[string]any, 0, len(connections))
-		for _, connection := range connections {
+		next := make([]map[string]any, 0, len(list))
+		for _, connection := range list {
 			if connectionString(connection, "id") == id {
 				continue
 			}
@@ -281,11 +286,20 @@ func (handler *Handler) remove(response http.ResponseWriter, request *http.Reque
 			}
 			next = append(next, connection)
 		}
-		encoded, encodeErr := json.Marshal(next)
-		if encodeErr != nil {
-			return "", encodeErr
+		// 级联删除：同一事务内清掉这条连接的工作区，其它工作区原样保留。
+		remaining, failure := removeWorkspacesForConnection(workspaces.Value, workspaces.Found, id)
+		if failure != nil {
+			return "", "", failure
 		}
-		return string(encoded), nil
+		encodedConnections, encodeErr := json.Marshal(next)
+		if encodeErr != nil {
+			return "", "", encodeErr
+		}
+		encodedWorkspaces, encodeErr := json.Marshal(remaining)
+		if encodeErr != nil {
+			return "", "", encodeErr
+		}
+		return string(encodedConnections), string(encodedWorkspaces), nil
 	})
 	if err != nil {
 		writeStoreError(response, err, "ssh_connections_write_failed")

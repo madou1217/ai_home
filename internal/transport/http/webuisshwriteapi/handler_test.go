@@ -35,6 +35,11 @@ func (store *countingStore) UpdateConnections(context.Context, func(string, bool
 	return nil
 }
 
+func (store *countingStore) DeleteConnectionAndWorkspaces(context.Context, func(KV, KV) (string, string, error)) error {
+	store.calls++
+	return nil
+}
+
 func newTestHandler(t *testing.T) (*Handler, string) {
 	t.Helper()
 	root := t.TempDir()

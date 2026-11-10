@@ -1,0 +1,19 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "gw-client-key",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:9527",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-user-header: keep-me",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": 200000,
+    "DISABLE_TELEMETRY": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(go test:*)",
+      "Read"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "aih statusline"
+  }
+}

@@ -6,11 +6,14 @@
 // 分组挂载，只写 app-state.db account_credentials.env_json 的两个规则键，并保留
 // 同一 env 内的其它凭据键与 env_updated_at（rulesenv 负责读改写）。
 //
-// 本包刻意不做两件事，避免制造假成功：
-//   - 不清理运行态阻塞：请求 clearErrorBlock=true 时整次拒绝（501），不写 env；
+// clearErrorBlock 由运行态端口承接（evidence = manual_admin_clear）：先清阻塞再写 env，
+// 清不干净就整次失败且不产生任何 env 写入——宁可让调用方知道阻塞还在，也不制造
+// 「已清」的假成功。宿主未装配运行态端口时仍整次拒绝（501）。
+//
+// 本包刻意不做的一件事：
 //   - 不刷新实时账号、不通知 Node 运行池/Go core 投影：响应只描述 env 写入结果。
 //
-// 这两项都需要宿主运行态端口，属于接线阶段的阻塞项，不能在此假装完成。
+// 这需要宿主运行池端口，属于接线阶段的阻塞项，不能在此假装完成。
 package webuiroutingrulesapi
 
 import (
@@ -24,6 +27,7 @@ import (
 	"strings"
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	mappingcore "github.com/madou1217/ai_home/core/upstreammapping"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
@@ -41,6 +45,15 @@ const (
 
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。
 var ErrInvalidDependencies = errors.New("调度规则接口依赖无效")
+
+var (
+	// errRuntimeBlockClearUnavailable 表示宿主没有装配运行态端口。
+	errRuntimeBlockClearUnavailable = errors.New("运行态阻塞清理端口未装配")
+	// errInvalidAccountPath 表示路径里的账号引用不是规范格式，无法作为运行态键。
+	errInvalidAccountPath = errors.New("账号引用无效")
+	// errRuntimeBlockClear 表示运行态清理失败或实现回报了非预期证据名。
+	errRuntimeBlockClear = errors.New("运行态阻塞清理失败")
+)
 
 // Authorizer 校验管理密钥。
 type Authorizer interface {
@@ -73,12 +86,27 @@ type RulesStore interface {
 	Update(ctx context.Context, accountRef string, change rulesenv.Change) (rulesenv.Result, error)
 }
 
+// RuntimeBlockClearer 是运行态门禁的人工清空端口（*inmemory.Runtime 实现）。
+//
+// 只暴露一个窄方法：clearErrorBlock 需要的运行态能力就是「把这个账号的门禁整体归零」，
+// 返回值是实现实际使用的证据名，响应会原样透出给调用方核对。
+type RuntimeBlockClearer interface {
+	ClearManualAdminBlocks(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (accountcore.StatusEventKind, error)
+}
+
 // Dependencies 汇总调度规则写入依赖。
+//
+// Runtime 可为 nil（宿主尚未装配运行态）：此时 clearErrorBlock=true 仍然整次拒绝，
+// 而不是假装清理过。
 type Dependencies struct {
 	Authorizer Authorizer
 	Store      RulesStore
 	Accounts   AccountResolver
 	Catalog    *providers.Catalog
+	Runtime    RuntimeBlockClearer
 }
 
 // Handler 处理账号调度规则写入。
@@ -87,6 +115,7 @@ type Handler struct {
 	store      RulesStore
 	accounts   AccountResolver
 	catalog    *providers.Catalog
+	runtime    RuntimeBlockClearer
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -100,6 +129,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		store:      dependencies.Store,
 		accounts:   dependencies.Accounts,
 		catalog:    dependencies.Catalog,
+		runtime:    dependencies.Runtime,
 	}, nil
 }
 
@@ -126,6 +156,9 @@ type successView struct {
 	UpstreamErrorGroupIDs []string          `json:"upstreamErrorGroupIds"`
 	Changed               bool              `json:"changed"`
 	EnvUpdatedAt          int64             `json:"envUpdatedAt"`
+	// ClearEvidence 只在请求 clearErrorBlock=true 时出现：它是实际执行清空的
+	// 证据名（manual_admin_clear），调用方据此确认阻塞真的被清过。
+	ClearEvidence string `json:"clearEvidence,omitempty"`
 }
 
 type errorView struct {
@@ -185,12 +218,17 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusBadRequest, "invalid_upstream_error_group", err.Error())
 		return
 	}
+	var clearEvidence accountcore.StatusEventKind
 	if payload.ClearErrorBlock {
-		// 运行态阻塞清理需要宿主运行态端口，本包不承接。写 env 后再返回成功会让调用方
-		// 误以为阻塞已清；因此整次拒绝且不产生任何写入。
-		writeError(response, http.StatusNotImplemented, "runtime_block_clear_unavailable",
-			"调度规则已校验，但运行态阻塞清理未在 Go 侧实现；请取消 clearErrorBlock 后重试")
-		return
+		// 先清运行态再写 env：清理失败时整次拒绝、不产生任何 env 写入，调用方看到的就是
+		// 真实结果；清理成功但写 env 失败时最多多重清一次（清空是幂等的），不会留下
+		// 「规则写了但阻塞还在」的矛盾状态。
+		evidence, err := handler.clearRuntimeBlocks(request.Context(), accountRef)
+		if err != nil {
+			writeRuntimeClearError(response, err)
+			return
+		}
+		clearEvidence = evidence
 	}
 	result, err := handler.store.Update(request.Context(), accountRef, rulesenv.Change{
 		Rules:    rules,
@@ -208,6 +246,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		UpstreamErrorGroupIDs: groupIDs,
 		Changed:               result.Changed,
 		EnvUpdatedAt:          result.EnvUpdatedAt,
+		ClearEvidence:         string(clearEvidence),
 	})
 }
 
@@ -304,6 +343,46 @@ func normalizeGroupIDs(groupIDs []string) ([]string, error) {
 		normalized = append(normalized, parsed)
 	}
 	return normalized, nil
+}
+
+// clearRuntimeBlocks 执行 clearErrorBlock 的领域动作，返回实现实际使用的证据名。
+//
+// 运行态以规范账号引用为键：account_refs 里存在但格式不规范的账号不能猜身份，直接按
+// 路径无效拒绝，避免把「清空了别的键」当成成功。
+func (handler *Handler) clearRuntimeBlocks(
+	ctx context.Context,
+	accountRef string,
+) (accountcore.StatusEventKind, error) {
+	if handler.runtime == nil {
+		return "", errRuntimeBlockClearUnavailable
+	}
+	reference, err := accountcore.ParseAccountRef(accountRef)
+	if err != nil {
+		return "", errInvalidAccountPath
+	}
+	evidence, err := handler.runtime.ClearManualAdminBlocks(ctx, reference)
+	if err != nil {
+		return "", errors.Join(errRuntimeBlockClear, err)
+	}
+	if evidence != accountcore.StatusEventManualAdminClear {
+		// 端口必须回报真实证据名；回报别的值说明实现与契约脱节，不能当成「已清」。
+		return "", errRuntimeBlockClear
+	}
+	return evidence, nil
+}
+
+// writeRuntimeClearError 把运行态清理失败映射成稳定的错误码。
+func writeRuntimeClearError(response http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errRuntimeBlockClearUnavailable):
+		writeError(response, http.StatusNotImplemented, "runtime_block_clear_unavailable",
+			"运行态阻塞清理端口未装配；请取消 clearErrorBlock 后重试")
+	case errors.Is(err, errInvalidAccountPath):
+		writeError(response, http.StatusBadRequest, "invalid_account_path", "账号引用无效")
+	default:
+		writeError(response, http.StatusInternalServerError, "runtime_block_clear_failed",
+			"运行态阻塞清理失败")
+	}
 }
 
 // writeStoreError 把存储失败映射成稳定的错误码。

@@ -28,6 +28,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuimobileaccountapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
@@ -332,12 +333,20 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建账号编辑接口失败: %w", err)
 	}
+	modelsSettings, err := webuimodelsettingsapi.NewHandler(webuimodelsettingsapi.Dependencies{
+		Authorizer: authorizer, Store: webuimodelsettingsapi.DatabaseStore{DatabasePath: databasePath},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建模型设置写入接口失败: %w", err)
+	}
 	routingAdapters, err := webuiroutingrulesapi.OpenAdapters(context.Background(), dependencies.AIHomeDir, dependencies.Store)
 	if err != nil {
 		return nil, fmt.Errorf("创建调度规则写入适配器失败: %w", err)
 	}
+	runtimeClearer, _ := dependencies.AccountRuntime.(webuiroutingrulesapi.RuntimeBlockClearer)
 	routingRules, err := webuiroutingrulesapi.NewHandler(webuiroutingrulesapi.Dependencies{
-		Authorizer: authorizer, Store: routingAdapters.Store, Accounts: routingAdapters.Accounts, Catalog: dependencies.Catalog,
+		Authorizer: authorizer, Store: routingAdapters.Store, Accounts: routingAdapters.Accounts,
+		Catalog: dependencies.Catalog, Runtime: runtimeClearer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建调度规则接口失败: %w", err)
@@ -354,6 +363,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuirestoreschedulingapi.Path + webuirestoreschedulingapi.RouteSuffix, Handler: restoreScheduling},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
+		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
+		{Pattern: "POST " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "GET " + webuiopenaimodelsapi.Path, Handler: openaiModelsRead},
 		{Pattern: "GET " + webuiarchivedsessionsapi.Path, Handler: archivedSessions},
 		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},

@@ -77,6 +77,12 @@ func relayHostsNodeOnly(reason string) map[string]RelayHost {
 	}
 }
 
+// hookFeatureFlag 返回特性开关的地址：false 与 nil 是两种不同事实
+// （合同声明「不需要」/ 合同没有声明），不能用同一个零值表示。
+func hookFeatureFlag(enabled bool) *bool {
+	return &enabled
+}
+
 // builtinCodex 定义 Codex/ChatGPT 的稳定身份和声明式能力。
 func builtinCodex() Definition {
 	return Definition{
@@ -96,7 +102,14 @@ func builtinCodex() Definition {
 			Adapter:    "json_hooks",
 			TargetKind: "hooks.json",
 			// nativeBoundary.hooks.files 声明的 hooks.json 落在 cli.globalDir 下。
-			Hook: &HookFormat{Target: []string{".codex", "hooks.json"}},
+			// Node 描述符：timeout 以秒计（合同默认），SessionStart 只在会话真正
+			// 开始/恢复时触发，且 hooks 还需在 config.toml 打开特性开关。
+			Hook: &HookFormat{
+				Target:        []string{".codex", "hooks.json"},
+				TimeoutUnit:   HookTimeoutSeconds,
+				EventMatchers: map[string]string{"SessionStart": "startup|resume|clear|compact"},
+				FeatureFlag:   hookFeatureFlag(true),
+			},
 			// PermissionRequest / Interrupt feed the terminal title's "waiting for you"
 			// and "interrupted" frames (codex 0.166 hook engine; schema verified from the binary).
 			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Interrupt", "Stop"},
@@ -160,7 +173,12 @@ func builtinGemini() Definition {
 			Adapter:    "json_hooks",
 			TargetKind: "settings.json",
 			// nativeBoundary.hooks.files 声明的 settings.json 落在 cli.globalDir 下。
-			Hook:   &HookFormat{Target: []string{".gemini", "settings.json"}},
+			// Node 描述符：gemini 是唯一用毫秒计 timeout 的 provider，且不需要特性开关。
+			Hook: &HookFormat{
+				Target:      []string{".gemini", "settings.json"},
+				TimeoutUnit: HookTimeoutMilliseconds,
+				FeatureFlag: hookFeatureFlag(false),
+			},
 			Events: []string{"SessionStart", "BeforeAgent", "AfterAgent", "SessionEnd"},
 		},
 		CLI: &CLIConfig{
@@ -195,7 +213,12 @@ func builtinClaude() Definition {
 			Adapter:    "json_hooks",
 			TargetKind: "settings.json",
 			// nativeBoundary.hooks.files 声明的 settings.json 落在 cli.globalDir 下。
-			Hook: &HookFormat{Target: []string{".claude", "settings.json"}},
+			// Node 描述符：timeout 以秒计，不需要 matcher 与特性开关。
+			Hook: &HookFormat{
+				Target:      []string{".claude", "settings.json"},
+				TimeoutUnit: HookTimeoutSeconds,
+				FeatureFlag: hookFeatureFlag(false),
+			},
 			// Notification (permission_prompt / idle_prompt / elicitation_dialog) and
 			// PermissionRequest feed the terminal title's "waiting for you" frame.
 			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd"},
@@ -252,7 +275,12 @@ func builtinAntigravity() Definition {
 			TargetKind: "hooks.json",
 			// nativeBoundary.hooks.files 的第一个用户级文件是宿主 home 相对的
 			// .gemini/config/hooks.json（其余是项目级 .agents/hooks.json 与插件目录）。
-			Hook:   &HookFormat{Target: []string{".gemini", "config", "hooks.json"}},
+			// Node 描述符：timeout 以秒计，不需要 matcher 与特性开关。
+			Hook: &HookFormat{
+				Target:      []string{".gemini", "config", "hooks.json"},
+				TimeoutUnit: HookTimeoutSeconds,
+				FeatureFlag: hookFeatureFlag(false),
+			},
 			Events: []string{"PreInvocation", "PostInvocation", "Stop"},
 		},
 		CLI: &CLIConfig{
@@ -307,7 +335,12 @@ func builtinOpenCode() Definition {
 			Adapter:    "opencode_plugin",
 			TargetKind: "plugin.js",
 			// nativeBoundary.hooks.files 的 plugin/aih-session-hook.js 相对 cli.globalDir。
-			Hook:   &HookFormat{Target: []string{".config", "opencode", "plugin", "aih-session-hook.js"}},
+			// Node 描述符：timeout 以秒计，插件桥没有 matcher 与特性开关。
+			Hook: &HookFormat{
+				Target:      []string{".config", "opencode", "plugin", "aih-session-hook.js"},
+				TimeoutUnit: HookTimeoutSeconds,
+				FeatureFlag: hookFeatureFlag(false),
+			},
 			Events: []string{},
 		},
 		CLI: &CLIConfig{
@@ -353,7 +386,12 @@ func builtinGrok() Definition {
 			Adapter:    "json_hooks",
 			TargetKind: "hooks.json",
 			// nativeBoundary.hooks.files 已写成宿主 home 相对的 .grok/hooks.json。
-			Hook:   &HookFormat{Target: []string{".grok", "hooks.json"}},
+			// Node 描述符：timeout 以秒计，不需要 matcher 与特性开关。
+			Hook: &HookFormat{
+				Target:      []string{".grok", "hooks.json"},
+				TimeoutUnit: HookTimeoutSeconds,
+				FeatureFlag: hookFeatureFlag(false),
+			},
 			Events: []string{"SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"},
 		},
 		CLI: &CLIConfig{

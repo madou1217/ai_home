@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -42,8 +43,7 @@ func boolPointer(value bool) *bool {
 
 // validCodexHookProfile 是一份**完整**的 codex 档案。
 //
-// 它用于证明校验器能接受齐全数据：target 现在由合同声明，timeoutUnit /
-// eventMatchers / featureFlag 仍没有 Go 真值源，由本函数合成。
+// 它用于证明校验器能接受齐全数据；四项都与内置合同逐字一致。
 func validCodexHookProfile() HookProfile {
 	return HookProfile{
 		Supported:     true,
@@ -145,21 +145,51 @@ func TestDeriveHookProfilePopulatesTargets(t *testing.T) {
 	}
 }
 
-// TestDeriveHookProfileLeavesUndeclaredFormatFieldsEmpty 记录「数据缺失」这一事实。
-//
-// timeoutUnit / eventMatchers / featureFlag 在 Go 内置数据里没有真值源，推导必须留空。
-// 这里把「留空」变成守卫：谁想补这三项，必须先在合同里给出真值来源，否则测试会红。
-func TestDeriveHookProfileLeavesUndeclaredFormatFieldsEmpty(t *testing.T) {
-	for _, id := range hookProviderIDs(t) {
+// hookFormatFacts 是 Node 描述符（lib/providers/defs + contract.js 归一规则）
+// 转录来的黄金样本：
+//   - gemini 显式 timeoutUnit='ms'，其余 provider 按合同默认值为 'seconds'；
+//   - 只有 codex 声明 SessionStart matcher 与 featureFlag=true；
+//   - 其余 provider 的 featureFlag 归一为 false（Node 注释：只有 codex 要在
+//     config.toml 打开开关），false 是声明值，不是「未声明」。
+var hookFormatFacts = map[string]struct {
+	timeoutUnit HookTimeoutUnit
+	matchers    map[string]string
+	featureFlag bool
+}{
+	"codex":    {HookTimeoutSeconds, map[string]string{"SessionStart": "startup|resume|clear|compact"}, true},
+	"gemini":   {HookTimeoutMilliseconds, nil, false},
+	"claude":   {HookTimeoutSeconds, nil, false},
+	"agy":      {HookTimeoutSeconds, nil, false},
+	"opencode": {HookTimeoutSeconds, nil, false},
+	"grok":     {HookTimeoutSeconds, nil, false},
+}
+
+// TestDeriveHookProfileTranscribesFormatFacts 锁定转录值：推导只能原样复制合同，
+// 任何一项漂移都必须在构建期暴露。
+func TestDeriveHookProfileTranscribesFormatFacts(t *testing.T) {
+	ids := hookProviderIDs(t)
+	for _, id := range ids {
+		want, exists := hookFormatFacts[id]
+		if !exists {
+			t.Fatalf("%s: 缺少 Node 描述符事实样本", id)
+		}
 		profile := DeriveHookProfile(builtinDefinition(t, id))
-		if profile.TimeoutUnit != "" {
-			t.Fatalf("%s: timeoutUnit 无真值源，必须留空，实际 %q", id, profile.TimeoutUnit)
+		if profile.TimeoutUnit != want.timeoutUnit {
+			t.Fatalf("%s: timeoutUnit=%q, want %q", id, profile.TimeoutUnit, want.timeoutUnit)
 		}
-		if len(profile.EventMatchers) != 0 {
-			t.Fatalf("%s: eventMatchers 无真值源，必须留空，实际 %v", id, profile.EventMatchers)
+		if len(profile.EventMatchers) != len(want.matchers) || !maps.Equal(profile.EventMatchers, want.matchers) {
+			t.Fatalf("%s: eventMatchers=%v, want %v", id, profile.EventMatchers, want.matchers)
 		}
-		if profile.FeatureFlag != nil {
-			t.Fatalf("%s: featureFlag 无真值源，必须留 nil（未声明），实际 %t", id, *profile.FeatureFlag)
+		if profile.FeatureFlag == nil {
+			t.Fatalf("%s: featureFlag 必须是声明值（false 也是事实），实际 nil", id)
+		}
+		if *profile.FeatureFlag != want.featureFlag {
+			t.Fatalf("%s: featureFlag=%t, want %t", id, *profile.FeatureFlag, want.featureFlag)
+		}
+	}
+	for id := range hookFormatFacts {
+		if !slices.Contains(ids, id) {
+			t.Fatalf("%s: 样本表含非 hook provider", id)
 		}
 	}
 }
@@ -289,6 +319,28 @@ func TestValidateHookProfileRejects(t *testing.T) {
 				EventMatchers: map[string]string{"PreInvocation": "always"},
 			},
 			want: "不在 sessionSync.events",
+		},
+		{
+			name:     "timeoutUnit 与合同不一致",
+			provider: codex,
+			profile:  HookProfile{Supported: true, Adapter: HookAdapterJSONHooks, TimeoutUnit: HookTimeoutMilliseconds},
+			want:     "不一致",
+		},
+		{
+			name:     "matcher 与合同不一致",
+			provider: codex,
+			profile: HookProfile{
+				Supported:     true,
+				Adapter:       HookAdapterJSONHooks,
+				EventMatchers: map[string]string{"SessionStart": "startup"},
+			},
+			want: "不一致",
+		},
+		{
+			name:     "featureFlag 与合同不一致",
+			provider: codex,
+			profile:  HookProfile{Supported: true, Adapter: HookAdapterJSONHooks, FeatureFlag: boolPointer(false)},
+			want:     "不一致",
 		},
 		{
 			name:     "matcher 为空",

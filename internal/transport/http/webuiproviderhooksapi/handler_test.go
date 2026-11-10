@@ -128,8 +128,8 @@ func TestEmptyProfileFieldsAreSurfacedAsEmpty(t *testing.T) {
 	if !exists {
 		t.Fatal("codex 缺失")
 	}
-	if row["status"] != statusDegraded {
-		t.Fatalf("status = %v, want %s", row["status"], statusDegraded)
+	if row["status"] != statusComplete {
+		t.Fatalf("status = %v, want %s", row["status"], statusComplete)
 	}
 	target, exists := row["target"]
 	if !exists {
@@ -142,24 +142,18 @@ func TestEmptyProfileFieldsAreSurfacedAsEmpty(t *testing.T) {
 	if !exists {
 		t.Fatal("event_matchers 键缺失")
 	}
-	if object, ok := matchers.(map[string]any); !ok || len(object) != 0 {
-		t.Fatalf("event_matchers = %#v, want {}", matchers)
+	if object, ok := matchers.(map[string]any); !ok || object["SessionStart"] != "startup|resume|clear|compact" {
+		t.Fatalf("event_matchers = %#v", matchers)
 	}
-	if row["timeout_unit"] != "" {
-		t.Fatalf("timeout_unit = %#v, want 空串", row["timeout_unit"])
+	if row["timeout_unit"] != "seconds" {
+		t.Fatalf("timeout_unit = %#v", row["timeout_unit"])
 	}
 	flag, exists := row["feature_flag"]
-	if !exists || flag != nil {
-		t.Fatalf("feature_flag = %#v (存在=%v), want null", flag, exists)
+	if !exists || flag != true {
+		t.Fatalf("feature_flag = %#v (存在=%v)", flag, exists)
 	}
-	unfilled := stringList(row["unfilled_fields"])
-	for _, field := range []string{"timeout_unit", "event_matchers"} {
-		if !contains(unfilled, field) {
-			t.Fatalf("unfilled_fields = %v, 缺少 %s", unfilled, field)
-		}
-	}
-	if contains(unfilled, "adapter") {
-		t.Fatalf("adapter 已由合同声明，不该算缺失: %v", unfilled)
+	if unfilled := stringList(row["unfilled_fields"]); len(unfilled) != 0 {
+		t.Fatalf("unfilled_fields = %v, want empty", unfilled)
 	}
 }
 

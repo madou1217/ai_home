@@ -12,13 +12,16 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/appstate/rulesenv"
 )
 
 const (
-	testRef            = "acct_routing_rules_0001"
+	testRef = "acct_routing_rules_0001"
+	// canonicalRef 是规范账号引用：运行态端口按规范键清理，非规范 ref 会被拒绝。
+	canonicalRef       = "acct_0123456789abcdef0123"
 	testProvider       = "claude"
 	seededEnvUpdatedAt = int64(1700000000123)
 )
@@ -80,16 +83,61 @@ func newFixture(t *testing.T, envJSON string) *fixture {
 
 func (f *fixture) newHandler(t *testing.T, authorizer Authorizer) *Handler {
 	t.Helper()
+	return f.newHandlerWithRuntime(t, authorizer, nil)
+}
+
+func (f *fixture) newHandlerWithRuntime(
+	t *testing.T,
+	authorizer Authorizer,
+	runtime RuntimeBlockClearer,
+) *Handler {
+	t.Helper()
 	handler, err := NewHandler(Dependencies{
 		Authorizer: authorizer,
 		Store:      f.store,
 		Accounts:   f.accounts,
 		Catalog:    f.catalog,
+		Runtime:    runtime,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
 	return handler
+}
+
+// seedAccount 追加一个额外的 account_refs + account_credentials 行。
+func (f *fixture) seedAccount(t *testing.T, accountRef string, envJSON string) {
+	t.Helper()
+	if _, err := f.db.Exec("INSERT INTO account_refs VALUES (?, ?, 1, 1)", accountRef, testProvider); err != nil {
+		t.Fatalf("insert account_refs: %v", err)
+	}
+	if _, err := f.db.Exec(
+		"INSERT INTO account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, '{}', ?, 1700000000111, 1700000000222)",
+		accountRef, envJSON, seededEnvUpdatedAt,
+	); err != nil {
+		t.Fatalf("insert account_credentials: %v", err)
+	}
+}
+
+// fakeBlockClearer 记录调用参数，并按配置返回证据或失败。
+type fakeBlockClearer struct {
+	calls    []accountcore.AccountRef
+	evidence accountcore.StatusEventKind
+	err      error
+}
+
+func (clearer *fakeBlockClearer) ClearManualAdminBlocks(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (accountcore.StatusEventKind, error) {
+	clearer.calls = append(clearer.calls, accountRef)
+	if clearer.err != nil {
+		return "", clearer.err
+	}
+	if clearer.evidence == "" {
+		return accountcore.StatusEventManualAdminClear, nil
+	}
+	return clearer.evidence, nil
 }
 
 func (f *fixture) post(t *testing.T, handler *Handler, provider, accountRef, body string) *httptest.ResponseRecorder {
@@ -327,7 +375,8 @@ func TestPostIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestPostClearErrorBlockIsRejectedWithoutWrite(t *testing.T) {
+// 未装配运行态端口时仍然整次拒绝，且不产生任何 env 写入。
+func TestPostClearErrorBlockWithoutRuntimeIsRejectedWithoutWrite(t *testing.T) {
 	f := newFixture(t, `{"OTHER_KEY":"keep"}`)
 	handler := f.newHandler(t, allowAllAuthorizer{allow: true})
 	body := mustJSON(t, map[string]any{
@@ -343,6 +392,93 @@ func TestPostClearErrorBlockIsRejectedWithoutWrite(t *testing.T) {
 	}
 	if _, exists := env[rulesenv.RulesEnvKey]; exists {
 		t.Fatalf("rules were written despite rejected clearErrorBlock")
+	}
+}
+
+// clearErrorBlock=true 走运行态端口，并在响应里回报实际证据名。
+func TestPostClearErrorBlockClearsRuntimeAndWrites(t *testing.T) {
+	f := newFixture(t, `{}`)
+	f.seedAccount(t, canonicalRef, `{"OTHER_KEY":"keep"}`)
+	clearer := &fakeBlockClearer{}
+	handler := f.newHandlerWithRuntime(t, allowAllAuthorizer{allow: true}, clearer)
+	body := mustJSON(t, map[string]any{
+		"upstreamErrorRules":    []any{validRule()},
+		"upstreamErrorGroupIds": []string{"group-a"},
+		"clearErrorBlock":       true,
+	})
+	recorder := f.post(t, handler, testProvider, canonicalRef, body)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	if len(clearer.calls) != 1 || clearer.calls[0].String() != canonicalRef {
+		t.Fatalf("cleared refs = %v, want [%s]", clearer.calls, canonicalRef)
+	}
+	view := decodeView(t, recorder)
+	if view.ClearEvidence != string(accountcore.StatusEventManualAdminClear) {
+		t.Fatalf("clearEvidence = %q, want manual_admin_clear", view.ClearEvidence)
+	}
+	env := storedEnvFor(t, f.db, canonicalRef)
+	if _, exists := env["OTHER_KEY"]; !exists {
+		t.Fatalf("credential key dropped: %v", env)
+	}
+	if _, exists := env[rulesenv.RulesEnvKey]; !exists {
+		t.Fatalf("rules key missing: %v", env)
+	}
+}
+
+// 运行态清理失败必须整次失败，不能写 env。
+func TestPostClearErrorBlockReportsRuntimeFailure(t *testing.T) {
+	f := newFixture(t, `{"OTHER_KEY":"keep"}`)
+	f.seedAccount(t, canonicalRef, `{}`)
+	clearer := &fakeBlockClearer{err: errRuntimeBlockClear}
+	handler := f.newHandlerWithRuntime(t, allowAllAuthorizer{allow: true}, clearer)
+	body := mustJSON(t, map[string]any{
+		"upstreamErrorRules":    []any{validRule()},
+		"upstreamErrorGroupIds": []string{"group-a"},
+		"clearErrorBlock":       true,
+	})
+	recorder := f.post(t, handler, testProvider, canonicalRef, body)
+	assertError(t, recorder, http.StatusInternalServerError, "runtime_block_clear_failed")
+	if env := f.storedEnv(t); len(env) != 1 {
+		t.Fatalf("env = %v, want only the seeded key", env)
+	}
+}
+
+// 端口回报的证据名不是 manual_admin_clear 时不能当成清理成功。
+func TestPostClearErrorBlockRejectsUnexpectedEvidence(t *testing.T) {
+	f := newFixture(t, `{"OTHER_KEY":"keep"}`)
+	f.seedAccount(t, canonicalRef, `{}`)
+	clearer := &fakeBlockClearer{evidence: accountcore.StatusEventLoginSuccess}
+	handler := f.newHandlerWithRuntime(t, allowAllAuthorizer{allow: true}, clearer)
+	body := mustJSON(t, map[string]any{
+		"upstreamErrorRules":    []any{validRule()},
+		"upstreamErrorGroupIds": []string{"group-a"},
+		"clearErrorBlock":       true,
+	})
+	recorder := f.post(t, handler, testProvider, canonicalRef, body)
+	assertError(t, recorder, http.StatusInternalServerError, "runtime_block_clear_failed")
+	if env := f.storedEnv(t); len(env) != 1 {
+		t.Fatalf("env = %v, want only the seeded key", env)
+	}
+}
+
+// 非规范账号引用不能作为运行态键：按路径无效拒绝，且不写 env。
+func TestPostClearErrorBlockRejectsNonCanonicalRef(t *testing.T) {
+	f := newFixture(t, `{"OTHER_KEY":"keep"}`)
+	clearer := &fakeBlockClearer{}
+	handler := f.newHandlerWithRuntime(t, allowAllAuthorizer{allow: true}, clearer)
+	body := mustJSON(t, map[string]any{
+		"upstreamErrorRules":    []any{validRule()},
+		"upstreamErrorGroupIds": []string{"group-a"},
+		"clearErrorBlock":       true,
+	})
+	recorder := f.post(t, handler, testProvider, testRef, body)
+	assertError(t, recorder, http.StatusBadRequest, "invalid_account_path")
+	if len(clearer.calls) != 0 {
+		t.Fatalf("cleared refs = %v, want none", clearer.calls)
+	}
+	if env := f.storedEnv(t); len(env) != 1 {
+		t.Fatalf("env = %v, want only the seeded key", env)
 	}
 }
 

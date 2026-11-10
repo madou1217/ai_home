@@ -3,6 +3,7 @@ package providers
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -40,8 +41,9 @@ const (
 // DeriveHookProfile 只做复制，不为零值补默认值。
 //
 // 零值 / nil 表示**合同没有声明**这项事实，不是「默认秒 / 不需要 matcher /
-// 不需要开关」。现有内置数据只能证明 Target（来自 nativeBoundary.hooks.files
-// 与 cli.globalDir），其余三项没有 Go 真值源，留空并如实报告。
+// 不需要开关」。内置合同里的数据逐字转录自 Node 描述符（lib/providers/defs）
+// 与其合同默认值：gemini 显式 ms，其余 provider 显式声明「秒」；codex 显式给
+// SessionStart matcher 与特性开关，其余 provider 显式声明不需要开关。
 type HookFormat struct {
 	// Target 是相对宿主 home 的路径段（例：[".codex", "hooks.json"]）。
 	Target []string `json:"target,omitempty"`
@@ -148,7 +150,9 @@ func hookUnsupportedReason(mode SessionSyncMode) string {
 //     否则适配器拼接出的路径会落到预期之外的位置；
 //   - TimeoutUnit 非空时必须已在单位表登记：拼错会让超时被当成另一种量级；
 //   - EventMatchers 的事件名必须是合同 Events 里真正会发出的事件，matcher 不能为空；
-//     给一个永不发出的挂 matcher 等于静默死配置。
+//     给一个永不发出的挂 matcher 等于静默死配置；
+//   - 合同与档案都声明 timeoutUnit / eventMatchers / featureFlag 时必须逐字一致，
+//     否则调用方会拿到两个互相矛盾的答案（与 target 的规则相同）。
 func ValidateHookProfile(definition Definition, profile HookProfile) error {
 	id := strings.TrimSpace(definition.ID)
 	if id == "" {
@@ -186,7 +190,33 @@ func ValidateHookProfile(definition Definition, profile HookProfile) error {
 	if profile.TimeoutUnit != "" && !profile.TimeoutUnit.IsValid() {
 		return fmt.Errorf("provider %s: 未知 hooks.timeoutUnit %q", id, profile.TimeoutUnit)
 	}
-	return validateHookMatchers(id, definition, profile.EventMatchers)
+	if err := validateHookMatchers(id, definition, profile.EventMatchers); err != nil {
+		return err
+	}
+	return validateHookFormatConsistency(id, definition.SessionSync.Hook, profile)
+}
+
+// validateHookFormatConsistency 保证档案与合同声明的格式字段逐字一致。
+//
+// 规则与 target 相同：只有双方都声明时才比较；任一方留空表示「无此项事实」，
+// 不追究。出现两个不同答案则必须失败，否则写文件的人不知道该信哪个。
+func validateHookFormatConsistency(id string, contract *HookFormat, profile HookProfile) error {
+	if contract == nil {
+		return nil
+	}
+	if contract.TimeoutUnit != "" && profile.TimeoutUnit != "" && contract.TimeoutUnit != profile.TimeoutUnit {
+		return fmt.Errorf("provider %s: hooks.timeoutUnit=%q 与 sessionSync.hook.timeoutUnit=%q 不一致",
+			id, profile.TimeoutUnit, contract.TimeoutUnit)
+	}
+	if len(contract.EventMatchers) > 0 && len(profile.EventMatchers) > 0 && !maps.Equal(contract.EventMatchers, profile.EventMatchers) {
+		return fmt.Errorf("provider %s: hooks.eventMatchers=%v 与 sessionSync.hook.eventMatchers=%v 不一致",
+			id, profile.EventMatchers, contract.EventMatchers)
+	}
+	if contract.FeatureFlag != nil && profile.FeatureFlag != nil && *contract.FeatureFlag != *profile.FeatureFlag {
+		return fmt.Errorf("provider %s: hooks.featureFlag=%t 与 sessionSync.hook.featureFlag=%t 不一致",
+			id, *profile.FeatureFlag, *contract.FeatureFlag)
+	}
+	return nil
 }
 
 // validateUnsupportedHookProfile 保证「不支持」是一个干净的回答。

@@ -3,7 +3,7 @@
 > 口径：**Go** = 数据面/持久化在 Go，Node 只做参数预校验与代理；**Go+Node** = 数据在 Go，运行态/调度器视图仍由 Node 合并；**Node** = 主要实现仍在 Node。
 > 统计只覆盖 WebUI 管理面（`/v0/webui/*` 与其 Go 对应 `/v1/management/webui/*`），不含推理前门。
 
-## 1. 已完成（38 项，按提交时间倒序）
+## 1. 已完成（39 项，按提交时间倒序）
 
 | # | 能力/接口 | 方法 | 归属 | 说明 | 提交 |
 | --- | --- | --- | --- | --- | --- |
@@ -50,6 +50,7 @@
 | 36 | control-plane 激活 profile | POST | Go | activeProfileId 校验后落库 | `ca0b2290` |
 | 37 | control-plane 删除 profile | DELETE | Go | 删除并清理 active | `ca0b2290` |
 | 38 | control-plane 端点提示 | GET | Go | Node 传请求地址/绑定 host/端口，Go 枚举网卡 | `ca0b2290` |
+| 39 | provider CLI 升级状态 | GET | Go+Node | Go 读账本投影，Node 合并 scheduler/lastTick | `dffe9562` |
 
 ## 2. 未完成（按优先级）
 

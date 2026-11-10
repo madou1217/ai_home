@@ -506,6 +506,12 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `POST .../profiles/active`、`DELETE .../profiles/{id}` 与 `GET .../endpoints`。profiles 在
   立即事务里归一化并落 `control-plane:profiles`；端点提示由 Node 传入请求地址/绑定 host/端口，
   Go 枚举本机网卡生成候选。`/control-plane/bootstrap` 仍由 Node 处理本机密钥。
+- **WebUI 路由注册收敛**：`composition.go` 不再逐切片声明 handler 字段，`router.go` 不再逐切片
+  写 `mux.Handle`；新增 `internal/host/aihserver/webuiroutes.go` 统一构造并返回
+  `[]webuiRoute{Pattern, Handler}`，新增能力只改这一处注册表。
+- **provider CLI 升级 GET 切 Go**：Go 新增 `GET /v1/management/webui/provider-cli-upgrade`，
+  读 `<aiHomeDir>/run/provider-cli-upgrade.json`，复刻账本默认值/`pinnable`/`updateAvailable`/
+  历史截断；Node 合并 scheduler 与 `lastResult` 的 lastTick 字段，PostgreSQL 式的运行态仍由 Node 持有。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

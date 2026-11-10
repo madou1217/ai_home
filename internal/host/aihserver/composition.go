@@ -90,21 +90,9 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
 )
 
 const (
@@ -150,34 +138,8 @@ type serverHandlers struct {
 	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
 	webuiAccounts http.Handler
-	// webuiToolSettings 是应用启动权限设置的只读模型（GET 固定读 Go）。
-	webuiToolSettings http.Handler
-	// webuiQuotaReset 是账号额度重置历史的只读模型（数据源仍是 Node 的 app-state.db）。
-	webuiQuotaReset http.Handler
-	// webuiAliasPool 是账号是否参与别名自动选号池的只读设置。
-	webuiAliasPool http.Handler
-	// webuiChatPaste 是会话框大段粘贴转附件阈值的只读设置（数据源是 Node app-state.db）。
-	webuiChatPaste http.Handler
-	// webuiUsageConfig 是全局用量配置的只读模型（数据源是 Node app-state.db）。
-	webuiUsageConfig http.Handler
-	// webuiSSH 是 SSH 连接列表的只读模型（密码/私钥脱敏，写入口仍在 Node）。
-	webuiSSH http.Handler
-	// webuiSSHWorkspaces 是 SSH 工作区列表的只读模型（远端工作区补影子目录）。
-	webuiSSHWorkspaces http.Handler
-	// webuiSSHSessions 是 SSH 工作区持久终端状态的只读模型（探测复用终端 tmux store）。
-	webuiSSHSessions http.Handler
-	// webuiServerConfig 是 server 配置的公开只读视图（密钥隐藏）。
-	webuiServerConfig http.Handler
-	// webuiToolkitTargets 是 toolkit 执行目标（本机 + SSH 连接）的只读列表。
-	webuiToolkitTargets http.Handler
-	// webuiAccountConfig 是账号配置文件只读查看（默认脱敏，raw 模式返回原值）。
-	webuiAccountConfig http.Handler
-	// webuiModelContext 是账号 × 模型上下文窗口的只读模型与写入入口。
-	webuiModelContext *webuimodelcontextapi.Handler
-	// webuiWindowActivation 是账号窗口激活设置的写入入口（读路径仍在 Node）。
-	webuiWindowActivation http.Handler
-	// webuiControlPlane 是控制面 profiles 与端点提示。
-	webuiControlPlane http.Handler
+	// webuiRoutes 是 WebUI 管理面的全部路由（各能力自己声明，router 统一挂载）。
+	webuiRoutes []webuiRoute
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1201,164 +1163,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建管理指标 Handler 失败: %w", err)
 	}
-	// 应用启动权限设置的只读模型：设置记录直读 app-state.db，能力/目录来自 Provider 合同。
-	// 写入口仍在 Node，本接口只服务 GET（见包注释）。
-	toolSettingsSource, err := webuitoolsettingsapi.OpenSettingsSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建工具启动权限设置数据源失败: %w", err)
-	}
-	webuiToolSettingsHandler, err := webuitoolsettingsapi.NewHandler(webuitoolsettingsapi.Dependencies{
-		Authorizer:  authorizer,
-		Providers:   catalog,
-		Settings:    toolSettingsSource,
-		HostHomeDir: dependencies.HostHomeDir,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建工具启动权限设置接口失败: %w", err)
-	}
-	quotaResetSource, err := webuiquotaresetapi.OpenSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建额度重置历史数据源失败: %w", err)
-	}
-	webuiQuotaResetHandler, err := webuiquotaresetapi.NewHandler(webuiquotaresetapi.Dependencies{
-		Authorizer: authorizer,
-		Accounts:   quotaResetSource,
-		Events:     quotaResetSource,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建额度重置历史接口失败: %w", err)
-	}
-	aliasPoolSource, err := webuialiaspoolapi.OpenSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建别名池设置数据源失败: %w", err)
-	}
-	webuiAliasPoolHandler, err := webuialiaspoolapi.NewHandler(webuialiaspoolapi.Dependencies{
-		Authorizer: authorizer,
-		Store:      aliasPoolSource,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建别名池设置接口失败: %w", err)
-	}
-	chatPasteSource, err := webuichatpasteapi.OpenSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建粘贴设置数据源失败: %w", err)
-	}
-	webuiChatPasteHandler, err := webuichatpasteapi.NewHandler(webuichatpasteapi.Dependencies{
-		Authorizer: authorizer,
-		Store:      chatPasteSource,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建粘贴设置接口失败: %w", err)
-	}
-	usageConfigSource, err := webuiusageconfigapi.OpenSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建用量配置数据源失败: %w", err)
-	}
-	webuiUsageConfigHandler, err := webuiusageconfigapi.NewHandler(webuiusageconfigapi.Dependencies{
-		Authorizer: authorizer,
-		Store:      usageConfigSource,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建用量配置接口失败: %w", err)
-	}
-	sshSource, err := webuisshapi.OpenSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 连接数据源失败: %w", err)
-	}
-	webuiSSHHandler, err := webuisshapi.NewHandler(webuisshapi.Dependencies{
-		Authorizer: authorizer,
-		Store:      sshSource,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 连接接口失败: %w", err)
-	}
-	webuiSSHWorkspacesHandler, err := webuisshapi.NewWorkspacesHandler(
-		webuisshapi.Dependencies{Authorizer: authorizer},
-		sshSource,
-		aiHomeDir,
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 工作区接口失败: %w", err)
-	}
-	webuiSSHSessionsHandler, err := webuisshapi.NewSessionsHandler(
-		webuisshapi.Dependencies{Authorizer: authorizer},
-		sshSource,
-		func(sessionKey string) string {
+	webuiRoutes, err := buildWebUIRoutes(webuiRouteDependencies{
+		Authorizer:      authorizer,
+		AIHomeDir:       aiHomeDir,
+		Catalog:         catalog,
+		ModelModalities: modelModalities,
+		HostHomeDir:     dependencies.HostHomeDir,
+		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 SSH 工作区终端状态接口失败: %w", err)
-	}
-	serverConfigSource, err := webuiserverconfigapi.OpenSource(aiHomeDir)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 server 配置数据源失败: %w", err)
-	}
-	webuiServerConfigHandler, err := webuiserverconfigapi.NewHandler(webuiserverconfigapi.Dependencies{
-		Authorizer: authorizer,
-		Store:      serverConfigSource,
 	})
 	if err != nil {
 		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 server 配置接口失败: %w", err)
-	}
-	webuiToolkitTargetsHandler, err := webuitoolkittargetsapi.NewHandler(webuitoolkittargetsapi.Dependencies{
-		Authorizer: authorizer,
-		Store:      sshSource,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建 toolkit 执行目标接口失败: %w", err)
-	}
-	webuiAccountConfigHandler, err := webuiaccountconfigapi.NewHandler(webuiaccountconfigapi.Dependencies{
-		Authorizer: authorizer,
-		AIHomeDir:  aiHomeDir,
-		Catalog:    catalog,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建账号配置查看接口失败: %w", err)
-	}
-	webuiModelContextHandler, err := webuimodelcontextapi.NewHandler(webuimodelcontextapi.Dependencies{
-		Authorizer: authorizer,
-		AIHomeDir:  aiHomeDir,
-		Catalog:    catalog,
-		Metadata:   modelModalities,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建模型上下文接口失败: %w", err)
-	}
-	webuiWindowActivationHandler, err := webuiwindowactivationapi.NewHandler(webuiwindowactivationapi.Dependencies{
-		Authorizer: authorizer,
-		AIHomeDir:  aiHomeDir,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建窗口激活写入接口失败: %w", err)
-	}
-	webuiControlPlaneHandler, err := webuicontrolplaneapi.NewHandler(webuicontrolplaneapi.Dependencies{
-		Authorizer: authorizer,
-		AIHomeDir:  aiHomeDir,
-	})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建控制面接口失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
@@ -1781,20 +1598,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		upstreamMappingGroups: upstreamMappingHandler,
 		accountRules:          accountRulesHandler,
 		modelCatalog:          modelCatalogHandler,
-		webuiToolSettings:     webuiToolSettingsHandler,
-		webuiQuotaReset:       webuiQuotaResetHandler,
-		webuiAliasPool:        webuiAliasPoolHandler,
-		webuiChatPaste:        webuiChatPasteHandler,
-		webuiUsageConfig:      webuiUsageConfigHandler,
-		webuiSSH:              webuiSSHHandler,
-		webuiSSHWorkspaces:    webuiSSHWorkspacesHandler,
-		webuiSSHSessions:      webuiSSHSessionsHandler,
-		webuiServerConfig:     webuiServerConfigHandler,
-		webuiToolkitTargets:   webuiToolkitTargetsHandler,
-		webuiAccountConfig:    webuiAccountConfigHandler,
-		webuiModelContext:     webuiModelContextHandler,
-		webuiWindowActivation: webuiWindowActivationHandler,
-		webuiControlPlane:     webuiControlPlaneHandler,
+		webuiRoutes:           webuiRoutes,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

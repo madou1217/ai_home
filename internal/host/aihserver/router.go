@@ -30,23 +30,11 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -122,74 +110,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.webuiAccounts != nil {
 		mux.Handle(webuiaccountsapi.Path, handlers.webuiAccounts)
 	}
-	// 应用启动权限设置：路径带 {appId} 通配，必须用「方法 + 模式」注册，且只挂 GET——
-	// PUT 仍在 Node 的 /v0/webui/toolkit/apps/{appId}/settings。
-	if handlers.webuiToolSettings != nil {
-		mux.Handle("GET "+webuitoolsettingsapi.Path+"/{appId}/settings", handlers.webuiToolSettings)
-	}
-	// 账号额度重置历史：只读 Go 模型，数据源仍是 Node 的 app-state.db。
-	if handlers.webuiQuotaReset != nil {
-		mux.Handle("GET "+webuiquotaresetapi.Path+"/{provider}/{accountRef}/quota-reset-events", handlers.webuiQuotaReset)
-	}
-	// 别名自动选号池：GET 固定读 Go；POST（写设置）仍在 Node。
-	if handlers.webuiAliasPool != nil {
-		mux.Handle("GET "+webuialiaspoolapi.Path+"/{provider}/{accountRef}/alias-pool", handlers.webuiAliasPool)
-		mux.Handle("POST "+webuialiaspoolapi.Path+"/{provider}/{accountRef}/alias-pool", handlers.webuiAliasPool)
-	}
-	// 粘贴设置：读写都固定走 Go。
-	if handlers.webuiChatPaste != nil {
-		mux.Handle("GET "+webuichatpasteapi.Path, handlers.webuiChatPaste)
-		mux.Handle("POST "+webuichatpasteapi.Path, handlers.webuiChatPaste)
-	}
-	// 全局用量配置：读写都固定走 Go。
-	if handlers.webuiUsageConfig != nil {
-		mux.Handle("GET "+webuiusageconfigapi.Path, handlers.webuiUsageConfig)
-		mux.Handle("POST "+webuiusageconfigapi.Path, handlers.webuiUsageConfig)
-	}
-	// SSH 连接列表：GET 固定读 Go（脱敏）；增删改仍在 Node。
-	if handlers.webuiSSH != nil {
-		mux.Handle("GET "+webuisshapi.Path, handlers.webuiSSH)
-	}
-	// SSH 工作区列表：GET 固定读 Go；增删改仍在 Node。
-	if handlers.webuiSSHWorkspaces != nil {
-		mux.Handle("GET "+webuisshapi.WorkspacesPath, handlers.webuiSSHWorkspaces)
-	}
-	// SSH 工作区终端状态：GET 固定读 Go（探测 Go 自己的 tmux 会话）。
-	if handlers.webuiSSHSessions != nil {
-		mux.Handle("GET "+webuisshapi.WorkspaceSessionsPath, handlers.webuiSSHSessions)
-	}
-	// server 配置：读写都固定走 Go（响应为公开视图，密钥隐藏）。
-	if handlers.webuiServerConfig != nil {
-		mux.Handle("GET "+webuiserverconfigapi.Path, handlers.webuiServerConfig)
-		mux.Handle("POST "+webuiserverconfigapi.Path, handlers.webuiServerConfig)
-	}
-	// toolkit 执行目标：GET 固定读 Go；远端执行仍在 Node。
-	if handlers.webuiToolkitTargets != nil {
-		mux.Handle("GET "+webuitoolkittargetsapi.Path, handlers.webuiToolkitTargets)
-	}
-	// 账号配置文件查看：GET 固定读 Go；默认脱敏，raw 模式返回原值。
-	if handlers.webuiAccountConfig != nil {
-		mux.Handle("GET "+webuiaccountconfigapi.Path+"/{provider}/{accountRef}/config-files", handlers.webuiAccountConfig)
-	}
-	// 控制面：profiles CRUD 与端点提示固定走 Go；bootstrap 仍由 Node 处理本机密钥。
-	if handlers.webuiControlPlane != nil {
-		mux.Handle("GET "+webuicontrolplaneapi.Path+"/profiles", handlers.webuiControlPlane)
-		mux.Handle("POST "+webuicontrolplaneapi.Path+"/profiles", handlers.webuiControlPlane)
-		mux.Handle("POST "+webuicontrolplaneapi.Path+"/profiles/active", handlers.webuiControlPlane)
-		mux.Handle("DELETE "+webuicontrolplaneapi.Path+"/profiles/{profileId}", handlers.webuiControlPlane)
-		mux.Handle("GET "+webuicontrolplaneapi.Path+"/endpoints", handlers.webuiControlPlane)
-	}
-	// 账号窗口激活：写固定走 Go；读仍由 Node 组装调度器状态。
-	if handlers.webuiWindowActivation != nil {
-		mux.Handle("GET "+webuiwindowactivationapi.Path+"/{provider}/{accountRef}/window-activation", handlers.webuiWindowActivation)
-		mux.Handle("POST "+webuiwindowactivationapi.Path+"/{provider}/{accountRef}/window-activation", handlers.webuiWindowActivation)
-	}
-	// 账号上下文窗口：读写都固定走 Go。
-	if handlers.webuiModelContext != nil {
-		mux.Handle("GET "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
-		mux.Handle("POST "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
-		mux.Handle("DELETE "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
-		mux.Handle("POST "+webuimodelcontextapi.Path+"/{provider}/model-context/bulk", http.HandlerFunc(handlers.webuiModelContext.ServeBulkHTTP))
+	// WebUI 管理面：各能力在 webuiroutes.go 声明方法 + 模式，这里统一挂载。
+	for _, route := range handlers.webuiRoutes {
+		mux.Handle(route.Pattern, route.Handler)
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。

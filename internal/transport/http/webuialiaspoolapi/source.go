@@ -32,6 +32,19 @@ func (source *Source) LookupProvider(ctx context.Context, accountRef string) (st
 	return appstate.LookupAccountProvider(ctx, source.databasePath, accountRef)
 }
 
+// WriteParticipation 写入 { participates, updatedAt }。
+func (source *Source) WriteParticipation(ctx context.Context, accountRef string, participates bool, updatedAt int64) error {
+	reference := strings.TrimSpace(accountRef)
+	if source == nil || reference == "" {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]any{"participates": participates, "updatedAt": updatedAt})
+	if err != nil {
+		return err
+	}
+	return appstate.WriteKV(ctx, source.databasePath, aliasPoolKeyPrefix+reference, string(payload), updatedAt)
+}
+
 // ReadParticipation 读取 participates；没有记录时默认 true。
 func (source *Source) ReadParticipation(ctx context.Context, accountRef string) (bool, error) {
 	reference := strings.TrimSpace(accountRef)

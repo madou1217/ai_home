@@ -490,6 +490,10 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   POST `tokens:null` 相同，响应同形）。
   Node 两条 POST 与 DELETE 固定代理、400/404/409 透传、Go 不可用 503；Node 的
   `setContextOverride/setContextOverridesForAccounts/writeOverrides` 已删除。
+- **别名池写入切 Go**：`POST /v1/management/webui/accounts/{provider}/{ref}/alias-pool` 由 Go 写
+  `account:alias-pool:<ref>`（`{participates, updatedAt}`，单事务 upsert）；Node 路由只做参数
+  预校验、代理与写成功后的运行池重载（响应补 `reloaded`）。账号创建时的默认偏好
+  （`alias-pool-preference.js`）仍由 Node 写同一键。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

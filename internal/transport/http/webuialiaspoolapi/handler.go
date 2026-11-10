@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const (
@@ -32,6 +33,8 @@ type Store interface {
 	LookupProvider(ctx context.Context, accountRef string) (string, bool, error)
 	// ReadParticipation 返回 participates；没有记录时为默认 true。
 	ReadParticipation(ctx context.Context, accountRef string) (bool, error)
+	// WriteParticipation 以单事务 upsert 账号的 participates 设置。
+	WriteParticipation(ctx context.Context, accountRef string, participates bool, updatedAt int64) error
 }
 
 // Dependencies 汇总只读依赖。
@@ -71,7 +74,7 @@ type errorView struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ServeHTTP 只接受 GET。
+// ServeHTTP 接受 GET/POST：GET 读设置，POST 写入 participates。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.store == nil {
 		writeError(response, http.StatusServiceUnavailable, "alias_pool_unavailable", "别名池设置服务不可用")
@@ -82,9 +85,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(request.PathValue("provider")))
@@ -101,6 +104,36 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if strings.ToLower(strings.TrimSpace(owner)) != provider {
 		// 与 Node 一致：账号存在但 Provider 不匹配是冲突，不是「不存在」。
 		writeError(response, http.StatusConflict, "account_provider_mismatch", "")
+		return
+	}
+	if request.Method == http.MethodPost {
+		var payload any
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 16*1024))
+		if err := decoder.Decode(&payload); err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_json_body", "")
+			return
+		}
+		object, ok := payload.(map[string]any)
+		if !ok || object == nil {
+			writeError(response, http.StatusBadRequest, "invalid_request_body", "")
+			return
+		}
+		rawParticipates, exists := object["participates"]
+		participates, isBool := rawParticipates.(bool)
+		if !exists || !isBool {
+			writeError(response, http.StatusBadRequest, "invalid_participates", "")
+			return
+		}
+		if err := handler.store.WriteParticipation(request.Context(), accountRef, participates, time.Now().UnixMilli()); err != nil {
+			writeError(response, http.StatusInternalServerError, "alias_pool_write_failed", "")
+			return
+		}
+		writeJSON(response, http.StatusOK, responseView{
+			OK:         true,
+			Provider:   provider,
+			AccountRef: accountRef,
+			Setting:    settingView{Participates: participates},
+		})
 		return
 	}
 	participates, err := handler.store.ReadParticipation(request.Context(), accountRef)

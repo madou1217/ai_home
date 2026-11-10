@@ -132,6 +132,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 别名自动选号池：GET 固定读 Go；POST（写设置）仍在 Node。
 	if handlers.webuiAliasPool != nil {
 		mux.Handle("GET "+webuialiaspoolapi.Path+"/{provider}/{accountRef}/alias-pool", handlers.webuiAliasPool)
+		mux.Handle("POST "+webuialiaspoolapi.Path+"/{provider}/{accountRef}/alias-pool", handlers.webuiAliasPool)
 	}
 	// 粘贴设置：GET 固定读 Go；POST（写 server config）仍在 Node。
 	if handlers.webuiChatPaste != nil {

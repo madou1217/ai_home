@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -94,95 +93,23 @@ func (handler *Handler) handleAccountsExport(
 		writeMethodNotAllowed(response)
 		return
 	}
-	providers, refs, err := parseExportFilters(request)
+	filters, err := ParseExportFilters(request.URL.Query())
 	if err != nil {
 		writeAPIError(response, http.StatusBadRequest, "invalid_export_query", "导出过滤参数无效")
 		return
 	}
-	overviews, err := handler.listAllOverviews(request)
+	result, err := ExportAccountCollection(
+		request.Context(),
+		handler.management,
+		handler.credentialSnapshots,
+		filters,
+	)
 	if err != nil {
 		writeApplicationError(response, err)
 		return
 	}
-	entries := make([]aihAccountEntry, 0, len(overviews))
-	skipped := make([]map[string]string, 0)
-	for _, overview := range overviews {
-		account := overview.Account()
-		if len(providers) > 0 {
-			if _, ok := providers[account.ProviderID()]; !ok {
-				continue
-			}
-		}
-		if len(refs) > 0 {
-			if _, ok := refs[account.Ref().String()]; !ok {
-				continue
-			}
-		}
-		snapshot, snapshotErr := handler.credentialSnapshots.GetCredentialSnapshot(
-			request.Context(),
-			account.Ref(),
-		)
-		if snapshotErr != nil {
-			skipped = append(skipped, map[string]string{
-				"accountRef": account.Ref().String(),
-				"provider":   account.ProviderID(),
-				"reason":     "credentials_unavailable",
-			})
-			continue
-		}
-		entry, ok := exportAccountEntry(overview, snapshot)
-		if !ok {
-			skipped = append(skipped, map[string]string{
-				"accountRef": account.Ref().String(),
-				"provider":   account.ProviderID(),
-				"reason":     "unsupported_credential",
-			})
-			continue
-		}
-		entries = append(entries, entry)
-	}
-	document := aihAccountsDocument{
-		Kind:       "aih-accounts",
-		Version:    1,
-		ExportedAt: time.Now().UTC().Format(time.RFC3339),
-		Source:     map[string]string{"host": ""},
-		Accounts:   entries,
-	}
-	payload, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		writeApplicationError(response, err)
-		return
-	}
-	response.Header().Set("X-AIH-Exported-Accounts", strconv.Itoa(len(entries)))
-	response.Header().Set("X-AIH-Skipped-Accounts", strconv.Itoa(len(skipped)))
-	writeExportJSON(response, payload, "aih-accounts.json")
-}
-
-// listAllOverviews 按稳定游标读完账号列表；导出是离线动作，数量有界。
-func (handler *Handler) listAllOverviews(request *http.Request) ([]accountapp.AccountOverview, error) {
-	const pageSize = 100
-	overviews := make([]accountapp.AccountOverview, 0, pageSize)
-	afterRef := accountcore.AccountRef("")
-	for {
-		query, err := accountapp.NewOverviewQuery(afterRef, pageSize)
-		if err != nil {
-			return nil, err
-		}
-		page, err := handler.management.ListAccountOverviews(request.Context(), query)
-		if err != nil {
-			return nil, err
-		}
-		overviews = append(overviews, page...)
-		if len(page) < pageSize {
-			break
-		}
-		last := page[len(page)-1].Account().Ref()
-		if last == afterRef {
-			break
-		}
-		afterRef = last
-	}
-	return overviews, nil
+	setExportCountHeaders(response.Header(), result)
+	writeExportJSON(response, result.Document, "aih-accounts.json")
 }
 
 // exportAccountEntry 把一个账号投影成可导入条目；未知凭据形态返回 false。
@@ -263,33 +190,6 @@ func exportAccountEntry(
 	}
 	entry.NativeAuth = payload
 	return entry, true
-}
-
-// parseExportFilters 解析 provider / account_ref（兼容 WebUI 的 accountRef）过滤。
-func parseExportFilters(request *http.Request) (map[string]struct{}, map[string]struct{}, error) {
-	providers := map[string]struct{}{}
-	refs := map[string]struct{}{}
-	for key, values := range request.URL.Query() {
-		var target map[string]struct{}
-		switch key {
-		case "provider":
-			target = providers
-		case "account_ref", "accountRef":
-			target = refs
-		default:
-			return nil, nil, errInvalidQuery
-		}
-		for _, value := range values {
-			for _, part := range strings.Split(value, ",") {
-				item := strings.TrimSpace(part)
-				if item == "" {
-					continue
-				}
-				target[item] = struct{}{}
-			}
-		}
-	}
-	return providers, refs, nil
 }
 
 // exportStaticEnv 只处理 Go 已能验证并回写的静态凭据形态。

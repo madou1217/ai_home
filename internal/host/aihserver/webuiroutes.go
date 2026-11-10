@@ -5,14 +5,21 @@ import (
 	"net/http"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuimobileaccountapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
@@ -37,6 +44,8 @@ type webuiRouteDependencies struct {
 	Catalog         *providers.Catalog
 	ModelModalities *modelsdev.Index
 	HostHomeDir     string
+	Store           *sqliteaccount.Store
+	AccountRuntime  any
 	// TerminalProbe 返回持久终端会话状态；SSH 工作区终端状态接口需要。
 	TerminalProbe func(sessionKey string) string
 }
@@ -156,7 +165,57 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建 provider CLI 升级接口失败: %w", err)
 	}
 
+	restoreRuntime, ok := dependencies.AccountRuntime.(webuirestoreschedulingapi.RuntimeRestorer)
+	if !ok {
+		return nil, fmt.Errorf("创建强制恢复调度接口失败: 运行态不支持 RestoreScheduling")
+	}
+	restoreScheduling, err := webuirestoreschedulingapi.NewHandler(webuirestoreschedulingapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Runtime: restoreRuntime,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建强制恢复调度接口失败: %w", err)
+	}
+	accountExport, err := webuiaccountsexportapi.NewHandler(webuiaccountsexportapi.Dependencies{
+		Authorizer: authorizer, Overviews: dependencies.Store, Credentials: dependencies.Store,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号导出接口失败: %w", err)
+	}
+	modelsRead, err := webuimodelsapi.NewHandler(webuimodelsapi.Dependencies{Authorizer: authorizer, Reader: dependencies.Store})
+	if err != nil {
+		return nil, fmt.Errorf("创建模型只读投影接口失败: %w", err)
+	}
+	openaiModelsRead, err := webuiopenaimodelsapi.NewHandler(webuiopenaimodelsapi.Dependencies{Authorizer: authorizer, Reader: dependencies.Store})
+	if err != nil {
+		return nil, fmt.Errorf("创建 OpenAI 模型读模型接口失败: %w", err)
+	}
+	archivedSessions, err := webuiarchivedsessionsapi.NewHandler(webuiarchivedsessionsapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建归档会话接口失败: %w", err)
+	}
+	setMobile, err := webuimobileaccountapi.NewSetMobileHandler(webuimobileaccountapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 Codex App 绑定接口失败: %w", err)
+	}
+	clearMobile, err := webuimobileaccountapi.NewClearMobileHandler(webuimobileaccountapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 Codex App 解绑接口失败: %w", err)
+	}
+
 	return []webuiRoute{
+		{Pattern: "POST " + webuirestoreschedulingapi.Path + webuirestoreschedulingapi.RouteSuffix, Handler: restoreScheduling},
+		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
+		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
+		{Pattern: "GET " + webuiopenaimodelsapi.Path, Handler: openaiModelsRead},
+		{Pattern: "GET " + webuiarchivedsessionsapi.Path, Handler: archivedSessions},
+		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},
+		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},
 		{Pattern: "GET " + webuitoolsettingsapi.Path + "/{appId}/settings", Handler: toolSettings},
 		{Pattern: "GET " + webuiquotaresetapi.Path + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset},
 		{Pattern: "GET " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},

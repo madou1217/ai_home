@@ -1169,6 +1169,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Catalog:         catalog,
 		ModelModalities: modelModalities,
 		HostHomeDir:     dependencies.HostHomeDir,
+		Store:           store,
+		AccountRuntime:  accountRuntime,
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},

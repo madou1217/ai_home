@@ -249,6 +249,45 @@ func (runtime *Runtime) ClearAccountState(
 	return nil
 }
 
+// RestoreScheduling 人工强制恢复调度：原子清空该账号及其全部模型的运行态阻塞。
+//
+// 清理范围是调度门禁本身：真相源推导出的账号/模型阻塞、上游失败观察、持久化
+// 运行态投影，以及全部模型 cooldown。故意保留 remaining：额度权重来自最新额度
+// 快照，不是阻塞，人工恢复不应把账号的配额比例抹成未知。
+//
+// 持久化账号文档仍是真相源：这里只清内存投影，文档若仍记录 auth_invalid 等失败，
+// 下一次 ApplyAccountState 会把阻塞重新投影回来。
+func (runtime *Runtime) RestoreScheduling(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) error {
+	if runtime == nil || ctx == nil || !accountRef.IsValid() {
+		return ErrInvalidRequest
+	}
+	if runtime.cooldowns == nil ||
+		runtime.accountBlocks == nil ||
+		runtime.modelBlocks == nil {
+		return ErrInvalidRequest
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	delete(runtime.accountBlocks, accountRef)
+	delete(runtime.accountFailures, accountRef)
+	delete(runtime.persistedFailures, accountRef)
+	for route := range runtime.modelBlocks {
+		if route.AccountRef() == accountRef {
+			delete(runtime.modelBlocks, route)
+		}
+	}
+	for route := range runtime.modelFailures {
+		if route.AccountRef() == accountRef {
+			delete(runtime.modelFailures, route)
+		}
+	}
+	runtime.cooldowns.ForgetAccount(accountRef)
+	return nil
+}
+
 // ClearAccountBlock 在账号真相源更新成功后精确清除对应阻塞位。
 func (runtime *Runtime) ClearAccountBlock(
 	ctx context.Context,

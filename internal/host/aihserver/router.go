@@ -165,9 +165,11 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.webuiAccountConfig != nil {
 		mux.Handle("GET "+webuiaccountconfigapi.Path+"/{provider}/{accountRef}/config-files", handlers.webuiAccountConfig)
 	}
-	// 账号上下文窗口：GET 固定读 Go；写入仍在 Node。
+	// 账号上下文窗口：读写都固定走 Go。
 	if handlers.webuiModelContext != nil {
 		mux.Handle("GET "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
+		mux.Handle("POST "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
+		mux.Handle("POST "+webuimodelcontextapi.Path+"/{provider}/model-context/bulk", http.HandlerFunc(handlers.webuiModelContext.ServeBulkHTTP))
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。

@@ -170,8 +170,8 @@ type serverHandlers struct {
 	webuiToolkitTargets http.Handler
 	// webuiAccountConfig 是账号配置文件只读查看（默认脱敏，raw 模式返回原值）。
 	webuiAccountConfig http.Handler
-	// webuiModelContext 是账号 × 模型上下文窗口的只读模型。
-	webuiModelContext http.Handler
+	// webuiModelContext 是账号 × 模型上下文窗口的只读模型与写入入口。
+	webuiModelContext *webuimodelcontextapi.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。

@@ -96,6 +96,8 @@ func newTestHandler(t *testing.T, aiHomeDir string, metadata Metadata) http.Hand
 	}
 	mux := http.NewServeMux()
 	mux.Handle("GET "+Path+"/{provider}/{accountRef}/model-context", handler)
+	mux.Handle("POST "+Path+"/{provider}/{accountRef}/model-context", handler)
+	mux.Handle("POST "+Path+"/{provider}/model-context/bulk", http.HandlerFunc(handler.ServeBulkHTTP))
 	return mux
 }
 
@@ -174,7 +176,7 @@ func TestErrorsAndAuth(t *testing.T) {
 	handler := newTestHandler(t, aiHomeDir, fakeMetadata{})
 
 	recorder, _ := requestModelContext(t, handler, "claude", mainRef, "")
-	if recorder.Code != http.StatusNotFound {
+	if recorder.Code != http.StatusConflict {
 		t.Fatalf("mismatch status = %d", recorder.Code)
 	}
 	recorder, _ = requestModelContext(t, handler, "codex", "acct_ffffffffffffffffffff", "")
@@ -182,9 +184,9 @@ func TestErrorsAndAuth(t *testing.T) {
 		t.Fatalf("unknown status = %d", recorder.Code)
 	}
 	recorder = httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path+"/codex/"+mainRef+"/model-context", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPut, Path+"/codex/"+mainRef+"/model-context", nil))
 	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST status = %d", recorder.Code)
+		t.Fatalf("PUT status = %d", recorder.Code)
 	}
 
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())

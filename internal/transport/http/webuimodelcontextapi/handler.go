@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -137,15 +138,19 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(request.PathValue("provider")))
 	accountRef := strings.TrimSpace(request.PathValue("accountRef"))
 	if provider == "" || accountRef == "" {
 		writeError(response, http.StatusBadRequest, "invalid_account_path", "无效的账号路径")
+		return
+	}
+	if request.Method == http.MethodPost {
+		handler.writeSingle(response, request, provider, accountRef)
 		return
 	}
 	result, failure := handler.readModelContext(request.Context(), provider, accountRef, request.URL.Query().Get("models"))
@@ -165,8 +170,11 @@ func (handler *Handler) readModelContext(ctx context.Context, provider string, a
 	if err != nil {
 		return responseView{}, &apiError{status: 500, code: "model_context_read_failed", message: err.Error()}
 	}
-	if !found || strings.ToLower(strings.TrimSpace(owner)) != provider {
+	if !found {
 		return responseView{}, &apiError{status: 404, code: "account_not_found", message: "未找到 " + provider + " 账号 " + accountRef}
+	}
+	if strings.ToLower(strings.TrimSpace(owner)) != provider {
+		return responseView{}, &apiError{status: 409, code: "account_provider_mismatch"}
 	}
 
 	overrides, err := readOverrides(ctx, databasePath)
@@ -188,16 +196,7 @@ func (handler *Handler) readModelContext(ctx context.Context, provider string, a
 	}
 	rows := make([]ModelView, 0, len(models))
 	for _, modelID := range models {
-		override := accountOverrides[modelID]
-		tokens, source := 0, "unknown"
-		if override > 0 {
-			tokens, source = override, "override"
-		} else if probedValue := probed[accountRef][modelID]; probedValue > 0 {
-			tokens, source = probedValue, "probed"
-		} else if catalogValue, ok := handler.metadata.LookupContextWindow(provider, modelID); ok && catalogValue > 0 {
-			tokens, source = catalogValue, "catalog"
-		}
-		rows = append(rows, ModelView{Model: modelID, Tokens: tokens, Source: source, Override: override})
+		rows = append(rows, handler.resolveModel(provider, accountRef, modelID, overrides, probed))
 	}
 
 	siblings, credentialType := handler.sameTypeAccounts(ctx, databasePath, provider, accountRef)
@@ -211,6 +210,20 @@ func (handler *Handler) readModelContext(ctx context.Context, provider string, a
 		SameTypeAccounts: siblings,
 		CredentialType:   credentialType,
 	}, nil
+}
+
+// resolveModel 复刻 Node resolveContextWindow：覆盖 > 探测 > 目录 > unknown。
+func (handler *Handler) resolveModel(provider string, accountRef string, modelID string, overrides map[string]map[string]int, probed map[string]map[string]int) ModelView {
+	override := overrides[accountRef][modelID]
+	tokens, source := 0, "unknown"
+	if override > 0 {
+		tokens, source = override, "override"
+	} else if probedValue := probed[accountRef][modelID]; probedValue > 0 {
+		tokens, source = probedValue, "probed"
+	} else if catalogValue, ok := handler.metadata.LookupContextWindow(provider, modelID); ok && catalogValue > 0 {
+		tokens, source = catalogValue, "catalog"
+	}
+	return ModelView{Model: modelID, Tokens: tokens, Source: source, Override: override}
 }
 
 func (handler *Handler) sameTypeAccounts(ctx context.Context, databasePath string, provider string, accountRef string) ([]SiblingView, string) {
@@ -421,7 +434,7 @@ func normalizeTokens(value any) int {
 	default:
 		return 0
 	}
-	if number < minContextTokens || number > maxContextTokens {
+	if number != math.Trunc(number) || number < minContextTokens || number > maxContextTokens {
 		return 0
 	}
 	return int(number)

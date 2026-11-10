@@ -103,6 +103,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
 )
 
 const (
@@ -172,6 +173,8 @@ type serverHandlers struct {
 	webuiAccountConfig http.Handler
 	// webuiModelContext 是账号 × 模型上下文窗口的只读模型与写入入口。
 	webuiModelContext *webuimodelcontextapi.Handler
+	// webuiWindowActivation 是账号窗口激活设置的写入入口（读路径仍在 Node）。
+	webuiWindowActivation http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1338,6 +1341,14 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型上下文接口失败: %w", err)
 	}
+	webuiWindowActivationHandler, err := webuiwindowactivationapi.NewHandler(webuiwindowactivationapi.Dependencies{
+		Authorizer: authorizer,
+		AIHomeDir:  aiHomeDir,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建窗口激活写入接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1771,6 +1782,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiToolkitTargets:   webuiToolkitTargetsHandler,
 		webuiAccountConfig:    webuiAccountConfigHandler,
 		webuiModelContext:     webuiModelContextHandler,
+		webuiWindowActivation: webuiWindowActivationHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

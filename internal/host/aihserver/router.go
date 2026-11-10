@@ -45,6 +45,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -165,6 +166,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 账号配置文件查看：GET 固定读 Go；默认脱敏，raw 模式返回原值。
 	if handlers.webuiAccountConfig != nil {
 		mux.Handle("GET "+webuiaccountconfigapi.Path+"/{provider}/{accountRef}/config-files", handlers.webuiAccountConfig)
+	}
+	// 账号窗口激活：写固定走 Go；读仍由 Node 组装调度器状态。
+	if handlers.webuiWindowActivation != nil {
+		mux.Handle("POST "+webuiwindowactivationapi.Path+"/{provider}/{accountRef}/window-activation", handlers.webuiWindowActivation)
 	}
 	// 账号上下文窗口：读写都固定走 Go。
 	if handlers.webuiModelContext != nil {

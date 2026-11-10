@@ -95,6 +95,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
@@ -175,6 +176,8 @@ type serverHandlers struct {
 	webuiModelContext *webuimodelcontextapi.Handler
 	// webuiWindowActivation 是账号窗口激活设置的写入入口（读路径仍在 Node）。
 	webuiWindowActivation http.Handler
+	// webuiControlPlane 是控制面 profiles 与端点提示。
+	webuiControlPlane http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1349,6 +1352,14 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建窗口激活写入接口失败: %w", err)
 	}
+	webuiControlPlaneHandler, err := webuicontrolplaneapi.NewHandler(webuicontrolplaneapi.Dependencies{
+		Authorizer: authorizer,
+		AIHomeDir:  aiHomeDir,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建控制面接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1783,6 +1794,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiAccountConfig:    webuiAccountConfigHandler,
 		webuiModelContext:     webuiModelContextHandler,
 		webuiWindowActivation: webuiWindowActivationHandler,
+		webuiControlPlane:     webuiControlPlaneHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

@@ -502,6 +502,10 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   返回设置 + `lastProbe` + 窗口账本视图（open/closed/absent/unknown）。Node 保留 provider/
   间隔校验、在 GET 与 POST 响应里合并全局调度器状态；间隔下限由 Node 以运行态
   `minIntervalMs` 随请求下发，Go 夹取到 [1h, 365d]。
+- **控制面 profiles/端点提示切 Go**：Go 新增 `GET|POST /v1/management/webui/control-plane/profiles`、
+  `POST .../profiles/active`、`DELETE .../profiles/{id}` 与 `GET .../endpoints`。profiles 在
+  立即事务里归一化并落 `control-plane:profiles`；端点提示由 Node 传入请求地址/绑定 host/端口，
+  Go 枚举本机网卡生成候选。`/control-plane/bootstrap` 仍由 Node 处理本机密钥。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

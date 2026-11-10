@@ -36,6 +36,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
@@ -169,6 +170,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 账号配置文件查看：GET 固定读 Go；默认脱敏，raw 模式返回原值。
 	if handlers.webuiAccountConfig != nil {
 		mux.Handle("GET "+webuiaccountconfigapi.Path+"/{provider}/{accountRef}/config-files", handlers.webuiAccountConfig)
+	}
+	// 控制面：profiles CRUD 与端点提示固定走 Go；bootstrap 仍由 Node 处理本机密钥。
+	if handlers.webuiControlPlane != nil {
+		mux.Handle("GET "+webuicontrolplaneapi.Path+"/profiles", handlers.webuiControlPlane)
+		mux.Handle("POST "+webuicontrolplaneapi.Path+"/profiles", handlers.webuiControlPlane)
+		mux.Handle("POST "+webuicontrolplaneapi.Path+"/profiles/active", handlers.webuiControlPlane)
+		mux.Handle("DELETE "+webuicontrolplaneapi.Path+"/profiles/{profileId}", handlers.webuiControlPlane)
+		mux.Handle("GET "+webuicontrolplaneapi.Path+"/endpoints", handlers.webuiControlPlane)
 	}
 	// 账号窗口激活：写固定走 Go；读仍由 Node 组装调度器状态。
 	if handlers.webuiWindowActivation != nil {

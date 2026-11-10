@@ -40,6 +40,30 @@ type outcomeRecordingRuntime struct {
 	quotaRefresh *quotaFailureRefresh
 }
 
+// restoreSchedulingRuntime 是内层运行态的可选能力：人工清空账号阻塞。
+//
+// 单独声明而不是并进 serverAccountRuntime：不是所有运行态实现都提供该能力，
+// 但装饰器必须原样转发——按接口断言取能力的调用方（WebUI 强制恢复调度）只看
+// 动态类型的方法集，装饰器少一个方法就会被判成「不支持」，进而拖垮整个启动。
+type restoreSchedulingRuntime interface {
+	RestoreScheduling(ctx context.Context, accountRef accountcore.AccountRef) error
+}
+
+// errRestoreSchedulingUnsupported 表示内层运行态没有提供强制恢复调度。
+var errRestoreSchedulingUnsupported = errors.New("账号运行态不支持强制恢复调度")
+
+// RestoreScheduling 透传给内层运行态，装饰器只做记账、不收窄能力集。
+func (runtime outcomeRecordingRuntime) RestoreScheduling(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) error {
+	restorer, ok := runtime.serverAccountRuntime.(restoreSchedulingRuntime)
+	if !ok {
+		return errRestoreSchedulingUnsupported
+	}
+	return restorer.RestoreScheduling(ctx, accountRef)
+}
+
 // RecordSuccess 记账后计入 success。
 func (runtime outcomeRecordingRuntime) RecordSuccess(
 	ctx context.Context,

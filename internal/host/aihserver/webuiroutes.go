@@ -189,15 +189,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建 provider CLI 升级接口失败: %w", err)
 	}
 
-	restoreRuntime, ok := dependencies.AccountRuntime.(webuirestoreschedulingapi.RuntimeRestorer)
-	if !ok {
-		return nil, fmt.Errorf("创建强制恢复调度接口失败: 运行态不支持 RestoreScheduling")
-	}
-	restoreScheduling, err := webuirestoreschedulingapi.NewHandler(webuirestoreschedulingapi.Dependencies{
-		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Runtime: restoreRuntime,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建强制恢复调度接口失败: %w", err)
+	// 强制恢复调度是可选能力：运行态不提供时**跳过**这条路由，让 Node 继续兜底，
+	// 而不是让一个 WebUI 写接口把整个 Go Core 拖到启动失败。
+	var restoreScheduling http.Handler
+	if restoreRuntime, ok := dependencies.AccountRuntime.(webuirestoreschedulingapi.RuntimeRestorer); ok {
+		restoreScheduling, err = webuirestoreschedulingapi.NewHandler(webuirestoreschedulingapi.Dependencies{
+			Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Runtime: restoreRuntime,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("创建强制恢复调度接口失败: %w", err)
+		}
 	}
 	databasePath, err := appstate.DatabasePath(dependencies.AIHomeDir)
 	if err != nil {
@@ -359,8 +360,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建默认账号接口失败: %w", err)
 	}
 
-	return []webuiRoute{
-		{Pattern: "POST " + webuirestoreschedulingapi.Path + webuirestoreschedulingapi.RouteSuffix, Handler: restoreScheduling},
+	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
@@ -411,5 +411,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},
-	}, nil
+	}
+	if restoreScheduling != nil {
+		routes = append(routes, webuiRoute{
+			Pattern: "POST " + webuirestoreschedulingapi.Path + webuirestoreschedulingapi.RouteSuffix,
+			Handler: restoreScheduling,
+		})
+	}
+	return routes, nil
 }

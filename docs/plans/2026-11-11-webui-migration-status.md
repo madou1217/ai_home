@@ -52,7 +52,29 @@
 | 38 | control-plane 端点提示 | GET | Go | Node 传请求地址/绑定 host/端口，Go 枚举网卡 | `ca0b2290` |
 | 39 | provider CLI 升级状态 | GET | Go+Node | Go 读账本投影，Node 合并 scheduler/lastTick | `dffe9562` |
 
-## 2. 未完成（按优先级）
+## 2. 2026-11-10 运行态事故与约束
+
+### 2.1 Go Core 启动即退出（已修）
+
+现象：`aih-server 启动失败: 创建强制恢复调度接口失败: 运行态不支持 RestoreScheduling`，Go Core 反复重启，管理面全部回落到 Node。
+
+根因：`outcomeRecordingRuntime` 是运行态装饰器，只内嵌了 `serverAccountRuntime` 接口。Go 的类型断言看**动态类型的方法集**，内层 `*inmemory.Runtime` 明明有 `RestoreScheduling`，装饰器没有转发方法就断言失败。而 `buildWebUIRoutes` 当时把它当致命错误，直接终止启动。
+
+修法（两道）：
+1. `account_outcomes.go` 增加 `RestoreScheduling` 透传——装饰器只做记账，不得收窄能力集。
+2. `webuiroutes.go` 把强制恢复调度改成**可选路由**：运行态不提供就跳过挂载（Node 继续兜底），单个 WebUI 写接口不能再拖垮整个 Core。
+
+守卫：`webui_routes_capability_test.go` 断言装饰后仍满足 `RuntimeRestorer`，且内层缺失时返回可识别错误而不是 panic。
+
+### 2.2 旧二进制导致修复"没生效"（运维约束）
+
+现象：`fix(codex-oauth): 回调允许 scope 参数`（`34b605e6`，11-10 16:59）合入后，真机 Codex 登录仍报 `invalid_callback（422）`。
+
+根因：`bin/native/darwin-arm64/aih-server` 是 11-09 构建的（`source_sha=489dedd3`），比修复早一天。supervisor 的 build stamp 只校验 `route_manifest_sha256`，而这次修复没动路由表，摘要一致 → 旧二进制照样通过校验并运行。
+
+约束：**改完 Go 代码必须 `npm run go:build` 再 `HOME=/Users/model aih server restart`**。只看 `git log` 会误判"已修复"。
+
+## 3. 未完成（按优先级）
 
 ### P0 账号写路径（影响日常操作）
 
@@ -120,7 +142,7 @@
 | 45 | `/studio/image/*` | GET/POST | Node | 图片工作室 |
 | 46 | `/terminal/*`（主会话已 Go） | GET/POST | Go+Node | 终端会话数据 Go，宿主 PTY 仍在 Node |
 
-## 3. Provider × 能力矩阵（2026-11-05 盘点，未逐格重审）
+## 4. Provider × 能力矩阵（2026-11-05 盘点，未逐格重审）
 
 112 格：**go 32 / both 20 / node 48 / none 12**。明细见 `docs/plans/2026-11-05-migration-matrix.md`。
 
@@ -134,7 +156,7 @@
 | 活动签到 | 0 | 0 | 5 | 11 | 强风控，短期不迁 |
 | 会话/PTY/SSH | 0 | 2 | 14 | 0 | 宿主级能力，P3 最后做 |
 
-## 4. 建议顺序
+## 5. 建议顺序
 
 1. 账号写路径：`restore-scheduling` → `routing-rules` → `set-default/clear-default` → `update/refresh`。
 2. 诊断读：`provider-cli-upgrade`（Go 拿账本，Node 补 scheduler）→ `provider-hooks`。

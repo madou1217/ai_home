@@ -512,6 +512,9 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **provider CLI 升级 GET 切 Go**：Go 新增 `GET /v1/management/webui/provider-cli-upgrade`，
   读 `<aiHomeDir>/run/provider-cli-upgrade.json`，复刻账本默认值/`pinnable`/`updateAvailable`/
   历史截断；Node 合并 scheduler 与 `lastResult` 的 lastTick 字段，PostgreSQL 式的运行态仍由 Node 持有。
+- **Node Go 代理收敛**：新增 `lib/server/webui-go-proxy.js`（`proxyGo` / `callGoHost` /
+  `writeGoFailure`），10 个 WebUI 路由文件删掉重复的 host 检测、try/catch、成功透传与
+  400/404/409/503 样板；新增能力只声明方法、参数与 transform。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

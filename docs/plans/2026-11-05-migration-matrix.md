@@ -470,6 +470,12 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   只读 `ssh_connections`，复刻 Node `listToolkitTargets`：固定本机目标 + 仅保留
   `conn_<16hex>` 的 SSH 连接，`label` 回落 `host`，展示为 `user@host`。Node GET 固定代理、
   Go 不可用 503；本地 `listToolkitTargets` 已删除，远端执行仍在 Node。
+- **账号配置文件查看 GET 切 Go**：Go 新增 `GET /v1/management/webui/accounts/{provider}/{ref}/config-files`，
+  读 `account_credentials` 与 `run/auth-projections/<provider>/<ref>`，候选路径由 Go 的 Provider
+  合同（`core/providers`）+ 与 Node 相同的凭据布局生成。脱敏：JSON/JSONC 结构遍历逐键匹配
+  （与 Node 的 `redactConfigContent` 共用夹具对拍），TOML/YAML/INI 走保守行级脱敏（不解析
+  重排、绝不返回未脱敏秘密值），SQLite 导出 key/value 表，kiro 的 base64 `data.sqlite3` 解码
+  成 JSON 视图。Node GET 固定代理、Go 不可用 503；Node 侧 `account-config-view.js` 与其测试已删除。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

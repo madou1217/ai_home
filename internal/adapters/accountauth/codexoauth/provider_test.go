@@ -232,6 +232,16 @@ func TestExchangeTable(t *testing.T) {
 			wantTokenCalls: 0,
 		},
 		{
+			name:   "good_callback_with_scope",
+			status: http.StatusOK,
+			body:   fullBody,
+			callback: func(state string) string {
+				return validLoginCallback(state) + "&scope=" + url.QueryEscape("openid profile email offline_access")
+			},
+			wantTokenCalls: 1,
+			wantAccountID:  testLoginAccountID,
+		},
+		{
 			name:           "upstream_4xx",
 			status:         http.StatusBadRequest,
 			body:           `{"error":"invalid_grant"}`,

@@ -32,7 +32,7 @@ func parseCallback(
 	if err != nil {
 		return "", accountauth.ErrInvalidCallback
 	}
-	if !onlyAllowedKeys(query, "code", "state", "error", "error_description") {
+	if !onlyAllowedKeys(query, "code", "state", "scope", "error", "error_description") {
 		return "", accountauth.ErrInvalidCallback
 	}
 	state, valid := singleValue(query, "state")

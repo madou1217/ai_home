@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiappentriesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
@@ -25,20 +26,28 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuifsreadapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifstreeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifstrustapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuigitapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuimanagementkeyapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimobileaccountapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelswriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderclearbrokenapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisessionpreviewsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
@@ -360,6 +369,70 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建默认账号接口失败: %w", err)
 	}
 
+	// 宿主面只读能力：git / 项目聚合 / slash 命令 / 应用入口 / 工具链环境。
+	// 统一以 HostHomeDir 为边界，越界由各包自己拒绝。
+	gitRead, err := webuigitapi.NewHandler(webuigitapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 git 只读接口失败: %w", err)
+	}
+	projects, err := webuiprojectsapi.NewHandler(webuiprojectsapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AiHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建项目聚合接口失败: %w", err)
+	}
+	slashCommands, err := webuislashcommandsapi.NewHandler(webuislashcommandsapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 slash 命令接口失败: %w", err)
+	}
+	appEntries, err := webuiappentriesapi.NewHandler(webuiappentriesapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建应用入口探测接口失败: %w", err)
+	}
+	toolkitEnvironments, err := webuitoolkitruntimeapi.NewHandler(webuitoolkitruntimeapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建工具链环境接口失败: %w", err)
+	}
+	sessionPreviews, err := webuisessionpreviewsapi.NewHandler(webuisessionpreviewsapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建会话预览接口失败: %w", err)
+	}
+
+	managementKeySource, err := webuimanagementkeyapi.OpenSource(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("创建管理密钥数据源失败: %w", err)
+	}
+	managementKey, err := webuimanagementkeyapi.NewHandler(webuimanagementkeyapi.Dependencies{
+		Authorizer: authorizer, Store: managementKeySource,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建管理密钥轮换接口失败: %w", err)
+	}
+	clearBroken, err := webuiproviderclearbrokenapi.NewHandler(webuiproviderclearbrokenapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Catalog: dependencies.Catalog,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建解除升级熔断接口失败: %w", err)
+	}
+	openaiModelsWrite, err := webuiopenaimodelswriteapi.NewHandler(webuiopenaimodelswriteapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+		Store:   webuiopenaimodelswriteapi.DatabaseStore{DatabasePath: databasePath},
+		Catalog: dependencies.Store,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 OpenAI 模型写入接口失败: %w", err)
+	}
+
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
@@ -411,6 +484,17 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},
+		{Pattern: "GET " + webuigitapi.Path + webuigitapi.SummarySuffix, Handler: gitRead},
+		{Pattern: "GET " + webuigitapi.Path + webuigitapi.DiffSuffix, Handler: gitRead},
+		{Pattern: "GET " + webuiprojectsapi.Path, Handler: projects},
+		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
+		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
+		{Pattern: "GET " + webuitoolkitruntimeapi.Path, Handler: toolkitEnvironments},
+		{Pattern: "POST " + webuisessionpreviewsapi.Path, Handler: sessionPreviews},
+		{Pattern: "POST " + webuimanagementkeyapi.Path, Handler: managementKey},
+		{Pattern: "POST " + webuiproviderclearbrokenapi.Path + webuiproviderclearbrokenapi.ClearBrokenSuffix, Handler: clearBroken},
+		{Pattern: "POST " + webuiopenaimodelswriteapi.RefreshPath, Handler: openaiModelsWrite},
+		{Pattern: "POST " + webuiopenaimodelswriteapi.DeletePath, Handler: openaiModelsWrite},
 	}
 	if restoreScheduling != nil {
 		routes = append(routes, webuiRoute{

@@ -29,3 +29,11 @@ func (source *Source) ReadServerConfig(ctx context.Context) (string, bool, error
 	}
 	return appstate.ReadKV(ctx, source.databasePath, serverConfigKey)
 }
+
+// UpdateServerConfig 在立即事务里读改写 config:server。
+func (source *Source) UpdateServerConfig(ctx context.Context, mutate func(current string, found bool) (string, error)) error {
+	if source == nil {
+		return nil
+	}
+	return appstate.UpdateKV(ctx, source.databasePath, serverConfigKey, mutate)
+}

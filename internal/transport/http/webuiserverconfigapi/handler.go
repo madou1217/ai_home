@@ -42,9 +42,11 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Store 读取 Node 的 config:server 原文。
+// Store 读写 Node 的 config:server 原文。
 type Store interface {
 	ReadServerConfig(ctx context.Context) (string, bool, error)
+	// UpdateServerConfig 在立即事务里读改写 config:server。
+	UpdateServerConfig(ctx context.Context, mutate func(current string, found bool) (string, error)) error
 }
 
 // Dependencies 汇总只读依赖。
@@ -107,7 +109,7 @@ type errorView struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ServeHTTP 只接受 GET。
+// ServeHTTP 接受 GET/POST：GET 读公开视图，POST 合并并写回 config:server。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.store == nil {
 		writeError(response, http.StatusServiceUnavailable, "server_config_unavailable", "server 配置服务不可用")
@@ -118,9 +120,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
+		return
+	}
+	if request.Method == http.MethodPost {
+		handler.writeConfig(response, request)
 		return
 	}
 	raw, found, err := handler.store.ReadServerConfig(request.Context())
@@ -137,6 +143,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func sanitizeServerConfigFromJSON(raw string, found bool) (ConfigView, error) {
+	config, err := sanitizeFullServerConfigFromJSON(raw, found)
+	if err != nil {
+		return ConfigView{}, err
+	}
+	return publicServerConfig(config), nil
+}
+
+// sanitizeFullServerConfigFromJSON 是写路径用的完整配置（保留密钥，不设 configured 标志）。
+func sanitizeFullServerConfigFromJSON(raw string, found bool) (ConfigView, error) {
 	input := map[string]any{}
 	if found && strings.TrimSpace(raw) != "" {
 		var decoded any
@@ -205,8 +220,8 @@ func sanitizeServerConfig(input map[string]any) ConfigView {
 	config := ConfigView{
 		Host:                              host,
 		Port:                              normalizeServerPort(input["port"]),
-		APIKey:                            "",
-		ManagementKey:                     "",
+		APIKey:                            apiKey,
+		ManagementKey:                     managementKey,
 		OpenNetwork:                       openNetwork,
 		ProxyURL:                          strings.TrimSpace(jsString(valueOrNil(input["proxyUrl"]))),
 		NoProxy:                           strings.TrimSpace(jsString(valueOrNil(input["noProxy"]))),
@@ -226,8 +241,6 @@ func sanitizeServerConfig(input map[string]any) ConfigView {
 		MaxAttempts:                       clampNumber(input["maxAttempts"], 0, 32, 0),
 		EgressEvidenceTTLMs:               egressTTL,
 		LargePasteChars:                   normalizeLargePasteChars(input["largePasteChars"]),
-		APIKeyConfigured:                  apiKey != "",
-		ManagementKeyConfigured:           managementKey != "",
 	}
 	if value, ok := input["modelCacheSync"]; ok && value == "scheduler" {
 		config.ModelCacheSync = "scheduler"

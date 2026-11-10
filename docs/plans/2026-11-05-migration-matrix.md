@@ -463,11 +463,12 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   远端工作区补 `run/remote-workspaces/<id>` 影子目录；终端状态在 Go 内按 `remote-ws:<id>`
   探测同一个 tmux store，不再由 Node 逐个 workspace 发 N 次请求。Node 三条 GET 固定代理、
   Go 不可用 503，增删改与终端创建仍在 Node。
-- **server 配置 GET 切 Go**：Go 新增 `GET /v1/management/webui/server-config`，只读
-  app-state.db 的 `config:server`，复刻 Node `sanitizeServerConfig` 的默认值/夹取/归一化，并按
-  `toPublicServerConfig` 隐藏 apiKey/managementKey（保留 configured 标志）。两侧共用
-  `test/fixtures/server-config-sanitize-cases.json` 对拍；Node GET 固定代理、Go 不可用 503，
-  POST 写配置仍在 Node。
+- **server 配置读写切 Go**：Go 新增 `GET|POST /v1/management/webui/server-config`。读路径复刻
+  Node `sanitizeServerConfig` 的默认值/夹取/归一化，响应按 `toPublicServerConfig` 隐藏
+  apiKey/managementKey（保留 configured 标志）；写路径在立即事务里把 patch 合并进当前完整
+  配置（保留未知键之外的 Node 已知键规则，空 apiKey 不覆盖），整份落库后再返回公开视图。
+  两侧共用 `test/fixtures/server-config-sanitize-cases.json` 对拍；Node GET/POST 固定代理、
+  Go 不可用 503，Management Key 变更仍由 Node 拒绝并指向专用轮换接口。
 - **toolkit 执行目标 GET 切 Go**：Go 新增 `GET /v1/management/webui/toolkit/environments/targets`，
   只读 `ssh_connections`，复刻 Node `listToolkitTargets`：固定本机目标 + 仅保留
   `conn_<16hex>` 的 SSH 连接，`label` 回落 `host`，展示为 `user@host`。Node GET 固定代理、

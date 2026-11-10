@@ -157,9 +157,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.webuiSSHSessions != nil {
 		mux.Handle("GET "+webuisshapi.WorkspaceSessionsPath, handlers.webuiSSHSessions)
 	}
-	// server 配置：GET 固定读 Go（公开视图，密钥隐藏）；POST 写配置仍在 Node。
+	// server 配置：读写都固定走 Go（响应为公开视图，密钥隐藏）。
 	if handlers.webuiServerConfig != nil {
 		mux.Handle("GET "+webuiserverconfigapi.Path, handlers.webuiServerConfig)
+		mux.Handle("POST "+webuiserverconfigapi.Path, handlers.webuiServerConfig)
 	}
 	// toolkit 执行目标：GET 固定读 Go；远端执行仍在 Node。
 	if handlers.webuiToolkitTargets != nil {

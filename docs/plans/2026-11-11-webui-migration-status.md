@@ -3,7 +3,7 @@
 > 口径：**Go** = 数据面/持久化在 Go，Node 只做参数预校验与代理；**Go+Node** = 数据在 Go，运行态/调度器视图仍由 Node 合并；**Node** = 主要实现仍在 Node。
 > 统计只覆盖 WebUI 管理面（`/v0/webui/*` 与其 Go 对应 `/v1/management/webui/*`），不含推理前门。
 
-## 1. 已完成（按提交时间倒序）
+## 1. 已完成（38 项，按提交时间倒序）
 
 | # | 能力/接口 | 方法 | 归属 | 说明 | 提交 |
 | --- | --- | --- | --- | --- | --- |
@@ -40,6 +40,16 @@
 | 31 | 账号删除/清理 | DELETE | Go | 删除投影 + 宿主清理 | `d7c6f67b` / `6d095eb7` |
 | 32 | 登录作业 | POST/轮询 | Go | codex/claude/opencode/zcode/agy/kiro 浏览器登录 | `58cc1311` 等 6 个提交 |
 | 33 | 历史用量导入 | POST | Go | 幂等批量导入 | `d4921e1d` |
+
+### 2026-11-11 追加（控制面，5 项）
+
+| # | 接口/能力 | 方法 | 归属 | 说明 | 提交 |
+| --- | --- | --- | --- | --- | --- |
+| 34 | control-plane profiles 列表 | GET | Go | 归一化后返回 profiles/activeProfileId | `ca0b2290` |
+| 35 | control-plane profile 保存 | POST | Go | 立即事务归一化落库 | `ca0b2290` |
+| 36 | control-plane 激活 profile | POST | Go | activeProfileId 校验后落库 | `ca0b2290` |
+| 37 | control-plane 删除 profile | DELETE | Go | 删除并清理 active | `ca0b2290` |
+| 38 | control-plane 端点提示 | GET | Go | Node 传请求地址/绑定 host/端口，Go 枚举网卡 | `ca0b2290` |
 
 ## 2. 未完成（按优先级）
 
@@ -85,7 +95,7 @@
 | --- | --- | --- | --- | --- |
 | 27 | `/server-config/management-key/rotate` | POST | Node | 安全敏感的即时轮换 |
 | 28 | `/server/restart` | POST | Node | 进程生命周期 |
-| 29 | `/control-plane/*` | GET/POST | Node | profiles 归一化 + 本机引导 |
+| 29 | `/control-plane/bootstrap` | GET | Node | 本机页面引导，需要回传当前 Management Key |
 | 30 | `/egress-pool*`、`/egress-upstreams*`、`/egress-evidence*` | GET/POST | Node | 出口池运行态与证据 |
 | 31 | `/accounts/:p/:r/egress` | GET/POST | Node | 账号出口绑定（不建议先做） |
 | 32 | `/toolkit/environments`、`/guide`、`/jobs`、`/plan`、`/execute` | GET/POST | Node | 14 类工具与运行时探测 |
@@ -127,5 +137,5 @@
 
 1. 账号写路径：`restore-scheduling` → `routing-rules` → `set-default/clear-default` → `update/refresh`。
 2. 诊断读：`provider-cli-upgrade`（Go 拿账本，Node 补 scheduler）→ `provider-hooks`。
-3. 设置：`control-plane/profiles` → `server/restart`（最后，属进程控制）。
+3. 设置：`server/restart`（最后，属进程控制）；`control-plane/bootstrap` 留在 Node。
 4. 宿主面：SSH 写/隧道 → sessions/projects/fs/git/chat（放最后，收益低于风险）。

@@ -37,25 +37,11 @@ type bulkWriteResponse struct {
 // writeSingle 处理单账号写入：POST /.../{provider}/{accountRef}/model-context。
 func (handler *Handler) writeSingle(response http.ResponseWriter, request *http.Request, provider string, accountRef string) {
 	ctx := request.Context()
-	databasePath, err := appstate.DatabasePath(handler.aiHomeDir)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, "model_context_write_failed", err.Error())
+	databasePath, failure := handler.verifyAccount(ctx, provider, accountRef)
+	if failure != nil {
+		writeError(response, failure.status, failure.code, failure.message)
 		return
 	}
-	owner, found, err := appstate.LookupAccountProvider(ctx, databasePath, accountRef)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, "model_context_write_failed", err.Error())
-		return
-	}
-	if !found {
-		writeError(response, http.StatusNotFound, "account_not_found", "未找到 "+provider+" 账号 "+accountRef)
-		return
-	}
-	if strings.ToLower(strings.TrimSpace(owner)) != provider {
-		writeError(response, http.StatusConflict, "account_provider_mismatch", "")
-		return
-	}
-
 	payload, failure := parseWritePayload(response, request)
 	if failure != nil {
 		writeError(response, failure.status, failure.code, failure.message)
@@ -71,7 +57,48 @@ func (handler *Handler) writeSingle(response http.ResponseWriter, request *http.
 		writeError(response, http.StatusBadRequest, "context_tokens_out_of_range", "")
 		return
 	}
+	handler.saveSingle(ctx, response, databasePath, provider, accountRef, modelID, tokens, clearing)
+}
 
+// clearSingle 是 POST 清空的 DELETE 别名：DELETE /.../{provider}/{accountRef}/model-context?model=xxx。
+//
+// 语义与 POST body { model, tokens: null } 完全相同，只是把「删掉这条覆盖」表达成
+// HTTP DELETE；响应仍是完整覆盖表与 resolved。
+func (handler *Handler) clearSingle(response http.ResponseWriter, request *http.Request, provider string, accountRef string) {
+	modelID := strings.TrimSpace(request.URL.Query().Get("model"))
+	if modelID == "" {
+		writeError(response, http.StatusBadRequest, "account_and_model_required", "")
+		return
+	}
+	ctx := request.Context()
+	databasePath, failure := handler.verifyAccount(ctx, provider, accountRef)
+	if failure != nil {
+		writeError(response, failure.status, failure.code, failure.message)
+		return
+	}
+	handler.saveSingle(ctx, response, databasePath, provider, accountRef, modelID, 0, true)
+}
+
+// verifyAccount 校验账号存在且属于该 provider；返回 app-state.db 路径。
+func (handler *Handler) verifyAccount(ctx context.Context, provider string, accountRef string) (string, *apiError) {
+	databasePath, err := appstate.DatabasePath(handler.aiHomeDir)
+	if err != nil {
+		return "", &apiError{status: 500, code: "model_context_write_failed", message: err.Error()}
+	}
+	owner, found, err := appstate.LookupAccountProvider(ctx, databasePath, accountRef)
+	if err != nil {
+		return "", &apiError{status: 500, code: "model_context_write_failed", message: err.Error()}
+	}
+	if !found {
+		return "", &apiError{status: 404, code: "account_not_found", message: "未找到 " + provider + " 账号 " + accountRef}
+	}
+	if strings.ToLower(strings.TrimSpace(owner)) != provider {
+		return "", &apiError{status: 409, code: "account_provider_mismatch"}
+	}
+	return databasePath, nil
+}
+
+func (handler *Handler) saveSingle(ctx context.Context, response http.ResponseWriter, databasePath string, provider string, accountRef string, modelID string, tokens int, clearing bool) {
 	overrides, readErr := readOverrides(ctx, databasePath)
 	if readErr != nil {
 		writeError(response, http.StatusBadRequest, "storage_write_failed", readErr.Error())
@@ -82,7 +109,6 @@ func (handler *Handler) writeSingle(response http.ResponseWriter, request *http.
 		writeError(response, http.StatusBadRequest, "storage_write_failed", writeErr.Error())
 		return
 	}
-
 	probed, probedErr := readProbedLimits(ctx, databasePath)
 	if probedErr != nil {
 		probed = map[string]map[string]int{}

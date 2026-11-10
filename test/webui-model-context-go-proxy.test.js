@@ -139,3 +139,45 @@ test('模型上下文 POST：非法 JSON 400，不调用 Go', async () => {
   assert.equal(result.captured.payload.error, 'invalid_json_body');
   assert.equal(result.forwarded, null);
 });
+
+async function callDelete(options = {}) {
+  let captured;
+  let forwarded = null;
+  const deps = options.goResponse === undefined ? {} : {
+    goCoreSync: {
+      clearAccountModelContext: async (provider, accountRef, model) => {
+        forwarded = { provider, accountRef, model };
+        return options.goResponse;
+      }
+    }
+  };
+  const pathname = '/v0/webui/accounts/codex/' + ACCOUNT_REF + '/model-context';
+  const ctx = {
+    method: 'DELETE',
+    pathname,
+    url: new URL('http://127.0.0.1' + pathname + (options.query || '?model=gpt-5')),
+    res: {},
+    deps,
+    fs: {},
+    aiHomeDir: '/tmp/ai-home',
+    writeJson: (_res, status, payload) => { captured = { status, payload }; }
+  };
+  const handled = await handleModelContextRequest(ctx);
+  return { handled, captured, forwarded };
+}
+
+test('模型上下文 DELETE：清空别名转发 Go 并透传响应', async () => {
+  const data = { ok: true, overrides: {}, resolved: { model: 'gpt-5', tokens: 0, source: 'unknown', override: 0 } };
+  const result = await callDelete({ goResponse: { ok: true, status: 200, data } });
+  assert.equal(result.handled, true);
+  assert.equal(result.captured.status, 200);
+  assert.deepEqual(result.captured.payload, data);
+  assert.deepEqual(result.forwarded, { provider: 'codex', accountRef: ACCOUNT_REF, model: 'gpt-5' });
+});
+
+test('模型上下文 DELETE：Go 的 400 透传', async () => {
+  const data = { ok: false, error: 'account_and_model_required' };
+  const result = await callDelete({ query: '', goResponse: { ok: false, status: 400, data } });
+  assert.equal(result.captured.status, 400);
+  assert.deepEqual(result.captured.payload, data);
+});

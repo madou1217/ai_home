@@ -127,3 +127,39 @@ func TestWriteValidation(t *testing.T) {
 		t.Fatalf("mismatch status = %d", recorder.Code)
 	}
 }
+
+func TestDeleteClearsOverride(t *testing.T) {
+	aiHomeDir := t.TempDir()
+	seedAppState(t, aiHomeDir)
+	handler := newTestHandler(t, aiHomeDir, fakeMetadata{})
+	base := Path + "/codex/" + mainRef + "/model-context"
+
+	recorder, _ := postJSON(t, handler, base, map[string]any{"model": "gpt-5", "tokens": 50000})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("set status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, base+"?model=gpt-5", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	overrides := payload["overrides"].(map[string]any)
+	if _, exists := overrides[mainRef]; exists {
+		t.Fatalf("override not cleared: %#v", overrides)
+	}
+	resolved := payload["resolved"].(map[string]any)
+	if resolved["tokens"] != float64(0) || resolved["source"] != "unknown" {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, base, nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("missing model status = %d", recorder.Code)
+	}
+}

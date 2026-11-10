@@ -97,6 +97,7 @@ func newTestHandler(t *testing.T, aiHomeDir string, metadata Metadata) http.Hand
 	mux := http.NewServeMux()
 	mux.Handle("GET "+Path+"/{provider}/{accountRef}/model-context", handler)
 	mux.Handle("POST "+Path+"/{provider}/{accountRef}/model-context", handler)
+	mux.Handle("DELETE "+Path+"/{provider}/{accountRef}/model-context", handler)
 	mux.Handle("POST "+Path+"/{provider}/model-context/bulk", http.HandlerFunc(handler.ServeBulkHTTP))
 	return mux
 }

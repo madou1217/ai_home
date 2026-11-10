@@ -169,6 +169,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.webuiModelContext != nil {
 		mux.Handle("GET "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
 		mux.Handle("POST "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
+		mux.Handle("DELETE "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
 		mux.Handle("POST "+webuimodelcontextapi.Path+"/{provider}/model-context/bulk", http.HandlerFunc(handlers.webuiModelContext.ServeBulkHTTP))
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的

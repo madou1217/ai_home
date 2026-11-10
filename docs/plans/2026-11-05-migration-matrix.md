@@ -486,7 +486,9 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   与 `/.../{provider}/model-context/bulk`，成为 `config:model-context-overrides` 的唯一写者
   （`BEGIN IMMEDIATE` 读改写，避免并发丢更新）；单账号写入返回 `resolved`，批量返回整表。
   校验与 Node 对齐：`tokens` 0/null/空串 = 清除，其余必须是 1024..2000000 的整数。
-  Node 两条 POST 固定代理、400/404/409 透传、Go 不可用 503；Node 的
+  新增 `DELETE /.../{provider}/{ref}/model-context?model=xxx` 作为清空别名（语义与
+  POST `tokens:null` 相同，响应同形）。
+  Node 两条 POST 与 DELETE 固定代理、400/404/409 透传、Go 不可用 503；Node 的
   `setContextOverride/setContextOverridesForAccounts/writeOverrides` 已删除。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在

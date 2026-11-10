@@ -138,9 +138,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodGet && request.Method != http.MethodPost {
-		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost && request.Method != http.MethodDelete {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost+", "+http.MethodDelete)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST/DELETE")
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(request.PathValue("provider")))
@@ -151,6 +151,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	if request.Method == http.MethodPost {
 		handler.writeSingle(response, request, provider, accountRef)
+		return
+	}
+	if request.Method == http.MethodDelete {
+		handler.clearSingle(response, request, provider, accountRef)
 		return
 	}
 	result, failure := handler.readModelContext(request.Context(), provider, accountRef, request.URL.Query().Get("models"))

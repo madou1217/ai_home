@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -39,6 +40,8 @@ type Dependencies struct {
 	Authorizer  Authorizer
 	Overviews   accountsapi.OverviewLister
 	Credentials accountsapi.CredentialSnapshotReader
+	// Resolver 是 Node→Go 账号引用的翻译器；零值等价于「未启用同步」的恒等翻译。
+	Resolver accountrefmap.Resolver
 }
 
 // Handler 是账号集合导出的 HTTP 入站适配器。
@@ -46,6 +49,7 @@ type Handler struct {
 	authorizer  Authorizer
 	overviews   accountsapi.OverviewLister
 	credentials accountsapi.CredentialSnapshotReader
+	resolver    accountrefmap.Resolver
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -59,6 +63,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer:  dependencies.Authorizer,
 		overviews:   dependencies.Overviews,
 		credentials: dependencies.Credentials,
+		resolver:    dependencies.Resolver,
 	}, nil
 }
 
@@ -79,7 +84,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "只支持读取出账号导出")
 		return
 	}
-	filters, err := accountsapi.ParseExportFilters(request.URL.Query())
+	query, err := handler.translateExportQuery(request.URL.Query())
+	if err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_export_query", "导出过滤参数无效")
+		return
+	}
+	filters, err := accountsapi.ParseExportFilters(query.values)
 	if err != nil {
 		writeError(response, http.StatusBadRequest, "invalid_export_query", "导出过滤参数无效")
 		return
@@ -94,12 +104,25 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusServiceUnavailable, "webui_accounts_export_failed", "账号导出失败")
 		return
 	}
+	// 指定了 accountRef 却一个都没导出：与 Node 入口一致回 404，而不是空集合 200。
+	if query.hasRefs && result.Exported == 0 {
+		writeError(response, http.StatusNotFound, "account_not_found", "账号不存在")
+		return
+	}
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("Content-Disposition", `attachment; filename="`+FileName+`"`)
 	response.Header().Set("X-AIH-Exported-Accounts", strconv.Itoa(result.Exported))
 	response.Header().Set("X-AIH-Skipped-Accounts", strconv.Itoa(result.Skipped))
+	// node-only 只在数据可解释时给出：过滤会移出集合成员、跳过的账号也不在文档里，
+	// 两种情况都会把已存在的 Go 账号误算成 Node-only，宁可不发也不发错数。
+	if links := handler.resolverLinks(); links != nil &&
+		!query.hasProviders && !query.hasRefs && result.Skipped == 0 {
+		if count, ok := nodeOnlyAccounts(links, result.Document); ok {
+			response.Header().Set(NodeOnlyAccountsHeader, strconv.Itoa(count))
+		}
+	}
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(result.Document)
 	_, _ = response.Write([]byte{'\n'})

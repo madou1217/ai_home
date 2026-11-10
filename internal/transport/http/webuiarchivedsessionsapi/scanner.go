@@ -6,9 +6,8 @@
 //	~/.gemini/tmp/<project>/chats/.archived/*.json
 //
 // 对应 Node lib/server/session-lifecycle/legacy-archive-recovery.js 的 list()。
-// Codex 原生归档由 app-server stdio 生命周期策略产生（运行时解析 + capabilities
-// 探测），Go 尚未拥有。因此响应固定带 scope=legacy，明确这是历史归档的完整
-// 结果，而不是把缺失的原生条目伪装成空列表。
+// Codex 原生归档由 codex.go 通过 app-server stdio 读取；这里只负责历史文件，
+// 两者在 handler 里合并后按归档时间排序。
 package webuiarchivedsessionsapi
 
 import (
@@ -32,10 +31,12 @@ type Entry struct {
 	Title          string `json:"title"`
 	Provider       string `json:"provider"`
 	ProjectDirName string `json:"projectDirName"`
-	Origin         string `json:"origin"`
-	CanUnarchive   bool   `json:"canUnarchive"`
-	UpdatedAt      int64  `json:"updatedAt"`
-	ArchivedAt     int64  `json:"archivedAt"`
+	// ProjectPath 只有原生归档带（cwd 绝对路径）；历史归档按目录名投影。
+	ProjectPath  string `json:"projectPath,omitempty"`
+	Origin       string `json:"origin"`
+	CanUnarchive bool   `json:"canUnarchive"`
+	UpdatedAt    int64  `json:"updatedAt"`
+	ArchivedAt   int64  `json:"archivedAt"`
 }
 
 type claudeRecord struct {
@@ -71,10 +72,15 @@ func scanLegacyArchives(hostHomeDir string) []Entry {
 	entries := make([]Entry, 0)
 	entries = append(entries, scanClaudeArchives(hostHomeDir)...)
 	entries = append(entries, scanGeminiArchives(hostHomeDir)...)
+	sortEntries(entries)
+	return entries
+}
+
+// sortEntries 按归档时间倒序；同一时间戳保持稳定顺序。
+func sortEntries(entries []Entry) {
 	sort.SliceStable(entries, func(left, right int) bool {
 		return entryTimestamp(entries[left]) > entryTimestamp(entries[right])
 	})
-	return entries
 }
 
 func scanClaudeArchives(hostHomeDir string) []Entry {

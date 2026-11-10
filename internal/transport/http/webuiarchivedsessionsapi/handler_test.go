@@ -18,16 +18,9 @@ func (fake fakeAuthorizer) Authorized(*http.Request) bool { return fake.allowed 
 
 func newTestHandler(t *testing.T, home string) http.Handler {
 	t.Helper()
-	handler, err := NewHandler(Dependencies{
-		Authorizer:  fakeAuthorizer{allowed: true},
-		HostHomeDir: home,
-	})
-	if err != nil {
-		t.Fatalf("NewHandler() error = %v", err)
-	}
-	mux := http.NewServeMux()
-	mux.Handle(Path, handler)
-	return mux
+	// 历史归档用例走一个「没有原生归档」的假 app-server，
+	// 保证 errors 只反映真实失败。
+	return newTestHandlerWithCodex(t, home, emptyCodexCommandResolver(t))
 }
 
 func writeFixture(t *testing.T, path, body string, modifiedAt time.Time) {
@@ -103,7 +96,7 @@ func TestReturnsLegacyArchivesAndScope(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !payload.OK || payload.Scope != ScopeLegacy {
+	if !payload.OK || payload.Scope != ScopeAll {
 		t.Fatalf("ok=%v scope=%q", payload.OK, payload.Scope)
 	}
 	if len(payload.Errors) != 0 {

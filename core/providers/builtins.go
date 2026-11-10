@@ -95,6 +95,8 @@ func builtinCodex() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "hooks.json",
+			// nativeBoundary.hooks.files 声明的 hooks.json 落在 cli.globalDir 下。
+			Hook: &HookFormat{Target: []string{".codex", "hooks.json"}},
 			// PermissionRequest / Interrupt feed the terminal title's "waiting for you"
 			// and "interrupted" frames (codex 0.166 hook engine; schema verified from the binary).
 			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Interrupt", "Stop"},
@@ -157,7 +159,9 @@ func builtinGemini() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "settings.json",
-			Events:     []string{"SessionStart", "BeforeAgent", "AfterAgent", "SessionEnd"},
+			// nativeBoundary.hooks.files 声明的 settings.json 落在 cli.globalDir 下。
+			Hook:   &HookFormat{Target: []string{".gemini", "settings.json"}},
+			Events: []string{"SessionStart", "BeforeAgent", "AfterAgent", "SessionEnd"},
 		},
 		CLI: &CLIConfig{
 			Order:      2,
@@ -190,6 +194,8 @@ func builtinClaude() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "settings.json",
+			// nativeBoundary.hooks.files 声明的 settings.json 落在 cli.globalDir 下。
+			Hook: &HookFormat{Target: []string{".claude", "settings.json"}},
 			// Notification (permission_prompt / idle_prompt / elicitation_dialog) and
 			// PermissionRequest feed the terminal title's "waiting for you" frame.
 			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd"},
@@ -244,7 +250,10 @@ func builtinAntigravity() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "agy_named_hooks",
 			TargetKind: "hooks.json",
-			Events:     []string{"PreInvocation", "PostInvocation", "Stop"},
+			// nativeBoundary.hooks.files 的第一个用户级文件是宿主 home 相对的
+			// .gemini/config/hooks.json（其余是项目级 .agents/hooks.json 与插件目录）。
+			Hook:   &HookFormat{Target: []string{".gemini", "config", "hooks.json"}},
+			Events: []string{"PreInvocation", "PostInvocation", "Stop"},
 		},
 		CLI: &CLIConfig{
 			Order:        1,
@@ -297,7 +306,9 @@ func builtinOpenCode() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "opencode_plugin",
 			TargetKind: "plugin.js",
-			Events:     []string{},
+			// nativeBoundary.hooks.files 的 plugin/aih-session-hook.js 相对 cli.globalDir。
+			Hook:   &HookFormat{Target: []string{".config", "opencode", "plugin", "aih-session-hook.js"}},
+			Events: []string{},
 		},
 		CLI: &CLIConfig{
 			Order:      5,
@@ -341,7 +352,9 @@ func builtinGrok() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "hooks.json",
-			Events:     []string{"SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"},
+			// nativeBoundary.hooks.files 已写成宿主 home 相对的 .grok/hooks.json。
+			Hook:   &HookFormat{Target: []string{".grok", "hooks.json"}},
+			Events: []string{"SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"},
 		},
 		CLI: &CLIConfig{
 			Order:      6,

@@ -225,6 +225,9 @@ type SessionSync struct {
 	Adapter    string          `json:"adapter,omitempty"`
 	TargetKind string          `json:"targetKind,omitempty"`
 	Events     []string        `json:"events"`
+	// Hook 是写文件所需的格式档案；nil 表示合同没有这项声明。
+	// 只有 Mode=hook 时才能非 nil（见 validateSessionSync）。
+	Hook *HookFormat `json:"hook,omitempty"`
 }
 
 // CLIConfig 描述原生 CLI 的发现、登录和账号隔离参数。

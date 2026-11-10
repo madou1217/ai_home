@@ -93,6 +93,7 @@ func cloneDefinition(source Definition) Definition {
 	target.Capabilities = append([]Capability(nil), source.Capabilities...)
 	target.AuthOptions = append([]AuthOption(nil), source.AuthOptions...)
 	target.SessionSync.Events = append([]string(nil), source.SessionSync.Events...)
+	target.SessionSync.Hook = cloneHookFormat(source.SessionSync.Hook)
 	if source.CLI != nil {
 		cli := *source.CLI
 		cli.LoginArgs = append([]string(nil), source.CLI.LoginArgs...)
@@ -123,6 +124,26 @@ func cloneDefinition(source Definition) Definition {
 		target.NativeBoundary = &native
 	}
 	return target
+}
+
+// cloneHookFormat 深复制 SessionSync 里的 Hook 格式，避免调用方改到合同缓存。
+func cloneHookFormat(source *HookFormat) *HookFormat {
+	if source == nil {
+		return nil
+	}
+	target := *source
+	target.Target = append([]string(nil), source.Target...)
+	if len(source.EventMatchers) > 0 {
+		target.EventMatchers = make(map[string]string, len(source.EventMatchers))
+		for event, matcher := range source.EventMatchers {
+			target.EventMatchers[event] = matcher
+		}
+	}
+	if source.FeatureFlag != nil {
+		flag := *source.FeatureFlag
+		target.FeatureFlag = &flag
+	}
+	return &target
 }
 
 // cloneDesktopClient 深复制桌面客户端平台配置。

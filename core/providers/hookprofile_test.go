@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -41,8 +42,8 @@ func boolPointer(value bool) *bool {
 
 // validCodexHookProfile 是一份**完整**的 codex 档案。
 //
-// 它现在只用于证明校验器能接受齐全数据：内置合同里这些字段没有真值源，
-// 所以 DeriveHookProfile 不会产出它们（见下一个测试）。
+// 它用于证明校验器能接受齐全数据：target 现在由合同声明，timeoutUnit /
+// eventMatchers / featureFlag 仍没有 Go 真值源，由本函数合成。
 func validCodexHookProfile() HookProfile {
 	return HookProfile{
 		Supported:     true,
@@ -84,18 +85,73 @@ func TestDeriveHookProfileMatchesSessionSync(t *testing.T) {
 	}
 }
 
-// TestDeriveHookProfileLeavesUndeclaredDataEmpty 记录「数据缺失」这一事实。
+// hookTargetSource 从内置合同的既有事实重建预期 target：
+// cli.globalDir（宿主 home 相对）加 nativeBoundary.hooks.files 的第一个文件；
+// 文件本身已带 globalDir 前缀时（grok / agy）只保留一次。
+func hookTargetSource(t *testing.T, definition Definition) []string {
+	t.Helper()
+	if definition.CLI == nil {
+		t.Fatalf("%s: 缺少 cli 配置，无法定位 hook 路径", definition.ID)
+	}
+	globalDir := strings.Trim(strings.TrimSpace(definition.CLI.GlobalDir), "/")
+	if globalDir == "" {
+		t.Fatalf("%s: cli.globalDir 为空，无法定位 hook 路径", definition.ID)
+	}
+	base := strings.Split(globalDir, "/")
+	if definition.NativeBoundary == nil || len(definition.NativeBoundary.Hooks.Files) == 0 {
+		t.Fatalf("%s: 缺少 nativeBoundary.hooks.files，无法定位 hook 文件", definition.ID)
+	}
+	file := strings.Trim(strings.TrimSpace(definition.NativeBoundary.Hooks.Files[0]), "/")
+	parts := strings.Split(file, "/")
+	if len(parts) >= len(base) && slices.Equal(parts[:len(base)], base) {
+		parts = parts[len(base):]
+	}
+	return append(append([]string{}, base...), parts...)
+}
+
+// TestDeriveHookProfilePopulatesTargets 锁定 target 的出处：
+// 只允许由 cli.globalDir + nativeBoundary.hooks.files 组合而成，
+// 且必须真的落到合同声明的某个 hook 文件上。
+func TestDeriveHookProfilePopulatesTargets(t *testing.T) {
+	for _, id := range hookProviderIDs(t) {
+		definition := builtinDefinition(t, id)
+		profile := DeriveHookProfile(definition)
+		if definition.SessionSync.Hook == nil {
+			t.Fatalf("%s: 缺少 sessionSync.hook 声明", id)
+		}
+		if len(profile.Target) == 0 {
+			t.Fatalf("%s: 已有 hook 文件事实，target 不能为空", id)
+		}
+		if !slices.Equal(profile.Target, definition.SessionSync.Hook.Target) {
+			t.Fatalf("%s: profile.target=%v 应逐字复制 sessionSync.hook.target=%v",
+				id, profile.Target, definition.SessionSync.Hook.Target)
+		}
+		want := hookTargetSource(t, definition)
+		if !slices.Equal(profile.Target, want) {
+			t.Fatalf("%s: target=%v 与既有事实组合结果 %v 不一致", id, profile.Target, want)
+		}
+		joined := strings.Join(profile.Target, "/")
+		matched := false
+		for _, file := range definition.NativeBoundary.Hooks.Files {
+			if strings.HasSuffix(joined, strings.Trim(strings.TrimSpace(file), "/")) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Fatalf("%s: target=%v 没有落到 nativeBoundary.hooks.files=%v 上",
+				id, profile.Target, definition.NativeBoundary.Hooks.Files)
+		}
+	}
+}
+
+// TestDeriveHookProfileLeavesUndeclaredFormatFieldsEmpty 记录「数据缺失」这一事实。
 //
-// target / timeoutUnit / eventMatchers / featureFlag 在 Go 内置数据里没有真值源，
-// 推导必须留空。用 CLI.GlobalDir + TargetKind 硬拼 target 只在 codex/gemini/claude
-// 上凑巧成立（agy 少一层 config/、grok 是 hooks/aih-session-sync.json、opencode 为空），
-// 那属于猜测而不是读取，因此这里把「留空」变成守卫：谁开始猜，这个测试就红。
-func TestDeriveHookProfileLeavesUndeclaredDataEmpty(t *testing.T) {
+// timeoutUnit / eventMatchers / featureFlag 在 Go 内置数据里没有真值源，推导必须留空。
+// 这里把「留空」变成守卫：谁想补这三项，必须先在合同里给出真值来源，否则测试会红。
+func TestDeriveHookProfileLeavesUndeclaredFormatFieldsEmpty(t *testing.T) {
 	for _, id := range hookProviderIDs(t) {
 		profile := DeriveHookProfile(builtinDefinition(t, id))
-		if len(profile.Target) != 0 {
-			t.Fatalf("%s: target 无真值源，必须留空，实际 %v", id, profile.Target)
-		}
 		if profile.TimeoutUnit != "" {
 			t.Fatalf("%s: timeoutUnit 无真值源，必须留空，实际 %q", id, profile.TimeoutUnit)
 		}
@@ -288,5 +344,167 @@ func TestHookAdapterAndTimeoutUnitValidation(t *testing.T) {
 		if unit.IsValid() {
 			t.Fatalf("未登记 timeoutUnit 被判合法: %q", unit)
 		}
+	}
+}
+
+// mutateBuiltinProvider 在 manifest 副本上修改指定 Provider，避免测试间共享状态。
+func mutateBuiltinProvider(t *testing.T, manifest *Manifest, id string, mutate func(*Definition)) {
+	t.Helper()
+	for index := range manifest.Providers {
+		if manifest.Providers[index].ID == id {
+			mutate(&manifest.Providers[index])
+			return
+		}
+	}
+	t.Fatalf("内置合同缺少 provider: %s", id)
+}
+
+// TestValidateManifestRejectsInvalidHookFormat 覆盖 SessionSync.Hook 的每一类拒绝理由。
+func TestValidateManifestRejectsInvalidHookFormat(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		mutate   func(*Definition)
+		want     string
+	}{
+		{
+			name:     "非 hook Provider 声明 hook 格式",
+			provider: "kimi",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook = &HookFormat{Target: []string{".kimi", "hooks.json"}}
+			},
+			want: "非 hook 同步不能声明 hook 格式",
+		},
+		{
+			name:     "target 段含分隔符",
+			provider: "codex",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook = &HookFormat{Target: []string{".codex/hooks.json"}}
+			},
+			want: "单个路径段",
+		},
+		{
+			name:     "target 含上跳段",
+			provider: "codex",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook = &HookFormat{Target: []string{"..", "hooks.json"}}
+			},
+			want: "不能是",
+		},
+		{
+			name:     "target 含空段",
+			provider: "codex",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook = &HookFormat{Target: []string{".codex", " "}}
+			},
+			want: "为空路径段",
+		},
+		{
+			name:     "未登记的 timeoutUnit",
+			provider: "codex",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook.TimeoutUnit = "nanoseconds"
+			},
+			want: "未知 hook.timeoutUnit",
+		},
+		{
+			name:     "matcher 挂在不存在的事件上",
+			provider: "codex",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook.EventMatchers = map[string]string{"PreInvocation": "always"}
+			},
+			want: "不在 sessionSync.events",
+		},
+		{
+			name:     "matcher 为空",
+			provider: "codex",
+			mutate: func(definition *Definition) {
+				definition.SessionSync.Hook.EventMatchers = map[string]string{"SessionStart": "  "}
+			},
+			want: "matcher 为空",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			manifest := BuiltinManifest()
+			mutateBuiltinProvider(t, &manifest, testCase.provider, testCase.mutate)
+			err := ValidateManifest(manifest)
+			if err == nil {
+				t.Fatal("应拒绝但通过了")
+			}
+			if !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("错误信息应包含 %q，实际: %v", testCase.want, err)
+			}
+		})
+	}
+}
+
+// TestValidateManifestAcceptsDeclaredHookFormatFields 证明合同一旦有真值，
+// timeoutUnit / eventMatchers / featureFlag 会被校验并通过推导原样进入档案。
+func TestValidateManifestAcceptsDeclaredHookFormatFields(t *testing.T) {
+	manifest := BuiltinManifest()
+	mutateBuiltinProvider(t, &manifest, "codex", func(definition *Definition) {
+		definition.SessionSync.Hook.TimeoutUnit = HookTimeoutSeconds
+		definition.SessionSync.Hook.EventMatchers = map[string]string{
+			"SessionStart": "startup|resume|clear|compact",
+		}
+		definition.SessionSync.Hook.FeatureFlag = boolPointer(true)
+	})
+	if err := ValidateManifest(manifest); err != nil {
+		t.Fatalf("声明齐全的 hook 格式应通过校验: %v", err)
+	}
+	var codex Definition
+	for _, definition := range manifest.Providers {
+		if definition.ID == "codex" {
+			codex = definition
+			break
+		}
+	}
+	profile := DeriveHookProfile(codex)
+	if profile.TimeoutUnit != HookTimeoutSeconds {
+		t.Fatalf("timeoutUnit = %q, want %q", profile.TimeoutUnit, HookTimeoutSeconds)
+	}
+	if profile.EventMatchers["SessionStart"] != "startup|resume|clear|compact" {
+		t.Fatalf("eventMatchers = %v", profile.EventMatchers)
+	}
+	if profile.FeatureFlag == nil || !*profile.FeatureFlag {
+		t.Fatalf("featureFlag = %v, want true", profile.FeatureFlag)
+	}
+}
+
+// TestCatalogClonesHookFormat 保证 Get 返回的 HookFormat 是深复制：
+// 调用方改 target / matcher / featureFlag 不能污染合同缓存。
+func TestCatalogClonesHookFormat(t *testing.T) {
+	manifest := BuiltinManifest()
+	mutateBuiltinProvider(t, &manifest, "codex", func(definition *Definition) {
+		definition.SessionSync.Hook.TimeoutUnit = HookTimeoutSeconds
+		definition.SessionSync.Hook.EventMatchers = map[string]string{"SessionStart": "startup"}
+		definition.SessionSync.Hook.FeatureFlag = boolPointer(true)
+	})
+	catalog, err := NewCatalog(manifest)
+	if err != nil {
+		t.Fatalf("构建 Catalog 失败: %v", err)
+	}
+	first, ok := catalog.Get("codex")
+	if !ok || first.SessionSync.Hook == nil {
+		t.Fatal("缺少 codex hook 格式")
+	}
+	first.SessionSync.Hook.Target[0] = "mutated"
+	first.SessionSync.Hook.EventMatchers["SessionStart"] = "mutated"
+	*first.SessionSync.Hook.FeatureFlag = false
+
+	second, ok := catalog.Get("codex")
+	if !ok || second.SessionSync.Hook == nil {
+		t.Fatal("缺少 codex hook 格式")
+	}
+	if second.SessionSync.Hook.Target[0] != ".codex" {
+		t.Fatalf("target 被调用方污染: %v", second.SessionSync.Hook.Target)
+	}
+	if second.SessionSync.Hook.EventMatchers["SessionStart"] != "startup" {
+		t.Fatalf("eventMatchers 被调用方污染: %v", second.SessionSync.Hook.EventMatchers)
+	}
+	if second.SessionSync.Hook.FeatureFlag == nil || !*second.SessionSync.Hook.FeatureFlag {
+		t.Fatalf("featureFlag 被调用方污染: %v", second.SessionSync.Hook.FeatureFlag)
 	}
 }

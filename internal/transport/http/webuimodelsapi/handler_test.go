@@ -41,10 +41,15 @@ func (reader fakeReader) ListAllAccountModels(context.Context) (accountapp.Accou
 
 func newTestHandler(t *testing.T, reader Reader, allowed bool) *Handler {
 	t.Helper()
-	handler, err := NewHandler(Dependencies{
+	return newTestHandlerWith(t, Dependencies{
 		Authorizer: stubAuthorizer(allowed),
 		Reader:     reader,
 	})
+}
+
+func newTestHandlerWith(t *testing.T, dependencies Dependencies) *Handler {
+	t.Helper()
+	handler, err := NewHandler(dependencies)
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
@@ -232,7 +237,7 @@ func TestNewAccountViewNeverProbedKeepsZeroTimestamp(t *testing.T) {
 	view := newAccountView(accountapp.AccountModelSet{
 		AccountRef: mustAccountRef(t, claudeAccountRef),
 		ProviderID: "claude",
-	})
+	}, newEnricher(context.Background(), nil, nil, nil))
 	if view.LastAttemptAtMS != 0 {
 		t.Fatalf("LastAttemptAtMS = %d, want 0", view.LastAttemptAtMS)
 	}
@@ -318,51 +323,47 @@ func TestHandlerReportsReaderFailure(t *testing.T) {
 	}
 }
 
-// TestFilledFieldsCoverEveryDataKey 防止新增字段时忘了归类：
-// 每个数据键必须且只能出现在 filled_fields / unfilled_fields 之一。
-func TestFilledFieldsCoverEveryDataKey(t *testing.T) {
-	expected := []string{"generation", "catalog_updated_at_ms", "providers"}
-	expected = append(expected, jsonFieldNames(reflect.TypeOf(providerView{}))...)
-	expected = append(expected, jsonFieldNames(reflect.TypeOf(accountView{}))...)
-	got := append([]string(nil), filledFields...)
-	sort.Strings(got)
+// TestDataFieldKeysMatchResponseSchema 防止新增字段时忘了归类：
+// dataFieldKeys 必须与 response 的 JSON 结构一一对应（envelope 键除外）。
+func TestDataFieldKeysMatchResponseSchema(t *testing.T) {
+	expected := jsonFieldNames(reflect.TypeOf(response{}))
+	for _, envelope := range []string{"ok", "derived_by", "data_source", "filled_fields", "unfilled_fields"} {
+		expected = slices.DeleteFunc(expected, func(name string) bool { return name == envelope })
+	}
 	sort.Strings(expected)
+	got := append([]string(nil), dataFieldKeys...)
+	sort.Strings(got)
 	if !slices.Equal(got, expected) {
-		t.Fatalf("filled_fields = %v, want %v", got, expected)
-	}
-
-	seen := make(map[string]bool, len(filledFields))
-	for _, field := range filledFields {
-		if field == "" || seen[field] {
-			t.Fatalf("filled_fields 存在空值或重复项: %v", filledFields)
-		}
-		seen[field] = true
-	}
-	for _, field := range unfilledFields {
-		if field == "" {
-			t.Fatal("unfilled_fields 存在空值")
-		}
-		if seen[field] {
-			t.Fatalf("字段 %q 同时出现在 filled 与 unfilled", field)
-		}
-	}
-	for _, key := range []string{"labels", "metadata", "selectableByAccountRef", "defaultByAccountRef"} {
-		if !slices.Contains(unfilledFields, key) {
-			t.Fatalf("unfilled_fields 缺少 %q", key)
-		}
+		t.Fatalf("dataFieldKeys = %v, want %v", got, expected)
 	}
 }
 
+const packagePath = "github.com/madou1217/ai_home/internal/transport/http/webuimodelsapi"
+
+// jsonFieldNames 收集本包结构体（含嵌套）的 JSON 字段名。
+// 外部类型（如 settings 的 CustomPricing）与动态键映射（labels）只看自身字段名，不下钻。
 func jsonFieldNames(structType reflect.Type) []string {
 	names := make([]string, 0, structType.NumField())
 	for index := 0; index < structType.NumField(); index++ {
-		name, _, _ := strings.Cut(structType.Field(index).Tag.Get("json"), ",")
+		field := structType.Field(index)
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		if name == "" || name == "-" {
 			continue
 		}
 		names = append(names, name)
+		names = append(names, nestedFieldNames(field.Type)...)
 	}
 	return names
+}
+
+func nestedFieldNames(fieldType reflect.Type) []string {
+	for fieldType.Kind() == reflect.Pointer || fieldType.Kind() == reflect.Slice {
+		fieldType = fieldType.Elem()
+	}
+	if fieldType.Kind() != reflect.Struct || fieldType.PkgPath() != packagePath {
+		return nil
+	}
+	return jsonFieldNames(fieldType)
 }
 
 func assertStrings(t *testing.T, label string, got, want []string) {

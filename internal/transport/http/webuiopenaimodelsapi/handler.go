@@ -1,11 +1,19 @@
 // Package webuiopenaimodelsapi 提供 WebUI OpenAI 模型目录的 Go 部分读模型。
 //
-// Node 的 /v0/webui/openai-models 还包含探测缓存状态（cached/source/sources/
-// scannedAccounts/firstError）、模型设置（managedData/settingsUpdatedAt）、
+// Node 的 /v0/webui/openai-models 包含探测缓存状态（cached/source/sources/
+// scannedAccounts/firstError）、模型设置派生的管理目录（managedData/settingsUpdatedAt）、
 // 展示元数据（labels/metadata）、离开运行池账号的留档目录，以及 SSE 刷新任务。
-// 这些事实没有 Go 真值来源。本包只发布 aih.db 的 account_models 与
-// account_model_probes 能证明的字段，并用 derived_by=go_partial 与
-// filled_fields/unfilled_fields 显式标注边界，绝不返回空对象冒充 Node 全量形状。
+//
+// 本包分两层：
+//   - aih.db 的 account_models 与 account_model_probes 是始终存在的真值来源，
+//     发布为 models / account_models。
+//   - app-state.db 的 model-catalog-settings（设置文档）与 webui-models-snapshot.json
+//     （上游显示名快照）是可选来源，读到才发布 managed_data / labels /
+//     settings_updated_at_ms；两者由 Node 写入，账号引用是 Node ref，必须经
+//     accountrefmap 翻译成 Go 的 account_ref 才能与 account_models 对齐。
+//
+// 无论可选源是否接线，本包都用 derived_by=go_partial 与 filled_fields/unfilled_fields
+// 显式标注边界，绝不返回空对象冒充 Node 全量形状。
 package webuiopenaimodelsapi
 
 import (
@@ -45,15 +53,25 @@ type Reader interface {
 }
 
 // Dependencies 汇总 WebUI OpenAI 模型目录的依赖。
+//
+// Settings / Snapshot / AccountRefs 是可选接线：未提供时对应字段留空并计入
+// unfilled_fields，而不是用默认值伪造。三者的文档都在 app-state.db。
 type Dependencies struct {
 	Authorizer Authorizer
 	Reader     Reader
+
+	Settings    SettingsReader
+	Snapshot    SnapshotReader
+	AccountRefs AccountRefResolver
 }
 
 // Handler 是 WebUI OpenAI 模型目录的 HTTP 入站适配器。
 type Handler struct {
-	authorizer Authorizer
-	reader     Reader
+	authorizer  Authorizer
+	reader      Reader
+	settings    SettingsReader
+	snapshot    SnapshotReader
+	accountRefs AccountRefResolver
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -61,14 +79,21 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Reader == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, reader: dependencies.Reader}, nil
+	return &Handler{
+		authorizer:  dependencies.Authorizer,
+		reader:      dependencies.Reader,
+		settings:    dependencies.Settings,
+		snapshot:    dependencies.Snapshot,
+		accountRefs: dependencies.AccountRefs,
+	}, nil
 }
 
 // response 是成功响应。
 //
-// models 是按模型 ID 聚合后的稳定视图；account_models 保留每个账号的原始模型
-// 关系与探测事实。两者都不是 Node 的 data/managedData：Node 的 enabled/manual/
-// defaultModel 来自模型设置，Go 只有账号模型的上游可用性与人工策略。
+// models 是按模型 ID 聚合后的稳定视图；account_models 保留每个账号的原始模型关系与
+// 探测事实；managed_data 是模型设置维度的管理条目（含手动添加与被停用的模型）；
+// labels 是上游显示名。三者都不是 Node 的 data：Node 的 data 还叠加别名、网关能力
+// 目录与 models.dev 元数据，本包没有这些源。
 type response struct {
 	OK                 bool               `json:"ok"`
 	DerivedBy          string             `json:"derived_by"`
@@ -77,8 +102,15 @@ type response struct {
 	CatalogUpdatedAtMS int64              `json:"catalog_updated_at_ms"`
 	Models             []modelView        `json:"models"`
 	AccountModels      []accountModelView `json:"account_models"`
-	FilledFields       []string           `json:"filled_fields"`
-	UnfilledFields     []string           `json:"unfilled_fields"`
+	// ManagedData 只在读到设置文档时出现；nil 与「空管理目录」不是同一件事。
+	ManagedData []managedModelView `json:"managed_data,omitempty"`
+	// Labels 只在快照可用时出现；空对象表示快照确实没有显示名。
+	Labels              *labelsView `json:"labels,omitempty"`
+	SettingsUpdatedAtMS int64       `json:"settings_updated_at_ms,omitempty"`
+	// UnavailableSources 记录「接了线但读失败」的源，供调用方区分「没有事实」与「读不到」。
+	UnavailableSources []string `json:"unavailable_sources"`
+	FilledFields       []string `json:"filled_fields"`
+	UnfilledFields     []string `json:"unfilled_fields"`
 }
 
 // modelView 是一个模型 ID 的聚合视图。
@@ -109,40 +141,65 @@ type accountModelView struct {
 	LastModelCount    int      `json:"last_model_count"`
 }
 
-// filledFields 是本响应真实提供的数据键（不含 ok/derived_by/data_source 这类 envelope）。
-var filledFields = []string{
-	"generation",
-	"catalog_updated_at_ms",
-	"models",
-	"account_models",
-	"id",
-	"providers",
-	"account_refs",
-	"upstream_available",
-	"effective",
-	"provider_id",
-	"account_ref",
-	"model_ids",
-	"effective_model_ids",
-	"last_attempt_at_ms",
-	"last_error_code",
-	"last_error_message",
-	"last_source",
-	"last_model_count",
-}
+// 字段清单分组：filled_fields 与 unfilled_fields 都由这些分组派生，
+// 新增字段时只改分组，不会出现两边都写或两边都漏。
+var (
+	// catalogFieldKeys 只依赖 aih.db 的账号模型事实，永远填充。
+	catalogFieldKeys = []string{
+		"generation",
+		"catalog_updated_at_ms",
+		"models",
+		"account_models",
+		"id",
+		"providers",
+		"account_refs",
+		"upstream_available",
+		"effective",
+		"provider_id",
+		"account_ref",
+		"model_ids",
+		"effective_model_ids",
+		"last_attempt_at_ms",
+		"last_error_code",
+		"last_error_message",
+		"last_source",
+		"last_model_count",
+		"unavailable_sources",
+	}
+	// settingsFieldKeys 需要 model-catalog-settings 文档。
+	settingsFieldKeys = []string{
+		"managed_data",
+		"settings_updated_at_ms",
+		"managed_data.id",
+		"managed_data.provider",
+		"managed_data.account_ref",
+		"managed_data.enabled",
+		"managed_data.manual",
+		"managed_data.default_model",
+		"managed_data.source",
+		"managed_data.providers",
+		"managed_data.description",
+		"managed_data.custom_pricing",
+		"managed_data.updated_at_ms",
+	}
+	// snapshotFieldKeys 需要 WebUI 模型快照。
+	snapshotFieldKeys = []string{
+		"labels",
+	}
+)
 
-// unfilledFields 是 Node 的 /v0/webui/openai-models 有、Go 当前没有真值来源的键。
+// nodeOnlyFieldKeys 是 Node 的 /v0/webui/openai-models 有、Go 仍无真值来源的键。
 //
 // 分组说明：
-//   - data / managedData / metadata / labels：Node 的展示目录、模型设置与 models.dev 全量元数据。
+//   - data / metadata / managedData.metadata：Node 的展示目录与 models.dev 全量元数据
+//     （价格、模态、上下文）。managed_data 的条目级 metadata 因此仍在缺口里。
 //   - cached / source / sources / scannedAccounts / firstError：Node 探测缓存聚合。
 //   - accounts / byProvider / byAccountRef / errorsByAccountRef / accountProbedAt：
 //     Node 账号 ref 口径的汇总；Go 只有 account_ref 口径的 account_models。
 //   - accountScope：Node accountRef 与 Go account_ref 不是同一个值，本端点不支持过滤。
-//   - settingsUpdatedAt：模型设置更新时间。
 //   - data.*：Node 单个模型项的展示/设置字段（object/created/owned_by/模态/价格等）。
 //   - SSE：watch 与 refresh 任务仍由 Node 负责。
-var unfilledFields = []string{
+var nodeOnlyFieldKeys = []string{
 	"endpoint",
 	"cached",
 	"updatedAt",
@@ -152,15 +209,13 @@ var unfilledFields = []string{
 	"firstError",
 	"accountScope",
 	"data",
-	"managedData",
 	"metadata",
-	"labels",
+	"managedData.metadata",
 	"accounts",
 	"byProvider",
 	"byAccountRef",
 	"errorsByAccountRef",
 	"accountProbedAt",
-	"settingsUpdatedAt",
 	"data.object",
 	"data.created",
 	"data.owned_by",
@@ -215,7 +270,8 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		writeError(responseWriter, http.StatusServiceUnavailable, "webui_openai_models_failed", "WebUI 模型目录读取失败")
 		return
 	}
-	writeJSON(responseWriter, http.StatusOK, newResponse(catalog))
+	enrich := newEnrichment(request.Context(), handler.accountRefs, handler.settings, handler.snapshot)
+	writeJSON(responseWriter, http.StatusOK, newResponse(catalog, enrich))
 }
 
 // modelAggregate 聚合同一个模型 ID 在多个账号上的事实。
@@ -226,12 +282,17 @@ type modelAggregate struct {
 	effective         bool
 }
 
-// newResponse 把账号模型目录翻译成模型聚合与账号事实两份稳定视图。
-func newResponse(catalog accountapp.AccountModelCatalog) response {
+// newResponse 把账号模型目录翻译成模型聚合与账号事实两份稳定视图，
+// 再按实际读到的可选源补上管理目录与显示名。
+func newResponse(catalog accountapp.AccountModelCatalog, enrich *enrichment) response {
 	accountModels := make([]accountModelView, 0, len(catalog.Sets))
 	aggregates := make(map[string]*modelAggregate)
+	providerIDs := make(map[string]struct{}, len(catalog.Sets))
 	for _, set := range catalog.Sets {
 		accountModels = append(accountModels, newAccountModelView(set))
+		if providerID := strings.TrimSpace(set.ProviderID); providerID != "" {
+			providerIDs[providerID] = struct{}{}
+		}
 		for _, model := range set.Models {
 			modelID := model.ModelID().String()
 			aggregate := aggregates[modelID]
@@ -275,17 +336,56 @@ func newResponse(catalog accountapp.AccountModelCatalog) response {
 	sort.Slice(models, func(left, right int) bool {
 		return models[left].ID < models[right].ID
 	})
-	return response{
-		OK:                 true,
-		DerivedBy:          derivedByGoPartial,
-		DataSource:         dataSource,
-		Generation:         catalog.Generation,
-		CatalogUpdatedAtMS: catalog.UpdatedAtMS,
-		Models:             models,
-		AccountModels:      accountModels,
-		FilledFields:       filledFields,
-		UnfilledFields:     unfilledFields,
+
+	managedData := enrich.managedData(catalog)
+	for _, item := range managedData {
+		if item.Provider != "" {
+			providerIDs[item.Provider] = struct{}{}
+		}
 	}
+	filled, unfilled := fieldCoverage(enrich)
+	settingsUpdatedAtMS, _ := enrich.settingsUpdatedAtMS()
+	return response{
+		OK:                  true,
+		DerivedBy:           derivedByGoPartial,
+		DataSource:          dataSource,
+		Generation:          catalog.Generation,
+		CatalogUpdatedAtMS:  catalog.UpdatedAtMS,
+		Models:              models,
+		AccountModels:       accountModels,
+		ManagedData:         managedData,
+		Labels:              enrich.labelProjection(sortedKeys(providerIDs)),
+		SettingsUpdatedAtMS: settingsUpdatedAtMS,
+		UnavailableSources:  enrich.unavailableSources(),
+		FilledFields:        filled,
+		UnfilledFields:      unfilled,
+	}
+}
+
+// fieldCoverage 按本次实际读到的源切分字段清单。
+//
+// 两个清单都是「本次响应真实提供的键」与「Node 有但没有源的键」的划分：
+// 同一次响应里同一个键不会两边都出现，也不会两边都漏。
+func fieldCoverage(enrich *enrichment) (filled []string, unfilled []string) {
+	hasSettings := enrich != nil && enrich.hasSettings
+	hasSnapshot := enrich != nil && enrich.hasSnapshot
+	filled = make([]string, 0, len(catalogFieldKeys)+len(settingsFieldKeys)+len(snapshotFieldKeys))
+	filled = append(filled, catalogFieldKeys...)
+	if hasSettings {
+		filled = append(filled, settingsFieldKeys...)
+	}
+	if hasSnapshot {
+		filled = append(filled, snapshotFieldKeys...)
+	}
+	unfilled = make([]string, 0, len(nodeOnlyFieldKeys)+3)
+	unfilled = append(unfilled, nodeOnlyFieldKeys...)
+	if !hasSettings {
+		unfilled = append(unfilled, "managedData", "settingsUpdatedAt")
+	}
+	if !hasSnapshot {
+		unfilled = append(unfilled, "labels")
+	}
+	return filled, unfilled
 }
 
 // newAccountModelView 把一条账号模型快照翻译成稳定排序的视图。

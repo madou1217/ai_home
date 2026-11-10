@@ -1,11 +1,14 @@
 package aihserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
@@ -13,11 +16,14 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuifsaccessapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuifstrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimobileaccountapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
@@ -26,6 +32,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
+	"github.com/madou1217/ai_home/internal/webuifile"
 )
 
 // webuiRoute 是 WebUI 管理面的单条路由；Pattern 含方法，直接交给 ServeMux。
@@ -175,17 +182,33 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建强制恢复调度接口失败: %w", err)
 	}
+	databasePath, err := appstate.DatabasePath(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("解析 app-state 路径失败: %w", err)
+	}
+	refTable, _ := accountrefmap.Load(context.Background(), dependencies.AIHomeDir)
+	refResolver := accountrefmap.NewResolver(true, refTable)
 	accountExport, err := webuiaccountsexportapi.NewHandler(webuiaccountsexportapi.Dependencies{
-		Authorizer: authorizer, Overviews: dependencies.Store, Credentials: dependencies.Store,
+		Authorizer: authorizer, Overviews: dependencies.Store, Credentials: dependencies.Store, Resolver: refResolver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号导出接口失败: %w", err)
 	}
-	modelsRead, err := webuimodelsapi.NewHandler(webuimodelsapi.Dependencies{Authorizer: authorizer, Reader: dependencies.Store})
+	modelsRead, err := webuimodelsapi.NewHandler(webuimodelsapi.Dependencies{
+		Authorizer: authorizer, Reader: dependencies.Store,
+		Settings: webuimodelsapi.SettingsFile{DatabasePath: databasePath},
+		Snapshot: webuimodelsapi.SnapshotFile{DatabasePath: databasePath},
+		Refs:     refResolver,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("创建模型只读投影接口失败: %w", err)
 	}
-	openaiModelsRead, err := webuiopenaimodelsapi.NewHandler(webuiopenaimodelsapi.Dependencies{Authorizer: authorizer, Reader: dependencies.Store})
+	openaiModelsRead, err := webuiopenaimodelsapi.NewHandler(webuiopenaimodelsapi.Dependencies{
+		Authorizer: authorizer, Reader: dependencies.Store,
+		Settings:    webuiopenaimodelsapi.SettingsFile{DatabasePath: databasePath},
+		Snapshot:    webuiopenaimodelsapi.SnapshotFile{DatabasePath: databasePath},
+		AccountRefs: refResolver,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 OpenAI 模型读模型接口失败: %w", err)
 	}
@@ -206,6 +229,34 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 Codex App 解绑接口失败: %w", err)
+	}
+	trustSource, err := webuifstrustapi.OpenSource(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("创建可信目录数据源失败: %w", err)
+	}
+	fsTrust, err := webuifstrustapi.NewHandler(webuifstrustapi.Dependencies{
+		Authorizer: authorizer, Store: trustSource,
+		AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建可信目录接口失败: %w", err)
+	}
+	fsAccess, err := webuifsaccessapi.NewHandler(webuifsaccessapi.Dependencies{
+		Authorizer: authorizer,
+		Env:        webuifile.Env{AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir},
+		TrustedRoots: func() []webuifile.TrustedRoot {
+			roots, _ := trustSource.ReadTrustedRoots(context.Background())
+			return roots
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建文件访问预检接口失败: %w", err)
+	}
+	hooks, err := webuiproviderhooksapi.NewHandler(webuiproviderhooksapi.Dependencies{
+		Authorizer: authorizer, Catalog: dependencies.Catalog,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 provider hooks 读模型失败: %w", err)
 	}
 
 	return []webuiRoute{
@@ -243,5 +294,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "DELETE " + webuicontrolplaneapi.Path + "/profiles/{profileId}", Handler: controlPlane},
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/endpoints", Handler: controlPlane},
 		{Pattern: "GET " + webuiprovidercliupgradeapi.Path, Handler: providerUpgrade},
+		{Pattern: "POST " + webuifstrustapi.TrustPath, Handler: fsTrust},
+		{Pattern: "GET " + webuifsaccessapi.Path, Handler: fsAccess},
+		{Pattern: "GET " + webuiproviderhooksapi.Path, Handler: hooks},
 	}, nil
 }

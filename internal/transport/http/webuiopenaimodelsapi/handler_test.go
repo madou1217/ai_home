@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -347,41 +346,6 @@ func TestNewAccountModelViewNeverProbedKeepsZeroTimestampAndArrays(t *testing.T)
 	}
 	if view.ModelIDs == nil || view.EffectiveModelIDs == nil {
 		t.Fatalf("空集合必须是空数组而不是 nil: %+v", view)
-	}
-}
-
-// TestFilledFieldsCoverEveryDataKey 防止新增字段时忘了归类：
-// 每个数据键必须且只能出现在 filled_fields / unfilled_fields 之一。
-func TestFilledFieldsCoverEveryDataKey(t *testing.T) {
-	expected := []string{"generation", "catalog_updated_at_ms", "models", "account_models"}
-	expected = append(expected, jsonFieldNames(reflect.TypeOf(modelView{}))...)
-	expected = append(expected, jsonFieldNames(reflect.TypeOf(accountModelView{}))...)
-	got := append([]string(nil), filledFields...)
-	sort.Strings(got)
-	sort.Strings(expected)
-	if !slices.Equal(got, expected) {
-		t.Fatalf("filled_fields = %v, want %v", got, expected)
-	}
-
-	seen := make(map[string]bool, len(filledFields))
-	for _, field := range filledFields {
-		if field == "" || seen[field] {
-			t.Fatalf("filled_fields 存在空值或重复项: %v", filledFields)
-		}
-		seen[field] = true
-	}
-	for _, field := range unfilledFields {
-		if field == "" {
-			t.Fatal("unfilled_fields 存在空值")
-		}
-		if seen[field] {
-			t.Fatalf("字段 %q 同时出现在 filled 与 unfilled", field)
-		}
-	}
-	for _, key := range []string{"data", "managedData", "metadata", "labels", "settingsUpdatedAt", "accountScope"} {
-		if !slices.Contains(unfilledFields, key) {
-			t.Fatalf("unfilled_fields 缺少 %q", key)
-		}
 	}
 }
 

@@ -3,6 +3,7 @@ package providers
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -34,20 +35,39 @@ const (
 	HookTimeoutMilliseconds HookTimeoutUnit = "ms"
 )
 
+// HookFormat 是 SessionSync 中「怎么写」的合同数据：目标路径段、超时单位、
+// 事件 matcher 与目标文件旁的特性开关。它是 HookProfile 的唯一数据源：
+// DeriveHookProfile 只做复制，不为零值补默认值。
+//
+// 零值 / nil 表示**合同没有声明**这项事实，不是「默认秒 / 不需要 matcher /
+// 不需要开关」。现有内置数据只能证明 Target（来自 nativeBoundary.hooks.files
+// 与 cli.globalDir），其余三项没有 Go 真值源，留空并如实报告。
+type HookFormat struct {
+	// Target 是相对宿主 home 的路径段（例：[".codex", "hooks.json"]）。
+	Target []string `json:"target,omitempty"`
+	// TimeoutUnit 是 timeout 的计量单位；空表示合同未声明。
+	TimeoutUnit HookTimeoutUnit `json:"timeoutUnit,omitempty"`
+	// EventMatchers 是「事件名 → matcher 正则」；空表示合同未声明。
+	EventMatchers map[string]string `json:"eventMatchers,omitempty"`
+	// FeatureFlag 表示目标文件旁还有一份特性开关需要一起打开。
+	// nil 表示合同未声明——不能当成 false。
+	FeatureFlag *bool `json:"featureFlag,omitempty"`
+}
+
 // HookProfile 是 Hook 档案的声明式数据：目标路径段、超时单位、事件 matcher、
 // 目标文件旁的特性开关，以及「有没有 Hook」的回答。
 //
 // 设计约束（与 Node 描述符 hooks 能力对齐）：
 //   - 一个 Provider 要么 supported=true 并给出 adapter，要么 supported=false 并写明 Reason；
 //     沉默缺席会让调用方只能靠猜，这正是本能力位要消灭的形态。
-//   - Target 是**相对原生根的路径段**，不是整条路径：段里出现分隔符说明写错了形状。
+//   - Target 是**相对宿主 home 的路径段**，不是整条路径：段里出现分隔符说明写错了形状。
 //   - TimeoutUnit / EventMatchers / FeatureFlag 的零值表示**合同没有声明**，
 //     不是「默认值」。给零值编一个默认值等于伪造上游事实（codex 之外的 provider
 //     确实没有 matcher，而 gemini 的单位是毫秒），所以宁可留空。
 //
-// 字段来源：adapter 来自 SessionSync（Go 合同是真值源）；其余档案字段目前
-// Go 内置数据里没有，DeriveHookProfile 不会填它们——缺数据就留空并如实报告，
-// 不从 Node 描述符反抄一遍变成第二份需要同步的名单。
+// 字段来源：全部来自 SessionSync（Go 合同是真值源）。HookFormat 声明的字段
+// 原样复制，未声明的字段保持零值——缺数据就留空并如实报告，不从 Node 描述符
+// 反抄一遍变成第二份需要同步的名单。
 type HookProfile struct {
 	// Supported 表示该 Provider 是否声明了 Hook 档案。
 	Supported bool `json:"supported"`
@@ -68,11 +88,9 @@ type HookProfile struct {
 
 // DeriveHookProfile 从 Provider 合同里**能查到的**事实推导 Hook 档案。
 //
-// 只填两个字段：Supported（SessionSync.Mode 是否为 hook）与 Adapter（合同声明）。
-// Target / TimeoutUnit / EventMatchers / FeatureFlag 在内置数据里没有真值源：
-// CLI.GlobalDir 与 NativeHooks.Files 的基准不同（claude 的 "settings.json" 相对配置根，
-// antigravity 的 ".gemini/config/hooks.json" 相对宿主 home），按它们拼 target 会得出
-// 错误路径；因此这里留空，调用方必须把空值读成「未声明」而不是默认值。
+// Supported 由 SessionSync.Mode 决定，adapter 来自 SessionSync.Adapter，
+// 格式字段从 SessionSync.Hook 原样复制。不做跨字段拼接、不补默认值：
+// 合同没声明的字段保持零值，调用方必须读成「未声明」。
 func DeriveHookProfile(definition Definition) HookProfile {
 	if definition.SessionSync.Mode != SessionSyncHook {
 		return HookProfile{
@@ -80,10 +98,27 @@ func DeriveHookProfile(definition Definition) HookProfile {
 			Reason:    hookUnsupportedReason(definition.SessionSync.Mode),
 		}
 	}
-	return HookProfile{
+	profile := HookProfile{
 		Supported: true,
 		Adapter:   HookAdapterID(strings.TrimSpace(definition.SessionSync.Adapter)),
 	}
+	format := definition.SessionSync.Hook
+	if format == nil {
+		return profile
+	}
+	profile.Target = append([]string(nil), format.Target...)
+	profile.TimeoutUnit = format.TimeoutUnit
+	if len(format.EventMatchers) > 0 {
+		profile.EventMatchers = make(map[string]string, len(format.EventMatchers))
+		for event, matcher := range format.EventMatchers {
+			profile.EventMatchers[event] = matcher
+		}
+	}
+	if format.FeatureFlag != nil {
+		flag := *format.FeatureFlag
+		profile.FeatureFlag = &flag
+	}
+	return profile
 }
 
 // hookUnsupportedReason 给出「为什么没有 Hook」的事实性回答。
@@ -108,7 +143,7 @@ func hookUnsupportedReason(mode SessionSyncMode) string {
 //     都会让调用方拿到自相矛盾的两个答案；
 //   - Supported=false 必须写 Reason，且**不得**携带 adapter/target/单位/matcher/开关
 //     ——「不支持」却带着写文件参数，只会让人以为配置生效了；
-//   - Supported=true 必须有合法 adapter；
+//   - Supported=true 必须有合法 adapter；合同与档案都声明 target 时必须逐段一致；
 //   - Target 的每一段都必须是一个正常路径段（非空、非 . / ..、不含分隔符、非绝对路径），
 //     否则适配器拼接出的路径会落到预期之外的位置；
 //   - TimeoutUnit 非空时必须已在单位表登记：拼错会让超时被当成另一种量级；
@@ -142,6 +177,12 @@ func ValidateHookProfile(definition Definition, profile HookProfile) error {
 	if err := validateHookTarget(id, profile.Target); err != nil {
 		return err
 	}
+	if contract := definition.SessionSync.Hook; contract != nil && len(contract.Target) > 0 && len(profile.Target) > 0 {
+		if !slices.Equal(contract.Target, profile.Target) {
+			return fmt.Errorf("provider %s: hooks.target=%v 与 sessionSync.hook.target=%v 不一致",
+				id, profile.Target, contract.Target)
+		}
+	}
 	if profile.TimeoutUnit != "" && !profile.TimeoutUnit.IsValid() {
 		return fmt.Errorf("provider %s: 未知 hooks.timeoutUnit %q", id, profile.TimeoutUnit)
 	}
@@ -173,20 +214,27 @@ func validateUnsupportedHookProfile(id string, profile HookProfile) error {
 
 // validateHookTarget 校验路径段列表的形状。
 func validateHookTarget(id string, target []string) error {
+	if err := validateHookTargetSegments(target); err != nil {
+		return fmt.Errorf("provider %s: %w", id, err)
+	}
+	return nil
+}
+
+// validateHookTargetSegments 是 provider 无关的路径段形状校验。
+func validateHookTargetSegments(target []string) error {
 	for index, segment := range target {
 		trimmed := strings.TrimSpace(segment)
 		if trimmed == "" {
-			return fmt.Errorf("provider %s: hooks.target[%d] 为空路径段", id, index)
+			return fmt.Errorf("hooks.target[%d] 为空路径段", index)
 		}
 		if trimmed != segment {
-			return fmt.Errorf("provider %s: hooks.target[%d] 含首尾空白: %q", id, index, segment)
+			return fmt.Errorf("hooks.target[%d] 含首尾空白: %q", index, segment)
 		}
 		if trimmed == "." || trimmed == ".." {
-			return fmt.Errorf("provider %s: hooks.target[%d] 不能是 %q", id, index, trimmed)
+			return fmt.Errorf("hooks.target[%d] 不能是 %q", index, trimmed)
 		}
 		if strings.ContainsAny(trimmed, "/\\") {
-			return fmt.Errorf("provider %s: hooks.target[%d]=%q 必须是单个路径段，不能含分隔符",
-				id, index, trimmed)
+			return fmt.Errorf("hooks.target[%d]=%q 必须是单个路径段，不能含分隔符", index, trimmed)
 		}
 	}
 	return nil
@@ -194,20 +242,41 @@ func validateHookTarget(id string, target []string) error {
 
 // validateHookMatchers 校验 matcher 只挂在合同真正会发出的事件上。
 func validateHookMatchers(id string, definition Definition, matchers map[string]string) error {
+	if err := validateHookMatcherEntries(definition.SessionSync.Events, matchers); err != nil {
+		return fmt.Errorf("provider %s: %w", id, err)
+	}
+	return nil
+}
+
+// validateHookMatcherEntries 是 provider 无关的 matcher 校验。
+func validateHookMatcherEntries(events []string, matchers map[string]string) error {
 	for event, matcher := range matchers {
 		event = strings.TrimSpace(event)
 		if event == "" {
-			return fmt.Errorf("provider %s: hooks.eventMatchers 含空事件名", id)
+			return fmt.Errorf("hooks.eventMatchers 含空事件名")
 		}
 		if strings.TrimSpace(matcher) == "" {
-			return fmt.Errorf("provider %s: hooks.eventMatchers[%s] 的 matcher 为空", id, event)
+			return fmt.Errorf("hooks.eventMatchers[%s] 的 matcher 为空", event)
 		}
-		if !containsString(definition.SessionSync.Events, event) {
-			return fmt.Errorf("provider %s: hooks.eventMatchers[%s] 对应的事件不在 sessionSync.events 里（永不触发）",
-				id, event)
+		if !containsString(events, event) {
+			return fmt.Errorf("hooks.eventMatchers[%s] 对应的事件不在 sessionSync.events 里（永不触发）", event)
 		}
 	}
 	return nil
+}
+
+// validateHookFormat 校验 SessionSync.Hook 自身的字段形状。
+//
+// 与 ValidateHookProfile 的分工：这里校验「合同里声明的数据」，所以不要求
+// 字段齐全（缺数据是允许的），只拒绝写错的形状。
+func validateHookFormat(format HookFormat, events []string) error {
+	if err := validateHookTargetSegments(format.Target); err != nil {
+		return err
+	}
+	if format.TimeoutUnit != "" && !format.TimeoutUnit.IsValid() {
+		return fmt.Errorf("未知 hook.timeoutUnit %q", format.TimeoutUnit)
+	}
+	return validateHookMatcherEntries(events, format.EventMatchers)
 }
 
 // ValidateHookProfiles 校验整份合同推导出的 Hook 档案是否全部自洽。

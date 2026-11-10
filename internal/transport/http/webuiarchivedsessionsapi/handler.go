@@ -13,8 +13,8 @@ const (
 	//	GET /v1/management/webui/sessions/archived
 	Path = "/v1/management/webui/sessions/archived"
 
-	// ScopeLegacy 表示响应只包含历史归档（Claude / Gemini 文件），
-	// Codex 等 Provider 的原生归档不在本切片覆盖范围内。
+	// ScopeLegacy 表示响应只包含历史归档（Claude / Gemini 文件）；
+	// Codex 原生归档读取失败时保持该值，并在 errors 里声明失败。
 	ScopeLegacy = "legacy"
 )
 
@@ -31,12 +31,16 @@ type Dependencies struct {
 	Authorizer Authorizer
 	// HostHomeDir 是宿主 HOME，历史归档位于其 .claude/.gemini 下。
 	HostHomeDir string
+	// CodexCommand 解析 Codex app-server 启动方式；为 nil 时
+	// 响应会在 errors 里报 codex_command_unavailable。
+	CodexCommand CodexCommandResolver
 }
 
 // Handler 处理已归档会话读取。
 type Handler struct {
-	authorizer  Authorizer
-	hostHomeDir string
+	authorizer   Authorizer
+	hostHomeDir  string
+	codexCommand CodexCommandResolver
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -45,7 +49,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || hostHomeDir == "" {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, hostHomeDir: hostHomeDir}, nil
+	return &Handler{
+		authorizer:   dependencies.Authorizer,
+		hostHomeDir:  hostHomeDir,
+		codexCommand: dependencies.CodexCommand,
+	}, nil
 }
 
 type responseView struct {
@@ -83,11 +91,23 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
 		return
 	}
+	archived := scanLegacyArchives(handler.hostHomeDir)
+	failures := make([]archivedError, 0, 1)
+	scope := ScopeLegacy
+	codexEntries, codexErr := handler.listCodexArchived(request.Context())
+	if codexErr != nil {
+		failures = append(failures, providerError(providerCodex, codexErr))
+	} else {
+		archived = append(archived, codexEntries...)
+		scope = ScopeAll
+	}
+	sortEntries(archived)
+
 	writeJSON(response, http.StatusOK, responseView{
 		OK:       true,
-		Scope:    ScopeLegacy,
-		Archived: scanLegacyArchives(handler.hostHomeDir),
-		Errors:   []archivedError{},
+		Scope:    scope,
+		Archived: archived,
+		Errors:   failures,
 	})
 }
 

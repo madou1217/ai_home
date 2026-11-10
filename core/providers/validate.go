@@ -235,9 +235,17 @@ func validateSessionSync(sync SessionSync) error {
 		if strings.TrimSpace(sync.Adapter) == "" {
 			return errors.New("hook 同步必须声明 adapter")
 		}
+		if sync.Hook != nil {
+			if err := validateHookFormat(*sync.Hook, sync.Events); err != nil {
+				return fmt.Errorf("hook 格式无效: %w", err)
+			}
+		}
 	case SessionSyncPolling, SessionSyncUnavailable:
 		if strings.TrimSpace(sync.Adapter) != "" || len(sync.Events) > 0 {
 			return errors.New("非 hook 同步不能声明 hook adapter 或 events")
+		}
+		if sync.Hook != nil {
+			return errors.New("非 hook 同步不能声明 hook 格式")
 		}
 	default:
 		return fmt.Errorf("未知 session sync mode: %s", sync.Mode)

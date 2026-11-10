@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
@@ -21,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplanebootstrapapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifsaccessapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifsmediaapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifsreadapi"
@@ -34,19 +36,23 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelswriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderclearbrokenapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionpreviewsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslistapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
@@ -73,6 +79,8 @@ type webuiRouteDependencies struct {
 	HostHomeDir     string
 	Store           *sqliteaccount.Store
 	AccountRuntime  any
+	// AuthJobs 是 OAuth 作业服务：重新认证直接复用它起作业，不另建一套状态机。
+	AuthJobs webuiaccountreauthapi.AccountAuthJobs
 	// AccountsHandler 是 accountsapi 的账号导入端点（WebUI import 直接复用）。
 	AccountsHandler http.Handler
 	// CredentialEditor 是静态凭据编辑用例（update 路由复用）。
@@ -196,6 +204,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 provider CLI 升级接口失败: %w", err)
+	}
+
+	controlPlaneBootstrap, err := webuicontrolplanebootstrapapi.NewHandler(webuicontrolplanebootstrapapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建控制面引导接口失败: %w", err)
 	}
 
 	// 强制恢复调度是可选能力：运行态不提供时**跳过**这条路由，让 Node 继续兜底，
@@ -433,6 +448,43 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建 OpenAI 模型写入接口失败: %w", err)
 	}
 
+	toolAppSettings, err := webuitoolappsettingswriteapi.NewHandler(webuitoolappsettingswriteapi.Dependencies{
+		Authorizer: authorizer, Providers: dependencies.Catalog, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建工具应用设置写入接口失败: %w", err)
+	}
+	sessionsList, err := webuisessionslistapi.NewHandler(webuisessionslistapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号会话列表接口失败: %w", err)
+	}
+	sessionsLifecycle, err := webuisessionslifecycleapi.NewHandler(webuisessionslifecycleapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建会话生命周期接口失败: %w", err)
+	}
+	reauthStarter, err := webuiaccountreauthapi.NewAccountAuthStarter(dependencies.AuthJobs)
+	if err != nil {
+		return nil, fmt.Errorf("创建重新认证作业启动器失败: %w", err)
+	}
+	reauth, err := webuiaccountreauthapi.NewHandler(webuiaccountreauthapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+		Accounts: dependencies.Store, Jobs: reauthStarter,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建重新认证接口失败: %w", err)
+	}
+
+	authSources, err := webuiproviderauthsourcesapi.NewHandler(webuiproviderauthsourcesapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 Provider 授权来源接口失败: %w", err)
+	}
+
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
@@ -495,6 +547,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiproviderclearbrokenapi.Path + webuiproviderclearbrokenapi.ClearBrokenSuffix, Handler: clearBroken},
 		{Pattern: "POST " + webuiopenaimodelswriteapi.RefreshPath, Handler: openaiModelsWrite},
 		{Pattern: "POST " + webuiopenaimodelswriteapi.DeletePath, Handler: openaiModelsWrite},
+		{Pattern: "PUT " + webuitoolappsettingswriteapi.Path + webuitoolappsettingswriteapi.SettingsSuffix, Handler: toolAppSettings},
+		{Pattern: "GET " + webuisessionslistapi.Path + "/{provider}/{accountRef}", Handler: sessionsList},
+		{Pattern: "GET " + webuisessionslifecycleapi.LifecycleCapabilitiesPath, Handler: sessionsLifecycle},
+		{Pattern: "POST " + webuisessionslifecycleapi.ArchivePath, Handler: sessionsLifecycle},
+		{Pattern: "POST " + webuiaccountreauthapi.Path + webuiaccountreauthapi.ReauthSuffix, Handler: reauth},
+		{Pattern: "GET " + webuicontrolplanebootstrapapi.Path, Handler: controlPlaneBootstrap},
+		{Pattern: "GET " + webuiproviderauthsourcesapi.Path, Handler: authSources},
 	}
 	if restoreScheduling != nil {
 		routes = append(routes, webuiRoute{

@@ -1171,6 +1171,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		HostHomeDir:      dependencies.HostHomeDir,
 		Store:            store,
 		AccountRuntime:   accountRuntime,
+		AuthJobs:         jobs,
 		AccountsHandler:  accountsHandler,
 		CredentialEditor: credentialRotator,
 		ProviderDefaults: providerDefaults,

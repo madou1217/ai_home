@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -19,13 +20,26 @@ type fakeAuthorizer struct{ allowed bool }
 func (fake fakeAuthorizer) Authorized(*http.Request) bool { return fake.allowed }
 
 type fakeStore struct {
-	raw   string
-	found bool
-	err   error
+	raw       string
+	found     bool
+	err       error
+	updateErr error
+	written   *string
 }
 
 func (fake fakeStore) ReadServerConfig(context.Context) (string, bool, error) {
 	return fake.raw, fake.found, fake.err
+}
+
+func (fake fakeStore) UpdateServerConfig(_ context.Context, mutate func(current string, found bool) (string, error)) error {
+	if fake.updateErr != nil {
+		return fake.updateErr
+	}
+	next, err := mutate(fake.raw, fake.found)
+	if err == nil && fake.written != nil {
+		*fake.written = next
+	}
+	return err
 }
 
 func newHandler(t *testing.T, store Store) http.Handler {
@@ -120,9 +134,9 @@ func TestAuthorizationAndMethod(t *testing.T) {
 	}
 
 	recorder = httptest.NewRecorder()
-	newHandler(t, fakeStore{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, nil))
+	newHandler(t, fakeStore{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodPut, Path, nil))
 	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST status = %d", recorder.Code)
+		t.Fatalf("PUT status = %d", recorder.Code)
 	}
 }
 
@@ -151,5 +165,71 @@ func TestSourceReadsSameKeyAsNode(t *testing.T) {
 	chars, custom, err := resolveLargePasteChars(raw, found)
 	if err != nil || chars != 60 || !custom {
 		t.Fatalf("resolve = %d/%v/%v", chars, custom, err)
+	}
+}
+
+func postPaste(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(body)))
+	return recorder
+}
+
+func TestWritePreservesOtherSettings(t *testing.T) {
+	written := ""
+	store := fakeStore{raw: "{\"maxAttempts\":7}", found: true, written: &written}
+	handler := newHandler(t, store)
+	recorder := postPaste(t, handler, "{\"largePasteChars\":60}")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	payload := decode(t, recorder)
+	if payload["largePasteChars"] != float64(60) || payload["custom"] != true {
+		t.Fatalf("payload = %#v", payload)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal([]byte(written), &stored); err != nil {
+		t.Fatalf("written = %q: %v", written, err)
+	}
+	if stored["largePasteChars"] != float64(60) || stored["maxAttempts"] != float64(7) {
+		t.Fatalf("written = %s", written)
+	}
+}
+
+func TestWriteReset(t *testing.T) {
+	handler := newHandler(t, fakeStore{raw: "{\"largePasteChars\":60}", found: true})
+	recorder := postPaste(t, handler, "{\"largePasteChars\":null}")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	payload := decode(t, recorder)
+	if payload["largePasteChars"] != float64(defaultLargePasteChars) || payload["custom"] != false {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestWriteValidation(t *testing.T) {
+	handler := newHandler(t, fakeStore{})
+	for _, body := range []string{"{\"largePasteChars\":49}", "{\"largePasteChars\":100001}", "{\"largePasteChars\":50.5}", "{\"largePasteChars\":\"abc\"}"} {
+		recorder := postPaste(t, handler, body)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("body %s status = %d", body, recorder.Code)
+		}
+		payload := decode(t, recorder)
+		if payload["error"] != "invalid_large_paste_chars" {
+			t.Fatalf("body %s payload = %#v", body, payload)
+		}
+	}
+	recorder := postPaste(t, handler, "{")
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid json status = %d", recorder.Code)
+	}
+}
+
+func TestWriteFailure(t *testing.T) {
+	handler := newHandler(t, fakeStore{updateErr: errors.New("boom")})
+	recorder := postPaste(t, handler, "{\"largePasteChars\":60}")
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", recorder.Code)
 	}
 }

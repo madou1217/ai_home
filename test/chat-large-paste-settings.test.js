@@ -10,7 +10,7 @@ const { PassThrough } = require('node:stream');
 const ts = require('../web/node_modules/typescript');
 const limits = require('../contracts/chat-attachments.json').largePasteChars;
 const { parseServerConfigArgs } = require('../lib/server/server-config-command');
-const { readServerConfig, resolveLargePasteChars, sanitizeServerConfig, writeServerConfig } = require('../lib/server/server-config-store');
+const { resolveLargePasteChars, sanitizeServerConfig } = require('../lib/server/server-config-store');
 const { handleChatPasteRequest, matchChatPasteRoute } = require('../lib/server/webui-chat-paste-routes');
 
 test('contract: default 200, minimum 50', () => {
@@ -35,24 +35,28 @@ function call(aiHomeDir, method, body, goResponse) {
   const req = new PassThrough();
   req.method = method;
   req.headers = {};
+  const state = { lastWrite: null };
   let response;
   const deps = goResponse === undefined ? {} : {
-    goCoreSync: { getChatPasteSettings: async () => goResponse }
+    goCoreSync: {
+      getChatPasteSettings: async () => goResponse,
+      updateChatPasteSettings: async (payload) => {
+        state.lastWrite = payload;
+        return goResponse;
+      }
+    }
   };
   const ctx = { req, res: {}, fs, aiHomeDir, deps, writeJson: (_res, status, payload) => { response = { status, payload }; } };
   const pending = handleChatPasteRequest(ctx);
   req.end(body === undefined ? '' : JSON.stringify(body));
-  return pending.then(() => response);
+  return pending.then(() => ({ ...response, lastWrite: state.lastWrite }));
 }
 
-test('WebUI route reads and writes the same server config key the CLI uses', async (t) => {
+test('WebUI paste route proxies GET/POST to Go', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-paste-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
-  // 已有的其它设置不能被这条路由改写。
-  writeServerConfig({ maxAttempts: 7 }, { fs, aiHomeDir });
 
   assert.equal(matchChatPasteRoute('GET', '/v0/webui/chat/paste-settings'), true);
-  // GET 固定读 Go：Node 不再本地解析默认值。
   const goSettings = {
     ok: true,
     status: 200,
@@ -62,21 +66,26 @@ test('WebUI route reads and writes the same server config key the CLI uses', asy
   assert.equal((await call(aiHomeDir, 'GET', undefined, { ok: false, status: 0 })).status, 503);
   assert.equal((await call(aiHomeDir, 'GET')).status, 503);
 
-  const saved = await call(aiHomeDir, 'POST', { largePasteChars: 60 });
+  const savedResponse = {
+    ok: true,
+    status: 200,
+    data: { ok: true, largePasteChars: 60, custom: true, limits: { default: 200, min: 50, max: 100000 } }
+  };
+  const saved = await call(aiHomeDir, 'POST', { largePasteChars: 60 }, savedResponse);
   assert.equal(saved.status, 200);
   assert.equal(saved.payload.largePasteChars, 60);
   assert.equal(saved.payload.custom, true);
-  assert.equal(readServerConfig({ fs, aiHomeDir }).largePasteChars, 60);
-  assert.equal(readServerConfig({ fs, aiHomeDir }).maxAttempts, 7);
+  assert.deepEqual(saved.lastWrite, { largePasteChars: 60 });
 
-  const tooSmall = await call(aiHomeDir, 'POST', { largePasteChars: 49 });
+  const invalid = { ok: false, status: 400, data: { ok: false, error: 'invalid_large_paste_chars' } };
+  const tooSmall = await call(aiHomeDir, 'POST', { largePasteChars: 49 }, invalid);
   assert.equal(tooSmall.status, 400);
   assert.equal(tooSmall.payload.error, 'invalid_large_paste_chars');
-  assert.equal(readServerConfig({ fs, aiHomeDir }).largePasteChars, 60);
 
-  const reset = await call(aiHomeDir, 'POST', { largePasteChars: null });
+  const reset = await call(aiHomeDir, 'POST', { largePasteChars: null }, goSettings);
   assert.equal(reset.payload.largePasteChars, 200);
   assert.equal(reset.payload.custom, false);
+  assert.equal((await call(aiHomeDir, 'POST', { largePasteChars: 60 })).status, 503);
 });
 
 test('WebUI paste helper honours the configured threshold and its floor', () => {

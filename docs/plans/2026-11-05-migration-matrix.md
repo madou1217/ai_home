@@ -447,10 +447,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   prepare/activate/discard 只接受回环 + 引导密钥，30s TTL 单发布锁。Node 侧不保留本地写入兜底。
   同日删除 `control.install/uninstall` 的本地实现（安装/卸载唯一写者已在 Go），控制面只剩
   enable/disable、诊断与期望状态；`state-store.update` 仅作为无 Go 依赖的单测回退保留。
-- **会话框大段粘贴阈值 GET 切 Go**：Go 新增 `GET /v1/management/webui/chat/paste-settings`，
-  只读 app-state.db 的 `config:server`（与 `aih server config set --large-paste-chars` 同键），
-  默认值/上下限与 `contracts/chat-attachments.json` 同源；Node GET 固定代理、Go 不可用 503，
-  POST（写配置）仍在 Node。
+- **会话框大段粘贴阈值读写切 Go**：Go 新增 `GET|POST /v1/management/webui/chat/paste-settings`，
+  读 app-state.db 的 `config:server`（与 `aih server config set --large-paste-chars` 同键），
+  写路径在 `BEGIN IMMEDIATE` 事务里只合并 `largePasteChars`，其它设置与密钥原样保留；
+  默认值/上下限与 `contracts/chat-attachments.json` 同源。Node GET/POST 固定代理、
+  Go 不可用 503。
 - **全局用量配置 GET 切 Go**：Go 新增 `GET /v1/management/webui/config`，只读 app-state.db 的
   `config:usage`，复刻 Node `normalizeConfig`（间隔白名单、阈值 1..100、自动换号开关与剩余
   百分比夹取）；Node GET 固定代理、Go 不可用 503，POST 写配置仍在 Node。

@@ -135,9 +135,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 		mux.Handle("GET "+webuialiaspoolapi.Path+"/{provider}/{accountRef}/alias-pool", handlers.webuiAliasPool)
 		mux.Handle("POST "+webuialiaspoolapi.Path+"/{provider}/{accountRef}/alias-pool", handlers.webuiAliasPool)
 	}
-	// 粘贴设置：GET 固定读 Go；POST（写 server config）仍在 Node。
+	// 粘贴设置：读写都固定走 Go。
 	if handlers.webuiChatPaste != nil {
 		mux.Handle("GET "+webuichatpasteapi.Path, handlers.webuiChatPaste)
+		mux.Handle("POST "+webuichatpasteapi.Path, handlers.webuiChatPaste)
 	}
 	// 全局用量配置：GET 固定读 Go；POST（写 config:usage）仍在 Node。
 	if handlers.webuiUsageConfig != nil {

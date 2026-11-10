@@ -35,9 +35,11 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Store 读取 Node 的 server 配置原文（app_kv config:server）。
+// Store 读写 Node 的 server 配置原文（app_kv config:server）。
 type Store interface {
 	ReadServerConfig(ctx context.Context) (string, bool, error)
+	// UpdateServerConfig 在立即事务里读改写 config:server。
+	UpdateServerConfig(ctx context.Context, mutate func(current string, found bool) (string, error)) error
 }
 
 // Dependencies 汇总只读依赖。
@@ -90,9 +92,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
+	if request.Method != http.MethodGet && request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/POST")
+		return
+	}
+	if request.Method == http.MethodPost {
+		handler.writeSettings(response, request)
 		return
 	}
 	raw, found, err := handler.store.ReadServerConfig(request.Context())
@@ -108,6 +114,68 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	writeJSON(response, http.StatusOK, responseView{
 		OK:              true,
 		LargePasteChars: chars,
+		Custom:          custom,
+		Limits:          limitsView{Default: defaultLargePasteChars, Min: minLargePasteChars, Max: maxLargePasteChars},
+	})
+}
+
+// writeSettings 处理 POST：只改 config:server 的 largePasteChars，其它字段原样保留。
+func (handler *Handler) writeSettings(response http.ResponseWriter, request *http.Request) {
+	var payload any
+	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 4*1024))
+	if err := decoder.Decode(&payload); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_json", "")
+		return
+	}
+	object, ok := payload.(map[string]any)
+	if !ok || object == nil {
+		writeError(response, http.StatusBadRequest, "invalid_json", "")
+		return
+	}
+	rawValue := object["largePasteChars"]
+	reset := rawValue == nil
+	if number, isNumber := rawValue.(float64); isNumber && number == 0 {
+		reset = true
+	}
+	value := 0
+	if !reset {
+		number := toNumber(rawValue)
+		if math.IsNaN(number) || number != math.Trunc(number) || number < minLargePasteChars || number > maxLargePasteChars {
+			writeJSON(response, http.StatusBadRequest, map[string]any{
+				"ok": false, "error": "invalid_large_paste_chars",
+				"message": "粘贴阈值只接受 50..100000 的整数",
+				"limits":  limitsView{Default: defaultLargePasteChars, Min: minLargePasteChars, Max: maxLargePasteChars},
+			})
+			return
+		}
+		value = int(number)
+	}
+	err := handler.store.UpdateServerConfig(request.Context(), func(current string, found bool) (string, error) {
+		config := map[string]any{}
+		if found && strings.TrimSpace(current) != "" {
+			if err := json.Unmarshal([]byte(current), &config); err != nil {
+				return "", err
+			}
+		}
+		config["largePasteChars"] = value
+		encoded, err := json.Marshal(config)
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
+	})
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "chat_paste_settings_write_failed", "")
+		return
+	}
+	resolved := value
+	custom := value > 0
+	if !custom {
+		resolved = defaultLargePasteChars
+	}
+	writeJSON(response, http.StatusOK, responseView{
+		OK:              true,
+		LargePasteChars: resolved,
 		Custom:          custom,
 		Limits:          limitsView{Default: defaultLargePasteChars, Min: minLargePasteChars, Max: maxLargePasteChars},
 	})

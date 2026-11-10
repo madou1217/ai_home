@@ -98,6 +98,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
 )
@@ -163,6 +164,8 @@ type serverHandlers struct {
 	webuiSSHSessions http.Handler
 	// webuiServerConfig 是 server 配置的公开只读视图（密钥隐藏）。
 	webuiServerConfig http.Handler
+	// webuiToolkitTargets 是 toolkit 执行目标（本机 + SSH 连接）的只读列表。
+	webuiToolkitTargets http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1302,6 +1305,14 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 server 配置接口失败: %w", err)
 	}
+	webuiToolkitTargetsHandler, err := webuitoolkittargetsapi.NewHandler(webuitoolkittargetsapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      sshSource,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 toolkit 执行目标接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1732,6 +1743,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiSSHWorkspaces:    webuiSSHWorkspacesHandler,
 		webuiSSHSessions:      webuiSSHSessionsHandler,
 		webuiServerConfig:     webuiServerConfigHandler,
+		webuiToolkitTargets:   webuiToolkitTargetsHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

@@ -466,6 +466,10 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   `toPublicServerConfig` 隐藏 apiKey/managementKey（保留 configured 标志）。两侧共用
   `test/fixtures/server-config-sanitize-cases.json` 对拍；Node GET 固定代理、Go 不可用 503，
   POST 写配置仍在 Node。
+- **toolkit 执行目标 GET 切 Go**：Go 新增 `GET /v1/management/webui/toolkit/environments/targets`，
+  只读 `ssh_connections`，复刻 Node `listToolkitTargets`：固定本机目标 + 仅保留
+  `conn_<16hex>` 的 SSH 连接，`label` 回落 `host`，展示为 `user@host`。Node GET 固定代理、
+  Go 不可用 503；本地 `listToolkitTargets` 已删除，远端执行仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

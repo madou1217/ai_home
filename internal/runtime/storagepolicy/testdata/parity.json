@@ -1,0 +1,1315 @@
+{
+  "home": "/Users/x",
+  "providers": {
+    "codex": {
+      "nativeRoot": [
+        ".codex"
+      ],
+      "hostAuthRoot": null,
+      "runtimeHomeRoot": [
+        ".codex",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "auth",
+          "path": [
+            ".codex",
+            "auth.json"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".codex",
+            "config.toml"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        ".tmp",
+        "model",
+        "images"
+      ]
+    },
+    "claude": {
+      "nativeRoot": [
+        ".claude"
+      ],
+      "hostAuthRoot": null,
+      "runtimeHomeRoot": [
+        ".claude",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            ".claude",
+            ".credentials.json"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "gemini": {
+      "nativeRoot": [
+        ".gemini"
+      ],
+      "hostAuthRoot": null,
+      "runtimeHomeRoot": [
+        ".gemini",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "oauthCreds",
+          "path": [
+            ".gemini",
+            "oauth_creds.json"
+          ],
+          "format": "json",
+          "optional": false
+        },
+        {
+          "field": "googleAccounts",
+          "path": [
+            ".gemini",
+            "google_accounts.json"
+          ],
+          "format": "json",
+          "optional": true
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "agy": {
+      "nativeRoot": [
+        ".gemini",
+        "antigravity-cli"
+      ],
+      "hostAuthRoot": null,
+      "runtimeHomeRoot": [
+        ".gemini",
+        "antigravity-cli",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "oauthToken",
+          "path": [
+            ".gemini",
+            "antigravity-cli",
+            "antigravity-oauth-token"
+          ],
+          "format": "json",
+          "optional": false
+        },
+        {
+          "field": "desktopOauthToken",
+          "path": [
+            ".gemini",
+            "jetski-standalone-oauth-token"
+          ],
+          "format": "json",
+          "optional": true
+        },
+        {
+          "field": "email",
+          "path": [
+            ".gemini",
+            "antigravity-cli",
+            "email.cache"
+          ],
+          "format": "text",
+          "optional": true
+        },
+        {
+          "field": "oauthCreds",
+          "path": [
+            ".gemini",
+            "oauth_creds.json"
+          ],
+          "format": "json",
+          "optional": true
+        },
+        {
+          "field": "googleAccounts",
+          "path": [
+            ".gemini",
+            "google_accounts.json"
+          ],
+          "format": "json",
+          "optional": true
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "opencode": {
+      "nativeRoot": [
+        ".local",
+        "share",
+        "opencode"
+      ],
+      "hostAuthRoot": null,
+      "runtimeHomeRoot": [
+        ".local",
+        "share",
+        "opencode",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "auth",
+          "path": [
+            ".local",
+            "share",
+            "opencode",
+            "auth.json"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".local",
+            "share",
+            "aih-opencode-runtime",
+            "opencode",
+            "auth.json"
+          ]
+        },
+        {
+          "path": [
+            ".config",
+            "opencode",
+            "auth.json"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "grok": {
+      "nativeRoot": [
+        ".grok"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".grok",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "auth",
+          "path": [
+            ".grok",
+            "auth.json"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "kimi": {
+      "nativeRoot": [
+        ".kimi-code"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".kimi-code",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            ".kimi-code",
+            "credentials",
+            "kimi-code.json"
+          ],
+          "format": "json",
+          "optional": false
+        },
+        {
+          "field": "deviceId",
+          "path": [
+            ".kimi-code",
+            "device_id"
+          ],
+          "format": "text",
+          "optional": true
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".kimi-code",
+            "config.toml"
+          ]
+        },
+        {
+          "path": [
+            ".kimi-code",
+            "credentials"
+          ]
+        },
+        {
+          "path": [
+            ".kimi-code",
+            "session_index.jsonl"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "zcode": {
+      "nativeRoot": [
+        ".zcode"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".zcode",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            ".zcode",
+            "v2",
+            "credentials.json"
+          ],
+          "format": "json",
+          "optional": false
+        },
+        {
+          "field": "config",
+          "path": [
+            ".zcode",
+            "v2",
+            "config.json"
+          ],
+          "format": "json",
+          "optional": true
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "kiro": {
+      "nativeRoot": [
+        ".kiro"
+      ],
+      "hostAuthRoot": [
+        ".local",
+        "share",
+        "kiro-cli"
+      ],
+      "runtimeHomeRoot": null,
+      "authArtifacts": [
+        {
+          "field": "database",
+          "path": [
+            "data.sqlite3"
+          ],
+          "format": "binary-base64",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".aih-kiro-auth-binding"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "cline": {
+      "nativeRoot": [
+        ".cline"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": null,
+      "authArtifacts": [
+        {
+          "field": "auth",
+          "path": [
+            ".cline",
+            "data",
+            "settings",
+            "providers.json"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".cline",
+            "data",
+            "settings"
+          ]
+        },
+        {
+          "path": [
+            ".cline",
+            "data",
+            "secrets.json"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "qoder": {
+      "nativeRoot": [],
+      "hostAuthRoot": [
+        ".qoder"
+      ],
+      "runtimeHomeRoot": [
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            ".auth",
+            "user"
+          ],
+          "format": "text",
+          "optional": false
+        },
+        {
+          "field": "machineId",
+          "path": [
+            ".auth",
+            "machine_id"
+          ],
+          "format": "text",
+          "optional": true
+        },
+        {
+          "field": "dnsCache",
+          "path": [
+            ".cache",
+            "dns-cache.json"
+          ],
+          "format": "json",
+          "optional": true
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".auth"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "qodercn": {
+      "nativeRoot": [],
+      "hostAuthRoot": [
+        ".qoder-cn"
+      ],
+      "runtimeHomeRoot": [
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            ".auth",
+            "user"
+          ],
+          "format": "text",
+          "optional": false
+        },
+        {
+          "field": "machineId",
+          "path": [
+            ".auth",
+            "machine_id"
+          ],
+          "format": "text",
+          "optional": true
+        },
+        {
+          "field": "dnsCache",
+          "path": [
+            ".cache",
+            "dns-cache.json"
+          ],
+          "format": "json",
+          "optional": true
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".auth"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "codebuddy": {
+      "nativeRoot": [
+        ".codebuddy"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".codebuddy",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Data",
+            "Public",
+            "auth",
+            "Tencent-Cloud.coding-copilot.info"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy",
+            "diagnostics"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Preferences",
+            "com.apple.security.plist"
+          ]
+        },
+        {
+          "path": [
+            ".workbuddy-key-fallback"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Cache"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Logs"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy",
+            ".mcp.json"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy",
+            "sessions"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "codebuddycn": {
+      "nativeRoot": [
+        ".codebuddy-cn"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".codebuddy-cn",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Data",
+            "Public",
+            "auth",
+            "workbuddy-desktop.info"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy",
+            "diagnostics"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Preferences",
+            "com.apple.security.plist"
+          ]
+        },
+        {
+          "path": [
+            ".workbuddy-key-fallback"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Cache"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Logs"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy-cn",
+            ".mcp.json"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy-cn",
+            "sessions"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "workbuddy": {
+      "nativeRoot": [
+        ".workbuddy-ai"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".workbuddy-ai",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Data",
+            "Public",
+            "auth",
+            "workbuddy-desktop-ai.info"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy",
+            "diagnostics"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Preferences",
+            "com.apple.security.plist"
+          ]
+        },
+        {
+          "path": [
+            ".workbuddy-key-fallback"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Cache"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Logs"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    },
+    "workbuddycn": {
+      "nativeRoot": [
+        ".workbuddy"
+      ],
+      "hostAuthRoot": [],
+      "runtimeHomeRoot": [
+        ".workbuddy",
+        ".aih-runtime-home"
+      ],
+      "authArtifacts": [
+        {
+          "field": "credentials",
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Data",
+            "Public",
+            "auth",
+            "workbuddy-desktop.info"
+          ],
+          "format": "json",
+          "optional": false
+        }
+      ],
+      "privateArtifacts": [
+        {
+          "path": [
+            "electron-user-data"
+          ]
+        },
+        {
+          "path": [
+            ".codebuddy",
+            "diagnostics"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Preferences",
+            "com.apple.security.plist"
+          ]
+        },
+        {
+          "path": [
+            ".workbuddy-key-fallback"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Cache"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Application Support",
+            "CodeBuddyExtension",
+            "Logs"
+          ]
+        },
+        {
+          "path": [
+            "Library",
+            "Keychains"
+          ]
+        }
+      ],
+      "attachmentSubdir": [
+        "tmp",
+        "model",
+        "images"
+      ]
+    }
+  },
+  "privateEntryNames": {
+    "codex": [
+      "auth.json",
+      "config.toml"
+    ],
+    "claude": [
+      ".credentials.json"
+    ],
+    "gemini": [
+      "oauth_creds.json",
+      "google_accounts.json"
+    ],
+    "agy": [
+      "antigravity-oauth-token",
+      "email.cache"
+    ],
+    "opencode": [
+      "auth.json"
+    ],
+    "grok": [
+      "auth.json"
+    ],
+    "kimi": [
+      "credentials",
+      "device_id",
+      "config.toml",
+      "credentials",
+      "session_index.jsonl"
+    ],
+    "zcode": [
+      "v2",
+      "v2"
+    ],
+    "kiro": [],
+    "cline": [
+      "data",
+      "data",
+      "data"
+    ],
+    "qoder": [
+      ".auth",
+      ".auth",
+      ".cache",
+      "electron-user-data",
+      ".auth",
+      "library"
+    ],
+    "qodercn": [
+      ".auth",
+      ".auth",
+      ".cache",
+      "electron-user-data",
+      ".auth",
+      "library"
+    ],
+    "codebuddy": [
+      "diagnostics",
+      ".mcp.json",
+      "sessions"
+    ],
+    "codebuddycn": [
+      ".mcp.json",
+      "sessions"
+    ],
+    "workbuddy": [],
+    "workbuddycn": []
+  },
+  "denySamples": [
+    {
+      "path": "/Users/x/.codex/auth.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.codex/auth.json.bak",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.codex/config.toml",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.codex/auth.json/extra",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/.claude/.credentials.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.claude/settings.json",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/credentials.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/Credentials.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info.bak",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop-ai.info",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/Library/Keychains/login.keychain",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/electron-user-data/Cookies",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/.kimi-code/credentials/kimi-code.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.kimi-code/session_index.jsonl",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.zcode/v2/credentials.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.local/share/opencode/auth.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.config/opencode/auth.json",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.local/share/aih-opencode-runtime/opencode/auth.json",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.cline/data/settings/providers.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.cline/data/secrets.json",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.qoder/.auth/user",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.auth/machine_id",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/data.sqlite3",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.kiro/data.sqlite3",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.gemini/oauth_creds.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.gemini/antigravity-cli/antigravity-oauth-token",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.aih-kiro-auth-binding",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.codebuddy/.mcp.json",
+      "auth": false,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.codebuddy/sessions/a.json",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/.workbuddy-ai/auth.json",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/projects/a.md",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "/Users/x/.codebuddy/projects/a.jsonl",
+      "auth": false,
+      "private": false
+    },
+    {
+      "path": "C:\\Users\\x\\.codex\\auth.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "/Users/x/.codex//auth.json",
+      "auth": true,
+      "private": true
+    },
+    {
+      "path": "  /Users/x/.codex/auth.json  ",
+      "auth": true,
+      "private": true
+    }
+  ],
+  "configSamples": [
+    {
+      "path": "/Users/x/.config/opencode/settings.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.config/opencode",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.codex/config.toml",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.codex/config.toml.bak",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.codex/config.toml/child",
+      "denied": false
+    },
+    {
+      "path": "/Users/x/.codex/hooks.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.claude/settings.local.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.claude/.mcp.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.mcp.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.claude.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.gemini/settings.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.gemini/.gemini/settings.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.gemini/antigravity-cli/mcp_config.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/.gemini/antigravity-cli/other.json",
+      "denied": false
+    },
+    {
+      "path": "/Users/x/.gemini/config/a.json",
+      "denied": true
+    },
+    {
+      "path": "/Users/x/other/config.toml",
+      "denied": false
+    },
+    {
+      "path": ".codex/config.toml",
+      "denied": false
+    },
+    {
+      "path": "",
+      "denied": false
+    }
+  ],
+  "readableRoots": [
+    "/Users/x/.codex/.tmp/model/images",
+    "/Users/x/.codex/attachments",
+    "/Users/x/.claude/tmp/model/images",
+    "/Users/x/.claude/artifacts",
+    "/Users/x/.claude/image-cache",
+    "/Users/x/.claude/projects",
+    "/Users/x/.gemini/tmp/model/images",
+    "/Users/x/.gemini/history",
+    "/Users/x/.gemini/tmp",
+    "/Users/x/.gemini/antigravity-cli/tmp/model/images",
+    "/Users/x/.gemini/antigravity-cli/brain",
+    "/Users/x/.gemini/antigravity-cli/scratch",
+    "/Users/x/.local/share/opencode/tmp/model/images",
+    "/Users/x/.local/share/opencode/storage"
+  ],
+  "familyConfigDirNames": [
+    ".codebuddy",
+    ".codebuddy-cn",
+    ".workbuddy-ai",
+    ".workbuddy"
+  ]
+}

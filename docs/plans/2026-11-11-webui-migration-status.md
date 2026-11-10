@@ -68,6 +68,16 @@
 | 47 | `/openai-models/refresh` `/delete` | POST | `webuiopenaimodelswriteapi` | 立即事务改 model-catalog-settings，删除幂等 |
 | 48 | `/sessions/previews` | POST | `webuisessionpreviewsapi` | 批量 200 上限、并发 8、8s 整批超时、逐条错误 |
 | 49 | `/egress-pool` | GET | `webuiegresspoolapi` | 只读投影已实现，**未挂载**：Go 侧还没有出口池数据源 |
+| 50 | `/sessions/lifecycle-capabilities` `/sessions/archive` | GET/POST | `webuisessionslifecycleapi` | claude/gemini 文件级归档 + codex app-server；重复归档幂等 |
+| 51 | `/accounts/:p/:r` 会话列表 | GET | `webuisessionslistapi` | claude/codex/codebuddy 家族；其它 provider 501 而非空列表 |
+| 52 | `/accounts/:p/:r/reauth` | POST | `webuiaccountreauthapi` | 复用 accountauth 作业服务，已有作业幂等返回 |
+| 53 | `/toolkit/apps/:appId/settings` | PUT | `webuitoolappsettingswriteapi` | 立即事务合并，交叉约束在事务内判 |
+| 54 | `/control-plane/bootstrap` | GET | `webuicontrolplanebootstrapapi` | 默认不回明文 Key，由 `RevealManagementKey` 端口决定 |
+| 55 | `/accounts/provider-auth-sources` | GET | `webuiproviderauthsourcesapi` | 只判存在性；`installable`/`alreadyImported` 恒 false 已标注 |
+
+**已实现但未挂载（缺运行时端口）**：`webuiopenappapi`（Launcher）、`webuiaccountrefreshapi`（三段 Refresher）、`webuiaccountrefreshusageapi`（QuotaProbe）、`webuisshhostbrowseapi`（Runner）。这四个包测试齐全，注入真实端口后即可注册；直接挂 nil 端口只会得到 501，所以先不占路由。
+
+**契约分歧（切 Node 代理前必须处理）**：`refresh` / `refresh-usage` 在 Node 是 `202 + job + SSE`，Go 是同步 200 逐段结果；`tool-app settings` 的 PUT 响应缺 `capability`，需与 GET 读模型合并；`app-entries` 已切流并做形状合并。
 
 **尚未切的 Node 入口**：上述 9 条已在 Go 注册并可直连，但 `lib/server/web-ui-router.js` 仍走 Node 实现。切换前必须逐条对齐形状，已知差异：
 

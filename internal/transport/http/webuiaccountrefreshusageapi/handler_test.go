@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,7 +62,9 @@ func (fake *fakeProbe) ProbeQuota(
 		return Snapshot{}, ctx.Err()
 	}
 	if fake.err != nil {
-		return Snapshot{}, fake.err
+		// 故意连快照一起返回：真实适配器可能在探测失败时仍持有上一份快照，
+		// 调用方必须只看 error，不能把它当成本次刷新结果。
+		return fake.snapshot, fake.err
 	}
 	return fake.snapshot, nil
 }
@@ -237,6 +240,9 @@ func TestRefreshUsageRejectsUnauthorized(t *testing.T) {
 	if recorder.Code != http.StatusUnauthorized || decoded["error"] != "unauthorized" {
 		t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
 	}
+	if challenge := recorder.Header().Get("WWW-Authenticate"); challenge != "Bearer" {
+		t.Fatalf("WWW-Authenticate = %q, want Bearer", challenge)
+	}
 	if probe.receivedRef != "" {
 		t.Fatal("未鉴权的请求不得触发探测")
 	}
@@ -251,10 +257,17 @@ func TestRefreshUsageRejectsNonPost(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d", recorder.Code)
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 	if allow := recorder.Header().Get("Allow"); allow != http.MethodPost {
 		t.Fatalf("Allow = %q", allow)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode %q: %v", recorder.Body.String(), err)
+	}
+	if decoded["error"] != "method_not_allowed" {
+		t.Fatalf("error = %v", decoded["error"])
 	}
 }
 
@@ -288,6 +301,13 @@ func TestRefreshUsageRejectsEmptyPath(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
+	var decoded map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode %q: %v", recorder.Body.String(), err)
+	}
+	if decoded["error"] != "invalid_account_path" {
+		t.Fatalf("error = %v", decoded["error"])
+	}
 	if probe.receivedRef != "" {
 		t.Fatal("空账号路径不得触发探测")
 	}
@@ -301,18 +321,23 @@ func TestRefreshUsageWithoutProbeReturnsNotImplemented(t *testing.T) {
 		t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
 	}
 	// 必须显式说明「没刷新」，而不是返回空窗口列表冒充「没有额度」。
-	if _, present := decoded["windows"]; present {
-		t.Fatalf("body = %v", decoded)
-	}
+	//
+	// 注：任务书写的错误码是 quota_refresh_unavailable，handler 实际用的是
+	// quota_probe_unavailable（quota_refresh_unavailable 只出现在 503 分支）；
+	// 本切片不改实现，按现状断言并在报告里登记这处命名偏差。
+	assertNoSnapshotPayload(t, decoded)
 }
 
-func TestRefreshUsageMapsProbeFailure(t *testing.T) {
-	handler := newHandler(t, knownAccounts(), &fakeProbe{err: errors.New("upstream 500")}, 0)
+func TestRefreshUsageMapsProbeFailureWithoutLeakingSnapshot(t *testing.T) {
+	// 探测失败时适配器手里可能还留着上一份快照；响应必须只说失败。
+	probe := &fakeProbe{snapshot: validSnapshot(), err: errors.New("upstream 500")}
+	handler := newHandler(t, knownAccounts(), probe, 0)
 
 	recorder, decoded := postRefreshUsage(t, handler, testProvider, testAccountRef)
 	if recorder.Code != http.StatusBadGateway || decoded["error"] != "quota_probe_failed" {
 		t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
 	}
+	assertNoSnapshotPayload(t, decoded)
 }
 
 func TestRefreshUsageReturnsGatewayTimeout(t *testing.T) {
@@ -350,6 +375,7 @@ func TestRefreshUsageRejectsMismatchedSnapshot(t *testing.T) {
 			if recorder.Code != http.StatusBadGateway || decoded["error"] != "quota_probe_invalid_snapshot" {
 				t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
 			}
+			assertNoSnapshotPayload(t, decoded)
 		})
 	}
 }
@@ -396,4 +422,202 @@ func TestPathConstantsComposeTheManagementRoute(t *testing.T) {
 	if !strings.HasPrefix(RefreshUsageSuffix, "/{provider}/{accountRef}/") {
 		t.Fatalf("suffix = %q", RefreshUsageSuffix)
 	}
+}
+
+// assertCapturedAt 校验 capturedAt 是可解析的 RFC3339 时间戳，且 capturedAtMs 与它
+// 指向同一时刻：展示层用前者格式化、用后者算剩余时间，两者漂移会显示错时间。
+func assertCapturedAt(t *testing.T, decoded map[string]any, want time.Time) {
+	t.Helper()
+	raw, _ := decoded["capturedAt"].(string)
+	if raw == "" {
+		t.Fatalf("capturedAt = %v", decoded["capturedAt"])
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		t.Fatalf("capturedAt = %q 不是 RFC3339: %v", raw, err)
+	}
+	if !parsed.Equal(want) {
+		t.Fatalf("capturedAt = %q, want %v", raw, want.UTC())
+	}
+	if milliseconds, _ := decoded["capturedAtMs"].(float64); int64(milliseconds) != parsed.UnixMilli() {
+		t.Fatalf("capturedAtMs = %v 与 capturedAt %q 不是同一时刻", decoded["capturedAtMs"], raw)
+	}
+}
+
+// assertNoSnapshotPayload 校验失败响应没有夹带任何快照字段。
+//
+// 刷新失败时旧快照可能仍在库里，把它当成本次结果返回等于伪造刷新成功。
+func assertNoSnapshotPayload(t *testing.T, decoded map[string]any) {
+	t.Helper()
+	if decoded["ok"] != false {
+		t.Fatalf("ok = %v, want false", decoded["ok"])
+	}
+	for _, key := range []string{"windows", "capturedAt", "capturedAtMs", "planType", "source"} {
+		if value, present := decoded[key]; present {
+			t.Fatalf("失败响应不得携带 %s（%v）", key, value)
+		}
+	}
+}
+
+// assertNoStore 校验响应禁止缓存。
+func assertNoStore(t *testing.T, recorder *httptest.ResponseRecorder) {
+	t.Helper()
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("status = %d, Cache-Control = %q, want no-store；"+
+			"handler.go 的 writeJSON 没有设置该头，需在 ServeHTTP 入口统一补一次", recorder.Code, got)
+	}
+}
+
+// TestRefreshUsageProjectsCapturedAtAndOptionalWindowFields 覆盖时间戳一致性与
+// 三个「零值不等于缺失」的字段：剩余 0%、未提供窗口长度、未提供恢复时间。
+func TestRefreshUsageProjectsCapturedAtAndOptionalWindowFields(t *testing.T) {
+	capturedAt := time.UnixMilli(1_700_000_000_123).UTC()
+	exhausted := 0.0
+	full := 100.0
+	probe := &fakeProbe{snapshot: Snapshot{
+		Provider:   testProvider,
+		AccountRef: testAccountRef,
+		CapturedAt: capturedAt,
+		Windows: []Window{
+			{
+				Bucket:       "primary",
+				Kind:         kindWindow,
+				Scope:        scopeAccount,
+				RemainingPct: &exhausted,
+				Availability: availabilityExhausted,
+			},
+			{
+				Bucket:        "seven_day",
+				Kind:          kindWindow,
+				Scope:         scopeAccount,
+				RemainingPct:  &full,
+				WindowSeconds: 60,
+				ResetAt:       capturedAt.Add(2 * time.Hour),
+				Availability:  availabilityAvailable,
+			},
+		},
+	}}
+	handler := newHandler(t, knownAccounts(), probe, 0)
+
+	recorder, decoded := postRefreshUsage(t, handler, testProvider, testAccountRef)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	assertCapturedAt(t, decoded, capturedAt)
+
+	windows, ok := decoded["windows"].([]any)
+	if !ok || len(windows) != 2 {
+		t.Fatalf("windows = %v", decoded["windows"])
+	}
+	for index, raw := range windows {
+		window, _ := raw.(map[string]any)
+		// 契约要求 remainingPct 落在 0–100；null 表示未知，不在越界判定内。
+		if remaining, ok := window["remainingPct"].(float64); ok && (remaining < 0 || remaining > 100) {
+			t.Fatalf("windows[%d].remainingPct = %v 越界", index, remaining)
+		}
+	}
+
+	first, _ := windows[0].(map[string]any)
+	// 0% 是「已耗尽」，必须原样保留成数字 0，不能因为零值被省略成 null。
+	if remaining, ok := first["remainingPct"].(float64); !ok || remaining != 0 {
+		t.Fatalf("remainingPct = %v, want 0", first["remainingPct"])
+	}
+	// Provider 没给窗口长度和恢复时间：两个字段分别是「省略」和「null」。
+	if value, present := first["windowSeconds"]; present {
+		t.Fatalf("windowSeconds = %v，未提供时应省略", value)
+	}
+	if value, present := first["windowMinutes"]; present {
+		t.Fatalf("windowMinutes = %v，未提供时应省略", value)
+	}
+	if resetAtMS, present := first["resetAtMs"]; !present || resetAtMS != nil {
+		t.Fatalf("resetAtMs = %v (present=%v)，未提供时必须是 null", resetAtMS, present)
+	}
+
+	second, _ := windows[1].(map[string]any)
+	if remaining, _ := second["remainingPct"].(float64); remaining != 100 {
+		t.Fatalf("remainingPct = %v, want 100", second["remainingPct"])
+	}
+	if minutes, _ := second["windowMinutes"].(float64); int64(minutes) != 1 {
+		t.Fatalf("windowMinutes = %v, want 1", second["windowMinutes"])
+	}
+	if resetAtMS, _ := second["resetAtMs"].(float64); int64(resetAtMS) != capturedAt.Add(2*time.Hour).UnixMilli() {
+		t.Fatalf("resetAtMs = %v, want %d", second["resetAtMs"], capturedAt.Add(2*time.Hour).UnixMilli())
+	}
+}
+
+func TestRefreshUsageRejectsOutOfRangeRemainingPct(t *testing.T) {
+	for name, remaining := range map[string]float64{
+		"below_zero":    -0.1,
+		"above_hundred": 100.1,
+		"nan":           math.NaN(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			snapshot := validSnapshot()
+			snapshot.Windows[0].RemainingPct = &remaining
+			handler := newHandler(t, knownAccounts(), &fakeProbe{snapshot: snapshot}, 0)
+
+			recorder, decoded := postRefreshUsage(t, handler, testProvider, testAccountRef)
+			if recorder.Code != http.StatusBadGateway || decoded["error"] != "quota_probe_invalid_snapshot" {
+				t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
+			}
+			assertNoSnapshotPayload(t, decoded)
+		})
+	}
+}
+
+func TestRefreshUsageRejectsEmptyWindows(t *testing.T) {
+	// 空窗口列表必须当失败处理：200 + windows: [] 会被展示层读成「这个账号没有额度」。
+	snapshot := validSnapshot()
+	snapshot.Windows = []Window{}
+	handler := newHandler(t, knownAccounts(), &fakeProbe{snapshot: snapshot}, 0)
+
+	recorder, decoded := postRefreshUsage(t, handler, testProvider, testAccountRef)
+	if recorder.Code != http.StatusBadGateway || decoded["error"] != "quota_probe_invalid_snapshot" {
+		t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
+	}
+	assertNoSnapshotPayload(t, decoded)
+}
+
+func TestRefreshUsageFailsClosedWithoutHandler(t *testing.T) {
+	for name, handler := range map[string]*Handler{
+		"nil_handler":  nil,
+		"zero_handler": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/", nil))
+			if recorder.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			}
+			var decoded map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &decoded); err != nil {
+				t.Fatalf("decode %q: %v", recorder.Body.String(), err)
+			}
+			if decoded["error"] != "quota_refresh_unavailable" {
+				t.Fatalf("error = %v", decoded["error"])
+			}
+		})
+	}
+}
+
+// TestRefreshUsageWritesNoStoreCacheControl 覆盖成功与失败响应的禁缓存头。
+//
+// 额度数据属于账号隐私，任何状态码都不能让中间层缓存；其它 /v1/management
+// 写入口（如 webuiquotaresetapi）都在入口统一设置。
+func TestRefreshUsageWritesNoStoreCacheControl(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		handler := newHandler(t, knownAccounts(), &fakeProbe{snapshot: validSnapshot()}, 0)
+		recorder, _ := postRefreshUsage(t, handler, testProvider, testAccountRef)
+		assertNoStore(t, recorder)
+	})
+	t.Run("account_not_found", func(t *testing.T) {
+		handler := newHandler(t, fakeAccounts{}, &fakeProbe{snapshot: validSnapshot()}, 0)
+		recorder, _ := postRefreshUsage(t, handler, testProvider, testAccountRef)
+		assertNoStore(t, recorder)
+	})
+	t.Run("probe_failed", func(t *testing.T) {
+		handler := newHandler(t, knownAccounts(), &fakeProbe{err: errors.New("upstream 500")}, 0)
+		recorder, _ := postRefreshUsage(t, handler, testProvider, testAccountRef)
+		assertNoStore(t, recorder)
+	})
 }

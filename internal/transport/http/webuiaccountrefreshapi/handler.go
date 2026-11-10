@@ -2,16 +2,22 @@
 //
 //	POST /v1/management/webui/accounts/{provider}/{accountRef}/refresh
 //
-// 与 Node 的 handleRefreshAccountRequest 相比，本切片是同步实现：Node 返回 202 与
-// job 句柄，再由 SSE 推送逐段进度；Go 入口在一次请求内并发执行状态 / 模型 / 额度
-// 三段，逐段返回 {ok, code, error}，HTTP 状态恒为 200（鉴权、方法、路径与账号不存在
-// 除外），调用方一次就能拿到全部结果，不需要额外的作业表与事件流。
+// 契约：**响应形状与 Node 的 handleRefreshAccountRequest 逐字段一致**——
+// `{ok, accepted, alreadyRunning, job}`，job 是 scope=account 的作业快照
+// （branches 里逐段 status/error，failedBranches 列出失败段，finishedAt 为终态时间）。
 //
-// 三段互相独立：单段失败只写进自己那一段，不影响其它段；整体超时（默认 20s）时
-// 未完成段标 timeout，已完成的段原样返回。三个 Refresher 都是可选端口，未接线的
-// 段返回 refresh_unavailable，不用成功状态掩盖「没有刷新」。
+// 执行模型是同步的：Node 返回 202 后靠 SSE 推进度，Go 在一次请求内并发跑完三段，
+// 直接回一个**终态** job。前端 handleAccountRefreshJobUpdate 对终态 job 会立刻收尾
+// （清 spinner、按 failedBranches 提示），所以不需要作业表、事件流或轮询。
 //
-// 装配（路由注册、Node 代理切换）不在本包内：本切片只提供可挂载的 http.Handler。
+// 稳定性取舍：
+//   - 三段并发、单段失败隔离，只有全部失败时 job.status 才是 failed；
+//   - 整体超时（默认 20s）时未完成段标 timeout，已完成的段原样保留；
+//   - 刷新跑在 context.WithoutCancel 上：客户端断开不会中止已经开始的探测，
+//     避免「界面关了、账号状态刷一半」；
+//   - 同一账号的并发请求复用同一次执行（alreadyRunning=true），不会重复打上游。
+//
+// 三个 Refresher 都是可选端口，未接线的段标 refresh_unavailable，不用成功掩盖「没刷新」。
 package webuiaccountrefreshapi
 
 import (
@@ -19,7 +25,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -42,6 +50,16 @@ const (
 	// BranchUsage 是额度刷新段的键名。
 	BranchUsage = "usage"
 
+	// JobScopeAccount 与 Node 的 job.scope 同值：账号级刷新（含 branches 明细）。
+	JobScopeAccount = "account"
+
+	// jobStatusSucceeded / jobStatusFailed 是作业终态，与 Node 序列化口径一致。
+	jobStatusSucceeded = "succeeded"
+	jobStatusFailed    = "failed"
+	// branchStatusSucceeded / branchStatusFailed 是单段终态。
+	branchStatusSucceeded = "succeeded"
+	branchStatusFailed    = "failed"
+
 	// codeRefreshUnavailable 表示该段刷新端口没有接线。
 	codeRefreshUnavailable = "refresh_unavailable"
 	// codeRefreshFailed 表示该段刷新执行失败。
@@ -55,6 +73,13 @@ const (
 	// maxErrorRunes 与 Node 的 slice(0, 500) 对齐，避免把上游长报文整段带回界面。
 	maxErrorRunes = 500
 )
+
+// branchLabels 与 Node 的 BRANCH_LABELS 同文案，用于拼 job.error。
+var branchLabels = map[string]string{
+	BranchStatus: "状态",
+	BranchModels: "模型",
+	BranchUsage:  "额度",
+}
 
 // errRefreshUnavailable 由未接线的段返回，统一翻成 refresh_unavailable。
 var errRefreshUnavailable = errors.New("刷新端口未接线")
@@ -126,7 +151,7 @@ type Dependencies struct {
 	Timeout         time.Duration
 }
 
-// BranchResult 是单段刷新的结果。
+// BranchResult 是单段刷新的结果（内部用）。
 //
 // ok=false 时 code 一定存在：refresh_unavailable（未接线）、refresh_failed（执行
 // 失败）或 timeout（整体超时未完成）；error 是给人看的摘要。
@@ -136,18 +161,36 @@ type BranchResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Response 是一次账号刷新的完整结果。
+// JobBranch 是作业里单段的状态，字段名与 Node 的 serializeAccountRefreshJob 一致。
+type JobBranch struct {
+	Status string `json:"status"`
+	Error  string `json:"error"`
+}
+
+// Job 是账号刷新作业快照，形状对齐 Node 的 scope=account 序列化结果。
 //
-// OK 沿用 Node 的作业口径：只要有一段成功就为 true，三段全部失败才是 false；
-// failedBranches 如实列出失败段，避免「整体成功」掩盖某一面没刷到。
+// FinishedAt 用指针：Node 在未完成时输出 null，用 0 会变成「1970 年已完成」。
+type Job struct {
+	ID             string               `json:"id"`
+	Provider       string               `json:"provider"`
+	AccountRef     string               `json:"accountRef"`
+	Status         string               `json:"status"`
+	CreatedAt      int64                `json:"createdAt"`
+	UpdatedAt      int64                `json:"updatedAt"`
+	FinishedAt     *int64               `json:"finishedAt"`
+	Error          string               `json:"error"`
+	FailedBranches []string             `json:"failedBranches,omitempty"`
+	Scope          string               `json:"scope"`
+	Branches       map[string]JobBranch `json:"branches"`
+}
+
+// Response 是刷新接口的完整响应，与 Node 的 202 响应同形。
 type Response struct {
-	OK             bool                    `json:"ok"`
-	Provider       string                  `json:"provider"`
-	AccountRef     string                  `json:"accountRef"`
-	Branches       map[string]BranchResult `json:"branches"`
-	FailedBranches []string                `json:"failedBranches,omitempty"`
-	TimedOut       bool                    `json:"timedOut"`
-	DurationMS     int64                   `json:"durationMs"`
+	OK             bool  `json:"ok"`
+	Accepted       bool  `json:"accepted"`
+	AlreadyRunning bool  `json:"alreadyRunning"`
+	Job            Job   `json:"job"`
+	DurationMS     int64 `json:"durationMs"`
 }
 
 type errorResponse struct {
@@ -164,6 +207,17 @@ type Handler struct {
 	modelRefresher  ModelRefresher
 	quotaRefresher  QuotaRefresher
 	timeout         time.Duration
+
+	// inflight 让同一账号的并发刷新复用同一次执行：第二个请求等第一个跑完，
+	// 拿同一份 job 并标 alreadyRunning=true，避免重复打上游。
+	inflightMu sync.Mutex
+	inflight   map[string]*inflightRun
+}
+
+// inflightRun 是一次进行中的刷新。
+type inflightRun struct {
+	done chan struct{}
+	job  Job
 }
 
 // NewHandler 校验必需依赖并创建 Handler。
@@ -182,10 +236,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		modelRefresher:  dependencies.ModelRefresher,
 		quotaRefresher:  dependencies.QuotaRefresher,
 		timeout:         timeout,
+		inflight:        make(map[string]*inflightRun),
 	}, nil
 }
 
-// ServeHTTP 只接受 POST，校验账号后并发执行三段刷新。
+// ServeHTTP 只接受 POST，校验账号后并发执行三段刷新并返回终态作业。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.accounts == nil {
 		writeError(response, http.StatusServiceUnavailable,
@@ -229,28 +284,117 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 
 	startedAt := time.Now()
-	specs := handler.branches(accountRef)
-	results, timedOut := runBranches(request.Context(), handler.timeout, specs)
-
-	failedBranches := make([]string, 0, len(specs))
-	anySucceeded := false
-	for _, spec := range specs {
-		if results[spec.name].OK {
-			anySucceeded = true
-			continue
-		}
-		failedBranches = append(failedBranches, spec.name)
-	}
-
-	writeJSON(response, http.StatusOK, Response{
-		OK:             anySucceeded,
-		Provider:       provider,
-		AccountRef:     accountRef.String(),
-		Branches:       results,
-		FailedBranches: failedBranches,
-		TimedOut:       timedOut,
+	job, alreadyRunning := handler.refresh(request.Context(), provider, accountRef)
+	writeJSON(response, http.StatusAccepted, Response{
+		OK:             true,
+		Accepted:       true,
+		AlreadyRunning: alreadyRunning,
+		Job:            job,
 		DurationMS:     time.Since(startedAt).Milliseconds(),
 	})
+}
+
+// refresh 执行一次刷新；同一账号已有执行在跑时等待并复用它的结果。
+//
+// 刷新本体跑在 context.WithoutCancel 上：客户端断开不该把已经发出的上游探测掐断，
+// 否则账号状态会停在刷一半的样子。整体上限仍由 handler.timeout 控制。
+func (handler *Handler) refresh(
+	parent context.Context,
+	provider string,
+	accountRef accountcore.AccountRef,
+) (Job, bool) {
+	key := provider + "\x00" + accountRef.String()
+
+	handler.inflightMu.Lock()
+	if running, found := handler.inflight[key]; found {
+		handler.inflightMu.Unlock()
+		select {
+		case <-running.done:
+		case <-time.After(handler.timeout + time.Second):
+			// 极端情况下上一次执行卡住：给一个超时终态，不让调用方无限等。
+		}
+		return running.job, true
+	}
+	running := &inflightRun{done: make(chan struct{})}
+	handler.inflight[key] = running
+	handler.inflightMu.Unlock()
+
+	job := handler.runOnce(context.WithoutCancel(parent), provider, accountRef)
+
+	handler.inflightMu.Lock()
+	running.job = job
+	delete(handler.inflight, key)
+	handler.inflightMu.Unlock()
+	close(running.done)
+	return job, false
+}
+
+// runOnce 并发跑三段并组装终态作业。
+func (handler *Handler) runOnce(
+	parent context.Context,
+	provider string,
+	accountRef accountcore.AccountRef,
+) Job {
+	now := time.Now().UnixMilli()
+	specs := handler.branches(accountRef)
+	results := runBranches(parent, handler.timeout, specs)
+
+	branches := make(map[string]JobBranch, len(specs))
+	failedBranches := make([]string, 0, len(specs))
+	failures := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		result := results[spec.name]
+		if result.OK {
+			branches[spec.name] = JobBranch{Status: branchStatusSucceeded}
+			continue
+		}
+		branches[spec.name] = JobBranch{Status: branchStatusFailed, Error: result.Error}
+		failedBranches = append(failedBranches, spec.name)
+		label := branchLabels[spec.name]
+		if label == "" {
+			label = spec.name
+		}
+		failures = append(failures, label+"："+result.Error)
+	}
+
+	// 与 Node 同口径：只有全部段都失败才算作业失败，否则是「部分失败」。
+	status := jobStatusSucceeded
+	if len(failedBranches) == len(specs) && len(specs) > 0 {
+		status = jobStatusFailed
+	}
+	// 全部成功时 job.error 必须为空：Node 的 serializeAccountRefreshJob 输出 error: ''，
+	// 而 truncateText 的「刷新失败」兜底只该用在真正的失败摘要上。
+	errorText := ""
+	if len(failures) > 0 {
+		errorText = truncateText(strings.Join(failures, "；"))
+	}
+	finishedAt := time.Now().UnixMilli()
+	job := Job{
+		ID:         makeJobID(provider, accountRef.String(), now),
+		Provider:   provider,
+		AccountRef: accountRef.String(),
+		Status:     status,
+		CreatedAt:  now,
+		UpdatedAt:  finishedAt,
+		FinishedAt: &finishedAt,
+		Error:      errorText,
+		Scope:      JobScopeAccount,
+		Branches:   branches,
+	}
+	if len(failedBranches) > 0 {
+		job.FailedBranches = failedBranches
+	}
+	return job
+}
+
+// makeJobID 生成与 Node 同前缀的作业标识；同步执行下它只用于前端去重与展示。
+func makeJobID(provider string, accountRef string, nowMS int64) string {
+	return strings.Join([]string{
+		"acct-refresh",
+		provider,
+		accountRef,
+		strconv.FormatInt(nowMS, 36),
+	}, "-")
 }
 
 // branchSpec 是一段刷新的执行体。
@@ -306,7 +450,7 @@ func runBranches(
 	parent context.Context,
 	timeout time.Duration,
 	specs []branchSpec,
-) (map[string]BranchResult, bool) {
+) map[string]BranchResult {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
@@ -323,24 +467,22 @@ func runBranches(
 	}
 
 	results := make(map[string]BranchResult, len(specs))
-	timedOut := false
 	for len(results) < len(specs) {
 		select {
 		case item := <-outcomes:
 			results[item.name] = item.result
 		case <-ctx.Done():
-			timedOut = true
 			for _, spec := range specs {
 				if _, done := results[spec.name]; !done {
 					results[spec.name] = BranchResult{
 						Code:  codeTimeout,
-						Error: "刷新超时，该段未在限定时间内完成",
+						Error: "刷新超时（timeout），该段未在限定时间内完成",
 					}
 				}
 			}
 		}
 	}
-	return results, timedOut
+	return results
 }
 
 // resultOfError 把一段刷新的错误收敛成稳定错误码。
@@ -349,23 +491,24 @@ func resultOfError(err error) BranchResult {
 	case err == nil:
 		return BranchResult{OK: true}
 	case errors.Is(err, errRefreshUnavailable):
+		// 作业 JSON 只暴露 status/error：把错误码写进文案，前端和排障才认得出是哪一类失败。
 		return BranchResult{
 			Code:  codeRefreshUnavailable,
-			Error: "该段刷新端口未接线，无法执行",
+			Error: "该段刷新端口未接线（refresh_unavailable），无法执行",
 		}
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return BranchResult{
 			Code:  codeTimeout,
-			Error: "刷新超时，该段未在限定时间内完成",
+			Error: "刷新超时（timeout），该段未在限定时间内完成",
 		}
 	default:
-		return BranchResult{Code: codeRefreshFailed, Error: truncateError(err)}
+		return BranchResult{Code: codeRefreshFailed, Error: truncateText(err.Error())}
 	}
 }
 
-// truncateError 截断错误摘要，按 rune 截断以免切断多字节字符。
-func truncateError(err error) string {
-	text := strings.TrimSpace(err.Error())
+// truncateText 截断错误摘要，按 rune 截断以免切断多字节字符。
+func truncateText(text string) string {
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return "刷新失败"
 	}

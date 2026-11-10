@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -52,6 +55,9 @@ func (stub stubStatusRefresher) RefreshAccountStatus(
 	ctx context.Context,
 	_ accountcore.AccountRef,
 ) error {
+	if stub.run == nil {
+		return nil
+	}
 	return stub.run(ctx)
 }
 
@@ -162,6 +168,42 @@ func decodeRefreshError(t *testing.T, recorder *httptest.ResponseRecorder) error
 	return payload
 }
 
+// decodeJSONMap 把响应体解成通用 map，用于逐字段断言 JSON 形状。
+func decodeJSONMap(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode json body %q: %v", string(body), err)
+	}
+	return payload
+}
+
+// assertJSONKeys 断言 JSON 对象的键集合完全一致，多一个少一个都算契约漂移。
+func assertJSONKeys(t *testing.T, payload map[string]any, want ...string) {
+	t.Helper()
+	got := make([]string, 0, len(payload))
+	for key := range payload {
+		got = append(got, key)
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("JSON keys = %v, want %v (payload = %v)", got, want, payload)
+	}
+}
+
+// allSucceeded 返回三段都成功的依赖。
+func allSucceeded(t *testing.T) Dependencies {
+	t.Helper()
+	return Dependencies{
+		Authorizer:      testAuthorizer(true),
+		Accounts:        stubDirectory{account: testAccount(t, testProvider)},
+		StatusRefresher: stubStatusRefresher{run: func(context.Context) error { return nil }},
+		ModelRefresher:  stubModelRefresher{run: func(context.Context) error { return nil }},
+		QuotaRefresher:  stubQuotaRefresher{run: func(context.Context) error { return nil }},
+	}
+}
+
 func TestNewHandlerValidatesDependencies(t *testing.T) {
 	validAuthorizer := testAuthorizer(true)
 	validDirectory := stubDirectory{account: testAccount(t, testProvider)}
@@ -201,10 +243,7 @@ func TestRefreshRejectsUnauthorized(t *testing.T) {
 }
 
 func TestRefreshRejectsMethod(t *testing.T) {
-	handler := newRefreshHandler(t, Dependencies{
-		Authorizer: testAuthorizer(true),
-		Accounts:   stubDirectory{account: testAccount(t, testProvider)},
-	})
+	handler := newRefreshHandler(t, allSucceeded(t))
 	request := newRefreshRequest(testProvider, testRefText)
 	request.Method = http.MethodGet
 	recorder := httptest.NewRecorder()
@@ -279,7 +318,120 @@ func TestRefreshRejectsProviderMismatch(t *testing.T) {
 	}
 }
 
-func TestRefreshReportsUnavailableBranches(t *testing.T) {
+func TestRefreshSucceedsAllBranches(t *testing.T) {
+	handler := newRefreshHandler(t, allSucceeded(t))
+
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	payload := decodeRefreshResponse(t, recorder)
+	if !payload.OK || !payload.Accepted {
+		t.Fatalf("payload = %+v, want ok/accepted", payload)
+	}
+	if payload.AlreadyRunning {
+		t.Fatalf("alreadyRunning = true, want false for the first request")
+	}
+	job := payload.Job
+	if job.Status != jobStatusSucceeded {
+		t.Fatalf("job.status = %q, want succeeded", job.Status)
+	}
+	if job.Provider != testProvider || job.AccountRef != testRefText {
+		t.Fatalf("job = %+v, want provider/accountRef 归一", job)
+	}
+	if job.Scope != JobScopeAccount {
+		t.Fatalf("job.scope = %q, want %q", job.Scope, JobScopeAccount)
+	}
+	if job.Error != "" {
+		t.Fatalf("job.error = %q, want empty", job.Error)
+	}
+	if len(job.FailedBranches) != 0 {
+		t.Fatalf("failedBranches = %v, want empty", job.FailedBranches)
+	}
+	if job.FinishedAt == nil {
+		t.Fatal("finishedAt = nil, want 终态毫秒")
+	}
+	if job.CreatedAt <= 0 || job.UpdatedAt < job.CreatedAt || *job.FinishedAt < job.UpdatedAt {
+		t.Fatalf("时间戳不单调：%+v", job)
+	}
+	for _, name := range []string{BranchStatus, BranchModels, BranchUsage} {
+		branch, found := job.Branches[name]
+		if !found {
+			t.Fatalf("branch %q missing from %+v", name, job.Branches)
+		}
+		if branch.Status != branchStatusSucceeded || branch.Error != "" {
+			t.Fatalf("branch %q = %+v, want succeeded", name, branch)
+		}
+	}
+}
+
+func TestRefreshKeepsSuccessfulBranchesWhenStatusFails(t *testing.T) {
+	dependencies := allSucceeded(t)
+	dependencies.StatusRefresher = stubStatusRefresher{run: func(context.Context) error {
+		return errors.New("凭据已失效")
+	}}
+	handler := newRefreshHandler(t, dependencies)
+
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	job := decodeRefreshResponse(t, recorder).Job
+	// 只有一段失败时作业整体仍算成功：其它面已经刷新过了。
+	if job.Status != jobStatusSucceeded {
+		t.Fatalf("job.status = %q, want succeeded", job.Status)
+	}
+	if !reflect.DeepEqual(job.FailedBranches, []string{BranchStatus}) {
+		t.Fatalf("failedBranches = %v, want [status]", job.FailedBranches)
+	}
+	if !strings.Contains(job.Error, "状态：") {
+		t.Fatalf("job.error = %q, want 含「状态：」", job.Error)
+	}
+	if !strings.Contains(job.Error, "凭据已失效") {
+		t.Fatalf("job.error = %q, want 带上游错误", job.Error)
+	}
+	if branch := job.Branches[BranchStatus]; branch.Status != branchStatusFailed ||
+		branch.Error != "凭据已失效" {
+		t.Fatalf("status branch = %+v, want failed 凭据已失效", branch)
+	}
+	for _, name := range []string{BranchModels, BranchUsage} {
+		if branch := job.Branches[name]; branch.Status != branchStatusSucceeded {
+			t.Fatalf("branch %q = %+v, want succeeded", name, branch)
+		}
+	}
+}
+
+func TestRefreshReportsAllFailedAsFailed(t *testing.T) {
+	fail := func(context.Context) error { return errors.New("boom") }
+	dependencies := allSucceeded(t)
+	dependencies.StatusRefresher = stubStatusRefresher{run: fail}
+	dependencies.ModelRefresher = stubModelRefresher{run: fail}
+	dependencies.QuotaRefresher = stubQuotaRefresher{run: fail}
+	handler := newRefreshHandler(t, dependencies)
+
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	job := decodeRefreshResponse(t, recorder).Job
+	if job.Status != jobStatusFailed {
+		t.Fatalf("job.status = %q, want failed", job.Status)
+	}
+	if !reflect.DeepEqual(job.FailedBranches,
+		[]string{BranchStatus, BranchModels, BranchUsage}) {
+		t.Fatalf("failedBranches = %v", job.FailedBranches)
+	}
+	for _, name := range []string{BranchStatus, BranchModels, BranchUsage} {
+		if branch := job.Branches[name]; branch.Status != branchStatusFailed {
+			t.Fatalf("branch %q = %+v, want failed", name, branch)
+		}
+	}
+}
+
+func TestRefreshMarksUnavailableBranches(t *testing.T) {
 	handler := newRefreshHandler(t, Dependencies{
 		Authorizer: testAuthorizer(true),
 		Accounts:   stubDirectory{account: testAccount(t, testProvider)},
@@ -287,31 +439,25 @@ func TestRefreshReportsUnavailableBranches(t *testing.T) {
 
 	recorder := postRefresh(t, handler, testProvider, testRefText)
 
-	if recorder.Code != http.StatusOK {
+	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	payload := decodeRefreshResponse(t, recorder)
-	if payload.OK {
-		t.Fatalf("OK = true, want false when every refresher is missing")
-	}
-	if payload.TimedOut {
-		t.Fatalf("TimedOut = true, want false")
-	}
-	if payload.Provider != testProvider || payload.AccountRef != testRefText {
-		t.Fatalf("payload = %+v", payload)
+	job := decodeRefreshResponse(t, recorder).Job
+	if job.Status != jobStatusFailed {
+		t.Fatalf("job.status = %q, want failed when every refresher is missing", job.Status)
 	}
 	for _, name := range []string{BranchStatus, BranchModels, BranchUsage} {
-		branch, ok := payload.Branches[name]
-		if !ok {
-			t.Fatalf("branch %q missing from %+v", name, payload.Branches)
+		branch, found := job.Branches[name]
+		if !found {
+			t.Fatalf("branch %q missing from %+v", name, job.Branches)
 		}
-		if branch.OK || branch.Code != codeRefreshUnavailable {
-			t.Fatalf("branch %q = %+v, want refresh_unavailable", name, branch)
+		if branch.Status != branchStatusFailed {
+			t.Fatalf("branch %q = %+v, want failed", name, branch)
 		}
-	}
-	wantFailed := []string{BranchStatus, BranchModels, BranchUsage}
-	if !reflect.DeepEqual(payload.FailedBranches, wantFailed) {
-		t.Fatalf("failedBranches = %v, want %v", payload.FailedBranches, wantFailed)
+		// 作业 JSON 只暴露 status/error，未接线必须能从文案里认出稳定错误码。
+		if !strings.Contains(branch.Error, codeRefreshUnavailable) {
+			t.Fatalf("branch %q error = %q, want 含 %q", name, branch.Error, codeRefreshUnavailable)
+		}
 	}
 }
 
@@ -327,14 +473,12 @@ func TestRefreshRunsBranchesConcurrently(t *testing.T) {
 			return ctx.Err()
 		}
 	}
-	handler := newRefreshHandler(t, Dependencies{
-		Authorizer:      testAuthorizer(true),
-		Accounts:        stubDirectory{account: testAccount(t, testProvider)},
-		StatusRefresher: stubStatusRefresher{run: waitForPeers},
-		ModelRefresher:  stubModelRefresher{run: waitForPeers},
-		QuotaRefresher:  stubQuotaRefresher{run: waitForPeers},
-		Timeout:         2 * time.Second,
-	})
+	dependencies := allSucceeded(t)
+	dependencies.StatusRefresher = stubStatusRefresher{run: waitForPeers}
+	dependencies.ModelRefresher = stubModelRefresher{run: waitForPeers}
+	dependencies.QuotaRefresher = stubQuotaRefresher{run: waitForPeers}
+	dependencies.Timeout = 2 * time.Second
+	handler := newRefreshHandler(t, dependencies)
 	recorder := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -357,69 +501,12 @@ func TestRefreshRunsBranchesConcurrently(t *testing.T) {
 		t.Fatal("刷新未在预期时间内完成")
 	}
 
-	if recorder.Code != http.StatusOK {
+	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	payload := decodeRefreshResponse(t, recorder)
-	if !payload.OK || len(payload.FailedBranches) != 0 {
-		t.Fatalf("payload = %+v, want all branches succeeded", payload)
-	}
-}
-
-func TestRefreshKeepsSuccessfulBranchesWhenOneFails(t *testing.T) {
-	handler := newRefreshHandler(t, Dependencies{
-		Authorizer:      testAuthorizer(true),
-		Accounts:        stubDirectory{account: testAccount(t, testProvider)},
-		StatusRefresher: stubStatusRefresher{run: func(context.Context) error { return nil }},
-		ModelRefresher: stubModelRefresher{run: func(context.Context) error {
-			return errors.New("上游 500")
-		}},
-		QuotaRefresher: stubQuotaRefresher{run: func(context.Context) error { return nil }},
-	})
-
-	recorder := postRefresh(t, handler, testProvider, testRefText)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
-	payload := decodeRefreshResponse(t, recorder)
-	if !payload.OK {
-		t.Fatalf("OK = false, want true when two branches succeeded")
-	}
-	if !reflect.DeepEqual(payload.FailedBranches, []string{BranchModels}) {
-		t.Fatalf("failedBranches = %v, want [models]", payload.FailedBranches)
-	}
-	if !payload.Branches[BranchStatus].OK || !payload.Branches[BranchUsage].OK {
-		t.Fatalf("branches = %+v, want status/usage succeeded", payload.Branches)
-	}
-	models := payload.Branches[BranchModels]
-	if models.OK || models.Code != codeRefreshFailed || models.Error != "上游 500" {
-		t.Fatalf("models = %+v, want refresh_failed 上游 500", models)
-	}
-}
-
-func TestRefreshReportsAllFailedAsNotOK(t *testing.T) {
-	fail := func(context.Context) error { return errors.New("boom") }
-	handler := newRefreshHandler(t, Dependencies{
-		Authorizer:      testAuthorizer(true),
-		Accounts:        stubDirectory{account: testAccount(t, testProvider)},
-		StatusRefresher: stubStatusRefresher{run: fail},
-		ModelRefresher:  stubModelRefresher{run: fail},
-		QuotaRefresher:  stubQuotaRefresher{run: fail},
-	})
-
-	recorder := postRefresh(t, handler, testProvider, testRefText)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
-	payload := decodeRefreshResponse(t, recorder)
-	if payload.OK {
-		t.Fatalf("OK = true, want false when every branch failed")
-	}
-	if !reflect.DeepEqual(payload.FailedBranches,
-		[]string{BranchStatus, BranchModels, BranchUsage}) {
-		t.Fatalf("failedBranches = %v", payload.FailedBranches)
+	job := decodeRefreshResponse(t, recorder).Job
+	if job.Status != jobStatusSucceeded || len(job.FailedBranches) != 0 {
+		t.Fatalf("job = %+v, want all branches succeeded", job)
 	}
 }
 
@@ -428,55 +515,205 @@ func TestRefreshMarksUnfinishedBranchesAsTimeout(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	handler := newRefreshHandler(t, Dependencies{
-		Authorizer:      testAuthorizer(true),
-		Accounts:        stubDirectory{account: testAccount(t, testProvider)},
-		StatusRefresher: stubStatusRefresher{run: func(context.Context) error { return nil }},
-		ModelRefresher:  stubModelRefresher{run: blockUntilDone},
-		QuotaRefresher:  stubQuotaRefresher{run: blockUntilDone},
-		Timeout:         50 * time.Millisecond,
-	})
+	dependencies := allSucceeded(t)
+	dependencies.ModelRefresher = stubModelRefresher{run: blockUntilDone}
+	dependencies.QuotaRefresher = stubQuotaRefresher{run: blockUntilDone}
+	dependencies.Timeout = 50 * time.Millisecond
+	handler := newRefreshHandler(t, dependencies)
 
 	recorder := postRefresh(t, handler, testProvider, testRefText)
 
-	if recorder.Code != http.StatusOK {
+	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	payload := decodeRefreshResponse(t, recorder)
-	if !payload.TimedOut {
-		t.Fatalf("TimedOut = false, want true")
+	job := decodeRefreshResponse(t, recorder).Job
+	if job.Status != jobStatusSucceeded {
+		t.Fatalf("job.status = %q, want succeeded when status branch succeeded", job.Status)
 	}
-	if !payload.Branches[BranchStatus].OK {
-		t.Fatalf("status branch = %+v, want succeeded", payload.Branches[BranchStatus])
+	if branch := job.Branches[BranchStatus]; branch.Status != branchStatusSucceeded {
+		t.Fatalf("status branch = %+v, want succeeded", branch)
 	}
 	for _, name := range []string{BranchModels, BranchUsage} {
-		branch := payload.Branches[name]
-		if branch.OK || branch.Code != codeTimeout {
-			t.Fatalf("branch %q = %+v, want timeout", name, branch)
+		branch := job.Branches[name]
+		if branch.Status != branchStatusFailed {
+			t.Fatalf("branch %q = %+v, want failed（超时段）", name, branch)
+		}
+		if !strings.Contains(branch.Error, codeTimeout) {
+			t.Fatalf("branch %q error = %q, want 含 %q", name, branch.Error, codeTimeout)
 		}
 	}
-	if !payload.OK {
-		t.Fatalf("OK = false, want true when status branch succeeded")
+	if !reflect.DeepEqual(job.FailedBranches, []string{BranchModels, BranchUsage}) {
+		t.Fatalf("failedBranches = %v, want [models usage]", job.FailedBranches)
 	}
-	if !reflect.DeepEqual(payload.FailedBranches, []string{BranchModels, BranchUsage}) {
-		t.Fatalf("failedBranches = %v, want [models usage]", payload.FailedBranches)
+}
+
+// gatedDirectory 让第二个请求在读完账号后停住，测试可以精确控制它进入复用分支的时机。
+type gatedDirectory struct {
+	account    accountcore.Account
+	mu         sync.Mutex
+	calls      int
+	secondRead chan struct{}
+	secondGate chan struct{}
+}
+
+func (directory *gatedDirectory) GetByRef(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (accountcore.Account, error) {
+	directory.mu.Lock()
+	directory.calls++
+	call := directory.calls
+	directory.mu.Unlock()
+	if call == 2 {
+		close(directory.secondRead)
+		<-directory.secondGate
+	}
+	return directory.account, nil
+}
+
+func TestRefreshReusesInflightRun(t *testing.T) {
+	var calls atomic.Int64
+	dependencies := allSucceeded(t)
+	dependencies.StatusRefresher = stubStatusRefresher{run: func(context.Context) error {
+		calls.Add(1)
+		return nil
+	}}
+	handler := newRefreshHandler(t, dependencies)
+	ref, err := accountcore.ParseAccountRef(testRefText)
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+
+	// 直接登记一次「正在执行」的刷新：复用判定只看 inflight 表，不依赖调度时序。
+	expected := Job{ID: "inflight-job", Status: jobStatusSucceeded, Scope: JobScopeAccount}
+	running := &inflightRun{done: make(chan struct{}), job: expected}
+	handler.inflightMu.Lock()
+	handler.inflight[testProvider+"\x00"+ref.String()] = running
+	handler.inflightMu.Unlock()
+
+	type result struct {
+		job            Job
+		alreadyRunning bool
+	}
+	results := make(chan result, 1)
+	go func() {
+		job, alreadyRunning := handler.refresh(context.Background(), testProvider, ref)
+		results <- result{job: job, alreadyRunning: alreadyRunning}
+	}()
+
+	// 去重生效时第二个调用不会碰 Refresher，而是等待 done。
+	time.Sleep(50 * time.Millisecond)
+	if calls.Load() != 0 {
+		t.Fatalf("Refresher 调用次数 = %d, want 0（复用不应重新执行）", calls.Load())
+	}
+	select {
+	case got := <-results:
+		t.Fatalf("刷新在 inflight 完成前返回: %+v", got)
+	default:
+	}
+
+	close(running.done)
+	select {
+	case got := <-results:
+		if !got.alreadyRunning {
+			t.Fatal("alreadyRunning = false, want true")
+		}
+		if got.job.ID != expected.ID {
+			t.Fatalf("复用应返回同一作业：%q != %q", got.job.ID, expected.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("复用调用未在期限内返回")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("Refresher 调用次数 = %d, want 0", calls.Load())
+	}
+}
+
+func TestRefreshResponseJSONShape(t *testing.T) {
+	handler := newRefreshHandler(t, allSucceeded(t))
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+
+	payload := decodeJSONMap(t, recorder.Body.Bytes())
+	// durationMs 是 Go 侧附加字段（Node 的 202 没有），其余必须与 Node 同形。
+	assertJSONKeys(t, payload, "ok", "accepted", "alreadyRunning", "job", "durationMs")
+
+	job, ok := payload["job"].(map[string]any)
+	if !ok {
+		t.Fatalf("job = %v, want 对象", payload["job"])
+	}
+	// 全部成功时 failedBranches 缺省，job 的键集合与 Node serializeAccountRefreshJob 一致。
+	assertJSONKeys(t, job,
+		"id", "provider", "accountRef", "status", "createdAt", "updatedAt",
+		"finishedAt", "error", "scope", "branches")
+	if _, isNumber := job["finishedAt"].(float64); !isNumber {
+		t.Fatalf("finishedAt = %v, want 毫秒数字", job["finishedAt"])
+	}
+	if _, isNumber := job["createdAt"].(float64); !isNumber {
+		t.Fatalf("createdAt = %v, want 毫秒数字", job["createdAt"])
+	}
+	if _, isNumber := job["updatedAt"].(float64); !isNumber {
+		t.Fatalf("updatedAt = %v, want 毫秒数字", job["updatedAt"])
+	}
+	if job["status"] != jobStatusSucceeded {
+		t.Fatalf("status = %v, want succeeded", job["status"])
+	}
+	if job["scope"] != JobScopeAccount {
+		t.Fatalf("scope = %v, want %q", job["scope"], JobScopeAccount)
+	}
+
+	branches, ok := job["branches"].(map[string]any)
+	if !ok || len(branches) != 3 {
+		t.Fatalf("branches = %v, want 三段", job["branches"])
+	}
+	for _, name := range []string{BranchStatus, BranchModels, BranchUsage} {
+		branch, ok := branches[name].(map[string]any)
+		if !ok {
+			t.Fatalf("branch %q = %v, want 对象", name, branches[name])
+		}
+		assertJSONKeys(t, branch, "status", "error")
+		if branch["error"] != "" {
+			t.Fatalf("branch %q error = %v, want 空串", name, branch["error"])
+		}
+	}
+}
+
+func TestRefreshResponseJSONShapeOnPartialFailure(t *testing.T) {
+	dependencies := allSucceeded(t)
+	dependencies.StatusRefresher = stubStatusRefresher{run: func(context.Context) error {
+		return errors.New("凭据已失效")
+	}}
+	handler := newRefreshHandler(t, dependencies)
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+
+	job, ok := decodeJSONMap(t, recorder.Body.Bytes())["job"].(map[string]any)
+	if !ok {
+		t.Fatalf("job = %v, want 对象", recorder.Body.String())
+	}
+	// 有失败段时 failedBranches 必须出现，且是字符串数组。
+	assertJSONKeys(t, job,
+		"id", "provider", "accountRef", "status", "createdAt", "updatedAt",
+		"finishedAt", "error", "failedBranches", "scope", "branches")
+	failed, ok := job["failedBranches"].([]any)
+	if !ok || len(failed) != 1 || failed[0] != BranchStatus {
+		t.Fatalf("failedBranches = %v, want [status]", job["failedBranches"])
+	}
+	if errorText, _ := job["error"].(string); !strings.Contains(errorText, "状态：") {
+		t.Fatalf("error = %v, want 含「状态：」", job["error"])
 	}
 }
 
 func TestRefreshTruncatesLongError(t *testing.T) {
 	longError := errors.New(strings.Repeat("错", maxErrorRunes+20))
-	handler := newRefreshHandler(t, Dependencies{
-		Authorizer:      testAuthorizer(true),
-		Accounts:        stubDirectory{account: testAccount(t, testProvider)},
-		StatusRefresher: stubStatusRefresher{run: func(context.Context) error { return longError }},
-		ModelRefresher:  stubModelRefresher{run: func(context.Context) error { return nil }},
-		QuotaRefresher:  stubQuotaRefresher{run: func(context.Context) error { return nil }},
-	})
+	dependencies := allSucceeded(t)
+	dependencies.StatusRefresher = stubStatusRefresher{run: func(context.Context) error {
+		return longError
+	}}
+	handler := newRefreshHandler(t, dependencies)
 
 	recorder := postRefresh(t, handler, testProvider, testRefText)
 
-	payload := decodeRefreshResponse(t, recorder)
-	status := payload.Branches[BranchStatus]
+	job := decodeRefreshResponse(t, recorder).Job
+	status := job.Branches[BranchStatus]
 	if !utf8.ValidString(status.Error) {
 		t.Fatalf("error is not valid UTF-8: %q", status.Error)
 	}

@@ -87,6 +87,35 @@
 - `sessions/previews`：Node 静默截 40 条、吞错误；Go 改为 400 / 逐条 error。
 - `git`：Node 有 5s stale-while-revalidate 缓存，Go 每次起 git 子进程。
 
+### 2026-11-11 refresh 契约决定
+
+**公开契约不变**：`/v0/webui/accounts/:provider/:accountRef/refresh` 与 `refresh-usage` 仍是 **202 + job + SSE**（事件名仍是 `account-refresh-job`，job 形状仍是 `serializeAccountRefreshJob`），前端不需要改。
+
+Go 侧把原来的同步执行器包成同样的异步作业语义，新增三条管理路由：
+
+| 方法 | 路由 | 响应 |
+| --- | --- | --- |
+| POST | `/v1/management/webui/accounts/{provider}/{accountRef}/refresh` | 202 `{ok, accepted, alreadyRunning, job}`，job 初始 `status=queued` |
+| POST | `/v1/management/webui/accounts/{provider}/{accountRef}/refresh-usage` | 同形，`job.scope=usage` |
+| GET | `/v1/management/webui/accounts/refresh-jobs/{jobId}` | 200 `{ok, job}` / 404 |
+
+作业表语义：作业在 Go 进程内异步执行，内存表最多 200 条、终态保留 10 分钟；同一 `(provider, accountRef, scope)` 的活动作业复用并返回 `alreadyRunning=true`。job 字段与 Node 的 `serializeAccountRefreshJob` 逐字段一致（`finishedAt` 未完成时为 `null`，`failedBranches` 为空时省略，`branches` 只在 `scope=account` 时出现）。
+
+**Node 现在是「Go 优先 + 本地回退」**：两条写入口都先调 Go，拿到 `data.job` 立刻回 202，再在后台每 300ms 调 `getRefreshJob`（最多 30s）把 queued/running/终态推成 SSE；终态成功后触发一次规范源刷新，让账号行跟上。
+
+- `webui-account-refresh.js`：三段刷新走 `goCoreSync.refreshAccountWebUI`；Go 的快照映射进本地作业（保留本地 job id，202 与 SSE 仍按同一 id 去重），本地三段实现保留为回退。
+- `webui-account-routes.js`：`handleRefreshAccountUsageRequest` 走 `goCoreSync.refreshAccountUsageWebUI`；API Key 账号的 400 前置校验仍在 Node。
+
+只有 `go_core_unavailable` / `network_error` / `http_404` / `http_405` / `http_501` / `status===0` 才退回 Node 的本地实现；`timeout` **不回退**——Go 可能已经在探测上游，本地再探一次会重复打上游——直接落 `failed`「刷新超时」。
+
+验证方法：
+
+- `go test ./internal/transport/http/webuiaccountrefreshapi ./internal/transport/http/webuiaccountrefreshusageapi ./internal/transport/http/webuirefreshjobstore`（三条路由 + 作业表语义）
+- `node --check lib/server/webui-account-routes.js`
+- 真机：`HOME=/Users/model aih server restart` 后在账号页点刷新，确认 SSE 依次收到 queued → running → 终态，且列表里的额度随后更新。
+
+**仍未切换的点**：Node 的模型目录缓存（`/openai-models` 读路径）仍由 Node 探测，Go 的 `models` 分支只把结果写进 `account_models`；切换前必须先确认模型选择器读的是 Go 的数据，否则会出现「Go 刷到了、界面看不到」。
+
 ## 2. 2026-11-10 运行态事故与约束
 
 ### 2.1 Go Core 启动即退出（已修）

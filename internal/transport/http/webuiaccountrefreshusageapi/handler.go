@@ -130,6 +130,7 @@ type errorView struct {
 
 // ServeHTTP 只接受 POST。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	writeNoStoreHeaders(response)
 	if handler == nil || handler.authorizer == nil || handler.accounts == nil {
 		writeError(response, http.StatusServiceUnavailable,
 			"quota_refresh_unavailable", "额度刷新服务不可用")
@@ -239,6 +240,14 @@ func newWindowViews(windows []Window) []windowView {
 		views = append(views, view)
 	}
 	return views
+}
+
+// writeNoStoreHeaders 关闭所有缓存层：额度快照属于账号隐私，且每次刷新都应重新取。
+func writeNoStoreHeaders(response http.ResponseWriter) {
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Pragma", "no-cache")
+	response.Header().Set("Referrer-Policy", "no-referrer")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
 }
 
 func writeJSON(response http.ResponseWriter, status int, payload any) {

@@ -1175,6 +1175,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		AccountsHandler:  accountsHandler,
 		CredentialEditor: credentialRotator,
 		ProviderDefaults: providerDefaults,
+		ModelRefresher:   recoveringModelManagement,
+		UsageService:     usage.service,
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},

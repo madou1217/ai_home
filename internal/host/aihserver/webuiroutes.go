@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -87,6 +88,10 @@ type webuiRouteDependencies struct {
 	CredentialEditor webuiaccountupdateapi.CredentialEditor
 	// ProviderDefaults 是 Go 的 provider 默认账号关系。
 	ProviderDefaults *accountapp.ProviderDefaults
+	// ModelRefresher 是账号模型目录刷新端口（账号刷新作业的 models 段）。
+	ModelRefresher accountapp.AccountModelRefresher
+	// UsageService 是额度应用服务（账号刷新作业的 usage 段与 refresh-usage 入口）。
+	UsageService *usageapp.Service
 	// TerminalProbe 返回持久终端会话状态；SSH 工作区终端状态接口需要。
 	TerminalProbe func(sessionKey string) string
 }
@@ -561,5 +566,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			Handler: restoreScheduling,
 		})
 	}
+	// 账号刷新同样是可选能力：账号存储缺失时整组不挂载，让 Node 继续兜底，
+	// 而不是让三条写接口把整个 Go Core 拖到启动失败。
+	refreshRoutes, err := buildWebUIRefreshRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, refreshRoutes...)
 	return routes, nil
 }

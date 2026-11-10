@@ -85,8 +85,8 @@
 | --- | --- | --- | --- | --- |
 | 21 | `/models` | GET | Node | 按 provider 组装模型目录 |
 | 22 | `/openai-models`（含 refresh/delete/watch） | GET/POST/PATCH | Node | 模型缓存、元数据、自定义模型 |
-| 23 | `/provider-cli-upgrade` | GET | Node | 含 Node 调度器 state；账本可作为 Go 切片 |
-| 24 | `/provider-cli-upgrade/:p/clear-broken` | POST | Node | 验证后解除熔断 |
+| 23 | `/provider-cli-upgrade` | GET | Go+Node | 账本已 Go；Node 只合并 scheduler/lastTick |
+| 24 | `/provider-cli-upgrade/:p/clear-broken` | POST | Node | 验证后解除熔断，响应复用 Go+Node 状态 |
 | 25 | `/provider-hooks`、`/provider-hooks/install` | GET/POST | Node | 各 provider 官方 hook 适配器 |
 | 26 | `/slash-commands` | GET | Node | 原生 CLI slash 命令发现 |
 

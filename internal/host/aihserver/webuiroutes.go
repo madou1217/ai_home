@@ -5,18 +5,25 @@ import (
 	"fmt"
 	"net/http"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifsaccessapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuifsmediaapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuifsreadapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuifstreeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifstrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimobileaccountapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
@@ -26,8 +33,11 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
@@ -53,6 +63,12 @@ type webuiRouteDependencies struct {
 	HostHomeDir     string
 	Store           *sqliteaccount.Store
 	AccountRuntime  any
+	// AccountsHandler 是 accountsapi 的账号导入端点（WebUI import 直接复用）。
+	AccountsHandler http.Handler
+	// CredentialEditor 是静态凭据编辑用例（update 路由复用）。
+	CredentialEditor webuiaccountupdateapi.CredentialEditor
+	// ProviderDefaults 是 Go 的 provider 默认账号关系。
+	ProviderDefaults *accountapp.ProviderDefaults
 	// TerminalProbe 返回持久终端会话状态；SSH 工作区终端状态接口需要。
 	TerminalProbe func(sessionKey string) string
 }
@@ -258,6 +274,81 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 provider hooks 读模型失败: %w", err)
 	}
+	fsRead, err := webuifsreadapi.NewHandler(webuifsreadapi.Dependencies{
+		Authorizer: authorizer,
+		Env:        webuifile.Env{AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir},
+		TrustedRoots: func() []webuifile.TrustedRoot {
+			roots, _ := trustSource.ReadTrustedRoots(context.Background())
+			return roots
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建文件读取接口失败: %w", err)
+	}
+	fsTree, err := webuifstreeapi.NewHandler(webuifstreeapi.Dependencies{
+		Authorizer: authorizer,
+		TrustedRoots: func() []webuifile.TrustedRoot {
+			roots, _ := trustSource.ReadTrustedRoots(context.Background())
+			return roots
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建文件树接口失败: %w", err)
+	}
+	fsMedia, err := webuifsmediaapi.NewHandler(webuifsmediaapi.Dependencies{
+		Authorizer: authorizer,
+		Env:        webuifile.Env{AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir},
+		TrustedRoots: func() []webuifile.TrustedRoot {
+			roots, _ := trustSource.ReadTrustedRoots(context.Background())
+			return roots
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建媒体预览接口失败: %w", err)
+	}
+	sshWriteSource, err := webuisshwriteapi.OpenSource(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("创建 SSH 写入数据源失败: %w", err)
+	}
+	sshWrite, err := webuisshwriteapi.NewHandler(webuisshwriteapi.Dependencies{Authorizer: authorizer, Store: sshWriteSource})
+	if err != nil {
+		return nil, fmt.Errorf("创建 SSH 写入接口失败: %w", err)
+	}
+	accountImport, err := webuiaccountimportapi.NewHandler(webuiaccountimportapi.Dependencies{
+		Authorizer: authorizer, Import: dependencies.AccountsHandler,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号导入接口失败: %w", err)
+	}
+	accountStatus, err := webuiaccountstatusapi.NewHandler(webuiaccountstatusapi.Dependencies{
+		Authorizer: authorizer, Accounts: dependencies.Store,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号启停接口失败: %w", err)
+	}
+	accountUpdate, err := webuiaccountupdateapi.NewHandler(webuiaccountupdateapi.Dependencies{
+		Authorizer: authorizer, Accounts: dependencies.Store, Editor: dependencies.CredentialEditor,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号编辑接口失败: %w", err)
+	}
+	routingAdapters, err := webuiroutingrulesapi.OpenAdapters(context.Background(), dependencies.AIHomeDir, dependencies.Store)
+	if err != nil {
+		return nil, fmt.Errorf("创建调度规则写入适配器失败: %w", err)
+	}
+	routingRules, err := webuiroutingrulesapi.NewHandler(webuiroutingrulesapi.Dependencies{
+		Authorizer: authorizer, Store: routingAdapters.Store, Accounts: routingAdapters.Accounts, Catalog: dependencies.Catalog,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建调度规则接口失败: %w", err)
+	}
+	setDefault, err := webuisetdefaultapi.NewHandler(webuisetdefaultapi.BuildDependencies(
+		authorizer, dependencies.AIHomeDir, dependencies.Catalog, dependencies.ProviderDefaults,
+		webuisetdefaultapi.HostProjection{},
+	))
+	if err != nil {
+		return nil, fmt.Errorf("创建默认账号接口失败: %w", err)
+	}
 
 	return []webuiRoute{
 		{Pattern: "POST " + webuirestoreschedulingapi.Path + webuirestoreschedulingapi.RouteSuffix, Handler: restoreScheduling},
@@ -297,5 +388,17 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuifstrustapi.TrustPath, Handler: fsTrust},
 		{Pattern: "GET " + webuifsaccessapi.Path, Handler: fsAccess},
 		{Pattern: "GET " + webuiproviderhooksapi.Path, Handler: hooks},
+		{Pattern: "GET " + webuifsreadapi.Path, Handler: fsRead},
+		{Pattern: "GET " + webuifstreeapi.Path, Handler: fsTree},
+		{Pattern: "GET " + webuifsmediaapi.Path, Handler: fsMedia},
+		{Pattern: "POST " + webuisshwriteapi.CollectionPath, Handler: sshWrite},
+		{Pattern: "PUT " + webuisshwriteapi.ItemPath, Handler: sshWrite},
+		{Pattern: "DELETE " + webuisshwriteapi.ItemPath, Handler: sshWrite},
+		{Pattern: "POST " + webuiaccountimportapi.Path, Handler: accountImport},
+		{Pattern: "POST " + webuiaccountstatusapi.Path + webuiaccountstatusapi.RouteSuffix, Handler: accountStatus},
+		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
+		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
+		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},
+		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},
 	}, nil
 }

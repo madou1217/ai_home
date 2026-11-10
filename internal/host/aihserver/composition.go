@@ -1164,13 +1164,16 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建管理指标 Handler 失败: %w", err)
 	}
 	webuiRoutes, err := buildWebUIRoutes(webuiRouteDependencies{
-		Authorizer:      authorizer,
-		AIHomeDir:       aiHomeDir,
-		Catalog:         catalog,
-		ModelModalities: modelModalities,
-		HostHomeDir:     dependencies.HostHomeDir,
-		Store:           store,
-		AccountRuntime:  accountRuntime,
+		Authorizer:       authorizer,
+		AIHomeDir:        aiHomeDir,
+		Catalog:          catalog,
+		ModelModalities:  modelModalities,
+		HostHomeDir:      dependencies.HostHomeDir,
+		Store:            store,
+		AccountRuntime:   accountRuntime,
+		AccountsHandler:  accountsHandler,
+		CredentialEditor: credentialRotator,
+		ProviderDefaults: providerDefaults,
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},

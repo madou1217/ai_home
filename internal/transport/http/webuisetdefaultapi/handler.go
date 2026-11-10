@@ -87,12 +87,27 @@ type HostGrantRevoker interface {
 	) (bool, error)
 }
 
+// ServerDefaultState 是 AIH Server 落点档位端口。默认实现是
+// aihdefault.Store 的适配器（ServerDefaultsAdapter）；注入方可以共享同一个
+// app-state.db，而不必让 Handler 重新推导路径。
+type ServerDefaultState interface {
+	ClearProviderProfile(ctx context.Context, provider string) (bool, error)
+	LandOnServerDefault(
+		ctx context.Context,
+		provider string,
+		sync aihdefault.GatewaySync,
+	) aihdefault.LandResult
+}
+
 // Dependencies 汇总写入依赖。Host 端口可以为 nil，由路由按能力显式返回 501。
 type Dependencies struct {
 	Authorizer Authorizer
 	AIHomeDir  string
 	Catalog    *providers.Catalog
 	Defaults   DefaultRelations
+
+	// ServerDefaults 可选；缺省时由 AIHomeDir 派生 aihdefault.Store。
+	ServerDefaults ServerDefaultState
 
 	HostSelector HostAccountSelector
 	HostGate     HostGatewayLander
@@ -106,7 +121,7 @@ type Handler struct {
 	databasePath string
 	catalog      *providers.Catalog
 	defaults     DefaultRelations
-	store        aihdefault.Store
+	store        ServerDefaultState
 
 	hostSelector HostAccountSelector
 	hostGate     HostGatewayLander
@@ -128,15 +143,19 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if err != nil {
 		return nil, ErrInvalidDependencies
 	}
+	store := dependencies.ServerDefaults
+	if store == nil {
+		store = NewServerDefaultsAdapter(aihdefault.Store{
+			DatabasePath: databasePath,
+			Catalog:      dependencies.Catalog,
+		})
+	}
 	return &Handler{
 		authorizer:   dependencies.Authorizer,
 		databasePath: databasePath,
 		catalog:      dependencies.Catalog,
 		defaults:     dependencies.Defaults,
-		store: aihdefault.Store{
-			DatabasePath: databasePath,
-			Catalog:      dependencies.Catalog,
-		},
+		store:        store,
 		hostSelector: dependencies.HostSelector,
 		hostGate:     dependencies.HostGate,
 		hostGrant:    dependencies.HostGrant,
@@ -190,7 +209,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if handler == nil ||
 		handler.authorizer == nil ||
 		handler.catalog == nil ||
-		handler.defaults == nil {
+		handler.defaults == nil ||
+		handler.store == nil {
 		writeError(response, http.StatusServiceUnavailable,
 			"default_account_unavailable", "默认账号服务不可用")
 		return
@@ -224,6 +244,11 @@ func (handler *Handler) serveSetDefault(response http.ResponseWriter, request *h
 	if err := handler.hostSelector.SelectAccount(
 		request.Context(), scope.provider, scope.accountRef,
 	); err != nil {
+		if aihdefault.CodeOf(err) == aihdefault.CodeHostSyncUnavailable {
+			writeError(response, http.StatusNotImplemented,
+				"host_projection_unavailable", "宿主配置投影未接入，默认账号未被修改")
+			return
+		}
 		writeError(response, http.StatusBadGateway,
 			"set_default_host_sync_failed", err.Error())
 		return
@@ -272,8 +297,8 @@ func (handler *Handler) serveClearDefault(response http.ResponseWriter, request 
 		}
 		revoked = &result
 	}
-	landed := aihdefault.LandOnServerDefault(
-		request.Context(), handler.store, scope.provider, handler.gatewaySync(),
+	landed := handler.store.LandOnServerDefault(
+		request.Context(), scope.provider, handler.gatewaySync(),
 	)
 	if !landed.OK {
 		status, code := landingFailure(landed.Reason)

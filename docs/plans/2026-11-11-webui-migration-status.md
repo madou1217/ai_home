@@ -52,6 +52,31 @@
 | 38 | control-plane 端点提示 | GET | Go | Node 传请求地址/绑定 host/端口，Go 枚举网卡 | `ca0b2290` |
 | 39 | provider CLI 升级状态 | GET | Go+Node | Go 读账本投影，Node 合并 scheduler/lastTick | `dffe9562` |
 
+### 2026-11-10 追加（宿主面 / 设置面，10 项）
+
+> 归属口径为 **Go 已实现并挂载 `/v1/management/webui/*`**；Node 的 `/v0/webui/*` 入口尚未切到 Go 代理，见本节末尾说明。
+
+| # | 接口/能力 | 方法 | 包 | 说明 |
+| --- | --- | --- | --- | --- |
+| 40 | `/git/summary` `/git/diff` | GET | `webuigitapi` | 直传参数调 git，8s 超时 + 2MB 预算，realpath 包含校验 |
+| 41 | `/projects` | GET | `webuiprojectsapi` | claude/gemini 复用 sessionscan，codex 读 rollout；2 万条目 + 8s 预算 |
+| 42 | `/slash-commands` | GET | `webuislashcommandsapi` | claude 内置 81 条 + 用户命令 frontmatter，指纹守卫 |
+| 43 | `/app-entries` | GET | `webuiappentriesapi` | 桌面/CLI 探测，30s 缓存，单 provider 150ms 预算 |
+| 44 | `/toolkit/environments` | GET | `webuitoolkitruntimeapi` | 15 个工具并发探测，单工具 1s 版本超时 |
+| 45 | `/server-config/management-key/rotate` | POST | `webuimanagementkeyapi` | 立即事务写 `config:server`，常量时间比对，响应 no-store |
+| 46 | `/provider-cli-upgrade/:p/clear-broken` | POST | `webuiproviderclearbrokenapi` | 可选验证后清熔断，写回账本 |
+| 47 | `/openai-models/refresh` `/delete` | POST | `webuiopenaimodelswriteapi` | 立即事务改 model-catalog-settings，删除幂等 |
+| 48 | `/sessions/previews` | POST | `webuisessionpreviewsapi` | 批量 200 上限、并发 8、8s 整批超时、逐条错误 |
+| 49 | `/egress-pool` | GET | `webuiegresspoolapi` | 只读投影已实现，**未挂载**：Go 侧还没有出口池数据源 |
+
+**尚未切的 Node 入口**：上述 9 条已在 Go 注册并可直连，但 `lib/server/web-ui-router.js` 仍走 Node 实现。切换前必须逐条对齐形状，已知差异：
+
+- `app-entries`：`installed→available`、`executablePath→path` 等改名，前端直读旧形状会空。
+- `toolkit/environments`：Go 是精简投影，没有 `runtimes/environments/resources[].managedVersions/canInstall`。
+- `slash-commands`：未知 provider 由 200+空清单改为 400。
+- `sessions/previews`：Node 静默截 40 条、吞错误；Go 改为 400 / 逐条 error。
+- `git`：Node 有 5s stale-while-revalidate 缓存，Go 每次起 git 子进程。
+
 ## 2. 2026-11-10 运行态事故与约束
 
 ### 2.1 Go Core 启动即退出（已修）

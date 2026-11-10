@@ -31,12 +31,14 @@ type snapshotRecord struct {
 	Input   []string `json:"input"`
 	Output  []string `json:"output"`
 	Efforts []string `json:"efforts,omitempty"`
+	Context int      `json:"context,omitempty"`
 }
 
 // Index 保存启动时构建后不再修改的 O(1) 模态与强度档位查找表。
 type Index struct {
 	models    map[string]modelmetadata.Modalities
 	efforts   map[string][]inference.ReasoningEffort
+	contexts  map[string]int
 	overrides atomic.Pointer[modalityOverrideSnapshot]
 }
 
@@ -55,6 +57,7 @@ func New() (*Index, error) {
 	}
 	models := make(map[string]modelmetadata.Modalities, len(records))
 	efforts := make(map[string][]inference.ReasoningEffort, len(records))
+	contexts := make(map[string]int, len(records))
 	for modelID, record := range records {
 		if strings.TrimSpace(modelID) == "" || modelID != strings.TrimSpace(modelID) {
 			return nil, ErrInvalidSnapshot
@@ -71,8 +74,11 @@ func New() (*Index, error) {
 		if len(ladder) > 0 {
 			efforts[modelID] = ladder
 		}
+		if record.Context > 0 {
+			contexts[modelID] = record.Context
+		}
 	}
-	index := &Index{models: models, efforts: efforts}
+	index := &Index{models: models, efforts: efforts, contexts: contexts}
 	index.overrides.Store(&modalityOverrideSnapshot{
 		byProvider: map[string]map[string]modelmetadata.Modalities{},
 	})
@@ -158,6 +164,32 @@ func (index *Index) LookupModalities(
 		}
 	}
 	return modelmetadata.Modalities{}, false
+}
+
+// LookupContextWindow 按 AIH Provider 和真实模型 ID 返回 models.dev 声明的输入上下文。
+//
+// 解析顺序与 LookupModalities 相同（Provider 命名空间 → 基座模型 → 逐段裁剪），
+// 因此目录值与模态使用同一套模型身份口径。0 / false 表示目录没有声明，不是「窗口为 0」。
+func (index *Index) LookupContextWindow(providerID string, modelID string) (int, bool) {
+	if index == nil || index.contexts == nil {
+		return 0, false
+	}
+	id := strings.TrimSpace(modelID)
+	if id == "" {
+		return 0, false
+	}
+	stripped := stripKnownModelPrefix(id)
+	for _, namespace := range providerNamespacesFor(providerID, id, stripped) {
+		if contextWindow, found := index.contexts[namespace+"/"+stripped]; found {
+			return contextWindow, true
+		}
+	}
+	for _, key := range baseModelCandidates(id, stripped) {
+		if contextWindow, found := index.contexts[key]; found {
+			return contextWindow, true
+		}
+	}
+	return 0, false
 }
 
 func (index *Index) lookupRuntimeOverride(providerID, modelID string) (modelmetadata.Modalities, bool) {

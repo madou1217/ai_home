@@ -95,6 +95,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
@@ -169,6 +170,8 @@ type serverHandlers struct {
 	webuiToolkitTargets http.Handler
 	// webuiAccountConfig 是账号配置文件只读查看（默认脱敏，raw 模式返回原值）。
 	webuiAccountConfig http.Handler
+	// webuiModelContext 是账号 × 模型上下文窗口的只读模型。
+	webuiModelContext http.Handler
 	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -1325,6 +1328,16 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建账号配置查看接口失败: %w", err)
 	}
+	webuiModelContextHandler, err := webuimodelcontextapi.NewHandler(webuimodelcontextapi.Dependencies{
+		Authorizer: authorizer,
+		AIHomeDir:  aiHomeDir,
+		Catalog:    catalog,
+		Metadata:   modelModalities,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建模型上下文接口失败: %w", err)
+	}
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1757,6 +1770,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiServerConfig:     webuiServerConfigHandler,
 		webuiToolkitTargets:   webuiToolkitTargetsHandler,
 		webuiAccountConfig:    webuiAccountConfigHandler,
+		webuiModelContext:     webuiModelContextHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

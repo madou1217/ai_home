@@ -476,6 +476,12 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   （与 Node 的 `redactConfigContent` 共用夹具对拍），TOML/YAML/INI 走保守行级脱敏（不解析
   重排、绝不返回未脱敏秘密值），SQLite 导出 key/value 表，kiro 的 base64 `data.sqlite3` 解码
   成 JSON 视图。Node GET 固定代理、Go 不可用 503；Node 侧 `account-config-view.js` 与其测试已删除。
+- **账号上下文窗口 GET 切 Go**：Go 新增 `GET /v1/management/webui/accounts/{provider}/{ref}/model-context`，
+  解析顺序与 Node 一致：手动覆盖（app-state `config:model-context-overrides`）> 上游探测
+  （`cache:webui-models-snapshot.json` 的 `contextLimits`）> models.dev 目录（Go 嵌入索引）> unknown；
+  同时返回同 provider 的同类型账号（oauth/api-key/auth-token）。models.dev 生成器补采
+  `limit.input || limit.context`，嵌入索引新增 `LookupContextWindow`。Node GET 固定代理、
+  Go 不可用 503；POST 写入仍在 Node。
 - **基线注意**：HEAD 树缺 `internal/adapters/accounts/nativeaccount/cline_document.go`（主工作区
   为未跟踪文件，另一条线 WIP），从 HEAD 新建 worktree 全量 `go build ./...` 会红在
   `deletionprojection/credential.go:540`；本次未修、未提交该文件。

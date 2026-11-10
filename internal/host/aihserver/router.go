@@ -36,6 +36,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuimodelcontextapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
@@ -163,6 +164,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 账号配置文件查看：GET 固定读 Go；默认脱敏，raw 模式返回原值。
 	if handlers.webuiAccountConfig != nil {
 		mux.Handle("GET "+webuiaccountconfigapi.Path+"/{provider}/{accountRef}/config-files", handlers.webuiAccountConfig)
+	}
+	// 账号上下文窗口：GET 固定读 Go；写入仍在 Node。
+	if handlers.webuiModelContext != nil {
+		mux.Handle("GET "+webuimodelcontextapi.Path+"/{provider}/{accountRef}/model-context", handlers.webuiModelContext)
 	}
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。

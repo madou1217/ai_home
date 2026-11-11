@@ -2,8 +2,10 @@
 //
 // 上游 GET https://api.cline.bot/api/v1/models 返回 462 条 OpenRouter 风格的伙伴
 // 命名空间 ID，**不含 cline-pass/***；原样透出会把模型误判给 claude 等 provider。
-// 因此对外的目录 = 官方 SDK 的推荐清单（已逐条对 /chat/completions 实测可用），
-// 与 Node lib/server/cline-models.js 同源。
+// 因此对外的目录 = 官方 SDK 的推荐清单（已逐条对 /chat/completions 实测可用）。
+//
+// 本包是 cline 目录的唯一真值源：Node 侧静态清单已随迁移删除，Node 只读 Go 的
+// account_models。清单本身冻结在 discovery_test.go 的黄金快照里，改动必须同步改测试。
 //
 // 刻意排除 cline-free/*：那条命名空间在本网关的 API 面上一律 403。
 package modelcatalog
@@ -31,7 +33,7 @@ const ProviderID = "cline"
 // 裸模型名（如 glm-5.3）不认：它会与 zcode 的 glm-* 抢路由。
 const NamespacePrefix = "cline-pass/"
 
-// KnownModels 与 Node KNOWN_CLINE_MODELS 逐条同值。
+// KnownModels 是 cline 的完整对外目录；黄金快照见 discovery_test.go（Node 侧同名清单已删除）。
 var KnownModels = []string{
 	"cline-pass/deepseek-v4-pro",
 	"cline-pass/deepseek-v4.1-flash",

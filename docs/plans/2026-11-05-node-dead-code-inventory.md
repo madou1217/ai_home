@@ -113,7 +113,7 @@
 | `lib/account/kiro-model-discovery.js` | 62 | `lib/providers/defs/kiro.js:17`；Node 发现链仍活跃。 | **不能删** | T3 + T4 |
 | `lib/account/qoder-model-catalog.js` | 615 | 4 处：`defs/qoder.js:12`、`defs/qodercn.js:12`、`server/qoder-cli-transport.js:38`、`server/qoder-http-transport.js:58`；qoder relay 仍用它解析模型。 | **不能删** | T3 + T4 |
 | `lib/account/codebuddy-family-model-discovery.js` | 171 | `lib/providers/defs/_shared/codebuddy-family.js:8`；四支共享。 | **不能删** | T3 |
-| `lib/server/cline-models.js` | 56 | `lib/server/http-utils.js:68`、`lib/server/model-discovery/http-handlers.js:18`；Go 没有 cline 模型目录源，Node 静态清单仍是唯一来源。 | **不能删** | T3 |
+| ~~`lib/server/cline-models.js`~~ | 56 | **已删除（2026-11-11）**：Go 的 `internal/adapters/cline/modelcatalog` 已是唯一真值源，Node 只经 `go-account-models` 读 `account_models`；删除时全仓零 require。 | 已删除 | T3 |
 | `lib/server/http-utils-zcode.js` | 252 | `lib/server/http-utils.js:66`、`lib/server/model-discovery/generic-models-probe.js:12`、`lib/server/model-discovery/http-handlers.js:17`；zcode plan/paas 目录 handler 仍在 Node 发现链上。 | **不能删** | T3 |
 | `lib/server/provider-model-discovery.js` | 457 | 12 处生产引用（`v1-router`、`model-endpoints`、`webui-model-cache/scheduler` 等）。 | **不能删** | T3 + T5 |
 | `lib/server/native-cli-model-discovery.js` | 136 | `http-utils.js:46`、`model-discovery/http-handlers.js:19`、`provider-model-discovery.js:9`。 | **不能删** | T3 + T5 |

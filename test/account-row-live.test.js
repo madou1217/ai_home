@@ -356,3 +356,28 @@ test('Go 读模型不可用：退回 Node 行（账号页照常可用）', async
   assert.equal(result.goAssembled, false);
   assert.deepEqual(result.accounts, [node]);
 });
+
+// Go 读模型的 status 恒为空串；空串会被前端当成 up，停用账号不能因此显示成正常。
+test('Go 读模型：status 空串按 Node 结论 / Go enabled 补齐', async () => {
+  resetGoAccountRowsState();
+  const disabledNode = nodeRow({ accountRef: 'acct_node1', status: 'down' });
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => ({
+      ok: true,
+      data: {
+        accounts: [
+          webUiRow({ provider: 'codex', accountRef: 'acct_go1' }),
+          webUiRow({ provider: 'cline', accountRef: 'acct_go2', enabled: false })
+        ]
+      }
+    })
+  };
+  const result = await assembleAccountListWithGo(
+    { goCoreSync: host, goAccountRefFor: (ref) => (ref === 'acct_node1' ? 'acct_go1' : ref) },
+    [disabledNode]
+  );
+  const byRef = new Map(result.accounts.map((row) => [row.accountRef, row]));
+  assert.equal(byRef.get('acct_node1').status, 'down', 'Node 结论优先');
+  assert.equal(byRef.get('acct_go2').status, 'down', 'Go 独有账号按 enabled=false 判停用');
+});

@@ -559,6 +559,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
 		{Pattern: "GET " + webuisshhostbrowseapi.Path, Handler: sshBrowse},
 		{Pattern: "GET " + webuisshreverseapi.Path, Handler: sshReverseTunnels},
+		{Pattern: "GET " + webuisshreverseapi.WatchPath, Handler: sshReverseTunnels},
 		{Pattern: "POST " + webuisshreverseapi.ReconcilePath, Handler: sshReverseTunnels},
 		{Pattern: "POST " + webuisshreverseapi.Path + "/{connectionId}/reconnect", Handler: sshReverseTunnels},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},

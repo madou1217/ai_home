@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 )
@@ -20,6 +22,8 @@ const (
 	ReconcilePath = Path + "/reconcile"
 	// ReconnectSuffix 是强制关闭并重连一条隧道。
 	ReconnectSuffix = "/reconnect"
+	// WatchPath 是状态 SSE；隧道状态变化时推全量快照。
+	WatchPath = Path + "/watch"
 )
 
 // Authorizer 校验管理密钥。
@@ -37,6 +41,7 @@ type Supervisor interface {
 	Reconcile(raw []byte) error
 	Reconnect(connectionID string) bool
 	Status() []sshtunnel.Status
+	Subscribe() (<-chan struct{}, func())
 }
 
 // Dependencies 汇总入站依赖。
@@ -93,6 +98,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		}{OK: true, Tunnels: handler.supervisor.Status()})
 		return
 	}
+	if request.Method == http.MethodGet && request.URL.Path == WatchPath {
+		handler.serveWatch(response, request)
+		return
+	}
 	switch {
 	case request.Method == http.MethodGet && request.URL.Path == Path:
 		writeJSON(response, http.StatusOK, struct {
@@ -118,6 +127,54 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		}{OK: true, Tunnels: handler.supervisor.Status()})
 	default:
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "")
+	}
+}
+
+func (handler *Handler) serveWatch(response http.ResponseWriter, request *http.Request) {
+	flusher, ok := response.(http.Flusher)
+	if !ok {
+		writeError(response, http.StatusInternalServerError, "sse_unsupported", "")
+		return
+	}
+	response.Header().Set("Content-Type", "text/event-stream")
+	response.Header().Set("Cache-Control", "no-cache")
+	response.Header().Set("Connection", "keep-alive")
+	response.WriteHeader(http.StatusOK)
+	send := func() bool {
+		payload, err := json.Marshal(struct {
+			Type    string             `json:"type"`
+			Tunnels []sshtunnel.Status `json:"tunnels"`
+		}{Type: "tunnels", Tunnels: handler.supervisor.Status()})
+		if err != nil {
+			return false
+		}
+		if _, err := fmt.Fprintf(response, "data: %s\n\n", payload); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+	if !send() {
+		return
+	}
+	updates, cancel := handler.supervisor.Subscribe()
+	defer cancel()
+	heartbeat := time.NewTicker(25 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-request.Context().Done():
+			return
+		case <-updates:
+			if !send() {
+				return
+			}
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(response, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
 	}
 }
 

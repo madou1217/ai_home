@@ -65,9 +65,10 @@ type Supervisor struct {
 	opener   Opener
 	now      func() time.Time
 
-	mutex   sync.Mutex
-	entries map[string]*entry
-	closed  bool
+	mutex    sync.Mutex
+	entries  map[string]*entry
+	watchers map[chan struct{}]struct{}
+	closed   bool
 }
 
 type entry struct {
@@ -100,7 +101,7 @@ func NewWithOpener(homeDir string, opener Opener) *Supervisor {
 // NewWithHostKeys 注入 app-state ssh_known_hosts 的指纹（host:port → SHA256）；
 // 未知主机仍按 TOFU 放行，指纹不一致拒绝。
 func NewWithHostKeys(homeDir string, hostKeys map[string]string, opener Opener) *Supervisor {
-	return &Supervisor{homeDir: homeDir, hostKeys: hostKeys, opener: opener, now: time.Now, entries: make(map[string]*entry)}
+	return &Supervisor{homeDir: homeDir, hostKeys: hostKeys, opener: opener, now: time.Now, entries: make(map[string]*entry), watchers: make(map[chan struct{}]struct{})}
 }
 
 // Reconcile 从 ssh_connections 原文解析并应用；不阻塞等待连接建立。
@@ -151,6 +152,7 @@ func (supervisor *Supervisor) ReconcileSpecs(specs []Spec) {
 			go supervisor.connect(id, entry)
 		}
 	}
+	supervisor.notifyLocked()
 	supervisor.mutex.Unlock()
 }
 
@@ -245,6 +247,7 @@ func (supervisor *Supervisor) connect(id string, entry *entry) {
 		entry.attempt++
 		delay := backoffDelay(entry.attempt - 1)
 		entry.timer = time.AfterFunc(delay, func() { supervisor.connect(id, entry) })
+		supervisor.notifyLocked()
 		supervisor.mutex.Unlock()
 		return
 	}
@@ -255,6 +258,7 @@ func (supervisor *Supervisor) connect(id string, entry *entry) {
 	entry.openedAt = supervisor.now()
 	entry.probeTimer = time.NewTicker(probeInterval)
 	entry.probeStop = make(chan struct{})
+	supervisor.notifyLocked()
 	supervisor.mutex.Unlock()
 
 	go supervisor.watch(id, entry, tunnel, generation)
@@ -274,6 +278,7 @@ func (supervisor *Supervisor) watch(id string, entry *entry, tunnel Tunnel, gene
 	entry.attempt++
 	delay := backoffDelay(entry.attempt - 1)
 	entry.timer = time.AfterFunc(delay, func() { supervisor.connect(id, entry) })
+	supervisor.notifyLocked()
 	supervisor.mutex.Unlock()
 }
 
@@ -369,9 +374,39 @@ func (supervisor *Supervisor) Reconnect(connectionID string) bool {
 		next.lastError = spec.Error
 	}
 	supervisor.entries[connectionID] = next
+	supervisor.notifyLocked()
 	go supervisor.connect(connectionID, next)
 	supervisor.mutex.Unlock()
 	return true
+}
+
+// Subscribe 返回状态变化通知（仅信号，读取用 Status）。
+func (supervisor *Supervisor) Subscribe() (<-chan struct{}, func()) {
+	channel := make(chan struct{}, 1)
+	if supervisor == nil {
+		return channel, func() {}
+	}
+	supervisor.mutex.Lock()
+	if supervisor.closed {
+		supervisor.mutex.Unlock()
+		return channel, func() {}
+	}
+	supervisor.watchers[channel] = struct{}{}
+	supervisor.mutex.Unlock()
+	return channel, func() {
+		supervisor.mutex.Lock()
+		delete(supervisor.watchers, channel)
+		supervisor.mutex.Unlock()
+	}
+}
+
+func (supervisor *Supervisor) notifyLocked() {
+	for channel := range supervisor.watchers {
+		select {
+		case channel <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // Close 停止所有隧道与重连计时器。

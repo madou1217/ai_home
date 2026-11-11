@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, Empty, Popconfirm, Space, Spin } from 'antd';
-import { sshHostsAPI } from '@/services/api';
+import { sshHostsAPI, watchSshReverseTunnels } from '@/services/api';
 import { DeleteOutlined, EditOutlined, MessageOutlined, ToolOutlined } from '@ant-design/icons';
 import { buildAppHref } from '@/services/app-navigation';
 import { buildToolkitEnvironmentHref } from '@/pages/toolkit-url-state';
@@ -37,7 +37,9 @@ function useReverseTunnels(enabled: boolean): SshReverseTunnelStatus[] | null {
     let alive = true;
     const load = () => { sshHostsAPI.listTunnels().then((list) => { if (alive) setTunnels(list); }).catch(() => {}); };
     load();
-    return () => { alive = false; };
+    const source = watchSshReverseTunnels();
+    source.onmessage = () => load();
+    return () => { alive = false; source.close(); };
   }, [enabled]);
   return tunnels;
 }

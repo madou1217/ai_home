@@ -1148,6 +1148,10 @@ export function watchPeerMessages(): EventSource {
   return openSharedWebUiEventSource('/v0/webui/peer/messages/watch');
 }
 
+export function watchSshReverseTunnels(): EventSource {
+  return openSharedWebUiEventSource('/v0/webui/ssh-connections/tunnels/watch');
+}
+
 // SSE 是主通道，短轮询只作为断线期间的恢复手段；安装进程始终在服务端
 // 后台运行，不会被浏览器请求的生命周期阻塞。
 export function waitForAppInstallJob(

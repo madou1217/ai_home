@@ -36,6 +36,10 @@ func (stub *stubSupervisor) Reconcile(raw []byte) error {
 }
 func (stub *stubSupervisor) Status() []sshtunnel.Status         { return stub.status }
 func (stub *stubSupervisor) Reconnect(connectionID string) bool { return connectionID == "c1" }
+func (stub *stubSupervisor) Subscribe() (<-chan struct{}, func()) {
+	channel := make(chan struct{})
+	return channel, func() {}
+}
 
 func TestGetStatusAndPostReconcile(t *testing.T) {
 	supervisor := &stubSupervisor{status: []sshtunnel.Status{{ConnectionID: "c1", State: "open", RemotePort: 2222, LocalPort: 22}}}

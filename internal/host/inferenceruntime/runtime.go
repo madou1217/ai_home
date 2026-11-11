@@ -7,6 +7,7 @@ package inferenceruntime
 import (
 	"errors"
 	"fmt"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
@@ -55,6 +56,10 @@ type Dependencies struct {
 	CredentialStrategies []accountcredentials.RefreshStrategy
 	// DelegateCredentialRefresh 表示嵌入宿主独占 OAuth 刷新，解析器不自行刷新。
 	DelegateCredentialRefresh bool
+	// OwnsCredentialRefresh 判定「这条账号的凭据由本进程刷新」。
+	// 嵌入宿主台账里没有的账号（Go 独有账号）在委托模式下也必须自刷新，
+	// 否则 token 过期后推理会一路 401 且没人能救。
+	OwnsCredentialRefresh func(accountcore.AccountRef) bool
 	// Upstreams 注册按真实线协议区分的上游 Adapter。
 	Upstreams []inferencegateway.UpstreamAdapter
 	// ModelRefreshes 接收模型不支持后的异步本地目录修复信号。
@@ -128,6 +133,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Strategies:       dependencies.CredentialStrategies,
 			Clock:            dependencies.Clock,
 			RefreshDelegated: dependencies.DelegateCredentialRefresh,
+			OwnsRefresh:      dependencies.OwnsCredentialRefresh,
 		},
 	)
 	if err != nil {

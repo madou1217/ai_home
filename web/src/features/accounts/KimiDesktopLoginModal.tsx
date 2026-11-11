@@ -2,10 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Modal, QRCode, Spin, Tag, Typography, message } from 'antd';
 import { accountsAPI } from '@/services/api';
 import {
-  KIMI_DESKTOP_SESSION_POLL_MS,
   getKimiDesktopSessionStatusTagColor,
   getKimiDesktopSessionStatusText,
-  resolveKimiDesktopPollPhase,
   resolveKimiDesktopSessionExpiryDelay
 } from '@/features/accounts/kimi-desktop-login';
 import type { KimiDesktopLoginPhase } from '@/features/accounts/kimi-desktop-login';
@@ -22,7 +20,6 @@ interface KimiDesktopLoginModalProps {
 export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose, onSuccess }: KimiDesktopLoginModalProps) {
   const [phase, setPhase] = useState<KimiDesktopLoginPhase>('loading');
   const [qrUrl, setQrUrl] = useState('');
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
   const onCloseRef = useRef(onClose);
@@ -34,10 +31,6 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
   }, [onClose, onSuccess]);
 
   const stopPolling = useCallback(() => {
-    if (pollTimerRef.current !== null) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
     if (expiryTimerRef.current !== null) {
       clearTimeout(expiryTimerRef.current);
       expiryTimerRef.current = null;
@@ -69,45 +62,11 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
         return;
       }
       setPhase('STATUS_PENDING');
-      const code = result.code;
-      const expiresAtMs = result.expiresAtMs;
       expiryTimerRef.current = setTimeout(() => {
         if (generationRef.current !== generation) return;
         stopPolling();
         setPhase('STATUS_EXPIRED');
       }, expiryDelayMs);
-      pollTimerRef.current = setInterval(async () => {
-        try {
-          const polled = await accountsAPI.pollKimiDesktopSession(accountRef, code);
-          if (generationRef.current !== generation) return;
-          if (!polled.ok || !polled.status) {
-            stopPolling();
-            setPhase('error');
-            message.error(polled.error || '查询扫码状态失败');
-            return;
-          }
-          const nextPhase = resolveKimiDesktopPollPhase(polled.status, expiresAtMs);
-          setPhase(nextPhase);
-          if (nextPhase === 'STATUS_SUCCESS') {
-            stopPolling();
-            message.success('桌面登录成功，session 已托管');
-            if (onSuccessRef.current) onSuccessRef.current();
-            else onCloseRef.current();
-          } else if (nextPhase === 'STATUS_EXPIRED') {
-            stopPolling();
-          }
-        } catch (pollError: any) {
-          if (generationRef.current !== generation) return;
-          if (resolveKimiDesktopSessionExpiryDelay(expiresAtMs) === 0) {
-            stopPolling();
-            setPhase('STATUS_EXPIRED');
-            return;
-          }
-          stopPolling();
-          setPhase('error');
-          message.error(pollError?.response?.data?.error || pollError?.message || '查询扫码状态失败');
-        }
-      }, KIMI_DESKTOP_SESSION_POLL_MS);
     } catch (startError: any) {
       if (generationRef.current !== generation) return;
       setPhase('error');

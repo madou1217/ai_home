@@ -272,11 +272,9 @@ export function useMobileImageStudio() {
         // 下个轮询周期继续同步。
       }
     };
-    const timer = window.setInterval(() => void refresh(), 6000);
     window.addEventListener('focus', refresh);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
   }, [applyModelCatalog, initializing, running, selectedAssetId, selectedRevisionId, session?.id, setSelectionFromSession]);

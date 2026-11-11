@@ -53,8 +53,7 @@ export default function RemoteWorkspacesPanel({ onOpenInWork }: {
   }, []);
   useEffect(() => {
     void refreshSessions();
-    const timer = window.setInterval(() => { void refreshSessions(); }, 15000);
-    return () => window.clearInterval(timer);
+    return undefined;
   }, [refreshSessions]);
 
   const toggle = () => {

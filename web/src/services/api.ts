@@ -1148,12 +1148,6 @@ export function waitForAppInstallJob(
     const eventSource = guardedWebUiEventSource(
       `/v0/webui/app-install/jobs/${encodeURIComponent(jobId)}/watch`
     );
-    const pollTimer = setInterval(() => {
-      void getAppInstallJob(jobId).then((job) => {
-        onJob?.(job);
-        if (isTerminalAppInstallJob(job)) finish(job);
-      }).catch(() => {});
-    }, 2000);
     const timeoutTimer = setTimeout(() => {
       finish(null, new Error('app_install_watch_timeout'));
     }, 30 * 60 * 1000);
@@ -1161,7 +1155,6 @@ export function waitForAppInstallJob(
     const finish = (job: AppInstallJob | null, error?: Error) => {
       if (settled) return;
       settled = true;
-      clearInterval(pollTimer);
       clearTimeout(timeoutTimer);
       eventSource.close();
       if (error) reject(error);

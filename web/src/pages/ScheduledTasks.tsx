@@ -153,11 +153,6 @@ export default function ScheduledTasks() {
     setRecordPage(1);
   }, [recordDays]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => { void load(); }, 15000);
-    return () => window.clearInterval(timer);
-  }, [load]);
-
   const eventOptions = useMemo(() => (
     events.map((event) => ({
       value: event.id,

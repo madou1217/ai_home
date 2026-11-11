@@ -53,12 +53,8 @@ class RealLatencyTracker {
   }
 
   private startSampling(): void {
-    // 首次立即探测
+    // WebUI 轮询已删除：只在启动时探测一次，后续由页面手动刷新。
     this.probeNow();
-    // 每 15 秒轻量采样一次
-    this.timer = setInterval(() => {
-      this.probeNow();
-    }, 15000);
   }
 
   private notify(): void {

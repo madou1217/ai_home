@@ -4,7 +4,6 @@ import type { Account, ManagementAccountActivity } from '@/types';
 import { getAccountActivityKey } from '@/features/accounts/account-view-model';
 import type { AccountActivityMap } from '@/features/accounts/account-view-model';
 
-const ACCOUNT_ACTIVITY_POLL_MS = 2000;
 
 export interface UseAccountActivityResult {
   accountActivity: AccountActivityMap | null;
@@ -59,10 +58,8 @@ export function useAccountActivity(): UseAccountActivityResult {
       }
     };
     poll();
-    const timer = setInterval(poll, ACCOUNT_ACTIVITY_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
     };
   }, []);
 

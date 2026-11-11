@@ -289,11 +289,9 @@ const ImageStudioWorkspace: React.FC = () => {
         // 其他窗口可能正在写入；下个轮询周期继续同步。
       }
     };
-    const timer = window.setInterval(() => void refresh(), 6000);
     window.addEventListener('focus', refresh);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
   }, [applyModelCatalog, running, selectedAssetId, selectedRevisionId, session?.id, setSelectionFromSession]);

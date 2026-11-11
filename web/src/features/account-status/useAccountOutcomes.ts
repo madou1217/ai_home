@@ -2,7 +2,6 @@ import React from 'react';
 import { accountOutcomesAPI } from '@/services/api';
 import type { AccountOutcomesData } from './types';
 
-const ACCOUNT_OUTCOMES_POLL_MS = 60_000;
 
 export interface UseAccountOutcomesResult {
   data: AccountOutcomesData | null;
@@ -39,10 +38,8 @@ export function useAccountOutcomes(): UseAccountOutcomesResult {
       }
     };
     void poll();
-    const timer = window.setInterval(() => { void poll(); }, ACCOUNT_OUTCOMES_POLL_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
   }, []);
 

@@ -28,7 +28,6 @@ import {
 import type { EgressUpstream, EgressUpstreamAccount, EgressUpstreamNode, EgressUpstreamView, EgressVerdictStatus } from './types';
 import './EgressUpstream.css';
 
-const REFRESH_INTERVAL_MS = 15000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type NodeFilter = 'all' | EgressVerdictStatus;
@@ -76,10 +75,6 @@ export default function EgressUpstreamPanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    const timer = window.setInterval(() => { void load(); }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [load]);
 
   const upstream = useMemo<EgressUpstream | null>(
     () => view?.upstreams.find((item) => item.id === selectedId) || null,
@@ -180,7 +175,7 @@ export default function EgressUpstreamPanel() {
   ];
 
   const accountColumns: ColumnsType<EgressUpstreamAccount> = [
-    { title: '账号', key: 'label', render: (_v, account) => <span>{account.label || account.accountRef}<small className="egress-muted"> · {account.provider}</small></span> },
+    { title: '账号', key: 'label', render: (_v, account) => <span>{account.label || account.provider}{account.label ? <small className="egress-muted"> · {account.provider}</small> : null}</span> },
     {
       title: '出口',
       key: 'egress',

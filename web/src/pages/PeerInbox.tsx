@@ -91,8 +91,7 @@ const PeerInbox: React.FC = () => {
 
   useEffect(() => {
     load();
-    const timer = window.setInterval(load, 5000);
-    return () => window.clearInterval(timer);
+    return undefined;
   }, [load]);
 
   const visible = useMemo(() => (

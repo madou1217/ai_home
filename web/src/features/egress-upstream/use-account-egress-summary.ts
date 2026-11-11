@@ -8,7 +8,6 @@ export interface AccountEgressEntry {
 }
 
 // 账号出口状态在账号列表里只是辅助信息：低频轮询即可，绑定改动后由调用方显式 reload。
-const REFRESH_INTERVAL_MS = 60 * 1000;
 
 /**
  * 账号列表的出口摘要：accountRef → 该账号的出口 / 车道 / 当前网络判定 + 所属上游。
@@ -32,8 +31,7 @@ export function useAccountEgressSummary() {
 
   useEffect(() => {
     void reload();
-    const timer = window.setInterval(() => { void reload(); }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return undefined;
   }, [reload]);
 
   const byAccount = useMemo(() => {

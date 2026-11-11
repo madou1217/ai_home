@@ -2,7 +2,6 @@ import type { KimiDesktopSessionStatus } from '@/services/api';
 
 export type KimiDesktopLoginPhase = 'loading' | 'error' | KimiDesktopSessionStatus;
 
-export const KIMI_DESKTOP_SESSION_POLL_MS = 2000;
 
 export function resolveKimiDesktopSessionExpiryDelay(
   expiresAtMs: unknown,

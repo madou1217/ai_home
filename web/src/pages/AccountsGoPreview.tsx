@@ -106,7 +106,6 @@ const PROVIDERS = ['codex', 'claude'] as const satisfies readonly Provider[];
 type SupportedAccountProvider = (typeof PROVIDERS)[number];
 type ImportMode = 'file' | 'text';
 const ACCOUNT_REMOVE_ANIMATION_MS = 420;
-const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
 const ACCOUNT_SNAPSHOT_REFRESH_FALLBACK_MS = 70_000;
 const MODEL_POLICY_OPTIONS: Array<{ label: string; value: AccountModelManualPolicy }> = [
@@ -1400,11 +1399,9 @@ export default function Accounts() {
       }
     };
 
-    poll();
-    const timer = setInterval(poll, AUTH_JOB_FALLBACK_POLL_MS);
+    void poll();
     return () => {
       cancelled = true;
-      clearInterval(timer);
     };
   }, [addJobId, handleAuthJobUpdate]);
 

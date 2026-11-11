@@ -78,12 +78,6 @@ export default function GeoResourcePanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-  // 有进行中的作业时轮询（下载 60MB 要几十秒，用户要看到进度）。
-  useEffect(() => {
-    if (!jobs.length) return undefined;
-    const timer = window.setInterval(() => { void load(); }, 2000);
-    return () => window.clearInterval(timer);
-  }, [jobs.length, load]);
 
   const runAction = async (resourceId: string, action: 'install' | 'update' | 'uninstall', label: string) => {
     setBusy(`${action}:${resourceId}`);

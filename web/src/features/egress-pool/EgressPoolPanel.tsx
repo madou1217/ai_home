@@ -32,7 +32,6 @@ import {
 import type { EgressPoolEvent, EgressPoolNode, EgressPoolView } from './types';
 import './EgressPoolPanel.css';
 
-const REFRESH_INTERVAL_MS = 5000;
 // 节点表每页条数：2w 节点时表格不能吃全量数据（见 visibleNodes 的注释）。
 const PAGE_SIZE = 50;
 
@@ -128,35 +127,15 @@ export default function EgressPoolPanel() {
     if (changed) versionRef.current = '';
     void load({ page, filter, query });
   }, [page, filter, query, load]);
-  // 自动刷新：**页面不可见时不拉**（切到别的标签页仍在轮询会把整个节点表反复传一遍；
-  // 节点多时那是每分钟十几 MB），回到前台立刻补一次。节点越多间隔越长，避免持续占带宽。
+  // 周期轮询已删除：只在回到前台时补一次；其余由用户操作/页面挂载触发。
   useEffect(() => {
     if (!autoRefresh) return undefined;
-    const nodeCount = view?.nodes.length || 0;
-    const interval = nodeCount > 5000 ? REFRESH_INTERVAL_MS * 6 : nodeCount > 1000 ? REFRESH_INTERVAL_MS * 3 : REFRESH_INTERVAL_MS;
-    let timer: number | null = null;
-    // 轮询不带 overrides：沿用当前页与版本指纹，服务端没变就回 304（不重传节点表）。
-    const tick = () => { if (document.visibilityState === 'visible') void load(); };
-    const start = () => {
-      if (timer !== null) window.clearInterval(timer);
-      timer = window.setInterval(tick, interval);
-    };
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void load();
-        start();
-      } else if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
+      if (document.visibilityState === 'visible') void load();
     };
-    start();
     document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      if (timer !== null) window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [autoRefresh, load, view?.nodes.length]);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [autoRefresh, load]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);

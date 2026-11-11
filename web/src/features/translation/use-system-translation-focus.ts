@@ -37,8 +37,6 @@ export function useSystemTranslationFocus() {
       }).catch(() => {});
     };
     const change = () => report();
-    const timer = window.setInterval(() => report(), 2000);
-    const refreshTimer = window.setInterval(refresh, 10000);
     window.addEventListener('focus', change);
     window.addEventListener('blur', change);
     window.addEventListener('pagehide', change);
@@ -47,8 +45,6 @@ export function useSystemTranslationFocus() {
     refresh();
     return () => {
       sequence++;
-      window.clearInterval(timer);
-      window.clearInterval(refreshTimer);
       window.removeEventListener('focus', change);
       window.removeEventListener('blur', change);
       window.removeEventListener('pagehide', change);

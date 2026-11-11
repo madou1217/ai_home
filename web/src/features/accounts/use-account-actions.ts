@@ -73,7 +73,6 @@ import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-cont
 // 本机导入入口因此挂在添加账号弹窗上，而不是授权进度弹窗。
 const DIRECT_REGISTER_AUTH_MODES: AccountAuthMode[] = ['api-key', 'auth-token', 'vertex-ai'];
 
-const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
 // 刷新分支的中文名（与服务端 webui-account-refresh.js 的 BRANCH_LABELS 同口径）：
 // 部分失败时用来告诉用户到底是哪一面没拿到。
@@ -752,11 +751,9 @@ export function useAccountActions({
       }
     };
 
-    poll();
-    const timer = setInterval(poll, AUTH_JOB_FALLBACK_POLL_MS);
+    void poll();
     return () => {
       cancelled = true;
-      clearInterval(timer);
     };
   }, [addJobId, handleAuthJobUpdate]);
 
@@ -764,8 +761,6 @@ export function useAccountActions({
   React.useEffect(() => {
     if (!pluginLoginJobId) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
     const poll = async () => {
       try {
         const pluginJob = await accountsAPI.getPluginLoginJob(pluginLoginJobId);
@@ -793,10 +788,8 @@ export function useAccountActions({
     };
 
     void poll();
-    timer = setInterval(poll, AUTH_JOB_FALLBACK_POLL_MS);
     return () => {
       cancelled = true;
-      if (timer) clearInterval(timer);
     };
   }, [pluginLoginJobId, closeAuthProgressPanel, requestAccountsSnapshotUpdate]);
 

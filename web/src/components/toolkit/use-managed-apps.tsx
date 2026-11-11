@@ -100,11 +100,6 @@ export function useManagedApps() {
   }, [fetchApps]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { void refreshRunningApps(); }, 1000);
-    return () => window.clearInterval(timer);
-  }, [refreshRunningApps]);
-
-  useEffect(() => {
     if (!data || !data.apps.some((app) => app.version === '探测中')) return undefined;
     const timer = window.setTimeout(() => { void fetchApps({ showLoading: false }); }, 500);
     return () => window.clearTimeout(timer);

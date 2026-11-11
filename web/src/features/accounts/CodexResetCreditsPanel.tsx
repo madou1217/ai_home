@@ -22,7 +22,6 @@ import {
 } from './codex-reset-credit-model';
 import './CodexResetCreditsPanel.css';
 
-const OPERATION_POLL_MS = 1_500;
 
 interface CodexResetCreditsPanelProps {
   account: Account | null;
@@ -68,7 +67,6 @@ function emitOutcome(operation: CodexResetOperation) {
 export function CodexResetCreditsPanel({
   active,
   account,
-  onClose,
   onAvailableCountChange,
   onBusyChange
 }: CodexResetCreditsPanelProps) {
@@ -277,10 +275,9 @@ export function CodexResetCreditsPanel({
         }
       }
     };
-    const timer = window.setInterval(() => void poll(), OPERATION_POLL_MS);
+    void poll();
     return () => {
       stopped = true;
-      window.clearInterval(timer);
     };
   }, [
     accountRef,
@@ -460,10 +457,6 @@ export function CodexResetCreditsPanel({
   useEffect(() => {
     onBusyChange?.(!closeAllowed);
   }, [closeAllowed, onBusyChange]);
-  const handleClose = () => {
-    if (closeAllowed) onClose();
-  };
-
   const statusText = recoveryStatus === 'checking'
     ? '正在核对上一次重置操作…'
     : recoveryStatus === 'blocked'

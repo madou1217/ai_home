@@ -20,7 +20,6 @@ const listeners = new Set<TaskListener>();
 const activeTasks = new Map<string, WebUiTask>();
 const recentTasks = new Map<string, { task: WebUiTask; seenAt: number }>();
 let eventSource: EventSource | null = null;
-let pollTimer: number | null = null;
 let started = false;
 let generation = 0;
 let snapshot: WebUiTaskQueueSnapshot = {
@@ -116,10 +115,6 @@ function start() {
   const localGeneration = generation;
   setStreamStatus('connecting');
   void hydrate(localGeneration);
-  pollTimer = window.setInterval(() => {
-    void hydrate(localGeneration);
-    publishSnapshot();
-  }, 5000);
   eventSource = watchWebUiTasks();
   eventSource.onopen = () => setStreamStatus('connected');
   eventSource.onerror = () => setStreamStatus('reconnecting');
@@ -130,8 +125,6 @@ function stop() {
   if (!started) return;
   started = false;
   generation += 1;
-  if (pollTimer !== null) window.clearInterval(pollTimer);
-  pollTimer = null;
   eventSource?.close();
   eventSource = null;
 }

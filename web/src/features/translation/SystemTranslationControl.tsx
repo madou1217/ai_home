@@ -129,8 +129,7 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
       }).catch(() => { if (!disposed) setError('系统取词服务不可用'); });
     };
     refresh();
-    const timer = window.setInterval(refresh, 3000);
-    return () => { disposed = true; window.clearInterval(timer); };
+    return () => { disposed = true; };
   }, []);
   useEffect(() => {
     if (!status) return;

@@ -37,8 +37,7 @@ function useReverseTunnels(enabled: boolean): SshReverseTunnelStatus[] | null {
     let alive = true;
     const load = () => { sshHostsAPI.listTunnels().then((list) => { if (alive) setTunnels(list); }).catch(() => {}); };
     load();
-    const timer = window.setInterval(load, 15000);
-    return () => { alive = false; window.clearInterval(timer); };
+    return () => { alive = false; };
   }, [enabled]);
   return tunnels;
 }

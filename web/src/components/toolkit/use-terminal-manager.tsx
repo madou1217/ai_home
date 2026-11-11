@@ -157,11 +157,9 @@ export function useTerminalManager() {
         }
       }));
     };
-    const timer = window.setInterval(() => { void pollJobs(); }, 3000);
     void pollJobs();
     return () => {
       disposed = true;
-      window.clearInterval(timer);
     };
   }, [pendingActions, updatePendingAction]);
 

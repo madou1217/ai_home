@@ -523,6 +523,7 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 
 - **cline 目录单一真值源**（`10b48c4a`）：删除 Node `cline-models.js`，Go `adapters/cline/modelcatalog` 唯一产出；黄金快照 + 注册表/刷新队列守卫。真机仍缺（两个账号 enabled=0）。
 - **插件 P2 真实宿主 E2E**（`0b7b44eb`）：真实 supervisor + echo 插件跑 enable→CAS→activate→projected，disable→宿主退出；Go 停掉 503 不落状态。
+- **插件在途租约 disable**（`cc704ca4`）：真实宿主上 `sample.echo.wait` 持租约时 disable→retiring 保留宿主；租约释放后代次卸载并补 stopHost，修复宿主进程泄漏；E2E 断言 forcedRetirements=0。
 - **OAuth Job 持久化**（`145734e3`）：Go sqlite 状态 CAS（终态不可复活/倒序忽略）、DELETE 管理端点、Node 启动回填；Node 仍是登录执行者。
 - **账号删除宿主清理契约**（`957c469c`）：Go 删除事务两段式调用 Node 回环 `/v0/management/internal/account-host-cleanup`；verify 409/503 fail-closed，cleanup 幂等；Go→Node accountRef 经链接表翻译。桌面端/keychain 仍未覆盖。
 - **SSH 远端工作区切 Go**（`6c0820b0`/`24e4fecd`/`777975d4`/`25f43495`/`4d991cbc`/`7dd9c5ff`）：

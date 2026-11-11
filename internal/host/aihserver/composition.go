@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +57,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
@@ -792,11 +795,26 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// WebUI 终端：PTY 会话、回放缓冲与 mux SSE 全部由 Go 承接，Node 只做管理密钥后的反代。
 	// ExitRetention 对齐 Node「退出后 250ms 清理」的语义：否则连续开关终端会让已退出
 	// 会话在保留期内继续占住 24 个会话名额。
-	sshTunnelSupervisor := sshtunnel.New(dependencies.HostHomeDir)
 	startupContext := dependencies.Context
 	if startupContext == nil {
 		startupContext = context.Background()
 	}
+	knownHostKeys := make(map[string]string)
+	if raw, found, readErr := appstate.ReadKV(startupContext, filepath.Join(dependencies.AIHomeDir, "app-state.db"), "ssh_known_hosts"); readErr == nil && found {
+		var records map[string]struct {
+			Fingerprint string `json:"fingerprint"`
+		}
+		if json.Unmarshal([]byte(raw), &records) == nil {
+			for id, record := range records {
+				if strings.TrimSpace(record.Fingerprint) != "" {
+					knownHostKeys[strings.ToLower(id)] = record.Fingerprint
+				}
+			}
+		}
+	}
+	sshTunnelSupervisor := sshtunnel.NewWithHostKeys(dependencies.HostHomeDir, knownHostKeys, func(ctx context.Context, config sshremote.Config, remotePort, localPort int) (sshtunnel.Tunnel, error) {
+		return sshremote.OpenReverseTunnel(ctx, config, remotePort, localPort)
+	})
 	if sshSource, sourceErr := webuisshapi.OpenSource(dependencies.AIHomeDir); sourceErr == nil {
 		if raw, found, readErr := sshSource.ReadConnections(startupContext); readErr == nil && found {
 			_ = sshTunnelSupervisor.Reconcile([]byte(raw))

@@ -8,11 +8,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 )
@@ -57,9 +60,10 @@ type Opener func(context.Context, sshremote.Config, int, int) (Tunnel, error)
 
 // Supervisor 按 connectionId 维护隧道集合。
 type Supervisor struct {
-	homeDir string
-	opener  Opener
-	now     func() time.Time
+	homeDir  string
+	hostKeys map[string]string
+	opener   Opener
+	now      func() time.Time
 
 	mutex   sync.Mutex
 	entries map[string]*entry
@@ -90,7 +94,13 @@ func New(homeDir string) *Supervisor {
 
 // NewWithOpener 允许测试注入隧道实现。
 func NewWithOpener(homeDir string, opener Opener) *Supervisor {
-	return &Supervisor{homeDir: homeDir, opener: opener, now: time.Now, entries: make(map[string]*entry)}
+	return NewWithHostKeys(homeDir, nil, opener)
+}
+
+// NewWithHostKeys 注入 app-state ssh_known_hosts 的指纹（host:port → SHA256）；
+// 未知主机仍按 TOFU 放行，指纹不一致拒绝。
+func NewWithHostKeys(homeDir string, hostKeys map[string]string, opener Opener) *Supervisor {
+	return &Supervisor{homeDir: homeDir, hostKeys: hostKeys, opener: opener, now: time.Now, entries: make(map[string]*entry)}
 }
 
 // Reconcile 从 ssh_connections 原文解析并应用；不阻塞等待连接建立。
@@ -144,6 +154,36 @@ func (supervisor *Supervisor) ReconcileSpecs(specs []Spec) {
 	supervisor.mutex.Unlock()
 }
 
+func applyHostKeys(config sshremote.Config, known map[string]string) sshremote.Config {
+	if known == nil {
+		return config
+	}
+	config.HostKeyCallback = hostKeyCallback(config.Host, config.Port, known)
+	if config.Jump != nil {
+		jump := applyHostKeys(*config.Jump, known)
+		config.Jump = &jump
+	}
+	return config
+}
+
+func hostKeyCallback(host string, port int, known map[string]string) ssh.HostKeyCallback {
+	if port == 0 {
+		port = 22
+	}
+	id := strings.ToLower(strings.TrimSpace(host)) + ":" + strconv.Itoa(port)
+	expected := strings.TrimSpace(known[id])
+	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
+		if expected == "" {
+			return nil
+		}
+		actual := ssh.FingerprintSHA256(key)
+		if actual != expected {
+			return fmt.Errorf("远端 %s 主机指纹变了（expected %s actual %s）", id, expected, actual)
+		}
+		return nil
+	}
+}
+
 func sameSpec(left Spec, right Spec) bool {
 	return left.RemotePort == right.RemotePort &&
 		left.LocalPort == right.LocalPort &&
@@ -178,7 +218,8 @@ func (supervisor *Supervisor) connect(id string, entry *entry) {
 	spec := entry.spec
 	supervisor.mutex.Unlock()
 
-	tunnel, err := supervisor.opener(context.Background(), spec.Config, spec.RemotePort, spec.LocalPort)
+	config := applyHostKeys(spec.Config, supervisor.hostKeys)
+	tunnel, err := supervisor.opener(context.Background(), config, spec.RemotePort, spec.LocalPort)
 	supervisor.mutex.Lock()
 	if entry.stopped || supervisor.closed || entry.generation != generation {
 		supervisor.mutex.Unlock()

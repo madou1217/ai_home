@@ -525,7 +525,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **插件 P2 真实宿主 E2E**（`0b7b44eb`）：真实 supervisor + echo 插件跑 enable→CAS→activate→projected，disable→宿主退出；Go 停掉 503 不落状态。
 - **OAuth Job 持久化**（`145734e3`）：Go sqlite 状态 CAS（终态不可复活/倒序忽略）、DELETE 管理端点、Node 启动回填；Node 仍是登录执行者。
 - **账号删除宿主清理契约**（`957c469c`）：Go 删除事务两段式调用 Node 回环 `/v0/management/internal/account-host-cleanup`；verify 409/503 fail-closed，cleanup 幂等；Go→Node accountRef 经链接表翻译。桌面端/keychain 仍未覆盖。
-- **SSH transport 第一切片**（`6c0820b0`）：`internal/adapters/sshremote` + 只读 `GET /v1/management/webui/ssh/probe`；密码/私钥/agent/known_hosts/Stream/目录/探测。Node 尚未切流。
+- **SSH 远端工作区切 Go**（`6c0820b0`/`24e4fecd`/`777975d4`/`25f43495`/`4d991cbc`/`7dd9c5ff`）：
+  `sshremote` 覆盖连接/认证/known_hosts/Stream/目录/探测；目录浏览与 WebUI SSH 工作区终端已切 Go，
+  Node 只代理连接事实；SSH PTY 支持 pty-req/window-change/取消/退出，断线按 1/2/5/10/20/30s 退避重连，
+  远端 tmux `new-session -A` 接回。真实本机 sshd E2E（第二次连接输出 RECONNECTED）通过；
+  真实远端多网络环境仍缺。
 - **自动换号防误触与续接守卫**（`c3b246de`）：文本 429 排除用户输入回显，结构化 `providerData.error` 优先；continue 只在精确 session 文件存在且非空时写。
 - **qoder relay 交付语义**（`86791702`/`95016058`）：403 排队转 429 + Retry-After，不误判凭据阻塞；只征召原生 OAuth 登录态。真机仍被 Free 账号阻塞。
 - **Chat 模型 policy**（`22d3ca9e`）：空闲切模型落 `session.policy.set`；能力快照随路由模型重建并推 `session.runtime.rebound`。浏览器目视项未做。

@@ -20,7 +20,9 @@ const (
 // （基准测试中 c16 下 20 s 新建约 1.6 万个上游连接后开始拨号失败）。
 // 其余参数（代理、HTTP/2、握手超时）沿用 DefaultTransport。
 func newUpstreamTransport() *http.Transport {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// 从启动时捕获的标准库默认值克隆：InstallOutboundFallback 之后
+	// http.DefaultTransport 已经是带回退的出站层，不再是 *http.Transport。
+	transport := stdlibDefaultTransport.Clone()
 	transport.MaxIdleConns = upstreamMaxIdleConns
 	transport.MaxIdleConnsPerHost = upstreamMaxIdleConnsPerHost
 	transport.IdleConnTimeout = upstreamIdleConnTimeout

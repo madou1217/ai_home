@@ -125,7 +125,8 @@ func newInferenceComposition(
 		transport := newUpstreamTransport()
 		composition.closers = append(composition.closers, idleConnectionCloser{transport: transport})
 		client = &http.Client{
-			Transport:     transport,
+			// 自建连接池同样要带「环境代理不可达改直连」语义（见 outbound_fallback.go）。
+			Transport:     wrapOutboundTransport(transport),
 			Timeout:       inferenceHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
 		}

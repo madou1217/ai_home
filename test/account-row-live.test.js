@@ -260,3 +260,99 @@ test('单账号：5xx 进入冷却，后续不再打 Go', async () => {
   assert.equal(second.errorCode, 'go_core_cooldown');
   assert.deepEqual(calls, ['acct_node1']);
 });
+
+// 账号页行来源切到 Go 读模型：Go 决定有哪些账号，Node 只补富化字段。
+function webUiRow(overrides = {}) {
+  return {
+    provider: 'agy',
+    accountRef: 'acct_go_agy',
+    displayId: '1',
+    enabled: true,
+    status: '',
+    displayName: '',
+    configured: true,
+    apiKeyMode: false,
+    isDefault: false,
+    remainingPct: 100,
+    planType: 'oauth',
+    email: '',
+    updatedAt: 1794384838074,
+    modelCount: 16,
+    ...overrides
+  };
+}
+
+test('Go 读模型：Go 独有账号（agy）进入列表，不再被丢掉', async () => {
+  resetGoAccountRowsState();
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => ({ ok: true, data: { accounts: [webUiRow()] } })
+  };
+  const result = await assembleAccountListWithGo({ goCoreSync: host }, []);
+  assert.equal(result.goAssembled, true);
+  assert.equal(result.accounts.length, 1);
+  assert.equal(result.accounts[0].accountRef, 'acct_go_agy');
+  assert.equal(result.accounts[0].provider, 'agy');
+  // Go 独有账号也要有中性运行态字段，前端不用区分 undefined。
+  assert.equal(result.accounts[0].runtimeStatus, '');
+  assert.equal(result.accounts[0].runtimeUntil, 0);
+});
+
+test('Go 读模型：Node 行保留 Node ref 与运行态富化字段', async () => {
+  resetGoAccountRowsState();
+  const node = nodeRow({
+    accountRef: 'acct_node1',
+    runtimeStatus: 'running',
+    runtimeReason: 'busy',
+    runtimeUntil: 123,
+    quotaReason: 'exhausted',
+    lastUsedAt: 456,
+    zcodeRegion: 'zai'
+  });
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => ({
+      ok: true,
+      data: { accounts: [webUiRow({ provider: 'codex', accountRef: 'acct_go1' })] }
+    })
+  };
+  // Node 侧的 ref 与 Go 不同（静态 key 账号），按 Node→Go 映射对齐。
+  const result = await assembleAccountListWithGo(
+    { goCoreSync: host, goAccountRefFor: (ref) => (ref === 'acct_node1' ? 'acct_go1' : ref) },
+    [node]
+  );
+  assert.equal(result.accounts.length, 1);
+  const row = result.accounts[0];
+  assert.equal(row.accountRef, 'acct_node1', '行引用必须回落 Node 键');
+  assert.equal(row.runtimeStatus, 'running');
+  assert.equal(row.runtimeReason, 'busy');
+  assert.equal(row.runtimeUntil, 123);
+  assert.equal(row.quotaReason, 'exhausted');
+  assert.equal(row.zcodeRegion, 'zai');
+  assert.equal(row.modelCount, 16, 'Go 独有字段照样透出');
+});
+
+test('Go 读模型：Go 没有的 Node 账号原样保留', async () => {
+  resetGoAccountRowsState();
+  const node = nodeRow({ provider: 'gemini', accountRef: 'acct_gemini' });
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => ({ ok: true, data: { accounts: [webUiRow()] } })
+  };
+  const result = await assembleAccountListWithGo({ goCoreSync: host }, [node]);
+  const refs = result.accounts.map((row) => row.accountRef).sort();
+  assert.deepEqual(refs, ['acct_gemini', 'acct_go_agy']);
+});
+
+test('Go 读模型不可用：退回 Node 行（账号页照常可用）', async () => {
+  resetGoAccountRowsState();
+  const node = nodeRow();
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => ({ ok: false, status: 502, errorCode: 'http_502' }),
+    listManagementAccounts: async () => ({ ok: false, status: 502, errorCode: 'http_502' })
+  };
+  const result = await assembleAccountListWithGo({ goCoreSync: host }, [node]);
+  assert.equal(result.goAssembled, false);
+  assert.deepEqual(result.accounts, [node]);
+});

@@ -148,9 +148,23 @@ test('the terminal route starts the supervisor (not raw ssh) and passes no crede
 test('session status comes from the server-side PTY, so any device sees the same live state', async (t) => {
   const aiHomeDir = home(t);
   seed(aiHomeDir);
+  // 终端状态已切 Go：Node 只转管理面结果，探测不再逐个 workspace 打一遍。
+  const probed = [];
   const res = await call(aiHomeDir, 'GET', '/v0/webui/ssh-workspaces/sessions', null, {
-    probeTerminalSession: (key) => ({ state: key === 'remote-ws:ws_0123456789abcdef' ? 'alive' : 'missing' })
+    goCoreSync: {
+      getSshWorkspaceSessions: async () => {
+        probed.push('sessions');
+        return {
+          ok: true,
+          data: {
+            ok: true,
+            sessions: [{ workspaceId: 'ws_0123456789abcdef', sessionKey: 'remote-ws:ws_0123456789abcdef', alive: true }]
+          }
+        };
+      }
+    }
   });
   assert.equal(res.status, 200);
+  assert.equal(probed.length, 1);
   assert.deepEqual(res.payload.sessions, [{ workspaceId: 'ws_0123456789abcdef', sessionKey: 'remote-ws:ws_0123456789abcdef', alive: true }]);
 });

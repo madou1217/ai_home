@@ -58,7 +58,10 @@ type Conn struct {
 	PrivateKey         string
 	IdentityFile       string
 	EgressConnectionID string
-	ReverseTunnel      map[string]any
+	// Jump 是 egressConnectionId 解析后的跳板链；为 nil 且 EgressConnectionID 非空时
+	// 由 Runner 失败关闭（不静默直连）。
+	Jump          *Conn
+	ReverseTunnel map[string]any
 	// Raw 是记录原文，适配层可读取本包未建模的字段（例如隧道参数）。
 	Raw map[string]any
 }

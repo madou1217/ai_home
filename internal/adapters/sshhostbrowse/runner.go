@@ -22,10 +22,16 @@ type Runner struct {
 
 // Run 在指定连接上执行 argv，返回远端 stdout。
 func (runner Runner) Run(ctx context.Context, connection webuisshhostbrowseapi.Conn, argv []string) ([]byte, error) {
-	if strings.TrimSpace(connection.EgressConnectionID) != "" || len(connection.ReverseTunnel) > 0 {
+	if len(connection.ReverseTunnel) > 0 {
 		return nil, &webuisshhostbrowseapi.RemoteFailure{
 			Code:    "ssh_tunnel_unsupported",
-			Message: "该连接使用出口/反向隧道，Go 侧暂未承接；请继续使用 Node 浏览。",
+			Message: "该连接使用反向隧道，Go 侧暂未承接；请继续使用 Node 浏览。",
+		}
+	}
+	if strings.TrimSpace(connection.EgressConnectionID) != "" && connection.Jump == nil {
+		return nil, &webuisshhostbrowseapi.RemoteFailure{
+			Code:    "ssh_egress_unresolved",
+			Message: "该连接的出口连接不存在或跳板链无效。",
 		}
 	}
 	client, err := sshremote.Dial(ctx, configFor(connection, runner.HomeDir), 0)
@@ -45,7 +51,7 @@ func (runner Runner) Run(ctx context.Context, connection webuisshhostbrowseapi.C
 }
 
 func configFor(connection webuisshhostbrowseapi.Conn, homeDir string) sshremote.Config {
-	return sshremote.Config{
+	config := sshremote.Config{
 		Host:         connection.Host,
 		Port:         connection.Port,
 		User:         connection.User,
@@ -55,6 +61,11 @@ func configFor(connection webuisshhostbrowseapi.Conn, homeDir string) sshremote.
 		IdentityFile: connection.IdentityFile,
 		HomeDir:      homeDir,
 	}
+	if connection.Jump != nil {
+		jump := configFor(*connection.Jump, homeDir)
+		config.Jump = &jump
+	}
+	return config
 }
 
 func translate(err error) error {

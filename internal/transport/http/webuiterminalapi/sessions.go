@@ -46,15 +46,16 @@ type launchBody struct {
 // sshLaunch 是 Node 进程内启动器交给 Go 的 SSH 终端事实。
 // 浏览器永远不直接调用这条路由；凭据只走管理密钥保护的本机链路。
 type sshLaunch struct {
-	Host         string   `json:"host"`
-	Port         int      `json:"port"`
-	User         string   `json:"user"`
-	AuthType     string   `json:"authType"`
-	Password     string   `json:"password"`
-	PrivateKey   string   `json:"privateKey"`
-	IdentityFile string   `json:"identityFile"`
-	Command      string   `json:"command"`
-	Env          []string `json:"env"`
+	Host         string     `json:"host"`
+	Port         int        `json:"port"`
+	User         string     `json:"user"`
+	AuthType     string     `json:"authType"`
+	Password     string     `json:"password"`
+	PrivateKey   string     `json:"privateKey"`
+	IdentityFile string     `json:"identityFile"`
+	Command      string     `json:"command"`
+	Env          []string   `json:"env"`
+	Jump         *sshLaunch `json:"jump"`
 }
 
 // terminalView 是 open/attach 的成功响应，字段与 Node 返回同名同义。
@@ -113,15 +114,7 @@ func (handler *Handler) handleLaunch(response http.ResponseWriter, request *http
 	var remote *terminalsession.RemoteSpec
 	if body.SSH != nil {
 		remote = &terminalsession.RemoteSpec{
-			Config: sshremote.Config{
-				Host:         body.SSH.Host,
-				Port:         body.SSH.Port,
-				User:         body.SSH.User,
-				AuthType:     body.SSH.AuthType,
-				Password:     body.SSH.Password,
-				PrivateKey:   body.SSH.PrivateKey,
-				IdentityFile: body.SSH.IdentityFile,
-			},
+			Config:  sshConfigFromLaunch(body.SSH),
 			Command: body.SSH.Command,
 			Env:     append([]string(nil), body.SSH.Env...),
 		}
@@ -142,6 +135,24 @@ func (handler *Handler) handleLaunch(response http.ResponseWriter, request *http
 		remote:     remote,
 	})
 	handler.writeOpenResult(response, result, failure, statusForOpen)
+}
+
+// sshConfigFromLaunch 递归展开 egress/jump 链；密码/私钥只在管理链路里传输。
+func sshConfigFromLaunch(launch *sshLaunch) sshremote.Config {
+	config := sshremote.Config{
+		Host:         launch.Host,
+		Port:         launch.Port,
+		User:         launch.User,
+		AuthType:     launch.AuthType,
+		Password:     launch.Password,
+		PrivateKey:   launch.PrivateKey,
+		IdentityFile: launch.IdentityFile,
+	}
+	if launch.Jump != nil {
+		jump := sshConfigFromLaunch(launch.Jump)
+		config.Jump = &jump
+	}
+	return config
 }
 
 func (handler *Handler) writeOpenResult(

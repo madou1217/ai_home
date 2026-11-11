@@ -128,3 +128,21 @@ test('a workspace whose connection was deleted fails with a clear error', async 
   assert.equal(res.status, 409);
   assert.equal(res.payload.error, 'connection_not_found');
 });
+test('egressConnectionId is passed to Go as a nested jump chain', async (t) => {
+  const aiHomeDir = tmpHome(t);
+  writeJsonValue(fs, aiHomeDir, 'ssh_connections', [
+    { id: 'jump', host: 'jump.local', user: 'jump', port: 22, authType: 'password', password: 'jump-secret' },
+    { id: 'c1', host: 'target.local', user: 'model', port: 22, authType: 'agent', egressConnectionId: 'jump' }
+  ]);
+  writeJsonValue(fs, aiHomeDir, 'ssh_workspaces', [{ id: 'ws_1', connectionId: 'c1', label: 'target', remoteRoot: '/srv/app' }]);
+  const opened = [];
+  const open = (input) => {
+    opened.push(input);
+    return { ok: true, termId: 't1', sessionKey: input.sessionKey, reused: false, durable: false };
+  };
+  const response = await callRoute(aiHomeDir, '/v0/webui/ssh-workspaces/ws_1/terminal', {}, open);
+  assert.equal(response.status, 200);
+  assert.equal(opened[0].ssh.host, 'target.local');
+  assert.equal(opened[0].ssh.jump.host, 'jump.local');
+  assert.equal(opened[0].ssh.jump.password, 'jump-secret');
+});

@@ -31,8 +31,24 @@ func TestRunRejectsTunnelConnectionsBeforeDial(t *testing.T) {
 		Host: "example.com", EgressConnectionID: "egress-1",
 	}, []string{"sh", "-c", "ls"})
 	var failure *webuisshhostbrowseapi.RemoteFailure
-	if !errors.As(err, &failure) || failure.Code != "ssh_tunnel_unsupported" {
+	if !errors.As(err, &failure) || failure.Code != "ssh_egress_unresolved" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestConfigForResolvesJumpChain(t *testing.T) {
+	config := configFor(webuisshhostbrowseapi.Conn{
+		Host: "target", Port: 2200, User: "target-user", AuthType: "agent",
+		EgressConnectionID: "jump-1",
+		Jump: &webuisshhostbrowseapi.Conn{
+			Host: "jump", Port: 22, User: "jump-user", AuthType: "password", Password: "secret",
+		},
+	}, "/home/me")
+	if config.Jump == nil || config.Jump.Host != "jump" || config.Jump.User != "jump-user" {
+		t.Fatalf("jump = %+v", config.Jump)
+	}
+	if config.Host != "target" || config.Port != 2200 {
+		t.Fatalf("target = %+v", config)
 	}
 }
 

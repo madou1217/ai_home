@@ -34,7 +34,8 @@ func (stub *stubSupervisor) Reconcile(raw []byte) error {
 	stub.reconciled = append([]byte(nil), raw...)
 	return nil
 }
-func (stub *stubSupervisor) Status() []sshtunnel.Status { return stub.status }
+func (stub *stubSupervisor) Status() []sshtunnel.Status         { return stub.status }
+func (stub *stubSupervisor) Reconnect(connectionID string) bool { return connectionID == "c1" }
 
 func TestGetStatusAndPostReconcile(t *testing.T) {
 	supervisor := &stubSupervisor{status: []sshtunnel.Status{{ConnectionID: "c1", State: "open", RemotePort: 2222, LocalPort: 22}}}
@@ -55,6 +56,20 @@ func TestGetStatusAndPostReconcile(t *testing.T) {
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, ReconcilePath, nil))
 	if recorder.Code != 200 || string(supervisor.reconciled) != `[{"id":"c1"}]` {
 		t.Fatalf("POST = %d %s raw=%s", recorder.Code, recorder.Body.String(), supervisor.reconciled)
+	}
+}
+
+func TestReconnectAcceptedAndUnknown(t *testing.T) {
+	handler, _ := NewHandler(Dependencies{Authorizer: stubAuthorizer{ok: true}, Connections: stubConnections{}, Supervisor: &stubSupervisor{}})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path+"/c1/reconnect", nil))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("known reconnect = %d %s", recorder.Code, recorder.Body.String())
+	}
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path+"/missing/reconnect", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("unknown reconnect = %d", recorder.Code)
 	}
 }
 

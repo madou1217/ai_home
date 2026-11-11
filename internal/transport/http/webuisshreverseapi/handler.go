@@ -18,6 +18,8 @@ const (
 	Path = "/v1/management/webui/ssh/reverse-tunnels"
 	// ReconcilePath 让 Node 在 ssh_connections 增删改后触发一次重读。
 	ReconcilePath = Path + "/reconcile"
+	// ReconnectSuffix 是强制关闭并重连一条隧道。
+	ReconnectSuffix = "/reconnect"
 )
 
 // Authorizer 校验管理密钥。
@@ -33,6 +35,7 @@ type Connections interface {
 // Supervisor 是 sshtunnel.Supervisor 的入站端口。
 type Supervisor interface {
 	Reconcile(raw []byte) error
+	Reconnect(connectionID string) bool
 	Status() []sshtunnel.Status
 }
 
@@ -71,6 +74,23 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if !handler.authorizer.Authorized(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, http.StatusUnauthorized, "unauthorized", "")
+		return
+	}
+	if request.Method == http.MethodPost && strings.HasPrefix(request.URL.Path, Path+"/") && strings.HasSuffix(request.URL.Path, ReconnectSuffix) {
+		connectionID := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, Path+"/"), ReconnectSuffix)
+		connectionID = strings.TrimSuffix(connectionID, "/")
+		if connectionID == "" || strings.Contains(connectionID, "/") {
+			writeError(response, http.StatusBadRequest, "invalid_connection_id", "")
+			return
+		}
+		if !handler.supervisor.Reconnect(connectionID) {
+			writeError(response, http.StatusNotFound, "connection_not_found", "")
+			return
+		}
+		writeJSON(response, http.StatusAccepted, struct {
+			OK      bool               `json:"ok"`
+			Tunnels []sshtunnel.Status `json:"tunnels"`
+		}{OK: true, Tunnels: handler.supervisor.Status()})
 		return
 	}
 	switch {

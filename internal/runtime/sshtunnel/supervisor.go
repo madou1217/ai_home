@@ -346,6 +346,34 @@ func (supervisor *Supervisor) Status() []Status {
 	return result
 }
 
+// Reconnect 关闭指定连接的隧道并按当前 spec 立即重连；不存在时返回 false。
+func (supervisor *Supervisor) Reconnect(connectionID string) bool {
+	if supervisor == nil {
+		return false
+	}
+	supervisor.mutex.Lock()
+	if supervisor.closed {
+		supervisor.mutex.Unlock()
+		return false
+	}
+	current, ok := supervisor.entries[connectionID]
+	if !ok {
+		supervisor.mutex.Unlock()
+		return false
+	}
+	spec := current.spec
+	supervisor.stopLocked(current)
+	next := &entry{spec: spec, status: "connecting"}
+	if spec.Error != "" {
+		next.status = "error"
+		next.lastError = spec.Error
+	}
+	supervisor.entries[connectionID] = next
+	go supervisor.connect(connectionID, next)
+	supervisor.mutex.Unlock()
+	return true
+}
+
 // Close 停止所有隧道与重连计时器。
 func (supervisor *Supervisor) Close() {
 	if supervisor == nil {

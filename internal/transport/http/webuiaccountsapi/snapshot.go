@@ -2,6 +2,7 @@ package webuiaccountsapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -84,10 +85,11 @@ var bucketLabels = map[string]string{
 }
 
 // normalizeUsageSnapshot 把一份原始快照归一成前端契约；无法识别时原样返回。
-func normalizeUsageSnapshot(snapshot map[string]any) any {
+func normalizeUsageSnapshot(snapshot map[string]any, provider string) any {
 	if len(snapshot) == 0 {
 		return nil
 	}
+	ensureSnapshotProvenance(snapshot, provider)
 	explicitShape := normalizeEntryShape(snapshot["entryShape"])
 
 	// 结构优先：哪个数组存在就用哪个。显式 entryShape 只能在结构兼容时收窄
@@ -584,6 +586,66 @@ func snapshotString(value any) string {
 		return strconv.Itoa(typed)
 	case int64:
 		return strconv.FormatInt(typed, 10)
+	default:
+		return ""
+	}
+}
+
+// snapshotProvenanceLabels 是快照来源的人类可读名。
+//
+// 前端 UsageProvenance 优先渲染 snapshot.provenance.id，没有再回落 snapshot.source——
+// 而 source 是机器名（agy_fetch_available_models 之类），直接露出就是一串技术 id。
+// Go 读模型是唯一出账方，所以在这里把来源翻成展示名；未知 Provider 用 Provider 本身。
+var snapshotProvenanceLabels = map[string]string{
+	"agy":      "Antigravity",
+	"gemini":   "Gemini",
+	"codex":    "Codex",
+	"claude":   "Claude",
+	"cline":    "Cline",
+	"zcode":    "Z.ai",
+	"opencode": "OpenCode",
+	"qoder":    "Qoder",
+	"kimi":     "Kimi",
+	"kiro":     "Kiro",
+}
+
+// ensureSnapshotProvenance 补出前端要的 provenance（id/kind/capturedAt/stale）。
+//
+// 已有 provenance 的文档原样保留（Provider 自己声明的来源优先）。
+func ensureSnapshotProvenance(snapshot map[string]any, providerHint string) {
+	if _, exists := snapshot["provenance"]; exists {
+		return
+	}
+	// 快照文档本身不一定带 Provider，行上的 provider 才是权威来源。
+	provider := strings.ToLower(strings.TrimSpace(providerHint))
+	if provider == "" {
+		provider = strings.ToLower(strings.TrimSpace(textValue(snapshot["provider_id"])))
+	}
+	label := snapshotProvenanceLabels[provider]
+	if label == "" {
+		label = provider
+	}
+	if label == "" {
+		// 连 Provider 都没有时不要编造：让前端按 source 自行回落。
+		return
+	}
+	provenance := map[string]any{
+		"id":   label,
+		"kind": "provider",
+	}
+	if capturedAt, ok := snapshot["capturedAt"]; ok {
+		provenance["capturedAt"] = capturedAt
+	}
+	snapshot["provenance"] = provenance
+}
+
+// textValue 把任意标量安全地转成字符串；非标量返回空串。
+func textValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
 	default:
 		return ""
 	}

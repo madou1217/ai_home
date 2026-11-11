@@ -218,7 +218,7 @@ func newRow(fact accountFact) Row {
 		remaining := float64(fact.RemainingBPS) / 100
 		row.RemainingPct = &remaining
 	}
-	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload)
+	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload, fact.Provider)
 	return row
 }
 
@@ -231,7 +231,7 @@ func newRow(fact accountFact) Row {
 // 「没有快照」处理——调用方用「usageSnapshot 是否为对象」判断 Go 有没有快照，
 // 下发 {} 会让它以为有快照却读不到 capturedAt，进而把快照时效判成 0。
 // 归一器对未知形状原样返回（不 panic、不编字段），未知 provider 只损失展示细节。
-func parseUsageSnapshot(payload string) any {
+func parseUsageSnapshot(payload string, provider string) any {
 	trimmed := strings.TrimSpace(payload)
 	if trimmed == "" {
 		return nil
@@ -240,7 +240,7 @@ func parseUsageSnapshot(payload string) any {
 	if err := json.Unmarshal([]byte(trimmed), &snapshot); err != nil || len(snapshot) == 0 {
 		return nil
 	}
-	return normalizeUsageSnapshot(snapshot)
+	return normalizeUsageSnapshot(snapshot, provider)
 }
 
 // resolvePlanType 与 Node 的 planType 取值一致。

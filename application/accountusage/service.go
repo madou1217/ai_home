@@ -386,8 +386,13 @@ func (service *Service) refreshCurrent(
 		if refreshErr != nil {
 			return ReadResult{}, refreshErr
 		}
-		if !refreshed.IsValid() || refreshed.AccountRef() != accountRef {
+		if !refreshed.IsValid() {
 			return ReadResult{}, ErrInvalidSnapshot
+		}
+		// 刷新可能把账号迁移到新的稳定身份：额度快照必须写到新引用，
+		// 否则会撞上已删除的旧账号。
+		if refreshed.AccountRef() != accountRef {
+			accountRef = refreshed.AccountRef()
 		}
 		credentialSnapshot = refreshed
 	}

@@ -148,3 +148,41 @@ test('SSH 工作区终端状态：Go 不可用时 503', async () => {
   const result = await callWorkspaceSessions({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
   assert.equal(result.status, 503);
 });
+async function callBrowse(goResponse) {
+  let response;
+  const deps = {
+    fs: {},
+    readRequestBody: async () => Buffer.from(JSON.stringify({ connectionId: 'c1', subDir: '/tmp' })),
+    spawnImpl: () => {},
+    homeDir: '/tmp',
+    writeJson: (_res, status, payload) => { response = { status, payload }; }
+  };
+  if (goResponse !== undefined) {
+    deps.goCoreSync = { browseSshHost: async () => goResponse };
+  }
+  const ctx = {
+    method: 'POST',
+    pathname: '/v0/webui/ssh-hosts/browse',
+    req: {},
+    res: {},
+    aiHomeDir: '/tmp/ai-home',
+    deps
+  };
+  const handled = await handleWebUiSshHostRoutes(ctx);
+  assert.equal(handled, true);
+  return response;
+}
+
+test('SSH 目录浏览：Go 成功时透传 currentDir/entries', async () => {
+  const data = { ok: true, currentDir: '/tmp', entries: [{ name: 'a', path: '/tmp/a', type: 'directory' }] };
+  const result = await callBrowse({ ok: true, status: 200, data });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.deepEqual(result.payload.entries, data.entries);
+});
+
+test('SSH 目录浏览：Go 不可用时 503，不本地回退', async () => {
+  const result = await callBrowse({ ok: false, status: 0, errorCode: 'go_core_unavailable' });
+  assert.equal(result.status, 503);
+  assert.equal(result.payload.error, 'go_core_unavailable');
+});

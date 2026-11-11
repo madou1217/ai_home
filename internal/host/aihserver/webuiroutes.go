@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
@@ -53,6 +54,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshhostbrowseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshprobeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
@@ -175,6 +177,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 探测接口失败: %w", err)
+	}
+	// 远端目录浏览：沿用 Node 的 argv 合同，Runner 用 Go 进程内 SSH 执行。
+	// 出口/反向隧道连接暂不承接，由 Runner 明确失败关闭。
+	sshBrowse, err := webuisshhostbrowseapi.NewHandler(webuisshhostbrowseapi.Dependencies{
+		Authorizer:  authorizer,
+		Connections: sshSource,
+		Runner:      sshhostbrowse.Runner{HomeDir: dependencies.HostHomeDir},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 SSH 目录浏览接口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -522,6 +534,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshapi.WorkspacesPath, Handler: sshWorkspaces},
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
 		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
+		{Pattern: "GET " + webuisshhostbrowseapi.Path, Handler: sshBrowse},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},

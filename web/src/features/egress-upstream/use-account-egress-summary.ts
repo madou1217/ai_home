@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { egressUpstreamAPI } from './egress-upstream-api';
+import { watchEgressUpstreams } from '@/services/api';
 import type { EgressUpstream, EgressUpstreamAccount, EgressUpstreamView } from './types';
 
 export interface AccountEgressEntry {
@@ -31,7 +32,9 @@ export function useAccountEgressSummary() {
 
   useEffect(() => {
     void reload();
-    return undefined;
+    const source = watchEgressUpstreams();
+    source.onmessage = () => { void reload(); };
+    return () => source.close();
   }, [reload]);
 
   const byAccount = useMemo(() => {

@@ -15,6 +15,7 @@ import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import ToolkitStatusTrack from '@/components/toolkit/ToolkitStatusTrack';
 import { egressUpstreamAPI } from './egress-upstream-api';
+import { watchEgressUpstreams } from '@/services/api';
 import RegionRulesEditor, { type RuleDraft } from './RegionRulesEditor';
 import BulkEgressModal from './BulkEgressModal';
 import {
@@ -75,6 +76,11 @@ export default function EgressUpstreamPanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const source = watchEgressUpstreams();
+    source.onmessage = () => { void load(); };
+    return () => source.close();
+  }, [load]);
 
   const upstream = useMemo<EgressUpstream | null>(
     () => view?.upstreams.find((item) => item.id === selectedId) || null,

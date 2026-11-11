@@ -107,13 +107,16 @@ test('只暴露 FACADE_METHODS，宿主额外方法不外溢', () => {
   const host = createFakeHost({
     start: () => 'started',
     stop: () => 'stopped',
-    runtimeStateInternal: () => 'internal'
+    runtimeStateInternal: () => 'internal',
+    // Go Core 引导密钥只用于回环内部回调，绝不能顺着门面流进 WebUI。
+    managementKey: () => 'go-core-boot-key'
   });
   const facade = createGoCoreSyncFacade(host);
   assert.deepEqual(Object.keys(facade), [...FACADE_METHODS]);
   assert.equal(facade.start, undefined);
   assert.equal(facade.stop, undefined);
   assert.equal(facade.runtimeStateInternal, undefined);
+  assert.equal(facade.managementKey, undefined);
 });
 
 test('门面冻结，运行期不能再挂方法', () => {

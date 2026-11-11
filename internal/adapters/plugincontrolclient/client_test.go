@@ -26,12 +26,53 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	return client
 }
 
-func TestNewRejectsNonLoopback(t *testing.T) {
-	if _, err := New(Options{BaseURL: "http://10.0.0.8:9527", ManagementKey: func() string { return "k" }}); err == nil {
-		t.Fatal("非 loopback 地址应被拒绝")
+func TestNewRejectsUnsafeBaseURL(t *testing.T) {
+	key := func() string { return "k" }
+	for _, baseURL := range []string{
+		"http://10.0.0.8:9527",
+		"https://127.0.0.1:9527",
+		"http://user:pass@127.0.0.1:9527",
+		"http://127.0.0.1:9527/?x=1",
+		"http://127.0.0.1:9527/#fragment",
+		"http://localhost.evil.example:9527",
+	} {
+		if _, err := New(Options{BaseURL: baseURL, ManagementKey: key}); err == nil {
+			t.Fatalf("%s 应被拒绝", baseURL)
+		}
 	}
-	if _, err := New(Options{BaseURL: "https://127.0.0.1:9527", ManagementKey: func() string { return "k" }}); err == nil {
-		t.Fatal("https 地址应被拒绝")
+	for _, baseURL := range []string{"http://127.0.0.1:9527", "http://localhost:9527", "http://[::1]:9527"} {
+		if _, err := New(Options{BaseURL: baseURL, ManagementKey: key}); err != nil {
+			t.Fatalf("%s 应被接受，error = %v", baseURL, err)
+		}
+	}
+}
+
+func TestPrepareDoesNotFollowRedirects(t *testing.T) {
+	var redirectTargetHits int
+	target := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		redirectTargetHits++
+		_, _ = response.Write([]byte(`{"ok":true,"ticket":"stolen","candidate":{"revision":9}}`))
+	}))
+	t.Cleanup(target.Close)
+	redirector := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		// 模拟被接管的本地端点：把带 Authorization 的请求导向另一个端口。
+		http.Redirect(response, request, target.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+	client, err := New(Options{
+		BaseURL:       redirector.URL,
+		ManagementKey: func() string { return "management-key" },
+		// 注入一个默认会跟随重定向的客户端：New 必须仍然关闭跳转。
+		HTTPClient: &http.Client{},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := client.Prepare(context.Background(), plugincontrol.PrepareRequest{Operation: plugincontrol.OperationEnable}); err == nil {
+		t.Fatal("重定向响应不应被当作成功")
+	}
+	if redirectTargetHits != 0 {
+		t.Fatalf("重定向目标被请求了 %d 次，管理密钥可能已随跳转发往其它端点", redirectTargetHits)
 	}
 }
 

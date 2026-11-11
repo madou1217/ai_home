@@ -99,9 +99,14 @@ function createSession(options = {}) {
 function createContext(session, options = {}) {
   const writes = [];
   const body = options.body === undefined ? {} : options.body;
-  const headers = options.authorization === null
-    ? {}
-    : { authorization: `Bearer ${options.authorization || MANAGEMENT_KEY}` };
+  // 默认模拟 Go 内部客户端：直连 127.0.0.1，Host 也是回环名字。
+  const headers = {
+    ...(options.host === null ? {} : { host: options.host || '127.0.0.1:9527' }),
+    ...(options.authorization === null
+      ? {}
+      : { authorization: `Bearer ${options.authorization || MANAGEMENT_KEY}` }),
+    ...(options.headers || {})
+  };
   const ctx = {
     method: options.method || 'POST',
     pathname: options.pathname,
@@ -186,6 +191,110 @@ test('internal/prepare：回环 + Go Core 引导密钥也能通过（与 Server 
   assert.equal(result.writes[0].status, 200);
   assert.ok(result.writes[0].payload.ticket);
   session.cleanup();
+});
+
+test('internal/prepare：非回环地址 + Go Core 引导密钥仍 403，且不读状态', async () => {
+  const failingStore = { get: () => { throw new Error('must not read state'); }, update: () => {}, commitRemote: async () => {} };
+  const session = createSession({ store: failingStore });
+  const result = await call(session, {
+    pathname: '/v0/plugins/internal/prepare',
+    body: prepareBody(),
+    remoteAddress: '10.1.2.3',
+    authorization: 'go-core-boot-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' }
+  });
+  assert.equal(result.writes[0].status, 403);
+  assert.equal(result.writes[0].payload.error, 'plugin_internal_loopback_required');
+  session.cleanup();
+});
+
+test('internal/prepare：回环 + 与 Server/Go 都不匹配的密钥 401', async () => {
+  const session = createSession();
+  const result = await call(session, {
+    pathname: '/v0/plugins/internal/prepare',
+    body: prepareBody(),
+    authorization: 'not-a-real-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' }
+  });
+  assert.equal(result.writes[0].status, 401);
+  assert.equal(result.writes[0].payload.error, 'unauthorized_management');
+  // 响应体不能回显调用方提交的密钥。
+  assert.equal(JSON.stringify(result.writes[0].payload).includes('not-a-real-key'), false);
+  session.cleanup();
+});
+
+test('internal/prepare：Go Core 引导密钥不能用于公开插件路由', async () => {
+  const session = createSession();
+  const result = await call(session, {
+    pathname: '/v0/plugins/install',
+    body: { file: '/tmp/does-not-matter.aih-plugin' },
+    authorization: 'go-core-boot-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' }
+  });
+  assert.equal(result.writes[0].status, 401);
+  assert.equal(result.writes[0].payload.error, 'unauthorized_management');
+  session.cleanup();
+});
+
+test('internal/prepare：同机反向代理（带转发头）即使回环 + Go key 也 403', async () => {
+  const session = createSession();
+  const result = await call(session, {
+    pathname: '/v0/plugins/internal/prepare',
+    body: prepareBody(),
+    authorization: 'go-core-boot-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' },
+    headers: { 'x-forwarded-for': '203.0.113.9' }
+  });
+  assert.equal(result.writes[0].status, 403);
+  assert.equal(result.writes[0].payload.error, 'plugin_internal_loopback_required');
+  session.cleanup();
+});
+
+test('internal/prepare：Host 不是回环名字（反向代理外部域名）403', async () => {
+  const session = createSession();
+  const result = await call(session, {
+    pathname: '/v0/plugins/internal/prepare',
+    body: prepareBody(),
+    authorization: 'go-core-boot-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' },
+    host: 'aih.example.com'
+  });
+  assert.equal(result.writes[0].status, 403);
+  assert.equal(result.writes[0].payload.error, 'plugin_internal_loopback_required');
+  session.cleanup();
+});
+
+test('internal/prepare：缺少 Host 头按非直连处理 403', async () => {
+  const session = createSession();
+  const result = await call(session, {
+    pathname: '/v0/plugins/internal/prepare',
+    body: prepareBody(),
+    authorization: 'go-core-boot-key',
+    deps: { goCoreManagementKey: () => 'go-core-boot-key' },
+    host: null
+  });
+  assert.equal(result.writes[0].status, 403);
+  assert.equal(result.writes[0].payload.error, 'plugin_internal_loopback_required');
+  session.cleanup();
+});
+
+test('internal/prepare：Host 为 localhost / [::1] 时按本机直连放行', async () => {
+  for (const host of ['localhost:9527', '[::1]:9527']) {
+    const session = createSession();
+    const result = await call(session, {
+      pathname: '/v0/plugins/internal/prepare',
+      body: prepareBody(),
+      authorization: 'go-core-boot-key',
+      deps: { goCoreManagementKey: () => 'go-core-boot-key' },
+      host
+    });
+    assert.equal(result.writes[0].status, 200, host);
+    await call(session, {
+      pathname: '/v0/plugins/internal/discard',
+      body: { ticket: result.writes[0].payload.ticket }
+    });
+    session.cleanup();
+  }
 });
 
 test('internal/prepare：候选被拒返回原错误码与 diagnostics', async () => {

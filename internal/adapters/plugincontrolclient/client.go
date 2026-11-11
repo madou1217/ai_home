@@ -63,12 +63,16 @@ func New(options Options) (*Client, error) {
 	if !isLoopbackHost(host) {
 		return nil, errors.New("插件内部客户端只接受 loopback 地址")
 	}
-	httpClient := options.HTTPClient
-	if httpClient == nil {
-		// 不跟随重定向：管理密钥只允许发给 supervisor 注入的 loopback 地址。
-		httpClient = &http.Client{
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}
+	// 不跟随重定向：管理密钥只允许发给 supervisor 注入的 loopback 地址，而 New 阶段
+	// 校验的只是初始地址。重定向会把 Authorization 带到另一个端点，因此无论是否注入
+	// 客户端都必须关闭跳转。复用注入客户端的 Transport 以保留其连接池配置，但不复制
+	// 它的自动跳转策略，也不修改调用方传入的实例。
+	httpClient := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	if options.HTTPClient != nil {
+		httpClient.Transport = options.HTTPClient.Transport
+		httpClient.Timeout = options.HTTPClient.Timeout
 	}
 	timeout := options.Timeout
 	if timeout <= 0 {

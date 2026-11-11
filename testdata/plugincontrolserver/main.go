@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
 	pluginstatereader "github.com/madou1217/ai_home/internal/adapters/plugincontrol"
 	"github.com/madou1217/ai_home/internal/adapters/plugincontrolclient"
+	adapterplugins "github.com/madou1217/ai_home/internal/adapters/pluginruntime"
 	"github.com/madou1217/ai_home/internal/adapters/pluginstatestore"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/plugincontrolapi"
@@ -85,7 +86,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "reader:", err)
 		os.Exit(2)
 	}
+	// 投影与清单共用同一份注册表：Node 推送投影 → Go 探活宿主确认 → 清单读回运行态。
+	// 端到端必须走真实宿主（unix socket + ping），不能用空注册表假装 projected。
 	registry := appplugins.NewRegistry()
+	invoker := adapterplugins.NewHostInvoker(registry)
+	projection, err := pluginapi.NewProjectionHandler(staticAuthorizer{key: key}, registry, invoker, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "projection:", err)
+		os.Exit(2)
+	}
 	inventory, err := pluginapi.NewInventoryHandler(staticAuthorizer{key: key}, reader, registry)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "inventory:", err)
@@ -100,6 +109,7 @@ func main() {
 		mux.Handle("POST "+plugincontrolapi.InstancesPath+"/{instanceId}/disable", handler)
 	}
 	mux.Handle(pluginapi.InventoryPath, inventory)
+	mux.Handle(pluginapi.ProjectionPath, projection)
 	fmt.Printf("LISTEN=%s\n", listener.Addr().String())
 	os.Stdout.Sync()
 	if err := http.Serve(listener, mux); err != nil {

@@ -22,6 +22,8 @@ const (
 	oauthCredsFile     = ".gemini/oauth_creds.json"
 	antigravityToken   = ".gemini/antigravity-cli/antigravity-oauth-token"
 	jetskiToken        = ".gemini/jetski-standalone-oauth-token"
+	googleAccountsFile = ".gemini/google_accounts.json"
+	emailCacheFile     = ".gemini/antigravity-cli/email.cache"
 	authMethodConsumer = "consumer"
 	projectionFileMode = 0o600
 	projectionDirMode  = 0o700
@@ -52,6 +54,16 @@ func Write(aiHomeDir string, accountRef string, auth *agy.OAuthAuth) error {
 		"token_type":    auth.TokenType(),
 		"expiry_date":   expiresAtMS,
 	}); err != nil {
+		return err
+	}
+	// 账号邮箱变化（re-key）后，CLI 的账号列表与邮箱缓存也必须跟着变，
+	// 否则界面/选号仍显示旧邮箱。
+	if err := mergeJSONFile(filepath.Join(runtimeDir, googleAccountsFile), map[string]any{
+		"active": auth.Email(),
+	}); err != nil {
+		return err
+	}
+	if err := writeTextFile(filepath.Join(runtimeDir, emailCacheFile), auth.Email()); err != nil {
 		return err
 	}
 	if err := mergeJSONFile(filepath.Join(runtimeDir, antigravityToken), map[string]any{
@@ -107,6 +119,31 @@ func mergeDocument(document map[string]any, patch map[string]any) {
 		}
 		document[key] = value
 	}
+}
+
+// writeTextFile 原子写入纯文本投影（email.cache 等）。
+func writeTextFile(path string, value string) error {
+	if err := os.MkdirAll(filepath.Dir(path), projectionDirMode); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".agy-projection-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(projectionFileMode); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.WriteString(value); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 func writeJSONFile(path string, document map[string]any) error {

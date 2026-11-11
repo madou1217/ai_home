@@ -56,6 +56,20 @@ func TestWriteUpdatesAllAgyProjectionFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(
+		filepath.Join(runtimeDir, ".gemini", "google_accounts.json"),
+		[]byte(`{"active":"old@example.test","old":["older@example.test"]}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runtimeDir, ".gemini", "antigravity-cli", "email.cache"),
+		[]byte("old@example.test"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
 		filepath.Join(runtimeDir, ".gemini", "antigravity-cli", "antigravity-oauth-token"),
 		[]byte(`{"auth_method":"consumer","token":{"access_token":"old"},"custom":"keep-me"}`),
 		0o600,
@@ -88,6 +102,19 @@ func TestWriteUpdatesAllAgyProjectionFiles(t *testing.T) {
 	}
 	if antigravity["custom"] != "keep-me" {
 		t.Fatalf("custom field = %v, want preserved", antigravity["custom"])
+	}
+
+	accounts := readJSON(t, filepath.Join(runtimeDir, ".gemini", "google_accounts.json"))
+	if accounts["active"] != "agy@example.test" {
+		t.Fatalf("google_accounts active = %v", accounts["active"])
+	}
+	oldAccounts, _ := accounts["old"].([]any)
+	if len(oldAccounts) != 1 || oldAccounts[0] != "older@example.test" {
+		t.Fatalf("google_accounts old = %v, want preserved", accounts["old"])
+	}
+	emailCache, err := os.ReadFile(filepath.Join(runtimeDir, ".gemini", "antigravity-cli", "email.cache"))
+	if err != nil || string(emailCache) != "agy@example.test" {
+		t.Fatalf("email.cache = %q, %v", string(emailCache), err)
 	}
 
 	jetski := readJSON(t, filepath.Join(runtimeDir, ".gemini", "jetski-standalone-oauth-token"))

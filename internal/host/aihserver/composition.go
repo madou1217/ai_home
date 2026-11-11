@@ -108,7 +108,9 @@ import (
 )
 
 const (
-	oauthHTTPTimeout = 10 * time.Second
+	// 与 Node agy-token-refresh 的默认刷新超时一致（15s）；共享隧道繁忙时
+	// 10s 会偏紧。
+	oauthHTTPTimeout = 15 * time.Second
 	// claudeRelayHTTPTimeout 同样覆盖到响应正文读完，是 Relay 透传流的绝对上限，
 	// 必须与流总时长兜底同量级（见 G3）。
 	claudeRelayHTTPTimeout  = inferenceapi.StreamTotalTimeout

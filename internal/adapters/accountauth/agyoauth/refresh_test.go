@@ -379,3 +379,36 @@ func TestRefreshWithAccountResolvesEgress(t *testing.T) {
 		t.Fatalf("pool egress must not build a client: %v", factoryURLs)
 	}
 }
+
+// 账号自带的客户端与内置默认完全相同时不能对同一个 client 连发两次。
+func TestRefreshDeduplicatesIdenticalClientCandidates(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusUnauthorized},
+		body:   map[string]string{primary.clientSecret: `{"error":"invalid_client"}`},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	refreshedAt := time.Date(2026, time.November, 8, 16, 0, 0, 0, time.UTC)
+	auth, err := agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         "agy@example.test",
+		AccessToken:   "old-access",
+		RefreshToken:  "old-refresh",
+		ExpiresAtMS:   refreshedAt.Add(time.Hour).UnixMilli(),
+		RefreshedAtMS: refreshedAt.UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+		ClientID:      primary.clientID,
+		ClientSecret:  primary.clientSecret,
+	})
+	if err != nil {
+		t.Fatalf("NewOAuthAuth() error = %v", err)
+	}
+	if _, err := provider.Refresh(context.Background(), auth, agyTestNow()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	attempts := stub.attempts()
+	if len(attempts) != 2 || attempts[0] != primary.clientSecret ||
+		attempts[1] != rotatedLoginClientSecret {
+		t.Fatalf("attempts = %v, want primary then rotated", attempts)
+	}
+}

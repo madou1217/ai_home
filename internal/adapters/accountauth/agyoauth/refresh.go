@@ -204,6 +204,19 @@ func (provider *Provider) refresh(
 			candidates...,
 		)
 	}
+	// 去重：账号自带的客户端可能与内置默认完全相同，失败时不应该对同一个
+	// client 连续发两次（Node 的 addCredentialCandidate 同样按 id+secret 去重）。
+	seen := make(map[string]struct{}, len(candidates))
+	unique := candidates[:0]
+	for _, candidate := range candidates {
+		key := candidate.clientID + "\x00" + candidate.clientSecret
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, candidate)
+	}
+	candidates = unique
 	var lastErr error
 	for _, candidate := range candidates {
 		refreshed, retry, err := provider.refreshWithClient(

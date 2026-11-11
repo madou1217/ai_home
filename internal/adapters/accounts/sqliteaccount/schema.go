@@ -7,7 +7,7 @@ const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
 	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 29
+	SchemaVersion = 30
 )
 
 // SchemaV1 是只用于全新 aih.db 的第一版完整结构。
@@ -167,3 +167,11 @@ var SchemaV28 string
 //
 //go:embed schema_v29.sql
 var SchemaV29 string
+
+// SchemaV30 给 oauth_jobs 补 owner/source：Go 只回收自己遗留的 pending。
+//
+// Node 仍是部分登录的执行者；Go 重启时若把所有 pending 都标 expired，会把
+// Node 正在运行的 Job 也误杀。
+//
+//go:embed schema_v30.sql
+var SchemaV30 string

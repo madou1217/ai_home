@@ -28,7 +28,7 @@ test('toJobRecord 区分 reauth 与 register，并保留目标账号', () => {
   // 不含任何凭据字段。
   assert.deepEqual(
     Object.keys(record).sort(),
-    ['created_at', 'error_code', 'error_message', 'expires_at', 'job_id', 'provider_id', 'purpose', 'status', 'target_ref', 'updated_at']
+    ['created_at', 'error_code', 'error_message', 'expires_at', 'job_id', 'owner', 'provider_id', 'purpose', 'source', 'status', 'target_ref', 'updated_at']
   );
 });
 

@@ -170,7 +170,7 @@ func TestAccountModelProbesForwardMigrationFromV20(t *testing.T) {
 	}
 	// v29 给 oauth_jobs 加了终态结果列；夹具代表真正的 v20 结构，回退前先删掉，
 	// 否则重放 v29 的 ALTER TABLE ADD COLUMN 会撞上「列已存在」。
-	for _, column := range []string{"account_ref", "cli_account_id", "finished_at_ms"} {
+	for _, column := range []string{"owner", "source", "account_ref", "cli_account_id", "finished_at_ms"} {
 		if _, err := store.db.ExecContext(
 			ctx,
 			"ALTER TABLE oauth_jobs DROP COLUMN "+column,

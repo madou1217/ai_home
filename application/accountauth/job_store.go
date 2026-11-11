@@ -42,6 +42,10 @@ type JobRecord struct {
 	ErrorCode string
 	// ErrorMessage 保留给存储层记录可读原因，Job 对外只暴露 ErrorCode。
 	ErrorMessage string
+	// Owner 标记写快照的进程；Go 只回收自己遗留的 pending。
+	Owner string
+	// Source 保留 Job 来源，当前与 Owner 同值。
+	Source string
 }
 
 // JobStore 是 Job 公开快照的持久化端口，由基础设施层实现。
@@ -75,6 +79,8 @@ func (job Job) snapshot(updatedAt time.Time) JobRecord {
 		CLIAccountID: job.cliAccountID.Int64(),
 		// ErrorMessage 留空：Job 只保留稳定错误码，上游错误文本可能带敏感信息。
 		ErrorCode: job.failureCode,
+		Owner:     "go",
+		Source:    "go",
 	}
 }
 

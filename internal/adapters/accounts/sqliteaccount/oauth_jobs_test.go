@@ -537,7 +537,7 @@ func TestOAuthJobsTerminalColumnsForwardMigrationFromV28(t *testing.T) {
 	}
 
 	// 夹具必须代表真正的 v28 结构，否则重放 v29 会撞上「列已存在」。
-	for _, column := range []string{"account_ref", "cli_account_id", "finished_at_ms"} {
+	for _, column := range []string{"owner", "source", "account_ref", "cli_account_id", "finished_at_ms"} {
 		if _, err := store.db.ExecContext(
 			ctx,
 			"ALTER TABLE oauth_jobs DROP COLUMN "+column,
@@ -590,6 +590,39 @@ func TestOAuthJobsTerminalColumnsForwardMigrationFromV28(t *testing.T) {
 }
 
 // assertSQLiteObjectsExist 检查表/索引真实存在，避免「迁移写了但没生效」。
+func TestExpirePendingJobsKeepsNodeOwnedJobs(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	goJob := newOAuthJobRecord("job-go", accountauth.StatusPending, createdAt)
+	goJob.Owner = "go"
+	goJob.Source = "go"
+	if err := store.UpsertJob(ctx, goJob); err != nil {
+		t.Fatalf("UpsertJob(go) error = %v", err)
+	}
+	nodeJob := newOAuthJobRecord("job-node", accountauth.StatusPending, createdAt)
+	nodeJob.Owner = "node"
+	nodeJob.Source = "node"
+	if err := store.UpsertJob(ctx, nodeJob); err != nil {
+		t.Fatalf("UpsertJob(node) error = %v", err)
+	}
+	expired, err := store.ExpirePendingJobs(ctx, createdAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ExpirePendingJobs() error = %v", err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired = %d, want 1", expired)
+	}
+	goRecord, _, _ := store.GetJob(ctx, "job-go")
+	nodeRecord, _, _ := store.GetJob(ctx, "job-node")
+	if goRecord.Status != accountauth.StatusExpired {
+		t.Fatalf("go status = %s", goRecord.Status)
+	}
+	if nodeRecord.Status != accountauth.StatusPending {
+		t.Fatalf("node status = %s", nodeRecord.Status)
+	}
+}
+
 func assertSQLiteObjectsExist(t *testing.T, store *Store, names ...string) {
 	t.Helper()
 	for _, name := range names {

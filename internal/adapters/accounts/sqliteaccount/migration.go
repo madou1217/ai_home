@@ -160,6 +160,8 @@ var expectedSchemaColumns = map[string][]string{
 		"account_ref",
 		"cli_account_id",
 		"finished_at_ms",
+		"owner",
+		"source",
 	},
 	"account_quota_window_samples": {
 		"sample_id",
@@ -328,6 +330,7 @@ var forwardMigrations = []string{
 	SchemaV27,
 	SchemaV28,
 	SchemaV29,
+	SchemaV30,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

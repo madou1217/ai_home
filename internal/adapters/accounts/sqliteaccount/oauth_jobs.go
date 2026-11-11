@@ -21,7 +21,8 @@ const oauthJobColumns = `
 	job_id, provider_id, purpose, target_ref, status,
 	created_at_ms, expires_at_ms, updated_at_ms,
 	error_code, error_message,
-	account_ref, cli_account_id, finished_at_ms`
+	account_ref, cli_account_id, finished_at_ms,
+	owner, source`
 
 const (
 	// upsertOAuthJobSQL 以 job_id 为唯一键覆盖写入。
@@ -33,7 +34,7 @@ const (
 	// （例如重启前遗留的 dirty 重放）不能把已落库的账号结果抹成空值。
 	upsertOAuthJobSQL = `
 		INSERT INTO oauth_jobs (` + oauthJobColumns + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (job_id) DO UPDATE SET
 			provider_id = excluded.provider_id,
 			purpose = excluded.purpose,
@@ -49,7 +50,9 @@ const (
 			cli_account_id = CASE
 				WHEN ? THEN oauth_jobs.cli_account_id ELSE excluded.cli_account_id END,
 			finished_at_ms = CASE
-				WHEN ? THEN oauth_jobs.finished_at_ms ELSE excluded.finished_at_ms END
+				WHEN ? THEN oauth_jobs.finished_at_ms ELSE excluded.finished_at_ms END,
+			owner = excluded.owner,
+			source = excluded.source
 		-- 状态机 CAS：终态是单向门，任何不同的终态或迟到的活动快照都不能回退状态。
 		--   * 已 completed/failed/cancelled/expired 的行只接受同状态精修（例如补账号结果）；
 		--   * processing 只能前进到终态，不能倒回 pending；
@@ -90,7 +93,8 @@ const (
 		       updated_at_ms = ?,
 		       error_code = ?,
 		       finished_at_ms = ?
-		 WHERE status IN (?, ?)`
+		 WHERE status IN (?, ?)
+		   AND owner <> 'node'`
 
 	// deleteOAuthJobSQL 物理删除单条快照，供管理面清理已终态的历史记录。
 	//
@@ -139,6 +143,14 @@ func (store *Store) UpsertJob(ctx context.Context, record accountauth.JobRecord)
 	if !record.Status.IsTerminal() {
 		preserveTerminalResult = 1
 	}
+	owner := record.Owner
+	if owner == "" {
+		owner = "go"
+	}
+	source := record.Source
+	if source == "" {
+		source = owner
+	}
 	if _, err := store.db.ExecContext(
 		ctx,
 		upsertOAuthJobSQL,
@@ -155,6 +167,8 @@ func (store *Store) UpsertJob(ctx context.Context, record accountauth.JobRecord)
 		record.AccountRef,
 		record.CLIAccountID,
 		finishedAtMS,
+		owner,
+		source,
 		preserveTerminalResult,
 		preserveTerminalResult,
 		preserveTerminalResult,
@@ -319,6 +333,8 @@ func scanOAuthJobRecord(scanner rowScanner) (accountauth.JobRecord, error) {
 		&record.AccountRef,
 		&record.CLIAccountID,
 		&finishedAtMS,
+		&record.Owner,
+		&record.Source,
 	); err != nil {
 		return accountauth.JobRecord{}, err
 	}

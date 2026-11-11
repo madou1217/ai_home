@@ -1,6 +1,7 @@
 package webuiaccountsapi
 
 import (
+	"encoding/json"
 	"reflect"
 	"strconv"
 	"strings"
@@ -27,8 +28,10 @@ type Row struct {
 	IsMobile    bool   `json:"isMobile"`
 
 	// RemainingPct 取自 account_usage_snapshots 的物化剩余额度（bps / 100）。
-	RemainingPct  *float64 `json:"remainingPct"`
-	UsageSnapshot any      `json:"usageSnapshot"`
+	RemainingPct *float64 `json:"remainingPct"`
+	// UsageSnapshot 是额度快照文档原文（payload_json 解析出的 JSON 对象），形状与 Node 行一致，
+	// 前端直接按 capturedAt/entries/models 渲染窗口与剩余额度；没有快照或文档不可解析时为 null。
+	UsageSnapshot any `json:"usageSnapshot"`
 
 	// UpstreamErrorRules / UpstreamErrorGroupIds 是 Node 的调度规则（app-state），本切片留空。
 	UpstreamErrorRules    []any `json:"upstreamErrorRules"`
@@ -97,8 +100,10 @@ type accountFact struct {
 	RemainingBPS   int64
 	HasRemaining   int64
 	CapturedAtMS   int64
-	IsDefault      int64
-	ModelCount     int64
+	// SnapshotPayload 是 account_usage_snapshots.payload_json 的原文；缺表/无快照时为空串。
+	SnapshotPayload string
+	IsDefault       int64
+	ModelCount      int64
 }
 
 // filledRowFields 是 Go 独占事实派生的字段：调用方可以无条件采用。
@@ -122,7 +127,8 @@ var filledRowFields = []string{
 //  1. account_ui_state 是 Node 推上来的镜像（displayName / apiKeyMode / authMode /
 //     baseUrl / oauth_pending，以及由 subscription_kind 派生的 planType），Node 本地状态可能更新；
 //  2. Go 自己算的采集类标量（updatedAt / remainingPct / quotaStatus / quotaReason）
-//     会随后台采集变化，与 Node 行缓存存在正常的时机差。
+//     会随后台采集变化，与 Node 行缓存存在正常的时机差；usageSnapshot 同理——
+//     它是某个采集时刻的文档，Node 缓存可能比这一份新。
 var approxRowFields = []string{
 	"displayName",
 	"apiKeyMode",
@@ -132,6 +138,7 @@ var approxRowFields = []string{
 	"planType",
 	"updatedAt",
 	"remainingPct",
+	"usageSnapshot",
 	"quotaStatus",
 	"quotaReason",
 }
@@ -177,7 +184,8 @@ func allRowFields() []string {
 // 翻译规则都贴着 Node 的 buildNodeBaseAccountRecord，避免两端各写一套语义：
 //   - planType：apiKeyMode → api-key；否则取 subscription_kind，没有就 oauth；没凭据是 pending；
 //   - updatedAt：已配置且非 API Key 时优先用额度快照的采集时间，否则用账号行更新时间；
-//   - remainingPct：只有物化出数值剩余额度时才给值，否则 null（Node 的「未知」语义）。
+//   - remainingPct：只有物化出数值剩余额度时才给值，否则 null（Node 的「未知」语义）；
+//   - usageSnapshot：快照文档原样下发，解析不了就是 null，绝不因此中断整页。
 func newRow(fact accountFact) Row {
 	configured := fact.HasCredential != 0
 	apiKeyMode := fact.UIAPIKeyMode != 0
@@ -209,7 +217,26 @@ func newRow(fact accountFact) Row {
 		remaining := float64(fact.RemainingBPS) / 100
 		row.RemainingPct = &remaining
 	}
+	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload)
 	return row
+}
+
+// parseUsageSnapshot 把 payload_json 原文解析成下发给前端的快照对象。
+//
+// 只有「非空 + 合法 JSON 对象」才给值：一行坏文档不能把整页打成 500，
+// 所以这里吞掉解析错误而不是向上返回。空对象也按「没有快照」处理——
+// 调用方用「usageSnapshot 是否为对象」判断 Go 有没有快照，下发 {} 会让它
+// 以为有快照却读不到 capturedAt，进而把快照时效判成 0。
+func parseUsageSnapshot(payload string) any {
+	trimmed := strings.TrimSpace(payload)
+	if trimmed == "" {
+		return nil
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &snapshot); err != nil || len(snapshot) == 0 {
+		return nil
+	}
+	return snapshot
 }
 
 // resolvePlanType 与 Node 的 planType 取值一致。

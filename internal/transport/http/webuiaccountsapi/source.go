@@ -262,6 +262,10 @@ func buildRowStatement(available map[string]bool, query Query) (string, []any) {
 			"COALESCE((SELECT s.has_numeric_remaining FROM account_usage_snapshots AS s WHERE s.account_ref = a.account_ref), 0)", "0"),
 		optionalColumn(available, tableSnapshots,
 			"COALESCE((SELECT s.captured_at_ms FROM account_usage_snapshots AS s WHERE s.account_ref = a.account_ref), 0)", "0"),
+		// 快照文档整份下发：账号页要按里面的 models/entries 渲染剩余额度与重置窗口，
+		// 只给物化标量（remaining_bps 等）时页面没有可展示的明细。
+		optionalColumn(available, tableSnapshots,
+			"COALESCE((SELECT s.payload_json FROM account_usage_snapshots AS s WHERE s.account_ref = a.account_ref), '')", "''"),
 		optionalColumn(available, tableDefaults,
 			"COALESCE((SELECT 1 FROM account_defaults AS d WHERE d.provider_id = a.provider_id AND d.account_ref = a.account_ref LIMIT 1), 0)", "0"),
 		optionalColumn(available, tableModels,
@@ -316,6 +320,7 @@ func scanAccountFact(rows *sql.Rows) (accountFact, error) {
 		&fact.RemainingBPS,
 		&fact.HasRemaining,
 		&fact.CapturedAtMS,
+		&fact.SnapshotPayload,
 		&fact.IsDefault,
 		&fact.ModelCount,
 	)

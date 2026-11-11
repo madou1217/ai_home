@@ -237,6 +237,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 			t.Fatalf("账号 1 字段 %s 应为空数组, 实际 %#v", field, oauth[field])
 		}
 	}
+	// 这里的快照 payload 是空对象「{}」：按无快照下发 null，而不是让前端拿到空壳对象。
 	if oauth["usageSnapshot"] != nil || oauth["tokenUsage"] != nil {
 		t.Fatalf("账号 1 的 usageSnapshot/tokenUsage 应为 null: %#v %#v", oauth["usageSnapshot"], oauth["tokenUsage"])
 	}
@@ -268,6 +269,62 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		if got != want {
 			t.Fatalf("账号 2 字段 %s = %#v, 期望 %#v", field, got, want)
 		}
+	}
+}
+
+// 额度快照的 payload_json 必须整份解析成对象下发，账号页才有窗口/剩余额度可渲染；
+// 坏文档只让该行退化为 null，不能把整页打成 500。
+func TestListAccountRowsParsesUsageSnapshotPayload(t *testing.T) {
+	directory := newSeededDatabase(t)
+	database := openWritableDatabase(t, directory)
+	// 形状照抄真实快照文档（agy 的 payload 就是这样：account + capturedAt + entries/models）。
+	validPayload := `{"capturedAt":1793937685487,"kind":"codex_usage",` +
+		`"account":{"email":"a@example.com","planType":"plus"},` +
+		`"entries":[{"bucket":"5h","remainingPct":73.5,"resetAtMs":1793939000000}]}`
+	mustExec(t, database,
+		"UPDATE account_usage_snapshots SET payload_json = ? WHERE account_ref = ?",
+		validPayload, oauthAccountRef)
+	// 真实 schema 对 payload_json 有 json_valid CHECK，脏快照只可能来自旧库或绕过写的
+	// 外部工具；这里临时放开约束造出那种行，验证读模型对坏数据仍然 fail-soft。
+	mustExec(t, database, "PRAGMA ignore_check_constraints = ON")
+	mustExec(t, database,
+		"UPDATE account_usage_snapshots SET payload_json = ? WHERE account_ref = ?",
+		`{"kind":`, apiKeyAccountRef)
+
+	source := newTestSource(t, directory)
+	handler := newTestHandler(t, source)
+
+	response, decoded := requestJSON(t, handler, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("坏快照不能把列表打成 500: status = %d body=%s", response.Code, response.Body.String())
+	}
+	rows := accountRows(t, decoded)
+	if len(rows) != 2 {
+		t.Fatalf("行数 = %d, 期望 2", len(rows))
+	}
+
+	snapshot, ok := rows[0]["usageSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("账号 1 的 usageSnapshot 不是对象: %#v", rows[0]["usageSnapshot"])
+	}
+	if snapshot["capturedAt"] != float64(1793937685487) || snapshot["kind"] != "codex_usage" {
+		t.Fatalf("快照顶层字段不符: %#v", snapshot)
+	}
+	account, ok := snapshot["account"].(map[string]any)
+	if !ok || account["email"] != "a@example.com" {
+		t.Fatalf("快照 account 未原样透出: %#v", snapshot["account"])
+	}
+	entries, ok := snapshot["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("快照 entries 未原样透出: %#v", snapshot["entries"])
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["remainingPct"] != 73.5 || entry["resetAtMs"] != float64(1793939000000) {
+		t.Fatalf("快照窗口字段不符: %#v", entry)
+	}
+
+	if rows[1]["usageSnapshot"] != nil {
+		t.Fatalf("坏 JSON 的账号快照应为 null: %#v", rows[1]["usageSnapshot"])
 	}
 }
 

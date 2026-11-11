@@ -547,3 +547,11 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **WebUI PTY TERM**（`ea8b6168`）：默认强制 `TERM=xterm-256color`，显式 `Spec.Env` 可覆盖。
 - **全量测试基线**（`d147e0fd`）：报告 `docs/plans/reports/2026-11-11-test-baseline.md`；环境类失败（缺 web/node_modules）与真实回归分开记录。
 
+## SSE 事件化验证状态（2026-11-11）
+
+- **已做 API/单元验证**：登录 Job（auth-job 帧）、账号活动（account-activity 帧）、Peer Inbox（fs.watch → peer-changed）、Egress 上游（策略/probe/reset/network → egress-upstreams-changed）、SSH 反向隧道（真实连接 connecting → open）、计划任务完成事件、Geo/Image 任务完成事件、账号 outcomes 快照订阅。
+- **未做真机/浏览器级验证**：Kimi 桌面扫码 SSE（需要真实 Kimi 账号扫码）、Codex 重置 SSE（需要真实重置卡与操作）、Egress 变更帧的浏览器目视、SSH 隧道状态 SSE 的前端目视。
+- **Kimi/Codex 当前状态**：协议与代码已接入，但「真机未验证」；不得在交付说明中写成已验证。
+- **未完成缺口**：插件在途租约 disable 真实宿主 E2E、账号删除桌面端/keychain/诊断、Chat 切模型能力快照浏览器验收。
+- 约束：WebUI 不恢复轮询；SSE 断线只显示重连/离线，不再用短轮询兜底。
+

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Card, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import api from '@/services/api';
+import api, { watchPeerMessages } from '@/services/api';
 import './PeerInbox.css';
 
 type PeerParty = {
@@ -92,6 +92,13 @@ const PeerInbox: React.FC = () => {
   useEffect(() => {
     load();
     return undefined;
+  }, [load]);
+
+  // 收件箱目录变化由服务端 fs.watch 推 SSE；页面不再周期轮询。
+  useEffect(() => {
+    const source = watchPeerMessages();
+    source.onmessage = () => { void load(); };
+    return () => source.close();
   }, [load]);
 
   const visible = useMemo(() => (

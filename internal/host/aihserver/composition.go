@@ -550,22 +550,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}, nil
 	}
 	agyEgressClientFactory := func(proxyURL string) agyoauth.HTTPClient {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		if proxyURL == "" {
-			transport.Proxy = nil
-		} else if parsed, parseErr := url.Parse(proxyURL); parseErr == nil &&
-			parsed.Scheme != "" && parsed.Host != "" {
-			transport.Proxy = http.ProxyURL(parsed)
-		} else {
-			transport.Proxy = func(*http.Request) (*url.URL, error) {
-				return nil, fmt.Errorf("账号出口代理地址无效")
-			}
-		}
-		return &http.Client{
-			Timeout:       oauthHTTPTimeout,
-			Transport:     transport,
-			CheckRedirect: rejectOAuthRedirect,
-		}
+		return newOAuthEgressClient(proxyURL, oauthHTTPTimeout)
 	}
 	agyProvider, err := agyoauth.NewWithEgress(
 		oauthClient,

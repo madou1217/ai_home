@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
 
@@ -108,5 +110,59 @@ func TestLogServerErrorTruncatesLongErrors(t *testing.T) {
 	}
 	if strings.Count(logged, "错") > maxLoggedErrorRunes {
 		t.Fatalf("截断后仍有 %d 个字符", strings.Count(logged, "错"))
+	}
+}
+
+// 凭据刷新失败必须有稳定语义：失效 grant → 401 重登；其它刷新失败 → 502。
+// 之前统一掉进 internal_error 500，前端只能看到「账号服务内部错误」。
+func TestWriteApplicationErrorMapsCredentialRefreshFailures(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "重新认证",
+			err:        fmt.Errorf("%w: oauth status=400 code=\"invalid_grant\"", accountcredentials.ErrReauthenticationRequired),
+			wantStatus: 401,
+			wantCode:   "account_reauth_required",
+		},
+		{
+			name:       "刷新暂时不可用",
+			err:        fmt.Errorf("%w: 账号出口模式 pool 需要宿主代理", accountcredentials.ErrRefreshUnavailable),
+			wantStatus: 502,
+			wantCode:   "credential_refresh_failed",
+		},
+		{
+			name:       "刷新被拒绝",
+			err:        accountcredentials.ErrRefreshRejected,
+			wantStatus: 502,
+			wantCode:   "credential_refresh_failed",
+		},
+		{
+			name:       "刷新结果无效",
+			err:        accountcredentials.ErrInvalidRefreshResult,
+			wantStatus: 502,
+			wantCode:   "credential_refresh_invalid",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			writeApplicationError(recorder, testCase.err)
+			if recorder.Code != testCase.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, testCase.wantStatus)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("响应不是 JSON: %v", err)
+			}
+			errorDocument, _ := payload["error"].(map[string]any)
+			code, _ := errorDocument["code"].(string)
+			if code != testCase.wantCode {
+				t.Fatalf("error.code = %q, want %q", code, testCase.wantCode)
+			}
+		})
 	}
 }

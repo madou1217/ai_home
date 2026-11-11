@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -298,6 +299,28 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			http.StatusBadGateway,
 			"model_refresh_failed",
 			"Provider 模型目录刷新失败",
+		)
+	case errors.Is(err, accountcredentials.ErrReauthenticationRequired):
+		writeAPIError(
+			response,
+			http.StatusUnauthorized,
+			"account_reauth_required",
+			"账号凭据已失效，需要重新登录",
+		)
+	case errors.Is(err, accountcredentials.ErrRefreshUnavailable),
+		errors.Is(err, accountcredentials.ErrRefreshRejected):
+		writeAPIError(
+			response,
+			http.StatusBadGateway,
+			"credential_refresh_failed",
+			"Provider 凭据刷新失败",
+		)
+	case errors.Is(err, accountcredentials.ErrInvalidRefreshResult):
+		writeAPIError(
+			response,
+			http.StatusBadGateway,
+			"credential_refresh_invalid",
+			"Provider 凭据刷新返回无效结果",
 		)
 	case errors.Is(err, accountapp.ErrInvalidAccountModel),
 		errors.Is(err, accountapp.ErrInvalidDiscoveredModels):

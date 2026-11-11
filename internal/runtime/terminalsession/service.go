@@ -75,6 +75,9 @@ type Spec struct {
 	Size       pty.Size
 	Durable    bool
 	Persistent bool
+	// Remote 非空时由 RemoteStarter 建立远端会话（例如 SSH PTY）；
+	// 此时 Path/Args 不参与本地进程启动。
+	Remote any
 }
 
 // Snapshot 是会话的只读投影，字段对应 Node open/attach 的返回。
@@ -131,6 +134,9 @@ type Options struct {
 	ExitRetention  time.Duration
 	Now            func() time.Time
 	ReadBufferSize int
+	// RemoteStarter 建立远端 PTY 会话；Remote 非空时必须提供，
+	// 否则 Create 失败关闭（不会偷偷退回本地进程）。
+	RemoteStarter func(context.Context, any, pty.Size) (pty.Session, error)
 }
 
 // Service 管理单个进程内的全部终端会话。
@@ -199,7 +205,8 @@ func (options Options) withDefaults() Options {
 
 // Create 启动一个会话；同 Key 的存活会话直接复用。
 func (service *Service) Create(ctx context.Context, spec Spec) (Snapshot, error) {
-	if service == nil || service.starter == nil || strings.TrimSpace(spec.Path) == "" {
+	remote := spec.Remote != nil
+	if service == nil || (remote && service.options.RemoteStarter == nil) || (!remote && (service.starter == nil || strings.TrimSpace(spec.Path) == "")) {
 		return Snapshot{}, ErrInvalidSpec
 	}
 	service.Reap()
@@ -232,13 +239,19 @@ func (service *Service) Create(ctx context.Context, spec Spec) (Snapshot, error)
 		// 会话生命周期由服务管理；请求 ctx 取消不能连带杀掉长期终端。
 		startContext = context.WithoutCancel(ctx)
 	}
-	terminal, err := service.starter.Start(startContext, pty.Spec{
-		Path: strings.TrimSpace(spec.Path),
-		Args: append([]string(nil), spec.Args...),
-		Env:  terminalEnvironment(spec.Env),
-		Dir:  dir,
-		Size: size,
-	})
+	var terminal pty.Session
+	var err error
+	if remote {
+		terminal, err = service.options.RemoteStarter(startContext, spec.Remote, size)
+	} else {
+		terminal, err = service.starter.Start(startContext, pty.Spec{
+			Path: strings.TrimSpace(spec.Path),
+			Args: append([]string(nil), spec.Args...),
+			Env:  terminalEnvironment(spec.Env),
+			Dir:  dir,
+			Size: size,
+		})
+	}
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -249,11 +262,15 @@ func (service *Service) Create(ctx context.Context, spec Spec) (Snapshot, error)
 	}
 
 	now := service.options.Now()
+	sessionPath := strings.TrimSpace(spec.Path)
+	if sessionPath == "" && remote {
+		sessionPath = "ssh"
+	}
 	created := &session{
 		id:           id,
 		key:          key,
 		terminal:     terminal,
-		path:         strings.TrimSpace(spec.Path),
+		path:         sessionPath,
 		dir:          dir,
 		cols:         size.Cols,
 		rows:         size.Rows,

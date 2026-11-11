@@ -371,4 +371,15 @@ func (store *Store) reindexReKeyedAccount(
 	}
 	store.routes.deleteAccount(previous)
 	store.routes.replaceAccount(routingAccount, current.Enabled(), effective)
+	// 路由排除行已经搬到新引用，但内存索引是按「新引用」重建的，默认不排除；
+	// 必须把搬过来的 excluded 事实补进索引，否则 re-key 会把停用路由的账号
+	// 重新放回可征召集合。
+	var excluded int
+	if err := store.db.QueryRowContext(
+		ctx,
+		"SELECT excluded FROM account_routing_exclusions WHERE account_ref = ?",
+		current.Ref().String(),
+	).Scan(&excluded); err == nil {
+		store.routes.setRoutingExcluded(current.Ref(), excluded != 0)
+	}
 }

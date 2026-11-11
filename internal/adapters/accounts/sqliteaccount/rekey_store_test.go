@@ -8,6 +8,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/providers"
@@ -218,5 +219,53 @@ func TestReKeyAccountRejectsExistingIdentity(t *testing.T) {
 	}
 	if _, err := store.GetByRef(ctx, oldRef); err != nil {
 		t.Fatalf("old account must survive failed rekey: %v", err)
+	}
+}
+
+// 路由排除行跟着账号搬走后，内存索引也必须保持排除状态；否则 re-key 会把
+// 原本不可征召的账号重新放回候选集合。
+func TestReKeyAccountKeepsRoutingExclusion(t *testing.T) {
+	ctx := context.Background()
+	before := newReKeyTestAuth(t, "before@example.test")
+	after := newReKeyTestAuth(t, "after@example.test")
+	store, oldRef := openReKeyTestStore(t, before)
+	newRef, err := accountcore.DeriveAccountRef(after)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	if _, err := store.ReplaceDiscoveredModels(
+		ctx,
+		oldRef,
+		[]runtimecore.ModelID{"gemini-3-pro"},
+		time.UnixMilli(150_000).UTC(),
+	); err != nil {
+		t.Fatalf("ReplaceDiscoveredModels() error = %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx,
+		`INSERT INTO account_routing_exclusions (account_ref, excluded, reason, updated_at_ms)
+		 VALUES (?, 1, 'test', 100000)`,
+		oldRef.String(),
+	); err != nil {
+		t.Fatalf("insert exclusion error = %v", err)
+	}
+	if _, err := store.ReKeyAccount(ctx, oldRef, after, time.UnixMilli(200_000).UTC()); err != nil {
+		t.Fatalf("ReKeyAccount() error = %v", err)
+	}
+	candidates, err := store.LoadRoutingCandidates(ctx, "agy", "gemini-3-pro")
+	if err != nil {
+		t.Fatalf("LoadRoutingCandidates() error = %v", err)
+	}
+	if _, found := candidates.FindByRef(newRef); found {
+		t.Fatal("excluded account must not become routable after rekey")
+	}
+	var excluded int
+	if err := store.db.QueryRowContext(ctx,
+		"SELECT excluded FROM account_routing_exclusions WHERE account_ref = ?",
+		newRef.String(),
+	).Scan(&excluded); err != nil {
+		t.Fatalf("read migrated exclusion error = %v", err)
+	}
+	if excluded != 1 {
+		t.Fatalf("excluded = %d, want 1", excluded)
 	}
 }

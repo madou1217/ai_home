@@ -58,3 +58,25 @@ test('writeGoFailure：fallbackStatus 可覆盖', () => {
   assert.equal(state.captured.status, 500);
   assert.equal(state.captured.payload.error, 'write_failed');
 });
+
+// 门面清单守卫：路由里 proxyGo/callGoHost 调用到的每个方法都必须在 FACADE_METHODS 里。
+//
+// 门面只暴露清单内的方法，漏登一个就等于让那个接口无论 Go 是否健康都恒返回 503
+// go_core_unavailable（2026-11-11 真机：/v0/webui/server-config、账号模型上下文、
+// 账号配置文件全部 503，而 Go 本身完全正常）。
+test('门面清单覆盖所有路由调用的 Go 方法', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { FACADE_METHODS } = require('../lib/server/go-core-sync-facade');
+  const directory = path.join(__dirname, '..', 'lib', 'server');
+  const used = new Set();
+  for (const name of fs.readdirSync(directory)) {
+    if (!name.endsWith('.js')) continue;
+    const source = fs.readFileSync(path.join(directory, name), 'utf8');
+    for (const match of source.matchAll(/proxyGo\([^)]*?method:\s*'([A-Za-z0-9_]+)'/gs)) used.add(match[1]);
+    for (const match of source.matchAll(/callGoHost\(\s*[A-Za-z_.]+\s*,\s*'([A-Za-z0-9_]+)'/g)) used.add(match[1]);
+  }
+  assert.ok(used.size > 10, '源码扫描应能找到路由调用');
+  const missing = [...used].filter((method) => !FACADE_METHODS.includes(method)).sort();
+  assert.deepEqual(missing, [], `这些方法没有登记到 FACADE_METHODS：${missing.join(', ')}`);
+});

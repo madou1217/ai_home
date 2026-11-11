@@ -93,8 +93,12 @@ func TestOAuthJobUpsertIsIdempotentAndOverwrites(t *testing.T) {
 	}
 }
 
-// 迟到的 pending 快照只能推进状态与时间，不能把已落库的终态结果抹成空值。
-func TestOAuthJobPendingUpsertKeepsTerminalResultColumns(t *testing.T) {
+// 迟到的 pending 快照不能把已落库的终态改回活动状态。
+//
+// 这是持久层的状态机 CAS：Node 的 dirty 重试、Go 重启前遗留的推送都可能
+// 在终态之后到达；如果照单全收，已经完成/过期的 Job 会重新变成「等待回调」，
+// 前端会一直轮询一个永远不会推进的任务。
+func TestOAuthJobStalePendingCannotReviveTerminal(t *testing.T) {
 	store := openOAuthJobStore(t)
 	ctx := context.Background()
 	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
@@ -112,18 +116,143 @@ func TestOAuthJobPendingUpsertKeepsTerminalResultColumns(t *testing.T) {
 	if err := store.UpsertJob(ctx, stale); err != nil {
 		t.Fatalf("UpsertJob() pending error = %v", err)
 	}
+	// 第二个终态（例如迟到的失败回调）同样不能改写首次成功结果。
+	secondTerminal := newOAuthJobRecord("job-terminal-guard", accountauth.StatusFailed, createdAt)
+	secondTerminal.UpdatedAt = createdAt.Add(3 * time.Minute)
+	secondTerminal.FinishedAt = secondTerminal.UpdatedAt
+	secondTerminal.ErrorCode = "provider_rejected"
+	if err := store.UpsertJob(ctx, secondTerminal); err != nil {
+		t.Fatalf("UpsertJob() failed error = %v", err)
+	}
 
 	record, found, err := store.GetJob(ctx, completed.ID)
 	if err != nil || !found {
 		t.Fatalf("GetJob() = %v, %v", found, err)
 	}
-	if record.Status != accountauth.StatusPending || !record.UpdatedAt.Equal(stale.UpdatedAt) {
-		t.Fatalf("非终态列未按最后一次写入更新: %#v", record)
+	if record.Status != accountauth.StatusCompleted {
+		t.Fatalf("终态被迟到的 pending 复活: %#v", record)
 	}
-	if record.AccountRef != completed.AccountRef ||
-		record.CLIAccountID != completed.CLIAccountID ||
-		!record.FinishedAt.Equal(completed.FinishedAt) {
-		t.Fatalf("pending 覆盖了终态结果列: %#v", record)
+	if !record.UpdatedAt.Equal(completed.UpdatedAt) || !record.FinishedAt.Equal(completed.FinishedAt) {
+		t.Fatalf("被忽略的旧快照改写了时间: %#v", record)
+	}
+	if record.AccountRef != completed.AccountRef || record.CLIAccountID != completed.CLIAccountID {
+		t.Fatalf("终态账号结果被覆盖: %#v", record)
+	}
+}
+
+// 过期是单向门：即使随后到达一个「完成」快照，也不能把状态改回来。
+// 过期意味着 Go 已经确认该 Job 的 OAuth Flow 随进程消失，重放完成结果只会
+// 制造「完成了但实际没有执行」的假象。
+func TestOAuthJobExpiredIsFinal(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	if err := store.UpsertJob(ctx, newOAuthJobRecord("job-expired-final", accountauth.StatusPending, createdAt)); err != nil {
+		t.Fatalf("UpsertJob() pending error = %v", err)
+	}
+	expiredAt := createdAt.Add(11 * time.Minute)
+	if _, err := store.ExpirePendingJobs(ctx, expiredAt); err != nil {
+		t.Fatalf("ExpirePendingJobs() error = %v", err)
+	}
+
+	late := newOAuthJobRecord("job-expired-final", accountauth.StatusCompleted, createdAt)
+	late.UpdatedAt = expiredAt.Add(time.Minute)
+	late.FinishedAt = late.UpdatedAt
+	late.AccountRef = "acct_0123456789abcdef0123"
+	late.CLIAccountID = 42
+	if err := store.UpsertJob(ctx, late); err != nil {
+		t.Fatalf("UpsertJob() late completed error = %v", err)
+	}
+	record, found, err := store.GetJob(ctx, late.ID)
+	if err != nil || !found {
+		t.Fatalf("GetJob() = %v, %v", found, err)
+	}
+	if record.Status != accountauth.StatusExpired || record.ErrorCode != "expired" {
+		t.Fatalf("过期 Job 被完成快照复活: %#v", record)
+	}
+	if record.AccountRef != "" || record.CLIAccountID != 0 {
+		t.Fatalf("过期 Job 接受了账号结果: %#v", record)
+	}
+}
+
+// processing 不能倒回 pending：回调已经被唯一消费者领取，倒回会让第二个
+// 回调再次领取并产生第二次 token 交换。
+func TestOAuthJobProcessingCannotRegressToPending(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	processing := newOAuthJobRecord("job-processing-guard", accountauth.StatusProcessing, createdAt)
+	processing.UpdatedAt = createdAt.Add(30 * time.Second)
+	if err := store.UpsertJob(ctx, processing); err != nil {
+		t.Fatalf("UpsertJob() processing error = %v", err)
+	}
+	stale := newOAuthJobRecord("job-processing-guard", accountauth.StatusPending, createdAt)
+	stale.UpdatedAt = createdAt.Add(time.Minute)
+	if err := store.UpsertJob(ctx, stale); err != nil {
+		t.Fatalf("UpsertJob() pending error = %v", err)
+	}
+	record, found, err := store.GetJob(ctx, processing.ID)
+	if err != nil || !found {
+		t.Fatalf("GetJob() = %v, %v", found, err)
+	}
+	if record.Status != accountauth.StatusProcessing {
+		t.Fatalf("processing 被 pending 覆盖: %#v", record)
+	}
+}
+
+// 同一终态的重复推送必须允许精修账号结果：Node 可能先写 completed，
+// 随后才补上 account_ref / cli_account_id。
+func TestOAuthJobCompletedSnapshotCanBeRefined(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	completed := newOAuthJobRecord("job-completed-refine", accountauth.StatusCompleted, createdAt)
+	completed.UpdatedAt = createdAt.Add(time.Minute)
+	completed.FinishedAt = completed.UpdatedAt
+	if err := store.UpsertJob(ctx, completed); err != nil {
+		t.Fatalf("UpsertJob() completed error = %v", err)
+	}
+	refined := completed
+	refined.UpdatedAt = createdAt.Add(2 * time.Minute)
+	refined.AccountRef = "acct_0123456789abcdef0123"
+	refined.CLIAccountID = 42
+	if err := store.UpsertJob(ctx, refined); err != nil {
+		t.Fatalf("UpsertJob() refined error = %v", err)
+	}
+	record, found, err := store.GetJob(ctx, completed.ID)
+	if err != nil || !found {
+		t.Fatalf("GetJob() = %v, %v", found, err)
+	}
+	if record.Status != accountauth.StatusCompleted ||
+		record.AccountRef != refined.AccountRef ||
+		record.CLIAccountID != refined.CLIAccountID ||
+		!record.UpdatedAt.Equal(refined.UpdatedAt) {
+		t.Fatalf("completed 快照精修失败: %#v", record)
+	}
+}
+
+// DeleteJob 只删目标行；不存在时返回 false 而不是报错。
+func TestOAuthJobDeleteRemovesOnlyTarget(t *testing.T) {
+	store := openOAuthJobStore(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	for _, id := range []string{"job-keep", "job-delete"} {
+		if err := store.UpsertJob(ctx, newOAuthJobRecord(id, accountauth.StatusFailed, createdAt)); err != nil {
+			t.Fatalf("UpsertJob(%s) error = %v", id, err)
+		}
+	}
+	deleted, err := store.DeleteJob(ctx, "job-delete")
+	if err != nil || !deleted {
+		t.Fatalf("DeleteJob() = %v, %v", deleted, err)
+	}
+	if _, found, err := store.GetJob(ctx, "job-delete"); err != nil || found {
+		t.Fatalf("deleted job still present: found=%v err=%v", found, err)
+	}
+	if _, found, err := store.GetJob(ctx, "job-keep"); err != nil || !found {
+		t.Fatalf("untargeted job was removed: found=%v err=%v", found, err)
+	}
+	if deleted, err := store.DeleteJob(ctx, "job-delete"); err != nil || deleted {
+		t.Fatalf("second DeleteJob() = %v, %v", deleted, err)
 	}
 }
 

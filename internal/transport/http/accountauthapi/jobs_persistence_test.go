@@ -176,3 +176,71 @@ func TestJobAccountResultSurvivesRestart(t *testing.T) {
 	reopened := openJobPersistenceStore(t, aiHomeDir)
 	assertCompletedJobView(t, newPersistenceHandler(t, reopened), jobID, accountRef, 42, finishedAt)
 }
+
+// TestJobSnapshotDeleteAndStalePushThroughHTTP 用真实 sqlite 串起管理面：
+// 终态之后的迟到 pending 不能复活 Job，DELETE 只清掉目标快照。
+func TestJobSnapshotDeleteAndStalePushThroughHTTP(t *testing.T) {
+	store := openJobPersistenceStore(t, t.TempDir())
+	handler, err := NewHandler(Dependencies{
+		Jobs:       fakeJobs{},
+		Authorizer: testAuthorizer(true),
+		JobRecords: store,
+		JobWrites:  store,
+		JobDeletes: store,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	createdAt := time.Date(2026, 11, 6, 13, 0, 0, 0, time.UTC)
+	jobID := "0123456789abcdef0123456789abcdef"
+	put := func(status string, updatedAt time.Time) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"provider_id": "codex",
+			"purpose":     "register",
+			"status":      status,
+			"created_at":  createdAt.Format(time.RFC3339),
+			"updated_at":  updatedAt.Format(time.RFC3339),
+			"expires_at":  createdAt.Add(10 * time.Minute).Format(time.RFC3339),
+		})
+		if err != nil {
+			t.Fatalf("JSON 编码失败: %v", err)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(
+			recorder,
+			httptest.NewRequest(http.MethodPut, JobsPath+"/"+jobID, bytes.NewReader(body)),
+		)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("PUT %s status = %d, body = %s", status, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	put("expired", createdAt.Add(time.Minute))
+	// 迟到的 pending 即使 updated_at 更新，也不能把 expired 改回等待回调。
+	put("pending", createdAt.Add(2*time.Minute))
+	view := readJobPayload(t, handler, jobID)
+	if view["status"] != "expired" {
+		t.Fatalf("status = %v, want expired", view["status"])
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodDelete, JobsPath+"/"+jobID, nil),
+	)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("DELETE status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if _, found, err := store.GetJob(context.Background(), jobID); err != nil || found {
+		t.Fatalf("deleted snapshot still present: found=%v err=%v", found, err)
+	}
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, JobsPath+"/"+jobID, nil),
+	)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("GET after delete status = %d, want 404", recorder.Code)
+	}
+}

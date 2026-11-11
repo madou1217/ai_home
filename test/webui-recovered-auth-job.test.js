@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { readPersistedAuthJob, __private } = require('../lib/server/web-ui-router');
+const { readPersistedAuthJob, hydrateAuthJobs, __private } = require('../lib/server/web-ui-router');
 
 const { toRecoveredAuthJob } = __private;
 
@@ -112,4 +112,33 @@ test('createAuthJobStoreForDeps 装配 Go 推送与查询（防再次漏 import�
   store.record({ id: 'job-z', provider: 'zcode', status: 'running', createdAt: 1, updatedAt: 2 });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(pushed, ['job-z']);
+});
+
+
+test('hydrateAuthJobs 启动回填后复用同一内存缓存', async () => {
+  const listCalls = [];
+  const deps = {
+    goCoreSync: {
+      listOAuthJobs: async () => {
+        listCalls.push('list');
+        return {
+          ok: true,
+          data: [{
+            job_id: 'old-startup', provider_id: 'codex', purpose: 'register', status: 'completed',
+            created_at: '2026-11-05T07:00:00Z', updated_at: '2026-11-05T07:01:00Z'
+          }]
+        };
+      },
+      getOAuthJob: async () => {
+        listCalls.push('get');
+        return { ok: true, data: null };
+      }
+    }
+  };
+  assert.equal(await hydrateAuthJobs(deps), 1);
+  // 回填命中内存，不应再走 Go 的单条查询。
+  const job = await readPersistedAuthJob(deps, 'old-startup');
+  assert.equal(job.status, 'succeeded');
+  assert.equal(job.recovered, true);
+  assert.deepEqual(listCalls, ['list']);
 });

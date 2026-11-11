@@ -111,7 +111,10 @@ func (handler *Handler) handleJobRecord(
 	jobID string,
 ) {
 	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
+		response.Header().Set(
+			"Allow",
+			http.MethodGet+", "+http.MethodPut+", "+http.MethodDelete,
+		)
 		writeMethodNotAllowed(response)
 		return
 	}

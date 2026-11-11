@@ -52,7 +52,11 @@ type Dependencies struct {
 	// JobWrites 是持久化 Job 快照的写入端口，可为空（未装配时 PUT 返回 503）。
 	//
 	// Node 仍是 12 类 Provider 的登录执行者：它把公开快照推进来，Go 只保存与查询。
-	JobWrites  JobWriter
+	JobWrites JobWriter
+	// JobDeletes 是持久化快照的删除端口，可为空（未装配时 DELETE 返回 503）。
+	//
+	// 删除只清理已落库的历史快照，不等价于取消内存中的 OAuth Job。
+	JobDeletes JobRemover
 	Authorizer Authorizer
 }
 
@@ -61,6 +65,7 @@ type Handler struct {
 	jobs       Jobs
 	records    JobReader
 	jobWrites  JobWriter
+	jobDeletes JobRemover
 	authorizer Authorizer
 }
 
@@ -73,6 +78,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		jobs:       dependencies.Jobs,
 		records:    dependencies.JobRecords,
 		jobWrites:  dependencies.JobWrites,
+		jobDeletes: dependencies.JobDeletes,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -111,11 +117,14 @@ func (handler *Handler) ServeHTTP(
 			)
 			return
 		}
-		if request.Method == http.MethodPut {
+		switch request.Method {
+		case http.MethodPut:
 			handler.handleJobUpsert(response, request, jobID)
-			return
+		case http.MethodDelete:
+			handler.handleJobDelete(response, request, jobID)
+		default:
+			handler.handleJobRecord(response, request, jobID)
 		}
-		handler.handleJobRecord(response, request, jobID)
 		return
 	}
 	if request.URL.Path == CollectionPath {

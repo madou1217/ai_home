@@ -958,6 +958,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Authorizer: authorizer,
 			JobRecords: store,
 			JobWrites:  store,
+			JobDeletes: store,
 		},
 	)
 	if err != nil {

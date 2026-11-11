@@ -387,7 +387,12 @@ func TestJobReadHidesStoreErrors(t *testing.T) {
 
 func TestJobReadRejectsNonGetMethods(t *testing.T) {
 	handler := newTestHandler(t, true, &fakeJobReader{})
-	for _, target := range []string{JobsPath, JobsPath + "/any"} {
+	// 集合只读；成员资源还有 Node 推送（PUT）与管理清理（DELETE）。
+	targets := map[string]string{
+		JobsPath:          http.MethodGet,
+		JobsPath + "/any": http.MethodGet + ", " + http.MethodPut + ", " + http.MethodDelete,
+	}
+	for target, allow := range targets {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(
 			recorder,
@@ -396,8 +401,8 @@ func TestJobReadRejectsNonGetMethods(t *testing.T) {
 		if recorder.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("%s status = %d", target, recorder.Code)
 		}
-		if recorder.Header().Get("Allow") != http.MethodGet {
-			t.Fatalf("%s Allow = %q", target, recorder.Header().Get("Allow"))
+		if recorder.Header().Get("Allow") != allow {
+			t.Fatalf("%s Allow = %q, want %q", target, recorder.Header().Get("Allow"), allow)
 		}
 	}
 }

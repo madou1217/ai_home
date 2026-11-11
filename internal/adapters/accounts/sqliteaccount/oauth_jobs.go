@@ -49,7 +49,18 @@ const (
 			cli_account_id = CASE
 				WHEN ? THEN oauth_jobs.cli_account_id ELSE excluded.cli_account_id END,
 			finished_at_ms = CASE
-				WHEN ? THEN oauth_jobs.finished_at_ms ELSE excluded.finished_at_ms END`
+				WHEN ? THEN oauth_jobs.finished_at_ms ELSE excluded.finished_at_ms END
+		-- 状态机 CAS：终态是单向门，任何不同的终态或迟到的活动快照都不能回退状态。
+		--   * 已 completed/failed/cancelled/expired 的行只接受同状态精修（例如补账号结果）；
+		--   * processing 只能前进到终态，不能倒回 pending；
+		--   * updated_at 单调递增，乱序到达的旧快照整行忽略。
+		-- 终态状态本身不做覆盖，避免「过期 Job 被待办快照复活」和「二次回调改写首次结果」。
+		WHERE excluded.updated_at_ms >= oauth_jobs.updated_at_ms
+		  AND NOT (
+			oauth_jobs.status IN ('completed', 'failed', 'cancelled', 'expired')
+			AND excluded.status <> oauth_jobs.status
+		  )
+		  AND NOT (oauth_jobs.status = 'processing' AND excluded.status = 'pending')`
 
 	getOAuthJobSQL = `
 		SELECT ` + oauthJobColumns + `
@@ -80,6 +91,14 @@ const (
 		       error_code = ?,
 		       finished_at_ms = ?
 		 WHERE status IN (?, ?)`
+
+	// deleteOAuthJobSQL 物理删除单条快照，供管理面清理已终态的历史记录。
+	//
+	// 只删持久化行，不碰进程内 Job；活动 Job 被删后下一次状态迁移会重新写入，
+	// 因此删除接口的语义是「清理快照」而不是「取消作业」。
+	deleteOAuthJobSQL = `
+		DELETE FROM oauth_jobs
+		 WHERE job_id = ?`
 )
 
 // UpsertJob 覆盖写入一个 OAuth Job 公开快照。
@@ -253,6 +272,30 @@ func (store *Store) ExpirePendingJobs(
 		return 0, fmt.Errorf("读取 OAuth Job 过期结果失败: %w", err)
 	}
 	return affected, nil
+}
+
+// DeleteJob 物理删除单条 OAuth Job 快照；不存在时 found 为 false。
+//
+// 幂等：重复删除同一个 Job 第二次返回 false，不视为存储故障。
+func (store *Store) DeleteJob(ctx context.Context, jobID string) (bool, error) {
+	if store == nil || store.db == nil {
+		return false, ErrIncompatibleDatabase
+	}
+	if ctx == nil || jobID == "" {
+		return false, ErrInvalidOAuthJobRecord
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	result, err := store.db.ExecContext(ctx, deleteOAuthJobSQL, jobID)
+	if err != nil {
+		return false, fmt.Errorf("删除 OAuth Job 快照失败: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("读取 OAuth Job 删除结果失败: %w", err)
+	}
+	return affected > 0, nil
 }
 
 // scanOAuthJobRecord 把一行还原成不含任何敏感值的公开快照。

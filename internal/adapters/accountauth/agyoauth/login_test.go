@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -186,5 +188,50 @@ func TestAgyExchangeRejectsInvalidClient(t *testing.T) {
 	}
 	if fake.forms[1].Get("client_secret") != "secret-new" {
 		t.Fatalf("第二个 secret = %q, want secret-new", fake.forms[1].Get("client_secret"))
+	}
+}
+
+// TestAgyExchangeKeepsTransportCause 验证换码的网络原因留在错误链里。
+//
+// 生产事故（2026-11-11）：宿主 HTTPS_PROXY 指向未监听的本机端口时换码立刻被拒，
+// Job 公开快照只有 provider_unavailable；服务端日志必须还能读出 connection refused。
+func TestAgyExchangeKeepsTransportCause(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	// 立刻关闭：该回环端口必定拒绝连接，且不会被别的进程占走。
+	deadEndpoint := "http://" + listener.Addr().String()
+	_ = listener.Close()
+
+	provider, err := newLoginProvider(loginOptions{
+		client:            &http.Client{Timeout: 2 * time.Second},
+		clock:             agyTestNow,
+		random:            rand.Reader,
+		authorizeEndpoint: deadEndpoint + "/authorize",
+		tokenEndpoint:     deadEndpoint + "/token",
+		userInfoEndpoint:  deadEndpoint + "/userinfo",
+		redirectURI:       defaultLoginRedirect,
+		clientID:          "agy-client",
+		clientSecrets:     []string{"secret-old"},
+	})
+	if err != nil {
+		t.Fatalf("newLoginProvider() error = %v", err)
+	}
+	value, err := provider.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin() error = %v", err)
+	}
+	flowValue, ok := value.(*loginFlow)
+	if !ok {
+		t.Fatalf("Begin() flow type = %T", value)
+	}
+	callback := defaultLoginRedirect + "?code=agy-code&state=" + url.QueryEscape(flowValue.state)
+	_, err = flowValue.Exchange(context.Background(), callback)
+	if !errors.Is(err, accountauth.ErrProviderUnavailable) {
+		t.Fatalf("Exchange() error = %v, want ErrProviderUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("错误链必须保留底层原因（connection refused），got %v", err)
 	}
 }

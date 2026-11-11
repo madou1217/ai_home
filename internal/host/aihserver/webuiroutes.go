@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
@@ -52,6 +53,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshprobeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitruntimeapi"
@@ -164,6 +166,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	sshSessions, err := webuisshapi.NewSessionsHandler(webuisshapi.Dependencies{Authorizer: authorizer}, sshSource, dependencies.TerminalProbe)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 工作区终端状态接口失败: %w", err)
+	}
+	// SSH 探测走 Go 进程内传输；第一切片只读，Node 仍承接终端与 Remote Workspace。
+	sshProbe, err := webuisshprobeapi.NewHandler(webuisshprobeapi.Dependencies{
+		Authorizer:  authorizer,
+		Connections: sshSource,
+		Prober:      sshremote.Prober{HomeDir: dependencies.HostHomeDir},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 SSH 探测接口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -510,6 +521,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshapi.Path, Handler: sshHandler},
 		{Pattern: "GET " + webuisshapi.WorkspacesPath, Handler: sshWorkspaces},
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
+		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},

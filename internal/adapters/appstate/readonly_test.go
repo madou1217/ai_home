@@ -105,4 +105,12 @@ func TestLookupAccountProviderFallsBackToGoStore(t *testing.T) {
 	if _, found, err = LookupAccountProvider(ctx, appStatePath, "acct_ffffffffffffffffffff"); err != nil || found {
 		t.Fatalf("LookupAccountProvider(missing) = %v/%v, want false/nil", found, err)
 	}
+	// 刷新所有权判定只看 Node 台账：Go 独有账号不能被视为宿主拥有。
+	if _, found, err = LookupNodeAccountProvider(ctx, appStatePath, goOnlyRef); err != nil || found {
+		t.Fatalf("LookupNodeAccountProvider(go-only) = %v/%v, want false/nil", found, err)
+	}
+	provider, found, err = LookupNodeAccountProvider(ctx, appStatePath, testRef)
+	if err != nil || !found || provider != "claude" {
+		t.Fatalf("LookupNodeAccountProvider(node) = %q/%v/%v, want claude/true/nil", provider, found, err)
+	}
 }

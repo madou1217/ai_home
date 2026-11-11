@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"errors"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"io"
 	"log"
 	"net/http"
@@ -83,11 +84,14 @@ type inferenceCompositionDependencies struct {
 	credentialRefresh []accountcredentials.RefreshStrategy
 	// delegateCredentialRefresh 与账号管理侧解析器保持同一刷新所有权。
 	delegateCredentialRefresh bool
-	authorizer                inferencehttp.Authorizer
-	httpClient                InferenceHTTPClient
-	decodeErrors              func(error)
-	responsesDecodeErrors     func(error)
-	upstreamDecodeErrors      func(error)
+	// ownsCredentialRefresh 与账号管理侧解析器共用同一判定：宿主台账里没有的账号
+	// 由 Go 负责刷新（委托模式下也一样）。
+	ownsCredentialRefresh func(accountcore.AccountRef) bool
+	authorizer            inferencehttp.Authorizer
+	httpClient            InferenceHTTPClient
+	decodeErrors          func(error)
+	responsesDecodeErrors func(error)
+	upstreamDecodeErrors  func(error)
 	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
 	codexVersions clientversion.Source
 	// codexRejections 接收 Codex 上游拒绝请求的低敏诊断；可为空。
@@ -220,6 +224,7 @@ func newInferenceComposition(
 		Routes:                    activeCatalog,
 		CredentialStrategies:      dependencies.credentialRefresh,
 		DelegateCredentialRefresh: dependencies.delegateCredentialRefresh,
+		OwnsCredentialRefresh:     dependencies.ownsCredentialRefresh,
 		Upstreams: []inferencegateway.UpstreamAdapter{
 			codexAdapter,
 			claudeAdapter,

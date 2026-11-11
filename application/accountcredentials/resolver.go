@@ -85,6 +85,11 @@ type Dependencies struct {
 	// 官方刷新协议，只使用由宿主同步进来的当前凭据。两个刷新者竞争同一个会轮换的
 	// Refresh Token 时，后到者会让先到者的 Token 失效，所以只能有一个刷新者。
 	RefreshDelegated bool
+	// OwnsRefresh 判断该账号是否由本进程负责刷新。宿主委托只覆盖宿主仍在维护的
+	// 账号；只在 Go 侧存在的账号（例如 Go 完成登录的 agy 账号）没有宿主凭据，
+	// 宿主永远不会刷新，必须由本进程接管，否则 Token 过期后两侧都不刷新。
+	// nil 表示没有归属信息，沿用「委托即全部跳过刷新」的原有语义。
+	OwnsRefresh func(accountRef accountcore.AccountRef) bool
 }
 
 // Result 返回当前可用凭据以及本次是否执行了真实刷新。
@@ -131,6 +136,7 @@ type Resolver struct {
 	refreshSuppressMu sync.Mutex
 	refreshSuppress   map[string]refreshSuppression
 	refreshDelegated  bool
+	ownsRefresh       func(accountRef accountcore.AccountRef) bool
 }
 
 var _ accountapp.DeletionCleanup = (*Resolver)(nil)
@@ -168,6 +174,7 @@ func NewResolver(dependencies Dependencies) (*Resolver, error) {
 		strategies:       strategies,
 		clock:            dependencies.Clock,
 		refreshDelegated: dependencies.RefreshDelegated,
+		ownsRefresh:      dependencies.OwnsRefresh,
 		refreshSuppress:  make(map[string]refreshSuppression),
 		flights: refreshFlightGroup{
 			active: make(map[string]*refreshCall),
@@ -224,7 +231,7 @@ func (resolver *Resolver) resolve(
 	if err != nil {
 		return credentialResolution{}, err
 	}
-	if !due || (resolver.refreshDelegated && !refreshDelegationExempt(strategy)) {
+	if !due || resolver.delegatesRefresh(accountRef, strategy) {
 		return currentResolution(snapshot), nil
 	}
 	now, err := resolver.currentTime()
@@ -297,7 +304,7 @@ func (resolver *Resolver) ForceRefreshCredentialBinding(
 	if _, refreshable := strategy.ExpiresAt(snapshot.Credential()); !refreshable {
 		return accountapp.CredentialBinding{}, ErrCredentialNotRefreshable
 	}
-	if resolver.refreshDelegated {
+	if resolver.refreshDelegated && !resolver.ownsAccountRefresh(accountRef) {
 		// 宿主负责刷新：这里只能报告暂不可用，等待宿主把新凭据同步进来后重试。
 		return accountapp.CredentialBinding{}, ErrRefreshUnavailable
 	}
@@ -308,6 +315,27 @@ func (resolver *Resolver) ForceRefreshCredentialBinding(
 		return accountapp.CredentialBinding{}, err
 	}
 	return resolution.snapshot.Binding(), nil
+}
+
+// delegatesRefresh 判断本次是否必须把刷新完全交给宿主进程。
+//
+// 委托语义只覆盖宿主拥有并会自行刷新的账号；宿主台账里没有的账号（Go 独有）
+// 由 OwnsRefresh 判定为本进程负责，即使开了委托也必须照常刷新，避免两侧都不刷新。
+func (resolver *Resolver) delegatesRefresh(
+	accountRef accountcore.AccountRef,
+	strategy RefreshStrategy,
+) bool {
+	if !resolver.refreshDelegated || refreshDelegationExempt(strategy) {
+		return false
+	}
+	return !resolver.ownsAccountRefresh(accountRef)
+}
+
+// ownsAccountRefresh 在未注入归属判定时退化为「宿主拥有」，保持原有委托语义。
+func (resolver *Resolver) ownsAccountRefresh(
+	accountRef accountcore.AccountRef,
+) bool {
+	return resolver.ownsRefresh != nil && resolver.ownsRefresh(accountRef)
 }
 
 // readResolutionState 读取最新凭据，并选择唯一 Provider 刷新策略。

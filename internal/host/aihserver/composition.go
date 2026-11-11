@@ -498,85 +498,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 kiro 凭据刷新策略失败: %w", err)
 	}
-	modelManagement, err := accountapp.NewModelManagement(
-		store,
-		store,
-		modelDiscovery,
-		kiroRefresher,
-		// 探测事实与目录快照落在同一 aih.db，WebUI 批量读一次 JOIN 取齐。
-		store,
-		time.Now,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号模型管理用例失败: %w", err)
-	}
-	recoveringReauthenticator, err :=
-		accountrecovery.NewReauthenticator(
-			reauthenticator,
-			accountRuntime,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建账号重新认证恢复边界失败: %w",
-			err,
-		)
-	}
-	recoveringModelManagement, err :=
-		accountrecovery.NewModelManagement(
-			modelManagement,
-			accountRuntime,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建账号模型恢复边界失败: %w",
-			err,
-		)
-	}
-	modelRefresh, err = accountapp.NewModelRefreshCoordinator(
-		accountapp.ModelRefreshCoordinatorOptions{
-			Catalog:             catalog,
-			Refresher:           recoveringModelManagement,
-			ProviderConcurrency: modelRefreshProviderConcurrency(modelDiscovery.ProviderIDs()),
-			RefreshTimeout:      modelRefreshTimeout,
-			BaseBackoff:         modelRefreshBaseBackoff,
-			MaxBackoff:          modelRefreshMaxBackoff,
-			MaxAttempts:         modelRefreshMaxAttempts,
-			Clock:               time.Now,
-			Random:              rand.Reader,
-			Observer:            newModelRefreshObserver(errorLog),
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号模型异步刷新协调器失败: %w", err)
-	}
-	// 启用即刷新复用同一个协调器：账号从停用切到启用时投递一次，合并与重试
-	// 仍由 Provider 队列负责；投递失败只记录，不回滚启停。
-	management, err := accountapp.NewManagement(
-		store,
-		store,
-		store,
-		store,
-		store,
-		time.Now,
-		accountapp.ManagementOptions{
-			ModelRefresh: modelRefresh,
-			ModelRefreshObserver: func(
-				accountRef accountcore.AccountRef,
-				providerID string,
-				err error,
-			) {
-				errorLog.Printf(
-					"账号启用后投递模型刷新失败 account=%s provider=%s: %v",
-					accountRef,
-					providerID,
-					err,
-				)
-			},
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
-	}
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
@@ -664,6 +585,25 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	credentialRefreshStrategies := func(oauth ...accountcredentials.RefreshStrategy) []accountcredentials.RefreshStrategy {
 		return append(oauth, staticCredentialStrategies...)
 	}
+	// 凭据刷新所有权以 Node 的 account_refs 台账为准：台账里的账号由宿主刷新，
+	// 委托模式下 Go 不重复刷新；Go 独有的账号（台账里没有，例如 Go 完成 agy 登录）
+	// 没有宿主凭据，必须由 Go 接管，否则 Token 过期后两侧都无人刷新。
+	appStateDatabasePath, appStatePathErr := appstate.DatabasePath(aiHomeDir)
+	ownsCredentialRefresh := func(accountRef accountcore.AccountRef) bool {
+		if appStatePathErr != nil {
+			return false
+		}
+		_, found, lookupErr := appstate.LookupNodeAccountProvider(
+			context.Background(),
+			appStateDatabasePath,
+			accountRef.String(),
+		)
+		if lookupErr != nil {
+			// 台账不可读时保守沿用宿主独占语义，避免两个刷新者竞争轮换 Token。
+			return false
+		}
+		return !found
+	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
 			Store: store,
@@ -679,10 +619,97 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
+			OwnsRefresh:      ownsCredentialRefresh,
 		},
 	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号凭据解析器失败: %w", err)
+	}
+	// 模型发现与额度/推理共用同一个 credential resolver：探测前先按到期窗口刷新
+	// OAuth 并 CAS 落库。模型路径原先只接了 kiro 专用刷新器，agy 的 1h access token
+	// 过期后仍会拿旧值打 loadCodeAssist，上游固定 401。
+	modelCredentialRefresher := credentialSnapshots{
+		resolver: credentials,
+		store:    store,
+	}
+	modelManagement, err := accountapp.NewModelManagement(
+		store,
+		store,
+		modelDiscovery,
+		modelCredentialRefresher,
+		// 探测事实与目录快照落在同一 aih.db，WebUI 批量读一次 JOIN 取齐。
+		store,
+		time.Now,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号模型管理用例失败: %w", err)
+	}
+	recoveringReauthenticator, err :=
+		accountrecovery.NewReauthenticator(
+			reauthenticator,
+			accountRuntime,
+		)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建账号重新认证恢复边界失败: %w",
+			err,
+		)
+	}
+	recoveringModelManagement, err :=
+		accountrecovery.NewModelManagement(
+			modelManagement,
+			accountRuntime,
+		)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建账号模型恢复边界失败: %w",
+			err,
+		)
+	}
+	modelRefresh, err = accountapp.NewModelRefreshCoordinator(
+		accountapp.ModelRefreshCoordinatorOptions{
+			Catalog:             catalog,
+			Refresher:           recoveringModelManagement,
+			ProviderConcurrency: modelRefreshProviderConcurrency(modelDiscovery.ProviderIDs()),
+			RefreshTimeout:      modelRefreshTimeout,
+			BaseBackoff:         modelRefreshBaseBackoff,
+			MaxBackoff:          modelRefreshMaxBackoff,
+			MaxAttempts:         modelRefreshMaxAttempts,
+			Clock:               time.Now,
+			Random:              rand.Reader,
+			Observer:            newModelRefreshObserver(errorLog),
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号模型异步刷新协调器失败: %w", err)
+	}
+	// 启用即刷新复用同一个协调器：账号从停用切到启用时投递一次，合并与重试
+	// 仍由 Provider 队列负责；投递失败只记录，不回滚启停。
+	management, err := accountapp.NewManagement(
+		store,
+		store,
+		store,
+		store,
+		store,
+		time.Now,
+		accountapp.ManagementOptions{
+			ModelRefresh: modelRefresh,
+			ModelRefreshObserver: func(
+				accountRef accountcore.AccountRef,
+				providerID string,
+				err error,
+			) {
+				errorLog.Printf(
+					"账号启用后投递模型刷新失败 account=%s provider=%s: %v",
+					accountRef,
+					providerID,
+					err,
+				)
+			},
+		},
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
 	}
 	usage, err = newUsageComposition(
 		ctx,
@@ -1113,6 +1140,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 				clineStrategy,
 			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
+			ownsCredentialRefresh:     ownsCredentialRefresh,
 			authorizer:                clientAuthorizer,
 			httpClient:                inferenceClient,
 			decodeErrors:              decodeErrors,

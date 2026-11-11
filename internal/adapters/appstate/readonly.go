@@ -101,6 +101,23 @@ func LookupAccountProvider(ctx context.Context, databasePath string, accountRef 
 	return lookupGoAccountProviderNear(ctx, databasePath, reference)
 }
 
+// LookupNodeAccountProvider 只读 Node 台账 account_refs，不回落 Go 账号库。
+//
+// 与 LookupAccountProvider 的区别：后者回落 Go 账号库以兼容「账号真实写入方已经是
+// Go」的读模型；这里要回答的是「Node 宿主是否拥有该账号」，所以只能在 Node 台账里
+// 查找。Go 独有账号返回 found=false，调用方据此接管刷新。
+func LookupNodeAccountProvider(
+	ctx context.Context,
+	databasePath string,
+	accountRef string,
+) (string, bool, error) {
+	reference := strings.TrimSpace(accountRef)
+	if reference == "" {
+		return "", false, nil
+	}
+	return lookupAppStateAccountProvider(ctx, databasePath, reference)
+}
+
 func lookupAppStateAccountProvider(
 	ctx context.Context,
 	databasePath string,

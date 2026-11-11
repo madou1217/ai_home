@@ -2,13 +2,23 @@ package aihserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
+	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	clinemodelcatalog "github.com/madou1217/ai_home/internal/adapters/cline/modelcatalog"
 )
@@ -108,5 +118,260 @@ func TestClineModelSourceIsStatic(t *testing.T) {
 		if models[index] != want {
 			t.Fatalf("models[%d] = %q, want %q", index, models[index], want)
 		}
+	}
+}
+
+// testServerTransport 把所有出站请求重写到 httptest 服务，保留路径与请求头。
+// agy 的 token/code-assist 端点是编译期常量，测试不能改 base URL，只能在这一层接管。
+type testServerTransport struct {
+	target *url.URL
+}
+
+func (transport testServerTransport) RoundTrip(
+	request *http.Request,
+) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.URL.Scheme = transport.target.Scheme
+	clone.URL.Host = transport.target.Host
+	clone.Host = transport.target.Host
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+// memoryCredentialStore 提供 resolver 需要的版本化读写，按 CAS 语义替换快照。
+type memoryCredentialStore struct {
+	mu       sync.Mutex
+	snapshot accountapp.CredentialSnapshot
+}
+
+func (store *memoryCredentialStore) GetCredentialSnapshot(
+	_ context.Context,
+	accountRef accountcore.AccountRef,
+) (accountapp.CredentialSnapshot, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.snapshot.AccountRef() != accountRef {
+		return accountapp.CredentialSnapshot{}, accountapp.ErrCredentialNotFound
+	}
+	return store.snapshot, nil
+}
+
+func (store *memoryCredentialStore) ReplaceCredential(
+	_ context.Context,
+	replacement accountapp.CredentialReplacement,
+) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if !store.snapshot.UpdatedAt().Equal(replacement.ExpectedUpdatedAt()) {
+		return accountapp.ErrCredentialConflict
+	}
+	next, err := accountapp.NewCredentialSnapshot(
+		replacement.AccountRef(),
+		replacement.Credential().ProviderID(),
+		replacement.Credential(),
+		replacement.UpdatedAt(),
+	)
+	if err != nil {
+		return err
+	}
+	store.snapshot = next
+	return nil
+}
+
+// neverRefreshStrategy 让 resolver 能读取其他 Provider，同时验证 agy 没有策略时的兜底。
+type neverRefreshStrategy struct{}
+
+func (neverRefreshStrategy) ProviderID() string { return "gemini" }
+
+func (neverRefreshStrategy) ExpiresAt(
+	accountapp.Credential,
+) (time.Time, bool) {
+	return time.Time{}, false
+}
+
+func (neverRefreshStrategy) Refresh(
+	context.Context,
+	accountapp.Credential,
+	time.Time,
+) (accountapp.Credential, error) {
+	return nil, errors.New("不应调用刷新")
+}
+
+func expiredAgyCredential(
+	t *testing.T,
+	now time.Time,
+	accessToken string,
+	refreshToken string,
+) *agy.OAuthAuth {
+	t.Helper()
+	auth, err := agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         "user@example.com",
+		AccessToken:   accessToken,
+		RefreshToken:  refreshToken,
+		ExpiresAtMS:   now.Add(-time.Minute).UnixMilli(),
+		RefreshedAtMS: now.Add(-time.Hour).UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+	})
+	if err != nil {
+		t.Fatalf("NewOAuthAuth() error = %v", err)
+	}
+	return auth
+}
+
+// TestModelDiscoveryRefreshesExpiredAgyCredential 复现真机 401：模型发现拿到过期
+// access token 直接打 loadCodeAssist。修复后必须先走 resolver 刷新，再用新 token 发现。
+func TestModelDiscoveryRefreshesExpiredAgyCredential(t *testing.T) {
+	const (
+		expiredToken = "expired-access"
+		freshToken   = "fresh-access"
+		refreshToken = "refresh-1"
+	)
+	now := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	codeAssistAuth := make([]string, 0, 2)
+	tokenRefreshes := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/token":
+			if err := request.ParseForm(); err != nil {
+				t.Errorf("token 请求解析失败: %v", err)
+				http.Error(writer, "bad form", http.StatusBadRequest)
+				return
+			}
+			if got := request.Form.Get("refresh_token"); got != refreshToken {
+				t.Errorf("refresh_token = %q, want %q", got, refreshToken)
+			}
+			mu.Lock()
+			tokenRefreshes++
+			mu.Unlock()
+			_, _ = writer.Write([]byte(
+				`{"access_token":"` + freshToken + `","expires_in":3600,"token_type":"Bearer"}`,
+			))
+		case "/v1internal:loadCodeAssist",
+			"/v1internal:fetchAvailableModels":
+			authorization := request.Header.Get("Authorization")
+			mu.Lock()
+			codeAssistAuth = append(codeAssistAuth, authorization)
+			mu.Unlock()
+			if authorization != "Bearer "+freshToken {
+				t.Errorf("code-assist Authorization = %q, want 新 token", authorization)
+			}
+			if strings.HasSuffix(request.URL.Path, "loadCodeAssist") {
+				_, _ = writer.Write([]byte(`{"cloudaicompanionProject":"proj-test"}`))
+				return
+			}
+			_, _ = writer.Write([]byte(`{"models":{"gemini-3-pro":{}}}`))
+		default:
+			t.Errorf("未预期的上游路径: %s", request.URL.Path)
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("解析测试服务地址失败: %v", err)
+	}
+	client := &http.Client{Transport: testServerTransport{target: target}}
+	auth := expiredAgyCredential(t, now, expiredToken, refreshToken)
+	accountRef, err := accountcore.DeriveAccountRef(auth)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	initial, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		agy.ProviderID,
+		auth,
+		now.Add(-time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialSnapshot() error = %v", err)
+	}
+	store := &memoryCredentialStore{snapshot: initial}
+	provider, err := agyoauth.New(client)
+	if err != nil {
+		t.Fatalf("agyoauth.New() error = %v", err)
+	}
+	resolver, err := accountcredentials.NewResolver(accountcredentials.Dependencies{
+		Store:      store,
+		Strategies: []accountcredentials.RefreshStrategy{provider},
+		Clock:      func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() error = %v", err)
+	}
+
+	refreshed, err := (credentialSnapshots{resolver: resolver, store: store}).
+		RefreshCredential(context.Background(), initial)
+	if err != nil {
+		t.Fatalf("RefreshCredential() error = %v", err)
+	}
+	refreshedAuth, valid := refreshed.Credential().(*agy.OAuthAuth)
+	if !valid || refreshedAuth.AccessToken() != freshToken {
+		t.Fatalf("刷新后 access token 未更新")
+	}
+
+	source, err := agycodeassist.NewModelCatalogSource(client)
+	if err != nil {
+		t.Fatalf("NewModelCatalogSource() error = %v", err)
+	}
+	models, err := source.DiscoverModels(context.Background(), refreshed.Credential())
+	if err != nil {
+		t.Fatalf("DiscoverModels() error = %v", err)
+	}
+	if len(models) != 1 || models[0] != "gemini-3-pro" {
+		t.Fatalf("models = %v, want [gemini-3-pro]", models)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if tokenRefreshes != 1 {
+		t.Fatalf("token 刷新次数 = %d, want 1", tokenRefreshes)
+	}
+	if len(codeAssistAuth) != 2 {
+		t.Fatalf("code-assist 请求数 = %d, want 2", len(codeAssistAuth))
+	}
+}
+
+// TestModelCredentialRefreshWithoutStrategyKeepsSnapshot 守住无刷新策略的 Provider
+// （例如 opencode 静态凭据）：模型发现不能因为缺少策略就拒绝探测。
+func TestModelCredentialRefreshWithoutStrategyKeepsSnapshot(t *testing.T) {
+	now := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	const expiredToken = "expired-access"
+	auth := expiredAgyCredential(t, now, expiredToken, "refresh-1")
+	accountRef, err := accountcore.DeriveAccountRef(auth)
+	if err != nil {
+		t.Fatalf("DeriveAccountRef() error = %v", err)
+	}
+	initial, err := accountapp.NewCredentialSnapshot(
+		accountRef,
+		agy.ProviderID,
+		auth,
+		now.Add(-time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("NewCredentialSnapshot() error = %v", err)
+	}
+	store := &memoryCredentialStore{snapshot: initial}
+	resolver, err := accountcredentials.NewResolver(accountcredentials.Dependencies{
+		Store:      store,
+		Strategies: []accountcredentials.RefreshStrategy{neverRefreshStrategy{}},
+		Clock:      func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() error = %v", err)
+	}
+	refreshed, err := (credentialSnapshots{resolver: resolver, store: store}).
+		RefreshCredential(context.Background(), initial)
+	if err != nil {
+		t.Fatalf("RefreshCredential() error = %v", err)
+	}
+	refreshedAuth, valid := refreshed.Credential().(*agy.OAuthAuth)
+	if !valid || refreshedAuth.AccessToken() != expiredToken {
+		t.Fatalf("无策略时应原样返回快照")
 	}
 }

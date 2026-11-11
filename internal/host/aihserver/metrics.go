@@ -71,6 +71,7 @@ func (writer *metricsResponseWriter) Write(payload []byte) (int, error) {
 	}
 	return writer.ResponseWriter.Write(payload)
 }
+
 // Flush 必须显式转发，否则包装后的 writer 不再满足 http.Flusher。
 // Go Core 的 SSE 处理器（例如 openairesponsesapi.NewSSEStream）直接做类型断言，
 // 断言失败就返回 500 streaming_unavailable；表现为 codex chat harness 的

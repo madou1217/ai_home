@@ -195,7 +195,7 @@ func newRow(fact accountFact) Row {
 		AccountRef:            fact.AccountRef,
 		DisplayID:             strconv.FormatInt(fact.CLIAccountID, 10),
 		Enabled:               fact.Enabled != 0,
-		DisplayName:           firstNonEmpty(fact.UIDisplayName, fact.ProfileName),
+		DisplayName:           firstNonEmpty(fact.UIDisplayName, fact.ProfileName, fact.ProfileEmail),
 		Configured:            configured,
 		APIKeyMode:            apiKeyMode,
 		IsDefault:             fact.IsDefault != 0,

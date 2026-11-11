@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/zcodeoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accounthostcleanup"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accountremoval"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
@@ -719,10 +722,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建凭据轮换模型刷新边界失败: %w", err)
 	}
-	deleter, err := accountapp.NewDeleter(
+	// 宿主清理通道只在有 Node 宿主时装配：独立部署没有 tmux/桌面资源可清，
+	// 删除语义与原来一致；接线错误（地址不是回环）必须在启动期就失败。
+	hostCleanup, err := newDeletionHostCleanup(nodeBaseURL, managementKey, aiHomeDir)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号宿主清理通道失败: %w", err)
+	}
+	deleter, err := accountapp.NewDeleterWithHostCleanup(
 		store,
 		deletionGuard,
 		deletionPreparation,
+		hostCleanup,
 		modelRefresh,
 		usage,
 		accountRuntime,
@@ -1834,6 +1844,38 @@ func newModelDiscovery(
 		return nil, fmt.Errorf("创建账号模型发现注册表失败: %w", err)
 	}
 	return discovery, nil
+}
+
+// newDeletionHostCleanup 装配账号删除的宿主清理通道。
+//
+// 没有 Node 回环地址（独立部署/测试）时返回 nil：此时机器上没有 Node 管理的
+// tmux 与会话登记，删除语义与未接入这条通道时完全一致。地址存在但配置非法
+// （不是 http loopback）必须在启动期失败，不能降级成「静默不清理」。
+func newDeletionHostCleanup(
+	nodeBaseURL string,
+	managementKey func() string,
+	aiHomeDir string,
+) (accountapp.DeletionHostCleanup, error) {
+	if strings.TrimSpace(nodeBaseURL) == "" || managementKey == nil {
+		return nil, nil
+	}
+	client, err := accounthostcleanup.New(accounthostcleanup.Options{
+		BaseURL:       nodeBaseURL,
+		ManagementKey: managementKey,
+		NodeAccountRef: func(ctx context.Context, goRef string) (string, error) {
+			// 每次删除都重读同步链接表：删除是低频动作，但链接表会随导入变化，
+			// 启动时缓存一份会让新账号拿着 Go 引用去 Node 查会话（永远查不到）。
+			table, err := accountrefmap.Load(ctx, aiHomeDir)
+			if err != nil {
+				return "", err
+			}
+			return accountrefmap.NewResolver(true, table).NodeRef(goRef), nil
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 
 // rejectOAuthRedirect 防止 Token 或 Profile 请求被重定向到未审计主机。

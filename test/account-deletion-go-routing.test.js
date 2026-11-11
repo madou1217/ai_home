@@ -111,6 +111,12 @@ function createGoHost(mode) {
         if (mode === 'fail') {
           return { ok: false, status: 500, errorCode: 'go_delete_boom' };
         }
+        if (mode === 'runtime_active') {
+          return { ok: false, status: 409, errorCode: 'account_runtime_active' };
+        }
+        if (mode === 'host_cleanup_failed') {
+          return { ok: false, status: 503, errorCode: 'account_host_cleanup_failed' };
+        }
         return { ok: true, status: 204 };
       }
     }
@@ -282,6 +288,24 @@ test('可回落 Provider：Go 删除失败返回 502 且不落本地删除', asy
     );
   }
 });
+test('Go 删除的真实语义不能被压成 502：409 有会话在跑 / 503 通道不可用', async (t) => {
+  // Go 现在会在提交前回调 Node 清理宿主，失败种类比原来更多。WebUI 需要区分
+  // 「去关会话」与「稍后重试」；一律 502 会让前端给错提示。
+  for (const [mode, expectedStatus] of [['runtime_active', 409], ['host_cleanup_failed', 503]]) {
+    const dir = makeAiHome(t);
+    seedAccount(dir, 'codebuddy');
+    const { host } = createGoHost(mode);
+
+    const result = await deleteViaRoute({ dir, provider: 'codebuddy', goHost: host });
+
+    assert.equal(result.status, expectedStatus, mode);
+    assert.ok(
+      resolveAccountRef(fs, dir, ACCOUNT_REF, { bestEffort: true }),
+      `${mode} 时账号行不得被删除`
+    );
+  }
+});
+
 test('承接方事实位：Go 模式跳过 Node 的投影删除，回落本地删除仍删', async (t) => {
   // 假 Go 只回报成功、不动文件系统：投影还在就说明 Node 没有重复删第二次。
   const goDir = makeAiHome(t);

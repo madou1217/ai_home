@@ -7,6 +7,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -14,6 +16,8 @@ const {
   releaseDeletionBlockers
 } = require('../lib/server/account-deletion-occupancy');
 const { buildZcodeDesktopApplicationName } = require('../lib/runtime/account-app-process-marker');
+const persistentSession = require('../lib/runtime/persistent-session');
+const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 
 const AI_HOME = '/tmp/aih-occupancy-test';
 const OWN_REF = 'acct_0123456789abcdef0123';
@@ -198,4 +202,96 @@ test('release 遇到 uncertain 项不杀进程', async () => {
   assert.equal(release.released, false);
   assert.equal(release.failed[0].reason, 'desktop_app_state_unknown');
   assert.equal(killed, 0);
+});
+
+// ── 持久会话：账号 socket 上的孤儿会话 ────────────────────────────────────────
+// 登记本该在每次启动时写入，但写失败/手工删文件都会留下「服务端上活着、登记里
+// 没有」的会话。它是账号私有的（socket 名带 accountRef），必须同时被占用者探测
+// 与宿主清理看见：只让宿主清理看见，会让用户带 force 重试也永远删不掉。
+
+const CHAT_PROVIDER = 'codebuddy';
+const CHAT_ACCOUNT_REF = 'acct_0123456789abcdef0123';
+const CHAT_SESSION = 'p-orphan-abc123';
+const CHAT_SOCKET = persistentSession.deriveSocket(CHAT_PROVIDER, CHAT_ACCOUNT_REF);
+
+function makePersistentCtx(t, servers) {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-occupancy-session-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const state = {
+    servers: new Map(Object.entries(servers || {}).map(([socket, names]) => [socket, new Set(names)])),
+    calls: []
+  };
+  const spawnSync = (command, args) => {
+    state.calls.push([command, ...args].join(' '));
+    if (args.includes('-V')) return { status: 0, stdout: 'tmux 3.8\n', stderr: '' };
+    const socketIndex = args.indexOf('-L');
+    const socket = socketIndex >= 0 ? String(args[socketIndex + 1] || '') : '';
+    const action = args[socketIndex + 2] || '';
+    if (action === 'list-sessions') {
+      const names = state.servers.get(socket);
+      if (!names) return { status: 1, stdout: '', stderr: 'no server running on /tmp/tmux-501/default' };
+      return { status: 0, stdout: [...names].join('\n') + (names.size ? '\n' : ''), stderr: '' };
+    }
+    if (action === 'kill-session') {
+      const names = state.servers.get(socket);
+      if (names) names.delete(String(args[args.indexOf('-t') + 1] || ''));
+      if (names && names.size === 0) state.servers.delete(socket);
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (action === 'kill-server') {
+      state.servers.delete(socket);
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: 'unexpected command' };
+  };
+  const ctx = makeCtx({
+    fs,
+    aiHomeDir,
+    spawnSync,
+    listDesktopInstances: () => []
+  });
+  return { aiHomeDir, state, ctx };
+}
+
+function chatTarget(aiHomeDir) {
+  return { provider: CHAT_PROVIDER, accountRef: CHAT_ACCOUNT_REF, aiHomeDir };
+}
+
+test('持久会话：没有登记的孤儿会话也是占用，force 后能真的杀掉', async (t) => {
+  const { aiHomeDir, state, ctx } = makePersistentCtx(t, { [CHAT_SOCKET]: [CHAT_SESSION] });
+
+  const detected = await detectDeletionBlockers(ctx, chatTarget(aiHomeDir));
+  assert.equal(detected.blocked, true);
+  assert.equal(detected.items.length, 1);
+  assert.equal(detected.items[0].session, CHAT_SESSION);
+  assert.equal(detected.items[0].unregistered, true);
+
+  const release = await releaseDeletionBlockers(ctx, detected.items);
+  assert.equal(release.released, true);
+  assert.equal(state.servers.has(CHAT_SOCKET), false);
+
+  const after = await detectDeletionBlockers(ctx, chatTarget(aiHomeDir));
+  assert.equal(after.blocked, false);
+});
+
+test('持久会话：已登记并且活着的会话按登记释放，并顺手删掉登记文件', async (t) => {
+  const { aiHomeDir, state, ctx } = makePersistentCtx(t, { [CHAT_SOCKET]: [CHAT_SESSION] });
+  persistentSessionRegistry.writeEntry(aiHomeDir, {
+    provider: CHAT_PROVIDER,
+    runtimeScope: CHAT_ACCOUNT_REF,
+    accountRef: CHAT_ACCOUNT_REF,
+    socket: CHAT_SOCKET,
+    session: CHAT_SESSION,
+    cwd: aiHomeDir
+  }, { strict: true });
+
+  const detected = await detectDeletionBlockers(ctx, chatTarget(aiHomeDir));
+  assert.equal(detected.blocked, true);
+  assert.equal(detected.items.length, 1);
+  assert.equal(detected.items[0].unregistered, undefined);
+
+  const release = await releaseDeletionBlockers(ctx, detected.items);
+  assert.equal(release.released, true);
+  assert.equal(state.servers.has(CHAT_SOCKET), false);
+  assert.deepEqual(persistentSessionRegistry.listEntries(aiHomeDir), []);
 });

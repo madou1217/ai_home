@@ -141,6 +141,15 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"account_deletion_preparation_failed",
 			"无法安全收敛账号 Provider 资源或敏感凭据投影",
 		)
+	case errors.Is(err, accountapp.ErrAccountHostCleanupFailed):
+		// 宿主清理通道不可用（Node 未启动 / 未授权 / 通信失败）。账号事实未被
+		// 修改，可以原样重试；不能返回 409，否则会被当成「有会话在跑」。
+		writeAPIError(
+			response,
+			http.StatusServiceUnavailable,
+			"account_host_cleanup_failed",
+			"无法确认或清理账号的宿主资源",
+		)
 	case errors.Is(err, accountapp.ErrProviderDefaultNotFound):
 		writeAPIError(
 			response,

@@ -148,6 +148,15 @@ export default function ScheduledTasks() {
     void load();
   }, [load]);
 
+  // 计划任务执行进统一任务队列；完成事件到达后补一次列表/记录，不再周期轮询。
+  useEffect(() => {
+    const handleTaskCompleted = () => {
+      void load();
+    };
+    window.addEventListener('aih:webui-task-completed', handleTaskCompleted);
+    return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
+  }, [load]);
+
   // 时间窗变化时回到第 1 页（否则会停在窗口内不存在的页码上）。
   useEffect(() => {
     setRecordPage(1);

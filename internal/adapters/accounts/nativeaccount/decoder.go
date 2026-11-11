@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
@@ -58,6 +59,16 @@ func NewDecoder() *Decoder {
 	}
 }
 
+// normalizeAGYAuthMethod 复刻 Node 的自愈：空值与历史值 "oauth" 归一为 consumer，
+// 其它未知枚举原样保留，交给领域校验拒绝（不能把 api-key 之类悄悄当成 OAuth）。
+func normalizeAGYAuthMethod(raw string) agy.AuthMethod {
+	method := agy.AuthMethod(strings.TrimSpace(raw))
+	if method == "" || method == "oauth" {
+		return agy.AuthMethodConsumer
+	}
+	return method
+}
+
 // decodeAGY 把 Antigravity 的邮箱与 consumer oauthToken 组合成既有领域值。
 func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, error) {
 	artifacts, err := decodeArtifactObject(data, "native_auth_json")
@@ -94,7 +105,10 @@ func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, er
 		Email: native.Email, AccessToken: native.OAuthToken.Token.AccessToken,
 		RefreshToken: native.OAuthToken.Token.RefreshToken, ExpiresAtMS: expiresAtMS,
 		RefreshedAtMS: refreshedAtMS, TokenType: native.OAuthToken.Token.TokenType,
-		AuthMethod: agy.AuthMethod(native.OAuthToken.AuthMethod),
+		// Node 刷新时的自愈：早期同步把 auth_method 写成 "oauth"，而 antigravity
+		// CLI 只接受 "consumer"（其余值报 Unknown auth method）。旧凭据没有经过
+		// 一次 Node 刷新就直接导入时，这里按同一规则归一，否则整条凭据无法加载。
+		AuthMethod: normalizeAGYAuthMethod(native.OAuthToken.AuthMethod),
 	})
 	if err != nil {
 		return nil, nil, invalidArtifacts("AGY OAuth artifact 无效")

@@ -4,6 +4,7 @@ package agyoauth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -79,6 +80,9 @@ func (provider *Provider) Refresh(
 	// Google 轮换 installed-app client secret 后，登录可能已经落在新 secret 上，
 	// 而旧 secret 对 refresh 不再被接受。Node 生产路径同样按顺序尝试候选凭据，
 	// 只在 invalid_client 时换下一个；这里必须保持一致，否则登录成功、刷新必败。
+	if len(provider.clientCredentials) == 0 {
+		return nil, accountcredentials.ErrInvalidDependencies
+	}
 	var lastErr error
 	for _, candidate := range provider.clientCredentials {
 		refreshed, retry, err := provider.refreshWithClient(
@@ -100,9 +104,9 @@ func (provider *Provider) Refresh(
 
 // refreshWithClient 使用单个客户端凭据发起一次换码。
 //
-// 第二个返回值表示上游明确判定 client 凭据无效（invalid_client）：只有这种
-// 错误允许调用方换候选 secret 重试。reauth、限流和传输错误必须原样返回，
-// 否则会被误判成客户端配置问题。
+// 第二个返回值表示「可以换下一个候选凭据重试」：传输失败和 invalid_client
+// 都属此类（与 Node 生产路径一致）。invalid_grant、限流和 5xx 是终态结论，
+// 换 secret 不会改变结果，必须立即返回最后错误。
 func (provider *Provider) refreshWithClient(
 	ctx context.Context,
 	auth *agy.OAuthAuth,
@@ -132,16 +136,31 @@ func (provider *Provider) refreshWithClient(
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, false, errors.Join(accountcredentials.ErrRefreshUnavailable, ctxErr)
 		}
-		return nil, false, accountcredentials.ErrRefreshUnavailable
+		// 单个 client 的网络失败不能终止整个候选链：Node 生产路径在同一位置
+		// continue，内置 legacy secret 仍可能拿到 token（2026-10-22 真机）。
+		return nil, true, accountcredentials.ErrRefreshUnavailable
 	}
 	if response == nil || response.Body == nil {
-		return nil, false, accountcredentials.ErrRefreshUnavailable
+		return nil, true, accountcredentials.ErrRefreshUnavailable
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
 		code := oauthutil.DecodeErrorCode(response.Body, maxTokenBytes)
-		return nil, code == "invalid_client", oauthutil.ClassifyRefreshError(
+		classified := oauthutil.ClassifyRefreshError(response.StatusCode, code)
+		// 保留上游 status 与机器码：Node 的失败结果带 reason/status，Go 只返回
+		// 「账号需要重新认证」会把 invalid_client 和 invalid_grant 混成一句话，
+		// 迁移后排查只能靠猜。code 是固定枚举，不含 token 或响应正文。
+		if code == "" {
+			return nil, false, fmt.Errorf(
+				"%w: oauth status=%d",
+				classified,
+				response.StatusCode,
+			)
+		}
+		return nil, code == "invalid_client", fmt.Errorf(
+			"%w: oauth status=%d code=%q",
+			classified,
 			response.StatusCode,
 			code,
 		)

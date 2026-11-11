@@ -90,6 +90,12 @@ type Dependencies struct {
 	// 宿主永远不会刷新，必须由本进程接管，否则 Token 过期后两侧都不刷新。
 	// nil 表示没有归属信息，沿用「委托即全部跳过刷新」的原有语义。
 	OwnsRefresh func(accountRef accountcore.AccountRef) bool
+	// OnCredentialRefreshed 在 CAS 成功后通知宿主把新凭据物化到 Provider 原生投影。
+	// 账本仍是唯一权威：回调失败不回滚凭据，也不影响本次刷新的返回值。
+	OnCredentialRefreshed func(
+		accountRef accountcore.AccountRef,
+		credential accountapp.Credential,
+	)
 }
 
 // Result 返回当前可用凭据以及本次是否执行了真实刷新。
@@ -129,14 +135,15 @@ func (result Result) Refreshed() bool {
 
 // Resolver 按 AccountRef 延迟读取凭据，并按账号合并并发刷新。
 type Resolver struct {
-	store             accountapp.CredentialVersionStore
-	strategies        map[string]RefreshStrategy
-	clock             accountapp.Clock
-	flights           refreshFlightGroup
-	refreshSuppressMu sync.Mutex
-	refreshSuppress   map[string]refreshSuppression
-	refreshDelegated  bool
-	ownsRefresh       func(accountRef accountcore.AccountRef) bool
+	store                 accountapp.CredentialVersionStore
+	strategies            map[string]RefreshStrategy
+	clock                 accountapp.Clock
+	flights               refreshFlightGroup
+	refreshSuppressMu     sync.Mutex
+	refreshSuppress       map[string]refreshSuppression
+	refreshDelegated      bool
+	ownsRefresh           func(accountRef accountcore.AccountRef) bool
+	onCredentialRefreshed func(accountcore.AccountRef, accountapp.Credential)
 }
 
 var _ accountapp.DeletionCleanup = (*Resolver)(nil)
@@ -170,12 +177,13 @@ func NewResolver(dependencies Dependencies) (*Resolver, error) {
 		strategies[providerID] = strategy
 	}
 	return &Resolver{
-		store:            dependencies.Store,
-		strategies:       strategies,
-		clock:            dependencies.Clock,
-		refreshDelegated: dependencies.RefreshDelegated,
-		ownsRefresh:      dependencies.OwnsRefresh,
-		refreshSuppress:  make(map[string]refreshSuppression),
+		store:                 dependencies.Store,
+		strategies:            strategies,
+		clock:                 dependencies.Clock,
+		refreshDelegated:      dependencies.RefreshDelegated,
+		ownsRefresh:           dependencies.OwnsRefresh,
+		onCredentialRefreshed: dependencies.OnCredentialRefreshed,
+		refreshSuppress:       make(map[string]refreshSuppression),
 		flights: refreshFlightGroup{
 			active: make(map[string]*refreshCall),
 		},
@@ -432,6 +440,9 @@ func (resolver *Resolver) refreshCurrent(
 		return credentialResolution{}, err
 	}
 	resolver.forgetRefreshSuppression(accountRef)
+	if resolver.onCredentialRefreshed != nil {
+		resolver.onCredentialRefreshed(accountRef, credential)
+	}
 	refreshed, err := accountapp.NewCredentialSnapshot(
 		accountRef,
 		credential.ProviderID(),

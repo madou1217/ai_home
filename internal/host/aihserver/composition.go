@@ -34,6 +34,7 @@ import (
 	"github.com/madou1217/ai_home/application/visionguard"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
@@ -57,6 +58,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
+	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
@@ -620,6 +622,25 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
 			OwnsRefresh:      ownsCredentialRefresh,
+			// agy 的 CLI 读运行投影而不是账本：Node 在刷新成功后会把新 token
+			// 物化到 run/auth-projections，迁移后由 Go 刷新也必须做同一件事，
+			// 否则已启动的会话和配置文件页一直看到旧 token。
+			OnCredentialRefreshed: func(
+				accountRef accountcore.AccountRef,
+				credential accountapp.Credential,
+			) {
+				auth, ok := credential.(*agy.OAuthAuth)
+				if !ok || auth == nil {
+					return
+				}
+				if err := agyprojection.Write(aiHomeDir, accountRef.String(), auth); err != nil {
+					log.Printf(
+						"agy 凭据投影同步失败: account=%s err=%v",
+						accountRef,
+						err,
+					)
+				}
+			},
 		},
 	)
 	if err != nil {

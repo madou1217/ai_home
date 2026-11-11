@@ -17,10 +17,11 @@ import (
 
 // agyRefreshStub 按 client_secret 决定 token 端点的响应，并记录尝试顺序。
 type agyRefreshStub struct {
-	mu      sync.Mutex
-	secrets []string
-	status  map[string]int
-	body    map[string]string
+	mu            sync.Mutex
+	secrets       []string
+	status        map[string]int
+	body          map[string]string
+	networkErrors map[string]bool
 }
 
 func (stub *agyRefreshStub) Do(request *http.Request) (*http.Response, error) {
@@ -35,9 +36,13 @@ func (stub *agyRefreshStub) Do(request *http.Request) (*http.Response, error) {
 	secret := form.Get("client_secret")
 	stub.mu.Lock()
 	stub.secrets = append(stub.secrets, secret)
+	failsAtNetwork := stub.networkErrors[secret]
 	status := stub.status[secret]
 	body := stub.body[secret]
 	stub.mu.Unlock()
+	if failsAtNetwork {
+		return nil, errors.New("dial tcp: connection refused")
+	}
 	if status == 0 {
 		status = http.StatusOK
 		body = `{"access_token":"agy-access","refresh_token":"agy-refresh","expires_in":3600,"token_type":"Bearer"}`
@@ -129,6 +134,51 @@ func TestRefreshDoesNotRetryOnInvalidGrant(t *testing.T) {
 	}
 	if attempts := stub.attempts(); len(attempts) != 1 {
 		t.Fatalf("token endpoint attempts = %d, want 1", len(attempts))
+	}
+}
+
+// 单个 client 的网络失败不能终止候选链：换 secret 后仍可能成功。
+func TestRefreshContinuesToNextCredentialOnTransportError(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		networkErrors: map[string]bool{primary.clientSecret: true},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	refreshed, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err != nil || refreshed == nil {
+		t.Fatalf("Refresh() = %v, %v; want refreshed credential", refreshed, err)
+	}
+	attempts := stub.attempts()
+	if len(attempts) != 2 || attempts[1] != rotatedLoginClientSecret {
+		t.Fatalf("attempts = %v, want primary then rotated secret", attempts)
+	}
+}
+
+// 上游拒绝必须保留 status 与机器码，否则 invalid_client / invalid_grant
+// 在日志里都会显示成「账号需要重新认证」。
+func TestRefreshErrorKeepsUpstreamStatusAndCode(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusBadRequest},
+		body:   map[string]string{primary.clientSecret: `{"error":"invalid_grant"}`},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	_, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err == nil {
+		t.Fatal("Refresh() error = nil, want failure")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "status=400") ||
+		!strings.Contains(message, "invalid_grant") {
+		t.Fatalf("error = %q, want upstream status and code", message)
 	}
 }
 

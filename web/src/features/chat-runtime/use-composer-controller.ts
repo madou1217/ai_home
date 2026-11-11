@@ -167,12 +167,14 @@ function useComposerViewState(props: ComposerProps) {
       props.onModelChange(selection.model);
     }
   }, [props.onModelChange, props.selectedModel, reasoningEffort, selection]);
-  const selectModel = useCallback((model: string): void => {
+  // 返回归一后的模型 id（目录里没有则为空串）：上层要把它同步进会话策略。
+  const selectModel = useCallback((model: string): string => {
     const next = resolveComposerModelSelection(props.catalog, model, reasoningEffort);
-    if (!next.model) return;
+    if (!next.model) return '';
     pickedSessionModelKey.current = sessionModelKey;
     props.onModelChange(next.model);
     setReasoningEffort(next.effort);
+    return next.model;
   }, [props.catalog, props.onModelChange, reasoningEffort, sessionModelKey, setReasoningEffort]);
   // Attachments may be prepared while a new session is still starting. The
   // initial delivery is `after_turn`, but it becomes a normal turn once the
@@ -227,7 +229,18 @@ function useComposerCommands(props: ComposerProps, view: ComposerViewState) {
       props.onApprovalModeChange(mode);
     } catch (error) { toast.error(errorText(error, '审批模式更新失败')); }
   }, [props.actions, props.onApprovalModeChange]);
-  return { send, interrupt, changeApprovalMode };
+  // 手选模型同时写会话策略：/snapshot 的能力快照按 policy.model 求值（见
+  // capability-routed-driver 的 routeForCapabilities），只随 turn.submit 逐轮下发的话，
+  // 没发送前与刷新后快照仍按上一个模型算，relay 会话会继续显示 tools / approval / plan。
+  // 只在自己空闲时写：运行中的轮次能力必须跟本轮模型一致，中途改会让 steer / 审批
+  // 入口在跑着的轮次里消失；那种情况交给下一轮 turn.submit 顺带同步。
+  // 同步失败不回滚选择、也不提示：发送时仍会带上模型，下一轮开始会再同步一次。
+  const selectModel = useCallback((model: string): void => {
+    const resolved = view.selectModel(model);
+    if (!resolved || view.policy.turnActive) return;
+    void props.actions.setPolicy('model', resolved).catch(() => {});
+  }, [props.actions, view.policy.turnActive, view.selectModel]);
+  return { send, interrupt, changeApprovalMode, selectModel };
 }
 
 async function dispatchComposerInput(props: ComposerProps, view: ComposerViewState): Promise<void> {

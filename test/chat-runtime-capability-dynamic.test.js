@@ -214,9 +214,9 @@ test('actor registry：getCapabilities 按当前 policy 模型求值，切模型
   });
   assert.equal(session.sessionId, 'session-capability-policy');
 
-  // 注册时的持久化快照仍是 Node 上限（服务重启后的保守回退），
-  // 但 actor 存在时读到的必须是 Go 子集。
-  assertNodeCapabilities(session.capabilitySnapshot);
+  // 创建时就按 policy.model 的路由目标落库：重启后没有 actor，/snapshot 只读这份
+  // 持久化快照，沿静态上限会让 relay 会话谎报 tools / approval。
+  assertGoCapabilities(session.capabilitySnapshot);
   assertGoCapabilities(service.getSessionCapabilities(session.sessionId));
   assertGoCapabilities(service.getSnapshot(session.sessionId).capabilitySnapshot);
   assert.equal(

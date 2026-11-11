@@ -45,6 +45,32 @@ test('official Codex endpoint does not use remote pool exhaustion semantics', ()
   assert.equal(policy.shouldMarkFailure, true);
 });
 
+test('codebuddy 429 Credits exhausted is account-scope hard exhaustion', () => {
+  const message = '429 Credits exhausted. Please visit the link below to purchase add-on packs '
+    + 'and get more credits: https://www.codebuddy.ai/profile/usage';
+  const policy = classifyUpstreamFailure({
+    provider: 'codebuddy',
+    statusCode: 429,
+    body: JSON.stringify({ code: 14018, message })
+  });
+  assert.equal(policy.kind, 'account_usage_exhausted');
+  assert.equal(policy.scope, 'account');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.equal(policy.shouldMarkFailure, true);
+  assert.equal(policy.cooldownMs, 60 * 60 * 1000);
+});
+
+test('ordinary codebuddy 429 without a reset hint stays model-scoped', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'codebuddy',
+    statusCode: 429,
+    detail: '429 Too Many Requests'
+  });
+  assert.equal(policy.kind, 'rate_limited');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+});
+
 for (const provider of ['codex', 'claude']) {
   test(`${provider} deactivated_workspace requires HTTP 402`, () => {
     const detail = JSON.stringify({ error: { code: 'deactivated_workspace' } });

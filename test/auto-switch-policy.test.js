@@ -4,13 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  HARD_EXHAUSTION_COOLDOWN_MS,
   LIMIT_SCAN_TAIL_LENGTH,
   MAX_COOLDOWN_MS,
   createAutoSwitchPolicy,
   detectRateLimitSignal,
   formatCooldownLabel,
   mightContainRateLimitSignal,
-  readRelativeResetMs
+  readRelativeResetMs,
+  signalLooksLikeUserEcho
 } = require('../lib/cli/services/pty/auto-switch-policy');
 const { normalizeConfig, DEFAULTS } = require('../lib/usage/config-store');
 
@@ -32,6 +34,40 @@ const CODEBUDDY_ZH_429 = '您的使用量已超出频率限制，将在 2026-11-
   + '您也可以切换其他模型继续使用。';
 const CODEBUDDY_ZH_RESET_MS = Date.UTC(2026, 10, 4, 5, 34, 21);
 const ZH_BEFORE_RESET_MS = Date.UTC(2026, 10, 3, 6, 0, 0);
+
+// 2026-11-10 真机：CodeBuddy 国际站积分耗尽，业务码 14018，没有恢复时刻。
+// 用户会话里直接收到这句后没有换号，整个会话在「买加量包」之前一直撞墙。
+const CODEBUDDY_CREDITS_EXHAUSTED = '429 Credits exhausted. Please visit the link below to purchase '
+  + 'add-on packs and get more credits: https://www.codebuddy.ai/profile/usage';
+
+test('codebuddy 429 Credits exhausted（没有恢复时刻）也立即换号', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED, { nowMs: BEFORE_RESET_MS });
+  assert.ok(signal);
+  assert.equal(signal.kind, 'quota_exhausted');
+  assert.equal(signal.signature, 'codebuddy-credits-exhausted');
+  assert.equal(signal.hardExhaustion, true);
+  assert.equal(signal.resetAtMs, BEFORE_RESET_MS + HARD_EXHAUSTION_COOLDOWN_MS);
+});
+
+test('Credits exhausted 被 TUI 换行/分块拆开仍然命中', () => {
+  const wrapped = '429 Credits exhausted. Please visit the link below to purchase\n  '
+    + 'add-on packs and get more credits: https://www.codebuddy.ai/profile/usage';
+  const signal = detectRateLimitSignal(wrapped, { nowMs: BEFORE_RESET_MS });
+  assert.ok(signal);
+  assert.equal(signal.kind, 'quota_exhausted');
+  assert.equal(signal.resetAtMs, BEFORE_RESET_MS + HARD_EXHAUSTION_COOLDOWN_MS);
+});
+
+test('Credits exhausted 前置过滤命中，但普通讨论不会触发', () => {
+  assert.equal(mightContainRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED), true);
+  assert.equal(mightContainRateLimitSignal('what does credits exhausted mean?'), true);
+  // 只有 credits exhausted 这个词、没有 429/购买页的正文不构成账号故障。
+  assert.equal(detectRateLimitSignal('what does credits exhausted mean?', { nowMs: BEFORE_RESET_MS }), null);
+  assert.equal(
+    detectRateLimitSignal('credits exhausted is a phrase in the docs', { nowMs: BEFORE_RESET_MS }),
+    null
+  );
+});
 
 test('codebuddy 中文 429（时间戳在「重置」之前）也是换号信号', () => {
   const signal = detectRateLimitSignal(CODEBUDDY_ZH_429, { nowMs: ZH_BEFORE_RESET_MS });
@@ -340,4 +376,46 @@ test('config-store round-trips the two new fields and rejects junk', () => {
   const legacy = normalizeConfig({ threshold_pct: 90 });
   assert.equal(legacy.auto_switch, false);
   assert.equal(legacy.auto_switch_remaining_pct, null);
+});
+
+// ── 用户输入回显：PTY 会把用户打的字原样画回输出流 ─────────────────────────────
+// 2026-11-10 用户实测：把 `429 Credits exhausted …` 粘进对话框，会话当场被换号。
+// 文本本身无法区分来源，唯一的外部事实是「这句原文刚被用户敲进去过」。
+
+test('命中的签名原文会带出来，供回显比对使用', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED, { nowMs: BEFORE_RESET_MS });
+  assert.ok(signal);
+  assert.match(signal.matchedText, /429\s+Credits exhausted/i);
+});
+
+test('用户把 429 原文粘进输入框 → 判为回显，不换号', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED, { nowMs: BEFORE_RESET_MS });
+  assert.equal(signalLooksLikeUserEcho(signal, CODEBUDDY_CREDITS_EXHAUSTED), true);
+});
+
+test('TUI 折行 + 输入框边框插进原文也不影响回显判定', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED, { nowMs: BEFORE_RESET_MS });
+  // 输入框会把一段粘贴拆成多行，每行带边框字符，并在折行处插空格。
+  const echoed = '│ 429 Credits exhausted. Please visit the link below to\n'
+    + '│ purchase add-on packs and get more credits:\n'
+    + '│ https://www.codebuddy.ai/profile/usage';
+  assert.equal(signalLooksLikeUserEcho(signal, echoed), true);
+});
+
+test('用户输入里没有这句报错 → 不是回显，正常换号', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_429, { nowMs: BEFORE_RESET_MS });
+  assert.equal(signalLooksLikeUserEcho(signal, '帮我看看这个 429 报错是什么意思'), false);
+  assert.equal(signalLooksLikeUserEcho(signal, ''), false);
+});
+
+test('中文 429 的回显同样能认出来', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_ZH_429, { nowMs: ZH_BEFORE_RESET_MS });
+  assert.equal(signalLooksLikeUserEcho(signal, CODEBUDDY_ZH_429), true);
+  assert.equal(signalLooksLikeUserEcho(signal, '频率限制是什么'), false);
+});
+
+test('太短的命中不足以证明来源，不抑制真实报错', () => {
+  // 只命中一个 `429` 时，用户输入里出现 429 并不能说明这句报错是回显。
+  assert.equal(signalLooksLikeUserEcho({ matchedText: '429' }, '我看到 429 了'), false);
+  assert.equal(signalLooksLikeUserEcho({ matchedText: '' }, '429 Credits exhausted'), false);
 });

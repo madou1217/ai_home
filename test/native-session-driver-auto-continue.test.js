@@ -140,6 +140,16 @@ test('分类器看得到被包进 details.detail 的上游正文', () => {
   assert.equal(classified.code, 'upstream_rate_limited');
 });
 
+test('CodeBuddy Credits exhausted 分类为可换号', () => {
+  const classified = classifyNativeSessionFailure('codebuddy', {
+    code: 'native_session_failed',
+    message: '429 Credits exhausted. Please visit the link below to purchase add-on packs '
+      + 'and get more credits: https://www.codebuddy.ai/profile/usage'
+  });
+  assert.equal(classified.code, 'upstream_credits_exhausted');
+  assert.equal(classified.retryAnotherAccount, true);
+});
+
 test('分类器对普通失败不误判为可换号', () => {
   const classified = classifyNativeSessionFailure('codex', new Error('tool crashed'));
   assert.equal(classified.retryAnotherAccount, false);

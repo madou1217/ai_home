@@ -19,6 +19,7 @@ type failureRule struct {
 	id           string
 	kind         string
 	provider     string
+	providers    []string
 	all          []string
 	any          []string
 	code         string
@@ -27,7 +28,12 @@ type failureRule struct {
 	status       string
 	reason       string
 	blockerState string
+	// blockerRecheck=manual 时阻塞不做定时试探（与 Node 的 recheck:'manual' 同义）。
+	blockerRecheck string
 }
+
+// codebuddyFamilyProviders 与 Node CODEBUDDY_FAMILY_PROVIDERS 同值。
+var codebuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
 
 // providerFailureRules 与 Node PROVIDER_FAILURE_RULES 同序同值。
 var providerFailureRules = []failureRule{
@@ -50,6 +56,25 @@ var providerFailureRules = []failureRule{
 		id: "agy-region-not-eligible-blocker", kind: "blocker", provider: "agy",
 		all: []string{"eligibility check failed"}, status: "permission_denied",
 		reason: "agy_region_not_eligible", blockerState: "permission_denied",
+	},
+	{
+		id: "upstream-credits-exhausted", kind: "turn", provider: "*",
+		all: []string{"credits"},
+		any: []string{
+			"credits exhausted", "credits are exhausted", "credits have been exhausted", "add-on packs",
+		},
+		code: "upstream_credits_exhausted", message: "当前账号额度已耗尽（credits exhausted），请换账号或购买额度", retryAnother: true,
+	},
+	{
+		// 腾讯信封 403 + code 11140「request illegal」= 账号级风控限制（不是 11128 的渠道校验）。
+		id: "codebuddy-account-restricted", kind: "turn", providers: codebuddyFamilyProviders,
+		all: []string{"403"}, any: []string{"request illegal"},
+		code: "upstream_account_restricted", message: "当前账号被上游风控限制（403 request illegal / 11140），请换账号或提交申诉", retryAnother: true,
+	},
+	{
+		id: "codebuddy-account-restricted-blocker", kind: "blocker", providers: codebuddyFamilyProviders,
+		all: []string{"403"}, any: []string{"request illegal"}, status: "permission_denied",
+		reason: "upstream_account_restricted", blockerState: "permission_denied", blockerRecheck: "manual",
 	},
 	{
 		id: "upstream-rate-limited", kind: "turn", provider: "*",
@@ -90,7 +115,7 @@ func findFailureRule(kind string, provider string, lowered string) *failureRule 
 		if rule.kind != kind {
 			continue
 		}
-		if rule.provider != provider && rule.provider != "*" {
+		if rule.provider != provider && rule.provider != "*" && !containsString(rule.providers, provider) {
 			continue
 		}
 		if matchesFailureRule(*rule, lowered) {
@@ -238,7 +263,7 @@ func ClassifyNativeAccountRuntimeBlocker(provider string, output string, nowMs i
 			Status:       rule.status,
 			Reason:       rule.reason,
 			Source:       "native_session_terminal_output",
-			RuntimeState: buildPermissionDeniedRuntimeState(rule.reason, nowMs),
+			RuntimeState: buildBlockerRuntimeState(*rule, nowMs),
 			Message:      truncateUTF16(plain, 512),
 		}
 	}
@@ -347,6 +372,34 @@ func buildPermissionDeniedRuntimeState(reason string, nowMs int64) map[string]an
 		"until":      nowMs + accountGuessedCooldownMs,
 	}
 	return state
+}
+
+// buildAccountRestrictedRuntimeState 构造上游风控限制账号（CodeBuddy 11140）的账号运行态。
+//
+// 与地区/资格拒绝的区别：风控限制不做定时试探（反复打过去只会放大风控），阻塞记
+// recheck:'manual'，只认人工恢复调度（与 Node buildAccountRestrictedRuntimeState 同义）。
+func buildAccountRestrictedRuntimeState(reason string, nowMs int64) map[string]any {
+	message := normalizeString(reason)
+	if message == "" {
+		message = "upstream_account_restricted"
+	}
+	state := emptyRuntimeStateBase(message, nowMs)
+	state["lastFailureKind"] = "permission_denied"
+	state["routingBlock"] = map[string]any{
+		"kind":       "permission_denied",
+		"reason":     message,
+		"observedAt": nowMs,
+		"recheck":    "manual",
+	}
+	return state
+}
+
+// buildBlockerRuntimeState 按规则选择阻塞运行态构造器（默认定时复核，manual 例外）。
+func buildBlockerRuntimeState(rule failureRule, nowMs int64) map[string]any {
+	if rule.blockerRecheck == "manual" || rule.blockerState == "manual" {
+		return buildAccountRestrictedRuntimeState(rule.reason, nowMs)
+	}
+	return buildPermissionDeniedRuntimeState(rule.reason, nowMs)
 }
 
 // runtimeAuthTokenPattern 把账号认证模式归一化成稳定 token。

@@ -210,6 +210,11 @@ func (management *ModelManagement) RefreshAccountModels(
 			return nil, err
 		}
 	}
+	// 刷新可能把账号迁移到新的稳定身份（re-key）：后续的模型、探测事实必须落在
+	// 新 AccountRef 上，否则会写回已删除的旧账号。
+	if credentialSnapshot.AccountRef() != accountRef {
+		accountRef = credentialSnapshot.AccountRef()
+	}
 	discovered, err := management.discovery.DiscoverModels(
 		ctx,
 		credentialSnapshot.Credential(),

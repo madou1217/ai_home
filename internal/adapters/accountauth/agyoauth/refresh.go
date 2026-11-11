@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 	"time"
@@ -170,6 +171,7 @@ func (provider *Provider) refreshWithClient(
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 		TokenType    string `json:"token_type"`
+		IDToken      string `json:"id_token"`
 	}
 	if err := oauthutil.DecodeJSONResponse(
 		response.Body,
@@ -189,8 +191,15 @@ func (provider *Provider) refreshWithClient(
 	if tokenType == "" {
 		tokenType = auth.TokenType()
 	}
+	// 账户身份以 Google 返回的 id_token 为准：账号邮箱在 Google 侧被改名后，
+	// 只沿用旧 email 会让凭据与账号引用脱节。id_token 解析失败时退回旧邮箱，
+	// 既保持稳定身份，也不把一个坏 token 变成刷新失败。
+	email := auth.Email()
+	if tokenEmail := emailFromIDToken(tokens.IDToken); validEmailAddress(tokenEmail) {
+		email = tokenEmail
+	}
 	refreshed, err := agy.NewOAuthAuth(agy.OAuthInput{
-		Email:         auth.Email(),
+		Email:         email,
 		AccessToken:   tokens.AccessToken,
 		RefreshToken:  refreshToken,
 		ExpiresAtMS:   refreshedAt.UTC().UnixMilli() + tokens.ExpiresIn*1000,
@@ -198,10 +207,23 @@ func (provider *Provider) refreshWithClient(
 		TokenType:     tokenType,
 		AuthMethod:    auth.AuthMethod(),
 	})
-	if err != nil || refreshed.IdentitySeed() != auth.IdentitySeed() {
+	// 身份可能变化（Google 侧改了邮箱）：这里不拒绝，交给 Resolver 判定是
+	// 迁移账号（Go 独有账号）还是拒绝（宿主拥有身份映射）。Node 就是直接
+	// 采用 id_token 的新身份，拒绝会丢掉官方返回的合法结果。
+	if err != nil {
 		return nil, false, accountcredentials.ErrInvalidRefreshResult
 	}
 	return refreshed, false, nil
+}
+
+// validEmailAddress 只接受纯邮箱地址，拒绝 "Name <mail>" 形式与空值。
+func validEmailAddress(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	address, err := mail.ParseAddress(trimmed)
+	return err == nil && address.Address == trimmed
 }
 
 func validSecret(value string) bool {

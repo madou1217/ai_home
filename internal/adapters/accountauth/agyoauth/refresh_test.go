@@ -2,6 +2,7 @@ package agyoauth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -45,6 +46,8 @@ func (stub *agyRefreshStub) Do(request *http.Request) (*http.Response, error) {
 	}
 	if status == 0 {
 		status = http.StatusOK
+	}
+	if body == "" {
 		body = `{"access_token":"agy-access","refresh_token":"agy-refresh","expires_in":3600,"token_type":"Bearer"}`
 	}
 	return &http.Response{
@@ -160,6 +163,60 @@ func TestRefreshContinuesToNextCredentialOnTransportError(t *testing.T) {
 
 // 上游拒绝必须保留 status 与机器码，否则 invalid_client / invalid_grant
 // 在日志里都会显示成「账号需要重新认证」。
+
+// 账号邮箱可能在 Google 侧被改名；刷新必须采用 id_token 里的新身份，
+// 才能让 Resolver 触发账号 re-key，而不是继续用旧邮箱。
+func TestRefreshUsesIdentityFromIDToken(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		body: map[string]string{
+			primary.clientSecret: "{\"access_token\":\"agy-access\",\"refresh_token\":\"agy-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\",\"id_token\":\"" + testIDToken("after@example.test") + "\"}",
+		},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	refreshed, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	auth, ok := refreshed.(*agy.OAuthAuth)
+	if !ok || auth.Email() != "after@example.test" {
+		t.Fatalf("refreshed email = %v, want after@example.test", refreshed)
+	}
+}
+
+func TestRefreshKeepsStoredEmailWhenIDTokenInvalid(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		body: map[string]string{
+			primary.clientSecret: "{\"access_token\":\"agy-access\",\"refresh_token\":\"agy-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\",\"id_token\":\"not-a-jwt\"}",
+		},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	refreshed, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	auth, ok := refreshed.(*agy.OAuthAuth)
+	if !ok || auth.Email() != "agy@example.test" {
+		t.Fatalf("refreshed email = %v, want stored email", refreshed)
+	}
+}
+
+func testIDToken(email string) string {
+	payload := base64.RawURLEncoding.EncodeToString(
+		[]byte("{\"email\":\"" + email + "\"}"),
+	)
+	return "header." + payload + ".signature"
+}
+
 func TestRefreshErrorKeepsUpstreamStatusAndCode(t *testing.T) {
 	primary := defaultClientCredential()
 	stub := &agyRefreshStub{

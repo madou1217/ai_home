@@ -74,13 +74,16 @@ func (snapshots credentialSnapshots) RefreshCredential(
 	if !snapshot.IsValid() {
 		return accountapp.CredentialSnapshot{}, accountapp.ErrInvalidCredentialSnapshot
 	}
-	if _, err := snapshots.resolver.ResolveCredential(ctx, snapshot.AccountRef()); err != nil {
+	resolved, err := snapshots.resolver.Resolve(ctx, snapshot.AccountRef())
+	if err != nil {
 		if errors.Is(err, accountcredentials.ErrRefreshStrategyNotFound) {
 			return snapshot, nil
 		}
 		return accountapp.CredentialSnapshot{}, err
 	}
-	return snapshots.store.GetCredentialSnapshot(ctx, snapshot.AccountRef())
+	// 刷新可能触发账号 re-key（身份变化），必须按解析结果的新引用读回快照；
+	// 继续用入参的旧引用会 ErrCredentialNotFound，看起来像刷新失败。
+	return snapshots.store.GetCredentialSnapshot(ctx, resolved.Binding().AccountRef())
 }
 
 // usageCompositionDependencies 集中声明额度子系统的窄端口。

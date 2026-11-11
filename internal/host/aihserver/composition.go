@@ -641,6 +641,29 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 					)
 				}
 			},
+			// 身份变化会把账号迁到新 AccountRef；运行投影目录也必须跟着改名，
+			// 否则新引用启动时没有历史工作区，旧目录还会一直留着旧令牌。
+			OnAccountReKeyed: func(
+				previous accountcore.AccountRef,
+				current accountcore.AccountRef,
+				providerID string,
+			) {
+				if err := renameAuthProjectionDir(
+					aiHomeDir,
+					providerID,
+					previous,
+					current,
+				); err != nil {
+					log.Printf(
+						"账号投影目录改名失败: provider=%s from=%s to=%s err=%v",
+						providerID,
+						previous,
+						current,
+						err,
+					)
+				}
+			},
+			ReKeyStore: store,
 		},
 	)
 	if err != nil {

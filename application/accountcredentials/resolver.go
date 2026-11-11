@@ -96,6 +96,16 @@ type Dependencies struct {
 		accountRef accountcore.AccountRef,
 		credential accountapp.Credential,
 	)
+	// OnAccountReKeyed 在同一次刷新改变了稳定身份时通知宿主更新按 AccountRef
+	// 命名的资源（运行投影目录等）。旧引用此刻已经不存在。
+	OnAccountReKeyed func(
+		previous accountcore.AccountRef,
+		current accountcore.AccountRef,
+		providerID string,
+	)
+	// ReKeyStore 在刷新得到的稳定身份变化时执行账号迁移；nil 表示该部署只允许
+	// 同身份刷新，身份变化按拒绝处理。
+	ReKeyStore accountapp.AccountReKeyStore
 }
 
 // Result 返回当前可用凭据以及本次是否执行了真实刷新。
@@ -144,6 +154,8 @@ type Resolver struct {
 	refreshDelegated      bool
 	ownsRefresh           func(accountRef accountcore.AccountRef) bool
 	onCredentialRefreshed func(accountcore.AccountRef, accountapp.Credential)
+	onAccountReKeyed      func(accountcore.AccountRef, accountcore.AccountRef, string)
+	reKeyStore            accountapp.AccountReKeyStore
 }
 
 var _ accountapp.DeletionCleanup = (*Resolver)(nil)
@@ -183,6 +195,8 @@ func NewResolver(dependencies Dependencies) (*Resolver, error) {
 		refreshDelegated:      dependencies.RefreshDelegated,
 		ownsRefresh:           dependencies.OwnsRefresh,
 		onCredentialRefreshed: dependencies.OnCredentialRefreshed,
+		onAccountReKeyed:      dependencies.OnAccountReKeyed,
+		reKeyStore:            dependencies.ReKeyStore,
 		refreshSuppress:       make(map[string]refreshSuppression),
 		flights: refreshFlightGroup{
 			active: make(map[string]*refreshCall),
@@ -425,6 +439,47 @@ func (resolver *Resolver) refreshCurrent(
 		resolver.rememberRefreshFailure(snapshot, now, err)
 		return currentResolution(snapshot), err
 	}
+	// 刷新换回来的稳定身份可能变化（例如 id_token 里的账号邮箱变了）。
+	// 账本按身份派生 AccountRef，所以不能像 Node 那样原地改 email：必须把账号
+	// 迁移到新引用。宿主拥有身份映射的账号（委托刷新）不能由 Go 单方面改，仍按
+	// 身份不匹配拒绝，让用户走重新登录。
+	if identityRef, identityErr := accountcore.DeriveAccountRef(credential); identityErr != nil {
+		return credentialResolution{}, ErrInvalidRefreshResult
+	} else if identityRef != accountRef {
+		// 只有能证明是本进程独有的账号才允许迁移：宿主台账里的账号由宿主
+		// 维护身份映射，Go 替它改引用会让两侧永久对不上。OwnsRefresh 未注入
+		// 时按「宿主拥有」处理，保持原来的拒绝语义。
+		if resolver.reKeyStore == nil ||
+			!resolver.ownsAccountRefresh(accountRef) {
+			identityMismatch := accountapp.ErrReauthenticationIdentityMismatch
+			resolver.rememberRefreshFailure(snapshot, now, identityMismatch)
+			return currentResolution(snapshot), identityMismatch
+		}
+		rekeyed, rekeyErr := resolver.reKeyStore.ReKeyAccount(
+			ctx,
+			accountRef,
+			credential,
+			refreshedAt,
+		)
+		if rekeyErr != nil {
+			return credentialResolution{}, rekeyErr
+		}
+		resolver.forgetRefreshSuppression(accountRef)
+		resolver.forgetRefreshSuppression(identityRef)
+		// 先搬按引用命名的宿主资源（投影目录），再把新 token 物化进去；
+		// 反过来会在新目录尚未存在时跳过写入，留下旧令牌。
+		if resolver.onAccountReKeyed != nil {
+			resolver.onAccountReKeyed(
+				accountRef,
+				identityRef,
+				credential.ProviderID(),
+			)
+		}
+		if resolver.onCredentialRefreshed != nil {
+			resolver.onCredentialRefreshed(identityRef, credential)
+		}
+		return credentialResolution{snapshot: rekeyed, refreshed: true}, nil
+	}
 	replacement, err := accountapp.NewCredentialReplacement(
 		snapshot,
 		credential,
@@ -521,7 +576,8 @@ func (resolver *Resolver) rememberRefreshFailure(
 	case errors.Is(err, context.Canceled),
 		errors.Is(err, context.DeadlineExceeded):
 		return
-	case errors.Is(err, ErrReauthenticationRequired):
+	case errors.Is(err, ErrReauthenticationRequired),
+		errors.Is(err, accountapp.ErrReauthenticationIdentityMismatch):
 		delay = invalidRefreshRetryDelay
 	case errors.Is(err, ErrRefreshUnavailable),
 		errors.Is(err, ErrRefreshRejected):

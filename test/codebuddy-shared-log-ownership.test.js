@@ -18,7 +18,7 @@ const {
   parseLogPidUser
 } = require('../lib/usage/codebuddy-native-message-ownership');
 const { __private: { readJsonlFromOffset } } = require('../lib/usage/model-usage-scanner');
-const { readRegistrySessionOwners } = require('../lib/usage/codebuddy-usage-ownership');
+const { createCodebuddyUsageOwnership, readRegistrySessionOwners } = require('../lib/usage/codebuddy-usage-ownership');
 const { writeEntry } = require('../lib/runtime/persistent-session-registry');
 
 const TS = '[11/6/2026, 8:40:53 PM.727]';
@@ -167,4 +167,24 @@ test('账号投影里的私有日志仍按目录归属（兼容旧会话）', ()
   const file = { provider: 'codebuddycn', sessionId: 'session-d', filePath: path.join(root, 'x') };
 
   assert.deepEqual(writer.sessionOwner(file), { provider: 'codebuddycn', accountRef });
+}));
+
+test('持久会话注册表：唯一归属补到没有 user_id 的 native 会话', () => withTemp((root) => {
+  const aiHome = path.join(root, 'ai-home');
+  const accountRef = 'acct_00000000000000000001';
+  writeEntry(aiHome, {
+    provider: 'codebuddycn', accountRef, runtimeScope: accountRef,
+    socket: `aih-codebuddycn-${accountRef}`, session: 'p-test-1',
+    nativeSessionId: 'session-g'
+  }, { fs });
+
+  const ownership = createCodebuddyUsageOwnership({
+    fs, path, accounts: [], aiHomeDir: aiHome,
+    hostHomeDir: path.join(root, 'host-home'), store: {}, readJsonlFromOffset
+  });
+  const owner = ownership.resolveNative({
+    provider: 'codebuddycn', sessionId: 'session-g',
+    projectsRoot: path.join(root, 'projects')
+  });
+  assert.deepEqual(owner, { provider: 'codebuddycn', accountRef, userId: '' });
 }));

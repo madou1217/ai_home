@@ -69,7 +69,8 @@ test('换号失败时用同一套过滤条件问原因（当前账号 + 冷却�
   assert.equal(calls.length, 1);
   assert.equal(calls[0].provider, 'codebuddycn');
   assert.equal(calls[0].currentId, '1');
-  assert.equal(calls[0].options.family, true);
+  // 自动换号只看同站：跨站必须由用户显式指定目标（2026-11-10）。
+  assert.equal(calls[0].options.family, false);
   assert.equal(calls[0].options.describeFailure, true);
   assert.equal(calls[0].options.model, 'deepseek-v4-pro');
   assert.deepEqual(

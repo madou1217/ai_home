@@ -77,7 +77,15 @@ type Spec struct {
 	Persistent bool
 	// Remote 非空时由 RemoteStarter 建立远端会话（例如 SSH PTY）；
 	// 此时 Path/Args 不参与本地进程启动。
-	Remote any
+	Remote *RemoteSpec
+}
+
+// RemoteSpec 是远端终端的启动事实；Config 由装配层解释（当前为 sshremote.Config），
+// terminalsession 不依赖具体传输实现。Command 非空时执行命令，否则打开登录 shell。
+type RemoteSpec struct {
+	Config  any
+	Command string
+	Env     []string
 }
 
 // Snapshot 是会话的只读投影，字段对应 Node open/attach 的返回。
@@ -136,7 +144,7 @@ type Options struct {
 	ReadBufferSize int
 	// RemoteStarter 建立远端 PTY 会话；Remote 非空时必须提供，
 	// 否则 Create 失败关闭（不会偷偷退回本地进程）。
-	RemoteStarter func(context.Context, any, pty.Size) (pty.Session, error)
+	RemoteStarter func(context.Context, RemoteSpec, pty.Size) (pty.Session, error)
 }
 
 // Service 管理单个进程内的全部终端会话。
@@ -242,7 +250,7 @@ func (service *Service) Create(ctx context.Context, spec Spec) (Snapshot, error)
 	var terminal pty.Session
 	var err error
 	if remote {
-		terminal, err = service.options.RemoteStarter(startContext, spec.Remote, size)
+		terminal, err = service.options.RemoteStarter(startContext, *spec.Remote, size)
 	} else {
 		terminal, err = service.starter.Start(startContext, pty.Spec{
 			Path: strings.TrimSpace(spec.Path),

@@ -52,9 +52,9 @@ func (session *fakeRemoteSession) Wait() error {
 
 func TestCreateUsesRemoteStarterAndSkipsLocalPath(t *testing.T) {
 	fake := newFakeRemoteSession()
-	var started any
+	var started RemoteSpec
 	service := NewService(nil, Options{
-		RemoteStarter: func(_ context.Context, remote any, size pty.Size) (pty.Session, error) {
+		RemoteStarter: func(_ context.Context, remote RemoteSpec, size pty.Size) (pty.Session, error) {
 			started = remote
 			if size.Cols != 100 || size.Rows != 30 {
 				t.Fatalf("size = %+v", size)
@@ -64,12 +64,12 @@ func TestCreateUsesRemoteStarterAndSkipsLocalPath(t *testing.T) {
 	})
 	t.Cleanup(func() { _ = service.Close() })
 	snapshot, err := service.Create(context.Background(), Spec{
-		Key: "ssh:ws", Remote: "ssh-config", Size: pty.Size{Cols: 100, Rows: 30},
+		Key: "ssh:ws", Remote: &RemoteSpec{Config: "ssh-config"}, Size: pty.Size{Cols: 100, Rows: 30},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if started != "ssh-config" {
+	if started.Config != "ssh-config" {
 		t.Fatalf("remote starter got %#v", started)
 	}
 	if snapshot.Path != "ssh" || snapshot.Status != StatusRunning {
@@ -92,7 +92,7 @@ func TestCreateUsesRemoteStarterAndSkipsLocalPath(t *testing.T) {
 
 func TestCreateRejectsRemoteWithoutStarter(t *testing.T) {
 	service := NewService(nil, Options{})
-	if _, err := service.Create(context.Background(), Spec{Key: "ssh:ws", Remote: "cfg"}); err != ErrInvalidSpec {
+	if _, err := service.Create(context.Background(), Spec{Key: "ssh:ws", Remote: &RemoteSpec{Config: "cfg"}}); err != ErrInvalidSpec {
 		t.Fatalf("err = %v", err)
 	}
 }

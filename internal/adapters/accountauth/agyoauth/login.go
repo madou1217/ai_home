@@ -1,12 +1,14 @@
 package agyoauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthutil"
 )
 
 // Clock 返回计算 Token 绝对过期时间所需的当前时间。
@@ -217,29 +220,34 @@ func (flow *loginFlow) exchangeWithSecret(
 		strings.NewReader(form.Encode()),
 	)
 	if err != nil {
-		return loginTokens{}, accountauth.ErrProviderUnavailable, false
+		return loginTokens{}, errors.Join(accountauth.ErrProviderUnavailable, err), false
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 	response, err := flow.provider.client.Do(request)
 	if err != nil {
-		return loginTokens{}, accountauth.ErrProviderUnavailable, false
+		// 错误文本只保留上下文原因（含代理/拨号失败），绝不拼接请求体或令牌：
+		// 换码失败在 WebUI 只显示稳定错误码，真正的原因必须落在服务端日志里。
+		return loginTokens{}, errors.Join(accountauth.ErrProviderUnavailable, err), false
 	}
 	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxLoginBodyBytes))
 	if err != nil {
-		return loginTokens{}, accountauth.ErrProviderUnavailable, false
+		return loginTokens{}, errors.Join(accountauth.ErrProviderUnavailable, err), false
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		// 只取白名单内的机器错误码（如 invalid_grant），响应正文不进错误链。
+		code := oauthutil.DecodeErrorCode(bytes.NewReader(body), maxLoginBodyBytes)
 		if response.StatusCode >= 400 && response.StatusCode < 500 {
-			var failure struct {
-				Error string `json:"error"`
-			}
-			_ = json.Unmarshal(body, &failure)
-			return loginTokens{}, accountauth.ErrProviderRejected,
-				strings.EqualFold(strings.TrimSpace(failure.Error), "invalid_client")
+			return loginTokens{}, errors.Join(
+				accountauth.ErrProviderRejected,
+				fmt.Errorf("agy 换码被 Google 拒绝：status=%d code=%s", response.StatusCode, codeLabel(code)),
+			), strings.EqualFold(code, "invalid_client")
 		}
-		return loginTokens{}, accountauth.ErrProviderUnavailable, false
+		return loginTokens{}, errors.Join(
+			accountauth.ErrProviderUnavailable,
+			fmt.Errorf("agy 换码失败：status=%d code=%s", response.StatusCode, codeLabel(code)),
+		), false
 	}
 	var tokens loginTokens
 	if err := json.Unmarshal(body, &tokens); err != nil {
@@ -269,21 +277,24 @@ func (flow *loginFlow) resolveEmail(ctx context.Context, tokens loginTokens) (st
 		nil,
 	)
 	if err != nil {
-		return "", accountauth.ErrProviderUnavailable
+		return "", errors.Join(accountauth.ErrProviderUnavailable, err)
 	}
 	request.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
 	request.Header.Set("Accept", "application/json")
 	response, err := flow.provider.client.Do(request)
 	if err != nil {
-		return "", accountauth.ErrProviderUnavailable
+		return "", errors.Join(accountauth.ErrProviderUnavailable, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", accountauth.ErrProviderRejected
+		return "", errors.Join(
+			accountauth.ErrProviderRejected,
+			fmt.Errorf("agy 身份接口拒绝：status=%d", response.StatusCode),
+		)
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxLoginBodyBytes))
 	if err != nil {
-		return "", accountauth.ErrProviderUnavailable
+		return "", errors.Join(accountauth.ErrProviderUnavailable, err)
 	}
 	var profile struct {
 		Email        string `json:"email"`
@@ -393,6 +404,14 @@ func randomState(random io.Reader) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buffer[:]), nil
+}
+
+// codeLabel 把缺失的上游错误码写成固定占位符，保证日志可读且不含响应正文。
+func codeLabel(code string) string {
+	if code == "" {
+		return "-"
+	}
+	return code
 }
 
 // validTokenSecret 拒绝空白与控制字符，但从不把原值写入错误。

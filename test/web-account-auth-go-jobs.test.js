@@ -20,7 +20,9 @@ const { registerAccountIdentity } = require('../lib/account/account-registration
 const { createAuthJobManager } = require('../lib/server/web-account-auth');
 const {
   createGoAuthJobsOption,
+  describeEnvProxyHint,
   isGoAuthJobFailureRetryable,
+  probeLoopbackProxy,
   toGoAuthJobFailure
 } = require('../lib/server/web-account-auth-go-jobs');
 
@@ -674,4 +676,56 @@ test('agy add（直连）：固定走 Go，本地不生成 PKCE/state，也不�
   assert.equal(job._codeVerifier, '', '直连流程不使用本地 PKCE');
   assert.equal(job.redirectUri, 'http://localhost:51121/oauth-callback', '回调地址与 Node 原行为一致');
   assert.equal(job.callbackCaptureStatus, '', '不监听 51121，用户手填回调');
+});
+
+// 宿主环境代理探测：Go 只认 HTTP(S)_PROXY，代理端口不在监听时所有出站立刻被拒。
+test('probeLoopbackProxy：只判定本机代理是否在监听', async (t) => {
+  const net = require('node:net');
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const { port } = server.address();
+
+  assert.equal(
+    await probeLoopbackProxy(`http://127.0.0.1:${port}`),
+    true,
+    '监听中的本机代理必须判为可达'
+  );
+  assert.equal(
+    await probeLoopbackProxy('http://127.0.0.1:1'),
+    false,
+    '回环上没有监听时必须判为不可达'
+  );
+  assert.equal(
+    await probeLoopbackProxy('http://10.255.255.1:8080'),
+    null,
+    '非本机代理不下结论'
+  );
+  assert.equal(await probeLoopbackProxy('not a url'), null, '非法代理串不判定');
+});
+
+test('describeEnvProxyHint：本机代理拒绝连接时给出可执行提示', async (t) => {
+  const net = require('node:net');
+  const deadHint = await describeEnvProxyHint({
+    env: { HTTPS_PROXY: 'http://127.0.0.1:1' }
+  });
+  assert.match(deadHint, /127\.0\.0\.1:1/, '提示必须点名具体代理地址');
+  assert.match(deadHint, /HTTP\(S\)_PROXY/, '提示必须说明 Go 只认标准代理变量');
+
+  assert.equal(
+    await describeEnvProxyHint({ env: { HTTPS_PROXY: 'socks5://10.255.255.1:1080' } }),
+    '',
+    '远端代理抖动不给用户下结论'
+  );
+  assert.equal(await describeEnvProxyHint({ env: {} }), '', '没有代理变量时没有可说的原因');
+
+  const server = net.createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const { port } = server.address();
+  assert.equal(
+    await describeEnvProxyHint({ env: { https_proxy: `http://127.0.0.1:${port}` } }),
+    '',
+    '代理可用时不能报错'
+  );
 });

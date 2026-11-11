@@ -357,6 +357,16 @@ func (service *Service) Complete(
 	claimed := claim.job
 	artifacts, err := claimed.flow.Exchange(ctx, callback)
 	if err != nil {
+		// 公开快照只暴露稳定错误码（provider_unavailable 等），换码真正失败的原因
+		// （拨号超时、代理连接被拒、上游 status/code）只会出现在这条服务端日志里。
+		// 适配器负责保证错误链里没有令牌或响应正文。
+		log.Printf(
+			"accountauth: OAuth 换码失败 job=%s provider=%s code=%s: %v",
+			jobID,
+			claimed.providerID,
+			failureCode(err),
+			err,
+		)
 		return service.failJob(jobID, failureCode(err)), err
 	}
 	return service.finishClaim(ctx, claimed, artifacts)

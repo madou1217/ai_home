@@ -29,8 +29,9 @@ type Row struct {
 
 	// RemainingPct 取自 account_usage_snapshots 的物化剩余额度（bps / 100）。
 	RemainingPct *float64 `json:"remainingPct"`
-	// UsageSnapshot 是额度快照文档原文（payload_json 解析出的 JSON 对象），形状与 Node 行一致，
-	// 前端直接按 capturedAt/entries/models 渲染窗口与剩余额度；没有快照或文档不可解析时为 null。
+	// UsageSnapshot 是额度快照文档**归一后**的对象（形状见 snapshot.go）：与 Node 行的
+	// normalizeAccountUsageSnapshot 同一契约（entryShape / 条目 label / windowMinutes /
+	// category / 顶层派生字段）。没有快照或文档不可解析时为 null。
 	UsageSnapshot any `json:"usageSnapshot"`
 
 	// UpstreamErrorRules / UpstreamErrorGroupIds 是 Node 的调度规则（app-state），本切片留空。
@@ -221,12 +222,15 @@ func newRow(fact accountFact) Row {
 	return row
 }
 
-// parseUsageSnapshot 把 payload_json 原文解析成下发给前端的快照对象。
+// parseUsageSnapshot 把 payload_json 原文解析成**前端契约形状**的快照对象。
 //
-// 只有「非空 + 合法 JSON 对象」才给值：一行坏文档不能把整页打成 500，
-// 所以这里吞掉解析错误而不是向上返回。空对象也按「没有快照」处理——
-// 调用方用「usageSnapshot 是否为对象」判断 Go 有没有快照，下发 {} 会让它
-// 以为有快照却读不到 capturedAt，进而把快照时效判成 0。
+// 解析后立刻走 normalizeUsageSnapshot（见 snapshot.go）：Node 行下发的是
+// lib/server/account-usage-view.js 归一过的文档，Go 直接透传原始 payload 时前端会
+// 缺 entryShape / label / windowMinutes 等字段。只有「非空 + 合法 JSON 对象」才给值：
+// 一行坏文档不能把整页打成 500，所以这里吞掉解析错误而不是向上返回。空对象也按
+// 「没有快照」处理——调用方用「usageSnapshot 是否为对象」判断 Go 有没有快照，
+// 下发 {} 会让它以为有快照却读不到 capturedAt，进而把快照时效判成 0。
+// 归一器对未知形状原样返回（不 panic、不编字段），未知 provider 只损失展示细节。
 func parseUsageSnapshot(payload string) any {
 	trimmed := strings.TrimSpace(payload)
 	if trimmed == "" {
@@ -236,7 +240,7 @@ func parseUsageSnapshot(payload string) any {
 	if err := json.Unmarshal([]byte(trimmed), &snapshot); err != nil || len(snapshot) == 0 {
 		return nil
 	}
-	return snapshot
+	return normalizeUsageSnapshot(snapshot)
 }
 
 // resolvePlanType 与 Node 的 planType 取值一致。

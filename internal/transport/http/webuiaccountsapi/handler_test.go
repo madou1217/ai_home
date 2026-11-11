@@ -328,6 +328,143 @@ func TestListAccountRowsParsesUsageSnapshotPayload(t *testing.T) {
 	}
 }
 
+// agy 的原始 payload 是 models[] 型：Go 必须按前端契约补出 entryShape/label 等字段，
+// 否则账号页拿到的是探针原文（没有 label、顺序也没归一）。
+func TestListAccountRowsNormalizesAgyUsageSnapshot(t *testing.T) {
+	directory := newSeededDatabase(t)
+	database := openWritableDatabase(t, directory)
+	const agyPayload = `{"schemaVersion":2,"kind":"agy_code_assist_quota",` +
+		`"source":"agy_fetch_available_models","capturedAt":1793937685487,` +
+		`"account":{"email":"agy@example.com","planType":"pro","subscriptionTier":"Google AI Pro","project":"proj-1"},` +
+		`"models":[` +
+		`{"model":"claude-sonnet-4-5","displayName":"Claude Sonnet 4.5","remainingPct":81.5,"resetIn":"2h","resetAtMs":1793940000000,"supportsThinking":true,"maxTokens":200000},` +
+		`{"model":"gemini-2.5-pro","displayName":"Gemini 2.5 Pro","remainingPct":42.5,"resetIn":"4h","resetAtMs":1793950000000}` +
+		`]}`
+	mustExec(t, database,
+		"UPDATE account_usage_snapshots SET payload_json = ? WHERE account_ref = ?",
+		agyPayload, oauthAccountRef)
+
+	source := newTestSource(t, directory)
+	handler := newTestHandler(t, source)
+	response, decoded := requestJSON(t, handler, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	rows := accountRows(t, decoded)
+	snapshot, ok := rows[0]["usageSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("agy 的 usageSnapshot 不是对象: %#v", rows[0]["usageSnapshot"])
+	}
+	if snapshot["entryShape"] != entryShapeModels {
+		t.Fatalf("entryShape = %v, 期望 %s", snapshot["entryShape"], entryShapeModels)
+	}
+	// 顶层事实原样保留（账号页的套餐/邮箱展示依赖它）。
+	account, ok := snapshot["account"].(map[string]any)
+	if !ok || account["email"] != "agy@example.com" {
+		t.Fatalf("快照 account 未保留: %#v", snapshot["account"])
+	}
+	models, ok := snapshot["models"].([]any)
+	if !ok || len(models) != 2 {
+		t.Fatalf("models 未归一为两条: %#v", snapshot["models"])
+	}
+	// 同窗口长度（模型型没有窗口声明）按剩余额度升序：最紧的在前。
+	first, _ := models[0].(map[string]any)
+	if first["model"] != "gemini-2.5-pro" || first["label"] != "gemini-2.5-pro" {
+		t.Fatalf("首个模型未按契约归一: %#v", first)
+	}
+	if first["remainingPct"] != 42.5 || first["resetAtMs"] != float64(1793950000000) {
+		t.Fatalf("模型剩余额度/重置时间不符: %#v", first)
+	}
+	second, _ := models[1].(map[string]any)
+	if second["displayName"] != "Claude Sonnet 4.5" || second["supportsThinking"] != true {
+		t.Fatalf("模型能力字段被丢弃: %#v", second)
+	}
+	if second["maxOutputTokens"] != nil {
+		t.Fatalf("原始文档没有 maxOutputTokens 时不该造键: %#v", second)
+	}
+}
+
+// entries[] 型（window / bucket）走同一条归一：主额度按窗口升序、gift 排最后并保留旁路标记。
+func TestListAccountRowsNormalizesEntriesUsageSnapshot(t *testing.T) {
+	directory := newSeededDatabase(t)
+	database := openWritableDatabase(t, directory)
+	const entriesPayload = `{"schemaVersion":2,"kind":"kimi_oauth_usage","capturedAt":1793937685487,` +
+		`"account":{"planType":"allegro"},"entries":[` +
+		`{"bucket":"gift:Invite to Earn Credit","remainingPct":0,"category":"gift","resetAtMs":1793939000000},` +
+		`{"bucket":"monthly","windowMinutes":43200,"remainingPct":55,"resetAtMs":1796939000000},` +
+		`{"bucket":"five_hour","window":"5h","windowMinutes":300,"remainingPct":91,"resetAtMs":1793941000000}` +
+		`]}`
+	mustExec(t, database,
+		"UPDATE account_usage_snapshots SET payload_json = ? WHERE account_ref = ?",
+		entriesPayload, oauthAccountRef)
+
+	source := newTestSource(t, directory)
+	handler := newTestHandler(t, source)
+	response, decoded := requestJSON(t, handler, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	snapshot, ok := accountRows(t, decoded)[0]["usageSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("usageSnapshot 不是对象: %#v", accountRows(t, decoded)[0]["usageSnapshot"])
+	}
+	if snapshot["entryShape"] != entryShapeBucket {
+		t.Fatalf("entryShape = %v, 期望 %s", snapshot["entryShape"], entryShapeBucket)
+	}
+	entries, ok := snapshot["entries"].([]any)
+	if !ok || len(entries) != 3 {
+		t.Fatalf("entries 未归一: %#v", snapshot["entries"])
+	}
+	first, _ := entries[0].(map[string]any)
+	if first["bucket"] != "five_hour" || first["label"] != "5h" || first["windowMinutes"] != float64(300) {
+		t.Fatalf("窗口条目未按契约归一: %#v", first)
+	}
+	second, _ := entries[1].(map[string]any)
+	if second["bucket"] != "monthly" || second["label"] != "Monthly" {
+		t.Fatalf("具名/通用桶标签不符: %#v", second)
+	}
+	gift, _ := entries[2].(map[string]any)
+	if gift["category"] != "gift" || gift["label"] != "Invite to Earn Credit" {
+		t.Fatalf("赠送条目未保留旁路标记或标签: %#v", gift)
+	}
+	if gift["windowMinutes"] != float64(0) || gift["remainingPct"] != float64(0) {
+		t.Fatalf("赠送条目字段不符: %#v", gift)
+	}
+}
+
+// 未知 provider / 未知形状必须原样降级：不 panic、不 500，也不凭空造 entryShape。
+func TestListAccountRowsDegradesUnknownUsageSnapshot(t *testing.T) {
+	directory := newSeededDatabase(t)
+	database := openWritableDatabase(t, directory)
+	const unknownPayload = `{"kind":"mystery_quota","capturedAt":1793937685487,` +
+		`"account":{"email":"mystery@example.com"},"mysteryField":{"nested":true},"windows":"not-an-array"}`
+	mustExec(t, database,
+		"UPDATE account_usage_snapshots SET payload_json = ? WHERE account_ref = ?",
+		unknownPayload, oauthAccountRef)
+
+	source := newTestSource(t, directory)
+	handler := newTestHandler(t, source)
+	response, decoded := requestJSON(t, handler, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("未知形状不能把列表打成 500: status = %d body=%s", response.Code, response.Body.String())
+	}
+	rows := accountRows(t, decoded)
+	snapshot, ok := rows[0]["usageSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("未知形状应原样下发对象: %#v", rows[0]["usageSnapshot"])
+	}
+	if snapshot["kind"] != "mystery_quota" || snapshot["capturedAt"] != float64(1793937685487) {
+		t.Fatalf("未知形状的原始字段被改动: %#v", snapshot)
+	}
+	if _, exists := snapshot["entryShape"]; exists {
+		t.Fatalf("未知形状不该编造 entryShape: %#v", snapshot)
+	}
+	mystery, ok := snapshot["mysteryField"].(map[string]any)
+	if !ok || mystery["nested"] != true {
+		t.Fatalf("未知字段未原样保留: %#v", snapshot["mysteryField"])
+	}
+}
+
 // 过滤与分页必须与 accountsapi 同口径：provider/ref 精确过滤，after_ref 为 keyset 游标。
 func TestListAccountRowsFiltersAndPaginates(t *testing.T) {
 	source := newTestSource(t, newSeededDatabase(t))

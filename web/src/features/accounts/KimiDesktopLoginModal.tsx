@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Modal, QRCode, Spin, Tag, Typography, message } from 'antd';
-import { accountsAPI } from '@/services/api';
+import { accountsAPI, watchKimiDesktopSession } from '@/services/api';
 import {
   getKimiDesktopSessionStatusTagColor,
   getKimiDesktopSessionStatusText,
+  resolveKimiDesktopPollPhase,
   resolveKimiDesktopSessionExpiryDelay
 } from '@/features/accounts/kimi-desktop-login';
 import type { KimiDesktopLoginPhase } from '@/features/accounts/kimi-desktop-login';
@@ -21,6 +22,7 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
   const [phase, setPhase] = useState<KimiDesktopLoginPhase>('loading');
   const [qrUrl, setQrUrl] = useState('');
   const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchRef = useRef<EventSource | null>(null);
   const generationRef = useRef(0);
   const onCloseRef = useRef(onClose);
   const onSuccessRef = useRef(onSuccess);
@@ -31,6 +33,10 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
   }, [onClose, onSuccess]);
 
   const stopPolling = useCallback(() => {
+    if (watchRef.current) {
+      watchRef.current.close();
+      watchRef.current = null;
+    }
     if (expiryTimerRef.current !== null) {
       clearTimeout(expiryTimerRef.current);
       expiryTimerRef.current = null;
@@ -62,11 +68,39 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
         return;
       }
       setPhase('STATUS_PENDING');
+      const expiresAtMs = result.expiresAtMs;
       expiryTimerRef.current = setTimeout(() => {
         if (generationRef.current !== generation) return;
         stopPolling();
         setPhase('STATUS_EXPIRED');
       }, expiryDelayMs);
+      const source = watchKimiDesktopSession(accountRef, result.code);
+      watchRef.current = source;
+      source.onmessage = (event) => {
+        if (generationRef.current !== generation) return;
+        try {
+          const payload = JSON.parse(String(event.data || '{}')) as { type?: string; status?: any; error?: string };
+          if (payload.type === 'error') {
+            stopPolling();
+            setPhase('error');
+            message.error(payload.error || '查询扫码状态失败');
+            return;
+          }
+          if (payload.type !== 'status' || !payload.status) return;
+          const nextPhase = resolveKimiDesktopPollPhase(payload.status, expiresAtMs);
+          setPhase(nextPhase);
+          if (nextPhase === 'STATUS_SUCCESS') {
+            stopPolling();
+            message.success('桌面登录成功，session 已托管');
+            if (onSuccessRef.current) onSuccessRef.current();
+            else onCloseRef.current();
+          } else if (nextPhase === 'STATUS_EXPIRED') {
+            stopPolling();
+          }
+        } catch (_error) {
+          // Ignore malformed frames.
+        }
+      };
     } catch (startError: any) {
       if (generationRef.current !== generation) return;
       setPhase('error');

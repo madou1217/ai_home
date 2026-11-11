@@ -1152,6 +1152,15 @@ export function watchSshReverseTunnels(): EventSource {
   return openSharedWebUiEventSource('/v0/webui/ssh-connections/tunnels/watch');
 }
 
+export function watchCodexResetOperation(accountRef: string, operationId: string): EventSource {
+  return guardedWebUiEventSource(`/v0/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-operations/${encodeURIComponent(operationId)}/watch`);
+}
+
+export function watchKimiDesktopSession(accountRef: string, code: string): EventSource {
+  const params = new URLSearchParams({ code });
+  return guardedWebUiEventSource(`/v0/webui/accounts/kimi/${encodeURIComponent(accountRef)}/desktop-session/watch?${params.toString()}`);
+}
+
 export function watchEgressUpstreams(): EventSource {
   return openSharedWebUiEventSource('/v0/webui/egress-upstreams/watch');
 }

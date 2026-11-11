@@ -1,7 +1,7 @@
 import { Button, Empty, Popconfirm, Spin, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { accountsAPI } from '@/services/api';
+import { accountsAPI, watchCodexResetOperation } from '@/services/api';
 import type {
   Account,
   CodexResetCredit,
@@ -276,8 +276,35 @@ export function CodexResetCreditsPanel({
       }
     };
     void poll();
+    const source = watchCodexResetOperation(accountRef, activeOperation.operationId);
+    source.onmessage = async (event) => {
+      if (stopped || generationRef.current !== generation) return;
+      try {
+        const payload = JSON.parse(String(event.data || '{}')) as { type?: string; operation?: typeof activeOperation; error?: string };
+        if (payload.type === 'error') {
+          if (getCodexResetOperationRecoveryDisposition({ errorCode: payload.error || '' }) === 'clear') {
+            clearPendingOperation(activeOperation.operationId);
+            setRecoveredOperation(null);
+            await loadInventory();
+          }
+          return;
+        }
+        if (payload.type !== 'operation' || !payload.operation) return;
+        if (handleTerminalOperation(payload.operation)) {
+          await loadInventory();
+          return;
+        }
+        setActiveOperation(payload.operation);
+        if (payload.operation.status === 'unknown') {
+          message.warning('重置结果暂不明确，账号已锁定；请核对结果，不会切换到下一张卡');
+        }
+      } catch (_error) {
+        // Ignore malformed frames.
+      }
+    };
     return () => {
       stopped = true;
+      source.close();
     };
   }, [
     accountRef,

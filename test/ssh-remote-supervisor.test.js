@@ -128,7 +128,7 @@ function call(aiHomeDir, method, pathname, body, deps = {}) {
   return pending.then(() => response);
 }
 
-test('the terminal route starts the supervisor (not raw ssh) and passes no credentials', async (t) => {
+test('the terminal route hands SSH facts to Go, not a local supervisor process', async (t) => {
   const aiHomeDir = home(t);
   seed(aiHomeDir, { id: 'c1', host: 'dev.example', authType: 'password', password: 'p4ss' });
   const opened = [];
@@ -136,12 +136,16 @@ test('the terminal route starts the supervisor (not raw ssh) and passes no crede
     openWebUiTerminalSession: (input) => { opened.push(input); return { ok: true, termId: 't1', sessionKey: input.sessionKey, durable: true }; }
   });
   assert.equal(res.status, 200);
-  const { file, args, env } = opened[0];
-  assert.equal(file, process.execPath);
-  assert.deepEqual(args.slice(1), ['__remote_ws__', 'ws_0123456789abcdef', 'remote-ws:ws_0123456789abcdef']);
-  assert.match(args[0], /bin[\\/]ai-home\.js$/);
-  assert.deepEqual(env, { AIH_HOME_DIR: aiHomeDir });
-  assert.ok(!JSON.stringify(opened[0]).includes('p4ss'), 'password never reaches the PTY launch');
+  const { file, args, env, ssh } = opened[0];
+  assert.equal(file, undefined);
+  assert.equal(args, undefined);
+  assert.equal(env, undefined);
+  assert.equal(ssh.host, 'dev.example');
+  assert.equal(ssh.port, 22);
+	  assert.match(ssh.command, /if command -v tmux/);
+	  assert.match(ssh.command, /\/srv\/app/);
+  assert.ok(!JSON.stringify(ssh.command).includes('p4ss'), 'password never reaches the remote command');
+  assert.ok(!JSON.stringify(ssh.command).includes('p4ss'), 'password never reaches argv');
   assert.deepEqual(fs.existsSync(path.join(aiHomeDir, 'run', 'ssh-remote')) ? fs.readdirSync(path.join(aiHomeDir, 'run', 'ssh-remote')) : [], [], 'validation leaves no askpass behind');
 });
 

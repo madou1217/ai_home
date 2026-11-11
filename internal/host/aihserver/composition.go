@@ -67,6 +67,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -97,6 +98,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 )
 
@@ -406,6 +408,8 @@ type handlerDependencies struct {
 	RouteObserver codexresponsesws.RouteObserver
 	// HostHomeDir 是宿主 CLI 配置文件所在家目录；工具权限设置的 host* 探测需要它。
 	HostHomeDir string
+	// ReverseTunnels 维护 ssh_connections.reverseTunnel；由 newHandlers 创建并随进程关闭。
+	ReverseTunnels *sshtunnel.Supervisor
 }
 
 // newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
@@ -788,6 +792,22 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// WebUI 终端：PTY 会话、回放缓冲与 mux SSE 全部由 Go 承接，Node 只做管理密钥后的反代。
 	// ExitRetention 对齐 Node「退出后 250ms 清理」的语义：否则连续开关终端会让已退出
 	// 会话在保留期内继续占住 24 个会话名额。
+	sshTunnelSupervisor := sshtunnel.New(dependencies.HostHomeDir)
+	startupContext := dependencies.Context
+	if startupContext == nil {
+		startupContext = context.Background()
+	}
+	if sshSource, sourceErr := webuisshapi.OpenSource(dependencies.AIHomeDir); sourceErr == nil {
+		if raw, found, readErr := sshSource.ReadConnections(startupContext); readErr == nil && found {
+			_ = sshTunnelSupervisor.Reconcile([]byte(raw))
+		}
+	}
+	if dependencies.Context != nil {
+		go func() {
+			<-dependencies.Context.Done()
+			sshTunnelSupervisor.Close()
+		}()
+	}
 	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
 		ExitRetention: 250 * time.Millisecond,
 		// WebUI SSH 终端：Node 传入连接事实，Go 直接建 SSH PTY。
@@ -1205,6 +1225,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
+		ReverseTunnels: sshTunnelSupervisor,
 	})
 	if err != nil {
 		_ = inference.Close()

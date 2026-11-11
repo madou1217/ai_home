@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
@@ -14,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
@@ -56,6 +58,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshhostbrowseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshprobeapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisshreverseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitruntimeapi"
@@ -98,6 +101,8 @@ type webuiRouteDependencies struct {
 	UsageService *usageapp.Service
 	// TerminalProbe 返回持久终端会话状态；SSH 工作区终端状态接口需要。
 	TerminalProbe func(sessionKey string) string
+	// ReverseTunnels 维护 ssh_connections.reverseTunnel。
+	ReverseTunnels *sshtunnel.Supervisor
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -187,6 +192,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 目录浏览接口失败: %w", err)
+	}
+	sshReverseTunnels, err := webuisshreverseapi.NewHandler(webuisshreverseapi.Dependencies{
+		Authorizer:  authorizer,
+		Connections: sshSource,
+		Supervisor:  dependencies.ReverseTunnels,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 SSH 反向隧道接口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -467,10 +480,20 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建解除升级熔断接口失败: %w", err)
 	}
+	// 模型目录刷新：Go 侧按账号扇出，Provider 适配器由各自的模型发现模块注册。
+	// 这里不按 Provider 写分支——「openai-models」只是 OpenAI 兼容的响应形状，
+	// 不是 Provider 范围。依赖缺失时保持 nil，写接口继续返回 501，由 Node 回落到
+	// 自己的探测路径，而不是假装刷新成功。
+	modelCatalogRefresher := newWebUIModelCatalogRefresher(
+		dependencies.Store,
+		dependencies.ModelRefresher,
+		time.Now,
+	)
 	openaiModelsWrite, err := webuiopenaimodelswriteapi.NewHandler(webuiopenaimodelswriteapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
-		Store:   webuiopenaimodelswriteapi.DatabaseStore{DatabasePath: databasePath},
-		Catalog: dependencies.Store,
+		Store:     webuiopenaimodelswriteapi.DatabaseStore{DatabasePath: databasePath},
+		Catalog:   dependencies.Store,
+		Refresher: modelCatalogRefresher,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 OpenAI 模型写入接口失败: %w", err)
@@ -535,6 +558,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
 		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
 		{Pattern: "GET " + webuisshhostbrowseapi.Path, Handler: sshBrowse},
+		{Pattern: "GET " + webuisshreverseapi.Path, Handler: sshReverseTunnels},
+		{Pattern: "POST " + webuisshreverseapi.ReconcilePath, Handler: sshReverseTunnels},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},

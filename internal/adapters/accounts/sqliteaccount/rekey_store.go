@@ -12,32 +12,59 @@ import (
 
 var _ accountapp.AccountReKeyStore = (*Store)(nil)
 
-// reKeyChildTables 是全部按 account_ref 归属账号的快照表。
+// reKeySpecialTables 是不参与通用搬移、需要单独处理的表：
+//   - accounts 本身；account_credentials 要换成新凭据（credential_ref 也是按
+//     身份派生的唯一键，不能简单 UPDATE）；
+//   - oauth_jobs 同时有 account_ref 与 target_ref 两列；
+//   - account_tombstones 记录的是被删除身份，不跟着迁移。
+var reKeySpecialTables = map[string]struct{}{
+	"accounts":            {},
+	"account_credentials": {},
+	"oauth_jobs":          {},
+	"account_tombstones":  {},
+}
+
+// listAccountRefTables 从 schema 动态发现所有带 account_ref 的表。
 //
-// 顺序不重要：新账号在事务里已经存在，更新目标永远有父行。account_credentials
-// 不在这里——刷新换回来的是新凭据，旧凭据必须删掉再插入（credential_ref 也是
-// 按身份派生的唯一键）。oauth_jobs / account_tombstones 单独处理。
-var reKeyChildTables = []string{
-	"account_profiles",
-	"account_models",
-	"account_model_probes",
-	"account_probe_state",
-	"account_ui_state",
-	"account_defaults",
-	"account_outcomes",
-	"account_usage",
-	"account_usage_snapshots",
-	"account_quota_detector_state",
-	"account_quota_reset_events",
-	"account_quota_window_ledger",
-	"account_quota_window_samples",
-	"account_runtime_blocks",
-	"account_runtime_state",
-	"account_runtime_states",
-	"account_routing_exclusions",
-	"account_upstream_error_group",
-	"account_upstream_error_rule",
-	"usage_ledger",
+// 不写死表名：后续新增按账号归属的快照表时，漏加进清单会让旧账号删除时的
+// 级联把数据一起抹掉，而且没有任何编译期提示。
+func listAccountRefTables(
+	ctx context.Context,
+	transaction *sql.Tx,
+) ([]string, error) {
+	rows, err := transaction.QueryContext(
+		ctx,
+		"SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("读取账号快照表清单失败: %w", err)
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("读取账号快照表名失败: %w", err)
+		}
+		if _, special := reKeySpecialTables[name]; special {
+			continue
+		}
+		var columns int
+		if err := transaction.QueryRowContext(
+			ctx,
+			"SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'account_ref'",
+			name,
+		).Scan(&columns); err != nil {
+			return nil, fmt.Errorf("检查账号快照表 %s 失败: %w", name, err)
+		}
+		if columns > 0 {
+			tables = append(tables, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历账号快照表失败: %w", err)
+	}
+	return tables, nil
 }
 
 // ReKeyAccount 把账号、凭据和全部从属快照原子迁移到新身份引用。
@@ -124,7 +151,11 @@ func (store *Store) ReKeyAccount(
 	if err := insertAccount(ctx, transaction, newAccount); err != nil {
 		return accountapp.CredentialSnapshot{}, err
 	}
-	for _, table := range reKeyChildTables {
+	childTables, err := listAccountRefTables(ctx, transaction)
+	if err != nil {
+		return accountapp.CredentialSnapshot{}, err
+	}
+	for _, table := range childTables {
 		if err := moveAccountRows(ctx, transaction, table, accountRef, identityRef); err != nil {
 			return accountapp.CredentialSnapshot{}, err
 		}

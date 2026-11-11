@@ -530,7 +530,8 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
   Node 只代理连接事实；SSH PTY 支持 pty-req/window-change/取消/退出，断线按 1/2/5/10/20/30s 退避重连，
   远端 tmux `new-session -A` 接回。真实本机 sshd E2E（第二次连接输出 RECONNECTED）通过；
   `Config.Jump` 支持跳板 SSH 通道拨号，双 sshd（系统 sshd 跳板 → 独立临时 sshd）重连 E2E 输出
-  MULTIHOP_RECONNECTED。真实 WAN 远端/多跳生产接线（egressConnectionId 解析）仍缺。
+  MULTIHOP_RECONNECTED。WebUI `egressConnectionId` 已解析成 Jump 链（终端由 Node 递归展开，browse 由
+  Go 从 ssh_connections 解析）；缺失/成环/超过 5 跳失败关闭，不静默直连。真实 WAN 远端仍缺。
 - **自动换号防误触与续接守卫**（`c3b246de`）：文本 429 排除用户输入回显，结构化 `providerData.error` 优先；continue 只在精确 session 文件存在且非空时写。
 - **qoder relay 交付语义**（`86791702`/`95016058`）：403 排队转 429 + Retry-After，不误判凭据阻塞；只征召原生 OAuth 登录态。真机仍被 Free 账号阻塞。
 - **Chat 模型 policy**（`22d3ca9e`）：空闲切模型落 `session.policy.set`；能力快照随路由模型重建并推 `session.runtime.rebound`。浏览器目视项未做。

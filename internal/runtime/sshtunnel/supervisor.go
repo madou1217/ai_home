@@ -159,6 +159,17 @@ func applyHostKeys(config sshremote.Config, known map[string]string) sshremote.C
 		return config
 	}
 	config.HostKeyCallback = hostKeyCallback(config.Host, config.Port, known)
+	// app-state 的存量指纹按 Node/ssh2 的 ED25519 优先口径记录；固定顺序避免
+	// 服务端同时提供 ECDSA 时 Go 选了另一把 key 导致“指纹变了”的假告警。
+	config.HostKeyAlgorithms = []string{
+		ssh.KeyAlgoED25519,
+		ssh.KeyAlgoRSASHA512,
+		ssh.KeyAlgoRSASHA256,
+		ssh.KeyAlgoRSA,
+		ssh.KeyAlgoECDSA256,
+		ssh.KeyAlgoECDSA384,
+		ssh.KeyAlgoECDSA521,
+	}
 	if config.Jump != nil {
 		jump := applyHostKeys(*config.Jump, known)
 		config.Jump = &jump

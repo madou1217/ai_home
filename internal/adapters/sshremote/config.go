@@ -42,6 +42,10 @@ type Config struct {
 	// Jump 非空时先连接跳板，再通过跳板的 SSH 通道拨号到 Host:Port（多跳）。
 	// 跳板有自己的认证与 known_hosts；关闭目标客户端会一并关闭跳板。
 	Jump *Config
+	// HostKeyAlgorithms 为空时用 x/crypto 默认顺序；app-state 的既有指纹按
+	// Node/ssh2 的 ED25519 优先口径记录，调用方可显式固定顺序避免 ECDSA 与
+	// ED25519 指纹错位。
+	HostKeyAlgorithms []string
 }
 
 // Validate 校验拨号必需的字段；消息直接面向 WebUI 用户。

@@ -91,12 +91,16 @@ func dial(ctx context.Context, config Config, timeout time.Duration, depth int) 
 		}
 	}()
 
-	clientConnection, channels, requests, handshakeErr := ssh.NewClientConn(connection, address, &ssh.ClientConfig{
+	clientConfig := &ssh.ClientConfig{
 		User:            user,
 		Auth:            methods,
 		HostKeyCallback: hostKeyCallback,
 		Timeout:         timeout,
-	})
+	}
+	if len(config.HostKeyAlgorithms) > 0 {
+		clientConfig.HostKeyAlgorithms = append([]string(nil), config.HostKeyAlgorithms...)
+	}
+	clientConnection, channels, requests, handshakeErr := ssh.NewClientConn(connection, address, clientConfig)
 	close(handshakeDone)
 	if handshakeErr != nil {
 		_ = connection.Close()

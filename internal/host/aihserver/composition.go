@@ -701,6 +701,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 						err,
 					)
 				}
+				// 出口绑定也按 AccountRef 命名，必须跟着账号走，否则迁移后
+				// 新引用静默回到默认出口。
+				if err := moveAccountEgressBinding(
+					aiHomeDir,
+					previous,
+					current,
+				); err != nil {
+					log.Printf(
+						"账号出口绑定迁移失败: from=%s to=%s err=%v",
+						previous,
+						current,
+						err,
+					)
+				}
 			},
 			ReKeyStore: store,
 		},

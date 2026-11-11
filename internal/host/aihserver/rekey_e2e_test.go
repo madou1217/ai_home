@@ -18,6 +18,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 // identityChangingAgyStrategy 模拟刷新换回另一个邮箱（id_token 变化）。
@@ -170,6 +171,22 @@ func TestAgyReKeyEndToEnd(t *testing.T) {
 		t.Fatalf("ReplaceUsageSnapshot() error = %v", err)
 	}
 
+	// 账号级出口绑定按旧引用命名，re-key 后必须搬到新引用。
+	appStatePath, err := appstate.DatabasePath(aiHomeDir)
+	if err != nil {
+		t.Fatalf("DatabasePath() error = %v", err)
+	}
+	egressValue := `{"mode":"proxy","proxyUrl":"socks5://127.0.0.1:1080","updatedAt":1}`
+	if err := appstate.WriteKV(
+		ctx,
+		appStatePath,
+		"account:egress:"+oldRef.String(),
+		egressValue,
+		1,
+	); err != nil {
+		t.Fatalf("seed egress binding error = %v", err)
+	}
+
 	// 旧引用的运行投影：目录里只有旧 token，re-key 后必须整体改名并写入新 token。
 	oldRuntimeDir := filepath.Join(aiHomeDir, "run", "auth-projections", "agy", oldRef.String())
 	if err := os.MkdirAll(filepath.Join(oldRuntimeDir, ".gemini"), 0o700); err != nil {
@@ -195,6 +212,9 @@ func TestAgyReKeyEndToEnd(t *testing.T) {
 			}
 			if err := renameAuthProjectionDir(aiHomeDir, providerID, previous, current); err != nil {
 				t.Errorf("renameAuthProjectionDir() error = %v", err)
+			}
+			if err := moveAccountEgressBinding(aiHomeDir, previous, current); err != nil {
+				t.Errorf("moveAccountEgressBinding() error = %v", err)
 			}
 		},
 		OnCredentialRefreshed: func(ref accountcore.AccountRef, credential accountapp.Credential) {
@@ -280,5 +300,21 @@ func TestAgyReKeyEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(newRuntimeDir, ".gemini", "antigravity-cli", "antigravity-oauth-token")); err != nil {
 		t.Fatalf("antigravity projection missing: %v", err)
+	}
+
+	movedEgress, found, err := appstate.ReadKV(
+		ctx,
+		appStatePath,
+		"account:egress:"+newRef.String(),
+	)
+	if err != nil || !found || movedEgress != egressValue {
+		t.Fatalf("moved egress = %q, found=%v, err=%v", movedEgress, found, err)
+	}
+	if _, found, _ := appstate.ReadKV(
+		ctx,
+		appStatePath,
+		"account:egress:"+oldRef.String(),
+	); found {
+		t.Fatal("old egress binding must be removed")
 	}
 }

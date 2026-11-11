@@ -3,6 +3,7 @@ package sqliteaccount
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,25 @@ func TestReKeyAccountMovesAccountCredentialAndChildRows(t *testing.T) {
 	); err != nil {
 		t.Fatalf("insert default error = %v", err)
 	}
+	if _, err := store.db.ExecContext(ctx,
+		`INSERT INTO account_profiles (
+			account_ref, display_name, email, subscription_kind, subscription_raw,
+			format_version, profile_json, updated_at_ms
+		) VALUES (?, ?, ?, 'unknown', '', 1, ?, 100000)`,
+		oldRef.String(),
+		"before@example.test",
+		"before@example.test",
+		`{"email":"before@example.test","subscription":"ultra"}`,
+	); err != nil {
+		t.Fatalf("insert profile error = %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx,
+		`INSERT INTO account_ui_state (account_ref, display_name, updated_at_ms)
+		 VALUES (?, 'before@example.test', 100000)`,
+		oldRef.String(),
+	); err != nil {
+		t.Fatalf("insert ui state error = %v", err)
+	}
 
 	updatedAt := time.UnixMilli(200_000).UTC()
 	snapshot, err := store.ReKeyAccount(ctx, oldRef, after, updatedAt)
@@ -131,10 +151,33 @@ func TestReKeyAccountMovesAccountCredentialAndChildRows(t *testing.T) {
 	if !ok || auth.Email() != "after@example.test" {
 		t.Fatalf("credential = %#v, want after@example.test", credential)
 	}
+	// 公开资料/展示名里的旧邮箱必须跟着身份一起更新。
+	var profileEmail, profileName, profileJSON, uiName string
+	if err := store.db.QueryRowContext(ctx,
+		"SELECT email, display_name, profile_json FROM account_profiles WHERE account_ref = ?",
+		newRef.String(),
+	).Scan(&profileEmail, &profileName, &profileJSON); err != nil {
+		t.Fatalf("read migrated profile error = %v", err)
+	}
+	if profileEmail != "after@example.test" || profileName != "after@example.test" ||
+		!strings.Contains(profileJSON, "after@example.test") {
+		t.Fatalf("profile = %q / %q / %s", profileEmail, profileName, profileJSON)
+	}
+	if err := store.db.QueryRowContext(ctx,
+		"SELECT display_name FROM account_ui_state WHERE account_ref = ?",
+		newRef.String(),
+	).Scan(&uiName); err != nil {
+		t.Fatalf("read migrated ui state error = %v", err)
+	}
+	if uiName != "after@example.test" {
+		t.Fatalf("ui display name = %q", uiName)
+	}
 	for table, want := range map[string]int{
 		"account_models":       1,
 		"account_model_probes": 1,
 		"account_defaults":     1,
+		"account_profiles":     1,
+		"account_ui_state":     1,
 	} {
 		var newCount, oldCount int
 		if err := store.db.QueryRowContext(ctx,

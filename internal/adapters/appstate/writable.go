@@ -29,6 +29,20 @@ func WriteKV(ctx context.Context, databasePath string, key string, value string,
 	return err
 }
 
+// DeleteKV 删除一行 app_kv；键不存在视为成功。
+func DeleteKV(ctx context.Context, databasePath string, key string) error {
+	db, err := OpenWritable(ctx, databasePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)"); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, "DELETE FROM app_kv WHERE key = ?", key)
+	return err
+}
+
 // OpenWritable 以 rwc + busy_timeout 打开 app-state.db。
 func OpenWritable(ctx context.Context, databasePath string) (*sql.DB, error) {
 	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}

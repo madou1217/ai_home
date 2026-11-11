@@ -8,6 +8,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/agy"
 )
 
 var _ accountapp.AccountReKeyStore = (*Store)(nil)
@@ -94,6 +95,7 @@ func (store *Store) ReKeyAccount(
 	if err != nil {
 		return accountapp.CredentialSnapshot{}, err
 	}
+	oldCredential, _ := store.GetCredential(ctx, accountRef)
 	if old.ProviderID() != credential.ProviderID() {
 		return accountapp.CredentialSnapshot{}, accountapp.ErrReauthenticationIdentityMismatch
 	}
@@ -161,6 +163,16 @@ func (store *Store) ReKeyAccount(
 		}
 	}
 	if err := moveOAuthJobRows(ctx, transaction, accountRef, identityRef); err != nil {
+		return accountapp.CredentialSnapshot{}, err
+	}
+	if err := updateReKeyedDisplayIdentity(
+		ctx,
+		transaction,
+		oldCredential,
+		credential,
+		accountRef,
+		identityRef,
+	); err != nil {
 		return accountapp.CredentialSnapshot{}, err
 	}
 	// 新身份如果曾被删除，遗留 tombstone 会阻止后续任何重建；本次是明确接管
@@ -233,6 +245,59 @@ func nextTemporaryCLIAccountID(
 		return 0, accountapp.ErrAccountReKeyConflict
 	}
 	return temporary, nil
+}
+
+// updateReKeyedDisplayIdentity 把公开资料里的旧身份邮箱改成新邮箱。
+//
+// 账号页的邮箱/显示名可能来自 account_profiles 或 account_ui_state；这些行
+// 跟着账号迁移后如果仍保留旧邮箱，界面会出现「账号已迁移、标题还是旧账号」。
+// 只改与旧身份完全相同的值，用户手工改过的显示名不动。
+func updateReKeyedDisplayIdentity(
+	ctx context.Context,
+	transaction *sql.Tx,
+	previousCredential accountapp.Credential,
+	currentCredential accountapp.Credential,
+	previous accountcore.AccountRef,
+	current accountcore.AccountRef,
+) error {
+	oldAuth, oldOK := previousCredential.(*agy.OAuthAuth)
+	newAuth, newOK := currentCredential.(*agy.OAuthAuth)
+	if !oldOK || !newOK || oldAuth == nil || newAuth == nil {
+		return nil
+	}
+	oldEmail := oldAuth.Email()
+	newEmail := newAuth.Email()
+	if oldEmail == "" || newEmail == "" || oldEmail == newEmail {
+		return nil
+	}
+	if _, err := transaction.ExecContext(
+		ctx,
+		`UPDATE account_profiles
+		 SET email = ?,
+		     display_name = CASE WHEN display_name = ? THEN ? ELSE display_name END,
+		     profile_json = json_set(profile_json, '$.email', ?)
+		 WHERE account_ref = ? AND email = ?`,
+		newEmail,
+		oldEmail,
+		newEmail,
+		newEmail,
+		current.String(),
+		oldEmail,
+	); err != nil {
+		return fmt.Errorf("更新账号资料邮箱失败: %w", err)
+	}
+	if _, err := transaction.ExecContext(
+		ctx,
+		`UPDATE account_ui_state
+		 SET display_name = ?
+		 WHERE account_ref = ? AND display_name = ?`,
+		newEmail,
+		current.String(),
+		oldEmail,
+	); err != nil {
+		return fmt.Errorf("更新账号展示名失败: %w", err)
+	}
+	return nil
 }
 
 // moveAccountRows 把单表里的账号引用搬到新引用。

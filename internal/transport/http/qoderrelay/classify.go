@@ -111,6 +111,40 @@ func parseQueueInfo(text string) QueueInfo {
 	return info
 }
 
+// ClassifyFailure 覆盖默认的非 2xx 分类：qoder 的排队除了藏在 200 的 SSE 首帧里，
+// 也会直接以 HTTP 403 + 10605 / RESOURCE_LIMIT 返回（2026-10-21 真机取证）。
+//
+// 为什么必须覆盖：通用分类把 403 一律判成凭据被拒并硬阻塞账号——排队与凭据无关，
+// 升级套餐或等几分钟就会恢复，误锁会让健康账号从池子里消失（Node 侧注释把这条
+// 路径称为「把健康账号锁一年」）。
+func (provider *Provider) ClassifyFailure(
+	statusCode int,
+	header http.Header,
+	body []byte,
+	now time.Time,
+) (sharedfailure.Classification, error) {
+	if queue, ok := DetectQueue(body); ok {
+		if classification, ok := queueClassification(queue); ok {
+			return classification, nil
+		}
+	}
+	return provider.BaseProvider.ClassifyFailure(statusCode, header, body, now)
+}
+
+// PresentHTTPStatusFailure 把状态码层面的排队交付成与首帧排队同形的 429 + Retry-After。
+//
+// 只接管「容量不足」这一类：其余 4xx/5xx 必须原样透传，客户端才能看到真实的鉴权 /
+// 请求错误。
+func (*Provider) PresentHTTPStatusFailure(
+	_ int,
+	classification sharedfailure.Classification,
+) (relaycore.BusinessFailurePresentation, bool) {
+	if classification.Kind() != runtimecore.FailureModelOverloaded {
+		return relaycore.BusinessFailurePresentation{}, false
+	}
+	return queuePresentation(classification), true
+}
+
 // ClassifyStreamBusinessFailure 实现 relaycore.StreamBusinessFailureClassifier。
 //
 // 只判定「可以确定」的两种拒绝：排队，和信封里显式的 4xx/5xx。其余首帧交回
@@ -193,6 +227,11 @@ func (*Provider) PresentBusinessFailure(
 	if classification.Kind() != runtimecore.FailureModelOverloaded {
 		return relaycore.BusinessFailurePresentation{}
 	}
+	return queuePresentation(classification)
+}
+
+// queuePresentation 是排队失败的唯一交付形态（首帧排队与 HTTP 状态排队共用）。
+func queuePresentation(classification sharedfailure.Classification) relaycore.BusinessFailurePresentation {
 	seconds := int(math.Ceil(classification.RetryAfter().Seconds()))
 	if seconds <= 0 {
 		seconds = defaultQueueRetrySeconds

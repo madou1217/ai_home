@@ -59,6 +59,21 @@ type BusinessFailurePresenter interface {
 	PresentBusinessFailure(classification sharedfailure.Classification) BusinessFailurePresentation
 }
 
+// HTTPStatusFailurePresenter 让 Provider 把「状态码失败但其实是容量/排队」的响应
+// 交付成客户端可退避的形态。
+//
+// 为什么与 BusinessFailurePresenter 分开：那个只管 2xx 业务失败。若让它同时接管
+// 非 2xx，所有 Provider 的呈现（含默认 502）都会被套到 429/5xx 上，改变既有透传
+// 语义。这里必须由 Provider 显式表态才生效 —— qoder 的排队实测是 HTTP 403 +
+// 10605，通用分类会把它判成凭据被拒并硬阻塞账号，正是要避免的那类误锁。
+type HTTPStatusFailurePresenter interface {
+	// PresentHTTPStatusFailure 返回 ok=true 表示由 Provider 接管本次失败的交付。
+	PresentHTTPStatusFailure(
+		statusCode int,
+		classification sharedfailure.Classification,
+	) (BusinessFailurePresentation, bool)
+}
+
 // businessFailurePresentation 合并 Provider 的呈现与 relaycore 的兜底。
 func businessFailurePresentation(
 	provider Provider,
@@ -80,6 +95,36 @@ func businessFailurePresentation(
 		presented.Message = fallback.Message
 	}
 	return presented
+}
+
+// presentHTTPStatusFailure 询问 Provider 是否接管非 2xx 失败的交付形态。
+//
+// 只有 Provider 显式实现 HTTPStatusFailurePresenter 并返回 ok=true 才生效；其余
+// Provider 保持「原样透传上游响应」的既有语义（状态码与正文都不改）。
+func presentHTTPStatusFailure(
+	provider Provider,
+	statusCode int,
+	classification sharedfailure.Classification,
+) (BusinessFailurePresentation, bool) {
+	presenter, ok := provider.(HTTPStatusFailurePresenter)
+	if !ok {
+		return BusinessFailurePresentation{}, false
+	}
+	presented, ok := presenter.PresentHTTPStatusFailure(statusCode, classification)
+	if !ok {
+		return BusinessFailurePresentation{}, false
+	}
+	fallback := defaultBusinessFailurePresentation(classification)
+	if presented.StatusCode == 0 {
+		presented.StatusCode = fallback.StatusCode
+	}
+	if presented.Code == "" {
+		presented.Code = fallback.Code
+	}
+	if presented.Message == "" {
+		presented.Message = fallback.Message
+	}
+	return presented, true
 }
 
 // defaultBusinessFailurePresentation 是「Provider 没表态」时的统一呈现。

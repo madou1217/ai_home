@@ -699,8 +699,8 @@ func (handler *Handler) attemptRelay(
 			providerImpl: provider,
 		}, false
 	}
-	retry, edgeRejected := handler.recordHTTPFailure(request.Context(), provider, route, observation, upstreamResponse)
-	if edgeRejected {
+	failure := handler.recordHTTPFailure(request.Context(), provider, route, observation, upstreamResponse)
+	if failure.edgeRejected {
 		// 与账号无关的边缘拒绝：交付网关自己的 502，不透传上游拦截页（与 Node 同语义）。
 		closeUpstreamResponse(upstreamResponse)
 		return attemptOutcome{
@@ -712,14 +712,31 @@ func (handler *Handler) attemptRelay(
 			},
 		}, false
 	}
+	// 「状态码不像成功、但其实是排队/容量」的失败（qoder 的 403 + 10605）由 Provider
+	// 决定交付形态：原样透传 403 会让客户端按「网关拒绝」处理，而真实含义是稍后重试。
+	if failure.classified {
+		if presented, handled := presentHTTPStatusFailure(provider, upstreamResponse.StatusCode, failure.classification); handled {
+			closeUpstreamResponse(upstreamResponse)
+			return attemptOutcome{
+				route:        route,
+				retryAccount: failure.retry,
+				failure: relayFailure{
+					status:  presented.StatusCode,
+					code:    presented.Code,
+					message: presented.Message,
+					header:  presented.Header,
+				},
+			}, failure.retry
+		}
+	}
 	return attemptOutcome{
 		response:     upstreamResponse,
 		route:        route,
 		observation:  observation,
 		rewritten:    rewritten,
 		provider:     provider.ID(),
-		retryAccount: retry,
-	}, retry
+		retryAccount: failure.retry,
+	}, failure.retry
 }
 
 // writeResponse 把上游响应交付给客户端。
@@ -896,20 +913,34 @@ func isEventStreamContentType(header http.Header) bool {
 	return strings.Contains(strings.ToLower(header.Get("Content-Type")), "text/event-stream")
 }
 
+// httpFailureObservation 是一次非 2xx 上游失败的记账结论。
+//
+// classification 必须一并返回：Provider 可能把它交付成另一种状态码（排队 → 429），
+// 只回一个「要不要换号」的布尔会把这条证据丢掉。
+type httpFailureObservation struct {
+	classification sharedfailure.Classification
+	// classified 为 false 表示没有可用失败证据（分类不可用或正文读取失败）。
+	classified bool
+	// retry 表示这次失败值得换账号重试。
+	retry bool
+	// edgeRejected 表示站点边缘拒绝（与账号无关）。
+	edgeRejected bool
+}
+
 func (handler *Handler) recordHTTPFailure(
 	ctx context.Context,
 	provider Provider,
 	route runtimecore.ModelRoute,
 	observation accountcredentials.CredentialObservation,
 	response *http.Response,
-) (retry bool, edgeRejected bool) {
+) httpFailureObservation {
 	if response == nil || response.Body == nil {
-		return false, false
+		return httpFailureObservation{}
 	}
 	originalBody := response.Body
 	prefix, readErr := io.ReadAll(io.LimitReader(originalBody, sharedfailure.MaxErrorPayloadBytes+1))
 	if readErr != nil {
-		return false, false
+		return httpFailureObservation{}
 	}
 	response.Body = &replayReadCloser{
 		Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
@@ -923,12 +954,14 @@ func (handler *Handler) recordHTTPFailure(
 	)
 	if err != nil {
 		// 没有失败证据（例如 2xx）或分类不可用：不换号，按上游原样交付。
-		return false, false
+		return httpFailureObservation{}
 	}
+	failure := httpFailureObservation{classification: classification, classified: true}
 	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：分类是 NoStateChange，
 	// 记账只留一次可观察的失败结果（不阻塞、不冷却、不换号），交付由调用方合成 502。
-	edgeRejected = classification.Kind() == runtimecore.FailureUpstreamEdgeRejected
-	return handler.recordClassification(ctx, route, observation, classification), edgeRejected
+	failure.edgeRejected = classification.Kind() == runtimecore.FailureUpstreamEdgeRejected
+	failure.retry = handler.recordClassification(ctx, route, observation, classification)
+	return failure
 }
 
 // recordClassification 写入运行态并给出换号建议。

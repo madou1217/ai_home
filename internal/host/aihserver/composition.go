@@ -517,7 +517,61 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
-	agyProvider, err := agyoauth.New(oauthClient)
+	// agy 刷新可能带账号级出口绑定（Node 的 account:egress:<ref>）。Go 接管
+	// 刷新后必须沿用同一绑定：direct 绕过代理、proxy 用指定代理；pool/tun 需要
+	// 宿主代理池，策略会明确拒绝而不是静默走错出口。
+	// 绑定只存在于 Node 台账账号；Go 独有账号通常没有绑定，行为与默认一致。
+	appStateEgressPath, appStateEgressErr := appstate.DatabasePath(aiHomeDir)
+	agyEgressResolver := func(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+	) (agyoauth.Egress, error) {
+		if appStateEgressErr != nil {
+			return agyoauth.Egress{}, nil
+		}
+		raw, found, err := appstate.ReadKV(
+			ctx,
+			appStateEgressPath,
+			"account:egress:"+accountRef.String(),
+		)
+		if err != nil || !found || strings.TrimSpace(raw) == "" {
+			return agyoauth.Egress{}, err
+		}
+		var document struct {
+			Mode     string `json:"mode"`
+			ProxyURL string `json:"proxyUrl"`
+		}
+		if json.Unmarshal([]byte(raw), &document) != nil {
+			return agyoauth.Egress{}, nil
+		}
+		return agyoauth.Egress{
+			Mode:     document.Mode,
+			ProxyURL: document.ProxyURL,
+		}, nil
+	}
+	agyEgressClientFactory := func(proxyURL string) agyoauth.HTTPClient {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		if proxyURL == "" {
+			transport.Proxy = nil
+		} else if parsed, parseErr := url.Parse(proxyURL); parseErr == nil &&
+			parsed.Scheme != "" && parsed.Host != "" {
+			transport.Proxy = http.ProxyURL(parsed)
+		} else {
+			transport.Proxy = func(*http.Request) (*url.URL, error) {
+				return nil, fmt.Errorf("账号出口代理地址无效")
+			}
+		}
+		return &http.Client{
+			Timeout:       oauthHTTPTimeout,
+			Transport:     transport,
+			CheckRedirect: rejectOAuthRedirect,
+		}
+	}
+	agyProvider, err := agyoauth.NewWithEgress(
+		oauthClient,
+		agyEgressClientFactory,
+		agyEgressResolver,
+	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 AGY OAuth Refresh Strategy 失败: %w", err)
 	}

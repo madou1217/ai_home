@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 )
 
@@ -256,5 +257,125 @@ func TestRefreshDoesNotRetryOnServerError(t *testing.T) {
 	}
 	if attempts := stub.attempts(); len(attempts) != 1 {
 		t.Fatalf("token endpoint attempts = %d, want 1", len(attempts))
+	}
+}
+
+// 账号自带的 OAuth 客户端必须排在默认候选之前（Node 同一顺序）。
+func TestRefreshPrefersCredentialProvidedClient(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusUnauthorized},
+		body:   map[string]string{primary.clientSecret: `{"error":"invalid_client"}`},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	refreshedAt := time.Date(2026, time.November, 8, 16, 0, 0, 0, time.UTC)
+	custom, err := agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         "agy@example.test",
+		AccessToken:   "old-access",
+		RefreshToken:  "old-refresh",
+		ExpiresAtMS:   refreshedAt.Add(time.Hour).UnixMilli(),
+		RefreshedAtMS: refreshedAt.UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+		ClientID:      "custom.apps.googleusercontent.com",
+		ClientSecret:  "custom-secret",
+	})
+	if err != nil {
+		t.Fatalf("NewOAuthAuth() error = %v", err)
+	}
+	refreshed, err := provider.Refresh(context.Background(), custom, agyTestNow())
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	attempts := stub.attempts()
+	if len(attempts) != 1 || attempts[0] != "custom-secret" {
+		t.Fatalf("attempts = %v, want only the credential-provided client", attempts)
+	}
+	auth, ok := refreshed.(*agy.OAuthAuth)
+	if !ok || auth.ClientID() != "custom.apps.googleusercontent.com" ||
+		auth.ClientSecret() != "custom-secret" {
+		t.Fatalf("refreshed client = %v", refreshed)
+	}
+}
+
+// 账号级出口：direct/proxy 由 factory 生成专用传输，pool/tun 明确拒绝。
+func TestRefreshWithAccountResolvesEgress(t *testing.T) {
+	primary := defaultClientCredential()
+	accepted := &agyRefreshStub{}
+	refused := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusUnauthorized,
+			rotatedLoginClientSecret: http.StatusUnauthorized},
+		body: map[string]string{
+			primary.clientSecret:     `{"error":"invalid_client"}`,
+			rotatedLoginClientSecret: `{"error":"invalid_client"}`,
+		},
+	}
+	var factoryURLs []string
+	newProviderWithEgress := func(binding Egress) *Provider {
+		provider, err := NewWithEgress(
+			refused,
+			func(proxyURL string) HTTPClient {
+				factoryURLs = append(factoryURLs, proxyURL)
+				return accepted
+			},
+			func(context.Context, accountcore.AccountRef) (Egress, error) {
+				return binding, nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("NewWithEgress() error = %v", err)
+		}
+		return provider
+	}
+	ref := accountcore.AccountRef("acct_0123456789abcdef0123")
+	cases := []struct {
+		name      string
+		binding   Egress
+		wantProxy string
+		wantURLs  []string
+	}{
+		{
+			name:      "direct 走直连传输",
+			binding:   Egress{Mode: "direct"},
+			wantProxy: "",
+			wantURLs:  []string{""},
+		},
+		{
+			name:      "proxy 使用绑定地址",
+			binding:   Egress{Mode: "proxy", ProxyURL: "socks5://127.0.0.1:1080"},
+			wantProxy: "socks5://127.0.0.1:1080",
+			wantURLs:  []string{"socks5://127.0.0.1:1080"},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			factoryURLs = nil
+			provider := newProviderWithEgress(testCase.binding)
+			if _, err := provider.RefreshWithAccount(
+				context.Background(),
+				ref,
+				newAgyRefreshTestCredential(t),
+				agyTestNow(),
+			); err != nil {
+				t.Fatalf("RefreshWithAccount() error = %v", err)
+			}
+			if len(factoryURLs) != 1 || factoryURLs[0] != testCase.wantProxy {
+				t.Fatalf("factory calls = %v, want %q", factoryURLs, testCase.wantProxy)
+			}
+		})
+	}
+
+	factoryURLs = nil
+	provider := newProviderWithEgress(Egress{Mode: "pool"})
+	if _, err := provider.RefreshWithAccount(
+		context.Background(),
+		ref,
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	); !errors.Is(err, accountcredentials.ErrRefreshUnavailable) {
+		t.Fatalf("pool egress error = %v, want ErrRefreshUnavailable", err)
+	}
+	if len(factoryURLs) != 0 {
+		t.Fatalf("pool egress must not build a client: %v", factoryURLs)
 	}
 }

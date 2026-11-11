@@ -74,6 +74,17 @@ type RefreshStrategy interface {
 	) (accountapp.Credential, error)
 }
 
+// AccountAwareRefreshStrategy 是可感知账号的刷新策略：需要按账号选择传输
+// （例如账号级出口代理）的 Provider 实现它，Resolver 会优先调用。
+type AccountAwareRefreshStrategy interface {
+	RefreshWithAccount(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		credential accountapp.Credential,
+		refreshedAt time.Time,
+	) (accountapp.Credential, error)
+}
+
 // Dependencies 集中声明 Resolver 的最小应用端口。
 type Dependencies struct {
 	// Store 提供凭据版本读取和 CAS 替换。
@@ -459,11 +470,21 @@ func (resolver *Resolver) refreshCurrent(
 		return credentialResolution{}, err
 	}
 	refreshedAt := nextCredentialVersion(now, snapshot.UpdatedAt())
-	credential, err := strategy.Refresh(
-		ctx,
-		snapshot.Credential(),
-		refreshedAt,
-	)
+	var credential accountapp.Credential
+	if aware, ok := strategy.(AccountAwareRefreshStrategy); ok {
+		credential, err = aware.RefreshWithAccount(
+			ctx,
+			accountRef,
+			snapshot.Credential(),
+			refreshedAt,
+		)
+	} else {
+		credential, err = strategy.Refresh(
+			ctx,
+			snapshot.Credential(),
+			refreshedAt,
+		)
+	}
 	if err != nil {
 		resolver.rememberRefreshFailure(snapshot, now, err)
 		return currentResolution(snapshot), err

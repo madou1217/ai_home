@@ -13,6 +13,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthutil"
 )
@@ -26,12 +27,29 @@ type HTTPClient interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
+// Egress 是账号级出口绑定（读自 Node 的 account:egress:<ref>）。
+//
+// Mode 取值：空/default（跟随进程默认）、direct（绕过环境代理）、proxy（显式
+// proxyUrl）、pool/tun（宿主代理池，Go 尚未承接）。
+type Egress struct {
+	Mode     string
+	ProxyURL string
+}
+
+// EgressResolver 读取账号出口绑定；未绑定返回零值。
+type EgressResolver func(context.Context, accountcore.AccountRef) (Egress, error)
+
+// ClientFactory 按代理地址创建传输；空地址表示直连（不使用环境代理）。
+type ClientFactory func(proxyURL string) HTTPClient
+
 // Provider 是无共享可变账号状态的 AGY OAuth 刷新策略。
 // 并发合并与版本 CAS 由 accountcredentials.Resolver 统一负责。
 type Provider struct {
 	client            HTTPClient
 	tokenEndpoint     string
 	clientCredentials []clientCredential
+	clientFactory     ClientFactory
+	egress            EgressResolver
 }
 
 var _ accountcredentials.RefreshStrategy = (*Provider)(nil)
@@ -54,6 +72,27 @@ func newProvider(client HTTPClient, endpoint string) (*Provider, error) {
 	}, nil
 }
 
+// NewWithEgress 创建带账号级出口的刷新策略。
+//
+// 只有 agy 这类「Go 独立刷新 + 账号可能有自定义出口」的 Provider 需要它；
+// 两个依赖必须同时提供。
+func NewWithEgress(
+	client HTTPClient,
+	factory ClientFactory,
+	resolver EgressResolver,
+) (*Provider, error) {
+	if client == nil || factory == nil || resolver == nil {
+		return nil, accountcredentials.ErrInvalidDependencies
+	}
+	provider, err := New(client)
+	if err != nil {
+		return nil, err
+	}
+	provider.clientFactory = factory
+	provider.egress = resolver
+	return provider, nil
+}
+
 func (*Provider) ProviderID() string { return agy.ProviderID }
 
 func (*Provider) ExpiresAt(
@@ -72,8 +111,77 @@ func (provider *Provider) Refresh(
 	credential accountapp.Credential,
 	refreshedAt time.Time,
 ) (accountapp.Credential, error) {
+	if provider == nil {
+		return nil, accountcredentials.ErrInvalidRefreshResult
+	}
+	return provider.refresh(ctx, credential, refreshedAt, provider.client)
+}
+
+// RefreshWithAccount 按账号出口绑定选择传输后刷新。
+//
+// 出口模式：
+//   - 空/default：跟随进程默认传输（与环境变量代理一致）；
+//   - direct：显式不走代理；
+//   - proxy：使用绑定里的 proxyUrl；
+//   - pool/tun：需要宿主代理池，Go 尚未承接，明确失败而不是静默走错出口。
+func (provider *Provider) RefreshWithAccount(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	credential accountapp.Credential,
+	refreshedAt time.Time,
+) (accountapp.Credential, error) {
+	if provider == nil || provider.egress == nil || provider.clientFactory == nil {
+		return provider.Refresh(ctx, credential, refreshedAt)
+	}
+	if !accountRef.IsValid() {
+		return nil, accountcredentials.ErrInvalidRefreshResult
+	}
+	binding, err := provider.egress(ctx, accountRef)
+	if err != nil {
+		return nil, errors.Join(accountcredentials.ErrRefreshUnavailable, err)
+	}
+	switch strings.ToLower(strings.TrimSpace(binding.Mode)) {
+	case "", "default":
+		return provider.Refresh(ctx, credential, refreshedAt)
+	case "direct":
+		return provider.refresh(
+			ctx,
+			credential,
+			refreshedAt,
+			provider.clientFactory(""),
+		)
+	case "proxy":
+		proxyURL := strings.TrimSpace(binding.ProxyURL)
+		if proxyURL == "" {
+			return nil, fmt.Errorf(
+				"%w: 账号出口为 proxy 但缺少 proxyUrl",
+				accountcredentials.ErrRefreshUnavailable,
+			)
+		}
+		return provider.refresh(
+			ctx,
+			credential,
+			refreshedAt,
+			provider.clientFactory(proxyURL),
+		)
+	default:
+		return nil, fmt.Errorf(
+			"%w: 账号出口模式 %q 需要宿主代理，Go 尚未承接",
+			accountcredentials.ErrRefreshUnavailable,
+			binding.Mode,
+		)
+	}
+}
+
+// refresh 使用指定传输执行一次完整刷新。
+func (provider *Provider) refresh(
+	ctx context.Context,
+	credential accountapp.Credential,
+	refreshedAt time.Time,
+	client HTTPClient,
+) (accountapp.Credential, error) {
 	auth, valid := credential.(*agy.OAuthAuth)
-	if provider == nil || provider.client == nil || ctx == nil ||
+	if provider == nil || client == nil || ctx == nil ||
 		!valid || auth == nil || refreshedAt.IsZero() ||
 		refreshedAt.UnixMilli() <= 0 {
 		return nil, accountcredentials.ErrInvalidRefreshResult
@@ -84,10 +192,23 @@ func (provider *Provider) Refresh(
 	if len(provider.clientCredentials) == 0 {
 		return nil, accountcredentials.ErrInvalidDependencies
 	}
+	candidates := provider.clientCredentials
+	// 凭据自带的自定义客户端优先：Node 的候选链也是先读 oauth.client_id /
+	// oauth.token.client_id，再退回内置 secret。
+	if auth.ClientID() != "" && auth.ClientSecret() != "" {
+		candidates = append(
+			[]clientCredential{{
+				clientID:     auth.ClientID(),
+				clientSecret: auth.ClientSecret(),
+			}},
+			candidates...,
+		)
+	}
 	var lastErr error
-	for _, candidate := range provider.clientCredentials {
+	for _, candidate := range candidates {
 		refreshed, retry, err := provider.refreshWithClient(
 			ctx,
+			client,
 			auth,
 			candidate,
 			refreshedAt,
@@ -110,6 +231,7 @@ func (provider *Provider) Refresh(
 // 换 secret 不会改变结果，必须立即返回最后错误。
 func (provider *Provider) refreshWithClient(
 	ctx context.Context,
+	client HTTPClient,
 	auth *agy.OAuthAuth,
 	clientCredential clientCredential,
 	refreshedAt time.Time,
@@ -132,7 +254,7 @@ func (provider *Provider) refreshWithClient(
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
-	response, err := provider.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, false, errors.Join(accountcredentials.ErrRefreshUnavailable, ctxErr)
@@ -206,6 +328,8 @@ func (provider *Provider) refreshWithClient(
 		RefreshedAtMS: refreshedAt.UTC().UnixMilli(),
 		TokenType:     tokenType,
 		AuthMethod:    auth.AuthMethod(),
+		ClientID:      auth.ClientID(),
+		ClientSecret:  auth.ClientSecret(),
 	})
 	// 身份可能变化（Google 侧改了邮箱）：这里不拒绝，交给 Resolver 判定是
 	// 迁移账号（Go 独有账号）还是拒绝（宿主拥有身份映射）。Node 就是直接

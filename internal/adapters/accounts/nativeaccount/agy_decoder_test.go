@@ -27,6 +27,28 @@ func TestDecodeAGYUpgradesLegacyOAuthAuthMethod(t *testing.T) {
 	}
 }
 
+// 自定义 OAuth 客户端可能写在 oauthToken 或 oauthToken.token；Node 两处都读。
+func TestDecodeAGYKeepsCustomOAuthClient(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour).UnixMilli()
+	payload := fmt.Sprintf(
+		`{"email":"agy@example.test","oauthToken":{"auth_method":"consumer","client_id":"client-top.apps.googleusercontent.com","client_secret":"secret-top","token":{"access_token":"agy-access","refresh_token":"agy-refresh","expires_at_ms":%d,"refreshed_at_ms":%d,"token_type":"Bearer"}}}`,
+		expiresAt,
+		expiresAt-int64(time.Hour/time.Millisecond),
+	)
+	credential, err := NewDecoder().DecodeNativeAuth("agy", []byte(payload))
+	if err != nil {
+		t.Fatalf("DecodeNativeAuth() error = %v", err)
+	}
+	auth, ok := credential.(*agy.OAuthAuth)
+	if !ok || auth == nil {
+		t.Fatalf("credential = %T", credential)
+	}
+	if auth.ClientID() != "client-top.apps.googleusercontent.com" ||
+		auth.ClientSecret() != "secret-top" {
+		t.Fatalf("client = %q / %q", auth.ClientID(), auth.ClientSecret())
+	}
+}
+
 func TestDecodeAGYRejectsUnknownAuthMethod(t *testing.T) {
 	if _, err := NewDecoder().DecodeNativeAuth(
 		"agy",

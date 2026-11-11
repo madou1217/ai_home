@@ -25,6 +25,8 @@ func (agyCredentialCodec) Encode(
 		RefreshedAtMS: auth.RefreshedAtMS(),
 		TokenType:     auth.TokenType(),
 		AuthMethod:    auth.AuthMethod().String(),
+		ClientID:      auth.ClientID(),
+		ClientSecret:  auth.ClientSecret(),
 	})
 	return encodedCredential{
 		authKind: agy.AuthKindOAuth.String(),
@@ -54,6 +56,8 @@ func (agyCredentialCodec) Decode(
 		RefreshedAtMS: document.RefreshedAtMS,
 		TokenType:     document.TokenType,
 		AuthMethod:    agy.AuthMethod(document.AuthMethod),
+		ClientID:      document.ClientID,
+		ClientSecret:  document.ClientSecret,
 	})
 	if err != nil {
 		return nil, ErrInvalidCredential
@@ -69,4 +73,7 @@ type agyOAuthCredentialV1 struct {
 	RefreshedAtMS int64  `json:"refreshed_at_ms"`
 	TokenType     string `json:"token_type"`
 	AuthMethod    string `json:"auth_method"`
+	// 自定义 OAuth 客户端（可选）：老凭据没有这两个字段。
+	ClientID     string `json:"client_id,omitempty"`
+	ClientSecret string `json:"client_secret,omitempty"`
 }

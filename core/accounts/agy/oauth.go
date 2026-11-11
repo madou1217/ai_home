@@ -20,6 +20,10 @@ type OAuthInput struct {
 	RefreshedAtMS int64
 	TokenType     string
 	AuthMethod    AuthMethod
+	// ClientID / ClientSecret 是账号自带的自定义 OAuth 客户端（可选）。
+	// Node 刷新时优先使用凭据里记录的客户端；为空表示使用内置默认客户端。
+	ClientID     string
+	ClientSecret string
 }
 
 // OAuthAuth 是构造后不可变的 Antigravity consumer OAuth 凭据。
@@ -33,6 +37,8 @@ type OAuthAuth struct {
 	refreshedAtMS int64
 	tokenType     string
 	authMethod    AuthMethod
+	clientID      string
+	clientSecret  string
 	identitySeed  string
 }
 
@@ -59,7 +65,10 @@ func newOAuthAuth(input OAuthInput, allowUnknownRefresh bool) (*OAuthAuth, error
 		(input.RefreshedAtMS == 0 && !allowUnknownRefresh) ||
 		input.RefreshedAtMS >= input.ExpiresAtMS ||
 		!validMetadata(input.TokenType, 32) ||
-		input.AuthMethod != AuthMethodConsumer {
+		input.AuthMethod != AuthMethodConsumer ||
+		(input.ClientID == "") != (input.ClientSecret == "") ||
+		(input.ClientID != "" && !validSecret(input.ClientID)) ||
+		(input.ClientSecret != "" && !validSecret(input.ClientSecret)) {
 		return nil, errInvalidOAuth
 	}
 	return &OAuthAuth{
@@ -70,6 +79,8 @@ func newOAuthAuth(input OAuthInput, allowUnknownRefresh bool) (*OAuthAuth, error
 		refreshedAtMS: input.RefreshedAtMS,
 		tokenType:     input.TokenType,
 		authMethod:    input.AuthMethod,
+		clientID:      input.ClientID,
+		clientSecret:  input.ClientSecret,
 		identitySeed:  "oauth:" + ProviderID + ":" + email,
 	}, nil
 }
@@ -86,6 +97,22 @@ func (auth *OAuthAuth) IdentitySeed() string {
 		return ""
 	}
 	return auth.identitySeed
+}
+
+// ClientID 返回账号自带的自定义 OAuth 客户端 ID；空表示使用内置默认客户端。
+func (auth *OAuthAuth) ClientID() string {
+	if auth == nil {
+		return ""
+	}
+	return auth.clientID
+}
+
+// ClientSecret 返回账号自带的自定义 OAuth 客户端密钥。
+func (auth *OAuthAuth) ClientSecret() string {
+	if auth == nil {
+		return ""
+	}
+	return auth.clientSecret
 }
 
 // Email 返回稳定公开邮箱。

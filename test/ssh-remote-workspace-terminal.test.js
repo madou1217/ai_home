@@ -146,3 +146,11 @@ test('egressConnectionId is passed to Go as a nested jump chain', async (t) => {
   assert.equal(opened[0].ssh.jump.host, 'jump.local');
   assert.equal(opened[0].ssh.jump.password, 'jump-secret');
 });
+test('missing egress connection fails closed instead of direct connect', async (t) => {
+  const aiHomeDir = tmpHome(t);
+  writeJsonValue(fs, aiHomeDir, 'ssh_connections', [{ id: 'c1', host: 'target.local', user: 'model', port: 22, authType: 'agent', egressConnectionId: 'gone' }]);
+  writeJsonValue(fs, aiHomeDir, 'ssh_workspaces', [{ id: 'ws_1', connectionId: 'c1', label: 'target', remoteRoot: '/srv/app' }]);
+  const res = await callRoute(aiHomeDir, '/v0/webui/ssh-workspaces/ws_1/terminal', {}, () => assert.fail('must not open'));
+  assert.equal(res.status, 409);
+  assert.equal(res.payload.error, 'egress_connection_invalid');
+});

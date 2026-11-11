@@ -241,8 +241,15 @@ func buildRowStatement(available map[string]bool, query Query) (string, []any) {
 			"COALESCE((SELECT u.base_url FROM account_ui_state AS u WHERE u.account_ref = a.account_ref), '')", "''"),
 		optionalColumn(available, tableProfiles,
 			"COALESCE((SELECT p.display_name FROM account_profiles AS p WHERE p.account_ref = a.account_ref), '')", "''"),
+		// 资料表没有 email 时回落凭据里的 email：agy 是凭据带 email、资料表缺失
+		// （2026-11-11 用 Go 登录的账号就是这样），账号页因此显示不出邮箱。
 		optionalColumn(available, tableProfiles,
-			"COALESCE((SELECT p.email FROM account_profiles AS p WHERE p.account_ref = a.account_ref), '')", "''"),
+			"COALESCE(NULLIF((SELECT p.email FROM account_profiles AS p WHERE p.account_ref = a.account_ref), ''), "+
+				optionalColumn(available, tableCredentials,
+					"(SELECT CASE WHEN json_valid(c.credential_json) THEN json_extract(c.credential_json, '$.email') END"+
+						" FROM account_credentials AS c WHERE c.account_ref = a.account_ref)",
+					"''")+
+				", '')", "''"),
 		optionalColumn(available, tableProfiles,
 			"COALESCE((SELECT p.subscription_kind FROM account_profiles AS p WHERE p.account_ref = a.account_ref), '')", "''"),
 		optionalColumn(available, tableSnapshots,

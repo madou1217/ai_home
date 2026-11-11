@@ -99,7 +99,13 @@ func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, er
 	if err != nil {
 		return nil, nil, invalidArtifacts("AGY OAuth artifact 无效")
 	}
-	return auth, nil, nil
+	// 邮箱是 agy 的账号身份：写进公开资料，账号页/CLI 才有展示字段。
+	// 邮箱缺失已是无效凭据（身份派生失败），这里不会再造一个空资料。
+	profile, profileErr := agy.NewAccountProfile(native.Email)
+	if profileErr != nil {
+		return nil, nil, invalidArtifacts("AGY OAuth 公开资料无效")
+	}
+	return auth, profile, nil
 }
 
 // DecodeNativeAuth reuses the exact import policy for SQLite restoration.

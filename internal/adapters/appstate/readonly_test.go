@@ -68,3 +68,41 @@ func TestMissingDatabaseIsEmpty(t *testing.T) {
 		t.Fatalf("LookupAccountProvider() found=%v err=%v", found, err)
 	}
 }
+
+// TestLookupAccountProviderFallsBackToGoStore 锁住「Go 独有账号」的归属判定。
+//
+// 账号的真实写入方已经是 Go（浏览器登录 / 导入），account_refs 只覆盖 Node 建过的账号。
+// 只看 account_refs 会让模型上下文、账号配置、额度、路由规则等入口对 Go 独有账号一律 404。
+func TestLookupAccountProviderFallsBackToGoStore(t *testing.T) {
+	ctx := context.Background()
+	appStatePath := seed(t)
+
+	goDatabase, err := sql.Open("sqlite", filepath.Join(filepath.Dir(appStatePath), goAccountDatabaseFileName))
+	if err != nil {
+		t.Fatalf("open go store: %v", err)
+	}
+	defer func() { _ = goDatabase.Close() }()
+	if _, err := goDatabase.Exec(
+		`CREATE TABLE accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL)`,
+	); err != nil {
+		t.Fatalf("create accounts: %v", err)
+	}
+	const goOnlyRef = "acct_0ea957d4866d74953fcd"
+	if _, err := goDatabase.Exec(`INSERT INTO accounts VALUES (?, 'agy')`, goOnlyRef); err != nil {
+		t.Fatalf("insert accounts: %v", err)
+	}
+
+	provider, found, err := LookupAccountProvider(ctx, appStatePath, goOnlyRef)
+	if err != nil || !found || provider != "agy" {
+		t.Fatalf("LookupAccountProvider(go-only) = %q/%v/%v, want agy/true/nil", provider, found, err)
+	}
+	// Node 台账仍然优先：同一个 ref 两边都有时以 account_refs 为准。
+	provider, found, err = LookupAccountProvider(ctx, appStatePath, testRef)
+	if err != nil || !found || provider != "claude" {
+		t.Fatalf("LookupAccountProvider(node) = %q/%v/%v, want claude/true/nil", provider, found, err)
+	}
+	// 两边都没有：仍然按「不存在」处理。
+	if _, found, err = LookupAccountProvider(ctx, appStatePath, "acct_ffffffffffffffffffff"); err != nil || found {
+		t.Fatalf("LookupAccountProvider(missing) = %v/%v, want false/nil", found, err)
+	}
+}

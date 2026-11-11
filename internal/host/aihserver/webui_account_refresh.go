@@ -1,9 +1,11 @@
 package aihserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountrefreshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountrefreshusageapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
@@ -67,7 +69,10 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 	usageExecutor, err := webuiaccountrefreshusageapi.NewHandler(webuiaccountrefreshusageapi.Dependencies{
 		Authorizer: dependencies.Authorizer,
 		AIHomeDir:  dependencies.AIHomeDir,
-		Accounts:   quotaSource,
+		Accounts: refreshUsageAccountLookup{
+			node:    quotaSource,
+			goStore: dependencies.Store,
+		},
 		QuotaProbe: quotaProbe,
 	})
 	if err != nil {
@@ -92,4 +97,43 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 			Handler: http.HandlerFunc(refreshAsync.ServeJob),
 		},
 	}, nil
+}
+
+// refreshUsageAccountLookup 判定额度刷新路径里的账号归属。
+//
+// 先按 Node 写入的 account_refs（额度事件的证据源），再回落到 Go 的 accounts 表：
+// Go 独有的账号（例如用 Go 完成 agy 登录的账号）只存在于 Go，只看 account_refs 会 404。
+// 两张表给出的是同一事实（ref → provider），冲突时以 Node 台账为准。
+type refreshUsageAccountLookup struct {
+	node    webuiquotaresetapi.AccountLookup
+	goStore interface {
+		GetByRef(
+			ctx context.Context,
+			accountRef accountcore.AccountRef,
+		) (accountcore.Account, error)
+	}
+}
+
+func (lookup refreshUsageAccountLookup) LookupProvider(
+	ctx context.Context,
+	accountRef string,
+) (string, bool, error) {
+	if lookup.node != nil {
+		provider, found, err := lookup.node.LookupProvider(ctx, accountRef)
+		if err != nil || found {
+			return provider, found, err
+		}
+	}
+	if lookup.goStore == nil {
+		return "", false, nil
+	}
+	ref, err := accountcore.ParseAccountRef(accountRef)
+	if err != nil {
+		return "", false, nil
+	}
+	account, err := lookup.goStore.GetByRef(ctx, ref)
+	if err != nil {
+		return "", false, nil
+	}
+	return account.ProviderID(), true, nil
 }

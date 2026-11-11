@@ -12,8 +12,10 @@ const {
   formatCooldownLabel,
   mightContainRateLimitSignal,
   readRelativeResetMs,
+  shouldTrustTextRateLimitSignal,
   signalLooksLikeUserEcho
 } = require('../lib/cli/services/pty/auto-switch-policy');
+const { createUserInputEchoBuffer } = require('../lib/cli/services/pty/user-input-echo');
 const { normalizeConfig, DEFAULTS } = require('../lib/usage/config-store');
 
 // 2026-10-31 14:57:00 UTC+8 = 06:57:00Z
@@ -418,4 +420,82 @@ test('太短的命中不足以证明来源，不抑制真实报错', () => {
   // 只命中一个 `429` 时，用户输入里出现 429 并不能说明这句报错是回显。
   assert.equal(signalLooksLikeUserEcho({ matchedText: '429' }, '我看到 429 了'), false);
   assert.equal(signalLooksLikeUserEcho({ matchedText: '' }, '429 Credits exhausted'), false);
+});
+
+// ── 文本限流信号能不能采信：来源判定 ─────────────────────────────────────────
+// 文本路径只在「结构化事实源还看不到这段会话」的启动窗口里兜底，且必须排除
+// 用户自己敲进去的原文（TUI 会把它画回输出流）。
+
+test('结构化事实源在观察时，文本命中一律让位（真实报错由会话 jsonl 负责）', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED, { nowMs: BEFORE_RESET_MS });
+  assert.equal(shouldTrustTextRateLimitSignal({
+    signal,
+    recentUserInput: '',
+    structuredObserving: true
+  }), false);
+});
+
+test('启动窗口：用户把 429 原文粘进输入框并回显到输出，不采信这条文本', () => {
+  const echo = createUserInputEchoBuffer();
+  echo.remember(CODEBUDDY_CREDITS_EXHAUSTED);
+  // 输入框按宽度折行，只在**行首**插边框（真机形态）；不能把边框插进句子中间，
+  // 那样连上游原文都会认不出来，测到的是假的回显。
+  const lines = [];
+  let current = '';
+  for (const word of CODEBUDDY_CREDITS_EXHAUSTED.split(' ')) {
+    if (current && (current + ' ' + word).length > 40) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  lines.push(current);
+  const echoedOutput = `\r\n${lines.map((line) => `│ ${line}`).join('\r\n')}\r\n`;
+  const signal = detectRateLimitSignal(echoedOutput, { nowMs: BEFORE_RESET_MS });
+  assert.ok(signal, '签名本身必须命中，否则测不到「采信闸门」');
+  assert.equal(shouldTrustTextRateLimitSignal({
+    signal,
+    recentUserInput: echo.read(),
+    structuredObserving: false
+  }), false);
+});
+
+test('启动窗口：上游真的报错、用户最近输入里没有这句 → 采信', () => {
+  const echo = createUserInputEchoBuffer();
+  echo.remember('帮我看一下这个项目为什么这么慢');
+  const signal = detectRateLimitSignal(CODEBUDDY_429, { nowMs: BEFORE_RESET_MS });
+  assert.equal(shouldTrustTextRateLimitSignal({
+    signal,
+    recentUserInput: echo.read(),
+    structuredObserving: false
+  }), true);
+});
+
+test('没有结构化观察者（非 CodeBuddy 家族）时，文本兜底照常生效', () => {
+  const signal = detectRateLimitSignal(CODEBUDDY_ZH_429, { nowMs: ZH_BEFORE_RESET_MS });
+  assert.equal(shouldTrustTextRateLimitSignal({ signal, recentUserInput: '' }), true);
+  assert.equal(shouldTrustTextRateLimitSignal({
+    signal,
+    recentUserInput: CODEBUDDY_ZH_429,
+    structuredObserving: false
+  }), false);
+});
+
+test('回显窗口过期后，同一句文本重新可采信（抑制必须有界）', () => {
+  let nowMs = BEFORE_RESET_MS;
+  const echo = createUserInputEchoBuffer({ windowMs: 1000, now: () => nowMs });
+  echo.remember(CODEBUDDY_CREDITS_EXHAUSTED);
+  const signal = detectRateLimitSignal(CODEBUDDY_CREDITS_EXHAUSTED, { nowMs: BEFORE_RESET_MS });
+  assert.equal(shouldTrustTextRateLimitSignal({
+    signal,
+    recentUserInput: echo.read(),
+    structuredObserving: false
+  }), false);
+  nowMs += 1001;
+  assert.equal(shouldTrustTextRateLimitSignal({
+    signal,
+    recentUserInput: echo.read(),
+    structuredObserving: false
+  }), true);
 });

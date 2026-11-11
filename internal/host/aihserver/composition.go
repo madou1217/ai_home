@@ -796,7 +796,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			if !ok {
 				return nil, errors.New("SSH 终端配置类型无效")
 			}
-			return sshremote.OpenPTYCommand(ctx, config, remote.Command, sshremote.PTYOptions{
+			return sshremote.OpenReconnectingPTY(ctx, config, remote.Command, sshremote.PTYOptions{
 				Cols: size.Cols,
 				Rows: size.Rows,
 				Env:  remote.Env,

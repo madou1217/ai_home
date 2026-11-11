@@ -684,7 +684,8 @@ func resolveDirectory(requested string) string {
 }
 
 // terminalEnvironment 与 Node 的 buildTerminalEnv 对齐：继承宿主环境，
-// 再由调用方覆盖；没有 TERM 时补 xterm-256color。
+// TERM 默认强制 xterm-256color（WebUI 终端不继承宿主 tmux/ssh 的 TERM），
+// 但 Spec.Env 显式给了 TERM 时以调用方为准。
 func terminalEnvironment(provided []string) []string {
 	environment := append([]string(nil), os.Environ()...)
 	indexes := make(map[string]int, len(environment))
@@ -692,6 +693,12 @@ func terminalEnvironment(provided []string) []string {
 		if separator := strings.IndexByte(entry, '='); separator > 0 {
 			indexes[entry[:separator]] = index
 		}
+	}
+	if index, ok := indexes["TERM"]; ok {
+		environment[index] = "TERM=xterm-256color"
+	} else {
+		indexes["TERM"] = len(environment)
+		environment = append(environment, "TERM=xterm-256color")
 	}
 	for _, entry := range provided {
 		separator := strings.IndexByte(entry, '=')
@@ -706,9 +713,6 @@ func terminalEnvironment(provided []string) []string {
 		}
 		indexes[name] = len(environment)
 		environment = append(environment, entry)
-	}
-	if _, ok := indexes["TERM"]; !ok {
-		environment = append(environment, "TERM=xterm-256color")
 	}
 	return environment
 }

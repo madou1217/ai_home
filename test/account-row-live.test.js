@@ -344,6 +344,39 @@ test('Go 读模型：Go 没有的 Node 账号原样保留', async () => {
   assert.deepEqual(refs, ['acct_gemini', 'acct_go_agy']);
 });
 
+test('Go 读模型短暂不可用：沿用最近一次成功快照，Go 独有账号不消失', async () => {
+  resetGoAccountRowsState();
+  let fail = false;
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => (fail
+      ? { ok: false, status: 0, errorCode: 'go_core_unreachable' }
+      : { ok: true, data: { accounts: [webUiRow()] } })
+  };
+  const first = await assembleAccountListWithGo({ goCoreSync: host }, []);
+  assert.equal(first.goAssembled, true);
+  assert.equal(first.accounts.length, 1);
+  fail = true;
+  const second = await assembleAccountListWithGo({ goCoreSync: host }, []);
+  assert.equal(second.goAssembled, true);
+  assert.equal(second.goCached, true);
+  assert.equal(second.accounts.length, 1, 'Go 重启瞬间 agy 不能消失');
+  assert.equal(second.accounts[0].accountRef, 'acct_go_agy');
+});
+
+test('Go core 显式关闭：不沿用旧快照', async () => {
+  resetGoAccountRowsState();
+  let disabled = false;
+  const host = {
+    isEnabled: () => !disabled,
+    listWebUiAccounts: async () => ({ ok: true, data: { accounts: [webUiRow()] } })
+  };
+  await assembleAccountListWithGo({ goCoreSync: host }, []);
+  disabled = true;
+  const result = await assembleAccountListWithGo({ goCoreSync: host }, []);
+  assert.equal(result.goAssembled, false, '关闭 Go 是明确配置，不能拿缓存冒充');
+});
+
 test('Go 读模型不可用：退回 Node 行（账号页照常可用）', async () => {
   resetGoAccountRowsState();
   const node = nodeRow();

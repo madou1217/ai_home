@@ -16,3 +16,16 @@ func defaultClientCredential() clientCredential {
 		clientSecret: "GOC" + "SPX-9YQWpF7RWDC0QTdj-YxKMwR0ZtsX",
 	}
 }
+
+// defaultClientCredentials 返回按优先级排列的换码候选。
+//
+// Google 轮换过 Antigravity installed-app secret，而 refresh_token 只对签发它的
+// client secret 有效。登录换码在 invalid_client 时会回退到轮换后的 secret，
+// 刷新必须沿用同一组候选，否则会出现「登录成功、刷新永远 invalid_client」。
+func defaultClientCredentials() []clientCredential {
+	primary := defaultClientCredential()
+	return []clientCredential{
+		primary,
+		{clientID: primary.clientID, clientSecret: rotatedLoginClientSecret},
+	}
+}

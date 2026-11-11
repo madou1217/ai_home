@@ -27,9 +27,9 @@ type HTTPClient interface {
 // Provider 是无共享可变账号状态的 AGY OAuth 刷新策略。
 // 并发合并与版本 CAS 由 accountcredentials.Resolver 统一负责。
 type Provider struct {
-	client           HTTPClient
-	tokenEndpoint    string
-	clientCredential clientCredential
+	client            HTTPClient
+	tokenEndpoint     string
+	clientCredentials []clientCredential
 }
 
 var _ accountcredentials.RefreshStrategy = (*Provider)(nil)
@@ -46,9 +46,9 @@ func newProvider(client HTTPClient, endpoint string) (*Provider, error) {
 		return nil, accountcredentials.ErrInvalidDependencies
 	}
 	return &Provider{
-		client:           client,
-		tokenEndpoint:    endpoint,
-		clientCredential: defaultClientCredential(),
+		client:            client,
+		tokenEndpoint:     endpoint,
+		clientCredentials: defaultClientCredentials(),
 	}, nil
 }
 
@@ -76,9 +76,42 @@ func (provider *Provider) Refresh(
 		refreshedAt.UnixMilli() <= 0 {
 		return nil, accountcredentials.ErrInvalidRefreshResult
 	}
+	// Google 轮换 installed-app client secret 后，登录可能已经落在新 secret 上，
+	// 而旧 secret 对 refresh 不再被接受。Node 生产路径同样按顺序尝试候选凭据，
+	// 只在 invalid_client 时换下一个；这里必须保持一致，否则登录成功、刷新必败。
+	var lastErr error
+	for _, candidate := range provider.clientCredentials {
+		refreshed, retry, err := provider.refreshWithClient(
+			ctx,
+			auth,
+			candidate,
+			refreshedAt,
+		)
+		if err == nil {
+			return refreshed, nil
+		}
+		lastErr = err
+		if !retry {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+// refreshWithClient 使用单个客户端凭据发起一次换码。
+//
+// 第二个返回值表示上游明确判定 client 凭据无效（invalid_client）：只有这种
+// 错误允许调用方换候选 secret 重试。reauth、限流和传输错误必须原样返回，
+// 否则会被误判成客户端配置问题。
+func (provider *Provider) refreshWithClient(
+	ctx context.Context,
+	auth *agy.OAuthAuth,
+	clientCredential clientCredential,
+	refreshedAt time.Time,
+) (accountapp.Credential, bool, error) {
 	form := url.Values{
-		"client_id":     {provider.clientCredential.clientID},
-		"client_secret": {provider.clientCredential.clientSecret},
+		"client_id":     {clientCredential.clientID},
+		"client_secret": {clientCredential.clientSecret},
 		"refresh_token": {auth.RefreshToken()},
 		"grant_type":    {"refresh_token"},
 	}
@@ -89,7 +122,7 @@ func (provider *Provider) Refresh(
 		strings.NewReader(form.Encode()),
 	)
 	if err != nil {
-		return nil, accountcredentials.ErrRefreshUnavailable
+		return nil, false, accountcredentials.ErrRefreshUnavailable
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
@@ -97,22 +130,20 @@ func (provider *Provider) Refresh(
 	response, err := provider.client.Do(request)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, errors.Join(accountcredentials.ErrRefreshUnavailable, ctxErr)
+			return nil, false, errors.Join(accountcredentials.ErrRefreshUnavailable, ctxErr)
 		}
-		return nil, accountcredentials.ErrRefreshUnavailable
+		return nil, false, accountcredentials.ErrRefreshUnavailable
 	}
 	if response == nil || response.Body == nil {
-		if response != nil && response.Body != nil {
-			_ = response.Body.Close()
-		}
-		return nil, accountcredentials.ErrRefreshUnavailable
+		return nil, false, accountcredentials.ErrRefreshUnavailable
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		return nil, oauthutil.ClassifyRefreshError(
+		code := oauthutil.DecodeErrorCode(response.Body, maxTokenBytes)
+		return nil, code == "invalid_client", oauthutil.ClassifyRefreshError(
 			response.StatusCode,
-			oauthutil.DecodeErrorCode(response.Body, maxTokenBytes),
+			code,
 		)
 	}
 	var tokens struct {
@@ -129,7 +160,7 @@ func (provider *Provider) Refresh(
 		(tokens.RefreshToken != "" && !validSecret(tokens.RefreshToken)) ||
 		tokens.ExpiresIn <= 0 ||
 		tokens.ExpiresIn > (253_402_300_799_999-refreshedAt.UnixMilli())/1000 {
-		return nil, accountcredentials.ErrInvalidRefreshResult
+		return nil, false, accountcredentials.ErrInvalidRefreshResult
 	}
 	refreshToken := auth.RefreshToken()
 	if tokens.RefreshToken != "" {
@@ -149,9 +180,9 @@ func (provider *Provider) Refresh(
 		AuthMethod:    auth.AuthMethod(),
 	})
 	if err != nil || refreshed.IdentitySeed() != auth.IdentitySeed() {
-		return nil, accountcredentials.ErrInvalidRefreshResult
+		return nil, false, accountcredentials.ErrInvalidRefreshResult
 	}
-	return refreshed, nil
+	return refreshed, false, nil
 }
 
 func validSecret(value string) bool {

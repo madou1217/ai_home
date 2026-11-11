@@ -290,9 +290,11 @@ const ImageStudioWorkspace: React.FC = () => {
       }
     };
     window.addEventListener('focus', refresh);
+    window.addEventListener('aih:webui-task-completed', refresh);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', refresh);
+      window.removeEventListener('aih:webui-task-completed', refresh);
     };
   }, [applyModelCatalog, running, selectedAssetId, selectedRevisionId, session?.id, setSelectionFromSession]);
 

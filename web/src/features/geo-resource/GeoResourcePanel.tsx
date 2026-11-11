@@ -78,6 +78,12 @@ export default function GeoResourcePanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // 资源安装/更新是统一任务；完成事件到达后补一次列表，不再轮询。
+  useEffect(() => {
+    const handleCompleted = () => { void load(); };
+    window.addEventListener('aih:webui-task-completed', handleCompleted);
+    return () => window.removeEventListener('aih:webui-task-completed', handleCompleted);
+  }, [load]);
 
   const runAction = async (resourceId: string, action: 'install' | 'update' | 'uninstall', label: string) => {
     setBusy(`${action}:${resourceId}`);

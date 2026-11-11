@@ -1,5 +1,5 @@
 import React from 'react';
-import { accountOutcomesAPI } from '@/services/api';
+import { accountOutcomesAPI, accountsAPI } from '@/services/api';
 import type { AccountOutcomesData } from './types';
 
 
@@ -11,8 +11,8 @@ export interface UseAccountOutcomesResult {
 }
 
 /**
- * 账号健康状态数据源：挂载时拉取一次，此后每 60s 刷新。
- * 失败（网络错误 / 503 account_outcomes_unavailable）不抛出，只置 unavailable。
+ * 账号健康状态数据源：挂载时拉一次；之后由 accounts/watch 的 snapshot/account
+ * 事件触发刷新（500ms 合并），不再周期轮询。失败只置 unavailable。
  */
 export function useAccountOutcomes(): UseAccountOutcomesResult {
   const [data, setData] = React.useState<AccountOutcomesData | null>(null);
@@ -38,8 +38,22 @@ export function useAccountOutcomes(): UseAccountOutcomesResult {
       }
     };
     void poll();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (cancelled || timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void poll();
+      }, 500);
+    };
+    const watcher = accountsAPI.watch({
+      onSnapshot: schedule,
+      onAccount: schedule
+    });
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
+      watcher.close();
     };
   }, []);
 

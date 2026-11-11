@@ -77,6 +77,7 @@ type entry struct {
 	lastProbe  time.Time
 	timer      *time.Timer
 	probeTimer *time.Ticker
+	probeStop  chan struct{}
 	stopped    bool
 }
 
@@ -201,6 +202,7 @@ func (supervisor *Supervisor) connect(id string, entry *entry) {
 	entry.attempt = 0
 	entry.openedAt = supervisor.now()
 	entry.probeTimer = time.NewTicker(probeInterval)
+	entry.probeStop = make(chan struct{})
 	supervisor.mutex.Unlock()
 
 	go supervisor.watch(id, entry, tunnel, generation)
@@ -230,7 +232,12 @@ func (supervisor *Supervisor) probeLoop(entry *entry, tunnel Tunnel, generation 
 	if ticker == nil {
 		return
 	}
-	for range ticker.C {
+	for {
+		select {
+		case <-entry.probeStop:
+			return
+		case <-ticker.C:
+		}
 		supervisor.mutex.Lock()
 		if entry.stopped || supervisor.closed || entry.generation != generation {
 			supervisor.mutex.Unlock()
@@ -316,6 +323,10 @@ func (supervisor *Supervisor) stopLocked(entry *entry) {
 }
 
 func (supervisor *Supervisor) stopTunnelLocked(entry *entry) {
+	if entry.probeStop != nil {
+		close(entry.probeStop)
+		entry.probeStop = nil
+	}
 	if entry.probeTimer != nil {
 		entry.probeTimer.Stop()
 		entry.probeTimer = nil

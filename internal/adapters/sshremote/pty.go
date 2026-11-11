@@ -37,6 +37,16 @@ type PTYSession struct {
 
 // OpenPTY 在已认证的 SSH 连接上申请 pty 并启动登录 shell。
 func OpenPTY(ctx context.Context, config Config, options PTYOptions) (*PTYSession, error) {
+	return openPTY(ctx, config, options, "")
+}
+
+// OpenPTYCommand 申请 pty 后执行指定远端命令（而不是登录 shell）。
+// 命令由调用方负责引用；用于 WebUI 远程工作区进入固定目录/tmux。
+func OpenPTYCommand(ctx context.Context, config Config, command string, options PTYOptions) (*PTYSession, error) {
+	return openPTY(ctx, config, options, strings.TrimSpace(command))
+}
+
+func openPTY(ctx context.Context, config Config, options PTYOptions, command string) (*PTYSession, error) {
 	client, err := Dial(ctx, config, 0)
 	if err != nil {
 		return nil, err
@@ -85,7 +95,13 @@ func OpenPTY(ctx context.Context, config Config, options PTYOptions) (*PTYSessio
 			_ = session.Setenv(entry[:separator], entry[separator+1:])
 		}
 	}
-	if err := session.Shell(); err != nil {
+	if command != "" {
+		if err := session.Start(command); err != nil {
+			_ = session.Close()
+			_ = client.Close()
+			return nil, newError(CodeDialFailed, "无法启动远端命令", err)
+		}
+	} else if err := session.Shell(); err != nil {
 		_ = session.Close()
 		_ = client.Close()
 		return nil, newError(CodeDialFailed, "无法启动远端 shell", err)

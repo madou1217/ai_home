@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
 )
@@ -30,15 +31,30 @@ type openBody struct {
 // 它与 /open 分开是为了把权限边界写死在路由上：浏览器路由只转发 /open，
 // /launch 只接受带管理密钥的进程内调用。
 type launchBody struct {
-	SessionKey string   `json:"sessionKey"`
-	Cwd        string   `json:"cwd"`
-	File       string   `json:"file"`
-	Args       []string `json:"args"`
-	Env        []string `json:"env"`
-	Cols       any      `json:"cols"`
-	Rows       any      `json:"rows"`
-	MuxID      string   `json:"muxId"`
-	Persistent bool     `json:"persistent"`
+	SessionKey string     `json:"sessionKey"`
+	Cwd        string     `json:"cwd"`
+	File       string     `json:"file"`
+	Args       []string   `json:"args"`
+	Env        []string   `json:"env"`
+	Cols       any        `json:"cols"`
+	Rows       any        `json:"rows"`
+	MuxID      string     `json:"muxId"`
+	Persistent bool       `json:"persistent"`
+	SSH        *sshLaunch `json:"ssh"`
+}
+
+// sshLaunch 是 Node 进程内启动器交给 Go 的 SSH 终端事实。
+// 浏览器永远不直接调用这条路由；凭据只走管理密钥保护的本机链路。
+type sshLaunch struct {
+	Host         string   `json:"host"`
+	Port         int      `json:"port"`
+	User         string   `json:"user"`
+	AuthType     string   `json:"authType"`
+	Password     string   `json:"password"`
+	PrivateKey   string   `json:"privateKey"`
+	IdentityFile string   `json:"identityFile"`
+	Command      string   `json:"command"`
+	Env          []string `json:"env"`
 }
 
 // terminalView 是 open/attach 的成功响应，字段与 Node 返回同名同义。
@@ -65,6 +81,7 @@ type openInput struct {
 	env        []string
 	persistent bool
 	attachOnly bool
+	remote     *terminalsession.RemoteSpec
 }
 
 type openResult struct {
@@ -93,7 +110,23 @@ func (handler *Handler) handleLaunch(response http.ResponseWriter, request *http
 	var body launchBody
 	handler.readJSON(request, handler.maxBody, &body)
 	file := strings.TrimSpace(body.File)
-	if file == "" {
+	var remote *terminalsession.RemoteSpec
+	if body.SSH != nil {
+		remote = &terminalsession.RemoteSpec{
+			Config: sshremote.Config{
+				Host:         body.SSH.Host,
+				Port:         body.SSH.Port,
+				User:         body.SSH.User,
+				AuthType:     body.SSH.AuthType,
+				Password:     body.SSH.Password,
+				PrivateKey:   body.SSH.PrivateKey,
+				IdentityFile: body.SSH.IdentityFile,
+			},
+			Command: body.SSH.Command,
+			Env:     append([]string(nil), body.SSH.Env...),
+		}
+	}
+	if file == "" && remote == nil {
 		writeTerminalError(response, http.StatusInternalServerError, errPTYSpawnFailed)
 		return
 	}
@@ -106,6 +139,7 @@ func (handler *Handler) handleLaunch(response http.ResponseWriter, request *http
 		shell:      Shell{File: file, Args: append([]string(nil), body.Args...)},
 		env:        append([]string(nil), body.Env...),
 		persistent: body.Persistent,
+		remote:     remote,
 	})
 	handler.writeOpenResult(response, result, failure, statusForOpen)
 }
@@ -158,6 +192,19 @@ func (handler *Handler) openSession(ctx context.Context, input openInput) (*open
 	}
 
 	cols, rows := normalizeSize(input.cols, input.rows)
+	// 远端 SSH 终端不经过本地 tmux/壳层；会话生命周期由 terminalsession 管理。
+	if input.remote != nil {
+		snapshot, err := handler.sessions.Create(ctx, terminalsession.Spec{
+			Key:        key,
+			Remote:     input.remote,
+			Size:       pty.Size{Rows: uint16(rows), Cols: uint16(cols)},
+			Persistent: true,
+		})
+		if err != nil {
+			return nil, &terminalError{code: errPTYSpawnFailed.code, message: err.Error()}
+		}
+		return &openResult{snapshot: snapshot, shell: "ssh", muxID: handler.muxIDFor(snapshot.ID)}, nil
+	}
 	dir := handler.resolveCwd(input.cwd)
 	env := handler.buildTerminalEnv(input.env)
 	file := input.shell.File

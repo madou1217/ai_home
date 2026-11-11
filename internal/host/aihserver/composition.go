@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -61,6 +62,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
@@ -788,6 +790,18 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 会话在保留期内继续占住 24 个会话名额。
 	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
 		ExitRetention: 250 * time.Millisecond,
+		// WebUI SSH 终端：Node 传入连接事实，Go 直接建 SSH PTY。
+		RemoteStarter: func(ctx context.Context, remote terminalsession.RemoteSpec, size pty.Size) (pty.Session, error) {
+			config, ok := remote.Config.(sshremote.Config)
+			if !ok {
+				return nil, errors.New("SSH 终端配置类型无效")
+			}
+			return sshremote.OpenPTYCommand(ctx, config, remote.Command, sshremote.PTYOptions{
+				Cols: size.Cols,
+				Rows: size.Rows,
+				Env:  remote.Env,
+			})
+		},
 	})
 	// 同一个 tmux 探测实例同时服务 WebUI 终端与 SSH 工作区状态，避免两套实现漂移。
 	terminalDurable := webuiterminalapi.NewTmuxStore()

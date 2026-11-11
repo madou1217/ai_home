@@ -39,6 +39,9 @@ type Config struct {
 	HomeDir string
 	// HostKeyCallback 仅供测试注入；非空时完全不读 known_hosts。
 	HostKeyCallback ssh.HostKeyCallback
+	// Jump 非空时先连接跳板，再通过跳板的 SSH 通道拨号到 Host:Port（多跳）。
+	// 跳板有自己的认证与 known_hosts；关闭目标客户端会一并关闭跳板。
+	Jump *Config
 }
 
 // Validate 校验拨号必需的字段；消息直接面向 WebUI 用户。

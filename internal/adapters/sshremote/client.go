@@ -31,6 +31,15 @@ type Client struct {
 // timeout <= 0 时用 DefaultTimeout；超时、取消、认证失败、主机密钥不匹配
 // 都返回带错误码的 *Error，调用方不需要解析文本。
 func Dial(ctx context.Context, config Config, timeout time.Duration) (*Client, error) {
+	return dial(ctx, config, timeout, 0)
+}
+
+const maxJumpDepth = 5
+
+func dial(ctx context.Context, config Config, timeout time.Duration, depth int) (*Client, error) {
+	if depth > maxJumpDepth {
+		return nil, newError(CodeInvalidConfig, "SSH 跳板层数超过上限", nil)
+	}
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -52,8 +61,19 @@ func Dial(ctx context.Context, config Config, timeout time.Duration) (*Client, e
 	}
 
 	address := config.address()
-	dialer := net.Dialer{Timeout: timeout}
-	connection, err := dialer.DialContext(ctx, "tcp", address)
+	var connection net.Conn
+	if config.Jump != nil {
+		jump, jumpErr := dial(ctx, *config.Jump, timeout, depth+1)
+		if jumpErr != nil {
+			closeAll(closers)
+			return nil, jumpErr
+		}
+		closers = append(closers, jump)
+		connection, err = jump.client.Dial("tcp", address)
+	} else {
+		dialer := net.Dialer{Timeout: timeout}
+		connection, err = dialer.DialContext(ctx, "tcp", address)
+	}
 	if err != nil {
 		closeAll(closers)
 		return nil, classifyDialError(ctx, err)

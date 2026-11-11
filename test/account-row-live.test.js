@@ -344,6 +344,27 @@ test('Go 读模型：Go 没有的 Node 账号原样保留', async () => {
   assert.deepEqual(refs, ['acct_gemini', 'acct_go_agy']);
 });
 
+test('冷启动没有缓存：短退避后重试一次，agy 不会首次打开就消失', async () => {
+  resetGoAccountRowsState();
+  let calls = 0;
+  const host = {
+    isEnabled: () => true,
+    listWebUiAccounts: async () => {
+      calls += 1;
+      if (calls === 1) return { ok: false, status: 0, errorCode: 'go_core_unreachable' };
+      return { ok: true, data: { accounts: [webUiRow()] } };
+    }
+  };
+  const result = await assembleAccountListWithGo(
+    { goCoreSync: host, goRowsRetryDelayMs: 0 },
+    []
+  );
+  assert.equal(calls, 2);
+  assert.equal(result.goAssembled, true);
+  assert.equal(result.accounts.length, 1);
+  assert.equal(result.accounts[0].provider, 'agy');
+});
+
 test('Go 读模型短暂不可用：沿用最近一次成功快照，Go 独有账号不消失', async () => {
   resetGoAccountRowsState();
   let fail = false;
@@ -385,7 +406,7 @@ test('Go 读模型不可用：退回 Node 行（账号页照常可用）', async
     listWebUiAccounts: async () => ({ ok: false, status: 502, errorCode: 'http_502' }),
     listManagementAccounts: async () => ({ ok: false, status: 502, errorCode: 'http_502' })
   };
-  const result = await assembleAccountListWithGo({ goCoreSync: host }, [node]);
+  const result = await assembleAccountListWithGo({ goCoreSync: host, goRowsRetryDelayMs: 0 }, [node]);
   assert.equal(result.goAssembled, false);
   assert.deepEqual(result.accounts, [node]);
 });

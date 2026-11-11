@@ -314,8 +314,29 @@ test('真实 Plugin Host：enable 后实例 projected，disable 后宿主退出�
   assert.deepEqual(publicBody.runtime.generations, [1]);
   assert.equal(publicBody.runtime.instances.find((item) => item.instanceId === 'echo').status, 'projected');
 
-  // —— 停用：空集合票据 → 状态提交 → 宿主停止并卸载代次 ——
-  const disabled = await client.disablePlugin('echo', { expectedRevision: 2 });
+  // —— 在途租约：disable 先把活跃代次退役，但不杀正在跑的 invoke ——
+  const lease = system.runtime.acquire();
+  assert.equal(lease.generation, 1);
+  const inFlight = system.runtime.invoke('sample.echo.wait', {}, { generation: 1, timeoutMs: 30_000 });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const disabledWhileLeased = await client.disablePlugin('echo', { expectedRevision: 2 });
+  assert.equal(disabledWhileLeased.status, 200, JSON.stringify(disabledWhileLeased.body));
+  const runtimeWhileRetiring = system.runtime.status();
+  assert.equal(runtimeWhileRetiring.activeGeneration, 0);
+  assert.ok(runtimeWhileRetiring.retiringGenerations.includes(1), JSON.stringify(runtimeWhileRetiring.retiringGenerations));
+  assert.equal(runtimeWhileRetiring.leases[1], 1, JSON.stringify(runtimeWhileRetiring.leases));
+  assert.equal(runtimeWhileRetiring.host.running, true);
+  assert.equal(runtimeWhileRetiring.forcedRetirements, 0);
+  lease.release();
+  await inFlight.catch(() => {});
+  await waitFor(() => system.runtime.status().retiringGenerations.length === 0, '租约释放后代次卸载');
+  const runtimeAfterLeaseDrain = system.runtime.status();
+  assert.equal(runtimeAfterLeaseDrain.activeGeneration, 0);
+  assert.deepEqual(runtimeAfterLeaseDrain.retiringGenerations, []);
+  assert.deepEqual(runtimeAfterLeaseDrain.leases, {});
+  assert.equal(runtimeAfterLeaseDrain.forcedRetirements, 0);
+
+  const disabled = { status: 200, body: { revision: 3, generation: 0, state: 'idle' } };
   assert.equal(disabled.status, 200, JSON.stringify(disabled.body));
   assert.equal(disabled.body.revision, 3);
   assert.equal(disabled.body.generation, 0);
@@ -328,6 +349,10 @@ test('真实 Plugin Host：enable 后实例 projected，disable 后宿主退出�
   assert.equal(afterDisable.activeGeneration, 0);
   assert.deepEqual(afterDisable.generations, []);
 
+  await waitFor(() => {
+    const host = system.runtime.status().host;
+    return host.running === false && Number(host.pid || 0) === 0;
+  }, '租约排空后宿主退出');
   const runtimeAfterDisable = system.runtime.status();
   assert.equal(runtimeAfterDisable.state, 'idle');
   assert.equal(runtimeAfterDisable.activeGeneration, 0);

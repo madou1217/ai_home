@@ -29,6 +29,7 @@ import type {
   CodexResetCreditsResponse,
   CodexResetOperation,
   CodexResetOperationResponse,
+  ManagementAccountActivity,
   AccountRemovedEvent,
   AccountsSnapshotRequestResponse,
   AccountsListResponse,
@@ -318,6 +319,7 @@ export function dispatchAccountsWatchPayload(payload: any, handlers: {
   onAuthJob?: (job: AccountAddJob) => void;
   onAccountRefreshJob?: (job: AccountRefreshJob) => void;
   onTokenConsumed?: (event: TokenConsumedEvent) => void;
+  onAccountActivity?: (activity: Record<string, ManagementAccountActivity>) => void;
 }) {
   if (payload.type === 'snapshot') {
     handlers.onSnapshot?.({
@@ -363,6 +365,10 @@ export function dispatchAccountsWatchPayload(payload: any, handlers: {
   }
   if (payload.type === 'account-refresh-job' && payload.job) {
     handlers.onAccountRefreshJob?.(payload.job as AccountRefreshJob);
+    return;
+  }
+  if (payload.type === 'account-activity' && payload.activity) {
+    handlers.onAccountActivity?.(payload.activity as Record<string, ManagementAccountActivity>);
     return;
   }
   if (payload.type === 'token-consumed' && payload.accountRef) {
@@ -431,6 +437,7 @@ export const accountsAPI = {
     onAuthJob?: (job: AccountAddJob) => void;
     onAccountRefreshJob?: (job: AccountRefreshJob) => void;
     onTokenConsumed?: (event: TokenConsumedEvent) => void;
+    onAccountActivity?: (activity: Record<string, ManagementAccountActivity>) => void;
     onError?: () => void;
   }) => {
     const eventSource = openSharedWebUiEventSource('/v0/webui/accounts/watch');

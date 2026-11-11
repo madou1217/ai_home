@@ -1,5 +1,5 @@
 import React from 'react';
-import { managementAPI } from '@/services/api';
+import { accountsAPI, managementAPI } from '@/services/api';
 import type { Account, ManagementAccountActivity } from '@/types';
 import { getAccountActivityKey } from '@/features/accounts/account-view-model';
 import type { AccountActivityMap } from '@/features/accounts/account-view-model';
@@ -37,8 +37,8 @@ function equalActivityMap(
 }
 
 /**
- * 网关请求活动轮询（从 Accounts.tsx 抽取）：驱动账号行首图标「运行中」旋转，转速随请求速率变化。
- * 数据来自 /webui/management/metrics 的 accountActivity（服务端每 1s 刷新），本 hook 每 2s 读取。
+ * 网关请求活动（从 Accounts.tsx 抽取）：驱动账号行首图标「运行中」旋转，转速随请求速率变化。
+ * 初始快照读 /webui/management/metrics；之后只吃 accounts/watch 的 account-activity 事件，不再轮询。
  */
 export function useAccountActivity(): UseAccountActivityResult {
   const [accountActivity, setAccountActivity] = React.useState<AccountActivityMap | null>(null);
@@ -57,9 +57,17 @@ export function useAccountActivity(): UseAccountActivityResult {
         if (!cancelled) setAccountActivity((current) => (current === null ? current : null));
       }
     };
-    poll();
+    void poll();
+    const watcher = accountsAPI.watch({
+      onAccountActivity: (next) => {
+        if (cancelled) return;
+        const map = next as AccountActivityMap;
+        setAccountActivity((current) => (equalActivityMap(current, map) ? current : map));
+      }
+    });
     return () => {
       cancelled = true;
+      watcher.close();
     };
   }, []);
 

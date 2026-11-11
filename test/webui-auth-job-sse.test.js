@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 
 const {
   emitAccountsAuthJobEvent,
+  emitAccountActivityEvent,
   __private: { getAccountsLiveState }
 } = require('../lib/server/webui-account-live');
 
@@ -46,4 +47,23 @@ test('auth-job 状态变化写入 accounts/watch SSE 帧', () => {
   assert.match(frames[0], /"type":"auth-job"/);
   assert.match(frames[0], /"status":"running"/);
   assert.match(frames[1], /"status":"succeeded"/);
+});
+
+test('账号活动快照写入 accounts/watch SSE 帧', () => {
+  const state = {};
+  const live = getAccountsLiveState(state);
+  const frames = [];
+  live.watchers.add({
+    res: {
+      destroyed: false,
+      writableEnded: false,
+      write(chunk) { frames.push(String(chunk)); }
+    }
+  });
+  emitAccountActivityEvent(state, {
+    'codebuddycn:acct_1': { inFlight: 2, rate: 0.5, lastAt: 3 }
+  });
+  assert.equal(frames.length, 1);
+  assert.match(frames[0], /"type":"account-activity"/);
+  assert.match(frames[0], /"inFlight":2/);
 });

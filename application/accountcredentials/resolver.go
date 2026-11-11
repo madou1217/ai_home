@@ -7,6 +7,7 @@ package accountcredentials
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -165,6 +166,9 @@ var _ accountapp.DeletionCleanup = (*Resolver)(nil)
 type refreshSuppression struct {
 	credentialUpdatedAt time.Time
 	retryAt             time.Time
+	// reauthentication 记录抑制原因：true 表示只能重新登录（失效 grant /
+	// 身份不匹配），用于在凭据过期时直接回报 reauth，而不是静默 401。
+	reauthentication bool
 }
 
 // NewResolver 创建使用固定五分钟刷新窗口的凭据解析用例。
@@ -260,7 +264,17 @@ func (resolver *Resolver) resolve(
 	if err != nil {
 		return credentialResolution{}, err
 	}
-	if resolver.suppressesRefresh(snapshot, now) {
+	if suppression, suppressed := resolver.suppressedRefresh(snapshot, now); suppressed {
+		// 上一次已经是「必须重新认证」且凭据已过期：继续拿旧 token 打上游只会
+		// 得到 401，把真实原因埋掉。直接把 reauth 结论交还给调用方。
+		if suppression.reauthentication &&
+			refreshableCredentialExpired(strategy, snapshot.Credential(), now) {
+			return credentialResolution{}, fmt.Errorf(
+				"%w: %s 凭据已过期且无法自动刷新",
+				ErrReauthenticationRequired,
+				snapshot.ProviderID(),
+			)
+		}
 		return currentResolution(snapshot), nil
 	}
 	resolution, err := resolver.executeRefreshFlight(ctx, accountRef, func() (credentialResolution, error) {
@@ -275,7 +289,22 @@ func (resolver *Resolver) resolve(
 		!canUseCurrentCredentialAfterRefreshFailure(err) {
 		return credentialResolution{}, err
 	}
+	// 预刷新窗口内（还没过期）可以继续用当前 token；已经过期就没有可用凭据，
+	// 必须让调用方看到真实刷新错误（例如 invalid_grant），而不是下游的 401。
+	if refreshableCredentialExpired(strategy, resolution.snapshot.Credential(), now) {
+		return credentialResolution{}, err
+	}
 	return currentResolution(resolution.snapshot), nil
+}
+
+// refreshableCredentialExpired 判断策略声明的可刷新凭据是否已经过期。
+func refreshableCredentialExpired(
+	strategy RefreshStrategy,
+	credential accountapp.Credential,
+	now time.Time,
+) bool {
+	expiresAt, refreshable := strategy.ExpiresAt(credential)
+	return refreshable && !expiresAt.After(now)
 }
 
 // ResolveCredential 以最小端口形式返回当前可用凭据，供账号征召等应用用例组合。
@@ -542,26 +571,26 @@ func canUseCurrentCredentialAfterRefreshFailure(err error) bool {
 		errors.Is(err, ErrReauthenticationRequired)
 }
 
-// suppressesRefresh 按 AccountRef 和 credential.updated_at 精确匹配。
+// suppressedRefresh 按 AccountRef 和 credential.updated_at 精确匹配。
 // 新登录或凭据轮换推进时间后会立即解除旧抑制。
-func (resolver *Resolver) suppressesRefresh(
+func (resolver *Resolver) suppressedRefresh(
 	snapshot accountapp.CredentialSnapshot,
 	now time.Time,
-) bool {
+) (refreshSuppression, bool) {
 	resolver.refreshSuppressMu.Lock()
 	defer resolver.refreshSuppressMu.Unlock()
 
 	key := snapshot.AccountRef().String()
 	observation, found := resolver.refreshSuppress[key]
 	if !found {
-		return false
+		return refreshSuppression{}, false
 	}
 	if !observation.credentialUpdatedAt.Equal(snapshot.UpdatedAt()) ||
 		!now.Before(observation.retryAt) {
 		delete(resolver.refreshSuppress, key)
-		return false
+		return refreshSuppression{}, false
 	}
-	return true
+	return observation, true
 }
 
 // rememberRefreshFailure 以 O(1) 按账号记录下一次允许刷新时间。
@@ -585,10 +614,13 @@ func (resolver *Resolver) rememberRefreshFailure(
 		return
 	}
 
+	reauthentication := errors.Is(err, ErrReauthenticationRequired) ||
+		errors.Is(err, accountapp.ErrReauthenticationIdentityMismatch)
 	resolver.refreshSuppressMu.Lock()
 	resolver.refreshSuppress[snapshot.AccountRef().String()] = refreshSuppression{
 		credentialUpdatedAt: snapshot.UpdatedAt(),
 		retryAt:             now.Add(delay),
+		reauthentication:    reauthentication,
 	}
 	resolver.refreshSuppressMu.Unlock()
 }

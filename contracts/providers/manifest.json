@@ -55,7 +55,18 @@
           "PermissionRequest",
           "Interrupt",
           "Stop"
-        ]
+        ],
+        "hook": {
+          "target": [
+            ".codex",
+            "hooks.json"
+          ],
+          "timeoutUnit": "seconds",
+          "eventMatchers": {
+            "SessionStart": "startup|resume|clear|compact"
+          },
+          "featureFlag": true
+        }
       },
       "clients": {
         "cli": true,
@@ -251,7 +262,15 @@
           "BeforeAgent",
           "AfterAgent",
           "SessionEnd"
-        ]
+        ],
+        "hook": {
+          "target": [
+            ".gemini",
+            "settings.json"
+          ],
+          "timeoutUnit": "ms",
+          "featureFlag": false
+        }
       },
       "clients": {
         "cli": true,
@@ -425,7 +444,15 @@
           "Stop",
           "StopFailure",
           "SessionEnd"
-        ]
+        ],
+        "hook": {
+          "target": [
+            ".claude",
+            "settings.json"
+          ],
+          "timeoutUnit": "seconds",
+          "featureFlag": false
+        }
       },
       "clients": {
         "cli": true,
@@ -626,7 +653,16 @@
           "PreInvocation",
           "PostInvocation",
           "Stop"
-        ]
+        ],
+        "hook": {
+          "target": [
+            ".gemini",
+            "config",
+            "hooks.json"
+          ],
+          "timeoutUnit": "seconds",
+          "featureFlag": false
+        }
       },
       "clients": {
         "cli": true,
@@ -807,7 +843,17 @@
         "mode": "hook",
         "adapter": "opencode_plugin",
         "targetKind": "plugin.js",
-        "events": []
+        "events": [],
+        "hook": {
+          "target": [
+            ".config",
+            "opencode",
+            "plugin",
+            "aih-session-hook.js"
+          ],
+          "timeoutUnit": "seconds",
+          "featureFlag": false
+        }
       },
       "clients": {
         "cli": true,
@@ -1004,7 +1050,15 @@
           "Stop",
           "StopFailure",
           "SessionEnd"
-        ]
+        ],
+        "hook": {
+          "target": [
+            ".grok",
+            "hooks.json"
+          ],
+          "timeoutUnit": "seconds",
+          "featureFlag": false
+        }
       },
       "clients": {
         "cli": true,
@@ -2134,7 +2188,10 @@
             "auto",
             "dontAsk",
             "bypassPermissions"
-          ]
+          ],
+          "env": {
+            "CODEBUDDY_IS_SANDBOX": "1"
+          }
         }
       },
       "credentials": {
@@ -2322,7 +2379,10 @@
             "auto",
             "dontAsk",
             "bypassPermissions"
-          ]
+          ],
+          "env": {
+            "CODEBUDDY_IS_SANDBOX": "1"
+          }
         }
       },
       "credentials": {
@@ -2503,7 +2563,10 @@
             "auto",
             "dontAsk",
             "bypassPermissions"
-          ]
+          ],
+          "env": {
+            "CODEBUDDY_IS_SANDBOX": "1"
+          }
         }
       },
       "credentials": {
@@ -2684,7 +2747,10 @@
             "auto",
             "dontAsk",
             "bypassPermissions"
-          ]
+          ],
+          "env": {
+            "CODEBUDDY_IS_SANDBOX": "1"
+          }
         }
       },
       "credentials": {

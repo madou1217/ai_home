@@ -361,7 +361,11 @@ type NativeHooks struct {
 }
 
 // NativePermissions 描述原生权限参数和可选模式。
+//
+// Env 是「最大权限参数也无法完全免确认」时的补充开关：宿主把它写进子进程环境，
+// 与 Flags 推导出的最大权限参数一起生效。没有这类开关的 Provider 不声明即可。
 type NativePermissions struct {
-	Flags []string `json:"flags"`
-	Modes []string `json:"modes"`
+	Flags []string          `json:"flags"`
+	Modes []string          `json:"modes"`
+	Env   map[string]string `json:"env,omitempty"`
 }

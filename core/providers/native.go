@@ -384,9 +384,17 @@ func nativeCodebuddy() *NativeCapability {
 			Files:                  []string{},
 			StopRequiresJSONStdout: false,
 		},
+		// bypassPermissions 只跳过普通权限提示：命令安全分类为 HIGH/CRITICAL 的仍会
+		// 「requires confirmation every time」逐次询问（2.178.1 二进制里的
+		// doCheckPermission：「Bypass mode active but dangerous command detected」）。
+		// 上游留的唯一 full pass 出口是进程环境变量 CODEBUDDY_IS_SANDBOX=1
+		// （2.139.0 变更日志：`-y` / `--permission-mode bypassPermissions` 配合该变量
+		// 跳过 HIGH/CRITICAL；刻意不做成 CLI 参数、也不会从 settings.json 的 env 注入，
+		// 只能由宿主进程环境带入）。`permissions.disableBypassPermissionsMode` 仍然生效。
 		Permissions: NativePermissions{
 			Flags: []string{"--permission-mode", "--allowedTools", "--disallowedTools", "--dangerously-skip-permissions"},
 			Modes: []string{"default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"},
+			Env:   map[string]string{"CODEBUDDY_IS_SANDBOX": "1"},
 		},
 	}
 }

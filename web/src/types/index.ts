@@ -673,6 +673,8 @@ export interface ProviderNativeCapability {
   permissions: {
     flags: string[];
     modes: string[];
+    // 最大权限参数之外的进程环境开关（如 codebuddy 的 CODEBUDDY_IS_SANDBOX）。
+    env?: Record<string, string>;
   };
 }
 

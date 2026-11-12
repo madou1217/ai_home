@@ -129,6 +129,31 @@ test('批量读 Go 写回 byAccount / accountUpdatedAt / byProvider 的既有形
   assert.deepEqual(result, { opencode: ['m/alpha', 'm/zeta', 'old/model'] });
 });
 
+test('Go 独有 Provider 的模型也进入 byProvider（Node 池没有该 Provider 账号）', async () => {
+  const rows = accountRows().concat([{
+    account_ref: 'goagy111111111111111111',
+    provider_id: 'agy',
+    last_attempt_at_ms: 5555,
+    last_source: 'remote',
+    models: [
+      { model_id: 'gemini-3.8-flash-high', effective: true },
+      { model_id: 'gemini-3.8-flash-tiered', effective: true }
+    ]
+  }]);
+  const state = makeState();
+  state.webUiModelsCache.updatedAt = 1;
+  const result = await refreshWebUiModelsCacheFromGo(
+    state,
+    {},
+    goBatchDeps({ readAccountModels: async () => goResponse(rows) })
+  );
+  assert.deepEqual(
+    state.webUiModelsCache.byProvider.agy,
+    ['gemini-3.8-flash-high', 'gemini-3.8-flash-tiered']
+  );
+  assert.deepEqual(result.agy, ['gemini-3.8-flash-high', 'gemini-3.8-flash-tiered']);
+});
+
 test('别名/候选读取前的 30 秒节流：窗口内不重复拉 Go', async () => {
   const state = makeState();
   let clock = 100000;

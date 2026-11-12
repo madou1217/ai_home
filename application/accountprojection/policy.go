@@ -9,6 +9,7 @@ package accountprojection
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -88,6 +89,28 @@ type SharedLink struct {
 	Exclude    []string
 }
 
+// EnvBase 是投影 env 值的路径基准。
+type EnvBase string
+
+const (
+	EnvBaseProjectionRoot EnvBase = "projection_root"
+	EnvBaseNativeRoot     EnvBase = "native_root"
+	EnvBaseHostHome       EnvBase = "host_home"
+	EnvBaseHostNativeRoot EnvBase = "host_native_root"
+)
+
+// EnvBinding 是投影需要写入子进程环境的变量。
+//
+// 例：Codex 的 CODEX_HOME=projection_root/.codex、CODEX_SQLITE_HOME=host_native_root；
+// fake-home Provider 的 HOME=projection_root。
+type EnvBinding struct {
+	Key  string
+	Base EnvBase
+	Path []string
+}
+
+var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 // Policy 是一个 Provider 的投影策略。
 //
 // 字段刻意与 Node lib/runtime/provider-storage-policy.js 对齐，但 Go 先按需实现：
@@ -111,6 +134,9 @@ type Policy struct {
 	SharedHostCaches    []SharedLink
 	SharedHostDataRoots []SharedLink
 	SharedHostDedupe    []SharedLink
+
+	// Env 是投影根/宿主路径到子进程环境变量的映射；不含明文凭据。
+	Env []EnvBinding
 
 	AttachmentSubdir []string
 }
@@ -191,6 +217,25 @@ func (policy Policy) Validate() error {
 	}
 	if err := validateSharedLinks("shared host dedupe", policy.SharedHostDedupe); err != nil {
 		return err
+	}
+	seenEnv := make(map[string]struct{}, len(policy.Env))
+	for index, binding := range policy.Env {
+		key := strings.TrimSpace(binding.Key)
+		if !envNamePattern.MatchString(key) {
+			return fmt.Errorf("env binding[%d] key invalid: %q", index, binding.Key)
+		}
+		if _, exists := seenEnv[key]; exists {
+			return fmt.Errorf("env binding[%d] key duplicated: %s", index, key)
+		}
+		seenEnv[key] = struct{}{}
+		switch binding.Base {
+		case EnvBaseProjectionRoot, EnvBaseNativeRoot, EnvBaseHostHome, EnvBaseHostNativeRoot:
+		default:
+			return fmt.Errorf("env binding[%d] base invalid: %q", index, binding.Base)
+		}
+		if err := validateOptionalPath("env binding path", binding.Path); err != nil {
+			return fmt.Errorf("env binding[%d]: %w", index, err)
+		}
 	}
 	if err := validateOptionalPath("attachment subdir", policy.AttachmentSubdir); err != nil {
 		return err

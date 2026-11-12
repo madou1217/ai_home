@@ -2,9 +2,22 @@ package accountprojection
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+)
+
+var (
+	// ErrInvalidProjectionRequest 表示请求缺少 Provider、账号、根目录或凭据存储。
+	ErrInvalidProjectionRequest = errors.New("account projection request invalid")
+	// ErrInvalidProjectionRoot 表示根目录不在 AIH 投影区，拒绝写入。
+	ErrInvalidProjectionRoot = errors.New("account projection root invalid")
+	// ErrProjectionConflict 表示投影已有非空会话/私有内容，不能安全接管。
+	ErrProjectionConflict = errors.New("account projection conflict")
+	// ErrCredentialStoreUnavailable 表示需要回写凭据但没有注入版本化存储。
+	ErrCredentialStoreUnavailable = errors.New("account projection credential store unavailable")
 )
 
 // Purpose 是本次投影的用途；登录投影是临时的，正常启动投影可复用。
@@ -51,10 +64,12 @@ type Plan struct {
 	UnsetEnv   []string
 }
 
-// ArtifactResult 是一次 auth artifact 写入结果。
-type ArtifactResult struct {
-	Path    string
-	Written bool
+// ArtifactWrite 是 Materializer 产出的待写文件；写入/权限/原子替换由 Provisioner 负责。
+type ArtifactWrite struct {
+	Path string
+	Data []byte
+	// Mode 为零时使用 0600。
+	Mode fs.FileMode
 }
 
 // PolicyProvider 按 Provider 返回投影策略；未知 Provider 返回 false。
@@ -74,9 +89,12 @@ type Provisioner interface {
 // Materializer 负责 Provider 特定的凭据编码/解码；通用目录/链接逻辑不得感知 Provider 名。
 type Materializer interface {
 	ProviderID() string
-	Materialize(ctx context.Context, request Request, policy Policy, root string) ([]ArtifactResult, error)
+	// Materialize 只做凭据编码，不落盘；Provisioner 统一做 0600/原子替换。
+	Materialize(ctx context.Context, request Request, policy Policy, root string) ([]ArtifactWrite, error)
 	// Capture 读取投影中的凭据；无法识别/身份不匹配时返回 false。
 	Capture(ctx context.Context, request Request, policy Policy, root string) (accountapp.Credential, bool, error)
+	// ShouldAdopt 判断投影读回的凭据是否比账号库当前代更新；并发更新时不能覆盖。
+	ShouldAdopt(current accountapp.Credential, next accountapp.Credential) bool
 }
 
 // Linker 是平台链接边界：Unix symbol link、Windows junction/hardlink/copy 都由此实现。

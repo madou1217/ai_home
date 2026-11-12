@@ -193,7 +193,12 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 		}
 		base := strings.TrimSuffix(modelID, "-tiered")
 		for _, tier := range []string{"high", "medium", "low"} {
-			seen[base+"-"+tier] = struct{}{}
+			alias := base + "-" + tier
+			seen[alias] = struct{}{}
+			// 上游只接受 *-tiered 基座：档位别名必须转回基座，否则请求会被
+			// 404 NOT_FOUND（真机：gemini-3.8-flash-high 直连上游即 404）。
+			// 档位强度由请求的 thinkingLevel 决定，不由模型 id 决定。
+			wires[alias] = modelID
 		}
 	}
 	models := make([]string, 0, len(seen))

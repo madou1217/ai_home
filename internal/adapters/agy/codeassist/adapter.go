@@ -104,6 +104,7 @@ func (adapter *Adapter) Execute(
 		project,
 		sessionID,
 		requestID,
+		agyThinkingLevel(model, wireModel),
 	)
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
@@ -171,6 +172,27 @@ func (adapter *Adapter) Execute(
 		if decoder.Terminal() {
 			return inferencegateway.CompletedAttempt(), nil
 		}
+	}
+}
+
+// agyThinkingLevel 把档位公开 id 映射成上游 thinkingLevel。
+//
+// 上游只发布 *-tiered 基座；-high/-medium/-low 是同一基座的不同思考强度。
+// 只有「公开 id 被转发表改写到 -tiered 基座」时才注入，避免把 claude 这类
+// 本身就带 -high/-low 后缀的真实模型误判成档位别名。
+func agyThinkingLevel(publicModel string, wireModel string) string {
+	if publicModel == wireModel || !strings.HasSuffix(wireModel, "-tiered") {
+		return ""
+	}
+	switch {
+	case strings.HasSuffix(publicModel, "-high"):
+		return "HIGH"
+	case strings.HasSuffix(publicModel, "-medium"):
+		return "MEDIUM"
+	case strings.HasSuffix(publicModel, "-low"):
+		return "LOW"
+	default:
+		return ""
 	}
 }
 

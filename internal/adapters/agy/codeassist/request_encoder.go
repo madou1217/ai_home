@@ -73,7 +73,10 @@ type wireGenerationConfig struct {
 
 type wireThinkingConfig struct {
 	IncludeThoughts bool  `json:"includeThoughts"`
-	ThinkingBudget  int64 `json:"thinkingBudget"`
+	ThinkingBudget  int64 `json:"thinkingBudget,omitempty"`
+	// ThinkingLevel 是 agy 档位模型的强度（HIGH/MEDIUM/LOW）；上游的
+	// gemini-3.8-flash 只发布 tiered 基座，档位完全由这个字段决定。
+	ThinkingLevel string `json:"thinkingLevel,omitempty"`
 }
 
 type wireToolGroup struct {
@@ -121,6 +124,7 @@ func encodeRequest(
 	project string,
 	sessionID string,
 	requestID string,
+	thinkingLevel string,
 ) ([]byte, error) {
 	if model == "" || project == "" || sessionID == "" || requestID == "" {
 		return nil, ErrUnsupportedRequest
@@ -142,6 +146,14 @@ func encodeRequest(
 	config := wireGenerationConfig{
 		MaxOutputTokens: withThinkingReserve(model, request.MaxOutputTokens()),
 		StopSequences:   request.StopSequences(),
+	}
+	// 档位模型（-high/-medium/-low）没有独立上游 id：必须带 thinkingLevel，
+	// 否则三者都会按上游默认强度执行。非档位模型保持不注入。
+	if thinkingLevel != "" {
+		config.ThinkingConfig = &wireThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingLevel:   thinkingLevel,
+		}
 	}
 	if value, found := request.Temperature(); found {
 		config.Temperature = &value

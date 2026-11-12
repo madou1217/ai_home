@@ -755,6 +755,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号模型管理用例失败: %w", err)
 	}
+	// 网关账号（自定义 base_url）的模型列表动态并入本地可路由目录，新模型不必
+	// 等代理升级或 6 小时重扫才出现在目录里。
+	modelManagement.SetRoutableModelSource(store)
 	recoveringReauthenticator, err :=
 		accountrecovery.NewReauthenticator(
 			reauthenticator,

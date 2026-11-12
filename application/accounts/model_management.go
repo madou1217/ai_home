@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -137,6 +139,25 @@ type ModelManagement struct {
 	refresher   ModelCredentialRefresher
 	probes      ModelProbeRecorder
 	clock       Clock
+	// routable 是本地可路由目录；只用于网关账号（自定义 base_url）的动态目录并集。
+	routable RoutableModelSource
+}
+
+// RoutableModelSource 返回本地当前可路由的模型集合（Provider + 模型）。
+type RoutableModelSource interface {
+	ListRoutableModels(ctx context.Context) ([]RoutableModel, error)
+}
+
+// SetRoutableModelSource 注入本地目录来源；nil 表示不做网关账号并集。
+//
+// 网关账号（例如指向自建 Proxy 的 codex API Key 账号）的上游 /models 只是它
+// 自己的快照；本地新发现的模型（agy 档位别名）不应等到代理升级或 6 小时重扫
+// 才出现，因此刷新时把本地可路由目录并入。
+func (management *ModelManagement) SetRoutableModelSource(source RoutableModelSource) {
+	if management == nil {
+		return
+	}
+	management.routable = source
 }
 
 // NewModelManagement 创建只用于账号管理写路径的模型用例。
@@ -163,6 +184,73 @@ func NewModelManagement(
 		probes:      probes,
 		clock:       clock,
 	}, nil
+}
+
+// mergeGatewayModels 把本地可路由目录并入网关账号的发现结果。
+//
+// 只对「凭据带自定义 base_url」的账号生效：官方 endpoint 的账号目录必须严格等于
+// 上游返回，不能把本地模型塞给不认识它们的上游。并集按模型 ID 去重并排序。
+func (management *ModelManagement) mergeGatewayModels(
+	ctx context.Context,
+	credential Credential,
+	modelIDs []runtimecore.ModelID,
+) []runtimecore.ModelID {
+	return management.mergeRoutableModels(ctx, gatewayBaseURL(credential), modelIDs)
+}
+
+// mergeRoutableModels 是 mergeGatewayModels 的可测试实现：baseURL 为空表示官方账号。
+func (management *ModelManagement) mergeRoutableModels(
+	ctx context.Context,
+	baseURL string,
+	modelIDs []runtimecore.ModelID,
+) []runtimecore.ModelID {
+	if management == nil || management.routable == nil || ctx == nil || baseURL == "" {
+		return modelIDs
+	}
+	models, err := management.routable.ListRoutableModels(ctx)
+	if err != nil || len(models) == 0 {
+		return modelIDs
+	}
+	seen := make(map[runtimecore.ModelID]struct{}, len(modelIDs)+len(models))
+	merged := make([]runtimecore.ModelID, 0, len(modelIDs)+len(models))
+	for _, modelID := range modelIDs {
+		if _, found := seen[modelID]; found {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		merged = append(merged, modelID)
+	}
+	for _, model := range models {
+		modelID := model.ModelID()
+		if !modelID.IsValid() {
+			continue
+		}
+		if _, found := seen[modelID]; found {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		merged = append(merged, modelID)
+	}
+	sort.Slice(merged, func(left, right int) bool {
+		return merged[left].String() < merged[right].String()
+	})
+	return merged
+}
+
+// gatewayBaseURL 返回自定义上游地址；官方默认地址返回空串。
+func gatewayBaseURL(credential any) string {
+	type endpointCredential interface {
+		BaseURL() string
+	}
+	value, ok := credential.(endpointCredential)
+	if !ok {
+		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(value.BaseURL()), "/")
+	if baseURL == "" || baseURL == strings.TrimRight(codex.DefaultAPIBaseURL, "/") {
+		return ""
+	}
+	return baseURL
 }
 
 // ListAccountModels 返回账号当前自动发现与人工策略快照。
@@ -223,6 +311,11 @@ func (management *ModelManagement) RefreshAccountModels(
 		management.recordModelProbeFailure(ctx, accountRef, err)
 		return nil, err
 	}
+	discovered = management.mergeGatewayModels(
+		ctx,
+		credentialSnapshot.Credential(),
+		discovered,
+	)
 	updatedAt, err := normalizeModelTime(management.clock())
 	if err != nil {
 		management.recordModelProbeFailure(ctx, accountRef, err)

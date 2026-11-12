@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/agy/modelnames"
 )
 
 // CodeError 是带稳定错误码的构造失败，对应 Node 的 error.code。
@@ -108,39 +110,11 @@ func normalizeImagePaths(paths []string) []string {
 	return result
 }
 
-// agyCLINameByID 是 agy 内部模型 id → CLI 显示名映射（唯一真值见 lib/runtime/agy-model-names.js）。
-var agyCLINameByID = map[string]string{
-	"gemini-3.8-flash-high":    "Gemini 3.8 Flash (High)",
-	"gemini-3.8-flash-medium":  "Gemini 3.8 Flash (Medium)",
-	"gemini-3.8-flash-tiered":  "Gemini 3.8 Flash (Medium)",
-	"gemini-3.8-flash-low":     "Gemini 3.8 Flash (Low)",
-	"claude-sonnet-4-6":        "Claude Sonnet 4.6 (Thinking)",
-	"claude-opus-4-6-thinking": "Claude Opus 4.6 (Thinking)",
-	"gpt-oss-120b-medium":      "GPT-OSS 120B (Medium)",
-}
-
-// agyCLINames 是全部合法显示名集合。
-var agyCLINames = func() map[string]bool {
-	names := make(map[string]bool, len(agyCLINameByID))
-	for _, name := range agyCLINameByID {
-		names[name] = true
-	}
-	return names
-}()
-
 // ResolveAgyCliModelName 把内部模型 id 译成 CLI 显示名；已是显示名原样返回；无法识别返回空串。
+//
+// 表已收敛到 internal/adapters/agy/modelnames，避免与 settings 各自维护一份。
 func ResolveAgyCliModelName(model string) string {
-	value := normalizeString(model)
-	if value == "" {
-		return ""
-	}
-	if name, found := agyCLINameByID[value]; found {
-		return name
-	}
-	if agyCLINames[value] {
-		return value
-	}
-	return ""
+	return modelnames.Resolve(normalizeString(model))
 }
 
 // imageGenerationModelPattern 匹配生图模型（gemini image / nano banana / flash-image）。

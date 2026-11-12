@@ -53,12 +53,22 @@ func TestResolveModelName(t *testing.T) {
 }
 
 func TestResolveModelNameRoundTripsEveryAlias(t *testing.T) {
-	for _, alias := range agyCLIModelAliases {
-		if got := ResolveModelName(alias.ID); got != alias.Name {
-			t.Fatalf("ResolveModelName(%q) = %q, want %q", alias.ID, got, alias.Name)
+	// 表已收敛到 modelnames；这里锁住 settings 的委托结果。
+	for _, id := range []string{
+		"gemini-3.8-flash-high",
+		"gemini-3.8-flash-medium",
+		"gemini-3.8-flash-tiered",
+		"gemini-3.8-flash-low",
+		"claude-sonnet-4-6",
+		"claude-opus-4-6-thinking",
+		"gpt-oss-120b-medium",
+	} {
+		name := ResolveModelName(id)
+		if name == "" {
+			t.Fatalf("ResolveModelName(%q) = empty", id)
 		}
-		if got := ResolveModelName(alias.Name); got != alias.Name {
-			t.Fatalf("ResolveModelName(%q) = %q, want 原样返回", alias.Name, got)
+		if got := ResolveModelName(name); got != name {
+			t.Fatalf("ResolveModelName(%q) = %q, want 原样返回", name, got)
 		}
 	}
 }

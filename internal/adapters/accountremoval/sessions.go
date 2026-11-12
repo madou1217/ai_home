@@ -77,6 +77,9 @@ type probeState struct {
 //   - 精确会话仍存活 → ErrAccountRuntimeActive；
 //   - 服务端不存在，或服务端存活但精确会话已消失 → 陈旧登记，当场清除后放行；
 //   - 探测无法确认 → ErrAccountRuntimeUnverifiable（同样拒绝删除）。
+//
+// 实现直接复用 InspectAccountDeletion：删除前探测与占用者上报必须是同一份事实，
+// 两套实现只会让「探测说有人、上报说没人」这类偏差长期存在。
 func (service *Service) AssertNoSessionWriters(
 	ctx context.Context,
 	providerRaw string,
@@ -89,91 +92,23 @@ func (service *Service) AssertNoSessionWriters(
 	if err != nil {
 		return err
 	}
-	return service.assertNoWriters(ctx, provider, accountRef)
-}
-
-// AssertAccountDeletable 是 DeletionGuard 的账号级入口。
-//
-// 账号引用已经由 Provider 身份派生，因此这里不再按 Provider 过滤；需要按
-// (provider, accountRef) 精确匹配的调用方使用 AssertNoSessionWriters。
-func (service *Service) AssertAccountDeletable(
-	ctx context.Context,
-	accountRef accountcore.AccountRef,
-) error {
-	if service == nil || ctx == nil || !accountRef.IsValid() {
-		return ErrInvalidRequest
-	}
-	return service.assertNoWriters(ctx, "", accountRef.String())
-}
-
-func (service *Service) assertNoWriters(ctx context.Context, provider, accountRef string) error {
-	if err := ctx.Err(); err != nil {
+	blockers, err := service.inspectAccountDeletion(ctx, provider, accountRef, false)
+	if err != nil {
 		return err
 	}
-	entries, err := service.readRegistryEntries()
-	if err != nil {
-		return fmt.Errorf("%w: %v", accountapp.ErrAccountRuntimeUnverifiable, err)
-	}
-	matching := make([]sessionEntry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.Gateway || entry.AccountRef != accountRef {
-			continue
-		}
-		if provider != "" && entry.Provider != provider {
-			continue
-		}
-		matching = append(matching, entry)
-	}
-	if len(matching) == 0 {
-		return nil
-	}
-
-	probes := make(map[string]probeState, len(matching))
-	blocking := 0
-	var firstProbeErr error
-	for _, entry := range matching {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		state, cached := probes[entry.Socket]
-		if !cached {
-			snapshot, probeErr := service.probe.Probe(ctx, entry.Socket)
-			state = probeState{err: probeErr}
-			if probeErr == nil {
-				state.serverAlive = snapshot.ServerAlive
-				state.names = make(map[string]struct{}, len(snapshot.Sessions))
-				for _, name := range snapshot.Sessions {
-					state.names[name] = struct{}{}
-				}
+	for _, blocker := range blockers {
+		if blocker.Uncertain {
+			detail := strings.TrimSpace(blocker.Detail)
+			if detail == "" {
+				detail = "持久会话探测失败"
 			}
-			probes[entry.Socket] = state
+			return fmt.Errorf("%w: %s", accountapp.ErrAccountRuntimeUnverifiable, detail)
 		}
-		if state.err != nil {
-			// 无法确认的探测与活跃会话同样阻塞删除；继续扫描是为了顺手清掉
-			// 同批的陈旧登记，行为与 Node 一致。
-			blocking++
-			if firstProbeErr == nil {
-				firstProbeErr = state.err
-			}
-			continue
-		}
-		_, exactSessionAlive := state.names[entry.Session]
-		if state.serverAlive && exactSessionAlive {
-			blocking++
-			continue
-		}
-		// 陈旧登记：服务端不存在，或服务端存活但这份会话已经退出。
-		// 删除失败不阻塞账号删除（与 Node 的 removeEntry 一致），最坏只是下次再判一次。
-		_ = os.Remove(entry.filePath)
 	}
-
-	if blocking == 0 {
-		return nil
+	if len(blockers) > 0 {
+		return fmt.Errorf("%w: persistent_session", accountapp.ErrAccountRuntimeActive)
 	}
-	if firstProbeErr != nil {
-		return fmt.Errorf("%w: %v", accountapp.ErrAccountRuntimeUnverifiable, firstProbeErr)
-	}
-	return fmt.Errorf("%w: persistent_session", accountapp.ErrAccountRuntimeActive)
+	return nil
 }
 
 // readRegistryEntries 读取全部可用登记；损坏的登记必须 fail-closed。
@@ -346,5 +281,3 @@ func parseSessionNames(stdout string) []string {
 	}
 	return names
 }
-
-var _ accountapp.DeletionGuard = (*Service)(nil)

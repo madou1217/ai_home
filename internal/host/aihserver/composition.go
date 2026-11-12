@@ -48,8 +48,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/zcodeoauth"
-	"github.com/madou1217/ai_home/internal/adapters/accounthostcleanup"
-	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accountremoval"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
@@ -65,6 +63,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
+	"github.com/madou1217/ai_home/internal/adapters/deletionhost"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
@@ -282,7 +281,9 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		errorLog:             options.ErrorLog,
 		quotaRefresh:         newQuotaFailureRefresh(store, time.Now, options.ErrorLog),
 	}
-	deletionGuard, err := accountremoval.New(accountremoval.Options{AIHomeDir: options.AIHomeDir})
+	// 账号删除的宿主运行时探测与强制释放都在 Go 侧完成：Node 不再为删除提供
+	// 宿主清理回调，tmux 会话按登记 + 账号 socket 两份事实核对，探测不确定即失败关闭。
+	deletionOccupancy, err := accountremoval.New(accountremoval.Options{AIHomeDir: options.AIHomeDir})
 	if err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号持久会话删除保护失败: %w", err)
@@ -313,7 +314,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		AttemptUsage:               accountRuntime,
 		ImageUsage:                 accountRuntime,
 		ImageOutcomes:              accountRuntime,
-		DeletionGuard:              deletionGuard,
+		DeletionOccupancy:          deletionOccupancy,
 		DeletionPreparation:        deletionPreparation,
 		ManagementKey:              options.ManagementKey,
 		ClientKey:                  options.ClientKey,
@@ -394,7 +395,7 @@ type handlerDependencies struct {
 	ImageUsage imagesapi.UsageRecorder
 	// ImageOutcomes 记录生图成功（账号页最近成功 + 清 cooldown）；为 nil 时不记录。
 	ImageOutcomes             imagesapi.ImageOutcomes
-	DeletionGuard             accountapp.DeletionGuard
+	DeletionOccupancy         accountapp.DeletionOccupancy
 	DeletionPreparation       accountapp.DeletionPreparation
 	ManagementKey             func() string
 	ClientKey                 func() string
@@ -433,7 +434,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	attemptUsage := dependencies.AttemptUsage
 	imageUsage := dependencies.ImageUsage
 	imageOutcomes := dependencies.ImageOutcomes
-	deletionGuard := dependencies.DeletionGuard
+	deletionOccupancy := dependencies.DeletionOccupancy
 	deletionPreparation := dependencies.DeletionPreparation
 	managementKey := dependencies.ManagementKey
 	clientKey := dependencies.ClientKey
@@ -873,17 +874,26 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建凭据轮换模型刷新边界失败: %w", err)
 	}
-	// 宿主清理通道只在有 Node 宿主时装配：独立部署没有 tmux/桌面资源可清，
-	// 删除语义与原来一致；接线错误（地址不是回环）必须在启动期就失败。
-	hostCleanup, err := newDeletionHostCleanup(nodeBaseURL, managementKey, aiHomeDir)
+	// 宿主投影（直连授权回收 + AIH Server 落点）由 Go 自己承接。宿主配置文件
+	// 同步仍是 Node 的投影，通过 GatewaySync 端口注入；端口缺省时按 Node 同款
+	// 原因码如实上报，绝不先写档位再等宿主。
+	deletionHost, err := deletionhost.New(deletionhost.Options{
+		AIHomeDir:   aiHomeDir,
+		HostHomeDir: dependencies.HostHomeDir,
+		Catalog:     catalog,
+		Credentials: store,
+		// 宿主全局配置的内容构造与写入仍在 Node（lib/account/host-sync.js），
+		// Go 没有等价端口：这里留空，落点按 Node 同款原因码如实上报
+		// host_sync_unavailable，而不是「先写档位再等宿主」。
+		GatewaySync: nil,
+	})
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号宿主清理通道失败: %w", err)
+		return serverHandlers{}, nil, fmt.Errorf("创建账号删除宿主投影失败: %w", err)
 	}
-	deleter, err := accountapp.NewDeleterWithHostCleanup(
+	deleter, err := accountapp.NewDeleter(
 		store,
-		deletionGuard,
+		deletionOccupancy,
 		deletionPreparation,
-		hostCleanup,
 		modelRefresh,
 		usage,
 		accountRuntime,
@@ -892,6 +902,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
 	}
+	deleter.WithHostProjection(deletionHost, deletionHost)
 	modelRefreshingRegistrar, err := accountapp.NewRegistrationModelRefreshDecorator(
 		registrar,
 		modelRefresh,
@@ -1389,7 +1400,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
-		ReverseTunnels: sshTunnelSupervisor,
+		ReverseTunnels:  sshTunnelSupervisor,
+		AccountDeletion: deleter,
 	})
 	if err != nil {
 		_ = inference.Close()
@@ -2043,38 +2055,6 @@ func newModelDiscovery(
 		return nil, fmt.Errorf("创建账号模型发现注册表失败: %w", err)
 	}
 	return discovery, nil
-}
-
-// newDeletionHostCleanup 装配账号删除的宿主清理通道。
-//
-// 没有 Node 回环地址（独立部署/测试）时返回 nil：此时机器上没有 Node 管理的
-// tmux 与会话登记，删除语义与未接入这条通道时完全一致。地址存在但配置非法
-// （不是 http loopback）必须在启动期失败，不能降级成「静默不清理」。
-func newDeletionHostCleanup(
-	nodeBaseURL string,
-	managementKey func() string,
-	aiHomeDir string,
-) (accountapp.DeletionHostCleanup, error) {
-	if strings.TrimSpace(nodeBaseURL) == "" || managementKey == nil {
-		return nil, nil
-	}
-	client, err := accounthostcleanup.New(accounthostcleanup.Options{
-		BaseURL:       nodeBaseURL,
-		ManagementKey: managementKey,
-		NodeAccountRef: func(ctx context.Context, goRef string) (string, error) {
-			// 每次删除都重读同步链接表：删除是低频动作，但链接表会随导入变化，
-			// 启动时缓存一份会让新账号拿着 Go 引用去 Node 查会话（永远查不到）。
-			table, err := accountrefmap.Load(ctx, aiHomeDir)
-			if err != nil {
-				return "", err
-			}
-			return accountrefmap.NewResolver(true, table).NodeRef(goRef), nil
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return client, nil
 }
 
 // rejectOAuthRedirect 防止 Token 或 Profile 请求被重定向到未审计主机。

@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountremoval"
 )
 
@@ -260,23 +262,91 @@ func TestAssertNoSessionWritersHonorsContext(t *testing.T) {
 	}
 }
 
-func TestAssertAccountDeletable(t *testing.T) {
+// accountForTest 构造一个真实的账号快照；占用者探测只用到 Provider 与账号引用。
+func accountForTest(t *testing.T, providerID string) accountcore.Account {
+	t.Helper()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	ref, err := accountcore.ParseAccountRef(testAccountRef)
+	if err != nil {
+		t.Fatalf("ParseAccountRef() error = %v", err)
+	}
+	cliAccountID, err := accountcore.NewCLIAccountID(1)
+	if err != nil {
+		t.Fatalf("NewCLIAccountID() error = %v", err)
+	}
+	account, err := accountcore.RestoreAccount(catalog, accountcore.RestoreAccountInput{
+		Ref:          ref,
+		ProviderID:   providerID,
+		CLIAccountID: cliAccountID,
+		Enabled:      true,
+		CreatedAt:    time.Unix(1, 0).UTC(),
+		UpdatedAt:    time.Unix(1, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("RestoreAccount() error = %v", err)
+	}
+	return account
+}
+
+// fakeKiller 记录被终止的会话，并按需把探测结果改成「服务器已不在」。
+type fakeKiller struct {
+	killErr error
+	killed  []string
+	probe   *fakeProbe
+	socket  string
+}
+
+func (killer *fakeKiller) KillSession(_ context.Context, socket string, session string) error {
+	killer.killed = append(killer.killed, socket+"/"+session)
+	if killer.killErr != nil {
+		return killer.killErr
+	}
+	if killer.probe != nil {
+		killer.probe.snapshots[killer.socket] = accountremoval.SessionSnapshot{ServerAlive: false}
+	}
+	return nil
+}
+
+func newServiceWithKiller(t *testing.T, aiHome string, probe *fakeProbe, killer *fakeKiller) *accountremoval.Service {
+	t.Helper()
+	service, err := accountremoval.New(accountremoval.Options{
+		AIHomeDir: aiHome,
+		Probe:     probe,
+		Kill:      killer,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	return service
+}
+
+// TestInspectAccountDeletion 守住占用者上报的三态：活跃、陈旧、探测不确定。
+func TestInspectAccountDeletion(t *testing.T) {
 	baseSocket := "aih-claude-" + testAccountRef
 	tests := []struct {
-		name      string
-		snapshot  accountremoval.SessionSnapshot
-		wantErr   error
-		wantExist bool
+		name        string
+		snapshot    accountremoval.SessionSnapshot
+		probeErr    error
+		wantBlocked int
+		wantStale   bool
 	}{
 		{
-			name:      "活跃会话阻塞账号删除",
-			snapshot:  accountremoval.SessionSnapshot{ServerAlive: true, Sessions: []string{"s-main"}},
-			wantErr:   accountapp.ErrAccountRuntimeActive,
-			wantExist: true,
+			name:        "活跃会话是占用者",
+			snapshot:    accountremoval.SessionSnapshot{ServerAlive: true, Sessions: []string{"s-main"}},
+			wantBlocked: 1,
 		},
 		{
-			name:     "陈旧会话放行并清理",
-			snapshot: accountremoval.SessionSnapshot{ServerAlive: false},
+			name:      "陈旧登记当场清除",
+			snapshot:  accountremoval.SessionSnapshot{ServerAlive: false},
+			wantStale: true,
+		},
+		{
+			name:        "探测不确定按占用者上报",
+			probeErr:    errors.New("tmux unavailable"),
+			wantBlocked: 1,
 		},
 	}
 
@@ -284,25 +354,113 @@ func TestAssertAccountDeletable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			aiHome := tempRoot(t)
 			paths := writeRegistry(t, aiHome, []registryFixture{accountSessionFixture("s-main")})
-			probe := &fakeProbe{snapshots: map[string]accountremoval.SessionSnapshot{baseSocket: test.snapshot}}
-			service := newService(t, aiHome, probe)
-
-			ref, err := accountcore.ParseAccountRef(testAccountRef)
-			if err != nil {
-				t.Fatalf("解析账号引用: %v", err)
+			probe := &fakeProbe{
+				snapshots: map[string]accountremoval.SessionSnapshot{baseSocket: test.snapshot},
 			}
-			err = service.AssertAccountDeletable(context.Background(), ref)
-			if test.wantErr == nil {
-				if err != nil {
-					t.Fatalf("不应拒绝删除, err = %v", err)
-				}
-			} else if !errors.Is(err, test.wantErr) {
-				t.Fatalf("错误 = %v, want %v", err, test.wantErr)
+			if test.probeErr != nil {
+				probe.errs = map[string]error{baseSocket: test.probeErr}
+			}
+			service := newServiceWithKiller(t, aiHome, probe, &fakeKiller{})
+
+			account := accountForTest(t, "claude")
+			blockers, err := service.InspectAccountDeletion(context.Background(), account)
+			if err != nil {
+				t.Fatalf("InspectAccountDeletion() error = %v", err)
+			}
+			if len(blockers) != test.wantBlocked {
+				t.Fatalf("blockers = %+v, want %d", blockers, test.wantBlocked)
+			}
+			if test.wantBlocked == 1 && test.probeErr != nil && !blockers[0].Uncertain {
+				t.Fatalf("探测失败必须标记 uncertain: %+v", blockers[0])
 			}
 			_, statErr := os.Lstat(paths["s-main"])
-			if exists := statErr == nil; exists != test.wantExist {
-				t.Fatalf("登记存在 = %v, want %v", exists, test.wantExist)
+			if exists := statErr == nil; exists == test.wantStale {
+				t.Fatalf("登记存在 = %v, want %v", exists, test.wantStale)
 			}
 		})
+	}
+}
+
+// TestInspectAccountDeletionReportsUnregisteredSessions 守住账号 socket 上
+// 没有登记的会话也算占用者：登记漏一条不等于没人。
+func TestInspectAccountDeletionReportsUnregisteredSessions(t *testing.T) {
+	baseSocket := "aih-claude-" + testAccountRef
+	aiHome := tempRoot(t)
+	probe := &fakeProbe{snapshots: map[string]accountremoval.SessionSnapshot{
+		baseSocket: {ServerAlive: true, Sessions: []string{"s-orphan"}},
+	}}
+	service := newServiceWithKiller(t, aiHome, probe, &fakeKiller{})
+
+	blockers, err := service.InspectAccountDeletion(context.Background(), accountForTest(t, "claude"))
+	if err != nil {
+		t.Fatalf("InspectAccountDeletion() error = %v", err)
+	}
+	if len(blockers) != 1 {
+		t.Fatalf("blockers = %+v", blockers)
+	}
+	if !blockers[0].Unregistered || blockers[0].Session != "s-orphan" || blockers[0].Socket != baseSocket {
+		t.Fatalf("blocker = %+v", blockers[0])
+	}
+}
+
+// TestReleaseAccountDeletionKillsAndReaps 守住强制释放：杀掉 + 复探 + 清登记。
+func TestReleaseAccountDeletionKillsAndReaps(t *testing.T) {
+	baseSocket := "aih-claude-" + testAccountRef
+	aiHome := tempRoot(t)
+	paths := writeRegistry(t, aiHome, []registryFixture{accountSessionFixture("s-main")})
+	probe := &fakeProbe{snapshots: map[string]accountremoval.SessionSnapshot{
+		baseSocket: {ServerAlive: true, Sessions: []string{"s-main"}},
+	}}
+	killer := &fakeKiller{probe: probe, socket: baseSocket}
+	service := newServiceWithKiller(t, aiHome, probe, killer)
+
+	account := accountForTest(t, "claude")
+	blockers, err := service.InspectAccountDeletion(context.Background(), account)
+	if err != nil || len(blockers) != 1 {
+		t.Fatalf("InspectAccountDeletion() = %+v, %v", blockers, err)
+	}
+	if err := service.ReleaseAccountDeletion(context.Background(), account, blockers); err != nil {
+		t.Fatalf("ReleaseAccountDeletion() error = %v", err)
+	}
+	if len(killer.killed) != 1 || killer.killed[0] != baseSocket+"/s-main" {
+		t.Fatalf("killed = %v", killer.killed)
+	}
+	if _, statErr := os.Lstat(paths["s-main"]); statErr == nil {
+		t.Fatal("释放成功后必须清掉登记")
+	}
+}
+
+// TestReleaseAccountDeletionFailsClosed 守住「复探还在就算没释放」。
+func TestReleaseAccountDeletionFailsClosed(t *testing.T) {
+	baseSocket := "aih-claude-" + testAccountRef
+	aiHome := tempRoot(t)
+	writeRegistry(t, aiHome, []registryFixture{accountSessionFixture("s-main")})
+	probe := &fakeProbe{snapshots: map[string]accountremoval.SessionSnapshot{
+		baseSocket: {ServerAlive: true, Sessions: []string{"s-main"}},
+	}}
+	// 不改变探测结果的 killer：模拟 kill 了但会话仍在。
+	killer := &fakeKiller{}
+	service := newServiceWithKiller(t, aiHome, probe, killer)
+
+	account := accountForTest(t, "claude")
+	blockers := []accountapp.DeletionBlocker{{
+		Kind: "persistent_session", Session: "s-main", Socket: baseSocket,
+	}}
+	err := service.ReleaseAccountDeletion(context.Background(), account, blockers)
+	if !errors.Is(err, accountapp.ErrAccountRuntimeActive) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+// TestReleaseAccountDeletionRefusesUncertainBlockers 守住「不确定不动手」。
+func TestReleaseAccountDeletionRefusesUncertainBlockers(t *testing.T) {
+	aiHome := tempRoot(t)
+	service := newServiceWithKiller(t, aiHome, &fakeProbe{}, &fakeKiller{})
+	account := accountForTest(t, "claude")
+	err := service.ReleaseAccountDeletion(context.Background(), account, []accountapp.DeletionBlocker{{
+		Kind: "persistent_session", Session: "s-main", Socket: "aih-claude-" + testAccountRef, Uncertain: true,
+	}})
+	if !errors.Is(err, accountapp.ErrAccountRuntimeActive) {
+		t.Fatalf("error = %v", err)
 	}
 }

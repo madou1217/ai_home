@@ -50,6 +50,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisessionmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionpreviewsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslistapi"
@@ -457,6 +458,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建工具链环境接口失败: %w", err)
 	}
+	sessionMessages, err := webuisessionmessagesapi.NewHandler(webuisessionmessagesapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建会话消息接口失败: %w", err)
+	}
 	sessionPreviews, err := webuisessionpreviewsapi.NewHandler(webuisessionpreviewsapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
 	})
@@ -596,6 +603,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.SummarySuffix, Handler: gitRead},
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.DiffSuffix, Handler: gitRead},
 		{Pattern: "GET " + webuiprojectsapi.Path, Handler: projects},
+		{Pattern: "GET " + webuisessionmessagesapi.Path, Handler: sessionMessages},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
 		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
 		{Pattern: "GET " + webuitoolkitruntimeapi.Path, Handler: toolkitEnvironments},

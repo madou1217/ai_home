@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/coder/websocket v1.8.15
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/klauspost/compress v1.20.1
 	golang.org/x/crypto v0.51.0
 	modernc.org/sqlite v1.42.2

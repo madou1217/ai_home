@@ -1,7 +1,9 @@
 // Package webuiprojectsapi 是 WebUI 项目管理面的 HTTP 边界。
 //
-//	GET /v1/management/webui/projects
-//	GET /v1/management/webui/projects/sessions?projectPath=...
+//	GET  /v1/management/webui/projects
+//	GET  /v1/management/webui/projects/sessions?projectPath=...
+//	GET  /v1/management/webui/projects/watch
+//	POST /v1/management/webui/projects/watch/snapshot
 //
 // 契约来源：Node lib/server/webui-project-routes.js 的 handleGetProjectsRequest
 // 与 lib/server/webui-project-cache.js 的 buildProjectsSnapshot。响应形状
@@ -18,7 +20,13 @@
 //   - 项目路径必须在磁盘上真实存在（与 Node filterHiddenProjects 同口径），
 //     解析不出真实路径的项目不下发。
 //
-// 本切片刻意不含：SSE watch、目录选择器、手动打开/移除项目、远程工作区项目。
+// SSE watch 的事件源：fsnotify 监听项目扫描根（目录结构、SQLite DB/-wal）与
+// Node 持久化的 run/provider-session-state（Provider hook 回合状态）。没有 ticker
+// 轮询；SSE 建立后先下发缓存快照，之后只在文件事件或显式 snapshot 请求时重建。
+// 运行态只认回合状态文件，不复制 Node 的 tmux attach 扫描：后者本质是周期探测，
+// 会把轮询带回 Go。
+//
+// 本切片刻意不含：目录选择器、手动打开/移除项目、远程工作区项目。
 // 这些都属于另外的契约。
 //
 // /projects/sessions 是 /projects 的按项目全量读：同一份扫描与聚合口径，但只下发
@@ -32,6 +40,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -84,6 +93,15 @@ type Handler struct {
 	aiHomeDir   string
 	maxEntries  int
 	scanTimeout time.Duration
+
+	// watchOnce/watchHub 惰性建立 SSE 事件源：没有订阅者时不创建 watcher。
+	watchOnce sync.Once
+	watchHub  *projectWatchHub
+	// watchSourceFactory 是测试注入点；nil 时使用 fsnotify。
+	watchSourceFactory func() (projectWatchSource, error)
+	heartbeat          time.Duration
+	// watchCoalesce 同 Node PROJECTS_DIRTY_COALESCE_MS，测试可调小。
+	watchCoalesce time.Duration
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -108,11 +126,13 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		aiHomeDir = filepath.Join(hostHomeDir, ".ai_home")
 	}
 	return &Handler{
-		authorizer:  dependencies.Authorizer,
-		hostHomeDir: hostHomeDir,
-		aiHomeDir:   aiHomeDir,
-		maxEntries:  maxEntries,
-		scanTimeout: scanTimeout,
+		authorizer:    dependencies.Authorizer,
+		hostHomeDir:   hostHomeDir,
+		aiHomeDir:     aiHomeDir,
+		maxEntries:    maxEntries,
+		scanTimeout:   scanTimeout,
+		heartbeat:     DefaultWatchHeartbeat,
+		watchCoalesce: watchSnapshotCoalesce,
 	}, nil
 }
 
@@ -160,7 +180,7 @@ type projectResponse struct {
 	Project projectView `json:"project"`
 }
 
-// ServeHTTP 只接受带管理密钥的 GET，并按路径分派列表与单项目全量读。
+// ServeHTTP 校验管理密钥后按路径分派：读接口只接受 GET，watch/snapshot 接受 POST。
 func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	// 项目列表随会话文件变化，缓存会让人看到过期条目。
 	responseWriter.Header().Set("Cache-Control", "no-store")
@@ -174,6 +194,10 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		writeError(responseWriter, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
+	if request.Method == http.MethodPost && request.URL.Path == SnapshotPath {
+		handler.serveSnapshot(responseWriter, request)
+		return
+	}
 	if request.Method != http.MethodGet {
 		responseWriter.Header().Set("Allow", http.MethodGet)
 		writeError(responseWriter, http.StatusMethodNotAllowed, "method_not_allowed", "只支持读取项目列表")
@@ -183,6 +207,8 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	switch request.URL.Path {
 	case SessionsPath:
 		handler.serveProjectSessions(responseWriter, request)
+	case WatchPath:
+		handler.serveWatch(responseWriter, request)
 	case Path:
 		handler.serveProjects(responseWriter, request)
 	default:

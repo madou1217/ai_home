@@ -617,6 +617,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.DiffSuffix, Handler: gitRead},
 		{Pattern: "GET " + webuiprojectsapi.Path, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.SessionsPath, Handler: projects},
+		{Pattern: "GET " + webuiprojectsapi.WatchPath, Handler: projects},
+		{Pattern: "POST " + webuiprojectsapi.SnapshotPath, Handler: projects},
 		{Pattern: "GET " + webuisessionmessagesapi.Path, Handler: sessionMessages},
 		{Pattern: "GET " + webuisessioneventsapi.Path, Handler: sessionEvents},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},

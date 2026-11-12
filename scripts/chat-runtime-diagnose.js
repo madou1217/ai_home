@@ -22,7 +22,9 @@ await p.waitForTimeout(6000);
 if(!(await p.locator('textarea').count())){console.log('NEW_CLICK',await clickFirst(['新建工作区会话','新建会话']));}
 await p.waitForSelector('textarea',{timeout:20000}).catch(()=>{});await p.waitForTimeout(1000);
 console.log('BEFORE',JSON.stringify(await p.evaluate(()=>({textarea:!!document.querySelector('textarea'),retry:!!document.body.innerText.includes('重试 AIH Chat Runtime'),buttons:[...document.querySelectorAll('button')].map(b=>b.textContent||'').filter(Boolean).slice(-12)}))));
-const approval=p.locator('button').filter({hasText:/Full access|选择审批模式|确认/}).first();await approval.click().catch(()=>{});await p.waitForTimeout(800);console.log('MENU',JSON.stringify(await p.evaluate(()=>document.body.innerText.slice(-500))));
+const approval=p.locator('button').filter({hasText:/Full access|选择审批模式|确认/}).first();await approval.click().catch(()=>{});await p.waitForTimeout(800);
+const menuItems=await p.evaluate(()=>[...document.querySelectorAll('[role="menuitem"], .ant-dropdown-menu-item, [data-menu-id]')].map((el)=>({text:String(el.textContent||'').trim().slice(0,80),ariaDisabled:el.getAttribute('aria-disabled'),className:String(el.className||'')})));
+console.log('MENU_ITEMS',JSON.stringify(menuItems));
 console.log('AFTER',JSON.stringify(await p.evaluate(()=>({textarea:!!document.querySelector('textarea'),retry:!!document.body.innerText.includes('重试 AIH Chat Runtime'),body:document.body.innerText.slice(-300)}))));
 await p.screenshot({path:'output/playwright/chat-runtime-diagnose.png'});
 await b.close();})().catch(e=>{console.error(e.stack);process.exit(1)});

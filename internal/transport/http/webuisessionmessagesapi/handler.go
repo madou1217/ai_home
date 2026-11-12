@@ -69,7 +69,7 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		messages, err := readClaudeMessages(handler.hostHome, r.URL.Query().Get("projectDirName"), sessionID)
 		if err == nil {
 			page := buildPage(messages, r.URL.Query())
-			writeJSON(w, http.StatusOK, response{OK: true, Messages: page.messages, Start: page.start, Total: page.total, HasMore: page.start > 0, Cursor: nil})
+			writeJSON(w, http.StatusOK, response{OK: true, Messages: page.messages, Start: page.start, Total: page.total, HasMore: page.start > 0, Cursor: claudeSessionCursor(handler.hostHome, r.URL.Query().Get("projectDirName"), sessionID)})
 			return
 		}
 	}

@@ -229,6 +229,14 @@ func (hub *Hub) start() {
 
 	go hub.consume(source)
 	hub.syncTargets()
+
+	// 空闲期间事件源是关闭的，缓存快照可能已经过期；新订阅建立后立即对齐
+	// 一次（首帧快照已返回的情况下只会广播真正的差异）。
+	hub.mu.Lock()
+	if hub.active && !hub.closed && hub.hasSnapshot {
+		hub.scheduleLocked(0)
+	}
+	hub.mu.Unlock()
 }
 
 // stopIfIdle 在最后一路订阅离开后释放 watcher，避免后台空转。

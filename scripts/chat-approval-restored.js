@@ -45,19 +45,32 @@ const profileFor = (origin, key) => {
   if (!chatReady) throw new Error('Chat composer 未出现');
 
   // 2. 在 composer 里显式选 Claude 账号。
-  const account = page.locator('button').filter({ hasText: /OAuth|API Key/ }).first();
+  const account = page.locator('button').filter({ hasText: /QODER|OAuth|API Key|国际站/ }).first();
   await account.click().catch(() => {});
   await page.waitForTimeout(500);
+  const claudeGroup = page.getByText('CLAUDE', { exact: true }).first();
+  if (await claudeGroup.count()) {
+    await claudeGroup.hover().catch(() => {});
+    console.log('CLAUDE_GROUP', 'hover');
+  } else {
+    console.log('CLAUDE_GROUP', 'missing');
+  }
+  await page.waitForTimeout(600);
   console.log('ACCOUNT_CLICK', await clickFirst(['api.deepseek.com']));
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(3000);
+  console.log('AFTER_ACCOUNT', JSON.stringify(await page.evaluate(() => document.body.innerText.slice(-240))));
 
   // 3. 切 WORK，选工作区，再新建会话；此时 selectedAccount 已是 Claude。
-  console.log('WORK_CLICK', await clickFirst(['Work', '工作区项目模式']));
+  await page.keyboard.press('Escape').catch(() => {});
+  const workButton = page.getByText('WORK', { exact: true }).first();
+  await workButton.click().catch(() => {});
+  await page.waitForTimeout(1500);
+  console.log('WORK_CLICK', 'WORK');
   await page.waitForTimeout(1200);
   console.log('WS_CLICK', await clickFirst(['AIH (Local Mac)']));
   await page.waitForTimeout(800);
   console.log('NEW_CLICK', await clickFirst(['新建工作区会话', '新建会话']));
-  await page.waitForSelector('textarea', { timeout: 30000 }).catch(() => {});
+  await page.waitForSelector('textarea', { timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(1200);
 
   console.log('BEFORE', JSON.stringify(await page.evaluate(() => ({

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,8 +33,9 @@ const (
 	maxLoginBodyBytes = 128 * 1024
 )
 
-// rotatedClientSecret 是 Google 轮换后的 Antigravity installed-app secret。
-// 旧 secret 仍被现有客户端接受，所以首次换码遇到 invalid_client 时按顺序重试。
+// rotatedLoginClientSecret 是 Google 轮换前的 Antigravity installed-app secret
+// （对应 Node 的 LEGACY_AGY_OAUTH_CLIENT_SECRET）。当前客户端仍接受它，所以首次
+// 换码遇到 invalid_client 时按顺序重试；变量名保持 client_credential.go 既有引用不变。
 var rotatedLoginClientSecret = "GOC" + "SPX-K58FWR486LdLJ1mLB8sXC4z6qDAf"
 
 // LoginProvider 是 Antigravity consumer OAuth 登录策略（无 PKCE，state 校验）。
@@ -257,17 +258,28 @@ func (flow *loginFlow) exchangeWithSecret(
 		return loginTokens{}, accountauth.ErrProviderRejected, false
 	}
 	if tokens.ExpiresIn <= 0 {
+		// Node: Math.max(1, expiresIn || 3600)；正常响应必带正整数，缺省按 1 小时。
 		tokens.ExpiresIn = 3600
 	}
-	if strings.TrimSpace(tokens.TokenType) == "" {
+	// Node 用 normalizeString(payload.token_type) || 'Bearer'：两端空白要裁掉。
+	tokens.TokenType = strings.TrimSpace(tokens.TokenType)
+	if tokens.TokenType == "" {
 		tokens.TokenType = "Bearer"
 	}
 	return tokens, nil, false
 }
 
-// resolveEmail 先读 ID Token claim，缺失时回落到 OIDC userinfo。
+// resolveEmail 先读 ID Token claim，再读 Access Token 的 JWT claim，最后回落到
+// OIDC userinfo。
+//
+// 与 Node 的 decodeJwtPayloadUnsafe(idToken) || decodeJwtPayloadUnsafe(accessToken)
+// 顺序一致：Google 返回的 access_token 通常是不透明串，但自定义客户端仍可能签发
+// JWT，多一层 claim 解析可以少打一次 userinfo。
 func (flow *loginFlow) resolveEmail(ctx context.Context, tokens loginTokens) (string, error) {
 	if email := emailFromIDToken(tokens.IDToken); email != "" {
+		return email, nil
+	}
+	if email := emailFromIDToken(tokens.AccessToken); email != "" {
 		return email, nil
 	}
 	request, err := http.NewRequestWithContext(
@@ -313,22 +325,31 @@ func (flow *loginFlow) resolveEmail(ctx context.Context, tokens loginTokens) (st
 	return email, nil
 }
 
-// buildArtifacts 生成 decoder 认识的 native_auth_json；id_token 不在快照字段内。
+// buildArtifacts 生成 decoder 认识的 native_auth_json。
+//
+// token 字段与 Node 写入 antigravity-oauth-token 的形状一致：access_token、
+// refresh_token、token_type、expiry（ISO）、expires_at_ms、refreshed_at_ms，
+// Google 返回 id_token 时一并保留（Node 会写进凭据文件并被 gemini 兼容投影读取；
+// 当前 Go 的 decoder/codec 尚未持久化该字段，见切片报告）。
 func (flow *loginFlow) buildArtifacts(tokens loginTokens, email string) ([]byte, error) {
 	now := flow.provider.clock().UTC()
 	expiresAt := now.Add(time.Duration(tokens.ExpiresIn) * time.Second)
+	token := map[string]any{
+		"access_token":    tokens.AccessToken,
+		"refresh_token":   tokens.RefreshToken,
+		"token_type":      tokens.TokenType,
+		"expiry":          expiresAt.Format(time.RFC3339),
+		"expires_at_ms":   expiresAt.UnixMilli(),
+		"refreshed_at_ms": now.UnixMilli(),
+	}
+	if tokens.IDToken != "" {
+		token["id_token"] = tokens.IDToken
+	}
 	native, err := json.Marshal(map[string]any{
 		"email": strings.TrimSpace(email),
 		"oauthToken": map[string]any{
 			"auth_method": "consumer",
-			"token": map[string]any{
-				"access_token":    tokens.AccessToken,
-				"refresh_token":   tokens.RefreshToken,
-				"token_type":      tokens.TokenType,
-				"expiry":          expiresAt.Format(time.RFC3339),
-				"expires_at_ms":   expiresAt.UnixMilli(),
-				"refreshed_at_ms": now.UnixMilli(),
-			},
+			"token":       token,
 		},
 	})
 	if err != nil {
@@ -342,16 +363,25 @@ func (flow *loginFlow) buildArtifacts(tokens loginTokens, email string) ([]byte,
 }
 
 // parseLoginCallback 读取 Google 回调的 code/state；authuser 等附加参数不参与校验。
+//
+// 粘贴形态与 Node 的 parseBrowserCallbackInput + isSameCallbackEndpoint 对齐：
+//   - 完整回调地址：http://localhost:51121/oauth-callback?code=…&state=…
+//   - 只粘查询串：?code=…&state=…（按 redirect 补齐 scheme/host/path）
+//   - 只粘路径：/oauth-callback?code=…&state=…（同上补齐 origin）
+//   - 地址两端空白、尾部 #fragment 都按 Node 的 normalizeString / searchParams 规则忽略。
+//
+// endpoint 仍需与 redirect 完全一致：Google 会把 code 只发给注册过的回调地址，
+// 放过别的目标等于接受一个可能被换码到别处的 code。
 func parseLoginCallback(raw string, expectedRedirect string, expectedState string) (string, error) {
-	if raw == "" || len(raw) > maxLoginBodyBytes || !strings.Contains(raw, "://") {
+	expected, expectedErr := url.Parse(expectedRedirect)
+	if expectedErr != nil || expected.Scheme == "" || expected.Host == "" {
 		return "", accountauth.ErrInvalidCallback
 	}
-	callback, err := url.Parse(raw)
-	expected, expectedErr := url.Parse(expectedRedirect)
-	if err != nil ||
-		expectedErr != nil ||
-		callback.User != nil ||
-		callback.Fragment != "" ||
+	callback, err := normalizeLoginCallback(raw, expected)
+	if err != nil {
+		return "", err
+	}
+	if callback.User != nil ||
 		!strings.EqualFold(callback.Scheme, expected.Scheme) ||
 		!strings.EqualFold(callback.Host, expected.Host) ||
 		callback.Path != expected.Path {
@@ -361,10 +391,15 @@ func parseLoginCallback(raw string, expectedRedirect string, expectedState strin
 	if err != nil {
 		return "", accountauth.ErrInvalidCallback
 	}
-	if values, found := query["state"]; !found || len(values) != 1 || values[0] != expectedState {
+	if values, found := query["state"]; !found || len(values) != 1 || !constantTimeEqual(values[0], expectedState) {
 		return "", accountauth.ErrStateMismatch
 	}
 	if providerError := query.Get("error"); providerError != "" {
+		return "", accountauth.ErrProviderRejected
+	}
+	// Node 的 native OAuth 回调用 error || error_description 判定上游拒绝；
+	// Google 正常只带 error，但协议允许只给 description，这里按同一规则归类。
+	if description := query.Get("error_description"); description != "" {
 		return "", accountauth.ErrProviderRejected
 	}
 	code := query.Get("code")
@@ -374,13 +409,54 @@ func parseLoginCallback(raw string, expectedRedirect string, expectedState strin
 	return code, nil
 }
 
-// emailFromIDToken 读取 ID Token 的 email claim；解析失败按缺失处理。
-func emailFromIDToken(idToken string) string {
-	parts := strings.Split(idToken, ".")
+// normalizeLoginCallback 把三种可粘贴形态归一成绝对 URL。
+func normalizeLoginCallback(raw string, expected *url.URL) (*url.URL, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(trimmed) > maxLoginBodyBytes {
+		return nil, accountauth.ErrInvalidCallback
+	}
+	base := expected.Scheme + "://" + expected.Host + expected.Path
+	switch {
+	case strings.HasPrefix(trimmed, "?"):
+		trimmed = base + trimmed
+	case strings.HasPrefix(trimmed, "/"):
+		trimmed = expected.Scheme + "://" + expected.Host + trimmed
+	case !strings.Contains(trimmed, "://"):
+		// 裸 code 没有 state 可比对，Node 的 native OAuth 路径同样拒绝。
+		return nil, accountauth.ErrInvalidCallback
+	}
+	callback, err := url.Parse(trimmed)
+	if err != nil {
+		return nil, accountauth.ErrInvalidCallback
+	}
+	// Node 只读 URL 的 searchParams，浏览器偶尔带入的 #fragment 不参与判定。
+	callback.Fragment = ""
+	return callback, nil
+}
+
+// constantTimeEqual 避免 state 比较暴露可利用的短路时序。
+func constantTimeEqual(left string, right string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+}
+
+// emailFromIDToken 读取 JWT 的 email claim；refresh.go 也用它解析 ID Token。
+// 登录路径会先用 ID Token、再用 Access Token 调它（Node 的
+// decodeJwtPayloadUnsafe(idToken) || decodeJwtPayloadUnsafe(accessToken)）。
+// 解析失败按缺失处理（Node 同样静默返回 null）。
+func emailFromIDToken(jwt string) string {
+	parts := strings.Split(jwt, ".")
 	if len(parts) != 3 {
 		return ""
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Node 的 Buffer.from(x, 'base64') 接受带补齐的 base64url；JWT 规范不带
+		// 补齐，但自定义客户端可能发 padding，按同一宽容度再试一次。
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+	}
 	if err != nil {
 		return ""
 	}
@@ -397,13 +473,16 @@ func emailFromIDToken(idToken string) string {
 	return strings.TrimSpace(claims.EmailAddress)
 }
 
-// randomState 生成 128 位十六进制 state。
+// randomState 生成 256 位 base64url state。
+//
+// 与 Node 的 createOauthState（base64Url(crypto.randomBytes(32))）保持同一熵与
+// 编码：state 不进入任何上游协议，但格式一致便于两端日志对账。
 func randomState(random io.Reader) (string, error) {
-	var buffer [16]byte
+	var buffer [32]byte
 	if _, err := io.ReadFull(random, buffer[:]); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(buffer[:]), nil
+	return base64.RawURLEncoding.EncodeToString(buffer[:]), nil
 }
 
 // codeLabel 把缺失的上游错误码写成固定占位符，保证日志可读且不含响应正文。

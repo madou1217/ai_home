@@ -229,41 +229,43 @@ func decodeModelCatalogDetail(raw json.RawMessage) (modelCatalogDetail, error) {
 // decodeCatalogAliases 收集 alias/commandModelIds 里的字符串叶子；对象里的展示名会被
 // validCatalogModelID 过滤，不会误注册。
 func decodeCatalogAliases(detail modelCatalogDetail) []string {
+	const maxAliasNodes = 4096
 	out := make([]string, 0)
 	seen := make(map[string]struct{})
-	var collect func(json.RawMessage)
-	collect = func(raw json.RawMessage) {
+	// 一次解码 + 显式栈：旧实现对每个节点重复 json.Unmarshal 成 string/list/map，
+	// 深层嵌套会变成 O(depth²)。这里限制遍历节点数和别名数，避免畸形目录放大 CPU/内存。
+	for _, raw := range []json.RawMessage{detail.Aliases, detail.Alias, detail.CommandModelIDs, detail.CommandModelIDsSnake} {
 		if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return
+			continue
 		}
-		var text string
-		if json.Unmarshal(raw, &text) == nil {
-			if text != "" {
-				if _, exists := seen[text]; !exists {
-					seen[text] = struct{}{}
-					out = append(out, text)
+		var root any
+		if json.Unmarshal(raw, &root) != nil {
+			continue
+		}
+		stack := []any{root}
+		nodes := 0
+		for len(stack) > 0 && nodes < maxAliasNodes && len(out) < accountapp.MaxDiscoveredModelsPerAccount {
+			nodes++
+			value := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			switch typed := value.(type) {
+			case string:
+				if typed != "" {
+					if _, exists := seen[typed]; !exists {
+						seen[typed] = struct{}{}
+						out = append(out, typed)
+					}
 				}
-			}
-			return
-		}
-		var list []json.RawMessage
-		if json.Unmarshal(raw, &list) == nil {
-			for _, item := range list {
-				collect(item)
-			}
-			return
-		}
-		var object map[string]json.RawMessage
-		if json.Unmarshal(raw, &object) == nil {
-			for _, item := range object {
-				collect(item)
+			case []any:
+				stack = append(stack, typed...)
+			case map[string]any:
+				for _, child := range typed {
+					stack = append(stack, child)
+				}
 			}
 		}
 	}
-	collect(detail.Aliases)
-	collect(detail.Alias)
-	collect(detail.CommandModelIDs)
-	collect(detail.CommandModelIDsSnake)
+	sort.Strings(out)
 	return out
 }
 

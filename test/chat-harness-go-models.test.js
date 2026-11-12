@@ -54,7 +54,7 @@ function pendingProbe() {
   return new Promise(() => {});
 }
 
-test('Go 优先：gateway catalog comes from Go effective rows with Go→Node ref translation', async () => {
+test('Go + 快照并集：Go effective 行与 Node 快照都进入 gateway catalog', async () => {
   const state = gatewayState({ [NODE_REF]: ['snapshot-model'] });
   let requestedPath = '';
   let probes = 0;
@@ -85,8 +85,9 @@ test('Go 优先：gateway catalog comes from Go effective rows with Go→Node re
 
   const models = await readModels('zcode', 'gateway');
 
-  // Go 独有账号（无 Node ref）也必须出现在网关目录：账号页能看到，聊天页不能少。
-  assert.deepEqual(models, ['glm-5.3', 'orphan-model']);
+  // Go 独有账号（无 Node ref）与 Node 快照都要出现：账号页是两份来源的并集，
+  // 聊天目录必须同口径，否则不是少 Go 独有账号就是少 Node 独有模型。
+  assert.deepEqual(models, ['glm-5.3', 'orphan-model', 'snapshot-model']);
   assert.equal(requestedPath, ACCOUNT_MODELS_PATH);
   assert.equal(probes, 0);
 });

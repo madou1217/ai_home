@@ -146,14 +146,18 @@ type LifecycleView struct {
 }
 
 type responseView struct {
-	OK             bool           `json:"ok"`
-	Platform       string         `json:"platform"`
-	ProbedAt       int64          `json:"probedAt"`
-	DerivedBy      string         `json:"derivedBy"`
-	Tools          []ToolView     `json:"tools"`
-	Resources      []ResourceView `json:"resources"`
-	AvailableCount int            `json:"availableCount"`
-	Total          int            `json:"total"`
+	OK             bool                       `json:"ok"`
+	Platform       string                     `json:"platform"`
+	ProbedAt       int64                      `json:"probedAt"`
+	DerivedBy      string                     `json:"derivedBy"`
+	Tools          []ToolView                 `json:"tools"`
+	Resources      []ResourceView             `json:"resources"`
+	RuntimePlugins []RuntimePluginView        `json:"runtimePlugins"`
+	Runtimes       map[string]RuntimeView     `json:"runtimes"`
+	Environments   map[string]EnvironmentView `json:"environments"`
+	InstalledCount int                        `json:"installedCount"`
+	AvailableCount int                        `json:"availableCount"`
+	Total          int                        `json:"total"`
 }
 
 type errorView struct {
@@ -186,6 +190,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			available++
 		}
 	}
+	runtimePlugins, runtimes, environments := handler.buildRuntimeCompatibility(request.Context(), tools, platform)
 	writeJSON(response, http.StatusOK, responseView{
 		OK:             true,
 		Platform:       platform,
@@ -193,6 +198,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		DerivedBy:      derivedByGoPartial,
 		Tools:          tools,
 		Resources:      buildResourceViews(platform, tools),
+		RuntimePlugins: runtimePlugins,
+		Runtimes:       runtimes,
+		Environments:   environments,
+		InstalledCount: available,
 		AvailableCount: available,
 		Total:          len(tools),
 	})

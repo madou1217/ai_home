@@ -363,3 +363,33 @@ func TestResourcesShapeMatchesNode(t *testing.T) {
 		}
 	}
 }
+func TestRuntimeCompatibilityBlocks(t *testing.T) {
+	handler := newHandler(t, Dependencies{
+		HostHomeDir: t.TempDir(),
+		LookPath: fakeLookPath(map[string]string{
+			"node": "/fake/node", "python3": "/fake/python3", "rustc": "/fake/rustc",
+			"npm": "/fake/npm", "pip3": "/fake/pip3", "cargo": "/fake/cargo",
+		}),
+		RunVersion: fakeRunner{outputs: map[string]string{
+			"/fake/node": "v22.21.0", "/fake/python3": "Python 3.11.9",
+			"/fake/rustc": "rustc 1.99.1", "/fake/npm": "10.9.4",
+			"/fake/pip3": "pip 24.0 from /fake", "/fake/cargo": "cargo 1.99.1",
+		}}.run,
+	})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path, nil))
+	payload := decodeResponse(t, recorder)
+	if len(payload.RuntimePlugins) != 5 {
+		t.Fatalf("runtimePlugins = %d", len(payload.RuntimePlugins))
+	}
+	for _, id := range []string{"node", "python", "rust", "go", "git"} {
+		if _, ok := payload.Runtimes[id]; !ok {
+			t.Fatalf("缺少 runtime %s", id)
+		}
+	}
+	for _, id := range []string{"node", "python"} {
+		if _, ok := payload.Environments[id]; !ok {
+			t.Fatalf("缺少 environment %s", id)
+		}
+	}
+}

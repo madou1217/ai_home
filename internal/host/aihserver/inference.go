@@ -34,7 +34,11 @@ var errInvalidInferenceComposition = errors.New("生产推理组合依赖无效"
 const (
 	// inferenceHTTPTimeout 是上游推理客户端的超时。http.Client.Timeout 覆盖到响应
 	// 正文读完，所以它同时是流式推理的绝对上限，必须与流总时长兜底同量级（见 G3）。
-	inferenceHTTPTimeout    = inferenceapi.StreamTotalTimeout
+	inferenceHTTPTimeout = inferenceapi.StreamTotalTimeout
+	// agyFirstByteTimeout 只限制「等到响应头」的时间，不限制流式正文长度。
+	// agy 池里偶发某个账号卡住不回首包；共享客户端没有首包超时，单次会吃满
+	// 30s 的重试预算，剩下账号来不及接管。12s 内不回首包就换号。
+	agyFirstByteTimeout     = 12 * time.Second
 	modelRefreshTimeout     = 20 * time.Second
 	modelRefreshBaseBackoff = time.Second
 	modelRefreshMaxBackoff  = time.Minute
@@ -158,7 +162,21 @@ func newInferenceComposition(
 	}
 	claudeAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
 	claudeAdapter.ObserveEffortLadders(dependencies.effortLadders)
-	agyAdapter, err := agycodeassist.NewAdapterWithWireModels(client, dependencies.clock, dependencies.agyModelWires)
+	agyClient := client
+	if dependencies.httpClient == nil {
+		agyTransport := newUpstreamTransport()
+		agyTransport.ResponseHeaderTimeout = agyFirstByteTimeout
+		composition.closers = append(
+			composition.closers,
+			idleConnectionCloser{transport: agyTransport},
+		)
+		agyClient = &http.Client{
+			Transport:     wrapOutboundTransport(agyTransport),
+			Timeout:       inferenceHTTPTimeout,
+			CheckRedirect: rejectOAuthRedirect,
+		}
+	}
+	agyAdapter, err := agycodeassist.NewAdapterWithWireModels(agyClient, dependencies.clock, dependencies.agyModelWires)
 	if err != nil {
 		return nil, err
 	}

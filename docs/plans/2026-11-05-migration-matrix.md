@@ -253,7 +253,7 @@
 
 | Provider | 现状 | 卡住的能力 | 解除条件 |
 | --- | --- | --- | --- |
-| agy | 6 个账号 `enabled=0`，token 自 2026-10-24 过期（plan §9） | 额度、模型、relay、登录全部无法真机验收 | 重新授权一个 agy 账号 |
+| agy | Go 库 1 个账号 `enabled=1`（2026-11-12 复核）；`account_models` 已刷新 19 条（含 tier/alias），额度快照正常。§5.1 旧结论「6 个账号全 disabled、token 过期」已过时。 | relay 真机请求、网关别名请求 | 账号保持可用；server 启动后做一次带 key 的别名请求 |
 | qoder | 唯一账号是 Free（`total=0`，落 `notApplicable`） | 付费档额度口径、relay 线协议 | 换付费账号，且每轮只打 1–2 次 |
 | cline | 两个账号 `enabled=0`（plan §9） | 额度、模型刷新无真机 | 启用一个 cline 账号 |
 | kimi / grok | 本机无账号（plan §9） | 额度、模型目录无法验收 | 导入账号（grok 需 API Key 才能发现目录） |
@@ -306,6 +306,7 @@
 
 - 本矩阵按**代码路径与接线**判定，不以单测通过或计划文档的「已完成」字样替代。
 - 未做真机调用；账号状态引用 `docs/plans/2026-11-04-node-go-merge.md` §9 的既有结论，未重新读库核对。
+- 2026-11-12 的 agy 复核例外：重新读了 `aih.db`（`accounts` / `account_models` / `account_usage_snapshots`）与 `run/agy-model-wires.json`，并跑了 `go test ./internal/adapters/agy/codeassist/...`；未启动服务，网关 200/401 与目录差集仍待复验。
 - Node 的 relay 判定以 `provider-protocol-routing.js` 与各 `*-transport.js` 的存在为准；通用网关 `upstream-endpoints-transport-general.js` 覆盖未单列协议的 Provider。
 - 若后续新增/删除 Provider 适配器，本表需要同步更新；建议只改对应行，并在提交说明里写明「矩阵哪一格变了」。
 
@@ -555,4 +556,28 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **Kimi/Codex 当前状态**：协议与代码已接入，但「真机未验证」；不得在交付说明中写成已验证。
 - **未完成缺口**：Chat 切模型能力快照已用 esbuild 加载真实前端纯函数验证逻辑（relay 限制 → /plan/confirm 收起，切回恢复）；Playwright 已装并可启动 Chromium；真实 Chat WORK 会话目视通过：审批菜单显示 Approve for me / Plan mode 禁用并给出「Antigravity CLI 没有权限确认通道」，Full access 可用；已通过账号菜单切到 Claude（deepseek-flash，运行时实时已连接）；审批菜单恢复为 Approve for me / Plan mode / Full access，无禁用原因；脚本已改为先等已有会话 textarea，未就绪才新建；Playwright 已用 `[data-flip-key^="session-"]` 固定会话、`button[aria-label="新建工作区会话"]` 新建 WORK 会话；切到 Claude 后审批菜单三项 `.ant-dropdown-menu-item` 均为 disabled=false，DOM 断言通过；账号删除的桌面进程/keychain 已用假进程与真实 Go 投影/跨语言清理测试验证，但未在真实用户桌面进程上做破坏性 E2E。
 - 约束：WebUI 不恢复轮询；SSE 断线只显示重连/离线，不再用短轮询兜底。
+
+## agy 别名 / key / 网关验证状态（2026-11-12）
+
+> 复核时间：2026-11-12 14:05（本机）。只读代码、`aih.db` 与 `run/agy-model-wires.json`；未启动/重启服务，未做真机推理。
+> 术语：**alias** = agy 目录里的公开别名/档位 ID；**key** = 网关客户端 key（`AIH_SERVER_API_KEY` / `AIH_SERVER_MANAGEMENT_KEY`）与 agy 转发表键；**gateway** = `/v1/models` 与推理前门。
+
+| 面 | 当前事实 | 证据 | 判定 |
+| --- | --- | --- | --- |
+| 别名展开（alias） | Go `codeassist.decodeModelCatalog` 除 `tieredModelIds` 外，解析 `aliases` / `alias` / `commandModelIds` / `command_model_ids`，并把 `*-tiered` 基座补出 `-high/-medium/-low`；畸形节点、嵌套深度与数量上限都有测试。 | `cfcdbc0e`、`17f87941`、`44d148c3`；`go test ./internal/adapters/agy/codeassist/...` 通过（2026-11-12）。 | 代码与单测已对齐 |
+| 目录落库 | 唯一活跃 agy 账号（`enabled=1`）的 `account_models` 在 2026-11-12 13:53:44 刷新为 19 条，含 `gemini-3.8-flash-{tiered,high,medium,low}` 与 `claude-{opus,sonnet}-5-5-{high,medium,low}`；额度快照 14:01:58 正常（`agy_fetch_available_models`，plan_type=ultra）。 | `aih.db` 的 `accounts` / `account_models` / `account_usage_snapshots`。 | 真机目录已落库 |
+| key / 转发表 | `run/agy-model-wires.json` 已按账号落盘（0600），8 个历史 ref 的映射全是 `{}`。本轮真机目录只触发 `*-tiered` 后缀补齐，档位 ID 直接发上游；`aliases`/`commandModelIds` → wire 的映射分支没有被真实上游数据命中。 | 文件内容 + `model_discovery.go` 的 `aliasesToWire` 分支。 | 转发表机制已接线；「别名→wire 改写」只有单测，不能记为真机已验证 |
+| 网关 key | `/v1/models` 的 `gateway.models.list` 仍是 `go_owned`、`blockers: []`；key 仍从运行中的 Go 进程环境读取，文档不保存值。agy 的 `authOptions` 只有 OAuth（Google 直连 / native-cli），没有 API Key 模式；这里的 key 指网关客户端 key，不是 agy 凭据。 | `contracts/route-ownership/manifest.json`、`contracts/providers/manifest.json`；本文 §3 第 8 条。 | 所有权未变；本轮 9527 未监听（连接被拒），没有重跑带 key 的 200/401 |
+| 网关目录 | agy 在 Node 侧是 `goOwnedModels('agy')`，只读 Go 的 `account_models`，因此 alias/tier 展开会随同源投影进入 `/v1/models`，Node 不需要再补别名表。 | `lib/providers/defs/agy.js`。 | 结构上同源；但 2026-11-06 的 Node 215 / Go 215 差集早于本轮 alias 展开，数量已变，不能继续引用为当前证据 |
+
+**下一次网关复验（server 启动后）**
+
+1. `HOME=/Users/model aih server restart`（必须用真实 HOME；沙箱 HOME 会顶掉真实 launchd 任务）。
+2. 用 gateway key 拉 `GET /v1/models`，确认 4 个 `gemini-3.8-flash-*` 与 6 个 `claude-*-5-5-*` 出现在 `data[].id`。
+3. 跑 `node scripts/compare-model-catalog.js --go <go-url> --allow-node-only gemini`，退出码 0 才算「两端目录一致」。
+4. 用档位/别名 ID（如 `gemini-3.8-flash-low`）发一次 `/v1/chat/completions`（或 agy canonical 入口），确认由 Go 承接、上游 200；结果落在 `usage_ledger` / `account_outcomes` 后再更新本节。
+5. 若上游真实返回 `aliases`/`commandModelIds`，复查 `run/agy-model-wires.json` 对应账号映射非空；仍为空则说明该字段在当前套餐不可见，不是代码回归。
+
+**当前边界**：第 2–4 步未做（服务未运行），所以本节只证明「目录/额度真机恢复 + 别名解析单测通过」，不证明「网关级别名请求已通过」。
+
 

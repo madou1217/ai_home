@@ -120,6 +120,7 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 		return nil, nil, ErrInvalidUpstreamResponse
 	}
 	seen := make(map[string]struct{}, len(document.Models))
+	aliasesToWire := make(map[string]string)
 	for modelID, rawDetail := range document.Models {
 		if !validCatalogModelID(modelID) {
 			// Antigravity 的完整目录会混入 chat_/tab_/内部枚举和占位模型。
@@ -148,6 +149,15 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 			}
 			seen[tieredID] = struct{}{}
 		}
+		// 上游把 high/medium/low 这类档位写在 detail 的别名/命令别名里，
+		// 它们是可请求的公开 ID，必须进入目录并转回真实 wire model。
+		for _, alias := range decodeCatalogAliases(detail) {
+			if !validCatalogModelID(alias) || alias == modelID {
+				continue
+			}
+			seen[alias] = struct{}{}
+			aliasesToWire[alias] = modelID
+		}
 	}
 	wires, err := decodeDeprecatedModelWires(document, seen)
 	if err != nil {
@@ -155,6 +165,23 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 	}
 	for publicID := range wires {
 		seen[publicID] = struct{}{}
+	}
+	for alias, wireID := range aliasesToWire {
+		if _, exists := wires[alias]; !exists {
+			wires[alias] = wireID
+		}
+	}
+	// 上游 fetchAvailableModels 只给 *-tiered 基座，agy CLI 把 high/medium/low 作为
+	// 可直接请求的档位 ID 暴露；Go 迁移后不能只留基座，否则网关会报模型不存在。
+	// 档位 ID 直接发给 agy 即可，不做 wire 改写。
+	for modelID := range seen {
+		if !strings.HasSuffix(modelID, "-tiered") {
+			continue
+		}
+		base := strings.TrimSuffix(modelID, "-tiered")
+		for _, tier := range []string{"high", "medium", "low"} {
+			seen[base+"-"+tier] = struct{}{}
+		}
 	}
 	models := make([]string, 0, len(seen))
 	for modelID := range seen {
@@ -176,8 +203,12 @@ type modelCatalogDocument struct {
 // modelCatalogDetail 只建模参与路由的 tiered ids。模型描述、能力标记等上游
 // metadata 不影响路由事实，新增字段应前向兼容，不能让整个账号从可用池消失。
 type modelCatalogDetail struct {
-	TieredModelIDs      json.RawMessage `json:"tieredModelIds,omitempty"`
-	TieredModelIDsSnake json.RawMessage `json:"tiered_model_ids,omitempty"`
+	TieredModelIDs       json.RawMessage `json:"tieredModelIds,omitempty"`
+	TieredModelIDsSnake  json.RawMessage `json:"tiered_model_ids,omitempty"`
+	Aliases              json.RawMessage `json:"aliases,omitempty"`
+	Alias                json.RawMessage `json:"alias,omitempty"`
+	CommandModelIDs      json.RawMessage `json:"commandModelIds,omitempty"`
+	CommandModelIDsSnake json.RawMessage `json:"command_model_ids,omitempty"`
 }
 
 func decodeModelCatalogDetail(raw json.RawMessage) (modelCatalogDetail, error) {
@@ -186,9 +217,54 @@ func decodeModelCatalogDetail(raw json.RawMessage) (modelCatalogDetail, error) {
 		return modelCatalogDetail{}, ErrInvalidUpstreamResponse
 	}
 	return modelCatalogDetail{
-		TieredModelIDs:      fields["tieredModelIds"],
-		TieredModelIDsSnake: fields["tiered_model_ids"],
+		TieredModelIDs:       fields["tieredModelIds"],
+		TieredModelIDsSnake:  fields["tiered_model_ids"],
+		Aliases:              fields["aliases"],
+		Alias:                fields["alias"],
+		CommandModelIDs:      fields["commandModelIds"],
+		CommandModelIDsSnake: fields["command_model_ids"],
 	}, nil
+}
+
+// decodeCatalogAliases 收集 alias/commandModelIds 里的字符串叶子；对象里的展示名会被
+// validCatalogModelID 过滤，不会误注册。
+func decodeCatalogAliases(detail modelCatalogDetail) []string {
+	out := make([]string, 0)
+	seen := make(map[string]struct{})
+	var collect func(json.RawMessage)
+	collect = func(raw json.RawMessage) {
+		if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return
+		}
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			if text != "" {
+				if _, exists := seen[text]; !exists {
+					seen[text] = struct{}{}
+					out = append(out, text)
+				}
+			}
+			return
+		}
+		var list []json.RawMessage
+		if json.Unmarshal(raw, &list) == nil {
+			for _, item := range list {
+				collect(item)
+			}
+			return
+		}
+		var object map[string]json.RawMessage
+		if json.Unmarshal(raw, &object) == nil {
+			for _, item := range object {
+				collect(item)
+			}
+		}
+	}
+	collect(detail.Aliases)
+	collect(detail.Alias)
+	collect(detail.CommandModelIDs)
+	collect(detail.CommandModelIDsSnake)
+	return out
 }
 
 func decodeTieredModelIDs(raw json.RawMessage) ([]string, error) {

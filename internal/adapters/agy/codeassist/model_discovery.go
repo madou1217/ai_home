@@ -3,8 +3,10 @@ package codeassist
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -52,13 +54,12 @@ func (source *ModelCatalogSource) DiscoverModels(
 	if source == nil || source.client == nil || ctx == nil || !valid || auth == nil {
 		return nil, ErrInvalidDependencies
 	}
-	project, err := loadProject(ctx, source.client, auth)
-	if err != nil {
-		return nil, err
-	}
+	// Node 对 loadCodeAssist 失败是 try/catch 后继续：project 为空也照常
+	// fetchAvailableModels。一次 onboarding 抖动不该让整个账号从模型目录消失。
+	project, _ := loadProject(ctx, source.client, auth)
 	payload, _ := json.Marshal(map[string]string{
 		"project":   project,
-		"requestId": "agent/models/goaih",
+		"requestId": newModelRequestID(),
 	})
 	request, err := http.NewRequestWithContext(
 		ctx,
@@ -100,6 +101,21 @@ func (source *ModelCatalogSource) DiscoverModels(
 		}
 	}
 	return models, nil
+}
+
+// newModelRequestID 生成随机 UUID 形态的请求 id（Node 用 crypto.randomUUID）。
+// 随机源不可用时退回固定值，保持请求仍可发出。
+func newModelRequestID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "agent/models/goaih"
+	}
+	value[6] = (value[6] & 0x0f) | 0x40
+	value[8] = (value[8] & 0x3f) | 0x80
+	return fmt.Sprintf(
+		"agent/models/%x-%x-%x-%x-%x",
+		value[0:4], value[4:6], value[6:8], value[8:10], value[10:16],
+	)
 }
 
 func decodeModelIDs(payload []byte) ([]string, error) {

@@ -1,6 +1,7 @@
 package webuiproviderauthsourcesapi
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,6 +26,10 @@ const (
 	reasonClientUnavailable = "client_unavailable"
 	// reasonUnavailable 表示来源自身不可用（非客户端原因）。
 	reasonUnavailable = "unavailable"
+	// reasonClientNotInstalled 表示客户端没装但这个平台有安装方案（界面据此给安装入口）。
+	reasonClientNotInstalled = "client_not_installed"
+	// reasonAccountAlreadyRegistered 表示本机登录态已经在账号池里（界面不再显示导入入口）。
+	reasonAccountAlreadyRegistered = "account_already_registered"
 
 	// kiroIDETokenRelative 是 Kiro IDE 自己写的登录态文件（相对宿主 HOME）。
 	kiroIDETokenRelative = ".aws/sso/cache/kiro-auth-token.json"
@@ -58,6 +63,12 @@ type sourceDescriptor struct {
 	DirectImport    bool
 	Description     string
 	Probe           probe
+	// PluginLogin 只对插件来源为真：登录任务走插件的 /plugin-login。
+	PluginLogin bool
+	// Identity 是插件自报的账号指纹；内置来源恒为空（它们的指纹由宿主端口现算）。
+	Identity string
+	// Availability 非 nil 表示可用性由声明方自报（插件），不再走 probe 探测。
+	Availability *bool
 }
 
 // declaredSources 是与 Node 描述符逐条对齐的特殊来源。
@@ -173,10 +184,17 @@ func defaultHostAuthMode(definition providers.Definition) string {
 //
 // 排序与分组语义与 Node 一致：① 可用优先 → ② 本机来源优先 → ③ id 稳定序；
 // 分组按排序后首次出现的顺序，界面据此决定先推哪个认证方式。
-func (handler *Handler) describeMethods(provider string, definition providers.Definition, descriptors []sourceDescriptor) []methodView {
+func (handler *Handler) describeMethods(
+	ctx context.Context,
+	provider string,
+	definition providers.Definition,
+	descriptors []sourceDescriptor,
+) []methodView {
+	// 已入库指纹每个请求只取一次：每个来源都单独查一遍账号池会把一次只读请求放大成 N 次。
+	identities := handler.existingIdentities(ctx, provider)
 	views := make([]sourceView, 0, len(descriptors))
 	for _, descriptor := range descriptors {
-		views = append(views, handler.describe(provider, definition, descriptor))
+		views = append(views, handler.describe(ctx, provider, definition, descriptor, identities))
 	}
 	sort.SliceStable(views, func(left, right int) bool {
 		return compareSources(views[left], views[right]) < 0
@@ -210,11 +228,42 @@ func (handler *Handler) describeMethods(provider string, definition providers.De
 }
 
 // describe 判定单个来源的可用性并生成视图。
-func (handler *Handler) describe(provider string, definition providers.Definition, descriptor sourceDescriptor) sourceView {
-	available := handler.available(provider, definition, descriptor)
+//
+// 判定顺序与 Node 的 describeSource 逐条一致：
+//
+//	appAvailable  = 客户端登录态在不在（插件来源是插件自报）
+//	installable   = 客户端不可用、且声明了客户端形态、且这个平台有安装方案
+//	alreadyImported = 客户端可用、能算出指纹、且指纹已在账号池里
+//	available     = appAvailable && !alreadyImported
+//
+// 注意 installable 用的是 appAvailable 而不是最终的 available：一个「装了就能导入」
+// 的来源即使当前已被粘贴 token 兜底，也要保留安装提示（Node 的注释写明了这一点）。
+func (handler *Handler) describe(
+	ctx context.Context,
+	provider string,
+	definition providers.Definition,
+	descriptor sourceDescriptor,
+	identities map[string]struct{},
+) sourceView {
+	appAvailable := handler.available(provider, definition, descriptor)
+	installable := !appAvailable && descriptor.RequiresApp != "" &&
+		handler.canInstall(provider, definition, descriptor.RequiresApp)
+	alreadyImported := false
+	if appAvailable {
+		// 指纹读不出来时不做判断（fail-open）：宁可多给一个导入入口，
+		// 也不能把可用的本机登录态误标成「已入库」。
+		if identity := handler.sourceIdentitySeed(ctx, provider, descriptor); identity != "" {
+			_, alreadyImported = identities[identity]
+		}
+	}
+	available := appAvailable && !alreadyImported
 	reason := ""
 	switch {
 	case available:
+	case alreadyImported:
+		reason = reasonAccountAlreadyRegistered
+	case installable:
+		reason = reasonClientNotInstalled
 	case descriptor.RequiresApp != "":
 		reason = reasonClientUnavailable
 	default:
@@ -227,16 +276,144 @@ func (handler *Handler) describe(provider string, definition providers.Definitio
 		RequiresApp:     descriptor.RequiresApp,
 		AuthMode:        descriptor.AuthMode,
 		Handler:         descriptor.Handler,
+		PluginLogin:     descriptor.PluginLogin,
 		DirectImport:    descriptor.DirectImport,
 		Description:     descriptor.Description,
 		Available:       available,
-		// installable / alreadyImported 恒为 false，原因见包注释的三块缺口。
-		Reason: reason,
+		Installable:     installable,
+		AlreadyImported: alreadyImported,
+		Reason:          reason,
 	}
 }
 
+// existingIdentities 取该 Provider 已入库账号的指纹集合；没有端口或读失败都返回空集合，
+// 调用方据此退化成「不做去重判断」——与 Node 收集指纹失败时的行为一致。
+func (handler *Handler) existingIdentities(ctx context.Context, provider string) map[string]struct{} {
+	if handler.identities == nil {
+		return nil
+	}
+	identities, err := handler.identities(ctx, provider)
+	if err != nil {
+		return nil
+	}
+	return identities
+}
+
+// sourceIdentitySeed 返回来源当前登录态的身份指纹；读不出来返回空串。
+func (handler *Handler) sourceIdentitySeed(ctx context.Context, provider string, descriptor sourceDescriptor) string {
+	// 插件来源的指纹由插件自报，宿主不再读一遍凭据。
+	if descriptor.Identity != "" {
+		return strings.TrimSpace(descriptor.Identity)
+	}
+	if handler.sourceIdentity == nil || descriptor.Kind != kindLocal {
+		return ""
+	}
+	identity, ok := handler.sourceIdentity(ctx, provider, descriptor.ID)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(identity)
+}
+
+// canInstall 回答「这个平台有没有该 Provider 这一类客户端的安装方案」。
+func (handler *Handler) canInstall(provider string, definition providers.Definition, app string) bool {
+	if handler.canInstallOverride != nil {
+		return handler.canInstallOverride(provider, app)
+	}
+	return installableFromContract(definition, app)
+}
+
+// installableFromContract 是 Go 侧的安装方案**声明**判定。
+//
+// Node 问的是安装器注册表的 resolveInstallPlans / installCli 是否存在；Go 没有注册表，
+// 只能看 Provider 合同里声明的安装落点，口径仍然保守：
+//   - cli：合同声明了可分发到本机的包（Definition.CLI.Package）才算有方案——
+//     没有包名的 CLI 无法通过 aih 自己的安装链路装上，直接说「可安装」会骗用户去点。
+//   - desktop：合同为该平台声明了至少一个安装落点（DesktopClient.<platform>.InstallPaths）。
+//   - 其它形态或平台没有声明：不可安装。
+//
+// 判定失败一律当作不可安装（与 Node 安装器抛错时的保守回答一致）。
+func installableFromContract(definition providers.Definition, app string) bool {
+	switch app {
+	case appCLI:
+		return definition.CLI != nil && strings.TrimSpace(definition.CLI.Package) != ""
+	case appDesktop:
+		return desktopInstallDeclared(definition, runtime.GOOS)
+	default:
+		return false
+	}
+}
+
+// desktopInstallDeclared 判该平台的桌面客户端是否声明了安装落点。
+func desktopInstallDeclared(definition providers.Definition, goos string) bool {
+	if definition.CLI == nil || definition.CLI.DesktopClient == nil {
+		return false
+	}
+	platform := desktopPlatform(definition.CLI.DesktopClient, goos)
+	if platform == nil {
+		return false
+	}
+	for _, path := range platform.InstallPaths {
+		if strings.TrimSpace(path) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// desktopPlatform 按运行平台取桌面客户端声明。
+func desktopPlatform(client *providers.DesktopClient, goos string) *providers.DesktopPlatform {
+	switch goos {
+	case "darwin":
+		return client.MacOS
+	case "windows":
+		return client.Windows
+	case "linux":
+		return client.Linux
+	default:
+		return nil
+	}
+}
+
+// pluginDescriptors 把外部账号插件的来源声明翻成内置来源同形的描述符。
+func (handler *Handler) pluginDescriptors(ctx context.Context, provider string) []sourceDescriptor {
+	if handler.pluginSources == nil {
+		return nil
+	}
+	declared, err := handler.pluginSources(ctx, provider)
+	if err != nil || len(declared) == 0 {
+		return nil
+	}
+	descriptors := make([]sourceDescriptor, 0, len(declared))
+	for _, source := range declared {
+		id := strings.TrimSpace(source.ID)
+		if id == "" {
+			continue
+		}
+		available := source.Available
+		descriptors = append(descriptors, sourceDescriptor{
+			ID:              id,
+			Kind:            source.Kind,
+			ClientDependent: source.ClientDependent,
+			RequiresApp:     source.RequiresApp,
+			AuthMode:        source.AuthMode,
+			PluginLogin:     source.PluginLogin,
+			DirectImport:    source.DirectImport,
+			Description:     source.Description,
+			Identity:        strings.TrimSpace(source.Identity),
+			Availability:    &available,
+		})
+	}
+	return descriptors
+}
+
 // available 只做存在性判断，不读凭据内容、不启动进程。
+//
+// 插件来源的可用性由插件自报（插件才知道宿主登录态与设备环境），宿主不猜。
 func (handler *Handler) available(provider string, definition providers.Definition, descriptor sourceDescriptor) bool {
+	if descriptor.Availability != nil {
+		return *descriptor.Availability
+	}
 	switch descriptor.Probe {
 	case probeHostArtifacts:
 		return handler.hostAuthArtifactsPresent(provider)

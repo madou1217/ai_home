@@ -543,8 +543,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建重新认证接口失败: %w", err)
 	}
 
+	// 认证来源链：installable 由 Go 按 Provider 合同的安装声明判定；alreadyImported 需要
+	// 两侧身份指纹，端口在这里接到账号存储与官方 artifact 读取器上（见同目录
+	// webuiproviderauthsources_ports.go）。插件来源仍归 Node 插件运行时，端口留空并由
+	// 响应的 unfilledFields 显式声明。
 	authSources, err := webuiproviderauthsourcesapi.NewHandler(webuiproviderauthsourcesapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+		ExistingIdentities:  providerAuthIdentities(dependencies.Store),
+		LocalSourceIdentity: providerLocalAuthIdentity(dependencies.HostHomeDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 Provider 授权来源接口失败: %w", err)

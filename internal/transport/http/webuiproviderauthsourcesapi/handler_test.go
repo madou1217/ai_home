@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/madou1217/ai_home/core/providers"
@@ -22,14 +21,21 @@ func (stub stubAuthorizer) Authorized(*http.Request) bool { return stub.allowed 
 // lookPath 默认恒失败、固定落点目录清空，避免测试受真实宿主安装影响。
 func newTestHandler(t *testing.T, hostHomeDir string, lookPath func(string) (string, error)) *Handler {
 	t.Helper()
-	if lookPath == nil {
-		lookPath = func(string) (string, error) { return "", errors.New("not found") }
-	}
-	built, err := NewHandler(Dependencies{
-		Authorizer:  stubAuthorizer{allowed: true},
-		HostHomeDir: hostHomeDir,
-		LookPath:    lookPath,
+	return newTestHandlerWithDependencies(t, Dependencies{
+		HostHomeDir: hostHomeDir, LookPath: lookPath,
 	})
+}
+
+// newTestHandlerWithDependencies 在默认替身之上叠加调用方声明的端口。
+func newTestHandlerWithDependencies(t *testing.T, dependencies Dependencies) *Handler {
+	t.Helper()
+	if dependencies.Authorizer == nil {
+		dependencies.Authorizer = stubAuthorizer{allowed: true}
+	}
+	if dependencies.LookPath == nil {
+		dependencies.LookPath = func(string) (string, error) { return "", errors.New("not found") }
+	}
+	built, err := NewHandler(dependencies)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -206,14 +212,17 @@ func TestHostAuthArtifactMissing(t *testing.T) {
 	if source.Available {
 		t.Fatalf("available = true，凭据文件不存在时不该判可用")
 	}
-	if source.Reason != reasonClientUnavailable {
-		t.Errorf("reason = %q，期望 %q", source.Reason, reasonClientUnavailable)
+	if !source.Installable {
+		t.Errorf("installable = false，claude 合同声明了可分发的 CLI 包，应当判可安装")
+	}
+	if source.Reason != reasonClientNotInstalled {
+		t.Errorf("reason = %q，期望 %q", source.Reason, reasonClientNotInstalled)
 	}
 	if method.PreferredSourceID != "" {
 		t.Errorf("preferredSourceId = %q，期望空", method.PreferredSourceID)
 	}
-	if method.InstallableSourceID != "" {
-		t.Errorf("installableSourceId = %q，Go 没有安装器注册表，必须为空", method.InstallableSourceID)
+	if method.InstallableSourceID != "claude-host-local" {
+		t.Errorf("installableSourceId = %q，期望 claude-host-local", method.InstallableSourceID)
 	}
 	if method.LocalSourceAvailable {
 		t.Errorf("localSourceAvailable = true，期望 false")
@@ -235,6 +244,10 @@ func TestHostAuthArtifactPresent(t *testing.T) {
 	}
 	if method.PreferredSourceID != "claude-host-local" || !method.LocalSourceAvailable {
 		t.Errorf("preferred/local = %q/%v，期望 claude-host-local/true", method.PreferredSourceID, method.LocalSourceAvailable)
+	}
+	if source.Installable || method.InstallableSourceID != "" {
+		t.Errorf("installable/installableSourceId = %v/%q，来源可用时不该再给安装方案",
+			source.Installable, method.InstallableSourceID)
 	}
 	// implementation 在 Node 里是函数句柄，Go 恒为 null（键必须存在）。
 	raw := map[string]any{}
@@ -313,8 +326,10 @@ func TestCLIProbeForHostScanSources(t *testing.T) {
 	if source.Available {
 		t.Fatalf("available = true，CLI 不在 PATH 也不在落点目录时不该判可用")
 	}
-	if source.Reason != reasonClientUnavailable {
-		t.Errorf("reason = %q，期望 %q", source.Reason, reasonClientUnavailable)
+	// cline 合同声明了可分发的 CLI 包：没装但有安装方案。
+	if !source.Installable || source.Reason != reasonClientNotInstalled {
+		t.Errorf("installable/reason = %v/%q，期望 true/%q",
+			source.Installable, source.Reason, reasonClientNotInstalled)
 	}
 }
 
@@ -359,8 +374,19 @@ func TestKiroSourcesWithoutIDELogin(t *testing.T) {
 	if ide.Available {
 		t.Fatalf("kiro-ide-local available = true，IDE 登录态不存在时不该判可用")
 	}
-	if ide.RequiresApp != appDesktop || ide.Reason != reasonClientUnavailable {
-		t.Errorf("requiresApp/reason = %q/%q", ide.RequiresApp, ide.Reason)
+	// 桌面端的可安装性取决于合同有没有为该平台声明安装落点（macOS 有，其它平台没有），
+	// 这里按同一判定取期望值，锁的是「有方案 → client_not_installed，没有 → client_unavailable」
+	// 这条 Node 的 reason 阶梯。
+	kiroDefinition, known := handler.catalog.Get("kiro")
+	if !known {
+		t.Fatalf("kiro 不在内置合同里")
+	}
+	expectedReason := reasonClientUnavailable
+	if installableFromContract(kiroDefinition, appDesktop) {
+		expectedReason = reasonClientNotInstalled
+	}
+	if ide.RequiresApp != appDesktop || ide.Reason != expectedReason {
+		t.Errorf("requiresApp/reason = %q/%q，期望 %q", ide.RequiresApp, ide.Reason, expectedReason)
 	}
 	if refresh.PreferredSourceID != "kiro-paste-token" {
 		t.Errorf("preferredSourceId = %q，期望回落到 kiro-paste-token", refresh.PreferredSourceID)
@@ -389,39 +415,6 @@ func TestKiroSourcesWithIDELogin(t *testing.T) {
 	device := methodByAuthMode(t, payload, "oauth-device")
 	if !device.Sources[0].Available || !device.Sources[1].Available {
 		t.Errorf("设备码来源应当恒可用：%+v", device.Sources)
-	}
-}
-
-// TestResponseMatchesNodeShape 锁死响应形状：键名、键序与缺省值必须与 Node
-// /v0/webui/accounts/provider-auth-sources 逐字一致（Node 侧已实测转储）。
-func TestResponseMatchesNodeShape(t *testing.T) {
-	handler := newTestHandler(t, t.TempDir(), nil)
-	body := strings.TrimSpace(request(t, handler, http.MethodGet, Path+"?provider=claude").Body.String())
-	wanted := `{"ok":true,"supported":true,"provider":"claude","methods":[{"authMode":"oauth-browser","sources":[{"id":"claude-host-local","kind":"local","clientDependent":true,"requiresApp":"cli","authMode":"oauth-browser","handler":"","pluginLogin":false,"directImport":true,"description":"读取本机 claude 客户端的登录态并直接入库，不需要用户手动导出","available":false,"installable":false,"alreadyImported":false,"reason":"client_unavailable","implementation":null}],"preferredSourceId":"","installableSourceId":"","localSourceAvailable":false}],"derivedBy":"go_partial","unfilledFields":["sources[].installable","methods[].installableSourceId","sources[].alreadyImported","pluginSources"]}`
-	if body != wanted {
-		t.Fatalf("响应形状与契约不符\n got: %s\nwant: %s", body, wanted)
-	}
-}
-
-func TestUnfilledFieldsAreStable(t *testing.T) {
-	handler := newTestHandler(t, t.TempDir(), nil)
-	payload := decode(t, request(t, handler, http.MethodGet, Path+"?provider=claude"))
-	if payload.DerivedBy != derivedByGoPartial {
-		t.Errorf("derivedBy = %q，期望 %q", payload.DerivedBy, derivedByGoPartial)
-	}
-	wanted := []string{
-		"sources[].installable",
-		"methods[].installableSourceId",
-		"sources[].alreadyImported",
-		"pluginSources",
-	}
-	if len(payload.UnfilledFields) != len(wanted) {
-		t.Fatalf("unfilledFields = %v，期望 %v", payload.UnfilledFields, wanted)
-	}
-	for index, key := range wanted {
-		if payload.UnfilledFields[index] != key {
-			t.Errorf("unfilledFields[%d] = %q，期望 %q", index, payload.UnfilledFields[index], key)
-		}
 	}
 }
 

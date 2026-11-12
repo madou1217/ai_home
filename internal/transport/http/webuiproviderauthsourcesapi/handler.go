@@ -3,7 +3,8 @@
 // 契约来源：Node 的 GET /v0/webui/accounts/provider-auth-sources
 // （lib/server/webui-account-routes.js → lib/account/auth-sources.js 的
 // describeAuthMethodsWithSources）。响应键名、类型与缺省值与该端点逐字一致，
-// 界面据此渲染「从本机导入」与安装提示，不自己判断环境。
+// 界面据此渲染「从本机导入」「装上客户端就能导入」「已入库」三种状态，
+// 不自己判断环境。
 //
 // 数据边界：
 //   - 来源清单是**声明**，不是探测结果：内置来源来自 Go 的 Provider 合同
@@ -14,17 +15,22 @@
 //   - 没有声明来源的 Provider 返回 supported=false 与空 methods（与 Node 一致），
 //     绝不凭空造一个来源出来。
 //
-// 三块 Node 事实 Go 侧没有可信来源，整块留空并列入 unfilledFields：
-//   - sources[].installable / methods[].installableSourceId：Node 问安装器注册表
-//     （lib/server/app-installers）「这个平台有没有安装方案」，Go 没有等价声明，
-//     一律 false——宁可少提示「装了就能导入」，也不猜一个装不上的方案。
-//   - sources[].alreadyImported：去重指纹要读宿主凭据内容再算 identitySeed，
-//     超出本包的探测边界（只判存在性），因此恒为 false。
-//   - pluginSources：外部账号插件提供的登录来源只存在于 Node 的插件运行时，
-//     Go 读不到；受此影响，只靠插件提供来源的 Provider 会返回 supported=false。
+// 四块「Node 有、Go 不能自己算」的事实通过可选端口注入，注入即由 Go 投影，
+// 未注入则显式列入 unfilledFields（绝不假装算过）：
+//   - installable / installableSourceId：Node 问安装器注册表（lib/server/app-installers）
+//     「这个平台有没有安装方案」。Go 没有注册表，默认按 Provider 合同的安装声明判定
+//     （见 canInstall：CLI 要有可分发包，桌面端要有该平台的安装落点），宿主也可以注入
+//     CanInstall 换成更权威的答案。
+//   - alreadyImported：去重要读宿主凭据内容并派生身份种子，超出本包「只判存在性」的边界。
+//     两个端口一起注入才生效：ExistingIdentities 给账号池里该 Provider 已入库账号的种子，
+//     LocalSourceIdentity 给某个本机来源当前登录态的种子（都由宿主用官方 artifact 解码器派生）。
+//   - pluginSources：外部账号插件提供的登录来源只存在于 Node 的插件运行时。注入 PluginSources
+//     后这些来源与内置来源同形进入 methods（按同一排序与分组规则），否则只靠插件提供来源的
+//     Provider 会返回 supported=false，调用方据此回落到 Node 实现。
 package webuiproviderauthsourcesapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -39,8 +45,12 @@ import (
 //	GET /v1/management/webui/accounts/provider-auth-sources?provider=<id>
 const Path = "/v1/management/webui/accounts/provider-auth-sources"
 
-// derivedByGoPartial 标注响应只包含 Go 能证明的来源与可用性。
-const derivedByGoPartial = "go_partial"
+const (
+	// derivedByGo 标注响应全部字段都由 Go 自己证明（端口齐全）。
+	derivedByGo = "go"
+	// derivedByGoPartial 标注响应里仍有 Node 才能证明的键（见 unfilledFields）。
+	derivedByGoPartial = "go_partial"
+)
 
 // ErrInvalidDependencies 表示 Handler 缺少鉴权策略或 Provider 合同。
 var ErrInvalidDependencies = errors.New("认证来源接口依赖无效")
@@ -50,27 +60,62 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+// PluginSource 是外部账号插件声明的登录来源。
+//
+// 字段与 Node 的插件来源（lib/plugins/account/auth-sources.js 的 toAuthSourceDescriptor）
+// 一一对应：插件只传 JSON，宿主把它转成这个值交给 Go，Go 与内置来源按同一规则排序分组。
+// Identity 是插件自报的账号指纹；空串表示该来源不参与「已入库」去重。
+type PluginSource struct {
+	ID              string
+	Kind            string
+	ClientDependent bool
+	RequiresApp     string
+	AuthMode        string
+	DirectImport    bool
+	// PluginLogin 表示这个来源的登录任务走插件的 /plugin-login，而不是内置 auth job。
+	PluginLogin bool
+	Description string
+	// Available 是插件自报的可用性（插件才知道宿主登录态/设备环境）。
+	Available bool
+	Identity  string
+}
+
 // Dependencies 汇总认证来源解析的依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	// HostHomeDir 是宿主 HOME：宿主凭据产物与 Kiro IDE 登录态都相对它定位。
 	// 空值表示不参与探测——此时本机来源一律不可用（绝不假设家目录存在）。
 	HostHomeDir string
-	// AIHomeDir 是 AI Home 数据根。Node 用它收集账号池里已入库的凭据指纹做去重；
-	// 该判断需要读凭据内容，本包按「只判存在性」的边界不做，因此它当前不参与探测，
-	// 保留字段只为与其它 WebUI 契约的接线形状一致。
+	// AIHomeDir 是 AI Home 数据根。只有注入 ExistingIdentities 时才会被宿主用来读账号池；
+	// 本包自己不开数据库连接。
 	AIHomeDir string
 	// LookPath 解析 PATH 上的可执行文件；为 nil 时使用 exec.LookPath。
 	// 注入以便测试，无需依赖真实宿主安装。
 	LookPath func(string) (string, error)
+	// CanInstall 判定「这个平台有没有该 Provider 这一类客户端的安装方案」。
+	// app 取 cli / desktop；为 nil 时按 Provider 合同的安装声明判定（见 canInstall）。
+	CanInstall func(provider, app string) bool
+	// ExistingIdentities 返回账号池里该 Provider 已入库账号的身份种子集合。
+	// 为空 Map 表示该 Provider 还没有账号；返回错误时本包按「没有账号」处理（fail-open：
+	// 宁可多显示一个导入入口，也不把可用来源误标成已入库）。
+	ExistingIdentities func(ctx context.Context, provider string) (map[string]struct{}, error)
+	// LocalSourceIdentity 返回某个本机来源当前登录态的身份种子。
+	// 第二个返回值 false 表示读不出来（凭据缺失/格式不受支持），此时不做去重判断。
+	LocalSourceIdentity func(ctx context.Context, provider, sourceID string) (string, bool)
+	// PluginSources 返回外部账号插件为该 Provider 声明的登录来源。
+	PluginSources func(ctx context.Context, provider string) ([]PluginSource, error)
 }
 
 // Handler 是认证来源链的 HTTP 入站适配器。
 type Handler struct {
-	authorizer  Authorizer
-	hostHomeDir string
-	lookPath    func(string) (string, error)
-	catalog     *providers.Catalog
+	authorizer         Authorizer
+	hostHomeDir        string
+	lookPath           func(string) (string, error)
+	catalog            *providers.Catalog
+	canInstallOverride func(provider, app string) bool
+	identities         func(ctx context.Context, provider string) (map[string]struct{}, error)
+	sourceIdentity     func(ctx context.Context, provider, sourceID string) (string, bool)
+	pluginSources      func(ctx context.Context, provider string) ([]PluginSource, error)
 	// searchDirs 是 LookPath 之外的固定安装落点候选目录。
 	searchDirs []string
 }
@@ -90,11 +135,15 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 	}
 	hostHomeDir := strings.TrimSpace(dependencies.HostHomeDir)
 	return &Handler{
-		authorizer:  dependencies.Authorizer,
-		hostHomeDir: hostHomeDir,
-		lookPath:    lookPath,
-		catalog:     catalog,
-		searchDirs:  defaultSearchDirs(hostHomeDir),
+		authorizer:         dependencies.Authorizer,
+		hostHomeDir:        hostHomeDir,
+		lookPath:           lookPath,
+		catalog:            catalog,
+		canInstallOverride: dependencies.CanInstall,
+		identities:         dependencies.ExistingIdentities,
+		sourceIdentity:     dependencies.LocalSourceIdentity,
+		pluginSources:      dependencies.PluginSources,
+		searchDirs:         defaultSearchDirs(hostHomeDir),
 	}, nil
 }
 
@@ -172,25 +221,38 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	if known {
 		descriptors = descriptorsFor(provider, definition)
 	}
+	descriptors = append(descriptors, handler.pluginDescriptors(request.Context(), provider)...)
 	writeJSON(responseWriter, http.StatusOK, responseView{
 		OK:             true,
 		Supported:      len(descriptors) > 0,
 		Provider:       provider,
-		Methods:        handler.describeMethods(provider, definition, descriptors),
-		DerivedBy:      derivedByGoPartial,
-		UnfilledFields: unfilledFields(),
+		Methods:        handler.describeMethods(request.Context(), provider, definition, descriptors),
+		DerivedBy:      handler.derivedBy(),
+		UnfilledFields: handler.unfilledFields(),
 	})
 }
 
-// unfilledFields 列出 Node 响应有、而本契约没有可信来源的键。
-// 每次返回新切片，避免调用方改写共享状态。
-func unfilledFields() []string {
-	return []string{
-		"sources[].installable",
-		"methods[].installableSourceId",
-		"sources[].alreadyImported",
-		"pluginSources",
+// derivedBy 标注这次响应是否仍然依赖 Node 才能补全的键。
+func (handler *Handler) derivedBy() string {
+	if len(handler.unfilledFields()) > 0 {
+		return derivedByGoPartial
 	}
+	return derivedByGo
+}
+
+// unfilledFields 列出 Node 响应有、而这次响应没有可信来源的键。
+//
+// 端口注入后对应的键就不再是缺口——名单由注入状态派生，而不是写死一份「永远缺」的清单，
+// 否则补齐了也还在对外宣称缺失。每次返回新切片，避免调用方改写共享状态。
+func (handler *Handler) unfilledFields() []string {
+	fields := make([]string, 0, 2)
+	if handler.sourceIdentity == nil || handler.identities == nil {
+		fields = append(fields, "sources[].alreadyImported")
+	}
+	if handler.pluginSources == nil {
+		fields = append(fields, "pluginSources")
+	}
+	return fields
 }
 
 func writeJSON(response http.ResponseWriter, status int, payload any) {

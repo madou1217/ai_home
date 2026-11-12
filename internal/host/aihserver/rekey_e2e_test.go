@@ -17,6 +17,7 @@ import (
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/agy/authmeta"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
@@ -295,8 +296,9 @@ func TestAgyReKeyEndToEnd(t *testing.T) {
 	if creds["access_token"] != "new-access" {
 		t.Fatalf("projection access_token = %v, want new-access", creds["access_token"])
 	}
-	if creds["scope"] != "cloud-platform" {
-		t.Fatalf("projection scope = %v, want preserved", creds["scope"])
+	// Node 物化写的是 AGY_GEMINI_OAUTH_SCOPE 的固定四项，不是沿用旧值。
+	if creds["scope"] != authmeta.GeminiOAuthScope {
+		t.Fatalf("projection scope = %v, want %v", creds["scope"], authmeta.GeminiOAuthScope)
 	}
 	if _, err := os.Stat(filepath.Join(newRuntimeDir, ".gemini", "antigravity-cli", "antigravity-oauth-token")); err != nil {
 		t.Fatalf("antigravity projection missing: %v", err)

@@ -24,16 +24,25 @@ func normalizeProjectPath(value string) string {
 	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
+// aggregateOptions 控制一次聚合的范围与截断。
+type aggregateOptions struct {
+	// projectPath 非空时只保留归一化后等于该路径的项目（单项目全量读）。
+	projectPath string
+	// includeAllSessions 为 true 时不套 sessionPayloadCap，下发完整会话集合。
+	includeAllSessions bool
+}
+
 // aggregateProjects 按项目路径聚合，复刻 Node buildProjectsSnapshot 的口径：
 //
 //   - 同一路径的多个 Provider 合并成一个项目，providers 按首次出现顺序；
 //   - 同一会话 id 只保留一份，更新的副本覆盖标题与时间，但保留先遇到的
 //     Provider 与目录身份（CodeBuddy 家族两个 Provider 会读出同一批会话）；
 //   - 项目内会话按 updatedAt 降序，项目间按最近活动降序；
-//   - 每个项目最多下发 sessionPayloadCap 条会话，总量用 sessionTotal 表达。
+//   - 默认每个项目最多下发 sessionPayloadCap 条会话，总量用 sessionTotal 表达；
+//     includeAllSessions 时下发全部会话。
 //
 // 路径在磁盘上不存在的项目直接丢弃（与 Node filterHiddenProjects 同口径）。
-func aggregateProjects(raw []rawProject, pathExists func(string) bool) []projectView {
+func aggregateProjects(raw []rawProject, pathExists func(string) bool, options aggregateOptions) []projectView {
 	projects := make([]projectView, 0, len(raw))
 	projectIndexByPath := make(map[string]int, len(raw))
 	sessionIndexByPath := make(map[string]map[string]int, len(raw))
@@ -41,6 +50,9 @@ func aggregateProjects(raw []rawProject, pathExists func(string) bool) []project
 	for _, project := range raw {
 		projectPath := normalizeProjectPath(project.Path)
 		if projectPath == "" || !pathExists(projectPath) {
+			continue
+		}
+		if options.projectPath != "" && projectPath != options.projectPath {
 			continue
 		}
 		position, exists := projectIndexByPath[projectPath]
@@ -94,7 +106,7 @@ func aggregateProjects(raw []rawProject, pathExists func(string) bool) []project
 			return sessions[left].UpdatedAt > sessions[right].UpdatedAt
 		})
 		projects[index].SessionTotal = len(sessions)
-		if len(sessions) > sessionPayloadCap {
+		if !options.includeAllSessions && len(sessions) > sessionPayloadCap {
 			projects[index].Sessions = sessions[:sessionPayloadCap]
 		}
 	}

@@ -1,6 +1,7 @@
-// Package webuiprojectsapi 是 WebUI 项目列表的管理 HTTP 边界。
+// Package webuiprojectsapi 是 WebUI 项目管理面的 HTTP 边界。
 //
 //	GET /v1/management/webui/projects
+//	GET /v1/management/webui/projects/sessions?projectPath=...
 //
 // 契约来源：Node lib/server/webui-project-routes.js 的 handleGetProjectsRequest
 // 与 lib/server/webui-project-cache.js 的 buildProjectsSnapshot。响应形状
@@ -15,8 +16,12 @@
 //   - 项目路径必须在磁盘上真实存在（与 Node filterHiddenProjects 同口径），
 //     解析不出真实路径的项目不下发。
 //
-// 本切片刻意不含：SSE watch、目录选择器、手动打开/移除项目、远程工作区项目、
-// 按项目读取完整会话集合。这些都属于另外的契约。
+// 本切片刻意不含：SSE watch、目录选择器、手动打开/移除项目、远程工作区项目。
+// 这些都属于另外的契约。
+//
+// /projects/sessions 是 /projects 的按项目全量读：同一份扫描与聚合口径，但只下发
+// 指定 projectPath 的项目，并且不套 40 条会话截断。扫描被预算或超时截断时返回
+// 503，让 Node 用本地项目索引兜底，绝不把不完整会话集冒充成完整结果。
 package webuiprojectsapi
 
 import (
@@ -32,6 +37,11 @@ import (
 //
 //	GET /v1/management/webui/projects
 const Path = "/v1/management/webui/projects"
+
+// SessionsPath 是单项目完整会话集合的管理契约路径。
+//
+//	GET /v1/management/webui/projects/sessions?projectPath=...
+const SessionsPath = Path + "/sessions"
 
 // 扫描预算默认值：单次请求最多消费的目录条目数与总时长。
 const (
@@ -140,7 +150,15 @@ type errorView struct {
 	Message string `json:"message"`
 }
 
-// ServeHTTP 只接受带管理密钥的 GET。
+// projectResponse 是单项目完整会话集合的成功响应。
+//
+// 键序与 Node 的 {ok, project} 一致；project 复用项目列表的 projectView。
+type projectResponse struct {
+	OK      bool        `json:"ok"`
+	Project projectView `json:"project"`
+}
+
+// ServeHTTP 只接受带管理密钥的 GET，并按路径分派列表与单项目全量读。
 func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	// 项目列表随会话文件变化，缓存会让人看到过期条目。
 	responseWriter.Header().Set("Cache-Control", "no-store")
@@ -160,11 +178,23 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		return
 	}
 
+	switch request.URL.Path {
+	case SessionsPath:
+		handler.serveProjectSessions(responseWriter, request)
+	case Path:
+		handler.serveProjects(responseWriter, request)
+	default:
+		writeError(responseWriter, http.StatusNotFound, "not_found", "未知的项目接口")
+	}
+}
+
+// serveProjects 是项目列表：每项目最多 40 条会话，总量用 sessionTotal 表达。
+func (handler *Handler) serveProjects(responseWriter http.ResponseWriter, request *http.Request) {
 	// Node 的 ?refresh=1 用于跳过快照 TTL；Go 侧每次请求都重新扫描，参数被接受但无额外语义。
 	ctx, cancel := context.WithTimeout(request.Context(), handler.scanTimeout)
 	defer cancel()
 
-	projects, truncated := handler.collect(ctx)
+	projects, truncated := handler.collect(ctx, aggregateOptions{})
 	writeJSON(responseWriter, http.StatusOK, response{
 		OK:        true,
 		Projects:  projects,
@@ -172,14 +202,43 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	})
 }
 
+// serveProjectSessions 对应 Node 的 handleGetProjectSessionsRequest：
+// 按 projectPath 返回单个项目的完整会话集合（不截断到 40 条）。
+func (handler *Handler) serveProjectSessions(responseWriter http.ResponseWriter, request *http.Request) {
+	projectPath := normalizeProjectPath(request.URL.Query().Get("projectPath"))
+	if projectPath == "" {
+		writeError(responseWriter, http.StatusBadRequest, "missing_projectPath", "缺少项目路径")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(request.Context(), handler.scanTimeout)
+	defer cancel()
+
+	projects, truncated := handler.collect(ctx, aggregateOptions{
+		projectPath:        projectPath,
+		includeAllSessions: true,
+	})
+	if truncated {
+		// 预算/超时意味着这条项目的会话可能不完整。全量读不能返回半份结果，
+		// 交给 Node 的项目索引兜底（Node 只认 ok/project，503 会自动回退）。
+		writeError(responseWriter, http.StatusServiceUnavailable, "project_sessions_unavailable", "项目会话读取不完整")
+		return
+	}
+	if len(projects) == 0 {
+		writeError(responseWriter, http.StatusNotFound, "project_not_found", "未找到项目")
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, projectResponse{OK: true, Project: projects[0]})
+}
+
 // collect 执行一次有界扫描并完成聚合。
 //
 // 扫描被预算或超时打断时返回已收集到的部分结果（truncated=true），
 // 而不是把「读得慢」升级成 5xx：项目列表本来就是最终一致视图。
-func (handler *Handler) collect(ctx context.Context) ([]projectView, bool) {
+func (handler *Handler) collect(ctx context.Context, options aggregateOptions) ([]projectView, bool) {
 	scan := newScanner(ctx, handler.hostHomeDir, handler.maxEntries)
 	raw := filterChatWorkspaceProjects(scan.collectProjects(), handler.aiHomeDir)
-	return aggregateProjects(raw, isExistingDirectory), scan.truncated
+	return aggregateProjects(raw, isExistingDirectory, options), scan.truncated
 }
 
 func writeJSON(responseWriter http.ResponseWriter, status int, body any) {

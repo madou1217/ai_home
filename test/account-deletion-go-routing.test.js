@@ -171,6 +171,12 @@ test('codebuddy 家族、kimi 与 kiro 已进入 Go 删除名单', () => {
   }
 });
 
+test('Go 独有账号无论 Provider 名单都强制走 Go', () => {
+  assert.equal(resolveGoDeletionMode('agy', enabledGoHost, { goOnly: true }), 'go');
+  assert.equal(resolveGoDeletionMode('future-provider', enabledGoHost, { goOnly: true }), 'go');
+  assert.equal(resolveGoDeletionMode('future-provider', null, { goOnly: true }), 'required_unavailable');
+});
+
 test('未接入 Go 的 Provider 继续走本地删除', () => {
   for (const provider of ['zcode']) {
     assert.equal(resolveGoDeletionMode(provider, enabledGoHost), 'local');

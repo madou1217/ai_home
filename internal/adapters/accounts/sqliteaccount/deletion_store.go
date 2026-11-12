@@ -102,6 +102,15 @@ func (store *Store) DeleteAccount(
 	default:
 		return ErrIncompatibleDatabase
 	}
+	// 显式删除凭据，不只依赖外键级联：级联要求连接上 foreign_keys=ON，
+	// 而凭据是敏感数据，任何 PRAGMA 配置异常都不应该让它在删号后留下来。
+	if _, err := transaction.ExecContext(
+		ctx,
+		"DELETE FROM account_credentials WHERE account_ref = ?",
+		accountRef.String(),
+	); err != nil {
+		return fmt.Errorf("删除账号凭据失败: %w", err)
+	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("提交删除账号事务失败: %w", err)
 	}

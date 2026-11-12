@@ -79,6 +79,12 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// 启动自愈：清理历史遗留的孤儿凭据（无 accounts 行）。级联只在
+	// foreign_keys=ON 的连接上生效，不能假设旧库/外部写入都守住了这条约束。
+	if _, err := store.DeleteOrphanCredentials(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	routes, err := store.loadRoutingIndex(ctx)
 	if err != nil {
 		_ = db.Close()

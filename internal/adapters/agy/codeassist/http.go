@@ -11,11 +11,11 @@ import (
 
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthutil"
+	"github.com/madou1217/ai_home/internal/adapters/agy/clientversion"
 )
 
 const (
 	defaultBaseURL  = "https://daily-cloudcode-pa.googleapis.com/v1internal"
-	clientVersion   = "1.15.8"
 	clientSessionID = "00000000-0000-4000-8000-000000000000"
 	maxProjectBytes = 2 * 1024 * 1024
 )
@@ -98,9 +98,10 @@ func applyTokenHeaders(request *http.Request, accessToken string, claudeModel bo
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
-	request.Header.Set("User-Agent", "antigravity/"+clientVersion+" darwin/arm64")
+	version := clientversion.Detect()
+	request.Header.Set("User-Agent", "antigravity/"+version+" darwin/arm64")
 	request.Header.Set("x-client-name", "antigravity")
-	request.Header.Set("x-client-version", clientVersion)
+	request.Header.Set("x-client-version", version)
 	request.Header.Set("x-vscode-sessionid", clientSessionID)
 	if claudeModel {
 		request.Header.Set("anthropic-beta", "claude-code-20250219")

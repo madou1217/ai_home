@@ -38,14 +38,14 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/internal/adapters/agy/clientversion"
 )
 
 const (
 	sourceID     = "agy_fetch_available_models"
 	documentKind = "agy_code_assist_quota"
-	// clientVersion 与 Go 侧 agy codeassist 适配器保持同一客户端画像
-	// （Node 配额路径用 buildAgyCodeAssistUserAgent()，两者上游都接受，见文件头说明）。
-	clientVersion   = "1.15.8"
+	// 客户端画像与 codeassist 适配器共用 clientversion 探测（Node 的
+	// buildAgyCodeAssistUserAgent 同一来源）。
 	clientSessionID = "00000000-0000-4000-8000-000000000000"
 	maxResponseBody = 8 * 1024 * 1024
 	requestTimeout  = 12 * time.Second
@@ -411,9 +411,10 @@ func (strategy *Strategy) post(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
-	request.Header.Set("User-Agent", "antigravity/"+clientVersion+" darwin/arm64")
+	version := clientversion.Detect()
+	request.Header.Set("User-Agent", "antigravity/"+version+" darwin/arm64")
 	request.Header.Set("x-client-name", "antigravity")
-	request.Header.Set("x-client-version", clientVersion)
+	request.Header.Set("x-client-version", version)
 	request.Header.Set("x-vscode-sessionid", clientSessionID)
 	response, err := client.Do(request)
 	if err != nil {

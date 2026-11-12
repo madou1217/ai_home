@@ -31,6 +31,8 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 	type record struct {
 		Type        string `json:"type"`
 		UUID        string `json:"uuid"`
+		RequestID   string `json:"requestId"`
+		ParentUUID  string `json:"parentUuid"`
 		Timestamp   string `json:"timestamp"`
 		IsSidechain bool   `json:"isSidechain"`
 		IsMeta      bool   `json:"isMeta"`
@@ -66,7 +68,6 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		}
 	}
 	messages := []json.RawMessage{}
-	lastAssistantID := ""
 	for _, item := range records {
 		if item.IsSidechain || (item.Type != "user" && item.Type != "assistant") {
 			continue
@@ -78,6 +79,9 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		if cut := strings.Index(text, "<system-reminder>"); cut >= 0 {
 			text = strings.TrimSpace(text[:cut])
 		}
+		if strings.HasPrefix(text, "Caveat:") || strings.HasPrefix(text, "<command-name>") || strings.HasPrefix(text, "<local-command") || strings.HasPrefix(text, "<system-reminder>") || strings.HasPrefix(text, "<ide_") {
+			continue
+		}
 		if strings.Contains(text, "<command-name>") || strings.Contains(text, "<local-command-") {
 			// 命令回显不是会话消息；Node reader 同样不把它们放进时间线。
 			continue
@@ -85,10 +89,13 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		if item.Type == "assistant" && len(messages) > 0 && item.Message.ID != "" && item.Message.ID == lastAssistantID {
+		if item.Type == "assistant" && len(messages) > 0 {
 			var previous map[string]any
 			if json.Unmarshal(messages[len(messages)-1], &previous) == nil && previous["role"] == "assistant" {
-				previous["content"] = strings.TrimRight(previous["content"].(string), "\n") + "\n" + strings.TrimSpace(text)
+				if _, exists := previous["model"]; !exists && item.Message.Model != "" && item.Message.Model != "<synthetic>" {
+					previous["model"] = item.Message.Model
+				}
+				previous["content"] = strings.TrimRight(previous["content"].(string), "\n") + "\n\n" + strings.TrimSpace(text)
 				raw, _ := json.Marshal(previous)
 				messages[len(messages)-1] = raw
 				continue
@@ -97,9 +104,6 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		message := map[string]any{"role": item.Type, "content": text, "timestamp": item.Timestamp}
 		if item.Message.Model != "" && item.Message.Model != "<synthetic>" {
 			message["model"] = item.Message.Model
-		}
-		if item.Type == "assistant" {
-			lastAssistantID = item.Message.ID
 		}
 		if item.Type == "assistant" {
 			message["images"] = []any{}
@@ -150,7 +154,7 @@ func claudeContent(raw json.RawMessage, toolResults map[string]string) (string, 
 		switch kind {
 		case "thinking":
 			if text, ok := block["thinking"].(string); ok {
-				parts = append(parts, "\n:::thinking\n"+text+"\n:::=\n")
+				parts = append(parts, ":::thinking\n"+text+"\n:::\n")
 			}
 			hasOnlyToolResult = false
 		case "text":

@@ -38,6 +38,7 @@ func newProfileRegistry() profileRegistry {
 	codecs := []profileCodec{
 		codexProfileCodec{},
 		claudeProfileCodec{},
+		agyProfileCodec{},
 	}
 	registry := make(profileRegistry, len(codecs))
 	for _, codec := range codecs {

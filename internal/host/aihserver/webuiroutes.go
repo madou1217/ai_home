@@ -21,7 +21,9 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
@@ -96,6 +98,8 @@ type webuiRouteDependencies struct {
 	AuthJobs webuiaccountreauthapi.AccountAuthJobs
 	// AccountsHandler 是 accountsapi 的账号导入端点（WebUI import 直接复用）。
 	AccountsHandler http.Handler
+	// AccountRows 是账号页读模型数据源（watch 快照与列表共用同一份行）。
+	AccountRows webuiaccountsapi.Source
 	// CredentialEditor 是静态凭据编辑用例（update 路由复用）。
 	CredentialEditor webuiaccountupdateapi.CredentialEditor
 	// ProviderDefaults 是 Go 的 provider 默认账号关系。
@@ -603,7 +607,23 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建账号活动接口失败: %w", activityErr)
 	}
 
+	// 账号实时视图：快照装配、revision 与增量 diff 都在 Go；Node 只做 SSE 外壳。
+	accountLive, liveErr := webuiaccountliveapi.NewHandler(webuiaccountliveapi.Dependencies{
+		Authorizer: authorizer,
+		Rows:       dependencies.AccountRows,
+		Runtime:    accountRuntimeSnapshotter(dependencies.AccountRuntime),
+		States:     dependencies.Store,
+		TokenUsage: dependencies.Store,
+		Catalog:    dependencies.Catalog,
+		AIHomeDir:  dependencies.AIHomeDir,
+	})
+	if liveErr != nil {
+		return nil, fmt.Errorf("创建账号实时视图接口失败: %w", liveErr)
+	}
+
 	routes := []webuiRoute{
+		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
+		{Pattern: "POST " + webuiaccountliveapi.SnapshotPath, Handler: accountLive},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
@@ -704,4 +724,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	routes = append(routes, refreshRoutes...)
 	return routes, nil
+}
+
+// accountRuntimeSnapshotter 把组合根传入的运行态对象收敛成 watch 需要的只读投影。
+//
+// dependencies.AccountRuntime 声明为 any 是为了让「恢复调度 / 清阻塞」等可选能力
+// 按接口断言取用；watch 只关心 RuntimeSnapshot，因此在这里做一次防御性断言，
+// 没实现时返回 nil（对应字段留空），而不是让整个路由构建失败。
+func accountRuntimeSnapshotter(value any) webuiaccountliveapi.RuntimeSource {
+	snapshotter, _ := value.(webuiaccountliveapi.RuntimeSource)
+	return snapshotter
 }

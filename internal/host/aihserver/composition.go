@@ -303,8 +303,15 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号投影删除准备边界失败: %w", err)
 	}
+	webuiAccountsSource, err := webuiaccountsapi.OpenSQLiteSource(webuiaccountsapi.SQLiteOptions{AIHomeDir: options.AIHomeDir})
+	if err != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("打开账号页读模型数据源失败: %w", err)
+	}
 	handlers, resources, err := newHandlers(handlerDependencies{
 		Context:                    ctx,
+		WebUIAccountsSource:        webuiAccountsSource,
 		Catalog:                    catalog,
 		Store:                      store,
 		AIHomeDir:                  options.AIHomeDir,
@@ -335,6 +342,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		HostHomeDir:                hostHomeDir,
 	})
 	if err != nil {
+		_ = webuiAccountsSource.Close()
 		_ = codexVersions.Close()
 		_ = store.Close()
 		return nil, err
@@ -342,15 +350,10 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	handlers.webUI = webUI
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
 	if err != nil {
+		_ = webuiAccountsSource.Close()
 		_ = codexVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号页读模型鉴权失败: %w", err)
-	}
-	webuiAccountsSource, err := webuiaccountsapi.OpenSQLiteSource(webuiaccountsapi.SQLiteOptions{AIHomeDir: options.AIHomeDir})
-	if err != nil {
-		_ = codexVersions.Close()
-		_ = store.Close()
-		return nil, fmt.Errorf("打开账号页读模型数据源失败: %w", err)
 	}
 	webuiAccountsHandler, err := webuiaccountsapi.NewHandler(webuiaccountsapi.Dependencies{
 		Authorizer: webuiAccountsAuthorizer,
@@ -417,6 +420,8 @@ type handlerDependencies struct {
 	RouteObserver codexresponsesws.RouteObserver
 	// HostHomeDir 是宿主 CLI 配置文件所在家目录；工具权限设置的 host* 探测需要它。
 	HostHomeDir string
+	// WebUIAccountsSource 是账号页读模型数据源；watch 快照与列表共用同一份只读连接。
+	WebUIAccountsSource webuiaccountsapi.Source
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel；由 newHandlers 创建并随进程关闭。
 	ReverseTunnels *sshtunnel.Supervisor
 }
@@ -1401,6 +1406,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		AccountRuntime:   accountRuntime,
 		AuthJobs:         jobs,
 		AccountsHandler:  accountsHandler,
+		AccountRows:      dependencies.WebUIAccountsSource,
 		CredentialEditor: credentialRotator,
 		ProviderDefaults: providerDefaults,
 		ModelRefresher:   recoveringModelManagement,

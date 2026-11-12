@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -203,14 +204,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 func buildResourceViews(platform string, tools []ToolView) []ResourceView {
 	resources := make([]ResourceView, 0, len(tools))
 	for _, tool := range tools {
-		managed := tool.ManagedVersions
-		if managed == nil {
-			managed = []string{}
-		}
+		managed := append([]string{}, tool.ManagedVersions...)
+		// Node 的 managedVersions 最新在前；目录枚举顺序不稳定，这里统一按版本降序。
+		sort.Slice(managed, func(left, right int) bool { return managed[left] > managed[right] })
 		lifecycle := LifecycleView{
-			Install:   !tool.Available,
-			Update:    tool.Available,
-			Uninstall: tool.Available,
+			Install: !tool.Available,
+			Update:  tool.Available,
+			// git 由系统包管理维护，Node 不提供卸载动作。
+			Uninstall: tool.Available && tool.ID != "git",
 		}
 		resources = append(resources, ResourceView{
 			ID:              tool.ID,

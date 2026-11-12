@@ -156,7 +156,11 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 				continue
 			}
 			seen[alias] = struct{}{}
-			aliasesToWire[alias] = modelID
+			// 多个基座声明同一别名时固定选字典序最小的基座：map 遍历顺序不固定，
+			// 「最后写入者赢」会让转发表在同一份上游目录上每次刷新都漂移。
+			if current, claimed := aliasesToWire[alias]; !claimed || modelID < current {
+				aliasesToWire[alias] = modelID
+			}
 		}
 	}
 	wires, err := decodeDeprecatedModelWires(document, seen)
@@ -171,6 +175,15 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 			wires[alias] = wireID
 		}
 	}
+	// Resolve 热路径只读一次 map，别名与 deprecated 链必须在这里展开到终点；
+	// 环或指向目录外模型的链直接丢弃，不能把另一个公开 ID 当成 wire model。
+	flattened := make(map[string]string, len(wires))
+	for publicID := range wires {
+		if wireID, ok := resolveWireTarget(publicID, wires, seen); ok {
+			flattened[publicID] = wireID
+		}
+	}
+	wires = flattened
 	// 上游 fetchAvailableModels 只给 *-tiered 基座，agy CLI 把 high/medium/low 作为
 	// 可直接请求的档位 ID 暴露；Go 迁移后不能只留基座，否则网关会报模型不存在。
 	// 档位 ID 直接发给 agy 即可，不做 wire 改写。
@@ -192,6 +205,25 @@ func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 	}
 	sort.Strings(models)
 	return models, wires, nil
+}
+
+// resolveWireTarget 沿转发表把公开 ID 展开到目录内的真实模型。终点不在目录里、
+// 或映射成环时返回 false，调用方丢弃该映射（与 deprecated 环的处理一致）。
+func resolveWireTarget(publicID string, wires map[string]string, available map[string]struct{}) (string, bool) {
+	visited := make(map[string]struct{}, 4)
+	current := publicID
+	for {
+		next, mapped := wires[current]
+		if !mapped {
+			_, found := available[current]
+			return current, found
+		}
+		if _, loop := visited[current]; loop {
+			return "", false
+		}
+		visited[current] = struct{}{}
+		current = next
+	}
 }
 
 type modelCatalogDocument struct {

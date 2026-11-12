@@ -84,6 +84,32 @@ test('ZCode Desktop 专用原因映射', (t) => {
   }), { confirm: 'ZCode 的逐项确认由 Desktop 处理，请在 Desktop 中确认' });
 });
 
+test('两个模式同时不支持且缺原因时都回退中文文案', (t) => {
+  const availabilityFrom = loadFunction(t);
+  if (!availabilityFrom) return;
+  assert.deepEqual(availabilityFrom({
+    capabilities: {
+      'mode.plan': { support: 'unsupported' },
+      'interaction.approval': { support: 'unsupported', reason: '' }
+    }
+  }), { confirm: '当前 CLI 不支持此模式', plan: '当前 CLI 不支持此模式' });
+});
+
+test('null/空描述符与 bypass 不误禁用', (t) => {
+  const availabilityFrom = loadFunction(t);
+  if (!availabilityFrom) return;
+  assert.deepEqual(availabilityFrom({
+    capabilities: {
+      'mode.plan': null,
+      'interaction.approval': null
+    }
+  }), {});
+  const result = availabilityFrom({
+    capabilities: { 'interaction.approval': { support: 'unsupported', reason: 'x' } }
+  });
+  assert.equal(Object.hasOwn(result, 'bypass'), false);
+});
+
 test('支持/降级/缺失描述符都不误禁用', (t) => {
   const availabilityFrom = loadFunction(t);
   if (!availabilityFrom) return;

@@ -69,7 +69,7 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		for _, block := range blocks {
 			if block["type"] == "tool_result" {
 				if id, ok := block["tool_use_id"].(string); ok {
-					toolResults[id] = toolResultText(block["content"])
+					toolResults[id] = trimToolResultText(toolResultText(block["content"]))
 				}
 			}
 		}
@@ -79,7 +79,7 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		if item.IsSidechain || (item.Type != "user" && item.Type != "assistant") {
 			continue
 		}
-		if item.Type == "assistant" && item.Message.Model == "<synthetic>" && (hiddenMetaUserIDs[item.ParentUUID] || previousRole(messages) == "assistant") {
+		if item.Type == "assistant" && item.Message.Model == "<synthetic>" && hiddenMetaUserIDs[item.ParentUUID] {
 			// 只丢弃挂在隐藏 meta user 下、或紧跟在 assistant 后的 synthetic 恢复 turn；
 			// 普通 API Error（前一 turn 是 user）仍保留，与 Node 一致。
 			continue
@@ -123,7 +123,16 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		raw, _ := json.Marshal(message)
 		messages = append(messages, raw)
 	}
-	return messages, nil
+	return decorateTurnModels(messages), nil
+}
+
+func trimToolResultText(text string) string {
+	text = strings.TrimSpace(text)
+	runes := []rune(text)
+	if len(runes) > 300 {
+		return string(runes[:300]) + "..."
+	}
+	return text
 }
 
 func toolResultText(value any) string {
@@ -190,7 +199,7 @@ func claudeContent(raw json.RawMessage, toolResults map[string]string) (string, 
 				}
 			}
 			section := "\n:::tool{name=\"" + name + "\"}\n" + body + "\n:::\n"
-			if result := toolResults[id]; result != "" {
+			if result, ok := toolResults[id]; ok {
 				section += "\n:::tool-result\n" + result + "\n:::\n"
 			}
 			parts = append(parts, section)
@@ -198,7 +207,7 @@ func claudeContent(raw json.RawMessage, toolResults map[string]string) (string, 
 			continue
 		}
 	}
-	return strings.Join(parts, "\n"), hasOnlyToolResult, hasImage
+	return strings.TrimPrefix(strings.Join(parts, "\n"), "\n"), hasOnlyToolResult, hasImage
 }
 
 func compactInput(input map[string]any) string {

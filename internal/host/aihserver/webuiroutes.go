@@ -50,6 +50,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisessioneventsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionpreviewsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
@@ -470,6 +471,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建会话预览接口失败: %w", err)
 	}
+	sessionEvents, err := webuisessioneventsapi.NewHandler(webuisessioneventsapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建会话事件接口失败: %w", err)
+	}
 
 	managementKeySource, err := webuimanagementkeyapi.OpenSource(dependencies.AIHomeDir)
 	if err != nil {
@@ -605,6 +612,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiprojectsapi.Path, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.SessionsPath, Handler: projects},
 		{Pattern: "GET " + webuisessionmessagesapi.Path, Handler: sessionMessages},
+		{Pattern: "GET " + webuisessioneventsapi.Path, Handler: sessionEvents},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
 		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
 		{Pattern: "GET " + webuitoolkitruntimeapi.Path, Handler: toolkitEnvironments},

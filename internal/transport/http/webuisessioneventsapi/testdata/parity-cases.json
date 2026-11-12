@@ -1,0 +1,472 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/dump-session-events-parity-cases.js",
+  "cases": [
+    {
+      "name": "basic-incremental",
+      "sessionId": "11111111-2222-4333-8444-000000000001",
+      "records": [
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"session-meta-ignored\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:00:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello <image src=\\\"a.png\\\">world\"},{\"type\":\"input_image\",\"image_url\":\"data:image/png;base64,AAAA\"},{\"type\":\"input_image\",\"image_url\":\"  https://example.com/x.png  \"}]}}",
+        "{\"type\":\"turn_context\",\"timestamp\":\"2026-11-12T10:00:00.100Z\",\"payload\":{\"model\":\"gpt-5.1-codex\"}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:00:01.000Z\",\"payload\":{\"type\":\"agent_reasoning\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"think one\"},{\"type\":\"summary_text\",\"text\":\"think two\"},{\"type\":\"other\",\"text\":\"ignored\"}]}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:00:01.500Z\",\"payload\":{\"type\":\"reasoning\",\"text\":\"raw reasoning\"}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:00:01.500Z\",\"payload\":{\"type\":\"agent_reasoning\",\"text\":\"raw reasoning\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:00:02.000Z\",\"payload\":{\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hi\"},{\"type\":\"output_text\",\"text\":\"there\"}]}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:00:03.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"exec_command\",\"call_id\":\"call-1\",\"arguments\":\"{\\\"cmd\\\":\\\"ls -la\\\",\\\"workdir\\\":\\\"/tmp\\\"}\"}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:00:04.000Z\",\"payload\":{\"type\":\"exec_command_end\",\"call_id\":\"call-1\",\"cwd\":\"/tmp\",\"command\":[\"bash\",\"-lc\",\"ls -la\"],\"aggregated_output\":\"total 0\\nChunk ID: abc\\nOutput: file.txt\\nmore\\n\"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:00:00.000Z",
+            "content": "hello\nworld",
+            "images": [
+              "data:image/png;base64,AAAA",
+              "https://example.com/x.png"
+            ],
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_reasoning",
+            "timestamp": "2026-11-12T10:00:01.000Z",
+            "text": "think one\n\nthink two",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_reasoning",
+            "timestamp": "2026-11-12T10:00:01.500Z",
+            "text": "raw reasoning",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_text",
+            "timestamp": "2026-11-12T10:00:02.000Z",
+            "text": "hi\nthere",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:00:03.000Z",
+            "callId": "call-1",
+            "content": "\n:::tool{name=\"Terminal\"}\nls -la\n# cwd: /tmp\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_result",
+            "timestamp": "2026-11-12T10:00:04.000Z",
+            "callId": "call-1",
+            "content": "\n:::tool{name=\"Terminal\"}\nls -la\n# cwd: /tmp\n:::\n\n:::tool-result\nfile.txt\nmore\n:::\n",
+            "model": "gpt-5.1-codex"
+          }
+        ],
+        "cursor": 1555,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": true
+      }
+    },
+    {
+      "name": "incremental-second-chunk",
+      "sessionId": "11111111-2222-4333-8444-000000000002",
+      "records": [
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"second-chunk\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:10:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"first chunk\"}]}}",
+        "{\"type\":\"turn_context\",\"timestamp\":\"2026-11-12T10:10:01.000Z\",\"payload\":{\"model\":\"gpt-5.1-codex\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:10:02.000Z\",\"payload\":{\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"second chunk reply\"}]}}"
+      ],
+      "tail": "",
+      "cursor": 218,
+      "cursorAfterLines": 2,
+      "expected": {
+        "events": [
+          {
+            "type": "assistant_text",
+            "timestamp": "2026-11-12T10:10:02.000Z",
+            "text": "second chunk reply",
+            "model": "gpt-5.1-codex"
+          }
+        ],
+        "cursor": 475,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "dedupe-upsert",
+      "sessionId": "11111111-2222-4333-8444-000000000003",
+      "records": [
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:01:00.000Z\",\"payload\":{\"type\":\"user_message\",\"message\":\"hello <image>\",\"images\":[\"data:image/png;base64,AAAA\"],\"local_images\":[\"https://example.com/a.png\"]}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:01:00.500Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello there\"},{\"type\":\"input_image\",\"image_url\":\"data:image/png;base64,NEW\"}]}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:01:00.100Z\",\"payload\":{\"type\":\"user_message\",\"message\":\"hello there\"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:01:00.000Z",
+            "content": "hello",
+            "images": [
+              "data:image/png;base64,AAAA",
+              "https://example.com/a.png"
+            ]
+          },
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:01:00.500Z",
+            "content": "hello there",
+            "images": [
+              "data:image/png;base64,NEW"
+            ]
+          }
+        ],
+        "cursor": 548,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "synthetic-only",
+      "sessionId": "11111111-2222-4333-8444-000000000004",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:02:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"<environment_context><cwd>/tmp</cwd></environment_context>\"}]}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:02:01.000Z\",\"payload\":{\"type\":\"turn_aborted\"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [],
+        "cursor": 303,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "goal-context-kept",
+      "sessionId": "11111111-2222-4333-8444-000000000005",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:03:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"<goal_context><objective>ship it</objective></goal_context>\"}]}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:03:00.000Z",
+            "content": "<goal_context><objective>ship it</objective></goal_context>",
+            "images": []
+          }
+        ],
+        "cursor": 210,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "function-call-output",
+      "sessionId": "11111111-2222-4333-8444-000000000006",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:04:00.000Z\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"call-9\",\"output\":\"orphan\"}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:04:01.000Z\",\"payload\":{\"type\":\"agent_reasoning\",\"text\":\"after orphan\"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "assistant_reasoning",
+            "timestamp": "2026-11-12T10:04:01.000Z",
+            "text": "after orphan"
+          }
+        ],
+        "cursor": 262,
+        "requiresSnapshot": true,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "mobile-preamble",
+      "sessionId": "11111111-2222-4333-8444-000000000007",
+      "records": [
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:05:00.000Z\",\"payload\":{\"type\":\"user_message\",\"message\":\"# Files mentioned by the user:\\n\\n- /tmp/codex-remote-attachments/a.png\\n\\n## My request for Codex:\\n\\nlook at this\",\"images\":[\"/v0/webui/chat/attachments/a.png\"]}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:05:00.000Z",
+            "content": "look at this",
+            "images": [
+              "/v0/webui/chat/attachments/a.png"
+            ],
+            "source": "codex-mobile"
+          }
+        ],
+        "cursor": 268,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "tool-variants",
+      "sessionId": "11111111-2222-4333-8444-000000000008",
+      "records": [
+        "{\"type\":\"turn_context\",\"timestamp\":\"2026-11-12T10:06:00.000Z\",\"payload\":{\"model\":\"gpt-5.1-codex\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:01.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"read_file\",\"call_id\":\"r1\",\"arguments\":\"{\\\"path\\\":\\\"/tmp/a.txt\\\"}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:02.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"apply_patch\",\"call_id\":\"r2\",\"arguments\":\"{\\\"file_path\\\":\\\"/tmp/b.txt\\\"}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:03.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"TodoWrite\",\"call_id\":\"r3\",\"arguments\":\"{\\\"todos\\\":[{\\\"content\\\":\\\"x\\\",\\\"status\\\":\\\"pending\\\"}]}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:04.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"update_plan\",\"call_id\":\"r4\",\"arguments\":\"{\\\"explanation\\\":\\\"why\\\",\\\"plan\\\":[{\\\"step\\\":\\\"a\\\",\\\"status\\\":\\\"pending\\\"}]}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:05.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"request_user_input\",\"call_id\":\"r5\",\"arguments\":\"{\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"question\\\":\\\"Q?\\\"}]}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:06.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"spawn_agent\",\"call_id\":\"r6\",\"arguments\":\"{\\\"task_name\\\":\\\"child\\\"}\",\"subagent\":{\"sessionId\":\"child-1\",\"agentPath\":\"/tmp/agent\",\"agentNickname\":\"nick\",\"agentRole\":\"worker\",\"status\":\"running\",\"createdAt\":1700000000000}}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:07.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"create_goal\",\"call_id\":\"r7\",\"arguments\":\"{\\\"objective\\\":\\\"win\\\"}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:08.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"write_stdin\",\"call_id\":\"r8\",\"arguments\":\"{}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:06:09.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"unknown_tool\",\"call_id\":\"r9\",\"arguments\":\"{\\\"payload\\\":\\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\\"}\"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:01.000Z",
+            "callId": "r1",
+            "content": "\n:::tool{name=\"Read\"}\n/tmp/a.txt\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:02.000Z",
+            "callId": "r2",
+            "content": "\n:::tool{name=\"Edit\"}\n/tmp/b.txt\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:03.000Z",
+            "callId": "r3",
+            "content": "\n:::tool{name=\"TodoWrite\"}\n[{\"content\":\"x\",\"status\":\"pending\"}]\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:04.000Z",
+            "callId": "r4",
+            "content": "\n:::tool{name=\"update_plan\"}\n{\"explanation\":\"why\",\"plan\":[{\"step\":\"a\",\"status\":\"pending\"}]}\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:05.000Z",
+            "callId": "r5",
+            "content": "\n:::tool{name=\"request_user_input\"}\n{\"questions\":[{\"id\":\"q1\",\"question\":\"Q?\"}]}\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:06.000Z",
+            "callId": "r6",
+            "content": "\n:::tool{name=\"spawn_agent\"}\n{\"task_name\":\"child\",\"child_session_id\":\"child-1\",\"agent_path\":\"/tmp/agent\",\"agent_nickname\":\"nick\",\"agent_role\":\"worker\",\"status\":\"running\",\"created_at\":1700000000000,\"updated_at\":0}\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:07.000Z",
+            "callId": "r7",
+            "content": "\n:::tool{name=\"create_goal\"}\n{\"objective\":\"win\"}\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:06:09.000Z",
+            "callId": "r9",
+            "content": "\n:::tool{name=\"unknown_tool\"}\n{\"payload\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n:::\n",
+            "model": "gpt-5.1-codex"
+          }
+        ],
+        "cursor": 6010,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": true
+      }
+    },
+    {
+      "name": "tool-argument-edge-cases",
+      "sessionId": "11111111-2222-4333-8444-000000000009",
+      "records": [
+        "{\"type\":\"turn_context\",\"timestamp\":\"2026-11-12T10:12:00.000Z\",\"payload\":{\"model\":\"gpt-5.1-codex\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:12:01.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"exec_command\",\"call_id\":\"e1\",\"arguments\":\"{\\\"path\\\":\\\"/must-not-be-used\\\",\\\"cmd\\\":\\\"real-command\\\"}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:12:02.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"TodoWrite\",\"call_id\":\"e2\",\"arguments\":\"{\\\"todos\\\":null}\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:12:03.000Z\",\"payload\":{\"type\":\"function_call\",\"name\":\"spawn_agent\",\"call_id\":\"e3\",\"arguments\":\"{}\",\"subagent\":{}}}",
+        "{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T10:12:04.000Z\",\"payload\":{\"type\":\"exec_command_end\",\"call_id\":\"e1\",\"cwd\":\"   \",\"command\":[],\"aggregated_output\":\"  spaced output  \"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:12:01.000Z",
+            "callId": "e1",
+            "content": "\n:::tool{name=\"Terminal\"}\nreal-command\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:12:02.000Z",
+            "callId": "e2",
+            "content": "\n:::tool{name=\"TodoWrite\"}\n{\"todos\":null}\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_call",
+            "timestamp": "2026-11-12T10:12:03.000Z",
+            "callId": "e3",
+            "content": "\n:::tool{name=\"spawn_agent\"}\n{\"task_name\":\"\",\"child_session_id\":\"\",\"agent_path\":\"\",\"agent_nickname\":\"\",\"agent_role\":\"\",\"status\":\"\",\"created_at\":0,\"updated_at\":0}\n:::\n",
+            "model": "gpt-5.1-codex"
+          },
+          {
+            "type": "assistant_tool_result",
+            "timestamp": "2026-11-12T10:12:04.000Z",
+            "callId": "e1",
+            "content": "\n:::tool{name=\"Terminal\"}\n\n# cwd:    \n:::\n\n:::tool-result\nspaced output\n:::\n",
+            "model": "gpt-5.1-codex"
+          }
+        ],
+        "cursor": 815,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": true
+      }
+    },
+    {
+      "name": "numeric-and-falsy-fields",
+      "sessionId": "11111111-2222-4333-8444-000000000010",
+      "records": [
+        "{\"type\":\"event_msg\",\"timestamp\":1700000000123,\"payload\":{\"type\":\"user_message\",\"message\":\"numeric timestamp\"}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:13:01.000Z\",\"payload\":{\"type\":\"reasoning\",\"text\":0}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:13:02.000Z\",\"payload\":{\"type\":\"agent_reasoning\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"\"}],\"text\":\"fallback text\"}}"
+      ],
+      "tail": "",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "1700000000123",
+            "content": "numeric timestamp",
+            "images": []
+          }
+        ],
+        "cursor": 385,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "cursor-mid-line",
+      "sessionId": "11111111-2222-4333-8444-000000000011",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:14:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"first\"}]}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:14:01.000Z\",\"payload\":{\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"second\"}]}}",
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:14:02.000Z\",\"payload\":{\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"third\"}]}}"
+      ],
+      "tail": "",
+      "cursor": 168,
+      "expected": {
+        "events": [
+          {
+            "type": "assistant_text",
+            "timestamp": "2026-11-12T10:14:02.000Z",
+            "text": "third"
+          }
+        ],
+        "cursor": 447,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "valid-tail-no-newline",
+      "sessionId": "11111111-2222-4333-8444-000000000012",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:07:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"complete line\"}]}}"
+      ],
+      "tail": "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:07:01.000Z\",\"payload\":{\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"unterminated but valid\"}]}}",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:07:00.000Z",
+            "content": "complete line",
+            "images": []
+          },
+          {
+            "type": "assistant_text",
+            "timestamp": "2026-11-12T10:07:01.000Z",
+            "text": "unterminated but valid"
+          }
+        ],
+        "cursor": 325,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "partial-tail",
+      "sessionId": "11111111-2222-4333-8444-000000000013",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:08:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"before partial\"}]}}"
+      ],
+      "tail": "{\"type\":\"response_item\",\"payload\":{\"type\":\"reasoning\",\"text\":\"半",
+      "cursor": 0,
+      "expected": {
+        "events": [
+          {
+            "type": "user_message",
+            "timestamp": "2026-11-12T10:08:00.000Z",
+            "content": "before partial",
+            "images": []
+          }
+        ],
+        "cursor": 165,
+        "requiresSnapshot": false,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "cursor-at-eof",
+      "sessionId": "11111111-2222-4333-8444-000000000014",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:09:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"done\"}]}}"
+      ],
+      "tail": "",
+      "cursor": 155,
+      "expected": {
+        "events": [],
+        "cursor": 155,
+        "hasAssistantToolCall": false
+      }
+    },
+    {
+      "name": "cursor-beyond",
+      "sessionId": "11111111-2222-4333-8444-000000000015",
+      "records": [
+        "{\"type\":\"response_item\",\"timestamp\":\"2026-11-12T10:11:00.000Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"truncated\"}]}}"
+      ],
+      "tail": "",
+      "cursor": 167,
+      "expected": {
+        "events": [],
+        "cursor": 160,
+        "requiresSnapshot": true,
+        "hasAssistantToolCall": false
+      }
+    }
+  ]
+}

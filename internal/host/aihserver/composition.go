@@ -627,6 +627,14 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 没有宿主凭据，必须由 Go 接管，否则 Token 过期后两侧都无人刷新。
 	appStateDatabasePath, appStatePathErr := appstate.DatabasePath(aiHomeDir)
 	ownsCredentialRefresh := func(accountRef accountcore.AccountRef) bool {
+		// agy 是 Go 权威账号：Node 台账即使有行（UI 投影）也不代表它真的会刷新。
+		// 实测 Node 侧不刷新 agy，委托模式下两侧都不动，Token 过期后整类 gemini
+		// 请求 401。这里按 Provider 强制 Go 接管，和 Node 无关。
+		if overview, overviewErr := store.GetAccountOverview(
+			context.Background(), accountRef,
+		); overviewErr == nil && overview.Account().ProviderID() == "agy" {
+			return true
+		}
 		if appStatePathErr != nil {
 			return false
 		}

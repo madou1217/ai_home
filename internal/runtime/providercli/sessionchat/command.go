@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/providerruntime"
 	"github.com/madou1217/ai_home/internal/adapters/agy/modelnames"
 )
 
@@ -237,7 +238,7 @@ func PushClaudeHeadlessStreamArgs(args []string) []string {
 //
 // POSIX 下常开：stdin 常开才能做 mid-run steer；Windows 无 sh cat-pipe，回退位置参数。
 func ClaudeUsesStreamJSONInput(provider string, interactiveCLI bool, platform string) bool {
-	return NormalizeProvider(provider) == "claude" && !interactiveCLI && normalizeNodePlatform(platform) != "win32"
+	return NormalizeProvider(provider) == "claude" && !interactiveCLI && providerruntime.NormalizeNodePlatform(platform) != "win32"
 }
 
 // BuildStartCommand 把「新建会话」翻译成 CLI 命令。错误码与 Node 一致。
@@ -721,7 +722,7 @@ func ShouldUseTmuxNativeRun(provider string, options MultiplexerOptions) bool {
 	if options.InteractiveCLI {
 		return false
 	}
-	if normalizeNodePlatform(options.Platform) == "win32" {
+	if providerruntime.NormalizeNodePlatform(options.Platform) == "win32" {
 		return false
 	}
 	return options.Available

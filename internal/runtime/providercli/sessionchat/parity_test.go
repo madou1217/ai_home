@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/madou1217/ai_home/application/providerruntime"
 )
 
 // parityFixture 是对拍快照：同一批输入由 Node 现有实现生成，Go 侧逐字段复算。
@@ -613,17 +615,17 @@ func TestAccountRuntimeBlockerParity(t *testing.T) {
 func TestEnvironmentProjectionParity(t *testing.T) {
 	fixture := loadParityFixture(t)
 	for _, testCase := range fixture.Environment.Strips {
-		if got := StripAccountScopedEnv(testCase.Base); !reflect.DeepEqual(got, testCase.Expect) {
+		if got := providerruntime.StripAccountScopedEnv(testCase.Base); !reflect.DeepEqual(got, testCase.Expect) {
 			t.Fatalf("%s: strip = %#v，期望 %#v", testCase.Name, got, testCase.Expect)
 		}
 	}
 	for _, testCase := range fixture.Environment.Scoped {
-		if got := BuildAccountScopedEnv(testCase.Base, testCase.Account); !reflect.DeepEqual(got, testCase.Expect) {
+		if got := providerruntime.BuildAccountScopedEnv(testCase.Base, testCase.Account); !reflect.DeepEqual(got, testCase.Expect) {
 			t.Fatalf("%s: scoped = %#v，期望 %#v", testCase.Name, got, testCase.Expect)
 		}
 	}
 	for _, testCase := range fixture.Environment.Projection {
-		got := RequiresProviderAuthProjection(testCase.Provider, testCase.AccountEnv, AuthProjectionOptions{
+		got := providerruntime.RequiresProviderAuthProjection(testCase.Provider, testCase.AccountEnv, providerruntime.AuthProjectionOptions{
 			IsLogin:     testCase.Flags.IsLogin,
 			Gateway:     testCase.Flags.Gateway,
 			AuthRelayed: testCase.Flags.AuthRelayed,
@@ -633,10 +635,10 @@ func TestEnvironmentProjectionParity(t *testing.T) {
 		}
 	}
 	for _, testCase := range fixture.Environment.Scopes {
-		got := ResolveProviderRuntimeScope(testCase.Provider, testCase.ProjectionDir, map[string]string{
+		got := providerruntime.ResolveProviderRuntimeScope(testCase.Provider, testCase.ProjectionDir, map[string]string{
 			"HOME": "/host/home",
-		}, RuntimeScopeOptions{
-			AuthProjectionOptions: AuthProjectionOptions{
+		}, providerruntime.RuntimeScopeOptions{
+			AuthProjectionOptions: providerruntime.AuthProjectionOptions{
 				Gateway:     testCase.Flags.Gateway,
 				AuthRelayed: testCase.Flags.AuthRelayed,
 			},
@@ -652,17 +654,17 @@ func TestEnvironmentProjectionParity(t *testing.T) {
 		}
 	}
 	for _, testCase := range fixture.Environment.Gemini {
-		if got := GeminiCliEndpointEnv(testCase.AccountEnv); !reflect.DeepEqual(got, testCase.Expect) {
+		if got := providerruntime.GeminiCliEndpointEnv(testCase.AccountEnv); !reflect.DeepEqual(got, testCase.Expect) {
 			t.Fatalf("gemini 接入点 = %#v，期望 %#v", got, testCase.Expect)
 		}
 	}
 	for _, testCase := range fixture.Environment.Extra {
-		if got := BuildProviderEnvExtra(testCase.Provider, testCase.AccountEnv); !reflect.DeepEqual(got, testCase.Expect) {
+		if got := providerruntime.BuildProviderEnvExtra(testCase.Provider, testCase.AccountEnv); !reflect.DeepEqual(got, testCase.Expect) {
 			t.Fatalf("%s: extra = %#v，期望 %#v", testCase.Provider, got, testCase.Expect)
 		}
 	}
 	for _, testCase := range fixture.Environment.HostHome {
-		if got := ResolveHostHomeDir(testCase.Injected, testCase.Env, testCase.Platform); got != testCase.Expect {
+		if got := providerruntime.ResolveHostHomeDir(testCase.Injected, testCase.Env, testCase.Platform); got != testCase.Expect {
 			t.Fatalf("host home = %q，期望 %q", got, testCase.Expect)
 		}
 	}
@@ -684,7 +686,7 @@ func TestBuildHostScopedBaseEnv(t *testing.T) {
 		"CLINE_DIR":            "/host/.cline",
 		"KEEP_ME":              "yes",
 	}
-	got := BuildHostScopedBaseEnv(base, "/new/home")
+	got := providerruntime.BuildHostScopedBaseEnv(base, "/new/home")
 	want := map[string]string{
 		"HOME":        "/new/home",
 		"USERPROFILE": "/new/home",
@@ -697,7 +699,7 @@ func TestBuildHostScopedBaseEnv(t *testing.T) {
 
 // TestBuildProjectedEnvironment 覆盖环境投影的组合顺序与账号引用写入。
 func TestBuildProjectedEnvironment(t *testing.T) {
-	env := BuildProjectedEnvironment(EnvironmentInput{
+	env := providerruntime.BuildProjectedEnvironment(providerruntime.EnvironmentInput{
 		Provider: "gemini",
 		BaseEnv: map[string]string{
 			"HOME":              "/host/home",
@@ -728,7 +730,7 @@ func TestBuildProjectedEnvironment(t *testing.T) {
 		t.Fatalf("projected = %#v，期望 %#v", env, want)
 	}
 	// 非法账号引用必须清掉继承来的变量。
-	cleared := BuildProjectedEnvironment(EnvironmentInput{
+	cleared := providerruntime.BuildProjectedEnvironment(providerruntime.EnvironmentInput{
 		BaseEnv:    map[string]string{"AIH_PROVIDER_ACCOUNT_REF": "acct_ffffffffffffffffffff"},
 		AccountRef: "not-an-account",
 	})
@@ -749,7 +751,7 @@ func TestNormalizeProviderAccountRef(t *testing.T) {
 		{"", ""},
 	}
 	for _, testCase := range cases {
-		if got := NormalizeProviderAccountRef(testCase.value); got != testCase.want {
+		if got := providerruntime.NormalizeProviderAccountRef(testCase.value); got != testCase.want {
 			t.Fatalf("NormalizeProviderAccountRef(%q) = %q，期望 %q", testCase.value, got, testCase.want)
 		}
 	}

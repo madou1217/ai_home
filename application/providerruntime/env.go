@@ -1,10 +1,8 @@
-package sessionchat
+package providerruntime
 
 import (
 	"regexp"
 	"strings"
-
-	"github.com/madou1217/ai_home/core/providers"
 )
 
 // ProviderAccountRefEnv 是按账号启动时注入的账号引用变量名。
@@ -121,96 +119,6 @@ func BuildAccountScopedEnv(base map[string]string, accountEnv map[string]string)
 // HasNonEmptyEnvValue 判断 env 中该键是否有非空值（去空白后）。
 func HasNonEmptyEnvValue(env map[string]string, key string) bool {
 	return strings.TrimSpace(env[key]) != ""
-}
-
-// AuthProjectionOptions 是「是否必须投影原生凭据文件」的输入。
-type AuthProjectionOptions struct {
-	IsLogin     bool
-	Gateway     bool
-	AuthRelayed bool
-}
-
-// credentialFactsForProvider 返回 Provider 合同的凭据事实；未知 Provider 返回空事实。
-func credentialFactsForProvider(provider string) providers.CredentialFacts {
-	catalog := providerCatalog()
-	if catalog == nil {
-		return providers.CredentialFacts{}
-	}
-	definition, found := catalog.Get(provider)
-	if !found || definition.Credentials == nil {
-		return providers.CredentialFacts{}
-	}
-	return *definition.Credentials
-}
-
-// RequiresProviderAuthProjection 判断启动沙箱是否必须投影原生凭据文件。
-//
-// 登录、原生 OAuth/文件凭据、以及合同声明 cliRequiresAuthFile 的 Provider
-// （如 opencode 的 auth.json）一律需要；纯 env 鉴权（密钥/令牌已在 env）不需要。
-func RequiresProviderAuthProjection(provider string, accountEnv map[string]string, options AuthProjectionOptions) bool {
-	if options.IsLogin {
-		return true
-	}
-	if options.Gateway {
-		return false
-	}
-	if options.AuthRelayed {
-		return false
-	}
-	facts := credentialFactsForProvider(NormalizeProvider(provider))
-	if facts.CLIRequiresAuthFile {
-		return true
-	}
-	for _, key := range facts.APIKeyEnv {
-		if HasNonEmptyEnvValue(accountEnv, key) {
-			return false
-		}
-	}
-	for _, key := range facts.AuthTokenEnv {
-		if HasNonEmptyEnvValue(accountEnv, key) {
-			return false
-		}
-	}
-	return true
-}
-
-// RuntimeScope 是运行时目录与投影需求。
-type RuntimeScope struct {
-	HostHomeDir        string
-	ProjectionRequired bool
-	RuntimeDir         string
-}
-
-// RuntimeScopeOptions 是运行时作用域解析的输入。
-type RuntimeScopeOptions struct {
-	AuthProjectionOptions
-	// AccountEnv 是本账号要注入的环境（用于判断是否已有 env 鉴权，从而免投影）。
-	AccountEnv               map[string]string
-	HostHomeDir              string
-	Platform                 string
-	RelayKeepsAccountSandbox bool
-}
-
-// ResolveProviderRuntimeScope 解析宿主家目录、是否投影、以及本次运行目录。
-//
-// projectionRequired 时运行目录是 Provider 的凭据投影目录；否则在 relay 需要保留沙箱时
-// 用投影根，其余情况用宿主家目录（共享配置与会话）。
-func ResolveProviderRuntimeScope(provider string, projectionDir string, baseEnv map[string]string, options RuntimeScopeOptions) RuntimeScope {
-	candidateDir := normalizeString(projectionDir)
-	hostHomeDir := ResolveHostHomeDir(options.HostHomeDir, baseEnv, options.Platform)
-	projectionRequired := RequiresProviderAuthProjection(provider, options.AccountEnv, options.AuthProjectionOptions)
-	relayKeepsSandbox := (options.AuthRelayed || options.Gateway) && options.RelayKeepsAccountSandbox
-	runtimeDir := hostHomeDir
-	if projectionRequired {
-		runtimeDir = ResolveCLIAuthProjectionDir(candidateDir, provider)
-	} else if relayKeepsSandbox {
-		runtimeDir = candidateDir
-	}
-	return RuntimeScope{
-		HostHomeDir:        hostHomeDir,
-		ProjectionRequired: projectionRequired,
-		RuntimeDir:         runtimeDir,
-	}
 }
 
 // BuildHostScopedBaseEnv 复制 base，剥掉 Provider 配置根变量，并把 HOME/USERPROFILE

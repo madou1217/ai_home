@@ -42,3 +42,9 @@
 3. 项目 watch 事件源
 4. provider-auth-sources installable/pluginSources
 5. app-entries 外部 harness 合同（若要求纯 Go）
+
+## 2026-11-12 复核（本轮）
+- Node entries=19，Go entries=16；差异仍只有 `pi / dsh / dsh-tui`。
+- 两边 unfilledFields 相同：runningAccounts 四个键、externalHarnessEntries、capabilities.crossProviderHarness。
+- 结论不变：Node 是 Go 数据 + 宿主运行态/外部 harness 合并，不是纯 Go 端点。
+- 同日新增：`/sessions/events` 已由 Go 覆盖 codex 并带 15 条 Node 对拍；`/projects/sessions` Go 全量读因只覆盖 claude/codex，已回退 Node 避免丢 provider。

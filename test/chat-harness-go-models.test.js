@@ -85,7 +85,8 @@ test('Go 优先：gateway catalog comes from Go effective rows with Go→Node re
 
   const models = await readModels('zcode', 'gateway');
 
-  assert.deepEqual(models, ['glm-5.3']);
+  // Go 独有账号（无 Node ref）也必须出现在网关目录：账号页能看到，聊天页不能少。
+  assert.deepEqual(models, ['glm-5.3', 'orphan-model']);
   assert.equal(requestedPath, ACCOUNT_MODELS_PATH);
   assert.equal(probes, 0);
 });

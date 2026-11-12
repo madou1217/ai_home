@@ -9,6 +9,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
+	accountactivityadapter "github.com/madou1217/ai_home/internal/adapters/accountactivity"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -16,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
@@ -108,6 +110,10 @@ type webuiRouteDependencies struct {
 	ReverseTunnels *sshtunnel.Supervisor
 	// AccountDeletion 是账号删除用例（WebUI 的 DELETE 承接者）。
 	AccountDeletion webuiaccountdeleteapi.AccountDeletion
+	// NodeBaseURL 是 Node 宿主回环地址：账号活动的 provider handler 仍由 Node 执行。
+	NodeBaseURL string
+	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
+	ManagementKey func() string
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -570,6 +576,33 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建 Provider 授权来源接口失败: %w", err)
 	}
 
+	// 账号活动：任务状态、守卫与速率限制在 Go；provider handler 经 Node 桥执行。
+	// 目录是 Go 内的声明数据（与 Node 描述符同源），因此参数校验不再跨进程。
+	activityLister, activityErr := accountactivityadapter.NewCredentialAccountLister(dependencies.AIHomeDir)
+	if activityErr != nil {
+		return nil, fmt.Errorf("创建账号活动账号来源失败: %w", activityErr)
+	}
+	activityService, activityErr := accountactivityadapter.NewService(accountactivityadapter.ServiceDependencies{
+		Catalog:  accountactivityadapter.BuiltinCatalog(),
+		Accounts: activityLister,
+		Executor: accountactivityadapter.NewNodeBridge(accountactivityadapter.NodeBridgeOptions{
+			BaseURL:       dependencies.NodeBaseURL,
+			ManagementKey: dependencies.ManagementKey,
+		}),
+		Jobs: accountactivityadapter.NewJobManager(time.Now, nil),
+		Now:  time.Now,
+	})
+	if activityErr != nil {
+		return nil, fmt.Errorf("创建账号活动服务失败: %w", activityErr)
+	}
+	accountActivity, activityErr := webuiaccountactivityapi.NewHandler(webuiaccountactivityapi.Dependencies{
+		Authorizer: authorizer,
+		Service:    activityService,
+	})
+	if activityErr != nil {
+		return nil, fmt.Errorf("创建账号活动接口失败: %w", activityErr)
+	}
+
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
@@ -651,6 +684,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountreauthapi.Path + webuiaccountreauthapi.ReauthSuffix, Handler: reauth},
 		{Pattern: "GET " + webuicontrolplanebootstrapapi.Path, Handler: controlPlaneBootstrap},
 		{Pattern: "GET " + webuiproviderauthsourcesapi.Path, Handler: authSources},
+		{Pattern: "POST " + webuiaccountactivityapi.RunPath, Handler: accountActivity},
+		{Pattern: "POST " + webuiaccountactivityapi.ProbePath, Handler: accountActivity},
+		{Pattern: "GET " + webuiaccountactivityapi.JobsPath, Handler: accountActivity},
+		{Pattern: "GET " + webuiaccountactivityapi.ParamsPath, Handler: accountActivity},
+		{Pattern: "POST " + webuiaccountactivityapi.AccountActionPath, Handler: accountActivity},
 	}
 	if restoreScheduling != nil {
 		routes = append(routes, webuiRoute{

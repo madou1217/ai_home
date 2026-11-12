@@ -1410,6 +1410,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 		ReverseTunnels:  sshTunnelSupervisor,
 		AccountDeletion: deleter,
+		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
+		NodeBaseURL:   nodeBaseURL,
+		ManagementKey: managementKey,
 	})
 	if err != nil {
 		_ = inference.Close()

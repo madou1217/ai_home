@@ -18,11 +18,13 @@ console.log('WS_CLICK',await clickFirst(['AIH (Local Mac)','远程工作区2']))
 await p.keyboard.press('Escape').catch(()=>{});
 const sessionClick=await clickFirst(['OKAY NOW TELL ME MY ACCOUNTS INFO','EXPRESSING SADNESS','ARE U OK']);
 console.log('SESSION_CLICK',sessionClick);
-await p.waitForTimeout(6000);
-if(!(await p.locator('textarea').count())){console.log('NEW_CLICK',await clickFirst(['新建工作区会话','新建会话']));}
-await p.waitForSelector('textarea',{timeout:20000}).catch(()=>{});await p.waitForTimeout(1000);
+await p.waitForSelector('textarea',{timeout:15000}).catch(()=>{});
+const sessionReady=await p.locator('textarea').count();
+console.log('SESSION_READY',Boolean(sessionReady));
+if(!sessionReady){console.log('NEW_CLICK',await clickFirst(['新建工作区会话','新建会话']));await p.waitForSelector('textarea',{timeout:20000}).catch(()=>{});}
+await p.waitForTimeout(800);
 console.log('BEFORE',JSON.stringify(await p.evaluate(()=>({textarea:!!document.querySelector('textarea'),retry:!!document.body.innerText.includes('重试 AIH Chat Runtime'),buttons:[...document.querySelectorAll('button')].map(b=>b.textContent||'').filter(Boolean).slice(-12)}))));
-const account=p.locator('button').filter({hasText:/OAuth|API Key/}).first();await account.click().catch(()=>{});await p.waitForTimeout(500);await p.getByText('api.deepseek.com').first().click().catch(()=>{});await p.waitForTimeout(3000);const approval=p.locator('button').filter({hasText:/Full access|选择审批模式|确认/}).first();await approval.click().catch(()=>{});await p.waitForTimeout(700);console.log('APPROVAL_MENU',JSON.stringify(await p.evaluate(()=>document.body.innerText.slice(-500))));await p.screenshot({path:'output/playwright/chat-approval-restored.png'});
+const account=p.locator('button').filter({hasText:/OAuth|API Key/}).first();await account.click().catch(()=>{});await p.waitForTimeout(500);await p.getByText('api.deepseek.com').first().click().catch(()=>{});await p.waitForTimeout(3000);await p.waitForFunction(()=>document.body.innerText.includes('实时已连接'),{timeout:15000}).catch(()=>{});const approval=p.locator('button').filter({hasText:/Full access|选择审批模式|确认/}).first();await approval.click().catch(()=>{});await p.waitForTimeout(700);const approvalMenu=await p.evaluate(()=>document.body.innerText.slice(-500));console.log('APPROVAL_MENU',JSON.stringify(approvalMenu));console.log('APPROVAL_RESTORED',!approvalMenu.includes('没有权限确认通道'));await p.screenshot({path:'output/playwright/chat-approval-restored.png'});
 console.log('AFTER',JSON.stringify(await p.evaluate(()=>({textarea:!!document.querySelector('textarea'),retry:!!document.body.innerText.includes('重试 AIH Chat Runtime'),body:document.body.innerText.slice(-300)}))));
 await p.screenshot({path:'output/playwright/chat-runtime-diagnose.png'});
 await b.close();})().catch(e=>{console.error(e.stack);process.exit(1)});

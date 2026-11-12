@@ -24,6 +24,10 @@ type OAuthInput struct {
 	// Node 刷新时优先使用凭据里记录的客户端；为空表示使用内置默认客户端。
 	ClientID     string
 	ClientSecret string
+	// IDToken 是 Google 返回的 OIDC id_token（可选）。Node 的投影把它写进
+	// .gemini/oauth_creds.json；不持久化会让新建投影缺这个字段。
+	// 它不参与 IdentitySeed，轮换 id_token 不会改变 AccountRef。
+	IDToken string
 }
 
 // OAuthAuth 是构造后不可变的 Antigravity consumer OAuth 凭据。
@@ -39,6 +43,7 @@ type OAuthAuth struct {
 	authMethod    AuthMethod
 	clientID      string
 	clientSecret  string
+	idToken       string
 	identitySeed  string
 }
 
@@ -68,7 +73,8 @@ func newOAuthAuth(input OAuthInput, allowUnknownRefresh bool) (*OAuthAuth, error
 		input.AuthMethod != AuthMethodConsumer ||
 		(input.ClientID == "") != (input.ClientSecret == "") ||
 		(input.ClientID != "" && !validSecret(input.ClientID)) ||
-		(input.ClientSecret != "" && !validSecret(input.ClientSecret)) {
+		(input.ClientSecret != "" && !validSecret(input.ClientSecret)) ||
+		(input.IDToken != "" && !validSecret(input.IDToken)) {
 		return nil, errInvalidOAuth
 	}
 	return &OAuthAuth{
@@ -81,6 +87,7 @@ func newOAuthAuth(input OAuthInput, allowUnknownRefresh bool) (*OAuthAuth, error
 		authMethod:    input.AuthMethod,
 		clientID:      input.ClientID,
 		clientSecret:  input.ClientSecret,
+		idToken:       input.IDToken,
 		identitySeed:  "oauth:" + ProviderID + ":" + email,
 	}, nil
 }
@@ -97,6 +104,14 @@ func (auth *OAuthAuth) IdentitySeed() string {
 		return ""
 	}
 	return auth.identitySeed
+}
+
+// IDToken 返回 Google 返回的 OIDC id_token；空表示上游没有给出。
+func (auth *OAuthAuth) IDToken() string {
+	if auth == nil {
+		return ""
+	}
+	return auth.idToken
 }
 
 // ClientID 返回账号自带的自定义 OAuth 客户端 ID；空表示使用内置默认客户端。

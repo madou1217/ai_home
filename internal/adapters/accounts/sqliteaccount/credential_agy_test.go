@@ -20,6 +20,7 @@ func testAgyCredentialWithClient(t *testing.T) *agy.OAuthAuth {
 		AuthMethod:    agy.AuthMethodConsumer,
 		ClientID:      "custom.apps.googleusercontent.com",
 		ClientSecret:  "custom-secret",
+		IDToken:       "header.payload.signature",
 	})
 	if err != nil {
 		t.Fatalf("NewOAuthAuth() error = %v", err)
@@ -39,8 +40,9 @@ func TestAgyCredentialCodecRoundTripsCustomClient(t *testing.T) {
 	}
 	auth, ok := decoded.(*agy.OAuthAuth)
 	if !ok || auth.ClientID() != "custom.apps.googleusercontent.com" ||
-		auth.ClientSecret() != "custom-secret" {
-		t.Fatalf("decoded client = %v", decoded)
+		auth.ClientSecret() != "custom-secret" ||
+		auth.IDToken() != "header.payload.signature" {
+		t.Fatalf("decoded credential = %v", decoded)
 	}
 }
 

@@ -94,6 +94,7 @@ func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, er
 			Token        struct {
 				AccessToken   string `json:"access_token"`
 				RefreshToken  string `json:"refresh_token"`
+				IDToken       string `json:"id_token"`
 				Expiry        any    `json:"expiry"`
 				ExpiryDate    any    `json:"expiry_date"`
 				ExpiresAtMS   int64  `json:"expires_at_ms"`
@@ -126,6 +127,7 @@ func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, er
 		// 自定义客户端可能写在 oauthToken 或 oauthToken.token（Node 两处都读）。
 		ClientID:     firstNonEmptyValue(native.OAuthToken.ClientID, native.OAuthToken.Token.ClientID),
 		ClientSecret: firstNonEmptyValue(native.OAuthToken.ClientSecret, native.OAuthToken.Token.ClientSecret),
+		IDToken:      native.OAuthToken.Token.IDToken,
 	})
 	if err != nil {
 		return nil, nil, invalidArtifacts("AGY OAuth artifact 无效")

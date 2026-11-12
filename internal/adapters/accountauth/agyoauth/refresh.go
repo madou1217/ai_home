@@ -419,6 +419,8 @@ func (provider *Provider) refreshWithClient(
 		AuthMethod:    auth.AuthMethod(),
 		ClientID:      auth.ClientID(),
 		ClientSecret:  auth.ClientSecret(),
+		// 上游给了新 id_token 就持久化；没给时保留旧值，避免投影丢字段。
+		IDToken: firstNonEmptyRefreshValue(tokens.IDToken, auth.IDToken()),
 	})
 	// 身份可能变化（Google 侧改了邮箱）：这里不拒绝，交给 Resolver 判定是
 	// 迁移账号（Go 独有账号）还是拒绝（宿主拥有身份映射）。Node 就是直接
@@ -430,6 +432,16 @@ func (provider *Provider) refreshWithClient(
 }
 
 // validEmailAddress 只接受纯邮箱地址，拒绝 "Name <mail>" 形式与空值。
+// firstNonEmptyRefreshValue 返回第一个非空值；用于「新 token 优先、旧值兜底」。
+func firstNonEmptyRefreshValue(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func validEmailAddress(value string) bool {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {

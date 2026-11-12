@@ -49,6 +49,24 @@ func TestDecodeAGYKeepsCustomOAuthClient(t *testing.T) {
 	}
 }
 
+// id_token 必须从 oauthToken.token 持久化，否则新建投影无法写出 oauth_creds.id_token。
+func TestDecodeAGYKeepsIDToken(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour).UnixMilli()
+	payload := fmt.Sprintf(
+		`{"email":"agy@example.test","oauthToken":{"auth_method":"consumer","token":{"access_token":"agy-access","refresh_token":"agy-refresh","id_token":"id-token-value","expires_at_ms":%d,"refreshed_at_ms":%d,"token_type":"Bearer"}}}`,
+		expiresAt,
+		expiresAt-int64(time.Hour/time.Millisecond),
+	)
+	credential, err := NewDecoder().DecodeNativeAuth("agy", []byte(payload))
+	if err != nil {
+		t.Fatalf("DecodeNativeAuth() error = %v", err)
+	}
+	auth, ok := credential.(*agy.OAuthAuth)
+	if !ok || auth == nil || auth.IDToken() != "id-token-value" {
+		t.Fatalf("credential = %#v, want id_token", credential)
+	}
+}
+
 func TestDecodeAGYRejectsUnknownAuthMethod(t *testing.T) {
 	if _, err := NewDecoder().DecodeNativeAuth(
 		"agy",

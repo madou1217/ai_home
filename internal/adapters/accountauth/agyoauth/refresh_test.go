@@ -228,6 +228,9 @@ func TestRefreshUsesIdentityFromIDToken(t *testing.T) {
 	if !ok || auth.Email() != "after@example.test" {
 		t.Fatalf("refreshed email = %v, want after@example.test", refreshed)
 	}
+	if auth.IDToken() != testIDToken("after@example.test") {
+		t.Fatalf("refreshed id_token = %q, want upstream value", auth.IDToken())
+	}
 }
 
 func TestRefreshKeepsStoredEmailWhenIDTokenInvalid(t *testing.T) {

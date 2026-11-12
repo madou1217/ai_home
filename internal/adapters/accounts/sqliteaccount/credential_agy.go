@@ -27,6 +27,7 @@ func (agyCredentialCodec) Encode(
 		AuthMethod:    auth.AuthMethod().String(),
 		ClientID:      auth.ClientID(),
 		ClientSecret:  auth.ClientSecret(),
+		IDToken:       auth.IDToken(),
 	})
 	return encodedCredential{
 		authKind: agy.AuthKindOAuth.String(),
@@ -58,6 +59,7 @@ func (agyCredentialCodec) Decode(
 		AuthMethod:    agy.AuthMethod(document.AuthMethod),
 		ClientID:      document.ClientID,
 		ClientSecret:  document.ClientSecret,
+		IDToken:       document.IDToken,
 	})
 	if err != nil {
 		return nil, ErrInvalidCredential
@@ -76,4 +78,6 @@ type agyOAuthCredentialV1 struct {
 	// 自定义 OAuth 客户端（可选）：老凭据没有这两个字段。
 	ClientID     string `json:"client_id,omitempty"`
 	ClientSecret string `json:"client_secret,omitempty"`
+	// IDToken 是 OIDC id_token（可选）：老凭据没有该字段。
+	IDToken string `json:"id_token,omitempty"`
 }

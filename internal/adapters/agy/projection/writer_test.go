@@ -194,6 +194,43 @@ func TestWriteMaterializesAllAgyArtifacts(t *testing.T) {
 	}
 }
 
+// 领域凭据里的 id_token 必须写进两份 CLI 凭据与派生的 oauth_creds.json；
+// 否则新建投影（没有历史 CLI 文件）会缺这个字段。
+func TestWriteUsesCredentialIDToken(t *testing.T) {
+	aiHomeDir := t.TempDir()
+	accountRef := "acct_0123456789abcdef0123"
+	runtimeDir := filepath.Join(aiHomeDir, "run", "auth-projections", "agy", accountRef)
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	refreshedAt := time.Date(2026, time.November, 11, 10, 0, 0, 0, time.UTC)
+	auth, err := agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         "agy@example.test",
+		AccessToken:   "new-access",
+		RefreshToken:  "new-refresh",
+		ExpiresAtMS:   refreshedAt.Add(time.Hour).UnixMilli(),
+		RefreshedAtMS: refreshedAt.UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+		IDToken:       "credential-id-token",
+	})
+	if err != nil {
+		t.Fatalf("NewOAuthAuth() error = %v", err)
+	}
+	if err := Write(aiHomeDir, accountRef, auth); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	creds := readJSON(t, filepath.Join(runtimeDir, ".gemini", "oauth_creds.json"))
+	if creds["id_token"] != "credential-id-token" {
+		t.Fatalf("oauth_creds id_token = %v", creds["id_token"])
+	}
+	cliToken := readJSON(t, filepath.Join(runtimeDir, ".gemini", "antigravity-cli", "antigravity-oauth-token"))
+	token, _ := cliToken["token"].(map[string]any)
+	if token["id_token"] != "credential-id-token" {
+		t.Fatalf("cli token id_token = %v", token["id_token"])
+	}
+}
+
 func TestWriteSkipsMissingRuntimeDir(t *testing.T) {
 	aiHomeDir := t.TempDir()
 	accountRef := "acct_0123456789abcdef0123"

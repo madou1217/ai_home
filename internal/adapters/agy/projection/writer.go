@@ -151,6 +151,10 @@ func buildCLITokenDocument(auth *agy.OAuthAuth, expiresAtMS int64, refreshedAtMS
 	if refreshedAtMS > 0 {
 		token["refreshed_at_ms"] = refreshedAtMS
 	}
+	// 领域凭据里保存的 id_token 优先；没有时保留 CLI 文件里的值（由合并语义兜底）。
+	if idToken := strings.TrimSpace(auth.IDToken()); idToken != "" {
+		token["id_token"] = idToken
+	}
 	document := map[string]any{
 		"auth_method": authmeta.AuthMethodConsumer,
 		// id_token_email 是 CLI 文件里的账号邮箱快照。Node 靠「捕获整份文档再原样

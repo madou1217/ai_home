@@ -28,6 +28,7 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 	}
 	defer file.Close()
 	toolResults := map[string]string{}
+	hiddenMetaUserIDs := map[string]bool{}
 	type record struct {
 		Type        string `json:"type"`
 		UUID        string `json:"uuid"`
@@ -55,6 +56,12 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 		if item.IsSidechain {
 			continue
 		}
+		if item.Type == "user" && item.IsMeta {
+			text, _, hasImage := claudeContent(item.Message.Content, toolResults)
+			if !hasImage && strings.TrimSpace(text) == "" {
+				hiddenMetaUserIDs[item.UUID] = true
+			}
+		}
 		var blocks []map[string]any
 		if json.Unmarshal(item.Message.Content, &blocks) != nil {
 			continue
@@ -70,6 +77,11 @@ func readClaudeMessages(hostHome, projectDirName, sessionID string) ([]json.RawM
 	messages := []json.RawMessage{}
 	for _, item := range records {
 		if item.IsSidechain || (item.Type != "user" && item.Type != "assistant") {
+			continue
+		}
+		if item.Type == "assistant" && item.Message.Model == "<synthetic>" && (hiddenMetaUserIDs[item.ParentUUID] || previousRole(messages) == "assistant") {
+			// 只丢弃挂在隐藏 meta user 下、或紧跟在 assistant 后的 synthetic 恢复 turn；
+			// 普通 API Error（前一 turn 是 user）仍保留，与 Node 一致。
 			continue
 		}
 		text, hasOnlyTool, hasImage := claudeContent(item.Message.Content, toolResults)
@@ -200,4 +212,16 @@ func compactInput(input map[string]any) string {
 		return string(raw[:120]) + "..."
 	}
 	return string(raw)
+}
+
+func previousRole(messages []json.RawMessage) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	var previous map[string]any
+	if json.Unmarshal(messages[len(messages)-1], &previous) != nil {
+		return ""
+	}
+	role, _ := previous["role"].(string)
+	return role
 }

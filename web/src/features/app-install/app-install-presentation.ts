@@ -94,9 +94,6 @@ export function getAppInstallFailureReasons(job: Pick<AppInstallJob, 'error' | '
 export function getAppInstallStatusPresentation(status: string): AppInstallStatusPresentation {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'succeeded') return { label: '已成功', tone: 'success', terminal: true };
-  // 账号活动批量领取的终态可能是 partial（部分账号成功/部分失败）；它必须算终态，
-  // 否则队列入口会永远显示「后台任务」并在 5 分钟后才被回收。
-  if (normalized === 'partial') return { label: '部分成功', tone: 'neutral', terminal: true };
   if (normalized === 'failed') return { label: '执行失败', tone: 'error', terminal: true };
   if (normalized === 'cancelled') return { label: '已取消', tone: 'neutral', terminal: true };
   if (normalized === 'queued') return { label: '排队中', tone: 'active', terminal: false };

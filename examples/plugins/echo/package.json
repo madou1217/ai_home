@@ -1,0 +1,8 @@
+{
+  "name": "aih-plugin-echo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "M0 最小插件样例：只依赖 @ai-home/plugin-sdk，回显 JSON 与二进制 payload，演示取消与 disposer。",
+  "peerDependencies": { "@ai-home/plugin-sdk": "0.1.0" }
+}

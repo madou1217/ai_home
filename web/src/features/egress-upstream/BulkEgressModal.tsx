@@ -45,7 +45,7 @@ export default function BulkEgressModal({ open, upstream, groups, poolReady, tar
         ...(mode === 'pool' ? { scope: selection.scope, strategy: selection.strategy } : {})
       });
       if (result.failed.length === 0) message.success(`已为 ${result.applied} 个账号设置出口`);
-      else message.warning(`${result.applied} 个成功，${result.failed.length} 个失败：${result.failed.map((item) => `${item.label || item.provider || '账号'}（${item.error}）`).join('、')}`);
+      else message.warning(`${result.applied} 个成功，${result.failed.length} 个失败：${result.failed.map((item) => `${item.label || item.accountRef}（${item.error}）`).join('、')}`);
       onClose(true);
     } finally {
       setSaving(false);

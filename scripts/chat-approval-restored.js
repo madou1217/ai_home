@@ -101,32 +101,6 @@ const profileFor = (origin, key) => {
     throw new Error('Claude 下审批菜单仍被禁用');
   }
   console.log('APPROVAL_ENABLED', true);
-
-  // 5. 再切回 Antigravity，断言受限菜单项在 DOM 上真的 disabled。
-  await page.keyboard.press('Escape').catch(() => {});
-  const accountAgain = page.locator('button').filter({ hasText: /OAuth|API Key/ }).first();
-  await accountAgain.click().catch(() => {});
-  await page.waitForTimeout(500);
-  console.log('ANTIGRAVITY_GROUP', await page.getByText('ANTIGRAVITY', { exact: true }).count());
-  await page.getByText('ANTIGRAVITY', { exact: true }).first().click().catch(() => {});
-  await page.waitForTimeout(500);
-  await page.getByText('ma****17@126.com', { exact: true }).first().click().catch(() => {});
-  await page.waitForTimeout(5000);
-  const restrictedApproval = page.locator('button[aria-label="选择审批模式"]').first();
-  await restrictedApproval.click().catch(() => {});
-  await page.waitForTimeout(700);
-  const restrictedItems = await page.evaluate(() => [...document.querySelectorAll('.ant-dropdown-menu-item')].map((el) => ({
-    text: String(el.textContent || '').trim(),
-    disabled: el.classList.contains('ant-dropdown-menu-item-disabled') || el.getAttribute('aria-disabled') === 'true'
-  })));
-  console.log('RESTRICTED_ITEMS', JSON.stringify(restrictedItems));
-  const restrictedApprove = restrictedItems.find((item) => item.text.includes('Approve for me'));
-  const restrictedPlan = restrictedItems.find((item) => item.text.includes('Plan mode'));
-  if (!restrictedApprove || !restrictedApprove.disabled) throw new Error('Antigravity Approve for me 未 disabled');
-  if (!restrictedPlan || !restrictedPlan.disabled) throw new Error('Antigravity Plan mode 未 disabled');
-  console.log('RESTRICTED_DISABLED', true);
-  await page.screenshot({ path: 'output/playwright/chat-approval-restricted-dom.png' });
-
   fs.mkdirSync('output/playwright', { recursive: true });
   await page.screenshot({ path: 'output/playwright/chat-approval-restored-dom.png' });
   await browser.close();

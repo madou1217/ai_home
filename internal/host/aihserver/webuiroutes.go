@@ -55,7 +55,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionpreviewsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslistapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
@@ -106,8 +105,6 @@ type webuiRouteDependencies struct {
 	TerminalProbe func(sessionKey string) string
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel。
 	ReverseTunnels *sshtunnel.Supervisor
-	// AccountDeletion 是账号删除用例（WebUI 的 DELETE 承接者）。
-	AccountDeletion webuiaccountdeleteapi.AccountDeletion
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -422,12 +419,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建调度规则接口失败: %w", err)
 	}
-	accountDelete, err := webuiaccountdeleteapi.NewHandler(webuiaccountdeleteapi.Dependencies{
-		Authorizer: authorizer, Deletion: dependencies.AccountDeletion,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建账号删除接口失败: %w", err)
-	}
 	setDefault, err := webuisetdefaultapi.NewHandler(webuisetdefaultapi.BuildDependencies(
 		authorizer, dependencies.AIHomeDir, dependencies.Catalog, dependencies.ProviderDefaults,
 		webuisetdefaultapi.HostProjection{},
@@ -623,7 +614,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "DELETE " + webuisshwriteapi.ItemPath, Handler: sshWrite},
 		{Pattern: "POST " + webuiaccountimportapi.Path, Handler: accountImport},
 		{Pattern: "POST " + webuiaccountstatusapi.Path + webuiaccountstatusapi.RouteSuffix, Handler: accountStatus},
-		{Pattern: "DELETE " + webuiaccountdeleteapi.Path + webuiaccountdeleteapi.DeleteSuffix, Handler: accountDelete},
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},

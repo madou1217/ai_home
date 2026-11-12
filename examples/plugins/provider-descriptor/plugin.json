@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "aih.sample.provider-descriptor",
+  "version": "0.1.0",
+  "engines": { "aih": ">=1.0.0", "node": ">=22" },
+  "runtime": "node",
+  "entry": "index.mjs",
+  "targets": ["any"],
+  "provides": [{ "name": "sample.provider-descriptor", "version": "1.0.0" }],
+  "contributes": [
+    { "id": "sample.provider.descriptor", "capability": "provider.descriptor", "version": 1, "failurePolicy": "delegate" }
+  ]
+}

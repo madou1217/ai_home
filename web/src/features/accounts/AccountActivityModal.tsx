@@ -105,7 +105,7 @@ export function AccountActivityModal({ open, title, results, onClose }: AccountA
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {result.displayName || result.provider || '账号'}
+                    {result.displayName || result.accountRef || result.provider}
                   </div>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {result.provider}

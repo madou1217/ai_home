@@ -51,15 +51,12 @@ type Options struct {
 	AIHomeDir string
 	// Probe 为 nil 时使用宿主 tmux；测试注入假探测器。
 	Probe SessionProbe
-	// Kill 为 nil 时使用宿主 tmux；测试注入假实现，让「杀完之后复探」可验证。
-	Kill SessionKiller
 }
 
-// Service 执行账号删除前的宿主投影清理、会话写者检查与强制释放。
+// Service 执行账号删除前的宿主投影清理与会话写者检查。
 type Service struct {
 	aiHomeDir string
 	probe     SessionProbe
-	killer    SessionKiller
 }
 
 // New 创建宿主清理服务；AIH_HOME 必须是已存在的真实目录。
@@ -83,11 +80,7 @@ func New(options Options) (*Service, error) {
 	if probe == nil {
 		probe = hostTmuxProbe{}
 	}
-	killer := options.Kill
-	if killer == nil {
-		killer = hostTmuxKiller{}
-	}
-	return &Service{aiHomeDir: resolved, probe: probe, killer: killer}, nil
+	return &Service{aiHomeDir: resolved, probe: probe}, nil
 }
 
 // RuntimeProjectionDirs 解析目标账号的全部运行时投影根。

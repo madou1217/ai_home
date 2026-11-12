@@ -1,0 +1,629 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/status-dual-read-capture.js",
+  "accountRef": "acct_0123456789abcdef0123",
+  "cases": [
+    {
+      "name": "codex_auth_invalid_then_login_success",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "auth_invalid",
+            "reason": "401 unauthorized",
+            "cooldownMs": 300000
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000060000,
+          "evidence": "login_success"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000300000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "auth_invalid",
+              "lastFailureReason": "401 unauthorized",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 1790000300000,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "auth_invalid"
+          },
+          {
+            "atMs": 1790000060000,
+            "runtimeState": null,
+            "status": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_rate_limited_then_manual_clear",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "rate_limited",
+            "reason": "429",
+            "cooldownMs": 60000
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000010000,
+          "evidence": "manual_admin_clear"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000060000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "rate_limited",
+              "lastFailureReason": "429",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 1790000060000,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "rate_limited"
+          },
+          {
+            "atMs": 1790000010000,
+            "runtimeState": null,
+            "status": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_overloaded_then_usage_success",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "overloaded",
+            "reason": "overloaded",
+            "cooldownMs": 30000
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000005000,
+          "evidence": "direct_usage_success"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000030000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "overloaded",
+              "lastFailureReason": "overloaded",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 1790000030000,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "overloaded"
+          },
+          {
+            "atMs": 1790000005000,
+            "runtimeState": null,
+            "status": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_network_error_no_clear_before_until",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "network_error",
+            "reason": "ECONNRESET",
+            "cooldownMs": 120000
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000001000,
+          "evidence": "models_probe_success"
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000130000,
+          "evidence": "models_probe_success"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000120000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "network_error",
+              "lastFailureReason": "ECONNRESET",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 1790000120000,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "transient_network"
+          },
+          {
+            "atMs": 1790000001000,
+            "runtimeState": null,
+            "status": "unknown"
+          },
+          {
+            "atMs": 1790000130000,
+            "runtimeState": null,
+            "status": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_quota_exhausted_block_then_manual_clear",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "quota_exhausted",
+            "reason": "quota exhausted",
+            "cooldownMs": 0
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000060000,
+          "evidence": "manual_admin_clear"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 0,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "quota_exhausted",
+              "lastFailureReason": "quota exhausted",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": {
+                "kind": "quota_exhausted",
+                "reason": "quota exhausted",
+                "observedAt": 1790000000000,
+                "until": 1790000030000
+              }
+            },
+            "status": "quota_exhausted"
+          },
+          {
+            "atMs": 1790000060000,
+            "runtimeState": null,
+            "status": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_permission_denied_block_kept_by_unrelated_evidence",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "permission_denied",
+            "reason": "403",
+            "cooldownMs": 0
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000030000,
+          "evidence": "credential_update_after_failure"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 0,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "permission_denied",
+              "lastFailureReason": "403",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": {
+                "kind": "permission_denied",
+                "reason": "403",
+                "observedAt": 1790000000000,
+                "until": 1790000030000
+              }
+            },
+            "status": "permission_denied"
+          },
+          {
+            "atMs": 1790000030000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 0,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "",
+              "lastFailureReason": "",
+              "lastFailureAt": 0,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": {
+                "kind": "permission_denied",
+                "reason": "403",
+                "observedAt": 1790000000000,
+                "until": 1790000030000
+              }
+            },
+            "status": "healthy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_runtime_state_replace_and_clear",
+      "provider": "codex",
+      "initial": {
+        "cooldownUntil": 1790000900000,
+        "consecutiveFailures": 2,
+        "successCount": 3,
+        "failCount": 2,
+        "lastError": "boom",
+        "lastFailureKind": "rate_limited",
+        "lastFailureReason": "429",
+        "lastFailureAt": 1789999999000,
+        "lastSuccessAt": 1789999998000,
+        "rateLimitUntil": 1790000900000,
+        "authInvalidUntil": 0,
+        "overloadUntil": 0,
+        "networkUntil": 0,
+        "serviceUnavailableUntil": 0,
+        "upstreamErrorUntil": 0,
+        "routingBlock": null,
+        "modelCooldowns": {},
+        "modelFailureStreaks": {}
+      },
+      "steps": [
+        {
+          "op": "runtime_state",
+          "atMs": 1790000001000,
+          "state": null
+        },
+        {
+          "op": "runtime_state",
+          "atMs": 1790000002000,
+          "state": {
+            "lastFailureKind": "auth_invalid",
+            "lastFailureReason": "401",
+            "authInvalidUntil": 1790000600000,
+            "cooldownUntil": 1790000600000
+          }
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000001000,
+            "runtimeState": null,
+            "status": "unknown"
+          },
+          {
+            "atMs": 1790000002000,
+            "runtimeState": {
+              "lastFailureKind": "auth_invalid",
+              "lastFailureReason": "401",
+              "authInvalidUntil": 1790000600000,
+              "cooldownUntil": 1790000600000,
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureAt": 0,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "auth_invalid"
+          }
+        ]
+      }
+    },
+    {
+      "name": "agy_permission_denied_region_block",
+      "provider": "agy",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "permission_denied",
+            "reason": "agy_region_not_eligible",
+            "cooldownMs": 0
+          }
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 0,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "permission_denied",
+              "lastFailureReason": "agy_region_not_eligible",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": {
+                "kind": "permission_denied",
+                "reason": "agy_region_not_eligible",
+                "observedAt": 1790000000000,
+                "until": 1790000030000
+              }
+            },
+            "status": "permission_denied"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_service_unavailable_repeated_extends_until",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "service_unavailable",
+            "reason": "503",
+            "cooldownMs": 60000
+          }
+        },
+        {
+          "op": "failure",
+          "atMs": 1790000010000,
+          "failure": {
+            "kind": "service_unavailable",
+            "reason": "503",
+            "cooldownMs": 60000
+          }
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000060000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "service_unavailable",
+              "lastFailureReason": "503",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 1790000060000,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "service_unavailable"
+          },
+          {
+            "atMs": 1790000010000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000070000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "service_unavailable",
+              "lastFailureReason": "503",
+              "lastFailureAt": 1790000010000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 1790000070000,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "service_unavailable"
+          }
+        ]
+      }
+    },
+    {
+      "name": "codex_upstream_error_then_upstream_success",
+      "provider": "codex",
+      "initial": null,
+      "steps": [
+        {
+          "op": "failure",
+          "atMs": 1790000000000,
+          "failure": {
+            "kind": "upstream_error",
+            "reason": "boom",
+            "cooldownMs": 30000
+          }
+        },
+        {
+          "op": "clear",
+          "atMs": 1790000040000,
+          "evidence": "upstream_success"
+        }
+      ],
+      "expected": {
+        "afterEach": [
+          {
+            "atMs": 1790000000000,
+            "runtimeState": {
+              "modelCooldowns": {},
+              "modelFailureStreaks": {},
+              "cooldownUntil": 1790000030000,
+              "consecutiveFailures": 0,
+              "successCount": 0,
+              "failCount": 0,
+              "lastError": "",
+              "lastFailureKind": "upstream_error",
+              "lastFailureReason": "boom",
+              "lastFailureAt": 1790000000000,
+              "lastSuccessAt": 0,
+              "rateLimitUntil": 0,
+              "authInvalidUntil": 0,
+              "overloadUntil": 0,
+              "networkUntil": 0,
+              "serviceUnavailableUntil": 0,
+              "upstreamErrorUntil": 0,
+              "routingBlock": null
+            },
+            "status": "upstream_error"
+          },
+          {
+            "atMs": 1790000040000,
+            "runtimeState": null,
+            "status": "unknown"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -55,7 +55,6 @@ import type {
 import type { UseModelCatalogResult } from '@/features/accounts/useModelCatalog';
 import { getAuthJobIdentity, getCallbackUiCopy } from '@/features/accounts/AuthProgressModal';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
-import { buildAccountCliCommand } from '@/features/accounts/account-cli-command';
 import {
   confirmOccupiedAccountDeletion,
   isAccountOccupiedError
@@ -289,20 +288,6 @@ export function useAccountActions({
   const cliDirectoryPicker = useServerDirectoryPicker(
     React.useCallback((path: string) => setCliWorkdir(path), [])
   );
-
-  const copyAccountCliCommand = React.useCallback(async (record: Pick<Account, 'provider' | 'displayId'>) => {
-    const command = buildAccountCliCommand(record);
-    if (!command) {
-      message.warning('该账号没有 CLI 数字 ID，无法生成启动命令');
-      return;
-    }
-    try {
-      await writeClipboardText(command);
-      message.success(`已复制：${command}`);
-    } catch (_error) {
-      message.error('复制失败');
-    }
-  }, []);
 
   const copyAccountEmail = React.useCallback(async (record: Pick<Account, 'apiKeyMode' | 'email' | 'baseUrl' | 'accountRef'>) => {
     if (!canCopyAccountEmail(record)) return;
@@ -776,7 +761,6 @@ export function useAccountActions({
   React.useEffect(() => {
     if (!pluginLoginJobId) return;
     let cancelled = false;
-
     const poll = async () => {
       try {
         const pluginJob = await accountsAPI.getPluginLoginJob(pluginLoginJobId);
@@ -803,10 +787,10 @@ export function useAccountActions({
       }
     };
 
-	    void poll();
-	    return () => {
-	      cancelled = true;
-	    };
+    void poll();
+    return () => {
+      cancelled = true;
+    };
   }, [pluginLoginJobId, closeAuthProgressPanel, requestAccountsSnapshotUpdate]);
 
   // 认证来源链：任务运行期间解析一次「这个认证方式在这台机器上有哪些来源」。
@@ -1865,7 +1849,6 @@ export function useAccountActions({
     refreshingUsageAccountRefs,
     refreshingAccountRefs,
     // 行级操作
-    copyAccountCliCommand,
     copyAccountEmail,
     handleEdit,
     handleRestoreScheduling,

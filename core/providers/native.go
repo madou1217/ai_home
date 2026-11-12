@@ -401,14 +401,6 @@ func nativeCodebuddyCLI() *NativeCapability {
 		Commands:    []string{"mcp"},
 		ConfigFiles: []string{".mcp.json"},
 	}
-	// 站点必须显式固定：CLI 缺省按 internal（copilot.tencent.com）解析，国际站
-	// 账号的 .ai token 会被发到国内站端点，业务与 refresh 双 401（2026-11-10 真机）。
-	// 这里固定的是资源子命令（plugin / mcp / doctor）的 lane，交互会话由启动策略
-	// 的 DEFAULT_INTERNET_ENVIRONMENT_BY_PROVIDER 固定，两处口径一致。
-	native.Runtime = &NativeResourceRuntime{Handler: "native-cli", Env: map[string]string{
-		"CODEBUDDY_INTERNET_ENVIRONMENT":         "external",
-		"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "external",
-	}}
 	return native
 }
 

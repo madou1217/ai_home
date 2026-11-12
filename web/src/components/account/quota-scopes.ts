@@ -180,17 +180,6 @@ export function getQuotaScopes(snapshot: AccountUsageSnapshot | null | undefined
   });
 }
 
-/**
- * 行内旁路标记：只给「赠送」出标签。
- *
- * `detail`（CodeBuddy 的每包明细）曾经也挂一个「明细」小标签，但它不是按钮、
- * 点了没反应，行本身已经可见；在剩余额度列里只是噪音。分类仍保留给排序与
- * 账号级 min 计算，展示层不再出这个标签。
- */
-export function getQuotaScopeTag(row: Pick<QuotaScopeRow, 'category'>): string | undefined {
-  return row && row.category === 'gift' ? '赠送' : undefined;
-}
-
 /** 账号级额度只看主额度（gift/detail 不参与）。 */
 export function getPrimaryQuotaScopes(snapshot: AccountUsageSnapshot | null | undefined): QuotaScopeRow[] {
   return getQuotaScopes(snapshot).filter((row) => row.category === 'primary');

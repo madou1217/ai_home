@@ -65,31 +65,17 @@ func (store *deletionTestStore) DeleteAccount(
 	return nil
 }
 
-// deletionTestOccupancy 是 DeletionOccupancy 的假实现：固定返回一批占用者。
-type deletionTestOccupancy struct {
-	blockers    []DeletionBlocker
-	inspectErr  error
-	releaseErr  error
-	releaseCall int
-	order       *[]string
+type deletionTestGuard struct {
+	err   error
+	order *[]string
 }
 
-func (occupancy *deletionTestOccupancy) InspectAccountDeletion(
+func (guard *deletionTestGuard) AssertAccountDeletable(
 	context.Context,
-	accountcore.Account,
-) ([]DeletionBlocker, error) {
-	*occupancy.order = append(*occupancy.order, "inspect")
-	return occupancy.blockers, occupancy.inspectErr
-}
-
-func (occupancy *deletionTestOccupancy) ReleaseAccountDeletion(
-	context.Context,
-	accountcore.Account,
-	[]DeletionBlocker,
+	accountcore.AccountRef,
 ) error {
-	occupancy.releaseCall++
-	*occupancy.order = append(*occupancy.order, "release")
-	return occupancy.releaseErr
+	*guard.order = append(*guard.order, "guard")
+	return guard.err
 }
 
 type deletionTestPreparation struct {
@@ -137,66 +123,14 @@ func (cleanup *deletionTestHostCleanup) AfterDelete(
 	return cleanup.afterErr
 }
 
-type deletionTestGrant struct {
-	revocation GrantRevocation
-	err        error
-	order      *[]string
-}
-
-func (grant *deletionTestGrant) RevokeHostGrant(
-	context.Context,
-	accountcore.Account,
-) (GrantRevocation, error) {
-	*grant.order = append(*grant.order, "grant")
-	return grant.revocation, grant.err
-}
-
-type deletionTestDefault struct {
-	isDefault bool
-	landing   ServerDefaultLanding
-	landErr   error
-	landCalls int
-	order     *[]string
-}
-
-func (defaults *deletionTestDefault) IsDefaultAccount(
-	context.Context,
-	string,
-	accountcore.AccountRef,
-) (bool, error) {
-	*defaults.order = append(*defaults.order, "default-read")
-	return defaults.isDefault, nil
-}
-
-func (defaults *deletionTestDefault) LandServerDefault(
-	context.Context,
-	string,
-) (ServerDefaultLanding, error) {
-	defaults.landCalls++
-	*defaults.order = append(*defaults.order, "default-land")
-	return defaults.landing, defaults.landErr
-}
-
-func assertOrder(t *testing.T, order []string, want ...string) {
-	t.Helper()
-	if len(order) != len(want) {
-		t.Fatalf("order = %v, want %v", order, want)
-	}
-	for index := range want {
-		if order[index] != want[index] {
-			t.Fatalf("order = %v, want %v", order, want)
-		}
-	}
-}
-
 func TestDeleteAccountRunsHostCleanupAroundCommit(t *testing.T) {
-	order := make([]string, 0, 8)
+	order := make([]string, 0, 6)
 	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
+	guard := &deletionTestGuard{order: &order}
 	preparation := &deletionTestPreparation{order: &order}
 	cleanup := &deletionTestCleanup{order: &order}
 	hostCleanup := &deletionTestHostCleanup{order: &order}
-	deleter, err := NewDeleterWithHostCleanup(store, occupancy, preparation, hostCleanup, cleanup)
+	deleter, err := NewDeleterWithHostCleanup(store, guard, preparation, hostCleanup, cleanup)
 	if err != nil {
 		t.Fatalf("NewDeleterWithHostCleanup() error = %v", err)
 	}
@@ -205,20 +139,28 @@ func TestDeleteAccountRunsHostCleanupAroundCommit(t *testing.T) {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 
-	assertOrder(t, order, "get", "inspect", "host-before", "prepare", "delete", "forget", "host-after")
+	want := []string{"guard", "get", "host-before", "prepare", "delete", "forget", "host-after"}
+	if len(order) != len(want) {
+		t.Fatalf("order = %v", order)
+	}
+	for index := range want {
+		if order[index] != want[index] {
+			t.Fatalf("order = %v, want %v", order, want)
+		}
+	}
 	if hostCleanup.afterCalls != 1 {
 		t.Fatalf("afterCalls = %d", hostCleanup.afterCalls)
 	}
 }
 
 func TestDeleteAccountAbortsWhenHostCleanupRejects(t *testing.T) {
-	order := make([]string, 0, 8)
+	order := make([]string, 0, 6)
 	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
+	guard := &deletionTestGuard{order: &order}
 	preparation := &deletionTestPreparation{order: &order}
 	cleanup := &deletionTestCleanup{order: &order}
 	hostCleanup := &deletionTestHostCleanup{order: &order, beforeErr: ErrAccountRuntimeActive}
-	deleter, err := NewDeleterWithHostCleanup(store, occupancy, preparation, hostCleanup, cleanup)
+	deleter, err := NewDeleterWithHostCleanup(store, guard, preparation, hostCleanup, cleanup)
 	if err != nil {
 		t.Fatalf("NewDeleterWithHostCleanup() error = %v", err)
 	}
@@ -227,25 +169,34 @@ func TestDeleteAccountAbortsWhenHostCleanupRejects(t *testing.T) {
 	if !errors.Is(err, ErrAccountRuntimeActive) {
 		t.Fatalf("error = %v", err)
 	}
-	assertOrder(t, order, "get", "inspect", "host-before")
+	want := []string{"guard", "get", "host-before"}
+	if len(order) != len(want) {
+		t.Fatalf("宿主拒绝后不得再动投影或数据库，order = %v", order)
+	}
+	for index := range want {
+		if order[index] != want[index] {
+			t.Fatalf("order = %v", order)
+		}
+	}
 	if hostCleanup.afterCalls != 0 {
 		t.Fatal("提交前失败时不得执行提交后清理")
 	}
 }
 
 func TestDeleteAccountIgnoresAfterDeleteFailure(t *testing.T) {
-	order := make([]string, 0, 8)
+	order := make([]string, 0, 6)
 	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
+	guard := &deletionTestGuard{order: &order}
 	preparation := &deletionTestPreparation{order: &order}
 	cleanup := &deletionTestCleanup{order: &order}
 	hostCleanup := &deletionTestHostCleanup{order: &order, afterErr: ErrAccountHostCleanupFailed}
-	deleter, err := NewDeleterWithHostCleanup(store, occupancy, preparation, hostCleanup, cleanup)
+	deleter, err := NewDeleterWithHostCleanup(store, guard, preparation, hostCleanup, cleanup)
 	if err != nil {
 		t.Fatalf("NewDeleterWithHostCleanup() error = %v", err)
 	}
 
-	if err := deleter.DeleteAccount(context.Background(), store.account.Ref()); err != nil {
+	err = deleter.DeleteAccount(context.Background(), store.account.Ref())
+	if err != nil {
 		t.Fatalf("账号事实已提交，宿主残留清理失败不得变成删除失败: %v", err)
 	}
 	if hostCleanup.afterCalls != 1 {
@@ -254,17 +205,17 @@ func TestDeleteAccountIgnoresAfterDeleteFailure(t *testing.T) {
 }
 
 func TestDeleteAccountSkipsAfterDeleteWhenCommitFails(t *testing.T) {
-	order := make([]string, 0, 8)
+	order := make([]string, 0, 6)
 	store := &deletionTestStore{
 		account:   deletionTestAccount(t),
 		deleteErr: errors.New("db boom"),
 		order:     &order,
 	}
-	occupancy := &deletionTestOccupancy{order: &order}
+	guard := &deletionTestGuard{order: &order}
 	preparation := &deletionTestPreparation{order: &order}
 	cleanup := &deletionTestCleanup{order: &order}
 	hostCleanup := &deletionTestHostCleanup{order: &order}
-	deleter, err := NewDeleterWithHostCleanup(store, occupancy, preparation, hostCleanup, cleanup)
+	deleter, err := NewDeleterWithHostCleanup(store, guard, preparation, hostCleanup, cleanup)
 	if err != nil {
 		t.Fatalf("NewDeleterWithHostCleanup() error = %v", err)
 	}
@@ -278,215 +229,16 @@ func TestDeleteAccountSkipsAfterDeleteWhenCommitFails(t *testing.T) {
 }
 
 func TestDeleteAccountWithoutHostCleanupKeepsLegacyFlow(t *testing.T) {
-	order := make([]string, 0, 8)
+	order := make([]string, 0, 6)
 	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
+	guard := &deletionTestGuard{order: &order}
 	preparation := &deletionTestPreparation{order: &order}
 	cleanup := &deletionTestCleanup{order: &order}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
+	deleter, err := NewDeleter(store, guard, preparation, cleanup)
 	if err != nil {
 		t.Fatalf("NewDeleter() error = %v", err)
 	}
 	if err := deleter.DeleteAccount(context.Background(), store.account.Ref()); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
-	}
-}
-
-// TestDeleteAccountRejectsOccupiedAccountWithoutForce 守住 fail-closed：
-// 有占用者且调用方没有确认强制删除时，账号事实必须完全不动。
-func TestDeleteAccountRejectsOccupiedAccountWithoutForce(t *testing.T) {
-	order := make([]string, 0, 8)
-	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{
-		order: &order,
-		blockers: []DeletionBlocker{{
-			Kind: "persistent_session", Label: "挂起的持久会话（tmux）", Session: "s-main",
-		}},
-	}
-	preparation := &deletionTestPreparation{order: &order}
-	cleanup := &deletionTestCleanup{order: &order}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-
-	outcome, err := deleter.DeleteAccountWithOptions(
-		context.Background(),
-		store.account.Ref(),
-		DeletionOptions{},
-	)
-	var runtimeActive *RuntimeActiveError
-	if !errors.As(err, &runtimeActive) {
-		t.Fatalf("error = %v，期望 RuntimeActiveError", err)
-	}
-	if !errors.Is(err, ErrAccountRuntimeActive) {
-		t.Fatalf("error 必须能被 errors.Is(ErrAccountRuntimeActive) 命中: %v", err)
-	}
-	if len(runtimeActive.Blockers) != 1 || runtimeActive.Blockers[0].Session != "s-main" {
-		t.Fatalf("blockers = %v", runtimeActive.Blockers)
-	}
-	if outcome.Account.Ref() != store.account.Ref() {
-		t.Fatalf("outcome.Account = %v", outcome.Account.Ref())
-	}
-	assertOrder(t, order, "get", "inspect")
-	if occupancy.releaseCall != 0 {
-		t.Fatal("没有 force 时不得终止任何占用者")
-	}
-}
-
-// TestDeleteAccountForceReleasesThenDeletes 守住强制删除的顺序：
-// 先释放占用者，再回收宿主授权、收敛投影、提交删除。
-func TestDeleteAccountForceReleasesThenDeletes(t *testing.T) {
-	order := make([]string, 0, 10)
-	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{
-		order:    &order,
-		blockers: []DeletionBlocker{{Kind: "persistent_session", Session: "s-main"}},
-	}
-	preparation := &deletionTestPreparation{order: &order}
-	cleanup := &deletionTestCleanup{order: &order}
-	grant := &deletionTestGrant{order: &order, revocation: GrantRevocation{OK: true}}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-	deleter.WithHostProjection(grant, nil)
-
-	if _, err := deleter.DeleteAccountWithOptions(
-		context.Background(),
-		store.account.Ref(),
-		DeletionOptions{Force: true},
-	); err != nil {
-		t.Fatalf("DeleteAccountWithOptions() error = %v", err)
-	}
-	assertOrder(t, order, "get", "inspect", "release", "grant", "prepare", "delete", "forget")
-	if occupancy.releaseCall != 1 {
-		t.Fatalf("releaseCall = %d", occupancy.releaseCall)
-	}
-}
-
-// TestDeleteAccountAbortsWhenReleaseFails 守住「释放不掉就不删」：
-// 带着写入者删库会留下攥着已删凭据的进程。
-func TestDeleteAccountAbortsWhenReleaseFails(t *testing.T) {
-	order := make([]string, 0, 8)
-	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	releaseErr := &RuntimeActiveError{Blockers: []DeletionBlocker{{Session: "s-main"}}}
-	occupancy := &deletionTestOccupancy{
-		order:      &order,
-		blockers:   []DeletionBlocker{{Kind: "persistent_session", Session: "s-main"}},
-		releaseErr: releaseErr,
-	}
-	preparation := &deletionTestPreparation{order: &order}
-	cleanup := &deletionTestCleanup{order: &order}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-
-	_, err = deleter.DeleteAccountWithOptions(
-		context.Background(),
-		store.account.Ref(),
-		DeletionOptions{Force: true},
-	)
-	if !errors.Is(err, ErrAccountRuntimeActive) {
-		t.Fatalf("error = %v", err)
-	}
-	assertOrder(t, order, "get", "inspect", "release")
-}
-
-// TestDeleteAccountLandsServerDefaultWhenDeletedAccountWasDefault 守住默认账号落点。
-func TestDeleteAccountLandsServerDefaultWhenDeletedAccountWasDefault(t *testing.T) {
-	order := make([]string, 0, 8)
-	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
-	preparation := &deletionTestPreparation{order: &order}
-	cleanup := &deletionTestCleanup{order: &order}
-	defaults := &deletionTestDefault{
-		order:     &order,
-		isDefault: true,
-		landing:   ServerDefaultLanding{OK: true, Landed: true, Profile: ".aih-server"},
-	}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-	deleter.WithHostProjection(nil, defaults)
-
-	outcome, err := deleter.DeleteAccountWithOptions(
-		context.Background(),
-		store.account.Ref(),
-		DeletionOptions{},
-	)
-	if err != nil {
-		t.Fatalf("DeleteAccountWithOptions() error = %v", err)
-	}
-	if !outcome.ServerDefault.Landed || outcome.ServerDefault.Profile != ".aih-server" {
-		t.Fatalf("ServerDefault = %+v", outcome.ServerDefault)
-	}
-	assertOrder(t, order, "get", "inspect", "default-read", "prepare", "delete", "forget", "default-land")
-}
-
-// TestDeleteAccountSkipsLandingWhenGrantRevokeAlreadyLanded 守住与 Node 相同的
-// 去重语义：授权回收链已经写过档位就不再落一次。
-func TestDeleteAccountSkipsLandingWhenGrantRevokeAlreadyLanded(t *testing.T) {
-	order := make([]string, 0, 8)
-	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
-	preparation := &deletionTestPreparation{order: &order}
-	cleanup := &deletionTestCleanup{order: &order}
-	grant := &deletionTestGrant{
-		order:      &order,
-		revocation: GrantRevocation{OK: true, Revoked: true, DefaultProfileUpdated: true},
-	}
-	defaults := &deletionTestDefault{order: &order, isDefault: true}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-	deleter.WithHostProjection(grant, defaults)
-
-	outcome, err := deleter.DeleteAccountWithOptions(
-		context.Background(),
-		store.account.Ref(),
-		DeletionOptions{},
-	)
-	if err != nil {
-		t.Fatalf("DeleteAccountWithOptions() error = %v", err)
-	}
-	if defaults.landCalls != 0 {
-		t.Fatalf("landCalls = %d，已经落过档位就不该再落", defaults.landCalls)
-	}
-	if outcome.ServerDefault.Reason != "landed_with_host_grant_revoke" {
-		t.Fatalf("ServerDefault.Reason = %q", outcome.ServerDefault.Reason)
-	}
-}
-
-// TestDeleteAccountKeepsDeletionWhenGrantRevokeFails 守住「回收失败不吞删除」。
-func TestDeleteAccountKeepsDeletionWhenGrantRevokeFails(t *testing.T) {
-	order := make([]string, 0, 8)
-	store := &deletionTestStore{account: deletionTestAccount(t), order: &order}
-	occupancy := &deletionTestOccupancy{order: &order}
-	preparation := &deletionTestPreparation{order: &order}
-	cleanup := &deletionTestCleanup{order: &order}
-	grant := &deletionTestGrant{order: &order, err: errors.New("host config unreadable")}
-	deleter, err := NewDeleter(store, occupancy, preparation, cleanup)
-	if err != nil {
-		t.Fatalf("NewDeleter() error = %v", err)
-	}
-	deleter.WithHostProjection(grant, nil)
-
-	outcome, err := deleter.DeleteAccountWithOptions(
-		context.Background(),
-		store.account.Ref(),
-		DeletionOptions{},
-	)
-	if err != nil {
-		t.Fatalf("授权回收失败不得让删除失败: %v", err)
-	}
-	if outcome.HostGrantRevoke == nil || outcome.HostGrantRevoke.OK {
-		t.Fatalf("HostGrantRevoke = %+v", outcome.HostGrantRevoke)
-	}
-	if outcome.HostGrantRevoke.Reason != "host_grant_revoke_failed" {
-		t.Fatalf("Reason = %q", outcome.HostGrantRevoke.Reason)
 	}
 }

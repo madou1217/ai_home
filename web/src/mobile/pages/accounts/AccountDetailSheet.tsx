@@ -4,7 +4,6 @@ import {
   ApiOutlined,
   BarChartOutlined,
   CheckCircleOutlined,
-  CodeOutlined,
   CopyOutlined,
   DesktopOutlined,
   GlobalOutlined,
@@ -43,8 +42,6 @@ import {
 } from '@/features/accounts/AccountBadges';
 import { describeCodexSubscription, getCodexSubscription } from '@/features/accounts/codex-subscription';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
-import { buildAccountCliCommand } from '@/features/accounts/account-cli-command';
-import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
 import { getProviderSite, getProviderSiteLabel, isMultiSiteProvider } from '@/providers/catalog';
 import {
   canViewQuotaResetHistory,
@@ -197,14 +194,6 @@ export default function AccountDetailSheet({
       active: defaultAction.active,
       onClick: () => { void actions.handleSetDefault(record); }
     });
-    if (buildAccountCliCommand(record)) {
-      sheetActions.push({
-        key: 'copy-cli-command',
-        label: '复制启动命令',
-        icon: <CodeOutlined />,
-        onClick: () => { void actions.copyAccountCliCommand(record); }
-      });
-    }
     const codexAppAction = getCodexAppAccountActionMeta(record);
     if (codexAppAction) {
       sheetActions.push({
@@ -252,7 +241,7 @@ export default function AccountDetailSheet({
       label: '账号',
       value: (
         <span className={styles.identity}>
-          <span className={styles.identityText}><RotatingAccountTitle record={record} /></span>
+          <span className={styles.identityText}>{getAccountPrimaryLabel(record)}</span>
           {canCopyAccountEmail(record) ? (
             <button
               type="button"
@@ -267,25 +256,6 @@ export default function AccountDetailSheet({
       )
     },
     ...(secondary ? [{ key: 'secondary', label: '标识', value: secondary }] : []),
-    ...(buildAccountCliCommand(record) ? [{
-      key: 'cli-command',
-      label: '启动命令',
-      value: (
-        <span className={styles.identity}>
-          <span className={styles.identityText} style={{ fontFamily: 'var(--font-mono)' }}>
-            {buildAccountCliCommand(record)}
-          </span>
-          <button
-            type="button"
-            className={styles.inlineIconBtn}
-            aria-label="复制启动命令"
-            onClick={() => { void actions.copyAccountCliCommand(record); }}
-          >
-            <CopyOutlined />
-          </button>
-        </span>
-      )
-    }] : []),
     ...(providerSite ? [{ key: 'provider-site', label: '站点', value: providerSite, mono: false }] : []),
     { key: 'provider', label: '平台', value: providerNames[record.provider] || record.provider, mono: false },
     {

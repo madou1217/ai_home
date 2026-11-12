@@ -17,7 +17,6 @@ import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import { accountsAPI, toolkitAPI } from '@/services/api';
 import { useWebUiTaskQueue, type WebUiTaskStreamStatus } from '@/services/webui-task-queue';
-import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
 import {
   canRetryWebUiTask,
   getAppInstallFailureReasons,
@@ -25,7 +24,7 @@ import {
   getWebUiTaskSourceLabel,
   mergeWebUiTaskQueueEntries
 } from '@/features/app-install/app-install-presentation';
-import type { Account, WebUiTask, WebUiTaskAccountIdentity, WebUiTaskEvent } from '@/types';
+import type { Account, WebUiTask } from '@/types';
 import { writeClipboardText } from '@/utils/clipboard';
 import './AppInstallTaskQueue.css';
 import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
@@ -62,28 +61,11 @@ const TASK_QUEUE_TABS: Array<{ key: TaskQueueTab; label: string }> = [
   { key: 'activity', label: '账号活动' }
 ];
 
-// 阶段词表与 WebUiTaskEvent.phase 同源：页面只做展示映射，不解析事件文案。
-const TASK_PHASE_LABELS: Record<string, string> = {
-  queued: '等待执行',
-  account_started: '处理账号',
-  discovering: '查询可领项',
-  claiming: '提交领取',
-  captcha_required: '需要验证码',
-  captcha_solving: '解验证码',
-  captcha_solved: '验证码通过',
-  captcha_failed: '验证码失败',
-  rate_limited: '限流退避',
-  retrying: '重试中',
-  account_finished: '账号完成',
-  completed: '已完成',
-  failed: '执行失败',
-  installing: '执行中',
-  running: '执行中'
-};
-
 function phaseLabel(task: WebUiTask) {
-  const phase = String(task.progress?.stage || task.phase || '');
-  return TASK_PHASE_LABELS[phase] || (phase || '执行中');
+  if (task.phase === 'queued') return '等待执行';
+  if (task.phase === 'completed') return '已完成';
+  if (task.phase === 'failed') return '执行失败';
+  return task.phase || '执行中';
 }
 
 function streamStatusLabel(status: WebUiTaskStreamStatus) {
@@ -97,24 +79,6 @@ function streamStatusLabel(status: WebUiTaskStreamStatus) {
 function updatedLabel(timestamp: number) {
   if (!timestamp) return '等待首次更新';
   return `更新于 ${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-}
-
-function eventTimeLabel(timestamp: number) {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-/** 队列里的账号身份复用账号页的轮播规则：displayNames 优先，CLI ID 放最后一项。 */
-function accountTitleRecord(account: WebUiTaskAccountIdentity): Account {
-  const displayNames = [...(account.displayNames || [])];
-  if (account.displayId && !displayNames.some((entry) => entry.value === `#${account.displayId}`)) {
-    displayNames.push({ type: 'displayId', value: `#${account.displayId}` });
-  }
-  return {
-    displayId: '',
-    displayNames,
-    displayName: '',
-    email: ''
-  } as unknown as Account;
 }
 
 export default function AppInstallTaskQueue() {
@@ -133,21 +97,11 @@ export default function AppInstallTaskQueue() {
     accountRef: string;
   } | null>(null);
 
-  const { tasks, recentTasks, events, streamStatus } = useWebUiTaskQueue();
+  const { tasks, recentTasks, streamStatus } = useWebUiTaskQueue();
   const visibleTasks = useMemo(
     () => mergeWebUiTaskQueueEntries(tasks, recentTasks, dismissedTaskIds),
     [dismissedTaskIds, recentTasks, tasks]
   );
-  // 事件流按任务分组：卡片只渲染自己最近几条，避免把整条轨迹铺满浮层。
-  const eventsByTask = useMemo(() => {
-    const grouped = new Map<string, WebUiTaskEvent[]>();
-    for (const event of events) {
-      const list = grouped.get(event.taskId) || [];
-      list.push(event);
-      grouped.set(event.taskId, list);
-    }
-    return grouped;
-  }, [events]);
   // tab 计数与过滤：账号活动（领取）与安装/卸载分开看，默认「全部」。
   const activityTasks = useMemo(() => visibleTasks.filter(isActivityTask), [visibleTasks]);
   const installTasks = useMemo(() => visibleTasks.filter((task) => !isActivityTask(task)), [visibleTasks]);
@@ -174,9 +128,7 @@ export default function AppInstallTaskQueue() {
     [tabTasks, page]
   );
   const hasActiveTask = visibleTasks.some((task) => !getAppInstallStatusPresentation(task.status).terminal);
-  const hasFailedTask = visibleTasks.some((task) => (
-    ['failed', 'partial'].includes(String(task.status || '').toLowerCase())
-  ));
+  const hasFailedTask = visibleTasks.some((task) => String(task.status || '').toLowerCase() === 'failed');
   const hasLaunchableTask = visibleTasks.some((task) => (
     task.source === 'app-install'
       && task.action === 'install'
@@ -371,10 +323,7 @@ export default function AppInstallTaskQueue() {
             const percent = status.tone === 'success'
               ? 100
               : Math.round(Number(task.progress?.percent || 0));
-            const failedOrPartial = status.tone === 'error' || String(task.status || '').toLowerCase() === 'partial';
-            const failureReasons = failedOrPartial ? getAppInstallFailureReasons(task) : [];
-            const taskEvents = eventsByTask.get(task.id) || [];
-            const taskAccount = task.progress?.account || null;
+            const failureReasons = status.tone === 'error' ? getAppInstallFailureReasons(task) : [];
             const launchable = task.source === 'app-install'
               && task.action === 'install'
               && task.status === 'succeeded'
@@ -395,11 +344,6 @@ export default function AppInstallTaskQueue() {
                   <span>{taskAction(task)}</span>
                   <span>{phaseLabel(task)}</span>
                   <span>{getWebUiTaskSourceLabel(task)}</span>
-                  {taskAccount && (taskAccount.displayNames?.length || taskAccount.displayId) ? (
-                    <span className="webui-task-queue-item-account">
-                      <RotatingAccountTitle record={accountTitleRecord(taskAccount)} />
-                    </span>
-                  ) : null}
                 </div>
                 <Progress
                   percent={percent}
@@ -411,16 +355,6 @@ export default function AppInstallTaskQueue() {
                   <span>{task.progress?.label || '等待状态更新'}</span>
                   <span>{updatedLabel(Number(task.updatedAt || 0))}</span>
                 </div>
-                {taskEvents.length ? (
-                  <ol className="webui-task-queue-events" aria-label="执行进度">
-                    {taskEvents.slice(-4).map((event) => (
-                      <li key={`${event.taskId}:${event.seq}`} className={`is-${event.tone}`}>
-                        <time dateTime={new Date(event.at).toISOString()}>{eventTimeLabel(event.at)}</time>
-                        <span>{event.message}</span>
-                      </li>
-                    ))}
-                  </ol>
-                ) : null}
                 {failureReasons.length ? (
                   <details className="webui-task-queue-failure">
                     <summary>查看失败原因</summary>

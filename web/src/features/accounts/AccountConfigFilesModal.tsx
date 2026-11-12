@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Empty, Modal, Segmented, Spin, Tabs, Tooltip, Typography, message } from 'antd';
-import { CodeOutlined, CopyOutlined, EyeInvisibleOutlined, EyeOutlined, ExportOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CopyOutlined, EyeInvisibleOutlined, EyeOutlined, ExportOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { Account, AccountConfigFile, AccountConfigFilesResponse } from '@/types';
 import { accountsAPI } from '@/services/api';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import ConfigCodeEditor from '@/components/toolkit/config-editor/ConfigCodeEditor';
-import { buildAccountCliCommand } from '@/features/accounts/account-cli-command';
-import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
-import { writeClipboardText } from '@/utils/clipboard';
 
 const { Text } = Typography;
 
@@ -104,17 +101,6 @@ export function AccountConfigFilesPanel({ account, onExport, exporting }: Accoun
     [data, selectedId]
   );
 
-  const cliCommand = buildAccountCliCommand(account);
-  const copyCliCommand = async () => {
-    if (!cliCommand) return;
-    try {
-      await writeClipboardText(cliCommand);
-      message.success(`已复制：${cliCommand}`);
-    } catch {
-      message.error('复制失败');
-    }
-  };
-
   const copySelected = async () => {
     if (!selected) return;
     try {
@@ -138,13 +124,6 @@ export function AccountConfigFilesPanel({ account, onExport, exporting }: Accoun
         <Button icon={<CopyOutlined />} disabled={!selected} onClick={() => void copySelected()}>
           复制当前文件
         </Button>
-        {cliCommand ? (
-          <Tooltip title={cliCommand}>
-            <Button icon={<CodeOutlined />} onClick={() => void copyCliCommand()}>
-              复制启动命令
-            </Button>
-          </Tooltip>
-        ) : null}
         {onExport ? (
           <Button icon={<ExportOutlined />} loading={exporting} onClick={onExport}>
             导出账号
@@ -214,7 +193,7 @@ export default function AccountConfigFilesModal({ account, onClose, onExport, ex
       open={Boolean(account)}
       onCancel={onClose}
       width={1000}
-      title={account ? `${getAccountPrimaryLabel(account)} 账号配置` : '账号配置'}
+      title={account ? `${account.displayName || account.accountRef} 账号配置` : '账号配置'}
       footer={<Button type="primary" onClick={onClose}>关闭</Button>}
     >
       <AccountConfigFilesPanel account={account} onExport={onExport} exporting={exporting} />

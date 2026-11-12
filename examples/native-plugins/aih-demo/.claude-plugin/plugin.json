@@ -1,0 +1,7 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "aih-demo",
+  "version": "1.0.0",
+  "description": "AIH portable native plugin demo",
+  "skills": ["./skills"]
+}

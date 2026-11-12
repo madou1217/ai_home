@@ -56,7 +56,6 @@ import { getProviderFamily } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
-import { buildAccountCliCommand } from '@/features/accounts/account-cli-command';
 import {
   useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
@@ -235,7 +234,6 @@ export default function Accounts() {
     updatingStatusAccountRefs,
     refreshingUsageAccountRefs,
     refreshingAccountRefs,
-    copyAccountCliCommand,
     copyAccountEmail,
     handleEdit,
     handleRestoreScheduling,
@@ -393,8 +391,7 @@ export default function Accounts() {
       ));
       return {
         ...result,
-        // 账号被删除时也不回落到 acct_xxx：用 Provider 名称，至少是用户能理解的。
-        displayName: record ? getAccountPrimaryLabel(record) : (result.provider || '账号')
+        displayName: record ? getAccountPrimaryLabel(record) : (result.accountRef || result.provider)
       };
     }));
     setRewardsOpen(true);
@@ -539,11 +536,6 @@ export default function Accounts() {
     if (canReauthAccount(record)) {
       menuItems.push({ key: 'reauth', label: getReauthActionLabel(record), icon: <SyncOutlined /> });
     }
-    // 账号启动命令是**可执行**的账号事实（aih <provider> <id>），不是配置；
-    // 单独给一个复制入口，免得用户去账号标题里逐项找 CLI ID。
-    if (buildAccountCliCommand(record)) {
-      menuItems.push({ key: 'copy-cli-command', label: '复制启动命令', icon: <CodeOutlined /> });
-    }
     // 同类项合并：编辑、查看配置文件与导出都是「这台账号的配置」，合成一个入口。
     // API Key 账号直接打开编辑弹窗（内含配置文件 Tab）；OAuth 账号没有可编辑凭据，
     // 打开只读的配置文件面板。
@@ -585,7 +577,6 @@ export default function Accounts() {
       return;
     }
     if (key === 'reauth') { handleReauth(record); return; }
-    if (key === 'copy-cli-command') { void copyAccountCliCommand(record); return; }
     if (key === 'account-config') {
       // 需重新登录的账号只允许只读查看，不能进编辑表单。
       if (!requiresAccountReauth(record) && canEditAccountConfig(record)) handleEdit(record);

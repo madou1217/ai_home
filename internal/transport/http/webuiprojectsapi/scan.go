@@ -1,6 +1,7 @@
 package webuiprojectsapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -26,9 +27,13 @@ const (
 	codexSessionFilePrefix = "rollout-"
 	codexSessionFileSuffix = ".jsonl"
 	// codexMetaMaxBytes 与 Node 的 CODEX_SESSION_META_MAX_BYTES 一致：只读文件头找 session_meta。
-	codexMetaMaxBytes = 256 * 1024
-	// codexTitleMaxBytes 是补标题时读取的文件头预算。
-	codexTitleMaxBytes = 256 * 1024
+	// 它是「首行最长能有多长」的安全上限，实际按块读到换行为止。
+	codexMetaMaxBytes = 16 * 1024 * 1024
+	// codexTitleMaxBytes 与 Node 的 CODEX_SESSION_TITLE_MAX_BYTES 一致：
+	// 补标题时最多读这么长的文件头，超过就当作没有可用用户消息。
+	codexTitleMaxBytes = 1024 * 1024
+	// codexTitleMaxRunes 与 Node normalizeCodexSessionTitle(content, 50) 一致。
+	codexTitleMaxRunes = 50
 )
 
 // codexSessionIDPattern 与 Node 一致：从 rollout-*.jsonl 文件名尾部取 UUID。
@@ -203,30 +208,49 @@ func (scan *scanner) geminiProjects() []rawProject {
 	return projects
 }
 
-// codexProjects 扫描 <hostHome>/.codex/sessions 下的 rollout 会话，按 cwd 归项目。
+// codexProjects 扫描 <hostHome>/.codex 下的会话，按 cwd 归项目。
 //
-// 与 Node 的差异：Node 优先读 state DB（~/.codex/state*.sqlite 的 threads 表），
-// 本切片只读 rollout JSONL 的 session_meta。state DB 里存在、而磁盘上已没有
-// rollout 文件的会话不会出现。
+// 与 Node readCodexProjectsFromHost 同口径：先读 state DB（~/.codex/state*.sqlite
+// 的 threads 表），只要库读得出来就完全以库为准，不再扫 rollout 文件；文件扫描
+// 只服务于没有 state 库的旧版 Codex。库里的会话行才是完整索引，rollout 文件可能
+// 已被清理，标题也可能只写在库里。
 func (scan *scanner) codexProjects() []rawProject {
 	codexDir := filepath.Join(scan.hostHome, ".codex")
-	files := scan.codexSessionFiles(filepath.Join(codexDir, "sessions"))
 	threadNames := scan.readCodexThreadNames(filepath.Join(codexDir, "session_index.jsonl"))
 
 	sessionsByCwd := make(map[string][]rawSession, 16)
 	cwdOrder := make([]string, 0, 16)
-	for _, file := range files {
-		if scan.exhausted() {
-			break
-		}
-		record, cwd, ok := readCodexSessionRecord(file, threadNames)
-		if !ok {
-			continue
-		}
+	add := func(cwd string, record rawSession) {
 		if _, exists := sessionsByCwd[cwd]; !exists {
 			cwdOrder = append(cwdOrder, cwd)
 		}
 		sessionsByCwd[cwd] = append(sessionsByCwd[cwd], record)
+	}
+
+	snapshot := scan.readCodexThreadSnapshot(codexDir)
+	if snapshot.Authoritative {
+		// SQLite 行不是目录条目，不消费条目预算；超时仍然截断。
+		for _, row := range snapshot.Rows {
+			if scan.outOfTime() {
+				break
+			}
+			record, cwd, ok := readCodexThreadRecord(codexDir, row, snapshot.SpawnedChildIDs, threadNames)
+			if !ok {
+				continue
+			}
+			add(cwd, record)
+		}
+	} else {
+		for _, file := range scan.codexSessionFiles(filepath.Join(codexDir, "sessions")) {
+			if scan.exhausted() {
+				break
+			}
+			record, cwd, ok := readCodexSessionRecord(file, threadNames)
+			if !ok {
+				continue
+			}
+			add(cwd, record)
+		}
 	}
 
 	projects := make([]rawProject, 0, len(cwdOrder))
@@ -368,14 +392,19 @@ func readCodexSessionRecord(sessionFilePath string, threadNames map[string]codex
 		return rawSession{}, "", false
 	}
 
-	title := ""
+	// Node：索引里有名字就只认索引，归一化后为空也不再看文件（该会话丢弃）；
+	// 索引里没有名字时才去文件头找第一条用户消息。
+	indexedName := ""
 	updatedAt := int64(0)
 	if entry, exists := threadNames[sessionID]; exists {
-		title = normalizeCodexSessionTitle(entry.Title)
+		indexedName = entry.Title
 		updatedAt = entry.UpdatedAt
 	}
-	if title == "" {
-		title = normalizeCodexSessionTitle(readCodexFallbackTitle(sessionFilePath))
+	title := ""
+	if indexedName != "" {
+		title = normalizeCodexSessionTitle(indexedName)
+	} else {
+		title = readCodexFallbackTitle(sessionFilePath)
 	}
 	if title == "" {
 		return rawSession{}, "", false
@@ -391,14 +420,61 @@ func readCodexSessionRecord(sessionFilePath string, threadNames map[string]codex
 	}, cwd, true
 }
 
+// readCodexThreadRecord 把 state DB 的一行翻译成会话条目。
+//
+// 与 Node readCodexThreadSnapshotFromStateDb 的记录构造同口径：可见性过滤之后，
+// 标题按 session_index -> threads.title -> threads.first_user_message -> rollout
+// 文件头 的顺序取第一个可用值，都取不到就不下发。
+func readCodexThreadRecord(
+	codexDir string,
+	row codexThreadRow,
+	spawnedChildIDs map[string]bool,
+	threadNames map[string]codexThreadName,
+) (rawSession, string, bool) {
+	if !isCodexVisibleThreadRow(row, spawnedChildIDs) {
+		return rawSession{}, "", false
+	}
+	cwd := normalizeProjectPath(row.Cwd)
+	if cwd == "" {
+		return rawSession{}, "", false
+	}
+
+	// Node：normalize(thread_name || title || first_user_message) || 文件头标题。
+	rawTitle := ""
+	if entry, exists := threadNames[row.ID]; exists {
+		rawTitle = entry.Title
+	}
+	if rawTitle == "" {
+		rawTitle = row.Title
+	}
+	if rawTitle == "" {
+		rawTitle = row.FirstUserMessage
+	}
+	title := normalizeCodexSessionTitle(rawTitle)
+	if title == "" {
+		if rolloutPath := resolveCodexRolloutPath(codexDir, row.ID, row.RolloutPath); rolloutPath != "" {
+			title = readCodexFallbackTitle(rolloutPath)
+		}
+	}
+	if title == "" {
+		return rawSession{}, "", false
+	}
+
+	return rawSession{
+		ID:        row.ID,
+		Title:     title,
+		UpdatedAt: row.UpdatedAtMS,
+		Provider:  codexProvider,
+	}, cwd, true
+}
+
 // readCodexSessionMeta 只读文件头第一行；非 session_meta 记录视为不可读。
 func readCodexSessionMeta(sessionFilePath string) (codexRolloutMeta, bool) {
-	content, err := readFileHead(sessionFilePath, codexMetaMaxBytes)
+	firstLine, err := readFileFirstLine(sessionFilePath, codexMetaMaxBytes)
 	if err != nil {
 		return codexRolloutMeta{}, false
 	}
-	firstLine, _, _ := strings.Cut(strings.TrimPrefix(content, "\ufeff"), "\n")
-	firstLine = strings.TrimSuffix(firstLine, "\r")
+	firstLine = strings.TrimSuffix(strings.TrimPrefix(firstLine, "\ufeff"), "\r")
 	if trimSpace(firstLine) == "" {
 		return codexRolloutMeta{}, false
 	}
@@ -410,6 +486,9 @@ func readCodexSessionMeta(sessionFilePath string) (codexRolloutMeta, bool) {
 }
 
 // readCodexFallbackTitle 从文件头里找第一条主线程用户消息作为标题。
+//
+// 预算是 Node CODEX_SESSION_TITLE_MAX_BYTES（1MB）；标题按 Node 的口径截到
+// codexTitleMaxRunes 个字符。文件里找不到可用用户消息时返回空串。
 func readCodexFallbackTitle(sessionFilePath string) string {
 	content, err := readFileHead(sessionFilePath, codexTitleMaxBytes)
 	if err != nil {
@@ -421,10 +500,10 @@ func readCodexFallbackTitle(sessionFilePath string) string {
 			continue
 		}
 		var record struct {
-			Type    string `json:"type"`
 			Payload struct {
 				Type    string `json:"type"`
 				Role    string `json:"role"`
+				Message string `json:"message"`
 				Content []struct {
 					Type string `json:"type"`
 					Text string `json:"text"`
@@ -434,20 +513,31 @@ func readCodexFallbackTitle(sessionFilePath string) string {
 		if json.Unmarshal([]byte(trimmed), &record) != nil {
 			continue
 		}
-		if record.Type != "response_item" || record.Payload.Type != "message" || record.Payload.Role != "user" {
+		// 与 Node extractCodexUserTitleFromPayload 同口径：既认 response_item 的
+		// message/content，也认 event_msg 的 user_message.message。
+		text := ""
+		switch record.Payload.Type {
+		case "message":
+			if record.Payload.Role != "user" {
+				continue
+			}
+			parts := make([]string, 0, len(record.Payload.Content))
+			for _, block := range record.Payload.Content {
+				if (block.Type == "input_text" || block.Type == "text") && block.Text != "" {
+					parts = append(parts, block.Text)
+				}
+			}
+			text = strings.Join(parts, " ")
+		case "user_message":
+			text = record.Payload.Message
+		default:
 			continue
 		}
-		parts := make([]string, 0, len(record.Payload.Content))
-		for _, block := range record.Payload.Content {
-			if (block.Type == "input_text" || block.Type == "text") && block.Text != "" {
-				parts = append(parts, block.Text)
-			}
-		}
-		text := strings.Join(parts, "\n")
 		if isSyntheticCodexUserContent(text) {
 			continue
 		}
-		if title := normalizeCodexSessionTitle(text); title != "" {
+		// Node 同一路径会把标题截到 50 个字符（normalizeCodexSessionTitle(nextTitle, 50)）。
+		if title := truncateCodexTitle(normalizeCodexSessionTitle(text), codexTitleMaxRunes); title != "" {
 			return title
 		}
 	}
@@ -462,7 +552,14 @@ func isCodexSubagent(meta codexRolloutMeta) bool {
 	if trimSpace(meta.Payload.ParentThreadID) != "" {
 		return true
 	}
-	source := trimSpace(string(meta.Payload.Source))
+	return isCodexSubagentSource(meta.Payload.Source)
+}
+
+// isCodexSubagentSource 判断 source 是否带非 null 的 subagent 字段。
+//
+// source 可能是 JSON 字符串（"cli"）或对象；只有对象形态才有 subagent。
+func isCodexSubagentSource(raw json.RawMessage) bool {
+	source := trimSpace(string(raw))
 	if !strings.HasPrefix(source, "{") {
 		return false
 	}
@@ -622,6 +719,66 @@ func readFileHead(filePath string, limit int64) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+// readFileFirstLine 按块读到第一个换行或 limit 字节为止（不含换行符）。
+//
+// 等价于 Node readCodexSessionMeta 的读取方式：limit 是首行的安全上限，
+// 不会为了拿首行把整段预算都读进内存。
+func readFileFirstLine(filePath string, limit int64) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if limit <= 0 {
+		return "", nil
+	}
+
+	var builder strings.Builder
+	buffer := make([]byte, 64*1024)
+	var consumed int64
+	for consumed < limit {
+		chunkSize := int64(len(buffer))
+		if remaining := limit - consumed; remaining < chunkSize {
+			chunkSize = remaining
+		}
+		count, readErr := file.Read(buffer[:chunkSize])
+		if count > 0 {
+			chunk := buffer[:count]
+			if newlineIndex := bytes.IndexByte(chunk, '\n'); newlineIndex >= 0 {
+				builder.Write(chunk[:newlineIndex])
+				return builder.String(), nil
+			}
+			builder.Write(chunk)
+			consumed += int64(count)
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return builder.String(), readErr
+		}
+		if count == 0 {
+			break
+		}
+	}
+	return builder.String(), nil
+}
+
+// truncateCodexTitle 等价于 JS 的 String.prototype.slice(0, limit)。
+//
+// 按 rune 切分，非 BMP 字符（emoji）不会被从中间截断；Node 用 UTF-16 码元切，
+// 只有这类字符的结果可能相差半个码元。
+func truncateCodexTitle(title string, limit int) string {
+	if limit <= 0 {
+		return title
+	}
+	runes := []rune(title)
+	if len(runes) <= limit {
+		return title
+	}
+	return string(runes[:limit])
 }
 
 // fileModifiedMillis 返回文件 mtime（毫秒）；读不到时为 0。

@@ -81,7 +81,7 @@ var familyProviders = map[string]bool{
 
 // NormalizeProvider 归一化 Provider 身份：去首尾空白并转小写。
 func NormalizeProvider(provider string) string {
-	return strings.ToLower(strings.TrimSpace(provider))
+	return providerruntime.NormalizeProvider(provider)
 }
 
 // IsOfficialNativeSessionProvider 判断该 Provider 是否声明了原生会话入口。

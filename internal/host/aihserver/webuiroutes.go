@@ -430,7 +430,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	setDefault, err := webuisetdefaultapi.NewHandler(webuisetdefaultapi.BuildDependencies(
 		authorizer, dependencies.AIHomeDir, dependencies.Catalog, dependencies.ProviderDefaults,
-		webuisetdefaultapi.HostProjection{},
+		buildSetDefaultHostProjection(dependencies.AIHomeDir, dependencies.HostHomeDir),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("创建默认账号接口失败: %w", err)

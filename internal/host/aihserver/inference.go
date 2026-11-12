@@ -74,10 +74,12 @@ func (composition *inferenceComposition) Runtime() inferenceruntime.AccountRunti
 
 // inferenceCompositionDependencies 集中声明生产推理组合所需的窄端口。
 type inferenceCompositionDependencies struct {
-	catalog           *providers.Catalog
-	store             *sqliteaccount.Store
-	runtime           inferenceruntime.AccountRuntime
-	weights           accountrouting.AccountWeightSource
+	catalog *providers.Catalog
+	store   *sqliteaccount.Store
+	runtime inferenceruntime.AccountRuntime
+	weights accountrouting.AccountWeightSource
+	// usageGate 是选号前的额度门禁；nil 表示不启用。
+	usageGate         accountrouting.UsageGate
 	strategy          accountrouting.SelectionStrategy
 	models            accountapp.AccountModelRefresher
 	modelRefreshes    inferencegateway.ModelRefreshScheduler
@@ -220,6 +222,7 @@ func newInferenceComposition(
 		Store:                     dependencies.store,
 		Runtime:                   dependencies.runtime,
 		Weights:                   dependencies.weights,
+		UsageGate:                 dependencies.usageGate,
 		Strategy:                  dependencies.strategy,
 		Routes:                    activeCatalog,
 		CredentialStrategies:      dependencies.credentialRefresh,

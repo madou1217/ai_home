@@ -79,6 +79,29 @@ type RuntimeEligibilitySource interface {
 	) (runtimecore.Eligibility, error)
 }
 
+// UsageDecision 是选号前的额度判定结果。
+//
+// Blocked 为 true 时 Status/Reason 携带与 Node account-usage-gate 相同的稳定码，
+// 供调用方记录日志或展示；空值表示不阻断。
+type UsageDecision struct {
+	Blocked bool
+	Status  string
+	Reason  string
+}
+
+// UsageGate 提供账号对指定真实模型的额度资格。
+//
+// 实现必须在读取凭据前给出结论；返回错误表示门禁本身不可用，调用方应终止本次
+// 征召而不是把账号当作可用（额度真相不可得时 fail-closed）。
+type UsageGate interface {
+	EvaluateScheduling(
+		ctx context.Context,
+		providerID string,
+		accountRef accountcore.AccountRef,
+		modelID runtimecore.ModelID,
+	) (UsageDecision, error)
+}
+
 // Dependencies 声明征召器所需的四个最小应用端口。
 type Dependencies struct {
 	// Candidates 负责从本地模型倒排读取启用账号的不可变紧凑快照。
@@ -89,6 +112,8 @@ type Dependencies struct {
 	Credentials CredentialResolver
 	// Weights 提供账号剩余额度；为空时所有账号按等概率参与随机选号。
 	Weights AccountWeightSource
+	// Usage 是选号前的额度门禁；为空表示不启用（等价 Node 没有额度策略）。
+	Usage UsageGate
 	// Strategy 是选号策略；零值非法，必须由调用方显式解析。
 	Strategy SelectionStrategy
 }
@@ -296,6 +321,7 @@ type Recruiter struct {
 	runtime     RuntimeEligibilitySource
 	credentials CredentialResolver
 	weights     AccountWeightSource
+	usage       UsageGate
 	strategy    SelectionStrategy
 	scheduler   *FairRoundRobinScheduler
 	// affinity 保存 (Provider, 会话键) -> 账号的粘性绑定。
@@ -350,6 +376,7 @@ func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 		runtime:     dependencies.Runtime,
 		credentials: dependencies.Credentials,
 		weights:     dependencies.Weights,
+		usage:       dependencies.Usage,
 		strategy:    strategy,
 		scheduler:   &FairRoundRobinScheduler{},
 		affinity:    NewSessionAffinity(),
@@ -527,6 +554,11 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if !session.admits(eligibility, offset, candidate) {
 			continue
 		}
+		if blocked, usageErr := session.usageBlocked(ctx, candidate); usageErr != nil {
+			return progress, usageErr
+		} else if blocked {
+			continue
+		}
 		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
 			ctx,
 			candidate.Ref(),
@@ -620,6 +652,32 @@ func (recruiter *Recruiter) runtimeEligibility(
 		return runtimecore.Eligibility{}, ErrInvalidRuntimeEligibility
 	}
 	return eligibility, nil
+}
+
+// usageBlocked 在读取凭据前按最新额度快照判断候选是否应被跳过。
+//
+// 门禁错误按 fail-closed 处理：拿不到额度真相时终止本次征召，而不是把账号当作可用。
+func (session *RecruitmentSession) usageBlocked(
+	ctx context.Context,
+	candidate accountapp.RoutingAccount,
+) (bool, error) {
+	gate := session.recruiter.usage
+	if gate == nil {
+		return false, nil
+	}
+	decision, err := gate.EvaluateScheduling(
+		ctx,
+		session.request.ProviderID(),
+		candidate.Ref(),
+		session.request.ModelID(),
+	)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, ctxErr
+		}
+		return false, fmt.Errorf("读取账号额度门禁失败: %w", err)
+	}
+	return decision.Blocked, nil
 }
 
 // admits 判定该候选能否继续解析凭据。

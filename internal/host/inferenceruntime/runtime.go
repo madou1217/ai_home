@@ -48,6 +48,8 @@ type Dependencies struct {
 	Runtime AccountRuntime
 	// Weights 提供账号剩余额度，用于加权随机选号；为空时按等概率随机。
 	Weights accountrouting.AccountWeightSource
+	// UsageGate 是选号前的额度门禁；为空表示不启用。
+	UsageGate accountrouting.UsageGate
 	// Strategy 是选号策略；零值非法，必须由调用方显式解析后传入。
 	Strategy accountrouting.SelectionStrategy
 	// Routes 负责客户端模型到真实上游路由计划的解析。
@@ -145,6 +147,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Runtime:     dependencies.Runtime,
 			Credentials: credentials,
 			Weights:     dependencies.Weights,
+			Usage:       dependencies.UsageGate,
 			Strategy:    dependencies.Strategy,
 		},
 	)

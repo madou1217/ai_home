@@ -1212,6 +1212,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则服务失败: %w", err)
 	}
 	upstreamRuleEvaluator := configured.NewEvaluator(upstreamRulesService)
+	// 选号前额度门禁：与 Node account-usage-gate 同口径，阈值读 config:usage。
+	usageGate := newUsageSchedulingGate(usage.service, aiHomeDir, time.Now)
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
@@ -1219,6 +1221,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			store:          store,
 			runtime:        accountRuntime,
 			weights:        accountRuntime,
+			usageGate:      usageGate,
 			strategy:       selectionStrategy,
 			models:         recoveringModelManagement,
 			modelRefreshes: modelRefresh,

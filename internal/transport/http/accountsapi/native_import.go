@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 var (
@@ -50,6 +52,32 @@ func (handler *Handler) handleNativeImport(
 		profile,
 	)
 	if err != nil {
+		// 幂等兜底：同一 Provider + 邮箱的账号已经存在（历史 ref 与本次派生不一致）
+		// 时直接返回既有账号。否则 Node 的同步循环会每 15 秒撞一次账号冲突。
+		if errors.Is(err, accountapp.ErrAccountConflict) &&
+			profile != nil && strings.TrimSpace(profile.Email()) != "" {
+			if lookup, ok := handler.management.(interface {
+				FindAccountRefByProviderEmail(
+					context.Context, string, string,
+				) (accountcore.AccountRef, bool, error)
+			}); ok {
+				ref, found, lookupErr := lookup.FindAccountRefByProviderEmail(
+					request.Context(), input.ProviderID, profile.Email(),
+				)
+				if lookupErr == nil && found {
+					if overview, overviewErr := handler.management.GetAccountOverview(
+						request.Context(), ref,
+					); overviewErr == nil {
+						writeJSON(
+							response,
+							http.StatusOK,
+							accountResponse{Data: newAccountView(overview)},
+						)
+						return
+					}
+				}
+			}
+		}
 		// 带上 Provider 与 artifact 数量：这两项足以定位是哪个 Provider 的解码/导入失败，
 		// 又不包含任何凭据内容。
 		logServerError(

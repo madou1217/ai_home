@@ -60,21 +60,19 @@ const profileFor = (origin, key) => {
   await page.waitForTimeout(3000);
   console.log('AFTER_ACCOUNT', JSON.stringify(await page.evaluate(() => document.body.innerText.slice(-240))));
 
-  // 3. 切 WORK，选工作区，再新建会话；此时 selectedAccount 已是 Claude。
+  // 3. 先关任务队列/菜单浮层，再切 WORK，选工作区，新建会话。
   await page.keyboard.press('Escape').catch(() => {});
-  await page.waitForTimeout(300);
-  const workButton = page.getByRole('button', { name: /Work/ });
-  const workTab = page.getByRole('tab', { name: /Work/ });
-  const workRadio = page.getByRole('radio', { name: /Work/ });
-  console.log('WORK_ROLE_COUNT', (await workButton.count()) + (await workTab.count()) + (await workRadio.count()));
-  if (await workButton.count()) await workButton.last().click({ force: true }).catch(() => {});
-  else if (await workTab.count()) await workTab.last().click({ force: true }).catch(() => {});
-  else if (await workRadio.count()) await workRadio.last().click({ force: true }).catch(() => {});
-  await page.waitForFunction(() => document.body.innerText.includes('新建工作区会话'), { timeout: 10000 }).catch(() => {});
-  console.log('WORK_READY', await page.evaluate(() => document.body.innerText.includes('新建工作区会话')));
-  console.log('WS_CLICK', await clickFirst(['AIH (Local Mac)']));
+  await page.mouse.click(1380, 900).catch(() => {});
+  await page.waitForTimeout(600);
+  const workByText = page.getByText('WORK', { exact: true }).first();
+  if (await workByText.count()) await workByText.click({ force: true }).catch(() => {});
+  else await page.getByText('工作区项目模式').first().click({ force: true }).catch(() => {});
   await page.waitForTimeout(800);
-  console.log('WS_BUTTONS', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('button')].map((b) => ({ text: String(b.textContent || '').trim(), aria: b.getAttribute('aria-label') || '' })).filter((b) => /新建|新建工作区/.test(b.text + b.aria)).slice(-8))));
+  console.log('WORK_READY', Boolean(await page.locator('button[aria-label="新建工作区会话"]').count()));
+  if (!(await page.locator('button[aria-label="新建工作区会话"]').count())) {
+    console.log('WS_CLICK', await clickFirst(['AIH (Local Mac)']));
+    await page.waitForTimeout(800);
+  }
   const newWork = page.locator('button[aria-label="新建工作区会话"]').first();
   console.log('NEW_CLICK', await newWork.count());
   await newWork.click().catch(() => {});

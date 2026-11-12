@@ -45,9 +45,6 @@ var ErrInvalidDependencies = errors.New("账号重新认证接口依赖无效")
 // authMode / authStrategy 由 Node 按账号状态推断；其余是 Node 侧回调捕获与
 // CLI 安装流程的运行态。Go 不伪造这些值。
 var unfilledFields = []string{
-	"authMode",
-	"authStrategy",
-	"pollIntervalMs",
 	"redirectUri",
 	"callbackCaptureStatus",
 	"callbackListeningUrl",
@@ -75,8 +72,11 @@ type AccountDirectory interface {
 
 // Request 是一次重新认证作业的起始命令。账号引用必填，表示原地重新认证。
 type Request struct {
-	ProviderID string
-	AccountRef accountcore.AccountRef
+	ProviderID      string
+	AccountRef      accountcore.AccountRef
+	AuthMode        string
+	AuthStrategy    string
+	ActiveNativeRun bool
 }
 
 // Job 是一次作业的公开快照，只含传输层需要的字段。
@@ -87,6 +87,9 @@ type Job struct {
 	ID               string
 	ProviderID       string
 	Purpose          string
+	AuthMode         string `json:"authMode"`
+	AuthStrategy     string `json:"authStrategy"`
+	PollIntervalMS   int    `json:"pollIntervalMs"`
 	Status           string
 	AuthorizationURL string
 	UserCode         string
@@ -172,6 +175,9 @@ type successResponse struct {
 	AccountRef       string `json:"accountRef"`
 	AccountLabel     string `json:"accountLabel"`
 	Purpose          string `json:"purpose"`
+	AuthMode         string `json:"authMode"`
+	AuthStrategy     string `json:"authStrategy"`
+	PollIntervalMS   int    `json:"pollIntervalMs"`
 	Status           string `json:"status"`
 	JobID            string `json:"jobId"`
 	AuthorizationURL string `json:"authorizationUrl"`
@@ -261,6 +267,19 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
+	authMode := inferAuthMode(provider)
+	if authMode == "" {
+		writeFailure(response, failure{status: http.StatusBadRequest, body: errorView{Error: "reauth_unsupported", Code: "unsupported_auth_mode", Message: "当前账号无法推断认证方式，请删除后重新添加。"}})
+		return
+	}
+	var body struct {
+		ActiveNativeRun bool `json:"activeNativeRun"`
+	}
+	_ = json.NewDecoder(request.Body).Decode(&body)
+	if body.ActiveNativeRun {
+		writeFailure(response, failure{status: http.StatusConflict, body: errorView{Error: "account_runtime_active", Message: "请先停止该账号正在运行的会话，再重新认证。"}})
+		return
+	}
 	result, startFailure := handler.startReauth(request.Context(), provider, overview)
 	if startFailure != nil {
 		writeFailure(response, *startFailure)
@@ -383,6 +402,9 @@ func newSuccessResponse(
 		AccountRef:       accountRef.String(),
 		AccountLabel:     accountLabel(overview),
 		Purpose:          job.Purpose,
+		AuthMode:         inferAuthMode(provider),
+		AuthStrategy:     "",
+		PollIntervalMS:   1000,
 		Status:           job.Status,
 		JobID:            job.ID,
 		AuthorizationURL: job.AuthorizationURL,
@@ -510,4 +532,14 @@ func writeJSON(response http.ResponseWriter, status int, payload any) {
 
 func writeFailure(response http.ResponseWriter, problem failure) {
 	writeJSON(response, problem.status, problem.body)
+}
+
+// inferAuthMode 与 Node inferReauthAuthMode 的 Provider 默认档一致；
+// 运行态里的自定义 authMode 由调用方在请求里显式传入时后续扩展。
+func inferAuthMode(provider string) string {
+	switch provider {
+	case "codex", "claude", "gemini", "agy", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+		return "oauth-browser"
+	}
+	return ""
 }

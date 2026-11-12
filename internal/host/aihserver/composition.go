@@ -58,6 +58,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
+	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
@@ -520,35 +521,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
 	// agy 刷新可能带账号级出口绑定（Node 的 account:egress:<ref>）。Go 接管
-	// 刷新后必须沿用同一绑定：direct 绕过代理、proxy 用指定代理；pool/tun 需要
-	// 宿主代理池，策略会明确拒绝而不是静默走错出口。
+	// 刷新后必须沿用同一绑定：url/system/tun/pool/direct 先由 egress 解析成
+	// 具体出站目标（fail-closed），再交给刷新策略；未绑定时保持进程默认。
 	// 绑定只存在于 Node 台账账号；Go 独有账号通常没有绑定，行为与默认一致。
-	appStateEgressPath, appStateEgressErr := appstate.DatabasePath(aiHomeDir)
+	agyEgress := agyegress.NewResolver(agyegress.Options{AIHomeDir: aiHomeDir})
 	agyEgressResolver := func(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 	) (agyoauth.Egress, error) {
-		if appStateEgressErr != nil {
-			return agyoauth.Egress{}, nil
-		}
-		raw, found, err := appstate.ReadKV(
-			ctx,
-			appStateEgressPath,
-			"account:egress:"+accountRef.String(),
-		)
-		if err != nil || !found || strings.TrimSpace(raw) == "" {
+		decision, err := agyEgress.Resolve(ctx, accountRef)
+		if err != nil {
 			return agyoauth.Egress{}, err
 		}
-		var document struct {
-			Mode     string `json:"mode"`
-			ProxyURL string `json:"proxyUrl"`
+		if !decision.Bound {
+			return agyoauth.Egress{Mode: "default"}, nil
 		}
-		if json.Unmarshal([]byte(raw), &document) != nil {
-			return agyoauth.Egress{}, nil
+		if decision.Target.Direct || strings.TrimSpace(decision.Target.ProxyURL) == "" {
+			return agyoauth.Egress{Mode: "direct"}, nil
 		}
 		return agyoauth.Egress{
-			Mode:     document.Mode,
-			ProxyURL: document.ProxyURL,
+			Mode:     "proxy",
+			ProxyURL: decision.Target.ProxyURL,
 		}, nil
 	}
 	agyEgressClientFactory := func(proxyURL string) agyoauth.HTTPClient {

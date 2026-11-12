@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	accountauth "github.com/madou1217/ai_home/application/accountauth"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
@@ -18,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
@@ -94,8 +96,8 @@ type webuiRouteDependencies struct {
 	HostHomeDir     string
 	Store           *sqliteaccount.Store
 	AccountRuntime  any
-	// AuthJobs 是 OAuth 作业服务：重新认证直接复用它起作业，不另建一套状态机。
-	AuthJobs webuiaccountreauthapi.AccountAuthJobs
+	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
+	AuthJobs *accountauth.Service
 	// AccountsHandler 是 accountsapi 的账号导入端点（WebUI import 直接复用）。
 	AccountsHandler http.Handler
 	// AccountRows 是账号页读模型数据源（watch 快照与列表共用同一份行）。
@@ -561,6 +563,18 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建重新认证接口失败: %w", err)
 	}
+	// 新增账号作业：作业引擎与重新认证共用 application/accountauth，本切片只把
+	// 开始/查询/回调/取消/安装确认/本机导入六条路径的权威入口搬到 Go。
+	addJobs, err := webuiaccountaddapi.NewAccountAuthJobs(dependencies.AuthJobs)
+	if err != nil {
+		return nil, fmt.Errorf("创建新增账号作业适配器失败: %w", err)
+	}
+	accountAdd, err := webuiaccountaddapi.NewHandler(webuiaccountaddapi.Dependencies{
+		Authorizer: authorizer, Jobs: addJobs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建新增账号作业接口失败: %w", err)
+	}
 
 	// 认证来源链：installable 由 Go 按 Provider 合同的安装声明判定；alreadyImported 需要
 	// 两侧身份指纹，端口在这里接到账号存储与官方 artifact 读取器上（见同目录
@@ -702,6 +716,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisessionslifecycleapi.LifecycleCapabilitiesPath, Handler: sessionsLifecycle},
 		{Pattern: "POST " + webuisessionslifecycleapi.ArchivePath, Handler: sessionsLifecycle},
 		{Pattern: "POST " + webuiaccountreauthapi.Path + webuiaccountreauthapi.ReauthSuffix, Handler: reauth},
+		{Pattern: "POST " + webuiaccountaddapi.Path, Handler: accountAdd},
+		{Pattern: "GET " + webuiaccountaddapi.Path + webuiaccountaddapi.JobsSuffix, Handler: accountAdd},
+		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CallbackSuffix, Handler: accountAdd},
+		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CancelSuffix, Handler: accountAdd},
+		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.LocalImportSuffix, Handler: accountAdd},
+		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.InstallSuffix, Handler: accountAdd},
 		{Pattern: "GET " + webuicontrolplanebootstrapapi.Path, Handler: controlPlaneBootstrap},
 		{Pattern: "GET " + webuiproviderauthsourcesapi.Path, Handler: authSources},
 		{Pattern: "POST " + webuiaccountactivityapi.RunPath, Handler: accountActivity},

@@ -41,6 +41,7 @@ export function useSessionRuntime(
   onSessionResolvedRef.current = onSessionResolved;
   const [connection, setConnection] = useState<SessionRuntimeConnection>({ phase: 'pending' });
   const retry = useCallback(() => setAttempt((current) => current + 1), []);
+  const autoRetriesRef = useRef(0);
 
   useEffect(() => {
     const activeResolution = resolutionRef.current;
@@ -55,6 +56,16 @@ export function useSessionRuntime(
 
     let disposed = false;
     let controller: SessionRuntimeController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleTransientRetry = (error: unknown) => {
+      if (autoRetriesRef.current >= 4 || !isTransientRuntimeFailure(error)) return;
+      const delays = [1000, 2000, 5000, 10000];
+      const delay = delays[Math.min(autoRetriesRef.current, delays.length - 1)];
+      autoRetriesRef.current += 1;
+      retryTimer = setTimeout(() => {
+        if (!disposed) setAttempt((current) => current + 1);
+      }, delay);
+    };
     setConnection({ phase: 'connecting' });
     void openSessionRuntime(
       activeResolution.target,
@@ -64,7 +75,10 @@ export function useSessionRuntime(
       },
       (error) => {
         // 工作区已经先渲染；首屏快照失败时再用错误态替换，避免整屏空等。
-        if (!disposed) setConnection({ phase: 'error', failure: runtimeFailure(error) });
+        if (!disposed) {
+          setConnection({ phase: 'error', failure: runtimeFailure(error) });
+          scheduleTransientRetry(error);
+        }
       },
     ).then(
       (opened) => {
@@ -73,11 +87,15 @@ export function useSessionRuntime(
         else setConnection({ phase: 'ready', controller: opened, readOnly: opened.readOnly });
       },
       (error: unknown) => {
-        if (!disposed) setConnection({ phase: 'error', failure: runtimeFailure(error) });
+        if (!disposed) {
+          setConnection({ phase: 'error', failure: runtimeFailure(error) });
+          scheduleTransientRetry(error);
+        }
       },
     );
     return () => {
       disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
       controller?.dispose();
     };
   }, [attempt, resolutionKey]);
@@ -146,6 +164,16 @@ function targetKey(
     target.provider, target.executionAccountRef, target.projectPath,
     runtimeInstanceKey,
   ].join('\u0000');
+}
+
+function isTransientRuntimeFailure(error: unknown): boolean {
+  const code = error instanceof ChatRuntimeApiError
+    ? String(error.code || '').toLowerCase()
+    : String((error as { code?: string })?.code || '').toLowerCase();
+  const message = String((error as Error)?.message || '').toLowerCase();
+  if (/credential|auth|account|unsupported|policy|blocked|not_found|permission/.test(code)) return false;
+  return /timeout|network|unavailable|closed|connect|socket|econn|502|503/.test(code)
+    || /timeout|network|unavailable|connection|socket|econn/.test(message);
 }
 
 function runtimeFailure(error: unknown): RuntimeFailure {

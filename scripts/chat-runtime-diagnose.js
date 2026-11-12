@@ -1,0 +1,20 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
+const {loadPlaywright}=require('./playwright-require');
+const base='http://127.0.0.1:9527';
+let key='';
+try{const pids=execFileSync('pgrep',['-f','bin/native/darwin-arm64/aih-server'],{encoding:'utf8'}).trim().split('\n');for(const pid of pids){const c=execFileSync('ps',['eww','-p',pid,'-o','command='],{encoding:'utf8'});const m=c.match(/AIH_SERVER_MANAGEMENT_KEY=(\S+)/);if(m){key=m[1];break;}}}catch(e){}
+const profileFor=(origin,key)=>{const now=Date.now();return{id:'local',stableServerId:'local',name:'Local',endpoint:origin,routes:[{id:'direct',kind:'direct',endpoint:origin,viaServerId:'',health:'healthy',rttMs:1,failureRate:0,consecutiveFailures:0,lastCheckedAt:now,lastSuccessAt:now,lastFailureAt:0,updatedAt:now}],activeRouteId:'direct',authorizationState:'authorized',connectionMode:'direct',broker:null,state:'ready',managementKey:key,managementKeyConfigured:true,nodes:[],nodeCount:0,accountCount:0,activeAccountCount:0,schedulableAccountCount:0,sessionCount:0,lastNodeSyncAt:0,lastStatusSyncAt:0,lastAccountsSyncAt:0,lastSessionsSyncAt:0,descriptor:null,lastCheckedAt:now,lastError:'',createdAt:now,updatedAt:now};};
+(async()=>{const{chromium}=loadPlaywright();const b=await chromium.launch({headless:true});const p=await b.newPage({viewport:{width:1440,height:960}});
+p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',m.text().slice(0,300))});
+p.on('websocket',ws=>{console.log('WS',ws.url());ws.on('close',()=>console.log('WS_CLOSE',ws.url()));ws.on('socketerror',e=>console.log('WS_ERR',String(e)));});
+await p.addInitScript(({key,profile})=>{localStorage.setItem('aih:control-plane-profiles:v1',JSON.stringify([profile]));localStorage.setItem('aih:active-control-plane-profile:v1','local');},{key,profile:profileFor(base,key)});
+await p.goto(base+'/ui/chat',{waitUntil:'domcontentloaded'});await p.waitForTimeout(1000);
+await p.getByText('工作区项目模式').first().click().catch(()=>{});await p.waitForTimeout(1000);
+await p.getByText('AIH (Local Mac)').first().click().catch(()=>{});await p.waitForTimeout(1000);
+await p.getByText('新建工作区会话').first().click().catch(()=>{});await p.waitForTimeout(15000);
+console.log('BEFORE',await p.evaluate(()=>({textarea:!!document.querySelector('textarea'),retry:!!document.body.innerText.includes('重试 AIH Chat Runtime'),buttons:[...document.querySelectorAll('button')].map(b=>b.textContent||'').filter(Boolean).slice(-12)})));
+await p.getByText('Full access').first().click().catch(()=>{});await p.waitForTimeout(3000);
+console.log('AFTER',await p.evaluate(()=>({textarea:!!document.querySelector('textarea'),retry:!!document.body.innerText.includes('重试 AIH Chat Runtime'),body:document.body.innerText.slice(-300)})));
+await p.screenshot({path:'output/playwright/chat-runtime-diagnose.png'});
+await b.close();})().catch(e=>{console.error(e.stack);process.exit(1)});

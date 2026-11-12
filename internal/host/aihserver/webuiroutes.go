@@ -551,6 +551,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
 		ExistingIdentities:  providerAuthIdentities(dependencies.Store),
 		LocalSourceIdentity: providerLocalAuthIdentity(dependencies.HostHomeDir),
+		// 插件账号来源由 Node 插件运行时维护；Node 一旦检测到该 Provider 有插件来源
+		// 就不会把请求交给 Go。因此 Go 侧无插件来源时返回空集，不把字段标成未填。
+		PluginSources: func(context.Context, string) ([]webuiproviderauthsourcesapi.PluginSource, error) {
+			return []webuiproviderauthsourcesapi.PluginSource{}, nil
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 Provider 授权来源接口失败: %w", err)

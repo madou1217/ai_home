@@ -245,34 +245,29 @@ func (runner *Runner) runWithHTTPProxy(
 		_ = server.Close()
 		return err
 	}
-	process, err := runner.processes.Start(ctx, processSpec{
-		path:   path,
-		args:   append([]string(nil), arguments...),
-		env:    environment,
-		stdin:  runner.stdin,
-		stdout: runner.stdout,
-		stderr: runner.stderr,
-	})
-	if err != nil {
-		_ = server.Close()
-		return err
-	}
-	processDone := waitProcess(process)
+	processCtx, cancelProcess := context.WithCancel(ctx)
+	defer cancelProcess()
+	processDone := make(chan error, 1)
+	go func() {
+		processDone <- runner.runProviderProcess(processCtx, path, arguments, environment)
+	}()
 	select {
 	case err := <-processDone:
 		shutdownHTTPServer(server)
 		<-serverDone
 		return err
 	case err := <-serverDone:
-		stopProcess(process, processDone)
+		cancelProcess()
+		<-processDone
 		if err == nil {
 			return ErrClaudeOAuthProxy
 		}
 		return err
 	case <-ctx.Done():
+		cancelProcess()
 		shutdownHTTPServer(server)
-		stopProcess(process, processDone)
 		<-serverDone
+		<-processDone
 		return ctx.Err()
 	}
 }

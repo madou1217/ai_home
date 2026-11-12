@@ -114,19 +114,12 @@ func (runner *Runner) runCodexExternalAuth(
 	go func() {
 		controllerDone <- controller.Serve(ctx)
 	}()
-	tuiProcess, err := runner.processes.Start(ctx, processSpec{
-		path:   binary,
-		args:   remoteArguments,
-		env:    environment,
-		stdin:  runner.stdin,
-		stdout: runner.stdout,
-		stderr: runner.stderr,
-	})
-	if err != nil {
-		stopProcess(serverProcess, serverDone)
-		return err
-	}
-	tuiDone := waitProcess(tuiProcess)
+	tuiCtx, cancelTUI := context.WithCancel(ctx)
+	defer cancelTUI()
+	tuiDone := make(chan error, 1)
+	go func() {
+		tuiDone <- runner.runProviderProcess(tuiCtx, binary, remoteArguments, environment)
+	}()
 	select {
 	case err := <-tuiDone:
 		_ = controller.Close()
@@ -134,13 +127,15 @@ func (runner *Runner) runCodexExternalAuth(
 		return err
 	case err := <-serverDone:
 		_ = controller.Close()
-		stopProcess(tuiProcess, tuiDone)
+		cancelTUI()
+		<-tuiDone
 		if err == nil {
 			return ErrCodexExternalAuthProtocol
 		}
 		return errors.Join(ErrCodexExternalAuthProtocol, err)
 	case err := <-controllerDone:
-		stopProcess(tuiProcess, tuiDone)
+		cancelTUI()
+		<-tuiDone
 		stopProcess(serverProcess, serverDone)
 		if err == nil || errors.Is(err, io.EOF) {
 			return ErrCodexExternalAuthProtocol
@@ -148,7 +143,8 @@ func (runner *Runner) runCodexExternalAuth(
 		return errors.Join(ErrCodexExternalAuthProtocol, err)
 	case <-ctx.Done():
 		_ = controller.Close()
-		stopProcess(tuiProcess, tuiDone)
+		cancelTUI()
+		<-tuiDone
 		stopProcess(serverProcess, serverDone)
 		return ctx.Err()
 	}

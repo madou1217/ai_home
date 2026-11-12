@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/ptyhost"
 )
 
 var (
@@ -164,14 +165,32 @@ func (runner *Runner) runDirect(
 	if err != nil {
 		return err
 	}
-	env := applyEnvironment(runner.environ(), environment)
+	return runner.runProviderProcess(
+		ctx,
+		path,
+		arguments,
+		applyEnvironment(runner.environ(), environment),
+	)
+}
+
+// runProviderProcess 是所有官方 CLI 前台进程的唯一入口：
+//   - 真终端 + ptyStarter 可用 → 走 ptyhost（raw mode / resize / 退出码）；
+//   - 脚本、管道、测试 → 普通 exec，保持 stdout/stderr 分离。
+//
+// 代理/OAuth 路径只负责旁路服务；TUI 进程必须同样走这里，不能各自 io.Copy。
+func (runner *Runner) runProviderProcess(
+	ctx context.Context,
+	path string,
+	arguments []string,
+	environment []string,
+) error {
 	if runner.interactive && runner.ptyStarter != nil {
-		return runner.runInteractiveDirect(ctx, path, arguments, env)
+		return runner.runInteractiveDirect(ctx, path, arguments, environment)
 	}
 	process, err := runner.processes.Start(ctx, processSpec{
 		path:   path,
 		args:   append([]string(nil), arguments...),
-		env:    env,
+		env:    append([]string(nil), environment...),
 		stdin:  runner.stdin,
 		stdout: runner.stdout,
 		stderr: runner.stderr,
@@ -191,28 +210,13 @@ func (runner *Runner) runInteractiveDirect(
 	if runner == nil || runner.ptyStarter == nil || ctx == nil || path == "" {
 		return ErrInvalidRunRequest
 	}
-	session, err := runner.ptyStarter.Start(ctx, pty.Spec{
-		Path: path,
-		Args: append([]string(nil), arguments...),
-		Env:  append([]string(nil), environment...),
-		Size: pty.Size{Rows: 24, Cols: 80},
+	_, err := ptyhost.Run(ctx, ptyhost.Config{
+		Path:    path,
+		Args:    arguments,
+		Env:     environment,
+		Stdin:   runner.stdin,
+		Stdout:  runner.stdout,
+		Starter: runner.ptyStarter,
 	})
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-	inputDone := make(chan error, 1)
-	go func() {
-		_, copyErr := io.Copy(session, runner.stdin)
-		inputDone <- copyErr
-	}()
-	_, outputErr := io.Copy(runner.stdout, session)
-	waitErr := session.Wait()
-	if outputErr != nil && outputErr != io.EOF {
-		return outputErr
-	}
-	if waitErr != nil {
-		return waitErr
-	}
-	return <-inputDone
+	return err
 }

@@ -159,7 +159,6 @@ func TestKiroDeletionRegistration(t *testing.T) {
 func TestNodeOnlyDeletionReasonsNameConcreteGaps(t *testing.T) {
 	cases := map[string][]string{
 		"zcode": {"enc:v1", "桥", "影子"},
-		"agy":   {"暖机", "language server"},
 	}
 	for providerID, keywords := range cases {
 		reason, found := nodeOnlyDeletionReasons[providerID]
@@ -172,6 +171,20 @@ func TestNodeOnlyDeletionReasonsNameConcreteGaps(t *testing.T) {
 				t.Errorf("%s 的 node-only 原因缺少 %q，实际 %q", providerID, keyword, reason)
 			}
 		}
+	}
+}
+
+// agy 的投影必须整根私有且删除时不采纳凭据（暖机会话由 Node 删除路由驱逐）。
+func TestAgyProjectionIsPrivateRootWithoutCredentialAdoption(t *testing.T) {
+	spec, found := projectionSpecFor(providerAgy)
+	if !found {
+		t.Fatal("agy 缺少投影删除规格")
+	}
+	if !spec.roots[projectionKindAccount].privateRoot {
+		t.Fatal("agy 的账号投影应整根私有")
+	}
+	if spec.credential.mode != credentialNone {
+		t.Fatalf("agy 的凭据模式 = %d, want credentialNone", spec.credential.mode)
 	}
 }
 

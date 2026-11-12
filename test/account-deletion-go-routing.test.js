@@ -172,7 +172,7 @@ test('codebuddy 家族、kimi 与 kiro 已进入 Go 删除名单', () => {
 });
 
 test('未接入 Go 的 Provider 继续走本地删除', () => {
-  for (const provider of ['agy', 'zcode']) {
+  for (const provider of ['zcode']) {
     assert.equal(resolveGoDeletionMode(provider, enabledGoHost), 'local');
   }
 });

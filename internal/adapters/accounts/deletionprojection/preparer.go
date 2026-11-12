@@ -27,6 +27,7 @@ var (
 const (
 	providerCodex    = "codex"
 	providerClaude   = "claude"
+	providerAgy      = "agy"
 	providerGemini   = "gemini"
 	providerGrok     = "grok"
 	providerCline    = "cline"

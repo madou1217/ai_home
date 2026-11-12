@@ -149,6 +149,16 @@ var projectionSpecs = map[string]providerProjectionSpec{
 			},
 		},
 	},
+	// agy 的投影是完整伪 HOME：.gemini 下都是本次投影的副本，共享条目是指回
+	// 宿主的软链（删链接不影响宿主）。整根随投影删除；凭据格式与 gemini 的
+	// native 文档不同，删除阶段只删不采纳。暖机会话由 Node 删除路由在调用 Go
+	// 之前驱逐，不属于投影清理。
+	providerAgy: {
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {privateRoot: true},
+		},
+		credential: credentialSpec{mode: credentialNone},
+	},
 	providerGemini: {
 		roots: map[projectionKind]projectionRootSpec{
 			projectionKindAccount: {
@@ -410,7 +420,6 @@ func kiroProjectionSpec() providerProjectionSpec {
 // 守卫测试会遍历 Provider 目录：既没有规格、也不在这张表里，或原因为空，
 // 测试都会失败。新增 Provider 时必须二选一，不能让删除流程沉默地拒绝它。
 var nodeOnlyDeletionReasons = map[string]string{
-	"agy":   "伪 HOME 投影与 gemini 共用 ~/.gemini，且删除前必须停掉常驻的暖机 language server 池，只有 Node 能做进程级停机",
 	"zcode": "凭据是 enc:v1 加密的多文件库，且桌面数据根由桥/影子 App 共享，Go 侧既无法比较代际也无法安全迁移",
 }
 

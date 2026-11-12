@@ -65,7 +65,7 @@ async function deleteViaRoute({ dir, provider, extraCtx = {} }) {
 // 登记表不是文档：每个 hook 必须能被 require 出同名函数，且调用点源码里真的
 // 调用了它。Go 侧守卫读同一份表，两边键集合必须一致。
 test('node-only 删除钩子表指向真实导出与调用点', () => {
-  assert.deepEqual(Object.keys(NODE_ONLY_DELETION_HOOKS).sort(), ['agy', 'zcode']);
+  assert.deepEqual(Object.keys(NODE_ONLY_DELETION_HOOKS).sort(), ['zcode']);
   for (const [provider, hooks] of Object.entries(NODE_ONLY_DELETION_HOOKS)) {
     // Go 守卫按「  provider: Object.freeze(」解析键；写成引号键会让它静默漏掉。
     assert.match(provider, /^[a-z0-9_]+$/, `登记表键必须是裸 Provider ID: ${provider}`);

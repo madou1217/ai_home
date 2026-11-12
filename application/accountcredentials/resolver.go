@@ -435,8 +435,12 @@ func refreshDueAt(
 	now time.Time,
 ) bool {
 	expiresAt, refreshable := strategy.ExpiresAt(snapshot.Credential())
-	if !refreshable || expiresAt.IsZero() {
+	if !refreshable {
 		return false
+	}
+	// 过期时间未知（refresh-only 导入的凭据）时必须刷新：没有 access token 可用。
+	if expiresAt.IsZero() {
+		return true
 	}
 	return expiresAt.Sub(now) <= DefaultRefreshSkew
 }

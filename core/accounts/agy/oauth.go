@@ -61,14 +61,21 @@ func NewNativeOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 
 func newOAuthAuth(input OAuthInput, allowUnknownRefresh bool) (*OAuthAuth, error) {
 	email, err := normalizeEmail(input.Email)
+	// 原生导入允许「只有 refresh_token」的凭据（Node 历史数据/用户手工恢复）。
+	// 这类凭据没有 access token，也没有可靠的过期时间，使用前必须由 resolver
+	// 强制刷新；显式 OAuth 交换仍然要求 access token。
+	refreshOnly := allowUnknownRefresh &&
+		input.AccessToken == "" &&
+		validSecret(input.RefreshToken)
 	if err != nil ||
-		!validSecret(input.AccessToken) ||
+		(input.AccessToken != "" && !validSecret(input.AccessToken)) ||
+		(input.AccessToken == "" && !refreshOnly) ||
 		!validSecret(input.RefreshToken) ||
-		input.ExpiresAtMS <= 0 ||
+		(input.ExpiresAtMS <= 0 && !refreshOnly) ||
 		input.ExpiresAtMS > maxUnixMillis ||
 		input.RefreshedAtMS < 0 ||
 		(input.RefreshedAtMS == 0 && !allowUnknownRefresh) ||
-		input.RefreshedAtMS >= input.ExpiresAtMS ||
+		(!refreshOnly && input.RefreshedAtMS >= input.ExpiresAtMS) ||
 		!validMetadata(input.TokenType, 32) ||
 		input.AuthMethod != AuthMethodConsumer ||
 		(input.ClientID == "") != (input.ClientSecret == "") ||

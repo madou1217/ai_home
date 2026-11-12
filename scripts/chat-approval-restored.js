@@ -62,14 +62,22 @@ const profileFor = (origin, key) => {
 
   // 3. 切 WORK，选工作区，再新建会话；此时 selectedAccount 已是 Claude。
   await page.keyboard.press('Escape').catch(() => {});
-  const workButton = page.getByText('WORK', { exact: true }).first();
-  await workButton.click().catch(() => {});
-  await page.waitForTimeout(1500);
-  console.log('WORK_CLICK', 'WORK');
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(300);
+  const workButton = page.getByRole('button', { name: /Work/ });
+  const workTab = page.getByRole('tab', { name: /Work/ });
+  const workRadio = page.getByRole('radio', { name: /Work/ });
+  console.log('WORK_ROLE_COUNT', (await workButton.count()) + (await workTab.count()) + (await workRadio.count()));
+  if (await workButton.count()) await workButton.last().click({ force: true }).catch(() => {});
+  else if (await workTab.count()) await workTab.last().click({ force: true }).catch(() => {});
+  else if (await workRadio.count()) await workRadio.last().click({ force: true }).catch(() => {});
+  await page.waitForFunction(() => document.body.innerText.includes('新建工作区会话'), { timeout: 10000 }).catch(() => {});
+  console.log('WORK_READY', await page.evaluate(() => document.body.innerText.includes('新建工作区会话')));
   console.log('WS_CLICK', await clickFirst(['AIH (Local Mac)']));
   await page.waitForTimeout(800);
-  console.log('NEW_CLICK', await clickFirst(['新建工作区会话', '新建会话']));
+  console.log('WS_BUTTONS', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('button')].map((b) => ({ text: String(b.textContent || '').trim(), aria: b.getAttribute('aria-label') || '' })).filter((b) => /新建|新建工作区/.test(b.text + b.aria)).slice(-8))));
+  const newWork = page.locator('button[aria-label="新建工作区会话"]').first();
+  console.log('NEW_CLICK', await newWork.count());
+  await newWork.click().catch(() => {});
   await page.waitForSelector('textarea', { timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(1200);
 

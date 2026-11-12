@@ -814,6 +814,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			httpClient:    usageClient,
 			clock:         time.Now,
 			codexVersions: codexVersions,
+			aiHomeDir:     aiHomeDir,
 		},
 	)
 	if err != nil {

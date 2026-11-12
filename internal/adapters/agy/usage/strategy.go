@@ -71,9 +71,20 @@ type HTTPClient interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
+// ClientResolver 按账号选择额度请求传输（账号级出口）。
+//
+// 未绑定出口的账号返回基础 client；解析失败必须 fail-closed，不能回落到默认
+// 网络策略（与刷新链同口径）。
+type ClientResolver func(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (HTTPClient, error)
+
 // Strategy 使用 agy OAuth 凭据读取 code-assist 配额。
 type Strategy struct {
 	client HTTPClient
+	// clientResolver 可选：账号级出口存在时返回专用传输。
+	clientResolver ClientResolver
 	// baseURLs 是候选根地址；Node resolveAgyQuotaBaseUrls 的默认列表，
 	// 由 endpoints() 兜底，测试可替换成单元素切片。
 	baseURLs []string
@@ -82,6 +93,19 @@ type Strategy struct {
 var _ usageapp.ProviderStrategy = (*Strategy)(nil)
 
 // New 创建生产端点上的额度策略。
+// NewWithEgress 创建带账号级出口解析的额度 Strategy。
+func NewWithEgress(client HTTPClient, resolver ClientResolver) (*Strategy, error) {
+	strategy, err := New(client)
+	if err != nil {
+		return nil, err
+	}
+	if resolver == nil {
+		return nil, ErrInvalidDependencies
+	}
+	strategy.clientResolver = resolver
+	return strategy, nil
+}
+
 func New(client HTTPClient) (*Strategy, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
@@ -129,12 +153,20 @@ func (strategy *Strategy) FetchUsageWithDocument(
 	if strategy == nil || strategy.client == nil || ctx == nil || !accountRef.IsValid() {
 		return usagecore.Snapshot{}, nil, usageapp.ErrInvalidRequest
 	}
+	client := strategy.client
+	if strategy.clientResolver != nil {
+		resolved, err := strategy.clientResolver(ctx, accountRef)
+		if err != nil || resolved == nil {
+			return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, err)
+		}
+		client = resolved
+	}
 	auth, ok := credential.(*agy.OAuthAuth)
 	if !ok || auth == nil || strings.TrimSpace(auth.AccessToken()) == "" {
 		return usagecore.Snapshot{}, nil, usageapp.ErrUsageUnsupported
 	}
-	project, tier := strategy.loadProject(ctx, auth)
-	payload, err := strategy.fetchModels(ctx, auth, project)
+	project, tier := strategy.loadProject(ctx, client, auth)
+	payload, err := strategy.fetchModels(ctx, client, auth, project)
 	if err != nil {
 		return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, err)
 	}
@@ -199,7 +231,11 @@ type loadProjectInfo struct {
 // Node fetchAgyCodeAssistProjectInfo 在 loadCodeAssist 上同样按 404/429/5xx 换端点；
 // 它还有 account 级缓存（codeAssistProject + codeAssistLoadResponse）可跳过请求，
 // Go 的 Strategy 没有账号状态，这里每次采集都重新读（差异见文件头的对齐清单）。
-func (strategy *Strategy) loadProject(ctx context.Context, auth *agy.OAuthAuth) (string, string) {
+func (strategy *Strategy) loadProject(
+	ctx context.Context,
+	client HTTPClient,
+	auth *agy.OAuthAuth,
+) (string, string) {
 	payload := map[string]any{"metadata": map[string]string{
 		"ideType":    "ANTIGRAVITY",
 		"platform":   "PLATFORM_UNSPECIFIED",
@@ -207,7 +243,7 @@ func (strategy *Strategy) loadProject(ctx context.Context, auth *agy.OAuthAuth) 
 	}}
 	var lastErr error
 	for _, baseURL := range strategy.endpoints() {
-		document, err := strategy.post(ctx, baseURL+":loadCodeAssist", auth, payload)
+		document, err := strategy.post(ctx, client, baseURL+":loadCodeAssist", auth, payload)
 		if err == nil {
 			info := parseLoadResponse(document)
 			return info.Project, info.Tier
@@ -295,7 +331,12 @@ func firstTierWithFlag(tiers []json.RawMessage, field string) int {
 
 // fetchModels 复刻 Node fetchAgyCodeAssistQuotaSnapshot 的请求顺序：
 // 每个端点先带 project、403 时去掉 project 重试一次；端点本身 404/429/5xx 时换下一个。
-func (strategy *Strategy) fetchModels(ctx context.Context, auth *agy.OAuthAuth, project string) ([]byte, error) {
+func (strategy *Strategy) fetchModels(
+	ctx context.Context,
+	client HTTPClient,
+	auth *agy.OAuthAuth,
+	project string,
+) ([]byte, error) {
 	bodies := []map[string]any{{}}
 	if project != "" {
 		bodies = []map[string]any{{"project": project}, {}}
@@ -304,7 +345,7 @@ func (strategy *Strategy) fetchModels(ctx context.Context, auth *agy.OAuthAuth, 
 	for _, baseURL := range strategy.endpoints() {
 		endpoint := baseURL + ":fetchAvailableModels"
 		for index, body := range bodies {
-			payload, err := strategy.post(ctx, endpoint, auth, body)
+			payload, err := strategy.post(ctx, client, endpoint, auth, body)
 			if err == nil {
 				return payload, nil
 			}
@@ -351,6 +392,7 @@ func shouldFallbackEndpoint(err error) bool {
 
 func (strategy *Strategy) post(
 	ctx context.Context,
+	client HTTPClient,
 	endpoint string,
 	auth *agy.OAuthAuth,
 	body map[string]any,
@@ -373,7 +415,7 @@ func (strategy *Strategy) post(
 	request.Header.Set("x-client-name", "antigravity")
 	request.Header.Set("x-client-version", clientVersion)
 	request.Header.Set("x-vscode-sessionid", clientSessionID)
-	response, err := strategy.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr

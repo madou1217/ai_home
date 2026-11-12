@@ -97,6 +97,8 @@ type usageCompositionDependencies struct {
 	clock       usageapp.Clock
 	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
 	codexVersions clientversion.Source
+	// aiHomeDir 是账号级出口绑定（app-state.db / 池运行文件）的数据根。
+	aiHomeDir string
 }
 
 // newUsageComposition 创建双 Provider Strategy、服务和周期刷新协调器。
@@ -125,6 +127,7 @@ func newUsageComposition(
 		codexVersions: dependencies.codexVersions,
 		store:         dependencies.store,
 		clock:         dependencies.clock,
+		aiHomeDir:     dependencies.aiHomeDir,
 	})
 	if err != nil {
 		return nil, err

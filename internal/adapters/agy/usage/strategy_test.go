@@ -130,6 +130,67 @@ func TestFetchUsageBuildsModelSnapshotAndDocument(t *testing.T) {
 	}
 }
 
+type failingUsageClient struct{ calls int }
+
+func (client *failingUsageClient) Do(*http.Request) (*http.Response, error) {
+	client.calls++
+	return nil, io.ErrUnexpectedEOF
+}
+
+// 账号级出口解析出的传输必须真正用于采集；基础 client 不能被调用。
+func TestFetchUsageUsesResolvedClient(t *testing.T) {
+	base := &failingUsageClient{}
+	resolved := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(request.URL.Path, ":loadCodeAssist"):
+			_, _ = response.Write([]byte(`{"cloudaicompanionProject":"project-1","currentTier":{"id":"free-tier"}}`))
+		case strings.HasSuffix(request.URL.Path, ":fetchAvailableModels"):
+			_, _ = response.Write([]byte(`{"models":{"gemini-3.8-flash-tiered":{"quotaInfo":{"remainingFraction":0.5,"resetTime":"2026-11-12T08:00:00Z"}}}}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer resolved.Close()
+
+	strategy, err := NewWithEgress(base, func(
+		context.Context,
+		accountcore.AccountRef,
+	) (HTTPClient, error) {
+		return resolved.Client(), nil
+	})
+	if err != nil {
+		t.Fatalf("NewWithEgress() error = %v", err)
+	}
+	strategy.baseURLs = []string{resolved.URL + "/v1internal"}
+	if _, err := strategy.FetchUsage(context.Background(), testAccountRef(t), agyCredential(t), time.Now().UTC()); err != nil {
+		t.Fatalf("FetchUsage() error = %v", err)
+	}
+	if base.calls != 0 {
+		t.Fatalf("base client calls = %d, want 0", base.calls)
+	}
+}
+
+// 出口解析失败必须 fail-closed，不能回落到基础 client。
+func TestFetchUsageFailsClosedWhenEgressResolutionFails(t *testing.T) {
+	base := &failingUsageClient{}
+	strategy, err := NewWithEgress(base, func(
+		context.Context,
+		accountcore.AccountRef,
+	) (HTTPClient, error) {
+		return nil, io.ErrClosedPipe
+	})
+	if err != nil {
+		t.Fatalf("NewWithEgress() error = %v", err)
+	}
+	if _, err := strategy.FetchUsage(context.Background(), testAccountRef(t), agyCredential(t), time.Now().UTC()); err == nil {
+		t.Fatal("FetchUsage() error = nil, want fail-closed")
+	}
+	if base.calls != 0 {
+		t.Fatalf("base client calls = %d, want 0", base.calls)
+	}
+}
+
 func TestFetchUsageRetriesWithoutProjectOn403(t *testing.T) {
 	t.Parallel()
 	fetches := 0

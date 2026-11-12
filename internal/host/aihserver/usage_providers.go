@@ -8,11 +8,14 @@ package aihserver
 // 协调器队列也由策略自己的 ProviderID() 派生——新增 Provider 不再触碰公共逻辑。
 
 import (
+	"context"
 	"fmt"
 
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
@@ -37,6 +40,8 @@ type usageProviderContext struct {
 	codexVersions clientversion.Source
 	store         *sqliteaccount.Store
 	clock         usageapp.Clock
+	// aiHomeDir 用于读取账号级出口绑定（app-state.db / 池运行文件）。
+	aiHomeDir string
 }
 
 // usageProviderModule 是一个 Provider（或家族）的额度装配单元。
@@ -92,8 +97,27 @@ func buildKiroUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, 
 	return []usageapp.ProviderStrategy{strategy}, nil
 }
 
-func buildAgyUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
-	strategy, err := agyusage.New(context.client)
+func buildAgyUsage(providerContext usageProviderContext) ([]usageapp.ProviderStrategy, error) {
+	// 额度采集与刷新共用同一份账号出口绑定：有绑定时走对应代理/直连，
+	// 解析失败 fail-closed，不能静默走进程默认网络。
+	egressResolver := agyegress.NewResolver(agyegress.Options{AIHomeDir: providerContext.aiHomeDir})
+	strategy, err := agyusage.NewWithEgress(
+		providerContext.client,
+		func(ctx context.Context, accountRef accountcore.AccountRef) (agyusage.HTTPClient, error) {
+			decision, err := egressResolver.Resolve(ctx, accountRef)
+			if err != nil {
+				return nil, err
+			}
+			if !decision.Bound {
+				return providerContext.client, nil
+			}
+			proxyURL := ""
+			if !decision.Target.Direct {
+				proxyURL = decision.Target.ProxyURL
+			}
+			return newOAuthEgressClient(proxyURL, usageHTTPTimeout), nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

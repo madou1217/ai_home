@@ -76,7 +76,10 @@ type PluginSource struct {
 	PluginLogin bool
 	Description string
 	// Available 是插件自报的可用性（插件才知道宿主登录态/设备环境）。
-	Available bool
+	//
+	// nil 表示插件没有声明可用性——按 Node 的 source.available !== false，这种情况视为可用；
+	// 用指针而不是布尔，就是为了让「没声明」与「声明不可用」不会被压成同一个 false。
+	Available *bool
 	Identity  string
 }
 

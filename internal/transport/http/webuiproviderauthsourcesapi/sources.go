@@ -390,7 +390,8 @@ func (handler *Handler) pluginDescriptors(ctx context.Context, provider string) 
 		if id == "" {
 			continue
 		}
-		available := source.Available
+		// 插件没声明可用性时按 Node 的 source.available !== false 视为可用。
+		available := source.Available == nil || *source.Available
 		descriptors = append(descriptors, sourceDescriptor{
 			ID:              id,
 			Kind:            source.Kind,

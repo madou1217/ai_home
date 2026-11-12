@@ -273,7 +273,7 @@ func TestPluginSourcesJoinBuiltinMethods(t *testing.T) {
 				AuthMode:    "oauth-device",
 				PluginLogin: true,
 				Description: "插件提供的设备码登录",
-				Available:   true,
+				Available:   boolPointer(true),
 				Identity:    "plugin:seed",
 			}}, nil
 		},
@@ -296,7 +296,7 @@ func TestPluginSourcesJoinBuiltinMethods(t *testing.T) {
 			if provider != "acme" {
 				return nil, nil
 			}
-			return []PluginSource{{ID: "acme-plugin", Kind: kindRemote, AuthMode: "oauth-device", Available: true}}, nil
+			return []PluginSource{{ID: "acme-plugin", Kind: kindRemote, AuthMode: "oauth-device"}}, nil
 		},
 	})
 	acme := decode(t, request(t, pluginOnly, http.MethodGet, Path+"?provider=acme"))
@@ -313,6 +313,28 @@ func TestPluginSourcesJoinBuiltinMethods(t *testing.T) {
 		t.Errorf("supported/methods = %v/%+v，期望 false 且空数组", payload.Supported, payload.Methods)
 	}
 }
+
+// TestPluginSourceWithoutAvailabilityIsAvailable 锁死 Node 的 source.available !== false：
+// 插件没有声明可用性时视为可用，不能因为缺省布尔值把登录入口压成不可用。
+func TestPluginSourceWithoutAvailabilityIsAvailable(t *testing.T) {
+	handler := newTestHandlerWithDependencies(t, Dependencies{
+		HostHomeDir: t.TempDir(),
+		PluginSources: func(_ context.Context, provider string) ([]PluginSource, error) {
+			if provider != "claude" {
+				return nil, nil
+			}
+			return []PluginSource{{ID: "claude-plugin-login", Kind: kindRemote, AuthMode: "oauth-device"}}, nil
+		},
+	})
+	method := methodByAuthMode(t, decode(t, request(t, handler, http.MethodGet, Path+"?provider=claude")), "oauth-device")
+	source := sourceByID(t, method, "claude-plugin-login")
+	if !source.Available || source.Reason != "" {
+		t.Fatalf("available/reason = %v/%q，期望 true/空", source.Available, source.Reason)
+	}
+}
+
+// boolPointer 是插件可用性的显式声明替身。
+func boolPointer(value bool) *bool { return &value }
 
 // TestPluginSourceBridgeFailureIsEmpty 锁死插件端口失败时按「没有插件来源」降级，不影响内置来源。
 func TestPluginSourceBridgeFailureIsEmpty(t *testing.T) {

@@ -553,6 +553,6 @@ Go 用 `http.FileServer` + SPA fallback 复刻不难。但当前前门是 Node�
 - **已做 API/单元验证**：登录 Job（auth-job 帧）、账号活动（account-activity 帧）、Peer Inbox（fs.watch → peer-changed）、Egress 上游（策略/probe/reset/network → egress-upstreams-changed）、SSH 反向隧道（真实连接 connecting → open）、计划任务完成事件、Geo/Image 任务完成事件、账号 outcomes 快照订阅。
 - **未做真机/浏览器级验证**：Kimi 桌面扫码 SSE（需要真实 Kimi 账号扫码）、Codex 重置 SSE（需要真实重置卡与操作）、Egress 变更帧的浏览器目视、SSH 隧道状态 SSE 的前端目视。
 - **Kimi/Codex 当前状态**：协议与代码已接入，但「真机未验证」；不得在交付说明中写成已验证。
-- **未完成缺口**：Chat 切模型能力快照已用 esbuild 加载真实前端纯函数验证逻辑（relay 限制 → /plan/confirm 收起，切回恢复）；Playwright 已装并可启动 Chromium，真实 Chat WORK 页可达并截到审批模式菜单，但切模型目视仍受运行时连接/会话状态影响，未完成；账号删除的桌面进程/keychain 已用假进程与真实 Go 投影/跨语言清理测试验证，但未在真实用户桌面进程上做破坏性 E2E。
+- **未完成缺口**：Chat 切模型能力快照已用 esbuild 加载真实前端纯函数验证逻辑（relay 限制 → /plan/confirm 收起，切回恢复）；Playwright 已装并可启动 Chromium；真实 Chat WORK 会话目视通过：审批菜单显示 Approve for me / Plan mode 禁用并给出「Antigravity CLI 没有权限确认通道」，Full access 可用；切到支持模型再切回的目视仍未做；账号删除的桌面进程/keychain 已用假进程与真实 Go 投影/跨语言清理测试验证，但未在真实用户桌面进程上做破坏性 E2E。
 - 约束：WebUI 不恢复轮询；SSE 断线只显示重连/离线，不再用短轮询兜底。
 

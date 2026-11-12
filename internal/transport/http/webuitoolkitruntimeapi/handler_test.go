@@ -343,3 +343,23 @@ func TestCatalogMatchesNodeOrder(t *testing.T) {
 		}
 	}
 }
+func TestResourcesShapeMatchesNode(t *testing.T) {
+	handler := newHandler(t, Dependencies{HostHomeDir: t.TempDir()})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path, nil))
+	payload := decodeResponse(t, recorder)
+	if len(payload.Resources) != len(payload.Tools) {
+		t.Fatalf("resources = %d, tools = %d", len(payload.Resources), len(payload.Tools))
+	}
+	for _, resource := range payload.Resources {
+		if resource.ID == "" || resource.Platform != currentPlatform() {
+			t.Fatalf("resource = %#v", resource)
+		}
+		if resource.ManagedVersions == nil {
+			t.Fatalf("managedVersions 不能是 null: %#v", resource)
+		}
+		if resource.Lifecycle.Install != resource.CanInstall || resource.Lifecycle.Update != resource.CanUpdate || resource.Lifecycle.Uninstall != resource.CanUninstall {
+			t.Fatalf("lifecycle 与 can 字段不一致: %#v", resource)
+		}
+	}
+}

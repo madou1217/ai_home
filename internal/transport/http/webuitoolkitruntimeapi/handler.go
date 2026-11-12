@@ -107,25 +107,52 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 
 // ToolView 是单个运行时 / 包管理器 / 工具链的探测结果。
 type ToolView struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Runtime       string `json:"runtime"`
-	Category      string `json:"category"`
-	Description   string `json:"description"`
-	Available     bool   `json:"available"`
-	Version       string `json:"version"`
-	Path          string `json:"path"`
-	VersionStatus string `json:"versionStatus"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Runtime         string   `json:"runtime"`
+	Category        string   `json:"category"`
+	Description     string   `json:"description"`
+	Available       bool     `json:"available"`
+	Version         string   `json:"version"`
+	Path            string   `json:"path"`
+	VersionStatus   string   `json:"versionStatus"`
+	ManagedVersions []string `json:"managedVersions"`
+}
+
+// ResourceView 是 Node resources[] 的兼容投影；字段名与前端 EnvironmentPanel 对齐。
+type ResourceView struct {
+	ID              string        `json:"id"`
+	Name            string        `json:"name"`
+	Runtime         string        `json:"runtime"`
+	Category        string        `json:"category"`
+	Description     string        `json:"description"`
+	Platform        string        `json:"platform"`
+	Installed       bool          `json:"installed"`
+	Version         string        `json:"version"`
+	ExecutablePath  string        `json:"executablePath"`
+	ManagedVersions []string      `json:"managedVersions"`
+	CanInstall      bool          `json:"canInstall"`
+	CanUpdate       bool          `json:"canUpdate"`
+	CanUninstall    bool          `json:"canUninstall"`
+	Lifecycle       LifecycleView `json:"lifecycle"`
+}
+
+// LifecycleView 对应 Node 的 lifecycle 三动作可用性。
+type LifecycleView struct {
+	Install   bool `json:"install"`
+	Update    bool `json:"update"`
+	Uninstall bool `json:"uninstall"`
 }
 
 type responseView struct {
-	OK             bool       `json:"ok"`
-	Platform       string     `json:"platform"`
-	ProbedAt       int64      `json:"probedAt"`
-	DerivedBy      string     `json:"derivedBy"`
-	Tools          []ToolView `json:"tools"`
-	AvailableCount int        `json:"availableCount"`
-	Total          int        `json:"total"`
+	OK             bool           `json:"ok"`
+	Platform       string         `json:"platform"`
+	ProbedAt       int64          `json:"probedAt"`
+	DerivedBy      string         `json:"derivedBy"`
+	Tools          []ToolView     `json:"tools"`
+	Resources      []ResourceView `json:"resources"`
+	AvailableCount int            `json:"availableCount"`
+	Total          int            `json:"total"`
 }
 
 type errorView struct {
@@ -164,9 +191,45 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		ProbedAt:       time.Now().UnixMilli(),
 		DerivedBy:      derivedByGoPartial,
 		Tools:          tools,
+		Resources:      buildResourceViews(platform, tools),
 		AvailableCount: available,
 		Total:          len(tools),
 	})
+}
+
+// buildResourceViews 把探测结果投影成 Node resources[] 的兼容形状。
+// managedVersions 永远是数组；生命周期先按「未安装可装、已安装可更/可卸」给出，
+// 具体安装计划仍由 Node 的 lifecycle API 判定。
+func buildResourceViews(platform string, tools []ToolView) []ResourceView {
+	resources := make([]ResourceView, 0, len(tools))
+	for _, tool := range tools {
+		managed := tool.ManagedVersions
+		if managed == nil {
+			managed = []string{}
+		}
+		lifecycle := LifecycleView{
+			Install:   !tool.Available,
+			Update:    tool.Available,
+			Uninstall: tool.Available,
+		}
+		resources = append(resources, ResourceView{
+			ID:              tool.ID,
+			Name:            tool.Name,
+			Runtime:         tool.Runtime,
+			Category:        tool.Category,
+			Description:     tool.Description,
+			Platform:        platform,
+			Installed:       tool.Available,
+			Version:         tool.Version,
+			ExecutablePath:  tool.Path,
+			ManagedVersions: managed,
+			CanInstall:      lifecycle.Install,
+			CanUpdate:       lifecycle.Update,
+			CanUninstall:    lifecycle.Uninstall,
+			Lifecycle:       lifecycle,
+		})
+	}
+	return resources
 }
 
 // probeAll 并发探测，保证总耗时接近单个工具上限而不是工具数乘上限。
@@ -233,6 +296,7 @@ func (handler *Handler) probeNVM(view ToolView) ToolView {
 	}
 	view.Available = true
 	versions := listDirectories(filepath.Join(root, "versions", "node"))
+	view.ManagedVersions = versions
 	if len(versions) == 0 {
 		view.VersionStatus = versionStatusEmpty
 		return view
@@ -246,6 +310,7 @@ func (handler *Handler) probeNVM(view ToolView) ToolView {
 func (handler *Handler) probePyenv(ctx context.Context, view ToolView, spec toolSpec) ToolView {
 	root := filepath.Join(handler.homeDir, ".pyenv")
 	versions := listDirectories(filepath.Join(root, "versions"))
+	view.ManagedVersions = versions
 	executable := handler.which(spec.Command)
 	view.Path = executable
 	if view.Path == "" {

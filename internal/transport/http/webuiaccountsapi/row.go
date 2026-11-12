@@ -142,6 +142,10 @@ var approxRowFields = []string{
 	"usageSnapshot",
 	"quotaStatus",
 	"quotaReason",
+	// 调度状态：Node 行存在时仍以 Node 派生为准；Go 独有账号（没有 Node 行）
+	// 用这里按账号静态事实算出的值，避免整列空串。
+	"schedulableStatus",
+	"schedulableReason",
 }
 
 // unfilledRowFields 返回既不在 filled 也不在 approx 里的字段，即本切片的空占位。
@@ -219,7 +223,33 @@ func newRow(fact accountFact) Row {
 		row.RemainingPct = &remaining
 	}
 	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload, fact.Provider)
+	row.SchedulableStatus, row.SchedulableReason = resolveSchedulableStatus(
+		configured,
+		row.Enabled,
+		row.QuotaStatus,
+	)
 	return row
+}
+
+// resolveSchedulableStatus 是 Go 独有账号的调度状态兜底。
+//
+// Node 存在账号行时仍由 Node 的完整派生（运行态/额度阈值/platform 策略）覆盖；
+// 这里只覆盖 Go 能静态确认的事实：未配置、停用、额度耗尽，其余按可调度。
+func resolveSchedulableStatus(
+	configured bool,
+	enabled bool,
+	quotaStatus string,
+) (string, string) {
+	if !configured {
+		return "blocked_by_account_status", "account_unconfigured"
+	}
+	if !enabled {
+		return "blocked_by_account_status", "account_disabled"
+	}
+	if strings.EqualFold(strings.TrimSpace(quotaStatus), "exhausted") {
+		return "blocked_by_quota", "usage_exhausted"
+	}
+	return "schedulable", ""
 }
 
 // parseUsageSnapshot 把 payload_json 原文解析成**前端契约形状**的快照对象。

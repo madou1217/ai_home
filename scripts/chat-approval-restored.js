@@ -38,7 +38,9 @@ const profileFor = (origin, key) => {
   await page.waitForTimeout(1200);
 
   // 1. 先在 Chat 模式进入已有会话，让 composer 出现。
-  console.log('CHAT_CLICK', await clickFirst(['妹妹你坐船头', '坐船头', '你好，只回复 OK']));
+  const firstSession=page.locator('[data-flip-key^="session-"]').first();
+  console.log('CHAT_CLICK', await firstSession.count());
+  await firstSession.click().catch(() => {});
   await page.waitForSelector('textarea', { timeout: 45000 }).catch(() => {});
   const chatReady = Boolean(await page.locator('textarea').count());
   console.log('CHAT_READY', chatReady);
@@ -64,15 +66,13 @@ const profileFor = (origin, key) => {
   await page.keyboard.press('Escape').catch(() => {});
   await page.mouse.click(1380, 900).catch(() => {});
   await page.waitForTimeout(600);
-  const workByText = page.getByText('WORK', { exact: true }).first();
-  if (await workByText.count()) await workByText.click({ force: true }).catch(() => {});
-  else await page.getByText('工作区项目模式').first().click({ force: true }).catch(() => {});
-  await page.waitForTimeout(800);
+  const workByAria = page.locator('button[aria-label="工作区项目模式"]').last();
+  console.log('WORK_ARIA_COUNT', await workByAria.count());
+  await workByAria.click({ force: true }).catch(() => {});
+  await page.waitForTimeout(1200);
   console.log('WORK_READY', Boolean(await page.locator('button[aria-label="新建工作区会话"]').count()));
-  if (!(await page.locator('button[aria-label="新建工作区会话"]').count())) {
-    console.log('WS_CLICK', await clickFirst(['AIH (Local Mac)']));
-    await page.waitForTimeout(800);
-  }
+  console.log('WS_CLICK', await clickFirst(['AIH (LOCAL MAC)', 'AIH (Local Mac)']));
+  await page.waitForTimeout(1000);
   const newWork = page.locator('button[aria-label="新建工作区会话"]').first();
   console.log('NEW_CLICK', await newWork.count());
   await newWork.click().catch(() => {});
@@ -86,7 +86,8 @@ const profileFor = (origin, key) => {
   }))));
 
   // 4. 打开审批菜单，断言菜单项 disabled 状态。
-  const approval = page.locator('button').filter({ hasText: /Full access|选择审批模式|确认/ }).first();
+  console.log('BUTTONS', JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('button')].map((b) => ({ label: b.getAttribute('aria-label') || '', text: String(b.textContent || '').trim() })).filter((b) => /审批|Full|通过|模式/.test(b.label + b.text)))));
+  const approval = page.locator('button').filter({ hasText: /Full access|Approve for me|选择审批模式|确认/ }).first();
   await approval.click().catch(() => {});
   await page.waitForTimeout(700);
   const approvalItems = await page.evaluate(() => [...document.querySelectorAll('.ant-dropdown-menu-item')].map((el) => ({

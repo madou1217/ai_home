@@ -26,6 +26,7 @@ type Dependencies struct {
 
 type Handler struct {
 	authorizer Authorizer
+	hostHome   string
 	chatDir    string
 }
 
@@ -37,7 +38,7 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 	if aiHome == "" {
 		aiHome = filepath.Join(deps.HostHomeDir, ".ai_home")
 	}
-	return &Handler{authorizer: deps.Authorizer, chatDir: filepath.Join(aiHome, "chat-sessions")}, nil
+	return &Handler{authorizer: deps.Authorizer, hostHome: deps.HostHomeDir, chatDir: filepath.Join(aiHome, "chat-sessions")}, nil
 }
 
 type response struct {
@@ -62,6 +63,15 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if sessionID == "" || strings.ContainsAny(sessionID, "/\\") || strings.Contains(sessionID, "..") {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_session_id"})
 		return
+	}
+	provider := strings.ToLower(strings.TrimSpace(r.PathValue("provider")))
+	if provider == "claude" && strings.TrimSpace(r.URL.Query().Get("projectDirName")) != "" {
+		messages, err := readClaudeMessages(handler.hostHome, r.URL.Query().Get("projectDirName"), sessionID)
+		if err == nil {
+			page := buildPage(messages, r.URL.Query())
+			writeJSON(w, http.StatusOK, response{OK: true, Messages: page.messages, Start: page.start, Total: page.total, HasMore: page.start > 0, Cursor: nil})
+			return
+		}
 	}
 	raw, err := os.ReadFile(filepath.Join(handler.chatDir, sessionID+".json"))
 	if err != nil {

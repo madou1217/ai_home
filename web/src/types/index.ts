@@ -1122,8 +1122,6 @@ export interface AccountAddJob {
   userCode?: string;
   authorizationUrl?: string;
   redirectUri?: string;
-  /** 服务端中介流程（如 zcode cli-flow）：结果由服务端轮询上游取回，没有本机回调可粘贴。 */
-  sessionFlow?: boolean;
   oauthState?: string;
   browserCallbackForwardedAt?: number;
   callbackCaptureStatus?: string;
@@ -2390,6 +2388,28 @@ export type ZcodeEgressApplyResult = AccountEgressApplyResult;
 export type ZcodeEgressRuntimeStatus = AccountEgressRuntimeStatus;
 export type ZcodeEgressResponse = AccountEgressResponse;
 
+export interface WebUiTaskAccountIdentity {
+  provider: string;
+  /** CLI 数字 ID（aih <provider> <id> 的参照）；没有时为空串。 */
+  displayId?: string;
+  /** 可轮播的展示身份（邮箱 / 手机号 / 昵称…）；数组顺序即轮播顺序。 */
+  displayNames: AccountDisplayName[];
+}
+
+/**
+ * 后台任务的**阶段事件**：队列面板用它回答「执行到哪里了」。
+ * 与任务快照分开：快照只有任务生命周期，事件是增量轨迹。
+ */
+export interface WebUiTaskEvent {
+  taskId: string;
+  seq: number;
+  at: number;
+  phase: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  account?: WebUiTaskAccountIdentity | null;
+}
+
 export interface AppInstallJob {
   id: string;
   source?: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
@@ -2400,7 +2420,14 @@ export interface AppInstallJob {
   action?: 'install' | 'update' | 'uninstall' | string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | string;
   phase: string;
-  progress: { percent: number; label: string };
+  progress: {
+    percent: number;
+    label: string;
+    /** 当前阶段（与 WebUiTaskEvent.phase 同词表）；仅账号活动等事件化任务有值。 */
+    stage?: string;
+    /** 当前处理的账号展示身份；**不要**从 label 里解析 acct_xxx。 */
+    account?: WebUiTaskAccountIdentity | null;
+  };
   attempts: Array<{ id: string; label: string; ok: boolean; error?: string }>;
   result?: { installed: boolean; cliPath?: string; executablePath?: string } | null;
   error?: string;

@@ -45,9 +45,13 @@ function createGoHost() {
     calls,
     host: {
       isEnabled: () => true,
-      deleteAccount: async (accountRef) => {
-        calls.push(accountRef);
-        return { ok: true, status: 204 };
+      deleteAccount: async (accountRef, options = {}) => {
+        calls.push({ accountRef, force: options.force === true });
+        return {
+          ok: true,
+          status: 200,
+          data: { ok: true, aihServerDefault: { ok: true, landed: false, reason: 'no_default_change' } }
+        };
       }
     }
   };
@@ -123,7 +127,7 @@ test('force=1：先终止会话再走 Go 删除，账号行被清掉', async (t)
   assert.equal(result.status, 200);
   assert.equal(state.aborted, 1);
   assert.deepEqual(state.unregistered, ['run-native-1']);
-  assert.deepEqual(calls, [ACCOUNT_REF]);
+  assert.deepEqual(calls, [{ accountRef: ACCOUNT_REF, force: true }]);
   assert.equal(
     resolveAccountRef(fs, dir, ACCOUNT_REF, { bestEffort: true }),
     null,

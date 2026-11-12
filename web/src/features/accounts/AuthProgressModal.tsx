@@ -45,6 +45,18 @@ export function getCallbackUiCopy(provider?: string, authStrategy = ''): Callbac
       requiresAwaitingCode: false
     };
   }
+  // zcode 登录固定由 Go 承接，回调是官方注册的 zcode:// 自定义协议：
+  // 本机没有 loopback 可监听，浏览器跳转后只能把完整地址粘回来。
+  if (provider === 'zcode') {
+    return {
+      hint: '授权完成后浏览器会跳到 zcode://oauth/callback（本机收不到）。把地址栏里的完整地址粘贴到这里，state 由 Go 校验。',
+      placeholder: '粘贴 zcode://oauth/callback?code=...&state=...',
+      submitLabel: '提交回调',
+      emptyWarning: '请粘贴完整回调地址',
+      submitSuccess: '回调已提交，正在向 Go 确认授权结果',
+      requiresAwaitingCode: false
+    };
+  }
   // kiro 只有 refresh_token 这一种认证方式会用到这个「粘贴并提交」入口
   // （设备码方式由服务端直接透出验证码，不需要粘贴），所以 provider 级别的文案就足够精确。
   if (provider === 'kiro') {
@@ -421,15 +433,7 @@ export function AuthProgressModal({
                     : (addJob.callbackCaptureStatus === 'manual_only' ? '需要手动粘贴回调地址' : '本地自动接收不可用')}
                 </InlineNote>
               ) : null}
-              {addJob.sessionFlow && addJob.status === 'running' ? (
-                <InlineNote
-                  tone="info"
-                  description="这是服务端中介流程：授权完成后由 aih 轮询上游自动收尾。回调地址指向官方服务，不会回到本机，也不需要粘贴。"
-                >
-                  无需粘贴回调，授权完成后自动完成
-                </InlineNote>
-              ) : null}
-              {addJob.status === 'running' && !addJob.pluginLogin && !addJob.sessionFlow ? (
+              {addJob.status === 'running' && !addJob.pluginLogin ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider, addJob.authStrategy).hint}</Text>
                   <Input.TextArea

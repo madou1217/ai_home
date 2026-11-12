@@ -737,6 +737,40 @@ func TestBuildProjectedEnvironment(t *testing.T) {
 	}
 }
 
+// TestBuildProjectedEnvironmentPinsCodebuddyFamilySite 钉住家族站点变量。
+//
+// 回归背景（2026-11-10 真机）：CLI 缺省按 internal 解析，国际站账号的 .ai token
+// 被发到 copilot.tencent.com —— 业务请求 401，refreshSession 也 401，只能提示 /login。
+// 站点必须由 aih 显式写进子进程 env，账号自己的声明优先。
+func TestBuildProjectedEnvironmentPinsCodebuddyFamilySite(t *testing.T) {
+	cases := []struct {
+		provider   string
+		accountEnv map[string]string
+		want       string
+	}{
+		{provider: "codebuddy", want: "external"},
+		{provider: "codebuddycn", want: "internal"},
+		// 账号显式声明（企业 iOA 等）优先于 Provider 默认值。
+		{provider: "codebuddy", accountEnv: map[string]string{"CODEBUDDY_INTERNET_ENVIRONMENT": "ioa"}, want: "ioa"},
+	}
+	for _, testCase := range cases {
+		env := BuildProjectedEnvironment(EnvironmentInput{
+			Provider:   testCase.provider,
+			AccountEnv: testCase.accountEnv,
+		})
+		if got := env["CODEBUDDY_INTERNET_ENVIRONMENT"]; got != testCase.want {
+			t.Fatalf("%s CODEBUDDY_INTERNET_ENVIRONMENT = %q，期望 %q", testCase.provider, got, testCase.want)
+		}
+		if got := env["CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT"]; got != testCase.want {
+			t.Fatalf("%s CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT = %q，期望 %q", testCase.provider, got, testCase.want)
+		}
+	}
+	// 非家族 Provider 不注入这两个键。
+	if env := BuildProjectedEnvironment(EnvironmentInput{Provider: "claude"}); env["CODEBUDDY_INTERNET_ENVIRONMENT"] != "" {
+		t.Fatal("非家族 Provider 不应注入 CodeBuddy 站点变量")
+	}
+}
+
 func TestNormalizeProviderAccountRef(t *testing.T) {
 	cases := []struct {
 		value string

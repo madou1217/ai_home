@@ -42,7 +42,19 @@ function seedAccount(dir, provider) {
   writeAccountCredentials(fs, dir, ACCOUNT_REF, {});
 }
 
-async function deleteViaRoute({ dir, provider, extraCtx = {} }) {
+// fakeGoHost 模拟 Go 的 WebUI 删除端点（Go 已提交删除事实，Node 只拆自己的投影）。
+function fakeGoHost() {
+  return {
+    isEnabled: () => true,
+    deleteAccount: async () => ({
+      ok: true,
+      status: 200,
+      data: { ok: true, aihServerDefault: { ok: true, landed: false, reason: 'no_default_change' } }
+    })
+  };
+}
+
+async function deleteViaRoute({ dir, provider, extraCtx = {}, goHost = fakeGoHost() }) {
   const writes = [];
   const url = new URL(`http://127.0.0.1/v0/webui/accounts/${provider}/${ACCOUNT_REF}`);
   const ctx = {
@@ -53,7 +65,7 @@ async function deleteViaRoute({ dir, provider, extraCtx = {} }) {
     res: {},
     fs,
     aiHomeDir: dir,
-    deps: { aiHomeDir: dir },
+    deps: { aiHomeDir: dir, goCoreSync: goHost },
     writeJson: (_res, status, payload) => writes.push({ status, payload })
   };
   const handled = await handleDeleteAccountRequest(ctx);

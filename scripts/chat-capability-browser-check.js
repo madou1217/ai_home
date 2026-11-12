@@ -9,6 +9,11 @@ const baseUrl = process.env.AIH_WEBUI_URL || 'http://127.0.0.1:9527';
 function resolveManagementKey() {
   if (process.env.AIH_WEBUI_MANAGEMENT_KEY) return process.env.AIH_WEBUI_MANAGEMENT_KEY.trim();
   try {
+    const raw = execFileSync('sqlite3', ['file:/Users/model/.ai_home/app-state.db?mode=ro', "select value from app_kv where key='config:server';"], { encoding: 'utf8' }).trim();
+    const key = String(JSON.parse(raw).managementKey || '').trim();
+    if (key) return key;
+  } catch (_error) {}
+  try {
     const pids = execFileSync('pgrep', ['-f', 'bin/native/darwin-arm64/aih-server'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
     for (const pid of pids) {
       const command = execFileSync('ps', ['eww', '-p', pid, '-o', 'command='], { encoding: 'utf8' });

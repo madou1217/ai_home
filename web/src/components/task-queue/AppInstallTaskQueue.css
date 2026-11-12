@@ -663,3 +663,79 @@
   transition:
     color var(--motion-fast) var(--ease-standard);
 }
+
+
+/* 当前账号：与账号页同一套轮播标题；队列里只展示身份，不展示 acct_xxx。 */
+.webui-task-queue-item-account {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.webui-task-queue-item-meta .webui-task-queue-item-account::before {
+  display: none;
+  content: none;
+}
+
+/* 阶段事件：时间 + 人话。只保留最近几条，颜色只给状态点，避免整块彩底。 */
+.webui-task-queue-events {
+  display: grid;
+  gap: 2px;
+  margin: var(--hos-space-1-5) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+}
+
+.webui-task-queue-events li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 52px 8px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--hos-space-1-5);
+}
+
+.webui-task-queue-events time {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.webui-task-queue-events li::before {
+  grid-column: 2;
+  grid-row: 1;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-muted);
+  content: '';
+  transform: translateY(-1px);
+}
+
+.webui-task-queue-events li.is-success::before {
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+}
+
+.webui-task-queue-events li.is-warning::before {
+  background: var(--color-warning);
+  box-shadow: 0 0 6px var(--color-warning);
+}
+
+.webui-task-queue-events li.is-error::before {
+  background: var(--color-danger);
+  box-shadow: 0 0 6px var(--color-danger);
+}
+
+.webui-task-queue-events li > span {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -239,7 +239,7 @@ export function AccountModelContextModal({ account, models = [], onClose, embedd
                   value={selectedPeers}
                   onChange={(values) => setSelectedPeers(values as string[])}
                   options={sameTypeAccounts.map((item) => ({
-                    label: `${item.displayName || item.accountRef}${item.disabled ? '（已关闭）' : ''}`,
+                    label: `${item.displayName || '账号'}${item.disabled ? '（已关闭）' : ''}`,
                     value: item.accountRef
                   }))}
                 />

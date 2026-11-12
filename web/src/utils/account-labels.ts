@@ -1,4 +1,4 @@
-import type { Account, Provider } from '@/types';
+import type { Account, AccountDisplayName, Provider } from '@/types';
 // Provider 契约由 Go 描述符生成（见 lib/providers/defs/*），前端只消费不维护。
 import { PROVIDER_CATALOG } from '@/providers/provider-contract.generated';
 
@@ -120,7 +120,7 @@ function getCleanDisplayName(account: Pick<Account, 'displayName'>) {
   return displayName;
 }
 
-export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'email' | 'displayName' | 'configured' | 'apiKeyMode' | 'baseUrl' | 'authPendingStale'>) {
+export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'email' | 'displayName' | 'displayNames' | 'configured' | 'apiKeyMode' | 'baseUrl' | 'authPendingStale'>) {
   const displayName = getCleanDisplayName(account);
 
   if (account.apiKeyMode) {
@@ -135,6 +135,13 @@ export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'ema
   if (email && !isInternalAccountLabel(email)) return maskPhoneIdentity(email);
 
   if (displayName) return maskPhoneIdentity(displayName);
+
+  // 旧/新服务端都可能只填了 displayNames（轮播身份列表），没有 displayName/email。
+  // 主标签必须与轮播同源，否则会显示「账号待识别」而标题栏明明有邮箱/手机号。
+  const firstDisplayName = Array.isArray(account.displayNames)
+    ? String((account.displayNames[0] as AccountDisplayName | undefined)?.value || '').trim()
+    : '';
+  if (firstDisplayName) return maskPhoneIdentity(firstDisplayName);
 
   if (!account.configured && account.authPendingStale) return 'OAuth 授权超时';
   return account.configured ? '账号待识别' : 'OAuth 授权中';

@@ -99,7 +99,7 @@ export default function AccountEgressBulkPicker({ open, view, providers = [], on
                             checked={selected.includes(account.accountRef)}
                             onChange={(event) => toggleMany([account.accountRef], event.target.checked)}
                           >
-                            {account.label || account.accountRef}
+                            {account.label || account.provider}
                           </Checkbox>
                           <Tag color={badge.tone === 'error' ? 'error' : badge.tone === 'success' ? 'processing' : 'default'}>{badge.label}</Tag>
                         </li>

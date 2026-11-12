@@ -3,7 +3,6 @@ import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import {
   getAccountDisplayBadgeMeta,
   getAccountLoginTypeLabel,
-  getAccountPrimaryLabel,
   getPlanTagLabels,
   getQuotaStateMeta
 } from '@/features/accounts/AccountBadges';
@@ -61,7 +60,9 @@ export default function AccountRowContent({ record, activity, removing, desktopR
         <AccountActivityIcon provider={record.provider} activity={activity} size={20} />
       </span>
       <span className="mhud-row__main">
-        <span className="mhud-row__title">{getAccountPrimaryLabel(record)}</span>
+        <span className="mhud-row__title" onClick={(event) => event.stopPropagation()}>
+          <RotatingAccountTitle record={record} />
+        </span>
         <span className="mhud-row__meta">{meta}</span>
       </span>
       <span className="mhud-row__side">

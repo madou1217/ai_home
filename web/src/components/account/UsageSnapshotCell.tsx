@@ -14,6 +14,7 @@ import {
   type AgyGroupMemberModel
 } from './usage-snapshot-format';
 import {
+  getQuotaScopeTag,
   getQuotaScopes,
   hasRenderableScopes,
   isNamedBucket
@@ -393,7 +394,7 @@ function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKey
                     <UsageMetaLine
                       key={`${groupIndex}:${row.key}`}
                       label={row.label}
-                      tag={row.category === 'gift' ? '赠送' : (row.category === 'detail' ? '明细' : undefined)}
+                      tag={getQuotaScopeTag(row)}
                       value={row.remainingPct}
                       resetIn={row.resetIn}
                       resetAtMs={row.resetAtMs}
@@ -477,7 +478,7 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
             <UsageMetaLine
               key={row.key}
               label={row.label}
-              tag={row.category === 'gift' ? '赠送' : (row.category === 'detail' ? '明细' : undefined)}
+              tag={getQuotaScopeTag(row)}
               value={row.remainingPct}
               resetIn={row.resetIn}
               resetAtMs={row.resetAtMs}

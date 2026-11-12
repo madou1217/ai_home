@@ -298,6 +298,32 @@ type EnvironmentInput struct {
 	AccountRef  string
 }
 
+// codebuddySiteEnvKeys 是 CodeBuddy 家族两个站点开关的写入顺序。
+//
+// CLI 读 `CODEBUDDY_INTERNET_ENVIRONMENT`，IDE / Copilot 侧读
+// `CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT`；只写一个会出现「CLI 打 A 站、
+// IDE 打 B 站」的静默分裂，所以两个键必须同值。
+var codebuddySiteEnvKeys = []string{
+	"CODEBUDDY_INTERNET_ENVIRONMENT",
+	"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT",
+}
+
+// codebuddyFamilySiteEnv 返回 CodeBuddy 家族两支的默认站点。
+//
+// 与 Node 启动策略（DEFAULT_INTERNET_ENVIRONMENT_BY_PROVIDER）同口径：
+// codebuddy = 国际站 external，codebuddycn = 国内站 internal。WorkBuddy 桌面两支
+// 不在这里——它们的配置根与站点由桌面 App 自己维护。
+func codebuddyFamilySiteEnv(provider string) string {
+	switch NormalizeProvider(provider) {
+	case "codebuddy":
+		return "external"
+	case "codebuddycn":
+		return "internal"
+	default:
+		return ""
+	}
+}
+
 // BuildProjectedEnvironment 构造服务端聊天轮传给原生 CLI 的环境基座。
 //
 // 顺序与 Node buildProviderRuntimeEnv 的纯投影段一致：
@@ -313,6 +339,24 @@ func BuildProjectedEnvironment(input EnvironmentInput) map[string]string {
 	if NormalizeProvider(input.Provider) == "gemini" {
 		for key, value := range GeminiCliEndpointEnv(scoped) {
 			env[key] = value
+		}
+	}
+	// CodeBuddy 家族：站点必须显式固定。CLI 缺省按 internal 解析，国际站账号
+	// （codebuddy，token 由 www.codebuddy.ai 签发）会被发到 copilot.tencent.com，
+	// 业务请求与 CLI 自己的 refreshSession 都是 401（2026-11-10 真机）。
+	// 账号 env 已显式声明时保留账号值（例如企业 iOA），并让另一个键跟随同一站点；
+	// ExtraEnv 仍可覆盖。
+	if site := codebuddyFamilySiteEnv(input.Provider); site != "" {
+		for _, key := range codebuddySiteEnvKeys {
+			if value := strings.TrimSpace(env[key]); value != "" {
+				site = value
+				break
+			}
+		}
+		for _, key := range codebuddySiteEnvKeys {
+			if strings.TrimSpace(env[key]) == "" {
+				env[key] = site
+			}
 		}
 	}
 	for key, value := range input.ExtraEnv {

@@ -1,6 +1,6 @@
 'use strict';
 
-// 真机 E2E（合成输入）：429 + 恢复时刻 → **自动**换号。
+// 真机 E2E（合成输入）：429 + 恢复时刻（或 Credits exhausted）→ **自动**换号。
 //
 // 为什么不用真上游：429 是额度窗口打满才出现的，没法按需制造。这里把 PATH 前面
 // 放一个假的 `codebuddy`——它只做一件事：打印上游那句真实格式的 429（带恢复时刻），
@@ -13,6 +13,7 @@
 //
 // 用法：node scripts/e2e-account-switch-limit.js --provider codebuddy --from 1 --yes
 //      node scripts/e2e-account-switch-limit.js --provider codebuddycn --from 1 --lang zh --yes
+//      node scripts/e2e-account-switch-limit.js --provider codebuddy --from 1 --message credits --yes
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -32,6 +33,12 @@ const fromId = readArg('from', '1');
 // 语言：en = `API Error: 429 … reset at <ts> UTC`；zh = codebuddycn 真机文案
 // `您的使用量已超出频率限制，将在 <ts> UTC+8 重置 …`（时间戳在动词前面）。
 const lang = readArg('lang', 'en').toLowerCase() === 'zh' ? 'zh' : 'en';
+// 文案种类：rate-limit（带恢复时刻）、credits（CodeBuddy 积分耗尽，无恢复时刻）
+// 或 echo（用户把 429 原文粘进对话框——必须**不**换号）。
+// credits 模式验证的是 hardExhaustion 分支：上游不给时刻也必须换号；
+// echo 模式验证的是输入回显抑制：文本一样，来源不同。
+const messageKindRaw = readArg('message', 'rate-limit').toLowerCase();
+const messageKind = ['credits', 'echo'].includes(messageKindRaw) ? messageKindRaw : 'rate-limit';
 const confirmed = process.argv.includes('--yes') || process.env.AIH_E2E_ACCOUNT_SWITCH === '1';
 
 if (!confirmed) {
@@ -65,21 +72,34 @@ for (const name of ['.codebuddy', '.codebuddy-cn', '.workbuddy', '.workbuddy-ai'
 const resetCommand = lang === 'zh'
   ? "RESET=$(TZ=Asia/Shanghai date -v+10M '+%Y-%m-%d %H:%M:%S' 2>/dev/null || TZ=Asia/Shanghai date -d '+10 minutes' '+%Y-%m-%d %H:%M:%S')"
   : "RESET=$(date -u -v+10M '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -u -d '+10 minutes' '+%Y-%m-%d %H:%M:%S')";
-const limitLine = lang === 'zh'
-  ? "您的使用量已超出频率限制，将在 %s UTC+8 重置，您也可以切换其他模型继续使用。"
-  : 'API Error: 429 usage exceeds frequency limit, please try again later. your usage will reset at %s UTC';
-fs.writeFileSync(fakeCli, [
-  '#!/bin/sh',
-  resetCommand,
-  `printf '${limitLine}\\r\\n' "$RESET"`,
-  // 每 5 秒重放一次：真实 TUI 也会反复重绘错误帧；同时让「换号后新进程立刻打的
-  // 那一句」即使落在 250ms 的换号窗口里被丢掉，也还有下一次机会。
-  'while :; do',
-  `  printf '${limitLine}\\r\\n' "$RESET"`,
-  '  sleep 5',
-  'done',
-  ''
-].join('\n'), { mode: 0o755 });
+const limitLine = messageKind === 'credits' || messageKind === 'echo'
+  ? '429 Credits exhausted. Please visit the link below to purchase add-on packs and get more credits: https://www.codebuddy.ai/profile/usage'
+  : (lang === 'zh'
+    ? "您的使用量已超出频率限制，将在 %s UTC+8 重置，您也可以切换其他模型继续使用。"
+    : 'API Error: 429 usage exceeds frequency limit, please try again later. your usage will reset at %s UTC');
+// credits 文案没有 %s；`printf` 传不传参数都不会改变它，保持两条分支的脚本形状一致。
+//
+// echo 模式：假 CLI 只打一个就绪标记，然后原样吐回 stdin（终端本身也会回显）。
+// aih 看到的是「用户打的 429」——与上游报错同形，但必须**不**换号。
+fs.writeFileSync(fakeCli, messageKind === 'echo'
+  ? [
+    '#!/bin/sh',
+    "printf 'READY\\r\\n'",
+    'cat',
+    ''
+  ].join('\n')
+  : [
+    '#!/bin/sh',
+    resetCommand,
+    `printf '${limitLine}\\r\\n' "$RESET"`,
+    // 每 5 秒重放一次：真实 TUI 也会反复重绘错误帧；同时让「换号后新进程立刻打的
+    // 那一句」即使落在 250ms 的换号窗口里被丢掉，也还有下一次机会。
+    'while :; do',
+    `  printf '${limitLine}\\r\\n' "$RESET"`,
+    '  sleep 5',
+    'done',
+    ''
+  ].join('\n'), { mode: 0o755 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let out = '';
@@ -133,6 +153,36 @@ function cleanupPersistentSessions() {
 
 (async () => {
   try {
+    // 用户输入回显：把 429 原文粘进对话框。文本与上游报错一模一样，唯一区别是
+    // 来源——它必须是**用户输入**。这条路径要求「不换号」，等满观察窗口即可。
+    if (messageKind === 'echo') {
+      const ready = await waitFor(() => /READY/.test(out), 60000, 'fake CLI ready');
+      if (ready) {
+        // 带回车提交，模拟用户真的发出这条消息（TUI 会把它回显到输出流）。
+        child.write(limitLine + '\r');
+        await sleep(12000);
+      }
+      const switched = /Auto-switch: \d+ -> \d+/.test(out);
+      const report = {
+        provider,
+        lang,
+        messageKind,
+        mode: 'user-echo-synthetic',
+        ready,
+        switched,
+        switchCount: (out.match(/Auto-switch: \d+ -> \d+/g) || []).length,
+        processAlive: exited === null
+      };
+      const ok = ready && !switched && report.processAlive;
+      console.log(JSON.stringify({ ok, ...report }, null, 2));
+      if (!ok) {
+        const plain = out.replace(/\x1b\][^\x07]*\x07/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\x00/g, '');
+        console.error('[e2e] --- last output ---\n' + plain.slice(-3000));
+      }
+      process.exitCode = ok ? 0 : 1;
+      return;
+    }
+
     const firstSwitch = await waitFor(
       () => /Auto-switch: \d+ -> \d+/.test(out),
       90000,
@@ -150,15 +200,15 @@ function cleanupPersistentSessions() {
     const report = {
       provider,
       lang,
-      mode: '429-synthetic',
-      from: first[1] || fromId,
+      messageKind,
+      mode: messageKind === 'credits' ? '429-credits-synthetic' : '429-synthetic',      from: first[1] || fromId,
       firstTarget: first[2] || '',
       firstSwitch,
       secondSwitch,
       switchCount: all.length,
       targets,
       coolingSkipped: all.length >= 2 ? targets[1] !== targets[0] : null,
-      cooldownMentioned: /恢复/.test(out),
+      cooldownMentioned: /恢复|可重试/.test(out),
       titleNotice: /\x1b\]0;[^\x07]*已自动换号[^\x07]*\x07/.test(out),
       processAlive: exited === null
     };

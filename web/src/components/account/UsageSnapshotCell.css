@@ -39,7 +39,7 @@
   white-space: nowrap;
 }
 
-/* 旁路条目标记（赠送额度 / 每包明细）：紧凑行内标签，不用色块，遵循无左侧竖条约束。 */
+/* 旁路条目标记（目前只有赠送额度）：紧凑行内标签，不用色块，遵循无左侧竖条约束。 */
 .usage-meta-line-tag {
   margin-left: 6px;
   padding: 0 5px;

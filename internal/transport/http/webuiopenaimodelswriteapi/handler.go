@@ -1,5 +1,8 @@
 // Package webuiopenaimodelswriteapi 提供 WebUI OpenAI 模型目录的写入接口。
 //
+// 路径里的 openai-models 是 OpenAI 兼容的 /v1/models 响应形状，不是 Provider 范围：
+// 目录覆盖全部 Provider，刷新按账号扇出，各 Provider 的上游适配器由模型发现注册表决定。
+//
 // 路由（管理面，只接受 POST）：
 //
 //	POST /v1/management/webui/openai-models/refresh

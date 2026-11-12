@@ -1,5 +1,27 @@
 # AGY：Node → Go 对齐矩阵
 
+## 本轮新补（2026-11-12 下午）
+
+| 能力 | 状态 | 证据 |
+| --- | --- | --- |
+| 请求前额度门禁（blocked_by_quota / below threshold） | 已对齐 | `application/accountusage/scheduling.go`、`accountrouting/recruiter.go`、`host/aihserver/usage_scheduling_gate.go` |
+| 额度阈值读 `config:usage.threshold_pct`（默认 95 → 5%） | 已对齐 | `usage_scheduling_gate.go` + 5s TTL |
+| 额度失败→即时刷新 | 已对齐 | `account_outcomes.go:132` 调 `quotaFailureRefresh.observe` |
+| 快照恢复解除 quota block | 已对齐 | `inmemory/runtime.go:341-390` |
+| 默认账号同步真实 HOME 全局 CLI 凭据 | 已对齐 | `projection.WriteGlobalAuth` + `host_default_auth.go` |
+| id_token 全链路持久化 | 已对齐 | `core/accounts/agy/oauth.go`、`credential_agy.go`、`projection/writer.go` |
+| 账号级出口 url/system/tun/pool/direct | 已对齐 | `internal/adapters/agy/egress/` + composition 适配 |
+| 额度采集按账号出口 | 已对齐 | `usage/strategy.go` ClientResolver |
+| 模型名表单一真值 | 已对齐 | `internal/adapters/agy/modelnames/` |
+| 模型发现容忍 loadCodeAssist 失败 + 随机 requestId | 已对齐 | `model_discovery.go` |
+| 档位别名 → tiered wire + thinkingLevel | 已对齐 | `model_discovery.go`、`adapter.go`、`request_encoder.go` |
+| 客户端版本动态探测 | 已对齐 | `internal/adapters/agy/clientversion/` |
+| 账号页 agy effective view / schedulableStatus | 仍缺 | 归属账号页切片（webuiaccountsapi） |
+| refresh-only 凭据强刷 | 仍缺 | 需放宽 agy 领域凭据校验 |
+| 账号删除清理 agy 投影目录 | 待核对 | `deletionprojection` 已有 auth projection 收敛，需补 agy 断言语义 |
+| 暖机 LS 池 | 边界外 | 浏览器会话仍由 Node 拥有 |
+
+
 - 切片：10（只读盘点，不改代码）
 - 快照时间：2026-11-12 10:20（本机时区）
 - 范围：agy 的凭据刷新、额度采集与展示、暖机会话池、认证元数据/恢复、原生投影、settings 自愈、账号级出口

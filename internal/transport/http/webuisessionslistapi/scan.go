@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 )
 
@@ -18,11 +19,9 @@ const (
 	codexProvider  = "codex"
 )
 
-// codebuddyFamilyProviders 是 CodeBuddy 家族的成员名单。
-//
-// 顺序只影响候选目录的读取优先级；家族成员共用同一份物理会话存储，
-// 读取时会按真实路径去重（见 codebuddy.go）。
-var codebuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+// codebuddyFamilyProviders 是 CodeBuddy 家族的成员名单（唯一来源见
+// internal/sessionscan/codebuddy）。
+var codebuddyFamilyProviders = codebuddy.Providers()
 
 // base64StdEncoding 是 Node Buffer 默认的 base64 字母表（codex 项目 id 用）。
 var base64StdEncoding = base64.StdEncoding

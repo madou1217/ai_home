@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 )
 
@@ -55,12 +56,13 @@ type rawProject struct {
 type scanner struct {
 	ctx       context.Context
 	hostHome  string
+	aiHome    string
 	remaining int
 	truncated bool
 }
 
-func newScanner(ctx context.Context, hostHome string, maxEntries int) *scanner {
-	return &scanner{ctx: ctx, hostHome: hostHome, remaining: maxEntries}
+func newScanner(ctx context.Context, hostHome, aiHome string, maxEntries int) *scanner {
+	return &scanner{ctx: ctx, hostHome: hostHome, aiHome: aiHome, remaining: maxEntries}
 }
 
 // exhausted 报告预算或时限是否已用尽；一旦用尽就把结果标记为不完整。
@@ -81,16 +83,45 @@ func (scan *scanner) take() bool {
 	return true
 }
 
-// collectProjects 按 Node 的 Provider 顺序（claude、codex、gemini）读取宿主项目。
+// outOfTime 只检查时限。
 //
-// 账号投影型 Provider（qoder/grok/kiro/cline）、CodeBuddy 家族与 zcode 的会话
-// 存在 SQLite 或账号投影里，不属于本切片的白名单目录扫描。
+// SQLite 类 Provider 的会话行不是目录条目，不消费条目预算；但超时仍要截断，
+// 否则 8 秒预算对它们不生效。
+func (scan *scanner) outOfTime() bool {
+	if scan.ctx.Err() != nil {
+		scan.truncated = true
+		return true
+	}
+	return false
+}
+
+// Take 实现 codebuddy.Budget：消费一个目录条目预算。
+func (scan *scanner) Take() bool {
+	return scan.take()
+}
+
+// OutOfTime 实现 codebuddy.Budget：只检查时限。
+func (scan *scanner) OutOfTime() bool {
+	return scan.outOfTime()
+}
+
+// collectProjects 按 Node 的 Provider 顺序读取宿主项目：
+// claude、codex、gemini、opencode、cline、CodeBuddy 家族。
+//
+// 顺序影响 providers 数组与重复会话的归属（Node readProjectsFromHostByProviders
+// 同口径）。账号投影型 Provider 里只有 cline 在本切片的合同内；其余
+// （qoder/grok/kiro）与 zcode 不在 /projects 的覆盖范围。
 func (scan *scanner) collectProjects() []rawProject {
 	knownPaths := scan.knownProjectPaths()
 	projects := make([]rawProject, 0, 64)
 	projects = append(projects, scan.claudeProjects(knownPaths)...)
 	projects = append(projects, scan.codexProjects()...)
 	projects = append(projects, scan.geminiProjects()...)
+	projects = append(projects, scan.opencodeProjects()...)
+	projects = append(projects, scan.clineProjects()...)
+	for _, provider := range codebuddy.Providers() {
+		projects = append(projects, scan.codebuddyProjects(provider)...)
+	}
 	return projects
 }
 
@@ -502,8 +533,7 @@ func isSyntheticCodexUserContent(content string) bool {
 
 // codexProjectID 复刻 Node：cwd 的标准 base64，再把 / + = 折成下划线。
 func codexProjectID(cwd string) string {
-	encoded := base64StdEncoding.EncodeToString([]byte(cwd))
-	return strings.NewReplacer("/", "_", "+", "_", "=", "_").Replace(encoded)
+	return base64PathID("", cwd)
 }
 
 // codexSessionIDFromPath 从 rollout 文件名尾部取 UUID。

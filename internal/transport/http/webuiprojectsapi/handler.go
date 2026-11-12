@@ -9,8 +9,10 @@
 // 降序、项目按最近活动降序、每个项目最多下发 40 条会话，全部照抄 Node。
 //
 // 数据边界：
-//   - 只扫描宿主 HOME 下的白名单 Provider 目录（claude / gemini / codex），
-//     不读账号投影、不读 app-state、不读 SQLite 会话库。
+//   - 覆盖 Node 在项目视图里返回的 Provider：claude、codex、gemini、opencode、
+//     CodeBuddy 家族（codebuddy / codebuddycn / workbuddy / workbuddycn）与 cline。
+//     目录型 Provider 只扫宿主 HOME；opencode 读宿主共享的 opencode.db，cline 读
+//     宿主与账号投影的 sessions.db（全部只读）；不读 app-state。
 //   - 目录遍历有预算：条目上限 + 单次请求超时；符号链接一律跳过，并对每个
 //     项目目录做 realpath 复核，保证不会逃出白名单根。
 //   - 项目路径必须在磁盘上真实存在（与 Node filterHiddenProjects 同口径），
@@ -236,7 +238,7 @@ func (handler *Handler) serveProjectSessions(responseWriter http.ResponseWriter,
 // 扫描被预算或超时打断时返回已收集到的部分结果（truncated=true），
 // 而不是把「读得慢」升级成 5xx：项目列表本来就是最终一致视图。
 func (handler *Handler) collect(ctx context.Context, options aggregateOptions) ([]projectView, bool) {
-	scan := newScanner(ctx, handler.hostHomeDir, handler.maxEntries)
+	scan := newScanner(ctx, handler.hostHomeDir, handler.aiHomeDir, handler.maxEntries)
 	raw := filterChatWorkspaceProjects(scan.collectProjects(), handler.aiHomeDir)
 	return aggregateProjects(raw, isExistingDirectory, options), scan.truncated
 }

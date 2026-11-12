@@ -7,8 +7,19 @@ import (
 	"strings"
 )
 
-// base64StdEncoding 是 Node Buffer 默认的 base64 字母表（codex 项目 id 用）。
+// base64StdEncoding 是 Node Buffer 默认的 base64 字母表（codex / opencode 项目 id 用）。
 var base64StdEncoding = base64.StdEncoding
+
+// base64PathID 复刻 Node 的项目 id 派生：prefix + base64(value)，再把 / + = 折成下划线。
+func base64PathID(prefix, value string) string {
+	encoded := base64StdEncoding.EncodeToString([]byte(value))
+	return prefix + strings.NewReplacer("/", "_", "+", "_", "=", "_").Replace(encoded)
+}
+
+// base64URLPathID 复刻 Node 的 Buffer.toString('base64url')（cline 项目 id 用）。
+func base64URLPathID(prefix, value string) string {
+	return prefix + base64.RawURLEncoding.EncodeToString([]byte(value))
+}
 
 func trimSpace(value string) string {
 	return strings.TrimSpace(value)

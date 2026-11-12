@@ -19,9 +19,11 @@ func defaultClientCredential() clientCredential {
 
 // defaultClientCredentials 返回按优先级排列的换码候选。
 //
-// Google 轮换过 Antigravity installed-app secret，而 refresh_token 只对签发它的
-// client secret 有效。登录换码在 invalid_client 时会回退到轮换后的 secret，
-// 刷新必须沿用同一组候选，否则会出现「登录成功、刷新永远 invalid_client」。
+// 顺序与 Node DEFAULT_AGY_OAUTH_CLIENT_CREDENTIALS 完全相同：先当前内置 secret，
+// 再 Google 轮换前发布的 legacy secret。refresh_token 只对签发它的 client secret
+// 有效（2026-10-22 实测新 secret 返回 invalid_client、legacy secret 200），登录
+// 换码与刷新必须共用这一组候选，否则会出现「登录成功、刷新永远 invalid_client」。
+// 第二个候选沿用 login.go 的变量名 rotatedLoginClientSecret，实际指 legacy secret。
 func defaultClientCredentials() []clientCredential {
 	primary := defaultClientCredential()
 	return []clientCredential{

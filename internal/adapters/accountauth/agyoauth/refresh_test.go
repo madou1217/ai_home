@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -24,7 +26,30 @@ type agyRefreshStub struct {
 	status        map[string]int
 	body          map[string]string
 	networkErrors map[string]bool
+	// hang 让该 secret 的请求一直等到上下文结束，用来验证候选级超时与父上下文取消。
+	hang map[string]bool
+	// stallBody 让响应头正常返回、响应体卡住，验证读体超时同样换下一个候选。
+	stallBody map[string]bool
 }
+
+// agyStallingBody 先回一段 JSON，再阻塞到请求上下文结束，模拟「头部已到、
+// 响应体不再推进」的上游。
+type agyStallingBody struct {
+	ctx     context.Context
+	payload string
+	sent    bool
+}
+
+func (body *agyStallingBody) Read(buffer []byte) (int, error) {
+	if !body.sent {
+		body.sent = true
+		return copy(buffer, body.payload), nil
+	}
+	<-body.ctx.Done()
+	return 0, body.ctx.Err()
+}
+
+func (*agyStallingBody) Close() error { return nil }
 
 func (stub *agyRefreshStub) Do(request *http.Request) (*http.Response, error) {
 	raw, err := io.ReadAll(request.Body)
@@ -41,7 +66,23 @@ func (stub *agyRefreshStub) Do(request *http.Request) (*http.Response, error) {
 	failsAtNetwork := stub.networkErrors[secret]
 	status := stub.status[secret]
 	body := stub.body[secret]
+	hangs := stub.hang[secret]
+	stalls := stub.stallBody[secret]
 	stub.mu.Unlock()
+	if hangs {
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	}
+	if stalls {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: &agyStallingBody{
+				ctx:     request.Context(),
+				payload: `{"access_token":"stalled-access"}`,
+			},
+		}, nil
+	}
 	if failsAtNetwork {
 		return nil, errors.New("dial tcp: connection refused")
 	}
@@ -410,5 +451,285 @@ func TestRefreshDeduplicatesIdenticalClientCandidates(t *testing.T) {
 	if len(attempts) != 2 || attempts[0] != primary.clientSecret ||
 		attempts[1] != rotatedLoginClientSecret {
 		t.Fatalf("attempts = %v, want primary then rotated", attempts)
+	}
+}
+
+// Google 认证错误把机器码放在 error.status（Node parseOAuthErrorPayload 读
+// error.status || error.code）。只读 code 会得到空码，丢掉 legacy secret 回退。
+func TestRefreshRetriesNextCredentialOnNestedOAuthErrorObject(t *testing.T) {
+	primary := defaultClientCredential()
+	bodies := map[string]string{
+		"status 字段": `{"error":{"status":"invalid_client","message":"Unauthorized"}}`,
+		"code 字段":   `{"error":{"code":"invalid_client","message":"Unauthorized"}}`,
+	}
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			stub := &agyRefreshStub{
+				status: map[string]int{primary.clientSecret: http.StatusUnauthorized},
+				body:   map[string]string{primary.clientSecret: body},
+			}
+			provider := newAgyRefreshTestProvider(t, stub)
+			refreshed, err := provider.Refresh(
+				context.Background(),
+				newAgyRefreshTestCredential(t),
+				agyTestNow(),
+			)
+			if err != nil || refreshed == nil {
+				t.Fatalf("Refresh() = %v, %v; want refreshed credential", refreshed, err)
+			}
+			attempts := stub.attempts()
+			if len(attempts) != 2 || attempts[1] != rotatedLoginClientSecret {
+				t.Fatalf("attempts = %v, want primary then legacy secret", attempts)
+			}
+		})
+	}
+}
+
+// 上游把 refresh_token 回显在 description 里时，写进错误前必须脱敏。
+func TestRefreshErrorDetailRedactsKnownSecrets(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusBadRequest},
+		body: map[string]string{
+			primary.clientSecret: `{"error":"invalid_grant","error_description":"refresh token old-refresh was revoked"}`,
+		},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	_, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err == nil {
+		t.Fatal("Refresh() error = nil, want failure")
+	}
+	message := err.Error()
+	if strings.Contains(message, "old-refresh") {
+		t.Fatalf("error = %q, must not leak the refresh token", message)
+	}
+	if !strings.Contains(message, "[redacted]") ||
+		!strings.Contains(message, "invalid_grant") ||
+		!strings.Contains(message, "status=400") {
+		t.Fatalf("error = %q, want redacted detail with status and code", message)
+	}
+}
+
+// description 超过 320 字符必须截断（Node sanitizeResponseText 同值）。
+func TestRefreshErrorDetailIsTruncated(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusBadRequest},
+		body: map[string]string{
+			primary.clientSecret: `{"error":"invalid_grant","error_description":"` +
+				strings.Repeat("a", 1000) + `"}`,
+		},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	_, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err == nil {
+		t.Fatal("Refresh() error = nil, want failure")
+	}
+	if strings.Contains(err.Error(), strings.Repeat("a", 321)) {
+		t.Fatalf("error detail longer than 320 characters: %d", len(err.Error()))
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("a", 320)) {
+		t.Fatal("error detail lost the truncated description")
+	}
+}
+
+// 非 JSON 错误体（网关 HTML）也要保留 status 与截断后的原文，且不换候选。
+func TestRefreshPlainTextErrorBodyKeepsStatus(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		status: map[string]int{primary.clientSecret: http.StatusBadGateway},
+		body:   map[string]string{primary.clientSecret: "<html>bad gateway</html>"},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	_, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if !errors.Is(err, accountcredentials.ErrRefreshUnavailable) {
+		t.Fatalf("Refresh() error = %v, want ErrRefreshUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "status=502") ||
+		!strings.Contains(err.Error(), "bad gateway") {
+		t.Fatalf("error = %q, want status and body detail", err.Error())
+	}
+	if attempts := stub.attempts(); len(attempts) != 1 {
+		t.Fatalf("token endpoint attempts = %d, want 1", len(attempts))
+	}
+}
+
+// 候选级超时属于「换下一个候选」的失败，不是终态（Node fetchWithTimeout 后
+// 捕获异常 continue，legacy secret 仍会被尝试）。
+func TestRefreshFallsBackToNextCredentialOnAttemptTimeout(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		hang: map[string]bool{primary.clientSecret: true},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	provider.attemptTimeout = 20 * time.Millisecond
+	refreshed, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err != nil || refreshed == nil {
+		t.Fatalf("Refresh() = %v, %v; want refreshed credential", refreshed, err)
+	}
+	attempts := stub.attempts()
+	if len(attempts) != 2 || attempts[1] != rotatedLoginClientSecret {
+		t.Fatalf("attempts = %v, want primary then legacy secret", attempts)
+	}
+}
+
+// 响应体卡住同样属于候选级超时：Node 的 fetch 超时覆盖 body 读取，Go 必须换
+// 下一个候选，而不是把整次刷新判成「结果无效」。
+func TestRefreshFallsBackToNextCredentialOnStalledBody(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		stallBody: map[string]bool{primary.clientSecret: true},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	provider.attemptTimeout = 20 * time.Millisecond
+	refreshed, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err != nil || refreshed == nil {
+		t.Fatalf("Refresh() = %v, %v; want refreshed credential", refreshed, err)
+	}
+	attempts := stub.attempts()
+	if len(attempts) != 2 || attempts[1] != rotatedLoginClientSecret {
+		t.Fatalf("attempts = %v, want primary then legacy secret", attempts)
+	}
+}
+
+// 调用方自己的截止时间到了必须终止：父上下文取消不能当成候选失败继续重试。
+func TestRefreshStopsOnParentContextDeadline(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		hang: map[string]bool{
+			primary.clientSecret:     true,
+			rotatedLoginClientSecret: true,
+		},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	provider.attemptTimeout = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := provider.Refresh(ctx, newAgyRefreshTestCredential(t), agyTestNow())
+	if !errors.Is(err, accountcredentials.ErrRefreshUnavailable) ||
+		!errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Refresh() error = %v, want ErrRefreshUnavailable with context deadline", err)
+	}
+	if attempts := stub.attempts(); len(attempts) != 1 {
+		t.Fatalf("token endpoint attempts = %d, want 1", len(attempts))
+	}
+}
+
+// 轮换后的 refresh_token 按 Node sanitizeAccessToken 处理：控制字符/空值视为
+// 未轮换并保留旧值，首尾空白则采用 trim 后的值；都不能让整次刷新失败。
+func TestRefreshSanitizesRotatedRefreshToken(t *testing.T) {
+	primary := defaultClientCredential()
+	cases := []struct {
+		name    string
+		rotated string
+		want    string
+	}{
+		{name: "控制字符保留旧值", rotated: "bad" + string(rune(10)) + "token", want: "old-refresh"},
+		{name: "空值保留旧值", rotated: "", want: "old-refresh"},
+		{name: "首尾空白先 trim", rotated: "  agy-rotated  ", want: "agy-rotated"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			stub := &agyRefreshStub{
+				body: map[string]string{
+					primary.clientSecret: fmt.Sprintf(
+						`{"access_token":"agy-access","refresh_token":%q,"expires_in":3600}`,
+						testCase.rotated,
+					),
+				},
+			}
+			provider := newAgyRefreshTestProvider(t, stub)
+			refreshed, err := provider.Refresh(
+				context.Background(),
+				newAgyRefreshTestCredential(t),
+				agyTestNow(),
+			)
+			if err != nil {
+				t.Fatalf("Refresh() error = %v", err)
+			}
+			auth, ok := refreshed.(*agy.OAuthAuth)
+			if !ok || auth.AccessToken() != "agy-access" {
+				t.Fatalf("refreshed credential = %v, want new access token", refreshed)
+			}
+			if auth.RefreshToken() != testCase.want {
+				t.Fatalf("refresh token = %q, want %q", auth.RefreshToken(), testCase.want)
+			}
+		})
+	}
+}
+
+// camelCase 字段名与 Node 的 payload.accessToken 等兜底读取一致。
+func TestRefreshAcceptsCamelCaseTokenFields(t *testing.T) {
+	primary := defaultClientCredential()
+	stub := &agyRefreshStub{
+		body: map[string]string{
+			primary.clientSecret: `{"accessToken":"agy-access","refreshToken":"agy-refresh","expiresIn":1800,"tokenType":"Bearer"}`,
+		},
+	}
+	provider := newAgyRefreshTestProvider(t, stub)
+	refreshed, err := provider.Refresh(
+		context.Background(),
+		newAgyRefreshTestCredential(t),
+		agyTestNow(),
+	)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	auth, ok := refreshed.(*agy.OAuthAuth)
+	if !ok || auth.AccessToken() != "agy-access" ||
+		auth.RefreshToken() != "agy-refresh" ||
+		auth.TokenType() != "Bearer" {
+		t.Fatalf("refreshed credential = %v", refreshed)
+	}
+	wantExpiry := agyTestNow().Add(1800 * time.Second).UnixMilli()
+	if auth.ExpiresAtMS() != wantExpiry {
+		t.Fatalf("expires at = %d, want %d", auth.ExpiresAtMS(), wantExpiry)
+	}
+}
+
+// Provider 被所有账号共享：一次刷新不能改掉默认候选列表的顺序或内容。
+func TestRefreshDoesNotMutateProviderCandidates(t *testing.T) {
+	stub := &agyRefreshStub{}
+	provider := newAgyRefreshTestProvider(t, stub)
+	before := append([]clientCredential(nil), provider.clientCredentials...)
+	auth, err := agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         "agy@example.test",
+		AccessToken:   "old-access",
+		RefreshToken:  "old-refresh",
+		ExpiresAtMS:   agyTestNow().Add(time.Hour).UnixMilli(),
+		RefreshedAtMS: agyTestNow().UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+		ClientID:      "custom.apps.googleusercontent.com",
+		ClientSecret:  "custom-secret",
+	})
+	if err != nil {
+		t.Fatalf("NewOAuthAuth() error = %v", err)
+	}
+	if _, err := provider.Refresh(context.Background(), auth, agyTestNow()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !reflect.DeepEqual(before, provider.clientCredentials) {
+		t.Fatalf("provider candidates = %v, want unchanged %v", provider.clientCredentials, before)
 	}
 }

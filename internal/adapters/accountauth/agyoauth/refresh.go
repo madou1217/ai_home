@@ -3,13 +3,16 @@ package agyoauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/mail"
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -21,6 +24,12 @@ import (
 const (
 	tokenEndpoint = "https://oauth2.googleapis.com/token"
 	maxTokenBytes = 256 * 1024
+	// refreshAttemptTimeout 对齐 Node DEFAULT_REFRESH_TIMEOUT_MS（15s）。
+	// Node 的 fetchWithTimeout 是每个候选凭据各自计时：一个候选卡死不能吃掉
+	// 后续候选的预算，否则内置 legacy secret 根本没机会被尝试。
+	refreshAttemptTimeout = 15 * time.Second
+	// maxOAuthErrorDetail 对齐 Node sanitizeResponseText(text, 320)。
+	maxOAuthErrorDetail = 320
 )
 
 type HTTPClient interface {
@@ -30,7 +39,8 @@ type HTTPClient interface {
 // Egress 是账号级出口绑定（读自 Node 的 account:egress:<ref>）。
 //
 // Mode 取值：空/default（跟随进程默认）、direct（绕过环境代理）、proxy（显式
-// proxyUrl）、pool/tun（宿主代理池，Go 尚未承接）。
+// proxyUrl）。pool/tun/system/url 由宿主解析成 concrete target 后再以
+// direct/proxy 传入，刷新策略不需要理解每种出口模式。
 type Egress struct {
 	Mode     string
 	ProxyURL string
@@ -50,6 +60,9 @@ type Provider struct {
 	clientCredentials []clientCredential
 	clientFactory     ClientFactory
 	egress            EgressResolver
+	// attemptTimeout 是单个候选凭据的换码超时；零值回落到 refreshAttemptTimeout。
+	// 单独成字段只为让测试用毫秒级预算验证「候选超时继续下一个」。
+	attemptTimeout time.Duration
 }
 
 var _ accountcredentials.RefreshStrategy = (*Provider)(nil)
@@ -69,6 +82,7 @@ func newProvider(client HTTPClient, endpoint string) (*Provider, error) {
 		client:            client,
 		tokenEndpoint:     endpoint,
 		clientCredentials: defaultClientCredentials(),
+		attemptTimeout:    refreshAttemptTimeout,
 	}, nil
 }
 
@@ -123,7 +137,8 @@ func (provider *Provider) Refresh(
 //   - 空/default：跟随进程默认传输（与环境变量代理一致）；
 //   - direct：显式不走代理；
 //   - proxy：使用绑定里的 proxyUrl；
-//   - pool/tun：需要宿主代理池，Go 尚未承接，明确失败而不是静默走错出口。
+//   - 其它未知模式：明确失败而不是静默走错出口；pool/tun/system/url 由
+//     宿主 egress 解析器先落到 direct/proxy。
 func (provider *Provider) RefreshWithAccount(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
@@ -166,7 +181,7 @@ func (provider *Provider) RefreshWithAccount(
 		)
 	default:
 		return nil, fmt.Errorf(
-			"%w: 账号出口模式 %q 需要宿主代理，Go 尚未承接",
+			"%w: 账号出口模式 %q 未被宿主解析",
 			accountcredentials.ErrRefreshUnavailable,
 			binding.Mode,
 		)
@@ -192,18 +207,18 @@ func (provider *Provider) refresh(
 	if len(provider.clientCredentials) == 0 {
 		return nil, accountcredentials.ErrInvalidDependencies
 	}
-	candidates := provider.clientCredentials
+	// 每次刷新都重新构造候选切片：Provider 被所有账号共享，不能把去重结果写回
+	// provider.clientCredentials 的底层数组（并发刷新时是数据竞争）。
+	candidates := make([]clientCredential, 0, len(provider.clientCredentials)+1)
 	// 凭据自带的自定义客户端优先：Node 的候选链也是先读 oauth.client_id /
 	// oauth.token.client_id，再退回内置 secret。
 	if auth.ClientID() != "" && auth.ClientSecret() != "" {
-		candidates = append(
-			[]clientCredential{{
-				clientID:     auth.ClientID(),
-				clientSecret: auth.ClientSecret(),
-			}},
-			candidates...,
-		)
+		candidates = append(candidates, clientCredential{
+			clientID:     auth.ClientID(),
+			clientSecret: auth.ClientSecret(),
+		})
 	}
+	candidates = append(candidates, provider.clientCredentials...)
 	// 去重：账号自带的客户端可能与内置默认完全相同，失败时不应该对同一个
 	// client 连续发两次（Node 的 addCredentialCandidate 同样按 id+secret 去重）。
 	seen := make(map[string]struct{}, len(candidates))
@@ -217,6 +232,14 @@ func (provider *Provider) refresh(
 		unique = append(unique, candidate)
 	}
 	candidates = unique
+	// knownSecrets 对齐 Node knownOauthSecrets：上游错误正文里若回显了 refresh
+	// token / access token / client secret，写进错误前必须先替换。Node 用同一份
+	// 清单做 detail 脱敏，Go 不返回响应正文，只对保留下来的 OAuth description 生效。
+	knownSecrets := make([]string, 0, len(candidates)+2)
+	knownSecrets = append(knownSecrets, auth.RefreshToken(), auth.AccessToken())
+	for _, candidate := range candidates {
+		knownSecrets = append(knownSecrets, candidate.clientSecret)
+	}
 	var lastErr error
 	for _, candidate := range candidates {
 		refreshed, retry, err := provider.refreshWithClient(
@@ -225,6 +248,7 @@ func (provider *Provider) refresh(
 			auth,
 			candidate,
 			refreshedAt,
+			knownSecrets,
 		)
 		if err == nil {
 			return refreshed, nil
@@ -239,15 +263,16 @@ func (provider *Provider) refresh(
 
 // refreshWithClient 使用单个客户端凭据发起一次换码。
 //
-// 第二个返回值表示「可以换下一个候选凭据重试」：传输失败和 invalid_client
-// 都属此类（与 Node 生产路径一致）。invalid_grant、限流和 5xx 是终态结论，
-// 换 secret 不会改变结果，必须立即返回最后错误。
+// 第二个返回值表示「可以换下一个候选凭据重试」：传输失败（含候选级 15s 超时）
+// 和 invalid_client 都属此类（与 Node 生产路径一致）。invalid_grant、限流和
+// 5xx 是终态结论，换 secret 不会改变结果，必须立即返回最后错误。
 func (provider *Provider) refreshWithClient(
 	ctx context.Context,
 	client HTTPClient,
 	auth *agy.OAuthAuth,
 	clientCredential clientCredential,
 	refreshedAt time.Time,
+	knownSecrets []string,
 ) (accountapp.Credential, bool, error) {
 	form := url.Values{
 		"client_id":     {clientCredential.clientID},
@@ -255,8 +280,16 @@ func (provider *Provider) refreshWithClient(
 		"refresh_token": {auth.RefreshToken()},
 		"grant_type":    {"refresh_token"},
 	}
+	// Node 的 fetchWithTimeout 按候选计时：每个候选各自 15s。这里用派生上下文
+	// 实现同样语义，同时不会把调用方更短的截止时间延长。
+	attemptTimeout := provider.attemptTimeout
+	if attemptTimeout <= 0 {
+		attemptTimeout = refreshAttemptTimeout
+	}
+	attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	defer cancel()
 	request, err := http.NewRequestWithContext(
-		ctx,
+		attemptCtx,
 		http.MethodPost,
 		provider.tokenEndpoint,
 		strings.NewReader(form.Encode()),
@@ -272,8 +305,8 @@ func (provider *Provider) refreshWithClient(
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, false, errors.Join(accountcredentials.ErrRefreshUnavailable, ctxErr)
 		}
-		// 单个 client 的网络失败不能终止整个候选链：Node 生产路径在同一位置
-		// continue，内置 legacy secret 仍可能拿到 token（2026-10-22 真机）。
+		// 单个 client 的网络失败或候选级超时不能终止整个候选链：Node 生产路径
+		// 在同一位置 continue，内置 legacy secret 仍可能拿到 token（2026-10-22 真机）。
 		return nil, true, accountcredentials.ErrRefreshUnavailable
 	}
 	if response == nil || response.Body == nil {
@@ -282,47 +315,90 @@ func (provider *Provider) refreshWithClient(
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		code := oauthutil.DecodeErrorCode(response.Body, maxTokenBytes)
+		// 错误体解析复刻 Node parseOAuthErrorPayload：error 既可能是字符串，
+		// 也可能是带 status/code/message 的对象（Google 的 OAuth 错误两种都会发）。
+		parsed := parseOAuthErrorPayload(response.Body, maxTokenBytes)
+		code := normalizeOAuthErrorCode(parsed.code, knownSecrets)
 		classified := oauthutil.ClassifyRefreshError(response.StatusCode, code)
-		// 保留上游 status 与机器码：Node 的失败结果带 reason/status，Go 只返回
-		// 「账号需要重新认证」会把 invalid_client 和 invalid_grant 混成一句话，
-		// 迁移后排查只能靠猜。code 是固定枚举，不含 token 或响应正文。
-		if code == "" {
-			return nil, false, fmt.Errorf(
-				"%w: oauth status=%d",
-				classified,
-				response.StatusCode,
-			)
+		// 保留上游 status、机器码和脱敏后的 description：Node 的失败结果带
+		// reason/status/detail，只回报「账号需要重新认证」会把 invalid_client
+		// 和 invalid_grant 混成一句话，迁移后排查只能靠猜。description 先按
+		// knownSecrets 脱敏并截断到 320 字符，绝不含 token 或完整响应正文。
+		detail := redactKnownOauthSecrets(parsed.description, knownSecrets)
+		format := "%w: oauth status=%d"
+		arguments := []any{classified, response.StatusCode}
+		if code != "" {
+			format += " code=%q"
+			arguments = append(arguments, code)
 		}
-		return nil, code == "invalid_client", fmt.Errorf(
-			"%w: oauth status=%d code=%q",
-			classified,
-			response.StatusCode,
-			code,
-		)
+		if detail != "" {
+			format += " detail=%q"
+			arguments = append(arguments, detail)
+		}
+		// 只有 invalid_client 值得换下一个客户端凭据（Node
+		// shouldTryNextClientCredential 的判定与此完全相同）。
+		return nil, code == "invalid_client", fmt.Errorf(format, arguments...)
 	}
+	// 同时接受 snake_case 与 camelCase：Node 读的是
+	// payload.access_token || payload.accessToken 等成对字段。
 	var tokens struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		TokenType    string `json:"token_type"`
-		IDToken      string `json:"id_token"`
+		AccessToken       string `json:"access_token"`
+		AccessTokenAlias  string `json:"accessToken"`
+		RefreshToken      string `json:"refresh_token"`
+		RefreshTokenAlias string `json:"refreshToken"`
+		ExpiresIn         int64  `json:"expires_in"`
+		ExpiresInAlias    int64  `json:"expiresIn"`
+		TokenType         string `json:"token_type"`
+		TokenTypeAlias    string `json:"tokenType"`
+		IDToken           string `json:"id_token"`
 	}
+	accessToken := ""
+	expiresIn := int64(0)
+	refreshToken := ""
+	tokenType := ""
 	if err := oauthutil.DecodeJSONResponse(
 		response.Body,
 		maxTokenBytes,
 		&tokens,
-	); err != nil || !validSecret(tokens.AccessToken) ||
-		(tokens.RefreshToken != "" && !validSecret(tokens.RefreshToken)) ||
-		tokens.ExpiresIn <= 0 ||
-		tokens.ExpiresIn > (253_402_300_799_999-refreshedAt.UnixMilli())/1000 {
+	); err == nil {
+		accessToken = sanitizeAccessToken(
+			firstNonEmptyString(tokens.AccessToken, tokens.AccessTokenAlias),
+		)
+		expiresIn = tokens.ExpiresIn
+		if expiresIn <= 0 {
+			expiresIn = tokens.ExpiresInAlias
+		}
+		refreshToken = sanitizeAccessToken(
+			firstNonEmptyString(tokens.RefreshToken, tokens.RefreshTokenAlias),
+		)
+		// Node 对 token_type 用 String(...).trim()：纯空白视同缺失，回落到旧值。
+		tokenType = strings.TrimSpace(
+			firstNonEmptyString(tokens.TokenType, tokens.TokenTypeAlias),
+		)
+	}
+	if accessToken == "" {
+		// 读响应体时撞上候选级超时也是「换下一个候选」：Node 的 fetch 超时覆盖
+		// 整个 body 读取，AbortError 同样走 refresh_exception → continue。
+		if attemptCtx.Err() != nil && ctx.Err() == nil {
+			return nil, true, accountcredentials.ErrRefreshUnavailable
+		}
+		// Node 的 sanitizeAccessToken 对空值/控制字符直接判 missing_access_token。
 		return nil, false, accountcredentials.ErrInvalidRefreshResult
 	}
-	refreshToken := auth.RefreshToken()
-	if tokens.RefreshToken != "" {
-		refreshToken = tokens.RefreshToken
+	// 故意不同于 Node：Node 在缺少 expires_in 时沿用旧 expiry，写回的凭据立刻
+	// 又是「已过期」，之后每个请求都会再刷一次。Go 拒绝没有生命周期的结果，
+	// 让上游契约异常以一次明确失败暴露，而不是变成刷新热循环。
+	if expiresIn <= 0 ||
+		expiresIn > (253_402_300_799_999-refreshedAt.UnixMilli())/1000 {
+		return nil, false, accountcredentials.ErrInvalidRefreshResult
 	}
-	tokenType := tokens.TokenType
+	// refresh_token 轮换：Node 的 sanitizeAccessToken 失败时按「未轮换」处理，
+	// 保留旧值而不是丢掉刚拿到的 access_token。
+	nextRefreshToken := auth.RefreshToken()
+	if refreshToken != "" {
+		nextRefreshToken = refreshToken
+	}
+	refreshToken = nextRefreshToken
 	if tokenType == "" {
 		tokenType = auth.TokenType()
 	}
@@ -335,9 +411,9 @@ func (provider *Provider) refreshWithClient(
 	}
 	refreshed, err := agy.NewOAuthAuth(agy.OAuthInput{
 		Email:         email,
-		AccessToken:   tokens.AccessToken,
+		AccessToken:   accessToken,
 		RefreshToken:  refreshToken,
-		ExpiresAtMS:   refreshedAt.UTC().UnixMilli() + tokens.ExpiresIn*1000,
+		ExpiresAtMS:   refreshedAt.UTC().UnixMilli() + expiresIn*1000,
 		RefreshedAtMS: refreshedAt.UTC().UnixMilli(),
 		TokenType:     tokenType,
 		AuthMethod:    auth.AuthMethod(),
@@ -363,8 +439,158 @@ func validEmailAddress(value string) bool {
 	return err == nil && address.Address == trimmed
 }
 
-func validSecret(value string) bool {
-	return value != "" && len(value) <= maxTokenBytes &&
-		value == strings.TrimSpace(value) &&
-		!strings.ContainsAny(value, "\r\n\x00")
+// sanitizeAccessToken 复刻 Node 的 sanitizeAccessToken：先 trim，空值或含
+// 控制字符（\r \n NUL）一律视为缺失并返回空串，调用方按「没拿到」处理。
+// 轮换后的 refresh_token 也走同一规则：无效就保留旧值，不回滚整次刷新。
+func sanitizeAccessToken(value string) string {
+	token := strings.TrimSpace(value)
+	if token == "" || len(token) > maxTokenBytes ||
+		strings.ContainsAny(token, "\r\n\x00") {
+		return ""
+	}
+	return token
+}
+
+// firstNonEmptyString 返回第一个非空原始值（不 trim，清洗交给 sanitizeAccessToken）。
+// 对应 Node 的 payload.access_token || payload.accessToken 取值方式。
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// oauthErrorPayload 是 OAuth 错误响应的低敏投影，对应 Node parseOAuthErrorPayload。
+type oauthErrorPayload struct {
+	code        string
+	description string
+}
+
+// parseOAuthErrorPayload 复刻 Node 的三种解析形态：
+//   - {"error":"invalid_grant","error_description":"..."}
+//   - {"error":{"status":"invalid_client","message":"..."}}（Google 认证错误）
+//   - 非 JSON 纯文本（网关 HTML、空体等）
+//
+// 只有 code 会参与换候选判断与分类；description 仅用于日志，写前必须脱敏。
+func parseOAuthErrorPayload(reader io.Reader, maxBytes int64) oauthErrorPayload {
+	if reader == nil || maxBytes <= 0 {
+		return oauthErrorPayload{}
+	}
+	raw, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil || int64(len(raw)) > maxBytes || !utf8.Valid(raw) {
+		return oauthErrorPayload{}
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return oauthErrorPayload{}
+	}
+	// Node 只在 JSON 顶层是对象时才读字段；其它形态一律把原文当 description。
+	if !strings.HasPrefix(text, "{") {
+		return oauthErrorPayload{description: text}
+	}
+	var payload struct {
+		Error            json.RawMessage `json:"error"`
+		ErrorDescription string          `json:"error_description"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return oauthErrorPayload{description: text}
+	}
+	if len(payload.Error) == 0 {
+		return oauthErrorPayload{
+			description: strings.TrimSpace(payload.ErrorDescription),
+		}
+	}
+	var direct string
+	if err := json.Unmarshal(payload.Error, &direct); err == nil {
+		return oauthErrorPayload{
+			code:        direct,
+			description: strings.TrimSpace(payload.ErrorDescription),
+		}
+	}
+	var nested struct {
+		Status  string `json:"status"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(payload.Error, &nested); err != nil {
+		return oauthErrorPayload{
+			description: strings.TrimSpace(payload.ErrorDescription),
+		}
+	}
+	description := strings.TrimSpace(payload.ErrorDescription)
+	if description == "" {
+		description = strings.TrimSpace(nested.Message)
+	}
+	// Node 取 error.status || error.code：Google 认证错误把机器码放在 status，
+	// 只读 code 会让 invalid_client 变成空码，进而丢掉 legacy secret 回退。
+	return oauthErrorPayload{
+		code: firstNonEmptyString(
+			strings.TrimSpace(nested.Status),
+			strings.TrimSpace(nested.Code),
+		),
+		description: description,
+	}
+}
+
+// normalizeOAuthErrorCode 把上游错误码收敛为可安全写日志的固定字符集。
+//
+// 与 Node normalizeOAuthErrorCode 等价：先按 knownSecrets 脱敏，命中过脱敏的
+// 值直接作废；只允许 [a-z0-9_.:-]{1,80}。Node 用大小写不敏感正则，这里统一
+// 小写，保证 INVALID_CLIENT 也能触发换候选。
+func normalizeOAuthErrorCode(value string, knownSecrets []string) string {
+	code := redactKnownOauthSecrets(value, knownSecrets)
+	if code == "" || strings.Contains(code, "[redacted]") {
+		return ""
+	}
+	code = strings.ToLower(code)
+	if len(code) > 80 {
+		return ""
+	}
+	for _, character := range code {
+		switch {
+		case character >= 'a' && character <= 'z',
+			character >= '0' && character <= '9',
+			character == '_', character == '-',
+			character == '.', character == ':':
+			continue
+		default:
+			return ""
+		}
+	}
+	return code
+}
+
+// redactKnownOauthSecrets 复刻 Node 同名函数：先替换秘密的 URL 编码形态，
+// 再替换原文，最后折叠空白并截断到 320 字符。
+func redactKnownOauthSecrets(value string, knownSecrets []string) string {
+	text := value
+	for _, secret := range knownSecrets {
+		normalized := strings.TrimSpace(secret)
+		if normalized == "" {
+			continue
+		}
+		if encoded := url.QueryEscape(normalized); encoded != normalized {
+			text = strings.ReplaceAll(text, encoded, "[redacted]")
+		}
+		text = strings.ReplaceAll(text, normalized, "[redacted]")
+	}
+	return sanitizeResponseText(text)
+}
+
+// sanitizeResponseText 对齐 Node response-body.js 的同名函数：控制字符与连续
+// 空白折叠成单个空格，两端去空白，最多保留 320 个字符。
+func sanitizeResponseText(value string) string {
+	cleaned := strings.Map(func(character rune) rune {
+		if character < 0x20 || character == 0x7f {
+			return ' '
+		}
+		return character
+	}, value)
+	collapsed := strings.Join(strings.Fields(cleaned), " ")
+	if runes := []rune(collapsed); len(runes) > maxOAuthErrorDetail {
+		return string(runes[:maxOAuthErrorDetail])
+	}
+	return collapsed
 }

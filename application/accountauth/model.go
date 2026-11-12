@@ -91,6 +91,10 @@ type Job struct {
 	finishedAt   time.Time
 	accountRef   accountcore.AccountRef
 	cliAccountID accountcore.CLIAccountID
+	// authMode 是登录流程的公开形态：oauth-browser 等待浏览器回调，
+	// oauth-device 靠设备码轮询推进。它只存在于进程内，持久化快照不记录，
+	// 重启后从持久化记录还原的 Job 一律为空（无法继续流程，也不需要展示）。
+	authMode string
 	// account 是成功登录后可直接展示的账号字段；失败或未完成时为零值。
 	account     Account
 	failureCode string
@@ -129,6 +133,14 @@ func (job Job) TargetAccountRef() accountcore.AccountRef {
 // Status 返回 Job 当前公开状态。
 func (job Job) Status() Status {
 	return job.status
+}
+
+// AuthMode 返回登录流程形态（oauth-browser / oauth-device）。
+//
+// 它来自 Start 时对 Flow 的实际类型判断，不是按 Provider 猜的默认值；
+// 从持久化快照还原的 Job 没有 Flow，返回空串。
+func (job Job) AuthMode() string {
+	return job.authMode
 }
 
 // CreatedAt 返回 Job 创建时间。

@@ -15,6 +15,7 @@ const (
 	// CollectionPath 是 OAuth Job v1 集合资源的规范路径。
 	CollectionPath = "/v1/management/account-auth-jobs"
 	callbackAction = "callback"
+	watchAction    = "watch"
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少 OAuth Job 服务或鉴权策略。
@@ -57,6 +58,11 @@ type Dependencies struct {
 	//
 	// 删除只清理已落库的历史快照，不等价于取消内存中的 OAuth Job。
 	JobDeletes JobRemover
+	// JobEvents 是 Job 快照变更订阅端口，可为空。
+	//
+	// 未显式装配时自动从 Jobs 提取（*accountauth.Service 同时实现了两个端口），
+	// 这样组合根不用重复传入同一个对象；两者都没有时 watch 路由返回 503。
+	JobEvents  JobEvents
 	Authorizer Authorizer
 }
 
@@ -66,6 +72,7 @@ type Handler struct {
 	records    JobReader
 	jobWrites  JobWriter
 	jobDeletes JobRemover
+	jobEvents  JobEvents
 	authorizer Authorizer
 }
 
@@ -74,11 +81,20 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Jobs == nil || dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
 	}
+	// 作业服务本身就是事件源：显式 JobEvents 优先，缺省按能力探测，
+	// 避免组合根为了同一条 SSE 路由再传一次同一个对象。
+	jobEvents := dependencies.JobEvents
+	if jobEvents == nil {
+		if events, ok := dependencies.Jobs.(JobEvents); ok {
+			jobEvents = events
+		}
+	}
 	return &Handler{
 		jobs:       dependencies.Jobs,
 		records:    dependencies.JobRecords,
 		jobWrites:  dependencies.JobWrites,
 		jobDeletes: dependencies.JobDeletes,
+		jobEvents:  jobEvents,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -141,11 +157,14 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	if action == callbackAction {
+	switch action {
+	case callbackAction:
 		handler.handleCallback(response, request, jobID)
-		return
+	case watchAction:
+		handler.handleJobWatch(response, request, jobID)
+	default:
+		handler.handleMember(response, request, jobID)
 	}
-	handler.handleMember(response, request, jobID)
 }
 
 // handleCollection 只允许创建新的 OAuth Job。
@@ -296,10 +315,10 @@ func parseResourcePath(path string) (string, string, error) {
 	if len(segments) == 1 {
 		return segments[0], "", nil
 	}
-	if segments[1] != callbackAction {
+	if segments[1] != callbackAction && segments[1] != watchAction {
 		return "", "", errors.New("OAuth Job 子资源无效")
 	}
-	return segments[0], callbackAction, nil
+	return segments[0], segments[1], nil
 }
 
 // validJobID 要求路径 ID 是规范的 128 位小写十六进制字符串。

@@ -53,6 +53,7 @@ func (starter accountAuthStarter) Start(
 		ID:               job.ID(),
 		ProviderID:       job.ProviderID(),
 		Purpose:          string(job.Purpose()),
+		AuthMode:         job.AuthMode(),
 		Status:           string(job.Status()),
 		AuthorizationURL: result.AuthorizationURL(),
 		UserCode:         result.UserCode(),

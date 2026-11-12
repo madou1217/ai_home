@@ -402,7 +402,7 @@ func newSuccessResponse(
 		AccountRef:       accountRef.String(),
 		AccountLabel:     accountLabel(overview),
 		Purpose:          job.Purpose,
-		AuthMode:         inferAuthMode(provider),
+		AuthMode:         firstNonEmpty(job.AuthMode, inferAuthMode(provider)),
 		AuthStrategy:     "",
 		PollIntervalMS:   1000,
 		Status:           job.Status,
@@ -415,6 +415,16 @@ func newSuccessResponse(
 		Partial:          true,
 		UnfilledFields:   append([]string(nil), unfilledFields...),
 	}
+}
+
+// firstNonEmpty 取第一个非空字符串；只用于展示字段的兜底，不改变语义。
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // accountLabel 与 Node 的 accountLabel 同口径：展示名 > 邮箱 > 账号引用。

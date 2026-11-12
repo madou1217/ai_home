@@ -41,17 +41,18 @@ type jobRecord struct {
 // Job 的私有 Flow 只存在于内存；公开快照在 jobStore 非空时同步落库，
 // 使进程重启后仍能查到终态结果。
 type Service struct {
-	mu         sync.Mutex
-	providers  map[string]OAuthProvider
-	jobs       map[string]*jobRecord
-	activeJobs map[string]string
-	decoder    NativeAccountDecoder
-	registrar  Registrar
-	reauth     Reauthenticator
-	clock      Clock
-	generateID IDGenerator
-	jobStore   JobStore
-	settings   serviceSettings
+	mu          sync.Mutex
+	providers   map[string]OAuthProvider
+	jobs        map[string]*jobRecord
+	activeJobs  map[string]string
+	subscribers map[string]map[*jobSubscription]struct{}
+	decoder     NativeAccountDecoder
+	registrar   Registrar
+	reauth      Reauthenticator
+	clock       Clock
+	generateID  IDGenerator
+	jobStore    JobStore
+	settings    serviceSettings
 }
 
 // NewService 创建只支持 Codex、Claude 且使用生产边界的 OAuth Job 服务。
@@ -97,16 +98,17 @@ func newService(
 		return nil, ErrInvalidDependencies
 	}
 	return &Service{
-		providers:  providerRegistry,
-		jobs:       make(map[string]*jobRecord),
-		activeJobs: make(map[string]string),
-		decoder:    dependencies.Decoder,
-		registrar:  dependencies.Registrar,
-		reauth:     dependencies.Reauth,
-		clock:      dependencies.Clock,
-		generateID: dependencies.GenerateID,
-		jobStore:   dependencies.JobStore,
-		settings:   settings,
+		providers:   providerRegistry,
+		jobs:        make(map[string]*jobRecord),
+		activeJobs:  make(map[string]string),
+		subscribers: make(map[string]map[*jobSubscription]struct{}),
+		decoder:     dependencies.Decoder,
+		registrar:   dependencies.Registrar,
+		reauth:      dependencies.Reauth,
+		clock:       dependencies.Clock,
+		generateID:  dependencies.GenerateID,
+		jobStore:    dependencies.JobStore,
+		settings:    settings,
 	}, nil
 }
 
@@ -173,6 +175,12 @@ func (service *Service) Start(
 		service.mu.Unlock()
 		return StartResult{}, ErrInvalidDependencies
 	}
+	// 设备码没有回调：只有后台轮询能推进 Job，stop 负责在终态时让它退出。
+	deviceFlow, isDevice := flow.(DeviceFlow)
+	authMode := "oauth-browser"
+	if isDevice {
+		authMode = "oauth-device"
+	}
 	job := Job{
 		id:         jobID,
 		providerID: request.ProviderID,
@@ -181,10 +189,9 @@ func (service *Service) Start(
 		status:     StatusPending,
 		createdAt:  now,
 		expiresAt:  now.Add(service.settings.jobTTL),
+		authMode:   authMode,
 	}
 	record := &jobRecord{job: job, flow: flow}
-	// 设备码没有回调：只有后台轮询能推进 Job，stop 负责在终态时让它退出。
-	deviceFlow, isDevice := flow.(DeviceFlow)
 	if isDevice {
 		record.stop = make(chan struct{})
 	}
@@ -774,6 +781,9 @@ func (service *Service) pollDeviceJob(
 // pending/processing 快照不会覆盖已经写入的终态。
 // 写失败只记日志：可查询性是增强能力，OAuth 主流程不能因为存储故障而失败。
 func (service *Service) persistJobLocked(job Job, now time.Time) {
+	// 每一次状态迁移都会经过这里落库，订阅者因此与存储看到同一份快照。
+	// 发布必须在 jobStore 判空之前：没有持久化存储的宿主也要有事件流。
+	service.publishJobLocked(job)
 	if service.jobStore == nil {
 		return
 	}

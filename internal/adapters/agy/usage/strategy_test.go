@@ -70,7 +70,7 @@ func TestFetchUsageBuildsModelSnapshotAndDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	strategy.baseURL = server.URL + "/v1internal"
+	strategy.baseURLs = []string{server.URL + "/v1internal"}
 	capturedAt := time.UnixMilli(1_800_000_000_000).UTC()
 	snapshot, document, err := strategy.FetchUsageWithDocument(
 		context.Background(), testAccountRef(t), agyCredential(t), capturedAt,
@@ -149,7 +149,7 @@ func TestFetchUsageRetriesWithoutProjectOn403(t *testing.T) {
 	}))
 	defer server.Close()
 	strategy, _ := New(server.Client())
-	strategy.baseURL = server.URL + "/v1internal"
+	strategy.baseURLs = []string{server.URL + "/v1internal"}
 	_, _, err := strategy.FetchUsageWithDocument(
 		context.Background(), testAccountRef(t), agyCredential(t), time.UnixMilli(1_800_000_000_000).UTC(),
 	)
@@ -196,5 +196,241 @@ func TestSnapshotPlanType(t *testing.T) {
 		if got := snapshotPlanType(testCase.raw); got != testCase.want {
 			t.Fatalf("snapshotPlanType(%q) = %q, want %q", testCase.raw, got, testCase.want)
 		}
+	}
+}
+
+// agy 的 models 既可能是对象也可能数组；数组形态按 Node descriptor 规则取 id（先 id 后
+// model，去 _vertex），可选字段的类型不合预期只影响该字段，不丢整条模型。
+func TestFetchUsageAcceptsArrayModelsAndTolerantFields(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, ":loadCodeAssist"):
+			_, _ = response.Write([]byte(`{"cloudaicompanionProject":"proj-1"}`))
+		case strings.HasSuffix(request.URL.Path, ":fetchAvailableModels"):
+			_, _ = response.Write([]byte(`{"models":[
+				{"id":"gemini-3-pro","model":"gemini-3-pro-preview","quotaInfo":{"remainingFraction":"0.5","resetTime":"2027-01-15T13:00:00Z"},"maxTokens":"1000","supportsThinking":0,"supportsImages":"yes"},
+				{"model":"claude-opus-4-5_vertex","quotaInfo":{"remaining_fraction":0.25,"reset_time":"2027-01-15T13:00:00Z"}},
+				{"model":"MODEL_PLACEHOLDER_1","quotaInfo":{"remainingFraction":0.9,"resetTime":"2027-01-15T13:00:00Z"}},
+				{"model":"chat_internal","quotaInfo":{"remainingFraction":0.9,"resetTime":"2027-01-15T13:00:00Z"}},
+				{"model":"no-quota-info"}
+			]}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	strategy, _ := New(server.Client())
+	strategy.baseURLs = []string{server.URL + "/v1internal"}
+	snapshot, document, err := strategy.FetchUsageWithDocument(
+		context.Background(), testAccountRef(t), agyCredential(t), time.UnixMilli(1_800_000_000_000).UTC(),
+	)
+	if err != nil {
+		t.Fatalf("FetchUsageWithDocument() error = %v", err)
+	}
+	entries := snapshot.Entries()
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d", len(entries))
+	}
+	// 排序按模型 ID 字节序：claude-… 在 gemini-… 之前。
+	if entries[0].Bucket() != "claude-opus-4-5" || entries[1].Bucket() != "gemini-3-pro" {
+		t.Fatalf("buckets = %q, %q", entries[0].Bucket(), entries[1].Bucket())
+	}
+	// 字符串分数按 Number("0.5") 参与计算。
+	if bps, _ := entries[1].RemainingBasisPoints(); bps != 5000 {
+		t.Fatalf("gemini bps = %d", bps)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(document.Payload(), &payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	models := payload["models"].([]any)
+	gemini := models[1].(map[string]any)
+	if gemini["model"] != "gemini-3-pro" {
+		t.Fatalf("gemini model = %#v", gemini["model"])
+	}
+	// maxTokens 字符串按 Number("1000") 取 1000；supportsThinking=0 是假值，
+	// supportsImages="yes" 是真值（JS Boolean 语义）。
+	if gemini["maxTokens"].(float64) != 1000 || gemini["supportsThinking"] != false || gemini["supportsImages"] != true {
+		t.Fatalf("gemini flags = %#v", gemini)
+	}
+}
+
+// 转发表只保留两端都是真实模型 ID 的规则（Node normalizeForwardingRules）。
+func TestForwardingRulesFilterUnrealModelIDs(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{
+		"deprecatedModelIds": {
+			"MODEL_INTERNAL": "gemini-3-pro",
+			"gemini-2-5-pro": "MODEL_PLACEHOLDER_2",
+			"gemini-3-pro-high": {"newModelId": "gemini-pro-agent"},
+			"gemini-3-pro-low": "gemini-3-pro"
+		}
+	}`)
+	rules := forwardingRules(payload)
+	if len(rules) != 2 {
+		t.Fatalf("rules = %#v", rules)
+	}
+	if rules["gemini-3-pro-high"] != "gemini-pro-agent" || rules["gemini-3-pro-low"] != "gemini-3-pro" {
+		t.Fatalf("rules = %#v", rules)
+	}
+	if rules := forwardingRules([]byte(`{"deprecatedModelIds": []}`)); len(rules) != 0 {
+		t.Fatalf("array form rules = %#v", rules)
+	}
+}
+
+// 套餐 tier 的优先级与 snake_case 字段（Node extractSubscriptionTier）。
+func TestSubscriptionTierExtraction(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		body     string
+		wantTier string
+		wantPlan string
+	}{
+		{
+			name:     "paid tier snake case",
+			body:     `{"cloudaicompanionProject":"p","paid_tier":{"quota_tier":"Google AI Pro"}}`,
+			wantTier: "Google AI Pro",
+			wantPlan: "pro",
+		},
+		{
+			name:     "ineligible tiers mark allowed default restricted",
+			body:     `{"ineligible_tiers":[{"reason":"x"}],"allowed_tiers":[{"name":"Free","is_default":true},{"name":"Pro"}]}`,
+			wantTier: "Free (Restricted)",
+			wantPlan: "free",
+		},
+		{
+			name:     "current tier ignored when ineligible",
+			body:     `{"current_tier":{"name":"Starter"},"ineligibleTiers":[{"reason":"x"}],"allowedTiers":[{"name":"Free"}]}`,
+			wantTier: "Free (Restricted)",
+			wantPlan: "free",
+		},
+		{
+			name:     "current tier without ineligible",
+			body:     `{"currentTier":{"name":"Starter"}}`,
+			wantTier: "Starter",
+			wantPlan: "free",
+		},
+		{
+			name:     "malformed tier is ignored",
+			body:     `{"paidTier":"not-an-object","currentTier":{"id":"Google AI Ultra"}}`,
+			wantTier: "Google AI Ultra",
+			wantPlan: "ultra",
+		},
+	}
+	for _, testCase := range cases {
+		info := parseLoadResponse([]byte(testCase.body))
+		if info.Tier != testCase.wantTier {
+			t.Fatalf("%s: tier = %q, want %q", testCase.name, info.Tier, testCase.wantTier)
+		}
+		if got := normalizePlanType(info.Tier); got != testCase.wantPlan {
+			t.Fatalf("%s: plan = %q, want %q", testCase.name, got, testCase.wantPlan)
+		}
+	}
+}
+
+// Node 在 loadCodeAssist / fetchAvailableModels 上按 404/429/5xx 换端点；
+// 401 是凭据问题，换端点没有意义。
+func TestFetchUsageFallsBackAcrossEndpoints(t *testing.T) {
+	t.Parallel()
+	firstHits := 0
+	first := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		firstHits++
+		response.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, ":loadCodeAssist"):
+			_, _ = response.Write([]byte(`{"cloudaicompanionProject":"proj-1"}`))
+		case strings.HasSuffix(request.URL.Path, ":fetchAvailableModels"):
+			_, _ = response.Write([]byte(`{"models":{"gemini-3-pro":{"quotaInfo":{"remainingFraction":0.5,"resetTime":"2027-01-15T13:00:00Z"}}}}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer second.Close()
+	strategy, _ := New(first.Client())
+	strategy.baseURLs = []string{first.URL + "/v1internal", second.URL + "/v1internal"}
+	snapshot, _, err := strategy.FetchUsageWithDocument(
+		context.Background(), testAccountRef(t), agyCredential(t), time.UnixMilli(1_800_000_000_000).UTC(),
+	)
+	if err != nil {
+		t.Fatalf("FetchUsageWithDocument() error = %v", err)
+	}
+	if len(snapshot.Entries()) != 1 {
+		t.Fatalf("entries = %d", len(snapshot.Entries()))
+	}
+	if firstHits < 2 {
+		t.Fatalf("first endpoint hits = %d, want load + fetch attempts", firstHits)
+	}
+}
+
+func TestFetchUsageDoesNotFallBackOnUnauthorized(t *testing.T) {
+	t.Parallel()
+	secondHits := 0
+	first := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		secondHits++
+		_, _ = response.Write([]byte(`{"models":{"gemini-3-pro":{"quotaInfo":{"remainingFraction":0.5,"resetTime":"2027-01-15T13:00:00Z"}}}}`))
+	}))
+	defer second.Close()
+	strategy, _ := New(first.Client())
+	strategy.baseURLs = []string{first.URL + "/v1internal", second.URL + "/v1internal"}
+	_, _, err := strategy.FetchUsageWithDocument(
+		context.Background(), testAccountRef(t), agyCredential(t), time.UnixMilli(1_800_000_000_000).UTC(),
+	)
+	if err == nil {
+		t.Fatal("FetchUsageWithDocument() = nil error, want 401 failure")
+	}
+	if secondHits != 0 {
+		t.Fatalf("second endpoint hits = %d, want 0", secondHits)
+	}
+}
+
+// Go 的额度条目键必须满足 core 的标识符字符集：大写归一成小写，奇异字符的单条模型
+// 被丢弃，但不拖垮整份快照。
+func TestFetchUsageNormalizesEntryKeys(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, ":loadCodeAssist"):
+			_, _ = response.Write([]byte(`{"cloudaicompanionProject":"proj-1"}`))
+		case strings.HasSuffix(request.URL.Path, ":fetchAvailableModels"):
+			_, _ = response.Write([]byte(`{"models":{
+				"Gemini-3-Pro":{"quotaInfo":{"remainingFraction":0.5,"resetTime":"2027-01-15T13:00:00Z"}},
+				"gemini+weird":{"quotaInfo":{"remainingFraction":0.9,"resetTime":"2027-01-15T13:00:00Z"}}
+			}}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	strategy, _ := New(server.Client())
+	strategy.baseURLs = []string{server.URL + "/v1internal"}
+	snapshot, document, err := strategy.FetchUsageWithDocument(
+		context.Background(), testAccountRef(t), agyCredential(t), time.UnixMilli(1_800_000_000_000).UTC(),
+	)
+	if err != nil {
+		t.Fatalf("FetchUsageWithDocument() error = %v", err)
+	}
+	entries := snapshot.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d", len(entries))
+	}
+	if entries[0].Bucket() != "gemini-3-pro" || entries[0].ScopeKey() != "gemini-3-pro" {
+		t.Fatalf("entry keys = %q / %q", entries[0].Bucket(), entries[0].ScopeKey())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(document.Payload(), &payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	models := payload["models"].([]any)
+	if models[0].(map[string]any)["model"] != "Gemini-3-Pro" {
+		t.Fatalf("document model = %#v", models[0])
 	}
 }

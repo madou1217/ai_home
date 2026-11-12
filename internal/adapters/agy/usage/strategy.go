@@ -3,12 +3,20 @@
 // 协议事实（与 Node lib/server/code-assist-quota.js 同口径）：
 //
 //	POST {base}/v1internal:loadCodeAssist
-//	  {"metadata":{"ideType":"ANTIGRAVITY"}}  → cloudaicompanionProject + 套餐 tier
+//	  {"metadata":{"ideType":"ANTIGRAVITY",...}}  → cloudaicompanionProject + 套餐 tier
 //	POST {base}/v1internal:fetchAvailableModels
 //	  {"project":...}（403 时回退空对象）→ models[*].quotaInfo.remainingFraction/resetTime
 //
+// 根地址按 Node DEFAULT_AGY_QUOTA_BASE_URLS 的顺序回退（404/429/5xx 换下一个）。
 // agy 的额度是**按模型**的（shape=models），因此每个模型一条 model_family 条目；
 // 展示文档与 Node 的 schemaVersion=2 形状一致。
+//
+// 文件分工：
+//
+//	strategy.go  采集：请求、窗口推断、快照条目、展示文档
+//	modelid.go   模型 ID 规则（Node model-id.js / code-assist-model-registry.js）
+//	document.go  读回展示文档：可信/过期判定、可用模型、账号派生事实
+//	view.go      账号用量视图（Node agy-account-usage-view.js）
 package usage
 
 import (
@@ -33,9 +41,10 @@ import (
 )
 
 const (
-	sourceID        = "agy_fetch_available_models"
-	documentKind    = "agy_code_assist_quota"
-	defaultBaseURL  = "https://daily-cloudcode-pa.googleapis.com/v1internal"
+	sourceID     = "agy_fetch_available_models"
+	documentKind = "agy_code_assist_quota"
+	// clientVersion 与 Go 侧 agy codeassist 适配器保持同一客户端画像
+	// （Node 配额路径用 buildAgyCodeAssistUserAgent()，两者上游都接受，见文件头说明）。
 	clientVersion   = "1.15.8"
 	clientSessionID = "00000000-0000-4000-8000-000000000000"
 	maxResponseBody = 8 * 1024 * 1024
@@ -48,6 +57,13 @@ var (
 	ErrInvalidDependencies = errors.New("agy 额度 Strategy 依赖无效")
 	// ErrInvalidResponse 表示上游状态、大小或 JSON 结构不满足额度合同。
 	ErrInvalidResponse = errors.New("agy 额度响应无效")
+	// defaultBaseURLs 与 Node code-assist-quota.js 的 DEFAULT_AGY_QUOTA_BASE_URLS 同序：
+	// sandbox → daily → 正式。Node 在 404/429/5xx 时按这个顺序换端点重试。
+	defaultBaseURLs = []string{
+		"https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal",
+		"https://daily-cloudcode-pa.googleapis.com/v1internal",
+		"https://cloudcode-pa.googleapis.com/v1internal",
+	}
 )
 
 // HTTPClient 是额度 Strategy 唯一依赖的传输端口。
@@ -57,8 +73,10 @@ type HTTPClient interface {
 
 // Strategy 使用 agy OAuth 凭据读取 code-assist 配额。
 type Strategy struct {
-	client  HTTPClient
-	baseURL string
+	client HTTPClient
+	// baseURLs 是候选根地址；Node resolveAgyQuotaBaseUrls 的默认列表，
+	// 由 endpoints() 兜底，测试可替换成单元素切片。
+	baseURLs []string
 }
 
 var _ usageapp.ProviderStrategy = (*Strategy)(nil)
@@ -68,7 +86,18 @@ func New(client HTTPClient) (*Strategy, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Strategy{client: client, baseURL: defaultBaseURL}, nil
+	return &Strategy{
+		client:   client,
+		baseURLs: append([]string(nil), defaultBaseURLs...),
+	}, nil
+}
+
+// endpoints 返回本轮请求允许尝试的根地址。
+func (strategy *Strategy) endpoints() []string {
+	if strategy == nil || len(strategy.baseURLs) == 0 {
+		return defaultBaseURLs
+	}
+	return strategy.baseURLs
 }
 
 // ProviderID 返回 agy。
@@ -115,11 +144,14 @@ func (strategy *Strategy) FetchUsageWithDocument(
 	}
 	entries := make([]usagecore.EntryInput, 0, len(models))
 	for _, model := range models {
+		// 条目键统一小写：core 的标识符只接受小写，MatchesModelFamily 用 EqualFold 比较，
+		// 因此原样大小写的模型名在文档里保留、在快照键里归一。
+		entryKey := strings.ToLower(model.id)
 		entries = append(entries, usagecore.EntryInput{
-			Bucket:               model.id,
+			Bucket:               entryKey,
 			Kind:                 usagecore.KindWindow,
 			Scope:                usagecore.ScopeModelFamily,
-			ScopeKey:             model.id,
+			ScopeKey:             entryKey,
 			HasRemaining:         true,
 			RemainingBasisPoints: model.remainingBasisPoints,
 			WindowSeconds:        inferWindowSeconds(model.resetAt, capturedAt),
@@ -156,94 +188,135 @@ func (strategy *Strategy) FetchUsageWithDocument(
 	return snapshot, &document, nil
 }
 
-type loadResponse struct {
-	Project         string            `json:"cloudaicompanionProject"`
-	PaidTier        *tierInfo         `json:"paidTier"`
-	CurrentTier     *tierInfo         `json:"currentTier"`
-	IneligibleTiers []json.RawMessage `json:"ineligibleTiers"`
-	AllowedTiers    []tierInfo        `json:"allowedTiers"`
-}
-
-type tierInfo struct {
-	Name      string `json:"name"`
-	ID        string `json:"id"`
-	QuotaTier string `json:"quotaTier"`
-	IsDefault bool   `json:"isDefault"`
-}
-
-func (tier tierInfo) title() string {
-	for _, value := range []string{tier.Name, tier.ID, tier.QuotaTier} {
-		if value = strings.TrimSpace(value); value != "" {
-			return value
-		}
-	}
-	return ""
+// loadProjectInfo 是 Node fetchAgyCodeAssistProjectInfo 的返回投影。
+type loadProjectInfo struct {
+	Project string
+	Tier    string
 }
 
 // loadProject 读取 project 与套餐 tier；失败时返回空值（配额请求可继续）。
+//
+// Node fetchAgyCodeAssistProjectInfo 在 loadCodeAssist 上同样按 404/429/5xx 换端点；
+// 它还有 account 级缓存（codeAssistProject + codeAssistLoadResponse）可跳过请求，
+// Go 的 Strategy 没有账号状态，这里每次采集都重新读（差异见文件头的对齐清单）。
 func (strategy *Strategy) loadProject(ctx context.Context, auth *agy.OAuthAuth) (string, string) {
 	payload := map[string]any{"metadata": map[string]string{
 		"ideType":    "ANTIGRAVITY",
 		"platform":   "PLATFORM_UNSPECIFIED",
 		"pluginType": "GEMINI",
 	}}
-	document, err := strategy.post(ctx, strategy.baseURL+":loadCodeAssist", auth, payload)
-	if err != nil {
-		return "", ""
+	var lastErr error
+	for _, baseURL := range strategy.endpoints() {
+		document, err := strategy.post(ctx, baseURL+":loadCodeAssist", auth, payload)
+		if err == nil {
+			info := parseLoadResponse(document)
+			return info.Project, info.Tier
+		}
+		lastErr = err
+		if !shouldFallbackEndpoint(err) {
+			break
+		}
 	}
-	var parsed loadResponse
-	if json.Unmarshal(document, &parsed) != nil {
-		return "", ""
-	}
-	return strings.TrimSpace(parsed.Project), extractTier(parsed)
+	_ = lastErr
+	return "", ""
 }
 
-func extractTier(document loadResponse) string {
-	if document.PaidTier != nil {
-		if name := document.PaidTier.title(); name != "" {
-			return name
-		}
+// parseLoadResponse 复刻 Node applyProjectResponse + extractSubscriptionTier。
+//
+// 字段按 RawMessage 读取：Node 对 tier 字段的类型错误是容忍的（某个字段不是对象
+// 就当没有），不会因为一个畸形 tier 把整份响应判成不可解析。
+func parseLoadResponse(payload []byte) loadProjectInfo {
+	document := rawObject(payload)
+	if document == nil {
+		return loadProjectInfo{}
 	}
-	restricted := len(document.IneligibleTiers) > 0
-	if !restricted && document.CurrentTier != nil {
-		if name := document.CurrentTier.title(); name != "" {
-			return name
-		}
+	return loadProjectInfo{
+		Project: readText(firstField(document, "cloudaicompanionProject")),
+		Tier:    extractSubscriptionTier(document),
 	}
-	if len(document.AllowedTiers) > 0 {
-		picked := document.AllowedTiers[0]
-		for _, tier := range document.AllowedTiers {
-			if tier.IsDefault {
-				picked = tier
-				break
-			}
-		}
-		if name := picked.title(); name != "" {
-			if restricted {
-				return name + " (Restricted)"
-			}
-			return name
-		}
-	}
-	return ""
 }
 
+// extractSubscriptionTier 复刻 Node extractSubscriptionTier 的优先级：
+// paidTier → currentTier（有 ineligibleTiers 时跳过）→ allowedTiers 的默认档（受限时加后缀）。
+func extractSubscriptionTier(document map[string]json.RawMessage) string {
+	if paid := tierTitle(rawObject(firstField(document, "paidTier", "paid_tier"))); paid != "" {
+		return paid
+	}
+	restricted := len(arrayOf(firstField(document, "ineligibleTiers", "ineligible_tiers"))) > 0
+	if !restricted {
+		if current := tierTitle(rawObject(firstField(document, "currentTier", "current_tier"))); current != "" {
+			return current
+		}
+	}
+	allowed := arrayOf(firstField(document, "allowedTiers", "allowed_tiers"))
+	if len(allowed) == 0 {
+		return ""
+	}
+	picked := firstTierWithFlag(allowed, "isDefault")
+	if picked < 0 {
+		picked = firstTierWithFlag(allowed, "is_default")
+	}
+	if picked < 0 {
+		picked = 0
+	}
+	name := tierTitle(rawObject(allowed[picked]))
+	if name != "" && restricted {
+		return name + " (Restricted)"
+	}
+	return name
+}
+
+// tierTitle 复刻 Node pickTierName：name → id → quotaTier → quota_tier，取第一个非空。
+func tierTitle(tier map[string]json.RawMessage) string {
+	if tier == nil {
+		return ""
+	}
+	return firstNonEmpty(
+		readText(firstField(tier, "name")),
+		readText(firstField(tier, "id")),
+		readText(firstField(tier, "quotaTier")),
+		readText(firstField(tier, "quota_tier")),
+	)
+}
+
+// firstTierWithFlag 返回第一个满足 name === true 的档位下标；没有返回 -1。
+func firstTierWithFlag(tiers []json.RawMessage, field string) int {
+	for index, raw := range tiers {
+		tier := rawObject(raw)
+		if tier == nil {
+			continue
+		}
+		if string(bytes.TrimSpace(tier[field])) == "true" {
+			return index
+		}
+	}
+	return -1
+}
+
+// fetchModels 复刻 Node fetchAgyCodeAssistQuotaSnapshot 的请求顺序：
+// 每个端点先带 project、403 时去掉 project 重试一次；端点本身 404/429/5xx 时换下一个。
 func (strategy *Strategy) fetchModels(ctx context.Context, auth *agy.OAuthAuth, project string) ([]byte, error) {
 	bodies := []map[string]any{{}}
 	if project != "" {
 		bodies = []map[string]any{{"project": project}, {}}
 	}
 	var lastErr error
-	for index, body := range bodies {
-		payload, err := strategy.post(ctx, strategy.baseURL+":fetchAvailableModels", auth, body)
-		if err == nil {
-			return payload, nil
+	for _, baseURL := range strategy.endpoints() {
+		endpoint := baseURL + ":fetchAvailableModels"
+		for index, body := range bodies {
+			payload, err := strategy.post(ctx, endpoint, auth, body)
+			if err == nil {
+				return payload, nil
+			}
+			lastErr = err
+			if index == 0 && project != "" && isForbidden(err) {
+				continue
+			}
+			break
 		}
-		lastErr = err
-		if index == 0 && project != "" && isForbidden(err) {
-			continue
+		if !shouldFallbackEndpoint(lastErr) {
+			break
 		}
-		break
 	}
 	if lastErr == nil {
 		lastErr = ErrInvalidResponse
@@ -262,6 +335,18 @@ func (err httpStatusError) Error() string {
 func isForbidden(err error) bool {
 	var statusErr httpStatusError
 	return errors.As(err, &statusErr) && statusErr.status == http.StatusForbidden
+}
+
+// shouldFallbackEndpoint 复刻 Node shouldFallbackEndpoint：404 / 429 / 5xx 才换端点。
+// 401/403 是凭据或项目问题，换端点没有意义。
+func shouldFallbackEndpoint(err error) bool {
+	var statusErr httpStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.status == http.StatusNotFound ||
+		statusErr.status == http.StatusTooManyRequests ||
+		(statusErr.status >= 500 && statusErr.status < 600)
 }
 
 func (strategy *Strategy) post(
@@ -360,123 +445,85 @@ func snapshotPlanType(rawTier string) string {
 	}
 }
 
+// parseQuotaModels 复刻 Node listQuotaModels：
+//
+//   - models 既可能是对象（键是模型 ID），也可能是数组（条目里带 id/model/modelId）；
+//   - 数组形态按 Node 的 descriptor 规则取 ID（先 id 后 model，去 _vertex 后缀）；
+//   - 同名模型（大小写不敏感）只留剩余比例最低的那条；
+//   - 按模型 ID 升序返回（Node 用 localeCompare；模型 ID 是 ASCII，见文件头对齐清单）。
 func parseQuotaModels(payload []byte) ([]quotaModel, bool) {
-	var document struct {
-		Models json.RawMessage `json:"models"`
-	}
-	if json.Unmarshal(payload, &document) != nil || len(document.Models) == 0 {
+	document := rawObject(payload)
+	if document == nil {
 		return nil, false
 	}
-	type entry struct {
-		id   string
-		info json.RawMessage
+	modelsRaw := bytes.TrimSpace(document["models"])
+	if len(modelsRaw) == 0 || isJSONNull(modelsRaw) {
+		return nil, false
 	}
-	entries := make([]entry, 0, 16)
-	trimmed := bytes.TrimSpace(document.Models)
-	switch {
-	case len(trimmed) > 0 && trimmed[0] == '{':
-		var byID map[string]json.RawMessage
-		if json.Unmarshal(trimmed, &byID) != nil {
-			return nil, false
-		}
-		for id, info := range byID {
-			entries = append(entries, entry{id: id, info: info})
-		}
-	case len(trimmed) > 0 && trimmed[0] == '[':
-		var list []json.RawMessage
-		if json.Unmarshal(trimmed, &list) != nil {
-			return nil, false
-		}
-		for _, raw := range list {
-			var header struct {
-				Model      string `json:"model"`
-				ID         string `json:"id"`
-				ModelID    string `json:"modelId"`
-				ModelSnake string `json:"model_id"`
+	models := make([]quotaModel, 0, 16)
+	switch modelsRaw[0] {
+	case '{':
+		for key, info := range rawObject(modelsRaw) {
+			if model, ok := parseQuotaModel(objectModelID(key, rawObject(info)), info); ok {
+				models = append(models, model)
 			}
-			if json.Unmarshal(raw, &header) != nil {
-				return nil, false
-			}
-			id := firstNonEmpty(header.Model, header.ID, header.ModelID, header.ModelSnake)
-			if id != "" {
-				entries = append(entries, entry{id: id, info: raw})
+		}
+	case '[':
+		for _, item := range arrayOf(modelsRaw) {
+			if model, ok := parseQuotaModel(readPublicModelID(rawObject(item)), item); ok {
+				models = append(models, model)
 			}
 		}
 	default:
 		return nil, false
 	}
-	byModel := make(map[string]quotaModel, len(entries))
-	for _, item := range entries {
-		model, ok := parseQuotaModel(item.id, item.info)
-		if !ok {
-			continue
-		}
+	byModel := make(map[string]quotaModel, len(models))
+	for _, model := range models {
 		key := strings.ToLower(model.id)
 		previous, exists := byModel[key]
 		if !exists || model.remainingPct < previous.remainingPct {
 			byModel[key] = model
 		}
 	}
-	models := make([]quotaModel, 0, len(byModel))
+	result := make([]quotaModel, 0, len(byModel))
 	for _, model := range byModel {
-		models = append(models, model)
+		result = append(result, model)
 	}
-	sort.Slice(models, func(left, right int) bool { return models[left].id < models[right].id })
-	return models, len(models) > 0
+	sort.Slice(result, func(left, right int) bool { return result[left].id < result[right].id })
+	return result, len(result) > 0
 }
 
+// parseQuotaModel 复刻 Node normalizeQuotaModel。
+//
+// 任何可选字段的类型不合预期都只让该字段取默认值，不会丢弃整条模型：
+// Node 是逐字段 Number()/Boolean()，一个 maxTokens 字符串不会让模型从列表里消失。
 func parseQuotaModel(id string, raw json.RawMessage) (quotaModel, bool) {
 	id = strings.TrimSpace(id)
-	if !validQuotaModelID(id) {
+	if !isRealProviderModelID(id) {
 		return quotaModel{}, false
 	}
-	var detail struct {
-		QuotaInfo *struct {
-			RemainingFraction *float64 `json:"remainingFraction"`
-			RemainingSnake    *float64 `json:"remaining_fraction"`
-			ResetTime         string   `json:"resetTime"`
-			ResetTimeSnake    string   `json:"reset_time"`
-		} `json:"quotaInfo"`
-		QuotaInfoSnake *struct {
-			RemainingFraction *float64 `json:"remainingFraction"`
-			RemainingSnake    *float64 `json:"remaining_fraction"`
-			ResetTime         string   `json:"resetTime"`
-			ResetTimeSnake    string   `json:"reset_time"`
-		} `json:"quota_info"`
-		DisplayName    string   `json:"displayName"`
-		DisplaySnake   string   `json:"display_name"`
-		SupportsThink  bool     `json:"supportsThinking"`
-		SupportsThinkS bool     `json:"supports_thinking"`
-		SupportsImage  bool     `json:"supportsImages"`
-		SupportsImageS bool     `json:"supports_images"`
-		MaxTokens      *float64 `json:"maxTokens"`
-		MaxTokensSnake *float64 `json:"max_tokens"`
-		MaxOutput      *float64 `json:"maxOutputTokens"`
-		MaxOutputSnake *float64 `json:"max_output_tokens"`
-	}
-	if json.Unmarshal(raw, &detail) != nil {
+	// Go 的额度条目要求 bucket/scopeKey 是 core 的标识符字符集；不满足的 ID 在这里丢掉，
+	// 否则一份快照会因为一个奇异模型 ID 整份失败（Node 没有这一层约束）。
+	if !validQuotaEntryKey(id) {
 		return quotaModel{}, false
 	}
-	quota := detail.QuotaInfo
-	if quota == nil {
-		quota = detail.QuotaInfoSnake
+	detail := rawObject(raw)
+	if detail == nil {
+		return quotaModel{}, false
 	}
+	quota := rawObject(firstField(detail, "quotaInfo", "quota_info"))
 	if quota == nil {
 		return quotaModel{}, false
 	}
-	fraction := quota.RemainingFraction
-	if fraction == nil {
-		fraction = quota.RemainingSnake
-	}
-	if fraction == nil || math.IsNaN(*fraction) || math.IsInf(*fraction, 0) {
+	fraction, ok := jsNumber(firstField(quota, "remainingFraction", "remaining_fraction"))
+	if !ok || math.IsNaN(fraction) || math.IsInf(fraction, 0) {
 		return quotaModel{}, false
 	}
-	resetValue := firstNonEmpty(quota.ResetTime, quota.ResetTimeSnake)
-	resetAt, err := time.Parse(time.RFC3339Nano, resetValue)
-	if err != nil || resetAt.UnixMilli() <= 0 {
+	resetAt, ok := parseQuotaResetTime(firstTextField(quota, "resetTime", "reset_time"))
+	if !ok {
 		return quotaModel{}, false
 	}
-	pct := math.Max(0, math.Min(100, *fraction*100))
+	pct := math.Max(0, math.Min(100, fraction*100))
 	availability := usagecore.AvailabilityAvailable
 	if pct <= 0 {
 		availability = usagecore.AvailabilityExhausted
@@ -485,27 +532,38 @@ func parseQuotaModel(id string, raw json.RawMessage) (quotaModel, bool) {
 		id:                   id,
 		remainingBasisPoints: uint16(math.Round(pct * 100)),
 		remainingPct:         pct,
-		resetAt:              resetAt.UTC(),
-		displayName:          strings.TrimSpace(firstNonEmpty(detail.DisplayName, detail.DisplaySnake)),
-		supportsThinking:     detail.SupportsThink || detail.SupportsThinkS,
-		supportsImages:       detail.SupportsImage || detail.SupportsImageS,
-		maxTokens:            firstAmount(detail.MaxTokens, detail.MaxTokensSnake),
-		maxOutputTokens:      firstAmount(detail.MaxOutput, detail.MaxOutputSnake),
-		availability:         availability,
+		resetAt:              resetAt,
+		displayName:          firstTextField(detail, "displayName", "display_name"),
+		supportsThinking: jsTruthy(firstField(detail, "supportsThinking")) ||
+			jsTruthy(firstField(detail, "supports_thinking")),
+		supportsImages: jsTruthy(firstField(detail, "supportsImages")) ||
+			jsTruthy(firstField(detail, "supports_images")),
+		maxTokens:       nullableJSNumeric(firstField(detail, "maxTokens", "max_tokens")),
+		maxOutputTokens: nullableJSNumeric(firstField(detail, "maxOutputTokens", "max_output_tokens")),
+		availability:    availability,
 	}, true
 }
 
-func validQuotaModelID(value string) bool {
-	if _, err := runtimecore.NewModelID(value); err != nil || strings.Contains(value, "*") {
-		return false
+// parseQuotaResetTime 解析上游 ISO 重置时间。
+//
+// Node 用 Date.parse，接受的范围比 RFC3339 宽。这里支持 RFC3339（含小数秒与时区）
+// 与纯日期；故意不同：不带时区的本地时间在 Node 里按本机时区解释，Go 统一按 UTC，
+// 否则同一份快照在不同时区机器上会得出不同的 resetIn。
+func parseQuotaResetTime(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
 	}
-	normalized := strings.ToLower(value)
-	return !strings.HasPrefix(value, "MODEL_") &&
-		!strings.HasPrefix(normalized, "chat_") &&
-		!strings.HasPrefix(normalized, "tab_") &&
-		!strings.HasPrefix(normalized, "models/") &&
-		!strings.Contains(normalized, "placeholder") &&
-		!strings.Contains(normalized, "proactive-observer")
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02"} {
+		parsed, err := time.Parse(layout, value)
+		if err != nil {
+			continue
+		}
+		if parsed.UnixMilli() <= 0 {
+			return time.Time{}, false
+		}
+		return parsed.UTC(), true
+	}
+	return time.Time{}, false
 }
 
 func buildDocumentPayload(
@@ -553,50 +611,38 @@ func buildDocumentPayload(
 	return encoded, nil
 }
 
+// forwardingRules 复刻 Node normalizeForwardingRules：
+// 只保留「旧模型 ID → 新模型 ID」两端都是真实模型 ID 的转发规则。
+//
+// 不过滤的话，内部枚举（MODEL_*）与占位值会进 modelForwardingRules，WebUI 会把
+// 不可请求的 ID 当成可转发目标。
 func forwardingRules(payload []byte) map[string]string {
-	var document struct {
-		Deprecated  map[string]json.RawMessage `json:"deprecatedModelIds"`
-		DeprecatedS map[string]json.RawMessage `json:"deprecated_model_ids"`
-	}
-	if json.Unmarshal(payload, &document) != nil {
+	document := rawObject(payload)
+	if document == nil {
 		return map[string]string{}
 	}
-	raw := document.Deprecated
-	if len(raw) == 0 {
-		raw = document.DeprecatedS
-	}
+	raw := rawObject(firstField(document, "deprecatedModelIds", "deprecated_model_ids"))
 	rules := make(map[string]string, len(raw))
-	for from, value := range raw {
-		var direct string
-		if json.Unmarshal(value, &direct) == nil && direct != "" {
-			rules[from] = direct
+	for key, value := range raw {
+		from := strings.TrimSpace(key)
+		to := ""
+		if object := rawObject(value); object != nil {
+			to = firstTextField(object, "newModelId", "new_model_id")
+		} else {
+			to = readText(value)
+		}
+		if !isRealProviderModelID(from) || !isRealProviderModelID(to) {
 			continue
 		}
-		var detail struct {
-			NewModelID string `json:"newModelId"`
-			NewSnake   string `json:"new_model_id"`
-		}
-		if json.Unmarshal(value, &detail) == nil {
-			if to := firstNonEmpty(detail.NewModelID, detail.NewSnake); to != "" {
-				rules[from] = to
-			}
-		}
+		rules[from] = to
 	}
 	return rules
 }
 
+// normalizePlanType 复刻 Node normalizeAgyPlanType(tier, 'oauth') 的取值；
+// 完整回落链见 NormalizePlanType（view.go）。
 func normalizePlanType(tier string) string {
-	value := strings.ToLower(strings.TrimSpace(tier))
-	switch {
-	case strings.Contains(value, "ultra"):
-		return "ultra"
-	case strings.Contains(value, "pro"):
-		return "pro"
-	case strings.Contains(value, "starter"), strings.Contains(value, "free"), strings.Contains(value, "default"):
-		return "free"
-	default:
-		return "oauth"
-	}
+	return NormalizePlanType(tier, "oauth")
 }
 
 func formatResetIn(resetAt time.Time, now time.Time) string {
@@ -624,15 +670,6 @@ func optionalNumber(value *float64) any {
 		return nil
 	}
 	return *value
-}
-
-func firstAmount(values ...*float64) *float64 {
-	for _, value := range values {
-		if value != nil {
-			return value
-		}
-	}
-	return nil
 }
 
 func firstNonEmpty(values ...string) string {

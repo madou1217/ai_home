@@ -674,6 +674,25 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 						err,
 					)
 				}
+				// 默认账号还要同步真实 HOME 的全局 CLI 凭据，否则 aih 之外的
+				// agy CLI/桌面端会一直拿旧 token（与 Node host-sync 同口径）。
+				if hostHome, homeErr := os.UserHomeDir(); homeErr == nil {
+					syncCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					if err := syncDefaultAgyAuthToHost(
+						syncCtx,
+						store,
+						hostHome,
+						accountRef,
+						auth,
+					); err != nil {
+						log.Printf(
+							"默认 agy 账号全局凭据同步失败: account=%s err=%v",
+							accountRef,
+							err,
+						)
+					}
+					cancel()
+				}
 			},
 			// 身份变化会把账号迁到新 AccountRef；运行投影目录也必须跟着改名，
 			// 否则新引用启动时没有历史工作区，旧目录还会一直留着旧令牌。

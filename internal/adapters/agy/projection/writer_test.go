@@ -2,6 +2,7 @@ package projection
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -228,6 +229,51 @@ func TestWriteUsesCredentialIDToken(t *testing.T) {
 	token, _ := cliToken["token"].(map[string]any)
 	if token["id_token"] != "credential-id-token" {
 		t.Fatalf("cli token id_token = %v", token["id_token"])
+	}
+}
+
+// 默认账号的全局 CLI 凭据：写到真实 HOME 形态的路径，保留已有扩展键。
+func TestWriteGlobalAuthPreservesExtensions(t *testing.T) {
+	hostHome := t.TempDir()
+	directory := filepath.Join(hostHome, ".gemini", "antigravity-cli")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(directory, "antigravity-oauth-token")
+	if err := os.WriteFile(
+		tokenPath,
+		[]byte(`{"custom":"keep","token":{"scope":"legacy"}}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	auth := testAgyAuth(t, "global-access")
+	if err := WriteGlobalAuth(hostHome, auth); err != nil {
+		t.Fatalf("WriteGlobalAuth() error = %v", err)
+	}
+	document := readJSON(t, tokenPath)
+	if document["custom"] != "keep" {
+		t.Fatalf("custom = %v, want preserved", document["custom"])
+	}
+	if document["auth_method"] != authmeta.AuthMethodConsumer {
+		t.Fatalf("auth_method = %v", document["auth_method"])
+	}
+	token, _ := document["token"].(map[string]any)
+	if token["access_token"] != "global-access" {
+		t.Fatalf("access_token = %v", token["access_token"])
+	}
+	if token["scope"] != "legacy" {
+		t.Fatalf("token.scope = %v, want preserved", token["scope"])
+	}
+	emailCache, err := os.ReadFile(filepath.Join(directory, "email.cache"))
+	if err != nil || string(emailCache) != "agy@example.test" {
+		t.Fatalf("email.cache = %q, %v", string(emailCache), err)
+	}
+}
+
+func TestWriteGlobalAuthRejectsEmptyHome(t *testing.T) {
+	if err := WriteGlobalAuth("", testAgyAuth(t, "x")); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("WriteGlobalAuth() error = %v, want ErrInvalidInput", err)
 	}
 }
 

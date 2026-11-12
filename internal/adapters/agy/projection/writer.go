@@ -114,6 +114,31 @@ func Write(aiHomeDir string, accountRef string, auth *agy.OAuthAuth) error {
 	return removeFileIfExists(filepath.Join(runtimeDir, googleAccountsFile))
 }
 
+// WriteGlobalAuth 把 agy 的 CLI 凭据同步到真实 HOME 的全局配置路径。
+//
+// 只有 provider 默认账号才应该调用（Node 的 host-sync.js:500-506 行为）：
+// CLI 在 aih 之外启动时读的是 ~/.gemini/antigravity-cli，而不是运行投影。
+// 与投影目录不同，这里以磁盘现有文档为底合并，保留 CLI 自己写入的扩展键。
+func WriteGlobalAuth(hostHomeDir string, auth *agy.OAuthAuth) error {
+	if strings.TrimSpace(hostHomeDir) == "" || auth == nil {
+		return ErrInvalidInput
+	}
+	directory := filepath.Join(hostHomeDir, ".gemini", "antigravity-cli")
+	tokenPath := filepath.Join(directory, "antigravity-oauth-token")
+	document, err := readJSONObject(tokenPath)
+	if err != nil {
+		return err
+	}
+	mergeDocument(
+		document,
+		buildCLITokenDocument(auth, auth.ExpiresAtMS(), auth.RefreshedAtMS()),
+	)
+	if err := writeJSONDocument(tokenPath, document); err != nil {
+		return err
+	}
+	return writeTextFile(filepath.Join(directory, "email.cache"), strings.TrimSpace(auth.Email()))
+}
+
 // writeCLITokenDocuments 把同一份 oauthToken 文档写到规范路径与桌面端副本。
 //
 // 以规范文件（antigravity-oauth-token）为底合并：Node 的语义是两个文件内容一致，

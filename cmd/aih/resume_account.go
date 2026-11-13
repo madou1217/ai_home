@@ -67,6 +67,22 @@ func rewriteFamilySessionVerb(
 	return rewritten, true, nil
 }
 
+// stripNativeEscapeMarker 去掉 aih 的 `--` 逃生门标记：它只告诉 aih「后面的参数
+// 不要再解析」，官方 CLI 不该收到这个标记本身。账号位保留（与 Node 丢弃账号位
+// 的旧行为不同，这里以账号钉选为准）。
+func stripNativeEscapeMarker(arguments []string) ([]string, bool) {
+	for index := 1; index < len(arguments); index++ {
+		if arguments[index] != "--" {
+			continue
+		}
+		stripped := make([]string, 0, len(arguments)-1)
+		stripped = append(stripped, arguments[:index]...)
+		stripped = append(stripped, arguments[index+1:]...)
+		return stripped, true
+	}
+	return arguments, false
+}
+
 // isFamilySessionVerb 只认家族 CLI 真实存在的统一动词。
 func isFamilySessionVerb(value string) bool {
 	return value == "resume" || value == "fork"

@@ -75,3 +75,26 @@ func TestRewriteFamilySessionVerb(t *testing.T) {
 		})
 	}
 }
+
+// TestStripNativeEscapeMarker 逃生门只去掉 `--` 标记本身，账号位与后续原生参数保留。
+func TestStripNativeEscapeMarker(t *testing.T) {
+	stripped, escaped := stripNativeEscapeMarker([]string{"codebuddycn", "2", "--", "--model", "x"})
+	if !escaped {
+		t.Fatal("应该识别到逃生门")
+	}
+	if strings.Join(stripped, " ") != "codebuddycn 2 --model x" {
+		t.Fatalf("stripped = %v", stripped)
+	}
+	unchanged, escaped := stripNativeEscapeMarker([]string{"codebuddycn", "2", "--model", "x"})
+	if escaped {
+		t.Fatal("没有 -- 不应标记为逃生门")
+	}
+	if strings.Join(unchanged, " ") != "codebuddycn 2 --model x" {
+		t.Fatalf("unchanged = %v", unchanged)
+	}
+	// 逃生门在账号位之前时，账号位之后的一切都原样保留给 CLI。
+	early, escaped := stripNativeEscapeMarker([]string{"codebuddycn", "--", "resume", "--model", "x"})
+	if !escaped || strings.Join(early, " ") != "codebuddycn resume --model x" {
+		t.Fatalf("early = %v escaped=%v", early, escaped)
+	}
+}

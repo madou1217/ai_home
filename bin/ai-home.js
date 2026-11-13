@@ -122,12 +122,23 @@ function applyGoFamilyEgressGuard(env, fs, aiHomeDir, provider, accountToken) {
   }
 }
 
+// 家族保留动作：出现在账号位之后时由各自的 Go 转发器处理，不能当成原生参数。
+const GO_FAMILY_RESERVED_ACTIONS = new Set([
+  'resume', 'fork', 'sessions', 'usage', 'ls', 'login', 'home', 'version', 'detect',
+  'auto-switch', 'set-default', 'unset-default', 'delete', 'deleteall', 'delete-all',
+  'terminal-icon', 'terminal-icons', 'help', '--help', '-h'
+]);
+
 function tryRunGoFamilyLaunch() {
   const args = process.argv.slice(2);
-  if (args.length !== 2) return false;
+  if (args.length < 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
   if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
   if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
+  if (args.length >= 3 &&
+    GO_FAMILY_RESERVED_ACTIONS.has(String(args[2] || '').trim().toLowerCase())) {
+    return false;
+  }
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

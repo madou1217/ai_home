@@ -86,12 +86,17 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	// aih <family> [<账号>] resume|fork ... → 官方 CLI 的 --resume/--continue；
 	// 家族没有 fork 入口时在这里明确拒绝，不把动词当消息发给 CLI。
 	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
-		rewritten, handled, verbErr := rewriteFamilySessionVerb(ctx, providerID, arguments, runtime)
-		if handled {
-			if verbErr != nil {
-				return verbErr
+		// `--` 之后是原生参数逃生门：不再解析 aih 统一动词。
+		stripped, escaped := stripNativeEscapeMarker(arguments)
+		arguments = stripped
+		if !escaped {
+			rewritten, handled, verbErr := rewriteFamilySessionVerb(ctx, providerID, arguments, runtime)
+			if handled {
+				if verbErr != nil {
+					return verbErr
+				}
+				arguments = rewritten
 			}
-			arguments = rewritten
 		}
 	}
 	if len(arguments) >= 2 && codebuddyfamilystorage.IsFamilyProvider(providerID) {

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/host/hostsync"
 	"io"
 	"strconv"
 	"strings"
@@ -58,6 +60,11 @@ func runProviderDefaultCommand(
 		if setErr != nil {
 			return fmt.Errorf("设置默认账号失败: %w", setErr)
 		}
+		// 显式设默认要把凭据写到宿主原生配置，aih 之外启动的 CLI 才用这个账号。
+		// 未迁移宿主同步的 Provider 保持旧行为（不做，也不报错）。
+		if syncErr := syncHostCredential(ctx, providerID, view.AccountRef.String(), runtime); syncErr != nil {
+			return syncErr
+		}
 		_, _ = fmt.Fprintf(runtime.stdout, "已设置 %s 默认账号: %s\n", providerID, snapshot.AccountRef)
 		if restart {
 			return runProviderRestart(ctx, providerID, accountID, runtime)
@@ -81,4 +88,29 @@ func runProviderDefaultCommand(
 
 func writeProviderDefaultUsage(output io.Writer, providerID string) {
 	_, _ = fmt.Fprintf(output, "用法:\n  aih %s set-default <id> [--restart-client]\n  aih %s unset-default\n", providerID, providerID)
+}
+
+// syncHostCredential 把默认账号凭据同步到宿主原生配置；未迁移的 Provider 静默跳过。
+func syncHostCredential(ctx context.Context, providerID string, accountRef string, runtime commandRuntime) error {
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil {
+		return err
+	}
+	hostHomeDir := lookupOrDefault(runtime.lookupEnv, "AIH_HOST_HOME", "")
+	if hostHomeDir == "" {
+		hostHomeDir, err = runtime.userHomeDir()
+		if err != nil {
+			return err
+		}
+	}
+	_, syncErr := hostsync.Sync(ctx, hostsync.Options{
+		AIHomeDir:   aiHomeDir,
+		HostHomeDir: hostHomeDir,
+		ProviderID:  providerID,
+		AccountRef:  accountRef,
+	})
+	if syncErr == nil || errors.Is(syncErr, hostsync.ErrUnsupportedProvider) {
+		return nil
+	}
+	return fmt.Errorf("同步宿主配置失败: %w", syncErr)
 }

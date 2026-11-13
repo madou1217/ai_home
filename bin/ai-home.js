@@ -576,7 +576,14 @@ function tryRunGoProviderCommonCommand() {
   // 删除投影已全量迁 Go（Node node-only 钩子表为空）：delete <id...> / deleteall。
   const isDelete = command === 'delete' && args.length >= 3;
   const isDeleteAll = (command === 'deleteall' || command === 'delete-all') && args.length === 2;
-  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll) return false;
+  // set-default：Go 已实现宿主配置同步的 Provider 才转发（其余仍交 Node 的 host-sync）。
+  const SET_DEFAULT_PROVIDERS = new Set(['gemini', 'agy', 'grok', 'opencode', 'qoder', 'qodercn']);
+  const isSetDefault = command === 'set-default' &&
+    args.length >= 3 &&
+    SET_DEFAULT_PROVIDERS.has(provider) &&
+    numeric(args[2]) &&
+    args.slice(3).every((token) => token === '--restart-client' || token === '--force-quit-client');
+  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault) return false;
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';
@@ -604,7 +611,7 @@ function tryRunGoProviderCommonCommand() {
     }
   }
   if (!aiHomeDir) return false;
-  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll;
+  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault;
   let managementKey = '';
   if (needsServer) {
     let config = null;

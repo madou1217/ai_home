@@ -138,12 +138,11 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 			return accountcore.Account{}, runErr
 		}
 	}
-	if code != 0 {
-		return accountcore.Account{}, fmt.Errorf("codebuddy login 退出码 %d", code)
-	}
-	credential, profile, err := readCredential(providerID, result.Root)
-	if err != nil {
-		return accountcore.Account{}, err
+	// 登录成功以「投影里出现 .info」为准：CLI 在浏览器授权完成后可能以非零码退出
+	// （用户 Ctrl+C、TUI 收尾异常），Node 的登录作业同样只看凭据产物。
+	credential, profile, credentialErr := readCredential(providerID, result.Root)
+	if credentialErr != nil {
+		return accountcore.Account{}, credentialFailure(code, credentialErr)
 	}
 	accountRef, err = accountcore.DeriveAccountRef(credential)
 	if err != nil {
@@ -190,6 +189,14 @@ func withoutEnvironmentKeys(environment []string, names []string) []string {
 		filtered = append(filtered, entry)
 	}
 	return filtered
+}
+
+// credentialFailure 在缺少凭据时才把非零退出码并入错误；有凭据时退出码不影响结果。
+func credentialFailure(code int, credentialErr error) error {
+	if code != 0 {
+		return fmt.Errorf("codebuddy login 退出码 %d: %w", code, credentialErr)
+	}
+	return credentialErr
 }
 
 // mergedEnvironment 用 overlay 覆盖同名变量，避免重复 HOME 让子进程读宿主值。

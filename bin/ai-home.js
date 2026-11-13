@@ -479,7 +479,9 @@ function tryRunGoProviderCommonCommand() {
       (args.length === 4 && numeric(args[2]) && args[3] === '--refresh'));
   const isTerminalIcon = (command === 'terminal-icon' || command === 'terminal-icons') &&
     args.length >= 2;
-  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon) return false;
+  // 自动换号是全局 config:usage，Go 的读写口径与家族同一实现。
+  const isAutoSwitch = command === 'auto-switch' && args.length >= 2 && args.length <= 5;
+  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch) return false;
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';
@@ -507,7 +509,7 @@ function tryRunGoProviderCommonCommand() {
     }
   }
   if (!aiHomeDir) return false;
-  const needsServer = isList || isUsageAll || isUsageOne;
+  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch;
   let managementKey = '';
   if (needsServer) {
     let config = null;

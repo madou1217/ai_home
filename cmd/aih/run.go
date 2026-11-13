@@ -133,8 +133,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			return runProviderDetect(ctx, providerID, arguments[2:], runtime)
 		}
 	}
-	if len(arguments) >= 2 && arguments[1] == "auto-switch" &&
-		codebuddyfamilystorage.IsFamilyProvider(providerID) {
+	// 自动换号是全局设置（额度事实与账号池跨 Provider 共用），任何 Provider 的
+	// 入口都读写同一份 config:usage，不需要限定家族。
+	if len(arguments) >= 2 && arguments[1] == "auto-switch" {
 		return runProviderAutoSwitch(ctx, providerID, arguments[2:], runtime)
 	}
 	if len(arguments) >= 2 && arguments[1] == "version" && providerBinaryName(providerID) != "" {

@@ -17,7 +17,9 @@ import (
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihlogin"
+	"github.com/madou1217/ai_home/internal/host/clilogin"
 )
 
 // Status 是作业生命周期状态。
@@ -79,10 +81,11 @@ func defaultPromptRules(provider string) []PromptRule {
 			Response: "2\r",
 		}}
 	case "agy":
-		// Node: 登录方式菜单自动选择 1. Google OAuth。
+		// Node: 登录方式菜单自动选择 1. Google OAuth。三个条目必须同时出现，
+		// 否则「恢复上次会话」这类同形菜单会被误答。
 		return []PromptRule{{
 			ID:       "agy-login-method",
-			Pattern:  regexp.MustCompile("(?i)Select login method"),
+			Pattern:  regexp.MustCompile("(?is)Select login method.*Google OAuth.*Google Cloud project"),
 			Response: "1\r",
 		}}
 	default:
@@ -130,7 +133,7 @@ type Manager struct {
 // NewManager 创建作业管理器。
 func NewManager(options Options) *Manager {
 	if options.Run == nil {
-		options.Run = aihlogin.Run
+		options.Run = runDefault
 	}
 	if options.Clock == nil {
 		options.Clock = time.Now
@@ -139,6 +142,23 @@ func NewManager(options Options) *Manager {
 		options.SiteMenuDownDelay = 900 * time.Millisecond
 	}
 	return &Manager{options: options, jobs: make(map[string]*job)}
+}
+
+// runDefault 按 Provider 分派登录 Runner：CodeBuddy 家族走临时投影登录，
+// 已迁移的原生 CLI（agy）走通用 CLI 登录。未迁移的 Provider 由 clilogin
+// 明确报错，不回退 Node。
+func runDefault(ctx context.Context, options aihlogin.Options) (accountcore.Account, error) {
+	if codebuddyfamilystorage.IsFamilyProvider(options.ProviderID) {
+		return aihlogin.Run(ctx, options)
+	}
+	return clilogin.Run(ctx, clilogin.Options{
+		AIHomeDir:   options.AIHomeDir,
+		HostHomeDir: options.HostHomeDir,
+		ProviderID:  options.ProviderID,
+		Stdin:       options.Stdin,
+		Stdout:      options.Stdout,
+		Stderr:      options.Stderr,
+	})
 }
 
 // Start 启动一次登录作业并立即返回快照。
@@ -308,7 +328,10 @@ func (writer *logWriter) Write(data []byte) (int, error) {
 			writer.entry.authURL = match
 		}
 	}
+	// 站点菜单只属于 CodeBuddy 家族登录：其它 Provider（agy 的登录方式菜单）
+	// 由各自的 PromptRule 回答，这里再按一次回车会把选择打乱。
 	shouldAnswer := !writer.entry.answered &&
+		codebuddyfamilystorage.IsFamilyProvider(writer.entry.provider) &&
 		siteMenuPattern.MatchString(writer.entry.logs.String()) &&
 		!siteMenuAdvance.MatchString(writer.entry.logs.String())
 	if shouldAnswer {

@@ -3,6 +3,9 @@ package aihloginjob
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -201,7 +204,7 @@ func TestDefaultPromptRules(t *testing.T) {
 		want string
 	}{
 		"gemini": {log: "Do you trust the files in this folder?\n1. Trust folder\n2. Trust parent folder\n", want: "2\r"},
-		"agy":    {log: "Select login method\n1. Google OAuth\n2. API Key\n", want: "1\r"},
+		"agy":    {log: "Select login method\n1. Google OAuth\n2. Google Cloud project\n", want: "1\r"},
 	}
 	for provider, testCase := range cases {
 		received := make(chan string, 1)
@@ -275,4 +278,46 @@ func TestPromptRuleFiresOnce(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("没有收到应答")
 	}
+}
+
+const agyDispatchToken = `{"auth_method":"consumer","id_token_email":"agy.dispatch@example.com","token":{"access_token":"ya29.dispatch-token-value","refresh_token":"1//dispatch-refresh-value","token_type":"Bearer","expires_at_ms":4070903045000}}`
+
+// TestManagerDispatchesAgyToCLILogin 默认 Runner 把非家族 Provider 交给 clilogin：
+// 假 CLI 写出凭据后作业成功并带回账号，证明分派与注册链路都接通。
+func TestManagerDispatchesAgyToCLILogin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假 CLI 用 sh 脚本")
+	}
+	scriptPath := filepath.Join(t.TempDir(), "agy")
+	script := strings.ReplaceAll(`#!/bin/sh
+mkdir -p "$HOME/.gemini/antigravity-cli"
+printf '%s' '@TOKEN@' > "$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
+`, "@TOKEN@", agyDispatchToken)
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("写入假 CLI 失败: %v", err)
+	}
+	t.Setenv("AIH_AGY_BINARY", scriptPath)
+	manager := NewManager(Options{
+		AIHomeDir:   t.TempDir(),
+		HostHomeDir: t.TempDir(),
+	})
+	snapshot, err := manager.Start(context.Background(), "agy")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		current, _ := manager.Get(snapshot.ID)
+		if current.Status != StatusRunning {
+			if current.Status != StatusSucceeded {
+				t.Fatalf("status = %s err=%s logs=%s", current.Status, current.Error, current.Logs)
+			}
+			if current.AccountRef == "" || current.Provider != "agy" {
+				t.Fatalf("快照缺少账号: %#v", current)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("agy 登录作业未在 10s 内结束")
 }

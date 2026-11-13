@@ -29,6 +29,7 @@ import (
 	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/host/credentialregister"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/ptyhost"
@@ -144,33 +145,7 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 	if credentialErr != nil {
 		return accountcore.Account{}, credentialFailure(code, credentialErr)
 	}
-	accountRef, err = accountcore.DeriveAccountRef(credential)
-	if err != nil {
-		return accountcore.Account{}, fmt.Errorf("派生登录账号身份失败: %w", err)
-	}
-	// 已存在同一身份时走原子凭据替换；只有新身份才注册。
-	if overview, overviewErr := store.GetAccountOverview(ctx, accountRef); overviewErr == nil {
-		if err := replaceExisting(ctx, store, catalog, accountRef, credential, profile); err != nil {
-			return accountcore.Account{}, err
-		}
-		account := overview.Account()
-		_, _ = fmt.Fprintf(options.Stderr, "登录成功: %s #%d (%s)\n",
-			account.ProviderID(), account.CLIAccountID().Int64(), account.Ref())
-		return account, nil
-	} else if !errors.Is(overviewErr, accountapp.ErrAccountNotFound) {
-		return accountcore.Account{}, fmt.Errorf("检查登录账号是否存在失败: %w", overviewErr)
-	}
-	request, err := accountapp.NewRegistrationRequest(catalog, credential, profile, time.Now())
-	if err != nil {
-		return accountcore.Account{}, fmt.Errorf("构造账号注册请求失败: %w", err)
-	}
-	account, err := store.RegisterNew(ctx, request)
-	if err != nil {
-		return accountcore.Account{}, fmt.Errorf("注册登录账号失败: %w", err)
-	}
-	_, _ = fmt.Fprintf(options.Stderr, "登录成功: %s #%d (%s)\n",
-		account.ProviderID(), account.CLIAccountID().Int64(), account.Ref())
-	return account, nil
+	return credentialregister.Register(ctx, store, catalog, credential, profile, options.Stderr)
 }
 
 // withoutEnvironmentKeys 删除宿主上的家族账号/站点变量：登录进程必须从干净环境
@@ -227,41 +202,6 @@ func mergedEnvironment(base []string, overlay map[string]string) []string {
 		result = append(result, name+"="+values[name])
 	}
 	return result
-}
-
-func replaceExisting(
-	ctx context.Context,
-	store *sqliteaccount.Store,
-	catalog *providers.Catalog,
-	accountRef accountcore.AccountRef,
-	credential accountapp.Credential,
-	profile accountapp.PublicProfile,
-) error {
-	snapshot, err := store.GetCredentialSnapshot(ctx, accountRef)
-	if err != nil {
-		return fmt.Errorf("读取现有登录凭据失败: %w", err)
-	}
-	now := time.Now()
-	if !now.After(snapshot.UpdatedAt()) {
-		now = snapshot.UpdatedAt().Add(time.Millisecond)
-	}
-	replacement, err := accountapp.NewCredentialReplacement(snapshot, credential, now)
-	if err != nil {
-		return fmt.Errorf("构造登录凭据替换失败: %w", err)
-	}
-	if err := store.ReplaceCredential(ctx, replacement); err != nil {
-		return fmt.Errorf("更新登录凭据失败: %w", err)
-	}
-	if profile != nil {
-		profileSnapshot, snapshotErr := accountapp.NewProfileSnapshot(catalog, profile, now)
-		if snapshotErr != nil {
-			return fmt.Errorf("构造登录资料失败: %w", snapshotErr)
-		}
-		if err := store.UpsertProfile(ctx, profileSnapshot); err != nil {
-			return fmt.Errorf("更新登录资料失败: %w", err)
-		}
-	}
-	return nil
 }
 
 func temporaryAccountRef() (string, error) {

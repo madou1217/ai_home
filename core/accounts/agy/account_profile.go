@@ -67,8 +67,13 @@ func (AccountProfile) DisplayName() string { return "" }
 // Email 返回稳定公开邮箱。
 func (profile AccountProfile) Email() string { return profile.email }
 
-// SubscriptionKind 返回稳定套餐分类；agy 登录不携带套餐信息。
-func (AccountProfile) SubscriptionKind() string { return "" }
+// SubscriptionKind 返回稳定套餐分类。
+//
+// agy 登录不携带套餐信息，但账号库的 subscription_kind 是 NOT NULL +
+// length BETWEEN 1 AND 64 的稳定标签，空串会让整条注册事务撞 CHECK 失败
+//（「账号冲突」）。这里用库表约定的 unknown 表示「没有套餐证据」，而不是
+// 让上层把空值当成有效分类。
+func (AccountProfile) SubscriptionKind() string { return "unknown" }
 
 // SubscriptionRaw 返回上游原始套餐值；agy 登录不携带套餐信息。
 func (AccountProfile) SubscriptionRaw() string { return "" }

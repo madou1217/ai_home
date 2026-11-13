@@ -864,6 +864,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, modelsRulesRoutes...)
+	// AI 翻译与 Image Studio 生图工作台全量切 Go，Node 只做薄代理。
+	translationStudioRoutes, err := buildWebUITranslationStudioRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, translationStudioRoutes...)
 	return routes, nil
 }
 

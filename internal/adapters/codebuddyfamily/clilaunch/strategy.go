@@ -66,13 +66,85 @@ func (strategy *Strategy) Build(
 		!binding.AccountRef().IsValid() {
 		return providerlaunch.StrategyResult{}, ErrInvalidBinding
 	}
-	native, ok := binding.Credential().(*accountcore.NativeCredential)
-	if !ok || native == nil || native.ProviderID() != strategy.providerID {
+	switch credential := binding.Credential().(type) {
+	case *accountcore.NativeCredential:
+		if credential == nil || credential.ProviderID() != strategy.providerID {
+			return providerlaunch.StrategyResult{}, ErrUnsupportedCredential
+		}
+		if strings.ToLower(strings.TrimSpace(credential.AuthKind())) != "oauth" {
+			return providerlaunch.StrategyResult{}, ErrUnsupportedCredential
+		}
+		return strategy.buildOAuth()
+	case *accountcore.StaticAPIKeyAuth:
+		if credential == nil || credential.ProviderID() != strategy.providerID {
+			return providerlaunch.StrategyResult{}, ErrUnsupportedCredential
+		}
+		return strategy.buildAPIKey(credential)
+	default:
 		return providerlaunch.StrategyResult{}, ErrUnsupportedCredential
 	}
-	if strings.ToLower(strings.TrimSpace(native.AuthKind())) != "oauth" {
-		return providerlaunch.StrategyResult{}, ErrUnsupportedCredential
+}
+
+// buildOAuth 让官方 CLI 读取伪 HOME 里共享的 .info；退出后由投影层回写续期结果。
+func (strategy *Strategy) buildOAuth() (providerlaunch.StrategyResult, error) {
+	result, err := strategy.baseResult()
+	if err != nil {
+		return providerlaunch.StrategyResult{}, err
 	}
+	return result, nil
+}
+
+// buildAPIKey 把账号密钥重新注入子进程环境：宿主上的 CODEBUDDY_API_KEY 属于别的
+// 账号，必须先剥掉再 set。伪 HOME 仍然需要——否则 CLI 会读到宿主 .info 的 OAuth
+// 身份，把 api-key 账号静默换成另一个人。
+func (strategy *Strategy) buildAPIKey(
+	credential *accountcore.StaticAPIKeyAuth,
+) (providerlaunch.StrategyResult, error) {
+	set := map[string]string{
+		"CODEBUDDY_API_KEY": credential.APIKey(),
+	}
+	if baseURL := strings.TrimSpace(credential.BaseURL()); baseURL != "" {
+		set["CODEBUDDY_BASE_URL"] = baseURL
+	}
+	if strategy.siteInternal {
+		set["CODEBUDDY_INTERNET_ENVIRONMENT"] = "internal"
+		set["CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT"] = "internal"
+	}
+	// 只删没有重新注入的凭据变量；AUTH_TOKEN 与 API Key 是互斥身份。
+	unset := []string{"CODEBUDDY_AUTH_TOKEN"}
+	if _, ok := set["CODEBUDDY_BASE_URL"]; !ok {
+		unset = append(unset, "CODEBUDDY_BASE_URL")
+	}
+	environment, err := providerlaunch.NewEnvironmentPatch(set, unset)
+	if err != nil {
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 环境无效", ErrBuildLaunchContext)
+	}
+	projection, err := providerlaunch.NewProjectionDirective(
+		strategy.providerID,
+		providerlaunch.ProjectionModeFakeHome,
+	)
+	if err != nil {
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 投影指令无效", ErrBuildLaunchContext)
+	}
+	descriptor, err := providerlaunch.NewCredentialDescriptor(
+		accountcore.StaticAPIKeyAuthKind,
+		"",
+	)
+	if err != nil {
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 凭据摘要无效", ErrBuildLaunchContext)
+	}
+	return providerlaunch.NewStrategyResult(providerlaunch.StrategyResultInput{
+		ProviderID:  strategy.providerID,
+		Binary:      binaryName,
+		Environment: environment,
+		Runtime:     providerlaunch.NewDirectProcessRuntime(),
+		Projection:  projection,
+		Credential:  descriptor,
+	})
+}
+
+// baseResult 是 OAuth 账号的启动描述：伪 HOME 投影 + 剥离宿主凭据变量。
+func (strategy *Strategy) baseResult() (providerlaunch.StrategyResult, error) {
 	projection, err := providerlaunch.NewProjectionDirective(
 		strategy.providerID,
 		providerlaunch.ProjectionModeFakeHome,

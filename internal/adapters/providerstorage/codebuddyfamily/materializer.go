@@ -62,6 +62,11 @@ func (materializer *Materializer) Materialize(
 	if materializer == nil || root == "" || request.ProviderID != materializer.providerID {
 		return nil, accountprojection.ErrInvalidProjectionRequest
 	}
+	// API Key 账号没有 .info 可写：身份由启动策略注入的 CODEBUDDY_API_KEY 决定，
+	// 伪 HOME 只是隔离宿主登录态。
+	if _, ok := request.Credential.(*accountcore.StaticAPIKeyAuth); ok {
+		return nil, nil
+	}
 	native, ok := request.Credential.(*accountcore.NativeCredential)
 	if !ok || native == nil || native.ProviderID() != materializer.providerID {
 		return nil, ErrUnsupportedCredential
@@ -95,6 +100,10 @@ func (materializer *Materializer) Capture(
 ) (accountapp.Credential, bool, error) {
 	if materializer == nil || root == "" || request.ProviderID != materializer.providerID {
 		return nil, false, accountprojection.ErrInvalidProjectionRequest
+	}
+	// API Key 账号没有可回写的原生文件。
+	if _, ok := request.Credential.(*accountcore.StaticAPIKeyAuth); ok {
+		return nil, false, nil
 	}
 	current, ok := request.Credential.(*accountcore.NativeCredential)
 	if !ok || current == nil || current.ProviderID() != materializer.providerID {

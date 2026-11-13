@@ -81,7 +81,8 @@ func readSession(path string, modTime time.Time) Session {
 		return Session{}
 	}
 	defer file.Close()
-	reader := bufio.NewReader(io.LimitReader(file, 512*1024))
+	// 与 Node TITLE_SCAN_MAX_BYTES 一致：1MB 内找不到真实用户消息才放弃。
+	reader := bufio.NewReader(io.LimitReader(file, 1024*1024))
 	session := Session{UpdatedAtMS: modTime.UnixMilli()}
 	for {
 		line, readErr := reader.ReadString('\n')

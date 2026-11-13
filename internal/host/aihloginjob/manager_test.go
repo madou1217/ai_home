@@ -238,3 +238,41 @@ func TestDefaultPromptRules(t *testing.T) {
 		waitStatus(t, manager, snapshot.ID, StatusSucceeded)
 	}
 }
+
+// TestPromptRuleFiresOnce 同一提示重复出现只回答一次，避免把多余按键打进 TUI。
+func TestPromptRuleFiresOnce(t *testing.T) {
+	received := make(chan string, 4)
+	manager := NewManager(Options{
+		Run: func(ctx context.Context, options aihlogin.Options) (accountcore.Account, error) {
+			// 连续三次输出同一提示：只应收到一次 "2\r"。
+			for index := 0; index < 3; index++ {
+				_, _ = io.WriteString(options.Stdout, "Do you trust the files in this folder?\n2. Trust parent folder\n")
+				time.Sleep(5 * time.Millisecond)
+			}
+			one := make([]byte, 1)
+			buffer := make([]byte, 0, 4)
+			for {
+				if _, err := options.Stdin.Read(one); err != nil {
+					break
+				}
+				buffer = append(buffer, one...)
+				if one[0] == '\r' {
+					break
+				}
+			}
+			received <- string(buffer)
+			return accountcore.Account{}, nil
+		},
+	})
+	if _, err := manager.Start(context.Background(), "gemini"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	select {
+	case got := <-received:
+		if got != "2\r" {
+			t.Fatalf("按键 = %q, want 只一次 2\\r", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("没有收到应答")
+	}
+}

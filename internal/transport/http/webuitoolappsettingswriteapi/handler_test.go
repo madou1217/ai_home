@@ -49,6 +49,8 @@ func newTestHandler(t *testing.T, databasePath string) http.Handler {
 		Authorizer: fakeAuthorizer{allowed: true},
 		Providers:  newTestCatalog(),
 		Store:      DatabaseStore{DatabasePath: databasePath},
+		// applyToHost 会真的写宿主配置：测试必须隔离到临时家目录。
+		HostHomeDir: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
@@ -197,13 +199,13 @@ func TestFullOverwrite(t *testing.T) {
 	writeDocument(t, databasePath, `{"version":1,"apps":{
 		"claude":{"maxPermission":true,"applyToHost":false,"permissionArgs":["--permission-mode","bypassPermissions"],"updatedAt":11}
 	}}`)
-	recorder := put(newTestHandler(t, databasePath), "claude", `{"maxPermission":true,"applyToHost":false,"permissionArgs":["--auto"]}`)
+	recorder := put(newTestHandler(t, databasePath), "claude", `{"maxPermission":true,"applyToHost":false,"permissionArgs":["--permission-mode","plan"]}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 	settings := decodeBody(t, recorder)["settings"].(map[string]any)
 	args := settings["permissionArgs"].([]any)
-	if len(args) != 1 || args[0] != "--auto" {
+	if len(args) != 2 || args[0] != "--permission-mode" || args[1] != "plan" {
 		t.Fatalf("permissionArgs = %#v", args)
 	}
 	// 空数组同样是一次「整份覆盖」：显式清空参数列表。
@@ -242,7 +244,7 @@ func TestRejectsInvalidPayload(t *testing.T) {
 		{name: "参数元素不是字符串", body: `{"permissionArgs":[1]}`, code: "invalid_permission_payload"},
 		{name: "没有可写字段", body: `{}`, code: "invalid_permission_payload"},
 		{name: "关闭最大权限却写宿主", body: `{"maxPermission":false,"applyToHost":true}`, code: "apply_to_host_requires_max_permission"},
-		{name: "关闭最大权限却选参数", body: `{"maxPermission":false,"permissionArgs":["--auto"]}`, code: "permission_args_requires_max_permission"},
+		{name: "关闭最大权限却选参数", body: `{"maxPermission":false,"permissionArgs":["--permission-mode","plan"]}`, code: "permission_args_requires_max_permission"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -298,7 +300,12 @@ func TestConcurrentWritesDoNotClobber(t *testing.T) {
 			group.Add(1)
 			go func(appID string, index int) {
 				defer group.Done()
-				body := fmt.Sprintf(`{"maxPermission":true,"permissionArgs":["--auto-%d"]}`, index)
+				// 参数必须是该 Provider 权限目录里登记过的组合；两个 Provider 各用各的。
+				flags := `["--permission-mode","plan"]`
+				if appID == "codex" {
+					flags = `["--sandbox","read-only"]`
+				}
+				body := fmt.Sprintf(`{"maxPermission":true,"permissionArgs":%s,"updatedAt":%d}`, flags, index)
 				if recorder := put(handler, appID, body); recorder.Code != http.StatusOK {
 					t.Errorf("%s 第 %d 次写入 status = %d, body = %s", appID, index, recorder.Code, recorder.Body.String())
 				}
@@ -312,7 +319,7 @@ func TestConcurrentWritesDoNotClobber(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s 的记录丢了: %#v", appID, apps)
 		}
-		if args := record["permissionArgs"].([]any); len(args) != 1 {
+		if args := record["permissionArgs"].([]any); len(args) != 2 {
 			t.Fatalf("%s 的 permissionArgs = %#v", appID, args)
 		}
 	}

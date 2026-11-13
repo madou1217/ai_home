@@ -80,7 +80,7 @@ func providerMenuLabel(catalog ProviderCatalog, providerID string) string {
 	if !ok {
 		return ""
 	}
-	members := familyMembers(catalog, definition.Family)
+	members := familyMembers(catalog, definition)
 	if len(members) <= 1 {
 		return definition.Presentation.Label
 	}
@@ -104,12 +104,21 @@ func providerMenuLabel(catalog ProviderCatalog, providerID string) string {
 	return named.Presentation.Label + " · " + siteLabel
 }
 
-func familyMembers(catalog ProviderCatalog, family string) []providers.Definition {
+func familyMembers(catalog ProviderCatalog, definition providers.Definition) []providers.Definition {
+	lister, ok := catalog.(interface {
+		List() []providers.Definition
+	})
+	if !ok {
+		return []providers.Definition{definition}
+	}
 	members := make([]providers.Definition, 0, 2)
-	for _, definition := range catalog.List() {
-		if definition.Family == family {
-			members = append(members, definition)
+	for _, member := range lister.List() {
+		if member.Family == definition.Family {
+			members = append(members, member)
 		}
+	}
+	if len(members) == 0 {
+		return []providers.Definition{definition}
 	}
 	return members
 }
@@ -158,4 +167,19 @@ func describeCapability(
 
 func normalizeProviderID(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// CapabilityViewFor 返回 /settings 的 capability 模型（写路径组装响应时复用同一份事实）。
+func CapabilityViewFor(
+	definition providers.Definition,
+	catalog ProviderCatalog,
+	home string,
+	lookupEnv func(string) string,
+) any {
+	return describeCapability(definition, catalog, home, lookupEnv)
+}
+
+// ProviderLabel 返回与 Node getProviderMenuLabel 同义的应用名。
+func ProviderLabel(catalog ProviderCatalog, providerID string) string {
+	return providerMenuLabel(catalog, providerID)
 }

@@ -33,6 +33,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
@@ -90,13 +91,20 @@ type Dependencies struct {
 	Providers  ProviderCatalog
 	AIHomeDir  string
 	Store      SettingsStore
+	// HostHomeDir 是宿主 CLI 配置文件所在的家目录（applyToHost 写入目标）。
+	HostHomeDir string
+	// LookupEnv 允许测试注入 XDG_CONFIG_HOME / APPDATA。
+	LookupEnv func(string) string
 }
 
 // Handler 处理单个应用的启动权限设置写入。
 type Handler struct {
-	authorizer Authorizer
-	providers  ProviderCatalog
-	store      SettingsStore
+	authorizer  Authorizer
+	providers   ProviderCatalog
+	store       SettingsStore
+	aiHomeDir   string
+	hostHomeDir string
+	lookupEnv   func(string) string
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -115,10 +123,26 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		}
 		store = DatabaseStore{DatabasePath: databasePath}
 	}
+	lookupEnv := dependencies.LookupEnv
+	if lookupEnv == nil {
+		lookupEnv = func(key string) string {
+			value, _ := os.LookupEnv(key)
+			return value
+		}
+	}
+	hostHomeDir := strings.TrimSpace(dependencies.HostHomeDir)
+	if hostHomeDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			hostHomeDir = strings.TrimSpace(home)
+		}
+	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		providers:  dependencies.Providers,
-		store:      store,
+		authorizer:  dependencies.Authorizer,
+		providers:   dependencies.Providers,
+		store:       store,
+		aiHomeDir:   strings.TrimSpace(dependencies.AIHomeDir),
+		hostHomeDir: hostHomeDir,
+		lookupEnv:   lookupEnv,
 	}, nil
 }
 
@@ -134,22 +158,27 @@ type patch struct {
 // 字段与 Node 写路径的响应同名同义，但不含 label / capability / hostApply：
 // 前两者由读模型提供，hostApply 是宿主配置写入的结果，仍在代理层组装。
 type settingsResponse struct {
-	OK       bool                                        `json:"ok"`
-	AppID    string                                      `json:"appId"`
-	Provider string                                      `json:"provider"`
-	Settings webuitoolsettingsapi.ToolPermissionSettings `json:"settings"`
+	OK         bool                                        `json:"ok"`
+	AppID      string                                      `json:"appId"`
+	Provider   string                                      `json:"provider"`
+	Label      string                                      `json:"label"`
+	Settings   webuitoolsettingsapi.ToolPermissionSettings `json:"settings"`
+	Capability any                                         `json:"capability"`
+	HostApply  *HostApplyResult                            `json:"hostApply,omitempty"`
 }
 
 type errorResponse struct {
-	OK      bool   `json:"ok"`
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	OK         bool   `json:"ok"`
+	Error      string `json:"error"`
+	Message    string `json:"message"`
+	Validation any    `json:"validation,omitempty"`
 }
 
 // validationError 是请求语义不合法（400）；它在事务回调里产生，用于回滚整笔写入。
 type validationError struct {
-	code    string
-	message string
+	code       string
+	message    string
+	validation any
 }
 
 func (err validationError) Error() string { return err.message }
@@ -187,6 +216,49 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusBadRequest, invalid.code, invalid.message)
 		return
 	}
+	if changes.permissionArgs != nil {
+		unknown, conflicts := webuitoolsettingsapi.ValidatePermissionArgs(definition.ID, *changes.permissionArgs)
+		if len(unknown) > 0 || len(conflicts) > 0 {
+			messages := make([]string, 0, len(conflicts)+len(unknown))
+			conflictPayload := make([]map[string]string, 0, len(conflicts))
+			for _, conflict := range conflicts {
+				messages = append(messages, conflict.Message)
+				conflictPayload = append(conflictPayload, map[string]string{
+					"provider": definition.ID,
+					"message":  conflict.Message,
+				})
+			}
+			for _, item := range unknown {
+				messages = append(messages, "未登记或取值非法的参数："+item)
+			}
+			detail := strings.Join(messages, "；")
+			if detail == "" {
+				detail = "启动权限参数不合法"
+			}
+			writeErrorWithValidation(response, http.StatusBadRequest, "permission_args_invalid", detail, map[string]any{
+				"ok":        false,
+				"unknown":   unknown,
+				"conflicts": conflictPayload,
+			})
+			return
+		}
+	}
+	var hostApply *HostApplyResult
+	if changes.applyToHost != nil && *changes.applyToHost {
+		applied, applyErr := ApplyHostPermission(definition, handler.hostHomeDir, handler.lookupEnv, handler.aiHomeDir)
+		if applyErr != nil {
+			if !writeHostApplyError(response, applyErr) {
+				writeError(response, http.StatusInternalServerError,
+					"tool_permission_settings_write_failed", "写入宿主配置失败")
+			}
+			return
+		}
+		if !applied.Supported {
+			writeError(response, http.StatusBadRequest, "unsupported_app", "该 CLI 尚未登记可写入的宿主权限字段")
+			return
+		}
+		hostApply = &applied
+	}
 	saved, err := handler.store.Update(request.Context(), definition.ID, func(current webuitoolsettingsapi.ToolPermissionSettings) (webuitoolsettingsapi.ToolPermissionSettings, error) {
 		return mergeSettings(current, changes)
 	})
@@ -204,7 +276,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		OK:       true,
 		AppID:    definition.ID,
 		Provider: definition.ID,
+		Label:    webuitoolsettingsapi.ProviderLabel(handler.providers, definition.ID),
 		Settings: saved,
+		Capability: webuitoolsettingsapi.CapabilityViewFor(
+			definition, handler.providers, handler.hostHomeDir, handler.lookupEnv,
+		),
+		HostApply: hostApply,
 	})
 }
 
@@ -305,4 +382,39 @@ func writeJSON(response http.ResponseWriter, status int, payload any) {
 
 func writeError(response http.ResponseWriter, status int, code string, message string) {
 	writeJSON(response, status, errorResponse{OK: false, Error: code, Message: message})
+}
+
+func writeErrorWithValidation(response http.ResponseWriter, status int, code string, message string, validation any) {
+	writeJSON(response, status, errorResponse{OK: false, Error: code, Message: message, Validation: validation})
+}
+
+// writeHostApplyError 把宿主配置写入错误映射成既有状态码；返回 false 表示不是已知错误。
+func writeHostApplyError(response http.ResponseWriter, err error) bool {
+	var typed *hostApplyError
+	if !errors.As(err, &typed) {
+		return false
+	}
+	status := http.StatusInternalServerError
+	message := typed.message
+	switch typed.code {
+	case "provider_config_not_writable":
+		status = http.StatusForbidden
+	case "provider_config_conflict":
+		status = http.StatusConflict
+	case "provider_config_too_large":
+		status = http.StatusRequestEntityTooLarge
+	case "provider_config_validation_failed":
+		status = http.StatusUnprocessableEntity
+	case "provider_config_read_failed", "provider_config_save_failed", "host_config_unavailable":
+		status = http.StatusInternalServerError
+	default:
+		if strings.HasPrefix(typed.code, "provider_config_") {
+			status = http.StatusInternalServerError
+		}
+	}
+	if message == "" {
+		message = "写入宿主配置失败"
+	}
+	writeError(response, status, typed.code, message)
+	return true
 }

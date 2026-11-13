@@ -39,7 +39,6 @@ type Authorizer interface {
 // core/providers 的合同，本包不维护 provider 名单。
 type ProviderCatalog interface {
 	Get(id string) (providers.Definition, bool)
-	List() []providers.Definition
 }
 
 // SettingsReader 读取单个 Provider 的启动权限设置（生产实现见 SettingsSource）。

@@ -17,22 +17,30 @@ import (
 var hostPermissionProfiles = map[string]hostProfile{
 	"claude": {
 		FileID:   "settings",
+		Format:   "json",
 		Location: hostLocation{Kind: "provider-root", Parts: []string{"settings.json"}},
+		Patch:    map[string]string{"permissions.defaultMode": "bypassPermissions"},
 	},
 	"codex": {
 		FileID:   "config",
+		Format:   "toml",
 		Location: hostLocation{Kind: "provider-root", Parts: []string{"config.toml"}},
+		Patch:    map[string]string{"approval_policy": "never", "sandbox_mode": "danger-full-access"},
 	},
 	"opencode": {
 		FileID:   "config",
+		Format:   "json",
 		Location: hostLocation{Kind: "provider-root", Parts: []string{"opencode.json"}},
 		Alternatives: []hostLocation{
 			{Kind: "provider-root", Parts: []string{"opencode.jsonc"}},
 		},
+		Patch: map[string]string{"permission": "allow"},
 	},
 	"agy": {
 		FileID:   "settings",
+		Format:   "json",
 		Location: hostLocation{Kind: "home", Parts: []string{".gemini", "antigravity-cli", "settings.json"}},
+		Patch:    map[string]string{"toolPermission": "always-proceed"},
 	},
 }
 
@@ -43,16 +51,62 @@ type hostLocation struct {
 
 type hostProfile struct {
 	FileID       string
+	Format       string
 	Location     hostLocation
 	Alternatives []hostLocation
+	// Patch 是「写入最大权限」时要设置的字段；只有验证过 schema 的 provider 才登记。
+	Patch map[string]string
 }
 
 type hostTarget struct {
 	FileID            string
+	AbsolutePath      string
 	DisplayPath       string
+	Format            string
+	Patch             map[string]string
 	Exists            bool
 	Writable          bool
 	RequiresElevation bool
+}
+
+// HostWriteTarget 是宿主配置文件写入所需的事实（路径 + 格式 + 字段补丁）。
+type HostWriteTarget struct {
+	Provider          string
+	FileID            string
+	AbsolutePath      string
+	DisplayPath       string
+	Format            string
+	Patch             map[string]string
+	Exists            bool
+	Writable          bool
+	RequiresElevation bool
+}
+
+// ResolveHostWriteTarget 返回某个 Provider 的宿主权限写入目标；未登记返回 known=false。
+func ResolveHostWriteTarget(
+	definition providers.Definition,
+	home string,
+	lookupEnv func(string) string,
+) (HostWriteTarget, bool, error) {
+	profile, known := hostPermissionProfiles[definition.ID]
+	if !known {
+		return HostWriteTarget{}, false, nil
+	}
+	target, err := describeHostTarget(definition, profile, home, lookupEnv)
+	if err != nil {
+		return HostWriteTarget{}, true, err
+	}
+	return HostWriteTarget{
+		Provider:          definition.ID,
+		FileID:            target.FileID,
+		AbsolutePath:      target.AbsolutePath,
+		DisplayPath:       target.DisplayPath,
+		Format:            target.Format,
+		Patch:             target.Patch,
+		Exists:            target.Exists,
+		Writable:          target.Writable,
+		RequiresElevation: target.RequiresElevation,
+	}, true, nil
 }
 
 // maxHostConfigBytes 与 Node provider-config-manager 的 2MB 编辑上限一致：
@@ -115,7 +169,10 @@ func describeHostTarget(
 	writable := writableTarget(absolute)
 	return hostTarget{
 		FileID:            profile.FileID,
+		AbsolutePath:      absolute,
 		DisplayPath:       displayHostPath(absolute, home),
+		Format:            profile.Format,
+		Patch:             profile.Patch,
 		Exists:            exists,
 		Writable:          writable,
 		RequiresElevation: !writable,

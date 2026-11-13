@@ -120,15 +120,16 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && (arguments[1] == "terminal-icon" || arguments[1] == "terminal-icons") {
 		return runProviderTerminalIcon(ctx, providerID, arguments[2:], runtime)
 	}
+	// 删除投影已全量迁入 Go deletionprojection（Node 的 node-only 钩子表为空），
+	// 所有 Provider 的 delete/deleteall 都由 Go Server 承担。
+	if len(arguments) >= 2 && arguments[1] == "delete" {
+		return runProviderDelete(ctx, providerID, arguments[2:], runtime)
+	}
+	if len(arguments) == 2 && (arguments[1] == "deleteall" || arguments[1] == "delete-all") {
+		return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
+	}
 	if len(arguments) >= 2 && codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		switch arguments[1] {
-		case "delete":
-			return runProviderDelete(ctx, providerID, arguments[2:], runtime)
-		case "deleteall", "delete-all":
-			if len(arguments) != 2 {
-				return fmt.Errorf("%w: 用法 aih %s deleteall", errInvalidCommand, providerID)
-			}
-			return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
 		case "detect":
 			return runProviderDetect(ctx, providerID, arguments[2:], runtime)
 		}

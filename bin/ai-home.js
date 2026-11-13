@@ -526,7 +526,10 @@ function tryRunGoProviderCommonCommand() {
     args.length >= 2;
   // 自动换号是全局 config:usage，Go 的读写口径与家族同一实现。
   const isAutoSwitch = command === 'auto-switch' && args.length >= 2 && args.length <= 5;
-  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch) return false;
+  // 删除投影已全量迁 Go（Node node-only 钩子表为空）：delete <id...> / deleteall。
+  const isDelete = command === 'delete' && args.length >= 3;
+  const isDeleteAll = (command === 'deleteall' || command === 'delete-all') && args.length === 2;
+  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll) return false;
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';
@@ -554,7 +557,7 @@ function tryRunGoProviderCommonCommand() {
     }
   }
   if (!aiHomeDir) return false;
-  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch;
+  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll;
   let managementKey = '';
   if (needsServer) {
     let config = null;

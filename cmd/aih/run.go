@@ -103,6 +103,8 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 				return fmt.Errorf("%w: 用法 aih %s deleteall", errInvalidCommand, providerID)
 			}
 			return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
+		case "detect":
+			return runProviderDetect(ctx, providerID, arguments[2:], runtime)
 		}
 	}
 	if len(arguments) >= 2 && arguments[1] == "auto-switch" &&

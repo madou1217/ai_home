@@ -115,6 +115,11 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			}
 		}
 	}
+	// 终端图标对所有 Provider 通用：图标与 GUID 都来自 Provider 合同与内嵌资产，
+	// 不依赖账号投影或家族站点，因此不受家族分支限制。
+	if len(arguments) >= 2 && (arguments[1] == "terminal-icon" || arguments[1] == "terminal-icons") {
+		return runProviderTerminalIcon(ctx, providerID, arguments[2:], runtime)
+	}
 	if len(arguments) >= 2 && codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		switch arguments[1] {
 		case "delete":
@@ -126,8 +131,6 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
 		case "detect":
 			return runProviderDetect(ctx, providerID, arguments[2:], runtime)
-		case "terminal-icon", "terminal-icons":
-			return runProviderTerminalIcon(ctx, providerID, arguments[2:], runtime)
 		}
 	}
 	if len(arguments) >= 2 && arguments[1] == "auto-switch" &&

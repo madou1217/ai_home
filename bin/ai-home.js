@@ -413,15 +413,43 @@ function tryRunGoCodexSessionsHistory() {
   return true;
 }
 
-// 非 TTY 下的 aih <codex|claude> ls [id] 固定走 Go：静态表格即可，交互动画仍交 Node。
-function tryRunGoProviderLs() {
+// aih <provider> 的通用只读命令（ls / usage / terminal-icon）固定走 Go。
+//
+// 账号事实在 Go 账号库里：Node 的本地索引只剩它自己创建的账号，Go 账号会显示
+// 「No profiles found」（agy/gemini/opencode/cline/qoder/zcode 实测均如此）。
+// codex/claude 的账号列表在 TTY 下有逐行补算动画，保留 Node 实现；其余 Provider
+// 与家族同口径，直接交给 Go。
+function goProviderHasCli(provider) {
+  try {
+    const { isSupportedAiCli } = require('../lib/cli/services/ai-cli/provider-registry');
+    return isSupportedAiCli(provider);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function tryRunGoProviderCommonCommand() {
   const args = process.argv.slice(2);
-  if (args.length < 2 || args.length > 3) return false;
+  if (args.length < 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
-  if (provider !== 'codex' && provider !== 'claude') return false;
-  if (String(args[1] || '').trim().toLowerCase() !== 'ls') return false;
-  if (args.length === 3 && !/^\d+$/.test(String(args[2] || '').trim())) return false;
-  if (process.stdout.isTTY) return false;
+  // 家族有专门入口（多站点/别名），不要在这里重复处理。
+  if (!provider || GO_FAMILY_PROVIDERS.has(provider)) return false;
+  const command = String(args[1] || '').trim().toLowerCase();
+  const numeric = (value) => /^\d+$/.test(String(value || '').trim());
+  const isList = command === 'ls' &&
+    (args.length === 2 || (args.length === 3 && numeric(args[2])));
+  const isUsageAll = command === 'usage' &&
+    (args.length === 2 || (args.length === 3 && args[2] === '--refresh'));
+  const isUsageOne = command === 'usage' &&
+    ((args.length === 3 && numeric(args[2])) ||
+      (args.length === 4 && numeric(args[2]) && args[3] === '--refresh'));
+  const isTerminalIcon = (command === 'terminal-icon' || command === 'terminal-icons') &&
+    args.length >= 2;
+  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon) return false;
+  if (!goProviderHasCli(provider)) return false;
+  // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
+  const animatedProvider = provider === 'codex' || provider === 'claude';
+  if (animatedProvider && (isList || isUsageAll) && process.stdout.isTTY) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();
@@ -445,26 +473,28 @@ function tryRunGoProviderLs() {
     }
   }
   if (!aiHomeDir) return false;
-  let config = null;
-  try {
-    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
-  } catch (_error) {
-    config = null;
+  const needsServer = isList || isUsageAll || isUsageOne;
+  let managementKey = '';
+  if (needsServer) {
+    let config = null;
+    try {
+      config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+    } catch (_error) {
+      config = null;
+    }
+    managementKey = String(config && config.managementKey || '').trim();
+    if (!managementKey) return false;
   }
-  const managementKey = String(config && config.managementKey || '').trim();
-  if (!managementKey) return false;
-  const env = {
-    ...process.env,
-    AIH_HOME_DIR: aiHomeDir,
-    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
-    AIH_SERVER_MANAGEMENT_KEY: managementKey
-  };
+  const env = { ...process.env, AIH_HOME_DIR: aiHomeDir };
+  if (needsServer) {
+    env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
+  }
   if (hostHome) env.AIH_HOST_HOME = hostHome;
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
   process.exitCode = Number.isInteger(result.status) ? result.status : 1;
   return true;
 }
-
 // aih <provider> sessions --history（非家族）固定走 Go：复用 sessionscan 读取器。
 const GO_SESSION_HISTORY_PROVIDERS = new Set([
   'claude', 'gemini', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kiro', 'cline', 'zcode'
@@ -924,6 +954,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

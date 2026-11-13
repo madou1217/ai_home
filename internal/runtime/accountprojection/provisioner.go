@@ -310,6 +310,69 @@ func (provisioner *Provisioner) applyProjection(
 			}
 		}
 	}
+	if err := provisioner.applyHostLinks(request, policy, root); err != nil {
+		return err
+	}
+	return nil
+}
+
+// applyHostLinks 把宿主缓存/共享数据根链接进投影。
+//
+// 与 ensureSharedEntry 的差别：宿主目标不存在时直接跳过，不能造悬空链接；
+// 投影里已有真实目录/文件时也不删（可能是客户端刚写的缓存），只接管空的或
+// 已托管的链接。
+func (provisioner *Provisioner) applyHostLinks(
+	request appprojection.Request,
+	policy appprojection.Policy,
+	root string,
+) error {
+	links := make([]appprojection.SharedLink, 0, len(policy.SharedHostCaches)+len(policy.SharedHostDataRoots)+len(policy.SharedHostDedupe))
+	links = append(links, policy.SharedHostCaches...)
+	links = append(links, policy.SharedHostDataRoots...)
+	links = append(links, policy.SharedHostDedupe...)
+	for _, link := range links {
+		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
+			continue
+		}
+		if len(link.Exclude) > 0 {
+			// 部分排除需要目录级复制；Go 只做整链接，遇到排除项宁可跳过也不泄露账号态。
+			continue
+		}
+		target, err := joinUnder(request.HostHomeDir, link.Host)
+		if err != nil {
+			return err
+		}
+		targetInfo, targetErr := os.Stat(target)
+		if errors.Is(targetErr, fs.ErrNotExist) {
+			continue
+		} else if targetErr != nil {
+			return targetErr
+		}
+		source, err := joinUnder(root, link.Projection)
+		if err != nil {
+			return err
+		}
+		if info, sourceErr := os.Lstat(source); sourceErr == nil {
+			if provisioner.linker.IsManaged(source, target) {
+				continue
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				continue
+			}
+			return fmt.Errorf("%w: %s is an unmanaged symlink", appprojection.ErrProjectionConflict, source)
+		} else if !errors.Is(sourceErr, fs.ErrNotExist) {
+			return sourceErr
+		}
+		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+			return err
+		}
+		if err := provisioner.linker.Link(source, target, targetInfo.IsDir()); err != nil {
+			if errors.Is(err, fs.ErrExist) && provisioner.linker.IsManaged(source, target) {
+				continue
+			}
+			return err
+		}
+	}
 	return nil
 }
 

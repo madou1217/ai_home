@@ -76,6 +76,81 @@ function tryLsFastPath() {
   }
 }
 
+// CodeBuddy / WorkBuddy 家族裸启动（只有 provider + 数字账号）固定走 Go CLI：
+// Go 侧已有 fake-home 投影、共享 .info 物化与退出捕获。Go 二进制缺失时明确报错，
+// 不悄悄回退 Node —— 回退会让同一账号在两套投影语义之间切换。
+const GO_FAMILY_PROVIDERS = new Set(['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']);
+
+function tryRunGoFamilyLaunch() {
+  const args = process.argv.slice(2);
+  if (args.length !== 2) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
+  if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const root = path.resolve(__dirname, '..');
+  const binary = path.join(
+    root,
+    'bin',
+    'native',
+    `${process.platform}-${process.arch}`,
+    process.platform === 'win32' ? 'aih-go.exe' : 'aih-go'
+  );
+  if (!fs.existsSync(binary)) {
+    process.stderr.write(`[aih] Go CLI 未构建：${binary}\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n`);
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  const env = { ...process.env };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  if (aiHomeDir) env.AIH_HOME_DIR = aiHomeDir;
+  // 出口守卫：Go CLI 还没有账号级出口代理。url/pool/system/retired 账号交回 Node；
+  // direct 在 Node 侧是「绕过任何代理」，这里显式清代理并 NO_PROXY=*，语义一致。
+  if (aiHomeDir) {
+    try {
+      const { resolveAccountRefByCliId } = require('../lib/server/account-ref-store');
+      const account = resolveAccountRefByCliId(fs, aiHomeDir, provider, args[1], { bestEffort: true });
+      if (!account) return false;
+      const { listAccountEgressBindings } = require('../lib/account/zcode-egress-binding-store');
+      const entries = listAccountEgressBindings(fs, aiHomeDir);
+      const binding = entries.find((entry) => entry && entry.accountRef === account.accountRef);
+      const record = binding && binding.binding;
+      const mode = String(record && record.mode || '').trim().toLowerCase();
+      if (record && (record.retired || ['url', 'pool', 'system'].includes(mode))) {
+        return false;
+      }
+      if (mode === 'direct') {
+        for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) {
+          delete env[key];
+        }
+        env.NO_PROXY = '*';
+        env.no_proxy = '*';
+      }
+    } catch (_error) {
+      return false;
+    }
+  }
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 const fastPathVerb = process.argv[2];
 if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
   const complete = require('../lib/cli/complete');
@@ -86,6 +161,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

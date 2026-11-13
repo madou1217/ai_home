@@ -20,7 +20,7 @@
     "gateway:routes": "node scripts/collect-gateway-routes.js",
     "gateway:shadow": "node scripts/gateway-shadow-compare.js",
     "chat:legacy-readiness": "node scripts/chat-legacy-readiness.js",
-    "go:build": "node scripts/build-go-server.js",
+    "go:build": "node scripts/build-go-server.js && node scripts/build-go-cli.js",
     "go:migrate-accounts": "node scripts/go-account-migration.js",
     "pkg:build": "node scripts/package/build-release.js",
     "pkg:host": "node scripts/package/build-release.js --targets host --skip-web-build",

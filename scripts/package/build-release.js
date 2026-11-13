@@ -173,11 +173,13 @@ async function buildTarget(options) {
   if (options.withGo) {
     try {
       buildGoCore(repositoryRoot, target, log);
+      const { buildGoCLI } = require('../build-go-cli');
+      buildGoCLI({ repositoryRoot, platform: target.platform, arch: target.arch, stdio: 'inherit' });
       goBuilt = true;
     } catch (error) {
-      // Go Core 是可选的加速数据面，缺它时 Node 会接管全部路由。
+      // Go Core 是可选的加速数据面；Go CLI 缺失时家族裸启动会显式报错（不回落 Node）。
       // 不让一个平台的交叉编译失败拖垮整批安装包。
-      log(`[pkg] warning: Go Core build failed for ${targetKey(target)}: ${error.message}`);
+      log(`[pkg] warning: Go build failed for ${targetKey(target)}: ${error.message}`);
     }
   }
 

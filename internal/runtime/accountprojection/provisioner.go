@@ -449,8 +449,21 @@ func (provisioner *Provisioner) ensureSharedEntry(
 			}
 		} else {
 			same, err := sameFileContent(source, target)
-			if err != nil || !same {
-				return fmt.Errorf("%w: %s differs from host", appprojection.ErrProjectionConflict, name)
+			if err != nil {
+				return err
+			}
+			if !same {
+				if sessionEntry {
+					return fmt.Errorf("%w: %s differs from host", appprojection.ErrProjectionConflict, name)
+				}
+				// 配置类共享文件允许一次性归一：settings.json 先把投影内容并进宿主
+				// 规范文件（target 优先，对齐 Node codebuddy-shared-config），其它文件
+				// 以宿主为规范源。归一后删投影副本并建链接，之后永远只有一份实体。
+				if name == "settings.json" {
+					if err := mergeSettingsFile(source, target); err != nil {
+						return err
+					}
+				}
 			}
 			if err := os.Remove(source); err != nil {
 				return err

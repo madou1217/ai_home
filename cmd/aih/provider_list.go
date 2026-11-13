@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -69,6 +70,9 @@ func runProviderList(
 		}
 		afterRef = result.NextAfterRef
 	}
+	sort.SliceStable(accounts, func(left, right int) bool {
+		return accounts[left].CLIAccountID.Int64() < accounts[right].CLIAccountID.Int64()
+	})
 	writeProviderList(runtime.stdout, providerID, accounts, displayNames, client, ctx)
 	return nil
 }

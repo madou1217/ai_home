@@ -385,6 +385,29 @@ func containsPath(paths []string, target string) bool {
 //
 // 读模型不可用时明确报错（Handler 回 503）：空快照会被前端当成「账号全没了」，
 // 比一次明确的不可用更糟。
+// liveSnapshot 返回最新实时账号列表，始终直读权威 SQLite + 运行态叠加层，并在已有长连快照时顺便同步给观察者。
+func (hub *Hub) liveSnapshot(ctx context.Context) ([]webuiaccountsapi.Row, int64, map[string]json.RawMessage, error) {
+	hub.refreshMu.Lock()
+	defer hub.refreshMu.Unlock()
+
+	rows, err := hub.loadRows(ctx)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	hub.mu.Lock()
+	hasSnapshot := hub.hasSnapshot
+	revision := hub.revision
+	hub.mu.Unlock()
+	if hasSnapshot {
+		if applyErr := hub.applyRows(rows, false); applyErr == nil {
+			hub.mu.Lock()
+			revision = hub.revision
+			hub.mu.Unlock()
+		}
+	}
+	return rows, revision, hub.capabilities(), nil
+}
+
 func (hub *Hub) ensureSnapshot(ctx context.Context) ([]webuiaccountsapi.Row, int64, error) {
 	hub.initialMu.Lock()
 	defer hub.initialMu.Unlock()
@@ -435,12 +458,17 @@ func (hub *Hub) requestRefresh() (int64, bool) {
 	hub.lastRequest = requestedAt
 	hub.forceQueued = true
 	revision := hub.revision
-	hub.mu.Unlock()
-
-	hub.broadcastFrame(snapshotRequestedFrame{
+	// 在释放 hub.mu 前把 snapshot-requested 放进订阅者队列，保证它严格先于随后由 forceQueued 触发的 hydrated 帧到达。
+	frame := mustEncodeFrame(snapshotRequestedFrame{
 		Type: "snapshot-requested", Revision: revision,
 		RequestedAt: requestedAt, Hydrating: true,
 	})
+	dropped := hub.enqueueLocked(frame)
+	hub.mu.Unlock()
+
+	for _, sub := range dropped {
+		hub.unsubscribe(sub)
+	}
 	hub.signal()
 	return requestedAt, alreadyRunning
 }
@@ -588,24 +616,32 @@ func (hub *Hub) broadcastFrame(payload any) {
 	}
 }
 
+func (hub *Hub) enqueueLocked(frame []byte) []*subscriber {
+	if frame == nil || len(hub.subs) == 0 {
+		return nil
+	}
+	var dropped []*subscriber
+	for sub := range hub.subs {
+		select {
+		case sub.events <- frame:
+		case <-sub.done:
+		default:
+			dropped = append(dropped, sub)
+		}
+	}
+	return dropped
+}
+
 // broadcast 永不阻塞：慢订阅者积压满队列就断开，浏览器会自行重连。
 func (hub *Hub) broadcast(frame []byte) {
 	if frame == nil {
 		return
 	}
 	hub.mu.Lock()
-	targets := make([]*subscriber, 0, len(hub.subs))
-	for sub := range hub.subs {
-		targets = append(targets, sub)
-	}
+	dropped := hub.enqueueLocked(frame)
 	hub.mu.Unlock()
-	for _, sub := range targets {
-		select {
-		case sub.events <- frame:
-		case <-sub.done:
-		default:
-			hub.unsubscribe(sub)
-		}
+	for _, sub := range dropped {
+		hub.unsubscribe(sub)
 	}
 }
 
@@ -689,6 +725,7 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 			row.TokenUsageSource = "go"
 		}
 	}
+	hub.enrichExtras(ctx, rows)
 }
 
 func (hub *Hub) loadStates(ctx context.Context) map[string]runtimecore.AccountState {

@@ -41,6 +41,7 @@ const (
 	providerWorkbuddyCN = "workbuddycn"
 	providerKimi        = "kimi"
 	providerKiro        = "kiro"
+	providerZcode       = "zcode"
 )
 
 // Clock 返回凭据 CAS 使用的当前业务时间。

@@ -3,6 +3,7 @@ package accounts
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -24,6 +25,8 @@ var (
 	ErrInvalidStaticCredentialRotatorDependencies = errors.New("静态账号凭据轮换依赖无效")
 	// ErrStaticCredentialEditIncomplete 表示编辑没有提供切换认证方式所需的新密钥。
 	ErrStaticCredentialEditIncomplete = errors.New("静态账号凭据编辑缺少必填字段")
+	// ErrStaticBaseURLUnsupported 表示当前认证模式不支持自定义 Base URL。
+	ErrStaticBaseURLUnsupported = errors.New("当前认证模式不支持自定义 Base URL")
 )
 
 // StaticCredentialEdit 是 WebUI 形态的静态凭据编辑命令：空密钥表示沿用当前密钥，
@@ -134,11 +137,19 @@ func validStaticCredentialRotation(
 		updatedAt.After(current.UpdatedAt())
 }
 
-// isRotatableStaticCredential 只允许当前已研究的 Codex/Claude 静态凭据形态。
+// isRotatableStaticCredential 允许 Codex/Claude/Gemini 以及通用 StaticAPIKeyAuth 静态凭据原地轮换。
 func isRotatableStaticCredential(credential Credential) bool {
-	switch credential.(type) {
-	case *codex.APIKeyAuth, *claude.APIKeyAuth, *claude.AuthTokenAuth, *gemini.VertexAuth:
-		return true
+	switch typed := credential.(type) {
+	case *codex.APIKeyAuth:
+		return typed != nil
+	case *claude.APIKeyAuth:
+		return typed != nil
+	case *claude.AuthTokenAuth:
+		return typed != nil
+	case *gemini.VertexAuth:
+		return typed != nil
+	case *accountcore.StaticAPIKeyAuth:
+		return typed != nil
 	default:
 		return false
 	}
@@ -278,6 +289,11 @@ func (rotator *StaticCredentialRotator) Edit(
 
 // replacementForEdit 只在 Provider 领域类型已知时构造替换凭据；未知形态 fail-closed。
 func replacementForEdit(current Credential, edit StaticCredentialEdit) (Credential, error) {
+	if edit.IncludeBaseURL && strings.TrimSpace(edit.BaseURL) != "" {
+		if _, err := accountcore.NormalizeStaticBaseURL(edit.BaseURL); err != nil {
+			return nil, err
+		}
+	}
 	switch credential := current.(type) {
 	case *codex.APIKeyAuth:
 		kind := normalizeStaticEditKind(edit.AuthKind)
@@ -295,11 +311,18 @@ func replacementForEdit(current Credential, edit StaticCredentialEdit) (Credenti
 		if edit.IncludeBaseURL {
 			baseURL = strings.TrimSpace(edit.BaseURL)
 		}
-		return codex.NewAPIKeyAuth(codex.APIKeyInput{APIKey: apiKey, BaseURL: baseURL})
+		auth, err := codex.NewAPIKeyAuth(codex.APIKeyInput{APIKey: apiKey, BaseURL: baseURL})
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", accountcore.ErrInvalidStaticAPIKey, err)
+		}
+		return auth, nil
 	case *claude.APIKeyAuth:
 		kind := normalizeStaticEditKind(edit.AuthKind)
 		if kind == "" {
 			kind = "api-key"
+		}
+		if kind != "api-key" && kind != "auth-token" {
+			return nil, ErrStaticCredentialRotationUnsupported
 		}
 		baseURL := credential.BaseURL()
 		if edit.IncludeBaseURL {
@@ -313,19 +336,30 @@ func replacementForEdit(current Credential, edit StaticCredentialEdit) (Credenti
 			if apiKey == "" {
 				return nil, ErrStaticCredentialEditIncomplete
 			}
-			return claude.NewAPIKeyAuth(claude.APIKeyInput{APIKey: apiKey, BaseURL: baseURL})
+			auth, err := claude.NewAPIKeyAuth(claude.APIKeyInput{APIKey: apiKey, BaseURL: baseURL})
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", accountcore.ErrInvalidStaticAPIKey, err)
+			}
+			return auth, nil
 		}
 		if strings.TrimSpace(edit.APIKey) == "" {
 			return nil, ErrStaticCredentialEditIncomplete
 		}
-		return claude.NewAuthTokenAuth(claude.AuthTokenInput{
+		auth, err := claude.NewAuthTokenAuth(claude.AuthTokenInput{
 			AuthToken: strings.TrimSpace(edit.APIKey),
 			BaseURL:   baseURL,
 		})
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", accountcore.ErrInvalidStaticAPIKey, err)
+		}
+		return auth, nil
 	case *claude.AuthTokenAuth:
 		kind := normalizeStaticEditKind(edit.AuthKind)
 		if kind == "" {
 			kind = "auth-token"
+		}
+		if kind != "auth-token" && kind != "api-key" {
+			return nil, ErrStaticCredentialRotationUnsupported
 		}
 		baseURL := credential.BaseURL()
 		if edit.IncludeBaseURL {
@@ -339,15 +373,23 @@ func replacementForEdit(current Credential, edit StaticCredentialEdit) (Credenti
 			if token == "" {
 				return nil, ErrStaticCredentialEditIncomplete
 			}
-			return claude.NewAuthTokenAuth(claude.AuthTokenInput{AuthToken: token, BaseURL: baseURL})
+			auth, err := claude.NewAuthTokenAuth(claude.AuthTokenInput{AuthToken: token, BaseURL: baseURL})
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", accountcore.ErrInvalidStaticAPIKey, err)
+			}
+			return auth, nil
 		}
 		if strings.TrimSpace(edit.APIKey) == "" {
 			return nil, ErrStaticCredentialEditIncomplete
 		}
-		return claude.NewAPIKeyAuth(claude.APIKeyInput{
+		auth, err := claude.NewAPIKeyAuth(claude.APIKeyInput{
 			APIKey:  strings.TrimSpace(edit.APIKey),
 			BaseURL: baseURL,
 		})
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", accountcore.ErrInvalidStaticAPIKey, err)
+		}
+		return auth, nil
 	case *gemini.VertexAuth:
 		kind := normalizeStaticEditKind(edit.AuthKind)
 		if kind != "" && kind != "api-key" && kind != "vertex-ai" {
@@ -367,6 +409,33 @@ func replacementForEdit(current Credential, edit StaticCredentialEdit) (Credenti
 			APIKey:      apiKey,
 			BaseURL:     baseURL,
 			Placeholder: credential.Placeholder(),
+		})
+	case *accountcore.StaticAPIKeyAuth:
+		if credential == nil {
+			return nil, ErrStaticCredentialRotationUnsupported
+		}
+		kind := normalizeStaticEditKind(edit.AuthKind)
+		if kind != "" && kind != "api-key" {
+			return nil, ErrStaticCredentialRotationUnsupported
+		}
+		apiKey := strings.TrimSpace(edit.APIKey)
+		if apiKey == "" {
+			apiKey = credential.APIKey()
+		}
+		if apiKey == "" {
+			return nil, ErrStaticCredentialEditIncomplete
+		}
+		baseURL := credential.BaseURL()
+		if edit.IncludeBaseURL {
+			baseURL = strings.TrimSpace(edit.BaseURL)
+		}
+		if credential.ProviderID() == gemini.ProviderID && baseURL != "" {
+			return nil, ErrStaticBaseURLUnsupported
+		}
+		return accountcore.NewStaticAPIKeyAuth(accountcore.StaticAPIKeyInput{
+			ProviderID: credential.ProviderID(),
+			APIKey:     apiKey,
+			BaseURL:    baseURL,
 		})
 	default:
 		return nil, ErrStaticCredentialRotationUnsupported

@@ -431,6 +431,24 @@ func TestUpdateMapsUseCaseErrors(t *testing.T) {
 			wantCode:   "invalid_account",
 		},
 		{
+			name:       "base url unsupported",
+			err:        accountapp.ErrStaticBaseURLUnsupported,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "base_url_unsupported",
+		},
+		{
+			name:       "invalid base url",
+			err:        accountcore.ErrInvalidStaticBaseURL,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "invalid_base_url",
+		},
+		{
+			name:       "invalid api key",
+			err:        accountcore.ErrInvalidStaticAPIKey,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "invalid_api_key",
+		},
+		{
 			name:       "unexpected failure",
 			err:        errors.New("boom"),
 			wantStatus: http.StatusInternalServerError,
@@ -453,6 +471,49 @@ func TestUpdateMapsUseCaseErrors(t *testing.T) {
 			}
 			if len(editor.calls) != 1 {
 				t.Fatalf("Edit() calls = %d, want 1", len(editor.calls))
+			}
+		})
+	}
+}
+
+func TestUpdateForwardsAuthKindAndNonCodexProvider(t *testing.T) {
+	accountRef := testAccountRef(t)
+	cases := []struct {
+		name     string
+		provider string
+		body     string
+		wantKind string
+	}{
+		{
+			name:     "claude credentialType",
+			provider: "claude",
+			body:     `{"apiKey":"tok-new","credentialType":"auth-token"}`,
+			wantKind: "auth-token",
+		},
+		{
+			name:     "claude authMode fallback",
+			provider: "claude",
+			body:     `{"apiKey":"sk-new","authMode":"api-key"}`,
+			wantKind: "api-key",
+		},
+		{
+			name:     "kimi generic static provider",
+			provider: "kimi",
+			body:     `{"apiKey":"sk-kimi","baseUrl":"https://api.moonshot.cn/v1"}`,
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			editor := &stubEditor{}
+			handler := newUpdateHandler(t, testAuthorizer(true), stubDirectory{
+				overview: testOverview(t, testCase.provider, accountRef),
+			}, editor)
+			recorder := postUpdate(t, handler, testCase.provider, testRefText, testCase.body)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+			}
+			if len(editor.calls) != 1 || editor.calls[0].edit.AuthKind != testCase.wantKind {
+				t.Fatalf("calls = %+v, want AuthKind=%q", editor.calls, testCase.wantKind)
 			}
 		})
 	}

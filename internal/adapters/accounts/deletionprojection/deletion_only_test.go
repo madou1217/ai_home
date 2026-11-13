@@ -291,4 +291,43 @@ func TestDeletionOnlyProviderRemovesProjectionAndKeepsHost(t *testing.T) {
 	t.Run("kimi", func(t *testing.T) {
 		runDeletionOnlyCase(t, "kimi", kimiNativePayload(), writeKimiProjection)
 	})
+	t.Run("zcode", func(t *testing.T) {
+		runDeletionOnlyCase(t, "zcode", zcodeNativePayload(), writeZcodeProjection)
+	})
+}
+
+func zcodeNativePayload() string {
+	const uid = "zcode_user_1"
+	userInfo := fmt.Sprintf("{\"user_id\":%q,\"email\":\"zcode@example.com\"}", uid)
+	jwt := jwtWithIssuer(1_700_000_000, "https://zcode.example.invalid", uid)
+	payload := strings.Replace(jwt, "}", "", 1)
+	_ = payload
+	// zcode decoder accepts user_id/sub in zcodejwttoken matching oauth:zai:user_info.
+	header := base64.RawURLEncoding.EncodeToString([]byte("{\"alg\":\"none\",\"typ\":\"JWT\"}"))
+	claims := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(
+		"{\"user_id\":%q,\"sub\":%q,\"iat\":1700000000,\"exp\":1700003600}", uid, uid,
+	)))
+	zcodeJWT := header + "." + claims + ".signature"
+	return fmt.Sprintf(
+		"{\"credentials\":{\"zcodejwttoken\":%q,\"oauth:zai:access_token\":%q,\"oauth:zai:user_info\":%q}}",
+		zcodeJWT, zcodeJWT, userInfo,
+	)
+}
+
+func writeZcodeProjection(t *testing.T, root, host string) {
+	t.Helper()
+	writeHostFile(t, host, []string{".zcode", "settings.json"}, "host-zcode-settings")
+	linkHostDir(t, root, host, []string{".zcode", "projects"})
+	private := [][]string{
+		{".zcode", "auth.db"},
+		{".zcode", "credentials", "enc.json"},
+		{"electron-user-data", "Local Storage", "leveldb", "000001.log"},
+	}
+	for _, segments := range private {
+		writeFile(
+			t,
+			filepath.Join(append([]string{root}, segments...)...),
+			"account-private-"+strings.Join(segments, "/"),
+		)
+	}
 }

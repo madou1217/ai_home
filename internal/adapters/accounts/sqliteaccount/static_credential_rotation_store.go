@@ -122,6 +122,14 @@ func (store *Store) RotateStaticCredential(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
+	if err := syncStaticCredentialUIState(
+		ctx,
+		connection,
+		rotation,
+		updatedAtMS,
+	); err != nil {
+		return accountcore.Account{}, err
+	}
 	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
 		if isBusyError(err) || isConstraintError(err) {
 			return accountcore.Account{}, accountapp.ErrStaticCredentialRotationConflict
@@ -176,6 +184,10 @@ func supportsStaticCredentialRotation(
 	authKind string,
 	authMode string,
 ) bool {
+	if authMode == accountcore.StaticAPIKeyAuthMode &&
+		authKind == accountcore.StaticAPIKeyAuthKind {
+		return providerID != codex.ProviderID && providerID != claude.ProviderID
+	}
 	if authMode != "" {
 		return false
 	}
@@ -269,6 +281,74 @@ func requireSingleStaticCredentialWrite(
 		return accountapp.ErrStaticCredentialRotationConflict
 	}
 	return nil
+}
+
+// syncStaticCredentialUIState 在同一事务内同步 account_ui_state 的 authMode 与 baseUrl，
+// 确保 WebUI 账号列表立即展示最新静态配置，同时保留用户自定义的 display_name 与 status。
+func syncStaticCredentialUIState(
+	ctx context.Context,
+	connection *sql.Conn,
+	rotation accountapp.StaticCredentialRotation,
+	updatedAtMS int64,
+) error {
+	authMode, baseURL, ok := staticCredentialUIStateMeta(rotation.Replacement())
+	if !ok {
+		return nil
+	}
+	const statement = `
+		INSERT INTO account_ui_state (
+			account_ref, status, display_name, auth_mode, api_key_mode, base_url,
+			updated_at_ms, configured, oauth_pending
+		)
+		VALUES (?, 'up', '', ?, 1, ?, ?, 1, 0)
+		ON CONFLICT(account_ref) DO UPDATE SET
+			auth_mode = excluded.auth_mode,
+			api_key_mode = 1,
+			base_url = excluded.base_url,
+			updated_at_ms = excluded.updated_at_ms`
+	if _, err := connection.ExecContext(
+		ctx,
+		statement,
+		rotation.AccountRef().String(),
+		authMode,
+		baseURL,
+		updatedAtMS,
+	); err != nil {
+		if isBusyError(err) || isConstraintError(err) {
+			return accountapp.ErrStaticCredentialRotationConflict
+		}
+		return fmt.Errorf("同步静态账号展示状态失败: %w", err)
+	}
+	return nil
+}
+
+func staticCredentialUIStateMeta(credential accountapp.Credential) (string, string, bool) {
+	switch typed := credential.(type) {
+	case *codex.APIKeyAuth:
+		baseURL := typed.BaseURL()
+		if baseURL == codex.DefaultAPIBaseURL {
+			baseURL = ""
+		}
+		return "api-key", baseURL, true
+	case *claude.APIKeyAuth:
+		baseURL := typed.BaseURL()
+		if baseURL == claude.DefaultAPIBaseURL {
+			baseURL = ""
+		}
+		return "api-key", baseURL, true
+	case *claude.AuthTokenAuth:
+		baseURL := typed.BaseURL()
+		if baseURL == claude.DefaultAPIBaseURL {
+			baseURL = ""
+		}
+		return "auth-token", baseURL, true
+	case *gemini.VertexAuth:
+		return "vertex-ai", typed.BaseURL(), true
+	case *accountcore.StaticAPIKeyAuth:
+		return "api-key", typed.BaseURL(), true
+	default:
+		return "", "", false
+	}
 }
 
 // staticCredentialRotationRecord 保存立即事务内读取的账号和凭据 CAS 字段。

@@ -265,6 +265,27 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"invalid_static_credential_edit",
 			"编辑静态凭据需要完整密钥",
 		)
+	case errors.Is(err, accountapp.ErrStaticBaseURLUnsupported):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"base_url_unsupported",
+			"Gemini API Key 模式不支持自定义 Base URL",
+		)
+	case errors.Is(err, accountcore.ErrInvalidStaticBaseURL):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_base_url",
+			"Base URL 格式无效",
+		)
+	case errors.Is(err, accountcore.ErrInvalidStaticAPIKey):
+		writeAPIError(
+			response,
+			http.StatusBadRequest,
+			"invalid_api_key",
+			"API Key 格式无效",
+		)
 	case errors.Is(err, accountapp.ErrStaticCredentialRotationUnsupported):
 		writeAPIError(
 			response,

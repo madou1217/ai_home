@@ -111,7 +111,7 @@ func TestPureFileSystemProviderBatchRegistration(t *testing.T) {
 // 的边界：家族四支与 kimi 已注册整根私有规格，不能同时留在 node-only 名单。
 func TestDeletionOnlyProviderBatchRegistration(t *testing.T) {
 	for _, providerID := range []string{
-		providerCodebuddy, providerCodebuddyCN, providerWorkbuddy, providerWorkbuddyCN, providerKimi,
+		providerCodebuddy, providerCodebuddyCN, providerWorkbuddy, providerWorkbuddyCN, providerKimi, providerZcode,
 	} {
 		spec, found := projectionSpecFor(providerID)
 		if !found {
@@ -157,20 +157,8 @@ func TestKiroDeletionRegistration(t *testing.T) {
 // TestNodeOnlyDeletionReasonsNameConcreteGaps 要求留在 Node 的 Provider 写清
 // 具体缺口：泛泛的「删除仍由 Node 处理」无法让后来的人判断何时可以迁过来。
 func TestNodeOnlyDeletionReasonsNameConcreteGaps(t *testing.T) {
-	cases := map[string][]string{
-		"zcode": {"enc:v1", "桥", "影子"},
-	}
-	for providerID, keywords := range cases {
-		reason, found := nodeOnlyDeletionReasons[providerID]
-		if !found {
-			t.Errorf("%s 必须留在 node-only 名单", providerID)
-			continue
-		}
-		for _, keyword := range keywords {
-			if !strings.Contains(reason, keyword) {
-				t.Errorf("%s 的 node-only 原因缺少 %q，实际 %q", providerID, keyword, reason)
-			}
-		}
+	if len(nodeOnlyDeletionReasons) != 0 {
+		t.Fatalf("所有 Provider 已迁入 Go，nodeOnlyDeletionReasons 应为空，实际 %+v", nodeOnlyDeletionReasons)
 	}
 }
 

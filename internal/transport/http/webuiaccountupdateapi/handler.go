@@ -103,8 +103,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 // apiKey 为空表示沿用当前密钥；baseUrl 只用「是否出现」决定覆盖，出现空串或
 // null 表示清空地址。未出现的字段完全不动。
 type updateRequest struct {
-	APIKey  string         `json:"apiKey"`
-	BaseURL optionalString `json:"baseUrl"`
+	APIKey         string         `json:"apiKey"`
+	BaseURL        optionalString `json:"baseUrl"`
+	AuthKind       string         `json:"authKind"`
+	CredentialType string         `json:"credentialType"`
+	AuthType       string         `json:"authType"`
+	AuthMode       string         `json:"authMode"`
 }
 
 // optionalString 区分「字段缺失」与「字段显式为空」。
@@ -191,6 +195,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
+	authKind := firstNonEmptyString(input.AuthKind, input.CredentialType, input.AuthType, input.AuthMode)
 	if _, err := handler.editor.Edit(
 		request.Context(),
 		accountRef,
@@ -198,6 +203,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			APIKey:         input.APIKey,
 			BaseURL:        input.BaseURL.Value,
 			IncludeBaseURL: input.BaseURL.Set,
+			AuthKind:       authKind,
 		},
 	); err != nil {
 		writeApplicationError(response, err)
@@ -244,6 +250,15 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 	case errors.Is(err, accountapp.ErrStaticCredentialEditIncomplete):
 		writeError(response, http.StatusBadRequest,
 			"invalid_static_credential_edit", "编辑静态凭据需要完整密钥")
+	case errors.Is(err, accountapp.ErrStaticBaseURLUnsupported):
+		writeError(response, http.StatusBadRequest,
+			"base_url_unsupported", "Gemini API Key 模式不支持自定义 Base URL")
+	case errors.Is(err, accountcore.ErrInvalidStaticBaseURL):
+		writeError(response, http.StatusBadRequest,
+			"invalid_base_url", "Base URL 格式无效")
+	case errors.Is(err, accountcore.ErrInvalidStaticAPIKey):
+		writeError(response, http.StatusBadRequest,
+			"invalid_api_key", "API Key 格式无效")
 	case errors.Is(err, accountapp.ErrStaticCredentialRotationUnsupported):
 		writeError(response, http.StatusUnprocessableEntity,
 			"static_credential_rotation_unsupported", "当前凭据类型不支持该接口编辑")
@@ -295,4 +310,13 @@ func writeJSON(response http.ResponseWriter, status int, payload any) {
 
 func writeError(response http.ResponseWriter, status int, code string, message string) {
 	writeJSON(response, status, errorResponse{OK: false, Error: code, Message: message})
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

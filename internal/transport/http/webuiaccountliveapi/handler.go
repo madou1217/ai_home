@@ -40,6 +40,8 @@ const (
 	//
 	//	Node: POST /v0/webui/accounts/watch/snapshot
 	SnapshotPath = Path + "/snapshot"
+	// LivePath 提供实时聚合后的完整账号列表（WebUI GET /v0/webui/accounts 权威接口）。
+	LivePath = "/v1/management/webui/accounts/live"
 
 	// DefaultHeartbeat 与 Node 的 ACCOUNTS_WATCH_HEARTBEAT_MS 一致。
 	DefaultHeartbeat = 30 * time.Second
@@ -187,11 +189,78 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	if request.URL.Path == SnapshotPath {
+	switch request.URL.Path {
+	case SnapshotPath:
 		handler.serveSnapshotRequest(response, request)
+	case LivePath:
+		handler.ServeLiveHTTP(response, request)
+	default:
+		handler.serveWatch(response, request)
+	}
+}
+
+type liveResponse struct {
+	OK                         bool                       `json:"ok"`
+	Accounts                   []webuiaccountsapi.Row     `json:"accounts"`
+	Revision                   int64                      `json:"revision"`
+	Hydrating                  bool                       `json:"hydrating"`
+	ProviderNativeCapabilities map[string]json.RawMessage `json:"providerNativeCapabilities"`
+}
+
+// ServeLiveHTTP 返回权威实时账号列表（支持可选 provider / ref 过滤）。
+func (handler *Handler) ServeLiveHTTP(response http.ResponseWriter, request *http.Request) {
+	if handler == nil || handler.hub == nil || handler.authorizer == nil {
+		writeError(response, http.StatusServiceUnavailable, "webui_accounts_live_unavailable", "账号实时列表服务不可用")
 		return
 	}
-	handler.serveWatch(response, request)
+	if !handler.authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
+		return
+	}
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "只支持 GET 查询实时账号列表")
+		return
+	}
+	rows, revision, capabilities, err := handler.hub.liveSnapshot(request.Context())
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "webui_accounts_live_unavailable", err.Error())
+		return
+	}
+	providerFilter := strings.ToLower(strings.TrimSpace(request.URL.Query().Get("provider")))
+	refFilter := strings.TrimSpace(request.URL.Query().Get("ref"))
+	filtered := filterLiveRows(rows, providerFilter, refFilter)
+	if capabilities == nil {
+		capabilities = map[string]json.RawMessage{}
+	}
+	writeJSON(response, http.StatusOK, liveResponse{
+		OK:                         true,
+		Accounts:                   filtered,
+		Revision:                   revision,
+		Hydrating:                  false,
+		ProviderNativeCapabilities: capabilities,
+	})
+}
+
+func filterLiveRows(rows []webuiaccountsapi.Row, providerFilter, refFilter string) []webuiaccountsapi.Row {
+	if providerFilter == "" && refFilter == "" {
+		if rows == nil {
+			return []webuiaccountsapi.Row{}
+		}
+		return rows
+	}
+	filtered := make([]webuiaccountsapi.Row, 0, len(rows))
+	for _, row := range rows {
+		if providerFilter != "" && strings.ToLower(strings.TrimSpace(row.Provider)) != providerFilter {
+			continue
+		}
+		if refFilter != "" && strings.TrimSpace(row.AccountRef) != refFilter {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
 }
 
 func (handler *Handler) serveSnapshotRequest(response http.ResponseWriter, request *http.Request) {

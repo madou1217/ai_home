@@ -748,6 +748,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
 		{Pattern: "POST " + webuiaccountliveapi.SnapshotPath, Handler: accountLive},
+		{Pattern: "GET " + webuiaccountliveapi.LivePath, Handler: http.HandlerFunc(accountLive.ServeLiveHTTP)},
 		{Pattern: "POST " + webuiaccountdetectapi.Path, Handler: accountDetect},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},

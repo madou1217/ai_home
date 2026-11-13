@@ -88,7 +88,7 @@ func parseNodeOnlyDeletionHooks(t *testing.T, source string) map[string][]nodeOn
 			hooks[providerID] = append(hooks[providerID], hook)
 		}
 	}
-	if len(hooks) == 0 {
+	if len(hooks) == 0 && !strings.Contains(source, "NODE_ONLY_DELETION_HOOKS = Object.freeze({})") {
 		t.Fatalf("Node 侧登记表里没有解析到任何 Provider（格式是否被改动？）")
 	}
 	return hooks

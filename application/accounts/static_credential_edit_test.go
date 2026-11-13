@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 )
@@ -105,5 +106,58 @@ func TestEditCodexRejectsAuthTokenKind(t *testing.T) {
 	}
 	if _, err := replacementForEdit(current, StaticCredentialEdit{AuthKind: "auth-token"}); !errors.Is(err, ErrStaticCredentialRotationUnsupported) {
 		t.Fatalf("expected unsupported, got %v", err)
+	}
+}
+
+func TestEditGenericStaticAPIKeyCoversAllProvidersAndBaseURLRules(t *testing.T) {
+	currentKimi, err := accountcore.NewStaticAPIKeyAuth(accountcore.StaticAPIKeyInput{
+		ProviderID: "kimi",
+		APIKey:     "sk-kimi-old",
+		BaseURL:    "https://api.moonshot.cn/v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := replacementForEdit(currentKimi, StaticCredentialEdit{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keptKimi := kept.(*accountcore.StaticAPIKeyAuth)
+	if keptKimi.APIKey() != "sk-kimi-old" || keptKimi.BaseURL() != "https://api.moonshot.cn/v1" {
+		t.Fatalf("kept kimi = %s/%s", keptKimi.APIKey(), keptKimi.BaseURL())
+	}
+
+	cleared, err := replacementForEdit(currentKimi, StaticCredentialEdit{
+		APIKey:         "sk-kimi-new",
+		IncludeBaseURL: true,
+		BaseURL:        "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearedKimi := cleared.(*accountcore.StaticAPIKeyAuth)
+	if clearedKimi.APIKey() != "sk-kimi-new" || clearedKimi.BaseURL() != "" {
+		t.Fatalf("cleared kimi = %s/%s", clearedKimi.APIKey(), clearedKimi.BaseURL())
+	}
+
+	if _, err := replacementForEdit(currentKimi, StaticCredentialEdit{AuthKind: "auth-token"}); !errors.Is(err, ErrStaticCredentialRotationUnsupported) {
+		t.Fatalf("expected unsupported auth kind, got %v", err)
+	}
+	if _, err := replacementForEdit(currentKimi, StaticCredentialEdit{IncludeBaseURL: true, BaseURL: "not-a-url"}); !errors.Is(err, accountcore.ErrInvalidStaticBaseURL) {
+		t.Fatalf("expected invalid base url, got %v", err)
+	}
+
+	currentGemini, err := accountcore.NewStaticAPIKeyAuth(accountcore.StaticAPIKeyInput{
+		ProviderID: "gemini",
+		APIKey:     "AIza-old",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := replacementForEdit(currentGemini, StaticCredentialEdit{
+		IncludeBaseURL: true,
+		BaseURL:        "https://proxy.example.com",
+	}); !errors.Is(err, ErrStaticBaseURLUnsupported) {
+		t.Fatalf("expected ErrStaticBaseURLUnsupported for gemini, got %v", err)
 	}
 }

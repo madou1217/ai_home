@@ -274,6 +274,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 	providerWorkbuddyCN: codebuddyFamilyProjectionSpec(),
 	providerKimi:        kimiProjectionSpec(),
 	providerKiro:        kiroProjectionSpec(),
+	providerZcode:       zcodeProjectionSpec(),
 }
 
 // qoderProjectionSpec 返回 Qoder 两个区域共用的投影规格。
@@ -415,13 +416,25 @@ func kiroProjectionSpec() providerProjectionSpec {
 	}
 }
 
+// zcodeProjectionSpec 是 zcode 的删除规格。
+//
+// zcode 账号投影根目录（run/auth-projections/zcode/<ref>）内的 enc:v1 凭据库与运行时
+// 文件均为账号私有，随投影整根删除；桌面影子 App 全局根与宿主 ~/.zcode 资源（共享目录
+// 仅以 symlink 接入投影）都不在删号投影范围内。占用探测与出口绑定清理仍由外围衔接执行。
+func zcodeProjectionSpec() providerProjectionSpec {
+	return providerProjectionSpec{
+		roots: map[projectionKind]projectionRootSpec{
+			projectionKindAccount: {privateRoot: true},
+		},
+		credential: credentialSpec{mode: credentialNone},
+	}
+}
+
 // nodeOnlyDeletionReasons 记录尚未注册投影规格的 Provider 为什么仍留在 Node。
 //
 // 守卫测试会遍历 Provider 目录：既没有规格、也不在这张表里，或原因为空，
-// 测试都会失败。新增 Provider 时必须二选一，不能让删除流程沉默地拒绝它。
-var nodeOnlyDeletionReasons = map[string]string{
-	"zcode": "凭据是 enc:v1 加密的多文件库，且桌面数据根由桥/影子 App 共享，Go 侧既无法比较代际也无法安全迁移",
-}
+// 测试都会失败。当前全量 Provider 已由 Go 删除规格覆盖。
+var nodeOnlyDeletionReasons = map[string]string{}
 
 // projectionSpecFor 是删除流程查询 Provider 规格的唯一入口。
 func projectionSpecFor(providerID string) (providerProjectionSpec, bool) {

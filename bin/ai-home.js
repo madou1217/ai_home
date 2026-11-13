@@ -27,14 +27,21 @@ const GLOBAL_SESSION_DETAIL_TOKENS = new Set([
 
 function tryRunGoGlobalSessions() {
   const args = process.argv.slice(2);
-  if (args.length !== 2) return false;
   const verb = String(args[0] || '').trim().toLowerCase();
   if (verb !== 'ss' && verb !== 'sessions') return false;
+  // 裸 aih ss：TTY 下 Go 交互选择器，非 TTY 直接输出分组列表。
+  if (args.length === 1) return runGoGlobalSessions(args);
+  if (args.length !== 2) return false;
   const token = String(args[1] || '').trim();
   const isDetail = GLOBAL_SESSION_DETAIL_TOKENS.has(token);
   // aih ss <名字>：直接进入指定会话（Go 负责匹配与 attach）。
   const isTarget = args.length === 2 && /^[^-]/.test(token) && token !== '';
   if (!isDetail && !isTarget) return false;
+  return runGoGlobalSessions(args);
+}
+
+// runGoGlobalSessions 把已校验的 aih ss 参数交给 Go CLI。
+function runGoGlobalSessions(args) {
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

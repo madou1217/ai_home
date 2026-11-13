@@ -36,16 +36,18 @@ type ReapPolicy struct {
 
 // SessionRow 表示一次持久会话枚举返回的统一只读行视图。
 type SessionRow struct {
-	Provider         string
-	RuntimeScope     string
-	AccountRef       string
-	Gateway          bool
-	Socket           string
-	Name             string
-	Label            string
-	Path             string
-	StartPath        string
-	Title            string
+	Provider     string
+	RuntimeScope string
+	AccountRef   string
+	Gateway      bool
+	Socket       string
+	Name         string
+	Label        string
+	Path         string
+	StartPath    string
+	Title        string
+	// NativeID 是该会话对应的 Provider 原生会话 id（能直接 resume）；未知为空。
+	NativeID         string
 	WindowName       string
 	Command          string
 	PanePID          int

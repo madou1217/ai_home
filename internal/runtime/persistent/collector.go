@@ -231,6 +231,7 @@ func (store *TmuxSessionStore) CollectSessions(ctx context.Context) ([]SessionRo
 			row.Socket = target.socket
 			if meta, ok := entryByKey[target.socket+"\x00"+row.Name]; ok {
 				row.Label = meta.Label
+				row.NativeID = meta.NativeID
 				row.ForwardArgs = append([]string(nil), meta.ForwardArgs...)
 			}
 			rows = append(rows, row)

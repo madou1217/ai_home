@@ -186,7 +186,7 @@ func prepareFamilyTerminalIcon(runtime commandRuntime, providerID string) {
 }
 
 // terminalWriterIsTTY 判断输出是否是真实终端。
-func terminalWriterIsTTY(output io.Writer) bool {
+func terminalWriterIsTTY(output any) bool {
 	file, ok := output.(*os.File)
 	if !ok || file == nil {
 		return false

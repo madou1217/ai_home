@@ -3,17 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"io"
-	"os"
-	"path/filepath"
-	goruntime "runtime"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
-
-	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/runtime/persistent"
 )
 
 // globalSessionDetailTokens 与 Node GLOBAL_SESSION_DETAIL_TOKENS 一致：
@@ -32,7 +27,7 @@ func runGlobalSessions(
 	runtime commandRuntime,
 ) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("%w: 需要在 TTY 中选择会话；只读列表用 aih ss --list", errInvalidCommand)
+		return runGlobalSessionPicker(ctx, runtime)
 	}
 	if len(arguments) > 1 {
 		return fmt.Errorf("%w: 用法 aih ss --list", errInvalidCommand)
@@ -49,41 +44,15 @@ func runGlobalSessions(
 	if err != nil {
 		return err
 	}
-	labels := make(map[string]string)
-	providersSeen := make(map[string]bool)
-	for _, row := range rows {
-		if providersSeen[row.Provider] {
-			continue
-		}
-		providersSeen[row.Provider] = true
-		for ref, label := range sessionAccountLabels(ctx, row.Provider, runtime) {
-			labels[ref] = label
-		}
-	}
-	writeGlobalSessionGroups(runtime.stdout, rows, labels)
+	writeGlobalSessionGroups(runtime.stdout, rows, collectGlobalLabels(ctx, rows, runtime))
 	return nil
 }
 
 // collectGlobalRows 读取全部受管持久会话的实时行。
 func collectGlobalRows(ctx context.Context, runtime commandRuntime) ([]persistent.SessionRow, error) {
-	aiHomeDir, err := resolveAIHomeDir(runtime)
+	store, err := globalSessionStore(runtime)
 	if err != nil {
 		return nil, err
-	}
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		return nil, err
-	}
-	registry, err := persistent.NewRegistry(filepath.Join(aiHomeDir, "run"))
-	if err != nil {
-		return nil, err
-	}
-	store := &persistent.TmuxSessionStore{
-		AIHomeDir: aiHomeDir,
-		Registry:  registry,
-		Catalog:   catalog,
-		Platform:  goruntime.GOOS,
-		Env:       os.Getenv,
 	}
 	rows, err := store.CollectSessions(ctx)
 	if err != nil {

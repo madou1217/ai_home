@@ -7,13 +7,21 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
+	"github.com/madou1217/ai_home/internal/sessionscan/codexindex"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
+
+// resolvedCandidate 是原生会话库提供给持久会话行的候选（标题/ID/更新时间）。
+type resolvedCandidate struct {
+	ID          string
+	Title       string
+	UpdatedAtMS int64
+}
 
 // resolveSessionTitles 用 Provider 原生会话库补标题与原生会话 id（aih ss --refresh）。
 //
 // 与 Node session-title-resolver 同思路：按项目路径 + 最近活动时间匹配，每个原生
-// 会话只认领一行；标题不可用时保留 pane 标题。
+// 会话只认领一行；标题不可用时保留 pane 标题。Codex 没有项目库，单独扫描 rollout。
 func resolveSessionTitles(
 	ctx context.Context,
 	runtime commandRuntime,
@@ -35,20 +43,9 @@ func resolveSessionTitles(
 		byProvider[rows[index].Provider] = append(byProvider[rows[index].Provider], index)
 	}
 	for providerID, indexes := range byProvider {
-		projects, listErr := sessionread.ListProjects(ctx, sessionread.Options{
-			AIHomeDir:   aiHomeDir,
-			HostHomeDir: hostHomeDir,
-		}, providerID)
-		if listErr != nil || len(projects) == 0 {
+		candidatesByPath := sessionCandidates(ctx, providerID, aiHomeDir, hostHomeDir)
+		if len(candidatesByPath) == 0 {
 			continue
-		}
-		byPath := make(map[string][]sessionread.Session)
-		for _, project := range projects {
-			key := normalizeSessionProjectPath(project.Path)
-			if key == "" {
-				continue
-			}
-			byPath[key] = append(byPath[key], project.Sessions...)
 		}
 		claimed := make(map[string]bool)
 		// 先按活动时间排序，让最活跃的行先认领最近的会话。
@@ -57,7 +54,7 @@ func resolveSessionTitles(
 		})
 		for _, index := range indexes {
 			projectKey := normalizeSessionProjectPath(rows[index].Path)
-			candidates := byPath[projectKey]
+			candidates := candidatesByPath[projectKey]
 			if projectKey == "" || len(candidates) == 0 {
 				continue
 			}
@@ -67,7 +64,7 @@ func resolveSessionTitles(
 				if claimed[candidate.ID] {
 					continue
 				}
-				delta := absInt64(sessionUpdatedMillis(candidate) - sessionActivityMillis(rows[index]))
+				delta := absInt64(candidate.UpdatedAtMS - sessionActivityMillis(rows[index]))
 				if delta < bestDelta {
 					bestDelta = delta
 					best = candidateIndex
@@ -91,7 +88,52 @@ func resolveSessionTitles(
 	}
 }
 
-// normalizeSessionProjectPath 统一路径分隔符与大小写边界（macOS 大小写不敏感）。
+// sessionCandidates 按项目路径组织某个 Provider 的原生会话；不支持读取时返回空。
+func sessionCandidates(
+	ctx context.Context,
+	providerID string,
+	aiHomeDir string,
+	hostHomeDir string,
+) map[string][]resolvedCandidate {
+	byPath := make(map[string][]resolvedCandidate)
+	if providerID == "codex" {
+		for _, session := range codexindex.List(hostHomeDir) {
+			key := normalizeSessionProjectPath(session.CWD)
+			if key == "" {
+				continue
+			}
+			byPath[key] = append(byPath[key], resolvedCandidate{
+				ID:          session.ID,
+				Title:       session.Title,
+				UpdatedAtMS: session.UpdatedAtMS,
+			})
+		}
+		return byPath
+	}
+	projects, err := sessionread.ListProjects(ctx, sessionread.Options{
+		AIHomeDir:   aiHomeDir,
+		HostHomeDir: hostHomeDir,
+	}, providerID)
+	if err != nil {
+		return byPath
+	}
+	for _, project := range projects {
+		key := normalizeSessionProjectPath(project.Path)
+		if key == "" {
+			continue
+		}
+		for _, session := range project.Sessions {
+			byPath[key] = append(byPath[key], resolvedCandidate{
+				ID:          session.ID,
+				Title:       session.Title,
+				UpdatedAtMS: sessionUpdatedMillis(session),
+			})
+		}
+	}
+	return byPath
+}
+
+// normalizeSessionProjectPath 统一路径分隔符与尾斜杠。
 func normalizeSessionProjectPath(value string) string {
 	text := strings.TrimSpace(value)
 	if text == "" {
@@ -118,6 +160,7 @@ func usableSessionTitle(value string) string {
 	for _, prefix := range []string{
 		"<goal_context", "<environment_context", "<user_instructions",
 		"<session_context", "# AGENTS.md instructions", "Caveat:", "<command-name>",
+		"<codex_internal_context", "<turn_aborted", "<user_shell_command",
 	} {
 		if strings.HasPrefix(title, prefix) {
 			return ""

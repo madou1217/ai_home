@@ -7,15 +7,17 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 )
 
 type windowsLinker struct{}
 
-// NewLinker 返回 Windows 链接实现：优先 symlink，文件退化为 hardlink；
-// 目录在无 symlink 权限时失败关闭（不做危险的递归复制）。
+// NewLinker 返回 Windows 链接实现：优先 symlink；目录退化为 junction（不需要
+// SeCreateSymbolicLinkPrivilege），文件退化为 hardlink。绝不递归复制。
 func NewLinker() appprojection.Linker { return windowsLinker{} }
 
 func (windowsLinker) Link(linkPath string, targetPath string, directory bool) error {
@@ -33,9 +35,33 @@ func (windowsLinker) Link(linkPath string, targetPath string, directory bool) er
 	if err := os.Symlink(targetPath, linkPath); err == nil {
 		return nil
 	} else if directory {
-		return fmt.Errorf("directory link requires symlink privilege: %w", err)
+		// 普通用户没有 symlink 权限；junction 是目录的等价重解析点，权限要求更低。
+		return createJunction(linkPath, targetPath, err)
 	}
 	return os.Link(targetPath, linkPath)
+}
+
+// createJunction 用系统自带 mklink /J 创建目录 junction；失败时把两条错误一起
+// 返回，便于区分「没有权限」和「目标不存在」。
+func createJunction(linkPath string, targetPath string, symlinkErr error) error {
+	shell := strings.TrimSpace(os.Getenv("COMSPEC"))
+	if shell == "" {
+		shell = "cmd.exe"
+	}
+	output, err := exec.Command(
+		shell, "/d", "/c", "mklink", "/J", linkPath, targetPath,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"create junction %s -> %s: %w (symlink: %v, mklink: %s)",
+			linkPath,
+			targetPath,
+			err,
+			symlinkErr,
+			strings.TrimSpace(string(output)),
+		)
+	}
+	return nil
 }
 
 func (windowsLinker) IsManaged(linkPath string, targetPath string) bool {

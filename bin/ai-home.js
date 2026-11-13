@@ -418,8 +418,9 @@ function tryRunGoCodexSessionsHistory() {
 // supportedNativeCLIProvider 与 providerstorage 注册表）。家族与 codex/claude
 // 各有专门入口；带统一动词（resume/ls/usage…）的形态仍交 Node 解析。
 const GO_NATIVE_LAUNCH_PROVIDERS = new Set(['gemini']);
+// resume/fork 由 Go 按合同旗标改写，其余统一动词仍交 Node 解析。
 const GO_UNIFIED_VERBS = new Set([
-  'resume', 'fork', 'ls', 'list', 'usage', 'stats', 'home', 'login', 'sessions',
+  'ls', 'list', 'usage', 'stats', 'home', 'login', 'sessions',
   'delete', 'deleteall', 'delete-all', 'set-default', 'unset-default', 'auto-switch',
   'policy', 'terminal-icon', 'terminal-icons', 'detect', 'set-mobile', 'unset-mobile'
 ]);

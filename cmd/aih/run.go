@@ -193,6 +193,21 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		writeProviderUsage(runtime.stdout, providerID)
 		return nil
 	}
+	// 非家族但已由 Go 承接原生启动的 Provider：resume/fork 统一动词按合同旗标
+	// 改写（家族在上面已单独处理）。未声明的能力明确拒绝，不把动词当消息发出去。
+	if !codebuddyfamilystorage.IsFamilyProvider(providerID) && aihcli.SupportsNativeCLI(providerID) {
+		stripped, escaped := stripNativeEscapeMarker(arguments)
+		arguments = stripped
+		if !escaped {
+			rewritten, handled, verbErr := rewriteGoLaunchSessionVerb(ctx, providerID, arguments, runtime)
+			if handled {
+				if verbErr != nil {
+					return verbErr
+				}
+				arguments = rewritten
+			}
+		}
+	}
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
 	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_API_KEY", "")
 	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")

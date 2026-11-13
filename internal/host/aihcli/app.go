@@ -373,6 +373,14 @@ func supportedNativeCLIProvider(providerID string) bool {
 	}
 }
 
+// SupportsNativeCLI 报告一个 Provider 是否已由本组合根承接原生启动。
+//
+// 命令层（cmd/aih）用它决定统一动词（resume/fork）要不要按官方旗标改写；
+// 与 supportedNativeCLIProvider 使用同一份名单，避免两处漂移。
+func SupportsNativeCLI(providerID string) bool {
+	return supportedNativeCLIProvider(providerID)
+}
+
 // supportedGatewayCLIProvider 与本组合根实际注册的 Gateway Strategy 保持一致。
 func supportedGatewayCLIProvider(providerID string) bool {
 	return providerID == "codex" || providerID == "claude"

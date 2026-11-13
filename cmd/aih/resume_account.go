@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
@@ -238,4 +239,82 @@ func parseResumeAccountTarget(target string) (accountcore.CLIAccountID, accountc
 		return 0, "", fmt.Errorf("%w: 账号目标无效: %s", errInvalidCommand, text)
 	}
 	return cliAccountID, "", nil
+}
+
+// isSessionVerbToken 只认 aih 的统一会话动词。
+func isSessionVerbToken(value string) bool {
+	return value == "resume" || value == "fork"
+}
+
+// rewriteGoLaunchSessionVerb 把非家族 Provider（已由 Go 承接原生启动）的
+// resume/fork 统一动词翻译成合同声明的官方旗标。
+//
+// 与 Node rewriteProviderNativeVerb 同语义：id 形态用 --resume；无 id 时只有
+// 合同声明了 --continue 才能续接，否则明确拒绝；fork 只在声明了 --fork-session
+// 时改写，不猜参数。
+func rewriteGoLaunchSessionVerb(
+	ctx context.Context,
+	providerID string,
+	arguments []string,
+	runtime commandRuntime,
+) ([]string, bool, error) {
+	verbIndex := -1
+	if len(arguments) >= 2 && isSessionVerbToken(arguments[1]) {
+		verbIndex = 1
+	} else if len(arguments) >= 3 &&
+		!strings.HasPrefix(arguments[1], "-") &&
+		isSessionVerbToken(arguments[2]) {
+		verbIndex = 2
+	}
+	if verbIndex < 0 {
+		return arguments, false, nil
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return nil, true, err
+	}
+	definition, found := catalog.Get(providerID)
+	if !found {
+		return nil, true, fmt.Errorf("%w: 未知 Provider %s", errInvalidCommand, providerID)
+	}
+	flags := []string{}
+	if definition.NativeBoundary != nil {
+		flags = definition.NativeBoundary.Sessions.Flags
+	}
+	hasFlag := func(name string) bool {
+		for _, flag := range flags {
+			if flag == name {
+				return true
+			}
+		}
+		return false
+	}
+	verb := arguments[verbIndex]
+	rest := arguments[verbIndex+1:]
+	target := ""
+	if verbIndex == 2 {
+		target = arguments[1]
+	}
+	accountID, err := resolveResumeAccountID(ctx, providerID, target, runtime)
+	if err != nil {
+		return nil, true, err
+	}
+	rewritten := []string{providerID, fmt.Sprintf("%d", accountID.Int64())}
+	if verb == "fork" {
+		if !hasFlag("--fork-session") {
+			return nil, true, errFamilyForkUnsupported(providerID)
+		}
+		return append(rewritten, append([]string{"--fork-session"}, rest...)...), true, nil
+	}
+	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		return append(rewritten, append([]string{"--resume", rest[0]}, rest[1:]...)...), true, nil
+	}
+	if !hasFlag("--continue") {
+		return nil, true, fmt.Errorf(
+			"%s 未声明 --continue，aih 不猜参数；请给出会话 id（aih %s resume <会话id>）。",
+			providerID,
+			providerID,
+		)
+	}
+	return append(rewritten, append([]string{"--continue"}, rest...)...), true, nil
 }

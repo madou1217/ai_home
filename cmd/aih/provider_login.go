@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -48,6 +49,13 @@ func runProviderLogin(
 		Stderr:      runtime.stderr,
 	})
 	if err != nil {
+		if errors.Is(err, aihlogin.ErrCredentialMissing) {
+			return fmt.Errorf(
+				"%w（CodeBuddy 浏览器登录结果不会回传 CLI；可运行 aih %s detect 导入本机已登录账号）",
+				err,
+				providerID,
+			)
+		}
 		return err
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "登录完成: %s #%d (%s)\n",

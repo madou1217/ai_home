@@ -42,6 +42,9 @@ export function useSessionRuntime(
   const [connection, setConnection] = useState<SessionRuntimeConnection>({ phase: 'pending' });
   const retry = useCallback(() => setAttempt((current) => current + 1), []);
   const autoRetriesRef = useRef(0);
+  // 本轮目标已经创建过的服务端会话：自动重试必须复用它，不能每重试一次就 POST
+  // 创建一个新的空会话（外网代理抖动时会连出好几条，且这些空会话谁都不会再引用）。
+  const createdSessionRef = useRef<{ key: string; session: ChatRuntimeSession } | null>(null);
 
   useEffect(() => {
     const activeResolution = resolutionRef.current;
@@ -67,20 +70,25 @@ export function useSessionRuntime(
       }, delay);
     };
     setConnection({ phase: 'connecting' });
-    void openSessionRuntime(
-      activeResolution.target,
-      browserApi,
-      (session) => {
+    // 创建成功后立刻记住会话对象：同一目标的重试直接复用它，一次 HTTP 都不再发。
+    // 没有 chatSessionId 的创建不是幂等操作，重试再建只会得到更多谁也不引用的空会话。
+    const cached = createdSessionRef.current;
+    void openSessionRuntime(activeResolution.target, browserApi, {
+      existingSession: cached && cached.key === resolutionKey ? cached.session : undefined,
+      onSessionAcquired: (session) => {
+        createdSessionRef.current = { key: resolutionKey, session };
+      },
+      onSessionResolved: (session) => {
         if (!disposed) onSessionResolvedRef.current?.(session);
       },
-      (error) => {
+      onStartError: (error) => {
         // 工作区已经先渲染；首屏快照失败时再用错误态替换，避免整屏空等。
         if (!disposed) {
           setConnection({ phase: 'error', failure: runtimeFailure(error) });
           scheduleTransientRetry(error);
         }
       },
-    ).then(
+    }).then(
       (opened) => {
         controller = opened;
         if (disposed) opened.dispose();
@@ -103,35 +111,43 @@ export function useSessionRuntime(
   return { ...connection, retry };
 }
 
+export interface OpenSessionRuntimeOptions {
+  readonly onSessionResolved?: (session: ChatRuntimeSession) => void;
+  readonly onStartError?: (error: unknown) => void;
+  /** 会话刚创建（或解析）出来就回调，供调用方在失败重试时复用。 */
+  readonly onSessionAcquired?: (session: ChatRuntimeSession) => void;
+  /** 已经创建过的会话：重试时直接复用，不再请求服务器。 */
+  readonly existingSession?: ChatRuntimeSession;
+}
+
 export async function openSessionRuntime(
   target: SessionRuntimeTarget,
   api: ChatRuntimeApi,
-  onSessionResolved?: (session: ChatRuntimeSession) => void,
-  onStartError?: (error: unknown) => void,
+  options: OpenSessionRuntimeOptions = {},
 ): Promise<SessionRuntimeController> {
-  let session: ChatRuntimeSession;
+  let session = options.existingSession;
   let readOnly = Boolean(target.readOnly);
-  try {
-    session = target.nativeSessionId || target.sessionId
-      ? (await api.resolveSession(target)).session
-      : await api.createSession(target);
-    // An already-running native turn belongs to the surface that started it.
-    // Other surfaces still attach for live preview, but remain read-only until
-    // the turn is over.
-    if (!target.readOnly && (target.sessionId || target.chatSessionId || target.nativeSessionId)
-      && isActiveSessionState(session.state)) {
+  if (!session) {
+    try {
+      session = await openSessionShared(target, api);
+      options.onSessionAcquired?.(session);
+    } catch (error) {
+      // A running session may be observed by another WebUI surface. Retry as a
+      // read-only attach so the timeline remains available while writes stay locked.
+      if (readOnly || !(error instanceof ChatRuntimeApiError)
+        || error.code !== 'chat_execution_credential_change_conflict') throw error;
       readOnly = true;
+      const observerTarget = { ...target, readOnly: true };
+      session = await openSessionShared(observerTarget, api);
+      options.onSessionAcquired?.(session);
     }
-  } catch (error) {
-    // A running session may be observed by another WebUI surface. Retry as a
-    // read-only attach so the timeline remains available while writes stay locked.
-    if (readOnly || !(error instanceof ChatRuntimeApiError)
-      || error.code !== 'chat_execution_credential_change_conflict') throw error;
+  }
+  // An already-running native turn belongs to the surface that started it.
+  // Other surfaces still attach for live preview, but remain read-only until
+  // the turn is over.
+  if (!target.readOnly && (target.sessionId || target.chatSessionId || target.nativeSessionId)
+    && isActiveSessionState(session.state)) {
     readOnly = true;
-    const observerTarget = { ...target, readOnly: true };
-    session = observerTarget.nativeSessionId || observerTarget.sessionId
-      ? (await api.resolveSession(observerTarget)).session
-      : await api.createSession(observerTarget);
   }
   const controller = new SessionRuntimeController(session.sessionId, api, {
     visibilitySource: typeof document === 'undefined' ? undefined : document,
@@ -140,13 +156,48 @@ export async function openSessionRuntime(
   // 先把控制器交给工作区，快照在后台加载：慢快照只让时间线晚到，不会让整页停在
   // 「正在连接原生运行时…」；首屏失败再通过 onStartError 切错误态。
   void controller.start().then(
-    () => onSessionResolved?.(session),
+    () => options.onSessionResolved?.(session),
     (error: unknown) => {
       controller.dispose();
-      onStartError?.(error);
+      options.onStartError?.(error);
     },
   );
   return controller;
+}
+
+// 同一个目标的首帧打开可能被多个挂载点同时触发（桌面/移动布局、快捷窗口、快速重挂）。
+// 服务器对带 chatSessionId 的打开是幂等的，但并发仍会打出多条 POST；这里按目标合并
+// 在途请求，只让一次真正到达服务器，请求完成后立刻释放（用户主动新建下一次照常新建）。
+const inFlightSessionOpens = new Map<string, Promise<ChatRuntimeSession>>();
+
+function sessionOpenKey(target: SessionRuntimeTarget): string {
+  return [
+    target.provider,
+    target.executionAccountRef,
+    target.projectPath,
+    target.sessionId || '',
+    target.nativeSessionId || '',
+    target.chatSessionId || '',
+    target.readOnly ? 'readonly' : 'write'
+  ].join('\u0000');
+}
+
+function openSessionShared(
+  target: SessionRuntimeTarget,
+  api: ChatRuntimeApi,
+): Promise<ChatRuntimeSession> {
+  const key = sessionOpenKey(target);
+  const pending = inFlightSessionOpens.get(key);
+  if (pending) return pending;
+  const request = target.nativeSessionId || target.sessionId
+    ? api.resolveSession(target).then((resolution) => resolution.session)
+    : api.createSession(target);
+  let shared: Promise<ChatRuntimeSession>;
+  shared = request.finally(() => {
+    if (inFlightSessionOpens.get(key) === shared) inFlightSessionOpens.delete(key);
+  });
+  inFlightSessionOpens.set(key, shared);
+  return shared;
 }
 
 function isActiveSessionState(state: ChatRuntimeSession['state']): boolean {

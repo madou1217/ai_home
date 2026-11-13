@@ -119,6 +119,11 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 		})
 	}
 	cwd, _ := os.Getwd()
+	// 登录投影是独立 HOME：先把工作目录写进 trustedDirectories，避免无头登录
+	// 停在「Do you trust the files in this folder?」。
+	if configDir := strings.TrimSpace(result.SetEnv["CODEBUDDY_CONFIG_DIR"]); configDir != "" {
+		_ = seedLoginFolderTrust(configDir, cwd)
+	}
 	code, runErr := ptyhost.Run(ctx, ptyhost.Config{
 		Path:    "codebuddy",
 		Env:     env,

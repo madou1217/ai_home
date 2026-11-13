@@ -145,6 +145,12 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			return runProviderHome(ctx, providerID, []string{arguments[1]}, runtime)
 		}
 	}
+	if len(arguments) >= 3 && codebuddyfamilystorage.IsFamilyProvider(providerID) &&
+		isNumericAccountToken(arguments[1]) &&
+		(containsArgument(arguments[2:], "--restart-client") ||
+			containsArgument(arguments[2:], "--force-quit-client")) {
+		return runProviderRestart(ctx, providerID, arguments[1], runtime)
+	}
 	if len(arguments) >= 2 && arguments[1] == "usage" {
 		return runProviderUsage(ctx, providerID, arguments[2:], runtime)
 	}
@@ -228,6 +234,20 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	runErr := app.Run(ctx, providerID, arguments[1:], gateway)
 	closeErr := app.Close()
 	return errors.Join(runErr, closeErr)
+}
+
+// isNumericAccountToken 判断 token 是否是 CLI 数字别名。
+func isNumericAccountToken(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return false
+	}
+	for _, char := range text {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // commandNeedsNativeStore 使用同一套 LaunchIntent 解析，避免命令入口重新猜测模式。

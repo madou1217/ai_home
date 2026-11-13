@@ -527,6 +527,58 @@ const GO_FAMILY_RESERVED_ACTIONS = new Set([
   'terminal-icon', 'terminal-icons', 'help', '--help', '-h'
 ]);
 
+// aih <family> <id> --restart-client 固定走 Go：Management API close + open 桌面端。
+function tryRunGoFamilyRestart() {
+  const args = process.argv.slice(2);
+  if (args.length < 3) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
+  if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
+  const hasFlag = args.slice(2).some((token) => token === '--restart-client' || token === '--force-quit-client');
+  if (!hasFlag) return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  if (!aiHomeDir) return false;
+  let config = null;
+  try {
+    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+  } catch (_error) {
+    config = null;
+  }
+  const managementKey = String(config && config.managementKey || '').trim();
+  if (!managementKey) return false;
+  const env = {
+    ...process.env,
+    AIH_HOME_DIR: aiHomeDir,
+    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_MANAGEMENT_KEY: managementKey
+  };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 function tryRunGoFamilyLaunch() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;
@@ -823,6 +875,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

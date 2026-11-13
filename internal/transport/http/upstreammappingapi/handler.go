@@ -28,6 +28,9 @@ import (
 // Path 是映射组集合资源的规范路径。
 const Path = "/v1/management/upstream-error-mapping-groups"
 
+// WebUIPath 是 WebUI 代理层使用的映射组集合路径。
+const WebUIPath = "/v1/management/webui/upstream-error-mappings"
+
 const (
 	// maxBodyBytes 与 Node 的映射组路由保持一致。
 	maxBodyBytes = 1 << 20
@@ -56,12 +59,15 @@ type Service interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	Service    Service
+	// BasePath 允许为 WebUI 挂接独立前缀；留空时使用 Path。
+	BasePath string
 }
 
 // Handler 提供映射组 CRUD。
 type Handler struct {
 	authorizer Authorizer
 	service    Service
+	basePath   string
 }
 
 // NewHandler 创建映射组管理接口。
@@ -69,7 +75,15 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Service == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, service: dependencies.Service}, nil
+	basePath := strings.TrimRight(strings.TrimSpace(dependencies.BasePath), "/")
+	if basePath == "" {
+		basePath = Path
+	}
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		service:    dependencies.Service,
+		basePath:   basePath,
+	}, nil
 }
 
 // groupPayload 是创建/更新的请求体；指针字段区分「未提供」与显式零值。
@@ -94,7 +108,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	memberID, memberPath, ok := splitPath(request.URL.Path)
+	memberID, memberPath, isToggle, ok := handler.splitPath(request.URL.Path)
 	if !ok {
 		writeError(response, http.StatusNotFound, "route_not_found", "路径不存在")
 		return
@@ -104,11 +118,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.list(response, request)
 	case !memberPath && request.Method == http.MethodPost:
 		handler.create(response, request)
-	case memberPath && request.Method == http.MethodGet:
+	case memberPath && isToggle && request.Method == http.MethodPost:
+		handler.toggle(response, request, memberID)
+	case memberPath && !isToggle && request.Method == http.MethodGet:
 		handler.get(response, request, memberID)
-	case memberPath && request.Method == http.MethodPut:
+	case memberPath && !isToggle && request.Method == http.MethodPut:
 		handler.update(response, request, memberID)
-	case memberPath && request.Method == http.MethodDelete:
+	case memberPath && !isToggle && request.Method == http.MethodDelete:
 		handler.remove(response, request, memberID)
 	default:
 		response.Header().Set("Allow", "GET, POST, PUT, DELETE")
@@ -116,19 +132,27 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 }
 
-// splitPath 返回成员 id 以及是否命中成员路径。
-func splitPath(path string) (string, bool, bool) {
-	if path != Path && !strings.HasPrefix(path, Path+"/") {
-		return "", false, false
+// splitPath 返回成员 id、是否命中成员路径、是否为 toggle 动作以及路径是否合法。
+func (handler *Handler) splitPath(path string) (string, bool, bool, bool) {
+	base := handler.basePath
+	if base == "" {
+		base = Path
 	}
-	rest := strings.Trim(strings.TrimPrefix(path, Path), "/")
+	if path != base && !strings.HasPrefix(path, base+"/") {
+		return "", false, false, false
+	}
+	rest := strings.Trim(strings.TrimPrefix(path, base), "/")
 	if rest == "" {
-		return "", false, true
+		return "", false, false, true
 	}
-	if strings.Contains(rest, "/") {
-		return "", false, false
+	parts := strings.Split(rest, "/")
+	if len(parts) == 1 {
+		return parts[0], true, false, true
 	}
-	return rest, true, true
+	if len(parts) == 2 && parts[1] == "toggle" && parts[0] != "" {
+		return parts[0], true, true, true
+	}
+	return "", false, false, false
 }
 
 func (handler *Handler) list(response http.ResponseWriter, request *http.Request) {
@@ -144,6 +168,7 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 		"ok":      true,
 		"version": mappingDataVersion,
 		"groups":  groups,
+		"source":  "go",
 	})
 }
 
@@ -153,7 +178,7 @@ func (handler *Handler) get(response http.ResponseWriter, request *http.Request,
 		writeServiceError(response, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "group": group})
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "group": group, "source": "go"})
 }
 
 func (handler *Handler) create(response http.ResponseWriter, request *http.Request) {
@@ -193,19 +218,77 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
+	version := payload.Version
+	if version == nil {
+		queryVersion, ok := parseVersionQuery(response, request.URL.Query().Get("version"))
+		if !ok {
+			return
+		}
+		version = queryVersion
+	}
 	group, err := handler.service.Update(request.Context(), id, mappingapp.UpdateInput{
 		Name:        payload.Name,
 		Description: payload.Description,
 		Provider:    payload.Provider,
 		Enabled:     payload.Enabled,
 		Rules:       payload.Rules,
-		Version:     payload.Version,
+		Version:     version,
 	})
 	if err != nil {
 		writeServiceError(response, err)
 		return
 	}
 	handler.writeGroup(response, request, group)
+}
+
+func (handler *Handler) toggle(response http.ResponseWriter, request *http.Request, id string) {
+	expectedVersion, ok := parseVersionQuery(response, request.URL.Query().Get("version"))
+	if !ok {
+		return
+	}
+	if expectedVersion == nil && request.Body != nil {
+		body, err := io.ReadAll(io.LimitReader(request.Body, maxBodyBytes+1))
+		if err != nil || int64(len(body)) > maxBodyBytes {
+			writeError(response, http.StatusBadRequest, "invalid_mapping_group", "请求体无效")
+			return
+		}
+		if len(strings.TrimSpace(string(body))) > 0 {
+			decoder := json.NewDecoder(strings.NewReader(string(body)))
+			decoder.DisallowUnknownFields()
+			var payload struct {
+				Version *int64 `json:"version"`
+			}
+			if err := decoder.Decode(&payload); err != nil {
+				writeError(response, http.StatusBadRequest, "invalid_mapping_group", "请求体不是合法 JSON")
+				return
+			}
+			expectedVersion = payload.Version
+		}
+	}
+	current, err := handler.service.Get(request.Context(), id)
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	if expectedVersion != nil && current.Version() != *expectedVersion {
+		writeServiceError(response, mappingcore.ErrGroupConflict)
+		return
+	}
+	// toggle 先读取当前组，再用读取时的 version 作为 CAS 条件写入，防止并发静默覆盖。
+	versionToUse := current.Version()
+	if expectedVersion != nil {
+		versionToUse = *expectedVersion
+	}
+	nextEnabled := !current.Enabled()
+	updated, err := handler.service.Update(request.Context(), id, mappingapp.UpdateInput{
+		Enabled: &nextEnabled,
+		Version: &versionToUse,
+	})
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	handler.writeGroup(response, request, updated)
 }
 
 func (handler *Handler) remove(response http.ResponseWriter, request *http.Request, id string) {
@@ -217,7 +300,7 @@ func (handler *Handler) remove(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "source": "go"})
 }
 
 // writeGroup 返回最新单组与整份集合，与 Node 路由的响应形状一致。
@@ -225,13 +308,13 @@ func (handler *Handler) writeGroup(response http.ResponseWriter, request *http.R
 	groups, err := handler.service.List(request.Context())
 	if err != nil {
 		// 写入已经成功，不能把列表读取失败报成写失败；单组仍然返回。
-		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "group": group})
+		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "group": group, "source": "go"})
 		return
 	}
 	if groups == nil {
 		groups = []mappingcore.Group{}
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "group": group, "groups": groups})
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "group": group, "groups": groups, "source": "go"})
 }
 
 // parseVersionQuery 解析可选的 version 查询参数。

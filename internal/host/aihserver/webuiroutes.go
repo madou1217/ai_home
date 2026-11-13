@@ -858,6 +858,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, projectsFSRoutes...)
+	// OpenAI 模型目录写改删查/监听与上游错误映射组管理切 Go，Node 只做透传。
+	modelsRulesRoutes, err := buildWebUIModelsRulesRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, modelsRulesRoutes...)
 	return routes, nil
 }
 

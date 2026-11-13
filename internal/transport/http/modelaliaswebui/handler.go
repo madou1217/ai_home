@@ -18,6 +18,7 @@ import (
 //	PUT    /v1/management/webui/model-aliases/{id}
 //	DELETE /v1/management/webui/model-aliases/{id}
 //	POST   /v1/management/webui/model-aliases/{id}/enabled
+//	POST   /v1/management/webui/model-aliases/{id}/toggle
 const Path = "/v1/management/webui/model-aliases"
 
 const maxBodyBytes = 64 * 1024
@@ -122,6 +123,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.replaceGroup(response, request)
 	case len(parts) == 2 && parts[1] == "enabled" && request.Method == http.MethodPost:
 		handler.setEnabled(response, request, parts[0])
+	case len(parts) == 2 && parts[1] == "toggle" && request.Method == http.MethodPost:
+		handler.toggleEnabled(response, request, parts[0])
 	default:
 		response.Header().Set("Allow", "GET, POST, PUT, DELETE")
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的别名操作")
@@ -204,6 +207,30 @@ func (handler *Handler) setEnabled(response http.ResponseWriter, request *http.R
 		return
 	}
 	record, generation, err := handler.service.SetEnabled(request.Context(), id, *payload.Enabled)
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	handler.refreshCatalog(request.Context())
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "alias": record, "generation": generation})
+}
+
+func (handler *Handler) toggleEnabled(response http.ResponseWriter, request *http.Request, id string) {
+	records := handler.service.List()
+	var current *modelalias.Record
+	for i := range records {
+		if records[i].ID == id {
+			current = &records[i]
+			break
+		}
+	}
+	if current == nil {
+		writeServiceError(response, modelalias.ErrAliasNotFound)
+		return
+	}
+	// Enabled 缺失时按启用处理，与 modelalias.Record 语义一致。
+	currentlyEnabled := current.Enabled == nil || *current.Enabled
+	record, generation, err := handler.service.SetEnabled(request.Context(), id, !currentlyEnabled)
 	if err != nil {
 		writeServiceError(response, err)
 		return
@@ -336,7 +363,8 @@ func writeJSON(response http.ResponseWriter, status int, payload any) {
 
 func writeError(response http.ResponseWriter, status int, code, message string) {
 	writeJSON(response, status, map[string]any{
-		"ok":    false,
-		"error": map[string]string{"code": code, "message": message},
+		"ok":     false,
+		"error":  map[string]string{"code": code, "message": message},
+		"detail": message,
 	})
 }

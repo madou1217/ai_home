@@ -323,3 +323,50 @@ func TestHandlerTargetsUnavailable(t *testing.T) {
 		t.Fatalf("status = %d, want 503", recorder.Code)
 	}
 }
+
+func TestHandlerToggleEnabledFlipsStateAndHandlesMissing(t *testing.T) {
+	disabled := false
+	refreshes := 0
+	service := &fakeService{
+		records: []modelalias.Record{
+			{ID: "a1", Alias: "fast", Target: "gpt-5", Enabled: nil},
+			{ID: "a2", Alias: "slow", Target: "gpt-4", Enabled: &disabled},
+		},
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    service,
+		Refresh:    func(context.Context) error { refreshes++; return nil },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+
+	rec1 := do(handler, http.MethodPost, Path+"/a1/toggle", "")
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("toggle a1 status = %d, body = %s", rec1.Code, rec1.Body.String())
+	}
+	if service.lastID != "a1" || service.lastEnable == nil || *service.lastEnable {
+		t.Fatalf("toggle a1 expected false, got id=%q enable=%v", service.lastID, service.lastEnable)
+	}
+
+	rec2 := do(handler, http.MethodPost, Path+"/a2/toggle", "")
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("toggle a2 status = %d, body = %s", rec2.Code, rec2.Body.String())
+	}
+	if service.lastID != "a2" || service.lastEnable == nil || !*service.lastEnable {
+		t.Fatalf("toggle a2 expected true, got id=%q enable=%v", service.lastID, service.lastEnable)
+	}
+	if refreshes != 2 {
+		t.Fatalf("refreshes = %d, want 2", refreshes)
+	}
+
+	missing := do(handler, http.MethodPost, Path+"/missing/toggle", "")
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, want 404", missing.Code)
+	}
+	payload := decode(t, missing)
+	if detail, _ := payload["detail"].(string); detail == "" {
+		t.Fatalf("missing detail string in error payload: %v", payload)
+	}
+}

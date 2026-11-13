@@ -265,3 +265,61 @@ func TestHandlerRejectsUnsupportedMethod(t *testing.T) {
 		t.Fatalf("status = %d, want 405", recorder.Code)
 	}
 }
+
+func TestHandlerWebUIBasePathAndToggle(t *testing.T) {
+	group := storedGroup(t)
+	service := &fakeService{groups: []mappingcore.Group{group}}
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    service,
+		BasePath:   WebUIPath,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+
+	if rec := do(handler, http.MethodGet, Path, ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("wrong base path status = %d, want 404", rec.Code)
+	}
+
+	listRec := do(handler, http.MethodGet, WebUIPath, "")
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	var listPayload map[string]any
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listPayload); err != nil {
+		t.Fatalf("decode list failed: %v", err)
+	}
+	if listPayload["source"] != "go" {
+		t.Fatalf("source = %v, want go", listPayload["source"])
+	}
+
+	toggleRec := do(handler, http.MethodPost, WebUIPath+"/uem_0123456789ab/toggle", "")
+	if toggleRec.Code != http.StatusOK {
+		t.Fatalf("toggle status = %d, body = %s", toggleRec.Code, toggleRec.Body.String())
+	}
+	if service.lastID != "uem_0123456789ab" {
+		t.Fatalf("lastID = %q", service.lastID)
+	}
+	if service.lastUpdate.Enabled == nil || *service.lastUpdate.Enabled {
+		t.Fatalf("expected enabled=false after toggling enabled=true group, got %v", service.lastUpdate.Enabled)
+	}
+	if service.lastUpdate.Version == nil || *service.lastUpdate.Version != group.Version() {
+		t.Fatalf("expected CAS version=%d, got %v", group.Version(), service.lastUpdate.Version)
+	}
+
+	conflictRec := do(handler, http.MethodPost, WebUIPath+"/uem_0123456789ab/toggle?version=99", "")
+	if conflictRec.Code != http.StatusConflict {
+		t.Fatalf("version mismatch status = %d, want 409", conflictRec.Code)
+	}
+
+	notFoundHandler, _ := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Service:    &fakeService{err: mappingcore.ErrGroupNotFound},
+		BasePath:   WebUIPath,
+	})
+	missingRec := do(notFoundHandler, http.MethodPost, WebUIPath+"/missing/toggle", "")
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, want 404", missingRec.Code)
+	}
+}

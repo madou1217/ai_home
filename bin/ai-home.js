@@ -205,7 +205,10 @@ function tryRunGoFamilyServerCommand() {
     command === 'usage' &&
     /^\d+$/.test(String(args[2] || '').trim()) &&
     (args.length === 3 || args[3] === '--refresh');
-  if (!isList && !isUsage) return false;
+  const isSetDefault = args.length === 3 && command === 'set-default' &&
+    /^\d+$/.test(String(args[2] || '').trim());
+  const isUnsetDefault = args.length === 2 && command === 'unset-default';
+  if (!isList && !isUsage && !isSetDefault && !isUnsetDefault) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

@@ -16,10 +16,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"sort"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/gemini"
 )
 
@@ -69,6 +71,14 @@ func (source *Source) DiscoverModels(
 	}
 	if credential.ProviderID() != providerID {
 		return nil, ErrUnsupportedCredential
+	}
+	if native, ok := credential.(*accountcore.NativeCredential); ok && native != nil &&
+		native.ProviderID() == providerID {
+		token, tokenOK := geminiOAuthToken(native.Payload())
+		if !tokenOK {
+			return nil, ErrUnsupportedCredential
+		}
+		return source.discoverCodeAssist(ctx, token)
 	}
 	vertex, ok := credential.(*gemini.VertexAuth)
 	if !ok || vertex == nil {
@@ -199,4 +209,150 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// geminiOAuthToken 从 native_auth_json 的 oauthCreds 读取 access token。
+func geminiOAuthToken(payload []byte) (string, bool) {
+	var document map[string]any
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return "", false
+	}
+	oauth := geminiObject(document["oauthCreds"])
+	if oauth == nil {
+		oauth = geminiObject(document["oauth_creds"])
+	}
+	if oauth == nil {
+		if credentials := geminiObject(document["credentials"]); credentials != nil {
+			oauth = geminiObject(credentials["oauthCreds"])
+			if oauth == nil {
+				oauth = geminiObject(credentials["oauth_creds"])
+			}
+		}
+	}
+	if oauth == nil {
+		return "", false
+	}
+	token := strings.TrimSpace(geminiString(oauth["access_token"]))
+	if token == "" {
+		token = strings.TrimSpace(geminiString(oauth["accessToken"]))
+	}
+	return token, token != ""
+}
+
+// discoverCodeAssist 用 loadCodeAssist/fetchAvailableModels 读取 OAuth 账号目录。
+func (source *Source) discoverCodeAssist(ctx context.Context, token string) ([]string, error) {
+	project := ""
+	loadBody := map[string]any{
+		"metadata": map[string]string{
+			"ideType":    "GEMINI",
+			"platform":   "PLATFORM_UNSPECIFIED",
+			"pluginType": "GEMINI",
+		},
+	}
+	if payload, err := json.Marshal(loadBody); err == nil {
+		if response, requestErr := source.postGemini(ctx, "loadCodeAssist", token, payload); requestErr == nil {
+			var document struct {
+				Project string `json:"cloudaicompanionProject"`
+			}
+			if json.Unmarshal(response, &document) == nil {
+				project = strings.TrimSpace(document.Project)
+			}
+		}
+	}
+	modelsBody := map[string]any{"requestId": "aih-model-discovery"}
+	if project != "" {
+		modelsBody["project"] = project
+	}
+	payload, err := json.Marshal(modelsBody)
+	if err != nil {
+		return nil, ErrInvalidDependencies
+	}
+	response, err := source.postGemini(ctx, "fetchAvailableModels", token, payload)
+	if err != nil {
+		return nil, err
+	}
+	var document struct {
+		Models map[string]json.RawMessage `json:"models"`
+	}
+	if err := json.Unmarshal(response, &document); err != nil {
+		return nil, ErrEmptyCatalog
+	}
+	seen := make(map[string]struct{}, len(document.Models))
+	models := make([]string, 0, len(document.Models))
+	for id := range document.Models {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		models = append(models, trimmed)
+	}
+	if len(models) == 0 {
+		return nil, ErrEmptyCatalog
+	}
+	sort.Strings(models)
+	return models, nil
+}
+
+func (source *Source) postGemini(
+	ctx context.Context,
+	method string,
+	token string,
+	body []byte,
+) ([]byte, error) {
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"https://cloudcode-pa.googleapis.com/v1internal:"+method,
+		strings.NewReader(string(body)),
+	)
+	if err != nil {
+		return nil, ErrInvalidDependencies
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", geminiCatalogUserAgent())
+	response, err := source.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	if response == nil || response.Body == nil {
+		return nil, ErrEmptyCatalog
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("gemini 模型清单请求失败: HTTP %d", response.StatusCode)
+	}
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+	if err != nil || len(payload) == 0 || len(payload) > maxResponseBytes {
+		return nil, ErrEmptyCatalog
+	}
+	return payload, nil
+}
+
+func geminiCatalogUserAgent() string {
+	platform := runtime.GOOS
+	if platform == "windows" {
+		platform = "win32"
+	}
+	arch := runtime.GOARCH
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	return "GeminiCLI-cli-command/0.42.0/unknown (" + platform + "; " + arch + "; terminal)"
+}
+
+func geminiObject(value any) map[string]any {
+	object, _ := value.(map[string]any)
+	return object
+}
+
+func geminiString(value any) string {
+	text, _ := value.(string)
+	return text
 }

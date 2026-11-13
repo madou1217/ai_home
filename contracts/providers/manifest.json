@@ -380,8 +380,8 @@
       },
       "relayHosts": {
         "go": {
-          "supported": false,
-          "reason": "Go 无 gemini 直连上游（gemini-* 模型经 agy 的 Code Assist 服务，agy 已声明 canonical）"
+          "supported": true,
+          "channel": "canonical"
         },
         "node": {
           "supported": true,

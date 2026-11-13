@@ -156,7 +156,9 @@ func builtinGemini() Definition {
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
-		RelayHosts:   relayHostsNodeOnly("Go 无 gemini 直连上游（gemini-* 模型经 agy 的 Code Assist 服务，agy 已声明 canonical）"),
+		// Gemini CLI 的 Code Assist 推理已由 Go 承接（gemini.code_assist），
+		// Node 只保留 CLI/桌面宿主能力。
+		RelayHosts:   relayHostsCanonical(),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(

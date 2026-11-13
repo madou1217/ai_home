@@ -109,9 +109,18 @@ func (decoder *responseDecoder) Apply(payload []byte) error {
 	}
 	var envelope streamEnvelope
 	jsonDecoder := json.NewDecoder(bytes.NewReader(payload))
-	if err := jsonDecoder.Decode(&envelope); err != nil ||
-		len(envelope.Response.Candidates) == 0 {
+	if err := jsonDecoder.Decode(&envelope); err != nil {
 		return fmt.Errorf("%w: envelope %v", ErrInvalidUpstreamResponse, err)
+	}
+	// Gemini Code Assist 可能把 candidates 包在 response 里，也可能直接给标准
+	// generateContent 结构；两种都接受，不能因为多一层信封丢整段响应。
+	if len(envelope.Response.Candidates) == 0 {
+		var direct streamResponse
+		if directErr := json.Unmarshal(payload, &direct); directErr != nil ||
+			len(direct.Candidates) == 0 {
+			return fmt.Errorf("%w: envelope %v", ErrInvalidUpstreamResponse, directErr)
+		}
+		envelope.Response = direct
 	}
 	if err := decoder.start(); err != nil {
 		return err

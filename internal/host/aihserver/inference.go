@@ -180,6 +180,10 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	geminiAdapter, err := agycodeassist.NewGeminiAdapter(agyClient, dependencies.clock)
+	if err != nil {
+		return nil, err
+	}
 	activeCatalog, err := inferencecatalog.NewAtomicCatalog(dependencies.clock)
 	if err != nil {
 		return nil, err
@@ -194,6 +198,7 @@ func newInferenceComposition(
 		codexAdapter,
 		claudeAdapter,
 		agyAdapter,
+		geminiAdapter,
 	)
 	if err != nil {
 		return nil, err
@@ -250,6 +255,7 @@ func newInferenceComposition(
 			codexAdapter,
 			claudeAdapter,
 			agyAdapter,
+			geminiAdapter,
 		},
 		ModelRefreshes:  dependencies.modelRefreshes,
 		Clock:           dependencies.clock,

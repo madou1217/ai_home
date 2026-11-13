@@ -708,7 +708,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			context.Background(), accountRef,
 		); overviewErr == nil {
 			switch overview.Account().ProviderID() {
-			case "agy", "kiro":
+			case "agy", "kiro", "gemini":
 				return true
 			}
 		}

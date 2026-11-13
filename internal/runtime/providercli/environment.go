@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/application/providerlaunch"
 )
 
@@ -41,6 +42,24 @@ func applyEnvironment(base []string, patch providerlaunch.EnvironmentPatch) []st
 		result = append(result, names[key]+"="+values[key])
 	}
 	return result
+}
+
+// applyProjectionEnvironment 在 Strategy 环境之后叠加账号投影结果。
+//
+// 投影是唯一允许改写 CODEX_HOME / HOME 等共享状态根的位置：Strategy 的环境补丁
+// 仍受 preservesSharedNativeState 约束，账号沙箱路径只能来自投影执行器。
+func applyProjectionEnvironment(
+	environment []string,
+	result appprojection.Result,
+) ([]string, error) {
+	if len(result.SetEnv) == 0 && len(result.UnsetEnv) == 0 {
+		return environment, nil
+	}
+	patch, err := providerlaunch.NewEnvironmentPatch(result.SetEnv, result.UnsetEnv)
+	if err != nil {
+		return nil, err
+	}
+	return applyEnvironment(environment, patch), nil
 }
 
 // setEnvironmentValue 覆盖 Runtime 动态分配的 Socket 等非持久配置。

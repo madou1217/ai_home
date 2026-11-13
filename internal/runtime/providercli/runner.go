@@ -4,10 +4,14 @@ package providercli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"runtime"
+	"time"
 
+	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -22,7 +26,15 @@ var (
 	ErrInvalidRunRequest = errors.New("Provider CLI Runtime 请求无效")
 	// ErrUnsupportedRuntime 表示当前官方 CLI 不支持计划要求的安全运行形态。
 	ErrUnsupportedRuntime = errors.New("Provider CLI Runtime 不受支持")
+	// ErrProjectionUnavailable 表示计划要求账号投影，但 Runtime 没有装配投影执行器。
+	ErrProjectionUnavailable = errors.New("Provider CLI 账号投影不可用")
+	// ErrProjectionMismatch 表示实际策略形态与 Strategy 声明的隔离级别不一致。
+	ErrProjectionMismatch = errors.New("Provider CLI 账号投影与策略不匹配")
 )
+
+// projectionCaptureTimeout 限制退出后的凭据回写；用户 Ctrl+C 取消了启动 Context
+// 时仍要回写，否则客户端刚续期的 refresh_token 会丢。
+const projectionCaptureTimeout = 20 * time.Second
 
 // CredentialRefresher 是常驻 OAuth Runtime 收到上游 401 后的最小应用端口。
 type CredentialRefresher interface {
@@ -45,6 +57,12 @@ type Options struct {
 	// Interactive selects the PTY-backed direct process path for foreground TTY runs.
 	Interactive bool
 	PTYStarter  pty.Starter
+	// Projection 执行账号级凭据文件投影；计划声明需要投影时必须提供。
+	Projection appprojection.Provisioner
+	// HostHomeDir 是投影共享链接指向的宿主家目录；为空时投影失败关闭。
+	HostHomeDir string
+	// Platform 覆盖链接/路径的平台语义；为空按 runtime.GOOS。
+	Platform string
 }
 
 // Runner 是 LaunchPlan 到官方进程拓扑的唯一执行入口。
@@ -56,6 +74,9 @@ type Runner struct {
 	httpClient  *http.Client
 	interactive bool
 	ptyStarter  pty.Starter
+	projection  appprojection.Provisioner
+	hostHomeDir string
+	platform    string
 	environ     func() []string
 	binaries    binaryResolver
 	processes   processFactory
@@ -71,6 +92,10 @@ func NewRunner(options Options) (*Runner, error) {
 	if client == nil {
 		client = &http.Client{}
 	}
+	platform := options.Platform
+	if platform == "" {
+		platform = runtime.GOOS
+	}
 	return &Runner{
 		credentials: options.Credentials,
 		stdin:       options.Stdin,
@@ -79,6 +104,9 @@ func NewRunner(options Options) (*Runner, error) {
 		httpClient:  client,
 		interactive: options.Interactive,
 		ptyStarter:  options.PTYStarter,
+		projection:  options.Projection,
+		hostHomeDir: options.HostHomeDir,
+		platform:    platform,
 		environ:     os.Environ,
 		binaries:    defaultBinaryResolver(),
 		processes:   execProcessFactory{},
@@ -134,13 +162,7 @@ func (runner *Runner) Run(
 		}
 		switch spec.Runtime().Kind() {
 		case providerlaunch.RuntimeKindDirectProcess:
-			return runner.runDirect(
-				ctx,
-				spec.ProviderID(),
-				spec.Binary(),
-				resolved,
-				spec.Environment(),
-			)
+			return runner.runNativeDirect(ctx, spec, resolved)
 		case providerlaunch.RuntimeKindCodexExternalAuth:
 			return runner.runCodexExternalAuth(ctx, spec, resolved)
 		case providerlaunch.RuntimeKindClaudeOAuthProxy:
@@ -171,6 +193,82 @@ func (runner *Runner) runDirect(
 		arguments,
 		applyEnvironment(runner.environ(), environment),
 	)
+}
+
+// runNativeDirect 执行 Native Direct：需要凭据文件投影时先物化账号沙箱，
+// 进程退出后（包括失败与取消）把客户端可能续期的凭据回写账号库。
+func (runner *Runner) runNativeDirect(
+	ctx context.Context,
+	spec providerlaunch.LaunchSpec,
+	arguments []string,
+) error {
+	path, err := runner.binaries.Resolve(spec.ProviderID(), spec.Binary())
+	if err != nil {
+		return err
+	}
+	environment := applyEnvironment(runner.environ(), spec.Environment())
+	projection := spec.Projection()
+	if !projection.Required() {
+		return runner.runProviderProcess(ctx, path, arguments, environment)
+	}
+	if runner.projection == nil || runner.hostHomeDir == "" {
+		return ErrProjectionUnavailable
+	}
+	request := appprojection.Request{
+		ProviderID:         spec.ProviderID(),
+		AccountRef:         spec.AccountRef(),
+		Credential:         spec.RevealCredential(),
+		HostHomeDir:        runner.hostHomeDir,
+		Platform:           runner.platform,
+		Purpose:            appprojection.PurposeLaunch,
+		ProjectionRequired: true,
+	}
+	result, err := runner.projection.Prepare(ctx, request)
+	if err != nil {
+		return err
+	}
+	// 策略漂移必须失败关闭：Strategy 以为在隔离配置根、策略却退回共享状态（或反向）
+	// 时，凭据可能落到宿主原生目录。
+	if string(result.Mode) != string(projection.Mode()) ||
+		result.PolicyID != projection.PolicyID() {
+		return fmt.Errorf(
+			"%w: got mode=%s policy=%s, want mode=%s policy=%s",
+			ErrProjectionMismatch,
+			result.Mode,
+			result.PolicyID,
+			projection.Mode(),
+			projection.PolicyID(),
+		)
+	}
+	environment, err = applyProjectionEnvironment(environment, result)
+	if err != nil {
+		return err
+	}
+	runErr := runner.runProviderProcess(ctx, path, arguments, environment)
+	// 回写失败必须可见：它意味着账号库停留在旧一代，下一次启动可能拿到失效的
+	// refresh_token。TUI 已经正常退出时把它当本次失败；TUI 自己失败时保留原
+	// 退出码，只把回写错误打印出来。
+	captureErr := runner.captureProjection(ctx, request, result)
+	if captureErr == nil {
+		return runErr
+	}
+	if runErr == nil {
+		return captureErr
+	}
+	_, _ = fmt.Fprintf(runner.stderr, "aih: 回写账号凭据失败: %v\n", captureErr)
+	return runErr
+}
+
+// captureProjection 用不受启动取消影响的 Context 回写凭据：TUI 被 Ctrl+C
+// 打断时客户端常常已经刷新过 auth.json，丢掉这次回写会让下次启动用旧 token。
+func (runner *Runner) captureProjection(
+	ctx context.Context,
+	request appprojection.Request,
+	result appprojection.Result,
+) error {
+	captureCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), projectionCaptureTimeout)
+	defer cancel()
+	return runner.projection.Capture(captureCtx, request, result)
 }
 
 // runProviderProcess 是所有官方 CLI 前台进程的唯一入口：

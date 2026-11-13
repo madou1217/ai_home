@@ -27,6 +27,8 @@ type StrategyResultInput struct {
 	Environment EnvironmentPatch
 	// Runtime 描述直接进程或受控辅助进程拓扑。
 	Runtime RuntimeDirective
+	// Projection 声明是否必须先物化账号级凭据文件。
+	Projection ProjectionDirective
 	// Credential 是不含凭据内容的认证类型摘要。
 	Credential CredentialDescriptor
 }
@@ -39,6 +41,7 @@ type StrategyResult struct {
 	argumentsAfterSubcommands []string
 	environment               EnvironmentPatch
 	runtime                   RuntimeDirective
+	projection                ProjectionDirective
 	credential                CredentialDescriptor
 }
 
@@ -49,8 +52,14 @@ func NewStrategyResult(input StrategyResultInput) (StrategyResult, error) {
 		!input.Environment.IsValid() ||
 		!preservesSharedNativeState(input.Environment) ||
 		!input.Runtime.IsValid() ||
+		!input.Projection.IsValid() ||
 		!input.Credential.IsValid() {
 		return StrategyResult{}, ErrInvalidStrategyResult
+	}
+	// 凭据文件投影只对直接子进程成立：辅助进程形态（OAuth 代理、app-server
+	// 外部认证）把凭据留在宿主内存或共享配置里，再投影一份会制造两个事实源。
+	if input.Projection.Required() && input.Runtime.Kind() != RuntimeKindDirectProcess {
+		return StrategyResult{}, ErrProjectionRuntimeConflict
 	}
 	arguments, err := validateArguments(input.Arguments)
 	if err != nil {
@@ -67,6 +76,7 @@ func NewStrategyResult(input StrategyResultInput) (StrategyResult, error) {
 		argumentsAfterSubcommands: argumentsAfterSubcommands,
 		environment:               cloneEnvironmentPatch(input.Environment),
 		runtime:                   cloneRuntimeDirective(input.Runtime),
+		projection:                input.Projection,
 		credential:                input.Credential,
 	}, nil
 }
@@ -121,6 +131,11 @@ func (result StrategyResult) Runtime() RuntimeDirective {
 	return cloneRuntimeDirective(result.runtime)
 }
 
+// Projection 返回账号投影意图。
+func (result StrategyResult) Projection() ProjectionDirective {
+	return result.projection
+}
+
 // Credential 返回 Strategy 的脱敏认证类型摘要。
 func (result StrategyResult) Credential() CredentialDescriptor {
 	return result.credential
@@ -129,7 +144,7 @@ func (result StrategyResult) Credential() CredentialDescriptor {
 // String 返回不含参数正文、环境值和 Runtime 敏感输入的安全 Strategy 摘要。
 func (result StrategyResult) String() string {
 	return fmt.Sprintf(
-		"providerlaunch.StrategyResult{provider=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,runtime=%s,credential=%s}",
+		"providerlaunch.StrategyResult{provider=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,runtime=%s,projection=%s,credential=%s}",
 		result.providerID,
 		result.binary,
 		len(result.arguments),
@@ -137,6 +152,7 @@ func (result StrategyResult) String() string {
 		result.environment.SetNames(),
 		result.environment.UnsetNames(),
 		result.runtime.Kind(),
+		result.projection,
 		result.credential,
 	)
 }
@@ -160,6 +176,7 @@ func (result StrategyResult) IsValid() bool {
 		ArgumentsAfterSubcommands: result.argumentsAfterSubcommands,
 		Environment:               result.environment,
 		Runtime:                   result.runtime,
+		Projection:                result.projection,
 		Credential:                result.credential,
 	})
 	return err == nil

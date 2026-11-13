@@ -229,9 +229,14 @@ func (provisioner *Provisioner) ensureRoot(
 	if err != nil {
 		return "", err
 	}
-	actual := filepath.Clean(strings.TrimSpace(request.RuntimeDir))
-	if !samePath(expected, actual) {
-		return "", fmt.Errorf("%w: want %s, got %s", appprojection.ErrInvalidProjectionRoot, expected, actual)
+	// RuntimeDir 为空表示由投影层按 AIH_HOME/账号引用推导；显式给出时必须与
+	// 推导结果完全一致，避免调用方把凭据写到别的账号目录。
+	actual := expected
+	if requested := strings.TrimSpace(request.RuntimeDir); requested != "" {
+		actual = filepath.Clean(requested)
+		if !samePath(expected, actual) {
+			return "", fmt.Errorf("%w: want %s, got %s", appprojection.ErrInvalidProjectionRoot, expected, actual)
+		}
 	}
 	if err := os.MkdirAll(actual, 0o700); err != nil {
 		return "", err

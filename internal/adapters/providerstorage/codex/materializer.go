@@ -40,15 +40,42 @@ func (Materializer) Materialize(
 	if !ok || auth == nil {
 		return nil, ErrUnsupportedCredential
 	}
+	path := filepath.Join(root, ".codex", "auth.json")
+	// Codex 会原地续期 auth.json。磁盘那份比账号快照新，说明上一次 Capture 没跑成
+	// （进程被强杀、回写失败）：这时绝不能用旧快照覆盖，否则轮换过的 refresh_token
+	// 直接失效。保持磁盘内容，退出后由 Capture 追平账号库。
+	if existing, found := readOAuthFile(path); found {
+		if sameOAuth(auth, existing) || shouldAdoptOAuth(auth, existing) {
+			return nil, nil
+		}
+	}
 	data, err := authfile.Encode(auth)
 	if err != nil {
 		return nil, err
 	}
 	return []accountprojection.ArtifactWrite{{
-		Path: filepath.Join(root, ".codex", "auth.json"),
+		Path: path,
 		Data: data,
 		Mode: 0o600,
 	}}, nil
+}
+
+// readOAuthFile 读取投影里的 auth.json；文件缺失、损坏或不是 OAuth 时按“不可用”
+// 处理，由 Materialize 用账号快照重建（重建比阻断启动更安全）。
+func readOAuthFile(path string) (*codex.OAuthAuth, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	decoded, err := authfile.Decode(data, authfile.DecodeOptions{})
+	if err != nil {
+		return nil, false
+	}
+	auth, ok := decoded.(*codex.OAuthAuth)
+	if !ok || auth == nil {
+		return nil, false
+	}
+	return auth, true
 }
 
 // Capture 读取投影里的 auth.json；缺失视为没有变化，格式/身份错误返回错误。
@@ -95,14 +122,20 @@ func (Materializer) ShouldAdopt(current accountapp.Credential, next accountapp.C
 	if !currentOK || !nextOK || currentAuth == nil || nextAuth == nil {
 		return false
 	}
-	if currentAuth.IdentitySeed() != nextAuth.IdentitySeed() || sameOAuth(currentAuth, nextAuth) {
+	return shouldAdoptOAuth(currentAuth, nextAuth)
+}
+
+// shouldAdoptOAuth 判断磁盘/投影的一代是否比账号库的一代更新。
+func shouldAdoptOAuth(current *codex.OAuthAuth, next *codex.OAuthAuth) bool {
+	if current == nil || next == nil ||
+		current.IdentitySeed() != next.IdentitySeed() || sameOAuth(current, next) {
 		return false
 	}
-	if nextAuth.RefreshedAtMS() > currentAuth.RefreshedAtMS() {
+	if next.RefreshedAtMS() > current.RefreshedAtMS() {
 		return true
 	}
 	// 账号库时间未知，而客户端写出了明确刷新时刻：可以采纳。
-	return currentAuth.RefreshedAtMS() == 0 && nextAuth.RefreshedAtMS() > 0
+	return current.RefreshedAtMS() == 0 && next.RefreshedAtMS() > 0
 }
 
 // sameOAuth 判断两代 OAuth 凭据是否完全一致；时间/Token/工作区任一变化都算新代。

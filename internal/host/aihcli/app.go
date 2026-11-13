@@ -8,19 +8,24 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/application/providerruntime"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
+	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 )
@@ -48,6 +53,8 @@ type Options struct {
 	OAuthHTTPClient *http.Client
 	// ProviderHTTPClient 仅供本地 Claude 代理转发请求。
 	ProviderHTTPClient *http.Client
+	// HostHomeDir 覆盖账号投影的宿主家目录；为空时从进程环境解析。
+	HostHomeDir string
 }
 
 // GatewayConfig 只在 Gateway Relay 模式使用；Native Direct 不读取它。
@@ -194,6 +201,17 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return fail("创建双模式启动服务失败", err)
 	}
+	var provisioner appprojection.Provisioner
+	if store != nil {
+		provisioner, err = newProjectionProvisioner(options.AIHomeDir, store)
+		if err != nil {
+			return fail("创建账号投影执行器失败", err)
+		}
+	}
+	hostHomeDir := strings.TrimSpace(options.HostHomeDir)
+	if hostHomeDir == "" {
+		hostHomeDir = resolveHostHomeDir()
+	}
 	runner, err := providercli.NewRunner(providercli.Options{
 		Credentials: credentials,
 		Stdin:       options.Stdin,
@@ -202,6 +220,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 		HTTPClient:  options.ProviderHTTPClient,
 		Interactive: isInteractiveTTY(options.Stdin, options.Stdout),
 		PTYStarter:  pty.NewStarter(),
+		Projection:  provisioner,
+		HostHomeDir: hostHomeDir,
 	})
 	if err != nil {
 		return fail("创建 Provider CLI Runtime 失败", err)
@@ -210,6 +230,34 @@ func New(ctx context.Context, options Options) (*App, error) {
 		return newApp(catalog, planner, runner)
 	}
 	return newApp(catalog, planner, runner, store)
+}
+
+// newProjectionProvisioner 装配已迁移 Provider 的投影策略、materializer、
+// 平台链接与凭据回写存储。未注册的 Provider 会在启动时失败关闭。
+func newProjectionProvisioner(
+	aiHomeDir string,
+	store accountapp.CredentialVersionStore,
+) (appprojection.Provisioner, error) {
+	registry := providerstorage.New()
+	return runtimeprojection.New(runtimeprojection.Options{
+		AIHomeDir:     aiHomeDir,
+		Policies:      registry,
+		Materializers: registry.Materializers(),
+		Linker:        runtimeprojection.NewLinker(),
+		Credentials:   store,
+	})
+}
+
+// resolveHostHomeDir 按 AIH_HOST_HOME / 平台家目录变量 / os 家目录解析宿主家。
+func resolveHostHomeDir() string {
+	environment := make(map[string]string)
+	for _, entry := range os.Environ() {
+		name, value, found := strings.Cut(entry, "=")
+		if found && name != "" {
+			environment[name] = value
+		}
+	}
+	return providerruntime.ResolveHostHomeDir("", environment, runtime.GOOS)
 }
 
 func isInteractiveTTY(input io.Reader, output io.Writer) bool {

@@ -81,7 +81,11 @@ func (*Strategy) Build(
 	}
 }
 
-// buildOAuth 生成不写 auth.json 的官方 app-server 外部 Token Runtime。
+// buildOAuth 让 Codex 读取账号级 CODEX_HOME 里的 auth.json。
+//
+// 与 Node 一致：OAuth 账号不再借用共享 CODEX_HOME + app-server 外部 Token 桥，
+// 而是把凭据物化到账号投影；sessions/sqlite 仍通过策略链接回宿主，会话保持共享。
+// 客户端在进程内续期 auth.json，退出后由投影层 Capture 回写账号库。
 func buildOAuth(auth *codex.OAuthAuth) (providerlaunch.StrategyResult, error) {
 	accountID := auth.UpstreamAccountID()
 	if accountID == "" {
@@ -90,13 +94,12 @@ func buildOAuth(auth *codex.OAuthAuth) (providerlaunch.StrategyResult, error) {
 			ErrBuildLaunchContext,
 		)
 	}
-	runtime, err := providerlaunch.NewCodexExternalAuthRuntime(
-		auth.AccessToken(),
-		accountID,
-		auth.PlanType(),
+	projection, err := providerlaunch.NewProjectionDirective(
+		codex.ProviderID,
+		providerlaunch.ProjectionModeConfigDir,
 	)
 	if err != nil {
-		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth Runtime 无效", ErrBuildLaunchContext)
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: OAuth 投影指令无效", ErrBuildLaunchContext)
 	}
 	environment, err := providerlaunch.NewEnvironmentPatch(nil, inheritedCredentialKeys)
 	if err != nil {
@@ -115,7 +118,8 @@ func buildOAuth(auth *codex.OAuthAuth) (providerlaunch.StrategyResult, error) {
 		Arguments:                 []string{"-c", `model_provider="openai"`},
 		ArgumentsAfterSubcommands: configScopedSubcommands,
 		Environment:               environment,
-		Runtime:                   runtime,
+		Runtime:                   providerlaunch.NewDirectProcessRuntime(),
+		Projection:                projection,
 		Credential:                descriptor,
 	})
 }

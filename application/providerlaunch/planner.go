@@ -146,5 +146,5 @@ func (planner *Planner) Build(
 		result.ProviderID() != account.ProviderID() {
 		return LaunchSpec{}, ErrInvalidStrategyResult
 	}
-	return newLaunchSpec(selection, result)
+	return newLaunchSpec(selection, result, binding.Credential())
 }

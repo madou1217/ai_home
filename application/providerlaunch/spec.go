@@ -29,15 +29,21 @@ type LaunchSpec struct {
 	argumentsAfterSubcommands []string
 	environment               EnvironmentPatch
 	runtime                   RuntimeDirective
-	credential                CredentialDescriptor
+	projection                ProjectionDirective
+	credentialDescriptor      CredentialDescriptor
+	// credential 是已解析的领域凭据，只在 Runtime Adapter 准备账号投影时显式取出；
+	// 不参与格式化，也不进入日志。
+	credential accountapp.Credential
 }
 
 // newLaunchSpec 合并经过验证的账号选择和 Provider Strategy 结果。
 func newLaunchSpec(
 	selection accountapp.LaunchSelection,
 	result StrategyResult,
+	credential accountapp.Credential,
 ) (LaunchSpec, error) {
-	if !selection.IsValid() || !result.IsValid() {
+	if !selection.IsValid() || !result.IsValid() ||
+		credential == nil || credential.ProviderID() != result.providerID {
 		return LaunchSpec{}, ErrInvalidLaunchSpec
 	}
 	account := selection.Account()
@@ -56,7 +62,9 @@ func newLaunchSpec(
 		argumentsAfterSubcommands: append([]string(nil), result.argumentsAfterSubcommands...),
 		environment:               cloneEnvironmentPatch(result.environment),
 		runtime:                   cloneRuntimeDirective(result.runtime),
-		credential:                result.credential,
+		projection:                result.projection,
+		credentialDescriptor:      result.credential,
+		credential:                credential,
 	}, nil
 }
 
@@ -119,8 +127,19 @@ func (spec LaunchSpec) Runtime() RuntimeDirective {
 	return cloneRuntimeDirective(spec.runtime)
 }
 
+// Projection 返回账号投影意图。
+func (spec LaunchSpec) Projection() ProjectionDirective {
+	return spec.projection
+}
+
 // Credential 返回不包含任何凭据内容的认证类型摘要。
 func (spec LaunchSpec) Credential() CredentialDescriptor {
+	return spec.credentialDescriptor
+}
+
+// RevealCredential 显式返回已解析的领域凭据，仅供 Runtime Adapter 物化账号投影。
+// 调用方不得记录返回值或其派生字节。
+func (spec LaunchSpec) RevealCredential() accountapp.Credential {
 	return spec.credential
 }
 
@@ -137,7 +156,11 @@ func (spec LaunchSpec) IsValid() bool {
 		!spec.environment.IsValid() ||
 		!preservesSharedNativeState(spec.environment) ||
 		!spec.runtime.IsValid() ||
-		!spec.credential.IsValid() {
+		!spec.projection.IsValid() ||
+		(spec.projection.Required() && spec.runtime.Kind() != RuntimeKindDirectProcess) ||
+		!spec.credentialDescriptor.IsValid() ||
+		spec.credential == nil ||
+		spec.credential.ProviderID() != spec.providerID {
 		return false
 	}
 	return true
@@ -146,7 +169,7 @@ func (spec LaunchSpec) IsValid() bool {
 // String 返回不含参数正文、环境值和 Runtime 敏感输入的安全启动摘要。
 func (spec LaunchSpec) String() string {
 	return fmt.Sprintf(
-		"providerlaunch.LaunchSpec{mode=%s,provider=%s,account=%s,cli_id=%d,source=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,runtime=%s,credential=%s}",
+		"providerlaunch.LaunchSpec{mode=%s,provider=%s,account=%s,cli_id=%d,source=%s,binary=%s,args=%d,args_after=%v,env_set=%v,env_unset=%v,runtime=%s,projection=%s,credential=%s}",
 		spec.mode,
 		spec.providerID,
 		spec.accountRef,
@@ -158,7 +181,8 @@ func (spec LaunchSpec) String() string {
 		spec.environment.SetNames(),
 		spec.environment.UnsetNames(),
 		spec.runtime.Kind(),
-		spec.credential,
+		spec.projection,
+		spec.credentialDescriptor,
 	)
 }
 

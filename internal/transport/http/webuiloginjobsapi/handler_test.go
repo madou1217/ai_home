@@ -126,3 +126,22 @@ func TestLoginJobsRequiresManagementKey(t *testing.T) {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
 }
+
+// TestProbeContractUsesJobNotFound Node 的能力探测依赖这个错误码：路由存在时未知
+// 作业必须回 job_not_found（旧 Server 缺路由时是 route_not_found）。
+func TestProbeContractUsesJobNotFound(t *testing.T) {
+	server, _ := newTestServer(t)
+	defer server.Close()
+	response := request(t, server, http.MethodGet, Path+"/__probe__", "")
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var body errorResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error != "job_not_found" {
+		t.Fatalf("error = %q, want job_not_found", body.Error)
+	}
+}

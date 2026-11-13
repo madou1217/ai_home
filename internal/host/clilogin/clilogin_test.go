@@ -113,7 +113,7 @@ func TestRunRejectsUnsupportedProvider(t *testing.T) {
 	_, err := Run(context.Background(), Options{
 		AIHomeDir:   t.TempDir(),
 		HostHomeDir: t.TempDir(),
-		ProviderID:  "kiro",
+		ProviderID:  "zcode",
 		Stdin:       strings.NewReader(""),
 		Stdout:      &strings.Builder{},
 		Stderr:      &strings.Builder{},

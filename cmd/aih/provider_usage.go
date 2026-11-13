@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
@@ -66,7 +67,31 @@ func runProviderUsage(
 	}
 	var result managementapi.UsageResult
 	if refresh {
-		result, err = client.RefreshUsage(ctx, accountRef)
+		// 刷新要打上游，额度探测可能超过 10s；单独放宽超时。
+		refreshClient := client
+		if slower, slowErr := newAccountManagementClientWithTimeout(runtime, 60*time.Second); slowErr == nil {
+			refreshClient = slower
+		}
+		result, err = refreshClient.RefreshUsage(ctx, accountRef)
+		if err != nil {
+			// 与 Node 一致：刷新失败时退回缓存快照并显式告警，不让命令整体失败。
+			cached, cachedErr := client.GetUsage(ctx, accountRef)
+			if cachedErr != nil {
+				// Server 在刷新失败的瞬间可能把错误连带返回给读接口；短暂退避后重试一次。
+				select {
+				case <-time.After(400 * time.Millisecond):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				cached, cachedErr = client.GetUsage(ctx, accountRef)
+			}
+			if cachedErr != nil {
+				return fmt.Errorf("读取 Server 账号额度失败: %w", cachedErr)
+			}
+			result = cached
+			err = nil
+			_, _ = fmt.Fprintln(runtime.stderr, "[aih] 额度刷新失败，显示缓存快照")
+		}
 	} else {
 		result, err = client.GetUsage(ctx, accountRef)
 	}
@@ -119,6 +144,7 @@ func runProviderUsageAll(
 				account.CLIAccountID.Int64(),
 				err,
 			)
+			err = nil
 			continue
 		}
 		writeAccountUsageSummary(runtime.stdout, account, displayNames[account.AccountRef.String()], result)

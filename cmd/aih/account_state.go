@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
@@ -38,6 +40,15 @@ func runAccountSetEnabled(
 func newAccountManagementClient(
 	runtime commandRuntime,
 ) (*managementapi.Client, error) {
+	return newAccountManagementClientWithTimeout(runtime, 0)
+}
+
+// newAccountManagementClientWithTimeout 为慢接口（额度刷新要打上游）放宽超时；
+// 0 表示沿用组合根的默认客户端。
+func newAccountManagementClientWithTimeout(
+	runtime commandRuntime,
+	timeout time.Duration,
+) (*managementapi.Client, error) {
 	managementKey, found := runtime.lookupEnv("AIH_SERVER_MANAGEMENT_KEY")
 	if !found || strings.TrimSpace(managementKey) == "" {
 		return nil, fmt.Errorf(
@@ -45,8 +56,12 @@ func newAccountManagementClient(
 			errInvalidCommand,
 		)
 	}
+	httpClient := runtime.managementAPI
+	if timeout > 0 {
+		httpClient = &http.Client{Timeout: timeout}
+	}
 	client, err := managementapi.New(
-		runtime.managementAPI,
+		httpClient,
 		managementapi.Config{
 			BaseURL: lookupOrDefault(
 				runtime.lookupEnv,

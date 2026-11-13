@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 )
 
 // runProviderDetect 触发本机账号扫描（Go 原生检测器），打印与 WebUI 同源的统计。
@@ -23,7 +27,7 @@ func runProviderDetect(
 	}
 	result, err := client.DetectHostAccounts(ctx)
 	if err != nil {
-		return fmt.Errorf("扫描本机账号失败: %w", err)
+		return detectFailure(err)
 	}
 	if !result.OK {
 		return fmt.Errorf("扫描本机账号失败")
@@ -59,6 +63,16 @@ func runProviderDetect(
 		)
 	}
 	return nil
+}
+
+// detectFailure 把运行中 Server 缺路由的 404 翻成可执行的提示：接口在源码里，
+// 但已启动的 aih-server 可能还是旧二进制。
+func detectFailure(err error) error {
+	var remote managementapi.RemoteError
+	if errors.As(err, &remote) && remote.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("扫描本机账号失败: 当前运行的 aih-server 没有账号扫描接口（版本过旧），重启 server 后再试")
+	}
+	return fmt.Errorf("扫描本机账号失败: %w", err)
 }
 
 // detectInventory 按 provider 名稳定排序，避免 map 迭代导致输出抖动。

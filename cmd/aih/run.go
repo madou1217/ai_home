@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
 )
@@ -81,6 +83,21 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	providerID := arguments[0]
 	if providerID == accountCommandName {
 		return runAccount(ctx, arguments[1:], runtime)
+	}
+	// aih <family> resume [id] [extra...] → 官方 CLI 的 --resume/--continue。
+	if len(arguments) >= 2 && arguments[1] == "resume" && codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		accountID, resolveErr := resolveResumeAccountID(ctx, providerID, runtime)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		resumeArguments := []string{"--continue"}
+		if len(arguments) >= 3 && !strings.HasPrefix(arguments[2], "-") {
+			resumeArguments = []string{"--resume", arguments[2]}
+			resumeArguments = append(resumeArguments, arguments[3:]...)
+		} else if len(arguments) >= 3 {
+			resumeArguments = append(resumeArguments, arguments[2:]...)
+		}
+		arguments = append([]string{providerID, strconv.FormatInt(accountID.Int64(), 10)}, resumeArguments...)
 	}
 	if len(arguments) >= 2 && arguments[1] == "usage" {
 		return runProviderUsage(ctx, providerID, arguments[2:], runtime)

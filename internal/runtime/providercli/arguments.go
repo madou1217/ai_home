@@ -42,6 +42,9 @@ func validateManagedArguments(providerID string, arguments []string) error {
 			if argument == "--bare" {
 				return ErrManagedArgumentConflict
 			}
+		case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+			// CodeBuddy 家族没有能覆盖账号的官方参数：账号边界由投影后的
+			// HOME / CODEBUDDY_CONFIG_DIR 决定，参数原样交给官方 CLI。
 		default:
 			return ErrUnsupportedRuntime
 		}

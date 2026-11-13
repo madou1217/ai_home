@@ -753,6 +753,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, refreshRoutes...)
+	// kimi 的套餐统计与桌面端托管登录：路由/上游协议都在 Go，Node 只做透传。
+	kimiRoutes, err := buildWebUIKimiRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, kimiRoutes...)
 	return routes, nil
 }
 

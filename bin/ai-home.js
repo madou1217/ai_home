@@ -577,13 +577,16 @@ function tryRunGoProviderCommonCommand() {
   const isDelete = command === 'delete' && args.length >= 3;
   const isDeleteAll = (command === 'deleteall' || command === 'delete-all') && args.length === 2;
   // set-default：Go 已实现宿主配置同步的 Provider 才转发（其余仍交 Node 的 host-sync）。
-  const SET_DEFAULT_PROVIDERS = new Set(['gemini', 'agy', 'grok', 'opencode', 'qoder', 'qodercn']);
+  const SET_DEFAULT_PROVIDERS = new Set(['gemini', 'agy', 'grok', 'opencode', 'qoder', 'qodercn', 'cline', 'zcode']);
+  const UNSET_DEFAULT_PROVIDERS = new Set(['gemini', 'agy', 'grok', 'qoder', 'qodercn', 'cline', 'zcode']);
+  // unset-default 只清默认指针；opencode 的宿主网关 profile 恢复仍交 Node。
+  const isUnsetDefault = command === 'unset-default' && args.length === 2 && UNSET_DEFAULT_PROVIDERS.has(provider);
   const isSetDefault = command === 'set-default' &&
     args.length >= 3 &&
     SET_DEFAULT_PROVIDERS.has(provider) &&
     numeric(args[2]) &&
     args.slice(3).every((token) => token === '--restart-client' || token === '--force-quit-client');
-  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault) return false;
+  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault && !isUnsetDefault) return false;
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';
@@ -611,7 +614,7 @@ function tryRunGoProviderCommonCommand() {
     }
   }
   if (!aiHomeDir) return false;
-  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault;
+  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault || isUnsetDefault;
   let managementKey = '';
   if (needsServer) {
     let config = null;

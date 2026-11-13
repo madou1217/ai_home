@@ -154,25 +154,39 @@ func (recorder *Recorder) LastActivity() map[accountcore.AccountRef]Activity {
 
 // Record 在内存中为账号的日桶与小时桶各记一次结果；非法输入静默忽略。
 func (recorder *Recorder) Record(accountRef accountcore.AccountRef, outcome string) {
+	if recorder == nil {
+		return
+	}
+	recorder.RecordAt(accountRef, outcome, recorder.clock())
+}
+
+// RecordAt 按指定事件时刻记录一次结果；零值时间回退为当前时钟，且历史样本不会倒退最近成功/失败时间戳。
+func (recorder *Recorder) RecordAt(accountRef accountcore.AccountRef, outcome string, at time.Time) {
 	if recorder == nil || !accountRef.IsValid() || outcome == "" {
 		return
 	}
-	now := recorder.clock()
+	if at.IsZero() {
+		at = recorder.clock()
+	}
 	recorder.mu.Lock()
 	for _, granularity := range []Granularity{Day, Hour} {
 		recorder.pending[pendingKey{
 			accountRef:  accountRef,
 			granularity: granularity,
-			bucket:      BucketStart(now, granularity, recorder.location),
+			bucket:      BucketStart(at, granularity, recorder.location),
 			outcome:     outcome,
 		}]++
 	}
 	activity := recorder.activity[accountRef]
 	if outcome == OutcomeSuccess {
-		activity.LastSuccessAt = now
+		if activity.LastSuccessAt.IsZero() || !at.Before(activity.LastSuccessAt) {
+			activity.LastSuccessAt = at
+		}
 	} else {
-		activity.LastFailureAt = now
-		activity.LastFailureKind = outcome
+		if activity.LastFailureAt.IsZero() || !at.Before(activity.LastFailureAt) {
+			activity.LastFailureAt = at
+			activity.LastFailureKind = outcome
+		}
 	}
 	recorder.activity[accountRef] = activity
 	recorder.mu.Unlock()

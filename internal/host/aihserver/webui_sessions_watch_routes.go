@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/codex/appserver"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
@@ -21,6 +22,22 @@ import (
 )
 
 const codexAppServerPassthroughEnv = "AIH_CODEX_APP_SERVER_PASSTHROUGH"
+
+type hookSessionActivityTracker struct {
+	activity *sessionactivity.AccountActivity
+}
+
+func (tracker hookSessionActivityTracker) MarkSessionTurn(provider, accountRef string) {
+	if tracker.activity != nil {
+		tracker.activity.MarkSessionTurn(provider, accountRef, 0)
+	}
+}
+
+func (tracker hookSessionActivityTracker) EndSessionTurn(provider, accountRef string) {
+	if tracker.activity != nil {
+		tracker.activity.EndSessionTurn(provider, accountRef)
+	}
+}
 
 // buildWebUISessionsWatchRoutes 装配会话实时监听、Provider Hook 事件接收与恢复归档路由。
 //
@@ -56,6 +73,7 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		StateStore:       stateStore,
 		Catalog:          dependencies.Catalog,
 		AIHomeDir:        dependencies.AIHomeDir,
+		AccountActivity:  dependencies.AccountActivity,
 		OutcomeRecorder:  sideEffects,
 		RuntimeRecoverer: sideEffects,
 	})

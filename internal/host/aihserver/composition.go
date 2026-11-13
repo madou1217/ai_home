@@ -18,6 +18,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountauth"
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountoutcomes"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -69,12 +70,15 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
@@ -331,6 +335,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		NodeBaseURL:                options.NodeBaseURL,
 		ModelDiscovery:             modelDiscovery,
 		Runtime:                    accountRuntime,
+		OutcomeRecorder:            outcomeRecorder,
 		AttemptUsage:               accountRuntime,
 		ImageUsage:                 accountRuntime,
 		ImageOutcomes:              accountRuntime,
@@ -404,7 +409,8 @@ type handlerDependencies struct {
 	NodeBaseURL    string
 	ModelDiscovery *accountapp.ModelDiscovery
 	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
-	Runtime serverAccountRuntime
+	Runtime         serverAccountRuntime
+	OutcomeRecorder *accountoutcomes.Recorder
 	// AttemptUsage 记录透传通道的真实 token 用量（由运行态装饰器实现）。
 	AttemptUsage relaycore.UsageRecorder
 	// ImageUsage 记录生图的 token 用量（与推理路径同一个用量管道）；为 nil 时不记账。
@@ -1700,6 +1706,86 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
 		errorLog.Printf("出口池后台守护启动降级: %v", err)
 	}
+	activityDaemon := sessionactivity.NewDaemon(sessionactivity.DaemonOptions{
+		AIHomeDir:   aiHomeDir,
+		HostHomeDir: dependencies.HostHomeDir,
+		Catalog:     catalog,
+		ResolveHarnessTurnMode: func(harnessID string) string {
+			definition, ok := catalog.Get(strings.TrimSpace(harnessID))
+			if !ok {
+				return "external"
+			}
+			if mode := strings.TrimSpace(string(definition.SessionSync.Mode)); mode != "" {
+				return mode
+			}
+			return "external"
+		},
+		IsAccountEnabled: func(checkCtx context.Context, _ string, accountRef string) bool {
+			if store == nil {
+				return true
+			}
+			parsedRef, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
+			if parseErr != nil {
+				return true
+			}
+			overview, lookupErr := store.GetAccountOverview(checkCtx, parsedRef)
+			if lookupErr != nil {
+				return true
+			}
+			return overview.Account().Enabled()
+		},
+		RecordOutcome: func(_ context.Context, accountRef, outcome string, atMS int64) bool {
+			if dependencies.OutcomeRecorder == nil {
+				return false
+			}
+			parsedRef, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
+			if parseErr != nil {
+				return false
+			}
+			trimmedOutcome := strings.TrimSpace(outcome)
+			if trimmedOutcome == "" {
+				return false
+			}
+			var at time.Time
+			if atMS > 0 {
+				at = time.UnixMilli(atMS)
+			}
+			dependencies.OutcomeRecorder.RecordAt(parsedRef, trimmedOutcome, at)
+			return true
+		},
+		OnCodebuddyLimit: func(limitCtx context.Context, obs sessionactivity.ObservedCodebuddyLimit) bool {
+			parsedRef, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(obs.AccountRef))
+			if parseErr != nil {
+				return false
+			}
+			model := strings.TrimSpace(obs.Model)
+			if model == "" {
+				return false
+			}
+			route, routeErr := runtimecore.NewModelRoute(parsedRef, model)
+			if routeErr != nil {
+				return false
+			}
+			nowMS := time.Now().UnixMilli()
+			var retryAfter time.Duration
+			if !obs.HardExhaustion && obs.ResetAtMS > nowMS {
+				retryAfter = time.Duration(obs.ResetAtMS-nowMS) * time.Millisecond
+				if retryAfter > runtimecore.MaxCooldownHint {
+					retryAfter = runtimecore.MaxCooldownHint
+				}
+			}
+			classification, classErr := sharedfailure.NewClassification(runtimecore.FailureRateLimited, retryAfter)
+			if classErr != nil {
+				return false
+			}
+			failure, failErr := attemptfailure.New(classification)
+			if failErr != nil {
+				return false
+			}
+			return accountRuntime.RecordFailure(limitCtx, route, failure) == nil
+		},
+	})
+	activityDaemon.Start(ctx)
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:       authorizer,
 		AIHomeDir:        aiHomeDir,
@@ -1733,6 +1819,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		PricingService:  sharedPricingService,
 		MetricsRecorder: metrics,
 		StartedAt:       time.Now(),
+		OutcomeRecorder: dependencies.OutcomeRecorder,
+		AccountActivity: hookSessionActivityTracker{activity: activityDaemon.Activity()},
 	}
 	schedulerPorts := webuiSchedulerPorts{
 		ClientKey:    clientKey,
@@ -2065,6 +2153,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if egressManager != nil {
 			closers = append(closers, egressManager)
+		}
+		if activityDaemon != nil {
+			closers = append(closers, activityDaemon)
 		}
 		return closers
 	}(), nil

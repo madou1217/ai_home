@@ -8,6 +8,7 @@ import (
 	"time"
 
 	accountauth "github.com/madou1217/ai_home/application/accountauth"
+	"github.com/madou1217/ai_home/application/accountoutcomes"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
@@ -72,6 +73,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessioneventsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionpreviewsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
@@ -157,6 +159,9 @@ type webuiRouteDependencies struct {
 	// UpgradeScheduler 与 WindowScheduler 由组合根统一启停托管。
 	UpgradeScheduler *providercliupgrade.Scheduler
 	WindowScheduler  *windowactivation.Scheduler
+	// OutcomeRecorder 与 AccountActivity 供原生会话轮询与 provider hook 共用。
+	OutcomeRecorder *accountoutcomes.Recorder
+	AccountActivity webuisessionhookapi.AccountActivityTracker
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -680,12 +685,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	activityService, activityErr := accountactivityadapter.NewService(accountactivityadapter.ServiceDependencies{
 		Catalog:  accountactivityadapter.BuiltinCatalog(),
 		Accounts: activityLister,
-		Executor: accountactivityadapter.NewNodeBridge(accountactivityadapter.NodeBridgeOptions{
-			BaseURL:       dependencies.NodeBaseURL,
-			ManagementKey: dependencies.ManagementKey,
-		}),
-		Jobs: accountactivityadapter.NewJobManager(time.Now, taskhub.AccountActivityChangedHandler(opsHub)),
-		Now:  time.Now,
+		Executor: newNativeActivityExecutor(dependencies),
+		Jobs:     accountactivityadapter.NewJobManager(time.Now, taskhub.AccountActivityChangedHandler(opsHub)),
+		Now:      time.Now,
 	})
 	if activityErr != nil {
 		return nil, fmt.Errorf("创建账号活动服务失败: %w", activityErr)

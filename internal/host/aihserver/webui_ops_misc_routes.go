@@ -35,6 +35,34 @@ type webuiOpsMiscPorts struct {
 	OnResetConfirmed   func(ctx context.Context, accountRef string)
 }
 
+func newNativeActivityExecutor(dependencies webuiRouteDependencies) accountactivity.Executor {
+	return accountactivity.NewNativeExecutor(accountactivity.NativeExecutorOptions{
+		AIHomeDir:   dependencies.AIHomeDir,
+		HostHomeDir: dependencies.HostHomeDir,
+		Catalog:     accountactivity.BuiltinCatalog(),
+		OnClaimed: func(_ context.Context, _ string, accountRef string, result map[string]any) {
+			usageSvc := dependencies.UsageService
+			if usageSvc == nil || result == nil {
+				return
+			}
+			status, _ := result["status"].(string)
+			normalizedStatus := strings.ToLower(strings.TrimSpace(status))
+			if normalizedStatus != "claimed" && normalizedStatus != "already_claimed" {
+				return
+			}
+			ref, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
+			if parseErr != nil {
+				return
+			}
+			go func() {
+				refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				_, _ = usageSvc.RefreshUsage(refreshCtx, ref)
+			}()
+		},
+	})
+}
+
 // buildWebUIOpsMiscRoutes 装配运维与杂项 WebUI 管理路由：
 //   - peer 只读消息与 watch（/v1/management/webui/peer/messages*）
 //   - 账号请求结果汇总视图（/v1/management/webui/account-outcomes）
@@ -103,12 +131,9 @@ func buildWebUIOpsMiscRoutesWithPorts(
 		createdActivitySvc, svcErr := accountactivity.NewService(accountactivity.ServiceDependencies{
 			Catalog:  accountactivity.BuiltinCatalog(),
 			Accounts: activityAccounts,
-			Executor: accountactivity.NewNodeBridge(accountactivity.NodeBridgeOptions{
-				BaseURL:       dependencies.NodeBaseURL,
-				ManagementKey: dependencies.ManagementKey,
-			}),
-			Jobs: activityJobs,
-			Now:  time.Now,
+			Executor: newNativeActivityExecutor(dependencies),
+			Jobs:     activityJobs,
+			Now:      time.Now,
 		})
 		if svcErr != nil {
 			return nil, fmt.Errorf("创建计划任务账号活动服务失败: %w", svcErr)

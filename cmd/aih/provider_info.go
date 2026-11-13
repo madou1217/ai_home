@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
+	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -109,6 +110,9 @@ func providerHomePolicy(providerID string) (accountapp.Policy, bool) {
 	}
 	if providerID == "codex" {
 		return codexstorage.Policy(), true
+	}
+	if providerID == geministorage.ProviderID {
+		return geministorage.Policy(), true
 	}
 	return accountapp.Policy{}, false
 }

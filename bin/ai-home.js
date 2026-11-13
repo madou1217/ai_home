@@ -420,7 +420,7 @@ function tryRunGoCodexSessionsHistory() {
 const GO_NATIVE_LAUNCH_PROVIDERS = new Set(['gemini']);
 // resume/fork 由 Go 按合同旗标改写，其余统一动词仍交 Node 解析。
 const GO_UNIFIED_VERBS = new Set([
-  'ls', 'list', 'usage', 'stats', 'home', 'login', 'sessions',
+  'ls', 'list', 'usage', 'stats', 'login', 'sessions',
   'delete', 'deleteall', 'delete-all', 'set-default', 'unset-default', 'auto-switch',
   'policy', 'terminal-icon', 'terminal-icons', 'detect', 'set-mobile', 'unset-mobile'
 ]);

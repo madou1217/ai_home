@@ -93,6 +93,35 @@ function resolveGoCLIBinary() {
   );
 }
 
+// applyGoFamilyEgressGuard 把 Node 的账号出口绑定语义带到 Go 启动路径：
+// Go CLI 还没有账号级出口代理，url/pool/system/retired 返回 false 交回 Node；
+// direct 表示绕过任何代理，显式清空代理变量并 NO_PROXY=*（与 Node 语义一致）。
+function applyGoFamilyEgressGuard(env, fs, aiHomeDir, provider, accountToken) {
+  try {
+    const { resolveAccountRefByCliId } = require('../lib/server/account-ref-store');
+    const account = resolveAccountRefByCliId(fs, aiHomeDir, provider, accountToken, { bestEffort: true });
+    if (!account) return false;
+    const { listAccountEgressBindings } = require('../lib/account/zcode-egress-binding-store');
+    const entries = listAccountEgressBindings(fs, aiHomeDir);
+    const binding = entries.find((entry) => entry && entry.accountRef === account.accountRef);
+    const record = binding && binding.binding;
+    const mode = String(record && record.mode || '').trim().toLowerCase();
+    if (record && (record.retired || ['url', 'pool', 'system'].includes(mode))) {
+      return false;
+    }
+    if (mode === 'direct') {
+      for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) {
+        delete env[key];
+      }
+      env.NO_PROXY = '*';
+      env.no_proxy = '*';
+    }
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
 function tryRunGoFamilyLaunch() {
   const args = process.argv.slice(2);
   if (args.length !== 2) return false;
@@ -124,46 +153,33 @@ function tryRunGoFamilyLaunch() {
   const env = { ...process.env };
   if (hostHome) env.AIH_HOST_HOME = hostHome;
   if (aiHomeDir) env.AIH_HOME_DIR = aiHomeDir;
-  // 出口守卫：Go CLI 还没有账号级出口代理。url/pool/system/retired 账号交回 Node；
-  // direct 在 Node 侧是「绕过任何代理」，这里显式清代理并 NO_PROXY=*，语义一致。
-  if (aiHomeDir) {
-    try {
-      const { resolveAccountRefByCliId } = require('../lib/server/account-ref-store');
-      const account = resolveAccountRefByCliId(fs, aiHomeDir, provider, args[1], { bestEffort: true });
-      if (!account) return false;
-      const { listAccountEgressBindings } = require('../lib/account/zcode-egress-binding-store');
-      const entries = listAccountEgressBindings(fs, aiHomeDir);
-      const binding = entries.find((entry) => entry && entry.accountRef === account.accountRef);
-      const record = binding && binding.binding;
-      const mode = String(record && record.mode || '').trim().toLowerCase();
-      if (record && (record.retired || ['url', 'pool', 'system'].includes(mode))) {
-        return false;
-      }
-      if (mode === 'direct') {
-        for (const key of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) {
-          delete env[key];
-        }
-        env.NO_PROXY = '*';
-        env.no_proxy = '*';
-      }
-    } catch (_error) {
-      return false;
-    }
+  if (aiHomeDir && !applyGoFamilyEgressGuard(env, fs, aiHomeDir, provider, args[1])) {
+    return false;
   }
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
   process.exitCode = Number.isInteger(result.status) ? result.status : 1;
   return true;
 }
 
-// aih <family> resume [id] 固定走 Go：翻译成官方 --resume/--continue，复用
-// Go CLI 的账号投影启动路径（会话 projects 已链接回宿主）。
-function tryRunGoFamilyResume() {
+// aih <family> [<账号>] resume|fork ... 固定走 Go：翻译成官方 --resume/--continue，
+// 复用 Go CLI 的账号投影启动路径（会话 projects 已链接回宿主）。
+const GO_FAMILY_SESSION_VERBS = new Set(['resume', 'fork']);
+
+function tryRunGoFamilySessionVerb() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
   if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
-  if (String(args[1] || '').trim().toLowerCase() !== 'resume') return false;
-  if (args.slice(2).some((token) => token === '--help' || token === '-h')) return false;
+  const verbIndex = GO_FAMILY_SESSION_VERBS.has(String(args[1] || '').trim().toLowerCase())
+    ? 1
+    : (args.length >= 3
+      && !String(args[1]).startsWith('-')
+      && GO_FAMILY_SESSION_VERBS.has(String(args[2] || '').trim().toLowerCase())
+      ? 2
+      : -1);
+  if (verbIndex < 0) return false;
+  // --help 留给统一用法文案（Node 侧维护），其余参数原样交给 Go。
+  if (args.some((token) => token === '--help' || token === '-h')) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();
@@ -199,6 +215,10 @@ function tryRunGoFamilyResume() {
   if (managementKey) {
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
+  }
+  if (verbIndex === 2 && aiHomeDir
+    && !applyGoFamilyEgressGuard(env, fs, aiHomeDir, provider, args[1])) {
+    return false;
   }
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
   process.exitCode = Number.isInteger(result.status) ? result.status : 1;
@@ -348,6 +368,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilyResume() && !tryRunGoFamilySessionsHistory() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessionsHistory() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

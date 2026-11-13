@@ -83,6 +83,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == accountCommandName {
 		return runAccount(ctx, arguments[1:], runtime)
 	}
+	// aih ls [id] [--scope ...]：全量账号列表。
+	if providerID == "ls" {
+		return runGlobalAccountList(ctx, arguments[1:], runtime)
+	}
 	// aih ss|sessions --list/-l/--detail：只读列出全部受管持久会话。
 	if providerID == "ss" || providerID == "sessions" {
 		return runGlobalSessions(ctx, arguments[1:], runtime)

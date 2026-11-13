@@ -125,6 +125,79 @@ function tryPersistentSessionFastPath() {
 // `aih ls` / `aih <provider> ls` 同样走轻量路径：列表第一帧只依赖账号索引，
 // 没必要为了它装配 server / webui / chat-runtime 全套（实测组合根 1.3s 起步）。
 // 任何异常都返回 false，交回完整 CLI 兜底。
+// aih ls [id] [--scope <provider...>] 固定走 Go：全量账号列表只依赖 Management API。
+// 带 provider 选择器（子串/通配）或 --help 的形态仍交回 Node 的完整解析。
+function tryRunGoGlobalLs() {
+  const args = process.argv.slice(2);
+  if (args.length < 1) return false;
+  if (String(args[0] || '').trim().toLowerCase() !== 'ls') return false;
+  const rest = args.slice(1);
+  if (rest.some((token) => token === '--help' || token === '-h' || token === 'help')) return false;
+  let ids = 0;
+  let scopeCount = 0;
+  let expectingScope = false;
+  for (const token of rest) {
+    if (token === '--scope') {
+      if (expectingScope) return false;
+      expectingScope = true;
+      continue;
+    }
+    if (expectingScope) {
+      if (token.startsWith('-')) return false;
+      scopeCount += 1;
+      continue;
+    }
+    if (/^\d+$/.test(token)) {
+      ids += 1;
+      if (ids > 1) return false;
+      continue;
+    }
+    return false;
+  }
+  if (expectingScope && scopeCount === 0) return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  if (!aiHomeDir) return false;
+  let config = null;
+  try {
+    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+  } catch (_error) {
+    config = null;
+  }
+  const managementKey = String(config && config.managementKey || '').trim();
+  if (!managementKey) return false;
+  const env = {
+    ...process.env,
+    AIH_HOME_DIR: aiHomeDir,
+    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_MANAGEMENT_KEY: managementKey
+  };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 function tryLsFastPath() {
   try {
     const { tryRunLsFastPath } = require('../lib/cli/services/profile/ls-fastpath');
@@ -483,6 +556,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

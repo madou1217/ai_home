@@ -90,46 +90,57 @@ func writeProviderList(
 		return
 	}
 	for _, account := range accounts {
-		plan := ""
-		remaining := ""
-		if usage, err := client.GetUsage(ctx, account.AccountRef); err == nil {
-			plan = titleCase(usage.Snapshot().PlanType())
-			if min := usage.Snapshot().MinRemaining(); min.Known {
-				remaining = fmt.Sprintf("%.1f%%", float64(min.BasisPoints)/100)
-			}
-		}
-		identity := strings.TrimSpace(account.DisplayName)
-		if identity == "" {
-			identity = strings.TrimSpace(displayNames[account.AccountRef.String()])
-		}
-		if identity == "" {
-			identity = strings.TrimSpace(account.Email)
-		}
-		if identity == "" {
-			identity = "未命名"
-		}
-		prefix := ""
-		if plan != "" {
-			prefix = "[" + plan + "] "
-		}
-		status := ""
-		if !account.Enabled {
-			status = " [停用]"
-		}
-		remainingLabel := "Unknown"
-		if remaining != "" {
-			remainingLabel = remaining
-		}
-		_, _ = fmt.Fprintf(
-			output,
-			"  - %sAccount ID: %d (%s)%s [Remaining: %s]\n",
-			prefix,
-			account.CLIAccountID.Int64(),
-			identity,
-			status,
-			remainingLabel,
-		)
+		writeAccountListRow(output, account, displayNames, client, ctx)
 	}
+}
+
+// writeAccountListRow 是单个账号的固定行格式（单 Provider 与全局列表共用）。
+func writeAccountListRow(
+	output io.Writer,
+	account managementapi.AccountView,
+	displayNames map[string]string,
+	client *managementapi.Client,
+	ctx context.Context,
+) {
+	plan := ""
+	remaining := ""
+	if usage, err := client.GetUsage(ctx, account.AccountRef); err == nil {
+		plan = titleCase(usage.Snapshot().PlanType())
+		if min := usage.Snapshot().MinRemaining(); min.Known {
+			remaining = fmt.Sprintf("%.1f%%", float64(min.BasisPoints)/100)
+		}
+	}
+	identity := strings.TrimSpace(account.DisplayName)
+	if identity == "" {
+		identity = strings.TrimSpace(displayNames[account.AccountRef.String()])
+	}
+	if identity == "" {
+		identity = strings.TrimSpace(account.Email)
+	}
+	if identity == "" {
+		identity = "未命名"
+	}
+	prefix := ""
+	if plan != "" {
+		prefix = "[" + plan + "] "
+	}
+	status := ""
+	if !account.Enabled {
+		status = " [停用]"
+	}
+	remainingLabel := "Unknown"
+	if remaining != "" {
+		remainingLabel = remaining
+	}
+	_, _ = fmt.Fprintf(
+		output,
+		"  - %sAccount ID: %d (%s)%s [Remaining: %s]\n",
+		prefix,
+		account.CLIAccountID.Int64(),
+		identity,
+		status,
+		remainingLabel,
+	)
 }
 
 func writeProviderListUsage(output io.Writer, providerID string) {

@@ -800,8 +800,10 @@ function tryRunGoFamilyServerCommand() {
       command === 'usage' &&
       /^\d+$/.test(String(args[2] || '').trim()) &&
       (args.length === 3 || args[3] === '--refresh'));
-  const isSetDefault = args.length === 3 && command === 'set-default' &&
-    /^\d+$/.test(String(args[2] || '').trim());
+  const setDefaultRest = args.slice(2).map((token) => String(token || '').trim());
+  const isSetDefault = command === 'set-default' && setDefaultRest.length >= 1 &&
+    /^\d+$/.test(setDefaultRest[0]) &&
+    setDefaultRest.slice(1).every((token) => token === '--restart-client' || token === '--force-quit-client');
   const isUnsetDefault = args.length === 2 && command === 'unset-default';
   const isHome = (args.length === 2 && command === 'home') ||
     (args.length === 3 && command === 'home' && /^\d+$/.test(String(args[2] || '').trim()));

@@ -6,8 +6,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-
-	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
 // runProviderDefaultCommand 执行 set-default / unset-default。
@@ -33,28 +31,37 @@ func runProviderDefaultCommand(
 	}
 	switch arguments[0] {
 	case "set-default":
-		if len(arguments) != 2 {
+		restart := false
+		positional := make([]string, 0, 1)
+		for _, argument := range arguments[1:] {
+			switch argument {
+			case "--restart-client", "--force-quit-client":
+				restart = true
+			default:
+				positional = append(positional, argument)
+			}
+		}
+		if len(positional) != 1 {
 			writeProviderDefaultUsage(runtime.stderr, providerID)
 			return fmt.Errorf("%w: set-default 需要一个账号 ID", errInvalidCommand)
 		}
-		accountID := strings.TrimSpace(arguments[1])
+		accountID := strings.TrimSpace(positional[0])
 		if _, parseErr := strconv.ParseUint(accountID, 10, 64); parseErr != nil {
 			writeProviderDefaultUsage(runtime.stderr, providerID)
 			return fmt.Errorf("%w: 账号 ID 必须是正整数", errInvalidCommand)
 		}
-		target, parseErr := aihaccount.ParseAccountTarget(providerID + ":" + accountID)
-		if parseErr != nil {
-			return fmt.Errorf("%w: 账号目标无效", errInvalidCommand)
-		}
-		accountRef, resolveErr := resolveManagementAccountRef(ctx, client, target)
+		view, resolveErr := resolveProviderAccountView(ctx, providerID, accountID, runtime)
 		if resolveErr != nil {
 			return fmt.Errorf("解析默认账号目标失败: %w", resolveErr)
 		}
-		snapshot, setErr := client.SetProviderDefault(ctx, providerID, accountRef)
+		snapshot, setErr := client.SetProviderDefault(ctx, providerID, view.AccountRef)
 		if setErr != nil {
 			return fmt.Errorf("设置默认账号失败: %w", setErr)
 		}
 		_, _ = fmt.Fprintf(runtime.stdout, "已设置 %s 默认账号: %s\n", providerID, snapshot.AccountRef)
+		if restart {
+			return runProviderRestart(ctx, providerID, accountID, runtime)
+		}
 		return nil
 	case "unset-default":
 		if len(arguments) != 1 {
@@ -73,5 +80,5 @@ func runProviderDefaultCommand(
 }
 
 func writeProviderDefaultUsage(output io.Writer, providerID string) {
-	_, _ = fmt.Fprintf(output, "用法:\n  aih %s set-default <id>\n  aih %s unset-default\n", providerID, providerID)
+	_, _ = fmt.Fprintf(output, "用法:\n  aih %s set-default <id> [--restart-client]\n  aih %s unset-default\n", providerID, providerID)
 }

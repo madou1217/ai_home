@@ -45,6 +45,11 @@ var familyNeverInheritKeys = []string{
 	"ACC_PRODUCT_CONFIG_PATH",
 }
 
+// NeverInheritKeys 返回登录/启动都必须从宿主环境剥掉的家族变量。
+func NeverInheritKeys() []string {
+	return append([]string(nil), familyNeverInheritKeys...)
+}
+
 // Strategy 负责一个家族 Provider 的伪 HOME 投影与站点环境。
 type Strategy struct {
 	providerID   string

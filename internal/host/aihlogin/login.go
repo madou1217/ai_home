@@ -26,6 +26,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
@@ -107,7 +108,10 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 	}
 	defer removeProjection(result.Root)
 
-	env := mergedEnvironment(os.Environ(), result.SetEnv)
+	env := mergedEnvironment(
+		withoutEnvironmentKeys(os.Environ(), codebuddyfamilycli.NeverInheritKeys()),
+		result.SetEnv,
+	)
 	if codebuddyfamilystorage.SiteInternal(providerID) {
 		env = mergedEnvironment(env, map[string]string{
 			"CODEBUDDY_INTERNET_ENVIRONMENT":         "internal",
@@ -163,6 +167,24 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 	_, _ = fmt.Fprintf(options.Stderr, "登录成功: %s #%d (%s)\n",
 		account.ProviderID(), account.CLIAccountID().Int64(), account.Ref())
 	return account, nil
+}
+
+// withoutEnvironmentKeys 删除宿主上的家族账号/站点变量：登录进程必须从干净环境
+// 起步，否则宿主 CODEBUDDY_API_KEY / 站点选择会决定这次登录拿到的身份。
+func withoutEnvironmentKeys(environment []string, names []string) []string {
+	blocked := make(map[string]bool, len(names))
+	for _, name := range names {
+		blocked[name] = true
+	}
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		name, _, found := strings.Cut(entry, "=")
+		if !found || blocked[name] {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 // mergedEnvironment 用 overlay 覆盖同名变量，避免重复 HOME 让子进程读宿主值。

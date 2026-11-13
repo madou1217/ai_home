@@ -46,11 +46,15 @@ const (
 	LifecycleCapabilitiesSuffix = "/lifecycle-capabilities"
 	// ArchiveSuffix 是归档会话的后缀。
 	ArchiveSuffix = "/archive"
+	// UnarchiveSuffix 是恢复归档会话的后缀。
+	UnarchiveSuffix = "/unarchive"
 
 	// LifecycleCapabilitiesPath 是完整的能力声明契约路径。
 	LifecycleCapabilitiesPath = Path + LifecycleCapabilitiesSuffix
 	// ArchivePath 是完整的归档契约路径。
 	ArchivePath = Path + ArchiveSuffix
+	// UnarchivePath 是完整的恢复归档契约路径。
+	UnarchivePath = Path + UnarchiveSuffix
 
 	// maxBodyBytes 与 Node 的 readRequestBody({maxBytes: 64 * 1024}) 对齐。
 	maxBodyBytes = 64 * 1024
@@ -193,7 +197,7 @@ type archiveResponse struct {
 	OK              bool   `json:"ok"`
 	Provider        string `json:"provider"`
 	SessionID       string `json:"sessionId"`
-	NativeSessionID string `json:"nativeSessionId"`
+	NativeSessionID string `json:"nativeSessionId,omitempty"`
 	Origin          string `json:"origin"`
 }
 
@@ -232,6 +236,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			return
 		}
 		handler.serveArchive(response, request)
+	case UnarchivePath:
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", http.MethodPost)
+			writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 POST")
+			return
+		}
+		handler.serveUnarchive(response, request)
 	default:
 		writeError(response, http.StatusNotFound, "unknown_path", "未知的会话生命周期路径")
 	}
@@ -270,6 +281,7 @@ func (handler *Handler) serveArchive(response http.ResponseWriter, request *http
 type archiveRequest struct {
 	Provider  string `json:"provider"`
 	SessionID string `json:"sessionId"`
+	Origin    string `json:"origin,omitempty"`
 }
 
 func readArchivePayload(request *http.Request) (archiveRequest, error) {
@@ -307,6 +319,7 @@ func readArchivePayload(request *http.Request) (archiveRequest, error) {
 	}
 	payload.Provider = normalizeProvider(payload.Provider)
 	payload.SessionID = strings.TrimSpace(payload.SessionID)
+	payload.Origin = strings.ToLower(strings.TrimSpace(payload.Origin))
 	if payload.Provider == "" || payload.SessionID == "" {
 		return archiveRequest{}, &lifecycleError{
 			status:  http.StatusBadRequest,

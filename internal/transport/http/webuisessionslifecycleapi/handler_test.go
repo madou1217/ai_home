@@ -28,7 +28,9 @@ type fakeCodexClient struct {
 	capabilities appserver.Capabilities
 	probeErr     error
 	archiveErr   error
+	unarchiveErr error
 	archived     []string
+	unarchived   []string
 	closeCount   int
 }
 
@@ -44,7 +46,11 @@ func (client *fakeCodexClient) ArchiveThread(_ context.Context, threadID string)
 	return nil
 }
 
-func (client *fakeCodexClient) UnarchiveThread(context.Context, string) error {
+func (client *fakeCodexClient) UnarchiveThread(_ context.Context, threadID string) error {
+	if client.unarchiveErr != nil {
+		return client.unarchiveErr
+	}
+	client.unarchived = append(client.unarchived, threadID)
 	return nil
 }
 

@@ -608,6 +608,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	sessionsLifecycle, err := webuisessionslifecycleapi.NewHandler(webuisessionslifecycleapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+		Codex:      buildCodexLifecycleDialer(dependencies.HostHomeDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建会话生命周期接口失败: %w", err)
@@ -845,6 +846,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, kimiRoutes...)
+	// 会话监听、Provider Hook 事件接收与恢复归档切 Go，不再依赖 Node sessionEventBus。
+	sessionsWatchRoutes, err := buildWebUISessionsWatchRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, sessionsWatchRoutes...)
 	return routes, nil
 }
 

@@ -58,3 +58,8 @@ func hasFileMarker(path string, marker string) bool {
 func defaultBinaryResolver() binaryResolver {
 	return binaryResolver{lookupEnv: os.LookupEnv, lookPath: exec.LookPath}
 }
+
+// ResolveBinary 按生产 PATH 策略解析官方 CLI，绕开遗留 Node hook。
+func ResolveBinary(providerID string, binary string) (string, error) {
+	return defaultBinaryResolver().Resolve(providerID, binary)
+}

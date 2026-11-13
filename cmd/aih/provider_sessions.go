@@ -110,7 +110,8 @@ func runProviderSessionsHistory(
 			item.title,
 		)
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "续接：aih %s resume <id>　分叉：aih %s fork <id>\n", providerID, providerID)
+	// 家族 CLI 没有 fork 入口，不要广告一个必然被拒绝的命令。
+	_, _ = fmt.Fprintf(runtime.stdout, "续接：aih %s resume <id>\n", providerID)
 	return nil
 }
 

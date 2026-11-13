@@ -414,6 +414,39 @@ function tryRunGoCodexSessionsHistory() {
   return true;
 }
 
+// Go 已承接登录的非家族 CLI（真值源：internal/host/clilogin 的 providerSpecs）。
+// 新增一个 Provider 时这里与 Go 侧一起更新；不在表里的登录仍走 Node。
+const GO_CLI_LOGIN_PROVIDERS = new Set(['agy']);
+
+// aih <provider> login [--no-browser]：Go 用一次性运行目录跑官方 CLI 登录并注册账号。
+function tryRunGoProviderLogin() {
+  const args = process.argv.slice(2);
+  if (args.length < 2 || args.length > 3) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_CLI_LOGIN_PROVIDERS.has(provider)) return false;
+  if (String(args[1] || '').trim().toLowerCase() !== 'login') return false;
+  if (args.length === 3 && String(args[2] || '').trim() !== '--no-browser') return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  const env = { ...process.env };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 // aih <provider> 的通用只读命令（ls / usage / terminal-icon）固定走 Go。
 //
 // 账号事实在 Go 账号库里：Node 的本地索引只剩它自己创建的账号，Go 账号会显示
@@ -955,6 +988,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderLogin() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

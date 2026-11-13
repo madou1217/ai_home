@@ -7,12 +7,16 @@ import (
 	"io"
 	"strings"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihlogin"
+	"github.com/madou1217/ai_home/internal/host/clilogin"
 )
 
-// runProviderLogin 执行 CodeBuddy / WorkBuddy 家族的原生 CLI 登录。
+// runProviderLogin 执行原生 CLI 登录。
 //
-// 只支持裸 login（不带额外参数）；其它登录子选项仍交回 Node。
+// 家族四支走临时 fake-home 投影；已迁移的非家族 CLI（agy）走通用 CLI 登录。
+// 只支持裸 login（不带额外参数）；未迁移的 Provider 明确拒绝，不静默交给 Node。
 func runProviderLogin(
 	ctx context.Context,
 	providerID string,
@@ -24,10 +28,19 @@ func runProviderLogin(
 			writeProviderLoginUsage(runtime.stdout, providerID)
 			return nil
 		}
+		if argument == "--no-browser" {
+			// 登录进程本来就用 BROWSER 捕获脚本，不打开宿主浏览器；接受该旗标
+			// 以保证 Node 旧用法原样可用。
+			continue
+		}
 		if strings.TrimSpace(argument) != "" {
 			writeProviderLoginUsage(runtime.stderr, providerID)
 			return fmt.Errorf("%w: login 不接受参数", errInvalidCommand)
 		}
+	}
+	family := codebuddyfamilystorage.IsFamilyProvider(providerID)
+	if !family && !clilogin.Supported(providerID) {
+		return fmt.Errorf("%w: %s 的 CLI 登录尚未迁移到 Go", errInvalidCommand, providerID)
 	}
 	aiHomeDir, err := resolveAIHomeDir(runtime)
 	if err != nil {
@@ -40,18 +53,37 @@ func runProviderLogin(
 			return err
 		}
 	}
-	account, err := aihlogin.Run(ctx, aihlogin.Options{
-		AIHomeDir:   aiHomeDir,
-		HostHomeDir: hostHomeDir,
-		ProviderID:  providerID,
-		Stdin:       runtime.stdin,
-		Stdout:      runtime.stdout,
-		Stderr:      runtime.stderr,
-	})
+	var account accountcore.Account
+	if family {
+		account, err = aihlogin.Run(ctx, aihlogin.Options{
+			AIHomeDir:   aiHomeDir,
+			HostHomeDir: hostHomeDir,
+			ProviderID:  providerID,
+			Stdin:       runtime.stdin,
+			Stdout:      runtime.stdout,
+			Stderr:      runtime.stderr,
+		})
+	} else {
+		account, err = clilogin.Run(ctx, clilogin.Options{
+			AIHomeDir:   aiHomeDir,
+			HostHomeDir: hostHomeDir,
+			ProviderID:  providerID,
+			Stdin:       runtime.stdin,
+			Stdout:      runtime.stdout,
+			Stderr:      runtime.stderr,
+		})
+	}
 	if err != nil {
 		if errors.Is(err, aihlogin.ErrCredentialMissing) {
 			return fmt.Errorf(
 				"%w（CodeBuddy 浏览器登录结果不会回传 CLI；可运行 aih %s detect 导入本机已登录账号）",
+				err,
+				providerID,
+			)
+		}
+		if errors.Is(err, clilogin.ErrCredentialMissing) {
+			return fmt.Errorf(
+				"%w（浏览器授权完成后 CLI 应写出凭据文件；可运行 aih %s ls 确认账号是否入库）",
 				err,
 				providerID,
 			)
@@ -66,5 +98,5 @@ func runProviderLogin(
 func writeProviderLoginUsage(output io.Writer, providerID string) {
 	_, _ = fmt.Fprintf(output, "用法:\n  aih %s login\n", providerID)
 	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintln(output, "  用临时 fake-home 投影启动官方 codebuddy 登录；退出后注册 .info 账号。")
+	_, _ = fmt.Fprintln(output, "  用一次性运行目录启动官方 CLI 登录；退出后把凭据注册成账号。")
 }

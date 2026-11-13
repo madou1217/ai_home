@@ -61,7 +61,13 @@ type pickerStore struct {
 }
 
 func (source pickerStore) Rows(ctx context.Context) ([]persistent.SessionRow, error) {
-	return source.store.CollectSessions(ctx)
+	rows, err := source.store.CollectSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 选择器重载（关闭会话后）也补一次缓存标题，避免掉回 pane 名。
+	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(source.store.AIHomeDir, time.Now()))
+	return rows, nil
 }
 
 func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) error {
@@ -75,14 +81,21 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 	if err != nil {
 		return err
 	}
-	rows, err := store.CollectSessions(ctx)
-	if err != nil {
-		return fmt.Errorf("读取持久会话失败: %w", err)
-	}
+	var rows []persistent.SessionRow
 	if refresh {
 		// --refresh：忽略缓存，直接用原生会话库解析标题/原生 id，再回写缓存。
+		rows, err = store.CollectSessions(ctx)
+		if err != nil {
+			return fmt.Errorf("读取持久会话失败: %w", err)
+		}
 		resolveSessionTitles(ctx, runtime, rows)
 		_ = persistent.WriteSessionCache(store.AIHomeDir, rows, time.Now())
+	} else {
+		// 默认走与 --list 相同的采集+缓存补全，picker 里的 c/y 才有原生会话 id。
+		rows, err = collectGlobalRows(ctx, runtime)
+		if err != nil {
+			return err
+		}
 	}
 	labels := collectGlobalLabels(ctx, rows, runtime)
 	if !terminalWriterIsTTY(runtime.stdin) || !terminalWriterIsTTY(runtime.stdout) {

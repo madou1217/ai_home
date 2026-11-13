@@ -86,11 +86,17 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			LiveStore: true,
 		}},
 		PrivateArtifacts: []accountprojection.PathSpec{
+			// 账号私有：桌面端加密/连接器状态、Keychain、诊断缓存与系统加密引用。
+			// 与 Node CODEBUDDY_PRIVATE_DESKTOP_STATE 同口径。
+			{Path: []string{"electron-user-data"}},
+			{Path: []string{".codebuddy", "diagnostics"}},
+			{Path: []string{"Library", "Preferences", "com.apple.security.plist"}},
+			{Path: []string{".workbuddy-key-fallback"}},
+			{Path: []string{"Library", "Application Support", "CodeBuddyExtension", "Cache"}},
+			{Path: []string{"Library", "Application Support", "CodeBuddyExtension", "Logs"}},
 			{Path: []string{layout.configDir, ".mcp.json"}},
 			{Path: []string{layout.configDir, "sessions"}},
 			{Path: []string{"Library", "Keychains"}},
-			{Path: []string{"electron-user-data"}},
-			{Path: []string{".codebuddy", "diagnostics"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
 			{From: []string{layout.configDir}, To: []string{layout.configDir}},
@@ -113,10 +119,34 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			"plugins",
 		},
 		SessionEntries: []string{"projects"},
+		// 与 Node HOST_TOOLCHAIN_CACHES 逐项对齐：工具链缓存与账号无关，必须链接回
+		// 宿主，否则每个账号各存一份（历史上 zcode 单账号堆到 4GB）。
 		SharedHostCaches: []accountprojection.SharedLink{
-			{Projection: []string{".npm"}, Host: []string{".npm"}},
-			{Projection: []string{".local", "bin"}, Host: []string{".local", "bin"}},
 			{Projection: []string{"go"}, Host: []string{"go"}},
+			{Projection: []string{".npm"}, Host: []string{".npm"}},
+			{Projection: []string{".bun"}, Host: []string{".bun"}},
+			{Projection: []string{".volta"}, Host: []string{".volta"}},
+			{Projection: []string{".local", "bin"}, Host: []string{".local", "bin"}},
+			{
+				Projection: []string{"Library", "Caches", "go-build"},
+				Host:       []string{"Library", "Caches", "go-build"},
+				Platforms:  []string{"darwin"},
+			},
+			{
+				Projection: []string{"Library", "Caches", "Homebrew"},
+				Host:       []string{"Library", "Caches", "Homebrew"},
+				Platforms:  []string{"darwin"},
+			},
+			{
+				Projection: []string{"Library", "Caches", "bun"},
+				Host:       []string{"Library", "Caches", "bun"},
+				Platforms:  []string{"darwin"},
+			},
+			{
+				Projection: []string{"Library", "Caches", "pip"},
+				Host:       []string{"Library", "Caches", "pip"},
+				Platforms:  []string{"darwin"},
+			},
 		},
 		SharedHostDataRoots: []accountprojection.SharedLink{
 			{

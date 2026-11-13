@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * 采集 Node 与 Go 网关的路由合同，供 ownership manifest、parity 文档和测试复核。
+ * 采集 Node 与 Go 网关的路由合同，供 route ownership 合同、parity 文档和测试复核。
  *
  * 这不是运行时路由表，也不启动任何服务。它只读取源码，保留命中表达式及其行号，
  * 并明确区分：

@@ -1,0 +1,507 @@
+{
+  "schema_version": 1,
+  "generated_from": "contracts/routeownership/contract.go",
+  "entries": [
+    {
+      "id": "gateway.health",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "HEAD"
+          ],
+          "path": "/healthz"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/healthz"
+        }
+      ]
+    },
+    {
+      "id": "gateway.readiness",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "HEAD"
+          ],
+          "path": "/readyz"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/readyz"
+        }
+      ]
+    },
+    {
+      "id": "gateway.models.list",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "HEAD"
+          ],
+          "path": "/v1/models"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/models"
+        }
+      ]
+    },
+    {
+      "id": "gateway.models.detail",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "HEAD"
+          ],
+          "path": "/v1/models/{id}",
+          "pattern": "^/v1/models/([^/]+)$"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/models/{id}",
+          "pattern": "^/v1/models/([^/]+)$"
+        }
+      ]
+    },
+    {
+      "id": "gateway.props",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/props"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/props"
+        }
+      ]
+    },
+    {
+      "id": "gateway.openai.responses",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/responses"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/responses"
+        }
+      ]
+    },
+    {
+      "id": "gateway.openai.responses.websocket",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/responses",
+          "upgrade": true
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/responses",
+          "upgrade": true
+        }
+      ]
+    },
+    {
+      "id": "gateway.openai.chat_completions",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/chat/completions"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/chat/completions"
+        }
+      ]
+    },
+    {
+      "id": "gateway.anthropic.messages",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/messages"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/messages"
+        }
+      ]
+    },
+    {
+      "id": "gateway.anthropic.count_tokens",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/messages/count_tokens"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/messages/count_tokens"
+        }
+      ]
+    },
+    {
+      "id": "gateway.gemini.generate_content",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1{beta?}/models/{model}:generateContent",
+          "pattern": "^/v1(?:beta)?/models/([^/:]+):generateContent$"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1{beta?}/models/{model}:generateContent",
+          "pattern": "^/v1(?:beta)?/models/[^/]*:generateContent$"
+        }
+      ]
+    },
+    {
+      "id": "gateway.gemini.stream_generate_content",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1{beta?}/models/{model}:streamGenerateContent",
+          "pattern": "^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1{beta?}/models/{model}:streamGenerateContent",
+          "pattern": "^/v1(?:beta)?/models/[^/]*:streamGenerateContent$"
+        }
+      ]
+    },
+    {
+      "id": "gateway.images.generations",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/images/generations"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/images/generations"
+        }
+      ]
+    },
+    {
+      "id": "gateway.images.edits",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/images/edits"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/images/edits"
+        }
+      ]
+    },
+    {
+      "id": "gateway.vision.blobs",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/blobs/{id}",
+          "pattern": "/v1/blobs/*"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/blobs/{id}",
+          "pattern": "/v1/blobs/*"
+        }
+      ]
+    },
+    {
+      "id": "node.webui_and_session_surface",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/*",
+          "role": "WebUI API, session, terminal and PTY"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/ui/*",
+          "role": "static WebUI"
+        }
+      ]
+    },
+    {
+      "id": "node.webui_image_studio",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/studio/image/models"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/studio/image/sessions"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/v0/webui/studio/image/sessions/{sessionId}"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/studio/image/sessions/{sessionId}/runs"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"
+        }
+      ]
+    },
+    {
+      "id": "node.codex_app_server",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_routes": [
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/codex/app-server",
+          "upgrade": true
+        },
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/",
+          "upgrade": true,
+          "role": "legacy app-server compatibility"
+        }
+      ]
+    },
+    {
+      "id": "go.preview.account_management",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v1/management/*",
+          "role": "explicit private Preview only"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/management/*",
+          "role": "formal Node WebUI facade"
+        }
+      ]
+    },
+    {
+      "id": "go.preview.claude_relay_leases",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v1/claude-relay-leases",
+          "role": "explicit private Preview/canary only"
+        }
+      ],
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/*",
+          "role": "formal Node control surface"
+        }
+      ]
+    }
+  ]
+}

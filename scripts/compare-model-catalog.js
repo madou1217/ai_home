@@ -3,7 +3,7 @@
 
 // 模型目录切流判据：比较 Node 与 Go 的 /v1/models，输出差集。
 //
-// 背景：contracts/route-ownership/manifest.json 里 gateway.models.list 是最后一个
+// 背景：lib/generated/route-ownership.json 里 gateway.models.list 是最后一个
 // 仍然 node_owned 的数据面条目。它不能凭「Go 有目录」就划转——Go 的目录只含 Go 能
 // 路由的模型，Node 还可能列出 node-only Provider（当前只有 gemini）或自定义账号的
 // 模型。划转前必须证明两边的差集是**已知且可接受**的。

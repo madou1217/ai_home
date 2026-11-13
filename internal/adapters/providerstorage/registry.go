@@ -6,6 +6,7 @@ package providerstorage
 
 import (
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
+	agystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/agy"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
@@ -21,13 +22,16 @@ type Registry struct {
 func New() *Registry {
 	codexPolicy := codexstorage.Policy()
 	geminiPolicy := geministorage.Policy()
+	agyPolicy := agystorage.Policy()
 	policies := map[string]appprojection.Policy{
 		codexPolicy.Provider:  codexPolicy,
 		geminiPolicy.Provider: geminiPolicy,
+		agyPolicy.Provider:    agyPolicy,
 	}
 	materializers := []appprojection.Materializer{
 		codexstorage.Materializer{},
 		geministorage.Materializer{},
+		agystorage.Materializer{},
 	}
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
 		policy, ok := codebuddyfamilystorage.Policy(providerID)

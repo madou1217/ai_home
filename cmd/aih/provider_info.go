@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/application/providerruntime"
 	"github.com/madou1217/ai_home/core/providers"
+	agystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/agy"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
@@ -113,6 +114,9 @@ func providerHomePolicy(providerID string) (accountapp.Policy, bool) {
 	}
 	if providerID == geministorage.ProviderID {
 		return geministorage.Policy(), true
+	}
+	if providerID == agystorage.ProviderID {
+		return agystorage.Policy(), true
 	}
 	return accountapp.Policy{}, false
 }

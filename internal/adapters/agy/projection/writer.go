@@ -69,7 +69,17 @@ func Write(aiHomeDir string, accountRef string, auth *agy.OAuthAuth) error {
 	if !info.IsDir() {
 		return nil
 	}
+	return WriteRuntimeDir(runtimeDir, auth)
+}
 
+// WriteRuntimeDir 把凭据物化到调用方给定的投影根。
+//
+// 账号投影执行器（providerstorage/agy）在启动前用它写五份文件；Write 保留
+// 给「只按 aiHome/accountRef 定位」的刷新路径。调用方负责保证 runtimeDir 存在。
+func WriteRuntimeDir(runtimeDir string, auth *agy.OAuthAuth) error {
+	if strings.TrimSpace(runtimeDir) == "" || auth == nil {
+		return ErrInvalidInput
+	}
 	expiresAtMS := auth.ExpiresAtMS()
 	refreshedAtMS := auth.RefreshedAtMS()
 	cliDocument := buildCLITokenDocument(auth, expiresAtMS, refreshedAtMS)

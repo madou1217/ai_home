@@ -48,6 +48,9 @@ func validateManagedArguments(providerID string, arguments []string) error {
 		case "gemini":
 			// Gemini 的账号边界由 GEMINI_CLI_HOME 投影决定；官方参数里没有能
 			// 改写凭据目录的开关，原样交给 CLI。
+		case "agy":
+			// Antigravity 的账号边界由伪 HOME 投影决定（$HOME/.gemini/antigravity-cli），
+			// 官方参数没有能覆盖它的开关。
 		default:
 			return ErrUnsupportedRuntime
 		}

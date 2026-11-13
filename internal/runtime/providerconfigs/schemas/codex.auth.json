@@ -1,0 +1,47 @@
+{
+  "id": "codex.auth",
+  "title": "Codex auth.json",
+  "source": "Credential file structure (observed + provider CLI behavior)",
+  "sourceUrl": "https://developers.openai.com/codex/auth",
+  "docsUrl": "https://developers.openai.com/codex/auth",
+  "verifiedCliVersion": "0.163.0",
+  "sensitive": true,
+  "fields": [
+    {
+      "path": "OPENAI_API_KEY",
+      "type": "string",
+      "description": "API Key 登录态；使用 ChatGPT 登录时通常为空。",
+      "secret": true
+    },
+    {
+      "path": "tokens.id_token",
+      "type": "string",
+      "description": "ChatGPT OAuth ID Token（JWT）。",
+      "secret": true
+    },
+    {
+      "path": "tokens.access_token",
+      "type": "string",
+      "description": "ChatGPT OAuth Access Token。",
+      "secret": true
+    },
+    {
+      "path": "tokens.refresh_token",
+      "type": "string",
+      "description": "ChatGPT OAuth Refresh Token；刷新时轮换。",
+      "secret": true
+    },
+    {
+      "path": "tokens.account_id",
+      "type": "string",
+      "description": "ChatGPT 账号 ID。",
+      "secret": true
+    },
+    {
+      "path": "last_refresh",
+      "type": "string",
+      "description": "最近一次 token 刷新时间（ISO 时间）。"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

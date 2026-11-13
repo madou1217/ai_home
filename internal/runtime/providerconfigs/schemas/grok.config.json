@@ -1,0 +1,2761 @@
+{
+  "id": "grok.config",
+  "title": "Grok config.toml",
+  "source": "Grok CLI bundled config reference (26-config-reference.md)",
+  "sourceUrl": "",
+  "docsUrl": "",
+  "verifiedCliVersion": "1.0.46",
+  "fields": [
+    {
+      "path": "agent.definition",
+      "type": "string",
+      "description": "Path to an agent definition markdown file with YAML frontmatter.",
+      "scope": "user",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "agent.name",
+      "type": "string",
+      "description": "Built-in or discovered agent definition name. Also GROK_AGENT and --agent-profile.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "agent.system_prompt_label",
+      "type": "string",
+      "description": "Global system-prompt identity; per-model override wins.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "announcements",
+      "type": "array",
+      "description": "Remote announcement payloads consumed at load. Not a user-authored table.",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "auth",
+      "type": "object",
+      "description": "Alias of [grok_com_config]; every grok_com_config. key also works as auth..",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "auth.auth_provider_command",
+      "type": "string",
+      "description": "External auth binary; stdout is the token. With endpoints.models_base_url or models_list_url set, that endpoint's list decides which models are offered. Also GROK_AUTH_PROVIDER_COMMAND; also valid as grok_com_config.auth_provider_command.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.auth_provider_label",
+      "type": "string",
+      "description": "Login button label for an external auth provider. Also GROK_AUTH_PROVIDER_LABEL; also valid as grok_com_config.auth_provider_label.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.auth_token_ttl",
+      "type": "string",
+      "description": "Token TTL in seconds for providers that return a bare token. Also GROK_AUTH_TOKEN_TTL; also valid as grok_com_config.auth_token_ttl.",
+      "scope": "user",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "auth.disable_api_key_auth",
+      "type": "boolean",
+      "description": "Refuse API-key auth so only the deployment IdP can log in. Also GROK_DISABLE_API_KEY_AUTH; also valid as grok_com_config.disable_api_key_auth.",
+      "scope": "user",
+      "typeLabel": "boolean",
+      "secret": true
+    },
+    {
+      "path": "auth.force_login_team_uuid",
+      "type": "string",
+      "description": "Require login to this team UUID, or any of an array; empty array fails closed. Also GROK_FORCE_LOGIN_TEAM_ID; also valid as grok_com_config.force_login_team_uuid.",
+      "scope": "user",
+      "typeLabel": "string / string[]"
+    },
+    {
+      "path": "auth.grok_ws_origin",
+      "type": "string",
+      "description": "Websocket origin for grok.com. Also GROK_WS_ORIGIN; also valid as grok_com_config.grok_ws_origin.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.grok_ws_url",
+      "type": "string",
+      "description": "Relay websocket URL. Also GROK_WS_URL; also valid as grok_com_config.grok_ws_url.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oauth2",
+      "type": "object",
+      "description": "OAuth2 provider used when enterprise OIDC is unset; also valid as grok_com_config.oauth2.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "auth.oauth2.client_id",
+      "type": "string",
+      "description": "OAuth2 client id. Also GROK_OAUTH2_CLIENT_ID; also valid as grok_com_config.oauth2.client_id.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oauth2.issuer",
+      "type": "string",
+      "description": "OAuth2 issuer URL. Also GROK_OAUTH2_ISSUER; also valid as grok_com_config.oauth2.issuer.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oauth2.principal_id",
+      "type": "string",
+      "description": "Required principal id when principal_type is set. Also GROK_OAUTH2_PRINCIPAL_ID; also valid as grok_com_config.oauth2.principal_id.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oauth2.principal_type",
+      "type": "string",
+      "description": "Token principal type, such as Team. Also GROK_OAUTH2_PRINCIPAL_TYPE; also valid as grok_com_config.oauth2.principal_type.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oauth2.referrer",
+      "type": "string",
+      "description": "Referrer for OAuth usage attribution. Also GROK_OAUTH2_REFERRER; also valid as grok_com_config.oauth2.referrer.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oauth2.scopes",
+      "type": "string",
+      "description": "OAuth2 scopes. Also GROK_OAUTH2_SCOPES; also valid as grok_com_config.oauth2.scopes.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "auth.oidc",
+      "type": "object",
+      "description": "Customer OIDC identity-provider settings; also valid as grok_com_config.oidc.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "auth.oidc.audience",
+      "type": "string",
+      "description": "Optional OIDC audience. Also GROK_OIDC_AUDIENCE; also valid as grok_com_config.oidc.audience.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oidc.client_id",
+      "type": "string",
+      "description": "OIDC client id. Also GROK_OIDC_CLIENT_ID; also valid as grok_com_config.oidc.client_id.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oidc.issuer",
+      "type": "string",
+      "description": "OIDC issuer URL. Also GROK_OIDC_ISSUER; also valid as grok_com_config.oidc.issuer.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auth.oidc.scopes",
+      "type": "string",
+      "description": "OIDC scopes. Also GROK_OIDC_SCOPES; also valid as grok_com_config.oidc.scopes.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "auth.preferred_method",
+      "type": "string",
+      "description": "Pin automatic auth to one method with no fallthrough; also valid as grok_com_config.preferred_method.",
+      "scope": "user",
+      "typeLabel": "api_key / oidc"
+    },
+    {
+      "path": "auth.token_header",
+      "type": "string",
+      "description": "Header name that carries the CLI auth token; default xai-grok-cli; also valid as grok_com_config.token_header.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "auth_provider.<name>",
+      "type": "object",
+      "description": "Named credential helper used by [model.<id>] auth_provider.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "auto_mode.enabled",
+      "type": "boolean",
+      "description": "Enable Auto permission mode.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "campaigns",
+      "type": "array",
+      "description": "Named campaign patches applied below requirements. The deployment publishes these.",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "cli.auto_update",
+      "type": "boolean",
+      "description": "Check for CLI updates on launch. Also GROK_DISABLE_AUTOUPDATER to suppress.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cli.update_base",
+      "type": "string",
+      "description": "Optional private artifact prefix for the internal installer. Only an allowlisted prefix is accepted. The updater attaches a gcloud auth print-access-token bearer only to URLs under that prefix, so run gcloud auth login first. Set update_base = \"\" and run grok update --stable to return to the public channel.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.installer",
+      "type": "string",
+      "description": "Which installer last set up this CLI, used to pick the update path.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.maximum_version",
+      "type": "string",
+      "description": "Highest CLI version that still runs without a hard block. Also GROK_MAXIMUM_VERSION.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.minimum_version",
+      "type": "string",
+      "description": "Lowest CLI version that still runs without a hard block. Also GROK_MINIMUM_VERSION.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.npm_registry",
+      "type": "string",
+      "description": "npm registry used by the auto-updater.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.required_maximum_version",
+      "type": "string",
+      "description": "Hard maximum CLI version. Also GROK_REQUIRED_MAXIMUM_VERSION.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.required_minimum_version",
+      "type": "string",
+      "description": "Hard minimum CLI version. Also GROK_REQUIRED_MINIMUM_VERSION.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli.session_picker_grouped",
+      "type": "boolean",
+      "description": "Group sessions by repo in the picker and CLI listings.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cli.session_registry",
+      "type": "boolean",
+      "description": "Participate in the cross-process session registry.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cli.show_tips",
+      "type": "boolean",
+      "description": "Startup tips.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cli.use_leader",
+      "type": "boolean",
+      "description": "Use the leader process for config reload and MCP watches.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cli.worktree_type",
+      "type": "string",
+      "description": "Creation-mode when set to linked, standalone, or git. The spellings grove, grove-fuse, grove-nfs, nfs, and copy also feed the session / -w Grove gate (same as cli.grove_worktree); they are not creation-mode values.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "compat.claude.agents",
+      "type": "boolean",
+      "description": "Scan CLAUDE.md. Also GROK_CLAUDE_AGENTS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.claude.hooks",
+      "type": "boolean",
+      "description": "Scan Claude hooks. Also GROK_CLAUDE_HOOKS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.claude.mcps",
+      "type": "boolean",
+      "description": "Scan Claude MCP config. Also GROK_CLAUDE_MCPS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.claude.rules",
+      "type": "boolean",
+      "description": "Scan Claude rules. Also GROK_CLAUDE_RULES_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.claude.skills",
+      "type": "boolean",
+      "description": "Scan Claude skills. Also GROK_CLAUDE_SKILLS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.codex.hooks",
+      "type": "boolean",
+      "description": "Scan Codex hooks when present.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.codex.skills",
+      "type": "boolean",
+      "description": "Scan Codex skills directories when present.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.cursor.agents",
+      "type": "boolean",
+      "description": "Scan agent definitions from Cursor compat sources. Also GROK_CURSOR_AGENTS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.cursor.hooks",
+      "type": "boolean",
+      "description": "Scan Cursor hooks. Also GROK_CURSOR_HOOKS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.cursor.mcps",
+      "type": "boolean",
+      "description": "Scan Cursor mcp.json. Also GROK_CURSOR_MCPS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.cursor.rules",
+      "type": "boolean",
+      "description": "Scan .cursor/rules/. Also GROK_CURSOR_RULES_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "compat.cursor.skills",
+      "type": "boolean",
+      "description": "Scan Cursor skills directories. Also GROK_CURSOR_SKILLS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cursor_worker.auto_start",
+      "type": "boolean",
+      "description": "Register this leader as a Cursor private worker at startup; default false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cursor_worker.name",
+      "type": "string",
+      "description": "Worker display name shown in Cursor; default is the machine hostname.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cursor_worker.worker_dirs",
+      "type": "string",
+      "description": "Absolute paths of the repository directories offered to Cursor Cloud Agents; the first is the registered working directory.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "cursor_worker.max_agents",
+      "type": "string",
+      "description": "Maximum concurrently claimed Cloud Agents per door (an idle claim frees its slot), beyond which a new agent fails rather than queues; unset means no cap.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "cursor_worker.any_repo",
+      "type": "boolean",
+      "description": "Also register the any-repo door, which clones whatever repository a Cloud Agent brings. Opt-in, default off.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "cursor_worker.hub_url",
+      "type": "string",
+      "description": "Computer Hub base URL used to obtain the Cursor session; default is derived from the leader's hub URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cursor_worker.rewrite_shell_output",
+      "type": "boolean",
+      "description": "Rewrite worktree and snapshot paths in shell output back to the registered directory; default true.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "dashboard.enabled",
+      "type": "boolean",
+      "description": "Show the agent dashboard.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "dashboard.grouping",
+      "type": "string",
+      "description": "How dashboard rows group.",
+      "scope": "user",
+      "typeLabel": "state / directory"
+    },
+    {
+      "path": "default_auto_mode",
+      "type": "boolean",
+      "description": "Start sessions in auto permission mode when no per-session override is set.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "diagnostics.crash_handler",
+      "type": "boolean",
+      "description": "Write a panic report under $GROK_HOME/crash/. Also GROK_CRASH_HANDLER.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "disable_web_search",
+      "type": "boolean",
+      "description": "Drop the web_search tool for this process. Also --disable-web-search.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "disabled_mcp_servers",
+      "type": "string",
+      "description": "MCP server names to skip without deleting their [mcp_servers] blocks.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "disabled_mcp_tools",
+      "type": "object",
+      "description": "Per-server MCP tool deny lists keyed by server name.",
+      "scope": "user",
+      "typeLabel": "map<string, string[]>"
+    },
+    {
+      "path": "doom_loop_recovery.enabled",
+      "type": "boolean",
+      "description": "Resample confident tool-call loops; set false to disable.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "endpoints.cli_chat_proxy_base_url",
+      "type": "string",
+      "description": "Session-service API base URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.deployment_key",
+      "type": "string",
+      "description": "Management key for enterprise deployments. Also GROK_DEPLOYMENT_KEY.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.feedback_base_url",
+      "type": "string",
+      "description": "Where feedback submissions go. Also GROK_FEEDBACK_BASE_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.managed_config_url",
+      "type": "string",
+      "description": "Override managed config endpoint. Also GROK_MANAGED_CONFIG_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.models_base_url",
+      "type": "string",
+      "description": "Custom inference base URL. With auth_provider_command set, {models_base_url}/models decides which models are offered. Also GROK_MODELS_BASE_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.models_list_url",
+      "type": "string",
+      "description": "Override model-list URL. With auth_provider_command set, this list decides which models are offered. Also GROK_MODELS_LIST_URL. Alias models_endpoint.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.trace_upload_bucket",
+      "type": "string",
+      "description": "Direct gs:// or s3:// bucket for traces; bypasses the proxy. Also GROK_TRACE_UPLOAD_BUCKET.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.trace_upload_credentials",
+      "type": "string",
+      "description": "Inline GCS service-account JSON or AWS credentials for that bucket; wins over trace_upload_credentials_file and has no environment variable.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "endpoints.trace_upload_credentials_file",
+      "type": "string",
+      "description": "Path to a GCS service-account JSON or AWS credentials file for that bucket. Also GROK_TRACE_UPLOAD_CREDENTIALS_FILE.",
+      "scope": "user",
+      "typeLabel": "string (path)",
+      "secret": true
+    },
+    {
+      "path": "endpoints.trace_upload_endpoint_url",
+      "type": "string",
+      "description": "Custom S3-compatible endpoint for s3:// bucket uploads. Also GROK_TRACE_UPLOAD_ENDPOINT_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.trace_upload_region",
+      "type": "string",
+      "description": "AWS region for s3:// bucket uploads; default us-east-1. Also GROK_TRACE_UPLOAD_REGION.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.trace_upload_url",
+      "type": "string",
+      "description": "Proxy destination for traces when no direct bucket is set. Also GROK_TRACE_UPLOAD_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "endpoints.xai_api_base_url",
+      "type": "string",
+      "description": "Public xAI API base. Also GROK_XAI_API_BASE_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.active_agent_messages",
+      "type": "boolean",
+      "description": "Enable or disable active_agent_messages. Default false. Also GROK_ACTIVE_AGENT_MESSAGES.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.ask_user_question",
+      "type": "boolean",
+      "description": "Enable or disable ask_user_question. Default true. Also GROK_ASK_USER_QUESTION.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.auto_wake",
+      "type": "boolean",
+      "description": "Enable or disable auto_wake. Default true. Also GROK_AUTO_WAKE.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.backend_tools",
+      "type": "boolean",
+      "description": "Enable or disable backend_tools. Default true. Also GROK_BACKEND_SEARCH.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.campaigns",
+      "type": "boolean",
+      "description": "Enable remote campaign patches. GROK_CAMPAIGNS=0 still disables even when requirements set this true.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.cancel_rewind",
+      "type": "boolean",
+      "description": "Enable or disable cancel_rewind. Default true. Also GROK_CANCEL_REWIND.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.codebase_indexing",
+      "type": "string",
+      "description": "Codebase graph indexing; true indexes git repos, or pass include/exclude globs.",
+      "scope": "user",
+      "typeLabel": "boolean / string[]"
+    },
+    {
+      "path": "features.compaction_detail",
+      "type": "string",
+      "description": "Verbatim detail level for segments compaction. Also GROK_COMPACTION_DETAIL.",
+      "scope": "user",
+      "typeLabel": "none / minimal / balanced / verbose"
+    },
+    {
+      "path": "features.compaction_mode",
+      "type": "string",
+      "description": "Compaction strategy. Also GROK_COMPACTION_MODE.",
+      "scope": "user",
+      "typeLabel": "summary / transcript / segments"
+    },
+    {
+      "path": "features.compaction_tool_choice",
+      "type": "string",
+      "description": "Tool-choice hint used during compaction.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.compaction_verbatim_input",
+      "type": "boolean",
+      "description": "Enable or disable compaction_verbatim_input. Default true. Also GROK_COMPACTION_VERBATIM_INPUT.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.dock",
+      "type": "boolean",
+      "description": "Enable or disable dock. Default false. Also GROK_DOCK.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.feedback",
+      "type": "boolean",
+      "description": "Enable or disable feedback. Default true. Also GROK_FEEDBACK_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.feedback_trace_card",
+      "type": "boolean",
+      "description": "Show a trace-upload consent question after /feedback. Default false. Also GROK_FEEDBACK_TRACE_CARD.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.file_acceleration",
+      "type": "boolean",
+      "description": "Hand local sessions' file systems to a file accelerator when the build installs one. Default false. Also GROK_FILE_ACCELERATION.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.image_edit_model_override",
+      "type": "string",
+      "description": "Imagine model id for image_edit.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.image_gen",
+      "type": "boolean",
+      "description": "Enable image_gen / /imagine.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.image_gen_model_override",
+      "type": "string",
+      "description": "Imagine model id for image_gen. Empty defers to the remotely configured default.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.lsp_tools",
+      "type": "boolean",
+      "description": "Enable or disable lsp_tools. Default false. Also GROK_LSP_TOOLS.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.managed_config",
+      "type": "boolean",
+      "description": "Fetch managed_config.toml and requirements.toml from the deployment.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.mcp_auto_restart",
+      "type": "boolean",
+      "description": "Auto-restart stdio MCP servers after transport failure. Also GROK_MCP_AUTO_RESTART.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.mcp_liveness_watchers",
+      "type": "boolean",
+      "description": "Poll MCP transports and push server_status updates. Emergency kill switch when false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.mcp_push_server_status",
+      "type": "boolean",
+      "description": "Pager subscribes to MCP server_status push. Process env GROK_MCP_PUSH_SERVER_STATUS wins at launch.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.mcp_recursive_config_watch",
+      "type": "boolean",
+      "description": "Watch <cwd>/ and <cwd>/.grok/ for project MCP config edits. Name is a misnomer; watches are non-recursive.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.non_git_warning",
+      "type": "boolean",
+      "description": "Show a blocking warning when Grok starts outside a Git repository.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.remember_mode",
+      "type": "boolean",
+      "description": "Remember the last permission mode across sessions. Read from user config.toml only.",
+      "scope": "—",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.remote_fetch",
+      "type": "boolean",
+      "description": "Pin remote model-catalog and asset fetch. Managed wins over the user file when both set.",
+      "scope": "fleet",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.session_recap",
+      "type": "boolean",
+      "description": "Enable or disable session_recap. Default true. Also GROK_SESSION_RECAP.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.session_search",
+      "type": "boolean",
+      "description": "Enable or disable session_search. Default true. Also GROK_SESSION_SEARCH.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.subagent_model_inheritance",
+      "type": "boolean",
+      "description": "Hide the subagent model argument when every model you can pick is an xAI model, so subagents inherit the parent's model. Default false. Also GROK_SUBAGENT_MODEL_INHERITANCE. Read when a session starts; changing it requires a restart.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.subagent_worktree_snapshot",
+      "type": "boolean",
+      "description": "Enable or disable subagent_worktree_snapshot. Default false. Also GROK_SUBAGENT_WORKTREE_SNAPSHOT.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.support_permission",
+      "type": "boolean",
+      "description": "Allow the agent to ask permission for tool executions.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.telemetry",
+      "type": "string",
+      "description": "Product telemetry mode. Enterprise default is off.",
+      "scope": "user",
+      "typeLabel": "boolean / session_metrics / off"
+    },
+    {
+      "path": "features.terminal_theme",
+      "type": "boolean",
+      "description": "Reveal the terminal-native terminal color theme during its rollout. Default false. Also GROK_TERMINAL_THEME.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.title_refresh",
+      "type": "boolean",
+      "description": "Early-session auto-title refresh. Pin this in requirements to beat GROK_TITLE_REFRESH.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.turn_summary",
+      "type": "boolean",
+      "description": "Enable or disable turn_summary. Default true. Also GROK_TURN_SUMMARY.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.two_pass_compaction",
+      "type": "boolean",
+      "description": "Enable or disable two_pass_compaction. Default true. Also GROK_TWO_PASS_COMPACTION.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.video_gen",
+      "type": "boolean",
+      "description": "Enable video tools / /imagine-video.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.voice_mode",
+      "type": "boolean",
+      "description": "Enable or disable voice_mode. Default true. Also GROK_VOICE_MODE.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.web_fetch",
+      "type": "boolean",
+      "description": "Enable or disable web_fetch. Default false. Also GROK_WEB_FETCH.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.write_file",
+      "type": "boolean",
+      "description": "Enable or disable write_file. Default true. Also GROK_WRITE_FILE.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.zdr_access_enabled",
+      "type": "boolean",
+      "description": "Advertise ZDR-incompatible tools when the team is on Zero Data Retention. Also GROK_ZDR_ACCESS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "feedback.user.command",
+      "type": "string",
+      "description": "Shell command that prints name and email JSON for feedback submissions.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "feedback.user.email",
+      "type": "string",
+      "description": "Sources for the feedback author email (git_email or a literal).",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "feedback.user.name",
+      "type": "string",
+      "description": "Sources for the feedback author name (os_user or a literal).",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "file_acceleration.routes",
+      "type": "string",
+      "description": "Route override passed unparsed to the installed file accelerator; empty is unset. Also GROK_FILE_ACCELERATION_ROUTES.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "goal.enabled",
+      "type": "boolean",
+      "description": "Enable /goal.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "grok_com_config",
+      "type": "object",
+      "description": "Grok.com websocket and OAuth/OIDC settings. [auth] is an alias.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "grok_com_config.auth_provider_command",
+      "type": "string",
+      "description": "External auth binary; stdout is the token. With endpoints.models_base_url or models_list_url set, that endpoint's list decides which models are offered. Also GROK_AUTH_PROVIDER_COMMAND.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.auth_provider_label",
+      "type": "string",
+      "description": "Login button label for an external auth provider. Also GROK_AUTH_PROVIDER_LABEL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.auth_token_ttl",
+      "type": "string",
+      "description": "Token TTL in seconds for providers that return a bare token. Also GROK_AUTH_TOKEN_TTL.",
+      "scope": "user",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "grok_com_config.disable_api_key_auth",
+      "type": "boolean",
+      "description": "Refuse API-key auth so only the deployment IdP can log in. Also GROK_DISABLE_API_KEY_AUTH.",
+      "scope": "user",
+      "typeLabel": "boolean",
+      "secret": true
+    },
+    {
+      "path": "grok_com_config.force_login_team_uuid",
+      "type": "string",
+      "description": "Require login to this team UUID, or any of an array; empty array fails closed. Also GROK_FORCE_LOGIN_TEAM_ID.",
+      "scope": "user",
+      "typeLabel": "string / string[]"
+    },
+    {
+      "path": "grok_com_config.grok_ws_origin",
+      "type": "string",
+      "description": "Websocket origin for grok.com. Also GROK_WS_ORIGIN.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.grok_ws_url",
+      "type": "string",
+      "description": "Relay websocket URL. Also GROK_WS_URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oauth2",
+      "type": "object",
+      "description": "OAuth2 provider used when enterprise OIDC is unset.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "grok_com_config.oauth2.client_id",
+      "type": "string",
+      "description": "OAuth2 client id. Also GROK_OAUTH2_CLIENT_ID.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oauth2.issuer",
+      "type": "string",
+      "description": "OAuth2 issuer URL. Also GROK_OAUTH2_ISSUER.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oauth2.principal_id",
+      "type": "string",
+      "description": "Required principal id when principal_type is set. Also GROK_OAUTH2_PRINCIPAL_ID.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oauth2.principal_type",
+      "type": "string",
+      "description": "Token principal type, such as Team. Also GROK_OAUTH2_PRINCIPAL_TYPE.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oauth2.referrer",
+      "type": "string",
+      "description": "Referrer for OAuth usage attribution. Also GROK_OAUTH2_REFERRER.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oauth2.scopes",
+      "type": "string",
+      "description": "OAuth2 scopes. Also GROK_OAUTH2_SCOPES.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "grok_com_config.oidc",
+      "type": "object",
+      "description": "Customer OIDC identity-provider settings.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "grok_com_config.oidc.audience",
+      "type": "string",
+      "description": "Optional OIDC audience. Also GROK_OIDC_AUDIENCE.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oidc.client_id",
+      "type": "string",
+      "description": "OIDC client id. Also GROK_OIDC_CLIENT_ID.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oidc.issuer",
+      "type": "string",
+      "description": "OIDC issuer URL. Also GROK_OIDC_ISSUER.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "grok_com_config.oidc.scopes",
+      "type": "string",
+      "description": "OIDC scopes. Also GROK_OIDC_SCOPES.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "grok_com_config.preferred_method",
+      "type": "string",
+      "description": "Pin automatic auth to one method with no fallthrough.",
+      "scope": "user",
+      "typeLabel": "api_key / oidc"
+    },
+    {
+      "path": "grok_com_config.token_header",
+      "type": "string",
+      "description": "Header name that carries the CLI auth token; default xai-grok-cli.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "harness.wait_for_uploads",
+      "type": "boolean",
+      "description": "Wait for turn-end trace uploads before returning the prompt response. Off by default; one-shot headless runs instead drain pending turn-end uploads at exit within a mandatory minimum budget (about 150s: the parse window plus one upload attempt) that upload_flush_timeout_secs, when larger, extends.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "harness.disable_workspace_teleport",
+      "type": "boolean",
+      "description": "Kill switch for per-turn workspace snapshots.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "hints.fork_worktree_mode",
+      "type": "string",
+      "description": "Whether /fork offers a worktree.",
+      "scope": "user",
+      "typeLabel": "ask / always / never"
+    },
+    {
+      "path": "hints.new_session_worktree_mode",
+      "type": "string",
+      "description": "Whether /new offers a worktree.",
+      "scope": "user",
+      "typeLabel": "ask / always / never"
+    },
+    {
+      "path": "hooks.<event>",
+      "type": "array",
+      "description": "Matcher groups for a lifecycle event such as PreToolUse or Stop. See Hooks.",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "hooks.<event>[].hooks[].command",
+      "type": "string",
+      "description": "Command to run for this hook. $VAR is not expanded at load.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "hooks.<event>[].hooks[].type",
+      "type": "string",
+      "description": "Hook handler type. Command hooks are supported.",
+      "scope": "user",
+      "typeLabel": "command"
+    },
+    {
+      "path": "hooks.<event>[].matcher",
+      "type": "string",
+      "description": "Tool-name matcher for this hook group.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "long_reasoning_reminder.enabled",
+      "type": "boolean",
+      "description": "Inject a mid-turn reminder to reason briefly after a model call with long hidden reasoning. Default false. Also GROK_LONG_REASONING_REMINDER (a bool word, or a JSON object in this table's shape).",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "long_reasoning_reminder.tokens",
+      "type": "string",
+      "description": "Reasoning tokens in one model call that count as long. Default 1000, clamped to 100–200000. Also tokens in the GROK_LONG_REASONING_REMINDER JSON object.",
+      "scope": "user",
+      "typeLabel": "integer",
+      "secret": true
+    },
+    {
+      "path": "long_reasoning_reminder.delay",
+      "type": "string",
+      "description": "Model calls to wait after the long call before the reminder. Default 1, clamped to 0–10. Also delay in the GROK_LONG_REASONING_REMINDER JSON object.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "managed_mcps.enabled",
+      "type": "boolean",
+      "description": "Fetch managed MCP configs at startup. Also GROK_MANAGED_MCPS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "managed_mcps.gateway_tools_enabled",
+      "type": "boolean",
+      "description": "Expose managed MCP gateway tools. Also GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "marketplace.sources",
+      "type": "array",
+      "description": "[[marketplace.sources]] plugin marketplace repos.",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "marketplace.require_sha",
+      "type": "boolean",
+      "description": "Tighten-only: remote plugin installs and updates must pin a full commit sha. Also GROK_MARKETPLACE_REQUIRE_SHA. Neither this key nor the env var can turn the gate back off.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "mcp.max_output_bytes",
+      "type": "string",
+      "description": "Cap MCP tool output size in bytes. Project files may set this.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "mcp_servers.<name>.args",
+      "type": "string",
+      "description": "[mcp_servers.<name>] args on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "mcp_servers.<name>.bearer_token_env_var",
+      "type": "string",
+      "description": "[mcp_servers.<name>] bearer_token_env_var on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "mcp_servers.<name>.bearer_token_file",
+      "type": "string",
+      "description": "[mcp_servers.<name>] bearer_token_file on an HTTP MCP server: absolute or ~/ path to a bearer token, re-read on every request.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "mcp_servers.<name>.command",
+      "type": "string",
+      "description": "[mcp_servers.<name>] command on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<name>.cwd",
+      "type": "string",
+      "description": "[mcp_servers.<name>] cwd on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<name>.enabled",
+      "type": "boolean",
+      "description": "[mcp_servers.<name>] enabled on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "mcp_servers.<name>.env",
+      "type": "object",
+      "description": "[mcp_servers.<name>] env on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "mcp_servers.<name>.expose_image_base64",
+      "type": "boolean",
+      "description": "[mcp_servers.<name>] expose_image_base64 on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "mcp_servers.<name>.headers",
+      "type": "object",
+      "description": "[mcp_servers.<name>] headers on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "mcp_servers.<name>.oauth",
+      "type": "object",
+      "description": "[mcp_servers.<name>] oauth on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "mcp_servers.<name>.oauth_client_id",
+      "type": "string",
+      "description": "[mcp_servers.<name>] oauth_client_id on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<name>.oauth_client_secret_env_var",
+      "type": "string",
+      "description": "[mcp_servers.<name>] oauth_client_secret_env_var on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "mcp_servers.<name>.oauth_scopes",
+      "type": "string",
+      "description": "[mcp_servers.<name>] oauth_scopes on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "mcp_servers.<name>.setup",
+      "type": "object",
+      "description": "[mcp_servers.<name>] setup on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "mcp_servers.<name>.startup_timeout_sec",
+      "type": "string",
+      "description": "[mcp_servers.<name>] startup_timeout_sec on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "mcp_servers.<name>.tool_timeout_sec",
+      "type": "string",
+      "description": "[mcp_servers.<name>] tool_timeout_sec on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "mcp_servers.<name>.tool_timeouts",
+      "type": "object",
+      "description": "[mcp_servers.<name>] tool_timeouts on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "mcp_servers.<name>.type",
+      "type": "string",
+      "description": "[mcp_servers.<name>] type on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<name>.url",
+      "type": "string",
+      "description": "[mcp_servers.<name>] url on a stdio or HTTP MCP server.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "memory.enabled",
+      "type": "boolean",
+      "description": "Legacy memory switch. Also GROK_MEMORY; superseded when the v2 gate is enabled.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.enabled",
+      "type": "boolean",
+      "description": "Primary memory-v2 switch. When true, v2 takes precedence over legacy memory.enabled. When false or absent, legacy enablement is resolved normally. Default: false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.capture_status_enabled",
+      "type": "boolean",
+      "description": "Shows memory-v2 capture lifecycle messages in the UI for debugging. Successful captures are expandable and include generated content plus links to committed observation files. Telemetry and debug logs are always recorded. Default: false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.capture_enabled",
+      "type": "boolean",
+      "description": "Enables memory-v2 extraction and observation capture. Default: true.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.automatic_dream_enabled",
+      "type": "boolean",
+      "description": "Enables event-driven memory-v2 Dream. Default: true.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.manual_dream_enabled",
+      "type": "boolean",
+      "description": "Enables explicitly requested memory-v2 Dream. Default: true.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.batch_dream_enabled",
+      "type": "boolean",
+      "description": "Runs active memory-v2 Dream as batch Dream, which folds notes into topics in batches with the full topic catalog; a local value wins over remote memory_v2.batch_dream_enabled, then defaults to false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.batch_dream_max_run_secs",
+      "type": "string",
+      "description": "Caps one batch Dream run in seconds, default 1800, clamped to 60–3600; unfinished notes stay in the inbox. A local value wins over remote memory_v2.batch_dream_max_run_secs.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memory_v2.batch_dream_max_calls_per_batch",
+      "type": "string",
+      "description": "Caps model calls per batch Dream batch, default 6, clamped to 2–16. A local value wins over remote memory_v2.batch_dream_max_calls_per_batch.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memory_v2.batch_dream_max_batch_note_bytes",
+      "type": "string",
+      "description": "Caps note bytes in one batch Dream batch, default 98304, clamped to 16384–262144. A local value wins over remote memory_v2.batch_dream_max_batch_note_bytes.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memory_v2.compact_index_enabled",
+      "type": "boolean",
+      "description": "Injects a titles-only memory index into the system prompt (no topic descriptions, no pending observations) so more topics fit the 8 KiB budget; titled entries are ordered by how often the agent has read each topic, and the on-disk MEMORY.md is rendered the same way. A local value wins over the remote memory_v2.compact_index_enabled. Default: false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.file_writes_enabled",
+      "type": "boolean",
+      "description": "Enables all memory-v2 file mutation; false fails closed before scaffold creation. Default: true.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memory_v2.archived_retention_days",
+      "type": "string",
+      "description": "Retains archived memory-v2 observation files for this many days. Default: 30.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memory_v2.job_retention_days",
+      "type": "string",
+      "description": "Retains terminal memory-v2 capture-job metadata for this many days. Default: 14.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>",
+      "type": "object",
+      "description": "Per-model override or BYOK definition. Prefer env_key over inline api_key.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "model.<id>.agent_type",
+      "type": "string",
+      "description": "Agent definition type associated with this model.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.api_backend",
+      "type": "string",
+      "description": "Wire protocol for this model.",
+      "scope": "user",
+      "typeLabel": "chat_completions / responses / messages"
+    },
+    {
+      "path": "model.<id>.api_base_url",
+      "type": "string",
+      "description": "Alternate API base used with XAI_API_KEY resolution.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.api_key",
+      "type": "string",
+      "description": "Inline API key. Prefer env_key. Not a secret to put in a shared repo.",
+      "scope": "user",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "model.<id>.auth_provider",
+      "type": "string",
+      "description": "Name of a [auth_provider.<name>] helper that mints this model's bearer token.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.auto_compact_threshold_percent",
+      "type": "string",
+      "description": "Per-model auto-compact threshold (0-100).",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "model.<id>.base_url",
+      "type": "string",
+      "description": "Provider endpoint base URL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.compaction_at_tokens",
+      "type": "string",
+      "description": "Token threshold that triggers compaction for this model.",
+      "scope": "user",
+      "typeLabel": "number / table",
+      "secret": true
+    },
+    {
+      "path": "model.<id>.compactions_remaining",
+      "type": "string",
+      "description": "How compaction leftover context is sent. Alias send_compactions_remaining.",
+      "scope": "user",
+      "typeLabel": "string / table"
+    },
+    {
+      "path": "model.<id>.context_window",
+      "type": "string",
+      "description": "Context window tokens; drives auto-compact timing.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.description",
+      "type": "string",
+      "description": "Optional description shown in the picker.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.env_http_headers",
+      "type": "object",
+      "description": "HTTP headers populated from environment variables when set.",
+      "scope": "user",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "model.<id>.env_key",
+      "type": "string",
+      "description": "Environment variable name(s) holding the provider API key.",
+      "scope": "user",
+      "typeLabel": "string / string[]"
+    },
+    {
+      "path": "model.<id>.extra_headers",
+      "type": "object",
+      "description": "Per-request headers for this model.",
+      "scope": "user",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "model.<id>.hidden",
+      "type": "boolean",
+      "description": "Hide this model from the picker. Still usable via -m.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model.<id>.inference_idle_timeout_secs",
+      "type": "string",
+      "description": "Idle timeout for streaming inference on this model.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.max_completion_tokens",
+      "type": "string",
+      "description": "Per-model max completion tokens.",
+      "scope": "user",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "model.<id>.max_request_bytes",
+      "type": "string",
+      "description": "Provider request-body cap that inline images are evicted to stay under. Unset inherits the [model_providers.<id>] value, then the api_backend default: 30 MB for messages, 50 MiB otherwise.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.max_retries",
+      "type": "string",
+      "description": "Inference retries for this model.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.model",
+      "type": "string",
+      "description": "Model id sent to the API.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.model_family",
+      "type": "string",
+      "description": "Family id used for compaction and capability grouping.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.model_provider",
+      "type": "string",
+      "description": "Named [model_providers.<name>] provider id for this model.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.mtls_cert_dir",
+      "type": "string",
+      "description": "Directory containing the model endpoint's mTLS identity as client.crt and client.key, or tls.crt and tls.key; configuration is rejected unless the same model has one HTTPS base_url and no api_base_url, and requests do not follow redirects.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.name",
+      "type": "string",
+      "description": "Label shown in the model picker.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.query_params",
+      "type": "object",
+      "description": "Extra query parameters on this model's requests.",
+      "scope": "user",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "model.<id>.rate_limit_retry_threshold",
+      "type": "string",
+      "description": "Total-attempt ceiling for rate-limited requests, capped by the resolved max_retries; when configured, it disables the separate subagent 429 wait loop.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.reasoning_effort",
+      "type": "string",
+      "description": "Deprecated per-model effort; prefer reasoning_efforts.",
+      "scope": "user",
+      "typeLabel": "string",
+      "deprecated": true
+    },
+    {
+      "path": "model.<id>.reasoning_efforts",
+      "type": "array",
+      "description": "Allowed reasoning-effort values for this model. When omitted, the menu comes from the endpoint's /v1/models row (reasoning_efforts, or capabilities.reasoning_effort when that is absent).",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "model.<id>.reasoning_summary",
+      "type": "string",
+      "description": "Responses API reasoning.summary for this model; default concise. none omits the field for endpoints that reject it (e.g. AWS Bedrock Mantle).",
+      "scope": "user",
+      "typeLabel": "none / auto / concise / detailed"
+    },
+    {
+      "path": "model.<id>.show_model_fingerprint",
+      "type": "boolean",
+      "description": "Show the provider model fingerprint in the UI when present.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model.<id>.stream_tool_calls",
+      "type": "boolean",
+      "description": "Per-model tool-call streaming request shape.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model.<id>.subagent_rate_limit_max_attempts",
+      "type": "string",
+      "description": "Maximum subagent 429 wait-loop attempts when rate_limit_retry_threshold is unset; default 8, maximum 32, and 0 disables the wait loop.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.supported_in_api",
+      "type": "boolean",
+      "description": "Whether this catalog entry is offered as a public API model.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model.<id>.supports_backend_search",
+      "type": "boolean",
+      "description": "Whether the endpoint supports Grok-hosted server-side search tools.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model.<id>.supports_reasoning_effort",
+      "type": "boolean",
+      "description": "Deprecated; prefer reasoning_efforts. An explicit false keeps the model out of any menu it would otherwise inherit from the endpoint or from a same-model catalog entry.",
+      "scope": "user",
+      "typeLabel": "boolean",
+      "deprecated": true
+    },
+    {
+      "path": "model.<id>.system_prompt_label",
+      "type": "string",
+      "description": "Per-model system-prompt identity label.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model.<id>.temperature",
+      "type": "string",
+      "description": "Per-model sampling temperature.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.top_p",
+      "type": "string",
+      "description": "Per-model top_p.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model.<id>.use_concise",
+      "type": "boolean",
+      "description": "Use the concise tool-description pack for this model.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model_providers.<name>",
+      "type": "object",
+      "description": "Named custom model provider definition.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "models.agent_type",
+      "type": "string",
+      "description": "Fallback agent_type for models without a per-model override.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "models.allowed_models",
+      "type": "string",
+      "description": "Glob allowlist for the model picker, default, and -m, ignored outside requirements.toml when auth_provider_command and a custom models endpoint are set. Empty means no restriction.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "models.default",
+      "type": "string",
+      "description": "Model used for new sessions. Also GROK_DEFAULT_MODEL, --model, -m.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "models.default_reasoning_effort",
+      "type": "string",
+      "description": "Default reasoning effort for the default model when the model supports it.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "models.disabled_models",
+      "type": "string",
+      "description": "Remove these model IDs from the catalog. Wins over hidden_models.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "models.extra_headers",
+      "type": "object",
+      "description": "Request headers applied to every model; per-model keys win.",
+      "scope": "user",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "models.hidden_models",
+      "type": "string",
+      "description": "Hide these model IDs from the picker; -m can still select them.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "models.image_description",
+      "type": "string",
+      "description": "Vision model used to transcribe user-supplied images.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "models.inference_idle_timeout_secs",
+      "type": "string",
+      "description": "Global idle timeout for streaming inference when a model leaves it unset.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "models.max_completion_tokens",
+      "type": "string",
+      "description": "Global max completion tokens default when a model leaves it unset.",
+      "scope": "user",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "models.max_retries",
+      "type": "string",
+      "description": "Global inference retry default when a model leaves it unset.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "models.prompt_suggestion",
+      "type": "string",
+      "description": "Model pin for next-prompt ghost text. Unset falls through remote, then the session model.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "models.rate_limit_retry_threshold",
+      "type": "string",
+      "description": "Global total-attempt ceiling for rate-limited requests when a model leaves it unset, capped by the resolved max_retries; when configured, it disables the separate subagent 429 wait loop.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "models.session_summary",
+      "type": "string",
+      "description": "Model used for session titles and summaries.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "models.stream_tool_calls",
+      "type": "boolean",
+      "description": "Global tool-call streaming request shape; some BYOK endpoints need false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "models.subagent_rate_limit_max_attempts",
+      "type": "string",
+      "description": "Global default for subagent 429 wait-loop attempts when rate_limit_retry_threshold is unset; default 8, maximum 32, and 0 disables the wait loop.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "models.temperature",
+      "type": "string",
+      "description": "Global sampling temperature default when a model leaves it unset.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "models.top_p",
+      "type": "string",
+      "description": "Global top_p default when a model leaves it unset.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "models.web_search",
+      "type": "string",
+      "description": "Model used by the client web_search tool. Also GROK_WEB_SEARCH_MODEL.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "path_not_found_hints",
+      "type": "boolean",
+      "description": "Enrich path-not-found errors with CWD reminders and similar-name suggestions.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "paths.extra_rule_dirs",
+      "type": "string",
+      "description": "More rule directories (absolute or ~/…; each contains *.md), loaded after the home rules.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "paths.extra_skill_dirs",
+      "type": "string",
+      "description": "Records /import-claude skill directories that skill injection ignores in favor of [skills] paths.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "permission.allow",
+      "type": "string",
+      "description": "Compact allow rules such as Bash(git *). Deny beats ask beats allow. Project files may set this.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "permission.ask",
+      "type": "string",
+      "description": "Compact ask rules. Project files may set this.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "permission.deny",
+      "type": "string",
+      "description": "Compact deny rules. Project files may set this.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "permission.rules",
+      "type": "array",
+      "description": "Verbose action/tool/pattern object rules. Project files may set this.",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "plugins.disabled",
+      "type": "string",
+      "description": "Plugin IDs to discover but not load. Project files may set this.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "plugins.enabled",
+      "type": "string",
+      "description": "Plugin IDs to enable; needed for project plugins that default off.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "plugins.paths",
+      "type": "string",
+      "description": "Additional plugin directories. Project files may set this when the folder is trusted.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "privacy.privacy_banner_acked",
+      "type": "string",
+      "description": "RFC 3339 UTC timestamp when the local privacy banner was dismissed. The pager reads user config.toml only.",
+      "scope": "—",
+      "typeLabel": "string"
+    },
+    {
+      "path": "relay.enabled",
+      "type": "boolean",
+      "description": "Enable session relay sync.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "sandbox.auto_allow_bash",
+      "type": "boolean",
+      "description": "Skip bash permission prompts when a sandbox profile is active. Also GROK_SANDBOX_AUTO_ALLOW_BASH.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "sandbox.profile",
+      "type": "string",
+      "description": "Filesystem sandbox profile. Also --sandbox and GROK_SANDBOX.",
+      "scope": "user",
+      "typeLabel": "off / workspace / read-only / strict / string"
+    },
+    {
+      "path": "session.auto_compact_threshold_percent",
+      "type": "string",
+      "description": "Auto-compact when context usage reaches this percent (0–100).",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "session.load_envrc",
+      "type": "boolean",
+      "description": "Inject .envrc variables into bash.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "shell_environment_policy.exclude",
+      "type": "string",
+      "description": "Env names to drop from bash. Overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "shell_environment_policy.ignore_default_excludes",
+      "type": "boolean",
+      "description": "Skip the built-in env denylist. Overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "shell_environment_policy.include_only",
+      "type": "string",
+      "description": "If set, bash inherits only these env names. Overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "shell_environment_policy.inherit",
+      "type": "string",
+      "description": "Which parent env names bash inherits. Overlay-allowlisted; cannot inject values.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "shell_environment_policy.set",
+      "type": "object",
+      "description": "Inject env values into bash. Not overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "skills.disabled",
+      "type": "string",
+      "description": "Skill names to discover but not activate.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "skills.paths",
+      "type": "string",
+      "description": "Additional skill directories.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "storage.cleanup_ttl_days",
+      "type": "string",
+      "description": "Days a session may stay idle before its folder is deleted; media and terminal logs older than this are pruned from live sessions; unset or 0 disables cleanup.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "subagents.enabled",
+      "type": "boolean",
+      "description": "Subagent / task tool master switch, default true even when other subagents.* keys are set. Also GROK_SUBAGENTS or --no-subagents.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "subagents.limit_behavior",
+      "type": "string",
+      "description": "What to do when the concurrent subagent cap is hit.",
+      "scope": "user",
+      "typeLabel": "queue / fail"
+    },
+    {
+      "path": "subagents.max_concurrent",
+      "type": "string",
+      "description": "Max concurrent subagents.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "subagents.max_depth",
+      "type": "string",
+      "description": "Max nested subagent depth (clamped ≥1).",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "subagents.models.<name>",
+      "type": "string",
+      "description": "Per-subagent model id override.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "subagents.toggle.<name>",
+      "type": "boolean",
+      "description": "Enable or disable an individual subagent type. Omitted agents default on.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.otel_enabled",
+      "type": "boolean",
+      "description": "External OTEL master switch. Also GROK_EXTERNAL_OTEL.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.otel_metrics_exporter",
+      "type": "string",
+      "description": "External OTEL metrics exporter. Also OTEL_METRICS_EXPORTER.",
+      "scope": "user",
+      "typeLabel": "otlp / console / none"
+    },
+    {
+      "path": "telemetry.otel_logs_exporter",
+      "type": "string",
+      "description": "External OTEL logs exporter. Also OTEL_LOGS_EXPORTER.",
+      "scope": "user",
+      "typeLabel": "otlp / console / none"
+    },
+    {
+      "path": "telemetry.otel_endpoint",
+      "type": "string",
+      "description": "External OTLP base endpoint. Also OTEL_EXPORTER_OTLP_ENDPOINT. Pin strips developer env and unlisted user/managed file siblings except listed.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_logs_endpoint",
+      "type": "string",
+      "description": "Logs-signal OTLP endpoint (verbatim). Also OTEL_EXPORTER_OTLP_LOGS_ENDPOINT.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_metrics_endpoint",
+      "type": "string",
+      "description": "Metrics-signal OTLP endpoint (verbatim). Also OTEL_EXPORTER_OTLP_METRICS_ENDPOINT.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_protocol",
+      "type": "string",
+      "description": "External OTLP transport. Also OTEL_EXPORTER_OTLP_PROTOCOL. Pin strips per-signal protocol env and unlisted file siblings except listed.",
+      "scope": "user",
+      "typeLabel": "http/protobuf / grpc"
+    },
+    {
+      "path": "telemetry.otel_logs_protocol",
+      "type": "string",
+      "description": "Logs-signal OTLP protocol. Also OTEL_EXPORTER_OTLP_LOGS_PROTOCOL.",
+      "scope": "user",
+      "typeLabel": "http/protobuf / grpc"
+    },
+    {
+      "path": "telemetry.otel_metrics_protocol",
+      "type": "string",
+      "description": "Metrics-signal OTLP protocol. Also OTEL_EXPORTER_OTLP_METRICS_PROTOCOL.",
+      "scope": "user",
+      "typeLabel": "http/protobuf / grpc"
+    },
+    {
+      "path": "telemetry.otel_timeout",
+      "type": "string",
+      "description": "Export timeout in milliseconds. Also OTEL_EXPORTER_OTLP_TIMEOUT.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "telemetry.otel_metric_export_interval",
+      "type": "string",
+      "description": "Metric export interval in milliseconds. Also OTEL_METRIC_EXPORT_INTERVAL.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "telemetry.otel_certificate",
+      "type": "string",
+      "description": "PEM path of extra CA certs for the collector. Also OTEL_EXPORTER_OTLP_CERTIFICATE. CA pin does not strip endpoints.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_logs_certificate",
+      "type": "string",
+      "description": "Logs-signal CA PEM path. Also OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_metrics_certificate",
+      "type": "string",
+      "description": "Metrics-signal CA PEM path. Also OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_client_certificate",
+      "type": "string",
+      "description": "PEM path of the mTLS client certificate. Also OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE. Pin strips credential copies, developer endpoints, and unlisted file siblings.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_client_key",
+      "type": "string",
+      "description": "PEM path of the mTLS client key. Tokens never live in this file. Also OTEL_EXPORTER_OTLP_CLIENT_KEY.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_logs_client_certificate",
+      "type": "string",
+      "description": "Logs-signal mTLS client cert PEM path. Also OTEL_EXPORTER_OTLP_LOGS_CLIENT_CERTIFICATE.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_logs_client_key",
+      "type": "string",
+      "description": "Logs-signal mTLS client key PEM path. Also OTEL_EXPORTER_OTLP_LOGS_CLIENT_KEY.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_metrics_client_certificate",
+      "type": "string",
+      "description": "Metrics-signal mTLS client cert PEM path. Also OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_metrics_client_key",
+      "type": "string",
+      "description": "Metrics-signal mTLS client key PEM path. Also OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "telemetry.otel_metrics_include_session_id",
+      "type": "boolean",
+      "description": "Attach session.id to metrics. Also OTEL_METRICS_INCLUDE_SESSION_ID.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.otel_log_user_prompts",
+      "type": "boolean",
+      "description": "Content gate for prompt text on grok_code.user_prompt. Also OTEL_LOG_USER_PROMPTS. Pinning any content gate without listing a sibling defaults the omitted sibling off.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.otel_log_tool_details",
+      "type": "boolean",
+      "description": "Metadata gate for tool-arg preview, paths, and verbatim names. Recommended on for SIEM join. Also OTEL_LOG_TOOL_DETAILS. Does not include full bodies.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.otel_log_assistant_responses",
+      "type": "boolean",
+      "description": "Content gate for grok_code.assistant_response text. Unset follows otel_log_user_prompts unless a sibling gate is pinned in requirements. Env-only OTEL_LOG_USER_PROMPTS=1 must set this to 0 (or pin it false) for a prompts-only stream. Also OTEL_LOG_ASSISTANT_RESPONSES.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.otel_log_tool_content",
+      "type": "boolean",
+      "description": "Body gate for tool_input, tool_output, full_command, and error_message. Independent of details; default off. CONTENT-only loses verbatim MCP names and paths. Also OTEL_LOG_TOOL_CONTENT.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "telemetry.trace_upload",
+      "type": "boolean",
+      "description": "Upload session traces. Requirements pin beats user config.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tools.disable_zdr_incompatible_tools",
+      "type": "boolean",
+      "description": "Restrict tools that need xAI-hosted output under ZDR. Also GROK_DISABLE_ZDR_INCOMPATIBLE_TOOLS.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tools.media_gen.max_parallel_image_gen_calls",
+      "type": "string",
+      "description": "Cap parallel image_gen/image_edit calls in one model step. Also GROK_MAX_PARALLEL_IMAGE_GEN_CALLS.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "tools.media_gen.max_parallel_video_gen_calls",
+      "type": "string",
+      "description": "Cap parallel video_gen calls in one model step. Also GROK_MAX_PARALLEL_VIDEO_GEN_CALLS.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "tools.respect_gitignore",
+      "type": "boolean",
+      "description": "When true, search and read tools skip gitignored files. Also GROK_RESPECT_GITIGNORE.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tools.zdr_video_output_s3",
+      "type": "object",
+      "description": "Team S3 bucket for ZDR video output. See ZDR Video Storage.",
+      "scope": "user",
+      "typeLabel": "table"
+    },
+    {
+      "path": "toolset.ask_user_question.timeout_secs",
+      "type": "string",
+      "description": "Timeout for the ask_user_question tool.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "toolset.bash.auto_background_on_timeout",
+      "type": "boolean",
+      "description": "Background the command when the foreground timeout fires.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "toolset.bash.login_shell_capture",
+      "type": "boolean",
+      "description": "Capture the user's login shell environment for bash. Overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "toolset.bash.max_timeout_secs",
+      "type": "string",
+      "description": "Cap on model-requested foreground timeouts.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "toolset.bash.output_byte_limit",
+      "type": "string",
+      "description": "Max captured bash output in bytes.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "toolset.bash.timeout_secs",
+      "type": "string",
+      "description": "Foreground bash command timeout in seconds.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "toolset.file_toolset",
+      "type": "string",
+      "description": "File edit tool scheme.",
+      "scope": "user",
+      "typeLabel": "standard / hashline"
+    },
+    {
+      "path": "toolset.web_fetch.allowed_domains",
+      "type": "string",
+      "description": "Domain allowlist override for web_fetch.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "toolset.web_fetch.proxy_endpoint",
+      "type": "string",
+      "description": "Egress proxy URL for web_fetch. Also GROK_WEB_FETCH_PROXY.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "toolset.web_search.allowed_domains",
+      "type": "string",
+      "description": "Domain allowlist for client web_search. Overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "toolset.web_search.excluded_domains",
+      "type": "string",
+      "description": "Domain denylist for client web_search. Overlay-allowlisted.",
+      "scope": "user",
+      "typeLabel": "string[]"
+    },
+    {
+      "path": "ui.approval_mode",
+      "type": "string",
+      "description": "Deprecated; use ui.permission_mode.",
+      "scope": "user",
+      "typeLabel": "string",
+      "deprecated": true
+    },
+    {
+      "path": "ui.auto_dark_theme",
+      "type": "string",
+      "description": "Theme when theme = auto and the OS is dark.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.auto_light_theme",
+      "type": "string",
+      "description": "Theme when theme = auto and the OS is light.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.cancel_subagents_on_turn_cancel",
+      "type": "string",
+      "description": "What to do with running subagents when cancelling a parent turn.",
+      "scope": "user",
+      "typeLabel": "ask / always_stop / always_continue"
+    },
+    {
+      "path": "ui.collapsed_edit_blocks",
+      "type": "boolean",
+      "description": "Show edits as one-line +N/-M summaries. Also GROK_COLLAPSED_EDIT_BLOCKS.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.combine_queued_prompts",
+      "type": "boolean",
+      "description": "Merge consecutive plain follow-ups into one turn.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.compact_mode",
+      "type": "boolean",
+      "description": "Denser message padding. Also /compact-mode.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.confirm_before_rewind",
+      "type": "boolean",
+      "description": "Ask before rewinding conversation history.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.dashboard_preview",
+      "type": "boolean",
+      "description": "The dashboard preview and reply panel appear by default (Appearance in /settings).",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.image_input",
+      "type": "boolean",
+      "description": "Clipboard image paste tip when the model accepts images.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.plan_mode",
+      "type": "boolean",
+      "description": "Suggest plan mode (Shift+Tab) for planning-style prompts.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.send_now",
+      "type": "boolean",
+      "description": "After queuing a mid-turn follow-up, Enter on an empty prompt sends now.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.small_screen",
+      "type": "boolean",
+      "description": "Suggest /compact-mode on short terminals.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.ssh_wrap",
+      "type": "boolean",
+      "description": "Recommend grok wrap when SSH lacks a clipboard sink.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.undo",
+      "type": "boolean",
+      "description": "Ctrl+Z restores a wiped prompt draft tip.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.contextual_hints.word_select",
+      "type": "boolean",
+      "description": "After double-click with fold/nav selection, point at Word select in settings.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.cursor_blink",
+      "type": "boolean",
+      "description": "Force blinking (true) or steady (false) block cursor. Unset inherits the terminal.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.default_selected_permission",
+      "type": "string",
+      "description": "Preselected approval row on the first prompt of a session. Also GROK_DEFAULT_SELECTED_PERMISSION.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.display_refresh.auto_cadence_enabled",
+      "type": "boolean",
+      "description": "Match stream/scroll cadence to display refresh rate. Also GROK_DISPLAY_REFRESH_AUTO_CADENCE.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.follow_up_behavior",
+      "type": "string",
+      "description": "Mid-turn follow-up routing.",
+      "scope": "user",
+      "typeLabel": "queue / steer"
+    },
+    {
+      "path": "ui.fork_secondary_model",
+      "type": "string",
+      "description": "Model for the secondary agent when forking. Defaults to the main default model.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.group_tool_verbs",
+      "type": "boolean",
+      "description": "Fold consecutive read/search/list tool rows. Also GROK_GROUP_TOOL_VERBS.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.hunk_tracker_mode",
+      "type": "string",
+      "description": "File-change hunk tracking. Also GROK_HUNK_TRACKER and --hunk-tracker-mode.",
+      "scope": "user",
+      "typeLabel": "agent_only / all_dirty / off"
+    },
+    {
+      "path": "ui.invert_scroll",
+      "type": "boolean",
+      "description": "Reverse vertical scroll direction. Also GROK_INVERT_SCROLL.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.keep_text_selection",
+      "type": "string",
+      "description": "In-app selection: brief flash, hold, or double-click word select.",
+      "scope": "user",
+      "typeLabel": "flash / hold / word_select"
+    },
+    {
+      "path": "ui.max_thoughts_width",
+      "type": "string",
+      "description": "Column width for the thoughts panel (40–500).",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "ui.mouse_reporting_toggle",
+      "type": "boolean",
+      "description": "Ctrl+R in scrollback toggles terminal mouse capture. Also GROK_MOUSE_REPORTING_TOGGLE.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.page_flip_on_send",
+      "type": "boolean",
+      "description": "Snap the sent prompt to the top of the viewport.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.permission_mode",
+      "type": "string",
+      "description": "Default tool-permission behavior. Enterprise locks use requirements.toml.",
+      "scope": "user",
+      "typeLabel": "default / ask / auto / always-approve"
+    },
+    {
+      "path": "ui.prompt_suggestions",
+      "type": "boolean",
+      "description": "Next-prompt ghost text after each turn. Also GROK_PROMPT_SUGGESTIONS; a remote kill-switch can disable it fleet-wide.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "prompt_suggestions.max_output_tokens",
+      "type": "string",
+      "description": "Visible-output tokens for the suggestion call; clamped to 16–256, default 64, with a separate reserve for reasoning. Remote-overridable.",
+      "scope": "user",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "prompt_suggestions.temperature",
+      "type": "string",
+      "description": "Sampling temperature for the suggestion call (default 0.2). Remote-overridable.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "prompt_suggestions.reasoning_effort",
+      "type": "string",
+      "description": "Reasoning effort for the suggestion call; default and none disable reasoning, while other values use a supported model effort. Remote-overridable.",
+      "scope": "user",
+      "typeLabel": "none / minimal / low / medium / high"
+    },
+    {
+      "path": "ui.remember_tool_approvals",
+      "type": "boolean",
+      "description": "Show per-tool Always allow options. Also GROK_REMEMBER_TOOL_APPROVALS.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.render_mermaid",
+      "type": "string",
+      "description": "How mermaid fences render: clickable open row or raw source.",
+      "scope": "user",
+      "typeLabel": "auto / on / off"
+    },
+    {
+      "path": "ui.screen_mode",
+      "type": "string",
+      "description": "Default render mode for plain grok. Restart required.",
+      "scope": "user",
+      "typeLabel": "fullscreen / minimal"
+    },
+    {
+      "path": "ui.scroll_lines",
+      "type": "string",
+      "description": "Lines per scroll tick (1–10). Also GROK_SCROLL_LINES.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "ui.scroll_mode",
+      "type": "string",
+      "description": "Scroll input classification. Also GROK_SCROLL_MODE.",
+      "scope": "user",
+      "typeLabel": "auto / wheel / trackpad"
+    },
+    {
+      "path": "ui.scroll_speed",
+      "type": "string",
+      "description": "Mouse/trackpad scroll speed multiplier (1–100). Also GROK_SCROLL_SPEED.",
+      "scope": "user",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "ui.show_thinking_blocks",
+      "type": "boolean",
+      "description": "Show thinking/reasoning blocks while streaming. Also GROK_SHOW_THINKING_BLOCKS.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.show_timeline",
+      "type": "boolean",
+      "description": "Per-turn tick rail instead of the scrollbar.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.show_timestamps",
+      "type": "boolean",
+      "description": "Clock time next to messages. Also /timestamps.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.simple_mode",
+      "type": "boolean",
+      "description": "Readline prompt editing when true; experimental vim prompt keys when false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.status_line.command",
+      "type": "string",
+      "description": "Script for a command status line. Campaigns strip this path; a requirements layer still merges it.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.status_line.type",
+      "type": "string",
+      "description": "Optional status-line row above the shortcuts bar. Off by default. See the status-line user guide.",
+      "scope": "user",
+      "typeLabel": "disabled / command"
+    },
+    {
+      "path": "ui.theme",
+      "type": "string",
+      "description": "Color theme name, or auto/system to follow the OS. Also /theme and GROK_THEME.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.ui_theme",
+      "type": "string",
+      "description": "Legacy alias for ui.theme.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.vim_mode",
+      "type": "boolean",
+      "description": "Vim keys in the scrollback, not the prompt. Also /vim-mode.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.voice_capture_mode",
+      "type": "string",
+      "description": "Hold-to-talk or press-to-toggle voice capture.",
+      "scope": "user",
+      "typeLabel": "hold / toggle"
+    },
+    {
+      "path": "ui.voice_keybind_enabled",
+      "type": "boolean",
+      "description": "Enable Ctrl+Space / F8 for voice dictation. /voice still works when false.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "ui.voice_stt_language",
+      "type": "string",
+      "description": "Speech-to-text language code or auto. Overrides [voice].language for the session.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "ui.yolo",
+      "type": "boolean",
+      "description": "Always-approve tool calls. Requirements can pin false and block --yolo.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "version_overrides",
+      "type": "array",
+      "description": "Per-CLI-version config patches applied before merge. See [[version_overrides]].",
+      "scope": "user",
+      "typeLabel": "array of tables"
+    },
+    {
+      "path": "voice.api_base",
+      "type": "string",
+      "description": "HTTPS API root for speech-to-text. Unset inherits [endpoints].xai_api_base_url.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "voice.language",
+      "type": "string",
+      "description": "Preferred STT language catalog code or auto.",
+      "scope": "user",
+      "typeLabel": "string"
+    },
+    {
+      "path": "voice.sample_rate",
+      "type": "string",
+      "description": "STT capture rate in Hz.",
+      "scope": "user",
+      "typeLabel": "number"
+    },
+    {
+      "path": "workflows.enabled",
+      "type": "boolean",
+      "description": "Enable workflows.",
+      "scope": "user",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "worktree.auto_gc",
+      "type": "object",
+      "description": "Automatic worktree garbage collection policy.",
+      "scope": "user",
+      "typeLabel": "table"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

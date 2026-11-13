@@ -923,6 +923,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, pricingRoutes...)
+	// Toolkit 扩展工作台（Edge 代理、Provider 配置、原生资源、订阅聚合）全量切 Go。
+	toolkitExtRoutes, err := buildWebUIToolkitExtRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, toolkitExtRoutes...)
 	return routes, nil
 }
 

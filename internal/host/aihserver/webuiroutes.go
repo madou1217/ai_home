@@ -882,6 +882,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, opsMiscRoutes...)
+	// GeoIP 资源、出口池、上游地区策略与账号出口分配全量切 Go。
+	egressGeoRoutes, err := buildWebUIEgressGeoRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, egressGeoRoutes...)
 	return routes, nil
 }
 

@@ -1,6 +1,28 @@
 package webuiegresspoolapi
 
-import "context"
+import (
+	"context"
+
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+)
+
+// PoolManager 定义 Go 出口池完整运行态、节点操作、策略与资源查询接口。
+// 注入该端口时，Handler 承接完整读写与分页契约；未注入时回退到只读 go_partial 契约以兼容早期测试。
+type PoolManager interface {
+	DescribePool(ctx context.Context, query runtimeegress.PoolQueryOptions) (*runtimeegress.PoolDescribeResult, string, error)
+	ProbePoolNodes(ctx context.Context, nodeName string) runtimeegress.PoolActionResult
+	SelectPoolNode(ctx context.Context, nodeName string) runtimeegress.PoolActionResult
+	ClearPoolNodeCooldown(ctx context.Context, nodeName string) runtimeegress.PoolActionResult
+	SetPoolNodeBlocked(ctx context.Context, nodeName string, blocked bool, reason string) runtimeegress.PoolActionResult
+	ReadNodePolicySummary(ctx context.Context) runtimeegress.NodePolicySummary
+	UpdateNodePolicy(ctx context.Context, patch runtimeegress.NodePolicyPatch) runtimeegress.PoolActionResult
+	ClearDisabledNodePolicy(ctx context.Context) runtimeegress.PoolActionResult
+	ListPoolGroupsTree(ctx context.Context) []runtimeegress.ResourceGroupView
+	ListPoolsView(ctx context.Context) []runtimeegress.ResourcePoolView
+	GetPoolView(ctx context.Context, poolID string) (*runtimeegress.ResourcePoolView, bool)
+	GetNodeView(ctx context.Context, nodeID string) (*runtimeegress.ResourceNodeView, bool)
+	BuildDiagnosticView(ctx context.Context, query runtimeegress.AccountDiagnosticQuery) runtimeegress.AccountDiagnosticView
+}
 
 // Source 读出口池的配置事实：服务是否在跑、当前选择、节点清单。
 //

@@ -54,21 +54,24 @@ type Dependencies struct {
 	Source     Source
 	// Health 读节点账本（冷却 / 拦截 / 最近探测）。
 	Health Health
+	// Manager 提供完整出口池运行态与写操作能力（注入后接管全量与写动作路由）。
+	Manager PoolManager
 	// Now 是判定冷却是否生效的时钟；零值时用 time.Now。
 	Now func() time.Time
 }
 
-// Handler 是出口池只读投影的 HTTP 入站适配器。
+// Handler 是出口池只读投影与管理面控制的 HTTP 入站适配器。
 type Handler struct {
 	authorizer Authorizer
 	source     Source
 	health     Health
+	manager    PoolManager
 	now        func() time.Time
 }
 
 // NewHandler 校验依赖并创建 Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Authorizer == nil || dependencies.Source == nil {
+	if dependencies.Authorizer == nil || (dependencies.Manager == nil && dependencies.Source == nil) {
 		return nil, ErrInvalidDependencies
 	}
 	now := dependencies.Now
@@ -79,6 +82,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer: dependencies.Authorizer,
 		source:     dependencies.Source,
 		health:     dependencies.Health,
+		manager:    dependencies.Manager,
 		now:        now,
 	}, nil
 }
@@ -158,13 +162,17 @@ type errorView struct {
 
 // ServeHTTP 只接受 GET。
 func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	if handler == nil || handler.authorizer == nil || handler.source == nil {
+	if handler == nil || handler.authorizer == nil || (handler.manager == nil && handler.source == nil) {
 		writeError(responseWriter, http.StatusServiceUnavailable, "egress_pool_unavailable", "出口池投影不可用")
 		return
 	}
 	if !handler.authorizer.Authorized(request) {
 		responseWriter.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(responseWriter, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
+		return
+	}
+	if handler.manager != nil {
+		handler.serveFullHTTP(responseWriter, request)
 		return
 	}
 	if request.Method != http.MethodGet {

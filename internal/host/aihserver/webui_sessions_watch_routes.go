@@ -27,10 +27,13 @@ const codexAppServerPassthroughEnv = "AIH_CODEX_APP_SERVER_PASSTHROUGH"
 // watch 与 provider-hook 共用同一个 Go sessionevents.Bus 与持久化 StateStore，
 // unarchive 通过独立的 Codex app-server 宿主环境拨号承接原生恢复，彻底脱离 Node 进程状态。
 func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
-	bus := sessionevents.NewBus(sessionevents.BusOptions{
-		AIHomeDir:   dependencies.AIHomeDir,
-		HostHomeDir: dependencies.HostHomeDir,
-	})
+	bus := dependencies.SessionEventBus
+	if bus == nil {
+		bus = sessionevents.NewBus(sessionevents.BusOptions{
+			AIHomeDir:   dependencies.AIHomeDir,
+			HostHomeDir: dependencies.HostHomeDir,
+		})
+	}
 	stateStore := sessionevents.NewStateStore(sessionevents.StateStoreOptions{
 		AIHomeDir: dependencies.AIHomeDir,
 	})

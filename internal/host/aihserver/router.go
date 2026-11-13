@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/codexappserverapi"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
@@ -266,7 +267,18 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
 	// 的来源，且同协议下这些信息本来是 1:1 的。
 	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
-	mux.HandleFunc("/", handleRouteNotFound)
+	if handlers.codexAppServer != nil {
+		mux.Handle(codexappserverapi.AppServerProxyPath, handlers.codexAppServer)
+		mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
+			if shouldDispatchCodexAppServerUpgrade(request) {
+				handlers.codexAppServer.ServeHTTP(response, request)
+				return
+			}
+			handleRouteNotFound(response, request)
+		})
+	} else {
+		mux.HandleFunc("/", handleRouteNotFound)
+	}
 	return mux
 }
 

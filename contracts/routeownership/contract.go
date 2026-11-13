@@ -48,8 +48,8 @@ func websocketRoute(path string) Route {
 
 // Current 返回当前路由归属表。
 //
-// 健康检查与 WebUI/App Server 表面始终由 Node 公开宿主应答；其余 /v1 数据面
-// 条目已经全部 go_owned。两个 go.preview 条目保留 node_owned，避免预览路由
+// 健康检查与 WebUI 表面由 Node 公开宿主调度；App Server 与全部 /v1 数据面
+// 条目已经 go_owned。两个 go.preview 条目保留 node_owned，避免预览路由
 // 被误当成正式切流结果。
 func Current() Manifest {
 	return Manifest{
@@ -206,8 +206,12 @@ func Current() Manifest {
 			},
 			{
 				ID:              "node.codex_app_server",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					websocketRoute("/v0/codex/app-server"),
+					{Transport: "websocket", Methods: []string{"GET"}, Path: "/", Upgrade: true, Role: "legacy app-server compatibility"},
+				},
 				NodeRoutes: []Route{
 					websocketRoute("/v0/codex/app-server"),
 					{Transport: "websocket", Methods: []string{"GET"}, Path: "/", Upgrade: true, Role: "legacy app-server compatibility"},

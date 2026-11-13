@@ -431,8 +431,27 @@
     },
     {
       "id": "node.codex_app_server",
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/codex/app-server",
+          "upgrade": true
+        },
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/",
+          "upgrade": true,
+          "role": "legacy app-server compatibility"
+        }
+      ],
       "node_routes": [
         {
           "transport": "websocket",

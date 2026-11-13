@@ -72,6 +72,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
@@ -151,6 +152,8 @@ type serverHandlers struct {
 	webUI http.Handler
 	// subAggregatorPublic 托管 /sub/{token} 免鉴权聚合订阅公开拉取。
 	subAggregatorPublic http.Handler
+	// codexAppServer 托管 /v0/codex/app-server 与根路径 WebSocket 升级代理。
+	codexAppServer http.Handler
 	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
 	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
@@ -462,12 +465,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	routeObserver := dependencies.RouteObserver
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
+	var hooksRuntime *codexHooksRuntime
+	var backgroundDaemons *backgroundDaemonsRuntime
 	defer func() {
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
 		}
 		if resultErr != nil && modelRefresh != nil {
 			_ = modelRefresh.Close()
+		}
+		if resultErr != nil && hooksRuntime != nil {
+			_ = hooksRuntime.Close()
+		}
+		if resultErr != nil && backgroundDaemons != nil {
+			_ = backgroundDaemons.Close()
 		}
 	}()
 	registrar, err := accountapp.NewRegistrar(
@@ -1422,7 +1433,35 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
-	webuiRoutes, err := buildWebUIRoutes(webuiRouteDependencies{
+	var sessionEventBus *sessionevents.Bus
+	if hooksAIHome := strings.TrimSpace(aiHomeDir); hooksAIHome != "" {
+		sessionEventBus = sessionevents.NewBus(sessionevents.BusOptions{
+			AIHomeDir:   hooksAIHome,
+			HostHomeDir: dependencies.HostHomeDir,
+		})
+		hooksRuntime, err = startCodexHooksDaemons(codexHooksDaemonOptions{
+			Context:                  ctx,
+			AIHomeDir:                hooksAIHome,
+			HostHomeDir:              dependencies.HostHomeDir,
+			EnableNotificationBridge: true,
+			SessionEventBus:          sessionEventBus,
+			LogWarn: func(message string) {
+				if errorLog != nil && strings.TrimSpace(message) != "" {
+					errorLog.Println(message)
+				}
+			},
+		})
+		if err != nil {
+			_ = inference.Close()
+			return serverHandlers{}, nil, err
+		}
+	}
+	codexAppServerHandler, err := newCodexAppServerWSHandler(clientAuthorizer, dependencies)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 Codex app-server 代理失败: %w", err)
+	}
+	webuiDeps := webuiRouteDependencies{
 		Authorizer:       authorizer,
 		AIHomeDir:        aiHomeDir,
 		Catalog:          catalog,
@@ -1449,11 +1488,25 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		ManagementKey:   managementKey,
 		TerminalHandler: webUITerminalHandler,
 		SubAggregator:   subAggSvc,
-	})
+		SessionEventBus: sessionEventBus,
+		CodexHooks:      hooksRuntime,
+	}
+	webuiRoutes, err := buildWebUIRoutes(webuiDeps)
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
+	backgroundDaemons, err = startBackgroundDaemons(ctx, webuiDeps)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	daemonsRoutes, err := backgroundDaemons.Routes(authorizer)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	webuiRoutes = append(webuiRoutes, daemonsRoutes...)
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1877,6 +1930,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		modelCatalog:          modelCatalogHandler,
 		webuiRoutes:           webuiRoutes,
 		subAggregatorPublic:   subAggregatorPublicHandler,
+		codexAppServer:        codexAppServerHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,
@@ -1890,18 +1944,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 				accounts:   accountCountsByProvider(catalog, store),
 			}
 		},
-	}, []io.Closer{
-		plugins,
-		modelSweepWorker,
-		initialModelRecoveryWorker,
-		webSocketHandler,
-		routeMissRefresh,
-		inference,
-		usage,
-		modelRefresh,
-		terminalService,
-		webUITerminalHandler,
-	}, nil
+	}, func() []io.Closer {
+		closers := []io.Closer{
+			plugins,
+			modelSweepWorker,
+			initialModelRecoveryWorker,
+			webSocketHandler,
+			routeMissRefresh,
+			inference,
+			usage,
+			modelRefresh,
+			terminalService,
+			webUITerminalHandler,
+		}
+		if hooksRuntime != nil {
+			closers = append(closers, hooksRuntime)
+		}
+		if backgroundDaemons != nil {
+			closers = append(closers, backgroundDaemons)
+		}
+		return closers
+	}(), nil
 }
 
 // newWebUIChatHandler 把内部聊天入口装配在管理前缀上。

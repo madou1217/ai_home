@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
@@ -142,6 +143,10 @@ type webuiRouteDependencies struct {
 	TerminalHandler *webuiterminalapi.Handler
 	// SubAggregator 由组合根注入，供 WebUI 管理路由与公开 /sub/ 拉取共享状态与缓存。
 	SubAggregator *subaggregator.Service
+	// SessionEventBus 由组合根注入，让 Codex 通知队列桥接与 sessions/watch SSE 共用同一事件总线。
+	SessionEventBus *sessionevents.Bus
+	// CodexHooks 为运行中的 Codex Hook 与通知桥接守护句柄（用于诊断状态查询）。
+	CodexHooks *codexHooksRuntime
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -938,6 +943,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, toolkitCoreRoutes...)
+	codexHooksRoutes, err := buildWebUICodexHooksRoutesWithRuntime(dependencies, dependencies.CodexHooks)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, codexHooksRoutes...)
 	return routes, nil
 }
 

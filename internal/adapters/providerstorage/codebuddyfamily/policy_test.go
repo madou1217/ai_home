@@ -77,3 +77,29 @@ func TestAllFamilyProvidersShareCaches(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkbuddyConfigDirEnv WorkBuddy 两支必须同时拿到 WORKBUDDY_CONFIG_DIR，
+// CodeBuddy 两支不能凭空多出这个变量。
+func TestWorkbuddyConfigDirEnv(t *testing.T) {
+	cases := map[string]bool{
+		"codebuddy":   false,
+		"codebuddycn": false,
+		"workbuddy":   true,
+		"workbuddycn": true,
+	}
+	for providerID, want := range cases {
+		policy, ok := Policy(providerID)
+		if !ok {
+			t.Fatalf("%s 缺少投影策略", providerID)
+		}
+		found := false
+		for _, binding := range policy.Env {
+			if binding.Key == "WORKBUDDY_CONFIG_DIR" {
+				found = true
+			}
+		}
+		if found != want {
+			t.Fatalf("%s WORKBUDDY_CONFIG_DIR = %v, want %v", providerID, found, want)
+		}
+	}
+}

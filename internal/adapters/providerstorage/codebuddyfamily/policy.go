@@ -182,12 +182,27 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			"projects",
 			"skills",
 		},
-		Env: []accountprojection.EnvBinding{
-			{Key: "HOME", Base: accountprojection.EnvBaseProjectionRoot},
-			{Key: "CODEBUDDY_CONFIG_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{layout.configDir}},
-		},
+		Env:              familyEnvironment(id, layout.configDir),
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}, true
+}
+
+// familyEnvironment 生成伪 HOME 的环境绑定。WorkBuddy 两支额外需要
+// WORKBUDDY_CONFIG_DIR（Node codebuddy-strategy 的同一口径）：只设 CODEBUDDY_CONFIG_DIR
+// 会让桌面端和 CLI 读到不同配置根。
+func familyEnvironment(providerID string, configDir string) []accountprojection.EnvBinding {
+	bindings := []accountprojection.EnvBinding{
+		{Key: "HOME", Base: accountprojection.EnvBaseProjectionRoot},
+		{Key: "CODEBUDDY_CONFIG_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{configDir}},
+	}
+	if strings.HasPrefix(providerID, "workbuddy") {
+		bindings = append(bindings, accountprojection.EnvBinding{
+			Key:  "WORKBUDDY_CONFIG_DIR",
+			Base: accountprojection.EnvBaseProjectionRoot,
+			Path: []string{configDir},
+		})
+	}
+	return bindings
 }
 
 // SiteInternal 返回该 Provider 是否固定使用国内站。

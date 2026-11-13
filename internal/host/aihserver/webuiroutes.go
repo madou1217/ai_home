@@ -362,6 +362,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 provider hooks 读模型失败: %w", err)
 	}
+	installHooks, err := webuiproviderhooksapi.NewInstallHandler(webuiproviderhooksapi.InstallDependencies{
+		Authorizer: authorizer, Catalog: dependencies.Catalog, HostHomeDir: dependencies.HostHomeDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 provider hooks 安装接口失败: %w", err)
+	}
 	fsRead, err := webuifsreadapi.NewHandler(webuifsreadapi.Dependencies{
 		Authorizer: authorizer,
 		Env:        webuifile.Env{AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir},
@@ -509,6 +515,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	clearBroken, err := webuiproviderclearbrokenapi.NewHandler(webuiproviderclearbrokenapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Catalog: dependencies.Catalog,
+		// status 与只读接口同源，前端拿到清除结果后直接刷新面板。
+		Status: func(context.Context) (any, error) {
+			return webuiprovidercliupgradeapi.Snapshot(dependencies.AIHomeDir, dependencies.Catalog), nil
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建解除升级熔断接口失败: %w", err)
@@ -691,6 +701,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuifstrustapi.TrustPath, Handler: fsTrust},
 		{Pattern: "GET " + webuifsaccessapi.Path, Handler: fsAccess},
 		{Pattern: "GET " + webuiproviderhooksapi.Path, Handler: hooks},
+		{Pattern: "POST " + webuiproviderhooksapi.InstallPath, Handler: installHooks},
 		{Pattern: "GET " + webuifsreadapi.Path, Handler: fsRead},
 		{Pattern: "GET " + webuifstreeapi.Path, Handler: fsTree},
 		{Pattern: "GET " + webuifsmediaapi.Path, Handler: fsMedia},

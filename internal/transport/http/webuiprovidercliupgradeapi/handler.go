@@ -75,20 +75,28 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
 		return
 	}
-	ledger := readLedger(handler.aiHomeDir)
-	providers := collectProviders(handler.catalog, ledger)
+	writeJSON(response, http.StatusOK, Snapshot(handler.aiHomeDir, handler.catalog))
+}
+
+// Snapshot 返回与 GET 完全一致的账本投影。
+//
+// 解除熔断接口会把它原样嵌进响应的 status 字段；两处必须同一份投影，
+// 否则「解除后刷新」会看到两套互相矛盾的口径。
+func Snapshot(aiHomeDir string, catalog *providers.Catalog) map[string]any {
+	ledger := readLedger(aiHomeDir)
+	providers := collectProviders(catalog, ledger)
 	rows := make([]map[string]any, 0, len(providers))
 	for _, provider := range providers {
 		rows = append(rows, projectProvider(provider, ledger))
 	}
-	writeJSON(response, http.StatusOK, map[string]any{
+	return map[string]any{
 		"ok": true, "scheduler": nil,
 		"global": map[string]any{
 			"enabled":        ledgerGlobalEnabled(ledger),
 			"disabledReason": text(object(ledger["global"])["disabledReason"]),
 		},
 		"providers": rows,
-	})
+	}
 }
 
 func readLedger(aiHomeDir string) map[string]any {

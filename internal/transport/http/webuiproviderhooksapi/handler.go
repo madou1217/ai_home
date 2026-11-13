@@ -1,4 +1,4 @@
-// Package webuiproviderhooksapi 提供「各 Provider 的 Hook 档案」只读投影。
+// Package webuiproviderhooksapi 提供「各 Provider 的 Hook 档案」投影与显式安装。
 //
 // 数据边界：唯一数据源是 core/providers 的能力合同。Support 与 Adapter 来自
 // SessionSync；Target / TimeoutUnit / EventMatchers / FeatureFlag 在内置合同里
@@ -12,6 +12,10 @@
 //
 // 不把空值翻译成「默认秒」「不需要 matcher」之类的猜测：gemini 的 timeout 以毫秒计、
 // codex 之外的 Provider 本来就不需要 matcher，猜错会写出读不回来的原生配置。
+//
+// POST /v1/management/webui/provider-hooks/install 的写盘逻辑见 install.go：
+// Provider 差异来自同一份合同，适配器只实现 json_hooks / agy_named_hooks /
+// opencode_plugin 三种格式。
 package webuiproviderhooksapi
 
 import (

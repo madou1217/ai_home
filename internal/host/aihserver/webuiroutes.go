@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
@@ -151,8 +152,9 @@ type webuiRouteDependencies struct {
 	SessionEventBus *sessionevents.Bus
 	// CodexHooks 为运行中的 Codex Hook 与通知桥接守护句柄（用于诊断状态查询）。
 	CodexHooks *codexHooksRuntime
-	// PricingService 由插件宿主与后台定价刷新共享。
-	PricingService *pricingcatalog.Service
+	// PluginHostService 与 PricingService 由插件宿主、WebUI 插件管理与后台定价刷新共享。
+	PluginHostService *pluginhost.Service
+	PricingService    *pricingcatalog.Service
 	// MetricsRecorder 与 StartedAt 为管理面监控提供实时指标与运行时长。
 	MetricsRecorder *metricsRecorder
 	StartedAt       time.Time
@@ -663,16 +665,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 
 	// 认证来源链：installable 由 Go 按 Provider 合同的安装声明判定；alreadyImported 需要
 	// 两侧身份指纹，端口在这里接到账号存储与官方 artifact 读取器上（见同目录
-	// webuiproviderauthsources_ports.go）。插件来源仍归 Node 插件运行时，端口留空并由
-	// 响应的 unfilledFields 显式声明。
+	// webuiproviderauthsources_ports.go）；插件账号来源直接查询 Go pluginhost.Service。
 	authSources, err := webuiproviderauthsourcesapi.NewHandler(webuiproviderauthsourcesapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
 		ExistingIdentities:  providerAuthIdentities(dependencies.Store),
 		LocalSourceIdentity: providerLocalAuthIdentity(dependencies.HostHomeDir),
-		// 插件账号来源由 Node 插件运行时维护；Node 一旦检测到该 Provider 有插件来源
-		// 就不会把请求交给 Go。因此 Go 侧无插件来源时返回空集，不把字段标成未填。
-		PluginSources: func(context.Context, string) ([]webuiproviderauthsourcesapi.PluginSource, error) {
-			return []webuiproviderauthsourcesapi.PluginSource{}, nil
+		PluginSources: func(ctx context.Context, provider string) ([]webuiproviderauthsourcesapi.PluginSource, error) {
+			return collectProviderPluginAuthSources(ctx, dependencies.PluginHostService, provider)
 		},
 	})
 	if err != nil {
@@ -938,6 +937,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, pricingRoutes...)
+	// 插件诊断、调试调用、插件报价刷新与账号插件管理路由统一由 Go pluginhost.Service 承接。
+	pluginRoutes, err := buildWebUIPluginRoutesWithHostService(dependencies, dependencies.PluginHostService)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, pluginRoutes...)
 	// Toolkit 扩展工作台（Edge 代理、Provider 配置、原生资源、订阅聚合）全量切 Go。
 	toolkitExtRoutes, err := buildWebUIToolkitExtRoutes(dependencies)
 	if err != nil {
@@ -973,6 +978,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, managementOpsRoutes...)
+	routingWeightsRoutes, err := buildWebUIRoutingWeightsRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, routingWeightsRoutes...)
+	loginJobRoutes, err := buildWebUILoginJobsRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, loginJobRoutes...)
 	return routes, nil
 }
 

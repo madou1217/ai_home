@@ -144,6 +144,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && arguments[1] == "sessions" && containsArgument(arguments[2:], "--history") {
 		return runProviderSessionsHistory(ctx, providerID, arguments[2:], runtime)
 	}
+	if len(arguments) >= 2 && arguments[1] == "sessions" {
+		return runProviderSessionsList(ctx, providerID, arguments[2:], runtime)
+	}
 	if providerID == "help" {
 		if len(arguments) == 2 && isCLIProvider(arguments[1]) {
 			writeProviderUsage(runtime.stdout, arguments[1])
@@ -322,6 +325,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> [原生参数...]              # 指定账号启动（伪 HOME 投影）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" resume [<id>] [原生参数...]      # 续接（无 id = 最近一段）")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" sessions [<id>] [--all-projects]   # 列出受管持久会话")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" sessions --history [--limit N]   # 列出宿主会话历史")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" ls                              # 账号列表")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" usage [<id>] [--refresh]         # 额度（无 id = 全部账号）")

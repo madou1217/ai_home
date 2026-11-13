@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
@@ -106,6 +107,7 @@ type webuiRouteDependencies struct {
 	AIHomeDir       string
 	Catalog         *providers.Catalog
 	ModelModalities *modelsdev.Index
+	EgressManager   *runtimeegress.Manager
 	HostHomeDir     string
 	Store           *sqliteaccount.Store
 	AccountRuntime  any
@@ -280,10 +282,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建模型上下文接口失败: %w", err)
 	}
-	// 账号出口绑定：Go 是设置的唯一写者；运行态应用仍在 Node（薄壳写后执行）。
+	// 账号出口绑定：设置存储与运行态解析/切换回滚全部由 Go 承接。
 	accountEgress, err := webuiaccountegressapi.NewHandler(webuiaccountegressapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
 		Catalog: dependencies.Catalog, Store: agyegress.NewStore(dependencies.AIHomeDir),
+		Runtime: dependencies.EgressManager,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号出口设置接口失败: %w", err)

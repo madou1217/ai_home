@@ -659,3 +659,142 @@ func boolDigitInt(v bool) int {
 	}
 	return 0
 }
+
+// RecordSuccess 记录一次经 name 节点出网成功的请求；若节点处于网络类冷却中则立即解除。
+func (l *NodeHealthLedger) RecordSuccess(name string, accountRef string) {
+	l.mu.Lock()
+	entry, found := l.entryByNameLocked(name)
+	if !found {
+		l.mu.Unlock()
+		return
+	}
+	stats := l.byIdentity[entry.Identity]
+	if stats == nil {
+		stats = emptyNodeHealthStats()
+		l.byIdentity[entry.Identity] = stats
+	}
+	at := l.now()
+	stats.Uses++
+	stats.Successes++
+	stats.ConsecutiveFailures = 0
+	stats.LastUsedAt = at
+	stats.LastSuccessAt = at
+	noteAccountUsageLocked(stats, accountRef, at)
+	if stats.CooldownUntil > at && stats.CooldownKind == "network" {
+		stats.CooldownUntil = 0
+		stats.CooldownKind = ""
+		l.pushEventLocked(HealthEvent{Type: "recovered", Node: name, Reason: "request_succeeded"})
+	}
+	l.mu.Unlock()
+	_ = l.Save()
+}
+
+// RecordFailure 记录一次经 name 节点出网失败并计算指数退避冷却时长；ip_blocked 绝不污染全局节点账本。
+func (l *NodeHealthLedger) RecordFailure(name string, kind string, accountRef string, model string, retryAfterMS int64) int64 {
+	trimmedKind := strings.TrimSpace(kind)
+	if trimmedKind == legacyIPBlockedKind {
+		return 0
+	}
+	baseMS, ok := failureKindCooldowns[trimmedKind]
+	if !ok || baseMS <= 0 {
+		return 0
+	}
+	l.mu.Lock()
+	entry, found := l.entryByNameLocked(name)
+	if !found {
+		l.mu.Unlock()
+		return 0
+	}
+	stats := l.byIdentity[entry.Identity]
+	if stats == nil {
+		stats = emptyNodeHealthStats()
+		l.byIdentity[entry.Identity] = stats
+	}
+	at := l.now()
+	stats.Uses++
+	stats.Failures++
+	stats.ConsecutiveFailures++
+	if stats.FailuresByKind == nil {
+		stats.FailuresByKind = make(map[string]int64)
+	}
+	stats.FailuresByKind[trimmedKind]++
+	stats.LastUsedAt = at
+	stats.LastFailureAt = at
+	stats.LastFailureKind = trimmedKind
+	noteAccountUsageLocked(stats, accountRef, at)
+
+	expShift := stats.ConsecutiveFailures - 1
+	if expShift < 0 {
+		expShift = 0
+	}
+	if expShift > 6 {
+		expShift = 6
+	}
+	cooldownMS := baseMS << expShift
+	if retryAfterMS > cooldownMS {
+		cooldownMS = retryAfterMS
+	}
+	if cooldownMS > maxNodeCooldownMS {
+		cooldownMS = maxNodeCooldownMS
+	}
+	if until := at + cooldownMS; until > stats.CooldownUntil {
+		stats.CooldownUntil = until
+	}
+	stats.CooldownKind = trimmedKind
+	l.pushEventLocked(HealthEvent{
+		Type:       "cooldown",
+		Node:       name,
+		Kind:       trimmedKind,
+		CooldownMS: cooldownMS,
+		AccountRef: strings.TrimSpace(accountRef),
+		Model:      strings.TrimSpace(model),
+	})
+	l.mu.Unlock()
+	_ = l.Save()
+	return cooldownMS
+}
+
+// RecordSwitch 追加一条节点切换事件。
+func (l *NodeHealthLedger) RecordSwitch(fromNode string, toNode string, reason string) {
+	l.PushEvent(HealthEvent{
+		Type:   "switch",
+		From:   strings.TrimSpace(fromNode),
+		Node:   strings.TrimSpace(toNode),
+		Reason: strings.TrimSpace(reason),
+	})
+}
+
+func noteAccountUsageLocked(stats *NodeHealthStats, accountRef string, at int64) {
+	ref := strings.TrimSpace(accountRef)
+	if ref == "" || stats == nil {
+		return
+	}
+	if stats.Accounts == nil {
+		stats.Accounts = make(map[string]AccountUsageRecord)
+	}
+	cur := stats.Accounts[ref]
+	stats.Accounts[ref] = AccountUsageRecord{
+		Uses:       cur.Uses + 1,
+		LastUsedAt: at,
+	}
+	if len(stats.Accounts) <= maxAccountsPerNode {
+		return
+	}
+	type pair struct {
+		ref  string
+		used int64
+	}
+	items := make([]pair, 0, len(stats.Accounts))
+	for k, v := range stats.Accounts {
+		items = append(items, pair{ref: k, used: v.LastUsedAt})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].used != items[j].used {
+			return items[i].used < items[j].used
+		}
+		return items[i].ref < items[j].ref
+	})
+	for i := 0; i < len(items)-maxAccountsPerNode; i++ {
+		delete(stats.Accounts, items[i].ref)
+	}
+}

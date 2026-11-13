@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -397,4 +398,93 @@ func NewDirectOrProxiedHTTPClient(proxyURL string, timeout time.Duration) (*http
 		Timeout:   timeout,
 		Transport: transport,
 	}, nil
+}
+
+// RemovePoolStateFile 删除 <aiHomeDir>/run/egress-pool/state.json（不存在时视为成功）。
+func RemovePoolStateFile(aiHomeDir string) error {
+	trimmed := strings.TrimSpace(aiHomeDir)
+	if trimmed == "" {
+		return nil
+	}
+	err := os.Remove(filepath.Join(trimmed, "run", "egress-pool", "state.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// IsIPLiteral 判断 host 是否为 IPv4/IPv6 字面量（无需经过 DNS 解析）。
+func IsIPLiteral(host string) bool {
+	trimmed := strings.TrimSpace(host)
+	trimmed = strings.TrimPrefix(trimmed, "[")
+	trimmed = strings.TrimSuffix(trimmed, "]")
+	if trimmed == "" {
+		return false
+	}
+	return net.ParseIP(trimmed) != nil
+}
+
+// DNSQueryResult 表示 mihomo /dns/query 响应结构。
+type DNSQueryResult struct {
+	Answer []struct {
+		Type int    `json:"type"`
+		Data string `json:"data"`
+		A    string `json:"A"`
+		AAAA string `json:"AAAA"`
+	} `json:"Answer"`
+}
+
+// PickResolvedAddress 从 /dns/query 响应中挑选第一个 A/AAAA 字面 IP 地址。
+func (r DNSQueryResult) PickResolvedAddress() string {
+	for _, rec := range r.Answer {
+		if rec.Type != 0 && rec.Type != 1 && rec.Type != 28 {
+			continue
+		}
+		if data := strings.TrimSpace(rec.Data); IsIPLiteral(data) {
+			return data
+		}
+		if a := strings.TrimSpace(rec.A); IsIPLiteral(a) {
+			return a
+		}
+		if aaaa := strings.TrimSpace(rec.AAAA); IsIPLiteral(aaaa) {
+			return aaaa
+		}
+	}
+	return ""
+}
+
+// DNSQuery 查询 mihomo 内置解析器解析 host 的真实地址。
+func (c *ControllerClient) DNSQuery(ctx context.Context, host string, qtype string) (string, error) {
+	if strings.TrimSpace(qtype) == "" {
+		qtype = "A"
+	}
+	apiPath := fmt.Sprintf("/dns/query?name=%s&type=%s", url.QueryEscape(strings.TrimSpace(host)), url.QueryEscape(qtype))
+	var out DNSQueryResult
+	if err := c.doJSON(ctx, http.MethodGet, apiPath, nil, &out, controllerTimeout); err != nil {
+		return "", err
+	}
+	return out.PickResolvedAddress(), nil
+}
+
+// ControllerPortAnswers 探测回环控制端口是否已有进程应答 HTTP（不带密钥，任何响应均算占用）。
+func ControllerPortAnswers(ctx context.Context, port int, client *http.Client) bool {
+	if port <= 0 {
+		return false
+	}
+	httpClient := client
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 1500 * time.Millisecond}
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/version", port), nil)
+	if err != nil {
+		return false
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil || resp == nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
 }

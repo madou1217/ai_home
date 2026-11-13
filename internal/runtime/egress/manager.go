@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,7 +13,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/core/providers"
+	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 )
+
+var _ io.Closer = (*Manager)(nil)
 
 const (
 	// DefaultProbeIntervalMS 与 Node EGRESS_POOL_PROBE_INTERVAL_MS 对齐（60s）。
@@ -38,6 +44,41 @@ type ManagerOptions struct {
 	UpstreamProbeTimeout time.Duration
 	NodeGeoTTLMS         int64
 	DisableAutoDirectGeo bool
+
+	Enabled             *bool
+	MixedPort           int
+	ControllerPort      int
+	ProbePort           int
+	DisableProbePort    bool
+	LanePortBase        int
+	LaneSlots           int
+	DisableLanes        bool
+	StartupTimeout      time.Duration
+	StartupPollInterval time.Duration
+	SwitchSettleDelay   time.Duration
+	DisableSwitchSettle bool
+	ReapTimeout         time.Duration
+	StartRetryBackoff   time.Duration
+	PlanInterval        time.Duration
+	ProbeInterval       time.Duration
+	DisableProbeLoop    bool
+	ProbeBatchSize      int
+	ProbeConcurrency    int
+	GeoPerTick          int
+	ProbesPerTick       int
+	CorePath            string
+	InterfacesFunc      func() ([]NetInterfaceEntry, error)
+	SpawnCore           func(ctx context.Context, binaryPath string, args []string) (CoreProcess, error)
+	KillPID             func(pid int) error
+	OwnerPID            int
+	Platform            string
+	SystemProxyDetector func(context.Context) (agyegress.SystemProxyStatus, error)
+	TUNDetector         func(context.Context) (agyegress.TUNStatus, error)
+	ProxyProbeFunc      func(ctx context.Context, proxyURL string) ProxyProbeResult
+	DesktopBridge       DesktopClientBridge
+	Catalog             *providers.Catalog
+	LocalGeoHTTPClient  *http.Client
+	Logger              func(string)
 }
 
 // LaneView 描述一条活跃车道的展示状态。
@@ -137,18 +178,48 @@ type Manager struct {
 	disableAutoDirectGeo bool
 
 	mu          sync.Mutex
+	syncMu      sync.Mutex
 	probeMu     sync.Mutex
+	reconcileMu sync.Mutex
 	health      *NodeHealthLedger
 	entities    *EntityStore
 	assignments *AssignmentService
 	evidence    *EvidenceStore
 	geoCache    *NetworkGeoCache
+	supervisor  *PoolSupervisor
+
+	platform            string
+	ownerPID            int
+	systemProxyDetector func(context.Context) (agyegress.SystemProxyStatus, error)
+	tunDetector         func(context.Context) (agyegress.TUNStatus, error)
+	proxyProbeFunc      func(ctx context.Context, proxyURL string) ProxyProbeResult
+	desktopBridge       DesktopClientBridge
+	catalog             *providers.Catalog
+	localGeoHTTPClient  *http.Client
+	planInterval        time.Duration
+	geoPerTick          int
+	probesPerTick       int
+	logger              func(string)
 
 	watchMu  sync.Mutex
 	watchers map[chan WatchEvent]struct{}
 
 	probeJobMu      sync.Mutex
 	backgroundProbe bool
+
+	daemonMu     sync.Mutex
+	daemonActive bool
+	daemonCancel context.CancelFunc
+	daemonWG     sync.WaitGroup
+
+	maintMu       sync.Mutex
+	maintInFlight *maintenanceCall
+
+	accountMutMu  sync.Mutex
+	accountMutMap map[string]*sync.Mutex
+
+	desktopOpMu  sync.Mutex
+	desktopOpMap map[string]*sync.Mutex
 }
 
 // NewManager 创建一个绑定到 aiHomeDir 的出口池与上游管理器。
@@ -160,10 +231,7 @@ func NewManager(opts ManagerOptions) *Manager {
 		nowFn = time.Now
 	}
 	nowMS := func() int64 { return nowFn().UnixMilli() }
-	pidAlive := opts.PIDAlive
-	if pidAlive == nil {
-		pidAlive = DefaultPIDAlive
-	}
+	rawPIDAlive := opts.PIDAlive
 	probeURL := strings.TrimSpace(opts.ProbeURL)
 	if probeURL == "" {
 		probeURL = DefaultProxyProbeURL
@@ -180,16 +248,42 @@ func NewManager(opts ManagerOptions) *Manager {
 	if geoTTL <= 0 {
 		geoTTL = NodeGeoTTLMS
 	}
+	planInterval := opts.PlanInterval
+	if planInterval <= 0 {
+		planInterval = DefaultPlanInterval
+	}
+	geoPerTick := opts.GeoPerTick
+	if geoPerTick <= 0 {
+		geoPerTick = DefaultGeoPerTick
+	}
+	probesPerTick := opts.ProbesPerTick
+	if probesPerTick <= 0 {
+		probesPerTick = DefaultProbesPerTick
+	}
+	ownerPID := opts.OwnerPID
+	if ownerPID <= 0 {
+		ownerPID = os.Getpid()
+	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = func(string) {}
+	}
 
 	entityStore := NewEntityStore(aiHome, nowMS)
 	assignmentSvc := NewAssignmentService(aiHome, entityStore)
 	evidenceStore := NewEvidenceStore(aiHome, nowMS)
+	geoCache := NewNetworkGeoCache(aiHome, home, nowMS)
+	if opts.LocalGeoHTTPClient != nil {
+		client := opts.LocalGeoHTTPClient
+		geoCache.lookupFn = func(ctx context.Context, proxyURL string, nowMS int64) (GeoLocation, error) {
+			return LookupIPGeoWithFallback(ctx, aiHome, home, proxyURL, client, nowMS)
+		}
+	}
 
-	return &Manager{
+	m := &Manager{
 		aiHomeDir:            aiHome,
 		homeDir:              home,
 		now:                  nowFn,
-		pidAlive:             pidAlive,
 		httpClient:           opts.HTTPClient,
 		probeURL:             probeURL,
 		probeTimeoutMS:       probeTimeoutMS,
@@ -200,9 +294,42 @@ func NewManager(opts ManagerOptions) *Manager {
 		entities:             entityStore,
 		assignments:          assignmentSvc,
 		evidence:             evidenceStore,
-		geoCache:             NewNetworkGeoCache(aiHome, home, nowMS),
+		geoCache:             geoCache,
+		platform:             strings.TrimSpace(opts.Platform),
+		ownerPID:             ownerPID,
+		systemProxyDetector:  opts.SystemProxyDetector,
+		tunDetector:          opts.TUNDetector,
+		proxyProbeFunc:       opts.ProxyProbeFunc,
+		desktopBridge:        opts.DesktopBridge,
+		catalog:              opts.Catalog,
+		localGeoHTTPClient:   opts.LocalGeoHTTPClient,
+		planInterval:         planInterval,
+		geoPerTick:           geoPerTick,
+		probesPerTick:        probesPerTick,
+		logger:               logger,
 		watchers:             make(map[chan WatchEvent]struct{}),
+		accountMutMap:        make(map[string]*sync.Mutex),
+		desktopOpMap:         make(map[string]*sync.Mutex),
 	}
+
+	m.supervisor = newPoolSupervisor(m, opts)
+	if rawPIDAlive != nil {
+		m.pidAlive = rawPIDAlive
+	} else {
+		m.pidAlive = func(pid int) bool {
+			if m.supervisor != nil && m.supervisor.isTrackedAlivePID(pid) {
+				return true
+			}
+			return DefaultPIDAlive(pid)
+		}
+	}
+	m.supervisor.pidAlive = m.pidAlive
+	return m
+}
+
+// GetAssignment 返回指定账号的出口池分配投影（兼容层 + 实体存储聚合）。
+func (m *Manager) GetAssignment(ctx context.Context, accountRef string) (*AccountEgressAssignment, error) {
+	return m.assignments.GetAssignment(ctx, accountRef)
 }
 
 func (m *Manager) nowMS() int64 {
@@ -244,6 +371,8 @@ func (m *Manager) EmitChanged(reason string) {
 }
 
 func (m *Manager) syncHealthBindingsLocked() error {
+	m.syncMu.Lock()
+	defer m.syncMu.Unlock()
 	m.health.Reload()
 	cfg, cfgOK := ReadPoolRuntimeConfig(m.aiHomeDir)
 	nodesData, dataErr := ReadProxyPoolData(m.aiHomeDir)
@@ -347,6 +476,11 @@ func (m *Manager) loadRuntimeSnapshot(ctx context.Context) (*runtimeSnapshot, er
 		return nil, err
 	}
 	state, liveErr := ReadLivePoolState(m.aiHomeDir, m.pidAlive)
+	if state == nil && m.supervisor != nil {
+		if supErr := m.supervisor.LastError(); supErr != "" {
+			liveErr = supErr
+		}
+	}
 	cfg, cfgOK := ReadPoolRuntimeConfig(m.aiHomeDir)
 	policy := ReadNodePolicy(ctx, m.aiHomeDir)
 	snapshots, events := m.health.Snapshot(&policy)
@@ -933,6 +1067,8 @@ func (m *Manager) BuildDiagnosticView(ctx context.Context, query AccountDiagnost
 
 // ReconcileLanes 根据最新绑定与策略重新计算车道；若本地 mihomo 控制面存活，则即时同步各车道选择与 state.json。
 func (m *Manager) ReconcileLanes(ctx context.Context) error {
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
 	state, _ := ReadLivePoolState(m.aiHomeDir, m.pidAlive)
 	cfg, cfgOK := ReadPoolRuntimeConfig(m.aiHomeDir)
 	if state == nil || !cfgOK || cfg == nil {

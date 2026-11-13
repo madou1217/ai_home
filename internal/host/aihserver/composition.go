@@ -71,6 +71,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -477,6 +478,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var upgradeScheduler *providercliupgrade.Scheduler
 	var windowScheduler *windowactivation.Scheduler
 	var pluginBundle *localPluginRuntimeBundle
+	var egressManager *runtimeegress.Manager
 	defer func() {
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
@@ -501,6 +503,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && pluginBundle != nil {
 			_ = pluginBundle.Close()
+		}
+		if resultErr != nil && egressManager != nil {
+			_ = egressManager.Close()
 		}
 	}()
 	registrar, err := accountapp.NewRegistrar(
@@ -1687,11 +1692,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			errorLog.Printf("插件宿主初始激活降级: %v", err)
 		}
 	}
+	egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
+		AIHomeDir: aiHomeDir,
+		HomeDir:   dependencies.HostHomeDir,
+		Catalog:   catalog,
+	})
+	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
+		errorLog.Printf("出口池后台守护启动降级: %v", err)
+	}
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:       authorizer,
 		AIHomeDir:        aiHomeDir,
 		Catalog:          catalog,
 		ModelModalities:  modelModalities,
+		EgressManager:    egressManager,
 		HostHomeDir:      dependencies.HostHomeDir,
 		Store:            store,
 		AccountRuntime:   accountRuntime,
@@ -2048,6 +2062,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if pluginBundle != nil {
 			closers = append(closers, pluginBundle)
+		}
+		if egressManager != nil {
+			closers = append(closers, egressManager)
 		}
 		return closers
 	}(), nil

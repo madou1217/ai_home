@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 )
 
 // ProxySubscription 描述 proxy-pool.json 中的订阅源条目。
@@ -44,7 +47,9 @@ type ProxyNode struct {
 	LastChecked    int64  `json:"lastChecked"`
 	UUID           string `json:"uuid,omitempty"`
 	Password       string `json:"password,omitempty"`
-	Username       string `json:"username,omitempty"`
+	Username       string         `json:"username,omitempty"`
+	// Raw 保留原始 JSON 字段供 mihomo 节点编译器使用，永不对外序列化。
+	Raw            map[string]any `json:"-"`
 }
 
 // EnabledFlag 判断该节点所属订阅是否启用（由订阅列表推导，单测也可直接构造）。
@@ -129,6 +134,7 @@ func decodeProxyNode(raw json.RawMessage) (ProxyNode, bool) {
 		UUID:           stringField(fields["uuid"]),
 		Password:       stringField(fields["password"]),
 		Username:       stringField(fields["username"]),
+		Raw:            fields,
 	}
 	return node, true
 }
@@ -612,4 +618,52 @@ func containsBoundedASCII(text string, token string) bool {
 
 func isASCIILetter(b byte) bool {
 	return b >= 'A' && b <= 'Z'
+}
+
+// ToSubaggregatorNode 将 ProxyNode 转为 subaggregator.ProxyNode 供 CompileMihomoProxy 编译出站配置。
+func (node ProxyNode) ToSubaggregatorNode() subaggregator.ProxyNode {
+	out := make(subaggregator.ProxyNode, len(node.Raw)+8)
+	for k, v := range node.Raw {
+		out[k] = v
+	}
+	if node.ID != "" {
+		out["id"] = node.ID
+	}
+	if node.Name != "" {
+		out["name"] = node.Name
+	}
+	if _, exists := out["protocol"]; !exists && node.Protocol != "" {
+		out["protocol"] = node.Protocol
+	}
+	if node.Server != "" {
+		out["server"] = node.Server
+	}
+	if node.Port > 0 {
+		out["port"] = node.Port
+	}
+	if node.UUID != "" {
+		out["uuid"] = node.UUID
+	}
+	if node.Password != "" {
+		out["password"] = node.Password
+	}
+	if node.Username != "" {
+		out["username"] = node.Username
+	}
+	return out.Clone()
+}
+
+// HasAnyEgressPoolBinding 检查当前是否至少存在一条未退役的 pool 出口绑定或分配投影，
+// 用于决定服务启动时是否自动拉起出口池内核。
+func HasAnyEgressPoolBinding(ctx context.Context, aiHomeDir string) bool {
+	bindings, err := ReadAccountEgressBindings(ctx, aiHomeDir)
+	if err == nil {
+		for _, item := range bindings {
+			if !item.Binding.Retired && strings.EqualFold(strings.TrimSpace(item.Binding.Mode), "pool") {
+				return true
+			}
+		}
+	}
+	assignments := NewAssignmentService(aiHomeDir, NewEntityStore(aiHomeDir, nil)).ListAssignments(ctx)
+	return len(assignments) > 0
 }

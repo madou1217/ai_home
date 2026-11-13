@@ -28,10 +28,13 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		return nil, fmt.Errorf("创建 GeoIP 资源接口失败: %w", err)
 	}
 
-	egressManager := runtimeegress.NewManager(runtimeegress.ManagerOptions{
-		AIHomeDir: dependencies.AIHomeDir,
-		HomeDir:   dependencies.HostHomeDir,
-	})
+	egressManager := dependencies.EgressManager
+	if egressManager == nil {
+		egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
+			AIHomeDir: dependencies.AIHomeDir,
+			HomeDir:   dependencies.HostHomeDir,
+		})
+	}
 
 	poolHandler, err := webuiegresspoolapi.NewHandler(webuiegresspoolapi.Dependencies{
 		Authorizer: dependencies.Authorizer,

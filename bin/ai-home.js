@@ -507,7 +507,7 @@ function tryRunGoAccountCommand() {
 
 // Go 已承接登录的非家族 CLI（真值源：internal/host/clilogin 的 providerSpecs）。
 // 新增一个 Provider 时这里与 Go 侧一起更新；不在表里的登录仍走 Node。
-const GO_CLI_LOGIN_PROVIDERS = new Set(['agy']);
+const GO_CLI_LOGIN_PROVIDERS = new Set(['agy', 'grok', 'opencode']);
 
 // aih <provider> login [--no-browser]：Go 用一次性运行目录跑官方 CLI 登录并注册账号。
 function tryRunGoProviderLogin() {

@@ -125,7 +125,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && arguments[1] == "usage" {
 		return runProviderUsage(ctx, providerID, arguments[2:], runtime)
 	}
-	if len(arguments) == 2 && arguments[1] == "ls" {
+	if len(arguments) >= 2 && arguments[1] == "ls" {
 		return runProviderList(ctx, providerID, arguments[2:], runtime)
 	}
 	if len(arguments) == 2 && arguments[1] == "login" {
@@ -247,7 +247,8 @@ func isRootHelp(argument string) bool {
 
 // isCLIProvider 与当前 Go CLI 实际开放的官方客户端保持一致。
 func isCLIProvider(providerID string) bool {
-	return providerID == "codex" || providerID == "claude"
+	return providerID == "codex" || providerID == "claude" ||
+		codebuddyfamilystorage.IsFamilyProvider(providerID)
 }
 
 // writeUsage 说明当前已实现的双模式命令和共享状态约束。
@@ -302,6 +303,27 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output, "共享状态:")
 		_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CLAUDE_CONFIG_DIR；AIH 不创建账号级 HOME，会话、信任和插件配置保持共享。")
 		_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME_DIR；Gateway Relay 不打开本地 AIH_HOME_DIR，固定数字别名由目标 Server 解析。")
+		return
+	}
+
+	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> [原生参数...]              # 指定账号启动（伪 HOME 投影）")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" resume [<id>] [原生参数...]      # 续接（无 id = 最近一段）")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" sessions --history [--limit N]   # 列出宿主会话历史")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" ls                              # 账号列表")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" usage [<id>] [--refresh]         # 额度（无 id = 全部账号）")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" home [<id>]                      # 投影路径诊断")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" version                         # 官方 CLI 版本")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" login                           # 原生 CLI 登录")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" detect                          # 扫描本机已登录账号")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" auto-switch on|off|status       # 全局自动换号")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" set-default <id> | unset-default")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" delete <id[,id...|start-end]...> | deleteall")
+		_, _ = fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output, "说明:")
+		_, _ = fmt.Fprintln(output, "  家族四支共用 codebuddy 二进制；账号边界由投影后的 HOME / CODEBUDDY_CONFIG_DIR 决定。")
+		_, _ = fmt.Fprintln(output, "  会话/配置根通过共享链接回到宿主；fork 没有原生入口，aih 不猜参数。")
 		return
 	}
 

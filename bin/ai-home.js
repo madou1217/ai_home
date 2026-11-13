@@ -304,7 +304,8 @@ function tryRunGoFamilyServerCommand() {
   const provider = String(args[0] || '').trim().toLowerCase();
   if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
   const command = String(args[1] || '').trim().toLowerCase();
-  const isList = args.length === 2 && command === 'ls';
+  const isList = command === 'ls' &&
+    (args.length === 2 || (args.length === 3 && /^\d+$/.test(String(args[2] || '').trim())));
   const isUsage = (args.length === 2 && command === 'usage') ||
     (args.length === 3 && command === 'usage' && args[2] === '--refresh') ||
     ((args.length === 3 || args.length === 4) &&
@@ -324,9 +325,11 @@ function tryRunGoFamilyServerCommand() {
   const isDelete = command === 'delete' && args.length >= 3;
   const isDeleteAll = (command === 'deleteall' || command === 'delete-all') && args.length === 2;
   const isDetect = command === 'detect' && args.length === 2;
+  const isHelp = args.length === 2 &&
+    (command === 'help' || command === '--help' || command === '-h');
   const needsServer = isList || isUsage || isSetDefault || isUnsetDefault || isAutoSwitch ||
     isDelete || isDeleteAll || isDetect;
-  if (!needsServer && !isHome && !isHomeAfterId && !isVersion) return false;
+  if (!needsServer && !isHome && !isHomeAfterId && !isVersion && !isHelp) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

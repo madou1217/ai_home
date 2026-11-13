@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
@@ -18,15 +19,22 @@ func runProviderList(
 	arguments []string,
 	runtime commandRuntime,
 ) error {
+	filterID := int64(0)
 	for _, argument := range arguments {
 		if isRootHelp(argument) {
 			writeProviderListUsage(runtime.stdout, providerID)
 			return nil
 		}
-		if strings.TrimSpace(argument) != "" {
-			writeProviderListUsage(runtime.stderr, providerID)
-			return fmt.Errorf("%w: ls 不接受参数", errInvalidCommand)
+		text := strings.TrimSpace(argument)
+		if text == "" {
+			continue
 		}
+		value, err := strconv.ParseInt(text, 10, 64)
+		if err != nil || value <= 0 || filterID != 0 {
+			writeProviderListUsage(runtime.stderr, providerID)
+			return fmt.Errorf("%w: 用法 aih %s ls [id]", errInvalidCommand, providerID)
+		}
+		filterID = value
 	}
 	client, err := newAccountManagementClient(runtime)
 	if err != nil {
@@ -48,9 +56,13 @@ func runProviderList(
 			return fmt.Errorf("读取 Server 账号列表失败: %w", listErr)
 		}
 		for _, account := range result.Accounts {
-			if account.ProviderID == providerID {
-				accounts = append(accounts, account)
+			if account.ProviderID != providerID {
+				continue
 			}
+			if filterID != 0 && account.CLIAccountID.Int64() != filterID {
+				continue
+			}
+			accounts = append(accounts, account)
 		}
 		if !result.HasMore || result.NextAfterRef == "" {
 			break

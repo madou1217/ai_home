@@ -458,6 +458,53 @@ function tryRunGoProviderLaunch() {
   return true;
 }
 
+// aih account <子命令>：Node 没有这个命令组，Go CLI 已实现账号管理全套
+// （list/show/enable/disable/delete/transfer/default/models/usage/import）。
+function tryRunGoAccountCommand() {
+  const args = process.argv.slice(2);
+  if (args.length < 1) return false;
+  if (String(args[0] || '').trim().toLowerCase() !== 'account') return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  if (!aiHomeDir) return false;
+  const env = { ...process.env, AIH_HOME_DIR: aiHomeDir };
+  let config = null;
+  try {
+    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+  } catch (_error) {
+    config = null;
+  }
+  const managementKey = String(config && config.managementKey || '').trim();
+  if (managementKey) {
+    env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
+  }
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 // Go 已承接登录的非家族 CLI（真值源：internal/host/clilogin 的 providerSpecs）。
 // 新增一个 Provider 时这里与 Go 侧一起更新；不在表里的登录仍走 Node。
 const GO_CLI_LOGIN_PROVIDERS = new Set(['agy']);
@@ -1039,6 +1086,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoAccountCommand() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

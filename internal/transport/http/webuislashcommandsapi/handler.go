@@ -10,9 +10,9 @@
 //   - 排序沿用 Node：claude 按命令名升序（Node 用 localeCompare，这里用字节序，命令名是 ASCII
 //     时两者一致）；其余 provider 保持清单原顺序。
 //
-// 与 Node 的刻意差异（都收敛在输入边界，不改变已有键）：
-//   - provider 缺失或未注册直接 400，不再扫描目录；Node 对未知 provider 返回 200 + 空清单，
-//     调用方会把「provider 名打错」误当成「该 provider 没有命令」。
+// 与 Node 的对齐及差异：
+//   - provider 缺失返回 400 missing_provider；未知但非空的 provider 直接返回 200 + 空清单（与 Node
+//     一致，便于路由层零回退直通 Go），同时绝不触发任何文件系统扫描。
 //   - 用户自定义命令会读 frontmatter 的 description / argument-hint；Node 固定写死
 //     「用户自定义命令」与空 hint。没有 frontmatter 时回落到 Node 的原值，键与类型不变。
 //   - 扫描有上限（条目数 / 深度 / 单文件大小），触顶时响应带 truncated=true；正常情况该键省略。
@@ -145,9 +145,14 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		writeError(responseWriter, http.StatusBadRequest, "missing_provider", "缺少 provider 参数")
 		return
 	}
-	// 先校验 provider 再扫描目录：未知 provider 不能触发任何文件系统访问。
+	// 未知 provider 不触发任何文件系统扫描，直接按 Node 语义返回 200 + 空清单。
 	if !handler.known[provider] {
-		writeError(responseWriter, http.StatusBadRequest, "unknown_provider", "未注册的 provider")
+		writeJSON(responseWriter, http.StatusOK, response{
+			OK:               true,
+			Provider:         provider,
+			Commands:         []Command{},
+			SlashPassthrough: handler.passthrough[provider],
+		})
 		return
 	}
 	commands, truncated := handler.commandsFor(provider)

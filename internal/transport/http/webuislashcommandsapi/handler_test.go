@@ -170,15 +170,18 @@ func TestRejectsMissingAndUnknownProvider(t *testing.T) {
 	}
 
 	unknown := doRequest(t, handler, http.MethodGet, Path+"?provider=not-a-provider")
-	if unknown.Code != http.StatusBadRequest {
-		t.Fatalf("未知 provider 期望 400，实际 %d", unknown.Code)
+	if unknown.Code != http.StatusOK {
+		t.Fatalf("未知 provider 期望 200，实际 %d", unknown.Code)
 	}
 	body := decode(t, unknown)
-	if body.OK || body.Error != "unknown_provider" {
-		t.Fatalf("未知 provider 错误体不符：%+v", body)
+	if !body.OK || body.Provider != "not-a-provider" || body.SlashPassthrough {
+		t.Fatalf("未知 provider 响应体不符：%+v", body)
 	}
-	if len(body.Commands) != 0 {
-		t.Fatalf("未知 provider 不应返回命令：%+v", body.Commands)
+	if body.Commands == nil || len(body.Commands) != 0 {
+		t.Fatalf("未知 provider 应返回非 nil 空数组：%+v", body.Commands)
+	}
+	if !strings.Contains(unknown.Body.String(), `"commands":[]`) {
+		t.Fatalf("未知 provider commands 应序列化为 []：%s", unknown.Body.String())
 	}
 	if strings.Contains(unknown.Body.String(), "/leak") {
 		t.Fatalf("未知 provider 不应扫描命令目录：%s", unknown.Body.String())

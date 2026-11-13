@@ -911,6 +911,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, sshExtraRoutes...)
+	// node-rpc、聊天附件与 legacy 聊天会话全量切 Go。
+	nodeRPCChatLegacyRoutes, err := buildWebUINodeRPCChatLegacyRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, nodeRPCChatLegacyRoutes...)
 	return routes, nil
 }
 

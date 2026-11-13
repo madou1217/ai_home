@@ -18,10 +18,15 @@ import (
 const (
 	// Provider 是版本学习存储中的键。
 	Provider = "codex"
-	// Floor 是编译期最低版本：Go 的 Codex 编码器已按 Codex CLI 0.158.0-alpha.2.1 的真实请求
-	// （Responses Lite、freeform 工具）验证；gpt-6-* 需要不低于该代的 client_version 才会出现在
-	// OAuth 模型目录中。只作下限，实际版本随 CLI 与真实客户端上涨。
-	Floor = "0.158.0"
+	// Floor 是编译期兜底下限：显式配置、本机 CLI 探测、真实客户端学习都拿不到版本时，
+	// 网关用这个值自报身份。请求形状由 Adapter 按模型选择（Responses Lite / freeform
+	// 工具见 requestProfileForModel），与身份版本解耦，所以这里表达的是「已知可用的
+	// 最低身份」，不是编码器形状的版本锁。
+	//
+	// 0.167.2 是 2026-11-13 线上真实流量验证过的版本（Node 路径按该版本服务
+	// gpt-6.1-*）；0.158.0 是编码器形状的实测基线，记录在 responses 包的注释里。
+	// 不再用 0.158.0 兜底：它低于 gpt-6.1 的目录门槛（实测 <0.159 必回 400）。
+	Floor = "0.167.2"
 	// Originator 是网关自报的调用来源；与官方 Codex HTTP Client 默认值一致，只替换版本。
 	Originator = "codex_cli_rs"
 	// ConfiguredVersionEnv 允许人工锁定版本（与 Node 宿主同名）。

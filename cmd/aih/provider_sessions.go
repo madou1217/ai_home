@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
+	"github.com/madou1217/ai_home/internal/sessionscan/codexindex"
 )
 
 var (
@@ -65,7 +66,6 @@ func runProviderSessionsHistory(
 			return err
 		}
 	}
-	projects := codebuddy.ReadProjects(hostHome, providerID, unlimitedScanBudget{})
 	type row struct {
 		id        string
 		title     string
@@ -73,23 +73,40 @@ func runProviderSessionsHistory(
 		updatedAt int64
 	}
 	rows := make([]row, 0)
-	for _, project := range projects {
-		projectPath := strings.TrimSpace(project.Path)
-		if projectPath == "" {
-			projectPath = strings.TrimSpace(project.Name)
-		}
-		for _, session := range project.Sessions {
-			fallback := strings.TrimSpace(project.Name)
-			title := cleanSessionTitle(session.Title, fallback)
+	if providerID == "codex" {
+		// Codex 没有项目库：从 rollout 索引直接列会话（id/cwd/标题/更新时间）。
+		for _, session := range codexindex.List(hostHome) {
+			title := usableSessionTitle(session.Title)
 			if title == "" {
-				title = fallback
+				title = "-"
 			}
 			rows = append(rows, row{
 				id:        session.ID,
 				title:     title,
-				path:      projectPath,
-				updatedAt: session.UpdatedAt,
+				path:      session.CWD,
+				updatedAt: session.UpdatedAtMS,
 			})
+		}
+	} else {
+		projects := codebuddy.ReadProjects(hostHome, providerID, unlimitedScanBudget{})
+		for _, project := range projects {
+			projectPath := strings.TrimSpace(project.Path)
+			if projectPath == "" {
+				projectPath = strings.TrimSpace(project.Name)
+			}
+			for _, session := range project.Sessions {
+				fallback := strings.TrimSpace(project.Name)
+				title := cleanSessionTitle(session.Title, fallback)
+				if title == "" {
+					title = fallback
+				}
+				rows = append(rows, row{
+					id:        session.ID,
+					title:     title,
+					path:      projectPath,
+					updatedAt: session.UpdatedAt,
+				})
+			}
 		}
 	}
 	sort.Slice(rows, func(left, right int) bool {

@@ -51,6 +51,8 @@ func validateManagedArguments(providerID string, arguments []string) error {
 		case "agy":
 			// Antigravity 的账号边界由伪 HOME 投影决定（$HOME/.gemini/antigravity-cli），
 			// 官方参数没有能覆盖它的开关。
+		case "grok":
+			// Grok 的账号边界由 GROK_HOME 投影决定，官方参数没有能覆盖它的开关。
 		default:
 			return ErrUnsupportedRuntime
 		}

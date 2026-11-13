@@ -16,6 +16,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/grok"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -117,6 +118,9 @@ func providerHomePolicy(providerID string) (accountapp.Policy, bool) {
 	}
 	if providerID == agystorage.ProviderID {
 		return agystorage.Policy(), true
+	}
+	if providerID == grokstorage.ProviderID {
+		return grokstorage.Policy(), true
 	}
 	return accountapp.Policy{}, false
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/geminioauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/grokoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -31,6 +32,7 @@ import (
 	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	geminicli "github.com/madou1217/ai_home/internal/adapters/gemini/clilaunch"
+	grokcli "github.com/madou1217/ai_home/internal/adapters/grok/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
@@ -173,17 +175,27 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 Antigravity OAuth 刷新策略失败", err)
 		}
+		grokOAuth, err := grokoauth.New(oauthClient, grokoauth.Options{})
+		if err != nil {
+			return fail("创建 Grok OAuth 刷新策略失败", err)
+		}
+		grokRefresh, err := tokenrefresh.NewStrategy(grokOAuth)
+		if err != nil {
+			return fail("创建 Grok 刷新适配策略失败", err)
+		}
 		refreshStrategies := []accountcredentials.RefreshStrategy{
 			codexOAuth,
 			claudeOAuth,
 			geminiRefresh,
 			agyOAuth,
+			grokRefresh,
 		}
 		launchStrategies := []providerlaunch.Strategy{
 			codexcli.NewStrategy(),
 			claudecli.NewStrategy(),
 			geminicli.NewStrategy(),
 			agycli.NewStrategy(),
+			grokcli.NewStrategy(),
 		}
 		// CodeBuddy 家族 Go 侧只消费 Node 已写入的凭据；Token 刷新仍由 Node 宿主完成。
 		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
@@ -374,7 +386,7 @@ func (app *App) Run(
 // supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
 func supportedNativeCLIProvider(providerID string) bool {
 	switch providerID {
-	case "codex", "claude", "gemini", "agy", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "codex", "claude", "gemini", "agy", "grok", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return true
 	default:
 		return false

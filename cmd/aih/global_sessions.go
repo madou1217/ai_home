@@ -58,6 +58,10 @@ func collectGlobalRows(ctx context.Context, runtime commandRuntime) ([]persisten
 	if err != nil {
 		return nil, fmt.Errorf("读取持久会话失败: %w", err)
 	}
+	// 与 Node 共用标题缓存：先用未过期缓存补标题/原生会话 id，再把本次结果写回。
+	now := time.Now()
+	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
+	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
 	return rows, nil
 }
 
@@ -103,7 +107,7 @@ func sessionActivityMillis(row persistent.SessionRow) int64 {
 	if row.LastActiveAtMS != 0 {
 		return row.LastActiveAtMS
 	}
-	return row.CreatedAtMS
+	return persistent.CreatedAtMillis(row)
 }
 
 // writeGlobalSessionGroups 渲染按项目分组的固定列表。

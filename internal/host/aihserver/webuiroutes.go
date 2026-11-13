@@ -292,7 +292,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 
 	controlPlaneBootstrap, err := webuicontrolplanebootstrapapi.NewHandler(webuicontrolplanebootstrapapi.Dependencies{
-		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, ManagementKey: dependencies.ManagementKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建控制面引导接口失败: %w", err)
@@ -917,6 +917,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, nodeRPCChatLegacyRoutes...)
+	// 价格目录、人工复核队列、社区价格采集与报价合并全量切 Go。
+	pricingRoutes, err := buildWebUIPricingRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, pricingRoutes...)
 	return routes, nil
 }
 

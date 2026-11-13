@@ -49,7 +49,10 @@ func (handler *Handler) resolveEndpoint(request *http.Request) endpointResolutio
 	if parsed != nil {
 		host = strings.TrimSpace(parsed.Host)
 	}
-	port := localListenPort(request)
+	port := validPort(request.URL.Query().Get("port"))
+	if port == 0 {
+		port = localListenPort(request)
+	}
 	if port == 0 {
 		port = urlPort(parsed)
 	}
@@ -68,11 +71,26 @@ func (handler *Handler) resolveEndpoint(request *http.Request) endpointResolutio
 }
 
 // requestBaseURL 取浏览器可见的 base URL。
+//
+// 当宿主未注入 PublicBaseURL 且请求带了 Node 透传的 host/port 查询参数时，
+// 按参数里的原始 Host 还原浏览器地址（避免落成 Node→Go 内部回环端口）。
 func (handler *Handler) requestBaseURL(request *http.Request) string {
 	if handler.publicBaseURL != nil {
 		if value := strings.TrimRight(strings.TrimSpace(handler.publicBaseURL(request)), "/"); value != "" {
 			return value
 		}
+	}
+	query := request.URL.Query()
+	if query.Has("host") || query.Has("port") {
+		host := sanitizeQueryHost(query.Get("host"))
+		if host == "" {
+			return ""
+		}
+		scheme := "http"
+		if strings.EqualFold(strings.TrimSpace(query.Get("proto")), "https") {
+			scheme = "https"
+		}
+		return scheme + "://" + host
 	}
 	host := strings.TrimSpace(request.Host)
 	if host == "" {
@@ -83,6 +101,27 @@ func (handler *Handler) requestBaseURL(request *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + host
+}
+
+// sanitizeQueryHost 校验查询参数传入的 Host[:Port]，拒绝路径、userinfo、空白与控制字符。
+func sanitizeQueryHost(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.ContainsAny(trimmed, "/\\@?# \t\r\n") {
+		return ""
+	}
+	for _, r := range trimmed {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	parsed, err := url.Parse("http://" + trimmed)
+	if err != nil || parsed == nil || parsed.Host != trimmed || parsed.Hostname() == "" {
+		return ""
+	}
+	if rawPort := parsed.Port(); rawPort != "" && validPort(rawPort) == 0 {
+		return ""
+	}
+	return trimmed
 }
 
 // localListenPort 取本连接实际监听端口，比猜配置更可靠。

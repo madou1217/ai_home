@@ -320,3 +320,92 @@ func TestBootstrapReadsEndpointPortFromRequestHost(t *testing.T) {
 		t.Fatalf("endpoint = %#v", profile["endpoint"])
 	}
 }
+
+func TestBootstrapResolvesEndpointFromQueryParams(t *testing.T) {
+	directory := seedHome(t)
+	seedProfiles(t, directory, `{"version":2,"activeProfileId":"cp-local","profiles":[{
+		"id":"cp-local","name":"本机开发","endpoint":"http://localhost:9527","state":"offline","accountCount":7
+	}]}`)
+	handler := newTestHandler(t, reportingAuthorizer{allowed: true, configured: true}, directory, nil)
+
+	// 1. 回环 host 查询参数优先于 Go 内部跳的 request.Host
+	req := httptest.NewRequest(http.MethodGet, Path+"?host=localhost:9527&port=9527", nil)
+	req.Host = "127.0.0.1:54321"
+	rec, payload := serve(t, handler, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	profile := payload["profile"].(map[string]any)
+	if profile["endpoint"] != "http://localhost:9527" || profile["id"] != "cp-local" || profile["name"] != "本机开发" {
+		t.Fatalf("profile = %#v", profile)
+	}
+	if payload["activeProfileId"] != "cp-local" {
+		t.Fatalf("activeProfileId = %#v", payload["activeProfileId"])
+	}
+
+	// 2. 非回环 host 回落到 query port 的本机回环地址，忽略 Go 内部端口
+	reqLan := httptest.NewRequest(http.MethodGet, Path+"?host=192.168.1.9&port=10527", nil)
+	reqLan.Host = "127.0.0.1:54321"
+	_, lanPayload := serve(t, handler, reqLan)
+	lanProfile := lanPayload["profile"].(map[string]any)
+	if lanProfile["endpoint"] != "http://127.0.0.1:10527" {
+		t.Fatalf("lan fallback endpoint = %#v", lanProfile["endpoint"])
+	}
+
+	// 3. 空 host 但带 port 时不误用内部跳的 request.Host
+	reqNoHost := httptest.NewRequest(http.MethodGet, Path+"?port=19527", nil)
+	reqNoHost.Host = "127.0.0.1:54321"
+	_, noHostPayload := serve(t, handler, reqNoHost)
+	noHostProfile := noHostPayload["profile"].(map[string]any)
+	if noHostProfile["endpoint"] != "http://127.0.0.1:19527" {
+		t.Fatalf("no-host fallback endpoint = %#v", noHostProfile["endpoint"])
+	}
+
+	// 4. 非法 host 参数被忽略并安全回落到回环地址
+	reqBad := httptest.NewRequest(http.MethodGet, Path+"?host=evil.com/path&port=9527", nil)
+	reqBad.Host = "127.0.0.1:54321"
+	_, badPayload := serve(t, handler, reqBad)
+	badProfile := badPayload["profile"].(map[string]any)
+	if badProfile["endpoint"] != "http://127.0.0.1:9527" {
+		t.Fatalf("bad-host fallback endpoint = %#v", badProfile["endpoint"])
+	}
+}
+
+func TestBootstrapLiveManagementKeyOverridesSnapshotWhenRevealed(t *testing.T) {
+	directory := seedHome(t)
+	seedLocalProfileWithKey(t, directory, "stale-key")
+	handler, err := NewHandler(Dependencies{
+		Authorizer:          fakeAuthorizer{allowed: true},
+		AIHomeDir:           directory,
+		PublicBaseURL:       fixedBase("http://127.0.0.1:9527"),
+		RevealManagementKey: func(*http.Request) bool { return true },
+		ManagementKey:       func() string { return "live-key-5678" },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	rec, payload := serve(t, handler, newRequest(t, http.MethodGet, 0))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	profile := payload["profile"].(map[string]any)
+	if profile["managementKey"] != "live-key-5678" {
+		t.Fatalf("managementKey = %#v", profile["managementKey"])
+	}
+
+	// 实时密钥为空时必须返回 404，即使快照里有旧密钥
+	emptyHandler, err := NewHandler(Dependencies{
+		Authorizer:          fakeAuthorizer{allowed: true},
+		AIHomeDir:           directory,
+		PublicBaseURL:       fixedBase("http://127.0.0.1:9527"),
+		RevealManagementKey: func(*http.Request) bool { return true },
+		ManagementKey:       func() string { return "   " },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	recEmpty, emptyPayload := serve(t, emptyHandler, newRequest(t, http.MethodGet, 0))
+	if recEmpty.Code != http.StatusNotFound || emptyPayload["error"] != "management_key_not_configured" {
+		t.Fatalf("empty key status = %d payload = %#v", recEmpty.Code, emptyPayload)
+	}
+}

@@ -11,8 +11,8 @@
 // profile 才带上 managementKey；未注入或返回 false 时响应体不会出现 Key 明文。
 //
 // 数据边界：
-//   - endpoint 只由请求地址与本机监听端口推导（PublicBaseURL 由宿主注入，未注入时退化为
-//     请求自身的 scheme+Host），不做任何网络探测。
+//   - endpoint 只由请求地址与本机监听端口推导（PublicBaseURL 由宿主注入，未注入时依次按
+//     Node 透传的 host/port 查询参数、请求自身的 scheme+Host 推导），不做任何网络探测。
 //   - profile 骨架来自 app-state.db 的 control-plane:profiles：按 endpoint 命中的记录原样
 //     透传（统计值、时间戳保持调用方写入的样子），只覆盖 id/name/endpoint/state 并剔除
 //     managementKey。归一化口径归 webuicontrolplaneapi（唯一写入口），本包不重算统计字段。
@@ -70,16 +70,21 @@ type Dependencies struct {
 	AIHomeDir string
 	// PublicBaseURL 返回浏览器可见的 base URL（scheme://host[:port]）。
 	//
-	// 由宿主按反向代理头计算；零值时退化为请求自身的 scheme+Host（Node 只认 Host 头）。
-	// 注入它是为了让端口映射场景仍能对上浏览器地址栏。
+	// 由宿主按反向代理头计算；零值时依次退化为请求查询参数（host/port）或请求自身的
+	// scheme+Host。注入它是为了让端口映射场景仍能对上浏览器地址栏。
 	PublicBaseURL func(*http.Request) string
 	// RevealManagementKey 决定本次请求能否回传 Management Key 明文。
 	//
 	// 零值表示永不回明文（失败关闭）。注入方通常实现 Node 的 loopback 窄口：仅 GET、
 	// TCP 对端 loopback、Host 为 loopback 名字且不带转发头。返回 true 时 profile 里带
-	// managementKey（与 Node 同名同位置），值取自 control-plane:profiles 的已存快照；
+	// managementKey（与 Node 同名同位置），优先取实时 ManagementKey，缺省时退回已存快照；
 	// 返回 false 或零值时响应体不出现该键。
 	RevealManagementKey func(*http.Request) bool
+	// ManagementKey 返回服务端当前生效的 Management Key（可选）。
+	//
+	// 注入时优先以实时值判断 managementKeyConfigured，并在 RevealManagementKey 放行时
+	// 回传该实时密钥，避免首次引导或密钥轮换后读到旧快照。
+	ManagementKey func() string
 }
 
 // Handler 是控制面引导的 HTTP 入站适配器。
@@ -88,6 +93,7 @@ type Handler struct {
 	aiHomeDir           string
 	publicBaseURL       func(*http.Request) string
 	revealManagementKey func(*http.Request) bool
+	managementKey       func() string
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -100,6 +106,7 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 		aiHomeDir:           strings.TrimSpace(dependencies.AIHomeDir),
 		publicBaseURL:       dependencies.PublicBaseURL,
 		revealManagementKey: dependencies.RevealManagementKey,
+		managementKey:       dependencies.ManagementKey,
 	}, nil
 }
 
@@ -160,8 +167,11 @@ func (handler *Handler) handleBootstrap(response http.ResponseWriter, request *h
 	})
 }
 
-// managementKeyConfigured 询问鉴权策略服务端是否已配置密钥。
+// managementKeyConfigured 询问鉴权策略或实时提供方服务端是否已配置密钥。
 func (handler *Handler) managementKeyConfigured() bool {
+	if handler.managementKey != nil {
+		return strings.TrimSpace(handler.managementKey()) != ""
+	}
 	if reporter, ok := handler.authorizer.(KeyConfiguredReporter); ok {
 		return reporter.ManagementKeyConfigured()
 	}
@@ -170,11 +180,16 @@ func (handler *Handler) managementKeyConfigured() bool {
 
 // revealableManagementKey 返回本次请求可以回传的明文 Key。
 //
-// 策略未注入、策略拒绝、或已存 profile 没有 Key 时都返回空串，调用方据此不写该字段——
+// 策略未注入、策略拒绝、或实时与已存均无 Key 时都返回空串，调用方据此不写该字段——
 // 空字符串也不写，避免把「没有」伪装成「有但是空」。
 func (handler *Handler) revealableManagementKey(request *http.Request, existing map[string]any) string {
 	if handler.revealManagementKey == nil || !handler.revealManagementKey(request) {
 		return ""
+	}
+	if handler.managementKey != nil {
+		if live := strings.TrimSpace(handler.managementKey()); live != "" {
+			return live
+		}
 	}
 	return trimmedString(existing["managementKey"])
 }

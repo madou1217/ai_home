@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
+	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
@@ -661,6 +662,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if activityErr != nil {
 		return nil, fmt.Errorf("创建账号活动账号来源失败: %w", activityErr)
 	}
+	opsHub := taskhub.NewHub()
 	activityService, activityErr := accountactivityadapter.NewService(accountactivityadapter.ServiceDependencies{
 		Catalog:  accountactivityadapter.BuiltinCatalog(),
 		Accounts: activityLister,
@@ -668,7 +670,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			BaseURL:       dependencies.NodeBaseURL,
 			ManagementKey: dependencies.ManagementKey,
 		}),
-		Jobs: accountactivityadapter.NewJobManager(time.Now, nil),
+		Jobs: accountactivityadapter.NewJobManager(time.Now, taskhub.AccountActivityChangedHandler(opsHub)),
 		Now:  time.Now,
 	})
 	if activityErr != nil {
@@ -870,6 +872,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, translationStudioRoutes...)
+	// peer / 账号结果 / 活跃任务 / 计划任务 / Codex 重置卡 / 重启全量切 Go。
+	opsMiscRoutes, err := buildWebUIOpsMiscRoutesWithPorts(dependencies, webuiOpsMiscPorts{
+		Hub:             opsHub,
+		EnvironmentJobs: toolkitEnvironmentActions.Jobs(),
+		ActivityService: activityService,
+	})
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, opsMiscRoutes...)
 	return routes, nil
 }
 

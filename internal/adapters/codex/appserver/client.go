@@ -3,6 +3,7 @@ package appserver
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,13 +42,14 @@ type Config struct {
 // 一个 Client 对应一个运行时；二进制指纹变化时应关闭旧 Client 再新建，
 // 与 Node 生命周期策略的 clientEntry 行为一致。
 type Client struct {
-	conn      *rpcConn
-	stdin     io.WriteCloser
-	command   *exec.Cmd
-	process   *os.Process
-	exited    chan struct{}
-	timeout   time.Duration
-	closeOnce sync.Once
+	conn             *rpcConn
+	stdin            io.WriteCloser
+	command          *exec.Cmd
+	process          *os.Process
+	exited           chan struct{}
+	timeout          time.Duration
+	initializeResult json.RawMessage
+	closeOnce        sync.Once
 }
 
 // Dial 启动子进程、完成 initialize/initialized 握手，失败时回收进程。
@@ -111,9 +113,13 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 		ClientInfo:   clientInfo,
 		Capabilities: initializeCapabilities{ExperimentalAPI: true},
 	}
-	if err := client.conn.request(handshakeCtx, "initialize", params, nil); err != nil {
+	var initRaw json.RawMessage
+	if err := client.conn.request(handshakeCtx, "initialize", params, &initRaw); err != nil {
 		client.terminate()
 		return nil, fmt.Errorf("Codex app-server 初始化失败: %w", err)
+	}
+	if len(initRaw) > 0 {
+		client.initializeResult = append(json.RawMessage(nil), initRaw...)
 	}
 	if err := client.conn.notify("initialized", map[string]any{}); err != nil {
 		client.terminate()
@@ -221,6 +227,19 @@ func (client *Client) Close() error {
 		}
 	})
 	return nil
+}
+
+// InitializeResult 返回 initialize 握手结果的原始 JSON 副本。
+func (client *Client) InitializeResult() json.RawMessage {
+	if client == nil || len(client.initializeResult) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), client.initializeResult...)
+}
+
+// Request 向已握手的 app-server 会话发起一次 JSON-RPC 请求。
+func (client *Client) Request(ctx context.Context, method string, params any, result any) error {
+	return client.request(ctx, method, params, result)
 }
 
 // request 给每次调用加独立超时，并共享同一会话。

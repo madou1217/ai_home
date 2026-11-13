@@ -196,7 +196,11 @@ func (handler *Handler) rotate(response http.ResponseWriter, request *http.Reque
 		}
 		return nil, &rotationFailure{http.StatusServiceUnavailable, "management_key_not_configured", "当前 Server 未配置 Management Key。"}
 	}
-	if !credentialsEqual(bearer, current) {
+	submittedCurrent := ""
+	if rawCurrent, okCurrent := payload["currentManagementKey"].(string); okCurrent {
+		submittedCurrent = strings.TrimSpace(rawCurrent)
+	}
+	if !credentialsEqual(bearer, current) && (submittedCurrent == "" || !credentialsEqual(submittedCurrent, current)) {
 		return nil, &rotationFailure{http.StatusUnauthorized, "webui_unauthorized", "当前 Management Key 无效。"}
 	}
 

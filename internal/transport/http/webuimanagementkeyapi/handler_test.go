@@ -358,3 +358,23 @@ func TestRandomGeneratorProducesUsableKey(t *testing.T) {
 		t.Fatalf("生成 Key 未通过校验: %v", failure.code)
 	}
 }
+
+func TestRotateWithProxySubmittedCurrentKey(t *testing.T) {
+	source := newTestStore(t, `{"managementKey":"`+currentKey+`"}`, true)
+	handler := newTestHandler(t, source, nil)
+
+	// 携带内部 Go Core Key 作为 Authorization，但请求体里带上正确的 currentManagementKey 时放行并落库
+	recorder := postRotate(t, handler, `{"managementKey":"`+replacementKey+`","currentManagementKey":"`+currentKey+`"}`, "ephemeral-go-core-key")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d，期望 200: %s", recorder.Code, recorder.Body.String())
+	}
+	if key := storedKey(t, source); key != replacementKey {
+		t.Fatalf("期望写入新 Key %q，实际 %q", replacementKey, key)
+	}
+
+	// currentManagementKey 错误时仍拒绝
+	badRec := postRotate(t, handler, `{"managementKey":"`+generatedKey+`","currentManagementKey":"wrong-key"}`, "ephemeral-go-core-key")
+	if badRec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d，期望 401", badRec.Code)
+	}
+}

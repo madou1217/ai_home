@@ -12,6 +12,7 @@ package accountactivity
 // 新增 Provider 只需要在 builtinDeclarations 里加一条数据，没有分支代码要改。
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -83,6 +84,19 @@ func NewCatalog(declarations map[string][]Action) *Catalog {
 		normalized[key] = append([]Action(nil), actions...)
 	}
 	return &Catalog{byProvider: normalized}
+}
+
+// Providers 返回目录中已声明动作的全部 Provider（按名称排序）。
+func (catalog *Catalog) Providers() []string {
+	if catalog == nil || len(catalog.byProvider) == 0 {
+		return nil
+	}
+	providers := make([]string, 0, len(catalog.byProvider))
+	for provider := range catalog.byProvider {
+		providers = append(providers, provider)
+	}
+	sort.Strings(providers)
+	return providers
 }
 
 // Actions 返回该 Provider 声明的动作清单（副本）。

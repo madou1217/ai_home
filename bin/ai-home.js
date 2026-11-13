@@ -338,9 +338,12 @@ function tryRunGoFamilyServerCommand() {
   const isDetect = command === 'detect' && args.length === 2;
   const isHelp = args.length === 2 &&
     (command === 'help' || command === '--help' || command === '-h');
+  // 终端图标安装是本地命令：图标从 Go 二进制内嵌资产物化，不访问 Server。
+  const isTerminalIcon = (command === 'terminal-icon' || command === 'terminal-icons') &&
+    args.length >= 2;
   const needsServer = isList || isUsage || isSetDefault || isUnsetDefault || isAutoSwitch ||
     isDelete || isDeleteAll || isDetect;
-  if (!needsServer && !isHome && !isHomeAfterId && !isVersion && !isHelp) return false;
+  if (!needsServer && !isHome && !isHomeAfterId && !isVersion && !isHelp && !isTerminalIcon) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

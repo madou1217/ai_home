@@ -110,6 +110,8 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
 		case "detect":
 			return runProviderDetect(ctx, providerID, arguments[2:], runtime)
+		case "terminal-icon", "terminal-icons":
+			return runProviderTerminalIcon(ctx, providerID, arguments[2:], runtime)
 		}
 	}
 	if len(arguments) >= 2 && arguments[1] == "auto-switch" &&
@@ -325,6 +327,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" auto-switch on|off|status       # 全局自动换号")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" set-default <id> | unset-default")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" delete <id[,id...|start-end]...> | deleteall")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" terminal-icon [--install|--install-iterm2|--install-linux|--install-windows-terminal] [--all]")
 		_, _ = fmt.Fprintln(output)
 		_, _ = fmt.Fprintln(output, "说明:")
 		_, _ = fmt.Fprintln(output, "  家族四支共用 codebuddy 二进制；账号边界由投影后的 HOME / CODEBUDDY_CONFIG_DIR 决定。")

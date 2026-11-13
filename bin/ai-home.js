@@ -417,7 +417,7 @@ function tryRunGoCodexSessionsHistory() {
 // Go 已承接「指定账号原生启动」的 Provider（真值源：internal/host/aihcli 的
 // supportedNativeCLIProvider 与 providerstorage 注册表）。家族与 codex/claude
 // 各有专门入口；带统一动词（resume/ls/usage…）的形态仍交 Node 解析。
-const GO_NATIVE_LAUNCH_PROVIDERS = new Set(['gemini', 'agy', 'grok']);
+const GO_NATIVE_LAUNCH_PROVIDERS = new Set(['gemini', 'agy', 'grok', 'cline']);
 // resume/fork 由 Go 按合同旗标改写，其余统一动词仍交 Node 解析。
 const GO_UNIFIED_VERBS = new Set([
   'ls', 'list', 'usage', 'stats', 'login', 'sessions',

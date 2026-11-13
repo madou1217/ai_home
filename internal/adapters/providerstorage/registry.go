@@ -7,6 +7,7 @@ package providerstorage
 import (
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	agystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/agy"
+	clinestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/cline"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
@@ -25,17 +26,20 @@ func New() *Registry {
 	geminiPolicy := geministorage.Policy()
 	agyPolicy := agystorage.Policy()
 	grokPolicy := grokstorage.Policy()
+	clinePolicy := clinestorage.Policy()
 	policies := map[string]appprojection.Policy{
 		codexPolicy.Provider:  codexPolicy,
 		geminiPolicy.Provider: geminiPolicy,
 		agyPolicy.Provider:    agyPolicy,
 		grokPolicy.Provider:   grokPolicy,
+		clinePolicy.Provider:  clinePolicy,
 	}
 	materializers := []appprojection.Materializer{
 		codexstorage.Materializer{},
 		geministorage.Materializer{},
 		agystorage.Materializer{},
 		grokstorage.Materializer{},
+		clinestorage.Materializer{},
 	}
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
 		policy, ok := codebuddyfamilystorage.Policy(providerID)

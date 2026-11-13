@@ -472,6 +472,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var modelRefresh *accountapp.ModelRefreshCoordinator
 	var hooksRuntime *codexHooksRuntime
 	var backgroundDaemons *backgroundDaemonsRuntime
+	var housekeepingDaemons *HousekeepingDaemons
 	var upgradeScheduler *providercliupgrade.Scheduler
 	var windowScheduler *windowactivation.Scheduler
 	defer func() {
@@ -486,6 +487,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && backgroundDaemons != nil {
 			_ = backgroundDaemons.Close()
+		}
+		if resultErr != nil && housekeepingDaemons != nil {
+			_ = housekeepingDaemons.Close()
 		}
 		if resultErr != nil && upgradeScheduler != nil {
 			_ = upgradeScheduler.Close()
@@ -1715,6 +1719,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, err
 	}
 	webuiRoutes = append(webuiRoutes, daemonsRoutes...)
+	// 启动期一次性清理陈旧 runtime projections 与 codex app-server 状态，并拉起远程备份与持久会话清理守护。
+	_, _ = runStartupHousekeeping(ctx, webuiDeps)
+	housekeepingDaemons, err = startHousekeepingDaemonsWithPorts(ctx, webuiDeps, housekeepingDaemonsPorts{})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	housekeepingRoutes, err := housekeepingDaemons.Routes(authorizer)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	webuiRoutes = append(webuiRoutes, housekeepingRoutes...)
 	// 内部聊天入口：Node 的轮次执行（session-actor 的 turn.submit）把本轮指令发到这里，
 	// 由 Go 完成账号征召、上游请求、改流与记账；事件流由 Node 翻译成既有 canonical 形状。
 	//
@@ -1994,6 +2011,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if backgroundDaemons != nil {
 			closers = append(closers, backgroundDaemons)
+		}
+		if housekeepingDaemons != nil {
+			closers = append(closers, housekeepingDaemons)
 		}
 		if upgradeScheduler != nil {
 			closers = append(closers, upgradeScheduler)

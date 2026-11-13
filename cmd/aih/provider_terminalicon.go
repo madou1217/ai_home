@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	goruntime "runtime"
 	"strings"
+
+	"golang.org/x/term"
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/terminalicon"
@@ -146,6 +149,49 @@ func runProviderTerminalIcon(
 		"Run with --install for this OS, or use --install-windows-terminal / --install-iterm2 / --install-linux explicitly.",
 	)
 	return nil
+}
+
+// prepareFamilyTerminalIcon 在交互式启动前切到该 Provider 的终端 Profile/标题。
+// 只在 stdout 是 TTY 时执行：管道/脚本里的 OSC 序列没有意义。
+func prepareFamilyTerminalIcon(runtime commandRuntime, providerID string) {
+	if !terminalWriterIsTTY(runtime.stdout) {
+		return
+	}
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil {
+		return
+	}
+	hostHomeDir := lookupOrDefault(runtime.lookupEnv, "AIH_HOST_HOME", "")
+	if hostHomeDir == "" {
+		hostHomeDir, err = runtime.userHomeDir()
+		if err != nil {
+			return
+		}
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return
+	}
+	provider, ok := terminalicon.NewRegistry(catalog).Get(providerID)
+	if !ok {
+		return
+	}
+	terminalicon.PrepareForLaunch(provider, terminalicon.Layout{
+		AIHomeDir:   aiHomeDir,
+		HostHomeDir: hostHomeDir,
+		Env:         environmentMap(runtime),
+		Platform:    goruntime.GOOS,
+		AIHCommand:  "aih",
+	}, runtime.stdout)
+}
+
+// terminalWriterIsTTY 判断输出是否是真实终端。
+func terminalWriterIsTTY(output io.Writer) bool {
+	file, ok := output.(*os.File)
+	if !ok || file == nil {
+		return false
+	}
+	return term.IsTerminal(int(file.Fd()))
 }
 
 // parseTerminalIconOptions 与 Node parseTerminalIconArgs 同旗标。

@@ -197,6 +197,11 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if err != nil {
 		return fmt.Errorf("初始化 Go CLI 失败: %w", err)
 	}
+	// 家族交互式启动：先把当前终端切到该 Provider 的 Profile/标题（与 Node 的
+	// prepareCurrentTerminalProviderIcon 同语义）。非 TTY 自动跳过。
+	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		prepareFamilyTerminalIcon(runtime, providerID)
+	}
 	gateway := aihcli.GatewayConfig{
 		BaseURL:   baseURL,
 		ClientKey: clientKey,

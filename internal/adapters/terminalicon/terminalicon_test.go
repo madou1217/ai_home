@@ -2,6 +2,7 @@ package terminalicon
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -127,5 +128,77 @@ func TestWarpPatternEscapesAIHCommand(t *testing.T) {
 	}
 	if !strings.HasPrefix(entries[0].Pattern, "^aih\\.v2\\s+codex") {
 		t.Fatalf("pattern = %q", entries[0].Pattern)
+	}
+}
+
+// TestDetectTerminal 与 Node 的识别顺序一致：WT > iTerm2 > Konsole > Warp > Apple。
+func TestDetectTerminal(t *testing.T) {
+	cases := []struct {
+		env  map[string]string
+		want string
+	}{
+		{map[string]string{"WT_SESSION": "1"}, "windows-terminal"},
+		{map[string]string{"TERM_PROGRAM": "iTerm.app"}, "iterm2"},
+		{map[string]string{"ITERM_SESSION_ID": "x"}, "iterm2"},
+		{map[string]string{"KONSOLE_DBUS_SERVICE": "s"}, "konsole"},
+		{map[string]string{"TERM_PROGRAM": "WarpTerminal"}, "warp"},
+		{map[string]string{"TERM_PROGRAM": "Apple_Terminal"}, "apple-terminal"},
+		{map[string]string{}, "other"},
+	}
+	for _, testCase := range cases {
+		if got := DetectTerminal(testCase.env); got != testCase.want {
+			t.Fatalf("DetectTerminal(%v) = %q, want %q", testCase.env, got, testCase.want)
+		}
+	}
+}
+
+// TestBuildTitleSequence 控制字符必须被替换，普通标题包成 OSC 0。
+func TestBuildTitleSequence(t *testing.T) {
+	if got := BuildTitleSequence("AIH GPT"); got != "\x1b]0;AIH GPT\x07" {
+		t.Fatalf("title = %q", got)
+	}
+	if got := BuildTitleSequence("bad\x01title\x1b"); got != "\x1b]0;bad title\x07" {
+		t.Fatalf("sanitized = %q", got)
+	}
+	if BuildTitleSequence("   ") != "" {
+		t.Fatal("空标题不应输出")
+	}
+}
+
+// TestPrepareForLaunchITerm2 写 Dynamic Profile 并发 SetProfile 序列。
+func TestPrepareForLaunchITerm2(t *testing.T) {
+	registry := testRegistry(t)
+	provider, _ := registry.Get("codebuddycn")
+	host := t.TempDir()
+	layout := Layout{
+		AIHomeDir:   t.TempDir(),
+		HostHomeDir: host,
+		Env:         map[string]string{"TERM_PROGRAM": "iTerm.app"},
+		Platform:    "darwin",
+		AIHCommand:  "aih",
+	}
+	var output strings.Builder
+	terminal, applied := PrepareForLaunch(provider, layout, &output)
+	if terminal != "iterm2" || !applied {
+		t.Fatalf("terminal=%q applied=%v", terminal, applied)
+	}
+	if !strings.Contains(output.String(), "]1337;SetProfile=AIH CodeBuddy CN\x07") {
+		t.Fatalf("output = %q", output.String())
+	}
+	if _, err := os.Stat(Iterm2DynamicProfilePath(host)); err != nil {
+		t.Fatalf("profile 文件未写入: %v", err)
+	}
+}
+
+// TestPrepareForLaunchFallbackTitle 未知终端只发标题兜底。
+func TestPrepareForLaunchFallbackTitle(t *testing.T) {
+	provider := Provider{ID: "codex", Label: "ChatGPT", Short: "GPT", TerminalIcon: "◎"}
+	var output strings.Builder
+	terminal, applied := PrepareForLaunch(provider, Layout{Env: map[string]string{}}, &output)
+	if terminal != "other" || !applied {
+		t.Fatalf("terminal=%q applied=%v", terminal, applied)
+	}
+	if output.String() != "\x1b]0;◎ AIH GPT\x07" {
+		t.Fatalf("output = %q", output.String())
 	}
 }

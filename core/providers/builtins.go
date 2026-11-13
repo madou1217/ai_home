@@ -66,6 +66,18 @@ func relayHostsGoRelay(entries ...string) map[string]RelayHost {
 	}
 }
 
+// relayHostsGoOnly 声明「只有 Go 能服务该 Provider 的推理」，并写明 Node 不能的原因。
+//
+// Node 侧据此拒绝把该 Provider 的请求交还本地处理：Go Core 不可用时返回
+// go_core_unavailable，而不是退到 Node 的旧实现（那会得到一份语义不同的结果）。
+// 用于已经完成迁移、Node 侧实现已删除的 Provider（当前是 kiro）。
+func relayHostsGoOnly(reason string, entries ...string) map[string]RelayHost {
+	return map[string]RelayHost{
+		RelayHostNode: {Supported: false, Reason: reason},
+		RelayHostGo:   {Supported: true, Channel: RelayChannelRelay, Entries: entries},
+	}
+}
+
 // relayHostsNodeOnly 声明「只有 Node 能服务该 Provider 的推理」，并写明 Go 不能的原因。
 //
 // reason 必填（validateRelayHosts 强制）：沉默缺失正是本能力位要消灭的形态——
@@ -585,7 +597,9 @@ func builtinKiro() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
-		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
+		// kiro 推理只由 Go 服务：Node 侧的 CodeWhisperer 实现已删除（2026-11-13），
+		// 声明 node.supported=false 让宿主在转发前就知道「交还 Node 也做不了」。
+		RelayHosts: relayHostsGoOnly("kiro inference is served by the Go core only; the Node implementation was removed", "gateway.openai.chat_completions"),
 		// usage_scan：kiro-cli 的会话写在宿主共享的 ~/.kiro/sessions/<sha256(cwd)[:16]>/sess_*/messages.jsonl，
 		// 每次模型请求一条 contextUsage（上下文占用百分比）、每轮一条 usage_summary（credits + status），
 		// 2026-10-19 实测 kiro-cli 2.32。token 没有原生字段，按「百分比 × 模型 maxInputTokens」估算；

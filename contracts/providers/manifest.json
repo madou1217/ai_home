@@ -1840,8 +1840,8 @@
           ]
         },
         "node": {
-          "supported": true,
-          "channel": "relay"
+          "supported": false,
+          "reason": "kiro inference is served by the Go core only; the Node implementation was removed"
         }
       }
     },

@@ -7,6 +7,8 @@ import (
 
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/application/providerruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 // applyEnvironment 把不可变补丁应用到父进程环境，并消除重复变量。
@@ -66,6 +68,18 @@ func applyProjectionEnvironment(
 func setEnvironmentValue(environment []string, name string, value string) []string {
 	patch, _ := providerlaunch.NewEnvironmentPatch(map[string]string{name: value}, nil)
 	return applyEnvironment(environment, patch)
+}
+
+// applyAccountRefEnvironment 写入本次账号的进程标记：WebUI 运行态与宿主进程扫描
+// 靠 AIH_PROVIDER_ACCOUNT_REF 把 CLI 归到账号，宿主继承值必须先被替换掉。
+func applyAccountRefEnvironment(
+	environment []string,
+	accountRef accountcore.AccountRef,
+) []string {
+	if ref := accountRef.String(); ref != "" {
+		return setEnvironmentValue(environment, providerruntime.ProviderAccountRefEnv, ref)
+	}
+	return unsetEnvironmentValue(environment, providerruntime.ProviderAccountRefEnv)
 }
 
 // unsetEnvironmentValue 删除 Runtime 已经转移到本地代理内存的敏感变量。

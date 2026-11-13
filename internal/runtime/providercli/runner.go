@@ -207,6 +207,9 @@ func (runner *Runner) runNativeDirect(
 		return err
 	}
 	environment := applyEnvironment(runner.environ(), spec.Environment())
+	// 进程标记：WebUI 运行态与宿主进程扫描靠这个变量把 CLI 归到账号；
+	// 必须先清掉宿主继承值，再写入本次账号。
+	environment = applyAccountRefEnvironment(environment, spec.AccountRef())
 	projection := spec.Projection()
 	if !projection.Required() {
 		return runner.runProviderProcess(ctx, path, arguments, environment)

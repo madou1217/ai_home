@@ -45,6 +45,9 @@ func validateManagedArguments(providerID string, arguments []string) error {
 		case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 			// CodeBuddy 家族没有能覆盖账号的官方参数：账号边界由投影后的
 			// HOME / CODEBUDDY_CONFIG_DIR 决定，参数原样交给官方 CLI。
+		case "gemini":
+			// Gemini 的账号边界由 GEMINI_CLI_HOME 投影决定；官方参数里没有能
+			// 改写凭据目录的开关，原样交给 CLI。
 		default:
 			return ErrUnsupportedRuntime
 		}

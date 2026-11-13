@@ -21,11 +21,14 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/geminioauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
+	geminicli "github.com/madou1217/ai_home/internal/adapters/gemini/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
@@ -156,13 +159,23 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 Claude OAuth 刷新策略失败", err)
 		}
+		geminiOAuth, err := geminioauth.New(oauthClient, geminioauth.Options{})
+		if err != nil {
+			return fail("创建 Gemini OAuth 刷新策略失败", err)
+		}
+		geminiRefresh, err := tokenrefresh.NewStrategy(geminiOAuth)
+		if err != nil {
+			return fail("创建 Gemini 刷新适配策略失败", err)
+		}
 		refreshStrategies := []accountcredentials.RefreshStrategy{
 			codexOAuth,
 			claudeOAuth,
+			geminiRefresh,
 		}
 		launchStrategies := []providerlaunch.Strategy{
 			codexcli.NewStrategy(),
 			claudecli.NewStrategy(),
+			geminicli.NewStrategy(),
 		}
 		// CodeBuddy 家族 Go 侧只消费 Node 已写入的凭据；Token 刷新仍由 Node 宿主完成。
 		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
@@ -324,7 +337,7 @@ func (app *App) Run(
 		return err
 	}
 	if !supportedNativeCLIProvider(providerID) {
-		return fmt.Errorf("%w: 当前只支持 codex / claude / CodeBuddy 家族", ErrInvalidRunRequest)
+		return fmt.Errorf("%w: 当前只支持 codex / claude / gemini / CodeBuddy 家族", ErrInvalidRunRequest)
 	}
 	intent, err := providerlaunch.ParseLaunchIntent(app.catalog, providerID, arguments)
 	if err != nil {
@@ -353,7 +366,7 @@ func (app *App) Run(
 // supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
 func supportedNativeCLIProvider(providerID string) bool {
 	switch providerID {
-	case "codex", "claude", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "codex", "claude", "gemini", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return true
 	default:
 		return false

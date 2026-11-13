@@ -8,6 +8,7 @@ import (
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
+	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
 )
 
 // Registry 是 Provider 投影适配器注册表。
@@ -19,11 +20,14 @@ type Registry struct {
 // New 创建当前已迁移 Provider 的注册表。
 func New() *Registry {
 	codexPolicy := codexstorage.Policy()
+	geminiPolicy := geministorage.Policy()
 	policies := map[string]appprojection.Policy{
-		codexPolicy.Provider: codexPolicy,
+		codexPolicy.Provider:  codexPolicy,
+		geminiPolicy.Provider: geminiPolicy,
 	}
 	materializers := []appprojection.Materializer{
 		codexstorage.Materializer{},
+		geministorage.Materializer{},
 	}
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
 		policy, ok := codebuddyfamilystorage.Policy(providerID)

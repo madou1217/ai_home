@@ -414,6 +414,49 @@ function tryRunGoCodexSessionsHistory() {
   return true;
 }
 
+// Go 已承接「指定账号原生启动」的 Provider（真值源：internal/host/aihcli 的
+// supportedNativeCLIProvider 与 providerstorage 注册表）。家族与 codex/claude
+// 各有专门入口；带统一动词（resume/ls/usage…）的形态仍交 Node 解析。
+const GO_NATIVE_LAUNCH_PROVIDERS = new Set(['gemini']);
+const GO_UNIFIED_VERBS = new Set([
+  'resume', 'fork', 'ls', 'list', 'usage', 'stats', 'home', 'login', 'sessions',
+  'delete', 'deleteall', 'delete-all', 'set-default', 'unset-default', 'auto-switch',
+  'policy', 'terminal-icon', 'terminal-icons', 'detect', 'set-mobile', 'unset-mobile'
+]);
+
+function tryRunGoProviderLaunch() {
+  const args = process.argv.slice(2);
+  if (args.length < 2) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_NATIVE_LAUNCH_PROVIDERS.has(provider)) return false;
+  // 只有显式账号位才走 Go：默认账号/网关池形态仍按 Node 现有语义。
+  if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
+  // `--` 之后是原生参数逃生门：不再按 aih 动词判断。
+  for (const token of args.slice(2)) {
+    if (token === '--') break;
+    if (GO_UNIFIED_VERBS.has(String(token || '').trim().toLowerCase())) return false;
+  }
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  const env = { ...process.env };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 // Go 已承接登录的非家族 CLI（真值源：internal/host/clilogin 的 providerSpecs）。
 // 新增一个 Provider 时这里与 Go 侧一起更新；不在表里的登录仍走 Node。
 const GO_CLI_LOGIN_PROVIDERS = new Set(['agy']);
@@ -992,6 +1035,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderLogin() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

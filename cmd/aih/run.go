@@ -82,6 +82,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == accountCommandName {
 		return runAccount(ctx, arguments[1:], runtime)
 	}
+	if len(arguments) >= 2 && arguments[1] == "usage" {
+		return runProviderUsage(ctx, providerID, arguments[2:], runtime)
+	}
 	if providerID == "help" {
 		if len(arguments) == 2 && isCLIProvider(arguments[1]) {
 			writeProviderUsage(runtime.stdout, arguments[1])

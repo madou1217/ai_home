@@ -81,23 +81,27 @@ function tryLsFastPath() {
 // 不悄悄回退 Node —— 回退会让同一账号在两套投影语义之间切换。
 const GO_FAMILY_PROVIDERS = new Set(['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']);
 
-function tryRunGoFamilyLaunch() {
-  const args = process.argv.slice(2);
-  if (args.length !== 2) return false;
-  const provider = String(args[0] || '').trim().toLowerCase();
-  if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
-  if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
+function resolveGoCLIBinary() {
   const path = require('node:path');
-  const fs = require('node:fs');
-  const os = require('node:os');
   const root = path.resolve(__dirname, '..');
-  const binary = path.join(
+  return path.join(
     root,
     'bin',
     'native',
     `${process.platform}-${process.arch}`,
     process.platform === 'win32' ? 'aih-go.exe' : 'aih-go'
   );
+}
+
+function tryRunGoFamilyLaunch() {
+  const args = process.argv.slice(2);
+  if (args.length !== 2) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
+  if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
   if (!fs.existsSync(binary)) {
     process.stderr.write(`[aih] Go CLI 未构建：${binary}\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n`);
     process.exitCode = 1;
@@ -151,6 +155,61 @@ function tryRunGoFamilyLaunch() {
   return true;
 }
 
+// aih <family> usage <id> [--refresh] 也固定走 Go：额度读取/刷新由 Go Server 承担，
+// Node 只注入 Server 地址与 Management Key，不再本地读缓存拼展示。
+function tryRunGoFamilyUsage() {
+  const args = process.argv.slice(2);
+  if (args.length !== 3 && args.length !== 4) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
+  if (String(args[1] || '').trim().toLowerCase() !== 'usage') return false;
+  if (!/^\d+$/.test(String(args[2] || '').trim())) return false;
+  if (args.length === 4 && args[3] !== '--refresh') return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write(`[aih] Go CLI 未构建：${binary}\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n`);
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  if (!aiHomeDir) return false;
+  let config = null;
+  try {
+    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+  } catch (_error) {
+    config = null;
+  }
+  const managementKey = String(config && config.managementKey || '').trim();
+  if (!managementKey) return false;
+  const env = {
+    ...process.env,
+    AIH_HOME_DIR: aiHomeDir,
+    // Go Server 的账号管理面在本地 Go Core 端口；9527 是客户端 API 前门，
+    // /v1/management 不在这条公开路由上。
+    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_MANAGEMENT_KEY: managementKey
+  };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 const fastPathVerb = process.argv[2];
 if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
   const complete = require('../lib/cli/complete');
@@ -161,6 +220,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilyUsage() && !tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

@@ -97,6 +97,9 @@ func writeAccountUsageResult(output io.Writer, result managementapi.UsageResult)
 		accountTimeLabel(snapshot.CapturedAt()),
 		result.Stale(),
 	)
+	if plan := snapshot.PlanType(); plan != "" {
+		_, _ = fmt.Fprintf(output, "plan: %s\n", plan)
+	}
 	writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(
 		writer,

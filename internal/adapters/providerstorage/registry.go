@@ -14,6 +14,7 @@ import (
 	grokstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/grok"
 	kimistorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kimi"
 	kirostorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kiro"
+	opencodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/opencode"
 	qoderstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/qoder"
 	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
 )
@@ -33,20 +34,22 @@ func New() *Registry {
 	clinePolicy := clinestorage.Policy()
 	kimiPolicy := kimistorage.Policy()
 	kiroPolicy := kirostorage.Policy()
+	opencodePolicy := opencodestorage.Policy()
 	zcodePolicy := zcodestorage.Policy()
 	qoderPolicy, _ := qoderstorage.Policy("qoder")
 	qodercnPolicy, _ := qoderstorage.Policy("qodercn")
 	policies := map[string]appprojection.Policy{
-		codexPolicy.Provider:   codexPolicy,
-		geminiPolicy.Provider:  geminiPolicy,
-		agyPolicy.Provider:     agyPolicy,
-		grokPolicy.Provider:    grokPolicy,
-		clinePolicy.Provider:   clinePolicy,
-		kimiPolicy.Provider:    kimiPolicy,
-		kiroPolicy.Provider:    kiroPolicy,
-		zcodePolicy.Provider:   zcodePolicy,
-		qoderPolicy.Provider:   qoderPolicy,
-		qodercnPolicy.Provider: qodercnPolicy,
+		codexPolicy.Provider:    codexPolicy,
+		geminiPolicy.Provider:   geminiPolicy,
+		agyPolicy.Provider:      agyPolicy,
+		grokPolicy.Provider:     grokPolicy,
+		clinePolicy.Provider:    clinePolicy,
+		kimiPolicy.Provider:     kimiPolicy,
+		kiroPolicy.Provider:     kiroPolicy,
+		opencodePolicy.Provider: opencodePolicy,
+		zcodePolicy.Provider:    zcodePolicy,
+		qoderPolicy.Provider:    qoderPolicy,
+		qodercnPolicy.Provider:  qodercnPolicy,
 	}
 	materializers := []appprojection.Materializer{
 		codexstorage.Materializer{},
@@ -56,6 +59,7 @@ func New() *Registry {
 		clinestorage.Materializer{},
 		kimistorage.Materializer{},
 		kirostorage.Materializer{},
+		opencodestorage.Materializer{},
 		zcodestorage.Materializer{},
 	}
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {

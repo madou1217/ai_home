@@ -63,6 +63,8 @@ func validateManagedArguments(providerID string, arguments []string) error {
 			// Qoder 的账号边界由启动参数 --config-dir 指向投影根决定（providercli 注入）。
 		case "kiro":
 			// Kiro 的账号边界由 KIRO_TEST_DB_PATH 指向投影凭据库决定。
+		case "opencode":
+			// OpenCode 的账号边界由 XDG_DATA_HOME/bridge 与 OPENCODE_API_KEY 决定。
 		default:
 			return ErrUnsupportedRuntime
 		}

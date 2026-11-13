@@ -57,6 +57,8 @@ func validateManagedArguments(providerID string, arguments []string) error {
 			// Cline 的账号边界由 CLINE_DIR/CLINE_DATA_DIR 投影决定。
 		case "kimi":
 			// Kimi 的账号边界由 KIMI_CODE_HOME 投影决定。
+		case "zcode":
+			// ZCode 的账号边界由 HOME/ZCODE_DATA_BASE_DIR 投影决定。
 		default:
 			return ErrUnsupportedRuntime
 		}

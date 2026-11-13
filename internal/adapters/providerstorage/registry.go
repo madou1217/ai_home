@@ -13,6 +13,7 @@ import (
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
 	grokstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/grok"
 	kimistorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kimi"
+	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
 )
 
 // Registry 是 Provider 投影适配器注册表。
@@ -29,6 +30,7 @@ func New() *Registry {
 	grokPolicy := grokstorage.Policy()
 	clinePolicy := clinestorage.Policy()
 	kimiPolicy := kimistorage.Policy()
+	zcodePolicy := zcodestorage.Policy()
 	policies := map[string]appprojection.Policy{
 		codexPolicy.Provider:  codexPolicy,
 		geminiPolicy.Provider: geminiPolicy,
@@ -36,6 +38,7 @@ func New() *Registry {
 		grokPolicy.Provider:   grokPolicy,
 		clinePolicy.Provider:  clinePolicy,
 		kimiPolicy.Provider:   kimiPolicy,
+		zcodePolicy.Provider:  zcodePolicy,
 	}
 	materializers := []appprojection.Materializer{
 		codexstorage.Materializer{},
@@ -44,6 +47,7 @@ func New() *Registry {
 		grokstorage.Materializer{},
 		clinestorage.Materializer{},
 		kimistorage.Materializer{},
+		zcodestorage.Materializer{},
 	}
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
 		policy, ok := codebuddyfamilystorage.Policy(providerID)

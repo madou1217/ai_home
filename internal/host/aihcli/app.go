@@ -39,6 +39,7 @@ import (
 	kimicli "github.com/madou1217/ai_home/internal/adapters/kimi/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	zcodecli "github.com/madou1217/ai_home/internal/adapters/zcode/clilaunch"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -199,6 +200,12 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 Kimi OAuth 刷新策略失败", err)
 		}
+		// ZCode 的 token 刷新仍由 Node 宿主完成（go-account-sync 推送）；Go 侧
+		// 声明静态凭据，避免解析器因「没有刷新策略」直接 500。
+		zcodeRefresh, err := staticcredential.New("zcode")
+		if err != nil {
+			return fail("创建 ZCode 静态凭据策略失败", err)
+		}
 		refreshStrategies := []accountcredentials.RefreshStrategy{
 			codexOAuth,
 			claudeOAuth,
@@ -207,6 +214,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 			grokRefresh,
 			clineRefresh,
 			kimiOAuth,
+			zcodeRefresh,
 		}
 		launchStrategies := []providerlaunch.Strategy{
 			codexcli.NewStrategy(),
@@ -216,6 +224,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 			grokcli.NewStrategy(),
 			clinecli.NewStrategy(),
 			kimicli.NewStrategy(),
+			zcodecli.NewStrategy(),
 		}
 		// CodeBuddy 家族 Go 侧只消费 Node 已写入的凭据；Token 刷新仍由 Node 宿主完成。
 		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
@@ -406,7 +415,7 @@ func (app *App) Run(
 // supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
 func supportedNativeCLIProvider(providerID string) bool {
 	switch providerID {
-	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "zcode", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return true
 	default:
 		return false

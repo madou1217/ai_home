@@ -590,8 +590,7 @@ function tryRunGoProviderCommonCommand() {
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';
-  // codex/claude 的列表已在 Go 内做首帧+补额度+/ 过滤；只有全量 usage 的扫描进度条仍留 Node。
-  if (animatedProvider && isUsageAll && process.stdout.isTTY) return false;
+  // codex/claude 的列表与全量 usage 都已由 Go 输出（进度写 stderr，非 TTY 静默）。
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

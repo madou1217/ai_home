@@ -247,6 +247,10 @@ func TestWebUITranslationGatewayConfigZeroNodeFallback(t *testing.T) {
 }
 
 func TestWebUITranslationInProcessTransport(t *testing.T) {
+	// 宿主可能预设网关地址/密钥；本用例验证显式注入的 ClientKey 与 BaseURL。
+	t.Setenv("AIH_GATEWAY_API_KEY", "")
+	t.Setenv("AIH_SERVER_API_KEY", "")
+	t.Setenv("AIH_GATEWAY_BASE_URL", "")
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)

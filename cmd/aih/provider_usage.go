@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
@@ -136,7 +138,9 @@ func runProviderUsageAll(
 	if len(accounts) == 0 {
 		return nil
 	}
+	progress := newUsageProgress(runtime.stderr, len(accounts))
 	for _, account := range accounts {
+		progress.advance(account.CLIAccountID.Int64())
 		var result managementapi.UsageResult
 		if refresh {
 			result, err = client.RefreshUsage(ctx, account.AccountRef)
@@ -169,7 +173,43 @@ func runProviderUsageAll(
 		}
 		writeAccountUsageSummary(runtime.stdout, account, displayNames[account.AccountRef.String()], result)
 	}
+	progress.done()
 	return nil
+}
+
+// usageProgress 是 TTY 下的单行进度（stderr + ），非 TTY 完全静默。
+type usageProgress struct {
+	output  io.Writer
+	total   int
+	current int
+	enabled bool
+}
+
+func newUsageProgress(output io.Writer, total int) *usageProgress {
+	enabled := false
+	if file, ok := output.(interface{ Fd() uintptr }); ok {
+		enabled = term.IsTerminal(int(file.Fd()))
+	}
+	progress := &usageProgress{output: output, total: total, enabled: enabled}
+	if enabled {
+		_, _ = fmt.Fprintf(output, "\r[0/%d] 读取额度…", total)
+	}
+	return progress
+}
+
+func (progress *usageProgress) advance(accountID int64) {
+	if progress == nil || !progress.enabled {
+		return
+	}
+	progress.current++
+	_, _ = fmt.Fprintf(progress.output, "\r[%d/%d] #%d", progress.current, progress.total, accountID)
+}
+
+func (progress *usageProgress) done() {
+	if progress == nil || !progress.enabled {
+		return
+	}
+	_, _ = fmt.Fprint(progress.output, "\r\x1b[2K")
 }
 
 // writeAccountUsageSummary 输出单账号的紧凑摘要。

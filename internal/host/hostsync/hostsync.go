@@ -47,7 +47,7 @@ func Sync(ctx context.Context, options Options) (Result, error) {
 		return Result{}, fmt.Errorf("%w: 参数不完整", ErrUnsupportedProvider)
 	}
 	switch providerID {
-	case "gemini", "agy", "grok", "opencode", "qoder", "qodercn":
+	case "gemini", "agy", "grok", "opencode", "qoder", "qodercn", "cline", "zcode":
 	default:
 		return Result{}, fmt.Errorf("%w: %s", ErrUnsupportedProvider, providerID)
 	}
@@ -138,6 +138,10 @@ func writeHost(providerID string, payload []byte, hostHomeDir string) (Result, e
 			files = append(files, path)
 		}
 		return Result{Files: files}, nil
+	case "cline":
+		return syncClineHost(payload, hostHomeDir)
+	case "zcode":
+		return syncZcodeHost(payload, hostHomeDir)
 	}
 	return Result{}, fmt.Errorf("%w: %s", ErrUnsupportedProvider, providerID)
 }

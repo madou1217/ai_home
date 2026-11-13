@@ -638,10 +638,18 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		// agy 是 Go 权威账号：Node 台账即使有行（UI 投影）也不代表它真的会刷新。
 		// 实测 Node 侧不刷新 agy，委托模式下两侧都不动，Token 过期后整类 gemini
 		// 请求 401。这里按 Provider 强制 Go 接管，和 Node 无关。
+		//
+		// kiro 同理且更隐蔽：Node 只在它自己的 kiro transport 里「发请求前顺手刷新」，
+		// 而 kiro 推理已由 Go 承接，Node 那条路径永远不会被走到。账号在台账里存在
+		// （Node 导入的），于是 Go 判定「宿主负责」也不刷新 —— 2026-11-13 AWS 服务器
+		// 上 5 个 kiro 账号的 token 停在过期状态，聊天与模型刷新一起 403。
 		if overview, overviewErr := store.GetAccountOverview(
 			context.Background(), accountRef,
-		); overviewErr == nil && overview.Account().ProviderID() == "agy" {
-			return true
+		); overviewErr == nil {
+			switch overview.Account().ProviderID() {
+			case "agy", "kiro":
+				return true
+			}
 		}
 		if appStatePathErr != nil {
 			return false

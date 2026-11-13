@@ -7,6 +7,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/kiro/clientidentity"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
@@ -141,6 +142,9 @@ func (provider *Provider) DecorateUpstream(request *http.Request, accessToken st
 	request.Header.Set("Content-Type", ContentType)
 	request.Header.Set("Accept", AcceptEventStream)
 	request.Header.Set("x-amz-target", Operation)
+	// Coral 按 User-Agent 里的 Kiro 版本判定客户端代际：不带版本一律 403
+	// （Go 默认 UA）或 400 UnsupportedClientVersionException（aws-sdk-js 但无版本）。
+	request.Header.Set("User-Agent", clientidentity.UserAgent)
 }
 
 // ErrInvalidRequest 表示客户端请求体无法编码成 conversationState。

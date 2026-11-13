@@ -27,6 +27,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/kiro"
+	"github.com/madou1217/ai_home/internal/adapters/kiro/clientidentity"
 )
 
 const (
@@ -178,6 +179,9 @@ func (source *Source) requestRaw(
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	request.Header.Set("Content-Type", contentType)
 	request.Header.Set("x-amz-target", target)
+	// 模型发现同样受客户端代际门控：不带 Kiro 版本的请求会被 CodeWhisperer
+	// 以 403 拒绝，表现为「目录刷新失败」而聊天同时不可用。
+	request.Header.Set("User-Agent", clientidentity.UserAgent)
 	response, err := source.client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("kiro 模型清单请求失败: %w", err)

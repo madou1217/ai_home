@@ -259,6 +259,8 @@ type upstreamCall struct {
 	route       runtimecore.ModelRoute
 	observation accountcredentials.CredentialObservation
 	providerID  string
+	// upstreamBody 是转换器读取的原始上游流；接上 ResponseTransformer 时才非空。
+	upstreamBody io.ReadCloser
 	// first 是提交前预读到的第一块增量（可能就是唯一一块）。
 	first    chunk
 	hasFirst bool
@@ -266,13 +268,19 @@ type upstreamCall struct {
 	hasUsage bool
 }
 
-// close 释放上游连接。
+// close 释放上游连接（转换管道与原始上游流都要关，否则转换 goroutine 会一直等）。
 func (call *upstreamCall) close() {
-	if call == nil || call.body == nil {
+	if call == nil {
 		return
 	}
-	_ = call.body.Close()
-	call.body = nil
+	if call.body != nil {
+		_ = call.body.Close()
+		call.body = nil
+	}
+	if call.upstreamBody != nil {
+		_ = call.upstreamBody.Close()
+		call.upstreamBody = nil
+	}
 }
 
 // openUpstream 征召账号并拿到一条可流式交付的上游成功响应。
@@ -473,6 +481,21 @@ func (handler *Handler) attempt(
 		route:       route,
 		observation: observation,
 		providerID:  provider.ID(),
+	}
+	// 非 OpenAI 协议的上游（kiro 的 AWS event-stream、qoder 的压缩帧）先由 Provider
+	// 的 ResponseTransformer 翻译成 OpenAI SSE；不接这一步，客户端只会看到二进制帧
+	// 解析失败（"上游返回了无法解析的数据帧"），账面上却是一次成功请求。
+	if transformed, handled := transformStream(provider, upstreamResponse); handled {
+		call.body = transformed
+		call.upstreamBody = upstreamResponse.Body
+		call.reader = newChatStreamReader(transformed)
+		first, hasFirst, peekErr := call.reader.Next()
+		if peekErr != nil {
+			call.close()
+			return nil, handler.recordStreamFailure(ctx, route, observation, peekErr), false
+		}
+		call.first, call.hasFirst = first, hasFirst
+		return call, nil, false
 	}
 	if isEventStream(upstreamResponse.Header) {
 		call.reader = newChatStreamReader(upstreamResponse.Body)
@@ -917,8 +940,15 @@ func streamFailureDetail(failure error) failureDetail {
 
 // upstreamErrorMessage 从上游错误体里取一条可展示的文案。
 //
-// 只取 error.message，不透传整个响应体：错误体里可能带请求回显与内部地址，
+// 只取错误文案，不透传整个响应体：错误体里可能带请求回显与内部地址，
 // 而客户端真正需要的是「为什么失败」。
+//
+// 两种错误形状都要认：
+//   - OpenAI 兼容：{"error":{"message":...}}
+//   - AWS Coral：{"__type":"...#AccessDeniedException","message":"..."}
+//
+// 只认第一种时，kiro 这类上游的 403 会被压成「上游返回 HTTP 403」，把
+// 「token 过期 / 客户端版本不受支持」这类可行动原因全部丢掉。
 func upstreamErrorMessage(body []byte, status int) string {
 	decoder := json.NewDecoder(strings.NewReader(string(body)))
 	var document map[string]any
@@ -927,6 +957,12 @@ func upstreamErrorMessage(body []byte, status int) string {
 			if message := sanitizeMessage(objectMessage(object)); message != "" {
 				return message
 			}
+		}
+		if message, ok := document["message"].(string); ok && strings.TrimSpace(message) != "" {
+			return sanitizeMessage(message)
+		}
+		if code, ok := document["__type"].(string); ok && strings.TrimSpace(code) != "" {
+			return sanitizeMessage(code)
 		}
 	}
 	return fmt.Sprintf("上游返回 HTTP %d", status)

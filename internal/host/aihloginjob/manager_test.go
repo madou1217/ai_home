@@ -127,3 +127,29 @@ func TestFailureCarriesError(t *testing.T) {
 		t.Fatalf("error = %q", done.Error)
 	}
 }
+
+// TestJobOutlivesRequestContext 请求上下文取消不应终止作业，只有 Cancel 能终止。
+func TestJobOutlivesRequestContext(t *testing.T) {
+	started := make(chan struct{})
+	var once sync.Once
+	manager := NewManager(Options{
+		Run: func(ctx context.Context, options aihlogin.Options) (accountcore.Account, error) {
+			once.Do(func() { close(started) })
+			<-ctx.Done()
+			return accountcore.Account{}, ctx.Err()
+		},
+	})
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	snapshot, err := manager.Start(requestCtx, "codebuddycn")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	<-started
+	cancelRequest()
+	time.Sleep(100 * time.Millisecond)
+	if current, _ := manager.Get(snapshot.ID); current.Status != StatusRunning {
+		t.Fatalf("请求取消后作业状态 = %s", current.Status)
+	}
+	manager.Cancel(snapshot.ID)
+	waitStatus(t, manager, snapshot.ID, StatusCancelled)
+}

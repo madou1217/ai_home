@@ -116,7 +116,9 @@ func (manager *Manager) Start(ctx context.Context, providerID string) (Snapshot,
 	if err != nil {
 		return Snapshot{}, err
 	}
-	jobCtx, cancel := context.WithCancel(ctx)
+	// HTTP 请求返回后 request ctx 会取消；作业必须脱离请求生命周期，只能用
+	// Manager.Cancel 显式终止，否则数据库/PTY 会在启动阶段被取消。
+	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	now := manager.options.Clock()
 	entry := &job{
 		id:       id,

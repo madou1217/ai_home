@@ -23,8 +23,11 @@ func TestPolicyMatchesNodeToolchainCaches(t *testing.T) {
 		"Library/Caches/bun",
 		"Library/Caches/pip",
 	}
-	got := make([]string, 0, len(policy.SharedHostCaches))
+	got := make([]string, 0, len(policy.SharedHostCaches)-1)
 	for _, link := range policy.SharedHostCaches {
+		if len(link.Exclude) > 0 {
+			continue
+		}
 		got = append(got, strings.Join(link.Projection, "/"))
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -64,8 +67,13 @@ func TestAllFamilyProvidersShareCaches(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s 缺少投影策略", providerID)
 		}
-		if len(policy.SharedHostCaches) != 9 {
-			t.Fatalf("%s shared host caches = %d, want 9", providerID, len(policy.SharedHostCaches))
+		// 9 条工具链缓存 + 1 条带排除的桌面 Library/Caches。
+		if len(policy.SharedHostCaches) != 10 {
+			t.Fatalf("%s shared host caches = %d, want 10", providerID, len(policy.SharedHostCaches))
+		}
+		last := policy.SharedHostCaches[len(policy.SharedHostCaches)-1]
+		if strings.Join(last.Projection, "/") != "Library/Caches" || len(last.Exclude) != 4 {
+			t.Fatalf("%s desktop caches link = %#v", providerID, last)
 		}
 	}
 }

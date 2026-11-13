@@ -147,6 +147,19 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 				Host:       []string{"Library", "Caches", "pip"},
 				Platforms:  []string{"darwin"},
 			},
+			// 桌面端整目录缓存共享（Node DESKTOP_SHARED_CACHE_PROVIDERS）：只排除
+			// 桌面应用自己的 Chromium 缓存（可能带凭据响应体）。
+			{
+				Projection: []string{"Library", "Caches"},
+				Host:       []string{"Library", "Caches"},
+				Platforms:  []string{"darwin"},
+				Exclude: []string{
+					"dev.zcode.app",
+					"com.tencent.codebuddy",
+					"com.workbuddy.workbuddy-ai",
+					"com.tencent.workbuddy.mac",
+				},
+			},
 		},
 		SharedHostDataRoots: []accountprojection.SharedLink{
 			{

@@ -51,7 +51,18 @@ func (symlinkLinker) IsManaged(linkPath string, targetPath string) bool {
 	if err != nil {
 		return false
 	}
-	return filepath.Clean(destination) == filepath.Clean(target)
+	if filepath.Clean(destination) == filepath.Clean(target) {
+		return true
+	}
+	// 大小写不敏感的文件系统（macOS/Windows）上链接名与目标真实名可能大小写不同
+	// （实测：宿主 com.apple.AppStore，投影链接名 com.apple.appstore）。只要解析后
+	// 指向同一个文件，就视为受管，避免把 Node 建好的链接判成无主冲突。
+	destinationInfo, destinationErr := os.Stat(destination)
+	if destinationErr != nil {
+		return false
+	}
+	targetInfo, targetErr := os.Stat(target)
+	return targetErr == nil && os.SameFile(destinationInfo, targetInfo)
 }
 
 func (linker symlinkLinker) RemoveManaged(linkPath string, targetPath string) error {

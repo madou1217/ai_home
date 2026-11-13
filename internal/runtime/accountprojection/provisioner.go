@@ -335,7 +335,10 @@ func (provisioner *Provisioner) applyHostLinks(
 			continue
 		}
 		if len(link.Exclude) > 0 {
-			// 部分排除需要目录级复制；Go 只做整链接，遇到排除项宁可跳过也不泄露账号态。
+			// 目录级共享：逐子项链接，排除账号自有的缓存目录（见家族的 Library/Caches）。
+			if err := provisioner.applyDirectoryHostLink(request, link, root); err != nil {
+				return err
+			}
 			continue
 		}
 		target, err := joinUnder(request.HostHomeDir, link.Host)
@@ -372,6 +375,91 @@ func (provisioner *Provisioner) applyHostLinks(
 			}
 			return err
 		}
+	}
+	return nil
+}
+
+// applyDirectoryHostLink 处理带 Exclude 的目录级共享：宿主目录逐个条目建链，
+// 排除项（账号自有的缓存）留在投影里。投影已是托管链接时幂等通过；出现无主
+// 链接或同名真实目录时保留现场，不覆盖客户端刚写的数据。
+func (provisioner *Provisioner) applyDirectoryHostLink(
+	request appprojection.Request,
+	link appprojection.SharedLink,
+	root string,
+) error {
+	target, err := joinUnder(request.HostHomeDir, link.Host)
+	if err != nil {
+		return err
+	}
+	targetInfo, targetErr := os.Stat(target)
+	if errors.Is(targetErr, fs.ErrNotExist) {
+		return nil
+	} else if targetErr != nil {
+		return targetErr
+	}
+	if !targetInfo.IsDir() {
+		return nil
+	}
+	source, err := joinUnder(root, link.Projection)
+	if err != nil {
+		return err
+	}
+	sourceInfo, sourceErr := os.Lstat(source)
+	switch {
+	case errors.Is(sourceErr, fs.ErrNotExist):
+		if err := os.MkdirAll(source, 0o700); err != nil {
+			return err
+		}
+	case sourceErr != nil:
+		return sourceErr
+	case sourceInfo.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("%w: %s is an unmanaged symlink", appprojection.ErrProjectionConflict, source)
+	case !sourceInfo.IsDir():
+		return fmt.Errorf("%w: %s is not a directory", appprojection.ErrProjectionConflict, source)
+	}
+	excluded := make(map[string]bool, len(link.Exclude))
+	for _, name := range link.Exclude {
+		excluded[name] = true
+	}
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if excluded[entry.Name()] {
+			continue
+		}
+		if err := provisioner.linkManagedChild(
+			filepath.Join(source, entry.Name()),
+			filepath.Join(target, entry.Name()),
+			entry.IsDir(),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// linkManagedChild 建一条宿主子项链接；已存在且受管时幂等通过。
+func (provisioner *Provisioner) linkManagedChild(source string, target string, isDir bool) error {
+	info, err := os.Lstat(source)
+	if err == nil {
+		if provisioner.linker.IsManaged(source, target) {
+			return nil
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return nil
+		}
+		return fmt.Errorf("%w: %s is an unmanaged symlink", appprojection.ErrProjectionConflict, source)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := provisioner.linker.Link(source, target, isDir); err != nil {
+		if errors.Is(err, fs.ErrExist) && provisioner.linker.IsManaged(source, target) {
+			return nil
+		}
+		return err
 	}
 	return nil
 }

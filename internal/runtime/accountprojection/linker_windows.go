@@ -79,7 +79,15 @@ func (windowsLinker) IsManaged(linkPath string, targetPath string) bool {
 		}
 		destination, _ = filepath.Abs(destination)
 		target, _ := filepath.Abs(targetPath)
-		return filepath.Clean(destination) == filepath.Clean(target)
+		if filepath.Clean(destination) == filepath.Clean(target) {
+			return true
+		}
+		destinationInfo, destinationErr := os.Stat(destination)
+		if destinationErr != nil {
+			return false
+		}
+		targetInfo, targetErr := os.Stat(target)
+		return targetErr == nil && os.SameFile(destinationInfo, targetInfo)
 	}
 	targetInfo, statErr := os.Stat(targetPath)
 	return statErr == nil && os.SameFile(linkInfo, targetInfo)

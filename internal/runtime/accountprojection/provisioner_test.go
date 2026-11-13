@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -272,4 +273,84 @@ func fakeJWT(t *testing.T, claims map[string]any) string {
 		t.Fatal(err)
 	}
 	return "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(payload) + ".c2ln"
+}
+
+// TestApplyDirectoryHostLinkExcludesAccountCaches 守住目录级共享：宿主缓存逐项建链，
+// 排除项不进投影，重复执行幂等。
+func TestApplyDirectoryHostLinkExcludesAccountCaches(t *testing.T) {
+	host := t.TempDir()
+	root := t.TempDir()
+	cacheHost := filepath.Join(host, "Library", "Caches")
+	for _, name := range []string{"keep", "com.tencent.codebuddy"} {
+		if err := os.MkdirAll(filepath.Join(cacheHost, name), 0o700); err != nil {
+			t.Fatalf("mkdir host: %v", err)
+		}
+	}
+	provisioner := &Provisioner{linker: NewLinker()}
+	link := appprojection.SharedLink{
+		Projection: []string{"Library", "Caches"},
+		Host:       []string{"Library", "Caches"},
+		Exclude:    []string{"com.tencent.codebuddy"},
+	}
+	request := appprojection.Request{HostHomeDir: host}
+	if err := provisioner.applyDirectoryHostLink(request, link, root); err != nil {
+		t.Fatalf("first link: %v", err)
+	}
+	if err := provisioner.applyDirectoryHostLink(request, link, root); err != nil {
+		t.Fatalf("second link: %v", err)
+	}
+	kept, err := os.Lstat(filepath.Join(root, "Library", "Caches", "keep"))
+	if err != nil || kept.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("keep link = %v, %v", kept, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "Library", "Caches", "com.tencent.codebuddy")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("排除项不应出现在投影: %v", err)
+	}
+}
+
+// TestApplyDirectoryHostLinkRejectsUnmanagedSymlink 无主链接必须失败关闭。
+func TestApplyDirectoryHostLinkRejectsUnmanagedSymlink(t *testing.T) {
+	host := t.TempDir()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(host, "Library", "Caches", "keep"), 0o700); err != nil {
+		t.Fatalf("mkdir host: %v", err)
+	}
+	source := filepath.Join(root, "Library", "Caches")
+	if err := os.MkdirAll(source, 0o700); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := os.Symlink("/tmp/elsewhere", filepath.Join(source, "keep")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	provisioner := &Provisioner{linker: NewLinker()}
+	err := provisioner.applyDirectoryHostLink(
+		appprojection.Request{HostHomeDir: host},
+		appprojection.SharedLink{Projection: []string{"Library", "Caches"}, Host: []string{"Library", "Caches"}},
+		root,
+	)
+	if !errors.Is(err, appprojection.ErrProjectionConflict) {
+		t.Fatalf("err = %v, want ErrProjectionConflict", err)
+	}
+}
+
+// TestIsManagedToleratesCaseInsensitiveNames 大小写不敏感文件系统上，链接名与目标
+// 真实名大小写不同仍算受管（真机：宿主 com.apple.AppStore / 投影 com.apple.appstore）。
+func TestIsManagedToleratesCaseInsensitiveNames(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("Linux 大小写敏感，无法构造该场景")
+	}
+	root := t.TempDir()
+	hostFile := filepath.Join(root, "host", "com.apple.AppStore")
+	if err := os.MkdirAll(hostFile, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// 链接目标用不同大小写（文件系统大小写不敏感时会解析到同一目录）。
+	differentlyCased := filepath.Join(root, "host", "com.apple.appstore")
+	linkPath := filepath.Join(root, "link")
+	if err := os.Symlink(differentlyCased, linkPath); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if !NewLinker().IsManaged(linkPath, hostFile) {
+		t.Fatal("大小写不同的同名目标应视为受管")
+	}
 }

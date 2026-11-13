@@ -585,7 +585,11 @@ func builtinKiro() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
-		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
+		// kiro 推理只有 Go 一个实现：Node 侧从来没有过（CodeWhisperer 实现已删除），
+		// 这里也就不存在 node 宿主这一项。不要为了「兜底」再把它补回来。
+		RelayHosts: map[string]RelayHost{
+			RelayHostGo: {Supported: true, Channel: RelayChannelRelay, Entries: []string{"gateway.openai.chat_completions"}},
+		},
 		// usage_scan：kiro-cli 的会话写在宿主共享的 ~/.kiro/sessions/<sha256(cwd)[:16]>/sess_*/messages.jsonl，
 		// 每次模型请求一条 contextUsage（上下文占用百分比）、每轮一条 usage_summary（credits + status），
 		// 2026-10-19 实测 kiro-cli 2.32。token 没有原生字段，按「百分比 × 模型 maxInputTokens」估算；

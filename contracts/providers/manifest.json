@@ -1838,10 +1838,6 @@
           "entries": [
             "gateway.openai.chat_completions"
           ]
-        },
-        "node": {
-          "supported": true,
-          "channel": "relay"
         }
       }
     },

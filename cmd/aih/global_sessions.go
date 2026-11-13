@@ -27,7 +27,7 @@ func runGlobalSessions(
 	runtime commandRuntime,
 ) error {
 	if len(arguments) == 0 {
-		return runGlobalSessionPicker(ctx, runtime)
+		return runGlobalSessionPicker(ctx, runtime, false)
 	}
 	if len(arguments) > 1 {
 		return fmt.Errorf("%w: 用法 aih ss --list", errInvalidCommand)
@@ -36,6 +36,9 @@ func runGlobalSessions(
 	if token == "--help" || token == "-h" || token == "help" {
 		writeGlobalSessionsUsage(runtime.stdout)
 		return nil
+	}
+	if token == "--refresh" || token == "-r" {
+		return runGlobalSessionPicker(ctx, runtime, true)
 	}
 	if !globalSessionDetailTokens[token] {
 		return runGlobalSessionTarget(ctx, token, runtime)
@@ -153,6 +156,12 @@ func globalSessionStatus(row persistent.SessionRow) string {
 func globalSessionAccount(row persistent.SessionRow, labels map[string]string) string {
 	if label := strings.TrimSpace(labels[row.AccountRef]); label != "" {
 		return label
+	}
+	if row.Gateway {
+		return "gateway"
+	}
+	if strings.TrimSpace(row.AccountRef) == "" {
+		return "-"
 	}
 	return shortAccountRef(row.AccountRef)
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
@@ -69,7 +70,7 @@ func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) 
 
 // runGlobalSessionPicker 实现 aih ss 的默认形态：TTY 下进入交互选择器，
 // 非 TTY（管道/CI）直接打印按项目分组的列表，与 Node 行为一致。
-func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime) error {
+func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh bool) error {
 	store, err := globalSessionStore(runtime)
 	if err != nil {
 		return err
@@ -77,6 +78,11 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime) error {
 	rows, err := store.CollectSessions(ctx)
 	if err != nil {
 		return fmt.Errorf("读取持久会话失败: %w", err)
+	}
+	if refresh {
+		// --refresh：忽略缓存，直接用原生会话库解析标题/原生 id，再回写缓存。
+		resolveSessionTitles(ctx, runtime, rows)
+		_ = persistent.WriteSessionCache(store.AIHomeDir, rows, time.Now())
 	}
 	labels := collectGlobalLabels(ctx, rows, runtime)
 	if !terminalWriterIsTTY(runtime.stdin) || !terminalWriterIsTTY(runtime.stdout) {

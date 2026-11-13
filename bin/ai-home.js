@@ -36,7 +36,8 @@ function tryRunGoGlobalSessions() {
   const isDetail = GLOBAL_SESSION_DETAIL_TOKENS.has(token);
   // aih ss <名字>：直接进入指定会话（Go 负责匹配与 attach）。
   const isTarget = args.length === 2 && /^[^-]/.test(token) && token !== '';
-  if (!isDetail && !isTarget) return false;
+  const isRefresh = token === '--refresh' || token === '-r';
+  if (!isDetail && !isTarget && !isRefresh) return false;
   return runGoGlobalSessions(args);
 }
 

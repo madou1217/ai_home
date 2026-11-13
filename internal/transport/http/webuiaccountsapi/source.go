@@ -272,6 +272,12 @@ func buildRowStatement(available map[string]bool, query Query) (string, []any) {
 			"(SELECT COUNT(*) FROM account_models AS m WHERE m.account_ref = a.account_ref"+
 				" AND (m.manual_policy = 'force_enable'"+
 				" OR (m.manual_policy = 'inherit' AND m.upstream_available = 1)))", "0"),
+		// zcode 的服务区域（zai / bigmodel）来自凭据里的 oauth:active_provider。
+		// 同邮箱的双区域账号只能靠它区分，缺失时留空由前端按「未判定」渲染。
+		optionalColumn(available, tableCredentials,
+			`COALESCE((SELECT CASE WHEN json_valid(c.credential_json)`+
+				` THEN json_extract(c.credential_json, '$."native_auth_json"."credentials"."oauth:active_provider"') END`+
+				` FROM account_credentials AS c WHERE c.account_ref = a.account_ref), '')`, "''"),
 	}
 	conditions := []string{"a.account_ref > ?"}
 	arguments := []any{query.AfterRef}
@@ -323,6 +329,7 @@ func scanAccountFact(rows *sql.Rows) (accountFact, error) {
 		&fact.SnapshotPayload,
 		&fact.IsDefault,
 		&fact.ModelCount,
+		&fact.ZcodeRegion,
 	)
 	if err != nil {
 		return accountFact{}, fmt.Errorf("读取账号页行失败: %w", err)

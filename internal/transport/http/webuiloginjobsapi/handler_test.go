@@ -36,6 +36,10 @@ func (jobs *stubJobs) Get(id string) (aihloginjob.Snapshot, bool) {
 	return jobs.snapshot, true
 }
 
+func (jobs *stubJobs) SubmitCode(id string, code string) bool {
+	return id == jobs.snapshot.ID && strings.TrimSpace(code) != ""
+}
+
 func (jobs *stubJobs) Cancel(id string) bool {
 	if id != jobs.snapshot.ID {
 		return false
@@ -61,6 +65,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *stubJobs) {
 	mux.Handle("POST "+Path, handler)
 	mux.Handle("GET "+Path+ItemSuffix, handler)
 	mux.Handle("POST "+Path+CancelSuffix, handler)
+	mux.Handle("POST "+Path+CodeSuffix, handler)
 	return httptest.NewServer(mux), jobs
 }
 
@@ -143,5 +148,23 @@ func TestProbeContractUsesJobNotFound(t *testing.T) {
 	}
 	if body.Error != "job_not_found" {
 		t.Fatalf("error = %q, want job_not_found", body.Error)
+	}
+}
+
+// TestSubmitCodeRoute 授权码写回：空码 400、未知作业 409、成功返回快照。
+func TestSubmitCodeRoute(t *testing.T) {
+	server, _ := newTestServer(t)
+	defer server.Close()
+	empty := request(t, server, http.MethodPost, Path+"/login-1/code", "{\"code\":\"  \"}")
+	if empty.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty status = %d", empty.StatusCode)
+	}
+	missing := request(t, server, http.MethodPost, Path+"/login-x/code", "{\"code\":\"abc\"}")
+	if missing.StatusCode != http.StatusConflict {
+		t.Fatalf("missing status = %d", missing.StatusCode)
+	}
+	ok := request(t, server, http.MethodPost, Path+"/login-1/code", "{\"code\":\"abc\"}")
+	if ok.StatusCode != http.StatusOK {
+		t.Fatalf("ok status = %d", ok.StatusCode)
 	}
 }

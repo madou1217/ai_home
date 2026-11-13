@@ -30,5 +30,6 @@ func buildWebUILoginJobsRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		{Pattern: "POST " + webuiloginjobsapi.Path, Handler: handler},
 		{Pattern: "GET " + webuiloginjobsapi.Path + webuiloginjobsapi.ItemSuffix, Handler: handler},
 		{Pattern: "POST " + webuiloginjobsapi.Path + webuiloginjobsapi.CancelSuffix, Handler: handler},
+		{Pattern: "POST " + webuiloginjobsapi.Path + webuiloginjobsapi.CodeSuffix, Handler: handler},
 	}, nil
 }

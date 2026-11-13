@@ -25,6 +25,8 @@ const (
 	ItemSuffix = "/{jobId}"
 	// CancelSuffix 是取消动作路径。
 	CancelSuffix = "/{jobId}/cancel"
+	// CodeSuffix 是粘贴授权码路径（agy 等 code-paste 登录）。
+	CodeSuffix = "/{jobId}/code"
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少鉴权或作业端口。
@@ -40,6 +42,7 @@ type Jobs interface {
 	Start(ctx context.Context, providerID string) (aihloginjob.Snapshot, error)
 	Get(id string) (aihloginjob.Snapshot, bool)
 	Cancel(id string) bool
+	SubmitCode(id string, code string) bool
 }
 
 // Dependencies 汇总 Handler 依赖。
@@ -103,6 +106,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.startJob(response, request)
 	case request.Method == http.MethodGet && jobID != "" && !strings.HasSuffix(request.URL.Path, "/cancel"):
 		handler.getJob(response, jobID)
+	case request.Method == http.MethodPost && jobID != "" && strings.HasSuffix(request.URL.Path, "/code"):
+		handler.submitCode(response, request, jobID)
 	case request.Method == http.MethodPost && jobID != "" && strings.HasSuffix(request.URL.Path, "/cancel"):
 		if !handler.jobs.Cancel(jobID) {
 			writeError(response, http.StatusNotFound, "job_not_found", "")
@@ -138,6 +143,25 @@ func (handler *Handler) startJob(response http.ResponseWriter, request *http.Req
 		return
 	}
 	writeJSON(response, http.StatusAccepted, jobResponse{OK: true, Job: toJobView(snapshot)})
+}
+
+func (handler *Handler) submitCode(response http.ResponseWriter, request *http.Request, jobID string) {
+	var payload struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(response, request.Body, 64*1024)).Decode(&payload); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_payload", "")
+		return
+	}
+	if strings.TrimSpace(payload.Code) == "" {
+		writeError(response, http.StatusBadRequest, "invalid_payload", "code 不能为空")
+		return
+	}
+	if !handler.jobs.SubmitCode(jobID, payload.Code) {
+		writeError(response, http.StatusConflict, "job_not_running", "")
+		return
+	}
+	handler.getJob(response, jobID)
 }
 
 func (handler *Handler) getJob(response http.ResponseWriter, jobID string) {

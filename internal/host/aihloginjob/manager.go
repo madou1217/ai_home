@@ -83,6 +83,7 @@ type job struct {
 	updated  time.Time
 	cancel   context.CancelFunc
 	answered bool
+	input    *io.PipeWriter
 	mu       *sync.Mutex
 }
 
@@ -133,6 +134,7 @@ func (manager *Manager) Start(ctx context.Context, providerID string) (Snapshot,
 	manager.jobs[id] = entry
 	manager.mu.Unlock()
 	reader, writer := io.Pipe()
+	entry.input = writer
 	go manager.run(jobCtx, entry, reader, writer)
 	return manager.snapshot(entry), nil
 }
@@ -149,6 +151,34 @@ func (manager *Manager) Get(id string) (Snapshot, bool) {
 		return Snapshot{}, false
 	}
 	return manager.snapshot(entry), true
+}
+
+// SubmitCode 把用户粘贴的授权码写回 CLI（agy 等 code-paste 登录）。
+// 返回 false 表示作业不存在或已不在运行。
+func (manager *Manager) SubmitCode(id string, code string) bool {
+	if manager == nil {
+		return false
+	}
+	text := strings.TrimSpace(code)
+	if text == "" {
+		return false
+	}
+	manager.mu.Lock()
+	entry, ok := manager.jobs[id]
+	manager.mu.Unlock()
+	if !ok {
+		return false
+	}
+	entry.mu.Lock()
+	running := entry.status == StatusRunning
+	input := entry.input
+	entry.updated = manager.options.Clock()
+	entry.mu.Unlock()
+	if !running || input == nil {
+		return false
+	}
+	_, err := input.Write([]byte(text + "\r"))
+	return err == nil
 }
 
 // Cancel 取消运行中的作业。

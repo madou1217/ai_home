@@ -153,3 +153,43 @@ func TestJobOutlivesRequestContext(t *testing.T) {
 	manager.Cancel(snapshot.ID)
 	waitStatus(t, manager, snapshot.ID, StatusCancelled)
 }
+
+// TestSubmitCodeWritesToCli 粘贴的授权码原样写回 CLI 并回车。
+func TestSubmitCodeWritesToCli(t *testing.T) {
+	received := make(chan string, 1)
+	manager := NewManager(Options{
+		Run: func(ctx context.Context, options aihlogin.Options) (accountcore.Account, error) {
+			_, _ = io.WriteString(options.Stdout, "paste the authorization code\n")
+			buffer := make([]byte, 0, 16)
+			one := make([]byte, 1)
+			for {
+				if _, err := options.Stdin.Read(one); err != nil {
+					break
+				}
+				buffer = append(buffer, one...)
+				if one[0] == '\r' {
+					break
+				}
+			}
+			received <- string(buffer)
+			return accountcore.Account{}, nil
+		},
+	})
+	snapshot, err := manager.Start(context.Background(), "agy")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if !manager.SubmitCode(snapshot.ID, " 4/0AbCd  ") {
+		t.Fatal("SubmitCode 应成功")
+	}
+	select {
+	case got := <-received:
+		if got != "4/0AbCd\r" {
+			t.Fatalf("CLI 收到 %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("CLI 没收到授权码")
+	}
+	waitStatus(t, manager, snapshot.ID, StatusSucceeded)
+}

@@ -929,6 +929,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, toolkitExtRoutes...)
+	// Toolkit 核心能力（镜像测速、代理与连通性、受管工具/服务、客户端终端、应用清单/安装任务）全量切 Go。
+	toolkitCoreRoutes, err := buildWebUIToolkitCoreRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, toolkitCoreRoutes...)
 	return routes, nil
 }
 

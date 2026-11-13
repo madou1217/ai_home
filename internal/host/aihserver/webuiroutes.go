@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
+	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
@@ -139,6 +140,8 @@ type webuiRouteDependencies struct {
 	ManagementKey func() string
 	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。
 	TerminalHandler *webuiterminalapi.Handler
+	// SubAggregator 由组合根注入，供 WebUI 管理路由与公开 /sub/ 拉取共享状态与缓存。
+	SubAggregator *subaggregator.Service
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {

@@ -88,6 +88,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 		mux.Handle("/ui", handlers.webUI)
 		mux.Handle(webuiassets.Prefix, handlers.webUI)
 	}
+	if handlers.subAggregatorPublic != nil {
+		mux.Handle(subaggregatorPublicRoutePrefix, handlers.subAggregatorPublic)
+	}
 	mux.HandleFunc("/healthz", handleHealth)
 	mux.HandleFunc("/readyz", func(
 		response http.ResponseWriter,

@@ -60,8 +60,8 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		nativeResourceSvc = svc
 	}
 
-	var subAggSvc *subaggregator.Service
-	if aiHome != "" {
+	subAggSvc := dependencies.SubAggregator
+	if subAggSvc == nil && aiHome != "" {
 		subAggSvc = subaggregator.NewService(aiHome, subaggregator.ServiceOptions{
 			HostHomeDir: hostHome,
 		})

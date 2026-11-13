@@ -73,6 +73,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
+	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -148,6 +149,8 @@ type serverHandlers struct {
 	accountUsageEvents http.Handler
 	// webUI 托管 Web UI 构建产物（/ui/*）；nil 表示不由 Go 承接。
 	webUI http.Handler
+	// subAggregatorPublic 托管 /sub/{token} 免鉴权聚合订阅公开拉取。
+	subAggregatorPublic http.Handler
 	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
 	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
@@ -1396,6 +1399,21 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建管理指标 Handler 失败: %w", err)
 	}
+	subAggAIHome := strings.TrimSpace(aiHomeDir)
+	if subAggAIHome == "" && strings.TrimSpace(dependencies.HostHomeDir) != "" {
+		subAggAIHome = filepath.Join(strings.TrimSpace(dependencies.HostHomeDir), ".ai_home")
+	}
+	var subAggSvc *subaggregator.Service
+	if subAggAIHome != "" {
+		subAggSvc = subaggregator.NewService(subAggAIHome, subaggregator.ServiceOptions{
+			HostHomeDir: strings.TrimSpace(dependencies.HostHomeDir),
+		})
+	}
+	subAggregatorPublicHandler, err := newPublicSubaggregatorHandlerWithService(subAggSvc)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
 	webuiRoutes, err := buildWebUIRoutes(webuiRouteDependencies{
 		Authorizer:       authorizer,
 		AIHomeDir:        aiHomeDir,
@@ -1422,6 +1440,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		NodeBaseURL:     nodeBaseURL,
 		ManagementKey:   managementKey,
 		TerminalHandler: webUITerminalHandler,
+		SubAggregator:   subAggSvc,
 	})
 	if err != nil {
 		_ = inference.Close()
@@ -1849,6 +1868,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		accountRules:          accountRulesHandler,
 		modelCatalog:          modelCatalogHandler,
 		webuiRoutes:           webuiRoutes,
+		subAggregatorPublic:   subAggregatorPublicHandler,
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,

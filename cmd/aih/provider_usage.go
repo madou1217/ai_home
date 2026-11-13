@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
@@ -46,8 +47,10 @@ func runProviderUsage(
 		accountID = argument
 	}
 	if accountID == "" {
-		writeProviderUsageUsage(runtime.stderr, providerID)
-		return fmt.Errorf("%w: usage 需要一个账号 ID", errInvalidCommand)
+		if err := runProviderUsageAll(ctx, providerID, refresh, runtime); err != nil {
+			return err
+		}
+		return nil
 	}
 	target, err := aihaccount.ParseAccountTarget(providerID + ":" + accountID)
 	if err != nil {
@@ -75,6 +78,109 @@ func runProviderUsage(
 		writeUsageDocumentDetails(runtime.stdout, document)
 	}
 	return nil
+}
+
+// runProviderUsageAll 打印该 Provider 全部账号的额度摘要（Node usage 无 id 形态）：
+// 每行一个账号，下列出非聚合额度条目；--refresh 逐账号刷新。
+func runProviderUsageAll(
+	ctx context.Context,
+	providerID string,
+	refresh bool,
+	runtime commandRuntime,
+) error {
+	client, err := newAccountManagementClient(runtime)
+	if err != nil {
+		return err
+	}
+	accounts, err := listProviderAccounts(ctx, client, providerID)
+	if err != nil {
+		return err
+	}
+	states, _ := client.ListAccountUIStates(ctx)
+	displayNames := make(map[string]string, len(states))
+	for _, state := range states {
+		displayNames[state.AccountRef] = state.DisplayName
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "%s usage（%d 个账号）:\n", providerID, len(accounts))
+	if len(accounts) == 0 {
+		return nil
+	}
+	for _, account := range accounts {
+		var result managementapi.UsageResult
+		if refresh {
+			result, err = client.RefreshUsage(ctx, account.AccountRef)
+		} else {
+			result, err = client.GetUsage(ctx, account.AccountRef)
+		}
+		if err != nil {
+			_, _ = fmt.Fprintf(
+				runtime.stdout,
+				"  #%d  读取失败: %v\n",
+				account.CLIAccountID.Int64(),
+				err,
+			)
+			continue
+		}
+		writeAccountUsageSummary(runtime.stdout, account, displayNames[account.AccountRef.String()], result)
+	}
+	return nil
+}
+
+// writeAccountUsageSummary 输出单账号的紧凑摘要。
+func writeAccountUsageSummary(
+	output io.Writer,
+	account managementapi.AccountView,
+	stateDisplayName string,
+	result managementapi.UsageResult,
+) {
+	snapshot := result.Snapshot()
+	identity := strings.TrimSpace(account.DisplayName)
+	if identity == "" {
+		identity = strings.TrimSpace(stateDisplayName)
+	}
+	if identity == "" {
+		identity = strings.TrimSpace(account.Email)
+	}
+	if identity == "" {
+		identity = "未命名"
+	}
+	plan := snapshot.PlanType()
+	planLabel := ""
+	if plan != "" {
+		planLabel = "[" + titleCase(plan) + "] "
+	}
+	remaining := "Unknown"
+	if min := snapshot.MinRemaining(); min.Known {
+		remaining = fmt.Sprintf("%.1f%%", float64(min.BasisPoints)/100)
+	}
+	status := ""
+	if !account.Enabled {
+		status = " [停用]"
+	}
+	_, _ = fmt.Fprintf(
+		output,
+		"  #%d  %s%s  剩余 %s%s\n",
+		account.CLIAccountID.Int64(),
+		planLabel,
+		identity,
+		remaining,
+		status,
+	)
+	for _, entry := range snapshot.Entries() {
+		bucket := entry.Bucket()
+		if bucket == "" {
+			bucket = entry.LimitID()
+		}
+		if bucket == "" || strings.EqualFold(bucket, "credits") {
+			continue
+		}
+		_, _ = fmt.Fprintf(
+			output,
+			"      %s  剩余 %s\n",
+			bucket,
+			accountUsageRemainingLabel(entry),
+		)
+	}
 }
 
 // writeUsageDocumentDetails 打印完整快照里的明细条目；聚合 credits 已在表里出现过。

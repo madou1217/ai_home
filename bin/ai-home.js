@@ -305,10 +305,12 @@ function tryRunGoFamilyServerCommand() {
   if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
   const command = String(args[1] || '').trim().toLowerCase();
   const isList = args.length === 2 && command === 'ls';
-  const isUsage = (args.length === 3 || args.length === 4) &&
-    command === 'usage' &&
-    /^\d+$/.test(String(args[2] || '').trim()) &&
-    (args.length === 3 || args[3] === '--refresh');
+  const isUsage = (args.length === 2 && command === 'usage') ||
+    (args.length === 3 && command === 'usage' && args[2] === '--refresh') ||
+    ((args.length === 3 || args.length === 4) &&
+      command === 'usage' &&
+      /^\d+$/.test(String(args[2] || '').trim()) &&
+      (args.length === 3 || args[3] === '--refresh'));
   const isSetDefault = args.length === 3 && command === 'set-default' &&
     /^\d+$/.test(String(args[2] || '').trim());
   const isUnsetDefault = args.length === 2 && command === 'unset-default';

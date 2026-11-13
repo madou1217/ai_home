@@ -206,6 +206,58 @@ function tryRunGoGlobalLs() {
   return true;
 }
 
+// aih codex set-mobile|unset-mobile 固定走 Go：服务端写 desktop-hook-state.json。
+function tryRunGoCodexMobile() {
+  const args = process.argv.slice(2);
+  if (args.length < 2) return false;
+  if (String(args[0] || '').trim().toLowerCase() !== 'codex') return false;
+  const verb = String(args[1] || '').trim().toLowerCase();
+  if (verb !== 'set-mobile' && verb !== 'unset-mobile') return false;
+  if (verb === 'set-mobile' && (args.length !== 3 || !/^\d+$/.test(String(args[2] || '').trim()))) return false;
+  if (verb === 'unset-mobile' && args.length !== 2) return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  if (!aiHomeDir) return false;
+  let config = null;
+  try {
+    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+  } catch (_error) {
+    config = null;
+  }
+  const managementKey = String(config && config.managementKey || '').trim();
+  if (!managementKey) return false;
+  const env = {
+    ...process.env,
+    AIH_HOME_DIR: aiHomeDir,
+    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_MANAGEMENT_KEY: managementKey
+  };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 function tryLsFastPath() {
   try {
     const { tryRunLsFastPath } = require('../lib/cli/services/profile/ls-fastpath');
@@ -564,6 +616,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

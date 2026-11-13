@@ -91,6 +91,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "ss" || providerID == "sessions" {
 		return runGlobalSessions(ctx, arguments[1:], runtime)
 	}
+	// aih codex set-mobile|unset-mobile：Codex App 账号绑定（服务端写 hook state）。
+	if len(arguments) >= 2 && (arguments[1] == "set-mobile" || arguments[1] == "unset-mobile") {
+		return runProviderMobile(ctx, providerID, arguments[1:], runtime)
+	}
 	// aih <family> [<账号>] resume|fork ... → 官方 CLI 的 --resume/--continue；
 	// 家族没有 fork 入口时在这里明确拒绝，不把动词当消息发给 CLI。
 	if codebuddyfamilystorage.IsFamilyProvider(providerID) {

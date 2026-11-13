@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
@@ -200,6 +201,7 @@ type serverHandlers struct {
 	managementStatus  http.Handler
 	managementMetrics http.Handler
 	metrics           *metricsRecorder
+	warmupDeps        webuiRouteDependencies
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -327,7 +329,9 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("打开账号页读模型数据源失败: %w", err)
 	}
+	deferredGateway := &deferredHTTPHandler{}
 	handlers, resources, err := newHandlers(handlerDependencies{
+		TranslationGateway:         deferredGateway,
 		Context:                    ctx,
 		WebUIAccountsSource:        webuiAccountsSource,
 		Catalog:                    catalog,
@@ -387,8 +391,11 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	resources = append(resources, webuiAccountsSource)
 	handlers.webuiAccounts = webuiAccountsHandler
 	resources = append(resources, codexVersions, outcomeRecorder, store)
+	rootHandler := withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers)))
+	deferredGateway.set(rootHandler)
+	resources = append(resources, startServerWarmups(ctx, rootHandler, handlers.warmupDeps, options.ManagementKey))
 	return newServer(
-		withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers))),
+		rootHandler,
 		resources,
 		options,
 	), nil
@@ -443,7 +450,8 @@ type handlerDependencies struct {
 	// WebUIAccountsSource 是账号页读模型数据源；watch 快照与列表共用同一份只读连接。
 	WebUIAccountsSource webuiaccountsapi.Source
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel；由 newHandlers 创建并随进程关闭。
-	ReverseTunnels *sshtunnel.Supervisor
+	ReverseTunnels     *sshtunnel.Supervisor
+	TranslationGateway http.Handler
 }
 
 // newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
@@ -1828,8 +1836,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		PricingService:  sharedPricingService,
 		MetricsRecorder: metrics,
 		StartedAt:       time.Now(),
-		OutcomeRecorder: dependencies.OutcomeRecorder,
-		AccountActivity: hookSessionActivityTracker{activity: activityDaemon.Activity()},
+		OutcomeRecorder:    dependencies.OutcomeRecorder,
+		AccountActivity:    hookSessionActivityTracker{activity: activityDaemon.Activity()},
+		AccountImporter:    accountImporter,
+		ClientKey:          clientKey,
+		TranslationGateway: dependencies.TranslationGateway,
 	}
 	schedulerPorts := webuiSchedulerPorts{
 		ClientKey:    clientKey,
@@ -2136,6 +2147,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		managementStatus:      managementStatusHandler,
 		managementMetrics:     managementMetricsHandler,
 		metrics:               metrics,
+		warmupDeps:            webuiDeps,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{
@@ -2416,5 +2428,38 @@ func startChatRuntimePrewarm(ctx context.Context, svc *chatruntime.Service) io.C
 	}
 	prewarmCtx, cancel := context.WithCancel(ctx)
 	go svc.PrewarmRecentComposerCatalogs(prewarmCtx, 8)
+	return cancelCloserFunc(cancel)
+}
+
+type deferredHTTPHandler struct {
+	target atomic.Pointer[http.Handler]
+}
+
+func (d *deferredHTTPHandler) set(handler http.Handler) {
+	if d == nil || handler == nil {
+		return
+	}
+	d.target.Store(&handler)
+}
+
+func (d *deferredHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if d != nil {
+		if ptr := d.target.Load(); ptr != nil && *ptr != nil {
+			(*ptr).ServeHTTP(w, r)
+			return
+		}
+	}
+	http.Error(w, "service warming up", http.StatusServiceUnavailable)
+}
+
+func startServerWarmups(
+	ctx context.Context,
+	rootHandler http.Handler,
+	deps webuiRouteDependencies,
+	managementKey func() string,
+) io.Closer {
+	warmupCtx, cancel := context.WithCancel(ctx)
+	StartWebUIWarmup(warmupCtx, rootHandler, managementKey)
+	StartTranslationWarmup(warmupCtx, deps, rootHandler)
 	return cancelCloserFunc(cancel)
 }

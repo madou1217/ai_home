@@ -162,6 +162,10 @@ type webuiRouteDependencies struct {
 	// OutcomeRecorder 与 AccountActivity 供原生会话轮询与 provider hook 共用。
 	OutcomeRecorder *accountoutcomes.Recorder
 	AccountActivity webuisessionhookapi.AccountActivityTracker
+	// AccountImporter、ClientKey 与 TranslationGateway 供原生账号探测与翻译预热/转发复用。
+	AccountImporter    *accountapp.AccountImporter
+	ClientKey          func() string
+	TranslationGateway http.Handler
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -724,12 +728,17 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建账号导入作业接口失败: %w", importErr)
 	}
 
-	// 账号发现：路由/鉴权/契约在 Go，扫描执行走 Node 宿主能力桥（详见 hostdetect）。
+	// 账号发现：路由/鉴权/契约/扫描与写入全部在 Go 原生完成（详见 hostdetect.NewNativeDetector）。
 	accountDetect, detectErr := webuiaccountdetectapi.NewHandler(webuiaccountdetectapi.Dependencies{
 		Authorizer: authorizer,
-		Detector: hostdetect.NewNodeBridge(hostdetect.NodeBridgeOptions{
-			BaseURL:       dependencies.NodeBaseURL,
+		Detector: hostdetect.NewNativeDetector(hostdetect.NativeDetectorOptions{
+			AIHomeDir:     dependencies.AIHomeDir,
+			HostHomeDir:   dependencies.HostHomeDir,
+			Store:         dependencies.Store,
+			Catalog:       dependencies.Catalog,
+			Importer:      dependencies.AccountImporter,
 			ManagementKey: dependencies.ManagementKey,
+			ClientKey:     dependencies.ClientKey,
 		}),
 	})
 	if detectErr != nil {
@@ -884,7 +893,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	routes = append(routes, modelsRulesRoutes...)
 	// AI 翻译与 Image Studio 生图工作台全量切 Go，Node 只做薄代理。
-	translationStudioRoutes, err := buildWebUITranslationStudioRoutes(dependencies)
+	translationStudioRoutes, err := BuildWebUITranslationStudioRoutesWithOptions(dependencies, TranslationGatewayOptions{
+		GatewayHandler: dependencies.TranslationGateway,
+		ClientKey:      dependencies.ClientKey,
+	})
 	if err != nil {
 		return nil, err
 	}

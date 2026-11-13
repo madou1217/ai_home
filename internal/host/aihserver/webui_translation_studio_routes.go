@@ -3,12 +3,15 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
@@ -83,37 +86,76 @@ func (l translationStudioOverviewLister) ListAccountOverviews(ctx context.Contex
 // 翻译设置、多语种判定、Provider 凭据/路由与流式对冲全部落在 internal/runtime/translation 与
 // internal/transport/http/webuitranslationapi；Image Studio 会话、资产与生图编排落在
 // internal/runtime/imagestudio 与 internal/transport/http/webuiimagestudioapi；Node 侧只做薄代理。
-func buildWebUITranslationStudioRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
-	if dependencies.Authorizer == nil {
-		return nil, fmt.Errorf("翻译与生图工作台路由缺少 Authorizer")
-	}
-
+func resolveTranslationStudioAIHomeDir(dependencies webuiRouteDependencies) string {
 	aiHomeDir := strings.TrimSpace(dependencies.AIHomeDir)
 	if aiHomeDir == "" && strings.TrimSpace(dependencies.HostHomeDir) != "" {
 		aiHomeDir = filepath.Join(strings.TrimSpace(dependencies.HostHomeDir), ".ai_home")
 	}
+	return aiHomeDir
+}
 
-	var overviewLister translationStudioOverviewLister
+func buildTranslationCatalogDependencies(
+	dependencies webuiRouteDependencies,
+	aiHomeDir string,
+) translation.CatalogDependencies {
 	var translationAccounts translation.AccountOverviewLister
 	var translationModels translation.AccountModelLister
 	var translationAliases translation.ModelAliasLister
 	var translationExclusions translation.RoutingExclusionReader
+	if dependencies.Store != nil {
+		overviewLister := translationStudioOverviewLister{store: dependencies.Store}
+		translationAccounts = overviewLister
+		translationModels = dependencies.Store
+		translationAliases = dependencies.Store
+		translationExclusions = dependencies.Store
+	}
+	translationRuntime, _ := dependencies.AccountRuntime.(translation.EligibilityChecker)
+	var dbPath string
+	if aiHomeDir != "" {
+		if resolved, err := appstate.DatabasePath(aiHomeDir); err == nil {
+			dbPath = resolved
+		}
+	}
+	return translation.CatalogDependencies{
+		Accounts:      translationAccounts,
+		AccountModels: translationModels,
+		Aliases:       translationAliases,
+		Exclusions:    translationExclusions,
+		Runtime:       translationRuntime,
+		Providers:     dependencies.Catalog,
+		Modalities:    dependencies.ModelModalities,
+		DatabasePath:  dbPath,
+	}
+}
+
+func buildWebUITranslationStudioRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
+	return BuildWebUITranslationStudioRoutesWithOptions(dependencies, TranslationGatewayOptions{})
+}
+
+// BuildWebUITranslationStudioRoutesWithOptions 允许注入进程内网关或运行期监听地址，
+// 使翻译推理直接走 Go 本机网关而不回落到 Node。
+func BuildWebUITranslationStudioRoutesWithOptions(
+	dependencies webuiRouteDependencies,
+	gatewayOpts TranslationGatewayOptions,
+) ([]webuiRoute, error) {
+	if dependencies.Authorizer == nil {
+		return nil, fmt.Errorf("翻译与生图工作台路由缺少 Authorizer")
+	}
+
+	aiHomeDir := resolveTranslationStudioAIHomeDir(dependencies)
+
+	var overviewLister translationStudioOverviewLister
 	var studioAccounts imagestudio.AccountOverviewLister
 	var studioModels imagestudio.AccountModelLister
 	var studioExclusions imagestudio.RoutingExclusionReader
 
 	if dependencies.Store != nil {
 		overviewLister = translationStudioOverviewLister{store: dependencies.Store}
-		translationAccounts = overviewLister
-		translationModels = dependencies.Store
-		translationAliases = dependencies.Store
-		translationExclusions = dependencies.Store
 		studioAccounts = overviewLister
 		studioModels = dependencies.Store
 		studioExclusions = dependencies.Store
 	}
 
-	translationRuntime, _ := dependencies.AccountRuntime.(translation.EligibilityChecker)
 	studioRuntime, _ := dependencies.AccountRuntime.(imagestudio.EligibilityChecker)
 	usageRecorder, _ := dependencies.AccountRuntime.(imagesapi.UsageRecorder)
 	imageOutcomes, _ := dependencies.AccountRuntime.(imagesapi.ImageOutcomes)
@@ -121,16 +163,8 @@ func buildWebUITranslationStudioRoutes(dependencies webuiRouteDependencies) ([]w
 	translationHandler, err := webuitranslationapi.NewHandler(webuitranslationapi.Dependencies{
 		Authorizer: dependencies.Authorizer,
 		AIHomeDir:  aiHomeDir,
-		Catalog: translation.CatalogDependencies{
-			Accounts:      translationAccounts,
-			AccountModels: translationModels,
-			Aliases:       translationAliases,
-			Exclusions:    translationExclusions,
-			Runtime:       translationRuntime,
-			Providers:     dependencies.Catalog,
-			Modalities:    dependencies.ModelModalities,
-		},
-		Gateway: buildTranslationGatewayConfig(dependencies),
+		Catalog:    buildTranslationCatalogDependencies(dependencies, aiHomeDir),
+		Gateway:    BuildTranslationGatewayConfig(dependencies, gatewayOpts),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 AI 翻译 HTTP 处理器失败: %w", err)
@@ -205,8 +239,40 @@ func buildWebUITranslationStudioRoutes(dependencies webuiRouteDependencies) ([]w
 	}, nil
 }
 
+const (
+	defaultGoGatewayPort            = "9527"
+	translationWarmupFirstDelay     = 1200 * time.Millisecond
+	translationWarmupMinInterval    = 4 * time.Minute
+	translationWarmupMaxInterval    = 6 * time.Minute
+	translationWarmupRequestTimeout = 30 * time.Second
+)
+
+// TranslationGatewayOptions 描述翻译自路由网关的运行期地址、密钥与进程内传输配置。
+type TranslationGatewayOptions struct {
+	BaseURL        func() string
+	ClientKey      func() string
+	RoundTripper   http.RoundTripper
+	GatewayHandler http.Handler
+}
+
 func buildTranslationGatewayConfig(dependencies webuiRouteDependencies) translation.GatewayConfig {
+	return BuildTranslationGatewayConfig(dependencies, TranslationGatewayOptions{})
+}
+
+// BuildTranslationGatewayConfig 构建仅指向 Go 本机网关的翻译配置，绝不回落到 Node。
+func BuildTranslationGatewayConfig(
+	dependencies webuiRouteDependencies,
+	opts TranslationGatewayOptions,
+) translation.GatewayConfig {
+	var httpClient translation.AdapterClient
+	if opts.RoundTripper != nil {
+		httpClient = &http.Client{Transport: opts.RoundTripper}
+	} else if opts.GatewayHandler != nil {
+		httpClient = &http.Client{Transport: NewTranslationInProcessTransport(opts.GatewayHandler)}
+	}
+
 	return translation.GatewayConfig{
+		HTTPClient: httpClient,
 		BaseURL: func() string {
 			if envBase := strings.TrimSpace(os.Getenv("AIH_GATEWAY_BASE_URL")); envBase != "" {
 				return envBase
@@ -219,10 +285,12 @@ func buildTranslationGatewayConfig(dependencies webuiRouteDependencies) translat
 			if port != "" && port != "0" {
 				return "http://" + net.JoinHostPort(host, port)
 			}
-			if nodeBase := strings.TrimSpace(dependencies.NodeBaseURL); nodeBase != "" {
-				return nodeBase
+			if opts.BaseURL != nil {
+				if runtimeBase := strings.TrimSpace(opts.BaseURL()); runtimeBase != "" {
+					return runtimeBase
+				}
 			}
-			return "http://" + net.JoinHostPort(host, "9527")
+			return "http://" + net.JoinHostPort(host, defaultGoGatewayPort)
 		},
 		ClientKey: func() string {
 			if key := strings.TrimSpace(os.Getenv("AIH_GATEWAY_API_KEY")); key != "" {
@@ -231,11 +299,246 @@ func buildTranslationGatewayConfig(dependencies webuiRouteDependencies) translat
 			if key := strings.TrimSpace(os.Getenv("AIH_SERVER_API_KEY")); key != "" {
 				return key
 			}
+			if opts.ClientKey != nil {
+				if key := strings.TrimSpace(opts.ClientKey()); key != "" {
+					return key
+				}
+			}
 			if dependencies.ManagementKey != nil {
 				return strings.TrimSpace(dependencies.ManagementKey())
 			}
 			return ""
 		},
+	}
+}
+
+type translationInProcessTransport struct {
+	handler http.Handler
+}
+
+type inProcessPipeResponseWriter struct {
+	header    http.Header
+	status    int
+	pw        *io.PipeWriter
+	readyOnce sync.Once
+	ready     chan struct{}
+}
+
+func (rw *inProcessPipeResponseWriter) Header() http.Header {
+	return rw.header
+}
+
+func (rw *inProcessPipeResponseWriter) markReady() {
+	rw.readyOnce.Do(func() {
+		close(rw.ready)
+	})
+}
+
+func (rw *inProcessPipeResponseWriter) WriteHeader(statusCode int) {
+	if statusCode > 0 {
+		rw.status = statusCode
+	}
+	rw.markReady()
+}
+
+func (rw *inProcessPipeResponseWriter) Write(p []byte) (int, error) {
+	rw.markReady()
+	return rw.pw.Write(p)
+}
+
+func (rw *inProcessPipeResponseWriter) Flush() {
+	rw.markReady()
+}
+
+// NewTranslationInProcessTransport 返回把请求直接派发给 Go HTTP Handler 的 http.RoundTripper，
+// 支持 SSE 流式分片传输，无需经过 TCP 套接字或 Node 进程。
+func NewTranslationInProcessTransport(handler http.Handler) http.RoundTripper {
+	return &translationInProcessTransport{handler: handler}
+}
+
+func (t *translationInProcessTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t == nil || t.handler == nil {
+		return nil, fmt.Errorf("翻译进程内网关处理器未配置")
+	}
+	if err := req.Context().Err(); err != nil {
+		return nil, err
+	}
+	pr, pw := io.Pipe()
+	rw := &inProcessPipeResponseWriter{
+		header: make(http.Header),
+		status: http.StatusOK,
+		pw:     pw,
+		ready:  make(chan struct{}),
+	}
+	go func() {
+		defer func() {
+			rw.markReady()
+			_ = pw.Close()
+		}()
+		t.handler.ServeHTTP(rw, req)
+	}()
+
+	select {
+	case <-req.Context().Done():
+		_ = pr.Close()
+		return nil, req.Context().Err()
+	case <-rw.ready:
+		statusCode := rw.status
+		if statusCode <= 0 {
+			statusCode = http.StatusOK
+		}
+		return &http.Response{
+			StatusCode: statusCode,
+			Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+			Header:     rw.header.Clone(),
+			Body:       pr,
+			Request:    req,
+		}, nil
+	}
+}
+
+type translationWarmupSchedule struct {
+	firstDelay  time.Duration
+	minInterval time.Duration
+	maxInterval time.Duration
+	maxTicks    int
+}
+
+// WarmTranslationModelCatalog 预热翻译模型目录与默认路由解析（替代 Node 的 warmTranslationModelCatalog）。
+func WarmTranslationModelCatalog(
+	ctx context.Context,
+	dependencies webuiRouteDependencies,
+) (translation.ModelCatalog, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return translation.ModelCatalog{}, err
+	}
+	aiHomeDir := resolveTranslationStudioAIHomeDir(dependencies)
+	catalogDeps := buildTranslationCatalogDependencies(dependencies, aiHomeDir)
+
+	var savedSettings *translation.Settings
+	if catalogDeps.DatabasePath != "" {
+		if loaded, err := translation.ReadSettings(ctx, catalogDeps.DatabasePath); err == nil {
+			savedSettings = loaded
+		}
+	}
+	catalog, err := translation.BuildTranslationModelCatalog(ctx, catalogDeps, savedSettings)
+	if err != nil {
+		return translation.ModelCatalog{}, err
+	}
+	fallbackCatalog := translation.ResolveTranslationFallbackCatalog(catalog, savedSettings)
+	_, _, _, _ = translation.ResolveTranslationRequestRoutes(
+		false, nil, "", "", "selection", fallbackCatalog, savedSettings,
+	)
+	return catalog, nil
+}
+
+// StartTranslationWarmup 启动 Go 翻译预热循环：先预热模型目录，再按 1.2s 首延迟与
+// 4-6 分钟抖动周期预热翻译设置/模型目录及进程内路由处理器，随 ctx 取消退出。
+func StartTranslationWarmup(
+	ctx context.Context,
+	dependencies webuiRouteDependencies,
+	gatewayHandler http.Handler,
+) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	_ = startTranslationWarmupWithSchedule(ctx, dependencies, gatewayHandler, translationWarmupSchedule{
+		firstDelay:  translationWarmupFirstDelay,
+		minInterval: translationWarmupMinInterval,
+		maxInterval: translationWarmupMaxInterval,
+	})
+}
+
+func startTranslationWarmupWithSchedule(
+	ctx context.Context,
+	dependencies webuiRouteDependencies,
+	gatewayHandler http.Handler,
+	schedule translationWarmupSchedule,
+) <-chan struct{} {
+	done := make(chan struct{})
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	go func() {
+		defer close(done)
+		_, _ = WarmTranslationModelCatalog(ctx, dependencies)
+		if !waitTranslationWarmupTimer(ctx, schedule.firstDelay) {
+			return
+		}
+		ticks := 0
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			runTranslationWarmupCycle(ctx, dependencies, gatewayHandler)
+			ticks++
+			if schedule.maxTicks > 0 && ticks >= schedule.maxTicks {
+				return
+			}
+			delay := nextTranslationWarmupDelay(schedule.minInterval, schedule.maxInterval)
+			if !waitTranslationWarmupTimer(ctx, delay) {
+				return
+			}
+		}
+	}()
+	return done
+}
+
+func runTranslationWarmupCycle(
+	ctx context.Context,
+	dependencies webuiRouteDependencies,
+	gatewayHandler http.Handler,
+) {
+	_, _ = WarmTranslationModelCatalog(ctx, dependencies)
+	if gatewayHandler == nil {
+		return
+	}
+	token := ""
+	if dependencies.ManagementKey != nil {
+		token = strings.TrimSpace(dependencies.ManagementKey())
+	}
+	if token == "" {
+		return
+	}
+	for _, path := range []string{
+		webuitranslationapi.Path + "/models",
+		webuitranslationapi.Path + "/settings",
+	} {
+		if ctx.Err() != nil {
+			return
+		}
+		dispatchWarmupGET(ctx, gatewayHandler, path, token, translationWarmupRequestTimeout)
+	}
+}
+
+func nextTranslationWarmupDelay(minInterval, maxInterval time.Duration) time.Duration {
+	if minInterval <= 0 {
+		minInterval = translationWarmupMinInterval
+	}
+	if maxInterval < minInterval {
+		return minInterval
+	}
+	span := maxInterval - minInterval
+	if span <= 0 {
+		return minInterval
+	}
+	return minInterval + time.Duration(rand.Int64N(int64(span)+1))
+}
+
+func waitTranslationWarmupTimer(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

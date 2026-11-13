@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -213,4 +214,153 @@ func TestBuildWebUITranslationStudioRoutes(t *testing.T) {
 			t.Fatal("expected error when Authorizer is nil")
 		}
 	})
+}
+
+func TestWebUITranslationGatewayConfigZeroNodeFallback(t *testing.T) {
+	t.Setenv("AIH_GATEWAY_BASE_URL", "")
+	t.Setenv("AIH_SERVER_HOST", "")
+	t.Setenv("AIH_SERVER_PORT", "")
+	t.Setenv("AIH_GATEWAY_API_KEY", "")
+	t.Setenv("AIH_SERVER_API_KEY", "")
+
+	cfg := buildTranslationGatewayConfig(webuiRouteDependencies{
+		NodeBaseURL:   "http://127.0.0.1:41234",
+		ManagementKey: func() string { return "mgmt-secret" },
+	})
+	if got := cfg.BaseURL(); got != "http://127.0.0.1:9527" {
+		t.Fatalf("BaseURL() = %q, want http://127.0.0.1:9527 (must not fall back to NodeBaseURL)", got)
+	}
+	if got := cfg.ClientKey(); got != "mgmt-secret" {
+		t.Fatalf("ClientKey() = %q, want mgmt-secret", got)
+	}
+
+	t.Setenv("AIH_SERVER_HOST", "localhost")
+	t.Setenv("AIH_SERVER_PORT", "19527")
+	if got := cfg.BaseURL(); got != "http://localhost:19527" {
+		t.Fatalf("BaseURL() with AIH_SERVER_PORT = %q, want http://localhost:19527", got)
+	}
+
+	t.Setenv("AIH_GATEWAY_BASE_URL", "http://127.0.0.1:29527")
+	if got := cfg.BaseURL(); got != "http://127.0.0.1:29527" {
+		t.Fatalf("BaseURL() with AIH_GATEWAY_BASE_URL = %q, want http://127.0.0.1:29527", got)
+	}
+}
+
+func TestWebUITranslationInProcessTransport(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer inproc-key" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\ndata: [DONE]\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	})
+
+	cfg := BuildTranslationGatewayConfig(
+		webuiRouteDependencies{ManagementKey: func() string { return "mgmt" }},
+		TranslationGatewayOptions{
+			GatewayHandler: handler,
+			ClientKey:      func() string { return "inproc-key" },
+			BaseURL:        func() string { return "http://127.0.0.1:18080" },
+		},
+	)
+	if cfg.HTTPClient == nil {
+		t.Fatal("expected non-nil in-process HTTPClient")
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, cfg.BaseURL()+"/v1/chat/completions", nil)
+	if err != nil {
+		t.Fatalf("NewRequest error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.ClientKey())
+	resp, err := cfg.HTTPClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTPClient.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestWebUITranslationWarmupLoopAndCancellation(t *testing.T) {
+	aiHomeDir := t.TempDir()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   catalog,
+	})
+	if err != nil {
+		t.Fatalf("sqliteaccount.Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	rt, err := runtimeinmemory.New(time.Now)
+	if err != nil {
+		t.Fatalf("runtimeinmemory.New() error = %v", err)
+	}
+
+	var (
+		mu   sync.Mutex
+		hits []string
+	)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	deps := webuiRouteDependencies{
+		Authorizer:     translationStudioTestAuthorizer{},
+		AIHomeDir:      aiHomeDir,
+		Catalog:        catalog,
+		Store:          store,
+		AccountRuntime: rt,
+		ManagementKey:  func() string { return "test-mgmt-key" },
+	}
+
+	done := startTranslationWarmupWithSchedule(
+		context.Background(),
+		deps,
+		handler,
+		translationWarmupSchedule{
+			firstDelay:  2 * time.Millisecond,
+			minInterval: 2 * time.Millisecond,
+			maxInterval: 4 * time.Millisecond,
+			maxTicks:    2,
+		},
+	)
+	<-done
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(hits) != 4 {
+		t.Fatalf("expected 4 warmup handler calls (2 ticks x /models+/settings), got %d: %v", len(hits), hits)
+	}
+	if hits[0] != webuitranslationapi.Path+"/models" || hits[1] != webuitranslationapi.Path+"/settings" {
+		t.Fatalf("unexpected warmup hit sequence: %v", hits)
+	}
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledDone := startTranslationWarmupWithSchedule(
+		cancelCtx,
+		deps,
+		handler,
+		translationWarmupSchedule{
+			firstDelay:  50 * time.Millisecond,
+			minInterval: time.Minute,
+			maxInterval: time.Minute,
+		},
+	)
+	<-canceledDone
 }

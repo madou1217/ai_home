@@ -21,11 +21,43 @@ var allowedProxySchemes = map[string]struct{}{
 	"socks5h": {},
 }
 
+// nativeProxyOnlySchemes 是原生代理字段只认 HTTP(S) 的消费方能力集合。
+// 对应 Node lib/providers/defs/zcode.js 与 opencode.js 的 egress.proxySchemes。
+var nativeProxyOnlySchemes = map[string]struct{}{
+	"http":  {},
+	"https": {},
+}
+
+// providerProxySchemes 按 provider 收窄出口地址可用的 scheme，语义与 Node
+// allowedSchemesForProvider() 一致：只有描述符明确收窄时才收窄，未列出 = 全集。
+// 收窄的现有 provider 与 Node 描述符保持一致（zcode 原生 setting.json httpProxy、
+// opencode 的 Bun 运行时静默忽略 socks env）；新增 provider 默认放行，不会被 Go 误拒。
+var providerProxySchemes = map[string]map[string]struct{}{
+	"zcode":    nativeProxyOnlySchemes,
+	"opencode": nativeProxyOnlySchemes,
+}
+
+// zcodeNativeSchemeError 沿用 Node 的历史错误名（WebUI 文案表按它映射）。
+const zcodeNativeSchemeError = "zcode_native_proxy_scheme_unsupported"
+
 // hostPortShorthandPattern 对应 Node 的 /^[^\s:/?#]+:\d{1,5}$/。
 var hostPortShorthandPattern = regexp.MustCompile("^[^\\s:/?#]+:[0-9]{1,5}$")
 
+// ProxyURLIssueForProvider 返回该 provider 消费方看到的问题码；空字符串表示合法。
+func ProxyURLIssueForProvider(rawURL string, provider string) string {
+	allowed := allowedProxySchemes
+	if narrowed, exists := providerProxySchemes[strings.ToLower(strings.TrimSpace(provider))]; exists {
+		allowed = narrowed
+	}
+	return proxyURLIssueWith(rawURL, allowed, true)
+}
+
 // proxyURLIssue 返回代理地址的问题码；空字符串表示合法。
 func proxyURLIssue(rawURL string) string {
+	return proxyURLIssueWith(rawURL, allowedProxySchemes, false)
+}
+
+func proxyURLIssueWith(rawURL string, allowed map[string]struct{}, narrowable bool) string {
 	value := strings.TrimSpace(rawURL)
 	if value == "" {
 		return "invalid_proxy_url"
@@ -42,8 +74,11 @@ func proxyURLIssue(rawURL string) string {
 		return "invalid_proxy_url"
 	}
 	scheme := strings.ToLower(parsed.Scheme)
-	if _, allowed := allowedProxySchemes[scheme]; !allowed {
+	if _, supported := allowedProxySchemes[scheme]; !supported {
 		return "proxy_scheme_unsupported"
+	}
+	if _, supported := allowed[scheme]; !supported && narrowable {
+		return zcodeNativeSchemeError
 	}
 	// 凭据会随绑定落盘并注入客户端环境变量，当前不支持（Node 同样拒绝）。
 	if parsed.Hostname() == "" || parsed.User != nil {

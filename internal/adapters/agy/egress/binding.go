@@ -52,12 +52,21 @@ var runtimeNodeNamePattern = regexp.MustCompile("(?i)^node-[0-9]+$")
 // 同文案：调用方只把它当作 egress_binding_read_failed 的 reason。
 var errInvalidBindingRecord = errors.New("invalid_account_egress_binding_record")
 
+// PoolScope 是出口池绑定的节点选择范围（Node normalizePoolScope() 的输出）。
+// Kind 取 all / groups / nodes；groups 与 nodes 始终是非 nil 切片，空表示该维度未选。
+type PoolScope struct {
+	Kind   string   `json:"kind"`
+	Groups []string `json:"groups"`
+	Nodes  []string `json:"nodes"`
+}
+
 // Binding 是规范化后的账号出口绑定。
 //
 // Mode 取值见 ModeDirect/ModeSystem/ModeTUN/ModeURL/ModePool；Retired 为 true 时
-// 除 Mode/ProxyURL 外的字段只用于展示。PoolStrategy / PoolScopeKind 是出口池选择的
+// 除 Mode/ProxyURL 外的字段只用于展示。PoolStrategy / PoolScope 是出口池选择的
 // 形状校验结果，Go 解析不需要它们（账号车道由池运行时写进 state.json，按 accountRef
-// 查表），保留是为了让 WebUI 与排查看到同一份规范化记录。
+// 查表），保留是为了让 WebUI 与排查看到同一份规范化记录。PoolScopeKind 是
+// PoolScope.Kind 的冗余投影，供只需要范围的调用方使用。
 type Binding struct {
 	Mode          string
 	ProxyURL      string
@@ -66,7 +75,14 @@ type Binding struct {
 	Retired       bool
 	PoolStrategy  string
 	PoolScopeKind string
+	PoolScope     *PoolScope
 	UpdatedAtMS   int64
+}
+
+// IsKnownMode 判断 mode 是否属于当前支持的出口模式（已下线的 node/group 不算）。
+func IsKnownMode(mode string) bool {
+	_, known := knownBindingModes[strings.ToLower(strings.TrimSpace(mode))]
+	return known
 }
 
 // bindingKey 与 Node buildEgressBindingKey() 同构。
@@ -115,6 +131,12 @@ func parseBinding(raw string) (Binding, error) {
 	if !valid {
 		return Binding{}, errInvalidBindingRecord
 	}
+	return parseBindingObject(object)
+}
+
+// parseBindingObject 是 parseBinding 的对象分支：WebUI 写入也需要同一套归一化，
+// 但输入来自已解码的请求体，不必再拼一次 JSON。
+func parseBindingObject(object map[string]any) (Binding, error) {
 	proxyURL := textValue(object["proxyUrl"])
 	nodeID := textValue(object["nodeId"])
 	groupID := textValue(object["groupId"])
@@ -171,14 +193,15 @@ func parseBinding(raw string) (Binding, error) {
 		// Node 在 pool 模式下把 proxyUrl 归一化为空：实际地址来自池运行时。
 		binding.ProxyURL = ""
 		binding.PoolStrategy = selection.strategy
-		binding.PoolScopeKind = selection.scopeKind
+		binding.PoolScopeKind = selection.scope.Kind
+		binding.PoolScope = &selection.scope
 	}
 	return binding, nil
 }
 
 type poolSelection struct {
-	strategy  string
-	scopeKind string
+	strategy string
+	scope    PoolScope
 }
 
 // parsePoolSelection 对应 Node normalizePoolSelection() + normalizePoolScope()。
@@ -220,7 +243,14 @@ func parsePoolSelection(object map[string]any) (poolSelection, bool) {
 	if _, known := poolBindingStrategies[strategy]; !known {
 		strategy = "shared"
 	}
-	return poolSelection{strategy: strategy, scopeKind: kind}, true
+	scope := PoolScope{Kind: kind, Groups: []string{}, Nodes: []string{}}
+	if kind == "groups" {
+		scope.Groups = groups
+	}
+	if kind == "nodes" {
+		scope.Nodes = nodes
+	}
+	return poolSelection{strategy: strategy, scope: scope}, true
 }
 
 // firstPresent 模拟 JS 的 source.groups || source.groupIds：键存在且非空时优先，

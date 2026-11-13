@@ -167,6 +167,14 @@ func (service *Service) LandServerDefault(
 	}, nil
 }
 
+// SupportsHostGrant 报告该 Provider 是否有宿主直连授权回收钩子。
+//
+// 目前只有 codex 声明了 revokeHostGrant；调用方据此决定响应里是否出现
+// hostGrantRevoke（Node 旧实现没有钩子的 Provider 返回 null）。
+func (service *Service) SupportsHostGrant(providerID string) bool {
+	return strings.ToLower(strings.TrimSpace(providerID)) == codexProviderID
+}
+
 // RevokeHostGrant 回收账号在宿主 Codex 上的直连授权。
 //
 // 三条判据都指向同一个账号：aih 默认账号记录、受管钉选、根级受管直连端点。

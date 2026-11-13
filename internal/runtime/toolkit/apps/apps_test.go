@@ -68,11 +68,11 @@ func TestResolveTargetAndLifecyclePlans(t *testing.T) {
 	_ = writeFakeExecutable(t, dshProfileBin, "dsh", "#!/bin/sh\n")
 
 	jm := NewJobManager(NewManager(), Options{
-		Platform:  "linux",
-		Arch:      "amd64",
+		Platform:    "linux",
+		Arch:        "amd64",
 		HostHomeDir: filepath.Join(tmp, "home"),
-		AIHomeDir: aiHome,
-		Env:       map[string]string{"PATH": ""},
+		AIHomeDir:   aiHome,
+		Env:         map[string]string{"PATH": ""},
 	})
 
 	if target := ResolveInstallTarget(InstallInput{AppID: "codex-desktop"}); target == nil || target.Provider != "codex" || target.Kind != "desktop" || target.Action != "install" {
@@ -293,12 +293,19 @@ func TestHooksInstallDiagnoseAndUninstall(t *testing.T) {
 
 	mgr := NewManager()
 	opts := Options{
-		Catalog:          nil,
-		HostHomeDir:      hostHome,
-		AIHomeDir:        aiHome,
-		Platform:         "linux",
-		Env:              map[string]string{"HOME": hostHome, "PATH": hookBinDir},
-		LookPath:         func(name string) (string, error) { if p, ok := cliBins[name]; ok { return p, nil }; return "", os.ErrNotExist },
+		Catalog:     nil,
+		HostHomeDir: hostHome,
+		AIHomeDir:   aiHome,
+		Platform:    "linux",
+		// 显式钉住 XDG_CONFIG_HOME：安装器会合并进程 env，宿主若已设置该项，
+		// opencode plugin 会写到 XDG 而不是测试断言用的 HOME/.config。
+		Env: map[string]string{"HOME": hostHome, "PATH": hookBinDir, "XDG_CONFIG_HOME": filepath.Join(hostHome, ".config")},
+		LookPath: func(name string) (string, error) {
+			if p, ok := cliBins[name]; ok {
+				return p, nil
+			}
+			return "", os.ErrNotExist
+		},
 		Executor:         execStub,
 		SenderScriptPath: senderScript,
 		NodeExecPath:     "/usr/local/bin/node",
@@ -468,8 +475,13 @@ checkedNodeGate:
 		VerifyRetries:    1,
 		VerifyRetryDelay: 0,
 		Env:              map[string]string{"HOME": hostHome, "PATH": binDir},
-		LookPath:         func(name string) (string, error) { if name == "opencode" && installedCliPath != "" { return installedCliPath, nil }; return "", os.ErrNotExist },
-		Executor:         opencodeExec,
+		LookPath: func(name string) (string, error) {
+			if name == "opencode" && installedCliPath != "" {
+				return installedCliPath, nil
+			}
+			return "", os.ErrNotExist
+		},
+		Executor: opencodeExec,
 	})
 	ocAll, cancelOC := mgrOC.SubscribeAll()
 	defer cancelOC()

@@ -156,10 +156,72 @@ type projectWatchHub struct {
 	closed        bool
 }
 
+var (
+	activeHubsMu sync.Mutex
+	activeHubs   = map[string]map[*projectWatchHub]struct{}{}
+)
+
+func registerActiveHub(aiHomeDir string, hub *projectWatchHub) {
+	key := filepath.Clean(strings.TrimSpace(aiHomeDir))
+	if key == "" || key == "." || hub == nil {
+		return
+	}
+	activeHubsMu.Lock()
+	defer activeHubsMu.Unlock()
+	if activeHubs[key] == nil {
+		activeHubs[key] = make(map[*projectWatchHub]struct{})
+	}
+	activeHubs[key][hub] = struct{}{}
+}
+
+func unregisterActiveHub(aiHomeDir string, hub *projectWatchHub) {
+	key := filepath.Clean(strings.TrimSpace(aiHomeDir))
+	if key == "" || key == "." || hub == nil {
+		return
+	}
+	activeHubsMu.Lock()
+	defer activeHubsMu.Unlock()
+	group := activeHubs[key]
+	if group == nil {
+		return
+	}
+	delete(group, hub)
+	if len(group) == 0 {
+		delete(activeHubs, key)
+	}
+}
+
+// NotifyWatchers 触发指定 aiHomeDir 下所有活跃项目监听中心立即重建并广播快照。
+func NotifyWatchers(ctx context.Context, aiHomeDir string) bool {
+	key := filepath.Clean(strings.TrimSpace(aiHomeDir))
+	if key == "" || key == "." {
+		return false
+	}
+	activeHubsMu.Lock()
+	group := activeHubs[key]
+	hubs := make([]*projectWatchHub, 0, len(group))
+	for hub := range group {
+		hubs = append(hubs, hub)
+	}
+	activeHubsMu.Unlock()
+
+	broadcasted := false
+	for _, hub := range hubs {
+		if hub.subscriberCount() > 0 {
+			hub.refresh(ctx, true)
+			if hub.broadcastSnapshot() {
+				broadcasted = true
+			}
+		}
+	}
+	return broadcasted
+}
+
 // watch 返回本 Handler 唯一的项目事件中心（不启动 watcher）。
 func (handler *Handler) watch() *projectWatchHub {
 	handler.watchOnce.Do(func() {
 		handler.watchHub = newProjectWatchHub(handler, handler.heartbeat)
+		registerActiveHub(handler.aiHomeDir, handler.watchHub)
 	})
 	return handler.watchHub
 }
@@ -548,6 +610,9 @@ func (hub *projectWatchHub) broadcastRuntime() bool {
 }
 
 func (hub *projectWatchHub) shutdown() {
+	if hub != nil && hub.handler != nil {
+		unregisterActiveHub(hub.handler.aiHomeDir, hub)
+	}
 	hub.mu.Lock()
 	if hub.closed {
 		hub.mu.Unlock()
@@ -694,6 +759,11 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 				addDatabase(filepath.Join(dataDir, "db", "sessions.db"))
 			}
 		}
+	}
+
+	// 监听 app-state.db 变更（手动打开/移除项目、远程工作区增删）。
+	if handler.aiHomeDir != "" {
+		addDatabase(filepath.Join(handler.aiHomeDir, "app-state.db"))
 	}
 
 	// 运行态事件源：Node 的 hook 状态目录。目录尚未创建时先盯住 run/ 发现它。

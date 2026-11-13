@@ -852,6 +852,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, sessionsWatchRoutes...)
+	// 项目管理、工作区文件/媒体/信任、Git 状态与工作区模型目录切 Go，不再依赖 Node 本地扫描与回退。
+	projectsFSRoutes, err := buildWebUIProjectsFSRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, projectsFSRoutes...)
 	return routes, nil
 }
 

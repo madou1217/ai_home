@@ -160,9 +160,9 @@ func mergeProjectSession(existing, incoming sessionView) sessionView {
 	return existing
 }
 
-// projectLastActivityAt 是项目内最新的会话时间；没有会话时为 0。
+// projectLastActivityAt 是项目内最新的会话或手动打开时间；没有时为 0。
 func projectLastActivityAt(project projectView) int64 {
-	latest := int64(0)
+	latest := project.AddedAt
 	for _, session := range project.Sessions {
 		if session.UpdatedAt > latest {
 			latest = session.UpdatedAt

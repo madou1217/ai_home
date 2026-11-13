@@ -42,6 +42,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/webuiremoteworkspace"
 )
 
 // Path 是项目列表的管理契约路径。
@@ -139,13 +141,24 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 // projectView 与 Node 的项目条目同形（manual / addedAt / remote 属于其它切片）。
 //
 // 键序按 Node 的对象构造顺序：sessions 先于 sessionTotal。
+type remoteDescriptor struct {
+	WorkspaceID  string `json:"workspaceId"`
+	ConnectionID string `json:"connectionId"`
+	Host         string `json:"host"`
+	HostLabel    string `json:"hostLabel,omitempty"`
+	RemoteRoot   string `json:"remoteRoot"`
+}
+
 type projectView struct {
-	ID           string        `json:"id"`
-	Name         string        `json:"name"`
-	Path         string        `json:"path"`
-	Providers    []string      `json:"providers"`
-	Sessions     []sessionView `json:"sessions"`
-	SessionTotal int           `json:"sessionTotal"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Path         string            `json:"path"`
+	Providers    []string          `json:"providers"`
+	Sessions     []sessionView     `json:"sessions"`
+	SessionTotal int               `json:"sessionTotal"`
+	Manual       bool              `json:"manual,omitempty"`
+	AddedAt      int64             `json:"addedAt,omitempty"`
+	Remote       *remoteDescriptor `json:"remote,omitempty"`
 }
 
 // sessionView 与 Node 下发到 /projects 的会话条目同形。
@@ -264,9 +277,18 @@ func (handler *Handler) serveProjectSessions(responseWriter http.ResponseWriter,
 // 扫描被预算或超时打断时返回已收集到的部分结果（truncated=true），
 // 而不是把「读得慢」升级成 5xx：项目列表本来就是最终一致视图。
 func (handler *Handler) collect(ctx context.Context, options aggregateOptions) ([]projectView, bool) {
+	state := readWebUIProjectState(ctx, handler.aiHomeDir)
+	workspaces, _ := webuiremoteworkspace.LoadWorkspaces(ctx, handler.aiHomeDir)
+	extraKnown := make([]string, 0, len(state.OpenedProjects))
+	for _, item := range state.OpenedProjects {
+		extraKnown = append(extraKnown, item.Path)
+	}
 	scan := newScanner(ctx, handler.hostHomeDir, handler.aiHomeDir, handler.maxEntries)
+	scan.extraKnownPaths = extraKnown
 	raw := filterChatWorkspaceProjects(scan.collectProjects(), handler.aiHomeDir)
-	return aggregateProjects(raw, isExistingDirectory, options), scan.truncated
+	projects := aggregateProjects(raw, isExistingDirectory, options)
+	projects = applyProjectOverlay(handler.aiHomeDir, projects, state, workspaces, options)
+	return projects, scan.truncated
 }
 
 func writeJSON(responseWriter http.ResponseWriter, status int, body any) {

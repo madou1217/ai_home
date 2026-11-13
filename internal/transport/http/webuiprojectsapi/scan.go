@@ -59,11 +59,12 @@ type rawProject struct {
 
 // scanner 是一次有界扫描的状态：预算、时限与截断标记。
 type scanner struct {
-	ctx       context.Context
-	hostHome  string
-	aiHome    string
-	remaining int
-	truncated bool
+	ctx             context.Context
+	hostHome        string
+	aiHome          string
+	extraKnownPaths []string
+	remaining       int
+	truncated       bool
 }
 
 func newScanner(ctx context.Context, hostHome, aiHome string, maxEntries int) *scanner {
@@ -162,6 +163,9 @@ func (scan *scanner) knownProjectPaths() []string {
 				add(key)
 			}
 		}
+	}
+	for _, extra := range scan.extraKnownPaths {
+		add(extra)
 	}
 	return paths
 }

@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -13,8 +14,12 @@ import (
 	accountactivityadapter "github.com/madou1217/ai_home/internal/adapters/accountactivity"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accountstate"
+	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
+	"github.com/madou1217/ai_home/internal/adapters/hostdetect"
+	"github.com/madou1217/ai_home/internal/adapters/hostexec"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
@@ -23,6 +28,8 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdetectapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountegressapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
@@ -72,7 +79,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshreverseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitruntimeapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitenvapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
@@ -122,6 +129,8 @@ type webuiRouteDependencies struct {
 	ReverseTunnels *sshtunnel.Supervisor
 	// AccountDeletion 是账号删除用例（WebUI 的 DELETE 承接者）。
 	AccountDeletion webuiaccountdeleteapi.AccountDeletion
+	// AccountHostGrant 回收停用账号在宿主上的直连授权（当前只有 codex）。
+	AccountHostGrant webuiaccountstatusapi.HostGrantRevoker
 	// NodeBaseURL 是 Node 宿主回环地址：账号活动的 provider handler 仍由 Node 执行。
 	NodeBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
@@ -256,6 +265,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建窗口激活接口失败: %w", err)
+	}
+	// 账号出口绑定：Go 是设置的唯一写者；运行态应用仍在 Node（薄壳写后执行）。
+	accountEgress, err := webuiaccountegressapi.NewHandler(webuiaccountegressapi.Dependencies{
+		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+		Catalog: dependencies.Catalog, Store: agyegress.NewStore(dependencies.AIHomeDir),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号出口设置接口失败: %w", err)
 	}
 	controlPlane, err := webuicontrolplaneapi.NewHandler(webuicontrolplaneapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
@@ -410,8 +427,18 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 写入接口失败: %w", err)
 	}
+	// account_state 是 Node WebUI 读取的展示投影。启停真值已经由 Go 承担，投影也
+	// 必须由 Go 同步写回，否则 Node 侧不再写之后账号页会一直显示旧状态。
+	// 打不开投影库时保持 nil：Go 真值仍可写，handler 不会伪造投影成功。
+	var accountStatusProjection webuiaccountstatusapi.AccountStateProjection
+	if projection, projectionErr := accountstate.Open(context.Background(), dependencies.AIHomeDir); projectionErr == nil {
+		accountStatusProjection = projection
+	} else {
+		log.Printf("账号启停投影不可用: %v", projectionErr)
+	}
 	accountStatus, err := webuiaccountstatusapi.NewHandler(webuiaccountstatusapi.Dependencies{
 		Authorizer: authorizer, Accounts: dependencies.Store,
+		Projection: accountStatusProjection, HostGrant: dependencies.AccountHostGrant,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号启停接口失败: %w", err)
@@ -500,11 +527,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建打开应用接口失败: %w", err)
 	}
-	toolkitEnvironments, err := webuitoolkitruntimeapi.NewHandler(webuitoolkitruntimeapi.Dependencies{
-		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+	// 运行环境：探测、计划、执行与作业状态机都在 Go，Node 只做代理。
+	toolkitEnvironmentActions, err := webuitoolkitenvapi.NewHandler(webuitoolkitenvapi.Dependencies{
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+		Executor: hostexec.Executor{},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("创建工具链环境接口失败: %w", err)
+		return nil, fmt.Errorf("创建运行环境操作接口失败: %w", err)
 	}
 	sessionMessages, err := webuisessionmessagesapi.NewHandler(webuisessionmessagesapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
@@ -566,6 +595,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 
 	toolAppSettings, err := webuitoolappsettingswriteapi.NewHandler(webuitoolappsettingswriteapi.Dependencies{
 		Authorizer: authorizer, Providers: dependencies.Catalog, AIHomeDir: dependencies.AIHomeDir,
+		HostHomeDir: dependencies.HostHomeDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建工具应用设置写入接口失败: %w", err)
@@ -664,7 +694,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if liveErr != nil {
 		return nil, fmt.Errorf("创建账号实时视图接口失败: %w", liveErr)
 	}
-
 	// 账号导入作业：状态机、上传解码、文档解析与逐条导入都在 Go。事件走同一条
 	// 账号 watch 流（import-job 帧），Node 只保留 POST/GET 的协议外壳。
 	accountImport, importErr := webuiaccountimportapi.NewHandler(webuiaccountimportapi.Dependencies{
@@ -676,9 +705,22 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建账号导入作业接口失败: %w", importErr)
 	}
 
+	// 账号发现：路由/鉴权/契约在 Go，扫描执行走 Node 宿主能力桥（详见 hostdetect）。
+	accountDetect, detectErr := webuiaccountdetectapi.NewHandler(webuiaccountdetectapi.Dependencies{
+		Authorizer: authorizer,
+		Detector: hostdetect.NewNodeBridge(hostdetect.NodeBridgeOptions{
+			BaseURL:       dependencies.NodeBaseURL,
+			ManagementKey: dependencies.ManagementKey,
+		}),
+	})
+	if detectErr != nil {
+		return nil, fmt.Errorf("创建账号发现接口失败: %w", detectErr)
+	}
+
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
 		{Pattern: "POST " + webuiaccountliveapi.SnapshotPath, Handler: accountLive},
+		{Pattern: "POST " + webuiaccountdetectapi.Path, Handler: accountDetect},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
@@ -714,6 +756,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/model-context/bulk", Handler: http.HandlerFunc(modelContext.ServeBulkHTTP)},
 		{Pattern: "GET " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
 		{Pattern: "POST " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
+		{Pattern: "GET " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
+		{Pattern: "POST " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles/active", Handler: controlPlane},
@@ -749,7 +793,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
 		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
 		{Pattern: "POST " + webuiopenappapi.Path + webuiopenappapi.OpenAppSuffix, Handler: openApp},
-		{Pattern: "GET " + webuitoolkitruntimeapi.Path, Handler: toolkitEnvironments},
+		{Pattern: "GET " + webuitoolkitenvapi.Path, Handler: toolkitEnvironmentActions},
+		{Pattern: "GET " + webuitoolkitenvapi.GuidePath, Handler: toolkitEnvironmentActions},
+		{Pattern: "POST " + webuitoolkitenvapi.PlanPath, Handler: toolkitEnvironmentActions},
+		{Pattern: "POST " + webuitoolkitenvapi.ExecutePath, Handler: toolkitEnvironmentActions},
+		{Pattern: "GET " + webuitoolkitenvapi.JobsPath, Handler: toolkitEnvironmentActions},
+		{Pattern: "GET " + webuitoolkitenvapi.JobsWatchPath, Handler: toolkitEnvironmentActions},
+		{Pattern: "GET " + webuitoolkitenvapi.JobPath, Handler: toolkitEnvironmentActions},
+		{Pattern: "GET " + webuitoolkitenvapi.JobWatchPath, Handler: toolkitEnvironmentActions},
+		{Pattern: "POST " + webuitoolkitenvapi.JobCancelPath, Handler: toolkitEnvironmentActions},
 		{Pattern: "POST " + webuisessionpreviewsapi.Path, Handler: sessionPreviews},
 		{Pattern: "POST " + webuimanagementkeyapi.Path, Handler: managementKey},
 		{Pattern: "POST " + webuiproviderclearbrokenapi.Path + webuiproviderclearbrokenapi.ClearBrokenSuffix, Handler: clearBroken},

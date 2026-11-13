@@ -416,6 +416,45 @@ const buildAccountActivityPath = (provider: string, accountRef: string, actionId
   `${buildAccountScopedPath(provider, accountRef)}/activity/${encodeURIComponent(actionId)}`
 );
 
+export interface RoutingWeightCandidate {
+  accountRef: string;
+  provider: string;
+  cliAccountId: number | null;
+  email: string;
+  eligible: boolean;
+  /** 空串=可调度；其余是稳定原因码（model_not_in_catalog / model_cooldown / runtime_* 等）。 */
+  reason: string;
+  remainingPct: number | null;
+  inFlight: number;
+  modelInFlight: number;
+  rate: number;
+  windowMs: number;
+  weight: number;
+  probability: number;
+}
+
+export interface RoutingWeightsResponse {
+  ok: boolean;
+  provider: string;
+  model: string;
+  strategy: string;
+  catalog: 'complete' | 'filtered' | 'unchecked';
+  totalWeight: number;
+  eligibleCount: number;
+  totalCount: number;
+  candidates: RoutingWeightCandidate[];
+}
+
+export const routingAPI = {
+  // 只读诊断：某 Provider × 模型的账号权重与下次命中概率（/v0/webui/routing/weights）
+  weights: async (provider: string, model: string): Promise<RoutingWeightsResponse> => {
+    const response = await api.get<RoutingWeightsResponse>('/webui/routing/weights', {
+      params: { provider, model }
+    });
+    return response.data;
+  }
+};
+
 export const accountsAPI = {
   // 获取所有账号
   list: async (): Promise<AccountsListResponse> => {

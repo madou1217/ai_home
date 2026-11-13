@@ -1,4 +1,5 @@
 import AccountCardGrid from '@/components/account/AccountCardGrid';
+import RoutingWeightsDrawer from '@/components/account/RoutingWeightsDrawer';
 import './Accounts.css';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StatisticCard } from '@ant-design/pro-components';
@@ -264,6 +265,7 @@ export default function Accounts() {
   // 账号出口摘要：列表 / 卡片上的出口徽标与「批量设置出口」共用（见 features/egress-upstream）。
   const egressSummary = useAccountEgressSummary();
   const [bulkEgressOpen, setBulkEgressOpen] = useState(false);
+  const [routingWeightsOpen, setRoutingWeightsOpen] = useState(false);
   // 账号活动（签到 / 领臭鸡蛋）：入口只在声明了该动作的供应商 tab 出现；
   // 动作清单来自服务端下发的 activityActions，前端不判断 provider。
   const [rewardsRunning, setRewardsRunning] = useState(false);
@@ -1118,6 +1120,9 @@ export default function Accounts() {
         // 列表自动订阅快照；账号刷新统一由行首 Logo 触发。
         extra={
           <Space size={8}>
+            <Button icon={<BarChartOutlined />} onClick={() => setRoutingWeightsOpen(true)}>
+              路由权重
+            </Button>
             <Button icon={<GlobalOutlined />} onClick={() => setBulkEgressOpen(true)}>
               批量设置出口
             </Button>
@@ -1239,6 +1244,13 @@ export default function Accounts() {
         </div>
       </SectionCard>
 
+      <RoutingWeightsDrawer
+        open={routingWeightsOpen}
+        onClose={() => setRoutingWeightsOpen(false)}
+        accounts={accounts}
+        modelCatalog={modelCatalog}
+        defaultProvider={activeProvider}
+      />
       <AccountFlowModals actions={accountActions} />
       <AccountEgressBulkPicker
         open={bulkEgressOpen}

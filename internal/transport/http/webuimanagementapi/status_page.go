@@ -1,7 +1,12 @@
-'use strict';
+// Package webuimanagementapi 提供管理面运行时监控、状态索引同步与用量分析的 Go HTTP 接口。
+package webuimanagementapi
 
-function renderProxyStatusPage() {
-  return `<!doctype html>
+// RenderStatusPageHTML 返回与历史 /v0/management/ui 一致的实时状态 HTML 页面。
+func RenderStatusPageHTML() string {
+	return statusPageHTML
+}
+
+const statusPageHTML = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -251,9 +256,4 @@ function renderProxyStatusPage() {
     setInterval(tick, 2000);
   </script>
 </body>
-</html>`;
-}
-
-module.exports = {
-  renderProxyStatusPage
-};
+</html>`

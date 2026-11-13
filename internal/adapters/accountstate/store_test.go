@@ -446,3 +446,64 @@ func mustExec(t *testing.T, db *sql.DB, statement string, args ...any) {
 func pointer[T any](value T) *T {
 	return &value
 }
+
+// TestEnsureAccountRefAndPruneMissing 覆盖台账兜底写入与按 Provider 清理过期投影。
+func TestEnsureAccountRefAndPruneMissing(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+	const newRef = "acct_44444444444444444444"
+
+	if err := store.EnsureAccountRef(ctx, newRef, "CODEX"); err != nil {
+		t.Fatalf("EnsureAccountRef() error = %v", err)
+	}
+	if _, err := store.Upsert(ctx, UpsertInput{AccountRef: newRef, Provider: "codex", Configured: true}); err != nil {
+		t.Fatalf("Upsert after EnsureAccountRef error = %v", err)
+	}
+	if _, err := store.Upsert(ctx, UpsertInput{AccountRef: codexRef, Provider: "codex", Configured: true}); err != nil {
+		t.Fatalf("Upsert(codexRef) error = %v", err)
+	}
+	if _, err := store.Upsert(ctx, UpsertInput{AccountRef: testRef, Provider: "claude", Configured: true}); err != nil {
+		t.Fatalf("Upsert(testRef) error = %v", err)
+	}
+
+	var storedProvider string
+	if err := db.QueryRow("SELECT provider FROM account_refs WHERE account_ref = ?", newRef).Scan(&storedProvider); err != nil {
+		t.Fatalf("读取 account_refs 失败: %v", err)
+	}
+	if storedProvider != "codex" {
+		t.Fatalf("provider = %q, want codex", storedProvider)
+	}
+
+	removed, err := store.PruneMissing(ctx, "CODEX", []string{newRef, "invalid-ignored"})
+	if err != nil {
+		t.Fatalf("PruneMissing() error = %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+
+	codexStates, err := store.List(ctx, "codex")
+	if err != nil {
+		t.Fatalf("List(codex) error = %v", err)
+	}
+	if len(codexStates) != 1 || codexStates[0].AccountRef != newRef {
+		t.Fatalf("List(codex) = %+v, want only %s", codexStates, newRef)
+	}
+	claudeStates, err := store.List(ctx, "claude")
+	if err != nil {
+		t.Fatalf("List(claude) error = %v", err)
+	}
+	if len(claudeStates) != 1 || claudeStates[0].AccountRef != testRef {
+		t.Fatalf("claude state should not be pruned: %+v", claudeStates)
+	}
+
+	if err := store.EnsureAccountRef(ctx, "bad-ref", "codex"); !errors.Is(err, accountcore.ErrInvalidAccountRef) {
+		t.Fatalf("EnsureAccountRef(bad-ref) = %v, want ErrInvalidAccountRef", err)
+	}
+	if err := store.EnsureAccountRef(ctx, newRef, " "); !errors.Is(err, ErrInvalidProvider) {
+		t.Fatalf("EnsureAccountRef(empty provider) = %v, want ErrInvalidProvider", err)
+	}
+	if _, err := store.PruneMissing(ctx, " ", nil); !errors.Is(err, ErrInvalidProvider) {
+		t.Fatalf("PruneMissing(empty provider) = %v, want ErrInvalidProvider", err)
+	}
+}

@@ -146,6 +146,9 @@ type webuiRouteDependencies struct {
 	SessionEventBus *sessionevents.Bus
 	// CodexHooks 为运行中的 Codex Hook 与通知桥接守护句柄（用于诊断状态查询）。
 	CodexHooks *codexHooksRuntime
+	// MetricsRecorder 与 StartedAt 为管理面监控提供实时指标与运行时长。
+	MetricsRecorder *metricsRecorder
+	StartedAt       time.Time
 	// UpgradeScheduler 与 WindowScheduler 由组合根统一启停托管。
 	UpgradeScheduler *providercliupgrade.Scheduler
 	WindowScheduler  *windowactivation.Scheduler
@@ -941,6 +944,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, schedulerRoutes...)
+	managementOpsRoutes, err := buildWebUIManagementOpsRoutesWithPorts(dependencies, webuiManagementOpsPorts{
+		Metrics:   newManagementMetricsPort(dependencies.MetricsRecorder),
+		StartedAt: dependencies.StartedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, managementOpsRoutes...)
 	return routes, nil
 }
 

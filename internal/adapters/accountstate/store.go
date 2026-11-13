@@ -342,6 +342,113 @@ func (store *Store) Upsert(ctx context.Context, input UpsertInput) (bool, error)
 	return true, nil
 }
 
+// EnsureAccountRef 确保 account_refs 台账里存在指定账号引用，避免 account_state
+// 写入时触发外键约束失败（对应 Node state-index 对新发现账号的台账登记）。
+func (store *Store) EnsureAccountRef(ctx context.Context, accountRef string, provider string) error {
+	if err := store.available(); err != nil {
+		return err
+	}
+	reference, err := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
+	if err != nil {
+		return err
+	}
+	normalizedProvider := normalizeProvider(provider)
+	if normalizedProvider == "" {
+		return ErrInvalidProvider
+	}
+	nowMS := store.nowMS()
+	if _, err := store.db.ExecContext(
+		ctx,
+		`INSERT INTO account_refs (account_ref, provider, created_at, updated_at)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(account_ref) DO UPDATE SET
+			provider = CASE WHEN excluded.provider <> '' THEN excluded.provider ELSE account_refs.provider END,
+			updated_at = excluded.updated_at`,
+		reference.String(),
+		normalizedProvider,
+		nowMS,
+		nowMS,
+	); err != nil {
+		return fmt.Errorf("写入 account_refs 台账失败: %w", err)
+	}
+	return nil
+}
+
+// PruneMissing 删除指定 Provider 下不再存在于 existingRefs 中的 account_state 行，
+// 语义与 Node account-state-index 的 pruneMissingRefs 一致。
+func (store *Store) PruneMissing(ctx context.Context, provider string, existingRefs []string) (int, error) {
+	if err := store.available(); err != nil {
+		return 0, err
+	}
+	normalizedProvider := normalizeProvider(provider)
+	if normalizedProvider == "" {
+		return 0, ErrInvalidProvider
+	}
+	keep := make(map[string]struct{}, len(existingRefs))
+	for _, raw := range existingRefs {
+		reference, err := accountcore.ParseAccountRef(strings.TrimSpace(raw))
+		if err != nil {
+			continue
+		}
+		keep[reference.String()] = struct{}{}
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("开启 account_state 清理事务失败: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	rows, err := tx.QueryContext(
+		ctx,
+		`SELECT account_ref FROM account_state WHERE provider = ?`,
+		normalizedProvider,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("查询待清理 account_state 失败: %w", err)
+	}
+	var toDelete []string
+	for rows.Next() {
+		var accountRef string
+		if scanErr := rows.Scan(&accountRef); scanErr != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("读取待清理 account_ref 失败: %w", scanErr)
+		}
+		trimmed := strings.TrimSpace(accountRef)
+		if _, ok := keep[trimmed]; !ok {
+			toDelete = append(toDelete, trimmed)
+		}
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		_ = rows.Close()
+		return 0, fmt.Errorf("遍历待清理 account_state 失败: %w", rowsErr)
+	}
+	if closeErr := rows.Close(); closeErr != nil {
+		return 0, fmt.Errorf("关闭 account_state 查询游标失败: %w", closeErr)
+	}
+	removed := 0
+	for _, accountRef := range toDelete {
+		res, delErr := tx.ExecContext(
+			ctx,
+			`DELETE FROM account_state WHERE provider = ? AND account_ref = ?`,
+			normalizedProvider,
+			accountRef,
+		)
+		if delErr != nil {
+			return 0, fmt.Errorf("删除过期 account_state 失败: %w", delErr)
+		}
+		affected, affErr := res.RowsAffected()
+		if affErr != nil {
+			return 0, fmt.Errorf("读取 account_state 删除结果失败: %w", affErr)
+		}
+		removed += int(affected)
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return 0, fmt.Errorf("提交 account_state 清理事务失败: %w", commitErr)
+	}
+	return removed, nil
+}
+
 func (store *Store) available() error {
 	if store == nil || store.db == nil {
 		return ErrUnavailable

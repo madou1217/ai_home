@@ -1692,6 +1692,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		SubAggregator:   subAggSvc,
 		SessionEventBus: sessionEventBus,
 		CodexHooks:      hooksRuntime,
+		MetricsRecorder: metrics,
+		StartedAt:       time.Now(),
 	}
 	schedulerPorts := webuiSchedulerPorts{
 		ClientKey:    clientKey,

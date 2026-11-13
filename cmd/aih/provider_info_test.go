@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	accountapp "github.com/madou1217/ai_home/application/accountprojection"
+
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
@@ -62,5 +64,24 @@ func TestPolicyNativeBaseUsesConfigRoot(t *testing.T) {
 	base := policyNativeBase("/tmp/projection", policy)
 	if base != filepath.Join("/tmp/projection", ".codebuddy-cn") {
 		t.Fatalf("base = %q", base)
+	}
+}
+
+// TestProviderHomePolicyCoversCodex codex 用 config_dir 策略；claude 没有投影策略。
+func TestProviderHomePolicyCoversCodex(t *testing.T) {
+	codexPolicy, ok := providerHomePolicy("codex")
+	if !ok || codexPolicy.Mode != accountapp.ModeConfigDir {
+		t.Fatalf("codex policy = %#v ok=%v", codexPolicy, ok)
+	}
+	if _, ok := providerHomePolicy("claude"); ok {
+		t.Fatal("claude 不应有 home 投影策略")
+	}
+}
+
+// TestArtifactPathTreatsEmptyBaseAsHome codex 策略的零值 Base 表示相对 HOME。
+func TestArtifactPathTreatsEmptyBaseAsHome(t *testing.T) {
+	path := artifactPath("/tmp/root", accountapp.Artifact{Path: []string{".codex", "auth.json"}})
+	if path != "/tmp/root/.codex/auth.json" {
+		t.Fatalf("artifact path = %q", path)
 	}
 }

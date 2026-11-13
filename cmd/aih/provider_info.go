@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/application/providerruntime"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -86,6 +87,17 @@ func runProviderVersion(
 	return nil
 }
 
+// providerHomePolicy 返回 home 诊断使用的投影策略：家族四支 + codex。
+func providerHomePolicy(providerID string) (accountapp.Policy, bool) {
+	if policy, ok := codebuddyfamilystorage.Policy(providerID); ok {
+		return policy, true
+	}
+	if providerID == "codex" {
+		return codexstorage.Policy(), true
+	}
+	return accountapp.Policy{}, false
+}
+
 // runProviderHome 打印家族账号的投影诊断：路径来自 Policy，避免 CLI 与投影
 // 各自维护一份目录事实。
 func runProviderHome(
@@ -106,7 +118,7 @@ func runProviderHome(
 	if err != nil {
 		return err
 	}
-	policy, ok := codebuddyfamilystorage.Policy(providerID)
+	policy, ok := providerHomePolicy(providerID)
 	if !ok {
 		return fmt.Errorf("%w: %s 没有投影策略", errInvalidCommand, providerID)
 	}
@@ -191,7 +203,8 @@ func environmentValue(root string, binding accountapp.EnvBinding) string {
 
 // artifactPath 计算 Home 基座认证产物的绝对路径。
 func artifactPath(root string, artifact accountapp.Artifact) string {
-	if artifact.Base != accountapp.ArtifactBaseHome {
+	// codex 策略未显式写 Base（零值即相对 HOME），家族策略写 ArtifactBaseHome。
+	if artifact.Base != "" && artifact.Base != accountapp.ArtifactBaseHome {
 		return ""
 	}
 	return filepath.Join(append([]string{root}, artifact.Path...)...)

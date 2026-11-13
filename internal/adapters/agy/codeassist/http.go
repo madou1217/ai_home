@@ -18,7 +18,23 @@ const (
 	defaultBaseURL  = "https://daily-cloudcode-pa.googleapis.com/v1internal"
 	clientSessionID = "00000000-0000-4000-8000-000000000000"
 	maxProjectBytes = 2 * 1024 * 1024
+
+	// antigravityClientBuild 是真实 agy CLI User-Agent 里的构建号。
+	// 服务端不校验它的具体值，保留只为与 CLI 的请求形态一致。
+	antigravityClientBuild = "1018951551"
 )
+
+// antigravityUserAgent 复刻 agy CLI 的客户端身份。
+//
+// 服务端按 User-Agent 区分客户端：`antigravity/<ver> darwin/arm64` 会被当成
+// Code Assist 客户端，fetchAvailableModels 只返回 19~23 个模型且不含 gemini-4；
+// 只有 `antigravity/cli/<ver> (aidev_client; ...)` 才返回 Antigravity 的完整
+// 目录（Ultra 账号 29 个模型，含 gemini-4 argon/carbon 的 low/medium/high）。
+func antigravityUserAgent() string {
+	return "antigravity/cli/" + clientversion.Detect() +
+		" (aidev_client; os_type=darwin; arch=arm64; cl=" + antigravityClientBuild +
+		"; auth_method=consumer)"
+}
 
 // GenerateContentURL 是 Code Assist 非流式 generateContent 的完整地址。
 //
@@ -99,7 +115,7 @@ func applyTokenHeaders(request *http.Request, accessToken string, claudeModel bo
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
 	version := clientversion.Detect()
-	request.Header.Set("User-Agent", "antigravity/"+version+" darwin/arm64")
+	request.Header.Set("User-Agent", antigravityUserAgent())
 	request.Header.Set("x-client-name", "antigravity")
 	request.Header.Set("x-client-version", version)
 	request.Header.Set("x-vscode-sessionid", clientSessionID)

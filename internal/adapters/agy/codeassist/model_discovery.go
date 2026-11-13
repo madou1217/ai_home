@@ -359,5 +359,8 @@ func validCatalogModelID(value string) bool {
 		!strings.HasPrefix(normalized, "tab_") &&
 		!strings.HasPrefix(normalized, "models/") &&
 		!strings.Contains(normalized, "placeholder") &&
-		!strings.Contains(normalized, "proactive-observer")
+		!strings.Contains(normalized, "proactive-observer") &&
+		// 上游对「模型存在但当前账号未获授权」的条目用 `-disabled` 后缀占位，
+		// 例如免费账号目录里的 gemini-4-argon-disabled。它不是可路由能力。
+		!strings.HasSuffix(normalized, "-disabled")
 }

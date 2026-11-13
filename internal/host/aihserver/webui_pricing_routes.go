@@ -42,6 +42,9 @@ func buildWebUIPricingRoutesWithPorts(
 
 	service := ports.Service
 	if service == nil {
+		service = dependencies.PricingService
+	}
+	if service == nil {
 		aiHome := strings.TrimSpace(dependencies.AIHomeDir)
 		hostHome := strings.TrimSpace(dependencies.HostHomeDir)
 		if aiHome == "" && hostHome != "" {

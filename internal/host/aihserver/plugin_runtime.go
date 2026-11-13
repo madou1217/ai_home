@@ -3,131 +3,26 @@ package aihserver
 import (
 	"context"
 	"net/http"
-	"strings"
 
-	plugincontrol "github.com/madou1217/ai_home/application/plugincontrol"
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
-	pluginstatereader "github.com/madou1217/ai_home/internal/adapters/plugincontrol"
-	"github.com/madou1217/ai_home/internal/adapters/plugincontrolclient"
 	adapterplugins "github.com/madou1217/ai_home/internal/adapters/pluginruntime"
-	"github.com/madou1217/ai_home/internal/adapters/pluginstatestore"
-	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
-	"github.com/madou1217/ai_home/internal/transport/http/plugincontrolapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
 )
 
-// pluginHandlers 是 Go 数据面的插件接入：Node 推送投影的管理接口与推理入口的 gateway.request 闸门。
-//
-// 没有任何投影时闸门对不带代次头的请求零开销直通；Node 只在 Go 确认了某代次后才带该代次转发。
+// pluginHandlers 是 Go 宿主持有的插件接入：本地宿主控制面、投影查询与推理入口的 gateway.request 闸门。
 type pluginHandlers struct {
 	gate       *pluginapi.RequestGate
 	projection http.Handler
-	// list 是只读插件清单：控制面事实来自 Node 的 app-state.db，运行态来自 projection。
+	// list 是只读插件清单：控制面事实来自 app-state.db，运行态来自 Go 本地宿主。
 	list http.Handler
-	// trust 是发布者信任根的读/写/撤销。信任根是文件型写面，写入口收敛到 Go；
-	// Node 的 install 校验仍直接读同一个文件，所以这里只改文件的写入方。
+	// trust 是发布者信任根的读/写/撤销。
 	trust http.Handler
-	// control 是插件安装/卸载。制品校验、状态 CAS 与文件清理都在 Go；
-	// 启用/停用仍由 Node 的 plugin runtime 负责。
+	// control 是插件安装/卸载与实例启停（全部由 Go 本地 pluginhost.Service 驱动）。
 	control  http.Handler
 	invoker  *adapterplugins.HostInvoker
 	observer *appplugins.Observer
-}
-
-// newPluginHandlers 组装插件接入；依赖无效时返回禁用状态（路由不包闸门、不挂管理接口），
-// 不让插件接入的问题拖垮整个 Go 数据面。Node 收不到投影确认时会把插件请求留在自己这边。
-func newPluginHandlers(
-	managementAuthorizer pluginapi.Authorizer,
-	clientAuthorizer pluginapi.Authorizer,
-	describe appplugins.AccountDescriber,
-	aiHomeDir string,
-	nodeBaseURL string,
-	managementKey func() string,
-) pluginHandlers {
-	registry := appplugins.NewRegistry()
-	invoker := adapterplugins.NewHostInvoker(registry)
-	observer := appplugins.NewObserver(invoker, registry, describe, 0)
-	gate, err := pluginapi.NewRequestGate(registry, invoker, clientAuthorizer, claudenativerelay.MaxRequestBodyBytes, observer)
-	if err != nil {
-		observer.Close()
-		return pluginHandlers{}
-	}
-	projection, err := pluginapi.NewProjectionHandler(managementAuthorizer, registry, invoker, observer)
-	if err != nil {
-		observer.Close()
-		return pluginHandlers{}
-	}
-	handlers := pluginHandlers{gate: gate, projection: projection, invoker: invoker, observer: observer}
-	// 只读清单依赖 Node 的 app-state.db。数据目录不可解析时只少挂这条路由，
-	// 投影推送与推理闸门照常工作——列表问题不能拖垮插件数据面。
-	if reader, err := pluginstatereader.NewReader(aiHomeDir); err == nil {
-		if list, err := pluginapi.NewInventoryHandler(managementAuthorizer, reader, registry); err == nil {
-			handlers.list = list
-		}
-	}
-	// 信任根接口与清单一样只依赖管理密钥和数据目录；数据目录不可用时只少挂这三条路由。
-	if trust, err := webuiplugintrustapi.NewHandler(webuiplugintrustapi.Dependencies{
-		Authorizer: managementAuthorizer,
-		AIHomeDir:  aiHomeDir,
-	}); err == nil {
-		handlers.trust = trust
-	}
-	handlers.control = newPluginControlHandler(managementAuthorizer, aiHomeDir, nodeBaseURL, managementKey)
-	return handlers
-}
-
-// newPluginControlHandler 组装安装/卸载与实例启停管理接口。
-//
-// 依赖不完整时只少挂对应路由（返回 404 而不是永远 500）；Node 代理拿不到
-// 路由时会把错误留给调用方，不会回落到本地安装/启停——回落会让状态写入方分叉。
-func newPluginControlHandler(
-	authorizer pluginapi.Authorizer,
-	aiHomeDir string,
-	nodeBaseURL string,
-	managementKey func() string,
-) http.Handler {
-	if authorizer == nil || len(aiHomeDir) == 0 {
-		return nil
-	}
-	acceptor, err := pluginartifact.NewAcceptor(aiHomeDir)
-	if err != nil {
-		return nil
-	}
-	store, err := pluginstatestore.NewStore(aiHomeDir)
-	if err != nil {
-		return nil
-	}
-	installer, err := plugincontrol.NewInstaller(aiHomeDir, acceptor, store)
-	if err != nil {
-		return nil
-	}
-	dependencies := plugincontrolapi.Dependencies{
-		Authorizer: authorizer,
-		Installer:  installer,
-		Committer:  store,
-	}
-	// 实例启停入口需要回调 Node 的内部发布协议；Node 地址缺失时只少挂这两条路由。
-	if strings.TrimSpace(nodeBaseURL) != "" && managementKey != nil {
-		client, clientErr := plugincontrolclient.New(plugincontrolclient.Options{
-			BaseURL:       nodeBaseURL,
-			ManagementKey: managementKey,
-		})
-		if clientErr == nil {
-			operator, operatorErr := plugincontrol.NewInstanceOperator(store, store, client)
-			if operatorErr == nil {
-				dependencies.Operator = operator
-			}
-		}
-	}
-	handler, err := plugincontrolapi.NewHandler(dependencies)
-	if err != nil {
-		return nil
-	}
-	return handler
 }
 
 // accountProviderResolver 用无敏感的账号管理投影描述账号：Provider（观察事件）与认证形态（账号偏好候选）。

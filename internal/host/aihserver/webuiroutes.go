@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
@@ -146,6 +147,8 @@ type webuiRouteDependencies struct {
 	SessionEventBus *sessionevents.Bus
 	// CodexHooks 为运行中的 Codex Hook 与通知桥接守护句柄（用于诊断状态查询）。
 	CodexHooks *codexHooksRuntime
+	// PricingService 由插件宿主与后台定价刷新共享。
+	PricingService *pricingcatalog.Service
 	// MetricsRecorder 与 StartedAt 为管理面监控提供实时指标与运行时长。
 	MetricsRecorder *metricsRecorder
 	StartedAt       time.Time

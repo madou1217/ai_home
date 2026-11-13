@@ -71,6 +71,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
@@ -475,6 +476,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var housekeepingDaemons *HousekeepingDaemons
 	var upgradeScheduler *providercliupgrade.Scheduler
 	var windowScheduler *windowactivation.Scheduler
+	var pluginBundle *localPluginRuntimeBundle
 	defer func() {
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
@@ -496,6 +498,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && windowScheduler != nil {
 			_ = windowScheduler.Close()
+		}
+		if resultErr != nil && pluginBundle != nil {
+			_ = pluginBundle.Close()
 		}
 	}()
 	registrar, err := accountapp.NewRegistrar(
@@ -1663,6 +1668,25 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		nativeHTTP: codexHTTPHandler,
 	})
 	windowProbeMux.Handle(openaichatcompletionsapi.Path, familyRelayHandler)
+	bundle := newLocalPluginHandlers(localPluginHandlerOptions{
+		ManagementAuthorizer: authorizer,
+		ClientAuthorizer:     clientAuthorizer,
+		Describe:             accountProviderResolver(store),
+		AIHomeDir:            aiHomeDir,
+		OnLog: func(message string) {
+			if errorLog != nil && strings.TrimSpace(message) != "" {
+				errorLog.Println(message)
+			}
+		},
+	})
+	pluginBundle = &bundle
+	var sharedPricingService *pricingcatalog.Service
+	if pluginBundle.HostService != nil {
+		sharedPricingService = pluginBundle.HostService.PricingService()
+		if err := pluginBundle.HostService.Start(ctx); err != nil && errorLog != nil {
+			errorLog.Printf("插件宿主初始激活降级: %v", err)
+		}
+	}
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:       authorizer,
 		AIHomeDir:        aiHomeDir,
@@ -1692,6 +1716,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		SubAggregator:   subAggSvc,
 		SessionEventBus: sessionEventBus,
 		CodexHooks:      hooksRuntime,
+		PricingService:  sharedPricingService,
 		MetricsRecorder: metrics,
 		StartedAt:       time.Now(),
 	}
@@ -1945,9 +1970,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
-	plugins := newPluginHandlers(authorizer, clientAuthorizer, accountProviderResolver(store), aiHomeDir, nodeBaseURL, managementKey)
 	return serverHandlers{
-		plugins:               plugins,
+		plugins:               pluginBundle.Handlers,
 		accounts:              accountsHandler,
 		accountAuth:           accountAuthHandler,
 		clientProps:           clientPropsHandler,
@@ -1997,7 +2021,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 	}, func() []io.Closer {
 		closers := []io.Closer{
-			plugins,
 			modelSweepWorker,
 			initialModelRecoveryWorker,
 			webSocketHandler,
@@ -2022,6 +2045,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if windowScheduler != nil {
 			closers = append(closers, windowScheduler)
+		}
+		if pluginBundle != nil {
+			closers = append(closers, pluginBundle)
 		}
 		return closers
 	}(), nil

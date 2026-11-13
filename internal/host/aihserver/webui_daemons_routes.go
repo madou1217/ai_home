@@ -183,6 +183,9 @@ func startBackgroundDaemonsWithPorts(
 	}
 
 	pricingSvc := ports.PricingService
+	if pricingSvc == nil {
+		pricingSvc = dependencies.PricingService
+	}
 	if pricingSvc == nil && !ports.DisablePricingSync && aiHomeDir != "" {
 		if store, storeErr := pricingcatalog.NewStore(aiHomeDir); storeErr == nil {
 			httpClient := ports.PricingHTTPClient

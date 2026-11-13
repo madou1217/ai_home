@@ -1,12 +1,14 @@
 package webuiaccountimportapi
 
 import (
+	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
@@ -19,57 +21,84 @@ type denyAll struct{}
 
 func (denyAll) Authorized(*http.Request) bool { return false }
 
-// recordingImport 记录转发进来的请求，并按配置写出响应。
-type recordingImport struct {
-	calls  int
-	method string
-	path   string
-	uri    string
-	body   string
-
-	status      int
-	contentType string
-	payload     string
+// fakeImporter 按配置返回导入结果，并记录收到的条目。
+type fakeImporter struct {
+	mu      sync.Mutex
+	results []accountsapi.AihAccountsImportResult
+	calls   [][]accountsapi.AihAccountsImportEntry
+	// gate 非空时阻塞到关闭，用来制造「活动作业」的时间窗口。
+	gate chan struct{}
 }
 
-func (endpoint *recordingImport) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	endpoint.calls++
-	endpoint.method = request.Method
-	endpoint.path = request.URL.Path
-	endpoint.uri = request.RequestURI
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		return
+func (importer *fakeImporter) ImportAihAccounts(
+	_ context.Context,
+	entries []accountsapi.AihAccountsImportEntry,
+) accountsapi.AihAccountsImportResult {
+	if importer.gate != nil {
+		<-importer.gate
 	}
-	endpoint.body = string(body)
-	if endpoint.contentType != "" {
-		response.Header().Set("Content-Type", endpoint.contentType)
+	importer.mu.Lock()
+	defer importer.mu.Unlock()
+	importer.calls = append(importer.calls, entries)
+	if len(importer.results) == 0 {
+		return emptyResult(len(entries))
 	}
-	status := endpoint.status
-	if status == 0 {
-		status = http.StatusOK
-	}
-	response.WriteHeader(status)
-	_, _ = response.Write([]byte(endpoint.payload))
+	result := importer.results[0]
+	importer.results = importer.results[1:]
+	return result
 }
 
-func mustHandler(t *testing.T, dependencies Dependencies) *Handler {
+func emptyResult(total int) accountsapi.AihAccountsImportResult {
+	return accountsapi.AihAccountsImportResult{
+		Summary: map[string]int{
+			"total": total, "created": 0, "updated": 0, "failed": 0, "skipped": 0,
+		},
+		Accounts: []accountsapi.AihAccountImportOutcome{},
+	}
+}
+
+// recordingPublisher 把广播帧塞进 channel，测试据此等待终态。
+type recordingPublisher struct {
+	mu     sync.Mutex
+	frames []any
+	events chan any
+}
+
+func newRecordingPublisher() *recordingPublisher {
+	return &recordingPublisher{events: make(chan any, 32)}
+}
+
+func (publisher *recordingPublisher) Publish(payload any) {
+	publisher.mu.Lock()
+	publisher.frames = append(publisher.frames, payload)
+	publisher.mu.Unlock()
+	select {
+	case publisher.events <- payload:
+	default:
+	}
+}
+
+// waitForStatus 读广播直到出现目标状态的作业帧。
+func (publisher *recordingPublisher) waitForStatus(t *testing.T, status string) importJobView {
 	t.Helper()
-	handler, err := NewHandler(dependencies)
-	if err != nil {
-		t.Fatal(err)
+	for range 16 {
+		select {
+		case frame := <-publisher.events:
+			event, ok := frame.(importJobEvent)
+			if ok && event.Job.Status == status {
+				return event.Job
+			}
+		case <-timeoutAfter(t):
+			t.Fatalf("等待作业状态 %s 超时", status)
+		}
 	}
-	return handler
+	t.Fatalf("没有等到作业状态 %s", status)
+	return importJobView{}
 }
 
-func decodeError(t *testing.T, recorder *httptest.ResponseRecorder) errorResponse {
+func timeoutAfter(t *testing.T) <-chan time.Time {
 	t.Helper()
-	var body errorResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("响应不是错误 envelope: %v (%s)", err, recorder.Body.String())
-	}
-	return body
+	return time.After(5 * time.Second)
 }
 
 func TestNewHandlerRejectsMissingDependencies(t *testing.T) {
@@ -77,8 +106,9 @@ func TestNewHandlerRejectsMissingDependencies(t *testing.T) {
 		name         string
 		dependencies Dependencies
 	}{
-		{name: "缺少鉴权", dependencies: Dependencies{Import: &recordingImport{}}},
-		{name: "缺少导入端点", dependencies: Dependencies{Authorizer: allowAll{}}},
+		{name: "缺少鉴权", dependencies: Dependencies{Importer: &fakeImporter{}, Publisher: newRecordingPublisher()}},
+		{name: "缺少导入端口", dependencies: Dependencies{Authorizer: allowAll{}, Publisher: newRecordingPublisher()}},
+		{name: "缺少事件发布", dependencies: Dependencies{Authorizer: allowAll{}, Importer: &fakeImporter{}}},
 		{name: "全缺", dependencies: Dependencies{}},
 	}
 	for _, testCase := range cases {
@@ -91,144 +121,271 @@ func TestNewHandlerRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-func TestServeHTTPFailsClosedWithoutEndpoint(t *testing.T) {
-	var handler *Handler
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader("{}")))
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("期望 503，得到 %d", recorder.Code)
-	}
-	body := decodeError(t, recorder)
-	if body.OK || body.Error.Code != "webui_accounts_import_unavailable" {
-		t.Fatalf("错误 envelope 不符: %+v", body)
-	}
-
-	// 依赖被绕过（零值字段）时同样失败关闭，不能因为 authorizer 为 nil 就放行。
-	zero := &Handler{}
-	recorder = httptest.NewRecorder()
-	zero.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader("{}")))
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("零值 Handler 期望 503，得到 %d", recorder.Code)
-	}
-}
-
 func TestServeHTTPRequiresAuthorization(t *testing.T) {
-	endpoint := &recordingImport{}
-	handler := mustHandler(t, Dependencies{Authorizer: denyAll{}, Import: endpoint})
+	handler := mustHandler(t, Dependencies{
+		Authorizer: denyAll{}, Importer: &fakeImporter{}, Publisher: newRecordingPublisher(),
+	})
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader("{}")))
-
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("期望 401，得到 %d", recorder.Code)
 	}
-	if got := recorder.Header().Get("WWW-Authenticate"); got != "Bearer" {
-		t.Fatalf("WWW-Authenticate = %q", got)
-	}
-	if endpoint.calls != 0 {
-		t.Fatalf("未鉴权时不应转发，实际调用 %d 次", endpoint.calls)
-	}
-	if body := decodeError(t, recorder); body.Error.Code != "unauthorized" {
-		t.Fatalf("错误码 = %q", body.Error.Code)
-	}
 }
 
-func TestServeHTTPRejectsNonPost(t *testing.T) {
-	endpoint := &recordingImport{}
-	handler := mustHandler(t, Dependencies{Authorizer: allowAll{}, Import: endpoint})
+func TestStartJobImportsDocumentsAndPublishesTerminalFrame(t *testing.T) {
+	importer := &fakeImporter{results: []accountsapi.AihAccountsImportResult{{
+		Summary: map[string]int{"total": 2, "created": 1, "updated": 1, "failed": 0, "skipped": 0},
+		Accounts: []accountsapi.AihAccountImportOutcome{
+			{Provider: "codex", AccountRef: "acct_new", Status: "created"},
+			{Provider: "claude", AccountRef: "acct_old", Status: "updated"},
+			{Provider: "codex", AccountRef: "acct_dup", Status: "unchanged"},
+		},
+	}}}
+	publisher := newRecordingPublisher()
+	handler := mustHandler(t, Dependencies{
+		Authorizer: allowAll{}, Importer: importer, Publisher: publisher,
+	})
+
+	document := `{"kind":"aih-accounts","version":1,"accounts":[{"provider":"codex","accountRef":"acct_new","env":{"OPENAI_API_KEY":"sk-test"}}]}`
+	body, err := json.Marshal(map[string]any{
+		"files": []map[string]string{{"name": "accounts.json", "content": document}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path, nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(string(body))))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("期望 202，得到 %d：%s", recorder.Code, recorder.Body.String())
+	}
+	var started startJobResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	if !started.OK || started.JobID == "" || started.Status != jobStatusQueued {
+		t.Fatalf("创建响应不符合契约: %s", recorder.Body.String())
+	}
 
-	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("期望 405，得到 %d", recorder.Code)
+	view := publisher.waitForStatus(t, jobStatusSucceeded)
+	if view.ID != started.JobID {
+		t.Fatalf("终态作业 id = %q，期望 %q", view.ID, started.JobID)
 	}
-	if got := recorder.Header().Get("Allow"); got != http.MethodPost {
-		t.Fatalf("Allow = %q", got)
+	if view.Summary.Imported != 2 || view.Summary.Created != 1 || view.Summary.Updated != 1 {
+		t.Fatalf("summary = %+v", view.Summary)
 	}
-	if endpoint.calls != 0 {
-		t.Fatalf("方法不符时不应转发，实际调用 %d 次", endpoint.calls)
+	if len(view.Summary.Accounts) != 2 {
+		t.Fatalf("只应记录 created/updated：%+v", view.Summary.Accounts)
 	}
-}
+	if len(view.Summary.Providers) != 2 || view.Summary.Providers[0] != "claude" {
+		t.Fatalf("providers 应去重并排序: %+v", view.Summary.Providers)
+	}
+	if view.FinishedAt == nil || view.Progress == nil || view.Progress.Percent != 100 {
+		t.Fatalf("终态字段缺失: %+v", view)
+	}
+	if !strings.Contains(view.Logs, "导入完成：写入 2，失败 0。") {
+		t.Fatalf("完成日志缺失: %q", view.Logs)
+	}
+	if view.Result == nil || len(view.Result.SourceResults) != 1 ||
+		view.Result.SourceResults[0]["source"] != "accounts.json" {
+		t.Fatalf("逐来源结果不符合契约: %+v", view.Result)
+	}
 
-func TestServeHTTPForwardsToAihAccountsImport(t *testing.T) {
-	endpoint := &recordingImport{status: http.StatusOK, payload: "{}"}
-	handler := mustHandler(t, Dependencies{Authorizer: allowAll{}, Import: endpoint})
-	document := `{"kind":"aih-accounts","version":1,"accounts":[]}`
-	request := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(document))
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	if endpoint.calls != 1 {
-		t.Fatalf("转发次数 = %d", endpoint.calls)
-	}
-	if endpoint.path != accountsapi.NativeImportPath+"/aih-accounts" {
-		t.Fatalf("上游路径 = %q", endpoint.path)
-	}
-	if endpoint.method != http.MethodPost {
-		t.Fatalf("上游方法 = %q", endpoint.method)
-	}
-	if endpoint.uri != "" {
-		t.Fatalf("转发时 RequestURI 应为空，得到 %q", endpoint.uri)
-	}
-	if endpoint.body != document {
-		t.Fatalf("请求体未原样转发: %q", endpoint.body)
-	}
-	// 入站请求本身不能被改写：中间件与访问日志读到的仍是 WebUI 路径。
-	if request.URL.Path != Path {
-		t.Fatalf("入站 URL 被改写为 %q", request.URL.Path)
-	}
-}
-
-// TestServeHTTPReturnsPerAccountResults 固定复用端点的逐账号结果形状：
-// Node 依赖 summary 计数与 accounts[].status 判断是否写入成功。
-func TestServeHTTPReturnsPerAccountResults(t *testing.T) {
-	payload := `{"ok":false,"summary":{"total":2,"created":1,"updated":0,"failed":1,"skipped":0},"accounts":[{"provider":"codex","accountRef":"codex:abc","status":"created"},{"provider":"claude","accountRef":"","status":"failed","reason":"credential_shape_unsupported"}]}`
-	endpoint := &recordingImport{
-		status:      http.StatusOK,
-		contentType: "application/json; charset=utf-8",
-		payload:     payload,
-	}
-	handler := mustHandler(t, Dependencies{Authorizer: allowAll{}, Import: endpoint})
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader("{}")))
-
+	// GET 作业：快照与广播一致。
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"/jobs/"+started.JobID, nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("期望 200，得到 %d", recorder.Code)
 	}
-	if got := recorder.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
-		t.Fatalf("Content-Type = %q", got)
+	var fetched jobResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &fetched); err != nil {
+		t.Fatal(err)
 	}
-	if recorder.Body.String() != payload {
-		t.Fatalf("响应体被改写:\n%s", recorder.Body.String())
-	}
-	var result struct {
-		OK       bool             `json:"ok"`
-		Summary  map[string]int   `json:"summary"`
-		Accounts []map[string]any `json:"accounts"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
-		t.Fatalf("响应不是逐账号结果: %v", err)
-	}
-	if result.OK || result.Summary["failed"] != 1 || len(result.Accounts) != 2 {
-		t.Fatalf("逐账号结果不符: %+v", result)
-	}
-	if result.Accounts[1]["reason"] != "credential_shape_unsupported" {
-		t.Fatalf("失败原因未透传: %+v", result.Accounts[1])
+	if fetched.Job.ID != started.JobID || fetched.Job.Status != jobStatusSucceeded {
+		t.Fatalf("查询结果不一致: %+v", fetched.Job)
 	}
 }
 
-// TestServeHTTPPassesThroughDocumentErrors 保证文档级拒绝（非 aih-accounts v1）
-// 由导入端点决定，适配层不改写状态码与错误码。
-func TestServeHTTPPassesThroughDocumentErrors(t *testing.T) {
-	payload := `{"ok":false,"error":{"code":"unsupported_import_document","message":"仅支持 aih-accounts v1"}}`
-	endpoint := &recordingImport{status: http.StatusBadRequest, payload: payload}
-	handler := mustHandler(t, Dependencies{Authorizer: allowAll{}, Import: endpoint})
+func TestStartJobRejectsInvalidJSON(t *testing.T) {
+	handler := mustHandler(t, Dependencies{
+		Authorizer: allowAll{}, Importer: &fakeImporter{}, Publisher: newRecordingPublisher(),
+	})
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(`{"kind":"other"}`)))
-
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader("{not json")))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("期望 400，得到 %d", recorder.Code)
 	}
-	if recorder.Body.String() != payload {
-		t.Fatalf("错误体被改写: %s", recorder.Body.String())
+	if !strings.Contains(recorder.Body.String(), "invalid_import_data") {
+		t.Fatalf("错误码不符合契约: %s", recorder.Body.String())
 	}
+}
+
+func TestStartJobReportsActiveJob(t *testing.T) {
+	gate := make(chan struct{})
+	importer := &fakeImporter{gate: gate}
+	publisher := newRecordingPublisher()
+	handler := mustHandler(t, Dependencies{
+		Authorizer: allowAll{}, Importer: importer, Publisher: publisher,
+	})
+	document := `[{"provider":"codex","env":{"OPENAI_API_KEY":"sk-test"}}]`
+	body, err := json.Marshal(map[string]string{"content": document})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(string(body))))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("期望 202，得到 %d：%s", recorder.Code, recorder.Body.String())
+	}
+	var started startJobResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	publisher.waitForStatus(t, jobStatusRunning)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(string(body))))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("期望 409，得到 %d：%s", recorder.Code, recorder.Body.String())
+	}
+	var conflict activeJobResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &conflict); err != nil {
+		t.Fatal(err)
+	}
+	if conflict.Error != "import_job_already_running" || conflict.JobID != started.JobID {
+		t.Fatalf("冲突响应不符合契约: %s", recorder.Body.String())
+	}
+	close(gate)
+	publisher.waitForStatus(t, jobStatusSucceeded)
+}
+
+func TestGetJobNotFound(t *testing.T) {
+	handler := mustHandler(t, Dependencies{
+		Authorizer: allowAll{}, Importer: &fakeImporter{}, Publisher: newRecordingPublisher(),
+	})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"/jobs/missing", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "job_not_found") {
+		t.Fatalf("错误码不符合契约: %s", recorder.Body.String())
+	}
+}
+
+func TestParseImportDocumentRecognizesOnlyNativeShapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		code    string
+		count   int
+	}{
+		{
+			name:    "文档",
+			content: `{"kind":"aih-accounts","version":1,"accounts":[{"provider":"codex","env":{"OPENAI_API_KEY":"k"}}]}`,
+			count:   1,
+		},
+		{
+			name:    "字符串版本号",
+			content: `{"kind":"aih-accounts","version":"1","accounts":[]}`,
+			count:   0,
+		},
+		{
+			name:    "单账号",
+			content: `{"provider":"claude","nativeAuth":{"credentials":{}}}`,
+			count:   1,
+		},
+		{
+			name:    "账号数组",
+			content: `[{"provider":"codex","env":{}},{"provider":"claude","env":{}}]`,
+			count:   2,
+		},
+		{name: "坏 JSON", content: "{", code: importErrorInvalidJSON},
+		{name: "其它格式", content: `{"accounts":[]}`, code: importErrorUnsupportedShape},
+		{name: "数组里有别的东西", content: `[{"provider":"codex"}]`, code: importErrorUnsupportedShape},
+		{
+			name:    "版本不支持",
+			content: `{"kind":"aih-accounts","version":2,"accounts":[]}`,
+			code:    importErrorUnsupportedDoc,
+		},
+		{
+			name:    "accounts 不是数组",
+			content: `{"kind":"aih-accounts","version":1,"accounts":{}}`,
+			code:    importErrorInvalidDocument,
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			entries, code := parseImportDocument(testCase.content)
+			if code != testCase.code {
+				t.Fatalf("错误码 = %q，期望 %q", code, testCase.code)
+			}
+			if len(entries) != testCase.count {
+				t.Fatalf("条目数 = %d，期望 %d", len(entries), testCase.count)
+			}
+		})
+	}
+}
+
+func TestCollectDocumentsAcceptsUploadsAndPaste(t *testing.T) {
+	paste := importPayload{Content: "  " + `{"provider":"codex","env":{}}` + "  "}
+	documents := paste.collectDocuments()
+	if len(documents) != 1 || documents[0].Name != pasteSourceName {
+		t.Fatalf("粘贴内容应折叠成一个来源: %+v", documents)
+	}
+	if strings.HasPrefix(documents[0].Content, " ") {
+		t.Fatalf("粘贴内容应去掉首尾空白: %q", documents[0].Content)
+	}
+
+	encoded := "eyJwcm92aWRlciI6ImNvZGV4IiwiZW52Ijp7fX0=" // {"provider":"codex","env":{}}
+	files, err := json.Marshal(map[string]any{"files": []map[string]string{
+		{"name": "data:text/plain,accounts.json", "contentBase64": "data:application/json;base64," + encoded},
+		{"name": "notes.md", "contentBase64": encoded},
+		{"name": "empty.txt", "content": ""},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload importPayload
+	if err := json.Unmarshal(files, &payload); err != nil {
+		t.Fatal(err)
+	}
+	documents = payload.collectDocuments()
+	if len(documents) != 1 || documents[0].Name != "data:text/plain,accounts.json" {
+		t.Fatalf("只应保留 .json/.txt 且非空的文件: %+v", documents)
+	}
+	if !strings.Contains(documents[0].Content, `"provider":"codex"`) {
+		t.Fatalf("base64 未正确解码: %q", documents[0].Content)
+	}
+
+	if documents := (importPayload{}).collectDocuments(); len(documents) != 0 {
+		t.Fatalf("空负载不应产生来源: %+v", documents)
+	}
+}
+
+func TestJobFailsWithoutContent(t *testing.T) {
+	publisher := newRecordingPublisher()
+	handler := mustHandler(t, Dependencies{
+		Authorizer: allowAll{}, Importer: &fakeImporter{}, Publisher: publisher,
+	})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, strings.NewReader(`{"mode":"upload"}`)))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("期望 202，得到 %d", recorder.Code)
+	}
+	view := publisher.waitForStatus(t, jobStatusFailed)
+	if view.Error != importErrorMissingContent {
+		t.Fatalf("失败原因 = %q，期望 %q", view.Error, importErrorMissingContent)
+	}
+	if !strings.Contains(view.Logs, "导入失败："+importErrorMissingContent) {
+		t.Fatalf("失败日志缺失: %q", view.Logs)
+	}
+}
+
+func mustHandler(t *testing.T, dependencies Dependencies) *Handler {
+	t.Helper()
+	handler, err := NewHandler(dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return handler
 }

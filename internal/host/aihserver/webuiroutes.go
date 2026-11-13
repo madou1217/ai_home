@@ -98,8 +98,12 @@ type webuiRouteDependencies struct {
 	AccountRuntime  any
 	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
 	AuthJobs *accountauth.Service
-	// AccountsHandler 是 accountsapi 的账号导入端点（WebUI import 直接复用）。
-	AccountsHandler http.Handler
+	// AccountsHandler 是 accountsapi 的账号端点：HTTP 分发之外还提供导入作业需要的
+	// 逐条导入用例（ImportAihAccounts），两条入口共用同一份导入语义。
+	AccountsHandler interface {
+		http.Handler
+		webuiaccountimportapi.DocumentImporter
+	}
 	// AccountRows 是账号页读模型数据源（watch 快照与列表共用同一份行）。
 	AccountRows webuiaccountsapi.Source
 	// CredentialEditor 是静态凭据编辑用例（update 路由复用）。
@@ -398,12 +402,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 写入接口失败: %w", err)
 	}
-	accountImport, err := webuiaccountimportapi.NewHandler(webuiaccountimportapi.Dependencies{
-		Authorizer: authorizer, Import: dependencies.AccountsHandler,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建账号导入接口失败: %w", err)
-	}
 	accountStatus, err := webuiaccountstatusapi.NewHandler(webuiaccountstatusapi.Dependencies{
 		Authorizer: authorizer, Accounts: dependencies.Store,
 	})
@@ -635,6 +633,17 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建账号实时视图接口失败: %w", liveErr)
 	}
 
+	// 账号导入作业：状态机、上传解码、文档解析与逐条导入都在 Go。事件走同一条
+	// 账号 watch 流（import-job 帧），Node 只保留 POST/GET 的协议外壳。
+	accountImport, importErr := webuiaccountimportapi.NewHandler(webuiaccountimportapi.Dependencies{
+		Authorizer: authorizer,
+		Importer:   dependencies.AccountsHandler,
+		Publisher:  accountLive,
+	})
+	if importErr != nil {
+		return nil, fmt.Errorf("创建账号导入作业接口失败: %w", importErr)
+	}
+
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
 		{Pattern: "POST " + webuiaccountliveapi.SnapshotPath, Handler: accountLive},
@@ -689,6 +698,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "PUT " + webuisshwriteapi.ItemPath, Handler: sshWrite},
 		{Pattern: "DELETE " + webuisshwriteapi.ItemPath, Handler: sshWrite},
 		{Pattern: "POST " + webuiaccountimportapi.Path, Handler: accountImport},
+		{Pattern: "GET " + webuiaccountimportapi.Path + webuiaccountimportapi.JobsSuffix, Handler: accountImport},
 		{Pattern: "POST " + webuiaccountstatusapi.Path + webuiaccountstatusapi.RouteSuffix, Handler: accountStatus},
 		{Pattern: "DELETE " + webuiaccountdeleteapi.Path + webuiaccountdeleteapi.DeleteSuffix, Handler: accountDelete},
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},

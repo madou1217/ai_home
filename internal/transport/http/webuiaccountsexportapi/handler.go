@@ -21,8 +21,9 @@ import (
 //	GET /v1/management/webui/accounts/export?provider=&accountRef=
 const Path = "/v1/management/webui/accounts/export"
 
-// FileName 是下载附件名；与 CLI 入口同名，导入端不需要按入口分支。
-const FileName = "aih-accounts.json"
+// fileNameDayLayout 是附件名里的日期格式；与 Node 的 toISOString().slice(0, 10)
+// 一致（UTC 日期）。
+const fileNameDayLayout = "2006-01-02"
 
 // ErrInvalidDependencies 表示 Handler 缺少鉴权策略或导出数据源。
 var ErrInvalidDependencies = errors.New("账号导出接口依赖无效")
@@ -109,19 +110,20 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusNotFound, "account_not_found", "账号不存在")
 		return
 	}
+	accounts, decoded := decodeExportedAccounts(result.Document)
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
-	response.Header().Set("Content-Disposition", `attachment; filename="`+FileName+`"`)
+	// 附件名沿用 Node 入口的规则（单账号 / 单 Provider / 全部）：浏览器把
+	// Content-Disposition 里的名字直接当成下载文件名，Node 只透传这个头。
+	response.Header().Set("Content-Disposition", `attachment; filename="`+exportFileName(query, accounts)+`"`)
 	response.Header().Set("X-AIH-Exported-Accounts", strconv.Itoa(result.Exported))
 	response.Header().Set("X-AIH-Skipped-Accounts", strconv.Itoa(result.Skipped))
 	// node-only 只在数据可解释时给出：过滤会移出集合成员、跳过的账号也不在文档里，
 	// 两种情况都会把已存在的 Go 账号误算成 Node-only，宁可不发也不发错数。
-	if links := handler.resolverLinks(); links != nil &&
+	if links := handler.resolverLinks(); links != nil && decoded &&
 		!query.hasProviders && !query.hasRefs && result.Skipped == 0 {
-		if count, ok := nodeOnlyAccounts(links, result.Document); ok {
-			response.Header().Set(NodeOnlyAccountsHeader, strconv.Itoa(count))
-		}
+		response.Header().Set(NodeOnlyAccountsHeader, strconv.Itoa(nodeOnlyAccounts(links, accounts)))
 	}
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(result.Document)

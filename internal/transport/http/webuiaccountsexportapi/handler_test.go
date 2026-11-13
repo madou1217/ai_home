@@ -201,7 +201,7 @@ func TestExportWritesAttachmentForEveryAccount(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if disposition := recorder.Header().Get("Content-Disposition"); disposition != `attachment; filename="`+FileName+`"` {
+	if disposition := recorder.Header().Get("Content-Disposition"); disposition != `attachment; filename="`+expectedExportFileName("aih-accounts")+`"` {
 		t.Fatalf("Content-Disposition = %q", disposition)
 	}
 	if exported := recorder.Header().Get("X-AIH-Exported-Accounts"); exported != "3" {
@@ -214,6 +214,36 @@ func TestExportWritesAttachmentForEveryAccount(t *testing.T) {
 	accounts, ok := document["accounts"].([]any)
 	if !ok || len(accounts) != 3 {
 		t.Fatalf("accounts = %#v", document["accounts"])
+	}
+}
+
+// expectedExportFileName 按日期规则拼出通用附件名（UTC 日期与 Node 实现一致）。
+func expectedExportFileName(prefix string) string {
+	return prefix + "-" + time.Now().UTC().Format(fileNameDayLayout) + ".json"
+}
+
+func TestExportNamesAttachmentByScope(t *testing.T) {
+	fixture := newFixture(t, 3)
+	handler := newTestHandler(t, fixture)
+	target := fixture.accounts[1].Ref().String()
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"?accountRef="+target, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	want := `attachment; filename="aih-account-codex-` + target + `-` + time.Now().UTC().Format(fileNameDayLayout) + `.json"`
+	if disposition := recorder.Header().Get("Content-Disposition"); disposition != want {
+		t.Fatalf("单账号 Content-Disposition = %q，期望 %q", disposition, want)
+	}
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"?provider=codex", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	if disposition := recorder.Header().Get("Content-Disposition"); disposition != `attachment; filename="`+expectedExportFileName("aih-accounts-codex")+`"` {
+		t.Fatalf("单 Provider Content-Disposition = %q", disposition)
 	}
 }
 

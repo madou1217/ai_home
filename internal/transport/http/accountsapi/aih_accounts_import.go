@@ -10,16 +10,20 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 )
 
-// aihAccountsImportDocument 是 WebUI/CLI 的 aih-accounts v1 迁移文档。
-type aihAccountsImportDocument struct {
+// AihAccountsImportDocument 是 WebUI/CLI 的 aih-accounts v1 迁移文档。
+type AihAccountsImportDocument struct {
 	Kind       string                   `json:"kind"`
 	Version    int                      `json:"version"`
 	ExportedAt string                   `json:"exportedAt"`
 	Source     map[string]string        `json:"source"`
-	Accounts   []aihAccountsImportEntry `json:"accounts"`
+	Accounts   []AihAccountsImportEntry `json:"accounts"`
 }
 
-type aihAccountsImportEntry struct {
+// AihAccountsImportEntry 是文档里的单条账号记录。
+//
+// 导出、CLI 管理面导入与 WebUI 导入作业共用同一份形状：env 承载静态凭据，
+// nativeAuth 承载 Provider 官方 artifact，两者都为空时该条目不可导入。
+type AihAccountsImportEntry struct {
 	Provider     string            `json:"provider"`
 	AccountRef   string            `json:"accountRef"`
 	CLIAccountID string            `json:"cliAccountId"`
@@ -28,7 +32,8 @@ type aihAccountsImportEntry struct {
 	NativeAuth   json.RawMessage   `json:"nativeAuth"`
 }
 
-type aihAccountImportOutcome struct {
+// AihAccountImportOutcome 是单条账号的导入结论。
+type AihAccountImportOutcome struct {
 	Provider   string `json:"provider"`
 	AccountRef string `json:"accountRef"`
 	Status     string `json:"status"`
@@ -38,7 +43,16 @@ type aihAccountImportOutcome struct {
 type aihAccountsImportResponse struct {
 	OK       bool                      `json:"ok"`
 	Summary  map[string]int            `json:"summary"`
-	Accounts []aihAccountImportOutcome `json:"accounts"`
+	Accounts []AihAccountImportOutcome `json:"accounts"`
+}
+
+// AihAccountsImportResult 汇总一次文档导入：summary 的键与旧响应体一致
+// (total/created/updated/failed/skipped)，Accounts 保留逐条结论。
+//
+// WebUI 的导入作业与 HTTP 端点共用本结果，避免两处各算一份计数。
+type AihAccountsImportResult struct {
+	Summary  map[string]int
+	Accounts []AihAccountImportOutcome
 }
 
 // handleAihAccountsImport 批量导入 aih-accounts；单条失败不影响其余条目。
@@ -54,7 +68,7 @@ func (handler *Handler) handleAihAccountsImport(
 	if rejectUnexpectedQuery(response, request) {
 		return
 	}
-	var document aihAccountsImportDocument
+	var document AihAccountsImportDocument
 	if err := decodeJSONRequest(response, request, &document); err != nil {
 		writeRequestDecodeError(response, err)
 		return
@@ -67,10 +81,26 @@ func (handler *Handler) handleAihAccountsImport(
 		writeAPIError(response, http.StatusBadRequest, "empty_import_document", "导入文档没有账号")
 		return
 	}
-	summary := map[string]int{"total": len(document.Accounts), "created": 0, "updated": 0, "failed": 0, "skipped": 0}
-	outcomes := make([]aihAccountImportOutcome, 0, len(document.Accounts))
-	for _, entry := range document.Accounts {
-		outcome := handler.importAihAccount(request.Context(), entry)
+	result := handler.ImportAihAccounts(request.Context(), document.Accounts)
+	writeJSON(response, http.StatusOK, aihAccountsImportResponse{
+		OK:       result.Summary["failed"] == 0,
+		Summary:  result.Summary,
+		Accounts: result.Accounts,
+	})
+}
+
+// ImportAihAccounts 逐条导入 aih-accounts 文档；单条失败不影响其余条目。
+//
+// 这是导入语义的唯一实现：管理面 HTTP 端点与 WebUI 的异步导入作业都调用它。
+// 每次调用都返回完整 summary，调用方只负责合并与展示。
+func (handler *Handler) ImportAihAccounts(
+	ctx context.Context,
+	entries []AihAccountsImportEntry,
+) AihAccountsImportResult {
+	summary := map[string]int{"total": len(entries), "created": 0, "updated": 0, "failed": 0, "skipped": 0}
+	outcomes := make([]AihAccountImportOutcome, 0, len(entries))
+	for _, entry := range entries {
+		outcome := handler.importAihAccount(ctx, entry)
 		outcomes = append(outcomes, outcome)
 		switch outcome.Status {
 		case "created":
@@ -83,20 +113,16 @@ func (handler *Handler) handleAihAccountsImport(
 			summary["failed"] += 1
 		}
 	}
-	writeJSON(response, http.StatusOK, aihAccountsImportResponse{
-		OK:       summary["failed"] == 0,
-		Summary:  summary,
-		Accounts: outcomes,
-	})
+	return AihAccountsImportResult{Summary: summary, Accounts: outcomes}
 }
 
 // importAihAccount 单条导入：静态 env → 静态凭据；nativeAuth → 原生 artifact。
 func (handler *Handler) importAihAccount(
 	ctx context.Context,
-	entry aihAccountsImportEntry,
-) aihAccountImportOutcome {
+	entry AihAccountsImportEntry,
+) AihAccountImportOutcome {
 	provider := strings.ToLower(strings.TrimSpace(entry.Provider))
-	outcome := aihAccountImportOutcome{Provider: provider, AccountRef: strings.TrimSpace(entry.AccountRef)}
+	outcome := AihAccountImportOutcome{Provider: provider, AccountRef: strings.TrimSpace(entry.AccountRef)}
 	if provider == "" {
 		outcome.Status = "failed"
 		outcome.Reason = "provider_missing"
@@ -132,7 +158,7 @@ func (handler *Handler) importAihAccount(
 // importCredentialForEntry 只接受 Go 已研究的静态/native 形态；未知形态返回 nil。
 func (handler *Handler) importCredentialForEntry(
 	provider string,
-	entry aihAccountsImportEntry,
+	entry AihAccountsImportEntry,
 ) (accountapp.Credential, accountapp.PublicProfile, error) {
 	if len(entry.NativeAuth) > 0 && string(entry.NativeAuth) != "{}" && string(entry.NativeAuth) != "null" {
 		artifacts, err := json.Marshal(map[string]json.RawMessage{"native_auth_json": entry.NativeAuth})

@@ -147,6 +147,18 @@ func (handler *Handler) Close() {
 	handler.hub.close()
 }
 
+// Publish 把一条非账号帧广播到同一条事件流。
+//
+// 账号页上的瞬时作业（例如导入作业的 queued/running/终态）不在快照里，也不该
+// 让浏览器另开轮询：它们和账号增量共用一条 SSE，浏览器只需要一个订阅。
+// 没有订阅者时广播是空操作，不会为「没人看」的作业保留任何队列。
+func (handler *Handler) Publish(payload any) {
+	if handler == nil || handler.hub == nil {
+		return
+	}
+	handler.hub.broadcastFrame(payload)
+}
+
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

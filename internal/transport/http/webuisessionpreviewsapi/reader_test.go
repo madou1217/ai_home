@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"database/sql"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func writeTranscript(t *testing.T, path string, lines ...string) {
@@ -149,7 +152,7 @@ func TestFileReaderMissingAndUnsupported(t *testing.T) {
 	if _, err := readPreview(t, reader, PreviewRequest{Provider: "claude", SessionID: "nope", ProjectDirName: "proj"}); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("缺失会话 error = %v, want ErrSessionNotFound", err)
 	}
-	if _, err := readPreview(t, reader, PreviewRequest{Provider: "gemini", SessionID: "g1"}); !errors.Is(err, ErrUnsupportedProvider) {
+	if _, err := readPreview(t, reader, PreviewRequest{Provider: "unknown", SessionID: "g1"}); !errors.Is(err, ErrUnsupportedProvider) {
 		t.Fatalf("未承接 Provider error = %v, want ErrUnsupportedProvider", err)
 	}
 	if _, err := readPreview(t, reader, PreviewRequest{Provider: "claude", SessionID: ""}); !errors.Is(err, ErrSessionNotFound) {
@@ -229,5 +232,91 @@ func TestHandlerUsesFileReaderWithHostHomeDir(t *testing.T) {
 	item := payload.Previews[0]
 	if item.Model != "claude-opus-4-1" || item.Preview != "真实文件读取" || item.Error != "" {
 		t.Fatalf("item = %+v", item)
+	}
+}
+
+
+func TestFileReaderAllAdditionalProviders(t *testing.T) {
+	home := t.TempDir()
+	aiHome := filepath.Join(home, ".ai_home")
+	if err := os.MkdirAll(aiHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// app-state.db: AGY recorded model overrides transcript
+	db, err := sql.Open("sqlite", filepath.Join(aiHome, "app-state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE model_usage_records (id INTEGER PRIMARY KEY, provider TEXT, session_id TEXT, model TEXT, source_kind TEXT, timestamp_ms INTEGER);
+		INSERT INTO model_usage_records(provider, session_id, model, source_kind, timestamp_ms) VALUES ('agy','agy-1','claude-sonnet-4-6','manual_proxy',5000);`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	// AGY transcript
+	writeTranscript(t, filepath.Join(home, ".gemini", "antigravity", "brain", "agy-1", ".system_generated", "logs", "transcript.jsonl"),
+		`{"type":"USER_INPUT","content":"<USER_REQUEST>AGY Q</USER_REQUEST>","created_at":"1970-01-01T00:00:01Z"}`+"\n"+
+			`{"type":"PLANNER_RESPONSE","content":"AGY preview reply","created_at":"1970-01-01T00:00:02Z"}`+"\n")
+
+	// Gemini
+	writeTranscript(t, filepath.Join(home, ".gemini", "tmp", "gproj", "chats", "session-g1.json"),
+		`{"sessionId":"g1","messages":[{"type":"gemini","model":"gemini-2.5-flash","content":"Gem reply"}]}`)
+
+	// OpenCode
+	ocDir := filepath.Join(home, ".local", "share", "opencode")
+	if err := os.MkdirAll(ocDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ocDB, err := sql.Open("sqlite", filepath.Join(ocDir, "opencode.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ocDB.Exec(`
+		CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT, title TEXT, model TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER, parent_id TEXT);
+		CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT);
+		CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
+		INSERT INTO session_v2 VALUES ('oc1','/tmp','OC','gpt-4.1',100,200,NULL,NULL);
+		INSERT INTO message VALUES ('m1','oc1','',150,'{"role":"assistant"}');
+		INSERT INTO part VALUES ('p1','m1','oc1',151,'{"type":"text","text":"OpenCode reply"}');
+	`); err != nil {
+		t.Fatal(err)
+	}
+	_ = ocDB.Close()
+
+	// Qoder
+	writeTranscript(t, filepath.Join(aiHome, "run", "auth-projections", "qoder", "acct-q", "projects", "-tmp-q", "q1.jsonl"),
+		`{"type":"assistant","model":"qwen-plus","timestamp":1000,"message":{"role":"assistant","content":"Qoder reply"}}`+"\n")
+
+	reader := &FileReader{HostHomeDir: home, AIHomeDir: aiHome}
+	handler, err := NewHandler(Dependencies{Authorizer: stubAuthorizer(true), Reader: reader})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := doRequest(t, handler, "POST", `{"sessions":[
+		{"provider":"agy","id":"agy-1"},
+		{"provider":"gemini","id":"g1","projectDirName":"gproj"},
+		{"provider":"opencode","id":"oc1"},
+		{"provider":"qoder","id":"q1","accountRef":"acct-q"},
+		{"provider":"kimi","id":"k1"}
+	]}`)
+	payload := decodeResponse(t, rec)
+	if len(payload.Previews) != 5 {
+		t.Fatalf("len=%d body=%s", len(payload.Previews), rec.Body.String())
+	}
+	if payload.Previews[0].Model != "claude-sonnet-4-6" || payload.Previews[0].Preview != "AGY preview reply" {
+		t.Fatalf("agy = %+v", payload.Previews[0])
+	}
+	if payload.Previews[1].Model != "gemini-2.5-flash" || payload.Previews[1].Preview != "Gem reply" {
+		t.Fatalf("gemini = %+v", payload.Previews[1])
+	}
+	if payload.Previews[2].Model != "gpt-4.1" || payload.Previews[2].Preview != "OpenCode reply" {
+		t.Fatalf("opencode = %+v", payload.Previews[2])
+	}
+	if payload.Previews[3].Preview != "Qoder reply" {
+		t.Fatalf("qoder = %+v", payload.Previews[3])
+	}
+	if payload.Previews[4].Error != "" {
+		t.Fatalf("kimi unexpected error = %+v", payload.Previews[4])
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 const (
@@ -27,6 +29,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer Authorizer
 	hostHome   string
+	aiHome     string
 	chatDir    string
 }
 
@@ -38,7 +41,12 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 	if aiHome == "" {
 		aiHome = filepath.Join(deps.HostHomeDir, ".ai_home")
 	}
-	return &Handler{authorizer: deps.Authorizer, hostHome: deps.HostHomeDir, chatDir: filepath.Join(aiHome, "chat-sessions")}, nil
+	return &Handler{
+		authorizer: deps.Authorizer,
+		hostHome:   deps.HostHomeDir,
+		aiHome:     aiHome,
+		chatDir:    filepath.Join(aiHome, "chat-sessions"),
+	}, nil
 }
 
 type response struct {
@@ -64,29 +72,113 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_session_id"})
 		return
 	}
-	provider := strings.ToLower(strings.TrimSpace(r.PathValue("provider")))
-	if provider == "claude" && strings.TrimSpace(r.URL.Query().Get("projectDirName")) != "" {
-		messages, err := readClaudeMessages(handler.hostHome, r.URL.Query().Get("projectDirName"), sessionID)
-		if err == nil {
-			page := buildPage(messages, r.URL.Query())
-			writeJSON(w, http.StatusOK, response{OK: true, Messages: page.messages, Start: page.start, Total: page.total, HasMore: page.start > 0, Cursor: claudeSessionCursor(handler.hostHome, r.URL.Query().Get("projectDirName"), sessionID)})
-			return
-		}
-	}
-	raw, err := os.ReadFile(filepath.Join(handler.chatDir, sessionID+".json"))
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "chat_session_not_found"})
+	provider := sessionread.NormalizeProvider(r.PathValue("provider"))
+	if !sessionread.IsKnownProvider(provider) {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"ok": false, "error": "unsupported_provider"})
 		return
 	}
-	var session struct {
-		Messages []json.RawMessage `json:"messages"`
+
+	query := r.URL.Query()
+	projectDirName := strings.TrimSpace(query.Get("projectDirName"))
+	accountRef := strings.TrimSpace(query.Get("accountRef"))
+	if err := sessionread.ValidateSessionRef(provider, sessionID, projectDirName); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_session_ref"})
+		return
 	}
-	if err := json.Unmarshal(raw, &session); err != nil {
+
+	opts := sessionread.Options{
+		HostHomeDir: handler.hostHome,
+		AIHomeDir:   handler.aiHome,
+		AccountRef:  accountRef,
+	}
+
+	// 优先检查 WebUI 自建 chat-sessions；provider == "chat" 时缺失直接 404。
+	raw, chatErr := os.ReadFile(filepath.Join(handler.chatDir, sessionID+".json"))
+	if chatErr == nil {
+		var session struct {
+			Messages []json.RawMessage `json:"messages"`
+		}
+		if err := json.Unmarshal(raw, &session); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "chat_session_invalid"})
+			return
+		}
+		decorated := sessionread.ApplyCanonicalAgyTurnModels(
+			r.Context(),
+			opts,
+			provider,
+			sessionID,
+			sessionread.DecorateMessagesWithTurnModels(session.Messages),
+		)
+		canonical := sessionread.CanonicalizeMessages(decorated, provider, handler.aiHome, handler.hostHome)
+		page := buildPage(canonical, query)
+		writeJSON(w, http.StatusOK, response{
+			OK:       true,
+			Messages: nonNilMessages(page.messages),
+			Start:    page.start,
+			Total:    page.total,
+			HasMore:  page.start > 0,
+			Cursor:   nil,
+		})
+		return
+	}
+	if !errors.Is(chatErr, os.ErrNotExist) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "chat_session_invalid"})
 		return
 	}
-	page := buildPage(session.Messages, r.URL.Query())
-	writeJSON(w, http.StatusOK, response{OK: true, Messages: page.messages, Start: page.start, Total: page.total, HasMore: page.start > 0, Cursor: nil})
+	if provider == "chat" {
+		writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "chat_session_not_found"})
+		return
+	}
+
+	// Claude 显式带 projectDirName 时走原有快速路径（保持逐字节兼容）。
+	if provider == "claude" && projectDirName != "" {
+		messages, err := readClaudeMessages(handler.hostHome, projectDirName, sessionID)
+		if err == nil {
+			canonical := sessionread.CanonicalizeMessages(messages, provider, handler.aiHome, handler.hostHome)
+			page := buildPage(canonical, query)
+			writeJSON(w, http.StatusOK, response{
+				OK:       true,
+				Messages: nonNilMessages(page.messages),
+				Start:    page.start,
+				Total:    page.total,
+				HasMore:  page.start > 0,
+				Cursor:   claudeSessionCursor(handler.hostHome, projectDirName, sessionID),
+			})
+			return
+		}
+	}
+
+	snapshot, err := sessionread.ReadMessagesSnapshot(r.Context(), opts, provider, sessionID, projectDirName)
+	if err != nil {
+		switch {
+		case errors.Is(err, sessionread.ErrUnsupportedProvider):
+			writeJSON(w, http.StatusNotImplemented, map[string]any{"ok": false, "error": "unsupported_provider"})
+		case errors.Is(err, sessionread.ErrInvalidSessionRef):
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_session_ref"})
+		case errors.Is(err, sessionread.ErrSessionNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "session_not_found"})
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": "get_messages_failed"})
+		}
+		return
+	}
+
+	page := buildPage(snapshot.Messages, query)
+	writeJSON(w, http.StatusOK, response{
+		OK:       true,
+		Messages: nonNilMessages(page.messages),
+		Start:    page.start,
+		Total:    page.total,
+		HasMore:  page.start > 0,
+		Cursor:   snapshot.Cursor,
+	})
+}
+
+func nonNilMessages(items []json.RawMessage) []json.RawMessage {
+	if items == nil {
+		return []json.RawMessage{}
+	}
+	return items
 }
 
 type pageResult struct {

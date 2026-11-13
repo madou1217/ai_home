@@ -558,13 +558,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建会话消息接口失败: %w", err)
 	}
 	sessionPreviews, err := webuisessionpreviewsapi.NewHandler(webuisessionpreviewsapi.Dependencies{
-		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建会话预览接口失败: %w", err)
 	}
 	sessionEvents, err := webuisessioneventsapi.NewHandler(webuisessioneventsapi.Dependencies{
-		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建会话事件接口失败: %w", err)

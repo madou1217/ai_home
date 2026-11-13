@@ -31,6 +31,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 // Path 是账号会话列表的管理契约路径。
@@ -83,6 +85,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer  Authorizer
 	hostHomeDir string
+	aiHomeDir   string
 	maxEntries  int
 	scanTimeout time.Duration
 }
@@ -139,6 +142,7 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 	return &Handler{
 		authorizer:  dependencies.Authorizer,
 		hostHomeDir: hostHomeDir,
+		aiHomeDir:   strings.TrimSpace(dependencies.AIHomeDir),
 		maxEntries:  maxEntries,
 		scanTimeout: scanTimeout,
 	}, nil
@@ -187,7 +191,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	ctx, cancel := context.WithTimeout(request.Context(), handler.scanTimeout)
 	defer cancel()
 
-	projects, truncated := handler.collect(ctx, provider)
+	projects, truncated := handler.collect(ctx, provider, accountRef)
 	writeJSON(responseWriter, http.StatusOK, responseView{
 		OK:        true,
 		Projects:  projects,
@@ -199,18 +203,102 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 //
 // 扫描被预算或超时打断时返回已收集到的部分结果（truncated=true），
 // 而不是把「读得慢」升级成 5xx：会话列表本来就是最终一致视图。
-func (handler *Handler) collect(ctx context.Context, provider string) ([]projectView, bool) {
+func (handler *Handler) collect(ctx context.Context, provider, accountRef string) ([]projectView, bool) {
 	scan := newScanner(ctx, handler.hostHomeDir, handler.maxEntries)
+	opts := sessionread.Options{
+		HostHomeDir: handler.hostHomeDir,
+		AIHomeDir:   handler.aiHomeDir,
+		AccountRef:  accountRef,
+	}
+	mappings := sessionread.ReadGeminiProjectNameMappings(handler.hostHomeDir)
+
 	var projects []projectView
 	switch {
 	case provider == claudeProvider:
-		projects = scan.claudeProjects(scan.knownProjectPaths())
+		projects = mapAndConvertProjects(convertViewsToSessionRead(scan.claudeProjects(scan.knownProjectPaths())), mappings)
 	case provider == codexProvider:
-		projects = scan.codexProjects()
+		codexViews := filterExcludedCodexSessions(scan.codexProjects(), sessionread.ReadCodexExcludedThreadIDs(ctx, handler.hostHomeDir))
+		projects = mapAndConvertProjects(convertViewsToSessionRead(codexViews), mappings)
+	case sessionread.IsCodebuddyFamilyProvider(provider):
+		base := convertViewsToSessionRead(scan.codebuddyProjects(provider))
+		enriched := sessionread.EnrichCodebuddyProjects(ctx, opts, provider, base)
+		projects = mapAndConvertProjects(enriched, mappings)
 	default:
-		projects = scan.codebuddyProjects(provider)
+		listed, _ := sessionread.ListProjects(ctx, opts, provider)
+		projects = convertSessionReadToViews(listed)
 	}
 	return finalizeProjects(projects), scan.truncated
+}
+
+func filterExcludedCodexSessions(projects []projectView, excluded map[string]bool) []projectView {
+	if len(excluded) == 0 {
+		return projects
+	}
+	out := make([]projectView, 0, len(projects))
+	for _, p := range projects {
+		kept := make([]sessionView, 0, len(p.Sessions))
+		for _, s := range p.Sessions {
+			if !excluded[s.ID] {
+				kept = append(kept, s)
+			}
+		}
+		p.Sessions = kept
+		out = append(out, p)
+	}
+	return out
+}
+
+func mapAndConvertProjects(projects []sessionread.Project, mappings map[string]string) []projectView {
+	mapped := sessionread.ApplyProjectNameMappings(projects, mappings)
+	return convertSessionReadToViews(mapped)
+}
+
+func convertViewsToSessionRead(views []projectView) []sessionread.Project {
+	out := make([]sessionread.Project, 0, len(views))
+	for _, p := range views {
+		sessions := make([]sessionread.Session, 0, len(p.Sessions))
+		for _, s := range p.Sessions {
+			sessions = append(sessions, sessionread.Session{
+				ID:             s.ID,
+				Title:          s.Title,
+				UpdatedAt:      s.UpdatedAt,
+				Provider:       s.Provider,
+				ProjectDirName: s.ProjectDirName,
+			})
+		}
+		out = append(out, sessionread.Project{
+			ID:       p.ID,
+			Name:     p.Name,
+			Path:     p.Path,
+			Sessions: sessions,
+			Provider: p.Provider,
+		})
+	}
+	return out
+}
+
+func convertSessionReadToViews(projects []sessionread.Project) []projectView {
+	out := make([]projectView, 0, len(projects))
+	for _, p := range projects {
+		sessions := make([]sessionView, 0, len(p.Sessions))
+		for _, s := range p.Sessions {
+			sessions = append(sessions, sessionView{
+				ID:             s.ID,
+				Title:          s.Title,
+				UpdatedAt:      s.UpdatedAt,
+				Provider:       s.Provider,
+				ProjectDirName: s.ProjectDirName,
+			})
+		}
+		out = append(out, projectView{
+			ID:       p.ID,
+			Name:     p.Name,
+			Path:     p.Path,
+			Sessions: sessions,
+			Provider: p.Provider,
+		})
+	}
+	return out
 }
 
 // routeSegments 取 {provider}/{accountRef}。

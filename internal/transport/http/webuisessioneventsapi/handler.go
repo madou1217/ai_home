@@ -30,6 +30,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 // Path 是会话增量事件的管理契约路径。
@@ -64,6 +66,7 @@ type EventRequest struct {
 	Provider       string
 	SessionID      string
 	ProjectDirName string
+	AccountRef     string
 	Cursor         int64
 }
 
@@ -101,6 +104,7 @@ type Reader interface {
 type Dependencies struct {
 	Authorizer  Authorizer
 	HostHomeDir string
+	AIHomeDir   string
 	Reader      Reader
 	// MaxEventBytes 只在 Reader 为空、由本包构造 FileReader 时生效。
 	MaxEventBytes int
@@ -123,7 +127,7 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 		if home == "" {
 			return nil, ErrInvalidDependencies
 		}
-		reader = &FileReader{HostHomeDir: home, MaxEventBytes: dependencies.MaxEventBytes}
+		reader = &FileReader{HostHomeDir: home, AIHomeDir: strings.TrimSpace(dependencies.AIHomeDir), MaxEventBytes: dependencies.MaxEventBytes}
 	}
 	return &Handler{authorizer: dependencies.Authorizer, reader: reader}, nil
 }
@@ -148,10 +152,16 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cursor := parseCursor(r.URL.Query().Get("cursor"))
+	projectDirName := strings.TrimSpace(r.URL.Query().Get("projectDirName"))
+	if sessionread.IsKnownProvider(provider) && sessionread.ValidateSessionRef(provider, sessionID, projectDirName) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_session_ref", "message": "会话引用不合法"})
+		return
+	}
 	result, err := handler.reader.ReadEvents(r.Context(), EventRequest{
 		Provider:       provider,
 		SessionID:      sessionID,
-		ProjectDirName: strings.TrimSpace(r.URL.Query().Get("projectDirName")),
+		ProjectDirName: projectDirName,
+		AccountRef:     strings.TrimSpace(r.URL.Query().Get("accountRef")),
 		Cursor:         cursor,
 	})
 	if err != nil {

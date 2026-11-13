@@ -211,7 +211,7 @@ func TestInvalidRefs(t *testing.T) {
 
 func TestUnsupportedProvider(t *testing.T) {
 	handler := newTestHandler(t, t.TempDir(), true)
-	recorder := doRequest(t, handler, http.MethodGet, Path+"/gemini/acct-1")
+	recorder := doRequest(t, handler, http.MethodGet, Path+"/unknown/acct-1")
 	decodeError(t, recorder, http.StatusNotImplemented, errorCodeUnsupported)
 	if strings.Contains(recorder.Body.String(), `"projects"`) {
 		t.Fatalf("不支持的 Provider 不应返回 projects 字段: %s", recorder.Body.String())
@@ -490,5 +490,74 @@ func TestScanTimeoutReturnsPartial(t *testing.T) {
 	}
 	if len(body.Projects) != 0 {
 		t.Fatalf("超时后不应继续下发项目: %+v", body.Projects)
+	}
+}
+
+
+func TestAllAdditionalProvidersListHandler(t *testing.T) {
+	hostHome := t.TempDir()
+	aiHome := filepath.Join(hostHome, ".ai_home")
+
+	// Gemini
+	writeListTestFile(t, filepath.Join(hostHome, ".gemini", "history", "gem-proj", ".project_root"), "/tmp/gem")
+	writeListTestFile(t, filepath.Join(hostHome, ".gemini", "tmp", "gem-proj", "chats", "session-g1.json"),
+		`{"sessionId":"g1","messages":[{"type":"user","content":[{"text":"Gem ask"}]}]}`)
+
+	// AGY
+	writeListTestFile(t, filepath.Join(hostHome, ".gemini", "antigravity-cli", "aih-session-projects.json"), `{"agy-1":{"projectPath":"/tmp/agy","updatedAt":2000}}`)
+	writeListTestFile(t, filepath.Join(hostHome, ".gemini", "antigravity", "brain", "agy-1", ".system_generated", "logs", "transcript.jsonl"),
+		`{"type":"USER_INPUT","content":"<USER_REQUEST>AGY run</USER_REQUEST>","created_at":"1970-01-01T00:00:02.000Z"}`+"\n")
+
+	// Qoder
+	writeListTestFile(t, filepath.Join(aiHome, "run", "auth-projections", "qoder", "acct-q", "projects", "-tmp-q", "q1.jsonl"),
+		`{"type":"user","cwd":"/tmp/q","timestamp":1000,"message":{"role":"user","content":"Hello Qoder"}}`+"\n")
+
+	// Grok
+	writeListTestFile(t, filepath.Join(aiHome, "run", "auth-projections", "grok", "acct-g", ".grok", "sessions", "projg", ".cwd"), "/tmp/grok")
+	writeListTestFile(t, filepath.Join(aiHome, "run", "auth-projections", "grok", "acct-g", ".grok", "sessions", "projg", "g1", "summary.json"), `{"title":"Grok S"}`)
+	writeListTestFile(t, filepath.Join(aiHome, "run", "auth-projections", "grok", "acct-g", ".grok", "sessions", "projg", "g1", "chat_history.jsonl"),
+		`{"role":"user","prompt_index":0,"content":"Grok hi"}`+"\n")
+
+	handler := newTestHandler(t, hostHome, true, func(d *Dependencies) { d.AIHomeDir = aiHome })
+
+	for _, tc := range []struct {
+		provider string
+		ref      string
+		wantID   string
+	}{
+		{"gemini", "acct-1", "g1"},
+		{"agy", "acct-1", "agy-1"},
+		{"qoder", "acct-q", "q1"},
+		{"grok", "acct-g", "g1"},
+		{"kimi", "acct-1", ""},
+		{"chat", "acct-1", ""},
+	} {
+		rec := doRequestWithParams(t, handler, http.MethodGet, Path+"/"+tc.provider+"/"+tc.ref, tc.provider, tc.ref)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d body=%s", tc.provider, rec.Code, rec.Body.String())
+		}
+		var resp sessionsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode %s: %v", tc.provider, err)
+		}
+		if tc.wantID == "" {
+			if len(resp.Projects) != 0 {
+				t.Fatalf("%s expected empty projects, got %+v", tc.provider, resp.Projects)
+			}
+			continue
+		}
+		if len(resp.Projects) != 1 || len(resp.Projects[0].Sessions) != 1 || resp.Projects[0].Sessions[0].ID != tc.wantID {
+			t.Fatalf("%s unexpected projects: %+v", tc.provider, resp.Projects)
+		}
+	}
+}
+
+func writeListTestFile(t *testing.T, p, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 }

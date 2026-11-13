@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"path/filepath"
+	"os"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -129,7 +132,7 @@ func TestHandlerUnsupportedProvider(t *testing.T) {
 		Authorizer:  stubAuthorizer(true),
 		HostHomeDir: t.TempDir(),
 	})
-	recorder := serveEvents(handler, "/v1/management/webui/sessions/claude/s-1/events")
+	recorder := serveEvents(handler, "/v1/management/webui/sessions/unknown/s-1/events")
 	if recorder.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -192,5 +195,57 @@ func TestNewHandlerRequiresDependencies(t *testing.T) {
 	}
 	if _, err := NewHandler(Dependencies{HostHomeDir: t.TempDir()}); err == nil {
 		t.Fatalf("缺少 Authorizer 时应失败")
+	}
+}
+
+
+func TestNonCodexProvidersReturnFileCursor(t *testing.T) {
+	home := t.TempDir()
+	aiHome := filepath.Join(home, ".ai_home")
+	geminiChat := filepath.Join(home, ".gemini", "tmp", "g1p", "chats", "session-g1.json")
+	if err := os.MkdirAll(filepath.Dir(geminiChat), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"sessionId":"g1","messages":[{"type":"user","content":"hi"}]}`
+	if err := os.WriteFile(geminiChat, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := NewHandler(Dependencies{
+		Authorizer:  stubAuthorizer(true),
+		HostHomeDir: home,
+		AIHomeDir:   aiHome,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := serveEvents(handler, "/v1/management/webui/sessions/gemini/g1/events?projectDirName=g1p&cursor=0")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		OK               bool  `json:"ok"`
+		Cursor           int64 `json:"cursor"`
+		RequiresSnapshot *bool `json:"requiresSnapshot"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK || res.Cursor != int64(len(payload)) || res.RequiresSnapshot == nil || !*res.RequiresSnapshot {
+		t.Fatalf("unexpected non-codex events response: %+v", res)
+	}
+
+	// Steady cursor -> requiresSnapshot: false
+	rec2 := serveEvents(handler, "/v1/management/webui/sessions/gemini/g1/events?projectDirName=g1p&cursor="+strconv.FormatInt(res.Cursor, 10))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("steady status=%d body=%s", rec2.Code, rec2.Body.String())
+	}
+	var res2 struct {
+		RequiresSnapshot *bool `json:"requiresSnapshot"`
+	}
+	_ = json.Unmarshal(rec2.Body.Bytes(), &res2)
+	if res2.RequiresSnapshot == nil || *res2.RequiresSnapshot {
+		t.Fatalf("expected requiresSnapshot=false when cursor unchanged, got %+v", res2)
 	}
 }

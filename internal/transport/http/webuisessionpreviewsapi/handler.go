@@ -72,9 +72,11 @@ type Authorizer interface {
 //
 // Reader 为空时按 HostHomeDir 构造默认的 FileReader；两者都为空则构造失败。
 type Dependencies struct {
-	Authorizer  Authorizer
-	HostHomeDir string
-	Reader      Reader
+	Authorizer     Authorizer
+	HostHomeDir    string
+	AIHomeDir      string
+	AppStateDBPath string
+	Reader         Reader
 	// MaxBatch 覆盖 DefaultMaxBatch（<=0 用默认值，>1000 按 1000 收）。
 	MaxBatch int
 	// Concurrency 覆盖 DefaultConcurrency（<=0 用默认值，>64 按 64 收）。
@@ -105,7 +107,12 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 		if home == "" {
 			return nil, ErrInvalidDependencies
 		}
-		reader = &FileReader{HostHomeDir: home, MaxFileBytes: dependencies.MaxFileBytes}
+		reader = &FileReader{
+			HostHomeDir:    home,
+			AIHomeDir:      strings.TrimSpace(dependencies.AIHomeDir),
+			AppStateDBPath: strings.TrimSpace(dependencies.AppStateDBPath),
+			MaxFileBytes:   dependencies.MaxFileBytes,
+		}
 	}
 	maxBatch := dependencies.MaxBatch
 	if maxBatch <= 0 {

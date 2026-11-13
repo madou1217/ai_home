@@ -231,7 +231,7 @@ func TestPartialFailureKeepsBatch(t *testing.T) {
 	reader := &fakeReader{
 		results: map[string]Preview{"claude/ok": {Model: "m", Preview: "p"}},
 		errs: map[string]error{
-			"opencode/unsupported": ErrUnsupportedProvider,
+			"unknown/unsupported": ErrUnsupportedProvider,
 			"claude/missing":       ErrSessionNotFound,
 			"claude/traversal":     ErrInvalidSessionRef,
 			"claude/broken":        ErrReadFailed,
@@ -239,7 +239,7 @@ func TestPartialFailureKeepsBatch(t *testing.T) {
 	}
 	handler := newTestHandler(t, Dependencies{Authorizer: stubAuthorizer(true), Reader: reader})
 	body := `{"sessions":[
-		{"provider":"opencode","id":"unsupported"},
+		{"provider":"unknown","id":"unsupported"},
 		{"provider":"claude","id":"missing"},
 		{"provider":"claude","id":"traversal"},
 		{"provider":"claude","id":"broken"},

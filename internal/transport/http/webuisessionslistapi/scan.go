@@ -12,6 +12,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 const (
@@ -26,17 +27,9 @@ var codebuddyFamilyProviders = codebuddy.Providers()
 // base64StdEncoding 是 Node Buffer 默认的 base64 字母表（codex 项目 id 用）。
 var base64StdEncoding = base64.StdEncoding
 
-// isSupportedProvider 报告该 Provider 的会话是否已由 Go 承接。
+// isSupportedProvider 报告该 Provider 的会话是否已由 Go 承接（覆盖全部已接入会话载体）。
 func isSupportedProvider(provider string) bool {
-	if provider == claudeProvider || provider == codexProvider {
-		return true
-	}
-	for _, member := range codebuddyFamilyProviders {
-		if provider == member {
-			return true
-		}
-	}
-	return false
+	return sessionread.IsKnownProvider(provider)
 }
 
 func normalizeProvider(value string) string {

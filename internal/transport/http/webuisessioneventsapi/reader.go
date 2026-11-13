@@ -2,11 +2,14 @@ package webuisessioneventsapi
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 const (
@@ -25,6 +28,8 @@ const (
 type FileReader struct {
 	// HostHomeDir 是宿主用户目录（.codex 在它下面）。
 	HostHomeDir string
+	// AIHomeDir 是 aih 运行状态目录（默认 <HostHomeDir>/.ai_home）。
+	AIHomeDir string
 	// MaxEventBytes 覆盖 DefaultMaxEventBytes；<=0 时使用默认值。
 	MaxEventBytes int
 
@@ -39,17 +44,46 @@ func (reader *FileReader) ReadEvents(ctx context.Context, request EventRequest) 
 	if err := ctx.Err(); err != nil {
 		return EventResult{}, err
 	}
-	provider := strings.ToLower(strings.TrimSpace(request.Provider))
-	if provider != "codex" {
+	provider := sessionread.NormalizeProvider(request.Provider)
+	if !sessionread.IsKnownProvider(provider) {
 		return EventResult{}, ErrUnsupportedProvider
 	}
-	filePath, found := reader.resolveCodexTranscript(strings.TrimSpace(request.SessionID))
-	if !found {
-		// Node 的 state DB 可能定位到 sessions 目录之外的 rollout；Go 找不到时必须显式报
-		// not_found，让 Node 代理回落，而不是用「空事件」把真实增量吞掉。
-		return EventResult{}, ErrSessionNotFound
+	sid := strings.TrimSpace(request.SessionID)
+	if provider == "codex" {
+		filePath, found := reader.resolveCodexTranscript(sid)
+		if !found {
+			if dbPath := sessionread.ResolveCodexSessionPath(ctx, reader.hostHome(), sid); dbPath != "" {
+				filePath = dbPath
+				found = true
+			}
+		}
+		if !found {
+			return EventResult{}, ErrSessionNotFound
+		}
+		return reader.readCodexEvents(ctx, filePath, request.Cursor)
 	}
-	return reader.readCodexEvents(ctx, filePath, request.Cursor)
+
+	opts := sessionread.Options{
+		HostHomeDir: reader.hostHome(),
+		AIHomeDir:   strings.TrimSpace(reader.AIHomeDir),
+		AccountRef:  strings.TrimSpace(request.AccountRef),
+	}
+	res, err := sessionread.ReadEventsNonCodex(ctx, opts, provider, sid, request.ProjectDirName, request.Cursor)
+	if err != nil {
+		if errors.Is(err, sessionread.ErrUnsupportedProvider) {
+			return EventResult{}, ErrUnsupportedProvider
+		}
+		if errors.Is(err, sessionread.ErrSessionNotFound) {
+			return EventResult{}, ErrSessionNotFound
+		}
+		return EventResult{}, err
+	}
+	return EventResult{
+		Events:               []Event{},
+		Cursor:               res.Cursor,
+		RequiresSnapshot:     boolPointer(res.RequiresSnapshot),
+		HasAssistantToolCall: false,
+	}, nil
 }
 
 func (reader *FileReader) maxEventBytes() int {

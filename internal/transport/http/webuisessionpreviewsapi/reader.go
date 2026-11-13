@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 // 预览读取的错误分类。Handler 只把这些错误翻成稳定的 per-item 错误码，
@@ -83,6 +85,10 @@ type Reader interface {
 type FileReader struct {
 	// HostHomeDir 是宿主用户目录（会话文件都在它下面）。
 	HostHomeDir string
+	// AIHomeDir 是 aih 运行状态目录（默认 <HostHomeDir>/.ai_home）。
+	AIHomeDir string
+	// AppStateDBPath 可选覆盖 app-state.db 路径（默认按 AIHomeDir 推导）。
+	AppStateDBPath string
 	// MaxFileBytes 覆盖 DefaultMaxFileBytes；<=0 时使用默认值。
 	MaxFileBytes int64
 
@@ -97,16 +103,84 @@ func NewFileReader(hostHomeDir string) *FileReader {
 	return &FileReader{HostHomeDir: hostHomeDir}
 }
 
-// ReadPreview 实现 Reader。
+// ReadPreview 实现 Reader：全 Provider 惰性读取 { Model, Preview }。
 func (reader *FileReader) ReadPreview(ctx context.Context, request PreviewRequest) (Preview, error) {
 	if err := ctx.Err(); err != nil {
 		return Preview{}, err
 	}
-	filePath, err := reader.resolveSessionFile(request)
-	if err != nil {
-		return Preview{}, err
+	provider := sessionread.NormalizeProvider(request.Provider)
+	if !sessionread.IsKnownProvider(provider) {
+		return Preview{}, ErrUnsupportedProvider
 	}
-	return reader.readTranscriptTail(ctx, filePath)
+	sessionID := strings.TrimSpace(request.SessionID)
+	if sessionID == "" {
+		return Preview{}, ErrSessionNotFound
+	}
+	if !isSafePathSegment(sessionID) {
+		return Preview{}, ErrInvalidSessionRef
+	}
+	projectDirName := strings.TrimSpace(request.ProjectDirName)
+	if err := sessionread.ValidateSessionRef(provider, sessionID, projectDirName); err != nil {
+		return Preview{}, ErrInvalidSessionRef
+	}
+
+	opts := sessionread.Options{
+		HostHomeDir:    reader.hostHome(),
+		AIHomeDir:      strings.TrimSpace(reader.AIHomeDir),
+		AccountRef:     strings.TrimSpace(request.AccountRef),
+		AppStateDBPath: strings.TrimSpace(reader.AppStateDBPath),
+	}
+
+	// 先查 WebUI chat-sessions；命中则直接提取摘要（并叠加 recorded model）。
+	if chatMsgs, found, chatErr := sessionread.ReadChatSessionMessages(opts, sessionID); found {
+		if chatErr != nil {
+			return Preview{}, ErrReadFailed
+		}
+		return Preview{
+			Model:   sessionread.GetLastSessionModel(ctx, opts, provider, sessionID),
+			Preview: sessionread.ExtractPreviewFromRawMessages(chatMsgs),
+		}, nil
+	}
+
+	// claude / codex / codebuddy 家族 CLI JSONL 走 2MB 尾部快速扫窗，并补充 recorded model / state_*.sqlite / IDE 回退。
+	if provider == "claude" || provider == "codex" || sessionread.IsCodebuddyFamilyProvider(provider) {
+		filePath, err := reader.resolveSessionFile(request)
+		if err != nil && provider == "codex" && errors.Is(err, ErrSessionNotFound) {
+			if dbResolved := sessionread.ResolveCodexSessionPath(ctx, reader.hostHome(), sessionID); dbResolved != "" {
+				filePath = dbResolved
+				err = nil
+			}
+		}
+		if err == nil {
+			preview, tailErr := reader.readTranscriptTail(ctx, filePath)
+			if tailErr != nil {
+				return Preview{}, tailErr
+			}
+			if preview.Model == "" {
+				preview.Model = sessionread.GetLastSessionModel(ctx, opts, provider, sessionID)
+			}
+			return preview, nil
+		}
+		if !errors.Is(err, ErrSessionNotFound) || !sessionread.IsCodebuddyFamilyProvider(provider) {
+			return Preview{}, err
+		}
+		// CodeBuddy / CodeBuddy CN IDE store（index.json + messages/*.json）兜底。
+	}
+
+	res, err := sessionread.ReadPreview(ctx, opts, provider, sessionID, projectDirName)
+	if err != nil {
+		switch {
+		case errors.Is(err, sessionread.ErrUnsupportedProvider):
+			return Preview{}, ErrUnsupportedProvider
+		case errors.Is(err, sessionread.ErrInvalidSessionRef):
+			return Preview{}, ErrInvalidSessionRef
+		case errors.Is(err, sessionread.ErrSessionNotFound):
+			return Preview{}, ErrSessionNotFound
+		default:
+			return Preview{}, ErrReadFailed
+		}
+	}
+	return Preview{Model: res.Model, Preview: res.Preview}, nil
 }
 
 // resolveSessionFile 按 Provider 的文件布局定位会话文件。

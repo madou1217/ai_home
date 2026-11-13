@@ -12,7 +12,7 @@ import (
 
 func TestFileReaderRejectsNonCodex(t *testing.T) {
 	reader := &FileReader{HostHomeDir: t.TempDir()}
-	_, err := reader.ReadEvents(context.Background(), EventRequest{Provider: "claude", SessionID: "s1"})
+	_, err := reader.ReadEvents(context.Background(), EventRequest{Provider: "unknown", SessionID: "s1"})
 	if err != ErrUnsupportedProvider {
 		t.Fatalf("error = %v, want ErrUnsupportedProvider", err)
 	}

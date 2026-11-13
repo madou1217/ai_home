@@ -4,8 +4,7 @@
 // `aih server config set --large-paste-chars` 同一个键）。写入口仍在 Node
 // （POST /v0/webui/chat/paste-settings），本包只读。
 //
-// 默认值/上下限与 contracts/chat-attachments.json 的 largePasteChars 同源；
-// 这里保留常量是 Go 侧唯一可用的口径，改动契约时必须同步本文件（单测锁住数值）。
+// 默认值/上下限来自 contracts/chatattachments，与 Node/Web 的附件合同同源。
 package webuichatpasteapi
 
 import (
@@ -16,15 +15,17 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/contracts/chatattachments"
 )
 
 const (
 	// Path 是粘贴设置的只读管理契约。
 	Path = "/v1/management/webui/chat/paste-settings"
 
-	defaultLargePasteChars = 200
-	minLargePasteChars     = 50
-	maxLargePasteChars     = 100000
+	defaultLargePasteChars = chatattachments.DefaultLargePasteChars
+	minLargePasteChars     = chatattachments.MinLargePasteChars
+	maxLargePasteChars     = chatattachments.MaxLargePasteChars
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。

@@ -1,4 +1,4 @@
-import limits from '../../../../contracts/chat-attachments.json';
+import limits from '../../../../lib/generated/chat-attachments.json';
 
 export { limits as CHAT_ATTACHMENT_LIMITS };
 export const CHAT_ATTACHMENT_ACCEPT = [

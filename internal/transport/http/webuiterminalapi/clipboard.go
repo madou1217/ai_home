@@ -12,10 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/contracts/chatattachments"
 )
 
 const (
-	maxImageBytes = 10 * 1024 * 1024
 	// clipboardImageDirName / projectAttachmentDir 与 Node chat-attachments 一致：
 	// 项目目录存在时写 <cwd>/.aih/chat-images，否则写系统临时目录。
 	clipboardImageDirName = "aih-web-chat-images"
@@ -29,7 +30,7 @@ var unixSafePathPattern = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
 //
 // 语义对齐 Node webui-terminal-clipboard.js：
 //   - 只接受 png/jpeg/webp/gif，声明 MIME 必须与文件头一致；
-//   - 上限 10MB（contracts/chat-attachments.json）；
+//   - 上限 10MB（contracts/chatattachments）；
 //   - 文件写 0600，返回 shell 安全的 pasteText；
 //   - 优先落到会话 cwd（跨机器路径不存在时回退临时目录）。
 func (handler *Handler) handleClipboardImage(response http.ResponseWriter, request *http.Request) {
@@ -82,7 +83,7 @@ func persistClipboardImage(dataURL string, cwd string, now time.Time) (string, *
 	if err != nil {
 		return "", &terminalError{code: "terminal_image_invalid", message: "图片 base64 解码失败"}
 	}
-	if len(buffer) > maxImageBytes {
+	if int64(len(buffer)) > chatattachments.MaxImageBytes {
 		return "", &terminalError{code: "terminal_image_size_exceeded", message: "图片超过大小上限"}
 	}
 	declared := normalizeImageMime(mimeType)

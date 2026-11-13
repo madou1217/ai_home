@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/contracts/chatattachments"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
 )
@@ -38,9 +39,9 @@ const (
 	defaultRows = 24
 	// maxJSONBodyBytes 与 Node readJsonBody 的默认上限一致。
 	maxJSONBodyBytes = 256 * 1024
-	// maxClipboardBodyBytes 按 contracts/chat-attachments.json 的 maxImageBytes
+	// maxClipboardBodyBytes 按 contracts/chatattachments 的 MaxImageBytes
 	// 反推 base64 体积，再留 4KB 头尾余量（与 Node 完全一致）。
-	maxClipboardBodyBytes = (10*1024*1024+2)/3*4 + 4096
+	maxClipboardBodyBytes = (chatattachments.MaxImageBytes+2)/3*4 + 4096
 	// DefaultHeartbeatInterval 与 Node 的 30s SSE 心跳一致。
 	DefaultHeartbeatInterval = 30 * time.Second
 	// subscriptionQueueSize 是单个 session 订阅的帧缓冲；慢消费者被摘除而不是反压 PTY。

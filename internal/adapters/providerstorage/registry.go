@@ -1,10 +1,12 @@
 // Package providerstorage 注册已迁移 Provider 的投影策略与凭据 materializer。
 //
-// P3.1 只注册 Codex；后续 Provider 在这里追加，通用投影执行器不感知 Provider 名。
+// P3.1 先注册 Codex；CodeBuddy 家族四支随后接入。后续 Provider 在这里追加，
+// 通用投影执行器不感知 Provider 名。
 package providerstorage
 
 import (
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 )
 
@@ -17,14 +19,25 @@ type Registry struct {
 // New 创建当前已迁移 Provider 的注册表。
 func New() *Registry {
 	codexPolicy := codexstorage.Policy()
-	return &Registry{
-		policies: map[string]appprojection.Policy{
-			codexPolicy.Provider: codexPolicy,
-		},
-		materializers: []appprojection.Materializer{
-			codexstorage.Materializer{},
-		},
+	policies := map[string]appprojection.Policy{
+		codexPolicy.Provider: codexPolicy,
 	}
+	materializers := []appprojection.Materializer{
+		codexstorage.Materializer{},
+	}
+	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
+		policy, ok := codebuddyfamilystorage.Policy(providerID)
+		if !ok {
+			continue
+		}
+		materializer, err := codebuddyfamilystorage.NewMaterializer(providerID)
+		if err != nil {
+			continue
+		}
+		policies[providerID] = policy
+		materializers = append(materializers, materializer)
+	}
+	return &Registry{policies: policies, materializers: materializers}
 }
 
 // Policy 返回 Provider 的投影策略。

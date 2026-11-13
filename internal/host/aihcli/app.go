@@ -21,10 +21,13 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
+	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -153,13 +156,34 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 Claude OAuth 刷新策略失败", err)
 		}
+		refreshStrategies := []accountcredentials.RefreshStrategy{
+			codexOAuth,
+			claudeOAuth,
+		}
+		launchStrategies := []providerlaunch.Strategy{
+			codexcli.NewStrategy(),
+			claudecli.NewStrategy(),
+		}
+		// CodeBuddy 家族 Go 侧只消费 Node 已写入的凭据；Token 刷新仍由 Node 宿主完成。
+		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
+			refresh, err := staticcredential.New(providerID)
+			if err != nil {
+				return fail("创建 CodeBuddy 家族静态凭据策略失败", err)
+			}
+			refreshStrategies = append(refreshStrategies, refresh)
+			strategy, err := codebuddyfamilycli.NewStrategy(
+				providerID,
+				codebuddyfamilystorage.SiteInternal(providerID),
+			)
+			if err != nil {
+				return fail("创建 CodeBuddy 家族 CLI 策略失败", err)
+			}
+			launchStrategies = append(launchStrategies, strategy)
+		}
 		credentials, err = accountcredentials.NewResolver(accountcredentials.Dependencies{
-			Store: store,
-			Strategies: []accountcredentials.RefreshStrategy{
-				codexOAuth,
-				claudeOAuth,
-			},
-			Clock: time.Now,
+			Store:      store,
+			Strategies: refreshStrategies,
+			Clock:      time.Now,
 		})
 		if err != nil {
 			return fail("创建账号凭据解析器失败", err)
@@ -171,10 +195,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		nativePlanner, err = providerlaunch.NewPlanner(providerlaunch.Dependencies{
 			Accounts:    selector,
 			Credentials: credentials,
-			Strategies: []providerlaunch.Strategy{
-				codexcli.NewStrategy(),
-				claudecli.NewStrategy(),
-			},
+			Strategies:  launchStrategies,
 		})
 		if err != nil {
 			return fail("创建 Native Direct 规划器失败", err)
@@ -302,18 +323,18 @@ func (app *App) Run(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !supportedCLIProvider(providerID) {
-		return fmt.Errorf("%w: 当前只支持 codex 和 claude", ErrInvalidRunRequest)
+	if !supportedNativeCLIProvider(providerID) {
+		return fmt.Errorf("%w: 当前只支持 codex / claude / CodeBuddy 家族", ErrInvalidRunRequest)
 	}
 	intent, err := providerlaunch.ParseLaunchIntent(app.catalog, providerID, arguments)
 	if err != nil {
 		return fmt.Errorf("解析 Provider CLI 命令失败: %w", err)
 	}
-	if !supportedCLIProvider(intent.RelayProviderID()) {
-		return fmt.Errorf("%w: 当前 Relay 只支持 codex 和 claude", ErrInvalidRunRequest)
-	}
 	var endpoint providerlaunch.GatewayEndpoint
 	if intent.Mode() == providerlaunch.LaunchModeGatewayRelay {
+		if !supportedGatewayCLIProvider(intent.RelayProviderID()) {
+			return fmt.Errorf("%w: 当前 Relay 只支持 codex 和 claude", ErrInvalidRunRequest)
+		}
 		endpoint, err = providerlaunch.NewGatewayEndpoint(gateway.BaseURL, gateway.ClientKey)
 		if err != nil {
 			return fmt.Errorf("Gateway 配置无效: %w", err)
@@ -329,8 +350,18 @@ func (app *App) Run(
 	return nil
 }
 
-// supportedCLIProvider 与本组合根实际注册的双模式 Strategy 保持一致。
-func supportedCLIProvider(providerID string) bool {
+// supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
+func supportedNativeCLIProvider(providerID string) bool {
+	switch providerID {
+	case "codex", "claude", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+		return true
+	default:
+		return false
+	}
+}
+
+// supportedGatewayCLIProvider 与本组合根实际注册的 Gateway Strategy 保持一致。
+func supportedGatewayCLIProvider(providerID string) bool {
 	return providerID == "codex" || providerID == "claude"
 }
 

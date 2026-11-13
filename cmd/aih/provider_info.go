@@ -19,6 +19,7 @@ import (
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/grok"
 	kimistorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kimi"
+	kirostorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kiro"
 	qoderstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/qoder"
 	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -131,6 +132,9 @@ func providerHomePolicy(providerID string) (accountapp.Policy, bool) {
 	}
 	if providerID == kimistorage.ProviderID {
 		return kimistorage.Policy(), true
+	}
+	if providerID == kirostorage.ProviderID {
+		return kirostorage.Policy(), true
 	}
 	if providerID == zcodestorage.ProviderID {
 		return zcodestorage.Policy(), true

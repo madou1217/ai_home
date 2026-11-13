@@ -37,6 +37,7 @@ import (
 	geminicli "github.com/madou1217/ai_home/internal/adapters/gemini/clilaunch"
 	grokcli "github.com/madou1217/ai_home/internal/adapters/grok/clilaunch"
 	kimicli "github.com/madou1217/ai_home/internal/adapters/kimi/clilaunch"
+	kirocli "github.com/madou1217/ai_home/internal/adapters/kiro/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	qodercli "github.com/madou1217/ai_home/internal/adapters/qoder/clilaunch"
@@ -207,6 +208,10 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 ZCode 静态凭据策略失败", err)
 		}
+		kiroRefresh, err := staticcredential.New("kiro")
+		if err != nil {
+			return fail("创建 Kiro 静态凭据策略失败", err)
+		}
 		qoderRefresh, err := staticcredential.New("qoder")
 		if err != nil {
 			return fail("创建 Qoder 静态凭据策略失败", err)
@@ -232,6 +237,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 			clineRefresh,
 			kimiOAuth,
 			zcodeRefresh,
+			kiroRefresh,
 			qoderRefresh,
 			qodercnRefresh,
 		}
@@ -244,6 +250,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 			clinecli.NewStrategy(),
 			kimicli.NewStrategy(),
 			zcodecli.NewStrategy(),
+			kirocli.NewStrategy(),
 			qoderStrategy,
 			qodercnStrategy,
 		}
@@ -436,7 +443,7 @@ func (app *App) Run(
 // supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
 func supportedNativeCLIProvider(providerID string) bool {
 	switch providerID {
-	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "zcode", "qoder", "qodercn", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "kiro", "zcode", "qoder", "qodercn", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return true
 	default:
 		return false

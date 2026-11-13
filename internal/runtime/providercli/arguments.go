@@ -61,6 +61,8 @@ func validateManagedArguments(providerID string, arguments []string) error {
 			// ZCode 的账号边界由 HOME/ZCODE_DATA_BASE_DIR 投影决定。
 		case "qoder", "qodercn":
 			// Qoder 的账号边界由启动参数 --config-dir 指向投影根决定（providercli 注入）。
+		case "kiro":
+			// Kiro 的账号边界由 KIRO_TEST_DB_PATH 指向投影凭据库决定。
 		default:
 			return ErrUnsupportedRuntime
 		}

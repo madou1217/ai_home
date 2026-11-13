@@ -13,6 +13,7 @@ import (
 	geministorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/gemini"
 	grokstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/grok"
 	kimistorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kimi"
+	kirostorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kiro"
 	qoderstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/qoder"
 	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
 )
@@ -31,6 +32,7 @@ func New() *Registry {
 	grokPolicy := grokstorage.Policy()
 	clinePolicy := clinestorage.Policy()
 	kimiPolicy := kimistorage.Policy()
+	kiroPolicy := kirostorage.Policy()
 	zcodePolicy := zcodestorage.Policy()
 	qoderPolicy, _ := qoderstorage.Policy("qoder")
 	qodercnPolicy, _ := qoderstorage.Policy("qodercn")
@@ -41,6 +43,7 @@ func New() *Registry {
 		grokPolicy.Provider:    grokPolicy,
 		clinePolicy.Provider:   clinePolicy,
 		kimiPolicy.Provider:    kimiPolicy,
+		kiroPolicy.Provider:    kiroPolicy,
 		zcodePolicy.Provider:   zcodePolicy,
 		qoderPolicy.Provider:   qoderPolicy,
 		qodercnPolicy.Provider: qodercnPolicy,
@@ -52,6 +55,7 @@ func New() *Registry {
 		grokstorage.Materializer{},
 		clinestorage.Materializer{},
 		kimistorage.Materializer{},
+		kirostorage.Materializer{},
 		zcodestorage.Materializer{},
 	}
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {

@@ -290,6 +290,8 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 		LookPath:     deps.LookPath,
 		HTTPClient:   deps.HTTPClient,
 		Now:          nowFn,
+		// 安装计划跟随工具箱的 npm 镜像设置（见 apps.effectiveNPMRegistry）。
+		NPMRegistry: func() string { return mirrorsMgr.NPMRegistry(context.Background()) },
 	}
 	if deps.AppsBaseOpts != nil {
 		appsOpts = *deps.AppsBaseOpts

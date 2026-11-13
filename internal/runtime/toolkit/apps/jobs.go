@@ -544,7 +544,10 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 	if timeout <= 0 {
 		timeout = defaultPlanExecTimeout
 	}
+	// 安装脚本依赖的 jq 可能被宿主 PATH 里的坏副本挡住（见 jq_path.go）。
+	plan = withUsableJQScript(ctx, plan, opts)
 	execEnv := mergePlanEnv(opts.Env, plan.Env)
+	execEnv = withUsableJQPath(ctx, execEnv, opts)
 	res := (&opts).exec().Run(ctx, plan.Command, plan.Args, environment.ExecOptions{
 		Timeout: timeout,
 		Env:     execEnv,

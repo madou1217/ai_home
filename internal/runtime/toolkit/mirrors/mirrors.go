@@ -131,6 +131,21 @@ func NewManager(options Options) *Manager {
 	return manager
 }
 
+// NPMRegistry 返回当前生效的 npm registry；读不到时返回空串（调用方回落官方源）。
+//
+// 工具箱的 npm 安装计划会用它替换写死的 registry：镜像设置是宿主网络的一部分，
+// 安装计划必须跟随它，否则「镜像已配置」和「安装仍走官方源」会互相矛盾。
+func (manager *Manager) NPMRegistry(ctx context.Context) string {
+	if manager == nil {
+		return ""
+	}
+	status := manager.GetStatus(ctx, false)
+	if status.NPM == nil {
+		return ""
+	}
+	return strings.TrimSpace(status.NPM.Current)
+}
+
 // ClearCache 清空 15 秒状态缓存。
 func (manager *Manager) ClearCache() {
 	manager.mu.Lock()

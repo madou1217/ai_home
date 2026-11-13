@@ -210,6 +210,18 @@ func buildCmdScriptPlan(id, label, rawURL string, hosts []string) LifecyclePlan 
 	}
 }
 
+// effectiveNPMRegistry 解析安装计划应使用的 registry：优先跟随工具箱镜像设置，
+// 未配置或读不到时才回落官方源。不能留空给 npm 自己解析——计划带 --userconfig，
+// 用户级 .npmrc 本来就不该参与。
+func effectiveNPMRegistry(opts Options) string {
+	if opts.NPMRegistry != nil {
+		if registry := strings.TrimSpace(opts.NPMRegistry()); registry != "" {
+			return registry
+		}
+	}
+	return NPMRegistry
+}
+
 func npmCommand(opts Options) (cmd string, userConfig string) {
 	if resolvePlatform(opts) == platformWindows {
 		return "npm.cmd", "NUL"
@@ -217,10 +229,10 @@ func npmCommand(opts Options) (cmd string, userConfig string) {
 	return "npm", "/dev/null"
 }
 
-func npmNetworkFlags(userConfig string) []string {
+func npmNetworkFlags(userConfig string, opts Options) []string {
 	return []string{
 		"--userconfig=" + userConfig,
-		"--registry=" + NPMRegistry,
+		"--registry=" + effectiveNPMRegistry(opts),
 		"--maxsockets=4",
 		"--fetch-timeout=60000",
 		"--fetch-retries=3",
@@ -237,13 +249,14 @@ func buildNpmPlan(pkg string, opts Options) LifecyclePlan {
 		return LifecyclePlan{}
 	}
 	cmd, uc := npmCommand(opts)
-	args := append([]string{"install", "-g", norm}, npmNetworkFlags(uc)...)
+	args := append([]string{"install", "-g", norm}, npmNetworkFlags(uc, opts)...)
 	return LifecyclePlan{
 		ID:      "npm_global",
 		Label:   "npm 安装 " + norm,
 		Command: cmd,
 		Args:    args,
 		Timeout: packagePlanTimeout,
+		Env:     npmPlanEnv(opts),
 	}
 }
 
@@ -253,13 +266,14 @@ func buildNpmUpdatePlan(pkg string, opts Options) LifecyclePlan {
 		return LifecyclePlan{}
 	}
 	cmd, uc := npmCommand(opts)
-	args := append([]string{"install", "--global", norm + "@latest"}, npmNetworkFlags(uc)...)
+	args := append([]string{"install", "--global", norm + "@latest"}, npmNetworkFlags(uc, opts)...)
 	return LifecyclePlan{
 		ID:      "npm_global_update",
 		Label:   "npm 更新 " + norm,
 		Command: cmd,
 		Args:    args,
 		Timeout: packagePlanTimeout,
+		Env:     npmPlanEnv(opts),
 	}
 }
 
@@ -276,6 +290,7 @@ func buildNpmUninstallPlan(pkg string, opts Options) LifecyclePlan {
 		Command: cmd,
 		Args:    args,
 		Timeout: packagePlanTimeout,
+		Env:     npmPlanEnv(opts),
 	}
 }
 

@@ -52,6 +52,9 @@ type Options struct {
 	VerifyRetries     int
 	VerifyRetryDelay  time.Duration
 
+	// NPMRegistry 返回当前 npm registry（工具箱镜像设置）；nil 或空串用官方源。
+	NPMRegistry func() string
+
 	SenderScriptPath     string
 	ReceiverURL          string
 	ServerHost           string

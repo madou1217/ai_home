@@ -465,6 +465,53 @@ function tryRunGoProviderLs() {
   return true;
 }
 
+// aih <provider> sessions --history（非家族）固定走 Go：复用 sessionscan 读取器。
+const GO_SESSION_HISTORY_PROVIDERS = new Set([
+  'claude', 'gemini', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kiro', 'cline', 'zcode'
+]);
+
+function tryRunGoProviderSessionsHistory() {
+  const args = process.argv.slice(2);
+  if (args.length < 3) return false;
+  const provider = String(args[0] || '').trim().toLowerCase();
+  if (!GO_SESSION_HISTORY_PROVIDERS.has(provider)) return false;
+  if (String(args[1] || '').trim().toLowerCase() !== 'sessions') return false;
+  const rest = args.slice(2);
+  if (!rest.includes('--history')) return false;
+  const allowed = rest.every((token) => (
+    token === '--history' || token === '--limit' || token === '-n' || /^\d+$/.test(token)
+  ));
+  if (!allowed) return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  const env = { ...process.env };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  if (aiHomeDir) env.AIH_HOME_DIR = aiHomeDir;
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 function tryLsFastPath() {
   try {
     const { tryRunLsFastPath } = require('../lib/cli/services/profile/ls-fastpath');
@@ -877,6 +924,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoProviderLs() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

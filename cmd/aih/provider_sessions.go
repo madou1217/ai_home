@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/codexindex"
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 var (
@@ -86,6 +88,37 @@ func runProviderSessionsHistory(
 				path:      session.CWD,
 				updatedAt: session.UpdatedAtMS,
 			})
+		}
+	} else if !codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		// 其它有项目库的 Provider（claude/gemini/agy/...）复用 WebUI 同一份读取器。
+		aiHomeDir, aiErr := resolveAIHomeDir(runtime)
+		if aiErr != nil {
+			return aiErr
+		}
+		projects, listErr := sessionread.ListProjects(ctx, sessionread.Options{
+			AIHomeDir:   aiHomeDir,
+			HostHomeDir: hostHome,
+		}, providerID)
+		if listErr != nil {
+			return fmt.Errorf("%w: %s 的会话历史不可读", errInvalidCommand, providerID)
+		}
+		for _, project := range projects {
+			projectPath := strings.TrimSpace(project.Path)
+			if projectPath == "" {
+				projectPath = strings.TrimSpace(project.Name)
+			}
+			for _, session := range project.Sessions {
+				title := usableSessionTitle(session.Title)
+				if title == "" {
+					title = strings.TrimSpace(project.Name)
+				}
+				rows = append(rows, row{
+					id:        session.ID,
+					title:     title,
+					path:      projectPath,
+					updatedAt: sessionUpdatedMillis(session),
+				})
+			}
 		}
 	} else {
 		projects := codebuddy.ReadProjects(hostHome, providerID, unlimitedScanBudget{})

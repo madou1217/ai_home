@@ -74,6 +74,7 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -485,6 +486,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var windowScheduler *windowactivation.Scheduler
 	var pluginBundle *localPluginRuntimeBundle
 	var egressManager *runtimeegress.Manager
+	var chatRuntimeService *chatruntime.Service
+	var chatPrewarmCloser io.Closer
 	defer func() {
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
@@ -512,6 +515,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && egressManager != nil {
 			_ = egressManager.Close()
+		}
+		if resultErr != nil && chatPrewarmCloser != nil {
+			_ = chatPrewarmCloser.Close()
+		}
+		if resultErr != nil && chatRuntimeService != nil {
+			_ = chatRuntimeService.Close()
 		}
 	}()
 	registrar, err := accountapp.NewRegistrar(
@@ -1889,6 +1898,22 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建内部聊天 Handler 失败: %w", err)
 	}
+	if chatHandler, ok := webUIChatHandler.(*webuichatapi.Handler); ok {
+		var chatErr error
+		chatRuntimeService, chatErr = AttachWebUIChatRuntime(ctx, chatHandler, webuiDeps)
+		if chatErr != nil {
+			_ = inference.Close()
+			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runtime 失败: %w", chatErr)
+		}
+		chatCollectionRoutes, routesErr := BuildWebUIChatRuntimeCollectionRoutes(chatHandler)
+		if routesErr != nil {
+			_ = chatRuntimeService.Close()
+			_ = inference.Close()
+			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runtime 集合路由失败: %w", routesErr)
+		}
+		webuiRoutes = append(webuiRoutes, chatCollectionRoutes...)
+		chatPrewarmCloser = startChatRuntimePrewarm(ctx, chatRuntimeService)
+	}
 	if webSocketHTTPClient == nil {
 		webSocketHTTPClient = &http.Client{
 			CheckRedirect: rejectOAuthRedirect,
@@ -2157,6 +2182,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		if activityDaemon != nil {
 			closers = append(closers, activityDaemon)
 		}
+		if chatPrewarmCloser != nil {
+			closers = append(closers, chatPrewarmCloser)
+		}
+		if chatRuntimeService != nil {
+			closers = append(closers, chatRuntimeService)
+		}
 		return closers
 	}(), nil
 }
@@ -2368,4 +2399,22 @@ func rejectOAuthRedirect(
 	_ []*http.Request,
 ) error {
 	return http.ErrUseLastResponse
+}
+
+type cancelCloserFunc context.CancelFunc
+
+func (fn cancelCloserFunc) Close() error {
+	if fn != nil {
+		fn()
+	}
+	return nil
+}
+
+func startChatRuntimePrewarm(ctx context.Context, svc *chatruntime.Service) io.Closer {
+	if svc == nil {
+		return nil
+	}
+	prewarmCtx, cancel := context.WithCancel(ctx)
+	go svc.PrewarmRecentComposerCatalogs(prewarmCtx, 8)
+	return cancelCloserFunc(cancel)
 }

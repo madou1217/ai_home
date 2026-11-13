@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
@@ -21,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
@@ -106,6 +108,10 @@ type Dependencies struct {
 	MaxAttempts int
 	// HeartbeatInterval 覆盖 SSE 心跳间隔；<= 0 表示关闭心跳。
 	HeartbeatInterval time.Duration
+	// Runtime 注入 Canonical Chat Runtime 服务；非空时接管完整 canonical 会话与事件路由。
+	Runtime *chatruntime.Service
+	// CLIInteractions 可选覆盖终端交互协调器；为空且 Runtime 非空时自动取 Runtime 内置协调器。
+	CLIInteractions *chatruntime.CLIInteractionCoordinator
 }
 
 // Handler 编排一次 turn.submit：校验指令、征召账号、请求上游、回写 SSE、结算用量。
@@ -123,6 +129,9 @@ type Handler struct {
 	maxBodyBytes      int64
 	maxAttempts       int
 	heartbeatInterval time.Duration
+	runtimeMu         sync.RWMutex
+	runtime           *chatruntime.Service
+	cliInteractions   *chatruntime.CLIInteractionCoordinator
 }
 
 // NewHandler 创建默认失败关闭的 WebUI Chat 切片。
@@ -166,6 +175,10 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if !strings.HasSuffix(commandPath, "/") {
 		return nil, ErrInvalidDependencies
 	}
+	cli := dependencies.CLIInteractions
+	if cli == nil && dependencies.Runtime != nil {
+		cli = dependencies.Runtime.CLIInteractionCoordinator()
+	}
 	return &Handler{
 		authorizer:        dependencies.Authorizer,
 		commandPath:       commandPath,
@@ -180,6 +193,8 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		maxBodyBytes:      maxBodyBytes,
 		maxAttempts:       maxAttempts,
 		heartbeatInterval: heartbeat,
+		runtime:           dependencies.Runtime,
+		cliInteractions:   cli,
 	}, nil
 }
 
@@ -196,6 +211,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeRouteError(response, newRouteError(
 			http.StatusUnauthorized, "chat_runtime_unauthorized", "管理凭据无效", nil,
 		))
+		return
+	}
+	if rt, cli := handler.currentRuntime(); rt != nil {
+		handler.serveCollectionSubpath(response, request, rt, cli)
 		return
 	}
 	sessionID, matched := matchCommandPath(request.URL.Path, handler.commandPath)

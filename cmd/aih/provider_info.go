@@ -157,8 +157,11 @@ func runProviderHome(
 			pathStateLabel(target),
 		)
 	}
+	// 会话/共享条目挂在该 Provider 的原生配置根下（Policy.ProjectionRoots[0]），
+	// 不是伪 HOME 根目录；诊断必须和投影执行器同路径。
+	base := policyNativeBase(root, policy)
 	for _, name := range policy.SessionEntries {
-		target := filepath.Join(root, name)
+		target := filepath.Join(base, name)
 		_, _ = fmt.Fprintf(
 			inspectRuntime.stdout,
 			"  %s: %s [%s]\n",
@@ -168,6 +171,14 @@ func runProviderHome(
 		)
 	}
 	return nil
+}
+
+// policyNativeBase 返回共享条目所在的原生配置根。
+func policyNativeBase(root string, policy accountapp.Policy) string {
+	if len(policy.ProjectionRoots) == 0 {
+		return root
+	}
+	return filepath.Join(append([]string{root}, policy.ProjectionRoots[0].From...)...)
 }
 
 // environmentValue 只渲染投影根驱动的绑定；其它基准在这里没有可靠值，跳过。

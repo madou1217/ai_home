@@ -52,3 +52,15 @@ func TestHomeDiagnosticsPathsFollowPolicy(t *testing.T) {
 		t.Fatalf("auth path = %q, want %q", authPath, wantAuth)
 	}
 }
+
+// TestPolicyNativeBaseUsesConfigRoot 共享条目必须挂在该 Provider 的配置根下。
+func TestPolicyNativeBaseUsesConfigRoot(t *testing.T) {
+	policy, ok := codebuddyfamilystorage.Policy("codebuddycn")
+	if !ok {
+		t.Fatal("codebuddycn 缺少投影策略")
+	}
+	base := policyNativeBase("/tmp/projection", policy)
+	if base != filepath.Join("/tmp/projection", ".codebuddy-cn") {
+		t.Fatalf("base = %q", base)
+	}
+}

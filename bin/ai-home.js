@@ -155,16 +155,19 @@ function tryRunGoFamilyLaunch() {
   return true;
 }
 
-// aih <family> usage <id> [--refresh] 也固定走 Go：额度读取/刷新由 Go Server 承担，
-// Node 只注入 Server 地址与 Management Key，不再本地读缓存拼展示。
-function tryRunGoFamilyUsage() {
+// aih <family> ls / usage [<id> [--refresh]] 也固定走 Go：账号列表、额度读取与
+// 刷新由 Go Server 承担，Node 只注入 Server 地址与 Management Key。
+function tryRunGoFamilyServerCommand() {
   const args = process.argv.slice(2);
-  if (args.length !== 3 && args.length !== 4) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
   if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
-  if (String(args[1] || '').trim().toLowerCase() !== 'usage') return false;
-  if (!/^\d+$/.test(String(args[2] || '').trim())) return false;
-  if (args.length === 4 && args[3] !== '--refresh') return false;
+  const command = String(args[1] || '').trim().toLowerCase();
+  const isList = args.length === 2 && command === 'ls';
+  const isUsage = (args.length === 3 || args.length === 4) &&
+    command === 'usage' &&
+    /^\d+$/.test(String(args[2] || '').trim()) &&
+    (args.length === 3 || args[3] === '--refresh');
+  if (!isList && !isUsage) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();
@@ -220,6 +223,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilyUsage() && !tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

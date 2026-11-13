@@ -18,6 +18,60 @@ const INTERNAL_FAST_PATH_VERBS = new Set(['__complete', '__suggest', '__learn'])
 // 交互选择器与 `aih ss <名字>` 必须走完整 CLI：真正进入会话需要 PTY 运行时
 // （runCliPty 只在组合根里装配），快路径拿不到它，Enter 只会报
 // 「PTY runtime is unavailable」（2026-11-06 用户多次遇到）。
+// aih ss|sessions --list/--detail 固定走 Go：只读注册表 + tmux 探测，不装配 Node
+// 组合根；交互 picker / --refresh（Node 标题缓存）与按名字进入仍交回 Node。
+const GLOBAL_SESSION_DETAIL_TOKENS = new Set([
+  '--list', '-l', '--detail', '--details', '--verbose', '-v', '-vv', '-vvv',
+  'list', 'detail', 'details', 'vvv'
+]);
+
+function tryRunGoGlobalSessions() {
+  const args = process.argv.slice(2);
+  if (args.length !== 2) return false;
+  const verb = String(args[0] || '').trim().toLowerCase();
+  if (verb !== 'ss' && verb !== 'sessions') return false;
+  if (!GLOBAL_SESSION_DETAIL_TOKENS.has(String(args[1] || '').trim())) return false;
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const binary = resolveGoCLIBinary();
+  if (!fs.existsSync(binary)) {
+    process.stderr.write('[aih] Go CLI 未构建：' + binary + '\n[aih] 运行 npm run go:build 后再试；不会回落 Node。\n');
+    process.exitCode = 1;
+    return true;
+  }
+  let hostHome = '';
+  try {
+    hostHome = require('../lib/runtime/host-home').resolveUnprojectedHostHomeDir({ env: process.env, os });
+  } catch (_error) {
+    hostHome = '';
+  }
+  let aiHomeDir = String(process.env.AIH_HOME_DIR || '').trim();
+  if (!aiHomeDir) {
+    try {
+      aiHomeDir = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env, hostHomeDir: hostHome });
+    } catch (_error) {
+      aiHomeDir = '';
+    }
+  }
+  let config = null;
+  try {
+    config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+  } catch (_error) {
+    config = null;
+  }
+  const managementKey = String(config && config.managementKey || '').trim();
+  const env = { ...process.env };
+  if (hostHome) env.AIH_HOST_HOME = hostHome;
+  if (aiHomeDir) env.AIH_HOME_DIR = aiHomeDir;
+  if (managementKey) {
+    env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
+  }
+  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 function tryPersistentSessionFastPath() {
   const verb = process.argv[2];
   if (verb !== 'ss' && verb !== 'sessions') return false;
@@ -425,6 +479,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

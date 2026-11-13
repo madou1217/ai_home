@@ -90,7 +90,11 @@ func runProviderUsage(
 			}
 			result = cached
 			err = nil
-			_, _ = fmt.Fprintln(runtime.stderr, "[aih] 额度刷新失败，显示缓存快照")
+			// 快照本身是新鲜的（刷新其实已落库，只是响应失败/被 single-flight 合并）时
+			// 不打扰用户；只有缓存确实过期才提示。
+			if cached.Stale() {
+				_, _ = fmt.Fprintln(runtime.stderr, "[aih] 额度刷新失败，显示缓存快照")
+			}
 		}
 	} else {
 		result, err = client.GetUsage(ctx, accountRef)
@@ -138,6 +142,20 @@ func runProviderUsageAll(
 			result, err = client.GetUsage(ctx, account.AccountRef)
 		}
 		if err != nil {
+			// 与单账号刷新一致：失败时退回缓存快照并标注。
+			if cached, cachedErr := client.GetUsage(ctx, account.AccountRef); cachedErr == nil {
+				writeAccountUsageSummary(
+					runtime.stdout,
+					account,
+					displayNames[account.AccountRef.String()],
+					cached,
+				)
+				if cached.Stale() {
+					_, _ = fmt.Fprintf(runtime.stdout, "      （刷新失败，显示缓存快照）\n")
+				}
+				err = nil
+				continue
+			}
 			_, _ = fmt.Fprintf(
 				runtime.stdout,
 				"  #%d  读取失败: %v\n",

@@ -206,7 +206,11 @@ export function getAccountDisplayState(record: Pick<Account,
   const effectiveRemainingPct = getEffectiveRemainingPct(record);
   if (!record.apiKeyMode && effectiveRemainingPct != null && effectiveRemainingPct <= 0) return 'exhausted';
   if (String(record.quotaStatus || '').trim() === 'exhausted') return 'exhausted';
-  if (String(record.schedulableStatus || '').trim() === 'blocked_by_policy') return 'policy_blocked';
+  const schedulableStatus = String(record.schedulableStatus || '').trim();
+  if (schedulableStatus === 'blocked_by_quota') return 'exhausted';
+  if (schedulableStatus === 'blocked_by_policy' || schedulableStatus === 'blocked_by_account_status') {
+    return 'policy_blocked';
+  }
   // 只有已确认耗尽才影响调度；额度缺失、采集超时与解析失败在额度组件中独立展示。
   // 增量记录暂未带 schedulableStatus 时，也不能把遥测缺失推断成账号异常。
   return 'healthy';

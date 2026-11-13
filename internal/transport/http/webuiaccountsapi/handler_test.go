@@ -231,11 +231,24 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		}
 	}
 	// 空占位必须是形状正确的空值，而不是 null。
-	for _, field := range []string{"upstreamErrorRules", "upstreamErrorGroupIds", "displayNames", "activityActions"} {
+	for _, field := range []string{"upstreamErrorRules", "upstreamErrorGroupIds", "activityActions"} {
 		value, present := oauth[field].([]any)
 		if !present || len(value) != 0 {
 			t.Fatalf("账号 1 字段 %s 应为空数组, 实际 %#v", field, oauth[field])
 		}
+	}
+	// 身份列表由 Go 派生：邮箱在前，展示名与资料名按昵称依次排列。
+	oauthNames, present := oauth["displayNames"].([]any)
+	if !present || len(oauthNames) != 3 {
+		t.Fatalf("账号 1 displayNames = %#v, 期望 3 项", oauth["displayNames"])
+	}
+	firstIdentity, _ := oauthNames[0].(map[string]any)
+	secondIdentity, _ := oauthNames[1].(map[string]any)
+	thirdIdentity, _ := oauthNames[2].(map[string]any)
+	if firstIdentity["type"] != "email" || firstIdentity["value"] != "a@example.com" ||
+		secondIdentity["type"] != "nickName" || secondIdentity["value"] != "工作号" ||
+		thirdIdentity["type"] != "nickName" || thirdIdentity["value"] != "profile 名" {
+		t.Fatalf("账号 1 displayNames = %#v", oauthNames)
 	}
 	// 这里的快照 payload 是空对象「{}」：按无快照下发 null，而不是让前端拿到空壳对象。
 	if oauth["usageSnapshot"] != nil || oauth["tokenUsage"] != nil {
@@ -269,6 +282,15 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		if got != want {
 			t.Fatalf("账号 2 字段 %s = %#v, 期望 %#v", field, got, want)
 		}
+	}
+	// API Key 账号没有昵称：展示名就是端点域名，用 name 项表达。
+	apiKeyNames, present := apiKey["displayNames"].([]any)
+	if !present || len(apiKeyNames) != 1 {
+		t.Fatalf("账号 2 displayNames = %#v, 期望 1 项", apiKey["displayNames"])
+	}
+	apiKeyIdentity, _ := apiKeyNames[0].(map[string]any)
+	if apiKeyIdentity["type"] != "name" || apiKeyIdentity["value"] != "proxy.example.com" {
+		t.Fatalf("账号 2 displayNames = %#v", apiKeyNames)
 	}
 }
 

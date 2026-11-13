@@ -43,10 +43,10 @@ type Row struct {
 	PlanName  string `json:"planName,omitempty"`
 	Region    string `json:"region,omitempty"`
 	// ZcodeRegion 是 zcode 的服务区域（zai / bigmodel），与上面的 region（kimi 网络区域）不是一回事。
-	ZcodeRegion  string `json:"zcodeRegion,omitempty"`
-	Email        string `json:"email"`
-	DisplayNames []any  `json:"displayNames"`
-	LoginType    string `json:"loginType,omitempty"`
+	ZcodeRegion  string        `json:"zcodeRegion,omitempty"`
+	Email        string        `json:"email"`
+	DisplayNames []DisplayName `json:"displayNames"`
+	LoginType    string        `json:"loginType,omitempty"`
 
 	TokenUsage any `json:"tokenUsage"`
 	// TokenUsageSource 是 Node 的诊断字段（go / node），本切片留空。
@@ -105,6 +105,8 @@ type accountFact struct {
 	SnapshotPayload string
 	IsDefault       int64
 	ModelCount      int64
+	// ZcodeRegion 是 zcode 凭据声明的服务区域（zai / bigmodel）；其它 Provider 为空。
+	ZcodeRegion string
 }
 
 // filledRowFields 是 Go 独占事实派生的字段：调用方可以无条件采用。
@@ -132,6 +134,9 @@ var filledRowFields = []string{
 //     它是某个采集时刻的文档，Node 缓存可能比这一份新。
 var approxRowFields = []string{
 	"displayName",
+	// displayNames 由 Go 从 displayName / email / phone 派生；与 displayName 同源，
+	// 随账号 UI 状态镜像变化，因此与它同归 approx。
+	"displayNames",
 	"apiKeyMode",
 	"authMode",
 	"baseUrl",
@@ -212,9 +217,9 @@ func newRow(fact accountFact) Row {
 		ModelCount:            int(fact.ModelCount),
 		UpstreamErrorRules:    []any{},
 		UpstreamErrorGroupIDs: []any{},
-		DisplayNames:          []any{},
 		ActivityActions:       []any{},
 	}
+	row.DisplayNames = buildDisplayNames(fact, row.DisplayName, apiKeyMode)
 	row.PlanType = resolvePlanType(configured, apiKeyMode, fact.Subscription)
 	row.UpdatedAt = resolveUpdatedAt(configured, apiKeyMode, fact.CapturedAtMS, fact.UpdatedAtMS)
 	// API Key 账号没有 Provider 额度：Node 对它们一律不给剩余额度，这里同口径。
@@ -223,6 +228,7 @@ func newRow(fact accountFact) Row {
 		row.RemainingPct = &remaining
 	}
 	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload, fact.Provider)
+	row.ZcodeRegion = resolveZcodeRegion(fact.Provider, fact.ZcodeRegion)
 	row.SchedulableStatus, row.SchedulableReason = resolveSchedulableStatus(
 		configured,
 		row.Enabled,
@@ -295,6 +301,20 @@ func resolveUpdatedAt(configured, apiKeyMode bool, capturedAtMS, accountUpdatedA
 		return capturedAtMS
 	}
 	return accountUpdatedAtMS
+}
+
+// resolveZcodeRegion 只认区域表里的取值；未知值留空（与 Node 的
+// resolveZcodeAccountRegion 一致：未判定不能被回落到默认区域）。
+func resolveZcodeRegion(provider, region string) string {
+	if !strings.EqualFold(strings.TrimSpace(provider), "zcode") {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(region)) {
+	case "zai", "bigmodel":
+		return strings.ToLower(strings.TrimSpace(region))
+	default:
+		return ""
+	}
 }
 
 func firstNonEmpty(values ...string) string {

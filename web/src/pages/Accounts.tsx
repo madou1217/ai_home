@@ -56,6 +56,7 @@ import { getProviderFamily } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
+import { AccountCliId } from '@/features/accounts/AccountCliId';
 import {
   useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
@@ -654,6 +655,7 @@ export default function Accounts() {
                 ) : null}
               </div>
             </div>
+            <AccountCliId record={record} className="account-cli-id" />
             <AccountSubscriptionLines
               record={record}
               onConfirm={handleRefreshUsage}

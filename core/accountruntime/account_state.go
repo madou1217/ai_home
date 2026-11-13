@@ -166,7 +166,7 @@ func (state AccountState) DeriveStatus(now time.Time) AccountStateStatus {
 		untilMS := int64FromPointer(block.Until)
 		if untilMS > nowMS {
 			return AccountStateStatus{
-				status: strings.TrimSpace(block.Kind),
+				status: runtimeStatusForFailureKind(block.Kind),
 				until:  timeFromUnixMilli(untilMS),
 				reason: strings.TrimSpace(block.Reason),
 			}
@@ -196,10 +196,7 @@ func (state AccountState) DeriveStatus(now time.Time) AccountStateStatus {
 	}
 	cooldownMS := int64FromPointer(state.parsed.CooldownUntil)
 	if cooldownMS > nowMS {
-		status := strings.TrimSpace(state.parsed.LastFailureKind)
-		if status == "" {
-			status = "cooling_down"
-		}
+		status := runtimeStatusForFailureKind(state.parsed.LastFailureKind)
 		return AccountStateStatus{
 			status: status,
 			until:  timeFromUnixMilli(cooldownMS),
@@ -207,6 +204,27 @@ func (state AccountState) DeriveStatus(now time.Time) AccountStateStatus {
 		}
 	}
 	return AccountStateStatus{status: "healthy"}
+}
+
+// runtimeStatusForFailureKind 把策略 kind 归一到运行态词表；未知种类落到 cooling_down，
+// 绝不把策略内部 slug 直接当 status 下发（与 Node 的 deriveAccountRuntimeStatus 同口径）。
+func runtimeStatusForFailureKind(kind string) string {
+	canonical := strings.TrimSpace(kind)
+	if alias, ok := runtimeStatusAliases[canonical]; ok {
+		canonical = alias
+	}
+	switch canonical {
+	case "quota_exhausted", "billing_blocked", "permission_denied", "auth_invalid",
+		"rate_limited", "overloaded", "service_unavailable", "upstream_error", "transient_network":
+		return canonical
+	default:
+		return "cooling_down"
+	}
+}
+
+var runtimeStatusAliases = map[string]string{
+	"account_usage_exhausted":     "quota_exhausted",
+	"account_no_resource_package": "quota_exhausted",
 }
 
 func (document accountStateDocument) failureReason() string {
@@ -330,19 +348,22 @@ func timeFromUnixMilli(value int64) time.Time {
 //
 // 只映射 Go 已注册的类型；未识别的观察不物化成阻塞（状态派生仍然可用）。
 var nodeFailureKinds = map[string]FailureKind{
-	"auth_invalid":          FailureReauthenticationRequired,
-	"credential_rejected":   FailureCredentialRejected,
-	"rate_limited":          FailureRateLimited,
-	"permission_denied":     FailurePermissionDenied,
-	"billing_blocked":       FailureBillingBlocked,
-	"quota_exhausted":       FailureQuotaExhausted,
-	"workspace_deactivated": FailureWorkspaceDeactivated,
-	"region_unsupported":    FailureRegionUnsupported,
-	"overloaded":            FailureModelOverloaded,
-	"model_overloaded":      FailureModelOverloaded,
-	"service_unavailable":   FailureUpstreamUnavailable,
-	"upstream_error":        FailureUpstreamUnavailable,
-	"transient_network":     FailureConnectionReset,
+	"auth_invalid":        FailureReauthenticationRequired,
+	"credential_rejected": FailureCredentialRejected,
+	"rate_limited":        FailureRateLimited,
+	"permission_denied":   FailurePermissionDenied,
+	"billing_blocked":     FailureBillingBlocked,
+	"quota_exhausted":     FailureQuotaExhausted,
+	// 旧版账号级额度耗尽策略词；新写入已统一为 quota_exhausted，这里兼容已落库状态。
+	"account_usage_exhausted":     FailureQuotaExhausted,
+	"account_no_resource_package": FailureQuotaExhausted,
+	"workspace_deactivated":       FailureWorkspaceDeactivated,
+	"region_unsupported":          FailureRegionUnsupported,
+	"overloaded":                  FailureModelOverloaded,
+	"model_overloaded":            FailureModelOverloaded,
+	"service_unavailable":         FailureUpstreamUnavailable,
+	"upstream_error":              FailureUpstreamUnavailable,
+	"transient_network":           FailureConnectionReset,
 }
 
 // DeriveBlock 从运行态文档物化一条账号级失败阻塞。

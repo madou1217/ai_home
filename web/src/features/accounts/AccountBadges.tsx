@@ -83,6 +83,9 @@ const RUNTIME_STATUS_META: Record<string, AccountBadgeMeta> = {
   healthy: { status: 'success', label: '正常' },
   billing_blocked: { status: 'error', label: '余额不足 / 账单受限' },
   quota_exhausted: { status: 'warning', label: '额度耗尽' },
+  // 旧版账号级额度耗尽策略词；新数据已归一为 quota_exhausted，这里兜底旧快照/旧浏览器缓存。
+  account_usage_exhausted: { status: 'warning', label: '额度耗尽' },
+  account_no_resource_package: { status: 'warning', label: '额度耗尽' },
   permission_denied: { status: 'error', label: '权限受限' },
   rate_limited: { status: 'warning', label: '限流中' },
   auth_invalid: { status: 'error', label: '认证失效' },

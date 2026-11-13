@@ -9,35 +9,38 @@ export interface AccountTitleDisplayName {
 }
 
 export interface AccountTitleFields {
-  displayId?: string;
   displayName?: string;
   email?: string;
   displayNames?: AccountTitleDisplayName[];
 }
 
-// 为什么要轮播：一个账号可能同时有昵称、手机号、邮箱、CLI ID，单行放不下，
-// 而用户在不同场景需要不同身份（对照 CLI 用 ID、确认账号用手机号/邮箱）。
+// 为什么要轮播：一个账号可能同时有昵称、手机号、邮箱，单行放不下，
+// 而用户在不同场景需要不同身份（确认账号用手机号/邮箱、对照昵称用昵称）。
 //
-// 顺序：#CLI ID → 服务端下发的 displayNames（数组顺序即轮播顺序）。
+// 顺序：服务端下发的 displayNames（数组顺序即轮播顺序）。
 // displayNames 是**唯一**的身份列表：新增身份类型（uin、员工号…）不需要改这里。
 // 旧服务端没有该字段时，回退到 displayName / email 的旧口径。
+//
+// CLI 数字 ID（#N）**不属于身份**，不进轮播：它只是 `aih <provider> <id>` 的命令参照，
+// 由账号名下方的 AccountCliId 以浅色单独渲染（点击直接复制命令）。
 export function buildAccountTitleItems(record: AccountTitleFields): string[] {
   const items: string[] = [];
   const push = (value: string) => {
     const text = String(value || '').trim();
     if (text && !items.includes(text)) items.push(text);
   };
-  push(record.displayId ? `#${record.displayId}` : '');
 
   if (Array.isArray(record.displayNames)) {
     for (const entry of record.displayNames) {
       if (!entry || typeof entry !== 'object') continue;
       push(String(entry.value || ''));
     }
-    return items;
+    // displayNames 为空数组（没有可展示身份）时不能直接返回空列表：
+    // 账号名会整块消失。继续走下面的 displayName / email 回退。
+    if (items.length > 0) return items;
   }
 
-  // —— 旧服务端兼容：没有 displayNames 时按原字段拼 ——
+  // —— 旧服务端 / 空 displayNames 兼容：按原字段拼 ——
   const name = String(record.displayName || '').trim();
   push(name);
   const email = String(record.email || '').trim();

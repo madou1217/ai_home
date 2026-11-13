@@ -77,6 +77,29 @@
   white-space: nowrap;
 }
 
+/* CLI 数字 ID：账号名下方的浅色命令参照，点击复制 aih <provider> <id>。
+ * 不放进名字轮播——它是命令参数，不是账号身份。 */
+.account-cli-id {
+  display: inline-flex;
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 2px;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.account-cli-id:hover,
+.account-cli-id:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+}
+
 .account-plan-tag {
   display: inline-flex;
   min-width: 0;

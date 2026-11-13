@@ -113,6 +113,26 @@
   white-space: nowrap;
 }
 
+/* CLI 数字 ID：名字下方的浅色命令参照（与列表同语义），点击复制 aih <provider> <id>。 */
+.accountCliId {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 2px;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountCliId:hover,
+.accountCliId:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+}
+
 .moreBtn {
   flex: none;
   align-self: flex-start;

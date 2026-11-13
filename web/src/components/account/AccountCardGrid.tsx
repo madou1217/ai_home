@@ -12,6 +12,7 @@ import type { Account, ManagementAccountActivity, Provider } from '@/types';
 import AccountRefreshLogo from '@/features/accounts/AccountRefreshLogo';
 import AccountSubscriptionLines from '@/features/accounts/AccountSubscriptionLines';
 import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
+import { AccountCliId } from '@/features/accounts/AccountCliId';
 import {
   getAccountSecondaryLabel,
   getPlanTagColor,
@@ -121,6 +122,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                     ) : null}
                   </span>
                 </div>
+                <AccountCliId record={acc} className={styles.accountCliId} />
                 {secondaryLabel ? <span className={styles.accountSubtitle}>{secondaryLabel}</span> : null}
                 <AccountSubscriptionLines
                   record={acc}

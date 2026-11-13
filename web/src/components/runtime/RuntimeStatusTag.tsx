@@ -5,6 +5,12 @@ import { formatAccountIssueReason } from '@/utils/account-reasons';
 // 由 AntdThemeProvider 的 token 驱动，深浅主题自动翻转；不再使用彩虹色预设。
 const RUNTIME_STATUS_META: Record<string, { color: string; label: string }> = {
   healthy: { color: 'success', label: '正常' },
+  billing_blocked: { color: 'error', label: '余额不足 / 账单受限' },
+  quota_exhausted: { color: 'warning', label: '额度耗尽' },
+  permission_denied: { color: 'error', label: '权限受限' },
+  // 旧版账号级额度耗尽策略词；新数据已归一为 quota_exhausted。
+  account_usage_exhausted: { color: 'warning', label: '额度耗尽' },
+  account_no_resource_package: { color: 'warning', label: '额度耗尽' },
   rate_limited: { color: 'warning', label: '限流中' },
   auth_invalid: { color: 'error', label: '认证失效' },
   overloaded: { color: 'warning', label: '上游繁忙' },

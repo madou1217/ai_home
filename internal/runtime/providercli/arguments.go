@@ -55,6 +55,8 @@ func validateManagedArguments(providerID string, arguments []string) error {
 			// Grok 的账号边界由 GROK_HOME 投影决定，官方参数没有能覆盖它的开关。
 		case "cline":
 			// Cline 的账号边界由 CLINE_DIR/CLINE_DATA_DIR 投影决定。
+		case "kimi":
+			// Kimi 的账号边界由 KIMI_CODE_HOME 投影决定。
 		default:
 			return ErrUnsupportedRuntime
 		}

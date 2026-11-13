@@ -8,13 +8,6 @@
 // 清除。语义与 Node 的 clearBrokenProvider 对齐——先确认账本确实处于熔断，再（可选）
 // 验证当前会被启动的那份 CLI，只有明确通过才解除，并把它记为新的回退锚点。本切片只
 // 改账本，不安装任何东西。
-//
-// 响应沿用 Node 的 {ok, reason, detail, version, status} 形状，另加 verified 标注本次
-// 是否真的跑过验证。status 由调用方注入的 Status 提供（与只读接口同源），本包不重新
-// 投影账本，避免出现第二套投影口径。
-//
-// 并发：写账本是 tmp + rename 的原子替换；同一 provider 被并发清除时结果幂等（后到者
-// 读到已解除的账本会得到 not_broken），与 Node 侧只靠 state.cycling 串行的强度相当。
 package webuiproviderclearbrokenapi
 
 import (
@@ -26,6 +19,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 )
 
 const (
@@ -41,6 +35,7 @@ const (
 	// 业务原因码，与 Node clearBrokenProvider / scheduler.clearBroken 的取值一致。
 	ReasonCleared                 = "cleared"
 	ReasonNotBroken               = "not_broken"
+	ReasonAlreadyRunning          = "already_running"
 	ReasonUnknownProvider         = "unknown_provider"
 	ReasonInstalledVersionUnknown = "installed_version_unknown"
 	ReasonVerifyFailed            = "verify_failed"
@@ -96,10 +91,12 @@ type Dependencies struct {
 	AIHomeDir  string
 	// Catalog 判定 provider 是否是升级候选（声明了 CLI 包），与只读接口同一真值源。
 	Catalog *providers.Catalog
-	// Verifier 可选：nil 时跳过验证（响应 verified=false），直接清除熔断。
+	// Scheduler 可选：注入后与后台周期升级串行互斥，并默认提供真实 CLI 验证器与含调度态的 status 快照。
+	Scheduler *providercliupgrade.Scheduler
+	// Verifier 可选：nil 且 Scheduler 也为 nil 时跳过验证（响应 verified=false），直接清除熔断。
 	Verifier Verifier
 	// Status 可选：返回与只读接口一致的账本视图，原样嵌入响应的 status 字段。
-	// nil 时 status 为 null，调用方自行回落到读接口。
+	// nil 时若注入了 Scheduler 则自动返回其含实时调度态的快照，否则 status 为 null。
 	Status func(ctx context.Context) (any, error)
 	// Now 是测试时钟；nil 时使用 time.Now。
 	Now func() time.Time
@@ -110,9 +107,29 @@ type Handler struct {
 	authorizer Authorizer
 	aiHomeDir  string
 	catalog    *providers.Catalog
+	scheduler  *providercliupgrade.Scheduler
 	verifier   Verifier
-	status     func(ctx context.Context) (any, error)
+	status     func(context.Context) (any, error)
 	now        func() time.Time
+}
+
+type schedulerVerifierAdapter struct {
+	inner providercliupgrade.ClearBrokenVerifier
+}
+
+func (a schedulerVerifierAdapter) ProbeInstalledVersion(ctx context.Context, provider string) (string, error) {
+	return a.inner.ProbeInstalledVersion(ctx, provider)
+}
+
+func (a schedulerVerifierAdapter) Verify(ctx context.Context, provider string, version string) (Verification, error) {
+	res, err := a.inner.Verify(ctx, provider, version)
+	if err != nil {
+		return Verification{}, err
+	}
+	return Verification{
+		Verdict: Verdict(res.Verdict),
+		Detail:  res.Detail,
+	}, nil
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -124,12 +141,26 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if now == nil {
 		now = time.Now
 	}
+	verifier := dependencies.Verifier
+	if verifier == nil && dependencies.Scheduler != nil {
+		if sv := dependencies.Scheduler.Verifier(); sv != nil {
+			verifier = schedulerVerifierAdapter{inner: sv}
+		}
+	}
+	status := dependencies.Status
+	if status == nil && dependencies.Scheduler != nil {
+		sched := dependencies.Scheduler
+		status = func(context.Context) (any, error) {
+			return sched.StatusSnapshot(), nil
+		}
+	}
 	return &Handler{
 		authorizer: dependencies.Authorizer,
 		aiHomeDir:  strings.TrimSpace(dependencies.AIHomeDir),
 		catalog:    dependencies.Catalog,
-		verifier:   dependencies.Verifier,
-		status:     dependencies.Status,
+		scheduler:  dependencies.Scheduler,
+		verifier:   verifier,
+		status:     status,
 		now:        now,
 	}, nil
 }
@@ -179,6 +210,27 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 
 	ctx := request.Context()
+	execClear := func() {
+		handler.executeClearBroken(ctx, response, provider)
+	}
+	if handler.scheduler != nil {
+		if err := handler.scheduler.TryRunExclusive(func() error {
+			execClear()
+			return nil
+		}); err != nil {
+			if errors.Is(err, providercliupgrade.ErrAlreadyRunning) {
+				handler.respond(ctx, response, http.StatusConflict, clearBrokenView{Reason: ReasonAlreadyRunning})
+				return
+			}
+			handler.respond(ctx, response, http.StatusInternalServerError, clearBrokenView{Reason: ReasonLedgerWriteFailed, Detail: err.Error()})
+			return
+		}
+		return
+	}
+	execClear()
+}
+
+func (handler *Handler) executeClearBroken(ctx context.Context, response http.ResponseWriter, provider string) {
 	current := readLedger(handler.aiHomeDir)
 	record := current.record(provider)
 	// 熔断在账本里落三处（state=broken、enabled=false、拉黑失败版本），只看 state 会

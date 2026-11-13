@@ -71,11 +71,13 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
+	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
 	accountrulesapi "github.com/madou1217/ai_home/internal/transport/http/accountrulesapi"
@@ -91,6 +93,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
+	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
@@ -99,6 +102,8 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliaswebui"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
@@ -467,6 +472,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var modelRefresh *accountapp.ModelRefreshCoordinator
 	var hooksRuntime *codexHooksRuntime
 	var backgroundDaemons *backgroundDaemonsRuntime
+	var upgradeScheduler *providercliupgrade.Scheduler
+	var windowScheduler *windowactivation.Scheduler
 	defer func() {
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
@@ -479,6 +486,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && backgroundDaemons != nil {
 			_ = backgroundDaemons.Close()
+		}
+		if resultErr != nil && upgradeScheduler != nil {
+			_ = upgradeScheduler.Close()
+		}
+		if resultErr != nil && windowScheduler != nil {
+			_ = windowScheduler.Close()
 		}
 	}()
 	registrar, err := accountapp.NewRegistrar(
@@ -1461,52 +1474,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 Codex app-server 代理失败: %w", err)
 	}
-	webuiDeps := webuiRouteDependencies{
-		Authorizer:       authorizer,
-		AIHomeDir:        aiHomeDir,
-		Catalog:          catalog,
-		ModelModalities:  modelModalities,
-		HostHomeDir:      dependencies.HostHomeDir,
-		Store:            store,
-		AccountRuntime:   accountRuntime,
-		AuthJobs:         jobs,
-		AccountsHandler:  accountsHandler,
-		AccountRows:      dependencies.WebUIAccountsSource,
-		CredentialEditor: credentialRotator,
-		ProviderDefaults: providerDefaults,
-		ModelRefresher:   recoveringModelManagement,
-		UsageService:     usage.service,
-		TerminalProbe: func(sessionKey string) string {
-			return string(terminalDurable.Probe(sessionKey).State)
-		},
-		ReverseTunnels:  sshTunnelSupervisor,
-		AccountDeletion: deleter,
-		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
-		AccountHostGrant: deletionHost,
-		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
-		NodeBaseURL:     nodeBaseURL,
-		ManagementKey:   managementKey,
-		TerminalHandler: webUITerminalHandler,
-		SubAggregator:   subAggSvc,
-		SessionEventBus: sessionEventBus,
-		CodexHooks:      hooksRuntime,
-	}
-	webuiRoutes, err := buildWebUIRoutes(webuiDeps)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	backgroundDaemons, err = startBackgroundDaemons(ctx, webuiDeps)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	daemonsRoutes, err := backgroundDaemons.Routes(authorizer)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	webuiRoutes = append(webuiRoutes, daemonsRoutes...)
 	accountRulesHandler, err := accountrulesapi.NewHandler(accountrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Service:    upstreamRulesService,
@@ -1683,6 +1650,71 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			err,
 		)
 	}
+	// 窗口激活探测回环处理器：直接覆盖 codex /v1/responses、agy /v1beta/models/ 与 /v1/chat/completions，
+	// 在 Go 进程内完成 /v1/* 极小探测而不绕经 Node 网关。
+	windowProbeMux := http.NewServeMux()
+	windowProbeMux.Handle(geminiapi.BetaPathPrefix, inference.gemini)
+	windowProbeMux.Handle(openairesponsesapi.Path, responsesDispatcher{
+		canonical:  inference.handler,
+		nativeHTTP: codexHTTPHandler,
+	})
+	windowProbeMux.Handle(openaichatcompletionsapi.Path, familyRelayHandler)
+	webuiDeps := webuiRouteDependencies{
+		Authorizer:       authorizer,
+		AIHomeDir:        aiHomeDir,
+		Catalog:          catalog,
+		ModelModalities:  modelModalities,
+		HostHomeDir:      dependencies.HostHomeDir,
+		Store:            store,
+		AccountRuntime:   accountRuntime,
+		AuthJobs:         jobs,
+		AccountsHandler:  accountsHandler,
+		AccountRows:      dependencies.WebUIAccountsSource,
+		CredentialEditor: credentialRotator,
+		ProviderDefaults: providerDefaults,
+		ModelRefresher:   recoveringModelManagement,
+		UsageService:     usage.service,
+		TerminalProbe: func(sessionKey string) string {
+			return string(terminalDurable.Probe(sessionKey).State)
+		},
+		ReverseTunnels:  sshTunnelSupervisor,
+		AccountDeletion: deleter,
+		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
+		AccountHostGrant: deletionHost,
+		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
+		NodeBaseURL:     nodeBaseURL,
+		ManagementKey:   managementKey,
+		TerminalHandler: webUITerminalHandler,
+		SubAggregator:   subAggSvc,
+		SessionEventBus: sessionEventBus,
+		CodexHooks:      hooksRuntime,
+	}
+	schedulerPorts := webuiSchedulerPorts{
+		ClientKey:    clientKey,
+		LocalHandler: windowProbeMux,
+	}
+	upgradeScheduler = NewUpgradeScheduler(webuiDeps, schedulerPorts)
+	upgradeScheduler.Start(ctx)
+	windowScheduler = NewWindowActivationScheduler(webuiDeps, schedulerPorts)
+	windowScheduler.Start(ctx)
+	webuiDeps.UpgradeScheduler = upgradeScheduler
+	webuiDeps.WindowScheduler = windowScheduler
+	webuiRoutes, err := buildWebUIRoutes(webuiDeps)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	backgroundDaemons, err = startBackgroundDaemons(ctx, webuiDeps)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	daemonsRoutes, err := backgroundDaemons.Routes(authorizer)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, err
+	}
+	webuiRoutes = append(webuiRoutes, daemonsRoutes...)
 	// 内部聊天入口：Node 的轮次执行（session-actor 的 turn.submit）把本轮指令发到这里，
 	// 由 Go 完成账号征召、上游请求、改流与记账；事件流由 Node 翻译成既有 canonical 形状。
 	//
@@ -1962,6 +1994,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if backgroundDaemons != nil {
 			closers = append(closers, backgroundDaemons)
+		}
+		if upgradeScheduler != nil {
+			closers = append(closers, upgradeScheduler)
+		}
+		if windowScheduler != nil {
+			closers = append(closers, windowScheduler)
 		}
 		return closers
 	}(), nil

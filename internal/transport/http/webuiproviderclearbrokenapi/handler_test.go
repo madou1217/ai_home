@@ -11,7 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"sync"
+
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
 )
 
@@ -432,5 +435,87 @@ func TestStatusSource(t *testing.T) {
 func TestInvalidDependencies(t *testing.T) {
 	if _, err := NewHandler(Dependencies{}); !errors.Is(err, ErrInvalidDependencies) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestClearBrokenWithSchedulerExclusiveAndLiveStatus(t *testing.T) {
+	aiHomeDir := t.TempDir()
+	seedLedger(t, aiHomeDir, brokenLedger)
+	catalog := newTestCatalog(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	var once sync.Once
+	sched := providercliupgrade.NewScheduler(providercliupgrade.SchedulerOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   catalog,
+		Config:    providercliupgrade.SchedulerConfig{ApplyEnabled: new(bool)},
+		Providers: []string{"claude"},
+		CycleDeps: &providercliupgrade.CycleDeps{},
+		RunCycleFn: func(_ context.Context, _ string, ledger providercliupgrade.Ledger, _ providercliupgrade.CycleDeps, _ providercliupgrade.CycleConfig) providercliupgrade.CycleOutcome {
+			once.Do(func() { close(started) })
+			<-release
+			return providercliupgrade.CycleOutcome{OK: true, Ledger: ledger, State: "healthy", Reason: "up_to_date"}
+		},
+	})
+	sched.Start(context.Background())
+	defer sched.Stop()
+
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		sched.RunNow(context.Background(), "busy_test")
+	}()
+	<-started
+
+	handler, err := NewHandler(Dependencies{
+		Authorizer: fakeAuthorizer{allowed: true},
+		AIHomeDir:  aiHomeDir,
+		Catalog:    catalog,
+		Scheduler:  sched,
+		Now:        func() time.Time { return time.UnixMilli(fixedNowMS) },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("POST "+Path+ClearBrokenSuffix, handler)
+
+	recBusy, payloadBusy := postClear(t, mux, "codex")
+	if recBusy.Code != http.StatusConflict || payloadBusy["reason"] != ReasonAlreadyRunning {
+		t.Fatalf("busy status=%d payload=%#v", recBusy.Code, payloadBusy)
+	}
+	statusBusy := object(payloadBusy["status"])
+	schedBusy := object(statusBusy["scheduler"])
+	if schedBusy["cycling"] != true {
+		t.Fatalf("expected scheduler.cycling=true in busy status: %#v", statusBusy)
+	}
+
+	close(release)
+	<-doneCh
+
+	// 重新写入熔断账本并走 Scheduler 默认 Status 快照 + 验证器清除
+	seedLedger(t, aiHomeDir, brokenLedger)
+	verifier := &fakeVerifier{version: "2.0.0", verification: Verification{Verdict: VerdictPass, Detail: "ok"}}
+	handlerReady, err := NewHandler(Dependencies{
+		Authorizer: fakeAuthorizer{allowed: true},
+		AIHomeDir:  aiHomeDir,
+		Catalog:    catalog,
+		Scheduler:  sched,
+		Verifier:   verifier,
+		Now:        func() time.Time { return time.UnixMilli(fixedNowMS) },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	muxReady := http.NewServeMux()
+	muxReady.Handle("POST "+Path+ClearBrokenSuffix, handlerReady)
+	recOK, payloadOK := postClear(t, muxReady, "codex")
+	if recOK.Code != http.StatusOK || payloadOK["ok"] != true {
+		t.Fatalf("ready status=%d payload=%#v", recOK.Code, payloadOK)
+	}
+	statusOK := object(payloadOK["status"])
+	if object(statusOK["scheduler"])["running"] != true {
+		t.Fatalf("expected scheduler.running=true in cleared status: %#v", statusOK)
 	}
 }

@@ -1,8 +1,11 @@
-// Package webuiwindowactivationapi 提供账号「窗口激活」设置的写入入口。
+// Package webuiwindowactivationapi 提供账号「窗口激活」配置的读写与全局状态投影。
 //
-// 读路径与调度器状态仍在 Node（GET 需要运行中的 scheduler 视图）；本包只把
-// account:window-activation:<ref> 的持久化收敛到 Go：Node 校验完 provider/账号/
-// 间隔后调用这里，随后再读回本地配置组装响应。
+// 路由（由宿主装配层挂载）：
+//
+//	GET  /v1/management/webui/accounts/{provider}/{accountRef}/window-activation
+//	POST /v1/management/webui/accounts/{provider}/{accountRef}/window-activation
+//
+// Provider 能力校验、minIntervalMs 下限约束、app_kv 持久化与全局调度器状态合并全部在 Go 内完成。
 package webuiwindowactivationapi
 
 import (
@@ -15,37 +18,41 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 )
 
 const (
 	// Path 是窗口激活设置的管理契约前缀。
 	//
-	//	POST /v1/management/webui/accounts/{provider}/{accountRef}/window-activation
+	//	GET|POST /v1/management/webui/accounts/{provider}/{accountRef}/window-activation
 	Path = "/v1/management/webui/accounts"
 
-	minIntervalMs = 60 * 60 * 1000
-	maxIntervalMs = 365 * 24 * 60 * 60 * 1000
-	keyPrefix     = "account:window-activation:"
+	minIntervalMs = windowactivation.DefaultMinIntervalMs
+	maxIntervalMs = windowactivation.MaxIntervalMs
+	keyPrefix     = windowactivation.ConfigKeyPrefix
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。
-var ErrInvalidDependencies = errors.New("窗口激活写入接口依赖无效")
+var ErrInvalidDependencies = errors.New("窗口激活接口依赖无效")
 
 // Authorizer 校验管理密钥。
 type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Dependencies 汇总写入依赖。
+// Dependencies 汇总窗口激活 HTTP 处理器依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	AIHomeDir  string
+	// Scheduler 可选：注入后响应附带实时全局调度状态，且 POST 直接使用调度器 minIntervalMs 下限。
+	Scheduler *windowactivation.Scheduler
 }
 
-// Handler 处理窗口激活设置写入。
+// Handler 处理窗口激活配置与状态读写。
 type Handler struct {
 	authorizer Authorizer
 	aiHomeDir  string
+	scheduler  *windowactivation.Scheduler
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -53,7 +60,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || strings.TrimSpace(dependencies.AIHomeDir) == "" {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, aiHomeDir: strings.TrimSpace(dependencies.AIHomeDir)}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		aiHomeDir:  strings.TrimSpace(dependencies.AIHomeDir),
+		scheduler:  dependencies.Scheduler,
+	}, nil
 }
 
 type errorView struct {
@@ -62,7 +73,7 @@ type errorView struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ServeHTTP 只接受 POST。
+// ServeHTTP 处理 GET/POST 窗口激活配置与状态查询。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil {
 		writeError(response, http.StatusServiceUnavailable, "window_activation_unavailable", "窗口激活服务不可用")
@@ -84,19 +95,28 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusBadRequest, "invalid_account_path", "")
 		return
 	}
-	if request.Method == http.MethodGet {
-		handler.readWindowActivation(response, request, provider, accountRef)
+	if !windowactivation.IsSupportedProvider(provider) {
+		writeError(response, http.StatusBadRequest, "window_activation_unsupported_provider", "")
 		return
 	}
+
 	ctx := request.Context()
 	databasePath, err := appstate.DatabasePath(handler.aiHomeDir)
 	if err != nil {
-		writeError(response, http.StatusInternalServerError, "window_activation_write_failed", err.Error())
+		code := "window_activation_write_failed"
+		if request.Method == http.MethodGet {
+			code = "window_activation_read_failed"
+		}
+		writeError(response, http.StatusInternalServerError, code, err.Error())
 		return
 	}
 	owner, found, err := appstate.LookupAccountProvider(ctx, databasePath, accountRef)
 	if err != nil {
-		writeError(response, http.StatusInternalServerError, "window_activation_write_failed", err.Error())
+		code := "window_activation_write_failed"
+		if request.Method == http.MethodGet {
+			code = "window_activation_read_failed"
+		}
+		writeError(response, http.StatusInternalServerError, code, err.Error())
 		return
 	}
 	if !found {
@@ -105,6 +125,11 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	if strings.ToLower(strings.TrimSpace(owner)) != provider {
 		writeError(response, http.StatusConflict, "account_provider_mismatch", "")
+		return
+	}
+
+	if request.Method == http.MethodGet {
+		handler.writeAccountView(ctx, response, databasePath, provider, accountRef)
 		return
 	}
 
@@ -120,11 +145,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	enabled := object["enabled"] == true
-	floor := resolveMinInterval(object["minIntervalMs"])
+	floor := float64(windowactivation.EffectiveMinIntervalMs(ctx, handler.aiHomeDir, handler.scheduler))
 	interval, valid := normalizeInterval(object["intervalMs"], floor)
 	if !valid {
 		writeJSON(response, http.StatusBadRequest, map[string]any{
-			"ok": false, "error": "invalid_interval_ms", "minIntervalMs": floor,
+			"ok":            false,
+			"error":         "invalid_interval_ms",
+			"minIntervalMs": floor,
 		})
 		return
 	}
@@ -140,20 +167,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusInternalServerError, "window_activation_write_failed", err.Error())
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true})
+	handler.writeAccountView(ctx, response, databasePath, provider, accountRef)
 }
 
-// resolveMinInterval 对齐 Node：优先用运行态上报的 minIntervalMs，缺省 1h。
-func resolveMinInterval(value any) float64 {
-	number := jsNumber(value)
-	if math.IsNaN(number) || number < minIntervalMs {
-		return minIntervalMs
-	}
-	return math.Floor(number)
-}
-
-// normalizeInterval 对齐 Node：null/缺省/空串 = 跟随全局默认；其余必须是
-// [minIntervalMs, 365d] 的有限数并向下取整。
+// normalizeInterval 对齐前端/旧路由契约：null/缺省/空串 = 跟随全局默认；其余必须是 [floor, 365d] 的有限数并向下取整。
 func normalizeInterval(value any, floor float64) (any, bool) {
 	switch typed := value.(type) {
 	case nil:
@@ -164,7 +181,7 @@ func normalizeInterval(value any, floor float64) (any, bool) {
 		}
 	}
 	number := jsNumber(value)
-	if math.IsNaN(number) || number < floor || number > maxIntervalMs {
+	if math.IsNaN(number) || number < floor || number > float64(maxIntervalMs) {
 		return nil, false
 	}
 	return math.Floor(number), true

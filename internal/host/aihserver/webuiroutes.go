@@ -23,10 +23,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
+	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
@@ -62,8 +64,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderclearbrokenapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
@@ -87,7 +87,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
 	"github.com/madou1217/ai_home/internal/webuifile"
 )
 
@@ -147,6 +146,9 @@ type webuiRouteDependencies struct {
 	SessionEventBus *sessionevents.Bus
 	// CodexHooks 为运行中的 Codex Hook 与通知桥接守护句柄（用于诊断状态查询）。
 	CodexHooks *codexHooksRuntime
+	// UpgradeScheduler 与 WindowScheduler 由组合根统一启停托管。
+	UpgradeScheduler *providercliupgrade.Scheduler
+	WindowScheduler  *windowactivation.Scheduler
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -272,12 +274,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建模型上下文接口失败: %w", err)
 	}
-	windowActivation, err := webuiwindowactivationapi.NewHandler(webuiwindowactivationapi.Dependencies{
-		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建窗口激活接口失败: %w", err)
-	}
 	// 账号出口绑定：Go 是设置的唯一写者；运行态应用仍在 Node（薄壳写后执行）。
 	accountEgress, err := webuiaccountegressapi.NewHandler(webuiaccountegressapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
@@ -291,12 +287,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建控制面接口失败: %w", err)
-	}
-	providerUpgrade, err := webuiprovidercliupgradeapi.NewHandler(webuiprovidercliupgradeapi.Dependencies{
-		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Catalog: dependencies.Catalog,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 provider CLI 升级接口失败: %w", err)
 	}
 
 	controlPlaneBootstrap, err := webuicontrolplanebootstrapapi.NewHandler(webuicontrolplanebootstrapapi.Dependencies{
@@ -588,16 +578,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建管理密钥轮换接口失败: %w", err)
 	}
-	clearBroken, err := webuiproviderclearbrokenapi.NewHandler(webuiproviderclearbrokenapi.Dependencies{
-		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Catalog: dependencies.Catalog,
-		// status 与只读接口同源，前端拿到清除结果后直接刷新面板。
-		Status: func(context.Context) (any, error) {
-			return webuiprovidercliupgradeapi.Snapshot(dependencies.AIHomeDir, dependencies.Catalog), nil
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建解除升级熔断接口失败: %w", err)
-	}
 	// 模型目录刷新：Go 侧按账号扇出，Provider 适配器由各自的模型发现模块注册。
 	// 这里不按 Provider 写分支——「openai-models」只是 OpenAI 兼容的响应形状，
 	// 不是 Provider 范围。依赖缺失时保持 nil，写接口继续返回 501，由 Node 回落到
@@ -780,8 +760,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "DELETE " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/model-context/bulk", Handler: http.HandlerFunc(modelContext.ServeBulkHTTP)},
-		{Pattern: "GET " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
-		{Pattern: "POST " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
 		{Pattern: "GET " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "POST " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
@@ -789,7 +767,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles/active", Handler: controlPlane},
 		{Pattern: "DELETE " + webuicontrolplaneapi.Path + "/profiles/{profileId}", Handler: controlPlane},
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/endpoints", Handler: controlPlane},
-		{Pattern: "GET " + webuiprovidercliupgradeapi.Path, Handler: providerUpgrade},
 		{Pattern: "POST " + webuifstrustapi.TrustPath, Handler: fsTrust},
 		{Pattern: "GET " + webuifsaccessapi.Path, Handler: fsAccess},
 		{Pattern: "GET " + webuiproviderhooksapi.Path, Handler: hooks},
@@ -830,7 +807,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuitoolkitenvapi.JobCancelPath, Handler: toolkitEnvironmentActions},
 		{Pattern: "POST " + webuisessionpreviewsapi.Path, Handler: sessionPreviews},
 		{Pattern: "POST " + webuimanagementkeyapi.Path, Handler: managementKey},
-		{Pattern: "POST " + webuiproviderclearbrokenapi.Path + webuiproviderclearbrokenapi.ClearBrokenSuffix, Handler: clearBroken},
 		{Pattern: "POST " + webuiopenaimodelswriteapi.RefreshPath, Handler: openaiModelsWrite},
 		{Pattern: "POST " + webuiopenaimodelswriteapi.DeletePath, Handler: openaiModelsWrite},
 		{Pattern: "PUT " + webuitoolappsettingswriteapi.Path + webuitoolappsettingswriteapi.SettingsSuffix, Handler: toolAppSettings},
@@ -948,6 +924,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, codexHooksRoutes...)
+	// Provider CLI 自动升级与窗口激活调度器路由统一由 webui_scheduler_routes 装配。
+	schedulerRoutes, err := buildWebUISchedulerRoutesWithPorts(dependencies, webuiSchedulerPorts{
+		UpgradeScheduler:   dependencies.UpgradeScheduler,
+		WindowScheduler:    dependencies.WindowScheduler,
+		SkipSchedulerStart: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, schedulerRoutes...)
 	return routes, nil
 }
 

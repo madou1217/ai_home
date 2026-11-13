@@ -1,6 +1,7 @@
 package webuiprovidercliupgradeapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 )
 
 type fakeAuthorizer struct{ allowed bool }
@@ -89,6 +91,61 @@ func TestLedgerProjection(t *testing.T) {
 	}
 	if rows["claude"]["pinnable"] != false || rows["claude"]["state"] != "unknown" {
 		t.Fatalf("claude = %#v", rows["claude"])
+	}
+}
+
+func TestLiveSchedulerProjectionMerged(t *testing.T) {
+	aiHomeDir := t.TempDir()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	enabled := true
+	sched := providercliupgrade.NewScheduler(providercliupgrade.SchedulerOptions{
+		AIHomeDir: aiHomeDir,
+		Catalog:   catalog,
+		Config:    providercliupgrade.SchedulerConfig{Enabled: &enabled, ApplyEnabled: new(bool)},
+		Providers: []string{"codex"},
+		CycleDeps: &providercliupgrade.CycleDeps{
+			DetectChannel: func(context.Context, string) (providercliupgrade.ChannelDetection, error) {
+				return providercliupgrade.ChannelDetection{Channel: providercliupgrade.ChannelNpmGlobal, ResolvedPath: "/usr/local/bin/codex", Pinnable: true}, nil
+			},
+			CheckUpdate: func(context.Context, string) (providercliupgrade.UpdateCheckResult, error) {
+				return providercliupgrade.UpdateCheckResult{InstalledVersion: "1.0.0", LatestVersion: "1.0.0"}, nil
+			},
+		},
+	})
+	sched.Start(context.Background())
+	defer sched.Stop()
+
+	res := sched.RunNow(context.Background(), "test_tick")
+	if !res.OK {
+		t.Fatalf("RunNow failed: %+v", res)
+	}
+
+	handler, err := NewHandler(Dependencies{
+		Authorizer: fakeAuthorizer{allowed: true},
+		AIHomeDir:  aiHomeDir,
+		Catalog:    catalog,
+		Scheduler:  sched,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	recorder, payload := readStatus(t, handler)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	schedulerView, ok := payload["scheduler"].(map[string]any)
+	if !ok || schedulerView == nil {
+		t.Fatalf("expected non-nil scheduler view, got %#v", payload["scheduler"])
+	}
+	if schedulerView["running"] != true || schedulerView["tickCount"] != float64(1) {
+		t.Fatalf("schedulerView = %#v", schedulerView)
+	}
+	codex := rowsByProvider(payload)["codex"]
+	if codex["lastTickState"] != "healthy" || codex["lastTickReason"] != "up_to_date" {
+		t.Fatalf("codex tick fields mismatch: %#v", codex)
 	}
 }
 

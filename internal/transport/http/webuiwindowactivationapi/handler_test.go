@@ -2,6 +2,7 @@ package webuiwindowactivationapi
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	_ "modernc.org/sqlite"
 )
 
@@ -48,7 +50,16 @@ func seed(t *testing.T) string {
 
 func newHandler(t *testing.T, aiHomeDir string) http.Handler {
 	t.Helper()
-	handler, err := NewHandler(Dependencies{Authorizer: fakeAuthorizer{allowed: true}, AIHomeDir: aiHomeDir})
+	return newHandlerWithScheduler(t, aiHomeDir, nil)
+}
+
+func newHandlerWithScheduler(t *testing.T, aiHomeDir string, scheduler *windowactivation.Scheduler) http.Handler {
+	t.Helper()
+	handler, err := NewHandler(Dependencies{
+		Authorizer: fakeAuthorizer{allowed: true},
+		AIHomeDir:  aiHomeDir,
+		Scheduler:  scheduler,
+	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
@@ -102,6 +113,13 @@ func TestWriteEnabledWithInterval(t *testing.T) {
 	if recorder.Code != http.StatusOK || payload["ok"] != true {
 		t.Fatalf("status=%d payload=%#v", recorder.Code, payload)
 	}
+	setting := payload["setting"].(map[string]any)
+	if setting["enabled"] != true || setting["intervalMs"] != float64(7200000) {
+		t.Fatalf("post setting = %#v", setting)
+	}
+	if _, ok := payload["global"].(map[string]any); !ok {
+		t.Fatalf("post missing global = %#v", payload)
+	}
 	stored := readStored(t, aiHomeDir)
 	if stored["enabled"] != true || stored["intervalMs"] != float64(7200000) || stored["updatedAt"] == float64(0) {
 		t.Fatalf("stored = %#v", stored)
@@ -111,11 +129,11 @@ func TestWriteEnabledWithInterval(t *testing.T) {
 func TestWriteClearsIntervalAndDisables(t *testing.T) {
 	aiHomeDir := seed(t)
 	handler := newHandler(t, aiHomeDir)
-	recorder, _ := post(t, handler, Path+"/codex/"+accountRef+"/window-activation", map[string]any{
+	recorder, payload := post(t, handler, Path+"/codex/"+accountRef+"/window-activation", map[string]any{
 		"enabled": false, "intervalMs": nil,
 	})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d", recorder.Code)
+	if recorder.Code != http.StatusOK || payload["ok"] != true {
+		t.Fatalf("status = %d payload=%#v", recorder.Code, payload)
 	}
 	stored := readStored(t, aiHomeDir)
 	if stored["enabled"] != false || stored["intervalMs"] != nil {
@@ -128,7 +146,13 @@ func TestWriteValidation(t *testing.T) {
 	handler := newHandler(t, aiHomeDir)
 	path := Path + "/codex/" + accountRef + "/window-activation"
 
-	recorder, payload := post(t, handler, path, map[string]any{"enabled": true, "intervalMs": 1000})
+	// 忽略请求体里伪造的更小 minIntervalMs，强制使用 Go 调度器/配置下限
+	recorder, payload := post(t, handler, path, map[string]any{"enabled": true, "intervalMs": 120000, "minIntervalMs": 60000})
+	if recorder.Code != http.StatusBadRequest || payload["error"] != "invalid_interval_ms" || payload["minIntervalMs"] != float64(minIntervalMs) {
+		t.Fatalf("forged minIntervalMs status=%d payload=%#v", recorder.Code, payload)
+	}
+
+	recorder, payload = post(t, handler, path, map[string]any{"enabled": true, "intervalMs": 1000})
 	if recorder.Code != http.StatusBadRequest || payload["error"] != "invalid_interval_ms" || payload["minIntervalMs"] != float64(minIntervalMs) {
 		t.Fatalf("status=%d payload=%#v", recorder.Code, payload)
 	}
@@ -147,6 +171,43 @@ func TestWriteValidation(t *testing.T) {
 	}
 }
 
+func TestSchedulerGlobalAndCustomMinIntervalEnforced(t *testing.T) {
+	aiHomeDir := seed(t)
+	dbPath, _ := appstate.DatabasePath(aiHomeDir)
+	_ = appstate.WriteKV(context.Background(), dbPath, windowactivation.ServerConfigKVKey, `{"windowActivation":false}`, 1)
+
+	sched := windowactivation.NewScheduler(windowactivation.SchedulerOptions{
+		AIHomeDir: aiHomeDir,
+		Config: windowactivation.SchedulerConfig{
+			Enabled:           true,
+			MinIntervalMs:     7200000,
+			DefaultIntervalMs: 7200000,
+		},
+	})
+	handler := newHandlerWithScheduler(t, aiHomeDir, sched)
+
+	// 小于调度器下限 7200000 应返回 400 invalid_interval_ms
+	recLow, payloadLow := post(t, handler, Path+"/codex/"+accountRef+"/window-activation", map[string]any{
+		"enabled": true, "intervalMs": 3600000,
+	})
+	if recLow.Code != http.StatusBadRequest || payloadLow["error"] != "invalid_interval_ms" || payloadLow["minIntervalMs"] != float64(7200000) {
+		t.Fatalf("low status=%d payload=%#v", recLow.Code, payloadLow)
+	}
+
+	// 合法写入后响应中的 global 应反映运行时调度状态（enabled=true, savedEnabled=false, restartRequired=true）
+	recOK, payloadOK := post(t, handler, Path+"/codex/"+accountRef+"/window-activation", map[string]any{
+		"enabled": true, "intervalMs": 7200000,
+	})
+	if recOK.Code != http.StatusOK {
+		t.Fatalf("ok status=%d payload=%#v", recOK.Code, payloadOK)
+	}
+	global := payloadOK["global"].(map[string]any)
+	if global["enabled"] != true || global["savedEnabled"] != false || global["restartRequired"] != true ||
+		global["minIntervalMs"] != float64(7200000) || global["defaultIntervalMs"] != float64(7200000) {
+		t.Fatalf("global = %#v", global)
+	}
+}
+
 func TestWriteAccountErrors(t *testing.T) {
 	aiHomeDir := seed(t)
 	handler := newHandler(t, aiHomeDir)
@@ -154,9 +215,15 @@ func TestWriteAccountErrors(t *testing.T) {
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unknown status = %d", recorder.Code)
 	}
-	recorder, _ = post(t, handler, Path+"/claude/"+accountRef+"/window-activation", map[string]any{"enabled": true})
-	if recorder.Code != http.StatusConflict {
-		t.Fatalf("mismatch status = %d", recorder.Code)
+	// claude 不支持窗口激活探测规格 -> 400 window_activation_unsupported_provider
+	recorder, payloadUnsupported := post(t, handler, Path+"/claude/"+accountRef+"/window-activation", map[string]any{"enabled": true})
+	if recorder.Code != http.StatusBadRequest || payloadUnsupported["error"] != "window_activation_unsupported_provider" {
+		t.Fatalf("unsupported status = %d payload = %#v", recorder.Code, payloadUnsupported)
+	}
+	// agy 支持窗口激活，但与库里 codex 账号不匹配 -> 409 account_provider_mismatch
+	recorder, payloadMismatch := post(t, handler, Path+"/agy/"+accountRef+"/window-activation", map[string]any{"enabled": true})
+	if recorder.Code != http.StatusConflict || payloadMismatch["error"] != "account_provider_mismatch" {
+		t.Fatalf("mismatch status = %d payload = %#v", recorder.Code, payloadMismatch)
 	}
 }
 
@@ -241,6 +308,9 @@ func TestReadOpenWindow(t *testing.T) {
 	if decision["action"] != "probe" || decision["reason"] != "window_closed" {
 		t.Fatalf("decision = %#v", decision)
 	}
+	if _, ok := payload["global"].(map[string]any); !ok {
+		t.Fatalf("missing global = %#v", payload)
+	}
 }
 
 func TestReadWindowKinds(t *testing.T) {
@@ -280,8 +350,15 @@ func TestReadDefaultsAndErrors(t *testing.T) {
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unknown status = %d", recorder.Code)
 	}
+	// claude 不支持窗口激活 -> 400 window_activation_unsupported_provider
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"/claude/"+accountRef+"/window-activation", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported status = %d", recorder.Code)
+	}
+	// agy 支持窗口激活，但与库里 codex 账号不匹配 -> 409 account_provider_mismatch
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"/agy/"+accountRef+"/window-activation", nil))
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("mismatch status = %d", recorder.Code)
 	}

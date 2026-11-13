@@ -94,6 +94,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			arguments = rewritten
 		}
 	}
+	if len(arguments) >= 2 && arguments[1] == "auto-switch" &&
+		codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		return runProviderAutoSwitch(ctx, providerID, arguments[2:], runtime)
+	}
 	if len(arguments) >= 2 && arguments[1] == "version" && providerBinaryName(providerID) != "" {
 		return runProviderVersion(ctx, providerID, arguments[2:], runtime)
 	}

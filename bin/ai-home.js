@@ -318,7 +318,8 @@ function tryRunGoFamilyServerCommand() {
     /^\d+$/.test(String(args[1] || '').trim()) &&
     String(args[2] || '').trim().toLowerCase() === 'home';
   const isVersion = args.length === 2 && command === 'version';
-  const needsServer = isList || isUsage || isSetDefault || isUnsetDefault;
+  const isAutoSwitch = command === 'auto-switch' && args.length >= 2 && args.length <= 5;
+  const needsServer = isList || isUsage || isSetDefault || isUnsetDefault || isAutoSwitch;
   if (!needsServer && !isHome && !isHomeAfterId && !isVersion) return false;
   const fs = require('node:fs');
   const os = require('node:os');

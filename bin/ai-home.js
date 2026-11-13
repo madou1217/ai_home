@@ -319,7 +319,10 @@ function tryRunGoFamilyServerCommand() {
     String(args[2] || '').trim().toLowerCase() === 'home';
   const isVersion = args.length === 2 && command === 'version';
   const isAutoSwitch = command === 'auto-switch' && args.length >= 2 && args.length <= 5;
-  const needsServer = isList || isUsage || isSetDefault || isUnsetDefault || isAutoSwitch;
+  const isDelete = command === 'delete' && args.length >= 3;
+  const isDeleteAll = (command === 'deleteall' || command === 'delete-all') && args.length === 2;
+  const needsServer = isList || isUsage || isSetDefault || isUnsetDefault || isAutoSwitch ||
+    isDelete || isDeleteAll;
   if (!needsServer && !isHome && !isHomeAfterId && !isVersion) return false;
   const fs = require('node:fs');
   const os = require('node:os');

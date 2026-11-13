@@ -94,6 +94,17 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			arguments = rewritten
 		}
 	}
+	if len(arguments) >= 2 && codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		switch arguments[1] {
+		case "delete":
+			return runProviderDelete(ctx, providerID, arguments[2:], runtime)
+		case "deleteall", "delete-all":
+			if len(arguments) != 2 {
+				return fmt.Errorf("%w: 用法 aih %s deleteall", errInvalidCommand, providerID)
+			}
+			return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
+		}
+	}
 	if len(arguments) >= 2 && arguments[1] == "auto-switch" &&
 		codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		return runProviderAutoSwitch(ctx, providerID, arguments[2:], runtime)

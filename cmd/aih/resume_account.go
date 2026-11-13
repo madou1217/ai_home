@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -111,25 +112,9 @@ func resolveProviderAccountView(
 	if err != nil {
 		return managementapi.AccountView{}, err
 	}
-	accounts := make([]managementapi.AccountView, 0)
-	afterRef := ""
-	for page := 0; page < 10; page++ {
-		result, listErr := client.ListAccounts(ctx, managementapi.ListOptions{
-			AfterRef: afterRef,
-			Limit:    200,
-		})
-		if listErr != nil {
-			return managementapi.AccountView{}, fmt.Errorf("读取 Server 账号列表失败: %w", listErr)
-		}
-		for _, account := range result.Accounts {
-			if account.ProviderID == providerID {
-				accounts = append(accounts, account)
-			}
-		}
-		if !result.HasMore || result.NextAfterRef == "" {
-			break
-		}
-		afterRef = result.NextAfterRef
+	accounts, err := listProviderAccounts(ctx, client, providerID)
+	if err != nil {
+		return managementapi.AccountView{}, err
 	}
 	if explicitRef != "" {
 		for _, account := range accounts {
@@ -177,6 +162,38 @@ func resolveProviderAccountView(
 		errInvalidCommand,
 		strings.TrimSpace(providerID),
 	)
+}
+
+// listProviderAccounts 分页读取该 Provider 的全部账号视图（按 CLI 别名升序）。
+func listProviderAccounts(
+	ctx context.Context,
+	client *managementapi.Client,
+	providerID string,
+) ([]managementapi.AccountView, error) {
+	accounts := make([]managementapi.AccountView, 0)
+	afterRef := ""
+	for page := 0; page < 10; page++ {
+		result, err := client.ListAccounts(ctx, managementapi.ListOptions{
+			AfterRef: afterRef,
+			Limit:    200,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("读取 Server 账号列表失败: %w", err)
+		}
+		for _, account := range result.Accounts {
+			if account.ProviderID == providerID {
+				accounts = append(accounts, account)
+			}
+		}
+		if !result.HasMore || result.NextAfterRef == "" {
+			break
+		}
+		afterRef = result.NextAfterRef
+	}
+	sort.SliceStable(accounts, func(left, right int) bool {
+		return accounts[left].CLIAccountID < accounts[right].CLIAccountID
+	})
+	return accounts, nil
 }
 
 // parseResumeAccountTarget 解析 `resume <账号>` 的账号位：数字 CLI 别名或

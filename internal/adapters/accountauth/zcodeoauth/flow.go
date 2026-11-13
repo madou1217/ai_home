@@ -17,6 +17,7 @@ const maxTokenBodyBytes = 64 * 1024
 type flow struct {
 	client        *http.Client
 	region        region
+	authStrategy  string
 	tokenEndpoint string
 	authorization string
 	state         string
@@ -80,6 +81,22 @@ func (tokens providerTokens) refreshTokenValue() string {
 // AuthorizationURL 返回一次性 ZCode 授权地址。
 func (flow *flow) AuthorizationURL() string {
 	return flow.authorization
+}
+
+// OAuthState 仅向应用服务内部暴露 state，用于协议回调按 state 认领在途 Job。
+func (flow *flow) OAuthState() string {
+	if flow == nil {
+		return ""
+	}
+	return flow.state
+}
+
+// AuthStrategy 返回本次 ZCode 流程采用的子策略标识。
+func (flow *flow) AuthStrategy() string {
+	if flow == nil {
+		return ""
+	}
+	return flow.authStrategy
 }
 
 // AccountClaims 返回 Exchange 从 token 响应解析出的公开账号字段。

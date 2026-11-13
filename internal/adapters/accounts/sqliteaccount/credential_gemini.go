@@ -2,6 +2,7 @@ package sqliteaccount
 
 import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/gemini"
 )
 
@@ -13,6 +14,9 @@ type geminiCredentialCodec struct {
 func (codec geminiCredentialCodec) ProviderID() string { return gemini.ProviderID }
 
 func (codec geminiCredentialCodec) Encode(credential accountapp.Credential) (encodedCredential, error) {
+	if staticKey, ok := credential.(*accountcore.StaticAPIKeyAuth); ok {
+		return encodeStaticAPIKeyCredential(gemini.ProviderID, staticKey)
+	}
 	if vertex, ok := credential.(*gemini.VertexAuth); ok {
 		payload, err := encodeCredentialJSON(geminiVertexCredentialV1{
 			ProjectID:   vertex.ProjectID(),
@@ -27,6 +31,9 @@ func (codec geminiCredentialCodec) Encode(credential accountapp.Credential) (enc
 }
 
 func (codec geminiCredentialCodec) Decode(authKind, authMode string, payload []byte) (accountapp.Credential, error) {
+	if authKind == accountcore.StaticAPIKeyAuthKind && authMode == accountcore.StaticAPIKeyAuthMode {
+		return decodeStaticAPIKeyCredential(gemini.ProviderID, payload)
+	}
 	if authKind == gemini.AuthKindVertex && authMode == "" {
 		var document geminiVertexCredentialV1
 		if err := decodeCredentialJSON(payload, &document); err != nil {

@@ -1,9 +1,13 @@
 package aihserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountrefreshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountrefreshusageapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
@@ -38,13 +42,33 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 	if dependencies.UsageService != nil {
 		quotaRefresher = dependencies.UsageService
 	}
+	var supportsModelCatalog func(provider string) bool
+	if dependencies.Catalog != nil {
+		supportsModelCatalog = func(provider string) bool {
+			return dependencies.Catalog.Supports(provider, providers.CapabilityModelCatalog)
+		}
+	}
+	isAPIKey := func(ctx context.Context, accountRef accountcore.AccountRef) bool {
+		apiKey, err := dependencies.Store.IsAPIKeyAccount(ctx, accountRef)
+		return err == nil && apiKey
+	}
+	readRuntimeStatus := func(ctx context.Context, accountRef accountcore.AccountRef) string {
+		state, err := dependencies.Store.GetAccountState(ctx, accountRef)
+		if err != nil {
+			return ""
+		}
+		return state.DeriveStatus(time.Now()).Status()
+	}
 	refreshExecutor, err := webuiaccountrefreshapi.NewHandler(webuiaccountrefreshapi.Dependencies{
-		Authorizer:      dependencies.Authorizer,
-		AIHomeDir:       dependencies.AIHomeDir,
-		Accounts:        dependencies.Store,
-		StatusRefresher: webuiAccountStatusRefresher{store: dependencies.Store},
-		ModelRefresher:  dependencies.ModelRefresher,
-		QuotaRefresher:  quotaRefresher,
+		Authorizer:           dependencies.Authorizer,
+		AIHomeDir:            dependencies.AIHomeDir,
+		Accounts:             dependencies.Store,
+		StatusRefresher:      webuiAccountStatusRefresher{store: dependencies.Store},
+		ModelRefresher:       dependencies.ModelRefresher,
+		QuotaRefresher:       quotaRefresher,
+		SupportsModelCatalog: supportsModelCatalog,
+		IsAPIKeyAccount:      isAPIKey,
+		ReadRuntimeStatus:    readRuntimeStatus,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号刷新执行器失败: %w", err)
@@ -69,6 +93,14 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 		AIHomeDir:  dependencies.AIHomeDir,
 		Accounts:   quotaSource,
 		QuotaProbe: quotaProbe,
+		IsAPIKeyAccount: func(ctx context.Context, _ string, rawRef string) bool {
+			accountRef, err := accountcore.ParseAccountRef(rawRef)
+			if err != nil {
+				return false
+			}
+			apiKey, err := dependencies.Store.IsAPIKeyAccount(ctx, accountRef)
+			return err == nil && apiKey
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建额度刷新执行器失败: %w", err)

@@ -120,9 +120,10 @@ func TestStartRejectsNodeOnlyFlows(t *testing.T) {
 		code string
 	}{
 		{"api-key", "{\"provider\":\"codex\",\"authMode\":\"api-key\"}", "unsupported_auth_mode"},
-		{"refresh-token", "{\"provider\":\"kiro\",\"authMode\":\"oauth-refresh-token\"}", "unsupported_auth_mode"},
+		{"codex-refresh-token", "{\"provider\":\"codex\",\"authMode\":\"oauth-refresh-token\"}", "unsupported_auth_mode"},
 		{"strategy", "{\"provider\":\"agy\",\"authMode\":\"oauth-browser\",\"authStrategy\":\"native-cli\"}", "unsupported_auth_strategy"},
-		{"social", "{\"provider\":\"kiro\",\"authMode\":\"oauth-device\",\"loginProvider\":\"Google\"}", "unsupported_login_provider"},
+		{"unknown-login-provider", "{\"provider\":\"kiro\",\"authMode\":\"oauth-device\",\"loginProvider\":\"okta\"}", "unsupported_login_provider"},
+		{"gemini-disabled", "{\"provider\":\"gemini\",\"authMode\":\"oauth-browser\"}", "gemini_google_oauth_disabled"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -168,7 +169,7 @@ func TestStartAcceptsBuilderIDAlias(t *testing.T) {
 func TestStartMapsUnsupportedProvider(t *testing.T) {
 	jobs := &fakeJobs{startErr: accountauth.ErrUnsupportedProvider}
 	response := doRequest(newTestHandler(t, jobs), http.MethodPost, Path,
-		"{\"provider\":\"gemini\",\"authMode\":\"oauth-browser\"}")
+		"{\"provider\":\"cline\",\"authMode\":\"oauth-browser\"}")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d，期望 400", response.Code)
 	}
@@ -321,5 +322,109 @@ func TestNewHandlerValidatesDependencies(t *testing.T) {
 	}
 	if _, err := NewHandler(Dependencies{Authorizer: allowAll{}}); !errors.Is(err, ErrInvalidDependencies) {
 		t.Fatalf("缺少 Jobs 必须失败关闭: %v", err)
+	}
+}
+
+
+type fakeLocalImporter struct {
+	calledJob      JobSnapshot
+	calledSourceID string
+	result         JobSnapshot
+	err            error
+}
+
+func (fake *fakeLocalImporter) CompleteLocalImport(_ context.Context, job JobSnapshot, sourceID string) (JobSnapshot, error) {
+	fake.calledJob = job
+	fake.calledSourceID = sourceID
+	return fake.result, fake.err
+}
+
+func TestStartPassesKiroSocialZCodeStrategyAndRefreshToken(t *testing.T) {
+	// 1. Kiro Social Google
+	jobs := &fakeJobs{startResult: Started{
+		Job: JobSnapshot{
+			ID: "job-kiro-social", Provider: "kiro", Purpose: "register", Status: "running",
+			GoStatus: "pending", AuthMode: "oauth-device", AuthStrategy: "social-oauth-device",
+			AuthProgressState: progressAwaitingCode,
+		},
+		AuthorizationURL: "https://prod.us-east-1.auth.desktop.kiro.dev/verify",
+		UserCode:         "SOC1-2345",
+	}}
+	resp := doRequest(newTestHandler(t, jobs), http.MethodPost, Path,
+		`{"provider":"kiro","authMode":"oauth-device","loginProvider":"google"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("kiro social status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if jobs.started.LoginProvider != "Google" {
+		t.Fatalf("LoginProvider = %q, want Google", jobs.started.LoginProvider)
+	}
+
+	// 2. ZCode bigmodel:cli-flow
+	zcodeJobs := &fakeJobs{startResult: Started{
+		Job: JobSnapshot{
+			ID: "job-zcode", Provider: "zcode", Purpose: "register", Status: "running",
+			GoStatus: "pending", AuthMode: "oauth-browser", AuthStrategy: "bigmodel:custom-scheme",
+			AuthProgressState: progressAuthURLReady,
+		},
+		AuthorizationURL: "https://open.bigmodel.cn/authorize?appId=1&state=s1",
+	}}
+	resp = doRequest(newTestHandler(t, zcodeJobs), http.MethodPost, Path,
+		`{"provider":"zcode","authMode":"oauth-browser","authStrategy":"bigmodel:cli-flow"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("zcode status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if zcodeJobs.started.AuthStrategy != "bigmodel:cli-flow" {
+		t.Fatalf("started AuthStrategy = %q", zcodeJobs.started.AuthStrategy)
+	}
+	body := decodeBody[pendingResponse](t, resp)
+	if body.AuthStrategy != "bigmodel:custom-scheme" {
+		t.Fatalf("response AuthStrategy = %q", body.AuthStrategy)
+	}
+
+	// 3. Kiro refresh_token job
+	rtJobs := &fakeJobs{startResult: Started{
+		Job: JobSnapshot{
+			ID: "job-kiro-rt", Provider: "kiro", Purpose: "register", Status: "running",
+			GoStatus: "pending", AuthMode: "oauth-refresh-token", AuthStrategy: "oauth-refresh-token",
+			AuthProgressState: progressAwaitingCode,
+		},
+	}}
+	resp = doRequest(newTestHandler(t, rtJobs), http.MethodPost, Path,
+		`{"provider":"kiro","authMode":"oauth-refresh-token"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("kiro rt status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if rtJobs.started.AuthStrategy != "oauth-refresh-token" {
+		t.Fatalf("started AuthStrategy = %q", rtJobs.started.AuthStrategy)
+	}
+}
+
+func TestLocalImportWithImporterSuccessAndErrors(t *testing.T) {
+	jobs := &fakeJobs{job: JobSnapshot{ID: "job-kiro", Provider: "kiro", Status: "running", GoStatus: "pending", AuthMode: "oauth-device"}}
+	importer := &fakeLocalImporter{result: JobSnapshot{
+		ID: "job-kiro", Provider: "kiro", Status: "succeeded", GoStatus: "completed", AccountRef: "kiro_acct_1",
+	}}
+	h, err := NewHandler(Dependencies{Authorizer: allowAll{}, Jobs: jobs, LocalImporter: importer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doRequest(h, http.MethodPost, Path+"/jobs/job-kiro/local-import", `{"sourceId":"kiro-ide-local"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if importer.calledSourceID != "kiro-ide-local" {
+		t.Fatalf("sourceId = %q", importer.calledSourceID)
+	}
+	if okBody := decodeBody[jobResponse](t, resp); okBody.Job.Status != "succeeded" || okBody.Job.AccountRef != "kiro_acct_1" {
+		t.Fatalf("unexpected job = %+v", okBody.Job)
+	}
+
+	importer.err = ErrLocalSourceUnavailable
+	resp = doRequest(h, http.MethodPost, Path+"/jobs/job-kiro/local-import", `{"sourceId":"kiro-ide-local"}`)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("unavailable status = %d, want 409", resp.Code)
+	}
+	if errBody := decodeBody[errorResponse](t, resp); errBody.Code != "auth_source_unavailable:kiro-ide-local" {
+		t.Fatalf("code = %q", errBody.Code)
 	}
 }

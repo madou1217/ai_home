@@ -63,6 +63,8 @@ type Dependencies struct {
 	Authorizer Authorizer
 	Accounts   AccountLookup
 	QuotaProbe QuotaProbe
+	// IsAPIKeyAccount 判定目标账号是否处于 API Key 模式；为 true 时直接拒绝额度刷新。
+	IsAPIKeyAccount func(ctx context.Context, provider string, accountRef string) bool
 	// AIHomeDir 预留给探测适配器定位数据根（额度事实表所在目录）；本包不读取。
 	AIHomeDir string
 	// Timeout 是单账号探测上限；零值或负值使用 DefaultTimeout。
@@ -71,10 +73,11 @@ type Dependencies struct {
 
 // Handler 处理单账号额度刷新。
 type Handler struct {
-	authorizer Authorizer
-	accounts   AccountLookup
-	probe      QuotaProbe
-	timeout    time.Duration
+	authorizer      Authorizer
+	accounts        AccountLookup
+	probe           QuotaProbe
+	isAPIKeyAccount func(ctx context.Context, provider string, accountRef string) bool
+	timeout         time.Duration
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -87,10 +90,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		timeout = DefaultTimeout
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		accounts:   dependencies.Accounts,
-		probe:      dependencies.QuotaProbe,
-		timeout:    timeout,
+		authorizer:      dependencies.Authorizer,
+		accounts:        dependencies.Accounts,
+		probe:           dependencies.QuotaProbe,
+		isAPIKeyAccount: dependencies.IsAPIKeyAccount,
+		timeout:         timeout,
 	}, nil
 }
 
@@ -125,6 +129,7 @@ type windowView struct {
 type errorView struct {
 	OK      bool   `json:"ok"`
 	Error   string `json:"error"`
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 
@@ -162,6 +167,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if !found || strings.ToLower(strings.TrimSpace(owner)) != provider {
 		writeError(response, http.StatusNotFound, "account_not_found",
 			"未找到 "+provider+" 账号 "+accountRef)
+		return
+	}
+	if handler.isAPIKeyAccount != nil && handler.isAPIKeyAccount(request.Context(), provider, accountRef) {
+		writeErrorWithCode(response, http.StatusBadRequest,
+			"refresh_usage_unsupported", "api_key_usage_refresh_unsupported",
+			"API Key 账号不支持额度刷新。")
 		return
 	}
 
@@ -260,4 +271,8 @@ func writeJSON(response http.ResponseWriter, status int, payload any) {
 
 func writeError(response http.ResponseWriter, status int, code string, message string) {
 	writeJSON(response, status, errorView{OK: false, Error: code, Message: message})
+}
+
+func writeErrorWithCode(response http.ResponseWriter, status int, errSlug string, code string, message string) {
+	writeJSON(response, status, errorView{OK: false, Error: errSlug, Code: code, Message: message})
 }

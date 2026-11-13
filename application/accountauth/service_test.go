@@ -679,3 +679,145 @@ func TestCompleteIsIdempotentForConcurrentCalls(t *testing.T) {
 		t.Fatalf("注册次数 = %d, want 1", registrar.calls)
 	}
 }
+
+
+type optionsStateStubProvider struct {
+	id          string
+	lastOptions accountauth.BeginOptions
+	state       string
+}
+
+func (provider *optionsStateStubProvider) ProviderID() string { return provider.id }
+
+func (provider *optionsStateStubProvider) Begin(context.Context) (accountauth.OAuthFlow, error) {
+	return &optionsStateStubFlow{state: provider.state}, nil
+}
+
+func (provider *optionsStateStubProvider) BeginWithOptions(
+	_ context.Context,
+	options accountauth.BeginOptions,
+) (accountauth.OAuthFlow, error) {
+	provider.lastOptions = options
+	return &optionsStateStubFlow{
+		state:        provider.state,
+		authStrategy: "resolved:" + options.AuthStrategy,
+	}, nil
+}
+
+type optionsStateStubFlow struct {
+	state        string
+	authStrategy string
+}
+
+func (flow *optionsStateStubFlow) AuthorizationURL() string {
+	return "https://example.test/authorize?state=" + flow.state
+}
+
+func (flow *optionsStateStubFlow) OAuthState() string { return flow.state }
+
+func (flow *optionsStateStubFlow) AuthStrategy() string { return flow.authStrategy }
+
+func (flow *optionsStateStubFlow) Exchange(_ context.Context, callback string) ([]byte, error) {
+	tokens := serviceTokens()
+	return json.Marshal(map[string]any{
+		"auth_json": map[string]any{
+			"auth_mode": "chatgpt",
+			"tokens": map[string]any{
+				"id_token":      tokens["id_token"],
+				"access_token":  tokens["access_token"],
+				"refresh_token": tokens["refresh_token"],
+				"account_id":    serviceAccountID,
+			},
+			"last_refresh": serviceNow().Format(time.RFC3339),
+		},
+	})
+}
+
+func TestStartWithOptionsAndCompleteByState(t *testing.T) {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	registrar := &recordingRegistrar{catalog: catalog, now: serviceNow()}
+	codexStub := &optionsStateStubProvider{id: "codex", state: "state-abc-123"}
+	service, err := accountauth.NewService(accountauth.Dependencies{
+		Providers:  []accountauth.OAuthProvider{codexStub, stubClaudeProvider{}},
+		Decoder:    nativeaccount.NewDecoder(),
+		Registrar:  registrar,
+		Reauth:     stubReauth{},
+		Clock:      serviceNow,
+		GenerateID: func() (string, error) { return serviceJobID, nil },
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	started, err := service.Start(context.Background(), accountauth.StartRequest{
+		ProviderID:    "codex",
+		AuthStrategy:  "custom-strat",
+		LoginProvider: "Google",
+	})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if codexStub.lastOptions.AuthStrategy != "custom-strat" || codexStub.lastOptions.LoginProvider != "Google" {
+		t.Fatalf("BeginWithOptions options = %+v", codexStub.lastOptions)
+	}
+	if started.Job().AuthStrategy() != "resolved:custom-strat" {
+		t.Fatalf("Job.AuthStrategy() = %q, want resolved:custom-strat", started.Job().AuthStrategy())
+	}
+	if _, err := service.CompleteByState(context.Background(), "codex", "wrong-state", "http://localhost/cb"); !errors.Is(err, accountauth.ErrJobNotFound) {
+		t.Fatalf("CompleteByState(wrong-state) err = %v, want ErrJobNotFound", err)
+	}
+	completed, err := service.CompleteByState(context.Background(), "codex", "state-abc-123", "zcode://oauth/callback?code=ok&state=state-abc-123")
+	if err != nil {
+		t.Fatalf("CompleteByState() error = %v", err)
+	}
+	if completed.Status() != accountauth.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", completed.Status())
+	}
+	if registrar.calls != 1 {
+		t.Fatalf("registrar.calls = %d, want 1", registrar.calls)
+	}
+}
+
+
+func TestCompleteWithArtifactsCompletesPendingJob(t *testing.T) {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	registrar := &recordingRegistrar{catalog: catalog, now: serviceNow()}
+	codexStub := &optionsStateStubProvider{id: "codex", state: "state-local"}
+	service, err := accountauth.NewService(accountauth.Dependencies{
+		Providers:  []accountauth.OAuthProvider{codexStub, stubClaudeProvider{}},
+		Decoder:    nativeaccount.NewDecoder(),
+		Registrar:  registrar,
+		Reauth:     stubReauth{},
+		Clock:      serviceNow,
+		GenerateID: func() (string, error) { return serviceJobID, nil },
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	started, err := service.Start(context.Background(), accountauth.StartRequest{ProviderID: "codex"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	artifacts, err := (&optionsStateStubFlow{}).Exchange(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Exchange() error = %v", err)
+	}
+	job, err := service.CompleteWithArtifacts(context.Background(), started.Job().ID(), artifacts, accountauth.Account{
+		Email:       "local@example.test",
+		DisplayName: "Local IDE",
+	})
+	if err != nil {
+		t.Fatalf("CompleteWithArtifacts() error = %v", err)
+	}
+	if job.Status() != accountauth.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", job.Status())
+	}
+	if registrar.calls != 1 {
+		t.Fatalf("registrar.calls = %d, want 1", registrar.calls)
+	}
+}

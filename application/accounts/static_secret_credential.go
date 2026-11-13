@@ -13,6 +13,9 @@ func IsStaticSecretCredential(credential Credential) bool {
 	if isRotatableStaticCredential(credential) {
 		return true
 	}
+	if staticKey, ok := credential.(*accountcore.StaticAPIKeyAuth); ok && staticKey != nil {
+		return true
+	}
 	native, ok := credential.(*accountcore.NativeCredential)
 	if !ok || native == nil {
 		return false

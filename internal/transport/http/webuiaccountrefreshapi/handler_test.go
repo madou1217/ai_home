@@ -724,3 +724,62 @@ func TestRefreshTruncatesLongError(t *testing.T) {
 		t.Fatalf("error = %q, want ellipsis suffix", status.Error)
 	}
 }
+
+func TestRefreshSkipsNonCatalogModelsAndAPIKeyUsage(t *testing.T) {
+	dependencies := allSucceeded(t)
+	dependencies.SupportsModelCatalog = func(string) bool { return false }
+	dependencies.IsAPIKeyAccount = func(context.Context, accountcore.AccountRef) bool { return true }
+	handler := newRefreshHandler(t, dependencies)
+
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: %s", recorder.Code, recorder.Body.String())
+	}
+	payload := decodeRefreshResponse(t, recorder)
+	if payload.Job.Status != jobStatusSucceeded {
+		t.Fatalf("job.status = %q, want %q", payload.Job.Status, jobStatusSucceeded)
+	}
+	if payload.Job.Branches[BranchModels].Status != branchStatusSkipped {
+		t.Fatalf("models branch = %+v, want skipped", payload.Job.Branches[BranchModels])
+	}
+	if payload.Job.Branches[BranchUsage].Status != branchStatusSkipped {
+		t.Fatalf("usage branch = %+v, want skipped", payload.Job.Branches[BranchUsage])
+	}
+	if payload.Job.Branches[BranchStatus].Status != branchStatusSucceeded {
+		t.Fatalf("status branch = %+v, want succeeded", payload.Job.Branches[BranchStatus])
+	}
+}
+
+func TestRefreshFailsWhenOnlyNonSkippedBranchFails(t *testing.T) {
+	dependencies := allSucceeded(t)
+	dependencies.SupportsModelCatalog = func(string) bool { return false }
+	dependencies.IsAPIKeyAccount = func(context.Context, accountcore.AccountRef) bool { return true }
+	dependencies.StatusRefresher = stubStatusRefresher{run: func(context.Context) error {
+		return errors.New("status_failed")
+	}}
+	handler := newRefreshHandler(t, dependencies)
+
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+	payload := decodeRefreshResponse(t, recorder)
+	if payload.Job.Status != jobStatusFailed {
+		t.Fatalf("job.status = %q, want %q when only non-skipped branch failed", payload.Job.Status, jobStatusFailed)
+	}
+}
+
+func TestRefreshMarksRecoveredWhenRuntimeBecomesHealthy(t *testing.T) {
+	var calls atomic.Int32
+	dependencies := allSucceeded(t)
+	dependencies.ReadRuntimeStatus = func(context.Context, accountcore.AccountRef) string {
+		if calls.Add(1) == 1 {
+			return "auth_invalid"
+		}
+		return "healthy"
+	}
+	handler := newRefreshHandler(t, dependencies)
+
+	recorder := postRefresh(t, handler, testProvider, testRefText)
+	payload := decodeRefreshResponse(t, recorder)
+	if !payload.Job.Recovered {
+		t.Fatalf("job.recovered = %v, want true", payload.Job.Recovered)
+	}
+}

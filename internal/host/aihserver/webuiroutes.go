@@ -635,7 +635,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建新增账号作业适配器失败: %w", err)
 	}
 	accountAdd, err := webuiaccountaddapi.NewHandler(webuiaccountaddapi.Dependencies{
-		Authorizer: authorizer, Jobs: addJobs,
+		Authorizer:    authorizer,
+		Jobs:          addJobs,
+		LocalImporter: NewKiroJobLocalImporter(dependencies),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建新增账号作业接口失败: %w", err)
@@ -841,6 +843,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, refreshRoutes...)
+	accountAuthRoutes, err := buildWebUIAccountAuthRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, accountAuthRoutes...)
 	// kimi 的套餐统计与桌面端托管登录：路由/上游协议都在 Go，Node 只做透传。
 	kimiRoutes, err := buildWebUIKimiRoutes(dependencies)
 	if err != nil {

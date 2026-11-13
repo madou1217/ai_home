@@ -621,3 +621,24 @@ func TestRefreshUsageWritesNoStoreCacheControl(t *testing.T) {
 		assertNoStore(t, recorder)
 	})
 }
+
+func TestRefreshUsageRejectsAPIKeyAccount(t *testing.T) {
+	rawHandler, err := NewHandler(Dependencies{
+		Authorizer:      fakeAuthorizer{allowed: true},
+		Accounts:        knownAccounts(),
+		QuotaProbe:      &fakeProbe{snapshot: validSnapshot()},
+		IsAPIKeyAccount: func(context.Context, string, string) bool { return true },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("POST "+Path+RefreshUsageSuffix, rawHandler)
+	recorder, payload := postRefreshUsage(t, mux, testProvider, testAccountRef)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
+	}
+	if payload["error"] != "refresh_usage_unsupported" || payload["code"] != "api_key_usage_refresh_unsupported" {
+		t.Fatalf("payload = %+v", payload)
+	}
+}

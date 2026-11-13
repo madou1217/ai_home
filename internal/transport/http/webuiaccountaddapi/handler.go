@@ -72,6 +72,13 @@ const (
 // ErrInvalidDependencies 表示 Handler 缺少作业服务或鉴权策略。
 var ErrInvalidDependencies = errors.New("新增账号作业接口依赖无效")
 
+var (
+	// ErrUnsupportedLocalSource 表示作业或 sourceId 不支持从本机导入。
+	ErrUnsupportedLocalSource = errors.New("本机登录态来源不受支持")
+	// ErrLocalSourceUnavailable 表示本机未发现可用登录态文件或凭据已失效。
+	ErrLocalSourceUnavailable = errors.New("本机登录态来源不可用")
+)
+
 // Authorizer 校验管理密钥（与其它 /v1/management 接口同一权限域）。
 type Authorizer interface {
 	Authorized(request *http.Request) bool
@@ -88,9 +95,16 @@ type Jobs interface {
 	Cancel(jobID string) (JobSnapshot, error)
 }
 
+// JobLocalImporter 为等待中的 OAuth 作业执行本机登录态导入并收敛终态。
+type JobLocalImporter interface {
+	CompleteLocalImport(ctx context.Context, job JobSnapshot, sourceID string) (JobSnapshot, error)
+}
+
 // StartRequest 是一次注册型作业的起始命令。
 type StartRequest struct {
-	ProviderID string
+	ProviderID    string
+	AuthStrategy  string
+	LoginProvider string
 }
 
 // Started 是新建作业的公开结果：授权地址只在创建响应里交付一次。
@@ -102,14 +116,16 @@ type Started struct {
 
 // Dependencies 汇总新增账号作业的依赖。
 type Dependencies struct {
-	Authorizer Authorizer
-	Jobs       Jobs
+	Authorizer    Authorizer
+	Jobs          Jobs
+	LocalImporter JobLocalImporter
 }
 
 // Handler 是新增账号 OAuth 作业的 HTTP 入站适配器。
 type Handler struct {
-	authorizer Authorizer
-	jobs       Jobs
+	authorizer    Authorizer
+	jobs          Jobs
+	localImporter JobLocalImporter
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -117,7 +133,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Jobs == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, jobs: dependencies.Jobs}, nil
+	return &Handler{
+		authorizer:    dependencies.Authorizer,
+		jobs:          dependencies.Jobs,
+		localImporter: dependencies.LocalImporter,
+	}, nil
 }
 
 // startRequest 是 Node 桥接层传来的新增作业输入。
@@ -181,6 +201,7 @@ type JobSnapshot struct {
 	Status            string `json:"status"`
 	GoStatus          string `json:"goStatus"`
 	AuthMode          string `json:"authMode"`
+	AuthStrategy      string `json:"authStrategy,omitempty"`
 	AuthProgressState string `json:"authProgressState"`
 	AuthorizationURL  string `json:"authorizationUrl,omitempty"`
 	RedirectURI       string `json:"redirectUri,omitempty"`
@@ -244,33 +265,42 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 	}
 	authMode := normalizeAuthMode(payload.AuthMode)
 	if authMode == "" {
-		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "Go 只承接浏览器回调与设备码 OAuth 作业", nil)
+		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "Go 只承接 OAuth 登录与 Kiro refresh_token 导入作业", nil)
 		return
 	}
-	// Go 的流程没有 Node 的策略分支；自定义策略（agy native-cli 等）必须留在 Node。
-	strategy := strings.TrimSpace(payload.AuthStrategy)
-	if strategy != "" && !(provider == "agy" && strategy == "aih-google-oauth") {
-		writeError(response, http.StatusBadRequest, "unsupported_auth_strategy", "Go 只承接默认 OAuth 策略", nil)
+	if authMode == "oauth-refresh-token" && provider != "kiro" {
+		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "仅 Kiro 支持 refresh_token 导入模式", nil)
 		return
 	}
-	// kiro 的 social（Google/GitHub）设备流是 Node 的独立协议，Go 只做 Builder ID。
-	if normalizeLoginProvider(payload.LoginProvider) != "" {
-		writeError(response, http.StatusBadRequest, "unsupported_login_provider", "Go 只承接默认登录方式", nil)
+	if provider == "gemini" && authMode == "oauth-browser" {
+		writeError(response, http.StatusBadRequest, "gemini_google_oauth_disabled", "Google 登录已关闭：Gemini Code Assist 个人版已停用，请改用 Gemini API Key 或 Antigravity。", nil)
+		return
+	}
+	strategy, loginProvider, errCode, errMessage := resolveStartOptions(provider, authMode, payload.AuthStrategy, payload.LoginProvider)
+	if errCode != "" {
+		writeError(response, http.StatusBadRequest, errCode, errMessage, nil)
 		return
 	}
 
-	started, err := handler.jobs.Start(request.Context(), StartRequest{ProviderID: provider})
+	started, err := handler.jobs.Start(request.Context(), StartRequest{
+		ProviderID:    provider,
+		AuthStrategy:  strategy,
+		LoginProvider: loginProvider,
+	})
 	if err != nil {
 		writeStartError(response, err)
 		return
 	}
 	job := started.Job
 	if job.AuthMode != authMode {
-		// 请求的形态与 Go 实际流程不一致（例如把 kiro social 当成 Builder ID）：
-		// 立刻释放刚创建的 Job，让 Node 回落本地流程。
+		// 请求的形态与 Go 实际流程不一致时立刻释放刚创建的 Job，避免占住 Provider 名额。
 		_, _ = handler.jobs.Cancel(job.ID)
 		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "Go 的登录流程与请求的认证方式不一致", nil)
 		return
+	}
+	resolvedStrategy := strings.TrimSpace(job.AuthStrategy)
+	if resolvedStrategy == "" {
+		resolvedStrategy = strategy
 	}
 	job.AuthorizationURL = started.AuthorizationURL
 	job.UserCode = started.UserCode
@@ -281,7 +311,7 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		AccountRef:        job.AccountRef,
 		Purpose:           job.Purpose,
 		AuthMode:          job.AuthMode,
-		AuthStrategy:      strategy,
+		AuthStrategy:      resolvedStrategy,
 		Status:            "pending",
 		JobID:             job.ID,
 		AuthorizationURL:  job.AuthorizationURL,
@@ -410,18 +440,49 @@ func (handler *Handler) handleLocalImport(response http.ResponseWriter, request 
 		writeError(response, http.StatusBadRequest, "missing_source_id", "sourceId 不能为空", nil)
 		return
 	}
+	sourceID := strings.TrimSpace(payload.SourceID)
 	job, lookupErr := handler.jobs.GetJob(request.Context(), jobID)
 	if lookupErr != nil {
 		writeLookupError(response, lookupErr, nil)
 		return
 	}
-	writeError(
-		response,
-		http.StatusNotImplemented,
-		"local_import_unsupported",
-		"本机登录态导入由 Node 宿主执行，Go 承接的 OAuth 作业不支持该操作。",
-		&job,
-	)
+	if handler.localImporter == nil {
+		writeError(
+			response,
+			http.StatusNotImplemented,
+			"local_import_unsupported",
+			"未装配本机登录态导入端口，暂不支持对 Go 作业执行本机导入。",
+			&job,
+		)
+		return
+	}
+	if job.Status != "running" {
+		writeError(response, http.StatusConflict, "job_not_pending", "OAuth Job 已被处理或结束", &job)
+		return
+	}
+	completed, importErr := handler.localImporter.CompleteLocalImport(request.Context(), job, sourceID)
+	if importErr != nil {
+		latest := &job
+		if current, getErr := handler.jobs.GetJob(request.Context(), jobID); getErr == nil {
+			latest = &current
+		}
+		switch {
+		case errors.Is(importErr, ErrUnsupportedLocalSource):
+			writeError(response, http.StatusBadRequest, "unsupported_auth_source", "该本机登录态来源不受支持", latest)
+		case errors.Is(importErr, ErrLocalSourceUnavailable):
+			writeJSON(response, http.StatusConflict, errorResponse{
+				OK:      false,
+				Error:   "auth_source_unavailable",
+				Code:    "auth_source_unavailable:" + sourceID,
+				Message: "未检测到可用的本机登录态，请确认客户端已登录。",
+				Job:     latest,
+			})
+		default:
+			writeCallbackError(response, importErr, latest)
+		}
+		return
+	}
+	writeJSON(response, http.StatusOK, jobResponse{OK: true, Job: completed})
 }
 
 // handleInstall 明确 Go 作业不需要 CLI 安装确认。
@@ -449,6 +510,7 @@ func NewJobView(job accountauth.Job) JobSnapshot {
 		Status:            NodeStatus(job.Status()),
 		GoStatus:          string(job.Status()),
 		AuthMode:          job.AuthMode(),
+		AuthStrategy:      job.AuthStrategy(),
 		AuthProgressState: progressState(job.Status(), job.AuthMode()),
 		AccountRef:        job.AccountRef().String(),
 		CLIAccountID:      job.CLIAccountID().Int64(),
@@ -495,7 +557,7 @@ func progressState(status accountauth.Status, authMode string) string {
 	case accountauth.StatusExpired:
 		return progressExpired
 	case accountauth.StatusPending:
-		if authMode == "oauth-device" {
+		if authMode == "oauth-device" || authMode == "oauth-refresh-token" {
 			return progressAwaitingCode
 		}
 		return progressAuthURLReady
@@ -544,13 +606,93 @@ func normalizeLoginProvider(raw string) string {
 	}
 }
 
-// normalizeAuthMode 只接受 Go 能执行的两种形态；其它返回空串。
+// resolveStartOptions 按 Provider 校验并归一 authStrategy / loginProvider。
+func resolveStartOptions(provider, authMode, rawStrategy, rawLoginProvider string) (string, string, string, string) {
+	strategy := strings.TrimSpace(rawStrategy)
+	lowerStrategy := strings.ToLower(strategy)
+	loginProvider := strings.TrimSpace(rawLoginProvider)
+
+	switch provider {
+	case "agy":
+		if strategy != "" && strategy != "aih-google-oauth" {
+			return "", "", "unsupported_auth_strategy", "Go 只承接直连 Google 登录策略"
+		}
+		if normalizeLoginProvider(loginProvider) != "" {
+			return "", "", "unsupported_login_provider", "Antigravity 不支持该登录提供方"
+		}
+		return strategy, "", "", ""
+	case "zcode":
+		switch lowerStrategy {
+		case "", "zai", "zai:custom-scheme", "zai:cli-flow", "bigmodel", "bigmodel:custom-scheme", "bigmodel:cli-flow":
+		default:
+			return "", "", "unsupported_auth_strategy", "不支持的 ZCode 登录策略"
+		}
+		if normalizeLoginProvider(loginProvider) != "" {
+			return "", "", "unsupported_login_provider", "ZCode 不支持该登录提供方"
+		}
+		return lowerStrategy, "", "", ""
+	case "opencode":
+		if lowerStrategy != "" && lowerStrategy != "opencode:device" {
+			return "", "", "unsupported_auth_strategy", "不支持的 OpenCode 登录策略"
+		}
+		if normalizeLoginProvider(loginProvider) != "" {
+			return "", "", "unsupported_login_provider", "OpenCode 不支持该登录提供方"
+		}
+		return lowerStrategy, "", "", ""
+	case "kiro":
+		normLogin, isBuilderID, ok := normalizeKiroLoginProvider(loginProvider)
+		if !ok {
+			return "", "", "unsupported_login_provider", "不支持的 Kiro 登录提供方"
+		}
+		if authMode == "oauth-refresh-token" {
+			if lowerStrategy != "" && lowerStrategy != "oauth-refresh-token" {
+				return "", "", "unsupported_auth_strategy", "refresh_token 模式不支持自定义策略"
+			}
+			return "oauth-refresh-token", normLogin, "", ""
+		}
+		switch lowerStrategy {
+		case "", "oauth-device", "builder-id", "social", "social-oauth-device":
+		default:
+			return "", "", "unsupported_auth_strategy", "不支持的 Kiro 登录策略"
+		}
+		if isBuilderID && (lowerStrategy == "social" || lowerStrategy == "social-oauth-device") {
+			return "", "", "unsupported_login_provider", "social 登录需要选择 Google 或 GitHub"
+		}
+		return lowerStrategy, normLogin, "", ""
+	default:
+		if strategy != "" {
+			return "", "", "unsupported_auth_strategy", "Go 只承接默认 OAuth 策略"
+		}
+		if normalizeLoginProvider(loginProvider) != "" {
+			return "", "", "unsupported_login_provider", "Go 只承接默认登录方式"
+		}
+		return "", "", "", ""
+	}
+}
+
+func normalizeKiroLoginProvider(raw string) (normalized string, isBuilderID bool, ok bool) {
+	if normalizeLoginProvider(raw) == "" {
+		return "", true, true
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "google":
+		return "Google", false, true
+	case "github":
+		return "Github", false, true
+	default:
+		return "", false, false
+	}
+}
+
+// normalizeAuthMode 只接受 Go 承接的交互/粘贴认证形态；其它返回空串。
 func normalizeAuthMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", "oauth-browser", "browser":
 		return "oauth-browser"
 	case "oauth-device", "device", "device-code":
 		return "oauth-device"
+	case "oauth-refresh-token", "refresh-token", "oauth_refresh_token":
+		return "oauth-refresh-token"
 	default:
 		return ""
 	}
@@ -589,6 +731,10 @@ func writeStartError(response http.ResponseWriter, err error) {
 		writeError(response, http.StatusConflict, "oauth_job_already_running", "该 Provider 已有进行中的登录任务", nil)
 	case errors.Is(err, accountauth.ErrJobCapacity):
 		writeError(response, http.StatusServiceUnavailable, "job_capacity_exhausted", "登录任务服务暂时繁忙", nil)
+	case errors.Is(err, accountauth.ErrUnsupportedAuthStrategy):
+		writeError(response, http.StatusBadRequest, "unsupported_auth_strategy", "不支持的 OAuth 登录策略", nil)
+	case errors.Is(err, accountauth.ErrUnsupportedLoginProvider):
+		writeError(response, http.StatusBadRequest, "unsupported_login_provider", "不支持的上游登录提供方", nil)
 	case errors.Is(err, accountauth.ErrInvalidStartRequest):
 		writeError(response, http.StatusBadRequest, "invalid_request", "登录任务请求无效", nil)
 	case errors.Is(err, accountauth.ErrProviderUnavailable):

@@ -225,15 +225,8 @@ func TestParityGoStructFieldNamesMatchNode(t *testing.T) {
 		t.Fatalf("AsyncJob 字段 = %v, want %v", got, want)
 	}
 
-	// 同步执行器的 Job 没有 recovered（该字段只由异步作业表写入），其余同名同形。
-	wantJob := make([]string, 0, len(nodeAccountRefreshJobKeys))
-	for _, key := range nodeAccountRefreshJobKeys {
-		if key == "recovered" {
-			continue
-		}
-		wantJob = append(wantJob, key)
-	}
-	sort.Strings(wantJob)
+	// 同步执行器的 Job 与 AsyncJob 同构，同样在阻塞自动解除时透出 recovered。
+	wantJob := sortedCopy(nodeAccountRefreshJobKeys)
 	if got := jsonFieldNames(t, Job{}); !reflect.DeepEqual(got, wantJob) {
 		t.Fatalf("Job 字段 = %v, want %v", got, wantJob)
 	}

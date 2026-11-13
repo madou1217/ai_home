@@ -82,9 +82,12 @@ func resolveRegion(value string) region {
 
 // 编译期断言：策略端口与一次性 Flow 端口都对齐现有 Job 框架。
 var (
-	_ accountauth.OAuthProvider         = (*Provider)(nil)
-	_ accountauth.OAuthFlow             = (*flow)(nil)
-	_ accountauth.AccountClaimsProvider = (*flow)(nil)
+	_ accountauth.OAuthProvider            = (*Provider)(nil)
+	_ accountauth.OAuthProviderWithOptions = (*Provider)(nil)
+	_ accountauth.OAuthFlow                = (*flow)(nil)
+	_ accountauth.AccountClaimsProvider    = (*flow)(nil)
+	_ accountauth.StateProvider            = (*flow)(nil)
+	_ accountauth.AuthStrategyProvider     = (*flow)(nil)
 )
 
 // Provider 是无可变会话状态的 ZCode 自定义协议策略。
@@ -144,6 +147,44 @@ func (*Provider) ProviderID() string {
 
 // Begin 生成 32 字节 state 与官方授权 URL。
 func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, error) {
+	return provider.beginForRegion(ctx, provider.region, "")
+}
+
+// BeginWithOptions 按请求里的 authStrategy（zai / bigmodel）切换授权入口与凭据键前缀。
+func (provider *Provider) BeginWithOptions(
+	ctx context.Context,
+	options accountauth.BeginOptions,
+) (accountauth.OAuthFlow, error) {
+	if strings.TrimSpace(options.LoginProvider) != "" {
+		return nil, accountauth.ErrUnsupportedLoginProvider
+	}
+	selected, strategy, err := resolveRegionForStrategy(provider.region, options.AuthStrategy)
+	if err != nil {
+		return nil, err
+	}
+	return provider.beginForRegion(ctx, selected, strategy)
+}
+
+func resolveRegionForStrategy(fallback region, rawStrategy string) (region, string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(rawStrategy))
+	if trimmed == "" {
+		return fallback, "", nil
+	}
+	switch trimmed {
+	case "zai", "zai:custom-scheme", "zai:cli-flow":
+		return regions["zai"], "zai:custom-scheme", nil
+	case "bigmodel", "bigmodel:custom-scheme", "bigmodel:cli-flow":
+		return regions["bigmodel"], "bigmodel:custom-scheme", nil
+	default:
+		return region{}, "", accountauth.ErrUnsupportedAuthStrategy
+	}
+}
+
+func (provider *Provider) beginForRegion(
+	ctx context.Context,
+	selected region,
+	authStrategy string,
+) (accountauth.OAuthFlow, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, errors.Join(accountauth.ErrProviderUnavailable, err)
 	}
@@ -151,13 +192,14 @@ func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, err
 	if err != nil {
 		return nil, accountauth.ErrProviderUnavailable
 	}
-	authorization, err := buildAuthorizationURL(provider.region, redirectURI, state)
+	authorization, err := buildAuthorizationURL(selected, redirectURI, state)
 	if err != nil {
 		return nil, accountauth.ErrProviderUnavailable
 	}
 	return &flow{
 		client:        provider.client,
-		region:        provider.region,
+		region:        selected,
+		authStrategy:  authStrategy,
 		tokenEndpoint: provider.tokenEndpoint,
 		authorization: authorization,
 		state:         state,

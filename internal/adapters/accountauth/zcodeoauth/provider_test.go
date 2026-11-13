@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -236,5 +237,53 @@ func TestBuildArtifactsUseRegionKeyPrefix(t *testing.T) {
 	}
 	if _, found := credentials["oauth:zai:access_token"]; found {
 		t.Fatal("bigmodel 不应写入 zai 键")
+	}
+}
+
+
+func TestBeginWithOptionsSwitchesRegionAndExposesState(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		strategy     string
+		wantHost     string
+		wantStrategy string
+	}{
+		{name: "bigmodel_custom", strategy: "bigmodel:custom-scheme", wantHost: "bigmodel.cn", wantStrategy: "bigmodel:custom-scheme"},
+		{name: "bigmodel_cli", strategy: "bigmodel:cli-flow", wantHost: "bigmodel.cn", wantStrategy: "bigmodel:custom-scheme"},
+		{name: "zai_cli", strategy: "zai:cli-flow", wantHost: "chat.z.ai", wantStrategy: "zai:custom-scheme"},
+		{name: "empty", strategy: "", wantHost: "chat.z.ai", wantStrategy: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newTestProvider(t, "https://example.test/token", "zai")
+			flowValue, err := provider.BeginWithOptions(context.Background(), accountauth.BeginOptions{
+				AuthStrategy: tc.strategy,
+			})
+			if err != nil {
+				t.Fatalf("BeginWithOptions(%q) error = %v", tc.strategy, err)
+			}
+			parsed, err := url.Parse(flowValue.AuthorizationURL())
+			if err != nil {
+				t.Fatalf("url.Parse() error = %v", err)
+			}
+			if parsed.Host != tc.wantHost {
+				t.Fatalf("Host = %q, want %q", parsed.Host, tc.wantHost)
+			}
+			if sp, ok := flowValue.(accountauth.StateProvider); !ok || sp.OAuthState() == "" {
+				t.Fatalf("OAuthState() missing or empty on %T", flowValue)
+			} else if parsed.Query().Get("state") != sp.OAuthState() {
+				t.Fatalf("url state %q != OAuthState() %q", parsed.Query().Get("state"), sp.OAuthState())
+			}
+			if asp, ok := flowValue.(accountauth.AuthStrategyProvider); !ok || asp.AuthStrategy() != tc.wantStrategy {
+				t.Fatalf("AuthStrategy() = %q, want %q", asp.AuthStrategy(), tc.wantStrategy)
+			}
+		})
+	}
+
+	provider := newTestProvider(t, "https://example.test/token", "zai")
+	if _, err := provider.BeginWithOptions(context.Background(), accountauth.BeginOptions{AuthStrategy: "unknown"}); !errors.Is(err, accountauth.ErrUnsupportedAuthStrategy) {
+		t.Fatalf("unknown strategy error = %v, want ErrUnsupportedAuthStrategy", err)
+	}
+	if _, err := provider.BeginWithOptions(context.Background(), accountauth.BeginOptions{LoginProvider: "Google"}); !errors.Is(err, accountauth.ErrUnsupportedLoginProvider) {
+		t.Fatalf("loginProvider error = %v, want ErrUnsupportedLoginProvider", err)
 	}
 }

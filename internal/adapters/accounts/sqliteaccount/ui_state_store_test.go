@@ -60,3 +60,45 @@ func TestAccountUIStateRoundTrip(t *testing.T) {
 		t.Fatalf("missing account error = %v", err)
 	}
 }
+
+func TestIsAPIKeyAccountReadsUIStateFlag(t *testing.T) {
+	ctx := context.Background()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	store, err := Open(ctx, OpenOptions{AIHomeDir: t.TempDir(), Catalog: catalog})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+	accountRef, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	account, err := accountcore.RestoreAccount(catalog, accountcore.RestoreAccountInput{
+		Ref: accountRef, ProviderID: "codex", CLIAccountID: 1, Enabled: true,
+		CreatedAt: time.UnixMilli(100).UTC(), UpdatedAt: time.UnixMilli(100).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("RestoreAccount() error = %v", err)
+	}
+	if err := store.Create(ctx, account); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	flag, err := store.IsAPIKeyAccount(ctx, accountRef)
+	if err != nil || flag {
+		t.Fatalf("initial IsAPIKeyAccount() = (%v, %v), want (false, nil)", flag, err)
+	}
+	state, err := accountcore.NewUIState(accountcore.UIStateInput{
+		AccountRef: accountRef, Status: "up", AuthMode: "api-key", APIKeyMode: true,
+		UpdatedAt: time.UnixMilli(2000).UTC(),
+	})
+	if err != nil {
+		t.Fatalf("NewUIState() error = %v", err)
+	}
+	if err := store.ReplaceAccountUIState(ctx, state); err != nil {
+		t.Fatalf("ReplaceAccountUIState() error = %v", err)
+	}
+	flag, err = store.IsAPIKeyAccount(ctx, accountRef)
+	if err != nil || !flag {
+		t.Fatalf("after UIState IsAPIKeyAccount() = (%v, %v), want (true, nil)", flag, err)
+	}
+}

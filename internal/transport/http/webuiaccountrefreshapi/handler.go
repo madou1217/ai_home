@@ -56,9 +56,10 @@ const (
 	// jobStatusSucceeded / jobStatusFailed 是作业终态，与 Node 序列化口径一致。
 	jobStatusSucceeded = "succeeded"
 	jobStatusFailed    = "failed"
-	// branchStatusSucceeded / branchStatusFailed 是单段终态。
+	// branchStatusSucceeded / branchStatusFailed / branchStatusSkipped 是单段终态。
 	branchStatusSucceeded = "succeeded"
 	branchStatusFailed    = "failed"
+	branchStatusSkipped   = "skipped"
 
 	// codeRefreshUnavailable 表示该段刷新端口没有接线。
 	codeRefreshUnavailable = "refresh_unavailable"
@@ -83,6 +84,9 @@ var branchLabels = map[string]string{
 
 // errRefreshUnavailable 由未接线的段返回，统一翻成 refresh_unavailable。
 var errRefreshUnavailable = errors.New("刷新端口未接线")
+
+// errBranchSkipped 表示该 Provider 或认证方式不适用此段刷新（如非模型目录 Provider 或 API Key 账号）。
+var errBranchSkipped = errors.New("refresh_branch_skipped")
 
 // ErrInvalidDependencies 表示 Handler 缺少鉴权或账号读端口。
 var ErrInvalidDependencies = errors.New("账号刷新接口依赖无效")
@@ -148,7 +152,13 @@ type Dependencies struct {
 	StatusRefresher StatusRefresher
 	ModelRefresher  ModelRefresher
 	QuotaRefresher  QuotaRefresher
-	Timeout         time.Duration
+	// SupportsModelCatalog 判定 Provider 是否支持模型目录段；nil 时默认支持。
+	SupportsModelCatalog func(provider string) bool
+	// IsAPIKeyAccount 判定账号是否处于 API Key 模式（跳过额度段）；nil 时不跳过。
+	IsAPIKeyAccount func(ctx context.Context, accountRef accountcore.AccountRef) bool
+	// ReadRuntimeStatus 读取刷新前后的账号运行态词，用于判定是否从阻塞自动恢复。
+	ReadRuntimeStatus func(ctx context.Context, accountRef accountcore.AccountRef) string
+	Timeout           time.Duration
 }
 
 // BranchResult 是单段刷新的结果（内部用）。
@@ -156,9 +166,10 @@ type Dependencies struct {
 // ok=false 时 code 一定存在：refresh_unavailable（未接线）、refresh_failed（执行
 // 失败）或 timeout（整体超时未完成）；error 是给人看的摘要。
 type BranchResult struct {
-	OK    bool   `json:"ok"`
-	Code  string `json:"code,omitempty"`
-	Error string `json:"error,omitempty"`
+	OK      bool   `json:"ok"`
+	Skipped bool   `json:"skipped,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // JobBranch 是作业里单段的状态，字段名与 Node 的 serializeAccountRefreshJob 一致。
@@ -179,6 +190,7 @@ type Job struct {
 	UpdatedAt      int64                `json:"updatedAt"`
 	FinishedAt     *int64               `json:"finishedAt"`
 	Error          string               `json:"error"`
+	Recovered      bool                 `json:"recovered,omitempty"`
 	FailedBranches []string             `json:"failedBranches,omitempty"`
 	Scope          string               `json:"scope"`
 	Branches       map[string]JobBranch `json:"branches"`
@@ -201,12 +213,15 @@ type errorResponse struct {
 
 // Handler 是账号三段刷新的 HTTP 入站适配器。
 type Handler struct {
-	authorizer      Authorizer
-	accounts        AccountDirectory
-	statusRefresher StatusRefresher
-	modelRefresher  ModelRefresher
-	quotaRefresher  QuotaRefresher
-	timeout         time.Duration
+	authorizer           Authorizer
+	accounts             AccountDirectory
+	statusRefresher      StatusRefresher
+	modelRefresher       ModelRefresher
+	quotaRefresher       QuotaRefresher
+	supportsModelCatalog func(provider string) bool
+	isAPIKeyAccount      func(ctx context.Context, accountRef accountcore.AccountRef) bool
+	readRuntimeStatus    func(ctx context.Context, accountRef accountcore.AccountRef) string
+	timeout              time.Duration
 
 	// inflight 让同一账号的并发刷新复用同一次执行：第二个请求等第一个跑完，
 	// 拿同一份 job 并标 alreadyRunning=true，避免重复打上游。
@@ -230,13 +245,16 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		timeout = defaultTimeout
 	}
 	return &Handler{
-		authorizer:      dependencies.Authorizer,
-		accounts:        dependencies.Accounts,
-		statusRefresher: dependencies.StatusRefresher,
-		modelRefresher:  dependencies.ModelRefresher,
-		quotaRefresher:  dependencies.QuotaRefresher,
-		timeout:         timeout,
-		inflight:        make(map[string]*inflightRun),
+		authorizer:           dependencies.Authorizer,
+		accounts:             dependencies.Accounts,
+		statusRefresher:      dependencies.StatusRefresher,
+		modelRefresher:       dependencies.ModelRefresher,
+		quotaRefresher:       dependencies.QuotaRefresher,
+		supportsModelCatalog: dependencies.SupportsModelCatalog,
+		isAPIKeyAccount:      dependencies.IsAPIKeyAccount,
+		readRuntimeStatus:    dependencies.ReadRuntimeStatus,
+		timeout:              timeout,
+		inflight:             make(map[string]*inflightRun),
 	}, nil
 }
 
@@ -336,16 +354,26 @@ func (handler *Handler) runOnce(
 	accountRef accountcore.AccountRef,
 ) Job {
 	now := time.Now().UnixMilli()
-	specs := handler.branches(accountRef)
+	statusBefore := ""
+	if handler.readRuntimeStatus != nil {
+		statusBefore = strings.TrimSpace(handler.readRuntimeStatus(parent, accountRef))
+	}
+	specs := handler.branches(provider, accountRef)
 	results := runBranches(parent, handler.timeout, specs)
 
 	branches := make(map[string]JobBranch, len(specs))
 	failedBranches := make([]string, 0, len(specs))
 	failures := make([]string, 0, len(specs))
+	succeededCount := 0
 	for _, spec := range specs {
 		result := results[spec.name]
+		if result.Skipped {
+			branches[spec.name] = JobBranch{Status: branchStatusSkipped}
+			continue
+		}
 		if result.OK {
 			branches[spec.name] = JobBranch{Status: branchStatusSucceeded}
+			succeededCount++
 			continue
 		}
 		branches[spec.name] = JobBranch{Status: branchStatusFailed, Error: result.Error}
@@ -357,10 +385,19 @@ func (handler *Handler) runOnce(
 		failures = append(failures, label+"："+result.Error)
 	}
 
-	// 与 Node 同口径：只有全部段都失败才算作业失败，否则是「部分失败」。
+	// 与 Node 同口径：只有非跳过段全部失败（succeededCount==0 且存在 failedBranches）才算作业失败。
 	status := jobStatusSucceeded
-	if len(failedBranches) == len(specs) && len(specs) > 0 {
+	if len(failedBranches) > 0 && succeededCount == 0 {
 		status = jobStatusFailed
+	}
+	recovered := false
+	if statusBefore != "" && statusBefore != "healthy" && handler.readRuntimeStatus != nil {
+		modelsRecovered := results[BranchModels].OK && !results[BranchModels].Skipped
+		usageRecovered := results[BranchUsage].OK && !results[BranchUsage].Skipped
+		if (modelsRecovered || usageRecovered) &&
+			strings.TrimSpace(handler.readRuntimeStatus(parent, accountRef)) == "healthy" {
+			recovered = true
+		}
 	}
 	// 全部成功时 job.error 必须为空：Node 的 serializeAccountRefreshJob 输出 error: ''，
 	// 而 truncateText 的「刷新失败」兜底只该用在真正的失败摘要上。
@@ -378,6 +415,7 @@ func (handler *Handler) runOnce(
 		UpdatedAt:  finishedAt,
 		FinishedAt: &finishedAt,
 		Error:      errorText,
+		Recovered:  recovered,
 		Scope:      JobScopeAccount,
 		Branches:   branches,
 	}
@@ -407,7 +445,7 @@ type branchSpec struct {
 //
 // 未接线的段返回 errRefreshUnavailable，由 resultOfError 统一翻译，而不是在这里
 // 直接伪造成功或空结果。
-func (handler *Handler) branches(accountRef accountcore.AccountRef) []branchSpec {
+func (handler *Handler) branches(provider string, accountRef accountcore.AccountRef) []branchSpec {
 	return []branchSpec{
 		{
 			name: BranchStatus,
@@ -421,6 +459,9 @@ func (handler *Handler) branches(accountRef accountcore.AccountRef) []branchSpec
 		{
 			name: BranchModels,
 			run: func(ctx context.Context) error {
+				if handler.supportsModelCatalog != nil && !handler.supportsModelCatalog(provider) {
+					return errBranchSkipped
+				}
 				if handler.modelRefresher == nil {
 					return errRefreshUnavailable
 				}
@@ -431,6 +472,9 @@ func (handler *Handler) branches(accountRef accountcore.AccountRef) []branchSpec
 		{
 			name: BranchUsage,
 			run: func(ctx context.Context) error {
+				if handler.isAPIKeyAccount != nil && handler.isAPIKeyAccount(ctx, accountRef) {
+					return errBranchSkipped
+				}
 				if handler.quotaRefresher == nil {
 					return errRefreshUnavailable
 				}
@@ -488,6 +532,8 @@ func runBranches(
 // resultOfError 把一段刷新的错误收敛成稳定错误码。
 func resultOfError(err error) BranchResult {
 	switch {
+	case errors.Is(err, errBranchSkipped):
+		return BranchResult{OK: true, Skipped: true}
 	case err == nil:
 		return BranchResult{OK: true}
 	case errors.Is(err, errRefreshUnavailable):

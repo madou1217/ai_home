@@ -20,6 +20,9 @@ type nativeCredentialCodec struct{ providerID string }
 func (codec nativeCredentialCodec) ProviderID() string { return codec.providerID }
 
 func (codec nativeCredentialCodec) Encode(credential accountapp.Credential) (encodedCredential, error) {
+	if staticKey, ok := credential.(*accountcore.StaticAPIKeyAuth); ok {
+		return encodeStaticAPIKeyCredential(codec.providerID, staticKey)
+	}
 	auth, ok := credential.(*accountcore.NativeCredential)
 	if !ok || auth == nil || auth.ProviderID() != codec.providerID {
 		return encodedCredential{}, ErrInvalidCredential
@@ -37,6 +40,9 @@ func (codec nativeCredentialCodec) Encode(credential accountapp.Credential) (enc
 }
 
 func (codec nativeCredentialCodec) Decode(authKind, authMode string, payload []byte) (accountapp.Credential, error) {
+	if authKind == accountcore.StaticAPIKeyAuthKind && authMode == accountcore.StaticAPIKeyAuthMode {
+		return decodeStaticAPIKeyCredential(codec.providerID, payload)
+	}
 	if authMode != "native_auth_json" {
 		return nil, ErrInvalidCredential
 	}

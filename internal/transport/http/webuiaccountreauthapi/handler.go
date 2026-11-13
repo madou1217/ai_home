@@ -14,6 +14,7 @@ package webuiaccountreauthapi
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"errors"
 	"net/http"
 	"strings"
@@ -70,12 +71,24 @@ type AccountDirectory interface {
 	) (accountapp.AccountOverview, error)
 }
 
+// CredentialMetaReader 是可选凭据元信息端口，由 *sqliteaccount.Store 满足。
+type CredentialMetaReader interface {
+	ReadCredentialMeta(ctx context.Context, accountRef accountcore.AccountRef) (authKind string, authMode string, found bool, err error)
+	IsAPIKeyAccount(ctx context.Context, accountRef accountcore.AccountRef) (bool, error)
+}
+
+// CredentialGetter 是可选凭据读端口，由 *sqliteaccount.Store 满足，用于推断 Kiro Social / ZCode 区域策略。
+type CredentialGetter interface {
+	GetCredential(ctx context.Context, accountRef accountcore.AccountRef) (accountapp.Credential, error)
+}
+
 // Request 是一次重新认证作业的起始命令。账号引用必填，表示原地重新认证。
 type Request struct {
 	ProviderID      string
 	AccountRef      accountcore.AccountRef
 	AuthMode        string
 	AuthStrategy    string
+	LoginProvider   string
 	ActiveNativeRun bool
 }
 
@@ -267,20 +280,44 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	authMode := inferAuthMode(provider)
-	if authMode == "" {
-		writeFailure(response, failure{status: http.StatusBadRequest, body: errorView{Error: "reauth_unsupported", Code: "unsupported_auth_mode", Message: "当前账号无法推断认证方式，请删除后重新添加。"}})
-		return
+	if metaReader, ok := handler.accounts.(CredentialMetaReader); ok {
+		isAPIKey, metaErr := metaReader.IsAPIKeyAccount(request.Context(), accountRef)
+		if metaErr == nil && isAPIKey {
+			writeFailure(response, failure{
+				status: http.StatusBadRequest,
+				body: errorView{
+					Error:   "reauth_unsupported",
+					Code:    "api_key_reauth_unsupported",
+					Message: "API Key / 静态凭据账号不支持原地重新认证，请直接更新密钥。",
+				},
+			})
+			return
+		}
 	}
 	var body struct {
-		ActiveNativeRun bool `json:"activeNativeRun"`
+		AuthMode        string `json:"authMode"`
+		AuthStrategy    string `json:"authStrategy"`
+		LoginProvider   string `json:"loginProvider"`
+		ActiveNativeRun bool   `json:"activeNativeRun"`
 	}
-	_ = json.NewDecoder(request.Body).Decode(&body)
+	if request.Body != nil {
+		if rawBody, readErr := io.ReadAll(io.LimitReader(request.Body, 64*1024)); readErr == nil && len(strings.TrimSpace(string(rawBody))) > 0 {
+			_ = json.Unmarshal(rawBody, &body)
+		}
+	}
 	if body.ActiveNativeRun {
 		writeFailure(response, failure{status: http.StatusConflict, body: errorView{Error: "account_runtime_active", Message: "请先停止该账号正在运行的会话，再重新认证。"}})
 		return
 	}
-	result, startFailure := handler.startReauth(request.Context(), provider, overview)
+	options, resolveFailure := handler.resolveReauthOptions(request.Context(), provider, accountRef, body.AuthMode, body.AuthStrategy, body.LoginProvider)
+	if resolveFailure != nil {
+		writeFailure(response, *resolveFailure)
+		return
+	}
+	options.ProviderID = provider
+	options.AccountRef = accountRef
+	options.ActiveNativeRun = body.ActiveNativeRun
+	result, startFailure := handler.startReauth(request.Context(), provider, overview, options)
 	if startFailure != nil {
 		writeFailure(response, *startFailure)
 		return
@@ -293,14 +330,12 @@ func (handler *Handler) startReauth(
 	ctx context.Context,
 	provider string,
 	overview accountapp.AccountOverview,
+	startReq Request,
 ) (successResponse, *failure) {
 	accountRef := overview.Account().Ref()
-	result, err := handler.jobs.Start(ctx, Request{
-		ProviderID: provider,
-		AccountRef: accountRef,
-	})
+	result, err := handler.jobs.Start(ctx, startReq)
 	if err == nil {
-		response := newSuccessResponse(provider, overview, result)
+		response := newSuccessResponse(provider, overview, startReq, result)
 		handler.remember(provider, accountRef, response, result.ExpiresAt)
 		return response, nil
 	}
@@ -393,18 +428,25 @@ func (handler *Handler) forget(provider string, jobID string) {
 func newSuccessResponse(
 	provider string,
 	overview accountapp.AccountOverview,
+	startReq Request,
 	job Job,
 ) successResponse {
 	accountRef := overview.Account().Ref()
+	resolvedAuthMode := firstNonEmpty(job.AuthMode, startReq.AuthMode, inferAuthMode(provider))
+	resolvedStrategy := firstNonEmpty(job.AuthStrategy, startReq.AuthStrategy)
+	pollInterval := job.PollIntervalMS
+	if pollInterval <= 0 {
+		pollInterval = pollIntervalForMode(resolvedAuthMode)
+	}
 	return successResponse{
 		OK:               true,
 		Provider:         provider,
 		AccountRef:       accountRef.String(),
 		AccountLabel:     accountLabel(overview),
 		Purpose:          job.Purpose,
-		AuthMode:         firstNonEmpty(job.AuthMode, inferAuthMode(provider)),
-		AuthStrategy:     "",
-		PollIntervalMS:   1000,
+		AuthMode:         resolvedAuthMode,
+		AuthStrategy:     resolvedStrategy,
+		PollIntervalMS:   pollInterval,
 		Status:           job.Status,
 		JobID:            job.ID,
 		AuthorizationURL: job.AuthorizationURL,
@@ -461,6 +503,24 @@ func mapStartFailure(err error) failure {
 				Error:   "reauth_unsupported",
 				Code:    "unsupported_provider",
 				Message: "该 Provider 还没有 Go 侧登录流程",
+			},
+		}
+	case errors.Is(err, accountauth.ErrUnsupportedAuthStrategy):
+		return failure{
+			status: http.StatusBadRequest,
+			body: errorView{
+				Error:   "reauth_unsupported",
+				Code:    "unsupported_auth_strategy",
+				Message: "该账号的登录策略不支持原地重新认证",
+			},
+		}
+	case errors.Is(err, accountauth.ErrUnsupportedLoginProvider):
+		return failure{
+			status: http.StatusBadRequest,
+			body: errorView{
+				Error:   "reauth_unsupported",
+				Code:    "unsupported_login_provider",
+				Message: "该账号的登录提供方不支持原地重新认证",
 			},
 		}
 	case errors.Is(err, accountauth.ErrInvalidStartRequest),
@@ -546,10 +606,193 @@ func writeFailure(response http.ResponseWriter, problem failure) {
 
 // inferAuthMode 与 Node inferReauthAuthMode 的 Provider 默认档一致；
 // 运行态里的自定义 authMode 由调用方在请求里显式传入时后续扩展。
+func (handler *Handler) resolveReauthOptions(
+	ctx context.Context,
+	provider string,
+	accountRef accountcore.AccountRef,
+	rawAuthMode string,
+	rawAuthStrategy string,
+	rawLoginProvider string,
+) (Request, *failure) {
+	authMode := normalizeReauthMode(rawAuthMode)
+	authStrategy := strings.TrimSpace(rawAuthStrategy)
+	loginProvider := strings.TrimSpace(rawLoginProvider)
+
+	if rawAuthMode != "" && authMode == "" {
+		return Request{}, &failure{
+			status: http.StatusBadRequest,
+			body: errorView{
+				Error:   "reauth_unsupported",
+				Code:    "unsupported_auth_mode",
+				Message: "该认证方式不支持原地重新认证",
+			},
+		}
+	}
+	if authMode == "" {
+		if metaReader, ok := handler.accounts.(CredentialMetaReader); ok {
+			if authKind, storedMode, found, err := metaReader.ReadCredentialMeta(ctx, accountRef); err == nil && found {
+				if isStaticAuthMeta(authKind, storedMode) {
+					return Request{}, &failure{
+						status: http.StatusBadRequest,
+						body: errorView{
+							Error:   "reauth_unsupported",
+							Code:    "api_key_reauth_unsupported",
+							Message: "API Key / 静态凭据账号不支持原地重新认证，请直接更新密钥。",
+						},
+					}
+				}
+				if normalizedStored := normalizeReauthMode(storedMode); normalizedStored != "" {
+					authMode = normalizedStored
+				}
+			}
+		}
+	}
+	if authMode == "" {
+		authMode = inferAuthMode(provider)
+	}
+	if authMode == "" {
+		return Request{}, &failure{
+			status: http.StatusBadRequest,
+			body: errorView{
+				Error:   "reauth_unsupported",
+				Code:    "unsupported_auth_mode",
+				Message: "当前账号无法推断认证方式，请删除后重新添加。",
+			},
+		}
+	}
+	if provider == "kiro" && authMode == "oauth-refresh-token" && authStrategy == "" {
+		authStrategy = "oauth-refresh-token"
+	}
+	if (provider == "kiro" || provider == "zcode") && (authStrategy == "" || (provider == "kiro" && loginProvider == "")) {
+		if getter, ok := handler.accounts.(CredentialGetter); ok {
+			if cred, err := getter.GetCredential(ctx, accountRef); err == nil {
+				if nativeCred, ok := cred.(*accountcore.NativeCredential); ok {
+					inferredStrategy, inferredLogin := inferCredentialReauthHints(provider, nativeCred.Payload())
+					if authStrategy == "" && inferredStrategy != "" {
+						authStrategy = inferredStrategy
+					}
+					if loginProvider == "" && inferredLogin != "" {
+						loginProvider = inferredLogin
+					}
+				}
+			}
+		}
+	}
+	if provider == "kiro" {
+		loginProvider = normalizeKiroReauthLoginProvider(loginProvider)
+	}
+	return Request{
+		AuthMode:      authMode,
+		AuthStrategy:  authStrategy,
+		LoginProvider: loginProvider,
+	}, nil
+}
+
+func isStaticAuthMeta(authKind, authMode string) bool {
+	switch strings.ToLower(strings.TrimSpace(authKind)) {
+	case "api_key", "auth_token", "vertex_ai":
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(authMode)) {
+	case "api-key", "api_key", "auth-token", "auth_token", "vertex-ai", "vertex_ai":
+		return true
+	}
+	return false
+}
+
+func normalizeReauthMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "oauth-browser", "browser":
+		return "oauth-browser"
+	case "oauth-device", "device", "device-code":
+		return "oauth-device"
+	case "oauth-refresh-token", "refresh-token", "oauth_refresh_token":
+		return "oauth-refresh-token"
+	default:
+		return ""
+	}
+}
+
+func normalizeKiroReauthLoginProvider(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "builder-id", "builderid", "builder", "aws-builder-id", "awsbuilderid", "idc":
+		return ""
+	case "google":
+		return "Google"
+	case "github":
+		return "Github"
+	default:
+		return strings.TrimSpace(raw)
+	}
+}
+
+func inferCredentialReauthHints(provider string, payload []byte) (authStrategy string, loginProvider string) {
+	if len(payload) == 0 {
+		return "", ""
+	}
+	switch provider {
+	case "zcode":
+		var doc struct {
+			Credentials map[string]any `json:"credentials"`
+		}
+		if json.Unmarshal(payload, &doc) == nil && doc.Credentials != nil {
+			if active, _ := doc.Credentials["oauth:active_provider"].(string); active != "" {
+				switch strings.ToLower(strings.TrimSpace(active)) {
+				case "bigmodel":
+					return "bigmodel:custom-scheme", ""
+				case "zai", "zcode":
+					return "zai:custom-scheme", ""
+				}
+			}
+		}
+	case "kiro":
+		var doc struct {
+			SQLite struct {
+				Slots map[string]string `json:"slots"`
+			} `json:"sqlite"`
+		}
+		if json.Unmarshal(payload, &doc) != nil || doc.SQLite.Slots == nil {
+			return "", ""
+		}
+		if metaRaw := strings.TrimSpace(doc.SQLite.Slots["aih:kiro:auth-meta"]); metaRaw != "" {
+			var meta struct {
+				AuthKind string `json:"authKind"`
+				Provider string `json:"provider"`
+			}
+			if json.Unmarshal([]byte(metaRaw), &meta) == nil {
+				if lp := normalizeKiroReauthLoginProvider(meta.Provider); lp != "" {
+					return "social-oauth-device", lp
+				}
+			}
+		}
+		if socialRaw := strings.TrimSpace(doc.SQLite.Slots["kirocli:social:token"]); socialRaw != "" {
+			var social struct {
+				Provider string `json:"provider"`
+			}
+			if json.Unmarshal([]byte(socialRaw), &social) == nil {
+				if lp := normalizeKiroReauthLoginProvider(social.Provider); lp != "" {
+					return "social-oauth-device", lp
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
+func pollIntervalForMode(authMode string) int {
+	if authMode == "oauth-device" || authMode == "oauth-refresh-token" {
+		return 2000
+	}
+	return 1000
+}
+
 func inferAuthMode(provider string) string {
 	switch provider {
-	case "codex", "claude", "gemini", "agy", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "codex", "claude", "gemini", "agy", "zcode", "grok", "qoder", "qodercn", "kimi", "cline",
+		"codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return "oauth-browser"
+	case "opencode", "kiro":
+		return "oauth-device"
 	}
 	return ""
 }

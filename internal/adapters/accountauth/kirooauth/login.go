@@ -83,10 +83,11 @@ var oidcScopes = []string{
 
 // 编译期断言：登录流程必须同时满足 Job 框架的四个端口。
 var (
-	_ accountauth.OAuthProvider         = (*LoginProvider)(nil)
-	_ accountauth.DeviceFlow            = (*loginFlow)(nil)
-	_ accountauth.DeviceCodeProvider    = (*loginFlow)(nil)
-	_ accountauth.AccountClaimsProvider = (*loginFlow)(nil)
+	_ accountauth.OAuthProvider            = (*LoginProvider)(nil)
+	_ accountauth.OAuthProviderWithOptions = (*LoginProvider)(nil)
+	_ accountauth.DeviceFlow               = (*loginFlow)(nil)
+	_ accountauth.DeviceCodeProvider       = (*loginFlow)(nil)
+	_ accountauth.AccountClaimsProvider    = (*loginFlow)(nil)
 )
 
 // LoginProvider 是 AWS SSO OIDC Builder ID 设备码登录策略。
@@ -94,27 +95,32 @@ var (
 // 每次 Begin 都重新登记一个 public client：Node 的入口也是每次登录注册一次，
 // clientSecret 有独立有效期，复用会让过期时间变成账号刷新链路的隐藏故障点。
 type LoginProvider struct {
-	client    *http.Client
-	clock     Clock
-	oidcBase  func(region string) string
-	usageBase func(region string) string
+	client      *http.Client
+	clock       Clock
+	oidcBase    func(region string) string
+	desktopBase func(region string) string
+	usageBase   func(region string) string
 }
 
 // loginOptions 仅供包内测试替换端点与时钟。
 type loginOptions struct {
-	client    *http.Client
-	clock     Clock
-	oidcBase  func(region string) string
-	usageBase func(region string) string
+	client      *http.Client
+	clock       Clock
+	oidcBase    func(region string) string
+	desktopBase func(region string) string
+	usageBase   func(region string) string
 }
 
-// NewLogin 创建固定使用 AWS 生产端点的 Builder ID 登录策略。
+// NewLogin 创建固定使用 AWS 生产端点的 Kiro 登录策略（支持 Builder ID OIDC 与 Social 设备码）。
 func NewLogin(client *http.Client, clock Clock) (*LoginProvider, error) {
 	return newLogin(loginOptions{
 		client: client,
 		clock:  clock,
 		oidcBase: func(region string) string {
 			return "https://oidc." + region + ".amazonaws.com"
+		},
+		desktopBase: func(region string) string {
+			return "https://prod." + normalizeDesktopRegion(region) + ".auth.desktop.kiro.dev"
 		},
 		usageBase: func(region string) string {
 			return "https://codewhisperer." + region + ".amazonaws.com"
@@ -130,11 +136,18 @@ func newLogin(options loginOptions) (*LoginProvider, error) {
 		options.usageBase == nil {
 		return nil, accountauth.ErrInvalidDependencies
 	}
+	desktopBase := options.desktopBase
+	if desktopBase == nil {
+		desktopBase = func(region string) string {
+			return "https://prod." + normalizeDesktopRegion(region) + ".auth.desktop.kiro.dev"
+		}
+	}
 	return &LoginProvider{
-		client:    options.client,
-		clock:     options.clock,
-		oidcBase:  options.oidcBase,
-		usageBase: options.usageBase,
+		client:      options.client,
+		clock:       options.clock,
+		oidcBase:    options.oidcBase,
+		desktopBase: desktopBase,
+		usageBase:   options.usageBase,
 	}, nil
 }
 
@@ -562,7 +575,17 @@ func (flow *loginFlow) fetchUsageLimits(
 	ctx context.Context,
 	grant deviceGrant,
 ) (usageLimits, error) {
-	endpoint, err := url.Parse(strings.TrimSuffix(flow.usageBase, "/") + "/")
+	return fetchUsageLimits(ctx, flow.client, flow.usageBase, grant.accessToken, "")
+}
+
+func fetchUsageLimits(
+	ctx context.Context,
+	client *http.Client,
+	usageBase string,
+	accessToken string,
+	profileARN string,
+) (usageLimits, error) {
+	endpoint, err := url.Parse(strings.TrimSuffix(usageBase, "/") + "/")
 	if err != nil {
 		return usageLimits{}, accountauth.ErrProviderUnavailable
 	}
@@ -570,6 +593,9 @@ func (flow *loginFlow) fetchUsageLimits(
 		"origin":          "CLI",
 		"resourceType":    "AGENTIC_REQUEST",
 		"isEmailRequired": "true",
+	}
+	if trimmedARN := strings.TrimSpace(profileARN); trimmedARN != "" {
+		input["profileArn"] = trimmedARN
 	}
 	query := url.Values{}
 	for key, value := range input {
@@ -584,11 +610,11 @@ func (flow *loginFlow) fetchUsageLimits(
 	if err != nil {
 		return usageLimits{}, accountauth.ErrProviderUnavailable
 	}
-	request.Header.Set("Authorization", "Bearer "+grant.accessToken)
+	request.Header.Set("Authorization", "Bearer "+accessToken)
 	request.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("x-amz-target", usageTarget)
-	response, err := flow.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return usageLimits{}, accountauth.ErrProviderUnavailable
 	}

@@ -272,3 +272,71 @@ func insertCredential(
 	}
 	return nil
 }
+
+// ReadCredentialMeta 按账号引用读取凭据类型与认证模式（不构造完整密钥对象）。
+func (store *Store) ReadCredentialMeta(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (authKind string, authMode string, found bool, err error) {
+	if store == nil || store.db == nil || ctx == nil || !accountRef.IsValid() {
+		return "", "", false, accountcore.ErrInvalidAccountRef
+	}
+	if err := ctx.Err(); err != nil {
+		return "", "", false, err
+	}
+	err = store.db.QueryRowContext(
+		ctx,
+		`SELECT c.auth_kind, c.auth_mode
+		   FROM account_credentials AS c
+		  WHERE c.account_ref = ?
+		  LIMIT 1`,
+		accountRef.String(),
+	).Scan(&authKind, &authMode)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("读取账号凭据元信息失败: %w", err)
+	}
+	return authKind, authMode, true, nil
+}
+
+// IsAPIKeyAccount 判断账号是否处于静态 API Key / Auth Token / Vertex AI 模式。
+//
+// 同时检查 account_credentials.auth_kind 与 account_ui_state.api_key_mode：
+// Go 直写入的账号看凭据类型，Node 历史投影的账号同时兼容 UI 状态标记。
+func (store *Store) IsAPIKeyAccount(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (bool, error) {
+	if store == nil || store.db == nil || ctx == nil || !accountRef.IsValid() {
+		return false, accountcore.ErrInvalidAccountRef
+	}
+	authKind, authMode, found, err := store.ReadCredentialMeta(ctx, accountRef)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		switch authKind {
+		case "api_key", "auth_token", "vertex_ai":
+			return true, nil
+		}
+		switch authMode {
+		case "api-key", "api_key", "auth-token", "auth_token", "vertex-ai", "vertex_ai":
+			return true, nil
+		}
+	}
+	var apiKeyMode int
+	err = store.db.QueryRowContext(
+		ctx,
+		`SELECT api_key_mode FROM account_ui_state WHERE account_ref = ? LIMIT 1`,
+		accountRef.String(),
+	).Scan(&apiKeyMode)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("读取账号静态凭据标记失败: %w", err)
+	}
+	return apiKeyMode == 1, nil
+}

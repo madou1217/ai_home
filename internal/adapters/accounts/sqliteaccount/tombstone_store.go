@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 )
@@ -54,6 +55,8 @@ func staticCredentialSecret(credential any) string {
 		return value.APIKey()
 	case *claude.AuthTokenAuth:
 		return value.AuthToken()
+	case *accountcore.StaticAPIKeyAuth:
+		return value.APIKey()
 	default:
 		return ""
 	}

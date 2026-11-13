@@ -44,6 +44,8 @@ func (starter accountAuthStarter) Start(
 	result, err := starter.jobs.Start(ctx, accountauth.StartRequest{
 		ProviderID:       request.ProviderID,
 		TargetAccountRef: request.AccountRef,
+		AuthStrategy:     request.AuthStrategy,
+		LoginProvider:    request.LoginProvider,
 	})
 	if err != nil {
 		return Job{}, err
@@ -54,6 +56,8 @@ func (starter accountAuthStarter) Start(
 		ProviderID:       job.ProviderID(),
 		Purpose:          string(job.Purpose()),
 		AuthMode:         job.AuthMode(),
+		AuthStrategy:     job.AuthStrategy(),
+		PollIntervalMS:   pollIntervalForMode(job.AuthMode()),
 		Status:           string(job.Status()),
 		AuthorizationURL: result.AuthorizationURL(),
 		UserCode:         result.UserCode(),

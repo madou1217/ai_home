@@ -507,3 +507,35 @@ func TestNewAsyncHandlerRejectsMissingDependencies(t *testing.T) {
 		t.Fatalf("zero executor error = %v", err)
 	}
 }
+
+func TestAsyncRefreshUsageRejectsAPIKeyAccountBeforeQueueing(t *testing.T) {
+	executor, err := NewHandler(Dependencies{
+		Authorizer: fakeAuthorizer{allowed: true},
+		Accounts:   knownAccounts(),
+		QuotaProbe: &fakeProbe{snapshot: validSnapshot()},
+		IsAPIKeyAccount: func(context.Context, string, string) bool { return true },
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	jobs := webuirefreshjobstore.New(webuirefreshjobstore.Options{})
+	asyncHandler, err := NewAsyncHandler(executor, jobs)
+	if err != nil {
+		t.Fatalf("NewAsyncHandler() error = %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, Path+"/"+testProvider+"/"+testAccountRef+RefreshUsageSuffix, nil)
+	request.SetPathValue("provider", testProvider)
+	request.SetPathValue("accountRef", testAccountRef)
+	recorder := httptest.NewRecorder()
+	asyncHandler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if payload["error"] != "refresh_usage_unsupported" || payload["code"] != "api_key_usage_refresh_unsupported" {
+		t.Fatalf("payload = %+v", payload)
+	}
+}

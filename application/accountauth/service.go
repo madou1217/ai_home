@@ -1,6 +1,7 @@
 package accountauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -147,11 +148,36 @@ func (service *Service) Start(
 	if err := service.checkStartCapacity(request.ProviderID); err != nil {
 		return StartResult{}, err
 	}
-	flow, err := provider.Begin(ctx)
+	beginOptions := BeginOptions{
+		AuthStrategy:  strings.TrimSpace(request.AuthStrategy),
+		LoginProvider: strings.TrimSpace(request.LoginProvider),
+	}
+	var flow OAuthFlow
+	var err error
+	if optionProvider, ok := provider.(OAuthProviderWithOptions); ok &&
+		(beginOptions.AuthStrategy != "" || beginOptions.LoginProvider != "") {
+		flow, err = optionProvider.BeginWithOptions(ctx, beginOptions)
+	} else {
+		flow, err = provider.Begin(ctx)
+	}
 	if err != nil {
 		return StartResult{}, err
 	}
-	if flow == nil || !validAuthorizationURL(flow.AuthorizationURL()) {
+	if flow == nil {
+		return StartResult{}, ErrInvalidDependencies
+	}
+	deviceFlow, isDevice := flow.(DeviceFlow)
+	authMode := "oauth-browser"
+	if isDevice {
+		authMode = "oauth-device"
+	}
+	if modeProvider, ok := flow.(AuthModeProvider); ok {
+		if declared := strings.TrimSpace(modeProvider.AuthMode()); declared != "" {
+			authMode = declared
+		}
+	}
+	// refresh_token 手工粘贴导入没有官方授权跳转 URL，其余流程必须给出合法 HTTPS 授权地址。
+	if authMode != "oauth-refresh-token" && !validAuthorizationURL(flow.AuthorizationURL()) {
 		return StartResult{}, ErrInvalidDependencies
 	}
 	jobID, err := service.generateID()
@@ -175,21 +201,22 @@ func (service *Service) Start(
 		service.mu.Unlock()
 		return StartResult{}, ErrInvalidDependencies
 	}
-	// 设备码没有回调：只有后台轮询能推进 Job，stop 负责在终态时让它退出。
-	deviceFlow, isDevice := flow.(DeviceFlow)
-	authMode := "oauth-browser"
-	if isDevice {
-		authMode = "oauth-device"
+	authStrategy := beginOptions.AuthStrategy
+	if sp, ok := flow.(AuthStrategyProvider); ok {
+		if resolved := strings.TrimSpace(sp.AuthStrategy()); resolved != "" {
+			authStrategy = resolved
+		}
 	}
 	job := Job{
-		id:         jobID,
-		providerID: request.ProviderID,
-		purpose:    request.Purpose(),
-		targetRef:  request.TargetAccountRef,
-		status:     StatusPending,
-		createdAt:  now,
-		expiresAt:  now.Add(service.settings.jobTTL),
-		authMode:   authMode,
+		id:           jobID,
+		providerID:   request.ProviderID,
+		purpose:      request.Purpose(),
+		targetRef:    request.TargetAccountRef,
+		status:       StatusPending,
+		createdAt:    now,
+		expiresAt:    now.Add(service.settings.jobTTL),
+		authMode:     authMode,
+		authStrategy: authStrategy,
 	}
 	record := &jobRecord{job: job, flow: flow}
 	if isDevice {
@@ -349,6 +376,39 @@ func (service *Service) Rehydrate(ctx context.Context) error {
 // token 交换与账号写入；已 completed 的 Job 直接回放 account_ref、
 // cli_account_id 等既有结果，已 failed 的 Job 回放同一失败码，都不会产生第二次
 // 副作用。网络重试、浏览器重复命中回调都依赖这个语义。
+// CompleteByState 在同 Provider 的等待中（pending）Job 里按 state 匹配并收尾回调。
+// 未提供 state 或当前无匹配的在途 Job 时返回 ErrJobNotFound。
+func (service *Service) CompleteByState(
+	ctx context.Context,
+	providerID string,
+	state string,
+	callback string,
+) (Job, error) {
+	providerID = strings.TrimSpace(providerID)
+	state = strings.TrimSpace(state)
+	if providerID == "" || state == "" {
+		return Job{}, ErrJobNotFound
+	}
+	now := service.now()
+	service.mu.Lock()
+	service.expireAndPruneLocked(now)
+	jobID := service.activeJobs[providerID]
+	record := service.jobs[jobID]
+	matched := record != nil && record.job.status == StatusPending
+	if matched {
+		if sp, ok := record.flow.(StateProvider); ok {
+			matched = sp.OAuthState() == state
+		} else {
+			matched = false
+		}
+	}
+	service.mu.Unlock()
+	if !matched {
+		return Job{}, ErrJobNotFound
+	}
+	return service.Complete(ctx, jobID, callback)
+}
+
 func (service *Service) Complete(
 	ctx context.Context,
 	jobID string,
@@ -379,6 +439,28 @@ func (service *Service) Complete(
 	return service.finishClaim(ctx, claimed, artifacts)
 }
 
+// CompleteWithArtifacts 使用已取得的官方 artifact（例如本机 IDE 登录态导入）
+// 直接把等待中的 Job 原子收尾并写入账号。
+func (service *Service) CompleteWithArtifacts(
+	ctx context.Context,
+	jobID string,
+	artifacts []byte,
+	hints Account,
+) (Job, error) {
+	claim, err := service.claimCompletion(ctx, jobID)
+	if err != nil {
+		return Job{}, err
+	}
+	if !claim.claimed {
+		return claim.replay, nil
+	}
+	if len(bytes.TrimSpace(artifacts)) == 0 {
+		return service.failJob(claim.job.jobID, "invalid_artifacts"), ErrInvalidArtifacts
+	}
+	copied := append([]byte(nil), artifacts...)
+	return service.finishClaimWithClaims(ctx, claim.job, copied, hints)
+}
+
 // finishClaim 把官方 artifact 写入账号，并把 processing Job 收敛为终态。
 //
 // 回调型流程（Exchange）与设备码轮询（Poll ready）拿到 artifact 之后的
@@ -388,10 +470,18 @@ func (service *Service) finishClaim(
 	claimed claimedJob,
 	artifacts []byte,
 ) (Job, error) {
-	defer clearBytes(artifacts)
 	// ID Token 的公开字段先取一份：账号解码器可能只返回资料子集，
 	// 这里保留上游原始 claim 作为缺失字段的回落来源。
-	claims := flowAccountClaims(claimed.flow)
+	return service.finishClaimWithClaims(ctx, claimed, artifacts, flowAccountClaims(claimed.flow))
+}
+
+func (service *Service) finishClaimWithClaims(
+	ctx context.Context,
+	claimed claimedJob,
+	artifacts []byte,
+	claims Account,
+) (Job, error) {
+	defer clearBytes(artifacts)
 	credential, profile, err := service.decoder.Decode(
 		claimed.providerID,
 		artifacts,

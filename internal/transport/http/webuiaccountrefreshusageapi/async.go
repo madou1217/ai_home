@@ -125,6 +125,12 @@ func (handler *AsyncHandler) ServeHTTP(response http.ResponseWriter, request *ht
 			"未找到 "+provider+" 账号 "+accountRef)
 		return
 	}
+	if handler.executor.isAPIKeyAccount != nil && handler.executor.isAPIKeyAccount(request.Context(), provider, accountRef) {
+		writeErrorWithCode(response, http.StatusBadRequest,
+			"refresh_usage_unsupported", "api_key_usage_refresh_unsupported",
+			"API Key 账号不支持额度刷新。")
+		return
+	}
 
 	// 探测端口未接线时必须在登记作业之前拒绝：先建作业再失败会让界面看到一条
 	// 没有任何意义的失败记录。

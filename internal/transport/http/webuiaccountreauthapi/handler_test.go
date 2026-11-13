@@ -451,3 +451,108 @@ func TestServeHTTPMapsStartFailure(t *testing.T) {
 		})
 	}
 }
+
+
+type metaStubDirectory struct {
+	overview accountapp.AccountOverview
+	isAPIKey bool
+	authKind string
+	authMode string
+	cred     accountapp.Credential
+}
+
+func (dir metaStubDirectory) GetAccountOverview(context.Context, accountcore.AccountRef) (accountapp.AccountOverview, error) {
+	return dir.overview, nil
+}
+
+func (dir metaStubDirectory) ReadCredentialMeta(context.Context, accountcore.AccountRef) (string, string, bool, error) {
+	return dir.authKind, dir.authMode, dir.authKind != "" || dir.authMode != "", nil
+}
+
+func (dir metaStubDirectory) IsAPIKeyAccount(context.Context, accountcore.AccountRef) (bool, error) {
+	return dir.isAPIKey, nil
+}
+
+func (dir metaStubDirectory) GetCredential(context.Context, accountcore.AccountRef) (accountapp.Credential, error) {
+	return dir.cred, nil
+}
+
+func TestServeHTTPRejectsAPIKeyReauth(t *testing.T) {
+	accountRef := testAccountRef(t)
+	jobs := &stubJobs{job: pendingJob()}
+	h := newReauthHandler(t, testAuthorizer(true), metaStubDirectory{
+		overview: testOverview(t, "codex", accountRef),
+		isAPIKey: true,
+	}, jobs)
+	rec := postReauth(t, h, "codex", testRefText)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	body := decodeBody(t, rec)
+	assertText(t, body, "error", "reauth_unsupported")
+	assertText(t, body, "code", "api_key_reauth_unsupported")
+	if jobs.calls != 0 {
+		t.Fatalf("jobs.calls = %d, want 0", jobs.calls)
+	}
+}
+
+func TestServeHTTPInfersZCodeAndKiroSocialHints(t *testing.T) {
+	accountRef := testAccountRef(t)
+
+	// ZCode bigmodel credential
+	zcodeId, err := accountcore.NewNativeSubjectIdentity("zcode", "zcode-u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zcodeCred, err := accountcore.NewNativeCredential(zcodeId, []byte(`{"credentials":{"oauth:active_provider":"bigmodel"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := &stubJobs{job: Job{
+		ID: testJobID, ProviderID: "zcode", Purpose: "reauth", AuthMode: "oauth-browser",
+		AuthStrategy: "bigmodel:custom-scheme", Status: "pending",
+		AuthorizationURL: "https://open.bigmodel.cn/authorize", ExpiresAt: time.Now().Add(time.Minute),
+	}}
+	h := newReauthHandler(t, testAuthorizer(true), metaStubDirectory{
+		overview: testOverview(t, "zcode", accountRef),
+		cred:     zcodeCred,
+	}, jobs)
+	rec := postReauth(t, h, "zcode", testRefText)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("zcode status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if jobs.requests[0].AuthStrategy != "bigmodel:custom-scheme" {
+		t.Fatalf("AuthStrategy = %q, want bigmodel:custom-scheme", jobs.requests[0].AuthStrategy)
+	}
+
+	// Kiro social google credential
+	kiroId, err := accountcore.NewNativeKiroIdentity("https://codewhisperer.us-east-1.amazonaws.com", "kiro-u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kiroCred, err := accountcore.NewNativeCredential(kiroId, []byte(`{"sqlite":{"slots":{"kirocli:social:token":"{\"provider\":\"google\"}"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kiroJobs := &stubJobs{job: Job{
+		ID: testJobID, ProviderID: "kiro", Purpose: "reauth", AuthMode: "oauth-device",
+		AuthStrategy: "social-oauth-device", PollIntervalMS: 2000, Status: "pending",
+		AuthorizationURL: "https://prod.us-east-1.auth.desktop.kiro.dev/verify", UserCode: "K1R0",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}
+	h2 := newReauthHandler(t, testAuthorizer(true), metaStubDirectory{
+		overview: testOverview(t, "kiro", accountRef),
+		cred:     kiroCred,
+	}, kiroJobs)
+	rec2 := postReauth(t, h2, "kiro", testRefText)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("kiro status = %d: %s", rec2.Code, rec2.Body.String())
+	}
+	if kiroJobs.requests[0].LoginProvider != "Google" || kiroJobs.requests[0].AuthStrategy != "social-oauth-device" {
+		t.Fatalf("kiro req = %+v", kiroJobs.requests[0])
+	}
+	respBody := decodeBody(t, rec2)
+	if poll, _ := respBody["pollIntervalMs"].(float64); poll != 2000 {
+		t.Fatalf("pollIntervalMs = %v, want 2000", respBody["pollIntervalMs"])
+	}
+}

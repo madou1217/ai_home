@@ -49,6 +49,10 @@ var (
 	ErrInvalidArtifacts = errors.New("OAuth 官方 artifact 无效")
 	// ErrInvalidStartRequest 表示 Job 起始命令缺少 Provider 或目标身份无效。
 	ErrInvalidStartRequest = errors.New("OAuth Job 起始命令无效")
+	// ErrUnsupportedAuthStrategy 表示所选登录子策略当前不受 Go OAuth 引擎支持。
+	ErrUnsupportedAuthStrategy = errors.New("OAuth 登录策略不受支持")
+	// ErrUnsupportedLoginProvider 表示所选上游身份提供方当前不受支持。
+	ErrUnsupportedLoginProvider = errors.New("OAuth 上游身份提供方不受支持")
 )
 
 // Purpose 区分新账号注册与已有账号原地重新认证。
@@ -95,6 +99,9 @@ type Job struct {
 	// oauth-device 靠设备码轮询推进。它只存在于进程内，持久化快照不记录，
 	// 重启后从持久化记录还原的 Job 一律为空（无法继续流程，也不需要展示）。
 	authMode string
+	// authStrategy 记录启动流程采用的子策略标识（如 bigmodel:custom-scheme / social-oauth-device），
+	// 同样只保留在进程内公开快照，不持久化。
+	authStrategy string
 	// account 是成功登录后可直接展示的账号字段；失败或未完成时为零值。
 	account     Account
 	failureCode string
@@ -141,6 +148,11 @@ func (job Job) Status() Status {
 // 从持久化快照还原的 Job 没有 Flow，返回空串。
 func (job Job) AuthMode() string {
 	return job.authMode
+}
+
+// AuthStrategy 返回启动流程时采用的子策略标识（如 zai:custom-scheme / bigmodel:custom-scheme）。
+func (job Job) AuthStrategy() string {
+	return job.authStrategy
 }
 
 // CreatedAt 返回 Job 创建时间。
@@ -218,16 +230,46 @@ func (result StartResult) UserCode() string {
 	return result.userCode
 }
 
+// BeginOptions 描述发起 OAuth 流程时的可选子策略与上游登录提供方。
+type BeginOptions struct {
+	AuthStrategy  string
+	LoginProvider string
+}
+
 // OAuthProvider 是 Provider OAuth 开始阶段的策略端口。
 type OAuthProvider interface {
 	ProviderID() string
 	Begin(ctx context.Context) (OAuthFlow, error)
 }
 
+// OAuthProviderWithOptions 是 OAuthProvider 的可选扩展：支持按子策略或上游提供方发起流程。
+type OAuthProviderWithOptions interface {
+	OAuthProvider
+	BeginWithOptions(ctx context.Context, options BeginOptions) (OAuthFlow, error)
+}
+
 // OAuthFlow 是仅由 Job 私有持有的一次性 OAuth 会话。
 type OAuthFlow interface {
 	AuthorizationURL() string
 	Exchange(ctx context.Context, callback string) ([]byte, error)
+}
+
+// StateProvider 是 OAuthFlow 的可选扩展：仅向应用服务内部暴露本次流程的随机 state，
+// 用于按协议回调 state 认领在途 Job；公开快照永远不会暴露该值。
+type StateProvider interface {
+	OAuthState() string
+}
+
+// AuthStrategyProvider 是 OAuthFlow 的可选扩展：返回 Flow 实际采用的规范子策略名。
+type AuthStrategyProvider interface {
+	AuthStrategy() string
+}
+
+// AuthModeProvider 是 OAuthFlow 的可选扩展：显式声明流程形态（如 oauth-refresh-token）。
+//
+// 未实现该端口时按是否实现 DeviceFlow 自动判定为 oauth-browser / oauth-device。
+type AuthModeProvider interface {
+	AuthMode() string
 }
 
 // AccountClaimsProvider 是 OAuthFlow 的可选扩展：Flow 在 Exchange 之后可直接
@@ -291,6 +333,10 @@ type StartRequest struct {
 	ProviderID string
 	// TargetAccountRef 非空时表示原地 reauth，空值表示注册新账号。
 	TargetAccountRef accountcore.AccountRef
+	// AuthStrategy 指定可选子策略（如 bigmodel:custom-scheme、aih-google-oauth）。
+	AuthStrategy string
+	// LoginProvider 指定同一策略下的上游身份提供方（如 Kiro 的 Google / Github）。
+	LoginProvider string
 }
 
 // Purpose 根据目标账号是否存在返回明确 Job 意图。

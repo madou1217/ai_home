@@ -209,6 +209,7 @@ func snapshotFromJob(job Job) webuirefreshjobstore.Snapshot {
 		UpdatedAt:      job.UpdatedAt,
 		FinishedAt:     job.FinishedAt,
 		Error:          errorText,
+		Recovered:      job.Recovered,
 		FailedBranches: job.FailedBranches,
 		Scope:          job.Scope,
 		Branches:       branches,

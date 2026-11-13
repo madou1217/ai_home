@@ -472,11 +472,12 @@ function tryRunGoProviderCommonCommand() {
   const numeric = (value) => /^\d+$/.test(String(value || '').trim());
   const isList = command === 'ls' &&
     (args.length === 2 || (args.length === 3 && numeric(args[2])));
+  const noCacheFlag = (value) => value === '--refresh' || value === '--no-cache';
   const isUsageAll = command === 'usage' &&
-    (args.length === 2 || (args.length === 3 && args[2] === '--refresh'));
+    (args.length === 2 || (args.length === 3 && noCacheFlag(args[2])));
   const isUsageOne = command === 'usage' &&
     ((args.length === 3 && numeric(args[2])) ||
-      (args.length === 4 && numeric(args[2]) && args[3] === '--refresh'));
+      (args.length === 4 && numeric(args[2]) && noCacheFlag(args[3])));
   const isTerminalIcon = (command === 'terminal-icon' || command === 'terminal-icons') &&
     args.length >= 2;
   // 自动换号是全局 config:usage，Go 的读写口径与家族同一实现。
@@ -907,12 +908,13 @@ function tryRunGoFamilyServerCommand() {
   const command = String(args[1] || '').trim().toLowerCase();
   const isList = command === 'ls' &&
     (args.length === 2 || (args.length === 3 && /^\d+$/.test(String(args[2] || '').trim())));
+  const usageNoCache = (value) => value === '--refresh' || value === '--no-cache';
   const isUsage = (args.length === 2 && command === 'usage') ||
-    (args.length === 3 && command === 'usage' && args[2] === '--refresh') ||
+    (args.length === 3 && command === 'usage' && usageNoCache(args[2])) ||
     ((args.length === 3 || args.length === 4) &&
       command === 'usage' &&
       /^\d+$/.test(String(args[2] || '').trim()) &&
-      (args.length === 3 || args[3] === '--refresh'));
+      (args.length === 3 || usageNoCache(args[3])));
   const setDefaultRest = args.slice(2).map((token) => String(token || '').trim());
   const isSetDefault = command === 'set-default' && setDefaultRest.length >= 1 &&
     /^\d+$/.test(setDefaultRest[0]) &&

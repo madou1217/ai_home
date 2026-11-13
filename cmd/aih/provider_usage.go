@@ -32,9 +32,11 @@ func runProviderUsage(
 	refresh := false
 	accountID := ""
 	for _, argument := range arguments {
-		if argument == "--refresh" {
+		// Node 把 --no-cache 与 --refresh 当同一个「跳过缓存」开关（查询单账号与
+		// 全量扫描都如此），这里保持同一语义，避免旧脚本改旗标后落到 Node。
+		if argument == "--refresh" || argument == "--no-cache" {
 			if refresh {
-				return fmt.Errorf("%w: --refresh 不能重复", errInvalidCommand)
+				return fmt.Errorf("%w: --refresh/--no-cache 不能重复", errInvalidCommand)
 			}
 			refresh = true
 			continue

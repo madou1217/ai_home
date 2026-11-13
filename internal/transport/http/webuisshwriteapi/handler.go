@@ -64,14 +64,22 @@ type Store interface {
 
 // Dependencies 汇总写入依赖。
 type Dependencies struct {
-	Authorizer Authorizer
-	Store      Store
+	Authorizer  Authorizer
+	Store       Store
+	HostHomeDir string
+	// OnConnectionsChanged 在连接新增、编辑或删除提交后触发（如刷新反向隧道监管）。
+	OnConnectionsChanged func(ctx context.Context, rawConnections []byte)
+	// OnWorkspacesChanged 在级联删掉关联工作区后触发（如通知项目列表监听者）。
+	OnWorkspacesChanged func(ctx context.Context)
 }
 
 // Handler 处理 SSH 连接新增、编辑、删除。
 type Handler struct {
-	authorizer Authorizer
-	store      Store
+	authorizer           Authorizer
+	store                Store
+	hostHomeDir          string
+	onConnectionsChanged func(ctx context.Context, rawConnections []byte)
+	onWorkspacesChanged  func(ctx context.Context)
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -79,7 +87,13 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Store == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, store: dependencies.Store}, nil
+	return &Handler{
+		authorizer:           dependencies.Authorizer,
+		store:                dependencies.Store,
+		hostHomeDir:          strings.TrimSpace(dependencies.HostHomeDir),
+		onConnectionsChanged: dependencies.OnConnectionsChanged,
+		onWorkspacesChanged:  dependencies.OnWorkspacesChanged,
+	}, nil
 }
 
 // Route 是本切片需要的路由模式，宿主装配时挂到 ServeMux。
@@ -109,6 +123,7 @@ type deleteResponse struct {
 type errorView struct {
 	OK      bool   `json:"ok"`
 	Error   string `json:"error"`
+	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 
@@ -116,6 +131,7 @@ type errorView struct {
 type requestError struct {
 	status  int
 	code    string
+	reason  string
 	message string
 }
 
@@ -198,6 +214,7 @@ func (handler *Handler) create(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	var created map[string]any
+	var encodedConnections []byte
 	err := handler.store.UpdateConnections(request.Context(), func(current string, found bool) (string, error) {
 		connections, failure := decodeConnections(current, found)
 		if failure != nil {
@@ -207,7 +224,7 @@ func (handler *Handler) create(response http.ResponseWriter, request *http.Reque
 		if failure != nil {
 			return "", failure
 		}
-		connection, failure := buildConnection(id, input, connections)
+		connection, failure := buildConnection(id, input, connections, handler.hostHomeDir)
 		if failure != nil {
 			return "", failure
 		}
@@ -217,11 +234,15 @@ func (handler *Handler) create(response http.ResponseWriter, request *http.Reque
 			return "", encodeErr
 		}
 		created = connection
+		encodedConnections = encoded
 		return string(encoded), nil
 	})
 	if err != nil {
 		writeStoreError(response, err, "ssh_connections_write_failed")
 		return
+	}
+	if handler.onConnectionsChanged != nil {
+		handler.onConnectionsChanged(request.Context(), encodedConnections)
 	}
 	writeJSON(response, http.StatusOK, connectionResponse{OK: true, Connection: sanitizeConnection(created)})
 }
@@ -238,6 +259,7 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	var updated map[string]any
+	var encodedConnections []byte
 	err := handler.store.UpdateConnections(request.Context(), func(current string, found bool) (string, error) {
 		connections, failure := decodeConnections(current, found)
 		if failure != nil {
@@ -247,11 +269,11 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 		if index < 0 {
 			return "", &requestError{status: http.StatusNotFound, code: "not_found", message: "Connection not found."}
 		}
-		connection := connections[index]
+		connection := cloneMap(connections[index])
 		if failure := patch.apply(connection, connections, id); failure != nil {
 			return "", failure
 		}
-		if failure := validateConnection(connection); failure != nil {
+		if failure := validateConnection(connection, handler.hostHomeDir); failure != nil {
 			return "", failure
 		}
 		clearInactiveCredentials(connection)
@@ -261,16 +283,22 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 			return "", encodeErr
 		}
 		updated = connection
+		encodedConnections = encoded
 		return string(encoded), nil
 	})
 	if err != nil {
 		writeStoreError(response, err, "ssh_connections_write_failed")
 		return
 	}
+	if handler.onConnectionsChanged != nil {
+		handler.onConnectionsChanged(request.Context(), encodedConnections)
+	}
 	writeJSON(response, http.StatusOK, connectionResponse{OK: true, Connection: sanitizeConnection(updated)})
 }
 
 func (handler *Handler) remove(response http.ResponseWriter, request *http.Request, id string) {
+	var encodedConnections []byte
+	var workspacesChanged bool
 	err := handler.store.DeleteConnectionAndWorkspaces(request.Context(), func(connections KV, workspaces KV) (string, string, error) {
 		list, failure := decodeConnections(connections.Value, connections.Found)
 		if failure != nil {
@@ -287,11 +315,16 @@ func (handler *Handler) remove(response http.ResponseWriter, request *http.Reque
 			next = append(next, connection)
 		}
 		// 级联删除：同一事务内清掉这条连接的工作区，其它工作区原样保留。
+		existingWorkspaces, failure := decodeWorkspaces(workspaces.Value, workspaces.Found)
+		if failure != nil {
+			return "", "", failure
+		}
 		remaining, failure := removeWorkspacesForConnection(workspaces.Value, workspaces.Found, id)
 		if failure != nil {
 			return "", "", failure
 		}
-		encodedConnections, encodeErr := json.Marshal(next)
+		workspacesChanged = len(remaining) != len(existingWorkspaces)
+		encodedConns, encodeErr := json.Marshal(next)
 		if encodeErr != nil {
 			return "", "", encodeErr
 		}
@@ -299,11 +332,18 @@ func (handler *Handler) remove(response http.ResponseWriter, request *http.Reque
 		if encodeErr != nil {
 			return "", "", encodeErr
 		}
-		return string(encodedConnections), string(encodedWorkspaces), nil
+		encodedConnections = encodedConns
+		return string(encodedConns), string(encodedWorkspaces), nil
 	})
 	if err != nil {
 		writeStoreError(response, err, "ssh_connections_write_failed")
 		return
+	}
+	if handler.onConnectionsChanged != nil {
+		handler.onConnectionsChanged(request.Context(), encodedConnections)
+	}
+	if workspacesChanged && handler.onWorkspacesChanged != nil {
+		handler.onWorkspacesChanged(request.Context())
 	}
 	writeJSON(response, http.StatusOK, deleteResponse{OK: true})
 }
@@ -329,7 +369,12 @@ func decodePayload(response http.ResponseWriter, request *http.Request) (map[str
 }
 
 func writeFailure(response http.ResponseWriter, failure *requestError) {
-	writeError(response, failure.status, failure.code, failure.message)
+	writeJSON(response, failure.status, errorView{
+		OK:      false,
+		Error:   failure.code,
+		Reason:  failure.reason,
+		Message: failure.message,
+	})
 }
 
 func writeStoreError(response http.ResponseWriter, err error, fallbackCode string) {

@@ -79,6 +79,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshprobeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshreverseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitenvapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
@@ -136,6 +137,8 @@ type webuiRouteDependencies struct {
 	NodeBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
 	ManagementKey func() string
+	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。
+	TerminalHandler *webuiterminalapi.Handler
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
@@ -424,7 +427,19 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 写入数据源失败: %w", err)
 	}
-	sshWrite, err := webuisshwriteapi.NewHandler(webuisshwriteapi.Dependencies{Authorizer: authorizer, Store: sshWriteSource})
+	sshWrite, err := webuisshwriteapi.NewHandler(webuisshwriteapi.Dependencies{
+		Authorizer:  authorizer,
+		Store:       sshWriteSource,
+		HostHomeDir: dependencies.HostHomeDir,
+		OnConnectionsChanged: func(_ context.Context, rawConnections []byte) {
+			if dependencies.ReverseTunnels != nil {
+				_ = dependencies.ReverseTunnels.Reconcile(rawConnections)
+			}
+		},
+		OnWorkspacesChanged: func(ctx context.Context) {
+			webuiprojectsapi.NotifyWatchers(ctx, dependencies.AIHomeDir)
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 写入接口失败: %w", err)
 	}
@@ -609,7 +624,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	sessionsLifecycle, err := webuisessionslifecycleapi.NewHandler(webuisessionslifecycleapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
-		Codex:      buildCodexLifecycleDialer(dependencies.HostHomeDir),
+		Codex: buildCodexLifecycleDialer(dependencies.HostHomeDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建会话生命周期接口失败: %w", err)
@@ -888,6 +903,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, egressGeoRoutes...)
+	// SSH 开发机与远程工作区补齐 POST 探测 / 浏览 / 工作区 CRUD 与工作区终端。
+	sshExtraRoutes, err := buildWebUISSHExtraRoutesWithPorts(dependencies, webUISSHPorts{
+		TerminalHandler: dependencies.TerminalHandler,
+	})
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, sshExtraRoutes...)
 	return routes, nil
 }
 

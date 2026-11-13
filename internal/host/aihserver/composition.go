@@ -1419,8 +1419,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
 		AccountHostGrant: deletionHost,
 		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
-		NodeBaseURL:   nodeBaseURL,
-		ManagementKey: managementKey,
+		NodeBaseURL:     nodeBaseURL,
+		ManagementKey:   managementKey,
+		TerminalHandler: webUITerminalHandler,
 	})
 	if err != nil {
 		_ = inference.Close()

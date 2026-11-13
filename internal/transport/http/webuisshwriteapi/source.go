@@ -33,9 +33,9 @@ type KV struct {
 	Found bool
 }
 
-// Source 提供 ssh_connections 的写入口。
+// Source 提供 ssh_connections 与 ssh_workspaces 的写入口。
 //
-// 只暴露「事务内读改写」这一个能力：调用方拿不到独立读 + 独立写的 API，
+// 只暴露「事务内读改写」能力：调用方拿不到独立读 + 独立写的 API，
 // 从类型上避免并发新增互相覆盖。
 type Source struct {
 	databasePath string
@@ -65,9 +65,57 @@ func (source *Source) UpdateConnections(ctx context.Context, mutate func(current
 // ssh_connections 与 ssh_workspaces 两行。
 //
 // 删除连接必须两行一起改：任一步失败都整笔回滚，不能留下「连接没了但
-// 工作区还挂着」的中间态。appstate 只提供单键 UpdateKV，这里沿用
-// webuimodelcontextapi 自建 immediate DSN 的做法，busy_timeout 口径一致。
+// 工作区还挂着」的中间态。
 func (source *Source) DeleteConnectionAndWorkspaces(ctx context.Context, mutate func(connections KV, workspaces KV) (string, string, error)) error {
+	return source.withImmediateTx(ctx, func(tx *sql.Tx) error {
+		connections, err := readKey(ctx, tx, connectionsKey)
+		if err != nil {
+			return err
+		}
+		workspaces, err := readKey(ctx, tx, workspacesKey)
+		if err != nil {
+			return err
+		}
+		nextConnections, nextWorkspaces, err := mutate(connections, workspaces)
+		if err != nil {
+			return err
+		}
+		updatedAt := time.Now().UnixMilli()
+		if _, err := tx.ExecContext(ctx, upsertAppKV, connectionsKey, nextConnections, updatedAt); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, upsertAppKV, workspacesKey, nextWorkspaces, updatedAt); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// UpdateWorkspacesWithConnections 在同一个 BEGIN IMMEDIATE 事务里读取 ssh_connections 校验关联连接，
+// 并原子读改写 ssh_workspaces。
+func (source *Source) UpdateWorkspacesWithConnections(ctx context.Context, mutate func(connections KV, workspaces KV) (string, error)) error {
+	return source.withImmediateTx(ctx, func(tx *sql.Tx) error {
+		connections, err := readKey(ctx, tx, connectionsKey)
+		if err != nil {
+			return err
+		}
+		workspaces, err := readKey(ctx, tx, workspacesKey)
+		if err != nil {
+			return err
+		}
+		nextWorkspaces, err := mutate(connections, workspaces)
+		if err != nil {
+			return err
+		}
+		updatedAt := time.Now().UnixMilli()
+		if _, err := tx.ExecContext(ctx, upsertAppKV, workspacesKey, nextWorkspaces, updatedAt); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (source *Source) withImmediateTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	if source == nil || source.databasePath == "" {
 		return ErrSourceUnavailable
 	}
@@ -86,23 +134,7 @@ func (source *Source) DeleteConnectionAndWorkspaces(ctx context.Context, mutate 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	connections, err := readKey(ctx, tx, connectionsKey)
-	if err != nil {
-		return err
-	}
-	workspaces, err := readKey(ctx, tx, workspacesKey)
-	if err != nil {
-		return err
-	}
-	nextConnections, nextWorkspaces, err := mutate(connections, workspaces)
-	if err != nil {
-		return err
-	}
-	updatedAt := time.Now().UnixMilli()
-	if _, err := tx.ExecContext(ctx, upsertAppKV, connectionsKey, nextConnections, updatedAt); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, upsertAppKV, workspacesKey, nextWorkspaces, updatedAt); err != nil {
+	if err := fn(tx); err != nil {
 		return err
 	}
 	return tx.Commit()

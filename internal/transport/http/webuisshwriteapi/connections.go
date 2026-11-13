@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/madou1217/ai_home/internal/adapters/sshhost"
 )
 
 const (
@@ -242,7 +245,7 @@ func integerField(object map[string]any, key string, fallback int) (int, *reques
 	return int(number), nil
 }
 
-func buildConnection(id string, input connectionInput, connections []map[string]any) (map[string]any, *requestError) {
+func buildConnection(id string, input connectionInput, connections []map[string]any, hostHomeDir string) (map[string]any, *requestError) {
 	label := strings.TrimSpace(input.Label)
 	host := strings.TrimSpace(input.Host)
 	user := strings.TrimSpace(input.User)
@@ -256,7 +259,7 @@ func buildConnection(id string, input connectionInput, connections []map[string]
 		return nil, invalidAuthType()
 	}
 	if input.AuthType == authTypeKeyFile {
-		if failure := validateIdentityFile(input.IdentityFile); failure != nil {
+		if failure := validateIdentityFile(input.IdentityFile, hostHomeDir); failure != nil {
 			return nil, failure
 		}
 	}
@@ -332,7 +335,7 @@ func (patch updatePatch) apply(connection map[string]any, connections []map[stri
 	return nil
 }
 
-func validateConnection(connection map[string]any) *requestError {
+func validateConnection(connection map[string]any, hostHomeDir string) *requestError {
 	label := connectionString(connection, "label")
 	host := connectionString(connection, "host")
 	user := connectionString(connection, "user")
@@ -347,7 +350,7 @@ func validateConnection(connection map[string]any) *requestError {
 		return invalidAuthType()
 	}
 	if authType == authTypeKeyFile {
-		if failure := validateIdentityFile(connectionString(connection, "identityFile")); failure != nil {
+		if failure := validateIdentityFile(connectionString(connection, "identityFile"), hostHomeDir); failure != nil {
 			return failure
 		}
 	}
@@ -419,25 +422,70 @@ func validUser(user string) bool {
 	return true
 }
 
-// validateIdentityFile 只做语法检查（绝对路径或 ~/ 开头、无控制字符、无 ..）。
-// 「必须在 ~/.ssh 内且权限不开放」需要宿主 homeDir，Go 侧尚未接入，见阻塞项。
-func validateIdentityFile(identityFile string) *requestError {
+var identityFileMessages = map[string]string{
+	sshhost.IdentityFileRequired:           "SSH identity file path is required.",
+	sshhost.IdentityFileMustBeAbsolute:     "SSH identity file path must be absolute or start with ~/.",
+	sshhost.IdentityFileOutsideSSHDir:      "SSH identity file must be inside the current server user SSH directory.",
+	sshhost.IdentityFileNotFound:           "SSH identity file was not found.",
+	sshhost.IdentityFileNotRegularFile:     "SSH identity file must be a regular file.",
+	sshhost.IdentityFilePermissionsTooOpen: "SSH identity file permissions must not allow group or other access.",
+}
+
+// validateIdentityFile 先做语法检查；接入 hostHomeDir 时继续调用 sshhost.ResolveIdentityFilePath
+// 做 ~/.ssh 越界与文件权限校验，返回带 reason 的 400 invalid_identity_file。
+func validateIdentityFile(identityFile string, hostHomeDir string) *requestError {
 	identityFile = strings.TrimSpace(identityFile)
 	if identityFile == "" {
-		return &requestError{status: http.StatusBadRequest, code: "invalid_identity_file", message: "SSH identity file path is required."}
+		return &requestError{
+			status:  http.StatusBadRequest,
+			code:    "invalid_identity_file",
+			reason:  sshhost.IdentityFileRequired,
+			message: identityFileMessages[sshhost.IdentityFileRequired],
+		}
 	}
 	if len(identityFile) > maxIdentityFile || strings.ContainsFunc(identityFile, unicode.IsControl) {
 		return &requestError{status: http.StatusBadRequest, code: "invalid_identity_file", message: "SSH identity file is invalid."}
 	}
 	if !filepath.IsAbs(identityFile) && !strings.HasPrefix(identityFile, "~/") {
-		return &requestError{status: http.StatusBadRequest, code: "invalid_identity_file", message: "SSH identity file path must be absolute or start with ~/."}
+		return &requestError{
+			status:  http.StatusBadRequest,
+			code:    "invalid_identity_file",
+			reason:  sshhost.IdentityFileMustBeAbsolute,
+			message: identityFileMessages[sshhost.IdentityFileMustBeAbsolute],
+		}
 	}
 	for _, segment := range strings.Split(strings.ReplaceAll(identityFile, "\\", "/"), "/") {
 		if segment == ".." {
 			return &requestError{status: http.StatusBadRequest, code: "invalid_identity_file", message: "SSH identity file must not contain .."}
 		}
 	}
+	if strings.TrimSpace(hostHomeDir) != "" {
+		if _, err := sshhost.ResolveIdentityFilePath(identityFile, sshhost.IdentityOptions{HomeDir: hostHomeDir}); err != nil {
+			var idErr *sshhost.IdentityFileError
+			if errors.As(err, &idErr) && idErr != nil {
+				msg := identityFileMessages[idErr.Code]
+				if msg == "" {
+					msg = "SSH identity file is invalid."
+				}
+				return &requestError{
+					status:  http.StatusBadRequest,
+					code:    "invalid_identity_file",
+					reason:  idErr.Code,
+					message: msg,
+				}
+			}
+			return &requestError{status: http.StatusBadRequest, code: "invalid_identity_file", message: "SSH identity file is invalid."}
+		}
+	}
 	return nil
+}
+
+func cloneMap(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // clearInactiveCredentials 与 Node 一致：非当前 authType 的凭据一律写空。

@@ -110,10 +110,10 @@ func TestMethodNotAllowed(t *testing.T) {
 	runner := &fakeRunner{}
 	handler := newTestHandler(t, Dependencies{Runner: runner})
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, Path, nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPut, Path, nil))
 
 	assertError(t, recorder, http.StatusMethodNotAllowed, "method_not_allowed")
-	if allow := recorder.Header().Get("Allow"); allow != http.MethodGet {
+	if allow := recorder.Header().Get("Allow"); allow != http.MethodGet+", "+http.MethodPost {
 		t.Fatalf("Allow = %q", allow)
 	}
 	if len(runner.calls) != 0 {
@@ -155,11 +155,10 @@ func TestUnknownConnection(t *testing.T) {
 
 func TestInvalidRemotePath(t *testing.T) {
 	cases := map[string]string{
-		"空路径":   "",
-		"相对路径":  "srv/app",
-		"家目录简写": "~/app",
 		"上跳段":   "/srv/../etc",
 		"末尾上跳段": "/srv/app/..",
+		"相对上跳段": "../etc",
+		"家目录上跳": "~/../secret",
 		"换行":    "/srv/app\nrm -rf /",
 		"回车":    "/srv/app\r",
 		"NUL":   "/srv/app\x00",
@@ -375,4 +374,104 @@ func TestRemoteExecutionErrorPassthrough(t *testing.T) {
 	if !strings.Contains(recorder.Body.String(), "connection refused") {
 		t.Fatalf("body = %s", recorder.Body.String())
 	}
+}
+
+
+type fakeDirectoryBrowser struct {
+	fakeRunner
+	result DirectoryResult
+	err    error
+	calls  []struct {
+		conn   Conn
+		subDir string
+		limit  int
+	}
+}
+
+func (browser *fakeDirectoryBrowser) BrowseDirectory(_ context.Context, conn Conn, subDir string, maxOutputBytes int) (DirectoryResult, error) {
+	browser.calls = append(browser.calls, struct {
+		conn   Conn
+		subDir string
+		limit  int
+	}{conn: conn, subDir: subDir, limit: maxOutputBytes})
+	return browser.result, browser.err
+}
+
+func TestBrowsePostAndEmptyRelativeHomeResolution(t *testing.T) {
+	browser := &fakeDirectoryBrowser{
+		result: DirectoryResult{
+			CurrentDir:  "/home/deploy/app",
+			ParentDir:   "/home/deploy",
+			Entries:     []Entry{{Name: "src", Path: "/home/deploy/app/src", Type: "d", IsDirectory: true}},
+			Directories: []Directory{{Name: "src", Path: "/home/deploy/app/src"}},
+		},
+	}
+	handler := newTestHandler(t, Dependencies{Runner: browser})
+	req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(`{"connectionId":"conn_1","subDir":"~/app"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", recorder.Code, recorder.Body.String())
+	}
+	if len(browser.calls) != 1 || browser.calls[0].subDir != "~/app" {
+		t.Fatalf("browser calls = %+v", browser.calls)
+	}
+	var payload responseView
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !payload.OK || payload.CurrentDir != "/home/deploy/app" || len(payload.Directories) != 1 {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestBrowsePostEmptySubDirWithFallbackRunner(t *testing.T) {
+	calls := 0
+	runner := &scriptedRunner{
+		fn: func(argv []string) ([]byte, error) {
+			calls++
+			if calls == 1 {
+				return []byte("/home/deploy\n"), nil
+			}
+			return []byte("drwxr-xr-x 2 deploy deploy 4096 Nov 10 12:34 projects\n"), nil
+		},
+	}
+	handler := newTestHandler(t, Dependencies{Runner: runner})
+	req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(`{"connectionId":"conn_1","subDir":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", recorder.Code, recorder.Body.String())
+	}
+	var payload responseView
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload.CurrentDir != "/home/deploy" || payload.ParentDir != "/home" || len(payload.Directories) != 1 || payload.Directories[0].Path != "/home/deploy/projects" {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestBrowseIdentityFileErrorReturns400WithReason(t *testing.T) {
+	runner := &fakeRunner{err: &RemoteFailure{Code: "invalid_identity_file", Reason: "identity_file_not_found", Message: "SSH identity file was not found."}}
+	handler := newTestHandler(t, Dependencies{Runner: runner})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, browseRequest("conn_1", "/srv"))
+
+	assertError(t, recorder, http.StatusBadRequest, "invalid_identity_file")
+	if !strings.Contains(recorder.Body.String(), "identity_file_not_found") {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
+type scriptedRunner struct {
+	fn func([]string) ([]byte, error)
+}
+
+func (r *scriptedRunner) Run(_ context.Context, _ Conn, argv []string) ([]byte, error) {
+	return r.fn(argv)
 }

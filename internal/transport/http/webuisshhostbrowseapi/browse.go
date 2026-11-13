@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/sshhost"
 )
 
 // Entry 是远端目录里的一项。
@@ -65,6 +67,54 @@ func normalizeRemotePath(raw string) (string, error) {
 		}
 	}
 	return path.Clean(trimmed), nil
+}
+
+
+// validateBrowseSubDir 校验浏览参数：拒绝 NUL/换行、超长与任何 .. 段，
+// 允许空串 / ~ / 相对路径 / POSIX 与 Windows 绝对路径。
+func validateBrowseSubDir(raw string) (string, error) {
+	if strings.ContainsAny(raw, "\x00\n\r") {
+		return "", &pathError{message: "远端路径不能包含 NUL 或换行字符。"}
+	}
+	trimmed := strings.TrimSpace(raw)
+	if len(trimmed) > maxRemotePathBytes {
+		return "", &pathError{message: "远端路径过长。"}
+	}
+	slashed := strings.ReplaceAll(trimmed, "\\", "/")
+	for _, segment := range strings.Split(slashed, "/") {
+		if segment == ".." {
+			return "", &pathError{message: "远端路径不能包含 .. 段。"}
+		}
+	}
+	if strings.HasPrefix(trimmed, "~\\") {
+		trimmed = "~/" + trimmed[2:]
+	}
+	return trimmed, nil
+}
+
+// isPOSIXAbsolute 判断路径是否为明确 POSIX 绝对路径（非 Windows 盘符）。
+func isPOSIXAbsolute(subDir string) bool {
+	return strings.HasPrefix(subDir, "/") && !sshhost.IsWindowsPath(subDir)
+}
+
+// ParseListing 导出给 sshhostbrowse 复用 POSIX `ls -lA` 输出解析。
+func ParseListing(stdout string, directory string) []Entry {
+	return parseListing(stdout, directory)
+}
+
+// TruncateAtLine 导出给 sshhostbrowse 复用按行截断。
+func TruncateAtLine(output []byte, limit int) []byte {
+	return truncateAtLine(output, limit)
+}
+
+// ListArgv 导出给 sshhostbrowse 复用安全列目录参数。
+func ListArgv(directory string) []string {
+	return listArgv(directory)
+}
+
+// ParentRemotePath 导出给 sshhostbrowse 复用 POSIX 父目录解析。
+func ParentRemotePath(directory string) string {
+	return parentRemotePath(directory)
 }
 
 // parentRemotePath 返回 POSIX 路径的上一级；根目录的上一级仍是根。

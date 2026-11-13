@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/madou1217/ai_home/internal/adapters/sshhost"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshhostbrowseapi"
 )
@@ -57,5 +58,29 @@ func TestTranslateKeepsSSHRemoteCode(t *testing.T) {
 	var remote *webuisshhostbrowseapi.RemoteFailure
 	if !errors.As(failure, &remote) || remote.Code != "ssh_auth_failed" || remote.Message != "认证失败" {
 		t.Fatalf("failure = %#v", failure)
+	}
+}
+
+
+func TestParseDetectAndHome(t *testing.T) {
+	dialect, home, ok := parseDetectAndHome("Linux\nAIH_POSIX\n/home/deploy\n")
+	if !ok || dialect != "posix" || home != "/home/deploy" {
+		t.Fatalf("posix = (%q, %q, %v)", dialect, home, ok)
+	}
+	dialect, home, ok = parseDetectAndHome("AIH_WINDOWS\r\nC:\\Users\\dev\r\n")
+	if !ok || dialect != "powershell" || home != `C:\Users\dev` {
+		t.Fatalf("win = (%q, %q, %v)", dialect, home, ok)
+	}
+}
+
+func TestTranslateIdentityFileErrorPreservesReason(t *testing.T) {
+	err := translate(&sshremote.Error{
+		Code:    sshremote.CodeKeyInvalid,
+		Message: "bad key",
+		Err:     &sshhost.IdentityFileError{Code: sshhost.IdentityFileOutsideSSHDir},
+	})
+	var remote *webuisshhostbrowseapi.RemoteFailure
+	if !errors.As(err, &remote) || remote.Code != "invalid_identity_file" || remote.Reason != sshhost.IdentityFileOutsideSSHDir {
+		t.Fatalf("remote = %#v", remote)
 	}
 }

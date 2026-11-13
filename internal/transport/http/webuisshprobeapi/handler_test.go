@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -95,10 +97,10 @@ func TestProbeRequiresManagementKey(t *testing.T) {
 	}
 }
 
-func TestProbeRejectsNonGet(t *testing.T) {
+func TestProbeRejectsUnsupportedMethod(t *testing.T) {
 	t.Parallel()
 	handler := newTestHandler(t, Dependencies{Prober: &fakeProber{}})
-	recorder := serve(handler, http.MethodPost, Path+"?connectionId=conn_1")
+	recorder := serve(handler, http.MethodPut, Path+"?connectionId=conn_1")
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("状态 = %d, want 405", recorder.Code)
 	}
@@ -213,5 +215,105 @@ func TestProbeInvalidConnectionsJSON(t *testing.T) {
 	}
 	if !strings.Contains(decodeError(t, recorder)["error"].(string), "invalid") {
 		t.Fatalf("响应 = %s", recorder.Body.String())
+	}
+}
+
+
+func postProbe(handler *Handler, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestProbePostInlineTargetAndDefaults(t *testing.T) {
+	t.Parallel()
+	prober := &fakeProber{result: sshremote.ProbeResult{Status: "reachable", Host: "10.0.0.9", Port: 22}}
+	handler := newTestHandler(t, Dependencies{Prober: prober})
+	recorder := postProbe(handler, `{"host":"10.0.0.9","user":"alice","authType":"password","password":"pw"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	if len(prober.calls) != 1 {
+		t.Fatalf("calls = %d", len(prober.calls))
+	}
+	call := prober.calls[0]
+	if call.config.Host != "10.0.0.9" || call.config.User != "alice" || call.config.Port != 22 || call.config.Password != "pw" {
+		t.Fatalf("config = %#v", call.config)
+	}
+	if call.timeout != defaultPostTimeoutMs*time.Millisecond {
+		t.Fatalf("timeout = %v, want %v", call.timeout, defaultPostTimeoutMs*time.Millisecond)
+	}
+}
+
+func TestProbePostSavedConnectionUsesAuthoritativeDBAndEgressJump(t *testing.T) {
+	t.Parallel()
+	prober := &fakeProber{result: sshremote.ProbeResult{Status: "reachable"}}
+	connectionsJSON := `[
+		{"id":"conn_jump","host":"jump.example.com","port":22,"user":"bastion","authType":"agent"},
+		{"id":"conn_target","host":"10.0.0.5","port":2222,"user":"dev","authType":"password","password":"real","egressConnectionId":"conn_jump"}
+	]`
+	handler := newTestHandler(t, Dependencies{
+		Connections: &fakeConnections{raw: connectionsJSON, found: true},
+		Prober:      prober,
+	})
+	// Client tries overriding host/password alongside connectionId; saved record must win.
+	recorder := postProbe(handler, `{"connectionId":"conn_target","host":"evil.example.com","password":"wrong","timeoutMs":8000}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	call := prober.calls[0]
+	if call.config.Host != "10.0.0.5" || call.config.Password != "real" || call.config.Jump == nil || call.config.Jump.Host != "jump.example.com" {
+		t.Fatalf("config = %#v", call.config)
+	}
+	if call.timeout != 8000*time.Millisecond {
+		t.Fatalf("timeout = %v", call.timeout)
+	}
+}
+
+func TestProbePostValidationErrorsAndIdentityCheck(t *testing.T) {
+	t.Parallel()
+	homeDir := t.TempDir()
+	outsideKey := filepath.Join(homeDir, "outside")
+	if err := os.WriteFile(outsideKey, []byte("KEY"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	prober := &fakeProber{}
+	cyclicJSON := `[
+		{"id":"conn_a","host":"a","egressConnectionId":"conn_b"},
+		{"id":"conn_b","host":"b","egressConnectionId":"conn_a"}
+	]`
+	handler := newTestHandler(t, Dependencies{
+		Connections: &fakeConnections{raw: cyclicJSON, found: true},
+		HostHomeDir: homeDir,
+		Prober:      prober,
+	})
+
+	rec := postProbe(handler, `{}`)
+	if rec.Code != http.StatusBadRequest || decodeError(t, rec)["error"] != "missing_host" {
+		t.Fatalf("empty body = %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = postProbe(handler, `{"connectionId":"conn_missing"}`)
+	if rec.Code != http.StatusNotFound || decodeError(t, rec)["error"] != "not_found" {
+		t.Fatalf("missing conn = %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = postProbe(handler, `{"connectionId":"conn_a"}`)
+	if rec.Code != http.StatusConflict || decodeError(t, rec)["error"] != "egress_connection_invalid" {
+		t.Fatalf("cycle egress = %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = postProbe(handler, `{"host":"10.0.0.1","authType":"key-file","identityFile":"`+filepath.ToSlash(outsideKey)+`"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("identity error status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	errBody := decodeError(t, rec)
+	if errBody["error"] != "invalid_identity_file" || errBody["reason"] != "identity_file_outside_ssh_dir" {
+		t.Fatalf("identity err = %#v", errBody)
+	}
+	if len(prober.calls) != 0 {
+		t.Fatalf("prober should not have been called: %d", len(prober.calls))
 	}
 }

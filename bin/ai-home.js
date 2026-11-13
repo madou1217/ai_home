@@ -355,10 +355,11 @@ function tryRunGoProviderVersion() {
   const args = process.argv.slice(2);
   if (args.length !== 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
-  // codex 的 PATH 入口在本机是旧 Node hook，Go 侧按安全策略拒绝执行它；
-  // 只接管 claude，codex 仍由 Node 解析可执行文件。
-  if (provider !== 'claude') return false;
   if (String(args[1] || '').trim().toLowerCase() !== 'version') return false;
+  // codex 的 PATH 入口在本机是旧 Node hook，Go 侧按安全策略拒绝执行它，仍由 Node 解析；
+  // 家族四支由 tryRunGoFamilyServerCommand 统一承接。
+  if (provider === 'codex' || GO_FAMILY_PROVIDERS.has(provider)) return false;
+  if (!goProviderHasCli(provider)) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

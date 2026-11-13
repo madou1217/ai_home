@@ -11,6 +11,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/application/providerruntime"
+	"github.com/madou1217/ai_home/core/providers"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -19,18 +20,32 @@ import (
 // ansiEscape 清除官方 CLI 版本输出里的颜色序列（与 Node 侧一致）。
 var ansiEscape = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
-// providerBinaryName 是 Go CLI 已知官方二进制的唯一映射。
+// providerBinaryName 从 Provider 合同读取官方二进制名。
+//
+// Node 的 AI_CLI_CONFIGS 也由同一份合同生成，新增 Provider 不需要在 CLI 里再加
+// 分支；合同没有显式 BinaryName 时按 Provider ID 找同名可执行文件。
 func providerBinaryName(providerID string) string {
-	switch strings.ToLower(strings.TrimSpace(providerID)) {
-	case "codex":
-		return "codex"
-	case "claude":
-		return "claude"
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		return "codebuddy"
-	default:
+	normalized := strings.ToLower(strings.TrimSpace(providerID))
+	if normalized == "" {
 		return ""
 	}
+	// 家族四支共用一个 codebuddy 二进制：合同只在 codebuddy/codebuddycn 上写了
+	// BinaryName，WorkBuddy 两支复用同一 CLI，不能回落到同名可执行文件。
+	if codebuddyfamilystorage.IsFamilyProvider(normalized) {
+		return "codebuddy"
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return ""
+	}
+	definition, found := catalog.Get(normalized)
+	if !found || definition.CLI == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(definition.CLI.BinaryName); name != "" {
+		return name
+	}
+	return definition.ID
 }
 
 // runProviderVersion 直接问原生 CLI（不猜版本），输出首行有效版本与二进制路径。

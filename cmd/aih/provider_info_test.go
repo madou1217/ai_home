@@ -9,7 +9,8 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
-// TestProviderBinaryName 守住家族四支共用 codebuddy 二进制的映射。
+// TestProviderBinaryName 守住「二进制名来自 Provider 合同」的契约：
+// 家族四支共用 codebuddy，显式 BinaryName 的 Provider 用合同值，其余用 Provider ID。
 func TestProviderBinaryName(t *testing.T) {
 	cases := map[string]string{
 		"codex":       "codex",
@@ -18,7 +19,14 @@ func TestProviderBinaryName(t *testing.T) {
 		"codebuddycn": "codebuddy",
 		"workbuddy":   "codebuddy",
 		"workbuddycn": "codebuddy",
-		"zcode":       "",
+		"zcode":       "zcode",
+		"agy":         "agy",
+		"gemini":      "gemini",
+		"cline":       "cline",
+		"qoder":       "qodercli",
+		"qodercn":     "qoderclicn",
+		"kiro":        "kiro-cli",
+		"unknown-cli": "",
 	}
 	for provider, want := range cases {
 		if got := providerBinaryName(provider); got != want {

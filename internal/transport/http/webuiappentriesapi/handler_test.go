@@ -1,16 +1,19 @@
 package webuiappentriesapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 )
 
 type stubAuthorizer bool
@@ -173,14 +176,21 @@ func TestEntriesAllMissing(t *testing.T) {
 	if !decoded.OK {
 		t.Fatal("ok = false, want true")
 	}
-	if len(decoded.Entries) != 1 {
-		t.Fatalf("entries = %+v, want 只有 alpha", decoded.Entries)
+	// alpha + 三个外部 harness（pi / dsh / dsh-tui）；beta 没有 CLI 合同，不产生条目。
+	if len(decoded.Entries) != 4 {
+		t.Fatalf("entries = %+v, want alpha + 三个外部 harness", decoded.Entries)
 	}
 	if entry, found := decoded.Entries["alpha"]; !found || entry.Desktop || entry.CLI {
 		t.Fatalf("alpha 条目 = %+v (found=%v), want {desktop:false cli:false}", entry, found)
 	}
 	if _, found := decoded.Entries["beta"]; found {
 		t.Fatal("没有 CLI 合同的 Provider 不应产生条目")
+	}
+	for _, harnessID := range []string{"pi", "dsh", "dsh-tui"} {
+		capability, found := decoded.Capabilities[harnessID]
+		if !found || !capability.ExternalHarness || !capability.CLI {
+			t.Fatalf("外部 harness %s 能力 = %+v (found=%v), want externalHarness+cli", harnessID, capability, found)
+		}
 	}
 	if capability := decoded.Capabilities["alpha"]; !capability.Desktop || !capability.CLI || capability.ExternalHarness {
 		t.Fatalf("alpha 能力 = %+v, want 声明 desktop/cli 且非外部 harness", capability)
@@ -361,6 +371,73 @@ func TestEntryJSONKeysMatchNodeContract(t *testing.T) {
 		if _, found := payload[key]; !found {
 			t.Fatalf("响应缺少 Node 兼容键 %q", key)
 		}
+	}
+}
+
+type stubHostAccounts struct {
+	accounts []hostapps.Account
+	aliases  map[string]string
+}
+
+func (accounts stubHostAccounts) ListAccounts(context.Context) ([]hostapps.Account, error) {
+	return accounts.accounts, nil
+}
+
+func (accounts stubHostAccounts) ListCLIAliases(context.Context) (map[string]string, error) {
+	return accounts.aliases, nil
+}
+
+func TestRunningAccountsAreDetectedFromHostProcesses(t *testing.T) {
+	home := t.TempDir()
+	ref := "acct_0123456789abcdef0123"
+	userDataDir := hostapps.UserDataDir(home, "alpha", ref)
+	scanner := &hostapps.Scanner{
+		Platform: "darwin",
+		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			key := name + " " + strings.Join(args, " ")
+			switch {
+			case strings.HasPrefix(key, "ps -ax -o pid=,command="):
+				return []byte("4242 /Applications/Alpha.app/Contents/MacOS/Alpha --user-data-dir=" + userDataDir), nil
+			case strings.HasPrefix(key, "ps -ax -o pid=,ppid=,command="):
+				return []byte("5252 1 aih alpha 7 AIH_ACCOUNT_APP=1 AIH_PROVIDER_ACCOUNT_REF=" + ref), nil
+			}
+			return nil, nil
+		},
+	}
+	handler := newTestHandler(t, Dependencies{
+		Authorizer:  stubAuthorizer(true),
+		HostHomeDir: home,
+		AIHomeDir:   home,
+		LookPath:    missingLookPath,
+		Providers:   stubCatalog{testProvider("alpha", "Alpha", "aih-test-alpha-cli", nil)},
+		Accounts:    stubHostAccounts{accounts: []hostapps.Account{{Provider: "alpha", AccountRef: ref}}},
+		Scanner:     scanner,
+	})
+	var payload struct {
+		RunningAccounts       []string         `json:"runningAccounts"`
+		RunningAccountPids    map[string][]int `json:"runningAccountPids"`
+		RunningCLIAccounts    []string         `json:"runningCliAccounts"`
+		RunningCLIAccountPids map[string][]int `json:"runningCliAccountPids"`
+		UnfilledFields        []string         `json:"unfilledFields"`
+	}
+	recorder := doRequest(t, handler, http.MethodGet, Path)
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("响应不是合法 JSON: %v (body=%s)", err, recorder.Body.String())
+	}
+	if len(payload.RunningAccounts) != 1 || payload.RunningAccounts[0] != ref {
+		t.Fatalf("runningAccounts = %v", payload.RunningAccounts)
+	}
+	if pids := payload.RunningAccountPids[ref]; len(pids) != 1 || pids[0] != 4242 {
+		t.Fatalf("runningAccountPids = %v", payload.RunningAccountPids)
+	}
+	if len(payload.RunningCLIAccounts) != 1 || payload.RunningCLIAccounts[0] != ref {
+		t.Fatalf("runningCliAccounts = %v", payload.RunningCLIAccounts)
+	}
+	if pids := payload.RunningCLIAccountPids[ref]; len(pids) != 1 || pids[0] != 5252 {
+		t.Fatalf("runningCliAccountPids = %v", payload.RunningCLIAccountPids)
+	}
+	if len(payload.UnfilledFields) != 0 {
+		t.Fatalf("unfilledFields = %v, want empty", payload.UnfilledFields)
 	}
 }
 

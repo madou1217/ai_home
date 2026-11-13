@@ -580,4 +580,79 @@ func TestServeHTTPDowngradesProxiedRequestToWebTerminal(t *testing.T) {
 	}
 }
 
+func TestServeHTTPLaunchesExternalHarness(t *testing.T) {
+	launcher := &stubLauncher{result: Result{OK: true, Status: "launched", LaunchMode: "webui-pty", SessionKey: "account-cli:pi"}}
+	handler := newTestHandler(t, newDependencies(t, launcher, false))
+
+	recorder := doRequest(t, handler, http.MethodPost,
+		openAppTarget("codex", codexAccountRef),
+		"{\"kind\":\"cli\",\"harness\":\"pi\",\"model\":\"gpt-5\"}", "127.0.0.1:5000")
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", recorder.Code, recorder.Body.String())
+	}
+	decoded := decodeResponse(t, recorder)
+	if decoded.Plan == nil {
+		t.Fatal("成功响应必须带启动计划")
+	}
+	if decoded.Plan.HarnessID != "pi" || decoded.Plan.HarnessKind != "external" {
+		t.Fatalf("plan = %+v, want external pi", decoded.Plan)
+	}
+	if decoded.Plan.ManagedAppID != "pi" || decoded.Plan.BinaryName != "pi" {
+		t.Fatalf("plan = %+v, want managedAppId/binaryName pi", decoded.Plan)
+	}
+	if !decoded.Plan.CrossProvider || decoded.Plan.IdentityProvider != "codex" {
+		t.Fatalf("plan = %+v, want 跨 Provider 且身份仍是 codex", decoded.Plan)
+	}
+	if launcher.calls != 1 || launcher.last.Harness != "pi" || launcher.last.HarnessKind != "external" {
+		t.Fatalf("launcher request = %+v", launcher.last)
+	}
+}
+
+func TestServeHTTPRejectsCrossProviderNativeHarnessWithoutRelayProfile(t *testing.T) {
+	launcher := &stubLauncher{}
+	handler := newTestHandler(t, newDependencies(t, launcher, false))
+
+	// gemini 声明了 CLI，但没有跨 Provider relay profile：以 codex 身份启动必须拒绝。
+	recorder := doRequest(t, handler, http.MethodPost,
+		openAppTarget("codex", codexAccountRef),
+		"{\"kind\":\"cli\",\"harness\":\"gemini\"}", "127.0.0.1:5000")
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body=%s)", recorder.Code, recorder.Body.String())
+	}
+	if decoded := decodeResponse(t, recorder); decoded.Error != "cross_provider_relay_unsupported" {
+		t.Fatalf("error = %q, want cross_provider_relay_unsupported", decoded.Error)
+	}
+	if launcher.calls != 0 {
+		t.Fatalf("launcher calls = %d, want 0", launcher.calls)
+	}
+}
+
+func TestServeHTTPPassesInstallAvailabilityFromLauncher(t *testing.T) {
+	available := true
+	launcher := &stubLauncher{result: Result{
+		OK:               false,
+		Error:            "cli_not_installed",
+		Message:          "未检测到原生 CLI，请确认后开始安装。",
+		InstallRequired:  true,
+		InstallTarget:    &InstallTarget{Provider: "codex", Kind: kindCLI, AppID: "codex"},
+		InstallAvailable: &available,
+	}}
+	handler := newTestHandler(t, newDependencies(t, launcher, true))
+
+	recorder := doRequest(t, handler, http.MethodPost,
+		openAppTarget("codex", codexAccountRef), "{\"kind\":\"cli\"}", "127.0.0.1:5000")
+
+	if recorder.Code != http.StatusPreconditionRequired {
+		t.Fatalf("status = %d, want 428 (body=%s)", recorder.Code, recorder.Body.String())
+	}
+	decoded := decodeResponse(t, recorder)
+	if !decoded.InstallRequired || decoded.InstallTarget == nil || decoded.InstallTarget.AppID != "codex" {
+		t.Fatalf("install = %+v, want codex", decoded)
+	}
+	if decoded.InstallAvailable == nil || *decoded.InstallAvailable != true {
+		t.Fatalf("installAvailable = %v, want true", decoded.InstallAvailable)
+	}
+}
 func intPointer(value int) *int { return &value }

@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
@@ -48,6 +49,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelswriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderclearbrokenapi"
@@ -474,9 +476,29 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	appEntries, err := webuiappentriesapi.NewHandler(webuiappentriesapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+		AIHomeDir: dependencies.AIHomeDir,
+		Accounts:  hostapps.NewSource(dependencies.AIHomeDir),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建应用入口探测接口失败: %w", err)
+	}
+	// 打开应用：契约、启动计划与错误码在 Go；真正的宿主启动仍由 Node 执行器完成
+	// （provider 桌面策略、账号出口、自动安装器都依赖宿主事实）。宿主缺失时保持
+	// nil，Handler 回 501 与启动计划，而不是让整组路由启动失败。
+	var openAppLauncher webuiopenappapi.Launcher
+	if launcher := webuiopenappapi.NewHostLauncher(webuiopenappapi.HostLauncherOptions{
+		BaseURL:       dependencies.NodeBaseURL,
+		ManagementKey: dependencies.ManagementKey,
+	}); launcher != nil {
+		openAppLauncher = launcher
+	}
+	openApp, err := webuiopenappapi.NewHandler(webuiopenappapi.Dependencies{
+		Authorizer: authorizer, Accounts: dependencies.Store,
+		AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir,
+		Launcher: openAppLauncher,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建打开应用接口失败: %w", err)
 	}
 	toolkitEnvironments, err := webuitoolkitruntimeapi.NewHandler(webuitoolkitruntimeapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
@@ -726,6 +748,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisessioneventsapi.Path, Handler: sessionEvents},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
 		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
+		{Pattern: "POST " + webuiopenappapi.Path + webuiopenappapi.OpenAppSuffix, Handler: openApp},
 		{Pattern: "GET " + webuitoolkitruntimeapi.Path, Handler: toolkitEnvironments},
 		{Pattern: "POST " + webuisessionpreviewsapi.Path, Handler: sessionPreviews},
 		{Pattern: "POST " + webuimanagementkeyapi.Path, Handler: managementKey},

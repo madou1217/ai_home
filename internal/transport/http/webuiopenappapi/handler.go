@@ -122,6 +122,19 @@ type Result struct {
 	RequiredAction string
 	EgressError    string
 	EgressWarning  string
+	// InstallRequired 表示缺少安装且宿主能给出安装目标（Node 同口径的 428）。
+	InstallRequired bool
+	// InstallTarget 是安装目标；InstallRequired 为 true 时有效。
+	InstallTarget *InstallTarget
+	// InstallAvailable 表示宿主是否有可用的自动安装器；nil 表示未知。
+	InstallAvailable *bool
+}
+
+// InstallTarget 与 Node 的 installTarget 同形状。
+type InstallTarget struct {
+	Provider string
+	Kind     string
+	AppID    string
 }
 
 // Launcher 是进程启动端口。
@@ -465,6 +478,10 @@ func writeLaunchFailure(responseWriter http.ResponseWriter, plan Request, result
 	// transport=webui 时不需要本机二进制，不走这条分支。
 	if plan.Action == actionOpen && plan.Transport != transportWebUI &&
 		(result.Error == "desktop_not_installed" || result.Error == "cli_not_installed") {
+		if result.InstallRequired && result.InstallTarget != nil {
+			writeInstallRequiredFromResult(responseWriter, plan, result)
+			return
+		}
 		writeInstallRequired(responseWriter, plan)
 		return
 	}
@@ -484,6 +501,44 @@ func writeLaunchFailure(responseWriter http.ResponseWriter, plan Request, result
 		EgressWarning:  result.EgressWarning,
 	}
 	writeError(responseWriter, launchErrorStatus(result.Error), view)
+}
+
+// writeInstallRequiredFromResult 输出宿主给出的安装目标与可用性。
+//
+// 自动安装器仍由 Node 托管（安装包解析、校验与宿主写权限都在那边），Go 只把它的
+// 结论原样交给浏览器，避免把「可自动安装」误报成「只能手动装」。
+func writeInstallRequiredFromResult(responseWriter http.ResponseWriter, plan Request, result Result) {
+	message := strings.TrimSpace(result.Message)
+	if message == "" {
+		if plan.Kind == kindDesktop {
+			message = "未检测到 Desktop 应用，请确认后开始安装。"
+		} else {
+			message = "未检测到原生 CLI，请确认后开始安装。"
+		}
+	}
+	target := &installTargetView{
+		Provider: result.InstallTarget.Provider,
+		Kind:     result.InstallTarget.Kind,
+		AppID:    result.InstallTarget.AppID,
+	}
+	if target.Provider == "" {
+		target.Provider = plan.Harness
+	}
+	if target.Kind == "" {
+		target.Kind = plan.Kind
+	}
+	if target.AppID == "" {
+		target.AppID = plan.Harness
+	}
+	writeJSON(responseWriter, http.StatusPreconditionRequired, errorView{
+		Error:            "install_required",
+		Message:          message,
+		Provider:         plan.Provider,
+		AccountRef:       plan.AccountRef,
+		InstallRequired:  true,
+		InstallTarget:    target,
+		InstallAvailable: result.InstallAvailable,
+	})
 }
 
 // writeInstallRequired 输出 428：Go 没有安装器端口，installAvailable 恒为 false。
@@ -524,7 +579,7 @@ func launchErrorStatus(code string) int {
 		"zcode_native_proxy_marker_unrecognized":
 		return http.StatusConflict
 	case "agy_desktop_process_probe_failed", "codebuddy_desktop_keychain_unavailable",
-		"account_egress_unavailable", "zcode_egress_unavailable":
+		"account_egress_unavailable", "zcode_egress_unavailable", "launch_host_unavailable":
 		return http.StatusServiceUnavailable
 	case "zcode_native_proxy_settings_failed",
 		"account_egress_binding_unavailable", "zcode_egress_binding_unavailable":
@@ -552,12 +607,11 @@ func launchErrorMessage(code string) string {
 }
 
 // unfilledFields 列出 Node 有、而本切片没有可信来源的键。
+//
+// 外部 harness 注册表已由 core/harnesses 承接；安装器与账号资格仍由宿主执行器
+// 判定，但结论通过 Launcher 的结果回传，不再需要调用方自行补字段。
 func unfilledFields() []string {
-	return []string{
-		"accountEligibility",
-		"appInstallManager",
-		"externalHarnessRegistry",
-	}
+	return []string{}
 }
 
 func newPlanView(plan Request) planView {

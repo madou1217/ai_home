@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/core/harnesses"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -92,13 +93,21 @@ func resolvePlan(input planInput) (Request, *planError) {
 	if input.action != actionOpen && input.action != actionClose {
 		return Request{}, newPlanError(http.StatusBadRequest, "unsupported_action", "action 只支持 open 或 close")
 	}
-	if input.definition.CLI == nil {
-		return Request{}, newPlanError(http.StatusBadRequest, "unsupported_provider", "该 Provider 没有 CLI 合同，无法判定启动方式")
-	}
 
-	harnessID := strings.TrimSpace(input.harness)
+	harnessID := harnesses.NormalizeID(input.harness)
 	if harnessID == "" {
 		harnessID = input.provider
+	}
+	// 外部 harness（pi / dsh / dsh-tui）不是 Provider：只允许作为 CLI 入口，
+	// 身份仍绑定账号所属 Provider；这与 Node launch-plan 的判定一致。
+	externalHarness, isExternal := harnesses.Get(harnessID)
+	if input.kind == kindDesktop && isExternal {
+		return Request{}, newPlanError(http.StatusBadRequest, "desktop_not_supported", "外部 harness 没有桌面客户端")
+	}
+	// 身份 Provider 的 CLI 合同是「能否以它为身份启动」的前提；外部 harness 可以
+	// 借用没有自身 CLI 的 Provider 身份（Node 同样只在外部 harness 时放行）。
+	if input.definition.CLI == nil && !(input.kind == kindCLI && isExternal) {
+		return Request{}, newPlanError(http.StatusBadRequest, "unsupported_provider", "该 Provider 没有 CLI 合同，无法判定启动方式")
 	}
 
 	if input.kind == kindDesktop {
@@ -122,15 +131,36 @@ func resolvePlan(input planInput) (Request, *planError) {
 
 	crossProvider := harnessID != input.provider
 	harnessDefinition := input.definition
-	if crossProvider {
-		found, ok := input.catalog.Get(harnessID)
-		if !ok || !found.Clients.CLI {
-			return Request{}, newPlanError(http.StatusBadRequest, "cli_not_supported",
-				"harness "+harnessID+" 不在 Provider 合同内或没有 CLI 声明")
+	harnessKind := "native"
+	managedAppID := harnessID
+	binary := ""
+	if isExternal {
+		harnessKind = "external"
+		managedAppID = externalHarness.ManagedAppID
+		if managedAppID == "" {
+			managedAppID = harnessID
 		}
-		harnessDefinition = found
-	} else if !input.definition.Clients.CLI {
-		return Request{}, newPlanError(http.StatusBadRequest, "cli_not_supported", "该 Provider 没有 CLI")
+		binary = externalHarness.BinaryName
+		if crossProvider && !externalHarness.SupportsCrossProvider {
+			return Request{}, newPlanError(http.StatusBadRequest, "cross_provider_relay_unsupported",
+				"harness "+harnessID+" 不支持以其它 Provider 的账号跨 Provider 启动")
+		}
+	} else {
+		if crossProvider {
+			found, ok := input.catalog.Get(harnessID)
+			if !ok || !found.Clients.CLI {
+				return Request{}, newPlanError(http.StatusBadRequest, "cli_not_supported",
+					"harness "+harnessID+" 不在 Provider 合同内或没有 CLI 声明")
+			}
+			if !harnesses.SupportsCrossProvider(harnessID) {
+				return Request{}, newPlanError(http.StatusBadRequest, "cross_provider_relay_unsupported",
+					"harness "+harnessID+" 不支持以其它 Provider 的账号跨 Provider 启动")
+			}
+			harnessDefinition = found
+		} else if !input.definition.Clients.CLI {
+			return Request{}, newPlanError(http.StatusBadRequest, "cli_not_supported", "该 Provider 没有 CLI")
+		}
+		binary = binaryName(harnessDefinition, harnessID)
 	}
 
 	terminalID := strings.ToLower(strings.TrimSpace(input.terminalID))
@@ -143,10 +173,10 @@ func resolvePlan(input planInput) (Request, *planError) {
 		Kind:          kindCLI,
 		Action:        input.action,
 		Harness:       harnessID,
-		HarnessKind:   "native",
+		HarnessKind:   harnessKind,
 		CrossProvider: crossProvider,
-		ManagedAppID:  harnessID,
-		BinaryName:    binaryName(harnessDefinition, harnessID),
+		ManagedAppID:  managedAppID,
+		BinaryName:    binary,
 		Model:         input.model,
 		TerminalID:    terminalID,
 		Workdir:       input.workdir,

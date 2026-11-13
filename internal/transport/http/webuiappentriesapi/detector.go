@@ -1,6 +1,7 @@
 package webuiappentriesapi
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/core/harnesses"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 )
 
 const (
@@ -48,10 +51,13 @@ type snapshot struct {
 type detector struct {
 	catalog     ProviderCatalog
 	hostHomeDir string
+	aiHomeDir   string
 	lookPath    func(string) (string, error)
 	searchDirs  []string
 	now         func() time.Time
 	platform    string
+	accounts    HostAccounts
+	scanner     *hostapps.Scanner
 
 	mu     sync.Mutex
 	cached *snapshot
@@ -68,14 +74,50 @@ func newDetector(dependencies Dependencies, catalog ProviderCatalog) *detector {
 	}
 	hostHomeDir := strings.TrimSpace(dependencies.HostHomeDir)
 	platform := resolvePlatformKey(runtime.GOOS)
+	scanner := dependencies.Scanner
+	if scanner == nil {
+		scanner = hostapps.NewScanner(runtime.GOOS)
+	}
+	if scanner.Platform == "" {
+		scanner.Platform = runtime.GOOS
+	}
+	if len(scanner.EnvRules) == 0 {
+		scanner.EnvRules = desktopEnvRules(catalog)
+	}
 	return &detector{
 		catalog:     catalog,
 		hostHomeDir: hostHomeDir,
+		aiHomeDir:   strings.TrimSpace(dependencies.AIHomeDir),
 		lookPath:    lookPath,
 		searchDirs:  defaultSearchDirs(hostHomeDir, platform),
 		now:         now,
 		platform:    platform,
+		accounts:    dependencies.Accounts,
+		scanner:     scanner,
 	}
+}
+
+// desktopEnvRules 从 Provider 合同派生 macOS 环境变量反读规则。
+//
+// 只收录同时声明 UserDataEnvKey 与 macOS PathIncludes 的桌面客户端：没有
+// PathIncludes 就无法确认可执行文件归属，宁可漏判也不猜。
+func desktopEnvRules(catalog ProviderCatalog) []hostapps.EnvRule {
+	rules := make([]hostapps.EnvRule, 0, 4)
+	for _, definition := range catalog.List() {
+		if definition.CLI == nil || definition.CLI.DesktopClient == nil {
+			continue
+		}
+		client := definition.CLI.DesktopClient
+		envKey := strings.TrimSpace(client.UserDataEnvKey)
+		if envKey == "" || client.MacOS == nil || len(client.MacOS.PathIncludes) == 0 {
+			continue
+		}
+		rules = append(rules, hostapps.EnvRule{
+			EnvKey:       envKey,
+			PathIncludes: append([]string(nil), client.MacOS.PathIncludes...),
+		})
+	}
+	return rules
 }
 
 // detect 返回当前快照；refresh 为 true 时跳过缓存重新探测。
@@ -133,16 +175,75 @@ func (detector *detector) probe() (map[string]entryView, map[string]capabilityVi
 			label = definition.ID
 		}
 		capabilities[definition.ID] = capabilityView{
-			Desktop:         definition.Clients.Desktop && platformConfig != nil,
-			CLI:             definition.Clients.CLI && binaryName != "",
-			Label:           label,
-			ExternalHarness: false,
+			Desktop:              definition.Clients.Desktop && platformConfig != nil,
+			CLI:                  definition.Clients.CLI && binaryName != "",
+			Label:                label,
+			ExternalHarness:      false,
+			CrossProviderHarness: harnesses.SupportsCrossProvider(definition.ID),
 		}
 		if budget.exhausted {
 			budgetExceeded = append(budgetExceeded, definition.ID)
 		}
 	}
+	// 外部 harness 不是 Provider：只声明「能作为 CLI 打开」与自身能力，桌面恒为 false。
+	for _, harness := range harnesses.List() {
+		budget := newProbeBudget(detector.now, providerProbeBudget)
+		cli := harness.BinaryName != "" && detector.findExecutable([]string{harness.BinaryName}, budget)
+		entries[harness.ID] = entryView{Desktop: false, CLI: cli}
+		capabilities[harness.ID] = capabilityView{
+			Desktop:              false,
+			CLI:                  harness.BinaryName != "",
+			Label:                harness.Label,
+			ExternalHarness:      true,
+			CrossProviderHarness: harness.SupportsCrossProvider,
+			InteractiveKind:      harness.InteractiveKind,
+			ManagedAppID:         harness.ManagedAppID,
+		}
+		if budget.exhausted {
+			budgetExceeded = append(budgetExceeded, harness.ID)
+		}
+	}
 	return entries, capabilities, budgetExceeded
+}
+
+// running 返回本次扫描到的运行中账号。
+//
+// 不在 30 秒缓存里：运行态是用户可见的即时状态（打开/关闭后马上要变），进程扫描
+// 只有两条 ps 调用，代价远小于让界面显示过期状态。
+func (detector *detector) running(ctx context.Context) hostapps.Running {
+	empty := hostapps.Running{
+		DesktopPIDs: map[string][]int{},
+		CLIPIDs:     map[string][]int{},
+	}
+	if detector.accounts == nil || detector.scanner == nil || detector.aiHomeDir == "" {
+		return empty
+	}
+	accounts, err := detector.accounts.ListAccounts(ctx)
+	if err != nil {
+		return empty
+	}
+	desktopProviders := make(map[string]bool, 16)
+	for _, definition := range detector.catalog.List() {
+		desktopProviders[definition.ID] = definition.Clients.Desktop
+	}
+	for index := range accounts {
+		accounts[index].Desktop = desktopProviders[strings.ToLower(accounts[index].Provider)]
+	}
+	aliases, _ := detector.accounts.ListCLIAliases(ctx)
+	return detector.scanner.Running(ctx, accounts, detector.aiHomeDir, aliases)
+}
+
+// unfilledFields 列出当前依赖下仍然没有可信来源的键；每次返回新切片。
+func (detector *detector) unfilledFields() []string {
+	if detector.accounts != nil && detector.scanner != nil && detector.aiHomeDir != "" {
+		return []string{}
+	}
+	return []string{
+		"runningAccounts",
+		"runningAccountPids",
+		"runningCliAccounts",
+		"runningCliAccountPids",
+	}
 }
 
 // desktopInstalled 按平台解析桌面客户端是否已安装。

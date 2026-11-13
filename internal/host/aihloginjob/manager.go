@@ -61,6 +61,35 @@ type Snapshot struct {
 // RunFunc 与 aihlogin.Run 同签名，便于测试注入。
 type RunFunc func(context.Context, aihlogin.Options) (accountcore.Account, error)
 
+// PromptRule 是静态提示自动回答：日志命中 Pattern 且规则未触发过时写 Response。
+type PromptRule struct {
+	ID       string
+	Pattern  *regexp.Regexp
+	Response string
+}
+
+// defaultPromptRules 返回 Provider 的默认提示规则（与 Node 登录策略同语义）。
+func defaultPromptRules(provider string) []PromptRule {
+	switch provider {
+	case "gemini":
+		// Node: 文件夹信任自动选择 2. Trust parent folder。
+		return []PromptRule{{
+			ID:       "gemini-folder-trust",
+			Pattern:  regexp.MustCompile("(?is)Do you trust the files in this folder.*Trust parent folder"),
+			Response: "2\r",
+		}}
+	case "agy":
+		// Node: 登录方式菜单自动选择 1. Google OAuth。
+		return []PromptRule{{
+			ID:       "agy-login-method",
+			Pattern:  regexp.MustCompile("(?i)Select login method"),
+			Response: "1\r",
+		}}
+	default:
+		return nil
+	}
+}
+
 // Options 是 Manager 的依赖。
 type Options struct {
 	AIHomeDir   string
@@ -69,6 +98,8 @@ type Options struct {
 	Clock       func() time.Time
 	// SiteMenuDownDelay 是站点菜单下移与回车之间的等待；默认 900ms（真机标定）。
 	SiteMenuDownDelay time.Duration
+	// PromptRules 覆盖默认提示规则（测试注入）。
+	PromptRules []PromptRule
 }
 
 type job struct {
@@ -84,6 +115,8 @@ type job struct {
 	cancel   context.CancelFunc
 	answered bool
 	input    *io.PipeWriter
+	rules    []PromptRule
+	fired    map[string]bool
 	mu       *sync.Mutex
 }
 
@@ -130,6 +163,11 @@ func (manager *Manager) Start(ctx context.Context, providerID string) (Snapshot,
 		cancel:   cancel,
 		mu:       &manager.mu,
 	}
+	entry.rules = manager.options.PromptRules
+	if len(entry.rules) == 0 {
+		entry.rules = defaultPromptRules(entry.provider)
+	}
+	entry.fired = make(map[string]bool)
 	manager.mu.Lock()
 	manager.jobs[id] = entry
 	manager.mu.Unlock()
@@ -277,9 +315,26 @@ func (writer *logWriter) Write(data []byte) (int, error) {
 		writer.entry.answered = true
 	}
 	provider := writer.entry.provider
+	rules := append([]PromptRule(nil), writer.entry.rules...)
+	logs := writer.entry.logs.String()
+	pending := make([]PromptRule, 0, len(rules))
+	for _, rule := range rules {
+		if rule.Pattern == nil || writer.entry.fired[rule.ID] {
+			continue
+		}
+		if rule.Pattern.MatchString(logs) {
+			writer.entry.fired[rule.ID] = true
+			pending = append(pending, rule)
+		}
+	}
 	writer.entry.mu.Unlock()
 	if shouldAnswer {
 		go writer.answerSiteMenu(provider)
+	}
+	for _, rule := range pending {
+		// 异步写：Stdout.Write 的调用方可能还没回到 Stdin.Read，同步写会死锁。
+		response := []byte(rule.Response)
+		go func() { _, _ = writer.input.Write(response) }()
 	}
 	return len(data), nil
 }

@@ -193,3 +193,48 @@ func TestSubmitCodeWritesToCli(t *testing.T) {
 	}
 	waitStatus(t, manager, snapshot.ID, StatusSucceeded)
 }
+
+// TestDefaultPromptRules Provider 默认提示自动回答（gemini 信任、agy 登录方式）。
+func TestDefaultPromptRules(t *testing.T) {
+	cases := map[string]struct {
+		log  string
+		want string
+	}{
+		"gemini": {log: "Do you trust the files in this folder?\n1. Trust folder\n2. Trust parent folder\n", want: "2\r"},
+		"agy":    {log: "Select login method\n1. Google OAuth\n2. API Key\n", want: "1\r"},
+	}
+	for provider, testCase := range cases {
+		received := make(chan string, 1)
+		manager := NewManager(Options{
+			Run: func(ctx context.Context, options aihlogin.Options) (accountcore.Account, error) {
+				_, _ = io.WriteString(options.Stdout, testCase.log)
+				buffer := make([]byte, 0, 8)
+				one := make([]byte, 1)
+				for {
+					if _, err := options.Stdin.Read(one); err != nil {
+						break
+					}
+					buffer = append(buffer, one...)
+					if one[0] == '\r' {
+						break
+					}
+				}
+				received <- string(buffer)
+				return accountcore.Account{}, nil
+			},
+		})
+		snapshot, err := manager.Start(context.Background(), provider)
+		if err != nil {
+			t.Fatalf("%s start: %v", provider, err)
+		}
+		select {
+		case got := <-received:
+			if got != testCase.want {
+				t.Fatalf("%s response = %q, want %q", provider, got, testCase.want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s 没有自动回答", provider)
+		}
+		waitStatus(t, manager, snapshot.ID, StatusSucceeded)
+	}
+}

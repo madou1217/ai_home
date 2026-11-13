@@ -39,6 +39,7 @@ import (
 	kimicli "github.com/madou1217/ai_home/internal/adapters/kimi/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	qodercli "github.com/madou1217/ai_home/internal/adapters/qoder/clilaunch"
 	zcodecli "github.com/madou1217/ai_home/internal/adapters/zcode/clilaunch"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -206,6 +207,22 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 ZCode 静态凭据策略失败", err)
 		}
+		qoderRefresh, err := staticcredential.New("qoder")
+		if err != nil {
+			return fail("创建 Qoder 静态凭据策略失败", err)
+		}
+		qodercnRefresh, err := staticcredential.New("qodercn")
+		if err != nil {
+			return fail("创建 Qoder CN 静态凭据策略失败", err)
+		}
+		qoderStrategy, err := qodercli.NewStrategy("qoder")
+		if err != nil {
+			return fail("创建 Qoder CLI 策略失败", err)
+		}
+		qodercnStrategy, err := qodercli.NewStrategy("qodercn")
+		if err != nil {
+			return fail("创建 Qoder CN CLI 策略失败", err)
+		}
 		refreshStrategies := []accountcredentials.RefreshStrategy{
 			codexOAuth,
 			claudeOAuth,
@@ -215,6 +232,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 			clineRefresh,
 			kimiOAuth,
 			zcodeRefresh,
+			qoderRefresh,
+			qodercnRefresh,
 		}
 		launchStrategies := []providerlaunch.Strategy{
 			codexcli.NewStrategy(),
@@ -225,6 +244,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 			clinecli.NewStrategy(),
 			kimicli.NewStrategy(),
 			zcodecli.NewStrategy(),
+			qoderStrategy,
+			qodercnStrategy,
 		}
 		// CodeBuddy 家族 Go 侧只消费 Node 已写入的凭据；Token 刷新仍由 Node 宿主完成。
 		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
@@ -415,7 +436,7 @@ func (app *App) Run(
 // supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
 func supportedNativeCLIProvider(providerID string) bool {
 	switch providerID {
-	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "zcode", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "zcode", "qoder", "qodercn", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
 		return true
 	default:
 		return false

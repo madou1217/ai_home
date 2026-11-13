@@ -247,6 +247,9 @@ func (runner *Runner) runNativeDirect(
 	if err != nil {
 		return err
 	}
+	// qoder/qodercn 的账号边界在启动参数上（合同声明 --config-dir）：投影根
+	// 就绪后把本次账号的配置根注入 argv，不能落到宿主 ~/.qoder。
+	arguments = applyConfigDirArgument(spec.ProviderID(), arguments, result.Root)
 	runErr := runner.runProviderProcess(ctx, path, arguments, environment)
 	// 回写失败必须可见：它意味着账号库停留在旧一代，下一次启动可能拿到失效的
 	// refresh_token。TUI 已经正常退出时把它当本次失败；TUI 自己失败时保留原

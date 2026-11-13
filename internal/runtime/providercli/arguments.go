@@ -59,6 +59,8 @@ func validateManagedArguments(providerID string, arguments []string) error {
 			// Kimi 的账号边界由 KIMI_CODE_HOME 投影决定。
 		case "zcode":
 			// ZCode 的账号边界由 HOME/ZCODE_DATA_BASE_DIR 投影决定。
+		case "qoder", "qodercn":
+			// Qoder 的账号边界由启动参数 --config-dir 指向投影根决定（providercli 注入）。
 		default:
 			return ErrUnsupportedRuntime
 		}

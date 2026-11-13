@@ -10,6 +10,7 @@ import type {
   SessionRuntimeTargetResolution,
   RuntimeTargetBlockReason,
 } from './session-surface-policy';
+import { sessionOpenCoordinator } from './session-open-coordinator';
 
 export interface RuntimeFailure {
   readonly code: string;
@@ -129,7 +130,7 @@ export async function openSessionRuntime(
   let readOnly = Boolean(target.readOnly);
   if (!session) {
     try {
-      session = await openSessionShared(target, api);
+      session = await sessionOpenCoordinator.open(target, api);
       options.onSessionAcquired?.(session);
     } catch (error) {
       // A running session may be observed by another WebUI surface. Retry as a
@@ -138,7 +139,7 @@ export async function openSessionRuntime(
         || error.code !== 'chat_execution_credential_change_conflict') throw error;
       readOnly = true;
       const observerTarget = { ...target, readOnly: true };
-      session = await openSessionShared(observerTarget, api);
+      session = await sessionOpenCoordinator.open(observerTarget, api);
       options.onSessionAcquired?.(session);
     }
   }
@@ -163,41 +164,6 @@ export async function openSessionRuntime(
     },
   );
   return controller;
-}
-
-// 同一个目标的首帧打开可能被多个挂载点同时触发（桌面/移动布局、快捷窗口、快速重挂）。
-// 服务器对带 chatSessionId 的打开是幂等的，但并发仍会打出多条 POST；这里按目标合并
-// 在途请求，只让一次真正到达服务器，请求完成后立刻释放（用户主动新建下一次照常新建）。
-const inFlightSessionOpens = new Map<string, Promise<ChatRuntimeSession>>();
-
-function sessionOpenKey(target: SessionRuntimeTarget): string {
-  return [
-    target.provider,
-    target.executionAccountRef,
-    target.projectPath,
-    target.sessionId || '',
-    target.nativeSessionId || '',
-    target.chatSessionId || '',
-    target.readOnly ? 'readonly' : 'write'
-  ].join('\u0000');
-}
-
-function openSessionShared(
-  target: SessionRuntimeTarget,
-  api: ChatRuntimeApi,
-): Promise<ChatRuntimeSession> {
-  const key = sessionOpenKey(target);
-  const pending = inFlightSessionOpens.get(key);
-  if (pending) return pending;
-  const request = target.nativeSessionId || target.sessionId
-    ? api.resolveSession(target).then((resolution) => resolution.session)
-    : api.createSession(target);
-  let shared: Promise<ChatRuntimeSession>;
-  shared = request.finally(() => {
-    if (inFlightSessionOpens.get(key) === shared) inFlightSessionOpens.delete(key);
-  });
-  inFlightSessionOpens.set(key, shared);
-  return shared;
 }
 
 function isActiveSessionState(state: ChatRuntimeSession['state']): boolean {

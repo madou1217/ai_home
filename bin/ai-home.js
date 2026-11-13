@@ -30,7 +30,11 @@ function tryRunGoGlobalSessions() {
   if (args.length !== 2) return false;
   const verb = String(args[0] || '').trim().toLowerCase();
   if (verb !== 'ss' && verb !== 'sessions') return false;
-  if (!GLOBAL_SESSION_DETAIL_TOKENS.has(String(args[1] || '').trim())) return false;
+  const token = String(args[1] || '').trim();
+  const isDetail = GLOBAL_SESSION_DETAIL_TOKENS.has(token);
+  // aih ss <名字>：直接进入指定会话（Go 负责匹配与 attach）。
+  const isTarget = args.length === 2 && /^[^-]/.test(token) && token !== '';
+  if (!isDetail && !isTarget) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();

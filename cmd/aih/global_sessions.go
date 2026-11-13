@@ -43,30 +43,11 @@ func runGlobalSessions(
 		return nil
 	}
 	if !globalSessionDetailTokens[token] {
-		return fmt.Errorf("%w: 用法 aih ss --list", errInvalidCommand)
+		return runGlobalSessionTarget(ctx, token, runtime)
 	}
-	aiHomeDir, err := resolveAIHomeDir(runtime)
+	rows, err := collectGlobalRows(ctx, runtime)
 	if err != nil {
 		return err
-	}
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		return err
-	}
-	registry, err := persistent.NewRegistry(filepath.Join(aiHomeDir, "run"))
-	if err != nil {
-		return err
-	}
-	store := &persistent.TmuxSessionStore{
-		AIHomeDir: aiHomeDir,
-		Registry:  registry,
-		Catalog:   catalog,
-		Platform:  goruntime.GOOS,
-		Env:       os.Getenv,
-	}
-	rows, err := store.CollectSessions(ctx)
-	if err != nil {
-		return fmt.Errorf("读取持久会话失败: %w", err)
 	}
 	labels := make(map[string]string)
 	providersSeen := make(map[string]bool)
@@ -81,6 +62,34 @@ func runGlobalSessions(
 	}
 	writeGlobalSessionGroups(runtime.stdout, rows, labels)
 	return nil
+}
+
+// collectGlobalRows 读取全部受管持久会话的实时行。
+func collectGlobalRows(ctx context.Context, runtime commandRuntime) ([]persistent.SessionRow, error) {
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil {
+		return nil, err
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return nil, err
+	}
+	registry, err := persistent.NewRegistry(filepath.Join(aiHomeDir, "run"))
+	if err != nil {
+		return nil, err
+	}
+	store := &persistent.TmuxSessionStore{
+		AIHomeDir: aiHomeDir,
+		Registry:  registry,
+		Catalog:   catalog,
+		Platform:  goruntime.GOOS,
+		Env:       os.Getenv,
+	}
+	rows, err := store.CollectSessions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("读取持久会话失败: %w", err)
+	}
+	return rows, nil
 }
 
 // sessionGroup 是一个项目下的会话集合。

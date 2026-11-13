@@ -83,12 +83,33 @@ func resolveResumeAccountID(
 	if err != nil {
 		return 0, err
 	}
+	// 显式数字别名不需要再读账号列表：启动参数本来就只吃 CLI 别名。
 	if explicitRef == "" && explicitID != 0 {
 		return explicitID, nil
 	}
-	client, err := newAccountManagementClient(runtime)
+	view, err := resolveProviderAccountView(ctx, providerID, target, runtime)
 	if err != nil {
 		return 0, err
+	}
+	return view.CLIAccountID, nil
+}
+
+// resolveProviderAccountView 是 resume/home 共用的账号解析：显式数字别名、
+// AccountRef，或回退到 Provider 默认/首个启用账号。返回完整视图是为了同时拿到
+// CLI 别名与 AccountRef（投影目录需要后者）。
+func resolveProviderAccountView(
+	ctx context.Context,
+	providerID string,
+	target string,
+	runtime commandRuntime,
+) (managementapi.AccountView, error) {
+	explicitID, explicitRef, err := parseResumeAccountTarget(target)
+	if err != nil {
+		return managementapi.AccountView{}, err
+	}
+	client, err := newAccountManagementClient(runtime)
+	if err != nil {
+		return managementapi.AccountView{}, err
 	}
 	accounts := make([]managementapi.AccountView, 0)
 	afterRef := ""
@@ -98,7 +119,7 @@ func resolveResumeAccountID(
 			Limit:    200,
 		})
 		if listErr != nil {
-			return 0, fmt.Errorf("读取 Server 账号列表失败: %w", listErr)
+			return managementapi.AccountView{}, fmt.Errorf("读取 Server 账号列表失败: %w", listErr)
 		}
 		for _, account := range result.Accounts {
 			if account.ProviderID == providerID {
@@ -113,32 +134,49 @@ func resolveResumeAccountID(
 	if explicitRef != "" {
 		for _, account := range accounts {
 			if account.AccountRef == explicitRef {
-				return account.CLIAccountID, nil
+				return account, nil
 			}
 		}
-		return 0, fmt.Errorf(
+		return managementapi.AccountView{}, fmt.Errorf(
 			"%w: %s 没有账号 %s",
 			errInvalidCommand,
 			providerID,
 			explicitRef,
 		)
 	}
+	if explicitID != 0 {
+		for _, account := range accounts {
+			if account.CLIAccountID == explicitID {
+				return account, nil
+			}
+		}
+		return managementapi.AccountView{}, fmt.Errorf(
+			"%w: %s 没有账号 #%d",
+			errInvalidCommand,
+			providerID,
+			explicitID.Int64(),
+		)
+	}
 	if len(accounts) == 0 {
-		return 0, fmt.Errorf("%w: %s 没有可用账号", errInvalidCommand, providerID)
+		return managementapi.AccountView{}, fmt.Errorf("%w: %s 没有可用账号", errInvalidCommand, providerID)
 	}
 	if snapshot, defaultErr := client.GetProviderDefault(ctx, providerID); defaultErr == nil {
 		for _, account := range accounts {
 			if account.AccountRef == snapshot.AccountRef {
-				return account.CLIAccountID, nil
+				return account, nil
 			}
 		}
 	}
 	for _, account := range accounts {
 		if account.Enabled {
-			return account.CLIAccountID, nil
+			return account, nil
 		}
 	}
-	return 0, fmt.Errorf("%w: %s 没有启用账号", errInvalidCommand, strings.TrimSpace(providerID))
+	return managementapi.AccountView{}, fmt.Errorf(
+		"%w: %s 没有启用账号",
+		errInvalidCommand,
+		strings.TrimSpace(providerID),
+	)
 }
 
 // parseResumeAccountTarget 解析 `resume <账号>` 的账号位：数字 CLI 别名或

@@ -297,8 +297,8 @@ function tryRunGoFamilyLogin() {
   return true;
 }
 
-// aih <family> ls / usage [<id> [--refresh]] 也固定走 Go：账号列表、额度读取与
-// 刷新由 Go Server 承担，Node 只注入 Server 地址与 Management Key。
+// aih <family> ls / usage [<id> [--refresh]] / home / version 也固定走 Go：
+// 账号列表、额度读取与本地投影诊断都由 Go 承担，Node 只注入 Server 地址与 Key。
 function tryRunGoFamilyServerCommand() {
   const args = process.argv.slice(2);
   const provider = String(args[0] || '').trim().toLowerCase();
@@ -312,7 +312,14 @@ function tryRunGoFamilyServerCommand() {
   const isSetDefault = args.length === 3 && command === 'set-default' &&
     /^\d+$/.test(String(args[2] || '').trim());
   const isUnsetDefault = args.length === 2 && command === 'unset-default';
-  if (!isList && !isUsage && !isSetDefault && !isUnsetDefault) return false;
+  const isHome = (args.length === 2 && command === 'home') ||
+    (args.length === 3 && command === 'home' && /^\d+$/.test(String(args[2] || '').trim()));
+  const isHomeAfterId = args.length === 3 &&
+    /^\d+$/.test(String(args[1] || '').trim()) &&
+    String(args[2] || '').trim().toLowerCase() === 'home';
+  const isVersion = args.length === 2 && command === 'version';
+  const needsServer = isList || isUsage || isSetDefault || isUnsetDefault;
+  if (!needsServer && !isHome && !isHomeAfterId && !isVersion) return false;
   const fs = require('node:fs');
   const os = require('node:os');
   const binary = resolveGoCLIBinary();
@@ -343,15 +350,14 @@ function tryRunGoFamilyServerCommand() {
     config = null;
   }
   const managementKey = String(config && config.managementKey || '').trim();
-  if (!managementKey) return false;
-  const env = {
-    ...process.env,
-    AIH_HOME_DIR: aiHomeDir,
+  if (needsServer && !managementKey) return false;
+  const env = { ...process.env, AIH_HOME_DIR: aiHomeDir };
+  if (managementKey) {
     // Go Server 的账号管理面在本地 Go Core 端口；9527 是客户端 API 前门，
     // /v1/management 不在这条公开路由上。
-    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
-    AIH_SERVER_MANAGEMENT_KEY: managementKey
-  };
+    env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
+  }
   if (hostHome) env.AIH_HOST_HOME = hostHome;
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
   process.exitCode = Number.isInteger(result.status) ? result.status : 1;

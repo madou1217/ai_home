@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/kiro"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/kiro/clientidentity"
 )
 
 func nativeKiroCredential(t *testing.T, profileARN string) accountapp.Credential {
@@ -57,11 +58,12 @@ func nativeKiroCredential(t *testing.T, profileARN string) accountapp.Credential
 }
 
 type recordedRequest struct {
-	path    string
-	target  string
-	body    string
-	auth    string
-	content string
+	path      string
+	target    string
+	body      string
+	auth      string
+	content   string
+	userAgent string
 }
 
 func testSource(t *testing.T, handler func(request recordedRequest) (int, string)) (*Source, *[]recordedRequest) {
@@ -70,11 +72,12 @@ func testSource(t *testing.T, handler func(request recordedRequest) (int, string
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		body, _ := io.ReadAll(request.Body)
 		recorded := recordedRequest{
-			path:    request.URL.Path,
-			target:  request.Header.Get("x-amz-target"),
-			body:    string(body),
-			auth:    request.Header.Get("Authorization"),
-			content: request.Header.Get("Content-Type"),
+			path:      request.URL.Path,
+			target:    request.Header.Get("x-amz-target"),
+			body:      string(body),
+			auth:      request.Header.Get("Authorization"),
+			content:   request.Header.Get("Content-Type"),
+			userAgent: request.Header.Get("User-Agent"),
 		}
 		requests = append(requests, recorded)
 		status, payload := handler(recorded)
@@ -120,6 +123,10 @@ func TestDiscoverModelsUsesV3WithProfileARN(t *testing.T) {
 	if recorded.auth != "Bearer aoa-test" || recorded.content != contentType {
 		t.Fatalf("headers = %q / %q", recorded.auth, recorded.content)
 	}
+	// CodeWhisperer 按 UA 里的 Kiro 版本判定客户端代际，漏了它整类目录请求会被 403。
+	if recorded.userAgent != clientidentity.UserAgent {
+		t.Fatalf("user-agent = %q", recorded.userAgent)
+	}
 }
 
 func TestDiscoverModelsFallsBackToV2(t *testing.T) {
@@ -142,6 +149,9 @@ func TestDiscoverModelsFallsBackToV2(t *testing.T) {
 	}
 	if (*requests)[1].target != targetV2 || !strings.Contains((*requests)[1].body, "CLI") {
 		t.Fatalf("v2 request = %#v", (*requests)[1])
+	}
+	if (*requests)[1].userAgent != clientidentity.UserAgent {
+		t.Fatalf("v2 user-agent = %q", (*requests)[1].userAgent)
 	}
 }
 

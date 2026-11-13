@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/kiro/clientidentity"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
@@ -74,6 +75,11 @@ func TestProviderResolveEndpointAndAuth(t *testing.T) {
 	}
 	if request.Header.Get("Authorization") != "Bearer at-1" {
 		t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
+	}
+	// 上游按 UA 里的 Kiro 版本判定客户端代际：Go 默认 UA 会被 403，
+	// 这条断言保护的是 2026-11-13 真机 403 的根因不再回退。
+	if request.Header.Get("User-Agent") != clientidentity.UserAgent {
+		t.Fatalf("user-agent = %q", request.Header.Get("User-Agent"))
 	}
 }
 

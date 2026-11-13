@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -57,12 +58,12 @@ func (a modelCatalogRefresherAdapter) RefreshModels(ctx context.Context) (manage
 	}, nil
 }
 
-type hostRestarterAdapter struct {
+type serverRestarterAdapter struct {
 	restarter webuiserverrestartapi.Restarter
 	now       func() time.Time
 }
 
-func (a hostRestarterAdapter) RestartServer(ctx context.Context) (managementops.RestartResponse, error) {
+func (a serverRestarterAdapter) RestartServer(ctx context.Context) (managementops.RestartResponse, error) {
 	if a.restarter == nil {
 		return managementops.RestartResponse{}, managementops.ErrRestartUnavailable
 	}
@@ -136,11 +137,12 @@ func buildWebUIManagementOpsRoutesWithPorts(
 
 		restarter := ports.Restarter
 		if restarter == nil {
-			if hostRestarter := webuiserverrestartapi.NewHostRestarter(webuiserverrestartapi.HostRestarterOptions{
-				BaseURL:       dependencies.NodeBaseURL,
-				ManagementKey: dependencies.ManagementKey,
-			}); hostRestarter != nil {
-				restarter = hostRestarterAdapter{restarter: hostRestarter, now: nowFn}
+			if nativeRestarter := webuiserverrestartapi.NewNativeRestarter(webuiserverrestartapi.NativeRestarterOptions{
+				AIHomeDir:     aiHome,
+				NodeExecPath:  os.Getenv("AIH_SERVER_NODE_EXEC"),
+				EntryFilePath: os.Getenv("AIH_SERVER_ENTRY_FILE"),
+			}); nativeRestarter != nil {
+				restarter = serverRestarterAdapter{restarter: nativeRestarter, now: nowFn}
 			}
 		}
 

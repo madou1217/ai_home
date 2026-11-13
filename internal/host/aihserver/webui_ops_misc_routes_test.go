@@ -190,6 +190,33 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("缺少 Store 与 AIHomeDir 时应回 503，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
+	rec = httptest.NewRecorder()
+	emptyMux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/management/webui/server/restart", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("缺少 AIHomeDir 且未注入 ServerRestarter 时 server/restart 应回 503，实际 %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// 未显式传入 ServerRestarter 但提供 AIHomeDir 时，自动装配 NativeRestarter（非 503）
+	t.Setenv("AIH_SERVER_ENTRY_FILE", filepath.Join(t.TempDir(), "missing-ai-home.js"))
+	wiredRestartRoutes, buildWiredErr := buildWebUIOpsMiscRoutesWithPorts(
+		webuiRouteDependencies{
+			Authorizer: stubOpsAuthorizer{allow: true},
+			AIHomeDir:  t.TempDir(),
+		},
+		webuiOpsMiscPorts{SkipSchedulerStart: true},
+	)
+	if buildWiredErr != nil {
+		t.Fatalf("默认 NativeRestarter 装配不应失败: %v", buildWiredErr)
+	}
+	wiredRestartMux := http.NewServeMux()
+	for _, r := range wiredRestartRoutes {
+		wiredRestartMux.Handle(r.Pattern, r.Handler)
+	}
+	rec = httptest.NewRecorder()
+	wiredRestartMux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/management/webui/server/restart", nil))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("提供 AIHomeDir 时默认 NativeRestarter 应接单回 202，实际 %d body=%s", rec.Code, rec.Body.String())
+	}
 
 	// 确认 buildWebUIOpsMiscRoutes 默认导出签名为 nil authorizer 时失败关闭
 	if _, buildErr := buildWebUIOpsMiscRoutes(webuiRouteDependencies{}); buildErr == nil {

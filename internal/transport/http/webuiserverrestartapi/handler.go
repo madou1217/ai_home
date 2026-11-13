@@ -2,13 +2,11 @@
 package webuiserverrestartapi
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,12 +16,14 @@ import (
 const (
 	// Path 是 server 重启的管理契约路径。
 	Path = "/v1/management/webui/server/restart"
-	// InternalRestartPath 是 Node 宿主承接进程拉起的回环执行端点。
-	InternalRestartPath = "/v0/internal/server/restart"
 )
 
-// ErrInvalidDependencies 表示 Handler 缺少必需端口。
-var ErrInvalidDependencies = errors.New("server 重启接口依赖无效")
+var (
+	// ErrInvalidDependencies 表示 Handler 缺少必需端口。
+	ErrInvalidDependencies = errors.New("server 重启接口依赖无效")
+	// ErrRestartUnavailable 表示当前运行环境缺少拉起重启进程所需的 Node 或入口脚本。
+	ErrRestartUnavailable = errors.New("server_restart_unavailable")
+)
 
 // Authorizer 校验 WebUI 管理请求的访问权限。
 type Authorizer interface {
@@ -59,86 +59,6 @@ type RestartOutcome struct {
 // Restarter 执行实际的后台重启动作。
 type Restarter interface {
 	Restart(ctx context.Context, job RestartJob) (RestartOutcome, error)
-}
-
-// HostRestarterOptions 配置通过 Node 宿主回环重启的参数。
-type HostRestarterOptions struct {
-	BaseURL       string
-	ManagementKey func() string
-	HTTPClient    *http.Client
-}
-
-// HostRestarter 通过 POST <NodeBaseURL>/v0/internal/server/restart 委托 Node 宿主重启。
-type HostRestarter struct {
-	baseURL       string
-	managementKey func() string
-	client        *http.Client
-}
-
-// NewHostRestarter 创建宿主重启桥；BaseURL 为空时返回 nil。
-func NewHostRestarter(options HostRestarterOptions) *HostRestarter {
-	baseURL := strings.TrimRight(strings.TrimSpace(options.BaseURL), "/")
-	if baseURL == "" {
-		return nil
-	}
-	client := options.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
-	}
-	return &HostRestarter{
-		baseURL:       baseURL,
-		managementKey: options.ManagementKey,
-		client:        client,
-	}
-}
-
-// Restart 通知 Node 宿主使用持久化配置重启服务。
-func (r *HostRestarter) Restart(ctx context.Context, job RestartJob) (RestartOutcome, error) {
-	if r == nil {
-		return RestartOutcome{}, errors.New("server_restart_unavailable")
-	}
-	body, err := json.Marshal(map[string]any{"job": job})
-	if err != nil {
-		return RestartOutcome{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+InternalRestartPath, bytes.NewReader(body))
-	if err != nil {
-		return RestartOutcome{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if r.managementKey != nil {
-		if key := strings.TrimSpace(r.managementKey()); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-	}
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return RestartOutcome{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
-	if err != nil {
-		return RestartOutcome{}, err
-	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return RestartOutcome{}, errors.New("server_restart_host_rejected")
-	}
-	var decoded struct {
-		OK            bool           `json:"ok"`
-		PID           int            `json:"pid"`
-		AppliedConfig map[string]any `json:"appliedConfig"`
-		Error         string         `json:"error"`
-	}
-	if err := json.Unmarshal(raw, &decoded); err != nil || !decoded.OK {
-		if strings.TrimSpace(decoded.Error) != "" {
-			return RestartOutcome{}, errors.New(strings.TrimSpace(decoded.Error))
-		}
-		return RestartOutcome{}, errors.New("server_restart_invalid_host_response")
-	}
-	return RestartOutcome{
-		PID:           decoded.PID,
-		AppliedConfig: decoded.AppliedConfig,
-	}, nil
 }
 
 // Dependencies 汇总重启处理器依赖。
@@ -260,10 +180,12 @@ func sanitizePublicConfig(cfg map[string]any) map[string]any {
 	}
 	apiKey, _ := cfg["apiKey"].(string)
 	mgmtKey, _ := cfg["managementKey"].(string)
+	apiConfigured, hasAPIConfigured := cfg["apiKeyConfigured"].(bool)
+	mgmtConfigured, hasMgmtConfigured := cfg["managementKeyConfigured"].(bool)
 	out["apiKey"] = ""
 	out["managementKey"] = ""
-	out["apiKeyConfigured"] = strings.TrimSpace(apiKey) != ""
-	out["managementKeyConfigured"] = strings.TrimSpace(mgmtKey) != ""
+	out["apiKeyConfigured"] = strings.TrimSpace(apiKey) != "" || (hasAPIConfigured && apiConfigured)
+	out["managementKeyConfigured"] = strings.TrimSpace(mgmtKey) != "" || (hasMgmtConfigured && mgmtConfigured)
 	return out
 }
 

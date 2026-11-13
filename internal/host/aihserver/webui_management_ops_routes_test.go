@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,19 @@ import (
 type stubMgmtAuthorizer struct{ allow bool }
 
 func (a stubMgmtAuthorizer) Authorized(*http.Request) bool { return a.allow }
+
+type stubMgmtRestarter struct{}
+
+func (stubMgmtRestarter) RestartServer(context.Context) (managementops.RestartResponse, error) {
+	return managementops.RestartResponse{
+		OK:            true,
+		Action:        "restart",
+		Running:       true,
+		PID:           7788,
+		Started:       true,
+		AppliedConfig: map[string]any{"port": 9527, "apiKey": "", "managementKey": ""},
+	}, nil
+}
 
 func TestBuildWebUIManagementOpsRoutes_NoAuthorizerSkipsCleanly(t *testing.T) {
 	routes, err := buildWebUIManagementOpsRoutes(webuiRouteDependencies{})
@@ -69,27 +83,16 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 		t.Fatalf("accountstate.EnsureSchema() error = %v", err)
 	}
 
-	// Mock Node internal restart bridge to verify HostRestarter wiring.
-	nodeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v0/internal/server/restart" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"pid":7788,"appliedConfig":{"port":9527}}`))
-	}))
-	defer nodeSrv.Close()
-
 	routes, err := buildWebUIManagementOpsRoutesWithPorts(webuiRouteDependencies{
 		Authorizer:    stubMgmtAuthorizer{allow: true},
 		AIHomeDir:     aiHome,
 		HostHomeDir:   hostHome,
 		Catalog:       cat,
 		Store:         acctStore,
-		NodeBaseURL:   nodeSrv.URL,
 		ManagementKey: func() string { return "secret" },
 	}, webuiManagementOpsPorts{
 		UsageStore: usageStore,
+		Restarter:  stubMgmtRestarter{},
 	})
 	if err != nil {
 		t.Fatalf("buildWebUIManagementOpsRoutesWithPorts() error = %v", err)
@@ -110,7 +113,7 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 		t.Fatalf("GET /status code=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// Verify /restart delegates through HostRestarter
+	// Verify /restart delegates through configured Restarter port
 	rRec := httptest.NewRecorder()
 	mux.ServeHTTP(rRec, httptest.NewRequest(http.MethodPost, webuimanagementapi.RestartPath, nil))
 	if rRec.Code != http.StatusOK || !strings.Contains(rRec.Body.String(), `"pid":7788`) {
@@ -148,5 +151,43 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 	mux.ServeHTTP(qDel, httptest.NewRequest(http.MethodDelete, webuimanagementapi.UsageDashboardQueryPath+"/"+started.Job.ID, nil))
 	if qDel.Code != http.StatusOK {
 		t.Fatalf("DELETE query job code=%d body=%s", qDel.Code, qDel.Body.String())
+	}
+}
+
+func TestBuildWebUIManagementOpsRoutes_DefaultNativeRestarterWiring(t *testing.T) {
+	// 1. AIHomeDir 与 HostHomeDir 均为空时保持 nil restarter -> 503 management_restart_unavailable
+	emptyRoutes, err := buildWebUIManagementOpsRoutes(webuiRouteDependencies{
+		Authorizer: stubMgmtAuthorizer{allow: true},
+	})
+	if err != nil {
+		t.Fatalf("buildWebUIManagementOpsRoutes(empty dir) error = %v", err)
+	}
+	emptyMux := http.NewServeMux()
+	for _, r := range emptyRoutes {
+		emptyMux.Handle(r.Pattern, r.Handler)
+	}
+	rec := httptest.NewRecorder()
+	emptyMux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, webuimanagementapi.RestartPath, nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"management_restart_unavailable"`) {
+		t.Fatalf("expected 503 management_restart_unavailable when AIHomeDir empty, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// 2. 提供 AIHomeDir 时自动装配 NativeRestarter（用缺失的 AIH_SERVER_ENTRY_FILE 验证其确实进入 NativeRestarter 路径）
+	t.Setenv("AIH_SERVER_ENTRY_FILE", filepath.Join(t.TempDir(), "missing-ai-home.js"))
+	wiredRoutes, err := buildWebUIManagementOpsRoutes(webuiRouteDependencies{
+		Authorizer: stubMgmtAuthorizer{allow: true},
+		AIHomeDir:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("buildWebUIManagementOpsRoutes(with aiHome) error = %v", err)
+	}
+	wiredMux := http.NewServeMux()
+	for _, r := range wiredRoutes {
+		wiredMux.Handle(r.Pattern, r.Handler)
+	}
+	rec = httptest.NewRecorder()
+	wiredMux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, webuimanagementapi.RestartPath, nil))
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), `"server_restart_unavailable"`) {
+		t.Fatalf("expected 500 server_restart_unavailable from wired NativeRestarter, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

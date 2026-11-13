@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -150,14 +151,15 @@ func buildWebUIOpsMiscRoutesWithPorts(
 		return nil, fmt.Errorf("创建任务队列接口失败: %w", err)
 	}
 
-	// nil 接口保护：未显式传入 Restarter 且 NodeBaseURL 为空时保持 nil，让 Handler 明确回 503。
+	// nil 接口保护：未显式传入 Restarter 且 AIHomeDir 为空时保持 nil，让 Handler 明确回 503。
 	restarter := ports.ServerRestarter
 	if restarter == nil {
-		if hostRestarter := webuiserverrestartapi.NewHostRestarter(webuiserverrestartapi.HostRestarterOptions{
-			BaseURL:       dependencies.NodeBaseURL,
-			ManagementKey: dependencies.ManagementKey,
-		}); hostRestarter != nil {
-			restarter = hostRestarter
+		if nativeRestarter := webuiserverrestartapi.NewNativeRestarter(webuiserverrestartapi.NativeRestarterOptions{
+			AIHomeDir:     aiHome,
+			NodeExecPath:  os.Getenv("AIH_SERVER_NODE_EXEC"),
+			EntryFilePath: os.Getenv("AIH_SERVER_ENTRY_FILE"),
+		}); nativeRestarter != nil {
+			restarter = nativeRestarter
 		}
 	}
 	serverRestartHandler, err := webuiserverrestartapi.NewHandler(webuiserverrestartapi.Dependencies{

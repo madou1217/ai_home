@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 )
@@ -43,6 +44,10 @@ type commandConfig struct {
 	webDir string
 	// nodeBaseURL 是 Node 宿主的回环管理地址（监督器注入）。为空时不挂实例启停路由。
 	nodeBaseURL string
+	// nodeExecPath 与 entryFilePath 由监督器通过 AIH_SERVER_NODE_EXEC / AIH_SERVER_ENTRY_FILE 注入，
+	// 供原生重启接口拉起独立后台重启进程；允许缺省，但显式设置损坏值时在启动期拦截。
+	nodeExecPath  string
+	entryFilePath string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -106,6 +111,14 @@ func loadCommandConfig(
 	if nodeBaseURL != "" && !isLoopbackBaseURL(nodeBaseURL) {
 		return commandConfig{}, errInvalidCommandConfig
 	}
+	nodeExecPath, err := envOptionalPath(runtime.lookupEnv, "AIH_SERVER_NODE_EXEC")
+	if err != nil {
+		return commandConfig{}, err
+	}
+	entryFilePath, err := envOptionalPath(runtime.lookupEnv, "AIH_SERVER_ENTRY_FILE")
+	if err != nil {
+		return commandConfig{}, err
+	}
 	return commandConfig{
 		host:                       host,
 		port:                       port,
@@ -116,7 +129,26 @@ func loadCommandConfig(
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
 		nodeBaseURL:                nodeBaseURL,
+		nodeExecPath:               nodeExecPath,
+		entryFilePath:              entryFilePath,
 	}, nil
+}
+
+// envOptionalPath 校验可选路径环境变量：未设置或空串按缺省处理，
+// 显式设置为纯空白或包含控制字符时拒绝启动。
+func envOptionalPath(lookupEnv func(string) (string, bool), name string) (string, error) {
+	raw, found := lookupEnv(name)
+	if !found || raw == "" {
+		return "", nil
+	}
+	if strings.IndexFunc(raw, unicode.IsControl) >= 0 {
+		return "", errInvalidCommandConfig
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", errInvalidCommandConfig
+	}
+	return trimmed, nil
 }
 
 // isLoopbackBaseURL 只接受 http + loopback 的 Node 地址：管理密钥不能发到远端。
@@ -242,4 +274,6 @@ func writeUsage(output io.Writer, flags *flag.FlagSet) {
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_API_KEY（必填，不接受命令行传入）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填，不接受命令行传入）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CREDENTIAL_REFRESH（self|delegated，默认 self）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_NODE_EXEC（可选，Server 重启拉起 Node 进程的可执行路径）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_ENTRY_FILE（可选，Server 重启调用的入口脚本路径）")
 }

@@ -34,7 +34,9 @@ type AccountRecord struct {
 	AuthType     string `json:"authType,omitempty"`
 	APIKeyMode   bool   `json:"apiKeyMode,omitempty"`
 	BaseURL      string `json:"baseUrl,omitempty"`
-	Enabled      bool   `json:"enabled"`
+	// OpenAIBaseURL 是 OpenAI 兼容入口的 base URL（自定义上游按账号覆盖时使用）。
+	OpenAIBaseURL string `json:"openaiBaseUrl,omitempty"`
+	Enabled       bool   `json:"enabled"`
 }
 
 // AccountLabel 生成前端与日志展示用的可读账号名称（如 #1 user@example.com）。

@@ -89,3 +89,36 @@ func TestBuildRejectsWrongProvider(t *testing.T) {
 		t.Fatal("跨 Provider 的 api-key 必须被拒绝")
 	}
 }
+
+// TestBuildInternationalStripsHostSite api-key 国际站账号必须剥掉宿主的站点选择，
+// 否则宿主选了国内站会把这个账号静默打到另一个站点。
+func TestBuildInternationalStripsHostSite(t *testing.T) {
+	credential, err := accountcore.NewStaticAPIKeyAuth(accountcore.StaticAPIKeyInput{
+		ProviderID: "codebuddy",
+		APIKey:     "sk-intl",
+	})
+	if err != nil {
+		t.Fatalf("credential: %v", err)
+	}
+	accountRef, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	binding, err := accountapp.NewCredentialBinding(accountRef, "codebuddy", credential)
+	if err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	strategy, _ := NewStrategy("codebuddy", false)
+	result, err := strategy.Build(binding)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	unset := result.Environment().UnsetNames()
+	if !contains(unset, "CODEBUDDY_INTERNET_ENVIRONMENT") ||
+		!contains(unset, "CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT") {
+		t.Fatalf("国际站必须剥掉宿主站点变量: %v", unset)
+	}
+	if !contains(unset, "CODEBUDDY_CONFIG_DIR") || !contains(unset, "WORKBUDDY_CONFIG_DIR") {
+		t.Fatalf("配置根变量必须剥掉: %v", unset)
+	}
+	if set := result.Environment().RevealSet(); set["CODEBUDDY_INTERNET_ENVIRONMENT"] != "" {
+		t.Fatalf("国际站不应注入站点变量: %#v", set)
+	}
+}

@@ -22,11 +22,27 @@ var (
 	ErrBuildLaunchContext = errors.New("CodeBuddy 家族 CLI 启动描述构建失败")
 )
 
-// inheritedCredentialKeys 是启动前必须删除的宿主账号级变量。
-var inheritedCredentialKeys = []string{
+// familyNeverInheritKeys 与 Node CODEBUDDY_NEVER_INHERIT_ENV + provider-runtime-env
+// 的家族段对齐：宿主上的账号身份、站点、配置根和侧车引导变量都不能穿进沙箱。
+var familyNeverInheritKeys = []string{
 	"CODEBUDDY_API_KEY",
 	"CODEBUDDY_BASE_URL",
 	"CODEBUDDY_AUTH_TOKEN",
+	"CODEBUDDY_API_KEY_DISABLED",
+	"CODEBUDDY_CONFIG_DIR",
+	"CODEBUDDY_INTERNET_ENVIRONMENT",
+	"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT",
+	"CODEBUDDY_SIDECAR_READY_SOCKET",
+	"CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET",
+	"CODEBUDDY_SIDECAR_READY_TOKEN",
+	"CODEBUDDY_SIDECAR_READY_SESSION_ID",
+	"CODEBUDDY_RUNTIME_INSTANCE_ID",
+	"WORKBUDDY_CONFIG_DIR",
+	"WORKBUDDY_USER_DATA_DIR",
+	"WORKBUDDY_AT_REST_ENCRYPTION",
+	"ACC_PRODUCT_CONFIG_V2",
+	"ACC_PRODUCT_CONFIG_V3",
+	"ACC_PRODUCT_CONFIG_PATH",
 }
 
 // Strategy 负责一个家族 Provider 的伪 HOME 投影与站点环境。
@@ -110,12 +126,7 @@ func (strategy *Strategy) buildAPIKey(
 		set["CODEBUDDY_INTERNET_ENVIRONMENT"] = "internal"
 		set["CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT"] = "internal"
 	}
-	// 只删没有重新注入的凭据变量；AUTH_TOKEN 与 API Key 是互斥身份。
-	unset := []string{"CODEBUDDY_AUTH_TOKEN"}
-	if _, ok := set["CODEBUDDY_BASE_URL"]; !ok {
-		unset = append(unset, "CODEBUDDY_BASE_URL")
-	}
-	environment, err := providerlaunch.NewEnvironmentPatch(set, unset)
+	environment, err := providerlaunch.NewEnvironmentPatch(set, neverInheritWithout(set, familyNeverInheritKeys))
 	if err != nil {
 		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 环境无效", ErrBuildLaunchContext)
 	}
@@ -143,6 +154,19 @@ func (strategy *Strategy) buildAPIKey(
 	})
 }
 
+// neverInheritWithout 过滤掉本轮已显式注入的键：EnvironmentPatch 不允许同一键
+// 既 set 又 unset，Node 侧也是先 Apply set 再过滤 unset。
+func neverInheritWithout(set map[string]string, keys []string) []string {
+	unset := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if _, exists := set[key]; exists {
+			continue
+		}
+		unset = append(unset, key)
+	}
+	return unset
+}
+
 // baseResult 是 OAuth 账号的启动描述：伪 HOME 投影 + 剥离宿主凭据变量。
 func (strategy *Strategy) baseResult() (providerlaunch.StrategyResult, error) {
 	projection, err := providerlaunch.NewProjectionDirective(
@@ -159,7 +183,7 @@ func (strategy *Strategy) baseResult() (providerlaunch.StrategyResult, error) {
 			"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
 		}
 	}
-	environment, err := providerlaunch.NewEnvironmentPatch(set, inheritedCredentialKeys)
+	environment, err := providerlaunch.NewEnvironmentPatch(set, neverInheritWithout(set, familyNeverInheritKeys))
 	if err != nil {
 		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 环境无效", ErrBuildLaunchContext)
 	}

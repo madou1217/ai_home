@@ -220,14 +220,24 @@ func newRow(fact accountFact) Row {
 		ActivityActions:       []any{},
 	}
 	row.DisplayNames = buildDisplayNames(fact, row.DisplayName, apiKeyMode)
+	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload, fact.Provider)
 	row.PlanType = resolvePlanType(configured, apiKeyMode, fact.Subscription)
+	// 资料表没有套餐时，用额度快照里的 account.planType 兜底：CodeBuddy 家族的
+	// 套餐由 Go 额度探针写入，账号页的行来源已经是 Go，不能只认 subscription_kind。
+	if row.PlanType == "oauth" {
+		if snapshotPlan := snapshotAccountPlanType(row.UsageSnapshot); snapshotPlan != "" {
+			if token := normalizePlanToken(snapshotPlan); token != "" {
+				row.PlanType = token
+				row.PlanName = planDisplayName(token)
+			}
+		}
+	}
 	row.UpdatedAt = resolveUpdatedAt(configured, apiKeyMode, fact.CapturedAtMS, fact.UpdatedAtMS)
 	// API Key 账号没有 Provider 额度：Node 对它们一律不给剩余额度，这里同口径。
 	if configured && !apiKeyMode && fact.HasRemaining != 0 {
 		remaining := float64(fact.RemainingBPS) / 100
 		row.RemainingPct = &remaining
 	}
-	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload, fact.Provider)
 	row.ZcodeRegion = resolveZcodeRegion(fact.Provider, fact.ZcodeRegion)
 	row.SchedulableStatus, row.SchedulableReason = resolveSchedulableStatus(
 		configured,
@@ -291,6 +301,49 @@ func resolvePlanType(configured, apiKeyMode bool, subscription string) string {
 		return planType
 	}
 	return "oauth"
+}
+
+// snapshotAccountPlanType 从归一后的额度快照里取 account.planType。
+//
+// CodeBuddy 家族的套餐由 Go 额度探针写入快照（account_profiles.subscription_kind
+// 是空的），账号页的行来源已经是 Go 读模型，所以套餐也必须在这里兜底。
+func snapshotAccountPlanType(snapshot any) string {
+	object, ok := snapshot.(map[string]any)
+	if !ok {
+		return ""
+	}
+	account, ok := object["account"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, _ := account["planType"].(string)
+	return strings.TrimSpace(value)
+}
+
+// normalizePlanToken 把 "Pro Plus" 归一成 "pro_plus"，与前端套餐 token 同口径。
+func normalizePlanToken(value string) string {
+	fields := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(value)), func(r rune) bool {
+		return r == ' ' || r == '-' || r == '_' || r == '\t' || r == '\n'
+	})
+	return strings.Join(fields, "_")
+}
+
+// planDisplayName 是套餐 token 的展示名；未知 token 留空，由前端用 token 兜底。
+func planDisplayName(token string) string {
+	switch token {
+	case "pro":
+		return "Pro"
+	case "pro_plus":
+		return "Pro Plus"
+	case "youth":
+		return "Youth"
+	case "advanced":
+		return "Advanced"
+	case "flagship":
+		return "Flagship"
+	default:
+		return ""
+	}
 }
 
 // resolveUpdatedAt 复刻 Node 的取值优先级（快照采集时间 > 账号行更新时间）。

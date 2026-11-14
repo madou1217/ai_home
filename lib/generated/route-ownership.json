@@ -371,13 +371,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/account-upstream-error-rules"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/accounts/plugin-login/start"
         },
         {
@@ -1516,6 +1509,20 @@
             "POST"
           ],
           "path": "/v0/webui/accounts/local-import"
+        }
+      ]
+    },
+    {
+      "id": "webui.account_error_rules",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/account-upstream-error-rules"
         }
       ]
     },

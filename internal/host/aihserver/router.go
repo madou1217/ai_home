@@ -228,6 +228,8 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 账号级规则：路径带 {ref} 通配，必须用「方法 + 模式」注册，才能在
 	// /v1/management/accounts/ 的既有前缀路由之前精确命中。
 	if handlers.accountRules != nil {
+		// 浏览器数据面：账号级上游错误规则只读视图（路径与 Node 旧入口一致）。
+		mux.Handle("GET /v0/webui/account-upstream-error-rules", webuipublicalias.Rewrite("/v0/webui/account-upstream-error-rules", accountrulesapi.CollectionPath, handlers.accountRules))
 		mux.Handle("GET "+accountrulesapi.CollectionPath, handlers.accountRules)
 		mux.Handle("GET "+accountrulesapi.MemberPattern, handlers.accountRules)
 		mux.Handle("PUT "+accountrulesapi.MemberPattern, handlers.accountRules)

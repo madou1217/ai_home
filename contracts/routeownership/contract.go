@@ -190,7 +190,6 @@ func Current() Manifest {
 				NodeRoutes: []Route{
 					// 真实剩余面：2026-11-14 用「无凭据探测公开口」逐个分类得到，
 					// 其余 /v0/webui 家族已由 Go 承接（见各自 go_owned 条目）。
-					httpRoute([]string{"*"}, "/v0/webui/account-upstream-error-rules"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/plugin-login/start"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/zcode/url-callback"),
 					httpRoute([]string{"*"}, "/v0/webui/chat-sessions"),
@@ -641,6 +640,15 @@ func Current() Manifest {
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/accounts/activity/params"),
 					httpRoute([]string{"POST"}, "/v0/webui/accounts/local-import"),
+				},
+			},
+			{
+				// 账号级上游错误规则只读视图：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_error_rules",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/account-upstream-error-rules"),
 				},
 			},
 			{

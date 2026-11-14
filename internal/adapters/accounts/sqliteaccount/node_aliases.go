@@ -3,9 +3,7 @@ package sqliteaccount
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,9 +35,6 @@ func readNodeCLIAliases(ctx context.Context, aiHomeDir string) map[string]map[st
 	}
 	db, err := appstate.OpenReadOnly(ctx, databasePath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return aliases
-		}
 		return aliases
 	}
 	defer func() { _ = db.Close() }()

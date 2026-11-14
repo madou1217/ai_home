@@ -93,3 +93,7 @@ C:\\*
 # macOS Finder metadata: never track, even under the /docs/** exception above.
 .DS_Store
 **/.DS_Store
+
+# 本地 go build 产物（在仓库根执行 go build ./cmd/... 时生成）
+/aih
+/aih-server

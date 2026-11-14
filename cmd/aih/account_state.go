@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -63,11 +65,7 @@ func newAccountManagementClientWithTimeout(
 	client, err := managementapi.New(
 		httpClient,
 		managementapi.Config{
-			BaseURL: lookupOrDefault(
-				runtime.lookupEnv,
-				"AIH_SERVER_BASE_URL",
-				defaultGatewayBaseURL,
-			),
+			BaseURL:       resolveManagementBaseURL(runtime),
 			ManagementKey: managementKey,
 		},
 	)
@@ -137,4 +135,50 @@ func writeAccountStateUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account disable claude:1")
 	_, _ = fmt.Fprintln(output, "  aih account enable acct_0123456789abcdef0123")
+}
+
+// resolveManagementBaseURL 选择本次管理请求真正可达的 Server 地址。
+//
+// 历史上 Go Core 在 19550，Node 公开面在 9527；切到前置门后 Go 直接持有公开
+// 端口，19550 不再监听。AIH_SERVER_ALT_BASE_URL 由 bin 按 Server 配置的公开端口
+// 填入，只在主地址连不上时才启用，避免多探一次网络影响正常路径。
+func resolveManagementBaseURL(runtime commandRuntime) string {
+	primary := lookupOrDefault(
+		runtime.lookupEnv,
+		"AIH_SERVER_BASE_URL",
+		defaultGatewayBaseURL,
+	)
+	alternate := strings.TrimSpace(lookupOrDefault(
+		runtime.lookupEnv,
+		"AIH_SERVER_ALT_BASE_URL",
+		"",
+	))
+	if alternate == "" || managementEndpointReachable(primary) {
+		return primary
+	}
+	if managementEndpointReachable(alternate) {
+		return alternate
+	}
+	return primary
+}
+
+// managementEndpointReachable 只做一次短超时 TCP 探测，不发送管理请求。
+func managementEndpointReachable(baseURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	host := parsed.Host
+	if !strings.Contains(host, ":") {
+		host += ":80"
+		if parsed.Scheme == "https" {
+			host = parsed.Host + ":443"
+		}
+	}
+	connection, err := net.DialTimeout("tcp", host, 250*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = connection.Close()
+	return true
 }

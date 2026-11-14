@@ -150,8 +150,9 @@ func writeGlobalAccountList(
 	for _, account := range accounts {
 		byProvider[account.ProviderID] = append(byProvider[account.ProviderID], account)
 	}
+	palette := paletteFor(output)
 	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintln(output, "📦 AI Home Accounts Overview")
+	_, _ = fmt.Fprintln(output, palette.cyan("📦 AI Home Accounts Overview"))
 	if len(accounts) == 0 {
 		_, _ = fmt.Fprintln(output, "  No profiles found.")
 		return
@@ -178,13 +179,13 @@ func writeGlobalAccountList(
 	})
 	for _, providerID := range providerIDs {
 		_, _ = fmt.Fprintln(output)
-		_, _ = fmt.Fprintf(output, "▶ %s\n", providerID)
+		_, _ = fmt.Fprintf(output, "%s\n", palette.yellow("▶ "+providerID))
 		group := byProvider[providerID]
 		sort.SliceStable(group, func(left, right int) bool {
 			return group[left].CLIAccountID.Int64() < group[right].CLIAccountID.Int64()
 		})
 		for _, account := range group {
-			writeAccountListRow(output, account, displayNames, client, ctx)
+			writeAccountListRow(output, account, displayNames, client, ctx, palette)
 		}
 	}
 }

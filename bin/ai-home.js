@@ -20,6 +20,13 @@ const INTERNAL_FAST_PATH_VERBS = new Set(['__complete', '__suggest', '__learn'])
 // 「PTY runtime is unavailable」（2026-11-06 用户多次遇到）。
 // aih ss|sessions --list/--detail 固定走 Go：只读注册表 + tmux 探测，不装配 Node
 // 组合根；交互 picker / --refresh（Node 标题缓存）与按名字进入仍交回 Node。
+// Go 管理面地址：19550 是旧拓扑的私有端口；前置门启用后 Go 直接持有公开端口。
+// 给 Go CLI 一个主/备地址，主地址连不上时自动改走公开端口。
+function goPublicManagementBaseURL(config) {
+  const port = Number(config && config.port) || 9527;
+  return `http://127.0.0.1:${port}`;
+}
+
 const GLOBAL_SESSION_DETAIL_TOKENS = new Set([
   '--list', '-l', '--detail', '--details', '--verbose', '-v', '-vv', '-vvv',
   'list', 'detail', 'details', 'vvv'
@@ -77,6 +84,7 @@ function runGoGlobalSessions(args) {
   if (aiHomeDir) env.AIH_HOME_DIR = aiHomeDir;
   if (managementKey) {
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_ALT_BASE_URL = goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
@@ -198,6 +206,7 @@ function tryRunGoGlobalLs() {
     ...process.env,
     AIH_HOME_DIR: aiHomeDir,
     AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_ALT_BASE_URL: goPublicManagementBaseURL(config),
     AIH_SERVER_MANAGEMENT_KEY: managementKey
   };
   if (hostHome) env.AIH_HOST_HOME = hostHome;
@@ -250,6 +259,7 @@ function tryRunGoCodexMobile() {
     ...process.env,
     AIH_HOME_DIR: aiHomeDir,
     AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_ALT_BASE_URL: goPublicManagementBaseURL(config),
     AIH_SERVER_MANAGEMENT_KEY: managementKey
   };
   if (hostHome) env.AIH_HOST_HOME = hostHome;
@@ -342,6 +352,7 @@ function tryRunGoCodexHome() {
     ...process.env,
     AIH_HOME_DIR: aiHomeDir,
     AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_ALT_BASE_URL: goPublicManagementBaseURL(config),
     AIH_SERVER_MANAGEMENT_KEY: managementKey
   };
   if (hostHome) env.AIH_HOST_HOME = hostHome;
@@ -497,6 +508,7 @@ function tryRunGoAccountCommand() {
   const managementKey = String(config && config.managementKey || '').trim();
   if (managementKey) {
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_ALT_BASE_URL = goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   if (hostHome) env.AIH_HOST_HOME = hostHome;
@@ -616,8 +628,8 @@ function tryRunGoProviderCommonCommand() {
   if (!aiHomeDir) return false;
   const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault || isUnsetDefault;
   let managementKey = '';
+  let config = null;
   if (needsServer) {
-    let config = null;
     try {
       config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
     } catch (_error) {
@@ -629,6 +641,7 @@ function tryRunGoProviderCommonCommand() {
   const env = { ...process.env, AIH_HOME_DIR: aiHomeDir };
   if (needsServer) {
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_ALT_BASE_URL = goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   if (hostHome) env.AIH_HOST_HOME = hostHome;
@@ -789,6 +802,7 @@ function tryRunGoFamilyRestart() {
     ...process.env,
     AIH_HOME_DIR: aiHomeDir,
     AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
+    AIH_SERVER_ALT_BASE_URL: goPublicManagementBaseURL(config),
     AIH_SERVER_MANAGEMENT_KEY: managementKey
   };
   if (hostHome) env.AIH_HOST_HOME = hostHome;
@@ -893,6 +907,7 @@ function tryRunGoFamilySessionVerb() {
   if (aiHomeDir) env.AIH_HOME_DIR = aiHomeDir;
   if (managementKey) {
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_ALT_BASE_URL = goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   if (verbIndex === 2 && aiHomeDir
@@ -958,6 +973,7 @@ function tryRunGoFamilySessions() {
   if (hostHome) env.AIH_HOST_HOME = hostHome;
   if (managementKey) {
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_ALT_BASE_URL = goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
@@ -1075,9 +1091,10 @@ function tryRunGoFamilyServerCommand() {
   if (needsServer && !managementKey) return false;
   const env = { ...process.env, AIH_HOME_DIR: aiHomeDir };
   if (managementKey) {
-    // Go Server 的账号管理面在本地 Go Core 端口；9527 是客户端 API 前门，
-    // /v1/management 不在这条公开路由上。
+    // 旧拓扑的管理面在 Go Core 私有端口 19550；前置门启用后 Go 直接持有
+    // 公开端口。主地址连不上时 Go CLI 会改用 AIH_SERVER_ALT_BASE_URL。
     env.AIH_SERVER_BASE_URL = 'http://127.0.0.1:19550';
+    env.AIH_SERVER_ALT_BASE_URL = goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   if (hostHome) env.AIH_HOST_HOME = hostHome;

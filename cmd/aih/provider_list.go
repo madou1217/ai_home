@@ -86,15 +86,16 @@ func writeProviderList(
 	ctx context.Context,
 ) {
 	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintln(output, "📦 AI Home Accounts Overview")
+	palette := paletteFor(output)
+	_, _ = fmt.Fprintln(output, palette.cyan("📦 AI Home Accounts Overview"))
 	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintf(output, "▶ %s\n", providerID)
+	_, _ = fmt.Fprintf(output, "%s\n", palette.yellow("▶ "+providerID))
 	if len(accounts) == 0 {
 		_, _ = fmt.Fprintln(output, "  No profiles found.")
 		return
 	}
 	for _, account := range accounts {
-		writeAccountListRow(output, account, displayNames, client, ctx)
+		writeAccountListRow(output, account, displayNames, client, ctx, palette)
 	}
 }
 
@@ -105,6 +106,7 @@ func writeAccountListRow(
 	displayNames map[string]string,
 	client *managementapi.Client,
 	ctx context.Context,
+	palette terminalPalette,
 ) {
 	plan := ""
 	remaining := ""
@@ -126,24 +128,24 @@ func writeAccountListRow(
 	}
 	prefix := ""
 	if plan != "" {
-		prefix = "[" + plan + "] "
+		prefix = palette.blue("["+plan+"]") + " "
 	}
 	status := ""
 	if !account.Enabled {
-		status = " [停用]"
+		status = " " + palette.gray("[停用]")
 	}
-	remainingLabel := "Unknown"
-	if remaining != "" {
-		remainingLabel = remaining
+	usage := palette.cyan("[Remaining: " + remaining + "]")
+	if remaining == "" {
+		usage = palette.gray("[Remaining: Unknown]")
 	}
 	_, _ = fmt.Fprintf(
 		output,
-		"  - %sAccount ID: %d (%s)%s [Remaining: %s]\n",
+		"  - %sAccount ID: %s %s%s %s\n",
 		prefix,
-		account.CLIAccountID.Int64(),
-		identity,
+		palette.cyan(strconv.FormatInt(account.CLIAccountID.Int64(), 10)),
+		palette.magenta("("+identity+")"),
 		status,
-		remainingLabel,
+		usage,
 	)
 }
 

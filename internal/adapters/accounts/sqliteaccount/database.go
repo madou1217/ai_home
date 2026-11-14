@@ -79,6 +79,15 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// 用户可见的 CLI 编号一直记录在 Node 台账 account_cli_aliases；Go 自增序列表
+	// 与它是两套编号。每次打开账号库都把两份收敛，保证 `aih ls`、`aih <id>`
+	// 和 WebUI 看到的是同一个数字。缺台账（全新安装）时是空操作。
+	if aliases := readNodeCLIAliases(ctx, options.AIHomeDir); len(aliases) > 0 {
+		if err := store.reconcileNodeCLIAliases(ctx, aliases); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
 	// 启动自愈：清理历史遗留的孤儿凭据（无 accounts 行）。级联只在
 	// foreign_keys=ON 的连接上生效，不能假设旧库/外部写入都守住了这条约束。
 	if _, err := store.DeleteOrphanCredentials(ctx); err != nil {

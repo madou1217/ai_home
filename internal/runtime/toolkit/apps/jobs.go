@@ -552,6 +552,19 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 		Timeout: timeout,
 		Env:     execEnv,
 	})
+	// 镜像同步滞后时 npm 会报 notarget/ETARGET（包或版本还没同步）；同一计划
+	// 换官方源再跑一次，避免「镜像少一个版本就让整个 CLI 装不上」。
+	if !res.OK && npmResolutionFailure(res) {
+		if fallback, ok := planWithOfficialNPMRegistry(plan); ok {
+			plan = fallback
+			execEnv = mergePlanEnv(opts.Env, plan.Env)
+			execEnv = withUsableJQPath(ctx, execEnv, opts)
+			res = (&opts).exec().Run(ctx, plan.Command, plan.Args, environment.ExecOptions{
+				Timeout: timeout,
+				Env:     execEnv,
+			})
+		}
+	}
 	attempt := AttemptView{
 		ID:    plan.ID,
 		Label: plan.Label,

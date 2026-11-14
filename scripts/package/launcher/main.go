@@ -48,9 +48,6 @@ func environment(directory, executable string) []string {
 	env = set(env, "AIH_PACKAGED", "1")
 	env = set(env, "AIH_PACKAGE_ROOT", directory)
 	env = set(env, "AIH_EXECUTABLE", executable)
-	if os.Getenv("AIH_CLI_PATH") == "" {
-		env = set(env, "AIH_CLI_PATH", executable)
-	}
 	current := os.Getenv("PATH")
 	if current == "" {
 		env = set(env, "PATH", runtimeDir)

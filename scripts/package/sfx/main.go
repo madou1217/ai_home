@@ -235,9 +235,6 @@ func packageEnv(dest string) []string {
 	env = setEnv(env, "AIH_PACKAGE_ROOT", dest)
 	if exe != "" {
 		env = setEnv(env, "AIH_EXECUTABLE", exe)
-		if os.Getenv("AIH_CLI_PATH") == "" {
-			env = setEnv(env, "AIH_CLI_PATH", exe)
-		}
 	}
 	current := os.Getenv("PATH")
 	if current == "" {

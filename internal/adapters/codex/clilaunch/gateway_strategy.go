@@ -11,10 +11,8 @@ const (
 	// Gateway profile 与 API-key strategy / Node 正式链共用同一个受管
 	// provider 身份。不能再产生 aih_gateway：Codex thread 元数据会持久记录
 	// provider 名，而宿主注册表只保证 aih_server 常驻。
-	gatewayClientKeyEnv           = "OPENAI_API_KEY"
-	legacyGatewayClientKeyEnv     = "AIH_GATEWAY_CLIENT_KEY"
-	legacyGatewayPinnedAccountEnv = "AIH_GATEWAY_ACCOUNT_REF"
-	gatewayPinnedAccountHead      = "X-Account-Ref"
+	gatewayClientKeyEnv      = "OPENAI_API_KEY"
+	gatewayPinnedAccountHead = "X-Account-Ref"
 )
 
 // 编译期确认 Codex Gateway Strategy 满足不读取上游凭据的应用层接口。
@@ -46,15 +44,12 @@ func (*GatewayStrategy) Build(
 	}
 	// OPENAI_API_KEY 在 Gateway 模式下承载的是 AIH Server client key，
 	// 必须先从“继承凭据清理”集合中排除再显式设置；其余上游凭据继续删除。
-	unset := make([]string, 0, len(inheritedCredentialKeys)+2)
+	unset := make([]string, 0, len(inheritedCredentialKeys))
 	for _, name := range inheritedCredentialKeys {
 		if name != gatewayClientKeyEnv {
 			unset = append(unset, name)
 		}
 	}
-	// 清理早期 Go Preview 的私有变量，避免旧 shell 环境继续暗示第二套契约。
-	unset = append(unset, legacyGatewayClientKeyEnv, legacyGatewayPinnedAccountEnv)
-
 	arguments := []string{
 		"-c", fmt.Sprintf("model_provider=%s", apiProviderKey),
 		"-c", fmt.Sprintf("model_providers.%s.name=%q", apiProviderKey, apiProviderLabel),

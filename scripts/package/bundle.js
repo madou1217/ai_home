@@ -44,10 +44,6 @@ export PATH
 AIH_PACKAGED=1
 AIH_EXECUTABLE="$DIR/aih"
 export AIH_PACKAGED AIH_EXECUTABLE
-if [ -z "\${AIH_CLI_PATH:-}" ]; then
-  AIH_CLI_PATH="$AIH_EXECUTABLE"
-  export AIH_CLI_PATH
-fi
 
 exec "$NODE" "$DIR/bin/ai-home.js" "$@"
 `;

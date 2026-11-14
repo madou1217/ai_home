@@ -391,7 +391,7 @@ mv -f "$ARTIFACT" "$INSTALL_DIR/aih"
 chmod 0755 "$INSTALL_DIR/aih"
 echo "[remote] installed $INSTALL_DIR/aih ($VERSION)"
 if [ "$RESTART" = "1" ]; then
-  export AIH_CLI_PATH="$INSTALL_DIR/aih"
+  export AIH_EXECUTABLE="$INSTALL_DIR/aih"
   export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   # 旧源码部署可能留下一个不属于本启动器的 9527 监听者；它会让 readyz 假通过。
   if command -v ss >/dev/null 2>&1; then
@@ -441,7 +441,7 @@ if (Test-Path -LiteralPath $Target) {
 Move-Item -Force -LiteralPath $Artifact -Destination $Target
 Write-Output "[remote] installed $Target ($Version)"
 if ($Restart -eq '1') {
-  $env:AIH_CLI_PATH = $Target
+  $env:AIH_EXECUTABLE = $Target
   # 旧源码部署可能留下一个不属于本启动器的 9527 监听者；它会让 readyz 假通过。
   # 只清理占用本端口的非本启动器进程，避免新包“部署成功”但实际仍跑着旧代码。
   $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1

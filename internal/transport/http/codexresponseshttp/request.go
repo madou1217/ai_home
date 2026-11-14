@@ -10,9 +10,11 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
-const MaxRequestBytes int64 = 16 * 1024 * 1024
+const MaxRequestBytes int64 = codexwire.MaxRequestBytes
 
 var errInvalidRequest = errors.New("invalid native Responses request")
 
@@ -40,6 +42,9 @@ func (request nativeRequest) passthroughSafe() bool {
 }
 
 func readRequest(request *http.Request) ([]byte, nativeRequest, error) {
+	if request.ContentLength > MaxRequestBytes {
+		return nil, nativeRequest{}, inferenceapi.ErrRequestTooLarge
+	}
 	payload, err := readBounded(request.Body, MaxRequestBytes)
 	if err != nil {
 		return nil, nativeRequest{}, err
@@ -66,7 +71,10 @@ func readRequest(request *http.Request) ([]byte, nativeRequest, error) {
 	}
 	body, err := readBounded(decoded, MaxRequestBytes)
 	var metadata nativeRequest
-	if err != nil || json.Unmarshal(body, &metadata) != nil || metadata.Model == "" {
+	if err != nil {
+		return nil, metadata, err
+	}
+	if json.Unmarshal(body, &metadata) != nil || metadata.Model == "" {
 		return payload, metadata, errInvalidRequest
 	}
 	return payload, metadata, nil
@@ -77,7 +85,10 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, errInvalidRequest
 	}
 	payload, err := io.ReadAll(io.LimitReader(reader, limit+1))
-	if err != nil || int64(len(payload)) > limit {
+	if int64(len(payload)) > limit || errors.Is(err, zstd.ErrDecoderSizeExceeded) || errors.Is(err, zstd.ErrWindowSizeExceeded) {
+		return nil, inferenceapi.ErrRequestTooLarge
+	}
+	if err != nil {
 		return nil, errInvalidRequest
 	}
 	return payload, nil

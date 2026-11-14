@@ -124,6 +124,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	payload, metadata, err := readRequest(request)
+	if errors.Is(err, inferenceapi.ErrRequestTooLarge) {
+		// Retrying or handing the same oversized history to another decoder cannot
+		// repair it. Preserve the size error instead of reporting malformed JSON.
+		writeError(response, "request_too_large")
+		return
+	}
 	if err != nil {
 		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败，
 		// 交还前置宿主重放（例如压缩体由 Node 归一化后再进来）。

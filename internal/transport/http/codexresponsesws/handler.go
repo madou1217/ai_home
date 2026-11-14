@@ -35,7 +35,7 @@ const (
 	// Path 与 HTTP Responses API 共用，是否 Upgrade 由 Host Dispatcher 决定。
 	Path = "/v1/responses"
 	// MaxMessageBytes 限制单个解压后业务消息占用。
-	MaxMessageBytes     int64 = 16 * 1024 * 1024
+	MaxMessageBytes     int64 = codexwire.MaxRequestBytes
 	firstFrameTimeout         = 30 * time.Second
 	upstreamDialTimeout       = 15 * time.Second
 	writeTimeout              = 30 * time.Second

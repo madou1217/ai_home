@@ -427,13 +427,17 @@ func TestAppsOpenPlanInstallAndSseWatch(t *testing.T) {
 		}
 		if strings.Contains(line, `"type":"connected"`) {
 			sawConnected = true
+			// connected 会带首帧快照；安装足够快时这里已经是 succeeded。
+			// 终止判定只能看 install-job 事件，否则会在首帧提前 break，
+			// 把紧随其后的 install-job 帧漏掉。
+			continue
 		}
 		if strings.Contains(line, `"type":"install-job"`) {
 			sawInstallJob = true
-		}
-		if strings.Contains(line, `"status":"succeeded"`) {
-			succeeded = true
-			break
+			if strings.Contains(line, `"status":"succeeded"`) {
+				succeeded = true
+				break
+			}
 		}
 	}
 	if !sawConnected || !sawInstallJob || !succeeded {

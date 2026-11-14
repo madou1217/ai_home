@@ -469,34 +469,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/fs/access"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/fs/media"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/fs/read"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/fs/trust"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/internal/approval-request"
         },
         {
@@ -505,13 +477,6 @@
             "*"
           ],
           "path": "/v0/webui/internal/remote-tools"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/models"
         },
         {
           "transport": "http",
@@ -1523,6 +1488,55 @@
             "POST"
           ],
           "path": "/v0/webui/scheduled-tasks/preview"
+        }
+      ]
+    },
+    {
+      "id": "webui.workspace_fs",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/fs/access"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/fs/read"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/fs/media"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/fs/trust"
+        }
+      ]
+    },
+    {
+      "id": "webui.workspace_models",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/models"
         }
       ]
     },

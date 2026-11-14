@@ -8,6 +8,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuifstrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectswriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiworkspacefsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiworkspacegitapi"
@@ -80,6 +81,11 @@ func buildWebUIProjectsFSRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		{Pattern: "POST " + webuiprojectswriteapi.OpenPath, Handler: projectsWrite},
 		{Pattern: "POST " + webuiprojectswriteapi.RemovePath, Handler: projectsWrite},
 		{Pattern: "POST " + webuiprojectswriteapi.PickPath, Handler: projectsWrite},
+		// 浏览器数据面：/v0/webui/fs/* 映射到 workspace/fs/*（模块名不同，语义同一份）。
+		{Pattern: "GET /v0/webui/fs/access", Handler: webuipublicalias.Rewrite("/v0/webui/fs", "/v1/management/webui/workspace/fs", workspaceFS)},
+		{Pattern: "GET /v0/webui/fs/read", Handler: webuipublicalias.Rewrite("/v0/webui/fs", "/v1/management/webui/workspace/fs", workspaceFS)},
+		{Pattern: "GET /v0/webui/fs/media", Handler: webuipublicalias.Rewrite("/v0/webui/fs", "/v1/management/webui/workspace/fs", workspaceFS)},
+		{Pattern: "POST /v0/webui/fs/trust", Handler: webuipublicalias.Rewrite("/v0/webui/fs", "/v1/management/webui/workspace/fs", workspaceFS)},
 		{Pattern: "GET " + webuiworkspacefsapi.AccessPath, Handler: workspaceFS},
 		{Pattern: "GET " + webuiworkspacefsapi.ReadPath, Handler: workspaceFS},
 		{Pattern: "GET " + webuiworkspacefsapi.TreePath, Handler: workspaceFS},
@@ -101,10 +107,17 @@ func buildWebUIProjectsFSRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		if err != nil {
 			return nil, fmt.Errorf("创建工作区模型目录接口失败: %w", err)
 		}
-		routes = append(routes, webuiRoute{
-			Pattern: "GET " + webuiworkspacemodelsapi.Path,
-			Handler: workspaceModels,
-		})
+		routes = append(routes,
+			webuiRoute{
+				Pattern: "GET " + webuiworkspacemodelsapi.Path,
+				Handler: workspaceModels,
+			},
+			// 浏览器数据面：/v0/webui/models 映射到 workspace/models。
+			webuiRoute{
+				Pattern: "GET /v0/webui/models",
+				Handler: webuipublicalias.Rewrite("/v0/webui/models", "/v1/management/webui/workspace/models", workspaceModels),
+			},
+		)
 	}
 
 	return routes, nil

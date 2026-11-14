@@ -204,13 +204,8 @@ func Current() Manifest {
 					httpRoute([]string{"*"}, "/v0/webui/config"),
 					httpRoute([]string{"*"}, "/v0/webui/control-plane/endpoints"),
 					httpRoute([]string{"*"}, "/v0/webui/control-plane/profiles"),
-					httpRoute([]string{"*"}, "/v0/webui/fs/access"),
-					httpRoute([]string{"*"}, "/v0/webui/fs/media"),
-					httpRoute([]string{"*"}, "/v0/webui/fs/read"),
-					httpRoute([]string{"*"}, "/v0/webui/fs/trust"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/approval-request"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/remote-tools"),
-					httpRoute([]string{"*"}, "/v0/webui/models"),
 					httpRoute([]string{"*"}, "/v0/webui/openai-models"),
 					httpRoute([]string{"*"}, "/v0/webui/openai-models/watch"),
 					httpRoute([]string{"*"}, "/v0/webui/provider-cli-upgrade"),
@@ -606,6 +601,27 @@ func Current() Manifest {
 				GoRoutes: []Route{
 					httpRoute([]string{"GET", "POST"}, "/v0/webui/scheduled-tasks"),
 					httpRoute([]string{"POST"}, "/v0/webui/scheduled-tasks/preview"),
+				},
+			},
+			{
+				// 工作区文件读/信任：浏览器 fs/* 映射到 workspace/fs/*。
+				ID:              "webui.workspace_fs",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/fs/access"),
+					httpRoute([]string{"GET"}, "/v0/webui/fs/read"),
+					httpRoute([]string{"GET"}, "/v0/webui/fs/media"),
+					httpRoute([]string{"POST"}, "/v0/webui/fs/trust"),
+				},
+			},
+			{
+				// 工作区模型目录：浏览器 /v0/webui/models 映射到 workspace/models。
+				ID:              "webui.workspace_models",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/models"),
 				},
 			},
 			{

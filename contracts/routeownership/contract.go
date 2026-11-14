@@ -204,7 +204,6 @@ func Current() Manifest {
 				MigrationState:  "node_owned",
 				NodeRoutes: []Route{
 					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
-					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
 				},
 			},
 			{
@@ -223,6 +222,15 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/chat/attachments"),
+				},
+			},
+			{
+				// 聊天产物下载：浏览器入口由 Go 直接应答。
+				ID:              "webui.chat_artifacts",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/chat/artifacts/{artifactId}"),
 				},
 			},
 			{

@@ -118,6 +118,11 @@ func BuildWebUIChatRuntimeCollectionRoutes(handler *webuichatapi.Handler) ([]web
 			Pattern: "GET " + webuichatapi.ArtifactCollectionPath + "{artifactId}",
 			Handler: http.HandlerFunc(handler.ServeArtifact),
 		},
+		{
+			// 浏览器产物下载入口：处理器已识别 /v0 前缀，直接挂载即可。
+			Pattern: "GET /v0/webui/chat/artifacts/{artifactId}",
+			Handler: http.HandlerFunc(handler.ServeArtifact),
+		},
 	}, nil
 }
 

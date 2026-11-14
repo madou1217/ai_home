@@ -13,8 +13,9 @@
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const APP_STATE = '/Users/model/.ai_home/app-state.db';
-const GO_DB = process.env.AIH_GO_DB || '/Users/model/.ai_home/aih.db';
+const AIH_HOME = process.env.AIH_HOME_DIR || '/Users/model/.ai_home';
+const APP_STATE = path.join(AIH_HOME, 'app-state.db');
+const GO_DB = path.join(AIH_HOME, 'aih.db');
 // 走 Node 的中转路由：Go 的 management key 是 Node 启动时生成的，脚本拿不到。
 const ENDPOINT = process.env.AIH_IMPORT_ENDPOINT
   || 'http://127.0.0.1:9527/v0/webui/usage/backfill';

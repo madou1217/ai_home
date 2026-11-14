@@ -73,8 +73,8 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.provider || !options.ref) throw new Error('需要 --provider 与 --ref');
   const config = readConfig();
-  // Go 的 management key 是 Node 每次启动生成的（不落盘）；本地对拍时用
-  // --key 或 AIH_GO_MANAGEMENT_KEY 传入，与 Node 传给 Go 的那份一致。
+  // Go 的 management key 是 Node 每次启动生成的（不落盘）；本地对拍默认
+  // 从 config:server 读取。
   const goRef = (config.links[options.ref] && config.links[options.ref].goRef) || options.ref;
   const nodeResponse = await fetch(
     NODE_BASE + '/v0/webui/accounts/' + encodeURIComponent(options.provider) + '/' + encodeURIComponent(options.ref)

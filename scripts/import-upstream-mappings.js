@@ -15,7 +15,7 @@
  *
  * 环境变量：
  *   AIH_HOME_DIR                  app-state 所在目录（默认 ~/.ai_home）
- *   AIH_MANAGEMENT_KEY            WebUI Management Key（默认从 app-state 的 config:server 读）
+ *   AIH_SERVER_MANAGEMENT_KEY            WebUI Management Key（默认从 app-state 的 config:server 读）
  *   AIH_UPSTREAM_MAPPING_ENDPOINT Node 服务地址（默认 http://127.0.0.1:9527）
  */
 
@@ -53,7 +53,7 @@ function resolveAiHomeDir() {
 }
 
 function resolveManagementKey(aiHomeDir) {
-  const fromEnv = String(process.env.AIH_MANAGEMENT_KEY || process.env.AIH_IMPORT_KEY || '').trim();
+  const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || process.env.AIH_IMPORT_KEY || '').trim();
   if (fromEnv) return fromEnv;
   // 与 backfill 脚本一致：WebUI 的 key 在 app-state 的 config:server 里。
   const config = readJsonValue(fs, aiHomeDir, 'config:server');
@@ -219,7 +219,7 @@ async function main() {
 
   if (options.verify) {
     const key = resolveManagementKey(aiHomeDir);
-    if (!key) throw new Error('缺少 Management Key（app-state 的 config:server 或 AIH_MANAGEMENT_KEY）');
+    if (!key) throw new Error('缺少 Management Key（app-state 的 config:server 或 AIH_SERVER_MANAGEMENT_KEY）');
     return runVerify(groups, key);
   }
   if (options.dryRun) {
@@ -231,7 +231,7 @@ async function main() {
     return 0;
   }
   const key = resolveManagementKey(aiHomeDir);
-  if (!key) throw new Error('缺少 Management Key（app-state 的 config:server 或 AIH_MANAGEMENT_KEY）');
+  if (!key) throw new Error('缺少 Management Key（app-state 的 config:server 或 AIH_SERVER_MANAGEMENT_KEY）');
   return runImport(groups, key);
 }
 

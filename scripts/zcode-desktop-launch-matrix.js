@@ -10,7 +10,7 @@
 //
 // 用法：
 //   HOME=/Users/model node scripts/zcode-desktop-launch-matrix.js [--json]
-//   AIH_MANAGEMENT_KEY=... node scripts/...   # 跳过 CLI 读取
+//   AIH_SERVER_MANAGEMENT_KEY=... node scripts/...   # 跳过 CLI 读取
 //
 // 注意：会真的启动/关闭桌面窗口，每台机器同一时间只应有一个实例在跑。
 
@@ -21,12 +21,12 @@ const os = require('node:os');
 const nodeCrypto = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const BASE_URL = process.env.AIH_SERVER_URL || 'http://127.0.0.1:9527';
+const BASE_URL = process.env.AIH_SERVER_BASE_URL || 'http://127.0.0.1:9527';
 const OPEN_TIMEOUT_MS = Number(process.env.AIH_OPEN_TIMEOUT_MS || 45_000);
 const SETTLE_MS = Number(process.env.AIH_OPEN_SETTLE_MS || 12_000);
 
 function readManagementKey() {
-  const fromEnv = String(process.env.AIH_MANAGEMENT_KEY || '').trim();
+  const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
   if (fromEnv) return fromEnv;
   const raw = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'ai-home.js'), 'server', 'config', '--show-secrets', '--json'], {
     encoding: 'utf8',

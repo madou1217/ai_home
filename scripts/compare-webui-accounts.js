@@ -31,7 +31,7 @@ function parseArgs(argv) {
   const options = {
     nodeDb: path.join(home, '.ai_home', 'app-state.db'),
     baseUrl: 'http://127.0.0.1:9527',
-    goBaseUrl: String(process.env.AIH_GO_CORE_BASE_URL || '').trim(),
+    goBaseUrl: String(process.env.AIH_SERVER_BASE_URL || '').trim(),
     nodePayload: '',
     goPayload: '',
     json: false,
@@ -62,7 +62,7 @@ function usage() {
   return [
     '用法: node scripts/compare-webui-accounts.js [选项]',
     '',
-    '  --go-base-url <url>   Go Core 地址（默认读 AIH_GO_CORE_BASE_URL）',
+    '  --go-base-url <url>   Go Core 地址（默认读 AIH_SERVER_BASE_URL）',
     '  --go-payload <path>   直接用已保存的 Go 响应 JSON（离线对拍）',
     '  --node-payload <path> 直接用已保存的 Node 响应 JSON（默认实时抓取）',
     '  --node-db <path>      Node 库，读 management key 与账号链接（默认 ~/.ai_home/app-state.db）',
@@ -134,7 +134,7 @@ async function readGoRows(options) {
     };
   }
   if (!options.goBaseUrl) {
-    throw new Error('缺少 --go-base-url（或 AIH_GO_CORE_BASE_URL）；Go Core 的端口在启动日志 "Go Core ready at" 一行');
+    throw new Error('缺少 --go-base-url（或 AIH_SERVER_BASE_URL）；Go Core 的端口在启动日志 "Go Core ready at" 一行');
   }
   const managementKey = readManagementKey(options.nodeDb);
   if (!managementKey) throw new Error('缺少 management key，无法调用 Go 管理接口');

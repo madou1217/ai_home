@@ -468,6 +468,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号编辑：浏览器入口由 Go 直接应答（ref 先经链接表翻译）。
+				ID:              "webui.account_update",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/update"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

@@ -485,6 +485,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建账号编辑接口失败: %w", err)
 	}
+	// 浏览器编辑入口的 Node→Go ref 翻译：链接表缺失时按恒等（与 Node 同规则）。
+	updateRefTable, _ := accountrefmap.Load(context.Background(), dependencies.AIHomeDir)
+	updateRefResolver := accountrefmap.NewResolver(true, updateRefTable)
+	publicAccountUpdate := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		provider := request.PathValue("provider")
+		goRef := updateRefResolver.GoRef(request.PathValue("accountRef"))
+		cloned := request.Clone(request.Context())
+		cloned.URL.Path = "/v1/management/webui/accounts/" + provider + "/" + goRef + "/update"
+		accountUpdate.ServeHTTP(response, cloned)
+	})
 	modelsSettings, err := webuimodelsettingsapi.NewHandler(webuimodelsettingsapi.Dependencies{
 		Authorizer: authorizer, Store: webuimodelsettingsapi.DatabaseStore{DatabasePath: databasePath},
 	})
@@ -849,6 +859,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET /v0/webui/account-jobs/{jobId}", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", webuiaccountjobsapi.Path, accountJobs)},
 
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
+		// 浏览器数据面：编辑入口（ref 先翻译成 Go ref）。
+		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/update", Handler: publicAccountUpdate},
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},

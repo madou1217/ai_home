@@ -36,15 +36,14 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountjobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdetectapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountegressapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountjobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
@@ -71,6 +70,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
@@ -144,6 +144,8 @@ type webuiRouteDependencies struct {
 	AccountHostGrant webuiaccountstatusapi.HostGrantRevoker
 	// NodeBaseURL 是 Node 宿主回环地址：账号活动的 provider handler 仍由 Node 执行。
 	NodeBaseURL string
+	// SelfBaseURL 是本进程回环地址：内部回调（审批桥）直接回 Go。
+	SelfBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
 	ManagementKey func() string
 	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。
@@ -894,7 +896,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST /v0/webui/account-jobs/{jobId}/callback", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
 		{Pattern: "POST /v0/webui/account-jobs/{jobId}/install", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
 		{Pattern: "POST /v0/webui/account-jobs/{jobId}/local-import", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
-
 
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
 		// 浏览器数据面：编辑入口（ref 先翻译成 Go ref）。

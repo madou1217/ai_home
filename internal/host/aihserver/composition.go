@@ -344,6 +344,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		Store:                      store,
 		AIHomeDir:                  options.AIHomeDir,
 		NodeBaseURL:                options.NodeBaseURL,
+		SelfBaseURL:                options.SelfBaseURL,
 		ModelDiscovery:             modelDiscovery,
 		Runtime:                    accountRuntime,
 		OutcomeRecorder:            outcomeRecorder,
@@ -421,7 +422,9 @@ type handlerDependencies struct {
 	// AIHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
 	AIHomeDir string
 	// NodeBaseURL 是 Node 回环地址；插件实例启停回调 Node 内部协议时需要。
-	NodeBaseURL    string
+	NodeBaseURL string
+	// SelfBaseURL 是本进程回环地址；内部回调不该绕道 Node。
+	SelfBaseURL    string
 	ModelDiscovery *accountapp.ModelDiscovery
 	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
 	Runtime         serverAccountRuntime
@@ -469,6 +472,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	store := dependencies.Store
 	aiHomeDir := dependencies.AIHomeDir
 	nodeBaseURL := dependencies.NodeBaseURL
+	selfBaseURL := dependencies.SelfBaseURL
 	modelDiscovery := dependencies.ModelDiscovery
 	accountRuntime := dependencies.Runtime
 	attemptUsage := dependencies.AttemptUsage
@@ -1835,6 +1839,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		AccountHostGrant: deletionHost,
 		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
 		NodeBaseURL:        nodeBaseURL,
+		SelfBaseURL:        selfBaseURL,
 		ManagementKey:      managementKey,
 		TerminalHandler:    webUITerminalHandler,
 		SubAggregator:      subAggSvc,

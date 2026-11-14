@@ -950,7 +950,6 @@ func NewNativeSessionDriver(opts NativeDriverOptions) (*NativeSessionDriver, err
 			aiHomeDir:           opts.AIHomeDir,
 			hostHomeDir:         opts.HostHomeDir,
 			approvalCallbackURL: opts.ApprovalCallbackURL,
-			nodeExecutablePath:  opts.NodeExecutablePath,
 		}
 	}
 	spawners := opts.ApprovalSpawners
@@ -1785,7 +1784,6 @@ type execNativeTurnRunner struct {
 	aiHomeDir           string
 	hostHomeDir         string
 	approvalCallbackURL string
-	nodeExecutablePath  string
 }
 
 func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) (*NativeRunHandle, error) {
@@ -1846,7 +1844,6 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 		updated, launchCleanup = configureClaudeApprovalArgs(
 			r.aiHomeDir,
 			r.approvalCallbackURL,
-			r.nodeExecutablePath,
 			req.RunID,
 			req.ApprovalMode,
 			args,
@@ -2171,7 +2168,6 @@ func splitCompleteUTF8(data []byte) (string, []byte) {
 func configureClaudeApprovalArgs(
 	aiHomeDir string,
 	approvalCallbackURL string,
-	nodeBin string,
 	runID string,
 	approvalMode string,
 	args []string,
@@ -2189,17 +2185,11 @@ func configureClaudeApprovalArgs(
 	if cbURL == "" {
 		return out, func() {}
 	}
-	toolPath := resolveClaudePermissionToolPath()
-	if toolPath == "" {
+	// 审批工具就是宿主二进制自己的子命令：Claude 由它启动 MCP server，
+	// 不再依赖 Node 脚本或 PATH 上的 node。
+	toolExe, err := os.Executable()
+	if err != nil || strings.TrimSpace(toolExe) == "" {
 		return out, func() {}
-	}
-	nodeExec := strings.TrimSpace(nodeBin)
-	if nodeExec == "" {
-		if resolved, err := exec.LookPath("node"); err == nil {
-			nodeExec = resolved
-		} else {
-			nodeExec = "node"
-		}
 	}
 	rootDir := strings.TrimSpace(aiHomeDir)
 	if rootDir == "" {
@@ -2220,8 +2210,8 @@ func configureClaudeApprovalArgs(
 	mcpCfg, _ := json.Marshal(map[string]any{
 		"mcpServers": map[string]any{
 			"aih": map[string]any{
-				"command": nodeExec,
-				"args":    []string{toolPath},
+				"command": toolExe,
+				"args":    []string{"__mcp-approve"},
 				"env": map[string]string{
 					"AIH_LAUNCH_CONTEXT": ctxFile,
 				},
@@ -2230,21 +2220,4 @@ func configureClaudeApprovalArgs(
 	})
 	out = append(out, "--permission-prompt-tool", "mcp__aih__approve", "--mcp-config", string(mcpCfg))
 	return out, func() { _ = os.Remove(ctxFile) }
-}
-
-func resolveClaudePermissionToolPath() string {
-	candidates := []string{
-		filepath.Join("lib", "server", "claude-permission-mcp-tool.js"),
-	}
-	if root := strings.TrimSpace(os.Getenv("AIH_PACKAGE_ROOT")); root != "" {
-		candidates = append([]string{filepath.Join(root, "lib", "server", "claude-permission-mcp-tool.js")}, candidates...)
-	}
-	for _, c := range candidates {
-		if abs, err := filepath.Abs(c); err == nil {
-			if info, serr := os.Stat(abs); serr == nil && !info.IsDir() {
-				return abs
-			}
-		}
-	}
-	return ""
 }

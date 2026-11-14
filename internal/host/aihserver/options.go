@@ -80,6 +80,9 @@ type Options struct {
 	// NodeBaseURL 是 Node 宿主的回环地址（由 Go Core 监督器注入）。
 	// 插件实例启停的 prepare/activate/discard 要回调 Node；为空时只少挂这两条路由。
 	NodeBaseURL string
+	// SelfBaseURL 是本进程的回环地址（http://host:port），供不需要经过宿主的内部回调使用。
+	// 例如 Claude 审批桥：provider 进程直接回调 Go，Node 不在链路上。
+	SelfBaseURL string
 	// FrontDoorBaseURL 是 Go 拥有公开端口时 Node 宿主的私有回环地址。
 	// 非空表示本进程就是公开入口：Go 自己应答推理与管理路由，未注册的路径
 	// （WebUI 数据面 /v0/webui/*、插件运行时回调）整体转交给 Node。

@@ -54,7 +54,6 @@ type ServiceOptions struct {
 	ChatStreamer            ChatTurnStreamer
 	CodexPool               *CodexClientPool
 	ApprovalCallbackURL     string
-	NodeExecutablePath      string
 	CodexExecutablePath     string
 	CodexRPCClient          CodexRPCClient
 	CodexDriverFactory      func(ctx context.Context, opts CodexDriverOptions) (*DriverEntry, error)
@@ -1175,7 +1174,6 @@ func (r *defaultDriverRegistry) resolveNativeEntry(sess *Session, rt RuntimeDesc
 		AIHomeDir:               s.opts.AIHomeDir,
 		HostHomeDir:             s.opts.HostHomeDir,
 		ApprovalCallbackURL:     s.opts.ApprovalCallbackURL,
-		NodeExecutablePath:      s.opts.NodeExecutablePath,
 		Runner:                  s.opts.NativeRunner,
 		ResolveFallbackAccounts: s.opts.ResolveFallbackAccounts,
 		ReadModels:              s.opts.ReadProviderModels,

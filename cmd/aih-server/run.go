@@ -67,6 +67,7 @@ func run(
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
 		NodeBaseURL:                config.nodeBaseURL,
+		SelfBaseURL:                config.selfBaseURL(),
 		FrontDoorBaseURL:           config.frontDoorBaseURL(),
 		ManagementKey:              func() string { return managementKey },
 		ClientKey:                  func() string { return clientKey },

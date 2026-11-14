@@ -86,6 +86,15 @@ func (config commandConfig) listenAddress() string {
 	return net.JoinHostPort(config.host, strconv.Itoa(config.port))
 }
 
+// selfBaseURL 返回本进程的回环地址，供内部回调（Claude 审批桥）使用。
+// 端口为 0（系统分配）时无法在监听前得知，返回空让调用方回落。
+func (config commandConfig) selfBaseURL() string {
+	if config.port <= 0 || config.port > 65535 {
+		return ""
+	}
+	return "http://" + net.JoinHostPort(config.host, strconv.Itoa(config.port))
+}
+
 // loadCommandConfig 从正式环境变量和显式 CLI 参数构建启动配置。
 func loadCommandConfig(
 	args []string,

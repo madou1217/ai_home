@@ -24,7 +24,6 @@ type WebUIChatRuntimeBuildOptions struct {
 	ChatStreamer        chatruntime.ChatTurnStreamer
 	ArtifactReader      chatruntime.ArtifactReader
 	ApprovalCallbackURL string
-	NodeExecutablePath  string
 }
 
 // BuildWebUIChatRuntimeService 构造并初始化供 WebUI 管理入口复用的 Canonical Chat Runtime Service。
@@ -56,7 +55,6 @@ func BuildWebUIChatRuntimeService(
 		WorkspaceCheckpoints: checkpoints,
 		ArtifactReader:       opts.ArtifactReader,
 		ApprovalCallbackURL:  strings.TrimSpace(opts.ApprovalCallbackURL),
-		NodeExecutablePath:   strings.TrimSpace(opts.NodeExecutablePath),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("初始化 Canonical Chat Runtime 失败: %w", err)
@@ -78,8 +76,12 @@ func AttachWebUIChatRuntime(
 	if dependencies.Store != nil {
 		accountPool = dependencies.Store
 	}
+	// 审批桥优先指回本进程：Go 自己就有这条回环 ingress（窄入口，只放行 POST + 回环对端），
+	// 绕道 Node 只会多一跳，还会让审批链在 Node 缺席时不可用。
 	approvalCallbackURL := ""
-	if trimmedNodeURL := strings.TrimRight(strings.TrimSpace(dependencies.NodeBaseURL), "/"); trimmedNodeURL != "" {
+	if trimmedSelfURL := strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/"); trimmedSelfURL != "" {
+		approvalCallbackURL = trimmedSelfURL + "/v0/webui/internal/approval-request"
+	} else if trimmedNodeURL := strings.TrimRight(strings.TrimSpace(dependencies.NodeBaseURL), "/"); trimmedNodeURL != "" {
 		approvalCallbackURL = trimmedNodeURL + "/v0/webui/internal/approval-request"
 	}
 	svc, err := BuildWebUIChatRuntimeService(ctx, WebUIChatRuntimeBuildOptions{

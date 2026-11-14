@@ -212,6 +212,22 @@ func Current() Manifest {
 				},
 			},
 			{
+				// AI 翻译页：浏览器数据面已由 Go 的同一处理器接住（前缀重写）。
+				ID:              "webui.translation_studio",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/translation/settings"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/settings"),
+					httpRoute([]string{"GET"}, "/v0/webui/translation/providers"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/providers"),
+					httpRoute([]string{"GET"}, "/v0/webui/translation/languages"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/detect"),
+					httpRoute([]string{"GET"}, "/v0/webui/translation/models"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/stream"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

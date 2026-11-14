@@ -2,7 +2,8 @@ package webuiimagestudioapi
 
 import (
 	"net/http"
-	"strings"
+
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // PublicPath 是浏览器使用的 WebUI 数据面前缀。
@@ -21,12 +22,5 @@ func NewPublicAlias(handler http.Handler) http.Handler {
 			writeStudioError(w, http.StatusServiceUnavailable, "image_studio_unavailable", "image Studio service is unavailable")
 		})
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		request := r.Clone(r.Context())
-		request.URL.Path = Path + strings.TrimPrefix(r.URL.Path, PublicPath)
-		if r.URL.RawPath != "" {
-			request.URL.RawPath = Path + strings.TrimPrefix(r.URL.RawPath, PublicPath)
-		}
-		handler.ServeHTTP(w, request)
-	})
+	return webuipublicalias.Rewrite(PublicPath, Path, handler)
 }

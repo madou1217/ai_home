@@ -470,6 +470,69 @@
       ]
     },
     {
+      "id": "webui.translation_studio",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/translation/settings"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/translation/settings"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/translation/providers"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/translation/providers"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/translation/languages"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/translation/detect"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/translation/models"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/translation/stream"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

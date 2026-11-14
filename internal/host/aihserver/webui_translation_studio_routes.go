@@ -239,6 +239,9 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		// 浏览器数据面：同一处理器同时挂 /v0/webui/studio/image/*，
 		// 迁移后不再经 Node 做前缀改写与转发。
 		{Pattern: webuiimagestudioapi.PublicPath + "/", Handler: webuiimagestudioapi.NewPublicAlias(studioHandler)},
+		// AI 翻译页同样直接接住浏览器前缀，不再经 Node 转发。
+		{Pattern: webuitranslationapi.PublicPath, Handler: webuitranslationapi.NewPublicAlias(translationHandler)},
+		{Pattern: webuitranslationapi.PublicPath + "/", Handler: webuitranslationapi.NewPublicAlias(translationHandler)},
 	}, nil
 }
 

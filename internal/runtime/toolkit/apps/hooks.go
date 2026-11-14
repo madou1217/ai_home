@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,12 +13,13 @@ import (
 	"unicode"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providersessionhook"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
 const (
-	managedHookMarker         = "--aih-provider-session-hook"
+	managedHookMarker         = providersessionhook.Marker
 	agyManagedHookName        = "aih-session-sync"
 	openCodePluginMarker      = "aih-session-hook"
 	defaultHookTimeoutSeconds = 10
@@ -415,48 +415,14 @@ func resolveRepoFile(opts Options, relParts ...string) string {
 	return rel
 }
 
-func resolveSenderCommand(profile resolvedHookProfile, event, receiverBase, senderScript string, opts Options) string {
-	p := resolvePlatform(opts)
-	u := receiverBase
-	sep := "?"
-	if strings.Contains(u, "?") {
-		sep = "&"
-	}
-	fullURL := u + sep + "provider=" + url.QueryEscape(profile.provider) + "&event=" + url.QueryEscape(event)
-	if p == platformWindows {
-		nodeCmd := "node"
-		if strings.TrimSpace(opts.NodeExecPath) != "" && !strings.ContainsAny(opts.NodeExecPath, " \t") {
-			nodeCmd = opts.NodeExecPath
-		}
-		return strings.Join([]string{
-			toWindowsHookToken(nodeCmd),
-			toWindowsHookToken(senderScript),
-			managedHookMarker,
-			"--provider", toWindowsHookToken(profile.provider),
-			"--event", toWindowsHookToken(event),
-			"--url", toWindowsHookToken(receiverBase),
-		}, " ")
-	}
-	nodeCmd := "/usr/bin/env node"
-	if strings.TrimSpace(opts.NodeExecPath) != "" {
-		nodeCmd = strings.TrimSpace(opts.NodeExecPath)
-	}
-	return strings.Join([]string{
-		nodeCmd,
-		shellQuote(senderScript),
-		managedHookMarker,
-		"--provider", shellQuote(profile.provider),
-		"--event", shellQuote(event),
-		"--url", shellQuote(fullURL),
-	}, " ")
-}
-
-func toWindowsHookToken(val string) string {
-	s := strings.ReplaceAll(strings.TrimSpace(val), "\\", "/")
-	if !strings.ContainsAny(s, " \t") {
-		return s
-	}
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+func resolveSenderCommand(profile resolvedHookProfile, event, receiverBase string, opts Options) string {
+	return providersessionhook.BuildCommand(providersessionhook.CommandOptions{
+		Provider:       profile.provider,
+		EventName:      event,
+		ReceiverURL:    receiverBase,
+		SenderExecPath: opts.SenderExecPath,
+		Platform:       resolvePlatform(opts),
+	})
 }
 
 func hookHandlerTimeout(profile resolvedHookProfile) int {
@@ -490,7 +456,6 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 		}
 	}
 
-	senderScript := nonEmpty(strings.TrimSpace(opts.SenderScriptPath), resolveRepoFile(opts, "scripts", "aih-provider-session-hook-sender.js"))
 	beforeBytes, _ := os.ReadFile(targetPath)
 	beforeObj := readJSONObjectSafe(targetPath)
 
@@ -501,7 +466,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 		for _, ev := range profile.events {
 			handler := map[string]any{
 				"type":    "command",
-				"command": resolveSenderCommand(profile, ev, receiverBase, senderScript, opts),
+				"command": resolveSenderCommand(profile, ev, receiverBase, opts),
 				"timeout": hookHandlerTimeout(profile),
 			}
 			if ev == "PreToolUse" || ev == "PostToolUse" {
@@ -521,7 +486,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 		for _, ev := range profile.events {
 			handler := map[string]any{
 				"type":    "command",
-				"command": resolveSenderCommand(profile, ev, receiverBase, senderScript, opts),
+				"command": resolveSenderCommand(profile, ev, receiverBase, opts),
 				"timeout": hookHandlerTimeout(profile),
 			}
 			group := map[string]any{"hooks": []any{handler}}

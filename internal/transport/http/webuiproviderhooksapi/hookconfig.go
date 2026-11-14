@@ -11,22 +11,22 @@ package webuiproviderhooksapi
 // hook 与其他配置键原样保留。文件写回使用有序 JSON（见 orderedjson.go）。
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providersessionhook"
 )
 
 const (
 	// managedHookMarker 是 AIH 托管 handler 的唯一识别标记。
-	managedHookMarker = "--aih-provider-session-hook"
+	managedHookMarker = providersessionhook.Marker
 	// defaultHookTimeoutSeconds 与 Node 的 DEFAULT_HOOK_TIMEOUT_SECONDS 一致。
 	defaultHookTimeoutSeconds = 10
 	// defaultReceiverURL 与 Node 的 DEFAULT_RECEIVER_URL 一致。
-	defaultReceiverURL = "http://127.0.0.1:9527/v0/webui/session-events/provider-hook"
+	defaultReceiverURL = providersessionhook.DefaultReceiverURL
 	// agyManagedHookName 与 Node 的 AGY_MANAGED_HOOK_NAME 一致。
 	agyManagedHookName = "aih-session-sync"
 )
@@ -102,7 +102,7 @@ func hookTargetPath(profile hookProfile, hostHomeDir string) string {
 type installContext struct {
 	hostHomeDir string
 	receiverURL string
-	// senderExecPath 覆盖发送器可执行文件路径；空时用当前进程自身。
+	// senderExecPath 覆盖发送器路径；空时定位当前、同目录或 PATH 上的 aih-server。
 	senderExecPath string
 	codexVersion   string
 	platform       string
@@ -139,87 +139,13 @@ func hookTimeout(profile hookProfile) int {
 // 不再需要 Node 或 PATH 上的 node。标记与参数顺序保持与 Node 版本一致，
 // 旧的托管 handler 仍可被 isManagedCommand 识别并替换。
 func buildProviderSessionHookSenderCommand(provider string, event string, context installContext) string {
-	platform := context.resolvedPlatform()
-	receiverURL := buildProviderHookReceiverURL(context.receiverURL, provider, event)
-	senderExec := strings.TrimSpace(context.senderExecPath)
-	if senderExec == "" {
-		if resolved, err := os.Executable(); err == nil {
-			senderExec = strings.TrimSpace(resolved)
-		}
-	}
-	if senderExec == "" {
-		senderExec = "aih-server"
-	}
-	if platform == "win32" {
-		return strings.Join([]string{
-			toWindowsHookToken(senderExec),
-			"__provider-hook",
-			managedHookMarker,
-			"--provider",
-			toWindowsHookToken(provider),
-			"--event",
-			toWindowsHookToken(event),
-			"--url",
-			toWindowsHookToken(stripURLQuery(receiverURL)),
-		}, " ")
-	}
-	return strings.Join([]string{
-		quoteShellArg(senderExec),
-		"__provider-hook",
-		managedHookMarker,
-		"--provider",
-		quoteShellArg(provider),
-		"--event",
-		quoteShellArg(event),
-		"--url",
-		quoteShellArg(receiverURL),
-	}, " ")
-}
-
-// buildProviderHookReceiverURL 把 provider/event 写进接收地址。
-// 参数顺序保持 Node 的 URLSearchParams 写法（provider 先于 event）。
-func buildProviderHookReceiverURL(base string, provider string, event string) string {
-	base = strings.TrimSpace(base)
-	if base == "" {
-		base = defaultReceiverURL
-	}
-	separator := "?"
-	if strings.Contains(base, "?") {
-		separator = "&"
-	}
-	parts := make([]string, 0, 2)
-	if strings.TrimSpace(provider) != "" {
-		parts = append(parts, "provider="+url.QueryEscape(provider))
-	}
-	if strings.TrimSpace(event) != "" {
-		parts = append(parts, "event="+url.QueryEscape(event))
-	}
-	if len(parts) == 0 {
-		return base
-	}
-	return base + separator + strings.Join(parts, "&")
-}
-
-// quoteShellArg 与 Node 的 quoteShellArg 一致：单引号包裹并把内部单引号转义。
-func quoteShellArg(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
-// toWindowsHookToken 与 Node 的 toWindowsHookToken 一致：无空格的 token 保持裸文本，
-// 反斜杠统一正斜杠；含空格时才加引号。
-func toWindowsHookToken(value string) string {
-	text := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
-	if !strings.ContainsAny(text, " \t") {
-		return text
-	}
-	return "\"" + strings.ReplaceAll(text, "\"", "\"\"") + "\""
-}
-
-func stripURLQuery(value string) string {
-	if index := strings.Index(value, "?"); index >= 0 {
-		return value[:index]
-	}
-	return value
+	return providersessionhook.BuildCommand(providersessionhook.CommandOptions{
+		Provider:       provider,
+		EventName:      event,
+		ReceiverURL:    context.receiverURL,
+		SenderExecPath: context.senderExecPath,
+		Platform:       context.resolvedPlatform(),
+	})
 }
 
 // commandReferencesProvider 与 Node 的 commandReferencesProvider 同口径：

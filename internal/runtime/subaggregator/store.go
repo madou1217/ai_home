@@ -46,14 +46,12 @@ type Store struct {
 	mu        sync.Mutex
 }
 
-// NewStore 创建指向指定 aiHomeDir 的存储实例（为空时回退 AIH_HOME / ~/.ai_home）。
+// NewStore 创建指向指定 aiHomeDir 的存储实例（为空时回退 AIH_HOME_DIR / ~/.ai_home）。
 func NewStore(aiHomeDir string) *Store {
 	dir := strings.TrimSpace(aiHomeDir)
 	if dir == "" {
-		if env := strings.TrimSpace(os.Getenv("AIH_HOME")); env != "" {
+		if env := strings.TrimSpace(os.Getenv("AIH_HOME_DIR")); env != "" {
 			dir = env
-		} else if env2 := strings.TrimSpace(os.Getenv("AI_HOME")); env2 != "" {
-			dir = env2
 		} else {
 			home, _ := os.UserHomeDir()
 			dir = filepath.Join(home, ".ai_home")

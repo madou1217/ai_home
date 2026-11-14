@@ -371,8 +371,238 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/*",
-          "role": "WebUI API, session, terminal and PTY"
+          "path": "/v0/webui/account-upstream-error-rules"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/accounts/activity/params"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/accounts/export"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/accounts/local-import"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/accounts/plugin-login/start"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/accounts/provider-auth-sources"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/accounts/zcode/url-callback"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/chat-sessions"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/chat/artifacts"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/chat/attachments"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/chat/sessions"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/config"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/control-plane/endpoints"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/control-plane/profiles"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/egress-evidence"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/egress-pool"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/egress-pool-groups"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/egress-pools"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/egress-upstreams"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/fs/access"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/fs/media"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/fs/read"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/fs/trust"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/geo-resources"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/internal/approval-request"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/internal/remote-tools"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/models"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/openai-models"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/openai-models/watch"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/peer/messages"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/provider-cli-upgrade"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/provider-hooks"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/scheduled-tasks"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/scheduled-tasks/preview"
         },
         {
           "transport": "http",

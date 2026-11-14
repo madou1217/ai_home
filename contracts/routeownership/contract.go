@@ -186,9 +186,11 @@ func Current() Manifest {
 			{
 				// Node 宿主能力（不是「还没迁的 WebUI」）：插件登录宿主、浏览器回调捕获、
 				// MCP stdio 桥与 CLI 升级都要求 Node 起子进程/监听本机回调，Go 不替代。
+				// 2026-11-14 用户确认豁免：这些能力要求 Node 起子进程或监听本机回调，
+				// Go 无法取代，正式保留在 Node，不计入 toGO 待迁项。
 				ID:              "node.host_runtime_surfaces",
 				ProductionOwner: "node",
-				MigrationState:  "node_owned",
+				MigrationState:  "node_exempt",
 				NodeRoutes: []Route{
 					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/accounts/plugin-login/start", Role: "插件登录宿主"},
 					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/accounts/zcode/url-callback", Role: "浏览器回调捕获"},

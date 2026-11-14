@@ -364,7 +364,7 @@
     {
       "id": "node.host_runtime_surfaces",
       "production_owner": "node",
-      "migration_state": "node_owned",
+      "migration_state": "node_exempt",
       "node_routes": [
         {
           "transport": "http",

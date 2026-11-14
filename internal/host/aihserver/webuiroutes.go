@@ -695,6 +695,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建新增账号作业接口失败: %w", err)
 	}
+	staticAddAccount, staticErr := newStaticAccountHandler(dependencies)
+	if staticErr != nil {
+		return nil, fmt.Errorf("创建静态账号入库处理器失败: %w", staticErr)
+	}
 
 	// 认证来源链：installable 由 Go 按 Provider 合同的安装声明判定；alreadyImported 需要
 	// 两侧身份指纹，端口在这里接到账号存储与官方 artifact 读取器上（见同目录
@@ -931,6 +935,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		// 浏览器重新认证入口（ref 先翻译成 Go ref）。
 		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/reauth", Handler: publicAccountReauth},
 		{Pattern: "POST " + webuiaccountaddapi.Path, Handler: accountAdd},
+		// 浏览器新增账号入口：按 authMode 分流到 OAuth 作业或静态入库。
+		{Pattern: "POST /v0/webui/accounts/add", Handler: newPublicAddAccountHandler(accountAdd, webuiaccountaddapi.Path, staticAddAccount)},
 		{Pattern: "GET " + webuiaccountaddapi.Path + webuiaccountaddapi.JobsSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CallbackSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CancelSuffix, Handler: accountAdd},

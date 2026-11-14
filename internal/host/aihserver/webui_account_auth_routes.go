@@ -34,3 +34,22 @@ func buildWebUIAccountAuthRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "POST " + webuiaccountauthapi.LocalImportPath, Handler: http.HandlerFunc(handler.HandleLocalImport)},
 	}, nil
 }
+
+// newStaticAccountHandler 返回静态凭据入库处理器（供 add 分流复用）。
+func newStaticAccountHandler(dependencies webuiRouteDependencies) (http.Handler, error) {
+	if dependencies.Authorizer == nil {
+		return nil, nil
+	}
+	handler, err := webuiaccountauthapi.NewHandler(webuiaccountauthapi.Dependencies{
+		Authorizer:  dependencies.Authorizer,
+		Catalog:     dependencies.Catalog,
+		Store:       dependencies.Store,
+		AuthJobs:    dependencies.AuthJobs,
+		HostHomeDir: dependencies.HostHomeDir,
+		NodeBaseURL: dependencies.NodeBaseURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return http.HandlerFunc(handler.HandleStaticAccount), nil
+}

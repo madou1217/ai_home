@@ -516,6 +516,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 新增账号：浏览器入口由 Go 分流（OAuth 作业 / 静态入库）。
+				ID:              "webui.account_add",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/add"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

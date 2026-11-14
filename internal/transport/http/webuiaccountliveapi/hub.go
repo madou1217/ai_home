@@ -3,6 +3,8 @@ package webuiaccountliveapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -847,4 +849,41 @@ func (hub *Hub) tokenUsageFor(ctx context.Context, accountRef string) (*tokenUsa
 	hub.tokenCache[accountRef] = tokenUsageEntry{value: value, fetchedAt: now}
 	hub.tokenMu.Unlock()
 	return value, true
+}
+
+// PublishPath 让宿主把 Node 仍然产生的事件（token-consumed / account-activity）
+// 注入同一条实时流：迁移 watch 到 Go 时，这两类帧必须继续出现在浏览器端。
+//
+//	POST /v1/management/webui/accounts/watch/publish
+const PublishPath = Path + "/publish"
+
+// 保留类型：快照与账号行只能由 Go 从数据库推导，外部注入会让两侧版本与内容分叉。
+var reservedPublishTypes = map[string]struct{}{
+	"snapshot": {},
+	"account":  {},
+}
+
+// ErrInvalidPublish 表示外部事件体不合法（缺 type 或类型保留）。
+var ErrInvalidPublish = errors.New("账号实时事件体无效")
+
+// Publish 把外部事件广播给所有订阅者。
+//
+// 事件体必须自带 type；revision 由 hub 统一补，保证前端按同一版本号排序。
+// 广播永不阻塞：慢订阅者积压满队列就断开，浏览器会自行重连。
+func (hub *Hub) Publish(event map[string]any) error {
+	if hub == nil || event == nil {
+		return ErrInvalidPublish
+	}
+	eventType := strings.TrimSpace(fmt.Sprint(event["type"]))
+	if eventType == "" {
+		return ErrInvalidPublish
+	}
+	if _, reserved := reservedPublishTypes[eventType]; reserved {
+		return ErrInvalidPublish
+	}
+	hub.mu.Lock()
+	event["revision"] = hub.revision
+	hub.mu.Unlock()
+	hub.broadcastFrame(event)
+	return nil
 }

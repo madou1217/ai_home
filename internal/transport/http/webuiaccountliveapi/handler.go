@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -192,6 +193,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	switch request.URL.Path {
 	case SnapshotPath:
 		handler.serveSnapshotRequest(response, request)
+	case PublishPath:
+		handler.servePublishRequest(response, request)
 	case LivePath:
 		handler.ServeLiveHTTP(response, request)
 	default:
@@ -451,4 +454,31 @@ func numberFromAny(value any) int64 {
 		}
 	}
 	return 0
+}
+
+// publishBodyLimit 与账号写接口同量级：事件体只是 token 计数或活动摘要。
+const publishBodyLimit = 1 << 20
+
+// servePublishRequest 接收宿主注入的实时事件（token-consumed / account-activity）。
+func (handler *Handler) servePublishRequest(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "只支持 POST 发布实时事件")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, publishBodyLimit))
+	if err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_event_body", "事件体读取失败")
+		return
+	}
+	var event map[string]any
+	if err := json.Unmarshal(body, &event); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_event_body", "事件体必须是 JSON 对象")
+		return
+	}
+	if err := handler.hub.Publish(event); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_event", err.Error())
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true})
 }

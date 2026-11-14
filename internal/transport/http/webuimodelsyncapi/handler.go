@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
@@ -107,6 +109,15 @@ type SnapshotReader interface {
 // AccountRefMapper 读取可选的 Node/Go 账号引用映射表。
 type AccountRefMapper interface {
 	LoadTable(ctx context.Context) (accountrefmap.Table, error)
+}
+
+// JobHistoryStore 持久化模型目录刷新的终态结果（可选）。
+//
+// 只记录 succeeded/failed；队列中的 queued/running 不落盘。Recent 供启动回填
+// 最近作业，让 watch 快照在重启后仍能看到上次刷新结果。
+type JobHistoryStore interface {
+	Record(ctx context.Context, job modelcatalogjobhistory.Job) error
+	Recent(ctx context.Context, limit int) ([]modelcatalogjobhistory.Job, error)
 }
 
 // DatabaseSettingsStore 基于 appstate 数据库实现 SettingsStore。
@@ -193,6 +204,8 @@ type Dependencies struct {
 	Modalities     *modelsdev.Index
 	AccountRows    webuiaccountsapi.Source
 	ModelRefresher accountapp.AccountModelRefresher
+	// History 是终态刷新历史的落盘端口；未接线时按 AIHomeDir 自动构造。
+	History        JobHistoryStore
 	Now            func() time.Time
 	RefreshTimeout time.Duration
 	WatchKeepalive time.Duration
@@ -209,6 +222,7 @@ type Handler struct {
 	modalities     *modelsdev.Index
 	accountRows    webuiaccountsapi.Source
 	modelRefresher accountapp.AccountModelRefresher
+	history        JobHistoryStore
 	now            func() time.Time
 	refreshTimeout time.Duration
 	watchKeepalive time.Duration
@@ -244,6 +258,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	settings := dependencies.Settings
 	snapshot := dependencies.Snapshot
 	refMapper := dependencies.RefMapper
+	history := dependencies.History
 	if strings.TrimSpace(dependencies.AIHomeDir) != "" {
 		if dbPath, err := appstate.DatabasePath(dependencies.AIHomeDir); err == nil {
 			if settings == nil {
@@ -251,6 +266,9 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 			}
 			if snapshot == nil {
 				snapshot = SnapshotFile{DatabasePath: dbPath}
+			}
+			if history == nil {
+				history = modelcatalogjobhistory.NewStore(dbPath)
 			}
 		}
 		if refMapper == nil {
@@ -278,7 +296,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if watchKeepalive <= 0 {
 		watchKeepalive = defaultWatchKeepalive
 	}
-	return &Handler{
+	handler := &Handler{
 		authorizer:     dependencies.Authorizer,
 		store:          dependencies.Store,
 		settings:       settings,
@@ -288,12 +306,57 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		modalities:     dependencies.Modalities,
 		accountRows:    dependencies.AccountRows,
 		modelRefresher: dependencies.ModelRefresher,
+		history:        history,
 		now:            now,
 		refreshTimeout: refreshTimeout,
 		watchKeepalive: watchKeepalive,
 		jobs:           make(map[string]*catalogJobState),
 		watchers:       make(map[chan ModelCatalogJob]struct{}),
-	}, nil
+	}
+	handler.hydrateJobHistory()
+	return handler, nil
+}
+
+// defaultHistoryTimeout 限制历史读写，避免 app-state.db 异常时拖住启动或作业收尾。
+const defaultHistoryTimeout = 5 * time.Second
+
+// hydrateJobHistory 把最近终态作业回填到内存队列，供 watch 快照展示。
+//
+// 只回填 id/状态/时间/错误，不回填 catalog：目录真值由 GET catalog 独立读取，
+// 旧的 catalog 快照可能已经过期。回填发生在注册 watcher 之前，不会广播。
+func (handler *Handler) hydrateJobHistory() {
+	if handler == nil || handler.history == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultHistoryTimeout)
+	defer cancel()
+	records, err := handler.history.Recent(ctx, maxModelCatalogJobs)
+	if err != nil || len(records) == 0 {
+		return
+	}
+	handler.jobsMu.Lock()
+	defer handler.jobsMu.Unlock()
+	// Recent 按完成时间倒序；内存队列按时间正序追加。
+	for index := len(records) - 1; index >= 0; index-- {
+		record := records[index]
+		if _, exists := handler.jobs[record.ID]; exists {
+			continue
+		}
+		job := ModelCatalogJob{
+			ID:         record.ID,
+			Status:     record.Status,
+			StartedAt:  record.StartedAt,
+			FinishedAt: record.FinishedAt,
+			Error:      record.Error,
+		}
+		scopeKey := "global"
+		if record.Scope != "" {
+			job.AccountScope = &AccountScope{AccountRef: record.Scope}
+			scopeKey = record.Scope
+		}
+		handler.jobs[record.ID] = &catalogJobState{job: job, scopeKey: scopeKey}
+		handler.jobOrder = append(handler.jobOrder, record.ID)
+	}
 }
 
 // ServeHTTP 按路径与方法分派模型管理接口请求。
@@ -835,6 +898,39 @@ func (handler *Handler) runRefreshJob(jobID string, scopedRef accountcore.Accoun
 
 	if hasState {
 		handler.broadcastJob(final)
+		handler.persistJobHistory(final)
+	}
+}
+
+// persistJobHistory 把终态作业写入 app-state.db。
+//
+// 落盘失败只记录日志：刷新本身已经完成，历史是旁路事实，不能让写库错误
+// 把作业状态改成 failed。queued/running 永远不会走到这里。
+func (handler *Handler) persistJobHistory(job ModelCatalogJob) {
+	if handler == nil || handler.history == nil || job.ID == "" {
+		return
+	}
+	if job.Status != "succeeded" && job.Status != "failed" {
+		return
+	}
+	record := modelcatalogjobhistory.Job{
+		ID:         job.ID,
+		Status:     job.Status,
+		StartedAt:  job.StartedAt,
+		FinishedAt: job.FinishedAt,
+		Error:      job.Error,
+	}
+	if job.AccountScope != nil {
+		record.Scope = job.AccountScope.AccountRef
+	}
+	if job.Catalog != nil {
+		record.ModelCount = len(job.Catalog.Data)
+		record.Sources = job.Catalog.Sources
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultHistoryTimeout)
+	defer cancel()
+	if err := handler.history.Record(ctx, record); err != nil {
+		log.Printf("模型刷新历史落盘失败: %v", err)
 	}
 }
 

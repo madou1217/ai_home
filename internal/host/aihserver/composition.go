@@ -348,6 +348,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		AIHomeDir:                  options.AIHomeDir,
 		NodeBaseURL:                options.NodeBaseURL,
 		SelfBaseURL:                options.SelfBaseURL,
+		DesktopManagedByHost:       options.DesktopManagedByHost,
 		ModelDiscovery:             modelDiscovery,
 		Runtime:                    accountRuntime,
 		OutcomeRecorder:            outcomeRecorder,
@@ -425,8 +426,9 @@ type handlerDependencies struct {
 	// NodeBaseURL 是 Node 回环地址；插件实例启停回调 Node 内部协议时需要。
 	NodeBaseURL string
 	// SelfBaseURL 是本进程回环地址；内部回调不该绕道 Node。
-	SelfBaseURL    string
-	ModelDiscovery *accountapp.ModelDiscovery
+	SelfBaseURL          string
+	DesktopManagedByHost bool
+	ModelDiscovery       *accountapp.ModelDiscovery
 	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
 	Runtime         serverAccountRuntime
 	OutcomeRecorder *accountoutcomes.Recorder
@@ -1951,12 +1953,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiRoutes = append(webuiRoutes, chatRunsRoutes...)
 		chatPrewarmCloser = startChatRuntimePrewarm(ctx, chatRuntimeService)
 	}
-	desktopTranslationService, desktopRoutes, desktopErr := newDesktopTranslation(ctx, webuiDeps, chatRuntimeService)
-	if desktopErr != nil {
-		return serverHandlers{}, nil, fmt.Errorf("装配桌面翻译宿主失败: %w", desktopErr)
+	var desktopTranslationService *desktoptranslation.Service
+	if !dependencies.DesktopManagedByHost {
+		var desktopRoutes []webuiRoute
+		var desktopErr error
+		desktopTranslationService, desktopRoutes, desktopErr = newDesktopTranslation(ctx, webuiDeps, chatRuntimeService)
+		if desktopErr != nil {
+			return serverHandlers{}, nil, fmt.Errorf("装配桌面翻译宿主失败: %w", desktopErr)
+		}
+		desktopChanged.attach(desktopTranslationService)
+		webuiRoutes = append(webuiRoutes, desktopRoutes...)
 	}
-	desktopChanged.attach(desktopTranslationService)
-	webuiRoutes = append(webuiRoutes, desktopRoutes...)
 	if webSocketHTTPClient == nil {
 		webSocketHTTPClient = &http.Client{
 			CheckRedirect: rejectOAuthRedirect,
@@ -2195,7 +2202,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 	}, func() []io.Closer {
 		closers := []io.Closer{
-			desktopTranslationService,
 			modelSweepWorker,
 			initialModelRecoveryWorker,
 			webSocketHandler,
@@ -2205,6 +2211,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			modelRefresh,
 			terminalService,
 			webUITerminalHandler,
+		}
+		if desktopTranslationService != nil {
+			closers = append([]io.Closer{desktopTranslationService}, closers...)
 		}
 		if hooksRuntime != nil {
 			closers = append(closers, hooksRuntime)

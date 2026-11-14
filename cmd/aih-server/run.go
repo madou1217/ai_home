@@ -90,10 +90,12 @@ func run(
 	remoteControlProxy := config.codexHooks.remoteControlProxy
 	// 出站语义统一在进程入口装一次：环境代理不可达时改直连（显式代理仍失败关闭）。
 	aihserver.InstallOutboundFallback()
+	desktopOwner, _ := runtime.lookupEnv("AIH_DESKTOP_TRANSLATION_OWNER")
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
 		NodeBaseURL:                nodeBaseURL,
 		SelfBaseURL:                config.selfBaseURL(),
+		DesktopManagedByHost:       desktopOwner == "node" && !config.superviseNode,
 		FrontDoorBaseURL:           frontDoorBaseURL,
 		ManagementKey:              func() string { return managementKey },
 		ClientKey:                  func() string { return clientKey },

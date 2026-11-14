@@ -10,6 +10,8 @@ const (
 	ansiYellow  = "\x1b[33m"
 	ansiMagenta = "\x1b[35m"
 	ansiBlue    = "\x1b[34m"
+	ansiGreen   = "\x1b[32m"
+	ansiRed     = "\x1b[31m"
 	ansiGray    = "\x1b[90m"
 )
 

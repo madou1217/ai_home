@@ -4,155 +4,43 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
-	"strconv"
 	"strings"
-
-	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 )
 
-// runProviderList 实现 aih <provider> ls：账号列表与额度来自 Go Management API。
-//
-// 只做只读投影：不读 Node 账号索引、不打开本地 SQLite。
-func runProviderList(
-	ctx context.Context,
-	providerID string,
-	arguments []string,
-	runtime commandRuntime,
-) error {
-	filterID := int64(0)
-	for _, argument := range arguments {
-		if isRootHelp(argument) {
-			writeProviderListUsage(runtime.stdout, providerID)
-			return nil
-		}
-		text := strings.TrimSpace(argument)
-		if text == "" {
-			continue
-		}
-		value, err := strconv.ParseInt(text, 10, 64)
-		if err != nil || value <= 0 || filterID != 0 {
-			writeProviderListUsage(runtime.stderr, providerID)
-			return fmt.Errorf("%w: 用法 aih %s ls [id]", errInvalidCommand, providerID)
-		}
-		filterID = value
-	}
-	client, err := newAccountManagementClient(runtime)
+// runProviderList 实现 aih <provider> ls [id]。
+func runProviderList(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	parsed, err := parseLSArguments(arguments)
 	if err != nil {
 		return err
 	}
-	states, _ := client.ListAccountUIStates(ctx)
-	displayNames := make(map[string]string, len(states))
-	for _, state := range states {
-		displayNames[state.AccountRef] = state.DisplayName
+	if parsed.Help {
+		writeProviderListUsage(runtime.stdout, providerID)
+		return nil
 	}
-	accounts := make([]managementapi.AccountView, 0)
-	afterRef := ""
-	for page := 0; page < 10; page++ {
-		result, listErr := client.ListAccounts(ctx, managementapi.ListOptions{
-			AfterRef: afterRef,
-			Limit:    200,
-		})
-		if listErr != nil {
-			return fmt.Errorf("读取 Server 账号列表失败: %w", listErr)
+	if len(parsed.Scope) > 0 {
+		matched, matchErr := matchLSProviders(parsed.Scope, lsProviderNames())
+		if matchErr != nil {
+			return matchErr
 		}
-		for _, account := range result.Accounts {
-			if account.ProviderID != providerID {
-				continue
+		found := false
+		for _, provider := range matched {
+			if provider == providerID {
+				found = true
+				break
 			}
-			if filterID != 0 && account.CLIAccountID.Int64() != filterID {
-				continue
-			}
-			accounts = append(accounts, account)
 		}
-		if !result.HasMore || result.NextAfterRef == "" {
-			break
-		}
-		afterRef = result.NextAfterRef
-	}
-	sort.SliceStable(accounts, func(left, right int) bool {
-		return accounts[left].CLIAccountID.Int64() < accounts[right].CLIAccountID.Int64()
-	})
-	writeProviderList(runtime.stdout, providerID, accounts, displayNames, client, ctx)
-	return nil
-}
-
-func writeProviderList(
-	output io.Writer,
-	providerID string,
-	accounts []managementapi.AccountView,
-	displayNames map[string]string,
-	client *managementapi.Client,
-	ctx context.Context,
-) {
-	_, _ = fmt.Fprintln(output)
-	palette := paletteFor(output)
-	_, _ = fmt.Fprintln(output, palette.cyan("📦 AI Home Accounts Overview"))
-	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintf(output, "%s\n", palette.yellow("▶ "+providerID))
-	if len(accounts) == 0 {
-		_, _ = fmt.Fprintln(output, "  No profiles found.")
-		return
-	}
-	for _, account := range accounts {
-		writeAccountListRow(output, account, displayNames, client, ctx, palette)
-	}
-}
-
-// writeAccountListRow 是单个账号的固定行格式（单 Provider 与全局列表共用）。
-func writeAccountListRow(
-	output io.Writer,
-	account managementapi.AccountView,
-	displayNames map[string]string,
-	client *managementapi.Client,
-	ctx context.Context,
-	palette terminalPalette,
-) {
-	plan := ""
-	remaining := ""
-	if usage, err := client.GetUsage(ctx, account.AccountRef); err == nil {
-		plan = titleCase(usage.Snapshot().PlanType())
-		if min := usage.Snapshot().MinRemaining(); min.Known {
-			remaining = fmt.Sprintf("%.1f%%", float64(min.BasisPoints)/100)
+		if !found {
+			return fmt.Errorf("%w: --scope %s 与 %s 不重叠", errInvalidCommand, strings.Join(parsed.Scope, " "), providerID)
 		}
 	}
-	identity := strings.TrimSpace(account.DisplayName)
-	if identity == "" {
-		identity = strings.TrimSpace(displayNames[account.AccountRef.String()])
+	if len(parsed.Positional) > 0 && parsed.FilterID == 0 {
+		return fmt.Errorf("%w: 账号 ID 必须是正整数", errInvalidCommand)
 	}
-	if identity == "" {
-		identity = strings.TrimSpace(account.Email)
-	}
-	if identity == "" {
-		identity = "未命名"
-	}
-	prefix := ""
-	if plan != "" {
-		prefix = palette.blue("["+plan+"]") + " "
-	}
-	status := ""
-	if !account.Enabled {
-		status = " " + palette.gray("[停用]")
-	}
-	usage := palette.cyan("[Remaining: " + remaining + "]")
-	if remaining == "" {
-		usage = palette.gray("[Remaining: Unknown]")
-	}
-	_, _ = fmt.Fprintf(
-		output,
-		"  - %sAccount ID: %s %s%s %s\n",
-		prefix,
-		palette.cyan(strconv.FormatInt(account.CLIAccountID.Int64(), 10)),
-		palette.magenta("("+identity+")"),
-		status,
-		usage,
-	)
+	return runLSList(ctx, runtime, lsOptions{Providers: []string{providerID}, FilterID: parsed.FilterID, ProviderExplicit: true})
 }
 
 func writeProviderListUsage(output io.Writer, providerID string) {
-	_, _ = fmt.Fprintf(output, "用法:\n  aih %s ls\n", providerID)
-	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintln(output, "  账号与额度来自 Go Management API；仅列出该 Provider 的账号。")
+	writeLSHelp(output, paletteFor(output), "aih "+providerID+" ls")
 }
 
 func titleCase(value string) string {

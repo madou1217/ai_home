@@ -146,7 +146,8 @@ function tryPersistentSessionFastPath() {
 function tryRunGoGlobalLs() {
   const args = process.argv.slice(2);
   if (args.length < 1) return false;
-  if (String(args[0] || '').trim().toLowerCase() !== 'ls') return false;
+  const command = String(args[0] || '').trim().toLowerCase();
+  if (command !== 'ls' && command !== 'list') return false;
   const rest = args.slice(1);
   if (rest.some((token) => token === '--help' || token === '-h' || token === 'help')) return false;
   let ids = 0;
@@ -154,8 +155,12 @@ function tryRunGoGlobalLs() {
   let expectingScope = false;
   for (const token of rest) {
     if (token === '--scope') {
-      if (expectingScope) return false;
       expectingScope = true;
+      continue;
+    }
+    if (token.startsWith('--scope=')) {
+      if (expectingScope || token.length <= '--scope='.length) return false;
+      scopeCount += 1;
       continue;
     }
     if (expectingScope) {
@@ -200,17 +205,13 @@ function tryRunGoGlobalLs() {
   } catch (_error) {
     config = null;
   }
-  const managementKey = String(config && config.managementKey || '').trim();
-  if (!managementKey) return false;
   const env = {
     ...process.env,
-    AIH_HOME_DIR: aiHomeDir,
-    AIH_SERVER_BASE_URL: 'http://127.0.0.1:19550',
-    AIH_SERVER_ALT_BASE_URL: goPublicManagementBaseURL(config),
-    AIH_SERVER_MANAGEMENT_KEY: managementKey
+    AIH_HOME_DIR: aiHomeDir
   };
   if (hostHome) env.AIH_HOST_HOME = hostHome;
-  const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
+  const forwarded = command === 'list' ? ['ls', ...rest] : args;
+  const result = require('node:child_process').spawnSync(binary, forwarded, { stdio: 'inherit', env });
   process.exitCode = Number.isInteger(result.status) ? result.status : 1;
   return true;
 }
@@ -626,7 +627,8 @@ function tryRunGoProviderCommonCommand() {
     }
   }
   if (!aiHomeDir) return false;
-  const needsServer = isList || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault || isUnsetDefault;
+  // 列表读本机 aih.db，不需要运行中的 Server；其余动作仍要管理面。
+  const needsServer = isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault || isUnsetDefault;
   let managementKey = '';
   let config = null;
   if (needsServer) {
@@ -1055,7 +1057,8 @@ function tryRunGoFamilyServerCommand() {
   // 终端图标安装是本地命令：图标从 Go 二进制内嵌资产物化，不访问 Server。
   const isTerminalIcon = (command === 'terminal-icon' || command === 'terminal-icons') &&
     args.length >= 2;
-  const needsServer = isList || isUsage || isSetDefault || isUnsetDefault || isAutoSwitch ||
+  // 列表读本机 aih.db，不需要运行中的 Server。
+  const needsServer = isUsage || isSetDefault || isUnsetDefault || isAutoSwitch ||
     isDelete || isDeleteAll || isDetect;
   if (!needsServer && !isHome && !isHomeAfterId && !isVersion && !isHelp && !isTerminalIcon) return false;
   const fs = require('node:fs');

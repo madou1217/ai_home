@@ -14,6 +14,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/runtime/nodesupervisor"
+	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -135,6 +136,12 @@ func run(
 	if err != nil {
 		return fmt.Errorf("监听 Go Server 地址失败: %w", err)
 	}
+	releaseIdentity, err := serveridentity.Publish(config.aiHomeDir, listener.Addr())
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("记录 Go Server 进程身份失败: %w", err)
+	}
+	defer releaseIdentity()
 	_, _ = fmt.Fprintf(
 		runtime.stdout,
 		"aih-server listening on http://%s\n",

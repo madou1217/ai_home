@@ -8,6 +8,7 @@ import (
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountrefreshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountrefreshusageapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
@@ -110,7 +111,25 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 		return nil, fmt.Errorf("创建额度刷新异步接口失败: %w", err)
 	}
 
+	refTable, _ := accountrefmap.Load(context.Background(), dependencies.AIHomeDir)
+	refResolver := accountrefmap.NewResolver(true, refTable)
+	withGoRef := func(target http.Handler, suffix string) http.Handler {
+		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			goRef := refResolver.GoRef(request.PathValue("accountRef"))
+			cloned := request.Clone(request.Context())
+			cloned.URL.Path = "/v1/management/webui/accounts/" + request.PathValue("provider") + "/" + goRef + suffix
+			target.ServeHTTP(response, cloned)
+		})
+	}
 	return []webuiRoute{
+		{
+			Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/refresh",
+			Handler: withGoRef(refreshAsync, "/refresh"),
+		},
+		{
+			Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/refresh-usage",
+			Handler: withGoRef(usageAsync, "/refresh-usage"),
+		},
 		{
 			Pattern: "POST " + webuiaccountrefreshapi.Path + webuiaccountrefreshapi.RefreshSuffix,
 			Handler: refreshAsync,

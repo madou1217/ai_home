@@ -1,8 +1,10 @@
 package codexhooks
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -27,13 +29,13 @@ type CLIHookPaths struct {
 
 // CLIHookState 表示持久化的 cli-hook-state.json（v1）。
 type CLIHookState struct {
-	Version                 int    `json:"version"`
-	Enabled                 bool   `json:"enabled"`
-	UpdatedAt               string `json:"updatedAt,omitempty"`
-	TargetBinaryPath        string `json:"targetBinaryPath,omitempty"`
+	Version                  int    `json:"version"`
+	Enabled                  bool   `json:"enabled"`
+	UpdatedAt                string `json:"updatedAt,omitempty"`
+	TargetBinaryPath         string `json:"targetBinaryPath,omitempty"`
 	ResolvedTargetBinaryPath string `json:"resolvedTargetBinaryPath,omitempty"`
-	UpstreamBinaryPath      string `json:"upstreamBinaryPath,omitempty"`
-	Reason                  string `json:"reason,omitempty"`
+	UpstreamBinaryPath       string `json:"upstreamBinaryPath,omitempty"`
+	Reason                   string `json:"reason,omitempty"`
 }
 
 // CLIHookResult 描述 CLI hook 安装、巡检、停用及别名修复的结果。
@@ -173,17 +175,110 @@ func (svc *CLIHookService) candidateExecutableNames() []string {
 	return []string{"codex"}
 }
 
-func (svc *CLIHookService) defaultResolveCodexBinary(_ bool) string {
+func (svc *CLIHookService) isCandidateExecutable(filePath string) bool {
+	if strings.TrimSpace(filePath) == "" {
+		return false
+	}
+	info, err := os.Stat(filePath)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	if svc.platform == "windows" {
+		return true
+	}
+	return info.Mode()&0o111 != 0
+}
+
+func (svc *CLIHookService) userCandidateDirs() []string {
+	if svc.platform == "windows" {
+		return nil
+	}
+	home := strings.TrimSpace(svc.hostHomeDir)
+	if home == "" {
+		home = strings.TrimSpace(os.Getenv("AIH_HOST_HOME"))
+	}
+	if home == "" {
+		home = strings.TrimSpace(os.Getenv("HOME"))
+	}
+	if home == "" {
+		home = strings.TrimSpace(os.Getenv("USERPROFILE"))
+	}
+	var dirs []string
+	if home != "" {
+		dirs = append(dirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+			filepath.Join(home, ".volta", "bin"),
+			filepath.Join(home, ".local", "share", "pnpm"),
+		)
+	}
+	// 仅在未显式注入 PathEnv（生产守护进程极简 PATH 场景）时兜底标准包管理器目录，保持单测隔离。
+	if strings.TrimSpace(svc.pathEnv) == "" {
+		dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
+	}
+	return dirs
+}
+
+func (svc *CLIHookService) probeCodexBinary() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if svc.platform == "windows" {
+		out, err := exec.CommandContext(ctx, "where.exe", "codex").Output()
+		if err != nil {
+			return ""
+		}
+		var firstValid string
+		for _, line := range strings.Split(string(out), "\n") {
+			cand := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+			if cand == "" || !isRegularFile(cand) {
+				continue
+			}
+			if firstValid == "" {
+				firstValid = cand
+			}
+			ext := strings.ToLower(filepath.Ext(cand))
+			if ext == ".exe" || ext == ".cmd" || ext == ".bat" || ext == ".com" {
+				return cand
+			}
+		}
+		return firstValid
+	}
+	out, err := exec.CommandContext(ctx, "sh", "-lc", `command -v "codex"`).Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		cand := strings.TrimSpace(line)
+		if cand != "" && svc.isCandidateExecutable(cand) {
+			return cand
+		}
+	}
+	return ""
+}
+
+func (svc *CLIHookService) defaultResolveCodexBinary(loginShellFallback bool) string {
 	names := svc.candidateExecutableNames()
 	for _, dir := range svc.effectivePathEntries() {
 		for _, name := range names {
 			candidate := filepath.Join(dir, name)
-			if isRegularFile(candidate) {
+			if svc.isCandidateExecutable(candidate) {
 				return candidate
 			}
 		}
 	}
-	return ""
+	for _, dir := range svc.userCandidateDirs() {
+		for _, name := range names {
+			candidate := filepath.Join(dir, name)
+			if svc.isCandidateExecutable(candidate) {
+				return candidate
+			}
+		}
+	}
+	if !loginShellFallback || strings.TrimSpace(svc.pathEnv) != "" {
+		return ""
+	}
+	return svc.probeCodexBinary()
 }
 
 func (svc *CLIHookService) resolveTempRoot() string {

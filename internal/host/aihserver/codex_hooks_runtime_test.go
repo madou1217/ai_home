@@ -1,11 +1,14 @@
 package aihserver
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -240,5 +243,336 @@ func TestCodexHooksRuntimeLifecycleAndProxies(t *testing.T) {
 	mu.Unlock()
 	if logCount == 0 {
 		t.Fatal("期望运行时产生启动日志")
+	}
+}
+
+func TestBuildCodexHooksDaemonOptions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("默认值、receiver URL 派生与 EntryFilePath 解析 HelperScript", func(t *testing.T) {
+		t.Parallel()
+		repoDir := t.TempDir()
+		entryPath := filepath.Join(repoDir, "bin", "ai-home.js")
+		helperPath := filepath.Join(repoDir, "lib", "server", "codex-app-server-stdio-proxy.js")
+		if err := os.MkdirAll(filepath.Dir(entryPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(entryPath, []byte("// entry"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(helperPath, []byte("// helper"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		var logBuf bytes.Buffer
+		logger := log.New(&logBuf, "", 0)
+		bus := sessionevents.NewBus(sessionevents.BusOptions{AIHomeDir: filepath.Join(repoDir, "ai_home")})
+
+		opts := buildCodexHooksDaemonOptions(
+			Options{
+				CodexHooks: CodexHooksOptions{
+					EnableCLIHook:     true,
+					EnableDesktopHook: true,
+					NodeExecPath:      "/custom/bin/node",
+					EntryFilePath:     entryPath,
+				},
+			},
+			filepath.Join(repoDir, "ai_home"),
+			"http://127.0.0.1:9527/",
+			bus,
+			logger,
+		)
+
+		if !opts.EnableCLIHook || !opts.EnableDesktopHook || !opts.EnableVscodeHook || !opts.EnableNotificationBridge {
+			t.Fatalf("预期 Desktop 联动开启 VSCode 且默认开启 NotificationBridge: %+v", opts)
+		}
+		if opts.CLISelfHealInterval != 15*time.Second || opts.DesktopSelfHealInterval != 15*time.Second {
+			t.Fatalf("默认自愈间隔应为 15s, 实际 cli=%v desktop=%v", opts.CLISelfHealInterval, opts.DesktopSelfHealInterval)
+		}
+		wantReceiver := "http://127.0.0.1:9527/v0/webui/session-events/provider-hook"
+		if opts.ProviderHookReceiverURL != wantReceiver {
+			t.Fatalf("ProviderHookReceiverURL = %q, want %q", opts.ProviderHookReceiverURL, wantReceiver)
+		}
+		if opts.NodeExecPath != "/custom/bin/node" || opts.HelperScriptPath != helperPath {
+			t.Fatalf("NodeExecPath=%q HelperScriptPath=%q, want helper=%q", opts.NodeExecPath, opts.HelperScriptPath, helperPath)
+		}
+		if opts.TraceConfig == nil || !opts.TraceConfig.TraceRemoteControl || !opts.TraceConfig.RemoteControlProxy || opts.TraceConfig.TraceResponses {
+			t.Fatalf("默认 TraceConfig 不符预期: %+v", opts.TraceConfig)
+		}
+		opts.LogInfo("info-msg")
+		opts.LogWarn("warn-msg")
+		if !strings.Contains(logBuf.String(), "info-msg") || !strings.Contains(logBuf.String(), "warn-msg") {
+			t.Fatalf("LogInfo/LogWarn 未写入 logger: %q", logBuf.String())
+		}
+	})
+
+	t.Run("显式覆盖 Trace、VSCode 独立开关、间隔钳位与 ReceiverURL", func(t *testing.T) {
+		t.Parallel()
+		disableFalse := false
+		opts := buildCodexHooksDaemonOptions(
+			Options{
+				AIHomeDir:   "/tmp/ai_home",
+				NodeBaseURL: "http://127.0.0.1:9527",
+				CodexHooks: CodexHooksOptions{
+					EnableDesktopHook:            true,
+					EnableVscodeHook:             &disableFalse,
+					CLISelfHealInterval:          200 * time.Millisecond,
+					DesktopSelfHealInterval:      2 * time.Second,
+					ProviderHookReceiverURL:      "http://127.0.0.1:19999/custom-hook",
+					TraceFile:                    "/tmp/custom-trace.jsonl",
+					TraceResponses:               true,
+					TraceRemoteControl:           &disableFalse,
+					RemoteControlProxy:           &disableFalse,
+					RestartAppServerOnHookChange: true,
+					HelperScriptPath:             "/opt/helper.js",
+				},
+			},
+			"",
+			"",
+			nil,
+			nil,
+		)
+
+		if !opts.EnableDesktopHook || opts.EnableVscodeHook {
+			t.Fatalf("显式关闭 VSCode 开关应生效: %+v", opts)
+		}
+		if opts.CLISelfHealInterval != minCodexHooksSelfHealInterval || opts.DesktopSelfHealInterval != 2*time.Second {
+			t.Fatalf("间隔钳位/透传错误: cli=%v desktop=%v", opts.CLISelfHealInterval, opts.DesktopSelfHealInterval)
+		}
+		if opts.ProviderHookReceiverURL != "http://127.0.0.1:19999/custom-hook" {
+			t.Fatalf("显式 ReceiverURL 被覆盖: %q", opts.ProviderHookReceiverURL)
+		}
+		if opts.TraceConfig == nil || opts.TraceConfig.TraceFile != "/tmp/custom-trace.jsonl" ||
+			!opts.TraceConfig.TraceResponses || opts.TraceConfig.TraceRemoteControl || opts.TraceConfig.RemoteControlProxy {
+			t.Fatalf("显式 TraceConfig 不符预期: %+v", opts.TraceConfig)
+		}
+		if !opts.RestartAppServerOnHookChange || opts.AIHomeDir != "/tmp/ai_home" {
+			t.Fatalf("RestartAppServerOnHookChange 或 AIHomeDir fallback 异常: %+v", opts)
+		}
+	})
+}
+
+func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
+	if goruntime.GOOS != "darwin" {
+		t.Skip("Desktop Hook bundle 激活测试仅针对 macOS 平台")
+	}
+	t.Parallel()
+
+	root := t.TempDir()
+	aiHome := filepath.Join(root, "ai_home")
+	hostHome := filepath.Join(root, "host_home")
+	helper := filepath.Join(root, "helper.js")
+	if err := os.WriteFile(helper, []byte("// helper v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bundlePath := filepath.Join(hostHome, "Applications", "Codex.app")
+	targetBin := filepath.Join(bundlePath, "Contents", "Resources", "codex")
+	if err := os.MkdirAll(filepath.Dir(targetBin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetBin, []byte("#!/bin/sh\necho upstream-desktop-codex\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	layouts := []codexhooks.DesktopLayout{
+		{
+			ID:            "test-in-place",
+			Platform:      "darwin",
+			BinarySubpath: filepath.Join("Contents", "Resources", "codex"),
+		},
+	}
+	allowSys := false
+	desktopMain := filepath.Join(bundlePath, "Contents", "MacOS", "Codex")
+	fakeProcs := []codexhooks.ProcessInfo{
+		{PID: 101, ParentPID: 1, Command: desktopMain},
+		{PID: 202, ParentPID: 101, Command: targetBin + " app-server --listen stdio://"},
+	}
+
+	var killMu sync.Mutex
+	var killedPIDs []int
+	recordKill := func(pid int) error {
+		killMu.Lock()
+		killedPIDs = append(killedPIDs, pid)
+		killMu.Unlock()
+		return nil
+	}
+	getKills := func() []int {
+		killMu.Lock()
+		defer killMu.Unlock()
+		out := make([]int, len(killedPIDs))
+		copy(out, killedPIDs)
+		return out
+	}
+	clearKills := func() {
+		killMu.Lock()
+		killedPIDs = nil
+		killMu.Unlock()
+	}
+
+	var logMu sync.Mutex
+	var infoLogs []string
+	appendInfo := func(msg string) {
+		logMu.Lock()
+		infoLogs = append(infoLogs, msg)
+		logMu.Unlock()
+	}
+
+	// 1) 首次激活：写入 trace 默认配置并因 RestartRequired=true 重启运行中 app-server。
+	rt1, err := startCodexHooksDaemons(codexHooksDaemonOptions{
+		AIHomeDir:                    aiHome,
+		HostHomeDir:                  hostHome,
+		EnableDesktopHook:            true,
+		EnableVscodeHook:             false,
+		AllowSystemApplications:      &allowSys,
+		DesktopRuntimeLayouts:        layouts,
+		NodeExecPath:                 "/usr/local/bin/node",
+		HelperScriptPath:             helper,
+		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
+		DesktopSelfHealInterval:      10 * time.Second,
+		RestartAppServerOnHookChange: false,
+		TraceConfig: &codexhooks.DesktopTraceConfig{
+			TraceRemoteControl: true,
+			RemoteControlProxy: true,
+		},
+		ReadBundleMetadata: func(string) codexhooks.BundleMetadata {
+			return codexhooks.BundleMetadata{AppVersion: "1.0.0", AppBuildVersion: "10"}
+		},
+		ReadCodexVersion: func(string) string { return "0.99.0" },
+		ListProcesses:    func() ([]codexhooks.ProcessInfo, error) { return fakeProcs, nil },
+		KillProcess:      recordKill,
+		LogInfo:          appendInfo,
+		LogWarn:          appendInfo,
+	})
+	if err != nil {
+		t.Fatalf("startCodexHooksDaemons(1) error = %v", err)
+	}
+	_ = rt1.Close()
+
+	kills1 := getKills()
+	if len(kills1) != 1 || kills1[0] != 202 {
+		t.Fatalf("首次安装 wrapper 应触发 app-server 重启 pid=202, 实际 %v", kills1)
+	}
+	state1 := rt1.DesktopService().ReadState()
+	wantDefaultTrace := filepath.Join(aiHome, "logs", "codex", "mobile-trace.jsonl")
+	if !state1.Enabled || !state1.TraceRemoteControl || !state1.RemoteControlProxy ||
+		state1.TraceFile != wantDefaultTrace ||
+		state1.ProviderHookReceiverURL != "http://127.0.0.1:9527/v0/webui/session-events/provider-hook" {
+		t.Fatalf("DesktopHookState 未持久化默认 Trace/ReceiverURL: %+v", state1)
+	}
+
+	// 2) wrapper 健康且仅修改 Trace，策略为 false 时更新状态但不重启 app-server。
+	clearKills()
+	logMu.Lock()
+	infoLogs = nil
+	logMu.Unlock()
+	customTrace1 := filepath.Join(root, "trace-1.jsonl")
+	rt2, err := startCodexHooksDaemons(codexHooksDaemonOptions{
+		AIHomeDir:                    aiHome,
+		HostHomeDir:                  hostHome,
+		EnableDesktopHook:            true,
+		AllowSystemApplications:      &allowSys,
+		DesktopRuntimeLayouts:        layouts,
+		NodeExecPath:                 "/usr/local/bin/node",
+		HelperScriptPath:             helper,
+		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
+		DesktopSelfHealInterval:      10 * time.Second,
+		RestartAppServerOnHookChange: false,
+		TraceConfig: &codexhooks.DesktopTraceConfig{
+			TraceFile:          customTrace1,
+			TraceResponses:     true,
+			TraceRemoteControl: true,
+			RemoteControlProxy: true,
+		},
+		ReadBundleMetadata: func(string) codexhooks.BundleMetadata {
+			return codexhooks.BundleMetadata{AppVersion: "1.0.0", AppBuildVersion: "10"}
+		},
+		ReadCodexVersion: func(string) string { return "0.99.0" },
+		ListProcesses:    func() ([]codexhooks.ProcessInfo, error) { return fakeProcs, nil },
+		KillProcess:      recordKill,
+		LogInfo:          appendInfo,
+		LogWarn:          appendInfo,
+	})
+	if err != nil {
+		t.Fatalf("startCodexHooksDaemons(2) error = %v", err)
+	}
+	_ = rt2.Close()
+
+	if kills2 := getKills(); len(kills2) != 0 {
+		t.Fatalf("RestartAppServerOnHookChange=false 且 wrapper 无漂移时不应杀进程, 实际 %v", kills2)
+	}
+	state2 := rt2.DesktopService().ReadState()
+	if !state2.TraceResponses || state2.TraceFile != customTrace1 {
+		t.Fatalf("TraceConfig 更新未落盘: %+v", state2)
+	}
+	logMu.Lock()
+	joinedLogs := strings.Join(infoLogs, "\n")
+	logMu.Unlock()
+	if !strings.Contains(joinedLogs, "reload disabled by hook change policy") {
+		t.Fatalf("期望记录 reload disabled 日志, 实际:\n%s", joinedLogs)
+	}
+
+	// 3) RestartAppServerOnHookChange=true 且验证自愈漂移修复后重新应用 Trace 并重启 app-server。
+	clearKills()
+	customTrace2 := filepath.Join(root, "trace-2.jsonl")
+	rt3, err := startCodexHooksDaemons(codexHooksDaemonOptions{
+		AIHomeDir:                    aiHome,
+		HostHomeDir:                  hostHome,
+		EnableDesktopHook:            true,
+		AllowSystemApplications:      &allowSys,
+		DesktopRuntimeLayouts:        layouts,
+		NodeExecPath:                 "/usr/local/bin/node",
+		HelperScriptPath:             helper,
+		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
+		DesktopSelfHealInterval:      1 * time.Second,
+		RestartAppServerOnHookChange: true,
+		TraceConfig: &codexhooks.DesktopTraceConfig{
+			TraceFile:          customTrace2,
+			TraceResponses:     false,
+			TraceRemoteControl: true,
+			RemoteControlProxy: true,
+		},
+		ReadBundleMetadata: func(string) codexhooks.BundleMetadata {
+			return codexhooks.BundleMetadata{AppVersion: "1.0.0", AppBuildVersion: "10"}
+		},
+		ReadCodexVersion: func(string) string { return "0.99.0" },
+		ListProcesses:    func() ([]codexhooks.ProcessInfo, error) { return fakeProcs, nil },
+		KillProcess:      recordKill,
+		LogInfo:          appendInfo,
+		LogWarn:          appendInfo,
+	})
+	if err != nil {
+		t.Fatalf("startCodexHooksDaemons(3) error = %v", err)
+	}
+	defer rt3.Close()
+
+	if kills3 := getKills(); len(kills3) != 1 || kills3[0] != 202 {
+		t.Fatalf("RestartAppServerOnHookChange=true 时 Trace 变更应触发重启, 实际 %v", kills3)
+	}
+
+	// 模拟客户端升级覆盖了包装器，等待 1s 自愈循环修复并再次重启 app-server。
+	clearKills()
+	if err := os.WriteFile(targetBin, []byte("#!/bin/sh\necho upstream-upgraded\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(4 * time.Second)
+	repaired := false
+	for time.Now().Before(deadline) {
+		body, readErr := os.ReadFile(targetBin)
+		killsRepair := getKills()
+		if readErr == nil && strings.Contains(string(body), codexhooks.WrapperMarkerDesktop) && len(killsRepair) > 0 {
+			repaired = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !repaired {
+		body, _ := os.ReadFile(targetBin)
+		t.Fatalf("自愈循环未在预期时间内修复 wrapper 并重启 app-server, kills=%v, target=%s", getKills(), string(body))
+	}
+	if err := rt3.Close(); err != nil {
+		t.Fatalf("rt3.Close() error = %v", err)
 	}
 }

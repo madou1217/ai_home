@@ -430,11 +430,11 @@ func TestCLIHookServiceBackupAliasAndCache(t *testing.T) {
 	// 验证后台 5 分钟缓存命中（模拟 fast scan 未命中，但 memo 未过期且目标仍存在）。
 	var loginFallbacks int
 	bgSvc := NewCLIHookService(CLIHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		Now:              func() time.Time { return now },
-		BackgroundTTL:    5 * time.Minute,
+		AIHomeDir:     aiHome,
+		HostHomeDir:   hostHome,
+		Platform:      "darwin",
+		Now:           func() time.Time { return now },
+		BackgroundTTL: 5 * time.Minute,
 		ResolveCodexBinary: func(loginShellFallback bool) string {
 			if !loginShellFallback {
 				return ""
@@ -677,5 +677,116 @@ func TestNotificationQueueAndBridge(t *testing.T) {
 	listenerMu.Unlock()
 	if gotCount < 2 {
 		t.Fatalf("监听者应至少收到内部发布和外部队列各一条事件, 实际 %d", gotCount)
+	}
+}
+
+func TestCLIHookDefaultResolveCodexBinary(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	pathDir := filepath.Join(root, "path-bin")
+	hostHome := filepath.Join(root, "host-home")
+	userDir := filepath.Join(hostHome, ".npm-global", "bin")
+	if err := os.MkdirAll(pathDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(userDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// PATH 上不可执行的同名文件应被跳过，转而命中用户目录安装路径。
+	nonExec := filepath.Join(pathDir, "codex")
+	if err := os.WriteFile(nonExec, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	userBin := filepath.Join(userDir, "codex")
+	if err := os.WriteFile(userBin, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewCLIHookService(CLIHookOptions{
+		AIHomeDir:   filepath.Join(root, "ai_home"),
+		HostHomeDir: hostHome,
+		Platform:    "darwin",
+		PathEnv:     pathDir,
+	})
+	if got := svc.defaultResolveCodexBinary(false); got != userBin {
+		t.Fatalf("defaultResolveCodexBinary(false) = %q, want %q", got, userBin)
+	}
+
+	// 删除用户目录入口并保留显式 PathEnv 时，不得越界命中宿主机真实二进制。
+	if err := os.Remove(userBin); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.defaultResolveCodexBinary(true); got != "" {
+		t.Fatalf("隔离 PathEnv 场景未找到时应返回空, 实际 %q", got)
+	}
+}
+
+func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	aiHome := filepath.Join(root, "ai_home")
+	hostHome := filepath.Join(root, "host_home")
+	helper := filepath.Join(root, "helper.js")
+	if err := os.WriteFile(helper, []byte("// helper\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bundlePath := filepath.Join(hostHome, "Applications", "Codex.app")
+	targetBin := filepath.Join(bundlePath, "Contents", "Resources", "codex")
+	if err := os.MkdirAll(filepath.Dir(targetBin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetBin, []byte("#!/bin/sh\necho upstream\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	allowSys := false
+	layouts := []DesktopLayout{
+		{
+			ID:            "test-in-place",
+			Platform:      "darwin",
+			BinarySubpath: filepath.Join("Contents", "Resources", "codex"),
+		},
+	}
+	svc := NewDesktopHookService(DesktopHookOptions{
+		AIHomeDir:               aiHome,
+		HostHomeDir:             hostHome,
+		Platform:                "darwin",
+		NodeExecPath:            "/usr/local/bin/node",
+		HelperScriptPath:        helper,
+		RuntimeLayouts:          layouts,
+		AllowSystemApplications: &allowSys,
+		ReadBundleMetadata: func(string) BundleMetadata {
+			return BundleMetadata{AppVersion: "1.0.0", AppBuildVersion: "10"}
+		},
+		ReadCodexVersion: func(string) string { return "0.99.0" },
+	})
+
+	first, err := svc.Activate()
+	if err != nil {
+		t.Fatalf("first Activate() error = %v", err)
+	}
+	if !first.Enabled || !first.RestartRequired {
+		t.Fatalf("unexpected first Activate() result: %+v", first)
+	}
+	if state := svc.ReadState(); state.UpstreamFingerprint == nil {
+		t.Fatalf("expected UpstreamFingerprint to be recorded after fresh install: %+v", state)
+	}
+
+	second, err := svc.Activate()
+	if err != nil {
+		t.Fatalf("second Activate() error = %v", err)
+	}
+	if second.RestartRequired || len(second.DriftReasons) != 0 {
+		t.Fatalf("second Activate() reported unexpected drift %v (restartRequired=%v)", second.DriftReasons, second.RestartRequired)
+	}
+	health, err := svc.EnsureInstalled()
+	if err != nil {
+		t.Fatalf("EnsureInstalled() error = %v", err)
+	}
+	if !health.Healthy || health.Repaired {
+		t.Fatalf("expected healthy=true repaired=false after fresh install, got %+v", health)
 	}
 }

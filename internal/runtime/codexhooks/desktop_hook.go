@@ -577,19 +577,19 @@ func helperMtimeMs(path string) int64 {
 }
 
 type desktopStateWritePatch struct {
-	enabled                    bool
-	paths                      DesktopHookPaths
-	expected                   *expectedDesktopHookState
-	desktopAccountRef          *string
-	traceFile                  *string
-	traceResponses             *bool
-	traceRemoteControl         *bool
-	remoteControlProxy         *bool
-	providerHookReceiverURL    *string
-	reason                     *string
-	errorCode                  *string
-	retryable                  *bool
-	preserveReasonFields       bool
+	enabled                 bool
+	paths                   DesktopHookPaths
+	expected                *expectedDesktopHookState
+	desktopAccountRef       *string
+	traceFile               *string
+	traceResponses          *bool
+	traceRemoteControl      *bool
+	remoteControlProxy      *bool
+	providerHookReceiverURL *string
+	reason                  *string
+	errorCode               *string
+	retryable               *bool
+	preserveReasonFields    bool
 }
 
 func (svc *DesktopHookService) writeStateLocked(patch desktopStateWritePatch) bool {
@@ -941,11 +941,15 @@ func (svc *DesktopHookService) Activate() (DesktopHookResult, error) {
 		previous.HelperScriptMtimeMs != nextMtime ||
 		strings.TrimSpace(previous.HelperRevision) != expected.HelperRevision
 
+	// 首次安装会在 installWrapper 中生成 .aih-original 上游快照，需在安装后重算期望指纹，
+	// 避免随后自愈或二次激活误报 upstream_fingerprint 漂移。
+	expectedAfterInstall, _ := svc.buildExpectedState(paths, previous)
+
 	svc.mu.Lock()
 	svc.writeStateLocked(desktopStateWritePatch{
 		enabled:  true,
 		paths:    paths,
-		expected: &expected,
+		expected: &expectedAfterInstall,
 	})
 	svc.mu.Unlock()
 

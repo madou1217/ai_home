@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -61,9 +64,9 @@ type codexHooksDaemonOptions struct {
 // codexHooksRuntime 持有运行中的 Codex Hook 服务、自愈循环与通知队列桥接器，
 // 实现 io.Closer 以便组合根在 Server 退出时统一停止全部后台协程。
 type codexHooksRuntime struct {
-	cancel     context.CancelFunc
-	closeOnce  sync.Once
-	aiHomeDir  string
+	cancel      context.CancelFunc
+	closeOnce   sync.Once
+	aiHomeDir   string
 	hostHomeDir string
 
 	desktop            *codexhooks.DesktopHookService
@@ -78,6 +81,161 @@ type codexHooksRuntime struct {
 	restartAppServerOnHookChange bool
 	logInfo                      func(string)
 	logWarn                      func(string)
+}
+
+const codexHelperScriptRelPath = "lib/server/codex-app-server-stdio-proxy.js"
+
+// buildCodexHooksDaemonOptions 根据 Go Server 启动配置装配完整的 Codex Hook 守护参数。
+// Desktop 开启时联动启用 VSCode 扩展 Hook（除非 EnableVscodeHook 显式设为 false），
+// ProviderHookReceiverURL 为空且 nodeBaseURL 非空时自动派生，TraceRemoteControl 与 RemoteControlProxy
+// 未显式指定时保持默认 true，SelfHeal 间隔默认 15s。
+func buildCodexHooksDaemonOptions(
+	dependencies Options,
+	aiHomeDir string,
+	nodeBaseURL string,
+	sessionEventBus *sessionevents.Bus,
+	errorLog *log.Logger,
+) codexHooksDaemonOptions {
+	cfg := dependencies.CodexHooks
+	resolvedAIHome := strings.TrimSpace(aiHomeDir)
+	if resolvedAIHome == "" {
+		resolvedAIHome = strings.TrimSpace(dependencies.AIHomeDir)
+	}
+	resolvedNodeBase := strings.TrimSpace(nodeBaseURL)
+	if resolvedNodeBase == "" {
+		resolvedNodeBase = strings.TrimSpace(dependencies.NodeBaseURL)
+	}
+	resolvedLog := errorLog
+	if resolvedLog == nil {
+		resolvedLog = dependencies.ErrorLog
+	}
+
+	enableVscode := cfg.EnableDesktopHook
+	if cfg.EnableVscodeHook != nil {
+		enableVscode = *cfg.EnableVscodeHook
+	}
+
+	receiverURL := strings.TrimSpace(cfg.ProviderHookReceiverURL)
+	if receiverURL == "" {
+		if cleanBase := strings.TrimRight(resolvedNodeBase, "/"); cleanBase != "" {
+			receiverURL = cleanBase + "/v0/webui/session-events/provider-hook"
+		}
+	}
+
+	traceRemoteControl := true
+	if cfg.TraceRemoteControl != nil {
+		traceRemoteControl = *cfg.TraceRemoteControl
+	}
+	remoteControlProxy := true
+	if cfg.RemoteControlProxy != nil {
+		remoteControlProxy = *cfg.RemoteControlProxy
+	}
+
+	var logInfo, logWarn func(string)
+	if resolvedLog != nil {
+		logInfo = func(message string) {
+			if trimmed := strings.TrimSpace(message); trimmed != "" {
+				resolvedLog.Println(trimmed)
+			}
+		}
+		logWarn = func(message string) {
+			if trimmed := strings.TrimSpace(message); trimmed != "" {
+				resolvedLog.Println(trimmed)
+			}
+		}
+	}
+
+	return codexHooksDaemonOptions{
+		AIHomeDir:                resolvedAIHome,
+		EnableDesktopHook:        cfg.EnableDesktopHook,
+		EnableVscodeHook:         enableVscode,
+		EnableCLIHook:            cfg.EnableCLIHook,
+		EnableNotificationBridge: true,
+		NodeExecPath:             resolveCodexNodeExecPath(cfg.NodeExecPath),
+		HelperScriptPath:         resolveCodexHelperScriptPath(cfg.HelperScriptPath, cfg.EntryFilePath),
+		ProviderHookReceiverURL:  receiverURL,
+		CLISelfHealInterval:      clampSelfHealInterval(cfg.CLISelfHealInterval),
+		DesktopSelfHealInterval:  clampSelfHealInterval(cfg.DesktopSelfHealInterval),
+		TraceConfig: &codexhooks.DesktopTraceConfig{
+			TraceFile:          strings.TrimSpace(cfg.TraceFile),
+			TraceResponses:     cfg.TraceResponses,
+			TraceRemoteControl: traceRemoteControl,
+			RemoteControlProxy: remoteControlProxy,
+		},
+		RestartAppServerOnHookChange: cfg.RestartAppServerOnHookChange,
+		SessionEventBus:              sessionEventBus,
+		LogInfo:                      logInfo,
+		LogWarn:                      logWarn,
+	}
+}
+
+func resolveCodexNodeExecPath(explicit string) string {
+	if trimmed := strings.TrimSpace(explicit); trimmed != "" {
+		return trimmed
+	}
+	if envNode := strings.TrimSpace(os.Getenv("AIH_SERVER_NODE_EXEC")); envNode != "" {
+		return envNode
+	}
+	if found, err := exec.LookPath("node"); err == nil && strings.TrimSpace(found) != "" {
+		return strings.TrimSpace(found)
+	}
+	if goruntime.GOOS != "windows" {
+		for _, candidate := range []string{"/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"} {
+			if isRegularNonDirFile(candidate) {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func resolveCodexHelperScriptPath(explicitHelper string, entryFilePath string) string {
+	if trimmed := strings.TrimSpace(explicitHelper); trimmed != "" {
+		return trimmed
+	}
+	relHelper := filepath.FromSlash(codexHelperScriptRelPath)
+	var roots []string
+	addAncestors := func(start string, levels int) {
+		curr := strings.TrimSpace(start)
+		for i := 0; i <= levels && curr != ""; i++ {
+			roots = append(roots, curr)
+			parent := filepath.Dir(curr)
+			if parent == curr {
+				break
+			}
+			curr = parent
+		}
+	}
+	entry := strings.TrimSpace(entryFilePath)
+	if entry == "" {
+		entry = strings.TrimSpace(os.Getenv("AIH_SERVER_ENTRY_FILE"))
+	}
+	if entry != "" {
+		addAncestors(filepath.Dir(entry), 2)
+	}
+	if exe, err := os.Executable(); err == nil && strings.TrimSpace(exe) != "" {
+		addAncestors(filepath.Dir(exe), 4)
+	}
+	if wd, err := os.Getwd(); err == nil && strings.TrimSpace(wd) != "" {
+		addAncestors(wd, 4)
+	}
+	seen := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		candidate := filepath.Join(root, relHelper)
+		if isRegularNonDirFile(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func isRegularNonDirFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // startCodexHooksDaemons 初始化并启动 Codex CLI/Desktop/VSCode Hook 管理器、
@@ -186,29 +344,33 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			KillProcess:             opts.KillProcess,
 		})
 		runtime.desktop = desktopSvc
-		startupResult, _ := desktopSvc.Activate()
-		if startupResult.Retryable != nil && !*startupResult.Retryable {
-			runtime.emitWarn(formatHookSelfHealFailure("codex-hook", codexhooks.SelfHealFailure{
-				Result: &codexhooks.SelfHealResult{
-					OK:               startupResult.OK,
-					Reason:           startupResult.Reason,
-					ErrorCode:        startupResult.ErrorCode,
-					Retryable:        startupResult.Retryable,
-					TargetBinaryPath: startupResult.TargetBinaryPath,
-				},
-				Suspended: true,
-			}))
-		}
-		runtime.applyDesktopTraceAndRestart(startupResult, true)
-		if startupResult.Supported {
-			if startupResult.Enabled {
-				runtime.emitInfo("[aih:codex-hook] desktop hook enabled")
-			} else if startupResult.Reason != "" {
-				runtime.emitInfo("[aih:codex-hook] desktop hook " + startupResult.Reason)
+		startupResult, activateErr := desktopSvc.Activate()
+		if activateErr != nil {
+			runtime.emitWarn(fmt.Sprintf("[aih:codex-hook] %v", activateErr))
+		} else {
+			if startupResult.Retryable != nil && !*startupResult.Retryable {
+				runtime.emitWarn(formatHookSelfHealFailure("codex-hook", codexhooks.SelfHealFailure{
+					Result: &codexhooks.SelfHealResult{
+						OK:               startupResult.OK,
+						Reason:           startupResult.Reason,
+						ErrorCode:        startupResult.ErrorCode,
+						Retryable:        startupResult.Retryable,
+						TargetBinaryPath: startupResult.TargetBinaryPath,
+					},
+					Suspended: true,
+				}))
+			}
+			runtime.applyDesktopTraceAndRestart(startupResult, true)
+			if startupResult.Supported {
+				if startupResult.Enabled {
+					runtime.emitInfo("[aih:codex-hook] desktop hook enabled")
+				} else if startupResult.Reason != "" {
+					runtime.emitInfo("[aih:codex-hook] desktop hook " + startupResult.Reason)
+				}
 			}
 		}
 
-		if startupResult.Retryable == nil || *startupResult.Retryable {
+		if activateErr != nil || startupResult.Retryable == nil || *startupResult.Retryable {
 			desktopLoop, err := codexhooks.StartSelfHealLoop(ctx, codexhooks.SelfHealOptions{
 				Interval: clampSelfHealInterval(opts.DesktopSelfHealInterval),
 				EnsureInstalled: func(context.Context) (codexhooks.SelfHealResult, error) {

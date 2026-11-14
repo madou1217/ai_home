@@ -97,8 +97,8 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 	if err != nil {
 		t.Fatalf("buildWebUIManagementOpsRoutesWithPorts() error = %v", err)
 	}
-	if len(routes) != 29 {
-		t.Fatalf("len(routes) = %d, want 29", len(routes))
+	if len(routes) != 31 {
+		t.Fatalf("len(routes) = %d, want 31", len(routes))
 	}
 
 	mux := http.NewServeMux()
@@ -111,6 +111,13 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, webuimanagementapi.StatusPath, nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"backend":"go-core"`) {
 		t.Fatalf("GET /status code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// 浏览器正式面：/v0/webui/management/* 与管理工作面是同一份实现。
+	pubRec := httptest.NewRecorder()
+	mux.ServeHTTP(pubRec, httptest.NewRequest(http.MethodGet, "/v0/webui/management/status", nil))
+	if pubRec.Code != http.StatusOK || !strings.Contains(pubRec.Body.String(), `"backend":"go-core"`) {
+		t.Fatalf("GET /v0/webui/management/status code=%d body=%s", pubRec.Code, pubRec.Body.String())
 	}
 
 	// Verify /restart delegates through configured Restarter port

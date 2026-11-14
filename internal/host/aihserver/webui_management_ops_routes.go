@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimanagementapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenaimodelswriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverrestartapi"
 )
 
@@ -211,7 +213,16 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		{Pattern: "GET " + webuimanagementapi.UsageDashboardQueryWatchPath, Handler: handler},
 		{Pattern: "GET " + webuimanagementapi.UsageDashboardQueryMemberPattern, Handler: handler},
 		{Pattern: "DELETE " + webuimanagementapi.UsageDashboardQueryMemberPattern, Handler: handler},
+		// 浏览器正式面：/v0/webui/management/* 直接由 Go 应答，通过前缀重写复用
+		// 同一份处理器；Node 不再保留这份管理面实现。
+		{Pattern: "/v0/webui/management", Handler: publicManagementHandler(handler)},
+		{Pattern: "/v0/webui/management/", Handler: publicManagementHandler(handler)},
 	}, nil
+}
+
+// publicManagementHandler 把浏览器前缀 /v0/webui/management 重写到 Go 管理面前缀。
+func publicManagementHandler(handler http.Handler) http.Handler {
+	return webuipublicalias.Rewrite("/v0/webui/management", webuimanagementapi.BasePath, handler)
 }
 
 func catalogProviderIDs(catalog *providers.Catalog) []string {

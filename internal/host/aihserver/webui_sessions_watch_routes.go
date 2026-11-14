@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionwatchapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 const codexAppServerPassthroughEnv = "AIH_CODEX_APP_SERVER_PASSTHROUGH"
@@ -104,6 +105,8 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		{Pattern: "GET " + webuisessionwatchapi.Path, Handler: watchHandler},
 		{Pattern: "POST " + webuisessionhookapi.Path, Handler: hookHandler},
 		{Pattern: "POST " + webuisessionslifecycleapi.UnarchivePath, Handler: unarchiveHandler},
+		// 浏览器数据面：/v0/webui/sessions/unarchive → 管理前缀（同一处理器）。
+		{Pattern: "POST /v0/webui/sessions/unarchive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", unarchiveHandler)},
 	}, nil
 }
 

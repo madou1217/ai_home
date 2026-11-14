@@ -774,6 +774,13 @@
             "POST"
           ],
           "path": "/v0/webui/sessions/archive"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/sessions/unarchive"
         }
       ]
     },

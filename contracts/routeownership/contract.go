@@ -337,6 +337,7 @@ func Current() Manifest {
 					httpRoute([]string{"GET"}, "/v0/webui/sessions/lifecycle-capabilities"),
 					httpRoute([]string{"GET"}, "/v0/webui/sessions/archived"),
 					httpRoute([]string{"POST"}, "/v0/webui/sessions/archive"),
+					httpRoute([]string{"POST"}, "/v0/webui/sessions/unarchive"),
 				},
 			},
 			{

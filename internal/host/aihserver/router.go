@@ -3,6 +3,7 @@ package aihserver
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -22,7 +23,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliaswebui"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
@@ -36,6 +36,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiassets"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiplugintrustapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 )
 
@@ -121,6 +122,8 @@ func newRouter(handlers serverHandlers) http.Handler {
 	for _, route := range handlers.webuiRoutes {
 		mux.Handle(route.Pattern, route.Handler)
 	}
+	// 已承接的管理路由同时挂到浏览器前缀：/v0 不再需要 Node 逐个转发。
+	mountPublicManagementAliases(mux, handlers.webuiRoutes)
 	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
 	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。
 	mountWebUIChat(mux, handlers.webUIChat)
@@ -430,6 +433,60 @@ func (dispatcher responsesDispatcher) ServeHTTP(
 		return
 	}
 	dispatcher.canonical.ServeHTTP(response, request)
+}
+
+const (
+	managementWebUIPrefix = "/v1/management/webui"
+	publicWebUIPrefix     = "/v0/webui"
+)
+
+// mountPublicManagementAliases 给 webuiRoutes 里每条管理路由补一条同构的
+// /v0/webui 路由（前缀重写，不复制处理器）。已手工挂载的公开路径先登记，避免重复注册。
+// 内部窄入口（/internal/）保持只走管理面，不扩到浏览器前缀。
+func mountPublicManagementAliases(mux *http.ServeMux, routes []webuiRoute) {
+	if mux == nil {
+		return
+	}
+	reserved := map[string]struct{}{
+		publicWebUIPrefix + "/chat/sessions":                                         {},
+		publicWebUIPrefix + "/chat/sessions/":                                        {},
+		"GET " + publicWebUIPrefix + "/accounts/{provider}/{accountRef}/token-usage": {},
+	}
+	for _, route := range routes {
+		reserved[route.Pattern] = struct{}{}
+	}
+	for _, route := range routes {
+		alias, ok := publicAliasPattern(route.Pattern)
+		if !ok {
+			continue
+		}
+		if _, exists := reserved[alias]; exists {
+			continue
+		}
+		reserved[alias] = struct{}{}
+		mux.Handle(alias, webuipublicalias.Rewrite(publicWebUIPrefix, managementWebUIPrefix, route.Handler))
+	}
+}
+
+// publicAliasPattern 把 "METHOD /v1/management/webui/..." 转成 "METHOD /v0/webui/..."。
+func publicAliasPattern(pattern string) (string, bool) {
+	method := ""
+	path := strings.TrimSpace(pattern)
+	if space := strings.IndexByte(path, ' '); space >= 0 {
+		method = strings.TrimSpace(path[:space])
+		path = strings.TrimSpace(path[space+1:])
+	}
+	if !strings.HasPrefix(path, managementWebUIPrefix) {
+		return "", false
+	}
+	if strings.Contains(path, "/internal/") {
+		return "", false
+	}
+	alias := publicWebUIPrefix + strings.TrimPrefix(path, managementWebUIPrefix)
+	if method != "" {
+		return method + " " + alias, true
+	}
+	return alias, true
 }
 
 // mountWebUIChat 只在装配方提供了 Handler 时挂载内部聊天入口。

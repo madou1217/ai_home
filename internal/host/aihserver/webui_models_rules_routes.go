@@ -67,6 +67,13 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "PUT /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
 		{Pattern: "DELETE /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
 		{Pattern: "POST /v0/webui/upstream-error-mappings/{id}/toggle", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		// 兼容 Node 时代的路径名（前端仍在用 -mapping-groups）：同构重写到 Go 的集合路径。
+		{Pattern: "GET /v0/webui/upstream-error-mapping-groups", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
+		{Pattern: "POST /v0/webui/upstream-error-mapping-groups", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
+		{Pattern: "GET /v0/webui/upstream-error-mapping-groups/{id}", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
+		{Pattern: "PUT /v0/webui/upstream-error-mapping-groups/{id}", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
+		{Pattern: "DELETE /v0/webui/upstream-error-mapping-groups/{id}", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
+		{Pattern: "POST /v0/webui/upstream-error-mapping-groups/{id}/toggle", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
 		{Pattern: "GET " + webuimodelsyncapi.CatalogPath, Handler: modelsSyncHandler},
 		{Pattern: "POST " + webuimodelsyncapi.BasePath, Handler: modelsSyncHandler},
 		{Pattern: "PATCH " + webuimodelsyncapi.BasePath, Handler: modelsSyncHandler},

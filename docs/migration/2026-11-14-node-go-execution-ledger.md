@@ -64,3 +64,57 @@
 ## 交付登记
 
 提交记录由实际 git commit 成功后追加，禁止提前写“已提交/已推送”。若正常 Git 网络操作失败，先查 2026-11-14 其它会话的 AWS 临时 Git 代理证据；不写全局代理、不关闭 SSH 主机密钥核验。
+
+## 2026-11-14 后续进展
+
+- 已提交 `d1f09a5b4`：全范围授权计划和执行账（2 个文档，不包含另一会话的全产品计划）。
+- 已提交 `c1b4b84a0`：effort 命令、权限/配置保留与 writer 锁、Canonical service_tier、缺 App 重载语义、未知模型不继承模板速度档（14 个明确文件）。
+- 已提交 `0e1a38ddc`：官方 CLI alias 解包复用安装器备份命名与 POSIX/CMD/PowerShell 字面量解析；真实含空格/单引号路径 + 扩展名 .js alias 启动原生 CLI version=0.167.2。
+- `lib/cli/complete/command-tree.js` 在提交前发现混入 peer shell flags；仅撤回本次暂存，没有改工作文件，未纳入上述提交。
+- 审查修复 `[[array-table]]` 不应被当作 TOML 根段：真实 CLI 插入 root service_tier，nested service_tier 原样保留。
+- 生命周期独立审查发现 MCP helper 误认、多 AIH_HOME 误停、start 非幂等、Node 子进程误清理、打包路径识别问题。W2 保持进行中，正在修；未将未验收生命周期改动提交。
+- 生命周期新方案：Go 监听成功后写入本 AIH_HOME 的无密钥 runtime identity（PID/可执行路径/hash/端口）；Node 管理只认 daemon 角色，核实进程 home 和受管父子关系，构件事实与 Node 源码指纹分开。
+- 2026-11-14 执行期间全仓 `git diff --check` 在 peer `internal/runtime/chatruntime/codex_rpc.go:384` 报末尾空行；本工作不删除 peer 修改，提交门禁按本次显式路径核对并保留全仓缺口。
+
+W0–W6 **尚未全部完成**；不据这三个提交关闭目标。未推送；尚未出现 Git 网络故障，因此未启用 AWS 临时代理。
+
+## 2026-11-15 00:00 后 W2 进展与 Git 推送
+
+- 当前日期已跨到 2026-11-15（Asia/Shanghai）；用户所说“今天其它会话”的代理线索按授权当时的 **2026-11-14** 检索，不误查成仅 15 日。
+- 默认 `git push origin main` 遇到 `github.com:22 Connection refused`。核对本地配置是 `core.sshCommand=ssh -F /dev/null`；历史 AWS SOCKS job 未加载，1080 无 listener。
+- 只读会话检索找到 14 日使用 AWS SOCKS 的线索，但未找到完整 Git 成功命令。结合已存在 AWS launcher，验证既有 AWS 主机 SSH 可达；以单次 `GIT_SSH_COMMAND` 的 `ProxyCommand=ssh -W %h:%p ...` 经 AWS 到 `ssh.github.com:443` 推送成功。未修改全局 Git/SSH 配置、未关闭 host key 校验、未转发 SSH agent。
+- 共享 main 推送 `96eb20cb3..0e1a38ddc`，包含其它会话已提交内容，符合共享 main 约定；未包含它们的 dirty 工作文件。上述三项本轮提交均已推送。
+
+### W2 审查发现与整改
+
+两轮独立只读审查发现并逐项整改：
+
+1. daemon/helper 角色必须分开，`__mcp-*` / `__remote-ws` 不进生命周期管理。
+2. 同一可执行文件下不同 AIH_HOME 不能互相 stop；native 与 Node 的 home 解析须匹配各自 runtime 规则。
+3. native supervisor 的 start 必须幂等；已解析的 listener 端口不能被 tracked PID 的空端口覆盖。
+4. stop 先停父进程；若父进程被强制结束，随后只清理创建身份和命令均匹配的原 Node 子进程。
+5. alias/打包路径使用既有安装根解析，不依赖发行包中不存在的 cmd 源目录。
+6. PID 身份必须绑定 OS process start ID，不能因 PID 复用误认另一实例；无可信环境或身份时失败关闭。
+7. autostart 检查实际 launcher 的 home，正确支持 Windows scheduled-task/CMD 与 startup/VBS；其它 home 的 job 不宣称当前已安装/加载。
+8. Node 源码指纹和 Go runtime binary hash/build stamp 分开校验；新增 runtime identity 含无凭据 PID/home/exe/hash/port/start ID，退出时只清理自己未被替换的记录。
+
+### W2 实机验证边界
+
+- 真实启动两个空账号库的 Go+Node 服务，各自独立临时 AIH_HOME/端口；没有改真实账号库，没有占用/重启 9527。
+- 两个 identity 的 PID、home、port、hash 均与实际进程吻合；给临时构件写入真实 build stamp 后，status 只显示各自服务且不误报 stale。
+- 真实原生 `__mcp-approve` 作为同二进制 helper 保持存活；重复 start 两次都不改父/Node 子进程 PID。
+- **不传 --port**、仅从持久配置读端口的两实例也通过上述验证。
+- 正常 stop A：A 退出，B 和 helper 均存活。
+- `SIGSTOP` 暂停临时 A 父进程，再实际 server stop：父进程进入 forced 路径，原 Node 子进程被清理，B/helper 不受影响。复核使用平台 `signal.SIGSTOP` 而非硬编码信号数，只有这次属于 forced 证据。
+- 临时进程全部退出，9527 `/healthz` 仍返回 200。
+- Windows/Linux 相关 Go 包交叉编译通过，**未做 Windows/Linux 真机生命周期验收**。
+- 当前共享 9527 仍是未写 runtime identity 的旧构件，CLI 会如实显示 native runtime identity 未验证；本次没有把旧进程伪报成新构件，也未重启加载这些新变更。
+
+W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升级完整工作包尚未验收完成，后续不能省略。W3–W6 继续在目标中。
+
+### W2 提交检查点
+
+- `c90f1a820` 已提交：server lifecycle 按实例/进程创建身份隔离、受管子进程清理、构件身份验证（10 个明确文件）。
+- 最新 forced 真机记录：无 `--port` 的临时服务 A/B；A 父进程 SIGSTOP 后 server stop 输出 `[forced]`，原 Node PID 96570 被清理；B 及 MCP helper 保持存活。未触碰 9527。
+- 审查中指出的全部六项具体问题已在本提交范围整改；Windows/Linux 仅编译，不据此关闭跨平台真实验收。
+- 下一实际工作：W3 Codex 默认档迁移。已确认不能直接把 codex 加进通用 allowlist：Go hostsync 未支持 Codex，现有 WebUI HostFileProjection 对 Codex BuildAccount 忽略账号引用，仅写 config provider；尚未覆盖 OAuth/auth.json、网关 client key、宿主同步事务和 Desktop 重载。必须补业务链路后切 owner，不接受“Go 返回成功但宿主未切换”。

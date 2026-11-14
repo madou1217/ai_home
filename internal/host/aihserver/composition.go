@@ -2025,6 +2025,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Clock:                  time.Now,
 			Rules:                  upstreamRuleEvaluator,
 			Routes:                 routeObserver,
+			Ladders:                modelModalities,
 		},
 	)
 	if err != nil {

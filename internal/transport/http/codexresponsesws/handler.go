@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -99,6 +100,8 @@ type Dependencies struct {
 	Rules configured.Rules
 	// Routes 可选：每轮选号成功后的路由观测（终端标题的当前账号 / 模型帧）。
 	Routes RouteObserver
+	// Ladders 可选：目标模型的推理强度档位；nil 表示不对齐，帧原样透传。
+	Ladders effortalign.LadderReader
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
@@ -112,6 +115,7 @@ type Handler struct {
 	clock          func() time.Time
 	rules          configured.Rules
 	routes         RouteObserver
+	ladders        effortalign.LadderReader
 	sessions       *sessionRegistry
 	// sessionAccounts 记住每个 Codex 会话上次由哪个账号服务，换号时剥离旧账号的加密推理。
 	sessionAccounts *sessionAccounts
@@ -146,6 +150,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		clock:           dependencies.Clock,
 		rules:           dependencies.Rules,
 		routes:          dependencies.Routes,
+		ladders:         dependencies.Ladders,
 		sessions:        newSessionRegistry(),
 		sessionAccounts: newSessionAccounts(),
 	}, nil
@@ -332,7 +337,7 @@ func (handler *Handler) ServeHTTP(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		prepareClientFrame(firstFrame, firstRequest.Model),
+		handler.prepareClientFrame(firstFrame, firstRequest.Model, route.ModelID().String()),
 	); err != nil {
 		handler.recordTransportFailure(
 			route,
@@ -527,7 +532,7 @@ func (handler *Handler) switchModel(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		prepareClientFrame(frame, model),
+		handler.prepareClientFrame(frame, model, selection.Route().EffectiveModel()),
 	); err != nil {
 		handler.recordTransportFailure(route, selection.CredentialObservation(), err)
 		_ = upstream.CloseNow()
@@ -686,12 +691,16 @@ func parseClientFrame(payload []byte, boundModel ...string) (clientRequestEnvelo
 // normalizeClientFrameModel restores the connection-bound model for a later
 // response.create that omitted it. The upstream Codex endpoint still expects
 // the concrete model in every request body.
-// prepareClientFrame 是「出站前唯一准备点」：补模型名 + 剥掉上游解析不了的引用。
+// prepareClientFrame 是「出站前唯一准备点」：补模型名 + 对齐推理强度 + 剥掉上游解析不了的引用。
 //
-// codex CLI 默认走 WebSocket，HTTP 侧那次清洗覆盖不到 WS，所以两条入站路径都必须
-// 过 codexwire.SanitizeRequestPayload（见该函数的注释）。
-func prepareClientFrame(payload []byte, model string) []byte {
-	return codexwire.SanitizeRequestPayload(normalizeClientFrameModel(payload, model))
+// codex CLI 默认走 WebSocket，HTTP 侧那次清洗与 effort 对齐覆盖不到 WS，所以两条入站
+// 路径都必须过本方法。effectiveModel 是选号后的目标模型；为空时按请求模型对齐。
+func (handler *Handler) prepareClientFrame(payload []byte, model string, effectiveModel string) []byte {
+	prepared := normalizeClientFrameModel(payload, model)
+	if handler != nil {
+		prepared = alignClientFrameEffort(prepared, effectiveModel, handler.ladders)
+	}
+	return codexwire.SanitizeRequestPayload(prepared)
 }
 
 func normalizeClientFrameModel(payload []byte, model string) []byte {
@@ -719,6 +728,73 @@ func normalizeClientFrameModel(payload []byte, model string) []byte {
 		return payload
 	}
 	return normalized
+}
+
+// alignClientFrameEffort 把 response.create 的 reasoning.effort 压进目标模型的档位阶梯。
+//
+// Codex CLI 默认走 WebSocket，HTTP 上游 Adapter 的 effortalign 覆盖不到这里。
+// 客户端配置 model_reasoning_effort = "none" 时，若目标模型只支持 low..max
+// （例如 gpt-6.1-sol），原样透传会被上游 400 unsupported_value；按阶梯对齐后
+// none 收敛到 low，显式且受支持的档位保持不变。
+func alignClientFrameEffort(
+	payload []byte,
+	model string,
+	ladders effortalign.LadderReader,
+) []byte {
+	if ladders == nil {
+		return payload
+	}
+	targetModel := strings.TrimSpace(model)
+	if targetModel == "" {
+		return payload
+	}
+	ladder, found := ladders.LookupReasoningEfforts(string(inference.ProviderCodex), targetModel)
+	if !found || len(ladder) == 0 {
+		return payload
+	}
+	var frame map[string]json.RawMessage
+	if json.Unmarshal(payload, &frame) != nil {
+		return payload
+	}
+	rawReasoning, found := frame["reasoning"]
+	if !found {
+		return payload
+	}
+	var reasoning map[string]json.RawMessage
+	if json.Unmarshal(rawReasoning, &reasoning) != nil {
+		return payload
+	}
+	rawEffort, found := reasoning["effort"]
+	if !found {
+		return payload
+	}
+	var effort string
+	if json.Unmarshal(rawEffort, &effort) != nil {
+		return payload
+	}
+	requested := inference.ReasoningEffort(strings.TrimSpace(effort))
+	if requested == "" {
+		return payload
+	}
+	aligned, ok := inference.AlignReasoningEffort(requested, nil, ladder)
+	if !ok || aligned == requested {
+		return payload
+	}
+	encodedEffort, err := json.Marshal(string(aligned))
+	if err != nil {
+		return payload
+	}
+	reasoning["effort"] = encodedEffort
+	encodedReasoning, err := json.Marshal(reasoning)
+	if err != nil {
+		return payload
+	}
+	frame["reasoning"] = encodedReasoning
+	encodedFrame, err := json.Marshal(frame)
+	if err != nil {
+		return payload
+	}
+	return encodedFrame
 }
 
 // clientRequestEnvelope 是 response.create 的有界最小观察投影。

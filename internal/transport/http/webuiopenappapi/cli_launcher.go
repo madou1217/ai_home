@@ -194,13 +194,8 @@ func openCLITerminal(
 		terminalID = terminals.DefaultTerminalID
 	}
 	title := buildCLITitle(harness, targetID, modelName, hasAccount)
-	nodeExe := findNodeExecutable(environ, platformKey)
-	cliEntry := "bin/ai-home.js"
-	if strings.TrimSpace(deps.RepoRoot) != "" {
-		cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
-	}
-
 	termEnv := buildCLIEnv(environ, deps.AIHomeDir, req.Provider, req.AccountRef, egressRes)
+
 	if transport == "webui" {
 		if deps.WebUITerminalOpener == nil {
 			return Result{
@@ -209,12 +204,32 @@ func openCLITerminal(
 				Message: launchErrorMessage("web_terminal_unavailable"),
 			}
 		}
-		launchFile := nodeExe
-		var args []string
+		launchFile := cliPath
+		var launchArgs []string
 		if hasAccount {
-			args = []string{cliEntry, harness, targetID}
-			if modelName != "" {
-				args = append(args, "--model", modelName)
+			if webUICLIIsGoOwned(req, harness) {
+				var failure *Result
+				launchArgs, termEnv, failure = prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
+				if failure != nil {
+					return *failure
+				}
+				var resolveErr error
+				launchFile, resolveErr = resolveGoCLIExecutable(deps, environ)
+				if resolveErr != nil {
+					return Result{OK: false, Error: "aih_cli_unavailable", Message: resolveErr.Error()}
+				}
+			} else {
+				// 明确保留未迁域，不是 Go 错误回退：旧 Node 支持更广的身份
+				// Provider 与 external harness，必须保留其 accountRef 启动合同。
+				launchFile = findNodeExecutable(environ, platformKey)
+				cliEntry := "bin/ai-home.js"
+				if strings.TrimSpace(deps.RepoRoot) != "" {
+					cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
+				}
+				launchArgs = []string{cliEntry, harness, targetID}
+				if modelName != "" {
+					launchArgs = append(launchArgs, "--model", modelName)
+				}
 			}
 		} else {
 			if cliPath == "" && deps.CLIBinaryFinder != nil {
@@ -229,7 +244,7 @@ func openCLITerminal(
 			SessionKey: req.SessionKey,
 			Cwd:        workdir,
 			File:       launchFile,
-			Args:       args,
+			Args:       launchArgs,
 			Env:        termEnv,
 			Persistent: true,
 		})
@@ -260,6 +275,13 @@ func openCLITerminal(
 		}
 	}
 
+	// 本机终端仍显式保留旧 Node 生命周期：tmux 包装与按账号关闭尚未迁移，
+	// 不得以禁用原有桌面功能替代迁移。本切片只切换上面的 WebUI PTY 分支。
+	nodeExe := findNodeExecutable(environ, platformKey)
+	cliEntry := "bin/ai-home.js"
+	if strings.TrimSpace(deps.RepoRoot) != "" {
+		cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
+	}
 	command := buildNativeCLICommand(nodeExe, cliEntry, harness, targetID, modelName, cliPath, workdir, req.AccountRef, deps.AIHomeDir, hasAccount, platformKey)
 	spec := terminals.ResolveClientTerminalLaunch(terminalID, command, title, terminals.Options{
 		Platform:    terminalsPlatform(platformKey),

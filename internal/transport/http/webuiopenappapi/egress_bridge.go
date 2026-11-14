@@ -206,29 +206,96 @@ var chromiumProxyPrefixes = []string{
 
 // applyAccountEgressProxyEnv 将解析好的账号出口写入环境变量。
 // ZCode 统一消费 setting.json 内的 httpProxy/httpProxyNoProxy，必须先清空继承代理且不额外注入环境变量。
+//
+// 直接按切片写入而不是经 map 往返：map 以大写键存储，HTTP_PROXY/http_proxy 这类
+// 大小写成对的键会互相覆盖，最后只剩一个名字——很多运行时只读大写变量，代理
+// 就等于没注入。这里对每个名字分别精确 upsert，两种写法都保留。
 func applyAccountEgressProxyEnv(provider string, env []string, res EgressResolution) []string {
-	m := envSliceToMap(env)
 	if strings.EqualFold(strings.TrimSpace(provider), "zcode") {
 		for _, key := range allProxyEnvKeys {
-			deleteEnvKey(m, key)
+			env = removeEnvKey(env, key)
 		}
-		return mapToEnvSlice(m)
+		return env
 	}
 	if res.Bound {
 		if res.Direct {
 			for _, key := range proxyEnvKeys {
-				deleteEnvKey(m, key)
+				env = removeEnvKey(env, key)
 			}
 		} else if res.ProxyServer != "" {
 			for _, key := range proxyEnvKeys {
-				setEnvKey(m, key, res.ProxyServer)
+				env = upsertEnvKey(env, key, res.ProxyServer)
 			}
-			mergeNoProxyMap(m)
+			env = mergeNoProxyEnv(env)
 		}
 	} else {
-		mergeNoProxyMap(m)
+		env = mergeNoProxyEnv(env)
 	}
-	return mapToEnvSlice(m)
+	return env
+}
+
+// upsertEnvKey 精确替换同名键（区分大小写），不存在则追加。
+func upsertEnvKey(env []string, name, value string) []string {
+	out := make([]string, 0, len(env)+1)
+	replaced := false
+	for _, raw := range env {
+		key, _, ok := strings.Cut(raw, "=")
+		if ok && key == name {
+			if !replaced {
+				out = append(out, name+"="+value)
+				replaced = true
+			}
+			continue
+		}
+		out = append(out, raw)
+	}
+	if !replaced {
+		out = append(out, name+"="+value)
+	}
+	return out
+}
+
+// removeEnvKey 删除所有同名键（区分大小写由调用方逐个列举）。
+func removeEnvKey(env []string, name string) []string {
+	out := make([]string, 0, len(env))
+	for _, raw := range env {
+		key, _, ok := strings.Cut(raw, "=")
+		if ok && key == name {
+			continue
+		}
+		out = append(out, raw)
+	}
+	return out
+}
+
+// mergeNoProxyEnv 保证 NO_PROXY/no_proxy 都包含 loopback 白名单。
+func mergeNoProxyEnv(env []string) []string {
+	existing := ""
+	for _, raw := range env {
+		name, value, ok := strings.Cut(raw, "=")
+		if ok && (name == "NO_PROXY" || name == "no_proxy") && strings.TrimSpace(value) != "" {
+			existing = value
+			break
+		}
+	}
+	seen := make(map[string]struct{})
+	items := make([]string, 0, 8)
+	for _, token := range append(strings.Split(existing, ","), "localhost", "127.0.0.1", "::1") {
+		trimmed := strings.TrimSpace(token)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if _, exists := seen[lower]; exists {
+			continue
+		}
+		seen[lower] = struct{}{}
+		items = append(items, trimmed)
+	}
+	joined := strings.Join(items, ",")
+	env = upsertEnvKey(env, "NO_PROXY", joined)
+	env = upsertEnvKey(env, "no_proxy", joined)
+	return env
 }
 
 func decorateChromiumEgressArgs(provider string, args []string, res EgressResolution) []string {
@@ -258,27 +325,6 @@ func decorateChromiumEgressArgs(provider string, args []string, res EgressResolu
 		)
 	}
 	return out
-}
-
-func mergeNoProxyMap(m map[string]envEntry) {
-	existing := firstEnvValue(m, "NO_PROXY", "no_proxy")
-	seen := make(map[string]struct{})
-	items := make([]string, 0, 8)
-	for _, token := range append(strings.Split(existing, ","), "localhost", "127.0.0.1", "::1") {
-		trimmed := strings.TrimSpace(token)
-		if trimmed == "" {
-			continue
-		}
-		lower := strings.ToLower(trimmed)
-		if _, exists := seen[lower]; exists {
-			continue
-		}
-		seen[lower] = struct{}{}
-		items = append(items, trimmed)
-	}
-	joined := strings.Join(items, ",")
-	setEnvKey(m, "NO_PROXY", joined)
-	setEnvKey(m, "no_proxy", joined)
 }
 
 func readEnvBaseUrls(env []string) []string {

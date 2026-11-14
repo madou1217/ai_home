@@ -17,9 +17,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providercli/sessionchat"
+	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -193,8 +195,11 @@ type NativeApprovalRequest struct {
 	ToolName      string
 	Title         string
 	Detail        string
+	Input         map[string]any
+	ToolUseID     string
 	Choices       []NativeApprovalChoice
 	RawPayload    map[string]any
+	OnPending     func(interactionID string)
 	OnResolve     func(decision map[string]any)
 }
 
@@ -212,6 +217,7 @@ type NativeApprovalSurface struct {
 
 type nativePendingApproval struct {
 	interaction *Interaction
+	input       map[string]any
 	onResolve   func(map[string]any)
 	done        chan map[string]any
 }
@@ -234,6 +240,72 @@ func (s *NativeApprovalSurface) BindRun(runID string) {
 	s.mu.Unlock()
 }
 
+// HasPending 判断指定 interactionId 当前是否仍挂起等待决策。
+func (s *NativeApprovalSurface) HasPending(interactionID string) bool {
+	id := strings.TrimSpace(interactionID)
+	if s == nil || id == "" {
+		return false
+	}
+	s.mu.Lock()
+	_, ok := s.pending[id]
+	s.mu.Unlock()
+	return ok
+}
+
+func buildNativeApprovalPayload(req NativeApprovalRequest) map[string]any {
+	choices := make([]map[string]any, 0, len(req.Choices))
+	for _, ch := range req.Choices {
+		m := map[string]any{
+			"id":     ch.ID,
+			"label":  ch.Label,
+			"intent": firstNonEmptyStr(ch.Intent, "neutral"),
+		}
+		choices = append(choices, m)
+	}
+	if len(choices) == 0 {
+		choices = []map[string]any{
+			{"id": "allow", "label": "允许一次", "intent": "accept"},
+			{"id": "deny", "label": "拒绝", "intent": "deny"},
+		}
+	}
+
+	toolName := strings.TrimSpace(req.ToolName)
+	defaultTitle := "需要确认工具调用"
+	if toolName != "" {
+		defaultTitle = "需要确认工具: " + toolName
+	}
+	pres := map[string]any{
+		"title": firstNonEmptyStr(strings.TrimSpace(req.Title), defaultTitle),
+	}
+	if detail := strings.TrimSpace(req.Detail); detail != "" {
+		pres["detail"] = detail
+	} else if len(req.Input) > 0 {
+		if raw, err := json.MarshalIndent(req.Input, "", "  "); err == nil && len(raw) > 0 {
+			pres["detail"] = string(raw)
+		}
+	}
+	if toolName != "" {
+		pres["annotations"] = []map[string]any{
+			{"label": "工具", "value": toolName},
+		}
+	}
+	if rawPres, ok := req.RawPayload["presentation"].(map[string]any); ok && rawPres != nil {
+		for _, k := range []string{"title", "description", "detail", "annotations"} {
+			if v, exists := rawPres[k]; exists && v != nil {
+				pres[k] = v
+			}
+		}
+	}
+	if rawChoices, ok := req.RawPayload["choices"].([]map[string]any); ok && len(rawChoices) > 0 {
+		choices = rawChoices
+	}
+
+	return map[string]any{
+		"presentation": pres,
+		"choices":      choices,
+	}
+}
+
 // Request 创建待决审批交互并阻塞等待用户响应、取消或超时。
 func (s *NativeApprovalSurface) Request(ctx context.Context, req NativeApprovalRequest) (map[string]any, error) {
 	if s.store == nil {
@@ -243,60 +315,53 @@ func (s *NativeApprovalSurface) Request(ctx context.Context, req NativeApprovalR
 	runID := firstNonEmptyStr(req.RunID, s.runID)
 	s.mu.Unlock()
 
-	choices := make([]map[string]any, 0, len(req.Choices))
-	for _, ch := range req.Choices {
-		choices = append(choices, map[string]any{
-			"id":     ch.ID,
-			"label":  ch.Label,
-			"intent": firstNonEmptyStr(ch.Intent, "neutral"),
-		})
+	interactionID := strings.TrimSpace(req.InteractionID)
+	if interactionID == "" {
+		interactionID = s.store.Store().NewID("interaction")
 	}
-	if len(choices) == 0 {
-		choices = []map[string]any{
-			{"id": "allow", "label": "允许一次", "intent": "accept"},
-			{"id": "deny", "label": "拒绝", "intent": "deny"},
-		}
-	}
-	payload := map[string]any{
-		"toolName": firstNonEmptyStr(req.ToolName, "tool"),
-		"choices":  choices,
-		"presentation": map[string]any{
-			"title":       firstNonEmptyStr(req.Title, "需要确认工具调用"),
-			"description": req.Detail,
+	entry := &nativePendingApproval{
+		interaction: &Interaction{
+			InteractionID: interactionID,
+			SessionID:     s.sessionID,
+			Kind:          "approval",
+			Revision:      1,
 		},
+		input:     CloneMap(req.Input),
+		onResolve: req.OnResolve,
+		done:      make(chan map[string]any, 1),
 	}
-	for k, v := range req.RawPayload {
-		payload[k] = v
-	}
+	s.mu.Lock()
+	s.pending[interactionID] = entry
+	s.mu.Unlock()
 
+	payload := buildNativeApprovalPayload(req)
 	inter, err := s.store.CreateInteraction(ctx, CreateInteractionInput{
-		InteractionID: req.InteractionID,
+		InteractionID: interactionID,
 		SessionID:     s.sessionID,
-		ItemID:        firstNonEmptyStr(req.InteractionID, runID, req.TurnID),
+		ItemID:        firstNonEmptyStr(req.InteractionID, runID, req.TurnID, interactionID),
 		Kind:          "approval",
 		Revision:      1,
 		Payload:       payload,
 	})
 	if err != nil {
+		s.mu.Lock()
+		delete(s.pending, interactionID)
+		s.mu.Unlock()
 		return nil, err
 	}
-	entry := &nativePendingApproval{
-		interaction: inter,
-		onResolve:   req.OnResolve,
-		done:        make(chan map[string]any, 1),
-	}
 	s.mu.Lock()
-	s.pending[inter.InteractionID] = entry
+	entry.interaction = inter
 	s.mu.Unlock()
+	if req.OnPending != nil {
+		req.OnPending(interactionID)
+	}
 
 	select {
 	case dec := <-entry.done:
 		return dec, nil
 	case <-ctx.Done():
-		s.mu.Lock()
-		delete(s.pending, inter.InteractionID)
-		s.mu.Unlock()
-		return map[string]any{"behavior": "deny", "choiceId": "deny"}, ctx.Err()
+		s.CancelPending(context.Background(), interactionID, "approval_channel_closed")
+		return map[string]any{"behavior": "deny", "choiceId": "deny", "message": "approval_channel_closed"}, ctx.Err()
 	}
 }
 
@@ -319,7 +384,43 @@ func (s *NativeApprovalSurface) Resolve(ctx context.Context, cmd *Command) (map[
 	if pending == nil {
 		return nil, NewError("chat_interaction_not_live", http.StatusConflict, nil)
 	}
+	return s.resolvePending(ctx, pending, int(rev), choiceID, "")
+}
 
+// ResolveDecision 处理来自兼容 REST 端点的 allow/deny 审批决策。
+func (s *NativeApprovalSurface) ResolveDecision(ctx context.Context, interactionID, decision, message string) (bool, error) {
+	id := strings.TrimSpace(interactionID)
+	if s == nil || id == "" {
+		return false, nil
+	}
+	s.mu.Lock()
+	pending := s.pending[id]
+	s.mu.Unlock()
+	if pending == nil {
+		return false, nil
+	}
+	choiceID := "deny"
+	if strings.EqualFold(strings.TrimSpace(decision), "allow") {
+		choiceID = "allow"
+	}
+	rev := 1
+	if pending.interaction != nil && pending.interaction.Revision > 0 {
+		rev = pending.interaction.Revision
+	}
+	if _, err := s.resolvePending(ctx, pending, rev, choiceID, message); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *NativeApprovalSurface) resolvePending(
+	ctx context.Context,
+	pending *nativePendingApproval,
+	rev int,
+	choiceID string,
+	message string,
+) (map[string]any, error) {
+	interactionID := pending.interaction.InteractionID
 	behavior := "deny"
 	if choiceID == "allow" || choiceID == "allow_session" || choiceID == "install" || strings.HasPrefix(choiceID, "accept") {
 		behavior = "allow"
@@ -328,12 +429,21 @@ func (s *NativeApprovalSurface) Resolve(ctx context.Context, cmd *Command) (map[
 		"choiceId": choiceID,
 		"behavior": behavior,
 	}
+	if behavior == "allow" {
+		updated := CloneMap(pending.input)
+		if updated == nil {
+			updated = map[string]any{}
+		}
+		decision["updatedInput"] = updated
+	} else if msg := strings.TrimSpace(message); msg != "" {
+		decision["message"] = msg
+	}
 
 	coord := NewInteractionResolutionCoordinator(s.store, nil)
 	out, err := coord.Resolve(ctx, interactionID, ResolveInteractionInput{
 		SessionID:  s.sessionID,
 		Kind:       "approval",
-		Revision:   int(rev),
+		Revision:   rev,
 		Resolution: map[string]any{"choiceId": choiceID},
 	}, func(_ *Interaction) (map[string]any, error) {
 		if pending.onResolve != nil {
@@ -354,16 +464,59 @@ func (s *NativeApprovalSurface) Resolve(ctx context.Context, cmd *Command) (map[
 	return out.Response, nil
 }
 
-// Dispose 取消所有悬而未决的审批等待。
+// CancelPending 在审批工具断开或运行取消时移除挂起审批并同步过期持久化交互。
+func (s *NativeApprovalSurface) CancelPending(ctx context.Context, interactionID, reason string) bool {
+	id := strings.TrimSpace(interactionID)
+	if s == nil || id == "" {
+		return false
+	}
+	s.mu.Lock()
+	entry := s.pending[id]
+	if entry != nil {
+		delete(s.pending, id)
+	}
+	s.mu.Unlock()
+	if entry == nil {
+		return false
+	}
+	if s.store != nil {
+		cleanupCtx := ctx
+		if cleanupCtx == nil || cleanupCtx.Err() != nil {
+			var cancel context.CancelFunc
+			cleanupCtx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+		}
+		_, _ = s.store.ExpireInteraction(cleanupCtx, id, firstNonEmptyStr(reason, "cancelled"))
+	}
+	select {
+	case entry.done <- map[string]any{
+		"behavior": "deny",
+		"choiceId": "cancel",
+		"message":  firstNonEmptyStr(reason, "cancelled"),
+	}:
+	default:
+	}
+	return true
+}
+
+// Dispose 取消所有悬而未决的审批等待并清理持久化交互状态。
 func (s *NativeApprovalSurface) Dispose() {
 	s.mu.Lock()
-	entries := make([]*nativePendingApproval, 0, len(s.pending))
+	entries := make(map[string]*nativePendingApproval, len(s.pending))
 	for k, e := range s.pending {
-		entries = append(entries, e)
+		entries[k] = e
 		delete(s.pending, k)
 	}
 	s.mu.Unlock()
-	for _, e := range entries {
+	if len(entries) == 0 {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for id, e := range entries {
+		if s.store != nil {
+			_, _ = s.store.ExpireInteraction(cleanupCtx, id, "disposed")
+		}
 		select {
 		case e.done <- map[string]any{"behavior": "deny", "choiceId": "cancel"}:
 		default:
@@ -714,12 +867,17 @@ type NativeRunExit struct {
 
 // NativeRunHandle 表示已启动的底层原生 CLI 进程句柄。
 type NativeRunHandle struct {
-	RunID      string
-	WriteSteer func(content string) error
-	Abort      func() error
-	Events     <-chan NativeRunEvent
-	SessionIDs <-chan string
-	Done       <-chan NativeRunExit
+	RunID              string
+	WriteSteer         func(content string) error
+	WriteInput         func(input string, appendNewline bool) error
+	Resize             func(cols, rows int) error
+	Abort              func() error
+	GetActivePrompt    func() map[string]any
+	GetContentSnapshot func() string
+	InteractionMode    string
+	Events             <-chan NativeRunEvent
+	SessionIDs         <-chan string
+	Done               <-chan NativeRunExit
 }
 
 // NativeTurnRunner 启动单次官方 CLI 执行；默认实现拉起真实子进程，测试可替换为桩实现。
@@ -734,12 +892,20 @@ type NativeDriverOptions struct {
 	Store                   *PublishingStore
 	AIHomeDir               string
 	HostHomeDir             string
+	ApprovalCallbackURL     string
+	NodeExecutablePath      string
 	Runner                  NativeTurnRunner
 	ResolveFallbackAccounts func(ctx context.Context, provider, currentRef string) []string
 	ReadModels              func(ctx context.Context, provider, accountRef string) []string
 	GetAdoptedRun           func(engineRunID string) *NativeRunHandle
 	ApprovalSpawners        map[string]bool
 	ResolveDefaultModel     func(provider string) string
+	OnRunRegistered         func(reg ActiveRunRegistration)
+	OnRunUnregistered       func(runID string)
+	OnSurfaceCreated        func(sessionID string, surface *NativeApprovalSurface)
+	OnSurfaceDisposed       func(sessionID string, surface *NativeApprovalSurface)
+	OnSurfaceRunBound       func(runID string, surface *NativeApprovalSurface)
+	OnSurfaceRunUnbound     func(runID string, surface *NativeApprovalSurface)
 }
 
 // NativeSessionDriver 驱动除 Codex app-server 之外的所有官方 CLI 原生会话。
@@ -781,8 +947,10 @@ func NewNativeSessionDriver(opts NativeDriverOptions) (*NativeSessionDriver, err
 	runner := opts.Runner
 	if runner == nil {
 		runner = &execNativeTurnRunner{
-			aiHomeDir:   opts.AIHomeDir,
-			hostHomeDir: opts.HostHomeDir,
+			aiHomeDir:           opts.AIHomeDir,
+			hostHomeDir:         opts.HostHomeDir,
+			approvalCallbackURL: opts.ApprovalCallbackURL,
+			nodeExecutablePath:  opts.NodeExecutablePath,
 		}
 	}
 	spawners := opts.ApprovalSpawners
@@ -790,17 +958,29 @@ func NewNativeSessionDriver(opts NativeDriverOptions) (*NativeSessionDriver, err
 		spawners = map[string]bool{spawnerNativeStream: true}
 	}
 	nativeSessionID := strings.TrimSpace(asString(opts.Session.RuntimeBinding["nativeSessionId"]))
+	surface := NewNativeApprovalSurface(opts.Store, opts.Session.SessionID, prov, opts.Runtime.RuntimeScope)
+	if opts.OnSurfaceCreated != nil {
+		opts.OnSurfaceCreated(opts.Session.SessionID, surface)
+	}
 	return &NativeSessionDriver{
 		opts:             opts,
 		session:          opts.Session,
 		runtime:          opts.Runtime,
 		store:            opts.Store,
 		provider:         prov,
-		approvalSurface:  NewNativeApprovalSurface(opts.Store, opts.Session.SessionID, prov, opts.Runtime.RuntimeScope),
+		approvalSurface:  surface,
 		runner:           runner,
 		approvalSpawners: spawners,
 		nativeSessionID:  nativeSessionID,
 	}, nil
+}
+
+// ApprovalSurface 返回本驱动绑定的原生审批表面。
+func (d *NativeSessionDriver) ApprovalSurface() *NativeApprovalSurface {
+	if d == nil {
+		return nil
+	}
+	return d.approvalSurface
 }
 
 // CreateNativeSessionDriverEntry 构建带有能力和命令处理器的 DriverEntry。
@@ -876,6 +1056,9 @@ func (d *NativeSessionDriver) Dispose() bool {
 		_ = act.handle.Abort()
 	}
 	if d.approvalSurface != nil {
+		if d.opts.OnSurfaceDisposed != nil {
+			d.opts.OnSurfaceDisposed(d.session.SessionID, d.approvalSurface)
+		}
 		d.approvalSurface.Dispose()
 	}
 	return true
@@ -1103,15 +1286,95 @@ func (d *NativeSessionDriver) executeWithRetries(
 	accounts []string,
 ) {
 	defer d.clearActive(act)
+	if d.opts.OnSurfaceRunBound != nil && d.approvalSurface != nil {
+		d.opts.OnSurfaceRunBound(tc.RunID, d.approvalSurface)
+		defer d.opts.OnSurfaceRunUnbound(tc.RunID, d.approvalSurface)
+	}
 
 	assistantItemID := "native-assistant-" + tc.TurnID
 	thinkingItemID := "native-thinking-" + tc.TurnID
-	var assistantStarted, thinkingStarted bool
-	var fullContent, fullThinking strings.Builder
+	terminalItemID := "native-terminal-" + tc.RunID
+	var assistantStarted, thinkingStarted, terminalStarted bool
+	var snapshotMu sync.Mutex
+	var fullContent, fullThinking, fullTerminal strings.Builder
 	var lastUsage map[string]any
+	startedAt := time.Now().UnixMilli()
+
+	appendAssistantDelta := func(textDelta string) {
+		if textDelta == "" {
+			return
+		}
+		if !assistantStarted {
+			assistantStarted = true
+			d.emitTimelineEvent(ctx, "timeline.item.started", tc, assistantItemID, map[string]any{
+				"item": map[string]any{
+					"id":     assistantItemID,
+					"turnId": tc.TurnID,
+					"kind":   "message",
+					"status": "running",
+					"detail": map[string]any{"role": "assistant", "model": model},
+				},
+			})
+		}
+		snapshotMu.Lock()
+		fullContent.WriteString(textDelta)
+		snapshotMu.Unlock()
+		d.emitTimelineEvent(ctx, "timeline.item.delta", tc, assistantItemID, map[string]any{
+			"itemId": assistantItemID,
+			"chunk":  textDelta,
+		})
+	}
+
+	appendTerminalDelta := func(chunk string) {
+		if chunk == "" {
+			return
+		}
+		if !terminalStarted {
+			terminalStarted = true
+			d.emitTimelineEvent(ctx, "timeline.item.started", tc, terminalItemID, map[string]any{
+				"item": map[string]any{
+					"id":     terminalItemID,
+					"turnId": tc.TurnID,
+					"kind":   "terminal",
+					"status": "running",
+					"detail": map[string]any{"stream": "stdout", "terminalId": tc.RunID},
+				},
+			})
+		}
+		snapshotMu.Lock()
+		fullTerminal.WriteString(chunk)
+		snapshotMu.Unlock()
+		d.emitTimelineEvent(ctx, "timeline.item.delta", tc, terminalItemID, map[string]any{
+			"itemId": terminalItemID,
+			"chunk":  chunk,
+		})
+	}
+
+	completeTerminalItem := func(status string) {
+		if !terminalStarted {
+			return
+		}
+		snapshotMu.Lock()
+		terminalText := fullTerminal.String()
+		snapshotMu.Unlock()
+		d.emitTimelineEvent(ctx, "timeline.item.completed", tc, terminalItemID, map[string]any{
+			"item": map[string]any{
+				"id":      terminalItemID,
+				"turnId":  tc.TurnID,
+				"kind":    "terminal",
+				"status":  status,
+				"content": terminalText,
+				"detail":  map[string]any{"stream": "stdout", "terminalId": tc.RunID},
+			},
+		})
+		terminalStarted = false
+	}
 
 	for attemptIdx, accountRef := range accounts {
-		continuation := attemptIdx > 0 && fullContent.Len() > 0 && d.getNativeSessionID() != ""
+		snapshotMu.Lock()
+		hasPriorContent := fullContent.Len() > 0
+		snapshotMu.Unlock()
+		continuation := attemptIdx > 0 && hasPriorContent && d.getNativeSessionID() != ""
 		attemptPrompt := prompt
 		attemptImages := imagePaths
 		if continuation {
@@ -1132,12 +1395,52 @@ func (d *NativeSessionDriver) executeWithRetries(
 			Slash:           isSlash,
 		})
 		if err != nil {
+			completeTerminalItem("failed")
 			act.done <- ProviderRunResult{Err: err}
 			return
 		}
 		d.mu.Lock()
 		act.handle = handle
 		d.mu.Unlock()
+
+		registeredID := ""
+		if d.opts.OnRunRegistered != nil {
+			registeredID = firstNonEmptyStr(handle.RunID, tc.RunID)
+			getSnapshot := handle.GetContentSnapshot
+			if getSnapshot == nil {
+				getSnapshot = func() string {
+					snapshotMu.Lock()
+					defer snapshotMu.Unlock()
+					if fullTerminal.Len() > 0 {
+						return fullTerminal.String()
+					}
+					return fullContent.String()
+				}
+			}
+			d.opts.OnRunRegistered(ActiveRunRegistration{
+				RunID:              registeredID,
+				Provider:           d.provider,
+				AccountRef:         accountRef,
+				SessionID:          d.session.SessionID,
+				ProjectDirName:     strings.TrimSpace(asString(sess.Policy["projectDirName"])),
+				ProjectPath:        strings.TrimSpace(sess.ProjectPath),
+				StartedAt:          startedAt,
+				InteractionMode:    firstNonEmptyStr(handle.InteractionMode, approvalMode, "default"),
+				Mode:               "native-session",
+				WriteInput:         handle.WriteInput,
+				WriteSteer:         handle.WriteSteer,
+				Resize:             handle.Resize,
+				Abort:              handle.Abort,
+				GetActivePrompt:    handle.GetActivePrompt,
+				GetContentSnapshot: getSnapshot,
+			})
+		}
+		unregisterAttempt := func() {
+			if registeredID != "" && d.opts.OnRunUnregistered != nil {
+				d.opts.OnRunUnregistered(registeredID)
+				registeredID = ""
+			}
+		}
 
 		var streamErrMsg string
 		var exitResult NativeRunExit
@@ -1163,27 +1466,9 @@ func (d *NativeSessionDriver) executeWithRetries(
 				}
 				switch ev.Type {
 				case "delta", "tool_use":
-					textDelta := ev.Delta
-					if textDelta == "" {
-						continue
-					}
-					if !assistantStarted {
-						assistantStarted = true
-						d.emitTimelineEvent(ctx, "timeline.item.started", tc, assistantItemID, map[string]any{
-							"item": map[string]any{
-								"id":     assistantItemID,
-								"turnId": tc.TurnID,
-								"kind":   "message",
-								"status": "running",
-								"detail": map[string]any{"role": "assistant", "model": model},
-							},
-						})
-					}
-					fullContent.WriteString(textDelta)
-					d.emitTimelineEvent(ctx, "timeline.item.delta", tc, assistantItemID, map[string]any{
-						"itemId": assistantItemID,
-						"chunk":  textDelta,
-					})
+					appendAssistantDelta(ev.Delta)
+				case "terminal_output":
+					appendTerminalDelta(ev.Delta)
 				case "thinking":
 					if ev.Thinking == "" {
 						continue
@@ -1208,9 +1493,14 @@ func (d *NativeSessionDriver) executeWithRetries(
 					if ev.Usage != nil {
 						lastUsage = ev.Usage
 					}
-					if ev.Content != "" && fullContent.Len() == 0 {
+					snapshotMu.Lock()
+					emptyAssistant := fullContent.Len() == 0
+					snapshotMu.Unlock()
+					if ev.Content != "" && emptyAssistant {
 						assistantStarted = true
+						snapshotMu.Lock()
 						fullContent.WriteString(ev.Content)
+						snapshotMu.Unlock()
 						d.emitTimelineEvent(ctx, "timeline.item.started", tc, assistantItemID, map[string]any{
 							"item": map[string]any{
 								"id":     assistantItemID,
@@ -1231,6 +1521,8 @@ func (d *NativeSessionDriver) executeWithRetries(
 				if handle.Abort != nil {
 					_ = handle.Abort()
 				}
+				unregisterAttempt()
+				completeTerminalItem("cancelled")
 				act.done <- ProviderRunResult{Result: map[string]any{"status": "interrupted"}}
 				return
 			}
@@ -1242,30 +1534,22 @@ func (d *NativeSessionDriver) executeWithRetries(
 			if !ok {
 				break
 			}
-			if ev.Type == "delta" && ev.Delta != "" {
-				if !assistantStarted {
-					assistantStarted = true
-					d.emitTimelineEvent(ctx, "timeline.item.started", tc, assistantItemID, map[string]any{
-						"item": map[string]any{
-							"id":     assistantItemID,
-							"turnId": tc.TurnID,
-							"kind":   "message",
-							"status": "running",
-							"detail": map[string]any{"role": "assistant", "model": model},
-						},
-					})
+			switch ev.Type {
+			case "delta", "tool_use":
+				appendAssistantDelta(ev.Delta)
+			case "terminal_output":
+				appendTerminalDelta(ev.Delta)
+			case "result":
+				if ev.Usage != nil {
+					lastUsage = ev.Usage
 				}
-				fullContent.WriteString(ev.Delta)
-				d.emitTimelineEvent(ctx, "timeline.item.delta", tc, assistantItemID, map[string]any{
-					"itemId": assistantItemID,
-					"chunk":  ev.Delta,
-				})
-			} else if ev.Type == "result" && ev.Usage != nil {
-				lastUsage = ev.Usage
-			} else if ev.Type == "error" && streamErrMsg == "" {
-				streamErrMsg = ev.Message
+			case "error":
+				if streamErrMsg == "" {
+					streamErrMsg = ev.Message
+				}
 			}
 		}
+		unregisterAttempt()
 
 		if sid := strings.TrimSpace(exitResult.SessionID); sid != "" {
 			d.bindNativeSessionID(ctx, sid)
@@ -1287,17 +1571,21 @@ func (d *NativeSessionDriver) executeWithRetries(
 				if lastUsage != nil {
 					detail["metrics"] = map[string]any{"usage": lastUsage}
 				}
+				snapshotMu.Lock()
+				contentStr := fullContent.String()
+				snapshotMu.Unlock()
 				d.emitTimelineEvent(ctx, "timeline.item.completed", tc, assistantItemID, map[string]any{
 					"item": map[string]any{
 						"id":      assistantItemID,
 						"turnId":  tc.TurnID,
 						"kind":    "message",
 						"status":  "completed",
-						"content": fullContent.String(),
+						"content": contentStr,
 						"detail":  detail,
 					},
 				})
 			}
+			completeTerminalItem("completed")
 			act.done <- ProviderRunResult{Result: map[string]any{"status": "completed"}}
 			return
 		}
@@ -1326,6 +1614,7 @@ func (d *NativeSessionDriver) executeWithRetries(
 			_, _ = d.store.UpdateExecutionContext(ctx, d.session.SessionID, nextRef, nil, nil)
 			continue
 		}
+		completeTerminalItem("failed")
 		errCode := firstNonEmptyStr(cls.Code, "native_session_failed")
 		act.done <- ProviderRunResult{Err: NewError(errCode, http.StatusBadGateway, map[string]any{
 			"provider": d.provider,
@@ -1493,28 +1782,33 @@ func (d *NativeSessionDriver) currentSession(ctx context.Context) *Session {
 }
 
 type execNativeTurnRunner struct {
-	aiHomeDir   string
-	hostHomeDir string
+	aiHomeDir           string
+	hostHomeDir         string
+	approvalCallbackURL string
+	nodeExecutablePath  string
 }
 
 func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) (*NativeRunHandle, error) {
+	useInteractivePTY := req.Slash && pty.Available()
 	var built sessionchat.Command
 	var err error
 	if strings.TrimSpace(req.NativeSessionID) != "" {
 		built, err = sessionchat.BuildResumeCommand(req.Provider, sessionchat.ResumeOptions{
-			Prompt:     req.Prompt,
-			SessionID:  req.NativeSessionID,
-			Model:      req.Model,
-			ImagePaths: req.ImagePaths,
-			Platform:   runtime.GOOS,
+			Prompt:         req.Prompt,
+			SessionID:      req.NativeSessionID,
+			Model:          req.Model,
+			ImagePaths:     req.ImagePaths,
+			InteractiveCLI: useInteractivePTY,
+			Platform:       runtime.GOOS,
 		})
 	} else {
 		built, err = sessionchat.BuildStartCommand(req.Provider, sessionchat.StartOptions{
-			Prompt:      req.Prompt,
-			Model:       req.Model,
-			ImagePaths:  req.ImagePaths,
-			ProjectPath: req.Session.ProjectPath,
-			Platform:    runtime.GOOS,
+			Prompt:         req.Prompt,
+			Model:          req.Model,
+			ImagePaths:     req.ImagePaths,
+			InteractiveCLI: useInteractivePTY,
+			ProjectPath:    req.Session.ProjectPath,
+			Platform:       runtime.GOOS,
 		})
 	}
 	if err != nil {
@@ -1534,12 +1828,36 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 	if runtimeDir := sessionread.ResolveAccountRuntimeDir(r.aiHomeDir, req.Provider, req.AccountRef); runtimeDir != "" {
 		args = sessionchat.ApplyProviderConfigDirArgs(req.Provider, args, runtimeDir)
 	}
+
+	workDir := strings.TrimSpace(req.Session.ProjectPath)
+	if workDir == "" {
+		if dir, derr := ChatWorkingDirectory(r.aiHomeDir, req.Session.SessionID); derr == nil {
+			workDir = dir
+		}
+	}
+
+	if useInteractivePTY {
+		return r.startInteractivePTY(ctx, req, binPath, args, workDir)
+	}
+
+	launchCleanup := func() {}
+	if strings.EqualFold(req.Provider, "claude") {
+		var updated []string
+		updated, launchCleanup = configureClaudeApprovalArgs(
+			r.aiHomeDir,
+			r.approvalCallbackURL,
+			r.nodeExecutablePath,
+			req.RunID,
+			req.ApprovalMode,
+			args,
+		)
+		args = updated
+	}
+
 	runCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(runCtx, binPath, args...)
-	if dir := strings.TrimSpace(req.Session.ProjectPath); dir != "" {
-		cmd.Dir = dir
-	} else if dir, derr := ChatWorkingDirectory(r.aiHomeDir, req.Session.SessionID); derr == nil {
-		cmd.Dir = dir
+	if workDir != "" {
+		cmd.Dir = workDir
 	}
 	cmd.Env = os.Environ()
 
@@ -1564,6 +1882,7 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
+		launchCleanup()
 		cancel()
 		return nil, err
 	}
@@ -1600,6 +1919,7 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 	}
 
 	go func() {
+		defer launchCleanup()
 		defer close(eventsCh)
 		defer close(sidsCh)
 
@@ -1711,3 +2031,220 @@ func dedupeNonEmptyStrings(in []string) []string {
 }
 
 func dummyNativePathKeep() string { return filepath.Clean(".") }
+
+func (r *execNativeTurnRunner) startInteractivePTY(
+	ctx context.Context,
+	req NativeRunRequest,
+	binPath string,
+	args []string,
+	workDir string,
+) (*NativeRunHandle, error) {
+	runCtx, cancel := context.WithCancel(ctx)
+	ptySess, err := pty.NewStarter().Start(runCtx, pty.Spec{
+		Path: binPath,
+		Args: args,
+		Env:  os.Environ(),
+		Dir:  workDir,
+		Size: pty.Size{Rows: 30, Cols: 120},
+	})
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	eventsCh := make(chan NativeRunEvent, 64)
+	sidsCh := make(chan string, 1)
+	doneCh := make(chan NativeRunExit, 1)
+
+	var ptyMu sync.Mutex
+	closed := false
+	markClosed := func() {
+		ptyMu.Lock()
+		closed = true
+		ptyMu.Unlock()
+	}
+
+	go func() {
+		defer close(eventsCh)
+		defer close(sidsCh)
+		defer close(doneCh)
+
+		buf := make([]byte, 4096)
+		var carry []byte
+		for {
+			n, rerr := ptySess.Read(buf)
+			if n > 0 {
+				chunk, nextCarry := splitCompleteUTF8(append(carry, buf[:n]...))
+				carry = nextCarry
+				if chunk != "" {
+					eventsCh <- NativeRunEvent{
+						Type:  "terminal_output",
+						Delta: chunk,
+					}
+				}
+			}
+			if rerr != nil {
+				break
+			}
+		}
+		if len(carry) > 0 {
+			eventsCh <- NativeRunEvent{
+				Type:  "terminal_output",
+				Delta: string(carry),
+			}
+		}
+		waitErr := ptySess.Wait()
+		markClosed()
+		exitCode := 0
+		if waitErr != nil {
+			if ee, ok := waitErr.(*exec.ExitError); ok {
+				exitCode = ee.ExitCode()
+			} else {
+				exitCode = 1
+			}
+		}
+		doneCh <- NativeRunExit{
+			ExitCode: exitCode,
+			Err:      waitErr,
+		}
+	}()
+
+	return &NativeRunHandle{
+		RunID:           req.RunID,
+		InteractionMode: firstNonEmptyStr(req.ApprovalMode, "default"),
+		WriteInput: func(input string, appendNewline bool) error {
+			ptyMu.Lock()
+			defer ptyMu.Unlock()
+			if closed {
+				return NewError("native_session_run_not_active", http.StatusConflict, nil)
+			}
+			payload := input
+			if appendNewline && !strings.HasSuffix(payload, "\r") && !strings.HasSuffix(payload, "\n") {
+				payload += "\r"
+			}
+			_, werr := ptySess.Write([]byte(payload))
+			return werr
+		},
+		Resize: func(cols, rows int) error {
+			ptyMu.Lock()
+			defer ptyMu.Unlock()
+			if closed {
+				return NewError("native_session_run_not_active", http.StatusConflict, nil)
+			}
+			c := clampInt(cols, minRunTerminalCols, maxRunTerminalCols)
+			rw := clampInt(rows, minRunTerminalRows, maxRunTerminalRows)
+			return ptySess.Resize(pty.Size{Cols: uint16(c), Rows: uint16(rw)})
+		},
+		Abort: func() error {
+			markClosed()
+			cancel()
+			if killer, ok := ptySess.(interface{ Kill() error }); ok {
+				_ = killer.Kill()
+			}
+			_ = ptySess.Close()
+			return nil
+		},
+		Events:     eventsCh,
+		SessionIDs: sidsCh,
+		Done:       doneCh,
+	}, nil
+}
+
+func splitCompleteUTF8(data []byte) (string, []byte) {
+	if len(data) == 0 {
+		return "", nil
+	}
+	// 保留末尾尚未构成完整 rune 的 UTF-8 前导字节到下一次读取。
+	split := len(data)
+	for split > 0 && len(data)-split < utf8.UTFMax {
+		if utf8.RuneStart(data[split-1]) {
+			if !utf8.FullRune(data[split-1:]) {
+				split--
+			}
+			break
+		}
+		split--
+	}
+	return string(data[:split]), append([]byte(nil), data[split:]...)
+}
+
+func configureClaudeApprovalArgs(
+	aiHomeDir string,
+	approvalCallbackURL string,
+	nodeBin string,
+	runID string,
+	approvalMode string,
+	args []string,
+) ([]string, func()) {
+	mode := strings.ToLower(strings.TrimSpace(approvalMode))
+	if mode != "confirm" && mode != "plan" {
+		return args, func() {}
+	}
+	permMode := "default"
+	if mode == "plan" {
+		permMode = "plan"
+	}
+	out := append(append([]string(nil), args...), "--permission-mode", permMode)
+	cbURL := strings.TrimSpace(approvalCallbackURL)
+	if cbURL == "" {
+		return out, func() {}
+	}
+	toolPath := resolveClaudePermissionToolPath()
+	if toolPath == "" {
+		return out, func() {}
+	}
+	nodeExec := strings.TrimSpace(nodeBin)
+	if nodeExec == "" {
+		if resolved, err := exec.LookPath("node"); err == nil {
+			nodeExec = resolved
+		} else {
+			nodeExec = "node"
+		}
+	}
+	rootDir := strings.TrimSpace(aiHomeDir)
+	if rootDir == "" {
+		rootDir = os.TempDir()
+	}
+	ctxDir := filepath.Join(rootDir, "run", "launch-context")
+	if err := os.MkdirAll(ctxDir, 0o700); err != nil {
+		return out, func() {}
+	}
+	ctxFile := filepath.Join(ctxDir, fmt.Sprintf("ctx-native-%s.json", randomControlID("lc")))
+	ctxRaw, _ := json.Marshal(map[string]any{
+		"approvalUrl": cbURL,
+		"runId":       runID,
+	})
+	if err := os.WriteFile(ctxFile, ctxRaw, 0o600); err != nil {
+		return out, func() {}
+	}
+	mcpCfg, _ := json.Marshal(map[string]any{
+		"mcpServers": map[string]any{
+			"aih": map[string]any{
+				"command": nodeExec,
+				"args":    []string{toolPath},
+				"env": map[string]string{
+					"AIH_LAUNCH_CONTEXT": ctxFile,
+				},
+			},
+		},
+	})
+	out = append(out, "--permission-prompt-tool", "mcp__aih__approve", "--mcp-config", string(mcpCfg))
+	return out, func() { _ = os.Remove(ctxFile) }
+}
+
+func resolveClaudePermissionToolPath() string {
+	candidates := []string{
+		filepath.Join("lib", "server", "claude-permission-mcp-tool.js"),
+	}
+	if root := strings.TrimSpace(os.Getenv("AIH_PACKAGE_ROOT")); root != "" {
+		candidates = append([]string{filepath.Join(root, "lib", "server", "claude-permission-mcp-tool.js")}, candidates...)
+	}
+	for _, c := range candidates {
+		if abs, err := filepath.Abs(c); err == nil {
+			if info, serr := os.Stat(abs); serr == nil && !info.IsDir() {
+				return abs
+			}
+		}
+	}
+	return ""
+}

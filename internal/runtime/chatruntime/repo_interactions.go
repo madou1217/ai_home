@@ -257,6 +257,43 @@ func (r *InteractionRepository) AcknowledgeExternal(ctx context.Context, interac
 	return out, err
 }
 
+// Expire 将仍处于挂起/结算中的交互标记为 expired，并追加 interaction.expired 事件。
+func (r *InteractionRepository) Expire(ctx context.Context, interactionID, reason string) (*Interaction, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "expired"
+	}
+	var out *Interaction
+	err := r.db.withTx(ctx, func(tx *sql.Tx) error {
+		current, err := getInteractionTx(ctx, tx, interactionID)
+		if err != nil {
+			return err
+		}
+		if current == nil || (current.State != "pending" && current.State != "resolving") {
+			out = current
+			return nil
+		}
+		expiredRes, _ := CanonicalJSON(map[string]any{"reason": reason})
+		res, err := tx.ExecContext(ctx, `
+			UPDATE chat_runtime_interactions
+			SET state = 'expired',
+				resolution_json = ?,
+				updated_at = ?
+			WHERE interaction_id = ? AND state IN ('pending', 'resolving')
+		`, expiredRes, r.db.clock(), current.InteractionID)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		out, err = getInteractionTx(ctx, tx, current.InteractionID)
+		if err != nil || n == 0 || out == nil {
+			return err
+		}
+		return r.appendEventTx(ctx, tx, out.SessionID, "interaction.expired", out)
+	})
+	return out, err
+}
+
 func (r *InteractionRepository) Validate(ctx context.Context, interactionID string, input ResolveInteractionInput) (*Interaction, error) {
 	var out *Interaction
 	err := r.db.withRead(ctx, func(db *sql.DB) error {

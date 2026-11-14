@@ -519,6 +519,14 @@ func (p *PublishingStore) AcknowledgeExternalInteraction(ctx context.Context, in
 	})
 }
 
+// ExpireInteraction 在 PublishingStore 中将交互置为已过期并广播 interaction.expired 事件。
+func (p *PublishingStore) ExpireInteraction(ctx context.Context, interactionID, reason string) (*Interaction, error) {
+	sid := p.interactionSessionID(ctx, interactionID)
+	return publishKnown(p, ctx, sid, func() (*Interaction, error) {
+		return p.store.ExpireInteraction(ctx, interactionID, reason)
+	})
+}
+
 func (p *PublishingStore) GetSnapshot(ctx context.Context, sessionID string) (*Snapshot, error) {
 	return p.store.GetSnapshot(ctx, sessionID)
 }

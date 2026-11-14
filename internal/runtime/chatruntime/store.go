@@ -584,6 +584,11 @@ func (s *Store) AcknowledgeExternalInteraction(ctx context.Context, interactionI
 	return s.Interactions.AcknowledgeExternal(ctx, interactionID)
 }
 
+// ExpireInteraction 将挂起交互标记为已过期并记录过期事件。
+func (s *Store) ExpireInteraction(ctx context.Context, interactionID, reason string) (*Interaction, error) {
+	return s.Interactions.Expire(ctx, interactionID, reason)
+}
+
 func (s *Store) ListRecoveryCandidates(ctx context.Context) ([]Session, error) {
 	return s.Recovery.ListCandidates(ctx)
 }

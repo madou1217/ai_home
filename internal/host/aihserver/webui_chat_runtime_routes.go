@@ -15,14 +15,16 @@ import (
 
 // WebUIChatRuntimeBuildOptions 配置宿主层 Canonical Chat Runtime 服务的装配参数。
 type WebUIChatRuntimeBuildOptions struct {
-	AIHomeDir       string
-	HostHomeDir     string
-	DBPath          string
-	Catalog         *providers.Catalog
-	ModelModalities *modelsdev.Index
-	AccountStore    chatruntime.AccountPoolReader
-	ChatStreamer    chatruntime.ChatTurnStreamer
-	ArtifactReader  chatruntime.ArtifactReader
+	AIHomeDir           string
+	HostHomeDir         string
+	DBPath              string
+	Catalog             *providers.Catalog
+	ModelModalities     *modelsdev.Index
+	AccountStore        chatruntime.AccountPoolReader
+	ChatStreamer        chatruntime.ChatTurnStreamer
+	ArtifactReader      chatruntime.ArtifactReader
+	ApprovalCallbackURL string
+	NodeExecutablePath  string
 }
 
 // BuildWebUIChatRuntimeService 构造并初始化供 WebUI 管理入口复用的 Canonical Chat Runtime Service。
@@ -53,6 +55,8 @@ func BuildWebUIChatRuntimeService(
 		ChatStreamer:         opts.ChatStreamer,
 		WorkspaceCheckpoints: checkpoints,
 		ArtifactReader:       opts.ArtifactReader,
+		ApprovalCallbackURL:  strings.TrimSpace(opts.ApprovalCallbackURL),
+		NodeExecutablePath:   strings.TrimSpace(opts.NodeExecutablePath),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("初始化 Canonical Chat Runtime 失败: %w", err)
@@ -74,13 +78,18 @@ func AttachWebUIChatRuntime(
 	if dependencies.Store != nil {
 		accountPool = dependencies.Store
 	}
+	approvalCallbackURL := ""
+	if trimmedNodeURL := strings.TrimRight(strings.TrimSpace(dependencies.NodeBaseURL), "/"); trimmedNodeURL != "" {
+		approvalCallbackURL = trimmedNodeURL + "/v0/webui/internal/approval-request"
+	}
 	svc, err := BuildWebUIChatRuntimeService(ctx, WebUIChatRuntimeBuildOptions{
-		AIHomeDir:       dependencies.AIHomeDir,
-		HostHomeDir:     dependencies.HostHomeDir,
-		Catalog:         dependencies.Catalog,
-		ModelModalities: dependencies.ModelModalities,
-		AccountStore:    accountPool,
-		ChatStreamer:    handler.InProcessChatTurnStreamer(),
+		AIHomeDir:           dependencies.AIHomeDir,
+		HostHomeDir:         dependencies.HostHomeDir,
+		Catalog:             dependencies.Catalog,
+		ModelModalities:     dependencies.ModelModalities,
+		AccountStore:        accountPool,
+		ChatStreamer:        handler.InProcessChatTurnStreamer(),
+		ApprovalCallbackURL: approvalCallbackURL,
 	})
 	if err != nil {
 		return nil, err

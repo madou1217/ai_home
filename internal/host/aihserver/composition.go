@@ -1931,6 +1931,13 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runtime 集合路由失败: %w", routesErr)
 		}
 		webuiRoutes = append(webuiRoutes, chatCollectionRoutes...)
+		chatRunsRoutes, runsRoutesErr := BuildWebUIChatRunsRoutes(chatHandler)
+		if runsRoutesErr != nil {
+			_ = chatRuntimeService.Close()
+			_ = inference.Close()
+			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runs 路由失败: %w", runsRoutesErr)
+		}
+		webuiRoutes = append(webuiRoutes, chatRunsRoutes...)
 		chatPrewarmCloser = startChatRuntimePrewarm(ctx, chatRuntimeService)
 	}
 	if webSocketHTTPClient == nil {

@@ -53,6 +53,8 @@ type ServiceOptions struct {
 	MetadataIndex           *modelsdev.Index
 	ChatStreamer            ChatTurnStreamer
 	CodexPool               *CodexClientPool
+	ApprovalCallbackURL     string
+	NodeExecutablePath      string
 	CodexExecutablePath     string
 	CodexRPCClient          CodexRPCClient
 	CodexDriverFactory      func(ctx context.Context, opts CodexDriverOptions) (*DriverEntry, error)
@@ -122,6 +124,13 @@ type Service struct {
 	prewarmCtx    context.Context
 	prewarmCancel context.CancelFunc
 	prewarmWG     sync.WaitGroup
+
+	runsMu              sync.RWMutex
+	activeRuns          map[string]*ActiveRunRegistration
+	surfacesByRun       map[string]*NativeApprovalSurface
+	surfacesBySession   map[string]*NativeApprovalSurface
+	standaloneApprovals *standaloneApprovalRegistry
+	cliConfirmations    *CLIInstallConfirmationRegistry
 }
 
 type composerFlight struct {
@@ -320,6 +329,7 @@ func NewService(ctx context.Context, opts ServiceOptions) (*Service, error) {
 	} else {
 		svc.cliInteractions = NewCLIInteractionCoordinator(svc.publisher, svc.ResolveSession, opts.IDFactory)
 	}
+	svc.ensureRunsControl()
 	return svc, nil
 }
 
@@ -1000,6 +1010,7 @@ func (s *Service) Close() error {
 	if s.actors != nil {
 		s.actors.Close()
 	}
+	s.closeRunsControl()
 	s.composerMu.Lock()
 	s.composerCache = map[string]composerCacheEntry{}
 	s.composerTasks = map[string]*composerFlight{}
@@ -1163,11 +1174,19 @@ func (r *defaultDriverRegistry) resolveNativeEntry(sess *Session, rt RuntimeDesc
 		Store:                   s.publisher,
 		AIHomeDir:               s.opts.AIHomeDir,
 		HostHomeDir:             s.opts.HostHomeDir,
+		ApprovalCallbackURL:     s.opts.ApprovalCallbackURL,
+		NodeExecutablePath:      s.opts.NodeExecutablePath,
 		Runner:                  s.opts.NativeRunner,
 		ResolveFallbackAccounts: s.opts.ResolveFallbackAccounts,
 		ReadModels:              s.opts.ReadProviderModels,
 		ResolveDefaultModel:     s.opts.ResolveDefaultModel,
 		GetAdoptedRun:           s.opts.GetAdoptedNativeRun,
+		OnRunRegistered:         s.RegisterActiveRun,
+		OnRunUnregistered:       s.UnregisterActiveRun,
+		OnSurfaceCreated:        s.RegisterApprovalSurface,
+		OnSurfaceDisposed:       s.UnregisterApprovalSurface,
+		OnSurfaceRunBound:       s.BindApprovalSurfaceRun,
+		OnSurfaceRunUnbound:     s.UnbindApprovalSurfaceRun,
 	})
 	if err != nil {
 		return nil, err

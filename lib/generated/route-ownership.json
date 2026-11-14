@@ -385,13 +385,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/chat-sessions"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/chat/artifacts"
         },
         {
@@ -1523,6 +1516,21 @@
             "GET"
           ],
           "path": "/v0/webui/account-upstream-error-rules"
+        }
+      ]
+    },
+    {
+      "id": "webui.chat_sessions",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/chat-sessions"
         }
       ]
     },

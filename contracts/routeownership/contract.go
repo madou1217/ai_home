@@ -192,7 +192,6 @@ func Current() Manifest {
 					// 其余 /v0/webui 家族已由 Go 承接（见各自 go_owned 条目）。
 					httpRoute([]string{"*"}, "/v0/webui/accounts/plugin-login/start"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/zcode/url-callback"),
-					httpRoute([]string{"*"}, "/v0/webui/chat-sessions"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/attachments"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
@@ -649,6 +648,15 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/account-upstream-error-rules"),
+				},
+			},
+			{
+				// 聊天会话 CRUD：浏览器入口由 Go 直接应答。
+				ID:              "webui.chat_sessions",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/chat-sessions"),
 				},
 			},
 			{

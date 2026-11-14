@@ -31,6 +31,19 @@ import (
 
 var ErrNotNativeRoute = errors.New("native Responses route requires canonical conversion")
 
+const (
+	// nativeTransportAttemptsPerAccount 是同一账号在「上游一个响应字节都没返回」时的
+	// 最大联系次数（含首次）。传输失败（连接重置、HTTP/2 PROTOCOL_ERROR、unexpected EOF）
+	// 描述的是出口可达性，不是账号可用性；单账号或同出口池里换号只是把同一故障再演一遍。
+	nativeTransportAttemptsPerAccount = 3
+	// nativeTransportRetryBudget 限制整个请求的同账号重试次数：多账号池在出口整体
+	// 抖动时，不能让 4 个候选账号各自把重试打满，把一次请求拖成十几分钟。
+	nativeTransportRetryBudget = 3
+	// nativeTransportRetryBaseDelay 是首次重试前的等待，之后每次翻倍。
+	nativeTransportRetryBaseDelay = 250 * time.Millisecond
+	nativeTransportRetryMaxDelay  = time.Second
+)
+
 type Selection struct {
 	AccountRef  accountcore.AccountRef
 	Credential  accountapp.Credential
@@ -145,6 +158,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	var last *http.Response
 	var lastRef accountcore.AccountRef
 	contacted := false
+	transportBudget := nativeTransportRetryBudget
 	defer func() {
 		if last != nil {
 			_ = last.Body.Close()
@@ -171,23 +185,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			continue
 		}
 		contacted = true
-		attemptStarted := trail.now()
-		upstream, err := handler.Upstream.RoundTripNative(ctx, selection.Credential, payload, request.Header, request.Host)
-		if err != nil || upstream == nil || upstream.Body == nil {
-			if upstream != nil && upstream.Body != nil {
-				_ = upstream.Body.Close()
-			}
+		// 传输失败且上游一个字节都没返回时，先在同一账号上有界重试，再考虑换号。
+		upstream, transportFailure, attemptStarted := handler.nativeRoundTrip(ctx, selection, payload, request, trail, &transportBudget)
+		if upstream == nil {
 			if request.Context().Err() != nil {
 				return
 			}
-			if err == nil {
-				err = io.ErrUnexpectedEOF
+			if transportFailure.IsValid() {
+				handler.recordFailure(ctx, route, selection, transportFailure)
 			}
-			failure, classifyErr := attemptfailure.NewTransport(err)
-			if classifyErr == nil {
-				handler.recordFailure(ctx, route, selection, failure)
-			}
-			trail.attempt(selection.AccountRef, "transport", failure, err.Error(), attemptStarted)
 			continue
 		}
 		if last != nil {
@@ -280,6 +286,80 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	handler.fail(response, trail, "upstream_temporarily_unavailable")
+}
+
+// nativeRoundTrip 联系上游；只有「一个响应字节都没拿到」的传输失败才在同一账号
+// 上重试。一旦拿到响应对象（哪怕状态码是 4xx/5xx），后续判断与交付都由调用方处理，
+// 这里绝不重试：重复请求会对同一轮生成计费两次，流式场景还会重复帧。
+//
+// retryBudget 是请求级预算指针，每真正发起一次重试就减一；由调用方在所有账号间共享。
+func (handler *Handler) nativeRoundTrip(
+	ctx context.Context,
+	selection Selection,
+	payload []byte,
+	request *http.Request,
+	trail *failureTrail,
+	retryBudget *int,
+) (*http.Response, inferencegateway.AttemptFailure, time.Time) {
+	var lastFailure inferencegateway.AttemptFailure
+	for attempt := 0; ; attempt++ {
+		started := trail.now()
+		upstream, err := handler.Upstream.RoundTripNative(ctx, selection.Credential, payload, request.Header, request.Host)
+		if err == nil && upstream != nil && upstream.Body != nil {
+			return upstream, inferencegateway.AttemptFailure{}, started
+		}
+		if upstream != nil && upstream.Body != nil {
+			_ = upstream.Body.Close()
+		}
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
+		failure, classifyErr := attemptfailure.NewTransport(err)
+		if classifyErr == nil {
+			lastFailure = failure
+		}
+		trail.attempt(selection.AccountRef, "transport", failure, err.Error(), started)
+		// 客户端断开或总预算耗尽时不再等待，也不再有意义地重试。
+		if ctx.Err() != nil {
+			return nil, lastFailure, time.Time{}
+		}
+		if attempt+1 >= nativeTransportAttemptsPerAccount || (retryBudget != nil && *retryBudget <= 0) {
+			return nil, lastFailure, time.Time{}
+		}
+		if retryBudget != nil {
+			*retryBudget--
+		}
+		if !waitTransportRetry(ctx, nativeTransportRetryDelay(attempt)) {
+			return nil, lastFailure, time.Time{}
+		}
+	}
+}
+
+// nativeTransportRetryDelay 返回第 retry 次重试（从 0 起）前的等待时长：250ms、500ms…上限 1s。
+func nativeTransportRetryDelay(retry int) time.Duration {
+	delay := nativeTransportRetryBaseDelay
+	for i := 0; i < retry; i++ {
+		delay *= 2
+		if delay >= nativeTransportRetryMaxDelay {
+			return nativeTransportRetryMaxDelay
+		}
+	}
+	return delay
+}
+
+// waitTransportRetry 在 ctx 存活的前提下等待；返回 false 表示等待被取消。
+func waitTransportRetry(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // fail 写出网关错误并汇报失败摘要。

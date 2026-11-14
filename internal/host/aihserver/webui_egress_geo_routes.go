@@ -73,6 +73,10 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		{Pattern: "/v0/webui/egress-pools/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
 		{Pattern: "/v0/webui/egress-pool-groups", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
 		{Pattern: "/v0/webui/egress-pool-groups/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
+		// 出口上游与证据（同构）。
+		{Pattern: "/v0/webui/egress-upstreams", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamsHandler)},
+		{Pattern: "/v0/webui/egress-upstreams/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamsHandler)},
+		{Pattern: "/v0/webui/egress-evidence", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
 		{Pattern: "GET " + webuiegresspoolapi.Path, Handler: poolHandler},
 		{Pattern: "POST " + webuiegresspoolapi.ProbePath, Handler: poolHandler},
 		{Pattern: "GET " + webuiegresspoolapi.PolicyPath, Handler: poolHandler},

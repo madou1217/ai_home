@@ -204,8 +204,6 @@ func Current() Manifest {
 					httpRoute([]string{"*"}, "/v0/webui/config"),
 					httpRoute([]string{"*"}, "/v0/webui/control-plane/endpoints"),
 					httpRoute([]string{"*"}, "/v0/webui/control-plane/profiles"),
-					httpRoute([]string{"*"}, "/v0/webui/egress-evidence"),
-					httpRoute([]string{"*"}, "/v0/webui/egress-upstreams"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/access"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/media"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/read"),
@@ -215,11 +213,8 @@ func Current() Manifest {
 					httpRoute([]string{"*"}, "/v0/webui/models"),
 					httpRoute([]string{"*"}, "/v0/webui/openai-models"),
 					httpRoute([]string{"*"}, "/v0/webui/openai-models/watch"),
-					httpRoute([]string{"*"}, "/v0/webui/peer/messages"),
 					httpRoute([]string{"*"}, "/v0/webui/provider-cli-upgrade"),
 					httpRoute([]string{"*"}, "/v0/webui/provider-hooks"),
-					httpRoute([]string{"*"}, "/v0/webui/scheduled-tasks"),
-					httpRoute([]string{"*"}, "/v0/webui/scheduled-tasks/preview"),
 					{Transport: "http", Methods: []string{"GET"}, Path: "/ui/*", Role: "static WebUI"},
 				},
 			},
@@ -592,6 +587,25 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/geo-resources"),
+				},
+			},
+			{
+				// peer 消息与 watch：浏览器入口由 Go 直接应答。
+				ID:              "webui.peer_messages",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/peer/messages"),
+				},
+			},
+			{
+				// 计划任务（列表/预览/记录/动作）：浏览器入口由 Go 直接应答。
+				ID:              "webui.scheduled_tasks",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/scheduled-tasks"),
+					httpRoute([]string{"POST"}, "/v0/webui/scheduled-tasks/preview"),
 				},
 			},
 			{

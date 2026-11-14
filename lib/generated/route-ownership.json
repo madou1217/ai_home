@@ -469,20 +469,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/egress-evidence"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/egress-upstreams"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/fs/access"
         },
         {
@@ -546,13 +532,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/peer/messages"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/provider-cli-upgrade"
         },
         {
@@ -561,20 +540,6 @@
             "*"
           ],
           "path": "/v0/webui/provider-hooks"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/scheduled-tasks"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/scheduled-tasks/preview"
         },
         {
           "transport": "http",
@@ -1522,6 +1487,42 @@
             "GET"
           ],
           "path": "/v0/webui/geo-resources"
+        }
+      ]
+    },
+    {
+      "id": "webui.peer_messages",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/peer/messages"
+        }
+      ]
+    },
+    {
+      "id": "webui.scheduled_tasks",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/scheduled-tasks"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/scheduled-tasks/preview"
         }
       ]
     },

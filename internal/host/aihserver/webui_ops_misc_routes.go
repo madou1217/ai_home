@@ -18,6 +18,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicodexresetcreditapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipeerapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuischeduledtasksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverrestartapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitasksapi"
@@ -171,6 +172,9 @@ func buildWebUIOpsMiscRoutesWithPorts(
 	}
 
 	routes := []webuiRoute{
+		// 浏览器数据面：peer 消息与 watch（同构）。
+		{Pattern: "/v0/webui/peer/messages", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", peerHandler)},
+		{Pattern: "/v0/webui/peer/messages/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", peerHandler)},
 		{Pattern: "GET " + webuipeerapi.MessagesPath, Handler: peerHandler},
 		{Pattern: "GET " + webuipeerapi.WatchPath, Handler: peerHandler},
 		{Pattern: "GET " + webuiaccountoutcomesapi.Path, Handler: outcomesHandler},
@@ -214,6 +218,9 @@ func buildWebUIOpsMiscRoutesWithPorts(
 			webuiRoute{Pattern: "POST " + webuischeduledtasksapi.ActionPrefix + "{taskId}/run", Handler: scheduledHandler},
 			webuiRoute{Pattern: "POST " + webuischeduledtasksapi.ActionPrefix + "{taskId}/toggle", Handler: scheduledHandler},
 			webuiRoute{Pattern: "POST " + webuischeduledtasksapi.ActionPrefix + "{taskId}/delete", Handler: scheduledHandler},
+			// 浏览器数据面：计划任务（同构）。
+			webuiRoute{Pattern: "/v0/webui/scheduled-tasks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", scheduledHandler)},
+			webuiRoute{Pattern: "/v0/webui/scheduled-tasks/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", scheduledHandler)},
 		)
 	}
 

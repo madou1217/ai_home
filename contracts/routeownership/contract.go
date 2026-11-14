@@ -488,6 +488,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号重新认证：浏览器入口由 Go 承接，ref 先翻译。
+				ID:              "webui.account_reauth",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/reauth"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

@@ -675,6 +675,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建重新认证接口失败: %w", err)
 	}
+	publicAccountReauth := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		goRef := updateRefResolver.GoRef(request.PathValue("accountRef"))
+		cloned := request.Clone(request.Context())
+		cloned.URL.Path = "/v1/management/webui/accounts/" + request.PathValue("provider") + "/" + goRef + "/reauth"
+		reauth.ServeHTTP(response, cloned)
+	})
 	// 新增账号作业：作业引擎与重新认证共用 application/accountauth，本切片只把
 	// 开始/查询/回调/取消/安装确认/本机导入六条路径的权威入口搬到 Go。
 	addJobs, err := webuiaccountaddapi.NewAccountAuthJobs(dependencies.AuthJobs)
@@ -916,6 +922,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST /v0/webui/sessions/archive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsLifecycle)},
 		{Pattern: "GET /v0/webui/sessions/archived", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", archivedSessions)},
 		{Pattern: "POST " + webuiaccountreauthapi.Path + webuiaccountreauthapi.ReauthSuffix, Handler: reauth},
+		// 浏览器重新认证入口（ref 先翻译成 Go ref）。
+		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/reauth", Handler: publicAccountReauth},
 		{Pattern: "POST " + webuiaccountaddapi.Path, Handler: accountAdd},
 		{Pattern: "GET " + webuiaccountaddapi.Path + webuiaccountaddapi.JobsSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CallbackSuffix, Handler: accountAdd},

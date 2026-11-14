@@ -416,6 +416,20 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 工具链镜像 / 代理 / 连通性：浏览器入口由 Go 直接应答。
+				ID:              "webui.toolkit_settings",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/mirrors"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/mirrors/set"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/mirrors/ping"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/proxy"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/proxy/set"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/connectivity"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

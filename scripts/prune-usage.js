@@ -37,7 +37,7 @@ function parseArgs(argv) {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const options = parseArgs(process.argv.slice(2));
-const home = process.env.AIH_HOME || path.join(os.homedir(), '.ai_home');
+const home = process.env.AIH_HOME_DIR || path.join(os.homedir(), '.ai_home');
 const dbPath = options.db || path.join(home, 'app-state.db');
 
 if (!fs.existsSync(dbPath)) {

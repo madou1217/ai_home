@@ -378,6 +378,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 插件 provider hook 回环入口：由 Go 的 webuiauth 门承接。
+				ID:              "webui.session_provider_hook",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/session-events/provider-hook"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

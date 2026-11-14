@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionwatchapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
@@ -104,6 +105,8 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 	return []webuiRoute{
 		{Pattern: "GET " + webuisessionwatchapi.Path, Handler: watchHandler},
 		{Pattern: "POST " + webuisessionhookapi.Path, Handler: hookHandler},
+		// 插件回调的公开入口：Node 的 /v0 门只对回环放行，这里用同一判定后注入 Bearer。
+		{Pattern: "POST /v0/webui/session-events/provider-hook", Handler: webuiauth.RequireManagementKey(dependencies.ManagementKey, hookHandler)},
 		{Pattern: "POST " + webuisessionslifecycleapi.UnarchivePath, Handler: unarchiveHandler},
 		// 浏览器数据面：/v0/webui/sessions/unarchive → 管理前缀（同一处理器）。
 		{Pattern: "POST /v0/webui/sessions/unarchive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", unarchiveHandler)},

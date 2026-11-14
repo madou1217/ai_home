@@ -429,6 +429,10 @@ func Current() Manifest {
 					httpRoute([]string{"GET"}, "/v0/webui/toolkit/connectivity"),
 					httpRoute([]string{"GET"}, "/v0/webui/toolkit/tools"),
 					httpRoute([]string{"GET"}, "/v0/webui/toolkit/apps"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/install"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/plan"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/hooks"),
+					httpRoute([]string{"GET", "PUT"}, "/v0/webui/toolkit/apps/{appId}/config"),
 				},
 			},
 			{

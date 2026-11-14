@@ -54,6 +54,12 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "GET /v0/webui/toolkit/mirrors", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET /v0/webui/toolkit/tools", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET /v0/webui/toolkit/apps", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "POST /v0/webui/toolkit/apps/install", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "POST /v0/webui/toolkit/apps/plan", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "POST /v0/webui/toolkit/apps/hooks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "GET /v0/webui/toolkit/apps/{appId}/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "PUT /v0/webui/toolkit/apps/{appId}/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+
 
 		{Pattern: "POST /v0/webui/toolkit/mirrors/set", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "POST /v0/webui/toolkit/mirrors/ping", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},

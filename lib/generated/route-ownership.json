@@ -1031,6 +1031,35 @@
             "GET"
           ],
           "path": "/v0/webui/toolkit/apps"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/toolkit/apps/install"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/toolkit/apps/plan"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/toolkit/apps/hooks"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "PUT"
+          ],
+          "path": "/v0/webui/toolkit/apps/{appId}/config"
         }
       ]
     },

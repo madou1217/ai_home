@@ -378,20 +378,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/accounts/activity/params"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/accounts/local-import"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/accounts/plugin-login/start"
         },
         {
@@ -1509,6 +1495,27 @@
             "POST"
           ],
           "path": "/v0/webui/internal/approval-request"
+        }
+      ]
+    },
+    {
+      "id": "webui.account_activity_params",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/accounts/activity/params"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/accounts/local-import"
         }
       ]
     },

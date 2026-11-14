@@ -5,6 +5,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountauthapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // NewKiroJobLocalImporter 装配 Kiro OAuth 新增/重登作业的本机 IDE 登录态导入端口。
@@ -32,6 +33,8 @@ func buildWebUIAccountAuthRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "POST " + webuiaccountauthapi.ZCodeURLCallbackPath, Handler: http.HandlerFunc(handler.HandleZCodeURLCallback)},
 		{Pattern: "POST " + webuiaccountauthapi.StaticAccountPath, Handler: http.HandlerFunc(handler.HandleStaticAccount)},
 		{Pattern: "POST " + webuiaccountauthapi.LocalImportPath, Handler: http.HandlerFunc(handler.HandleLocalImport)},
+		// 浏览器数据面：本机登录态导入（同构）。
+		{Pattern: "POST /v0/webui/accounts/local-import", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", http.HandlerFunc(handler.HandleLocalImport))},
 	}, nil
 }
 

@@ -967,6 +967,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountactivityapi.ProbePath, Handler: accountActivity},
 		{Pattern: "GET " + webuiaccountactivityapi.JobsPath, Handler: accountActivity},
 		{Pattern: "GET " + webuiaccountactivityapi.ParamsPath, Handler: accountActivity},
+		// 浏览器数据面：账号活动参数（同构）。
+		{Pattern: "GET /v0/webui/accounts/activity/params", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountActivity)},
 		{Pattern: "POST " + webuiaccountactivityapi.AccountActionPath, Handler: accountActivity},
 	}
 	if restoreScheduling != nil {

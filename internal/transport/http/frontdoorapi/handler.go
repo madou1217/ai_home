@@ -16,10 +16,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ErrInvalidTarget 表示前置门目标地址不是合法的 loopback HTTP 端点。
@@ -38,11 +40,19 @@ func New(target string) (*Handler, error) {
 		return nil, err
 	}
 	handler := &Handler{target: parsed}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// 回环流量绝不走宿主机代理：HTTP_PROXY 一类的环境变量会让内部调用出网，
-	// 表现为上游 502 或把内部管理密钥发给代理。
-	transport.Proxy = nil
-	transport.MaxIdleConnsPerHost = 64
+	// 不复用 http.DefaultTransport：进程入口会把它替换成带出站回退的 RoundTripper
+	// （aihserver.InstallOutboundFallback），类型断言会直接 panic；即使没被替换，
+	// 默认 Transport 也会读 HTTP_PROXY，把内部管理密钥发给代理。
+	transport := &http.Transport{
+		Proxy:                 nil,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   64,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 	handler.proxy = &httputil.ReverseProxy{
 		Transport: transport,
 		Rewrite: func(request *httputil.ProxyRequest) {

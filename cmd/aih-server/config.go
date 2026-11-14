@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	defaultServerHost = "127.0.0.1"
-	defaultServerPort = 9527
+	defaultServerHost                  = "127.0.0.1"
+	defaultServerPort                  = 9527
+	defaultCodexHookSelfHealIntervalMs = 15000
 )
 
 var (
@@ -44,10 +45,37 @@ type commandConfig struct {
 	webDir string
 	// nodeBaseURL 是 Node 宿主的回环管理地址（监督器注入）。为空时不挂实例启停路由。
 	nodeBaseURL string
+	// frontDoor 表示本进程拥有公开端口：未注册的路径转交给 nodeBaseURL。
+	// 关闭时（缺省）Go 仍只跑私有端口，未注册路径保持 404。
+	frontDoor bool
 	// nodeExecPath 与 entryFilePath 由监督器通过 AIH_SERVER_NODE_EXEC / AIH_SERVER_ENTRY_FILE 注入，
 	// 供原生重启接口拉起独立后台重启进程；允许缺省，但显式设置损坏值时在启动期拦截。
 	nodeExecPath  string
 	entryFilePath string
+	// codexHooks 配置由 Go Server 承载的 Codex CLI/Desktop/VSCode Hook 守护参数。
+	codexHooks codexHooksConfig
+}
+
+type codexHooksConfig struct {
+	enableCLIHook                bool
+	enableDesktopHook            bool
+	cliSelfHealIntervalMs        int
+	desktopSelfHealIntervalMs    int
+	providerHookReceiverURL      string
+	traceFile                    string
+	traceResponses               bool
+	traceRemoteControl           bool
+	remoteControlProxy           bool
+	restartAppServerOnHookChange bool
+}
+
+// frontDoorBaseURL 只在公开端口模式下返回 Node 私有地址；其余情况为空，
+// 让 Go 保持「私有端口 + 未注册路径 404」的既有合同。
+func (config commandConfig) frontDoorBaseURL() string {
+	if !config.frontDoor {
+		return ""
+	}
+	return config.nodeBaseURL
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -74,6 +102,24 @@ func loadCommandConfig(
 	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
 	var nodeBaseURL string
 	flags.StringVar(&nodeBaseURL, "node-base-url", "", "Node 宿主回环地址；由 Go Core 监督器注入，不面向用户")
+	var frontDoor bool
+	flags.BoolVar(&frontDoor, "front-door", false, "本进程拥有公开端口：未注册的路由转交给 --node-base-url")
+	hooksCfg := codexHooksConfig{
+		cliSelfHealIntervalMs:     defaultCodexHookSelfHealIntervalMs,
+		desktopSelfHealIntervalMs: defaultCodexHookSelfHealIntervalMs,
+		traceRemoteControl:        true,
+		remoteControlProxy:        true,
+	}
+	flags.BoolVar(&hooksCfg.enableCLIHook, "enable-codex-cli-hook", false, "启用 Codex CLI Hook 注入与后台自愈")
+	flags.BoolVar(&hooksCfg.enableDesktopHook, "enable-codex-desktop-hook", false, "启用 Codex Desktop/VSCode Hook 注入与后台自愈")
+	flags.IntVar(&hooksCfg.cliSelfHealIntervalMs, "codex-cli-hook-self-heal-interval-ms", defaultCodexHookSelfHealIntervalMs, "Codex CLI Hook 后台自愈间隔（毫秒）")
+	flags.IntVar(&hooksCfg.desktopSelfHealIntervalMs, "codex-desktop-hook-self-heal-interval-ms", defaultCodexHookSelfHealIntervalMs, "Codex Desktop/VSCode Hook 后台自愈间隔（毫秒）")
+	flags.StringVar(&hooksCfg.providerHookReceiverURL, "codex-provider-hook-receiver-url", "", "覆盖 Codex Desktop provider hook 回调地址；留空按 node-base-url 派生")
+	flags.StringVar(&hooksCfg.traceFile, "codex-desktop-trace-file", "", "Codex Desktop 代理追踪日志文件路径")
+	flags.BoolVar(&hooksCfg.traceResponses, "codex-desktop-trace-responses", false, "开启 Codex Desktop responses 追踪日志")
+	flags.BoolVar(&hooksCfg.traceRemoteControl, "codex-desktop-trace-remote-control", true, "开启 Codex Desktop remote-control 追踪")
+	flags.BoolVar(&hooksCfg.remoteControlProxy, "codex-desktop-remote-control-proxy", true, "开启 Codex Desktop remote-control 代理开关")
+	flags.BoolVar(&hooksCfg.restartAppServerOnHookChange, "codex-desktop-restart-app-server-on-hook-change", false, "trace 或 helper 变更时自动重启运行中的 desktop app-server")
 	flags.Usage = func() {
 		writeUsage(runtime.stderr, flags)
 	}
@@ -111,6 +157,31 @@ func loadCommandConfig(
 	if nodeBaseURL != "" && !isLoopbackBaseURL(nodeBaseURL) {
 		return commandConfig{}, errInvalidCommandConfig
 	}
+	if frontDoor {
+		// 前置门必须有回退目标，且不能指向自己：指向自身会让未注册路径无限自环，
+		// 表现为 CPU 打满而不是一个可定位的错误。
+		if nodeBaseURL == "" {
+			return commandConfig{}, errInvalidCommandConfig
+		}
+		nodePort, portErr := loopbackURLPort(nodeBaseURL)
+		if portErr != nil || nodePort == port {
+			return commandConfig{}, errInvalidCommandConfig
+		}
+	}
+	if hooksCfg.cliSelfHealIntervalMs <= 0 || hooksCfg.desktopSelfHealIntervalMs <= 0 {
+		return commandConfig{}, errInvalidCommandConfig
+	}
+	if strings.IndexFunc(hooksCfg.traceFile, unicode.IsControl) >= 0 {
+		return commandConfig{}, errInvalidCommandConfig
+	}
+	hooksCfg.traceFile = strings.TrimSpace(hooksCfg.traceFile)
+	if strings.IndexFunc(hooksCfg.providerHookReceiverURL, unicode.IsControl) >= 0 {
+		return commandConfig{}, errInvalidCommandConfig
+	}
+	hooksCfg.providerHookReceiverURL = strings.TrimSpace(hooksCfg.providerHookReceiverURL)
+	if hooksCfg.providerHookReceiverURL != "" && !isLoopbackBaseURL(hooksCfg.providerHookReceiverURL) {
+		return commandConfig{}, errInvalidCommandConfig
+	}
 	nodeExecPath, err := envOptionalPath(runtime.lookupEnv, "AIH_SERVER_NODE_EXEC")
 	if err != nil {
 		return commandConfig{}, err
@@ -129,8 +200,10 @@ func loadCommandConfig(
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
 		nodeBaseURL:                nodeBaseURL,
+		frontDoor:                  frontDoor,
 		nodeExecPath:               nodeExecPath,
 		entryFilePath:              entryFilePath,
+		codexHooks:                 hooksCfg,
 	}, nil
 }
 

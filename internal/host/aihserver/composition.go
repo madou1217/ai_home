@@ -167,6 +167,8 @@ type serverHandlers struct {
 	subAggregatorPublic http.Handler
 	// codexAppServer 托管 /v0/codex/app-server 与根路径 WebSocket 升级代理。
 	codexAppServer http.Handler
+	// frontDoor 把 Go 未注册的路径转交给 Node；nil 表示本进程不是公开入口。
+	frontDoor http.Handler
 	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
 	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
@@ -224,6 +226,10 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	webUI, err := newWebUIHandler(options.WebDir)
+	if err != nil {
+		return nil, err
+	}
+	frontDoor, err := newFrontDoorHandler(options.FrontDoorBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +377,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, err
 	}
 	handlers.webUI = webUI
+	handlers.frontDoor = frontDoor
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
 	if err != nil {
 		_ = webuiAccountsSource.Close()

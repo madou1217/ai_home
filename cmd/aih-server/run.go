@@ -60,11 +60,14 @@ func run(
 	}
 	managementKey := config.managementKey
 	clientKey := config.clientKey
+	traceRemoteControl := config.codexHooks.traceRemoteControl
+	remoteControlProxy := config.codexHooks.remoteControlProxy
 	// 出站语义统一在进程入口装一次：环境代理不可达时改直连（显式代理仍失败关闭）。
 	aihserver.InstallOutboundFallback()
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
 		NodeBaseURL:                config.nodeBaseURL,
+		FrontDoorBaseURL:           config.frontDoorBaseURL(),
 		ManagementKey:              func() string { return managementKey },
 		ClientKey:                  func() string { return clientKey },
 		ModelDiscoverers:           runtime.models,
@@ -72,6 +75,20 @@ func run(
 		UpstreamErrorRuleProviders: config.upstreamErrorRuleProviders,
 		WebDir:                     config.webDir,
 		RequestShutdown:            runtime.requestShutdown,
+		CodexHooks: aihserver.CodexHooksOptions{
+			EnableCLIHook:                config.codexHooks.enableCLIHook,
+			EnableDesktopHook:            config.codexHooks.enableDesktopHook,
+			CLISelfHealInterval:          time.Duration(config.codexHooks.cliSelfHealIntervalMs) * time.Millisecond,
+			DesktopSelfHealInterval:      time.Duration(config.codexHooks.desktopSelfHealIntervalMs) * time.Millisecond,
+			ProviderHookReceiverURL:      config.codexHooks.providerHookReceiverURL,
+			TraceFile:                    config.codexHooks.traceFile,
+			TraceResponses:               config.codexHooks.traceResponses,
+			TraceRemoteControl:           &traceRemoteControl,
+			RemoteControlProxy:           &remoteControlProxy,
+			RestartAppServerOnHookChange: config.codexHooks.restartAppServerOnHookChange,
+			NodeExecPath:                 config.nodeExecPath,
+			EntryFilePath:                config.entryFilePath,
+		},
 		ErrorLog: log.New(
 			runtime.stderr,
 			"aih-server http: ",

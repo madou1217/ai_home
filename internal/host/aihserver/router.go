@@ -267,6 +267,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
 	// 的来源，且同协议下这些信息本来是 1:1 的。
 	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
+	// 未命中任何注册路由时：公开端口模式下交给 Node（WebUI 数据面、插件回调），
+	// 私有端口模式下保持 404——那条路径只有 Go 自己会访问，回落到 Node 会掩盖装配错误。
+	var fallback http.Handler = http.HandlerFunc(handleRouteNotFound)
+	if handlers.frontDoor != nil {
+		fallback = handlers.frontDoor
+	}
 	if handlers.codexAppServer != nil {
 		mux.Handle(codexappserverapi.AppServerProxyPath, handlers.codexAppServer)
 		mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
@@ -274,10 +280,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 				handlers.codexAppServer.ServeHTTP(response, request)
 				return
 			}
-			handleRouteNotFound(response, request)
+			fallback.ServeHTTP(response, request)
 		})
 	} else {
-		mux.HandleFunc("/", handleRouteNotFound)
+		mux.Handle("/", fallback)
 	}
 	return mux
 }

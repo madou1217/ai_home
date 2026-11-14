@@ -3,6 +3,7 @@ package frontdoorapi
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -293,4 +294,26 @@ func mustNewHandler(t *testing.T, target string) *Handler {
 		t.Fatalf("构造前置门失败: %v", err)
 	}
 	return handler
+}
+
+// TestNewSurvivesReplacedDefaultTransport 防止再次踩到「进程入口替换了
+// http.DefaultTransport」的坑：构造前置门不得依赖它的具体类型，更不能 panic。
+type stubRoundTripper struct{}
+
+func (stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("stub transport")
+}
+
+func TestNewSurvivesReplacedDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = stubRoundTripper{}
+	defer func() { http.DefaultTransport = original }()
+
+	handler, err := New("http://127.0.0.1:19551")
+	if err != nil {
+		t.Fatalf("New 失败: %v", err)
+	}
+	if handler == nil {
+		t.Fatal("New 返回空处理器")
+	}
 }

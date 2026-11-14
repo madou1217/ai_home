@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -79,12 +80,49 @@ type Options struct {
 	// NodeBaseURL 是 Node 宿主的回环地址（由 Go Core 监督器注入）。
 	// 插件实例启停的 prepare/activate/discard 要回调 Node；为空时只少挂这两条路由。
 	NodeBaseURL string
+	// FrontDoorBaseURL 是 Go 拥有公开端口时 Node 宿主的私有回环地址。
+	// 非空表示本进程就是公开入口：Go 自己应答推理与管理路由，未注册的路径
+	// （WebUI 数据面 /v0/webui/*、插件运行时回调）整体转交给 Node。
+	FrontDoorBaseURL string
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
 	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
 	//
 	// Windows 上必须走这条路径：`child.kill('SIGTERM')` 在那里实际是
 	// TerminateProcess，进程内的信号处理不会运行。
 	RequestShutdown func()
+	// CodexHooks 配置 Go 托管的 Codex CLI / Desktop / VSCode Hook 注入、Trace 同步与后台自愈参数。
+	CodexHooks CodexHooksOptions
+}
+
+// CodexHooksOptions 配置 Go 侧 Codex CLI / Desktop / VSCode Hook 注入、
+// Trace 配置同步、app-server 热重启与后台自愈循环参数。
+type CodexHooksOptions struct {
+	// EnableCLIHook 启用 Codex CLI 包装器注入与后台自愈循环。
+	EnableCLIHook bool
+	// EnableDesktopHook 启用 Codex Desktop 包装器注入、Trace 同步与后台自愈循环。
+	EnableDesktopHook bool
+	// EnableVscodeHook 允许独立覆盖 VSCode 扩展 Hook 开关；nil 时跟随 EnableDesktopHook（与 server.js 一致）。
+	EnableVscodeHook *bool
+	// CLISelfHealInterval 配置 CLI Hook 自愈周期；<=0 时使用 15s 默认值，最低钳位到 1s。
+	CLISelfHealInterval time.Duration
+	// DesktopSelfHealInterval 配置 Desktop/VSCode Hook 自愈周期；<=0 时使用 15s 默认值，最低钳位到 1s。
+	DesktopSelfHealInterval time.Duration
+	// ProviderHookReceiverURL 覆盖桌面端 provider hook 回调地址；为空且 NodeBaseURL 非空时自动派生。
+	ProviderHookReceiverURL string
+	// TraceFile 指定 Desktop 代理日志文件路径；为空且 TraceRemoteControl 为 true 时使用默认 mobile-trace.jsonl。
+	TraceFile string
+	// TraceResponses 开启 Desktop responses 追踪日志。
+	TraceResponses bool
+	// TraceRemoteControl 控制 remote-control trace；nil 时按默认 true 处理（与 args.js 一致）。
+	TraceRemoteControl *bool
+	// RemoteControlProxy 控制 remote-control 代理开关；nil 时按默认 true 处理（与 args.js 一致）。
+	RemoteControlProxy *bool
+	// RestartAppServerOnHookChange 控制 trace 或 helper 变化时是否自动重启运行中的 desktop app-server。
+	RestartAppServerOnHookChange bool
+	// NodeExecPath、EntryFilePath 与 HelperScriptPath 用于包装脚本；留空时由运行时自动解析。
+	NodeExecPath     string
+	EntryFilePath    string
+	HelperScriptPath string
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

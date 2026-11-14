@@ -812,6 +812,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiproviderhooksapi.InstallPath, Handler: installHooks},
 		{Pattern: "GET " + webuifsreadapi.Path, Handler: fsRead},
 		{Pattern: "GET " + webuifstreeapi.Path, Handler: fsTree},
+		// 浏览器数据面：/v0/webui/fs/tree → 管理前缀（同一处理器）。
+		{Pattern: "GET /v0/webui/fs/tree", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", fsTree)},
 		{Pattern: "GET " + webuifsmediaapi.Path, Handler: fsMedia},
 		{Pattern: "POST " + webuisshwriteapi.CollectionPath, Handler: sshWrite},
 		{Pattern: "PUT " + webuisshwriteapi.ItemPath, Handler: sshWrite},
@@ -826,6 +828,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.SummarySuffix, Handler: gitRead},
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.DiffSuffix, Handler: gitRead},
+		// 浏览器数据面：/v0/webui/git/* → 管理前缀（同一处理器）。
+		{Pattern: "GET /v0/webui/git/summary", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", gitRead)},
+		{Pattern: "GET /v0/webui/git/diff", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", gitRead)},
 		{Pattern: "GET " + webuiprojectsapi.Path, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.SessionsPath, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.WatchPath, Handler: projects},

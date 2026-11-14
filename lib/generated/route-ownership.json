@@ -673,6 +673,41 @@
       ]
     },
     {
+      "id": "webui.fs_tree",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/fs/tree"
+        }
+      ]
+    },
+    {
+      "id": "webui.git_read",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/git/summary"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/git/diff"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

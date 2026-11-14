@@ -297,6 +297,25 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 项目目录树：浏览器入口由 Go 直接应答。
+				ID:              "webui.fs_tree",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/fs/tree"),
+				},
+			},
+			{
+				// Git 只读摘要与差异：浏览器入口由 Go 直接应答。
+				ID:              "webui.git_read",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/git/summary"),
+					httpRoute([]string{"GET"}, "/v0/webui/git/diff"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

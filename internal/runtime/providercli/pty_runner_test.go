@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -20,8 +21,21 @@ func (starter *fakePTYStarter) Start(_ context.Context, spec pty.Spec) (pty.Sess
 }
 
 type fakePTYSession struct {
-	bytes.Buffer
-	input bytes.Buffer
+	mu     sync.Mutex
+	output bytes.Buffer
+	input  bytes.Buffer
+}
+
+func (session *fakePTYSession) Read(p []byte) (n int, err error) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.output.Read(p)
+}
+
+func (session *fakePTYSession) Write(p []byte) (n int, err error) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.input.Write(p)
 }
 
 func (session *fakePTYSession) Close() error          { return nil }

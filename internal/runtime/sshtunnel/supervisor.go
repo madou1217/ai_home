@@ -285,13 +285,14 @@ func (supervisor *Supervisor) watch(id string, entry *entry, tunnel Tunnel, gene
 func (supervisor *Supervisor) probeLoop(entry *entry, tunnel Tunnel, generation int) {
 	supervisor.mutex.Lock()
 	ticker := entry.probeTimer
+	stopCh := entry.probeStop
 	supervisor.mutex.Unlock()
-	if ticker == nil {
+	if ticker == nil || stopCh == nil {
 		return
 	}
 	for {
 		select {
-		case <-entry.probeStop:
+		case <-stopCh:
 			return
 		case <-ticker.C:
 		}

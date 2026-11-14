@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -158,17 +159,17 @@ func TestOpenAdaptersRejectsEmptyRoot(t *testing.T) {
 	}
 }
 
-func TestLedgerResolverPrefersAppStateLedger(t *testing.T) {
+func TestLedgerResolverPrefersGoLedger(t *testing.T) {
 	root := newAppStateRoot(t, ledgerRef, "claude")
 	ledger := &fakeLedger{account: mustLocalAccount(t, "codex")}
 	resolver := LedgerResolver{DatabasePath: filepath.Join(root, appstate.DatabaseFileName), Ledger: ledger}
 
 	provider, found, err := resolver.ProviderOf(context.Background(), ledgerRef)
-	if err != nil || !found || provider != "claude" {
-		t.Fatalf("ProviderOf() = %q, %v, %v; want claude, true, nil", provider, found, err)
+	if err != nil || !found || provider != "codex" {
+		t.Fatalf("ProviderOf() = %q, %v, %v; want codex, true, nil", provider, found, err)
 	}
-	if ledger.calls != 0 {
-		t.Fatalf("ledger calls = %d, want 0", ledger.calls)
+	if ledger.calls != 1 {
+		t.Fatalf("ledger calls = %d, want 1", ledger.calls)
 	}
 }
 
@@ -210,14 +211,20 @@ func TestLedgerResolverReturnsMissingWhenGoLedgerMisses(t *testing.T) {
 }
 
 func TestLedgerResolverPropagatesAppStateError(t *testing.T) {
-	ledger := &fakeLedger{account: mustLocalAccount(t, "codex")}
-	resolver := LedgerResolver{Ledger: ledger}
-
-	if _, _, err := resolver.ProviderOf(context.Background(), ledgerRef); !errors.Is(err, appstate.ErrInvalidRoot) {
-		t.Fatalf("ProviderOf() error = %v, want ErrInvalidRoot", err)
+	root := t.TempDir()
+	databasePath := filepath.Join(root, appstate.DatabaseFileName)
+	if err := os.WriteFile(databasePath, []byte("not a sqlite database"), 0o600); err != nil {
+		t.Fatalf("write invalid app-state.db: %v", err)
 	}
-	if ledger.calls != 0 {
-		t.Fatalf("ledger calls = %d, want 0", ledger.calls)
+	// Go 台账未命中后才会查询 app-state，错误必须原样向上传播。
+	ledger := &fakeLedger{err: accountapp.ErrAccountNotFound}
+	resolver := LedgerResolver{DatabasePath: databasePath, Ledger: ledger}
+
+	if _, _, err := resolver.ProviderOf(context.Background(), ledgerRef); err == nil {
+		t.Fatal("ProviderOf() error = nil, want app-state error")
+	}
+	if ledger.calls != 1 {
+		t.Fatalf("ledger calls = %d, want 1", ledger.calls)
 	}
 }
 

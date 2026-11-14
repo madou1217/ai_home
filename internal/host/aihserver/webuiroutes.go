@@ -42,6 +42,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountjobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountquotastatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
@@ -137,6 +138,8 @@ type webuiRouteDependencies struct {
 	ModelRefresher accountapp.AccountModelRefresher
 	// UsageService 是额度应用服务（账号刷新作业的 usage 段与 refresh-usage 入口）。
 	UsageService *usageapp.Service
+	// QuotaStats 是账号额度窗口统计服务（与账号行共用同一份额度/用量端口与定价）。
+	QuotaStats *usageapp.QuotaStatsService
 	// TerminalProbe 返回持久终端会话状态；SSH 工作区终端状态接口需要。
 	TerminalProbe func(sessionKey string) string
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel。
@@ -201,6 +204,21 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建额度重置历史接口失败: %w", err)
+	}
+	// 账号额度统计：窗口维度来自 QuotaStatsService，日/周用量来自 aih.db 账本。
+	// 账号解析复用 handler 内的 aih.db / app-state 回退，不需要额外台账端口。
+	var accountQuotaStats *webuiaccountquotastatsapi.Handler
+	if dependencies.QuotaStats != nil && dependencies.Store != nil {
+		accountQuotaStats, err = webuiaccountquotastatsapi.NewHandler(webuiaccountquotastatsapi.Dependencies{
+			Authorizer:   authorizer,
+			AIHomeDir:    dependencies.AIHomeDir,
+			QuotaStats:   dependencies.QuotaStats,
+			UsageBuckets: dependencies.Store,
+			Now:          time.Now,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("创建账号额度统计接口失败: %w", err)
+		}
 	}
 
 	aliasSource, err := webuialiaspoolapi.OpenSource(dependencies.AIHomeDir)
@@ -1070,6 +1088,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, err
 	}
 	routes = append(routes, loginJobRoutes...)
+	// 账号额度统计：管理面路由由 router 自动补 /v0 公开别名。
+	if accountQuotaStats != nil {
+		routes = append(routes, webuiRoute{
+			Pattern: "GET " + webuiaccountquotastatsapi.Path + "/{provider}/{accountRef}/" + webuiaccountquotastatsapi.Suffix,
+			Handler: accountQuotaStats,
+		})
+	}
 	return routes, nil
 }
 

@@ -105,6 +105,10 @@ type Job struct {
 	// account 是成功登录后可直接展示的账号字段；失败或未完成时为零值。
 	account     Account
 	failureCode string
+	// authorizationURL / userCode 只对活跃作业有值：设备码与授权链接在启动响应里
+	// 交付一次，浏览器随后通过作业快照重新读取（进程重启后为空）。
+	authorizationURL string
+	userCode         string
 }
 
 // Account 是 OAuth 登录成功后可直接展示的公开账号字段。
@@ -186,6 +190,12 @@ func (job Job) FailureCode() string {
 }
 
 // Account 返回登录成功时解析出的公开账号字段；其它状态返回零值。
+// AuthorizationURL 返回创建响应里交付的官方授权地址（仅活跃作业）。
+func (job Job) AuthorizationURL() string { return job.authorizationURL }
+
+// UserCode 返回设备码流程的短码（仅活跃作业）。
+func (job Job) UserCode() string { return job.userCode }
+
 func (job Job) Account() Account {
 	return job.account
 }

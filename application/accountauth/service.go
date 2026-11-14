@@ -234,9 +234,18 @@ func (service *Service) Start(
 	if codeProvider, ok := flow.(DeviceCodeProvider); ok {
 		userCode = strings.TrimSpace(codeProvider.UserCode())
 	}
+	authorizationURL := flow.AuthorizationURL()
+	// 设备码与授权链接在启动响应里交付一次；作业快照也要能读到（浏览器会二次查询）。
+	service.mu.Lock()
+	if stored, ok := service.jobs[jobID]; ok {
+		stored.job.authorizationURL = authorizationURL
+		stored.job.userCode = userCode
+		service.jobs[jobID] = stored
+	}
+	service.mu.Unlock()
 	return StartResult{
 		job:              job,
-		authorizationURL: flow.AuthorizationURL(),
+		authorizationURL: authorizationURL,
 		userCode:         userCode,
 	}, nil
 }

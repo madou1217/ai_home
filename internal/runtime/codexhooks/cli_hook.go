@@ -421,8 +421,9 @@ func (svc *CLIHookService) ResolveUpstreamBinaryPath(targetBinaryPath string) (r
 	return resolvedTarget, upstream, legacy
 }
 
-func resolveAliasTargetFromFile(filePath string) string {
-	content := readTextFileSafe(filePath)
+// ReadAliasTarget returns only the literal delegate in an AIH-generated alias.
+// It never executes shell/PowerShell/CMD code.
+func ReadAliasTarget(content string) string {
 	if content == "" || !HasAliasWrapperMarkerLine(content) {
 		return ""
 	}
@@ -436,6 +437,10 @@ func resolveAliasTargetFromFile(filePath string) string {
 		return strings.TrimSpace(m[1])
 	}
 	return ""
+}
+
+func resolveAliasTargetFromFile(filePath string) string {
+	return ReadAliasTarget(readTextFileSafe(filePath))
 }
 
 func resolvePnpmShimRuntimeTarget(filePath string) string {

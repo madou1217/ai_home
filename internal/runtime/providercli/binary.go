@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -22,25 +21,25 @@ type binaryResolver struct {
 // Resolve 优先使用显式官方路径，并拒绝执行无法安全绕过的旧 Node Hook。
 func (resolver binaryResolver) Resolve(providerID string, binary string) (string, error) {
 	overrideName := "AIH_" + strings.ToUpper(providerID) + "_BINARY"
-	if override, found := resolver.lookupEnv(overrideName); found {
+	candidate := binary
+	override, hasOverride := resolver.lookupEnv(overrideName)
+	if hasOverride {
 		if override == "" || override != strings.TrimSpace(override) {
 			return "", ErrProviderBinaryNotFound
 		}
-		return resolver.lookPath(override)
+		candidate = override
 	}
-	resolved, err := resolver.lookPath(binary)
+	resolved, err := resolver.lookPath(candidate)
 	if err != nil {
+		if hasOverride {
+			return "", err
+		}
 		return "", errors.Join(ErrProviderBinaryNotFound, err)
 	}
 	if providerID != "codex" || !hasFileMarker(resolved, codexLegacyHookMarker) {
 		return resolved, nil
 	}
-	legacyUpstream := resolved + ".aih-original"
-	if info, statErr := os.Stat(legacyUpstream); statErr == nil &&
-		!info.IsDir() && info.Mode()&0o111 != 0 {
-		return filepath.Clean(legacyUpstream), nil
-	}
-	return "", errors.New("检测到旧 Codex Node hook，但没有可用的官方上游 CLI")
+	return resolveCodexHook(resolved)
 }
 
 // hasFileMarker 只读取小段文本头，不会扫描或执行目标文件。

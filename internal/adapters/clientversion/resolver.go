@@ -38,6 +38,8 @@ type ResolverOptions struct {
 	ProbeInterval time.Duration
 	// Learned 持久化从真实客户端学到的版本；为空时只在内存中学习。
 	Learned *LearnedStore
+	// ProbeCache 持久化本机 CLI 探测结果及其身份；为空时每次启动都重新探测。
+	ProbeCache *ProbeCache
 }
 
 // Resolver 合并配置、学习、探测与最低版本，返回单调不降的当前版本。
@@ -48,6 +50,7 @@ type Resolver struct {
 	probeCommands []string
 	probeInterval time.Duration
 	learnedStore  *LearnedStore
+	probeCache    *ProbeCache
 
 	mu       sync.RWMutex
 	detected Version
@@ -69,6 +72,7 @@ func NewResolver(options ResolverOptions) (*Resolver, error) {
 		probeCommands: append([]string(nil), options.ProbeCommands...),
 		probeInterval: options.ProbeInterval,
 		learnedStore:  options.Learned,
+		probeCache:    options.ProbeCache,
 	}
 	if configured, ok := Parse(options.Configured); ok {
 		resolver.configured = configured
@@ -114,8 +118,16 @@ func (resolver *Resolver) Observe(version Version) {
 }
 
 // Probe 立即执行一次本机 CLI 探测。
+//
+// 起子进程之前先看快照：候选命令的文件身份（存在性、大小、mtime）没变时，重复执行
+// `--version` 必然得到同一个版本号，直接复用即可。这也让 Start 的首次「同步探测」
+// 在绝大多数启动里退化成一次 stat，不再把服务启动卡在 Node 垫片的冷启动上。
 func (resolver *Resolver) Probe(ctx context.Context) {
 	if resolver == nil || len(resolver.probeCommands) == 0 {
+		return
+	}
+	if cached, ok := resolver.probeCache.Lookup(resolver.provider, ProbeIdentity(resolver.probeCommands)); ok {
+		resolver.recordDetected(cached)
 		return
 	}
 	var best Version
@@ -133,12 +145,22 @@ func (resolver *Resolver) Probe(ctx context.Context) {
 	if best.IsZero() {
 		return
 	}
+	resolver.recordDetected(best)
+	// 身份在探测之后再取一次：探测期间 CLI 若被升级，快照记录的是升级后的身份。
+	resolver.probeCache.Store(resolver.provider, ProbeIdentity(resolver.probeCommands), best)
+}
+
+// recordDetected 记住探测到的版本，并同步抬高已学习版本。
+func (resolver *Resolver) recordDetected(version Version) {
+	if version.IsZero() {
+		return
+	}
 	resolver.mu.Lock()
-	resolver.detected = best
+	resolver.detected = Max(resolver.detected, version)
 	resolver.mu.Unlock()
 	// 探测结果同样记入已学习版本：下次启动在探测完成前也从最近一次已知版本起步。
 	if resolver.learnedStore != nil {
-		resolver.learnedStore.Raise(resolver.provider, best)
+		resolver.learnedStore.Raise(resolver.provider, version)
 	}
 }
 

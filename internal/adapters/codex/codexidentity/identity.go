@@ -46,8 +46,8 @@ func UserAgent(version string) string {
 	return Originator + "/" + version
 }
 
-// NewResolver 创建 Codex 客户端版本解析器；learned 为 nil 时只在内存中学习。
-func NewResolver(learned *clientversion.LearnedStore) (*clientversion.Resolver, error) {
+// NewResolver 创建 Codex 客户端版本解析器；learned / probeCache 为 nil 时只在内存中生效。
+func NewResolver(learned *clientversion.LearnedStore, probeCache *clientversion.ProbeCache) (*clientversion.Resolver, error) {
 	return clientversion.NewResolver(clientversion.ResolverOptions{
 		Provider:      Provider,
 		Floor:         Floor,
@@ -55,6 +55,7 @@ func NewResolver(learned *clientversion.LearnedStore) (*clientversion.Resolver, 
 		ProbeCommands: probeCommands(),
 		ProbeInterval: probeInterval,
 		Learned:       learned,
+		ProbeCache:    probeCache,
 	})
 }
 

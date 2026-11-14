@@ -12,6 +12,11 @@ import (
 // clientVersionsFile 保存从真实客户端学到的版本号（不含完整 User-Agent）。
 const clientVersionsFile = "client-versions.json"
 
+// clientVersionsProbeFile 保存本机 CLI 探测结果及其文件身份：身份未变时启动不再执行
+// `codex --version`（Node 垫片冷启动 0.25–1.2s，而 Start 是同步探测）。
+// 与 client-versions.json 分开：学习值是单调高水位，探测值必须能随 CLI 升级变化。
+const clientVersionsProbeFile = "client-versions-probe.json"
+
 // newCodexClientVersions 创建并启动 Codex 客户端版本解析器。
 //
 // 网关模拟 Codex 客户端的请求（推理、模型目录、用量、WS 兜底）都从这里取版本，
@@ -21,7 +26,8 @@ func newCodexClientVersions(
 	aiHomeDir string,
 ) (*clientversion.Resolver, error) {
 	learned := clientversion.NewLearnedStore(filepath.Join(aiHomeDir, "run", clientVersionsFile))
-	resolver, err := codexidentity.NewResolver(learned)
+	probeCache := clientversion.NewProbeCache(filepath.Join(aiHomeDir, "run", clientVersionsProbeFile))
+	resolver, err := codexidentity.NewResolver(learned, probeCache)
 	if err != nil {
 		return nil, err
 	}

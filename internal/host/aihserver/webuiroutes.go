@@ -831,6 +831,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "DELETE " + webuisshwriteapi.ItemPath, Handler: sshWrite},
 		{Pattern: "POST " + webuiaccountimportapi.Path, Handler: accountImport},
 		{Pattern: "GET " + webuiaccountimportapi.Path + webuiaccountimportapi.JobsSuffix, Handler: accountImport},
+		// 浏览器数据面：导入作业（公开路径多 accounts/ 段，目标少 accounts 段）。
+		{Pattern: "POST /v0/webui/accounts/import", Handler: webuipublicalias.Rewrite("/v0/webui/accounts/import", "/v1/management/webui/account-import", accountImport)},
+
 		{Pattern: "POST " + webuiaccountstatusapi.Path + webuiaccountstatusapi.RouteSuffix, Handler: accountStatus},
 		{Pattern: "DELETE " + webuiaccountdeleteapi.Path + webuiaccountdeleteapi.DeleteSuffix, Handler: accountDelete},
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},

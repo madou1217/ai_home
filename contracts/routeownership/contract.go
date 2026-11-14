@@ -450,6 +450,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号导入作业：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_import",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/import"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

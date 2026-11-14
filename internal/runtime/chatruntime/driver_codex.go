@@ -73,6 +73,7 @@ type codexActiveTurn struct {
 	toolOrder                 *CodexToolOrder
 	done                      chan ProviderRunResult
 	cancelLaunch              context.CancelFunc
+	binding                   *CodexTurnHandle
 
 	mu       sync.Mutex
 	settled  bool
@@ -540,7 +541,11 @@ func (d *CodexSessionDriver) RecoverTurn(ctx context.Context, in RecoverTurnInpu
 		pending = nil
 	}
 	d.bridge.ExpectReplays(pending)
-	d.bind(active)
+	if err := d.bind(ctx, active); err != nil {
+		d.bridge.CancelExpectedReplays()
+		d.finishCleanup(active)
+		return nil, err
+	}
 
 	resumeParams := map[string]any{"excludeTurns": false}
 	if built, berr := BuildCodexThreadResumeParams(active.approvalMode, active.nativeThreadId, false); berr == nil {
@@ -688,7 +693,7 @@ func (d *CodexSessionDriver) providerRunHandle(active *codexActiveTurn) *Provide
 			}
 			active.settle(nil, NewError("chat_turn_abandoned", http.StatusConflict, map[string]any{"reason": reason}))
 			if active.nativeThreadId != "" {
-				d.client.UnbindTurn(active.nativeThreadId)
+				d.unbindActiveTurn(active)
 			}
 			<-active.cleanCh
 			return "abandoned"
@@ -829,7 +834,9 @@ func (d *CodexSessionDriver) acquireThread(ctx context.Context, active *codexAct
 		if err := d.history.Run(ctx); err != nil {
 			return err
 		}
-		d.bind(active)
+		if err := d.bind(ctx, active); err != nil {
+			return err
+		}
 		resumeParams, err := d.resumeParams(ctx, active.approvalMode, existingThread, true)
 		if err != nil {
 			return err
@@ -887,7 +894,9 @@ func (d *CodexSessionDriver) acquireThread(ctx context.Context, active *codexAct
 		"nativeSessionId": threadID,
 		"fingerprint":     d.runtime.Fingerprint,
 	}, nil)
-	d.bind(active)
+	if err := d.bind(ctx, active); err != nil {
+		return err
+	}
 	_ = d.goals.Refresh(ctx, threadID, active.tc.TurnID, active.tc.RunID, d.runtime.RuntimeScope)
 	if active.tc.Trace != nil {
 		active.tc.Trace.Mark("sessionBound", map[string]any{"runtimeId": d.runtime.RuntimeScope})
@@ -1050,9 +1059,9 @@ func (d *CodexSessionDriver) anchorNativeTurn(ctx context.Context, active *codex
 	return nil
 }
 
-func (d *CodexSessionDriver) bind(active *codexActiveTurn) {
-	resumeFull, _ := d.resumeParams(context.Background(), active.approvalMode, active.nativeThreadId, false)
-	d.client.BindTurn(active.nativeThreadId, CodexTurnBinding{
+func (d *CodexSessionDriver) bind(ctx context.Context, active *codexActiveTurn) error {
+	resumeFull, _ := d.resumeParams(ctx, active.approvalMode, active.nativeThreadId, false)
+	binding := CodexTurnBinding{
 		ResumeParams: resumeFull,
 		OnDisconnected: func(err error) {
 			if active.submissionUncertain {
@@ -1075,7 +1084,41 @@ func (d *CodexSessionDriver) bind(active *codexActiveTurn) {
 				active.settle(nil, err)
 			}
 		},
-	})
+	}
+	if scoped, ok := d.client.(codexScopedTurnClient); ok {
+		handle, err := scoped.BindTurnScoped(ctx, active.nativeThreadId, binding)
+		if err != nil {
+			return err
+		}
+		active.mu.Lock()
+		if active.cleaned || active.settled {
+			active.mu.Unlock()
+			handle.Unbind()
+			return context.Canceled
+		}
+		previous := active.binding
+		active.binding = handle
+		active.mu.Unlock()
+		if previous != nil {
+			previous.Unbind()
+		}
+	} else {
+		d.client.BindTurn(active.nativeThreadId, binding)
+	}
+	return nil
+}
+
+// unbindActiveTurn 在 EOF/重连后仍精确撤销旧回调，不按线程名猜测当前代次。
+func (d *CodexSessionDriver) unbindActiveTurn(active *codexActiveTurn) {
+	active.mu.Lock()
+	handle := active.binding
+	active.binding = nil
+	active.mu.Unlock()
+	if handle != nil {
+		handle.Unbind()
+	} else if _, scoped := d.client.(codexScopedTurnClient); !scoped && active.nativeThreadId != "" {
+		d.client.UnbindTurn(active.nativeThreadId)
+	}
 }
 
 func (d *CodexSessionDriver) observe(active *codexActiveTurn, msg CodexJSONRPCMessage, serverRequest bool) {
@@ -1098,7 +1141,12 @@ func (d *CodexSessionDriver) observe(active *codexActiveTurn, msg CodexJSONRPCMe
 			return
 		}
 	}
-	ctx := context.Background()
+	ctx := msg.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, defaultCodexRPCTimeout)
+	defer cancel()
 	var obs CodexBridgeObservation
 	if active.toolOrder != nil {
 		active.toolOrder.ObserveRaw(msg)
@@ -1184,9 +1232,21 @@ func (d *CodexSessionDriver) retryAfterContextOverflow(ctx context.Context, acti
 		"nativeSessionId": nextThreadID,
 		"fingerprint":     d.runtime.Fingerprint,
 	}, replacement)
-	d.client.UnbindTurn(previousThreadID)
-	_ = d.client.ReleaseThread(ctx, previousThreadID)
-	d.bind(active)
+	active.mu.Lock()
+	previousBinding := active.binding
+	active.binding = nil
+	active.mu.Unlock()
+	if previousBinding != nil {
+		if err := previousBinding.Release(ctx); err != nil {
+			return err
+		}
+	} else if _, scoped := d.client.(codexScopedTurnClient); !scoped {
+		d.client.UnbindTurn(previousThreadID)
+		_ = d.client.ReleaseThread(ctx, previousThreadID)
+	}
+	if err := d.bind(ctx, active); err != nil {
+		return err
+	}
 	d.applyDocumentTokenBudget(ctx, active)
 	if err := d.injectOversizedDocuments(ctx, active); err != nil {
 		return err
@@ -1363,8 +1423,9 @@ func (d *CodexSessionDriver) finishCleanup(active *codexActiveTurn) {
 	if active.toolOrder != nil {
 		active.toolOrder.Flush()
 	}
-	if active.nativeThreadId != "" {
-		d.client.UnbindTurn(active.nativeThreadId)
+	releaseThread := (active.nativeTerminal || active.cancelledBeforeSubmission) && active.nativeThreadId != ""
+	if active.nativeThreadId != "" && !releaseThread {
+		d.unbindActiveTurn(active)
 	}
 	if active.cancelledBeforeSubmission && active.createdNativeThread {
 		_, _ = d.store.UpdateRuntimeBinding(context.Background(), d.session.SessionID, map[string]any{
@@ -1375,8 +1436,23 @@ func (d *CodexSessionDriver) finishCleanup(active *codexActiveTurn) {
 			d.setNativeThreadID("")
 		}
 	}
-	if (active.nativeTerminal || active.cancelledBeforeSubmission) && active.nativeThreadId != "" {
-		_ = d.client.ReleaseThread(context.Background(), active.nativeThreadId)
+	if releaseThread {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), d.cleanupTimeout)
+		var err error
+		active.mu.Lock()
+		handle := active.binding
+		active.binding = nil
+		active.mu.Unlock()
+		if handle != nil {
+			err = handle.Release(cleanupCtx)
+		} else if _, scoped := d.client.(codexScopedTurnClient); !scoped {
+			d.unbindActiveTurn(active)
+			err = d.client.ReleaseThread(cleanupCtx, active.nativeThreadId)
+		}
+		cancel()
+		if err != nil && d.releaseFailureSink != nil {
+			d.releaseFailureSink(map[string]any{"code": "codex_thread_release_failed", "threadId": active.nativeThreadId})
+		}
 	}
 	d.mu.Lock()
 	if d.active == active {
@@ -1386,9 +1462,13 @@ func (d *CodexSessionDriver) finishCleanup(active *codexActiveTurn) {
 }
 
 func (d *CodexSessionDriver) handleDynamicToolCall(msg CodexJSONRPCMessage) bool {
+	ctx := msg.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	wsID := webuiremoteworkspace.WorkspaceIDFromProjectPath(d.aiHomeDir, d.session.ProjectPath)
 	if wsID == "" {
-		_ = d.client.Respond(context.Background(), msg.ID, map[string]any{
+		_ = d.client.Respond(ctx, msg.ID, map[string]any{
 			"contentItems": []map[string]any{{"type": "inputText", "text": fmt.Sprintf("[unknown_tool] %s", asString(msg.Params["tool"]))}},
 			"success":      false,
 		})
@@ -1398,12 +1478,14 @@ func (d *CodexSessionDriver) handleDynamicToolCall(msg CodexJSONRPCMessage) bool
 		return false
 	}
 	go func() {
-		items, isErr := d.remoteTools(context.Background(), wsID, asString(msg.Params["tool"]), msg.Params["arguments"])
+		ctx, cancel := context.WithTimeout(ctx, defaultCodexRPCTimeout)
+		defer cancel()
+		items, isErr := d.remoteTools(ctx, wsID, asString(msg.Params["tool"]), msg.Params["arguments"])
 		contentItems := make([]map[string]any, 0, len(items))
 		for _, item := range items {
 			contentItems = append(contentItems, map[string]any{"type": "inputText", "text": asString(item["text"])})
 		}
-		_ = d.client.Respond(context.Background(), msg.ID, map[string]any{
+		_ = d.client.Respond(ctx, msg.ID, map[string]any{
 			"contentItems": contentItems,
 			"success":      !isErr,
 		})

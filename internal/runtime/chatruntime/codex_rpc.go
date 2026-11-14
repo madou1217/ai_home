@@ -1,11 +1,9 @@
 package chatruntime
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -61,12 +59,14 @@ func (e *CodexRPCError) Error() string {
 
 // CodexJSONRPCMessage 描述一条双向 JSON-RPC 2.0 消息（请求、响应或通知）。
 type CodexJSONRPCMessage struct {
-	JSONRPC string         `json:"jsonrpc,omitempty"`
-	ID      any            `json:"id,omitempty"`
-	Method  string         `json:"method,omitempty"`
-	Params  map[string]any `json:"params,omitempty"`
-	Result  map[string]any `json:"result,omitempty"`
-	Error   *CodexRPCError `json:"error,omitempty"`
+	// Context 携带连接代次；回调内的 RPC 不能静默重连到其他子进程。
+	Context context.Context `json:"-"`
+	JSONRPC string          `json:"jsonrpc,omitempty"`
+	ID      any             `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  map[string]any  `json:"params,omitempty"`
+	Result  map[string]any  `json:"result,omitempty"`
+	Error   *CodexRPCError  `json:"error,omitempty"`
 }
 
 // CodexTurnBinding 描述单线程的实时事件与断开回调。
@@ -112,20 +112,30 @@ type CodexAppServerClient struct {
 	opts           CodexAppServerClientOptions
 	requestTimeout time.Duration
 
-	mu          sync.Mutex
-	connected   bool
-	closed      bool
-	cmd         *exec.Cmd
-	waitDone    chan struct{}
-	stdin       io.WriteCloser
-	writeMu     sync.Mutex
-	nextID      atomic.Int64
-	pending     map[string]chan codexRPCResult
-	bindings    map[string]CodexTurnBinding
-	identity    *CodexVerifiedIdentity
-	runtimeHome CodexRuntimeHome
-	hasHome     bool
-	stderrTail  bytes.Buffer
+	mu             sync.Mutex
+	connected      bool
+	ready          bool
+	connecting     *codexConnectFlight
+	dispatch       *codexRPCDispatch
+	dispatchers    int
+	connectionDone chan struct{}
+	releases       map[string]*codexThreadRelease
+	onIdle         func()
+	closed         bool
+	retiring       bool
+	cmd            *exec.Cmd
+	waitDone       chan struct{}
+	stdin          io.WriteCloser
+	stdout         io.ReadCloser
+	stderr         io.ReadCloser
+	writeMu        sync.Mutex
+	nextID         atomic.Int64
+	pending        map[string]chan codexRPCResult
+	bindings       map[string]*codexTurnRegistration
+	identity       *CodexVerifiedIdentity
+	runtimeHome    CodexRuntimeHome
+	hasHome        bool
+	stderrTail     bytes.Buffer
 }
 
 type codexRPCResult struct {
@@ -143,161 +153,87 @@ func NewCodexAppServerClient(opts CodexAppServerClientOptions) *CodexAppServerCl
 		opts:           opts,
 		requestTimeout: timeout,
 		pending:        make(map[string]chan codexRPCResult),
-		bindings:       make(map[string]CodexTurnBinding),
+		bindings:       make(map[string]*codexTurnRegistration),
+		releases:       make(map[string]*codexThreadRelease),
 	}
 }
 
-// EnsureConnected 建立或复用与 codex app-server 的 stdio 会话并完成 initialize 握手。
-func (c *CodexAppServerClient) EnsureConnected(ctx context.Context) error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return NewError("codex_app_server_closed", http.StatusGone, nil)
-	}
-	if c.connected {
-		c.mu.Unlock()
-		return nil
-	}
-	c.mu.Unlock()
-
+// Request 始终施加有界 deadline，调用方更短的 deadline / 取消仍优先。
+func (c *CodexAppServerClient) Request(ctx context.Context, method string, params any) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-
-	command, args, env, runtimeHome, err := c.resolveSpawnSpec()
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.Command(command, args...)
-	cmd.Env = env
-	if runtimeHome.CodexHome != "" {
-		_ = os.MkdirAll(runtimeHome.CodexHome, 0o700)
-	}
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return NewErrorWithMessage("codex_app_server_spawn_failed", http.StatusBadGateway, err.Error(), nil)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return NewErrorWithMessage("codex_app_server_spawn_failed", http.StatusBadGateway, err.Error(), nil)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return NewErrorWithMessage("codex_app_server_spawn_failed", http.StatusBadGateway, err.Error(), nil)
-	}
-	if err := cmd.Start(); err != nil {
-		return NewErrorWithMessage("codex_app_server_spawn_failed", http.StatusBadGateway, err.Error(), nil)
-	}
-
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		_ = stdin.Close()
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		_ = cmd.Wait()
-		return NewError("codex_app_server_closed", http.StatusGone, nil)
-	}
-	waitDone := make(chan struct{})
-	c.cmd = cmd
-	c.waitDone = waitDone
-	c.stdin = stdin
-	c.connected = true
-	c.runtimeHome = runtimeHome
-	c.hasHome = runtimeHome.CodexHome != ""
-	c.identity = &CodexVerifiedIdentity{
-		Verified:   true,
-		Kind:       "oauth",
-		Assurance:  "runtime-home",
-		AccountRef: c.opts.AccountRef,
-	}
-	c.stderrTail.Reset()
-	c.mu.Unlock()
-
-	go c.drainStderr(stderr)
-	go c.readLoop(stdout, cmd, waitDone)
-
-	// 执行 initialize 握手与 initialized 通知，并在失败时收口进程。
-	initCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
-	if _, err := c.Request(initCtx, "initialize", map[string]any{
-		"clientInfo": map[string]any{
-			"name":    "ai_home",
-			"title":   "AIH Server",
-			"version": "1.0.0",
-		},
-		"capabilities": map[string]any{
-			"experimentalApi": true,
-		},
-	}); err != nil {
-		_ = c.disconnect(err)
-		return NewErrorWithMessage("codex_app_server_initialize_failed", http.StatusBadGateway, err.Error(), nil)
+	cmd, scoped := ctx.Value(codexRPCConnectionKey{}).(*exec.Cmd)
+	if !scoped {
+		if err := c.EnsureConnected(ctx); err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		if !c.ready || !c.connected || c.closed || c.retiring {
+			c.mu.Unlock()
+			return nil, NewError("codex_app_server_disconnected", http.StatusBadGateway, nil)
+		}
+		cmd = c.cmd
+		c.mu.Unlock()
 	}
-	_ = c.writeEnvelope(map[string]any{
-		"jsonrpc": "2.0",
-		"method":  "initialized",
-	})
-	return nil
+	return c.requestConnected(ctx, cmd, method, params)
 }
 
-// Request 向 app-server 发起 JSON-RPC 请求并等待匹配响应。
-func (c *CodexAppServerClient) Request(ctx context.Context, method string, params any) (map[string]any, error) {
-	if err := c.EnsureConnected(ctx); err != nil {
+// requestConnected 只在指定连接上发送；initialize 也走此入口而不递归 EnsureConnected。
+func (c *CodexAppServerClient) requestConnected(ctx context.Context, cmd *exec.Cmd, method string, params any) (map[string]any, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), c.requestTimeout)
-		defer cancel()
-	}
-
 	idNum := c.nextID.Add(1)
 	key := "n:" + strconv.FormatInt(idNum, 10)
 	ch := make(chan codexRPCResult, 1)
-
 	c.mu.Lock()
-	if !c.connected || c.closed {
+	if !c.connected || c.closed || c.retiring || c.cmd != cmd || cmd == nil {
 		c.mu.Unlock()
 		return nil, NewError("codex_app_server_disconnected", http.StatusBadGateway, nil)
 	}
+	// 旧 unsubscribe 完成前不能重新 resume/start/steer 同线程；失败明确可重试，
+	// 不把新请求写入上游后再发现 release 仍在飞。读目录等无 threadId 请求不受影响。
+	if method != "thread/unsubscribe" {
+		if object, ok := params.(map[string]any); ok {
+			if threadID := asString(object["threadId"]); threadID != "" && c.releases[threadID] != nil {
+				c.mu.Unlock()
+				return nil, NewError("codex_thread_release_in_progress", http.StatusConflict, nil)
+			}
+		}
+	}
+	if len(c.pending) >= maxCodexPendingRequests {
+		c.mu.Unlock()
+		return nil, NewError("codex_app_server_requests_full", http.StatusTooManyRequests, nil)
+	}
 	c.pending[key] = ch
 	c.mu.Unlock()
-
-	envelope := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      idNum,
-		"method":  method,
-	}
+	defer func() { c.mu.Lock(); delete(c.pending, key); c.mu.Unlock() }()
+	envelope := map[string]any{"jsonrpc": "2.0", "id": idNum, "method": method}
 	if params != nil {
 		envelope["params"] = params
 	}
-	if err := c.writeEnvelope(envelope); err != nil {
-		c.mu.Lock()
-		delete(c.pending, key)
-		c.mu.Unlock()
-		return nil, NewErrorWithMessage("codex_app_server_write_failed", http.StatusBadGateway, err.Error(), nil)
+	if err := c.writeConnectionEnvelope(ctx, cmd, envelope); err != nil {
+		return nil, err
 	}
-
 	select {
 	case <-ctx.Done():
-		c.mu.Lock()
-		delete(c.pending, key)
-		c.mu.Unlock()
-		return nil, NewErrorWithMessage("codex_app_server_timeout", http.StatusGatewayTimeout, ctx.Err().Error(), map[string]any{"method": method})
+		err := NewErrorWithMessage("codex_app_server_timeout", http.StatusGatewayTimeout, ctx.Err().Error(), map[string]any{"method": method})
+		err.Cause = ctx.Err()
+		return nil, err
 	case res := <-ch:
 		return res.result, res.err
 	}
 }
 
 // Respond 回写服务端发起请求的 JSON-RPC 成功响应（审批/提问/elicitation）。
-func (c *CodexAppServerClient) Respond(_ context.Context, requestID any, result any) error {
+func (c *CodexAppServerClient) Respond(ctx context.Context, requestID any, result any) error {
 	if result == nil {
 		result = map[string]any{}
 	}
-	return c.writeEnvelope(map[string]any{
+	return c.writeEnvelope(ctx, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      requestID,
 		"result":  result,
@@ -305,8 +241,8 @@ func (c *CodexAppServerClient) Respond(_ context.Context, requestID any, result 
 }
 
 // RespondError 回写服务端发起请求的 JSON-RPC 错误响应。
-func (c *CodexAppServerClient) RespondError(_ context.Context, requestID any, code int, message string) error {
-	return c.writeEnvelope(map[string]any{
+func (c *CodexAppServerClient) RespondError(ctx context.Context, requestID any, code int, message string) error {
+	return c.writeEnvelope(ctx, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      requestID,
 		"error": map[string]any{
@@ -314,34 +250,6 @@ func (c *CodexAppServerClient) RespondError(_ context.Context, requestID any, co
 			"message": message,
 		},
 	})
-}
-
-// BindTurn 注册指定原生线程的通知与服务端请求回调。
-func (c *CodexAppServerClient) BindTurn(threadID string, binding CodexTurnBinding) {
-	id := strings.TrimSpace(threadID)
-	if id == "" {
-		return
-	}
-	c.mu.Lock()
-	c.bindings[id] = binding
-	c.mu.Unlock()
-}
-
-// UnbindTurn 解除指定原生线程的事件绑定。
-func (c *CodexAppServerClient) UnbindTurn(threadID string) {
-	id := strings.TrimSpace(threadID)
-	if id == "" {
-		return
-	}
-	c.mu.Lock()
-	delete(c.bindings, id)
-	c.mu.Unlock()
-}
-
-// ReleaseThread 释放常驻线程占用的运行态（与 Node releaseThread 对齐，尽力而为）。
-func (c *CodexAppServerClient) ReleaseThread(_ context.Context, threadID string) error {
-	c.UnbindTurn(threadID)
-	return nil
 }
 
 // GetVerifiedAccountIdentity 返回已校验的执行身份（支持 runtime-home 与 gateway 校验）。
@@ -380,217 +288,6 @@ func (c *CodexAppServerClient) Close() error {
 	c.closed = true
 	c.mu.Unlock()
 	return c.disconnect(NewError("codex_app_server_closed", http.StatusGone, nil))
-}
-
-func (c *CodexAppServerClient) disconnect(reason error) error {
-	c.mu.Lock()
-	wasConnected := c.connected
-	c.connected = false
-	cmd := c.cmd
-	waitDone := c.waitDone
-	stdin := c.stdin
-	c.cmd = nil
-	c.waitDone = nil
-	c.stdin = nil
-	pending := c.pending
-	c.pending = make(map[string]chan codexRPCResult)
-	bindings := make([]CodexTurnBinding, 0, len(c.bindings))
-	for _, b := range c.bindings {
-		bindings = append(bindings, b)
-	}
-	c.bindings = make(map[string]CodexTurnBinding)
-	c.mu.Unlock()
-
-	if stdin != nil {
-		_ = stdin.Close()
-	}
-	if cmd != nil && cmd.Process != nil {
-		_ = cmd.Process.Kill()
-	}
-	if waitDone != nil {
-		select {
-		case <-waitDone:
-		case <-time.After(2 * time.Second):
-		}
-	}
-
-	if reason == nil {
-		reason = NewError("codex_app_server_disconnected", http.StatusBadGateway, nil)
-	}
-	for _, ch := range pending {
-		ch <- codexRPCResult{err: reason}
-		close(ch)
-	}
-	if wasConnected {
-		for _, b := range bindings {
-			if b.OnDisconnected != nil {
-				b.OnDisconnected(reason)
-			}
-		}
-	}
-	return nil
-}
-
-func (c *CodexAppServerClient) writeEnvelope(payload any) error {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	c.mu.Lock()
-	stdin := c.stdin
-	connected := c.connected
-	c.mu.Unlock()
-	if !connected || stdin == nil {
-		return NewError("codex_app_server_disconnected", http.StatusBadGateway, nil)
-	}
-	raw = append(raw, '\n')
-	_, err = stdin.Write(raw)
-	return err
-}
-
-func (c *CodexAppServerClient) drainStderr(r io.Reader) {
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			c.mu.Lock()
-			if c.stderrTail.Len() > 8192 {
-				b := c.stderrTail.Bytes()
-				c.stderrTail.Reset()
-				_, _ = c.stderrTail.Write(b[len(b)-4096:])
-			}
-			_, _ = c.stderrTail.Write(buf[:n])
-			c.mu.Unlock()
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func (c *CodexAppServerClient) readLoop(stdout io.Reader, cmd *exec.Cmd, waitDone chan struct{}) {
-	defer func() {
-		_ = cmd.Wait()
-		close(waitDone)
-	}()
-	reader := bufio.NewReader(stdout)
-	for {
-		line, err := reader.ReadBytes('\n')
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) > 0 {
-			c.dispatchLine(trimmed)
-		}
-		if err != nil {
-			c.mu.Lock()
-			tail := strings.TrimSpace(c.stderrTail.String())
-			stillSame := c.cmd == cmd
-			c.mu.Unlock()
-			if !stillSame {
-				return
-			}
-			msg := "codex app-server disconnected"
-			if tail != "" {
-				msg = tail
-			} else if err != nil && !errors.Is(err, io.EOF) {
-				msg = err.Error()
-			}
-			_ = c.disconnect(NewErrorWithMessage("codex_app_server_disconnected", http.StatusBadGateway, msg, nil))
-			return
-		}
-	}
-}
-
-func (c *CodexAppServerClient) dispatchLine(line []byte) {
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.UseNumber()
-	var raw map[string]any
-	if err := dec.Decode(&raw); err != nil {
-		return
-	}
-	idVal, hasID := raw["id"]
-	method := strings.TrimSpace(asString(raw["method"]))
-	params, _ := raw["params"].(map[string]any)
-	result, _ := raw["result"].(map[string]any)
-
-	// 带 id 且无 method → 我方出站请求的响应
-	if hasID && method == "" {
-		key := canonicalRPCIDKey(idVal)
-		c.mu.Lock()
-		ch := c.pending[key]
-		delete(c.pending, key)
-		c.mu.Unlock()
-		if ch == nil {
-			return
-		}
-		if errRaw, ok := raw["error"].(map[string]any); ok {
-			codeInt := -32000
-			if n, ok := coerceInt(errRaw["code"]); ok {
-				codeInt = n
-			}
-			rpcErr := &CodexRPCError{
-				Code:    codeInt,
-				Message: strings.TrimSpace(asString(errRaw["message"])),
-				Data:    errRaw["data"],
-			}
-			ch <- codexRPCResult{
-				err: NewErrorWithMessage("codex_app_server_rpc_error", http.StatusBadGateway, rpcErr.Error(), map[string]any{
-					"rpcCode": rpcErr.Code,
-				}),
-			}
-		} else {
-			ch <- codexRPCResult{result: result}
-		}
-		close(ch)
-		return
-	}
-
-	msg := CodexJSONRPCMessage{
-		ID:     idVal,
-		Method: method,
-		Params: params,
-	}
-
-	// 带 id 且带 method → 服务端发起的双向请求（审批/提问/MCP elicitation/remote tool）
-	if hasID && method != "" {
-		binding, ok := c.lookupBinding(params)
-		if !ok || binding.OnServerRequest == nil {
-			_ = c.RespondError(context.Background(), idVal, -32601, "unsupported server request method: "+method)
-			return
-		}
-		binding.OnServerRequest(msg)
-		return
-	}
-
-	// 通知（无 id，有 method）
-	if method != "" {
-		binding, ok := c.lookupBinding(params)
-		if ok && binding.OnNotification != nil {
-			binding.OnNotification(msg)
-		}
-	}
-}
-
-func (c *CodexAppServerClient) lookupBinding(params map[string]any) (CodexTurnBinding, bool) {
-	threadID := strings.TrimSpace(asString(params["threadId"]))
-	if threadID == "" {
-		if turnMap, ok := params["turn"].(map[string]any); ok {
-			threadID = strings.TrimSpace(asString(turnMap["threadId"]))
-		}
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if threadID != "" {
-		b, ok := c.bindings[threadID]
-		return b, ok
-	}
-	if len(c.bindings) == 1 {
-		for _, b := range c.bindings {
-			return b, true
-		}
-	}
-	return CodexTurnBinding{}, false
 }
 
 func canonicalRPCIDKey(raw any) string {
@@ -691,97 +388,4 @@ func appendOrReplaceEnv(env []string, key, value string) []string {
 		out = append(out, prefix+value)
 	}
 	return out
-}
-
-// CodexClientLease 表示对池中常驻 CodexRPCClient 的借用租约。
-type CodexClientLease struct {
-	Client  CodexRPCClient
-	Release func() bool
-}
-
-// CodexClientPool 按 runtimeScope + fingerprint 复用常驻 app-server 客户端。
-type CodexClientPool struct {
-	mu      sync.Mutex
-	entries map[string]*codexPoolEntry
-	closed  bool
-	factory func(opts CodexAppServerClientOptions) CodexRPCClient
-}
-
-type codexPoolEntry struct {
-	key    string
-	client CodexRPCClient
-	refs   int
-}
-
-// NewCodexClientPool 构造常驻 Codex app-server 客户端连接池。
-func NewCodexClientPool(factory func(opts CodexAppServerClientOptions) CodexRPCClient) *CodexClientPool {
-	if factory == nil {
-		factory = func(opts CodexAppServerClientOptions) CodexRPCClient {
-			return NewCodexAppServerClient(opts)
-		}
-	}
-	return &CodexClientPool{
-		entries: make(map[string]*codexPoolEntry),
-		factory: factory,
-	}
-}
-
-// Acquire 获取或创建对应作用域的客户端租约。
-func (p *CodexClientPool) Acquire(opts CodexAppServerClientOptions) *CodexClientLease {
-	key := strings.TrimSpace(opts.RuntimeScope) + "::" + strings.TrimSpace(opts.RuntimeFingerprint)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		client := p.factory(opts)
-		return &CodexClientLease{
-			Client: client,
-			Release: func() bool {
-				_ = client.Close()
-				return true
-			},
-		}
-	}
-	entry := p.entries[key]
-	if entry == nil {
-		entry = &codexPoolEntry{
-			key:    key,
-			client: p.factory(opts),
-		}
-		p.entries[key] = entry
-	}
-	entry.refs++
-	var once sync.Once
-	return &CodexClientLease{
-		Client: entry.client,
-		Release: func() bool {
-			released := false
-			once.Do(func() {
-				p.mu.Lock()
-				defer p.mu.Unlock()
-				entry.refs--
-				released = true
-				if entry.refs <= 0 && (p.closed || p.entries[key] != entry) {
-					delete(p.entries, key)
-					_ = entry.client.Close()
-				}
-			})
-			return released
-		},
-	}
-}
-
-// Close 释放池中全部常驻客户端。
-func (p *CodexClientPool) Close() error {
-	p.mu.Lock()
-	p.closed = true
-	entries := make([]*codexPoolEntry, 0, len(p.entries))
-	for k, e := range p.entries {
-		entries = append(entries, e)
-		delete(p.entries, k)
-	}
-	p.mu.Unlock()
-	for _, e := range entries {
-		_ = e.client.Close()
-	}
-	return nil
 }

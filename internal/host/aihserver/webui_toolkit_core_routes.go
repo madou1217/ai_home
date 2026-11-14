@@ -28,13 +28,8 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		}
 	}
 
-	var appLauncher webuiopenappapi.Launcher
-	if launcher := webuiopenappapi.NewHostLauncher(webuiopenappapi.HostLauncherOptions{
-		BaseURL:       dependencies.NodeBaseURL,
-		ManagementKey: dependencies.ManagementKey,
-	}); launcher != nil {
-		appLauncher = launcher
-	}
+	// 工具箱的 app-open 与账号页共用同一个 Go 原生启动器，不经过 Node。
+	var appLauncher webuiopenappapi.Launcher = newWebUIOpenAppLauncher(dependencies)
 
 	handler, err := webuitoolkitcoreapi.NewHandler(webuitoolkitcoreapi.Dependencies{
 		Authorizer:             dependencies.Authorizer,
@@ -64,7 +59,6 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "POST /v0/webui/toolkit/apps/hooks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET /v0/webui/toolkit/apps/{appId}/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "PUT /v0/webui/toolkit/apps/{appId}/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-
 
 		{Pattern: "POST /v0/webui/toolkit/mirrors/set", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "POST /v0/webui/toolkit/mirrors/ping", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},

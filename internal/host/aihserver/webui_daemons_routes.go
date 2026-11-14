@@ -127,8 +127,14 @@ func startBackgroundDaemonsWithPorts(
 		peerDelivery = *ports.PeerDelivery
 	}
 	if peerDelivery.ServerBaseURL == nil {
+		// chat commands 已由 Go 直接服务：优先指回本进程，Node 只在旧拓扑里兜底。
+		selfBaseURL := strings.TrimSpace(dependencies.SelfBaseURL)
 		nodeBaseURL := strings.TrimSpace(dependencies.NodeBaseURL)
-		peerDelivery.ServerBaseURL = func() string { return nodeBaseURL }
+		if selfBaseURL != "" {
+			peerDelivery.ServerBaseURL = func() string { return selfBaseURL }
+		} else {
+			peerDelivery.ServerBaseURL = func() string { return nodeBaseURL }
+		}
 	}
 	if peerDelivery.ManagementKey == nil && dependencies.ManagementKey != nil {
 		peerDelivery.ManagementKey = dependencies.ManagementKey

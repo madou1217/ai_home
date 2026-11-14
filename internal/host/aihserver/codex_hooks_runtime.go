@@ -117,8 +117,13 @@ func buildCodexHooksDaemonOptions(
 
 	receiverURL := strings.TrimSpace(cfg.ProviderHookReceiverURL)
 	if receiverURL == "" {
-		if cleanBase := strings.TrimRight(resolvedNodeBase, "/"); cleanBase != "" {
-			receiverURL = cleanBase + "/v0/webui/session-events/provider-hook"
+		// 接收端由 Go 自己提供：优先指回本进程，Node 地址只在旧拓扑里使用。
+		selfBase := strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/")
+		if selfBase == "" {
+			selfBase = strings.TrimRight(resolvedNodeBase, "/")
+		}
+		if selfBase != "" {
+			receiverURL = selfBase + "/v0/webui/session-events/provider-hook"
 		}
 	}
 

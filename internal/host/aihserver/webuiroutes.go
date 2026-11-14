@@ -572,16 +572,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建应用入口探测接口失败: %w", err)
 	}
-	// 打开应用：契约、启动计划与错误码在 Go；真正的宿主启动仍由 Node 执行器完成
-	// （provider 桌面策略、账号出口、自动安装器都依赖宿主事实）。宿主缺失时保持
-	// nil，Handler 回 501 与启动计划，而不是让整组路由启动失败。
-	var openAppLauncher webuiopenappapi.Launcher
-	if launcher := webuiopenappapi.NewHostLauncher(webuiopenappapi.HostLauncherOptions{
-		BaseURL:       dependencies.NodeBaseURL,
-		ManagementKey: dependencies.ManagementKey,
-	}); launcher != nil {
-		openAppLauncher = launcher
-	}
+	// 打开应用：契约、启动计划、资格/出口校验与进程生命周期全部在 Go 原生执行器里，
+	// 不再回环调用 Node 的 /v0/internal/accounts/launch-app。
+	openAppLauncher := newWebUIOpenAppLauncher(dependencies)
 	openApp, err := webuiopenappapi.NewHandler(webuiopenappapi.Dependencies{
 		Authorizer: authorizer, Accounts: dependencies.Store,
 		AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir,

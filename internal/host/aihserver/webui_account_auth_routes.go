@@ -2,11 +2,21 @@ package aihserver
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
+
+// selfOrNodeBaseURL 返回「本服务自己的地址」：账号认证只用它做自反向判定，
+// 优先 SelfBaseURL，Node 地址仅作旧拓扑兜底。
+func selfOrNodeBaseURL(dependencies webuiRouteDependencies) string {
+	if self := strings.TrimSpace(dependencies.SelfBaseURL); self != "" {
+		return self
+	}
+	return dependencies.NodeBaseURL
+}
 
 // NewKiroJobLocalImporter 装配 Kiro OAuth 新增/重登作业的本机 IDE 登录态导入端口。
 func NewKiroJobLocalImporter(dependencies webuiRouteDependencies) webuiaccountaddapi.JobLocalImporter {
@@ -24,7 +34,7 @@ func buildWebUIAccountAuthRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		Store:       dependencies.Store,
 		AuthJobs:    dependencies.AuthJobs,
 		HostHomeDir: dependencies.HostHomeDir,
-		NodeBaseURL: dependencies.NodeBaseURL,
+		NodeBaseURL: selfOrNodeBaseURL(dependencies),
 	})
 	if err != nil {
 		return nil, err
@@ -49,7 +59,7 @@ func newStaticAccountHandler(dependencies webuiRouteDependencies) (http.Handler,
 		Store:       dependencies.Store,
 		AuthJobs:    dependencies.AuthJobs,
 		HostHomeDir: dependencies.HostHomeDir,
-		NodeBaseURL: dependencies.NodeBaseURL,
+		NodeBaseURL: selfOrNodeBaseURL(dependencies),
 	})
 	if err != nil {
 		return nil, err

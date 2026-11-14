@@ -53,7 +53,7 @@ function resolveAiHomeDir() {
 }
 
 function resolveManagementKey(aiHomeDir) {
-  const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || process.env.AIH_IMPORT_KEY || '').trim();
+  const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
   if (fromEnv) return fromEnv;
   const config = readJsonValue(fs, aiHomeDir, 'config:server');
   return String(config && config.managementKey || '').trim();

@@ -5,9 +5,9 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { loadPlaywright } = require('./playwright-require');
 
-const baseUrl = process.env.AIH_WEBUI_URL || 'http://127.0.0.1:9527';
+const baseUrl = process.env.AIH_SERVER_BASE_URL || 'http://127.0.0.1:9527';
 function resolveManagementKey() {
-  if (process.env.AIH_WEBUI_MANAGEMENT_KEY) return process.env.AIH_WEBUI_MANAGEMENT_KEY.trim();
+  if (process.env.AIH_SERVER_MANAGEMENT_KEY) return process.env.AIH_SERVER_MANAGEMENT_KEY.trim();
   try {
     const pids = execFileSync('pgrep', ['-f', 'bin/native/darwin-arm64/aih-server'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
     for (const pid of pids) {

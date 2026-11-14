@@ -70,7 +70,7 @@ function toEvent(row) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const key = process.env.AIH_IMPORT_KEY || readManagementKey();
+  const key = process.env.AIH_SERVER_MANAGEMENT_KEY || readManagementKey();
   if (!key && !options.dryRun) throw new Error('缺少管理密钥');
   // 只导「Go 里还存在的账号」：账本有账号外键，已删除/已 rekey 的账号历史无法落库。
   // 额度统计页是按账号看数据，这些历史本来就不会出现在页面上。

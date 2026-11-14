@@ -53,7 +53,7 @@ function resolveAiHomeDir() {
 }
 
 function resolveManagementKey(aiHomeDir) {
-  const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || process.env.AIH_IMPORT_KEY || '').trim();
+  const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
   if (fromEnv) return fromEnv;
   // 与 backfill 脚本一致：WebUI 的 key 在 app-state 的 config:server 里。
   const config = readJsonValue(fs, aiHomeDir, 'config:server');

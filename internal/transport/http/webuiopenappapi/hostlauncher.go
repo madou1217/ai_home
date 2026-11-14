@@ -83,7 +83,7 @@ type launchResultPayload struct {
 	Error            string               `json:"error"`
 	Message          string               `json:"message"`
 	Reason           string               `json:"reason"`
-	RequiredAction   string               `json:"requiredAction"`
+	RequiredAction   any                  `json:"requiredAction"`
 	EgressError      string               `json:"egressError"`
 	EgressWarning    string               `json:"egressWarning"`
 	InstallRequired  bool                 `json:"installRequired"`

@@ -108,18 +108,19 @@ type Request struct {
 // OK=false 表示业务失败（例如账号未配置、桌面端未安装），由 Handler 翻译成
 // Node 对应的状态码；error 返回值只用于传输/实现层面的意外故障。
 type Result struct {
-	OK             bool
-	Status         string
-	PID            *int
-	TerminalID     string
-	SessionKey     string
-	LaunchMode     string
-	Executable     string
-	PIDs           []int
-	Error          string
-	Message        string
-	Reason         string
-	RequiredAction string
+	OK         bool
+	Status     string
+	PID        *int
+	TerminalID string
+	SessionKey string
+	LaunchMode string
+	Executable string
+	PIDs       []int
+	Error      string
+	Message    string
+	Reason     string
+	// RequiredAction 透传可选引导动作（字符串或 {kind,flow,warn} 结构）。
+	RequiredAction any
 	EgressError    string
 	EgressWarning  string
 	// InstallRequired 表示缺少安装且宿主能给出安装目标（Node 同口径的 428）。
@@ -248,21 +249,22 @@ type planView struct {
 
 // successView 是成功响应：Node 的字段全部保留，另加 plan 与未填字段清单。
 type successView struct {
-	OK            bool     `json:"ok"`
-	Provider      string   `json:"provider"`
-	AccountRef    string   `json:"accountRef"`
-	Kind          string   `json:"kind"`
-	Action        string   `json:"action"`
-	Status        string   `json:"status"`
-	PID           *int     `json:"pid"`
-	TerminalID    string   `json:"terminalId"`
-	SessionKey    string   `json:"sessionKey"`
-	LaunchMode    string   `json:"launchMode"`
-	Executable    string   `json:"executable"`
-	PIDs          []int    `json:"pids"`
-	EgressWarning string   `json:"egressWarning,omitempty"`
-	Plan          planView `json:"plan"`
-	Partial       bool     `json:"partial"`
+	OK             bool     `json:"ok"`
+	Provider       string   `json:"provider"`
+	AccountRef     string   `json:"accountRef"`
+	Kind           string   `json:"kind"`
+	Action         string   `json:"action"`
+	Status         string   `json:"status"`
+	PID            *int     `json:"pid"`
+	TerminalID     string   `json:"terminalId"`
+	SessionKey     string   `json:"sessionKey"`
+	LaunchMode     string   `json:"launchMode"`
+	Executable     string   `json:"executable"`
+	PIDs           []int    `json:"pids"`
+	RequiredAction any      `json:"requiredAction,omitempty"`
+	EgressWarning  string   `json:"egressWarning,omitempty"`
+	Plan           planView `json:"plan"`
+	Partial        bool     `json:"partial"`
 	// UnfilledFields 列出 Node 有、而本切片没有可信来源的键。
 	UnfilledFields []string `json:"unfilledFields"`
 }
@@ -284,7 +286,7 @@ type errorView struct {
 	Plan             *planView          `json:"plan,omitempty"`
 	PIDs             []int              `json:"pids,omitempty"`
 	Reason           string             `json:"reason,omitempty"`
-	RequiredAction   string             `json:"requiredAction,omitempty"`
+	RequiredAction   any                `json:"requiredAction,omitempty"`
 	EgressError      string             `json:"egressError,omitempty"`
 	EgressWarning    string             `json:"egressWarning,omitempty"`
 	InstallRequired  bool               `json:"installRequired,omitempty"`
@@ -465,6 +467,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		LaunchMode:     result.LaunchMode,
 		Executable:     executable,
 		PIDs:           pids,
+		RequiredAction: result.RequiredAction,
 		EgressWarning:  result.EgressWarning,
 		Plan:           newPlanView(plan),
 		Partial:        true,
@@ -579,10 +582,13 @@ func launchErrorStatus(code string) int {
 		"zcode_native_proxy_marker_unrecognized":
 		return http.StatusConflict
 	case "agy_desktop_process_probe_failed", "codebuddy_desktop_keychain_unavailable",
-		"account_egress_unavailable", "zcode_egress_unavailable", "launch_host_unavailable":
+		"account_egress_unavailable", "zcode_egress_unavailable", "launch_host_unavailable",
+		"web_terminal_unavailable":
 		return http.StatusServiceUnavailable
 	case "zcode_native_proxy_settings_failed",
-		"account_egress_binding_unavailable", "zcode_egress_binding_unavailable":
+		"account_egress_binding_unavailable", "zcode_egress_binding_unavailable",
+		"account_profile_unavailable", "codex_desktop_profile_prepare_failed",
+		"claude_gateway_prepare_failed", "kiro_desktop_profile_unavailable":
 		return http.StatusInternalServerError
 	}
 	return http.StatusBadRequest
@@ -591,12 +597,40 @@ func launchErrorStatus(code string) int {
 // launchErrorMessages 只收录本切片与资格判定会出现的稳定错误码；
 // Launcher 自带 message 时优先用它的措辞。
 var launchErrorMessages = map[string]string{
-	"account_unconfigured":  "该账号尚未完成配置，未启动应用。",
-	"account_auth_invalid":  "该账号的授权已失效，请重新授权后再打开。",
-	"desktop_not_installed": "未检测到 Desktop 应用。",
-	"cli_not_installed":     "未检测到原生 CLI。",
-	"terminal_not_found":    "未找到可用的终端。",
-	"workdir_not_found":     "所选项目目录不存在或不是文件夹，未启动 CLI。",
+	"account_unconfigured":                   "该账号尚未完成配置，未启动应用。",
+	"account_auth_invalid":                   "该账号的授权已失效，请重新授权后再打开。",
+	"desktop_not_installed":                  "未检测到 Desktop 应用。",
+	"cli_not_installed":                      "未检测到原生 CLI。",
+	"desktop_not_supported":                  "当前系统或该 Provider 不支持打开 Desktop 客户端。",
+	"account_required":                       "缺少目标账号引用。",
+	"account_profile_unavailable":            "无法准备账号独立资料目录。",
+	"terminal_not_found":                     "未找到可用的终端。",
+	"terminal_launch_failed":                 "终端拉起失败。",
+	"web_terminal_unavailable":               "Web 虚拟终端服务不可用。",
+	"web_terminal_open_failed":               "Web 虚拟终端打开失败。",
+	"codex_desktop_profile_prepare_failed":   "准备 Codex 桌面端账号投影目录失败。",
+	"claude_gateway_prepare_failed":          "准备 Claude 桌面端本地网关配置失败。",
+	"kiro_desktop_profile_unavailable":       "准备 Kiro 桌面端隔离运行目录失败。",
+	"workdir_not_found":                      "所选项目目录不存在或不是文件夹，未启动 CLI。",
+	"model_alias_target_provider_mismatch":   "所选别名指向其他供应商，当前身份账号无法路由。请选择该账号支持的模型。",
+	"model_alias_lookup_failed":              "读取模型别名失败，未启动 CLI。",
+	"agy_desktop_keychain_conflict":          "检测到其他 Antigravity Desktop 实例。macOS Keychain 是全局凭据，请先关闭其他实例后再打开此账号。",
+	"agy_desktop_restart_required":           "该账号的 Antigravity Desktop 仍在使用旧凭据，请关闭后重新打开以加载当前账号凭据。",
+	"agy_desktop_auth_unavailable":           "当前账号没有可用的 Antigravity OAuth 凭据，未启动 Desktop。",
+	"agy_desktop_process_probe_failed":       "无法确认 Antigravity Desktop 实例状态，为避免覆盖全局凭据已停止启动。",
+	"codebuddy_desktop_keychain_unavailable": "无法为该账号的 Desktop 准备 macOS 系统钥匙串，请确认当前用户有可用的默认钥匙串后重试。",
+	"kimi_desktop_session_required":          "该账号尚未完成 Kimi Desktop 托管登录，请先扫码后再打开。",
+	"kimi_desktop_session_seed_failed":       "Kimi Desktop 登录态写入失败，未启动未登录的应用实例。",
+	"kimi_desktop_restart_failed":            "Kimi Desktop 登录态已准备，但旧实例未能结束；为保证同账号单实例，未启动新实例。",
+	"account_egress_binding_unavailable":     "账号出口绑定无法读取，为避免直连降级，Desktop 未启动；现有客户端设置保持不变。",
+	"account_egress_unavailable":             "账号出口当前不可用，为避免绕过绑定，Desktop 未启动；请检查出口设置里的代理地址、系统代理或外部 TUN 后重试。",
+	"zcode_egress_binding_unavailable":       "ZCode 出口绑定无法读取，为避免直连降级，Desktop 未启动；现有原生设置保持不变。",
+	"zcode_egress_unavailable":               "ZCode 账号出口当前不可用，为避免绕过绑定，Desktop 未启动；请检查出口设置里的代理地址、系统代理或外部 TUN 后重试。",
+	"zcode_native_proxy_marker_unrecognized": "ZCode 出口 marker 无法识别，Desktop 未启动；为避免覆盖现有设置或绕过绑定，请检查账号投影目录。",
+	"zcode_native_proxy_settings_failed":     "ZCode 原生代理设置写入失败，未启动 Desktop；请检查账号投影目录权限或 setting.json 是否损坏。",
+	"desktop_data_root_not_shared":           "桌面应用共享数据目录尚未就绪，未启动 Desktop；请确认宿主数据目录可访问后重试。",
+	"zcode_captcha_shadow_prepare_failed":    "ZCode 隔离桌面副本准备失败，未启动 Desktop；请检查磁盘空间与签名权限后重试。",
+	"account_egress_region_denied":           "当前出口地区受上游限制，未启动应用；请为该账号切换允许的出口后重试。",
 }
 
 func launchErrorMessage(code string) string {

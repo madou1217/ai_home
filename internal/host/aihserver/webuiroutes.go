@@ -519,6 +519,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建账号删除接口失败: %w", err)
 	}
+	publicAccountDelete := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		goRef := updateRefResolver.GoRef(request.PathValue("accountRef"))
+		cloned := request.Clone(request.Context())
+		cloned.Method = http.MethodDelete
+		cloned.URL.Path = "/v1/management/webui/accounts/" + goRef
+		cloned.URL.RawQuery = request.URL.RawQuery
+		accountDelete.ServeHTTP(response, cloned)
+	})
 	accountJobs, err := webuiaccountjobsapi.NewHandler(webuiaccountjobsapi.Dependencies{
 		Authorizer: authorizer,
 		Jobs:       dependencies.AuthJobs,
@@ -861,6 +869,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
 		// 浏览器数据面：编辑入口（ref 先翻译成 Go ref）。
 		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/update", Handler: publicAccountUpdate},
+		// 浏览器删除入口：Node 旧路径是 POST /accounts/{provider}/{accountRef}（无后缀）。
+		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}", Handler: publicAccountDelete},
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},

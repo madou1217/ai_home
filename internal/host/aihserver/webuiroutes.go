@@ -759,6 +759,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountliveapi.PublishPath, Handler: accountLive},
 		{Pattern: "GET " + webuiaccountliveapi.LivePath, Handler: http.HandlerFunc(accountLive.ServeLiveHTTP)},
 		{Pattern: "POST " + webuiaccountdetectapi.Path, Handler: accountDetect},
+		// 浏览器入口：账号发现直接由 Go 承接（Node 只提供宿主扫描能力）。
+		{Pattern: "POST /v0/webui/accounts/detect", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountDetect)},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},

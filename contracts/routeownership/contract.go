@@ -407,6 +407,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 本机账号发现：浏览器入口由 Go 直接应答。
+				ID:              "webui.accounts_detect",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/detect"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

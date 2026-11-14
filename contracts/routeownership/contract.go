@@ -205,15 +205,11 @@ func Current() Manifest {
 					httpRoute([]string{"*"}, "/v0/webui/control-plane/endpoints"),
 					httpRoute([]string{"*"}, "/v0/webui/control-plane/profiles"),
 					httpRoute([]string{"*"}, "/v0/webui/egress-evidence"),
-					httpRoute([]string{"*"}, "/v0/webui/egress-pool"),
-					httpRoute([]string{"*"}, "/v0/webui/egress-pool-groups"),
-					httpRoute([]string{"*"}, "/v0/webui/egress-pools"),
 					httpRoute([]string{"*"}, "/v0/webui/egress-upstreams"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/access"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/media"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/read"),
 					httpRoute([]string{"*"}, "/v0/webui/fs/trust"),
-					httpRoute([]string{"*"}, "/v0/webui/geo-resources"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/approval-request"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/remote-tools"),
 					httpRoute([]string{"*"}, "/v0/webui/models"),
@@ -576,6 +572,26 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/app-entries"),
+				},
+			},
+			{
+				// 出口池 / 池组 / 节点：浏览器入口由 Go 直接应答（路径同构）。
+				ID:              "webui.egress_pools",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"*"}, "/v0/webui/egress-pool"),
+					httpRoute([]string{"*"}, "/v0/webui/egress-pools"),
+					httpRoute([]string{"*"}, "/v0/webui/egress-pool-groups"),
+				},
+			},
+			{
+				// GeoIP 资源与任务：浏览器入口由 Go 直接应答。
+				ID:              "webui.geo_resources",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/geo-resources"),
 				},
 			},
 			{

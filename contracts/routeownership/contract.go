@@ -328,6 +328,18 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 会话读取与生命周期（列表/归档/恢复）：浏览器入口由 Go 直接应答。
+				ID:              "webui.sessions",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/{provider}/{accountRef}"),
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/lifecycle-capabilities"),
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/archived"),
+					httpRoute([]string{"POST"}, "/v0/webui/sessions/archive"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

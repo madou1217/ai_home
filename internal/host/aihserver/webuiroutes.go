@@ -862,6 +862,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisessionslistapi.Path + "/{provider}/{accountRef}", Handler: sessionsList},
 		{Pattern: "GET " + webuisessionslifecycleapi.LifecycleCapabilitiesPath, Handler: sessionsLifecycle},
 		{Pattern: "POST " + webuisessionslifecycleapi.ArchivePath, Handler: sessionsLifecycle},
+		// 浏览器数据面：/v0/webui/sessions* → 管理前缀（同一处理器）。
+		{Pattern: "GET /v0/webui/sessions/{provider}/{accountRef}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsList)},
+		{Pattern: "GET /v0/webui/sessions/lifecycle-capabilities", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsLifecycle)},
+		{Pattern: "POST /v0/webui/sessions/archive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsLifecycle)},
+		{Pattern: "GET /v0/webui/sessions/archived", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", archivedSessions)},
 		{Pattern: "POST " + webuiaccountreauthapi.Path + webuiaccountreauthapi.ReauthSuffix, Handler: reauth},
 		{Pattern: "POST " + webuiaccountaddapi.Path, Handler: accountAdd},
 		{Pattern: "GET " + webuiaccountaddapi.Path + webuiaccountaddapi.JobsSuffix, Handler: accountAdd},

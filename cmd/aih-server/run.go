@@ -13,6 +13,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
+	"github.com/madou1217/ai_home/internal/runtime/nodesupervisor"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -60,15 +61,39 @@ func run(
 	}
 	managementKey := config.managementKey
 	clientKey := config.clientKey
+	// superviseNode：Go 是服务主体，Node 只作为子进程承接尚未迁移的 WebUI 路由。
+	// 先选好 Node 私有端口再装配 Handler，监听成功后才真正拉起 Node。
+	nodeBaseURL := config.nodeBaseURL
+	frontDoorBaseURL := config.frontDoorBaseURL()
+	var nodeSupervisor *nodesupervisor.Supervisor
+	if config.superviseNode {
+		supervisor, baseURL, err := nodesupervisor.Prepare(nodesupervisor.Options{
+			AIHomeDir:     config.aiHomeDir,
+			NodeExec:      config.nodeExecPath,
+			EntryFile:     config.entryFilePath,
+			ExternalURL:   config.selfBaseURL(),
+			ManagementKey: managementKey,
+			ClientKey:     clientKey,
+			Logf:          log.New(runtime.stderr, "aih-server node: ", log.Ldate|log.Ltime|log.LUTC).Printf,
+			Stdout:        runtime.stderr,
+			Stderr:        runtime.stderr,
+		})
+		if err != nil {
+			return fmt.Errorf("准备 Node 子进程失败: %w", err)
+		}
+		nodeSupervisor = supervisor
+		nodeBaseURL = baseURL
+		frontDoorBaseURL = baseURL
+	}
 	traceRemoteControl := config.codexHooks.traceRemoteControl
 	remoteControlProxy := config.codexHooks.remoteControlProxy
 	// 出站语义统一在进程入口装一次：环境代理不可达时改直连（显式代理仍失败关闭）。
 	aihserver.InstallOutboundFallback()
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
-		NodeBaseURL:                config.nodeBaseURL,
+		NodeBaseURL:                nodeBaseURL,
 		SelfBaseURL:                config.selfBaseURL(),
-		FrontDoorBaseURL:           config.frontDoorBaseURL(),
+		FrontDoorBaseURL:           frontDoorBaseURL,
 		ManagementKey:              func() string { return managementKey },
 		ClientKey:                  func() string { return clientKey },
 		ModelDiscoverers:           runtime.models,
@@ -101,6 +126,9 @@ func run(
 	}
 	defer func() {
 		returnErr = errors.Join(returnErr, server.Close())
+		if nodeSupervisor != nil {
+			nodeSupervisor.Stop()
+		}
 	}()
 
 	listener, err := runtime.listen(ctx, "tcp", config.listenAddress())
@@ -112,6 +140,10 @@ func run(
 		"aih-server listening on http://%s\n",
 		listener.Addr().String(),
 	)
+	// Go 已在监听：此时拉起 Node，它启动期间的账号同步能立刻打到管理面。
+	if nodeSupervisor != nil {
+		nodeSupervisor.Start()
+	}
 	return serveUntilCanceled(ctx, server, listener)
 }
 

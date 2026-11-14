@@ -51,6 +51,9 @@ type commandConfig struct {
 	// frontDoor 表示本进程拥有公开端口：未注册的路径转交给 nodeBaseURL。
 	// 关闭时（缺省）Go 仍只跑私有端口，未注册路径保持 404。
 	frontDoor bool
+	// superviseNode 表示本进程同时持有 Node 子进程：Node 只承接尚未迁移的 WebUI 路由。
+	// 打开时 Go 是服务主体，Node 的地址由 supervisor 动态分配，不能再传 nodeBaseURL。
+	superviseNode bool
 	// nodeExecPath 与 entryFilePath 由监督器通过 AIH_SERVER_NODE_EXEC / AIH_SERVER_ENTRY_FILE 注入，
 	// 供原生重启接口拉起独立后台重启进程；允许缺省，但显式设置损坏值时在启动期拦截。
 	nodeExecPath  string
@@ -95,13 +98,27 @@ func (config commandConfig) selfBaseURL() string {
 	return "http://" + net.JoinHostPort(config.host, strconv.Itoa(config.port))
 }
 
-// loadCommandConfig 从正式环境变量和显式 CLI 参数构建启动配置。
+// loadCommandConfig 从持久化配置、正式环境变量和显式 CLI 参数构建启动配置。
 func loadCommandConfig(
 	args []string,
 	runtime commandRuntime,
 ) (commandConfig, error) {
-	host := envValue(runtime.lookupEnv, "AIH_SERVER_HOST", defaultServerHost)
-	port, err := envPort(runtime.lookupEnv)
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil {
+		return commandConfig{}, err
+	}
+	// 持久化配置是权威缺省：Go 必须能在没有 Node 监督者时按用户配置的地址/端口/密钥启动。
+	persisted := readPersistedServerConfig(aiHomeDir)
+	hostFallback := defaultServerHost
+	if persisted.Host != "" {
+		hostFallback = persisted.Host
+	}
+	portFallback := defaultServerPort
+	if persisted.Port > 0 && persisted.Port <= 65535 {
+		portFallback = persisted.Port
+	}
+	host := envValue(runtime.lookupEnv, "AIH_SERVER_HOST", hostFallback)
+	port, err := envPort(runtime.lookupEnv, portFallback)
 	if err != nil {
 		return commandConfig{}, err
 	}
@@ -116,6 +133,8 @@ func loadCommandConfig(
 	flags.StringVar(&nodeBaseURL, "node-base-url", "", "Node 宿主回环地址；由 Go Core 监督器注入，不面向用户")
 	var frontDoor bool
 	flags.BoolVar(&frontDoor, "front-door", false, "本进程拥有公开端口：未注册的路由转交给 --node-base-url")
+	var superviseNode bool
+	flags.BoolVar(&superviseNode, "supervise-node", false, "同时启动并监督 Node 子进程，承接尚未迁移的 WebUI 路由")
 	hooksCfg := codexHooksConfig{
 		cliSelfHealIntervalMs:     defaultCodexHookSelfHealIntervalMs,
 		desktopSelfHealIntervalMs: defaultCodexHookSelfHealIntervalMs,
@@ -148,21 +167,15 @@ func loadCommandConfig(
 	if port < 0 || port > 65535 {
 		return commandConfig{}, errInvalidCommandConfig
 	}
-	aiHomeDir, err := resolveAIHomeDir(runtime)
-	if err != nil {
-		return commandConfig{}, err
-	}
-	// 环境变量是运维的临时覆盖；持久化配置才是权威来源。Go 必须在没有 Node
-	// 监督者注入环境变量时也能独立启动，因此缺项从 app-state 的 config:server 补齐。
+	// 环境变量是运维的临时覆盖；持久化配置才是权威来源。
 	managementKey := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", ""))
 	clientKey := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_SERVER_API_KEY", ""))
 	if managementKey == "" || clientKey == "" {
-		storedManagementKey, storedClientKey := readPersistedServerKeys(aiHomeDir)
 		if managementKey == "" {
-			managementKey = storedManagementKey
+			managementKey = persisted.ManagementKey
 		}
 		if clientKey == "" {
-			clientKey = storedClientKey
+			clientKey = persisted.APIKey
 		}
 	}
 	if err := aihserver.ValidateServerKeys(managementKey, clientKey); err != nil {
@@ -187,6 +200,13 @@ func loadCommandConfig(
 	if frontDoor && nodeBaseURL != "" {
 		nodePort, portErr := loopbackURLPort(nodeBaseURL)
 		if portErr != nil || nodePort == port {
+			return commandConfig{}, errInvalidCommandConfig
+		}
+	}
+	if superviseNode {
+		// Node 的私有端口由 supervisor 动态分配；固定端口与自监督要互斥，
+		// 否则同一个 Go 可能既当父进程又连一个外部 Node。
+		if !frontDoor || port <= 0 || nodeBaseURL != "" {
 			return commandConfig{}, errInvalidCommandConfig
 		}
 	}
@@ -223,6 +243,7 @@ func loadCommandConfig(
 		webDir:                     strings.TrimSpace(webDir),
 		nodeBaseURL:                nodeBaseURL,
 		frontDoor:                  frontDoor,
+		superviseNode:              superviseNode,
 		nodeExecPath:               nodeExecPath,
 		entryFilePath:              entryFilePath,
 		codexHooks:                 hooksCfg,
@@ -300,11 +321,11 @@ func envCredentialRefreshDelegated(lookupEnv func(string) (string, bool)) (bool,
 	}
 }
 
-// envPort 严格解析环境端口，不把错误值静默回退到默认端口。
-func envPort(lookupEnv func(string) (string, bool)) (int, error) {
+// envPort 严格解析环境端口，不把错误值静默回退到缺省端口。
+func envPort(lookupEnv func(string) (string, bool), fallback int) (int, error) {
 	raw, found := lookupEnv("AIH_SERVER_PORT")
 	if !found || raw == "" {
-		return defaultServerPort, nil
+		return fallback, nil
 	}
 	if strings.TrimSpace(raw) != raw {
 		return 0, errInvalidCommandConfig
@@ -316,28 +337,43 @@ func envPort(lookupEnv func(string) (string, bool)) (int, error) {
 	return port, nil
 }
 
-// readPersistedServerKeys 从 app-state.db 的 config:server 读取权威密钥。
+// persistedServerConfig 是 app-state 里 config:server 的启动要素。
+type persistedServerConfig struct {
+	Host          string
+	Port          int
+	ManagementKey string
+	APIKey        string
+}
+
+// readPersistedServerConfig 从 app-state.db 的 config:server 读取权威启动配置。
 //
 // 读取失败按「没有持久化配置」处理：启动继续走环境变量（与旧行为一致），
 // 最终由 ValidateServerKeys 对结果失败关闭。这样 Go 不依赖 Node 监督者
 // 注入 AIH_SERVER_* 就能独立启动，同时保留环境变量作为运维覆盖。
-func readPersistedServerKeys(aiHomeDir string) (managementKey, clientKey string) {
+func readPersistedServerConfig(aiHomeDir string) persistedServerConfig {
 	databasePath, err := appstate.DatabasePath(aiHomeDir)
 	if err != nil {
-		return "", ""
+		return persistedServerConfig{}
 	}
 	raw, found, err := appstate.ReadKV(context.Background(), databasePath, "config:server")
 	if err != nil || !found {
-		return "", ""
+		return persistedServerConfig{}
 	}
 	var stored struct {
+		Host          string `json:"host"`
+		Port          int    `json:"port"`
 		ManagementKey string `json:"managementKey"`
 		APIKey        string `json:"apiKey"`
 	}
 	if json.Unmarshal([]byte(raw), &stored) != nil {
-		return "", ""
+		return persistedServerConfig{}
 	}
-	return strings.TrimSpace(stored.ManagementKey), strings.TrimSpace(stored.APIKey)
+	return persistedServerConfig{
+		Host:          strings.TrimSpace(stored.Host),
+		Port:          stored.Port,
+		ManagementKey: strings.TrimSpace(stored.ManagementKey),
+		APIKey:        strings.TrimSpace(stored.APIKey),
+	}
 }
 
 // resolveAIHomeDir 只读取规范 AIH_HOME_DIR，缺省时使用当前用户的 .ai_home。

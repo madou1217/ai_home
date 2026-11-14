@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -49,12 +50,12 @@ func (handler *Handler) deliver(response http.ResponseWriter, request *http.Requ
 			result <- handler.observeStream(reader, upstream.Header, string(selection.AccountRef))
 			_ = reader.Close()
 		}()
-		upstreamErr, downstreamErr = copyBody(response, io.TeeReader(upstream.Body, &observationTap{writer: writer}))
+		upstreamErr, downstreamErr = copyBody(response, io.TeeReader(upstream.Body, &observationTap{writer: writer}), streamHeartbeatInterval)
 		_ = writer.CloseWithError(upstreamErr)
 		observed = <-result
 	} else {
 		var captured bytes.Buffer
-		upstreamErr, downstreamErr = copyBody(response, io.TeeReader(upstream.Body, &boundedCapture{buffer: &captured, limit: MaxRequestBytes}))
+		upstreamErr, downstreamErr = copyBody(response, io.TeeReader(upstream.Body, &boundedCapture{buffer: &captured, limit: MaxRequestBytes}), 0)
 		var envelope struct {
 			Status string          `json:"status"`
 			Usage  json.RawMessage `json:"usage"`
@@ -191,11 +192,33 @@ func (capture *boundedCapture) Write(payload []byte) (int, error) {
 	return len(payload), nil
 }
 
+// streamHeartbeatInterval 是 SSE 流持续没有上游数据时的保活帧间隔。
+//
+// Cloudflare 等中间层对静默连接有 100s 左右的存活上限，而一次长推理很容易
+// 超过这个窗口；心跳只写 SSE 注释行，不产生事件、不改变客户端看到的事件序列。
+const streamHeartbeatInterval = 15 * time.Second
+
+// streamHeartbeatLine 是注释行本体（含换行，不含事件终止空行）。
+const streamHeartbeatLine = ": keepalive\n"
+
 // copyBody 逐块把上游字节交付给客户端，并在每次交付后重置空闲窗口。
 //
 // Server 的 WriteTimeout 是绝对截止时间，会把长推理流硬切断；这里用
 // StreamDeadline 把「断开」重新定义为「持续没有数据」（见 G3）。
+// heartbeat > 0 时（仅 SSE 响应）在静默期插入注释帧保活。
 func copyBody(
+	response http.ResponseWriter,
+	source io.Reader,
+	heartbeat time.Duration,
+) (error, error) {
+	if heartbeat <= 0 {
+		return copyBodyOnce(response, source)
+	}
+	return copyBodyWithHeartbeat(response, source, heartbeat)
+}
+
+// copyBodyOnce 是「来一块写一块」的基础实现，用于非流式响应与已收尾的错误体。
+func copyBodyOnce(
 	response http.ResponseWriter,
 	source io.Reader,
 ) (error, error) {
@@ -220,6 +243,112 @@ func copyBody(
 			return readErr, nil
 		}
 	}
+}
+
+// copyBodyWithHeartbeat 在读取上游的同时按静默间隔写 SSE 注释帧。
+//
+// 读与写必须分开：上游可能长时间一个字节都不产出，阻塞式 Read 无法同时写心跳。
+// reader goroutine 只负责读，写只发生在当前 goroutine，避免并发写 ResponseWriter。
+func copyBodyWithHeartbeat(
+	response http.ResponseWriter,
+	source io.Reader,
+	heartbeat time.Duration,
+) (error, error) {
+	controller := http.NewResponseController(response)
+	deadline := inferenceapi.NewStreamDeadline(response)
+	type readResult struct {
+		payload []byte
+		err     error
+	}
+	results := make(chan readResult)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		buffer := make([]byte, 32*1024)
+		for {
+			count, readErr := source.Read(buffer)
+			result := readResult{err: readErr}
+			if count > 0 {
+				// 交付所有权给写侧；缓冲区留在本 goroutine 复用。
+				result.payload = append([]byte(nil), buffer[:count]...)
+			}
+			select {
+			case results <- result:
+			case <-done:
+				return
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	// trailer 记录已写出内容的最后两个字节，用于判断注释帧能否安全插入：
+	// SSE 以行/空行分帧，只有行边界才能写注释；空行（\n\n）才是事件边界。
+	var trailer [2]byte
+	written := 0
+	write := func(payload []byte) error {
+		if len(payload) == 0 {
+			return nil
+		}
+		if _, err := response.Write(payload); err != nil {
+			return err
+		}
+		for _, value := range payload {
+			trailer[0], trailer[1] = trailer[1], value
+		}
+		written += len(payload)
+		if err := controller.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return err
+		}
+		deadline.Refresh()
+		return nil
+	}
+
+	ticker := time.NewTicker(heartbeat)
+	defer ticker.Stop()
+	for {
+		select {
+		case result := <-results:
+			if err := write(result.payload); err != nil {
+				return nil, err
+			}
+			if errors.Is(result.err, io.EOF) {
+				return nil, nil
+			}
+			if result.err != nil {
+				return result.err, nil
+			}
+			ticker.Reset(heartbeat)
+		case <-ticker.C:
+			if frame := streamHeartbeatFrame(trailer, written); frame != "" {
+				if err := write([]byte(frame)); err != nil {
+					return nil, err
+				}
+			}
+			ticker.Reset(heartbeat)
+		}
+	}
+}
+
+// streamHeartbeatFrame 根据已写出的尾部字节返回可安全插入的注释帧。
+//
+// 帧首不能落在半行中间（会被当成上一行内容），因此：
+//   - 还没写过内容：直接写完整注释帧；
+//   - 上一个字节不是换行：跳过本次心跳，等下一个静默窗口；
+//   - 行尾但不是事件边界：只写注释行，避免提前终止尚未结束的事件（多行 data）；
+//   - 空行之后（\n\n）：写注释帧并用空行收尾。
+func streamHeartbeatFrame(trailer [2]byte, written int) string {
+	if written == 0 {
+		return streamHeartbeatLine + "\n"
+	}
+	if trailer[1] != '\n' {
+		return ""
+	}
+	if trailer[0] == '\n' {
+		return streamHeartbeatLine + "\n"
+	}
+	return streamHeartbeatLine
 }
 
 func copyHeaders(destination, source http.Header) {

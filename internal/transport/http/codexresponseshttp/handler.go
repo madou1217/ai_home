@@ -261,7 +261,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			copyHeaders(response.Header(), upstream.Header)
 			setAccountHeaders(response, selection.AccountRef)
 			response.WriteHeader(upstream.StatusCode)
-			copyBody(response, io.MultiReader(bytes.NewReader(prefix), upstream.Body))
+			copyBody(response, io.MultiReader(bytes.NewReader(prefix), upstream.Body), 0)
 			_ = upstream.Body.Close()
 			trail.finish(upstream.StatusCode, "upstream_status")
 			return
@@ -277,7 +277,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		copyHeaders(response.Header(), last.Header)
 		setAccountHeaders(response, lastRef)
 		response.WriteHeader(last.StatusCode)
-		copyBody(response, last.Body)
+		copyBody(response, last.Body, 0)
 		trail.finish(last.StatusCode, "upstream_status")
 		return
 	}

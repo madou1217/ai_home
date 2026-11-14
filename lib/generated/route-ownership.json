@@ -362,7 +362,7 @@
       ]
     },
     {
-      "id": "node.webui_and_session_surface",
+      "id": "node.host_runtime_surfaces",
       "production_owner": "node",
       "migration_state": "node_owned",
       "node_routes": [
@@ -371,21 +371,46 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/accounts/plugin-login/start"
+          "path": "/v0/webui/accounts/plugin-login/start",
+          "role": "插件登录宿主"
         },
         {
           "transport": "http",
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/accounts/zcode/url-callback"
+          "path": "/v0/webui/accounts/zcode/url-callback",
+          "role": "浏览器回调捕获"
         },
         {
           "transport": "http",
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/chat/artifacts"
+          "path": "/v0/webui/internal/remote-tools",
+          "role": "MCP stdio 桥"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/provider-cli-upgrade",
+          "role": "CLI 升级子进程"
+        }
+      ]
+    },
+    {
+      "id": "node.webui_chat_stream",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "*"
+          ],
+          "path": "/v0/webui/chat/sessions"
         },
         {
           "transport": "http",
@@ -399,22 +424,15 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/chat/sessions"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/internal/remote-tools"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/provider-cli-upgrade"
-        },
+          "path": "/v0/webui/chat/artifacts"
+        }
+      ]
+    },
+    {
+      "id": "node.webui_static_shell",
+      "production_owner": "node",
+      "migration_state": "node_owned",
+      "node_routes": [
         {
           "transport": "http",
           "methods": [

@@ -184,19 +184,36 @@ func Current() Manifest {
 				}},
 			},
 			{
-				ID:              "node.webui_and_session_surface",
+				// Node 宿主能力（不是「还没迁的 WebUI」）：插件登录宿主、浏览器回调捕获、
+				// MCP stdio 桥与 CLI 升级都要求 Node 起子进程/监听本机回调，Go 不替代。
+				ID:              "node.host_runtime_surfaces",
 				ProductionOwner: "node",
 				MigrationState:  "node_owned",
 				NodeRoutes: []Route{
-					// 真实剩余面：2026-11-14 用「无凭据探测公开口」逐个分类得到，
-					// 其余 /v0/webui 家族已由 Go 承接（见各自 go_owned 条目）。
-					httpRoute([]string{"*"}, "/v0/webui/accounts/plugin-login/start"),
-					httpRoute([]string{"*"}, "/v0/webui/accounts/zcode/url-callback"),
-					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
-					httpRoute([]string{"*"}, "/v0/webui/chat/attachments"),
+					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/accounts/plugin-login/start", Role: "插件登录宿主"},
+					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/accounts/zcode/url-callback", Role: "浏览器回调捕获"},
+					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/internal/remote-tools", Role: "MCP stdio 桥"},
+					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/provider-cli-upgrade", Role: "CLI 升级子进程"},
+				},
+			},
+			{
+				// 聊天流与附件管道：Go 已有会话存储与 run 控制，但 202+独立 SSE 的帧编排、
+				// 上传落盘与 artifact 取回仍在 Node，需按帧逐条对齐后再切。
+				ID:              "node.webui_chat_stream",
+				ProductionOwner: "node",
+				MigrationState:  "node_owned",
+				NodeRoutes: []Route{
 					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
-					httpRoute([]string{"*"}, "/v0/webui/internal/remote-tools"),
-					httpRoute([]string{"*"}, "/v0/webui/provider-cli-upgrade"),
+					httpRoute([]string{"*"}, "/v0/webui/chat/attachments"),
+					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
+				},
+			},
+			{
+				// 静态 WebUI 外壳（构建产物）；数据面已全部由 Go 或上面两个条目承接。
+				ID:              "node.webui_static_shell",
+				ProductionOwner: "node",
+				MigrationState:  "node_owned",
+				NodeRoutes: []Route{
 					{Transport: "http", Methods: []string{"GET"}, Path: "/ui/*", Role: "static WebUI"},
 				},
 			},

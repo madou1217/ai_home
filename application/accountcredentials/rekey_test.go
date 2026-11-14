@@ -34,7 +34,8 @@ func (strategy *identityChangingStrategy) Refresh(
 
 // reKeyTestStore 在内存里完成迁移并记录回调，验证 resolver 的接线而不是 SQL。
 type reKeyTestStore struct {
-	delegationStore
+	// 指针嵌入：delegationStore 内含 sync.Mutex，按值嵌入会在构造时复制锁。
+	*delegationStore
 	rekeyed []accountcore.AccountRef
 }
 
@@ -90,7 +91,7 @@ func newReKeyResolverFixture(t *testing.T) (time.Time, delegationCredential, acc
 
 func TestRefreshReKeysGoOwnedAccountWhenIdentityChanges(t *testing.T) {
 	now, _, oldRef, base := newReKeyResolverFixture(t)
-	store := &reKeyTestStore{delegationStore: *base}
+	store := &reKeyTestStore{delegationStore: base}
 	var previous, current accountcore.AccountRef
 	var refreshedRef accountcore.AccountRef
 	resolver, err := NewResolver(Dependencies{
@@ -137,7 +138,7 @@ func TestRefreshReKeysGoOwnedAccountWhenIdentityChanges(t *testing.T) {
 
 func TestRefreshRejectsIdentityChangeWhenReKeyNotAllowed(t *testing.T) {
 	now, _, oldRef, base := newReKeyResolverFixture(t)
-	store := &reKeyTestStore{delegationStore: *base}
+	store := &reKeyTestStore{delegationStore: base}
 	resolver, err := NewResolver(Dependencies{
 		Store:            store,
 		Strategies:       []RefreshStrategy{&identityChangingStrategy{now: now}},
@@ -163,7 +164,7 @@ func TestRefreshRejectsIdentityChangeWhenReKeyNotAllowed(t *testing.T) {
 // 宿主拥有的账号在委托模式下根本不刷新；身份变化只能由宿主处理。
 func TestDelegatedHostOwnedAccountNeverReKeys(t *testing.T) {
 	now, _, oldRef, base := newReKeyResolverFixture(t)
-	store := &reKeyTestStore{delegationStore: *base}
+	store := &reKeyTestStore{delegationStore: base}
 	resolver, err := NewResolver(Dependencies{
 		Store:            store,
 		Strategies:       []RefreshStrategy{&identityChangingStrategy{now: now}},

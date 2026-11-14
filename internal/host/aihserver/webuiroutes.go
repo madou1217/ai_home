@@ -798,10 +798,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		// 浏览器入口：账号发现直接由 Go 承接（Node 只提供宿主扫描能力）。
 		{Pattern: "POST /v0/webui/accounts/detect", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountDetect)},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
+		// 浏览器数据面：账号导出。
+		{Pattern: "GET /v0/webui/accounts/export", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountExport)},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "POST " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "GET " + webuiopenaimodelsapi.Path, Handler: openaiModelsRead},
+		// 浏览器数据面：openai 模型目录与 watch。
+		{Pattern: "/v0/webui/openai-models", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", openaiModelsRead)},
+		{Pattern: "/v0/webui/openai-models/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", openaiModelsRead)},
 		{Pattern: "GET " + webuiarchivedsessionsapi.Path, Handler: archivedSessions},
 		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},
 		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},
@@ -822,6 +827,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuichatpasteapi.PublicPath, Handler: webuichatpasteapi.NewPublicAlias(chatPaste)},
 		{Pattern: "GET " + webuiusageconfigapi.Path, Handler: usageConfig},
 		{Pattern: "POST " + webuiusageconfigapi.Path, Handler: usageConfig},
+		// 浏览器数据面：服务配置。
+		{Pattern: "/v0/webui/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", usageConfig)},
+		{Pattern: "/v0/webui/config/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", usageConfig)},
 		{Pattern: "GET " + webuisshapi.Path, Handler: sshHandler},
 		{Pattern: "GET " + webuisshapi.WorkspacesPath, Handler: sshWorkspaces},
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
@@ -848,6 +856,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuipublicalias.PublicAccountPrefix + "/{provider}/model-context/bulk", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, http.HandlerFunc(modelContext.ServeBulkHTTP))},
 		{Pattern: "GET " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "POST " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
+		// 浏览器数据面：控制面（bootstrap/endpoints/profiles）。
+		{Pattern: "/v0/webui/control-plane", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", controlPlane)},
+		{Pattern: "/v0/webui/control-plane/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", controlPlane)},
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles/active", Handler: controlPlane},
@@ -856,6 +867,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuifstrustapi.TrustPath, Handler: fsTrust},
 		{Pattern: "GET " + webuifsaccessapi.Path, Handler: fsAccess},
 		{Pattern: "GET " + webuiproviderhooksapi.Path, Handler: hooks},
+		// 浏览器数据面：provider hooks。
+		{Pattern: "/v0/webui/provider-hooks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", hooks)},
+		{Pattern: "/v0/webui/provider-hooks/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", hooks)},
 		{Pattern: "POST " + webuiproviderhooksapi.InstallPath, Handler: installHooks},
 		{Pattern: "GET " + webuifsreadapi.Path, Handler: fsRead},
 		{Pattern: "GET " + webuifstreeapi.Path, Handler: fsTree},
@@ -947,6 +961,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.InstallSuffix, Handler: accountAdd},
 		{Pattern: "GET " + webuicontrolplanebootstrapapi.Path, Handler: controlPlaneBootstrap},
 		{Pattern: "GET " + webuiproviderauthsourcesapi.Path, Handler: authSources},
+		// 浏览器数据面：provider 授权来源。
+		{Pattern: "GET /v0/webui/accounts/provider-auth-sources", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", authSources)},
 		{Pattern: "POST " + webuiaccountactivityapi.RunPath, Handler: accountActivity},
 		{Pattern: "POST " + webuiaccountactivityapi.ProbePath, Handler: accountActivity},
 		{Pattern: "GET " + webuiaccountactivityapi.JobsPath, Handler: accountActivity},

@@ -385,13 +385,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/accounts/export"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/accounts/local-import"
         },
         {
@@ -400,13 +393,6 @@
             "*"
           ],
           "path": "/v0/webui/accounts/plugin-login/start"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/accounts/provider-auth-sources"
         },
         {
           "transport": "http",
@@ -448,27 +434,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/config"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/control-plane/endpoints"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/control-plane/profiles"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/internal/approval-request"
         },
         {
@@ -483,28 +448,7 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/openai-models"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/openai-models/watch"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/provider-cli-upgrade"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/provider-hooks"
         },
         {
           "transport": "http",
@@ -1537,6 +1481,27 @@
             "GET"
           ],
           "path": "/v0/webui/models"
+        }
+      ]
+    },
+    {
+      "id": "webui.control_plane_surfaces",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/accounts/export"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/accounts/provider-auth-sources"
         }
       ]
     },

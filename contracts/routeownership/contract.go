@@ -192,24 +192,16 @@ func Current() Manifest {
 					// 其余 /v0/webui 家族已由 Go 承接（见各自 go_owned 条目）。
 					httpRoute([]string{"*"}, "/v0/webui/account-upstream-error-rules"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/activity/params"),
-					httpRoute([]string{"*"}, "/v0/webui/accounts/export"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/local-import"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/plugin-login/start"),
-					httpRoute([]string{"*"}, "/v0/webui/accounts/provider-auth-sources"),
 					httpRoute([]string{"*"}, "/v0/webui/accounts/zcode/url-callback"),
 					httpRoute([]string{"*"}, "/v0/webui/chat-sessions"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/attachments"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
-					httpRoute([]string{"*"}, "/v0/webui/config"),
-					httpRoute([]string{"*"}, "/v0/webui/control-plane/endpoints"),
-					httpRoute([]string{"*"}, "/v0/webui/control-plane/profiles"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/approval-request"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/remote-tools"),
-					httpRoute([]string{"*"}, "/v0/webui/openai-models"),
-					httpRoute([]string{"*"}, "/v0/webui/openai-models/watch"),
 					httpRoute([]string{"*"}, "/v0/webui/provider-cli-upgrade"),
-					httpRoute([]string{"*"}, "/v0/webui/provider-hooks"),
 					{Transport: "http", Methods: []string{"GET"}, Path: "/ui/*", Role: "static WebUI"},
 				},
 			},
@@ -622,6 +614,17 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/models"),
+				},
+			},
+			{
+				// 服务配置 / 控制面 / 模型目录 / provider hooks / 账号导出与授权来源：
+				// 浏览器入口由 Go 直接应答（与管理路径同构）。
+				ID:              "webui.control_plane_surfaces",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/export"),
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/provider-auth-sources"),
 				},
 			},
 			{

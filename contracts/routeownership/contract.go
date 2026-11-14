@@ -197,13 +197,13 @@ func Current() Manifest {
 				},
 			},
 			{
-				// 聊天流与附件管道：Go 已有会话存储与 run 控制，但 202+独立 SSE 的帧编排、
-				// 上传落盘与 artifact 取回仍在 Node，需按帧逐条对齐后再切。
-				ID:              "node.webui_chat_stream",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
-				NodeRoutes: []Route{
-					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
+				// 聊天会话集合与子路径（含 202 + 独立 SSE 流）：Node 原先只是把 Go 的
+				// 管理流中继给浏览器；现在浏览器直接打 Go 的同一处理器。
+				ID:              "webui.chat_sessions_stream",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/chat/sessions"),
 				},
 			},
 			{

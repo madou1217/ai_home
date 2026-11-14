@@ -441,6 +441,10 @@ func mountWebUIChat(mux *http.ServeMux, handler http.Handler) {
 		return
 	}
 	mux.Handle(webuichatapi.ManagementCollectionPath, handler)
+	// 浏览器数据面：聊天会话集合与子路径（含 202 + 独立 SSE 流）由 Go 直接应答。
+	publicChat := webuipublicalias.Rewrite("/v0/webui/chat/sessions", webuichatapi.ManagementCollectionPath, handler)
+	mux.Handle("/v0/webui/chat/sessions", publicChat)
+	mux.Handle("/v0/webui/chat/sessions/", publicChat)
 }
 
 // handleRouteNotFound 返回 JSON 404，避免标准库默认纯文本泄漏合同差异。

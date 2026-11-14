@@ -401,14 +401,15 @@
       ]
     },
     {
-      "id": "node.webui_chat_stream",
-      "production_owner": "node",
-      "migration_state": "node_owned",
-      "node_routes": [
+      "id": "webui.chat_sessions_stream",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
         {
           "transport": "http",
           "methods": [
-            "*"
+            "GET",
+            "POST"
           ],
           "path": "/v0/webui/chat/sessions"
         }

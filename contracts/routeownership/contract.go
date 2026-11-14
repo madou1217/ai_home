@@ -316,6 +316,18 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 项目目录与工作区项目视图：浏览器入口由 Go 直接应答。
+				ID:              "webui.projects",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/projects"),
+					httpRoute([]string{"GET"}, "/v0/webui/projects/sessions"),
+					httpRoute([]string{"GET"}, "/v0/webui/projects/watch"),
+					httpRoute([]string{"POST"}, "/v0/webui/projects/snapshot"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

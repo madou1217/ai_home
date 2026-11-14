@@ -835,6 +835,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiprojectsapi.SessionsPath, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.WatchPath, Handler: projects},
 		{Pattern: "POST " + webuiprojectsapi.SnapshotPath, Handler: projects},
+		// 浏览器数据面：/v0/webui/projects* → 管理前缀（同一处理器）。
+		{Pattern: "GET /v0/webui/projects", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
+		{Pattern: "GET /v0/webui/projects/sessions", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
+		{Pattern: "GET /v0/webui/projects/watch", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
+		{Pattern: "POST /v0/webui/projects/snapshot", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
 		{Pattern: "GET " + webuisessionmessagesapi.Path, Handler: sessionMessages},
 		{Pattern: "GET " + webuisessioneventsapi.Path, Handler: sessionEvents},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},

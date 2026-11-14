@@ -4,8 +4,8 @@
 // /accounts/{provider}/{accountRef}/<action> 在 ServeMux 里同形，无法同时注册；
 // 迁移后统一走不冲突的 /v0/webui/account-jobs/{id}。
 //
-// 返回体对齐 Node 的 serializeAuthJob：持久化字段来自 oauth_jobs，运行时字段
-// （设备码、回调捕获、日志）在没有内存态时给空值，并用 recovered=true 标记，
+// 返回体对齐 Node 的 serializeAuthJob：活跃作业给出 authMode/authStrategy/账号字段；
+// 内存中已清理的终态回落到 oauth_jobs 快照，运行时字段为空并用 recovered=true 标记，
 // 与 Node 进程重启后的只读视图同语义。
 package webuiaccountjobsapi
 
@@ -30,9 +30,9 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// JobReader 读取持久化作业快照。
+// JobReader 读取作业快照（活跃作业在内存，终态回落持久化）。
 type JobReader interface {
-	GetJob(ctx context.Context, jobID string) (accountauth.JobRecord, bool, error)
+	GetJob(ctx context.Context, jobID string) (accountauth.Job, error)
 }
 
 // Dependencies 汇总 Handler 所需依赖。
@@ -76,62 +76,70 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusNotFound, "job_not_found", "作业不存在")
 		return
 	}
-	record, found, err := handler.jobs.GetJob(request.Context(), jobID)
+	job, err := handler.jobs.GetJob(request.Context(), jobID)
+	if errors.Is(err, accountauth.ErrJobNotFound) {
+		writeError(response, http.StatusNotFound, "job_not_found", "作业不存在")
+		return
+	}
 	if err != nil {
 		writeError(response, http.StatusServiceUnavailable, "account_jobs_unavailable", "作业快照读取失败")
 		return
 	}
-	if !found {
-		writeError(response, http.StatusNotFound, "job_not_found", "作业不存在")
-		return
-	}
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":        true,
-		"recovered": true,
-		"job":       jobView(record),
+		"recovered": job.AuthMode() == "",
+		"job":       jobView(job),
 	})
 }
 
-// jobView 把持久化记录投影成 Node 的 serializeAuthJob 形状。
-func jobView(record accountauth.JobRecord) map[string]any {
-	createdAt := record.CreatedAt.UnixMilli()
-	updatedAt := record.UpdatedAt.UnixMilli()
-	var expiresAt any
-	if !record.ExpiresAt.IsZero() {
-		expiresAt = record.ExpiresAt.UnixMilli()
+// jobView 把 Job 投影成 Node 的 serializeAuthJob 形状。
+func jobView(job accountauth.Job) map[string]any {
+	createdAt := job.CreatedAt().UnixMilli()
+	updatedAt := createdAt
+	if finished := job.FinishedAt(); !finished.IsZero() {
+		updatedAt = finished.UnixMilli()
 	}
+	var expiresAt any
+	if expires := job.ExpiresAt(); !expires.IsZero() {
+		expiresAt = expires.UnixMilli()
+	}
+	accountRef := job.AccountRef().String()
+	if accountRef == "" {
+		accountRef = job.TargetAccountRef().String()
+	}
+	account := job.Account()
 	return map[string]any{
-		"id":               record.ID,
-		"provider":         record.ProviderID,
-		"accountRef":       record.AccountRef,
-		"authMode":         "",
-		"authStrategy":     "",
-		"reauth":           strings.EqualFold(string(record.Purpose), "reauth"),
-		"status":           string(record.Status),
-		"authProgressState": "",
-		"logs":             "",
-		"exitCode":         nil,
-		"error":            record.ErrorCode,
-		"createdAt":        createdAt,
-		"updatedAt":        updatedAt,
-		"lastOutputAt":     0,
-		"pid":              nil,
-		"expiresAt":        expiresAt,
-		"pollIntervalMs":   nil,
-		"verificationUri":  "",
+		"id":                      job.ID(),
+		"provider":                job.ProviderID(),
+		"accountRef":              accountRef,
+		"authMode":                job.AuthMode(),
+		"authStrategy":            job.AuthStrategy(),
+		"reauth":                  strings.EqualFold(string(job.Purpose()), "reauth"),
+		"status":                  string(job.Status()),
+		"authProgressState":       "",
+		"logs":                    "",
+		"exitCode":                nil,
+		"error":                   job.FailureCode(),
+		"createdAt":               createdAt,
+		"updatedAt":               updatedAt,
+		"lastOutputAt":            0,
+		"pid":                     nil,
+		"expiresAt":               expiresAt,
+		"pollIntervalMs":          nil,
+		"verificationUri":         "",
 		"verificationUriComplete": "",
-		"userCode":         "",
-		"authorizationUrl": "",
-		"redirectUri":      "",
-		"callbackCaptureStatus": "",
-		"callbackListeningUrl":  "",
-		"callbackCaptureError":  "",
-		"email":            "",
-		"displayName":      "",
-		"planType":         "",
-		"setupPhase":       "",
-		"installRequired":  false,
-		"installAttempts":  []any{},
+		"userCode":                "",
+		"authorizationUrl":        "",
+		"redirectUri":             "",
+		"callbackCaptureStatus":   "",
+		"callbackListeningUrl":    "",
+		"callbackCaptureError":    "",
+		"email":                   account.Email,
+		"displayName":             account.DisplayName,
+		"planType":                account.PlanType,
+		"setupPhase":              "",
+		"installRequired":         false,
+		"installAttempts":         []any{},
 	}
 }
 

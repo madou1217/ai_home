@@ -698,7 +698,13 @@ func parseClientFrame(payload []byte, boundModel ...string) (clientRequestEnvelo
 func (handler *Handler) prepareClientFrame(payload []byte, model string, effectiveModel string) []byte {
 	prepared := normalizeClientFrameModel(payload, model)
 	if handler != nil {
-		prepared = alignClientFrameEffort(prepared, effectiveModel, handler.ladders)
+		// HTTP 原生快路径与 WS 帧共用同一份对齐实现（application/effortalign）。
+		prepared = effortalign.AlignResponsesPayload(
+			prepared,
+			inference.ProviderCodex,
+			effectiveModel,
+			handler.ladders,
+		)
 	}
 	return codexwire.SanitizeRequestPayload(prepared)
 }
@@ -728,73 +734,6 @@ func normalizeClientFrameModel(payload []byte, model string) []byte {
 		return payload
 	}
 	return normalized
-}
-
-// alignClientFrameEffort 把 response.create 的 reasoning.effort 压进目标模型的档位阶梯。
-//
-// Codex CLI 默认走 WebSocket，HTTP 上游 Adapter 的 effortalign 覆盖不到这里。
-// 客户端配置 model_reasoning_effort = "none" 时，若目标模型只支持 low..max
-// （例如 gpt-6.1-sol），原样透传会被上游 400 unsupported_value；按阶梯对齐后
-// none 收敛到 low，显式且受支持的档位保持不变。
-func alignClientFrameEffort(
-	payload []byte,
-	model string,
-	ladders effortalign.LadderReader,
-) []byte {
-	if ladders == nil {
-		return payload
-	}
-	targetModel := strings.TrimSpace(model)
-	if targetModel == "" {
-		return payload
-	}
-	ladder, found := ladders.LookupReasoningEfforts(string(inference.ProviderCodex), targetModel)
-	if !found || len(ladder) == 0 {
-		return payload
-	}
-	var frame map[string]json.RawMessage
-	if json.Unmarshal(payload, &frame) != nil {
-		return payload
-	}
-	rawReasoning, found := frame["reasoning"]
-	if !found {
-		return payload
-	}
-	var reasoning map[string]json.RawMessage
-	if json.Unmarshal(rawReasoning, &reasoning) != nil {
-		return payload
-	}
-	rawEffort, found := reasoning["effort"]
-	if !found {
-		return payload
-	}
-	var effort string
-	if json.Unmarshal(rawEffort, &effort) != nil {
-		return payload
-	}
-	requested := inference.ReasoningEffort(strings.TrimSpace(effort))
-	if requested == "" {
-		return payload
-	}
-	aligned, ok := inference.AlignReasoningEffort(requested, nil, ladder)
-	if !ok || aligned == requested {
-		return payload
-	}
-	encodedEffort, err := json.Marshal(string(aligned))
-	if err != nil {
-		return payload
-	}
-	reasoning["effort"] = encodedEffort
-	encodedReasoning, err := json.Marshal(reasoning)
-	if err != nil {
-		return payload
-	}
-	frame["reasoning"] = encodedReasoning
-	encodedFrame, err := json.Marshal(frame)
-	if err != nil {
-		return payload
-	}
-	return encodedFrame
 }
 
 // clientRequestEnvelope 是 response.create 的有界最小观察投影。

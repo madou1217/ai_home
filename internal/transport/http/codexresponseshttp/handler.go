@@ -14,11 +14,13 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/contracts/codex-relay"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
@@ -60,6 +62,11 @@ type Dependencies struct {
 	Rules configured.Rules
 	// FailureLog 可选：请求以失败结束时收到一份低敏摘要（见 FailureReport）。
 	FailureLog func(FailureReport)
+	// Ladders 可选：原生快路径的推理强度档位来源。nil 表示不做强度对齐。
+	// ChatGPT 登录账号的请求是字节透传，不会经过 Canonical Adapter 的 aligner，
+	// 必须在这里对齐，否则客户端 model_reasoning_effort=none 会打到只支持
+	// low..max 的模型上（上游 400 unsupported_value）。
+	Ladders effortalign.LadderReader
 }
 
 type Handler struct {
@@ -111,6 +118,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	// 原样透传前先剥掉上游解析不了的引用（item id 前缀、store:false 的断点、
 	// 换号后无法解密的 reasoning）。见 sanitizeNativePayload 的说明。
 	payload = codexwire.SanitizeRequestPayload(payload)
+	payload = effortalign.AlignResponsesPayload(payload, inference.ProviderCodex, metadata.Model, handler.Ladders)
 	trail := handler.newFailureTrail(metadata.Model)
 	cursor, err := handler.Accounts.Open(ctx, metadata.Model)
 	if errors.Is(err, ErrNotNativeRoute) {

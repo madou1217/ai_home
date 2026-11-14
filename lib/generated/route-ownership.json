@@ -1060,6 +1060,21 @@
             "PUT"
           ],
           "path": "/v0/webui/toolkit/apps/{appId}/config"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/toolkit/tools/{toolId}/service"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "PUT"
+          ],
+          "path": "/v0/webui/toolkit/tools/{toolId}/service/settings"
         }
       ]
     },

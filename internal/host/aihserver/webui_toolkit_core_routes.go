@@ -54,6 +54,11 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "GET /v0/webui/toolkit/mirrors", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET /v0/webui/toolkit/tools", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET /v0/webui/toolkit/apps", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		// 受管工具的本地服务：状态查询/启动与设置写入。
+		{Pattern: "GET /v0/webui/toolkit/tools/{toolId}/service", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "POST /v0/webui/toolkit/tools/{toolId}/service", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "PUT /v0/webui/toolkit/tools/{toolId}/service/settings", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+
 		{Pattern: "POST /v0/webui/toolkit/apps/install", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "POST /v0/webui/toolkit/apps/plan", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "POST /v0/webui/toolkit/apps/hooks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},

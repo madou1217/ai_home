@@ -433,6 +433,8 @@ func Current() Manifest {
 					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/plan"),
 					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/hooks"),
 					httpRoute([]string{"GET", "PUT"}, "/v0/webui/toolkit/apps/{appId}/config"),
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/toolkit/tools/{toolId}/service"),
+					httpRoute([]string{"PUT"}, "/v0/webui/toolkit/tools/{toolId}/service/settings"),
 				},
 			},
 			{

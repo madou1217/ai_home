@@ -257,3 +257,56 @@ func TestNewHandlerRejectsMissingDependencies(t *testing.T) {
 		t.Fatal("缺 Installer 必须拒绝装配")
 	}
 }
+
+func TestInstallAndUninstallEmitAuditEvents(t *testing.T) {
+	var events []struct {
+		op      string
+		details map[string]any
+	}
+	installer := &stubInstaller{
+		installResult: plugincontrol.InstallResult{
+			PluginID:    "demo.plugin",
+			Version:     "1.2.3",
+			Digest:      "sha256:abc",
+			Revision:    4,
+			Signature:   plugincontrol.Signature{Status: "signed", KeyID: "key-1"},
+			Permissions: json.RawMessage(`{"capabilities":["observe"]}`),
+		},
+		uninstallResult: plugincontrol.UninstallResult{
+			PluginID: "demo.plugin",
+			Version:  "1.2.3",
+			Revision: 5,
+		},
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allowed: true},
+		Installer:  installer,
+		OnAudit: func(op string, details map[string]any) {
+			events = append(events, struct {
+				op      string
+				details map[string]any
+			}{op: op, details: details})
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 handler 失败: %v", err)
+	}
+
+	status, _ := perform(t, handler, http.MethodPost, InstallPath, `{"file":"/tmp/demo.aih-plugin"}`)
+	if status != http.StatusOK {
+		t.Fatalf("install 状态码异常: %d", status)
+	}
+	status, _ = perform(t, handler, http.MethodPost, UninstallPath, `{"pluginId":"demo.plugin","version":"1.2.3"}`)
+	if status != http.StatusOK {
+		t.Fatalf("uninstall 状态码异常: %d", status)
+	}
+	if len(events) != 2 {
+		t.Fatalf("期望 2 条审计事件，实际 %d", len(events))
+	}
+	if events[0].op != "install" || events[0].details["pluginId"] != "demo.plugin" || events[0].details["signature"] != "signed" || events[0].details["keyId"] != "key-1" {
+		t.Fatalf("install 审计详情异常: %+v", events[0])
+	}
+	if events[1].op != "uninstall" || events[1].details["pluginId"] != "demo.plugin" || events[1].details["version"] != "1.2.3" {
+		t.Fatalf("uninstall 审计详情异常: %+v", events[1])
+	}
+}

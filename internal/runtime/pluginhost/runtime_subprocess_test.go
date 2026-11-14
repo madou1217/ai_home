@@ -311,10 +311,10 @@ func (f *fakeHostClient) Status(ctx context.Context) (HostStatusResult, error) {
 }
 
 func (f *fakeHostClient) Ping(ctx context.Context) error { return nil }
-func (f *fakeHostClient) SocketPath() string           { return "/tmp/fake.sock" }
-func (f *fakeHostClient) Token() string                { return "fake-token" }
-func (f *fakeHostClient) PID() int                     { f.mu.Lock(); defer f.mu.Unlock(); return f.pid }
-func (f *fakeHostClient) Running() bool                { f.mu.Lock(); defer f.mu.Unlock(); return f.running }
+func (f *fakeHostClient) SocketPath() string             { return "/tmp/fake.sock" }
+func (f *fakeHostClient) Token() string                  { return "fake-token" }
+func (f *fakeHostClient) PID() int                       { f.mu.Lock(); defer f.mu.Unlock(); return f.pid }
+func (f *fakeHostClient) Running() bool                  { f.mu.Lock(); defer f.mu.Unlock(); return f.running }
 
 func TestRuntimeBackoffRecoveryAndTicketLifecycle(t *testing.T) {
 	var seqCounter atomic.Int64

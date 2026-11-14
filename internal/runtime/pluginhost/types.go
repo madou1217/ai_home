@@ -109,20 +109,20 @@ type FailureRecord struct {
 
 // RuntimeStatus 汇总插件运行时当前代次、租约与恢复状态。
 type RuntimeStatus struct {
-	State               RuntimeState       `json:"state"`
-	Generation          int64              `json:"generation"`
-	ActiveGeneration    int64              `json:"activeGeneration"`
-	DesiredPlugins      int                `json:"desiredPlugins"`
-	HostPID             int                `json:"hostPid,omitempty"`
-	GenerationsOnHost   int                `json:"generationsOnHost"`
-	RetiringCount       int                `json:"retiringCount"`
-	ActiveLeases        int                `json:"activeLeases"`
-	ConsecutiveFailures int                `json:"consecutiveFailures"`
-	LastError           *FailureRecord     `json:"lastError,omitempty"`
-	RecentFailures      []FailureRecord    `json:"recentFailures"`
+	State               RuntimeState        `json:"state"`
+	Generation          int64               `json:"generation"`
+	ActiveGeneration    int64               `json:"activeGeneration"`
+	DesiredPlugins      int                 `json:"desiredPlugins"`
+	HostPID             int                 `json:"hostPid,omitempty"`
+	GenerationsOnHost   int                 `json:"generationsOnHost"`
+	RetiringCount       int                 `json:"retiringCount"`
+	ActiveLeases        int                 `json:"activeLeases"`
+	ConsecutiveFailures int                 `json:"consecutiveFailures"`
+	LastError           *FailureRecord      `json:"lastError,omitempty"`
+	RecentFailures      []FailureRecord     `json:"recentFailures"`
 	Diagnostics         []PrepareDiagnostic `json:"diagnostics,omitempty"`
-	DescriptorErrors    []DescriptorError  `json:"providerDescriptorErrors,omitempty"`
-	HostStatus          *HostStatusResult  `json:"host,omitempty"`
+	DescriptorErrors    []DescriptorError   `json:"providerDescriptorErrors,omitempty"`
+	HostStatus          *HostStatusResult   `json:"host,omitempty"`
 }
 
 // DoctorIssue 描述插件控制面或运行时诊断出的问题或警告。
@@ -139,6 +139,7 @@ type DoctorInstalledSummary struct {
 	PluginID    string `json:"pluginId"`
 	Version     string `json:"version"`
 	Digest      string `json:"digest,omitempty"`
+	Signature   any    `json:"signature"`
 	Permissions any    `json:"permissions,omitempty"`
 }
 

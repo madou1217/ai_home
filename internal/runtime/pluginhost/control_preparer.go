@@ -223,10 +223,15 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		artifact := stringField(item, "artifact")
 		directory := stringField(item, "directory")
 		manifest, _ := item["manifest"].(map[string]any)
+		sigValue := item["signature"]
+		if sigValue == nil {
+			sigValue = map[string]any{"status": "unsigned"}
+		}
 		summary := DoctorInstalledSummary{
-			PluginID: pluginID,
-			Version:  version,
-			Digest:   digest,
+			PluginID:  pluginID,
+			Version:   version,
+			Digest:    digest,
+			Signature: sigValue,
 		}
 		if manifest != nil {
 			summary.Permissions = manifest["permissions"]

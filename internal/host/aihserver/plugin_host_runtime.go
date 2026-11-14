@@ -96,6 +96,7 @@ func newLocalPluginHandlers(options localPluginHandlerOptions) localPluginRuntim
 	if trust, err := webuiplugintrustapi.NewHandler(webuiplugintrustapi.Dependencies{
 		Authorizer: options.ManagementAuthorizer,
 		AIHomeDir:  options.AIHomeDir,
+		OnAudit:    service.Audit,
 	}); err == nil {
 		handlers.trust = trust
 	}
@@ -136,6 +137,7 @@ func newLocalPluginControlHandler(
 		Installer:  installer,
 		Committer:  store,
 		Operator:   operator,
+		OnAudit:    hostService.Audit,
 	})
 	if err != nil {
 		return nil

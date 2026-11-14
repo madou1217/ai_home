@@ -553,3 +553,57 @@ func TestKeysAreSortedInFile(t *testing.T) {
 		t.Fatalf("文件键顺序不是 alpha<beta<gamma: %s", raw)
 	}
 }
+
+// TestTrustAndUntrustEmitAuditEvents 验证加信任与撤销信任都会触发审计回调。
+func TestTrustAndUntrustEmitAuditEvents(t *testing.T) {
+	home := t.TempDir()
+	var events []struct {
+		op      string
+		details map[string]any
+	}
+	handler, err := NewHandler(Dependencies{
+		Authorizer: fakeAuthorizer{allowed: true},
+		AIHomeDir:  home,
+		OnAudit: func(op string, details map[string]any) {
+			events = append(events, struct {
+				op      string
+				details map[string]any
+			}{op: op, details: details})
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建 handler 失败: %v", err)
+	}
+	bodyBytes, _ := json.Marshal(map[string]any{
+		"publicKey": generateEd25519PEM(t),
+		"keyId":     "audit-key",
+	})
+	reqTrust := httptest.NewRequest(http.MethodPost, TrustPath, bytes.NewReader(bodyBytes))
+	reqTrust.Header.Set("Content-Type", "application/json")
+	recTrust := httptest.NewRecorder()
+	handler.ServeHTTP(recTrust, reqTrust)
+	if recTrust.Code != http.StatusOK {
+		t.Fatalf("trust 失败: %d %s", recTrust.Code, recTrust.Body.String())
+	}
+
+	reqUntrust := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, UntrustPath, strings.NewReader(`{"keyId":"audit-key"}`))
+		r.Header.Set("Content-Type", "application/json")
+		return r
+	}()
+	recUntrust := httptest.NewRecorder()
+	handler.ServeHTTP(recUntrust, reqUntrust)
+	if recUntrust.Code != http.StatusOK {
+		t.Fatalf("untrust 失败: %d %s", recUntrust.Code, recUntrust.Body.String())
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("期望 2 条审计事件，实际 %d", len(events))
+	}
+	if events[0].op != "trust" || events[0].details["keyId"] != "audit-key" || events[0].details["fingerprint"] == "" {
+		t.Fatalf("trust 审计事件异常: %+v", events[0])
+	}
+	if events[1].op != "untrust" || events[1].details["keyId"] != "audit-key" || events[1].details["removed"] != true {
+		t.Fatalf("untrust 审计事件异常: %+v", events[1])
+	}
+}

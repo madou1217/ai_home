@@ -28,6 +28,7 @@ type PricingSyncOptions struct {
 	DebounceDelay   time.Duration
 	InvokeTimeout   time.Duration
 	OnApplied       func(context.Context)
+	OnAudit         func(operation string, details map[string]any)
 	OnLog           func(string)
 	Now             func() time.Time
 }
@@ -41,6 +42,7 @@ type PricingSync struct {
 	debounceDelay   time.Duration
 	invokeTimeout   time.Duration
 	onApplied       func(context.Context)
+	onAudit         func(operation string, details map[string]any)
 	onLog           func(string)
 	now             func() time.Time
 
@@ -88,6 +90,7 @@ func NewPricingSync(options PricingSyncOptions) (*PricingSync, error) {
 		debounceDelay:   debounce,
 		invokeTimeout:   timeout,
 		onApplied:       options.OnApplied,
+		onAudit:         options.OnAudit,
 		onLog:           options.OnLog,
 		now:             nowFn,
 		runCtx:          runCtx,
@@ -209,15 +212,41 @@ func (s *PricingSync) SyncNow(ctx context.Context) error {
 		return err
 	}
 
-	anyApplied := false
+	appliedIDs := make([]string, 0, len(report.Sources))
 	for _, src := range report.Sources {
-		if src.Applied {
-			anyApplied = true
-			break
+		if src.Applied && strings.TrimSpace(src.SourceID) != "" {
+			appliedIDs = append(appliedIDs, src.SourceID)
 		}
 	}
-	if anyApplied && s.onApplied != nil {
+	if len(appliedIDs) > 0 && s.onApplied != nil {
 		s.onApplied(ctx)
+	}
+	if s.onAudit != nil {
+		if len(appliedIDs) > 0 {
+			s.onAudit("pricing_apply", map[string]any{
+				"sources": appliedIDs,
+				"reviews": len(report.Reviews),
+			})
+		}
+		if len(report.Reviews) > 0 {
+			seen := make(map[string]struct{}, len(report.Reviews))
+			reviewSources := make([]string, 0, len(report.Reviews))
+			for _, item := range report.Reviews {
+				id := strings.TrimSpace(item.SourceID)
+				if id == "" {
+					continue
+				}
+				if _, exists := seen[id]; exists {
+					continue
+				}
+				seen[id] = struct{}{}
+				reviewSources = append(reviewSources, id)
+			}
+			s.onAudit("pricing_review_queued", map[string]any{
+				"sources": reviewSources,
+				"reviews": len(report.Reviews),
+			})
+		}
 	}
 	return nil
 }
@@ -236,11 +265,43 @@ func (s *PricingSync) LastReport() *pricingcatalog.RefreshReport {
 	return &cp
 }
 
-func (s *PricingSync) collectPluginSnapshots(ctx context.Context, nowISO string) []pricingcatalog.PluginSnapshotInput {
-	if s.runtime == nil {
+// CollectSnapshots 采集当前激活代次中 pricing.catalog 插件返回的价格目录快照。
+func (s *PricingSync) CollectSnapshots(ctx context.Context, timeout time.Duration) []pricingcatalog.PluginSnapshotInput {
+	if s == nil {
 		return nil
 	}
-	lease := s.runtime.Acquire()
+	effectiveTimeout := clampPricingTimeout(timeout, s.invokeTimeout)
+	nowISO := s.now().UTC().Format(time.RFC3339Nano)
+	return collectPricingSnapshotsFromRuntime(ctx, s.runtime, nowISO, effectiveTimeout)
+}
+
+func (s *PricingSync) collectPluginSnapshots(ctx context.Context, nowISO string) []pricingcatalog.PluginSnapshotInput {
+	return collectPricingSnapshotsFromRuntime(ctx, s.runtime, nowISO, s.invokeTimeout)
+}
+
+func clampPricingTimeout(timeout, fallback time.Duration) time.Duration {
+	if timeout <= 0 {
+		return fallback
+	}
+	if timeout < time.Second {
+		return time.Second
+	}
+	if timeout > 60*time.Second {
+		return 60 * time.Second
+	}
+	return timeout
+}
+
+func collectPricingSnapshotsFromRuntime(
+	ctx context.Context,
+	rt *Runtime,
+	nowISO string,
+	timeout time.Duration,
+) []pricingcatalog.PluginSnapshotInput {
+	if rt == nil {
+		return nil
+	}
+	lease := rt.Acquire()
 	if lease == nil {
 		return nil
 	}
@@ -252,11 +313,11 @@ func (s *PricingSync) collectPluginSnapshots(ctx context.Context, nowISO string)
 	}
 	results := make([]pricingcatalog.PluginSnapshotInput, 0, len(chain))
 	for _, item := range chain {
-		raw, err := s.runtime.Invoke(ctx, lease.Generation, item.ID, map[string]any{
+		raw, err := rt.Invoke(ctx, lease.Generation, item.ID, map[string]any{
 			"schemaVersion": 1,
 			"kind":          "catalog",
 			"now":           nowISO,
-		}, s.invokeTimeout)
+		}, timeout)
 		if err != nil {
 			results = append(results, pricingcatalog.PluginSnapshotInput{
 				ContributionID: item.ID,

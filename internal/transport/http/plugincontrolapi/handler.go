@@ -73,6 +73,8 @@ type Dependencies struct {
 	Committer StateCommitter
 	// Operator 为空时只关闭实例启停路由；Node 代理会得到 404（不回落到本地写）。
 	Operator InstanceOperator
+	// OnAudit 在 install / uninstall 成功落盘后追加审计记录（可选）。
+	OnAudit func(operation string, details map[string]any)
 }
 
 // Handler 处理安装、卸载与状态提交。
@@ -81,6 +83,7 @@ type Handler struct {
 	installer  Installer
 	committer  StateCommitter
 	operator   InstanceOperator
+	onAudit    func(operation string, details map[string]any)
 }
 
 // NewHandler 创建管理接口；依赖缺失时拒绝装配。
@@ -93,6 +96,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		installer:  dependencies.Installer,
 		committer:  dependencies.Committer,
 		operator:   dependencies.Operator,
+		onAudit:    dependencies.OnAudit,
 	}, nil
 }
 
@@ -153,6 +157,24 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 		writeControlError(response, err)
 		return
 	}
+	if handler.onAudit != nil {
+		sigStatus := strings.TrimSpace(result.Signature.Status)
+		if sigStatus == "" {
+			sigStatus = "unsigned"
+		}
+		var permissions any
+		if len(result.Permissions) > 0 && string(bytes.TrimSpace(result.Permissions)) != "null" {
+			_ = json.Unmarshal(result.Permissions, &permissions)
+		}
+		handler.onAudit("install", map[string]any{
+			"pluginId":    result.PluginID,
+			"version":     result.Version,
+			"digest":      result.Digest,
+			"signature":   sigStatus,
+			"keyId":       result.Signature.KeyID,
+			"permissions": permissions,
+		})
+	}
 	writeJSON(response, http.StatusOK, struct {
 		OK bool `json:"ok"`
 		plugincontrol.InstallResult
@@ -182,6 +204,12 @@ func (handler *Handler) uninstall(response http.ResponseWriter, request *http.Re
 	if err != nil {
 		writeControlError(response, err)
 		return
+	}
+	if handler.onAudit != nil {
+		handler.onAudit("uninstall", map[string]any{
+			"pluginId": result.PluginID,
+			"version":  result.Version,
+		})
 	}
 	writeJSON(response, http.StatusOK, struct {
 		OK bool `json:"ok"`

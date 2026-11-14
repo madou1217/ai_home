@@ -66,10 +66,10 @@ type RuntimeTicket struct {
 
 // GenerationSnapshot 保存单个存活代次的不可变贡献投影与已收集目录元数据。
 type GenerationSnapshot struct {
-	Generation       int64
-	Projection       appplugins.Projection
-	CatalogAliases   []CatalogAlias
-	Descriptors      DescriptorCollectResult
+	Generation     int64
+	Projection     appplugins.Projection
+	CatalogAliases []CatalogAlias
+	Descriptors    DescriptorCollectResult
 }
 
 // Lease 固定当前活跃代次，保证请求期间代次不会被释放。Release 幂等。
@@ -117,7 +117,7 @@ type Runtime struct {
 	backoffSchedule         []time.Duration
 	maxConsecutiveFailures  int
 
-	hookMu         sync.RWMutex
+	hookMu sync.RWMutex
 	// opMu 串行化 Start/Stop/Prepare/Activate/Discard/Publish/Recover 等代次状态转换。
 	opMu sync.Mutex
 
@@ -635,12 +635,18 @@ func (r *Runtime) releaseLease(gen int64) {
 
 // Invoke 在指定代次上通过活跃宿主调用插件贡献项，并在调用期间自动持有租约。
 func (r *Runtime) Invoke(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error) {
+	raw, _, err := r.InvokeWithPayload(ctx, generation, contributionID, value, timeout)
+	return raw, err
+}
+
+// InvokeWithPayload 与 Invoke 相同，但保留宿主附带的二进制 payload。
+func (r *Runtime) InvokeWithPayload(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	lease := r.acquireForGeneration(generation)
 	if lease == nil {
-		return nil, pluginerr.New(CodeRuntimeUnavailable, "目标代次未就绪或已卸载")
+		return nil, nil, pluginerr.New(CodeRuntimeUnavailable, "目标代次未就绪或已卸载")
 	}
 	defer lease.Release()
 
@@ -648,9 +654,13 @@ func (r *Runtime) Invoke(ctx context.Context, generation int64, contributionID s
 	host := r.host
 	r.mu.Unlock()
 	if host == nil || !host.Running() {
-		return nil, pluginerr.New(CodeRuntimeUnavailable, "插件宿主未运行")
+		return nil, nil, pluginerr.New(CodeRuntimeUnavailable, "插件宿主未运行")
 	}
-	return host.Invoke(ctx, lease.Generation, contributionID, value, timeout)
+	if rawClient, ok := host.(HostRawClient); ok {
+		return rawClient.InvokeRaw(ctx, lease.Generation, contributionID, value, timeout)
+	}
+	raw, err := host.Invoke(ctx, lease.Generation, contributionID, value, timeout)
+	return raw, nil, err
 }
 
 func (r *Runtime) acquireForGeneration(generation int64) *Lease {

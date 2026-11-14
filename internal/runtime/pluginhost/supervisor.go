@@ -55,6 +55,11 @@ type ExitEvent struct {
 	Stderr string
 }
 
+// HostRawClient 是可选扩展接口：在 Invoke 返回值之外同时暴露二进制 payload 字节片段。
+type HostRawClient interface {
+	InvokeRaw(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error)
+}
+
 // HostClient 抽象 Supervisor 与运行时之间的宿主 RPC 能力，便于生产真进程与单元测试共用。
 type HostClient interface {
 	Start(ctx context.Context) error
@@ -139,7 +144,7 @@ type Supervisor struct {
 	options         SupervisorOptions
 	aiHomeDir       string
 	socketPath      string
-	ownsSocketDir  bool
+	ownsSocketDir   bool
 	token           string
 	hostVersion     string
 	nodePath        string
@@ -212,7 +217,7 @@ func NewSupervisor(options SupervisorOptions) (*Supervisor, error) {
 		options:         options,
 		aiHomeDir:       absRoot,
 		socketPath:      socketPath,
-		ownsSocketDir:  ownsSocket,
+		ownsSocketDir:   ownsSocket,
 		token:           token,
 		hostVersion:     hostVersion,
 		nodePath:        nodePath,
@@ -611,9 +616,15 @@ func (s *Supervisor) Activate(ctx context.Context, generation int64, retainPrevi
 }
 
 func (s *Supervisor) Invoke(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error) {
+	raw, _, err := s.InvokeRaw(ctx, generation, contributionID, value, timeout)
+	return raw, err
+}
+
+// InvokeRaw 在 Invoke 基础上同步返回宿主响应帧附带的二进制 payload。
+func (s *Supervisor) InvokeRaw(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error) {
 	cli, err := s.ensureClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	callCtx := ctx
 	if callCtx == nil {
@@ -630,9 +641,9 @@ func (s *Supervisor) Invoke(ctx context.Context, generation int64, contributionI
 		"value":          value,
 	}, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return res.Value, nil
+	return res.Value, res.Payload, nil
 }
 
 func (s *Supervisor) Dispose(ctx context.Context, generation int64) (HostDisposeResult, error) {

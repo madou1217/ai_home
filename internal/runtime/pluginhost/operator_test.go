@@ -14,10 +14,10 @@ import (
 	_ "modernc.org/sqlite"
 
 	plugincontrol "github.com/madou1217/ai_home/application/plugincontrol"
-	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
 	"github.com/madou1217/ai_home/internal/adapters/pluginstatestore"
 	"github.com/madou1217/ai_home/internal/pluginerr"
+	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 )
 
 func seedControlStateDB(t *testing.T, aiHomeDir string, state map[string]any) {
@@ -118,10 +118,10 @@ func TestServiceInstanceOperatorEnableDisableCASAndDefaults(t *testing.T) {
 	}
 
 	svc, err := NewService(ServiceOptions{
-		AIHomeDir:   aiHomeDir,
-		RepoRoot:    repoRoot,
-		SocketPath:  shortSock,
-		NodePath:    nodePath,
+		AIHomeDir:      aiHomeDir,
+		RepoRoot:       repoRoot,
+		SocketPath:     shortSock,
+		NodePath:       nodePath,
 		HostVersion:    "1.0.0",
 		PricingService: pSvc,
 		OnAudit: func(op string, details map[string]any) {

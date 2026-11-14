@@ -61,6 +61,7 @@ import (
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
@@ -70,9 +71,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
-	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
-	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
@@ -1827,15 +1827,16 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
 		AccountHostGrant: deletionHost,
 		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
-		NodeBaseURL:     nodeBaseURL,
-		ManagementKey:   managementKey,
-		TerminalHandler: webUITerminalHandler,
-		SubAggregator:   subAggSvc,
-		SessionEventBus: sessionEventBus,
-		CodexHooks:      hooksRuntime,
-		PricingService:  sharedPricingService,
-		MetricsRecorder: metrics,
-		StartedAt:       time.Now(),
+		NodeBaseURL:        nodeBaseURL,
+		ManagementKey:      managementKey,
+		TerminalHandler:    webUITerminalHandler,
+		SubAggregator:      subAggSvc,
+		SessionEventBus:    sessionEventBus,
+		CodexHooks:         hooksRuntime,
+		PluginHostService:  pluginBundle.HostService,
+		PricingService:     sharedPricingService,
+		MetricsRecorder:    metrics,
+		StartedAt:          time.Now(),
 		OutcomeRecorder:    dependencies.OutcomeRecorder,
 		AccountActivity:    hookSessionActivityTracker{activity: activityDaemon.Activity()},
 		AccountImporter:    accountImporter,

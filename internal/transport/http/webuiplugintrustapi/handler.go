@@ -49,12 +49,15 @@ type Authorizer interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	AIHomeDir  string
+	// OnAudit 在 trust / untrust 落盘成功后追加审计记录（可选）。
+	OnAudit func(operation string, details map[string]any)
 }
 
 // Handler 提供信任根的读、写入与撤销。
 type Handler struct {
 	authorizer Authorizer
 	store      *TrustStore
+	onAudit    func(operation string, details map[string]any)
 }
 
 // NewHandler 创建信任根管理接口；依赖无效时拒绝装配，避免挂出永远 500 的路由。
@@ -66,7 +69,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if err != nil {
 		return nil, errors.Join(ErrInvalidDependencies, err)
 	}
-	return &Handler{authorizer: dependencies.Authorizer, store: store}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		store:      store,
+		onAudit:    dependencies.OnAudit,
+	}, nil
 }
 
 // ServeHTTP 按路径分派三个动作；三条路径都是管理密钥保护路径。
@@ -137,6 +144,12 @@ func (handler *Handler) trust(response http.ResponseWriter, request *http.Reques
 		writeStoreError(response, err)
 		return
 	}
+	if handler.onAudit != nil {
+		handler.onAudit("trust", map[string]any{
+			"keyId":       result.KeyID,
+			"fingerprint": result.Fingerprint,
+		})
+	}
 	writeJSON(response, http.StatusOK, trustResponse{
 		OK:          true,
 		KeyID:       result.KeyID,
@@ -158,6 +171,12 @@ func (handler *Handler) untrust(response http.ResponseWriter, request *http.Requ
 	if err != nil {
 		writeStoreError(response, err)
 		return
+	}
+	if handler.onAudit != nil {
+		handler.onAudit("untrust", map[string]any{
+			"keyId":   result.KeyID,
+			"removed": result.Removed,
+		})
 	}
 	writeJSON(response, http.StatusOK, untrustResponse{
 		OK:      true,

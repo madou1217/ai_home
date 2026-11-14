@@ -2,6 +2,7 @@ package webuipricingapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -101,8 +102,8 @@ func TestPricingHTTPWorkflowRefreshReviewStatusAndMergeQuotes(t *testing.T) {
 			case strings.Contains(req.URL.String(), "litellm"):
 				body := map[string]any{
 					"anthropic/claude-sonnet-4": map[string]any{
-						"litellm_provider":     "anthropic",
-						"input_cost_per_token": inRate,
+						"litellm_provider":      "anthropic",
+						"input_cost_per_token":  inRate,
 						"output_cost_per_token": 0.000015,
 					},
 				}
@@ -281,5 +282,60 @@ func TestPricingHTTPErrorMapping502And415(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("expected 415 on text/plain approve, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRefreshCollectsPluginSnapshotsWhenOmitted(t *testing.T) {
+	store, err := pricingcatalog.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+	svc, err := pricingcatalog.NewService(pricingcatalog.ServiceDependencies{
+		Store:            store,
+		CommunitySources: []pricingcatalog.CommunitySource{},
+		Now:              func() time.Time { return time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	var gotTimeoutMs int
+	h, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{authorized: true},
+		Service:    svc,
+		CollectPluginSnapshots: func(_ context.Context, timeoutMs int) []pricingcatalog.PluginSnapshotInput {
+			gotTimeoutMs = timeoutMs
+			return []pricingcatalog.PluginSnapshotInput{{
+				ContributionID: "plug.catalog",
+				InstanceID:     "inst-1",
+				SourceID:       "plugin-collected-src",
+				Source: pricingcatalog.SourceMeta{
+					ID:   "plugin-collected-src",
+					Kind: pricingcatalog.KindOfficial,
+				},
+				Quotes: []json.RawMessage{
+					json.RawMessage(`{"provider":"openai","model":"gpt-5-plug","input":1.5,"output":6.0}`),
+				},
+			}}
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, RefreshPath, strings.NewReader(`{"timeoutMs":12000}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if gotTimeoutMs != 12000 {
+		t.Fatalf("expected timeoutMs=12000, got %d", gotTimeoutMs)
+	}
+	payload := decodeBodyMap(t, rec)
+	run, _ := payload["pluginRun"].(map[string]any)
+	sources, _ := run["sources"].([]any)
+	if len(sources) != 1 {
+		t.Fatalf("expected 1 applied source in pluginRun, got %+v", payload)
 	}
 }

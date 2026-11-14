@@ -39,6 +39,15 @@ func (tracker hookSessionActivityTracker) EndSessionTurn(provider, accountRef st
 	}
 }
 
+func (tracker hookSessionActivityTracker) SelectionLoad(provider, accountRef, model string) sessionactivity.SelectionLoad {
+	if tracker.activity != nil {
+		return tracker.activity.SelectionLoad(provider, accountRef, model)
+	}
+	return sessionactivity.SelectionLoad{
+		WindowMS: sessionactivity.DefaultRateWindow.Milliseconds(),
+	}
+}
+
 // buildWebUISessionsWatchRoutes 装配会话实时监听、Provider Hook 事件接收与恢复归档路由。
 //
 // watch 与 provider-hook 共用同一个 Go sessionevents.Bus 与持久化 StateStore，
@@ -232,14 +241,14 @@ func buildCodexLifecycleDialer(hostHomeDir string) webuisessionslifecycleapi.Cod
 
 func buildCodexHostLifecycleEnv(hostHomeDir, codexHome string) []string {
 	overrides := map[string]string{
-		"HOME":                         hostHomeDir,
-		"USERPROFILE":                  hostHomeDir,
-		"CODEX_HOME":                   codexHome,
-		"CODEX_SQLITE_HOME":            codexHome,
-		"XDG_CONFIG_HOME":              hostHomeDir,
-		"XDG_DATA_HOME":                filepath.Join(hostHomeDir, ".local", "share"),
-		"XDG_STATE_HOME":               filepath.Join(hostHomeDir, ".local", "state"),
-		codexAppServerPassthroughEnv:  "1",
+		"HOME":                       hostHomeDir,
+		"USERPROFILE":                hostHomeDir,
+		"CODEX_HOME":                 codexHome,
+		"CODEX_SQLITE_HOME":          codexHome,
+		"XDG_CONFIG_HOME":            hostHomeDir,
+		"XDG_DATA_HOME":              filepath.Join(hostHomeDir, ".local", "share"),
+		"XDG_STATE_HOME":             filepath.Join(hostHomeDir, ".local", "state"),
+		codexAppServerPassthroughEnv: "1",
 	}
 	base := os.Environ()
 	out := make([]string, 0, len(base)+len(overrides))

@@ -13,6 +13,7 @@ package webuipricingapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -52,12 +53,16 @@ type Authorizer interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	Service    *pricingcatalog.Service
+	// CollectPluginSnapshots 在 refresh 请求未指定 sourceId 且未显式携带 pluginSnapshots 时，
+	// 从 Go 插件宿主采集 pricing.catalog 快照（可选）。
+	CollectPluginSnapshots func(ctx context.Context, timeoutMs int) []pricingcatalog.PluginSnapshotInput
 }
 
 // Handler 负责把 /v1/management/webui/pricing/* 路由映射到 pricingcatalog.Service。
 type Handler struct {
-	authorizer Authorizer
-	service    *pricingcatalog.Service
+	authorizer             Authorizer
+	service                *pricingcatalog.Service
+	collectPluginSnapshots func(ctx context.Context, timeoutMs int) []pricingcatalog.PluginSnapshotInput
 }
 
 // NewHandler 创建失败关闭的价格管理 HTTP 处理器。
@@ -66,8 +71,9 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		service:    dependencies.Service,
+		authorizer:             dependencies.Authorizer,
+		service:                dependencies.Service,
+		collectPluginSnapshots: dependencies.CollectPluginSnapshots,
 	}, nil
 }
 
@@ -78,7 +84,7 @@ type errorView struct {
 }
 
 type sourcesResponse struct {
-	OK               bool                            `json:"ok"`
+	OK               bool                             `json:"ok"`
 	CommunitySources []pricingcatalog.CommunitySource `json:"communitySources"`
 	Sources          []pricingcatalog.SourceSummary   `json:"sources"`
 	Reviews          []pricingcatalog.ReviewItem      `json:"reviews"`
@@ -100,7 +106,8 @@ type statusResponse struct {
 }
 
 type refreshRequest struct {
-	SourceID        string                              `json:"sourceId"`
+	SourceID        string                               `json:"sourceId"`
+	TimeoutMs       int                                  `json:"timeoutMs"`
 	PluginSnapshots []pricingcatalog.PluginSnapshotInput `json:"pluginSnapshots"`
 }
 
@@ -266,7 +273,11 @@ func (handler *Handler) handleRefresh(response http.ResponseWriter, request *htt
 		return
 	}
 
-	report, err := handler.service.RefreshAll(request.Context(), body.PluginSnapshots)
+	snapshots := body.PluginSnapshots
+	if snapshots == nil && handler.collectPluginSnapshots != nil {
+		snapshots = handler.collectPluginSnapshots(request.Context(), body.TimeoutMs)
+	}
+	report, err := handler.service.RefreshAll(request.Context(), snapshots)
 	if err != nil {
 		writeDomainError(response, err)
 		return

@@ -29,19 +29,19 @@ const (
 	CodeStateUnavailable          = plugincontrol.CodeStateUnavailable
 	CodeStateInvalid              = plugincontrol.CodeStateInvalid
 
-	CodePluginIDRequired      = "plugin_id_required"
-	CodeInstanceIDInvalid     = "plugin_instance_id_invalid"
-	CodeInstanceConflict      = "plugin_instance_conflict"
-	CodeInstanceDuplicate     = "plugin_instance_duplicate"
-	CodePluginIDDuplicate     = "plugin_id_duplicate"
-	CodeContributionDuplicate = "plugin_contribution_duplicate"
-	CodeServiceReserved       = "plugin_service_reserved"
-	CodeServiceConflict       = "plugin_service_conflict"
-	CodeServiceMissing        = "plugin_service_missing"
+	CodePluginIDRequired       = "plugin_id_required"
+	CodeInstanceIDInvalid      = "plugin_instance_id_invalid"
+	CodeInstanceConflict       = "plugin_instance_conflict"
+	CodeInstanceDuplicate      = "plugin_instance_duplicate"
+	CodePluginIDDuplicate      = "plugin_id_duplicate"
+	CodeContributionDuplicate  = "plugin_contribution_duplicate"
+	CodeServiceReserved        = "plugin_service_reserved"
+	CodeServiceConflict        = "plugin_service_conflict"
+	CodeServiceMissing         = "plugin_service_missing"
 	CodeServiceVersionMismatch = "plugin_service_version_mismatch"
-	CodeDependencyCycle       = "plugin_dependency_cycle"
-	CodeManifestInvalid       = "plugin_manifest_invalid"
-	CodeSpecInvalid           = "plugin_spec_invalid"
+	CodeDependencyCycle        = "plugin_dependency_cycle"
+	CodeManifestInvalid        = "plugin_manifest_invalid"
+	CodeSpecInvalid            = "plugin_spec_invalid"
 
 	CodeGenerationInvalid = "plugin_generation_invalid"
 	CodeGenerationUnknown = plugincontract.CodeGenerationUnknown

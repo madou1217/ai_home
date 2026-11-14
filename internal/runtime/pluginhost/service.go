@@ -46,6 +46,9 @@ type ServiceOptions struct {
 // Service 对外提供 Go 侧插件宿主的完整生命周期与各域门面：
 // Runtime、ControlPreparer（plugincontrol.RuntimePreparer）、Registry、HostInvoker、Observer 与 PricingSync。
 type Service struct {
+	aiHomeDir      string
+	auditLog       *AuditLog
+	onAudit        func(operation string, details map[string]any)
 	registry       *appplugins.Registry
 	invoker        *adapterplugins.HostInvoker
 	observer       *appplugins.Observer
@@ -109,13 +112,26 @@ func NewService(options ServiceOptions) (*Service, error) {
 		return nil, err
 	}
 
+	auditLog := NewAuditLog(options.AIHomeDir)
+	var combinedAudit func(string, map[string]any)
+	if (auditLog != nil && auditLog.Path() != "") || options.OnAudit != nil {
+		combinedAudit = func(operation string, details map[string]any) {
+			if auditLog != nil && auditLog.Path() != "" {
+				auditLog.Append(operation, details)
+			}
+			if options.OnAudit != nil {
+				options.OnAudit(operation, details)
+			}
+		}
+	}
+
 	preparer, err := NewControlPreparer(ControlPreparerOptions{
 		AIHomeDir:   options.AIHomeDir,
 		HostVersion: options.HostVersion,
 		NodeVersion: options.NodeVersion,
 		Reader:      options.StateReader,
 		Runtime:     rt,
-		OnAudit:     options.OnAudit,
+		OnAudit:     combinedAudit,
 	})
 	if err != nil {
 		observer.Close()
@@ -131,6 +147,7 @@ func NewService(options ServiceOptions) (*Service, error) {
 			PricingService:  pricingSvc,
 			RefreshInterval: options.PricingRefreshInterval,
 			OnApplied:       options.OnPricingApplied,
+			OnAudit:         combinedAudit,
 			OnLog:           options.OnLog,
 		})
 		if err != nil {
@@ -142,6 +159,9 @@ func NewService(options ServiceOptions) (*Service, error) {
 	}
 
 	return &Service{
+		aiHomeDir:      strings.TrimSpace(options.AIHomeDir),
+		auditLog:       auditLog,
+		onAudit:        combinedAudit,
 		registry:       registry,
 		invoker:        invoker,
 		observer:       observer,
@@ -196,13 +216,13 @@ func (s *Service) Close() error {
 	return errors.Join(errs...)
 }
 
-func (s *Service) Registry() *appplugins.Registry        { return s.registry }
-func (s *Service) Invoker() *adapterplugins.HostInvoker  { return s.invoker }
-func (s *Service) Observer() *appplugins.Observer        { return s.observer }
-func (s *Service) Runtime() *Runtime                     { return s.runtime }
+func (s *Service) Registry() *appplugins.Registry          { return s.registry }
+func (s *Service) Invoker() *adapterplugins.HostInvoker    { return s.invoker }
+func (s *Service) Observer() *appplugins.Observer          { return s.observer }
+func (s *Service) Runtime() *Runtime                       { return s.runtime }
 func (s *Service) Preparer() plugincontrol.RuntimePreparer { return s.preparer }
 func (s *Service) PricingService() *pricingcatalog.Service { return s.pricingService }
-func (s *Service) PricingSync() *PricingSync             { return s.pricingSync }
+func (s *Service) PricingSync() *PricingSync               { return s.pricingSync }
 
 // Operator 基于本机 RuntimePreparer 组装进程内 InstanceOperator，不再依赖 Node HTTP 内部协议。
 func (s *Service) Operator(
@@ -234,4 +254,40 @@ func (s *Service) Status(ctx context.Context) RuntimeStatus {
 
 func (s *Service) Doctor(ctx context.Context) DoctorReport {
 	return s.preparer.Doctor(ctx)
+}
+
+// AIHomeDir 返回插件宿主绑定的 AI Home 根目录。
+func (s *Service) AIHomeDir() string {
+	if s == nil {
+		return ""
+	}
+	return s.aiHomeDir
+}
+
+// AuditLog 返回底层插件审计日志句柄。
+func (s *Service) AuditLog() *AuditLog {
+	if s == nil {
+		return nil
+	}
+	return s.auditLog
+}
+
+// Audit 追加一条插件审计记录（同时写入 <AIHomeDir>/plugins/audit.log 并触发外部钩子）。
+func (s *Service) Audit(event string, details map[string]any) {
+	if s == nil || s.onAudit == nil {
+		return
+	}
+	s.onAudit(event, details)
+}
+
+// CollectPricingSnapshots 从当前激活代次中的 pricing.catalog 插件采集价格目录快照。
+func (s *Service) CollectPricingSnapshots(ctx context.Context, timeout time.Duration) []pricingcatalog.PluginSnapshotInput {
+	if s == nil {
+		return nil
+	}
+	if s.pricingSync != nil {
+		return s.pricingSync.CollectSnapshots(ctx, timeout)
+	}
+	effectiveTimeout := clampPricingTimeout(timeout, defaultPricingInvokeTimeout)
+	return collectPricingSnapshotsFromRuntime(ctx, s.runtime, time.Now().UTC().Format(time.RFC3339Nano), effectiveTimeout)
 }

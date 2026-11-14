@@ -1,6 +1,7 @@
 package chatruntime
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -527,6 +528,7 @@ func firstNonNil(vals ...any) any {
 
 // CodexInteractionEnvelope 保存挂起的 Codex 原生交互请求私密上下文以便回写答案。
 type CodexInteractionEnvelope struct {
+	Context         context.Context `json:"-"`
 	Method          string
 	NativeRequest   map[string]any
 	NativeThreadID  string

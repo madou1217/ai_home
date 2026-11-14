@@ -75,7 +75,11 @@ type CodexTurnBinding struct {
 	OnNotification    func(msg CodexJSONRPCMessage)
 	OnServerRequest   func(msg CodexJSONRPCMessage)
 	OnReconnectResume func(response map[string]any, client CodexRPCClient)
-	ResumeParams      map[string]any
+	// Recovery callbacks are sequential and bounded by the reconnect attempt context.
+	OnReconnectStart func(context.Context) error
+	RecoverHistory   func(context.Context, map[string]any, CodexHistoryClient) error
+	OnReconnectReady func(context.Context) error
+	ResumeParams     map[string]any
 }
 
 // CodexRPCClient 定义 Codex app-server 双向 JSON-RPC 端口（支持真实子进程与测试桩）。
@@ -116,6 +120,7 @@ type CodexAppServerClient struct {
 	connected      bool
 	ready          bool
 	connecting     *codexConnectFlight
+	recovery       *codexReconnectFlight
 	dispatch       *codexRPCDispatch
 	dispatchers    int
 	connectionDone chan struct{}
@@ -171,7 +176,7 @@ func (c *CodexAppServerClient) Request(ctx context.Context, method string, param
 			return nil, err
 		}
 		c.mu.Lock()
-		if !c.ready || !c.connected || c.closed || c.retiring {
+		if !c.ready || !c.connected || c.closed || c.retiring || c.recovery != nil {
 			c.mu.Unlock()
 			return nil, NewError("codex_app_server_disconnected", http.StatusBadGateway, nil)
 		}

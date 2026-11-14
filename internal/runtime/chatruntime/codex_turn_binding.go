@@ -49,9 +49,12 @@ func (handle *CodexTurnHandle) Release(ctx context.Context) error {
 		return err
 	}
 	handle.registration.active.Store(false)
-	ctx = context.WithValue(ctx, codexRPCConnectionKey{}, handle.cmd)
+	handle.client.mu.Lock()
+	cmd := handle.registration.cmd
+	handle.client.mu.Unlock()
+	ctx = context.WithValue(ctx, codexRPCConnectionKey{}, cmd)
 	err := handle.client.releaseThread(ctx, handle.threadID, true, handle.registration)
-	if ctx.Err() != nil {
+	if err != nil {
 		handle.Unbind()
 	}
 	return err
@@ -117,7 +120,7 @@ func (c *CodexAppServerClient) bindTurn(ctx context.Context, cmd *exec.Cmd, thre
 		if old := c.bindings[id]; old != nil {
 			old.active.Store(false)
 		}
-		registration := &codexTurnRegistration{binding: binding}
+		registration := &codexTurnRegistration{binding: binding, cmd: cmd}
 		registration.active.Store(true)
 		c.bindings[id] = registration
 		c.mu.Unlock()

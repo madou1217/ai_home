@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -72,6 +73,7 @@ type codexActiveTurn struct {
 	contextOverflowRetried    bool
 	toolOrder                 *CodexToolOrder
 	done                      chan ProviderRunResult
+	settledCh                 chan struct{}
 	cancelLaunch              context.CancelFunc
 	binding                   *CodexTurnHandle
 
@@ -89,6 +91,9 @@ func (a *codexActiveTurn) settle(result map[string]any, err error) {
 		return
 	}
 	a.settled = true
+	if a.settledCh != nil {
+		close(a.settledCh)
+	}
 	a.mu.Unlock()
 	select {
 	case a.done <- ProviderRunResult{Result: result, Err: err}:
@@ -428,6 +433,7 @@ func (d *CodexSessionDriver) StartTurn(ctx context.Context, tc DriverTurnContext
 		approvalMode:    d.currentApprovalMode(ctx),
 		toolOrder:       NewCodexToolOrder(),
 		done:            make(chan ProviderRunResult, 1),
+		settledCh:       make(chan struct{}),
 		cleanCh:         make(chan struct{}),
 		cancelLaunch:    cancelLaunch,
 	}
@@ -457,6 +463,7 @@ func (d *CodexSessionDriver) CompactThread(ctx context.Context, tc DriverTurnCon
 		approvalMode: d.currentApprovalMode(ctx),
 		toolOrder:    NewCodexToolOrder(),
 		done:         make(chan ProviderRunResult, 1),
+		settledCh:    make(chan struct{}),
 		cleanCh:      make(chan struct{}),
 		cancelLaunch: cancelLaunch,
 	}
@@ -530,6 +537,7 @@ func (d *CodexSessionDriver) RecoverTurn(ctx context.Context, in RecoverTurnInpu
 		submissionStarted:     true,
 		toolOrder:             NewCodexToolOrder(),
 		done:                  make(chan ProviderRunResult, 1),
+		settledCh:             make(chan struct{}),
 		cleanCh:               make(chan struct{}),
 		cancelLaunch:          cancelLaunch,
 	}
@@ -564,9 +572,12 @@ func (d *CodexSessionDriver) RecoverTurn(ctx context.Context, in RecoverTurnInpu
 		return nil, err
 	}
 	_ = d.goals.Refresh(ctx, active.nativeThreadId, active.tc.TurnID, active.tc.RunID, d.runtime.RuntimeScope)
-	if active.nativeTurnId != "" && active.nativeTurnId != active.persistedNativeTurnId {
-		_, _ = d.store.UpdateActiveTurnAnchor(ctx, d.session.SessionID, active.tc.RunID, active.nativeTurnId, "")
-		active.persistedNativeTurnId = active.nativeTurnId
+	if snapshot.id != "" {
+		if err := d.anchorNativeTurn(ctx, active, snapshot.id); err != nil {
+			d.bridge.CancelExpectedReplays()
+			d.finishCleanup(active)
+			return nil, err
+		}
 	}
 
 	if interruptRequested && snapshot.status == "inProgress" {
@@ -579,7 +590,11 @@ func (d *CodexSessionDriver) RecoverTurn(ctx context.Context, in RecoverTurnInpu
 			if replayErr := d.bridge.WaitForExpectedReplays(runCtx); replayErr != nil {
 				active.settle(nil, replayErr)
 			}
-			<-active.done
+			select {
+			case <-active.settledCh:
+			case <-runCtx.Done():
+				active.settle(map[string]any{"status": "interrupted"}, nil)
+			}
 			return
 		}
 		d.bridge.CancelExpectedReplays()
@@ -670,7 +685,13 @@ func (d *CodexSessionDriver) resolveThenRespond(ctx context.Context, hctx Comman
 		if aerr != nil {
 			return nil, aerr
 		}
-		if err := d.client.Respond(ctx, env.RequestID, rpcResult); err != nil {
+		responseCtx := ctx
+		if env.Context != nil {
+			if cmd, ok := env.Context.Value(codexRPCConnectionKey{}).(*exec.Cmd); ok {
+				responseCtx = context.WithValue(ctx, codexRPCConnectionKey{}, cmd)
+			}
+		}
+		if err := d.client.Respond(responseCtx, env.RequestID, rpcResult); err != nil {
 			return nil, err
 		}
 		d.bridge.RemoveEnvelope(interactionID)
@@ -708,7 +729,7 @@ func (d *CodexSessionDriver) runAndCleanup(ctx context.Context, active *codexAct
 		return
 	}
 	select {
-	case <-active.done:
+	case <-active.settledCh:
 	case <-ctx.Done():
 		active.settle(map[string]any{"status": "interrupted"}, nil)
 	}
@@ -758,9 +779,9 @@ func (d *CodexSessionDriver) launch(ctx context.Context, active *codexActiveTurn
 		active.nativeThreadId,
 		active.prompt,
 		active.imagePaths,
+		active.tc.RunID,
 		active.model,
 		active.reasoningEffort,
-		active.tc.RunID,
 	)
 	if err != nil {
 		return err
@@ -1011,7 +1032,19 @@ func (d *CodexSessionDriver) submitCodexTurn(ctx context.Context, active *codexA
 	if err != nil {
 		var chatErr *Error
 		if errors.As(err, &chatErr) && chatErr.Code == "codex_app_server_disconnected" {
+			active.mu.Lock()
 			active.submissionUncertain = true
+			active.mu.Unlock()
+			if recovery, ok := d.client.(interface{ WaitForRecovery(context.Context) error }); ok {
+				if recoveryErr := recovery.WaitForRecovery(ctx); recoveryErr == nil {
+					active.mu.Lock()
+					uncertain := active.submissionUncertain
+					active.mu.Unlock()
+					if !uncertain || active.isSettled() {
+						return nil
+					}
+				}
+			}
 			if d.reconnectGraceWait > 0 {
 				timer := time.NewTimer(d.reconnectGraceWait)
 				defer timer.Stop()
@@ -1064,7 +1097,10 @@ func (d *CodexSessionDriver) bind(ctx context.Context, active *codexActiveTurn) 
 	binding := CodexTurnBinding{
 		ResumeParams: resumeFull,
 		OnDisconnected: func(err error) {
-			if active.submissionUncertain {
+			active.mu.Lock()
+			uncertain := active.submissionUncertain
+			active.mu.Unlock()
+			if uncertain {
 				active.settle(nil, NewError("codex_turn_start_outcome_unknown", http.StatusBadGateway, map[string]any{
 					"outcomeUnknown": true,
 					"cause":          err.Error(),
@@ -1079,10 +1115,25 @@ func (d *CodexSessionDriver) bind(ctx context.Context, active *codexActiveTurn) 
 		OnServerRequest: func(msg CodexJSONRPCMessage) {
 			d.observe(active, msg, true)
 		},
-		OnReconnectResume: func(resp map[string]any, historyClient CodexRPCClient) {
-			if err := d.reconnectRecovery(context.Background(), active, resp, historyClient); err != nil {
-				active.settle(nil, err)
+		OnReconnectStart: func(ctx context.Context) error {
+			if active.isSettled() {
+				return nil
 			}
+			if active.toolOrder != nil {
+				if err := active.toolOrder.Flush(); err != nil {
+					return err
+				}
+			}
+			return d.bridge.BeginReconnect(ctx)
+		},
+		RecoverHistory: func(ctx context.Context, resp map[string]any, historyClient CodexHistoryClient) error {
+			return d.reconnectRecovery(ctx, active, resp, historyClient)
+		},
+		OnReconnectReady: func(ctx context.Context) error {
+			if active.isSettled() {
+				return nil
+			}
+			return d.bridge.WaitForExpectedReplays(ctx)
 		},
 	}
 	if scoped, ok := d.client.(codexScopedTurnClient); ok {
@@ -1149,7 +1200,10 @@ func (d *CodexSessionDriver) observe(active *codexActiveTurn, msg CodexJSONRPCMe
 	defer cancel()
 	var obs CodexBridgeObservation
 	if active.toolOrder != nil {
-		active.toolOrder.ObserveRaw(msg)
+		if err := active.toolOrder.ObserveRaw(msg); err != nil {
+			active.settle(nil, err)
+			return
+		}
 	}
 	if serverRequest {
 		obs = d.bridge.ForwardServerRequest(ctx, msg, active.tc.TurnID, active.tc.RunID, d.runtime.RuntimeScope)
@@ -1175,6 +1229,12 @@ func (d *CodexSessionDriver) observe(active *codexActiveTurn, msg CodexJSONRPCMe
 	}
 	switch obs.Mapped.Type {
 	case "turn.completed", "turn.interrupted", "turn.failed":
+		if active.toolOrder != nil {
+			if err := active.toolOrder.Flush(); err != nil {
+				active.settle(nil, err)
+				return
+			}
+		}
 		if obs.Mapped.Type == "turn.failed" && isCodexContextLengthFailure(obs.Mapped) && !active.contextOverflowRetried {
 			if err := d.retryAfterContextOverflow(ctx, active); err != nil {
 				active.settle(nil, err)
@@ -1256,9 +1316,9 @@ func (d *CodexSessionDriver) retryAfterContextOverflow(ctx context.Context, acti
 		nextThreadID,
 		active.prompt,
 		active.imagePaths,
+		active.tc.RunID,
 		active.model,
 		active.reasoningEffort,
-		active.tc.RunID,
 	)
 	if err != nil {
 		return err
@@ -1267,7 +1327,7 @@ func (d *CodexSessionDriver) retryAfterContextOverflow(ctx context.Context, acti
 	return d.submitCodexTurn(ctx, active, turnParams)
 }
 
-func (d *CodexSessionDriver) reconnectRecovery(ctx context.Context, active *codexActiveTurn, resp map[string]any, historyClient CodexRPCClient) error {
+func (d *CodexSessionDriver) reconnectRecovery(ctx context.Context, active *codexActiveTurn, resp map[string]any, historyClient CodexHistoryClient) error {
 	d.mu.Lock()
 	isCurrent := d.active == active
 	d.mu.Unlock()
@@ -1278,12 +1338,15 @@ func (d *CodexSessionDriver) reconnectRecovery(ctx context.Context, active *code
 	if err != nil {
 		return err
 	}
-	_ = d.goals.Refresh(ctx, active.nativeThreadId, active.tc.TurnID, active.tc.RunID, d.runtime.RuntimeScope)
-	if active.nativeTurnId != "" && active.nativeTurnId != active.persistedNativeTurnId {
-		_, _ = d.store.UpdateActiveTurnAnchor(ctx, d.session.SessionID, active.tc.RunID, active.nativeTurnId, "")
-		active.persistedNativeTurnId = active.nativeTurnId
+	_ = d.goals.refreshWithClient(ctx, historyClient, active.nativeThreadId, active.tc.TurnID, active.tc.RunID, d.runtime.RuntimeScope)
+	if snapshot.id != "" {
+		if err := d.anchorNativeTurn(ctx, active, snapshot.id); err != nil {
+			return err
+		}
 	}
+	active.mu.Lock()
 	active.submissionUncertain = false
+	active.mu.Unlock()
 	d.mu.Lock()
 	stillCurrent := d.active == active
 	d.mu.Unlock()
@@ -1299,7 +1362,7 @@ type codexRecoveredTurn struct {
 	errObj any
 }
 
-func (d *CodexSessionDriver) restoreRecoveredSnapshot(ctx context.Context, active *codexActiveTurn, resp map[string]any, historyClient CodexRPCClient) (codexRecoveredTurn, error) {
+func (d *CodexSessionDriver) restoreRecoveredSnapshot(ctx context.Context, active *codexActiveTurn, resp map[string]any, historyClient CodexHistoryClient) (codexRecoveredTurn, error) {
 	if active.nativeTurnId != "" {
 		_ = d.bridge.MarkHistoryCoverage(ctx, active.nativeThreadId, active.nativeTurnId, "gap")
 	}
@@ -1320,7 +1383,9 @@ func (d *CodexSessionDriver) restoreRecoveredSnapshot(ctx context.Context, activ
 	if err := d.history.ImportRecovered(ctx, hydrated, active.nativeThreadId); err != nil {
 		return codexRecoveredTurn{}, err
 	}
+	active.anchorMu.Lock()
 	active.nativeTurnId = snap.id
+	active.anchorMu.Unlock()
 	return snap, nil
 }
 

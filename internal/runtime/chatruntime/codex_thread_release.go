@@ -142,7 +142,7 @@ func (c *CodexAppServerClient) failThreadReleasesLocked(reason error) {
 func (c *CodexAppServerClient) retireIfIdle() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.bindings) > 0 || len(c.releases) > 0 || c.connecting != nil {
+	if len(c.bindings) > 0 || len(c.releases) > 0 || c.connecting != nil || c.recovery != nil {
 		return false
 	}
 	c.retiring = true
@@ -156,7 +156,10 @@ func (c *CodexAppServerClient) setIdleObserver(observer func()) {
 }
 
 func (c *CodexAppServerClient) idleObserverLocked() func() {
-	if len(c.bindings) == 0 && len(c.releases) == 0 && c.connecting == nil {
+	if len(c.bindings) == 0 && c.recovery != nil {
+		c.recovery.cancel()
+	}
+	if len(c.bindings) == 0 && len(c.releases) == 0 && c.connecting == nil && c.recovery == nil {
 		return c.onIdle
 	}
 	return nil

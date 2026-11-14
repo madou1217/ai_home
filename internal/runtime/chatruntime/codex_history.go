@@ -26,274 +26,6 @@ const (
 	defaultCodexCleanupTimeout   = 5 * time.Second
 )
 
-// CodexToolOrder 协调 rawResponseItem 与 typed lifecycle 事件的发布顺序，保证工具卡与正文不乱序。
-type CodexToolOrder struct {
-	mu                 sync.Mutex
-	calls              map[string]*codexOrderedCall
-	order              []string
-	cursor             int
-	aliases            map[string]any // *codexOrderedCall | struct{} (ambiguous)
-	outputsBeforeCalls map[string]struct{}
-	nextSlot           int
-}
-
-type codexOrderedCall struct {
-	slot       string
-	primary    string
-	sourceIDs  map[string]struct{}
-	aliases    []string
-	events     []codexQueuedToolEvent
-	flush      bool
-	outputSeen bool
-	ambiguous  bool
-	released   bool
-}
-
-type codexQueuedToolEvent struct {
-	fn   func() error
-	done chan error
-}
-
-var codexAmbiguousSentinel = struct{}{}
-
-// NewCodexToolOrder 构造单轮工具顺序协调器。
-func NewCodexToolOrder() *CodexToolOrder {
-	return &CodexToolOrder{
-		calls:              make(map[string]*codexOrderedCall),
-		aliases:            make(map[string]any),
-		outputsBeforeCalls: make(map[string]struct{}),
-	}
-}
-
-// ObserveRaw 记录 rawResponseItem 中的工具调用或结果并推进可释放槽位。
-func (o *CodexToolOrder) ObserveRaw(msg CodexJSONRPCMessage) {
-	if msg.Method != "rawResponseItem/completed" {
-		return
-	}
-	item, _ := msg.Params["item"].(map[string]any)
-	if item == nil {
-		return
-	}
-	stage, aliases, sourceID := codexRawToolIdentity(item)
-	if len(aliases) == 0 {
-		return
-	}
-	o.mu.Lock()
-	if stage == "call" {
-		o.registerLocked(aliases, sourceID)
-	} else if stage == "output" {
-		o.noteOutputLocked(aliases)
-	}
-	writes := o.collectDrainLocked()
-	o.mu.Unlock()
-	runCodexOrderedWrites(writes)
-}
-
-// DispatchOrdered 若事件关联已登记工具槽位则排队保序发送，否则直接执行 fn。
-func (o *CodexToolOrder) DispatchOrdered(callID string, fn func() error) error {
-	if fn == nil {
-		return nil
-	}
-	o.mu.Lock()
-	call := o.resolveLocked(callID)
-	if call == nil || call.released || call.ambiguous {
-		o.mu.Unlock()
-		return fn()
-	}
-	done := make(chan error, 1)
-	call.events = append(call.events, codexQueuedToolEvent{fn: fn, done: done})
-	writes := o.collectDrainLocked()
-	o.mu.Unlock()
-	runCodexOrderedWrites(writes)
-	return <-done
-}
-
-// Flush 强制释放全部剩余挂起工具槽位中的事件。
-func (o *CodexToolOrder) Flush() {
-	o.mu.Lock()
-	for i := o.cursor; i < len(o.order); i++ {
-		if call := o.calls[o.order[i]]; call != nil {
-			call.flush = true
-		}
-	}
-	writes := o.collectDrainLocked()
-	o.mu.Unlock()
-	runCodexOrderedWrites(writes)
-}
-
-func (o *CodexToolOrder) registerLocked(aliases []string, sourceID string) {
-	uniq := uniqueNonEmptyStrings(aliases)
-	if len(uniq) == 0 {
-		return
-	}
-	var prior *codexOrderedCall
-	priorCount := 0
-	for _, a := range uniq {
-		if owner, ok := o.aliases[a].(*codexOrderedCall); ok && owner != nil {
-			if prior == nil {
-				prior = owner
-				priorCount = 1
-			} else if prior != owner {
-				priorCount++
-			}
-		}
-	}
-	if priorCount != 1 {
-		prior = nil
-	}
-	source := strings.TrimSpace(sourceID)
-	samePrimary := prior != nil && prior.primary == uniq[0]
-	sourceConflict := samePrimary && source != "" && len(prior.sourceIDs) > 0
-	if sourceConflict {
-		_, exists := prior.sourceIDs[source]
-		sourceConflict = !exists
-	}
-	allFreeOrPrior := true
-	if samePrimary && !sourceConflict {
-		for _, a := range uniq {
-			if cur, exists := o.aliases[a]; exists && cur != prior {
-				allFreeOrPrior = false
-				break
-			}
-		}
-		if allFreeOrPrior {
-			for _, a := range uniq {
-				o.bindAliasLocked(a, prior)
-			}
-			if source != "" {
-				prior.sourceIDs[source] = struct{}{}
-			}
-			return
-		}
-	}
-
-	o.nextSlot++
-	call := &codexOrderedCall{
-		slot:       fmt.Sprintf("tool-%d", o.nextSlot),
-		primary:    uniq[0],
-		sourceIDs:  make(map[string]struct{}),
-		aliases:    uniq,
-		outputSeen: false,
-	}
-	if source != "" {
-		call.sourceIDs[source] = struct{}{}
-	}
-	for _, a := range uniq {
-		if _, seen := o.outputsBeforeCalls[a]; seen {
-			call.outputSeen = true
-		}
-		delete(o.outputsBeforeCalls, a)
-	}
-	o.calls[call.slot] = call
-	o.order = append(o.order, call.slot)
-	for _, a := range uniq {
-		o.bindAliasLocked(a, call)
-	}
-}
-
-func (o *CodexToolOrder) noteOutputLocked(aliases []string) {
-	for _, a := range uniqueNonEmptyStrings(aliases) {
-		if owner, ok := o.aliases[a].(*codexOrderedCall); ok && owner != nil {
-			owner.outputSeen = true
-		} else if _, exists := o.aliases[a]; !exists {
-			o.outputsBeforeCalls[a] = struct{}{}
-		}
-	}
-}
-
-func (o *CodexToolOrder) resolveLocked(alias string) *codexOrderedCall {
-	clean := strings.TrimSpace(alias)
-	if clean == "" {
-		return nil
-	}
-	owner, ok := o.aliases[clean].(*codexOrderedCall)
-	if !ok {
-		return nil
-	}
-	return owner
-}
-
-func (o *CodexToolOrder) bindAliasLocked(alias string, call *codexOrderedCall) {
-	existing, exists := o.aliases[alias]
-	if !exists {
-		o.aliases[alias] = call
-		return
-	}
-	if existing == call || existing == codexAmbiguousSentinel {
-		if existing == codexAmbiguousSentinel {
-			call.ambiguous = true
-		}
-		return
-	}
-	if other, ok := existing.(*codexOrderedCall); ok && other != nil {
-		other.ambiguous = true
-	}
-	call.ambiguous = true
-	o.aliases[alias] = codexAmbiguousSentinel
-}
-
-func (o *CodexToolOrder) collectDrainLocked() []codexQueuedToolEvent {
-	var writes []codexQueuedToolEvent
-	for o.cursor < len(o.order) {
-		call := o.calls[o.order[o.cursor]]
-		if call == nil {
-			o.cursor++
-			continue
-		}
-		if !call.ambiguous && len(call.events) == 0 && !call.outputSeen && !call.flush {
-			break
-		}
-		call.released = true
-		o.cursor++
-		writes = append(writes, call.events...)
-		call.events = nil
-	}
-	return writes
-}
-
-func runCodexOrderedWrites(writes []codexQueuedToolEvent) {
-	for _, q := range writes {
-		err := q.fn()
-		q.done <- err
-		close(q.done)
-	}
-}
-
-func codexRawToolIdentity(item map[string]any) (string, []string, string) {
-	t := asString(item["type"])
-	sourceID := asString(item["id"])
-	switch t {
-	case "function_call", "custom_tool_call":
-		callID := asString(item["call_id"])
-		return "call", []string{callID, sourceID}, sourceID
-	case "local_shell_call":
-		return "call", []string{asString(item["call_id"]), sourceID}, sourceID
-	case "web_search_call":
-		return "call", []string{sourceID, asString(item["call_id"])}, sourceID
-	case "function_call_output", "custom_tool_call_output":
-		return "output", []string{asString(item["call_id"]), sourceID}, sourceID
-	default:
-		return "", nil, ""
-	}
-}
-
-func uniqueNonEmptyStrings(in []string) []string {
-	out := make([]string, 0, len(in))
-	seen := make(map[string]struct{}, len(in))
-	for _, s := range in {
-		clean := strings.TrimSpace(s)
-		if clean == "" {
-			continue
-		}
-		if _, ok := seen[clean]; ok {
-			continue
-		}
-		seen[clean] = struct{}{}
-		out = append(out, clean)
-	}
-	return out
-}
-
 // CodexInteractionReplayGate 在重启重连后验证挂起交互请求是否如实重放。
 type CodexInteractionReplayGate struct {
 	provider  string
@@ -305,6 +37,7 @@ type CodexInteractionReplayGate struct {
 	failure  error
 	waitCh   chan struct{}
 	timer    *time.Timer
+	epoch    uint64
 }
 
 // NewCodexInteractionReplayGate 构造恢复期交互重放验证门。
@@ -336,6 +69,10 @@ func (g *CodexInteractionReplayGate) Expect(interactions []Interaction) {
 
 // Capture 检查重连期间收到的 interaction.requested 是否与预期挂起交互匹配。
 func (g *CodexInteractionReplayGate) Capture(interaction map[string]any, env *CodexInteractionEnvelope) (replayed bool, err error) {
+	return g.captureAndPublish(interaction, env, nil)
+}
+
+func (g *CodexInteractionReplayGate) captureAndPublish(interaction map[string]any, env *CodexInteractionEnvelope, publish func()) (replayed bool, err error) {
 	if env == nil {
 		return false, nil
 	}
@@ -345,23 +82,35 @@ func (g *CodexInteractionReplayGate) Capture(interaction map[string]any, env *Co
 		return false, err
 	}
 	g.mu.Lock()
+	if g.failure != nil {
+		err := g.failure
+		g.mu.Unlock()
+		return true, err
+	}
 	expected, ok := g.expected[id]
 	if !ok {
+		if publish != nil {
+			publish()
+		}
 		g.mu.Unlock()
 		return false, nil
 	}
 	if !sameRecoveredInteraction(expected, interaction) {
 		mismatchErr := NewError("codex_pending_interaction_replay_mismatch", http.StatusConflict, map[string]any{"interactionId": id})
+		clear(g.expected)
+		g.failure = mismatchErr
+		g.resolveLocked()
 		g.mu.Unlock()
-		g.Fail(mismatchErr)
 		return true, mismatchErr
 	}
-	delete(g.expected, id)
-	remaining := len(g.expected)
-	g.mu.Unlock()
-	if remaining == 0 {
-		g.resolve()
+	if publish != nil {
+		publish()
 	}
+	delete(g.expected, id)
+	if len(g.expected) == 0 {
+		g.resolveLocked()
+	}
+	g.mu.Unlock()
 	return true, nil
 }
 
@@ -379,15 +128,21 @@ func (g *CodexInteractionReplayGate) Wait(ctx context.Context) error {
 	}
 	if g.waitCh == nil {
 		g.waitCh = make(chan struct{})
+		epoch := g.epoch
 		g.timer = time.AfterFunc(g.timeout, func() {
 			g.mu.Lock()
+			defer g.mu.Unlock()
+			if g.epoch != epoch || len(g.expected) == 0 {
+				return
+			}
 			ids := make([]string, 0, len(g.expected))
 			for id := range g.expected {
 				ids = append(ids, id)
 			}
-			g.mu.Unlock()
 			sort.Strings(ids)
-			g.Fail(NewError("codex_pending_interaction_replay_missing", http.StatusServiceUnavailable, map[string]any{"interactionIds": ids}))
+			clear(g.expected)
+			g.failure = NewError("codex_pending_interaction_replay_missing", http.StatusServiceUnavailable, map[string]any{"interactionIds": ids})
+			g.resolveLocked()
 		})
 	}
 	ch := g.waitCh
@@ -411,6 +166,7 @@ func (g *CodexInteractionReplayGate) Wait(ctx context.Context) error {
 // Cancel 清空等待列表并唤醒所有等待方。
 func (g *CodexInteractionReplayGate) Cancel() {
 	g.mu.Lock()
+	g.epoch++
 	g.expected = make(map[string]Interaction)
 	g.failure = nil
 	g.resolveLocked()
@@ -557,6 +313,20 @@ func (b *CodexSessionEventBridge) CancelExpectedReplays() {
 	b.replayGate.Cancel()
 }
 
+// BeginReconnect 只读取挂起交互，不为恢复读取整份时间线。旧信封不能被新连接回答。
+func (b *CodexSessionEventBridge) BeginReconnect(ctx context.Context) error {
+	pending, err := b.store.store.Interactions.ListActive(ctx, b.sessionID)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	clear(b.envelopes)
+	b.mu.Unlock()
+	b.replayGate.Cancel()
+	b.replayGate.Expect(pending)
+	return nil
+}
+
 // LookupEnvelope 取回待回答交互对应的私密原生请求信封。
 func (b *CodexSessionEventBridge) LookupEnvelope(interactionID string) *CodexInteractionEnvelope {
 	b.mu.Lock()
@@ -694,11 +464,12 @@ func (b *CodexSessionEventBridge) ForwardServerRequest(
 
 	interaction, _ := mapped.Payload["interaction"].(map[string]any)
 	interactionID := asString(interaction["interactionId"])
-	b.mu.Lock()
-	b.envelopes[interactionID] = mapped.Envelope
-	b.mu.Unlock()
-
-	replayed, replayErr := b.replayGate.Capture(interaction, mapped.Envelope)
+	mapped.Envelope.Context = msg.Context
+	replayed, replayErr := b.replayGate.captureAndPublish(interaction, mapped.Envelope, func() {
+		b.mu.Lock()
+		b.envelopes[interactionID] = mapped.Envelope
+		b.mu.Unlock()
+	})
 	if replayErr != nil {
 		return CodexBridgeObservation{Mapped: mapped, ProviderTurnID: mapped.TurnID, Err: replayErr}
 	}
@@ -802,6 +573,19 @@ func (b *CodexSessionEventBridge) persistMapped(
 	switch mapped.Type {
 	case "", "turn.started", "turn.completed", "turn.failed", "turn.interrupted":
 		return nil
+	case "stream.error":
+		// 与 Node transientEventSink 一致：传输提示不占持久化序号，也不能
+		// 被 SQLite 的不可持久化门禁替换掉真正的上游失败原因。
+		event, err := NormalizeEventEnvelope(EventEnvelope{
+			Schema: EventSchema, EventID: b.store.Store().NewID("event"), SessionID: b.sessionID,
+			Type: mapped.Type, At: b.store.Store().Clock(), TurnID: turnID, RunID: runID,
+			Source: b.eventSource(runtimeScope), Payload: mapped.Payload,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = b.store.EventHub().Publish(event)
+		return err
 	case "session.goal.updated":
 		if goal, ok := mapped.Payload["goal"].(map[string]any); ok {
 			_, err := b.store.SetGoal(ctx, b.sessionID, goal, "codex")
@@ -818,7 +602,11 @@ func (b *CodexSessionEventBridge) persistMapped(
 		return err
 	}
 
+	// A queued ordered event outlives this dispatch callback's private cancel.
+	// Bound each actual DB write when it is drained, instead of retaining an already-canceled context.
 	emit := func() error {
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultCodexCleanupTimeout)
+		defer cancel()
 		payload := mapped.Payload
 		if item, ok := payload["item"].(map[string]any); ok && turnID != "" {
 			cp := CloneMap(item)
@@ -826,7 +614,7 @@ func (b *CodexSessionEventBridge) persistMapped(
 			payload = CloneMap(payload)
 			payload["item"] = cp
 		}
-		_, err := b.store.AppendEvent(ctx, b.sessionID, EventDraft{
+		_, err := b.store.AppendEvent(writeCtx, b.sessionID, EventDraft{
 			Type:    mapped.Type,
 			TurnID:  turnID,
 			RunID:   runID,
@@ -839,7 +627,11 @@ func (b *CodexSessionEventBridge) persistMapped(
 
 	if toolOrder != nil {
 		if callID := canonicalOrderedCallID(mapped); callID != "" {
-			return toolOrder.DispatchOrdered(callID, emit)
+			size, err := mappedToolCost(mapped)
+			if err != nil {
+				return err
+			}
+			return toolOrder.dispatch(callID, size, emit)
 		}
 	}
 	return emit()
@@ -881,7 +673,7 @@ func asMap(v any) map[string]any {
 }
 
 // HydrateCodexHistoryResponse 当 thread/read 或 thread/resume 返回摘要或游标时翻页补全全部 turns。
-func HydrateCodexHistoryResponse(ctx context.Context, client CodexRPCClient, response map[string]any, threadID string) (map[string]any, error) {
+func HydrateCodexHistoryResponse(ctx context.Context, client CodexHistoryClient, response map[string]any, threadID string) (map[string]any, error) {
 	if strings.TrimSpace(threadID) == "" {
 		return nil, NewError("codex_history_thread_required", http.StatusInternalServerError, nil)
 	}
@@ -971,7 +763,7 @@ func HydrateCodexHistoryResponse(ctx context.Context, client CodexRPCClient, res
 	return outResp, nil
 }
 
-func readPagedCodexTurns(ctx context.Context, client CodexRPCClient, threadID, cursor, sortDirection string) ([]map[string]any, error) {
+func readPagedCodexTurns(ctx context.Context, client CodexHistoryClient, threadID, cursor, sortDirection string) ([]map[string]any, error) {
 	turns := make([]map[string]any, 0)
 	seenCursors := make(map[string]struct{})
 	seenTurns := make(map[string]struct{})
@@ -1802,10 +1594,17 @@ type CodexSessionGoalSync struct {
 
 // Refresh 从常驻 app-server 主动拉取一次 thread/goal/get（不可用时按空目标清理）。
 func (g *CodexSessionGoalSync) Refresh(ctx context.Context, threadID, turnID, runID, runtimeScope string) error {
-	if g == nil || g.client == nil || strings.TrimSpace(threadID) == "" {
+	if g == nil {
 		return nil
 	}
-	resp, err := g.client.Request(ctx, "thread/goal/get", map[string]any{"threadId": threadID})
+	return g.refreshWithClient(ctx, g.client, threadID, turnID, runID, runtimeScope)
+}
+
+func (g *CodexSessionGoalSync) refreshWithClient(ctx context.Context, client CodexHistoryClient, threadID, turnID, runID, runtimeScope string) error {
+	if g == nil || client == nil || strings.TrimSpace(threadID) == "" {
+		return nil
+	}
+	resp, err := client.Request(ctx, "thread/goal/get", map[string]any{"threadId": threadID})
 	if err != nil {
 		return nil
 	}

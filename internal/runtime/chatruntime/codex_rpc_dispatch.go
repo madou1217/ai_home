@@ -19,6 +19,7 @@ const (
 type codexTurnRegistration struct {
 	binding CodexTurnBinding
 	active  atomic.Bool
+	cmd     *exec.Cmd // guarded by client.mu; survives successful recovery of the same binding.
 }
 
 type codexQueuedNotification struct {
@@ -43,10 +44,13 @@ type codexRPCDispatch struct {
 	stopped                    bool
 	terminal                   map[string]*codexTurnRegistration
 	reason                     error
+	gated                      bool
+	recovering                 bool
+	done                       chan struct{}
 }
 
 func newCodexRPCDispatch(client *CodexAppServerClient, cmd *exec.Cmd) *codexRPCDispatch {
-	d := &codexRPCDispatch{client: client, cmd: cmd}
+	d := &codexRPCDispatch{client: client, cmd: cmd, done: make(chan struct{})}
 	d.ready = sync.NewCond(&d.mu)
 	return d
 }
@@ -64,29 +68,39 @@ func (d *codexRPCDispatch) enqueue(event codexQueuedNotification) bool {
 	return true
 }
 
-func (d *codexRPCDispatch) finish(bindings map[string]*codexTurnRegistration, reason error) {
+func (d *codexRPCDispatch) finish(bindings map[string]*codexTurnRegistration, reason error, recovering bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.stopped {
 		return
 	}
-	d.stopped, d.terminal, d.reason = true, bindings, reason
+	d.stopped, d.terminal, d.reason, d.recovering = true, bindings, reason, recovering
+	// Candidate notifications are not committed until history restore succeeds.
+	if d.gated {
+		clear(d.entries[:])
+		d.head = 0
+		d.count = 0
+		d.bytes = 0
+	}
 	d.ready.Signal()
 }
 
 func (d *codexRPCDispatch) run() {
-	defer func() { d.client.mu.Lock(); d.client.dispatchers--; d.client.mu.Unlock() }()
+	defer func() { d.client.mu.Lock(); d.client.dispatchers--; d.client.mu.Unlock(); close(d.done) }()
 	for {
 		d.mu.Lock()
-		for d.count == 0 && !d.stopped {
+		for (d.count == 0 || d.gated) && !d.stopped {
 			d.ready.Wait()
 		}
 		if d.count == 0 && d.stopped {
-			terminal, reason := d.terminal, d.reason
+			terminal, reason, recovering := d.terminal, d.reason, d.recovering
 			d.terminal = nil
 			d.mu.Unlock()
 			// 已收到的正常终态先交付，断连是最后一项；不会盖掉排队中的 completed。
 			for _, binding := range terminal {
+				if recovering {
+					continue
+				}
 				if binding.active.Swap(false) && binding.binding.OnDisconnected != nil {
 					binding.binding.OnDisconnected(reason)
 				}

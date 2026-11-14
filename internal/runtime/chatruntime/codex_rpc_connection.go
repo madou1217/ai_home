@@ -37,6 +37,11 @@ func (c *CodexAppServerClient) EnsureConnected(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if ctx.Value(codexRecoveryDialKey{}) == nil {
+		if err := c.WaitForRecovery(ctx); err != nil {
+			return err
+		}
+	}
 	c.mu.Lock()
 	if c.closed || c.retiring {
 		c.mu.Unlock()
@@ -135,12 +140,16 @@ func (c *CodexAppServerClient) connect(ctx context.Context) error {
 	}
 	waitDone := make(chan struct{})
 	dispatcher := newCodexRPCDispatch(c, cmd)
+	dispatcher.gated = c.recovery != nil
 	c.cmd, c.stdin, c.waitDone = cmd, stdin, waitDone
 	c.stdout, c.stderr = stdout, stderr
 	c.dispatch = dispatcher
 	c.dispatchers++
 	c.connectionDone = make(chan struct{})
 	c.connected, c.ready = true, false
+	for _, binding := range c.bindings {
+		binding.cmd = cmd
+	}
 	c.runtimeHome, c.hasHome = runtimeHome, runtimeHome.CodexHome != ""
 	c.identity = &CodexVerifiedIdentity{Verified: true, Kind: "oauth", Assurance: "runtime-home", AccountRef: c.opts.AccountRef}
 	c.stderrTail.Reset()
@@ -194,8 +203,28 @@ func (c *CodexAppServerClient) disconnectConnection(expected *exec.Cmd, reason e
 	}
 	pending := c.pending
 	c.pending = make(map[string]chan codexRPCResult)
-	bindings := c.bindings
-	c.bindings = make(map[string]*codexTurnRegistration)
+	bindings := make(map[string]*codexTurnRegistration, len(c.bindings))
+	for id, binding := range c.bindings {
+		bindings[id] = binding
+	}
+	recovering := !c.closed && !c.retiring && len(bindings) > 0 && codexRecoverableDisconnect(reason)
+	var flight *codexReconnectFlight
+	if recovering {
+		if c.recovery == nil {
+			flight = newCodexReconnectFlight(dispatcher)
+			c.recovery = flight
+		}
+	} else if c.recovery == nil {
+		c.bindings = make(map[string]*codexTurnRegistration)
+	}
+	if c.recovery != nil {
+		// Recovery owns the final callbacks even when Close happens during backoff,
+		// when there is no current dispatcher to deliver a terminal notification.
+		recovering = true
+		if c.closed || c.retiring {
+			c.recovery.cancel()
+		}
+	}
 	c.failThreadReleasesLocked(reason)
 	idle := c.idleObserverLocked()
 	c.mu.Unlock()
@@ -205,7 +234,7 @@ func (c *CodexAppServerClient) disconnectConnection(expected *exec.Cmd, reason e
 		close(ch)
 	}
 	if dispatcher != nil {
-		dispatcher.finish(bindings, reason)
+		dispatcher.finish(bindings, reason, recovering)
 	}
 	if stdin != nil {
 		_ = stdin.Close()
@@ -219,6 +248,9 @@ func (c *CodexAppServerClient) disconnectConnection(expected *exec.Cmd, reason e
 	}
 	if stderr != nil {
 		_ = stderr.Close()
+	}
+	if flight != nil {
+		go c.runReconnect(flight, reason)
 	}
 	if idle != nil {
 		idle()

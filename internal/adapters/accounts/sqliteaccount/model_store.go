@@ -56,7 +56,10 @@ func (store *Store) ListAllAccountModels(ctx context.Context) (accountapp.Accoun
 		_ = rows.Close()
 	}()
 	sets := make([]accountapp.AccountModelSet, 0)
-	index := make(map[string]int)
+	// ORDER BY already groups each account contiguously. Keep only the current
+	// group instead of an O(accounts) hash index and repeated account parsing.
+	var currentRef accountcore.AccountRef
+	position := -1
 	for rows.Next() {
 		var (
 			accountRefText string
@@ -86,12 +89,15 @@ func (store *Store) ListAllAccountModels(ctx context.Context) (accountapp.Accoun
 		); err != nil {
 			return accountapp.AccountModelCatalog{}, fmt.Errorf("读取全量账号模型关系失败: %w", err)
 		}
-		accountRef, err := accountcore.ParseAccountRef(accountRefText)
-		if err != nil {
-			return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
-		}
-		position, exists := index[accountRefText]
-		if !exists {
+		if position < 0 || currentRef.String() != accountRefText {
+			accountRef, err := accountcore.ParseAccountRef(accountRefText)
+			if err != nil {
+				return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
+			}
+			if position >= 0 && accountRefText <= currentRef.String() {
+				return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
+			}
+			currentRef = accountRef
 			set := accountapp.AccountModelSet{
 				AccountRef:       accountRef,
 				ProviderID:       providerID,
@@ -110,7 +116,6 @@ func (store *Store) ListAllAccountModels(ctx context.Context) (accountapp.Accoun
 				set.LastModelCount = int(modelCount.Int64)
 			}
 			position = len(sets)
-			index[accountRefText] = position
 			sets = append(sets, set)
 		}
 		// LEFT JOIN 对无模型账号返回一行 NULL，跳过模型构造但保留探测事实。
@@ -122,7 +127,7 @@ func (store *Store) ListAllAccountModels(ctx context.Context) (accountapp.Accoun
 			return accountapp.AccountModelCatalog{}, ErrIncompatibleDatabase
 		}
 		model, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
-			AccountRef:        accountRef,
+			AccountRef:        currentRef,
 			ModelID:           modelIDText.String,
 			UpstreamAvailable: upstream.Bool,
 			ManualPolicy:      policy,

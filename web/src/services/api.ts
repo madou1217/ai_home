@@ -501,12 +501,12 @@ export const accountsAPI = {
   },
 
   getAddJob: async (jobId: string): Promise<AccountAddJob> => {
-    const response = await api.get<{ ok: boolean; job: AccountAddJob }>(`/webui/accounts/add/jobs/${jobId}`);
+    const response = await api.get<{ ok: boolean; job: AccountAddJob }>(`/webui/account-jobs/${jobId}`);
     return response.data.job;
   },
 
   cancelAddJob: async (jobId: string) => {
-    const response = await api.post(`/webui/accounts/add/jobs/${jobId}/cancel`);
+    const response = await api.post(`/webui/account-jobs/${jobId}/cancel`);
     return response.data;
   },
 
@@ -541,14 +541,14 @@ export const accountsAPI = {
 
   confirmCliInstall: async (jobId: string): Promise<AccountAddJob> => {
     const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
-      `/webui/accounts/add/jobs/${jobId}/install`
+      `/webui/account-jobs/${jobId}/install`
     );
     return response.data.job;
   },
 
   completeBrowserCallback: async (jobId: string, callbackUrl: string): Promise<AccountAddJob> => {
     const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
-      `/webui/accounts/add/jobs/${jobId}/callback`,
+      `/webui/account-jobs/${jobId}/callback`,
       { callbackUrl }
     );
     return response.data.job;
@@ -557,7 +557,7 @@ export const accountsAPI = {
   // 从本机登录态完成登录任务（例如 Kiro IDE 的登录态）：不需要用户粘贴任何东西。
   completeLocalAuthImport: async (jobId: string, sourceId: string): Promise<AccountAddJob> => {
     const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
-      `/webui/accounts/add/jobs/${jobId}/local-import`,
+      `/webui/account-jobs/${jobId}/local-import`,
       { sourceId }
     );
     return response.data.job;

@@ -467,6 +467,10 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/account-jobs/{jobId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/cancel"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/callback"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/install"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/local-import"),
 				},
 			},
 			{

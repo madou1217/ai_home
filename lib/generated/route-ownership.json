@@ -1101,6 +1101,34 @@
             "GET"
           ],
           "path": "/v0/webui/account-jobs/{jobId}"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/account-jobs/{jobId}/cancel"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/account-jobs/{jobId}/callback"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/account-jobs/{jobId}/install"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/account-jobs/{jobId}/local-import"
         }
       ]
     },

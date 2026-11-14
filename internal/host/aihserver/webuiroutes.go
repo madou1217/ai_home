@@ -871,6 +871,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		// 账号授权作业快照：新前缀避开 /accounts/{provider}/{accountRef}/<action> 的模式冲突。
 		{Pattern: "GET " + webuiaccountjobsapi.Path + "/{jobId}", Handler: accountJobs},
 		{Pattern: "GET /v0/webui/account-jobs/{jobId}", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", webuiaccountjobsapi.Path, accountJobs)},
+		// 作业动作：取消/回调/安装/本机导入（公开前缀 → account-add/jobs）。
+		{Pattern: "POST /v0/webui/account-jobs/{jobId}/cancel", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
+		{Pattern: "POST /v0/webui/account-jobs/{jobId}/callback", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
+		{Pattern: "POST /v0/webui/account-jobs/{jobId}/install", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
+		{Pattern: "POST /v0/webui/account-jobs/{jobId}/local-import", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", "/v1/management/webui/account-add/jobs", accountAdd)},
+
 
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
 		// 浏览器数据面：编辑入口（ref 先翻译成 Go ref）。

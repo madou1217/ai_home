@@ -537,6 +537,8 @@ type RequestInput struct {
 	TopK *uint64
 	// UserID 是客户端提供的低敏最终用户或会话标识。
 	UserID *string
+	// ServiceTier 是可选服务调度层级；由支持该语义的 Provider 映射。
+	ServiceTier *string
 	// PromptCacheKey 是客户端用于稳定复用提示前缀的缓存亲和键。
 	PromptCacheKey *string
 	// ClientMetadata 是客户端传入的非语义诊断元数据。
@@ -584,6 +586,7 @@ type Request struct {
 	topP              *float64
 	topK              *uint64
 	userID            *string
+	serviceTier       *string
 	promptCacheKey    *string
 	clientMetadata    map[string]string
 	cacheBreakpoints  []PromptCacheBreakpoint
@@ -639,6 +642,7 @@ func NewRequest(input RequestInput) (Request, error) {
 		topP:              cloneFloat(input.TopP),
 		topK:              cloneUint64(input.TopK),
 		userID:            cloneString(input.UserID),
+		serviceTier:       cloneString(input.ServiceTier),
 		promptCacheKey:    cloneString(input.PromptCacheKey),
 		clientMetadata:    cloneStringMap(input.ClientMetadata),
 		cacheBreakpoints:  append([]PromptCacheBreakpoint(nil), input.PromptCacheBreakpoints...),
@@ -652,6 +656,14 @@ func NewRequest(input RequestInput) (Request, error) {
 	}
 	request.capabilities = deriveRequiredCapabilities(request)
 	return request, nil
+}
+
+// ServiceTier 返回客户端指定的可选服务调度层级。
+func (request Request) ServiceTier() (string, bool) {
+	if request.serviceTier == nil {
+		return "", false
+	}
+	return *request.serviceTier, true
 }
 
 // ClientProtocol 返回客户端入口协议。
@@ -893,6 +905,9 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 		return ErrInvalidRequest
 	}
 	if input.UserID != nil && !isValidRequestUserID(*input.UserID) {
+		return ErrInvalidRequest
+	}
+	if input.ServiceTier != nil && !isCanonicalOpaqueID(*input.ServiceTier) {
 		return ErrInvalidRequest
 	}
 	if input.PromptCacheKey != nil && !isCanonicalOpaqueID(*input.PromptCacheKey) {

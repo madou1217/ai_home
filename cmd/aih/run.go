@@ -95,6 +95,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && (arguments[1] == "set-mobile" || arguments[1] == "unset-mobile") {
 		return runProviderMobile(ctx, providerID, arguments[1:], runtime)
 	}
+	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "effort" {
+		return runCodexEffort(arguments[2:], runtime)
+	}
 	// aih codex policy [show|set <sandbox>]：app-state 的 policy:exec。
 	if len(arguments) >= 2 && arguments[1] == "policy" {
 		return runProviderPolicy(ctx, providerID, arguments[2:], runtime)

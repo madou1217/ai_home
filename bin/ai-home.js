@@ -266,17 +266,21 @@ function tryRunGoCodexMobile() {
   return true;
 }
 
-// aih codex policy [show|set <sandbox>] 固定走 Go：读写 app-state 的 policy:exec。
-function tryRunGoCodexPolicy() {
+// Codex 管理设置固定走 Go：policy 读写 app-state，effort 只更新原生配置。
+function tryRunGoCodexConfigCommand() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;
   if (String(args[0] || '').trim().toLowerCase() !== 'codex') return false;
-  if (String(args[1] || '').trim().toLowerCase() !== 'policy') return false;
+  const command = String(args[1] || '').trim().toLowerCase();
+  if (command !== 'policy' && command !== 'effort') return false;
+  args[0] = 'codex';
+  args[1] = command;
   const rest = args.slice(2).map((token) => String(token || '').trim()).filter(Boolean);
   let valid = false;
   if (rest.length === 0) valid = true;
   else if (rest.length === 1 && rest[0].toLowerCase() === 'show') valid = true;
   else if (rest.length === 2 && rest[0].toLowerCase() === 'set') valid = true;
+  if (command === 'effort') valid = true;
   if (!valid) return false;
   const fs = require('node:fs');
   const os = require('node:os');
@@ -364,7 +368,7 @@ function tryRunGoProviderVersion() {
   if (args.length !== 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
   if (String(args[1] || '').trim().toLowerCase() !== 'version') return false;
-  // codex 的 PATH 入口在本机是旧 Node hook，Go 侧按安全策略拒绝执行它，仍由 Node 解析；
+  // codex version 保留现有 Node 入口；Go 的安全解包同时供原生模型元数据读取使用。
   // 家族四支由 tryRunGoFamilyServerCommand 统一承接。
   if (provider === 'codex' || GO_FAMILY_PROVIDERS.has(provider)) return false;
   if (!goProviderHasCli(provider)) return false;
@@ -1105,6 +1109,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexPolicy() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoAccountCommand() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexConfigCommand() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoAccountCommand() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

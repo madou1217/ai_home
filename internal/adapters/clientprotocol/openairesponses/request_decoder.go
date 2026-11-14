@@ -97,6 +97,7 @@ func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
 		MaxOutputTokens:           valueOrZero(wireRequest.MaxOutputTokens),
 		Temperature:               wireRequest.Temperature,
 		TopP:                      wireRequest.TopP,
+		ServiceTier:               wireRequest.ServiceTier,
 		PromptCacheKey:            wireRequest.PromptCacheKey,
 		ClientMetadata:            wireRequest.ClientMetadata,
 		Store:                     wireRequest.Store,
@@ -176,8 +177,7 @@ func validateSupportedRootFields(wireRequest requestDTO) error {
 	case wireRequest.MaxOutputTokens != nil && *wireRequest.MaxOutputTokens == 0:
 		return invalidField("max_output_tokens")
 	default:
-		// service_tier / metadata 是 OpenAI 特有的调度或透传提示，
-		// 跨协议转码时静默丢弃——不进入 Canonical Request，也不拒绝客户端。
+		// metadata 是非语义透传提示；service_tier 经 Canonical 保留给支持的上游。
 		return nil
 	}
 }

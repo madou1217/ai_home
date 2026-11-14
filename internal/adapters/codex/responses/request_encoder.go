@@ -78,6 +78,13 @@ func encodeRequest(
 		ClientMetadata:    request.ClientMetadata(),
 		Text:              text,
 	}
+	if tier, found := request.ServiceTier(); found {
+		// Native config uses fast; the Responses wire API calls it priority.
+		if tier == "fast" {
+			tier = "priority"
+		}
+		wireRequest.ServiceTier = &tier
+	}
 	if promptCacheKey, found := request.PromptCacheKey(); found {
 		wireRequest.PromptCacheKey = &promptCacheKey
 	}

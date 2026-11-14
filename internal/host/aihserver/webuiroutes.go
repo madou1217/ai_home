@@ -806,9 +806,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "POST " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "GET " + webuiopenaimodelsapi.Path, Handler: openaiModelsRead},
-		// 浏览器数据面：openai 模型目录与 watch。
-		{Pattern: "/v0/webui/openai-models", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", openaiModelsRead)},
-		{Pattern: "/v0/webui/openai-models/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", openaiModelsRead)},
+		// 浏览器数据面（/v0/webui/openai-models*）由 buildWebUIModelsRulesRoutes
+		// 逐条接到完整模型目录处理器；这里保留只读管理契约，避免方法落到错处理器。
 		{Pattern: "GET " + webuiarchivedsessionsapi.Path, Handler: archivedSessions},
 		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},
 		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},

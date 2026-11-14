@@ -37,3 +37,21 @@ func Rewrite(from, to string, handler http.Handler) http.Handler {
 		handler.ServeHTTP(w, request)
 	})
 }
+
+// RewritePath 返回把任意请求路径改成 to 的处理器。
+//
+// 用于公开路径与管理路径不同构的端点（例如 GET /v0/webui/openai-models 对应管理面的
+// /openai-models/catalog，而 POST /v0/webui/openai-models/refresh 对应
+// /openai-models/catalog/refresh）：只改路径，查询串、方法与请求体原样保留。
+func RewritePath(to string, handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handler == nil {
+			http.NotFound(w, r)
+			return
+		}
+		request := r.Clone(r.Context())
+		request.URL.Path = to
+		request.URL.RawPath = ""
+		handler.ServeHTTP(w, request)
+	})
+}

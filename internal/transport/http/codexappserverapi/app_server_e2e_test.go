@@ -204,7 +204,9 @@ func TestAppServerHandlerSubprocessEndToEnd(t *testing.T) {
 		handler, err := NewAppServerHandler(AppServerDependencies{
 			AIHomeDir:           aiHome,
 			HostHomeDir:         hostHome,
-			StartupProbeTimeout: 500 * time.Millisecond,
+			// 探活窗口要覆盖高负载机器上 fork/exec 的排队时间：
+			// 500ms 在并行跑全量测试时会偶发「进程还没退出就返回 101」。
+			StartupProbeTimeout: 2 * time.Second,
 			ResolveCodex:        func() (string, error) { return fastExitWrapper, nil },
 		})
 		if err != nil {

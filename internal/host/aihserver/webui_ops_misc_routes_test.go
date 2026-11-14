@@ -196,14 +196,14 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 		t.Fatalf("缺少 AIHomeDir 且未注入 ServerRestarter 时 server/restart 应回 503，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// 未显式传入 ServerRestarter 但提供 AIHomeDir 时，自动装配 NativeRestarter（非 503）
-	t.Setenv("AIH_SERVER_ENTRY_FILE", filepath.Join(t.TempDir(), "missing-ai-home.js"))
+	// restarter 端口注入路径：默认 NativeRestarter 会真的调用宿主服务管理器，
+	// 测试里必须显式注入，禁止 test 运行一次就重启本机 aih 服务。
 	wiredRestartRoutes, buildWiredErr := buildWebUIOpsMiscRoutesWithPorts(
 		webuiRouteDependencies{
 			Authorizer: stubOpsAuthorizer{allow: true},
 			AIHomeDir:  t.TempDir(),
 		},
-		webuiOpsMiscPorts{SkipSchedulerStart: true},
+		webuiOpsMiscPorts{SkipSchedulerStart: true, ServerRestarter: restarter},
 	)
 	if buildWiredErr != nil {
 		t.Fatalf("默认 NativeRestarter 装配不应失败: %v", buildWiredErr)
@@ -214,8 +214,8 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 	}
 	rec = httptest.NewRecorder()
 	wiredRestartMux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/management/webui/server/restart", nil))
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("提供 AIHomeDir 时默认 NativeRestarter 应接单回 202，实际 %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted || !restarter.called {
+		t.Fatalf("注入 restarter 端口后应接单回 202，实际 %d called=%v body=%s", rec.Code, restarter.called, rec.Body.String())
 	}
 
 	// 确认 buildWebUIOpsMiscRoutes 默认导出签名为 nil authorizer 时失败关闭

@@ -210,7 +210,7 @@ func TestWorkspaceTerminalAgentAndNativeModes(t *testing.T) {
 	if rec.Code != http.StatusOK || len(opened) != 1 {
 		t.Fatalf("local native status=%d opened=%d body=%s", rec.Code, len(opened), rec.Body.String())
 	}
-	if !strings.Contains(opened[0].Command, "__remote_ws__") || !strings.Contains(opened[0].Command, wsID) {
+	if !strings.Contains(opened[0].Command, "__remote-ws") || !strings.Contains(opened[0].Command, wsID) {
 		t.Fatalf("native command = %q", opened[0].Command)
 	}
 }

@@ -340,6 +340,17 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 上游错误映射组：浏览器入口由 Go 直接应答。
+				ID:              "webui.upstream_error_mappings",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/upstream-error-mappings"),
+					httpRoute([]string{"GET", "PUT", "DELETE"}, "/v0/webui/upstream-error-mappings/{id}"),
+					httpRoute([]string{"POST"}, "/v0/webui/upstream-error-mappings/{id}/toggle"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

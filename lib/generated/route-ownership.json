@@ -778,6 +778,37 @@
       ]
     },
     {
+      "id": "webui.upstream_error_mappings",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/upstream-error-mappings"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "PUT",
+            "DELETE"
+          ],
+          "path": "/v0/webui/upstream-error-mappings/{id}"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/upstream-error-mappings/{id}/toggle"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

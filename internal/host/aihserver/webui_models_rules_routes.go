@@ -6,6 +6,7 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsyncapi"
 )
 
@@ -58,6 +59,13 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "PUT " + upstreammappingapi.WebUIPath + "/{id}", Handler: upstreamMappingsHandler},
 		{Pattern: "DELETE " + upstreammappingapi.WebUIPath + "/{id}", Handler: upstreamMappingsHandler},
 		{Pattern: "POST " + upstreammappingapi.WebUIPath + "/{id}/toggle", Handler: upstreamMappingsHandler},
+		// 浏览器数据面：/v0/webui/upstream-error-mappings* → 管理前缀（同一处理器）。
+		{Pattern: "GET /v0/webui/upstream-error-mappings", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		{Pattern: "POST /v0/webui/upstream-error-mappings", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		{Pattern: "GET /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		{Pattern: "PUT /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		{Pattern: "DELETE /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		{Pattern: "POST /v0/webui/upstream-error-mappings/{id}/toggle", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
 		{Pattern: "GET " + webuimodelsyncapi.CatalogPath, Handler: modelsSyncHandler},
 		{Pattern: "POST " + webuimodelsyncapi.BasePath, Handler: modelsSyncHandler},
 		{Pattern: "PATCH " + webuimodelsyncapi.BasePath, Handler: modelsSyncHandler},

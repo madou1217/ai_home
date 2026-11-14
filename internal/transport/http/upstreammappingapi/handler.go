@@ -95,6 +95,11 @@ type groupPayload struct {
 	Enabled     *bool             `json:"enabled"`
 	Rules       *[]rulescore.Rule `json:"rules"`
 	Version     *int64            `json:"version"`
+	// position / createdAtMs 是 Go 自己返回的展示元数据，前端编辑时会原样带回。
+	// 与 Node 旧代理的字段裁剪等价：接受但忽略，避免 DisallowUnknownFields 把
+	// 一次合法的编辑保存变成 400。
+	Position    *json.RawMessage `json:"position"`
+	CreatedAtMs *json.RawMessage `json:"createdAtMs"`
 }
 
 // ServeHTTP 只接受 Management Key 鉴权过的 CRUD 请求。

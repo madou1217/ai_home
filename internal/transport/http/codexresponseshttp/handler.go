@@ -80,6 +80,9 @@ type Dependencies struct {
 	// 必须在这里对齐，否则客户端 model_reasoning_effort=none 会打到只支持
 	// low..max 的模型上（上游 400 unsupported_value）。
 	Ladders effortalign.LadderReader
+	// ProbeWindow 可选：流式响应写头前等待首个正文事件的时长。<=0 用 nativeProbeWindow。
+	// 超过窗口即提交当前账号并开始交付（含心跳），避免长推理的 TTFB 静默被中间层判死。
+	ProbeWindow time.Duration
 }
 
 type Handler struct {
@@ -201,7 +204,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			last = nil
 		}
 		if upstream.StatusCode >= 200 && upstream.StatusCode < 300 {
-			failure := handler.probeResponse(upstream, metadata.Stream, string(selection.AccountRef))
+			probeWindow := handler.ProbeWindow
+			if probeWindow <= 0 {
+				probeWindow = nativeProbeWindow
+			}
+			probed := handler.probeResponse(upstream, metadata.Stream, string(selection.AccountRef), probeWindow)
+			failure := probed.failure
 			if request.Context().Err() != nil {
 				_ = upstream.Body.Close()
 				return
@@ -222,7 +230,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				last, lastRef = upstream, selection.AccountRef
 				continue
 			}
-			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream)
+			if probed.committed {
+				// 窗口到期时正文尚未开始：先写 200 头并立即 flush 到线上，
+				// 后续读到的字节（含回放）与心跳都走同一个响应。
+				// 只 WriteHeader 不 Flush 时，net/http 会把头留在缓冲区等首块正文，
+				// 提前交付就失去意义。
+				writeResponseHeaders(response, upstream, selection.AccountRef, metadata.Stream)
+				flushResponse(response)
+			}
+			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream, probed.committed, trail)
 			_ = upstream.Body.Close()
 			return
 		}

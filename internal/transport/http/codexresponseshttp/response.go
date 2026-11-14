@@ -27,20 +27,48 @@ type outcome struct {
 	incomplete bool
 	failure    inferencegateway.AttemptFailure
 	usage      inference.Usage
+	// sawContent 表示已经出现过正文事件（非 response.created/in_progress/queued）。
+	// 提前提交的流在还没有正文时中断，需要补一帧流内错误，而不是静默截断。
+	sawContent bool
 }
 
-func (handler *Handler) deliver(response http.ResponseWriter, request *http.Request, upstream *http.Response, route runtimecore.ModelRoute, selection Selection, stream bool) {
+// isStreamingResponse 判断上游返回的是否为 SSE 流。
+func isStreamingResponse(upstream *http.Response, stream bool) bool {
+	mediaType, _, _ := mime.ParseMediaType(upstream.Header.Get("Content-Type"))
+	return mediaType == "text/event-stream" || (mediaType == "" && stream)
+}
+
+// writeResponseHeaders 写出交付所需的响应头（含账号标记与缓存策略）。
+//
+// 正常路径由 deliver 调用；probe 窗口到期时由调用方先调用一次，以便立即开始
+// 心跳。两处必须共用同一实现，否则提前交付与常规交付的头部会漂移。
+func writeResponseHeaders(response http.ResponseWriter, upstream *http.Response, ref accountcore.AccountRef, stream bool) {
 	copyHeaders(response.Header(), upstream.Header)
-	setAccountHeaders(response, selection.AccountRef)
+	setAccountHeaders(response, ref)
 	if response.Header().Get("Cache-Control") == "" {
 		response.Header().Set("Cache-Control", "no-store")
 	}
-	mediaType, _, _ := mime.ParseMediaType(upstream.Header.Get("Content-Type"))
-	streaming := mediaType == "text/event-stream" || (mediaType == "" && stream)
-	if streaming && response.Header().Get("Content-Type") == "" {
+	if isStreamingResponse(upstream, stream) && response.Header().Get("Content-Type") == "" {
 		response.Header().Set("Content-Type", "text/event-stream")
 	}
 	response.WriteHeader(upstream.StatusCode)
+}
+
+// deliver 交付上游响应体；committed 表示响应头已由提前交付写出，这里不能再写。
+func (handler *Handler) deliver(
+	response http.ResponseWriter,
+	request *http.Request,
+	upstream *http.Response,
+	route runtimecore.ModelRoute,
+	selection Selection,
+	stream bool,
+	committed bool,
+	trail *failureTrail,
+) {
+	if !committed {
+		writeResponseHeaders(response, upstream, selection.AccountRef, stream)
+	}
+	streaming := isStreamingResponse(upstream, stream)
 	var observed outcome
 	var upstreamErr, downstreamErr error
 	if streaming {
@@ -101,6 +129,43 @@ func (handler *Handler) deliver(response http.ResponseWriter, request *http.Requ
 			handler.recordFailure(request.Context(), route, selection, failure)
 		}
 	}
+	// 提前提交的流在还没有正文时中断：客户端已经拿到 200 头，只能补一帧流内错误，
+	// 不能再改写成 HTTP 502。上游自己发过错误帧（observed.failure）时不重复补。
+	if committed && !observed.sawContent && !observed.completed && !observed.incomplete && !observed.failure.IsValid() {
+		writeStreamFailureFrame(response)
+		if trail != nil {
+			trail.finish(http.StatusOK, "upstream_stream_interrupted")
+		}
+	}
+}
+
+// flushResponse 立即把已写出的响应头/数据推给客户端。
+func flushResponse(response http.ResponseWriter) {
+	if err := http.NewResponseController(response).Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return
+	}
+}
+
+// writeStreamFailureFrame 在已经提交的 SSE 流里补一帧协议级 error 事件。
+//
+// Responses 的流内错误既可以是 error，也可以是 response.failed；这里选 error，
+// 因为它不要求完整的 response 对象，形状更稳定，上游失败分类器也按同一语义识别。
+func writeStreamFailureFrame(response http.ResponseWriter) {
+	payload, err := json.Marshal(map[string]any{
+		"type":    "error",
+		"code":    "upstream_stream_interrupted",
+		"message": "上游响应流中断",
+		"param":   nil,
+	})
+	if err != nil {
+		return
+	}
+	if _, err := response.Write([]byte("event: error\ndata: " + string(payload) + "\n\n")); err != nil {
+		return
+	}
+	if err := http.NewResponseController(response).Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return
+	}
 }
 
 func (handler *Handler) observeStream(source io.Reader, header http.Header, accountRef string) outcome {
@@ -108,10 +173,11 @@ func (handler *Handler) observeStream(source io.Reader, header http.Header, acco
 	if err != nil {
 		return outcome{}
 	}
+	sawContent := false
 	for {
 		event, err := reader.Next()
 		if err != nil {
-			return outcome{}
+			return outcome{sawContent: sawContent}
 		}
 		var envelope struct {
 			Type     string `json:"type"`
@@ -125,11 +191,16 @@ func (handler *Handler) observeStream(source io.Reader, header http.Header, acco
 		if envelope.Type == "" {
 			envelope.Type = event.Type()
 		}
+		switch envelope.Type {
+		case "response.created", "response.in_progress", "response.queued":
+		default:
+			sawContent = true
+		}
 		if envelope.Type == "response.completed" {
-			return outcome{completed: true, usage: decodeUsage(envelope.Response.Usage)}
+			return outcome{completed: true, usage: decodeUsage(envelope.Response.Usage), sawContent: sawContent}
 		}
 		if envelope.Type == "response.incomplete" {
-			return outcome{incomplete: true}
+			return outcome{incomplete: true, sawContent: sawContent}
 		}
 		classification, failed, err := configured.ClassifySSEWithRules(
 			handler.Rules,
@@ -142,7 +213,7 @@ func (handler *Handler) observeStream(source io.Reader, header http.Header, acco
 		)
 		if failed && err == nil {
 			failure, _ := attemptfailure.New(classification)
-			return outcome{failure: failure}
+			return outcome{failure: failure, sawContent: sawContent}
 		}
 	}
 }
@@ -256,6 +327,9 @@ func copyBodyWithHeartbeat(
 ) (error, error) {
 	controller := http.NewResponseController(response)
 	deadline := inferenceapi.NewStreamDeadline(response)
+	// 先武装空闲截止时间：心跳不刷新它，否则上游彻底卡死时这条保护失效。
+	// 首批上游数据到达后会按正常节奏继续刷新。
+	deadline.Refresh()
 	type readResult struct {
 		payload []byte
 		err     error
@@ -287,7 +361,7 @@ func copyBodyWithHeartbeat(
 	// SSE 以行/空行分帧，只有行边界才能写注释；空行（\n\n）才是事件边界。
 	var trailer [2]byte
 	written := 0
-	write := func(payload []byte) error {
+	write := func(payload []byte, refreshDeadline bool) error {
 		if len(payload) == 0 {
 			return nil
 		}
@@ -301,7 +375,11 @@ func copyBodyWithHeartbeat(
 		if err := controller.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 			return err
 		}
-		deadline.Refresh()
+		// 心跳只是给中间层续命，不代表上游还活着：不能刷新空闲截止时间，
+		// 否则 StreamIdleTimeout 对「上游彻底卡死」失效，只剩 60 分钟总兜底。
+		if refreshDeadline {
+			deadline.Refresh()
+		}
 		return nil
 	}
 
@@ -310,7 +388,7 @@ func copyBodyWithHeartbeat(
 	for {
 		select {
 		case result := <-results:
-			if err := write(result.payload); err != nil {
+			if err := write(result.payload, true); err != nil {
 				return nil, err
 			}
 			if errors.Is(result.err, io.EOF) {
@@ -322,7 +400,7 @@ func copyBodyWithHeartbeat(
 			ticker.Reset(heartbeat)
 		case <-ticker.C:
 			if frame := streamHeartbeatFrame(trailer, written); frame != "" {
-				if err := write([]byte(frame)); err != nil {
+				if err := write([]byte(frame), false); err != nil {
 					return nil, err
 				}
 			}

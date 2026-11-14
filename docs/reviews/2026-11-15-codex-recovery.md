@@ -62,3 +62,9 @@ This demonstrates resource return on this startup/metadata/idle-release workload
 - Multi-binding slow/unbound recovery callbacks can hold an attempt until its deadline; callbacks ignoring context cannot be forcibly killed by Go. Bounded worker generations and queue limits remain enforced.
 - Full provider protocol/auth/usage parity, desktop terminal migration, plugins/translation/packaging residual Node ownership, cross-platform real operations and representative memory/performance measurements remain open.
 - No production service restart/deploy, no branch/worktree creation, no peer code rollback. Local checkpoints will list exact paths/commits once reviewed.
+
+## Account-catalog ordered read checkpoint
+
+`636d7b38b` removes the redundant account-index map from the already SQL-ordered full catalog reader, keeps O(1) grouping state, parses account identity once per group, and fails closed on a violated ordering invariant. Probe-only accounts, NULL model rows and the shared transaction for stamp/data remain unchanged.
+
+Real local catalog metadata was copied into an isolated initialized database **without credentials/profile tables**: 41 accounts, 1244 account-model rows, 41 probe rows. The old source was compiled through a Go overlay, not written back to the shared tree. Old/new runs over the same data produced identical complete catalog hash `b25004774efa0f1189f3f9f77c5d1f2a48e8f9e665da03c3dc7dda15f0ba7ea0` (includes model values as well as public JSON). Across 100 reads, allocated bytes were 80,295,880 → 79,973,552; mallocs 3,773,419 → 3,772,705. Elapsed samples varied under concurrent work; no speedup claim. Evidence: `/tmp/aih-catalog-read-current` points to the run directory containing `before-fullhash.json` and `after-repeat.json`. Independent source review, package build and vet passed; no new test cases.

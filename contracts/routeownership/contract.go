@@ -287,6 +287,16 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号额度重置历史：浏览器入口（含 reset-history 别名）由 Go 直接应答。
+				ID:              "webui.account_quota_reset",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/quota-reset-events"),
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/reset-history"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

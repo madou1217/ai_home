@@ -760,6 +760,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},
 		{Pattern: "GET " + webuitoolsettingsapi.Path + "/{appId}/settings", Handler: toolSettings},
 		{Pattern: "GET " + webuiquotaresetapi.Path + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset},
+		// 浏览器数据面：同一处理器（PathValue 取参），保留 Node 的 reset-history 别名。
+		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset},
+		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/reset-history", Handler: quotaReset},
 		{Pattern: "GET " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		{Pattern: "POST " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		// 浏览器数据面：同一处理器 + 前缀重写。

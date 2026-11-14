@@ -184,17 +184,6 @@ func Current() Manifest {
 				}},
 			},
 			{
-				// 唯一仍未迁的 Node 宿主能力：远程工作区 MCP stdio 桥。
-				// plugin-login / zcode 回调 / provider-cli-upgrade 已由 Go 直接应答
-				// （2026-11-14 真机 POST 复核），不再计入 Node 面。
-				ID:              "node.host_runtime_surfaces",
-				ProductionOwner: "node",
-				MigrationState:  "node_exempt",
-				NodeRoutes: []Route{
-					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/internal/remote-tools", Role: "MCP stdio 桥"},
-				},
-			},
-			{
 				// 聊天会话集合与子路径（含 202 + 独立 SSE 流）：Node 原先只是把 Go 的
 				// 管理流中继给浏览器；现在浏览器直接打 Go 的同一处理器。
 				ID:              "webui.chat_sessions_stream",

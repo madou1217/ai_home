@@ -362,21 +362,6 @@
       ]
     },
     {
-      "id": "node.host_runtime_surfaces",
-      "production_owner": "node",
-      "migration_state": "node_exempt",
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/internal/remote-tools",
-          "role": "MCP stdio 桥"
-        }
-      ]
-    },
-    {
       "id": "webui.chat_sessions_stream",
       "production_owner": "go",
       "migration_state": "go_owned",

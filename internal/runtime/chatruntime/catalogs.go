@@ -281,8 +281,13 @@ func (r *ModelCatalogResolver) BuildAccountModelIndex(ctx context.Context) (*Acc
 	var overviews []accountapp.AccountOverview
 	var accountModels accountapp.AccountModelCatalog
 	if r != nil && r.AccountStore != nil {
-		var after accountapp.OverviewQuery
-		var err error
+		// 首页查询也必须带合法 limit：OverviewQuery 的零值 limit=0，会被
+		// ListAccountOverviews 判成 ErrInvalidOverview，纯聊天 composer 目录
+		// 会因此直接 500（账号管理投影无效）。
+		after, queryErr := accountapp.NewOverviewQuery("", accountapp.DefaultOverviewLimit)
+		if queryErr != nil {
+			return nil, queryErr
+		}
 		for {
 			page, pageErr := r.AccountStore.ListAccountOverviews(ctx, after)
 			if pageErr != nil {
@@ -295,11 +300,13 @@ func (r *ModelCatalogResolver) BuildAccountModelIndex(ctx context.Context) (*Acc
 			if len(page) < accountapp.DefaultOverviewLimit {
 				break
 			}
-			after, err = accountapp.NewOverviewQuery(page[len(page)-1].Account().Ref(), accountapp.DefaultOverviewLimit)
-			if err != nil {
+			next, nextErr := accountapp.NewOverviewQuery(page[len(page)-1].Account().Ref(), accountapp.DefaultOverviewLimit)
+			if nextErr != nil {
 				break
 			}
+			after = next
 		}
+		var err error
 		accountModels, err = r.AccountStore.ListAllAccountModels(ctx)
 		if err != nil {
 			return nil, err

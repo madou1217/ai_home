@@ -3,6 +3,7 @@ package sqliteaccount
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -38,6 +39,10 @@ func readNodeCLIAliases(ctx context.Context, aiHomeDir string) map[string]map[st
 		return aliases
 	}
 	defer func() { _ = db.Close() }()
+	// 同一个身份在 Node / Go 两侧可能派生不同的 account_ref（opencode 就是这样）。
+	// go-account-sync 已把它们登记成 nodeRef → goRef 的链接；编号收敛必须沿链接
+	// 走，否则同一个账号在两侧会各拿一个数字别名。
+	links := readNodeAccountLinks(ctx, db)
 	rows, err := db.QueryContext(
 		ctx,
 		`SELECT provider, account_ref, cli_account_id FROM account_cli_aliases`,
@@ -58,14 +63,63 @@ func readNodeCLIAliases(ctx context.Context, aiHomeDir string) map[string]map[st
 		if provider == "" || accountRef == "" || parseErr != nil || id <= 0 {
 			continue
 		}
-		byRef, ok := aliases[provider]
-		if !ok {
-			byRef = make(map[string]int64)
-			aliases[provider] = byRef
+		assignNodeCLIAlias(aliases, provider, accountRef, id)
+		if goRef := strings.TrimSpace(links[accountRef]); goRef != "" && goRef != accountRef {
+			assignNodeCLIAlias(aliases, provider, goRef, id)
 		}
-		byRef[accountRef] = id
 	}
 	return aliases
+}
+
+// readNodeAccountLinks 读取 go-account-sync 的 nodeRef → goRef 链接。
+//
+// 链接表在 app-state.db 的 app_kv 里；缺失或损坏时返回空映射，编号收敛退化为
+// 只按同 ref 匹配，不影响账号库打开。
+func readNodeAccountLinks(ctx context.Context, db *sql.DB) map[string]string {
+	links := make(map[string]string)
+	var raw string
+	err := db.QueryRowContext(
+		ctx,
+		`SELECT value FROM app_kv WHERE key = 'go-account-sync:state'`,
+	).Scan(&raw)
+	if err != nil {
+		return links
+	}
+	var state struct {
+		Links map[string]struct {
+			GoRef string `json:"goRef"`
+		} `json:"links"`
+	}
+	if jsonErr := json.Unmarshal([]byte(raw), &state); jsonErr != nil {
+		return links
+	}
+	for nodeRef, link := range state.Links {
+		nodeRef = strings.TrimSpace(nodeRef)
+		goRef := strings.TrimSpace(link.GoRef)
+		if nodeRef != "" && goRef != "" {
+			links[nodeRef] = goRef
+		}
+	}
+	return links
+}
+
+// assignNodeCLIAlias 写入一个 ref 的别名；同一 Go ref 被多个 Node 记录链接时
+// 取最小的编号（即最早分配的那个），结果与遍历顺序无关。
+func assignNodeCLIAlias(
+	aliases map[string]map[string]int64,
+	provider string,
+	accountRef string,
+	id int64,
+) {
+	byRef, ok := aliases[provider]
+	if !ok {
+		byRef = make(map[string]int64)
+		aliases[provider] = byRef
+	}
+	if existing, exists := byRef[accountRef]; exists && existing <= id {
+		return
+	}
+	byRef[accountRef] = id
 }
 
 // reconcileNodeCLIAliases 把所有已知账号的 cli_account_id 收敛到 Node 台账编号。

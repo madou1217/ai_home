@@ -101,6 +101,9 @@ import (
 type webuiRoute struct {
 	Pattern string
 	Handler http.Handler
+	// SkipPublicAlias 表示该管理路由的 /v0 公开入口由专门的分发器承接，
+	// router 不再自动生成同构别名（通常是模式会与其它公开路由冲突）。
+	SkipPublicAlias bool
 }
 
 // webuiRouteDependencies 是 WebUI 路由装配的全部输入。
@@ -799,10 +802,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},
 		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},
 		{Pattern: "GET " + webuitoolsettingsapi.Path + "/{appId}/settings", Handler: toolSettings},
-		{Pattern: "GET " + webuiquotaresetapi.Path + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset},
-		// 浏览器数据面：同一处理器（PathValue 取参），保留 Node 的 reset-history 别名。
-		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset},
-		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/reset-history", Handler: quotaReset},
+		// 公开入口（quota-reset-events / reset-history）与 activity jobs 的模式
+		// 互不更具体，统一交给 publicAccountsDispatcher；这里关闭自动别名，
+		// 避免 ServeMux 启动期 panic。
+		{Pattern: "GET " + webuiquotaresetapi.Path + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset, SkipPublicAlias: true},
+		{Pattern: "GET " + publicAccountsPrefix + "/", Handler: newPublicAccountsDispatcher(quotaReset, accountActivity)},
 		{Pattern: "GET " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		{Pattern: "POST " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		// 浏览器数据面：同一处理器 + 前缀重写。

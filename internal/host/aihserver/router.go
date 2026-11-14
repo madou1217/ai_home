@@ -462,6 +462,9 @@ func mountPublicManagementAliases(mux *http.ServeMux, routes []webuiRoute) {
 		reserved[route.Pattern] = struct{}{}
 	}
 	for _, route := range routes {
+		if route.SkipPublicAlias {
+			continue
+		}
 		alias, ok := publicAliasPattern(route.Pattern)
 		if !ok {
 			continue

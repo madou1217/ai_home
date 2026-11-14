@@ -29,7 +29,7 @@ export default function TranslationProviderSettings({ providers, drafts, saving,
           <span className={styles.savedHint}>{provider.metadata.accessLabel}</span>
         </div>
         <span className={styles.savedHint}>{provider.metadata.accessDescription}</span>
-        <span className={styles.savedHint}>支持：{provider.operations.join(' / ')}{provider.capabilities.streaming ? ' · 流式输出' : ' · 完整结果'}</span>
+        <span className={styles.savedHint}>支持：{(provider.capabilities.operations || []).join(' / ')}{provider.capabilities.streaming ? ' · 流式输出' : ' · 完整结果'}</span>
         {missingFields.length ? <span className={styles.providerMissingFields} role="status">待补充：{missingFields.join('、')}</span> : null}
         {!provider.executable ? <span className={styles.providerMissingFields} role="status">当前环境无法执行此引擎</span> : null}
         {fields.length ? <div className={styles.providerFields}>

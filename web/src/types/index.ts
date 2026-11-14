@@ -4140,8 +4140,13 @@ export interface TranslationProviderField {
 export interface TranslationProviderOption {
   id: string;
   label: string;
-  operations: TranslationRoutePreference['operations'];
-  capabilities: { streaming?: boolean; detection?: boolean; glossary?: boolean; formality?: boolean };
+  capabilities: {
+    operations: TranslationRoutePreference['operations'];
+    streaming?: boolean;
+    detection?: boolean;
+    glossary?: boolean;
+    formality?: boolean;
+  };
   auth: { modes: string[]; required: boolean; fields: string[] };
   config: {
     fields: string[];

@@ -144,6 +144,7 @@ func (animation *lsAnimation) run() error {
 	for {
 		select {
 		case <-animation.ctx.Done():
+			animation.render(true)
 			return nil
 		case <-signals:
 			return nil

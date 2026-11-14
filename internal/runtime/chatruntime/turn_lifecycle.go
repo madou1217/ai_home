@@ -431,10 +431,35 @@ func (t *TurnLifecycle) WaitForIdle(ctx context.Context) error {
 	}
 }
 
+// turnWatcherShutdownTimeout 限制关闭时等待 watcher 的时长。
+// 活动 CLI 进程异常或底层驱动无响应时，watcher 可能永远等不到 Done；
+// 服务关闭不能因此无限挂起。
+const turnWatcherShutdownTimeout = 5 * time.Second
+
 // WaitWatchers 等待所有异步 watcher 退出（用于清理关闭）。
 func (t *TurnLifecycle) WaitWatchers() {
-	if t != nil {
+	t.WaitWatchersTimeout(turnWatcherShutdownTimeout)
+}
+
+// WaitWatchersTimeout 在给定时长内等待 watcher 退出；超时返回 false。
+// 超时后 watcher 仍可能存活，但调用方可以在关闭路径上继续，避免进程挂死。
+func (t *TurnLifecycle) WaitWatchersTimeout(timeout time.Duration) bool {
+	if t == nil {
+		return true
+	}
+	if timeout <= 0 {
+		timeout = turnWatcherShutdownTimeout
+	}
+	done := make(chan struct{})
+	go func() {
 		t.watchWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 

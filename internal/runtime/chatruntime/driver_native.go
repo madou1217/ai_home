@@ -930,6 +930,22 @@ type nativeActiveRun struct {
 	runID  string
 	handle *NativeRunHandle
 	done   chan ProviderRunResult
+	// ready 在首个 attempt 的进程启动并完成控制面注册后关闭。
+	// StartTurn 等待它，保证「运行对 ListActiveRuns 可见」时句柄已经可写/可 resize。
+	ready     chan struct{}
+	readyOnce sync.Once
+}
+
+// markReady 关闭 ready；重复调用安全，Start 失败路径也必须调用，避免提交方永久等待。
+func (act *nativeActiveRun) markReady() {
+	if act == nil {
+		return
+	}
+	act.readyOnce.Do(func() {
+		if act.ready != nil {
+			close(act.ready)
+		}
+	})
 }
 
 // NewNativeSessionDriver 创建原生 CLI 会话驱动。
@@ -1250,12 +1266,20 @@ func (d *NativeSessionDriver) StartTurn(ctx context.Context, tc DriverTurnContex
 		turnID: tc.TurnID,
 		runID:  tc.RunID,
 		done:   make(chan ProviderRunResult, 1),
+		ready:  make(chan struct{}),
 	}
 	d.mu.Lock()
 	d.active = act
 	d.mu.Unlock()
 
 	go d.executeWithRetries(ctx, act, tc, sess, prompt, imagePaths, model, approvalMode, isSlash, accounts)
+	// 等到首帧进程真正启动并注册后再返回，避免出现「ListActiveRuns 已列出、
+	// ResizeRun/WriteRunInput 却报 run_not_found」的可见性窗口。
+	// ctx 取消时不继续等：驱动会按 ctx 终止启动，结算走原有失败路径。
+	select {
+	case <-act.ready:
+	case <-ctx.Done():
+	}
 
 	return &ProviderRun{
 		NativeTurnID: tc.RunID,
@@ -1394,13 +1418,22 @@ func (d *NativeSessionDriver) executeWithRetries(
 			Slash:           isSlash,
 		})
 		if err != nil {
+			act.markReady()
 			completeTerminalItem("failed")
 			act.done <- ProviderRunResult{Err: err}
 			return
 		}
 		d.mu.Lock()
 		act.handle = handle
+		disposed := d.disposed
 		d.mu.Unlock()
+		if disposed {
+			// Dispose 早于 Start 返回时，abort 发生时还没有句柄可终止。
+			// 这里补上「句柄迟到」的终止，否则进程会挂到服务关闭之后。
+			if handle.Abort != nil {
+				_ = handle.Abort()
+			}
+		}
 
 		registeredID := ""
 		if d.opts.OnRunRegistered != nil {
@@ -1434,6 +1467,7 @@ func (d *NativeSessionDriver) executeWithRetries(
 				GetContentSnapshot: getSnapshot,
 			})
 		}
+		act.markReady()
 		unregisterAttempt := func() {
 			if registeredID != "" && d.opts.OnRunUnregistered != nil {
 				d.opts.OnRunUnregistered(registeredID)

@@ -37,10 +37,23 @@ Evidence root: `/tmp/aih-reconnect-live-20261115-dxYE3k`.
 | Release during backoff | Returns disconnected while precisely unbinding; no child/recovery owner remains. |
 | Full Go Service + official CLI, OS deny-all network | Initially found transient-event persistence bug; after repair a missing isolated env-key produces `stream.error` plus durable `turn.failed`, state idle, activeTurn=nil in 194 ms. SQLite contains exactly one `turn.failed`, no persisted `stream.error`. |
 | Network-denied CLI retry then explicit interrupt | Actual upstream CLI emitted retryable waiting-for-network notices, not a false failed/success result. Explicit turn interrupt reached idle/no activeTurn in 2055 ms. |
+| Full Go Service, kill active official CLI | Durable thread resumed with interrupted status, history imported, actor settled idle/no activeTurn in 1790 ms; SQLite contains `turn.interrupted`, without reissuing the turn. |
 
 Final event error evidence: `driver-missing-key-race.jsonl` and `driver-real-error-1794678137011/app-state.db`. It contains only isolated configuration; do not commit runtime databases. The CLI had no credentials and was OS network-blocked; no model inference could occur. Earlier no-keyless-provider runs waited for network and timed out as observed; they are not counted as successful error completion.
 
 `go build -mod=readonly ./...`, focused `go vet`, Windows/Linux package cross-builds, whitespace checks and race-instrumented live driver commands passed. Latest retry run recovered in 1785 ms after two actual restore callbacks. Source review cleared the bounded scope. Code checkpoint: `f7cc34649` (11 explicit paths, staged scope checked before and commit scope after; no push/deploy by this session).
+
+## Actual resource lifecycle measurement
+
+A non-race temporary driver used the real exported Go client/pool and official app-server for **100 distinct runtime scopes**, requesting native loaded-list and releasing each final lease. Samples explicitly forced GC; no inference was issued. Each sampled checkpoint and final close had **0 child processes, 1 driver goroutine, 6 open FDs**.
+
+| Measurement | Before | After 100 cycles | After pool close |
+| --- | ---: | ---: | ---: |
+| Go live heap | 2,584,384 B | 2,717,608 B | 2,658,376 B |
+| Driver RSS | 17,280 KiB | 19,312 KiB | 19,232 KiB |
+| Cumulative allocated bytes | 5,278,064 B | 18,117,912 B | 18,230,856 B |
+
+This demonstrates resource return on this startup/metadata/idle-release workload, not global memory optimality or inference-stream throughput. RSS is driver-only sampled after subprocess cleanup; it excludes peak simultaneous child memory. Per-cycle timing included an explicit 50 ms post-release observation delay, so it is not reported as latency benchmark. Evidence: `/tmp/aih-runtime-memory-20261115-Sz4jY4/measurements-100.jsonl`. Full-service recovered interruption evidence: `/tmp/aih-reconnect-live-20261115-dxYE3k/driver-recovered-interrupted-race.jsonl`, with its isolated database under `driver-real-error-1794679085082`.
 
 ## Remaining verification and migration scope
 

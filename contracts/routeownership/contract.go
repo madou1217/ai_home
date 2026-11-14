@@ -387,6 +387,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号实时通道（SSE）：浏览器入口由 Go 直接应答，Node 事件经 publish 注入。
+				ID:              "webui.accounts_watch",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/watch"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

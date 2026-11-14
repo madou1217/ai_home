@@ -747,6 +747,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
+		// 浏览器实时通道：/v0/webui/accounts/watch 由 Go 直接应答（SSE）。
+		{Pattern: "GET /v0/webui/accounts/watch", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountLive)},
 		{Pattern: "POST " + webuiaccountliveapi.SnapshotPath, Handler: accountLive},
 		// 宿主注入实时事件（token-consumed / account-activity）到同一条 watch 流。
 		{Pattern: "POST " + webuiaccountliveapi.PublishPath, Handler: accountLive},

@@ -535,6 +535,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 宿主应用可用性（app-entries）：浏览器入口由 Go 探测，字段与 Node 一致。
+				ID:              "webui.app_entries",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/app-entries"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

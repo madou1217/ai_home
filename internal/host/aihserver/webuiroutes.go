@@ -908,6 +908,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisessioneventsapi.Path, Handler: sessionEvents},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
 		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
+		// 浏览器入口：宿主应用可用性由 Go 探测（字段与 Node 一致）。
+		{Pattern: "GET /v0/webui/app-entries", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", appEntries)},
+
 		{Pattern: "POST " + webuiopenappapi.Path + webuiopenappapi.OpenAppSuffix, Handler: openApp},
 		{Pattern: "GET " + webuitoolkitenvapi.Path, Handler: toolkitEnvironmentActions},
 		{Pattern: "GET " + webuitoolkitenvapi.GuidePath, Handler: toolkitEnvironmentActions},

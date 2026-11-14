@@ -216,6 +216,483 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 聊天附件取回：浏览器入口由 Go 直接应答（Node 原先只做流式中继）。
+				ID:              "webui.chat_attachments",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/chat/attachments"),
+				},
+			},
+			{
+				// 聊天产物下载：浏览器入口由 Go 直接应答。
+				ID:              "webui.chat_artifacts",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/chat/artifacts/{artifactId}"),
+				},
+			},
+			{
+				ID:              "node.webui_image_studio",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/studio/image/models"),
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/studio/image/sessions"),
+					httpRoute([]string{"DELETE", "GET", "PATCH"}, "/v0/webui/studio/image/sessions/{sessionId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/studio/image/sessions/{sessionId}/runs"),
+					httpRoute([]string{"GET"}, "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"),
+				},
+				NodeRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/studio/image/models"),
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/studio/image/sessions"),
+					httpRoute([]string{"DELETE", "GET", "PATCH"}, "/v0/webui/studio/image/sessions/{sessionId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/studio/image/sessions/{sessionId}/runs"),
+					httpRoute([]string{"GET"}, "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"),
+				},
+			},
+			{
+				// AI 翻译页：浏览器数据面已由 Go 的同一处理器接住（前缀重写）。
+				ID:              "webui.translation_studio",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/translation/settings"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/settings"),
+					httpRoute([]string{"GET"}, "/v0/webui/translation/providers"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/providers"),
+					httpRoute([]string{"GET"}, "/v0/webui/translation/languages"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/detect"),
+					httpRoute([]string{"GET"}, "/v0/webui/translation/models"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/stream"),
+				},
+			},
+			{
+				// 路由权重诊断：浏览器入口由 Go 直接应答。
+				ID:              "webui.routing_weights",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/routing/weights"),
+				},
+			},
+			{
+				// 账号结果汇总：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_outcomes",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/account-outcomes"),
+				},
+			},
+			{
+				// 账号别名池读写：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_alias_pool",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/alias-pool"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/alias-pool"),
+				},
+			},
+			{
+				// 账号配置文件只读查看：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_config_files",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/config-files"),
+				},
+			},
+			{
+				// 账号模型上下文窗口读写：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_model_context",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/model-context"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/model-context"),
+					httpRoute([]string{"DELETE"}, "/v0/webui/accounts/{provider}/{accountRef}/model-context"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/model-context/bulk"),
+				},
+			},
+			{
+				// 聊天粘贴设置：浏览器入口由 Go 直接应答。
+				ID:              "webui.chat_paste_settings",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/chat/paste-settings"),
+					httpRoute([]string{"POST"}, "/v0/webui/chat/paste-settings"),
+				},
+			},
+			{
+				// 账号额度重置历史：浏览器入口（含 reset-history 别名）由 Go 直接应答。
+				ID:              "webui.account_quota_reset",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/quota-reset-events"),
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/reset-history"),
+				},
+			},
+			{
+				// 项目目录树：浏览器入口由 Go 直接应答。
+				ID:              "webui.fs_tree",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/fs/tree"),
+				},
+			},
+			{
+				// Git 只读摘要与差异：浏览器入口由 Go 直接应答。
+				ID:              "webui.git_read",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/git/summary"),
+					httpRoute([]string{"GET"}, "/v0/webui/git/diff"),
+				},
+			},
+			{
+				// 项目目录与工作区项目视图：浏览器入口由 Go 直接应答。
+				ID:              "webui.projects",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/projects"),
+					httpRoute([]string{"GET"}, "/v0/webui/projects/sessions"),
+					httpRoute([]string{"GET"}, "/v0/webui/projects/watch"),
+					httpRoute([]string{"POST"}, "/v0/webui/projects/snapshot"),
+				},
+			},
+			{
+				// 会话读取与生命周期（列表/归档/恢复）：浏览器入口由 Go 直接应答。
+				ID:              "webui.sessions",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/{provider}/{accountRef}"),
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/lifecycle-capabilities"),
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/archived"),
+					httpRoute([]string{"POST"}, "/v0/webui/sessions/archive"),
+					httpRoute([]string{"POST"}, "/v0/webui/sessions/unarchive"),
+				},
+			},
+			{
+				// 上游错误映射组：浏览器入口由 Go 直接应答。
+				ID:              "webui.upstream_error_mappings",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/upstream-error-mappings"),
+					httpRoute([]string{"GET", "PUT", "DELETE"}, "/v0/webui/upstream-error-mappings/{id}"),
+					httpRoute([]string{"POST"}, "/v0/webui/upstream-error-mappings/{id}/toggle"),
+				},
+			},
+			{
+				// 模型别名：浏览器入口由 Go 直接应答（集合/成员/targets/replace/enabled/toggle）。
+				ID:              "webui.model_aliases",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/model-aliases"),
+					httpRoute([]string{"PUT", "DELETE"}, "/v0/webui/model-aliases/{id}"),
+					httpRoute([]string{"GET"}, "/v0/webui/model-aliases/targets"),
+					httpRoute([]string{"POST"}, "/v0/webui/model-aliases/replace"),
+					httpRoute([]string{"POST"}, "/v0/webui/model-aliases/{id}/enabled"),
+					httpRoute([]string{"POST"}, "/v0/webui/model-aliases/{id}/toggle"),
+				},
+			},
+			{
+				// 应用安装：浏览器入口由 Go 直接应答。
+				ID:              "webui.app_install",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/app-install"),
+					httpRoute([]string{"GET"}, "/v0/webui/app-install/jobs"),
+					httpRoute([]string{"GET"}, "/v0/webui/app-install/jobs/{jobId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/app-install/jobs/{jobId}/cancel"),
+				},
+			},
+			{
+				// 插件 provider hook 回环入口：由 Go 的 webuiauth 门承接。
+				ID:              "webui.session_provider_hook",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/session-events/provider-hook"),
+				},
+			},
+			{
+				// 账号实时通道（SSE）：浏览器入口由 Go 直接应答，Node 事件经 publish 注入。
+				ID:              "webui.accounts_watch",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/watch"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/watch/snapshot"),
+				},
+			},
+			{
+				// 账号列表（全量，浏览器入口）：由 Go 的实时列表直接应答。
+				ID:              "webui.accounts_list",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts"),
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/live"),
+				},
+			},
+			{
+				// 本机账号发现：浏览器入口由 Go 直接应答。
+				ID:              "webui.accounts_detect",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/detect"),
+				},
+			},
+			{
+				// 工具链镜像 / 代理 / 连通性：浏览器入口由 Go 直接应答。
+				ID:              "webui.toolkit_settings",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/mirrors"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/mirrors/set"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/mirrors/ping"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/proxy"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/proxy/set"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/connectivity"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/tools"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/apps"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/install"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/plan"),
+					httpRoute([]string{"POST"}, "/v0/webui/toolkit/apps/hooks"),
+					httpRoute([]string{"GET", "PUT"}, "/v0/webui/toolkit/apps/{appId}/config"),
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/toolkit/tools/{toolId}/service"),
+					httpRoute([]string{"PUT"}, "/v0/webui/toolkit/tools/{toolId}/service/settings"),
+				},
+			},
+			{
+				// 账号出口池运行时与分配：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_egress",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/egress-runtime"),
+					httpRoute([]string{"PUT"}, "/v0/webui/accounts/{provider}/{accountRef}/egress-assignment"),
+				},
+			},
+			{
+				// 账号窗口激活设置与状态：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_window_activation",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/window-activation"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/window-activation"),
+				},
+			},
+			{
+				// 账号导入作业：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_import",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/import"),
+				},
+			},
+			{
+				// 账号授权作业快照：新公开前缀（避开 accounts/{provider}/{accountRef} 冲突）。
+				ID:              "webui.account_jobs",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/account-jobs/{jobId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/cancel"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/callback"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/install"),
+					httpRoute([]string{"POST"}, "/v0/webui/account-jobs/{jobId}/local-import"),
+				},
+			},
+			{
+				// 账号编辑：浏览器入口由 Go 直接应答（ref 先经链接表翻译）。
+				ID:              "webui.account_update",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/update"),
+				},
+			},
+			{
+				// 账号删除：浏览器旧路径（POST 无后缀）由 Go 承接，ref 先翻译。
+				ID:              "webui.account_delete",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}"),
+				},
+			},
+			{
+				// 账号重新认证：浏览器入口由 Go 承接，ref 先翻译。
+				ID:              "webui.account_reauth",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/reauth"),
+				},
+			},
+			{
+				// 账号用量对拍调试入口（必须带 ?source=go）。
+				ID:              "webui.account_token_usage",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/token-usage"),
+				},
+			},
+			{
+				// 新增账号：浏览器入口由 Go 分流（OAuth 作业 / 静态入库）。
+				ID:              "webui.account_add",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/add"),
+				},
+			},
+			{
+				// 账号刷新（模型/状态/额度）与仅额度刷新：浏览器入口由 Go 承接，ref 先翻译。
+				ID:              "webui.account_refresh",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/refresh"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/refresh-usage"),
+				},
+			},
+			{
+				// 宿主应用可用性（app-entries）：浏览器入口由 Go 探测，字段与 Node 一致。
+				ID:              "webui.app_entries",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/app-entries"),
+				},
+			},
+			{
+				// 出口池 / 池组 / 节点：浏览器入口由 Go 直接应答（路径同构）。
+				ID:              "webui.egress_pools",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"*"}, "/v0/webui/egress-pool"),
+					httpRoute([]string{"*"}, "/v0/webui/egress-pools"),
+					httpRoute([]string{"*"}, "/v0/webui/egress-pool-groups"),
+				},
+			},
+			{
+				// GeoIP 资源与任务：浏览器入口由 Go 直接应答。
+				ID:              "webui.geo_resources",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/geo-resources"),
+				},
+			},
+			{
+				// peer 消息与 watch：浏览器入口由 Go 直接应答。
+				ID:              "webui.peer_messages",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/peer/messages"),
+				},
+			},
+			{
+				// 计划任务（列表/预览/记录/动作）：浏览器入口由 Go 直接应答。
+				ID:              "webui.scheduled_tasks",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/scheduled-tasks"),
+					httpRoute([]string{"POST"}, "/v0/webui/scheduled-tasks/preview"),
+				},
+			},
+			{
+				// 工作区文件读/信任：浏览器 fs/* 映射到 workspace/fs/*。
+				ID:              "webui.workspace_fs",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/fs/access"),
+					httpRoute([]string{"GET"}, "/v0/webui/fs/read"),
+					httpRoute([]string{"GET"}, "/v0/webui/fs/media"),
+					httpRoute([]string{"POST"}, "/v0/webui/fs/trust"),
+				},
+			},
+			{
+				// 工作区模型目录：浏览器 /v0/webui/models 映射到 workspace/models。
+				ID:              "webui.workspace_models",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/models"),
+				},
+			},
+			{
+				// 服务配置 / 控制面 / 模型目录 / provider hooks / 账号导出与授权来源：
+				// 浏览器入口由 Go 直接应答（与管理路径同构）。
+				ID:              "webui.control_plane_surfaces",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/export"),
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/provider-auth-sources"),
+				},
+			},
+			{
+				// 本机审批桥 ingress（回环专用）。
+				ID:              "webui.internal_approval",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/internal/approval-request"),
+				},
+			},
+			{
+				// 账号活动参数与本机登录态导入：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_activity_params",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/activity/params"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/local-import"),
+				},
+			},
+			{
+				// 账号级上游错误规则只读视图：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_error_rules",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/account-upstream-error-rules"),
+				},
+			},
+			{
+				// 聊天会话 CRUD：浏览器入口由 Go 直接应答。
+				ID:              "webui.chat_sessions",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/chat-sessions"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

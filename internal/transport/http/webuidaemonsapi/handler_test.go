@@ -11,6 +11,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/retention"
+	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"github.com/madou1217/ai_home/internal/runtime/usagedaemons"
 )
 
@@ -53,6 +54,11 @@ func (c *stubController) Status(context.Context) StatusReport {
 		ProviderRefresh: &usagedaemons.ProviderRefreshState{
 			Running: true,
 			Enabled: true,
+		},
+		TokenRefresh: &tokenrefreshdaemon.DaemonState{
+			Running:        true,
+			Enabled:        true,
+			RefreshedCount: 3,
 		},
 	}
 }
@@ -118,7 +124,7 @@ func TestHandlerAuthMethodStatusAndTrigger(t *testing.T) {
 	if err := json.Unmarshal(recStatus.Body.Bytes(), &statusBody); err != nil {
 		t.Fatal(err)
 	}
-	if !statusBody.OK || statusBody.Status.Peer == nil || statusBody.Status.Peer.TickCount != 7 {
+	if !statusBody.OK || statusBody.Status.Peer == nil || statusBody.Status.Peer.TickCount != 7 || statusBody.Status.TokenRefresh == nil || statusBody.Status.TokenRefresh.RefreshedCount != 3 {
 		t.Fatalf("unexpected status body: %+v", statusBody)
 	}
 
@@ -156,5 +162,34 @@ func TestHandlerAuthMethodStatusAndTrigger(t *testing.T) {
 	h.ServeHTTP(recDup, reqDup)
 	if recDup.Code != http.StatusBadRequest {
 		t.Fatalf("POST unknown JSON field = %d, want 400", recDup.Code)
+	}
+}
+
+func TestNormalizeTargetTokenRefreshAliasesAndTrigger(t *testing.T) {
+	t.Parallel()
+
+	for _, raw := range []string{"token-refresh", "token_refresh", "tokenrefresh", "refresh", " TOKEN_REFRESH "} {
+		got, err := NormalizeTarget(raw)
+		if err != nil || got != "token-refresh" {
+			t.Fatalf("NormalizeTarget(%q) = (%q, %v), want (%q, nil)", raw, got, err, "token-refresh")
+		}
+	}
+
+	ctrl := &stubController{}
+	h, err := NewHandler(Dependencies{
+		Authorizer: stubAuthorizer{allow: true},
+		Controller: ctrl,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	for _, alias := range []string{"token-refresh", "token_refresh", "tokenrefresh", "refresh"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, TriggerPath, strings.NewReader(`{"daemon":"`+alias+`","provider":"codex"}`))
+		req.Header.Set("Authorization", "Bearer ok-token")
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"target":"token-refresh"`) {
+			t.Fatalf("POST %q trigger = %d %s", alias, rec.Code, rec.Body.String())
+		}
 	}
 }

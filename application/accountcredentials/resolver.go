@@ -342,6 +342,41 @@ func (resolver *Resolver) ResolveCredentialBinding(
 	return resolution.snapshot.Binding(), nil
 }
 
+// RefreshCandidate 汇总账号当前凭据的可刷新性、Access Token 过期时间与宿主委托状态（只读）。
+type RefreshCandidate struct {
+	Snapshot    accountapp.CredentialSnapshot
+	ExpiresAt   time.Time
+	Refreshable bool
+	Delegated   bool
+}
+
+// InspectRefreshCandidate 读取最新凭据快照并评估所属策略的过期时间与委托状态，不发起网络刷新。
+func (resolver *Resolver) InspectRefreshCandidate(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) (RefreshCandidate, error) {
+	if resolver == nil ||
+		resolver.store == nil ||
+		ctx == nil ||
+		!accountRef.IsValid() {
+		return RefreshCandidate{}, ErrInvalidResolveRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return RefreshCandidate{}, err
+	}
+	snapshot, strategy, _, err := resolver.readResolutionState(ctx, accountRef)
+	if err != nil {
+		return RefreshCandidate{}, err
+	}
+	expiresAt, refreshable := strategy.ExpiresAt(snapshot.Credential())
+	return RefreshCandidate{
+		Snapshot:    snapshot,
+		ExpiresAt:   expiresAt,
+		Refreshable: refreshable,
+		Delegated:   resolver.delegatesRefresh(accountRef, strategy),
+	}, nil
+}
+
 // ForceRefreshCredentialBinding 在上游明确拒绝当前 OAuth 后强制刷新并返回新绑定。
 //
 // 它只服务常驻 Provider Runtime 的 401 恢复；普通启动和路由仍使用 Resolve 的

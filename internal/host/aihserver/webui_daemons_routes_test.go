@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/usagedaemons"
@@ -120,7 +122,7 @@ func TestBuildWebUIDaemonsRoutesContractAndAuth(t *testing.T) {
 	if err := json.Unmarshal(recOK.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if !payload.OK || payload.Status.Peer == nil || payload.Status.Retention == nil || payload.Status.QuotaProbe == nil || payload.Status.UsageScan == nil || payload.Status.ProviderRefresh == nil {
+	if !payload.OK || payload.Status.Peer == nil || payload.Status.Retention == nil || payload.Status.QuotaProbe == nil || payload.Status.UsageScan == nil || payload.Status.ProviderRefresh == nil || payload.Status.TokenRefresh == nil {
 		t.Fatalf("incomplete status report: %+v", payload.Status)
 	}
 }
@@ -347,5 +349,210 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 	}
 	if reconciledRef != activeRef {
 		t.Fatalf("reconciled account_ref = %q, want %q", reconciledRef, activeRef)
+	}
+}
+
+type testDaemonAgyStrategy struct {
+	mu     sync.Mutex
+	calls  int
+	onCall func()
+}
+
+func (*testDaemonAgyStrategy) ProviderID() string { return agy.ProviderID }
+
+func (*testDaemonAgyStrategy) ExpiresAt(cred accountapp.Credential) (time.Time, bool) {
+	auth, ok := cred.(*agy.OAuthAuth)
+	if !ok || auth == nil {
+		return time.Time{}, false
+	}
+	return time.UnixMilli(auth.ExpiresAtMS()).UTC(), true
+}
+
+func (s *testDaemonAgyStrategy) Refresh(_ context.Context, cred accountapp.Credential, refreshedAt time.Time) (accountapp.Credential, error) {
+	s.mu.Lock()
+	s.calls++
+	if s.onCall != nil {
+		s.onCall()
+	}
+	s.mu.Unlock()
+	auth := cred.(*agy.OAuthAuth)
+	return agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         auth.Email(),
+		AccessToken:   "refreshed-daemon-access",
+		RefreshToken:  "refreshed-daemon-refresh",
+		ExpiresAtMS:   refreshedAt.Add(2 * time.Hour).UnixMilli(),
+		RefreshedAtMS: refreshedAt.UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+	})
+}
+
+func TestBuildWebUIDaemonsRoutesTokenRefreshTriggerAndDelegation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	aiHome := t.TempDir()
+	now := time.UnixMilli(1_750_000_000_000).UTC()
+	nowFn := func() time.Time { return now }
+
+	store, err := sqliteaccount.Open(ctx, sqliteaccount.OpenOptions{
+		AIHomeDir: aiHome,
+		Catalog:   catalog,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	registrar, err := accountapp.NewRegistrar(catalog, store, nowFn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := agy.NewOAuthAuth(agy.OAuthInput{
+		Email:         "token-daemon-route@example.com",
+		AccessToken:   "old-daemon-access",
+		RefreshToken:  "old-daemon-refresh",
+		ExpiresAtMS:   now.Add(5 * time.Minute).UnixMilli(),
+		RefreshedAtMS: now.Add(-time.Hour).UnixMilli(),
+		TokenType:     "Bearer",
+		AuthMethod:    agy.AuthMethodConsumer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc, err := registrar.Register(ctx, auth, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountRuntime, err := inmemory.New(nowFn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	strategy := &testDaemonAgyStrategy{}
+	resolver, err := accountcredentials.NewResolver(accountcredentials.Dependencies{
+		Store:      store,
+		Strategies: []accountcredentials.RefreshStrategy{strategy},
+		Clock:      nowFn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	longDelay := time.Hour
+	zeroDelay := time.Duration(0)
+	rt, err := startBackgroundDaemonsWithPorts(ctx, webuiRouteDependencies{
+		Authorizer:     testDaemonsAuthorizer{},
+		AIHomeDir:      aiHome,
+		Catalog:        catalog,
+		Store:          store,
+		AccountRuntime: accountRuntime,
+	}, webuiDaemonsPorts{
+		Now:                     nowFn,
+		DisablePricingSync:      true,
+		UsageScanStartDelay:     &zeroDelay,
+		TokenRefreshStartDelay:  &longDelay,
+		TokenRefreshInterval:    time.Hour,
+		TokenRefreshConcurrency: 2,
+		CredentialResolver:      resolver,
+	})
+	if err != nil {
+		t.Fatalf("startBackgroundDaemonsWithPorts() error = %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	routes, err := buildWebUIDaemonsRoutesWithPorts(webuiRouteDependencies{
+		Authorizer: testDaemonsAuthorizer{},
+		AIHomeDir:  aiHome,
+	}, webuiDaemonsPorts{Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	for _, route := range routes {
+		mux.Handle(route.Pattern, route.Handler)
+	}
+
+	// 验证 Status 包含 TokenRefresh Running=true
+	statusReq := httptest.NewRequest(http.MethodGet, webuidaemonsapi.StatusPath, nil)
+	statusReq.Header.Set("Authorization", "Bearer daemon-secret")
+	statusRec := httptest.NewRecorder()
+	mux.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d %s", statusRec.Code, statusRec.Body.String())
+	}
+	var statusResp struct {
+		OK     bool                         `json:"ok"`
+		Status webuidaemonsapi.StatusReport `json:"status"`
+	}
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusResp); err != nil {
+		t.Fatal(err)
+	}
+	if statusResp.Status.TokenRefresh == nil || !statusResp.Status.TokenRefresh.Running || statusResp.Status.TokenRefresh.Delegated {
+		t.Fatalf("unexpected initial tokenRefresh status: %+v", statusResp.Status.TokenRefresh)
+	}
+
+	// 验证 Trigger token_refresh 完成主动刷新与 DB 写回
+	trigReq := httptest.NewRequest(http.MethodPost, webuidaemonsapi.TriggerPath, strings.NewReader(`{"daemon":"token_refresh","provider":"agy"}`))
+	trigReq.Header.Set("Authorization", "Bearer daemon-secret")
+	trigRec := httptest.NewRecorder()
+	mux.ServeHTTP(trigRec, trigReq)
+	if trigRec.Code != http.StatusOK {
+		t.Fatalf("POST trigger = %d %s", trigRec.Code, trigRec.Body.String())
+	}
+	var trigResp struct {
+		OK      bool                         `json:"ok"`
+		Target  string                       `json:"target"`
+		Results map[string]json.RawMessage   `json:"results"`
+		Status  webuidaemonsapi.StatusReport `json:"status"`
+	}
+	if err := json.Unmarshal(trigRec.Body.Bytes(), &trigResp); err != nil {
+		t.Fatal(err)
+	}
+	if !trigResp.OK || trigResp.Target != "token-refresh" || trigResp.Status.TokenRefresh == nil || trigResp.Status.TokenRefresh.RefreshedCount != 1 {
+		t.Fatalf("unexpected trigger response: target=%q body=%s", trigResp.Target, trigRec.Body.String())
+	}
+	updatedCred, err := store.GetCredential(ctx, acc.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedCred.(*agy.OAuthAuth).AccessToken() != "refreshed-daemon-access" {
+		t.Fatalf("SQLite credential not refreshed: %q", updatedCred.(*agy.OAuthAuth).AccessToken())
+	}
+
+	// 验证 DelegateCredentialRefresh=true 时安全跳过
+	rtDelegated, err := startBackgroundDaemonsWithPorts(ctx, webuiRouteDependencies{
+		AIHomeDir: aiHome,
+		Store:     store,
+	}, webuiDaemonsPorts{
+		Now:                       nowFn,
+		DisablePricingSync:        true,
+		UsageScanStartDelay:       &zeroDelay,
+		DelegateCredentialRefresh: true,
+		CredentialResolver:        resolver,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rtDelegated.Close() })
+	delegatedStatus := rtDelegated.Status(ctx)
+	if delegatedStatus.TokenRefresh == nil || !delegatedStatus.TokenRefresh.Delegated || delegatedStatus.TokenRefresh.Running {
+		t.Fatalf("unexpected delegated status: %+v", delegatedStatus.TokenRefresh)
+	}
+	delegatedRes, err := rtDelegated.Trigger(ctx, webuidaemonsapi.TriggerRequest{Daemon: "refresh"})
+	if err != nil {
+		t.Fatalf("delegated Trigger() error = %v", err)
+	}
+	strategy.mu.Lock()
+	calls := strategy.calls
+	strategy.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected delegated trigger not to call strategy again, calls=%d results=%+v", calls, delegatedRes.Results)
 	}
 }

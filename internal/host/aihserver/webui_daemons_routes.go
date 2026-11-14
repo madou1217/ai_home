@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/retention"
+	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"github.com/madou1217/ai_home/internal/runtime/usagedaemons"
 	"github.com/madou1217/ai_home/internal/transport/http/webuidaemonsapi"
 	_ "modernc.org/sqlite"
@@ -49,24 +51,35 @@ type zcodeOwnerStore interface {
 
 // webuiDaemonsPorts 允许调用方和测试注入时钟、间隔或替换底层扫描/刷新端口。
 type webuiDaemonsPorts struct {
-	Context              context.Context
-	Now                  func() time.Time
-	PeerInterval         time.Duration
-	PeerBatch            int
-	PeerDelivery         *peer.DeliveryOptions
-	LogSweepInterval     time.Duration
-	RuntimeSweepInterval time.Duration
-	QuotaProbeInterval   time.Duration
-	QuotaProbePort       usagedaemons.QuotaProbePort
-	UsageScanInterval    time.Duration
-	UsageScanStartDelay  *time.Duration
-	UsageScanPort        usagedaemons.UsageScanPort
-	ProviderRefreshPort  usagedaemons.ProviderRefreshPort
-	PricingService       *pricingcatalog.Service
-	PricingHTTPClient    pricingcatalog.HTTPClient
-	ZcodeOwnerStore      zcodeOwnerStore
-	Runtime              *backgroundDaemonsRuntime
-	DisablePricingSync   bool
+	Context                   context.Context
+	Now                       func() time.Time
+	PeerInterval              time.Duration
+	PeerBatch                 int
+	PeerDelivery              *peer.DeliveryOptions
+	LogSweepInterval          time.Duration
+	RuntimeSweepInterval      time.Duration
+	QuotaProbeInterval        time.Duration
+	QuotaProbePort            usagedaemons.QuotaProbePort
+	UsageScanInterval         time.Duration
+	UsageScanStartDelay       *time.Duration
+	UsageScanPort             usagedaemons.UsageScanPort
+	ProviderRefreshPort       usagedaemons.ProviderRefreshPort
+	PricingService            *pricingcatalog.Service
+	PricingHTTPClient         pricingcatalog.HTTPClient
+	ZcodeOwnerStore           zcodeOwnerStore
+	Runtime                   *backgroundDaemonsRuntime
+	DisablePricingSync        bool
+	TokenRefreshEnabled       *bool
+	TokenRefreshInterval      time.Duration
+	TokenRefreshStartDelay    *time.Duration
+	TokenRefreshSkew          time.Duration
+	TokenRefreshConcurrency   int
+	TokenRefreshRetryDelay    time.Duration
+	TokenRefreshTimeout       time.Duration
+	DelegateCredentialRefresh bool
+	CredentialResolver        tokenrefreshdaemon.CredentialRefresher
+	TokenRefreshAccountStore  tokenrefreshdaemon.AccountStore
+	TokenRefreshRuntime       tokenrefreshdaemon.AccountRuntimeNotifier
 }
 
 // backgroundDaemonsRuntime 统一托管 peer 补投、日志与目录保留、额度探测和用量扫描后台守护。
@@ -77,6 +90,7 @@ type backgroundDaemonsRuntime struct {
 	quotaProbe      *usagedaemons.QuotaProbeScheduler
 	usageScan       *usagedaemons.UsageScanScheduler
 	providerRefresh *usagedaemons.ProviderRefreshCoordinator
+	tokenRefresh    *tokenrefreshdaemon.Daemon
 	ownedOwnerStore zcodeOwnerStore
 
 	closeOnce sync.Once
@@ -237,6 +251,29 @@ func startBackgroundDaemonsWithPorts(
 		return nil, fmt.Errorf("启动 provider 用量监听守护失败: %w", err)
 	}
 
+	// 5) OAuth 令牌后台主动续期守护（受 DelegateCredentialRefresh 与 CredentialResolver 约束）。
+	tokenAccountStore := ports.TokenRefreshAccountStore
+	if tokenAccountStore == nil && dependencies.Store != nil {
+		tokenAccountStore = dependencies.Store
+	}
+	tokenRuntime := resolveTokenRefreshRuntimeNotifier(ports.TokenRefreshRuntime, dependencies.AccountRuntime)
+	rt.tokenRefresh = tokenrefreshdaemon.New(tokenrefreshdaemon.Options{
+		Enabled:                   ports.TokenRefreshEnabled,
+		DelegateCredentialRefresh: ports.DelegateCredentialRefresh,
+		Interval:                  ports.TokenRefreshInterval,
+		StartDelay:                ports.TokenRefreshStartDelay,
+		Skew:                      ports.TokenRefreshSkew,
+		Concurrency:               ports.TokenRefreshConcurrency,
+		PerAccountTimeout:         ports.TokenRefreshTimeout,
+		SuppressionRetryDelay:     ports.TokenRefreshRetryDelay,
+		AIHomeDir:                 aiHomeDir,
+		Store:                     tokenAccountStore,
+		Refresher:                 ports.CredentialResolver,
+		Runtime:                   tokenRuntime,
+		Now:                       nowFn,
+	})
+	rt.tokenRefresh.Start(ctx)
+
 	return rt, nil
 }
 
@@ -318,6 +355,10 @@ func (r *backgroundDaemonsRuntime) Status(context.Context) webuidaemonsapi.Statu
 		st := r.providerRefresh.State()
 		report.ProviderRefresh = &st
 	}
+	if r.tokenRefresh != nil {
+		st := r.tokenRefresh.State()
+		report.TokenRefresh = &st
+	}
 	return report
 }
 
@@ -363,6 +404,14 @@ func (r *backgroundDaemonsRuntime) Trigger(ctx context.Context, req webuidaemons
 			results["providerRefresh"] = map[string]any{"ok": true, "records": records}
 		}
 	}
+	if (runAll || target == "token-refresh") && r.tokenRefresh != nil {
+		summary, refreshErr := r.tokenRefresh.Trigger(ctx, req.Provider)
+		if refreshErr != nil {
+			results["tokenRefresh"] = map[string]any{"ok": false, "error": refreshErr.Error()}
+		} else {
+			results["tokenRefresh"] = summary
+		}
+	}
 
 	return webuidaemonsapi.TriggerResult{
 		Target:  target,
@@ -378,6 +427,9 @@ func (r *backgroundDaemonsRuntime) Close() error {
 	}
 	var closeErr error
 	r.closeOnce.Do(func() {
+		if r.tokenRefresh != nil {
+			_ = r.tokenRefresh.Close()
+		}
 		if r.providerRefresh != nil {
 			_ = r.providerRefresh.Close()
 		}
@@ -784,4 +836,34 @@ func reconcileZcodeOwnership(ctx context.Context, aiHomeDir string, ownerStore z
 		return 0, nil
 	}
 	return ownerStore.ReconcileZcodeOwners(ctx, batch)
+}
+
+func resolveTokenRefreshRuntimeNotifier(
+	explicit tokenrefreshdaemon.AccountRuntimeNotifier,
+	raw any,
+) tokenrefreshdaemon.AccountRuntimeNotifier {
+	if explicit != nil && !isTypedNilValue(explicit) {
+		return explicit
+	}
+	if raw == nil || isTypedNilValue(raw) {
+		return nil
+	}
+	notifier, ok := raw.(tokenrefreshdaemon.AccountRuntimeNotifier)
+	if !ok || isTypedNilValue(notifier) {
+		return nil
+	}
+	return notifier
+}
+
+func isTypedNilValue(val any) bool {
+	if val == nil {
+		return true
+	}
+	rv := reflect.ValueOf(val)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }

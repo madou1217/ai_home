@@ -13,6 +13,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/retention"
+	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"github.com/madou1217/ai_home/internal/runtime/usagedaemons"
 	"github.com/madou1217/ai_home/internal/transport/http/httpjson"
 )
@@ -40,12 +41,13 @@ type Authorizer interface {
 
 // StatusReport 聚合各后台守护与调度器的即时可观测状态。
 type StatusReport struct {
-	GeneratedAt     int64                               `json:"generatedAt"`
-	Peer            *peer.DispatchDaemonState           `json:"peer,omitempty"`
-	Retention       *retention.DaemonState              `json:"retention,omitempty"`
-	QuotaProbe      *usagedaemons.QuotaProbeState       `json:"quotaProbe,omitempty"`
-	UsageScan       *usagedaemons.UsageScanState        `json:"usageScan,omitempty"`
-	ProviderRefresh *usagedaemons.ProviderRefreshState  `json:"providerRefresh,omitempty"`
+	GeneratedAt     int64                              `json:"generatedAt"`
+	Peer            *peer.DispatchDaemonState          `json:"peer,omitempty"`
+	Retention       *retention.DaemonState             `json:"retention,omitempty"`
+	QuotaProbe      *usagedaemons.QuotaProbeState      `json:"quotaProbe,omitempty"`
+	UsageScan       *usagedaemons.UsageScanState       `json:"usageScan,omitempty"`
+	ProviderRefresh *usagedaemons.ProviderRefreshState `json:"providerRefresh,omitempty"`
+	TokenRefresh    *tokenrefreshdaemon.DaemonState    `json:"tokenRefresh,omitempty"`
 }
 
 // TriggerRequest 指定手动触发的守护目标与可选 provider 过滤。
@@ -108,6 +110,8 @@ func NormalizeTarget(raw string) (string, error) {
 		return "usage-scan", nil
 	case "provider", "provider-refresh":
 		return "provider-refresh", nil
+	case "token-refresh", "token_refresh", "tokenrefresh", "refresh":
+		return "token-refresh", nil
 	default:
 		return "", ErrInvalidTarget
 	}

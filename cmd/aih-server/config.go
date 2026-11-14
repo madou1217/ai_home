@@ -171,12 +171,11 @@ func loadCommandConfig(
 	if nodeBaseURL != "" && !isLoopbackBaseURL(nodeBaseURL) {
 		return commandConfig{}, errInvalidCommandConfig
 	}
-	if frontDoor {
-		// 前置门必须有回退目标，且不能指向自己：指向自身会让未注册路径无限自环，
-		// 表现为 CPU 打满而不是一个可定位的错误。
-		if nodeBaseURL == "" {
-			return commandConfig{}, errInvalidCommandConfig
-		}
+	// 回退目标是可选的：Node 宿主缺席时 Go 仍能独立持有公开端口，
+	// 未注册路径按 404 失败关闭（不再把「没有 Node」当成启动错误）。
+	// 提供目标时只拒绝自环：指向自身会让未注册路径无限转发，
+	// 表现为 CPU 打满而不是一个可定位的错误。
+	if frontDoor && nodeBaseURL != "" {
 		nodePort, portErr := loopbackURLPort(nodeBaseURL)
 		if portErr != nil || nodePort == port {
 			return commandConfig{}, errInvalidCommandConfig

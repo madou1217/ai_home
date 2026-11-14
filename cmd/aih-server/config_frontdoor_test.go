@@ -2,11 +2,15 @@ package main
 
 import "testing"
 
-// TestLoadCommandConfigFrontDoorRequiresNodeBaseURL 前置门没有回退目标时必须拒绝启动：
-// 否则公开端口上未注册的路径会全部 404，看上去像「网关坏了」。
-func TestLoadCommandConfigFrontDoorRequiresNodeBaseURL(t *testing.T) {
-	if _, err := loadCommandConfig([]string{"--front-door"}, testRuntime(nil)); err == nil {
-		t.Fatal("--front-door 缺少 --node-base-url 未被拒绝")
+// TestLoadCommandConfigFrontDoorWithoutNodeBaseURL 前置门不依赖 Node 宿主：
+// 没有回退目标时 Go 独立服务自有路由，未注册路径按 404 失败关闭。
+func TestLoadCommandConfigFrontDoorWithoutNodeBaseURL(t *testing.T) {
+	cfg, err := loadCommandConfig([]string{"--front-door"}, testRuntime(nil))
+	if err != nil {
+		t.Fatalf("Node 宿主缺席时前置门被拒绝: %v", err)
+	}
+	if got := cfg.frontDoorBaseURL(); got != "" {
+		t.Fatalf("没有 Node 目标时 frontDoorBaseURL() = %q，期望为空", got)
 	}
 }
 

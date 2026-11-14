@@ -28,6 +28,8 @@ func TestBuildWebUIRefreshRoutes(t *testing.T) {
 			t.Fatalf("装配刷新路由失败: %v", err)
 		}
 		want := []string{
+			"POST /v0/webui/accounts/{provider}/{accountRef}/refresh",
+			"POST /v0/webui/accounts/{provider}/{accountRef}/refresh-usage",
 			"POST /v1/management/webui/accounts/{provider}/{accountRef}/refresh",
 			"POST /v1/management/webui/accounts/{provider}/{accountRef}/refresh-usage",
 			"GET /v1/management/webui/accounts/refresh-jobs/{jobId}",
@@ -56,8 +58,8 @@ func TestBuildWebUIRefreshRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("装配刷新路由失败: %v", err)
 		}
-		if len(routes) != 3 {
-			t.Fatalf("路由条数 = %d, want 3", len(routes))
+		if len(routes) != 5 {
+			t.Fatalf("路由条数 = %d, want 5", len(routes))
 		}
 	})
 

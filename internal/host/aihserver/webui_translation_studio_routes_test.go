@@ -84,6 +84,10 @@ func TestBuildWebUITranslationStudioRoutes(t *testing.T) {
 			"DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}",
 			"POST " + webuiimagestudioapi.Path + "/sessions/{sessionId}/runs",
 			"GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}/assets/{assetId}",
+			// 浏览器数据面：Image Studio 与翻译页由 Go 直接应答同一处理器。
+			webuiimagestudioapi.PublicPath + "/",
+			webuitranslationapi.PublicPath,
+			webuitranslationapi.PublicPath + "/",
 		}
 		if len(routes) != len(want) {
 			t.Fatalf("路由数量 = %d, want %d", len(routes), len(want))

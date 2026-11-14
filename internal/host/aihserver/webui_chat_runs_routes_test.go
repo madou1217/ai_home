@@ -48,9 +48,9 @@ func newTestWebUIChatRunsHandler(t *testing.T, allow bool) (*webuichatapi.Handle
 }
 
 func TestBuildWebUIChatRunsRoutesNilGuards(t *testing.T) {
-	routes, err := BuildWebUIChatRunsRoutes(nil)
+	routes, err := BuildWebUIChatRunsRoutes(nil, nil)
 	if err != nil || routes != nil {
-		t.Fatalf("BuildWebUIChatRunsRoutes(nil) = (%v, %v), want (nil, nil)", routes, err)
+		t.Fatalf("BuildWebUIChatRunsRoutes(nil, nil) = (%v, %v), want (nil, nil)", routes, err)
 	}
 	routes, err = buildWebUIChatRunsRoutes(webuiRouteDependencies{})
 	if err != nil || routes != nil {
@@ -85,8 +85,8 @@ func TestBuildWebUIChatRunsRoutesServeMuxCoexistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUIChatRunsRoutesWithHandler() error = %v", err)
 	}
-	if len(runsRoutes) != 8 {
-		t.Fatalf("expected 8 runs routes, got %d", len(runsRoutes))
+	if len(runsRoutes) != 9 {
+		t.Fatalf("expected 9 runs routes, got %d", len(runsRoutes))
 	}
 	for _, route := range runsRoutes {
 		mux.Handle(route.Pattern, route.Handler)

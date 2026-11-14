@@ -57,6 +57,10 @@ func TestBuildWebUIProjectsFSRoutes(t *testing.T) {
 			"POST " + webuiprojectswriteapi.OpenPath,
 			"POST " + webuiprojectswriteapi.RemovePath,
 			"POST " + webuiprojectswriteapi.PickPath,
+			"GET /v0/webui/fs/access",
+			"GET /v0/webui/fs/read",
+			"GET /v0/webui/fs/media",
+			"POST /v0/webui/fs/trust",
 			"GET " + webuiworkspacefsapi.AccessPath,
 			"GET " + webuiworkspacefsapi.ReadPath,
 			"GET " + webuiworkspacefsapi.TreePath,
@@ -65,6 +69,7 @@ func TestBuildWebUIProjectsFSRoutes(t *testing.T) {
 			"GET " + webuiworkspacegitapi.SummaryPath,
 			"GET " + webuiworkspacegitapi.DiffPath,
 			"GET " + webuiworkspacemodelsapi.Path,
+			"GET /v0/webui/models",
 		}
 		if len(routes) != len(want) {
 			t.Fatalf("路由数量 = %d, want %d", len(routes), len(want))
@@ -140,8 +145,8 @@ func TestBuildWebUIProjectsFSRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildWebUIProjectsFSRoutes() error = %v", err)
 		}
-		if len(routes) != 11 {
-			t.Fatalf("路由数量 = %d, want 11", len(routes))
+		if len(routes) != 15 {
+			t.Fatalf("路由数量 = %d, want 15", len(routes))
 		}
 	})
 

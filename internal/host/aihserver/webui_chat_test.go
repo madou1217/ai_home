@@ -21,8 +21,8 @@ func TestMountWebUIChatSkipsNilHandler(t *testing.T) {
 	}
 }
 
-// 内部聊天入口只挂管理前缀；浏览器路径必须继续由 Node 拥有（202 + 独立 SSE）。
-func TestMountWebUIChatOnlyServesManagementPrefix(t *testing.T) {
+// 聊天入口同时挂管理前缀与浏览器公开入口：公开入口改写前缀后复用同一处理器。
+func TestMountWebUIChatServesManagementAndPublicPrefixes(t *testing.T) {
 	var servedPath string
 	mux := http.NewServeMux()
 	mountWebUIChat(mux, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -45,8 +45,11 @@ func TestMountWebUIChatOnlyServesManagementPrefix(t *testing.T) {
 	mux.ServeHTTP(browser, httptest.NewRequest(
 		http.MethodPost, webuichatapi.CollectionPath+"s-1/commands", nil,
 	))
-	if browser.Code != http.StatusNotFound {
-		t.Fatalf("浏览器路径状态码 = %d, want 404", browser.Code)
+	if browser.Code != http.StatusAccepted {
+		t.Fatalf("浏览器路径状态码 = %d, want 202", browser.Code)
+	}
+	if servedPath != webuichatapi.ManagementCollectionPath+"s-1/commands" {
+		t.Fatalf("浏览器路径改写后 = %q, want %q", servedPath, webuichatapi.ManagementCollectionPath+"s-1/commands")
 	}
 }
 

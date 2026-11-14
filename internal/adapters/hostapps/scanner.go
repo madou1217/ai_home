@@ -63,6 +63,9 @@ type CLIInstance struct {
 	CLIAccountID string
 	AccountRef   string
 	RootPID      int
+	// NativeOwned marks a Go native lifecycle process or a family containing one.
+	// Legacy process-tree shutdown must never signal these rows or descendants.
+	NativeOwned bool
 }
 
 // EnvRule 描述「从进程环境变量反读 user-data 目录」的 provider 规则。

@@ -138,14 +138,32 @@ func buildCLIInstances(processes []Process) []CLIInstance {
 	for _, process := range processes {
 		byPID[process.PID] = process
 		children[process.PPID] = append(children[process.PPID], process)
-		if assignmentValue(process.CommandLine, AccountAppMarkerEnv) == "1" {
+		_, _, nativeRef := parseNativeTerminalInvocation(process.CommandLine)
+		if assignmentValue(process.CommandLine, AccountAppMarkerEnv) == "1" || nativeRef != "" {
 			marked = append(marked, process)
+		}
+	}
+	// Protect native descendants across every overlapping legacy-root view. A
+	// marked shell parent may otherwise emit the same PID again as a legacy row.
+	nativePIDs := make(map[int]bool)
+	for _, process := range processes {
+		if _, _, nativeRef := parseNativeTerminalInvocation(process.CommandLine); nativeRef != "" {
+			for _, member := range collectFamily(process, children) {
+				nativePIDs[member.PID] = true
+			}
 		}
 	}
 	output := make([]CLIInstance, 0, len(marked))
 	seen := make(map[string]bool)
 	for _, root := range marked {
 		family := collectFamily(root, children)
+		familyNative := false
+		for _, member := range family {
+			if nativePIDs[member.PID] {
+				familyNative = true
+				break
+			}
+		}
 		provider := ""
 		cliAccountID := ""
 		for _, process := range family {
@@ -160,6 +178,10 @@ func buildCLIInstances(processes []Process) []CLIInstance {
 		}
 		accountRef := ""
 		for _, process := range family {
+			if _, _, nativeRef := parseNativeTerminalInvocation(process.CommandLine); nativeRef != "" {
+				accountRef = nativeRef
+				break
+			}
 			if candidate := assignmentValue(process.CommandLine, ProviderAccountRefEnv); candidate != "" {
 				accountRef = candidate
 				break
@@ -178,6 +200,7 @@ func buildCLIInstances(processes []Process) []CLIInstance {
 				CLIAccountID: cliAccountID,
 				AccountRef:   accountRef,
 				RootPID:      root.PID,
+				NativeOwned:  familyNative || nativePIDs[process.PID],
 			})
 		}
 	}
@@ -238,6 +261,9 @@ func assignmentValue(commandLine string, name string) string {
 
 // parseCLIInvocation 从命令行识别 aih / ai-home.js 的 <provider> <cliAccountId> 调用。
 func parseCLIInvocation(commandLine string) (string, string) {
+	if provider, accountID, ref := parseNativeTerminalInvocation(commandLine); ref != "" {
+		return provider, accountID
+	}
 	tokens := splitCommandLine(commandLine)
 	for index := 0; index < len(tokens); index++ {
 		name := strings.ToLower(executableBase(tokens[index]))
@@ -255,6 +281,49 @@ func parseCLIInvocation(commandLine string) (string, string) {
 		return provider, accountID
 	}
 	return "", ""
+}
+
+// parseNativeTerminalInvocation reads only the narrow public identity flags of
+// an actual aih-go lifecycle process. Flags after -- belong to the provider and
+// cannot spoof identity. Existing Node title parsing remains unchanged.
+func parseNativeTerminalInvocation(commandLine string) (string, string, string) {
+	tokens := splitCommandLine(commandLine)
+	if len(tokens) < 3 {
+		return "", "", ""
+	}
+	name := strings.ToLower(executableBase(tokens[0]))
+	if name != "aih-go" && name != "aih-go.exe" {
+		return "", "", ""
+	}
+	if tokens[1] != "__native-terminal" || (tokens[2] != "launch" && tokens[2] != "inner") {
+		return "", "", ""
+	}
+	var provider, accountID, accountRef string
+	for index := 3; index+1 < len(tokens); index++ {
+		if tokens[index] == "--" {
+			break
+		}
+		switch tokens[index] {
+		case "--provider":
+			provider = tokens[index+1]
+			index++
+		case "--account-id":
+			accountID = tokens[index+1]
+			index++
+		case "--account-ref":
+			accountRef = tokens[index+1]
+			index++
+		}
+	}
+	if !isProviderToken(provider) || !isCLIAccountID(accountID) || len(accountRef) != 25 || !strings.HasPrefix(accountRef, "acct_") {
+		return "", "", ""
+	}
+	for _, char := range accountRef[5:] {
+		if !(char >= 'a' && char <= 'f' || char >= '0' && char <= '9') {
+			return "", "", ""
+		}
+	}
+	return provider, accountID, accountRef
 }
 
 func splitCommandLine(commandLine string) []string {

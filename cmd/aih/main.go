@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/madou1217/ai_home/internal/runtime/nativeterminal"
 )
 
 // silentExit 是前台 TUI 透传退出码的窄合同：不打印 aih 自身错误，只保留子进程退出码。
@@ -28,6 +30,14 @@ func main() {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
+	// Native terminal supervision owns its own signal/capture/drain order. Keep
+	// this adapter thin and leave provider dispatch in the shared runCLI entry.
+	if len(args) > 0 && args[0] == nativeterminal.Command {
+		return nativeterminal.Execute(args[1:], nativeterminal.Runtime{
+			Stdin: runtime.stdin, Stdout: runtime.stdout, Stderr: runtime.stderr,
+			RunCLI: func(ctx context.Context, arguments []string) error { return runCLI(ctx, arguments, runtime) },
+		})
+	}
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,

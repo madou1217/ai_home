@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/nativeterminal"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/terminals"
 )
 
@@ -29,7 +30,21 @@ func (l *NativeLauncher) executeCLI(
 	}
 
 	if req.Action == "close" {
-		return closeCLITerminals(ctx, deps, harness, req.AccountRef), nil
+		if strings.TrimSpace(req.AccountRef) == "" {
+			return closeCLITerminals(ctx, deps, harness, req.AccountRef), nil
+		}
+		// Go-owned panes must settle capture before legacy process-tree shutdown.
+		// Keep the old scanner path for existing Node-created windows.
+		native, closeErr := nativeterminal.CloseAccount(ctx, deps.AIHomeDir, harness, req.AccountRef)
+		if closeErr != nil {
+			return Result{OK: false, Error: "native_terminal_close_incomplete", Message: "原生会话退出清理未完成，已保留恢复记录；未强杀其他账号进程。", PIDs: native.PIDs}, nil
+		}
+		legacy := closeCLITerminalsAfterNative(ctx, deps, harness, req.AccountRef, native.PIDs)
+		if native.Matched > 0 && legacy.OK {
+			legacy.Status = "closed"
+			legacy.PIDs = append(native.PIDs, legacy.PIDs...)
+		}
+		return legacy, nil
 	}
 	return openCLITerminal(ctx, deps, req, harness, snapshot, hasAccount), nil
 }
@@ -40,6 +55,15 @@ func closeCLITerminals(
 	harness string,
 	accountRef string,
 ) Result {
+	return closeCLITerminalsAfterNative(ctx, deps, harness, accountRef, nil)
+}
+
+// Close only legacy instances. Native families require a successful trusted
+// registry close, independent of whether List skipped a damaged/missing record.
+func closeCLITerminalsAfterNative(
+	ctx context.Context, deps NativeLauncherDependencies, harness, accountRef string,
+	settledNativePIDs []int,
+) Result {
 	if strings.TrimSpace(accountRef) == "" {
 		return Result{
 			OK:      false,
@@ -48,16 +72,38 @@ func closeCLITerminals(
 		}
 	}
 	if deps.ProcessScanner == nil {
-		return Result{OK: true, Status: "not_running", PIDs: []int{}}
+		return Result{OK: false, Error: "native_terminal_state_unavailable", Message: "无法核对原生会话进程归属；未执行旧进程强制关闭。"}
 	}
 	instances, err := deps.ProcessScanner.ListCLIInstances(ctx)
 	if err != nil {
-		return Result{OK: true, Status: "not_running", PIDs: []int{}}
+		return Result{OK: false, Error: "native_terminal_state_unavailable", Message: "无法核对原生会话进程归属；未执行旧进程强制关闭。"}
+	}
+	settled := make(map[int]bool, len(settledNativePIDs))
+	for _, pid := range settledNativePIDs {
+		if pid > 0 {
+			settled[pid] = true
+		}
+	}
+	protected := make(map[int]bool)
+	for _, inst := range instances {
+		if !inst.NativeOwned {
+			continue
+		}
+		protected[inst.PID] = true
+		if inst.RootPID > 0 {
+			protected[inst.RootPID] = true
+		}
+		if strings.EqualFold(strings.TrimSpace(inst.Provider), harness) && strings.TrimSpace(inst.AccountRef) == strings.TrimSpace(accountRef) && !settled[inst.PID] && !settled[inst.RootPID] {
+			return Result{OK: false, Error: "native_terminal_registry_untrusted", Message: "存在原生会话进程，但缺少已完成可信关闭的记录；未强杀该会话及其子进程。", PIDs: []int{}}
+		}
 	}
 	platformKey := normalizePlatformKey(deps.Platform)
 	var pids []int
 	seen := make(map[int]struct{})
 	for _, inst := range instances {
+		if inst.NativeOwned || protected[inst.PID] || protected[inst.RootPID] {
+			continue
+		}
 		if !strings.EqualFold(strings.TrimSpace(inst.Provider), harness) {
 			continue
 		}
@@ -275,14 +321,42 @@ func openCLITerminal(
 		}
 	}
 
-	// 本机终端仍显式保留旧 Node 生命周期：tmux 包装与按账号关闭尚未迁移，
-	// 不得以禁用原有桌面功能替代迁移。本切片只切换上面的 WebUI PTY 分支。
-	nodeExe := findNodeExecutable(environ, platformKey)
-	cliEntry := "bin/ai-home.js"
-	if strings.TrimSpace(deps.RepoRoot) != "" {
-		cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
+	// Native uses the same capability ownership boundary as WebUI. The lifecycle
+	// wrapper owns tmux, titles and cleanup; unsupported/unmigrated combinations
+	// keep the existing Node path rather than losing features.
+	var command string
+	if hasAccount && webUICLIIsGoOwned(req, harness) {
+		args, nativeEnv, failure := prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
+		if failure != nil {
+			return *failure
+		}
+		binary, err := resolveGoCLIExecutable(deps, environ)
+		if err != nil {
+			return Result{OK: false, Error: "aih_cli_unavailable", Message: err.Error()}
+		}
+		cwd := workdir
+		if cwd == "" {
+			cwd, _ = os.Getwd()
+		}
+		lifecycleArgs := nativeterminal.Arguments(deps.AIHomeDir, nativeterminal.Spec{
+			Provider: harness, IdentityProvider: req.Provider, AccountRef: req.AccountRef,
+			CLIAccountID: snapshot.CLIAccountID, CWD: cwd, Model: modelName, Args: args,
+		})
+		parts := []string{quoteShellToken(binary, platformKey)}
+		for _, arg := range lifecycleArgs {
+			parts = append(parts, quoteShellToken(arg, platformKey))
+		}
+		command = strings.Join(parts, " ")
+		termEnv = nativeEnv
+	} else {
+		nodeExe := findNodeExecutable(environ, platformKey)
+		cliEntry := "bin/ai-home.js"
+		if strings.TrimSpace(deps.RepoRoot) != "" {
+			cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
+		}
+		command = buildNativeCLICommand(nodeExe, cliEntry, harness, targetID, modelName, cliPath, workdir, req.AccountRef, deps.AIHomeDir, hasAccount, platformKey)
 	}
-	command := buildNativeCLICommand(nodeExe, cliEntry, harness, targetID, modelName, cliPath, workdir, req.AccountRef, deps.AIHomeDir, hasAccount, platformKey)
+
 	spec := terminals.ResolveClientTerminalLaunch(terminalID, command, title, terminals.Options{
 		Platform:    terminalsPlatform(platformKey),
 		HostHomeDir: hostHomeDir,

@@ -253,16 +253,15 @@ func (runner *Runner) runNativeDirect(
 	runErr := runner.runProviderProcess(ctx, path, arguments, environment)
 	// 回写失败必须可见：它意味着账号库停留在旧一代，下一次启动可能拿到失效的
 	// refresh_token。TUI 已经正常退出时把它当本次失败；TUI 自己失败时保留原
-	// 退出码，只把回写错误打印出来。
+	// 退出码，并向宿主显式携带 CaptureFailed，不能仅打印后丢掉回写失败事实。
 	captureErr := runner.captureProjection(ctx, request, result)
 	if captureErr == nil {
 		return runErr
 	}
-	if runErr == nil {
-		return captureErr
+	if runErr != nil {
+		_, _ = fmt.Fprintf(runner.stderr, "aih: 回写账号凭据失败: %v\n", captureErr)
 	}
-	_, _ = fmt.Fprintf(runner.stderr, "aih: 回写账号凭据失败: %v\n", captureErr)
-	return runErr
+	return withCaptureFailure(runErr, captureErr)
 }
 
 // captureProjection 用不受启动取消影响的 Context 回写凭据：TUI 被 Ctrl+C

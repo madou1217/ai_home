@@ -543,35 +543,52 @@ func ReadSettings(ctx context.Context, databasePath string) (*Settings, error) {
 	return &normalized, nil
 }
 
-// WriteSettingsPatch 验证允许修改的字段、合并现状后写入 app-state.db。
-func WriteSettingsPatch(
-	ctx context.Context,
-	databasePath string,
-	patchRaw map[string]any,
-	now time.Time,
-) (Settings, error) {
+// WriteSettingsPatch serializes read/modify/write at SQLite, including desktop-only
+// fields. Helper and WebUI writes cannot silently overwrite one another's settings.
+func WriteSettingsPatch(ctx context.Context, databasePath string, patchRaw map[string]any, now time.Time) (Settings, error) {
 	path := strings.TrimSpace(databasePath)
 	if path == "" {
-		return Settings{}, &ConfigError{
-			StatusCode: 503,
-			Code:       "translation_home_dir_unavailable",
-			Detail:     "数据目录不可用",
-		}
+		return Settings{}, &ConfigError{StatusCode: 503, Code: "translation_home_dir_unavailable", Detail: "数据目录不可用"}
 	}
-
-	baseMap := map[string]any{}
-	if existingRaw, found, err := appstate.ReadKV(ctx, path, SettingsKVKey); err == nil && found && strings.TrimSpace(existingRaw) != "" {
-		var parsed map[string]any
-		if json.Unmarshal([]byte(existingRaw), &parsed) == nil && parsed != nil {
-			normalizedCurrent := NormalizeModelProvider(NormalizeSettingsMap(parsed))
-			if encoded, err := json.Marshal(normalizedCurrent); err == nil {
-				_ = json.Unmarshal(encoded, &baseMap)
-			}
+	var next Settings
+	err := appstate.UpdateKV(ctx, path, SettingsKVKey, func(raw string, found bool) (string, error) {
+		baseMap := map[string]any{}
+		if found && strings.TrimSpace(raw) != "" {
+			_ = json.Unmarshal([]byte(raw), &baseMap)
 		}
-	} else if defBytes, err := json.Marshal(DefaultSettings()); err == nil {
-		_ = json.Unmarshal(defBytes, &baseMap)
+		if baseMap == nil {
+			baseMap = map[string]any{}
+		}
+		updated, err := mergeSettingsPatch(baseMap, patchRaw, now)
+		if err != nil {
+			return "", err
+		}
+		known, err := json.Marshal(updated)
+		if err != nil {
+			return "", err
+		}
+		var fields map[string]any
+		if err = json.Unmarshal(known, &fields); err != nil {
+			return "", err
+		}
+		// Preserve existing future/peer fields, but only accepted patch fields can change.
+		for key, value := range fields {
+			baseMap[key] = value
+		}
+		payload, err := json.Marshal(baseMap)
+		if err != nil {
+			return "", err
+		}
+		next = updated
+		return string(payload), nil
+	})
+	if err != nil {
+		return Settings{}, err
 	}
+	return next, nil
+}
 
+func mergeSettingsPatch(baseMap map[string]any, patchRaw map[string]any, now time.Time) (Settings, error) {
 	if v, ok := patchRaw["source"]; ok {
 		code := NormalizeLanguageCode(asString(v))
 		if code != AutoLanguage && !IsSupportedLanguage(code) {
@@ -616,6 +633,39 @@ func WriteSettingsPatch(
 		baseMap["routes"] = v
 	}
 
+	// These fields were normalized by readers but omitted by the migrated writer.
+	for _, key := range []string{"systemEnabled", "shortcutEnabled", "chatShortcutEnabled"} {
+		if value, ok := patchRaw[key]; ok {
+			flag, ok := value.(bool)
+			if !ok {
+				return Settings{}, &ConfigError{StatusCode: 400, Code: "translation_settings_invalid", Detail: "翻译开关必须为布尔值"}
+			}
+			baseMap[key] = flag
+		}
+	}
+	for _, key := range []string{"executionTarget", "shortcut", "chatShortcut", "readingTheme"} {
+		if value, ok := patchRaw[key]; ok {
+			baseMap[key] = value
+		}
+	}
+	if value, ok := patchRaw["systemServerTarget"]; ok {
+		if value == nil {
+			baseMap["systemServerTarget"] = nil
+		} else {
+			target, valid := normalizeSystemServerTargetRaw(value)
+			if !valid {
+				return Settings{}, &ConfigError{StatusCode: 400, Code: "translation_server_target_invalid", Detail: "翻译服务目标无效"}
+			}
+			baseMap["systemServerTarget"] = map[string]any{"kind": target.Kind, "label": target.Label, "origin": target.Origin, "serverId": target.ServerID}
+		}
+	}
+	if value, ok := patchRaw["systemServerTargets"]; ok {
+		if _, valid := value.([]any); !valid && value != nil {
+			return Settings{}, &ConfigError{StatusCode: 400, Code: "translation_server_targets_invalid", Detail: "翻译服务目标列表无效"}
+		}
+		baseMap["systemServerTargets"] = value
+	}
+
 	updatedMS := now.UnixMilli()
 	if updatedMS <= 0 {
 		updatedMS = time.Now().UnixMilli()
@@ -623,20 +673,5 @@ func WriteSettingsPatch(
 	baseMap["updatedAt"] = updatedMS
 
 	next := NormalizeModelProvider(NormalizeSettingsMap(baseMap))
-	payload, err := json.Marshal(next)
-	if err != nil {
-		return Settings{}, &ConfigError{
-			StatusCode: 500,
-			Code:       "translation_settings_write_failed",
-			Detail:     "保存翻译设置失败",
-		}
-	}
-	if err := appstate.WriteKV(ctx, path, SettingsKVKey, string(payload), updatedMS); err != nil {
-		return Settings{}, &ConfigError{
-			StatusCode: 500,
-			Code:       "translation_settings_write_failed",
-			Detail:     "保存翻译设置失败",
-		}
-	}
 	return next, nil
 }

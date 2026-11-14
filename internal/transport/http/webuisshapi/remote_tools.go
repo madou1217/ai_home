@@ -482,6 +482,9 @@ func (host *remoteToolHost) listDirectory(ctx context.Context, args map[string]a
 	if host.dialect == "windows" {
 		listed, listErr := host.windowsListRaw(ctx, rel)
 		if listErr != nil {
+			if errors.Is(listErr, errRemoteNotFound) {
+				return remoteToolError("not_found", "远端目录不存在："+rel)
+			}
 			return remoteToolError("list_failed", strings.TrimSpace(listErr.Error()))
 		}
 		raw = listed

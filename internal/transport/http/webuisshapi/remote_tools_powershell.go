@@ -81,11 +81,22 @@ func (host *remoteToolHost) windowsWriteContent(ctx context.Context, rel string,
 
 func (host *remoteToolHost) windowsListRaw(ctx context.Context, rel string) ([]byte, error) {
 	abs := host.abs(rel)
-	script := "$items=Get-ChildItem -LiteralPath " + psQuote(abs) + " -Force -ErrorAction Stop;" +
+	script := "if(-not (Test-Path -LiteralPath " + psQuote(abs) + ")){exit 3};" +
+		"$items=Get-ChildItem -LiteralPath " + psQuote(abs) + " -Force -ErrorAction Stop;" +
 		"foreach($i in $items){$t=if($i.PSIsContainer){'d'}elseif($i.LinkType){'l'}else{'-'};" +
 		"$s=if($i.PSIsContainer){0}else{$i.Length};" +
 		"[Console]::Out.WriteLine($t+[char]9+$s+[char]9+$i.Name)}"
-	return host.runPowerShell(ctx, script, 4*1024*1024)
+	result, err := host.client.Run(ctx, powershellCommand(script), 4*1024*1024)
+	if err != nil {
+		return nil, err
+	}
+	if result.Code == 3 {
+		return nil, errRemoteNotFound
+	}
+	if result.Code != 0 {
+		return nil, errors.New(strings.TrimSpace(string(result.Stderr)))
+	}
+	return result.Stdout, nil
 }
 
 func (host *remoteToolHost) windowsSearchRaw(ctx context.Context, pattern string, maxResults int) ([]byte, error) {

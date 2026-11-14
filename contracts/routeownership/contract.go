@@ -440,6 +440,16 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号窗口激活设置与状态：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_window_activation",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/window-activation"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/window-activation"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

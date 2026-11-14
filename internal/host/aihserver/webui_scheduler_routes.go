@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderclearbrokenapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprovidercliupgradeapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiwindowactivationapi"
 )
 
@@ -104,6 +105,10 @@ func buildWebUISchedulerRoutesWithPorts(
 		{Pattern: "POST " + webuiproviderclearbrokenapi.Path + webuiproviderclearbrokenapi.ClearBrokenSuffix, Handler: clearBroken},
 		{Pattern: "GET " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
 		{Pattern: "POST " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
+		// 浏览器数据面：窗口激活设置/状态。
+		{Pattern: "GET /v0/webui/accounts/{provider}/{accountRef}/window-activation", Handler: webuipublicalias.Rewrite("/v0/webui/accounts", "/v1/management/webui/accounts", windowActivation)},
+		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/window-activation", Handler: webuipublicalias.Rewrite("/v0/webui/accounts", "/v1/management/webui/accounts", windowActivation)},
+
 	}, nil
 }
 

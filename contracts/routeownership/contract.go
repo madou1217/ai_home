@@ -459,6 +459,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号授权作业快照：新公开前缀（避开 accounts/{provider}/{accountRef} 冲突）。
+				ID:              "webui.account_jobs",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/account-jobs/{jobId}"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

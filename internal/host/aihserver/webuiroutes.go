@@ -36,6 +36,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountjobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdetectapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountegressapi"
@@ -508,6 +509,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建账号删除接口失败: %w", err)
 	}
+	accountJobs, err := webuiaccountjobsapi.NewHandler(webuiaccountjobsapi.Dependencies{
+		Authorizer: authorizer,
+		Jobs:       dependencies.Store,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号作业快照接口失败: %w", err)
+	}
 	setDefault, err := webuisetdefaultapi.NewHandler(webuisetdefaultapi.BuildDependencies(
 		authorizer, dependencies.AIHomeDir, dependencies.Catalog, dependencies.ProviderDefaults,
 		buildSetDefaultHostProjection(dependencies.AIHomeDir, dependencies.HostHomeDir),
@@ -836,6 +844,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 
 		{Pattern: "POST " + webuiaccountstatusapi.Path + webuiaccountstatusapi.RouteSuffix, Handler: accountStatus},
 		{Pattern: "DELETE " + webuiaccountdeleteapi.Path + webuiaccountdeleteapi.DeleteSuffix, Handler: accountDelete},
+		// 账号授权作业快照：新前缀避开 /accounts/{provider}/{accountRef}/<action> 的模式冲突。
+		{Pattern: "GET " + webuiaccountjobsapi.Path + "/{jobId}", Handler: accountJobs},
+		{Pattern: "GET /v0/webui/account-jobs/{jobId}", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", webuiaccountjobsapi.Path, accountJobs)},
+
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},

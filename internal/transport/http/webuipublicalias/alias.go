@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+// PublicAccountPrefix 是浏览器账号数据面的统一前缀。
+//
+// 账号能力在管理面都挂在 /v1/management/webui/accounts 下，浏览器路径同构；
+// 迁移某条能力时只需一次前缀重写，不必为每个处理器再写一套路由。
+const PublicAccountPrefix = "/v0/webui/accounts"
+
 // Rewrite 返回把 from 前缀替换成 to 前缀的处理器；from 必须是非空且以 "/" 开头。
 //
 // 只改路径与 RawPath，查询串、方法与请求体原样保留；to/from 不匹配时保持原路径，

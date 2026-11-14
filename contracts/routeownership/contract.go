@@ -256,6 +256,27 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号配置文件只读查看：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_config_files",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/config-files"),
+				},
+			},
+			{
+				// 账号模型上下文窗口读写：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_model_context",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/model-context"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/model-context"),
+					httpRoute([]string{"DELETE"}, "/v0/webui/accounts/{provider}/{accountRef}/model-context"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/model-context/bulk"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

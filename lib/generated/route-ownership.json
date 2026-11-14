@@ -582,6 +582,55 @@
       ]
     },
     {
+      "id": "webui.account_config_files",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/accounts/{provider}/{accountRef}/config-files"
+        }
+      ]
+    },
+    {
+      "id": "webui.account_model_context",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/accounts/{provider}/{accountRef}/model-context"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/accounts/{provider}/{accountRef}/model-context"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/v0/webui/accounts/{provider}/{accountRef}/model-context"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/accounts/{provider}/model-context/bulk"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

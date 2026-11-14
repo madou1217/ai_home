@@ -43,6 +43,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
@@ -781,10 +782,17 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},
 		{Pattern: "GET " + webuiaccountconfigapi.Path + "/{provider}/{accountRef}/config-files", Handler: accountConfig},
+		// 浏览器数据面：同一处理器 + 前缀重写。
+		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/config-files", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuiaccountconfigapi.Path, accountConfig)},
 		{Pattern: "GET " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "DELETE " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/model-context/bulk", Handler: http.HandlerFunc(modelContext.ServeBulkHTTP)},
+		// 浏览器数据面。
+		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/model-context", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, modelContext)},
+		{Pattern: "POST " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/model-context", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, modelContext)},
+		{Pattern: "DELETE " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/model-context", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, modelContext)},
+		{Pattern: "POST " + webuipublicalias.PublicAccountPrefix + "/{provider}/model-context/bulk", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, http.HandlerFunc(modelContext.ServeBulkHTTP))},
 		{Pattern: "GET " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "POST " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},

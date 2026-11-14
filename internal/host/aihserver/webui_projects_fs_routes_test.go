@@ -34,7 +34,7 @@ func TestBuildWebUIProjectsFSRoutes(t *testing.T) {
 		}
 		store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
 			AIHomeDir: aiHomeDir,
-			Catalog: catalog,
+			Catalog:   catalog,
 		})
 		if err != nil {
 			t.Fatalf("sqliteaccount.Open() error = %v", err)

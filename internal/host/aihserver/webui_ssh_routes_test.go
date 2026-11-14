@@ -104,12 +104,12 @@ func TestBuildWebUISSHExtraRoutesNoConflictAndCRUD(t *testing.T) {
 		t.Fatalf("buildWebUISSHExtraRoutes() error = %v", err)
 	}
 	want := map[string]bool{
-		"POST " + webuisshprobeapi.Path:             true,
-		"POST " + webuisshhostbrowseapi.Path:        true,
-		"POST " + webuisshwriteapi.WorkspacesPath:    true,
-		"PUT " + webuisshwriteapi.WorkspaceItemPath:  true,
+		"POST " + webuisshprobeapi.Path:                true,
+		"POST " + webuisshhostbrowseapi.Path:           true,
+		"POST " + webuisshwriteapi.WorkspacesPath:      true,
+		"PUT " + webuisshwriteapi.WorkspaceItemPath:    true,
 		"DELETE " + webuisshwriteapi.WorkspaceItemPath: true,
-		"POST " + webuisshapi.WorkspaceTerminalPath: true,
+		"POST " + webuisshapi.WorkspaceTerminalPath:    true,
 	}
 	if len(extraRoutes) != len(want) {
 		t.Fatalf("extraRoutes len = %d, want %d", len(extraRoutes), len(want))

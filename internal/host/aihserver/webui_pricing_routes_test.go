@@ -50,8 +50,8 @@ func TestBuildWebUIPricingRoutes_ServeMuxAndEndToEnd(t *testing.T) {
 			case strings.Contains(req.URL.String(), "litellm"):
 				raw, _ := json.Marshal(map[string]any{
 					"anthropic/claude-sonnet-4": map[string]any{
-						"litellm_provider":     "anthropic",
-						"input_cost_per_token": in,
+						"litellm_provider":      "anthropic",
+						"input_cost_per_token":  in,
 						"output_cost_per_token": 0.000015,
 					},
 				})

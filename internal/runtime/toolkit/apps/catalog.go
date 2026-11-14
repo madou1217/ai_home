@@ -13,14 +13,14 @@ import (
 )
 
 const (
-	defaultPlanTimeout  = 20 * time.Minute
-	packagePlanTimeout  = 30 * time.Minute
-	wingetNoUpdatePos   = 2316632107
-	wingetNoUpdateNeg   = -1978335189
-	windowsInnoSilent   = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
-	windowsNsisSilent   = "/S"
-	windowsPowerShell   = "powershell.exe"
-	windowsCmdExe       = "cmd.exe"
+	defaultPlanTimeout = 20 * time.Minute
+	packagePlanTimeout = 30 * time.Minute
+	wingetNoUpdatePos  = 2316632107
+	wingetNoUpdateNeg  = -1978335189
+	windowsInnoSilent  = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
+	windowsNsisSilent  = "/S"
+	windowsPowerShell  = "powershell.exe"
+	windowsCmdExe      = "cmd.exe"
 )
 
 var (
@@ -32,21 +32,21 @@ var (
 
 // IDEClientSpec 描述跨平台 IDE 客户端宿主信息与 Linux 仓库。
 type IDEClientSpec struct {
-	ID                   string
-	Name                 string
-	Order                int
-	BinaryName           string
-	MacBundleNames       []string
-	MacExecutableNames   []string
-	WindowsProgramNames  []string
+	ID                     string
+	Name                   string
+	Order                  int
+	BinaryName             string
+	MacBundleNames         []string
+	MacExecutableNames     []string
+	WindowsProgramNames    []string
 	WindowsExecutableNames []string
-	LinuxExecutableNames []string
-	ConfigDirectoryName  string
-	RemoteServerDirName  string
-	Cask                 string
-	WingetID             string
-	WindowsDisplayNames  []string
-	LinuxRepo            LinuxRepoSpec
+	LinuxExecutableNames   []string
+	ConfigDirectoryName    string
+	RemoteServerDirName    string
+	Cask                   string
+	WingetID               string
+	WindowsDisplayNames    []string
+	LinuxRepo              LinuxRepoSpec
 }
 
 // LinuxRepoSpec 描述 IDE 的 apt/yum 官方仓库定义。
@@ -63,46 +63,46 @@ type LinuxRepoSpec struct {
 
 // StandaloneAppSpec 描述不在 Provider 目录内、但纳入托管工具箱的独立 CLI（如 dsh / pi）。
 type StandaloneAppSpec struct {
-	ID             string
-	Provider       string
-	Name           string
-	ClientName     string
-	Categories     []string
-	BinaryName     string
-	Pkg            string
-	HookSupported  bool
-	SyncMode       string
+	ID            string
+	Provider      string
+	Name          string
+	ClientName    string
+	Categories    []string
+	BinaryName    string
+	Pkg           string
+	HookSupported bool
+	SyncMode      string
 }
 
 type desktopPlatformDescriptor struct {
-	Cask                 string
-	WingetID             string
-	WingetSource         string
-	WindowsDisplayNames  []string
-	LinuxPackages        []string
-	Hint                 string
-	CleanupFiles         []string
-	CleanupHomeFiles     []string
-	CleanupTrees         []string
-	CleanupHomeTrees     []string
-	ResolveInstallPlans  func(Options) []LifecyclePlan
-	ResolveUpdatePlans   func(Options) []LifecyclePlan
+	Cask                  string
+	WingetID              string
+	WingetSource          string
+	WindowsDisplayNames   []string
+	LinuxPackages         []string
+	Hint                  string
+	CleanupFiles          []string
+	CleanupHomeFiles      []string
+	CleanupTrees          []string
+	CleanupHomeTrees      []string
+	ResolveInstallPlans   func(Options) []LifecyclePlan
+	ResolveUpdatePlans    func(Options) []LifecyclePlan
 	ResolveUninstallPlans func(Options) []LifecyclePlan
 	ExplicitVersionSource *VersionSource
 }
 
 type cliDescriptor struct {
-	Pkg                  string
-	BinaryNames          []string
-	LegacyNpmPackages    []string
-	MinNodeVersion       string
-	CleanupFiles         []string
-	CleanupHomeFiles     []string
-	CleanupTrees         []string
-	CleanupHomeTrees     []string
-	CollectPathEntries   func(Options) []string
-	ResolveInstallPlans  func(Options) []LifecyclePlan
-	ResolveUpdatePlans   func(Options) []LifecyclePlan
+	Pkg                   string
+	BinaryNames           []string
+	LegacyNpmPackages     []string
+	MinNodeVersion        string
+	CleanupFiles          []string
+	CleanupHomeFiles      []string
+	CleanupTrees          []string
+	CleanupHomeTrees      []string
+	CollectPathEntries    func(Options) []string
+	ResolveInstallPlans   func(Options) []LifecyclePlan
+	ResolveUpdatePlans    func(Options) []LifecyclePlan
 	ResolveUninstallPlans func(Options) []LifecyclePlan
 	ExplicitVersionSource *VersionSource
 }

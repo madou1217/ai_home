@@ -253,8 +253,12 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 			ResolveInstallPlans: func(opts Options) []LifecyclePlan {
 				return filterValidPlans([]LifecyclePlan{buildNpmPlan("cline", opts)})
 			},
-			ResolveUpdatePlans:    func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("cline", opts)}) },
-			ResolveUninstallPlans: func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("cline", opts)}) },
+			ResolveUpdatePlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("cline", opts)})
+			},
+			ResolveUninstallPlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("cline", opts)})
+			},
 		},
 	})
 
@@ -275,7 +279,9 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 				plans = append(plans, buildDshTuiProfileUpdatePlans(opts)...)
 				return filterValidPlans(plans)
 			},
-			ResolveUninstallPlans: func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@deepseek-ai/dsh", opts)}) },
+			ResolveUninstallPlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@deepseek-ai/dsh", opts)})
+			},
 		},
 	})
 
@@ -292,8 +298,12 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 			ResolveInstallPlans: func(opts Options) []LifecyclePlan {
 				return filterValidPlans([]LifecyclePlan{buildNpmPlan("@earendil-works/pi-coding-agent", opts)})
 			},
-			ResolveUpdatePlans:    func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("@earendil-works/pi-coding-agent", opts)}) },
-			ResolveUninstallPlans: func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@earendil-works/pi-coding-agent", opts)}) },
+			ResolveUpdatePlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("@earendil-works/pi-coding-agent", opts)})
+			},
+			ResolveUninstallPlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@earendil-works/pi-coding-agent", opts)})
+			},
 		},
 	})
 
@@ -387,8 +397,12 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 					buildNpmPlan("@moonshot-ai/kimi-code", opts),
 				})
 			},
-			ResolveUpdatePlans:    func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("@moonshot-ai/kimi-code", opts)}) },
-			ResolveUninstallPlans: func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@moonshot-ai/kimi-code", opts)}) },
+			ResolveUpdatePlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("@moonshot-ai/kimi-code", opts)})
+			},
+			ResolveUninstallPlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@moonshot-ai/kimi-code", opts)})
+			},
 		},
 		Desktop: map[string]*desktopPlatformDescriptor{
 			platformMacOS: {
@@ -539,9 +553,11 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 					}
 					return uniqueStrings(entries)
 				},
-				ResolveInstallPlans:   cliPlan,
-				ResolveUpdatePlans:    cliPlan,
-				ResolveUninstallPlans: func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@tencent-ai/codebuddy-code", opts)}) },
+				ResolveInstallPlans: cliPlan,
+				ResolveUpdatePlans:  cliPlan,
+				ResolveUninstallPlans: func(opts Options) []LifecyclePlan {
+					return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@tencent-ai/codebuddy-code", opts)})
+				},
 			},
 			Desktop: map[string]*desktopPlatformDescriptor{
 				platformMacOS:   {Cask: macCask, CleanupHomeTrees: macCleanup},
@@ -594,8 +610,12 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 					buildNpmPlan("@qoder-ai/qodercli", opts),
 				})
 			},
-			ResolveUpdatePlans:    func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("@qoder-ai/qodercli", opts)}) },
-			ResolveUninstallPlans: func(opts Options) []LifecyclePlan { return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@qoder-ai/qodercli", opts)}) },
+			ResolveUpdatePlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUpdatePlan("@qoder-ai/qodercli", opts)})
+			},
+			ResolveUninstallPlans: func(opts Options) []LifecyclePlan {
+				return filterValidPlans([]LifecyclePlan{buildNpmUninstallPlan("@qoder-ai/qodercli", opts)})
+			},
 		},
 		Desktop: map[string]*desktopPlatformDescriptor{
 			platformMacOS: {
@@ -808,10 +828,16 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 				platformMacOS:   {Cask: ide.Cask},
 				platformWindows: {WingetID: ide.WingetID, WindowsDisplayNames: ide.WindowsDisplayNames},
 				platformLinux: {
-					LinuxPackages:         []string{ide.LinuxRepo.PackageName},
-					ResolveInstallPlans:   func(Options) []LifecyclePlan { return []LifecyclePlan{buildLinuxRepoPlan(ide.ID, ide.Name, "install", ide.LinuxRepo)} },
-					ResolveUpdatePlans:    func(Options) []LifecyclePlan { return []LifecyclePlan{buildLinuxRepoPlan(ide.ID, ide.Name, "update", ide.LinuxRepo)} },
-					ResolveUninstallPlans: func(Options) []LifecyclePlan { return []LifecyclePlan{buildLinuxRepoPlan(ide.ID, ide.Name, "uninstall", ide.LinuxRepo)} },
+					LinuxPackages: []string{ide.LinuxRepo.PackageName},
+					ResolveInstallPlans: func(Options) []LifecyclePlan {
+						return []LifecyclePlan{buildLinuxRepoPlan(ide.ID, ide.Name, "install", ide.LinuxRepo)}
+					},
+					ResolveUpdatePlans: func(Options) []LifecyclePlan {
+						return []LifecyclePlan{buildLinuxRepoPlan(ide.ID, ide.Name, "update", ide.LinuxRepo)}
+					},
+					ResolveUninstallPlans: func(Options) []LifecyclePlan {
+						return []LifecyclePlan{buildLinuxRepoPlan(ide.ID, ide.Name, "uninstall", ide.LinuxRepo)}
+					},
 				},
 			},
 		})

@@ -179,13 +179,13 @@ func prepareClaudeDesktopGateway(ctx context.Context, opts Options) string {
 	}
 
 	apiConfig := map[string]any{
-		"inferenceProvider":            "gateway",
-		"inferenceCredentialKind":      "helper-script",
-		"inferenceGatewayBaseUrl":      resolveDefaultServerRootURL(ctx, opts),
-		"inferenceGatewayAuthScheme":   "bearer",
-		"inferenceCredentialHelper":    nodeExec,
+		"inferenceProvider":             "gateway",
+		"inferenceCredentialKind":       "helper-script",
+		"inferenceGatewayBaseUrl":       resolveDefaultServerRootURL(ctx, opts),
+		"inferenceGatewayAuthScheme":    "bearer",
+		"inferenceCredentialHelper":     nodeExec,
 		"inferenceCredentialHelperArgs": []string{helperScript, "--ai-home-dir", aiHomeDir},
-		"modelDiscoveryEnabled":        true,
+		"modelDiscoveryEnabled":         true,
 	}
 	if err := writePrivateJSONAtomic(filepath.Join(libraryDir, entryID+".json"), apiConfig); err != nil {
 		return err.Error()

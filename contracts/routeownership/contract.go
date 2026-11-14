@@ -277,6 +277,16 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 聊天粘贴设置：浏览器入口由 Go 直接应答。
+				ID:              "webui.chat_paste_settings",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/chat/paste-settings"),
+					httpRoute([]string{"POST"}, "/v0/webui/chat/paste-settings"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

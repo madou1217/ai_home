@@ -767,6 +767,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuialiaspoolapi.PublicAccountPrefix + "/{provider}/{accountRef}/alias-pool", Handler: webuialiaspoolapi.NewPublicAlias(aliasPool)},
 		{Pattern: "GET " + webuichatpasteapi.Path, Handler: chatPaste},
 		{Pattern: "POST " + webuichatpasteapi.Path, Handler: chatPaste},
+		// 浏览器数据面。
+		{Pattern: "GET " + webuichatpasteapi.PublicPath, Handler: webuichatpasteapi.NewPublicAlias(chatPaste)},
+		{Pattern: "POST " + webuichatpasteapi.PublicPath, Handler: webuichatpasteapi.NewPublicAlias(chatPaste)},
 		{Pattern: "GET " + webuiusageconfigapi.Path, Handler: usageConfig},
 		{Pattern: "POST " + webuiusageconfigapi.Path, Handler: usageConfig},
 		{Pattern: "GET " + webuisshapi.Path, Handler: sshHandler},

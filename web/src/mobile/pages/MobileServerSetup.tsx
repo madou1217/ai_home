@@ -234,7 +234,14 @@ export default function MobileServerSetup(_props: MobilePageProps) {
 
   return (
     <MobilePage
-      lead="使用 Server 网关地址和 Management Key 连接 AIH Server"
+      lead={
+        <>
+          使用 Server 网关地址和 Management Key 连接 AIH Server
+          {setup.bootstrapIssue === 'unauthorized'
+            ? ' · Management Key 无效或缺失，请重新授权'
+            : null}
+        </>
+      }
       toolbar={(
         <MobileToolbar>
           <HudIconButton icon={<PlusOutlined />} label="添加 Server" onClick={openAddServer} />

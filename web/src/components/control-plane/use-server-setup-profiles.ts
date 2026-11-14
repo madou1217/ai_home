@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { message } from 'antd';
 import {
+  addControlPlaneBootstrapIssueListener,
+  clearControlPlaneBootstrapIssue,
+  getLastControlPlaneBootstrapIssue,
   isControlPlaneManagementKeyConfigured,
   isControlPlaneProfileReady,
   listControlPlaneProfiles,
   refreshControlPlaneDeviceState,
   removeControlPlaneProfile,
   saveControlPlaneProfile,
-  syncSharedControlPlaneProfiles
+  syncSharedControlPlaneProfiles,
+  type ControlPlaneBootstrapIssue
 } from '@/services/control-plane-profiles';
 import {
   getActiveControlPlaneProfileId,
@@ -24,9 +28,16 @@ export type ServerSetupFormValues = {
   managementKey?: string;
 };
 
+const MANAGEMENT_KEY_REJECTED = 'Management Key 无效或缺失，请重新授权';
+
 export function normalizeServerSetupError(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return String(error || '操作失败');
+  const text = error instanceof Error && error.message ? error.message : String(error || '操作失败');
+  // 管理面鉴权失败在客户端会以 control_plane_*_401 返回；直接翻译成可操作的中文提示，
+  // 避免把裸错误码显示给用户。
+  if (/_401$/.test(text) || text === 'unauthorized' || text === 'management_key_not_configured') {
+    return MANAGEMENT_KEY_REJECTED;
+  }
+  return text;
 }
 
 /** 已保存 Server 的状态灯 / 文案（与首启页一致：ready / degraded / offline）。 */
@@ -61,6 +72,11 @@ export function useServerSetupProfiles() {
   const [activeProfileId, setActiveProfileId] = useState(initialState.activeProfileId);
   const [checkingId, setCheckingId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [bootstrapIssue, setBootstrapIssue] = useState<ControlPlaneBootstrapIssue | null>(
+    getLastControlPlaneBootstrapIssue
+  );
+
+  useEffect(() => addControlPlaneBootstrapIssueListener(setBootstrapIssue), []);
 
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || null;
   const readyProfiles = profiles.filter(isControlPlaneProfileReady);
@@ -131,6 +147,7 @@ export function useServerSetupProfiles() {
       }
       await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
       syncProfiles();
+      clearControlPlaneBootstrapIssue();
       message.success('Server 已保存并设为当前');
       return true;
     } catch (error) {
@@ -191,6 +208,7 @@ export function useServerSetupProfiles() {
     hasReadyServer,
     checkingId,
     saving,
+    bootstrapIssue,
     saveServer,
     refreshProfile,
     removeProfile,

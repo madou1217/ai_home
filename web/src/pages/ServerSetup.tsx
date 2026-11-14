@@ -53,6 +53,7 @@ export default function ServerSetup() {
     hasReadyServer,
     checkingId,
     saving,
+    bootstrapIssue,
     saveServer,
     refreshProfile: handleRefreshProfile,
     removeProfile: handleRemoveProfile,
@@ -279,6 +280,11 @@ export default function ServerSetup() {
         {effectiveDialog.mode === 'initial' && (
           <Typography.Paragraph type="secondary" className="server-setup-boot-intro hud-prose">
             首次使用需要连接一台 AIH Server。验证 Server 网关地址和 Management Key 后才能进入工作台。
+          </Typography.Paragraph>
+        )}
+        {bootstrapIssue === 'unauthorized' && (
+          <Typography.Paragraph type="warning" className="server-setup-boot-intro hud-prose">
+            Management Key 无效或缺失，请重新授权。
           </Typography.Paragraph>
         )}
         <Form

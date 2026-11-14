@@ -319,6 +319,40 @@ export async function syncSharedControlPlaneProfiles(options: { fetchImpl?: type
 
 const LOCAL_BOOTSTRAP_API_PATH = '/v0/webui/control-plane/bootstrap';
 
+export type ControlPlaneBootstrapIssue = 'unauthorized';
+
+const CONTROL_PLANE_BOOTSTRAP_ISSUE_EVENT = 'aih:control-plane-bootstrap-issue';
+let lastBootstrapIssue: ControlPlaneBootstrapIssue | null = null;
+
+/** 最近一次本机引导失败的原因；仅用于首启页提示，不参与授权判断。 */
+export function getLastControlPlaneBootstrapIssue(): ControlPlaneBootstrapIssue | null {
+  return lastBootstrapIssue;
+}
+
+/** 清除首启页的授权提示（连接成功后调用）。 */
+export function clearControlPlaneBootstrapIssue() {
+  if (lastBootstrapIssue !== null) publishControlPlaneBootstrapIssue(null);
+}
+
+export function addControlPlaneBootstrapIssueListener(
+  listener: (issue: ControlPlaneBootstrapIssue | null) => void
+) {
+  const target = getEventTarget();
+  if (!target || typeof target.addEventListener !== 'function') return () => {};
+  const handler = (event: Event) => {
+    listener(((event as CustomEvent).detail as ControlPlaneBootstrapIssue | null) ?? null);
+  };
+  target.addEventListener(CONTROL_PLANE_BOOTSTRAP_ISSUE_EVENT, handler);
+  return () => target.removeEventListener(CONTROL_PLANE_BOOTSTRAP_ISSUE_EVENT, handler);
+}
+
+function publishControlPlaneBootstrapIssue(issue: ControlPlaneBootstrapIssue | null) {
+  lastBootstrapIssue = issue;
+  const target = getEventTarget();
+  if (!target || typeof target.dispatchEvent !== 'function') return;
+  target.dispatchEvent(new CustomEvent(CONTROL_PLANE_BOOTSTRAP_ISSUE_EVENT, { detail: issue }));
+}
+
 /**
  * bootstrapLocalControlPlaneProfile 在「当前 origin 没有可用 Key」时向本机服务取回
  * 本机 profile（endpoint + 当前 Management Key）。
@@ -346,6 +380,11 @@ export async function bootstrapLocalControlPlaneProfile(
       credentials: 'same-origin',
       ...(controller ? { signal: controller.signal } : {})
     });
+    if (response.status === 401) {
+      // 非 loopback 页面必须自带 Management Key；401 说明浏览器侧 Key 缺失或已过期。
+      publishControlPlaneBootstrapIssue('unauthorized');
+      return null;
+    }
     if (!response.ok) return null;
     const payload = await response.json() as SharedControlPlaneProfilesResponse;
     if (!payload || payload.ok !== true) return null;
@@ -353,6 +392,7 @@ export async function bootstrapLocalControlPlaneProfile(
     if (!profile || !profile.managementKey) return null;
     // 只接受与当前页面同源的 profile（localhost / 127.0.0.1 视为同源）。
     if (!isSameServerOrigin(profile.endpoint, window.location.origin)) return null;
+    publishControlPlaneBootstrapIssue(null);
     return saveControlPlaneProfile(profile);
   } catch (_error) {
     return null;

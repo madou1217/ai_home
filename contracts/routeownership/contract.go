@@ -430,6 +430,16 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号出口池运行时与分配：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_egress",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/egress-runtime"),
+					httpRoute([]string{"PUT"}, "/v0/webui/accounts/{provider}/{accountRef}/egress-assignment"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

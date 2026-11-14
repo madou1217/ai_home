@@ -1021,6 +1021,27 @@
       ]
     },
     {
+      "id": "webui.account_egress",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/accounts/{provider}/{accountRef}/egress-runtime"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "PUT"
+          ],
+          "path": "/v0/webui/accounts/{provider}/{accountRef}/egress-assignment"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

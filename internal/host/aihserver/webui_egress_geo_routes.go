@@ -8,6 +8,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiegresspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiegressupstreamsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuigeoresourcesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // buildWebUIEgressGeoRoutes 装配 GeoIP 数据资源、出口池、上游地区策略及账号出口分配全部 Go WebUI 路由。
@@ -83,5 +84,9 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		{Pattern: "POST " + webuiegressupstreamsapi.UpstreamEvidenceResetPath, Handler: upstreamsHandler},
 		{Pattern: "GET " + webuiegressupstreamsapi.AccountRuntimePath, Handler: upstreamsHandler},
 		{Pattern: "PUT " + webuiegressupstreamsapi.AccountAssignmentPath, Handler: upstreamsHandler},
+		// 浏览器数据面：账号出口池运行时/分配（路径少一级 egress 段）。
+		{Pattern: "GET /v0/webui/accounts/{provider}/{accountRef}/egress-runtime", Handler: webuipublicalias.Rewrite("/v0/webui/accounts", "/v1/management/webui/egress/accounts", upstreamsHandler)},
+		{Pattern: "PUT /v0/webui/accounts/{provider}/{accountRef}/egress-assignment", Handler: webuipublicalias.Rewrite("/v0/webui/accounts", "/v1/management/webui/egress/accounts", upstreamsHandler)},
+
 	}, nil
 }

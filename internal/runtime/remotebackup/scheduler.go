@@ -189,7 +189,9 @@ func (s *Scheduler) Start(ctx context.Context) bool {
 	s.started = true
 
 	if s.startupDelay > 0 {
+		s.wg.Add(1)
 		s.startupTimer = time.AfterFunc(s.startupDelay, func() {
+			defer s.wg.Done()
 			s.mu.Lock()
 			stopped := s.stopped
 			runCtx := s.baseCtx
@@ -214,7 +216,7 @@ func (s *Scheduler) Start(ctx context.Context) bool {
 			case <-tickStop:
 				return
 			case <-ctx.Done():
-				s.Stop()
+				s.stopScheduling()
 				return
 			case <-ticker.C:
 				_, _ = s.run(ctx, "interval", false, false, nil)
@@ -229,25 +231,43 @@ func (s *Scheduler) Stop() {
 	if s == nil {
 		return
 	}
+	s.stopScheduling()
+	s.wg.Wait()
+}
+
+// stopScheduling 只停止接收和调度，不等待；被 wg 跟踪的 worker 不能等待自身退出。
+// 所有 wg.Add 都在 mu 下检查 stopped 后执行，外部 Stop 关闸后再 Wait。
+func (s *Scheduler) stopScheduling() {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped {
+		return
+	}
 	s.stopped = true
 	s.started = false
 	s.pending = nil
+	// AfterFunc 成功取消时回调不会执行，由停止方释放其预登记计数；
+	// 已触发的回调则保留计数，直到回调自己的 defer Done 执行。
 	if s.startupTimer != nil {
-		s.startupTimer.Stop()
+		if s.startupTimer.Stop() {
+			s.wg.Done()
+		}
 		s.startupTimer = nil
 	}
 	if s.debounceTimer != nil {
-		s.debounceTimer.Stop()
+		if s.debounceTimer.Stop() {
+			s.wg.Done()
+		}
 		s.debounceTimer = nil
+	}
+	if s.tickTicker != nil {
+		s.tickTicker.Stop()
+		s.tickTicker = nil
 	}
 	if s.tickStop != nil {
 		close(s.tickStop)
 		s.tickStop = nil
 	}
-	s.mu.Unlock()
-
-	s.wg.Wait()
 }
 
 // Trigger 按配置中的 debounceSeconds 触发一次去抖强制备份；已有等待中的去抖时不重置计时器。
@@ -275,7 +295,9 @@ func (s *Scheduler) Trigger(reason string) bool {
 	if resolvedReason == "" {
 		resolvedReason = "event"
 	}
+	s.wg.Add(1)
 	s.debounceTimer = time.AfterFunc(time.Duration(debounce)*time.Second, func() {
+		defer s.wg.Done()
 		s.mu.Lock()
 		if s.stopped {
 			s.debounceTimer = nil
@@ -395,11 +417,14 @@ func (s *Scheduler) run(
 		return BackupRunResult{OK: true, Skipped: "running"}, nil
 	}
 	s.running = true
+	// 直接调用与 timer/tick 触发的执行都纳入停机等待，登记与 stopped 共享同一把锁。
+	s.wg.Add(1)
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	s.mu.Unlock()
 
+	defer s.wg.Done()
 	defer s.finishRun()
 
 	config, err := ReadBackupConfig(s.aiHomeDir)

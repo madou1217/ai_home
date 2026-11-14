@@ -132,3 +132,16 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - 使用实际当前仓库执行采集成功；Go AST 语法错误会显式失败，不吞错误输出“覆盖完整”。本工具不新增测试文件。
 
 复现命令：`go run ./cmd/route-entry-inventory > /tmp/aih-route-entry-inventory.json`。输出 stdout JSON，无凭据、无实际会话内容。
+
+## W3：宿主配置与动态网关认证依赖（2026-11-15）
+
+- 已盘清 Node 默认行为：`set-default <id>` 写 native openai auth/endpoint，同时保留 command-backed aih_server 供历史会话；无参数 set-default / unset-default 落回网关。Go 通用 hostsync 不能直接替代。
+- 新 `codex gateway-auth --ai-home <absolute>` 是供原生配置调用的机器接口，只在 stdout 返回当前网关 key；持久 key 优先，绝不继承任意 OPENAI_API_KEY；错误使用封闭代码。
+- 新 HostSpec/PatchHost 是纯内容构建器，当前**尚未切公开默认账号入口**。API/OAuth/gateway 模式都保留 unrelated provider、profile、effort/tier；网关模式 root endpoint 指向网关，OAuth 仅去掉带 AIH 标记的 endpoint。
+- 独立审查指出简单按行 TOML 扫描不安全。已改为基于真实 parser 的 statement/value spans，精确保留 quoted key、Unicode 转义、多行字符串、数组；不支持的 inline/dotted managed provider 布局显式拒绝且不给输出。
+- 修复 parser 的两项底层限制：表身份用组件编码而非点拼接（`"aih_server.auth"` 与 `aih_server.auth` 不混淆）；允许多行 literal string 的 4/5 个闭合单引号。
+- 真实验证：生成三模式配置，原生 Codex 0.167.2 app-server `config/read` 均成功；重复构建幂等；生成的认证命令在持久 key 轮换后立即读新值，无需重写 TOML。
+- 独立 Python tomllib 核对 quoted whitespace/Unicode/包含 ] 的表名、转义 triple quotes、嵌套数组与开发指令保持不变；现存 root endpoint→API/gateway→OAuth 的 marker 邻接已复验。
+- `effort fast` 也复用 statement scanner，真实 CLI 修改 complex config 只改变根 service_tier，文本中的伪键不变。
+- 绝对路径的控制字符、空 hostname、越界端口均先拒绝；stderr 不回显输入配置/密钥。
+- 新文件/事务服务仍在集成中：本段不证明宿主账号切换、rollback/recovery、Desktop 重载、Windows/Linux 真机已完成。

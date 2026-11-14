@@ -390,7 +390,7 @@ func parseTOML(content string) (map[string]any, error) {
 				return nil, err
 			}
 
-			pathKey := strings.Join(keys, ".")
+			pathKey := tomlTableIdentity(keys)
 			if isArray {
 				tbl, err := p.navigateArrayTable(root, keys, arrayTables, definedTables)
 				if err != nil {
@@ -665,9 +665,15 @@ func (p *tomlParser) parseLiteralString(multiline bool) (string, error) {
 	start := p.pos
 	for !p.eof() {
 		if multiline && strings.HasPrefix(p.src[p.pos:], `'''`) {
-			val := p.src[start:p.pos]
-			p.pos += 3
-			return val, nil
+			end := p.pos
+			for !p.eof() && p.src[p.pos] == '\'' {
+				p.pos++
+			}
+			quotes := p.pos - end
+			if quotes > 5 {
+				return "", p.errAt("单引号字符串闭合引号过多")
+			}
+			return p.src[start:end] + strings.Repeat("'", quotes-3), nil
 		}
 		if !multiline && p.src[p.pos] == '\'' {
 			val := p.src[start:p.pos]
@@ -836,6 +842,19 @@ func (p *tomlParser) navigateTable(root map[string]any, keys []string, create bo
 	return curr, nil
 }
 
+// Encode each decoded key as a separate JSON string followed by a delimiter.
+// A quoted dot belongs to its component, and a path is a prefix only when the
+// complete encoded parent components match.
+func tomlTableIdentity(keys []string) string {
+	var out strings.Builder
+	for _, key := range keys {
+		encoded, _ := json.Marshal(key)
+		out.Write(encoded)
+		out.WriteByte('/')
+	}
+	return out.String()
+}
+
 func (p *tomlParser) navigateArrayTable(root map[string]any, keys []string, arrayTables, definedTables map[string]bool) (map[string]any, error) {
 	parent, err := p.navigateTable(root, keys[:len(keys)-1], true)
 	if err != nil {
@@ -853,7 +872,7 @@ func (p *tomlParser) navigateArrayTable(root map[string]any, keys []string, arra
 		return nil, p.errAt(fmt.Sprintf("键 %q 已定义为非数组表，不能再用 [[...]]", lastKey))
 	}
 	// 同路径下之前定义过子表需要清除子节点表标记，允许下个元素继续定义同名子表
-	prefix := strings.Join(keys, ".") + "."
+	prefix := tomlTableIdentity(keys)
 	for k := range definedTables {
 		if strings.HasPrefix(k, prefix) {
 			delete(definedTables, k)

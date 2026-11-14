@@ -1,106 +1,48 @@
 package codex
 
 import (
+	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
 
-// RootString reads a scalar preference without matching keys inside tables or multiline strings.
+// RootString reads the decoded root scalar, never strings embedded in tables,
+// multiline values or nested arrays. Invalid documents return no preference.
 func RootString(current, key string) string {
-	doc := parseDocument(current)
-	end, starts := preferenceRoot(doc.lines)
-	for i := 0; i < end; i++ {
-		if starts[i] != stateNone {
-			continue
-		}
-		if found, ok := assignmentKey(doc.lines[i]); ok && found == key {
-			raw := strings.TrimSpace(doc.lines[i][indexOfEquals(doc.lines[i])+1:])
-			if strings.HasPrefix(raw, "'") {
-				if end := strings.Index(raw[1:], "'"); end >= 0 {
-					return raw[1 : 1+end]
-				}
-			}
-			if strings.HasPrefix(raw, "\"") {
-				for end := 1; end < len(raw); end++ {
-					if raw[end] == '"' {
-						if value, err := strconv.Unquote(raw[:end+1]); err == nil {
-							return value
-						}
-					}
-				}
-			}
+	statements, err := providerconfigs.ScanTOMLStatements(current)
+	if err != nil {
+		return ""
+	}
+	for _, item := range statements {
+		if !item.Table && len(item.TablePath) == 0 && len(item.Keys) == 1 && item.Keys[0] == key {
+			value, _ := item.Value.(string)
+			return value
 		}
 	}
 	return ""
 }
 
-// PatchPreference preserves unrelated config, comments, tables and line endings.
+// PatchPreference replaces only the parsed value span, preserving comments,
+// quoted key spelling, unrelated arrays/strings, tables and original line endings.
 func PatchPreference(current, key, value string) (string, error) {
 	if key != "service_tier" && key != "model_reasoning_effort" {
 		return "", fmt.Errorf("unsupported Codex preference %s", key)
 	}
+	statements, err := providerconfigs.ScanTOMLStatements(current)
+	if err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid Codex preference value")
+	}
+	for _, item := range statements {
+		if !item.Table && len(item.TablePath) == 0 && len(item.Keys) == 1 && item.Keys[0] == key {
+			return current[:item.ValueStart] + string(encoded) + current[item.ValueEnd:], nil
+		}
+	}
 	doc := parseDocument(current)
-	end, starts := preferenceRoot(doc.lines)
-	assignment := key + " = " + strconv.Quote(value)
-	for i := 0; i < end; i++ {
-		if starts[i] != stateNone {
-			continue
-		}
-		if found, ok := assignmentKey(doc.lines[i]); ok && found == key {
-			// Refuse to replace a multiline value with a single-line edit.
-			raw := strings.TrimSpace(doc.lines[i][indexOfEquals(doc.lines[i])+1:])
-			if strings.HasPrefix(raw, "\"\"\"") || strings.HasPrefix(raw, "'''") {
-				return "", fmt.Errorf("%s must be a single-line string", key)
-			}
-			doc.lines[i] = indentOf(doc.lines[i]) + assignment + preferenceComment(doc.lines[i])
-			return doc.render(), nil
-		}
-	}
-	doc.lines = applyEdits(doc.lines, []edit{{at: leadingCommentEnd(doc.lines), insert: []string{assignment}}})
+	doc.lines = applyEdits(doc.lines, []edit{{at: leadingCommentEnd(doc.lines), insert: []string{key + " = " + string(encoded)}}})
 	return doc.render(), nil
-}
-
-// preferenceComment keeps user annotations, ignoring hashes inside quoted values.
-func preferenceComment(line string) string {
-	var quote byte
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		if quote != 0 {
-			if quote == '"' && c == '\\' {
-				i++
-				continue
-			}
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch c {
-		case '"', '\'':
-			quote = c
-		case '#':
-			start := i
-			for start > 0 && (line[start-1] == ' ' || line[start-1] == '\t') {
-				start--
-			}
-			if start == i {
-				return " " + line[i:]
-			}
-			return line[start:]
-		}
-	}
-	return ""
-}
-
-// Array tables terminate the TOML root too, even though the provider-table
-// patcher deliberately does not treat them as managed replacement targets.
-func preferenceRoot(lines []string) (int, []stringState) {
-	_, starts := scanSections(lines)
-	for i, line := range lines {
-		if starts[i] == stateNone && strings.HasPrefix(strings.TrimSpace(line), "[") {
-			return i, starts
-		}
-	}
-	return len(lines), starts
 }

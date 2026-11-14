@@ -23,7 +23,7 @@ import (
 // 上游会先发 response.created 之类的首帧，然后进入长时间推理；这段时间客户端
 // 收不到任何字节，中间层按「源站无响应」计时。窗口到期后不再等正文，直接提交
 // 当前账号并开始交付（含心跳），把 TTFB 静默压到窗口内。
-const nativeProbeWindow = 2 * time.Second
+const nativeProbeWindow = 1 * time.Second
 
 // errProbeTimeout 是 probe 窗口到期的内部哨兵，不会出现在交付路径上。
 var errProbeTimeout = errors.New("probe window elapsed")

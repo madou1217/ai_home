@@ -371,32 +371,8 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/accounts/plugin-login/start",
-          "role": "插件登录宿主"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/accounts/zcode/url-callback",
-          "role": "浏览器回调捕获"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/internal/remote-tools",
           "role": "MCP stdio 桥"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/provider-cli-upgrade",
-          "role": "CLI 升级子进程"
         }
       ]
     },

@@ -184,18 +184,14 @@ func Current() Manifest {
 				}},
 			},
 			{
-				// Node 宿主能力（不是「还没迁的 WebUI」）：插件登录宿主、浏览器回调捕获、
-				// MCP stdio 桥与 CLI 升级都要求 Node 起子进程/监听本机回调，Go 不替代。
-				// 2026-11-14 用户确认豁免：这些能力要求 Node 起子进程或监听本机回调，
-				// Go 无法取代，正式保留在 Node，不计入 toGO 待迁项。
+				// 唯一仍未迁的 Node 宿主能力：远程工作区 MCP stdio 桥。
+				// plugin-login / zcode 回调 / provider-cli-upgrade 已由 Go 直接应答
+				// （2026-11-14 真机 POST 复核），不再计入 Node 面。
 				ID:              "node.host_runtime_surfaces",
 				ProductionOwner: "node",
 				MigrationState:  "node_exempt",
 				NodeRoutes: []Route{
-					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/accounts/plugin-login/start", Role: "插件登录宿主"},
-					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/accounts/zcode/url-callback", Role: "浏览器回调捕获"},
 					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/internal/remote-tools", Role: "MCP stdio 桥"},
-					{Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/provider-cli-upgrade", Role: "CLI 升级子进程"},
 				},
 			},
 			{

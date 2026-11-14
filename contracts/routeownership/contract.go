@@ -50,7 +50,7 @@ func websocketRoute(path string) Route {
 //
 // 当前 Go-first 公开端口由 Go 处理健康检查与已迁路由。Node 私有端口仍处理
 // 自己的进程健康，不将它转发回 Go。条目仅声明列出的端点，不能作为整个功能
-// 完成率；桌面翻译宿主等未迁叶子必须显式保留。两个旧 preview 汇总保留历史语义。
+// 完成率；仅标记已接线的精确叶子。两个旧 preview 汇总保留历史语义。
 func Current() Manifest {
 	return Manifest{
 		SchemaVersion: SchemaVersion,
@@ -256,10 +256,14 @@ func Current() Manifest {
 				},
 			},
 			{
-				// Translation inference/settings are Go-owned; OS capture/focus lifecycle is not.
+				// Go-first host owns helper lifecycle; legacy standalone Node retains compatibility only.
 				ID:              "node.translation_desktop_host",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/translation/system"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/focus"),
+				},
 				NodeRoutes: []Route{
 					httpRoute([]string{"GET", "POST"}, "/v0/webui/translation/system"),
 					httpRoute([]string{"POST"}, "/v0/webui/translation/focus"),

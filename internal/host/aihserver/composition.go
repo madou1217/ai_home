@@ -77,6 +77,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
+	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -175,7 +176,8 @@ type serverHandlers struct {
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
 	webuiAccounts http.Handler
 	// webuiRoutes 是 WebUI 管理面的全部路由（各能力自己声明，router 统一挂载）。
-	webuiRoutes []webuiRoute
+	webuiRoutes        []webuiRoute
+	desktopTranslation *desktoptranslation.Service
 	// webUIChat 是聊天轮次入口：管理前缀与浏览器 /v0/webui/chat/* 均由 Go 应答。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
@@ -403,11 +405,9 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	rootHandler := withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers)))
 	deferredGateway.set(rootHandler)
 	resources = append(resources, startServerWarmups(ctx, rootHandler, handlers.warmupDeps, options.ManagementKey))
-	return newServer(
-		rootHandler,
-		resources,
-		options,
-	), nil
+	server := newServer(rootHandler, resources, options)
+	server.desktopTranslation = handlers.desktopTranslation
+	return server, nil
 }
 
 // handlerDependencies 汇总 newHandlers 的全部输入。
@@ -1816,6 +1816,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 	})
 	activityDaemon.Start(ctx)
+	desktopChanged := &desktopSettingsNotifier{}
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:       authorizer,
 		AIHomeDir:        aiHomeDir,
@@ -1841,23 +1842,24 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
 		AccountHostGrant: deletionHost,
 		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
-		NodeBaseURL:        nodeBaseURL,
-		SelfBaseURL:        selfBaseURL,
-		ManagementKey:      managementKey,
-		RequestShutdown:    requestShutdown,
-		TerminalHandler:    webUITerminalHandler,
-		SubAggregator:      subAggSvc,
-		SessionEventBus:    sessionEventBus,
-		CodexHooks:         hooksRuntime,
-		PluginHostService:  pluginBundle.HostService,
-		PricingService:     sharedPricingService,
-		MetricsRecorder:    metrics,
-		StartedAt:          time.Now(),
-		OutcomeRecorder:    dependencies.OutcomeRecorder,
-		AccountActivity:    hookSessionActivityTracker{activity: activityDaemon.Activity()},
-		AccountImporter:    accountImporter,
-		ClientKey:          clientKey,
-		TranslationGateway: dependencies.TranslationGateway,
+		NodeBaseURL:            nodeBaseURL,
+		SelfBaseURL:            selfBaseURL,
+		ManagementKey:          managementKey,
+		RequestShutdown:        requestShutdown,
+		TerminalHandler:        webUITerminalHandler,
+		SubAggregator:          subAggSvc,
+		SessionEventBus:        sessionEventBus,
+		CodexHooks:             hooksRuntime,
+		PluginHostService:      pluginBundle.HostService,
+		PricingService:         sharedPricingService,
+		MetricsRecorder:        metrics,
+		StartedAt:              time.Now(),
+		OutcomeRecorder:        dependencies.OutcomeRecorder,
+		AccountActivity:        hookSessionActivityTracker{activity: activityDaemon.Activity()},
+		AccountImporter:        accountImporter,
+		ClientKey:              clientKey,
+		TranslationGateway:     dependencies.TranslationGateway,
+		DesktopSettingsChanged: desktopChanged.changed,
 	}
 	schedulerPorts := webuiSchedulerPorts{
 		ClientKey:    clientKey,
@@ -1949,6 +1951,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		webuiRoutes = append(webuiRoutes, chatRunsRoutes...)
 		chatPrewarmCloser = startChatRuntimePrewarm(ctx, chatRuntimeService)
 	}
+	desktopTranslationService, desktopRoutes, desktopErr := newDesktopTranslation(ctx, webuiDeps, chatRuntimeService)
+	if desktopErr != nil {
+		return serverHandlers{}, nil, fmt.Errorf("装配桌面翻译宿主失败: %w", desktopErr)
+	}
+	desktopChanged.attach(desktopTranslationService)
+	webuiRoutes = append(webuiRoutes, desktopRoutes...)
 	if webSocketHTTPClient == nil {
 		webSocketHTTPClient = &http.Client{
 			CheckRedirect: rejectOAuthRedirect,
@@ -2168,6 +2176,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		accountRules:          accountRulesHandler,
 		modelCatalog:          modelCatalogHandler,
 		webuiRoutes:           webuiRoutes,
+		desktopTranslation:    desktopTranslationService,
 		subAggregatorPublic:   subAggregatorPublicHandler,
 		codexAppServer:        codexAppServerHandler,
 		managementStatus:      managementStatusHandler,
@@ -2186,6 +2195,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 	}, func() []io.Closer {
 		closers := []io.Closer{
+			desktopTranslationService,
 			modelSweepWorker,
 			initialModelRecoveryWorker,
 			webSocketHandler,

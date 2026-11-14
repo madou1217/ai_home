@@ -112,14 +112,15 @@ type webuiRoute struct {
 // 这里刻意只收「跨切片共享」的依赖：新增一个 WebUI 能力时，在 buildWebUIRoutes
 // 里加一个 constructor + 路由条目即可，composition/router 不再逐切片增长。
 type webuiRouteDependencies struct {
-	Authorizer      interface{ Authorized(*http.Request) bool }
-	AIHomeDir       string
-	Catalog         *providers.Catalog
-	ModelModalities *modelsdev.Index
-	EgressManager   *runtimeegress.Manager
-	HostHomeDir     string
-	Store           *sqliteaccount.Store
-	AccountRuntime  any
+	DesktopSettingsChanged func()
+	Authorizer             interface{ Authorized(*http.Request) bool }
+	AIHomeDir              string
+	Catalog                *providers.Catalog
+	ModelModalities        *modelsdev.Index
+	EgressManager          *runtimeegress.Manager
+	HostHomeDir            string
+	Store                  *sqliteaccount.Store
+	AccountRuntime         any
 	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
 	AuthJobs *accountauth.Service
 	// AccountsHandler 是 accountsapi 的账号端点：HTTP 分发之外还提供导入作业需要的

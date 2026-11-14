@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
@@ -24,8 +25,9 @@ const (
 
 // Server 持有 HTTP、后台 worker 和唯一账号数据库生命周期。
 type Server struct {
-	httpServer *http.Server
-	resources  []io.Closer
+	httpServer         *http.Server
+	resources          []io.Closer
+	desktopTranslation *desktoptranslation.Service
 }
 
 // Serve 在调用方拥有的 Listener 上提供服务，关闭属于正常退出。
@@ -33,6 +35,7 @@ func (server *Server) Serve(listener net.Listener) error {
 	if server == nil || server.httpServer == nil || listener == nil {
 		return ErrInvalidOptions
 	}
+	startDesktopOnListener(context.Background(), server.desktopTranslation, "http://"+listener.Addr().String())
 	err := server.httpServer.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

@@ -226,6 +226,7 @@ func (supervisor *Supervisor) childEnv() []string {
 		"AIH_SERVER_MANAGEMENT_KEY":     supervisor.options.ManagementKey,
 		"AIH_SERVER_API_KEY":            supervisor.options.ClientKey,
 		"AIH_GO_CORE_EXTERNAL_URL":      supervisor.options.ExternalURL,
+		"AIH_DESKTOP_TRANSLATION_OWNER": "go",
 		"AIH_GO_CORE_FRONT_DOOR":        "0",
 		"AIH_SERVER_CREDENTIAL_REFRESH": "delegated",
 	}

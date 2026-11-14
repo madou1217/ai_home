@@ -18,6 +18,13 @@ import (
 // 交给管理端点：Windows 上 `child.kill('SIGTERM')` 实际是 TerminateProcess，
 // 宿主只能靠这条进程内路径触发优雅关闭。
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "__desktop-translation" {
+		if err := runDesktopTranslation(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "aih desktop:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// Claude 的权限提示 MCP server 复用本二进制：由 provider 直接拉起，
 	// 不经过服务器装配，也不依赖 Node 脚本。
 	if len(os.Args) > 1 && os.Args[1] == "__mcp-approve" {

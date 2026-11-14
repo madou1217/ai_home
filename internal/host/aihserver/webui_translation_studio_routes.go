@@ -165,6 +165,11 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		AIHomeDir:  aiHomeDir,
 		Catalog:    buildTranslationCatalogDependencies(dependencies, aiHomeDir),
 		Gateway:    BuildTranslationGatewayConfig(dependencies, gatewayOpts),
+		OnSettingsUpdated: func(translation.Settings) {
+			if dependencies.DesktopSettingsChanged != nil {
+				dependencies.DesktopSettingsChanged()
+			}
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 AI 翻译 HTTP 处理器失败: %w", err)
@@ -239,10 +244,8 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		// 浏览器数据面：同一处理器同时挂 /v0/webui/studio/image/*，
 		// 迁移后不再经 Node 做前缀改写与转发。
 		{Pattern: webuiimagestudioapi.PublicPath + "/", Handler: webuiimagestudioapi.NewPublicAlias(studioHandler)},
-		// AI 翻译页的已实现子路径由 router 的 mountPublicManagementAliases 自动补
-		// /v0/webui/translation/* 别名。这里不能再挂 catch-all：/system 与 /focus
-		// 仍由 Node 宿主的桌面取词服务承接，catch-all 会让前置门把它们也吃进 Go，
-		// 返回 translation_route_not_found。未注册子路径交给前置门回落 Node。
+		// 翻译推理与桌面 helper 状态分别由聚焦处理器注册；router 自动补公开别名。
+		// 不使用 catch-all，未知路径不被伪装成已迁能力。
 	}, nil
 }
 

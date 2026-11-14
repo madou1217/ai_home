@@ -572,8 +572,25 @@
     },
     {
       "id": "node.translation_desktop_host",
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/translation/system"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/translation/focus"
+        }
+      ],
       "node_routes": [
         {
           "transport": "http",

@@ -866,6 +866,8 @@ type NativeRunExit struct {
 }
 
 // NativeRunHandle 表示已启动的底层原生 CLI 进程句柄。
+// Runner 必须在最后一条事件后关闭 Events；Done 可以先到达，但其发送后不能再
+// 等待消费者输入才关闭 Events。这样调用方能有序 drain 尾帧再结算进程终态。
 type NativeRunHandle struct {
 	RunID              string
 	WriteSteer         func(content string) error
@@ -1480,9 +1482,12 @@ func (d *NativeSessionDriver) executeWithRetries(
 		eventsCh := handle.Events
 		sidsCh := handle.SessionIDs
 		doneCh := handle.Done
+		cancelCh := ctx.Done()
 
+		// Done 只表示进程已退出；Events 的尾帧仍须经过下面唯一的事件处理分支。
+		// 进程运行期间响应取消；已收到退出结果后完整收尾，不能因迟到取消丢终稿。
 		running := true
-		for running {
+		for running || eventsCh != nil {
 			select {
 			case sid, ok := <-sidsCh:
 				if !ok {
@@ -1550,7 +1555,9 @@ func (d *NativeSessionDriver) executeWithRetries(
 			case exit := <-doneCh:
 				exitResult = exit
 				running = false
-			case <-ctx.Done():
+				doneCh = nil // 只接收一次退出结果，避免关闭后的 channel 在 drain 期间空转。
+				cancelCh = nil
+			case <-cancelCh:
 				if handle.Abort != nil {
 					_ = handle.Abort()
 				}
@@ -1561,27 +1568,6 @@ func (d *NativeSessionDriver) executeWithRetries(
 			}
 		}
 
-		// 清空剩余通道缓冲事件
-		for eventsCh != nil {
-			ev, ok := <-eventsCh
-			if !ok {
-				break
-			}
-			switch ev.Type {
-			case "delta", "tool_use":
-				appendAssistantDelta(ev.Delta)
-			case "terminal_output":
-				appendTerminalDelta(ev.Delta)
-			case "result":
-				if ev.Usage != nil {
-					lastUsage = ev.Usage
-				}
-			case "error":
-				if streamErrMsg == "" {
-					streamErrMsg = ev.Message
-				}
-			}
-		}
 		unregisterAttempt()
 
 		if sid := strings.TrimSpace(exitResult.SessionID); sid != "" {

@@ -23,6 +23,23 @@ func HookStatePath(aiHomeDir string) string {
 	return filepath.Join(strings.TrimSpace(aiHomeDir), hookStateRelativePath)
 }
 
+// ReadDesktopAccountRef 只读返回当前绑定的 Codex Desktop 账号引用；缺失、损坏或非法时返回空串。
+func ReadDesktopAccountRef(aiHomeDir string) string {
+	trimmedDir := strings.TrimSpace(aiHomeDir)
+	if trimmedDir == "" {
+		return ""
+	}
+	state, exists, err := readHookState(HookStatePath(trimmedDir))
+	if err != nil || !exists {
+		return ""
+	}
+	accountRef := normalizeDesktopAccountRef(state["desktopAccountRef"])
+	if _, parseErr := accountcore.ParseAccountRef(accountRef); parseErr != nil {
+		return ""
+	}
+	return accountRef
+}
+
 type hookStateResult struct {
 	DesktopAccountRef string
 	Changed           bool

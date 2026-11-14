@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimanagementapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiserverrestartapi"
 )
 
 type stubMgmtAuthorizer struct{ allow bool }
@@ -179,11 +179,15 @@ func TestBuildWebUIManagementOpsRoutes_DefaultNativeRestarterWiring(t *testing.T
 		t.Fatalf("expected 503 management_restart_unavailable when AIHomeDir empty, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// 2. 提供 AIHomeDir 时自动装配 NativeRestarter（用缺失的 AIH_SERVER_ENTRY_FILE 验证其确实进入 NativeRestarter 路径）
-	t.Setenv("AIH_SERVER_ENTRY_FILE", filepath.Join(t.TempDir(), "missing-ai-home.js"))
-	wiredRoutes, err := buildWebUIManagementOpsRoutes(webuiRouteDependencies{
+	// 2. 提供 AIHomeDir 时自动装配 NativeRestarter；测试注入无服务探测，
+	// 避免依赖本机是否真的挂着 launchd/systemd 服务。
+	wiredRoutes, err := buildWebUIManagementOpsRoutesWithPorts(webuiRouteDependencies{
 		Authorizer: stubMgmtAuthorizer{allow: true},
 		AIHomeDir:  t.TempDir(),
+	}, webuiManagementOpsPorts{
+		RestartCommandResolver: func() (string, []string, error) {
+			return "", nil, webuiserverrestartapi.ErrRestartUnavailable
+		},
 	})
 	if err != nil {
 		t.Fatalf("buildWebUIManagementOpsRoutes(with aiHome) error = %v", err)
@@ -197,4 +201,5 @@ func TestBuildWebUIManagementOpsRoutes_DefaultNativeRestarterWiring(t *testing.T
 	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), `"server_restart_unavailable"`) {
 		t.Fatalf("expected 500 server_restart_unavailable from wired NativeRestarter, got %d body=%s", rec.Code, rec.Body.String())
 	}
+
 }

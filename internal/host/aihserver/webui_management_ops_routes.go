@@ -19,19 +19,21 @@ import (
 
 // webuiManagementOpsPorts 允许组合根或测试注入实时指标、模型刷新器、重启桥或共享 UsageStore。
 type webuiManagementOpsPorts struct {
-	Service          *managementops.ManagementService
-	UsageStore       *managementops.UsageStore
-	AccountRows      managementops.AccountRowPort
-	Metrics          managementops.MetricsSnapshotPort
-	ModelCatalog     managementops.ModelCatalogPort
-	Restarter        managementops.ServerRestarterPort
-	Host             string
-	Port             int
-	APIKeyConfigured bool
-	ProviderMode     string
-	Strategy         string
-	Now              func() time.Time
-	StartedAt        time.Time
+	Service      *managementops.ManagementService
+	UsageStore   *managementops.UsageStore
+	AccountRows  managementops.AccountRowPort
+	Metrics      managementops.MetricsSnapshotPort
+	ModelCatalog managementops.ModelCatalogPort
+	Restarter    managementops.ServerRestarterPort
+	// RestartCommandResolver 覆盖平台服务管理器的重启命令探测；测试用它稳定制造无服务场景。
+	RestartCommandResolver func() (string, []string, error)
+	Host                   string
+	Port                   int
+	APIKeyConfigured       bool
+	ProviderMode           string
+	Strategy               string
+	Now                    func() time.Time
+	StartedAt              time.Time
 }
 
 type modelCatalogRefresherAdapter struct {
@@ -139,7 +141,8 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		restarter := ports.Restarter
 		if restarter == nil {
 			if nativeRestarter := webuiserverrestartapi.NewNativeRestarter(webuiserverrestartapi.NativeRestarterOptions{
-				AIHomeDir: aiHome,
+				AIHomeDir:      aiHome,
+				ResolveCommand: ports.RestartCommandResolver,
 			}); nativeRestarter != nil {
 				restarter = serverRestarterAdapter{restarter: nativeRestarter, now: nowFn}
 			}

@@ -21,7 +21,7 @@ const (
 var (
 	// ErrInvalidDependencies 表示 Handler 缺少必需端口。
 	ErrInvalidDependencies = errors.New("server 重启接口依赖无效")
-	// ErrRestartUnavailable 表示当前运行环境缺少拉起重启进程所需的 Node 或入口脚本。
+	// ErrRestartUnavailable 表示当前实例缺少经过校验的原生服务管理器重启路径。
 	ErrRestartUnavailable = errors.New("server_restart_unavailable")
 )
 
@@ -52,6 +52,8 @@ type RestartEvent struct {
 
 // RestartOutcome 描述宿主拉起新进程的结果。
 type RestartOutcome struct {
+	// Pending means only the independent helper is armed; persisted worker status is authoritative.
+	Pending       bool
 	PID           int
 	AppliedConfig map[string]any
 }
@@ -104,6 +106,23 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeJSON(response, http.StatusUnauthorized, map[string]any{"ok": false, "error": "unauthorized", "message": "需要管理密钥"})
 		return
 	}
+	// POST ?jobId=... reads the persisted Windows outcome on the already-mounted route.
+	if request.Method == http.MethodPost && request.URL.Query().Has("jobId") {
+		reader, ok := h.restarter.(interface {
+			RestartStatus(context.Context, string) (map[string]any, error)
+		})
+		if !ok {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "server_restart_status_unavailable"})
+			return
+		}
+		status, err := reader.RestartStatus(request.Context(), request.URL.Query().Get("jobId"))
+		if err != nil {
+			writeJSON(response, http.StatusNotFound, map[string]any{"ok": false, "error": "server_restart_job_not_found"})
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "job": status})
+		return
+	}
 	if request.Method != http.MethodPost {
 		response.Header().Set("Allow", http.MethodPost)
 		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
@@ -137,7 +156,11 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			h.emit(ev)
 			return
 		}
-		ev := buildEvent(job, "started", nowMS)
+		status := "started"
+		if outcome.Pending {
+			status = "pending"
+		}
+		ev := buildEvent(job, status, nowMS)
 		ev.PID = outcome.PID
 		ev.Config = sanitizePublicConfig(outcome.AppliedConfig)
 		h.emit(ev)

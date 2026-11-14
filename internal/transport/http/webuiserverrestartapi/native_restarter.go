@@ -39,6 +39,9 @@ const (
 // NativeRestarterOptions 配置原生服务管理器重启的参数。
 type NativeRestarterOptions struct {
 	AIHomeDir string
+	// RequestShutdown is the host-owned, idempotent, nonblocking graceful exit callback.
+	// Both HTTP entry points authorize before invoking the shared restarter.
+	RequestShutdown func()
 	// ServiceLabel 是自启服务标识；空时用 com.meadeo.ai_home。
 	ServiceLabel string
 	// ResolveCommand 覆盖平台服务管理器探测（测试或嵌入式宿主注入）。
@@ -46,12 +49,14 @@ type NativeRestarterOptions struct {
 	CommandFactory func(name string, args ...string) *exec.Cmd
 }
 
-// NativeRestarter 通过系统服务管理器（launchd / systemd user）重启整个 aih 服务，
+// NativeRestarter 通过系统服务管理器（launchd / systemd user / Windows Task Scheduler）重启当前实例，
 // 不经过 Node；并在返回前读取持久化 `config:server` 的脱敏公开视图作为 `appliedConfig`。
 type NativeRestarter struct {
-	aiHomeDir      string
-	resolveCommand func() (string, []string, error)
-	commandFactory func(name string, args ...string) *exec.Cmd
+	usePlatformRestart bool
+	requestShutdown    func()
+	aiHomeDir          string
+	resolveCommand     func() (string, []string, error)
+	commandFactory     func(name string, args ...string) *exec.Cmd
 }
 
 // NewNativeRestarter 创建原生重启器；AIHomeDir 为空时返回 nil。
@@ -73,20 +78,28 @@ func NewNativeRestarter(options NativeRestarterOptions) *NativeRestarter {
 		resolve = func() (string, []string, error) { return detectServiceRestartCommand(label) }
 	}
 	return &NativeRestarter{
-		aiHomeDir:      aiHomeDir,
-		resolveCommand: resolve,
-		commandFactory: factory,
+		usePlatformRestart: options.ResolveCommand == nil,
+		requestShutdown:    options.RequestShutdown,
+		aiHomeDir:          aiHomeDir,
+		resolveCommand:     resolve,
+		commandFactory:     factory,
 	}
 }
 
 // Restart 读取当前持久化服务端配置，并拉起分离的后台重启命令。
-func (r *NativeRestarter) Restart(ctx context.Context, _ RestartJob) (RestartOutcome, error) {
+func (r *NativeRestarter) Restart(ctx context.Context, job RestartJob) (RestartOutcome, error) {
 	if r == nil || r.aiHomeDir == "" {
 		return RestartOutcome{}, ErrRestartUnavailable
 	}
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return RestartOutcome{}, err
+		}
+	}
+
+	if r.usePlatformRestart {
+		if outcome, handled, err := r.restartPlatform(ctx, job); handled {
+			return outcome, err
 		}
 	}
 

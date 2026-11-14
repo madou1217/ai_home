@@ -1844,6 +1844,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		NodeBaseURL:        nodeBaseURL,
 		SelfBaseURL:        selfBaseURL,
 		ManagementKey:      managementKey,
+		RequestShutdown:    requestShutdown,
 		TerminalHandler:    webUITerminalHandler,
 		SubAggregator:      subAggSvc,
 		SessionEventBus:    sessionEventBus,

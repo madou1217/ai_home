@@ -154,6 +154,8 @@ type webuiRouteDependencies struct {
 	SelfBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
 	ManagementKey func() string
+	// RequestShutdown is the host graceful-exit port shared by both restart entry points.
+	RequestShutdown func()
 	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。
 	TerminalHandler *webuiterminalapi.Handler
 	// SubAggregator 由组合根注入，供 WebUI 管理路由与公开 /sub/ 拉取共享状态与缓存。

@@ -154,7 +154,8 @@ func buildWebUIOpsMiscRoutesWithPorts(
 	restarter := ports.ServerRestarter
 	if restarter == nil {
 		if nativeRestarter := webuiserverrestartapi.NewNativeRestarter(webuiserverrestartapi.NativeRestarterOptions{
-			AIHomeDir: aiHome,
+			AIHomeDir:       aiHome,
+			RequestShutdown: dependencies.RequestShutdown,
 		}); nativeRestarter != nil {
 			restarter = nativeRestarter
 		}

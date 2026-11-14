@@ -83,6 +83,14 @@ func (a serverRestarterAdapter) RestartServer(ctx context.Context) (managementop
 	if err != nil {
 		return managementops.RestartResponse{}, err
 	}
+	if outcome.Pending {
+		return managementops.RestartResponse{
+			OK: true, Action: "restart", PID: outcome.PID,
+			// The worker is armed, not proof the server was stopped or its successor started.
+			Stopped:       managementops.RestartStoppedStatus{Reason: "restart_pending"},
+			AppliedConfig: outcome.AppliedConfig,
+		}, nil
+	}
 	return managementops.RestartResponse{
 		OK:            true,
 		Action:        "restart",
@@ -141,8 +149,9 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		restarter := ports.Restarter
 		if restarter == nil {
 			if nativeRestarter := webuiserverrestartapi.NewNativeRestarter(webuiserverrestartapi.NativeRestarterOptions{
-				AIHomeDir:      aiHome,
-				ResolveCommand: ports.RestartCommandResolver,
+				AIHomeDir:       aiHome,
+				ResolveCommand:  ports.RestartCommandResolver,
+				RequestShutdown: dependencies.RequestShutdown,
 			}); nativeRestarter != nil {
 				restarter = serverRestarterAdapter{restarter: nativeRestarter, now: nowFn}
 			}
@@ -194,6 +203,8 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		{Pattern: "POST " + webuimanagementapi.ReloadPath, Handler: handler},
 		{Pattern: "POST " + webuimanagementapi.CooldownClearPath, Handler: handler},
 		{Pattern: "POST " + webuimanagementapi.RestartPath, Handler: handler},
+		// Preserve the Node public restart contract when the native server runs without Node.
+		{Pattern: "POST " + webuimanagementapi.PublicPrefix + "/restart", Handler: handler},
 		{Pattern: "POST " + webuimanagementapi.StateIndexOperationalStatusPath, Handler: handler},
 		{Pattern: "POST " + webuimanagementapi.StateIndexRuntimeStatePath, Handler: handler},
 		{Pattern: "POST " + webuimanagementapi.StateIndexUpsertPath, Handler: handler},

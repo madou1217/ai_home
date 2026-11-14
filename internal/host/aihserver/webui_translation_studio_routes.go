@@ -239,9 +239,10 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		// 浏览器数据面：同一处理器同时挂 /v0/webui/studio/image/*，
 		// 迁移后不再经 Node 做前缀改写与转发。
 		{Pattern: webuiimagestudioapi.PublicPath + "/", Handler: webuiimagestudioapi.NewPublicAlias(studioHandler)},
-		// AI 翻译页同样直接接住浏览器前缀，不再经 Node 转发。
-		{Pattern: webuitranslationapi.PublicPath, Handler: webuitranslationapi.NewPublicAlias(translationHandler)},
-		{Pattern: webuitranslationapi.PublicPath + "/", Handler: webuitranslationapi.NewPublicAlias(translationHandler)},
+		// AI 翻译页的已实现子路径由 router 的 mountPublicManagementAliases 自动补
+		// /v0/webui/translation/* 别名。这里不能再挂 catch-all：/system 与 /focus
+		// 仍由 Node 宿主的桌面取词服务承接，catch-all 会让前置门把它们也吃进 Go，
+		// 返回 translation_route_not_found。未注册子路径交给前置门回落 Node。
 	}, nil
 }
 

@@ -24,7 +24,7 @@ func (translationStudioTestAuthorizer) Authorized(req *http.Request) bool {
 }
 
 func TestBuildWebUITranslationStudioRoutes(t *testing.T) {
-	t.Run("返回全部十七条路由并与现有切片路由无 ServeMux 模式冲突", func(t *testing.T) {
+	t.Run("返回全部十八条路由并与现有切片路由无 ServeMux 模式冲突", func(t *testing.T) {
 		aiHomeDir := t.TempDir()
 		hostHomeDir := t.TempDir()
 		catalog, err := providers.NewCatalog(providers.BuiltinManifest())
@@ -84,10 +84,9 @@ func TestBuildWebUITranslationStudioRoutes(t *testing.T) {
 			"DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}",
 			"POST " + webuiimagestudioapi.Path + "/sessions/{sessionId}/runs",
 			"GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}/assets/{assetId}",
-			// 浏览器数据面：Image Studio 与翻译页由 Go 直接应答同一处理器。
+			// 浏览器数据面：Image Studio 由 Go 直接应答；翻译页只挂已实现子路径，
+			// /system 与 /focus 留给前置门回落 Node 的桌面取词服务。
 			webuiimagestudioapi.PublicPath + "/",
-			webuitranslationapi.PublicPath,
-			webuitranslationapi.PublicPath + "/",
 		}
 		if len(routes) != len(want) {
 			t.Fatalf("路由数量 = %d, want %d", len(routes), len(want))

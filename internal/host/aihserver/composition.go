@@ -76,6 +76,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
+	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -1559,6 +1560,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Clock:          time.Now,
 		Rules:          upstreamRuleEvaluator,
 		FailureLog:     newCodexResponsesFailureLogger(errorLog),
+		Ladders:        modelModalities,
 	})
 	if err != nil {
 		_ = inference.Close()
@@ -2037,12 +2039,13 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		)
 	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
-		Models:     inference.models,
-		Catalog:    modelCatalogStore,
-		Modalities: modelModalities,
-		Reasoning:  modelModalities,
-		Aliases:    inference.models,
-		Authorizer: clientAuthorizer,
+		ServiceTiers: codexmodelcatalog.NewReader(),
+		Models:       inference.models,
+		Catalog:      modelCatalogStore,
+		Modalities:   modelModalities,
+		Reasoning:    modelModalities,
+		Aliases:      inference.models,
+		Authorizer:   clientAuthorizer,
 	})
 	if err != nil {
 		_ = inference.Close()

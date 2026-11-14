@@ -48,12 +48,13 @@ type ModelReader interface {
 
 // Dependencies 声明标准模型目录的只读依赖。
 type Dependencies struct {
-	Models     ModelReader
-	Catalog    CatalogReader
-	Modalities modelmetadata.Reader
-	Reasoning  modelmetadata.ReasoningLadderReader
-	Aliases    modelalias.DisplayReader
-	Authorizer Authorizer
+	ServiceTiers modelmetadata.ServiceTierReader
+	Models       ModelReader
+	Catalog      CatalogReader
+	Modalities   modelmetadata.Reader
+	Reasoning    modelmetadata.ReasoningLadderReader
+	Aliases      modelalias.DisplayReader
+	Authorizer   Authorizer
 }
 
 // CatalogReader is the optional public model catalog projection supplied by
@@ -64,12 +65,13 @@ type CatalogReader interface {
 
 // Handler 把本地 Provider 模型元组渲染为 OpenAI 模型列表。
 type Handler struct {
-	models     ModelReader
-	catalog    CatalogReader
-	modalities modelmetadata.Reader
-	reasoning  modelmetadata.ReasoningLadderReader
-	aliases    modelalias.DisplayReader
-	authorizer Authorizer
+	serviceTiers modelmetadata.ServiceTierReader
+	models       ModelReader
+	catalog      CatalogReader
+	modalities   modelmetadata.Reader
+	reasoning    modelmetadata.ReasoningLadderReader
+	aliases      modelalias.DisplayReader
+	authorizer   Authorizer
 }
 
 // NewHandler 创建不会访问 SQLite、凭据或上游的标准模型目录 Handler。
@@ -80,12 +82,13 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		models:     dependencies.Models,
-		catalog:    dependencies.Catalog,
-		modalities: dependencies.Modalities,
-		reasoning:  dependencies.Reasoning,
-		aliases:    dependencies.Aliases,
-		authorizer: dependencies.Authorizer,
+		serviceTiers: dependencies.ServiceTiers,
+		models:       dependencies.Models,
+		catalog:      dependencies.Catalog,
+		modalities:   dependencies.Modalities,
+		reasoning:    dependencies.Reasoning,
+		aliases:      dependencies.Aliases,
+		authorizer:   dependencies.Authorizer,
 	}, nil
 }
 
@@ -163,7 +166,38 @@ func (handler *Handler) ServeHTTP(
 			Data:   views,
 		})
 	case catalogProtocolCodex:
-		writeJSON(response, http.StatusOK, newCodexModelList(views))
+		payload := newCodexModelList(views)
+		if handler.serviceTiers != nil {
+			for index := range payload.Models {
+				model := &payload.Models[index]
+				tiers := handler.serviceTiers.LookupServiceTiers(request.Context(), "codex", model.Slug)
+				if len(tiers) == 0 {
+					continue
+				}
+				model.ServiceTiers = tiers
+				hasUltrafast := false
+				for _, tier := range tiers {
+					switch tier.ID {
+					case "priority":
+						model.AdditionalSpeedTiers = appendUniqueString(model.AdditionalSpeedTiers, "fast")
+					case "ultrafast":
+						hasUltrafast = true
+						model.AdditionalSpeedTiers = appendUniqueString(model.AdditionalSpeedTiers, "ultrafast")
+					}
+				}
+				// Codex 首方目录当前不给 Sol / Astra 的 ultrafast 条目（官方文档声明两者支持），
+				// 这里按 Fast 的同一形状补齐，避免 TUI 只显示 Fast。
+				if !hasUltrafast && codexSupportsUltrafast(model.Slug) {
+					model.ServiceTiers = append(model.ServiceTiers, modelmetadata.ServiceTier{
+						ID:          "ultrafast",
+						Name:        "Ultrafast",
+						Description: "The fastest available responses for latency-sensitive work.",
+					})
+					model.AdditionalSpeedTiers = appendUniqueString(model.AdditionalSpeedTiers, "ultrafast")
+				}
+			}
+		}
+		writeJSON(response, http.StatusOK, payload)
 	}
 }
 

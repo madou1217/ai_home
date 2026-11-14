@@ -52,6 +52,9 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "GET " + webuitoolkitcoreapi.MirrorsPath, Handler: handler},
 		// 浏览器数据面：镜像/代理/连通性四条与 Go 管理路径同构，直接前缀重写。
 		{Pattern: "GET /v0/webui/toolkit/mirrors", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "GET /v0/webui/toolkit/tools", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "GET /v0/webui/toolkit/apps", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+
 		{Pattern: "POST /v0/webui/toolkit/mirrors/set", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "POST /v0/webui/toolkit/mirrors/ping", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET /v0/webui/toolkit/proxy", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},

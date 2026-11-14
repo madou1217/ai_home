@@ -1017,6 +1017,20 @@
             "GET"
           ],
           "path": "/v0/webui/toolkit/connectivity"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/toolkit/tools"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/toolkit/apps"
         }
       ]
     },

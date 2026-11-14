@@ -427,6 +427,8 @@ func Current() Manifest {
 					httpRoute([]string{"GET"}, "/v0/webui/toolkit/proxy"),
 					httpRoute([]string{"POST"}, "/v0/webui/toolkit/proxy/set"),
 					httpRoute([]string{"GET"}, "/v0/webui/toolkit/connectivity"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/tools"),
+					httpRoute([]string{"GET"}, "/v0/webui/toolkit/apps"),
 				},
 			},
 			{

@@ -1931,7 +1931,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runtime 集合路由失败: %w", routesErr)
 		}
 		webuiRoutes = append(webuiRoutes, chatCollectionRoutes...)
-		chatRunsRoutes, runsRoutesErr := BuildWebUIChatRunsRoutes(chatHandler)
+		chatRunsRoutes, runsRoutesErr := BuildWebUIChatRunsRoutes(chatHandler, dependencies.ManagementKey)
 		if runsRoutesErr != nil {
 			_ = chatRuntimeService.Close()
 			_ = inference.Close()

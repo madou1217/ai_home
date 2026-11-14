@@ -434,13 +434,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/internal/approval-request"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/internal/remote-tools"
         },
         {
@@ -1502,6 +1495,20 @@
             "GET"
           ],
           "path": "/v0/webui/accounts/provider-auth-sources"
+        }
+      ]
+    },
+    {
+      "id": "webui.internal_approval",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/internal/approval-request"
         }
       ]
     },

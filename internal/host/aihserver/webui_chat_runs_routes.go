@@ -4,12 +4,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // BuildWebUIChatRunsRoutes 返回原生 chat run 控制、审批长轮询、CLI 安装确认与 legacy /chat 路由。
 // 全部路由均挂在 /v1/management/webui/chat* 下，不与 /sessions/ 前缀挂载和集合路由冲突。
-func BuildWebUIChatRunsRoutes(handler *webuichatapi.Handler) ([]webuiRoute, error) {
+func BuildWebUIChatRunsRoutes(handler *webuichatapi.Handler, managementKey func() string) ([]webuiRoute, error) {
 	if handler == nil {
 		return nil, nil
 	}
@@ -41,6 +43,11 @@ func BuildWebUIChatRunsRoutes(handler *webuichatapi.Handler) ([]webuiRoute, erro
 			Handler: http.HandlerFunc(handler.ServeApprovalRequest),
 		},
 		{
+			// 浏览器/本机审批桥的公开入口：同一条回环 ingress（Go 只监听回环）。
+			Pattern: "POST /v0/webui/internal/approval-request",
+			Handler: webuiauth.RequireManagementKey(managementKey, webuipublicalias.Rewrite("/v0/webui/internal/approval-request", webuichatapi.ManagementInternalApprovalPath, http.HandlerFunc(handler.ServeApprovalRequest))),
+		},
+		{
 			Pattern: "POST " + webuichatapi.ManagementCLIInstallConfirmationsPrefixPath + "{confirmationId}",
 			Handler: http.HandlerFunc(handler.ServeCliInstallConfirmation),
 		},
@@ -63,5 +70,5 @@ func buildWebUIChatRunsRoutesWithHandler(
 	if dependencies.Authorizer == nil || handler == nil {
 		return nil, nil
 	}
-	return BuildWebUIChatRunsRoutes(handler)
+	return BuildWebUIChatRunsRoutes(handler, nil)
 }

@@ -199,7 +199,6 @@ func Current() Manifest {
 					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/attachments"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
-					httpRoute([]string{"*"}, "/v0/webui/internal/approval-request"),
 					httpRoute([]string{"*"}, "/v0/webui/internal/remote-tools"),
 					httpRoute([]string{"*"}, "/v0/webui/provider-cli-upgrade"),
 					{Transport: "http", Methods: []string{"GET"}, Path: "/ui/*", Role: "static WebUI"},
@@ -625,6 +624,15 @@ func Current() Manifest {
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/accounts/export"),
 					httpRoute([]string{"GET"}, "/v0/webui/accounts/provider-auth-sources"),
+				},
+			},
+			{
+				// 本机审批桥 ingress（回环专用）。
+				ID:              "webui.internal_approval",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/internal/approval-request"),
 				},
 			},
 			{

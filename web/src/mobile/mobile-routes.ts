@@ -27,6 +27,7 @@ export type MobileNavKey = 'dashboard' | 'accounts' | 'chat' | 'usage' | 'more';
 export const MOBILE_ROUTES: MobileRouteEntry[] = [
   { pattern: '/dashboard', code: 'DASH', title: '仪表盘', nav: 'dashboard' },
   { pattern: '/accounts/:provider/:accountRef/models', code: 'MODELS', title: '账号模型', nav: 'accounts' },
+  { pattern: '/accounts/:provider/:accountRef/quota', code: 'QUOTA', title: '额度统计', nav: 'accounts' },
   { pattern: '/accounts', code: 'ACCTS', title: '账号管理', nav: 'accounts' },
   { pattern: '/chat', code: 'CHAT', title: 'AI 会话', nav: 'chat' },
   { pattern: '/usage', code: 'USAGE', title: '模型用量', nav: 'usage' },

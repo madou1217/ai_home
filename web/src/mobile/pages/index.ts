@@ -8,6 +8,7 @@ import type { MobilePageComponent } from '../mobile-routes';
 export const MOBILE_PAGES: Record<string, MobilePageComponent> = {
   '/dashboard': lazy(() => import('./MobileDashboard')),
   '/accounts/:provider/:accountRef/models': lazy(() => import('./MobileAccountModels')),
+  '/accounts/:provider/:accountRef/quota': lazy(() => import('./MobileAccountQuota')),
   '/accounts': lazy(() => import('./MobileAccounts')),
   '/chat': lazy(() => import('./MobileChat')),
   '/usage': lazy(() => import('./MobileUsage')),

@@ -174,6 +174,8 @@ func buildWebUIOpsMiscRoutesWithPorts(
 		{Pattern: "GET " + webuipeerapi.MessagesPath, Handler: peerHandler},
 		{Pattern: "GET " + webuipeerapi.WatchPath, Handler: peerHandler},
 		{Pattern: "GET " + webuiaccountoutcomesapi.Path, Handler: outcomesHandler},
+		// 浏览器数据面直接由 Go 应答。
+		{Pattern: "GET " + webuiaccountoutcomesapi.PublicPath, Handler: webuiaccountoutcomesapi.NewPublicAlias(outcomesHandler)},
 		{Pattern: "GET " + webuitasksapi.Path, Handler: tasksHandler},
 		{Pattern: "GET " + webuitasksapi.WatchPath, Handler: tasksHandler},
 		{Pattern: "POST " + webuiserverrestartapi.Path, Handler: serverRestartHandler},

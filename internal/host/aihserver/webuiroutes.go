@@ -761,6 +761,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiquotaresetapi.Path + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset},
 		{Pattern: "GET " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		{Pattern: "POST " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
+		// 浏览器数据面：同一处理器 + 前缀重写。
+		{Pattern: "GET " + webuialiaspoolapi.PublicAccountPrefix + "/{provider}/{accountRef}/alias-pool", Handler: webuialiaspoolapi.NewPublicAlias(aliasPool)},
+		{Pattern: "POST " + webuialiaspoolapi.PublicAccountPrefix + "/{provider}/{accountRef}/alias-pool", Handler: webuialiaspoolapi.NewPublicAlias(aliasPool)},
 		{Pattern: "GET " + webuichatpasteapi.Path, Handler: chatPaste},
 		{Pattern: "POST " + webuichatpasteapi.Path, Handler: chatPaste},
 		{Pattern: "GET " + webuiusageconfigapi.Path, Handler: usageConfig},

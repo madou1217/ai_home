@@ -237,6 +237,25 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号结果汇总：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_outcomes",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/account-outcomes"),
+				},
+			},
+			{
+				// 账号别名池读写：浏览器入口由 Go 直接应答。
+				ID:              "webui.account_alias_pool",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/alias-pool"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}/alias-pool"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

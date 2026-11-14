@@ -40,11 +40,24 @@ func (config Config) authMethods() ([]ssh.AuthMethod, []io.Closer, error) {
 		}
 		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil, nil
 	case AuthAgent:
-		method, closer, err := agentMethod()
-		if err != nil {
-			return nil, nil, err
+		// 与 OpenSSH 一致：先试 agent，再试 ~/.ssh 下的默认私钥。
+		// systemd 拉起的服务常带着一个空的 SSH_AUTH_SOCK（登录会话的 agent
+		// 已重启），这时只认 agent 会让「测试连接」（ssh CLI）成功、浏览失败。
+		var methods []ssh.AuthMethod
+		var closers []io.Closer
+		method, closer, signerCount, agentErr := agentMethod()
+		if agentErr == nil && signerCount > 0 {
+			methods = append(methods, method)
+			closers = append(closers, closer)
 		}
-		return []ssh.AuthMethod{method}, []io.Closer{closer}, nil
+		methods = append(methods, config.defaultIdentityMethods()...)
+		if len(methods) == 0 {
+			if agentErr != nil {
+				return nil, nil, agentErr
+			}
+			return nil, nil, newError(CodeAuthFailed, "ssh-agent 没有可用身份，且未找到可用的默认私钥", nil)
+		}
+		return methods, closers, nil
 	default:
 		return nil, nil, newError(CodeInvalidConfig, "不支持的 SSH 认证方式: "+config.authType(), nil)
 	}
@@ -107,16 +120,56 @@ func parsePrivateKey(body []byte, source string) (ssh.Signer, error) {
 	return nil, newError(CodeKeyInvalid, source+"无法解析", err)
 }
 
+// defaultIdentityMethods 返回 ~/.ssh 下 OpenSSH 默认私钥的认证方法。
+//
+// 仅在 agent 认证之后追加：agent 没有身份或身份被远端拒绝时，行为与
+// ssh CLI 的默认身份文件回退一致。缺失、权限不合格或加密的私钥直接跳过。
+func (config Config) defaultIdentityMethods() []ssh.AuthMethod {
+	home, err := config.homeDir()
+	if err != nil {
+		return nil
+	}
+	methods := make([]ssh.AuthMethod, 0, 3)
+	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		resolved, err := sshhost.ResolveIdentityFilePath("~/.ssh/"+name, sshhost.IdentityOptions{HomeDir: home})
+		if err != nil {
+			continue
+		}
+		body, err := os.ReadFile(resolved)
+		if err != nil {
+			continue
+		}
+		signer, err := ssh.ParsePrivateKey(body)
+		if err != nil {
+			continue
+		}
+		methods = append(methods, ssh.PublicKeys(signer))
+	}
+	return methods
+}
+
 // agentMethod 连接 SSH_AUTH_SOCK；返回的 closer 由 Client 统一关闭。
-func agentMethod() (ssh.AuthMethod, io.Closer, error) {
+//
+// 返回 signerCount 供调用方跳过空 agent：x/crypto 在回调返回空身份时会直接
+// 结束 publickey 尝试，后面的默认私钥就再也试不到了。
+func agentMethod() (ssh.AuthMethod, io.Closer, int, error) {
 	socket := strings.TrimSpace(os.Getenv("SSH_AUTH_SOCK"))
 	if socket == "" {
-		return nil, nil, newError(CodeAgentUnavailable, "SSH_AUTH_SOCK 未设置，agent 认证不可用", nil)
+		return nil, nil, 0, newError(CodeAgentUnavailable, "SSH_AUTH_SOCK 未设置，agent 认证不可用", nil)
 	}
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
-		return nil, nil, newError(CodeAgentUnavailable, "无法连接 ssh-agent", err)
+		return nil, nil, 0, newError(CodeAgentUnavailable, "无法连接 ssh-agent", err)
 	}
 	client := agent.NewClient(conn)
-	return ssh.PublicKeysCallback(client.Signers), conn, nil
+	signers, err := client.Signers()
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, 0, newError(CodeAgentUnavailable, "ssh-agent 无法列出身份", err)
+	}
+	if len(signers) == 0 {
+		_ = conn.Close()
+		return nil, nil, 0, nil
+	}
+	return ssh.PublicKeysCallback(client.Signers), conn, len(signers), nil
 }

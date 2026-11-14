@@ -17,7 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshhostbrowseapi"
 )
 
-const detectAndHomeCommand = `uname -s 2>/dev/null && printf AIH_POSIXn%sn "$HOME" || powershell -NoProfile -NonInteractive -Command "Write-Output AIH_WINDOWS; Write-Output ([Environment]::GetFolderPath(UserProfile))"`
+const detectAndHomeCommand = `uname -s 2>/dev/null && printf 'AIH_POSIX\n%s\n' "$HOME" || powershell -NoProfile -NonInteractive -Command "Write-Output AIH_WINDOWS; Write-Output ([Environment]::GetFolderPath(UserProfile))"`
 
 // Runner 实现 webuisshhostbrowseapi.Runner 与 webuisshhostbrowseapi.DirectoryBrowser。
 type Runner struct {

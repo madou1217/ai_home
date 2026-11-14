@@ -283,7 +283,7 @@ func (handler *Handler) browse(ctx context.Context, connection Conn, subDir stri
 		directory = path.Clean(directory)
 	} else {
 		runCtx, cancel := context.WithTimeout(ctx, handler.timeout)
-		homeBytes, err := handler.runner.Run(runCtx, connection, []string{"sh", "-c", `printf %sn "$HOME"`})
+		homeBytes, err := handler.runner.Run(runCtx, connection, []string{"sh", "-c", `printf '%s\n' "$HOME"`})
 		cancel()
 		if err != nil {
 			return DirectoryResult{}, err

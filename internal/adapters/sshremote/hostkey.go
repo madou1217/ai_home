@@ -44,11 +44,24 @@ func (config Config) hostKeyCallback() (ssh.HostKeyCallback, error) {
 			return nil
 		}
 		var keyErr *knownhosts.KeyError
-		if errors.As(verifyErr, &keyErr) && len(keyErr.Want) == 0 {
+		if !errors.As(verifyErr, &keyErr) {
+			return fmt.Errorf("SSH 主机密钥校验失败: %w", verifyErr)
+		}
+		if len(keyErr.Want) == 0 {
 			// 未知主机：accept-new 记录后放行。
 			return appendKnownHost(path, hostname, key)
 		}
-		return fmt.Errorf("SSH 主机密钥校验失败: %w", verifyErr)
+		// x/crypto/knownhosts 把同一主机记录过的任何密钥都当作期望值；
+		// OpenSSH（以及 Node 的 ssh2）按密钥类型分别记录。主机只记录过
+		// ED25519 时，服务端同时提供的 RSA/ECDSA 主机密钥属于尚未记录的
+		// 类型，应 accept-new 记录，而不是误报“指纹变化”。只有同一类型
+		// 已记录且不匹配时才是真正的主机密钥变更，必须拒绝。
+		for _, want := range keyErr.Want {
+			if want.Key != nil && want.Key.Type() == key.Type() {
+				return fmt.Errorf("SSH 主机密钥校验失败: %w", verifyErr)
+			}
+		}
+		return appendKnownHost(path, hostname, key)
 	}, nil
 }
 

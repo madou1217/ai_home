@@ -167,11 +167,29 @@ func (client *Client) Run(ctx context.Context, command string, limit int) (Resul
 	return result, err
 }
 
+// RunWithInput 执行命令并把 input 写入远端 stdin；用于原子写文件。
+func (client *Client) RunWithInput(ctx context.Context, command string, input []byte, limit int) (Result, error) {
+	stdout := &limitedBuffer{limit: limit}
+	stderr := &limitedBuffer{limit: limit}
+	code, err := client.stream(ctx, command, bytes.NewReader(input), stdout, stderr)
+	result := Result{
+		Code:      code,
+		Stdout:    stdout.Bytes(),
+		Stderr:    stderr.Bytes(),
+		Truncated: stdout.truncated || stderr.truncated,
+	}
+	return result, err
+}
+
 // Stream 执行命令并把 stdout / stderr 实时复制到调用方 writer，返回远端退出码。
 //
 // 非零退出码不是 error：调用方需要按 code 区分「命令失败」与「传输失败」。
 // ctx 取消时会关闭会话并返回 ctx.Err()。
 func (client *Client) Stream(ctx context.Context, command string, stdout, stderr io.Writer) (int, error) {
+	return client.stream(ctx, command, nil, stdout, stderr)
+}
+
+func (client *Client) stream(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if client == nil || client.client == nil {
 		return -1, newError(CodeDialFailed, "SSH 连接已关闭", nil)
 	}
@@ -183,6 +201,9 @@ func (client *Client) Stream(ctx context.Context, command string, stdout, stderr
 		return -1, newError(CodeDialFailed, "无法打开 SSH 会话", err)
 	}
 	defer session.Close()
+	if stdin != nil {
+		session.Stdin = stdin
+	}
 	if stdout != nil {
 		session.Stdout = stdout
 	}

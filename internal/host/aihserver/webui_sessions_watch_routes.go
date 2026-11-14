@@ -2,7 +2,9 @@ package aihserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +17,12 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionwatchapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 const codexAppServerPassthroughEnv = "AIH_CODEX_APP_SERVER_PASSTHROUGH"
@@ -107,6 +109,16 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		{Pattern: "POST " + webuisessionhookapi.Path, Handler: hookHandler},
 		// 插件回调的公开入口：Node 的 /v0 门只对回环放行，这里用同一判定后注入 Bearer。
 		{Pattern: "POST /v0/webui/session-events/provider-hook", Handler: webuiauth.RequireManagementKey(dependencies.ManagementKey, hookHandler)},
+		// 远程工具 HTTP 入口：Go 版 agent 终端用直连模式（MCP server 自建 SSH），
+		// 这里不再签发令牌；无令牌一律拒绝，避免 Node 桥继续承接该路由。
+		{Pattern: "POST /v0/webui/internal/remote-tools", Handler: http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			response.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(response).Encode(map[string]any{
+				"isError": true,
+				"content": []any{map[string]any{"type": "text", "text": "[remote_tools_forbidden] 远程工具令牌无效或已过期"}},
+			})
+		})},
 		{Pattern: "POST " + webuisessionslifecycleapi.UnarchivePath, Handler: unarchiveHandler},
 		// 浏览器数据面：/v0/webui/sessions/unarchive → 管理前缀（同一处理器）。
 		{Pattern: "POST /v0/webui/sessions/unarchive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", unarchiveHandler)},

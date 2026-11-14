@@ -27,6 +27,14 @@ func main() {
 		}
 		return
 	}
+	// 远程工作区工具 MCP server：由 Claude/Codex 直接拉起，直接模式自己建 SSH。
+	if len(os.Args) > 1 && os.Args[1] == "__mcp-remote-tools" {
+		if err := webuisshapi.RunRemoteToolsMCP(os.Stdin, os.Stdout, os.Getenv); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "aih-server __mcp-remote-tools: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// Provider 官方 hook 的发送器：由 provider 直接执行，不经服务器装配，也不需要 Node。
 	if len(os.Args) > 1 && os.Args[1] == "__provider-hook" {
 		stdin, _ := io.ReadAll(io.LimitReader(os.Stdin, 4<<20))

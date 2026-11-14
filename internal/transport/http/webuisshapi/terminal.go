@@ -239,9 +239,9 @@ func (handler *WorkspaceTerminalHandler) openAgentTerminal(
 		writeError(response, http.StatusInternalServerError, "shadow_directory_failed", err.Error())
 		return
 	}
-	nodePath, cliEntry, errCode, errMsg := handler.resolveNodeAndCLI()
-	if errCode != "" {
-		writeError(response, http.StatusServiceUnavailable, errCode, errMsg)
+	providerPath, providerArgs, providerEnv, buildErr := buildRemoteAgentLaunch(handler.aiHomeDir, workspaceID, agent)
+	if buildErr != nil {
+		writeError(response, http.StatusServiceUnavailable, "remote_agent_unavailable", buildErr.Error())
 		return
 	}
 	if handler.launcher == nil {
@@ -255,9 +255,9 @@ func (handler *WorkspaceTerminalHandler) openAgentTerminal(
 	agentKey := "remote-ai:" + workspaceID + ":" + agent + suffix
 	res, launchErr := handler.launcher.LaunchTerminal(request.Context(), TerminalLaunchRequest{
 		SessionKey: agentKey,
-		File:       nodePath,
-		Args:       []string{cliEntry, agent, "--remote=" + workspaceID},
-		Env:        []string{"AIH_HOME_DIR=" + handler.aiHomeDir},
+		File:       providerPath,
+		Args:       providerArgs,
+		Env:        providerEnv,
 		Cwd:        shadowDir,
 		Cols:       intValue(body.Cols),
 		Rows:       intValue(body.Rows),

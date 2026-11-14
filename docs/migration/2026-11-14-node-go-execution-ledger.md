@@ -118,3 +118,17 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - 最新 forced 真机记录：无 `--port` 的临时服务 A/B；A 父进程 SIGSTOP 后 server stop 输出 `[forced]`，原 Node PID 96570 被清理；B 及 MCP helper 保持存活。未触碰 9527。
 - 审查中指出的全部六项具体问题已在本提交范围整改；Windows/Linux 仅编译，不据此关闭跨平台真实验收。
 - 下一实际工作：W3 Codex 默认档迁移。已确认不能直接把 codex 加进通用 allowlist：Go hostsync 未支持 Codex，现有 WebUI HostFileProjection 对 Codex BuildAccount 忽略账号引用，仅写 config provider；尚未覆盖 OAuth/auth.json、网关 client key、宿主同步事务和 Desktop 重载。必须补业务链路后切 owner，不接受“Go 返回成功但宿主未切换”。
+
+## W0：补齐 Go 分文件路由注册发现（2026-11-15）
+
+新增只读工具 `go run ./cmd/route-entry-inventory`。原 regex 工具仅扫描主 router，新的 AST 工具读取 host 构造器、HTTP handler 常量和 internal/contracts 中的别名/拼接；不启动服务、不读账号库、不修改生成合同。
+
+当前实际扫描结果：
+
+- mux_registration=79，webui_constructor=411，derived_public_alias_candidate=357，共 847 条**源码证据**。
+- unresolved=8，均记录表达式/函数/文件/行号，包括动态 route.Pattern、alias、函数本地 TrimSuffix 的变量、noderpc 循环拼接。
+- 保留显式 `SkipPublicAlias` 与 `/internal/` 排除，不把派生候选当作一定生效；重复/保留路由、构造器可达性、handler 内部 WS/SSE/方法语义必须另外核实。
+- 源码条目不等于唯一 URL，更不等于验收功能数。现有 source scanner 输出仍保留；没有改写另一会话的 product-inventory。
+- 使用实际当前仓库执行采集成功；Go AST 语法错误会显式失败，不吞错误输出“覆盖完整”。本工具不新增测试文件。
+
+复现命令：`go run ./cmd/route-entry-inventory > /tmp/aih-route-entry-inventory.json`。输出 stdout JSON，无凭据、无实际会话内容。

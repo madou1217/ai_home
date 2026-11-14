@@ -84,6 +84,14 @@ func (job Job) snapshot(updatedAt time.Time) JobRecord {
 	}
 }
 
+// RestoreJob 从持久化快照还原只读 Job。
+//
+// 还原结果只用于查询与终态回放：OAuthFlow 等私有状态无法从快照恢复，
+// 因此返回的 Job 只能被读取，不能被重新领取执行。
+func RestoreJob(record JobRecord) Job {
+	return jobFromRecord(record)
+}
+
 // jobFromRecord 把持久化快照还原为只读 Job。
 //
 // 还原结果只用于查询与终态回放：OAuthFlow 等私有状态无法从快照恢复，

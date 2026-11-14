@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/accountauth"
@@ -71,8 +72,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
 		return
 	}
-	jobID := strings.Trim(strings.TrimPrefix(request.URL.Path, Path), "/")
-	if jobID == "" || strings.Contains(jobID, "/") {
+	rawJobID := strings.Trim(strings.TrimPrefix(request.URL.Path, Path), "/")
+	if rawJobID == "" || strings.Contains(rawJobID, "/") {
+		writeError(response, http.StatusNotFound, "job_not_found", "作业不存在")
+		return
+	}
+	jobID, unescapeErr := url.PathUnescape(rawJobID)
+	jobID = strings.TrimSpace(jobID)
+	if unescapeErr != nil || jobID == "" || strings.Contains(jobID, "/") {
 		writeError(response, http.StatusNotFound, "job_not_found", "作业不存在")
 		return
 	}
@@ -88,12 +95,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":        true,
 		"recovered": job.AuthMode() == "",
-		"job":       jobView(job),
+		"job":       SerializeJob(job),
 	})
 }
 
-// jobView 把 Job 投影成 Node 的 serializeAuthJob 形状。
-func jobView(job accountauth.Job) map[string]any {
+// SerializeJob 把 Job 投影成 Node 的 serializeAuthJob 形状，供快照查询与 SSE 广播复用。
+func SerializeJob(job accountauth.Job) map[string]any {
 	createdAt := job.CreatedAt().UnixMilli()
 	updatedAt := createdAt
 	if finished := job.FinishedAt(); !finished.IsZero() {
@@ -107,30 +114,52 @@ func jobView(job accountauth.Job) map[string]any {
 	if accountRef == "" {
 		accountRef = job.TargetAccountRef().String()
 	}
+	authMode := strings.TrimSpace(job.AuthMode())
+	recovered := authMode == ""
+	rawAuthURL := strings.TrimSpace(job.AuthorizationURL())
+	authorizationURL := ""
+	verificationURI := ""
+	redirectURI := ""
+	if authMode == "oauth-device" {
+		verificationURI = rawAuthURL
+	} else if rawAuthURL != "" {
+		authorizationURL = rawAuthURL
+		redirectURI = deriveRedirectURI(rawAuthURL)
+	}
+	var pollIntervalMS any
+	if !recovered {
+		if authMode == "oauth-device" || authMode == "oauth-refresh-token" {
+			pollIntervalMS = 2000
+		} else {
+			pollIntervalMS = 1000
+		}
+	}
 	account := job.Account()
 	return map[string]any{
 		"id":                      job.ID(),
 		"provider":                job.ProviderID(),
 		"accountRef":              accountRef,
-		"authMode":                job.AuthMode(),
+		"authMode":                authMode,
 		"authStrategy":            job.AuthStrategy(),
 		"reauth":                  strings.EqualFold(string(job.Purpose()), "reauth"),
-		"status":                  string(job.Status()),
-		"authProgressState":       "",
+		"status":                  nodeStatus(job.Status()),
+		"goStatus":                string(job.Status()),
+		"authProgressState":       progressState(job.Status(), authMode, recovered),
 		"logs":                    "",
 		"exitCode":                nil,
 		"error":                   job.FailureCode(),
+		"failureCode":             job.FailureCode(),
 		"createdAt":               createdAt,
 		"updatedAt":               updatedAt,
 		"lastOutputAt":            0,
 		"pid":                     nil,
 		"expiresAt":               expiresAt,
-		"pollIntervalMs":          nil,
-		"verificationUri":         job.AuthorizationURL(),
+		"pollIntervalMs":          pollIntervalMS,
+		"verificationUri":         verificationURI,
 		"verificationUriComplete": "",
 		"userCode":                job.UserCode(),
-		"authorizationUrl":        "",
-		"redirectUri":             "",
+		"authorizationUrl":        authorizationURL,
+		"redirectUri":             redirectURI,
 		"callbackCaptureStatus":   "",
 		"callbackListeningUrl":    "",
 		"callbackCaptureError":    "",
@@ -141,6 +170,68 @@ func jobView(job accountauth.Job) map[string]any {
 		"installRequired":         false,
 		"installAttempts":         []any{},
 	}
+}
+
+func nodeStatus(status accountauth.Status) string {
+	switch status {
+	case accountauth.StatusPending, accountauth.StatusProcessing:
+		return "running"
+	case accountauth.StatusCompleted:
+		return "succeeded"
+	case accountauth.StatusFailed:
+		return "failed"
+	case accountauth.StatusCancelled:
+		return "cancelled"
+	case accountauth.StatusExpired:
+		return "expired"
+	default:
+		return "running"
+	}
+}
+
+func progressState(status accountauth.Status, authMode string, recovered bool) string {
+	switch status {
+	case accountauth.StatusProcessing:
+		return "submitted_code"
+	case accountauth.StatusCompleted:
+		return "completed"
+	case accountauth.StatusFailed:
+		return "failed"
+	case accountauth.StatusCancelled:
+		return "cancelled"
+	case accountauth.StatusExpired:
+		return "expired"
+	case accountauth.StatusPending:
+		if recovered {
+			return ""
+		}
+		if authMode == "oauth-device" || authMode == "oauth-refresh-token" {
+			return "awaiting_code"
+		}
+		return "auth_url_ready"
+	default:
+		if recovered {
+			return ""
+		}
+		return "auth_url_ready"
+	}
+}
+
+func deriveRedirectURI(authorizationURL string) string {
+	if authorizationURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(authorizationURL)
+	if err != nil {
+		return ""
+	}
+	query := parsed.Query()
+	for _, key := range []string{"redirect_uri", "redirectUri", "redirect"} {
+		if value := strings.TrimSpace(query.Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func writeJSON(response http.ResponseWriter, status int, payload any) {

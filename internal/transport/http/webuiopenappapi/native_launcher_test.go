@@ -424,6 +424,38 @@ func TestNativeLauncherInstallRequiredDesktopAndCLI(t *testing.T) {
 	}
 }
 
+func TestApplyAccountEgressProxyEnvKeepsBothCases(t *testing.T) {
+	t.Parallel()
+	// 未绑定出口：宿主只留了小写写法时，必须补出大写，反之亦然。
+	base := []string{"https_proxy=http://127.0.0.1:18080", "HOME=/tmp/x"}
+	got := applyAccountEgressProxyEnv("codex", base, EgressResolution{})
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy"} {
+		if value, _ := envLookup(got, key); value != "http://127.0.0.1:18080" {
+			t.Fatalf("%s = %q, want mirrored proxy", key, value)
+		}
+	}
+
+	// 绑定代理：四种写法都要写成解析出的出口。
+	bound := applyAccountEgressProxyEnv("codex", []string{"HOME=/tmp/x"}, EgressResolution{
+		OK: true, Bound: true, ProxyServer: "http://127.0.0.1:19000",
+	})
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		if value, _ := envLookup(bound, key); value != "http://127.0.0.1:19000" {
+			t.Fatalf("%s = %q, want bound proxy", key, value)
+		}
+	}
+
+	// zcode：统一清空，大小写都不能残留。
+	zcode := applyAccountEgressProxyEnv("zcode", []string{
+		"HTTPS_PROXY=http://a:1", "https_proxy=http://a:1", "HTTP_PROXY=http://a:1", "http_proxy=http://a:1",
+	}, EgressResolution{OK: true, Bound: true, ProxyServer: "http://b:2"})
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		if _, exists := envLookup(zcode, key); exists {
+			t.Fatalf("zcode must clear %s", key)
+		}
+	}
+}
+
 func TestNativeLauncherEgressFailClosedAndProxyDecoration(t *testing.T) {
 	t.Parallel()
 	aiHome := t.TempDir()
@@ -550,8 +582,16 @@ func TestNativeLauncherEgressFailClosedAndProxyDecoration(t *testing.T) {
 		t.Fatalf("missing EgressWarning: %+v", res)
 	}
 	lastSpawn := runner.spawns[len(runner.spawns)-1]
-	if gotProxy, _ := envLookup(lastSpawn.Env, "HTTPS_PROXY"); gotProxy != "http://127.0.0.1:18080" {
-		t.Fatalf("HTTPS_PROXY mismatch: %q", gotProxy)
+	// 大小写两份都必须落到 spawn 环境：客户端只读其中一种写法。
+	for _, key := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		if gotProxy, _ := envLookup(lastSpawn.Env, key); gotProxy != "http://127.0.0.1:18080" {
+			t.Fatalf("%s mismatch: %q", key, gotProxy)
+		}
+	}
+	for _, key := range []string{"NO_PROXY", "no_proxy"} {
+		if gotNoProxy, _ := envLookup(lastSpawn.Env, key); !strings.Contains(gotNoProxy, "127.0.0.1") {
+			t.Fatalf("%s must contain loopback, got %q", key, gotNoProxy)
+		}
 	}
 	if !slices.Contains(lastSpawn.Args, "--proxy-server=http://127.0.0.1:18080") {
 		t.Fatalf("expected --proxy-server arg, got %v", lastSpawn.Args)

@@ -231,7 +231,43 @@ func applyAccountEgressProxyEnv(provider string, env []string, res EgressResolut
 	} else {
 		env = mergeNoProxyEnv(env)
 	}
+	return mirrorProxyEnvCases(env)
+}
+
+// mirrorProxyEnvCases 把已存在的代理变量补齐成大小写两份。
+//
+// 调用前的 env 可能经过 map[string]envEntry（键统一大写）往返，成对写法被折叠成
+// 只剩一个名字。这里按「谁存在就用谁的值」补回另一种写法，避免只读大写变量的
+// 客户端在直连/未绑定出口时丢掉宿主代理。
+func mirrorProxyEnvCases(env []string) []string {
+	pairs := [][2]string{
+		{"HTTP_PROXY", "http_proxy"},
+		{"HTTPS_PROXY", "https_proxy"},
+		{"ALL_PROXY", "all_proxy"},
+	}
+	for _, pair := range pairs {
+		value := exactEnvValue(env, pair[0])
+		if value == "" {
+			value = exactEnvValue(env, pair[1])
+		}
+		if value == "" {
+			continue
+		}
+		env = upsertEnvKey(env, pair[0], value)
+		env = upsertEnvKey(env, pair[1], value)
+	}
 	return env
+}
+
+// exactEnvValue 按名字精确读取（区分大小写）。
+func exactEnvValue(env []string, name string) string {
+	for _, raw := range env {
+		key, value, ok := strings.Cut(raw, "=")
+		if ok && key == name {
+			return value
+		}
+	}
+	return ""
 }
 
 // upsertEnvKey 精确替换同名键（区分大小写），不存在则追加。

@@ -926,6 +926,13 @@
             "GET"
           ],
           "path": "/v0/webui/accounts/watch"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/accounts/watch/snapshot"
         }
       ]
     },

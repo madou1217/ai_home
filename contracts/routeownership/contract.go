@@ -393,6 +393,7 @@ func Current() Manifest {
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/accounts/watch"),
+					httpRoute([]string{"POST"}, "/v0/webui/accounts/watch/snapshot"),
 				},
 			},
 			{

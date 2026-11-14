@@ -749,6 +749,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
 		// 浏览器实时通道：/v0/webui/accounts/watch 由 Go 直接应答（SSE）。
 		{Pattern: "GET /v0/webui/accounts/watch", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountLive)},
+		// 一次性快照请求：通知 Go 重建并广播，语义与 Node 的刷新一致。
+		{Pattern: "POST /v0/webui/accounts/watch/snapshot", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountLive)},
 		// 浏览器账号列表（全量）：直接走 Go 的实时列表端点。
 		{Pattern: "GET /v0/webui/accounts", Handler: webuiaccountliveapi.NewPublicLiveAlias(accountLive)},
 		{Pattern: "GET /v0/webui/accounts/live", Handler: webuiaccountliveapi.NewPublicLiveAlias(accountLive)},

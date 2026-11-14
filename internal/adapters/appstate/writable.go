@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 
 	_ "modernc.org/sqlite"
 )
@@ -45,7 +45,7 @@ func DeleteKV(ctx context.Context, databasePath string, key string) error {
 
 // OpenWritable 以 rwc + busy_timeout 打开 app-state.db。
 func OpenWritable(ctx context.Context, databasePath string) (*sql.DB, error) {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
 	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", busyTimeoutMS))
@@ -100,7 +100,7 @@ func UpdateKV(ctx context.Context, databasePath string, key string, mutate func(
 }
 
 func openWritableImmediate(ctx context.Context, databasePath string) (*sql.DB, error) {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
 	query.Set("_txlock", "immediate")

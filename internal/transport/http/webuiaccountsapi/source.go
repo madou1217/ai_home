@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,7 +135,7 @@ func (source *SQLiteSource) Close() error {
 
 // readOnlyDSN 固定开启只读语义：query_only 让误写的语句也改不动库。
 func readOnlyDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "query_only(1)")

@@ -17,9 +17,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -166,7 +165,7 @@ func Endpoint(auth map[string]json.RawMessage) string {
 // openReadOnly 为每个连接固定只读、query_only 和 busy_timeout。
 // query_only 是第二道保险：即使 DSN 被误改成可写，SQLite 也会拒绝任何写语句。
 func openReadOnly(databasePath string) (*sql.DB, error) {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Add("mode", "ro")
 	query.Add("_pragma", "query_only(ON)")

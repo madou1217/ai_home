@@ -13,8 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"path/filepath"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"regexp"
 	"strings"
 	"time"
@@ -326,7 +325,7 @@ func decodeStringPayload(raw json.RawMessage) ([]byte, bool) {
 }
 
 func buildWritableDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
 	query.Set("_txlock", "immediate")

@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,23 +25,23 @@ import (
 )
 
 const (
-	statsCacheTTL               = 5 * time.Second
-	maxStatsCacheEntries        = 64
-	pricingCustomRefreshWindow  = 3 * time.Second
-	pricingActiveCatalogKVKey   = "active:model_usage_pricing"
-	nativeOutcomeRetentionMS    = 91 * 24 * 60 * 60 * 1000
-	pricingPerMillion           = 1_000_000.0
+	statsCacheTTL              = 5 * time.Second
+	maxStatsCacheEntries       = 64
+	pricingCustomRefreshWindow = 3 * time.Second
+	pricingActiveCatalogKVKey  = "active:model_usage_pricing"
+	nativeOutcomeRetentionMS   = 91 * 24 * 60 * 60 * 1000
+	pricingPerMillion          = 1_000_000.0
 )
 
 var (
-	accountRefRe                 = regexp.MustCompile(`^acct_[0-9a-f]{20}$`)
-	sourceHashRe                 = regexp.MustCompile(`^[0-9a-f]{16}$`)
-	codebuddyMessageEventKeyRe   = regexp.MustCompile(`^codebuddy:message:[a-f0-9]{16}:[a-f0-9]{16}:usage$`)
-	codebuddyIdeEventKeyRe       = regexp.MustCompile(`^codebuddy:ide-request:[a-f0-9]{16}:[a-f0-9]{16}:usage$`)
-	kimiFileEventKeyRe           = regexp.MustCompile(`^kimi:file:([0-9a-f]{16}):[0-9]+:(usage|prompt)$`)
-	zcodeUsageIDRe               = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$`)
-	codebuddyFamilyProviders     = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
-	codebuddyFamilyProviderSet   = map[string]struct{}{
+	accountRefRe               = regexp.MustCompile(`^acct_[0-9a-f]{20}$`)
+	sourceHashRe               = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	codebuddyMessageEventKeyRe = regexp.MustCompile(`^codebuddy:message:[a-f0-9]{16}:[a-f0-9]{16}:usage$`)
+	codebuddyIdeEventKeyRe     = regexp.MustCompile(`^codebuddy:ide-request:[a-f0-9]{16}:[a-f0-9]{16}:usage$`)
+	kimiFileEventKeyRe         = regexp.MustCompile(`^kimi:file:([0-9a-f]{16}):[0-9]+:(usage|prompt)$`)
+	zcodeUsageIDRe             = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$`)
+	codebuddyFamilyProviders   = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+	codebuddyFamilyProviderSet = map[string]struct{}{
 		"codebuddy":   {},
 		"codebuddycn": {},
 		"workbuddy":   {},
@@ -212,7 +212,7 @@ func NewUsageStore(ctx context.Context, dbPath string, providerIDs []string, now
 			return nil, fmt.Errorf("创建用量数据库目录失败: %w", err)
 		}
 	}
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(cleaned)}
+	fileURL := sqlitefile.URL(cleaned)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
 	query.Add("_pragma", "busy_timeout(5000)")
@@ -1599,7 +1599,6 @@ func checkCanonicalAccountRef(ref string) error {
 func resolveUsageAppStateDBPath(aiHomeDir string) (string, error) {
 	return appstate.DatabasePath(aiHomeDir)
 }
-
 
 // UsageOwnerRecord 描述已落库记录的归属快照（供增量扫描与对账读取）。
 type UsageOwnerRecord struct {

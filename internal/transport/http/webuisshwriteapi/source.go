@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"path/filepath"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -153,7 +152,7 @@ func readKey(ctx context.Context, tx *sql.Tx, key string) (KV, error) {
 }
 
 func buildImmediateDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
 	query.Set("_txlock", "immediate")

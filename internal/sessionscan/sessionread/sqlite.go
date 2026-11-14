@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -42,10 +43,7 @@ func openReadOnlySQLite(ctx context.Context, dbPath string) (*sql.DB, bool, erro
 }
 
 func buildReadOnlySQLiteDSN(dbPath string) string {
-	fileURL := &url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(filepath.Clean(dbPath)),
-	}
+	fileURL := sqlitefile.URL(filepath.Clean(dbPath))
 	query := url.Values{}
 	query.Set("mode", "ro")
 	query.Add("_pragma", "busy_timeout(5000)")

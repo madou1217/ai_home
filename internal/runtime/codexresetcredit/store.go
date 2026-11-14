@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -711,7 +711,7 @@ func getOperationInTx(ctx context.Context, tx *sql.Tx, operationID string) (*Ope
 }
 
 func openImmediateSQLite(ctx context.Context, dbPath string) (*sql.DB, error) {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath)}
+	fileURL := sqlitefile.URL(dbPath)
 	q := fileURL.Query()
 	q.Set("mode", "rwc")
 	q.Set("_txlock", "immediate")

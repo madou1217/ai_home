@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"io"
 	"math"
 	"os"
@@ -22,8 +23,8 @@ import (
 
 const (
 	// ScopeGraceMS 是持久会话注册表时间窗口与原生会话落盘时间的时钟余量。
-	ScopeGraceMS int64 = 2 * 60 * 1000
-	jsonlChunkSize     = 256 * 1024
+	ScopeGraceMS   int64 = 2 * 60 * 1000
+	jsonlChunkSize       = 256 * 1024
 )
 
 var (
@@ -200,7 +201,7 @@ func ListAccountRefsFromStores(ctx context.Context, aiHomeDir string) []AccountR
 
 	aihDBPath := filepath.Join(root, "aih.db")
 	if info, err := os.Stat(aihDBPath); err == nil && info.Mode().IsRegular() {
-		if db, err := sql.Open("sqlite", "file:"+aihDBPath+"?mode=ro&_busy_timeout=5000"); err == nil {
+		if db, err := sql.Open("sqlite", "file:"+sqlitefile.Path(aihDBPath)+"?mode=ro&_busy_timeout=5000"); err == nil {
 			rows, qErr := db.QueryContext(ctx, `SELECT account_ref, provider_id, enabled FROM accounts`)
 			if qErr == nil {
 				for rows.Next() {

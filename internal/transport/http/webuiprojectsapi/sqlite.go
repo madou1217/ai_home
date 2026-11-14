@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,7 +18,7 @@ const sqliteBusyTimeoutMS = 2000
 // buildReadOnlySQLiteDSN 生成只读 DSN：mode=ro + query_only，防止扫描过程改写
 // Provider 的原生数据库。
 func buildReadOnlySQLiteDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "ro")
 	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeoutMS))

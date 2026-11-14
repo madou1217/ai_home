@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -533,7 +534,7 @@ func LoadCodebuddyAccountIdentities(ctx context.Context, aiHomeDir string) []Cod
 
 	aihDBPath := filepath.Join(root, "aih.db")
 	if info, err := os.Stat(aihDBPath); err == nil && info.Mode().IsRegular() {
-		if db, err := sql.Open("sqlite", "file:"+aihDBPath+"?mode=ro&_busy_timeout=5000"); err == nil {
+		if db, err := sql.Open("sqlite", "file:"+sqlitefile.Path(aihDBPath)+"?mode=ro&_busy_timeout=5000"); err == nil {
 			rows, qErr := db.QueryContext(ctx, `
 				SELECT a.provider_id, a.account_ref, COALESCE(c.credential_json, '')
 				FROM accounts a
@@ -1235,7 +1236,7 @@ func (r *CodebuddyOwnershipResolver) readNativeUsers(projectsRoot string) map[st
 		if info, err := os.Stat(dbPath); err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_busy_timeout=5000")
+		db, err := sql.Open("sqlite", "file:"+sqlitefile.Path(dbPath)+"?mode=ro&_busy_timeout=5000")
 		if err != nil {
 			continue
 		}

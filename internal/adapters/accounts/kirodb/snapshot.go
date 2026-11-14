@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,7 +72,7 @@ func ReadSnapshot(ctx context.Context, databasePath string) (DatabaseSnapshot, e
 // 不复用 openReadOnly 的 query_only：VACUUM INTO 需要 SQLite 读取并写出副本，
 // Node 的参考实现同样只用 readOnly，不设置 query_only。
 func openSnapshotSource(databasePath string) (*sql.DB, error) {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Add("mode", "ro")
 	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", busyTimeoutMillis))

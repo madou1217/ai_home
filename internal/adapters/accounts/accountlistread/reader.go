@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,7 +182,7 @@ func readOnlyDSN(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("解析账号库路径失败: %w", err)
 	}
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}
+	fileURL := sqlitefile.URL(absolute)
 	query := fileURL.Query()
 	query.Set("mode", "ro")
 	query.Add("_pragma", "busy_timeout(5000)")

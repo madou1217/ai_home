@@ -11,7 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,7 +147,7 @@ func openAndPing(ctx context.Context, databasePath string) (*sql.DB, error) {
 }
 
 func buildReadOnlyDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "ro")
 	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", databaseBusyTimeoutMS))

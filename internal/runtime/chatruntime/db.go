@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,7 +54,7 @@ func OpenDatabase(ctx context.Context, dbPath string, clock func() int64) (*Data
 		}
 	}
 
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(trimmed)}
+	fileURL := sqlitefile.URL(trimmed)
 	q := fileURL.Query()
 	q.Set("mode", "rwc")
 	q.Set("_txlock", "immediate")

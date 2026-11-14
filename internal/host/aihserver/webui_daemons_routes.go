@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -671,7 +672,7 @@ type sqliteZcodeOwnerStore struct {
 }
 
 func openSQLiteZcodeOwnerStore(ctx context.Context, dbPath string) (*sqliteZcodeOwnerStore, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqlitefile.URL(dbPath).String())
 	if err != nil {
 		return nil, err
 	}

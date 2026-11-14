@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"io"
 	"math"
 	"net/url"
@@ -4531,7 +4532,7 @@ func minInt64Val(a, b int64) int64 {
 }
 
 func buildReadOnlySQLiteDSN(dbPath string) string {
-	u := url.URL{Scheme: "file", Path: dbPath}
+	u := sqlitefile.URL(dbPath)
 	q := u.Query()
 	q.Set("mode", "ro")
 	q.Set("_pragma", "busy_timeout(2000)")

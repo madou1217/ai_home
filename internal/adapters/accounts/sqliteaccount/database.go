@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	_ "modernc.org/sqlite"
 )
 
@@ -155,7 +155,7 @@ func prepareDatabasePath(options OpenOptions) (string, error) {
 
 // buildDatabaseDSN 为每个连接固定启用外键、超时和安全 schema 设置。
 func buildDatabaseDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "foreign_keys(ON)")

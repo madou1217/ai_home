@@ -3,6 +3,7 @@ package sessionactivity
 import (
 	"context"
 	"database/sql"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,7 +106,7 @@ func NewSQLiteAccountEnabledChecker(aiHomeDir string) AccountEnabledFunc {
 		if err != nil || !info.Mode().IsRegular() {
 			return true
 		}
-		db, err := sql.Open("sqlite", "file:"+aihDBPath+"?mode=ro&_busy_timeout=5000")
+		db, err := sql.Open("sqlite", "file:"+sqlitefile.Path(aihDBPath)+"?mode=ro&_busy_timeout=5000")
 		if err != nil {
 			return true
 		}

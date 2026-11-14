@@ -5,10 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"io"
 	"net/http"
-	"net/url"
-	"path/filepath"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -273,7 +272,7 @@ func writeOverrides(ctx context.Context, databasePath string, overrides map[stri
 }
 
 func buildWritableDSN(databasePath string) string {
-	fileURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath)}
+	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
 	query.Set("_txlock", "immediate")

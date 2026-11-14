@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitcoreapi"
 )
 
@@ -83,6 +84,11 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "POST " + webuitoolkitcoreapi.AppsHooksPath, Handler: handler},
 
 		{Pattern: "POST " + webuitoolkitcoreapi.AppInstallPath, Handler: handler},
+		// 浏览器数据面：/v0/webui/app-install* → 管理前缀（同一处理器）。
+		{Pattern: "POST /v0/webui/app-install", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "GET /v0/webui/app-install/jobs", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "GET /v0/webui/app-install/jobs/{jobId}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
+		{Pattern: "POST /v0/webui/app-install/jobs/{jobId}/cancel", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobsPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobsWatchPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobPath, Handler: handler},

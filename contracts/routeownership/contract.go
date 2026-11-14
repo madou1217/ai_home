@@ -366,6 +366,18 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 应用安装：浏览器入口由 Go 直接应答。
+				ID:              "webui.app_install",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"POST"}, "/v0/webui/app-install"),
+					httpRoute([]string{"GET"}, "/v0/webui/app-install/jobs"),
+					httpRoute([]string{"GET"}, "/v0/webui/app-install/jobs/{jobId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/app-install/jobs/{jobId}/cancel"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

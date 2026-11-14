@@ -214,8 +214,8 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 	}
 	rec = httptest.NewRecorder()
 	wiredRestartMux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/management/webui/server/restart", nil))
-	if rec.Code != http.StatusAccepted || !restarter.called {
-		t.Fatalf("注入 restarter 端口后应接单回 202，实际 %d called=%v body=%s", rec.Code, restarter.called, rec.Body.String())
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"restarting":true`) {
+		t.Fatalf("注入 restarter 端口后应接单回 202，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	// 确认 buildWebUIOpsMiscRoutes 默认导出签名为 nil authorizer 时失败关闭

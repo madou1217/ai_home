@@ -1,14 +1,11 @@
 package chatruntime
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha1"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1871,154 +1868,7 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 		args = updated
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(runCtx, binPath, args...)
-	if workDir != "" {
-		cmd.Dir = workDir
-	}
-	cmd.Env = os.Environ()
-
-	var stdinPipe io.WriteCloser
-	usesStreamJSON := sessionchat.ClaudeUsesStreamJSONInput(req.Provider, false, runtime.GOOS)
-	if usesStreamJSON {
-		var serr error
-		stdinPipe, serr = cmd.StdinPipe()
-		if serr != nil {
-			cancel()
-			return nil, serr
-		}
-	}
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		launchCleanup()
-		cancel()
-		return nil, err
-	}
-
-	eventsCh := make(chan NativeRunEvent, 64)
-	sidsCh := make(chan string, 4)
-	doneCh := make(chan NativeRunExit, 1)
-
-	var stdinMu sync.Mutex
-	sendStreamUserMessage := func(textMsg string, images []string) error {
-		if stdinPipe == nil {
-			return fmt.Errorf("stdin unavailable")
-		}
-		var imgs []sessionchat.ImageAttachment
-		for _, p := range images {
-			raw, rerr := os.ReadFile(p)
-			if rerr != nil {
-				continue
-			}
-			imgs = append(imgs, sessionchat.ImageAttachment{
-				MediaType: sessionchat.DetectImageMediaType(p),
-				Base64:    base64.StdEncoding.EncodeToString(raw),
-			})
-		}
-		line := sessionchat.BuildClaudeStreamJSONUserMessage(textMsg, imgs)
-		stdinMu.Lock()
-		defer stdinMu.Unlock()
-		_, werr := io.WriteString(stdinPipe, line+"\n")
-		return werr
-	}
-
-	if usesStreamJSON {
-		_ = sendStreamUserMessage(req.Prompt, req.ImagePaths)
-	}
-
-	go func() {
-		defer launchCleanup()
-		defer close(eventsCh)
-		defer close(sidsCh)
-
-		var stderrBuf strings.Builder
-		stderrDone := make(chan struct{})
-		go func() {
-			defer close(stderrDone)
-			sc := bufio.NewScanner(stderrPipe)
-			sc.Buffer(make([]byte, 0, 16*1024), 1024*1024)
-			for sc.Scan() {
-				if stderrBuf.Len() < 64*1024 {
-					stderrBuf.WriteString(sc.Text())
-					stderrBuf.WriteByte('\n')
-				}
-			}
-		}()
-
-		state := &NativeStreamState{}
-		sc := bufio.NewScanner(stdoutPipe)
-		sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-		for sc.Scan() {
-			chunks := ParseNativeStreamLine(req.Provider, sc.Text(), state)
-			for _, ch := range chunks {
-				if ch.Type == "session-created" && ch.SessionID != "" {
-					select {
-					case sidsCh <- ch.SessionID:
-					default:
-					}
-					continue
-				}
-				eventsCh <- NativeRunEvent{
-					Type:     ch.Type,
-					Delta:    ch.Delta,
-					Thinking: ch.Thinking,
-					Content:  ch.Content,
-					Message:  ch.Message,
-					Usage:    ch.Usage,
-				}
-				if ch.ClaudeResultError && cmd.Process != nil {
-					_ = cmd.Process.Kill()
-				}
-			}
-		}
-
-		<-stderrDone
-		waitErr := cmd.Wait()
-		exitCode := 0
-		if waitErr != nil {
-			if ee, ok := waitErr.(*exec.ExitError); ok {
-				exitCode = ee.ExitCode()
-			} else {
-				exitCode = 1
-			}
-		}
-		doneCh <- NativeRunExit{
-			ExitCode:  exitCode,
-			SessionID: state.SessionID,
-			Stderr:    stderrBuf.String(),
-			Err:       waitErr,
-		}
-		close(doneCh)
-	}()
-
-	return &NativeRunHandle{
-		RunID: req.RunID,
-		WriteSteer: func(content string) error {
-			if !usesStreamJSON {
-				return NewError("native_steer_unsupported", http.StatusConflict, nil)
-			}
-			return sendStreamUserMessage(content, nil)
-		},
-		Abort: func() error {
-			cancel()
-			if stdinPipe != nil {
-				_ = stdinPipe.Close()
-			}
-			return nil
-		},
-		Events:     eventsCh,
-		SessionIDs: sidsCh,
-		Done:       doneCh,
-	}, nil
+	return startNativeStreamProcess(ctx, req, binPath, args, workDir, launchCleanup)
 }
 
 func stringSliceContains(slice []string, target string) bool {
@@ -2074,17 +1924,39 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 	doneCh := make(chan NativeRunExit, 1)
 
 	var ptyMu sync.Mutex
+	var writeMu sync.Mutex
 	closed := false
 	markClosed := func() {
 		ptyMu.Lock()
 		closed = true
 		ptyMu.Unlock()
 	}
+	isClosed := func() bool {
+		ptyMu.Lock()
+		defer ptyMu.Unlock()
+		return closed
+	}
+	var closeOnce sync.Once
+	closeTerminal := func() { closeOnce.Do(func() { _ = ptySess.Close() }) }
+	var abortOnce sync.Once
+	abort := func() {
+		abortOnce.Do(func() {
+			cancel()
+			if killer, ok := ptySess.(interface{ Kill() error }); ok {
+				_ = killer.Kill()
+			}
+			// 不等待持有 I/O 锁的写入者；关闭 PTY 先解除阻塞。
+			closeTerminal()
+			markClosed()
+		})
+	}
+	stopCancellation := context.AfterFunc(runCtx, abort)
 
 	go func() {
-		defer close(eventsCh)
-		defer close(sidsCh)
 		defer close(doneCh)
+		defer cancel()
+		defer closeTerminal()
+		defer stopCancellation()
 
 		buf := make([]byte, 4096)
 		var carry []byte
@@ -2093,11 +1965,11 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 			if n > 0 {
 				chunk, nextCarry := splitCompleteUTF8(append(carry, buf[:n]...))
 				carry = nextCarry
-				if chunk != "" {
-					eventsCh <- NativeRunEvent{
-						Type:  "terminal_output",
-						Delta: chunk,
-					}
+				if chunk != "" && !sendNativeRunEvent(runCtx, eventsCh, NativeRunEvent{
+					Type: "terminal_output", Delta: chunk,
+				}) {
+					abort()
+					break
 				}
 			}
 			if rerr != nil {
@@ -2105,13 +1977,18 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 			}
 		}
 		if len(carry) > 0 {
-			eventsCh <- NativeRunEvent{
-				Type:  "terminal_output",
-				Delta: string(carry),
+			if !sendNativeRunEvent(runCtx, eventsCh, NativeRunEvent{
+				Type: "terminal_output", Delta: string(carry),
+			}) {
+				abort()
 			}
 		}
+		// 终端读端已结束后，子进程也必须有界退出；取消时 abort 会立即解除读写。
+		exitTimer := time.AfterFunc(nativeStreamErrorSettleTimeout, abort)
 		waitErr := ptySess.Wait()
+		exitTimer.Stop()
 		markClosed()
+		closeTerminal()
 		exitCode := 0
 		if waitErr != nil {
 			if ee, ok := waitErr.(*exec.ExitError); ok {
@@ -2120,6 +1997,8 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 				exitCode = 1
 			}
 		}
+		close(eventsCh)
+		close(sidsCh)
 		doneCh <- NativeRunExit{
 			ExitCode: exitCode,
 			Err:      waitErr,
@@ -2130,9 +2009,9 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 		RunID:           req.RunID,
 		InteractionMode: firstNonEmptyStr(req.ApprovalMode, "default"),
 		WriteInput: func(input string, appendNewline bool) error {
-			ptyMu.Lock()
-			defer ptyMu.Unlock()
-			if closed {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			if isClosed() || runCtx.Err() != nil {
 				return NewError("native_session_run_not_active", http.StatusConflict, nil)
 			}
 			payload := input
@@ -2143,27 +2022,15 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 			return werr
 		},
 		Resize: func(cols, rows int) error {
-			ptyMu.Lock()
-			defer ptyMu.Unlock()
-			if closed {
+			if isClosed() || runCtx.Err() != nil {
 				return NewError("native_session_run_not_active", http.StatusConflict, nil)
 			}
 			c := clampInt(cols, minRunTerminalCols, maxRunTerminalCols)
 			rw := clampInt(rows, minRunTerminalRows, maxRunTerminalRows)
 			return ptySess.Resize(pty.Size{Cols: uint16(c), Rows: uint16(rw)})
 		},
-		Abort: func() error {
-			markClosed()
-			cancel()
-			if killer, ok := ptySess.(interface{ Kill() error }); ok {
-				_ = killer.Kill()
-			}
-			_ = ptySess.Close()
-			return nil
-		},
-		Events:     eventsCh,
-		SessionIDs: sidsCh,
-		Done:       doneCh,
+		Abort:  func() error { abort(); return nil },
+		Events: eventsCh, SessionIDs: sidsCh, Done: doneCh,
 	}, nil
 }
 

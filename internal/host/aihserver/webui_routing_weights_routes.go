@@ -91,6 +91,11 @@ func buildWebUIRoutingWeightsRoutes(dependencies webuiRouteDependencies) ([]webu
 			Pattern: "GET " + webuiroutingweightsapi.Path,
 			Handler: handler,
 		},
+		// 浏览器数据面直接由 Go 应答，不再经 Node 转发。
+		{
+			Pattern: "GET " + webuiroutingweightsapi.PublicPath,
+			Handler: webuiroutingweightsapi.NewPublicAlias(handler),
+		},
 	}, nil
 }
 

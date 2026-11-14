@@ -228,6 +228,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 路由权重诊断：浏览器入口由 Go 直接应答。
+				ID:              "webui.routing_weights",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/routing/weights"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

@@ -533,6 +533,20 @@
       ]
     },
     {
+      "id": "webui.routing_weights",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/routing/weights"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

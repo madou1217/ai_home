@@ -112,6 +112,8 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.AccountRuntimeBlockCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.AccountRuntimeStateCollectionPath, handlers.accounts)
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
+	// 浏览器对拍调试入口：必须显式带 ?source=go，返回 {ok,go:<doc>}。
+	mux.Handle("GET /v0/webui/accounts/{provider}/{accountRef}/token-usage", publicTokenUsageHandler(handlers.accounts))
 	if handlers.webuiAccounts != nil {
 		mux.Handle(webuiaccountsapi.Path, handlers.webuiAccounts)
 	}

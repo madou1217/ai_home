@@ -505,6 +505,15 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号用量对拍调试入口（必须带 ?source=go）。
+				ID:              "webui.account_token_usage",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/{provider}/{accountRef}/token-usage"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

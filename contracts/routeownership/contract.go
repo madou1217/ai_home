@@ -396,6 +396,16 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 账号列表（全量，浏览器入口）：由 Go 的实时列表直接应答。
+				ID:              "webui.accounts_list",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/accounts"),
+					httpRoute([]string{"GET"}, "/v0/webui/accounts/live"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

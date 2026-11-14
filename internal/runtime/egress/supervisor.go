@@ -15,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 const (
@@ -279,12 +281,7 @@ func newPoolSupervisor(mgr *Manager, opts ManagerOptions) *PoolSupervisor {
 	}
 	killPID := opts.KillPID
 	if killPID == nil {
-		killPID = func(pid int) error {
-			if pid <= 0 {
-				return nil
-			}
-			return syscall.Kill(pid, syscall.SIGTERM)
-		}
+		killPID = platform.Terminate
 	}
 	ownerPID := opts.OwnerPID
 	if ownerPID <= 0 {

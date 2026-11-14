@@ -16,7 +16,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -24,27 +23,28 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 const (
-	codexUsageStreamLimit         = 16
-	codexUsageEventLimit          = 32
-	codexScanContextVersion       = 2
-	codexDefaultScanByteBudget    = 4 * 1024 * 1024
-	firstJSONLEntryChunkBytes     = 8 * 1024
-	firstJSONLEntryMaxBytes       = 256 * 1024
-	scopeGraceMS                  = 120 * 1000
-	qoderContextWindowTokens      = 200000
-	qoderEstimatedSourceSuffix    = "_estimated"
-	kiroPromptCacheTTLMS          = 5 * 60 * 1000
-	kiroSessionUsageSourceKind    = "native_kiro_session_estimated"
-	grokUsageProjectionVersion    = 2
-	usageScanSchemaVersion        = 1
-	usageScanKind                 = "usage.scan"
-	usageScanSourceID             = "local-sessions"
-	usageScanStatusOK             = "ok"
-	usageScanStatusEmpty          = "empty"
-	usageScanStatusUnavailable    = "unavailable"
+	codexUsageStreamLimit      = 16
+	codexUsageEventLimit       = 32
+	codexScanContextVersion    = 2
+	codexDefaultScanByteBudget = 4 * 1024 * 1024
+	firstJSONLEntryChunkBytes  = 8 * 1024
+	firstJSONLEntryMaxBytes    = 256 * 1024
+	scopeGraceMS               = 120 * 1000
+	qoderContextWindowTokens   = 200000
+	qoderEstimatedSourceSuffix = "_estimated"
+	kiroPromptCacheTTLMS       = 5 * 60 * 1000
+	kiroSessionUsageSourceKind = "native_kiro_session_estimated"
+	grokUsageProjectionVersion = 2
+	usageScanSchemaVersion     = 1
+	usageScanKind              = "usage.scan"
+	usageScanSourceID          = "local-sessions"
+	usageScanStatusOK          = "ok"
+	usageScanStatusEmpty       = "empty"
+	usageScanStatusUnavailable = "unavailable"
 )
 
 var (
@@ -56,27 +56,27 @@ var (
 )
 
 var kiroModelMaxInputTokens = map[string]int64{
-	"auto":             1000000,
-	"claude-opus-5.5":  1000000,
+	"auto":              1000000,
+	"claude-opus-5.5":   1000000,
 	"claude-sonnet-5.5": 1000000,
-	"claude-opus-5":    1000000,
-	"claude-sonnet-5":  1000000,
-	"claude-opus-4.8":  1000000,
-	"claude-opus-4.7":  1000000,
-	"claude-opus-4.6":  1000000,
+	"claude-opus-5":     1000000,
+	"claude-sonnet-5":   1000000,
+	"claude-opus-4.8":   1000000,
+	"claude-opus-4.7":   1000000,
+	"claude-opus-4.6":   1000000,
 	"claude-sonnet-4.6": 1000000,
-	"claude-opus-4.5":  200000,
+	"claude-opus-4.5":   200000,
 	"claude-sonnet-4.5": 200000,
-	"claude-haiku-4.5": 200000,
-	"gpt-5.6-sol":      922000,
-	"gpt-5.6-terra":    922000,
-	"gpt-5.6-luna":     922000,
-	"deepseek-3.2":     164000,
-	"minimax-m2.5":     196000,
-	"minimax-m2.1":     196000,
-	"glm-5":            200000,
-	"qwen3-coder-next": 256000,
-	"kimi-k3":          1000000,
+	"claude-haiku-4.5":  200000,
+	"gpt-5.6-sol":       922000,
+	"gpt-5.6-terra":     922000,
+	"gpt-5.6-luna":      922000,
+	"deepseek-3.2":      164000,
+	"minimax-m2.5":      196000,
+	"minimax-m2.1":      196000,
+	"glm-5":             200000,
+	"qwen3-coder-next":  256000,
+	"kimi-k3":           1000000,
 }
 
 // ScanUsageOptions 定义本地客户端会话扫描的执行参数。
@@ -962,10 +962,8 @@ func statDevIno(st os.FileInfo) (string, string) {
 	if st == nil {
 		return "", ""
 	}
-	if sys, ok := st.Sys().(*syscall.Stat_t); ok && sys != nil {
-		return strconv.FormatUint(uint64(sys.Dev), 10), strconv.FormatUint(uint64(sys.Ino), 10)
-	}
-	return "", ""
+	dev, ino := platform.FileIdentity(st)
+	return strconv.FormatUint(dev, 10), strconv.FormatUint(ino, 10)
 }
 
 func contextString(ctx map[string]any, key string) string {
@@ -1047,10 +1045,10 @@ func readPersistentSessionEntries(aiHomeDir string) []persistentSessionEntry {
 }
 
 type codexThreadOwnership struct {
-	AccountRefs  map[string]struct{}
+	AccountRefs   map[string]struct{}
 	EarliestByRef map[string]int64
-	HasGateway   bool
-	GatewaySince int64
+	HasGateway    bool
+	GatewaySince  int64
 }
 
 type codexOwnershipResolved struct {
@@ -3200,10 +3198,10 @@ func scanKimiFile(
 // ---------- OpenCode SQLite dual-layout scanner ----------
 
 type opencodeLayout struct {
-	ID            string
-	SessionTable  string
-	MessageTable  string
-	TypeColumn    string
+	ID           string
+	SessionTable string
+	MessageTable string
+	TypeColumn   string
 }
 
 var opencodeLayouts = []opencodeLayout{
@@ -3212,22 +3210,22 @@ var opencodeLayouts = []opencodeLayout{
 }
 
 type opencodeMessageRow struct {
-	LayoutPriority     int
-	MessageID          string
-	SessionID          string
-	MessageType        string
-	MessageCreatedAt   int64
-	MessageUpdatedAt   int64
-	MessageData        string
-	SessionDirectory   string
-	SessionPath        string
-	SessionTitle       string
-	SessionModel       string
-	SessionVersion     string
-	SessionStartedAt   int64
-	SessionUpdatedAt   int64
-	ProjectWorktree    string
-	ProjectName        string
+	LayoutPriority   int
+	MessageID        string
+	SessionID        string
+	MessageType      string
+	MessageCreatedAt int64
+	MessageUpdatedAt int64
+	MessageData      string
+	SessionDirectory string
+	SessionPath      string
+	SessionTitle     string
+	SessionModel     string
+	SessionVersion   string
+	SessionStartedAt int64
+	SessionUpdatedAt int64
+	ProjectWorktree  string
+	ProjectName      string
 }
 
 func discoverOpenCodeUsageFiles(hostHomeDir, aiHomeDir string) []string {

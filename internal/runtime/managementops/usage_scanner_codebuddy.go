@@ -12,32 +12,32 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 const codebuddyProjectionVersion = 2
 
 var (
-	codebuddySessionIDRe     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
-	codebuddyHex32Re         = regexp.MustCompile(`^[a-f0-9]{32}$`)
-	codebuddyUIDRe           = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	cbOutcomeTimeoutRe       = regexp.MustCompile(`(?i)timed out|timeout`)
-	cbOutcomeNetworkRe       = regexp.MustCompile(`(?i)network|socket|econn|reset|dns|connect`)
-	cbOutcomeRateLimitRe     = regexp.MustCompile(`(?i)429|too many requests|frequency limit|rate limit`)
-	cbOutcomeQuotaRe         = regexp.MustCompile(`(?i)quota|exhaust|usage limit|insufficient.*(quota|balance)|billing`)
-	cbOutcomeCredentialRe    = regexp.MustCompile(`(?i)401|403|unauthor|invalid.*(token|credential)|authentication`)
-	cbOutcomePermissionRe    = regexp.MustCompile(`(?i)permission|forbidden`)
-	cbOutcomeUpstreamRe      = regexp.MustCompile(`(?i)5\d\d|server error|service unavailable|overloaded|bad gateway`)
-	cbOutcomeMalformedRe     = regexp.MustCompile(`(?i)empty stream|no valid response|finish_reason=error|malformed|parse`)
-	cbOutcomeInvalidReqRe    = regexp.MustCompile(`(?i)context.*(length|window)|too many tokens`)
-	cbLogPIDRe               = regexp.MustCompile(`pid[=:\s]+(\d+)`)
-	cbLogUserIDRe            = regexp.MustCompile(`"userId"\s*:\s*"([A-Za-z0-9_-]+)"|userId[=:\s]+([A-Za-z0-9_-]+)`)
-	cbLogAddHistRe           = regexp.MustCompile(`\[addHistory\].*?(?:messageId|msgId)[=:\s"]+([A-Za-z0-9_-]+)`)
+	codebuddySessionIDRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+	codebuddyHex32Re      = regexp.MustCompile(`^[a-f0-9]{32}$`)
+	codebuddyUIDRe        = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	cbOutcomeTimeoutRe    = regexp.MustCompile(`(?i)timed out|timeout`)
+	cbOutcomeNetworkRe    = regexp.MustCompile(`(?i)network|socket|econn|reset|dns|connect`)
+	cbOutcomeRateLimitRe  = regexp.MustCompile(`(?i)429|too many requests|frequency limit|rate limit`)
+	cbOutcomeQuotaRe      = regexp.MustCompile(`(?i)quota|exhaust|usage limit|insufficient.*(quota|balance)|billing`)
+	cbOutcomeCredentialRe = regexp.MustCompile(`(?i)401|403|unauthor|invalid.*(token|credential)|authentication`)
+	cbOutcomePermissionRe = regexp.MustCompile(`(?i)permission|forbidden`)
+	cbOutcomeUpstreamRe   = regexp.MustCompile(`(?i)5\d\d|server error|service unavailable|overloaded|bad gateway`)
+	cbOutcomeMalformedRe  = regexp.MustCompile(`(?i)empty stream|no valid response|finish_reason=error|malformed|parse`)
+	cbOutcomeInvalidReqRe = regexp.MustCompile(`(?i)context.*(length|window)|too many tokens`)
+	cbLogPIDRe            = regexp.MustCompile(`pid[=:\s]+(\d+)`)
+	cbLogUserIDRe         = regexp.MustCompile(`"userId"\s*:\s*"([A-Za-z0-9_-]+)"|userId[=:\s]+([A-Za-z0-9_-]+)`)
+	cbLogAddHistRe        = regexp.MustCompile(`\[addHistory\].*?(?:messageId|msgId)[=:\s"]+([A-Za-z0-9_-]+)`)
 )
 
 var codebuddyConfigDirByProvider = map[string]string{
@@ -62,10 +62,10 @@ var codebuddySessionRootsByProvider = map[string][]string{
 }
 
 var codebuddyIssuers = map[string][]string{
-	"https://www.codebuddy.ai/auth/realms/copilot":   {"codebuddy"},
-	"https://www.workbuddy.ai/auth/realms/copilot":   {"workbuddy"},
-	"https://www.workbuddy.cn/auth/realms/copilot":   {"codebuddycn", "workbuddycn"},
-	"https://www.codebuddy.cn/auth/realms/copilot":   {"codebuddycn", "workbuddycn"},
+	"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},
+	"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy"},
+	"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
+	"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
 	"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn", "workbuddycn"},
 }
 
@@ -86,22 +86,22 @@ type codebuddyIdentityInfo struct {
 }
 
 type codebuddyLogCorrelation struct {
-	PID     string
-	MsgID   string
-	AtMS    int64
-	UserID  string
+	PID    string
+	MsgID  string
+	AtMS   int64
+	UserID string
 }
 
 type codebuddyOwnership struct {
-	HostHomeDir    string
-	AIHomeDir      string
-	Accounts       []codebuddyIdentityInfo
-	ByUIDAndProv   map[string][]codebuddyIdentityInfo // key: provider+"\x00"+uid
-	BySessPersistent map[string]string                // nativeSessionId -> accountRef
-	AddHistoryByMsg map[string][]codebuddyLogCorrelation
-	PIDUserIDs     map[string]string
-	Fingerprint    string
-	WriterFPByRoot map[string]string
+	HostHomeDir      string
+	AIHomeDir        string
+	Accounts         []codebuddyIdentityInfo
+	ByUIDAndProv     map[string][]codebuddyIdentityInfo // key: provider+"\x00"+uid
+	BySessPersistent map[string]string                  // nativeSessionId -> accountRef
+	AddHistoryByMsg  map[string][]codebuddyLogCorrelation
+	PIDUserIDs       map[string]string
+	Fingerprint      string
+	WriterFPByRoot   map[string]string
 }
 
 func scanCodebuddyFamilySources(
@@ -367,9 +367,9 @@ func discoverCodebuddyUsageFiles(hostHomeDir string, providers []string, session
 				physFile := resolvePhysicalPath(fp)
 				var inoVal uint64
 				identity := physFile
-				if sys, ok := st.Sys().(*syscall.Stat_t); ok && sys != nil && sys.Ino > 0 {
-					inoVal = sys.Ino
-					identity = fmt.Sprintf("%d:%d", sys.Dev, sys.Ino)
+				if dev, ino := platform.FileIdentity(st); ino > 0 {
+					inoVal = ino
+					identity = fmt.Sprintf("%d:%d", dev, ino)
 				}
 				if _, dup := identities[identity]; dup {
 					continue

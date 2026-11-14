@@ -9,10 +9,10 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 )
 
@@ -70,21 +70,11 @@ func (osFS) IsExecutable(path string) bool {
 	if path == "" {
 		return false
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return false
-	}
-	if err := syscall.Access(path, 1 /* X_OK */); err != nil {
-		return info.Mode().Perm()&0111 != 0
-	}
-	return true
+	return platform.IsExecutable(path)
 }
 
 func (osFS) IsWritable(path string) bool {
-	if path == "" {
-		return false
-	}
-	return syscall.Access(path, 2 /* W_OK */) == nil
+	return platform.IsWritable(path)
 }
 
 func (osFS) ReadFile(path string) ([]byte, error) {

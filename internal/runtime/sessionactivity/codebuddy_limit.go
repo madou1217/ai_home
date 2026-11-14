@@ -15,10 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 const (
@@ -27,10 +27,10 @@ const (
 	// MinCodebuddyLimitInterval 是扫描周期下限。
 	MinCodebuddyLimitInterval = 15 * time.Second
 
-	codebuddySharedLogDirName      = ".codebuddy"
-	codebuddySharedLogDays         = 2
-	codebuddyWriteTimeToleranceMS  = 5000
-	codebuddyLogCacheLimit         = 8
+	codebuddySharedLogDirName     = ".codebuddy"
+	codebuddySharedLogDays        = 2
+	codebuddyWriteTimeToleranceMS = 5000
+	codebuddyLogCacheLimit        = 8
 )
 
 var (
@@ -58,10 +58,10 @@ var (
 	}
 
 	codebuddyIssuers = map[string][]string{
-		"https://www.codebuddy.ai/auth/realms/copilot":   {"codebuddy"},
-		"https://www.workbuddy.ai/auth/realms/copilot":   {"workbuddy"},
-		"https://www.workbuddy.cn/auth/realms/copilot":   {"codebuddycn", "workbuddycn"},
-		"https://www.codebuddy.cn/auth/realms/copilot":   {"codebuddycn", "workbuddycn"},
+		"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},
+		"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy"},
+		"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
+		"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
 		"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn", "workbuddycn"},
 	}
 
@@ -368,8 +368,8 @@ func DiscoverCodebuddyUsageFiles(hostHomeDir string, providers []string, session
 				}
 				phys := resolvePhysicalPathStr(fp)
 				identity := phys
-				if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Ino > 0 {
-					identity = fmt.Sprintf("%d:%d", st.Dev, st.Ino)
+				if dev, ino := platform.FileIdentity(info); ino > 0 {
+					identity = fmt.Sprintf("%d:%d", dev, ino)
 				}
 				if _, dup := identities[identity]; dup {
 					continue
@@ -886,11 +886,7 @@ func readNativeLogFile(old *nativeLogFileCache, desc cbLogDescriptor) (*nativeLo
 	if err != nil {
 		return nil, err
 	}
-	var dev, ino uint64
-	if st, ok := info.Sys().(*syscall.Stat_t); ok {
-		dev = uint64(st.Dev)
-		ino = st.Ino
-	}
+	dev, ino := platform.FileIdentity(info)
 	size := info.Size()
 	mtimeNS := info.ModTime().UnixNano()
 	sameFile := old != nil && old.provider == desc.provider && old.accountRef == desc.accountRef &&
@@ -972,7 +968,7 @@ func parseCodebuddyLogTimestamp(value string) int64 {
 		if h < 1 || h > 12 {
 			return 0
 		}
-		h = h%12
+		h = h % 12
 		if m[7] == "PM" {
 			h += 12
 		}
@@ -1361,9 +1357,9 @@ type cbFileCursor struct {
 }
 
 type pendingCodebuddyLimit struct {
-	file CodebuddyUsageFile
+	file  CodebuddyUsageFile
 	model string
-	obs  SessionLimitObservation
+	obs   SessionLimitObservation
 }
 
 // CodebuddyLimitObserver 增量扫描 CodeBuddy 家族原生会话，将未过期 429 reset at / 硬耗尽反馈给运行时。

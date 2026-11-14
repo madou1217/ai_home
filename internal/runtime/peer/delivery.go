@@ -20,8 +20,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 const (
@@ -325,11 +326,7 @@ func deliverNative(ctx context.Context, rec Record, text string, opts DeliveryOp
 }
 
 func defaultProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
+	return platform.ProcessAlive(pid)
 }
 
 // ListClaudeConfigDirs 枚举 CLAUDE_CONFIG_DIR、宿主 ~/.claude 以及账号沙箱下的 .claude。

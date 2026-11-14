@@ -7,7 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
+
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 // TurnState 表示探测策略产出的回合判定状态。
@@ -107,12 +108,12 @@ func CombineTurnSignals(signals []TurnSignal) CombinedTurnDecision {
 		}
 	}
 	var (
-		hasActive            bool
-		maxActiveAt          int64
-		bestActiveSource     string
-		hasAuthIdle          bool
-		maxIdleAt            int64
-		bestIdleSource       string
+		hasActive        bool
+		maxActiveAt      int64
+		bestActiveSource string
+		hasAuthIdle      bool
+		maxIdleAt        int64
+		bestIdleSource   string
 	)
 	for _, sig := range signals {
 		switch sig.State {
@@ -475,12 +476,5 @@ func checkPIDAlive(ctx *ProbeContext, pid int) (alive bool, known bool) {
 	if pid <= 0 {
 		return false, false
 	}
-	err := syscall.Kill(pid, 0)
-	if err == nil || err == syscall.EPERM {
-		return true, true
-	}
-	if err == syscall.ESRCH {
-		return false, true
-	}
-	return false, false
+	return platform.ProcessState(pid)
 }

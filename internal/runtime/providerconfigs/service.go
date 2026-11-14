@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 // ConfigError 表示 Provider 配置工作台业务领域错误，HTTP 层据此映射状态码。
@@ -587,12 +587,12 @@ func isWritableTarget(targetPath string) bool {
 		return false
 	}
 	if _, err := os.Stat(targetPath); err == nil {
-		return syscall.Access(targetPath, 2 /* W_OK */) == nil
+		return platform.IsWritable(targetPath)
 	}
 	dir := filepath.Dir(targetPath)
 	for dir != "" {
 		if _, err := os.Stat(dir); err == nil {
-			return syscall.Access(dir, 2 /* W_OK */) == nil
+			return platform.IsWritable(dir)
 		}
 		parent := filepath.Dir(dir)
 		if parent == "" || parent == dir {

@@ -15,8 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 const (
@@ -103,11 +104,7 @@ type fileLockInfo struct {
 }
 
 func isProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
+	return platform.ProcessAlive(pid)
 }
 
 func (s *Store) withFileLock(targetPath string, fn func() error) error {

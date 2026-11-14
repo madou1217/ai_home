@@ -2262,7 +2262,7 @@ func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver
 		}
 		now := time.Now()
 		mu.Lock()
-		if result.Exhausted {
+		if result.Exhausted || result.NonRetryable {
 			delete(lastLogged, result.AccountRef)
 		} else {
 			previous, seen := lastLogged[result.AccountRef]
@@ -2273,6 +2273,13 @@ func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver
 			lastLogged[result.AccountRef] = now
 		}
 		mu.Unlock()
+		if result.NonRetryable {
+			logger.Printf(
+				"账号模型刷新停止本轮重试: provider=%s account=%s attempts=%d err=%v（认证被拒绝，后续凭据更新或外部重扫可再探测）",
+				result.ProviderID, result.AccountRef, result.Attempts, result.Err,
+			)
+			return
+		}
 		if result.Exhausted {
 			logger.Printf(
 				"账号模型刷新放弃: provider=%s account=%s attempts=%d err=%v（等待下次周期重扫）",

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
@@ -102,12 +103,16 @@ func fetchModelCatalog(
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
 		drainModelCatalogResponse(response.Body)
-		return modelCatalog{}, fmt.Errorf(
+		catalogErr := fmt.Errorf(
 			"%w: status=%d media_type=%s",
 			ErrModelCatalogUnavailable,
 			response.StatusCode,
 			mediaType,
 		)
+		if response.StatusCode == http.StatusUnauthorized {
+			return modelCatalog{}, fmt.Errorf("%w: %w", accountapp.ErrModelAuthenticationRejected, catalogErr)
+		}
+		return modelCatalog{}, catalogErr
 	}
 	if mediaType != "application/json" {
 		drainModelCatalogResponse(response.Body)

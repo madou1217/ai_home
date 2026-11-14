@@ -59,6 +59,9 @@ function publicErrorMessage(code: string, status?: number): string {
   if (status === 401 || code === 'unauthorized') {
     return '当前 Server 的 Management Key 无效或缺失';
   }
+  if (code === 'model_authentication_rejected') {
+    return '模型目录认证被拒绝，请检查该账号的 API Key 或重新授权';
+  }
   if (code.endsWith('_unsupported') || code.includes('operation_unsupported')) {
     return '当前 Go 账号管理链暂不支持该操作';
   }

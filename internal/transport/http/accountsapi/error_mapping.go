@@ -314,6 +314,14 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"model_refresh_unsupported",
 			"当前 Provider 不支持模型刷新",
 		)
+	case errors.Is(err, accountapp.ErrModelAuthenticationRejected):
+		// 上游账号认证失败不等于当前 WebUI 会话失效，不能返回管理面 401。
+		writeAPIError(
+			response,
+			http.StatusUnprocessableEntity,
+			"model_authentication_rejected",
+			"模型目录认证被拒绝，请检查账号凭据或重新授权",
+		)
 	case errors.Is(err, accountapp.ErrModelDiscoveryFailed):
 		writeAPIError(
 			response,

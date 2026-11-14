@@ -42,6 +42,9 @@ type ModelRefreshResult struct {
 	// Exhausted 表示本代次已达最大尝试次数并放弃内部重试；账号需要外部调度器
 	// （周期重扫、路由未命中、按需触发）重新入队才会再次刷新。
 	Exhausted bool
+	// NonRetryable 表示本轮已明确被凭据拒绝；不消耗重试预算或拖慢同 Provider。
+	// 后续凭据更新、人工刷新和周期重扫仍可创建新一轮探测。
+	NonRetryable bool
 }
 
 // ModelRefreshObserver 接收异步任务结果，不参与刷新正确性。
@@ -258,11 +261,18 @@ func (coordinator *ModelRefreshCoordinator) runProviderWorker(
 		if !available {
 			return
 		}
-		_, err := coordinator.refresher.RefreshAccountModels(
-			refreshCtx,
-			task.accountRef,
-		)
-		coordinator.finishModelRefresh(providerID, queue, task, err)
+		resolvedRef := task.accountRef
+		var err error
+		if refresher, ok := coordinator.refresher.(AccountModelSnapshotRefresher); ok {
+			var snapshot AccountModelRefreshSnapshot
+			snapshot, err = refresher.RefreshAccountModelSnapshot(refreshCtx, task.accountRef)
+			if snapshot.AccountRef.IsValid() {
+				resolvedRef = snapshot.AccountRef
+			}
+		} else {
+			_, err = coordinator.refresher.RefreshAccountModels(refreshCtx, task.accountRef)
+		}
+		coordinator.finishModelRefresh(providerID, queue, task, resolvedRef, err)
 	}
 }
 
@@ -316,6 +326,7 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 	providerID string,
 	queue *modelRefreshProviderQueue,
 	task *modelRefreshTask,
+	resolvedRef accountcore.AccountRef,
 	refreshErr error,
 ) {
 	coordinator.mu.Lock()
@@ -333,11 +344,28 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 		}
 		return
 	}
+	if resolvedRef.IsValid() && resolvedRef != task.accountRef {
+		delete(coordinator.pending, task.accountRef)
+		if coordinator.pending[resolvedRef] != nil {
+			// 新身份已有一轮正在执行或排队：合并而不是覆盖其取消句柄和预算。
+			coordinator.mu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+			return
+		}
+		task.accountRef = resolvedRef
+		coordinator.pending[resolvedRef] = task
+	}
 	exhausted := false
+	nonRetryable := errors.Is(refreshErr, ErrModelAuthenticationRejected)
 	if refreshErr == nil {
 		delete(coordinator.pending, task.accountRef)
 		queue.failures = 0
 		queue.nextRetryAt = time.Time{}
+	} else if nonRetryable {
+		task.attempts++
+		delete(coordinator.pending, task.accountRef)
 	} else {
 		queue.failures++
 		task.attempts++
@@ -354,17 +382,19 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 	signalModelRefreshQueue(queue)
 	observer := coordinator.observer
 	attempts := task.attempts
+	resultRef := task.accountRef
 	coordinator.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	if observer != nil {
 		observer(ModelRefreshResult{
-			AccountRef: task.accountRef,
-			ProviderID: providerID,
-			Err:        refreshErr,
-			Attempts:   attempts,
-			Exhausted:  exhausted,
+			AccountRef:   resultRef,
+			ProviderID:   providerID,
+			Err:          refreshErr,
+			Attempts:     attempts,
+			Exhausted:    exhausted,
+			NonRetryable: nonRetryable,
 		})
 	}
 }

@@ -379,7 +379,14 @@ export class AccountManagementClient {
 
   private assertStatus(response: ServerJsonResponse<unknown>, allowed: readonly number[]): void {
     if (allowed.includes(response.status)) return;
-    // 服务端错误 body 可能来自上游，客户端只保留状态，避免 message/code 携带凭据。
+    // 只接受约定状态下的稳定业务码；未知 code/message 仍可能携带上游凭据。
+    if (response.status === 422 && response.data && typeof response.data === 'object') {
+      const error = (response.data as Record<string, unknown>).error;
+      if (error && typeof error === 'object'
+        && (error as Record<string, unknown>).code === 'model_authentication_rejected') {
+        throw new AccountManagementError('model_authentication_rejected', response.status);
+      }
+    }
     throw new AccountManagementError(`account_management_http_${response.status}`, response.status);
   }
 }

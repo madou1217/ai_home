@@ -223,6 +223,10 @@ func (store *Store) RecordModelProbe(
 	if record.Succeeded {
 		statement = recordModelProbeSuccessSQL
 	}
+	var credentialVersion any
+	if !record.CredentialUpdatedAt.IsZero() {
+		credentialVersion = record.CredentialUpdatedAt.UnixMilli()
+	}
 	_, err := store.db.ExecContext(
 		ctx,
 		statement,
@@ -234,6 +238,8 @@ func (store *Store) RecordModelProbe(
 		record.ModelCount,
 		record.UpdatedAt.UnixMilli(),
 		record.AccountRef.String(),
+		credentialVersion,
+		credentialVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("写入账号模型探测事实失败: %w", err)
@@ -250,6 +256,10 @@ const recordModelProbeSuccessSQL = `
 	SELECT ?, a.provider_id, ?, ?, ?, ?, ?, ?
 	FROM accounts AS a
 	WHERE a.account_ref = ?
+	  AND (? IS NULL OR EXISTS (
+		SELECT 1 FROM account_credentials AS c
+		WHERE c.account_ref = a.account_ref AND c.updated_at_ms = ?
+	  ))
 	ON CONFLICT (account_ref) DO UPDATE SET
 		provider_id = excluded.provider_id,
 		last_attempt_at_ms = excluded.last_attempt_at_ms,
@@ -271,6 +281,10 @@ const recordModelProbeFailureSQL = `
 	SELECT ?, a.provider_id, ?, ?, ?, ?, ?, ?
 	FROM accounts AS a
 	WHERE a.account_ref = ?
+	  AND (? IS NULL OR EXISTS (
+		SELECT 1 FROM account_credentials AS c
+		WHERE c.account_ref = a.account_ref AND c.updated_at_ms = ?
+	  ))
 	ON CONFLICT (account_ref) DO UPDATE SET
 		provider_id = excluded.provider_id,
 		last_attempt_at_ms = excluded.last_attempt_at_ms,

@@ -84,6 +84,9 @@ type ModelProbeRecord struct {
 	ErrorMessage string
 	// UpdatedAt 是这条事实的写入时刻（UTC 毫秒）。
 	UpdatedAt time.Time
+	// CredentialUpdatedAt 是本次请求实际使用的凭据版本；零值只用于读凭据前失败。
+	// 存储层在同一个写语句里校验它，旧请求不能覆盖新凭据的探测结果。
+	CredentialUpdatedAt time.Time
 }
 
 // IsValid 校验探测事实的字段范围与成功/失败互斥关系。
@@ -100,6 +103,12 @@ func (record ModelProbeRecord) IsValid() bool {
 		!attemptedAt.Equal(record.AttemptedAt) ||
 		!updatedAt.Equal(record.UpdatedAt) {
 		return false
+	}
+	if !record.CredentialUpdatedAt.IsZero() {
+		version, err := normalizeModelTime(record.CredentialUpdatedAt)
+		if err != nil || !version.Equal(record.CredentialUpdatedAt) {
+			return false
+		}
 	}
 	if record.Succeeded {
 		return record.Source == ModelProbeSourceRemote &&

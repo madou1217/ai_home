@@ -180,6 +180,8 @@ type refreshSuppression struct {
 	// reauthentication 记录抑制原因：true 表示只能重新登录（失效 grant /
 	// 身份不匹配），用于在凭据过期时直接回报 reauth，而不是静默 401。
 	reauthentication bool
+	// identityMismatch 只保存稳定分类，让强制恢复在抑制期内保留身份不匹配语义。
+	identityMismatch bool
 }
 
 // NewResolver 创建使用固定五分钟刷新窗口的凭据解析用例。
@@ -291,18 +293,23 @@ func (resolver *Resolver) resolve(
 	resolution, err := resolver.executeRefreshFlight(ctx, accountRef, func() (credentialResolution, error) {
 		return resolver.refreshCurrent(ctx, accountRef, strategy, false)
 	})
+	resolution, err = resolver.reconcileRefreshFlightFailure(ctx, snapshot, resolution, err)
 	if err == nil {
 		return resolution, nil
 	}
-	// 共享飞行保留原始刷新错误：普通预刷新可继续尝试当前 Access Token，
-	// 同时加入该飞行的真实 401 强制刷新仍能看到 reauth 结论。
+	// 代次校验后才允许普通预刷新降级：只能使用仍是当前版本的 Access Token，
+	// 不能把其他 flight 的旧凭据或永久拒绝归给入口看到的新版本。
 	if !resolution.snapshot.IsValid() ||
 		!canUseCurrentCredentialAfterRefreshFailure(err) {
 		return credentialResolution{}, err
 	}
 	// 预刷新窗口内（还没过期）可以继续用当前 token；已经过期就没有可用凭据，
 	// 必须让调用方看到真实刷新错误（例如 invalid_grant），而不是下游的 401。
-	if refreshableCredentialExpired(strategy, resolution.snapshot.Credential(), now) {
+	checkedAt, clockErr := resolver.currentTime()
+	if clockErr != nil {
+		return credentialResolution{}, clockErr
+	}
+	if refreshableCredentialExpired(strategy, resolution.snapshot.Credential(), checkedAt) {
 		return credentialResolution{}, err
 	}
 	return currentResolution(resolution.snapshot), nil
@@ -401,7 +408,7 @@ func (resolver *Resolver) ForceRefreshCredentialBinding(
 	if _, refreshable := strategy.ExpiresAt(snapshot.Credential()); !refreshable {
 		return accountapp.CredentialBinding{}, ErrCredentialNotRefreshable
 	}
-	if resolver.refreshDelegated && !resolver.ownsAccountRefresh(accountRef) {
+	if resolver.delegatesRefresh(accountRef, strategy) {
 		// 宿主负责刷新：这里只能报告暂不可用，等待宿主把新凭据同步进来后重试。
 		return accountapp.CredentialBinding{}, ErrRefreshUnavailable
 	}
@@ -504,6 +511,17 @@ func (resolver *Resolver) refreshCurrent(
 	if !force && !due {
 		return currentResolution(snapshot), nil
 	}
+	return resolver.refreshSnapshot(ctx, snapshot, strategy)
+}
+
+// refreshSnapshot 复用已在共享飞行内校验的快照执行刷新及 CAS / re-key。
+// 此处不能重新读凭据，否则会越过代次检查并刷新刚被其他调用方替换的新版本。
+func (resolver *Resolver) refreshSnapshot(
+	ctx context.Context,
+	snapshot accountapp.CredentialSnapshot,
+	strategy RefreshStrategy,
+) (credentialResolution, error) {
+	accountRef := snapshot.AccountRef()
 	now, err := resolver.currentTime()
 	if err != nil {
 		return credentialResolution{}, err
@@ -619,6 +637,61 @@ func (resolver *Resolver) executeRefreshFlight(
 	return resolver.flights.Do(ctx, accountRef.String(), operation)
 }
 
+// reconcileRefreshFlightFailure 防止按账号合并的旧 flight 把失败归给新凭据。
+// 不再发起刷新，也不改变抑制状态；仅在最新快照能证明换代时复用它。
+// 最新快照仅等于入口版本时返回中性可重试错误：普通 Resolve 仍可按有效期降级，
+// 401 恢复入口则不能把已被拒绝的同一代 token 当成成功。
+func (resolver *Resolver) reconcileRefreshFlightFailure(
+	ctx context.Context,
+	observed accountapp.CredentialSnapshot,
+	resolution credentialResolution,
+	refreshErr error,
+) (credentialResolution, error) {
+	if err := ctx.Err(); err != nil {
+		return credentialResolution{}, err
+	}
+	if refreshErr == nil {
+		return resolution, nil
+	}
+	// 取消和结构/代次错误不是凭据恢复结论，必须保留，且禁止后续 token 降级。
+	if errors.Is(refreshErr, context.Canceled) ||
+		errors.Is(refreshErr, context.DeadlineExceeded) ||
+		errors.Is(refreshErr, accountapp.ErrCredentialConflict) ||
+		errors.Is(refreshErr, accountapp.ErrInvalidCredentialSnapshot) ||
+		errors.Is(refreshErr, ErrInvalidRefreshResult) {
+		return credentialResolution{}, refreshErr
+	}
+	if !canUseCurrentCredentialAfterRefreshFailure(refreshErr) &&
+		!errors.Is(refreshErr, accountapp.ErrReauthenticationIdentityMismatch) &&
+		!errors.Is(refreshErr, ErrCredentialNotRefreshable) &&
+		!errors.Is(refreshErr, ErrRefreshStrategyNotFound) {
+		return resolution, refreshErr
+	}
+	failed := resolution.snapshot
+	if !failed.IsValid() {
+		// 旧入口的部分错误没有携带快照，无法证明它属于本代，不能传播永久拒绝。
+		return credentialResolution{}, ErrRefreshUnavailable
+	}
+	if failed.AccountRef() != observed.AccountRef() || failed.ProviderID() != observed.ProviderID() {
+		return credentialResolution{}, ErrInvalidRefreshResult
+	}
+	current, _, err := resolver.readCurrentCredentialSnapshot(ctx, observed)
+	if err != nil {
+		return credentialResolution{}, err
+	}
+	if current.UpdatedAt().Before(failed.UpdatedAt()) {
+		return credentialResolution{}, accountapp.ErrCredentialConflict
+	}
+	if current.UpdatedAt().After(failed.UpdatedAt()) {
+		if current.UpdatedAt().After(observed.UpdatedAt()) {
+			return currentResolution(current), nil
+		}
+		// 当前是入口版本，但严格新于失败的 flight；丢弃旧永久错误，不 Join。
+		return currentResolution(current), ErrRefreshUnavailable
+	}
+	return resolution, refreshErr
+}
+
 // canUseCurrentCredentialAfterRefreshFailure 只放行 Provider 已归类的预刷新失败。
 // 当前 Access Token 是否失效由随后真实上游响应判定；取消、非法结果和存储错误仍返回。
 func canUseCurrentCredentialAfterRefreshFailure(err error) bool {
@@ -681,6 +754,7 @@ func (resolver *Resolver) rememberRefreshFailure(
 		credentialUpdatedAt: snapshot.UpdatedAt(),
 		retryAt:             now.Add(delay),
 		reauthentication:    reauthentication,
+		identityMismatch:    errors.Is(err, accountapp.ErrReauthenticationIdentityMismatch),
 	}
 	resolver.refreshSuppressMu.Unlock()
 }

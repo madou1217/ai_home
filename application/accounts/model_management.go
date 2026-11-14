@@ -264,52 +264,58 @@ func (management *ModelManagement) ListAccountModels(
 	return management.models.ListAccountModels(ctx, accountRef)
 }
 
-// RefreshAccountModels 读取当前凭据并全量刷新上游发现部分。
+// RefreshAccountModelSnapshot 读取当前凭据并全量刷新上游发现部分。
 //
 // 这是唯一真正执行 DiscoverModels 的位置，因此也在这里记录探测事实：成功的目录
 // 替换提交后写 remote 与模型数；任何一步失败都写 error 事实。用独立事实表记录是
 // 因为失败时目录快照保持不变，只有探测表能表达「最近一次尝试失败了」。
-func (management *ModelManagement) RefreshAccountModels(
+func (management *ModelManagement) RefreshAccountModelSnapshot(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
-) ([]AccountModel, error) {
-	if management == nil || !accountRef.IsValid() {
-		return nil, ErrInvalidAccountModel
+) (AccountModelRefreshSnapshot, error) {
+	if management == nil || ctx == nil || !accountRef.IsValid() {
+		return AccountModelRefreshSnapshot{AccountRef: accountRef}, ErrInvalidAccountModel
 	}
 	credentialSnapshot, err := management.credentials.GetCredentialSnapshot(
 		ctx,
 		accountRef,
 	)
 	if err != nil {
-		management.recordModelProbeFailure(ctx, accountRef, err)
-		return nil, err
+		management.recordModelProbeFailure(ctx, accountRef, err, time.Time{})
+		return AccountModelRefreshSnapshot{AccountRef: accountRef}, err
 	}
 	if !credentialSnapshot.IsValid() ||
 		credentialSnapshot.AccountRef() != accountRef {
 		err = ErrInvalidAccountModel
-		management.recordModelProbeFailure(ctx, accountRef, err)
-		return nil, err
+		management.recordModelProbeFailure(ctx, accountRef, err, time.Time{})
+		return AccountModelRefreshSnapshot{AccountRef: accountRef}, err
 	}
 	// kiro 这类 OAuth 账号的 access token 会过期；先刷新再发现，否则上游直接 403。
 	if management.refresher != nil {
-		credentialSnapshot, err = management.refresher.RefreshCredential(ctx, credentialSnapshot)
-		if err != nil {
-			management.recordModelProbeFailure(ctx, accountRef, err)
-			return nil, err
+		refreshed, refreshErr := management.refresher.RefreshCredential(ctx, credentialSnapshot)
+		if refreshErr != nil {
+			management.recordModelProbeFailure(ctx, accountRef, refreshErr, credentialSnapshot.UpdatedAt())
+			return AccountModelRefreshSnapshot{AccountRef: accountRef}, refreshErr
 		}
+		if !refreshed.IsValid() || refreshed.ProviderID() != credentialSnapshot.ProviderID() {
+			management.recordModelProbeFailure(ctx, accountRef, ErrInvalidCredentialSnapshot, credentialSnapshot.UpdatedAt())
+			return AccountModelRefreshSnapshot{AccountRef: accountRef}, ErrInvalidCredentialSnapshot
+		}
+		credentialSnapshot = refreshed
 	}
 	// 刷新可能把账号迁移到新的稳定身份（re-key）：后续的模型、探测事实必须落在
 	// 新 AccountRef 上，否则会写回已删除的旧账号。
 	if credentialSnapshot.AccountRef() != accountRef {
 		accountRef = credentialSnapshot.AccountRef()
 	}
-	discovered, err := management.discovery.DiscoverModels(
-		ctx,
-		credentialSnapshot.Credential(),
-	)
+	discovered, credentialSnapshot, err := management.discoverWithCredentialRecovery(ctx, credentialSnapshot)
+	// 恢复也可能 re-key；目录 CAS 与探测事实必须使用恢复后的身份和代次。
+	if credentialSnapshot.IsValid() {
+		accountRef = credentialSnapshot.AccountRef()
+	}
 	if err != nil {
-		management.recordModelProbeFailure(ctx, accountRef, err)
-		return nil, err
+		management.recordModelProbeFailure(ctx, accountRef, err, credentialSnapshot.UpdatedAt())
+		return AccountModelRefreshSnapshot{AccountRef: accountRef}, err
 	}
 	discovered = management.mergeGatewayModels(
 		ctx,
@@ -318,8 +324,8 @@ func (management *ModelManagement) RefreshAccountModels(
 	)
 	updatedAt, err := normalizeModelTime(management.clock())
 	if err != nil {
-		management.recordModelProbeFailure(ctx, accountRef, err)
-		return nil, err
+		management.recordModelProbeFailure(ctx, accountRef, err, credentialSnapshot.UpdatedAt())
+		return AccountModelRefreshSnapshot{AccountRef: accountRef}, err
 	}
 	snapshot, err := management.models.ReplaceDiscoveredModelsIfCredentialVersion(
 		ctx,
@@ -329,11 +335,11 @@ func (management *ModelManagement) RefreshAccountModels(
 		updatedAt,
 	)
 	if err != nil {
-		management.recordModelProbeFailure(ctx, accountRef, err)
-		return nil, err
+		management.recordModelProbeFailure(ctx, accountRef, err, credentialSnapshot.UpdatedAt())
+		return AccountModelRefreshSnapshot{AccountRef: accountRef}, err
 	}
-	management.recordModelProbeSuccess(ctx, accountRef, len(discovered), updatedAt)
-	return snapshot, nil
+	management.recordModelProbeSuccess(ctx, accountRef, len(discovered), updatedAt, credentialSnapshot.UpdatedAt())
+	return AccountModelRefreshSnapshot{AccountRef: accountRef, Models: snapshot}, nil
 }
 
 // recordModelProbeSuccess 在目录替换提交后写入成功事实。
@@ -345,14 +351,16 @@ func (management *ModelManagement) recordModelProbeSuccess(
 	accountRef accountcore.AccountRef,
 	modelCount int,
 	updatedAt time.Time,
+	credentialUpdatedAt time.Time,
 ) {
 	management.recordModelProbe(ctx, ModelProbeRecord{
-		AccountRef:  accountRef,
-		AttemptedAt: updatedAt,
-		Succeeded:   true,
-		Source:      ModelProbeSourceRemote,
-		ModelCount:  modelCount,
-		UpdatedAt:   updatedAt,
+		AccountRef:          accountRef,
+		AttemptedAt:         updatedAt,
+		Succeeded:           true,
+		Source:              ModelProbeSourceRemote,
+		ModelCount:          modelCount,
+		UpdatedAt:           updatedAt,
+		CredentialUpdatedAt: credentialUpdatedAt,
 	})
 }
 
@@ -361,6 +369,7 @@ func (management *ModelManagement) recordModelProbeFailure(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 	cause error,
+	credentialUpdatedAt time.Time,
 ) {
 	if management == nil || management.probes == nil || cause == nil ||
 		errors.Is(cause, context.Canceled) {
@@ -371,13 +380,14 @@ func (management *ModelManagement) recordModelProbeFailure(
 		return
 	}
 	management.recordModelProbe(ctx, ModelProbeRecord{
-		AccountRef:   accountRef,
-		AttemptedAt:  attemptedAt,
-		Succeeded:    false,
-		Source:       ModelProbeSourceError,
-		ErrorCode:    modelProbeErrorCode(cause),
-		ErrorMessage: truncateModelProbeMessage(cause.Error()),
-		UpdatedAt:    attemptedAt,
+		AccountRef:          accountRef,
+		AttemptedAt:         attemptedAt,
+		Succeeded:           false,
+		Source:              ModelProbeSourceError,
+		ErrorCode:           modelProbeErrorCode(cause),
+		ErrorMessage:        truncateModelProbeMessage(cause.Error()),
+		UpdatedAt:           attemptedAt,
+		CredentialUpdatedAt: credentialUpdatedAt,
 	})
 }
 
@@ -406,6 +416,8 @@ func modelProbeErrorCode(err error) string {
 		return "timeout"
 	case errors.Is(err, ErrModelDiscoveryUnsupported):
 		return "discovery_unsupported"
+	case errors.Is(err, ErrModelAuthenticationRejected):
+		return "authentication_rejected"
 	case errors.Is(err, ErrModelDiscoveryFailed):
 		return "discovery_failed"
 	case errors.Is(err, ErrInvalidDiscoveredModels):

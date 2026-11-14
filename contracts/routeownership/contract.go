@@ -48,9 +48,9 @@ func websocketRoute(path string) Route {
 
 // Current 返回当前路由归属表。
 //
-// 健康检查与 WebUI 表面由 Node 公开宿主调度；App Server 与全部 /v1 数据面
-// 条目已经 go_owned。两个 go.preview 条目保留 node_owned，避免预览路由
-// 被误当成正式切流结果。
+// 当前 Go-first 公开端口由 Go 处理健康检查与已迁路由。Node 私有端口仍处理
+// 自己的进程健康，不将它转发回 Go。条目仅声明列出的端点，不能作为整个功能
+// 完成率；桌面翻译宿主等未迁叶子必须显式保留。两个旧 preview 汇总保留历史语义。
 func Current() Manifest {
 	return Manifest{
 		SchemaVersion: SchemaVersion,
@@ -58,17 +58,17 @@ func Current() Manifest {
 		Entries: []Entry{
 			{
 				ID:              "gateway.health",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
-				GoRoutes:        []Route{httpRoute([]string{"GET", "HEAD"}, "/healthz")},
-				NodeRoutes:      []Route{httpRoute([]string{"GET"}, "/healthz")},
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes:        []Route{{Transport: "http", Methods: []string{"GET", "HEAD"}, Path: "/healthz", Role: "Go-first public process health"}},
+				NodeRoutes:      []Route{{Transport: "http", Methods: []string{"GET"}, Path: "/healthz", Role: "Node private or legacy host health; never forwarded"}},
 			},
 			{
 				ID:              "gateway.readiness",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
-				GoRoutes:        []Route{httpRoute([]string{"GET", "HEAD"}, "/readyz")},
-				NodeRoutes:      []Route{httpRoute([]string{"GET"}, "/readyz")},
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes:        []Route{{Transport: "http", Methods: []string{"GET", "HEAD"}, Path: "/readyz", Role: "Go-first public process health"}},
+				NodeRoutes:      []Route{{Transport: "http", Methods: []string{"GET"}, Path: "/readyz", Role: "Node private or legacy host health; never forwarded"}},
 			},
 			{
 				ID:              "gateway.models.list",
@@ -253,6 +253,16 @@ func Current() Manifest {
 					httpRoute([]string{"POST"}, "/v0/webui/translation/detect"),
 					httpRoute([]string{"GET"}, "/v0/webui/translation/models"),
 					httpRoute([]string{"POST"}, "/v0/webui/translation/stream"),
+				},
+			},
+			{
+				// Translation inference/settings are Go-owned; OS capture/focus lifecycle is not.
+				ID:              "node.translation_desktop_host",
+				ProductionOwner: "node",
+				MigrationState:  "node_owned",
+				NodeRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/translation/system"),
+					httpRoute([]string{"POST"}, "/v0/webui/translation/focus"),
 				},
 			},
 			{
@@ -697,10 +707,10 @@ func Current() Manifest {
 				ProductionOwner: "node",
 				MigrationState:  "node_owned",
 				GoRoutes: []Route{{
-					Transport: "http", Methods: []string{"*"}, Path: "/v1/management/*", Role: "explicit private Preview only",
+					Transport: "http", Methods: []string{"*"}, Path: "/v1/management/*", Role: "legacy aggregate; inspect precise Go registrations for current management ownership",
 				}},
 				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/management/*", Role: "formal Node WebUI facade",
+					Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/management/*", Role: "legacy compatibility aggregate; current Go-first facade is mounted separately",
 				}},
 			},
 			{
@@ -708,10 +718,10 @@ func Current() Manifest {
 				ProductionOwner: "node",
 				MigrationState:  "node_owned",
 				GoRoutes: []Route{{
-					Transport: "http", Methods: []string{"POST"}, Path: "/v1/claude-relay-leases", Role: "explicit private Preview/canary only",
+					Transport: "http", Methods: []string{"POST"}, Path: "/v1/claude-relay-leases", Role: "Go relay lease endpoint; legacy aggregate is not a whole-control-plane ownership claim",
 				}},
 				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/*", Role: "formal Node control surface",
+					Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/*", Role: "legacy broad Node namespace; not evidence that every child endpoint remains Node-owned",
 				}},
 			},
 		},

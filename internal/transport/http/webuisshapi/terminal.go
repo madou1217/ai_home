@@ -301,13 +301,12 @@ func (handler *WorkspaceTerminalHandler) openNativeTerminal(
 		writeError(response, http.StatusConflict, "web_terminal_required", "浏览器不在 AIH Server 本机，改用 Web Terminal 打开。")
 		return
 	}
-	nodePath, cliEntry, errCode, errMsg := handler.resolveNodeAndCLI()
-	if errCode != "" {
-		writeError(response, http.StatusServiceUnavailable, errCode, errMsg)
+	nativeKey := sshhost.RemoteSessionKey(workspaceID, "native-"+randomHex(4))
+	command, commandErr := buildNativeRemoteCommand(handler.aiHomeDir, workspaceID, nativeKey)
+	if commandErr != nil {
+		writeError(response, http.StatusServiceUnavailable, "remote_workspace_terminal_unavailable", "当前宿主缺少可执行的 aih-server。")
 		return
 	}
-	nativeKey := sshhost.RemoteSessionKey(workspaceID, "native-"+randomHex(4))
-	command := buildNativeRemoteCommand(handler.aiHomeDir, nodePath, cliEntry, workspaceID, nativeKey)
 	connHost := trimmedString(connObj["host"])
 	res := handler.clientOpener(terminals.OpenRequest{
 		TerminalID: trimmedString(body.TerminalID),
@@ -665,19 +664,24 @@ func discoverRepoRoot() string {
 	return ""
 }
 
-func buildNativeRemoteCommand(aiHomeDir, nodePath, cliEntry, workspaceID, sessionKey string) string {
+// buildNativeRemoteCommand 构造桌面终端要执行的命令：宿主二进制自己的
+// __remote-ws 子命令，不再经过 Node CLI。
+func buildNativeRemoteCommand(aiHomeDir, workspaceID, sessionKey string) (string, error) {
+	executable, err := os.Executable()
+	if err != nil || strings.TrimSpace(executable) == "" {
+		return "", errors.New("aih-server executable unavailable")
+	}
 	if runtime.GOOS == "windows" {
 		quoteWin := func(v string) string {
 			return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
 		}
 		return `set "AIH_HOME_DIR=` + strings.ReplaceAll(aiHomeDir, `"`, `\"`) + `" && ` +
-			quoteWin(nodePath) + ` ` + quoteWin(cliEntry) + ` __remote_ws__ ` + quoteWin(workspaceID) + ` ` + quoteWin(sessionKey)
+			quoteWin(executable) + ` __remote-ws ` + quoteWin(workspaceID) + ` ` + quoteWin(sessionKey), nil
 	}
 	return "AIH_HOME_DIR=" + sshhost.ShellQuote(aiHomeDir) + " " +
-		sshhost.ShellQuote(nodePath) + " " +
-		sshhost.ShellQuote(cliEntry) + " __remote_ws__ " +
+		sshhost.ShellQuote(executable) + " __remote-ws " +
 		sshhost.ShellQuote(workspaceID) + " " +
-		sshhost.ShellQuote(sessionKey)
+		sshhost.ShellQuote(sessionKey), nil
 }
 
 func (handler *WorkspaceTerminalHandler) isDesktopHost() bool {

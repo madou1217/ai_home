@@ -30,6 +30,11 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        if (Environment.GetCommandLineArgs().Contains("--protocol-only", StringComparer.OrdinalIgnoreCase))
+        {
+            TranslationProtocolOnly.Run();
+            return;
+        }
         ApplicationConfiguration.Initialize();
         // A WinExe launched with redirected pipes (the normal AIH helper mode)
         // may not have a console handle. Setting OutputEncoding calls the
@@ -65,6 +70,77 @@ internal static class Program
         {
             if (!context.IsFullApp) context.PostExit();
         }
+    }
+}
+
+
+// Does not initialize WinForms, windows, hotkeys, clipboard or permission APIs.
+internal static class TranslationProtocolOnly
+{
+    internal static void Run()
+    {
+        var greeted = false;
+        var configured = false;
+        var fullApp = Environment.GetCommandLineArgs().Contains("--full-app", StringComparer.OrdinalIgnoreCase);
+        void Emit(object value) => ProtocolIo.Output.WriteLine(JsonSerializer.Serialize(value));
+        void Fail(string code) => Emit(new { version = 1, type = "error", code, message = code, retryable = false });
+        void Status() => Emit(new {
+            version = 1, type = "status", platform = "win32", protocolOnly = true,
+            mode = fullApp ? "full-app" : "helper", trusted = false, permission = "none",
+            captureModes = Array.Empty<string>(), configured,
+            detail = "protocol-only; desktop capture and permissions disabled"
+        });
+        bool Receive(string line)
+        {
+            if (line.Length == 0) return true;
+            if (Encoding.UTF8.GetByteCount(line) > 100_000) { Fail("desktop_protocol_too_large"); return true; }
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var message = doc.RootElement;
+                if (message.ValueKind != JsonValueKind.Object || !message.TryGetProperty("type", out var typeValue) || typeValue.ValueKind != JsonValueKind.String)
+                { Fail("desktop_protocol_invalid"); return true; }
+                if (message.TryGetProperty("version", out var version) &&
+                    (version.ValueKind != JsonValueKind.Number || !version.TryGetDouble(out var number) || number != 1))
+                { Fail("desktop_protocol_version_unsupported"); return true; }
+                var type = typeValue.GetString();
+                if (type == "shutdown") { Emit(new { version = 1, type = "shutdown", protocolOnly = true }); return false; }
+                if (type == "hello")
+                {
+                    greeted = true;
+                    Emit(new { version = 1, type = "ready", protocolOnly = true });
+                    Status(); return true;
+                }
+                if (!greeted) { Fail("desktop_protocol_handshake_required"); return true; }
+                switch (type)
+                {
+                    case "configure": configured = true; Status(); break;
+                    case "status": Status(); break;
+                    default: Fail("desktop_protocol_only_unsupported"); break;
+                }
+            }
+            catch (JsonException) { Fail("desktop_protocol_invalid"); }
+            return true;
+        }
+        var line = new StringBuilder();
+        var oversized = false;
+        int ch;
+        while ((ch = ProtocolIo.Input.Read()) != -1)
+        {
+            if (ch == '\n')
+            {
+                if (oversized) Fail("desktop_protocol_too_large");
+                else if (!Receive(line.ToString())) return;
+                line.Clear(); oversized = false;
+            }
+            else if (!oversized)
+            {
+                if (line.Length >= 100_000) { line.Clear(); oversized = true; }
+                else line.Append((char)ch);
+            }
+        }
+        if (oversized) Fail("desktop_protocol_too_large");
+        else if (line.Length > 0) Receive(line.ToString());
     }
 }
 

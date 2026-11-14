@@ -1,10 +1,88 @@
 import AppKit
 import ApplicationServices
+import Darwin
 
 func emit(_ event: [String: Any]) {
   guard let bytes = try? JSONSerialization.data(withJSONObject: event), let text = String(data: bytes, encoding: .utf8) else { return }
   print(text)
   fflush(stdout)
+}
+
+
+// A real stdin-only mode: branch before constructing NSApplication, panels,
+// SelectionReader, Services, shortcuts or permission/accessibility observers.
+// configure is acknowledged but never applied to desktop resources or echoed.
+func runTranslationProtocolOnly() {
+  var greeted = false
+  var configured = false
+  let fullApp = CommandLine.arguments.contains("--full-app")
+  func fail(_ code: String) {
+    emit(["version": 1, "type": "error", "code": code, "message": code, "retryable": false])
+  }
+  func status() {
+    emit(["version": 1, "type": "status", "platform": "darwin", "protocolOnly": true,
+          "mode": fullApp ? "full-app" : "helper", "trusted": false, "permission": "none",
+          "captureModes": [String](), "configured": configured,
+          "detail": "protocol-only; desktop capture and permissions disabled"])
+  }
+  func receive(_ line: Data) -> Bool {
+    guard !line.isEmpty else { return true }
+    guard let event = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+          let type = event["type"] as? String else {
+      fail("desktop_protocol_invalid"); return true
+    }
+    if let rawVersion = event["version"] {
+      guard let version = rawVersion as? NSNumber,
+            CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1 else {
+        fail("desktop_protocol_version_unsupported"); return true
+      }
+    }
+    if type == "shutdown" {
+      emit(["version": 1, "type": "shutdown", "protocolOnly": true]); return false
+    }
+    if type == "hello" {
+      greeted = true
+      emit(["version": 1, "type": "ready", "protocolOnly": true])
+      status(); return true
+    }
+    guard greeted else { fail("desktop_protocol_handshake_required"); return true }
+    switch type {
+    case "configure": configured = true; status()
+    case "status": status()
+    default: fail("desktop_protocol_only_unsupported")
+    }
+    return true
+  }
+  var line = Data()
+  var oversized = false
+  var buffer = [UInt8](repeating: 0, count: 4096)
+  while true {
+    // POSIX read returns available pipe bytes; Foundation's read(upToCount:) can
+    // wait for the full count/EOF and deadlock hello/ready while stdin stays open.
+    let count = buffer.withUnsafeMutableBytes { bytes in
+      Darwin.read(STDIN_FILENO, bytes.baseAddress!, bytes.count)
+    }
+    if count == 0 { break }
+    if count < 0 {
+      if errno == EINTR { continue }
+      fail("desktop_protocol_read_failed")
+      return
+    }
+    for byte in buffer.prefix(count) {
+      if byte == 10 {
+        if oversized { fail("desktop_protocol_too_large") }
+        else if !receive(line) { return }
+        line.removeAll(keepingCapacity: true)
+        oversized = false
+      } else if !oversized {
+        if line.count >= 100_000 {
+          line.removeAll(keepingCapacity: true); oversized = true
+        } else { line.append(byte) }
+      }
+    }
+  }
+  if oversized { fail("desktop_protocol_too_large") }
+  else if !line.isEmpty { _ = receive(line) }
 }
 
 final class TranslationApp: NSObject, NSApplicationDelegate {
@@ -335,7 +413,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   }
 }
 
-let app = NSApplication.shared
-let delegate = TranslationApp()
-app.delegate = delegate
-app.run()
+if CommandLine.arguments.contains("--protocol-only") {
+  runTranslationProtocolOnly()
+} else {
+  let app = NSApplication.shared
+  let delegate = TranslationApp()
+  app.delegate = delegate
+  app.run()
+}

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.meadeo.translation</string>
+<key>CFBundleName</key><string>AIH Translation</string>
+<key>CFBundleExecutable</key><string>aih-translation</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleDisplayName</key><string>AIH Translation</string>
+<key>CFBundleShortVersionString</key><string>{{VERSION}}</string>
+<key>CFBundleVersion</key><string>{{BUILD}}</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleIconName</key><string>AppIcon</string>
+<key>NSHumanReadableCopyright</key><string>AI Home</string>
+<key>LSUIElement</key>{{AGENT}}
+<key>LSMinimumSystemVersion</key><string>12.0</string>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSServices</key><array><dict>
+<key>NSMenuItem</key><dict><key>default</key><string>AIH 翻译选中内容</string></dict>
+<key>NSMessage</key><string>translateSelectedText</string>
+<key>NSPortName</key><string>AIH Translation</string>
+<key>NSRequiredContext</key><dict/>
+<key>NSSendTypes</key><array><string>public.utf8-plain-text</string><string>public.plain-text</string><string>NSStringPboardType</string></array>
+</dict>
+<dict>
+<key>NSMenuItem</key><dict><key>default</key><string>AIH Chat 选中内容</string></dict>
+<key>NSMessage</key><string>chatSelectedText</string>
+<key>NSPortName</key><string>AIH Translation</string>
+<key>NSRequiredContext</key><dict/>
+<key>NSSendTypes</key><array><string>public.utf8-plain-text</string><string>public.plain-text</string><string>NSStringPboardType</string></array>
+</dict>
+</array>
+</dict></plist>

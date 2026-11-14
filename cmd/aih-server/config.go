@@ -110,7 +110,9 @@ func loadCommandConfig(
 	// 持久化配置是权威缺省：Go 必须能在没有 Node 监督者时按用户配置的地址/端口/密钥启动。
 	persisted := readPersistedServerConfig(aiHomeDir)
 	hostFallback := defaultServerHost
-	if persisted.Host != "" {
+	if persisted.Host != "" && isLoopbackHost(persisted.Host) {
+		// Node 时代的 openNetwork 会持久化 0.0.0.0；Go 只服务回环，
+		// 不能让一个历史字段把整个服务挡在启动之外。
 		hostFallback = persisted.Host
 	}
 	portFallback := defaultServerPort

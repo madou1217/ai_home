@@ -816,6 +816,57 @@
       ]
     },
     {
+      "id": "webui.model_aliases",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/model-aliases"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "PUT",
+            "DELETE"
+          ],
+          "path": "/v0/webui/model-aliases/{id}"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/model-aliases/targets"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/model-aliases/replace"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/model-aliases/{id}/enabled"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/model-aliases/{id}/toggle"
+        }
+      ]
+    },
+    {
       "id": "node.codex_app_server",
       "production_owner": "go",
       "migration_state": "go_owned",

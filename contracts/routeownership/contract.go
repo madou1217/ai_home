@@ -352,6 +352,20 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 模型别名：浏览器入口由 Go 直接应答（集合/成员/targets/replace/enabled/toggle）。
+				ID:              "webui.model_aliases",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/model-aliases"),
+					httpRoute([]string{"PUT", "DELETE"}, "/v0/webui/model-aliases/{id}"),
+					httpRoute([]string{"GET"}, "/v0/webui/model-aliases/targets"),
+					httpRoute([]string{"POST"}, "/v0/webui/model-aliases/replace"),
+					httpRoute([]string{"POST"}, "/v0/webui/model-aliases/{id}/enabled"),
+					httpRoute([]string{"POST"}, "/v0/webui/model-aliases/{id}/toggle"),
+				},
+			},
+			{
 				ID:              "node.codex_app_server",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

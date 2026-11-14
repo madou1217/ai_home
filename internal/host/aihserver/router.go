@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliaswebui"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
@@ -217,6 +218,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 		// 另外挂 Path + "/"，否则 DELETE/PUT 会落到兜底的 route_not_found。
 		mux.Handle(modelaliaswebui.Path, handlers.modelAliasesWebUI)
 		mux.Handle(modelaliaswebui.Path+"/", handlers.modelAliasesWebUI)
+		// 浏览器数据面：/v0/webui/model-aliases* → 管理前缀（同一处理器）。
+		publicAliases := webuipublicalias.Rewrite("/v0/webui/model-aliases", modelaliaswebui.Path, handlers.modelAliasesWebUI)
+		mux.Handle("/v0/webui/model-aliases", publicAliases)
+		mux.Handle("/v0/webui/model-aliases/", publicAliases)
 	}
 	// 账号级规则：路径带 {ref} 通配，必须用「方法 + 模式」注册，才能在
 	// /v1/management/accounts/ 的既有前缀路由之前精确命中。

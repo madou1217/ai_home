@@ -417,13 +417,6 @@
           "methods": [
             "*"
           ],
-          "path": "/v0/webui/chat/attachments"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
           "path": "/v0/webui/chat/artifacts"
         }
       ]
@@ -440,6 +433,20 @@
           ],
           "path": "/ui/*",
           "role": "static WebUI"
+        }
+      ]
+    },
+    {
+      "id": "webui.chat_attachments",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/chat/attachments"
         }
       ]
     },

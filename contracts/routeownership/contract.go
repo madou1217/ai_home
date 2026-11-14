@@ -204,7 +204,6 @@ func Current() Manifest {
 				MigrationState:  "node_owned",
 				NodeRoutes: []Route{
 					httpRoute([]string{"*"}, "/v0/webui/chat/sessions"),
-					httpRoute([]string{"*"}, "/v0/webui/chat/attachments"),
 					httpRoute([]string{"*"}, "/v0/webui/chat/artifacts"),
 				},
 			},
@@ -215,6 +214,15 @@ func Current() Manifest {
 				MigrationState:  "node_owned",
 				NodeRoutes: []Route{
 					{Transport: "http", Methods: []string{"GET"}, Path: "/ui/*", Role: "static WebUI"},
+				},
+			},
+			{
+				// 聊天附件取回：浏览器入口由 Go 直接应答（Node 原先只做流式中继）。
+				ID:              "webui.chat_attachments",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/chat/attachments"),
 				},
 			},
 			{

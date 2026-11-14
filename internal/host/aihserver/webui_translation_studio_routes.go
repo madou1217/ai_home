@@ -36,9 +36,9 @@ import (
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/images"
-	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/runtime/imagestudio"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
+	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiimagestudioapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitranslationapi"
@@ -236,6 +236,9 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		{Pattern: "DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}", Handler: studioHandler},
 		{Pattern: "POST " + webuiimagestudioapi.Path + "/sessions/{sessionId}/runs", Handler: studioHandler},
 		{Pattern: "GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}/assets/{assetId}", Handler: studioHandler},
+		// 浏览器数据面：同一处理器同时挂 /v0/webui/studio/image/*，
+		// 迁移后不再经 Node 做前缀改写与转发。
+		{Pattern: webuiimagestudioapi.PublicPath + "/", Handler: webuiimagestudioapi.NewPublicAlias(studioHandler)},
 	}, nil
 }
 

@@ -386,8 +386,48 @@
     },
     {
       "id": "node.webui_image_studio",
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/studio/image/models"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/v0/webui/studio/image/sessions"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/v0/webui/studio/image/sessions/{sessionId}"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/studio/image/sessions/{sessionId}/runs"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"
+        }
+      ],
       "node_routes": [
         {
           "transport": "http",

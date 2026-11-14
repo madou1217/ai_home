@@ -194,8 +194,15 @@ func Current() Manifest {
 			},
 			{
 				ID:              "node.webui_image_studio",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/studio/image/models"),
+					httpRoute([]string{"GET", "POST"}, "/v0/webui/studio/image/sessions"),
+					httpRoute([]string{"DELETE", "GET", "PATCH"}, "/v0/webui/studio/image/sessions/{sessionId}"),
+					httpRoute([]string{"POST"}, "/v0/webui/studio/image/sessions/{sessionId}/runs"),
+					httpRoute([]string{"GET"}, "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"),
+				},
 				NodeRoutes: []Route{
 					httpRoute([]string{"GET"}, "/v0/webui/studio/image/models"),
 					httpRoute([]string{"GET", "POST"}, "/v0/webui/studio/image/sessions"),

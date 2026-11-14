@@ -6,7 +6,6 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountauthapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // selfOrNodeBaseURL 返回「本服务自己的地址」：账号认证只用它做自反向判定，
@@ -42,9 +41,8 @@ func buildWebUIAccountAuthRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 	return []webuiRoute{
 		{Pattern: "POST " + webuiaccountauthapi.ZCodeURLCallbackPath, Handler: http.HandlerFunc(handler.HandleZCodeURLCallback)},
 		{Pattern: "POST " + webuiaccountauthapi.StaticAccountPath, Handler: http.HandlerFunc(handler.HandleStaticAccount)},
+		// 浏览器同构别名由 router 统一生成；本机登录态导入只声明管理路径。
 		{Pattern: "POST " + webuiaccountauthapi.LocalImportPath, Handler: http.HandlerFunc(handler.HandleLocalImport)},
-		// 浏览器数据面：本机登录态导入（同构）。
-		{Pattern: "POST /v0/webui/accounts/local-import", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", http.HandlerFunc(handler.HandleLocalImport))},
 	}, nil
 }
 

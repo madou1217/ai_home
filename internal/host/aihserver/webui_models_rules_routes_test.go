@@ -32,7 +32,7 @@ func TestBuildWebUIModelsRulesRoutes(t *testing.T) {
 		}
 	})
 
-	t.Run("返回三十条无冲突路由并可执行映射组与模型读写", func(t *testing.T) {
+	t.Run("返回二十四条无冲突路由并可执行映射组与模型读写", func(t *testing.T) {
 		aiHomeDir := t.TempDir()
 		catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 		if err != nil {
@@ -57,8 +57,8 @@ func TestBuildWebUIModelsRulesRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildWebUIModelsRulesRoutes() error = %v", err)
 		}
-		if len(routes) != 30 {
-			t.Fatalf("路由数量 = %d, want 30", len(routes))
+		if len(routes) != 24 {
+			t.Fatalf("路由数量 = %d, want 24", len(routes))
 		}
 
 		// 验证与 webuiroutes.go 既有 openai-models 路由以及 router.go model-aliases 路由无冲突。

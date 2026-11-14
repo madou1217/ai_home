@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitcoreapi"
 )
 
@@ -44,28 +43,9 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 	}
 
 	return []webuiRoute{
+		// 浏览器数据面由 router 的 mountPublicManagementAliases 统一生成，
+		// 这里只声明管理路径，避免两份路由表漂移。
 		{Pattern: "GET " + webuitoolkitcoreapi.MirrorsPath, Handler: handler},
-		// 浏览器数据面：镜像/代理/连通性四条与 Go 管理路径同构，直接前缀重写。
-		{Pattern: "GET /v0/webui/toolkit/mirrors", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/toolkit/tools", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/toolkit/apps", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		// 受管工具的本地服务：状态查询/启动与设置写入。
-		{Pattern: "GET /v0/webui/toolkit/tools/{toolId}/service", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "POST /v0/webui/toolkit/tools/{toolId}/service", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "PUT /v0/webui/toolkit/tools/{toolId}/service/settings", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-
-		{Pattern: "POST /v0/webui/toolkit/apps/install", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "POST /v0/webui/toolkit/apps/plan", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "POST /v0/webui/toolkit/apps/hooks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/toolkit/apps/{appId}/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "PUT /v0/webui/toolkit/apps/{appId}/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-
-		{Pattern: "POST /v0/webui/toolkit/mirrors/set", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "POST /v0/webui/toolkit/mirrors/ping", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/toolkit/proxy", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "POST /v0/webui/toolkit/proxy/set", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/toolkit/connectivity", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-
 		{Pattern: "POST " + webuitoolkitcoreapi.MirrorsSetPath, Handler: handler},
 		{Pattern: "POST " + webuitoolkitcoreapi.MirrorsPingPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitcoreapi.ProxyPath, Handler: handler},
@@ -100,11 +80,6 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "POST " + webuitoolkitcoreapi.AppsHooksPath, Handler: handler},
 
 		{Pattern: "POST " + webuitoolkitcoreapi.AppInstallPath, Handler: handler},
-		// 浏览器数据面：/v0/webui/app-install* → 管理前缀（同一处理器）。
-		{Pattern: "POST /v0/webui/app-install", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/app-install/jobs", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "GET /v0/webui/app-install/jobs/{jobId}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
-		{Pattern: "POST /v0/webui/app-install/jobs/{jobId}/cancel", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", handler)},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobsPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobsWatchPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobPath, Handler: handler},

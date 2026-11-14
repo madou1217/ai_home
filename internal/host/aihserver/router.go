@@ -124,8 +124,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	// 已承接的管理路由同时挂到浏览器前缀：/v0 不再需要 Node 逐个转发。
 	mountPublicManagementAliases(mux, handlers.webuiRoutes)
-	// 内部聊天入口：Node 的 turn.submit 从这里进入 Go。浏览器仍走 Node 的
-	// /v0/webui/chat/*（202 + 独立 SSE），所以这里只挂管理前缀。
+	// 聊天入口：管理前缀 + 浏览器前缀（/v0/webui/chat/*，202 + 独立 SSE）都由 Go 应答。
 	mountWebUIChat(mux, handlers.webUIChat)
 	// WebUI 终端：Node 把 /v0/webui/terminal/* 原样反代到这里。
 	// 前缀注册同时覆盖 /open、/mux 等子路径；不带尾斜杠的那条是给潜在的空路径兜底。
@@ -443,6 +442,13 @@ const (
 // mountPublicManagementAliases 给 webuiRoutes 里每条管理路由补一条同构的
 // /v0/webui 路由（前缀重写，不复制处理器）。已手工挂载的公开路径先登记，避免重复注册。
 // 内部窄入口（/internal/）保持只走管理面，不扩到浏览器前缀。
+//
+// 这是公开别名的唯一生成点：路由构建器只声明 /v1/management/webui 路径，
+// 不要再手写同构的 /v0/webui 别名（会形成两份路由表并随管理路径漂移）。
+// 仅三类例外允许在构建器里显式声明公开路由：
+//   - 路径重命名（/v0/webui/fs/* → workspace/fs/*）；
+//   - 旧 Node 路径名兼容（如 upstream-error-mapping-groups）；
+//   - 公开面需要不同处理器或额外参数改写（如 public live alias、withGoRef）。
 func mountPublicManagementAliases(mux *http.ServeMux, routes []webuiRoute) {
 	if mux == nil {
 		return

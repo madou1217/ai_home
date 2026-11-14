@@ -10,7 +10,7 @@
 //
 // 前四条为什么单独一个前缀：Go 的 ServeMux 会把 /accounts/activity/jobs/{id} 与
 // /accounts/{provider}/{accountRef}/quota-reset-events 判成互不包含的歧义模式；
-// 浏览器看到的仍是 Node 的 /v0/webui/accounts/activity/*，这里只是内部管理地址。
+// 浏览器访问的 /v0/webui/accounts/activity/* 由 router 的公开别名直接重写到下面的管理地址。
 //
 // 任务状态、运行守卫（防抖 + 唯一）、探测/领取互斥、探测上限与上游调用的串行化都在
 // Go（见 internal/adapters/accountactivity）；本包只做管理鉴权、HTTP 形状与错误映射。

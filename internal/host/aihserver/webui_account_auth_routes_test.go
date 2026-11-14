@@ -25,7 +25,6 @@ func TestBuildWebUIAccountAuthRoutes(t *testing.T) {
 			"POST " + webuiaccountauthapi.ZCodeURLCallbackPath,
 			"POST " + webuiaccountauthapi.StaticAccountPath,
 			"POST " + webuiaccountauthapi.LocalImportPath,
-			"POST /v0/webui/accounts/local-import",
 		}
 		if len(routes) != len(want) {
 			t.Fatalf("routes len = %d, want %d", len(routes), len(want))

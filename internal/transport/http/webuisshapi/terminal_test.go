@@ -159,6 +159,17 @@ func TestWorkspaceTerminalAgentAndNativeModes(t *testing.T) {
 	launcher := &fakeTerminalLauncher{result: TerminalLaunchResult{TermID: "t_ai", Durable: true}}
 	var opened []terminals.OpenRequest
 
+	// agent 终端直接拉起宿主 CLI（不再经 node __remote-ws），用临时 PATH 固定解析结果。
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	fakeClaude := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(fakeClaude, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	handler, err := NewWorkspaceTerminalHandler(TerminalDependencies{
 		Authorizer:   fakeAuthorizer{allowed: true},
 		Connections:  fakeStore{raw: `[{"id":"conn_1","host":"10.0.0.1","user":"dev","authType":"agent"}]`, found: true},
@@ -187,7 +198,7 @@ func TestWorkspaceTerminalAgentAndNativeModes(t *testing.T) {
 	}
 	req := launcher.reqs[0]
 	expectedShadow := filepath.Join(aiHome, "run", "remote-workspaces", wsID)
-	if req.SessionKey != "remote-ai:"+wsID+":claude" || req.Cwd != expectedShadow || req.File != "/usr/local/bin/node" {
+	if req.SessionKey != "remote-ai:"+wsID+":claude" || req.Cwd != expectedShadow || req.File != fakeClaude {
 		t.Fatalf("agent req = %#v", req)
 	}
 	if _, statErr := os.Stat(expectedShadow); statErr != nil {

@@ -175,7 +175,7 @@ type serverHandlers struct {
 	webuiAccounts http.Handler
 	// webuiRoutes 是 WebUI 管理面的全部路由（各能力自己声明，router 统一挂载）。
 	webuiRoutes []webuiRoute
-	// webUIChat 是 Node 轮次执行的内部聊天入口（挂管理前缀）。浏览器路由仍由 Node 拥有。
+	// webUIChat 是聊天轮次入口：管理前缀与浏览器 /v0/webui/chat/* 均由 Go 应答。
 	webUIChat http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
 	usageStats http.Handler

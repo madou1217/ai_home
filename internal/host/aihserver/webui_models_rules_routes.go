@@ -61,12 +61,7 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "DELETE " + upstreammappingapi.WebUIPath + "/{id}", Handler: upstreamMappingsHandler},
 		{Pattern: "POST " + upstreammappingapi.WebUIPath + "/{id}/toggle", Handler: upstreamMappingsHandler},
 		// 浏览器数据面：/v0/webui/upstream-error-mappings* → 管理前缀（同一处理器）。
-		{Pattern: "GET /v0/webui/upstream-error-mappings", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
-		{Pattern: "POST /v0/webui/upstream-error-mappings", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
-		{Pattern: "GET /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
-		{Pattern: "PUT /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
-		{Pattern: "DELETE /v0/webui/upstream-error-mappings/{id}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
-		{Pattern: "POST /v0/webui/upstream-error-mappings/{id}/toggle", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamMappingsHandler)},
+		// 管理路径的 /v0 同构别名由 router 统一生成；这里只保留旧 Node 路径名兼容。
 		// 兼容 Node 时代的路径名（前端仍在用 -mapping-groups）：同构重写到 Go 的集合路径。
 		{Pattern: "GET /v0/webui/upstream-error-mapping-groups", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
 		{Pattern: "POST /v0/webui/upstream-error-mapping-groups", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 )
 
@@ -140,8 +143,19 @@ func loadCommandConfig(
 	if err != nil {
 		return commandConfig{}, err
 	}
-	managementKey, _ := runtime.lookupEnv("AIH_SERVER_MANAGEMENT_KEY")
-	clientKey, _ := runtime.lookupEnv("AIH_SERVER_API_KEY")
+	// 环境变量是运维的临时覆盖；持久化配置才是权威来源。Go 必须在没有 Node
+	// 监督者注入环境变量时也能独立启动，因此缺项从 app-state 的 config:server 补齐。
+	managementKey := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", ""))
+	clientKey := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_SERVER_API_KEY", ""))
+	if managementKey == "" || clientKey == "" {
+		storedManagementKey, storedClientKey := readPersistedServerKeys(aiHomeDir)
+		if managementKey == "" {
+			managementKey = storedManagementKey
+		}
+		if clientKey == "" {
+			clientKey = storedClientKey
+		}
+	}
 	if err := aihserver.ValidateServerKeys(managementKey, clientKey); err != nil {
 		return commandConfig{}, err
 	}
@@ -292,6 +306,30 @@ func envPort(lookupEnv func(string) (string, bool)) (int, error) {
 		return 0, errInvalidCommandConfig
 	}
 	return port, nil
+}
+
+// readPersistedServerKeys 从 app-state.db 的 config:server 读取权威密钥。
+//
+// 读取失败按「没有持久化配置」处理：启动继续走环境变量（与旧行为一致），
+// 最终由 ValidateServerKeys 对结果失败关闭。这样 Go 不依赖 Node 监督者
+// 注入 AIH_SERVER_* 就能独立启动，同时保留环境变量作为运维覆盖。
+func readPersistedServerKeys(aiHomeDir string) (managementKey, clientKey string) {
+	databasePath, err := appstate.DatabasePath(aiHomeDir)
+	if err != nil {
+		return "", ""
+	}
+	raw, found, err := appstate.ReadKV(context.Background(), databasePath, "config:server")
+	if err != nil || !found {
+		return "", ""
+	}
+	var stored struct {
+		ManagementKey string `json:"managementKey"`
+		APIKey        string `json:"apiKey"`
+	}
+	if json.Unmarshal([]byte(raw), &stored) != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(stored.ManagementKey), strings.TrimSpace(stored.APIKey)
 }
 
 // resolveAIHomeDir 只读取规范 AIH_HOME_DIR，缺省时使用当前用户的 .ai_home。

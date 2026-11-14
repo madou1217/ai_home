@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"io"
 	"strings"
 	"testing"
@@ -181,5 +183,33 @@ func TestLoadCommandConfigRejectsInvalidCodexHooksFlags(t *testing.T) {
 				t.Fatalf("expected errInvalidCommandConfig, got %v", err)
 			}
 		})
+	}
+}
+
+func TestLoadCommandConfigFallsBackToPersistedServerKeys(t *testing.T) {
+	aiHome := t.TempDir()
+	dbPath, err := appstate.DatabasePath(aiHome)
+	if err != nil {
+		t.Fatalf("DatabasePath() error = %v", err)
+	}
+	ctx := context.Background()
+	if err := appstate.WriteKV(ctx, dbPath, "config:server", "{\"managementKey\":\"stored-mgmt-key-1234567890123456\",\"apiKey\":\"stored-client-key-1234567890123456\"}", 123456789); err != nil {
+		t.Fatalf("WriteKV error = %v", err)
+	}
+
+	runtime := testRuntime(map[string]string{
+		"AIH_HOME_DIR":              aiHome,
+		"AIH_SERVER_MANAGEMENT_KEY": "",
+		"AIH_SERVER_API_KEY":        "",
+	})
+	cfg, err := loadCommandConfig(nil, runtime)
+	if err != nil {
+		t.Fatalf("loadCommandConfig() error = %v", err)
+	}
+	if cfg.managementKey != "stored-mgmt-key-1234567890123456" {
+		t.Fatalf("expected managementKey stored-mgmt-key-1234567890123456, got %q", cfg.managementKey)
+	}
+	if cfg.clientKey != "stored-client-key-1234567890123456" {
+		t.Fatalf("expected clientKey stored-client-key-1234567890123456, got %q", cfg.clientKey)
 	}
 }

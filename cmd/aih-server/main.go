@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime/approvaltool"
+	"github.com/madou1217/ai_home/internal/runtime/providersessionhook"
 )
 
 // main 把操作系统信号转换为 Go Server 的优雅关闭上下文，并把同一个取消动作
@@ -21,6 +23,20 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "aih-server __mcp-approve: %v\n", err)
 			os.Exit(1)
 		}
+		return
+	}
+	// Provider 官方 hook 的发送器：由 provider 直接执行，不经服务器装配，也不需要 Node。
+	if len(os.Args) > 1 && os.Args[1] == "__provider-hook" {
+		stdin, _ := io.ReadAll(io.LimitReader(os.Stdin, 4<<20))
+		result := providersessionhook.Run(providersessionhook.Options{
+			Args:   os.Args[2:],
+			Stdin:  stdin,
+			Getenv: os.Getenv,
+		})
+		if result.Stderr != "" {
+			_, _ = fmt.Fprint(os.Stderr, result.Stderr)
+		}
+		_, _ = fmt.Fprint(os.Stdout, result.Stdout)
 		return
 	}
 	signalCtx, stop := signal.NotifyContext(

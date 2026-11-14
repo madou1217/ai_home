@@ -128,11 +128,9 @@ func (handler *InstallHandler) ServeHTTP(response http.ResponseWriter, request *
 	}
 
 	context := installContext{
-		hostHomeDir:      handler.hostHomeDir,
-		receiverURL:      textValue(payload["receiverUrl"]),
-		senderScriptPath: textValue(payload["senderScriptPath"]),
-		nodeExecPath:     textValue(payload["nodeExecPath"]),
-		codexVersion:     textValue(payload["codexVersion"]),
+		hostHomeDir:  handler.hostHomeDir,
+		receiverURL:  textValue(payload["receiverUrl"]),
+		codexVersion: textValue(payload["codexVersion"]),
 	}
 	results := make([]installResult, 0, len(providersToInstall))
 	failed := false

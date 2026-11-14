@@ -100,12 +100,12 @@ func hookTargetPath(profile hookProfile, hostHomeDir string) string {
 
 // installContext 是一次安装请求的服务端上下文。
 type installContext struct {
-	hostHomeDir      string
-	receiverURL      string
-	senderScriptPath string
-	nodeExecPath     string
-	codexVersion     string
-	platform         string
+	hostHomeDir string
+	receiverURL string
+	// senderExecPath 覆盖发送器可执行文件路径；空时用当前进程自身。
+	senderExecPath string
+	codexVersion   string
+	platform       string
 }
 
 func (context installContext) resolvedPlatform() string {
@@ -133,25 +133,27 @@ func hookTimeout(profile hookProfile) int {
 	return defaultHookTimeoutSeconds
 }
 
-// buildProviderSessionHookSenderCommand 与 Node 的 sender 命令逐字对齐。
+// buildProviderSessionHookSenderCommand 生成托管 handler 的命令行。
+//
+// 发送器就是宿主二进制自己的 __provider-hook 子命令：provider 侧执行 hook 时
+// 不再需要 Node 或 PATH 上的 node。标记与参数顺序保持与 Node 版本一致，
+// 旧的托管 handler 仍可被 isManagedCommand 识别并替换。
 func buildProviderSessionHookSenderCommand(provider string, event string, context installContext) string {
 	platform := context.resolvedPlatform()
-	nodeCommand := strings.TrimSpace(context.nodeExecPath)
-	if platform != "win32" {
-		// POSIX 默认走 PATH 上的 node；Node 侧 webui 安装没有传 nodeExecPath。
-		if nodeCommand == "" {
-			nodeCommand = "/usr/bin/env node"
-		}
-	} else if nodeCommand == "" || strings.ContainsAny(nodeCommand, " \t") {
-		// Windows hook 命令必须无引号，含空格的 node 路径退回 PATH 上的 node。
-		nodeCommand = "node"
-	}
 	receiverURL := buildProviderHookReceiverURL(context.receiverURL, provider, event)
-	senderScriptPath := strings.TrimSpace(context.senderScriptPath)
+	senderExec := strings.TrimSpace(context.senderExecPath)
+	if senderExec == "" {
+		if resolved, err := os.Executable(); err == nil {
+			senderExec = strings.TrimSpace(resolved)
+		}
+	}
+	if senderExec == "" {
+		senderExec = "aih-server"
+	}
 	if platform == "win32" {
 		return strings.Join([]string{
-			toWindowsHookToken(nodeCommand),
-			toWindowsHookToken(senderScriptPath),
+			toWindowsHookToken(senderExec),
+			"__provider-hook",
 			managedHookMarker,
 			"--provider",
 			toWindowsHookToken(provider),
@@ -162,8 +164,8 @@ func buildProviderSessionHookSenderCommand(provider string, event string, contex
 		}, " ")
 	}
 	return strings.Join([]string{
-		nodeCommand,
-		quoteShellArg(senderScriptPath),
+		quoteShellArg(senderExec),
+		"__provider-hook",
 		managedHookMarker,
 		"--provider",
 		quoteShellArg(provider),

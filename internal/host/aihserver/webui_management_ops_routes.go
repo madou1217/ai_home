@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -140,9 +139,7 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		restarter := ports.Restarter
 		if restarter == nil {
 			if nativeRestarter := webuiserverrestartapi.NewNativeRestarter(webuiserverrestartapi.NativeRestarterOptions{
-				AIHomeDir:     aiHome,
-				NodeExecPath:  os.Getenv("AIH_SERVER_NODE_EXEC"),
-				EntryFilePath: os.Getenv("AIH_SERVER_ENTRY_FILE"),
+				AIHomeDir: aiHome,
 			}); nativeRestarter != nil {
 				restarter = serverRestarterAdapter{restarter: nativeRestarter, now: nowFn}
 			}

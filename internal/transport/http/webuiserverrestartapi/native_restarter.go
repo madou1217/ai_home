@@ -3,19 +3,23 @@ package webuiserverrestartapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
 const (
-	nodeExecEnv  = "AIH_SERVER_NODE_EXEC"
-	entryFileEnv = "AIH_SERVER_ENTRY_FILE"
+	// defaultServiceLabel 是自启服务标识（launchd label / systemd user unit 名）。
+	defaultServiceLabel = "com.meadeo.ai_home"
+	// serviceProbeTimeout 限制探测服务是否存在的等待时间。
+	serviceProbeTimeout = 5 * time.Second
 
 	restartContextEnv   = "AIH_SERVER_RESTART"
 	restartContextValue = "mode=background"
@@ -32,24 +36,22 @@ const (
 	minEgressEvidenceTTLMs     = 60000
 )
 
-// NativeRestarterOptions 配置 Go 原生拉起独立 Node Server 重启进程的参数。
+// NativeRestarterOptions 配置原生服务管理器重启的参数。
 type NativeRestarterOptions struct {
-	AIHomeDir      string
-	RepoRoot       string
-	NodeExecPath   string
-	EntryFilePath  string
+	AIHomeDir string
+	// ServiceLabel 是自启服务标识；空时用 com.meadeo.ai_home。
+	ServiceLabel string
+	// ResolveCommand 覆盖平台服务管理器探测（测试或嵌入式宿主注入）。
+	ResolveCommand func() (string, []string, error)
 	CommandFactory func(name string, args ...string) *exec.Cmd
 }
 
-// NativeRestarter 直接以分离进程拉起 `<node> <entry> server restart`，
-// 并在返回前读取持久化 `config:server` 的脱敏公开视图作为 `appliedConfig`。
+// NativeRestarter 通过系统服务管理器（launchd / systemd user）重启整个 aih 服务，
+// 不经过 Node；并在返回前读取持久化 `config:server` 的脱敏公开视图作为 `appliedConfig`。
 type NativeRestarter struct {
-	aiHomeDir            string
-	repoRoot             string
-	nodeExecPath         string
-	entryFilePath        string
-	commandFactory       func(name string, args ...string) *exec.Cmd
-	customCommandFactory bool
+	aiHomeDir      string
+	resolveCommand func() (string, []string, error)
+	commandFactory func(name string, args ...string) *exec.Cmd
 }
 
 // NewNativeRestarter 创建原生重启器；AIHomeDir 为空时返回 nil。
@@ -59,17 +61,21 @@ func NewNativeRestarter(options NativeRestarterOptions) *NativeRestarter {
 		return nil
 	}
 	factory := options.CommandFactory
-	customFactory := factory != nil
 	if factory == nil {
 		factory = exec.Command
 	}
+	label := strings.TrimSpace(options.ServiceLabel)
+	if label == "" {
+		label = defaultServiceLabel
+	}
+	resolve := options.ResolveCommand
+	if resolve == nil {
+		resolve = func() (string, []string, error) { return detectServiceRestartCommand(label) }
+	}
 	return &NativeRestarter{
-		aiHomeDir:            aiHomeDir,
-		repoRoot:             strings.TrimSpace(options.RepoRoot),
-		nodeExecPath:         strings.TrimSpace(options.NodeExecPath),
-		entryFilePath:        strings.TrimSpace(options.EntryFilePath),
-		commandFactory:       factory,
-		customCommandFactory: customFactory,
+		aiHomeDir:      aiHomeDir,
+		resolveCommand: resolve,
+		commandFactory: factory,
 	}
 }
 
@@ -84,7 +90,7 @@ func (r *NativeRestarter) Restart(ctx context.Context, _ RestartJob) (RestartOut
 		}
 	}
 
-	nodeExecPath, entryFilePath, err := r.resolveCommand()
+	commandName, commandArgs, err := r.resolveCommand()
 	if err != nil {
 		return RestartOutcome{}, err
 	}
@@ -96,7 +102,7 @@ func (r *NativeRestarter) Restart(ctx context.Context, _ RestartJob) (RestartOut
 
 	// 严禁使用 exec.CommandContext：请求/超时上下文在 Restart 返回后即刻取消，
 	// 若绑定上下文会把刚拉起的独立重启进程直接杀死。
-	cmd := r.commandFactory(nodeExecPath, entryFilePath, "server", "restart")
+	cmd := r.commandFactory(commandName, commandArgs...)
 	if cmd == nil {
 		return RestartOutcome{}, ErrRestartUnavailable
 	}
@@ -120,70 +126,42 @@ func (r *NativeRestarter) Restart(ctx context.Context, _ RestartJob) (RestartOut
 	}, nil
 }
 
-func (r *NativeRestarter) resolveCommand() (string, string, error) {
-	nodePath := r.nodeExecPath
-	if nodePath == "" {
-		nodePath = strings.TrimSpace(os.Getenv(nodeExecEnv))
+// detectServiceRestartCommand 用系统服务管理器重启整个 aih 服务。
+//
+// Go 不再拉起 `node ... server restart`：重启动作属于宿主生命周期，
+// 应该由持有该进程的服务管理器完成。没有受管服务（开发态前台运行）时
+// 明确返回 ErrRestartUnavailable，由 Handler 回 503，而不是退回 Node。
+func detectServiceRestartCommand(label string) (string, []string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "", nil, ErrRestartUnavailable
 	}
-	if nodePath == "" {
-		found, err := exec.LookPath("node")
-		if err != nil {
-			return "", "", ErrRestartUnavailable
+	switch runtime.GOOS {
+	case "darwin":
+		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+		if !serviceExists("launchctl", "print", target) {
+			return "", nil, ErrRestartUnavailable
 		}
-		nodePath = found
-	} else if !r.customCommandFactory {
-		found, err := exec.LookPath(nodePath)
-		if err != nil {
-			return "", "", ErrRestartUnavailable
+		return "launchctl", []string{"kickstart", "-k", target}, nil
+	case "linux":
+		unit := label + ".service"
+		if !serviceExists("systemctl", "--user", "cat", unit) {
+			return "", nil, ErrRestartUnavailable
 		}
-		nodePath = found
+		return "systemctl", []string{"--user", "restart", unit}, nil
+	default:
+		return "", nil, ErrRestartUnavailable
 	}
-
-	entry := r.entryFilePath
-	if entry == "" {
-		entry = strings.TrimSpace(os.Getenv(entryFileEnv))
-	}
-	if entry == "" {
-		root := r.repoRoot
-		if root == "" {
-			root = discoverRepoRoot()
-		}
-		if root != "" {
-			entry = filepath.Join(root, "bin", "ai-home.js")
-		}
-	}
-	if entry == "" {
-		return "", "", ErrRestartUnavailable
-	}
-	info, err := os.Stat(entry)
-	if err != nil || info.IsDir() {
-		return "", "", ErrRestartUnavailable
-	}
-	return nodePath, entry, nil
 }
 
-func discoverRepoRoot() string {
-	candidates := make([]string, 0, 2)
-	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Dir(executable))
+// serviceExists 探测服务管理器里是否存在目标；探测失败按「不存在」处理。
+func serviceExists(name string, args ...string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
 	}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, cwd)
-	}
-	for _, start := range candidates {
-		dir := start
-		for depth := 0; depth < 6; depth++ {
-			if info, err := os.Stat(filepath.Join(dir, "bin", "ai-home.js")); err == nil && !info.IsDir() {
-				return dir
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-	return ""
+	ctx, cancel := context.WithTimeout(context.Background(), serviceProbeTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Run() == nil
 }
 
 func buildRestartEnv(base []string) []string {

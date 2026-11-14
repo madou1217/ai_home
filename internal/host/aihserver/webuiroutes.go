@@ -777,11 +777,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 
 	routes := []webuiRoute{
+		// 浏览器实时通道（watch / snapshot）由 router 统一派生 /v0 别名。
 		{Pattern: "GET " + webuiaccountliveapi.Path, Handler: accountLive},
-		// 浏览器实时通道：/v0/webui/accounts/watch 由 Go 直接应答（SSE）。
-		{Pattern: "GET /v0/webui/accounts/watch", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountLive)},
-		// 一次性快照请求：通知 Go 重建并广播，语义与 Node 的刷新一致。
-		{Pattern: "POST /v0/webui/accounts/watch/snapshot", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountLive)},
 		// 浏览器账号列表（全量）：直接走 Go 的实时列表端点。
 		{Pattern: "GET /v0/webui/accounts", Handler: webuiaccountliveapi.NewPublicLiveAlias(accountLive)},
 		{Pattern: "GET /v0/webui/accounts/live", Handler: webuiaccountliveapi.NewPublicLiveAlias(accountLive)},
@@ -789,12 +786,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		// 宿主注入实时事件（token-consumed / account-activity）到同一条 watch 流。
 		{Pattern: "POST " + webuiaccountliveapi.PublishPath, Handler: accountLive},
 		{Pattern: "GET " + webuiaccountliveapi.LivePath, Handler: http.HandlerFunc(accountLive.ServeLiveHTTP)},
+		// 浏览器入口：账号发现与导出都由 router 统一派生公开别名。
 		{Pattern: "POST " + webuiaccountdetectapi.Path, Handler: accountDetect},
-		// 浏览器入口：账号发现直接由 Go 承接（Node 只提供宿主扫描能力）。
-		{Pattern: "POST /v0/webui/accounts/detect", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountDetect)},
 		{Pattern: "GET " + webuiaccountsexportapi.Path, Handler: accountExport},
-		// 浏览器数据面：账号导出。
-		{Pattern: "GET /v0/webui/accounts/export", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountExport)},
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "POST " + webuimodelsettingsapi.Path, Handler: modelsSettings},
@@ -821,9 +815,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuichatpasteapi.PublicPath, Handler: webuichatpasteapi.NewPublicAlias(chatPaste)},
 		{Pattern: "GET " + webuiusageconfigapi.Path, Handler: usageConfig},
 		{Pattern: "POST " + webuiusageconfigapi.Path, Handler: usageConfig},
-		// 浏览器数据面：服务配置。
-		{Pattern: "/v0/webui/config", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", usageConfig)},
-		{Pattern: "/v0/webui/config/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", usageConfig)},
 		{Pattern: "GET " + webuisshapi.Path, Handler: sshHandler},
 		{Pattern: "GET " + webuisshapi.WorkspacesPath, Handler: sshWorkspaces},
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
@@ -837,22 +828,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},
 		{Pattern: "GET " + webuiaccountconfigapi.Path + "/{provider}/{accountRef}/config-files", Handler: accountConfig},
-		// 浏览器数据面：同一处理器 + 前缀重写。
-		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/config-files", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuiaccountconfigapi.Path, accountConfig)},
 		{Pattern: "GET " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "DELETE " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/model-context/bulk", Handler: http.HandlerFunc(modelContext.ServeBulkHTTP)},
-		// 浏览器数据面。
-		{Pattern: "GET " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/model-context", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, modelContext)},
-		{Pattern: "POST " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/model-context", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, modelContext)},
-		{Pattern: "DELETE " + webuipublicalias.PublicAccountPrefix + "/{provider}/{accountRef}/model-context", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, modelContext)},
-		{Pattern: "POST " + webuipublicalias.PublicAccountPrefix + "/{provider}/model-context/bulk", Handler: webuipublicalias.Rewrite(webuipublicalias.PublicAccountPrefix, webuimodelcontextapi.Path, http.HandlerFunc(modelContext.ServeBulkHTTP))},
 		{Pattern: "GET " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
 		{Pattern: "POST " + webuiaccountegressapi.Path + "/{provider}/{accountRef}/egress", Handler: accountEgress},
-		// 浏览器数据面：控制面（bootstrap/endpoints/profiles）。
-		{Pattern: "/v0/webui/control-plane", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", controlPlane)},
-		{Pattern: "/v0/webui/control-plane/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", controlPlane)},
+		// 浏览器数据面（bootstrap/endpoints/profiles）由 router 统一派生。
 		{Pattern: "GET " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles", Handler: controlPlane},
 		{Pattern: "POST " + webuicontrolplaneapi.Path + "/profiles/active", Handler: controlPlane},
@@ -861,14 +843,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuifstrustapi.TrustPath, Handler: fsTrust},
 		{Pattern: "GET " + webuifsaccessapi.Path, Handler: fsAccess},
 		{Pattern: "GET " + webuiproviderhooksapi.Path, Handler: hooks},
-		// 浏览器数据面：provider hooks。
-		{Pattern: "/v0/webui/provider-hooks", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", hooks)},
-		{Pattern: "/v0/webui/provider-hooks/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", hooks)},
 		{Pattern: "POST " + webuiproviderhooksapi.InstallPath, Handler: installHooks},
 		{Pattern: "GET " + webuifsreadapi.Path, Handler: fsRead},
 		{Pattern: "GET " + webuifstreeapi.Path, Handler: fsTree},
-		// 浏览器数据面：/v0/webui/fs/tree → 管理前缀（同一处理器）。
-		{Pattern: "GET /v0/webui/fs/tree", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", fsTree)},
 		{Pattern: "GET " + webuifsmediaapi.Path, Handler: fsMedia},
 		{Pattern: "POST " + webuisshwriteapi.CollectionPath, Handler: sshWrite},
 		{Pattern: "PUT " + webuisshwriteapi.ItemPath, Handler: sshWrite},
@@ -899,24 +876,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.ClearDefaultRouteSuffix, Handler: setDefault},
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.SummarySuffix, Handler: gitRead},
 		{Pattern: "GET " + webuigitapi.Path + webuigitapi.DiffSuffix, Handler: gitRead},
-		// 浏览器数据面：/v0/webui/git/* → 管理前缀（同一处理器）。
-		{Pattern: "GET /v0/webui/git/summary", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", gitRead)},
-		{Pattern: "GET /v0/webui/git/diff", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", gitRead)},
 		{Pattern: "GET " + webuiprojectsapi.Path, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.SessionsPath, Handler: projects},
 		{Pattern: "GET " + webuiprojectsapi.WatchPath, Handler: projects},
 		{Pattern: "POST " + webuiprojectsapi.SnapshotPath, Handler: projects},
-		// 浏览器数据面：/v0/webui/projects* → 管理前缀（同一处理器）。
-		{Pattern: "GET /v0/webui/projects", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
-		{Pattern: "GET /v0/webui/projects/sessions", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
-		{Pattern: "GET /v0/webui/projects/watch", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
-		{Pattern: "POST /v0/webui/projects/snapshot", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", projects)},
 		{Pattern: "GET " + webuisessionmessagesapi.Path, Handler: sessionMessages},
 		{Pattern: "GET " + webuisessioneventsapi.Path, Handler: sessionEvents},
 		{Pattern: "GET " + webuislashcommandsapi.Path, Handler: slashCommands},
 		{Pattern: "GET " + webuiappentriesapi.Path, Handler: appEntries},
-		// 浏览器入口：宿主应用可用性由 Go 探测（字段与 Node 一致）。
-		{Pattern: "GET /v0/webui/app-entries", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", appEntries)},
 
 		{Pattern: "POST " + webuiopenappapi.Path + webuiopenappapi.OpenAppSuffix, Handler: openApp},
 		{Pattern: "GET " + webuitoolkitenvapi.Path, Handler: toolkitEnvironmentActions},
@@ -936,11 +903,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisessionslistapi.Path + "/{provider}/{accountRef}", Handler: sessionsList},
 		{Pattern: "GET " + webuisessionslifecycleapi.LifecycleCapabilitiesPath, Handler: sessionsLifecycle},
 		{Pattern: "POST " + webuisessionslifecycleapi.ArchivePath, Handler: sessionsLifecycle},
-		// 浏览器数据面：/v0/webui/sessions* → 管理前缀（同一处理器）。
-		{Pattern: "GET /v0/webui/sessions/{provider}/{accountRef}", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsList)},
-		{Pattern: "GET /v0/webui/sessions/lifecycle-capabilities", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsLifecycle)},
-		{Pattern: "POST /v0/webui/sessions/archive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", sessionsLifecycle)},
-		{Pattern: "GET /v0/webui/sessions/archived", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", archivedSessions)},
 		{Pattern: "POST " + webuiaccountreauthapi.Path + webuiaccountreauthapi.ReauthSuffix, Handler: reauth},
 		// 浏览器重新认证入口（ref 先翻译成 Go ref）。
 		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/reauth", Handler: publicAccountReauth},
@@ -954,14 +916,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.InstallSuffix, Handler: accountAdd},
 		{Pattern: "GET " + webuicontrolplanebootstrapapi.Path, Handler: controlPlaneBootstrap},
 		{Pattern: "GET " + webuiproviderauthsourcesapi.Path, Handler: authSources},
-		// 浏览器数据面：provider 授权来源。
-		{Pattern: "GET /v0/webui/accounts/provider-auth-sources", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", authSources)},
 		{Pattern: "POST " + webuiaccountactivityapi.RunPath, Handler: accountActivity},
 		{Pattern: "POST " + webuiaccountactivityapi.ProbePath, Handler: accountActivity},
 		{Pattern: "GET " + webuiaccountactivityapi.JobsPath, Handler: accountActivity},
 		{Pattern: "GET " + webuiaccountactivityapi.ParamsPath, Handler: accountActivity},
-		// 浏览器数据面：账号活动参数（同构）。
-		{Pattern: "GET /v0/webui/accounts/activity/params", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", accountActivity)},
+		// 浏览器数据面：Node 的 accounts/activity/* 对应 Go 的 account-activity/*（前缀不同名）。
+		// jobs/{jobId} 暂不能注册：与 /accounts/{provider}/{accountRef}/quota-reset-events
+		// 是互不更具体的 ServeMux 模式，需要独立的账号路径分发器。
+		{Pattern: "GET /v0/webui/accounts/activity/params", Handler: webuipublicalias.Rewrite("/v0/webui/accounts/activity", "/v1/management/webui/account-activity", accountActivity)},
+		{Pattern: "POST /v0/webui/accounts/activity/run", Handler: webuipublicalias.Rewrite("/v0/webui/accounts/activity", "/v1/management/webui/account-activity", accountActivity)},
+		{Pattern: "POST /v0/webui/accounts/activity/probe", Handler: webuipublicalias.Rewrite("/v0/webui/accounts/activity", "/v1/management/webui/account-activity", accountActivity)},
 		{Pattern: "POST " + webuiaccountactivityapi.AccountActionPath, Handler: accountActivity},
 	}
 	if restoreScheduling != nil {

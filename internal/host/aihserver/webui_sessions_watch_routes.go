@@ -18,7 +18,6 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionslifecycleapi"
@@ -120,8 +119,6 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 			})
 		})},
 		{Pattern: "POST " + webuisessionslifecycleapi.UnarchivePath, Handler: unarchiveHandler},
-		// 浏览器数据面：/v0/webui/sessions/unarchive → 管理前缀（同一处理器）。
-		{Pattern: "POST /v0/webui/sessions/unarchive", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", unarchiveHandler)},
 	}, nil
 }
 

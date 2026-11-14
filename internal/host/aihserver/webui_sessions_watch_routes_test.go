@@ -39,7 +39,7 @@ func (r *sessionsWatchTestRestorer) RestoreScheduling(_ context.Context, account
 }
 
 func TestBuildWebUISessionsWatchRoutes(t *testing.T) {
-	t.Run("返回六条预期路由且模式完整对齐", func(t *testing.T) {
+	t.Run("返回五条预期路由且模式完整对齐", func(t *testing.T) {
 		routes, err := buildWebUISessionsWatchRoutes(webuiRouteDependencies{
 			Authorizer:  sessionsWatchTestAuthorizer{},
 			AIHomeDir:   t.TempDir(),
@@ -54,7 +54,6 @@ func TestBuildWebUISessionsWatchRoutes(t *testing.T) {
 			"POST /v0/webui/session-events/provider-hook",
 			"POST /v0/webui/internal/remote-tools",
 			"POST " + webuisessionslifecycleapi.UnarchivePath,
-			"POST /v0/webui/sessions/unarchive",
 		}
 		if len(routes) != len(want) {
 			t.Fatalf("路由数量 = %d, want %d: %+v", len(routes), len(want), routes)

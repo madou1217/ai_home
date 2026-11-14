@@ -9,7 +9,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatattachmentsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatsessionsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 var nodeRPCOperations = []string{
@@ -77,13 +76,8 @@ func buildWebUINodeRPCChatLegacyRoutes(dependencies webuiRouteDependencies) ([]w
 	routes := make([]webuiRoute, 0, 5+2*(len(nodeRPCOperations)+1))
 	routes = append(routes,
 		webuiRoute{Pattern: "GET " + webuichatattachmentsapi.Path, Handler: attachmentsHandler},
-		// 浏览器数据面：聊天附件取回（Node 只做流式中继）。
-		webuiRoute{Pattern: "GET /v0/webui/chat/attachments", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", attachmentsHandler)},
 		webuiRoute{Pattern: "GET " + webuichatsessionsapi.CollectionPath, Handler: chatSessionsHandler},
 		webuiRoute{Pattern: "POST " + webuichatsessionsapi.CollectionPath, Handler: chatSessionsHandler},
-		// 浏览器数据面：聊天会话 CRUD（同构）。
-		webuiRoute{Pattern: "/v0/webui/chat-sessions", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", chatSessionsHandler)},
-		webuiRoute{Pattern: "/v0/webui/chat-sessions/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", chatSessionsHandler)},
 		webuiRoute{Pattern: "GET " + webuichatsessionsapi.ItemPath, Handler: chatSessionsHandler},
 		webuiRoute{Pattern: "DELETE " + webuichatsessionsapi.ItemPath, Handler: chatSessionsHandler},
 	)

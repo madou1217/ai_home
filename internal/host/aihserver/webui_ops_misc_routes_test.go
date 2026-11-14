@@ -99,8 +99,8 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 	if err != nil {
 		t.Fatalf("buildWebUIOpsMiscRoutesWithPorts 失败: %v", err)
 	}
-	if len(routes) != 23 {
-		t.Fatalf("期望 23 条路由，实际 %d 条", len(routes))
+	if len(routes) != 19 {
+		t.Fatalf("期望 19 条路由，实际 %d 条", len(routes))
 	}
 	for _, r := range routes {
 		mux.Handle(r.Pattern, r.Handler)

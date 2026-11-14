@@ -55,9 +55,7 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 
 	return []webuiRoute{
 		// GeoIP 数据资源与异步下载/删除作业 + SSE
-		// 浏览器数据面：geo-resources 与 egress 池族（公开路径与管理路径同构）。
-		{Pattern: "/v0/webui/geo-resources", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", geoHandler)},
-		{Pattern: "/v0/webui/geo-resources/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", geoHandler)},
+		// 浏览器同构别名由 router 统一派生，这里只声明管理路径。
 		{Pattern: "GET " + webuigeoresourcesapi.Path, Handler: geoHandler},
 		{Pattern: "GET " + webuigeoresourcesapi.JobsPath, Handler: geoHandler},
 		{Pattern: "POST " + webuigeoresourcesapi.JobsPath, Handler: geoHandler},
@@ -66,17 +64,6 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		{Pattern: "POST " + webuigeoresourcesapi.JobCancelPath, Handler: geoHandler},
 
 		// 出口池面板数据面、分页/ETag 与节点/策略操作
-		// 浏览器数据面：出口池 / 池组 / 节点（同构）。
-		{Pattern: "/v0/webui/egress-pool", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
-		{Pattern: "/v0/webui/egress-pool/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
-		{Pattern: "/v0/webui/egress-pools", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
-		{Pattern: "/v0/webui/egress-pools/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
-		{Pattern: "/v0/webui/egress-pool-groups", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
-		{Pattern: "/v0/webui/egress-pool-groups/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
-		// 出口上游与证据（同构）。
-		{Pattern: "/v0/webui/egress-upstreams", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamsHandler)},
-		{Pattern: "/v0/webui/egress-upstreams/", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", upstreamsHandler)},
-		{Pattern: "/v0/webui/egress-evidence", Handler: webuipublicalias.Rewrite("/v0/webui", "/v1/management/webui", poolHandler)},
 		{Pattern: "GET " + webuiegresspoolapi.Path, Handler: poolHandler},
 		{Pattern: "POST " + webuiegresspoolapi.ProbePath, Handler: poolHandler},
 		{Pattern: "GET " + webuiegresspoolapi.PolicyPath, Handler: poolHandler},

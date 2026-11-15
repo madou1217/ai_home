@@ -287,6 +287,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.codexAppServer != nil {
 		mux.Handle(codexappserverapi.AppServerProxyPath, handlers.codexAppServer)
 		mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
+			if redirectRootToWebUI(response, request, handlers.webUI) {
+				return
+			}
 			if shouldDispatchCodexAppServerUpgrade(request) {
 				handlers.codexAppServer.ServeHTTP(response, request)
 				return
@@ -294,7 +297,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 			fallback.ServeHTTP(response, request)
 		})
 	} else {
-		mux.Handle("/", fallback)
+		mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
+			if redirectRootToWebUI(response, request, handlers.webUI) {
+				return
+			}
+			fallback.ServeHTTP(response, request)
+		})
 	}
 	return withRemoteWebUIProxy(handlers.frontDoor, mux)
 }
@@ -511,6 +519,19 @@ func mountWebUIChat(mux *http.ServeMux, handler http.Handler) {
 	publicChat := webuipublicalias.Rewrite("/v0/webui/chat/sessions", webuichatapi.ManagementCollectionPath, handler)
 	mux.Handle("/v0/webui/chat/sessions", publicChat)
 	mux.Handle("/v0/webui/chat/sessions/", publicChat)
+}
+
+// redirectRootToWebUI 让浏览器直接打开域名时进入 WebUI。
+// 只有托管了 WebUI 构件且是 GET/HEAD 的根路径才重定向；其余路径与 404 语义不变。
+func redirectRootToWebUI(response http.ResponseWriter, request *http.Request, webUI http.Handler) bool {
+	if webUI == nil || request == nil || request.URL == nil || request.URL.Path != "/" {
+		return false
+	}
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		return false
+	}
+	http.Redirect(response, request, "/ui/", http.StatusFound)
+	return true
 }
 
 // handleRouteNotFound 返回 JSON 404，避免标准库默认纯文本泄漏合同差异。

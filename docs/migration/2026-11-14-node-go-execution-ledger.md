@@ -56,9 +56,9 @@
 | W0 | 进行中 | 初版归属账已建；全入口覆盖、运行版本关联与在途整合未完成 |
 | W1 | 进行中 | 先提交复核后的 effort/参数传递修复；补完整 WS/resume/cancel/usage 验收 |
 | W2 | 进行中 | preference I/O 真实验证通过；进程生命周期安全审查及真机矩阵未完成 |
-| W3 | 进行中 | 默认事务/恢复/权威读桥已在单库副本验收；主体提交与公开入口切换依赖单库底座提交，真实OAuth/跨平台仍缺 |
-| W4 | 待集成审查 | 凭据恢复工作正在其它会话修改；待稳定后集成与真实验收 |
-| W5 | 待执行 | 管理面/鉴权/watch 真业务和桌面页面验收 |
+| W3 | 进行中 | 主体已随b71a8858e进入main，公开/旧Node入口c26511ad7、0e78d118f已切Go；Desktop兼容effect/真实OAuth/跨平台仍缺 |
+| W4 | 进行中 | 共享resolver接线已集成；真实API-key目录刷新/失败保留/作业去重已验收，OAuth轮换与re-key真业务未验收 |
+| W5 | 进行中 | 已集成管理auth/assets/watch检查点；部分API有实证，现有Edge无受支持后台连接，真实页面验收未完成 |
 | W6 | 待执行 | 其余功能分计划、平台实机、旧回落退出与最终发布 |
 
 ## 交付登记
@@ -236,3 +236,14 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - 旧`node lib/cli/app.js codex set-default`入口也转同一适配器而不执行旧业务writer；真实临时路径执行JSON结果ok/selected41且Go receipt落库。
 - Desktop reload/restart仍由聚焦的Node兼容effect承担，Go负责账号/配置/默认指针；不宣称Desktop全平台生命周期已迁完。共享网关从未被本轮重启；外部恢复/部署会话的进程变化独立记录。
 - 后续提交仍用明确pathspec及一次性独立索引，直到快照owner确认主索引同步。绝不把反向diff当成自己的改动提交。
+
+## W4/W5真实模型刷新与作业检查点（2026-11-15）
+
+- 运行独立临时Go Server、单库私密clone，仅启用API-key账号41；本地透明转发器原样访问账号既有上游模型目录，凭据不打印、不导出、不提交。
+- 初始模型读200/224行；通过真实管理API对gpt-6.1-sol设置force_disable，随后真实上游刷新200（实际上游200），人工策略保持。
+- WebUI异步刷新连续两次POST均202，同一jobId，第二次alreadyRunning=true；实际只访问上游一次；轮询到succeeded/finishedAt非空，models/status succeeded、API-key usage skipped。
+- 停止这个临时透明转发器后，真实刷新返回502/model_refresh_failed，原目录224行和人工策略逐行相同，未因失败清空last-known-good。
+- 临时实例/转发器退出，clone清理；共享9527数据库、配置、进程未改动；没有新增测试文件。
+- 本地无Codex OAuth账号，因此不能用API-key目录检查证明OAuth刷新单飞、旋转token、身份re-key等分支完成。相关源码现已集成并保留严格身份守卫，但真业务门槛仍未过。
+- W5独立既有证据覆盖管理鉴权/静态资源条件请求/native watch；本轮确认已有Microsoft Edge进程，但无可用CDP监听，DevToolsActivePort读取被OS拒绝，也没有暴露的browser工具。不使用AppleScript、不另开浏览器；真实桌面页面验收仍记未完成。
+- 并行main快照后主索引反向diff仍存在，精确checkpoint用一次性索引，主索引未改；不把编译、API成功或peer报告替代全W0–W6完成。

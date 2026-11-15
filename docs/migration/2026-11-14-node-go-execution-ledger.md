@@ -329,3 +329,9 @@ canonical buildGoCLIPlan构建，769真实依赖文件与e3266101c committed blo
 Windows官方0.163.0真实新建、同thread managed resume、last+stdin、fast profile、explicit default覆盖通过；首次生成失败后，观察到原私有SSH forward进程已不在，换成live tool handle后沿原thread重试，失败记录不计通过。真实上游6生成尝试5成功5usage，缺终态用量不等于免费。两端私有目录/DB clone/进程/relay与一次性key文件清理，已有Windows task state4未变。详见 `2026-11-16-standard-cli-windows-native-acceptance.md`。Linux官方客户端/OAuth/Desktop/Edge及全W0-W6仍未关闭。
 
 Node宿主guard incident由peer独立负责，我未改相关路径；Go ready200和/ui后来200仅读态观察，不宣称浏览器业务已验收。各自范围/显式pathspec提交规则持续遵守。
+
+## 2026-11-16 Linux官方native0.167.2真实验收
+
+原Linux缺官方Codex缺口本轮按固定版本official package/sha校验补齐：只临时解包，不系统安装。/tmp tmpfs配额导致初次解包失败后，核对archive摘要迁到有空间的私有/var/tmp；只清自己incomplete目录，未删他人文件。真实Linux new、UUID resume、last+stdin、fast profile、explicit default均同thread/OK；请求none对齐low，priority/default按意图送达，上游五个最终default，5生成5usage。root配置保持default。
+
+native/CLI hash、真实/proc精确PID、私有目录清理与existing service inactive/dead/MainPID0未变已核对；本机DB clone/gateway/relay/reverse SSH与一次性key文件清理。详见 `2026-11-16-linux-native-exec-acceptance.md`。不把临时native可用称全局安装，不关闭OAuth/浏览器/全W0-W6。

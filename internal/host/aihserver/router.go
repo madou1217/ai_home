@@ -296,7 +296,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	} else {
 		mux.Handle("/", fallback)
 	}
-	return mux
+	return withRemoteWebUIProxy(handlers.frontDoor, mux)
 }
 
 // handleHealth 返回不依赖账号数量的进程存活状态。

@@ -41,11 +41,11 @@ func (request nativeRequest) passthroughSafe() bool {
 	return len(input) > 0 && input[0] == '['
 }
 
-func readRequest(request *http.Request) ([]byte, nativeRequest, error) {
+func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, nativeRequest, error) {
 	if request.ContentLength > MaxRequestBytes {
 		return nil, nativeRequest{}, inferenceapi.ErrRequestTooLarge
 	}
-	payload, err := readBounded(request.Body, MaxRequestBytes)
+	payload, err := inferenceapi.ReadRequestBody(response, request.Body, MaxRequestBytes)
 	if err != nil {
 		return nil, nativeRequest{}, err
 	}

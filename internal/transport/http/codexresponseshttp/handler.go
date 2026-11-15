@@ -123,7 +123,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "invalid_account_ref")
 		return
 	}
-	payload, metadata, err := readRequest(request)
+	payload, metadata, err := readRequest(response, request)
+	if errors.Is(err, inferenceapi.ErrRequestBodyTimeout) {
+		// An interrupted upload is not a decoder gap. Replaying an incomplete
+		// body through Node cannot repair it and would hide the timeout again.
+		writeError(response, "request_timeout")
+		return
+	}
 	if errors.Is(err, inferenceapi.ErrRequestTooLarge) {
 		// Retrying or handing the same oversized history to another decoder cannot
 		// repair it. Preserve the size error instead of reporting malformed JSON.

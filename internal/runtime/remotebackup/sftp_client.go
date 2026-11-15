@@ -322,7 +322,11 @@ func (c *sftpClient) posixReplace(oldPath, newPath string) error {
 	return c.sendAndExpectOK(sftpPacketExtended, buf, id)
 }
 
-func (c *sftpClient) ReadFile(remotePath string) (content []byte, resultErr error) {
+func (c *sftpClient) ReadFile(remotePath string) ([]byte, error) {
+	return c.ReadFileLimit(remotePath, 0)
+}
+
+func (c *sftpClient) ReadFileLimit(remotePath string, limit int) (content []byte, resultErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -369,6 +373,9 @@ func (c *sftpClient) ReadFile(remotePath string) (content []byte, resultErr erro
 		}
 		if len(chunk) == 0 {
 			return out, nil
+		}
+		if limit > 0 && len(out)+len(chunk) > limit {
+			return nil, errors.New("backup_object_too_large")
 		}
 		out = append(out, chunk...)
 		offset += uint64(len(chunk))

@@ -1,0 +1,14 @@
+{
+  "kind": "aih-backup-repository",
+  "version": 2,
+  "objectEncoding": "jcs-rfc8785-lf",
+  "maxObjectBytes": 8388608,
+  "maxManifestBytes": 8388608,
+  "maxAccounts": 5000,
+  "lockPath": "v2/.writer-lock",
+  "formatPath": "v2/format.json",
+  "manifestPath": "v2/manifest.json",
+  "objectsPrefix": "v2/objects/sha256/",
+  "manifestsPrefix": "v2/manifests/sha256/",
+  "maxSnapshotBytes": 67108864
+}

@@ -1,0 +1,13 @@
+{
+  "dryExit": 0,
+  "dry": {
+    "targetId": "v2",
+    "ok": true,
+    "dryRun": true,
+    "intent": null,
+    "action": "confirm_original_writer_stopped_before_recovery"
+  },
+  "recoverExit": 0,
+  "recover": "{\n  \"targetId\": \"v2\",\n  \"ok\": true,\n  \"quarantine\": \"v2/.recovery-82481aa51fa9-a3a1ff8811e61e92\",\n  \"action\": \"preserved_current_snapshot\",\n  \"revision\": 1\n}",
+  "stderr": ""
+}

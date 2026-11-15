@@ -1,0 +1,64 @@
+{
+  "rows": [
+    {
+      "phase": "dry-recovery",
+      "result": {
+        "targetId": "v2",
+        "ok": true,
+        "dryRun": true,
+        "intent": {
+          "kind": "aih-backup-publish-intent",
+          "manifestSha256": "4aed1487807e9ee7525341f95211d9c84534d761674cb371698fcc774e576bb4",
+          "previousSha256": "",
+          "version": 2
+        },
+        "action": "confirm_original_writer_stopped_before_recovery"
+      },
+      "lockPresent": true
+    },
+    {
+      "phase": "restore-before-recovery",
+      "result": {
+        "ok": false,
+        "error": "backup_repository_busy",
+        "targetId": "v2",
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "explicit-recovery",
+      "result": {
+        "targetId": "v2",
+        "ok": true,
+        "quarantine": "v2/.recovery-012ca22ad667-c6f2911db0333cbc",
+        "action": "published_verified_snapshot",
+        "revision": 1
+      }
+    },
+    {
+      "phase": "restore-after-recovery",
+      "result": {
+        "ok": true,
+        "targetId": "v2",
+        "summary": {
+          "total": 1,
+          "created": 0,
+          "updated": 0,
+          "unchanged": 0,
+          "invalid": 0,
+          "failed": 0
+        },
+        "accounts": [
+          {
+            "provider": "codex",
+            "sourceRef": "acct_00000000000000000001",
+            "status": "planned"
+          }
+        ],
+        "missing": [],
+        "revision": 1,
+        "dryRun": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "result": {
+    "targetId": "v2",
+    "ok": true,
+    "uploaded": 0,
+    "unchanged": 1,
+    "deleted": 0,
+    "revision": 1,
+    "total": 1,
+    "startedAt": "2026-11-15T12:07:55.835Z"
+  },
+  "restore": {
+    "ok": true,
+    "targetId": "v2",
+    "summary": {
+      "total": 1,
+      "created": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "invalid": 0,
+      "failed": 0
+    },
+    "accounts": [
+      {
+        "provider": "codex",
+        "sourceRef": "acct_00000000000000000001",
+        "status": "planned"
+      }
+    ],
+    "missing": [],
+    "revision": 1,
+    "dryRun": true
+  }
+}

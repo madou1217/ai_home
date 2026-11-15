@@ -141,3 +141,7 @@ Go/Node 在自有隔离 OpenSSH 真实复现外链读写越出 workspace；已�
 ### G06 首个保护检查点：恢复前完整校验
 
 真实策略/SSH复现“旧manifest不变但对象已被新内容覆盖”以及“对象换accountRef仍dry-run成功”。已给现有v1 restore增加原始bytes/UTF8/单账号schema/provider/ref/record hash全批预检；missing/corrupt不调用importer，CLI逐ref显示原因，importer invalid/failed不再报总成功。见 `backup-restore-integrity-2026-11-15.md/json`。对象不可变与v2命名空间发布、skipped/tombstone、多writer、旧版互读仍待继续，不能把拒绝损坏恢复算作完整备份一致性完成。
+
+### G06 v2 不可变对象与发布/恢复协议
+
+Go scheduler 与 Node CLI 已接独立v2仓库：实际字节摘要寻址、no-overwrite对象发布、共享JCS格式/上限、固定连接代次的整轮协作锁、不可变manifest snapshot与发布intent、显式可续接恢复。真实Go/Node互写、对象上传后中断保留旧快照、skipped/墓碑、v3-only与manifest缺席间隙恢复、并发恢复、旧格式迁移及full重传校验已有记录，见 `backup-v2-2026-11-15.md`。共享服务未部署；Windows真机、断电持久性、WAN性能/增长、源数值精度及非协作writer仍开放，不宣称M0–M5完成。

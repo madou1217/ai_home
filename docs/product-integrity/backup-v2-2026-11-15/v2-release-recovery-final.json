@@ -1,0 +1,11 @@
+{
+  "result": {
+    "targetId": "v2",
+    "ok": true,
+    "quarantine": "v2/.recovery-9a6e14781e509e8b541e588f65644107052376cf40eddc66",
+    "action": "preserved_current_snapshot",
+    "revision": 1
+  },
+  "dryConfirm": true,
+  "lockAbsent": true
+}

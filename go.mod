@@ -8,6 +8,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/google/uuid v1.6.0
+	github.com/gowebpki/jcs v1.0.2
 	github.com/klauspost/compress v1.20.1
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/rivo/uniseg v0.4.7

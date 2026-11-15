@@ -1,0 +1,44 @@
+{
+  "rows": [
+    {
+      "phase": "legacy-to-v2",
+      "result": {
+        "targetId": "v2",
+        "ok": true,
+        "uploaded": 0,
+        "unchanged": 1,
+        "deleted": 0,
+        "revision": 2,
+        "total": 1,
+        "startedAt": "2026-11-15T11:42:20.549Z"
+      },
+      "legacyUnchanged": true,
+      "legacyObjectUnchanged": true
+    },
+    {
+      "phase": "v2-preferred-over-changed-legacy",
+      "result": {
+        "ok": true,
+        "targetId": "v2",
+        "summary": {
+          "total": 1,
+          "created": 0,
+          "updated": 0,
+          "unchanged": 0,
+          "invalid": 0,
+          "failed": 0
+        },
+        "accounts": [
+          {
+            "provider": "codex",
+            "sourceRef": "acct_00000000000000000001",
+            "status": "planned"
+          }
+        ],
+        "missing": [],
+        "revision": 2,
+        "dryRun": true
+      }
+    }
+  ]
+}

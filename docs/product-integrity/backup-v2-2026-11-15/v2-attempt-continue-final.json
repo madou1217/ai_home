@@ -1,0 +1,27 @@
+[
+  {
+    "phase": "first-failure",
+    "error": "backup_recovery_snapshot_missing_or_changed"
+  },
+  {
+    "phase": "resume-diagnostic",
+    "hasRecoveryToken": true,
+    "hasAttemptToken": true
+  },
+  {
+    "phase": "parallel-resume",
+    "ok": false,
+    "error": 2
+  },
+  {
+    "phase": "parallel-resume",
+    "ok": true,
+    "result": {
+      "targetId": "v2",
+      "ok": true,
+      "quarantine": "v2/.recovery-8ed5788da7106ff3176c8ab02224d7be9741b907eb7e20bf",
+      "action": "published_verified_snapshot",
+      "revision": 2
+    }
+  }
+]

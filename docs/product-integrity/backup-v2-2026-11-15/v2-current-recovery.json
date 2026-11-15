@@ -1,0 +1,18 @@
+[
+  {
+    "phase": "failed-preflight",
+    "error": "backup_recovery_snapshot_missing_or_changed",
+    "gateRetained": true,
+    "oldUnchanged": true
+  },
+  {
+    "phase": "resume",
+    "result": {
+      "targetId": "v2",
+      "ok": true,
+      "quarantine": "v2/.recovery-22692322205a88d10953c72e8a1e594ad2b9f12af02ee878",
+      "action": "published_verified_snapshot",
+      "revision": 2
+    }
+  }
+]

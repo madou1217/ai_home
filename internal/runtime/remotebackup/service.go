@@ -166,7 +166,7 @@ func RunRemoteBackup(
 					break
 				}
 			}
-		})
+		}, exported.Skipped)
 		results = append(results, res)
 		prevState := state.Targets[target.ID]
 		if res.OK {
@@ -217,6 +217,7 @@ func executeSingleTargetBackup(
 	factory StrategyFactory,
 	logger BackupLogger,
 	onHostKey func(string),
+	skips ...[]SkippedAccount,
 ) TargetBackupResult {
 	strategy, err := factory(target, onHostKey)
 	if err != nil {
@@ -242,82 +243,22 @@ func executeSingleTargetBackup(
 		}
 	}
 
-	manifestText, _, err := strategy.ReadFile(ctx, ManifestFileName)
+	var skipped []SkippedAccount
+	if len(skips) > 0 {
+		skipped = skips[0]
+	}
+	plan, err := SyncRepository(ctx, strategy, accounts, skipped, full, hostName)
 	if err != nil {
-		return TargetBackupResult{
-			TargetID:  target.ID,
-			OK:        false,
-			Error:     safeBackupErrorMessage(err),
-			Recovery:  backupRecovery(err),
-			StartedAt: startedAt,
-		}
+		return TargetBackupResult{TargetID: target.ID, OK: false, Error: safeBackupErrorMessage(err), Recovery: backupRecovery(err), StartedAt: startedAt}
 	}
-	previousManifest, _ := ParseManifest(manifestText)
-
-	plan, err := BuildBackupPlan(accounts, previousManifest, full, hostName)
-	if err != nil {
-		return TargetBackupResult{
-			TargetID:  target.ID,
-			OK:        false,
-			Error:     safeBackupErrorMessage(err),
-			Recovery:  backupRecovery(err),
-			StartedAt: startedAt,
-		}
+	result := TargetBackupResult{TargetID: target.ID, OK: len(plan.Incomplete) == 0, Uploaded: plan.Uploaded, Unchanged: plan.Unchanged, Deleted: plan.Deleted, Revision: plan.Manifest.Revision, Total: len(plan.Manifest.Accounts), StartedAt: startedAt}
+	if len(plan.Incomplete) > 0 {
+		result.Error = "backup_export_incomplete"
 	}
-
-	for _, upload := range plan.Uploads {
-		if err := strategy.WriteFile(ctx, upload.Path, upload.Content, 0o600); err != nil {
-			return TargetBackupResult{
-				TargetID:  target.ID,
-				OK:        false,
-				Error:     safeBackupErrorMessage(err),
-				Recovery:  backupRecovery(err),
-				StartedAt: startedAt,
-			}
-		}
-	}
-	// 清单最后写：中途失败时远端仍指向旧清单，不会出现清单里有但账号文件缺损的半截状态。
-	if plan.Changed {
-		manifestJSON, serErr := SerializeManifest(plan.Manifest)
-		if serErr != nil {
-			return TargetBackupResult{
-				TargetID:  target.ID,
-				OK:        false,
-				Error:     safeBackupErrorMessage(serErr),
-				StartedAt: startedAt,
-			}
-		}
-		if err := strategy.WriteFile(ctx, ManifestFileName, manifestJSON, 0o600); err != nil {
-			return TargetBackupResult{
-				TargetID:  target.ID,
-				OK:        false,
-				Error:     safeBackupErrorMessage(err),
-				Recovery:  backupRecovery(err),
-				StartedAt: startedAt,
-			}
-		}
-	}
-
 	if logger != nil {
-		logger.Info(fmt.Sprintf(
-			"%s: 上传 %d，未变 %d，删除标记 %d，revision %d",
-			target.ID,
-			len(plan.Uploads),
-			plan.Unchanged,
-			len(plan.Deleted),
-			plan.Manifest.Revision,
-		))
+		logger.Info(fmt.Sprintf("%s: 上传 %d，未变 %d，删除标记 %d，revision %d", target.ID, result.Uploaded, result.Unchanged, result.Deleted, result.Revision))
 	}
-	return TargetBackupResult{
-		TargetID:  target.ID,
-		OK:        true,
-		Uploaded:  len(plan.Uploads),
-		Unchanged: plan.Unchanged,
-		Deleted:   len(plan.Deleted),
-		Revision:  plan.Manifest.Revision,
-		Total:     len(plan.Manifest.Accounts),
-		StartedAt: startedAt,
-	}
+	return result
 }
 
 func selectTargets(config BackupConfig, targetIDs []string) ([]BackupTarget, error) {

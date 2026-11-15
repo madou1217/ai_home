@@ -1,0 +1,14 @@
+{
+  "result": {
+    "targetId": "v2",
+    "ok": true,
+    "uploaded": 0,
+    "unchanged": 1,
+    "deleted": 0,
+    "revision": 2,
+    "total": 1,
+    "startedAt": "2026-11-15T12:35:39.531Z"
+  },
+  "objectUnchanged": true,
+  "stagesLeft": []
+}

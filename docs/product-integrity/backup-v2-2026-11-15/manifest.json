@@ -1,0 +1,95 @@
+{
+  "boundary": "Actual own loopback OpenSSH, Go/Node product strategies and CLI; synthetic records only; no new test cases. Private target/key paths and recovery coordination tokens omitted. Some evidence predates final format contract fields; final-current/attempt/full are named explicitly.",
+  "artifacts": [
+    {
+      "file": "v2-current-cross.json",
+      "source_sha256": "04ed7be7a3283277f1a0ecc49252a471463c30ad4b4e5d22b9d1c4e014255d9a",
+      "evidence_sha256": "9236e3dc0a65d6089ca36574f4b2057714063af571a7f2737af2d7bc65146682"
+    },
+    {
+      "file": "v2-canonical-cross.json",
+      "source_sha256": "4768aa9f77d23637c85e6f0ae14a581351ea53b213ac1f14a3cc980031677e6c",
+      "evidence_sha256": "bf2ff650165b50355d5ce1daa74eb1ccda87717abb6966616da2100e39d5ac4d"
+    },
+    {
+      "file": "v2-live-interruption.json",
+      "source_sha256": "e17ef092a42bd9d764c50f0bd2662168ebffaa63b316c3c6583c25d90dc64366",
+      "evidence_sha256": "dd62e375abad36b3fa1c8e4a6203bba8a93ea9023b5a48e7ba44e918b541a57c"
+    },
+    {
+      "file": "v2-migration-first.json",
+      "source_sha256": "ddadf8221563a09f64c6b7f89905bb998f6f960fee25973980cbf86ea6be9cf5",
+      "evidence_sha256": "6c512be1752dfa2d206d48310d6af7b2edeba3d1e01bda9bc7f00805d7e56fe1"
+    },
+    {
+      "file": "v2-legacy-extra-verification.json",
+      "source_sha256": "4b089a5e7a94f2ebb45cbeb9ab5d4856ea592f5ffe6680df691c37aa8ee27522",
+      "evidence_sha256": "569d7a38d64c85d93d10dfa64981874b3098787b5e64932538e2853fbeeb5763"
+    },
+    {
+      "file": "v2-full-reverify.json",
+      "source_sha256": "80211afefff4df57d4fccaa2d7058e99f67c85758926fa2ca12be4aef84cf9d7",
+      "evidence_sha256": "3046a05ef96343591893592514f6e592ab18c155e47ae05b3c0c85c16bbbac27"
+    },
+    {
+      "file": "v2-explicit-recovery.json",
+      "source_sha256": "1fa055eb613849d31207a5ee8a0dd3543dd236ef22efeb7648a815cc48fe6e2a",
+      "evidence_sha256": "36c8dba6db50ccb3ed1a54ce24dcda8c8b6573cb07cc74b9d73dc973d09dffe9"
+    },
+    {
+      "file": "v2-recovery-cli-final.json",
+      "source_sha256": "eac8b1e4416f74bb0b08519d26ad861ee24ffc88ecbb2c66af664b4822140c95",
+      "evidence_sha256": "c2392c6dad3c120151d60d20d994fcc25c7a5f4a3fb817677e5dfc7719fa8ba5"
+    },
+    {
+      "file": "v2-current-recovery.json",
+      "source_sha256": "3e6d1e37050e810300e91752ad37457da92476f2b0100545c68043ce08a60f23",
+      "evidence_sha256": "a53806518bcc31f1ec862d4a317ae7f9d5963dcc9f14e6d7ad60f29cfd66e7f8"
+    },
+    {
+      "file": "v2-attempt-continue-final.json",
+      "source_sha256": "ab86d0fb483273ac67ddace27ec45f9160dc0a0206e3f810301c05377347d088",
+      "evidence_sha256": "5cb132fdffc99a1028ae3b84d94c89a9be73c654633bb1f81535f90f07d8d549"
+    },
+    {
+      "file": "v2-v3-gap-recovery.json",
+      "source_sha256": "3ff93308f3488d2d5dd54323a69c3e488f828fe281a52fdf2804f96922ba9cd6",
+      "evidence_sha256": "d23659945fe75ea06919c5c9322f7fee38ab80b03cbb6a49ca9905e6a90a1310"
+    },
+    {
+      "file": "v2-go-recovery-cross.json",
+      "source_sha256": "f680943f82c4c04cf62a81466b24d54abd7d5a57da2a7d8de01e118b201882b2",
+      "evidence_sha256": "e8673df30a642801acabe6dc9d9bdb15f22e7af68ae19422af6bd9ea4b84be52"
+    },
+    {
+      "file": "v2-go-disconnect.json",
+      "source_sha256": "6f3716f2fd247c94c20f053f2191f78ec6c28732e2841e201393bdf46ef954b6",
+      "evidence_sha256": "6413596d9a4721f0a5bab11b196b52f47c8648b40429656efd287451b8f3f904"
+    },
+    {
+      "file": "v2-limits-go.json",
+      "source_sha256": "bef2b995688ce2d1bb4306e779b416038225b4dc17238c08711a53559f7784c7",
+      "evidence_sha256": "622b1a2b4aa9183a99bb50e007ffae76a7dadcb09dc077fd2bd15e00ac2524e2"
+    },
+    {
+      "file": "v2-limits.json",
+      "source_sha256": "39a13e6c6df0b5285d9667082978651be0d8b283991b0db39d00ba1e550a85e7",
+      "evidence_sha256": "2e5ce9537ea5de8ba582cac9f4d34a2c4e24981867b7196eb213ef9cac3c8046"
+    },
+    {
+      "file": "v2-v3-only.json",
+      "source_sha256": "fe3ed9fb3d69620cc80da89dadc039251075f105572741774efe27435af4352b",
+      "evidence_sha256": "9f13602df0ec006c2a106b5ec54cf9ed7cefeba639f1b5d1c0b540f16ec57625"
+    },
+    {
+      "file": "v2-release-recovery-final.json",
+      "source_sha256": "8c1d581895a2a34fd650e4409141ea9d1e1451e9aceb74805240feb08b412330",
+      "evidence_sha256": "cd5f075ff968c367ce84970ce65692a26d7207274229c79fee4f14566ec17b9f"
+    },
+    {
+      "file": "v2-go-service-final.json",
+      "source_sha256": "78b02bbb177379f67dcd1c2619870cf8a1d99abe7f328850277ac82ac24c1e83",
+      "evidence_sha256": "cb0a7765e2087ab19f741c28315543bfdcf018ac2c000347c46f6e38dba33021"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "phase": "published",
+    "result": {
+      "Manifest": {
+        "kind": "aih-account-backup",
+        "version": 2,
+        "objectEncoding": "jcs-rfc8785-lf",
+        "source": {
+          "host": "manual-go"
+        },
+        "revision": 1,
+        "accounts": {
+          "acct_00000000000000000001": {
+            "provider": "codex",
+            "objectSha256": "e27d910752fe4f36d6d3df91b28261bf11d9886b754c0472ba4f644950761e43",
+            "bytes": 197
+          }
+        }
+      },
+      "Uploaded": 1,
+      "Unchanged": 0,
+      "Deleted": 0,
+      "Incomplete": null
+    }
+  },
+  {
+    "oldManifestIdentical": true,
+    "oldObjectIdentical": true,
+    "phase": "disconnect-held-lock"
+  }
+]

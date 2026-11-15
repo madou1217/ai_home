@@ -1,0 +1,91 @@
+[
+  {
+    "phase": "contender",
+    "code": "backup_repository_busy"
+  },
+  {
+    "phase": "interrupted-before-manifest",
+    "manifestIdentical": true,
+    "oldObjectIdentical": true,
+    "orphanPresent": true
+  },
+  {
+    "phase": "skipped-retains",
+    "result": {
+      "targetId": "v2",
+      "ok": false,
+      "error": "backup_export_incomplete",
+      "skipped": [
+        "acct_00000000000000000001"
+      ],
+      "uploaded": 0,
+      "unchanged": 0,
+      "deleted": 0,
+      "revision": 2,
+      "total": 1,
+      "startedAt": "2026-11-15T11:37:57.288Z"
+    },
+    "entry": {
+      "bytes": 203,
+      "objectSha256": "6138e42af5f26a69baddc8a98d7bbd0b0beb9b7e99bedcdd4d460dd798100079",
+      "provider": "codex"
+    }
+  },
+  {
+    "phase": "deleted-tombstone",
+    "result": {
+      "targetId": "v2",
+      "ok": true,
+      "uploaded": 0,
+      "unchanged": 0,
+      "deleted": 1,
+      "revision": 3,
+      "total": 1,
+      "startedAt": "2026-11-15T11:37:57.352Z"
+    },
+    "entry": {
+      "bytes": 203,
+      "deleted": true,
+      "objectSha256": "6138e42af5f26a69baddc8a98d7bbd0b0beb9b7e99bedcdd4d460dd798100079",
+      "provider": "codex"
+    }
+  },
+  {
+    "phase": "reappeared",
+    "result": {
+      "targetId": "v2",
+      "ok": true,
+      "uploaded": 1,
+      "unchanged": 0,
+      "deleted": 0,
+      "revision": 4,
+      "total": 1,
+      "startedAt": "2026-11-15T11:37:57.358Z"
+    }
+  },
+  {
+    "phase": "restore-after",
+    "result": {
+      "ok": true,
+      "targetId": "v2",
+      "summary": {
+        "total": 1,
+        "created": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "invalid": 0,
+        "failed": 0
+      },
+      "accounts": [
+        {
+          "provider": "codex",
+          "sourceRef": "acct_00000000000000000001",
+          "status": "planned"
+        }
+      ],
+      "missing": [],
+      "revision": 4,
+      "dryRun": true
+    }
+  }
+]

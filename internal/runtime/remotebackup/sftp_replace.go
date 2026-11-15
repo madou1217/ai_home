@@ -117,6 +117,14 @@ type BackupRecovery struct {
 }
 
 func backupRecovery(err error) *BackupRecovery {
+	var repository *RepositoryError
+	if errors.As(err, &repository) {
+		out := &BackupRecovery{Code: repository.Code, Applied: repository.Applied}
+		if len(repository.RecoveryPath) <= 4096 && !strings.ContainsAny(repository.RecoveryPath, "\x00\r\n") {
+			out.Path = repository.RecoveryPath
+		}
+		return out
+	}
 	var replacement *SFTPReplacementError
 	if !errors.As(err, &replacement) {
 		return nil

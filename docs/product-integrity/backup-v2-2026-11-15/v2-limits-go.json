@@ -1,0 +1,44 @@
+[
+  {
+    "error": "backup_snapshot_too_large",
+    "phase": "sync",
+    "result": {
+      "Manifest": {
+        "kind": "",
+        "version": 0,
+        "objectEncoding": "",
+        "source": {
+          "host": ""
+        },
+        "revision": 0,
+        "accounts": null
+      },
+      "Uploaded": 0,
+      "Unchanged": 0,
+      "Deleted": 0,
+      "Incomplete": null
+    },
+    "run": 0
+  },
+  {
+    "error": "backup_snapshot_too_large",
+    "phase": "sync",
+    "result": {
+      "Manifest": {
+        "kind": "",
+        "version": 0,
+        "objectEncoding": "",
+        "source": {
+          "host": ""
+        },
+        "revision": 0,
+        "accounts": null
+      },
+      "Uploaded": 0,
+      "Unchanged": 0,
+      "Deleted": 0,
+      "Incomplete": null
+    },
+    "run": 1
+  }
+]

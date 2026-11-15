@@ -1,0 +1,54 @@
+{
+  "boundary": "Actual RunRemoteBackup service with a manual non-credential exporter port, real SSH transport and isolated state directory; does not prove production credential exporter.",
+  "rows": [
+    {
+      "error": "",
+      "phase": "real-service",
+      "result": {
+        "ok": true,
+        "targets": [
+          {
+            "targetId": "manual",
+            "ok": true,
+            "uploaded": 1,
+            "unchanged": 0,
+            "deleted": 0,
+            "revision": 1,
+            "total": 1,
+            "startedAt": "2026-11-15T12:38:56.441574Z"
+          }
+        ],
+        "accounts": 1
+      },
+      "skipped": false
+    },
+    {
+      "error": "",
+      "phase": "real-service",
+      "result": {
+        "ok": false,
+        "targets": [
+          {
+            "targetId": "manual",
+            "ok": false,
+            "error": "backup_export_incomplete",
+            "uploaded": 0,
+            "unchanged": 0,
+            "deleted": 0,
+            "revision": 2,
+            "total": 1,
+            "startedAt": "2026-11-15T12:38:56.534522Z"
+          }
+        ],
+        "accounts": 0,
+        "skippedAccounts": [
+          {
+            "accountRef": "acct_00000000000000000001",
+            "reason": "manual_missing"
+          }
+        ]
+      },
+      "skipped": true
+    }
+  ]
+}

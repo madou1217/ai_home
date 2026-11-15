@@ -113,9 +113,11 @@ func hasFileMarkerPrefix(path string, marker string) bool {
 
 // StartProcessOptions 配置 Codex app-server 子进程启动参数。
 type StartProcessOptions struct {
-	Command string
-	Args    []string
-	Env     []string
+	Dir             string
+	WindowsVerbatim bool
+	Command         string
+	Args            []string
+	Env             []string
 }
 
 // AppServerProcess 封装基于独立 os.Pipe 管理的 codex app-server --listen stdio:// 子进程，
@@ -128,6 +130,7 @@ type AppServerProcess struct {
 
 	done      chan struct{}
 	closeOnce sync.Once
+	groupOnce sync.Once
 
 	waitMu  sync.Mutex
 	waitErr error
@@ -172,11 +175,13 @@ func StartAppServerProcess(opts StartProcessOptions) (*AppServerProcess, error) 
 	}
 
 	cmd := exec.Command(command, args...)
+	cmd.Dir = opts.Dir
 	cmd.Env = opts.Env
 	cmd.Stdin = stdinR
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
 	configureDetachedProcess(cmd)
+	configureVerbatimArguments(cmd, args, opts.WindowsVerbatim)
 
 	if err := cmd.Start(); err != nil {
 		_ = stdinR.Close()
@@ -206,6 +211,9 @@ func StartAppServerProcess(opts StartProcessOptions) (*AppServerProcess, error) 
 		proc.waitMu.Lock()
 		proc.waitErr = waitErr
 		proc.waitMu.Unlock()
+		// Reclaim the exclusively created process group immediately after its
+		// leader exits. Later Close calls cannot signal a potentially reused PID.
+		proc.closeProcessGroup()
 		close(proc.done)
 	}()
 
@@ -256,6 +264,14 @@ func (p *AppServerProcess) WaitErr() error {
 	return p.waitErr
 }
 
+func (p *AppServerProcess) closeProcessGroup() {
+	p.groupOnce.Do(func() {
+		if p.cmd != nil && p.cmd.Process != nil {
+			terminateProcessGroup(p.cmd.Process, p.done, childKillGracePeriod)
+		}
+	})
+}
+
 // Close 关闭 stdin 并终止子进程及所属进程组；可安全多次调用。
 func (p *AppServerProcess) Close() {
 	if p == nil {
@@ -265,9 +281,7 @@ func (p *AppServerProcess) Close() {
 		if p.stdin != nil {
 			_ = p.stdin.Close()
 		}
-		if p.cmd != nil && p.cmd.Process != nil {
-			terminateProcessGroup(p.cmd.Process, p.done, childKillGracePeriod)
-		}
+		p.closeProcessGroup()
 		select {
 		case <-p.done:
 		case <-time.After(200 * time.Millisecond):

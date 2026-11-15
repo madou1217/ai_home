@@ -16,28 +16,32 @@ func configureDetachedProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
-func terminateProcessGroup(proc *os.Process, done <-chan struct{}, grace time.Duration) {
+func terminateProcessGroup(proc *os.Process, _ <-chan struct{}, grace time.Duration) {
 	if proc == nil || proc.Pid <= 0 {
 		return
 	}
-	select {
-	case <-done:
-		return
-	default:
-	}
-
+	// This group was created exclusively for the child. Its leader can exit
+	// before inherited pipes/grandchildren do; leader Done is not group Done.
 	pid := proc.Pid
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	_ = proc.Signal(syscall.SIGTERM)
 
-	timer := time.NewTimer(grace)
-	defer timer.Stop()
-	select {
-	case <-done:
-		return
-	case <-timer.C:
+	deadline := time.NewTimer(grace)
+	defer deadline.Stop()
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		if err := syscall.Kill(-pid, 0); err == syscall.ESRCH {
+			return
+		}
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			_ = proc.Kill()
+			return
+		}
 	}
-
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
-	_ = proc.Kill()
 }
+
+func configureVerbatimArguments(_ *exec.Cmd, _ []string, _ bool) {}

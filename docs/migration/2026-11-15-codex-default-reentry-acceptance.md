@@ -37,7 +37,11 @@ The implementation subagent initially generated synthetic fixture data and a tem
 
 A private LLDB version-only probe did not progress; its exact private debugger/child processes were terminated. It is not verification evidence and did not target the shared service.
 
-## Remaining requirements
+## Follow-up status
+
+The later `2026-11-15-codex-rollback-publication-acceptance.md` records the subsequent repair and real Windows instruction-level acceptance for the initial publication and rollback two-move gaps below. This document remains the earlier checkpoint; its historical gaps must not be read as the latest status.
+
+## Remaining requirements at this checkpoint
 
 - Windows initial publication's precise two-`MoveFileEx` interruption window has **source review and cross-compilation only**, not new native Windows execution in this checkpoint. The earlier Windows platform recovery record cannot prove this exact point.
 - **Still open:** Windows rollback of an existing after-image calls `publishFile`, which creates an unjournaled `.aih-default-*` temporary. If rollback itself dies between its two Windows moves, the original stage is already gone and this patch deliberately cannot recover by guessing. A follow-up must journal/deterministically scope rollback publication evidence; it must not remove the two-witness guard.

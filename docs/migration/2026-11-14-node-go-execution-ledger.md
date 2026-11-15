@@ -293,3 +293,9 @@ W3新五文件复审：原subagent再次工具协议400；已读跨会话peer请
 重新执行Go AST盘点：864候选（mux79/WebUI420/public alias365），保留4个动态表达式；不把注册计数当迁移完成率。手工对齐nodeRPCOperations七操作在direct/WebUI/public三前缀的21叶子，真实独立Go server执行30次HTTP：5列表/status每前缀200、2不存在会话404、无鉴权401、错误方法405、未知op404一致。空状态/分派已实证，不替代真实会话正文/UI业务。详情 `2026-11-15-entry-inventory-checkpoint.md`。
 
 旧Node/Go collector比较仍仅含14个Node候选，missing0不能宣称全面对齐。完整产品清单另在/tmp刷新供后续审计，不覆盖并行owner已提交的inventory。全部只读/私有实例，不重启共享9527。
+
+## 2026-11-15 W1：原生CLI新建/resume/fork与实际优先级
+
+实际官方Codex0.167.2通过独立Go网关运行：fast→native新建成功，resume同thread成功，fork新thread成功；均最终OK，无工具执行。none对齐low，fast送priority，真实最终default。fork显式default/low有效且不改root；fast off后的新建按default省略tier，显式fast profile胜过root default。每轮native先generate:false预热再生成，两者不能算重复业务；四生成轮仅4条usage。
+
+**新确认未完成项**：旧fast会话resume仍发priority，即使root fast off、-c default、显式default profile或-c flex；原生请求本身已是priority，非网关覆盖。故不能宣称resume tier优先级完成，也不通过全局网关override/篡改rollout掩盖。安装版本schema提供thread/resume、turn/start serviceTier typed入口，后续需在受管resume边界正规实现/验收。详见 `2026-11-15-codex-native-tier-precedence.md`，包含真实记录/计账与外部限制。全部私有CODEX_HOME/数据库副本清理、共享服务未重启。

@@ -28,3 +28,16 @@ The shell lifecycle checkpoint contains only the command router, integration/gen
 No new test cases were written. No real user rc, database, shared service, or installed application was changed. Windows/PowerShell execution and Linux-host behavior remain unverified. The final comparison-to-rename interval is not cross-process CAS; ACL/extended-attribute preservation is not certified. Current real CLI checks do not replace interactive TAB acceptance.
 
 Option-value completion remains separate because its candidate reader contains the single-DB work line's uncommitted dependency. Provider action completion remains separate because its new session-command contract has not landed. Neither dependency is silently included here.
+
+## Bounded file-history and suggestion protocol checkpoint
+
+Three source paths are committed separately: `lib/cli/complete/index.js`, `lib/cli/complete/typo.js`, and `lib/cli/complete/history-tail.js`.
+
+- Read only a bounded tail of regular history files rather than loading/splitting the full file. Keep the original truncation/line boundary semantics and reject nonregular history files without blocking on a FIFO.
+- Parse protocol options only before `--`; preserve the user's arguments, including empty strings and arguments named `--debug` or `--history-file`.
+- Use learned corrections to rank the current command, not to replay stale action/account/path arguments.
+- Reject line/field control bytes that the existing shell wire format cannot represent safely.
+
+Fresh real execution on the isolated HEAD-plus-12-path snapshot returned 15 server subcommands. A 37,700,018-byte actual history file still returned candidates (one measured call: 143 ms; not a performance distribution). An actual learn → suggest sequence preserved the new command's complete argv including its empty tail; newline and field-separator payloads returned the wire's `none` kind. Syntax checks passed on all three source files. No interactive shell command, account operation, or inference was automatically executed.
+
+This bounds file-history reads only: stdin history still uses an unbounded read and remains an explicit follow-up. The candidate database path and new Provider command-tree projection are excluded from this checkpoint.

@@ -166,8 +166,9 @@ type pumpResult struct {
 	model       string
 }
 
-// pumpClientToUpstream 保持文本帧字节不变，并在写入前验证串行模型绑定。
-func pumpClientToUpstream(
+// pumpClientToUpstream validates serial model binding, then applies the same
+// outbound model/effort policy without clearing this peer's continuity.
+func (handler *Handler) pumpClientToUpstream(
 	session *managedSession,
 	observer *turnObserver,
 	results chan<- pumpResult,
@@ -229,7 +230,7 @@ func pumpClientToUpstream(
 			session.Context(),
 			upstream,
 			messageType,
-			normalizeClientFrameModel(payload, observer.model),
+			handler.prepareBoundClientFrame(payload, observer.model, observer.route.ModelID().String()),
 		); err != nil {
 			results <- resultFromRead(pumpSourceUpstream, err, true)
 			return

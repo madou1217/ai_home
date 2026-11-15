@@ -269,3 +269,11 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 主代理用完整生产CLI与真实生成的journal完成Unix两次SIGKILL链：旧CLI恢复exit1/external_edit，patched CLI同journal恢复exit0且清理journal/stage、auth仍0600。数据库仅权限受限副本，未写原库/原宿主凭据、未重启9527；go build ./...与Windows交叉编译通过。详情 `2026-11-15-codex-default-reentry-acceptance.md`。
 
 子代理曾越界生成临时合成fixture/component driver，已停止，全部排除验收且不提交；正式Unix证据由主代理真实完整CLI补齐。Windows精确初次窗口仍未真机验收；review另指出回滚自身的两次move之间再次崩溃时，unjournaled rollback temp仍无法自动恢复，保持后续任务。全目标继续active。
+
+## 2026-11-15 W1：WS后续帧none复发根因与闭环
+
+真实同WS两轮复现原始错误：首轮none→low成功，第二轮省略model虽补回gpt-6.1-sol，effort却原样none，上游unsupported_value。原因client pump只normalizeModel，绕过首轮/切模型共用prepareClientFrame。将pump接为Handler方法，抽出bound-frame model/effort准备，不在后续帧执行fresh-peer sanitizer（避免误删同连接previous_response_id与same-account reasoning）；保持observer串行/切模型及foreign-reasoning guard不变。
+
+完整新构件真实两轮均completed，上游两帧皆low/priority，客户端最终皆default；第二轮携前轮真实responseID且store:false，上游仍保留该续接引用并成功。按clone前usage ID边界仅2条新记录。共享9527未重启，真实临时实例/relay/数据库副本已清理。详情 `2026-11-15-codex-ws-followup-acceptance.md`；这关闭后续省略model的none复发，不代表resume/fork/所有WS矩阵完成。
+
+最终WS复审原代理两名与替代代理均因工具协议400终止，能力发现无native review可用；按AGENTS能力链显式降级self_review，已在WS验收文档记录精确commit bypass、原因/风险/自审路径与真实最终构件证据。不将审查故障称为通过、不绕过共享服务重启限制。

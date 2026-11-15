@@ -394,7 +394,7 @@ func (handler *Handler) proxy(
 ) {
 	for {
 		results := make(chan pumpResult, 2)
-		go pumpClientToUpstream(session, observer, results)
+		go handler.pumpClientToUpstream(session, observer, results)
 		go pumpUpstreamToClient(session, observer, results)
 		result := <-results
 		if len(result.modelSwitch) > 0 {
@@ -688,27 +688,15 @@ func parseClientFrame(payload []byte, boundModel ...string) (clientRequestEnvelo
 	return request, nil
 }
 
-// normalizeClientFrameModel restores the connection-bound model for a later
-// response.create that omitted it. The upstream Codex endpoint still expects
-// the concrete model in every request body.
-// prepareClientFrame 是「出站前唯一准备点」：补模型名 + 对齐推理强度 + 剥掉上游解析不了的引用。
-//
-// codex CLI 默认走 WebSocket，HTTP 侧那次清洗与 effort 对齐覆盖不到 WS，所以两条入站
-// 路径都必须过本方法。effectiveModel 是选号后的目标模型；为空时按请求模型对齐。
+// prepareClientFrame retains the existing fresh-upstream sanitization policy.
+// Later turns use prepareBoundClientFrame: connection-local response references
+// and same-account encrypted reasoning must survive on that existing peer.
 func (handler *Handler) prepareClientFrame(payload []byte, model string, effectiveModel string) []byte {
-	prepared := normalizeClientFrameModel(payload, model)
-	if handler != nil {
-		// HTTP 原生快路径与 WS 帧共用同一份对齐实现（application/effortalign）。
-		prepared = effortalign.AlignResponsesPayload(
-			prepared,
-			inference.ProviderCodex,
-			effectiveModel,
-			handler.ladders,
-		)
-	}
-	return codexwire.SanitizeRequestPayload(prepared)
+	return codexwire.SanitizeRequestPayload(handler.prepareBoundClientFrame(payload, model, effectiveModel))
 }
 
+// normalizeClientFrameModel restores the connection-bound model for later turns
+// that omitted it; the upstream still expects a model in every request body.
 func normalizeClientFrameModel(payload []byte, model string) []byte {
 	bound := strings.TrimSpace(model)
 	if bound == "" {

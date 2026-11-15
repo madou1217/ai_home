@@ -105,6 +105,7 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 
 	return []webuiRoute{
 		{Pattern: "GET " + webuisessionwatchapi.Path, Handler: watchHandler},
+		{Pattern: "GET " + webuisessionwatchapi.WSPath, Handler: watchHandler},
 		{Pattern: "POST " + webuisessionhookapi.Path, Handler: hookHandler},
 		// 插件回调的公开入口：Node 的 /v0 门只对回环放行，这里用同一判定后注入 Bearer。
 		{Pattern: "POST /v0/webui/session-events/provider-hook", Handler: webuiauth.RequireManagementKey(dependencies.ManagementKey, hookHandler)},

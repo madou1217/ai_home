@@ -383,6 +383,17 @@ func Current() Manifest {
 				},
 			},
 			{
+				// 单会话实时事件由 Go 直接订阅；旧 Node 监听器仅保留字节级 WS 代理。
+				// 不放入通用推理转发器的 NodeRoutes：此流使用首帧 Management Key，非 Client Key。
+				ID:              "webui.session_watch",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/sessions/watch"),
+					websocketRoute("/v0/webui/sessions/watch/ws"),
+				},
+			},
+			{
 				// 上游错误映射组：浏览器入口由 Go 直接应答。
 				ID:              "webui.upstream_error_mappings",
 				ProductionOwner: "go",

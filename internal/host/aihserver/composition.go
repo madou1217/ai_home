@@ -502,6 +502,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
 	var hooksRuntime *codexHooksRuntime
+	var sessionEventBus *sessionevents.Bus
 	var backgroundDaemons *backgroundDaemonsRuntime
 	var housekeepingDaemons *HousekeepingDaemons
 	var upgradeScheduler *providercliupgrade.Scheduler
@@ -519,6 +520,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && hooksRuntime != nil {
 			_ = hooksRuntime.Close()
+		}
+		if resultErr != nil && sessionEventBus != nil {
+			sessionEventBus.Close()
 		}
 		if resultErr != nil && backgroundDaemons != nil {
 			_ = backgroundDaemons.Close()
@@ -1497,9 +1501,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
-	var sessionEventBus *sessionevents.Bus
 	if hooksAIHome := strings.TrimSpace(aiHomeDir); hooksAIHome != "" {
-		sessionEventBus = sessionevents.NewBus(sessionevents.BusOptions{
+		sessionEventBus = newManagedSessionEventBus(ctx, sessionevents.BusOptions{
 			AIHomeDir:   hooksAIHome,
 			HostHomeDir: dependencies.HostHomeDir,
 		})
@@ -2202,6 +2205,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 	}, func() []io.Closer {
 		closers := []io.Closer{
+			sessionEventBusCloser{bus: sessionEventBus},
 			modelSweepWorker,
 			initialModelRecoveryWorker,
 			webSocketHandler,

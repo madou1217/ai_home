@@ -862,6 +862,28 @@
       ]
     },
     {
+      "id": "webui.session_watch",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/sessions/watch"
+        },
+        {
+          "transport": "websocket",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/sessions/watch/ws",
+          "upgrade": true
+        }
+      ]
+    },
+    {
       "id": "webui.upstream_error_mappings",
       "production_owner": "go",
       "migration_state": "go_owned",

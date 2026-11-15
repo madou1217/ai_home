@@ -57,7 +57,7 @@ func verifyStages(changes []fileChange) error {
 		if !stagePathValid(change) {
 			return fmt.Errorf("codex_default_journal_stage_invalid")
 		}
-		for _, candidate := range []string{change.Staged, change.Staged + ".displaced"} {
+		for _, candidate := range recoveryStagePaths(change) {
 			file, err := readHostFile(candidate)
 			if err != nil {
 				return preserveConflict(change.Before.Path, candidate)
@@ -65,9 +65,7 @@ func verifyStages(changes []fileChange) error {
 			if !file.Existed {
 				continue
 			}
-			isAfter := candidate == change.Staged && bytes.Equal(file.Data, change.After) && sameMode(file.Mode, change.Mode)
-			isBefore := change.Before.Existed && bytes.Equal(file.Data, change.Before.Data) && sameMode(file.Mode, change.Before.Mode)
-			if !isAfter && !isBefore {
+			if !validRecoveryStage(change, file) {
 				return preserveConflict(change.Before.Path, candidate)
 			}
 		}
@@ -80,7 +78,7 @@ func cleanupStages(changes []fileChange) error {
 		return err
 	}
 	for _, change := range changes {
-		for _, candidate := range []string{change.Staged, change.Staged + ".displaced"} {
+		for _, candidate := range recoveryStagePaths(change) {
 			file, err := readHostFile(candidate)
 			if err != nil {
 				return err
@@ -88,9 +86,7 @@ func cleanupStages(changes []fileChange) error {
 			if file.Existed {
 				// Revalidate the exact snapshot used for removal. A native
 				// writer may have renewed the displaced inode after verifyStages.
-				isAfter := candidate == change.Staged && bytes.Equal(file.Data, change.After) && sameMode(file.Mode, change.Mode)
-				isBefore := change.Before.Existed && bytes.Equal(file.Data, change.Before.Data) && sameMode(file.Mode, change.Before.Mode)
-				if !isAfter && !isBefore {
+				if !validRecoveryStage(change, file) {
 					return preserveConflict(change.Before.Path, candidate)
 				}
 				if err := removePublished(file); err != nil {

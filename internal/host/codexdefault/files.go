@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/runtime/fileexchange"
 	"io"
 	"os"
 	"path/filepath"
@@ -65,71 +64,6 @@ func sameFileContents(left, right fileSnapshot) bool {
 	return left.Existed == right.Existed && sameMode(left.Mode, right.Mode) && bytes.Equal(left.Data, right.Data) && (left.identity == nil || right.identity == nil || os.SameFile(left.identity, right.identity))
 }
 
-func publishFile(before fileSnapshot, data []byte, mode os.FileMode) error {
-	current, err := readHostFile(before.Path)
-	if err != nil || !sameFileContents(before, current) {
-		return fmt.Errorf("codex_host_file_changed")
-	}
-	temp, err := os.CreateTemp(filepath.Dir(before.Path), ".aih-default-*")
-	if err != nil {
-		return fmt.Errorf("codex_host_file_stage_failed")
-	}
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(temp.Name())
-		}
-	}()
-	defer temp.Close()
-	if err := temp.Chmod(mode); err != nil {
-		return fmt.Errorf("codex_host_file_mode_failed")
-	}
-	if mode == 0o600 || filepath.Base(before.Path) == "auth.json" {
-		if err := securePrivateFile(temp); err != nil {
-			return fmt.Errorf("codex_host_file_acl_failed")
-		}
-	}
-
-	if _, err := temp.Write(data); err != nil {
-		return fmt.Errorf("codex_host_file_stage_failed")
-	}
-	if err := temp.Sync(); err != nil {
-		return fmt.Errorf("codex_host_file_sync_failed")
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("codex_host_file_stage_failed")
-	}
-	current, err = readHostFile(before.Path)
-	if err != nil || !sameFileContents(before, current) {
-		return fmt.Errorf("codex_host_file_changed")
-	}
-	if before.Existed {
-		displaced, swapErr := fileexchange.Exchange(temp.Name(), before.Path)
-		if displaced != "" {
-			old, readErr := readHostFile(displaced)
-			if swapErr != nil || readErr != nil || !sameFileContents(before, old) {
-				if displaced == temp.Name() {
-					cleanup = false
-				}
-				return preserveConflict(before.Path, displaced)
-			}
-			if displaced != temp.Name() {
-				if err := os.Remove(displaced); err != nil {
-					return preserveConflict(before.Path, displaced)
-				}
-			}
-		} else if swapErr != nil {
-			return fmt.Errorf("codex_host_file_publish_failed")
-		}
-	} else if err := publishRename(temp.Name(), before.Path, false); err != nil {
-		return fmt.Errorf("codex_host_file_publish_failed")
-	}
-	if err := syncDirectory(filepath.Dir(before.Path)); err != nil {
-		return fmt.Errorf("codex_host_directory_sync_failed")
-	}
-	return nil
-}
-
 func rollbackFiles(changes []fileChange) error {
 	var failures []error
 	for index := len(changes) - 1; index >= 0; index-- {
@@ -156,7 +90,7 @@ func rollbackFiles(changes []fileChange) error {
 			if err := removePublished(current); err != nil {
 				failures = append(failures, err)
 			}
-		} else if err := publishFile(current, change.Before.Data, change.Before.Mode); err != nil {
+		} else if err := publishRollback(change, current); err != nil {
 			failures = append(failures, err)
 		}
 	}

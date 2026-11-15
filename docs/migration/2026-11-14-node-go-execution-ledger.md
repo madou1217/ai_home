@@ -277,3 +277,13 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 完整新构件真实两轮均completed，上游两帧皆low/priority，客户端最终皆default；第二轮携前轮真实responseID且store:false，上游仍保留该续接引用并成功。按clone前usage ID边界仅2条新记录。共享9527未重启，真实临时实例/relay/数据库副本已清理。详情 `2026-11-15-codex-ws-followup-acceptance.md`；这关闭后续省略model的none复发，不代表resume/fork/所有WS矩阵完成。
 
 最终WS复审原代理两名与替代代理均因工具协议400终止，能力发现无native review可用；按AGENTS能力链显式降级self_review，已在WS验收文档记录精确commit bypass、原因/风险/自审路径与真实最终构件证据。不将审查故障称为通过、不绕过共享服务重启限制。
+
+## 2026-11-15 W3：Windows回滚两次移动中断的精确闭环
+
+剩余匿名rollback temp缺口已修：从原journal.Staged派生.rollback/.rollback.displaced，固定名发布前完整write/sync；present target只在身份/内容匹配时Exchange，missing target必须凭before/after双证据no-replace恢复，统一4个合法candidate校验/cleanup，auth继续0600/DACL，不改schema/共享fileexchange。
+
+真实Windows完整生产CLI在实际Exchange第一MoveAside成功、第二次执行前由私有debugger断点终止，分别命中初次publication与rollback窗口。真实journal显示target缺失+对应双witness；旧CLI同journal重试exit1/external_edit，新CLI同journalexit0且journal/stage清理。重复rollback gap后实际写入独立native config，新CLI拒绝覆盖、hash不变、journal保留。没有改磁盘binary、没有伪造journal/复制函数用例。macOS完整CLI真实双SIGKILL也重跑通过。
+
+Windows临时目录已校验路径/二进制hash且无活进程后清理，已有task状态前后一致；本机私有数据库副本/进程已清理。go build ./...、Windows构建、focused go vet、route manifest --check通过。详见 `2026-11-15-codex-rollback-publication-acceptance.md`。共享9527未重启/未发布；仍不声称断电全窗口、OAuth、Desktop/Edge或全W0–W6完成。
+
+W3新五文件复审：原subagent再次工具协议400；已读跨会话peer请求尚无结论，消息已读不等于运行/通过。按AGENTS链显式self_review commit bypass，精确范围、crash状态/角色/权限/no-replace自审与未独立复审风险写入验收文档；不以此授权部署或共享重启。

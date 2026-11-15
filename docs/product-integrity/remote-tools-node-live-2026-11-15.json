@@ -1,0 +1,151 @@
+{
+  "method": "actual MCP stdio -> workspace config -> pooled SSH -> POSIX file operations",
+  "log": [
+    {
+      "phase": "invalid-missing",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "invalid-null",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "invalid-number",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "invalid-array",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "invalid-object",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "invalid-bool",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "valid-read",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "version: 884d29502e6339685986bc08b5a17bd2\nlines: 1-2 / 2\n     1\tUSER ORIGINAL\n     2\t"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "valid-write",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "已写入 file.txt（version: c58cd46f154e7199b5176579bbb86580）"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "new-existing-same-content",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[version_conflict] 远端文件已存在：file.txt"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "stale-version",
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "[version_conflict] 远端文件已被修改：file.txt"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "new-empty-version",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "已写入 created.txt（version: 21998928836741932680bb7ef8fb3fe2）"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "edit-versioned",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "已修改 file.txt（替换 1 处，version: 204d063573a16f904ea34f8aac3033b0）"
+          }
+        ]
+      }
+    }
+  ],
+  "boundary": "Actual Node MCP stdio -> isolated aih.db config -> connection pool -> own loopback OpenSSH POSIX file commands. No fake host/server. Original file and created content verified locally.",
+  "file_verification": {
+    "original_after_invalid": "USER ORIGINAL\n",
+    "final_file": "EDITED WRITE\n",
+    "new_file": "NEW\n"
+  }
+}

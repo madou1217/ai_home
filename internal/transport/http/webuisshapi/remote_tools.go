@@ -102,7 +102,7 @@ func RemoteToolDefinitions() []any {
 		},
 		map[string]any{
 			"name":        "write_file",
-			"description": "写入（覆盖或新建）远程工作区内的文件，原子替换。修改已有文件时必须传 read_file 返回的 expected_version；新建文件传空字符串。",
+			"description": "写入（覆盖或新建）远程工作区内的文件，先校验版本再替换。修改已有文件时必须传 read_file 返回的 expected_version；新建文件传空字符串。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -265,6 +265,9 @@ func remoteToolFailure(err error) map[string]any {
 	if err != nil {
 		message = err.Error()
 	}
+	if errors.Is(err, errRemoteFileTooLarge) {
+		code = "file_too_large"
+	}
 	return map[string]any{
 		"isError": true,
 		"content": []any{map[string]any{"type": "text", "text": "[" + code + "] " + message}},
@@ -382,11 +385,7 @@ func (host *remoteToolHost) readContentPosix(ctx context.Context, rel string) ([
 	if result.Code != 0 {
 		return nil, "", fmt.Errorf("读取远端文件失败: %s", strings.TrimSpace(string(result.Stderr)))
 	}
-	content := result.Stdout
-	if len(content) > remoteReadMaxBytes {
-		content = content[:remoteReadMaxBytes]
-	}
-	return content, versionOfContent(content), nil
+	return completeRemoteFile(result.Stdout, result.Truncated)
 }
 
 func (host *remoteToolHost) writeFile(ctx context.Context, args map[string]any) map[string]any {

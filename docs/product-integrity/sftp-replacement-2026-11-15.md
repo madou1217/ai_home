@@ -1,6 +1,15 @@
 # SFTP safe replacement checkpoint
 
-## Real evidence and defect
+## Current checkpoint after recovery (2026-11-15)
+
+The sections below preserve the **initial** protocol-only checkpoint. Their “Go not runtime exercised” and “v3 overwrite pending” limits have since been superseded by the real lifecycle evidence in `sftp-go-lifecycle-2026-11-15.json`; do not read the initial record as current acceptance status.
+
+- Actual exported Go SSH backup strategy reached this session's own loopback OpenSSH via temporary keys. Sixteen concurrent Connect calls opened one child; twenty concurrent round trips returned no errors. A paused child respected 150ms read cancellation, Close unblocked immediately, reconnect used a new child; background-context read was bounded at 500ms in the manual driver. Server-denied CLOSE failed the write and retained OLD. Pre-VERSION connection cancellation was exercised. The driver used `-race`, without repository test cases.
+- Actual OpenSSH restricted to SFTP v3 (no posix-rename extension) replaced OLD with SECOND and left no lock. The fallback is a **recoverable, non-atomic transaction**, not atomic overwrite and not a general external-writer CAS: cooperative lock, owned stage, backup-before-publish, explicit recovery on uncertain ACK/outcome. The old unlink-target retry is not reinstated.
+- Node and Go stage creation uses exclusive ownership; timeout/transport errors do not imply the server did not apply the operation. Unknown publication omits `applied`; confirmed publication with cleanup failure returns `applied=true`; busy/pre-publish target-changed returns false. Lorentz's recovered final read-only review closed this outcome projection across service/config/MCP, not the entire backup feature.
+- SSH lifecycle/backup manifest consistency, remote symlink containment, external-writer races, Windows real-server behavior and full production backup/restore remain separate gates. No shared gateway, existing SSH service, or production credential was changed.
+
+## Initial real evidence and defect
 
 Local `/usr/libexec/sftp-server` supports ordinary v3 rename and OpenSSH `posix-rename@openssh.com`. Actual protocol exchange: ordinary rename over existing file returned status4; extension succeeded. With native server `-P rename,posix-rename`, the old backup algorithm (rename fails → unlink target → retry rename) deleted the old file and still failed. This was a real protocol/algorithm primitive experiment, not a fake SFTP implementation or complete backup SSH-auth flow.
 

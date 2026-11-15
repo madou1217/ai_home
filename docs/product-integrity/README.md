@@ -125,3 +125,11 @@ SFTP主路径追加独占临时写（wx）并把初次write放入cleanup范围�
 ## 恢复执行（2026-11-15 下午）
 
 用户通知16MiB入站和schema31单库切换已由恢复会话完成；本会话不重复合库/回退/重启网关。原Goal仍是全M0–M5。本次从SFTP lifecycle断点继续，仅读git/worktree核对，使用早前本会话创建的loopback OpenSSH服务和临时密钥；没有连接/改其他会话的sshd或Colima服务。
+
+## 2026-11-15 本轮真实闭环与剩余边界
+
+- 用户追加的窄终端 `aih ls` 已纳入原 M0–M5（不是替代 Goal）。Go 共享 terminalui 修复 raw-mode 换行、显示列宽、ANSI/字素折行及 resize 物理行失效；80/60 列、宽→窄→宽、中文/长账号/长模型、筛选清空、退出码、轮播及静态输出均有真实 PTY 记录。源码 checkpoint `404373c46`，标准入口证据 `e1116d3af`。只原子重建 CLI aih-go，未更新/重启共享 server。见 `ls-terminal-2026-11-15.md`。
+- SFTP 原断点的 Go SSH lifecycle/v3 fallback 实测已在 `sftp-go-lifecycle-2026-11-15.json`；旧初版“Go只编译”不是当前结论，sftp-replacement 文档已补时间边界。Lorentz 关闭 unknown applied 省略语义的源码审查。非原子恢复不等于任意外部 writer CAS。
+- Node remote-tools 直连 MCP→隔离配置→真实连接池→自有 OpenSSH 已验收 required string version、new-only、过期版本与 edit。Go 先前实测保留，未重复宣称为新验证。HTTP forwarding 仍只有源码门禁证据。
+- 新发现并真实复现 Go 超过 512 KiB 文件的静默截断版本导致 edit 丢尾：修复后超限明确 file_too_large，524,317/524,289 字节保持原样，524,288 字节仍可编辑，小文件链路回归通过。源码/临时构件已验收，**未部署共享 server**。详见 `remote-tools-version-2026-11-15.md` 与 large-file JSON。
+- 未关闭：G03 外部 writer 原子 CAS、G04 symlink/root containment、G06 manifest/restore 一致性、真实 OAuth/re-key、Windows运行矩阵、真实管理页面/Edge、全功能叶子复核和M5长运行。原Goal保持active；局部修复不代表全部完成。

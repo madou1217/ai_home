@@ -1,0 +1,268 @@
+{
+  "boundary": "Actual Go CallRemoteTool over this session loopback OpenSSH and isolated temporary files; final run with -race; no mock, no new test cases. PowerShell changes reviewed/compiled only.",
+  "before": [
+    {
+      "phase": "large-read",
+      "result": {
+        "content": [
+          {
+            "text": "version: 6929c6e8b4fe6911169bd7e1fdf54e50\nlines: 1-1 / 2\n     1\tUNIQUE_START",
+            "type": "text"
+          }
+        ]
+      },
+      "size": 524317
+    },
+    {
+      "afterBytes": 524288,
+      "beforeBytes": 524317,
+      "phase": "large-edit",
+      "result": {
+        "content": [
+          {
+            "text": "已修改 large.txt（替换 1 处，version: 56199e07297a41cc143c493da291fb3d）",
+            "type": "text"
+          }
+        ]
+      },
+      "tailRetained": false,
+      "unchanged": false
+    },
+    {
+      "phase": "large-write-prefix-version",
+      "result": {
+        "content": [
+          {
+            "text": "已写入 large.txt（version: cd1c07250eac2c101946b19a7905c5f0）",
+            "type": "text"
+          }
+        ]
+      },
+      "tailRetained": false,
+      "unchanged": false
+    }
+  ],
+  "after": [
+    {
+      "phase": "large-read",
+      "result": {
+        "content": [
+          {
+            "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "size": 524317
+    },
+    {
+      "afterBytes": 524317,
+      "beforeBytes": 524317,
+      "phase": "large-edit",
+      "result": {
+        "content": [
+          {
+            "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "tailRetained": true,
+      "unchanged": true
+    },
+    {
+      "phase": "large-write-prefix-version",
+      "result": {
+        "content": [
+          {
+            "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "tailRetained": true,
+      "unchanged": true
+    },
+    {
+      "afterSize": 524288,
+      "phase": "boundary-edit",
+      "result": {
+        "content": [
+          {
+            "text": "已修改 large.txt（替换 1 处，version: a60b907158f05958c7d7ee4a20147381）",
+            "type": "text"
+          }
+        ]
+      },
+      "size": 524288,
+      "unchanged": false
+    },
+    {
+      "afterSize": 524289,
+      "phase": "boundary-edit",
+      "result": {
+        "content": [
+          {
+            "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "size": 524289,
+      "unchanged": true
+    }
+  ],
+  "small_file_regression": [
+    {
+      "file": "USER ORIGINAL\n",
+      "phase": "missing-version",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "created": false,
+      "phase": "wrong-type",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "phase": "invalid-before-workspace",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "type": "<nil>"
+    },
+    {
+      "phase": "invalid-before-workspace",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "type": "int"
+    },
+    {
+      "phase": "invalid-before-workspace",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "type": "bool"
+    },
+    {
+      "phase": "invalid-before-workspace",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "type": "[]interface {}"
+    },
+    {
+      "phase": "invalid-before-workspace",
+      "result": {
+        "content": [
+          {
+            "text": "[invalid_expected_version] expected_version 必须提供字符串；新建文件传空字符串",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      },
+      "type": "map[string]interface {}"
+    },
+    {
+      "phase": "valid-read",
+      "result": {
+        "content": [
+          {
+            "text": "version: 884d29502e6339685986bc08b5a17bd2\nlines: 1-2 / 2\n     1\tUSER ORIGINAL\n     2\t",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "valid-write",
+      "result": {
+        "content": [
+          {
+            "text": "已写入 file.txt（version: c58cd46f154e7199b5176579bbb86580）",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "new-existing-same-content",
+      "result": {
+        "content": [
+          {
+            "text": "[version_conflict] 远端文件已存在：file.txt",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "phase": "new-empty-version",
+      "result": {
+        "content": [
+          {
+            "text": "已写入 created.txt（version: 21998928836741932680bb7ef8fb3fe2）",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "edit-versioned",
+      "result": {
+        "content": [
+          {
+            "text": "已修改 file.txt（替换 1 处，version: 204d063573a16f904ea34f8aac3033b0）",
+            "type": "text"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -40,9 +40,11 @@ func psQuote(value string) string {
 
 func (host *remoteToolHost) windowsReadContent(ctx context.Context, rel string) ([]byte, string, error) {
 	abs := host.abs(rel)
-	script := "$p=" + psQuote(abs) + ";if(-not(Test-Path -LiteralPath $p)){exit 3};" +
-		"$b=[IO.File]::ReadAllBytes($p);[Convert]::ToBase64String($b)"
-	result, err := host.client.Run(ctx, powershellCommand(script), 4*1024*1024)
+	script := "$ErrorActionPreference='Stop';$p=" + psQuote(abs) + ";if(-not(Test-Path -LiteralPath $p)){exit 3};" +
+		"$f=[IO.File]::OpenRead($p);try{$b=New-Object byte[] " + strconv.Itoa(remoteReadMaxBytes+1) + ";" +
+		"$n=0;while($n -lt $b.Length){$r=$f.Read($b,$n,$b.Length-$n);if($r -eq 0){break};$n+=$r};" +
+		"[Convert]::ToBase64String($b,0,$n)}finally{$f.Dispose()}"
+	result, err := host.client.Run(ctx, powershellCommand(script), base64.StdEncoding.EncodedLen(remoteReadMaxBytes+1)+8192)
 	if err != nil {
 		return nil, "", err
 	}
@@ -52,14 +54,14 @@ func (host *remoteToolHost) windowsReadContent(ctx context.Context, rel string) 
 	if result.Code != 0 {
 		return nil, "", fmt.Errorf("读取远端文件失败: %s", strings.TrimSpace(string(result.Stderr)))
 	}
+	if result.Truncated {
+		return nil, "", errRemoteFileTooLarge
+	}
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(result.Stdout)))
 	if err != nil {
 		return nil, "", fmt.Errorf("解码远端文件失败: %w", err)
 	}
-	if len(decoded) > remoteReadMaxBytes {
-		decoded = decoded[:remoteReadMaxBytes]
-	}
-	return decoded, versionOfContent(decoded), nil
+	return completeRemoteFile(decoded, false)
 }
 
 func (host *remoteToolHost) windowsWriteContent(ctx context.Context, rel string, content []byte) error {

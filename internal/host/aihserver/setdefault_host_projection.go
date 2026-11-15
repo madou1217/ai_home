@@ -10,7 +10,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/claude"
-	"github.com/madou1217/ai_home/internal/host/aihdefault/content/codex"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/kimi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 )
@@ -40,16 +39,7 @@ func buildSetDefaultHostProjection(aiHomeDir, hostHomeDir string) webuisetdefaul
 	}
 	targets["claude"] = claudeTarget
 
-	baseURL := "http://" + hostWithPort(config.Host, config.Port) + "/v1"
-	codexTarget := webuisetdefaultapi.HostFileTarget{
-		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".codex"), FileName: "config.toml", Ownership: aihdefault.OwnershipFile},
-	}
-	codexBuild := func(current string, _ bool) (string, error) {
-		return codex.Patch(current, codex.Spec{BaseURL: baseURL})
-	}
-	codexTarget.BuildAccount = func(accountcore.AccountRef) aihdefault.BuildContent { return codexBuild }
-	codexTarget.BuildGateway = codexBuild
-	targets["codex"] = codexTarget
+	// Codex uses the transactional Host adapter below; never a config-only projection.
 
 	kimiTarget := webuisetdefaultapi.HostFileTarget{
 		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".kimi-code"), FileName: "config.toml", Ownership: aihdefault.OwnershipFile},
@@ -59,7 +49,7 @@ func buildSetDefaultHostProjection(aiHomeDir, hostHomeDir string) webuisetdefaul
 	targets["kimi"] = kimiTarget
 
 	projection := webuisetdefaultapi.HostFileProjection{Targets: targets}
-	return webuisetdefaultapi.HostProjection{SelectAccount: projection.SelectAccount, LandGateway: projection.LandGateway}
+	return webuisetdefaultapi.HostProjection{SelectAccount: projection.SelectAccount, LandGateway: projection.LandGateway, Transaction: codexDefaultProjection{aiHome: aiHomeDir, hostHome: hostHomeDir}}
 }
 
 type hostProjectionServerConfig struct {

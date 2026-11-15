@@ -143,7 +143,25 @@
             "resume",
             "fork"
           ],
-          "nativeStore": "state_*.sqlite"
+          "nativeStore": "state_*.sqlite",
+          "resume": {
+            "withId": [
+              "resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "resume"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "fork",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "fork"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -314,7 +332,17 @@
             "--list-sessions",
             "--session-file"
           ],
-          "nativeStore": "sessions"
+          "nativeStore": "sessions",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--resume",
+              "latest"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -532,7 +560,27 @@
             "--session-id",
             "--fork-session"
           ],
-          "nativeStore": "projects/<project>/<session-id>.jsonl"
+          "nativeStore": "projects/<project>/<session-id>.jsonl",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--resume",
+              "{sessionId}",
+              "--fork-session"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork-session"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -738,7 +786,16 @@
             "--continue",
             "--conversation"
           ],
-          "nativeStore": "workspace-scoped conversations"
+          "nativeStore": "workspace-scoped conversations",
+          "resume": {
+            "withId": [
+              "--conversation",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -931,7 +988,27 @@
             "--session",
             "--fork"
           ],
-          "nativeStore": "opencode.db"
+          "nativeStore": "opencode.db",
+          "resume": {
+            "withId": [
+              "--session",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--session",
+              "{sessionId}",
+              "--fork"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -1105,9 +1182,30 @@
           "flags": [
             "--continue",
             "--resume",
-            "--session-id"
+            "--session-id",
+            "--fork-session"
           ],
-          "nativeStore": "sessions"
+          "nativeStore": "sessions",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--resume",
+              "{sessionId}",
+              "--fork-session"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork-session"
+            ]
+          }
         },
         "mcp": {
           "commands": [
@@ -1288,7 +1386,27 @@
             "--resume",
             "--fork-session"
           ],
-          "nativeStore": ""
+          "nativeStore": "",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--resume",
+              "{sessionId}",
+              "--fork-session"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork-session"
+            ]
+          }
         },
         "mcp": {
           "commands": null,
@@ -1462,7 +1580,27 @@
             "--resume",
             "--fork-session"
           ],
-          "nativeStore": ""
+          "nativeStore": "",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--resume",
+              "{sessionId}",
+              "--fork-session"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork-session"
+            ]
+          }
         },
         "mcp": {
           "commands": null,
@@ -1975,7 +2113,16 @@
             "--resume",
             "--continue"
           ],
-          "nativeStore": "cli/db/db.sqlite"
+          "nativeStore": "cli/db/db.sqlite",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          }
         },
         "mcp": {
           "commands": null,
@@ -2133,9 +2280,30 @@
           "flags": [
             "--continue",
             "--resume",
-            "--session-id"
+            "--session-id",
+            "--fork-session"
           ],
-          "nativeStore": "projects/<project>/<session-id>.jsonl"
+          "nativeStore": "projects/<project>/<session-id>.jsonl",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--resume",
+              "{sessionId}",
+              "--fork-session"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork-session"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -2324,9 +2492,30 @@
           "flags": [
             "--continue",
             "--resume",
-            "--session-id"
+            "--session-id",
+            "--fork-session"
           ],
-          "nativeStore": "projects/<project>/<session-id>.jsonl"
+          "nativeStore": "projects/<project>/<session-id>.jsonl",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          },
+          "fork": {
+            "withId": [
+              "--resume",
+              "{sessionId}",
+              "--fork-session"
+            ],
+            "withoutId": [
+              "--continue",
+              "--fork-session"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -2510,7 +2699,16 @@
             "--resume",
             "--session-id"
           ],
-          "nativeStore": "projects/<project>/<session-id>.jsonl"
+          "nativeStore": "projects/<project>/<session-id>.jsonl",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -2694,7 +2892,16 @@
             "--resume",
             "--session-id"
           ],
-          "nativeStore": "projects/<project>/<session-id>.jsonl"
+          "nativeStore": "projects/<project>/<session-id>.jsonl",
+          "resume": {
+            "withId": [
+              "--resume",
+              "{sessionId}"
+            ],
+            "withoutId": [
+              "--continue"
+            ]
+          }
         },
         "mcp": {
           "projection": {
@@ -2856,7 +3063,14 @@
           "flags": [
             "--id"
           ],
-          "nativeStore": "data/db/sessions.db"
+          "nativeStore": "data/db/sessions.db",
+          "resume": {
+            "withId": [
+              "--id",
+              "{sessionId}"
+            ],
+            "withoutId": []
+          }
         },
         "mcp": {
           "projection": {

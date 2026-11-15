@@ -10,6 +10,7 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/dashboard': { no: '01', code: 'DASHBOARD' },
   '/accounts': { no: '02', code: 'ACCOUNTS' },
   '/chat': { no: '03', code: 'SESSIONS' },
+  '/terminals': { code: 'TERMINALS' },
   '/usage': { no: '04', code: 'USAGE' },
   '/models': { no: '05', code: 'MODELS' },
   '/scheduled-tasks': { no: '06', code: 'SCHEDULE' },

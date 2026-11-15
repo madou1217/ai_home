@@ -6,66 +6,19 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
-// errFamilyForkUnsupported 与 Node 统一动词拒绝文案保持一致：
-// 家族 CLI 没有分叉入口，aih 不猜参数。
-func errFamilyForkUnsupported(providerID string) error {
-	return fmt.Errorf(
-		"%s 未声明会话分叉入口，aih 不猜参数；需要分叉请用原生命令（aih %s --help）。",
-		providerID,
-		providerID,
-	)
-}
-
 // rewriteFamilySessionVerb 把 `aih <family> [<账号>] resume|fork ...` 统一动词
 // 翻译成官方 CLI 参数；handled=false 表示没有动词，调用方照常解析启动意图。
 func rewriteFamilySessionVerb(
-	ctx context.Context,
-	providerID string,
-	arguments []string,
-	runtime commandRuntime,
+	ctx context.Context, providerID string, arguments []string, runtime commandRuntime,
 ) ([]string, bool, error) {
-	verbIndex := -1
-	if len(arguments) >= 2 && isFamilySessionVerb(arguments[1]) {
-		verbIndex = 1
-	} else if len(arguments) >= 3 &&
-		!strings.HasPrefix(arguments[1], "-") &&
-		isFamilySessionVerb(arguments[2]) {
-		verbIndex = 2
-	}
-	if verbIndex < 0 {
-		return arguments, false, nil
-	}
-	verb := arguments[verbIndex]
-	rest := arguments[verbIndex+1:]
-	if verb == "fork" {
-		return nil, true, errFamilyForkUnsupported(providerID)
-	}
-	target := ""
-	if verbIndex == 2 {
-		target = arguments[1]
-	}
-	accountID, err := resolveResumeAccountID(ctx, providerID, target, runtime)
-	if err != nil {
-		return nil, true, err
-	}
-	resumeArguments := []string{"--continue"}
-	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		resumeArguments = []string{"--resume", rest[0]}
-		resumeArguments = append(resumeArguments, rest[1:]...)
-	} else {
-		resumeArguments = append(resumeArguments, rest...)
-	}
-	rewritten := append(
-		[]string{providerID, fmt.Sprintf("%d", accountID.Int64())},
-		resumeArguments...,
-	)
-	return rewritten, true, nil
+	return rewriteGoLaunchSessionVerb(ctx, providerID, arguments, runtime)
 }
 
 // stripNativeEscapeMarker 去掉 aih 的 `--` 逃生门标记：它只告诉 aih「后面的参数
@@ -82,11 +35,6 @@ func stripNativeEscapeMarker(arguments []string) ([]string, bool) {
 		return stripped, true
 	}
 	return arguments, false
-}
-
-// isFamilySessionVerb 只认家族 CLI 真实存在的统一动词。
-func isFamilySessionVerb(value string) bool {
-	return value == "resume" || value == "fork"
 }
 
 // resolveResumeAccountID 选择 resume 使用的账号：显式目标优先，其次 Provider
@@ -249,9 +197,8 @@ func isSessionVerbToken(value string) bool {
 // rewriteGoLaunchSessionVerb 把非家族 Provider（已由 Go 承接原生启动）的
 // resume/fork 统一动词翻译成合同声明的官方旗标。
 //
-// 与 Node rewriteProviderNativeVerb 同语义：id 形态用 --resume；无 id 时只有
-// 合同声明了 --continue 才能续接，否则明确拒绝；fork 只在声明了 --fork-session
-// 时改写，不猜参数。
+// 与 Node 共用 Provider 合同 argv 模板；先校验能力/身份，再解析账号，
+// 不从任意 flags 列表推断参数顺序或猜测缺失的恢复入口。
 func rewriteGoLaunchSessionVerb(
 	ctx context.Context,
 	providerID string,
@@ -277,20 +224,21 @@ func rewriteGoLaunchSessionVerb(
 	if !found {
 		return nil, true, fmt.Errorf("%w: 未知 Provider %s", errInvalidCommand, providerID)
 	}
-	flags := []string{}
-	if definition.NativeBoundary != nil {
-		flags = definition.NativeBoundary.Sessions.Flags
-	}
-	hasFlag := func(name string) bool {
-		for _, flag := range flags {
-			if flag == name {
-				return true
-			}
-		}
-		return false
-	}
 	verb := arguments[verbIndex]
 	rest := arguments[verbIndex+1:]
+	identity := ""
+	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		identity = rest[0]
+		rest = rest[1:]
+	}
+	var sessions providers.NativeSessions
+	if definition.NativeBoundary != nil {
+		sessions = definition.NativeBoundary.Sessions
+	}
+	nativeArgs, err := providerlaunch.BuildSessionVerb(sessions, verb, identity, rest)
+	if err != nil {
+		return nil, true, fmt.Errorf("%s %s: %w", providerID, verb, err)
+	}
 	target := ""
 	if verbIndex == 2 {
 		target = arguments[1]
@@ -299,22 +247,5 @@ func rewriteGoLaunchSessionVerb(
 	if err != nil {
 		return nil, true, err
 	}
-	rewritten := []string{providerID, fmt.Sprintf("%d", accountID.Int64())}
-	if verb == "fork" {
-		if !hasFlag("--fork-session") {
-			return nil, true, errFamilyForkUnsupported(providerID)
-		}
-		return append(rewritten, append([]string{"--fork-session"}, rest...)...), true, nil
-	}
-	if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		return append(rewritten, append([]string{"--resume", rest[0]}, rest[1:]...)...), true, nil
-	}
-	if !hasFlag("--continue") {
-		return nil, true, fmt.Errorf(
-			"%s 未声明 --continue，aih 不猜参数；请给出会话 id（aih %s resume <会话id>）。",
-			providerID,
-			providerID,
-		)
-	}
-	return append(rewritten, append([]string{"--continue"}, rest...)...), true, nil
+	return append([]string{providerID, fmt.Sprintf("%d", accountID.Int64())}, nativeArgs...), true, nil
 }

@@ -132,7 +132,7 @@ func collectAccountRefsFromAppState(
 
 	rows, err := database.QueryContext(ctx, `
 		SELECT c.account_ref
-		FROM account_credentials AS c
+		FROM compat_account_credentials AS c
 		INNER JOIN account_refs AS r ON r.account_ref = c.account_ref
 		WHERE (c.env_json <> '{}' OR c.native_auth_json <> '{}')
 		  AND r.provider = ?

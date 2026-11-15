@@ -1,0 +1,23 @@
+{
+  "at": "2026-11-14T18:37:40.938Z",
+  "boundary": "real product sftpFileOps + ssh2 codec transported to actual local OpenSSH sftp-server; no fake server, no SSH auth/network account; Go runtime build only",
+  "rows": [
+    {
+      "denied": false,
+      "result": {
+        "size": 3,
+        "mtime": 1794681460
+      },
+      "error": "",
+      "content": "NEW",
+      "tempCount": 0
+    },
+    {
+      "denied": true,
+      "result": null,
+      "error": "permission_denied",
+      "content": "OLD",
+      "tempCount": 0
+    }
+  ]
+}

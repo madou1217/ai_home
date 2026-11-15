@@ -23,7 +23,7 @@ import (
 
 const (
 	// AppStateDatabaseFileName 是 Node 运行态数据库的固定文件名。
-	AppStateDatabaseFileName = "app-state.db"
+	AppStateDatabaseFileName = "aih.db"
 	databaseBusyTimeoutMS    = 5000
 )
 

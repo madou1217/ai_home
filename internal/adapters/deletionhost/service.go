@@ -69,7 +69,13 @@ var (
 type GatewaySync func(ctx context.Context, providerID string) error
 
 // Options 汇总宿主投影的唯一外部依赖。
+type CodexDefaultTransitions interface {
+	RevokeIfSelected(context.Context, accountcore.AccountRef) (bool, error)
+	LandIfUnselected(context.Context) (bool, error)
+}
+
 type Options struct {
+	CodexDefaults CodexDefaultTransitions
 	// AIHomeDir 是 app-state.db 所在的数据根。
 	AIHomeDir string
 	// HostHomeDir 是宿主 HOME，用于读取 ~/.codex/config.toml。
@@ -86,12 +92,13 @@ type Options struct {
 // Service 是 application/accounts.DeletionHostGrant 与
 // DeletionServerDefault 的宿主投影实现。
 type Service struct {
-	aiHomeDir    string
-	databasePath string
-	hostHomeDir  string
-	catalog      *providers.Catalog
-	credentials  accountapp.CredentialVersionStore
-	gatewaySync  GatewaySync
+	codexDefaults CodexDefaultTransitions
+	aiHomeDir     string
+	databasePath  string
+	hostHomeDir   string
+	catalog       *providers.Catalog
+	credentials   accountapp.CredentialVersionStore
+	gatewaySync   GatewaySync
 }
 
 // New 创建宿主投影服务；AIH 数据根必须能定位 app-state.db。
@@ -105,12 +112,13 @@ func New(options Options) (*Service, error) {
 		return nil, err
 	}
 	return &Service{
-		aiHomeDir:    aiHomeDir,
-		databasePath: databasePath,
-		hostHomeDir:  strings.TrimSpace(options.HostHomeDir),
-		catalog:      options.Catalog,
-		credentials:  options.Credentials,
-		gatewaySync:  options.GatewaySync,
+		codexDefaults: options.CodexDefaults,
+		aiHomeDir:     aiHomeDir,
+		databasePath:  databasePath,
+		hostHomeDir:   strings.TrimSpace(options.HostHomeDir),
+		catalog:       options.Catalog,
+		credentials:   options.Credentials,
+		gatewaySync:   options.GatewaySync,
 	}, nil
 }
 
@@ -134,6 +142,17 @@ func (service *Service) IsDefaultAccount(
 	if err != nil {
 		return false, err
 	}
+	if !found && providerID == codexProviderID {
+		if defaults, ok := service.credentials.(interface {
+			GetProviderDefault(context.Context, string) (accountcore.ProviderDefault, error)
+		}); ok {
+			selected, err := defaults.GetProviderDefault(ctx, codexProviderID)
+			if errors.Is(err, accountapp.ErrProviderDefaultNotFound) {
+				return false, nil
+			}
+			return err == nil && selected.AccountRef() == accountRef, err
+		}
+	}
 	if !found {
 		return false, nil
 	}
@@ -150,6 +169,14 @@ func (service *Service) LandServerDefault(
 ) (accountapp.ServerDefaultLanding, error) {
 	if service == nil || ctx == nil {
 		return accountapp.ServerDefaultLanding{}, accountapp.ErrInvalidDeletionRequest
+	}
+	if providerID == codexProviderID && service.codexDefaults != nil {
+		changed, err := service.codexDefaults.LandIfUnselected(ctx)
+		reason := "newer_default_preserved"
+		if changed {
+			reason = ""
+		}
+		return accountapp.ServerDefaultLanding{OK: err == nil, Landed: changed, Provider: providerID, Profile: aihdefault.ServerProfileID, Reason: reason}, err
 	}
 	result := aihdefault.LandOnServerDefault(
 		ctx,
@@ -202,6 +229,17 @@ func (service *Service) RevokeHostGrant(
 			Revoked: false,
 			Reason:  ReasonNoHostGrant,
 		}, nil
+	}
+	if service.codexDefaults != nil {
+		changed, err := service.codexDefaults.RevokeIfSelected(ctx, account.Ref())
+		if err != nil {
+			return accountapp.GrantRevocation{OK: false, Revoked: false, Reason: ReasonHostSyncFailed, Message: err.Error()}, nil
+		}
+		reason := "newer_default_preserved"
+		if changed {
+			reason = ""
+		}
+		return accountapp.GrantRevocation{OK: true, Revoked: changed, DefaultProfileUpdated: changed, Reason: reason}, nil
 	}
 	if service.gatewaySync == nil {
 		// 不能先改档位再等宿主：档位与宿主配置必须成对，否则下一次启动

@@ -1,0 +1,38 @@
+{
+  "at": "2026-11-14T17:42:49.834Z",
+  "boundary": "actual official Codex --help, consumer head closes; 141 only when EPIPE observed, full-buffer successful transfer can exit0",
+  "samples": [
+    {
+      "i": 0,
+      "exit": 0,
+      "pipeline": "PIPE_EXIT=141 0",
+      "unhandled": false
+    },
+    {
+      "i": 1,
+      "exit": 0,
+      "pipeline": "PIPE_EXIT=141 0",
+      "unhandled": false
+    },
+    {
+      "i": 2,
+      "exit": 0,
+      "pipeline": "PIPE_EXIT=141 0",
+      "unhandled": false
+    },
+    {
+      "i": 3,
+      "exit": 0,
+      "pipeline": "PIPE_EXIT=141 0",
+      "unhandled": false
+    },
+    {
+      "i": 4,
+      "exit": 0,
+      "pipeline": "PIPE_EXIT=0 0",
+      "unhandled": false
+    }
+  ],
+  "fullExit": 0,
+  "fullTail": true
+}

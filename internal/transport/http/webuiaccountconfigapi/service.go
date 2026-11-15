@@ -105,7 +105,7 @@ func readCredentialRecord(ctx context.Context, databasePath string, accountRef s
 	err = db.QueryRowContext(ctx, `
 		SELECT c.account_ref, r.provider, c.env_json, c.native_auth_json,
 		       c.env_updated_at, c.native_auth_updated_at, c.updated_at
-		FROM account_credentials c
+		FROM compat_account_credentials c
 		INNER JOIN account_refs r ON r.account_ref = c.account_ref
 		WHERE c.account_ref = ?
 		LIMIT 1`, accountRef).Scan(
@@ -171,7 +171,7 @@ func (handler *Handler) credentialStoreFiles(provider string, record *credential
 		ID:             "store:credentials",
 		Label:          "账号凭据记录",
 		Source:         "store",
-		Location:       "app-state.db · account_credentials",
+		Location:       "app-state.db · compat_account_credentials",
 		Format:         "json",
 		UpdatedAt:      record.UpdatedAt,
 		Content:        content,
@@ -187,7 +187,7 @@ func (handler *Handler) credentialStoreFiles(provider string, record *credential
 			ID:             "store:database",
 			Label:          label,
 			Source:         "store",
-			Location:       "account_credentials.native_auth_json.database",
+			Location:       "compat_account_credentials.native_auth_json.database",
 			Format:         "json",
 			UpdatedAt:      record.NativeAuthUpdatedAt,
 			Content:        dbContent,

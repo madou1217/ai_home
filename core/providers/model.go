@@ -335,6 +335,18 @@ type NativeConfig struct {
 type NativeSessions struct {
 	Flags       []string `json:"flags"`
 	NativeStore string   `json:"nativeStore"`
+	// Explicit argv templates for user-requested verbs. Nil means unsupported;
+	// an empty WithoutID means a precise identity is required, not a new chat.
+	Resume *NativeSessionCommand `json:"resume,omitempty"`
+	Fork   *NativeSessionCommand `json:"fork,omitempty"`
+}
+
+// NativeSessionCommand is shared by Node and Go adapters, not a shell string.
+// WithID contains exactly one {sessionId} slot; WithoutID is a native picker or
+// documented last-session form. Neither form is evaluated by a shell.
+type NativeSessionCommand struct {
+	WithID    []string `json:"withId"`
+	WithoutID []string `json:"withoutId"`
 }
 
 // NativeMCP 描述原生 MCP 命令和配置文件。

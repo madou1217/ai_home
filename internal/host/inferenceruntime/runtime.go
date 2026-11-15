@@ -38,6 +38,14 @@ type AccountRuntime interface {
 	inferencegateway.AttemptRecorder
 }
 
+// CredentialResolver is the shared in-process credential authority. A Server
+// injects its existing resolver so refresh singleflight and projection/re-key
+// callbacks do not vary by management, model, usage or inference entrypoint.
+type CredentialResolver interface {
+	accountrouting.CredentialResolver
+	inferencegateway.CredentialObservationVerifier
+}
+
 // Dependencies 声明 Canonical Runtime 的最小生产组合边界。
 type Dependencies struct {
 	// Catalog 校验 Provider，并供账号征召构造规范请求。
@@ -56,6 +64,8 @@ type Dependencies struct {
 	Routes inferencegateway.RouteResolver
 	// CredentialStrategies 注册当前 Provider 的凭据刷新策略。
 	CredentialStrategies []accountcredentials.RefreshStrategy
+	// Credentials is preferred; strategies only construct a standalone resolver.
+	Credentials CredentialResolver
 	// DelegateCredentialRefresh 表示嵌入宿主独占 OAuth 刷新，解析器不自行刷新。
 	DelegateCredentialRefresh bool
 	// OwnsCredentialRefresh 判定「这条账号的凭据由本进程刷新」。
@@ -129,17 +139,17 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 	if err := validateDependencies(dependencies); err != nil {
 		return nil, err
 	}
-	credentials, err := accountcredentials.NewResolver(
-		accountcredentials.Dependencies{
-			Store:            dependencies.Store,
-			Strategies:       dependencies.CredentialStrategies,
-			Clock:            dependencies.Clock,
-			RefreshDelegated: dependencies.DelegateCredentialRefresh,
-			OwnsRefresh:      dependencies.OwnsCredentialRefresh,
-		},
-	)
-	if err != nil {
-		return nil, wrapDependencyError("创建账号凭据解析器失败", err)
+	credentials := dependencies.Credentials
+	if credentials == nil {
+		standalone, err := accountcredentials.NewResolver(accountcredentials.Dependencies{
+			Store: dependencies.Store, Strategies: dependencies.CredentialStrategies,
+			Clock: dependencies.Clock, RefreshDelegated: dependencies.DelegateCredentialRefresh,
+			OwnsRefresh: dependencies.OwnsCredentialRefresh,
+		})
+		if err != nil {
+			return nil, wrapDependencyError("创建账号凭据解析器失败", err)
+		}
+		credentials = standalone
 	}
 	recruiter, err := accountrouting.NewRecruiter(
 		accountrouting.Dependencies{
@@ -191,7 +201,7 @@ func validateDependencies(dependencies Dependencies) error {
 		dependencies.Store == nil ||
 		dependencies.Runtime == nil ||
 		dependencies.Routes == nil ||
-		len(dependencies.CredentialStrategies) == 0 ||
+		(dependencies.Credentials == nil && len(dependencies.CredentialStrategies) == 0) ||
 		len(dependencies.Upstreams) == 0 ||
 		dependencies.ModelRefreshes == nil ||
 		dependencies.PoolRetries == nil ||

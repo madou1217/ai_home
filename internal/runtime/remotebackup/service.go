@@ -40,15 +40,16 @@ type RunOptions struct {
 
 // TargetBackupResult 描述单个目标的执行结果。
 type TargetBackupResult struct {
-	TargetID  string `json:"targetId"`
-	OK        bool   `json:"ok"`
-	Error     string `json:"error,omitempty"`
-	Uploaded  int    `json:"uploaded"`
-	Unchanged int    `json:"unchanged"`
-	Deleted   int    `json:"deleted"`
-	Revision  int    `json:"revision,omitempty"`
-	Total     int    `json:"total,omitempty"`
-	StartedAt string `json:"startedAt,omitempty"`
+	TargetID  string          `json:"targetId"`
+	OK        bool            `json:"ok"`
+	Error     string          `json:"error,omitempty"`
+	Recovery  *BackupRecovery `json:"recovery,omitempty"`
+	Uploaded  int             `json:"uploaded"`
+	Unchanged int             `json:"unchanged"`
+	Deleted   int             `json:"deleted"`
+	Revision  int             `json:"revision,omitempty"`
+	Total     int             `json:"total,omitempty"`
+	StartedAt string          `json:"startedAt,omitempty"`
 }
 
 // BackupRunResult 描述一轮多目标远程备份或调度决策的汇总结果。
@@ -183,6 +184,7 @@ func RunRemoteBackup(
 			allOK = false
 			prevState.LastRunAt = res.StartedAt
 			prevState.LastError = res.Error
+			prevState.Recovery = res.Recovery
 			prevState.Uploaded = 0
 			prevState.Unchanged = 0
 			prevState.Deleted = 0
@@ -222,6 +224,7 @@ func executeSingleTargetBackup(
 			TargetID:  target.ID,
 			OK:        false,
 			Error:     safeBackupErrorMessage(err),
+			Recovery:  backupRecovery(err),
 			StartedAt: startedAt,
 		}
 	}
@@ -234,6 +237,7 @@ func executeSingleTargetBackup(
 			TargetID:  target.ID,
 			OK:        false,
 			Error:     safeBackupErrorMessage(err),
+			Recovery:  backupRecovery(err),
 			StartedAt: startedAt,
 		}
 	}
@@ -244,6 +248,7 @@ func executeSingleTargetBackup(
 			TargetID:  target.ID,
 			OK:        false,
 			Error:     safeBackupErrorMessage(err),
+			Recovery:  backupRecovery(err),
 			StartedAt: startedAt,
 		}
 	}
@@ -255,6 +260,7 @@ func executeSingleTargetBackup(
 			TargetID:  target.ID,
 			OK:        false,
 			Error:     safeBackupErrorMessage(err),
+			Recovery:  backupRecovery(err),
 			StartedAt: startedAt,
 		}
 	}
@@ -265,6 +271,7 @@ func executeSingleTargetBackup(
 				TargetID:  target.ID,
 				OK:        false,
 				Error:     safeBackupErrorMessage(err),
+				Recovery:  backupRecovery(err),
 				StartedAt: startedAt,
 			}
 		}
@@ -285,6 +292,7 @@ func executeSingleTargetBackup(
 				TargetID:  target.ID,
 				OK:        false,
 				Error:     safeBackupErrorMessage(err),
+				Recovery:  backupRecovery(err),
 				StartedAt: startedAt,
 			}
 		}

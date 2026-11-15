@@ -120,6 +120,9 @@ func remoteToolsReply(id any, result map[string]any) map[string]any {
 }
 
 func callRemoteToolForLaunch(launch remoteToolsLaunchContext, name string, arguments map[string]any) map[string]any {
+	if invalid := validateRemoteToolInput(name, arguments); invalid != nil {
+		return invalid
+	}
 	if launch.ToolsURL != "" {
 		return postRemoteToolCall(launch, name, arguments)
 	}

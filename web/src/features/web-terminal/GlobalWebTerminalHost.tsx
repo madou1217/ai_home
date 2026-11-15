@@ -209,7 +209,7 @@ export default function GlobalWebTerminalHost() {
   }, [manager.setPosition]);
 
   const closings = motion?.phase === 'closing';
-  if (!manager.tabs.length && !closings) return null;
+  if (manager.overviewVisible || (!manager.tabs.length && !closings)) return null;
   const activeTab = manager.tabs.find((tab) => tab.id === manager.activeTabId) || manager.tabs[0];
   const availableWidth = typeof window === 'undefined' ? manager.position.width : Math.max(1, window.innerWidth - 16);
   const availableHeight = typeof window === 'undefined' ? manager.position.height : Math.max(1, window.innerHeight - 16);

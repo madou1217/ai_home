@@ -18,12 +18,13 @@ var (
 
 // RegistrationRequest 是等待持久化层原子分配 CLI 别名的账号注册命令。
 type RegistrationRequest struct {
-	accountRef      accountcore.AccountRef
-	providerID      string
-	credential      Credential
-	profileSnapshot ProfileSnapshot
-	hasProfile      bool
-	registeredAt    time.Time
+	accountRef        accountcore.AccountRef
+	providerID        string
+	credential        Credential
+	profileSnapshot   ProfileSnapshot
+	hasProfile        bool
+	registeredAt      time.Time
+	initiallyDisabled bool
 }
 
 // NewRegistrationRequest 绑定凭据、可选公开资料、稳定身份和注册时间。
@@ -82,6 +83,9 @@ func (request RegistrationRequest) ProviderID() string {
 func (request RegistrationRequest) Credential() Credential {
 	return request.credential
 }
+
+// Enabled is part of the atomic initial aggregate, not a later status mutation.
+func (request RegistrationRequest) Enabled() bool { return !request.initiallyDisabled }
 
 // HasProfile 返回注册命令是否携带同身份公开资料。
 func (request RegistrationRequest) HasProfile() bool {
@@ -162,6 +166,10 @@ func (registrar *Registrar) Register(
 	credential Credential,
 	profile PublicProfile,
 ) (accountcore.Account, error) {
+	return registrar.RegisterWithInitialState(ctx, credential, profile, InitialAccountState{})
+}
+
+func (registrar *Registrar) RegisterWithInitialState(ctx context.Context, credential Credential, profile PublicProfile, state InitialAccountState) (accountcore.Account, error) {
 	if err := validateRegistrationIdentity(
 		registrar.catalog,
 		credential,
@@ -178,6 +186,7 @@ func (registrar *Registrar) Register(
 	if err != nil {
 		return accountcore.Account{}, err
 	}
+	request.initiallyDisabled = state.Disabled
 	return registrar.store.RegisterNew(ctx, request)
 }
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 
 	_ "modernc.org/sqlite"
@@ -45,6 +46,9 @@ func DeleteKV(ctx context.Context, databasePath string, key string) error {
 
 // OpenWritable 以 rwc + busy_timeout 打开 app-state.db。
 func OpenWritable(ctx context.Context, databasePath string) (*sql.DB, error) {
+	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
+		return nil, err
+	}
 	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
@@ -100,6 +104,9 @@ func UpdateKV(ctx context.Context, databasePath string, key string, mutate func(
 }
 
 func openWritableImmediate(ctx context.Context, databasePath string) (*sql.DB, error) {
+	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
+		return nil, err
+	}
 	fileURL := sqlitefile.URL(databasePath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")

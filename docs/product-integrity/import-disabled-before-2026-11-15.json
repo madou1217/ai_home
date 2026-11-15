@@ -1,0 +1,9 @@
+{
+  "boundary": "real isolated server/SQLite import of local unissued static key, endpoint dead loopback, no upstream credentials/production calls",
+  "requested": "down",
+  "importStatus": 200,
+  "outcome": "created",
+  "enabled": true,
+  "viewStatus": 200,
+  "at": "2026-11-14T18:09:23.136Z"
+}

@@ -1,0 +1,73 @@
+{
+  "at": "2026-11-14T18:11:53.851Z",
+  "boundary": "actual isolated Server+SQLite; local unissued static keys/dead loopback base URL, not provider credential validity; disabled first SQL/state ordering also source reviewed",
+  "records": [
+    {
+      "which": 0,
+      "inputStatus": "down",
+      "http": 200,
+      "outcome": "created",
+      "enabled": false,
+      "alias": 1
+    },
+    {
+      "which": 0,
+      "inputStatus": "up",
+      "http": 200,
+      "outcome": "unchanged",
+      "enabled": false,
+      "alias": 1
+    },
+    {
+      "which": 1,
+      "inputStatus": "up",
+      "http": 200,
+      "outcome": "created",
+      "enabled": true,
+      "alias": 2
+    },
+    {
+      "which": 1,
+      "inputStatus": "down",
+      "http": 200,
+      "outcome": "unchanged",
+      "enabled": true,
+      "alias": 2
+    },
+    {
+      "which": 0,
+      "inputStatus": "DOWN",
+      "http": 200,
+      "outcome": "unchanged",
+      "enabled": false,
+      "alias": 1
+    },
+    {
+      "which": 0,
+      "inputStatus": "bad-state",
+      "http": 200,
+      "outcome": "failed",
+      "reason": "invalid_initial_account_status",
+      "enabled": false,
+      "alias": 1
+    },
+    {
+      "which": 0,
+      "restarted": true,
+      "http": 200,
+      "enabled": false,
+      "sameRef": true
+    },
+    {
+      "which": 1,
+      "restarted": true,
+      "http": 200,
+      "enabled": true,
+      "sameRef": true
+    }
+  ],
+  "firstExit": {
+    "code": 0,
+    "signal": null
+  }
+}

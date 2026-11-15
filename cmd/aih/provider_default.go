@@ -17,6 +17,9 @@ func runProviderDefaultCommand(
 	arguments []string,
 	runtime commandRuntime,
 ) error {
+	if providerID == "codex" {
+		return runCodexDefaultCommand(ctx, arguments, runtime)
+	}
 	if len(arguments) == 0 {
 		writeProviderDefaultUsage(runtime.stderr, providerID)
 		return fmt.Errorf("%w: 缺少 set-default / unset-default", errInvalidCommand)

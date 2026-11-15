@@ -94,6 +94,10 @@ func (importer *AccountImporter) Import(
 	credential Credential,
 	profile PublicProfile,
 ) (AccountImportResult, error) {
+	return importer.ImportWithInitialState(ctx, credential, profile, InitialAccountState{})
+}
+
+func (importer *AccountImporter) ImportWithInitialState(ctx context.Context, credential Credential, profile PublicProfile, state InitialAccountState) (AccountImportResult, error) {
 	if importer == nil || ctx == nil || credential == nil {
 		return AccountImportResult{}, ErrInvalidAccountImport
 	}
@@ -104,7 +108,7 @@ func (importer *AccountImporter) Import(
 	if err != nil {
 		return AccountImportResult{}, ErrInvalidAccountImport
 	}
-	account, err := importer.registration.Register(ctx, credential, profile)
+	account, err := RegisterInitialAccount(ctx, importer.registration, credential, profile, state)
 	if err == nil {
 		if !importedAccountMatches(account, accountRef, credential.ProviderID()) {
 			return AccountImportResult{}, ErrInvalidAccountImport

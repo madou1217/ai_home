@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 
 	_ "modernc.org/sqlite"
@@ -21,7 +22,7 @@ import (
 
 const (
 	// DatabaseFileName 是 Node app-state-store 的数据库文件名。
-	DatabaseFileName = "app-state.db"
+	DatabaseFileName = "aih.db"
 	busyTimeoutMS    = 5000
 )
 
@@ -43,6 +44,9 @@ func DatabasePath(aiHomeDir string) (string, error) {
 
 // OpenReadOnly 以只读方式打开数据库；数据库不存在时返回 os.ErrNotExist。
 func OpenReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
+	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
+		return nil, err
+	}
 	db, err := openAndPing(ctx, databasePath, false)
 	if err == nil {
 		return db, nil

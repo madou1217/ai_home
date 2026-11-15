@@ -68,14 +68,15 @@ type BackupConfig struct {
 
 // TargetRunState 记录单个目标最近一次备份执行状态。
 type TargetRunState struct {
-	LastRunAt string `json:"lastRunAt,omitempty"`
-	LastOkAt  string `json:"lastOkAt,omitempty"`
-	LastError string `json:"lastError,omitempty"`
-	Uploaded  int    `json:"uploaded"`
-	Unchanged int    `json:"unchanged"`
-	Deleted   int    `json:"deleted"`
-	Revision  int    `json:"revision,omitempty"`
-	Total     int    `json:"total,omitempty"`
+	LastRunAt string          `json:"lastRunAt,omitempty"`
+	LastOkAt  string          `json:"lastOkAt,omitempty"`
+	LastError string          `json:"lastError,omitempty"`
+	Recovery  *BackupRecovery `json:"recovery,omitempty"`
+	Uploaded  int             `json:"uploaded"`
+	Unchanged int             `json:"unchanged"`
+	Deleted   int             `json:"deleted"`
+	Revision  int             `json:"revision,omitempty"`
+	Total     int             `json:"total,omitempty"`
 }
 
 // BackupState 对应 <aiHomeDir>/backup/state.json。

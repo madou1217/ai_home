@@ -1,29 +1,38 @@
 // Package accountrulesapi 是账号级上游错误规则的管理 HTTP 边界。
 //
-// 账号级配置 = 账号自身规则 + 挂载的映射组 id 顺序；有效规则由 Go 在读取时拼装，
-// Node 不再推送「已拼装好」的整份规则。本包只做鉴权、路径分派、JSON DTO 与错误映射。
+// 账号级配置 = 账号自身规则 + 挂载的映射组 id 顺序；有效规则由 Go 在读取时直接拼装，
+// 以 aih.db 作为权威单源真值。
 //
-//	GET    /v1/management/accounts/{ref}/upstream-error-rules  读取配置与拼装结果
-//	PUT    /v1/management/accounts/{ref}/upstream-error-rules  整体替换配置
-//	DELETE /v1/management/accounts/{ref}/upstream-error-rules  清空配置（幂等）
-//	GET    /v1/management/account-upstream-error-rules         列出全部账号配置（诊断/对账）
+//	GET    /v1/management/accounts/{ref}/upstream-error-rules     读取配置与拼装结果
+//	PUT    /v1/management/accounts/{ref}/upstream-error-rules     整体替换配置
+//	DELETE /v1/management/accounts/{ref}/upstream-error-rules     清空配置（幂等）
+//	GET    /v1/management/account-upstream-error-rules            列出全部账号配置（诊断/对账）
+//	POST   /v1/management/account-upstream-error-rules/import     批量导入或从 app-state 一次性迁入账号级规则
 package accountrulesapi
 
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/appstate/rulesenv"
 )
 
 const (
 	// CollectionPath 是全部账号配置的只读诊断路径。
 	CollectionPath = "/v1/management/account-upstream-error-rules"
+	// ImportPath 是账号级规则批量导入/迁移路径。
+	ImportPath = CollectionPath + "/import"
 	// MemberPattern 是账号级配置路径的方法无关模式，供路由注册使用。
 	MemberPattern = "/v1/management/accounts/{ref}/upstream-error-rules"
 	// maxBodyBytes 限制一次配置写入的正文大小。
@@ -52,12 +61,15 @@ type Service interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	Service    Service
+	// AIHomeDir 可选：用于填充历史映射引用及承接 app-state.db 账号规则迁入。
+	AIHomeDir string
 }
 
-// Handler 提供账号级上游错误规则的读写。
+// Handler 提供账号级上游错误规则的读写与批量迁入。
 type Handler struct {
 	authorizer Authorizer
 	service    Service
+	aiHomeDir  string
 }
 
 // NewHandler 创建账号级规则管理接口。
@@ -65,7 +77,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Service == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, service: dependencies.Service}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		service:    dependencies.Service,
+		aiHomeDir:  strings.TrimSpace(dependencies.AIHomeDir),
+	}, nil
 }
 
 // accountRulesPayload 是整体替换的请求体；缺席字段按空集合处理。
@@ -77,12 +93,19 @@ type accountRulesPayload struct {
 // accountRulesView 是单个账号的配置与拼装结果。
 type accountRulesView struct {
 	AccountRef     string           `json:"account_ref"`
+	NodeAccountRef string           `json:"node_account_ref"`
 	Provider       string           `json:"provider"`
 	Source         string           `json:"source"`
 	GroupIDs       []string         `json:"group_ids"`
 	Rules          []rulescore.Rule `json:"rules"`
 	EffectiveRules []rulescore.Rule `json:"effective_rules"`
 	Supported      bool             `json:"supported"`
+}
+
+type importAccountItem struct {
+	AccountRef string          `json:"account_ref"`
+	GroupIDs   []string        `json:"group_ids"`
+	Rules      json.RawMessage `json:"rules"`
 }
 
 // ServeHTTP 只接受 Management Key 鉴权过的请求。
@@ -105,7 +128,16 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.list(response, request)
 		return
 	}
-	accountRef := request.PathValue("ref")
+	if request.URL.Path == ImportPath {
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", "POST")
+			writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "只支持 POST")
+			return
+		}
+		handler.importRules(response, request)
+		return
+	}
+	accountRef := strings.TrimSpace(request.PathValue("ref"))
 	if accountRef == "" {
 		writeError(response, http.StatusNotFound, "route_not_found", "请求的账号规则资源不存在")
 		return
@@ -124,39 +156,49 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) list(response http.ResponseWriter, request *http.Request) {
-	accounts, err := handler.service.ListAccounts(request.Context())
+	ctx := request.Context()
+	accounts, err := handler.service.ListAccounts(ctx)
 	if err != nil {
 		writeError(response, http.StatusServiceUnavailable, "account_rules_unavailable", "账号规则服务不可用")
 		return
 	}
+	refTable := handler.loadRefTable(ctx)
 	views := make([]accountRulesView, 0, len(accounts))
 	for _, account := range accounts {
-		views = append(views, toView(account))
+		views = append(views, toView(account, refTable))
 	}
+	supported := nonNilStrings(handler.service.SupportedProviders())
+	generation := handler.service.Generation()
 	writeJSON(response, http.StatusOK, map[string]any{
+		"ok":                  true,
+		"accounts":            views,
+		"supported_providers": supported,
+		"generation":          generation,
 		"data": map[string]any{
 			"accounts":            views,
-			"supported_providers": nonNilStrings(handler.service.SupportedProviders()),
-			"generation":          handler.service.Generation(),
+			"supported_providers": supported,
+			"generation":          generation,
 		},
 	})
 }
 
 func (handler *Handler) get(response http.ResponseWriter, request *http.Request, accountRef string) {
-	view, err := handler.service.Effective(request.Context(), accountRef)
+	ctx := request.Context()
+	view, err := handler.service.Effective(ctx, accountRef)
 	if err != nil {
 		writeServiceError(response, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"data": toView(view)})
+	writeJSON(response, http.StatusOK, map[string]any{"data": toView(view, handler.loadRefTable(ctx))})
 }
 
 func (handler *Handler) put(response http.ResponseWriter, request *http.Request, accountRef string) {
+	ctx := request.Context()
 	payload, ok := decodePayload(response, request)
 	if !ok {
 		return
 	}
-	view, err := handler.service.ReplaceAccount(request.Context(), accountRef, rulesapp.AccountInput{
+	view, err := handler.service.ReplaceAccount(ctx, accountRef, rulesapp.AccountInput{
 		GroupIDs: payload.GroupIDs,
 		Rules:    payload.Rules,
 	})
@@ -164,7 +206,7 @@ func (handler *Handler) put(response http.ResponseWriter, request *http.Request,
 		writeServiceError(response, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"data": toView(view)})
+	writeJSON(response, http.StatusOK, map[string]any{"data": toView(view, handler.loadRefTable(ctx))})
 }
 
 func (handler *Handler) remove(response http.ResponseWriter, request *http.Request, accountRef string) {
@@ -178,10 +220,264 @@ func (handler *Handler) remove(response http.ResponseWriter, request *http.Reque
 	})
 }
 
+func (handler *Handler) importRules(response http.ResponseWriter, request *http.Request) {
+	ctx := request.Context()
+	items, force, ok := handler.parseImportPayload(ctx, response, request)
+	if !ok {
+		return
+	}
+	refTable := handler.loadRefTable(ctx)
+
+	existingSet := map[string]bool{}
+	if !force {
+		if existingAccounts, err := handler.service.ListAccounts(ctx); err == nil {
+			for _, view := range existingAccounts {
+				if len(view.Rules) > 0 || len(view.GroupIDs) > 0 {
+					existingSet[view.AccountRef] = true
+				}
+			}
+		}
+	}
+
+	pushed := 0
+	accepted := 0
+	failed := 0
+	dropped := 0
+	droppedReasons := make([]map[string]string, 0)
+	skippedAccounts := make([]string, 0)
+
+	for _, item := range items {
+		rawRef := strings.TrimSpace(item.AccountRef)
+		if rawRef == "" {
+			continue
+		}
+		targetRef := refTable.GoRef(rawRef)
+		if !force && existingSet[targetRef] {
+			skippedAccounts = append(skippedAccounts, targetRef)
+			continue
+		}
+		rules, ruleDrops := parsePermissiveRules(item.Rules, targetRef)
+		if len(ruleDrops) > 0 {
+			dropped += len(ruleDrops)
+			droppedReasons = append(droppedReasons, ruleDrops...)
+		}
+		if len(rules) == 0 && len(item.GroupIDs) == 0 {
+			continue
+		}
+		pushed++
+		if _, err := handler.service.ReplaceAccount(ctx, targetRef, rulesapp.AccountInput{
+			GroupIDs: item.GroupIDs,
+			Rules:    rules,
+		}); err != nil {
+			if errors.Is(err, rulesapp.ErrAccountNotFound) {
+				skippedAccounts = append(skippedAccounts, rawRef)
+				pushed--
+				continue
+			}
+			failed++
+			droppedReasons = append(droppedReasons, map[string]string{
+				"account_ref": targetRef,
+				"reason":      err.Error(),
+			})
+			continue
+		}
+		accepted++
+	}
+
+	writeJSON(response, http.StatusOK, map[string]any{
+		"ok":              failed == 0,
+		"pushed":          pushed,
+		"accepted":        accepted,
+		"failed":          failed,
+		"dropped":         dropped,
+		"droppedReasons":  droppedReasons,
+		"skippedAccounts": skippedAccounts,
+		"generation":      handler.service.Generation(),
+	})
+}
+
+func (handler *Handler) parseImportPayload(
+	ctx context.Context,
+	response http.ResponseWriter,
+	request *http.Request,
+) ([]importAccountItem, bool, bool) {
+	var body []byte
+	if request.Body != nil && request.Body != http.NoBody {
+		readBytes, err := io.ReadAll(io.LimitReader(request.Body, maxBodyBytes+1))
+		if err != nil || int64(len(readBytes)) > maxBodyBytes {
+			writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体无效")
+			return nil, false, false
+		}
+		body = bytes.TrimSpace(readBytes)
+	}
+	if len(body) == 0 {
+		items, err := handler.loadAppStateAccountRules(ctx)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, "account_rules_failed", "读取历史账号规则失败")
+			return nil, false, false
+		}
+		return items, false, true
+	}
+	if body[0] != '{' {
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体须为 JSON 对象")
+		return nil, false, false
+	}
+	var envelope struct {
+		Force    bool                 `json:"force"`
+		Accounts *[]importAccountItem `json:"accounts"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体不是合法 JSON")
+		return nil, false, false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体包含多余内容")
+		return nil, false, false
+	}
+	if envelope.Accounts != nil {
+		return *envelope.Accounts, envelope.Force, true
+	}
+	items, err := handler.loadAppStateAccountRules(ctx)
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "account_rules_failed", "读取历史账号规则失败")
+		return nil, false, false
+	}
+	return items, envelope.Force, true
+}
+
+func (handler *Handler) loadAppStateAccountRules(ctx context.Context) ([]importAccountItem, error) {
+	if handler.aiHomeDir == "" {
+		return nil, nil
+	}
+	dbPath, err := appstate.DatabasePath(handler.aiHomeDir)
+	if err != nil {
+		return nil, nil
+	}
+	if _, statErr := os.Stat(dbPath); statErr != nil {
+		return nil, nil
+	}
+	db, err := appstate.OpenReadOnly(ctx, dbPath)
+	if err != nil {
+		return nil, nil
+	}
+	defer func() { _ = db.Close() }()
+
+	rows, err := db.QueryContext(ctx, "SELECT account_ref, env_json FROM compat_account_credentials WHERE env_json != '' ORDER BY account_ref")
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]importAccountItem, 0, 16)
+	for rows.Next() {
+		var ref, rawEnv string
+		if err := rows.Scan(&ref, &rawEnv); err != nil {
+			continue
+		}
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		var env map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(rawEnv), &env); err != nil || env == nil {
+			continue
+		}
+		rawRules := unwrapEnvJSONValue(env[rulesenv.RulesEnvKey])
+		groupIDs := decodeStringSlice(unwrapEnvJSONValue(env[rulesenv.GroupIDsEnvKey]))
+		if len(rawRules) == 0 && len(groupIDs) == 0 {
+			continue
+		}
+		items = append(items, importAccountItem{
+			AccountRef: ref,
+			GroupIDs:   groupIDs,
+			Rules:      rawRules,
+		})
+	}
+	if err := rows.Err(); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	return items, nil
+}
+
+func unwrapEnvJSONValue(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
+	var encoded string
+	if err := json.Unmarshal(trimmed, &encoded); err == nil {
+		inner := bytes.TrimSpace([]byte(encoded))
+		if len(inner) == 0 || bytes.Equal(inner, []byte("null")) {
+			return nil
+		}
+		return json.RawMessage(inner)
+	}
+	return json.RawMessage(trimmed)
+}
+
+func decodeStringSlice(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil
+	}
+	return values
+}
+
+func parsePermissiveRules(raw json.RawMessage, accountRef string) ([]rulescore.Rule, []map[string]string) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	var rawElements []json.RawMessage
+	if err := json.Unmarshal(trimmed, &rawElements); err != nil {
+		return nil, []map[string]string{{"account_ref": accountRef, "reason": err.Error()}}
+	}
+	valid := make([]rulescore.Rule, 0, len(rawElements))
+	drops := make([]map[string]string, 0)
+	for _, elem := range rawElements {
+		var rule rulescore.Rule
+		if err := json.Unmarshal(elem, &rule); err != nil {
+			drops = append(drops, map[string]string{"account_ref": accountRef, "reason": err.Error()})
+			continue
+		}
+		validated, err := rulescore.Validate([]rulescore.Rule{rule})
+		if err != nil {
+			drops = append(drops, map[string]string{"account_ref": accountRef, "reason": err.Error()})
+			continue
+		}
+		valid = append(valid, validated...)
+	}
+	return valid, drops
+}
+
+func (handler *Handler) loadRefTable(ctx context.Context) accountrefmap.Table {
+	if handler == nil || handler.aiHomeDir == "" {
+		return accountrefmap.Table{}
+	}
+	table, err := accountrefmap.Load(ctx, handler.aiHomeDir)
+	if err != nil {
+		return accountrefmap.Table{}
+	}
+	return table
+}
+
 // toView 把应用层视图转成稳定的 JSON 形状。
-func toView(view rulesapp.AccountView) accountRulesView {
+func toView(view rulesapp.AccountView, refTable accountrefmap.Table) accountRulesView {
+	nodeRef := refTable.NodeRef(view.AccountRef)
+	if nodeRef == "" {
+		nodeRef = view.AccountRef
+	}
 	return accountRulesView{
 		AccountRef:     view.AccountRef,
+		NodeAccountRef: nodeRef,
 		Provider:       view.Provider,
 		Source:         string(view.Source),
 		GroupIDs:       nonNilStrings(view.GroupIDs),
@@ -192,15 +488,28 @@ func toView(view rulesapp.AccountView) accountRulesView {
 }
 
 func decodePayload(response http.ResponseWriter, request *http.Request) (accountRulesPayload, bool) {
+	if request.Body == nil || request.Body == http.NoBody {
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体无效")
+		return accountRulesPayload{}, false
+	}
 	body, err := io.ReadAll(io.LimitReader(request.Body, maxBodyBytes+1))
 	if err != nil || int64(len(body)) > maxBodyBytes {
 		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体无效")
 		return accountRulesPayload{}, false
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体不是合法 JSON")
+		return accountRulesPayload{}, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
 	decoder.DisallowUnknownFields()
 	var payload accountRulesPayload
 	if err := decoder.Decode(&payload); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体不是合法 JSON")
+		return accountRulesPayload{}, false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体不是合法 JSON")
 		return accountRulesPayload{}, false
 	}

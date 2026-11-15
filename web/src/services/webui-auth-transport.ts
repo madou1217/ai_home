@@ -162,6 +162,17 @@ class AuthorizedWebUiEventSource extends EventTarget {
   private abortController: AbortController | null = null;
   private reconnectTimer: number | null = null;
   private closed = false;
+  private readPaused = false;
+  private resumeReader: (() => void) | null = null;
+
+  setReadPaused(paused: boolean) {
+    this.readPaused = paused;
+    if (!paused) { this.resumeReader?.(); this.resumeReader = null; }
+  }
+
+  private waitForReader() {
+    return this.readPaused && !this.closed ? new Promise<void>((resolve) => { this.resumeReader = resolve; }) : Promise.resolve();
+  }
 
   constructor(url: string) {
     super();
@@ -171,6 +182,7 @@ class AuthorizedWebUiEventSource extends EventTarget {
 
   close() {
     this.closed = true;
+    this.setReadPaused(false);
     this.readyState = EventSource.CLOSED;
     this.abortController?.abort();
     this.abortController = null;
@@ -224,6 +236,8 @@ class AuthorizedWebUiEventSource extends EventTarget {
       const decoder = new TextDecoder();
       let buffer = '';
       while (!this.closed) {
+        if (this.readPaused) await this.waitForReader();
+        if (this.closed) break;
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -232,6 +246,8 @@ class AuthorizedWebUiEventSource extends EventTarget {
           const event = parseSseMessage(buffer.slice(0, boundary.index));
           buffer = buffer.slice(boundary.index + boundary.length);
           if (event) this.emitMessage(event);
+          if (this.readPaused) await this.waitForReader();
+          if (this.closed) return;
           boundary = findSseBoundary(buffer);
         }
       }

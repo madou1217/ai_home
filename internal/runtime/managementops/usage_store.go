@@ -19,6 +19,7 @@ import (
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	_ "modernc.org/sqlite"
@@ -206,6 +207,12 @@ func NewUsageStore(ctx context.Context, dbPath string, providerIDs []string, now
 	cleaned := strings.TrimSpace(dbPath)
 	if cleaned == "" {
 		return nil, fmt.Errorf("app-state 数据库路径不能为空")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := businessdb.CheckReady(ctx, cleaned); err != nil {
+		return nil, err
 	}
 	if dir := filepath.Dir(cleaned); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

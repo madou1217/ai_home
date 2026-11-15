@@ -140,6 +140,7 @@ func (fn HostGrantFunc) RevokeGrant(
 
 // HostProjection 汇总宿主投影回调；未注入的能力返回 nil，由 Handler 显式 501。
 type HostProjection struct {
+	Transaction   HostDefaultTransaction
 	SelectAccount HostSelectorFunc
 	LandGateway   HostGatewayFunc
 	RevokeGrant   HostGrantFunc
@@ -249,6 +250,7 @@ func BuildDependencies(
 		AIHomeDir:    aiHomeDir,
 		Catalog:      catalog,
 		Defaults:     NewProviderDefaultsAdapter(defaults),
+		Transaction:  projection.Transaction,
 		HostSelector: projection.Selector(),
 		HostGate:     projection.Gateway(),
 		HostGrant:    projection.GrantRevoker(),

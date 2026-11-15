@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"net/http"
 	"os"
@@ -44,6 +45,9 @@ func OpenDatabase(ctx context.Context, dbPath string, clock func() int64) (*Data
 	}
 	if clock == nil {
 		return nil, NewError("chat_runtime_clock_required", http.StatusInternalServerError, nil)
+	}
+	if err := businessdb.CheckReady(ctx, trimmed); err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(trimmed), 0o700); err != nil {
 		return nil, &Error{

@@ -1,0 +1,679 @@
+{
+  "at": "2026-11-14T17:32:20.479Z",
+  "boundary": "real Go application command builder invokes installed official CLI with --help only; Node builder parity; not a real resume/fork of existing conversation, no inference",
+  "rows": [
+    {
+      "args": [
+        "resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 4289,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "codex",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "resume",
+        "--help"
+      ],
+      "bytes": 4289,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "codex",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "fork",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 4155,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "codex",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "fork",
+        "--help"
+      ],
+      "bytes": 4155,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "codex",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 4134,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "gemini",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "latest",
+        "--help"
+      ],
+      "bytes": 4134,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "gemini",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "gemini",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "gemini",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 22494,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "claude",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "bytes": 22494,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "claude",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 22494,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "claude",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 22494,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "claude",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--conversation",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 3319,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "agy",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "bytes": 3319,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "agy",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "agy",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "agy",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--session",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 2323,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "opencode",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "bytes": 2323,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "opencode",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--session",
+        "aih-metadata-audit-no-turn",
+        "--fork",
+        "--help"
+      ],
+      "bytes": 2323,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "opencode",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork",
+        "--help"
+      ],
+      "bytes": 2323,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "opencode",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 5161,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "grok",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "bytes": 5161,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "grok",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 5161,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "grok",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 5161,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "grok",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 6109,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "qoder",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "bytes": 6109,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "qoder",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 6109,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "qoder",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 6109,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "qoder",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "qodercn",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "qodercn",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--fork-session",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "qodercn",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork-session",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "qodercn",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "kimi",
+      "rejection": "native session verb unsupported",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "kimi",
+      "rejection": "native session verb unsupported",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "kimi",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "kimi",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "kiro",
+      "rejection": "native session verb unsupported",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "kiro",
+      "rejection": "native session verb unsupported",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "kiro",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "kiro",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "zcode",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "zcode",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "zcode",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "zcode",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 13276,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "codebuddy",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "bytes": 13276,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "codebuddy",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 13276,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "codebuddy",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork-session",
+        "--help"
+      ],
+      "bytes": 13276,
+      "helpPresent": true,
+      "identityPresent": false,
+      "nativeExit": 0,
+      "provider": "codebuddy",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "codebuddycn",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "codebuddycn",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--fork-session",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "codebuddycn",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--continue",
+        "--fork-session",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "codebuddycn",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "workbuddy",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "workbuddy",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "workbuddy",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "workbuddy",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--resume",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "identityPresent": true,
+      "nativeVerified": false,
+      "provider": "workbuddycn",
+      "verb": "resume"
+    },
+    {
+      "args": [
+        "--continue",
+        "--help"
+      ],
+      "identityPresent": false,
+      "nativeVerified": false,
+      "provider": "workbuddycn",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "workbuddycn",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "workbuddycn",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": [
+        "--id",
+        "aih-metadata-audit-no-turn",
+        "--help"
+      ],
+      "bytes": 3993,
+      "helpPresent": true,
+      "identityPresent": true,
+      "nativeExit": 0,
+      "provider": "cline",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "cline",
+      "rejection": "native session identity required",
+      "verb": "resume"
+    },
+    {
+      "args": null,
+      "identityPresent": true,
+      "provider": "cline",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    },
+    {
+      "args": null,
+      "identityPresent": false,
+      "provider": "cline",
+      "rejection": "native session verb unsupported",
+      "verb": "fork"
+    }
+  ],
+  "mismatches": []
+}

@@ -1,0 +1,234 @@
+{
+  "at": "2026-11-14T18:38:42.743Z",
+  "boundary": "current files only; not runtime verification; some unchanged shell files included for exact generator context",
+  "files": [
+    {
+      "file": "lib/cli/commands/shell-router.js",
+      "sha256": "e74783b74aa38718e033e202ce6be7d0f93a8e875f9899215556366e109c4b1f"
+    },
+    {
+      "file": "lib/cli/complete/command-tree.js",
+      "sha256": "30b4f344d389545dd31f2782baa0de8a10911a92a302e535c2400140250542c2"
+    },
+    {
+      "file": "lib/cli/complete/candidates.js",
+      "sha256": "cda25a1816f3eeb54ec7054c5c22e81f574d8fe2d5eff8981b77fccb0bf3ca8e"
+    },
+    {
+      "file": "lib/cli/complete/index.js",
+      "sha256": "bebddc2e825f1b1a432995237567ff096b89b48c5bb143776123c977907622b6"
+    },
+    {
+      "file": "lib/cli/complete/resolve.js",
+      "sha256": "58350994c90a57a111300b72642c9395dbacefbabda82e1207a012f3888248a6"
+    },
+    {
+      "file": "lib/cli/complete/typo.js",
+      "sha256": "1a95ef496d37c267d55947ee20166a2b409c184d6ebf00a0298dc561b1e7eb88"
+    },
+    {
+      "file": "lib/cli/complete/history-tail.js",
+      "sha256": "9f17177bf6bd0f1ab38125faccdcd4bc4c5b8c636b7467921aae37dd6180881d"
+    },
+    {
+      "file": "lib/cli/complete/option-values.js",
+      "sha256": "861b71627d39ec264969f346a72135ff46b56cdb16d7917ba2a9e2ec243b6c1f"
+    },
+    {
+      "file": "lib/cli/complete/server-config-candidates.js",
+      "sha256": "09016091ce942a970f5c869702c1c19617ac0e4878306d0ac274d7d3189655d4"
+    },
+    {
+      "file": "lib/cli/services/shell/rc-block.js",
+      "sha256": "ebdb330613386ddc7b794d5ede37fa5102cacc36aff5112de29b17184a21c286"
+    },
+    {
+      "file": "lib/cli/services/shell/rc-file.js",
+      "sha256": "2ad05d677dd2db12c488c627847e37092de920855ffb588feed27fdcd625b300"
+    },
+    {
+      "file": "lib/cli/services/shell/shell-integration.js",
+      "sha256": "74b806156df125442b8b46c97c2d34c20a65a810fd881b0fe4439c8defefdedc"
+    },
+    {
+      "file": "lib/cli/services/shell/shell-snippet.js",
+      "sha256": "0bce5d6b104a4160befef15ae61818a0f608fdba5bc959dd80a51b0749b80908"
+    },
+    {
+      "file": "lib/cli/services/shell/shell-syntax-check.js",
+      "sha256": "f5ee0bc532a10b8624a5556fa1cec2227ac59c249b158c79adf47f29f5220e58"
+    },
+    {
+      "file": "lib/cli/services/shell/snippet-bash.js",
+      "sha256": "2a65385aa299cdbe96699da4ec30d543108029455bbf2a089a9160e609130e98"
+    },
+    {
+      "file": "lib/cli/services/shell/snippet-fish.js",
+      "sha256": "d7901f450bab0e691b3990dc4b6a745a456169b9c5e6c8ffd4b7602fbca29b1a"
+    },
+    {
+      "file": "lib/cli/services/shell/snippet-powershell.js",
+      "sha256": "99e6a2faa886c4d5a085687805bf63d16b681fdd7cdc4ddc791819130fe9329c"
+    },
+    {
+      "file": "lib/cli/services/shell/snippet-settings.js",
+      "sha256": "0f53092446e76a42391755fa906a97dad8e9a8c863446b7240580ba0a388460b"
+    },
+    {
+      "file": "lib/cli/services/shell/snippet-zsh.js",
+      "sha256": "5c3628e400c5b21014699991b8e9920febee404fd0182463f7977fb0a4d2ee10"
+    },
+    {
+      "file": "lib/cli/services/ai-cli/native-escape.js",
+      "sha256": "72268e37c62611af6b8d48c4470a51d3710123c270cd4e4524783711ff12041a"
+    },
+    {
+      "file": "lib/cli/services/ai-cli/session-control-args.js",
+      "sha256": "08b6522e0890800303efb728e42779cc80b2ffc3b8ac435129a775cec7d6e68e"
+    },
+    {
+      "file": "lib/runtime/provider-session-command.js",
+      "sha256": "911c664238bd7575774b3958899742048dc74be166b240b4cebd9546e50e131a"
+    },
+    {
+      "file": "lib/runtime/provider-resume.js",
+      "sha256": "0c8e86817a035a6b011dfd86e2057812081b388edff8177d1dc39a8f6934d4ba"
+    },
+    {
+      "file": "application/providerlaunch/session_verb.go",
+      "sha256": "cad784a0657b581a2cbb7cb61745d58ea60d99cb9d4e8e7f138420c3ae44344d"
+    },
+    {
+      "file": "application/providerlaunch/intent.go",
+      "sha256": "f72ae96d0ce9efde6067dcc707c3157fa592c937d7b5a692f73c16364db7d708"
+    },
+    {
+      "file": "cmd/aih/resume_account.go",
+      "sha256": "dc4d62fe6955d195cdadd397e8b8a8eb3d90bc33408666fc7a64f825cf077341"
+    },
+    {
+      "file": "core/providers/session_command.go",
+      "sha256": "e9d98eed53528af001d55851bed60d3bb55cdec29619dc3287192fb2c94f5542"
+    },
+    {
+      "file": "lib/cli/services/pty/pipe-lifecycle.js",
+      "sha256": "7217a28877e5529c0414d8539700bebdee2b51f62076824795e8cf2b277ceebf"
+    },
+    {
+      "file": "core/providers/native.go",
+      "sha256": "aaa2083982ecd3913b9c808a9326cb915b6318983b79b8565e5808f6538908d8"
+    },
+    {
+      "file": "core/providers/model.go",
+      "sha256": "64368d001c00b26023d92bfc16ef5236ca4590ec07b4c5253fea7e2e52690532"
+    },
+    {
+      "file": "core/providers/catalog.go",
+      "sha256": "64a0a2717f5105b68d6d93249c2f63f552aaeca0672c60d44603b74c4fcd7dc0"
+    },
+    {
+      "file": "core/providers/validate.go",
+      "sha256": "5e0407d64825d8b8743ac98717e112f8ccb41d51205e6a0db387571fedaa7002"
+    },
+    {
+      "file": "core/providers/builtins.go",
+      "sha256": "6a5c7dac9b5c0b309149cca835a7850098802dfb8011273c497d7c563f72764e"
+    },
+    {
+      "file": "contracts/providers/manifest.json",
+      "sha256": "8c541b9f5077e46b8d894ece864d0602898ac158e28d8544069a0839fa752417"
+    },
+    {
+      "file": "cmd/aih/session_verb_help.go",
+      "sha256": "7efd610f18744152a413524f9acbd22d48b59e1bb1995c1d6a6f44fb68ff3771"
+    },
+    {
+      "file": "application/accountcredentials/resolver.go",
+      "sha256": "fecadf8b5c31a2cd6dd406a40108191054d4dfad1d8ec0b77b3f6fef6383fd57"
+    },
+    {
+      "file": "application/inferencegateway/coordinator.go",
+      "sha256": "6ccd752e690f5bea36784114b298b551b2332d8cd1f0b64c998ce6b0e8a3a794"
+    },
+    {
+      "file": "internal/host/inferenceruntime/runtime.go",
+      "sha256": "65857b47c797bfc66d1ae0753c29d94182009986171b255358f62a9efbfce975"
+    },
+    {
+      "file": "internal/host/aihserver/inference.go",
+      "sha256": "e889f0e144de90df3637f31971d3d3bdcbffa07546d79ee6731ab0a25ead8eef"
+    },
+    {
+      "file": "internal/host/aihserver/composition.go",
+      "sha256": "c181faa66c398a71513618c38d3186ac4c79a6b50402dd053a55008473cd8425"
+    },
+    {
+      "file": "application/accounts/initial_state.go",
+      "sha256": "d32ec4a4f4600731ae7a879081458f08a7eb91e45919e6d7c85caccc78c405ee"
+    },
+    {
+      "file": "application/accounts/registrar.go",
+      "sha256": "4da5b5359c5b365135303752f75e1890e86fbf708c29ec80cc72123bd82a636e"
+    },
+    {
+      "file": "application/accounts/account_import.go",
+      "sha256": "2ebc519e5be545f58afe82b806a9bd57f080690390e3e227463b34e877320027"
+    },
+    {
+      "file": "application/accounts/model_refresh_lifecycle.go",
+      "sha256": "a0700d9be4b91d7108fd0d08ea25c4729e3350139152f2fcbe917524d2aca876"
+    },
+    {
+      "file": "application/accountusage/lifecycle.go",
+      "sha256": "a0cf633c1dfbbf08a2045d0566fcaf078528f16bb828a4e2e52fab0c4fc66f12"
+    },
+    {
+      "file": "internal/adapters/accounts/sqliteaccount/registration_store.go",
+      "sha256": "0b0dfbaa3c66710447b1bda7ef206d189ca71287f437b89324ecea6b80daa4bc"
+    },
+    {
+      "file": "internal/transport/http/accountsapi/aih_accounts_import.go",
+      "sha256": "ce58ae54098dd901c4f4969d8e71afac48853e32e75a4fd071b7b6870ac2e7fc"
+    },
+    {
+      "file": "scripts/package/bundle.js",
+      "sha256": "de3d6e1fe3476dfd18a658d45cd9735ee5f2a5b1a1db2e7c434ea38d47dc987f"
+    },
+    {
+      "file": "scripts/package/build-release.js",
+      "sha256": "9fcc1b40af04070ab5ba197acf67c5c4d0122fcad1768aad93a55964ae157421"
+    },
+    {
+      "file": "scripts/package/native-components.js",
+      "sha256": "15fcf46d11921db1867137609ae95f3fb1bc3281751883b2350441580811efde"
+    },
+    {
+      "file": "scripts/package/installers/posix.sh",
+      "sha256": "1d3d90d90cbe2c509b6dd15f4fa99960ed26ba5cb2a9b52e339e0203bfb77cfb"
+    },
+    {
+      "file": "scripts/package/installers/windows.ps1",
+      "sha256": "2677178d2e8d2c3cd39c3831c97db3346d344c7aa26dc3fbfb0e8da98c3f2dcd"
+    },
+    {
+      "file": "lib/runtime/sftp-rename.js",
+      "sha256": "a2653a5ef18ad9edfab46cf7461c5e0d5a503417cdf2d59c12488f3b15c83ef4"
+    },
+    {
+      "file": "lib/account/backup/strategies/ssh.js",
+      "sha256": "ad4f619f03035399906ea355a070ad532780b592e96e17848793b0820ce361a6"
+    },
+    {
+      "file": "lib/remote-workspace/ops/file-ops-sftp.js",
+      "sha256": "ab95335dc7bb6642aacb54aff89ce76de50431b3ec24dc580cf828d4a10e3db0"
+    },
+    {
+      "file": "internal/runtime/remotebackup/sftp_client.go",
+      "sha256": "745058b78344be4855a7587a075d017146217cd713275852caefcd3baadeeffb"
+    },
+    {
+      "file": "internal/runtime/remotebackup/strategy_ssh.go",
+      "sha256": "74e499d8f5e8a693b6adbd878196980c918a4766194d6845172fe7bef8895426"
+    }
+  ]
+}

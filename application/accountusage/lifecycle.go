@@ -83,18 +83,25 @@ func (decorator *RegistrationDecorator) Register(
 	credential accountapp.Credential,
 	profile accountapp.PublicProfile,
 ) (accountcore.Account, error) {
+	return decorator.RegisterWithInitialState(ctx, credential, profile, accountapp.InitialAccountState{})
+}
+
+func (decorator *RegistrationDecorator) RegisterWithInitialState(ctx context.Context, credential accountapp.Credential, profile accountapp.PublicProfile, state accountapp.InitialAccountState) (accountcore.Account, error) {
 	if decorator == nil ||
 		decorator.next == nil ||
 		decorator.scheduler == nil ||
 		ctx == nil {
 		return accountcore.Account{}, ErrInvalidRequest
 	}
-	account, err := decorator.next.Register(ctx, credential, profile)
+	account, err := accountapp.RegisterInitialAccount(ctx, decorator.next, credential, profile, state)
 	if err != nil {
 		return accountcore.Account{}, err
 	}
 	if !account.IsValid() {
 		return accountcore.Account{}, ErrInvalidSnapshot
+	}
+	if !account.Enabled() {
+		return account, nil
 	}
 	// 入队失败不能把已经提交的账号事务伪装成失败。
 	_ = decorator.scheduler.ScheduleUsageRefresh(
@@ -253,6 +260,9 @@ func rescheduleCommittedUsageRefresh(
 		return accountcore.Account{}, ErrInvalidSnapshot
 	}
 	scheduler.ForgetAccount(expectedRef)
+	if !account.Enabled() {
+		return account, nil
+	}
 	// 入队失败不能把已经提交的账号事务伪装成失败。
 	_ = scheduler.ScheduleUsageRefresh(
 		context.WithoutCancel(ctx),

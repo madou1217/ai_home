@@ -763,7 +763,7 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 
 	// 监听 app-state.db 变更（手动打开/移除项目、远程工作区增删）。
 	if handler.aiHomeDir != "" {
-		addDatabase(filepath.Join(handler.aiHomeDir, "app-state.db"))
+		addDatabase(filepath.Join(handler.aiHomeDir, "aih.db"))
 	}
 
 	// 运行态事件源：Node 的 hook 状态目录。目录尚未创建时先盯住 run/ 发现它。

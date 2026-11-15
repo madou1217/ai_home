@@ -128,6 +128,12 @@ func (handler *Handler) importAihAccount(
 		outcome.Reason = "provider_missing"
 		return outcome
 	}
+	status := strings.ToLower(strings.TrimSpace(entry.Status))
+	if status != "" && status != "up" && status != "down" {
+		outcome.Status = "failed"
+		outcome.Reason = "invalid_initial_account_status"
+		return outcome
+	}
 	credential, profile, err := handler.importCredentialForEntry(provider, entry)
 	if err != nil {
 		outcome.Status = "failed"
@@ -139,7 +145,18 @@ func (handler *Handler) importAihAccount(
 		outcome.Reason = "credential_shape_unsupported"
 		return outcome
 	}
-	result, err := handler.importer.Import(ctx, credential, profile)
+	var result accountapp.AccountImportResult
+	if status == "down" {
+		port, ok := handler.importer.(accountapp.InitialStateImporter)
+		if !ok {
+			outcome.Status = "failed"
+			outcome.Reason = "initial_account_state_unsupported"
+			return outcome
+		}
+		result, err = port.ImportWithInitialState(ctx, credential, profile, accountapp.InitialAccountState{Disabled: true})
+	} else {
+		result, err = handler.importer.Import(ctx, credential, profile)
+	}
 	if err != nil {
 		outcome.Status = "failed"
 		outcome.Reason = importReason(err)
@@ -230,6 +247,8 @@ func importReason(err error) string {
 		return "account_conflict"
 	case errors.Is(err, accountapp.ErrInvalidAccountImport):
 		return "invalid_account_import"
+	case errors.Is(err, accountapp.ErrInitialAccountStateUnsupported):
+		return "initial_account_state_unsupported"
 	default:
 		return "import_failed"
 	}

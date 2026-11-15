@@ -41,6 +41,10 @@ var (
 	ErrInvalidRefreshResult = errors.New("账号 OAuth 刷新结果无效")
 	// ErrCredentialNotRefreshable 表示静态凭据或长效 Token 没有官方刷新协议。
 	ErrCredentialNotRefreshable = errors.New("账号凭据不可刷新")
+	// ErrCredentialIdentityChanged means an authorized refresh committed a re-key.
+	// Consumers holding an old routing snapshot must reacquire it, not use the
+	// new binding under the old identity or relax account matching.
+	ErrCredentialIdentityChanged = errors.New("账号凭据身份已迁移，需要重新读取候选")
 )
 
 // RefreshDelegationExempt 表示该策略即使宿主声明独占刷新，也必须由本进程刷新。
@@ -242,6 +246,9 @@ func (resolver *Resolver) ResolveObservedCredentialBinding(
 	resolution, err := resolver.resolve(ctx, accountRef)
 	if err != nil {
 		return accountapp.CredentialBinding{}, CredentialObservation{}, err
+	}
+	if resolution.snapshot.AccountRef() != accountRef {
+		return accountapp.CredentialBinding{}, CredentialObservation{}, ErrCredentialIdentityChanged
 	}
 	observation, err := NewCredentialObservation(resolution.snapshot)
 	if err != nil {

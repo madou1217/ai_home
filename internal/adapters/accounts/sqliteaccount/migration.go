@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 )
 
 const (
@@ -16,6 +18,7 @@ const (
 )
 
 var expectedSchemaColumns = map[string][]string{
+	"account_default_ownership": {"provider_id", "owner", "expected_ref", "operation_id", "updated_at_ms"},
 	"accounts": {
 		"account_ref",
 		"provider_id",
@@ -331,6 +334,7 @@ var forwardMigrations = []string{
 	SchemaV28,
 	SchemaV29,
 	SchemaV30,
+	SchemaV31,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
@@ -365,8 +369,30 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		}
 		return commitMigration(ctx, connection)
 	}
-	if applicationID != 0 || schemaVersion != 0 || objectCount != 0 {
+	if applicationID != 0 || schemaVersion != 0 {
 		return ErrIncompatibleDatabase
+	}
+	if objectCount != 0 {
+		rows, err := connection.QueryContext(ctx, "SELECT type,tbl_name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var kind, table string
+			if err := rows.Scan(&kind, &table); err != nil {
+				return err
+			}
+			if (kind != "table" && kind != "index") || !businessdb.IsCompatibilityTable(table) {
+				return ErrIncompatibleDatabase
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
 	}
 	for version, migration := range forwardMigrations {
 		if _, err := connection.ExecContext(ctx, migration); err != nil {

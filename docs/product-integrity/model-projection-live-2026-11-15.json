@@ -1,0 +1,23 @@
+{
+  "at": "2026-11-14T17:20:39.733Z",
+  "boundary": "actual compiled server in empty isolated HOME, observed public metadata copied via real management endpoint; no credentials/account import/inference",
+  "binary": "/tmp/aih-product-model-server-20261115",
+  "sha256": "83d31735704189c57d750e365f9c0592bd50cc8837911e2976d201cdfdce3b8c",
+  "putStatus": 200,
+  "openaiStatus": 200,
+  "codexStatus": 200,
+  "openaiEfforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "codexEfforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ]
+}

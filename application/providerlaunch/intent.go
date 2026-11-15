@@ -61,12 +61,30 @@ func ParseLaunchIntent(
 		}
 	}
 
+	// Only prefix tokens can select a provider/account/mode. A numeric token in
+	// the native suffix is prompt text, never an account selection.
+	var suffix []string
+	for index, arg := range arguments {
+		if arg == "--" {
+			suffix = arguments[index+1:]
+			arguments = arguments[:index]
+			break
+		}
+	}
+	// This typed launch API accepts numeric selectors only. Never downgrade a
+	// persistent accountRef to unpinned prompt text; callers must resolve it first.
+	if len(arguments) > 0 && strings.HasPrefix(arguments[0], "acct_") {
+		return LaunchIntent{}, ErrInvalidLaunchIntent
+	}
 	mode := LaunchModeGatewayRelay
 	relayProviderID := providerID
 	var cliAccountID accountcore.CLIAccountID
 	forwardArguments := arguments
 	if len(arguments) > 0 && arguments[0] == "relay" {
 		forwardArguments = arguments[1:]
+		if len(forwardArguments) > 0 && strings.HasPrefix(forwardArguments[0], "acct_") {
+			return LaunchIntent{}, ErrInvalidLaunchIntent
+		}
 		if len(forwardArguments) > 0 && isCanonicalProviderToken(catalog, forwardArguments[0]) {
 			relayProviderID = forwardArguments[0]
 			forwardArguments = forwardArguments[1:]
@@ -95,6 +113,7 @@ func ParseLaunchIntent(
 		forwardArguments = arguments[1:]
 	}
 
+	forwardArguments = append(append([]string(nil), forwardArguments...), suffix...)
 	intent := LaunchIntent{
 		mode:             mode,
 		clientProviderID: providerID,

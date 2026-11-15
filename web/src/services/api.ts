@@ -2258,14 +2258,30 @@ async function terminalPost(path: string, body: unknown): Promise<any> {
   }
 }
 
+export interface TerminalDirectorySession {
+  sessionKey: string;
+  termId?: string;
+  label: string;
+  provider?: string;
+  cwd: string;
+  nativeSessionId?: string;
+  source: 'native' | 'web';
+  status: 'running' | 'exited';
+}
+
 export const terminalAPI = {
+  listSessions: async (): Promise<{ ok: boolean; sessions: TerminalDirectorySession[] }> => {
+    const response = await api.get('/webui/terminal/sessions');
+    return response.data;
+  },
+  focus: (termId: string, active: boolean) => terminalPost('focus', { termId, active }),
   open: async (
     cols: number,
     rows: number,
     muxId?: string,
     cwd?: string,
     sessionKey?: string
-  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; error?: string }> =>
+  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; cols?: number; rows?: number; error?: string }> =>
     terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
   input: (termId: string, data: string) => terminalPost('input', { termId, data }),
   pasteImage: async (sessionKey: string, cwd: string | undefined, dataUrl: string): Promise<{

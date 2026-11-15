@@ -46,8 +46,12 @@ func (handler *Handler) resolveEndpoint(request *http.Request) endpointResolutio
 	base := handler.requestBaseURL(request)
 	parsed, _ := url.Parse(base)
 	host := ""
+	scheme := "http"
 	if parsed != nil {
 		host = strings.TrimSpace(parsed.Host)
+		if strings.EqualFold(parsed.Scheme, "https") {
+			scheme = "https"
+		}
 	}
 	port := validPort(request.URL.Query().Get("port"))
 	if port == 0 {
@@ -64,7 +68,7 @@ func (handler *Handler) resolveEndpoint(request *http.Request) endpointResolutio
 		return endpointResolution{Endpoint: loopback, Source: "loopback"}
 	}
 	if isLoopbackHostName(host) {
-		browser := "http://" + host
+		browser := scheme + "://" + host
 		return endpointResolution{Endpoint: browser, Source: "request", BrowserEndpoint: browser, RequestIsLoopback: true}
 	}
 	return endpointResolution{Endpoint: loopback, Source: "loopback", BrowserEndpoint: base}
@@ -73,7 +77,8 @@ func (handler *Handler) resolveEndpoint(request *http.Request) endpointResolutio
 // requestBaseURL 取浏览器可见的 base URL。
 //
 // 当宿主未注入 PublicBaseURL 且请求带了 Node 透传的 host/port 查询参数时，
-// 按参数里的原始 Host 还原浏览器地址（避免落成 Node→Go 内部回环端口）。
+// 按参数里的原始 Host 还原浏览器地址（避免落成 Node→Go 内部回环端口）；
+// 浏览器直连 /v0/webui/control-plane/bootstrap 时无查询参数，直接按请求自身的 scheme+Host 推导。
 func (handler *Handler) requestBaseURL(request *http.Request) string {
 	if handler.publicBaseURL != nil {
 		if value := strings.TrimRight(strings.TrimSpace(handler.publicBaseURL(request)), "/"); value != "" {
@@ -84,7 +89,13 @@ func (handler *Handler) requestBaseURL(request *http.Request) string {
 	if query.Has("host") || query.Has("port") {
 		host := sanitizeQueryHost(query.Get("host"))
 		if host == "" {
-			return ""
+			// 仅传了空 host 且未传 port 时退回请求自身 Host；带了 port 时保持为空以走回环端口兜底。
+			if !query.Has("port") {
+				host = sanitizeQueryHost(request.Host)
+			}
+			if host == "" {
+				return ""
+			}
 		}
 		scheme := "http"
 		if strings.EqualFold(strings.TrimSpace(query.Get("proto")), "https") {
@@ -92,7 +103,7 @@ func (handler *Handler) requestBaseURL(request *http.Request) string {
 		}
 		return scheme + "://" + host
 	}
-	host := strings.TrimSpace(request.Host)
+	host := sanitizeQueryHost(request.Host)
 	if host == "" {
 		return ""
 	}
@@ -103,11 +114,14 @@ func (handler *Handler) requestBaseURL(request *http.Request) string {
 	return scheme + "://" + host
 }
 
-// sanitizeQueryHost 校验查询参数传入的 Host[:Port]，拒绝路径、userinfo、空白与控制字符。
+// sanitizeQueryHost 校验 Host[:Port]，拒绝路径、userinfo、空白与控制字符，并兼容裸 ::1。
 func sanitizeQueryHost(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || strings.ContainsAny(trimmed, "/\\@?# \t\r\n") {
 		return ""
+	}
+	if trimmed == "::1" {
+		return "[::1]"
 	}
 	for _, r := range trimmed {
 		if r < 0x20 || r == 0x7f {
@@ -171,12 +185,26 @@ func isLoopbackHostName(value string) bool {
 func stripHostPort(host string) string {
 	if strings.HasPrefix(host, "[") {
 		if index := strings.Index(host, "]"); index >= 0 {
+			rest := host[index+1:]
+			if rest != "" {
+				if rest[0] != ':' || len(rest) < 2 {
+					return ""
+				}
+				for _, char := range rest[1:] {
+					if char < '0' || char > '9' {
+						return ""
+					}
+				}
+			}
 			return host[:index+1]
 		}
 		return host
 	}
 	index := strings.LastIndex(host, ":")
 	if index < 0 {
+		return host
+	}
+	if index+1 >= len(host) {
 		return host
 	}
 	for _, char := range host[index+1:] {

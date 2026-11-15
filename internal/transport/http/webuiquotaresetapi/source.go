@@ -17,7 +17,7 @@ var ErrInvalidDependencies = errors.New("额度重置历史接口依赖无效")
 // ErrInvalidSource 表示没有可用的数据根目录。
 var ErrInvalidSource = errors.New("额度重置历史数据源无效")
 
-// Source 只读 app-state.db 的 account_quota_reset_events。
+// Source 只读 app-state.db 的 compat_account_quota_reset_events。
 type Source struct {
 	databasePath string
 }
@@ -69,7 +69,7 @@ func (source *Source) Read(
 		       previous_expected_reset_at_ms, exhausted_at_ms,
 		       occurred_at_ms, detected_at_ms, early_duration_ms,
 		       previous_plan_type, current_plan_type
-		FROM account_quota_reset_events
+		FROM compat_account_quota_reset_events
 		WHERE account_ref = ?`
 	arguments := []any{reference}
 	if beforeID > 0 {

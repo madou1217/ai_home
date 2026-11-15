@@ -572,7 +572,7 @@ func LoadCodebuddyAccountIdentities(ctx context.Context, aiHomeDir string) []Cod
 			rows, qErr := db.QueryContext(ctx, `
 				SELECT r.provider, r.account_ref, COALESCE(c.native_auth_json, '')
 				FROM account_refs r
-				LEFT JOIN account_credentials c ON c.account_ref = r.account_ref
+				LEFT JOIN compat_account_credentials c ON c.account_ref = r.account_ref
 				WHERE r.provider IN ('codebuddy','codebuddycn','workbuddy','workbuddycn')
 			`)
 			if qErr == nil {

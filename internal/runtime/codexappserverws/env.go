@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
+	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 )
 
 const (
@@ -64,6 +65,18 @@ func BuildSpawnEnv(ctx context.Context, opts SpawnEnvOptions) ([]string, error) 
 		baseEnv = os.Environ()
 	}
 	envMap := envSliceToMap(baseEnv)
+	delete(envMap, "AIH_CODEX_DEFAULT_OPERATION")
+
+	checkHome := envMap["CODEX_HOME"]
+	if opts.HostHomeDir != "" {
+		checkHome = filepath.Join(opts.HostHomeDir, ".codex")
+	}
+	if checkHome == "" && envMap["HOME"] != "" {
+		checkHome = filepath.Join(envMap["HOME"], ".codex")
+	}
+	if err := codexpreferences.CheckHostReady(checkHome); err != nil {
+		return nil, err
+	}
 
 	if err := applyCodexDefaultCliEnv(ctx, envMap, opts); err != nil {
 		return nil, err
@@ -90,6 +103,22 @@ func BuildSpawnEnv(ctx context.Context, opts SpawnEnvOptions) ([]string, error) 
 
 	envMap[codexhooks.CodexAppServerPassthroughEnv] = "1"
 	SetCodexFlagInEnv(envMap, "remoteProxy", "1")
+	if err := codexpreferences.CheckHostReady(checkHome); err != nil {
+		return nil, err
+	}
+	if receipt := envMap["AIH_CODEX_DEFAULT_OPERATION"]; receipt != "" {
+		if reader, ok := opts.AccountStore.(interface {
+			ReadCodexDefaultSelection(context.Context) (bool, bool, accountcore.AccountRef, string, error)
+		}); ok {
+			owned, _, _, current, err := reader.ReadCodexDefaultSelection(ctx)
+			if !owned {
+				current = "legacy"
+			}
+			if err != nil || current != receipt {
+				return nil, fmt.Errorf("codex_default_changed_retry")
+			}
+		}
+	}
 	return envMapToSlice(envMap), nil
 }
 
@@ -106,6 +135,33 @@ func applyCodexDefaultCliEnv(ctx context.Context, envMap map[string]string, opts
 	dbPath, err := appstate.DatabasePath(aiHomeDir)
 	if err != nil {
 		return err
+	}
+
+	if reader, ok := opts.AccountStore.(interface {
+		ReadCodexDefaultSelection(context.Context) (bool, bool, accountcore.AccountRef, string, error)
+	}); ok {
+		owned, gateway, ref, operation, err := reader.ReadCodexDefaultSelection(ctx)
+		if err != nil {
+			return fmt.Errorf("codex_default_owner_unavailable")
+		}
+		envMap["AIH_CODEX_DEFAULT_OPERATION"] = "legacy"
+		if owned {
+			envMap["AIH_CODEX_DEFAULT_OPERATION"] = operation
+			if gateway {
+				cfg, err := readServerConfigFromAppState(ctx, dbPath)
+				if err != nil {
+					return err
+				}
+				applyGatewayConnectionEnv(envMap, cfg)
+				return nil
+			}
+			key, endpoint, ok := readGoStoreCodexCredential(ctx, opts.AccountStore, ref.String())
+			if !ok {
+				return fmt.Errorf("codex_default_credential_unavailable")
+			}
+			applyAccountCredentialEnv(envMap, key, endpoint)
+			return nil
+		}
 	}
 
 	if fileExistsRegular(dbPath) {
@@ -253,7 +309,7 @@ func readAppStateCodexCredential(ctx context.Context, dbPath string, accountRef 
 
 	const query = `
 		SELECT r.provider, c.env_json
-		FROM account_credentials c
+		FROM compat_account_credentials c
 		INNER JOIN account_refs r ON r.account_ref = c.account_ref
 		WHERE c.account_ref = ?
 		LIMIT 1`

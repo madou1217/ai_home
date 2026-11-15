@@ -1,0 +1,198 @@
+{
+  "at": "2026-11-14T16:38:32.007Z",
+  "boundary": "isolated actual CLI final current-source snapshot; not all-platform acceptance",
+  "list": [
+    {
+      "shell": "zsh",
+      "argv": [
+        "apply",
+        "--no-typo",
+        "--no-wrapper"
+      ],
+      "exit": 0,
+      "ok": true,
+      "changed": true,
+      "stderr": ""
+    },
+    {
+      "shell": "zsh",
+      "argv": [
+        "apply"
+      ],
+      "exit": 0,
+      "ok": true,
+      "changed": false,
+      "stderr": ""
+    },
+    {
+      "shell": "zsh",
+      "argv": [
+        "status"
+      ],
+      "exit": 0,
+      "ok": true,
+      "features": {
+        "completion": true,
+        "typo": false,
+        "wrapper": false
+      },
+      "upToDate": true,
+      "stderr": ""
+    },
+    {
+      "shell": "zsh",
+      "argv": [
+        "doctor"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "zsh",
+      "argv": [
+        "remove"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "zsh",
+      "argv": [
+        "remove"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "bash",
+      "argv": [
+        "apply",
+        "--no-typo",
+        "--no-wrapper"
+      ],
+      "exit": 0,
+      "ok": true,
+      "changed": true,
+      "stderr": ""
+    },
+    {
+      "shell": "bash",
+      "argv": [
+        "apply"
+      ],
+      "exit": 0,
+      "ok": true,
+      "changed": false,
+      "stderr": ""
+    },
+    {
+      "shell": "bash",
+      "argv": [
+        "status"
+      ],
+      "exit": 0,
+      "ok": true,
+      "features": {
+        "completion": true,
+        "typo": false,
+        "wrapper": false
+      },
+      "upToDate": true,
+      "stderr": ""
+    },
+    {
+      "shell": "bash",
+      "argv": [
+        "doctor"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "bash",
+      "argv": [
+        "remove"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "bash",
+      "argv": [
+        "remove"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "fish",
+      "argv": [
+        "apply",
+        "--no-typo",
+        "--no-wrapper"
+      ],
+      "exit": 0,
+      "ok": true,
+      "changed": true,
+      "stderr": ""
+    },
+    {
+      "shell": "fish",
+      "argv": [
+        "apply"
+      ],
+      "exit": 0,
+      "ok": true,
+      "changed": false,
+      "stderr": ""
+    },
+    {
+      "shell": "fish",
+      "argv": [
+        "status"
+      ],
+      "exit": 0,
+      "ok": true,
+      "features": {
+        "completion": true,
+        "typo": false,
+        "wrapper": false
+      },
+      "upToDate": true,
+      "stderr": ""
+    },
+    {
+      "shell": "fish",
+      "argv": [
+        "doctor"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "fish",
+      "argv": [
+        "remove"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    },
+    {
+      "shell": "fish",
+      "argv": [
+        "remove"
+      ],
+      "exit": 0,
+      "ok": true,
+      "stderr": ""
+    }
+  ]
+}

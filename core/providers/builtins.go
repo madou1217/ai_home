@@ -464,7 +464,9 @@ func builtinQoder() Definition {
 		// 不声明 NativeStore：aih 不读它的会话库（会话身份由用户/CLI 提供）。
 		NativeBoundary: &NativeCapability{
 			Sessions: NativeSessions{
-				Flags: []string{"--continue", "--resume", "--fork-session"},
+				Resume: &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--continue"}},
+				Fork:   &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}", "--fork-session"}, WithoutID: []string{"--continue", "--fork-session"}},
+				Flags:  []string{"--continue", "--resume", "--fork-session"},
 			},
 			// 权限（qodercli 1.1.74 的 --help 与内置设置项，2026-10-22 实测）：
 			//   --permission-mode <mode>  取值 default / accept_edits / auto / bypass_permissions / dont_ask
@@ -524,7 +526,9 @@ func builtinQoderCN() Definition {
 		// 与 qoder 同源（qoderclicn 1.1.72 实测同样支持 -c/--continue、-r/--resume、--fork-session）。
 		NativeBoundary: &NativeCapability{
 			Sessions: NativeSessions{
-				Flags: []string{"--continue", "--resume", "--fork-session"},
+				Resume: &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--continue"}},
+				Fork:   &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}", "--fork-session"}, WithoutID: []string{"--continue", "--fork-session"}},
+				Flags:  []string{"--continue", "--resume", "--fork-session"},
 			},
 			// 权限与 qoder 同源（qoderclicn 的 --help 实测同样的旗标与取值）。
 			Permissions: NativePermissions{

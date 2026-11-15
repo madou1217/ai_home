@@ -1,0 +1,73 @@
+{
+  "at": "2026-11-15T07:17:26.115Z",
+  "boundary": "real exported Go SSHBackupStrategy over own loopback OpenSSH, -race; native SFTP processes paused/resumed or server denied CLOSE; no mocks or tests",
+  "rows": [
+    {
+      "children": 1,
+      "errors": 0,
+      "phase": "16-connect"
+    },
+    {
+      "error": "<nil>",
+      "found": true,
+      "phase": "write-replace-read",
+      "value": "NEW"
+    },
+    {
+      "deadline": true,
+      "ms": 150,
+      "phase": "read-deadline"
+    },
+    {
+      "error": "<nil>",
+      "found": true,
+      "newChild": true,
+      "phase": "reconnect",
+      "value": "NEW"
+    },
+    {
+      "error": "<nil>",
+      "ms": 0,
+      "phase": "explicit-close"
+    },
+    {
+      "error": "EOF",
+      "phase": "read-unblocked"
+    },
+    {
+      "error": "sftp status 3: Permission denied",
+      "failed": true,
+      "oldRetained": true,
+      "phase": "close-denied"
+    },
+    {
+      "children": 1,
+      "failed": true,
+      "ms": 150,
+      "phase": "subsystem-timeout"
+    },
+    {
+      "deadline": true,
+      "ms": 500,
+      "phase": "background-bound"
+    },
+    {
+      "close": "<nil>",
+      "connectRejected": true,
+      "ms": 0,
+      "phase": "close-connecting"
+    },
+    {
+      "errors": 0,
+      "phase": "20-concurrent-roundtrip"
+    },
+    {
+      "error": "<nil>",
+      "found": true,
+      "lockAbsent": true,
+      "phase": "actual-v3-replace",
+      "readError": "<nil>",
+      "value": "SECOND"
+    }
+  ]
+}

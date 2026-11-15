@@ -95,10 +95,14 @@ func (decorator *RegistrationModelRefreshDecorator) Register(
 	credential Credential,
 	profile PublicProfile,
 ) (accountcore.Account, error) {
+	return decorator.RegisterWithInitialState(ctx, credential, profile, InitialAccountState{})
+}
+
+func (decorator *RegistrationModelRefreshDecorator) RegisterWithInitialState(ctx context.Context, credential Credential, profile PublicProfile, state InitialAccountState) (accountcore.Account, error) {
 	if decorator == nil || decorator.next == nil || decorator.scheduler == nil || ctx == nil {
 		return accountcore.Account{}, ErrInvalidModelRefreshLifecycleRequest
 	}
-	account, err := decorator.next.Register(ctx, credential, profile)
+	account, err := RegisterInitialAccount(ctx, decorator.next, credential, profile, state)
 	if err != nil {
 		return accountcore.Account{}, err
 	}
@@ -252,6 +256,9 @@ func scheduleCommittedAccountModelRefresh(
 ) (accountcore.Account, error) {
 	if !account.IsValid() || expectedRef.IsValid() && account.Ref() != expectedRef {
 		return accountcore.Account{}, ErrInvalidModelRefreshLifecycleResult
+	}
+	if !account.Enabled() {
+		return account, nil
 	}
 	// 入队失败不能把已经提交的账号事务伪装成失败。
 	_ = scheduler.ScheduleModelRefresh(

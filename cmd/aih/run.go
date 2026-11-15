@@ -91,6 +91,14 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "ss" || providerID == "sessions" {
 		return runGlobalSessions(ctx, arguments[1:], runtime)
 	}
+	// Preserve the native boundary before interpreting any provider action. The
+	// launch intent parses only the prefix and strips the marker at its boundary.
+	if aihcli.SupportsNativeCLI(providerID) && containsArgument(arguments[1:], "--") {
+		return runProviderLaunch(ctx, providerID, arguments[1:], runtime)
+	}
+	if writeSessionVerbHelp(providerID, arguments, runtime) {
+		return nil
+	}
 	// aih codex set-mobile|unset-mobile：Codex App 账号绑定（服务端写 hook state）。
 	if len(arguments) >= 2 && (arguments[1] == "set-mobile" || arguments[1] == "unset-mobile") {
 		return runProviderMobile(ctx, providerID, arguments[1:], runtime)
@@ -168,7 +176,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && arguments[1] == "ls" {
 		return runProviderList(ctx, providerID, arguments[2:], runtime)
 	}
-	if len(arguments) == 2 && arguments[1] == "login" {
+	if len(arguments) >= 2 && arguments[1] == "login" {
 		return runProviderLogin(ctx, providerID, arguments[2:], runtime)
 	}
 	if len(arguments) >= 2 && (arguments[1] == "set-default" || arguments[1] == "unset-default") {
@@ -215,10 +223,16 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			}
 		}
 	}
+	return runProviderLaunch(ctx, providerID, arguments[1:], runtime)
+}
+
+// runProviderLaunch composes the same native/relay execution path for both the
+// explicit escape and normal parsed commands; it never dispatches management verbs.
+func runProviderLaunch(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
 	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_API_KEY", "")
 	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")
-	needsNativeStore := commandNeedsNativeStore(providerID, arguments[1:])
+	needsNativeStore := commandNeedsNativeStore(providerID, arguments)
 	var err error
 	var aiHomeDir string
 	if needsNativeStore {
@@ -257,7 +271,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		BaseURL:   baseURL,
 		ClientKey: clientKey,
 	}
-	runErr := app.Run(ctx, providerID, arguments[1:], gateway)
+	runErr := app.Run(ctx, providerID, arguments, gateway)
 	closeErr := app.Close()
 	return errors.Join(runErr, closeErr)
 }

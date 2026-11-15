@@ -1,0 +1,140 @@
+[
+  {
+    "shell": "zsh",
+    "phases": [
+      {
+        "action": "plan",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "apply",
+        "exit": 0,
+        "ok": true,
+        "changed": true,
+        "stderr": ""
+      },
+      {
+        "action": "apply",
+        "exit": 0,
+        "ok": true,
+        "changed": false,
+        "stderr": ""
+      },
+      {
+        "action": "status",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "remove",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "remove",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      }
+    ],
+    "symlink": true,
+    "mode": "600",
+    "exactRestore": true
+  },
+  {
+    "shell": "bash",
+    "phases": [
+      {
+        "action": "plan",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "apply",
+        "exit": 0,
+        "ok": true,
+        "changed": true,
+        "stderr": ""
+      },
+      {
+        "action": "apply",
+        "exit": 0,
+        "ok": true,
+        "changed": false,
+        "stderr": ""
+      },
+      {
+        "action": "status",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "remove",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "remove",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      }
+    ],
+    "symlink": true,
+    "mode": "600",
+    "exactRestore": true
+  },
+  {
+    "shell": "fish",
+    "phases": [
+      {
+        "action": "plan",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "apply",
+        "exit": 0,
+        "ok": true,
+        "changed": true,
+        "stderr": ""
+      },
+      {
+        "action": "apply",
+        "exit": 0,
+        "ok": true,
+        "changed": false,
+        "stderr": ""
+      },
+      {
+        "action": "status",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "remove",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "action": "remove",
+        "exit": 0,
+        "ok": true,
+        "stderr": ""
+      }
+    ],
+    "symlink": true,
+    "mode": "600",
+    "exactRestore": true
+  }
+]

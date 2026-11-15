@@ -1,4 +1,4 @@
-// Package rulesenv 写 app-state.db 的 account_credentials.env_json 中「调度规则」
+// Package rulesenv 写 app-state.db 的 compat_account_credentials.env_json 中「调度规则」
 // 两个键：AIH_UPSTREAM_ERROR_RULES / AIH_UPSTREAM_ERROR_GROUP_IDS。
 //
 // 这是 routing-rules 单一写者的存储前置：写入必须读改写（保留同一 env 里的其它
@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"regexp"
 	"strings"
@@ -33,8 +34,8 @@ const (
 var (
 	// ErrInvalidAccountRef 表示 account_ref 为空。
 	ErrInvalidAccountRef = errors.New("account_ref 不能为空")
-	// ErrAccountNotFound 表示 account_credentials 中没有该账号。
-	ErrAccountNotFound = errors.New("account_credentials 中没有该账号")
+	// ErrAccountNotFound 表示 compat_account_credentials 中没有该账号。
+	ErrAccountNotFound = errors.New("compat_account_credentials 中没有该账号")
 	// ErrInvalidEnvJSON 表示已存的 env_json 不是 JSON 对象；此时拒绝写入，避免
 	// 用一份空对象覆盖掉未知数据。
 	ErrInvalidEnvJSON = errors.New("env_json 不是 JSON 对象")
@@ -76,8 +77,11 @@ type Store struct {
 }
 
 // Open 打开 databasePath 指向的 app-state.db。文件不存在时按 rwc 创建；
-// account_credentials 表由调用方保证已存在。
+// compat_account_credentials 表由调用方保证已存在。
 func Open(ctx context.Context, databasePath string) (*Store, error) {
+	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", buildWritableDSN(databasePath))
 	if err != nil {
 		return nil, err
@@ -108,7 +112,7 @@ func (store *Store) Read(ctx context.Context, accountRef string) (State, error) 
 	var raw string
 	var envUpdatedAt int64
 	err = store.db.QueryRowContext(ctx,
-		"SELECT env_json, env_updated_at FROM account_credentials WHERE account_ref = ?",
+		"SELECT env_json, env_updated_at FROM compat_account_credentials WHERE account_ref = ?",
 		reference).Scan(&raw, &envUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return State{}, ErrAccountNotFound
@@ -158,7 +162,7 @@ func (store *Store) Update(ctx context.Context, accountRef string, change Change
 	var raw string
 	var envUpdatedAt int64
 	err = tx.QueryRowContext(ctx,
-		"SELECT env_json, env_updated_at FROM account_credentials WHERE account_ref = ?",
+		"SELECT env_json, env_updated_at FROM compat_account_credentials WHERE account_ref = ?",
 		reference).Scan(&raw, &envUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Result{}, ErrAccountNotFound
@@ -196,7 +200,7 @@ func (store *Store) Update(ctx context.Context, accountRef string, change Change
 		return Result{Changed: false, EnvUpdatedAt: envUpdatedAt}, nil
 	}
 	result, err := tx.ExecContext(ctx,
-		"UPDATE account_credentials SET env_json = ?, updated_at = ? WHERE account_ref = ?",
+		"UPDATE compat_account_credentials SET env_json = ?, updated_at = ? WHERE account_ref = ?",
 		string(next), store.clockNow().UnixMilli(), reference)
 	if err != nil {
 		return Result{}, err

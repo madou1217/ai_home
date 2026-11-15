@@ -72,6 +72,11 @@ func validateDefinition(definition Definition) error {
 	if definition.Gateway != GatewayActive && definition.Gateway != GatewayDeprecated {
 		return fmt.Errorf("未知 gateway 状态: %s", definition.Gateway)
 	}
+	if definition.NativeBoundary != nil {
+		if err := validateSessionCommands(definition.NativeBoundary.Sessions); err != nil {
+			return err
+		}
+	}
 	if err := validateCapabilities(definition.Capabilities); err != nil {
 		return err
 	}

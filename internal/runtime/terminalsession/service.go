@@ -91,6 +91,7 @@ type RemoteSpec struct {
 // Snapshot 是会话的只读投影，字段对应 Node open/attach 的返回。
 type Snapshot struct {
 	ID         string
+	ProcessID  int
 	Key        string
 	Path       string
 	Dir        string
@@ -641,8 +642,13 @@ func (service *Service) byKeyLocked(key string) *session {
 }
 
 func snapshotOf(found *session, reused bool) Snapshot {
+	processID := 0
+	if process, ok := found.terminal.(interface{ ProcessID() int }); ok {
+		processID = process.ProcessID()
+	}
 	return Snapshot{
 		ID:         found.id,
+		ProcessID:  processID,
 		Key:        found.key,
 		Path:       found.path,
 		Dir:        found.dir,

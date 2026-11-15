@@ -10,6 +10,8 @@ func nativeCodex() *NativeCapability {
 			CLIFlags:        []string{"--profile", "--config"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"resume", "{sessionId}"}, WithoutID: []string{"resume"}},
+			Fork:        &NativeSessionCommand{WithID: []string{"fork", "{sessionId}"}, WithoutID: []string{"fork"}},
 			Flags:       []string{"resume", "fork"},
 			NativeStore: "state_*.sqlite",
 		},
@@ -41,6 +43,8 @@ func nativeClaude() *NativeCapability {
 			CLIFlags:        []string{"--settings", "--setting-sources"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--continue"}},
+			Fork:        &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}", "--fork-session"}, WithoutID: []string{"--continue", "--fork-session"}},
 			Flags:       []string{"--continue", "--resume", "--session-id", "--fork-session"},
 			NativeStore: "projects/<project>/<session-id>.jsonl",
 		},
@@ -72,6 +76,7 @@ func nativeGemini() *NativeCapability {
 			CLIFlags:        []string{"--model", "--approval-mode", "--policy", "--admin-policy"},
 		},
 		Sessions: NativeSessions{
+			Resume: &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--resume", "latest"}},
 			// --session-file：按绝对路径加载某段会话（绕开 cwd → projectHash 的发现机制，
 			// 持久会话重启恢复用这条；见 lib/runtime/provider-resume.js）。
 			Flags:       []string{"--resume", "--session-id", "--list-sessions", "--session-file"},
@@ -105,6 +110,7 @@ func nativeAntigravity() *NativeCapability {
 			CLIFlags:        []string{"--sandbox", "--conversation", "--continue"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"--conversation", "{sessionId}"}, WithoutID: []string{"--continue"}},
 			Flags:       []string{"--continue", "--conversation"},
 			NativeStore: "workspace-scoped conversations",
 		},
@@ -144,7 +150,9 @@ func nativeGrok() *NativeCapability {
 			CLIFlags:        []string{"--model", "--permission-mode"},
 		},
 		Sessions: NativeSessions{
-			Flags:       []string{"--continue", "--resume", "--session-id"},
+			Resume:      &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--continue"}},
+			Fork:        &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}", "--fork-session"}, WithoutID: []string{"--continue", "--fork-session"}},
+			Flags:       []string{"--continue", "--resume", "--session-id", "--fork-session"},
 			NativeStore: "sessions",
 		},
 		MCP: NativeMCP{
@@ -262,6 +270,7 @@ func nativeZcode() *NativeCapability {
 			CLIFlags:        []string{"--cwd", "--mode", "--resume", "--continue", "--prompt"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--continue"}},
 			Flags:       []string{"--resume", "--continue"},
 			NativeStore: "cli/db/db.sqlite",
 		},
@@ -289,6 +298,7 @@ func nativeCline() *NativeCapability {
 			CLIFlags:        []string{"--config", "--data-dir"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"--id", "{sessionId}"}, WithoutID: []string{}},
 			Flags:       []string{"--id"},
 			NativeStore: "data/db/sessions.db",
 		},
@@ -329,6 +339,8 @@ func nativeOpenCode() *NativeCapability {
 			CLIFlags:        []string{"--model", "--agent"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"--session", "{sessionId}"}, WithoutID: []string{"--continue"}},
+			Fork:        &NativeSessionCommand{WithID: []string{"--session", "{sessionId}", "--fork"}, WithoutID: []string{"--continue", "--fork"}},
 			Flags:       []string{"--continue", "--session", "--fork"},
 			NativeStore: "opencode.db",
 		},
@@ -371,6 +383,7 @@ func nativeCodebuddy() *NativeCapability {
 			CLIFlags:        []string{"--model", "--permission-mode", "--mcp-config"},
 		},
 		Sessions: NativeSessions{
+			Resume:      &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}"}, WithoutID: []string{"--continue"}},
 			Flags:       []string{"--continue", "--resume", "--session-id"},
 			NativeStore: "projects/<project>/<session-id>.jsonl",
 		},
@@ -403,6 +416,8 @@ func nativeCodebuddy() *NativeCapability {
 // The older WorkBuddy bundle has its own verified projection below.
 func nativeCodebuddyCLI() *NativeCapability {
 	native := nativeCodebuddy()
+	native.Sessions.Flags = append(native.Sessions.Flags, "--fork-session")
+	native.Sessions.Fork = &NativeSessionCommand{WithID: []string{"--resume", "{sessionId}", "--fork-session"}, WithoutID: []string{"--continue", "--fork-session"}}
 	native.Plugins.Adapter = "native-marketplace"
 	native.MCP = NativeMCP{
 		Projection:  &NativeMCPProjection{Path: ".mcp.json", Format: "json-stdio"},

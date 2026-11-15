@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const defaultEndpointPort = 9527
+
 type endpointHint struct {
 	Endpoint    string `json:"endpoint"`
 	Source      string `json:"source"`
@@ -22,8 +24,9 @@ type lanCandidate struct {
 	name    string
 }
 
-// handleEndpoints 复刻 Node buildControlPlaneEndpointHints；请求地址与绑定 host
-// 由 Node 通过查询参数传入（Go 不猜反向代理头）。
+// handleEndpoints 复刻 Node buildControlPlaneEndpointHints：
+// 兼容 Node 代理传入的 endpoint/host/port 查询参数，也支持浏览器无参直连 /v0/webui/control-plane/endpoints
+// 时从请求 Host（及 X-Forwarded-Host / X-Forwarded-Proto）与宿主监听配置推导。
 func (handler *Handler) handleEndpoints(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
@@ -32,8 +35,30 @@ func (handler *Handler) handleEndpoints(response http.ResponseWriter, request *h
 	}
 	query := request.URL.Query()
 	requestEndpoint := strings.TrimRight(strings.TrimSpace(query.Get("endpoint")), "/")
-	bindHost := normalizeHost(query.Get("host"))
+	if requestEndpoint == "" && !query.Has("endpoint") {
+		requestEndpoint = inferRequestEndpoint(request)
+	}
+	rawBindHost := strings.TrimSpace(query.Get("host"))
+	if rawBindHost == "" {
+		rawBindHost = handler.bindHost
+	}
+	if rawBindHost == "" {
+		rawBindHost = localSocketHost(request)
+	}
+	bindHost := normalizeHost(rawBindHost)
+
 	port := resolvePort(requestEndpoint, query.Get("port"))
+	if port == 0 && handler.listenPort != nil {
+		if candidate := handler.listenPort(); candidate > 0 && candidate <= 65535 {
+			port = candidate
+		}
+	}
+	if port == 0 {
+		port = localSocketPort(request)
+	}
+	if port == 0 {
+		port = defaultEndpointPort
+	}
 
 	requestURL, _ := url.Parse(requestEndpoint)
 	requestHost := ""
@@ -93,6 +118,105 @@ func (handler *Handler) handleEndpoints(response http.ResponseWriter, request *h
 	}
 
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "endpoints": hints, "warnings": warnings})
+}
+
+// inferRequestEndpoint 对齐 Node webui-control-plane-routes.js 的 inferControlEndpoint。
+func inferRequestEndpoint(request *http.Request) string {
+	if request == nil {
+		return ""
+	}
+	rawHost := firstHeaderToken(request.Header, "X-Forwarded-Host")
+	if rawHost == "" {
+		rawHost = firstCSVToken(request.Host)
+	}
+	host := sanitizeEndpointHost(rawHost)
+	if host == "" {
+		return ""
+	}
+	proto := strings.TrimSuffix(strings.ToLower(firstHeaderToken(request.Header, "X-Forwarded-Proto")), ":")
+	if proto == "" && request.TLS != nil {
+		proto = "https"
+	}
+	scheme := "http"
+	if proto == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + host
+}
+
+func firstHeaderToken(header http.Header, name string) string {
+	if len(header) == 0 {
+		return ""
+	}
+	return firstCSVToken(header.Get(name))
+}
+
+func firstCSVToken(raw string) string {
+	first, _, _ := strings.Cut(raw, ",")
+	return strings.TrimSpace(first)
+}
+
+func sanitizeEndpointHost(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.ContainsAny(trimmed, "/\\@?# \t\r\n") {
+		return ""
+	}
+	if trimmed == "::1" {
+		return "[::1]"
+	}
+	for _, r := range trimmed {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	parsed, err := url.Parse("http://" + trimmed)
+	if err != nil || parsed == nil || parsed.Host != trimmed || parsed.Hostname() == "" {
+		return ""
+	}
+	if rawPort := parsed.Port(); rawPort != "" {
+		port, convErr := strconv.Atoi(rawPort)
+		if convErr != nil || port <= 0 || port > 65535 {
+			return ""
+		}
+	}
+	return trimmed
+}
+
+func localSocketHost(request *http.Request) string {
+	if request == nil {
+		return ""
+	}
+	addr, ok := request.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok || addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return ""
+	}
+	if zoneIndex := strings.IndexByte(host, '%'); zoneIndex >= 0 {
+		host = host[:zoneIndex]
+	}
+	return strings.TrimSpace(host)
+}
+
+func localSocketPort(request *http.Request) int {
+	if request == nil {
+		return 0
+	}
+	addr, ok := request.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok || addr == nil {
+		return 0
+	}
+	_, portText, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return 0
+	}
+	value, convErr := strconv.Atoi(strings.TrimSpace(portText))
+	if convErr != nil || value <= 0 || value > 65535 {
+		return 0
+	}
+	return value
 }
 
 func normalizeHost(value string) string {

@@ -22,6 +22,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/plugincontrol"
 	"github.com/madou1217/ai_home/internal/adapters/accountmaintenance"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/pluginerr"
 )
 
@@ -29,7 +30,7 @@ const (
 	// ControlStateKey 是 Node 插件控制面在 app_kv 里的键。
 	ControlStateKey = "plugins.control.v1"
 	// DatabaseFileName 是 Node app-state-store 的数据库文件名。
-	DatabaseFileName = "app-state.db"
+	DatabaseFileName = "aih.db"
 	// maxStateBytes 与 application/pluginruntime.MaxControlStateBytes 一致。
 	maxStateBytes = 4 << 20
 	// busyTimeoutMS 与 Node DEFAULT_BUSY_TIMEOUT_MS 一致。
@@ -73,6 +74,9 @@ func (store *Store) DatabasePath() string {
 func (store *Store) CurrentRevision(ctx context.Context) (int64, error) {
 	if store == nil || ctx == nil {
 		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	if err := businessdb.CheckReady(ctx, store.databasePath); err != nil {
+		return 0, err
 	}
 	lease, err := accountmaintenance.Acquire(ctx, store.aiHomeDir)
 	if err != nil {
@@ -129,6 +133,9 @@ func (store *Store) Update(
 ) (plugincontrol.State, error) {
 	if store == nil || mutate == nil {
 		return plugincontrol.EmptyState(), pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	if err := businessdb.CheckReady(ctx, store.databasePath); err != nil {
+		return plugincontrol.EmptyState(), err
 	}
 	lease, err := accountmaintenance.Acquire(ctx, store.aiHomeDir)
 	if err != nil {
@@ -263,6 +270,9 @@ func (store *Store) Commit(
 ) (int64, error) {
 	if store == nil || len(candidate) == 0 {
 		return 0, pluginerr.New(plugincontrol.CodeStateUnavailable, "")
+	}
+	if err := businessdb.CheckReady(ctx, store.databasePath); err != nil {
+		return 0, err
 	}
 	lease, err := accountmaintenance.Acquire(ctx, store.aiHomeDir)
 	if err != nil {

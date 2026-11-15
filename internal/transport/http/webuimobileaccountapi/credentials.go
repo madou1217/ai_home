@@ -14,7 +14,7 @@ import (
 
 // readStoredCodexCredential 从 Node 的 app-state.db 读取账号归属与原生凭据。
 //
-// 账号存在性以 account_refs + account_credentials 为准（与 Node accountExists 同口径）；
+// 账号存在性以 account_refs + compat_account_credentials 为准（与 Node accountExists 同口径）；
 // native_auth_json 解析失败按空对象处理，交给凭证校验拒绝。
 func readStoredCodexCredential(
 	ctx context.Context,
@@ -41,7 +41,7 @@ func readStoredCodexCredential(
 	err = db.QueryRowContext(ctx, `
 		SELECT r.provider, c.native_auth_json
 		FROM account_refs AS r
-		INNER JOIN account_credentials AS c ON c.account_ref = r.account_ref
+		INNER JOIN compat_account_credentials AS c ON c.account_ref = r.account_ref
 		WHERE r.account_ref = ?
 		LIMIT 1`, accountRef).Scan(&provider, &nativeAuthJSON)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -1,0 +1,396 @@
+{
+  "generatedAt": "2026-11-14T16:01:39.213Z",
+  "boundary": "real CLI in isolated HOME, real zsh/bash/fish parsers; no native provider execution",
+  "report": [
+    {
+      "shell": "zsh",
+      "phases": [
+        {
+          "action": "plan",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "upToDate": false,
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [
+            "--no-typo",
+            "--no-wrapper"
+          ],
+          "exit": 0,
+          "ok": true,
+          "changed": true,
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "changed": false,
+          "stderr": ""
+        },
+        {
+          "action": "status",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "features": {
+            "completion": true,
+            "typo": false,
+            "wrapper": false
+          },
+          "upToDate": true,
+          "stderr": ""
+        },
+        {
+          "action": "doctor",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "checks": [
+            {
+              "name": "shell 识别",
+              "ok": true,
+              "detail": "zsh"
+            },
+            {
+              "name": "zsh 片段已装",
+              "ok": true,
+              "detail": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-shell-matrix-final-SDbSVQ/zsh/custom rc"
+            },
+            {
+              "name": "zsh 已安装片段语法",
+              "ok": true,
+              "detail": "zsh -n"
+            },
+            {
+              "name": "zsh 片段最新",
+              "ok": true,
+              "detail": ""
+            },
+            {
+              "name": "aih 路径可用",
+              "ok": true,
+              "detail": "/Users/model/projects/feature/ai_home/bin/ai-home.js"
+            },
+            {
+              "name": "补全入口",
+              "ok": true,
+              "detail": "45 个候选"
+            },
+            {
+              "name": "纠正入口",
+              "ok": true,
+              "detail": "aih codx → aih codex"
+            }
+          ],
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [
+            "--typo",
+            "--wrapper"
+          ],
+          "exit": 0,
+          "ok": true,
+          "changed": true,
+          "stderr": ""
+        },
+        {
+          "action": "status",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "features": {
+            "completion": true,
+            "typo": true,
+            "wrapper": true
+          },
+          "upToDate": true,
+          "stderr": ""
+        },
+        {
+          "action": "remove",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "stderr": ""
+        },
+        {
+          "action": "remove",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "stderr": ""
+        }
+      ],
+      "exactRestored": true,
+      "symlink": true,
+      "mode": "600"
+    },
+    {
+      "shell": "bash",
+      "phases": [
+        {
+          "action": "plan",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "upToDate": false,
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [
+            "--no-typo",
+            "--no-wrapper"
+          ],
+          "exit": 0,
+          "ok": true,
+          "changed": true,
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "changed": false,
+          "stderr": ""
+        },
+        {
+          "action": "status",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "features": {
+            "completion": true,
+            "typo": false,
+            "wrapper": false
+          },
+          "upToDate": true,
+          "stderr": ""
+        },
+        {
+          "action": "doctor",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "checks": [
+            {
+              "name": "shell 识别",
+              "ok": true,
+              "detail": "bash"
+            },
+            {
+              "name": "bash 片段已装",
+              "ok": true,
+              "detail": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-shell-matrix-final-SDbSVQ/bash/custom rc"
+            },
+            {
+              "name": "bash 已安装片段语法",
+              "ok": true,
+              "detail": "bash -n"
+            },
+            {
+              "name": "bash 片段最新",
+              "ok": true,
+              "detail": ""
+            },
+            {
+              "name": "aih 路径可用",
+              "ok": true,
+              "detail": "/Users/model/projects/feature/ai_home/bin/ai-home.js"
+            },
+            {
+              "name": "补全入口",
+              "ok": true,
+              "detail": "45 个候选"
+            },
+            {
+              "name": "纠正入口",
+              "ok": true,
+              "detail": "aih codx → aih codex"
+            }
+          ],
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [
+            "--typo",
+            "--wrapper"
+          ],
+          "exit": 0,
+          "ok": true,
+          "changed": true,
+          "stderr": ""
+        },
+        {
+          "action": "status",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "features": {
+            "completion": true,
+            "typo": true,
+            "wrapper": true
+          },
+          "upToDate": true,
+          "stderr": ""
+        },
+        {
+          "action": "remove",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "stderr": ""
+        },
+        {
+          "action": "remove",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "stderr": ""
+        }
+      ],
+      "exactRestored": true,
+      "symlink": true,
+      "mode": "600"
+    },
+    {
+      "shell": "fish",
+      "phases": [
+        {
+          "action": "plan",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "upToDate": false,
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [
+            "--no-typo",
+            "--no-wrapper"
+          ],
+          "exit": 0,
+          "ok": true,
+          "changed": true,
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "changed": false,
+          "stderr": ""
+        },
+        {
+          "action": "status",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "features": {
+            "completion": true,
+            "typo": false,
+            "wrapper": false
+          },
+          "upToDate": true,
+          "stderr": ""
+        },
+        {
+          "action": "doctor",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "checks": [
+            {
+              "name": "shell 识别",
+              "ok": true,
+              "detail": "fish"
+            },
+            {
+              "name": "fish 片段已装",
+              "ok": true,
+              "detail": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-shell-matrix-final-SDbSVQ/fish/custom rc"
+            },
+            {
+              "name": "fish 已安装片段语法",
+              "ok": true,
+              "detail": "fish -n"
+            },
+            {
+              "name": "fish 片段最新",
+              "ok": true,
+              "detail": ""
+            },
+            {
+              "name": "aih 路径可用",
+              "ok": true,
+              "detail": "/Users/model/projects/feature/ai_home/bin/ai-home.js"
+            },
+            {
+              "name": "补全入口",
+              "ok": true,
+              "detail": "45 个候选"
+            },
+            {
+              "name": "纠正入口",
+              "ok": true,
+              "detail": "aih codx → aih codex"
+            }
+          ],
+          "stderr": ""
+        },
+        {
+          "action": "apply",
+          "flags": [
+            "--typo",
+            "--wrapper"
+          ],
+          "exit": 0,
+          "ok": true,
+          "changed": true,
+          "stderr": ""
+        },
+        {
+          "action": "status",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "features": {
+            "completion": true,
+            "typo": true,
+            "wrapper": true
+          },
+          "upToDate": true,
+          "stderr": ""
+        },
+        {
+          "action": "remove",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "stderr": ""
+        },
+        {
+          "action": "remove",
+          "flags": [],
+          "exit": 0,
+          "ok": true,
+          "stderr": ""
+        }
+      ],
+      "exactRestored": true,
+      "symlink": true,
+      "mode": "600"
+    }
+  ]
+}

@@ -275,7 +275,7 @@ func discoverCodebuddyIDEAccounts(ctx context.Context, opts Options, targetProvi
 		ctx,
 		`SELECT r.account_ref, r.provider, COALESCE(c.native_auth_json, '')
 		 FROM account_refs r
-		 LEFT JOIN account_credentials c ON c.account_ref = r.account_ref`,
+		 LEFT JOIN compat_account_credentials c ON c.account_ref = r.account_ref`,
 	)
 	if err != nil {
 		return nil

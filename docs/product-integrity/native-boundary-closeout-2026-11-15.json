@@ -1,0 +1,39 @@
+{
+  "at": "2026-11-14T17:53:33.931Z",
+  "boundary": "actual public CLI readonly help and invalid prefix, no inference/account mutation",
+  "rows": [
+    {
+      "args": [
+        "codex",
+        "--",
+        "exec",
+        "--help"
+      ],
+      "status": 0,
+      "hasHelp": true,
+      "hasMissingValue": false
+    },
+    {
+      "args": [
+        "codex",
+        "--session",
+        "--",
+        "ls",
+        "--help"
+      ],
+      "status": 2,
+      "hasHelp": false,
+      "hasMissingValue": true
+    },
+    {
+      "args": [
+        "cline",
+        "resume",
+        "--help"
+      ],
+      "status": 0,
+      "hasHelp": true,
+      "hasMissingValue": false
+    }
+  ]
+}

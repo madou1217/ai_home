@@ -40,6 +40,7 @@ type SSHStrategyDeps struct {
 	HomeDir           string
 	Env               func(string) string
 	ReadyTimeout      time.Duration
+	OperationTimeout  time.Duration
 	KeepaliveInterval time.Duration
 	OnHostKey         func(fingerprint string)
 	HostKeyAlgorithms []string
@@ -103,12 +104,10 @@ type SSHBackupStrategy struct {
 	deps   SSHStrategyDeps
 
 	mu                  sync.Mutex
-	client              *ssh.Client
-	sftp                *sftpClient
+	connection          *sshBackupConnection
+	connecting          *sshConnectFlight
 	baseDir             string
-	connected           bool
 	observedFingerprint string
-	keepaliveStop       chan struct{}
 }
 
 // NewSSHBackupStrategy 构造面向单个 BackupTarget 的 SSH/SFTP 备份策略。
@@ -139,186 +138,83 @@ func (s *SSHBackupStrategy) ObservedFingerprint() string {
 
 // Connect 建立 SSH 连接与 SFTP 会话，校验或记录主机指纹，并确保远端根目录存在。
 func (s *SSHBackupStrategy) Connect(ctx context.Context) error {
-	s.mu.Lock()
-	if s.connected {
-		s.mu.Unlock()
+	_, err := s.connectionFor(ctx)
+	return err
+}
+
+// ReadFile executes on one connection generation with cancellation and a bound.
+func (s *SSHBackupStrategy) ReadFile(ctx context.Context, relativePath string) (content string, found bool, err error) {
+	err = s.withConnection(ctx, func(conn *sshBackupConnection) error {
+		remote, e := JoinRemote(conn.baseDir, relativePath)
+		if e != nil {
+			return e
+		}
+		data, e := conn.sftp.ReadFile(remote)
+		if IsNoSuchFile(e) && completeSFTPStatus(e) {
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		content, found = string(data), true
 		return nil
-	}
-	s.mu.Unlock()
-
-	config, observedPtr, err := s.buildSSHClientConfig()
-	if err != nil {
-		return err
-	}
-
-	timeout := s.deps.ReadyTimeout
-	if timeout <= 0 {
-		timeout = defaultReadyTimeout
-	}
-	port := s.target.Port
-	if port <= 0 {
-		port = 22
-	}
-	address := net.JoinHostPort(s.target.Host, fmt.Sprintf("%d", port))
-	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", address)
-	if err != nil {
-		return err
-	}
-
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	handshakeDone := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close()
-		case <-handshakeDone:
-		}
-	}()
-
-	sshConn, chans, reqs, err := ssh.NewClientConn(conn, address, config)
-	close(handshakeDone)
-	if err != nil {
-		_ = conn.Close()
-		return err
-	}
-	_ = conn.SetDeadline(time.Time{})
-
-	client := ssh.NewClient(sshConn, chans, reqs)
-	sftpCli, err := newSFTPClient(client)
-	if err != nil {
-		_ = client.Close()
-		return err
-	}
-
-	home, err := sftpCli.Realpath(".")
-	if err != nil {
-		_ = sftpCli.Close()
-		_ = client.Close()
-		return err
-	}
-	baseDir, err := ResolveRemoteDir(s.target.RemoteDir, home)
-	if err != nil {
-		_ = sftpCli.Close()
-		_ = client.Close()
-		return err
-	}
-	if err := ensureRemoteDir(sftpCli, baseDir); err != nil {
-		_ = sftpCli.Close()
-		_ = client.Close()
-		return err
-	}
-
-	observed := *observedPtr
-	keepaliveStop := make(chan struct{})
-	keepaliveInterval := s.deps.KeepaliveInterval
-	if keepaliveInterval <= 0 {
-		keepaliveInterval = defaultKeepaliveInterval
-	}
-	go runSSHKeepalive(client, keepaliveInterval, keepaliveStop)
-
-	s.mu.Lock()
-	s.client = client
-	s.sftp = sftpCli
-	s.baseDir = baseDir
-	s.observedFingerprint = observed
-	s.connected = true
-	s.keepaliveStop = keepaliveStop
-	s.mu.Unlock()
-
-	if s.target.HostKeyFingerprint == "" && observed != "" && s.deps.OnHostKey != nil {
-		s.deps.OnHostKey(observed)
-	}
-	return nil
+	})
+	return
 }
 
-// ReadFile 读取远端相对路径文件；文件不存在返回 found=false, err=nil。
-func (s *SSHBackupStrategy) ReadFile(ctx context.Context, relativePath string) (string, bool, error) {
-	if err := s.Connect(ctx); err != nil {
-		return "", false, err
-	}
-	s.mu.Lock()
-	baseDir := s.baseDir
-	sftpCli := s.sftp
-	s.mu.Unlock()
-
-	remote, err := JoinRemote(baseDir, relativePath)
-	if err != nil {
-		return "", false, err
-	}
-	content, err := sftpCli.ReadFile(remote)
-	if err != nil {
-		if IsNoSuchFile(err) {
-			return "", false, nil
+// WriteFile publishes only after a complete staged write, including CLOSE ACK.
+// Failure never authorizes unlinking the previous destination.
+func (s *SSHBackupStrategy) WriteFile(ctx context.Context, relativePath, content string, mode os.FileMode) error {
+	return s.withConnection(ctx, func(conn *sshBackupConnection) error {
+		remote, err := JoinRemote(conn.baseDir, relativePath)
+		if err != nil {
+			return err
 		}
-		return "", false, err
-	}
-	return string(content), true, nil
+		if err = ensureRemoteDir(conn.sftp, path.Dir(remote)); err != nil {
+			return err
+		}
+		if mode == 0 {
+			mode = 0o600
+		}
+		var rnd [12]byte
+		if _, err = rand.Read(rnd[:]); err != nil {
+			return err
+		}
+		temp := fmt.Sprintf("%s.tmp-%d-%s", remote, os.Getpid(), hex.EncodeToString(rnd[:]))
+		created, err := conn.sftp.WriteExclusive(temp, []byte(content), mode)
+		if err != nil {
+			if created && completeSFTPStatus(err) && !conn.closed.Load() {
+				err = errors.Join(err, conn.sftp.Remove(temp))
+			}
+			return err
+		}
+		if err = conn.sftp.ReplaceFile(temp, remote); err != nil {
+			var existing *SFTPReplacementError
+			if !completeSFTPStatus(err) && !errors.As(err, &existing) {
+				return &SFTPReplacementError{Code: "write_outcome_unknown", RecoveryPath: temp, cause: err}
+			}
+			var replacement *SFTPReplacementError
+			if ctx.Err() == nil && !conn.closed.Load() && completeSFTPStatus(err) && !errors.As(err, &replacement) {
+				err = errors.Join(err, conn.sftp.Remove(temp))
+			}
+			return err
+		}
+		return nil
+	})
 }
 
-// WriteFile 先写临时文件再 rename 到目标路径（含 Windows 覆盖回退），避免远端出现半截文件。
-func (s *SSHBackupStrategy) WriteFile(ctx context.Context, relativePath string, content string, mode os.FileMode) error {
-	if err := s.Connect(ctx); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	baseDir := s.baseDir
-	sftpCli := s.sftp
-	s.mu.Unlock()
-
-	remote, err := JoinRemote(baseDir, relativePath)
-	if err != nil {
-		return err
-	}
-	dir := path.Dir(remote)
-	if err := ensureRemoteDir(sftpCli, dir); err != nil {
-		return err
-	}
-	if mode == 0 {
-		mode = 0o600
-	}
-	var rnd [4]byte
-	_, _ = rand.Read(rnd[:])
-	temp := fmt.Sprintf("%s.tmp-%d-%s", remote, os.Getpid(), hex.EncodeToString(rnd[:]))
-
-	if err := sftpCli.WriteFile(temp, []byte(content), mode); err != nil {
-		_ = sftpCli.Remove(temp)
-		return err
-	}
-	if err := sftpCli.Rename(temp, remote); err != nil {
-		// Windows OpenSSH 的 SFTP 不允许 rename 直接覆盖已存在文件。
-		_ = sftpCli.Remove(remote)
-		if retryErr := sftpCli.Rename(temp, remote); retryErr != nil {
-			_ = sftpCli.Remove(temp)
-			return retryErr
-		}
-	}
-	return nil
-}
-
-// Close 关闭 SFTP 子系统与底层 SSH 连接。
+// Close cancels any in-progress connect and wakes blocked operations without
+// waiting for their RPC mutex. A later explicit call may open a new generation.
 func (s *SSHBackupStrategy) Close() error {
 	s.mu.Lock()
-	sftpCli := s.sftp
-	client := s.client
-	keepaliveStop := s.keepaliveStop
-	s.sftp = nil
-	s.client = nil
-	s.keepaliveStop = nil
-	s.connected = false
+	conn, flight := s.connection, s.connecting
+	s.connection = nil
+	s.connecting = nil
 	s.mu.Unlock()
-
-	if keepaliveStop != nil {
-		close(keepaliveStop)
+	if flight != nil {
+		flight.cancel()
 	}
-	var errs []error
-	if sftpCli != nil {
-		errs = append(errs, sftpCli.Close())
-	}
-	if client != nil {
-		errs = append(errs, client.Close())
-	}
-	return errors.Join(errs...)
+	return conn.close()
 }
 
 func (s *SSHBackupStrategy) buildSSHClientConfig() (*ssh.ClientConfig, *string, error) {
@@ -419,27 +315,4 @@ func ensureRemoteDir(sftpCli *sftpClient, directory string) error {
 		}
 	}
 	return nil
-}
-
-func runSSHKeepalive(client *ssh.Client, interval time.Duration, stop <-chan struct{}) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	missed := 0
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-			if err != nil {
-				missed++
-				if missed >= 3 {
-					_ = client.Close()
-					return
-				}
-			} else {
-				missed = 0
-			}
-		}
-	}
 }

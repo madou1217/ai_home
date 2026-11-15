@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/contracts/chatattachments"
+	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
 )
@@ -79,8 +80,9 @@ type ShellPicker func() Shell
 
 // Dependencies 汇总入站依赖。
 type Dependencies struct {
-	Authorizer Authorizer
-	Sessions   SessionService
+	Authorizer     Authorizer
+	Sessions       SessionService
+	NativeSessions persistent.SessionCollector
 	// Durable 管理 sessionKey 对应的 tmux 外层；为空时按「tmux 不可用」处理，
 	// 终端仍可打开，只是返回 durable=false（与 Node 在 tmux 缺失时的行为一致）。
 	Durable DurableStore
@@ -100,30 +102,35 @@ type Dependencies struct {
 
 // Handler 实现 /v1/management/webui/terminal/* 的全部端点。
 type Handler struct {
-	authorizer Authorizer
-	sessions   SessionService
-	durable    DurableStore
-	pickShell  ShellPicker
-	homeDir    string
-	lookupEnv  func(string) string
-	maxBody    int64
-	heartbeat  time.Duration
-	now        func() time.Time
+	authorizer     Authorizer
+	sessions       SessionService
+	nativeSessions persistent.SessionCollector
+	durable        DurableStore
+	pickShell      ShellPicker
+	homeDir        string
+	lookupEnv      func(string) string
+	maxBody        int64
+	heartbeat      time.Duration
+	now            func() time.Time
 
 	shimOnce sync.Once
 	shimDir  string
 
-	mu    sync.Mutex
-	muxes map[string]*muxStream
-	meta  map[string]*sessionMeta
+	mu       sync.Mutex
+	nativeMu sync.Mutex
+	muxes    map[string]*muxStream
+	meta     map[string]*sessionMeta
 }
 
 // sessionMeta 是 terminalsession.Snapshot 之外、只有传输层关心的会话信息。
 // muxID 决定输出分发到哪条面板流；shell 是用户请求的 shell（durable 会话底层
 // 跑的是 tmux attach，不能拿 Snapshot.Path 当 shell 回报）。
 type sessionMeta struct {
-	muxID string
-	shell string
+	muxID         string
+	muxIDs        map[string]bool
+	shell         string
+	nativeSocket  string
+	nativeSession string
 }
 
 // ErrInvalidDependencies 表示 handler 缺少必需依赖。
@@ -166,17 +173,18 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		durable = missingDurable{}
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		sessions:   dependencies.Sessions,
-		durable:    durable,
-		pickShell:  pickShell,
-		homeDir:    homeDir,
-		lookupEnv:  lookupEnv,
-		maxBody:    maxBody,
-		heartbeat:  heartbeat,
-		now:        now,
-		muxes:      make(map[string]*muxStream),
-		meta:       make(map[string]*sessionMeta),
+		authorizer:     dependencies.Authorizer,
+		sessions:       dependencies.Sessions,
+		nativeSessions: dependencies.NativeSessions,
+		durable:        durable,
+		pickShell:      pickShell,
+		homeDir:        homeDir,
+		lookupEnv:      lookupEnv,
+		maxBody:        maxBody,
+		heartbeat:      heartbeat,
+		now:            now,
+		muxes:          make(map[string]*muxStream),
+		meta:           make(map[string]*sessionMeta),
 	}, nil
 }
 
@@ -216,6 +224,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 
 	path := strings.TrimPrefix(request.URL.Path, Prefix)
 	switch {
+	case request.Method == http.MethodGet && path == "/sessions":
+		handler.handleSessions(response, request)
+	case request.Method == http.MethodPost && path == "/focus":
+		handler.handleFocus(response, request)
 	case request.Method == http.MethodGet && path == "/mux":
 		handler.handleMux(response, request)
 	case request.Method == http.MethodGet && path == "/stream":

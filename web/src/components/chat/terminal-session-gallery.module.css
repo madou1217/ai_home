@@ -1,0 +1,25 @@
+.gallery { display: flex; gap: 12px; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 10px; box-sizing: border-box; background: var(--term-bg); }
+.surface { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--term-border); border-radius: 8px; background: var(--term-bg); }
+.main { flex: 1; animation: terminal-session-focus 140ms ease-out; }
+.rail { width: clamp(210px, 23%, 300px); flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; overflow: auto; scrollbar-gutter: stable; min-height: 0; padding: 1px; }
+.preview { flex: 0 0 auto; height: clamp(104px, calc((100% - (var(--terminal-preview-count) - 1) * 10px) / var(--terminal-preview-count)), 176px); transition: border-color 140ms ease, box-shadow 140ms ease; contain: layout paint; }
+.preview:hover, .preview:focus-within { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+.caption { flex: 0 0 30px; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 10px; background: var(--term-bg-header); color: var(--color-muted-strong); font-size: 11px; }
+.label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { color: var(--color-muted); font-size: 10px; white-space: nowrap; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--term-off); flex: 0 0 auto; }
+.dot[data-status='ready'] { background: var(--term-ok); }
+.dot[data-status='connecting'] { background: var(--color-accent); }
+.dot[data-status='error'] { background: var(--term-error); }
+.viewport { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.main .viewport { padding: 6px 8px; }
+.mount { width: 100%; height: 100%; min-width: 0; min-height: 0; transform-origin: top left; letter-spacing: normal; }
+.preview .mount { position: absolute; top: 0; left: 0; pointer-events: none; }
+.mount :global(.xterm) { letter-spacing: normal; width: 100%; height: 100%; }
+.mount :global(.xterm-viewport) { overflow-x: hidden !important; overscroll-behavior: contain; }
+.select { position: absolute; inset: 0; border: 0; background: transparent; cursor: pointer; z-index: 1; }
+.select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -3px; border-radius: inherit; }
+.close { z-index: 2; position: relative; flex: 0 0 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--color-muted); font-size: 18px; line-height: 20px; cursor: pointer; }
+.close:hover, .close:focus-visible { color: var(--color-heading); background: var(--color-overlay); }
+@keyframes terminal-session-focus { from { opacity: 0.6; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .preview { transition: none; } .main { animation: none; } }

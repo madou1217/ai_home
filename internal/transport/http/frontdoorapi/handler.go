@@ -27,6 +27,17 @@ import (
 // ErrInvalidTarget 表示前置门目标地址不是合法的 loopback HTTP 端点。
 var ErrInvalidTarget = errors.New("前置门目标地址无效")
 
+// incomingForwardingHeaders 枚举代表请求已途经上游反向代理或跨节点网关的请求头。
+var incomingForwardingHeaders = []string{
+	"X-Forwarded-For",
+	"X-Real-Ip",
+	"Forwarded",
+	"X-Forwarded-Host",
+	"X-Forwarded-Proto",
+	"Cf-Connecting-Ip",
+	"X-Aih-Server-Id",
+}
+
 // Handler 把请求转交给 Node 宿主。
 type Handler struct {
 	target *url.URL
@@ -57,7 +68,7 @@ func New(target string) (*Handler, error) {
 		Transport: transport,
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(parsed)
-			request.SetXForwarded()
+			rewriteForwardingHeaders(request)
 			// 保留原始 Host：Node 用它判定「这是本机请求」，也用于拼接绝对地址。
 			// 改写成上游端口会让 Node 认为自己是被别的站点访问的。
 			request.Out.Host = request.In.Host
@@ -67,6 +78,116 @@ func New(target string) (*Handler, error) {
 		ErrorHandler:  handleProxyError,
 	}
 	return handler, nil
+}
+
+// rewriteForwardingHeaders 维护三类入站拓扑的安全边界：
+//  1. 本机直连（TCP 对端是回环且无任何入站转发头）：不注入 X-Forwarded-*，让 Node 的
+//     isDirectLoopbackRequest / isLoopbackBootstrapIngress 继续识别为本机直连；
+//  2. 本机反向代理（如 Nginx/Caddy 在 127.0.0.1 转发公网流量并携带转发头）：先恢复被
+//     ReverseProxy 清空的入站 X-Forwarded-For / Forwarded，再追加当前对端并保留原始
+//     X-Forwarded-Host / X-Forwarded-Proto，确保 Node 不会把反代流量误判为本机直连；
+//  3. 外部（非回环）客户端直连或经外部代理访问 Go：必须写入 X-Forwarded-For，避免 Node
+//     看到 Go→Node 的 127.0.0.1 套接字后把远端客户端误判为本机。
+func rewriteForwardingHeaders(request *httputil.ProxyRequest) {
+	if request == nil || request.In == nil || request.Out == nil {
+		return
+	}
+	inHeader := request.In.Header
+	hasForwarded := hasIncomingForwardingHeaders(inHeader)
+	if isLoopbackPeer(request.In.RemoteAddr) && !hasForwarded {
+		return
+	}
+
+	priorXFF := nonEmptyHeaderValues(inHeader, "X-Forwarded-For")
+	if len(priorXFF) > 0 {
+		request.Out.Header["X-Forwarded-For"] = priorXFF
+	}
+	request.SetXForwarded()
+
+	// 若 RemoteAddr 不含端口导致 SetXForwarded 清空了 X-Forwarded-For，兜底补齐对端地址。
+	if strings.TrimSpace(request.Out.Header.Get("X-Forwarded-For")) == "" {
+		peer := extractPeerHost(request.In.RemoteAddr)
+		switch {
+		case len(priorXFF) > 0 && peer != "":
+			request.Out.Header.Set("X-Forwarded-For", strings.Join(priorXFF, ", ")+", "+peer)
+		case len(priorXFF) > 0:
+			request.Out.Header.Set("X-Forwarded-For", strings.Join(priorXFF, ", "))
+		case peer != "":
+			request.Out.Header.Set("X-Forwarded-For", peer)
+		}
+	}
+
+	if forwarded := nonEmptyHeaderValues(inHeader, "Forwarded"); len(forwarded) > 0 {
+		request.Out.Header["Forwarded"] = forwarded
+	}
+	if hasForwarded {
+		if xfh := strings.TrimSpace(inHeader.Get("X-Forwarded-Host")); xfh != "" {
+			request.Out.Header.Set("X-Forwarded-Host", xfh)
+		}
+		if xfp := strings.TrimSpace(inHeader.Get("X-Forwarded-Proto")); xfp != "" {
+			request.Out.Header.Set("X-Forwarded-Proto", xfp)
+		}
+	}
+}
+
+func hasIncomingForwardingHeaders(header http.Header) bool {
+	if len(header) == 0 {
+		return false
+	}
+	for _, name := range incomingForwardingHeaders {
+		for _, value := range header.Values(name) {
+			if strings.TrimSpace(value) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func nonEmptyHeaderValues(header http.Header, name string) []string {
+	values := header.Values(name)
+	if len(values) == 0 {
+		return nil
+	}
+	copied := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			copied = append(copied, value)
+		}
+	}
+	if len(copied) == 0 {
+		return nil
+	}
+	return copied
+}
+
+func extractPeerHost(remoteAddr string) string {
+	trimmed := strings.TrimSpace(remoteAddr)
+	if trimmed == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(trimmed)
+	if err != nil {
+		host = strings.Trim(trimmed, "[]")
+	}
+	if zoneIndex := strings.IndexByte(host, '%'); zoneIndex >= 0 {
+		host = host[:zoneIndex]
+	}
+	return strings.TrimSpace(host)
+}
+
+func isLoopbackPeer(remoteAddr string) bool {
+	host := extractPeerHost(remoteAddr)
+	if host == "" {
+		return false
+	}
+	lower := strings.ToLower(host)
+	lower = strings.TrimPrefix(lower, "::ffff:")
+	if lower == "::1" {
+		return true
+	}
+	ip := net.ParseIP(lower)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Target 返回归一化后的目标地址，供状态接口展示。

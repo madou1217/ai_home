@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -18,9 +19,11 @@ const (
 	sftpPacketOpen     byte = 3
 	sftpPacketClose    byte = 4
 	sftpPacketRead     byte = 5
+	sftpPacketLstat    byte = 7
 	sftpPacketWrite    byte = 6
 	sftpPacketRemove   byte = 13
 	sftpPacketMkdir    byte = 14
+	sftpPacketRmdir    byte = 15
 	sftpPacketRealpath byte = 16
 	sftpPacketStat     byte = 17
 	sftpPacketRename   byte = 18
@@ -29,6 +32,7 @@ const (
 	sftpPacketData     byte = 103
 	sftpPacketName     byte = 104
 	sftpPacketAttrs    byte = 105
+	sftpPacketExtended byte = 200
 
 	sftpStatusOK         uint32 = 0
 	sftpStatusEOF        uint32 = 1
@@ -38,6 +42,7 @@ const (
 	sftpFlagWrite uint32 = 0x00000002
 	sftpFlagCreat uint32 = 0x00000008
 	sftpFlagTrunc uint32 = 0x00000010
+	sftpFlagExcl  uint32 = 0x00000020
 
 	sftpAttrSize        uint32 = 0x00000001
 	sftpAttrUIDGID      uint32 = 0x00000002
@@ -50,8 +55,9 @@ const (
 
 // SFTPStatusError 表示远端 SFTP 子系统返回了非 OK 状态码。
 type SFTPStatusError struct {
-	Code    uint32
-	Message string
+	Code      uint32
+	Message   string
+	malformed bool
 }
 
 func (e *SFTPStatusError) Error() string {
@@ -82,9 +88,10 @@ type sftpClient struct {
 	stdin   io.WriteCloser
 	stdout  io.Reader
 
-	mu     sync.Mutex
-	nextID uint32
-	closed bool
+	mu          sync.Mutex
+	nextID      uint32
+	closed      atomic.Bool
+	posixRename bool
 }
 
 func newSFTPClient(client *ssh.Client) (*sftpClient, error) {
@@ -139,26 +146,36 @@ func (c *sftpClient) handshake() error {
 	if version < 3 {
 		return fmt.Errorf("远端 SFTP 协议版本过低: %d", version)
 	}
+	remaining := body[4:]
+	for len(remaining) > 0 {
+		name, rest, ok := readString(remaining)
+		if !ok {
+			return errors.New("SFTP extension name truncated")
+		}
+		value, rest, ok := readString(rest)
+		if !ok {
+			return errors.New("SFTP extension value truncated")
+		}
+		if name == "posix-rename@openssh.com" && value == "1" {
+			c.posixRename = true
+		}
+		remaining = rest
+	}
 	return nil
 }
 
+// Close must not wait for the RPC mutex: an outstanding read may be waiting
+// for the peer forever. The strategy closes the transport before this method.
 func (c *sftpClient) Close() error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+	if c.closed.Swap(true) {
 		return nil
 	}
-	c.closed = true
-	stdin := c.stdin
-	session := c.session
-	c.mu.Unlock()
-
 	var errs []error
-	if stdin != nil {
-		errs = append(errs, stdin.Close())
+	if c.stdin != nil {
+		errs = append(errs, c.stdin.Close())
 	}
-	if session != nil {
-		errs = append(errs, session.Close())
+	if c.session != nil {
+		errs = append(errs, c.session.Close())
 	}
 	return errors.Join(errs...)
 }
@@ -199,6 +216,14 @@ func (c *sftpClient) Realpath(remotePath string) (string, error) {
 }
 
 func (c *sftpClient) Stat(remotePath string) (sftpFileAttr, error) {
+	return c.stat(remotePath, sftpPacketStat)
+}
+
+func (c *sftpClient) Lstat(remotePath string) (sftpFileAttr, error) {
+	return c.stat(remotePath, sftpPacketLstat)
+}
+
+func (c *sftpClient) stat(remotePath string, kind byte) (sftpFileAttr, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -206,7 +231,7 @@ func (c *sftpClient) Stat(remotePath string) (sftpFileAttr, error) {
 	var buf []byte
 	buf = appendUint32(buf, reqID)
 	buf = appendString(buf, remotePath)
-	if err := c.writePacket(sftpPacketStat, buf); err != nil {
+	if err := c.writePacket(kind, buf); err != nil {
 		return sftpFileAttr{}, err
 	}
 	pktType, body, err := c.readResponseFor(reqID)
@@ -222,7 +247,9 @@ func (c *sftpClient) Stat(remotePath string) (sftpFileAttr, error) {
 	return parseFileAttr(body)
 }
 
-func (c *sftpClient) Mkdir(remotePath string) error {
+func (c *sftpClient) Mkdir(remotePath string) error { return c.mkdir(remotePath, 0) }
+
+func (c *sftpClient) mkdir(remotePath string, mode uint32) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -230,7 +257,12 @@ func (c *sftpClient) Mkdir(remotePath string) error {
 	var buf []byte
 	buf = appendUint32(buf, reqID)
 	buf = appendString(buf, remotePath)
-	buf = appendUint32(buf, 0) // attrs flags = 0
+	if mode == 0 {
+		buf = appendUint32(buf, 0)
+	} else {
+		buf = appendUint32(buf, sftpAttrPermissions)
+		buf = appendUint32(buf, mode)
+	}
 	return c.sendAndExpectOK(sftpPacketMkdir, buf, reqID)
 }
 
@@ -245,6 +277,15 @@ func (c *sftpClient) Remove(remotePath string) error {
 	return c.sendAndExpectOK(sftpPacketRemove, buf, reqID)
 }
 
+func (c *sftpClient) rmdir(remotePath string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id := c.allocID()
+	buf := appendUint32(nil, id)
+	buf = appendString(buf, remotePath)
+	return c.sendAndExpectOK(sftpPacketRmdir, buf, id)
+}
+
 func (c *sftpClient) Rename(oldPath, newPath string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -257,7 +298,31 @@ func (c *sftpClient) Rename(oldPath, newPath string) error {
 	return c.sendAndExpectOK(sftpPacketRename, buf, reqID)
 }
 
-func (c *sftpClient) ReadFile(remotePath string) ([]byte, error) {
+// ReplaceFile uses the advertised atomic extension or v3 rename. Failure never
+// authorizes unlinking the existing target; unsupported servers fail safely.
+func (c *sftpClient) ReplaceFile(oldPath, newPath string) error {
+	if c.posixRename {
+		err := c.posixReplace(oldPath, newPath)
+		var status *SFTPStatusError
+		if err == nil || !errors.As(err, &status) || status.malformed || status.Code != 8 {
+			return err
+		}
+	}
+	return c.recoverableReplace(oldPath, newPath)
+}
+
+func (c *sftpClient) posixReplace(oldPath, newPath string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id := c.allocID()
+	buf := appendUint32(nil, id)
+	buf = appendString(buf, "posix-rename@openssh.com")
+	buf = appendString(buf, oldPath)
+	buf = appendString(buf, newPath)
+	return c.sendAndExpectOK(sftpPacketExtended, buf, id)
+}
+
+func (c *sftpClient) ReadFile(remotePath string) (content []byte, resultErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -266,7 +331,10 @@ func (c *sftpClient) ReadFile(remotePath string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() {
-		_ = c.closeHandleLocked(handle)
+		if resultErr != nil && !completeSFTPStatus(resultErr) {
+			return
+		}
+		resultErr = errors.Join(resultErr, c.closeHandleLocked(handle))
 	}()
 
 	var out []byte
@@ -308,17 +376,35 @@ func (c *sftpClient) ReadFile(remotePath string) ([]byte, error) {
 }
 
 func (c *sftpClient) WriteFile(remotePath string, data []byte, mode os.FileMode) error {
+	return c.writeFile(remotePath, data, mode, sftpFlagWrite|sftpFlagCreat|sftpFlagTrunc)
+}
+
+// WriteExclusive stages a file only if its name is new. A collision never
+// authorizes overwriting or deleting a file owned by another writer.
+func (c *sftpClient) WriteExclusive(remotePath string, data []byte, mode os.FileMode) (bool, error) {
+	created := false
+	err := c.writeFile(remotePath, data, mode, sftpFlagWrite|sftpFlagCreat|sftpFlagExcl, &created)
+	return created, err
+}
+
+func (c *sftpClient) writeFile(remotePath string, data []byte, mode os.FileMode, flags uint32, created ...*bool) (resultErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	handle, err := c.openLocked(remotePath, sftpFlagWrite|sftpFlagCreat|sftpFlagTrunc, uint32(mode))
+	handle, err := c.openLocked(remotePath, flags, uint32(mode))
 	if err != nil {
 		return err
 	}
+	if len(created) > 0 {
+		*created[0] = true
+	}
 	defer func() {
-		_ = c.closeHandleLocked(handle)
+		// The peer can acknowledge WRITE and still fail CLOSE (e.g. deferred
+		// disk errors). Do not publish that staged file as a successful backup.
+		if resultErr != nil && !completeSFTPStatus(resultErr) {
+			return
+		}
+		resultErr = errors.Join(resultErr, c.closeHandleLocked(handle))
 	}()
-
 	var offset uint64
 	for offset < uint64(len(data)) {
 		end := offset + sftpChunkBytes
@@ -405,19 +491,23 @@ func (c *sftpClient) allocID() uint32 {
 }
 
 func (c *sftpClient) writePacket(pktType byte, payload []byte) error {
-	if c.closed {
+	if c.closed.Load() {
 		return errors.New("sftp_closed")
 	}
 	totalLen := 1 + len(payload)
 	header := make([]byte, 5)
 	binary.BigEndian.PutUint32(header[:4], uint32(totalLen))
 	header[4] = pktType
-	if _, err := c.stdin.Write(header); err != nil {
+	if n, err := c.stdin.Write(header); err != nil {
 		return err
+	} else if n != len(header) {
+		return io.ErrShortWrite
 	}
 	if len(payload) > 0 {
-		if _, err := c.stdin.Write(payload); err != nil {
+		if n, err := c.stdin.Write(payload); err != nil {
 			return err
+		} else if n != len(payload) {
+			return io.ErrShortWrite
 		}
 	}
 	return nil
@@ -456,10 +546,17 @@ func (c *sftpClient) readResponseFor(expectedReqID uint32) (byte, []byte, error)
 
 func parseStatusError(body []byte) *SFTPStatusError {
 	if len(body) < 4 {
-		return &SFTPStatusError{Code: 4, Message: "truncated status"}
+		return &SFTPStatusError{Code: 4, Message: "truncated status", malformed: true}
 	}
 	code := binary.BigEndian.Uint32(body[:4])
-	msg, _, _ := readString(body[4:])
+	msg, rest, ok := readString(body[4:])
+	if !ok {
+		return &SFTPStatusError{Code: 4, Message: "truncated status message", malformed: true}
+	}
+	_, trailing, ok := readString(rest)
+	if !ok || len(trailing) != 0 {
+		return &SFTPStatusError{Code: 4, Message: "invalid status language", malformed: true}
+	}
 	return &SFTPStatusError{Code: code, Message: msg}
 }
 
@@ -533,4 +630,29 @@ func readString(src []byte) (string, []byte, bool) {
 		return "", nil, false
 	}
 	return string(b), rest, true
+}
+
+// Only complete protocol statuses prove the stream can carry another command.
+// A joined write-status + transport-close error is not a reusable connection.
+func completeSFTPStatus(err error) bool {
+	if err == nil {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !completeSFTPStatus(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return completeSFTPStatus(wrapped.Unwrap())
+	}
+	status, ok := err.(*SFTPStatusError)
+	return ok && !status.malformed
 }

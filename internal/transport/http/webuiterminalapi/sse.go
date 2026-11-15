@@ -96,6 +96,12 @@ func (stream *muxStream) addWatcher(watcher *muxWatcher) bool {
 	return true
 }
 
+func (stream *muxStream) hasWatchers() bool {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	return !stream.closed && len(stream.watchers) > 0
+}
+
 func (stream *muxStream) removeWatcher(watcher *muxWatcher) int {
 	stream.mu.Lock()
 	delete(stream.watchers, watcher)
@@ -137,7 +143,11 @@ func (stream *muxStream) unsubscribe(termID string) {
 }
 
 func (stream *muxStream) forward(termID string, subscription *terminalsession.Subscription) {
+	sawExit := false
 	for frame := range subscription.C {
+		if frame.Type == terminalsession.FrameExit {
+			sawExit = true
+		}
 		payload := encodeMuxFrame(termID, frame)
 		stream.mu.Lock()
 		for watcher := range stream.watchers {
@@ -157,6 +167,13 @@ func (stream *muxStream) forward(termID string, subscription *terminalsession.Su
 	stream.mu.Lock()
 	if stream.subs[termID] == subscription {
 		delete(stream.subs, termID)
+		// An overflow closes a subscription without exiting the PTY. End the
+		// transport so clients reconnect instead of receiving only heartbeats.
+		if !stream.closed && !sawExit {
+			for watcher := range stream.watchers {
+				watcher.stop()
+			}
+		}
 	}
 	stream.mu.Unlock()
 }
@@ -269,10 +286,24 @@ func (handler *Handler) releaseMux(stream *muxStream, watcher *muxWatcher) {
 	if stream == nil {
 		return
 	}
+	handler.nativeMu.Lock()
+	defer handler.nativeMu.Unlock()
 	handler.mu.Lock()
 	remaining := stream.removeWatcher(watcher)
 	if remaining == 0 && handler.muxes[stream.id] == stream {
 		delete(handler.muxes, stream.id)
+		for _, meta := range handler.meta {
+			delete(meta.muxIDs, stream.id)
+			if meta.muxID == stream.id {
+				meta.muxID = ""
+			}
+		}
+		for termID, meta := range handler.meta {
+			if meta.nativeSocket != "" && len(meta.muxIDs) == 0 {
+				_ = handler.sessions.Kill(termID)
+				delete(handler.meta, termID)
+			}
+		}
 		handler.mu.Unlock()
 		stream.shutdown()
 		return
@@ -315,7 +346,7 @@ func (handler *Handler) handleMux(response http.ResponseWriter, request *http.Re
 	// 回放该 mux 下已有会话的挂载前缓冲（例如各 tab 的首个 prompt）。
 	// 订阅本身先送回放帧，再送实时帧；这里按快照顺序逐个挂上。
 	for _, snapshot := range snapshots {
-		if handler.muxIDFor(snapshot.ID) == muxID {
+		if handler.boundToMux(snapshot.ID, muxID) {
 			stream.subscribe(handler.sessions, snapshot.ID)
 		}
 	}

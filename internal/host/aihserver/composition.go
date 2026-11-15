@@ -82,6 +82,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
@@ -985,10 +986,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		HostHomeDir: dependencies.HostHomeDir,
 		Catalog:     catalog,
 		Credentials: store,
-		// 宿主全局配置的内容构造与写入仍在 Node（lib/account/host-sync.js），
-		// Go 没有等价端口：这里留空，落点按 Node 同款原因码如实上报
-		// host_sync_unavailable，而不是「先写档位再等宿主」。
-		GatewaySync: nil,
+		// Codex host credentials/default pointers now share the transactional host
+		// service. Other providers remain explicitly unavailable in this adapter.
+		CodexDefaults: codexDefaultProjection{aiHome: aiHomeDir, hostHome: dependencies.HostHomeDir},
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除宿主投影失败: %w", err)
@@ -1056,7 +1056,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		startupContext = context.Background()
 	}
 	knownHostKeys := make(map[string]string)
-	if raw, found, readErr := appstate.ReadKV(startupContext, filepath.Join(dependencies.AIHomeDir, "app-state.db"), "ssh_known_hosts"); readErr == nil && found {
+	if raw, found, readErr := appstate.ReadKV(startupContext, appStateDatabasePath, "ssh_known_hosts"); readErr == nil && found {
 		var records map[string]struct {
 			Fingerprint string `json:"fingerprint"`
 		}
@@ -1083,6 +1083,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}()
 	}
 	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
+		MaxSessions: 64, // Multiple overviews each own a separate borrowed client.
 		ExitRetention: 250 * time.Millisecond,
 		// WebUI SSH 终端：Node 传入连接事实，Go 直接建 SSH PTY。
 		RemoteStarter: func(ctx context.Context, remote terminalsession.RemoteSpec, size pty.Size) (pty.Session, error) {
@@ -1103,6 +1104,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Authorizer: authorizer,
 		Sessions:   terminalService,
 		Durable:    terminalDurable,
+		NativeSessions: &persistent.TmuxSessionStore{AIHomeDir: aiHomeDir},
 	})
 	if err != nil {
 		_ = terminalService.Close()
@@ -1353,24 +1355,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
-			catalog:        catalog,
-			store:          store,
-			runtime:        accountRuntime,
-			weights:        accountRuntime,
-			usageGate:      usageGate,
-			strategy:       selectionStrategy,
-			models:         recoveringModelManagement,
-			modelRefreshes: modelRefresh,
-			credentialRefresh: credentialRefreshStrategies(
-				codexProvider,
-				claudeProvider,
-				agyProvider,
-				kimiProvider,
-				kiroProvider,
-				geminiStrategy,
-				grokStrategy,
-				clineStrategy,
-			),
+			catalog:                   catalog,
+			store:                     store,
+			runtime:                   accountRuntime,
+			weights:                   accountRuntime,
+			usageGate:                 usageGate,
+			strategy:                  selectionStrategy,
+			models:                    recoveringModelManagement,
+			modelRefreshes:            modelRefresh,
+			credentials:               credentials,
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			ownsCredentialRefresh:     ownsCredentialRefresh,
 			authorizer:                clientAuthorizer,

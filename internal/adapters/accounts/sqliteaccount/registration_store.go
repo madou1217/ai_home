@@ -62,6 +62,10 @@ func (store *Store) RegisterNew(
 		account.ProviderID() != request.ProviderID() {
 		return accountcore.Account{}, accountapp.ErrInvalidRegistration
 	}
+	account, err = account.WithEnabled(request.Enabled(), request.RegisteredAt())
+	if err != nil {
+		return accountcore.Account{}, err
+	}
 	if err := insertCredential(
 		ctx,
 		transaction,
@@ -121,7 +125,7 @@ func insertAccountWithAllocatedAlias(
 			account_ref, provider_id, cli_account_id, enabled,
 			created_at_ms, updated_at_ms
 		)
-		SELECT ?, ?, COALESCE(MAX(cli_account_id), 0) + 1, 1, ?, ?
+		SELECT ?, ?, COALESCE(MAX(cli_account_id), 0) + 1, ?, ?, ?
 		FROM accounts
 		WHERE provider_id = ?
 		HAVING COALESCE(MAX(cli_account_id), 0) < ?
@@ -132,6 +136,7 @@ func insertAccountWithAllocatedAlias(
 		statement,
 		request.AccountRef().String(),
 		request.ProviderID(),
+		request.Enabled(),
 		request.RegisteredAt().UnixMilli(),
 		request.RegisteredAt().UnixMilli(),
 		request.ProviderID(),

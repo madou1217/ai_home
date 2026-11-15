@@ -309,7 +309,7 @@ func listProviderAccounts(ctx context.Context, databasePath string, catalog *pro
 
 func readCredentialEnv(ctx context.Context, db *sql.DB, accountRef string) (map[string]any, error) {
 	var envJSON string
-	err := db.QueryRowContext(ctx, "SELECT env_json FROM account_credentials WHERE account_ref = ? LIMIT 1", accountRef).Scan(&envJSON)
+	err := db.QueryRowContext(ctx, "SELECT env_json FROM compat_account_credentials WHERE account_ref = ? LIMIT 1", accountRef).Scan(&envJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return map[string]any{}, nil
 	}

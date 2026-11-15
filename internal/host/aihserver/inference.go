@@ -88,6 +88,7 @@ type inferenceCompositionDependencies struct {
 	models            accountapp.AccountModelRefresher
 	modelRefreshes    inferencegateway.ModelRefreshScheduler
 	credentialRefresh []accountcredentials.RefreshStrategy
+	credentials       inferenceruntime.CredentialResolver
 	// delegateCredentialRefresh 与账号管理侧解析器保持同一刷新所有权。
 	delegateCredentialRefresh bool
 	// ownsCredentialRefresh 与账号管理侧解析器共用同一判定：宿主台账里没有的账号
@@ -249,6 +250,7 @@ func newInferenceComposition(
 		Strategy:                  dependencies.strategy,
 		Routes:                    activeCatalog,
 		CredentialStrategies:      dependencies.credentialRefresh,
+		Credentials:               dependencies.credentials,
 		DelegateCredentialRefresh: dependencies.delegateCredentialRefresh,
 		OwnsCredentialRefresh:     dependencies.ownsCredentialRefresh,
 		Upstreams: []inferencegateway.UpstreamAdapter{
@@ -313,7 +315,7 @@ func validInferenceDependencies(
 		dependencies.runtime != nil &&
 		dependencies.models != nil &&
 		dependencies.modelRefreshes != nil &&
-		len(dependencies.credentialRefresh) > 0 &&
+		(dependencies.credentials != nil || len(dependencies.credentialRefresh) > 0) &&
 		dependencies.authorizer != nil &&
 		dependencies.clock != nil
 }

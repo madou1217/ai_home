@@ -1,0 +1,79 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { CodeOutlined, PlusOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { Button, Empty, Input, Select, Spin, message } from 'antd';
+import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
+import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
+import { useTerminalDirectory } from '@/features/web-terminal/use-terminal-directory';
+import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
+import './TerminalSessions.css';
+
+function readHidden(serverId: string): string[] {
+  try { const value = JSON.parse(localStorage.getItem(`aih:terminal-overview:hidden:${serverId}`) || '[]'); return Array.isArray(value) ? value.filter((key) => typeof key === 'string') : []; } catch { return []; }
+}
+
+export default function TerminalSessions() {
+  const manager = useWebTerminalManager();
+  useLayoutEffect(() => {
+    manager.setOverviewVisible(true);
+    return () => manager.setOverviewVisible(false);
+  }, [manager.setOverviewVisible]);
+  const directory = useTerminalDirectory(manager.serverId);
+  const openProjectTerminal = useOpenProjectTerminal();
+  const [hiddenState, setHidden] = useState(() => ({ serverId: manager.serverId, keys: readHidden(manager.serverId) }));
+  const hidden = useMemo(() => hiddenState.serverId === manager.serverId ? hiddenState.keys : readHidden(manager.serverId), [hiddenState, manager.serverId]);
+  const [query, setQuery] = useState('');
+  const [provider, setProvider] = useState('all');
+  useEffect(() => {
+    manager.adoptSessions(directory.sessions.filter((session) => session.status === 'running' && !hidden.includes(session.sessionKey)).map((session) => ({
+      sessionKey: session.sessionKey, label: session.label, cwd: session.cwd,
+      kind: session.source === 'native' ? 'account-cli' : 'shell', harness: session.provider,
+    })));
+  }, [directory.sessions, hidden, manager.adoptSessions]);
+  const hide = useCallback((id: string) => {
+    const tab = manager.tabs.find((item) => item.id === id);
+    if (!tab) return;
+    setHidden((current) => {
+      const keys = [...new Set([...(current.serverId === manager.serverId ? current.keys : readHidden(manager.serverId)), tab.sessionKey])];
+      try { localStorage.setItem(`aih:terminal-overview:hidden:${manager.serverId}`, JSON.stringify(keys)); } catch { /* session remains usable */ }
+      return { serverId: manager.serverId, keys };
+    });
+    manager.closeTab(id);
+  }, [hidden, manager]);
+  const restoreHidden = () => {
+    setHidden({ serverId: manager.serverId, keys: [] });
+    try { localStorage.removeItem(`aih:terminal-overview:hidden:${manager.serverId}`); } catch { /* ignore */ }
+  };
+  const candidates = manager.tabs.filter((tab) => !hidden.includes(tab.sessionKey));
+  const filtered = candidates.filter((tab) => (provider === 'all' || tab.harness === provider)
+    && `${tab.label} ${tab.cwd} ${tab.harness || ''}`.toLowerCase().includes(query.toLowerCase()));
+  const options = [...new Set(candidates.map((tab) => tab.harness).filter(Boolean))];
+  const active = candidates.find((tab) => tab.id === manager.activeTabId) || candidates[0];
+  const select = (id: string) => { manager.setActiveTab(id); setQuery(''); setProvider('all'); };
+  return <main className="terminal-overview">
+    <header className="terminal-overview-header">
+      <div><span className="terminal-overview-eyebrow">LIVE SESSIONS</span><h1><CodeOutlined /> 会话总览 <span>{candidates.length}</span></h1></div>
+      <div className="terminal-overview-actions">
+        <Button icon={<ReloadOutlined />} loading={directory.loading} onClick={() => void directory.refresh()}>刷新会话</Button>
+        {hidden.length ? <Button icon={<EyeOutlined />} onClick={restoreHidden}>显示已隐藏 ({hidden.length})</Button> : null}
+        <Button icon={<PlusOutlined />} onClick={() => void openProjectTerminal(active?.cwd)}>项目终端</Button>
+      </div>
+    </header>
+    <div className="terminal-overview-toolbar">
+      <Input.Search aria-label="查找会话" placeholder="查找名称、项目路径" value={query} onChange={(event) => setQuery(event.target.value)} allowClear />
+      <Select aria-label="筛选会话类型" value={provider} onChange={setProvider} options={[{ value: 'all', label: '全部类型' }, ...options.map((value) => ({ value, label: value }))]} />
+      <span className="terminal-overview-help">点击预览切换，直接在主窗口输入 · 关闭原生会话视图会保留后台任务</span>
+      {directory.error ? <span className="terminal-overview-error" role="status">{directory.error}</span> : null}
+    </div>
+    {query || provider !== 'all' ? <nav className="terminal-overview-results" aria-label="查找结果">
+      {filtered.length ? filtered.map((tab) => <button key={tab.id} type="button" onClick={() => select(tab.id)} title={tab.cwd}>{tab.label}</button>) : <span>没有匹配的会话</span>}
+    </nav> : null}
+    <div className="terminal-overview-workspace">
+      {candidates.length ? <ShellTerminalPanel key={manager.serverId} visible persistent compactChrome title="会话终端"
+        sessionTabs={candidates.map((tab) => ({ ...tab, persistent: true }))} activeTabId={active?.id}
+        onActiveTabChange={manager.setActiveTab} onTabClose={hide} layout="gallery" panelHeight={700}
+        onClose={() => message.info('会话视图已关闭，后台任务继续运行')} allowNewTab={false} minimized={false} />
+        : directory.loading ? <div className="terminal-overview-empty"><Spin tip="正在发现运行中的会话" /></div>
+          : <div className="terminal-overview-empty"><Empty description="当前服务器没有可显示的会话"><Button onClick={() => void openProjectTerminal()}>打开终端</Button></Empty></div>}
+    </div>
+  </main>;
+}

@@ -116,6 +116,8 @@ func cloneDefinition(source Definition) Definition {
 		native.Config.ProjectSettings = append([]string(nil), source.NativeBoundary.Config.ProjectSettings...)
 		native.Config.CLIFlags = append([]string(nil), source.NativeBoundary.Config.CLIFlags...)
 		native.Sessions.Flags = append([]string(nil), source.NativeBoundary.Sessions.Flags...)
+		native.Sessions.Resume = cloneSessionCommand(source.NativeBoundary.Sessions.Resume)
+		native.Sessions.Fork = cloneSessionCommand(source.NativeBoundary.Sessions.Fork)
 		native.MCP.Commands = append([]string(nil), source.NativeBoundary.MCP.Commands...)
 		native.MCP.ConfigFiles = append([]string(nil), source.NativeBoundary.MCP.ConfigFiles...)
 		native.Hooks.Files = append([]string(nil), source.NativeBoundary.Hooks.Files...)
@@ -173,4 +175,14 @@ func cloneDesktopPlatform(source *DesktopPlatform) *DesktopPlatform {
 	target.PathIncludes = append([]string(nil), source.PathIncludes...)
 	target.InstallPaths = append([]string(nil), source.InstallPaths...)
 	return &target
+}
+
+func cloneSessionCommand(source *NativeSessionCommand) *NativeSessionCommand {
+	if source == nil {
+		return nil
+	}
+	return &NativeSessionCommand{
+		WithID:    append([]string(nil), source.WithID...),
+		WithoutID: append([]string(nil), source.WithoutID...),
+	}
 }

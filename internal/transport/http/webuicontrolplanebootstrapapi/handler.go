@@ -1,38 +1,27 @@
 // Package webuicontrolplanebootstrapapi 提供本机控制面引导契约：
 //
 //	GET /v1/management/webui/control-plane/bootstrap
+//	GET /v0/webui/control-plane/bootstrap
 //
 // 语义对齐 Node 的 handleBootstrapLocalProfile：把「当前生效 endpoint + 本机 profile」
 // 交回浏览器，用于 localStorage 被清空（PWA 存储回收 / 清站点数据 / 换浏览器）后恢复同机连接。
-//
-// 凭据边界：默认**不回传 Management Key 明文**，只回传 managementKeyConfigured 与
-// managementKeySource，让调用方知道服务端是否已配置密钥。只有宿主注入的
-// RevealManagementKey 对本次请求返回 true（通常就是 Node 的 loopback + 无转发头窄口）时，
-// profile 才带上 managementKey；未注入或返回 false 时响应体不会出现 Key 明文。
-//
-// 数据边界：
-//   - endpoint 只由请求地址与本机监听端口推导（PublicBaseURL 由宿主注入，未注入时依次按
-//     Node 透传的 host/port 查询参数、请求自身的 scheme+Host 推导），不做任何网络探测。
-//   - profile 骨架来自 app-state.db 的 control-plane:profiles：按 endpoint 命中的记录原样
-//     透传（统计值、时间戳保持调用方写入的样子），只覆盖 id/name/endpoint/state 并剔除
-//     managementKey。归一化口径归 webuicontrolplaneapi（唯一写入口），本包不重算统计字段。
-//   - 本契约只读，不写 store：引导请求不应该产生副作用（Node 同样不写）。
-//
-// 鉴权边界：Authorizer 负责全部放行判断，包括 Node 侧的本机窄口
-// （webui-auth-gate 的 loopback_bootstrap：只允许 GET、TCP 对端 loopback、Host 为 loopback
-// 名字且不带转发头）。那属于策略，不属于本契约；Handler 只认 Authorizer 的结论。
-// 「能不能回明文」是另一条独立策略，由 RevealManagementKey 单独决定，不写在 Handler 里。
 package webuicontrolplanebootstrapapi
 
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
 )
 
-// Path 是控制面引导的 WebUI 契约路径。
+// Path 是控制面引导的管理面契约路径。
 const Path = "/v1/management/webui/control-plane/bootstrap"
+
+// PublicPath 是浏览器直连的控制面引导公开路径。
+const PublicPath = "/v0/webui/control-plane/bootstrap"
 
 const (
 	// localProfileID 是本机 profile 的固定标识（Node 的兜底值）。
@@ -40,11 +29,18 @@ const (
 	// profileStateReady 表示这份 profile 就是当前正在服务的网关。
 	profileStateReady = "ready"
 	// managementKeySourceServer 说明密钥状态取自服务端当前生效配置，而不是 profile 快照。
-	//
-	// Node 的引导响应会用服务端当前 Key 覆盖 store 里的旧快照；Go 不回明文，因此用这个
-	// 来源标记告诉调用方：configured 反映「服务端现在有没有密钥」，不能拿历史快照当依据。
 	managementKeySourceServer = "server"
 )
+
+var bootstrapForwardedHeaders = []string{
+	"X-Forwarded-For",
+	"X-Real-Ip",
+	"Cf-Connecting-Ip",
+	"Forwarded",
+	"X-Aih-Server-Id",
+	"X-Forwarded-Host",
+	"X-Forwarded-Proto",
+}
 
 // ErrInvalidDependencies 表示 Handler 缺少鉴权策略或数据根目录。
 var ErrInvalidDependencies = errors.New("控制面引导接口依赖无效")
@@ -55,9 +51,6 @@ type Authorizer interface {
 }
 
 // KeyConfiguredReporter 是 Authorizer 的可选扩展：报告服务端是否已配置 Management Key。
-//
-// 不实现时按「已配置」处理：请求能走到这里说明鉴权策略已经放行，缺密钥的场景由策略自己
-// 拒绝；把未知当成未配置会让所有未接线的宿主都返回 404。
 type KeyConfiguredReporter interface {
 	ManagementKeyConfigured() bool
 }
@@ -69,21 +62,14 @@ type Dependencies struct {
 	// AIHomeDir 是 app-state.db 所在的数据根目录（读 control-plane:profiles）。
 	AIHomeDir string
 	// PublicBaseURL 返回浏览器可见的 base URL（scheme://host[:port]）。
-	//
-	// 由宿主按反向代理头计算；零值时依次退化为请求查询参数（host/port）或请求自身的
-	// scheme+Host。注入它是为了让端口映射场景仍能对上浏览器地址栏。
 	PublicBaseURL func(*http.Request) string
 	// RevealManagementKey 决定本次请求能否回传 Management Key 明文。
 	//
-	// 零值表示永不回明文（失败关闭）。注入方通常实现 Node 的 loopback 窄口：仅 GET、
-	// TCP 对端 loopback、Host 为 loopback 名字且不带转发头。返回 true 时 profile 里带
-	// managementKey（与 Node 同名同位置），优先取实时 ManagementKey，缺省时退回已存快照；
-	// 返回 false 或零值时响应体不出现该键。
+	// 注入方通常传入 IsLoopbackBootstrapRequest（仅 GET、TCP 对端 loopback、Host 为 loopback
+	// 名字且不带转发头）。未显式注入时，仅对已通过外层 webuiauth 本机引导窄口（loopback_bootstrap）
+	// 且满足 IsLoopbackBootstrapRequest 的请求回传明文，管理面裸调保持失败关闭。
 	RevealManagementKey func(*http.Request) bool
 	// ManagementKey 返回服务端当前生效的 Management Key（可选）。
-	//
-	// 注入时优先以实时值判断 managementKeyConfigured，并在 RevealManagementKey 放行时
-	// 回传该实时密钥，避免首次引导或密钥轮换后读到旧快照。
 	ManagementKey func() string
 }
 
@@ -110,6 +96,64 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 	}, nil
 }
 
+// IsLoopbackBootstrapRequest 复刻 Node 本机引导明文回传的窄边界：
+// 仅允许 GET、TCP 对端为回环地址、请求 Host（及可选 host 查询参数）为本机名字，且不携带任何代理转发头。
+func IsLoopbackBootstrapRequest(request *http.Request) bool {
+	if request == nil || request.Method != http.MethodGet {
+		return false
+	}
+	if !isLoopbackPeerAddr(request.RemoteAddr) {
+		return false
+	}
+	if !isLoopbackHostName(request.Host) {
+		return false
+	}
+	if hasBootstrapForwardingHeaders(request.Header) {
+		return false
+	}
+	if request.URL != nil {
+		query := request.URL.Query()
+		if query.Has("host") && !isLoopbackHostName(query.Get("host")) {
+			return false
+		}
+	}
+	return true
+}
+
+func isLoopbackPeerAddr(remoteAddr string) bool {
+	trimmed := strings.TrimSpace(remoteAddr)
+	if trimmed == "" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(trimmed)
+	if err != nil {
+		host = strings.Trim(trimmed, "[]")
+	}
+	if zoneIndex := strings.IndexByte(host, '%'); zoneIndex >= 0 {
+		host = host[:zoneIndex]
+	}
+	host = strings.TrimPrefix(strings.ToLower(host), "::ffff:")
+	if host == "::1" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func hasBootstrapForwardingHeaders(header http.Header) bool {
+	if len(header) == 0 {
+		return false
+	}
+	for _, name := range bootstrapForwardedHeaders {
+		for _, value := range header.Values(name) {
+			if strings.TrimSpace(value) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 type errorView struct {
 	OK      bool   `json:"ok"`
 	Error   string `json:"error"`
@@ -122,7 +166,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusServiceUnavailable, "control_plane_bootstrap_unavailable", "控制面引导服务不可用")
 		return
 	}
-	if !handler.authorizer.Authorized(request) {
+	if !handler.authorizer.Authorized(request) && !webuiauth.IsLoopbackBootstrap(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
@@ -179,11 +223,14 @@ func (handler *Handler) managementKeyConfigured() bool {
 }
 
 // revealableManagementKey 返回本次请求可以回传的明文 Key。
-//
-// 策略未注入、策略拒绝、或实时与已存均无 Key 时都返回空串，调用方据此不写该字段——
-// 空字符串也不写，避免把「没有」伪装成「有但是空」。
 func (handler *Handler) revealableManagementKey(request *http.Request, existing map[string]any) string {
-	if handler.revealManagementKey == nil || !handler.revealManagementKey(request) {
+	allowed := false
+	if handler.revealManagementKey != nil {
+		allowed = handler.revealManagementKey(request)
+	} else if webuiauth.IsLoopbackBootstrap(request) {
+		allowed = IsLoopbackBootstrapRequest(request)
+	}
+	if !allowed {
 		return ""
 	}
 	if handler.managementKey != nil {
@@ -195,9 +242,7 @@ func (handler *Handler) revealableManagementKey(request *http.Request, existing 
 }
 
 // bootstrapProfile 复刻 Node 的 profile 合并：以 endpoint 命中的已存 profile 为底，
-// 覆盖 id/name/endpoint/state，并剔除 managementKey（本契约不回明文）。
-//
-// 不改动已存记录本身：入参是 store 解码出来的副本，返回值是新的 map。
+// 覆盖 id/name/endpoint/state，并剔除旧快照里的 managementKey。
 func bootstrapProfile(existing map[string]any, endpoint string) map[string]any {
 	profile := make(map[string]any, len(existing)+4)
 	for key, value := range existing {
@@ -215,7 +260,6 @@ func bootstrapProfile(existing map[string]any, endpoint string) map[string]any {
 	return profile
 }
 
-// trimmedString 取字符串字段并去空白；非字符串一律视为空（endpoint/id 只会是字符串）。
 func trimmedString(value any) string {
 	text, ok := value.(string)
 	if !ok {
@@ -225,7 +269,8 @@ func trimmedString(value any) string {
 }
 
 func writeJSON(response http.ResponseWriter, status int, payload any) {
-	response.Header().Set("Content-Type", "application/json")
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(status)
 	encoder := json.NewEncoder(response)
 	encoder.SetEscapeHTML(false)

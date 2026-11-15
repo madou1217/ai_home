@@ -18,6 +18,13 @@ type conPtySession struct {
 	command  *gopty.Cmd
 }
 
+func (session *conPtySession) ProcessID() int {
+	if session == nil || session.command == nil || session.command.Process == nil {
+		return 0
+	}
+	return session.command.Process.Pid
+}
+
 func Available() bool     { return true }
 func NewStarter() Starter { return conPtyStarter{} }
 

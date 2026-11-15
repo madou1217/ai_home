@@ -439,6 +439,8 @@ func (store *TmuxSessionStore) readFlexibleRegistryEntries(ctx context.Context) 
 			Label             string   `json:"label"`
 			ForwardArgsSnake  []string `json:"forward_args"`
 			ForwardArgsCamel  []string `json:"forwardArgs"`
+			NativeIDCamel     string   `json:"nativeSessionId"`
+			NativeIDSnake     string   `json:"native_session_id"`
 		}
 		if json.Unmarshal(payload, &doc) != nil {
 			continue
@@ -475,6 +477,7 @@ func (store *TmuxSessionStore) readFlexibleRegistryEntries(ctx context.Context) 
 			CWD:          doc.CWD,
 			Label:        doc.Label,
 			ForwardArgs:  args,
+			NativeID:     firstNonEmptyStr(doc.NativeIDCamel, doc.NativeIDSnake),
 		})
 	}
 	return results

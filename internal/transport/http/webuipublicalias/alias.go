@@ -17,7 +17,7 @@ const PublicAccountPrefix = "/v0/webui/accounts"
 
 // Rewrite 返回把 from 前缀替换成 to 前缀的处理器；from 必须是非空且以 "/" 开头。
 //
-// 只改路径与 RawPath，查询串、方法与请求体原样保留；to/from 不匹配时保持原路径，
+// 只按路径段边界替换路径与 RawPath，查询串、方法与请求体原样保留；to/from 不匹配时保持原路径，
 // 由目标处理器按自己的路由表返回 404。
 func Rewrite(from, to string, handler http.Handler) http.Handler {
 	trimmedFrom := strings.TrimSuffix(from, "/")
@@ -28,14 +28,25 @@ func Rewrite(from, to string, handler http.Handler) http.Handler {
 			return
 		}
 		request := r.Clone(r.Context())
-		if strings.HasPrefix(r.URL.Path, trimmedFrom) {
+		if hasSegmentPrefix(r.URL.Path, trimmedFrom) {
 			request.URL.Path = trimmedTo + strings.TrimPrefix(r.URL.Path, trimmedFrom)
 		}
-		if r.URL.RawPath != "" && strings.HasPrefix(r.URL.RawPath, trimmedFrom) {
-			request.URL.RawPath = trimmedTo + strings.TrimPrefix(r.URL.RawPath, trimmedFrom)
+		if r.URL.RawPath != "" {
+			if hasSegmentPrefix(r.URL.RawPath, trimmedFrom) {
+				request.URL.RawPath = trimmedTo + strings.TrimPrefix(r.URL.RawPath, trimmedFrom)
+			} else if request.URL.Path != r.URL.Path {
+				request.URL.RawPath = ""
+			}
 		}
 		handler.ServeHTTP(w, request)
 	})
+}
+
+func hasSegmentPrefix(targetPath, trimmedFrom string) bool {
+	if trimmedFrom == "" {
+		return strings.HasPrefix(targetPath, "/")
+	}
+	return targetPath == trimmedFrom || strings.HasPrefix(targetPath, trimmedFrom+"/")
 }
 
 // RewritePath 返回把任意请求路径改成 to 的处理器。

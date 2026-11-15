@@ -765,7 +765,9 @@ function tryRunGoFamilyRestart() {
   const provider = String(args[0] || '').trim().toLowerCase();
   if (!GO_FAMILY_PROVIDERS.has(provider)) return false;
   if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
-  const hasFlag = args.slice(2).some((token) => token === '--restart-client' || token === '--force-quit-client');
+  const marker = args.indexOf('--');
+  const owned = marker < 0 ? args : args.slice(0, marker);
+  const hasFlag = owned.slice(2).some((token) => token === '--restart-client' || token === '--force-quit-client');
   if (!hasFlag) return false;
   const fs = require('node:fs');
   const os = require('node:os');

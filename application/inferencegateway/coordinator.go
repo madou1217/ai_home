@@ -525,8 +525,20 @@ func (coordinator *Coordinator) executeRouteRound(
 	if err != nil {
 		return routeExecution{}, err
 	}
+	refreshedCandidateSnapshot := false
 	for range coordinator.upstreamAttemptLimit {
 		recruited, err := session.Next(ctx)
+		if errors.Is(err, accountcredentials.ErrCredentialIdentityChanged) && !refreshedCandidateSnapshot && attempted == 0 && !request.IncludeEncryptedReasoning() {
+			if _, pinned := PinnedAccount(ctx); !pinned {
+				// No upstream attempt or output has occurred. Reload once after an
+				// authorized re-key; never reuse a mismatched candidate/binding.
+				refreshedCandidateSnapshot = true
+				session, err = coordinator.beginRecruitment(ctx, request, route, upstream)
+				if err == nil {
+					recruited, err = session.Next(ctx)
+				}
+			}
+		}
 		if err != nil {
 			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 				return routeExecution{

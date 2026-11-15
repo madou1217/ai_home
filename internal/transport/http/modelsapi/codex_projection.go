@@ -49,7 +49,7 @@ type codexModelView struct {
 	SupportsSearchTool                bool                        `json:"supports_search_tool"`
 }
 
-// codexReasoningLevel 保留 Codex 线协议的数组形状；当前目录没有可靠档位元数据。
+// codexReasoningLevel 将模型目录声明的档位投影为 Codex 原生推理强度选项。
 type codexReasoningLevel struct {
 	Effort      string `json:"effort"`
 	Description string `json:"description"`
@@ -93,7 +93,7 @@ func newCodexModelList(models []modelView) codexModelList {
 			Slug:                              model.ID,
 			DisplayName:                       model.ID,
 			Description:                       nil,
-			SupportedReasoningLevels:          []codexReasoningLevel{},
+			SupportedReasoningLevels:          codexReasoningLevels(model.AIHReasoningEfforts),
 			ShellType:                         "shell_command",
 			Visibility:                        "list",
 			SupportedInAPI:                    true,
@@ -120,4 +120,16 @@ func newCodexModelList(models []modelView) codexModelList {
 		})
 	}
 	return codexModelList{Models: views}
+}
+
+// codexReasoningLevels preserves the source ladder and never invents model capabilities.
+func codexReasoningLevels(efforts []string) []codexReasoningLevel {
+	levels := make([]codexReasoningLevel, 0, len(efforts))
+	for _, effort := range efforts {
+		levels = append(levels, codexReasoningLevel{
+			Effort:      effort,
+			Description: effort,
+		})
+	}
+	return levels
 }

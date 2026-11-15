@@ -30,6 +30,12 @@ const nodeRoutes = [
     layout: false,
   },
   {
+    name: "会话总览",
+    path: "/terminals",
+    component: "./TerminalSessions",
+    icon: "code",
+  },
+  {
     name: "模型用量",
     path: "/usage",
     component: "./ModelUsage",

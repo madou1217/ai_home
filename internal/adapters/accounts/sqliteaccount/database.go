@@ -11,13 +11,14 @@ import (
 	"sync/atomic"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	_ "modernc.org/sqlite"
 )
 
 const (
 	// DatabaseFileName 是 AIH 单一业务数据库的固定文件名。
-	DatabaseFileName = "aih.db"
+	DatabaseFileName = businessdb.FileName
 	databaseFileMode = 0o600
 	databaseDirMode  = 0o700
 )
@@ -58,7 +59,14 @@ type Store struct {
 
 // Open 创建或校验 aih.db，并返回可并发使用的账号 Store。
 func Open(ctx context.Context, options OpenOptions) (*Store, error) {
-	databasePath, err := prepareDatabasePath(options)
+	databasePath, err := DatabasePath(options.AIHomeDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
+		return nil, err
+	}
+	databasePath, err = prepareDatabasePath(options)
 	if err != nil {
 		return nil, err
 	}

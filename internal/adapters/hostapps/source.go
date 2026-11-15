@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	appStateDatabaseFileName  = "app-state.db"
+	appStateDatabaseFileName  = "aih.db"
 	goAccountDatabaseFileName = "aih.db"
 	busyTimeoutMS             = 5000
 )

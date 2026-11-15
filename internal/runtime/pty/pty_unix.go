@@ -20,6 +20,13 @@ type unixSession struct {
 	process  *exec.Cmd
 }
 
+func (session *unixSession) ProcessID() int {
+	if session == nil || session.process == nil || session.process.Process == nil {
+		return 0
+	}
+	return session.process.Process.Pid
+}
+
 func Available() bool     { return true }
 func NewStarter() Starter { return unixStarter{} }
 

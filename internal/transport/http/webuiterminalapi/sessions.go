@@ -96,6 +96,10 @@ type openResult struct {
 func (handler *Handler) handleOpen(response http.ResponseWriter, request *http.Request) {
 	var body openBody
 	handler.readJSON(request, handler.maxBody, &body)
+	if strings.HasPrefix(strings.TrimSpace(body.SessionKey), nativeSessionPrefix) {
+		writeError(response, http.StatusBadRequest, "native_session_attach_required", "原生会话请使用接入操作")
+		return
+	}
 	result, failure := handler.openSession(request.Context(), openInput{
 		sessionKey: body.SessionKey,
 		muxID:      body.MuxID,
@@ -300,6 +304,10 @@ func (handler *Handler) handleAttach(response http.ResponseWriter, request *http
 		writeTerminalError(response, http.StatusNotFound, errTerminalNotFound)
 		return
 	}
+	if strings.HasPrefix(key, nativeSessionPrefix) {
+		handler.attachNative(response, request, key, body.MuxID)
+		return
+	}
 	if existing, err := handler.sessions.Attach(key); err == nil {
 		shell := handler.shellForSnapshot(existing)
 		handler.bind(existing.ID, body.MuxID, shell)
@@ -396,11 +404,18 @@ func (handler *Handler) handleClose(response http.ResponseWriter, request *http.
 	key := normalizeSessionKey(body.SessionKey)
 
 	target := handler.findSnapshot(termID)
-	if target != nil && key != "" && target.Key != key {
+	targetKey := ""
+	if target != nil {
+		targetKey = target.Key
+		if strings.HasPrefix(targetKey, nativeSessionPrefix) {
+			targetKey = strings.SplitN(targetKey, "@", 2)[0]
+		}
+	}
+	if target != nil && key != "" && targetKey != key {
 		writeJSON(response, http.StatusConflict, errorView{OK: false, Error: "terminal_identity_mismatch"})
 		return
 	}
-	if target == nil && key != "" {
+	if target == nil && key != "" && !strings.HasPrefix(key, nativeSessionPrefix) {
 		target = handler.findSnapshotByKey(key)
 	}
 
@@ -411,6 +426,12 @@ func (handler *Handler) handleClose(response http.ResponseWriter, request *http.
 		durableKey = ""
 		if target.Durable {
 			durableKey = target.Key
+		}
+	}
+	if durableKey != "" {
+		// Native keys address borrowed tmux clients, never the provider session.
+		if strings.HasPrefix(durableKey, nativeSessionPrefix) {
+			durableKey = ""
 		}
 	}
 	if durableKey != "" {
@@ -504,15 +525,15 @@ func (handler *Handler) bind(termID string, muxID string, shell string) {
 	// 会话从正在观察它的面板上摘下来。
 	if muxID != "" {
 		meta.muxID = muxID
+		if meta.muxIDs == nil {
+			meta.muxIDs = make(map[string]bool)
+		}
+		meta.muxIDs[muxID] = true
 	} else {
 		muxID = previous
 	}
 	if shell != "" {
 		meta.shell = shell
-	}
-	var oldMux *muxStream
-	if previous != "" && previous != muxID {
-		oldMux = handler.muxes[previous]
 	}
 	var newMux *muxStream
 	if muxID != "" {
@@ -520,12 +541,16 @@ func (handler *Handler) bind(termID string, muxID string, shell string) {
 	}
 	handler.mu.Unlock()
 
-	if oldMux != nil {
-		oldMux.unsubscribe(termID)
-	}
 	if newMux != nil {
 		newMux.subscribe(handler.sessions, termID)
 	}
+}
+
+func (handler *Handler) boundToMux(termID, muxID string) bool {
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	meta := handler.meta[termID]
+	return meta != nil && (meta.muxID == muxID || meta.muxIDs[muxID])
 }
 
 func (handler *Handler) muxIDFor(termID string) string {

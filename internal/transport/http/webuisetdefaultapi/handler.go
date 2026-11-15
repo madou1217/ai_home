@@ -101,10 +101,11 @@ type ServerDefaultState interface {
 
 // Dependencies 汇总写入依赖。Host 端口可以为 nil，由路由按能力显式返回 501。
 type Dependencies struct {
-	Authorizer Authorizer
-	AIHomeDir  string
-	Catalog    *providers.Catalog
-	Defaults   DefaultRelations
+	Transaction HostDefaultTransaction
+	Authorizer  Authorizer
+	AIHomeDir   string
+	Catalog     *providers.Catalog
+	Defaults    DefaultRelations
 
 	// ServerDefaults 可选；缺省时由 AIHomeDir 派生 aihdefault.Store。
 	ServerDefaults ServerDefaultState
@@ -117,6 +118,7 @@ type Dependencies struct {
 // Handler 处理 set-default / clear-default。两条路由共用一个 Handler，
 // 由路径后缀分派（wiring 分别注册两个模式）。
 type Handler struct {
+	transaction  HostDefaultTransaction
 	authorizer   Authorizer
 	databasePath string
 	catalog      *providers.Catalog
@@ -151,7 +153,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		})
 	}
 	return &Handler{
-		authorizer:   dependencies.Authorizer,
+		transaction: dependencies.Transaction, authorizer: dependencies.Authorizer,
 		databasePath: databasePath,
 		catalog:      dependencies.Catalog,
 		defaults:     dependencies.Defaults,
@@ -230,6 +232,9 @@ func (handler *Handler) serveSetDefault(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
+	if handler.transactionDefault(response, request, scope, false) {
+		return
+	}
 	if handler.hostSelector == nil {
 		writeError(response, http.StatusNotImplemented,
 			"host_projection_unavailable", "宿主配置投影未接入，默认账号未被修改")
@@ -272,6 +277,9 @@ func (handler *Handler) serveSetDefault(response http.ResponseWriter, request *h
 func (handler *Handler) serveClearDefault(response http.ResponseWriter, request *http.Request) {
 	scope, ok := handler.resolveScope(response, request)
 	if !ok {
+		return
+	}
+	if handler.transactionDefault(response, request, scope, true) {
 		return
 	}
 	gatewayCapable := handler.catalog.Supports(scope.provider, providers.CapabilityGatewayProfile)

@@ -250,7 +250,7 @@ func loadAppStateExtras(ctx context.Context, aiHomeDir string) appStateExtras {
 		}
 	}
 
-	if rows, qErr := db.QueryContext(ctx, "SELECT account_ref, env_json FROM account_credentials WHERE env_json != ''"); qErr == nil {
+	if rows, qErr := db.QueryContext(ctx, "SELECT account_ref, env_json FROM compat_account_credentials WHERE env_json != ''"); qErr == nil {
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var ref, rawEnv string

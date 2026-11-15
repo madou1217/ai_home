@@ -38,3 +38,8 @@ export async function flushTerminalInput(
     if (state.inputBuf && state.inputReady) void flushTerminalInput(state, send, onMissing, onUncertain);
   }
 }
+
+/** xterm replies must remain live while a terminal is a read-only preview. */
+export function isTerminalProtocolReply(data: string): boolean {
+  return /^(?:\x1b\[[0-9;?=>]*[cRnIOt]|\x1b\[[0-9;?]*\$y|\x1b(?:P|\])[^\x1b\x07]*(?:\x07|\x1b\\))+$/.test(data);
+}

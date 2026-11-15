@@ -193,7 +193,7 @@ func startBackgroundDaemonsWithPorts(
 	// 4) ZCode 账单归属对账存储与价格服务适配端口。
 	ownerStore := ports.ZcodeOwnerStore
 	if ownerStore == nil && aiHomeDir != "" {
-		dbPath := filepath.Join(aiHomeDir, "app-state.db")
+		dbPath := filepath.Join(aiHomeDir, "aih.db")
 		if _, statErr := os.Stat(dbPath); statErr == nil {
 			opened, openErr := openSQLiteZcodeOwnerStore(ctx, dbPath)
 			if openErr == nil {

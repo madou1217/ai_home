@@ -183,7 +183,7 @@ func readAccountRecordFromAppState(
 	var nativeUpdated int64
 	err = db.QueryRowContext(ctx, `
 		SELECT COALESCE(c.env_json, '{}'), COALESCE(c.native_auth_json, '{}'), COALESCE(c.native_auth_updated_at, 0)
-		FROM account_credentials AS c
+		FROM compat_account_credentials AS c
 		INNER JOIN account_refs AS r ON r.account_ref = c.account_ref
 		WHERE r.provider = ? AND c.account_ref = ?
 		  AND (c.env_json <> '{}' OR c.native_auth_json <> '{}')

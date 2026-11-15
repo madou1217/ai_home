@@ -1,7 +1,7 @@
-// Package webuicontrolplaneapi 提供控制面 profiles 与端点提示的读写。
+// Package webuicontrolplaneapi 提供控制面 profiles 读写、局域网端点提示与跨 Server 透明流式代理。
 //
-// profiles 存 Node app-state.db 的 control-plane:profiles；Go 成为 WebUI 写入口，
-// 读路径归一化后返回。端点提示只依赖请求地址、绑定 host 与本机网卡，不碰运行态。
+// profiles 持久化于 app-state.db 的 control-plane:profiles，进程内由 profileCache 提供
+// 基于文件指纹的 O(1) 内存索引，并供 RemoteProxy 一行正交挂载以实现零缓冲跨节点代理。
 package webuicontrolplaneapi
 
 import (
@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 const (
 	// Path 是控制面管理契约前缀。
 	Path = "/v1/management/webui/control-plane"
+	// PublicPath 是浏览器直连的控制面公开前缀。
+	PublicPath = "/v0/webui/control-plane"
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。
@@ -28,24 +28,38 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Dependencies 汇总只读依赖。
+// Dependencies 汇总控制面接口依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	AIHomeDir  string
+	// BindHost 是服务配置的监听地址（如 127.0.0.1 或 0.0.0.0），供浏览器无参直连 /endpoints 时判定局域网可达性。
+	BindHost string
+	// ListenPort 返回服务实际监听端口（可选），供无显式端口的场景拼装局域网候选地址。
+	ListenPort func() int
 }
 
-// Handler 处理控制面 profiles/endpoints。
+// Handler 处理控制面 profiles/endpoints，并持有可与 RemoteProxy 共享的内存缓存。
 type Handler struct {
 	authorizer Authorizer
 	aiHomeDir  string
+	bindHost   string
+	listenPort func() int
+	cache      *profileCache
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Authorizer == nil || strings.TrimSpace(dependencies.AIHomeDir) == "" {
+	home := strings.TrimSpace(dependencies.AIHomeDir)
+	if dependencies.Authorizer == nil || home == "" {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, aiHomeDir: strings.TrimSpace(dependencies.AIHomeDir)}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		aiHomeDir:  home,
+		bindHost:   strings.TrimSpace(dependencies.BindHost),
+		listenPort: dependencies.ListenPort,
+		cache:      newProfileCache(home),
+	}, nil
 }
 
 type errorView struct {
@@ -65,7 +79,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
-	path := strings.TrimPrefix(request.URL.Path, Path)
+	path := trimControlPlanePrefix(request.URL.Path)
 	switch {
 	case path == "/profiles":
 		handler.handleProfiles(response, request)
@@ -78,6 +92,16 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	default:
 		writeError(response, http.StatusNotFound, "not_found", "")
 	}
+}
+
+func trimControlPlanePrefix(requestPath string) string {
+	if requestPath == Path || strings.HasPrefix(requestPath, Path+"/") {
+		return strings.TrimPrefix(requestPath, Path)
+	}
+	if requestPath == PublicPath || strings.HasPrefix(requestPath, PublicPath+"/") {
+		return strings.TrimPrefix(requestPath, PublicPath)
+	}
+	return requestPath
 }
 
 func (handler *Handler) handleProfiles(response http.ResponseWriter, request *http.Request) {
@@ -183,46 +207,17 @@ func (handler *Handler) handleRemove(response http.ResponseWriter, request *http
 	})
 }
 
-func (handler *Handler) databasePath() (string, error) {
-	return appstate.DatabasePath(handler.aiHomeDir)
-}
-
 func (handler *Handler) readStore(ctx context.Context) (map[string]any, error) {
-	databasePath, err := handler.databasePath()
-	if err != nil {
-		return nil, err
-	}
-	raw, found, err := appstate.ReadKV(ctx, databasePath, profilesKey)
-	if err != nil {
-		return nil, err
-	}
-	return decodeStore(raw, found)
+	return handler.cache.ReadStore(ctx)
 }
 
 func (handler *Handler) updateStore(ctx context.Context, mutate func(store map[string]any) (map[string]any, error)) error {
-	databasePath, err := handler.databasePath()
-	if err != nil {
-		return err
-	}
-	return appstate.UpdateKV(ctx, databasePath, profilesKey, func(current string, found bool) (string, error) {
-		store, err := decodeStore(current, found)
-		if err != nil {
-			return "", err
-		}
-		next, err := mutate(store)
-		if err != nil {
-			return "", err
-		}
-		encoded, err := json.Marshal(next)
-		if err != nil {
-			return "", err
-		}
-		return string(encoded), nil
-	})
+	return handler.cache.UpdateStore(ctx, mutate)
 }
 
 func writeJSON(response http.ResponseWriter, status int, payload any) {
-	response.Header().Set("Content-Type", "application/json")
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(status)
 	encoder := json.NewEncoder(response)
 	encoder.SetEscapeHTML(false)

@@ -19,7 +19,7 @@ interface WebTerminalLayoutState {
   tabs: WebTerminalTab[];
   activeTabId: string;
   minimized: boolean;
-  layout: 'tabs' | 'sidebar';
+  layout: 'tabs' | 'sidebar' | 'gallery';
   position: { x: number; y: number; width: number; height: number };
 }
 interface StoredState {
@@ -39,7 +39,10 @@ export interface OpenWebTerminalTabInput {
 
 interface WebTerminalManagerValue extends WebTerminalLayoutState {
   serverId: string;
+  overviewVisible: boolean;
+  setOverviewVisible: (visible: boolean) => void;
   openTab: (input: OpenWebTerminalTabInput) => void;
+  adoptSessions: (inputs: OpenWebTerminalTabInput[]) => void;
   closeTab: (id: string) => void;
   closeAll: () => void;
   setActiveTab: (id: string) => void;
@@ -54,7 +57,7 @@ const DEFAULT_STATE: WebTerminalLayoutState = {
   tabs: [],
   activeTabId: '',
   minimized: false,
-  layout: 'tabs',
+  layout: 'gallery',
   position: { x: 0, y: 0, width: DEFAULT_WIDTH, height: 420 }
 };
 
@@ -103,7 +106,7 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
     tabs,
     activeTabId,
     minimized: item.minimized === true,
-    layout: item.layout === 'sidebar' ? 'sidebar' : 'tabs',
+    layout: item.layout === 'sidebar' || item.layout === 'tabs' ? item.layout : 'gallery',
     position: {
       x: Number.isFinite(x) ? x : 0,
       y: Number.isFinite(y) ? y : 0,
@@ -152,6 +155,7 @@ function makeTabId(sessionKey: string): string {
 }
 
 export function WebTerminalManagerProvider({ children }: { children: React.ReactNode }) {
+  const [overviewVisible, setOverviewVisible] = useState(false);
   const [{ serverId, state }, setScopedState] = useState(() => {
     const id = currentServerId();
     return { serverId: id, state: readStoredState(id) };
@@ -208,6 +212,20 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     });
   }, [update]);
 
+  const adoptSessions = useCallback((inputs: OpenWebTerminalTabInput[]) => {
+    update((current) => {
+      const tabs = current.tabs.slice();
+      let changed = false;
+      for (const input of inputs) {
+        if (!input.sessionKey || tabs.some((tab) => tab.sessionKey === input.sessionKey)) continue;
+        tabs.push({ id: makeTabId(input.sessionKey), sessionKey: input.sessionKey,
+          serverId, label: input.label, cwd: input.cwd || '', kind: input.kind || 'account-cli', harness: input.harness });
+        changed = true;
+      }
+      return changed ? { ...current, tabs, activeTabId: current.activeTabId || tabs[0]?.id || '' } : current;
+    });
+  }, [serverId, update]);
+
   const closeAll = useCallback(() => update((current) => ({ ...current, tabs: [], activeTabId: '' })), [update]);
   const setActiveTab = useCallback((id: string) => update((current) => current.tabs.some((tab) => tab.id === id) ? { ...current, activeTabId: id } : current), [update]);
   const setMinimized = useCallback((value: boolean) => update((current) => ({ ...current, minimized: value })), [update]);
@@ -220,14 +238,17 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
   const value = useMemo<WebTerminalManagerValue>(() => ({
     ...state,
     serverId,
+    overviewVisible,
+    setOverviewVisible,
     openTab,
+    adoptSessions,
     closeTab,
     closeAll,
     setActiveTab,
     setMinimized,
     setLayout,
     setPosition
-  }), [closeAll, closeTab, openTab, serverId, setActiveTab, setLayout, setMinimized, setPosition, state]);
+  }), [adoptSessions, closeAll, closeTab, openTab, overviewVisible, serverId, setActiveTab, setLayout, setMinimized, setPosition, state]);
   return <WebTerminalManagerContext.Provider value={value}>{children}</WebTerminalManagerContext.Provider>;
 }
 

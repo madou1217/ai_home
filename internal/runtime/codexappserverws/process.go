@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -143,6 +144,14 @@ func StartAppServerProcess(opts StartProcessOptions) (*AppServerProcess, error) 
 		args = []string{"app-server", "--listen", "stdio://"}
 	}
 
+	for _, entry := range opts.Env {
+		if strings.HasPrefix(entry, "CODEX_HOME=") {
+			if err := codexpreferences.CheckHostReady(strings.TrimPrefix(entry, "CODEX_HOME=")); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
 	stdinR, stdinW, err := os.Pipe()
 	if err != nil {
 		return nil, err

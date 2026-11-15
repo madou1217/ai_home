@@ -477,7 +477,7 @@ func readNodeCredentialOverlay(ctx context.Context, aiHomeDir string, byRef map[
 		return
 	}
 	nodeOverlayCache.mu.Unlock()
-	path := filepath.Join(dir, "app-state.db")
+	path := filepath.Join(dir, "aih.db")
 	if _, err := os.Stat(path); err != nil {
 		return
 	}
@@ -496,7 +496,7 @@ func readNodeCredentialOverlay(ctx context.Context, aiHomeDir string, byRef map[
 	links := readNodeLinks(ctx, db)
 	rows, err := db.QueryContext(ctx, `
 		SELECT c.account_ref, c.env_json, c.native_auth_json, c.updated_at
-		  FROM account_credentials c
+		  FROM compat_account_credentials c
 		 ORDER BY c.updated_at`)
 	if err != nil {
 		return

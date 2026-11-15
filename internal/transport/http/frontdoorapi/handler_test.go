@@ -86,31 +86,143 @@ func TestHandlerForwardsRequestShape(t *testing.T) {
 	}
 }
 
-// TestHandlerSetsForwardedFor 保证 Node 侧仍能拿到真实客户端地址。
-func TestHandlerSetsForwardedFor(t *testing.T) {
-	chain := make(chan string, 1)
+// TestHandlerForwardingBoundaryThreeCases 严格验证三类网络入站拓扑的转发头边界：
+//  1. 本机回环直连（127.0.0.1 / ::1 且无转发头）：禁止注入 X-Forwarded-*，保持本机直连语义；
+//  2. 本机反向代理（127.0.0.1 携带 X-Forwarded-For / X-Real-Ip / Forwarded / X-Forwarded-Proto 等）：
+//     保留原始转发头并追加 X-Forwarded-For 链，防止反代公网流量伪装成本机直连；
+//  3. 外部非回环对端：必须注入 X-Forwarded-For，防止 Node 把 Go 的回环套接字误判为本机客户端。
+func TestHandlerForwardingBoundaryThreeCases(t *testing.T) {
+	type capturedHeaders struct {
+		xff       string
+		xfHost    string
+		xfProto   string
+		xRealIP   string
+		forwarded string
+		host      string
+	}
+
+	seenCh := make(chan capturedHeaders, 8)
 	backend := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		chain <- request.Header.Get("X-Forwarded-For")
+		seenCh <- capturedHeaders{
+			xff:       request.Header.Get("X-Forwarded-For"),
+			xfHost:    request.Header.Get("X-Forwarded-Host"),
+			xfProto:   request.Header.Get("X-Forwarded-Proto"),
+			xRealIP:   request.Header.Get("X-Real-Ip"),
+			forwarded: request.Header.Get("Forwarded"),
+			host:      request.Host,
+		}
 		response.WriteHeader(http.StatusNoContent)
 	}))
 	defer backend.Close()
 
-	front := httptest.NewServer(mustNewHandler(t, backend.URL))
-	defer front.Close()
+	proxyHandler := mustNewHandler(t, backend.URL)
 
-	response, err := front.Client().Get(front.URL + "/v0/webui/health")
-	if err != nil {
-		t.Fatalf("请求失败: %v", err)
-	}
-	response.Body.Close()
-	select {
-	case forwarded := <-chain:
-		if strings.TrimSpace(forwarded) == "" {
-			t.Fatal("X-Forwarded-For 为空")
+	t.Run("本机IPv4直连不注入X-Forwarded头", func(t *testing.T) {
+		front := httptest.NewServer(proxyHandler)
+		defer front.Close()
+
+		resp, err := front.Client().Get(front.URL + "/v0/webui/control-plane/bootstrap")
+		if err != nil {
+			t.Fatalf("请求失败: %v", err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("上游未收到请求")
-	}
+		_ = resp.Body.Close()
+		got := <-seenCh
+		if got.xff != "" || got.xfHost != "" || got.xfProto != "" || got.forwarded != "" || got.xRealIP != "" {
+			t.Fatalf("本机直连不应注入任何转发头，实际收到: %+v", got)
+		}
+	})
+
+	t.Run("本机IPv6直连不注入X-Forwarded头", func(t *testing.T) {
+		ln, err := net.Listen("tcp6", "[::1]:0")
+		if err != nil {
+			t.Skipf("当前环境不支持 IPv6 回环监听: %v", err)
+		}
+		front := httptest.NewUnstartedServer(proxyHandler)
+		front.Listener = ln
+		front.Start()
+		defer front.Close()
+
+		resp, err := front.Client().Get(front.URL + "/v0/webui/control-plane/bootstrap")
+		if err != nil {
+			t.Fatalf("IPv6 请求失败: %v", err)
+		}
+		_ = resp.Body.Close()
+		got := <-seenCh
+		if got.xff != "" || got.xfHost != "" || got.xfProto != "" {
+			t.Fatalf("IPv6 本机直连不应注入转发头，实际收到: %+v", got)
+		}
+	})
+
+	t.Run("本机反向代理保留转发链并追加回环跳", func(t *testing.T) {
+		front := httptest.NewServer(proxyHandler)
+		defer front.Close()
+
+		req, err := http.NewRequest(http.MethodGet, front.URL+"/v0/webui/control-plane/bootstrap", nil)
+		if err != nil {
+			t.Fatalf("构造请求失败: %v", err)
+		}
+		req.Host = "aih.example.com"
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		req.Header.Set("X-Real-Ip", "203.0.113.7")
+		req.Header.Set("Forwarded", "for=203.0.113.7;proto=https;host=aih.example.com")
+		req.Header.Set("X-Forwarded-Host", "aih.example.com")
+		req.Header.Set("X-Forwarded-Proto", "https")
+
+		resp, err := front.Client().Do(req)
+		if err != nil {
+			t.Fatalf("请求失败: %v", err)
+		}
+		_ = resp.Body.Close()
+		got := <-seenCh
+		if got.xff != "203.0.113.7, 127.0.0.1" {
+			t.Fatalf("X-Forwarded-For = %q，期望 %q", got.xff, "203.0.113.7, 127.0.0.1")
+		}
+		if got.xRealIP != "203.0.113.7" {
+			t.Fatalf("X-Real-Ip = %q，期望 203.0.113.7", got.xRealIP)
+		}
+		if got.forwarded != "for=203.0.113.7;proto=https;host=aih.example.com" {
+			t.Fatalf("Forwarded = %q", got.forwarded)
+		}
+		if got.xfHost != "aih.example.com" || got.xfProto != "https" {
+			t.Fatalf("X-Forwarded-Host/Proto 未保留: %+v", got)
+		}
+	})
+
+	t.Run("本机反代仅传X-Real-Ip时同样标记转发头", func(t *testing.T) {
+		front := httptest.NewServer(proxyHandler)
+		defer front.Close()
+
+		req, _ := http.NewRequest(http.MethodGet, front.URL+"/v0/webui/health", nil)
+		req.Header.Set("X-Real-Ip", "198.51.100.88")
+		resp, err := front.Client().Do(req)
+		if err != nil {
+			t.Fatalf("请求失败: %v", err)
+		}
+		_ = resp.Body.Close()
+		got := <-seenCh
+		if got.xff != "127.0.0.1" || got.xRealIP != "198.51.100.88" {
+			t.Fatalf("仅传 X-Real-Ip 时应生成 XFF 并保留 X-Real-Ip，实际: %+v", got)
+		}
+	})
+
+	t.Run("外部非回环客户端必须注入X-Forwarded-For", func(t *testing.T) {
+		externalFront := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cloned := r.Clone(r.Context())
+			cloned.RemoteAddr = "198.51.100.42:54321"
+			proxyHandler.ServeHTTP(w, cloned)
+		}))
+		defer externalFront.Close()
+
+		resp, err := externalFront.Client().Get(externalFront.URL + "/v0/webui/health")
+		if err != nil {
+			t.Fatalf("请求失败: %v", err)
+		}
+		_ = resp.Body.Close()
+		got := <-seenCh
+		if got.xff != "198.51.100.42" {
+			t.Fatalf("外部客户端 X-Forwarded-For = %q，期望 198.51.100.42", got.xff)
+		}
+	})
 }
 
 // TestHandlerStreamsChunks 保证首块响应在第二块产生前就到达客户端（SSE 语义）。

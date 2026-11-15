@@ -14,6 +14,7 @@ export function updateTerminalScope<T>(
 ): TerminalScope<T> {
   const scoped = current.serverId === serverId ? current.state : read(serverId);
   const next = change(scoped);
+  if (current.serverId === serverId && next === scoped) return current;
   persist(serverId, next);
   return current.serverId === serverId ? { ...current, state: next } : current;
 }

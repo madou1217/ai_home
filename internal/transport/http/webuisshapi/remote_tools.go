@@ -50,6 +50,9 @@ func CallRemoteTool(ctx context.Context, options RemoteToolOptions, name string,
 	if args == nil {
 		args = map[string]any{}
 	}
+	if invalid := validateRemoteToolInput(name, args); invalid != nil {
+		return invalid
+	}
 	config, root, err := loadRemoteToolHost(ctx, options)
 	if err != nil {
 		return remoteToolFailure(err)
@@ -387,41 +390,42 @@ func (host *remoteToolHost) readContentPosix(ctx context.Context, rel string) ([
 }
 
 func (host *remoteToolHost) writeFile(ctx context.Context, args map[string]any) map[string]any {
-	rel, err := host.resolve(asString(args["path"]))
+	if invalid := validateRemoteToolInput("write_file", args); invalid != nil {
+		return invalid
+	}
+	rel, err := host.resolve(args["path"].(string))
 	if err != nil {
 		return remoteToolFailure(err)
 	}
 	if rel == "" {
 		return remoteToolError("invalid_path", "不能写入工作区根目录")
 	}
-	content := []byte(asString(args["content"]))
-	expected, hasExpected := args["expected_version"]
-	var expectedVersion *string
-	if hasExpected {
-		value := asString(expected)
-		if value == "" {
-			expectedVersion = nil
-		} else {
-			expectedVersion = &value
-		}
+	content := []byte(args["content"].(string))
+	if failure := host.writeVersioned(ctx, rel, content, args["expected_version"].(string)); failure != nil {
+		return failure
 	}
+	return remoteToolText(fmt.Sprintf("已写入 %s（version: %s）", rel, versionOfContent(content)))
+}
+
+// Both explicit writes and edits use the version observed by the caller. This
+// check is not a claim of remote filesystem CAS against external editors.
+func (host *remoteToolHost) writeVersioned(ctx context.Context, rel string, content []byte, expected string) map[string]any {
 	current, _, currentErr := host.readContent(ctx, rel)
 	exists := currentErr == nil
 	if currentErr != nil && !errors.Is(currentErr, errRemoteNotFound) {
 		return remoteToolFailure(currentErr)
 	}
-	target := versionOfContent(content)
-	if exists && expectedVersion != nil && versionOfContent(current) == target {
-		return remoteToolText(fmt.Sprintf("已写入 %s（version: %s，内容未变化）", rel, target))
+	if expected == "" && exists {
+		return remoteToolError("version_conflict", "远端文件已存在："+rel)
 	}
-	if hasExpected {
-		if !exists && expectedVersion != nil {
-			return remoteToolError("version_conflict", "远端文件已被删除："+rel)
+	if expected != "" && !exists {
+		return remoteToolError("version_conflict", "远端文件已被删除："+rel)
+	}
+	if exists {
+		if versionOfContent(current) == versionOfContent(content) {
+			return nil
 		}
-		if exists && expectedVersion == nil {
-			return remoteToolError("version_conflict", "远端文件已存在："+rel)
-		}
-		if exists && expectedVersion != nil && versionOfContent(current) != *expectedVersion {
+		if versionOfContent(current) != expected {
 			return remoteToolError("version_conflict", "远端文件已被修改："+rel)
 		}
 	}
@@ -431,7 +435,7 @@ func (host *remoteToolHost) writeFile(ctx context.Context, args map[string]any) 
 		}
 		return remoteToolError("write_failed", strings.TrimSpace(err.Error()))
 	}
-	return remoteToolText(fmt.Sprintf("已写入 %s（version: %s）", rel, target))
+	return nil
 }
 
 func (host *remoteToolHost) editFile(ctx context.Context, args map[string]any) map[string]any {
@@ -463,8 +467,8 @@ func (host *remoteToolHost) editFile(ctx context.Context, args map[string]any) m
 	if replaceAll {
 		next = strings.ReplaceAll(original, oldString, asString(args["new_string"]))
 	}
-	if err := host.writeContent(ctx, rel, []byte(next)); err != nil {
-		return remoteToolError("write_failed", strings.TrimSpace(err.Error()))
+	if failure := host.writeVersioned(ctx, rel, []byte(next), versionOfContent(content)); failure != nil {
+		return failure
 	}
 	replaced := 1
 	if replaceAll {

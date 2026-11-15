@@ -56,7 +56,7 @@
 | W0 | 进行中 | 初版归属账已建；全入口覆盖、运行版本关联与在途整合未完成 |
 | W1 | 进行中 | 先提交复核后的 effort/参数传递修复；补完整 WS/resume/cancel/usage 验收 |
 | W2 | 进行中 | preference I/O 真实验证通过；进程生命周期安全审查及真机矩阵未完成 |
-| W3 | 待执行 | Codex 默认档/宿主同步迁 Go；help/completion/escape 一致性 |
+| W3 | 进行中 | 默认事务/恢复/权威读桥已在单库副本验收；主体提交与公开入口切换依赖单库底座提交，真实OAuth/跨平台仍缺 |
 | W4 | 待集成审查 | 凭据恢复工作正在其它会话修改；待稳定后集成与真实验收 |
 | W5 | 待执行 | 管理面/鉴权/watch 真业务和桌面页面验收 |
 | W6 | 待执行 | 其余功能分计划、平台实机、旧回落退出与最终发布 |
@@ -211,3 +211,12 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - W3事务主体、默认读桥和API接线仍未提交，等待单库owner确认其 businessdb/appstate 底座的提交边界；已通过peer发出协调信息，不把对方未提交代码夹带。
 - `cmd/aih/run.go`、`bin/ai-home.js`、`composition.go`、schema migration存在并行hunk；不用裸提交纳入。
 - 公共default前门还没切；原生Desktop重载仍是显式Node兼容effect，不宣称整个Codex入口纯Go。真实OAuth账号、Windows/Linux真实运行、W4–W6全部验收仍未完成。
+
+### 2026-11-15 W3追加checkpoint：四项审查闭环与独立提交
+
+- `751e3ed83` 与 `ffd256dc7` 已通过一次性 AWS ProxyCommand 推到 origin/main。没有更改全局Git/SSH配置，没有重启网关。
+- 最后审查发现的四项均在只读复核中关闭：stage cleanup校验实际删除快照；auth rollback不依赖Windows合成mode；config healer安全交换保留外部版本；legacy→Go也比较启动代次。随后补齐单文件symlink目标旁conflict marker定位，真实CLI/Node均拒绝启动/写入。
+- 新的真实并发验证确实观测到 native writer 在被swap的旧auth inode上续写：CLI退出1并报external_edit_preserved，更新后的字节保留且recovery gate仍在；不是仅凭代码声称处理竞态。
+- 最新CLI/Server构建在 `/tmp`，单库API/CLI验收再次通过；共享9527进程持续存活，shared schema31且owner receipt仍为0，实际用户默认账号未被本轮切换。
+- W3单库事务不再引用ATTACH；当前未提交的businessdb/appstate底座由恢复owner保有，已通过peer请求提交边界。该依赖不能用回退单库或夹带对方全文件来绕开。
+- W3事务主体仍待精确提交；其它W0–W6不足没有删除。全目标保持active。

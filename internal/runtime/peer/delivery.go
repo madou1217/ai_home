@@ -638,6 +638,13 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 	if opts.DryRun {
 		return DeliveryResult{OK: true, Channel: "inject"}
 	}
+	if composer := inspectComposer(ctx, runner, tmuxCmd, socket, sessionName); composer != "empty" {
+		code := "target_input_unavailable"
+		if composer == "draft" {
+			code = "target_has_draft"
+		}
+		return DeliveryResult{OK: false, Error: code, Message: "输入框已有草稿或状态无法确认，通知保留在收件箱。"}
+	}
 
 	if text != "" {
 		cmdCtx, cancel := context.WithTimeout(ctx, ActivityProbeTimeout)
@@ -649,6 +656,14 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 				Error:   "send_keys_failed",
 				Message: formatSendKeysError(sessionName, code, err),
 			}
+		}
+		// Codex's paste detector otherwise treats Enter as part of the draft.
+		timer := time.NewTimer(250 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return DeliveryResult{OK: false, Error: "send_keys_failed", Message: ctx.Err().Error()}
+		case <-timer.C:
 		}
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, ActivityProbeTimeout)

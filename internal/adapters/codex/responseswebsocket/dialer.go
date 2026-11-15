@@ -146,6 +146,9 @@ func (dialer *Dialer) Connect(
 	if err != nil {
 		return nil, response, err
 	}
+	if _, apiKey := credential.(*codexauth.APIKeyAuth); apiKey {
+		return &statelessConnection{Connection: connection}, response, nil
+	}
 	return connection, response, nil
 }
 

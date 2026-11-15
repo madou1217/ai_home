@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.20.1
 	github.com/oschwald/maxminddb-golang v1.13.1
+	github.com/rivo/uniseg v0.4.7
 	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/crypto v0.51.0
 	golang.org/x/term v0.43.0

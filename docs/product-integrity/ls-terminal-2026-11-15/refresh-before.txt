@@ -1,0 +1,1 @@
+history=239 size=120x24

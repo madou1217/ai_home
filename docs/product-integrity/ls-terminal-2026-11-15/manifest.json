@@ -1,0 +1,127 @@
+{
+  "date": "2026-11-15",
+  "method": "actual tmux 3.8 independent PTY, capture-pane; no mocks or new test cases",
+  "redaction": "email characters replaced one-for-one; ANSI ESC stored as literal \\x1b",
+  "artifacts": [
+    {
+      "file": "before-80x24.txt",
+      "source_sha256": "5b31eb92b99b2f09e21dd284159211c285d8178940709eacda062963daa16674",
+      "evidence_sha256": "86399561144b31b1a29e73440c3f765087a5660bf3bb311b8c8504ead279eb40"
+    },
+    {
+      "file": "before-60x24.txt",
+      "source_sha256": "fb7a93d41849aa70c0207c40d9cbc8458f82a21cab9638f9ff4cb0b811dd35b9",
+      "evidence_sha256": "31e925f4edd2897959f0d95bb8e9a8adaec14ad7aa6c92bf1736cc9c14bc8da8"
+    },
+    {
+      "file": "before-120x30-after-resize.txt",
+      "source_sha256": "ef623857a6dd367f3e7341bfee3949fbe8b124c18be91c186cbacf7a32395d40",
+      "evidence_sha256": "397550cdb3c0cb16db0f802783b19c5fbe204597998293c3227a2fc231690fa1"
+    },
+    {
+      "file": "review-final-real-80.ansi.txt",
+      "source_sha256": "4dafcdc4daf3bf15bf8e9125b19a5f364a03964727bba80bcb8fffd220bf03b0",
+      "evidence_sha256": "b01d3d1b39b1ae4e59575918c8f9aaedb763ce66fdaedb9704fd2e4e789fd8bf"
+    },
+    {
+      "file": "review-final-real-60.ansi.txt",
+      "source_sha256": "18863239f9928cb69c59193c65dc6de8edf1049d78864b321e70936262c6ad94",
+      "evidence_sha256": "0968b8a51b7a646b25818a5c5d18eeb6ea829cbeaf559979e2e83fdd0192e43e"
+    },
+    {
+      "file": "review-final-real-120.ansi.txt",
+      "source_sha256": "e0dbc57f40381715544589c1b4cd4c0d1f07902889fd97b089645a32e09e5199",
+      "evidence_sha256": "2650b5bd4d3ad3c4b46c021b7eb53668a13f995a083526aeb96818f8aa57bd67"
+    },
+    {
+      "file": "review-final-filter.ansi.txt",
+      "source_sha256": "04e5c28e56a7311d20cc93348d5aff59a97f00583634b6af7056df14d128d848",
+      "evidence_sha256": "c24219d878d2a4d355884739c0d82dc8b5eb7ba45847db43b2392c554fe53279"
+    },
+    {
+      "file": "review-final-interrupt.txt",
+      "source_sha256": "15769c03588338ee86f79d17f1933bf122e437e806283e8af15cbff962935b84",
+      "evidence_sha256": "15769c03588338ee86f79d17f1933bf122e437e806283e8af15cbff962935b84"
+    },
+    {
+      "file": "long-before-60.txt",
+      "source_sha256": "b496e790fba95b6c779b11f6eaaa6d13bf35ef547ffd517557df490162476eeb",
+      "evidence_sha256": "b496e790fba95b6c779b11f6eaaa6d13bf35ef547ffd517557df490162476eeb"
+    },
+    {
+      "file": "accept-long-80.ansi.txt",
+      "source_sha256": "6823f5a9c0f5719b07a6d80302d5ffd8e14ed00e373d062f7b97ff6d949e8388",
+      "evidence_sha256": "f5ba8ddcae31fa6408834222e3e563603824a96bf2111bc7e0b61e772f4bf91e"
+    },
+    {
+      "file": "accept-long-60.ansi.txt",
+      "source_sha256": "c95c91680a1335d5404acdaa253612c9066d0325468995d57f0863510dfe27a3",
+      "evidence_sha256": "9a3e37d5cc74ff322c98bfd67471708ce6140e58f8da680cb7797ae742f29c5b"
+    },
+    {
+      "file": "accept-long-120.ansi.txt",
+      "source_sha256": "8f7cf25676373bd903e6dd058ff05138389476e3144c24e2565bd11642a676c8",
+      "evidence_sha256": "45935d8086853b8f4ff8128ca097eafb516c1dc7a916d923c3634a090ae6dc33"
+    },
+    {
+      "file": "accept-long-query.ansi.txt",
+      "source_sha256": "5cab0ad2443ad1b4461881058c90b0074633024125dd8cb34bab6d68bba19f73",
+      "evidence_sha256": "64fb5af69f04669edc7e4f5c4c4667fd2d12f26f9a457dfd26cbdf3a932660df"
+    },
+    {
+      "file": "accept-query-cleared.ansi.txt",
+      "source_sha256": "8f7cf25676373bd903e6dd058ff05138389476e3144c24e2565bd11642a676c8",
+      "evidence_sha256": "45935d8086853b8f4ff8128ca097eafb516c1dc7a916d923c3634a090ae6dc33"
+    },
+    {
+      "file": "accept-minimal-3x2.txt",
+      "source_sha256": "3f10a7e5e57c4473950f75a041a3c098f55ebca87f49b57c442f9f7e7a57fd36",
+      "evidence_sha256": "3f10a7e5e57c4473950f75a041a3c098f55ebca87f49b57c442f9f7e7a57fd36"
+    },
+    {
+      "file": "accept-minimal-1x1.txt",
+      "source_sha256": "7ddcfda184b55ee06b0c81e0ad136b1aa4a86daeb1078bcaeccc246eb2c8693b",
+      "evidence_sha256": "7ddcfda184b55ee06b0c81e0ad136b1aa4a86daeb1078bcaeccc246eb2c8693b"
+    },
+    {
+      "file": "accept-recovered-60.ansi.txt",
+      "source_sha256": "c95c91680a1335d5404acdaa253612c9066d0325468995d57f0863510dfe27a3",
+      "evidence_sha256": "9a3e37d5cc74ff322c98bfd67471708ce6140e58f8da680cb7797ae742f29c5b"
+    },
+    {
+      "file": "accept-static-exit.txt",
+      "source_sha256": "7627d24296a4b79bbb7dc5d7af96b35264d8562ced296708548afd8cd7bc557d",
+      "evidence_sha256": "7627d24296a4b79bbb7dc5d7af96b35264d8562ced296708548afd8cd7bc557d"
+    },
+    {
+      "file": "refresh-before.txt",
+      "source_sha256": "b70b0302b3db2e9a66a4567f606b688f3eef32af7e7abe107455ffca156b7b06",
+      "evidence_sha256": "b70b0302b3db2e9a66a4567f606b688f3eef32af7e7abe107455ffca156b7b06"
+    },
+    {
+      "file": "refresh-after.txt",
+      "source_sha256": "b70b0302b3db2e9a66a4567f606b688f3eef32af7e7abe107455ffca156b7b06",
+      "evidence_sha256": "b70b0302b3db2e9a66a4567f606b688f3eef32af7e7abe107455ffca156b7b06"
+    },
+    {
+      "file": "rotation-before.txt",
+      "source_sha256": "990f27ee3dae5f9134e971ac9818710fdf55605107453914580eff3781813229",
+      "evidence_sha256": "990f27ee3dae5f9134e971ac9818710fdf55605107453914580eff3781813229"
+    },
+    {
+      "file": "rotation-after.txt",
+      "source_sha256": "990f27ee3dae5f9134e971ac9818710fdf55605107453914580eff3781813229",
+      "evidence_sha256": "990f27ee3dae5f9134e971ac9818710fdf55605107453914580eff3781813229"
+    },
+    {
+      "file": "performance.json",
+      "source_sha256": "f6c3a2f6961be7883ad01e66ac78d85a98d20720660bee08df8f3763ae58c791",
+      "evidence_sha256": "f6c3a2f6961be7883ad01e66ac78d85a98d20720660bee08df8f3763ae58c791"
+    },
+    {
+      "file": "stty-review-final.txt",
+      "source_sha256": "88f862ea2320334a71ec8038e4417b50c170d0c983bb52c044ced98890655086",
+      "evidence_sha256": "88f862ea2320334a71ec8038e4417b50c170d0c983bb52c044ced98890655086"
+    }
+  ]
+}

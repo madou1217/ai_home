@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"github.com/madou1217/ai_home/internal/runtime/terminalui"
 
 	"golang.org/x/term"
 )
@@ -47,6 +46,13 @@ type lsDomino struct {
 	step   int
 }
 
+type lsRowLayout struct {
+	text   string
+	width  int
+	indent int
+	lines  []terminalui.Line
+}
+
 type lsAnimation struct {
 	ctx         context.Context
 	runtime     commandRuntime
@@ -59,7 +65,12 @@ type lsAnimation struct {
 	query       string
 	editing     bool
 	data        *lsData
-	painted     []string
+	targets     []string
+	rowKeys     []string
+	layouts     []lsRowLayout
+	lastQuery   string
+	screen      terminalui.Frame
+	paintErr    error
 	frameIdx    []int
 	dominoes    map[int]*lsDomino
 	lastAdv     time.Time
@@ -69,7 +80,6 @@ type lsAnimation struct {
 	escDeadline time.Time
 	start       time.Time
 	aiHomeDir   string
-	writeMu     sync.Mutex
 }
 
 // runLSAnimated 在真实 TTY 下接管屏幕；非 TTY 返回 false，由调用方静态输出。
@@ -90,14 +100,14 @@ func runLSAnimated(
 		return false, nil
 	}
 	restore := func() {
+		_, _ = io.WriteString(runtime.stdout, "\x1b[?2026l\x1b[0m\r\n")
 		_ = term.Restore(int(stdin.Fd()), previous)
-		_, _ = fmt.Fprintln(runtime.stdout)
 	}
 	defer restore()
 
 	width, height, err := term.GetSize(int(stdin.Fd()))
-	if err != nil {
-		width, height = 0, 0
+	if err != nil || width <= 0 || height <= 0 {
+		width, height = 80, 24
 	}
 	animation := &lsAnimation{
 		ctx:       ctx,
@@ -142,10 +152,13 @@ func (animation *lsAnimation) run() error {
 
 	animation.render(false)
 	for {
+		if animation.paintErr != nil {
+			return animation.paintErr
+		}
 		select {
 		case <-animation.ctx.Done():
 			animation.render(true)
-			return nil
+			return animation.paintErr
 		case <-signals:
 			return nil
 		case next := <-dataCh:
@@ -165,7 +178,7 @@ func (animation *lsAnimation) run() error {
 				switch animation.applyEscape() {
 				case "quit":
 					animation.render(true)
-					return nil
+					return animation.paintErr
 				}
 			}
 			action := animation.handleKeys(chunk)
@@ -176,12 +189,12 @@ func (animation *lsAnimation) run() error {
 			case "escape":
 				if animation.applyEscape() == "quit" {
 					animation.render(true)
-					return nil
+					return animation.paintErr
 				}
 				animation.render(false)
 			case "quit":
 				animation.render(true)
-				return nil
+				return animation.paintErr
 			case "interrupt":
 				animation.render(true)
 				return lsExitCode(130)
@@ -193,7 +206,7 @@ func (animation *lsAnimation) run() error {
 				animation.escPending = false
 				if animation.applyEscape() == "quit" {
 					animation.render(true)
-					return nil
+					return animation.paintErr
 				}
 			}
 			animation.render(false)
@@ -330,45 +343,82 @@ func (animation *lsAnimation) statusLine() string {
 }
 
 func (animation *lsAnimation) render(static bool) {
-	if animation.data == nil {
+	if animation.data == nil || animation.paintErr != nil {
 		return
 	}
+	resized := animation.refreshSize()
 	if animation.activities == nil || time.Since(animation.activityAt) >= lsActivityReadEvery {
 		animation.activities = readLSActivity(animation.aiHomeDir)
 		animation.activityAt = time.Now()
 	}
-	rows := buildLSRows(animation.data, animation.query, animation.palette, true, animation.start, time.Now())
+	rows := buildLSRows(animation.data, animation.query, animation.palette, !static, animation.start, time.Now())
 	if len(animation.frameIdx) != len(rows) {
 		animation.frameIdx = make([]int, len(rows))
 	}
 	targets := make([]string, len(rows))
+	rowKeys := make([]string, len(rows))
+	newSnapshot := static || animation.lastQuery != animation.query || len(animation.rowKeys) != len(rows)
 	for index, row := range rows {
-		prefix := animation.prefixFor(row, index, static)
-		targets[index] = toLSScreenLine(row.render(prefix), animation.maxWidth())
+		rowKeys[index] = row.kind + ":" + row.provider
+		if row.account != nil {
+			rowKeys[index] += ":" + row.account.Account.AccountRef
+		}
+		if !newSnapshot && rowKeys[index] != animation.rowKeys[index] {
+			newSnapshot = true
+		}
+		targets[index] = row.render(animation.prefixFor(row, index, static))
 	}
-	if animation.painted != nil && len(targets) == len(animation.painted) {
+	if newSnapshot || resized || len(targets) != len(animation.targets) {
+		animation.dominoes = make(map[int]*lsDomino)
+	} else {
 		for index := range targets {
-			if animation.dominoes[index] == nil && targets[index] != animation.painted[index] && shouldLSAnimate(targets[index], animation.painted[index]) {
+			if animation.dominoes[index] == nil && targets[index] != animation.targets[index] && shouldLSAnimate(targets[index], animation.targets[index]) {
 				animation.startDomino(index, targets[index])
 			}
 		}
 	}
-	if static {
-		animation.dominoes = make(map[int]*lsDomino)
-	}
-	displayed := animation.renderDominoes(targets)
-	status := ""
-	if !static {
-		status = toLSScreenLine(animation.statusLine(), animation.maxWidth())
-	}
-	displayed = append(displayed, status)
-	if animation.painted != nil && sameLSLines(displayed, animation.painted) {
-		animation.advanceDominoes()
+	if animation.cols < 4 || animation.rows < 3 {
+		animation.renderSizeHint()
 		return
 	}
-	animation.writeFrame(displayed)
-	animation.painted = displayed
+	lines, err := animation.layoutRows(rows, targets)
+	if err != nil {
+		animation.renderSizeHint()
+		return
+	}
+	status := ""
+	if !static {
+		status = animation.statusLine()
+	}
+	statusLines, err := terminalui.Wrap(status, animation.maxWidth(), 0)
+	if err != nil {
+		animation.renderSizeHint()
+		return
+	}
+	for _, line := range statusLines {
+		lines = append(lines, line.Text)
+	}
+	animation.paintErr = animation.screen.Present(animation.stdout, lines, animation.cols, animation.rows, static)
+	animation.targets = targets
+	animation.rowKeys = rowKeys
+	animation.lastQuery = animation.query
 	animation.advanceDominoes()
+}
+
+// Polling on the existing 100ms tick also covers terminals without SIGWINCH
+// forwarding and keeps the rendering path portable to Windows.
+func (animation *lsAnimation) refreshSize() bool {
+	file := animation.stdin
+	if output, ok := animation.stdout.(*os.File); ok {
+		file = output
+	}
+	width, height, err := term.GetSize(int(file.Fd()))
+	if err != nil || width <= 0 || height <= 0 {
+		return false
+	}
+	changed := width != animation.cols || height != animation.rows
+	animation.cols, animation.rows = width, height
+	return changed
 }
 
 func (animation *lsAnimation) prefixFor(row lsRow, index int, static bool) string {
@@ -400,50 +450,6 @@ func (animation *lsAnimation) maxWidth() int {
 	return 0
 }
 
-func (animation *lsAnimation) writeFrame(lines []string) {
-	animation.writeMu.Lock()
-	defer animation.writeMu.Unlock()
-	write := func(value string) { _, _ = io.WriteString(animation.stdout, value) }
-	write("\x1b[?2026h")
-	defer write("\x1b[?2026l")
-	if animation.painted == nil {
-		write("\x1b[H\x1b[J")
-		for _, line := range lines {
-			write(line + "\n")
-		}
-		return
-	}
-	if len(lines) == len(animation.painted) && animation.rows > 0 {
-		scrolledOff := 0
-		if len(lines) > animation.rows-1 {
-			scrolledOff = len(lines) - (animation.rows - 1)
-		}
-		touched := false
-		for index := scrolledOff; index < len(lines); index++ {
-			if lines[index] == animation.painted[index] {
-				continue
-			}
-			write(fmt.Sprintf("\x1b[%d;1H%s\x1b[K", index-scrolledOff+1, lines[index]))
-			touched = true
-		}
-		if touched {
-			park := len(lines) - scrolledOff + 1
-			if animation.rows > 0 && park > animation.rows {
-				park = animation.rows
-			}
-			write(fmt.Sprintf("\x1b[%d;1H", park))
-		}
-		return
-	}
-	write("\x1b[H")
-	for _, line := range lines {
-		write(line + "\x1b[K\n")
-	}
-	if len(lines) < len(animation.painted) {
-		write("\x1b[J")
-	}
-}
-
 func (animation *lsAnimation) startDomino(index int, target string) {
 	if animation.dominoes[index] == nil && len(animation.dominoes) >= lsDominoMaxLines {
 		return
@@ -459,24 +465,57 @@ func (animation *lsAnimation) startDomino(index int, target string) {
 	}
 }
 
-func (animation *lsAnimation) renderDominoes(targets []string) []string {
-	displayed := append([]string(nil), targets...)
-	for index, state := range animation.dominoes {
-		if index >= len(targets) {
-			delete(animation.dominoes, index)
-			continue
+// layoutRows fixes physical boundaries before applying animation glyphs, so
+// replacing a wide grapheme with ASCII cannot create a new word-wrap point.
+func (animation *lsAnimation) layoutRows(rows []lsRow, targets []string) ([]string, error) {
+	lines := make([]string, 0, len(targets)+1)
+	if len(animation.layouts) != len(targets) {
+		animation.layouts = make([]lsRowLayout, len(targets))
+	}
+	for index, target := range targets {
+		indent := 0
+		if rows[index].account != nil {
+			indent = lsPrefixWidth
 		}
-		if stripLSPrefix(state.target) != stripLSPrefix(targets[index]) {
-			delete(animation.dominoes, index)
-			animation.startDomino(index, targets[index])
-			continue
+		layout := &animation.layouts[index]
+		if layout.text != target || layout.width != animation.maxWidth() || layout.indent != indent || layout.lines == nil {
+			wrapped, err := terminalui.Wrap(target, animation.maxWidth(), indent)
+			if err != nil {
+				return nil, err
+			}
+			*layout = lsRowLayout{text: target, width: animation.maxWidth(), indent: indent, lines: wrapped}
 		}
-		state.target = targets[index]
-		if state.frame < lsDominoSteps {
-			displayed[index] = applyLSDomino(state.target, lsPrefixWidth+state.frame*state.step)
+		state := animation.dominoes[index]
+		if state != nil && stripLSPrefix(state.target) != stripLSPrefix(target) {
+			delete(animation.dominoes, index)
+			animation.startDomino(index, target)
+			state = animation.dominoes[index]
+		}
+		offset, glyph := 0, 0
+		for _, part := range layout.lines {
+			line, padding, width := part.Text, part.Indent, part.Width
+			if state != nil && state.frame < lsDominoSteps && glyph < len(lsDominoGlyphs) {
+				start := max(padding, lsPrefixWidth+state.frame*state.step-offset+padding)
+				if start < width {
+					var used int
+					line, used = terminalui.ReplaceCells(line, start, lsDominoGlyphs[glyph:])
+					glyph += used
+				}
+			}
+			lines = append(lines, line)
+			offset += width - padding
 		}
 	}
-	return displayed
+	return lines, nil
+}
+
+func (animation *lsAnimation) renderSizeHint() {
+	hint := "Terminal too small; enlarge to show accounts."
+	if animation.cols <= len(hint) {
+		hint = "!"
+	}
+	animation.paintErr = animation.screen.Present(animation.stdout, []string{hint}, animation.cols, animation.rows, false)
+	animation.dominoes = make(map[int]*lsDomino)
 }
 
 func stripLSPrefix(value string) string {
@@ -517,18 +556,6 @@ func shouldLSAnimate(target string, previous string) bool {
 	return lsVisibleWidth(target) >= lsDominoMinWidth
 }
 
-func sameLSLines(left []string, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
 func lsFrameStep(activity lsActivity) int {
 	step := (activity.Rate + 2) / 3
 	if step < 1 {
@@ -544,115 +571,4 @@ func isWindowsPlatform() bool {
 	return os.PathSeparator == '\\'
 }
 
-func toLSScreenLine(value string, maxWidth int) string {
-	single := strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
-	if maxWidth <= 0 {
-		return single
-	}
-	var builder strings.Builder
-	width := 0
-	for index := 0; index < len(single); {
-		if single[index] == 0x1b {
-			if end := lsEscapeEnd(single, index); end > index {
-				builder.WriteString(single[index:end])
-				index = end
-				continue
-			}
-		}
-		rune, size := utf8.DecodeRuneInString(single[index:])
-		if size <= 0 {
-			break
-		}
-		cell := lsRuneWidth(rune)
-		if width+cell > maxWidth {
-			builder.WriteString("\x1b[0m")
-			break
-		}
-		builder.WriteString(single[index : index+size])
-		width += cell
-		index += size
-	}
-	return builder.String()
-}
-
-func lsVisibleWidth(value string) int {
-	width := 0
-	for index := 0; index < len(value); {
-		if value[index] == 0x1b {
-			if end := lsEscapeEnd(value, index); end > index {
-				index = end
-				continue
-			}
-		}
-		rune, size := utf8.DecodeRuneInString(value[index:])
-		if size <= 0 {
-			break
-		}
-		width += lsRuneWidth(rune)
-		index += size
-	}
-	return width
-}
-
-func lsEscapeEnd(value string, start int) int {
-	if start+1 >= len(value) || value[start] != 0x1b || value[start+1] != '[' {
-		return start
-	}
-	index := start + 2
-	for index < len(value) {
-		if value[index] >= 0x40 && value[index] <= 0x7e {
-			return index + 1
-		}
-		index++
-	}
-	return len(value)
-}
-
-func lsRuneWidth(runeValue rune) int {
-	code := int(runeValue)
-	if code >= 0x1100 && (code <= 0x115f ||
-		code == 0x2329 || code == 0x232a ||
-		(code >= 0x2e80 && code <= 0xa4cf) ||
-		(code >= 0xac00 && code <= 0xd7a3) ||
-		(code >= 0xf900 && code <= 0xfaff) ||
-		(code >= 0xfe30 && code <= 0xfe6f) ||
-		(code >= 0xff00 && code <= 0xff60) ||
-		(code >= 0xffe0 && code <= 0xffe6)) {
-		return 2
-	}
-	return 1
-}
-
-func applyLSDomino(value string, startCol int) string {
-	var builder strings.Builder
-	column := 0
-	glyph := 0
-	for index := 0; index < len(value); {
-		if value[index] == 0x1b {
-			if end := lsEscapeEnd(value, index); end > index {
-				builder.WriteString(value[index:end])
-				index = end
-				continue
-			}
-		}
-		rune, size := utf8.DecodeRuneInString(value[index:])
-		if size <= 0 {
-			break
-		}
-		width := lsRuneWidth(rune)
-		if glyph < len(lsDominoGlyphs) && column >= startCol {
-			builder.WriteString(lsDominoGlyphs[glyph])
-			glyph++
-			if width == 2 {
-				builder.WriteString(" ")
-			}
-			column += width
-			index += size
-			continue
-		}
-		builder.WriteString(value[index : index+size])
-		column += width
-		index += size
-	}
-	return builder.String()
-}
+func lsVisibleWidth(value string) int { return terminalui.Width(value) }

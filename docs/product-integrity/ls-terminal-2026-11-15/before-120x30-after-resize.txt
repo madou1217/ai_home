@@ -1,0 +1,30 @@
+                     - Account ID: 7  [运行态不可用] (Deo Mea) [Runtime: permission_denied]
+             - Account ID: 8  [额度已耗尽] (xxxxxxxxx@xxx.xxx) [Remaining: Credits: 0.0%]
+  ⠹ [Pro] Account ID: 1  [额度已耗尽] (码逗) [Remaining: Credits: 0.0%]
+                        ⠙ [Pro] Account ID: 1  [额度已耗尽] (185****5206) [Remaining: Credits: 0.0%]
+                      - Account ID: 2 (189****1630) [Remaining: Credits: 60.0%]
+                                                                                 - Account ID: 3 (131****0378) [Remainin
+g: Credits: 48.4%]
+                                                            - Account ID: 4 (186****2115) [Remaining: Credits: 62.7%]
+                                       - Account ID: 5 (131****3910) [Remaining: Credits: 38.5%]
+                  - Account ID: 8 (133****5831) [Remaining: Credits: 86.4%]
+                                                                             - Account ID: 9 (189****1636) [Remaining: C
+redits: 60.0%]
+                                                        - Account ID: 10 (158****4859) [Remaining: Credits: 65.2%]
+  ⠋ [Pro] Account ID: 1  [额度已耗尽] (码逗) [Remaining: Credits: 0.0%]           - Account ID: 2 (MeaDeo) [Remai
+ning: Credits: 60.0%]
+  - Account ID: 3 (MeaDeo) [Remaining: Credits: 48.4%]
+  ⠙ [Pro] Account ID: 1  [额度已耗尽] (码逗) [Remaining: Credits: 0.0%]
+       ng: Credits: 38.5%]
+                                                        - Account ID: 14 (182***  - Account ID: 9 (flower) [Remaining: C
+redits: 60.0%]
+                                  ▶ workbuddy
+                                               - Account ID: 1 (xxxxxxxxx@xxxxx.xxx) [Remaining: Credits: 97.0%]
+                                  - Account ID: 2 (xxxxxxxxx@xxxx.xxx) [Remaining: Credits: 100.0%]
+                   ▶ workbuddycn
+                                  - [Pro] Account ID: 1  [额度已耗尽] (码逗) [Remaining: Credits: 0.0%]
+                       ▶ cline
+                                - Account ID: 1 (Deo Mea) [Remaining: 5h: 100.0%]
+  - Account ID: 1 (Deo Mea) [Remaining: 30days: 100.0%]
+  - Account ID: 2 (Deo Mea) [Remaining: 30days: 100.0%] [⚠️ Duplicate of ID 1] 选  ·  q/Esc 退出
+

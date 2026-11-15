@@ -1,0 +1,34 @@
+{
+  "duration_seconds": 15.007937415968627,
+  "conditions": "same live 41-account read-only data; independent 120x24 PTYs, no inference",
+  "processes": {
+    "before": {
+      "pid": 91075,
+      "before": {
+        "cpu_seconds": 1.21,
+        "rss_kib": 29024,
+        "ps_cpu_pct": 0.6
+      },
+      "after": {
+        "cpu_seconds": 1.47,
+        "rss_kib": 29152,
+        "ps_cpu_pct": 0.5
+      },
+      "cpu_pct_over_interval": 1.73
+    },
+    "after": {
+      "pid": 92087,
+      "before": {
+        "cpu_seconds": 0.34,
+        "rss_kib": 29248,
+        "ps_cpu_pct": 3.4
+      },
+      "after": {
+        "cpu_seconds": 0.59,
+        "rss_kib": 29632,
+        "ps_cpu_pct": 3.5
+      },
+      "cpu_pct_over_interval": 1.67
+    }
+  }
+}

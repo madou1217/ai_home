@@ -1,0 +1,47 @@
+
+📦 AI Home Accounts Overview
+
+▶ agy
+  - Account ID: 1  [★ Default]
+    (long-account-name-terminal-display-validation-shanghai
+    -team-END) [Remaining:
+    long-model-name-gemini-extended-context-中文长模型-v202
+    61115-END 87.5%]
+▶ cline
+  - Account ID: 1  [★ Default]
+    (中文研发账号-长名称-Zoë-👩🏽‍💻-终端渲染验收-上海团队-END)
+    [Remaining:
+    long-\/|el-name-gemini-extended-context-中文长模型-v202
+    61115-END 87.5%]
+  - Account ID: 2  [关闭] (短账号-稳定字段) [Remaining:
+    中-long-rotation-boundary-extended-terminal-display-rem
+    aining-END 99.0%]
+/ 筛选  ·  q/Esc 退出
+
+📦 AI Home Accounts Overview
+
+▶ agy
+  - Account ID: 1  [★ Default]
+    (long-account-name-terminal-display-validation-shanghai
+    -team-END) [Remaining:
+    long-model-name-gemini-extended-context-中文长模型-v202
+    61115-END 87.5% / tiny 91.0% /
+    中-long-rotation-boundary-extended-terminal-display-rem
+    aining-END 99.0%]
+▶ cline
+  - Account ID: 1  [★ Default]
+    (中文研发账号-长名称-Zoë-👩🏽‍💻-终端渲染验收-上海团队-END)
+    [Remaining:
+    long-model-name-gemini-extended-context-中文长模型-v202
+    61115-END 87.5% / tiny 91.0% /
+    中-long-rotation-boundary-extended-terminal-display-rem
+    aining-END 99.0%]
+  - Account ID: 2  [关闭] (短账号-稳定字段) [Remaining:
+    short-model 87.5% / tiny 91.0% /
+    中-long-rotation-boundary-extended-terminal-display-rem
+    aining-END 99.0%]
+
+
+
+[exit 0]
+

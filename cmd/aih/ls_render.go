@@ -2,18 +2,17 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/terminalui"
 )
 
 const lsRotationStep = 1500 * time.Millisecond
 
-var lsSGRPattern = regexp.MustCompile("\\x1b\\[[0-9;]*m")
-
-// lsRow 是一屏幕行；render 接收 4 列活动前缀。
+// lsRow 是一个逻辑行；render 接收 4 列活动前缀，物理折行由共享渲染层负责。
 type lsRow struct {
 	kind     string
 	provider string
@@ -59,6 +58,7 @@ func buildLSRows(
 		lsRow{kind: "spacer", render: func(string) string { return "" }},
 	)
 
+	filtering := strings.TrimSpace(query) != ""
 	byProvider := make(map[string][]*lsAccount)
 	for _, account := range data.Accounts {
 		byProvider[account.Account.Provider] = append(byProvider[account.Account.Provider], account)
@@ -88,11 +88,17 @@ func buildLSRows(
 				continue
 			}
 			current := account
+			searchText := ""
+			if filtering {
+				// Search the complete static fields, not only the current
+				// rotating candidate. No search projection is needed otherwise.
+				searchText = strings.ToLower(providerName + " " + stripLSAnsi(formatLSAccountRow(current, "", false, 0, palette, rotationStart, now)))
+			}
 			rows = append(rows, lsRow{
 				kind:     "account",
 				provider: providerName,
 				account:  current,
-				text:     strings.ToLower(providerName + " " + stripLSAnsi(formatLSAccountRow(current, "", false, 0, palette, rotationStart, now))),
+				text:     searchText,
 				render: func(prefix string) string {
 					return formatLSAccountRow(current, prefix, tty, lsRotationFor(current, rotationStart, now), palette, rotationStart, now)
 				},
@@ -333,5 +339,5 @@ func lsRotationFor(account *lsAccount, start time.Time, now time.Time) int {
 }
 
 func stripLSAnsi(value string) string {
-	return lsSGRPattern.ReplaceAllString(value, "")
+	return terminalui.Plain(value)
 }

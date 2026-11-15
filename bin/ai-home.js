@@ -267,6 +267,17 @@ function tryRunGoCodexMobile() {
 }
 
 // Codex 管理设置固定走 Go：policy 读写 app-state，effort 只更新原生配置。
+// Codex default writes use one native transaction. Desktop effects remain in
+// the focused compatibility adapter; no fallback to the old Node state writer.
+function tryRunGoCodexDefault() {
+  const args = process.argv.slice(2);
+  if (String(args[0] || '').toLowerCase() !== 'codex'
+    || !['set-default', 'unset-default'].includes(String(args[1] || '').toLowerCase())) return false;
+  // Explicit native escape belongs wholly to the provider, including AIH-like verbs.
+  if (args.includes('--')) return false;
+  return require('../lib/cli/services/ai-cli/codex-default-command').tryRunCodexDefaultCommand(args, resolveGoCLIBinary());
+}
+
 function tryRunGoCodexConfigCommand() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;
@@ -1111,6 +1122,6 @@ if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
       ? complete.runSuggestEntry(entryArgv)
       : complete.runLearnEntry(entryArgv));
   process.exitCode = Number.isInteger(exitCode) ? exitCode : 0;
-} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexConfigCommand() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoAccountCommand() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
+} else if (!tryRunGoFamilySessionVerb() && !tryRunGoFamilySessions() && !tryRunGoFamilyLogin() && !tryRunGoFamilyServerCommand() && !tryRunGoFamilyRestart() && !tryRunGoFamilyLaunch() && !tryRunGoGlobalSessions() && !tryRunGoGlobalLs() && !tryRunGoCodexMobile() && !tryRunGoCodexDefault() && !tryRunGoCodexConfigCommand() && !tryRunGoCodexHome() && !tryRunGoProviderVersion() && !tryRunGoCodexSessionsHistory() && !tryRunGoProviderSessionsHistory() && !tryRunGoAccountCommand() && !tryRunGoProviderLogin() && !tryRunGoProviderLaunch() && !tryRunGoProviderCommonCommand() && !tryLsFastPath() && !tryPersistentSessionFastPath()) {
   require('../lib/cli/app');
 }

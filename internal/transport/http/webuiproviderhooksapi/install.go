@@ -11,12 +11,14 @@ package webuiproviderhooksapi
 // 请求体形状校验与结果装配。
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 )
 
 const (
@@ -135,7 +137,7 @@ func (handler *InstallHandler) ServeHTTP(response http.ResponseWriter, request *
 	results := make([]installResult, 0, len(providersToInstall))
 	failed := false
 	for _, provider := range providersToInstall {
-		result := handler.installOne(provider, context, dryRun)
+		result := handler.installOneContext(request.Context(), provider, context, dryRun)
 		if !result.OK {
 			failed = true
 		}
@@ -148,26 +150,18 @@ func (handler *InstallHandler) ServeHTTP(response http.ResponseWriter, request *
 	writeJSON(response, status, installResponse{OK: !failed, Results: results})
 }
 
-func (handler *InstallHandler) installOne(provider string, context installContext, dryRun bool) installResult {
-	profile := resolveHookProfile(handler.catalog, provider)
-	if !profile.supported {
-		return installFailure(profile.providerID, "unsupported_provider")
+func (handler *InstallHandler) installOne(provider string, settings installContext, dryRun bool) installResult {
+	return handler.installOneContext(context.Background(), provider, settings, dryRun)
+}
+func (handler *InstallHandler) installOneContext(ctx context.Context, provider string, settings installContext, dryRun bool) installResult {
+	result := apps.InstallProviderHooks(ctx, provider, apps.Options{Catalog: handler.catalog, HostHomeDir: settings.hostHomeDir, ReceiverURL: settings.receiverURL, CodexVersion: settings.codexVersion, HookDryRun: dryRun})
+	changed := result.Changed
+	dry := result.DryRun
+	out := installResult{OK: result.OK, Provider: result.Provider, Error: result.Error, TargetPath: result.TargetPath, TargetKind: result.TargetKind, DryRun: &dry, Changed: &changed, Events: result.Events, ReceiverURL: result.ReceiverURL}
+	if v := result.CodexFeatures; v != nil {
+		out.CodexFeatures = &codexFeaturesView{Path: v.Path, Changed: v.Changed, FlagName: v.FlagName, CodexVersion: v.CodexVersion, DisabledBefore: v.DisabledBefore}
 	}
-	switch profile.adapter {
-	case providers.HookAdapterJSONHooks:
-		return installJSONHookFile(profile, context, dryRun)
-	case providers.HookAdapterAgyNamedHooks:
-		return installAgyHookFile(profile, context, dryRun)
-	case providers.HookAdapterOpenCodePlugin:
-		return installOpenCodePluginHook(profile, context, dryRun)
-	default:
-		return installResult{
-			OK:       false,
-			Provider: profile.providerID,
-			Error:    "unsupported_hook_adapter",
-			Adapter:  string(profile.adapter),
-		}
-	}
+	return out
 }
 
 // installConfirmed 与 Node 的确认判定一致：true 或约定字符串。

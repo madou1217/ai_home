@@ -1,0 +1,34 @@
+[
+  {
+    "emptyUserGroupRetained": true,
+    "first": true,
+    "largeExact": true,
+    "mode": "0640",
+    "noRewrite": true,
+    "phase": "json-install-repeat-remove",
+    "remove": true,
+    "second": true,
+    "userHookRetained": true
+  },
+  {
+    "linkRetained": true,
+    "ok": true,
+    "phase": "config-symlink"
+  },
+  {
+    "first": true,
+    "phase": "plugin-normal",
+    "sameBytes": true,
+    "second": true
+  },
+  {
+    "editPreserved": true,
+    "phase": "plugin-user-modified",
+    "rejected": true
+  },
+  {
+    "ok": true,
+    "phase": "plugin-owned-uninstall",
+    "removed": true
+  }
+]

@@ -1,0 +1,65 @@
+{
+  "boundary": "Real product manager/Go API, actual filesystem and isolated loopback HTTP handler; Node entry uses actual private Go CLI subprocess. All paths are owned disposable directories; no user credentials or production configs. No new tests.",
+  "artifacts": [
+    {
+      "file": "hooksafety-before.json",
+      "source_sha256": "4664ac304284222f05b93390c1ebbe4379ee7d490d7c77da68839e1e97cf7416",
+      "evidence_sha256": "a2d6ad65fbee70837904df6a32a53d522b120a0b82c60e1767e680adbcdb29b1"
+    },
+    {
+      "file": "hooksafety-after-final.json",
+      "source_sha256": "f68e36516ac45da53960050b65b5f33ac5734a7a2a231576029d798523dcabb0",
+      "evidence_sha256": "e0ed5492ead9e756ff25b04c4652e7c0495d6b4bbacec377b46ca604277dad8f"
+    },
+    {
+      "file": "hooknormal-final.json",
+      "source_sha256": "8296cab9ac6a8d6c661650dbf4b14e2fa8156ec733546fe135e3fc4948185b98",
+      "evidence_sha256": "56ec69f132dc87b964c77dc91940f828e97fd05d28ef25f9d69e97aab0505718"
+    },
+    {
+      "file": "hookshapes-final.json",
+      "source_sha256": "0985c8ebc2881afc5442bef32c3dc1d97b33f73bb7b1038f0c0b77636524f4f3",
+      "evidence_sha256": "e73bf702f876d574e6fcbcb6731acaafb37815c552ec7a3999cb54f908d3f2e8"
+    },
+    {
+      "file": "configsnapshot-live.json",
+      "source_sha256": "1eda19e6bc7780024f6f53d543fdbbfddbc71f51762024b0dc8bcfcc2257ab39",
+      "evidence_sha256": "f561596d89e06bb0c3a2fcf31fda0c4f1a89782d9c081cfedfbfc7c6d78f5bf5"
+    },
+    {
+      "file": "hookcodex-final.json",
+      "source_sha256": "9f5b387970cc6f55bcb709687d8438f7f6fac74dff17472f8ad100673ceebd3d",
+      "evidence_sha256": "93393663b8206c5230b1ba8fdd4bfbf670ca52de99d37395e4fb0ed455577143"
+    },
+    {
+      "file": "hook-http-final.json",
+      "source_sha256": "62bd3180339b119ed8e0a7a7cf99c3708d81f7b2d44d09beae7f1ac2eacaf194",
+      "evidence_sha256": "0a54de41426898224b8a876ea095c9cf9469ea12c470e3455935a3fbef785bdf"
+    },
+    {
+      "file": "hook-node-bridge-final.json",
+      "source_sha256": "7afaa0284346c5d1492675053d900d4955c4fe62cdf342723b3288b071b1f852",
+      "evidence_sha256": "b56130d3231e47b0be72add484988305079f7368e7473753a1dc068db6d32c60"
+    },
+    {
+      "file": "hook-legacy-opencode-final.json",
+      "source_sha256": "470c3adc3c6099f08593cc1a18427199a939ef1a7e79a66448c4e89e6261d390",
+      "evidence_sha256": "e1bbe215a6466fbd212c47bbb44795e125905aa8806bf26744b83077987a328e"
+    },
+    {
+      "file": "hook-agy-custom-final.json",
+      "source_sha256": "64c6df53b36d0e97d734583a07c5d8ab4ed2afff65d5ed4c5da91ad3edbb3c64",
+      "evidence_sha256": "aecf5cdfa43927feefbf76dbccd82b745da84fa1258bbb455e0aa436a1abff29"
+    },
+    {
+      "file": "hook-echo-argv-final.json",
+      "source_sha256": "b633fd183043cc7be4ee90336c3977c5ab80ddff9ef9a36b2118900d0ec38f40",
+      "evidence_sha256": "1407b16e88f00f6547a577d29f869fbd0a24ab83036eab48331e93015e8c196e"
+    },
+    {
+      "file": "hook-child-outcomes-final.json",
+      "source_sha256": "ca0888f11ec349e261d5e78e4f9303745b2cbd3ed733640cd676509f319a3361",
+      "evidence_sha256": "464fdd324028bb9d99fd259c82788c4f577fbb9dcc9898350f76223b84312bea"
+    }
+  ]
+}

@@ -149,3 +149,7 @@ Go scheduler 与 Node CLI 已接独立v2仓库：实际字节摘要寻址、no-o
 ### G06 真正恢复到Go核心（2026-11-15）
 
 真实非dry restore暴露compat-only成功而Go ls无accounts表；现已接共享portable adapter＋Go backupaccounts离线/在线端口，核心提交后版本绑定投影compat，源Go-only账号也被备份。真实source→SSH backup→新目录restore→Go ls/Node read→重复restore闭环、编号/引用冲突、OAuth代际与stale mirror、服务生命周期lease、扩展字段/Claude身份配置/AGY客户端字段、数值token保护记录见 `backup-canonical-roundtrip-2026-11-15.md`。未重启共享server；旧运行态、全Provider真实OAuth及跨平台仍未计通过，原Goal持续。
+
+### G01/G02 原生配置和资源登记保护（2026-11-15）
+
+真实复现坏Hook JSON被覆盖、foreign OpenCode插件被覆盖/删除及managed坏KV被重置。G02已独立`711ddcdba`：严格状态解码先于mutator、unknown字段保留，真实skill lifecycle/Go-Node坏数据保留。G01共享Go Hook写入边界覆盖toolkit、独立HTTP和Node兼容入口；权限/JSON软链/用户Hook/未知metadata保留，plugin归属和中断恢复有实际证据。见 `managed-state-integrity-2026-11-15.md`、`hook-config-safety-2026-11-15.md`。不把desktop gateway preparation的另一路安全问题或Windows真机、跨文件原子性算作完成；不重启/部署共享服务，原Goal继续。

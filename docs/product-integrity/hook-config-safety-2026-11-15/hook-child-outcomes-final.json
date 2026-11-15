@@ -1,0 +1,25 @@
+{
+  "unknown": {
+    "ok": false,
+    "provider": "claude",
+    "dryRun": false,
+    "error": "hook_core_outcome_unknown",
+    "outcomeUnknown": true,
+    "recoveryRequired": true
+  },
+  "invalid": {
+    "ok": false,
+    "provider": "claude",
+    "dryRun": false,
+    "error": "hook_core_invalid_response",
+    "outcomeUnknown": true,
+    "recoveryRequired": true
+  },
+  "missing": {
+    "ok": false,
+    "provider": "claude",
+    "dryRun": false,
+    "error": "hook_core_unavailable",
+    "changed": false
+  }
+}

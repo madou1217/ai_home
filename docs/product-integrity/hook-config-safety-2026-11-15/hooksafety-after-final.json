@@ -1,0 +1,104 @@
+[
+  {
+    "afterBytes": 18,
+    "phase": "broken-settings-install",
+    "preserved": true,
+    "result": {
+      "ok": false,
+      "results": [
+        {
+          "provider": "claude",
+          "ok": false,
+          "verified": false,
+          "missingEvents": [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PermissionRequest",
+            "Notification",
+            "Stop",
+            "StopFailure",
+            "SessionEnd"
+          ],
+          "reason": "hook_config_invalid",
+          "error": "hook_config_invalid",
+          "result": {
+            "ok": false,
+            "provider": "claude",
+            "error": "hook_config_invalid",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3914005342/host/.claude/settings.json",
+            "targetKind": "settings.json",
+            "changed": false,
+            "dryRun": false,
+            "events": [
+              "SessionStart",
+              "UserPromptSubmit",
+              "PermissionRequest",
+              "Notification",
+              "Stop",
+              "StopFailure",
+              "SessionEnd"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "phase": "foreign-plugin-install",
+    "preserved": true,
+    "result": {
+      "ok": false,
+      "results": [
+        {
+          "provider": "opencode",
+          "ok": false,
+          "verified": false,
+          "missingEvents": [
+            "UserPromptSubmit",
+            "Stop"
+          ],
+          "reason": "hook_plugin_ownership_conflict",
+          "error": "hook_plugin_ownership_conflict",
+          "result": {
+            "ok": false,
+            "provider": "opencode",
+            "error": "hook_plugin_ownership_conflict",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3914005342/host/.config/opencode/plugin/aih-session-hook.js",
+            "targetKind": "plugin.js",
+            "changed": false,
+            "dryRun": false,
+            "events": [
+              "UserPromptSubmit",
+              "Stop"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "phase": "foreign-plugin-uninstall",
+    "result": {
+      "ok": false,
+      "results": [
+        {
+          "provider": "opencode",
+          "ok": false,
+          "verified": false,
+          "reason": "hook_plugin_ownership_conflict",
+          "error": "hook_plugin_ownership_conflict",
+          "result": {
+            "ok": false,
+            "provider": "opencode",
+            "error": "hook_plugin_ownership_conflict",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3914005342/host/.config/opencode/plugin/aih-session-hook.js",
+            "targetKind": "plugin.js",
+            "changed": false,
+            "dryRun": false
+          }
+        }
+      ]
+    },
+    "retained": true
+  }
+]

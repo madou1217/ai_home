@@ -1,0 +1,50 @@
+[
+  {
+    "changed": false,
+    "error": "native_config_changed_retry",
+    "phase": "concurrent-external-edit",
+    "preserved": true
+  },
+  {
+    "changed": true,
+    "content": "NEW",
+    "error": "<nil>",
+    "mode": "0640",
+    "phase": "normal-atomic-replace"
+  },
+  {
+    "current": "ORIGINAL",
+    "error": "<nil>",
+    "pending": false,
+    "phase": "before-rename",
+    "saved": ""
+  },
+  {
+    "current": "NEXT",
+    "error": "<nil>",
+    "pending": false,
+    "phase": "after-exchange",
+    "saved": ""
+  },
+  {
+    "current": "ORIGINAL",
+    "error": "<nil>",
+    "pending": false,
+    "phase": "delete-before-move",
+    "saved": ""
+  },
+  {
+    "current": "",
+    "error": "<nil>",
+    "pending": false,
+    "phase": "delete-after-move",
+    "saved": ""
+  },
+  {
+    "current": "NEXT",
+    "error": "native_config_recovery_required",
+    "pending": true,
+    "phase": "conflicting-displaced",
+    "saved": "LATE EXTERNAL"
+  }
+]

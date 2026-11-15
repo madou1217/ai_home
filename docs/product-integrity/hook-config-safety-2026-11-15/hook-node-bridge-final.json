@@ -1,0 +1,27 @@
+{
+  "bad": {
+    "ok": false,
+    "provider": "claude",
+    "error": "hook_config_invalid",
+    "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-node-bridge-l9PkRB/.claude/settings.json",
+    "targetKind": "settings.json",
+    "changed": false,
+    "dryRun": false,
+    "events": [
+      "SessionStart",
+      "UserPromptSubmit",
+      "PermissionRequest",
+      "Notification",
+      "Stop",
+      "StopFailure",
+      "SessionEnd"
+    ]
+  },
+  "preserved": true,
+  "good": true,
+  "againChanged": false,
+  "removed": true,
+  "userRetained": true,
+  "dryOK": true,
+  "dryWroteHome": false
+}

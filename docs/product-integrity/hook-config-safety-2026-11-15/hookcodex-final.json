@@ -1,0 +1,55 @@
+[
+  {
+    "content": "[features]\nhooks = true\n# KEEP\n[other]\nx = 1\n",
+    "phase": "codex-existing-preference-lock",
+    "result": {
+      "ok": true,
+      "results": [
+        {
+          "provider": "codex",
+          "ok": true,
+          "verified": true,
+          "installed": true,
+          "result": {
+            "ok": true,
+            "provider": "codex",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-codex-2214532588/host/.codex/hooks.json",
+            "targetKind": "hooks.json",
+            "changed": true,
+            "dryRun": false,
+            "events": [
+              "SessionStart",
+              "UserPromptSubmit",
+              "PermissionRequest",
+              "Interrupt",
+              "Stop"
+            ],
+            "codexFeatures": {
+              "path": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-codex-2214532588/host/.codex/config.toml",
+              "changed": true,
+              "flagName": "hooks",
+              "codexVersion": "codex-cli 0.167.2",
+              "disabledBefore": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "hooksPreserved": true,
+    "phase": "codex-bad-toml",
+    "rejected": true,
+    "tomlPreserved": true
+  },
+  {
+    "error": "hook_codex_config_invalid",
+    "installed": false,
+    "phase": "codex-bad-diagnosis"
+  },
+  {
+    "error": "native_config_recovery_required",
+    "installed": false,
+    "phase": "codex-pending-diagnosis"
+  }
+]

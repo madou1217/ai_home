@@ -1,0 +1,14 @@
+{
+  "installOK": true,
+  "repeatOK": true,
+  "removeOK": true,
+  "unknownMetadata": {
+    "extraArray": [
+      "non-event metadata"
+    ],
+    "metadata": {
+      "keep": "USER"
+    }
+  },
+  "timeoutWas13": true
+}

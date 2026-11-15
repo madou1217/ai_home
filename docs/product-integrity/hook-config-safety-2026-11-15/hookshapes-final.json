@@ -1,0 +1,62 @@
+[
+  {
+    "input": "",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "input": "null",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "input": "[]",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "input": "{\"hooks\":42}",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "input": "{\"hooks\":{\"Stop\":{}}}",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "input": "{\"user\":\"a\",\"user\":\"b\"}",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "input": "{\"user\":\"\\ud800\"}",
+    "phase": "invalid-shape",
+    "preserved": true,
+    "rejected": true
+  },
+  {
+    "ok": true,
+    "phase": "legacy-node-managed-uninstall",
+    "removed": true
+  },
+  {
+    "install": true,
+    "phase": "marker-in-user-command",
+    "remove": true,
+    "userPreserved": true
+  },
+  {
+    "installRejected": true,
+    "linkRetained": true,
+    "phase": "plugin-symlink-conflict",
+    "targetPreserved": true,
+    "uninstallRejected": true
+  }
+]

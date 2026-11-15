@@ -1,0 +1,87 @@
+[
+  {
+    "afterBytes": 2625,
+    "phase": "broken-settings-install",
+    "preserved": false,
+    "result": {
+      "ok": true,
+      "results": [
+        {
+          "provider": "claude",
+          "ok": true,
+          "verified": true,
+          "installed": true,
+          "result": {
+            "ok": true,
+            "provider": "claude",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3064547420/host/.claude/settings.json",
+            "targetKind": "settings.json",
+            "changed": true,
+            "dryRun": false,
+            "events": [
+              "SessionStart",
+              "UserPromptSubmit",
+              "PermissionRequest",
+              "Notification",
+              "Stop",
+              "StopFailure",
+              "SessionEnd"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "phase": "foreign-plugin-install",
+    "preserved": false,
+    "result": {
+      "ok": true,
+      "results": [
+        {
+          "provider": "opencode",
+          "ok": true,
+          "verified": true,
+          "installed": true,
+          "result": {
+            "ok": true,
+            "provider": "opencode",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3064547420/host/.config/opencode/plugin/aih-session-hook.js",
+            "targetKind": "plugin.js",
+            "changed": true,
+            "dryRun": false,
+            "events": [
+              "UserPromptSubmit",
+              "Stop"
+            ],
+            "receiverUrl": "http://127.0.0.1:1/manual"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "phase": "foreign-plugin-uninstall",
+    "result": {
+      "ok": true,
+      "results": [
+        {
+          "provider": "opencode",
+          "ok": true,
+          "verified": true,
+          "changed": true,
+          "reason": "missing_events",
+          "result": {
+            "ok": true,
+            "provider": "opencode",
+            "targetPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3064547420/host/.config/opencode/plugin/aih-session-hook.js",
+            "targetKind": "plugin.js",
+            "changed": true,
+            "dryRun": false
+          }
+        }
+      ]
+    },
+    "retained": false
+  }
+]

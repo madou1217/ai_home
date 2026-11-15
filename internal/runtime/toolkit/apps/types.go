@@ -52,6 +52,14 @@ type Options struct {
 	VerifyRetries     int
 	VerifyRetryDelay  time.Duration
 
+	// Hook options retain the legacy explicit installer contract.
+	HookEvents              []string
+	HookName                string
+	HookTimeoutSeconds      int
+	HookTimeoutMilliseconds int
+	HookDryRun              bool
+	CodexVersion            string
+
 	// NPMRegistry 返回当前 npm registry（工具箱镜像设置）；nil 或空串用官方源。
 	NPMRegistry func() string
 
@@ -229,6 +237,7 @@ type DesktopRecord struct {
 
 // CodexFeaturesView 是 codex config.toml [features] 诊断/修改结果。
 type CodexFeaturesView struct {
+	Error          string `json:"error,omitempty"`
 	Path           string `json:"path"`
 	Changed        bool   `json:"changed,omitempty"`
 	FlagName       string `json:"flagName"`
@@ -242,6 +251,7 @@ type CodexFeaturesView struct {
 
 // HookDiagnosis 表示单个 Provider 官方会话 Hook 的诊断状态。
 type HookDiagnosis struct {
+	Error         string             `json:"error,omitempty"`
 	Supported     bool               `json:"supported"`
 	Provider      string             `json:"provider"`
 	TargetPath    string             `json:"targetPath,omitempty"`

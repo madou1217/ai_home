@@ -1,17 +1,17 @@
 {
   "date": "2026-11-15",
   "method": "actual tmux 3.8 independent PTY, capture-pane; no mocks or new test cases",
-  "redaction": "email characters replaced one-for-one; ANSI ESC stored as literal \\x1b",
+  "redaction": "email characters and wrapped address fragments replaced one-for-one; ANSI ESC stored as literal \\x1b",
   "artifacts": [
     {
       "file": "before-80x24.txt",
       "source_sha256": "5b31eb92b99b2f09e21dd284159211c285d8178940709eacda062963daa16674",
-      "evidence_sha256": "86399561144b31b1a29e73440c3f765087a5660bf3bb311b8c8504ead279eb40"
+      "evidence_sha256": "a986bb977f5e85a86c205f798f6a46cc822d83ec1fda8b3e63060edd2e981c97"
     },
     {
       "file": "before-60x24.txt",
       "source_sha256": "fb7a93d41849aa70c0207c40d9cbc8458f82a21cab9638f9ff4cb0b811dd35b9",
-      "evidence_sha256": "31e925f4edd2897959f0d95bb8e9a8adaec14ad7aa6c92bf1736cc9c14bc8da8"
+      "evidence_sha256": "3ef34ad3beea3b48db348661faecd3a33d719bc3750a38ce29ac84c62694e73d"
     },
     {
       "file": "before-120x30-after-resize.txt",
@@ -122,6 +122,26 @@
       "file": "stty-review-final.txt",
       "source_sha256": "88f862ea2320334a71ec8038e4417b50c170d0c983bb52c044ced98890655086",
       "evidence_sha256": "88f862ea2320334a71ec8038e4417b50c170d0c983bb52c044ced98890655086"
+    },
+    {
+      "file": "standard-real-80.ansi.txt",
+      "source_sha256": "d9d3a5d00f5085061ef2d28c5c53b56e1c2cb4de66c63e99a5e29da3fd2a853e",
+      "evidence_sha256": "26f7404f217192b29163f7fc65e5c5609a903bd2ad3e444b41eeb23c0d15e800"
+    },
+    {
+      "file": "standard-real-60.ansi.txt",
+      "source_sha256": "18863239f9928cb69c59193c65dc6de8edf1049d78864b321e70936262c6ad94",
+      "evidence_sha256": "0968b8a51b7a646b25818a5c5d18eeb6ea829cbeaf559979e2e83fdd0192e43e"
+    },
+    {
+      "file": "standard-real-120.ansi.txt",
+      "source_sha256": "e0dbc57f40381715544589c1b4cd4c0d1f07902889fd97b089645a32e09e5199",
+      "evidence_sha256": "2650b5bd4d3ad3c4b46c021b7eb53668a13f995a083526aeb96818f8aa57bd67"
+    },
+    {
+      "file": "standard-exit.txt",
+      "source_sha256": "dc3f33b2fddd4e04a083d9adce05739b3f063d9e5ce4ee48dbdc25df8b43fe43",
+      "evidence_sha256": "183017f21af8b85ca46a3ba7e3463f0a64c252c207cde5db03eee3265bdd92d1"
     }
   ]
 }

@@ -1,0 +1,24 @@
+  - Account ID: 2 (189****1630 / MeaDeo) [Remaining: 60.0%]
+  - Account ID: 3 (131****0378 / MeaDeo) [Remaining: 48.4%]
+  - Account ID: 4 (186****2115 / 团长助手) [Remaining: 62.7%]
+  - Account ID: 5 (131****3910 / Mea Deo) [Remaining: 38.5%]
+  - Account ID: 8 (133****5831) [Remaining: 86.4%]
+  - Account ID: 9 (189****1636 / flower) [Remaining: 60.0%]
+  - Account ID: 10 (158****4859) [Remaining: 65.2%]
+  - Account ID: 11 (185****4834) [Remaining: 79.2%]
+  - Account ID: 12 (199****6789) [Remaining: 72.1%]
+  - Account ID: 13 (181****9558) [Remaining: 89.0%]
+  - Account ID: 14 (182****2137) [Remaining: 79.3%]
+▶ workbuddy
+  - Account ID: 1 (xxxxxxxxx@xxxxx.xxx) [Remaining: 97.0%]
+  - Account ID: 2 (xxxxxxxxx@xxxx.xxx) [Remaining: 100.0%]
+▶ workbuddycn
+  - [Pro] Account ID: 1  [额度已耗尽] (码逗) [Remaining: 0.0%]
+▶ cline
+  - Account ID: 1 (Deo Mea) [Remaining: 5h: 100.0% / 7days: 100.0% / 30days: 100.0%]
+  - Account ID: 2 (Deo Mea) [Remaining: 5h: 100.0% / 7days: 100.0% / 30days: 100.0%] [⚠️ Duplicate of ID 1]
+
+
+
+[standard aih ls exit 0]
+

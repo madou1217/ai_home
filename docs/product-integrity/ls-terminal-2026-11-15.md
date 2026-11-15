@@ -45,3 +45,11 @@ Performance observation: independent before/after 120×24 PTYs, same live 41-acc
 - Existing scrollback semantics retained: offscreen live intermediate states are not individually archived. Initial/resize/normal exit snapshots retain all fields. A short terminal cannot show every account simultaneously.
 - Independent reviewer Carver reviewed the actual shared renderer and animator; CRLF, physical-tail mapping, layout-before-animation, cache bounds, static exit and sync-end fallback addressed. No tests were written.
 - Source checkpoint and standard CLI installation are distinct. This record initially validates the isolated built Go binary; do not infer a gateway restart or production deployment from it.
+
+## Standard-entry closeout
+
+Source checkpoint `404373c46` contains only the six rendering/dependency files and this work package's evidence. It used an independent index initialized from HEAD and an explicit commit pathspec. Shared `git ls-files --stage` was byte-identical before/after; no shared staged changes were discarded. Blank rows at capture EOF were intentionally retained as terminal evidence.
+
+After checking for concurrent CLI builds, `node scripts/build-go-cli.js` atomically rebuilt **only** `bin/native/darwin-arm64/aih-go`. The standard `/opt/homebrew/bin/aih` resolves to this workspace's Node front door; the observed child was `bin/native/darwin-arm64/aih-go ls`, whose build metadata includes `uniseg v0.4.7` and revision `404373c46`. Real standard-entry PTYs repeated 120→80→60→120 columns with aligned wrapped fields and exited 0. See `standard-real-*.ansi.txt` and `standard-exit.txt`. No server binary, server build stamp, gateway process, production database, shell/completion file or native Codex installation was changed.
+
+A follow-up redaction corrects email fragments split across lines by the original broken renderer; fragments are replaced character-for-character without altering captured positions. This is an evidence privacy correction, not a rewrite of the observed screen.

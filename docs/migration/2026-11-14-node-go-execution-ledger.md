@@ -319,3 +319,5 @@ reviewer thread limit/原代理工具400，peer已读无结论，按AGENTS显式
 复审随后指出Windows npm descendant和Close超时解锁两风险，已复用taskkill /T、等待实际Done再解锁；正在原reviewer final窄确认。详见 `2026-11-15-codex-exec-resume-tier.md`，实机/源码/交叉编译边界分别记录；共享9527未由本会话重启，原全W0-W6未关闭。
 
 W1 exec intent最终独立复审Hubble在23:17:53确认本范围无remaining must-fix；最终Close等待Done、Windows taskkill status/error+立即诊断已源码关闭。真实Windows生产helper实际回收parent+child989ms，不存在PID显式失败；hash/noPIDs/私有目录清理与existing task state4未变均确认。全量build/focused vet/JS语法通过，准备本owner18路径窄checkpoint，不夹带并行逆diff。
+
+W1 exec交付检查发现标准server未含private command，因此新增resolver标准能力优先、无显式override才允许同目录companion；exclusive创建ignored aih-codex-exec-intent，不替换标准server/CLI、不重启共享服务。无任何binary override的实际Node公共launcher再验收same-thread/default成功3生成3usage，重复lease拒绝；显式old binary失败关闭。标准Go CLI仍需后续协调重建，不能将tmp构件成功称全量已加载。

@@ -92,3 +92,13 @@ Windows cleanup is now separately confirmed by the main operator: exact module h
 ## Remaining acceptance scope
 
 This does not establish all W1/W0–W6. Unverified edges include names colliding across historical provider scopes, multiple-thread ordering of `--last`, unusual profile provider/permission overrides, concurrent non-AIH native writers, Windows/Linux runtime and generic shell shims, OAuth projections/rotation, full cancellation/reconnect/model ladder matrix, Edge UI and shared runtime delivery. No new branch/worktree, shared service restart, original DB merge or rollback occurred. Only this owner's explicit allowlist may be committed; peer staged reversals and other dirty files are excluded.
+
+## Local delivery without shared-service restart
+
+After the main checkpoint, the standard local `aih-server` capability probe did not advertise `__codex-exec-intent`; replacing running services was prohibited. The Node resolver now checks standard first, then the exact sibling `aih-codex-exec-intent` companion when there is **no explicit override**. An explicit old/invalid binary fails closed and never falls through. This follows the existing caller-local helper delivery pattern, not a separate routing implementation.
+
+Published the new ignored companion with create-exclusive semantics (no prior file was overwritten), SHA-256 `ed4ebf809076512cba7bf261a01e23fe4664b54508a1d808a3cfda2b1969ad23`. The standard server and standard Go CLI were not replaced, and the shared gateway was not restarted. Future normal builds/package releases contain the same private command in `aih-server`; the companion is a local staged delivery artifact, not a claim that standard CLI/server artifacts were refreshed.
+
+Actual production Node preflight/default-launcher validation was repeated **without AIH_GO_CORE_BINARY or a supplied goServerBinary**: real native resume completed, same thread, default tier,3 generated-turn usage rows, duplicate lease rejected, helpers/private state cleaned. Explicitly choosing the old server returned `codex_exec_intent_binary_missing_or_outdated` as expected. Ephemeral evidence: `/tmp/aih-w1-exec-companion-result-20261115.json`.
+
+Hubble independently reviewed the follow-up resolver hunk against the HEAD blob/physical file and reported no blocking findings. The default resolver business run remains main-agent execution evidence, not a claim of reviewer re-execution.

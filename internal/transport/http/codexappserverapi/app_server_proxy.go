@@ -266,7 +266,9 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 	defer shutdown()
 
 	tracker := NewResponseContextTracker()
+	defer tracker.Close()
 	listScopes := codexappserverws.NewThreadListScopeTracker()
+	defer listScopes.Close()
 	var wg sync.WaitGroup
 
 	// stderr 调试日志泵
@@ -337,9 +339,19 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 		if readErr != nil {
 			break
 		}
-		listScopes.Remember(data, rewriteOptions)
+		if err := listScopes.TryRemember(data, rewriteOptions); err != nil {
+			if h.logError != nil {
+				h.logError(err)
+			}
+			break
+		}
 		rewritten := codexappserverws.RewriteClientMessage(data, rewriteOptions)
-		tracker.RememberThreadResumeRequest(rewritten)
+		if err := tracker.TryRememberThreadResumeRequest(rewritten); err != nil {
+			if h.logError != nil {
+				h.logError(err)
+			}
+			break
+		}
 		frame := make([]byte, len(rewritten)+1)
 		copy(frame, rewritten)
 		frame[len(rewritten)] = '\n'

@@ -2,10 +2,16 @@ package codexappserverws
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/madou1217/ai_home/internal/runtime/sessionproject"
 )
+
+var ErrThreadListTrackerFull = errors.New("thread_list_context_capacity_exceeded")
+
+const maxThreadListContexts = 512
+const maxThreadListContextBytes = 512 * 1024
 
 type threadListScope struct {
 	cwd         string
@@ -18,20 +24,32 @@ type threadListScope struct {
 type ThreadListScopeTracker struct {
 	mu     sync.Mutex
 	scopes map[string]threadListScope
+	bytes  int
 }
 
 func NewThreadListScopeTracker() *ThreadListScopeTracker {
 	return &ThreadListScopeTracker{scopes: make(map[string]threadListScope)}
 }
 
+func (tracker *ThreadListScopeTracker) Close() {
+	tracker.mu.Lock()
+	clear(tracker.scopes)
+	tracker.bytes = 0
+	tracker.mu.Unlock()
+}
+
 func (tracker *ThreadListScopeTracker) Remember(raw []byte, opts RewriteOptions) {
+	_ = tracker.TryRemember(raw, opts)
+}
+
+func (tracker *ThreadListScopeTracker) TryRemember(raw []byte, opts RewriteOptions) error {
 	payload := parseRawObjectOrNil(raw)
 	if extractTrimmedMethod(payload["method"]) != "thread/list" {
-		return
+		return nil
 	}
-	id := extractJSONRPCIDKey(payload)
+	id := resumeRequestKey(payload["id"])
 	if id == "" {
-		return
+		return nil
 	}
 	params := parseRawObjectOrEmpty(payload["params"])
 	allProjects := opts.SkipInjectCwd || isJSONTrue(params["allProjects"])
@@ -40,16 +58,30 @@ func (tracker *ThreadListScopeTracker) Remember(raw []byte, opts RewriteOptions)
 		cwd = opts.Cwd
 	}
 	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	if _, exists := tracker.scopes[id]; exists {
+		return ErrResumeRequestDuplicate
+	}
+	if len(tracker.scopes) >= maxThreadListContexts || tracker.bytes+len(id)+len(cwd) > maxThreadListContextBytes {
+		return ErrThreadListTrackerFull
+	}
+	tracker.bytes += len(id) + len(cwd)
 	tracker.scopes[id] = threadListScope{cwd: cwd, allProjects: allProjects}
-	tracker.mu.Unlock()
+	return nil
 }
 
 func (tracker *ThreadListScopeTracker) Patch(raw []byte) []byte {
 	payload := parseRawObjectOrNil(raw)
-	id := extractJSONRPCIDKey(payload)
+	if len(payload["method"]) != 0 || (len(payload["result"]) == 0 && len(payload["error"]) == 0) {
+		return raw
+	}
+	id := resumeRequestKey(payload["id"])
 	tracker.mu.Lock()
 	scope, found := tracker.scopes[id]
-	delete(tracker.scopes, id)
+	if found {
+		delete(tracker.scopes, id)
+		tracker.bytes -= len(id) + len(scope.cwd)
+	}
 	tracker.mu.Unlock()
 	if !found || (scope.cwd == "" && scope.allProjects) {
 		return raw

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // RewriteOptions 控制客户端 JSON-RPC 报文的重写行为。
@@ -122,122 +121,6 @@ func RewriteClientMessage(raw []byte, opts RewriteOptions) []byte {
 	default:
 		return raw
 	}
-}
-
-type trackedResumeRequest struct {
-	method   string
-	threadID string
-}
-
-// ResumeTracker 线程安全地记录进行中的 thread/resume 请求，并为缺少 result.threadIds 的响应补齐 [threadId]。
-type ResumeTracker struct {
-	mu       sync.Mutex
-	contexts map[string]trackedResumeRequest
-}
-
-// NewResumeTracker 创建 thread/resume 响应上下文跟踪器。
-func NewResumeTracker() *ResumeTracker {
-	return &ResumeTracker{
-		contexts: make(map[string]trackedResumeRequest),
-	}
-}
-
-// RememberRequest 1:1 复刻 rememberThreadResumeRequestMessage：
-// 当报文为带 id 的 thread/resume 请求时记录其目标 threadId。
-func (t *ResumeTracker) RememberRequest(raw []byte) bool {
-	if t == nil {
-		return false
-	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return false
-	}
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &payload); err != nil || payload == nil {
-		return false
-	}
-	var method string
-	if err := json.Unmarshal(payload["method"], &method); err != nil || method != "thread/resume" {
-		return false
-	}
-	id := extractJSONRPCIDKey(payload)
-	if id == "" {
-		return false
-	}
-	threadID := extractRequestThreadID(payload["params"])
-
-	t.mu.Lock()
-	t.contexts[id] = trackedResumeRequest{
-		method:   "thread/resume",
-		threadID: threadID,
-	}
-	t.mu.Unlock()
-	return true
-}
-
-// PatchResponse 1:1 复刻 patchThreadResumeResponseMessage：
-// 若响应对应先前的 thread/resume 请求且 result 缺少 threadIds，则补齐 result.threadIds = [threadId]。
-func (t *ResumeTracker) PatchResponse(raw []byte) []byte {
-	if t == nil {
-		return raw
-	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return raw
-	}
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &payload); err != nil || payload == nil {
-		return raw
-	}
-	id := extractJSONRPCIDKey(payload)
-	if id == "" {
-		return raw
-	}
-
-	t.mu.Lock()
-	ctx, ok := t.contexts[id]
-	if ok && ctx.method == "thread/resume" {
-		delete(t.contexts, id)
-	}
-	t.mu.Unlock()
-
-	if !ok || ctx.method != "thread/resume" {
-		return raw
-	}
-
-	result := parseRawObjectOrNil(payload["result"])
-	if result == nil {
-		return raw
-	}
-	if _, hasThreadIDs := result["threadIds"]; hasThreadIDs {
-		return raw
-	}
-
-	threadID := strings.TrimSpace(ctx.threadID)
-	if threadID == "" {
-		if threadObj := parseRawObjectOrNil(result["thread"]); threadObj != nil {
-			threadID = unmarshalTrimmedString(threadObj["id"])
-		}
-	}
-	if threadID == "" {
-		return raw
-	}
-
-	encodedThreadIDs, err := marshalNoEscapeHTML([]string{threadID})
-	if err != nil {
-		return raw
-	}
-	result["threadIds"] = encodedThreadIDs
-	encodedResult, err := marshalNoEscapeHTML(result)
-	if err != nil {
-		return raw
-	}
-	payload["result"] = encodedResult
-	encoded, err := marshalNoEscapeHTML(payload)
-	if err != nil {
-		return raw
-	}
-	return encoded
 }
 
 // SplitJSONRPCLines 1:1 复刻 splitJsonRpcLines：将缓冲文本按 \r\n 或 \n 切分为完整非空行与剩余不完整尾片段。

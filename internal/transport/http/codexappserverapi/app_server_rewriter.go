@@ -88,6 +88,21 @@ func (t *ResponseContextTracker) RememberThreadResumeRequest(raw []byte) bool {
 	return t.tracker.RememberRequest(raw)
 }
 
+// TryRememberThreadResumeRequest preserves explicit admission errors for native transports.
+func (t *ResponseContextTracker) TryRememberThreadResumeRequest(raw []byte) error {
+	if t == nil || t.tracker == nil {
+		return nil
+	}
+	_, err := t.tracker.TryRememberRequest(raw)
+	return err
+}
+
+func (t *ResponseContextTracker) Close() {
+	if t != nil && t.tracker != nil {
+		t.tracker.Close()
+	}
+}
+
 // PatchThreadResumeResponse 为缺少 result.threadIds 的 thread/resume 响应补齐 [threadId]。
 func (t *ResponseContextTracker) PatchThreadResumeResponse(raw []byte) []byte {
 	if t == nil || t.tracker == nil {

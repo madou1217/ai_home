@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -44,6 +46,7 @@ import (
 	qodercli "github.com/madou1217/ai_home/internal/adapters/qoder/clilaunch"
 	zcodecli "github.com/madou1217/ai_home/internal/adapters/zcode/clilaunch"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
+	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 )
@@ -331,15 +334,16 @@ func New(ctx context.Context, options Options) (*App, error) {
 		hostHomeDir = resolveHostHomeDir()
 	}
 	runner, err := providercli.NewRunner(providercli.Options{
-		Credentials: credentials,
-		Stdin:       options.Stdin,
-		Stdout:      options.Stdout,
-		Stderr:      options.Stderr,
-		HTTPClient:  options.ProviderHTTPClient,
-		Interactive: isInteractiveTTY(options.Stdin, options.Stdout),
-		PTYStarter:  pty.NewStarter(),
-		Projection:  provisioner,
-		HostHomeDir: hostHomeDir,
+		Credentials:   credentials,
+		Stdin:         options.Stdin,
+		Stdout:        options.Stdout,
+		Stderr:        options.Stderr,
+		HTTPClient:    options.ProviderHTTPClient,
+		Interactive:   isInteractiveTTY(options.Stdin, options.Stdout),
+		PTYStarter:    pty.NewStarter(),
+		Projection:    provisioner,
+		HostHomeDir:   hostHomeDir,
+		PrepareNative: codexexecintent.Prepare,
 	})
 	if err != nil {
 		return fail("创建 Provider CLI Runtime 失败", err)
@@ -381,7 +385,8 @@ func resolveHostHomeDir() string {
 func isInteractiveTTY(input io.Reader, output io.Writer) bool {
 	stdin, inputOK := input.(*os.File)
 	stdout, outputOK := output.(*os.File)
-	return inputOK && outputOK && stdin == os.Stdin && stdout == os.Stdout
+	return inputOK && outputOK && stdin == os.Stdin && stdout == os.Stdout &&
+		term.IsTerminal(int(stdin.Fd())) && term.IsTerminal(int(stdout.Fd()))
 }
 
 // newApp 统一生产和包内测试的不变量校验。

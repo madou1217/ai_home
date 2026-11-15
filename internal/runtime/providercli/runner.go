@@ -63,23 +63,27 @@ type Options struct {
 	HostHomeDir string
 	// Platform 覆盖链接/路径的平台语义；为空按 runtime.GOOS。
 	Platform string
+	// PrepareNative applies provider launch intent after the final argv/env resolve.
+	// Its release is held through foreground exit; nil preserves existing behavior.
+	PrepareNative func(context.Context, string, string, []string, []string) ([]string, func(), error)
 }
 
 // Runner 是 LaunchPlan 到官方进程拓扑的唯一执行入口。
 type Runner struct {
-	credentials CredentialRefresher
-	stdin       io.Reader
-	stdout      io.Writer
-	stderr      io.Writer
-	httpClient  *http.Client
-	interactive bool
-	ptyStarter  pty.Starter
-	projection  appprojection.Provisioner
-	hostHomeDir string
-	platform    string
-	environ     func() []string
-	binaries    binaryResolver
-	processes   processFactory
+	credentials   CredentialRefresher
+	stdin         io.Reader
+	stdout        io.Writer
+	stderr        io.Writer
+	httpClient    *http.Client
+	interactive   bool
+	ptyStarter    pty.Starter
+	projection    appprojection.Provisioner
+	hostHomeDir   string
+	platform      string
+	environ       func() []string
+	binaries      binaryResolver
+	processes     processFactory
+	prepareNative func(context.Context, string, string, []string, []string) ([]string, func(), error)
 }
 
 // NewRunner 创建只依赖标准库操作系统边界的生产 Runtime。
@@ -97,19 +101,20 @@ func NewRunner(options Options) (*Runner, error) {
 		platform = runtime.GOOS
 	}
 	return &Runner{
-		credentials: options.Credentials,
-		stdin:       options.Stdin,
-		stdout:      options.Stdout,
-		stderr:      options.Stderr,
-		httpClient:  client,
-		interactive: options.Interactive,
-		ptyStarter:  options.PTYStarter,
-		projection:  options.Projection,
-		hostHomeDir: options.HostHomeDir,
-		platform:    platform,
-		environ:     os.Environ,
-		binaries:    defaultBinaryResolver(),
-		processes:   execProcessFactory{},
+		credentials:   options.Credentials,
+		stdin:         options.Stdin,
+		stdout:        options.Stdout,
+		stderr:        options.Stderr,
+		httpClient:    client,
+		interactive:   options.Interactive,
+		ptyStarter:    options.PTYStarter,
+		projection:    options.Projection,
+		hostHomeDir:   options.HostHomeDir,
+		platform:      platform,
+		environ:       os.Environ,
+		binaries:      defaultBinaryResolver(),
+		processes:     execProcessFactory{},
+		prepareNative: options.PrepareNative,
 	}, nil
 }
 
@@ -187,12 +192,7 @@ func (runner *Runner) runDirect(
 	if err != nil {
 		return err
 	}
-	return runner.runProviderProcess(
-		ctx,
-		path,
-		arguments,
-		applyEnvironment(runner.environ(), environment),
-	)
+	return runner.runPreparedProviderProcess(ctx, providerID, path, arguments, applyEnvironment(runner.environ(), environment))
 }
 
 // runNativeDirect 执行 Native Direct：需要凭据文件投影时先物化账号沙箱，
@@ -212,7 +212,7 @@ func (runner *Runner) runNativeDirect(
 	environment = applyAccountRefEnvironment(environment, spec.AccountRef())
 	projection := spec.Projection()
 	if !projection.Required() {
-		return runner.runProviderProcess(ctx, path, arguments, environment)
+		return runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, arguments, environment)
 	}
 	if runner.projection == nil || runner.hostHomeDir == "" {
 		return ErrProjectionUnavailable
@@ -250,7 +250,7 @@ func (runner *Runner) runNativeDirect(
 	// qoder/qodercn 的账号边界在启动参数上（合同声明 --config-dir）：投影根
 	// 就绪后把本次账号的配置根注入 argv，不能落到宿主 ~/.qoder。
 	arguments = applyConfigDirArgument(spec.ProviderID(), arguments, result.Root)
-	runErr := runner.runProviderProcess(ctx, path, arguments, environment)
+	runErr := runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, arguments, environment)
 	// 回写失败必须可见：它意味着账号库停留在旧一代，下一次启动可能拿到失效的
 	// refresh_token。TUI 已经正常退出时把它当本次失败；TUI 自己失败时保留原
 	// 退出码，并向宿主显式携带 CaptureFailed，不能仅打印后丢掉回写失败事实。

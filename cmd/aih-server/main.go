@@ -46,6 +46,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "__codex-exec-intent" {
+		if err := runCodexExecIntent(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "aih codex exec intent:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "__codex-local-app-server" {
 		if err := runCodexLocalAppServer(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "aih local codex:", err)

@@ -309,3 +309,13 @@ W3新五文件复审：原subagent再次工具协议400；已读跨会话peer请
 reviewer thread limit/原代理工具400，peer已读无结论，按AGENTS显式self_review commit bypass并记录未独立复审风险。共享服务未重启，新构件仅隔离验证；原始全目标保持active。
 
 后续真实调查确认raw exec可通过正式API而非改文件解决：私有真实thread经thread/resume(default)+thread/settings/update(default)+unsubscribe后，全新native exec resume按default发出并完成；2实际生成轮只有2usage。尚未接入启动器，需要精确UUID/name/--last、profile、account scope、活动线程和release-before-launch保护；不把手工调用成功宣称自动路径已完成。记录追加在managed-resume-tier文档。
+
+## 2026-11-15 W1：原生exec resume正式启动意图接线
+
+实现同一个Go codexexecintent模块并接Go CLI与Node default launcher：native config/read及profile root tier/explicit覆盖→精确UUID/name或provider/cwd-scoped last→shared sessions旁per-thread OS lease→metadata/latest-turn idle守卫→官方thread/resume+settings/update+unsubscribe→确认control进程Done后native foreground，lease持有到结束。无vendor rollout/SQLite直接修改。Node private pipe helper丢失会终止foreground并明确exit1，不静默继续。
+
+真实Go UUID/default、profile fast、explicit default赢profile、last固定同ID通过5生成5usage；exact name通过，不存在name/unknown option0上游；Node preflight+完整default launcher通过3生成3usage，重复lease明确busy。reviewer恢复live查出failure unlock顺序/helper loss/stdin '-'三项，已修；stdin真实又发现pointer-only TTY误把pipe放PTY导致EOF hang，改实际term.IsTerminal后same-thread/OK/default/2usage通过。helper SIGKILL真实故障6ms exit1/foreground消失，无追加生成；SIGSTOP native control后owner关闭13ms回收无残留。
+
+复审随后指出Windows npm descendant和Close超时解锁两风险，已复用taskkill /T、等待实际Done再解锁；正在原reviewer final窄确认。详见 `2026-11-15-codex-exec-resume-tier.md`，实机/源码/交叉编译边界分别记录；共享9527未由本会话重启，原全W0-W6未关闭。
+
+W1 exec intent最终独立复审Hubble在23:17:53确认本范围无remaining must-fix；最终Close等待Done、Windows taskkill status/error+立即诊断已源码关闭。真实Windows生产helper实际回收parent+child989ms，不存在PID显式失败；hash/noPIDs/私有目录清理与existing task state4未变均确认。全量build/focused vet/JS语法通过，准备本owner18路径窄checkpoint，不夹带并行逆diff。

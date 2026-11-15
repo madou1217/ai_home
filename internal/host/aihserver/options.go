@@ -25,7 +25,8 @@ type UsageHTTPClient interface {
 
 const (
 	// MinServerKeyLength 是 Client 与 Management Key 共用的最小长度。
-	MinServerKeyLength = 32
+	// AWS 保留既有短 key：不再强制 32 位下限，只要求非空。
+	MinServerKeyLength = 1
 	// MaxServerKeyLength 防止异常请求头和配置占用无界内存。
 	MaxServerKeyLength = 8192
 )
@@ -34,9 +35,9 @@ var (
 	// ErrInvalidOptions 表示 Go Server Host 缺少启动所需依赖。
 	ErrInvalidOptions = errors.New("go server host 配置无效")
 	// ErrInvalidManagementKey 表示 Management Key 不满足安全合同。
-	ErrInvalidManagementKey = errors.New("management key 必须为 32-8192 个非空白且非控制字符")
+	ErrInvalidManagementKey = errors.New("management key 必须为 1-8192 个非空白且非控制字符")
 	// ErrInvalidClientKey 表示 Client Key 不满足安全合同。
-	ErrInvalidClientKey = errors.New("client key 必须为 32-8192 个非空白且非控制字符")
+	ErrInvalidClientKey = errors.New("client key 必须为 1-8192 个非空白且非控制字符")
 	// ErrServerKeyCollision 表示管理权限和标准客户端权限没有使用独立密钥。
 	ErrServerKeyCollision = errors.New("management key 与 client key 必须不同")
 )

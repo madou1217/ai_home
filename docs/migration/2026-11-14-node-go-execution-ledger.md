@@ -145,3 +145,69 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - `effort fast` 也复用 statement scanner，真实 CLI 修改 complex config 只改变根 service_tier，文本中的伪键不变。
 - 绝对路径的控制字符、空 hostname、越界端口均先拒绝；stderr 不回显输入配置/密钥。
 - 新文件/事务服务仍在集成中：本段不证明宿主账号切换、rollback/recovery、Desktop 重载、Windows/Linux 真机已完成。
+
+## W3 默认事务实施中（2026-11-15）
+
+依赖提交 `7903450e9` 已完成：Go HostSpec TOML 内容构建、机器用 gateway-auth 命令、语句级偏好编辑。默认账号事务仍在审查/集成中，**公开 Node 前门尚未切到新事务，9527 未迁移新 schema**。
+
+当前实现覆盖：
+
+- native config/auth 预检→host 文件锁→版本化默认状态快照→BEGIN IMMEDIATE 核验→0600 journal→文件发布→数据库提交→清理 journal。
+- v31 增加 `account_default_ownership` 操作收据及 DB trigger guard。消费者仍读 `account_defaults`；guard 阻止迟到的旧 Node/旧服务 SQL 把不同账号写回来，不是依赖有竞态的客户端标记检查。
+- 两个 SQLite 文件使用 FULL 同步；Unix 同步目录元数据，Windows 采用 MoveFileEx WRITE_THROUGH。WAL 多文件并非全局原子提交：局部提交错误保留 journal，后续遇到状态不匹配明确要求恢复，不猜成功。
+- OAuth 切走前尝试保存已登记 outgoing identity 的较新凭据，不把 outgoing token 写入 incoming 账号；未知宿主 OAuth 登录要求先登记，不无声丢弃。当前没有真实 Codex OAuth 账号，因此该分支仍未获真实续期验收。
+- auth.json 发布固定0600，config 保留原 mode；临时文件、journal 不泄露 key；只在旧值/文件身份仍匹配时回滚。
+- Node 默认读侧、默认 CLI 环境和 Go app-server 在所有权转移后读 Go 默认；旧同步不再把 legacy slot 当权威。
+- 管理 API 接同一 host transaction，避免先写 DB 默认再尝试 host sync 的半成功。
+
+本轮实际验收（全部隔离数据目录，真实程序，不新增测试用例）：
+
+1. 私密临时 SQLite clone 中选择账号41：auth key/baseURL 与该账号匹配（只输出 boolean），默认指针一致，config max/fast/profile/mode 保留。
+2. gateway/unset：原生 provider 和 root endpoint 都指向本地网关，清空账号钉选；未知ID/无效TOML失败且原配置/默认状态不变。
+3. 真实 Node front-door adapter 调真实 Go CLI，set/unset/help/invalid参数/JSON回显通过；兼容启动器读 Go 凭据而非继承的错误 key。
+4. 用实际 SQLite 连接模拟已迟到的 legacy SQL：不同账号 UPDATE、DELETE 和 gateway 后重新 INSERT 均被数据库约束拒绝；正常 disable 清默认及 delete 级联不受阻。
+5. 真实临时 Go Server：WebUI set-default 200、clear-default 200；generic PUT 旧默认请求返回409；坏TOML API返回失败，之前默认 ref+version不变。
+6. macOS 给临时 auth.json 设置 user immutable，强制真实文件发布失败：配置自动回滚、auth原样、默认仍gateway、journal已清；解除约束后重试成功。
+7. native CLI/Server 构建、相关 JS syntax、Windows/Linux 包交叉编译通过；不将交叉编译计为跨平台真机验证。
+
+仍需完成：复审问题闭环、真实 crash/recovery受控验收、CLI前门部署 gate与 schema同步加载、Desktop重载证据、旧Node/UI写入口彻底收敛、OAuth账号续期与多平台验收。W4–W6 仍未关闭。
+
+## 2026-11-15 恢复后的 W3 增量验收（禁止重启网关）
+
+用户/恢复协调会话已完成 16MiB 入站修复和正式单库切换；本会话**未重做入站修改、数据库合并、回退或共享服务重启**。现场只读确认 `aih.db` schema31、Codex ownership receipt=0，9527 正常。本轮全部默认切换只发生在 SQLite 私密快照和临时 `.codex`。
+
+### 已适应的单库事实
+
+恢复会话把 host default metadata 从 ATTACH 改为 `main.app_kv`；本会话保留此修复。默认指针、owner 和 operation receipt 现在同一业务库事务提交；文件仍有独立 journal 恢复边界。旧文档中多库 WAL 描述仅为当时设计历史，不是当前实施。
+
+### 已关闭的审查问题
+
+- Node 与 Go 的启动器检查 pending journal / conflict；config 单文件软链接的 realpath 旁标记也检查。未处理的切换不得启动混合账号环境。
+- 原生默认与 gateway 模式从 Go receipt读取，晚到 app_kv profile 无权覆盖；首次 legacy→Go 也检查代次。
+- Node healer/project registry 的配置发布统一调用 Go stdin compare-and-replace，取得同一文件锁并拒绝过期快照。
+- 既有文件以平台 swap/保留 displaced inode 后验证；新增文件 no-replace。未确认的新 native 内容保留并标记冲突，不删除以换成功。
+- journal v2 记录 stage路径；逐个 cleanup 对**实际移除快照**再次核对 pre/after-image，防止外部写者持有旧 inode 续期后被删。
+- auth.json 回滚强制私密模式/Windows protected DACL，Windows 文件 mode仅用于 readonly比较，不当 ACL证据。
+- 删除/停用自动回网关变为条件式事务；不会在事务后单独回写profile，也不会清掉更新的默认选择。
+
+独立审查者 Locke 对此前四个具体发现的最终只读复核已关闭（不是全项目完成声明）。
+
+### 本轮真实操作结果
+
+1. 编译真实 CLI 到 `/tmp/aih-w3-cli-20261115`；macOS业务调用、Windows/Linux相关包交叉编译通过。没有新增测试用例。
+2. 单库clone中账号41/API default→gateway：host auth key/endpoint与账号一致（只输出boolean），config0640/auth0600、max/fast及profile保留；未产生旧app-state.db。
+3. late profile写入、旧generic default SQL写入分别被权威读侧/数据库guard阻止；默认选择不会被恢复成旧值。
+4. 实际auth文件immutable导致发布失败：config/auth/默认状态回退，journal/stage清理；解除限制后重试成功。
+5. 观察真实journal后SIGKILL新CLI：Node受管启动和Go配置自愈拒绝；重试set-default后回到一致状态、journal/stage清空。
+6. 单库临时Go Server实际WebUI set/clear=200，迟到generic PUT=409；坏TOML=失败且默认ref+version不变。仅启动临时私有端口，不触碰9527。
+7. 条件式自动落点：wrong expected-ref、OnlyIfUnselected但已有新默认均返回applied=false，文件不变；Go app-server env在pending journal时拒绝，正常态通过。
+8. **真实并发native inode更新**：另一个线程持有旧auth文件，在它被swap到stage后写入新内容并fsync；实际CLI返回 `codex_default_external_edit_preserved_recovery_required`，外部新字节仍存在且恢复gate保留。
+9. 配置文件软链到独立目录且目标旁有conflict marker：实际Go effort和Node admission都拒绝，配置不变。
+10. 已安装标准CLI在临时配置上验证 `effort --replace-config` 可用；未修改安装文件或宿主配置。
+
+### 当前提交/依赖边界
+
+- `751e3ed83` 已提交：共享配置写锁/CAS、外部冲突保留、恢复gate和协作healer/project writer（14个明确文件）。
+- W3事务主体、默认读桥和API接线仍未提交，等待单库owner确认其 businessdb/appstate 底座的提交边界；已通过peer发出协调信息，不把对方未提交代码夹带。
+- `cmd/aih/run.go`、`bin/ai-home.js`、`composition.go`、schema migration存在并行hunk；不用裸提交纳入。
+- 公共default前门还没切；原生Desktop重载仍是显式Node兼容effect，不宣称整个Codex入口纯Go。真实OAuth账号、Windows/Linux真实运行、W4–W6全部验收仍未完成。

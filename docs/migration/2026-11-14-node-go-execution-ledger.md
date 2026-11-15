@@ -220,3 +220,9 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - 最新CLI/Server构建在 `/tmp`，单库API/CLI验收再次通过；共享9527进程持续存活，shared schema31且owner receipt仍为0，实际用户默认账号未被本轮切换。
 - W3单库事务不再引用ATTACH；当前未提交的businessdb/appstate底座由恢复owner保有，已通过peer请求提交边界。该依赖不能用回退单库或夹带对方全文件来绕开。
 - W3事务主体仍待精确提交；其它W0–W6不足没有删除。全目标保持active。
+
+### W0增量：只解析可证明不变的局部路由（2026-11-15）
+
+`cmd/route-entry-inventory` 已支持顶层一次赋值且未取地址/重赋值/遮蔽的局部字符串表达式，及明确的标准库 TrimSuffix/TrimPrefix 调用；没有引入任意代码执行或推测动态变量。实际当前仓库采集结果为 mux=79、WebUI constructor=420、派生alias候选=365，仍全部标记 runtime_state=not_verified。四条聊天集合/运行入口已从unknown变为源码可解析；剩余4处是动态 route.Pattern、alias、两处RPC循环。未解析数下降不是业务验收率提高，W0全入口核对仍进行中。
+
+本轮未写测试用例；真实执行编译后的采集器及标准 go run，输出逐条检查源码函数/表达式。共享服务未重启，数据库未改写。

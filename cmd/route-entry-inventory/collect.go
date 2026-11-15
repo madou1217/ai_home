@@ -68,6 +68,36 @@ func collect(root string) (report, error) {
 			if !ok || fn.Body == nil {
 				continue
 			}
+			localFile := *file
+			localFile.locals = localConstants(file, fn)
+			localFile.shadowed = make(map[string]bool)
+			// Every declared local/parameter shadows its package name even if
+			// it cannot safely be resolved as a route expression.
+			ast.Inspect(fn, func(node ast.Node) bool {
+				switch n := node.(type) {
+				case *ast.AssignStmt:
+					for _, lhs := range n.Lhs {
+						if name, ok := lhs.(*ast.Ident); ok {
+							localFile.shadowed[name.Name] = true
+						}
+					}
+				case *ast.Field:
+					for _, name := range n.Names {
+						localFile.shadowed[name.Name] = true
+					}
+				case *ast.ValueSpec:
+					for _, name := range n.Names {
+						localFile.shadowed[name.Name] = true
+					}
+				case *ast.RangeStmt:
+					for _, expr := range []ast.Expr{n.Key, n.Value} {
+						if name, ok := expr.(*ast.Ident); ok {
+							localFile.shadowed[name.Name] = true
+						}
+					}
+				}
+				return true
+			})
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
 				switch value := node.(type) {
 				case *ast.CallExpr:
@@ -79,7 +109,7 @@ func collect(root string) (report, error) {
 					if !ok || receiver.Name != "mux" {
 						break
 					}
-					src.add(&out, file, fn.Name.Name, value.Args[0], "mux_registration", false)
+					src.add(&out, &localFile, fn.Name.Name, value.Args[0], "mux_registration", false)
 				case *ast.CompositeLit:
 					var pattern ast.Expr
 					handlerFound, skipAlias := false, false
@@ -103,7 +133,7 @@ func collect(root string) (report, error) {
 						}
 					}
 					if pattern != nil && handlerFound {
-						src.add(&out, file, fn.Name.Name, pattern, "webui_constructor", !skipAlias)
+						src.add(&out, &localFile, fn.Name.Name, pattern, "webui_constructor", !skipAlias)
 					}
 				}
 				return true

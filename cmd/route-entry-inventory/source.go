@@ -15,10 +15,12 @@ import (
 const modulePath = "github.com/madou1217/ai_home/"
 
 type sourceFile struct {
-	path    string
-	pkg     string
-	imports map[string]string
-	file    *ast.File
+	path     string
+	pkg      string
+	imports  map[string]string
+	file     *ast.File
+	locals   map[string]ast.Expr
+	shadowed map[string]bool
 }
 
 type definition struct {
@@ -60,9 +62,7 @@ func loadSources(root string) (*sources, error) {
 				if spec.Name != nil {
 					name = spec.Name.Name
 				}
-				if strings.HasPrefix(importPath, modulePath) {
-					item.imports[name] = strings.TrimPrefix(importPath, modulePath)
-				}
+				item.imports[name] = strings.TrimPrefix(importPath, modulePath)
 			}
 			src.files = append(src.files, item)
 			for _, decl := range file.Decls {
@@ -91,8 +91,8 @@ func loadSources(root string) (*sources, error) {
 	return src, nil
 }
 
-// resolve accepts only string constants and concatenation. Variables, calls,
-// conditional registration and reflection remain explicitly unresolved.
+// resolve accepts constants, immutable local expressions and the two explicit
+// stdlib string trimming operations. Other calls/variables remain unresolved.
 func (src *sources) resolve(file *sourceFile, expr ast.Expr, seen map[string]bool) (string, bool) {
 	switch node := expr.(type) {
 	case *ast.BasicLit:
@@ -111,13 +111,46 @@ func (src *sources) resolve(file *sourceFile, expr ast.Expr, seen map[string]boo
 		right, b := src.resolve(file, node.Y, seen)
 		return left + right, a && b
 	case *ast.Ident:
+		if value, found := file.locals[node.Name]; found {
+			key := "local:" + node.Name
+			if seen[key] {
+				return "", false
+			}
+			seen[key] = true
+			out, ok := src.resolve(file, value, seen)
+			delete(seen, key)
+			return out, ok
+		}
+		if file.shadowed[node.Name] {
+			return "", false
+		}
 		return src.resolveName(file.pkg+"."+node.Name, seen)
 	case *ast.SelectorExpr:
 		pkg, ok := node.X.(*ast.Ident)
-		if !ok || file.imports[pkg.Name] == "" {
+		if !ok || file.imports[pkg.Name] == "" || file.shadowed[pkg.Name] {
 			return "", false
 		}
 		return src.resolveName(file.imports[pkg.Name]+"."+node.Sel.Name, seen)
+	case *ast.CallExpr:
+		selector, ok := node.Fun.(*ast.SelectorExpr)
+		if !ok || len(node.Args) != 2 {
+			return "", false
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok || file.imports[pkg.Name] != "strings" || file.shadowed[pkg.Name] {
+			return "", false
+		}
+		left, a := src.resolve(file, node.Args[0], seen)
+		right, b := src.resolve(file, node.Args[1], seen)
+		if !a || !b {
+			return "", false
+		}
+		switch selector.Sel.Name {
+		case "TrimSuffix":
+			return strings.TrimSuffix(left, right), true
+		case "TrimPrefix":
+			return strings.TrimPrefix(left, right), true
+		}
 	}
 	return "", false
 }

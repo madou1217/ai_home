@@ -261,3 +261,11 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 修复后真实 JSON/SSE 均 200 且完整回传 `default`，每轮一次上游POST、一条usage（11入/5出/16总）。真实流首个文本增量后受控断连，客户端failed档位缺省，上游仅一次POST、无重放、无新usage；未收到终态用量不等于上游免费。`go build ./...`通过。详见 `2026-11-15-codex-response-tier-acceptance.md` 的构件hash、命令和边界。
 
 全部在权限受限数据库副本/独立端口执行，临时资源已清理；共享9527未重启、新构件未发布。WS/resume/fork等完整矩阵、OAuth、真实页面和全W0–W6仍未关闭。原W3 reviewer源码复核关闭旧五项，同时发现Windows两次rename之间与Unix安全回滚重入两个恢复边界；交原代理窄修，不能以此前平台成功记录覆盖这些新发现。
+
+## 2026-11-15 W3：回滚安全权限重入与初次发布中断
+
+原reviewer复审关闭两个窄缺陷：Windows初次两步发布中间态须同时匹配stage after-image与displaced before-image才能no-replace恢复；Unix旧auth回滚收紧到0600后再次中断，可认可完全相同旧内容的安全化权限，不重新放宽到0644。
+
+主代理用完整生产CLI与真实生成的journal完成Unix两次SIGKILL链：旧CLI恢复exit1/external_edit，patched CLI同journal恢复exit0且清理journal/stage、auth仍0600。数据库仅权限受限副本，未写原库/原宿主凭据、未重启9527；go build ./...与Windows交叉编译通过。详情 `2026-11-15-codex-default-reentry-acceptance.md`。
+
+子代理曾越界生成临时合成fixture/component driver，已停止，全部排除验收且不提交；正式Unix证据由主代理真实完整CLI补齐。Windows精确初次窗口仍未真机验收；review另指出回滚自身的两次move之间再次崩溃时，unjournaled rollback temp仍无法自动恢复，保持后续任务。全目标继续active。

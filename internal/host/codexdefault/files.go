@@ -139,7 +139,13 @@ func rollbackFiles(changes []fileChange) error {
 			failures = append(failures, err)
 			continue
 		}
-		if sameFileContents(current, change.Before) {
+		if rollbackPreimageMatches(change.Before, current) {
+			continue
+		}
+		if !current.Existed && change.Before.Existed {
+			if err := restoreInterruptedPublication(change, current); err != nil {
+				failures = append(failures, err)
+			}
 			continue
 		}
 		if !current.Existed || !bytes.Equal(current.Data, change.After) || !sameMode(current.Mode, change.Mode) {

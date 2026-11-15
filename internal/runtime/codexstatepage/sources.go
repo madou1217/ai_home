@@ -10,9 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
-	_ "modernc.org/sqlite"
 )
 
 type source struct {
@@ -90,27 +87,8 @@ func openSources(ctx context.Context, home string, p Params, hidden bool) ([]*so
 	var sources []*source
 	fail := func(err error) ([]*source, error) { closeSources(sources); return nil, err }
 	for _, path := range paths {
-		info, err := os.Stat(path)
+		db, tx, err := openVendorReadOnly(ctx, path)
 		if err != nil {
-			return fail(err)
-		}
-		if !info.Mode().IsRegular() {
-			return fail(ErrSchema)
-		}
-		url := sqlitefile.URL(path)
-		q := url.Query()
-		q.Set("mode", "ro")
-		q.Add("_pragma", "query_only(1)")
-		q.Add("_pragma", "busy_timeout(1000)")
-		url.RawQuery = q.Encode()
-		db, err := sql.Open("sqlite", url.String())
-		if err != nil {
-			return fail(err)
-		}
-		db.SetMaxOpenConns(1)
-		tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-		if err != nil {
-			db.Close()
 			return fail(err)
 		}
 		src := &source{path: path, db: db, tx: tx, index: len(sources)}

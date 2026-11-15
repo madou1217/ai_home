@@ -1,15 +1,12 @@
 package codexappserverapi
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -253,119 +250,5 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 	}
 	wsConn.SetReadLimit(maxAppServerLineBytes)
 
-	var closeOnce sync.Once
-	shutdown := func() {
-		closeOnce.Do(func() {
-			cancel()
-			if stdio.Close != nil {
-				_ = stdio.Close()
-			}
-			_ = wsConn.Close(websocket.StatusNormalClosure, "")
-		})
-	}
-	defer shutdown()
-
-	tracker := NewResponseContextTracker()
-	defer tracker.Close()
-	listScopes := codexappserverws.NewThreadListScopeTracker()
-	defer listScopes.Close()
-	var wg sync.WaitGroup
-
-	// stderr 调试日志泵
-	if stdio.Stderr != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			reader := bufio.NewReaderSize(stdio.Stderr, 16*1024)
-			for {
-				line, readErr := reader.ReadString('\n')
-				if h.logDebug != nil {
-					if trimmed := strings.TrimSpace(line); trimmed != "" {
-						h.logDebug(trimmed)
-					}
-				}
-				if readErr != nil {
-					return
-				}
-			}
-		}()
-	}
-
-	// stdout -> WebSocket 泵（打补丁后下发给客户端，支持 \r\n 与超长 JSON-RPC 帧）
-	if stdio.Stdout != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer shutdown()
-			reader := bufio.NewReaderSize(stdio.Stdout, 64*1024)
-			for {
-				rawLine, readErr := reader.ReadBytes('\n')
-				if readErr != nil {
-					if !errors.Is(readErr, io.EOF) && h.logError != nil && ctx.Err() == nil {
-						h.logError(readErr)
-					}
-					return
-				}
-				line := bytes.TrimSuffix(rawLine, []byte("\n"))
-				line = bytes.TrimSuffix(line, []byte("\r"))
-				if len(line) == 0 {
-					continue
-				}
-				patched := listScopes.Patch(tracker.PatchThreadResumeResponse(line))
-				writeCtx, writeCancel := context.WithTimeout(ctx, 15*time.Second)
-				writeErr := wsConn.Write(writeCtx, websocket.MessageText, patched)
-				writeCancel()
-				if writeErr != nil {
-					return
-				}
-			}
-		}()
-	}
-
-	// 子进程退出监控
-	if stdio.Wait != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer shutdown()
-			_ = stdio.Wait()
-		}()
-	}
-
-	// WebSocket -> stdin 泵（消息重写与请求跟踪）
-	var stdinMu sync.Mutex
-	for {
-		_, data, readErr := wsConn.Read(ctx)
-		if readErr != nil {
-			break
-		}
-		if err := listScopes.TryRemember(data, rewriteOptions); err != nil {
-			if h.logError != nil {
-				h.logError(err)
-			}
-			break
-		}
-		rewritten := codexappserverws.RewriteClientMessage(data, rewriteOptions)
-		if err := tracker.TryRememberThreadResumeRequest(rewritten); err != nil {
-			if h.logError != nil {
-				h.logError(err)
-			}
-			break
-		}
-		frame := make([]byte, len(rewritten)+1)
-		copy(frame, rewritten)
-		frame[len(rewritten)] = '\n'
-		stdinMu.Lock()
-		_, writeErr := stdio.Stdin.Write(frame)
-		stdinMu.Unlock()
-		if writeErr != nil {
-			if h.logError != nil && ctx.Err() == nil {
-				h.logError(writeErr)
-			}
-			break
-		}
-	}
-
-	shutdown()
-	wg.Wait()
+	BridgeAppServerStdio(ctx, wsConn, stdio, StdioBridgeOptions{Rewrite: rewriteOptions, MaxFrameBytes: maxAppServerLineBytes, LogDebug: h.logDebug, LogError: h.logError})
 }

@@ -226,3 +226,13 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 `cmd/route-entry-inventory` 已支持顶层一次赋值且未取地址/重赋值/遮蔽的局部字符串表达式，及明确的标准库 TrimSuffix/TrimPrefix 调用；没有引入任意代码执行或推测动态变量。实际当前仓库采集结果为 mux=79、WebUI constructor=420、派生alias候选=365，仍全部标记 runtime_state=not_verified。四条聊天集合/运行入口已从unknown变为源码可解析；剩余4处是动态 route.Pattern、alias、两处RPC循环。未解析数下降不是业务验收率提高，W0全入口核对仍进行中。
 
 本轮未写测试用例；真实执行编译后的采集器及标准 go run，输出逐条检查源码函数/表达式。共享服务未重启，数据库未改写。
+
+### 2026-11-15公开默认命令切流与共享快照边界
+
+- 其它会话创建 `b71a8858e chore(snapshot): AWS cutover baseline`，明确包含当前在途 single-store/provider/session/front-door/WebUI。W3主体文件与该快照 blob逐一相同，因此它们已经进入共享main，不再计为“主体未提交”。这是快照提交，不等于整个W3/全迁移验收。
+- 快照后主索引仍保留旧树，曾显示214文件、约-63609行的反向diff；工作文件全都存在。已通知提交方和并行owner，**本会话未reset/restore主索引**。
+- 在明确路径、已运行验收的基础上，一次性独立索引提交 `c26511ad7`，仅2文件：公共`aih codex set-default/unset-default`转Go Host事务，以及保留`--`原生逃生门。
+- 只重建标准aih-go（不触碰aih-server），真实公共CLI在临时单库/host目录执行 set41、unset、JSON、invalid-ID、help成功符合合同；偏好profile不变、未产生legacy DB、`--`逃生门没有切账号。真实用户默认账号未改变。
+- 旧`node lib/cli/app.js codex set-default`入口也转同一适配器而不执行旧业务writer；真实临时路径执行JSON结果ok/selected41且Go receipt落库。
+- Desktop reload/restart仍由聚焦的Node兼容effect承担，Go负责账号/配置/默认指针；不宣称Desktop全平台生命周期已迁完。共享网关从未被本轮重启；外部恢复/部署会话的进程变化独立记录。
+- 后续提交仍用明确pathspec及一次性独立索引，直到快照owner确认主索引同步。绝不把反向diff当成自己的改动提交。

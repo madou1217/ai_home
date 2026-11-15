@@ -266,7 +266,6 @@ function tryRunGoCodexMobile() {
   return true;
 }
 
-// Codex 管理设置固定走 Go：policy 读写 app-state，effort 只更新原生配置。
 // Codex default writes use one native transaction. Desktop effects remain in
 // the focused compatibility adapter; no fallback to the old Node state writer.
 function tryRunGoCodexDefault() {
@@ -278,6 +277,7 @@ function tryRunGoCodexDefault() {
   return require('../lib/cli/services/ai-cli/codex-default-command').tryRunCodexDefaultCommand(args, resolveGoCLIBinary());
 }
 
+// Codex 管理设置固定走 Go：policy 读写业务设置，effort 只更新原生配置。
 function tryRunGoCodexConfigCommand() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;

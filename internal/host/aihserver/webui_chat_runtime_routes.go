@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
@@ -22,6 +23,7 @@ type WebUIChatRuntimeBuildOptions struct {
 	Catalog             *providers.Catalog
 	ModelModalities     *modelsdev.Index
 	AccountStore        chatruntime.AccountPoolReader
+	GatewayModels       chatruntime.GatewayModelReader
 	ChatStreamer        chatruntime.ChatTurnStreamer
 	ArtifactReader      chatruntime.ArtifactReader
 	ApprovalCallbackURL string
@@ -45,11 +47,14 @@ func BuildWebUIChatRuntimeService(
 	if strings.TrimSpace(opts.AIHomeDir) != "" {
 		checkpoints = chatruntime.DefaultWorkspaceCheckpointsOpener(opts.AIHomeDir, hostHome, nil)
 	}
+	gatewayAccounts, _ := opts.AccountStore.(accountrouting.CandidateSource)
 	svc, err := chatruntime.NewService(ctx, chatruntime.ServiceOptions{
 		DBPath:               strings.TrimSpace(opts.DBPath),
 		AIHomeDir:            strings.TrimSpace(opts.AIHomeDir),
 		HostHomeDir:          hostHome,
 		AccountStore:         opts.AccountStore,
+		GatewayModels:        opts.GatewayModels,
+		GatewayAccounts:      gatewayAccounts,
 		ProviderCatalog:      opts.Catalog,
 		MetadataIndex:        opts.ModelModalities,
 		ChatStreamer:         opts.ChatStreamer,
@@ -91,6 +96,7 @@ func AttachWebUIChatRuntime(
 		Catalog:         dependencies.Catalog,
 		ModelModalities: dependencies.ModelModalities,
 		AccountStore:    accountPool,
+		GatewayModels:   dependencies.ChatModels,
 		ChatStreamer: &webuichatapi.GatewayChatTurnStreamer{
 			Client:    &http.Client{Transport: inprocesshttp.NewTransport(dependencies.ChatGateway)},
 			ClientKey: dependencies.ClientKey,

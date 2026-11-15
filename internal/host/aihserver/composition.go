@@ -1872,6 +1872,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		ClientKey:              clientKey,
 		TranslationGateway:     dependencies.TranslationGateway,
 		ChatGateway:            pluginBundle.Handlers.wrap("openai_chat", familyRelayHandler),
+		ChatModels:             inference.models,
 		DesktopSettingsChanged: desktopChanged.changed,
 	}
 	schedulerPorts := webuiSchedulerPorts{

@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
@@ -182,6 +183,7 @@ type webuiRouteDependencies struct {
 	ClientKey          func() string
 	TranslationGateway http.Handler
 	ChatGateway        http.Handler
+	ChatModels         chatruntime.GatewayModelReader
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {

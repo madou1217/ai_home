@@ -10,7 +10,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
@@ -245,6 +247,12 @@ type AccountPoolReader interface {
 	ListAccountOverviews(ctx context.Context, query accountapp.OverviewQuery) ([]accountapp.AccountOverview, error)
 }
 
+// GatewayModelReader exposes the gateway's published models and compiled aliases.
+type GatewayModelReader interface {
+	ListRoutableModelCarriers(context.Context) ([]accountapp.RoutableModel, error)
+	ListDisplayModelsForProtocol(context.Context, inference.ClientProtocolID) ([]modelalias.DisplayModel, error)
+}
+
 // AccountModelCarrier 表示能够承载某个模型的账号及其 Provider。
 type AccountModelCarrier struct {
 	AccountRef string
@@ -263,10 +271,12 @@ type AccountModelIndex struct {
 
 // ModelCatalogResolver 负责从 Go 账号库、app-state 设置/快照与 models.dev 构建模型目录并对齐推理强度。
 type ModelCatalogResolver struct {
-	AIHomeDir     string
-	Catalog       *providers.Catalog
-	AccountStore  AccountPoolReader
-	MetadataIndex *modelsdev.Index
+	AIHomeDir       string
+	Catalog         *providers.Catalog
+	AccountStore    AccountPoolReader
+	MetadataIndex   *modelsdev.Index
+	GatewayModels   GatewayModelReader
+	GatewayAccounts accountrouting.CandidateSource
 }
 
 // BuildAccountModelIndex 构建模型-账号索引及启用的全局/账号模型视图。
@@ -458,6 +468,9 @@ func (r *ModelCatalogResolver) ListGatewayModels(ctx context.Context, session *S
 	if err != nil {
 		return nil, err
 	}
+	if r.GatewayModels != nil && IsChatSession(session) {
+		return r.listPublishedChatModels(ctx, session, idx)
+	}
 	var ids []string
 	if IsGatewayRuntimeScope(session.ExecutionAccountRef) {
 		ids = idx.GlobalModels
@@ -550,9 +563,10 @@ func (r *ModelCatalogResolver) ResolveTurnSettings(ctx context.Context, session 
 		}
 	}
 	if selected == nil {
-		return TurnModelSettings{}, NewError("chat_harness_account_model_unavailable", 422, map[string]any{
-			"model": reqModel,
-		})
+		return TurnModelSettings{}, NewErrorWithMessage("chat_harness_account_model_unavailable", 422,
+			"所选模型当前不可用，请重新选择模型后发送", map[string]any{
+				"model": reqModel,
+			})
 	}
 	reqEffort := strings.ToLower(strings.TrimSpace(requestedEffort))
 	ladder := make([]inference.ReasoningEffort, 0, len(selected.SupportedReasoningEfforts))

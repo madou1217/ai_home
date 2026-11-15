@@ -28,6 +28,7 @@ type Clock func() time.Time
 type Snapshot struct {
 	routes     *inferencegateway.RouteCatalog
 	models     []accountapp.RoutableModel
+	carriers   []accountapp.RoutableModel
 	routeCount int
 	// displayOnly 是展示目录里没有 Canonical 执行规则的模型数（透传通道执行）。
 	displayOnly int
@@ -40,6 +41,7 @@ type Snapshot struct {
 func newSnapshot(
 	routes *inferencegateway.RouteCatalog,
 	models []accountapp.RoutableModel,
+	carriers []accountapp.RoutableModel,
 	routeCount int,
 	displayOnly int,
 	aliases AliasCompilation,
@@ -47,6 +49,7 @@ func newSnapshot(
 	return &Snapshot{
 		routes:      routes,
 		models:      append([]accountapp.RoutableModel(nil), models...),
+		carriers:    append([]accountapp.RoutableModel(nil), carriers...),
 		routeCount:  routeCount,
 		displayOnly: displayOnly,
 		aliases:     aliases,
@@ -257,6 +260,23 @@ func (catalog *AtomicCatalog) ListRoutableModels(
 		return nil, ErrRouteCatalogUnavailable
 	}
 	return snapshot.Models(), nil
+}
+
+// ListRoutableModelCarriers preserves all executable provider/model pairs from
+// the same published snapshot. The public model list intentionally deduplicates
+// IDs and cannot be used to infer an account's eligibility or alias carriers.
+func (catalog *AtomicCatalog) ListRoutableModelCarriers(ctx context.Context) ([]accountapp.RoutableModel, error) {
+	if catalog == nil || ctx == nil {
+		return nil, ErrRouteCatalogUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	snapshot := catalog.current.Load()
+	if snapshot == nil || !snapshot.isValid() {
+		return nil, ErrRouteCatalogUnavailable
+	}
+	return append([]accountapp.RoutableModel(nil), snapshot.carriers...), nil
 }
 
 // AliasCompilation 返回当前已发布快照的别名编译结果；尚未发布时返回零值。

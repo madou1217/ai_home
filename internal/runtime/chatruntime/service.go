@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
@@ -49,6 +50,8 @@ type ServiceOptions struct {
 	AIHomeDir               string
 	HostHomeDir             string
 	AccountStore            AccountPoolReader
+	GatewayModels           GatewayModelReader
+	GatewayAccounts         accountrouting.CandidateSource
 	ProviderCatalog         *providers.Catalog
 	MetadataIndex           *modelsdev.Index
 	ChatStreamer            ChatTurnStreamer
@@ -197,10 +200,12 @@ func NewService(ctx context.Context, opts ServiceOptions) (*Service, error) {
 		provCatalog, _ = providers.NewCatalog(providers.BuiltinManifest())
 	}
 	modelResolver := &ModelCatalogResolver{
-		AIHomeDir:     opts.AIHomeDir,
-		Catalog:       provCatalog,
-		AccountStore:  opts.AccountStore,
-		MetadataIndex: opts.MetadataIndex,
+		AIHomeDir:       opts.AIHomeDir,
+		Catalog:         provCatalog,
+		AccountStore:    opts.AccountStore,
+		MetadataIndex:   opts.MetadataIndex,
+		GatewayModels:   opts.GatewayModels,
+		GatewayAccounts: opts.GatewayAccounts,
 	}
 
 	retention := opts.EventRetentionLimit
@@ -1113,6 +1118,9 @@ func (r *defaultDriverRegistry) resolveChatDriver(_ context.Context, sess *Sessi
 		Store:           s.publisher,
 		Streamer:        s.opts.ChatStreamer,
 		ComposerCatalog: composerCatalogFn,
+		ResolveTurnSettings: func(ctx context.Context, model, effort string) (TurnModelSettings, error) {
+			return s.modelResolver.ResolveTurnSettings(ctx, sess, model, effort)
+		},
 	})
 }
 

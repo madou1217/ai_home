@@ -60,15 +60,16 @@ func (fn ChatTurnStreamerFunc) StreamTurn(
 
 // GoChatDriverOptions 配置 Go 网关直连驱动的运行参数与端口依赖。
 type GoChatDriverOptions struct {
-	Session          *Session
-	Store            *PublishingStore
-	GetSessionPolicy func() map[string]any
-	ReadChatHistory  func(ctx context.Context, sessionID string) ([]map[string]any, error)
-	Streamer         ChatTurnStreamer
-	IDFactory        func(prefix string) string
-	Clock            func() int64
-	Capabilities     map[string]any
-	ComposerCatalog  func(ctx context.Context) (map[string]any, error)
+	Session             *Session
+	Store               *PublishingStore
+	GetSessionPolicy    func() map[string]any
+	ReadChatHistory     func(ctx context.Context, sessionID string) ([]map[string]any, error)
+	Streamer            ChatTurnStreamer
+	IDFactory           func(prefix string) string
+	Clock               func() int64
+	Capabilities        map[string]any
+	ComposerCatalog     func(ctx context.Context) (map[string]any, error)
+	ResolveTurnSettings func(ctx context.Context, model, effort string) (TurnModelSettings, error)
 }
 
 type goChatActiveTurn struct {
@@ -86,13 +87,14 @@ type goChatActiveTurn struct {
 
 // GoChatDriver 将 canonical turn.submit 直接委托给 Go 网关流式执行器完成。
 type GoChatDriver struct {
-	session          *Session
-	store            *PublishingStore
-	getSessionPolicy func() map[string]any
-	readChatHistory  func(ctx context.Context, sessionID string) ([]map[string]any, error)
-	streamer         ChatTurnStreamer
-	idFactory        func(string) string
-	clock            func() int64
+	session             *Session
+	store               *PublishingStore
+	getSessionPolicy    func() map[string]any
+	readChatHistory     func(ctx context.Context, sessionID string) ([]map[string]any, error)
+	streamer            ChatTurnStreamer
+	resolveTurnSettings func(ctx context.Context, model, effort string) (TurnModelSettings, error)
+	idFactory           func(string) string
+	clock               func() int64
 
 	mu       sync.Mutex
 	disposed bool
@@ -132,13 +134,14 @@ func NewGoChatDriver(opts GoChatDriverOptions) (*GoChatDriver, error) {
 		readHistory = defaultReadChatHistory(opts.Store)
 	}
 	return &GoChatDriver{
-		session:          opts.Session,
-		store:            opts.Store,
-		getSessionPolicy: getPolicy,
-		readChatHistory:  readHistory,
-		streamer:         opts.Streamer,
-		idFactory:        idFactory,
-		clock:            clock,
+		session:             opts.Session,
+		store:               opts.Store,
+		getSessionPolicy:    getPolicy,
+		readChatHistory:     readHistory,
+		streamer:            opts.Streamer,
+		resolveTurnSettings: opts.ResolveTurnSettings,
+		idFactory:           idFactory,
+		clock:               clock,
 	}, nil
 }
 
@@ -182,13 +185,21 @@ func (d *GoChatDriver) StartTurn(ctx context.Context, tc DriverTurnContext) (*Pr
 	if model == "" {
 		model = strings.TrimSpace(asString(policy["model"]))
 	}
-	if model == "" {
-		d.mu.Unlock()
-		return nil, NewError("chat_turn_model_required", http.StatusUnprocessableEntity, nil)
-	}
 	reasoningEffort := strings.TrimSpace(asString(payload["reasoningEffort"]))
 	if reasoningEffort == "" {
 		reasoningEffort = strings.TrimSpace(asString(policy["reasoningEffort"]))
+	}
+	if d.resolveTurnSettings != nil {
+		settings, err := d.resolveTurnSettings(ctx, model, reasoningEffort)
+		if err != nil {
+			d.mu.Unlock()
+			return nil, err
+		}
+		model, reasoningEffort = settings.Model, settings.ReasoningEffort
+	}
+	if model == "" {
+		d.mu.Unlock()
+		return nil, NewErrorWithMessage("chat_turn_model_required", http.StatusUnprocessableEntity, "请先选择可用模型", nil)
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())

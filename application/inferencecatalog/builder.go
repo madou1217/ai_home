@@ -103,7 +103,7 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	if len(models) == 0 {
 		// 没有本地可路由模型时仍要记录别名投影的编译结果，管理接口才能如实回报
 		// 「哪些别名 Go 接不了」，而不是静默丢失。
-		return newSnapshot(nil, nil, 0, 0, builder.compileAliases(models, nil)), nil
+		return newSnapshot(nil, nil, nil, 0, 0, builder.compileAliases(models, nil)), nil
 	}
 	rules := make([]inferencegateway.RouteRule, 0, len(models))
 	identities := make(map[ruleIdentity]struct{}, len(models))
@@ -140,7 +140,7 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	}
 	display := uniqueModels(displayModels)
 	displayOnly := countDisplayOnlyModels(display, routedModels)
-	return newSnapshot(routes, display, len(rules), displayOnly, compilation), nil
+	return newSnapshot(routes, display, displayModels, len(rules), displayOnly, compilation), nil
 }
 
 // WithRelayProviders 声明由独立透传通道承载、不进 Canonical 路由目录的 Provider。

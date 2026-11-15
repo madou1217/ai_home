@@ -13,13 +13,18 @@ type RewriteOptions struct {
 	Cwd string
 	// SkipInjectCwd 为 true 时禁用 thread/list 的 cwd 注入（对应 Node injectCwd: false）。
 	SkipInjectCwd bool
+	// ServiceTier is an optional effective caller-owned launch preference.
+	// Only missing resume/fork fields inherit it; explicit values/null win.
+	ServiceTier *string
 }
 
-// RewriteClientMessage 1:1 复刻 Node rewriteCodexAppServerClientMessage：
+// RewriteClientMessage preserves the scoped app-server compatibility contract:
 //   - thread/list：按需注入 cwd，强制清空 modelProviders=[] 与 useStateDbOnly=true；
 //   - thread/start、thread/resume、thread/fork：剥离非空 config.profile（若 config 变空则移除 config）；
+//   - caller-local resume/fork inherits an explicitly resolved launch service tier only when omitted;
 //   - 未发生变化或非合法 JSON 对象时原样返回原始字节。
 func RewriteClientMessage(raw []byte, opts RewriteOptions) []byte {
+	raw = inheritResumeServiceTier(raw, opts.ServiceTier)
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return raw

@@ -299,3 +299,11 @@ W3新五文件复审：原subagent再次工具协议400；已读跨会话peer请
 实际官方Codex0.167.2通过独立Go网关运行：fast→native新建成功，resume同thread成功，fork新thread成功；均最终OK，无工具执行。none对齐low，fast送priority，真实最终default。fork显式default/low有效且不改root；fast off后的新建按default省略tier，显式fast profile胜过root default。每轮native先generate:false预热再生成，两者不能算重复业务；四生成轮仅4条usage。
 
 **新确认未完成项**：旧fast会话resume仍发priority，即使root fast off、-c default、显式default profile或-c flex；原生请求本身已是priority，非网关覆盖。故不能宣称resume tier优先级完成，也不通过全局网关override/篡改rollout掩盖。安装版本schema提供thread/resume、turn/start serviceTier typed入口，后续需在受管resume边界正规实现/验收。详见 `2026-11-15-codex-native-tier-precedence.md`，包含真实记录/计账与外部限制。全部私有CODEX_HOME/数据库副本清理、共享服务未重启。
+
+## 2026-11-15 W1：受管本地resume/fork typed档位意图
+
+真实native app-server typed thread/resume/turn/start default验证可用后，补caller-local Go桥：native config/read按原命令/Args/Env/Cwd解析实际service_tier，4s/4MiB有界只读probe；仅缺省resume/fork补typed字段，显式typed/null优先，request config tier映射typed。共享gateway未opt-in、不全局改写请求、不写vendor会话文件。
+
+真实旧helper root fast off仍priority；新helper返回default并实际生成完成、同thread、2生成轮仅2usage。显式fork fast保持priority、缺省default、request config fast优先；-c default覆盖root fast且不改配置。实际原生PTY TUI也完成恢复，显式default原样。最终构件真实坏TOML502与SIGSTOP原生probe后取消回收通过。详见 `2026-11-15-codex-managed-resume-tier.md`。仅4个production文件，无新测试用例，暂不宣称raw exec resume/profile bypass或整个W1完成。
+
+reviewer thread limit/原代理工具400，peer已读无结论，按AGENTS显式self_review commit bypass并记录未独立复审风险。共享服务未重启，新构件仅隔离验证；原始全目标保持active。

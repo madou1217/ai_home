@@ -72,6 +72,11 @@ func (h *handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 	defer cancel()
 	stopHost := context.AfterFunc(h.ctx, cancel)
 	defer stopHost()
+	tier, err := effectiveServiceTier(ctx, h.config, h.env)
+	if err != nil {
+		http.Error(response, "local_app_server_effective_config_unavailable", http.StatusBadGateway)
+		return
+	}
 	process, err := codexappserverws.StartAppServerProcess(codexappserverws.StartProcessOptions{Command: h.config.Command, Args: h.config.Args, Env: h.env, Dir: h.config.Cwd, WindowsVerbatim: h.config.WindowsVerbatim})
 	if err != nil {
 		http.Error(response, "local_app_server_start_failed", http.StatusBadGateway)
@@ -90,5 +95,5 @@ func (h *handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	stdio := &codexappserverapi.StdioSession{Stdin: process.Stdin(), Stdout: process.Stdout(), Stderr: process.Stderr(), Wait: func() error { <-process.Done(); return process.WaitErr() }, Close: func() error { process.Close(); return nil }}
-	codexappserverapi.BridgeAppServerStdio(ctx, conn, stdio, codexappserverapi.StdioBridgeOptions{Rewrite: codexappserverws.RewriteOptions{Cwd: h.config.Cwd, SkipInjectCwd: !h.config.InjectCwd}})
+	codexappserverapi.BridgeAppServerStdio(ctx, conn, stdio, codexappserverapi.StdioBridgeOptions{Rewrite: codexappserverws.RewriteOptions{Cwd: h.config.Cwd, SkipInjectCwd: !h.config.InjectCwd, ServiceTier: tier}})
 }

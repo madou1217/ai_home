@@ -247,3 +247,9 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 - 本地无Codex OAuth账号，因此不能用API-key目录检查证明OAuth刷新单飞、旋转token、身份re-key等分支完成。相关源码现已集成并保留严格身份守卫，但真业务门槛仍未过。
 - W5独立既有证据覆盖管理鉴权/静态资源条件请求/native watch；本轮确认已有Microsoft Edge进程，但无可用CDP监听，DevToolsActivePort读取被OS拒绝，也没有暴露的browser工具。不使用AppleScript、不另开浏览器；真实桌面页面验收仍记未完成。
 - 并行main快照后主索引反向diff仍存在，精确checkpoint用一次性索引，主索引未改；不把编译、API成功或peer报告替代全W0–W6完成。
+
+## 2026-11-15跨平台真实配置恢复验收
+
+详见 `2026-11-15-codex-default-platform-acceptance.md`。真实Windows/Linux均通过effort配置保留、gateway default、网关key来源隔离、journal出现后终止CLI与显式重试恢复；Windows journal以protected DACL验证且原生Codex0.163.0 config/read通过。两个主机只操作本次临时目录，进程/目录均清理，已有任务/服务未改变。共享9527未重启。
+
+这只补齐W2/W3相应平台子项，不宣称OAuth、Desktop、原生推理、UI或全计划已完成；Linux无官方Codex，相关原生验收仍缺。共享索引反向diff依然由快照owner协调，本会话继续单次独立索引精确提交。

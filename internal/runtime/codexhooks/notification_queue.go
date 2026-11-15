@@ -432,19 +432,20 @@ type NotificationBridgeOptions struct {
 
 // NotificationBridge 在 Go sessionevents.Bus、外部监听器与持久化 JSONL 队列之间双向安全桥接 Codex 通知。
 type NotificationBridge struct {
+	cursor       *NotificationCursor
 	queue        *NotificationQueue
 	bus          *sessionevents.Bus
 	pollInterval time.Duration
 	startAtEnd   bool
 
-	mu          sync.Mutex
-	offset      int64
-	listeners   map[int]func(NotificationEvent)
-	nextListID  int
-	recentSelf  [][32]byte
-	cancel      context.CancelFunc
-	done        chan struct{}
-	stopOnce    sync.Once
+	mu         sync.Mutex
+	offset     int64
+	listeners  map[int]func(NotificationEvent)
+	nextListID int
+	recentSelf [][32]byte
+	cancel     context.CancelFunc
+	done       chan struct{}
+	stopOnce   sync.Once
 }
 
 // NewNotificationBridge 创建队列桥接器；调用 Start 后将增量监听外部写入的队列事件并广播到 Bus 与监听者。
@@ -472,6 +473,7 @@ func NewNotificationBridge(opts NotificationBridgeOptions) *NotificationBridge {
 	}
 	return &NotificationBridge{
 		queue:        queue,
+		cursor:       NewNotificationCursor(queue.FilePath(), startAtEnd, queue.now),
 		bus:          opts.Bus,
 		pollInterval: pollInterval,
 		startAtEnd:   startAtEnd,
@@ -604,16 +606,14 @@ func (b *NotificationBridge) PollOnce() []NotificationEvent {
 	if b == nil || b.queue == nil {
 		return nil
 	}
-	b.mu.Lock()
-	offset := b.offset
-	b.mu.Unlock()
-
-	res := b.queue.ReadSince(offset, DefaultNotificationMaxReadBytes)
-
-	b.mu.Lock()
-	if res.Offset != offset {
-		b.offset = res.Offset
+	b.queue.mu.Lock()
+	res, err := b.cursor.Poll(DefaultNotificationMaxReadBytes)
+	b.queue.mu.Unlock()
+	if err != nil {
+		return nil
 	}
+	b.mu.Lock()
+	b.offset = res.Offset
 	b.mu.Unlock()
 
 	var dispatched []NotificationEvent

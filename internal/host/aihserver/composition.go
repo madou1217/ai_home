@@ -79,10 +79,10 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
-	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
@@ -1083,7 +1083,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}()
 	}
 	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
-		MaxSessions: 64, // Multiple overviews each own a separate borrowed client.
+		MaxSessions:   64, // Multiple overviews each own a separate borrowed client.
 		ExitRetention: 250 * time.Millisecond,
 		// WebUI SSH 终端：Node 传入连接事实，Go 直接建 SSH PTY。
 		RemoteStarter: func(ctx context.Context, remote terminalsession.RemoteSpec, size pty.Size) (pty.Session, error) {
@@ -1101,9 +1101,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 同一个 tmux 探测实例同时服务 WebUI 终端与 SSH 工作区状态，避免两套实现漂移。
 	terminalDurable := webuiterminalapi.NewTmuxStore()
 	webUITerminalHandler, err := webuiterminalapi.NewHandler(webuiterminalapi.Dependencies{
-		Authorizer: authorizer,
-		Sessions:   terminalService,
-		Durable:    terminalDurable,
+		Authorizer:     authorizer,
+		Sessions:       terminalService,
+		Durable:        terminalDurable,
 		NativeSessions: &persistent.TmuxSessionStore{AIHomeDir: aiHomeDir},
 	})
 	if err != nil {
@@ -1857,6 +1857,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		AccountImporter:        accountImporter,
 		ClientKey:              clientKey,
 		TranslationGateway:     dependencies.TranslationGateway,
+		ChatGateway:            pluginBundle.Handlers.wrap("openai_chat", familyRelayHandler),
 		DesktopSettingsChanged: desktopChanged.changed,
 	}
 	schedulerPorts := webuiSchedulerPorts{

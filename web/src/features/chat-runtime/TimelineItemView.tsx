@@ -46,7 +46,7 @@ function TimelineItemView({
   if (item.kind === 'message') {
     const messageContent = item.content ?? '';
     return (
-      <CaptureIdentityBoundary provider={getProviderLabel(provider)} model={item.detail.model || ''}>
+      <CaptureIdentityBoundary provider={projectPath ? getProviderLabel(provider) : 'AIH'} model={item.detail.model || ''}>
         <MessageBubble
           message={{
             role: item.detail.role,
@@ -57,6 +57,7 @@ function TimelineItemView({
             metrics: item.detail.metrics,
           }}
           provider={provider}
+          showProviderMetadata={Boolean(projectPath)}
           session={{ projectPath }}
           mobile={mobile}
           anchorId={item.id}

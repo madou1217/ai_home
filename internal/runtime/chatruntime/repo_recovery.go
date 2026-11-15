@@ -177,6 +177,11 @@ func (r *RecoveryRepository) Fail(ctx context.Context, sessionID string, errInpu
 				Source:  runtimeEventSource(session.Provider, session.RuntimeBinding),
 				Payload: map[string]any{"error": normErr},
 			}
+			if IsChatSession(session) {
+				// Ordinary Chat has no native side effects to adopt. Its lost
+				// HTTP response can be retried explicitly from the saved input.
+				terminal.Type = "turn.failed"
+			}
 			if err := r.events.turnMetrics.finishInTx(ctx, tx, sessionID, terminal); err != nil {
 				return err
 			}

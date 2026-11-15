@@ -1041,6 +1041,13 @@ func (r *defaultRuntimeResolver) Resolve(_ context.Context, provider string, opt
 	if scope == "" {
 		scope = "default"
 	}
+	if opts.Chat {
+		// Chat has no executable identity and must never retire a WORK actor.
+		return RuntimeDescriptor{
+			Provider: prov, RuntimeScope: "chat:" + scope,
+			Fingerprint: "gateway-chat-v2:" + scope, Version: "go-chat-v2",
+		}, nil
+	}
 	fp := prov + ":" + scope
 	if prov == "codex" && !IsGatewayRuntimeScope(scope) {
 		bin := r.codexBinary
@@ -1089,12 +1096,10 @@ func (r *defaultDriverRegistry) Resolve(ctx context.Context, provider string, op
 	return r.resolveNativeEntry(sess, rt)
 }
 
-func (r *defaultDriverRegistry) resolveChatDriver(_ context.Context, sess *Session, rt RuntimeDescriptor) (*DriverEntry, error) {
+func (r *defaultDriverRegistry) resolveChatDriver(_ context.Context, sess *Session, _ RuntimeDescriptor) (*DriverEntry, error) {
 	s := r.svc
-	codexSession := *sess
-	codexSession.Provider = "codex"
 	composerCatalogFn := func(ctx context.Context) (map[string]any, error) {
-		cat, err := s.modelResolver.ReadComposerCatalog(ctx, &codexSession)
+		cat, err := s.modelResolver.ReadComposerCatalog(ctx, sess)
 		if err != nil {
 			return nil, err
 		}
@@ -1103,35 +1108,11 @@ func (r *defaultDriverRegistry) resolveChatDriver(_ context.Context, sess *Sessi
 			"defaultModel": cat.DefaultModel,
 		}, nil
 	}
-	return CreateCapabilityRoutedChatDriverEntry(CapabilityRoutedDriverOptions{
-		Session:         &codexSession,
+	return CreateGoChatDriverEntry(GoChatDriverOptions{
+		Session:         sess,
 		Store:           s.publisher,
-		Catalog:         s.modelResolver,
-		CanonicalCaps:   CodexCapabilities(rt),
+		Streamer:        s.opts.ChatStreamer,
 		ComposerCatalog: composerCatalogFn,
-		Diagnostics:     s.opts.Diagnostics,
-		CreateGoEntry: func(_ context.Context) (*DriverEntry, error) {
-			return CreateGoChatDriverEntry(GoChatDriverOptions{
-				Session:         &codexSession,
-				Store:           s.publisher,
-				Streamer:        s.opts.ChatStreamer,
-				ComposerCatalog: composerCatalogFn,
-			})
-		},
-		CreateNodeEntry: func(ctx context.Context) (*DriverEntry, error) {
-			workDir, err := ChatWorkingDirectory(s.opts.AIHomeDir, sess.SessionID)
-			if err != nil {
-				workDir = s.opts.AIHomeDir
-			}
-			fallbackSess := codexSession
-			fallbackSess.ProjectPath = workDir
-			entry, err := r.resolveCodexEntry(ctx, &fallbackSess, rt)
-			if err != nil {
-				return nil, err
-			}
-			wrapped := WithRuntimePrewarmLifecycle(*entry)
-			return &wrapped, nil
-		},
 	})
 }
 

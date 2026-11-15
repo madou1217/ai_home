@@ -55,6 +55,7 @@ const styles = { ...bubbleStyles, ...filePreviewStyles };
 interface Props {
   message: ChatMessage;
   provider: Provider;
+  showProviderMetadata?: boolean;
   session?: Pick<Session, 'projectPath' | 'projectDirName'> | null;
   mobile?: boolean;
   isFollowup?: boolean;
@@ -554,7 +555,7 @@ const PendingStatusLine = ({ text }: { text: string }) => {
   );
 };
 
-const MessageBubble = ({ message, provider, session, mobile = false, isFollowup = false, onRetry, onFork, progress, anchorId }: Props) => {
+const MessageBubble = ({ message, provider, showProviderMetadata = true, session, mobile = false, isFollowup = false, onRetry, onFork, progress, anchorId }: Props) => {
   const isUser = message.role === 'user';
   const showAssistantAvatar = !mobile && !isFollowup;
   const [metaVisible, setMetaVisible] = useState(false);
@@ -893,7 +894,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
-            provider={provider}
+            provider={showProviderMetadata ? provider : undefined}
             effort={message.effort}
             source={message.source}
             copyText={message.content}
@@ -928,7 +929,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
-            provider={provider}
+            provider={showProviderMetadata ? provider : undefined}
             effort={message.effort}
             source={message.source}
             metrics={message.metrics}
@@ -968,7 +969,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
-            provider={provider}
+            provider={showProviderMetadata ? provider : undefined}
             effort={message.effort}
             source={message.source}
             metrics={message.metrics}
@@ -1004,7 +1005,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
           role={message.role}
           timestamp={message.timestamp}
           model={message.model}
-          provider={provider}
+          provider={showProviderMetadata ? provider : undefined}
           effort={message.effort}
           source={message.source}
           metrics={message.metrics}

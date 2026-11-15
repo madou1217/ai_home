@@ -19,7 +19,7 @@ var (
 	gatewayRuntimeScopePattern = regexp.MustCompile(`(?i)^gateway(?::[a-z0-9][a-z0-9-]*)?$`)
 	publicAccountRefPattern    = regexp.MustCompile(`^acct_[a-zA-Z0-9_-]{12,}$`)
 	// CanonicalChatSlashCommands 定义 chat 模式内置并持久化声明的斜杠命令。
-	CanonicalChatSlashCommands = []string{"compact", "goal", "plan"}
+	CanonicalChatSlashCommands = []string{"goal", "plan"}
 )
 
 // RuntimeTarget 描述归约后的执行目标（网关池化 或 单账号直连）。
@@ -139,6 +139,10 @@ func RefreshSlashCapabilities(sess *Session, providerSlashFn func(provider strin
 		current = sess.CapabilitySnapshot
 	} else {
 		current = map[string]any{}
+	}
+	if IsChatSession(sess) {
+		next := GoChatCapabilities()
+		return next, !SameCapabilitySnapshot(current, next)
 	}
 	var names []string
 	slashPassthrough := false

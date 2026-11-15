@@ -3,7 +3,6 @@ package aihserver
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"math/rand/v2"
 	"net"
@@ -11,8 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/transport/http/inprocesshttp"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
@@ -322,89 +322,10 @@ func BuildTranslationGatewayConfig(
 	}
 }
 
-type translationInProcessTransport struct {
-	handler http.Handler
-}
-
-type inProcessPipeResponseWriter struct {
-	header    http.Header
-	status    int
-	pw        *io.PipeWriter
-	readyOnce sync.Once
-	ready     chan struct{}
-}
-
-func (rw *inProcessPipeResponseWriter) Header() http.Header {
-	return rw.header
-}
-
-func (rw *inProcessPipeResponseWriter) markReady() {
-	rw.readyOnce.Do(func() {
-		close(rw.ready)
-	})
-}
-
-func (rw *inProcessPipeResponseWriter) WriteHeader(statusCode int) {
-	if statusCode > 0 {
-		rw.status = statusCode
-	}
-	rw.markReady()
-}
-
-func (rw *inProcessPipeResponseWriter) Write(p []byte) (int, error) {
-	rw.markReady()
-	return rw.pw.Write(p)
-}
-
-func (rw *inProcessPipeResponseWriter) Flush() {
-	rw.markReady()
-}
-
-// NewTranslationInProcessTransport 返回把请求直接派发给 Go HTTP Handler 的 http.RoundTripper，
-// 支持 SSE 流式分片传输，无需经过 TCP 套接字或 Node 进程。
+// NewTranslationInProcessTransport retains the translation composition API
+// while sharing the cancellable gateway stream transport with ordinary Chat.
 func NewTranslationInProcessTransport(handler http.Handler) http.RoundTripper {
-	return &translationInProcessTransport{handler: handler}
-}
-
-func (t *translationInProcessTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t == nil || t.handler == nil {
-		return nil, fmt.Errorf("翻译进程内网关处理器未配置")
-	}
-	if err := req.Context().Err(); err != nil {
-		return nil, err
-	}
-	pr, pw := io.Pipe()
-	rw := &inProcessPipeResponseWriter{
-		header: make(http.Header),
-		status: http.StatusOK,
-		pw:     pw,
-		ready:  make(chan struct{}),
-	}
-	go func() {
-		defer func() {
-			rw.markReady()
-			_ = pw.Close()
-		}()
-		t.handler.ServeHTTP(rw, req)
-	}()
-
-	select {
-	case <-req.Context().Done():
-		_ = pr.Close()
-		return nil, req.Context().Err()
-	case <-rw.ready:
-		statusCode := rw.status
-		if statusCode <= 0 {
-			statusCode = http.StatusOK
-		}
-		return &http.Response{
-			StatusCode: statusCode,
-			Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
-			Header:     rw.header.Clone(),
-			Body:       pr,
-			Request:    req,
-		}, nil
-	}
+	return inprocesshttp.NewTransport(handler)
 }
 
 type translationWarmupSchedule struct {

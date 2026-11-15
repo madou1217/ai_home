@@ -70,13 +70,25 @@ func encodeRequest(
 		Input:             input,
 		Tools:             topLevelTools,
 		ToolChoice:        toolChoice,
-		ParallelToolCalls: parallelToolCalls,
+		ParallelToolCalls: &parallelToolCalls,
 		Reasoning:         reasoning,
 		Store:             store,
 		Stream:            true,
 		Include:           include,
 		ClientMetadata:    request.ClientMetadata(),
 		Text:              text,
+	}
+	// API-key endpoints may serve non-Codex models. Preserve absent tool
+	// controls for a plain conversation instead of inventing auto/parallel
+	// settings that those upstreams reject. Explicit controls and native
+	// Codex OAuth/Lite contracts retain their existing representation.
+	if authKind == codexauth.AuthKindAPIKey && profile.mode == standardResponsesMode && len(tools) == 0 {
+		if _, found := request.ToolChoice(); !found {
+			wireRequest.ToolChoice = nil
+		}
+		if _, found := request.ParallelToolCalls(); !found {
+			wireRequest.ParallelToolCalls = nil
+		}
 	}
 	if tier, found := request.ServiceTier(); found {
 		// Native config uses fast; the Responses wire API calls it priority.

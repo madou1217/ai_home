@@ -24,7 +24,8 @@ const (
 // chunk 是一次上游读取得到的增量。
 type chunk struct {
 	// Content 是正文增量；空字符串表示这帧没有可见文本（首帧 role、心跳帧等）。
-	Content string
+	Content   string
+	Reasoning string
 	// FinishReason 非空表示上游声明本轮结束（stop / length / tool_calls …）。
 	FinishReason string
 }
@@ -45,11 +46,12 @@ func (err *upstreamError) Error() string { return err.Message }
 // 为什么不用 bufio.Scanner：默认 64KB 上限会在超长帧上直接报错；这里用 Reader 按行读，
 // 行长度只受内存约束，被拆到多次 Read 的一行也会自动拼好。
 type chatStreamReader struct {
-	reader     *bufio.Reader
-	usage      usageAccumulator
-	pending    strings.Builder
-	pendingSet bool
-	finished   bool
+	reader       *bufio.Reader
+	usage        usageAccumulator
+	pending      strings.Builder
+	pendingSet   bool
+	finished     bool
+	terminalSeen bool
 }
 
 // newChatStreamReader 包装上游响应体。
@@ -137,6 +139,7 @@ func (reader *chatStreamReader) consumeFrame() (chunk, bool, error) {
 	}
 	if payload == doneSentinel {
 		reader.finished = true
+		reader.terminalSeen = true
 		return chunk{}, false, nil
 	}
 	result, err := parseChatPayload([]byte(payload))
@@ -144,7 +147,10 @@ func (reader *chatStreamReader) consumeFrame() (chunk, bool, error) {
 		return chunk{}, false, err
 	}
 	reader.usage.absorb([]byte(payload))
-	return result, result.Content != "" || result.FinishReason != "", nil
+	if result.FinishReason != "" {
+		reader.terminalSeen = true
+	}
+	return result, result.Content != "" || result.Reasoning != "" || result.FinishReason != "", nil
 }
 
 // Result 返回整条流累计到的用量。
@@ -183,6 +189,10 @@ func parseChatPayload(payload []byte) (chunk, error) {
 	result := chunk{}
 	if delta, ok := choice["delta"].(map[string]any); ok {
 		result.Content, _ = delta["content"].(string)
+		result.Reasoning, _ = delta["reasoning_content"].(string)
+		if result.Reasoning == "" {
+			result.Reasoning, _ = delta["reasoning"].(string)
+		}
 	} else if message, ok := choice["message"].(map[string]any); ok {
 		result.Content, _ = message["content"].(string)
 	}

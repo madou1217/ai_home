@@ -244,53 +244,49 @@ func (coordinator *Coordinator) executePlan(
 		coordinator.attempts,
 	)
 	supported := false
-	for _, route := range plan.candidates[:plan.count] {
-		if !route.Supports(request.RequiredCapabilities()) {
-			continue
+	// 先遍历所有路由寻找钉选账号；不能在第一个不属于该账号的 Provider
+	// 路由上提前放弃钉选，否则用户指定 Codex 也可能被交给 Claude。
+	plans := []RoutePlan{plan}
+	if _, pinned := PinnedAccount(ctx); pinned {
+		plans = append(plans, coordinator.orderRoutePlan(request.Model(), plan))
+	}
+	for phase, phasePlan := range plans {
+		phaseCtx := ctx
+		if phase > 0 {
+			phaseCtx = withoutPinnedAccount(ctx)
 		}
-		supported = true
-		routeCtx := poolRetryPermit.routeContext(ctx, coordinator.poolRetries, route)
-		execution, err := coordinator.executeCandidate(
-			routeCtx,
-			request,
-			route,
-			emit,
-			accountFailures,
-			poolRetryPermit,
-		)
-		if shouldFallBackFromPin(routeCtx, execution, err) {
-			// 钉选是账号亲和偏好而不是独占（与 Node v1-router 语义一致）：钉住的账号
-			// 不支持该模型、冷却/额度耗尽，或尝试失败且客户端尚未收到任何输出时，
-			// 摘掉钉选按普通账号池重新征召同一路由；已失败账号由运行态冷却自动跳过。
-			if execution.pendingFailure != nil {
-				pendingFailure = execution.pendingFailure
+		for _, route := range phasePlan.candidates[:phasePlan.count] {
+			if !route.Supports(request.RequiredCapabilities()) {
+				continue
 			}
-			execution, err = coordinator.executeCandidate(
-				withoutPinnedAccount(routeCtx),
+			supported = true
+			routeCtx := poolRetryPermit.routeContext(phaseCtx, coordinator.poolRetries, route)
+			execution, err := coordinator.executeCandidate(
+				routeCtx,
 				request,
 				route,
 				emit,
 				accountFailures,
 				poolRetryPermit,
 			)
-		}
-		if execution.pendingFailure != nil {
-			pendingFailure = execution.pendingFailure
-		}
-		if err != nil {
-			if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
-				return finishInterruptedPlan(
-					pendingFailure,
-					fmt.Errorf(
-						"提交请求级上游失败状态失败: %w",
-						finalizeErr,
-					),
-				)
+			if execution.pendingFailure != nil {
+				pendingFailure = execution.pendingFailure
 			}
-			return finishInterruptedPlan(pendingFailure, err)
-		}
-		if execution.terminal {
-			return nil
+			if err != nil {
+				if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
+					return finishInterruptedPlan(
+						pendingFailure,
+						fmt.Errorf(
+							"提交请求级上游失败状态失败: %w",
+							finalizeErr,
+						),
+					)
+				}
+				return finishInterruptedPlan(pendingFailure, err)
+			}
+			if execution.terminal {
+				return nil
+			}
 		}
 	}
 	if !supported {

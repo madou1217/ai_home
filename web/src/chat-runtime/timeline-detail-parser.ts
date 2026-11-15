@@ -17,6 +17,7 @@ export function parseMessageDetail(value: unknown): TimelineDetailByKind['messag
   const source = detail(value);
   return {
     role: choice(source.role, ROLES, 'role'),
+    ...optionalString(source, 'originalContent'),
     ...optionalText(source, 'phase'),
     ...optionalText(source, 'model'),
     ...optionalText(source, 'effort'),

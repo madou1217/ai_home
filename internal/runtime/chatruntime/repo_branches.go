@@ -109,6 +109,10 @@ func AssessHistoryItem(item TimelineItem, nativeItem map[string]any) HistoryReve
 		}
 		return HistoryReversibility{Kind: kind, Reason: "native_item_shape_not_persisted"}
 	case "reasoning":
+		if item.Status == "completed" && asString(item.Detail["engine"]) == "gateway" {
+			// Completions reasoning is display history, not native continuation state.
+			return HistoryReversibility{Reversible: true}
+		}
 		if item.Status == "completed" && nativeItem != nil && asString(nativeItem["type"]) == "reasoning" && asString(nativeItem["id"]) == item.ID {
 			return HistoryReversibility{Reversible: true}
 		}
@@ -752,7 +756,9 @@ func buildChatHistoryPrefixWithQuerier(ctx context.Context, q queryRunner, store
 			}
 			responseItems = append(responseItems, msg)
 		case "reasoning":
-			responseItems = append(responseItems, nativeMap[item.ID])
+			if native := nativeMap[item.ID]; native != nil {
+				responseItems = append(responseItems, native)
+			}
 		case "notice":
 			if IsSkippableNotice(item) {
 				continue

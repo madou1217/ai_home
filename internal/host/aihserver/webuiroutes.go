@@ -181,6 +181,7 @@ type webuiRouteDependencies struct {
 	AccountImporter    *accountapp.AccountImporter
 	ClientKey          func() string
 	TranslationGateway http.Handler
+	ChatGateway        http.Handler
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {

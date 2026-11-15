@@ -316,7 +316,11 @@ func (c *CodexAppServerClient) resolveSpawnSpec() (string, []string, []string, C
 	command := strings.TrimSpace(c.opts.Command)
 	args := append([]string(nil), c.opts.Args...)
 	if command == "" {
-		bin, err := providercli.ResolveBinary("codex", strings.TrimSpace(c.opts.ExecutablePath))
+		binary := strings.TrimSpace(c.opts.ExecutablePath)
+		if binary == "" {
+			binary = "codex"
+		}
+		bin, err := providercli.ResolveBinary("codex", binary)
 		if err != nil {
 			return "", nil, nil, CodexRuntimeHome{}, NewErrorWithMessage("codex_app_server_binary_unavailable", http.StatusServiceUnavailable, err.Error(), nil)
 		}

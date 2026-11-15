@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
+	"github.com/madou1217/ai_home/internal/transport/http/inprocesshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 )
 
@@ -85,12 +86,16 @@ func AttachWebUIChatRuntime(
 		approvalCallbackURL = trimmedNodeURL + "/v0/webui/internal/approval-request"
 	}
 	svc, err := BuildWebUIChatRuntimeService(ctx, WebUIChatRuntimeBuildOptions{
-		AIHomeDir:           dependencies.AIHomeDir,
-		HostHomeDir:         dependencies.HostHomeDir,
-		Catalog:             dependencies.Catalog,
-		ModelModalities:     dependencies.ModelModalities,
-		AccountStore:        accountPool,
-		ChatStreamer:        handler.InProcessChatTurnStreamer(),
+		AIHomeDir:       dependencies.AIHomeDir,
+		HostHomeDir:     dependencies.HostHomeDir,
+		Catalog:         dependencies.Catalog,
+		ModelModalities: dependencies.ModelModalities,
+		AccountStore:    accountPool,
+		ChatStreamer: &webuichatapi.GatewayChatTurnStreamer{
+			Client:    &http.Client{Transport: inprocesshttp.NewTransport(dependencies.ChatGateway)},
+			ClientKey: dependencies.ClientKey,
+			BaseURL:   "http://aih-gateway.internal",
+		},
 		ApprovalCallbackURL: approvalCallbackURL,
 	})
 	if err != nil {

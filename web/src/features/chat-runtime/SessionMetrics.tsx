@@ -31,6 +31,7 @@ export default function SessionMetrics({ store, actions, onCompact }: {
   const status = context?.compaction?.status;
   const contextStale = Boolean(context?.stale);
   const compacting = status === 'running';
+  const canCompact = projection.capabilitySnapshot?.slashCommands?.includes('compact');
   const contextMeter = <>
     {status === 'failed' ? <span role="status" className={styles.compactStatus} data-state="failed">压缩失败，可重试</span>
         : status === 'cancelled' ? <span role="status" className={styles.compactStatus} data-state="cancelled">压缩已停止</span>
@@ -38,7 +39,7 @@ export default function SessionMetrics({ store, actions, onCompact }: {
     {projection.items.length > 0 ? <ContextMeter
       messages={[]} maxTokens={window} usedTokens={used}
       stale={contextStale} compacting={compacting} unknown={!window || used === undefined}
-      showLabel onCompactSuggest={projection.state === 'idle' && !compacting ? onCompact : undefined} /> : null}
+      showLabel onCompactSuggest={canCompact && projection.state === 'idle' && !compacting ? onCompact : undefined} /> : null}
   </>;
   const goal = <GoalControl actions={actions} projection={projection} context={context} />;
   return <StatsLine messages={messages} showConnection={false} partial={projection.timelineHasMore}

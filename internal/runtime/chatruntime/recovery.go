@@ -132,6 +132,15 @@ func (r *RecoveryCoordinator) recoverOne(ctx context.Context, sess *Session) *Re
 	if state == nil || !state.Recoverable {
 		return state
 	}
+	if IsChatSession(state.Session) {
+		// An HTTP stream cannot be reattached after restart. Preserve its
+		// submission for explicit retry instead of launching a native runtime.
+		err := NewErrorWithMessage("chat_gateway_stream_interrupted", 409,
+			"服务重启中断了本轮回复，请重试继续对话", nil)
+		r.actors.Dispose(sess.SessionID)
+		_, _ = r.store.FailRestartRecovery(ctx, sess.SessionID, err)
+		return nil
+	}
 	if err := requireRecoveryNativeSession(state.Session); err != nil {
 		r.actors.Dispose(sess.SessionID)
 		_, _ = r.store.FailRestartRecovery(ctx, sess.SessionID, err)

@@ -230,6 +230,9 @@ func (handler *Handler) allowedRoots(lexicalTarget string) []string {
 	}
 
 	addRoot(handler.chatImageRootDir)
+	if handler.aiHomeDir != "" {
+		addRoot(filepath.Join(handler.aiHomeDir, "chat", "attachments"))
+	}
 	if handler.hostHomeDir != "" {
 		for _, provider := range storagepolicy.Names() {
 			policy := storagepolicy.Get(provider)

@@ -42,6 +42,7 @@ func buildUsageLedgerRecord(
 		AccountRef: route.AccountRef(),
 		Provider:   account.ProviderID(),
 		Model:      route.ModelID().String(),
+		SessionID:  inferencegateway.RequestSessionKey(ctx),
 		OccurredAt: success.HappenedAt(),
 		Usage:      usage,
 	})

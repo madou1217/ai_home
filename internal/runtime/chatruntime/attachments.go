@@ -209,6 +209,9 @@ func (s *AttachmentService) Upload(ctx context.Context, sessionID string, upload
 }
 
 func (s *AttachmentService) resolveAttachmentRootDir(session *Session) string {
+	if IsChatSession(session) && filepath.IsAbs(s.aiHomeDir) {
+		return filepath.Join(s.aiHomeDir, "chat", "attachments")
+	}
 	provider := strings.ToLower(strings.TrimSpace(session.Provider))
 	if s.hostHomeDir != "" && storagepolicy.Normalize(provider) != "" {
 		if providerRoot := storagepolicy.ResolveAttachmentRoot(s.hostHomeDir, provider); filepath.IsAbs(providerRoot) {

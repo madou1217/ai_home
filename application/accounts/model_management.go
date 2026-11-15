@@ -188,13 +188,16 @@ func NewModelManagement(
 
 // mergeGatewayModels 把本地可路由目录并入网关账号的发现结果。
 //
-// 只对「凭据带自定义 base_url」的账号生效：官方 endpoint 的账号目录必须严格等于
-// 上游返回，不能把本地模型塞给不认识它们的上游。并集按模型 ID 去重并排序。
+// 只对 Codex API Key 网关账号生效；其他协议的自定义端点（例如 DeepSeek 的
+// Anthropic 兼容端点）不代表聚合网关，必须保持它实际返回的模型能力。
 func (management *ModelManagement) mergeGatewayModels(
 	ctx context.Context,
 	credential Credential,
 	modelIDs []runtimecore.ModelID,
 ) []runtimecore.ModelID {
+	if _, ok := credential.(*codex.APIKeyAuth); !ok {
+		return modelIDs
+	}
 	return management.mergeRoutableModels(ctx, gatewayBaseURL(credential), modelIDs)
 }
 

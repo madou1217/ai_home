@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckOutlined, DownOutlined, UserOutlined } from '@ant-design/icons';
+import { CheckOutlined, DeploymentUnitOutlined, DownOutlined, UserOutlined } from '@ant-design/icons';
 import { Popover } from 'antd';
 import ProviderIcon from '../ProviderIcon';
 import { getProviderFamily, getProviderMenuLabel } from '@/providers/catalog';
@@ -109,8 +109,8 @@ export default function ComposerAccountMenu(props: Props) {
         aria-expanded={open}
         disabled={props.disabled || groups.length === 0}
       >
-        {current?.provider ? <ProviderIcon provider={current.provider} size={16} /> : <UserOutlined />}
-        {props.grouped && current?.provider ? (
+        {current?.badge === 'Gateway' ? <DeploymentUnitOutlined /> : current?.provider ? <ProviderIcon provider={current.provider} size={16} /> : <UserOutlined />}
+        {props.grouped && current?.provider && current.badge !== 'Gateway' ? (
           <span className={styles.controlProviderLabel}>
             {current.provider === 'codex' ? 'Codex' : getProviderMenuLabel(current.provider)}
           </span>

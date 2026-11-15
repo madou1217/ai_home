@@ -19,6 +19,7 @@ const (
 // ChatTurnStreamEvent 表示 Go 网关流式引擎向 GoChatDriver 吐出的一条增量事件。
 type ChatTurnStreamEvent struct {
 	Type         string
+	Kind         string
 	ItemID       string
 	Chunk        string
 	Content      string
@@ -74,6 +75,9 @@ type goChatActiveTurn struct {
 	turnID          string
 	runID           string
 	commandID       string
+	submissionID    string
+	userItemID      string
+	attachmentIDs   []string
 	cancel          context.CancelFunc
 	cancelRequested bool
 	settled         bool
@@ -117,6 +121,9 @@ func NewGoChatDriver(opts GoChatDriverOptions) (*GoChatDriver, error) {
 			if opts.Session == nil {
 				return map[string]any{}
 			}
+			if latest, err := opts.Store.GetSession(context.Background(), opts.Session.SessionID); err == nil && latest != nil {
+				return latest.Policy
+			}
 			return opts.Session.Policy
 		}
 	}
@@ -155,15 +162,20 @@ func (d *GoChatDriver) StartTurn(ctx context.Context, tc DriverTurnContext) (*Pr
 	if tc.Command != nil && tc.Command.Payload != nil {
 		payload = tc.Command.Payload
 	}
-	attachmentIDs, _ := NormalizeAttachmentIDs(payload["attachmentIds"], false)
-	if len(attachmentIDs) > 0 || len(tc.ImagePaths) > 0 {
+	attachmentIDs, err := NormalizeAttachmentIDs(payload["attachmentIds"], false)
+	if err != nil {
 		d.mu.Unlock()
-		return nil, NewError("chat_attachment_store_unavailable", http.StatusServiceUnavailable, nil)
+		return nil, err
 	}
 	content := strings.TrimSpace(asString(payload["content"]))
-	if content == "" {
+	if content == "" && len(attachmentIDs) == 0 && len(tc.ImagePaths) == 0 {
 		d.mu.Unlock()
 		return nil, NewError("chat_turn_content_required", http.StatusUnprocessableEntity, nil)
+	}
+	input, err := gatewayUserContent(d.session, content, tc.ImagePaths)
+	if err != nil {
+		d.mu.Unlock()
+		return nil, err
 	}
 	policy := d.currentPolicy()
 	model := strings.TrimSpace(asString(payload["model"]))
@@ -185,16 +197,18 @@ func (d *GoChatDriver) StartTurn(ctx context.Context, tc DriverTurnContext) (*Pr
 		commandID = tc.Command.CommandID
 	}
 	active := &goChatActiveTurn{
-		turnID:    tc.TurnID,
-		runID:     tc.RunID,
-		commandID: commandID,
-		cancel:    cancel,
-		done:      make(chan ProviderRunResult, 1),
+		turnID:        tc.TurnID,
+		runID:         tc.RunID,
+		commandID:     commandID,
+		submissionID:  strings.TrimSpace(asString(payload["submissionCommandId"])),
+		attachmentIDs: attachmentIDs,
+		cancel:        cancel,
+		done:          make(chan ProviderRunResult, 1),
 	}
 	d.active = active
 	d.mu.Unlock()
 
-	go d.execute(runCtx, active, content, model, reasoningEffort, policy, tc.Trace)
+	go d.execute(runCtx, active, input, content, model, reasoningEffort, policy, tc.Trace)
 
 	return &ProviderRun{
 		Done: active.done,
@@ -247,11 +261,16 @@ func (d *GoChatDriver) Dispose() bool {
 func (d *GoChatDriver) execute(
 	runCtx context.Context,
 	active *goChatActiveTurn,
+	input any,
 	content, model, reasoningEffort string,
 	policy map[string]any,
 	trace *TraceRecord,
 ) {
-	messages := d.buildMessages(runCtx, content, policy)
+	messages, err := d.buildMessages(runCtx, active, input, policy)
+	if err != nil {
+		d.settleErrorOrInterrupt(active, err)
+		return
+	}
 	if err := d.writeUserMessage(runCtx, active, content); err != nil {
 		d.settleErrorOrInterrupt(active, err)
 		return
@@ -276,7 +295,7 @@ func (d *GoChatDriver) execute(
 
 	var failure error
 	terminal := false
-	err := d.streamer.StreamTurn(runCtx, req, func(ev ChatTurnStreamEvent) error {
+	err = d.streamer.StreamTurn(runCtx, req, func(ev ChatTurnStreamEvent) error {
 		if d.isCancelled(active) {
 			return context.Canceled
 		}
@@ -336,52 +355,34 @@ func (d *GoChatDriver) execute(
 	d.finish(active, map[string]any{"status": "completed"}, nil)
 }
 
-func (d *GoChatDriver) buildMessages(ctx context.Context, content string, policy map[string]any) []map[string]any {
-	messages := []map[string]any{
-		{"role": "system", "content": ChatInstructions},
-	}
-	if sysPrompt := strings.TrimSpace(asString(policy["systemPrompt"])); sysPrompt != "" {
-		messages = append(messages, map[string]any{"role": "system", "content": sysPrompt})
-	}
-	for _, msg := range d.history(ctx) {
-		messages = append(messages, msg)
-	}
-	messages = append(messages, map[string]any{"role": "user", "content": content})
-	return messages
-}
-
-func (d *GoChatDriver) history(ctx context.Context) []map[string]any {
-	entries, err := d.readChatHistory(ctx, d.sessionID())
-	if err != nil || len(entries) == 0 {
-		return nil
-	}
-	out := make([]map[string]any, 0, len(entries))
-	chars := 0
-	for _, entry := range entries {
-		role := strings.TrimSpace(asString(entry["role"]))
-		content, _ := entry["content"].(string)
-		if (role != "user" && role != "assistant") || strings.TrimSpace(content) == "" {
-			continue
-		}
-		if len(out) >= GoChatMaxHistoryMessages || chars+len(content) > GoChatMaxHistoryChars {
-			break
-		}
-		out = append(out, map[string]any{"role": role, "content": content})
-		chars += len(content)
-	}
-	return out
-}
-
 func (d *GoChatDriver) writeUserMessage(ctx context.Context, active *goChatActiveTurn, content string) error {
+	originalContent := content
+	if len(active.attachmentIDs) > 0 {
+		paths, err := d.store.ResolveAttachmentPaths(ctx, d.sessionID(), active.attachmentIDs)
+		if err != nil {
+			return err
+		}
+		input, err := SessionAttachmentTurnInput(d.session, content, paths)
+		if err != nil {
+			return err
+		}
+		content = input.Prompt
+		for _, path := range input.ImagePaths {
+			content += "\n[Image: " + path + "]"
+		}
+	}
 	now := d.clock()
-	itemID := d.idFactory("item")
+	itemID := active.userItemID
+	if itemID == "" {
+		itemID = d.idFactory("item")
+	}
 	item := map[string]any{
 		"id":        itemID,
 		"kind":      "message",
 		"createdAt": now,
 		"status":    "running",
 		"content":   content,
-		"detail":    map[string]any{"role": "user"},
+		"detail":    map[string]any{"role": "user", "attachmentIds": active.attachmentIDs, "originalContent": originalContent},
 		"turnId":    active.turnID,
 	}
 	if err := d.emitEvent(ctx, active, "timeline.item.started", itemID, map[string]any{"item": item}); err != nil {
@@ -406,7 +407,7 @@ func (d *GoChatDriver) buildAssistantItem(ev ChatTurnStreamEvent, model, effort 
 	if role == "" {
 		role = "assistant"
 	}
-	detail := map[string]any{"role": role}
+	detail := map[string]any{"role": role, "engine": "gateway"}
 	if model != "" {
 		detail["model"] = model
 	}
@@ -420,9 +421,13 @@ func (d *GoChatDriver) buildAssistantItem(ev ChatTurnStreamEvent, model, effort 
 	if ev.Type == "timeline.item.completed" {
 		status = "completed"
 	}
+	kind := ev.Kind
+	if kind == "" {
+		kind = "message"
+	}
 	item := map[string]any{
 		"id":        itemID,
-		"kind":      "message",
+		"kind":      kind,
 		"createdAt": createdAt,
 		"status":    status,
 		"content":   ev.Content,
@@ -551,30 +556,6 @@ func (d *GoChatDriver) requireContext(tc DriverTurnContext) error {
 	return nil
 }
 
-func defaultReadChatHistory(store *PublishingStore) func(ctx context.Context, sessionID string) ([]map[string]any, error) {
-	return func(ctx context.Context, sessionID string) ([]map[string]any, error) {
-		page, err := store.ReadTimeline(ctx, sessionID, "", 200)
-		if err != nil || page == nil {
-			return nil, err
-		}
-		out := make([]map[string]any, 0, len(page.Items))
-		for _, item := range page.Items {
-			if item.Kind != "message" || item.Content == nil || strings.TrimSpace(*item.Content) == "" {
-				continue
-			}
-			role := strings.TrimSpace(asString(item.Detail["role"]))
-			if role != "user" && role != "assistant" {
-				continue
-			}
-			out = append(out, map[string]any{
-				"role":    role,
-				"content": *item.Content,
-			})
-		}
-		return out, nil
-	}
-}
-
 func capSupport(value, reason string) map[string]any {
 	out := map[string]any{"support": value}
 	if reason != "" {
@@ -586,10 +567,10 @@ func capSupport(value, reason string) map[string]any {
 // GoChatCapabilities 返回 go-chat 驱动如实声明的静态能力快照。
 func GoChatCapabilities() map[string]any {
 	return map[string]any{
-		"revision": "go-chat-v1",
+		"revision": "go-chat-v2",
 		"capabilities": map[string]any{
-			"session.resume":                capSupport("unsupported", "go_chat_turn_is_stateless"),
-			"timeline.reasoning":            capSupport("unsupported", "go_chat_completions_ignores_reasoning"),
+			"session.resume":                capSupport("emulated", "aih_chat_history"),
+			"timeline.reasoning":            capSupport("native", ""),
 			"timeline.tool":                 capSupport("unsupported", "go_chat_completions_has_no_tools"),
 			"timeline.diff":                 capSupport("unsupported", "go_chat_completions_has_no_tools"),
 			"mode.plan":                     capSupport("unsupported", "go_chat_has_no_plan_mode"),

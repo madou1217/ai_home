@@ -174,8 +174,8 @@ export class SessionProjectionStore {
     const serverUser = items.filter((item) => item.kind === 'message' && item.detail.role === 'user');
     const used = new Set<string>();
     for (const echo of this.localEchoes) {
-      const match = serverUser.find((item) => !used.has(item.id)
-        && (item.content || '').trim() === (echo.content || '').trim()
+      const match = serverUser.find((item) => item.kind === 'message' && !used.has(item.id)
+        && (item.detail.originalContent ?? item.content ?? '').trim() === (echo.content || '').trim()
         && item.createdAt >= echo.createdAt - 2000);
       if (match) { used.add(match.id); confirmed.add(echo.id); }
     }

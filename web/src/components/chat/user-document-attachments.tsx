@@ -46,7 +46,7 @@ function parseName(rawName: string): string {
 
 function displayName(name: string): string {
   // 上传落盘会加 "<uuid>-" 前缀，展示时去掉。
-  return name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, '');
+  return name.replace(/^(?:[0-9a-f]{16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-/i, '');
 }
 
 function sizeLabel(text: string | undefined): string {

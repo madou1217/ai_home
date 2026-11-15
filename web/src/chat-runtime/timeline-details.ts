@@ -18,6 +18,7 @@ export interface TimelineMessageMetrics {
 export interface TimelineDetailByKind {
   message: {
     role: 'user' | 'assistant' | 'system';
+    originalContent?: string;
     phase?: string;
     model?: string;
     /** 本轮实际生效的推理强度；provider 没有档位概念时缺省（界面留空）。 */

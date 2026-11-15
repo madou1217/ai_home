@@ -8,8 +8,8 @@ type requestDTO struct {
 	Instructions      string             `json:"instructions,omitempty"`
 	Input             []inputItemDTO     `json:"input"`
 	Tools             *[]json.RawMessage `json:"tools,omitempty"`
-	ToolChoice        any                `json:"tool_choice"`
-	ParallelToolCalls bool               `json:"parallel_tool_calls"`
+	ToolChoice        any                `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool              `json:"parallel_tool_calls,omitempty"`
 	Reasoning         *reasoningDTO      `json:"reasoning"`
 	Store             bool               `json:"store"`
 	Stream            bool               `json:"stream"`

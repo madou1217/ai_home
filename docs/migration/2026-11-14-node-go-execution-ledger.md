@@ -307,3 +307,5 @@ W3新五文件复审：原subagent再次工具协议400；已读跨会话peer请
 真实旧helper root fast off仍priority；新helper返回default并实际生成完成、同thread、2生成轮仅2usage。显式fork fast保持priority、缺省default、request config fast优先；-c default覆盖root fast且不改配置。实际原生PTY TUI也完成恢复，显式default原样。最终构件真实坏TOML502与SIGSTOP原生probe后取消回收通过。详见 `2026-11-15-codex-managed-resume-tier.md`。仅4个production文件，无新测试用例，暂不宣称raw exec resume/profile bypass或整个W1完成。
 
 reviewer thread limit/原代理工具400，peer已读无结论，按AGENTS显式self_review commit bypass并记录未独立复审风险。共享服务未重启，新构件仅隔离验证；原始全目标保持active。
+
+后续真实调查确认raw exec可通过正式API而非改文件解决：私有真实thread经thread/resume(default)+thread/settings/update(default)+unsubscribe后，全新native exec resume按default发出并完成；2实际生成轮只有2usage。尚未接入启动器，需要精确UUID/name/--last、profile、account scope、活动线程和release-before-launch保护；不把手工调用成功宣称自动路径已完成。记录追加在managed-resume-tier文档。

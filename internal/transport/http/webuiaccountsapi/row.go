@@ -82,25 +82,28 @@ type Row struct {
 
 // accountFact 是 SQL 读出的原始列，只在本包内流转。
 type accountFact struct {
-	AccountRef     string
-	Provider       string
-	CLIAccountID   int64
-	Enabled        int64
-	UpdatedAtMS    int64
-	HasCredential  int64
-	UIDisplayName  string
-	UIAuthMode     string
-	UIAPIKeyMode   int64
-	UIOAuthPending int64
-	UIBaseURL      string
-	ProfileName    string
-	ProfileEmail   string
-	Subscription   string
-	QuotaStatus    string
-	QuotaReason    string
-	RemainingBPS   int64
-	HasRemaining   int64
-	CapturedAtMS   int64
+	AccountRef        string
+	Provider          string
+	CLIAccountID      int64
+	Enabled           int64
+	UpdatedAtMS       int64
+	HasCredential     int64
+	CredentialKind    string
+	CredentialBaseURL string
+	UIDisplayName     string
+	UIAuthMode        string
+	UIAPIKeyMode      int64
+	UIOAuthPending    int64
+	UIBaseURL         string
+	ProfileName       string
+	ProfileEmail      string
+	Subscription      string
+	SubscriptionRaw   string
+	QuotaStatus       string
+	QuotaReason       string
+	RemainingBPS      int64
+	HasRemaining      int64
+	CapturedAtMS      int64
 	// SnapshotPayload 是 account_usage_snapshots.payload_json 的原文；缺表/无快照时为空串。
 	SnapshotPayload string
 	IsDefault       int64
@@ -142,6 +145,7 @@ var approxRowFields = []string{
 	"baseUrl",
 	"authPending",
 	"planType",
+	"planName",
 	"updatedAt",
 	"remainingPct",
 	"usageSnapshot",
@@ -192,13 +196,20 @@ func allRowFields() []string {
 // newRow 把一条数据库事实翻译成账号页行。
 //
 // 翻译规则都贴着 Node 的 buildNodeBaseAccountRecord，避免两端各写一套语义：
-//   - planType：apiKeyMode → api-key；否则取 subscription_kind，没有就 oauth；没凭据是 pending；
+//   - planType：API Key → api-key；Codex OAuth 优先取已确认的套餐和原始档位，缺失时保持未知；
+//     其它 Provider 取 subscription_kind，没有就 oauth；没凭据是 pending；
 //   - updatedAt：已配置且非 API Key 时优先用额度快照的采集时间，否则用账号行更新时间；
 //   - remainingPct：只有物化出数值剩余额度时才给值，否则 null（Node 的「未知」语义）；
 //   - usageSnapshot：快照文档原样下发，解析不了就是 null，绝不因此中断整页。
 func newRow(fact accountFact) Row {
 	configured := fact.HasCredential != 0
 	apiKeyMode := fact.UIAPIKeyMode != 0
+	authMode, baseURL := fact.UIAuthMode, fact.UIBaseURL
+	if fact.Provider == "codex" {
+		apiKeyMode, authMode, baseURL = codexCredentialPresentation(fact)
+		// 身份标签和套餐使用同一份凭据地址，避免旧 UI 镜像再次参与兜底。
+		fact.UIBaseURL = baseURL
+	}
 	row := Row{
 		Provider:              fact.Provider,
 		AccountRef:            fact.AccountRef,
@@ -209,9 +220,9 @@ func newRow(fact accountFact) Row {
 		APIKeyMode:            apiKeyMode,
 		IsDefault:             fact.IsDefault != 0,
 		Email:                 fact.ProfileEmail,
-		AuthMode:              fact.UIAuthMode,
+		AuthMode:              authMode,
 		AuthPending:           fact.UIOAuthPending != 0,
-		BaseURL:               fact.UIBaseURL,
+		BaseURL:               baseURL,
 		QuotaStatus:           fact.QuotaStatus,
 		QuotaReason:           fact.QuotaReason,
 		ModelCount:            int(fact.ModelCount),
@@ -231,6 +242,9 @@ func newRow(fact accountFact) Row {
 				row.PlanName = planDisplayName(token)
 			}
 		}
+	}
+	if fact.Provider == "codex" && configured && !apiKeyMode {
+		row.PlanType, row.PlanName = codexPlanPresentation(fact, row.UsageSnapshot)
 	}
 	row.UpdatedAt = resolveUpdatedAt(configured, apiKeyMode, fact.CapturedAtMS, fact.UpdatedAtMS)
 	// API Key 账号没有 Provider 额度：Node 对它们一律不给剩余额度，这里同口径。

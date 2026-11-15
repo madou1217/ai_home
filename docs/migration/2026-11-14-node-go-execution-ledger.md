@@ -287,3 +287,9 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 Windows临时目录已校验路径/二进制hash且无活进程后清理，已有task状态前后一致；本机私有数据库副本/进程已清理。go build ./...、Windows构建、focused go vet、route manifest --check通过。详见 `2026-11-15-codex-rollback-publication-acceptance.md`。共享9527未重启/未发布；仍不声称断电全窗口、OAuth、Desktop/Edge或全W0–W6完成。
 
 W3新五文件复审：原subagent再次工具协议400；已读跨会话peer请求尚无结论，消息已读不等于运行/通过。按AGENTS链显式self_review commit bypass，精确范围、crash状态/角色/权限/no-replace自审与未独立复审风险写入验收文档；不以此授权部署或共享重启。
+
+## 2026-11-15 W0：当前入口盘点与动态RPC真实核对
+
+重新执行Go AST盘点：864候选（mux79/WebUI420/public alias365），保留4个动态表达式；不把注册计数当迁移完成率。手工对齐nodeRPCOperations七操作在direct/WebUI/public三前缀的21叶子，真实独立Go server执行30次HTTP：5列表/status每前缀200、2不存在会话404、无鉴权401、错误方法405、未知op404一致。空状态/分派已实证，不替代真实会话正文/UI业务。详情 `2026-11-15-entry-inventory-checkpoint.md`。
+
+旧Node/Go collector比较仍仅含14个Node候选，missing0不能宣称全面对齐。完整产品清单另在/tmp刷新供后续审计，不覆盖并行owner已提交的inventory。全部只读/私有实例，不重启共享9527。

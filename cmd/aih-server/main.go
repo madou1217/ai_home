@@ -18,6 +18,13 @@ import (
 // 交给管理端点：Windows 上 `child.kill('SIGTERM')` 实际是 TerminateProcess，
 // 宿主只能靠这条进程内路径触发优雅关闭。
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "__codex-state-page" {
+		if err := runCodexStatePage(os.Args[2:]); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "aih codex state page:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "__codex-notifications" {
 		if err := runCodexNotifications(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "aih codex notifications:", err)

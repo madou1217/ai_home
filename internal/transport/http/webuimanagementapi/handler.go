@@ -14,11 +14,16 @@ import (
 
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/transport/http/httpjson"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
 )
 
 const (
 	// BasePath 是 WebUI 管理面聚合接口在 Go 侧的命名空间前缀。
 	BasePath = "/v1/management/webui/management"
+	// PublicPrefix 是历史与 CLI/状态页直连的管理面公开前缀。
+	PublicPrefix = "/v0/management"
+	// PublicWebUIPrefix 是 WebUI 管理面公开别名路径前缀。
+	PublicWebUIPrefix = "/v0/webui/management"
 
 	UIPath                           = BasePath + "/ui"
 	StatusPath                       = BasePath + "/status"
@@ -96,7 +101,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeError(response, http.StatusServiceUnavailable, "management_unavailable", "管理接口未初始化")
 		return
 	}
-	if !h.authorizer.Authorized(request) {
+	if !h.authorizer.Authorized(request) && !webuiauth.IsLoopbackManagement(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
@@ -106,6 +111,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		return
 	}
 
+	request = normalizeManagementRequest(request)
 	path := request.URL.Path
 	switch path {
 	case UIPath:
@@ -743,4 +749,36 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func normalizeManagementRequest(request *http.Request) *http.Request {
+	if request == nil || request.URL == nil {
+		return request
+	}
+	rewrittenPath, changed := rewriteManagementPath(request.URL.Path)
+	if !changed {
+		return request
+	}
+	cloned := request.Clone(request.Context())
+	cloned.URL.Path = rewrittenPath
+	if request.URL.RawPath != "" {
+		if rewrittenRaw, rawChanged := rewriteManagementPath(request.URL.RawPath); rawChanged {
+			cloned.URL.RawPath = rewrittenRaw
+		} else {
+			cloned.URL.RawPath = ""
+		}
+	}
+	return cloned
+}
+
+func rewriteManagementPath(rawPath string) (string, bool) {
+	for _, prefix := range []string{PublicWebUIPrefix, PublicPrefix} {
+		if rawPath == prefix {
+			return BasePath, true
+		}
+		if strings.HasPrefix(rawPath, prefix+"/") {
+			return BasePath + strings.TrimPrefix(rawPath, prefix), true
+		}
+	}
+	return rawPath, false
 }

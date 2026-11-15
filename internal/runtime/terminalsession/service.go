@@ -179,6 +179,7 @@ type session struct {
 	bufferBytes int
 	subs        map[*Subscription]struct{}
 	writeMu     sync.Mutex
+	protocol    terminalProtocol
 }
 
 // NewService 创建会话服务；starter 通常为 pty.NewStarter()。
@@ -329,6 +330,13 @@ func (service *Service) Write(ref string, payload []byte) error {
 		return ErrSessionExited
 	}
 	found.lastActivity = service.options.Now()
+	if found.durable {
+		payload = found.protocol.filter(payload)
+	}
+	if len(payload) == 0 {
+		service.mu.Unlock()
+		return nil
+	}
 	found.writeMu.Lock()
 	terminal := found.terminal
 	service.mu.Unlock()
@@ -497,6 +505,9 @@ func (service *Service) pump(found *session) {
 			service.mu.Lock()
 			if found.status == StatusRunning {
 				found.lastActivity = service.options.Now()
+				if found.durable {
+					found.protocol.observe(chunk)
+				}
 				service.appendOutputLocked(found, chunk)
 				service.broadcastLocked(found, Frame{Type: FrameOutput, Data: chunk})
 			}

@@ -46,7 +46,7 @@ function usage() {
   --build-web             强制构建 WebUI（默认只在 web/dist 缺失时构建）
   --skip-web-build        不构建 WebUI，直接使用现有 web/dist
   --npm-registry <url>    覆盖 npm registry（默认沿用 npm 配置；国内可用 https://registry.npmmirror.com）
-  --with-go               一并构建并打包 Go Core（默认跳过）
+  --with-go               兼容选项；Go Server 和 CLI 已是必需组件（默认构建）
   --skip-sfx              不生成单文件自解压产物
   --skip-archives         不生成 tar.gz / zip
   --keep-work             保留中间目录（便于排错）
@@ -63,7 +63,7 @@ function parseArgs(argv) {
     out: DEFAULT_OUT,
     buildWeb: false,
     skipWebBuild: false,
-    withGo: false,
+    withGo: true,
     skipSfx: false,
     skipArchives: false,
     keepWork: false,
@@ -169,19 +169,9 @@ async function buildTarget(options) {
   });
   copyTree(modules, path.join(bundleRoot, 'node_modules'), { dereference: true });
 
-  let goBuilt = false;
-  if (options.withGo) {
-    try {
-      buildGoCore(repositoryRoot, target, log);
-      const { buildGoCLI } = require('../build-go-cli');
-      buildGoCLI({ repositoryRoot, platform: target.platform, arch: target.arch, stdio: 'inherit' });
-      goBuilt = true;
-    } catch (error) {
-      // Go Core 是可选的加速数据面；Go CLI 缺失时家族裸启动会显式报错（不回落 Node）。
-      // 不让一个平台的交叉编译失败拖垮整批安装包。
-      log(`[pkg] warning: Go build failed for ${targetKey(target)}: ${error.message}`);
-    }
-  }
+  buildGoCore(repositoryRoot, target, log);
+  const { buildGoCLI } = require('../build-go-cli');
+  buildGoCLI({ repositoryRoot, platform: target.platform, arch: target.arch, stdio: 'inherit' });
 
   const finalized = finalizeBundle({
     repositoryRoot,
@@ -189,7 +179,7 @@ async function buildTarget(options) {
     target,
     version,
     nodeVersion: runtime.version,
-    skipGo: !goBuilt,
+    skipGo: false,
     log
   });
   log(`[pkg] bundle ready: ${finalized.root}`);

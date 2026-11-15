@@ -1,0 +1,81 @@
+{
+  "at": "2026-11-14T18:17:34.114Z",
+  "boundary": "actual generated POSIX installer in isolated HOME, launcher template only; not full published bundle or Windows",
+  "results": [
+    {
+      "args": [
+        "--uninstall",
+        "--prefix",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/unrelated",
+        "--bin-dir",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "[aih] Refusing to remove an unowned installation; missing or mismatched ownership receipt"
+    },
+    {
+      "unrelatedSurvives": true
+    },
+    {
+      "args": [
+        "--prefix",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/apps/aih",
+        "--bin-dir",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin",
+        "--no-path"
+      ],
+      "exit": 0,
+      "stdout": "[aih] 已安装 audit 到 /private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/apps/aih\n[aih] 命令：/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin/aih\n[aih] 数据目录仍是 ~/.ai_home（可用 AIH_HOME_DIR 修改）",
+      "stderr": ""
+    },
+    {
+      "args": [
+        "--prefix",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/apps/aih",
+        "--bin-dir",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin",
+        "--no-path"
+      ],
+      "exit": 0,
+      "stdout": "[aih] 已安装 audit 到 /private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/apps/aih\n[aih] 命令：/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin/aih\n[aih] 数据目录仍是 ~/.ai_home（可用 AIH_HOME_DIR 修改）",
+      "stderr": ""
+    },
+    {
+      "args": [
+        "--uninstall",
+        "--prefix",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/apps/aih",
+        "--bin-dir",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin"
+      ],
+      "exit": 0,
+      "stdout": "[aih] 已卸载（��；用户数据保留",
+      "stderr": ""
+    },
+    {
+      "foreignLinkPreserved": true,
+      "installationRemoved": true
+    },
+    {
+      "args": [
+        "--uninstall",
+        "--prefix",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home",
+        "--bin-dir",
+        "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-after-LRAHjm/home/bin"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "[aih] Refusing root, HOME or AIH data directory"
+    },
+    {
+      "args": [
+        "--prefix"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "[aih] --prefix requires a directory"
+    }
+  ]
+}

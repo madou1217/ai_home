@@ -1,0 +1,42 @@
+{
+  "at": "2026-11-14T18:20:20.303Z",
+  "boundary": "actual POSIX installer isolated filesystem; PowerShell encoding only not runtime",
+  "results": [
+    {
+      "flags": [],
+      "exit": 1,
+      "out": "",
+      "err": "[aih] Existing directory has no matching AIH ownership receipt; use --preserve-existing to move it aside without deleting"
+    },
+    {
+      "flags": [
+        "--preserve-existing"
+      ],
+      "exit": 0,
+      "out": "[aih] 旧目录完整保留：/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-final-jMtoHE/home/apps/aih.old.UfIuEL/app\n[aih] 已安装 audit 到 /private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-final-jMtoHE/home/apps/aih\n[aih] 命令：/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-final-jMtoHE/home/bin/aih\n[aih] 数据目录仍是 ~/.ai_home（可用 AIH_HOME_DIR 修改）",
+      "err": ""
+    },
+    {
+      "legacyBackupPreserved": true
+    },
+    {
+      "flags": [],
+      "exit": 0,
+      "out": "[aih] 已安装 audit 到 /private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-final-jMtoHE/home/apps/aih\n[aih] 命令：/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-final-jMtoHE/home/bin/aih\n[aih] 数据目录仍是 ~/.ai_home（可用 AIH_HOME_DIR 修改）",
+      "err": ""
+    },
+    {
+      "flags": [
+        "--uninstall"
+      ],
+      "exit": 0,
+      "out": "[aih] 已卸载（/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-installer-final-jMtoHE/home/apps/aih）；用户数据保留",
+      "err": ""
+    },
+    {
+      "ownedLinkRemoved": true,
+      "userBackupStillExists": true,
+      "powershellBOM": "efbbbf"
+    }
+  ]
+}

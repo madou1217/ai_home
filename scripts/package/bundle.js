@@ -48,138 +48,9 @@ export AIH_PACKAGED AIH_EXECUTABLE
 exec "$NODE" "$DIR/bin/ai-home.js" "$@"
 `;
 
-const POSIX_INSTALLER = `#!/bin/sh
-# 把这份便携版安装到用户目录，并在 PATH 里放一个 aih 链接。
-set -e
-
-SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-VERSION="__AIH_VERSION__"
-DATA_HOME=\${XDG_DATA_HOME:-$HOME/.local/share}
-INSTALL_DIR=\${AIH_INSTALL_DIR:-$DATA_HOME/aih}
-BIN_DIR=\${AIH_BIN_DIR:-$HOME/.local/bin}
-NO_PATH=0
-
-usage() {
-  cat <<'EOF'
-用法: ./install.sh [选项]
-
-  --prefix DIR    安装目录（默认 $XDG_DATA_HOME/aih 或 ~/.local/share/aih）
-  --bin-dir DIR   放 aih 链接的目录（默认 ~/.local/bin）
-  --no-path       不提示 PATH 配置
-  --uninstall     卸载：删除链接和安装目录
-  -h, --help      显示帮助
-EOF
-}
-
-UNINSTALL=0
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --prefix) INSTALL_DIR=$2; shift 2 ;;
-    --bin-dir) BIN_DIR=$2; shift 2 ;;
-    --no-path) NO_PATH=1; shift ;;
-    --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "[aih] 未知参数: $1" >&2; usage >&2; exit 2 ;;
-  esac
-done
-
-LINK="$BIN_DIR/aih"
-if [ "$UNINSTALL" = "1" ]; then
-  if [ -L "$LINK" ]; then rm -f "$LINK"; fi
-  rm -rf "$INSTALL_DIR"
-  echo "[aih] 已卸载（$INSTALL_DIR）"
-  exit 0
-fi
-
-if [ ! -x "$SELF_DIR/aih" ]; then
-  echo "[aih] 这不是完整的安装包：找不到 $SELF_DIR/aih" >&2
-  exit 1
-fi
-
-mkdir -p "$BIN_DIR"
-STAGE="\${INSTALL_DIR}.new.$$"
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
-cp -R "$SELF_DIR"/. "$STAGE"/
-if [ -e "$INSTALL_DIR" ]; then
-  OLD="\${INSTALL_DIR}.old.$$"
-  rm -rf "$OLD"
-  mv "$INSTALL_DIR" "$OLD"
-  if ! mv "$STAGE" "$INSTALL_DIR"; then
-    mv "$OLD" "$INSTALL_DIR"
-    rm -rf "$STAGE"
-    echo "[aih] 安装失败，已恢复原目录" >&2
-    exit 1
-  fi
-  rm -rf "$OLD"
-else
-  mv "$STAGE" "$INSTALL_DIR"
-fi
-
-ln -sfn "$INSTALL_DIR/aih" "$LINK"
-chmod +x "$INSTALL_DIR/aih" "$INSTALL_DIR/install.sh" 2>/dev/null || true
-
-echo "[aih] 已安装 $VERSION 到 $INSTALL_DIR"
-echo "[aih] 命令：$LINK"
-if [ "$NO_PATH" != "1" ]; then
-  case ":$PATH:" in
-    *":$BIN_DIR:"*) ;;
-    *) echo "[aih] 提示：把 $BIN_DIR 加入 PATH，例如："; echo "      export PATH=$BIN_DIR:\\$PATH" ;;
-  esac
-fi
-echo "[aih] 数据目录仍是 ~/.ai_home（可用 AIH_HOME_DIR 修改）"
-`;
-
-const POWERSHELL_INSTALLER = `# AI Home 便携版 Windows 安装脚本。
-param(
-  [string]$Prefix = "$env:LOCALAPPDATA\\aih",
-  [switch]$Uninstall,
-  [switch]$NoPath
-)
-$ErrorActionPreference = 'Stop'
-$Version = '__AIH_VERSION__'
-
-if ($Uninstall) {
-  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $parts = @($userPath -split ';' | Where-Object { $_ -and $_ -ne $Prefix })
-  [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
-  if (Test-Path -LiteralPath $Prefix) { Remove-Item -LiteralPath $Prefix -Recurse -Force }
-  Write-Host "[aih] 已卸载（$Prefix）"
-  exit 0
-}
-
-$source = Split-Path -Parent $MyInvocation.MyCommand.Path
-$launcher = Join-Path $source 'aih.exe'
-if (-not (Test-Path -LiteralPath $launcher)) {
-  throw "这不是完整的安装包：找不到 $launcher"
-}
-
-$stage = "$Prefix.new.$PID"
-if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-New-Item -ItemType Directory -Path $stage | Out-Null
-Copy-Item -Path (Join-Path $source '*') -Destination $stage -Recurse -Force
-if (Test-Path -LiteralPath $Prefix) {
-  $old = "$Prefix.old.$PID"
-  if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
-  Move-Item -LiteralPath $Prefix -Destination $old
-  Move-Item -LiteralPath $stage -Destination $Prefix
-  Remove-Item -LiteralPath $old -Recurse -Force
-} else {
-  Move-Item -LiteralPath $stage -Destination $Prefix
-}
-
-if (-not $NoPath) {
-  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $parts = @($userPath -split ';' | Where-Object { $_ })
-  if ($parts -notcontains $Prefix) {
-    [Environment]::SetEnvironmentVariable('Path', (($parts + $Prefix) -join ';'), 'User')
-  }
-}
-
-Write-Host "[aih] 已安装 $Version 到 $Prefix"
-Write-Host "[aih] 新开一个终端后运行: aih help"
-Write-Host "[aih] 数据目录仍是 %USERPROFILE%\\.ai_home（可用 AIH_HOME_DIR 修改）"
-`;
+// Platform effects stay in focused adapters, not in the bundle composition.
+const POSIX_INSTALLER = fs.readFileSync(path.join(__dirname, 'installers', 'posix.sh'), 'utf8');
+const POWERSHELL_INSTALLER = fs.readFileSync(path.join(__dirname, 'installers', 'windows.ps1'), 'utf8');
 
 function readSourceSha(repositoryRoot) {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' });
@@ -230,7 +101,7 @@ function writePosixFiles(bundleRoot, version) {
 function writePowerShellFile(bundleRoot, version) {
   fs.writeFileSync(
     path.join(bundleRoot, 'install.ps1'),
-    POWERSHELL_INSTALLER.replace('__AIH_VERSION__', version),
+    '\uFEFF' + POWERSHELL_INSTALLER.replace('__AIH_VERSION__', version),
     'utf8'
   );
 }
@@ -252,26 +123,7 @@ function writeBuildInfo(bundleRoot, info) {
   return buildInfo;
 }
 
-function copyGoCore(repositoryRoot, bundleRoot, target) {
-  const sourceDir = path.join(repositoryRoot, 'bin', 'native', targetKey(target));
-  const binaryName = isWindows(target) ? 'aih-server.exe' : 'aih-server';
-  const binary = path.join(sourceDir, binaryName);
-  if (!fs.existsSync(binary)) return null;
-  const destination = path.join(bundleRoot, 'bin', 'native', targetKey(target));
-  ensureDir(destination);
-  copyTree(binary, path.join(destination, binaryName), { dereference: true });
-  const stamp = `${binary}.build.json`;
-  if (fs.existsSync(stamp)) copyTree(stamp, path.join(destination, `${binaryName}.build.json`));
-  // bin/native 里可能残留其它历史二进制（例如 aih-go），只带当前 Go Core。
-  for (const name of fs.readdirSync(destination)) {
-    if (name !== binaryName && name !== `${binaryName}.build.json`) removeIfExists(path.join(destination, name));
-  }
-  if (!isWindows(target)) fs.chmodSync(path.join(destination, binaryName), 0o755);
-  return {
-    binary: `bin/native/${targetKey(target)}/${binaryName}`,
-    sha256: require('./fs-utils').sha256File(binary)
-  };
-}
+const { copyNativeComponents: copyGoCore } = require('./native-components');
 
 function buildWindowsLauncher(options) {
   const { repositoryRoot, bundleRoot, target, log } = options;
@@ -320,7 +172,8 @@ function finalizeBundle(options = {}) {
   writePosixFiles(bundleRoot, version);
   writePowerShellFile(bundleRoot, version);
   buildWindowsLauncher({ repositoryRoot, bundleRoot, target, log });
-  const goCore = options.skipGo ? null : copyGoCore(repositoryRoot, bundleRoot, target);
+  if (options.skipGo) throw new Error('native_components_required');
+  const goCore = copyGoCore(repositoryRoot, bundleRoot, target);
   removeBundleCaches(bundleRoot);
   const webManifest = sha256Tree(path.join(bundleRoot, 'web', 'dist'));
   const info = writeBuildInfo(bundleRoot, {

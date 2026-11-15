@@ -200,3 +200,38 @@ At this checkpoint no new `invalid_request_body` turn errors were present after
 the live cutover. Completion of the parent compaction/subagent continuation and
 the separately requested single-AIH-database migration remain separate acceptance
 items, not inferred from successful gateway startup.
+
+## Final coordination audit after standard-entry repair
+
+On 2026-11-15 at approximately 14:25 Asia/Shanghai, the coordinator revalidated
+rather than repeating the completed recovery:
+
+- The live listener remained the standard Go server (PID 7485). Its binary hash,
+  build stamp and runtime-identity hash matched the standard-entry repair record.
+- Since that process's start at `2026-11-15T04:59:59.308346Z`, the Codex turn-error
+  log contained zero new `invalid_request_body`, migration-required or incompatible
+  database-schema errors.
+- Fresh authenticated Go app-server listing returned only ai_home rows (25), only
+  Shalou rows (24), and zero rows/no next cursor for unknown cwd. Explicit all
+  restored cross-project rows.
+- The four affected parent Goals were `active`; their subagent remains owned by
+  its original parent. No duplicate continuation or shared-service restart was
+  performed in this audit.
+- `aih.db` was schema 31 with 41 canonical accounts and 41 credentials. The old
+  database had 96 business-write fences. Its retained receipt/backup does not
+  constitute a second writable business database. Final migration and standard
+  startup acceptance are recorded in
+  `docs/migration/2026-11-15-single-business-database-cutover.md`.
+
+The user's additional small-terminal CLI rendering requirement was routed to the
+original CLI/M0-M5 owner `01a1da12-9ab6-7a70-929e-581822624377`, not implemented in
+parallel by this coordinator. The exact requirement is durably queued in native
+Codex as `01a1dde2-b741-75a2-b75a-d5cae67b83f2`; its duplicate pending Peer dispatch
+was cancelled while retaining the audit record. The shell/completion coordinator
+received a separate coordination message, `pm-36d418ce0d569a9f6a0de740b8b6b498`.
+
+Requested acceptance covers real narrow terminal widths and resize behavior,
+Chinese/long values/ANSI width, alignment, wrapping, truncation and stale output,
+starting with `aih ls` and preserving Go ownership. No test cases are to be added.
+The original owner was still busy when queued: **the handoff is recorded, but the
+small-terminal rendering implementation is not claimed complete here.**

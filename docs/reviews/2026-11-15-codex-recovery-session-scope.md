@@ -160,3 +160,43 @@ history should be edited or compacted concurrently with its loaded owner. Only
 these two thread owners need release/reload; the shared gateway and unrelated
 sessions need not be restarted. This is bounded session recovery, not replacement
 of the already-running gateway's 16 MiB code limit.
+
+
+## Authorized live gateway update and automatic continuation
+
+After the user explicitly requested the gateway restart followed by automatic
+Peer/App Server continuation, the fixed Go core was installed at the same public
+`127.0.0.1:9527` endpoint. Core ownership remains Go. Its auxiliary Node child also
+uses the same frozen committed-source release, not the dirty workspace.
+
+- Fixed source: `9bc4db1ed` plus the documented PublicPrefix-only overlay.
+- Release: `~/.ai_home/run/releases/20261115-codex-body-scope-9bc4db1ed`.
+- Native binary SHA256: `38defca5d04a85bf6f857a4e4c3cdf6f7db497d72d0fc76c0734eb60a0fe3912`.
+- Full Go-front-door + supervised-Node rehearsal: real 16,862,842-byte request,
+  HTTP 200, 4,382 events, `response.completed`.
+- Validated fallback: previous Go artifact plus the same fixed Node source; both
+  ready before changing the live service. Credentials/database backups are private.
+- The first launchd bootstrap returned code 5 after bootout. The validated fallback
+  restored service. A second attempt waited for the old launchd registration to
+  disappear before bootstrap and succeeded. No rollback of database contents or
+  working-tree source was performed.
+- Live Go PID at acceptance: `86305`; its auxiliary Node PID: `86375`.
+  Live schema remained 30 with 41 account rows. Original native CLI owners kept
+  their PIDs; their histories were not rewritten.
+
+A fresh error scan found five affected thread IDs, of which one was an existing
+subagent rather than a separate TUI. Recovery messages were delivered through the
+existing **Go peer runtime** to the four original tmux panes. This was not a new
+conversation or a fabricated agent response.
+
+Three original main threads returned HTTP 200 and emitted assistant messages
+explicitly continuing their previous work: `01a1d99a…`, `01a1da12…`, and
+`01a1da3a…`. The fourth (`01a1da29…`) also crossed the gateway successfully but
+reported the distinct native `context_window_exceeded` error. Native `/compact`
+was then submitted in its existing owner; its child `01a1da37…` must be resumed
+through that parent's agent capability, not by opening a second writer.
+
+At this checkpoint no new `invalid_request_body` turn errors were present after
+the live cutover. Completion of the parent compaction/subagent continuation and
+the separately requested single-AIH-database migration remain separate acceptance
+items, not inferred from successful gateway startup.

@@ -1,6 +1,7 @@
 package sessionevents
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,8 @@ import (
 )
 
 const (
-	defaultDebounce          = 500 * time.Millisecond
-	subscriberChannelBuffer  = 64
+	defaultDebounce         = 500 * time.Millisecond
+	subscriberChannelBuffer = 64
 )
 
 // Session 标识需要监听或派发事件的目标会话。
@@ -107,7 +108,8 @@ type busEntry struct {
 	session       Session
 	subscribers   map[*subscriber]struct{}
 	watchPath     string
-	watcher       *fsnotify.Watcher
+	watcher       *sessionFileWatcher
+	watchStarting bool
 	watchStop     chan struct{}
 	watchDone     chan struct{}
 	debounceTimer *time.Timer
@@ -116,6 +118,11 @@ type busEntry struct {
 
 // Bus 维护按会话聚合的实时订阅与文件变更通知。
 type Bus struct {
+	lifetime        context.Context
+	cancelLifetime  context.CancelFunc
+	closedDone      chan struct{}
+	stopLifetime    func() bool
+	watchStarts     sync.WaitGroup
 	mu              sync.Mutex
 	entries         map[string]*busEntry
 	closed          bool
@@ -146,7 +153,11 @@ func NewBus(options BusOptions) *Bus {
 			return ResolveSessionFilePath(hostHome, aiHome, session.Provider, session.SessionID, session.ProjectDirName)
 		}
 	}
+	lifetime, cancelLifetime := context.WithCancel(context.Background())
 	return &Bus{
+		lifetime:        lifetime,
+		cancelLifetime:  cancelLifetime,
+		closedDone:      make(chan struct{}),
 		entries:         make(map[string]*busEntry),
 		hostHomeDir:     strings.TrimSpace(options.HostHomeDir),
 		aiHomeDir:       strings.TrimSpace(options.AIHomeDir),
@@ -187,7 +198,11 @@ func (bus *Bus) Subscribe(rawSession Session, watchFile bool) (<-chan Event, <-c
 		bus.entries[key] = entry
 	}
 	entry.subscribers[sub] = struct{}{}
-	needWatch := watchFile && entry.watcher == nil
+	needWatch := watchFile && entry.watcher == nil && !entry.watchStarting
+	if needWatch {
+		entry.watchStarting = true
+		bus.watchStarts.Add(1)
+	}
 	bus.mu.Unlock()
 
 	if needWatch {
@@ -272,9 +287,14 @@ func (bus *Bus) Close() {
 	bus.mu.Lock()
 	if bus.closed {
 		bus.mu.Unlock()
+		<-bus.closedDone
 		return
 	}
 	bus.closed = true
+	if bus.stopLifetime != nil {
+		bus.stopLifetime()
+	}
+	bus.cancelLifetime()
 	entries := make([]*busEntry, 0, len(bus.entries))
 	for key, entry := range bus.entries {
 		entries = append(entries, entry)
@@ -288,6 +308,8 @@ func (bus *Bus) Close() {
 	for _, entry := range entries {
 		bus.stopEntry(entry)
 	}
+	bus.watchStarts.Wait()
+	close(bus.closedDone)
 }
 
 func (bus *Bus) buildPayloadLocked(subscriber Session, published Session, event Event) Event {
@@ -347,6 +369,12 @@ func (bus *Bus) buildPayloadLocked(subscriber Session, published Session, event 
 }
 
 func (bus *Bus) startFileWatch(entry *busEntry) {
+	defer bus.watchStarts.Done()
+	defer func() {
+		bus.mu.Lock()
+		entry.watchStarting = false
+		bus.mu.Unlock()
+	}()
 	watchPath := strings.TrimSpace(bus.resolveFilePath(entry.session))
 	if watchPath == "" {
 		return
@@ -356,28 +384,19 @@ func (bus *Bus) startFileWatch(entry *busEntry) {
 		return
 	}
 	cleanTarget := filepath.Clean(watchPath)
-	parentDir := filepath.Dir(cleanTarget)
-
-	watcher, err := fsnotify.NewWatcher()
+	watcher, err := newSessionFileWatcher(cleanTarget)
 	if err != nil {
 		return
 	}
-	// macOS kqueue 只在对文件本身 Add 时通知追加写，监听父目录则捕捉原子 rename 替换；
-	// 两者同时挂载再用目标路径过滤，兼容追加写与原子替换两种转录落盘方式。
-	if err := watcher.Add(parentDir); err != nil {
-		_ = watcher.Close()
-		return
-	}
-	_ = watcher.Add(cleanTarget)
 
 	watchStop := make(chan struct{})
 	watchDone := make(chan struct{})
 
 	bus.mu.Lock()
-	if bus.closed || len(entry.subscribers) == 0 || entry.watcher != nil {
+	if bus.closed || bus.entries[entry.key] != entry || len(entry.subscribers) == 0 || entry.watcher != nil {
 		bus.mu.Unlock()
 		close(watchDone)
-		_ = watcher.Close()
+		watcher.Close()
 		return
 	}
 	entry.watchPath = cleanTarget
@@ -392,7 +411,7 @@ func (bus *Bus) startFileWatch(entry *busEntry) {
 func (bus *Bus) watchLoop(
 	entry *busEntry,
 	targetPath string,
-	watcher *fsnotify.Watcher,
+	watcher *sessionFileWatcher,
 	watchStop <-chan struct{},
 	watchDone chan struct{},
 ) {
@@ -412,7 +431,7 @@ func (bus *Bus) watchLoop(
 				continue
 			}
 			if event.Op&(fsnotify.Create|fsnotify.Rename) != 0 {
-				_ = watcher.Add(targetPath)
+				watcher.Rewatch()
 			}
 			bus.scheduleFileChanged(entry)
 		case _, ok := <-watcher.Errors:
@@ -465,11 +484,12 @@ func (bus *Bus) stopEntry(entry *busEntry) {
 		if watchStop != nil {
 			close(watchStop)
 		}
-		if watcher != nil {
-			_ = watcher.Close()
-		}
+		// Stop any re-add from the watch loop before removing its descriptors.
 		if watchDone != nil {
 			<-watchDone
+		}
+		if watcher != nil {
+			watcher.Close()
 		}
 	})
 }

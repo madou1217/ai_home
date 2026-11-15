@@ -369,9 +369,7 @@ func (store *Store) replaceDiscoveredModels(
 		!accountapp.ValidDiscoveredModelIDs(models) {
 		return nil, accountapp.ErrInvalidDiscoveredModels
 	}
-	store.routingWrites.Lock()
-	defer store.routingWrites.Unlock()
-	transaction, err := store.db.BeginTx(ctx, nil)
+	transaction, err := store.beginModelTransaction(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("开始账号模型刷新事务失败: %w", err)
 	}
@@ -412,7 +410,7 @@ func (store *Store) replaceDiscoveredModels(
 	if err != nil {
 		return nil, err
 	}
-	if err := transaction.Commit(); err != nil {
+	if err := transaction.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("提交账号模型刷新事务失败: %w", err)
 	}
 	if err := store.publishAccountModels(accountRef, snapshot); err != nil {
@@ -521,9 +519,7 @@ func (store *Store) SetManualModelPolicy(
 		!validPersistedTimestamp(updatedAt) {
 		return nil, accountapp.ErrInvalidAccountModel
 	}
-	store.routingWrites.Lock()
-	defer store.routingWrites.Unlock()
-	transaction, err := store.db.BeginTx(ctx, nil)
+	transaction, err := store.beginModelTransaction(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("开始人工模型维护事务失败: %w", err)
 	}
@@ -574,7 +570,7 @@ func (store *Store) SetManualModelPolicy(
 	if err != nil {
 		return nil, err
 	}
-	if err := transaction.Commit(); err != nil {
+	if err := transaction.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("提交人工模型维护事务失败: %w", err)
 	}
 	if err := store.publishAccountModels(accountRef, snapshot); err != nil {

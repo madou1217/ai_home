@@ -335,3 +335,9 @@ Node宿主guard incident由peer独立负责，我未改相关路径；Go ready20
 原Linux缺官方Codex缺口本轮按固定版本official package/sha校验补齐：只临时解包，不系统安装。/tmp tmpfs配额导致初次解包失败后，核对archive摘要迁到有空间的私有/var/tmp；只清自己incomplete目录，未删他人文件。真实Linux new、UUID resume、last+stdin、fast profile、explicit default均同thread/OK；请求none对齐low，priority/default按意图送达，上游五个最终default，5生成5usage。root配置保持default。
 
 native/CLI hash、真实/proc精确PID、私有目录清理与existing service inactive/dead/MainPID0未变已核对；本机DB clone/gateway/relay/reverse SSH与一次性key文件清理。详见 `2026-11-16-linux-native-exec-acceptance.md`。不把临时native可用称全局安装，不关闭OAuth/浏览器/全W0-W6。
+
+## 2026-11-16 W4：模型写入争锁、取消与路由发布
+
+真实私有DB external BEGIN IMMEDIATE下GET200而manual PATCH1ms500/internal_error，根因deferred事务先读后升级写锁立即busy。窄修两model写入口：2s writer admission含mutex/conn/BEGIN IMMEDIATE，busy_timeout连接局部0并恢复，25..200ms只retry BEGIN，无业务/上游重放；超限503/account_model_write_busy+Retry-After1。commit前检查取消，提交阶段WithoutCancel且成功持锁publish，再清理。
+
+Hubble独立review指出postcommit取消/PRAGMA预算映射两项，均修复并final窄review无blocking。最终真实锁保留2003ms503不改旧值；350ms解锁同请求385ms200；client cancel后解锁6s无迟到写、后续200。真实上游refresh仅1call/224rows/人工策略保留，断私有relay502保完整last-good。详情 `2026-11-16-model-write-contention.md`。不写共享DB/重启/新增测试，2s非whole-refresh SLA；全W4及W0-W6仍未关闭。

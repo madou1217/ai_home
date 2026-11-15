@@ -79,6 +79,9 @@ func writeStaticCredentialInputError(response http.ResponseWriter, err error) {
 // writeApplicationError 把领域和持久化错误收敛为无内部细节的 HTTP 错误。
 func writeApplicationError(response http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, accountapp.ErrModelWriteBusy):
+		response.Header().Set("Retry-After", "1")
+		writeAPIError(response, http.StatusServiceUnavailable, "account_model_write_busy", "账号模型正在被并发更新，请稍后重试")
 	case errors.Is(err, usageapp.ErrSnapshotNotFound):
 		writeAPIError(
 			response,

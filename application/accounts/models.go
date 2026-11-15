@@ -17,6 +17,8 @@ const (
 )
 
 var (
+	// ErrModelWriteBusy means no model mutation began within the bounded writer budget.
+	ErrModelWriteBusy = errors.New("account model write busy")
 	// ErrInvalidAccountModel 表示账号模型关系缺少合法身份、模型、策略或时间。
 	ErrInvalidAccountModel = errors.New("账号模型关系无效")
 	// ErrInvalidDiscoveredModels 表示远端模型发现结果为空、重复或超过安全上限。

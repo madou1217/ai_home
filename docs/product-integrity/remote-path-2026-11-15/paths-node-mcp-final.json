@@ -1,0 +1,64 @@
+[
+  {
+    "phase": "mcp-outside-read",
+    "result": {
+      "isError": true,
+      "content": [
+        {
+          "type": "text",
+          "text": "[path_outside_workspace] 远端工作区路径校验失败：path_outside_workspace"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "mcp-outside-write",
+    "result": {
+      "isError": true,
+      "content": [
+        {
+          "type": "text",
+          "text": "[path_outside_workspace] 远端工作区路径校验失败：path_outside_workspace"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "mcp-inside-read",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "version: 3f515aa105fa09319a15ce69b2e67e20\nlines: 1-2 / 2\n     1\tINSIDE_EDITED_SENTINEL\n     2\t"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "mcp-inside-new",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "已写入 inside-dir/mcp.txt（version: bee58824430feb8aae2ae892fbceebf7）"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "mcp-inside-edit",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "已修改 inside-dir/mcp.txt（替换 1 处，version: 1b3eafe84ac6a7c6813006d40e7fb114）"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "actual-files",
+    "outside": false,
+    "inside": "MCP EDITED\n"
+  }
+]

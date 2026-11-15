@@ -160,7 +160,7 @@ func LoadWorkspaces(ctx context.Context, aiHomeDir string) ([]WorkspaceRecord, e
 		records = append(records, WorkspaceRecord{
 			ID:           id,
 			ConnectionID: connID,
-			RemoteRoot:   stringField(object, "remoteRoot"),
+			RemoteRoot:   rawRemoteRoot(object),
 			Label:        label,
 			Dialect:      normalizeDialect(stringField(object, "dialect")),
 			CreatedAt:    int64Field(object, "createdAt"),
@@ -372,4 +372,10 @@ func firstNonEmpty(values ...string) string {
 func IsNotFoundError(err error) bool {
 	var remoteErr *RemoteError
 	return errors.As(err, &remoteErr) && remoteErr.Code == "not_found"
+}
+
+// File paths are not labels: preserve spaces and newline bytes in configured roots.
+func rawRemoteRoot(object map[string]any) string {
+	value, _ := object["remoteRoot"].(string)
+	return value
 }

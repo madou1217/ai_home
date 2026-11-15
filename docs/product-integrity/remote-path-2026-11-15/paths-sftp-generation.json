@@ -1,0 +1,10 @@
+[
+  {
+    "phase": "closed-session-io",
+    "code": "connection_lost"
+  },
+  {
+    "phase": "re-resolve-new-session",
+    "content": "INSIDE_SENTINEL\n"
+  }
+]

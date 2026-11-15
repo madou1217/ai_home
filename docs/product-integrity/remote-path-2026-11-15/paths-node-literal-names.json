@@ -1,0 +1,12 @@
+[
+  {
+    "path": "inner/actual-*",
+    "write": "ef9896abc1dcf807d54880c3eef96a3c",
+    "read": "LITERAL_OK\n"
+  },
+  {
+    "path": "inner/ literal ' \\ name\n",
+    "write": "ef9896abc1dcf807d54880c3eef96a3c",
+    "read": "LITERAL_OK\n"
+  }
+]

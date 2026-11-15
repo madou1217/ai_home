@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/remotepath"
 	"github.com/madou1217/ai_home/internal/adapters/sshhost"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"golang.org/x/crypto/ssh"
@@ -67,6 +68,13 @@ func CallRemoteTool(ctx context.Context, options RemoteToolOptions, name string,
 		return remoteToolError("unsupported_remote", "无法识别远端系统（需要 POSIX sh 或 Windows PowerShell）")
 	}
 	host := &remoteToolHost{client: client, root: root, dialect: dialect}
+	if name != "run_command" {
+		resolved, resolveErr := remotepath.Resolve(ctx, client, dialect, root, "", remotepath.Read)
+		if resolveErr != nil {
+			return remoteToolFailure(resolveErr)
+		}
+		host.root = resolved.Root
+	}
 	switch name {
 	case "read_file":
 		return host.readFile(ctx, args)
@@ -211,7 +219,7 @@ func loadRemoteToolHost(ctx context.Context, options RemoteToolOptions) (sshremo
 		return sshremote.Config{}, "", err
 	}
 	config.HostKeyCallback = appStateHostKeyCallback(options.AIHomeDir)
-	return config, trimmedString(workspace["remoteRoot"]), nil
+	return config, asString(workspace["remoteRoot"]), nil
 }
 
 // appStateHostKeyCallback 用 app-state 的 ssh_known_hosts 做 TOFU 校验。
@@ -265,6 +273,10 @@ func remoteToolFailure(err error) map[string]any {
 	if err != nil {
 		message = err.Error()
 	}
+	var pathErr *remotepath.Error
+	if errors.As(err, &pathErr) {
+		code = pathErr.Code
+	}
 	if errors.Is(err, errRemoteFileTooLarge) {
 		code = "file_too_large"
 	}
@@ -282,35 +294,13 @@ func remoteToolError(code, message string) map[string]any {
 }
 
 func (host *remoteToolHost) resolve(value string) (string, error) {
-	if host.dialect == "windows" {
-		value = strings.ReplaceAll(value, "\\", "/")
-	}
-	rel, ok := cleanRemoteRelPath(value)
-	if !ok {
-		return "", errors.New("路径必须位于工作区根目录内")
-	}
-	return rel, nil
+	return remotepath.Relative(value, host.dialect)
 }
 
+// Kept for compatibility; production callers pass the actual remote dialect.
 func cleanRemoteRelPath(value string) (string, bool) {
-	text := strings.TrimSpace(value)
-	if text == "" {
-		return "", true
-	}
-	if strings.HasPrefix(text, "/") || strings.HasPrefix(text, "\\") || strings.Contains(text, "\\") {
-		return "", false
-	}
-	if len(text) >= 2 && text[1] == ':' {
-		return "", false
-	}
-	cleaned := path.Clean(text)
-	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || cleaned == "." {
-		if cleaned == "." {
-			return "", true
-		}
-		return "", false
-	}
-	return cleaned, true
+	rel, err := remotepath.Relative(value, "posix")
+	return rel, err == nil
 }
 
 func (host *remoteToolHost) abs(rel string) string {
@@ -343,38 +333,48 @@ var errRemoteNotFound = errors.New("remote file not found")
 
 // writeContent 原子写入远端文件；Windows 走 PowerShell + base64 stdin。
 func (host *remoteToolHost) writeContent(ctx context.Context, rel string, content []byte) error {
+	resolved, err := remotepath.Resolve(ctx, host.client, host.dialect, host.root, rel, remotepath.Replace, host.root)
+	if err != nil {
+		return err
+	}
 	if host.dialect == "windows" {
-		return host.windowsWriteContent(ctx, rel, content)
+		// Preserve this backend's direct-write semantics for internal leaf links.
+		return host.windowsWriteContent(ctx, resolved.Target, content)
 	}
-	temp := rel + ".aih-tmp-" + randomSuffix()
-	dir := path.Dir(rel)
-	mkdir := ""
-	if dir != "." && dir != "" {
-		mkdir = "mkdir -p " + sshhost.ShellQuote(dir) + " && "
-	}
-	command := "cd " + sshhost.ShellQuote(host.root) + " && " + mkdir +
-		"cat > " + sshhost.ShellQuote(temp) + " && mv -f " + sshhost.ShellQuote(temp) + " " + sshhost.ShellQuote(rel)
-	result, err := host.client.RunWithInput(ctx, command, content, 4096)
+	target := resolved.IO
+	temp := target + ".aih-tmp-" + randomSuffix()
+	dir := path.Dir(target)
+	command := "mkdir -p " + sshhost.ShellQuote(dir) + " && " +
+		"cat > " + sshhost.ShellQuote(temp) + " && mv -f " + sshhost.ShellQuote(temp) + " " + sshhost.ShellQuote(target)
+	result, err := host.client.RunWithInput(ctx, "sh -c "+sshhost.ShellQuote(command), content, 4096)
 	if err != nil {
 		return err
 	}
 	if result.Code != 0 {
-		_, _ = host.client.Run(ctx, "cd "+sshhost.ShellQuote(host.root)+" && rm -f "+sshhost.ShellQuote(temp), 1024)
+		_, _ = host.client.Run(ctx, "rm -f "+sshhost.ShellQuote(temp), 1024)
 		return errors.New(strings.TrimSpace(string(result.Stderr)))
 	}
 	return nil
 }
 
 func (host *remoteToolHost) readContent(ctx context.Context, rel string) ([]byte, string, error) {
-	if host.dialect == "windows" {
-		return host.windowsReadContent(ctx, rel)
+	resolved, err := remotepath.Resolve(ctx, host.client, host.dialect, host.root, rel, remotepath.Read, host.root)
+	if err != nil {
+		var pathErr *remotepath.Error
+		if errors.As(err, &pathErr) && pathErr.Code == "not_found" {
+			return nil, "", errRemoteNotFound
+		}
+		return nil, "", err
 	}
-	return host.readContentPosix(ctx, rel)
+	if host.dialect == "windows" {
+		return host.windowsReadContent(ctx, resolved.IO)
+	}
+	return host.readContentPosix(ctx, resolved.IO)
 }
 
-func (host *remoteToolHost) readContentPosix(ctx context.Context, rel string) ([]byte, string, error) {
-	command := "cd " + sshhost.ShellQuote(host.root) + " && test -f " + sshhost.ShellQuote(rel) +
-		" && head -c " + strconv.Itoa(remoteReadMaxBytes+1) + " -- " + sshhost.ShellQuote(rel)
+func (host *remoteToolHost) readContentPosix(ctx context.Context, absolute string) ([]byte, string, error) {
+	command := "test -f " + sshhost.ShellQuote(absolute) +
+		" && head -c " + strconv.Itoa(remoteReadMaxBytes+1) + " -- " + sshhost.ShellQuote(absolute)
 	result, err := host.client.Run(ctx, command, remoteReadMaxBytes+8192)
 	if err != nil {
 		return nil, "", err
@@ -432,6 +432,10 @@ func (host *remoteToolHost) writeVersioned(ctx context.Context, rel string, cont
 		if errors.Is(err, errRemoteNotFound) {
 			return remoteToolError("not_found", "远端路径不存在："+rel)
 		}
+		var pathErr *remotepath.Error
+		if errors.As(err, &pathErr) {
+			return remoteToolFailure(err)
+		}
 		return remoteToolError("write_failed", strings.TrimSpace(err.Error()))
 	}
 	return nil
@@ -481,9 +485,13 @@ func (host *remoteToolHost) listDirectory(ctx context.Context, args map[string]a
 	if err != nil {
 		return remoteToolFailure(err)
 	}
+	resolved, err := remotepath.Resolve(ctx, host.client, host.dialect, host.root, rel, remotepath.Read, host.root)
+	if err != nil {
+		return remoteToolFailure(err)
+	}
 	var raw []byte
 	if host.dialect == "windows" {
-		listed, listErr := host.windowsListRaw(ctx, rel)
+		listed, listErr := host.windowsListRaw(ctx, resolved.IO)
 		if listErr != nil {
 			if errors.Is(listErr, errRemoteNotFound) {
 				return remoteToolError("not_found", "远端目录不存在："+rel)
@@ -492,13 +500,13 @@ func (host *remoteToolHost) listDirectory(ctx context.Context, args map[string]a
 		}
 		raw = listed
 	} else {
-		abs := host.abs(rel)
-		command := "cd " + sshhost.ShellQuote(abs) + " && for f in * .[!.]*; do " +
+		abs := resolved.IO
+		command := "cd " + sshhost.ShellQuote(abs) + " && for f in * .[!.]* ..?*; do " +
 			"if [ -e \"$f\" ] || [ -L \"$f\" ]; then " +
-			"if [ -d \"$f\" ]; then t=d; elif [ -L \"$f\" ]; then t=l; else t=-; fi; " +
-			"s=$(wc -c < \"$f\" 2>/dev/null || echo 0); " +
+			"if [ -L \"$f\" ]; then t=l; elif [ -d \"$f\" ]; then t=d; else t=-; fi; " +
+			"s=$(stat -c %s -- \"$f\" 2>/dev/null || stat -f %z -- \"$f\"); " +
 			"printf '%s\\t%s\\t%s\\n' \"$t\" \"$s\" \"$f\"; fi; done"
-		result, runErr := host.client.Run(ctx, command, 4*1024*1024)
+		result, runErr := host.client.Run(ctx, "sh -c "+sshhost.ShellQuote(command), 4*1024*1024)
 		if runErr != nil {
 			return remoteToolFailure(runErr)
 		}
@@ -570,11 +578,7 @@ func (host *remoteToolHost) search(ctx context.Context, args map[string]any) map
 		}
 		stdout = found
 	} else {
-		quoted := sshhost.ShellQuote(pattern)
-		command := "cd " + sshhost.ShellQuote(host.root) +
-			" && if command -v rg >/dev/null 2>&1; then rg -n --no-heading --color never -e " + quoted +
-			" . | head -n " + strconv.Itoa(maxResults) +
-			"; else grep -rn -e " + quoted + " . | head -n " + strconv.Itoa(maxResults) + "; fi"
+		command := remotepath.SearchCommand(host.root, pattern, maxResults)
 		result, runErr := host.client.Run(ctx, command, 4*1024*1024)
 		if runErr != nil {
 			return remoteToolFailure(runErr)

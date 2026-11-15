@@ -1,0 +1,74 @@
+[
+  {
+    "phase": "large-read",
+    "result": {
+      "content": [
+        {
+          "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    },
+    "size": 524317
+  },
+  {
+    "afterBytes": 524317,
+    "beforeBytes": 524317,
+    "phase": "large-edit",
+    "result": {
+      "content": [
+        {
+          "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    },
+    "tailRetained": true,
+    "unchanged": true
+  },
+  {
+    "phase": "large-write-prefix-version",
+    "result": {
+      "content": [
+        {
+          "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    },
+    "tailRetained": true,
+    "unchanged": true
+  },
+  {
+    "afterSize": 524288,
+    "phase": "boundary-edit",
+    "result": {
+      "content": [
+        {
+          "text": "已修改 large.txt（替换 1 处，version: a60b907158f05958c7d7ee4a20147381）",
+          "type": "text"
+        }
+      ]
+    },
+    "size": 524288,
+    "unchanged": false
+  },
+  {
+    "afterSize": 524289,
+    "phase": "boundary-edit",
+    "result": {
+      "content": [
+        {
+          "text": "[file_too_large] 文件过大（超过 512 KiB 读取上限）；不能用截断内容生成版本或覆盖原文件",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    },
+    "size": 524289,
+    "unchanged": true
+  }
+]

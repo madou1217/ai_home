@@ -1,0 +1,40 @@
+[
+  {
+    "phase": "outside-read",
+    "error": "path_outside_workspace",
+    "message": "远端工作区路径校验失败：path_outside_workspace"
+  },
+  {
+    "phase": "outside-leaf",
+    "error": "path_outside_workspace",
+    "message": "远端工作区路径校验失败：path_outside_workspace"
+  },
+  {
+    "phase": "outside-write",
+    "error": "path_outside_workspace",
+    "message": "远端工作区路径校验失败：path_outside_workspace"
+  },
+  {
+    "phase": "inside-read",
+    "result": {
+      "content": "INSIDE_SENTINEL\n",
+      "size": 16,
+      "mtime": 1794733710
+    }
+  },
+  {
+    "phase": "inside-new",
+    "result": {
+      "size": 8,
+      "mtime": 1794734661
+    }
+  },
+  {
+    "phase": "remove-external-link"
+  },
+  {
+    "phase": "outside-disk",
+    "content": "OUTSIDE_SENTINEL\n",
+    "newCreated": false
+  }
+]

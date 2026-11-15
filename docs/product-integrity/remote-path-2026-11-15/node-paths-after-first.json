@@ -1,0 +1,98 @@
+[
+  {
+    "phase": "outside-read",
+    "error": "path_outside_workspace",
+    "message": "远端工作区路径校验失败：path_outside_workspace"
+  },
+  {
+    "phase": "outside-write-no-version",
+    "error": "path_outside_workspace",
+    "message": "远端工作区路径校验失败：path_outside_workspace"
+  },
+  {
+    "phase": "outside-list",
+    "error": "path_outside_workspace",
+    "message": "远端工作区路径校验失败：path_outside_workspace"
+  },
+  {
+    "phase": "inside-read",
+    "result": {
+      "path": "inside-dir/file.txt",
+      "content": "INSIDE_SENTINEL\n",
+      "size": 16,
+      "mtime": 1794733710,
+      "version": "77f9022c0ae3cd1ffdba18d7bbad9164"
+    }
+  },
+  {
+    "phase": "inside-new",
+    "result": {
+      "path": "inside-dir/new/a ' \n.txt",
+      "version": "21998928836741932680bb7ef8fb3fe2",
+      "size": 4,
+      "mtime": 1794734631
+    }
+  },
+  {
+    "phase": "list-links",
+    "result": {
+      "path": "",
+      "entries": [
+        {
+          "name": "inner",
+          "type": "d",
+          "size": 128,
+          "mtime": 1794734631
+        },
+        {
+          "name": "escape",
+          "type": "l",
+          "size": 111,
+          "mtime": 1794733710
+        },
+        {
+          "name": "inside-dir",
+          "type": "l",
+          "size": 5,
+          "mtime": 1794733710
+        },
+        {
+          "name": "inside-leaf",
+          "type": "l",
+          "size": 14,
+          "mtime": 1794733710
+        },
+        {
+          "name": "outside-leaf",
+          "type": "l",
+          "size": 122,
+          "mtime": 1794733710
+        }
+      ]
+    }
+  },
+  {
+    "phase": "search",
+    "result": {
+      "matches": [
+        {
+          "path": "inner/file.txt",
+          "line": 1,
+          "text": "INSIDE_SENTINEL"
+        }
+      ],
+      "truncated": false
+    }
+  },
+  {
+    "phase": "remove-link",
+    "result": {
+      "path": "outside-leaf"
+    }
+  },
+  {
+    "phase": "outside-disk",
+    "content": "OUTSIDE_SENTINEL\n",
+    "newCreated": false
+  }
+]

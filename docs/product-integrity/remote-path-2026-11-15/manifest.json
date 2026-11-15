@@ -1,0 +1,75 @@
+{
+  "boundary": "Real local filesystem + own loopback OpenSSH; private context paths omitted; no mock server or added test cases. Intermediate captures are named explicitly.",
+  "artifacts": [
+    {
+      "file": "remote-paths-before.json",
+      "source_sha256": "3156bbbdc157f21badf0ca8219dad316bb8a3c25dab5c95127b1f9e8c971c248",
+      "artifact_sha256": "5ea5632e1a10b1476b2c85b18acbdd256fb4d118f664987aeceef786fcb999e0"
+    },
+    {
+      "file": "node-paths-before.json",
+      "source_sha256": "6d08dc88b97cce4ea66e1b169201eeaa25fe2f68e855d1bdf0a42652574e376f",
+      "artifact_sha256": "8c7cdf818d5b9e72368823d5330c9043dfa7cee8389a536257dea0dafcc33709"
+    },
+    {
+      "file": "remote-paths-go-final.json",
+      "source_sha256": "18371c1238fe46c728ebef9f01de6d07cbb177bf808ea9a304d7b082b78402fa",
+      "artifact_sha256": "f86e1b0ca3102eb00956632c6693ce42a11452019605b1a0789fe130179b5f98"
+    },
+    {
+      "file": "node-paths-after-first.json",
+      "source_sha256": "3b9051eabe9ddf0a490278a9f9f40011a3960f633337a41caf032e19f87b6e14",
+      "artifact_sha256": "4a19aefb2add472b08657112ac8ba9c115906396afb1710c999ae591a4082c5d"
+    },
+    {
+      "file": "paths-node-mcp-final.json",
+      "source_sha256": "2ed18f2e977b70f7c44b0913577d653aacd966710434b3d47f5a68b5431eaef4",
+      "artifact_sha256": "ef1c019ea269f05779fb44e89058f743d1e2b74468ff618aabe046a30ea454e7"
+    },
+    {
+      "file": "paths-sftp-first.json",
+      "source_sha256": "e8e8cd207a80103a3a6417bb219bcaa15c37820dfd452fb4366c33ade81a5eeb",
+      "artifact_sha256": "5562944678bf176fe68c01e0703b456b3966dc11e40c05246e33693b676c6b53"
+    },
+    {
+      "file": "paths-sftp-generation.json",
+      "source_sha256": "d558c4f0b32e684a8a69e4757ca66eeeb6c04c348c01f99d931ae9f2f49fc6de",
+      "artifact_sha256": "c8f826227b3aef9be3a2609df69a064a6baf429335083e7162353503edde5846"
+    },
+    {
+      "file": "paths-edit-root-binding-final.json",
+      "source_sha256": "b31412b8e6a822ae589cb4a0dea8f2d965cf564e5ba764b04a82eb1bcfa503a7",
+      "artifact_sha256": "b8082133fe0bcb06f1dac2bcd833c0ae9798fed2d96a973755a048599142b854"
+    },
+    {
+      "file": "paths-posix-literal-names.json",
+      "source_sha256": "8e11fee77a5e4644d6fc178433e9c2cae4db1d8dfab6c52f336825ac4b4d67c2",
+      "artifact_sha256": "f77df3df7237b269e15c164f62784de4556955e485cb081623bc50a858c88043"
+    },
+    {
+      "file": "paths-node-literal-names.json",
+      "source_sha256": "30e478426dda42873b8b56422f46f985bfae05054b07346a20e74f4e886eaf07",
+      "artifact_sha256": "70f8277235ec5e8e6020718c385e143d80bb806de31cb5f20c258b66480cdf93"
+    },
+    {
+      "file": "paths-search-fallback.json",
+      "source_sha256": "e06ca5deb756f25675783e6472e62ac4c6574dcfaf9e6d36709d254073299b34",
+      "artifact_sha256": "912c938ddfcac1950769abe90574b1af7fef2978d6ea9f55ba58ed54f96c0a1b"
+    },
+    {
+      "file": "paths-latency-before-optimization.json",
+      "source_sha256": "8821ab7718d19033ba41f9a554df6b521e2ef9af5383e65f60625b01bd41d5a0",
+      "artifact_sha256": "e4ecca6df50b83c1c4fa81552c30b34b7e5295de961941a10f276aa2e304aa8b"
+    },
+    {
+      "file": "paths-latency-comparison.json",
+      "source_sha256": "c17a6483f6dc3bff09b18d812e3ea8100f82bed82e9a87da1fad11cf7ea815ec",
+      "artifact_sha256": "7fd7b2d2bcf9e22f71f52bc9edf9e0d6fd877cd2a6297cacb4c78f4ee0ea094e"
+    },
+    {
+      "file": "remote-paths-large-regression.json",
+      "source_sha256": "cb3258d7d6c47dd13264d4abb4779bea99708720463bad61c242bad8e6cbced1",
+      "artifact_sha256": "74d369f55260b7347a5c30e7438fdc5084ea709f537565a75eea1caf1f5b6e90"
+    }
+  ]
+}

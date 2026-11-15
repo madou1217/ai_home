@@ -1,0 +1,106 @@
+[
+  {
+    "phase": "outside-directory-read",
+    "result": {
+      "path": "escape/secret.txt",
+      "content": "OUTSIDE_SENTINEL\n",
+      "size": 17,
+      "mtime": 1794733710,
+      "version": "80b1d58a5cdebd0a43da7a3bc19cb7fc"
+    }
+  },
+  {
+    "phase": "outside-leaf-read",
+    "result": {
+      "path": "outside-leaf",
+      "content": "OUTSIDE_SENTINEL\n",
+      "size": 122,
+      "mtime": 1794733710,
+      "version": "80b1d58a5cdebd0a43da7a3bc19cb7fc"
+    }
+  },
+  {
+    "phase": "outside-directory-list",
+    "result": {
+      "path": "escape",
+      "entries": [
+        {
+          "name": "secret.txt",
+          "type": "f",
+          "size": 17,
+          "mtime": 1794733710
+        }
+      ]
+    }
+  },
+  {
+    "phase": "outside-new-write",
+    "result": {
+      "path": "escape/new.txt",
+      "version": "56c493461c40cdec8332306991a54483",
+      "size": 14,
+      "mtime": 1794733711
+    }
+  },
+  {
+    "phase": "inside-read",
+    "result": {
+      "path": "inside-dir/file.txt",
+      "content": "INSIDE_SENTINEL\n",
+      "size": 16,
+      "mtime": 1794733710,
+      "version": "77f9022c0ae3cd1ffdba18d7bbad9164"
+    }
+  },
+  {
+    "phase": "root-list-links",
+    "result": {
+      "path": "",
+      "entries": [
+        {
+          "name": "inner",
+          "type": "d",
+          "size": 96,
+          "mtime": 1794733710
+        },
+        {
+          "name": "escape",
+          "type": "l",
+          "size": 111,
+          "mtime": 1794733710
+        },
+        {
+          "name": "inside-dir",
+          "type": "l",
+          "size": 5,
+          "mtime": 1794733710
+        },
+        {
+          "name": "inside-leaf",
+          "type": "l",
+          "size": 14,
+          "mtime": 1794733710
+        },
+        {
+          "name": "outside-leaf",
+          "type": "l",
+          "size": 122,
+          "mtime": 1794733710
+        }
+      ]
+    }
+  },
+  {
+    "phase": "workspace-search",
+    "result": {
+      "matches": [
+        {
+          "path": "inner/file.txt",
+          "line": 1,
+          "text": "INSIDE_SENTINEL"
+        }
+      ],
+      "truncated": false
+    }
+  }
+]

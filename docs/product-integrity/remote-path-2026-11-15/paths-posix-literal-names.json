@@ -1,0 +1,52 @@
+[
+  {
+    "name": "*",
+    "code": 0,
+    "pathExact": true,
+    "error": ""
+  },
+  {
+    "name": "*",
+    "existingRead": 0
+  },
+  {
+    "name": ".[!.]*",
+    "code": 0,
+    "pathExact": true,
+    "error": ""
+  },
+  {
+    "name": ".[!.]*",
+    "existingRead": 0
+  },
+  {
+    "name": "..?*",
+    "code": 0,
+    "pathExact": true,
+    "error": ""
+  },
+  {
+    "name": "..?*",
+    "existingRead": 0
+  },
+  {
+    "name": " leading trailing \n",
+    "code": 0,
+    "pathExact": true,
+    "error": ""
+  },
+  {
+    "name": " leading trailing \n",
+    "existingRead": 0
+  },
+  {
+    "name": "a'\\b",
+    "code": 0,
+    "pathExact": true,
+    "error": ""
+  },
+  {
+    "name": "a'\\b",
+    "existingRead": 0
+  }
+]

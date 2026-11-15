@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/madou1217/ai_home/internal/adapters/remotepath"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 )
 
@@ -140,7 +141,11 @@ func (session *Session) Stat(ctx context.Context, relPath string) (StatInfo, err
 	if err != nil {
 		return StatInfo{}, err
 	}
-	absPath := JoinRemotePath(dialect, session.workspace.RemoteRoot, relPath)
+	resolved, err := remotepath.Resolve(ctx, session.runner, dialect, session.workspace.RemoteRoot, relPath, remotepath.Read)
+	if err != nil {
+		return StatInfo{}, translateSSHError(err)
+	}
+	absPath := resolved.IO
 	result, err := session.runner.Run(ctx, BuildStatCommand(dialect, absPath), DefaultCommandLimit)
 	if err != nil {
 		return StatInfo{}, translateSSHError(err)
@@ -157,7 +162,11 @@ func (session *Session) ListDir(ctx context.Context, relPath string) ([]Entry, e
 	if err != nil {
 		return nil, err
 	}
-	absPath := JoinRemotePath(dialect, session.workspace.RemoteRoot, relPath)
+	resolved, err := remotepath.Resolve(ctx, session.runner, dialect, session.workspace.RemoteRoot, relPath, remotepath.Read)
+	if err != nil {
+		return nil, translateSSHError(err)
+	}
+	absPath := resolved.IO
 	result, err := session.runner.Run(ctx, BuildListDirCommand(dialect, absPath), DefaultCommandLimit)
 	if err != nil {
 		return nil, translateSSHError(err)
@@ -174,7 +183,11 @@ func (session *Session) ReadFile(ctx context.Context, relPath string, maxBytes i
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	absPath := JoinRemotePath(dialect, session.workspace.RemoteRoot, relPath)
+	resolved, err := remotepath.Resolve(ctx, session.runner, dialect, session.workspace.RemoteRoot, relPath, remotepath.Read)
+	if err != nil {
+		return nil, 0, 0, translateSSHError(err)
+	}
+	absPath := resolved.IO
 	limit := int((maxBytes*4)/3) + 1024
 	if maxBytes <= 0 || limit < DefaultCommandLimit {
 		limit = DefaultCommandLimit
@@ -216,6 +229,19 @@ func classifyExecFailure(result sshremote.Result, absPath string) error {
 }
 
 func translateSSHError(err error) error {
+	var pathErr *remotepath.Error
+	if errors.As(err, &pathErr) {
+		status := http.StatusBadGateway
+		switch pathErr.Code {
+		case "not_found":
+			status = http.StatusNotFound
+		case "invalid_path":
+			status = http.StatusBadRequest
+		case "path_outside_workspace", "permission_denied":
+			status = http.StatusForbidden
+		}
+		return &RemoteError{Status: status, Code: pathErr.Code, Message: pathErr.Error()}
+	}
 	var remoteErr *RemoteError
 	if errors.As(err, &remoteErr) && remoteErr != nil {
 		return remoteErr

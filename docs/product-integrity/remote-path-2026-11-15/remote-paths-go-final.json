@@ -1,0 +1,188 @@
+[
+  {
+    "phase": "outside-directory-read",
+    "result": {
+      "content": [
+        {
+          "text": "[path_outside_workspace] 远端工作区路径校验失败: path_outside_workspace",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "phase": "outside-leaf-read",
+    "result": {
+      "content": [
+        {
+          "text": "[path_outside_workspace] 远端工作区路径校验失败: path_outside_workspace",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "phase": "outside-directory-list",
+    "result": {
+      "content": [
+        {
+          "text": "[path_outside_workspace] 远端工作区路径校验失败: path_outside_workspace",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "phase": "outside-new-write",
+    "result": {
+      "content": [
+        {
+          "text": "[path_outside_workspace] 远端工作区路径校验失败: path_outside_workspace",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "phase": "dangling-outside-write",
+    "result": {
+      "content": [
+        {
+          "text": "[path_resolution_failed] 远端工作区路径校验失败: path_resolution_failed",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "phase": "inside-directory-read",
+    "result": {
+      "content": [
+        {
+          "text": "version: 77f9022c0ae3cd1ffdba18d7bbad9164\nlines: 1-2 / 2\n     1\tINSIDE_SENTINEL\n     2\t",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "inside-leaf-read",
+    "result": {
+      "content": [
+        {
+          "text": "version: 77f9022c0ae3cd1ffdba18d7bbad9164\nlines: 1-2 / 2\n     1\tINSIDE_SENTINEL\n     2\t",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "inside-new-write",
+    "result": {
+      "content": [
+        {
+          "text": "已写入 inside-dir/new/child ' \n.txt（version: 41a830e2eda0c27eb2fe93eb519f0fdb）",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "inside-leaf-edit",
+    "result": {
+      "content": [
+        {
+          "text": "已修改 inside-leaf（替换 1 处，version: 39176a89be56f04d67d92168d200728d）",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "leafStillLink": false,
+    "phase": "leaf-replace-semantics",
+    "referent": "INSIDE_SENTINEL\n"
+  },
+  {
+    "phase": "link-loop-read",
+    "result": {
+      "content": [
+        {
+          "text": "[path_resolution_failed] 远端工作区路径校验失败: path_resolution_failed",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "phase": "root-list-links",
+    "result": {
+      "content": [
+        {
+          "text": ".（7 项）\nd        128  inner/\nl        118  dangling\nl        110  escape\nl          5  inside-dir\n-         16  inside-leaf\nl          4  loop\nl        121  outside-leaf",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "workspace-search",
+    "result": {
+      "content": [
+        {
+          "text": "2 处匹配\ninner/file.txt:1:INSIDE_SENTINEL\ninside-leaf:1:EDITED_SENTINEL",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "content": "",
+    "error": "远端工作区路径校验失败: path_outside_workspace",
+    "path": "escape/secret.txt",
+    "phase": "webui-read"
+  },
+  {
+    "content": "INSIDE_SENTINEL\n",
+    "error": "",
+    "path": "inside-dir/file.txt",
+    "phase": "webui-read"
+  },
+  {
+    "phase": "root-alias-read",
+    "result": {
+      "content": [
+        {
+          "text": "version: 77f9022c0ae3cd1ffdba18d7bbad9164\nlines: 1-2 / 2\n     1\tINSIDE_SENTINEL\n     2\t",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "phase": "whitespace-root-link-read",
+    "result": {
+      "content": [
+        {
+          "text": "version: b3ffdf0d187df0405d4e4c62add7e091\nlines: 1-2 / 2\n     1\tSPACE_ROOT_OK\n     2\t",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "error": "远端工作区路径校验失败: workspace_root_changed",
+    "phase": "observed-root-rebind"
+  },
+  {
+    "newCreated": false,
+    "original": "OUTSIDE_SENTINEL\n",
+    "phase": "outside-disk"
+  }
+]

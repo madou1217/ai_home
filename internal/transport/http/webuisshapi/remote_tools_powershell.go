@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/madou1217/ai_home/internal/adapters/remotepath"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 )
 
@@ -38,8 +39,7 @@ func psQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-func (host *remoteToolHost) windowsReadContent(ctx context.Context, rel string) ([]byte, string, error) {
-	abs := host.abs(rel)
+func (host *remoteToolHost) windowsReadContent(ctx context.Context, abs string) ([]byte, string, error) {
 	script := "$ErrorActionPreference='Stop';$p=" + psQuote(abs) + ";if(-not(Test-Path -LiteralPath $p)){exit 3};" +
 		"$f=[IO.File]::OpenRead($p);try{$b=New-Object byte[] " + strconv.Itoa(remoteReadMaxBytes+1) + ";" +
 		"$n=0;while($n -lt $b.Length){$r=$f.Read($b,$n,$b.Length-$n);if($r -eq 0){break};$n+=$r};" +
@@ -64,8 +64,7 @@ func (host *remoteToolHost) windowsReadContent(ctx context.Context, rel string) 
 	return completeRemoteFile(decoded, false)
 }
 
-func (host *remoteToolHost) windowsWriteContent(ctx context.Context, rel string, content []byte) error {
-	abs := host.abs(rel)
+func (host *remoteToolHost) windowsWriteContent(ctx context.Context, abs string, content []byte) error {
 	script := "$p=" + psQuote(abs) + ";$d=Split-Path -Parent $p;" +
 		"if($d -and -not (Test-Path -LiteralPath $d)){New-Item -ItemType Directory -Force -Path $d|Out-Null};" +
 		"$s=[Console]::In.ReadToEnd();" +
@@ -81,8 +80,7 @@ func (host *remoteToolHost) windowsWriteContent(ctx context.Context, rel string,
 	return nil
 }
 
-func (host *remoteToolHost) windowsListRaw(ctx context.Context, rel string) ([]byte, error) {
-	abs := host.abs(rel)
+func (host *remoteToolHost) windowsListRaw(ctx context.Context, abs string) ([]byte, error) {
 	script := "if(-not (Test-Path -LiteralPath " + psQuote(abs) + ")){exit 3};" +
 		"$items=Get-ChildItem -LiteralPath " + psQuote(abs) + " -Force -ErrorAction Stop;" +
 		"foreach($i in $items){$t=if($i.PSIsContainer){'d'}elseif($i.LinkType){'l'}else{'-'};" +
@@ -102,11 +100,15 @@ func (host *remoteToolHost) windowsListRaw(ctx context.Context, rel string) ([]b
 }
 
 func (host *remoteToolHost) windowsSearchRaw(ctx context.Context, pattern string, maxResults int) ([]byte, error) {
-	abs := host.root
-	script := "$r=Get-ChildItem -LiteralPath " + psQuote(abs) + " -Recurse -File -Force -ErrorAction SilentlyContinue | " +
-		"Select-String -Pattern " + psQuote(pattern) + " | Select-Object -First " + strconv.Itoa(maxResults) + ";" +
-		"foreach($m in $r){[Console]::Out.WriteLine($m.Path+':'+$m.LineNumber+':'+$m.Line)}"
-	return host.runPowerShell(ctx, script, 4*1024*1024)
+	command := remotepath.PowerShellSearch(host.root, pattern, maxResults, false, false)
+	result, err := host.client.Run(ctx, command, 4*1024*1024)
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("搜索远端失败: %s", strings.TrimSpace(string(result.Stderr)))
+	}
+	return result.Stdout, nil
 }
 
 func (host *remoteToolHost) windowsRun(ctx context.Context, command string, timeoutMS int) (sshremote.Result, error) {

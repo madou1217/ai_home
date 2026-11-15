@@ -1,0 +1,12 @@
+{
+  "first": {
+    "code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "second": {
+    "code": 0,
+    "stdout": "./a.txt:1:FIND_SAFE\n",
+    "stderr": ""
+  }
+}

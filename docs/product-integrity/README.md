@@ -133,3 +133,7 @@ SFTP主路径追加独占临时写（wx）并把初次write放入cleanup范围�
 - Node remote-tools 直连 MCP→隔离配置→真实连接池→自有 OpenSSH 已验收 required string version、new-only、过期版本与 edit。Go 先前实测保留，未重复宣称为新验证。HTTP forwarding 仍只有源码门禁证据。
 - 新发现并真实复现 Go 超过 512 KiB 文件的静默截断版本导致 edit 丢尾：修复后超限明确 file_too_large，524,317/524,289 字节保持原样，524,288 字节仍可编辑，小文件链路回归通过。源码/临时构件已验收，**未部署共享 server**。详见 `remote-tools-version-2026-11-15.md` 与 large-file JSON。
 - 未关闭：G03 外部 writer 原子 CAS、G04 symlink/root containment、G06 manifest/restore 一致性、真实 OAuth/re-key、Windows运行矩阵、真实管理页面/Edge、全功能叶子复核和M5长运行。原Goal保持active；局部修复不代表全部完成。
+
+### G04 继续：远端真实路径边界（2026-11-15）
+
+Go/Node 在自有隔离 OpenSSH 真实复现外链读写越出 workspace；已用共享脚本合同和 remotepath adapter 接入 Go tools、Go WebUI 文件读及 Node exec/SFTP。外链拒绝，内部/root link保留，root绑定贯穿edit和retry，literal/空白路径/SFTP代次实际验证，证据见 `remote-path-2026-11-15.md`。这是 observed-path containment，不是原子sandbox；Windows实际运行、TOCTOU、全目录/搜索特殊名称显示与WAN性能仍开放。未重启/更新共享服务，原Goal不缩减。

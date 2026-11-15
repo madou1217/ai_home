@@ -57,6 +57,7 @@ No second writer attached to an original thread or the production database.
 | Original affected native Codex thread via `exec fork --ephemeral`, read-only, actual slow upload | 39.54 s first upload; compaction and next request both 200 / `response.completed`; `BODY_RECOVERY_OK`; `turn.completed`; exit 0; original rollout unchanged |
 | Stalled upload with large unread tail | 30.00 s, 408 `request_timeout`, connection close, no decode-handback |
 | Stalled upload with only final 8 KiB unread | 30.02 s, 408; no cleanup/drain hang |
+| Continuous upload every 4 seconds beyond fixed total budget | 300.01 s, 408; no decode-handback; total deadline did not slide |
 | Chunked 32 MiB + 1 byte, no terminating chunk | 0.12 s, 413 |
 | Declared oversize without sending body | Immediate 413 |
 | Malformed JSON | Immediate 400 |

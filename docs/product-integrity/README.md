@@ -137,3 +137,7 @@ SFTP主路径追加独占临时写（wx）并把初次write放入cleanup范围�
 ### G04 继续：远端真实路径边界（2026-11-15）
 
 Go/Node 在自有隔离 OpenSSH 真实复现外链读写越出 workspace；已用共享脚本合同和 remotepath adapter 接入 Go tools、Go WebUI 文件读及 Node exec/SFTP。外链拒绝，内部/root link保留，root绑定贯穿edit和retry，literal/空白路径/SFTP代次实际验证，证据见 `remote-path-2026-11-15.md`。这是 observed-path containment，不是原子sandbox；Windows实际运行、TOCTOU、全目录/搜索特殊名称显示与WAN性能仍开放。未重启/更新共享服务，原Goal不缩减。
+
+### G06 首个保护检查点：恢复前完整校验
+
+真实策略/SSH复现“旧manifest不变但对象已被新内容覆盖”以及“对象换accountRef仍dry-run成功”。已给现有v1 restore增加原始bytes/UTF8/单账号schema/provider/ref/record hash全批预检；missing/corrupt不调用importer，CLI逐ref显示原因，importer invalid/failed不再报总成功。见 `backup-restore-integrity-2026-11-15.md/json`。对象不可变与v2命名空间发布、skipped/tombstone、多writer、旧版互读仍待继续，不能把拒绝损坏恢复算作完整备份一致性完成。

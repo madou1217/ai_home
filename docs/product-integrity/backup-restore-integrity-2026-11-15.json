@@ -1,0 +1,236 @@
+{
+  "boundary": "Actual Node backup/restore service and CLI over own OpenSSH; all account records use synthetic DISPLAY_ONLY_VALUE, no user credentials exported/imported; negative nondry restore used empty isolated local home.",
+  "before": [
+    {
+      "phase": "interrupted-before-manifest",
+      "manifestUnchanged": true,
+      "manifestSHA": "e6ef4769e0c2e5289caf124730ec481e9f0f18c59d64d89b1aac20969232c577",
+      "objectHasNew": true
+    },
+    {
+      "phase": "tampered-object-restore-dry-run",
+      "result": {
+        "ok": true,
+        "targetId": "isolated-g06",
+        "summary": {
+          "total": 1,
+          "created": 0,
+          "updated": 0,
+          "unchanged": 0,
+          "invalid": 0,
+          "failed": 0
+        },
+        "accounts": [
+          {
+            "provider": "codex",
+            "sourceRef": "acct_00000000000000000002",
+            "status": "planned"
+          }
+        ],
+        "missing": [],
+        "revision": 1,
+        "dryRun": true
+      }
+    }
+  ],
+  "after": [
+    {
+      "phase": "valid",
+      "result": {
+        "ok": true,
+        "targetId": "isolated-g06",
+        "summary": {
+          "total": 1,
+          "created": 0,
+          "updated": 0,
+          "unchanged": 0,
+          "invalid": 0,
+          "failed": 0
+        },
+        "accounts": [
+          {
+            "provider": "codex",
+            "sourceRef": "acct_00000000000000000001",
+            "status": "planned"
+          }
+        ],
+        "missing": [],
+        "revision": 1,
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "same-size-hash-mismatch",
+      "result": {
+        "ok": false,
+        "error": "backup_integrity_failed",
+        "targetId": "isolated-g06",
+        "missing": [],
+        "corrupt": [
+          {
+            "accountRef": "acct_00000000000000000001",
+            "error": "backup_object_hash_mismatch"
+          }
+        ],
+        "revision": 1,
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "same-size-ref-mismatch",
+      "result": {
+        "ok": false,
+        "error": "backup_integrity_failed",
+        "targetId": "isolated-g06",
+        "missing": [],
+        "corrupt": [
+          {
+            "accountRef": "acct_00000000000000000001",
+            "error": "backup_object_identity_mismatch"
+          }
+        ],
+        "revision": 1,
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "size-mismatch",
+      "result": {
+        "ok": false,
+        "error": "backup_integrity_failed",
+        "targetId": "isolated-g06",
+        "missing": [],
+        "corrupt": [
+          {
+            "accountRef": "acct_00000000000000000001",
+            "error": "backup_object_bytes_mismatch"
+          }
+        ],
+        "revision": 1,
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "invalid-entry-not-skipped",
+      "result": {
+        "ok": false,
+        "error": "backup_manifest_invalid",
+        "targetId": "isolated-g06",
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "missing-prevents-nondry-import",
+      "result": {
+        "ok": false,
+        "error": "backup_integrity_failed",
+        "targetId": "isolated-g06",
+        "missing": [
+          "acct_00000000000000000001"
+        ],
+        "corrupt": [],
+        "revision": 1,
+        "dryRun": false
+      }
+    },
+    {
+      "phase": "isolated-local-state",
+      "files": []
+    }
+  ],
+  "cli_and_decode": [
+    {
+      "phase": "actual-cli-corrupt",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "\u001b[31m[aih]\u001b[0m 恢复失败：backup_integrity_failed\n  acct_00000000000000000003: backup_object_hash_mismatch\n"
+    },
+    {
+      "phase": "integrity-valid-importer-invalid",
+      "result": {
+        "ok": false,
+        "error": "backup_import_incomplete",
+        "targetId": "isolated-g06",
+        "summary": {
+          "total": 1,
+          "created": 0,
+          "updated": 0,
+          "unchanged": 0,
+          "invalid": 1,
+          "failed": 0
+        },
+        "accounts": [
+          {
+            "provider": "unknownprovider",
+            "sourceRef": "acct_00000000000000000003",
+            "status": "invalid",
+            "reason": "unsupported_provider"
+          }
+        ],
+        "missing": [],
+        "revision": 1,
+        "dryRun": true
+      }
+    },
+    {
+      "phase": "malformed-utf8-raw-read",
+      "result": {
+        "ok": false,
+        "error": "backup_integrity_failed",
+        "targetId": "isolated-g06",
+        "missing": [],
+        "corrupt": [
+          {
+            "accountRef": "acct_00000000000000000003",
+            "error": "backup_object_invalid"
+          }
+        ],
+        "revision": 1,
+        "dryRun": true
+      }
+    }
+  ],
+  "go_node_legacy_unicode": {
+    "before": {
+      "result": {
+        "ok": false,
+        "error": "backup_integrity_failed",
+        "targetId": "g06-cross",
+        "missing": [],
+        "corrupt": [
+          {
+            "accountRef": "acct_00000000000000000004",
+            "error": "backup_object_hash_mismatch"
+          }
+        ],
+        "revision": 1,
+        "dryRun": true
+      },
+      "goHash": "5f3745f5ff9c526363ef51c516e1e9d79f0475b8b6806b3f1dbda021453bcd54",
+      "nodeHash": "bf4a8a298dff072e0fa85e4b975ca7cd4440b4314765f3c8b3b0676ca02118d1"
+    },
+    "after": {
+      "ok": true,
+      "targetId": "g06-cross",
+      "summary": {
+        "total": 1,
+        "created": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "invalid": 0,
+        "failed": 0
+      },
+      "accounts": [
+        {
+          "provider": "codex",
+          "sourceRef": "acct_00000000000000000004",
+          "status": "planned"
+        }
+      ],
+      "missing": [],
+      "revision": 1,
+      "dryRun": true
+    },
+    "boundary": "Real Go planner+serializer and SSH strategy produced legacy v1 with U+2028/U+2029/Chinese/HTML text; actual Node restore dry-run. Exact historical Go escaping accepted; other legacy numeric/key-order differences remain unverified."
+  }
+}

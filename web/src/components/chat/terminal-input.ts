@@ -1,8 +1,19 @@
+interface TerminalInputChunk { data: string; protocol: boolean }
+
 export interface TerminalInputState {
   termId: string;
-  inputBuf: string;
+  inputQueue: TerminalInputChunk[];
   sending: boolean;
   inputReady: boolean;
+  attachmentVersion?: number;
+}
+
+export function enqueueTerminalInput(state: TerminalInputState, data: string, protocol = false) {
+  if (data) state.inputQueue.push({ data, protocol });
+}
+
+export function discardTerminalProtocolInput(state: TerminalInputState) {
+  state.inputQueue = state.inputQueue.filter((chunk) => !chunk.protocol);
 }
 
 // Only one write may be in flight per terminal. A definite 404 means the
@@ -17,15 +28,19 @@ export async function flushTerminalInput(
   if (state.sending || !state.termId || !state.inputReady) return;
   state.sending = true;
   try {
-    while (state.inputBuf && state.inputReady && state.termId) {
-      const chunk = state.inputBuf;
+    while (state.inputQueue.length && state.inputReady && state.termId) {
+      const chunks = state.inputQueue;
       const target = state.termId;
-      state.inputBuf = '';
+      const version = state.attachmentVersion;
+      state.inputQueue = [];
       let result: { ok: boolean; error?: string };
-      try { result = await send(target, chunk); } catch { result = { ok: false }; }
+      try { result = await send(target, chunks.map((chunk) => chunk.data).join('')); } catch { result = { ok: false }; }
       if (result.ok) continue;
       if (result.error === 'terminal_not_found') {
-        state.inputBuf = chunk + state.inputBuf;
+        // A missing client never received user input. Capability replies belong
+        // to that client only and must not be replayed into its replacement.
+        state.inputQueue = [...chunks.filter((chunk) => !chunk.protocol), ...state.inputQueue];
+        if (state.termId !== target || state.attachmentVersion !== version) continue;
         state.inputReady = false;
         onMissing();
       } else {
@@ -35,7 +50,7 @@ export async function flushTerminalInput(
     }
   } finally {
     state.sending = false;
-    if (state.inputBuf && state.inputReady) void flushTerminalInput(state, send, onMissing, onUncertain);
+    if (state.inputQueue.length && state.inputReady) void flushTerminalInput(state, send, onMissing, onUncertain);
   }
 }
 

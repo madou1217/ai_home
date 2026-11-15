@@ -2,12 +2,13 @@ package terminalsession
 
 import "regexp"
 
-// replayQueryPatterns 与 Node lib/server/terminal-replay.js 保持一致。
 // tmux 外层客户端缓存的能力查询在重连时已经过期，回放出去会被 shell 当成输入；
 // 直连 PTY 仍在等待首个浏览器回应，因此只在 durable 会话上剥离。
 var replayQueryPatterns = []*regexp.Regexp{
 	regexp.MustCompile("\x1b\\[[?>]?[0-9;]*c"),
 	regexp.MustCompile("\x1b\\[\\??(?:5|6|15|25|26|53|55|56|62|63|75|85|996)n"),
+	// DECRQM（含 tmux 的同步输出模式 ?2026）不能在历史回放时再次应答。
+	regexp.MustCompile("\x1b\\[\\??[0-9;]+\\$p"),
 	regexp.MustCompile("\x1b\\[(?:14|16|18|19|20|21)t"),
 	regexp.MustCompile("\x1b\\[>q"),
 	regexp.MustCompile("\x1b\\](?:10|11|12);\\?(?:\x07|\x1b\\\\)"),

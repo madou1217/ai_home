@@ -321,3 +321,11 @@ reviewer thread limit/原代理工具400，peer已读无结论，按AGENTS显式
 W1 exec intent最终独立复审Hubble在23:17:53确认本范围无remaining must-fix；最终Close等待Done、Windows taskkill status/error+立即诊断已源码关闭。真实Windows生产helper实际回收parent+child989ms，不存在PID显式失败；hash/noPIDs/私有目录清理与existing task state4未变均确认。全量build/focused vet/JS语法通过，准备本owner18路径窄checkpoint，不夹带并行逆diff。
 
 W1 exec交付检查发现标准server未含private command，因此新增resolver标准能力优先、无显式override才允许同目录companion；exclusive创建ignored aih-codex-exec-intent，不替换标准server/CLI、不重启共享服务。无任何binary override的实际Node公共launcher再验收same-thread/default成功3生成3usage，重复lease拒绝；显式old binary失败关闭。标准Go CLI仍需后续协调重建，不能将tmp构件成功称全量已加载。
+
+## 2026-11-16 标准CLI交付与Windows真实exec矩阵
+
+canonical buildGoCLIPlan构建，769真实依赖文件与e3266101c committed blob一致且构建前后hash稳定；核对目标oldhash/inode无并行变化后原子发布标准aih-go，旧构件私有保留。标准路径实际fast off/UUID/profile/explicit/last矩阵5成功生成5usage；不再只以/tmp构件宣称CLI可用，standard server未替换/未重启。
+
+Windows官方0.163.0真实新建、同thread managed resume、last+stdin、fast profile、explicit default覆盖通过；首次生成失败后，观察到原私有SSH forward进程已不在，换成live tool handle后沿原thread重试，失败记录不计通过。真实上游6生成尝试5成功5usage，缺终态用量不等于免费。两端私有目录/DB clone/进程/relay与一次性key文件清理，已有Windows task state4未变。详见 `2026-11-16-standard-cli-windows-native-acceptance.md`。Linux官方客户端/OAuth/Desktop/Edge及全W0-W6仍未关闭。
+
+Node宿主guard incident由peer独立负责，我未改相关路径；Go ready200和/ui后来200仅读态观察，不宣称浏览器业务已验收。各自范围/显式pathspec提交规则持续遵守。

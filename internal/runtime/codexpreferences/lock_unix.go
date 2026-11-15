@@ -14,3 +14,5 @@ func lockExclusive(file *os.File) error {
 func unlockExclusive(file *os.File) {
 	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 }
+
+func publishNewConfig(source, target string) error { return os.Link(source, target) }

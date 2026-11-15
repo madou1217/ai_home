@@ -10,6 +10,9 @@ import (
 
 // runCodexEffort updates native preferences, not the prompt sent to the model.
 func runCodexEffort(arguments []string, runtime commandRuntime) error {
+	if len(arguments) == 2 && arguments[0] == "--replace-config" {
+		return runCodexConfigEdit(arguments[1], runtime)
+	}
 	normalized := make([]string, len(arguments))
 	for i, arg := range arguments {
 		normalized[i] = strings.ToLower(strings.TrimSpace(arg))

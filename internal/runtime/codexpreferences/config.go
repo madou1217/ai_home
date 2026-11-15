@@ -40,29 +40,35 @@ func Read(home string) (Snapshot, error) {
 // Update serializes AIH preference writers and detects intervening external edits.
 // The native config's symlink, unrelated text and existing permission bits are preserved.
 func Update(home, key, value string) (Snapshot, error) {
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		return Snapshot{}, err
-	}
-	target, err := resolveTarget(home)
+	return updateDocument(home, func(current string) (string, error) { return codexconfig.PatchPreference(current, key, value) })
+}
+
+// ReplaceDocument is the cooperating Node config-healer publication port. The
+// original snapshot must still match after taking the shared Go advisory lock.
+func ReplaceDocument(home, expected, next string) error {
+	_, err := updateDocument(home, func(current string) (string, error) {
+		if current != expected {
+			return "", fmt.Errorf("codex_config_changed_retry")
+		}
+		return next, nil
+	})
+	return err
+}
+
+func updateDocument(home string, transform func(string) (string, error)) (Snapshot, error) {
+	target, release, err := AcquireHostLock(home)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	// A stable sidecar inode is necessary: locking config.toml itself would lose
-	// mutual exclusion when the file is replaced by rename. Never unlink this lock.
-	lock, err := os.OpenFile(target+".aih-preferences.lock", os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
+	defer release()
+	if err := CheckHostReady(home); err != nil {
 		return Snapshot{}, err
 	}
-	defer lock.Close()
-	if err := lockExclusive(lock); err != nil {
-		return Snapshot{}, fmt.Errorf("Codex 配置正由其它进程修改，请重试: %w", err)
-	}
-	defer unlockExclusive(lock)
 	doc, err := readDocument(target)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	patched, err := codexconfig.PatchPreference(string(doc.content), key, value)
+	patched, err := transform(string(doc.content))
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -76,7 +82,12 @@ func Update(home, key, value string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	defer os.Remove(temp.Name())
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(temp.Name())
+		}
+	}()
 	defer temp.Close()
 	mode := os.FileMode(0o600)
 	if doc.info != nil {
@@ -107,8 +118,16 @@ func Update(home, key, value string) (Snapshot, error) {
 	if !bytes.Equal(latest.content, doc.content) || !sameDocument(doc, latest) {
 		return Snapshot{}, fmt.Errorf("Codex 配置已被其它进程修改，请重试")
 	}
-	if err := os.Rename(temp.Name(), target); err != nil {
-		return Snapshot{}, err
+	if doc.info == nil {
+		if err := publishNewConfig(temp.Name(), target); err != nil {
+			return Snapshot{}, err
+		}
+	} else {
+		preserve, err := replaceExistingConfig(temp.Name(), target, doc, []byte(patched))
+		cleanup = !preserve
+		if err != nil {
+			return Snapshot{}, err
+		}
 	}
 	return snapshot(target, []byte(patched)), nil
 }
@@ -174,4 +193,25 @@ func validate(content string) error {
 
 func snapshot(target string, content []byte) Snapshot {
 	return Snapshot{Path: target, Effort: codexconfig.RootString(string(content), "model_reasoning_effort"), Tier: codexconfig.RootString(string(content), "service_tier")}
+}
+
+// AcquireHostLock shares the preference writer's lock with host default changes.
+// release must be called; this never modifies config content or removes lock inodes.
+func AcquireHostLock(home string) (target string, release func(), err error) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return "", nil, err
+	}
+	target, err = resolveTarget(home)
+	if err != nil {
+		return "", nil, err
+	}
+	lock, err := os.OpenFile(target+".aih-preferences.lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := lockExclusive(lock); err != nil {
+		lock.Close()
+		return "", nil, fmt.Errorf("Codex 配置正由其它进程修改，请重试")
+	}
+	return target, func() { unlockExclusive(lock); _ = lock.Close() }, nil
 }

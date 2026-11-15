@@ -343,7 +343,7 @@ func (adapter *Adapter) executeJSONResponse(
 		if classifyErr != nil {
 			return inferencegateway.AttemptResult{}, classifyErr
 		}
-		return inferencegateway.FailedAttempt(failure), nil
+		return inferencegateway.FailedAttempt(failure.WithResponseMetadata(observedFailureMetadata(payload))), nil
 	}
 	if !errors.Is(observeErr, sharedfailure.ErrNoFailureEvidence) {
 		return malformedAttempt()
@@ -473,7 +473,7 @@ func (adapter *Adapter) observeSSEFailure(
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}
-	return inferencegateway.FailedAttempt(failure), nil
+	return inferencegateway.FailedAttempt(failure.WithResponseMetadata(observedFailureMetadata(event.data))), nil
 }
 
 // readBoundedJSON 完整读取单个 JSON 值并拒绝超限正文。

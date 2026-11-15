@@ -68,8 +68,9 @@ type eventPosition struct {
 // ResponseStartedEvent 是响应生命周期的第一个 Canonical 事件。
 type ResponseStartedEvent struct {
 	eventBase
-	responseID string
-	model      string
+	responseMetadata ResponseMetadata
+	responseID       string
+	model            string
 }
 
 // NewResponseStartedEvent 创建拥有明确响应 ID 和模型的开始事件。
@@ -976,8 +977,9 @@ func (reason StopReason) IsValid() bool {
 // ResponseCompletedEvent 表示收到 Provider 的明确成功终态。
 type ResponseCompletedEvent struct {
 	eventBase
-	stopReason   StopReason
-	stopSequence string
+	responseMetadata ResponseMetadata
+	stopReason       StopReason
+	stopSequence     string
 	// refusalCategory 是内容被拒绝时 Provider 给出的稳定类别标识。
 	//
 	// 它只在 StopReasonContentFilter 下合法，与 stopSequence 只在
@@ -1118,7 +1120,8 @@ func (failure ResponseFailure) IsValid() bool {
 // ResponseFailedEvent 是响应明确失败或提前断流的终态事件。
 type ResponseFailedEvent struct {
 	eventBase
-	failure ResponseFailure
+	responseMetadata ResponseMetadata
+	failure          ResponseFailure
 }
 
 // NewResponseFailedEvent 创建只有低敏分类信息的失败终态。

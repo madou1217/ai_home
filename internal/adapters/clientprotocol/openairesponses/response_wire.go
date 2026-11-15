@@ -32,6 +32,8 @@ type responseWireDTO struct {
 	Metadata json.RawMessage `json:"metadata"`
 	// Model 是上游确认使用的真实模型。
 	Model string `json:"model"`
+	// ServiceTier is observed upstream, not echoed from the request.
+	ServiceTier *string `json:"service_tier,omitempty"`
 	// Output 是按 output_index 排列的完整输出项。
 	Output []json.RawMessage `json:"output"`
 	// Usage 是完成终态的累计 token。
@@ -420,6 +422,9 @@ func (state *responseState) buildResponseWireWithOutputCount(
 		Text:               textConfig,
 		ToolChoice:         toolChoice,
 		Tools:              tools,
+	}
+	if tier, found := state.responseMetadata.ServiceTier(); found {
+		response.ServiceTier = &tier
 	}
 	// incomplete 与 completed 共享同一套输出与 usage，仅多一个截断原因；
 	// 客户端据此判断是否应把输出当成最终答案。

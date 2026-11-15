@@ -253,3 +253,11 @@ W2 的多实例安全/状态代码具备提交证据；W2 全平台、安装/升
 详见 `2026-11-15-codex-default-platform-acceptance.md`。真实Windows/Linux均通过effort配置保留、gateway default、网关key来源隔离、journal出现后终止CLI与显式重试恢复；Windows journal以protected DACL验证且原生Codex0.163.0 config/read通过。两个主机只操作本次临时目录，进程/目录均清理，已有任务/服务未改变。共享9527未重启。
 
 这只补齐W2/W3相应平台子项，不宣称OAuth、Desktop、原生推理、UI或全计划已完成；Linux无官方Codex，相关原生验收仍缺。共享索引反向diff依然由快照owner协调，本会话继续单次独立索引精确提交。
+
+## 2026-11-15 W1：真实最终档位回传
+
+真实 Canonical 别名请求确认：`none` 已对齐 `low`，`priority` 已送达上游；上游最终返回 `default`，但客户端 JSON 原先丢失 `service_tier`。补齐可选 Canonical 响应元数据及 JSON/SSE 共用 renderer，终态只使用自己的上游快照，不继承 created 的 `auto`、不回填请求的 `priority`。失败元数据沿原有分类/Coordinator链传递，不改变重试、可见性和记账决策。
+
+修复后真实 JSON/SSE 均 200 且完整回传 `default`，每轮一次上游POST、一条usage（11入/5出/16总）。真实流首个文本增量后受控断连，客户端failed档位缺省，上游仅一次POST、无重放、无新usage；未收到终态用量不等于上游免费。`go build ./...`通过。详见 `2026-11-15-codex-response-tier-acceptance.md` 的构件hash、命令和边界。
+
+全部在权限受限数据库副本/独立端口执行，临时资源已清理；共享9527未重启、新构件未发布。WS/resume/fork等完整矩阵、OAuth、真实页面和全W0–W6仍未关闭。原W3 reviewer源码复核关闭旧五项，同时发现Windows两次rename之间与Unix安全回滚重入两个恢复边界；交原代理窄修，不能以此前平台成功记录覆盖这些新发现。

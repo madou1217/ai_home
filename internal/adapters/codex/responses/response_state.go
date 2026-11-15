@@ -174,7 +174,11 @@ func (decoder *responseDecoder) startResponse(response responseDTO) error {
 	if err != nil {
 		return ErrInvalidUpstreamResponse
 	}
-	if err := decoder.emitEvent(event); err != nil {
+	metadata, err := inference.NewResponseMetadata(response.ServiceTier)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
+	if err := decoder.emitEvent(event.WithResponseMetadata(metadata)); err != nil {
 		return err
 	}
 	decoder.responseID = response.ID
@@ -204,6 +208,10 @@ func (decoder *responseDecoder) completeResponse(
 	response responseDTO,
 	stopReason inference.StopReason,
 ) error {
+	metadata, err := inference.NewResponseMetadata(response.ServiceTier)
+	if err != nil {
+		return ErrInvalidUpstreamResponse
+	}
 	if err := decoder.ensureResponseIdentity(response); err != nil {
 		return err
 	}
@@ -246,7 +254,7 @@ func (decoder *responseDecoder) completeResponse(
 	if err != nil {
 		return ErrInvalidUpstreamResponse
 	}
-	if err := decoder.emitEvent(completed); err != nil {
+	if err := decoder.emitEvent(completed.WithResponseMetadata(metadata)); err != nil {
 		return err
 	}
 	decoder.terminal = true

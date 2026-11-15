@@ -136,6 +136,15 @@ func (stream *attemptStream) FailedWithDifferent(
 func (stream *attemptStream) EnsureFailure(
 	failure inference.ResponseFailure,
 ) error {
+	return stream.EnsureFailureWithMetadata(failure, inference.ResponseMetadata{})
+}
+
+// EnsureFailureWithMetadata preserves observed terminal metadata without
+// emitting early or changing visibility, retries, or accounting.
+func (stream *attemptStream) EnsureFailureWithMetadata(
+	failure inference.ResponseFailure,
+	metadata inference.ResponseMetadata,
+) error {
 	if stream == nil || !failure.IsValid() {
 		return ErrInvalidUpstreamEventStream
 	}
@@ -154,7 +163,7 @@ func (stream *attemptStream) EnsureFailure(
 	if err != nil {
 		return ErrInvalidUpstreamEventStream
 	}
-	stream.terminal = event
+	stream.terminal = event.WithResponseMetadata(metadata)
 	stream.hasSequence = true
 	stream.lastSequence = sequence
 	return nil

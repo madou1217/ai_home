@@ -143,6 +143,7 @@ func (invocation Invocation) CredentialObservation() accountcredentials.Credenti
 // AttemptFailure 同时保存客户端安全失败和运行态稳定分类。
 type AttemptFailure struct {
 	responseFailure                        inference.ResponseFailure
+	responseMetadata                       inference.ResponseMetadata
 	runtimeKind                            runtimecore.FailureKind
 	retryAfter                             time.Duration
 	blockDirective                         runtimecore.BlockDirective
@@ -153,6 +154,8 @@ type AttemptFailure struct {
 type AttemptFailureInput struct {
 	// ResponseFailure 是交给客户端 Renderer 的低敏失败。
 	ResponseFailure inference.ResponseFailure
+	// ResponseMetadata is the observed terminal snapshot, not error classification.
+	ResponseMetadata inference.ResponseMetadata
 	// RuntimeKind 是账号运行态识别的稳定失败类型。
 	RuntimeKind runtimecore.FailureKind
 	// RetryAfter 只允许用于有限时间自动恢复的模型 cooldown。
@@ -188,6 +191,7 @@ func NewAttemptFailure(
 	}
 	return AttemptFailure{
 		responseFailure:                        input.ResponseFailure,
+		responseMetadata:                       input.ResponseMetadata,
 		runtimeKind:                            input.RuntimeKind,
 		retryAfter:                             input.RetryAfter,
 		blockDirective:                         input.BlockDirective,
@@ -225,6 +229,7 @@ func (failure AttemptFailure) IsValid() bool {
 	restored, err := NewAttemptFailure(
 		AttemptFailureInput{
 			ResponseFailure:                        failure.responseFailure,
+			ResponseMetadata:                       failure.responseMetadata,
 			RuntimeKind:                            failure.runtimeKind,
 			RetryAfter:                             failure.retryAfter,
 			BlockDirective:                         failure.blockDirective,
@@ -243,8 +248,9 @@ func (failure AttemptFailure) forStaticSecret() AttemptFailure {
 		return failure
 	}
 	converted, err := NewAttemptFailure(AttemptFailureInput{
-		ResponseFailure: failure.responseFailure,
-		RuntimeKind:     runtimecore.FailureStaticCredentialRejected,
+		ResponseFailure:  failure.responseFailure,
+		ResponseMetadata: failure.responseMetadata,
+		RuntimeKind:      runtimecore.FailureStaticCredentialRejected,
 	})
 	if err != nil {
 		return failure

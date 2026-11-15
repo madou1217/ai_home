@@ -814,7 +814,7 @@ func (coordinator *Coordinator) failAttempt(
 		stream.FailedWithDifferent(failure.ResponseFailure()) {
 		return false, ErrInvalidUpstreamEventStream
 	}
-	if err := stream.EnsureFailure(failure.ResponseFailure()); err != nil {
+	if err := stream.EnsureFailureWithMetadata(failure.ResponseFailure(), failure.ResponseMetadata()); err != nil {
 		return false, err
 	}
 	if err := accountFailures.Record(

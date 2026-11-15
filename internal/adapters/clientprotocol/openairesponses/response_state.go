@@ -11,22 +11,23 @@ import (
 
 // responseState 是流式和非流式 Renderer 共享的唯一响应状态机。
 type responseState struct {
-	request         inference.Request
-	projection      responseProjection
-	createdAt       int64
-	completedAt     *int64
-	completionClock func() time.Time
-	started         bool
-	terminal        bool
-	completed       bool
-	responseID      string
-	model           string
-	lastSequence    uint64
-	items           []*outputItemState
-	itemIDs         map[string]struct{}
-	usage           inference.Usage
-	failure         inference.ResponseFailure
-	hasFailure      bool
+	request          inference.Request
+	projection       responseProjection
+	createdAt        int64
+	completedAt      *int64
+	completionClock  func() time.Time
+	started          bool
+	terminal         bool
+	completed        bool
+	responseID       string
+	model            string
+	responseMetadata inference.ResponseMetadata
+	lastSequence     uint64
+	items            []*outputItemState
+	itemIDs          map[string]struct{}
+	usage            inference.Usage
+	failure          inference.ResponseFailure
+	hasFailure       bool
 	// stopReason 决定终态渲染成 completed 还是 incomplete，必须留存。
 	stopReason inference.StopReason
 }
@@ -128,6 +129,7 @@ func (state *responseState) apply(event inference.StreamEvent) error {
 	case inference.ResponseCompletedEvent:
 		err = state.completeResponse(typed)
 	case inference.ResponseFailedEvent:
+		state.responseMetadata = typed.ResponseMetadata()
 		state.failure = typed.Failure()
 		state.hasFailure = true
 		state.terminal = true
@@ -177,6 +179,7 @@ func (state *responseState) start(event inference.ResponseStartedEvent) error {
 	state.started = true
 	state.responseID = event.ResponseID()
 	state.model = event.Model()
+	state.responseMetadata = event.ResponseMetadata()
 	state.lastSequence = event.Sequence()
 	return nil
 }
@@ -446,6 +449,7 @@ func (state *responseState) completeResponse(event inference.ResponseCompletedEv
 			return ErrInvalidEventSequence
 		}
 	}
+	state.responseMetadata = event.ResponseMetadata()
 	state.usage = event.Usage()
 	state.stopReason = event.StopReason()
 	status, _ := terminalStatusFor(state.stopReason)

@@ -152,6 +152,7 @@ type streamEventDTO struct {
 type responseDTO struct {
 	ID                string                `json:"id"`
 	Model             string                `json:"model"`
+	ServiceTier       *string               `json:"service_tier"`
 	Status            string                `json:"status"`
 	EndTurn           *bool                 `json:"end_turn"`
 	Output            []outputItemDTO       `json:"output"`

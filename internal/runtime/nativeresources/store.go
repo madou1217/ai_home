@@ -64,6 +64,7 @@ func requireCond(cond bool, code string) error {
 
 // MCPServerSpec 描述 MCP stdio 服务定义。
 type MCPServerSpec struct {
+	extra   map[string]json.RawMessage
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Cwd     string            `json:"cwd,omitempty"`
@@ -72,6 +73,7 @@ type MCPServerSpec struct {
 
 // ManagedRecord 描述 app_kv 中持久化的托管资源记录（plugin / skill / mcp）。
 type ManagedRecord struct {
+	extra         map[string]json.RawMessage
 	Kind          string         `json:"kind"`
 	ID            string         `json:"id"`
 	Provider      string         `json:"provider,omitempty"`
@@ -94,6 +96,7 @@ type ManagedRecord struct {
 
 // ManagedState 是存入 app_kv native-resources.managed.v1 的顶层结构。
 type ManagedState struct {
+	extra         map[string]json.RawMessage
 	SchemaVersion int             `json:"schemaVersion"`
 	Revision      int             `json:"revision"`
 	Resources     []ManagedRecord `json:"resources"`
@@ -124,20 +127,7 @@ func (s *managedStore) get(ctx context.Context) (ManagedState, error) {
 	if err != nil {
 		return emptyManagedState(), err
 	}
-	if !found || strings.TrimSpace(raw) == "" {
-		return emptyManagedState(), nil
-	}
-	var st ManagedState
-	if err := json.Unmarshal([]byte(raw), &st); err != nil {
-		return emptyManagedState(), err
-	}
-	if st.SchemaVersion == 0 {
-		st.SchemaVersion = 1
-	}
-	if st.Resources == nil {
-		st.Resources = []ManagedRecord{}
-	}
-	return st, nil
+	return decodeManagedState(raw, found)
 }
 
 func (s *managedStore) update(ctx context.Context, mutate func(state *ManagedState) (any, error)) (any, error) {
@@ -147,29 +137,43 @@ func (s *managedStore) update(ctx context.Context, mutate func(state *ManagedSta
 	}
 	var result any
 	err = appstate.UpdateKV(ctx, dbPath, managedStoreKVKey, func(current string, found bool) (string, error) {
-		st := emptyManagedState()
-		if found && strings.TrimSpace(current) != "" {
-			if decErr := json.Unmarshal([]byte(current), &st); decErr != nil {
-				st = emptyManagedState()
-			}
-			if st.SchemaVersion == 0 {
-				st.SchemaVersion = 1
-			}
-			if st.Resources == nil {
-				st.Resources = []ManagedRecord{}
-			}
+		st, err := decodeManagedState(current, found)
+		if err != nil {
+			return "", err
 		}
-		prevBytes, _ := json.Marshal(st)
+		prevBytes, err := json.Marshal(st)
+		if err != nil {
+			return "", fail("managed_resource_state_invalid")
+		}
+
+		if st.Revision >= 9007199254740991 {
+			return "", fail("managed_resource_revision_exhausted")
+		}
 		res, mutErr := mutate(&st)
 		if mutErr != nil {
 			return "", mutErr
 		}
-		nextBytes, _ := json.Marshal(st)
+		nextBytes, err := json.Marshal(st)
+		if err != nil {
+			return "", fail("managed_resource_state_invalid")
+		}
 		if !reflect.DeepEqual(prevBytes, nextBytes) {
+			if st.Revision >= 9007199254740991 {
+				return "", fail("managed_resource_revision_exhausted")
+			}
 			st.Revision++
-			nextBytes, _ = json.Marshal(st)
+			nextBytes, err = json.Marshal(st)
+			if err != nil {
+				return "", fail("managed_resource_state_invalid")
+			}
+		}
+		if _, err = decodeManagedState(string(nextBytes), true); err != nil {
+			return "", err
 		}
 		result = res
+		if found && reflect.DeepEqual(prevBytes, nextBytes) {
+			return current, nil
+		}
 		return string(nextBytes), nil
 	})
 	if err != nil {

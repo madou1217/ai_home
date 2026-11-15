@@ -1938,10 +1938,10 @@ func (m *nativePluginManager) install(ctx context.Context, source, provider, hos
 	if err := adapter.validate(pkg); err != nil {
 		return PluginOperateResult{}, err
 	}
-	if _, err := snapshotPluginPackage(m.snapshotRoot, pkg); err != nil {
-		return PluginOperateResult{}, err
-	}
 	res, err := m.store.update(ctx, func(st *ManagedState) (any, error) {
+		if _, err := snapshotPluginPackage(m.snapshotRoot, pkg); err != nil {
+			return nil, err
+		}
 		idx := findPluginIndex(st.Resources, pkg.ID, aCtx.provider, aCtx.host)
 		var prev *ManagedRecord
 		replacing := false
@@ -1978,6 +1978,7 @@ func (m *nativePluginManager) install(ctx context.Context, source, provider, hos
 			UpdatedAt: now,
 		}
 		if prev != nil {
+			rec.extra = prev.extra
 			rec.CreatedAt = prev.CreatedAt
 			rec.UpdatedAt = prev.UpdatedAt
 		}

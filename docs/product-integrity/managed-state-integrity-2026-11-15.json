@@ -1,0 +1,138 @@
+{
+  "boundary": "Actual Service.Operate against isolated appstate/skill projection and actual Node store calls; no new test cases or production state.",
+  "before": [
+    {
+      "error": "<nil>",
+      "ok": true,
+      "phase": "corrupt-managed-update",
+      "preserved": false,
+      "state": "{\"schemaVersion\":1,\"revision\":1,\"resources\":[{\"kind\":\"skill\",\"id\":\"manual-skill\",\"provider\":\"claude\",\"scope\":\"host\",\"target\":\"/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-hook-safety-3064547420/host/.claude/skills/manual-skill\",\"mode\":\"native\",\"digest\":\"ae7f81ef18c1ecab13b42f0e98049a959ab9a6215d075a49f72da86bf779bad1\",\"enabled\":true,\"createdAt\":1794752304779,\"updatedAt\":1794752304779}]}"
+    }
+  ],
+  "goAfter": [
+    {
+      "error": "managed_resource_state_invalid",
+      "noProjection": true,
+      "ok": false,
+      "phase": "blank",
+      "statePreserved": true
+    },
+    {
+      "error": "managed_resource_state_invalid",
+      "noProjection": true,
+      "ok": false,
+      "phase": "null",
+      "statePreserved": true
+    },
+    {
+      "error": "managed_resource_state_invalid",
+      "noProjection": true,
+      "ok": false,
+      "phase": "array",
+      "statePreserved": true
+    },
+    {
+      "error": "managed_resource_schema_unsupported",
+      "noProjection": true,
+      "ok": false,
+      "phase": "unknown-schema",
+      "statePreserved": true
+    },
+    {
+      "error": "managed_resource_state_invalid",
+      "noProjection": true,
+      "ok": false,
+      "phase": "wrong-type",
+      "statePreserved": true
+    },
+    {
+      "error": "managed_resource_state_invalid",
+      "noProjection": true,
+      "ok": false,
+      "phase": "duplicate",
+      "statePreserved": true
+    },
+    {
+      "error": "managed_resource_revision_exhausted",
+      "noProjection": true,
+      "ok": false,
+      "phase": "exhausted",
+      "statePreserved": true
+    },
+    {
+      "error": "<nil>",
+      "ok": true,
+      "phase": "valid-record-metadata-disable",
+      "state": "{\"future\":{\"n\":9007199254740993},\"resources\":[{\"createdAt\":1794755874464,\"digest\":\"4e67e1b06d40007f3f2648f33e7c3b0dd3bc5da034294c936fad2a78f72cbc5b\",\"enabled\":false,\"futureRecord\":{\"keep\":true,\"large\":9007199254740993},\"id\":\"manual-skill\",\"kind\":\"skill\",\"mode\":\"native\",\"provider\":\"claude\",\"scope\":\"host\",\"target\":\"/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-managed-matrix-984994495/host/.claude/skills/manual-skill\",\"updatedAt\":1794755874480}],\"revision\":6,\"schemaVersion\":1}"
+    },
+    {
+      "error": "<nil>",
+      "ok": true,
+      "phase": "valid-lifecycle-enable"
+    },
+    {
+      "error": "<nil>",
+      "ok": true,
+      "phase": "valid-lifecycle-remove"
+    }
+  ],
+  "nodeAfter": [
+    {
+      "phase": "broken",
+      "error": "managed_resource_state_invalid",
+      "mutatorCalled": false,
+      "preserved": true
+    },
+    {
+      "phase": "blank",
+      "error": "managed_resource_state_invalid",
+      "mutatorCalled": false,
+      "preserved": true
+    },
+    {
+      "phase": "null",
+      "error": "managed_resource_state_invalid",
+      "mutatorCalled": false,
+      "preserved": true
+    },
+    {
+      "phase": "version",
+      "error": "managed_resource_schema_unsupported",
+      "mutatorCalled": false,
+      "preserved": true
+    },
+    {
+      "phase": "duplicate",
+      "error": "managed_resource_state_invalid",
+      "mutatorCalled": false,
+      "preserved": true
+    },
+    {
+      "phase": "unsafe-number",
+      "error": "managed_resource_numeric_unsupported",
+      "mutatorCalled": false,
+      "preserved": true
+    },
+    {
+      "phase": "normal",
+      "state": {
+        "schemaVersion": 1,
+        "revision": 8,
+        "resources": [
+          {
+            "kind": "mcp",
+            "id": "manual",
+            "scope": "host",
+            "provider": "claude",
+            "enabled": false,
+            "createdAt": 1,
+            "updatedAt": 1
+          }
+        ],
+        "extra": {
+          "marker": "KEEP"
+        }
+      }
+    }
+  ]
+}

@@ -515,6 +515,7 @@ func (m *skillManager) install(ctx context.Context, source, provider, legacySour
 			UpdatedAt: now,
 		}
 		if prevPtr != nil {
+			rec.extra = prevPtr.extra
 			rec.CreatedAt = prevPtr.CreatedAt
 		}
 		adapter := skillProjections[rec.Mode]

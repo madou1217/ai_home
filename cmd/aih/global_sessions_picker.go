@@ -57,7 +57,8 @@ func collectGlobalLabels(
 
 // pickerStore 把 TmuxSessionStore 适配成选择器的读写端口。
 type pickerStore struct {
-	store *persistent.TmuxSessionStore
+	store       *persistent.TmuxSessionStore
+	allProjects bool
 }
 
 func (source pickerStore) Rows(ctx context.Context) ([]persistent.SessionRow, error) {
@@ -67,7 +68,7 @@ func (source pickerStore) Rows(ctx context.Context) ([]persistent.SessionRow, er
 	}
 	// 选择器重载（关闭会话后）也补一次缓存标题，避免掉回 pane 名。
 	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(source.store.AIHomeDir, time.Now()))
-	return rows, nil
+	return scopeGlobalSessionRows(rows, source.allProjects)
 }
 
 func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) error {
@@ -76,7 +77,7 @@ func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) 
 
 // runGlobalSessionPicker 实现 aih ss 的默认形态：TTY 下进入交互选择器，
 // 非 TTY（管道/CI）直接打印按项目分组的列表，与 Node 行为一致。
-func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh bool) error {
+func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh bool, allProjects ...bool) error {
 	store, err := globalSessionStore(runtime)
 	if err != nil {
 		return err
@@ -92,15 +93,19 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 		_ = persistent.WriteSessionCache(store.AIHomeDir, rows, time.Now())
 	} else {
 		// 默认走与 --list 相同的采集+缓存补全，picker 里的 c/y 才有原生会话 id。
-		rows, err = collectGlobalRows(ctx, runtime)
+		rows, err = collectGlobalRows(ctx, runtime, true)
 		if err != nil {
 			return err
 		}
+	}
+	rows, err = scopeGlobalSessionRows(rows, allProjects...)
+	if err != nil {
+		return err
 	}
 	labels := collectGlobalLabels(ctx, rows, runtime)
 	if !terminalWriterIsTTY(runtime.stdin) || !terminalWriterIsTTY(runtime.stdout) {
 		writeGlobalSessionGroups(runtime.stdout, rows, labels)
 		return nil
 	}
-	return runSessionPicker(ctx, runtime, pickerStore{store: store}, labels)
+	return runSessionPicker(ctx, runtime, pickerStore{store: store, allProjects: len(allProjects) > 0 && allProjects[0]}, labels)
 }

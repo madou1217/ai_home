@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -26,8 +27,18 @@ func runGlobalSessions(
 	arguments []string,
 	runtime commandRuntime,
 ) error {
+	allProjects := false
+	options := make([]string, 0, len(arguments))
+	for _, arg := range arguments {
+		if arg == "--all-projects" || arg == "--all" {
+			allProjects = true
+		} else {
+			options = append(options, arg)
+		}
+	}
+	arguments = options
 	if len(arguments) == 0 {
-		return runGlobalSessionPicker(ctx, runtime, false)
+		return runGlobalSessionPicker(ctx, runtime, false, allProjects)
 	}
 	if len(arguments) > 1 {
 		return fmt.Errorf("%w: 用法 aih ss --list", errInvalidCommand)
@@ -38,12 +49,12 @@ func runGlobalSessions(
 		return nil
 	}
 	if token == "--refresh" || token == "-r" {
-		return runGlobalSessionPicker(ctx, runtime, true)
+		return runGlobalSessionPicker(ctx, runtime, true, allProjects)
 	}
 	if !globalSessionDetailTokens[token] {
-		return runGlobalSessionTarget(ctx, token, runtime)
+		return runGlobalSessionTarget(ctx, token, runtime, allProjects)
 	}
-	rows, err := collectGlobalRows(ctx, runtime)
+	rows, err := collectGlobalRows(ctx, runtime, allProjects)
 	if err != nil {
 		return err
 	}
@@ -52,7 +63,7 @@ func runGlobalSessions(
 }
 
 // collectGlobalRows 读取全部受管持久会话的实时行。
-func collectGlobalRows(ctx context.Context, runtime commandRuntime) ([]persistent.SessionRow, error) {
+func collectGlobalRows(ctx context.Context, runtime commandRuntime, allProjects ...bool) ([]persistent.SessionRow, error) {
 	store, err := globalSessionStore(runtime)
 	if err != nil {
 		return nil, err
@@ -65,7 +76,18 @@ func collectGlobalRows(ctx context.Context, runtime commandRuntime) ([]persisten
 	now := time.Now()
 	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
 	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
-	return rows, nil
+	return scopeGlobalSessionRows(rows, allProjects...)
+}
+
+func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) ([]persistent.SessionRow, error) {
+	if len(allProjects) > 0 && allProjects[0] {
+		return rows, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return persistent.FilterSessionsByCwd(rows, cwd), nil
 }
 
 // sessionGroup 是一个项目下的会话集合。
@@ -194,6 +216,7 @@ func writeGlobalSessionsUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "Usage:")
 	_, _ = fmt.Fprintln(output, "  aih ss                    上下选择活跃持久会话")
 	_, _ = fmt.Fprintln(output, "  aih ss <名字>             直接进入指定会话（TAB 可补名字/项目描述）")
-	_, _ = fmt.Fprintln(output, "  aih ss --list             按项目预览所有会话")
+	_, _ = fmt.Fprintln(output, "  aih ss --list             预览当前项目会话")
+	_, _ = fmt.Fprintln(output, "  aih ss --all-projects     显式查看全部项目（也可用 --all）")
 	_, _ = fmt.Fprintln(output, "  aih ss --refresh          强制重新采集（默认走缓存，打开更快）")
 }

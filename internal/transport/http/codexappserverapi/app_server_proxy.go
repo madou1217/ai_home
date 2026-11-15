@@ -218,7 +218,10 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 		return
 	}
 
-	injectedCwd := strings.TrimSpace(request.URL.Query().Get("aih_cwd"))
+	rewriteOptions := codexappserverws.RewriteOptions{
+		Cwd:           strings.TrimSpace(request.URL.Query().Get("aih_cwd")),
+		SkipInjectCwd: request.URL.Query().Get("aih_all_projects") == "1",
+	}
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
 
@@ -263,6 +266,7 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 	defer shutdown()
 
 	tracker := NewResponseContextTracker()
+	listScopes := codexappserverws.NewThreadListScopeTracker()
 	var wg sync.WaitGroup
 
 	// stderr 调试日志泵
@@ -305,7 +309,7 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 				if len(line) == 0 {
 					continue
 				}
-				patched := tracker.PatchThreadResumeResponse(line)
+				patched := listScopes.Patch(tracker.PatchThreadResumeResponse(line))
 				writeCtx, writeCancel := context.WithTimeout(ctx, 15*time.Second)
 				writeErr := wsConn.Write(writeCtx, websocket.MessageText, patched)
 				writeCancel()
@@ -333,7 +337,8 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 		if readErr != nil {
 			break
 		}
-		rewritten := RewriteClientMessage(data, injectedCwd)
+		listScopes.Remember(data, rewriteOptions)
+		rewritten := codexappserverws.RewriteClientMessage(data, rewriteOptions)
 		tracker.RememberThreadResumeRequest(rewritten)
 		frame := make([]byte, len(rewritten)+1)
 		copy(frame, rewritten)

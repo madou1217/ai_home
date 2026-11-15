@@ -39,9 +39,12 @@ func RewriteClientMessage(raw []byte, opts RewriteOptions) []byte {
 
 	switch method {
 	case "thread/list":
-		changed := false
+		allProjects := isJSONTrue(params["allProjects"])
+		_, changed := params["allProjects"]
+		// Strip AIH scope intent before forwarding to native Codex.
+		delete(params, "allProjects")
 		injectedCwd := strings.TrimSpace(opts.Cwd)
-		if injectedCwd != "" && !opts.SkipInjectCwd {
+		if injectedCwd != "" && !opts.SkipInjectCwd && !allProjects {
 			curCwdRaw, hasCwd := params["cwd"]
 			if !hasCwd || isJSONNull(curCwdRaw) || isJSONEmptyString(curCwdRaw) {
 				encodedCwd, err := marshalNoEscapeHTML(injectedCwd)

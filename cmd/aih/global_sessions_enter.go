@@ -16,8 +16,9 @@ func runGlobalSessionTarget(
 	ctx context.Context,
 	target string,
 	runtime commandRuntime,
+	allProjects ...bool,
 ) error {
-	rows, err := collectGlobalRows(ctx, runtime)
+	rows, err := collectGlobalRows(ctx, runtime, allProjects...)
 	if err != nil {
 		return err
 	}

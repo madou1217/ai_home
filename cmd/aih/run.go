@@ -174,7 +174,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && (arguments[1] == "set-default" || arguments[1] == "unset-default") {
 		return runProviderDefaultCommand(ctx, providerID, arguments[1:], runtime)
 	}
-	if len(arguments) >= 2 && arguments[1] == "sessions" && containsArgument(arguments[2:], "--history") {
+	if len(arguments) >= 2 && arguments[1] == "sessions" && (containsArgument(arguments[2:], "--history") || containsArgument(arguments[2:], "--all")) {
 		return runProviderSessionsHistory(ctx, providerID, arguments[2:], runtime)
 	}
 	if len(arguments) >= 2 && arguments[1] == "sessions" {

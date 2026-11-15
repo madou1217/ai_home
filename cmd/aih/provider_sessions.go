@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/runtime/sessionproject"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/codexindex"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
@@ -37,6 +39,7 @@ func runProviderSessionsHistory(
 	runtime commandRuntime,
 ) error {
 	limit := 20
+	allProjects := false
 	for index := 0; index < len(arguments); index++ {
 		argument := arguments[index]
 		if isRootHelp(argument) {
@@ -46,6 +49,8 @@ func runProviderSessionsHistory(
 		switch argument {
 		case "--history":
 			continue
+		case "--all", "--all-projects":
+			allProjects = true
 		case "--limit", "-n":
 			if index+1 >= len(arguments) {
 				return fmt.Errorf("%w: --limit 缺少值", errInvalidCommand)
@@ -104,9 +109,6 @@ func runProviderSessionsHistory(
 		}
 		for _, project := range projects {
 			projectPath := strings.TrimSpace(project.Path)
-			if projectPath == "" {
-				projectPath = strings.TrimSpace(project.Name)
-			}
 			for _, session := range project.Sessions {
 				title := usableSessionTitle(session.Title)
 				if title == "" {
@@ -124,9 +126,6 @@ func runProviderSessionsHistory(
 		projects := codebuddy.ReadProjects(hostHome, providerID, unlimitedScanBudget{})
 		for _, project := range projects {
 			projectPath := strings.TrimSpace(project.Path)
-			if projectPath == "" {
-				projectPath = strings.TrimSpace(project.Name)
-			}
 			for _, session := range project.Sessions {
 				fallback := strings.TrimSpace(project.Name)
 				title := cleanSessionTitle(session.Title, fallback)
@@ -142,6 +141,21 @@ func runProviderSessionsHistory(
 			}
 		}
 	}
+	scope := "全部项目"
+	if !allProjects {
+		scope = "当前项目"
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return cwdErr
+		}
+		selected := rows[:0]
+		for _, item := range rows {
+			if sessionproject.MatchesCwd(item.path, cwd) {
+				selected = append(selected, item)
+			}
+		}
+		rows = selected
+	}
 	sort.Slice(rows, func(left, right int) bool {
 		return rows[left].updatedAt > rows[right].updatedAt
 	})
@@ -149,7 +163,7 @@ func runProviderSessionsHistory(
 	if limit > total {
 		limit = total
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "%s 会话历史（宿主，最近 %d/%d）：\n", providerID, limit, total)
+	_, _ = fmt.Fprintf(runtime.stdout, "%s 会话历史（%s，最近 %d/%d）：\n", providerID, scope, limit, total)
 	for _, item := range rows[:limit] {
 		_, _ = fmt.Fprintf(
 			runtime.stdout,
@@ -203,5 +217,5 @@ func formatSessionTime(ms int64) string {
 }
 
 func writeProviderSessionsUsage(output io.Writer, providerID string) {
-	_, _ = fmt.Fprintf(output, "用法:\n  aih %s sessions --history [--limit N]\n", providerID)
+	_, _ = fmt.Fprintf(output, "用法:\n  aih %s sessions [<id>] [--all-projects]\n  aih %s sessions --history [--limit N] [--all-projects]\n  --all: 全部项目历史（等同 --history --all-projects）\n", providerID, providerID)
 }

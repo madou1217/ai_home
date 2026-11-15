@@ -27,6 +27,7 @@ func runProviderSessionsList(
 	runtime commandRuntime,
 ) error {
 	filterRef := ""
+	allProjects := false
 	options := make([]string, 0, len(arguments))
 	for _, argument := range arguments {
 		text := strings.TrimSpace(argument)
@@ -34,7 +35,7 @@ func runProviderSessionsList(
 		case text == "":
 			continue
 		case text == "--all-projects":
-			// 持久会话行本来就带项目路径，没有额外的项目过滤。
+			allProjects = true
 			continue
 		case isRootHelp(text):
 			writeProviderSessionsUsage(runtime.stdout, providerID)
@@ -88,6 +89,13 @@ func runProviderSessionsList(
 			continue
 		}
 		selected = append(selected, row)
+	}
+	if !allProjects {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return cwdErr
+		}
+		selected = persistent.FilterSessionsByCwd(selected, cwd)
 	}
 	labels := sessionAccountLabels(ctx, providerID, runtime)
 	writeSessionRows(runtime.stdout, providerID, selected, labels)

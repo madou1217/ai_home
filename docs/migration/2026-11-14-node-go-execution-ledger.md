@@ -53,13 +53,13 @@
 
 | 工作包 | 状态 | 下一步/缺口 |
 |---|---|---|
-| W0 | 进行中 | 初版归属账已建；全入口覆盖、运行版本关联与在途整合未完成 |
-| W1 | 进行中 | 先提交复核后的 effort/参数传递修复；补完整 WS/resume/cancel/usage 验收 |
-| W2 | 进行中 | preference I/O 真实验证通过；进程生命周期安全审查及真机矩阵未完成 |
-| W3 | 进行中 | 主体已随b71a8858e进入main，公开/旧Node入口c26511ad7、0e78d118f已切Go；Desktop兼容effect/真实OAuth/跨平台仍缺 |
-| W4 | 进行中 | 共享resolver接线已集成；真实API-key目录刷新/失败保留/作业去重已验收，OAuth轮换与re-key真业务未验收 |
-| W5 | 进行中 | 已集成管理auth/assets/watch检查点；部分API有实证，现有Edge无受支持后台连接，真实页面验收未完成 |
-| W6 | 待执行 | 其余功能分计划、平台实机、旧回落退出与最终发布 |
+| W0 | 进行中 | 入口/动态RPC已有真实核对；全CLI/WS/jobs/hooks/UI叶子覆盖和当前运行版本关联仍缺 |
+| W1 | 进行中 | none后续帧、真实tier回传、managed/raw exec resume已修；Mac标准CLI和Windows/Linux真实矩阵通过，metadata版本/完整取消与账号切换矩阵仍缺 |
+| W2 | 进行中 | Mac隔离生命周期及三平台配置/crash恢复有证据；标准CLI已发布，完整三平台托管服务/安装升级矩阵仍缺，禁止共享重启 |
+| W3 | 进行中 | 默认事务/公开入口/exec intent Go归属已提交；Desktop effect、mobile全命令/TAB/OAuth与完整App状态验收仍缺 |
+| W4 | 进行中 | API-key真实刷新/去重/保旧目录、模型写busy/cancel已闭环；真实OAuth轮换/re-key、其他writer及版本贯通UI仍缺 |
+| W5 | 进行中 | 管理auth/assets/watch及RPC有分项证据；现有Edge缺受支持连接，真实完整页面旅程未验收 |
+| W6 | 进行中 | 其它owner已交付部分native/backup/hooks/包装；仍需逐域子计划/遗留退出/全平台安装服务与最终发布闭环 |
 
 ## 交付登记
 
@@ -341,3 +341,7 @@ native/CLI hash、真实/proc精确PID、私有目录清理与existing service i
 真实私有DB external BEGIN IMMEDIATE下GET200而manual PATCH1ms500/internal_error，根因deferred事务先读后升级写锁立即busy。窄修两model写入口：2s writer admission含mutex/conn/BEGIN IMMEDIATE，busy_timeout连接局部0并恢复，25..200ms只retry BEGIN，无业务/上游重放；超限503/account_model_write_busy+Retry-After1。commit前检查取消，提交阶段WithoutCancel且成功持锁publish，再清理。
 
 Hubble独立review指出postcommit取消/PRAGMA预算映射两项，均修复并final窄review无blocking。最终真实锁保留2003ms503不改旧值；350ms解锁同请求385ms200；client cancel后解锁6s无迟到写、后续200。真实上游refresh仅1call/224rows/人工策略保留，断私有relay502保完整last-good。详情 `2026-11-16-model-write-contention.md`。不写共享DB/重启/新增测试，2s非whole-refresh SLA；全W4及W0-W6仍未关闭。
+
+## 2026-11-16 原需求逐项审计
+
+`2026-11-16-requirement-evidence-audit.md`按原顺序保留42个W0-W6勾选要求和7个交付门槛，逐项分证据/部分/缺口，不删原范围、不用route或目录数量作完成百分比。更新顶部过时状态（标准CLI和Windows/Linux native已实证，但三平台托管服务不是同一要求）。当前明确未完成，safe下一步含W1 metadata版本/来源、完整transport cells、剩余CLI/服务/多writer和W6逐域；OAuth/Edge只是特定验收输入限制，不构成全目标停止理由。

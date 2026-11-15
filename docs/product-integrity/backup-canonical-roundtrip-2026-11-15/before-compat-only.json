@@ -1,0 +1,15 @@
+{
+  "boundary": "actual valid-shape manual API credential, loopback URL, isolated account directories",
+  "restore": {
+    "total": 1,
+    "created": 1,
+    "updated": 0,
+    "unchanged": 0,
+    "invalid": 0,
+    "failed": 0
+  },
+  "goList": {
+    "code": 1,
+    "stderr": "aih: 读取本机账号库失败: 读取账号失败: SQL logic error: no such table: accounts (1)\n"
+  }
+}

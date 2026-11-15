@@ -1,0 +1,93 @@
+{
+  "sourceCanonicalOnly": true,
+  "seed": {
+    "created": 1,
+    "failed": 0,
+    "invalid": 0,
+    "total": 1,
+    "unchanged": 0,
+    "updated": 0
+  },
+  "backup": {
+    "ok": true,
+    "targets": [
+      {
+        "targetId": "core-roundtrip",
+        "ok": true,
+        "uploaded": 1,
+        "unchanged": 0,
+        "deleted": 0,
+        "revision": 1,
+        "total": 1,
+        "startedAt": "2026-11-15T13:56:02.007Z"
+      }
+    ],
+    "accounts": 1,
+    "skipped": []
+  },
+  "restore": {
+    "ok": true,
+    "targetId": "core-roundtrip",
+    "summary": {
+      "created": 1,
+      "failed": 0,
+      "invalid": 0,
+      "total": 1,
+      "unchanged": 0,
+      "updated": 0
+    },
+    "accounts": [
+      {
+        "provider": "codex",
+        "sourceRef": "acct_a0384907d717a040a780",
+        "accountRef": "acct_a0384907d717a040a780",
+        "cliAccountId": "7",
+        "status": "created",
+        "credentialUpdatedAt": 1794750962187
+      }
+    ],
+    "missing": [],
+    "revision": 1,
+    "dryRun": false
+  },
+  "again": {
+    "ok": true,
+    "targetId": "core-roundtrip",
+    "summary": {
+      "created": 0,
+      "failed": 0,
+      "invalid": 0,
+      "total": 1,
+      "unchanged": 1,
+      "updated": 0
+    },
+    "accounts": [
+      {
+        "provider": "codex",
+        "sourceRef": "acct_a0384907d717a040a780",
+        "accountRef": "acct_a0384907d717a040a780",
+        "cliAccountId": "7",
+        "status": "unchanged",
+        "credentialUpdatedAt": 1794750962187
+      }
+    ],
+    "missing": [],
+    "revision": 1,
+    "dryRun": false
+  },
+  "goList": {
+    "code": 0,
+    "output": "\n📦 AI Home Accounts Overview\n\n▶ codex\n  - Account ID: 7  [关闭] (API Key: aih-m...-key) [Base URL: http://127.0.0.1:1]\n\n"
+  },
+  "compat": {
+    "count": 1,
+    "ref": "acct_a0384907d717a040a780",
+    "id": "7",
+    "state": "down",
+    "extensionRetained": true
+  },
+  "sourceCounts": {
+    "canonical": 1,
+    "compatRefTablePresent": false
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "first": [
+    {
+      "provider": "codex",
+      "sourceRef": "acct_00000000000000000041",
+      "accountRef": "acct_00000000000000000041",
+      "cliAccountId": "7",
+      "status": "created",
+      "credentialUpdatedAt": 1794751095949
+    }
+  ],
+  "second": [
+    {
+      "provider": "codex",
+      "sourceRef": "acct_00000000000000000042",
+      "accountRef": "acct_00000000000000000042",
+      "cliAccountId": "8",
+      "status": "created",
+      "credentialUpdatedAt": 1794751095970
+    }
+  ],
+  "conflict": {
+    "ok": false,
+    "error": "backup_import_incomplete",
+    "accounts": [
+      {
+        "provider": "codex",
+        "sourceRef": "acct_00000000000000000041",
+        "status": "failed",
+        "reason": "canonical_restore_failed"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "ref": "acct_00000000000000000041",
+      "id": "7",
+      "state": "down"
+    },
+    {
+      "ref": "acct_00000000000000000042",
+      "id": "8",
+      "state": "down"
+    }
+  ]
+}

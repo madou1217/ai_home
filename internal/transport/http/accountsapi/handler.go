@@ -242,6 +242,7 @@ type Sub2APIAccountDecoder interface {
 
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
+	BackupAccounts      func(context.Context, string, []byte) ([]byte, error)
 	Management          Management
 	Models              ModelManagement
 	Usage               UsageManagement
@@ -281,6 +282,7 @@ type RuntimeStateApplier interface {
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
 type Handler struct {
+	backupAccounts      func(context.Context, string, []byte) ([]byte, error)
 	management          Management
 	models              ModelManagement
 	usage               UsageManagement
@@ -321,6 +323,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
+		backupAccounts:      dependencies.BackupAccounts,
 		management:          dependencies.Management,
 		models:              dependencies.Models,
 		usage:               dependencies.Usage,
@@ -370,6 +373,8 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	switch {
+	case strings.HasPrefix(request.URL.Path, CollectionPath+"/backup/"):
+		handler.handleBackupAccounts(response, request)
 	case request.URL.Path == NativeImportPath+"/aih-accounts":
 		handler.handleAihAccountsImport(response, request)
 	case request.URL.Path == NativeImportPath:

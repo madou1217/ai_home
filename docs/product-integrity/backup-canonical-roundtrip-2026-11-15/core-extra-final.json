@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "inputKeys": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_WIRE_API",
+    "AIH_UPSTREAM_HEADERS",
+    "DISPLAY_ONLY_VALUE"
+  ],
+  "outputKeys": [
+    "AIH_UPSTREAM_HEADERS",
+    "DISPLAY_ONLY_VALUE",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_WIRE_API"
+  ],
+  "missing": [],
+  "restoredId": "7"
+}

@@ -1,7 +1,9 @@
 package sqliteaccount
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/user"
 	"runtime"
@@ -88,8 +90,14 @@ type nativeCredentialV1 struct {
 func decryptZcodeNativeAuth(raw json.RawMessage) (json.RawMessage, error) {
 	secret := currentZcodeSecret()
 	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
 		return nil, err
+	}
+	var extra any
+	if decoder.Decode(&extra) != io.EOF {
+		return nil, ErrInvalidCredential
 	}
 	decrypted := decryptZcodeValue(value, secret)
 	return json.Marshal(decrypted)

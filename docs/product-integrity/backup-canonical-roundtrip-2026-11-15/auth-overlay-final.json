@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "envKeys": [
+    "DISPLAY_ONLY_VALUE",
+    "OPENAI_WIRE_API"
+  ],
+  "nativeKeys": [
+    "config",
+    "credentials"
+  ],
+  "configName": "Manual",
+  "aliasPresent": false
+}

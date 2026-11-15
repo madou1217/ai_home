@@ -1,8 +1,10 @@
 package remotebackup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/user"
 	"runtime"
@@ -17,18 +19,19 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/accounts/gemini"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
 )
 
 // AccountRecord 表示可移植 aih-accounts v1 导出条目，结构与 Node native-account-transfer 一致。
 type AccountRecord struct {
-	Provider     string            `json:"provider"`
-	AccountRef   string            `json:"accountRef"`
-	CLIAccountID string            `json:"cliAccountId"`
-	Status       string            `json:"status"`
-	Env          map[string]string `json:"env"`
-	NativeAuth   map[string]any    `json:"nativeAuth"`
+	CredentialUpdatedAt int64             `json:"-"`
+	ProfileUpdatedAt    int64             `json:"-"`
+	Provider            string            `json:"provider"`
+	AccountRef          string            `json:"accountRef"`
+	CLIAccountID        string            `json:"cliAccountId"`
+	Status              string            `json:"status"`
+	Env                 map[string]string `json:"env"`
+	NativeAuth          map[string]any    `json:"nativeAuth"`
 }
 
 // SkippedAccount 记录因缺少或无法导出凭据而被跳过的账号。
@@ -50,8 +53,13 @@ type AccountExporter interface {
 }
 
 // SQLiteAccountExporter 从 sqliteaccount.Store 读取账号概览与凭据快照并生成 aih-accounts v1 记录。
+type ExportStore interface {
+	ListAccountOverviews(context.Context, accountapp.OverviewQuery) ([]accountapp.AccountOverview, error)
+	GetCredentialSnapshot(context.Context, accountcore.AccountRef) (accountapp.CredentialSnapshot, error)
+}
+
 type SQLiteAccountExporter struct {
-	Store   *sqliteaccount.Store
+	Store   ExportStore
 	Catalog *providers.Catalog
 }
 
@@ -93,6 +101,18 @@ func (exporter SQLiteAccountExporter) ExportAccounts(ctx context.Context) (Expor
 				continue
 			}
 			record, ok := exportCredentialEntry(overview, snapshot, catalog)
+			record.CredentialUpdatedAt = snapshot.UpdatedAt().UnixMilli()
+			if auth, isClaude := snapshot.Credential().(*claude.OAuthAuth); isClaude {
+				record.NativeAuth, record.ProfileUpdatedAt, ok = portableClaude(ctx, exporter.Store, account.Ref(), auth)
+			}
+			if ok {
+				var mergeErr error
+				record, mergeErr = applyPortableSupplement(ctx, exporter.Store, account.Ref(), record)
+				if mergeErr != nil {
+					result.Skipped = append(result.Skipped, SkippedAccount{AccountRef: account.Ref().String(), Provider: account.ProviderID(), Reason: "portable_supplement_invalid"})
+					continue
+				}
+			}
 			if !ok {
 				result.Skipped = append(result.Skipped, SkippedAccount{
 					AccountRef: account.Ref().String(),
@@ -107,6 +127,12 @@ func (exporter SQLiteAccountExporter) ExportAccounts(ctx context.Context) (Expor
 					Provider:   account.ProviderID(),
 					Reason:     "credentials_missing",
 				})
+				continue
+			}
+			// This is the final source boundary before Node JSON.parse/JCS.
+			// Reject unsupported numeric values while tokens are still exact.
+			if _, err := canonicalRepository(record); err != nil {
+				result.Skipped = append(result.Skipped, SkippedAccount{AccountRef: account.Ref().String(), Provider: account.ProviderID(), Reason: "portable_value_unsupported"})
 				continue
 			}
 			result.Accounts = append(result.Accounts, record)
@@ -193,9 +219,12 @@ func exportCredentialEntry(
 		record.NativeAuth = map[string]any{
 			"email": cred.Email(),
 			"oauthToken": map[string]any{
-				"auth_method": string(cred.AuthMethod()),
+				"auth_method":   string(cred.AuthMethod()),
+				"client_id":     cred.ClientID(),
+				"client_secret": cred.ClientSecret(),
 				"token": map[string]any{
 					"access_token":    cred.AccessToken(),
+					"id_token":        cred.IDToken(),
 					"refresh_token":   cred.RefreshToken(),
 					"expires_at_ms":   cred.ExpiresAtMS(),
 					"refreshed_at_ms": cred.RefreshedAtMS(),
@@ -242,7 +271,13 @@ func exportCredentialEntry(
 			return AccountRecord{}, false
 		}
 		var payload map[string]any
-		if err := json.Unmarshal(cred.Payload(), &payload); err != nil || len(payload) == 0 {
+		decoder := json.NewDecoder(bytes.NewReader(cred.Payload()))
+		decoder.UseNumber()
+		if err := decoder.Decode(&payload); err != nil || len(payload) == 0 {
+			return AccountRecord{}, false
+		}
+		var extra any
+		if decoder.Decode(&extra) != io.EOF {
 			return AccountRecord{}, false
 		}
 		if cred.ProviderID() == "zcode" {

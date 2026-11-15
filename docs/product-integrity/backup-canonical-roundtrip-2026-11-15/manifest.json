@@ -1,0 +1,65 @@
+{
+  "boundary": "Actual isolated SQLite, own OpenSSH, CLI and isolated real Go server; manual non-functional credential strings never used upstream. No new test cases. No shared service touched.",
+  "artifacts": [
+    {
+      "file": "backup-core-final-evidence.json",
+      "source_sha256": "a0eb06dead3ae5d334fcc2b2d324cd2773f17922f9b464a69541e2e78b55de6d",
+      "artifact_sha256": "aa2befa2140801ccedef69db726cd1c797a5cfb093a912130fa8730b0334d1cc"
+    },
+    {
+      "file": "backup-core-preflight-final.json",
+      "source_sha256": "749717a91d3531eb73a83e7fa3da2b6f2c21a71c74cb3b93e4d11fab92d6af8c",
+      "artifact_sha256": "0b6e436610319268f2a4951918311e6847df5090403ce1fc0f385320f0aad3e8"
+    },
+    {
+      "file": "backup-lease-validation.json",
+      "source_sha256": "3aba9afa74bcd1d41838a161462c3abc6cec4b84a3336074aef933bdb4b6d1d4",
+      "artifact_sha256": "5ae4029c4a5a80c8ce002d1386771bfdd5f40dd56393e8f0cfe211b6b9d59fb2"
+    },
+    {
+      "file": "backup-lease-startup-final.json",
+      "source_sha256": "75dff6f8c3cbf172d664fbf13242a265331838b7da28b143c84eccf5fc44fb5c",
+      "artifact_sha256": "690d439a66bf415a286067a8aa293bc98c7b5e2b6c78024bad210ad8612cae8b"
+    },
+    {
+      "file": "backup-online-final.json",
+      "source_sha256": "0c358900e8c1e194107975a918b1f2ca5f6f389cff1f0ffef220a58447366981",
+      "artifact_sha256": "a870af481808d151bde0b9acf713e5939f6014041d61fb08c8dc1c283f187162"
+    },
+    {
+      "file": "mirror-generation-final.json",
+      "source_sha256": "f6662ab8bd5dc5043d058988e579306fed8ec260534e16fcbc23ac0c48357452",
+      "artifact_sha256": "04c3216247f5255bde1d15bf10e8990eb4e015ea62ca329e6d58dcb623ca0be5"
+    },
+    {
+      "file": "core-identity-conflict-final.json",
+      "source_sha256": "1f77ab281087156dab7ffe4b1b227aeb32e1c8875a6744f76e2da90e68cec4d7",
+      "artifact_sha256": "4b179c4e0950729d9620726fb10e41fa92487c36b53e8f26b434da7ea32df8a5"
+    },
+    {
+      "file": "core-extra-final.json",
+      "source_sha256": "a1196b9f494cb4af0f26f74543dbbcc330eb9b1a4fb361fe1728ad369bc7b1ee",
+      "artifact_sha256": "b474db4abd3ce6fbdc1274f45db17b8d7857c331497c6e92c023dd4608f18d5b"
+    },
+    {
+      "file": "auth-overlay-final.json",
+      "source_sha256": "9728c4220aba98261609f91a2fa5ae4c4b85be05a1389a4f0a6611d1f972c539",
+      "artifact_sha256": "07b4b31297e3c06184113e0776f5ec722058f0a09d80979410207ae4db99f2b0"
+    },
+    {
+      "file": "claude-full-roundtrip-final.json",
+      "source_sha256": "c1c50f846c5e26f58f60d87db942c1031687eb93323f1870967a1d03fea9d25f",
+      "artifact_sha256": "0f96428c517fd25b7b5e2b0654c3a143df058196e3c277c7010d4163f5db266d"
+    },
+    {
+      "file": "agy-fields-final.json",
+      "source_sha256": "0619c26b0ca4600a02f6ae7b6ab393ac3bb392a02682f8fa20cc1526479f2e86",
+      "artifact_sha256": "c339c9c79c06c2e0014dd7c079bd3461cf6b33114273817a00b635d8cc256fe2"
+    },
+    {
+      "file": "backup-numeric-guard-final.json",
+      "source_sha256": "c5a0ed9b628c3827a00ec4fc2f8d25940ef2cac846ee8cdb8e486fbc347823a8",
+      "artifact_sha256": "f8bd1537ceb7e43875f3ed5692b235317873bd62d77b403010b0b0295d51e933"
+    }
+  ]
+}

@@ -125,8 +125,18 @@ func (store *Store) GetProfile(
 		profile,
 		time.UnixMilli(updatedAtMS).UTC(),
 	)
-	if err != nil || snapshot.AccountRef() != accountRef {
+	if err != nil {
 		return accountapp.ProfileSnapshot{}, ErrInvalidProfileDocument
+	}
+	if snapshot.AccountRef() != accountRef {
+		credential, readErr := store.GetCredentialSnapshot(ctx, accountRef)
+		if readErr != nil {
+			return accountapp.ProfileSnapshot{}, ErrInvalidProfileDocument
+		}
+		snapshot, err = accountapp.NewBoundProfileSnapshot(store.catalog, accountRef, profile, credential.Credential(), time.UnixMilli(updatedAtMS).UTC())
+		if err != nil {
+			return accountapp.ProfileSnapshot{}, ErrInvalidProfileDocument
+		}
 	}
 	return snapshot, nil
 }

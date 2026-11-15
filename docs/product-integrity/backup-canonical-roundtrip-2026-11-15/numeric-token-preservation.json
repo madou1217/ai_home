@@ -1,0 +1,7 @@
+{
+  "accountRef": "acct_1b62a2d89c5fbb9639aa",
+  "fractionTokenExact": true,
+  "largeExact": true,
+  "phase": "canonical-store-export-numbers",
+  "type": "json.Number"
+}

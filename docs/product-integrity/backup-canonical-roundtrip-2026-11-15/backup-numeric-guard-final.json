@@ -1,0 +1,16 @@
+{
+  "protocolVersion": 1,
+  "ok": true,
+  "document": {
+    "kind": "aih-accounts",
+    "version": 1,
+    "accounts": []
+  },
+  "skipped": [
+    {
+      "accountRef": "acct_1b62a2d89c5fbb9639aa",
+      "provider": "kimi",
+      "reason": "portable_value_unsupported"
+    }
+  ]
+}

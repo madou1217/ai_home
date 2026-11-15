@@ -74,7 +74,9 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
+	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
@@ -229,6 +231,16 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err := validateOptions(options); err != nil {
 		return nil, err
 	}
+	writerLease, err := accountwriterlease.Acquire(options.AIHomeDir)
+	if err != nil {
+		return nil, err
+	}
+	leaseTransferred := false
+	defer func() {
+		if !leaseTransferred {
+			_ = writerLease.Close()
+		}
+	}()
 	webUI, err := newWebUIHandler(options.WebDir)
 	if err != nil {
 		return nil, err
@@ -403,7 +415,8 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	resources = append(resources, webuiAccountsSource)
 	handlers.webuiAccounts = webuiAccountsHandler
-	resources = append(resources, codexVersions, outcomeRecorder, store)
+	resources = append(resources, codexVersions, outcomeRecorder, store, writerLease)
+	leaseTransferred = true
 	rootHandler := withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers)))
 	deferredGateway.set(rootHandler)
 	resources = append(resources, startServerWarmups(ctx, rootHandler, handlers.warmupDeps, options.ManagementKey))
@@ -1200,10 +1213,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建额度统计服务失败: %w", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management: management,
-		Models:     recoveringModelManagement,
-		Usage:      usage.service,
-		QuotaStats: quotaStatsService,
+		BackupAccounts: backupaccounts.Handler(store, catalog),
+		Management:     management,
+		Models:         recoveringModelManagement,
+		Usage:          usage.service,
+		QuotaStats:     quotaStatsService,
 		// 账号行的 token 用量直接读 Go 账本：与用量页同一份事实，不再回 Node 现算。
 		TokenUsage:          store,
 		Deletion:            deleter,

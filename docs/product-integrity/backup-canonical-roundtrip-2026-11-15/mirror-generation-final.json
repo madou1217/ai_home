@@ -1,0 +1,14 @@
+{
+  "staleMirror": "backup_core_projection_stale",
+  "updatedSummary": {
+    "created": 0,
+    "failed": 0,
+    "invalid": 0,
+    "total": 1,
+    "unchanged": 0,
+    "updated": 1
+  },
+  "mirrorHasNewest": true,
+  "ref": "acct_00000000000000000031",
+  "id": "9"
+}

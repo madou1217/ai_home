@@ -1,0 +1,10 @@
+{
+  "seed": true,
+  "backup": true,
+  "restore": true,
+  "id": "9",
+  "sourceRefKept": true,
+  "profileConfigPresent": true,
+  "clientIdRetained": true,
+  "sameToken": true
+}

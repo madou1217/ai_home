@@ -87,3 +87,16 @@ type ProfileStore interface {
 	// GetProfile 按稳定账号身份读取并重新校验 Provider 公开资料。
 	GetProfile(ctx context.Context, accountRef accountcore.AccountRef) (ProfileSnapshot, error)
 }
+
+// NewBoundProfileSnapshot restores a historical account reference whose current
+// credential identity is still independently verified. Source references may
+// predate the current hash policy; profile and credential must identify the same
+// provider principal, never merely share an email or caller-supplied ref.
+func NewBoundProfileSnapshot(catalog *providers.Catalog, ref accountcore.AccountRef, profile PublicProfile, credential Credential, updatedAt time.Time) (ProfileSnapshot, error) {
+	snapshot, err := NewProfileSnapshot(catalog, profile, updatedAt)
+	if err != nil || !ref.IsValid() || credential == nil || credential.ProviderID() != profile.ProviderID() || credential.IdentitySeed() != profile.IdentitySeed() {
+		return ProfileSnapshot{}, ErrInvalidProfile
+	}
+	snapshot.accountRef = ref
+	return snapshot, nil
+}

@@ -1,0 +1,6 @@
+{
+  "dryRunOK": true,
+  "invalidOK": false,
+  "invalidError": "backup_import_preflight_failed",
+  "homeCreated": false
+}

@@ -1,0 +1,6 @@
+{
+  "directWhileServer": 1,
+  "directError": "aih: backup_accounts_core_failed\n",
+  "onlineOK": true,
+  "unknownIdentity": "backup_core_state_unknown"
+}

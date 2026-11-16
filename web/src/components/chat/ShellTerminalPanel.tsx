@@ -71,6 +71,10 @@ interface TermInstance extends TerminalInputState {
   term: Terminal;
   fit: FitAddon;
   sessionKey: string;
+  durable: boolean;
+  exited: boolean;
+  exitedTermId: string;
+  restarting: boolean;
   opened: boolean;
   attachmentVersion: number;
   resizeSender: ReturnType<typeof createTerminalResizeSender>;
@@ -82,6 +86,13 @@ interface TermInstance extends TerminalInputState {
 const HEIGHT_STORAGE_KEY = 'aih:webui-terminal-height:v1';
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 300;
+const CONNECTION_STOP_ERRORS = new Set(['terminal_not_found', 'too_many_terminals', 'unauthorized', 'terminal_http_403', 'native_session_attach_required', 'terminal_identity_mismatch']);
+
+function terminalConnectionFailure(error?: string) {
+  return error === 'terminal_not_found'
+    ? '原终端会话不存在或已结束；请重新启动原任务或终端。'
+    : `终端连接失败: ${error || 'unknown'}`;
+}
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -248,8 +259,23 @@ function ShellTerminalPanel({
     if (msg.type === 'output' && typeof msg.data === 'string') {
       inst.output.write(base64ToBytes(msg.data));
     } else if (msg.type === 'exit') {
+      inst.exitedTermId = inst.termId;
+      if (inst.restarting || closingRef.current.has(tabId)) return;
       inst.inputReady = false;
       inst.resizeSender.clear();
+      if (inst.durable && inst.sessionKey) {
+        // The exit belongs to the borrowed tmux client, not necessarily the
+        // underlying task. Reattach the same session before declaring it dead.
+        setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'connecting' } : tab));
+        const exitedClient = inst.termId;
+        // A buffered exit can be drained inside an attach response. Wait until
+        // that response releases its recovery guard before scheduling another.
+        queueMicrotask(() => {
+          if (instancesRef.current.get(tabId) === inst && inst.termId === exitedClient && !inst.inputReady) recoverRef.current(inst);
+        });
+        return;
+      }
+      inst.exited = true;
       inst.term.options.disableStdin = true;
       inst.output.write(new TextEncoder().encode('\r\n\x1b[90m[进程已退出]\x1b[0m\r\n'));
       setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, status: 'closed' } : t)));
@@ -260,9 +286,21 @@ function ShellTerminalPanel({
   const registerTermId = useCallback((tabId: string, termId: string, inst: TermInstance) => {
     if (inst.termId !== termId) discardTerminalProtocolInput(inst);
     inst.termId = termId;
-    inst.inputReady = panelReadyRef.current;
+    inst.exited = false;
+    inst.term.options.disableStdin = false;
+    inst.inputReady = panelReadyRef.current && inst.exitedTermId !== termId;
     byTermIdRef.current.set(termId, tabId);
     pendingOutput.drain(termId, (frame) => applyFrame(tabId, inst, frame));
+    if (inst.exitedTermId === termId) {
+      if (inst.durable && inst.sessionKey) {
+        queueMicrotask(() => {
+          if (instancesRef.current.get(tabId) === inst && inst.termId === termId && !inst.inputReady) recoverRef.current(inst);
+        });
+      } else {
+        inst.exited = true;
+        inst.term.options.disableStdin = true;
+      }
+    }
     if (inst.opened && activeIdRef.current === tabId) inst.resizeSender.enqueue(termId, inst.term.cols, inst.term.rows);
     flushInput(inst);
   }, [applyFrame, flushInput, pendingOutput]);
@@ -326,7 +364,7 @@ function ShellTerminalPanel({
     const term = newTerm();
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, opened: false, inputQueue: [], sending: false, inputReady: false, attachmentVersion: 0,
+    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, durable: false, exited: false, exitedTermId: '', restarting: false, opened: false, inputQueue: [], sending: false, inputReady: false, attachmentVersion: 0,
       resizeSender: createTerminalResizeSender(terminalAPI.resize),
       output: createTerminalOutput(term, () => activeIdRef.current === id && !document.hidden, (blocked) => setOutputBlocked(id, blocked)),
       focusSender: createTerminalFocusSender(terminalAPI.focus),
@@ -375,7 +413,9 @@ function ShellTerminalPanel({
       };
       let res = await openOrAttach();
       let attempts = 0;
-      while ((requestEpoch !== connectionEpochRef.current || (definition?.sessionKey && !res.ok)) && !['terminal_not_found', 'too_many_terminals', 'unauthorized'].includes(res.error || '') && instancesRef.current.get(id) === inst && inst.attachmentVersion === version && attempts < 5) {
+      // Retrying an attach/keyed open is idempotent. An unkeyed open with a
+      // lost response is ambiguous even if the stream changed in parallel.
+      while (!CONNECTION_STOP_ERRORS.has(res.error || '') && Boolean(tabSessionKey || previousResultId || (res.ok && res.termId)) && (requestEpoch !== connectionEpochRef.current || !res.ok) && instancesRef.current.get(id) === inst && inst.attachmentVersion === version) {
         if (res.ok && res.termId) previousResultId = res.termId;
         await new Promise((resolve) => setTimeout(resolve, Math.min(4000, 500 * 2 ** attempts++)));
         if (instancesRef.current.get(id) !== inst || inst.attachmentVersion !== version) {
@@ -388,20 +428,21 @@ function ShellTerminalPanel({
         releaseLateAttachment(res, tabSessionKey, id, openingMux);
         return;
       }
-      if (requestEpoch !== connectionEpochRef.current) res = { ok: false, error: 'terminal_connection_changed' };
+      if (requestEpoch !== connectionEpochRef.current && !CONNECTION_STOP_ERRORS.has(res.error || '')) res = { ok: false, error: 'terminal_connection_changed' };
       if (!res.ok || !res.termId) {
-        term.writeln(`\x1b[31m终端启动失败: ${res.error || 'unknown'}${res.error === 'terminal_not_found' ? '（Server session 已结束，请重新打开）' : ''}\x1b[0m`);
+        term.writeln(`\x1b[31m${terminalConnectionFailure(res.error)}\x1b[0m`);
         setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
         return;
       }
       if (tabSessionKey && res.durable === false) {
         term.writeln('\x1b[33m当前服务器未提供持久终端后端，服务重启后此会话无法恢复。\x1b[0m');
       }
+      inst.durable = res.durable === true;
       if (tabSessionKey.startsWith('native:') && res.cols && res.rows) term.resize(res.cols, res.rows);
       registerTermId(id, res.termId, inst);
       setTabs((prev) => prev.map((t) => (
         t.id === id
-          ? { ...t, termId: res.termId!, status: panelReadyRef.current ? 'ready' : 'connecting' }
+          ? { ...t, termId: res.termId!, status: inst.exited ? 'closed' : inst.inputReady ? 'ready' : 'connecting' }
           : t
       )));
     } catch (error) {
@@ -434,13 +475,13 @@ function ShellTerminalPanel({
       if (disposed || !panelReadyRef.current) return;
       const definitions = sessionTabsRef.current;
       for (const [tabId, inst] of instancesRef.current) {
-        if ((target && target !== inst) || !inst.termId || closingRef.current.has(tabId)) continue;
+        if ((target && target !== inst) || !inst.termId || inst.exited || inst.restarting || closingRef.current.has(tabId)) continue;
         const epoch = connectionEpochRef.current;
         const pending = recoveries.get(inst);
         if (pending?.epoch === epoch && pending.version === inst.attachmentVersion) continue;
         const previousTermId = inst.termId;
         const definition = definitions?.find((item) => item.id === tabId);
-        const key = String(definition?.sessionKey || sessionKey || previousTermId).trim();
+        const key = String(definition?.sessionKey || inst.sessionKey || sessionKey || previousTermId).trim();
         const attachmentMux = muxIdRef.current;
         const version = ++inst.attachmentVersion;
         const recovery = { epoch, version };
@@ -470,9 +511,12 @@ function ShellTerminalPanel({
               return;
             }
             if (!attached.ok || !attached.termId) {
-              if (attached.error === 'terminal_not_found') {
-                inst.term.writeln('\r\n\x1b[31mServer session 已结束，请重新打开终端。\x1b[0m');
-                setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'error' } : tab));
+              if (CONNECTION_STOP_ERRORS.has(attached.error || '')) {
+                inst.exited = attached.error === 'terminal_not_found';
+                if (inst.exited) inst.inputQueue = [];
+                inst.term.options.disableStdin = true;
+                inst.term.writeln(`\r\n\x1b[31m${terminalConnectionFailure(attached.error)}\x1b[0m`);
+                setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: inst.exited ? 'closed' : 'error' } : tab));
                 finishRecovery();
               } else {
                 setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'connecting' } : tab));
@@ -484,9 +528,10 @@ function ShellTerminalPanel({
               pendingOutput.retire(inst.termId);
               byTermIdRef.current.delete(inst.termId);
             }
+            inst.durable = attached.durable === true;
             registerTermId(tabId, attached.termId, inst);
             setTabs((prev) => prev.map((tab) => tab.id === tabId
-              ? { ...tab, termId: attached.termId!, status: panelReadyRef.current ? 'ready' : 'connecting' }
+              ? { ...tab, termId: attached.termId!, status: inst.exited ? 'closed' : inst.inputReady ? 'ready' : 'connecting' }
               : tab));
             finishRecovery();
           }).catch(retry).finally(finishAttaching);
@@ -792,7 +837,9 @@ function ShellTerminalPanel({
   const reloadActiveTab = useCallback(async () => {
     const id = activeId;
     const inst = instancesRef.current.get(id);
-    if (!inst) return;
+    if (!inst || inst.restarting) return;
+    inst.restarting = true;
+    inst.exited = false;
     const version = ++inst.attachmentVersion;
     const attachmentMux = muxIdRef.current;
     const requestEpoch = connectionEpochRef.current;
@@ -805,6 +852,7 @@ function ShellTerminalPanel({
         const result = await terminalAPI.attach(inst.sessionKey, attachmentMux);
         if (!isCurrent() || requestEpoch !== connectionEpochRef.current) {
           releaseLateAttachment(result, inst.sessionKey, id, attachmentMux);
+          inst.restarting = false;
           if (isCurrent() && panelReadyRef.current) recoverRef.current(inst);
           return;
         }
@@ -813,8 +861,10 @@ function ShellTerminalPanel({
             pendingOutput.retire(inst.termId);
             byTermIdRef.current.delete(inst.termId);
           }
+          inst.restarting = false;
+          inst.durable = result.durable === true;
           registerTermId(id, result.termId, inst);
-          setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, termId: result.termId!, status: 'ready' } : tab));
+          setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, termId: result.termId!, status: inst.exited ? 'closed' : inst.inputReady ? 'ready' : 'connecting' } : tab));
         } else {
           setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, status: 'error' } : tab));
           message.error(`重新连接失败: ${result.error || 'unknown'}`);
@@ -849,6 +899,8 @@ function ShellTerminalPanel({
           return;
         }
         if (res.ok && res.termId) {
+          inst.restarting = false;
+          inst.durable = res.durable === true;
           if (requestEpoch !== connectionEpochRef.current) {
             inst.termId = res.termId;
             if (panelReadyRef.current) recoverRef.current(inst);
@@ -856,7 +908,7 @@ function ShellTerminalPanel({
           }
           registerTermId(id, res.termId, inst);
           setTabs((prev) => prev.map((t) => (t.id === id
-            ? { ...t, termId: res.termId!, status: panelReadyRef.current ? 'ready' : 'connecting' }
+            ? { ...t, termId: res.termId!, status: inst.exited ? 'closed' : inst.inputReady ? 'ready' : 'connecting' }
             : t)));
         } else {
           setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
@@ -864,7 +916,10 @@ function ShellTerminalPanel({
       } catch {
         if (isCurrent()) setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
       }
-    } finally { finishReloading(); }
+    } finally {
+      inst.restarting = false;
+      finishReloading();
+    }
   }, [activeId, pendingOutput, registerTermId, releaseLateAttachment, sessionKey]);
 
   const panelStyleHeight = minimized ? '38px' : (panelHeight !== undefined ? '100%' : `${height}px`);

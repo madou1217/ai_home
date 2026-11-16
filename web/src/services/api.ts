@@ -2310,7 +2310,8 @@ export const terminalAPI = {
   // 整个面板一条 SSE，承载所有 tab 的输出（帧带 termId），规避浏览器每域 ~6 连接上限。
   // Management Key 与远端 server id 均通过 header 传递，不进入 URL。
   openMuxStream: (muxId: string): EventSource => guardedWebUiEventSource(
-    `/v0/webui/terminal/mux?muxId=${encodeURIComponent(muxId)}`
+    `/v0/webui/terminal/mux?muxId=${encodeURIComponent(muxId)}`,
+    { silenceTimeoutMs: 90_000 }
   )
 };
 

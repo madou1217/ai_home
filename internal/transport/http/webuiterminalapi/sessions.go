@@ -319,19 +319,31 @@ func (handler *Handler) handleAttach(response http.ResponseWriter, request *http
 		}, nil, statusForAttach)
 		return
 	}
-	// 刚退出、还在保留期内的会话按 Node 语义直接 404，不再尝试恢复 tmux。
-	for _, snapshot := range handler.sessions.List() {
-		if snapshot.Key == key {
-			writeTerminalError(response, http.StatusNotFound, errTerminalNotFound)
-			return
-		}
-	}
-	restored, failure := handler.openSession(request.Context(), openInput{
+	input := openInput{
 		sessionKey: key,
 		muxID:      body.MuxID,
 		shell:      handler.pickShell(),
 		attachOnly: true,
-	})
+	}
+	previous := handler.findSnapshot(key)
+	if previous == nil {
+		previous = handler.findSnapshotByKey(key)
+	}
+	if previous != nil {
+		// A tmux client exiting does not mean its background shell exited. Probe
+		// the durable session before reporting it missing, including requests
+		// addressed by the old client ID. Never recreate the shell on attach.
+		if !previous.Durable || previous.Key == "" || strings.HasPrefix(previous.Key, nativeSessionPrefix) {
+			writeTerminalError(response, http.StatusNotFound, errTerminalNotFound)
+			return
+		}
+		input.sessionKey = previous.Key
+		input.cwd = previous.Dir
+		input.cols = int(previous.Cols)
+		input.rows = int(previous.Rows)
+		input.shell = Shell{File: handler.shellForSnapshot(*previous)}
+	}
+	restored, failure := handler.openSession(request.Context(), input)
 	if failure != nil {
 		writeTerminalError(response, statusForAttach(failure), failure)
 		return

@@ -164,19 +164,45 @@ class AuthorizedWebUiEventSource extends EventTarget {
   private closed = false;
   private readPaused = false;
   private resumeReader: (() => void) | null = null;
+  private lastActivityAt = Date.now();
+  private watchdogTimer: number | null = null;
+  private readonly silenceTimeoutMs: number;
+
+  private checkConnection = () => {
+    if (!this.closed && !this.readPaused && this.silenceTimeoutMs > 0
+      && Date.now() - this.lastActivityAt >= this.silenceTimeoutMs) {
+      this.abortController?.abort();
+    }
+  };
+
+  private resumeConnection = () => {
+    if (!this.closed && !this.readPaused) this.abortController?.abort();
+  };
 
   setReadPaused(paused: boolean) {
     this.readPaused = paused;
-    if (!paused) { this.resumeReader?.(); this.resumeReader = null; }
+    if (!paused) {
+      // Rendering backpressure is not a dead connection. Start a fresh grace
+      // period when the consumer resumes reading buffered heartbeats/output.
+      this.lastActivityAt = Date.now();
+      this.resumeReader?.();
+      this.resumeReader = null;
+    }
   }
 
   private waitForReader() {
     return this.readPaused && !this.closed ? new Promise<void>((resolve) => { this.resumeReader = resolve; }) : Promise.resolve();
   }
 
-  constructor(url: string) {
+  constructor(url: string, silenceTimeoutMs = 0) {
     super();
     this.url = url;
+    this.silenceTimeoutMs = silenceTimeoutMs;
+    if (silenceTimeoutMs > 0) {
+      this.watchdogTimer = window.setInterval(this.checkConnection, Math.min(5000, silenceTimeoutMs));
+      document.addEventListener('visibilitychange', this.checkConnection);
+      window.addEventListener('online', this.resumeConnection);
+    }
     queueMicrotask(() => this.connect());
   }
 
@@ -186,6 +212,12 @@ class AuthorizedWebUiEventSource extends EventTarget {
     this.readyState = EventSource.CLOSED;
     this.abortController?.abort();
     this.abortController = null;
+    if (this.watchdogTimer !== null) {
+      window.clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    document.removeEventListener('visibilitychange', this.checkConnection);
+    window.removeEventListener('online', this.resumeConnection);
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -222,6 +254,7 @@ class AuthorizedWebUiEventSource extends EventTarget {
     if (this.closed) return;
     const controller = new AbortController();
     this.abortController = controller;
+    this.lastActivityAt = Date.now();
     try {
       const response = await fetchAuthorizedWebUiResource(this.url, {
         method: 'GET',
@@ -229,6 +262,7 @@ class AuthorizedWebUiEventSource extends EventTarget {
         signal: controller.signal
       });
       if (!response.ok || !response.body) throw new Error(`webui_event_stream_http_${response.status}`);
+      this.lastActivityAt = Date.now();
       this.readyState = EventSource.OPEN;
       this.emitOpen();
 
@@ -240,6 +274,7 @@ class AuthorizedWebUiEventSource extends EventTarget {
         if (this.closed) break;
         const { done, value } = await reader.read();
         if (done) break;
+        this.lastActivityAt = Date.now(); // SSE comments are heartbeats too.
         buffer += decoder.decode(value, { stream: true });
         let boundary = findSseBoundary(buffer);
         while (boundary) {
@@ -257,15 +292,16 @@ class AuthorizedWebUiEventSource extends EventTarget {
       if (finalEvent) this.emitMessage(finalEvent);
       if (!this.closed) this.emitError();
     } catch (_error) {
-      if (!this.closed && !controller.signal.aborted) this.emitError();
+      if (!this.closed) this.emitError();
     } finally {
+      controller.abort();
       if (this.abortController === controller) this.abortController = null;
       this.scheduleReconnect();
     }
   }
 }
 
-export function guardedWebUiEventSource(path: string): EventSource {
+export function guardedWebUiEventSource(path: string, options: { silenceTimeoutMs?: number } = {}): EventSource {
   const target = readSessionWatchTarget(path);
   if (target && typeof window !== 'undefined' && typeof WebSocket !== 'undefined'
     && !resolveActiveServer().isRemote) {
@@ -275,5 +311,5 @@ export function guardedWebUiEventSource(path: string): EventSource {
       readManagementKey: resolveWebUiManagementKey
     }) as unknown as EventSource;
   }
-  return new AuthorizedWebUiEventSource(path) as unknown as EventSource;
+  return new AuthorizedWebUiEventSource(path, options.silenceTimeoutMs) as unknown as EventSource;
 }

@@ -337,7 +337,10 @@ func prepareZcodeShadowApp(
 	if strings.TrimSpace(repoRoot) == "" || strings.TrimSpace(sourceBundlePath) == "" {
 		return sourceBundlePath, sourceExecutablePath, "", nil
 	}
-	hookModulePath := filepath.Join(repoRoot, "lib", "runtime", zcodeBundledHookFilename)
+	// 源文件名是 zcode-electron-captcha-hook.js；zcodeBundledHookFilename 是写入
+	// 影子 App 后的目标名。此前这里用目标名找源文件，必然 stat 失败并静默回退到
+	// 原版 App，导致 3.18.2 的 host 报 unsupported_runtime（2026-11-17 真机）。
+	hookModulePath := filepath.Join(repoRoot, "lib", "runtime", "zcode-electron-captcha-hook.js")
 	if info, statErr := os.Stat(hookModulePath); statErr != nil || info.IsDir() {
 		return sourceBundlePath, sourceExecutablePath, "", nil
 	}
@@ -557,16 +560,20 @@ func inspectZcodeSourceBundle(sourceBundlePath, sourceExecutablePath, hookModule
 
 func findAgentRuntimeEntry(asarPath string, metadata asarMetadata) (asarResolvedEntry, []byte, error) {
 	candidates := collectAsarChunkPaths(metadata.Root, "")
-	for _, entryPath := range candidates {
-		if !strings.HasPrefix(entryPath, "out/main/") || !strings.HasSuffix(entryPath, ".js") {
-			continue
-		}
-		entry, raw, err := readAndVerifyAsarEntry(asarPath, metadata, entryPath)
-		if err != nil {
-			continue
-		}
-		if loc := zcodeAgentCwdFieldPattern.Find(raw); loc != nil && strings.Contains(string(raw), zcodeAgentCwdEnvRef) {
-			return entry, loc, nil
+	// 3.18.x 把 Agent 命令解析挪到了 out/host/chunk-*.js（Node 侧也搜 out/host）；
+	// 旧版本仍在 out/main。先按新布局找，找不到再回落旧布局。
+	for _, prefix := range []string{"out/host/", "out/main/"} {
+		for _, entryPath := range candidates {
+			if !strings.HasPrefix(entryPath, prefix) || !strings.HasSuffix(entryPath, ".js") {
+				continue
+			}
+			entry, raw, err := readAndVerifyAsarEntry(asarPath, metadata, entryPath)
+			if err != nil {
+				continue
+			}
+			if loc := zcodeAgentCwdFieldPattern.Find(raw); loc != nil && strings.Contains(string(raw), zcodeAgentCwdEnvRef) {
+				return entry, loc, nil
+			}
 		}
 	}
 	return asarResolvedEntry{}, nil, errors.New("zcode_agent_runtime_anchor_missing")

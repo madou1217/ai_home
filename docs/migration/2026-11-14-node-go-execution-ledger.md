@@ -345,3 +345,11 @@ Hubble独立review指出postcommit取消/PRAGMA预算映射两项，均修复并
 ## 2026-11-16 原需求逐项审计
 
 `2026-11-16-requirement-evidence-audit.md`按原顺序保留42个W0-W6勾选要求和7个交付门槛，逐项分证据/部分/缺口，不删原范围、不用route或目录数量作完成百分比。更新顶部过时状态（标准CLI和Windows/Linux native已实证，但三平台托管服务不是同一要求）。当前明确未完成，safe下一步含W1 metadata版本/来源、完整transport cells、剩余CLI/服务/多writer和W6逐域；OAuth/Edge只是特定验收输入限制，不构成全目标停止理由。
+
+## 2026-11-16 WORK native/composer bounded checkpoint
+
+源码 `e036cf01f`（前置协议视图 `987a3d026`）仅提交本owner21路径：account-native/gateway descriptor、既有策略/projection/Capture复用、child env与binary别名、真实transport门槛、AGY stream-json、session-scoped composer/default/submit校验。Hubble与Mendel独立源码审查finding已关闭；主index原字节保留，未夹带configsnapshot/claudedesktopconfig/toolkit六条并行未提交。
+
+从已提交源码archive仅覆盖本组的依赖闭包build/vet通过，产物`f915dfa3dd19f5b73eed51cadc529f1bce4ea0fa713fc9be131ad00b7c0b305e`真实private API及installed Claude验证：固定Claude2/catalog2、CBcn19/catalog19、global224；invalid422、AGY gateway422/absent404；alias wildcard/shadow/restore；Claude fixed-account WORK回合202→completed/idle且实回`WORK_NATIVE_OK`。目录数来自最新DB副本，不与早轮20/223混淆；direct native无gateway ledger记账证明。私有HOME/DB/服务均清理。全部5780非doc文件与提交源码匹配。详见`2026-11-16-work-native-execution-acceptance.md`。
+
+剩余明确未关：零AGY注册账号下仅natural noauth ERROR，无authenticated inference/resume/Capture；global Claude native `/v1/messages?beta=true`仍upstream参数拒绝；其他transport/profile、Edge真实页面、shared WORK发布另行闭环。Chat owner单独授权发布85851ec39不含本组；本session未重启/部署。原W0–W6不标完成。

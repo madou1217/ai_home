@@ -2,6 +2,8 @@
 
 > 总控复核：2026-11-17 00:02–00:14（Asia/Shanghai）；原目标澄清为 2026-11-16 18:14–18:32。这是用户可读的目标与状态入口，不是新的平行开发计划，也不是实时仪表盘。详细需求继续以 [原 W0–W6 计划](../superpowers/plans/2026-11-14-node-go-next-development-plan.md)、[执行账](2026-11-14-node-go-execution-ledger.md) 和 [逐项证据审计](2026-11-16-requirement-evidence-audit.md) 为准；状态变化必须更新证据，不能把旧快照当现状。
 
+> **后续快照更正（2026-11-17 00:23，非本监督执行发布）：**本页00:02–00:14记录之后，运行已变为Go PID `7686`、Node PID `7889`（私有 `59784`）；runtime identity/磁盘均为 `a460355e...`，内嵌 `a4c4d8070` 且 `vcs.modified=true`，旧stamp仍 `85851ec...` / `079a565d...`。下面 `93990/94287/5cc9...` 是前一观察快照，不再代表实时值；R0须补最新构件来源，不能凭dirty revision确认全部已加载。00:20通过既有单次SSH跳板核对远端main为 `a4c4d8070`，确认本页与此前Desktop/Terminal提交已包含；这只证明Git交付，不证明加载或Node退出。未更改全局SSH/代理配置。 文档收尾期间runtime identity再次变化，故不将该观察延长为持续运行断言；后续状态必须另附观察时间和发布owner凭证。
+
 ## 1. 总目标：迁移并退出旧实现，不是长期双轨
 
 **AIH 的第一方业务、状态写入和运行调度逐域迁到 Go；Go 是最终主实现。Node.js 只能作为有负责人、必要理由和退出门槛的过渡兼容层，不能成为另一套长期维护的业务实现。**
@@ -20,7 +22,7 @@
 
 这些工作如果只分别汇报“已实现/已提交”，而没有统一展示“旧路是否还必需、何时能移除”，用户就无法判断是否在向终点收敛。**不能以局部修复数量、Go 文件数量、接口数量或路由合同占比代替迁移进度。**
 
-## 3. 当前可确认的状态
+## 3. 带观察时间的状态（运行更新见页首）
 
 | 范围 | 已有事实 | 尚未证明/下一门槛 |
 | --- | --- | --- |
@@ -52,7 +54,7 @@
 
 | 卡/原域/负责人 | 当前真实入口与Go唯一目标/写者 | 仍必需或条件可达的Node残留及caller | 下一个切换→断依赖→删除节点与阻碍 |
 | --- | --- | --- | --- |
-| **R0 构件与服务，W0/W2/W6**；监督`01a1df63`核对，当前发布owner待确认 | 当前Go93990→Node94287；Go启动 `cmd/aih-server/run.go` → `internal/runtime/nodesupervisor/supervisor.go`；目标是Go单服务运行链，不另立Node守护实现 | 监督器实际执行 `bin/ai-home.js server serve`；`router.go` 未命中路径转 `frontdoor`，Node不是已退出的空壳 | **先**找出5cc9构建输入/批准记录/正确stamp，做可复核artifact关联；再按下面各域完成Node-off，最后改默认拓扑与包。来源缺口未关、未授权重启；本页不执行切换 |
+| **R0 构件与服务，W0/W2/W6**；监督`01a1df63`核对，当前发布owner待确认 | 当前Go93990→Node94287；Go启动 `cmd/aih-server/run.go` → `internal/runtime/nodesupervisor/supervisor.go`；目标是Go单服务运行链，不另立Node守护实现 | 监督器实际执行 `bin/ai-home.js server serve`；`router.go` 未命中路径转 `frontdoor`，Node不是已退出的空壳 | **先**找出最新运行构件（00:23为a460355e）的构建输入/批准记录/正确stamp，做可复核artifact关联；再按下面各域完成Node-off，最后改默认拓扑与包。来源缺口未关、未授权重启；本页不执行切换 |
 | **R1 公开CLI与Codex，W1/W3**；W0 owner`01a1d99a`，Desktop effect与M协调 | `aih`当前symlink仍指 `bin/ai-home.js`；目标复用 `cmd/aih`、`aihcli`、`codexpreferences`、`codexdefault` 的唯一事务/状态写者 | `bin/ai-home.js` fast dispatch + `lib/cli/app.js`；default-command输出/Desktop effects；artifact-hooks→`host-sync.js`仍有条件配置/凭据写者，不能泛称只转发 | 先逐命令转Go公开入口并退条件host writer；证明default/effort/credentials更新不经Node仍不复活旧值，保留help/TAB/逃生门/失败清理，再删对应旧业务。缺跨入口/平台矩阵 |
 | **R2 Codex wrapper/stdio/RPC，W1/W3**；W0 owner`01a1d99a` | Go `codexexecintent`/`codexexecpreflight`/`codexlocalappserver`/`codexappserverws` 已交；lease、线程选择、tier与取消只保留Go规则 | installed wrapper由 `codexhooks/wrapper.go` 生成但仍调 `codex-app-server-stdio-proxy.js`；Node launcher/privatepipe/helper生命周期，以及rollout path条件writer仍可达 | Go接住安装wrapper和stdio语义，优先官方API；在旧Node proxy不可用下真验TUI/exec/resume/断线/引用/lease，再断旧入口及writer后删除。公共与caller-local参数矩阵不能互借 |
 | **R3 本地native WORK/session/composer，W0/W1/W5**；W0 owner`01a1d99a` | `worknative`→Go账号selector/resolver/strategy，`chatruntime/{driver_native,native_model_*}`→Go进程/终态；审批 `__mcp-approve` 已Go。目标统一Go session与Capture链 | Node同名文件不必然第二owner；self-base缺失且node-base存在的approval fallback仍有条件路径；远端入口另见R6 | 先用来源冻结的private服务不启动AIH Node，验本地创建/目录/发送/stream/取消/审批/恢复/清理；再移除非必需fallback。AGY无账号、globalClaude参数、Capture与缺transport独立阻塞，不回退Node伪实现 |

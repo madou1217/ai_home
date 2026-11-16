@@ -2414,6 +2414,10 @@ export interface AppInstallJob {
 export interface WebUiTask extends AppInstallJob {
   source: 'app-install' | 'terminal' | 'environment' | 'managed-tool' | string;
   taskName: string;
+  /** 账号活动的原始动作与目标，兼容迁移前后的任务事件。 */
+  providers?: string[];
+  actionId?: string;
+  actionLabel?: string;
   /** 运行环境任务的执行目标（'local' | 'ssh:<connectionId>'）。 */
   target?: string;
 }

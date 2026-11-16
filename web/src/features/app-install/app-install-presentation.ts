@@ -94,6 +94,7 @@ export function getAppInstallFailureReasons(job: Pick<AppInstallJob, 'error' | '
 export function getAppInstallStatusPresentation(status: string): AppInstallStatusPresentation {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'succeeded') return { label: '已成功', tone: 'success', terminal: true };
+  if (normalized === 'partial') return { label: '部分成功', tone: 'neutral', terminal: true };
   if (normalized === 'failed') return { label: '执行失败', tone: 'error', terminal: true };
   if (normalized === 'cancelled') return { label: '已取消', tone: 'neutral', terminal: true };
   if (normalized === 'queued') return { label: '排队中', tone: 'active', terminal: false };
@@ -132,7 +133,12 @@ export function canRetryWebUiTask(task: WebUiTask) {
     && Boolean(task.appId && task.action);
 }
 
-export function getWebUiTaskSourceLabel(task: Pick<WebUiTask, 'source'>) {
+export function isAccountActivityTask(task: Pick<WebUiTask, 'source'> & Partial<Pick<WebUiTask, 'kind'>>) {
+  return task.kind === 'activity' || task.source === 'account-activity';
+}
+
+export function getWebUiTaskSourceLabel(task: Pick<WebUiTask, 'source'> & Partial<Pick<WebUiTask, 'kind'>>) {
+  if (isAccountActivityTask(task)) return '账号活动';
   if (task.source === 'terminal') return '终端';
   if (task.source === 'environment') return '运行环境';
   if (task.source === 'managed-tool') return '网络接入';

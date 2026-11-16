@@ -2,6 +2,8 @@ package taskhub
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/accountactivity"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
@@ -61,7 +63,7 @@ func AttachAccountActivityJobs(hub *Hub, manager *accountactivity.JobManager) fu
 		jobs := manager.ListActive()
 		tasks := make([]Task, 0, len(jobs))
 		for _, job := range jobs {
-			if task, ok := StructToTask("account-activity", job); ok {
+			if task, ok := accountActivityTask(job); ok {
 				tasks = append(tasks, task)
 			}
 		}
@@ -73,7 +75,43 @@ func AttachAccountActivityJobs(hub *Hub, manager *accountactivity.JobManager) fu
 func AccountActivityChangedHandler(hub *Hub) func(accountactivity.JobView) {
 	return func(job accountactivity.JobView) {
 		if hub != nil && job.ID != "" {
-			hub.PublishTyped("account-activity", job)
+			if task, ok := accountActivityTask(job); ok {
+				hub.Publish(task)
+			}
 		}
 	}
+}
+
+// accountActivityTask 为快照与实时事件提供相同的 WebUiTask 投影，保留活动原始结果。
+func accountActivityTask(job accountactivity.JobView) (Task, bool) {
+	task, ok := StructToTask("account-activity", job)
+	if !ok {
+		return nil, false
+	}
+	provider := strings.Join(job.Providers, ",")
+	label := strings.TrimSpace(job.ActionLabel)
+	if label == "" {
+		label = "账号活动"
+	}
+	task["appId"] = provider
+	task["provider"] = provider
+	task["kind"] = "activity"
+	task["action"] = "claim"
+	task["taskName"] = strings.TrimSpace(provider + " " + label)
+	task["attempts"] = []any{}
+	if job.ErrorSummary != "" {
+		task["error"] = job.ErrorSummary
+	}
+	progress, _ := task["progress"].(map[string]any)
+	if progress != nil {
+		progressLabel := job.Phase
+		if job.Progress.Total > 0 {
+			progressLabel = fmt.Sprintf("%d/%d", job.Progress.Completed, job.Progress.Total)
+			if current := strings.TrimSpace(job.Progress.CurrentAccountRef); current != "" {
+				progressLabel += " · " + current
+			}
+		}
+		progress["label"] = progressLabel
+	}
+	return task, true
 }

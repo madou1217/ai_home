@@ -22,6 +22,7 @@ import {
   getAppInstallFailureReasons,
   getAppInstallStatusPresentation,
   getWebUiTaskSourceLabel,
+  isAccountActivityTask,
   mergeWebUiTaskQueueEntries
 } from '@/features/app-install/app-install-presentation';
 import type { Account, WebUiTask } from '@/types';
@@ -31,12 +32,19 @@ import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-laun
 
 function taskName(task: WebUiTask) {
   if (task.taskName) return task.taskName;
-  if (task.kind === 'terminal') return `${task.provider || task.appId} 终端操作`;
-  return `${task.provider || task.appId} ${task.kind === 'desktop' ? 'Desktop' : 'CLI'} 安装`;
+  const target = task.provider || task.appId
+    || (Array.isArray(task.providers) ? task.providers.join(',') : '');
+  if (isAccountActivityTask(task)) {
+    return [target, task.actionLabel || '账号活动'].filter(Boolean).join(' ');
+  }
+  if (task.kind === 'terminal') return [target, '终端操作'].filter(Boolean).join(' ');
+  const kind = task.kind === 'desktop' ? 'Desktop' : task.kind === 'cli' ? 'CLI' : '';
+  const action = kind && !task.action ? '安装' : taskAction(task);
+  return [target, kind, action].filter(Boolean).join(' ');
 }
 
 function taskAction(task: WebUiTask) {
-  if (task.kind === 'activity') return '领取';
+  if (isAccountActivityTask(task)) return task.actionLabel || '账号活动';
   if (task.action === 'install') return '安装';
   if (task.action === 'update') return '更新';
   if (task.action === 'uninstall') return '卸载';
@@ -47,11 +55,6 @@ function taskAction(task: WebUiTask) {
 
 // 队列分 tab：账号活动（签到 / 领臭鸡蛋）与安装卸载**同队列同页面**，但可分开看。
 // 判定按 `kind`/`source` 数据，不按名字猜。
-const ACTIVITY_SOURCES = new Set(['account-activity']);
-
-function isActivityTask(task: WebUiTask) {
-  return task.kind === 'activity' || ACTIVITY_SOURCES.has(String(task.source || ''));
-}
 
 type TaskQueueTab = 'all' | 'install' | 'activity';
 
@@ -103,8 +106,8 @@ export default function AppInstallTaskQueue() {
     [dismissedTaskIds, recentTasks, tasks]
   );
   // tab 计数与过滤：账号活动（领取）与安装/卸载分开看，默认「全部」。
-  const activityTasks = useMemo(() => visibleTasks.filter(isActivityTask), [visibleTasks]);
-  const installTasks = useMemo(() => visibleTasks.filter((task) => !isActivityTask(task)), [visibleTasks]);
+  const activityTasks = useMemo(() => visibleTasks.filter(isAccountActivityTask), [visibleTasks]);
+  const installTasks = useMemo(() => visibleTasks.filter((task) => !isAccountActivityTask(task)), [visibleTasks]);
   const tabTasks = activeTab === 'activity'
     ? activityTasks
     : activeTab === 'install'
@@ -323,7 +326,9 @@ export default function AppInstallTaskQueue() {
             const percent = status.tone === 'success'
               ? 100
               : Math.round(Number(task.progress?.percent || 0));
-            const failureReasons = status.tone === 'error' ? getAppInstallFailureReasons(task) : [];
+            const failureReasons = status.tone === 'error' || task.status === 'partial'
+              ? getAppInstallFailureReasons(task)
+              : [];
             const launchable = task.source === 'app-install'
               && task.action === 'install'
               && task.status === 'succeeded'
@@ -349,7 +354,7 @@ export default function AppInstallTaskQueue() {
                   percent={percent}
                   size="small"
                   showInfo
-                  status={status.tone === 'success' ? 'success' : status.tone === 'error' ? 'exception' : 'active'}
+                  status={status.tone === 'success' ? 'success' : status.tone === 'error' ? 'exception' : status.terminal ? 'normal' : 'active'}
                 />
                 <div className="webui-task-queue-item-detail">
                   <span>{task.progress?.label || '等待状态更新'}</span>

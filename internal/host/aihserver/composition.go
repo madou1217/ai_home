@@ -276,7 +276,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, fmt.Errorf("创建 models.dev 模态索引失败: %w", err)
 	}
 	agyModelWires := newAgyModelWires(options.AIHomeDir)
-	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires, modelModalities)
+	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires, modelModalities, options.AIHomeDir)
 	if err != nil {
 		_ = codexVersions.Close()
 		_ = store.Close()
@@ -2451,6 +2451,7 @@ func newModelDiscovery(
 	codexVersions clientversion.Source,
 	agyModelWires agycodeassist.ModelWireWriter,
 	modalityRegistrar modelmetadata.ModelDescriptorRegistrar,
+	aiHomeDir string,
 ) (*accountapp.ModelDiscovery, error) {
 	strategies := injected
 	if len(strategies) == 0 {
@@ -2463,6 +2464,7 @@ func newModelDiscovery(
 			codexVersions:     codexVersions,
 			agyModelWires:     agyModelWires,
 			modalityRegistrar: modalityRegistrar,
+			aiHomeDir:         aiHomeDir,
 		})
 		if err != nil {
 			return nil, err

@@ -12,8 +12,12 @@ package aihserver
 
 import (
 	stdcontext "context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelmetadata"
@@ -43,6 +47,8 @@ type modelProviderContext struct {
 	codexVersions     clientversion.Source
 	agyModelWires     agycodeassist.ModelWireWriter
 	modalityRegistrar modelmetadata.ModelDescriptorRegistrar
+	// aiHomeDir 供需要宿主事实的目录源读取（如 zcode 的真实 app_version 缓存）。
+	aiHomeDir string
 }
 
 // modelProviderModule 是一个 Provider（或家族）的模型目录装配单元。
@@ -148,12 +154,38 @@ func buildKiroModelProvider(context modelProviderContext) ([]accountapp.Provider
 }
 
 // zcode 的目录来自 plan 计费接口（余额 + 活动预览回退），需要客户端元数据头。
+// app_version 必须是宿主解析到的真实版本：写旧版本时 preview 会以空 plans 假阴性
+// 返回，模型目录与「可领套餐」会一起消失。
 func buildZcodeModelProvider(context modelProviderContext) ([]accountapp.ProviderModelDiscoverer, error) {
-	source, err := zcodemodelcatalog.New(context.client)
+	source, err := zcodemodelcatalog.NewWithAppVersion(context.client, resolveZcodeAppVersion(context.aiHomeDir))
 	if err != nil {
 		return nil, err
 	}
 	return []accountapp.ProviderModelDiscoverer{source}, nil
+}
+
+// resolveZcodeAppVersion 读取宿主维护的版本缓存；缺失时回落到种子版本。
+// 缓存由账号活动/凭据链路按安装版 → 在线安装页刷新，目录源只读同一份事实。
+func resolveZcodeAppVersion(aiHomeDir string) string {
+	root := strings.TrimSpace(aiHomeDir)
+	if root == "" {
+		return zcodemodelcatalog.SeedAppVersion
+	}
+	payload, err := os.ReadFile(filepath.Join(root, "run", "zcode-app-version.json"))
+	if err != nil {
+		return zcodemodelcatalog.SeedAppVersion
+	}
+	var cached struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(payload, &cached) != nil {
+		return zcodemodelcatalog.SeedAppVersion
+	}
+	version := strings.TrimSpace(cached.Version)
+	if version == "" {
+		return zcodemodelcatalog.SeedAppVersion
+	}
+	return version
 }
 
 // gemini 的 Vertex 占位/网关号直接读 base_url 的 /v1/models。

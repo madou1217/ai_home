@@ -66,15 +66,27 @@ var _ accountapp.ProviderModelDiscoverer = (*Source)(nil)
 
 // New 创建生产端点上的目录源。
 func New(client HTTPClient) (*Source, error) {
+	return NewWithAppVersion(client, SeedAppVersion)
+}
+
+// NewWithAppVersion 用宿主解析出的真实 ZCode 版本创建目录源。
+//
+// billing/preview 对 app_version 做版本门槛且失败方式是假阴性（旧版本只返回
+// plans:[]，看起来像「暂无可领」），所以宿主解析到的版本必须透传进来。
+func NewWithAppVersion(client HTTPClient, version string) (*Source, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
+	}
+	appVersion := strings.TrimSpace(version)
+	if appVersion == "" {
+		appVersion = SeedAppVersion
 	}
 	return &Source{
 		client:        client,
 		balanceURL:    balanceURL,
 		previewURL:    previewURL,
 		paasModelsURL: paasModelsURL,
-		appVersion:    SeedAppVersion,
+		appVersion:    appVersion,
 		platform:      runtime.GOOS + "-" + runtime.GOARCH,
 	}, nil
 }
@@ -325,6 +337,11 @@ func zcodeJWT(payload []byte) (string, error) {
 }
 
 // bigmodelToken 读取 z.ai 登录态的 access token（paas 目录兜底凭据）。
+// bigmodelToken 读取通用目录回退用的 z.ai access token。
+//
+// 凭据键按账号区域走：zai 区写 oauth:zai:access_token，bigmodel 区写
+// oauth:bigmodel:access_token（Node 的 zcode-credential 同口径）。只认 bigmodel
+// 会让 zai 区账号跳过 paas 兜底，模型目录直接判空。
 func bigmodelToken(payload []byte) string {
 	var document struct {
 		Credentials map[string]json.RawMessage `json:"credentials"`
@@ -332,15 +349,20 @@ func bigmodelToken(payload []byte) string {
 	if json.Unmarshal(payload, &document) != nil || document.Credentials == nil {
 		return ""
 	}
-	raw, exists := document.Credentials["oauth:bigmodel:access_token"]
-	if !exists {
-		return ""
+	for _, key := range []string{"oauth:zai:access_token", "oauth:bigmodel:access_token"} {
+		raw, exists := document.Credentials[key]
+		if !exists {
+			continue
+		}
+		var token string
+		if json.Unmarshal(raw, &token) != nil {
+			continue
+		}
+		if value := strings.TrimSpace(token); value != "" {
+			return value
+		}
 	}
-	var token string
-	if json.Unmarshal(raw, &token) != nil {
-		return ""
-	}
-	return strings.TrimSpace(token)
+	return ""
 }
 
 func capabilityModelIDs(capabilities []string) []string {

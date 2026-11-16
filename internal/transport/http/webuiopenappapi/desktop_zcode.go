@@ -499,7 +499,9 @@ func inspectZcodeSourceBundle(sourceBundlePath, sourceExecutablePath, hookModule
 		return zcodeSourceInspection{}, errors.New("zcode_bootstrap_entry_too_small")
 	}
 
-	agentEntry, agentMatch, err := findAgentRuntimeEntry(asarPath, metadata)
+	appVersion := readZcodeAppVersion(sourceBundlePath)
+	layout := matchZcodeLayoutProfile(appVersion)
+	agentEntry, agentMatch, err := findAgentRuntimeEntry(asarPath, metadata, layout.AgentDirs)
 	if err != nil {
 		return zcodeSourceInspection{}, err
 	}
@@ -529,6 +531,8 @@ func inspectZcodeSourceBundle(sourceBundlePath, sourceExecutablePath, hookModule
 		FuseWire      string `json:"fuseWire"`
 		HookHash      string `json:"hookHash"`
 		ExecRel       string `json:"executableRelativePath"`
+		ProfileID     string `json:"layoutProfile"`
+		AppVersion    string `json:"appVersion"`
 	}{
 		Version:       zcodeShadowLayoutVersion,
 		HeaderHash:    metadata.HeaderHash,
@@ -540,6 +544,8 @@ func inspectZcodeSourceBundle(sourceBundlePath, sourceExecutablePath, hookModule
 		FuseWire:      wire,
 		HookHash:      hookHash,
 		ExecRel:       relExec,
+		ProfileID:     layout.ID,
+		AppVersion:    appVersion,
 	})
 	fingerprint := sha256Hex(fpPayload)[:16]
 
@@ -558,11 +564,10 @@ func inspectZcodeSourceBundle(sourceBundlePath, sourceExecutablePath, hookModule
 	}, nil
 }
 
-func findAgentRuntimeEntry(asarPath string, metadata asarMetadata) (asarResolvedEntry, []byte, error) {
+func findAgentRuntimeEntry(asarPath string, metadata asarMetadata, searchDirs []string) (asarResolvedEntry, []byte, error) {
 	candidates := collectAsarChunkPaths(metadata.Root, "")
-	// 3.18.x 把 Agent 命令解析挪到了 out/host/chunk-*.js（Node 侧也搜 out/host）；
-	// 旧版本仍在 out/main。先按新布局找，找不到再回落旧布局。
-	for _, prefix := range []string{"out/host/", "out/main/"} {
+	// 搜索目录来自版本布局注册表：3.18+ 先 out/host，3.16/3.17 用 out/main。
+	for _, prefix := range searchDirs {
 		for _, entryPath := range candidates {
 			if !strings.HasPrefix(entryPath, prefix) || !strings.HasSuffix(entryPath, ".js") {
 				continue

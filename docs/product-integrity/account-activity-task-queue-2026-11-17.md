@@ -68,10 +68,10 @@
 - 01:00 左右只读重新检查：9527 已变为 PID `59695`，启动时间 00:44:09；本会话没有发布或重启它。正在运行的 executable inode `1154284379` 与磁盘当前二进制一致；Go 符号表包含 `taskhub.accountActivityTask`。
 - 实际 HTTP 页面提供 `/ui/umi.824a925f.js`，包内确有本次 kind/source 识别、活动标题、动作、来源及 partial 展示修复。已对现有 Edge 的 dashboard 页普通刷新，浏览器从旧 `umi.eb31a6e3.js` 加载成该新版；没有刷新终端页或修改草稿。
 - 共享队列当前为空，原成功任务记录已因其他会话重启返回 404。因此「没有 undefined」不能以空队列证明；没有为验收而重新触发真实账号领取。
-- 取当前正在运行的**同一二进制**及当前实际 HTTP 提供的前端文件复制到隔离环境，未重新编译。服务器 SHA-256 为 `7e45232a6ebe4676b83825ef81bf3bd0567e04d8241b5ec7e343f8cb29099000`；线上 JS 与复制文件 SHA-256 均为 `d47c2dce639b7863884f16689d963ed646c8eb4b0cc5957f1bca37feffa83aec`。记录在 `/tmp/aih-task-queue-20261117/installed-runtime/installed-artifact-identity.json`。
+- 取当前正在运行的**同一二进制**及当前实际 HTTP 提供的前端文件复制到隔离环境，未重新编译。服务器 SHA-256 为 `7e45232a6ebe4676b83825ef81bf3bd0567e04d8241b5ec7e343f8cb29099000`；线上 JS 与复制文件 SHA-256 均为 `d47c2dce639b7863884f16689d963ed646c8eb4b0cc5957f1bca37feffa83aec`。记录在 `/tmp/aih-task-queue-20261117/installed-runtime/installed-artifact-identity.json`。其中取证时仓库 revision 与构件嵌入 revision 分列；构件嵌入 `5b5da3396`、`vcs.modified=true`，不能把仓库当时 HEAD 当作精确构建输入。
 - 全新隔离 HOME、19148、零真实账号，真实 POST 200 个不存在账号：获得 **404 条 SSE task 事件**和 **29 次非空 REST 活跃快照**；全部正确投影为 `zcode 领臭鸡蛋`、`kind=activity`、`provider/appId=zcode`、`0/200 → 200/200`、人类可读 `account_not_found` 失败归因。此为同线上构件验收，不是以旧候选代替线上。
 - 复用已有 Edge 支持的 Playwright endpoint，不启动浏览器、不主动切焦点；临时 iframe 真实加载上述同构件，收到真实 10 个不存在账号的任务。显示全部 1 / 安装卸载 0 / 账号活动 1，标题与来源正确、进度 10/10；切换页签计数实测为 1/0；展开详情显示「全部 10 个账号失败：account_not_found ×10」。以真实 DOM click 触发展示后截图，未以伪造事件替代服务数据。
 - DOM 检查没有 Alert 主内容和粗左侧装饰线；已实际查看截图 `/tmp/aih-task-queue-20261117/installed-runtime/exact-installed-after.png`。接口和 Edge 原始结果为同目录 `exact-installed-api-result.json` 与 `edge-exact-result.txt`。
 - 清理完毕：移除本会话私有 iframe，detach 本会话 endpoint，按精确 PID/命令终止 19148 私有服务；共享 9527 仍健康，未修改真实账号或草稿。
-- 远端交付状态也已变化：本地 `refs/remotes/origin/main` reflog 在 **00:40:27、00:46:00、00:58:59** 记录了其他会话的 `update by push`；最新记录为 `166c0a316`，其祖先包含修复 `d921de54a`。这是共享仓库成功推送记录，不再声称修复从未推送；但本会话目前的独立 `ls-remote` 仍受失效代理 / 直连超时阻塞，未冒充新的远端查询成功。
+- 远端交付状态也已变化：本地 `refs/remotes/origin/main` reflog 在 **00:40:27、00:46:00、00:58:59** 记录了其他会话的 `update by push`；00:59 取证当时的记录为 `166c0a316`；01:10:39 又由其他会话推送推进到 `0ec508688`，两者的祖先均包含修复 `d921de54a`。这是共享仓库成功推送记录，不再声称修复从未推送；但本会话目前的独立 `ls-remote` 仍受失效代理 / 直连超时阻塞，未冒充新的远端查询成功。
 - 原 Go 回归作者 session 的证据缺口未被填补：可归属到引入提交，不可猜测作者会话。本次源码修复、线上构件生效及同构件真实验收已确认；全量 TS 既有三条错误的边界保持不变。

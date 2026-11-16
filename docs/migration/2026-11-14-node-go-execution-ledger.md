@@ -353,3 +353,9 @@ Hubble独立review指出postcommit取消/PRAGMA预算映射两项，均修复并
 从已提交源码archive仅覆盖本组的依赖闭包build/vet通过，产物`f915dfa3dd19f5b73eed51cadc529f1bce4ea0fa713fc9be131ad00b7c0b305e`真实private API及installed Claude验证：固定Claude2/catalog2、CBcn19/catalog19、global224；invalid422、AGY gateway422/absent404；alias wildcard/shadow/restore；Claude fixed-account WORK回合202→completed/idle且实回`WORK_NATIVE_OK`。目录数来自最新DB副本，不与早轮20/223混淆；direct native无gateway ledger记账证明。私有HOME/DB/服务均清理。全部5780非doc文件与提交源码匹配。详见`2026-11-16-work-native-execution-acceptance.md`。
 
 剩余明确未关：零AGY注册账号下仅natural noauth ERROR，无authenticated inference/resume/Capture；global Claude native `/v1/messages?beta=true`仍upstream参数拒绝；其他transport/profile、Edge真实页面、shared WORK发布另行闭环。Chat owner单独授权发布85851ec39不含本组；本session未重启/部署。原W0–W6不标完成。
+
+## 2026-11-16 W0/native Go owner 与 Node 退出状态卡
+
+新增 `2026-11-16-w0-native-node-exit-status.md` 对齐原W0–W6和统一总览，不以21源码/隔离矩阵作迁移完成。Codex effort/default/exec-intent、local appserver及本地native WORK核心已Go；仍有公开CLI/安装wrapper/stdio语义及条件host writer，static启动合同/remote代理，alias首迁/wildcard来源与Node model-policy兼容写者，supervisor尚未退。每项分Go目标、Node调用/写者、阻碍、下一切换及Node-off/退役门禁；不恢复第二套Node业务。
+
+2026-11-16 23:57只读运行证据更新：共享Go93990/Node94287，runtime identity与磁盘sha5cc9d8a9...一致，内嵌revcef00368e且modified=true；旧stamp仍85851ec39/079a565d...不符。历史“当时未加载WORK”不当现状，但不以dirty revision宣称精确加载及验收；先由当前发布owner补来源证明。source/push/artifact/loaded/real accept/Node停用删除分列；AGY、Capture、globalClaude、其他transport与完整Node-off保持Partial。Hubble/Mendel只读审计；本轮仅本人文档checkpoint，无新增feature/test、源码/DB/服务变更，不碰M/terminal/统一README，不授权删除或共享重启。

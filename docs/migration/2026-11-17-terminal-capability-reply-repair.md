@@ -109,7 +109,7 @@ tmux 的具体时限和重复回复处理已对照 [3.8 tty.c](https://raw.githu
 
 源码提交 `ec0da8192` 为九文件、161 行新增/33 行删除。使用一次性临时索引和显式 pathspec 提交；前后主索引 SHA256 一致，未带走其他会话的暂存内容。最终逐文件比较确认九个源码文件与该提交字节相同。
 
-`git push origin main` 普通和提权重试均失败。SSH 配置依赖的 `127.0.0.1:6153` SOCKS 代理未监听，HTTPS Git 代理 `6152` 也未监听；不修改全局配置的直接连通性检查同样未通。因此目前不能声称已推送远端。没有重写历史、回滚并行代码或创建分支/worktree。
+首次 `git push origin main` 普通和提权重试均失败：SSH 配置依赖的 `127.0.0.1:6153` SOCKS 代理未监听，HTTPS Git 代理 `6152` 也未监听，直接连通性检查也未通。用户补充 AWS 验收位置后，重新按当前 `ssh_connections` 定位到 `54.178.88.80`，通过已配置主机的命令级 SSH `-W` 跳转成功推送。01:13 前后已用 `ls-remote` 核对远端 `main=0ec5086881ff2179d4d7ceec2d92e5ef23584352`，包含源码和首版报告。此前误试的 `yesboss` 指向旧新加坡主机，不能用于判定当前日本 AWS 不可达。没有修改全局 Git/SSH/代理配置、重写历史、回滚并行代码或创建分支/worktree。
 
 本轮创建的私有 Go、SSH 服务、验收 tmux 和浏览器页已按精确身份关闭，证据文件保留。现有 Edge 和用户终端保留。
 
@@ -121,3 +121,32 @@ tmux 的具体时限和重复回复处理已对照 [3.8 tty.c](https://raw.githu
 - native CLI 仍使用既有 framer 的 30ms Escape/2s 序列缓存时限；本轮没有声称 native 任意延迟碎片均已覆盖。
 - 新机器帧缓存上限为 1024 字节；超过上限的 OSC/DCS 不属于透明传输承诺。当前页面没有启用 OSC52 或长标题回复处理。
 - 本轮约半小时的稳定观察是当次证据，未安装常驻全局监控，也不是永久无复发保证。
+
+## 7. 用户补充后的 AWS AGY 真实验收
+
+用户明确 AGY 在 AWS，应连接 AWS 验收。本轮据当前数据库中的 `AWS Current Japan` 配置连接 `ubuntu@54.178.88.80`，使用已有 `~/.ssh/aws.pem`；没有因为本机缺少 AGY 账号而结束该项。
+
+### 环境与范围
+
+- 远端实际安装 `/home/ubuntu/.local/bin/agy` 为 **1.5.9**，SHA256 `39816d49d5ab92229952987225c23ea3fed7580699dcb4a444e0388e0ac1ce43`，tmux 为 **3.6**。非交互 SSH 的默认 PATH 不含 `.local/bin`，最初 `command -v agy` 为空不等于未安装。
+- 只读查询确认远端 **8 个 AGY 账号均启用**。原有 AGY pane `p-hud-carbon-20261117-01a1e527` 和另一个 Web pane 均未发现三类模式；01:09:22 → 01:23:29 的对应计数保持 0。
+- 实际运行单元是 `com.meadeo.ai_home`，`active/running`、MainPID **341399**；旧 `aih-server` unit 为 inactive，不能据此误报 AWS 业务停机。现有 AIH 来自 `/home/ubuntu/.ai_home/pkg/1.0.0-linux-x64-90e1c928`，该包中的草稿模块仍是旧版。本轮没有升级远端发行包或重启正式服务。
+- 在远端 `/var/tmp/aih-terminal-agy-647052dc9254` 创建自有 HOME、空项目和独立 socket `aih-reply-agy-647052dc9254`，使用第一个启用账号的最小文件凭据副本；凭据始终留在 AWS，未复制到 Mac 或写入报告。复制了既有配置/已完成 onboarding 标记，没有为验收重新接受数据收集选项。
+
+### 真实操作与结果
+
+| 操作 | 实际路径与结果 | 证据 |
+| --- | --- | --- |
+| 认证和模型目录 | 官方 AGY 在隔离 HOME 成功拉取目录；选用返回的 `gemini-3.8-flash-low` | `aws-agy-private-models.log` |
+| 协议污染和草稿保持 | **本机当前 Go 9527 → 生产 Go SSH key-file → AWS tmux 3.6 → 官方 AGY 1.5.9 TUI**。累计 73 次机器回复 HTTP 请求，覆盖过期完整回复、重复完整回复、逐字节碎片。输入 `AGY_DRAFT中文🙂` 后再发回复，前后仍为该草稿，三类模式均为 0 | `aws-agy-injected-replies.json`、`aws-agy-repeat-injection.json`、`aws-agy-real-draft-before.json`、`aws-agy-real-draft-after.json` |
+| 官方 stream-json 实际推理 | `--print` 收到 init、step_update、最终 result；结果 `SUCCESS`、response `AGY_AWS_OK`、exit 0。用量 input 8857、output 6、total 8863，未执行工具 | `aws-agy-inference-summary.json` |
+| 同一个真实交互终端发送一轮 | 在自己的草稿完成前后检查后，通过正常输入清除该验收草稿并提交 `Reply exactly AGY_TERMINAL_OK. Do not use any tools.`；屏幕出现独立回答 `AGY_TERMINAL_OK`，随后回到空输入提示符，三类污染计数仍为 0 | `aws-agy-real-tui-turn.json`、`aws-agy-real-tui-turn.log` |
+| 原有会话与正式服务 | 仅只读观察原有两个 pane，无计数增长。清理后正式服务仍 active、MainPID 341399 | `aws-agy-pane-baseline.json`、`aws-agy-pane-final.json`、`aws-agy-cleanup-verified.json` |
+
+AGY 交互界面同时显示 **Sign-in update needed**，提示账号缺少新版要求的部分权限。该轮确实返回了回答，但不能推广为该账号所有权限都健康；没有执行 `/logout` 或替用户重新授权。
+
+本轮 AWS 的 Edge 可视验收没有完成：原有扩展连接的操作持续等待，定位到共享 daemon 下还有其他会话的页面操作；已通知其 owner，只取消了本轮自己的 CLI 请求，未重启共享 daemon、切换浏览器、抢焦点或使用 AppleScript。上述 AWS TUI 结论来自真实 tmux 屏幕和实际 Go HTTP/SSH 操作，不冒充 Edge 截图验收。
+
+结束时精确关闭本轮 Go SSH attachment 和自有 tmux server，确认没有 HOME 指向本轮目录的 AGY 子进程后移除自有临时 HOME，包含复制的凭据、身份文件和会话数据库；非凭据验收记录保留。原有两个 AWS pane、账号库、已安装 AGY/AIH 及正式服务未被替换。
+
+这补齐了**远端真实 AGY 的终端输入、草稿保持及最小模型请求**证据；未覆盖远端旧 AIH 包的补丁升级、真实账号切换重放、Go WORK/Capture 全链路或 AWS Edge 可视验收。它们不能借本轮结果标为完成。

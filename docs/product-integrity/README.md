@@ -153,3 +153,7 @@ Go scheduler 与 Node CLI 已接独立v2仓库：实际字节摘要寻址、no-o
 ### G01/G02 原生配置和资源登记保护（2026-11-15）
 
 真实复现坏Hook JSON被覆盖、foreign OpenCode插件被覆盖/删除及managed坏KV被重置。G02已独立`711ddcdba`：严格状态解码先于mutator、unknown字段保留，真实skill lifecycle/Go-Node坏数据保留。G01共享Go Hook写入边界覆盖toolkit、独立HTTP和Node兼容入口；权限/JSON软链/用户Hook/未知metadata保留，plugin归属和中断恢复有实际证据。见 `managed-state-integrity-2026-11-15.md`、`hook-config-safety-2026-11-15.md`。不把desktop gateway preparation的另一路安全问题或Windows真机、跨文件原子性算作完成；不重启/部署共享服务，原Goal继续。
+
+### 桌面网关配置准备（2026-11-16）
+
+补完上一Hook检查点明确保留的desktop缺口：Go会覆盖损坏配置，Node会在报错前先改entry/meta，均真实复现。现Go共享claudedesktopconfig预检＋所有权receipt＋版本化entry＋协调journal，toolkit与Node同用，正常/API-Web切换/幂等/坏文件/外来条目/软链权限/真实锁中断续接已验证。见 `desktop-config-2026-11-16.md`。本包不启动GUI、不部署共享server；跨文件原子可见性、Windows真机、Desktop真实登录/推理仍未计通过。归属核查已按授权同步84个disk==HEAD的本会话stale index，composition有peer差异主动跳过。

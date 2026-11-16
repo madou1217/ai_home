@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-16",
+  "boundary": "Actual Go preparation and Node->Go CLI over disposable filesystem roots; no Desktop launch, browser automation, shared service restart, production config writes or added test cases. Before captures were recorded on 2026-11-15; post-fix acceptance is 2026-11-16.",
+  "artifacts": [
+    {
+      "file": "desktop-config-before.json",
+      "source_sha256": "0c99658417f14df571b8235e70254509334ecf974e0b80416da24dbe65d9a2a8",
+      "artifact_sha256": "41a0c20793f1627325c7aa57e38644ec7ac18955270f9957cc05eae0dead2c85"
+    },
+    {
+      "file": "desktop-node-before.json",
+      "source_sha256": "758509f71d9f02c7019da561fa9cd4bea40a177dff7667b59a17c36dbad2784f",
+      "artifact_sha256": "d60a7cfa9f1c28857b1d1f4d43f7f69ec690efe89a7790375ed32fa1b7118b0d"
+    },
+    {
+      "file": "desktop-config-after-final.json",
+      "source_sha256": "f6d7bfb0aade8bcf2eb2f162e81f400a8154b727f6196931baa967784ba0816a",
+      "artifact_sha256": "90bf083dce77ba97a6545ffbb89b26413c4df0d2a89737a38acc3f1a12aa2b20"
+    },
+    {
+      "file": "desktop-guards-final.json",
+      "source_sha256": "3b438241839a932ace0fbda4bf4ce2ba8155adcfe349433924e07323195da9eb",
+      "artifact_sha256": "cedeb82d53fcc3806ba81c87ce0e69ef80797da7ba6c423ece68ebc316e53483"
+    },
+    {
+      "file": "desktop-recovery-final.json",
+      "source_sha256": "412870e14f9dc7eda7d5fb5689348322e071980729d9eeef365b87003080f99d",
+      "artifact_sha256": "1decad86d685e81760ae4e4659607080f271258eb0c5eca9a2a246225cfd84f9"
+    },
+    {
+      "file": "desktop-noop-contention.json",
+      "source_sha256": "9b941fcee5eedae730c738cf8bcaa87d46cd2f8212873bfa64a4f82f8836c4b5",
+      "artifact_sha256": "573e4f9f443873bce913e658ecdc3bd2a3446b16d35b5d15d2930562c12db382"
+    },
+    {
+      "file": "desktop-cancel-final.json",
+      "source_sha256": "ca2333764060c850767c51ca016362dd223341f01e409580669e20bf69416a0d",
+      "artifact_sha256": "87f1bd1af65f4da475ef5b0225b43113301a279aae79fb756ce5568c70e8eaf1"
+    },
+    {
+      "file": "desktop-final-repeat.json",
+      "source_sha256": "c1d56ecdd3cce191a7e2afcaeafa77f137c3e928d8b22e55e6531fd7cb4a84be",
+      "artifact_sha256": "488c9daf598f065cb807c0f64d96a8bf379b7d67d0f9429bc7b04028460020ab"
+    },
+    {
+      "file": "desktop-normal-roundtrip.json",
+      "source_sha256": "c479cafecf624a94b9eb5852101175e8373778f8c078b629c340573bfe4a6f64",
+      "artifact_sha256": "b79c0e33ddb7107a256a6b2a716047151094e923a5825b9081e4ed255d4d531c"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "result": {
+    "ok": false,
+    "status": "failed",
+    "reason": "Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+  },
+  "metaUnchanged": false,
+  "foreignPreserved": false,
+  "brokenDeveloperPreserved": true
+}

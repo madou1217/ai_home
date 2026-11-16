@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
@@ -198,18 +197,6 @@ func splitHookCommand(text string) ([]string, bool) {
 		fields = append(fields, word.String())
 	}
 	return fields, true
-}
-
-func readJSONObjectSafe(target string) map[string]any {
-	raw, err := os.ReadFile(target)
-	if err != nil {
-		return map[string]any{}
-	}
-	out, decodeErr := jsondocument.Object(raw)
-	if decodeErr != nil || out == nil {
-		return map[string]any{}
-	}
-	return out
 }
 
 func cloneJSONMap(src map[string]any) map[string]any {

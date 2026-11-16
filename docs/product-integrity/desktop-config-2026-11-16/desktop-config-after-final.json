@@ -1,0 +1,10 @@
+[
+  {
+    "brokenDesktopPreserved": true,
+    "brokenDeveloperPreserved": true,
+    "error": "desktop_config_invalid",
+    "foreignEntryPreserved": true,
+    "mode": "0640",
+    "phase": "actual-go-desktop-prepare"
+  }
+]

@@ -1,0 +1,71 @@
+[
+  {
+    "phase": "first",
+    "result": {
+      "ok": true,
+      "status": "api_configured",
+      "mode": "api",
+      "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-accept-JpHpSW/host/Library/Application Support/Claude-3p",
+      "configId": "de2d24a3-bc31-437b-be59-581b1d1e8c8e",
+      "gatewayBaseUrl": "http://127.0.0.1:12345",
+      "changed": true
+    }
+  },
+  {
+    "phase": "repeat",
+    "result": {
+      "ok": true,
+      "status": "api_configured",
+      "mode": "api",
+      "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-accept-JpHpSW/host/Library/Application Support/Claude-3p",
+      "configId": "de2d24a3-bc31-437b-be59-581b1d1e8c8e",
+      "gatewayBaseUrl": "http://127.0.0.1:12345",
+      "changed": false
+    },
+    "unchanged": true,
+    "mode": "640",
+    "largeExact": true
+  },
+  {
+    "phase": "endpoint-change",
+    "result": {
+      "ok": true,
+      "status": "api_configured",
+      "mode": "api",
+      "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-accept-JpHpSW/host/Library/Application Support/Claude-3p",
+      "configId": "12ba5e96-8833-4c58-8267-a55ef1cc4c7f",
+      "gatewayBaseUrl": "http://127.0.0.1:12346",
+      "changed": true
+    },
+    "newEntry": true,
+    "oldEntryPreserved": true,
+    "noSecrets": true
+  },
+  {
+    "phase": "bad-late-file-preflight",
+    "result": {
+      "ok": false,
+      "status": "failed",
+      "reason": "desktop_config_invalid",
+      "mode": "api",
+      "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-accept-JpHpSW/badhost/Library/Application Support/Claude-3p",
+      "changed": false
+    },
+    "libraryAbsent": true,
+    "brokenPreserved": true
+  },
+  {
+    "phase": "dry-run",
+    "ok": true,
+    "homeCreated": false
+  },
+  {
+    "phase": "account-api-web-roundtrip",
+    "web": true,
+    "api": true,
+    "back": true,
+    "webIDStable": true,
+    "entries": 2,
+    "mode": "1p"
+  }
+]

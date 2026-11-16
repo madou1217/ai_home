@@ -1,0 +1,95 @@
+[
+  {
+    "phase": "real-held-supporting-file-lock",
+    "response": {
+      "exit": 0,
+      "result": {
+        "ok": false,
+        "status": "failed",
+        "reason": "native_config_busy",
+        "mode": "api",
+        "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile",
+        "configId": "00706501-de14-4485-88f7-b49250aaf37c",
+        "changed": true,
+        "recoveryRequired": true,
+        "recoveryPath": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile/.aih-desktop-prepare.json"
+      },
+      "stderr": ""
+    },
+    "journalExists": true,
+    "originalsPreserved": true,
+    "entryFiles": 1
+  },
+  {
+    "phase": "different-request-refused",
+    "response": {
+      "exit": 0,
+      "result": {
+        "ok": false,
+        "status": "failed",
+        "reason": "desktop_pending_request_conflict",
+        "mode": "api",
+        "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile",
+        "changed": false,
+        "recoveryRequired": true,
+        "recoveryPath": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile/.aih-desktop-prepare.json"
+      },
+      "stderr": ""
+    }
+  },
+  {
+    "phase": "external-change-preserved",
+    "response": {
+      "exit": 0,
+      "result": {
+        "ok": false,
+        "status": "failed",
+        "reason": "desktop_configuration_changed",
+        "mode": "api",
+        "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile",
+        "configId": "00706501-de14-4485-88f7-b49250aaf37c",
+        "changed": true,
+        "recoveryRequired": true,
+        "recoveryPath": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile/.aih-desktop-prepare.json"
+      },
+      "stderr": ""
+    },
+    "externalPreserved": true,
+    "activationUnchanged": true
+  },
+  {
+    "phase": "same-request-resumes",
+    "response": {
+      "exit": 0,
+      "result": {
+        "ok": true,
+        "status": "api_configured",
+        "mode": "api",
+        "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile",
+        "configId": "00706501-de14-4485-88f7-b49250aaf37c",
+        "gatewayBaseUrl": "http://127.0.0.1:12345",
+        "changed": true
+      },
+      "stderr": ""
+    },
+    "journalGone": true,
+    "activation": "3p",
+    "metaKeep": "USER META"
+  },
+  {
+    "phase": "repeat-after-recovery",
+    "response": {
+      "exit": 0,
+      "result": {
+        "ok": true,
+        "status": "api_configured",
+        "mode": "api",
+        "profileDir": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-recovery-o0si0itv/profile",
+        "configId": "00706501-de14-4485-88f7-b49250aaf37c",
+        "gatewayBaseUrl": "http://127.0.0.1:12345",
+        "changed": false
+      },
+      "stderr": ""
+    }
+  }
+]

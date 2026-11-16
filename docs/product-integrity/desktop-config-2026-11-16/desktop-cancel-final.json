@@ -1,0 +1,12 @@
+{
+  "noProfileCreated": true,
+  "phase": "cancelled-before-prepare",
+  "result": {
+    "ok": false,
+    "status": "failed",
+    "reason": "desktop_preparation_cancelled",
+    "mode": "web",
+    "profileDir": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-desktop-cancel-398128720/missing",
+    "changed": false
+  }
+}

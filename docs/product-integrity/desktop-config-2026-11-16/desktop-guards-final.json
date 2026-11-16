@@ -1,0 +1,29 @@
+[
+  {
+    "phase": "foreign-same-name",
+    "reason": "desktop_entry_ownership_conflict",
+    "ok": false,
+    "entryUntouched": true,
+    "metaUntouched": true,
+    "noActivation": true
+  },
+  {
+    "phase": "owned-edited",
+    "ok": false,
+    "reason": "desktop_managed_entry_changed",
+    "preserved": true
+  },
+  {
+    "phase": "native-settings-link",
+    "ok": true,
+    "linkPreserved": true,
+    "mode": "640",
+    "largeExact": true
+  },
+  {
+    "phase": "two-logical-targets-one-file",
+    "ok": false,
+    "reason": "desktop_configuration_target_alias",
+    "untouched": true
+  }
+]

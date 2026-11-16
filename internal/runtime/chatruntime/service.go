@@ -61,6 +61,8 @@ type ServiceOptions struct {
 	CodexRPCClient          CodexRPCClient
 	CodexDriverFactory      func(ctx context.Context, opts CodexDriverOptions) (*DriverEntry, error)
 	NativeRunner            NativeTurnRunner
+	NativeLaunchPreparer    NativeLaunchPreparer
+	NativeModelCatalog      *NativeModelCatalogResolver
 	RuntimeResolver         RuntimeResolver
 	DriverRegistry          DriverRegistry
 	CommandCatalog          *CapabilityCommandCatalog
@@ -206,6 +208,9 @@ func NewService(ctx context.Context, opts ServiceOptions) (*Service, error) {
 		MetadataIndex:   opts.MetadataIndex,
 		GatewayModels:   opts.GatewayModels,
 		GatewayAccounts: opts.GatewayAccounts,
+	}
+	if opts.NativeModelCatalog == nil && opts.NativeLaunchPreparer != nil {
+		opts.NativeModelCatalog = &NativeModelCatalogResolver{AccountStore: opts.AccountStore, Catalog: provCatalog, GatewayModels: opts.GatewayModels, Metadata: opts.MetadataIndex, ResolveExecution: opts.NativeLaunchPreparer.GetTarget}
 	}
 
 	retention := opts.EventRetentionLimit
@@ -1156,6 +1161,10 @@ func (r *defaultDriverRegistry) resolveCodexEntry(ctx context.Context, sess *Ses
 
 func (r *defaultDriverRegistry) resolveNativeEntry(sess *Session, rt RuntimeDescriptor) (*DriverEntry, error) {
 	s := r.svc
+	var resolveModels func(context.Context, *Session, string, string) (TurnModelSettings, error)
+	if models := s.opts.NativeModelCatalog; models != nil {
+		resolveModels = models.ResolveTurnSettings
+	}
 	entry, err := CreateNativeSessionDriverEntry(NativeDriverOptions{
 		Session:                 sess,
 		Runtime:                 rt,
@@ -1164,9 +1173,11 @@ func (r *defaultDriverRegistry) resolveNativeEntry(sess *Session, rt RuntimeDesc
 		HostHomeDir:             s.opts.HostHomeDir,
 		ApprovalCallbackURL:     s.opts.ApprovalCallbackURL,
 		Runner:                  s.opts.NativeRunner,
+		LaunchPreparer:          s.opts.NativeLaunchPreparer,
 		ResolveFallbackAccounts: s.opts.ResolveFallbackAccounts,
 		ReadModels:              s.opts.ReadProviderModels,
 		ResolveDefaultModel:     s.opts.ResolveDefaultModel,
+		ResolveModels:           resolveModels,
 		GetAdoptedRun:           s.opts.GetAdoptedNativeRun,
 		OnRunRegistered:         s.RegisterActiveRun,
 		OnRunUnregistered:       s.UnregisterActiveRun,
@@ -1177,6 +1188,19 @@ func (r *defaultDriverRegistry) resolveNativeEntry(sess *Session, rt RuntimeDesc
 	})
 	if err != nil {
 		return nil, err
+	}
+	if models := s.opts.NativeModelCatalog; models != nil {
+		entry.ComposerCatalog = func(ctx context.Context) (map[string]any, error) {
+			latest, err := s.publisher.RequireSession(ctx, sess.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			catalog, observation, err := models.ReadComposerCatalogWithObservation(ctx, latest)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"models": catalog.Models, "defaultModel": catalog.DefaultModel, "source": observation}, nil
+		}
 	}
 	wrapped := WithRuntimePrewarmLifecycle(*entry)
 	return &wrapped, nil

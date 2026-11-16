@@ -17,16 +17,17 @@ import (
 
 // WebUIChatRuntimeBuildOptions 配置宿主层 Canonical Chat Runtime 服务的装配参数。
 type WebUIChatRuntimeBuildOptions struct {
-	AIHomeDir           string
-	HostHomeDir         string
-	DBPath              string
-	Catalog             *providers.Catalog
-	ModelModalities     *modelsdev.Index
-	AccountStore        chatruntime.AccountPoolReader
-	GatewayModels       chatruntime.GatewayModelReader
-	ChatStreamer        chatruntime.ChatTurnStreamer
-	ArtifactReader      chatruntime.ArtifactReader
-	ApprovalCallbackURL string
+	AIHomeDir            string
+	HostHomeDir          string
+	DBPath               string
+	Catalog              *providers.Catalog
+	ModelModalities      *modelsdev.Index
+	AccountStore         chatruntime.AccountPoolReader
+	NativeLaunchPreparer chatruntime.NativeLaunchPreparer
+	GatewayModels        chatruntime.GatewayModelReader
+	ChatStreamer         chatruntime.ChatTurnStreamer
+	ArtifactReader       chatruntime.ArtifactReader
+	ApprovalCallbackURL  string
 }
 
 // BuildWebUIChatRuntimeService 构造并初始化供 WebUI 管理入口复用的 Canonical Chat Runtime Service。
@@ -53,6 +54,7 @@ func BuildWebUIChatRuntimeService(
 		AIHomeDir:            strings.TrimSpace(opts.AIHomeDir),
 		HostHomeDir:          hostHome,
 		AccountStore:         opts.AccountStore,
+		NativeLaunchPreparer: opts.NativeLaunchPreparer,
 		GatewayModels:        opts.GatewayModels,
 		GatewayAccounts:      gatewayAccounts,
 		ProviderCatalog:      opts.Catalog,
@@ -91,12 +93,13 @@ func AttachWebUIChatRuntime(
 		approvalCallbackURL = trimmedNodeURL + "/v0/webui/internal/approval-request"
 	}
 	svc, err := BuildWebUIChatRuntimeService(ctx, WebUIChatRuntimeBuildOptions{
-		AIHomeDir:       dependencies.AIHomeDir,
-		HostHomeDir:     dependencies.HostHomeDir,
-		Catalog:         dependencies.Catalog,
-		ModelModalities: dependencies.ModelModalities,
-		AccountStore:    accountPool,
-		GatewayModels:   dependencies.ChatModels,
+		AIHomeDir:            dependencies.AIHomeDir,
+		HostHomeDir:          dependencies.HostHomeDir,
+		Catalog:              dependencies.Catalog,
+		ModelModalities:      dependencies.ModelModalities,
+		AccountStore:         accountPool,
+		NativeLaunchPreparer: dependencies.NativeWorkPreparer,
+		GatewayModels:        dependencies.ChatModels,
 		ChatStreamer: &webuichatapi.GatewayChatTurnStreamer{
 			Client:    &http.Client{Transport: inprocesshttp.NewTransport(dependencies.ChatGateway)},
 			ClientKey: dependencies.ClientKey,

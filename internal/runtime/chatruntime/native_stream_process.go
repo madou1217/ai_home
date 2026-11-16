@@ -39,16 +39,19 @@ func startNativeStreamProcess(
 	binPath string,
 	args []string,
 	workDir string,
+	environment []string,
+	release func() error,
 	launchCleanup func(),
 ) (_ *NativeRunHandle, startErr error) {
 	runCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(runCtx, binPath, args...)
 	cmd.Dir = workDir
-	cmd.Env = os.Environ()
+	cmd.Env = append([]string{}, environment...)
 	cmd.WaitDelay = nativeStreamErrorSettleTimeout
 
 	input := &claudeStreamInput{}
 	usesStreamJSON := sessionchat.ClaudeUsesStreamJSONInput(req.Provider, false, runtime.GOOS)
+	isAGY := sessionchat.NormalizeProvider(req.Provider) == "agy"
 	var stdout, stdoutWriter, stderr, stderrWriter *os.File
 	var cleanupOnce sync.Once
 	cleanup := func() {
@@ -66,6 +69,9 @@ func startNativeStreamProcess(
 	defer func() {
 		if startErr != nil {
 			cleanup()
+			if release != nil {
+				startErr = errors.Join(startErr, release())
+			}
 		}
 	}()
 
@@ -134,19 +140,33 @@ func startNativeStreamProcess(
 		defer stopCancellation()
 
 		var stderrText string
+		var stderrErr error
 		stderrDone := make(chan struct{})
 		go func() {
 			defer close(stderrDone)
 			// stderr 只有有限诊断价值，进程退出后使用固定期限，不因后代持续输出延长。
-			stderrText = readNativeStderr(stderr)
+			if isAGY {
+				stderrText, stderrErr = readAGYNativeStderr(stderr, abort)
+			} else {
+				stderrText = readNativeStderr(stderr)
+			}
 		}()
 
 		state := &NativeStreamState{}
+		if isAGY {
+			state.SessionID = strings.TrimSpace(req.NativeSessionID)
+		}
 		scanner := bufio.NewScanner(nativeProcessReader{file: stdout, processDone: processDone})
 		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 		expectedKill := false
 		terminalDelivered := false
 		var streamErr error
+		var agyDrainTimer *time.Timer
+		defer func() {
+			if agyDrainTimer != nil {
+				agyDrainTimer.Stop()
+			}
+		}()
 	readLoop:
 		for scanner.Scan() {
 			for _, chunk := range ParseNativeStreamLine(req.Provider, scanner.Text(), state) {
@@ -175,6 +195,17 @@ func startNativeStreamProcess(
 					abort()
 					break readLoop
 				}
+				if isAGY && chunk.Terminal {
+					if chunk.Type == "error" {
+						abort()
+						break readLoop
+					}
+					// SUCCESS is provisional until bounded stdout drain and process
+					// exit. Any repeated/error/malformed tail remains visible.
+					if agyDrainTimer == nil {
+						agyDrainTimer = time.AfterFunc(nativeStreamErrorSettleTimeout, abort)
+					}
+				}
 				if terminal || chunk.ClaudeResultError {
 					terminalDelivered = true
 					// 最后一个 result 已交付，之后不再接受新的轮次或依赖 stdout EOF。
@@ -201,6 +232,9 @@ func startNativeStreamProcess(
 		}
 		exitTimer.Stop()
 		<-stderrDone
+		if agyDrainTimer != nil {
+			agyDrainTimer.Stop()
+		}
 
 		finalErr := waitErr
 		var exitErr *exec.ExitError
@@ -219,6 +253,15 @@ func startNativeStreamProcess(
 		}
 		if finalErr == nil && usesStreamJSON && input.incomplete() {
 			finalErr = NewError("native_stream_incomplete", http.StatusBadGateway, nil)
+		}
+		if isAGY && (finalErr == nil || state.agyFailure != nil) {
+			finalErr = agyNativeCompletionError(state)
+		}
+		if stderrErr != nil {
+			finalErr = stderrErr
+		}
+		if release != nil {
+			finalErr = errors.Join(finalErr, release())
 		}
 		exitCode := 0
 		if finalErr != nil {
@@ -253,7 +296,8 @@ func startNativeStreamProcess(
 		}
 	}
 	return &NativeRunHandle{
-		RunID: req.RunID,
+		RunID:                req.RunID,
+		waitForLaunchRelease: release != nil,
 		WriteSteer: func(content string) error {
 			if !usesStreamJSON {
 				return NewError("native_steer_unsupported", http.StatusConflict, nil)

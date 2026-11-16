@@ -259,6 +259,16 @@ func TerminalResult(submissionCommandID string, interruptRequested bool, result 
 		p["outcomeUnknown"] = true
 		return failedTerminalResult(p, err)
 	}
+	if err != nil && nativeLaunchCaptureFailed(err) {
+		// A user stop must not hide failure to persist refreshed credentials.
+		// Do not automatically retry inference after this external side effect.
+		p := CloneMap(basePayload)
+		p["retryable"] = false
+		if interruptRequested {
+			p["interruptRequested"] = true
+		}
+		return failedTerminalResult(p, errNativeLaunchCaptureFailed)
+	}
 	statusStr, _ := result["status"].(string)
 	if interruptRequested || statusStr == "interrupted" {
 		p := CloneMap(basePayload)

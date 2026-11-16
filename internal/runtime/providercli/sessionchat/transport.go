@@ -38,7 +38,7 @@ type transportDecl struct {
 var defaultTransport = Transport{Mode: ModePTYTranscript, PromptDelivery: PromptDeliveryArgv}
 
 // transportByProvider 与 lib/server/native-session-chat-transport.js 的
-// TRANSPORT_BY_PROVIDER 同序同值。
+// TRANSPORT_BY_PROVIDER 同序；AGY 采用已核实支持 stream-json 的 headless 协议。
 var transportByProvider = map[string]transportDecl{
 	"claude":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
 	"codex":    {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
@@ -50,8 +50,8 @@ var transportByProvider = map[string]transportDecl{
 	"zcode":   {mode: ModeDesktopSession, promptDelivery: PromptDeliveryArgv},
 	// cline 续聊走 ACP：TUI 敲入在进程启动期会被吞（2026-10-16 实测）。
 	"cline": {mode: ModeHeadlessStream, resumeMode: ModeACPSession, promptDelivery: PromptDeliveryArgv},
-	// agy 新会话是 headless --print（一次性），续接走 TUI --conversation。
-	"agy":         {mode: ModePTYTranscript, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
+	// AGY 新建和精确续聊都使用 --print --output-format stream-json；不冒充 PTY transcript。
+	"agy":         {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
 	"codebuddy":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
 	"codebuddycn": {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
 	"workbuddy":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},

@@ -386,8 +386,12 @@ func BuildStartCommand(provider string, options StartOptions) (Command, error) {
 				fmt.Sprintf("agy CLI does not support image generation model %s", model))
 		}
 		// agy 不接受预先指定 conversation id（自动生成）：新会话只走 headless --print。
-		args := []string{"--print", prompt, "--dangerously-skip-permissions"}
-		if cliModel := ResolveAgyCliModelName(model); cliModel != "" {
+		args := []string{"--print", prompt, "--output-format", "stream-json", "--dangerously-skip-permissions"}
+		if model != "" {
+			cliModel := ResolveAgyCliModelName(model)
+			if cliModel == "" {
+				return Command{}, NewCodeError("agy_model_unsupported", "Selected AGY model has no supported CLI mapping")
+			}
 			args = append(args, "--model", cliModel)
 		}
 		return Command{CommandName: "agy", Args: args}, nil
@@ -586,11 +590,15 @@ func BuildResumeCommand(provider string, options ResumeOptions) (Command, error)
 			return Command{}, NewCodeError("agy_image_model_unsupported",
 				fmt.Sprintf("agy CLI does not support image generation model %s", model))
 		}
-		args := []string{"--conversation", sessionID, "--dangerously-skip-permissions"}
-		if strings.TrimSpace(prompt) != "" {
-			args = append(args, "--print", prompt)
+		if strings.TrimSpace(prompt) == "" {
+			return Command{}, NewCodeError("agy_headless_prompt_required", "AGY native resume requires a headless prompt")
 		}
-		if cliModel := ResolveAgyCliModelName(model); cliModel != "" {
+		args := []string{"--conversation", sessionID, "--print", prompt, "--output-format", "stream-json", "--dangerously-skip-permissions"}
+		if model != "" {
+			cliModel := ResolveAgyCliModelName(model)
+			if cliModel == "" {
+				return Command{}, NewCodeError("agy_model_unsupported", "Selected AGY model has no supported CLI mapping")
+			}
 			args = append(args, "--model", cliModel)
 		}
 		return Command{CommandName: "agy", Args: args}, nil

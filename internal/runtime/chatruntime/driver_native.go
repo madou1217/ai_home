@@ -542,6 +542,9 @@ type NativeStreamState struct {
 	FailureMessage  string
 	Usage           map[string]any
 	SeenToolUseIDs  map[string]struct{}
+	agyInitialized  bool
+	agyTerminal     bool
+	agyFailure      error
 }
 
 // ParseNativeStreamLine 解析各 Provider CLI 的一行 JSONL 流输出，并返回标准化流事件切片。
@@ -549,6 +552,9 @@ func ParseNativeStreamLine(provider, line string, state *NativeStreamState) []Na
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || state == nil {
 		return nil
+	}
+	if sessionchat.NormalizeProvider(provider) == "agy" {
+		return parseAGYNativeStreamLine(trimmed, state)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil || parsed == nil {
@@ -866,17 +872,18 @@ type NativeRunExit struct {
 // Runner 必须在最后一条事件后关闭 Events；Done 可以先到达，但其发送后不能再
 // 等待消费者输入才关闭 Events。这样调用方能有序 drain 尾帧再结算进程终态。
 type NativeRunHandle struct {
-	RunID              string
-	WriteSteer         func(content string) error
-	WriteInput         func(input string, appendNewline bool) error
-	Resize             func(cols, rows int) error
-	Abort              func() error
-	GetActivePrompt    func() map[string]any
-	GetContentSnapshot func() string
-	InteractionMode    string
-	Events             <-chan NativeRunEvent
-	SessionIDs         <-chan string
-	Done               <-chan NativeRunExit
+	RunID                string
+	WriteSteer           func(content string) error
+	WriteInput           func(input string, appendNewline bool) error
+	Resize               func(cols, rows int) error
+	Abort                func() error
+	GetActivePrompt      func() map[string]any
+	GetContentSnapshot   func() string
+	InteractionMode      string
+	Events               <-chan NativeRunEvent
+	SessionIDs           <-chan string
+	Done                 <-chan NativeRunExit
+	waitForLaunchRelease bool
 }
 
 // NativeTurnRunner 启动单次官方 CLI 执行；默认实现拉起真实子进程，测试可替换为桩实现。
@@ -894,11 +901,13 @@ type NativeDriverOptions struct {
 	ApprovalCallbackURL     string
 	NodeExecutablePath      string
 	Runner                  NativeTurnRunner
+	LaunchPreparer          NativeLaunchPreparer
 	ResolveFallbackAccounts func(ctx context.Context, provider, currentRef string) []string
 	ReadModels              func(ctx context.Context, provider, accountRef string) []string
 	GetAdoptedRun           func(engineRunID string) *NativeRunHandle
 	ApprovalSpawners        map[string]bool
 	ResolveDefaultModel     func(provider string) string
+	ResolveModels           func(context.Context, *Session, string, string) (TurnModelSettings, error)
 	OnRunRegistered         func(reg ActiveRunRegistration)
 	OnRunUnregistered       func(runID string)
 	OnSurfaceCreated        func(sessionID string, surface *NativeApprovalSurface)
@@ -965,6 +974,7 @@ func NewNativeSessionDriver(opts NativeDriverOptions) (*NativeSessionDriver, err
 			aiHomeDir:           opts.AIHomeDir,
 			hostHomeDir:         opts.HostHomeDir,
 			approvalCallbackURL: opts.ApprovalCallbackURL,
+			launchPreparer:      opts.LaunchPreparer,
 		}
 	}
 	spawners := opts.ApprovalSpawners
@@ -1227,8 +1237,15 @@ func (d *NativeSessionDriver) StartTurn(ctx context.Context, tc DriverTurnContex
 	if model == "" {
 		model = strings.TrimSpace(asString(sess.Policy["model"]))
 	}
-	if model == "" && d.opts.ResolveDefaultModel != nil {
+	if model == "" && d.opts.ResolveDefaultModel != nil && (isSlash || d.opts.ResolveModels == nil) {
 		model = strings.TrimSpace(d.opts.ResolveDefaultModel(d.provider))
+	}
+	if !isSlash && d.opts.ResolveModels != nil {
+		settings, err := d.opts.ResolveModels(ctx, sess, model, strings.TrimSpace(asString(payload["reasoningEffort"])))
+		if err != nil {
+			return nil, err
+		}
+		model = settings.Model
 	}
 
 	approvalMode := "bypass"
@@ -1403,6 +1420,18 @@ func (d *NativeSessionDriver) executeWithRetries(
 			attemptPrompt = nativeContinuePrompt
 			attemptImages = nil
 		}
+		if !isSlash && d.opts.ResolveModels != nil {
+			attemptSession := *sess
+			attemptSession.ExecutionAccountRef = accountRef
+			settings, resolveErr := d.opts.ResolveModels(ctx, &attemptSession, model, "")
+			if resolveErr != nil {
+				act.markReady()
+				completeTerminalItem("failed")
+				act.done <- ProviderRunResult{Err: resolveErr}
+				return
+			}
+			model = settings.Model
+		}
 		handle, err := d.runner.Start(ctx, NativeRunRequest{
 			Session:         sess,
 			Provider:        d.provider,
@@ -1525,6 +1554,13 @@ func (d *NativeSessionDriver) executeWithRetries(
 						"chunk":  ev.Thinking,
 					})
 				case "result":
+					if d.provider == "agy" && assistantStarted {
+						// The terminal response is authoritative, including multi-step turns.
+						snapshotMu.Lock()
+						fullContent.Reset()
+						fullContent.WriteString(ev.Content)
+						snapshotMu.Unlock()
+					}
 					if ev.Usage != nil {
 						lastUsage = ev.Usage
 					}
@@ -1560,6 +1596,10 @@ func (d *NativeSessionDriver) executeWithRetries(
 				}
 				unregisterAttempt()
 				completeTerminalItem("cancelled")
+				if handle.waitForLaunchRelease {
+					act.done <- cancelledNativeLaunchResult(handle)
+					return
+				}
 				act.done <- ProviderRunResult{Result: map[string]any{"status": "interrupted"}}
 				return
 			}
@@ -1610,11 +1650,24 @@ func (d *NativeSessionDriver) executeWithRetries(
 		if exitResult.Err != nil && errDetail == "" {
 			errDetail = exitResult.Err.Error()
 		}
+		failureCode := ""
+		if handle.waitForLaunchRelease && exitResult.Err != nil {
+			if runtimeErr, ok := AsRuntimeError(exitResult.Err); ok {
+				failureCode = runtimeErr.Code
+			}
+			if !strings.Contains(errDetail, exitResult.Err.Error()) {
+				errDetail = strings.TrimSpace(errDetail + "\n" + exitResult.Err.Error())
+			}
+		}
 		codePtr := float64(exitResult.ExitCode)
 		cls := sessionchat.ClassifyNativeSessionFailure(d.provider, &sessionchat.FailureError{
+			Code:    failureCode,
 			Message: errDetail,
 			Detail:  exitResult.Stderr,
 		}, sessionchat.FailureOptions{ExitCode: &codePtr})
+		if nativeLaunchCaptureFailed(exitResult.Err) {
+			cls.Code, cls.RetryAnotherAccount = "native_launch_capture_failed", false
+		}
 		if cls.RetryAnotherAccount && attemptIdx+1 < len(accounts) {
 			nextRef := accounts[attemptIdx+1]
 			noticeID := d.store.Store().NewID("notice")
@@ -1801,9 +1854,15 @@ type execNativeTurnRunner struct {
 	aiHomeDir           string
 	hostHomeDir         string
 	approvalCallbackURL string
+	launchPreparer      NativeLaunchPreparer
 }
 
 func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) (*NativeRunHandle, error) {
+	if sessionchat.NormalizeProvider(req.Provider) == "agy" {
+		if err := validateAGYNativeTransport(req); err != nil {
+			return nil, err
+		}
+	}
 	useInteractivePTY := req.Slash && pty.Available()
 	var built sessionchat.Command
 	var err error
@@ -1831,6 +1890,9 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 			"message": err.Error(),
 		})
 	}
+	if r.launchPreparer != nil || sessionchat.NormalizeProvider(req.Provider) == "agy" {
+		return r.startPreparedNativeProcess(ctx, req, built, useInteractivePTY)
+	}
 	binPath, err := providercli.ResolveBinary(req.Provider, built.CommandName)
 	if err != nil {
 		return nil, NewError("provider_cli_not_found", http.StatusServiceUnavailable, map[string]any{
@@ -1840,7 +1902,7 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 	}
 
 	args := append([]string(nil), built.Args...)
-	if runtimeDir := sessionread.ResolveAccountRuntimeDir(r.aiHomeDir, req.Provider, req.AccountRef); runtimeDir != "" {
+	if runtimeDir := sessionread.ResolveAccountRuntimeDir(r.aiHomeDir, req.Provider, req.AccountRef); r.launchPreparer == nil && runtimeDir != "" {
 		args = sessionchat.ApplyProviderConfigDirArgs(req.Provider, args, runtimeDir)
 	}
 
@@ -1868,7 +1930,7 @@ func (r *execNativeTurnRunner) Start(ctx context.Context, req NativeRunRequest) 
 		args = updated
 	}
 
-	return startNativeStreamProcess(ctx, req, binPath, args, workDir, launchCleanup)
+	return startNativeStreamProcess(ctx, req, binPath, args, workDir, os.Environ(), nil, launchCleanup)
 }
 
 func stringSliceContains(slice []string, target string) bool {
@@ -1899,23 +1961,28 @@ func dedupeNonEmptyStrings(in []string) []string {
 
 func dummyNativePathKeep() string { return filepath.Clean(".") }
 
-func (r *execNativeTurnRunner) startInteractivePTY(
+func (r *execNativeTurnRunner) startInteractivePTYWithLaunch(
 	ctx context.Context,
 	req NativeRunRequest,
 	binPath string,
 	args []string,
 	workDir string,
+	environment []string,
+	release func() error,
 ) (*NativeRunHandle, error) {
 	runCtx, cancel := context.WithCancel(ctx)
 	ptySess, err := pty.NewStarter().Start(runCtx, pty.Spec{
 		Path: binPath,
 		Args: args,
-		Env:  os.Environ(),
+		Env:  append([]string{}, environment...),
 		Dir:  workDir,
 		Size: pty.Size{Rows: 30, Cols: 120},
 	})
 	if err != nil {
 		cancel()
+		if release != nil {
+			err = joinNativeLaunchError(err, release())
+		}
 		return nil, err
 	}
 
@@ -1989,6 +2056,9 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 		exitTimer.Stop()
 		markClosed()
 		closeTerminal()
+		if release != nil {
+			waitErr = joinNativeLaunchError(waitErr, release())
+		}
 		exitCode := 0
 		if waitErr != nil {
 			if ee, ok := waitErr.(*exec.ExitError); ok {
@@ -2006,8 +2076,9 @@ func (r *execNativeTurnRunner) startInteractivePTY(
 	}()
 
 	return &NativeRunHandle{
-		RunID:           req.RunID,
-		InteractionMode: firstNonEmptyStr(req.ApprovalMode, "default"),
+		RunID:                req.RunID,
+		waitForLaunchRelease: release != nil,
+		InteractionMode:      firstNonEmptyStr(req.ApprovalMode, "default"),
 		WriteInput: func(input string, appendNewline bool) error {
 			writeMu.Lock()
 			defer writeMu.Unlock()

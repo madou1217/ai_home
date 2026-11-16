@@ -76,6 +76,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/host/worknative"
 	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
@@ -1829,23 +1830,28 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	})
 	activityDaemon.Start(ctx)
 	desktopChanged := &desktopSettingsNotifier{}
+	nativeWork, nativeWorkErr := worknative.New(worknative.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir, Catalog: catalog, Store: store, Credentials: credentials, GatewayURL: selfBaseURL, GatewayKey: clientKey})
+	if nativeWorkErr != nil {
+		return serverHandlers{}, nil, fmt.Errorf("装配 WORK 原生启动边界失败: %w", nativeWorkErr)
+	}
 	webuiDeps := webuiRouteDependencies{
-		Authorizer:       authorizer,
-		AIHomeDir:        aiHomeDir,
-		Catalog:          catalog,
-		ModelModalities:  modelModalities,
-		EgressManager:    egressManager,
-		HostHomeDir:      dependencies.HostHomeDir,
-		Store:            store,
-		AccountRuntime:   accountRuntime,
-		AuthJobs:         jobs,
-		AccountsHandler:  accountsHandler,
-		AccountRows:      dependencies.WebUIAccountsSource,
-		CredentialEditor: credentialRotator,
-		ProviderDefaults: providerDefaults,
-		ModelRefresher:   recoveringModelManagement,
-		UsageService:     usage.service,
-		QuotaStats:       quotaStatsService,
+		Authorizer:         authorizer,
+		AIHomeDir:          aiHomeDir,
+		Catalog:            catalog,
+		ModelModalities:    modelModalities,
+		EgressManager:      egressManager,
+		HostHomeDir:        dependencies.HostHomeDir,
+		Store:              store,
+		NativeWorkPreparer: nativeWork,
+		AccountRuntime:     accountRuntime,
+		AuthJobs:           jobs,
+		AccountsHandler:    accountsHandler,
+		AccountRows:        dependencies.WebUIAccountsSource,
+		CredentialEditor:   credentialRotator,
+		ProviderDefaults:   providerDefaults,
+		ModelRefresher:     recoveringModelManagement,
+		UsageService:       usage.service,
+		QuotaStats:         quotaStatsService,
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},

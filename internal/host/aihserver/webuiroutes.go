@@ -121,6 +121,7 @@ type webuiRouteDependencies struct {
 	EgressManager          *runtimeegress.Manager
 	HostHomeDir            string
 	Store                  *sqliteaccount.Store
+	NativeWorkPreparer     chatruntime.NativeLaunchPreparer
 	AccountRuntime         any
 	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
 	AuthJobs *accountauth.Service

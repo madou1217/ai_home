@@ -93,13 +93,13 @@ tmux 的具体时限和重复回复处理已对照 [3.8 tty.c](https://raw.githu
 - tmux passthrough 的第一轮单独脚本存在初始握手尚未完成的时序，不能将该轮称为 pane 恰好一次成功。后续新查询的完整 DA1 已到达 pane；Edge 的真实查询链路中，每轮三类回复各记录一次，再发送重复回复后计数不变。
 - tmux 的原始输入记录器会消费握手回复，因此没有把其粘贴用例称为“任意 CSI 均逐字节到达”；逐字节保留的结论来自直接 PTY 和 CLI 括号粘贴验收。
 - 背压验收没有等待 240KB 输入逐字节收完，仅用于观察并发 attach 和写入请求是否停顿。
-- CLI 验收调用生产草稿模块的 `take()` 并检查待重放字节，未对真实 Provider 执行换号，也未消耗真实账号请求。
+- 本节的 CLI 初轮验收调用生产草稿模块的 `take()` 并检查待重放字节，当时未对真实 Provider 执行换号，也未消耗真实账号请求；第 8 节补充了后续 AWS 实际换号及取出/重放字节对照。
 - Edge 通过现有扩展连接，在本轮自有页面后台验收。当前构建的普通输入通过实际 xterm 实例的 `Terminal.paste` 触发；本轮后台 DOM 按键没有到达 `onData`，未将其报告为当前构建的键盘验收成功。账号列表等外围数据使用空数据夹具，终端组件、adapter、Go、PTY、tmux 均为真实实现。
 - 真实桌面截图 `edge-terminal-current-build.png` 已检查，终端为正常连接状态，没有新增大块告警容器或粗左侧装饰条。
 
 构建/静态检查：`go build ./internal/runtime/terminalsession ./internal/transport/http/webuiterminalapi`、两个修改 JS 文件的 `node --check`、限定修改路径的 `git diff --check` 均通过。前端使用 Node 22 运行 `web/scripts/build-locked.cjs`，Webpack 编译完成并生成新 dist；没有新增或运行测试套件。
 
-独立只读审查已核对最终源码及报告中的原始 JSON，未发现本轮三类能力回复路径的新确定性阻断问题，也未发现报告的确定性错误。审查特别复核了 21 个用户 pane 的归属和稳定计数，以及旧 CLI 未热更新、未执行真实 Provider 换号等交付边界。
+独立只读审查已核对最终源码及报告中的原始 JSON，未发现本轮三类能力回复路径的新确定性阻断问题，也未发现报告的确定性错误。审查特别复核了 21 个用户 pane 的归属和稳定计数，以及旧 CLI 未热更新等交付边界。初轮审查时未执行真实 Provider 换号；后续 AWS 实际换号对照见第 8 节。
 
 ## 6. 本机生效状态与交付边界
 
@@ -149,4 +149,56 @@ AGY 交互界面同时显示 **Sign-in update needed**，提示账号缺少新�
 
 结束时精确关闭本轮 Go SSH attachment 和自有 tmux server，确认没有 HOME 指向本轮目录的 AGY 子进程后移除自有临时 HOME，包含复制的凭据、身份文件和会话数据库；非凭据验收记录保留。原有两个 AWS pane、账号库、已安装 AGY/AIH 及正式服务未被替换。
 
-这补齐了**远端真实 AGY 的终端输入、草稿保持及最小模型请求**证据；未覆盖远端旧 AIH 包的补丁升级、真实账号切换重放、Go WORK/Capture 全链路或 AWS Edge 可视验收。它们不能借本轮结果标为完成。
+本节补齐了**远端真实 AGY 的终端输入、草稿保持及最小模型请求**证据；当时未覆盖远端旧 AIH 包的补丁升级、真实账号切换重放、Go WORK/Capture 全链路或 AWS Edge 可视验收。后续真实换号重放对照见第 8 节，其余边界继续保留。
+
+
+## 8. AWS 真实换号与重放字节对照（02:00 补充）
+
+此前仅检查 CLI 草稿模块的待重放内容，本轮补做真实 AGY 账号 1 → 2。为保护原有终端和正式服务，复制远端已安装的 AIH 包到 `/var/tmp/aih-terminal-switch-23786a82b6d6/package`，并创建自有宿主 HOME、空项目、tmux socket 和最小账号库。仅选择两个启用账号的必要记录及凭据，凭据始终留在 AWS；未复制远端约 700MB 的整库、旧会话历史或第三个账号。最初未复制 CLI 数字别名，导致快捷键提示无可切换账号；补齐独立库的两条别名后再进行对照，未改变正式账号配置。
+
+本项明确直接调用复制包中的 Node CLI 组合根，覆盖本次修复的 **legacy stdin framer → switchDraft → Ctrl-Alt-A → spawnSwitchedProcess → scheduleDraftReplay → 新 AGY PTY**，不是把它当作当前所有 Go CLI 入口的替代证据。验收入口只包装导出函数，记录真实 `take` 结果及 `write` 调用的原始字节；没有替换选号、启动、草稿处理、调度或官方 AGY 实现。旧版与修复版间仅替换私有包内的 `switch-draft.js`，正式包文件哈希保持不变。
+
+| 真实操作 | 旧版私有副本 | 修复版私有副本 |
+| --- | --- | --- |
+| 输入 `SWITCH_DRAFT中文🙂`，再发送 DA1/DA2/2026 三类完整回复，触发 Ctrl-Alt-A | 实际从账号 1 换至账号 2，官方 AGY 以 `--continue` 启动 | 同样实际换至账号 2，`/proc` 中新 AGY HOME 指向账号 2 的私有投影 |
+| `take()` 真实取出的字节 | 括号粘贴草稿后附带三类回复，各一次 | 仅保留括号粘贴草稿，三类回复计数均为 0 |
+| 调度器真实写入新 PTY 的字节 | 与 `take` 相同，确实重放了三类回复 | 与 `take` 相同，确实排除了三类回复 |
+| 新账号提交真实模型请求 | 初始账号请求已收到独立回答 `AGY_SWITCH_SEED`，换号后续接该对话 | 新账号实际返回独立回答 `AGY_SWITCH_FIXED_OK`，随后回到输入框，三类屏幕模式均为 0 |
+
+对应原始结果：`aws-switch-baseline-traced-result.json`、`aws-switch-fixed-result.json`、`aws-switch-fixed-turn-result.json`。汇总：`aws-switch-acceptance-summary.json`。
+
+必须区分两个结论：本轮证明了**真实换号时，修复模块不再把机器回复存入并重放到新 PTY**；没有证明新 AGY 一定自动恢复可见草稿。旧版和修复版的自动重放均发生在新 AGY 输入框就绪前，观察到的最后输入框为空，因此没有把包含旧画面的全历史抓取误报为恢复成功。等新 TUI 就绪后，手动向该自有终端发送修复版记录的完全相同字节，屏幕准确出现 `> SWITCH_DRAFT中文🙂`，三类模式为 0。这是额外的字节/渲染验收，不冒充自动重放成功。重放就绪判定沿用现有逻辑，本轮没有扩大修改范围。
+
+02:00:36 清理后，独立 wrapper/AGY 进程为空，自有 tmux server 已关闭，自有宿主 HOME（包括最小账号库、投影凭据和新增会话）已移除。原有两个 AWS pane 仍存在，三类计数均为 0；`com.meadeo.ai_home` 仍 active/running、MainPID 341399，正式 `switch-draft.js` SHA256 仍为 `3fffafa58b48f240915deeec55c43b41b7909462e0d91cf5d13810e95ae9019b`。证据：`aws-switch-cleanup.json`。
+
+本轮续查时本机未发现正在运行的 Microsoft Edge 主进程，两套已安装 Playwright CLI 的 `list` 均返回 `(no browsers)`。未为补齐截图启动浏览器，因此 AWS Edge 可视验收仍未完成。
+
+
+## 9. AWS 完整 Linux 候选包验收（02:19 补充）
+
+从已推送的固定提交 `83d7c2db069da62509bdc6934bcd452d4a0de740` 用 `git archive` 准备只读来源的构建副本，没有创建 branch/worktree，也没有使用共享索引中的内容。前端使用 Node 22.21.0 的锁定构建，发行包使用规范 `scripts/package/build-release.js --targets linux-x64 --node-version 22.21.0`；Go Server、Go CLI、Node、生产依赖和 WebUI 均随包生成。源码归档不含两个空目录，补建归档副本内的 `examples`、`native` 后，规范发行构建退出 0；没有修改仓库构建脚本。
+
+| 产物信息 | 实测值 |
+| --- | --- |
+| 单文件启动器 | `aih-1.0.0-linux-x64.run`，121839776 字节 |
+| 启动器 SHA256 | `9f7784638f28cb19e31cc808a426a603c48a661c9d5a52f24daed1966bae483a` |
+| `BUILD_INFO.source_sha` | `83d7c2db069da62509bdc6934bcd452d4a0de740` |
+| Go Server SHA256 | `3a317d29d431c6c39950f31d6c0c8f9c6a637eb2c16e354df002ad4dbfe1ac47` |
+| Go CLI SHA256 | `34503bc9e83d3c8d5db051bb1adfb553f415e2025b42286be766f03129a69bb3` |
+| 草稿修复模块 SHA256 | `df49288edf34e40a0e884fa4a457943184e5cdcb54b5fb6f02b2c2f8329368cc` |
+
+将启动器上传 AWS 的 `/var/tmp/aih-terminal-candidate-49623487e51f/aih-candidate.run`，先比对完整 SHA256，再由启动器自身解包至该目录的 `packages/1.0.0-linux-x64-bb7e54fc`。实际启动包内 Go Server，使用回环端口 19543、自有空 HOME/数据库，并监督启动同包 Node；未导入正式账号或凭据。`/healthz`、`/ui/chat`、两种前缀的终端会话接口均 HTTP 200。`/readyz` 为 HTTP 200、`ok=true`、`ready=false`、所有账号数为 0，与其“至少一个启用 Provider 账号才 ready”的源码语义一致；没有将空库候选服务报告为具备真实推理就绪证据。
+
+- **tmux 3.6 → 原始 Linux PTY：** 等待 6.2 秒后，通过真实 `/v0/webui/terminal/input` 的 Node adapter 发送 18 个完整、重复、分片及未带 `protocol` 字段的协议请求。pane 中三类模式均为 0；随后普通输入中的 Escape、四个方向键、中文、表情和标记文本逐字节等于预期。经 Go 接口关闭自有会话后，其独立 socket 已停止。
+- **直接 Linux PTY：** 程序实际输出三类查询后等待 6.2 秒，首份合法回复逐字节到达；再次发送完整和分片重复回复，接收内容不增加。之后 `protocol=false` 的括号粘贴包含相同三类字节及中文表情，全部原样保留。没有将 tmux 的期限错误套用于直接程序。
+- **前端产物：** AWS 候选 `/ui/chat` 实际引用 `umi.a26938dc.css` 和 `umi.7d254ccf.js`；HTTP 资源分别为 719227、6918925 字节，与包内文件完整字节相同。此为资源生效证据，AWS 浏览器可视验收仍未完成。
+
+02:19:11 候选清理后，自有终端列表和进程列表均为空，私有 HOME、数据库和随机管理密钥文件已移除，候选包/启动器及非凭据验收记录保留。正式 `com.meadeo.ai_home` 仍为 active/running、MainPID 341399，旧包模块哈希未变，原有两个 AWS pane 均保留且三类模式计数为 0。
+
+另在本机持续只读扫描：01:50:57 → 02:17:42 的 21 个用户 pane 身份完全相同，没有新增或退出，三类模式总计始终为 36/35/23，逐 pane 均未增长。该轮对照使用自己的起始快照，不混用第 4 节更早一轮中已退出的 pane。
+
+原始证据：`aws-release-build-retry-result.json`、`aws-release-artifacts/aih-1.0.0-manifest.json`、`aws-candidate-package-verification.json`、`aws-candidate-health.json`、`aws-candidate-terminal-result.json`、`aws-candidate-direct-result.json`、`aws-candidate-assets-and-formal-launcher.json`、`aws-candidate-cleanup.json`；汇总为 `aws-candidate-acceptance-summary.json`，本机观察为 `all-panes-continuation-summary.json`。
+
+正式部署仅完成规范 artifact-only 命令的 `--dry-run`，没有执行。现存 systemd 单元从 `/home/ubuntu/.local/bin/aih server serve --host 127.0.0.1 --port 9527` 启动；`/usr/local/bin/aih` 和 `~/.local/bin/aih` 都仍指向旧包。若批准正式升级，具体范围为：以已验收启动器替换 `~/.local/bin/aih`、由规范发布脚本重装/重启该用户单元，保留 `/usr/local/bin/aih` 当前指向 `~/.local/bin/aih` 的链接，并复核其随之解析到新启动器；保留旧包，并在修改前保存两个原软链接的精确目标和原 systemd unit；失败时显式恢复原链接、原 unit，执行 daemon-reload 并重启原单元。规范脚本的 `aih.prev` 仅复制旧链接所指文件，不能单独恢复原链接，因此不把它作为目录包的完整回退机制。升级后复查包哈希、正式 HTTP/鉴权终端链路及原有两 pane。重启会短暂断开 WebUI/网关连接；既有 CLI wrapper 不会因包替换自动热更新。用户本次补充授权为连接 AWS 测试，故正式服务替换和重启保留为最后的明确确认步骤。
+
+02:22 补充：已在 AWS 自有候选目录 `formal-preupgrade-backup/` 保存原 unit 的私有副本和两个软链接目标清单，未修改正式入口或单元；本机仅保存低敏清单与 unit SHA256。证据：`aws-formal-preupgrade-rollback-preparation.json`。

@@ -1,6 +1,6 @@
 # Node → Go 迁移总览
 
-> 核对时间：2026-11-16 18:14–18:32（Asia/Shanghai）。这是用户可读的目标与状态入口，不是新的平行开发计划，也不是实时仪表盘。详细需求继续以 [原 W0–W6 计划](../superpowers/plans/2026-11-14-node-go-next-development-plan.md)、[执行账](2026-11-14-node-go-execution-ledger.md) 和 [逐项证据审计](2026-11-16-requirement-evidence-audit.md) 为准；状态变化必须更新证据，不能把旧快照当现状。
+> 总控复核：2026-11-17 00:02–00:14（Asia/Shanghai）；原目标澄清为 2026-11-16 18:14–18:32。这是用户可读的目标与状态入口，不是新的平行开发计划，也不是实时仪表盘。详细需求继续以 [原 W0–W6 计划](../superpowers/plans/2026-11-14-node-go-next-development-plan.md)、[执行账](2026-11-14-node-go-execution-ledger.md) 和 [逐项证据审计](2026-11-16-requirement-evidence-audit.md) 为准；状态变化必须更新证据，不能把旧快照当现状。
 
 ## 1. 总目标：迁移并退出旧实现，不是长期双轨
 
@@ -24,15 +24,49 @@
 
 | 范围 | 已有事实 | 尚未证明/下一门槛 |
 | --- | --- | --- |
-| 正式服务 | 9527 由 Go PID `5919` 持有；它仍以 `--supervise-node` 监督 Node PID `6656`（私有端口 `56360`） | 说明 Go 前门已在运行，但第一方 Node 运行依赖尚未退出；不得报 Node-free |
-| 正式构件与当前源码 | 正式 SHA-256 `079a565d...`，来源基线 `85851ec...`；当前源码 HEAD `0af25e9db` | 后续提交不等于正式已加载，必须逐域核对实际版本 |
+| 正式服务 | 00:02 实查 9527 为 Go PID `93990`，监督 Node PID `94287`（私有端口 `61740`）；ready=true，模型数229 | Go 前门已运行但第一方 Node 必需依赖未退出；旧 `5919/6656` 仅历史快照，不得沿用 |
+| 正式构件与当前源码 | runtime identity 与磁盘 SHA-256 均为 `5cc9d8a9...`；内嵌 `cef00368e` 且 `vcs.modified=true`。同目录 stamp 却仍为 `85851ec...` / `079a565d...`；源码核查基线 `297a08c08`；W0状态卡后续提交 `2238d97e2` | 当前 exact 构建输入/加载范围待发布 owner 证明；不把旧“未加载”当现状，也不把 dirty revision 当逐域已加载。不得重写 stamp 伪造来源 |
 | CLI | 当前 `aih` 安装入口仍指向 `bin/ai-home.js`，其中存在 Go 转交路径；原执行账记录了部分标准 CLI 真机验收 | 仍需清点尚由 Node 调度的叶子命令及启动包装，不能只验证被转交命令后宣布 CLI 全迁移 |
 | native WORK | `e036cf01f`、`72631a417` 已有本人源码/证据 checkpoint，隔离实际业务验收及明确剩余矩阵 | 不是完整 native/跨平台验收，也不代表正式服务采用；以该 owner 的最新回执为准 |
 | Desktop 安全准备 | `ff93cfa48` 已提交原生 Claude 配置准备及保留用户配置的修复 | 安全 prepare 不等于完整桌面效果、权限和 Node 宿主退出；M owner 需列精确残留 |
-| Terminal | `0af25e9db` 已提交；真实隔离 Go/PTy、实际 Node 代理/SSE、完整 90 秒失活恢复有证据 | 正式后端未加载，现有 Edge 页面验收未完成；仍是修复 checkpoint，不是全迁移完成 |
+| Terminal | `0af25e9db` 已本人提交；真实隔离 Go/PTY、Node 代理/SSE、完整90秒失活恢复有证据，5路径索引已清 | “当时正式未加载”是13点历史；当前 dirty构件不能精确归因该提交，Edge验收缺口也未关闭；不称上线/迁移完成 |
 | 迁移范围 | 原计划保留 W0–W6 共 42 项要求和 7 个共用交付门禁；当前逐项审计仍未判定总目标达成 | 不删除未覆盖项，不把 pending/unverified 改名为 done |
 
 当前生成合同为 67 个条目，其中 65 声明 Go、2 个历史聚合条目声明 Node。聚合与叶子范围不同，而且不能覆盖所有 CLI/作业/宿主/安装行为；**这不是“迁移完成 97%”的证据**。历史文档中更早的条目数或 PID 只代表当时快照。
+
+### 分立交付状态：不把 Git 绿色当运行迁移绿色
+
+| 域/证据 | Source commit / 本人索引 | Push | 构件 / Loaded | 真实验收 | Node 停用 / 删除 |
+| --- | --- | --- | --- | --- | --- |
+| W0/Codex/WORK | `987a3d026`、`e036cf01f`、`72631a417`；本人57项旧索引已同步；退出卡 `2238d97e2` | owner已有推送回执；不是当前远端HEAD快照 | private WORK `f915dfa3...` 已验；共享 `5cc9...` 的 exact 来源缺口未关 | 固定账号Claude、模型/错误/别名有证据；AGY认证、Capture、globalClaude、全transport矩阵仍Partial | 完整域Node-off未验，未删除 |
+| M/Desktop/配置 | `ff93cfa48`；10源码+12证据，原84项与本组索引本人已收口 | 00:08本地 `origin/main=297a08c08` 的push reflog及祖先关系已包含；00:03实时远端查询失败，不声称当前服务器ref | isolated Go prepare与CLI构件已验；当前共享/标准CLI exact加载另核 | JSON/ownership/锁/恢复/noop/预取消已验；GUI、Windows实际行为、spawn边界未全验 | Node入口/helper仍在，未停用/删除 |
+| Terminal | `0af25e9db`，精确5路径已交/本人索引清 | 原owner未自己push；00:08本地tracking/push reflog已包含该SHA；实时远端查询失败另记 | matched private候选 `c30241b2...` 已验；不能把共享dirty构件当该候选 | 原PTY身份/环境/目录/90秒与背压有证据；Edge DOM未关 | 后端恢复核心Go，Node代理/入口未退 |
+| 普通Chat | `85851ec39`，证据 `906a38799`；9项旧索引均disk==HEAD，仍待原owner同步 | 有此前推送回执；当前远端查询失败 | 旧批准构件 `079a...` 是历史；当前为 `5cc9...`，两者不互借证据 | 既有Edge真实两轮/用量归普通Chat；不代表native WORK或本次构件复验 | Node全局projection/远端transport依赖未关 |
+| 其他域与整体 | 原42项+7门禁不删；本页不替owner代交业务 | 未逐域核实即未知 | 无exact artifact凭证即未知 | 没有真实矩阵即Partial/未知 | 没有调用归零和Node-off证据，不判退出 |
+
+**远端查询边界：**2026-11-17 00:03 `git ls-remote origin refs/heads/main` 失败（连接关闭），未修改SSH/代理配置。00:08本地 `origin/main` 的 `update by push` 已到 `297a08c08`，且包含Desktop/Terminal提交；这是本地交付日志与tracking证据，不等于这次实时远端查询成功。上表保留各owner回执的时间语义，不把13点“未push”沿用为当前未交。当前新文档/功能的源提交也不倒推已在共享服务运行。
+
+### 逐域 Node 残留与退出卡（总控入口）
+
+卡内“已核对源码”只证明可达调用，不等于本轮实际流量；“待owner确认”不是自动接管。每次交付须明确消除下面哪条第一方Node必要依赖。子域完整条件仍由原W0–W6、详细账和owner证据约束。
+
+| 卡/原域/负责人 | 当前真实入口与Go唯一目标/写者 | 仍必需或条件可达的Node残留及caller | 下一个切换→断依赖→删除节点与阻碍 |
+| --- | --- | --- | --- |
+| **R0 构件与服务，W0/W2/W6**；监督`01a1df63`核对，当前发布owner待确认 | 当前Go93990→Node94287；Go启动 `cmd/aih-server/run.go` → `internal/runtime/nodesupervisor/supervisor.go`；目标是Go单服务运行链，不另立Node守护实现 | 监督器实际执行 `bin/ai-home.js server serve`；`router.go` 未命中路径转 `frontdoor`，Node不是已退出的空壳 | **先**找出5cc9构建输入/批准记录/正确stamp，做可复核artifact关联；再按下面各域完成Node-off，最后改默认拓扑与包。来源缺口未关、未授权重启；本页不执行切换 |
+| **R1 公开CLI与Codex，W1/W3**；W0 owner`01a1d99a`，Desktop effect与M协调 | `aih`当前symlink仍指 `bin/ai-home.js`；目标复用 `cmd/aih`、`aihcli`、`codexpreferences`、`codexdefault` 的唯一事务/状态写者 | `bin/ai-home.js` fast dispatch + `lib/cli/app.js`；default-command输出/Desktop effects；artifact-hooks→`host-sync.js`仍有条件配置/凭据写者，不能泛称只转发 | 先逐命令转Go公开入口并退条件host writer；证明default/effort/credentials更新不经Node仍不复活旧值，保留help/TAB/逃生门/失败清理，再删对应旧业务。缺跨入口/平台矩阵 |
+| **R2 Codex wrapper/stdio/RPC，W1/W3**；W0 owner`01a1d99a` | Go `codexexecintent`/`codexexecpreflight`/`codexlocalappserver`/`codexappserverws` 已交；lease、线程选择、tier与取消只保留Go规则 | installed wrapper由 `codexhooks/wrapper.go` 生成但仍调 `codex-app-server-stdio-proxy.js`；Node launcher/privatepipe/helper生命周期，以及rollout path条件writer仍可达 | Go接住安装wrapper和stdio语义，优先官方API；在旧Node proxy不可用下真验TUI/exec/resume/断线/引用/lease，再断旧入口及writer后删除。公共与caller-local参数矩阵不能互借 |
+| **R3 本地native WORK/session/composer，W0/W1/W5**；W0 owner`01a1d99a` | `worknative`→Go账号selector/resolver/strategy，`chatruntime/{driver_native,native_model_*}`→Go进程/终态；审批 `__mcp-approve` 已Go。目标统一Go session与Capture链 | Node同名文件不必然第二owner；self-base缺失且node-base存在的approval fallback仍有条件路径；远端入口另见R6 | 先用来源冻结的private服务不启动AIH Node，验本地创建/目录/发送/stream/取消/审批/恢复/清理；再移除非必需fallback。AGY无账号、globalClaude参数、Capture与缺transport独立阻塞，不回退Node伪实现 |
+| **R4 账号/凭据/模型/别名，W4/W5**；W0认领model admission，跨域policy/wildcard归属由监督确认 | Go `accountcredentials.Resolver`、`application/accounts/models.go`、`sqliteaccount/model_{store,transaction}.go`、`inferencecatalog`/`model_route_view` 是目标规则/存储入口 | `go-core-host.js` 启动reconcile→`go-account-sync.js`仍可决定enabled/default/model policy；空alias一次性播种和 `wildcard-alias-expansion.js` 展示来源依Node。单库≠单writer | 先给旧表迁移完成凭证、把wildcard来源和policy决策迁Go；真实副本验证清空不复活/冲突取消无迟到写/重启无需投影，再停timer/播种/旧writer后删。真实OAuth轮换输入和跨域owner确认尚缺 |
+| **R5 Desktop/hooks/backup，W3/W4/W6**；M owner`01a1da12` | `claudedesktopconfig` + `configsnapshot`、Go `__claude-desktop-config`、toolkit hooks、`backupaccounts`/`remotebackup` 为各自Go写入口；不新增Node版publisher/备份规则 | Node `claude-desktop-inference.js`→Go privateCLI；`provider-session-hook-config.js`→`provider-hook-go-adapter.js`；backup `core-accounts.js` RPC/pipe；`bin/claude-desktop-credential.js`仍Node helper。适配在用不等于已退出 | 先由owner确认完整caller及Node-off配置/备份/恢复/失败journal/凭据helper矩阵，再统一到Go入口；关闭JSwriter/默认caller后才删adapter/包依赖。目前GUI/Windows/spawn边界未全验；卡的跨M细节待本人回执 |
+| **R6 普通Chat/页面静态与remote，W2/W5**；Chat owner`01a1dfb7`（未注册peer），跨remote/部署由监督定owner | Go `webuichatapi`/`gateway_catalog`已承接普通Chat；`webui_assets.go`可托管静态；目标Go端到端HTTP/WS/SSE、profile鉴权与传输，不迁移React本身 | Go `remote_webui_proxy.go` 对server-id请求先frontdoor→Node `webui-server-proxy.js`；部分autostart Go-first未传web-dir，static可落 `web-ui-router.js`，实际每请求依赖未测 | 统一web-dir与remote-profile Go transport，不再加Node会话/路由/重试规则；Node-off验静态深链、401/404、两真实服务的remote请求/取消/SSE不落本机，再撤代理。原Chat writer10588存活而peer无入口，9旧索引仍本人待办 |
+| **R7 Terminal，W2/W5**；owner`01a1e2ab`（00:04本人退出卡ACK） | `router.go`仅挂Go管理prefix→`webuiterminalapi`→一个`terminalsession.Service`/tmuxStore，唯一PTY/session状态写者在Go；浏览器渲染看门狗不是第二后端 | 浏览器`api.ts`请求 `/v0/webui/terminal/*`，当前fallback经 `web-ui-router.js`→`webui-terminal-routes.js`→`go-core-host.js`回同一Go；账号旧launch caller和remote proxy仍在。`sessions.go:ensureAihShimDir`生成的`.runtime-bin/aih`实际exec Node+`bin/ai-home.js` | 先协调Go `/v0` terminal alias保留鉴权/字段allowlist/禁止任意launch/remote隔离，再把终端内shim接Go标准CLI；Node桥和第一方Node PATH不可用时真验open/attach/mux/input/resize/close/90秒背压/退出不换shell，最后据完整调用+运行证据删旧adapter/export。exact加载和Edge仍缺，不盲删共享proxy |
+| **R8 其余Provider/插件/后台/安装，W6**；监督列叶子后指定现有owner，未ACK不虚构归属 | Go provider Catalog/manifest、plugin control CAS、scheduler、安装生命周期是目标；`router.go`已显示Go插件install/CAS/trust写入口 | plugin runtime host与部分候选仍Node；Go `nodeOnlyProviderIDs`按Catalog声明派生；`scripts/package/bundle.js` launcher仍必需Node，build-release嵌Node runtime/modules | 按真实provider/extension/任务/安装leaf建卡：承接Go缺口→停相应Nodecaller/host→业务及安装升级恢复真验→删旧包装依赖。不能把67合同覆盖当全部leaf。无owner/流量证据是开放缺口，禁止广删 |
+
+**哪些同目标、哪些停扩：**上面已交的Go账号事务/native执行/配置prepare/PTY核心继续收验收；浏览器必要React逻辑保留。禁止为同一已迁业务再扩Node版selector、credential刷新、publisher、retry/cost写者；迁移紧急兼容修复须给实际caller/原因/退出卡，不能凭“兼容”无限留存。没有旧调用归零证据时先不删除，但“暂不删”也不是允许继续双轨新增。
+
+**新增问题归属边界：**00:06后共享工作区出现 `internal/runtime/terminalsession/{protocol.go,service.go,protocol_input.go}` 新协议改动，非本监督或原Terminal五路径作者所写；实际writer仍待确认。新截图中的DA/DECRQM/鼠标回包污染与missing-session须按当前原owner及最小写集处理，不从旧 `0af25e9db` 验收推出全部协议问题已解决，不拿旧 `85851ec` 限定候选覆盖当前共享构件。未确认归属前不安排第二会话并写，本页只记阻碍。
+
+**当前Node退出总状态：未达成。**这些卡是下一可执行退出节点，不是另一套平行需求；W0–W6完整42项和共同7门禁继续有效。跨域未确认owner由监督落实认领，不能发消息排队后写成已接手。
 
 ### W0–W6 的总体门禁
 
@@ -72,15 +106,16 @@
 
 **总控：** 现有监督会话 `01a1df63` 负责汇总；W0/native owner `01a1d99a`、M/Desktop owner `01a1da12` 和其他域 owner 提供各自卡片。没有回执或只有源码证据的域不得默认为完成。本文不抢占或改写 owner 的详细账，不授权代交、危险删除或绕过验收。
 
-本轮目标澄清已发给监督、W0、M、协调和本项目其他可发现会话；部分消息因忙碌或存在草稿而排队，不把排队当确认。W0 已明确 ACK：按 Go 单 owner 目标核对当前真实链路，向监督回报 Node 残留/阻碍/退出门禁，不以源码或隔离矩阵冒充全迁移，也不新增 feature/test 或共享重启。其他域的具体退出卡仍待 owner 回报。
+总控已在原会话请求一次性退出卡：W0退出卡已本人提交 `2238d97e2` 并回报推送，Terminal已回00:04本人卡并核实浏览器桥/CLI shim残留；M/Desktop补卡请求已发出，部分因忙碌/草稿排队；表中明确区分本人ACK、监督源码核查与待确认。不得把排队当确认，不重复发送已结案提交回执。现有HTML状态页仍是另一owner的待确认设计；本轮只给一个稳定文档入口，不新增服务、轮询或第二套看板数据业务。
 
 ## 6. 用户如何查看
 
 - 本页看总目标、事实快照、下一步和退出标准。
 - [执行账](2026-11-14-node-go-execution-ledger.md) 看 W0–W6 的各次交付；[逐项审计](2026-11-16-requirement-evidence-audit.md) 看 42+7 门禁缺口。
+- [W0/Codex/WORK退出卡](2026-11-16-w0-native-node-exit-status.md) 看本域完整caller/writer/退役门禁；本页R0–R8汇总跨域责任，不替代owner卡。
 - [native WORK](2026-11-16-work-native-execution-acceptance.md)、[Terminal](2026-11-16-terminal-keepalive-repair.md)、[Desktop](../reviews/2026-11-15-desktop-host-migration.md) 看精确验收边界；不能从一个域绿色推出全项目完成。
 - 后续总控回报应说明“这次消除了哪个 Node 必要依赖、还剩哪些、有谁负责下一步”，不能只给 commit 列表或“继续调查”。
 
-**本轮仅澄清和传达总目标，新增此文档入口；未新增功能/测试，未更改路由/业务实现、数据库、正式服务或其他 owner 的工作。整体 Node → Go 迁移尚未完成。**
+**本轮监督仅在既有入口补当前事实、逐域退出卡和交付门禁；未新增功能/测试、看板服务或周期任务，未更改路由/业务实现、数据库、正式服务或其他 owner 的工作。整体 Node → Go 迁移尚未完成。**
 
-文档检查：已核对当前源码/运行进程快照、原 42 项要求与 7 个交付门禁、8 个相对文档链接及单路径差异。独立文档复核已请求但冻结时尚未返回，本次纯说明性 checkpoint 采用显式 `self_review`，不声称独立通过，也不作为代码发布或迁移完成的批准。
+文档检查：本轮重新核对源码caller、runtime identity/进程/哈希/旧stamp与原42项+7门禁；9个相对链接、9张退出卡、引用路径及单路径提交边界检查通过。Newton独立只读复核给出APPROVE、无阻断文档问题，仅限入口信息提交；之后W0本人已提交的退出卡链接通过存在性与精确提交范围补核。不外推为源码/全部域/发布批准。完整流量、平台与Node-off矩阵未在本轮执行。

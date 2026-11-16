@@ -66,7 +66,11 @@
 
 **哪些同目标、哪些停扩：**上面已交的Go账号事务/native执行/配置prepare/PTY核心继续收验收；浏览器必要React逻辑保留。禁止为同一已迁业务再扩Node版selector、credential刷新、publisher、retry/cost写者；迁移紧急兼容修复须给实际caller/原因/退出卡，不能凭“兼容”无限留存。没有旧调用归零证据时先不删除，但“暂不删”也不是允许继续双轨新增。
 
-**新增问题归属边界：**00:06后共享工作区出现 `internal/runtime/terminalsession/{protocol.go,service.go,protocol_input.go}` 新协议改动，非本监督或原Terminal五路径作者所写；实际writer仍待确认。新截图中的DA/DECRQM/鼠标回包污染与missing-session须按当前原owner及最小写集处理，不从旧 `0af25e9db` 验收推出全部协议问题已解决，不拿旧 `85851ec` 限定候选覆盖当前共享构件。未确认归属前不安排第二会话并写，本页只记阻碍。
+**终端协议问题归属与源码检查点（2026-11-17 00:46 owner回报，00:56监督只读复核）：**原owner `01a1dfb7-34fe-7582-ab9b-ad8b8e55f2d6` 已自行提交 `ec0da8192`，精确9路径、161增/33删：`terminalsession/{protocol.go,protocol_input.go,service.go}`、`webuiterminalapi/{handler.go,sessions.go}`、`lib/cli/services/pty/switch-draft.js`、`lib/server/webui-terminal-routes.js`、`web/src/components/chat/terminal-input.ts`、`web/src/services/api.ts`。监督确认该提交在main、9个磁盘blob均与提交相同；暂存区仍是旧投影，由原owner自行收口，监督不代stage。此确认取代先前“协议writer待确认”，不触碰失效条目UI四路径。
+
+- **源码已交，不等于上线全闭环：**owner回报SSH/真实Go/tmux/Edge组件/CLI草稿验收通过及共享Go已拦截原始复现；详细报告与确切构件证据待交，监督本轮未重跑这些操作，不扩称已验证所有分片/多viewer/鼠标回包场景。
+- **前端与wrapper分列：**owner报告正用标准 `build-locked` 在当前共享源码构建前端以补齐 `protocol` 来源字段；监督仅观察、不并发Web build、不替换terminal模块或重启Go。构建与字段实际生效证据未收到前保留待回；既有wrapper不会自动热更新，CLI wrapper加载/重开后的行为不能借Go拦截证据代替。
+- **归属和发布边界：**协议修复、原 `0af25e9db` 保活、失效条目UI和Node-off迁移各自记账；不拿旧 `85851ec` 限定候选覆盖当前共享构件，不把当前共享源码构建自动认定为纯提交来源。任何后续正式替换仍须确切范围、构件配对与相应批准。
 
 **R7 失效条目UI交接（2026-11-17 00:36开始；00:40确认必要hook扩展，四路径实现中）：**原保活owner `01a1e2ab` 已确认不并行写，接手owner `01a1e50f-c4cb-7000-8af0-fd956cb5d2b4` 在 `pm-6431b2ac` 明确开始；CSS及共享目录hook扩展已按精确路径协调；原owner新增scope说明与Terminal交接回执 `pm-c56ed437` 相互印证。唯一写集为 `web/src/features/web-terminal/web-terminal-context.tsx`、`web/src/pages/TerminalSessions.tsx`、`web/src/pages/TerminalSessions.css`、`web/src/features/web-terminal/use-terminal-directory.ts`。状态为 **四路径实现中；构建/Edge/提交待回**，不从文件已改推导完成。
 

@@ -37,7 +37,7 @@ tmux 的具体时限和重复回复处理已对照 [3.8 tty.c](https://raw.githu
 3. 机器回复流由独立模块跨请求合帧，处理碎片和非法前缀，并限制未完成帧的缓存。普通输入不进入该状态机，Escape、方向键、UTF-8 和粘贴不会新增等待。
 4. 输出仍原样透传，并在本地、SSH 和直接 PTY 中观察新查询。直接本地程序保留自己的回复时限，合法的六秒晚回复不会套用 tmux 的期限。
 5. 每会话写入锁与全局锁分离；等待一个繁忙 PTY 不占用服务全局锁，未新增自动写入器。
-6. CLI 草稿观察器在非括号粘贴状态跳过完整的三类回复；括号粘贴中的相同字节和正常文本继续保留。
+6. CLI 草稿观察器在非括号粘贴状态跳过三类回复；第 10 节进一步补齐超过 stdin 合帧时限的 CSI 分片，括号粘贴中的相同字节和正常文本继续保留。
 
 修改仅涉及以下九个文件：
 
@@ -199,6 +199,21 @@ AGY 交互界面同时显示 **Sign-in update needed**，提示账号缺少新�
 
 原始证据：`aws-release-build-retry-result.json`、`aws-release-artifacts/aih-1.0.0-manifest.json`、`aws-candidate-package-verification.json`、`aws-candidate-health.json`、`aws-candidate-terminal-result.json`、`aws-candidate-direct-result.json`、`aws-candidate-assets-and-formal-launcher.json`、`aws-candidate-cleanup.json`；汇总为 `aws-candidate-acceptance-summary.json`，本机观察为 `all-panes-continuation-summary.json`。
 
-正式部署仅完成规范 artifact-only 命令的 `--dry-run`，没有执行。现存 systemd 单元从 `/home/ubuntu/.local/bin/aih server serve --host 127.0.0.1 --port 9527` 启动；`/usr/local/bin/aih` 和 `~/.local/bin/aih` 都仍指向旧包。若批准正式升级，具体范围为：以已验收启动器替换 `~/.local/bin/aih`、由规范发布脚本重装/重启该用户单元，保留 `/usr/local/bin/aih` 当前指向 `~/.local/bin/aih` 的链接，并复核其随之解析到新启动器；保留旧包，并在修改前保存两个原软链接的精确目标和原 systemd unit；失败时显式恢复原链接、原 unit，执行 daemon-reload 并重启原单元。规范脚本的 `aih.prev` 仅复制旧链接所指文件，不能单独恢复原链接，因此不把它作为目录包的完整回退机制。升级后复查包哈希、正式 HTTP/鉴权终端链路及原有两 pane。重启会短暂断开 WebUI/网关连接；既有 CLI wrapper 不会因包替换自动热更新。用户本次补充授权为连接 AWS 测试，故正式服务替换和重启保留为最后的明确确认步骤。
+本节所述旧候选正式部署仅完成规范 artifact-only 命令的 `--dry-run`，没有执行；第 10 节补漏后此包已撤下，须以包含后续补漏的新包重新验收。现存 systemd 单元从 `/home/ubuntu/.local/bin/aih server serve --host 127.0.0.1 --port 9527` 启动；`/usr/local/bin/aih` 和 `~/.local/bin/aih` 都仍指向旧包。若批准正式升级，具体范围为：以包含第 10 节补漏且重新验收的新启动器替换 `~/.local/bin/aih`、由规范发布脚本重装/重启该用户单元，保留 `/usr/local/bin/aih` 当前指向 `~/.local/bin/aih` 的链接，并复核其随之解析到新启动器；保留旧包，并在修改前保存两个原软链接的精确目标和原 systemd unit；失败时显式恢复原链接、原 unit，执行 daemon-reload 并重启原单元。规范脚本的 `aih.prev` 仅复制旧链接所指文件，不能单独恢复原链接，因此不把它作为目录包的完整回退机制。升级后复查包哈希、正式 HTTP/鉴权终端链路及原有两 pane。重启会短暂断开 WebUI/网关连接；既有 CLI wrapper 不会因包替换自动热更新。用户本次补充授权为连接 AWS 测试，故正式服务替换和重启保留为最后的明确确认步骤。
 
 02:22 补充：已在 AWS 自有候选目录 `formal-preupgrade-backup/` 保存原 unit 的私有副本和两个软链接目标清单，未修改正式入口或单元；本机仅保存低敏清单与 unit SHA256。证据：`aws-formal-preupgrade-rollback-preparation.json`。
+
+
+## 10. 超过 stdin 合帧时限的 CLI 分片补漏（02:37 续查）
+
+继续检查修复生效边界时，发现 `terminal-input-framer.js` 在两秒后会原样放行未完成的 CSI；此前草稿过滤依赖它交付完整序列的假设并不总是成立。这是同一污染路径的剩余漏洞。在自有真实 tmux PTY 中，用 `send-keys -H` 精确发送三类回复的前后半段，段间等待 2.35 秒，实际生产 stdin framer → 草稿观察器 → `take()` 的结果仍含完整三类回复，各一次。证据：`cli-slow-fragment-before-hex-input.json`。早一轮 `send-keys -l` 的分号传输不准确，未用于该结论。
+
+本次仅补强 `lib/cli/services/pty/switch-draft.js` 的观察状态：保存最多 1024 字节的未完成 CSI，后续闭合后再识别能力回复，不新增定时器，也不修改实时 PTY 转发、stdin framer 时限、选号或重放调度。单独 Escape 仍立即取消，回车/Ctrl-C/Ctrl-D 仍清草稿与解析尾部。`take()` 不重放半帧；保留其识别状态以过滤迟到回复，并标记半帧已属于上一份草稿，避免以后把旧的非回复 CSI 前缀重新回放。若跨边界闭合为括号粘贴开始标记，完整保留开始/正文/结束包络，防止正文换行失去字面保护。
+
+相同真实 PTY 验收路径、相同字节和相同 2.35 秒间隔再次操作，修复后三类回复计数均为 0，`FRAGMENT_DRAFT中文🙂` 的完整括号粘贴字节与预期完全相同。证据：`cli-slow-fragment-after-hex-input.json`。
+
+另以自有真实 tmux stdin、生产 framer 和生产草稿观察器检查 12 个边界结果，全部逐字节一致：跨 `take()` 的能力回复迟到尾部、非回复 CSI 旧前缀、Ctrl-C/回车清除、独立 Escape、方向键/SS3/Alt/退格/UTF-8、含能力回复和控制字符的字面粘贴、超长非回复，以及跨 `take()` 完成的粘贴开始标记。验收命令仅以 Ctrl-] 旁路记录真实 `take()` 返回值，没有替换模块实现。自有 socket 均已关闭；`node --check` 通过，没有创建测试文件或运行测试套件。证据：`cli-slow-fragment-boundaries.json`。
+
+该补漏不声称覆盖 Escape 自身间隔超过既有 30ms 判定的任意拆分，或任意慢分片的括号粘贴结束标记；不改变已有自动重放就绪判定，也不将第 8 节未证明的可见草稿恢复标为成功。独立 Escape 和非能力键仍按现有语义处理。
+
+第 9 节的 `83d7c2db0` Linux 包不含本节补漏，已从正式升级候选中撤下；其验收作为历史记录保留。正式升级需使用本节修复提交重新构建并在 AWS 验收的包，仍等待用户对正式服务替换和重启的明确确认。

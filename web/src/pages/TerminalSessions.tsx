@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { CodeOutlined, PlusOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { CodeOutlined, CopyOutlined, PlusOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
 import { Button, Empty, Input, Select, Spin, message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
-import { useTerminalDirectory } from '@/features/web-terminal/use-terminal-directory';
 import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
 import './TerminalSessions.css';
 
@@ -17,7 +16,7 @@ export default function TerminalSessions() {
     manager.setOverviewVisible(true);
     return () => manager.setOverviewVisible(false);
   }, [manager.setOverviewVisible]);
-  const directory = useTerminalDirectory(manager.serverId);
+  const directory = manager.directory;
   const openProjectTerminal = useOpenProjectTerminal();
   const [hiddenState, setHidden] = useState(() => ({ serverId: manager.serverId, keys: readHidden(manager.serverId) }));
   const hidden = useMemo(() => hiddenState.serverId === manager.serverId ? hiddenState.keys : readHidden(manager.serverId), [hiddenState, manager.serverId]);
@@ -26,9 +25,15 @@ export default function TerminalSessions() {
   useEffect(() => {
     manager.adoptSessions(directory.sessions.filter((session) => session.status === 'running' && !hidden.includes(session.sessionKey)).map((session) => ({
       sessionKey: session.sessionKey, label: session.label, cwd: session.cwd,
-      kind: session.source === 'native' ? 'account-cli' : 'shell', harness: session.provider,
+      kind: session.source === 'native' ? 'account-cli' : 'shell', harness: session.provider, nativeSessionId: session.nativeSessionId,
     })));
   }, [directory.sessions, hidden, manager.adoptSessions]);
+  const copyIdentity = async (label: string, key: string, nativeSessionId?: string) => {
+    try {
+      await navigator.clipboard.writeText([label, nativeSessionId, key].filter(Boolean).join('\n'));
+      message.success('已复制原会话标识；不会自动重启任务');
+    } catch { message.error('复制失败，请手动选择下方原会话标识'); }
+  };
   const hide = useCallback((id: string) => {
     const tab = manager.tabs.find((item) => item.id === id);
     if (!tab) return;
@@ -46,7 +51,10 @@ export default function TerminalSessions() {
   const candidates = manager.tabs.filter((tab) => !hidden.includes(tab.sessionKey));
   const filtered = candidates.filter((tab) => (provider === 'all' || tab.harness === provider)
     && `${tab.label} ${tab.cwd} ${tab.harness || ''}`.toLowerCase().includes(query.toLowerCase()));
-  const options = [...new Set(candidates.map((tab) => tab.harness).filter(Boolean))];
+  const unavailable = manager.unavailableTabs.filter((tab) => !hidden.includes(tab.sessionKey)
+    && (provider === 'all' || tab.harness === provider)
+    && `${tab.label} ${tab.cwd} ${tab.nativeSessionId || ''} ${tab.sessionKey}`.toLowerCase().includes(query.toLowerCase()));
+  const options = [...new Set([...candidates, ...manager.unavailableTabs].map((tab) => tab.harness).filter(Boolean))];
   const active = candidates.find((tab) => tab.id === manager.activeTabId) || candidates[0];
   const select = (id: string) => { manager.setActiveTab(id); setQuery(''); setProvider('all'); };
   return <main className="terminal-overview">
@@ -67,6 +75,17 @@ export default function TerminalSessions() {
     {query || provider !== 'all' ? <nav className="terminal-overview-results" aria-label="查找结果">
       {filtered.length ? filtered.map((tab) => <button key={tab.id} type="button" onClick={() => select(tab.id)} title={tab.cwd}>{tab.label}</button>) : <span>没有匹配的会话</span>}
     </nav> : null}
+    {unavailable.length ? <section className="terminal-overview-unavailable" aria-label="暂不可接入的原会话">
+      <div className="terminal-overview-unavailable-heading">
+        <span role="status">{unavailable.length} 个原会话当前未发现，标识已保留</span>
+        <span>刷新后会重新核对；不会替换为同名终端或自动续跑</span>
+      </div>
+      <ul>{unavailable.map((tab) => <li key={tab.id}>
+        <div><strong>{tab.label}</strong><span>当前目录未发现且接入返回 404，不代表历史已丢失</span></div>
+        <code title={tab.sessionKey}>{tab.nativeSessionId || tab.sessionKey}</code>
+        <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void copyIdentity(tab.label, tab.sessionKey, tab.nativeSessionId)}>复制原标识</Button>
+      </li>)}</ul>
+    </section> : null}
     <div className="terminal-overview-workspace">
       {candidates.length ? <ShellTerminalPanel key={manager.serverId} visible persistent compactChrome title="会话终端"
         sessionTabs={candidates.map((tab) => ({ ...tab, persistent: true }))} activeTabId={active?.id}

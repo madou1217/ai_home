@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { resolveActiveServer } from '@/services/webui-auth-transport';
 import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
 import { updateTerminalScope } from './web-terminal-scope';
+import { useTerminalDirectory } from './use-terminal-directory';
+import { useTerminalAvailability } from './use-terminal-availability';
 
 export type WebTerminalTabKind = 'account-cli' | 'shell';
 
@@ -14,6 +16,7 @@ export interface WebTerminalTab {
   kind: WebTerminalTabKind;
   harness?: string;
   model?: string;
+  nativeSessionId?: string;
 }
 interface WebTerminalLayoutState {
   tabs: WebTerminalTab[];
@@ -35,6 +38,7 @@ export interface OpenWebTerminalTabInput {
   kind?: WebTerminalTabKind;
   harness?: string;
   model?: string;
+  nativeSessionId?: string;
 }
 
 interface WebTerminalManagerValue extends WebTerminalLayoutState {
@@ -43,6 +47,8 @@ interface WebTerminalManagerValue extends WebTerminalLayoutState {
   setOverviewVisible: (visible: boolean) => void;
   openTab: (input: OpenWebTerminalTabInput) => void;
   adoptSessions: (inputs: OpenWebTerminalTabInput[]) => void;
+  unavailableTabs: WebTerminalTab[];
+  directory: ReturnType<typeof useTerminalDirectory>;
   closeTab: (id: string) => void;
   closeAll: () => void;
   setActiveTab: (id: string) => void;
@@ -84,7 +90,8 @@ function normalizeTab(value: unknown, serverId: string): WebTerminalTab | null {
     serverId: String(item.serverId || serverId).trim() || serverId,
     kind: item.kind === 'account-cli' ? 'account-cli' : 'shell',
     harness: String(item.harness || '').trim() || undefined,
-    model: String(item.model || '').trim() || undefined
+    model: String(item.model || '').trim() || undefined,
+    nativeSessionId: String(item.nativeSessionId || '').trim() || undefined
   };
 }
 
@@ -161,6 +168,8 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     return { serverId: id, state: readStoredState(id) };
   });
 
+  const { directory, interactiveTabs, unavailableTabs, isUnavailable } = useTerminalAvailability(serverId, state.tabs, overviewVisible);
+
   // Server selection can change without remounting the application shell. Swap
   // to that server's persisted terminal layout and let the host remount its
   // xterm panel; persistent PTYs from the previous server remain attachable.
@@ -190,7 +199,8 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
       serverId: targetServerId,
       kind: input.kind || 'account-cli',
       harness: String(input.harness || '').trim() || undefined,
-      model: String(input.model || '').trim() || undefined
+      model: String(input.model || '').trim() || undefined,
+      nativeSessionId: String(input.nativeSessionId || '').trim() || undefined
     };
     setScopedState((current) => {
       // A launch may finish after the user switches servers. Preserve it in
@@ -207,26 +217,45 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
 
   const closeTab = useCallback((id: string) => {
     update((current) => {
+      const selected = current.tabs.find((tab) => tab.id === id);
+      // Removing an unavailable viewer is not a request to forget its task.
+      // User callbacks may race discovery; never forget a retained identity.
+      if (selected && isUnavailable(selected.sessionKey)) return current;
       const tabs = current.tabs.filter((tab) => tab.id !== id);
       return { ...current, tabs, activeTabId: current.activeTabId === id ? (tabs[tabs.length - 1]?.id || '') : current.activeTabId };
     });
-  }, [update]);
+  }, [isUnavailable, update]);
 
   const adoptSessions = useCallback((inputs: OpenWebTerminalTabInput[]) => {
     update((current) => {
       const tabs = current.tabs.slice();
       let changed = false;
       for (const input of inputs) {
-        if (!input.sessionKey || tabs.some((tab) => tab.sessionKey === input.sessionKey)) continue;
+        if (!input.sessionKey) continue;
+        const existing = tabs.findIndex((tab) => tab.sessionKey === input.sessionKey);
+        if (existing >= 0) {
+          if (!tabs[existing].nativeSessionId && input.nativeSessionId) {
+            tabs[existing] = { ...tabs[existing], nativeSessionId: input.nativeSessionId };
+            changed = true;
+          }
+          continue;
+        }
         tabs.push({ id: makeTabId(input.sessionKey), sessionKey: input.sessionKey,
-          serverId, label: input.label, cwd: input.cwd || '', kind: input.kind || 'account-cli', harness: input.harness });
+          serverId, label: input.label, cwd: input.cwd || '', kind: input.kind || 'account-cli',
+          harness: input.harness, nativeSessionId: input.nativeSessionId });
         changed = true;
       }
       return changed ? { ...current, tabs, activeTabId: current.activeTabId || tabs[0]?.id || '' } : current;
     });
   }, [serverId, update]);
 
-  const closeAll = useCallback(() => update((current) => ({ ...current, tabs: [], activeTabId: '' })), [update]);
+  const closeAll = useCallback(() => {
+    const closed = new Set(interactiveTabs.map((tab) => tab.id));
+    update((current) => {
+      const tabs = current.tabs.filter((tab) => !closed.has(tab.id) || isUnavailable(tab.sessionKey));
+      return { ...current, tabs, activeTabId: tabs.some((tab) => tab.id === current.activeTabId) ? current.activeTabId : tabs[0]?.id || '' };
+    });
+  }, [interactiveTabs, isUnavailable, update]);
   const setActiveTab = useCallback((id: string) => update((current) => current.tabs.some((tab) => tab.id === id) ? { ...current, activeTabId: id } : current), [update]);
   const setMinimized = useCallback((value: boolean) => update((current) => ({ ...current, minimized: value })), [update]);
   const setLayout = useCallback((layout: WebTerminalLayoutState['layout']) => update((current) => ({ ...current, layout })), [update]);
@@ -237,18 +266,22 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
 
   const value = useMemo<WebTerminalManagerValue>(() => ({
     ...state,
+    tabs: interactiveTabs,
+    unavailableTabs,
+    activeTabId: interactiveTabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : interactiveTabs[0]?.id || '',
     serverId,
     overviewVisible,
     setOverviewVisible,
     openTab,
     adoptSessions,
+    directory,
     closeTab,
     closeAll,
     setActiveTab,
     setMinimized,
     setLayout,
     setPosition
-  }), [adoptSessions, closeAll, closeTab, openTab, overviewVisible, serverId, setActiveTab, setLayout, setMinimized, setPosition, state]);
+  }), [adoptSessions, closeAll, closeTab, directory, interactiveTabs, openTab, overviewVisible, serverId, setActiveTab, setLayout, setMinimized, setPosition, state, unavailableTabs]);
   return <WebTerminalManagerContext.Provider value={value}>{children}</WebTerminalManagerContext.Provider>;
 }
 

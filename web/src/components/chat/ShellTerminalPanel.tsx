@@ -751,7 +751,7 @@ function ShellTerminalPanel({
     return () => panel.removeEventListener('paste', handleTerminalPaste, true);
   }, [handleTerminalPaste, visible]);
 
-  const closeTab = useCallback(async (id: string, closeLast = true): Promise<boolean> => {
+  const closeTab = useCallback(async (id: string, closeLast = true, notifyParent = true): Promise<boolean> => {
     if (isCreatingTab?.()) return false;
     if (closingRef.current.has(id)) return false;
     closingRef.current.add(id);
@@ -796,8 +796,10 @@ function ShellTerminalPanel({
       setActiveId((cur) => (cur === id ? nextActiveId : cur));
       return next;
     });
-    if (onTabClose) onTabClose(id);
-    else if (isLast && closeLast) onClose();
+    if (notifyParent) {
+      if (onTabClose) onTabClose(id);
+      else if (isLast && closeLast) onClose();
+    }
     closingRef.current.delete(id);
     setClosingCount((count) => count - 1);
     return true;
@@ -812,7 +814,9 @@ function ShellTerminalPanel({
     }
     const wanted = new Set(sessionTabs.map((definition) => definition.id));
     for (const tab of tabs) {
-      if (!wanted.has(tab.id)) void closeTab(tab.id);
+      // The parent already changed its definitions. Viewer cleanup is not a
+      // second user request to delete a saved task, even if it reappeared.
+      if (!wanted.has(tab.id)) void closeTab(tab.id, false, false);
     }
   }, [closeTab, createTab, creatingTab, sessionTabs, tabs, visible]);
 

@@ -62,6 +62,7 @@ type SessionService interface {
 	Create(context.Context, terminalsession.Spec) (terminalsession.Snapshot, error)
 	Attach(string) (terminalsession.Snapshot, error)
 	Write(string, []byte) error
+	WriteInput(string, []byte, *bool) error
 	Resize(string, pty.Size) (terminalsession.Snapshot, error)
 	Kill(string) error
 	Subscribe(string, int) (*terminalsession.Subscription, error)

@@ -2283,7 +2283,7 @@ export const terminalAPI = {
     sessionKey?: string
   ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; cols?: number; rows?: number; error?: string }> =>
     terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
-  input: (termId: string, data: string) => terminalPost('input', { termId, data }),
+  input: (termId: string, data: string, protocol?: boolean) => terminalPost('input', { termId, data, protocol }),
   pasteImage: async (sessionKey: string, cwd: string | undefined, dataUrl: string): Promise<{
     ok: boolean;
     path?: string;

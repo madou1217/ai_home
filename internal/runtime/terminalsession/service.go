@@ -290,6 +290,9 @@ func (service *Service) Create(ctx context.Context, spec Spec) (Snapshot, error)
 		createdAt:    now,
 		lastActivity: now,
 		subs:         make(map[*Subscription]struct{}),
+		// Local durable and SSH clients may have a tmux handshake deadline.
+		// A direct local program keeps its own response timing contract.
+		protocol: terminalProtocol{expiring: spec.Durable || remote},
 	}
 	service.sessions[id] = created
 	go service.pump(created)
@@ -313,6 +316,12 @@ func (service *Service) Attach(ref string) (Snapshot, error) {
 
 // Write 串行写入 PTY；并发调用按整次 Write 原子排序，避免输入交错。
 func (service *Service) Write(ref string, payload []byte) error {
+	return service.WriteInput(ref, payload, nil)
+}
+
+// WriteInput preserves the source of browser input. A missing protocol flag is
+// a legacy client; false is literal user input, true is a machine reply stream.
+func (service *Service) WriteInput(ref string, payload []byte, protocol *bool) error {
 	if service == nil {
 		return ErrSessionNotFound
 	}
@@ -329,18 +338,28 @@ func (service *Service) Write(ref string, payload []byte) error {
 		service.mu.Unlock()
 		return ErrSessionExited
 	}
-	found.lastActivity = service.options.Now()
-	if found.durable {
-		payload = found.protocol.filter(payload)
+	service.mu.Unlock()
+	// Never hold the service-wide lock while waiting for a busy PTY writer.
+	found.writeMu.Lock()
+	defer found.writeMu.Unlock()
+	service.mu.Lock()
+	if found.status != StatusRunning {
+		service.mu.Unlock()
+		return ErrSessionExited
+	}
+	now := service.options.Now()
+	found.lastActivity = now
+	if protocol == nil {
+		payload = found.protocol.filter(payload, now)
+	} else if *protocol {
+		payload = found.protocol.filterReply(payload, now)
 	}
 	if len(payload) == 0 {
 		service.mu.Unlock()
 		return nil
 	}
-	found.writeMu.Lock()
 	terminal := found.terminal
 	service.mu.Unlock()
-	defer found.writeMu.Unlock()
 	_, err := terminal.Write(payload)
 	return err
 }
@@ -505,9 +524,7 @@ func (service *Service) pump(found *session) {
 			service.mu.Lock()
 			if found.status == StatusRunning {
 				found.lastActivity = service.options.Now()
-				if found.durable {
-					found.protocol.observe(chunk)
-				}
+				found.protocol.observe(chunk, service.options.Now())
 				service.appendOutputLocked(found, chunk)
 				service.broadcastLocked(found, Frame{Type: FrameOutput, Data: chunk})
 			}

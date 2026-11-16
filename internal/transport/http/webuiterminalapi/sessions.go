@@ -353,8 +353,9 @@ func (handler *Handler) handleAttach(response http.ResponseWriter, request *http
 
 func (handler *Handler) handleInput(response http.ResponseWriter, request *http.Request) {
 	var body struct {
-		TermID string `json:"termId"`
-		Data   string `json:"data"`
+		TermID   string `json:"termId"`
+		Data     string `json:"data"`
+		Protocol *bool  `json:"protocol"`
 	}
 	handler.readJSON(request, handler.maxBody, &body)
 	termID := strings.TrimSpace(body.TermID)
@@ -362,7 +363,7 @@ func (handler *Handler) handleInput(response http.ResponseWriter, request *http.
 		writeTerminalError(response, http.StatusNotFound, errTerminalNotFound)
 		return
 	}
-	if err := handler.sessions.Write(termID, []byte(body.Data)); err != nil {
+	if err := handler.sessions.WriteInput(termID, []byte(body.Data), body.Protocol); err != nil {
 		writeJSON(response, http.StatusBadRequest, errorView{
 			OK: false, Error: "terminal_write_failed", Message: err.Error(),
 		})

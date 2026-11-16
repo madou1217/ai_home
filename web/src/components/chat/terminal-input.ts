@@ -21,7 +21,7 @@ export function discardTerminalProtocolInput(state: TerminalInputState) {
 // A transport failure is ambiguous: replaying it could execute a command twice.
 export async function flushTerminalInput(
   state: TerminalInputState,
-  send: (termId: string, data: string) => Promise<{ ok: boolean; error?: string }>,
+  send: (termId: string, data: string, protocol?: boolean) => Promise<{ ok: boolean; error?: string }>,
   onMissing: () => void,
   onUncertain: () => void,
 ): Promise<void> {
@@ -29,12 +29,15 @@ export async function flushTerminalInput(
   state.sending = true;
   try {
     while (state.inputQueue.length && state.inputReady && state.termId) {
-      const chunks = state.inputQueue;
+      // Keep source boundaries through HTTP. In particular, never join an
+      // automatic reply to a user's keys or paste and lose its classification.
+      const protocol = state.inputQueue[0].protocol;
+      const boundary = state.inputQueue.findIndex((chunk) => chunk.protocol !== protocol);
+      const chunks = state.inputQueue.splice(0, boundary < 0 ? state.inputQueue.length : boundary);
       const target = state.termId;
       const version = state.attachmentVersion;
-      state.inputQueue = [];
       let result: { ok: boolean; error?: string };
-      try { result = await send(target, chunks.map((chunk) => chunk.data).join('')); } catch { result = { ok: false }; }
+      try { result = await send(target, chunks.map((chunk) => chunk.data).join(''), protocol); } catch { result = { ok: false }; }
       if (result.ok) continue;
       if (result.error === 'terminal_not_found') {
         // A missing client never received user input. Capability replies belong

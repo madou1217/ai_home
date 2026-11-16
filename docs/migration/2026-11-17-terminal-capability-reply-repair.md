@@ -217,3 +217,25 @@ AGY 交互界面同时显示 **Sign-in update needed**，提示账号缺少新�
 该补漏不声称覆盖 Escape 自身间隔超过既有 30ms 判定的任意拆分，或任意慢分片的括号粘贴结束标记；不改变已有自动重放就绪判定，也不将第 8 节未证明的可见草稿恢复标为成功。独立 Escape 和非能力键仍按现有语义处理。
 
 第 9 节的 `83d7c2db0` Linux 包不含本节补漏，已从正式升级候选中撤下；其验收作为历史记录保留。正式升级需使用本节修复提交重新构建并在 AWS 验收的包，仍等待用户对正式服务替换和重启的明确确认。
+
+
+## 11. 包含慢分片补漏的新 Linux 包与 AWS 复验（02:49）
+
+补漏提交 `92485176575d2f4b8f184689679a0fc70faa2693` 已推送 main。再次用固定提交 `git archive` 构建完整 Linux 包；两次固定提交之间的 `web/` 源码差异为空，因此复用第 9 节规范构建的前端产物，Go Server/CLI 重新构建，Node/生产依赖和新草稿模块重新打包。规范构建退出 0，包内 `BUILD_INFO.source_sha` 与该提交一致。
+
+新单文件启动器为 `aih-1.0.0-linux-x64.run`，121839776 字节，SHA256 **`b3e747d171f45e97a871f4352ba202ea70538798a463335984868e3329b8e9c3`**；新草稿模块 SHA256 **`4e4c942271225c4e30832ea0480d44620f74516604630fc2bf783c8eb075cc02`**。本机产物、AWS 上传文件、自解包模块分别校验一致。AWS 文件为 `/var/tmp/aih-terminal-candidate-slow-a10a1be5df84/aih-candidate.run`，自解包目录 `packages/1.0.0-linux-x64-cb4b1664`。第 9 节的旧包继续保持撤下状态。
+
+以新包的 Go front door 19543 及同包受监督 Node 启动自有空 HOME/数据库，未导入正式凭据，再完成以下真实路径：
+
+- **包内 CLI 模块：** 真实 Node adapter → Go → tmux → 包内 Node stdin framer/草稿观察器，三类回复各拆两段、间隔 2.35 秒，最终草稿精确保留 `AWS_FRAGMENT中文🙂` 的完整括号粘贴包络，三类回复均被移除。另核对跨 `take()` 的迟到尾部、跨 `take()` 完成的粘贴包络、粘贴内能力回复和控制字符、方向键/Alt/UTF-8/退格、独立 Escape，共 8 个结果，实际字节全部等于预期。此项将输入标为 `protocol=false`，刻意让原始 CSI 到达 CLI 观察器；不会用外层 Go 已过滤的结果冒充 CLI 模块有效。
+- **Go tmux 路径：** 六秒以上等待后，完整、重复、分片、未带分类字段的协议输入被过滤，普通方向键及中文表情精确保留，三类模式为 0。
+- **直接 PTY 路径：** 程序实际发出三类查询，6.2 秒后的首份回复精确到达；重复和分片重复不增加内容；普通输入及字面括号粘贴完整保留。接收数据中三类模式各 2 次，分别来自首份合法回复和有意粘贴的字面内容，不将该路径错误报告为全零。
+- **包资源和存活：** HTTP 获取的 CSS/JS 与新包文件完整一致；空账号库仍为 `ok=true、ready=false`，没有声称该候选完成模型推理。此次新包没有再次请求官方 AGY 模型；第 7、8 节的真实 Provider 证据保留原有范围。
+
+两项验收条件已纠正并保留边界：第一轮 CLI 记录器未启用括号粘贴模式，tmux 消费了包络，不能用该轮证明原样粘贴；最终记录器主动开启该模式后逐字节通过。第一轮 tmux 原始记录器主动查询能力，收到 tmux 自身的合法回答，不能把这些回答归为浏览器污染；最终 tmux 记录器不主动查询，直接 PTY 则继续主动查询验证合法回复。未为适配验收而修改产品实现。
+
+02:48:52 清理后，候选终端列表与自有进程均为空，私有 HOME/数据库/随机管理密钥文件已移除；新启动器和解包目录保留供最终升级。正式服务仍为 active/running、MainPID 341399，正式草稿模块保持原哈希，两个原有 AWS pane 继续存在且三类模式为 0。本机 01:50:57 → 02:49:08 的同一组 21 个用户 pane 逐项无增长，总数保持 36/35/23。没有对用户草稿进行清除或输入操作。
+
+新包的规范 artifact-only 部署命令 `--dry-run` 已通过，未实际部署。正式升级提案绑定本节 `b3e747d1…` 新产物，入口、用户单元、短暂连接中断和原软链接/unit 显式回退步骤仍按第 9 节执行。既有 CLI 进程不会自动热加载新观察器，AWS Edge 可视验收及自动恢复可见草稿仍未完成。
+
+证据：`aws-release-slow-build-result.json`、`aws-release-artifacts-slow-fragment/aih-1.0.0-manifest.json`、`aws-candidate-slow-start.json`、`aws-candidate-slow-cli-v2-result.json`、`aws-candidate-slow-terminal-v2-regression.json`、`aws-candidate-slow-cleanup.json`、`all-panes-slow-fragment-summary.json`、`aws-release-slow-deploy-dry-run.log`。汇总：`aws-candidate-slow-acceptance-summary.json`。

@@ -192,7 +192,7 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		return nil, fmt.Errorf("创建管理面聚合接口失败: %w", err)
 	}
 
-	return []webuiRoute{
+	routes := []webuiRoute{
 		{Pattern: "GET " + webuimanagementapi.UIPath, Handler: handler},
 		{Pattern: "GET " + webuimanagementapi.StatusPath, Handler: handler},
 		{Pattern: "GET " + webuimanagementapi.MetricsPath, Handler: handler},
@@ -228,7 +228,20 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		// 同一份处理器；Node 不再保留这份管理面实现。
 		{Pattern: "/v0/webui/management", Handler: publicManagementHandler(handler)},
 		{Pattern: "/v0/webui/management/", Handler: publicManagementHandler(handler)},
-	}, nil
+	}
+	// Preserve legacy public management callers without intercepting plugin routes,
+	// which still have a separate owner. Reuse the same Go handler and method gate.
+	for _, route := range routes {
+		method, path, ok := strings.Cut(route.Pattern, " ")
+		if !ok || !strings.HasPrefix(path, webuimanagementapi.BasePath+"/") || path == webuimanagementapi.RestartPath {
+			continue
+		}
+		routes = append(routes, webuiRoute{
+			Pattern: method + " " + webuimanagementapi.PublicPrefix + strings.TrimPrefix(path, webuimanagementapi.BasePath),
+			Handler: handler,
+		})
+	}
+	return routes, nil
 }
 
 // publicManagementHandler 把浏览器前缀 /v0/webui/management 重写到 Go 管理面前缀。

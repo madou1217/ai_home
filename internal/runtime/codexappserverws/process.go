@@ -3,6 +3,7 @@ package codexappserverws
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -68,9 +69,17 @@ func StartAppServerProcess(opts StartProcessOptions) (*AppServerProcess, error) 
 	}
 
 	for _, entry := range opts.Env {
-		if strings.HasPrefix(entry, "CODEX_HOME=") {
-			if err := codexpreferences.CheckHostReady(strings.TrimPrefix(entry, "CODEX_HOME=")); err != nil {
+		if home, ok := strings.CutPrefix(entry, "CODEX_HOME="); ok {
+			if err := codexpreferences.CheckHostReady(home); err != nil {
 				return nil, err
+			}
+			// An explicit CODEX_HOME must exist before the official app-server
+			// starts. Fresh installs have no native config or credentials yet;
+			// create only the directory, after the interrupted-default guard.
+			if home != "" {
+				if err := os.MkdirAll(home, 0o700); err != nil {
+					return nil, fmt.Errorf("初始化 Codex 运行目录失败: %w", err)
+				}
 			}
 			break
 		}

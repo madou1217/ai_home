@@ -80,6 +80,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	providerID := arguments[0]
+	if providerID == "__codex-cli-startup" {
+		return runCodexCLIStartup(ctx, arguments[1:], runtime)
+	}
 	if providerID == "__codex-cli-app-server" {
 		return runCodexCLIAppServer(ctx, arguments[1:], runtime)
 	}

@@ -20,6 +20,14 @@ type managedClaudeDesktopGatewayRequest struct {
 	DryRun      bool   `json:"dryRun"`
 }
 
+type claudeDesktopAccountModeRequest struct {
+	Intent     string `json:"intent"`
+	AIHomeDir  string `json:"aiHomeDir"`
+	AccountRef string `json:"accountRef"`
+	Mode       string `json:"mode"`
+	DryRun     bool   `json:"dryRun"`
+}
+
 // Explicit private pipe adapter. Preparation is independent of GUI launch and
 // server lifecycle; managed requests leave config and helper selection in Go.
 func runClaudeDesktopConfig(ctx context.Context, runtime commandRuntime) error {
@@ -31,23 +39,15 @@ func runClaudeDesktopConfig(ctx context.Context, runtime commandRuntime) error {
 	if json.Unmarshal(raw, &fields) != nil {
 		return errors.New("desktop_config_request_invalid")
 	}
-	if _, managed := fields["intent"]; managed {
-		if validateManagedClaudeDesktopGatewayRequest(raw) != nil {
+	if rawIntent, typed := fields["intent"]; typed {
+		var intent string
+		if json.Unmarshal(rawIntent, &intent) != nil {
 			return errors.New("desktop_config_request_invalid")
 		}
-		var request managedClaudeDesktopGatewayRequest
-		if decodeClaudeDesktopConfigRequest(raw, &request) != nil || request.Intent != "managed-gateway" {
-			return errors.New("desktop_config_request_invalid")
+		result, prepareErr := prepareTypedClaudeDesktopConfig(ctx, raw, intent)
+		if prepareErr != nil {
+			return prepareErr
 		}
-		request.AIHomeDir = strings.TrimSpace(request.AIHomeDir)
-		request.HostHomeDir = strings.TrimSpace(request.HostHomeDir)
-		if !filepath.IsAbs(request.AIHomeDir) || !filepath.IsAbs(request.HostHomeDir) ||
-			strings.ContainsRune(request.AIHomeDir, 0) || strings.ContainsRune(request.HostHomeDir, 0) {
-			return errors.New("desktop_config_request_invalid")
-		}
-		result := apps.PrepareClaudeDesktopGatewayResult(ctx, apps.Options{
-			AIHomeDir: request.AIHomeDir, HostHomeDir: request.HostHomeDir,
-		}, request.DryRun)
 		return json.NewEncoder(runtime.stdout).Encode(result)
 	}
 	var options claudedesktopconfig.Options
@@ -55,6 +55,46 @@ func runClaudeDesktopConfig(ctx context.Context, runtime commandRuntime) error {
 		return errors.New("desktop_config_request_invalid")
 	}
 	return json.NewEncoder(runtime.stdout).Encode(claudedesktopconfig.Prepare(ctx, options))
+}
+
+func prepareTypedClaudeDesktopConfig(ctx context.Context, raw []byte, intent string) (claudedesktopconfig.Result, error) {
+	invalid := errors.New("desktop_config_request_invalid")
+	switch intent {
+	case "managed-gateway":
+		if validateTypedClaudeDesktopConfigRequest(raw, false, "intent", "aiHomeDir", "hostHomeDir", "dryRun") != nil {
+			return claudedesktopconfig.Result{}, invalid
+		}
+		var request managedClaudeDesktopGatewayRequest
+		if decodeClaudeDesktopConfigRequest(raw, &request) != nil {
+			return claudedesktopconfig.Result{}, invalid
+		}
+		request.AIHomeDir = strings.TrimSpace(request.AIHomeDir)
+		request.HostHomeDir = strings.TrimSpace(request.HostHomeDir)
+		if !validClaudeDesktopConfigRoot(request.AIHomeDir) || !validClaudeDesktopConfigRoot(request.HostHomeDir) {
+			return claudedesktopconfig.Result{}, invalid
+		}
+		return apps.PrepareClaudeDesktopGatewayResult(ctx, apps.Options{
+			AIHomeDir: request.AIHomeDir, HostHomeDir: request.HostHomeDir,
+		}, request.DryRun), nil
+	case "account-mode":
+		if validateTypedClaudeDesktopConfigRequest(raw, true, "intent", "aiHomeDir", "accountRef", "mode", "dryRun") != nil {
+			return claudedesktopconfig.Result{}, invalid
+		}
+		var request claudeDesktopAccountModeRequest
+		if decodeClaudeDesktopConfigRequest(raw, &request) != nil || !validClaudeDesktopConfigRoot(request.AIHomeDir) ||
+			(request.Mode != "web" && request.Mode != "api") {
+			return claudedesktopconfig.Result{}, invalid
+		}
+		return apps.PrepareClaudeDesktopAccountMode(ctx, apps.Options{
+			AIHomeDir: request.AIHomeDir,
+		}, request.AccountRef, request.Mode, request.DryRun), nil
+	default:
+		return claudedesktopconfig.Result{}, invalid
+	}
+}
+
+func validClaudeDesktopConfigRoot(value string) bool {
+	return filepath.IsAbs(value) && !strings.ContainsRune(value, 0)
 }
 
 func decodeClaudeDesktopConfigRequest(raw []byte, target any) error {
@@ -70,9 +110,13 @@ func decodeClaudeDesktopConfigRequest(raw []byte, target any) error {
 	return nil
 }
 
-// Managed requests use exact field names and reject duplicate/null values; the
+// Typed requests use exact field names and reject duplicate/null values; the
 // legacy Options decoder retains its original compatibility contract.
-func validateManagedClaudeDesktopGatewayRequest(raw []byte) error {
+func validateTypedClaudeDesktopConfigRequest(raw []byte, required bool, fields ...string) error {
+	allowed := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		allowed[field] = true
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
 		return errors.New("desktop_config_request_invalid")
@@ -87,9 +131,7 @@ func validateManagedClaudeDesktopGatewayRequest(raw []byte) error {
 		if !ok || seen[key] {
 			return errors.New("desktop_config_request_invalid")
 		}
-		switch key {
-		case "intent", "aiHomeDir", "hostHomeDir", "dryRun":
-		default:
+		if !allowed[key] {
 			return errors.New("desktop_config_request_invalid")
 		}
 		seen[key] = true
@@ -98,7 +140,7 @@ func validateManagedClaudeDesktopGatewayRequest(raw []byte) error {
 			return errors.New("desktop_config_request_invalid")
 		}
 	}
-	if _, err := decoder.Token(); err != nil {
+	if _, err := decoder.Token(); err != nil || (required && len(seen) != len(allowed)) {
 		return errors.New("desktop_config_request_invalid")
 	}
 	return nil

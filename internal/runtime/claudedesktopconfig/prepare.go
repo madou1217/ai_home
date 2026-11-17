@@ -15,6 +15,19 @@ import (
 // native setting. An interrupted operation is resumed only for the same request;
 // conflicting native edits retain the journal and are never automatically undone.
 func Prepare(ctx context.Context, o Options) Result {
+	return prepare(ctx, o, "")
+}
+
+// PrepareBoundProfile binds a previously admitted canonical profile to the
+// transaction's first resolution while retaining subsequent path drift guards.
+func PrepareBoundProfile(ctx context.Context, o Options, expectedProfile string) Result {
+	if !filepath.IsAbs(expectedProfile) || filepath.Clean(expectedProfile) != expectedProfile {
+		return Result{Status: "failed", Reason: "desktop_profile_changed", Mode: o.Mode, ProfileDir: o.ProfileDir, DryRun: o.DryRun}
+	}
+	return prepare(ctx, o, expectedProfile)
+}
+
+func prepare(ctx context.Context, o Options, expectedProfile string) Result {
 	result := Result{Status: "failed", Mode: o.Mode, ProfileDir: o.ProfileDir, DryRun: o.DryRun}
 	failure := func(err error, recovery bool) Result {
 		result.Reason = err.Error()
@@ -36,6 +49,9 @@ func Prepare(ctx context.Context, o Options) Result {
 	profile, err := configsnapshot.Resolve(o.ProfileDir)
 	if err != nil {
 		return failure(err, false)
+	}
+	if expectedProfile != "" && profile != expectedProfile {
+		return failure(fail("desktop_profile_changed"), false)
 	}
 	result.ProfileDir = profile
 	marker := filepath.Join(profile, journalName)

@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/runtime/claudedesktopconfig"
 	"github.com/madou1217/ai_home/internal/runtime/claudedesktopcredential"
+	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
 )
 
 // OpenManagedDesktopApp 不绑定账号，直接在宿主打开已安装的桌面客户端。
@@ -142,6 +144,43 @@ func PrepareClaudeDesktopGatewayResult(ctx context.Context, opts Options, dryRun
 	if profileDir == "" || !filepath.IsAbs(aiHome) {
 		return failure("invalid_gateway_scope")
 	}
+	return prepareClaudeDesktopAPIProfile(ctx, opts, profileDir, "", dryRun)
+}
+
+// PrepareClaudeDesktopAccountMode derives an isolated account profile in Go;
+// web configuration does not require a credential helper or a server config.
+func PrepareClaudeDesktopAccountMode(ctx context.Context, opts Options, accountRef, mode string, dryRun bool) claudedesktopconfig.Result {
+	aiHome := strings.TrimSpace(opts.AIHomeDir)
+	profileDir := filepath.Join(aiHome, "desktop-clients", "claude", accountRef)
+	failure := func(reason string) claudedesktopconfig.Result {
+		return claudedesktopconfig.Result{Status: "failed", Reason: reason, Mode: mode, ProfileDir: profileDir, DryRun: dryRun}
+	}
+	if _, err := accounts.ParseAccountRef(accountRef); err != nil || !filepath.IsAbs(aiHome) || strings.ContainsRune(aiHome, 0) {
+		return failure("invalid_account_scope")
+	}
+	if mode != "api" && mode != "web" {
+		return failure("invalid_desktop_mode")
+	}
+	root, err := configsnapshot.Resolve(aiHome)
+	if err != nil {
+		return failure("invalid_account_scope")
+	}
+	resolved, err := configsnapshot.Resolve(profileDir)
+	if err != nil || resolved != filepath.Join(root, "desktop-clients", "claude", accountRef) {
+		return failure("invalid_account_scope")
+	}
+	if mode == "web" {
+		return claudedesktopconfig.PrepareBoundProfile(ctx, claudedesktopconfig.Options{ProfileDir: profileDir, Mode: mode, DryRun: dryRun}, resolved)
+	}
+	opts.AIHomeDir = root
+	return prepareClaudeDesktopAPIProfile(ctx, opts, profileDir, resolved, dryRun)
+}
+
+func prepareClaudeDesktopAPIProfile(ctx context.Context, opts Options, profileDir, expectedProfile string, dryRun bool) claudedesktopconfig.Result {
+	failure := func(reason string) claudedesktopconfig.Result {
+		return claudedesktopconfig.Result{Status: "failed", Reason: reason, Mode: "api", ProfileDir: profileDir, DryRun: dryRun}
+	}
+	aiHome := strings.TrimSpace(opts.AIHomeDir)
 	packagePlatform := resolvePlatform(opts)
 	if packagePlatform == platformMacOS {
 		packagePlatform = "darwin"
@@ -162,12 +201,16 @@ func PrepareClaudeDesktopGatewayResult(ctx context.Context, opts Options, dryRun
 	if err != nil {
 		return failure(err.Error())
 	}
-	return claudedesktopconfig.Prepare(ctx, claudedesktopconfig.Options{
+	options := claudedesktopconfig.Options{
 		ProfileDir: profileDir, Mode: "api", GatewayBaseURL: resolveDefaultServerRootURL(ctx, opts),
 		CredentialHelper:     helper,
 		CredentialHelperArgs: []string{claudedesktopcredential.Command, "--ai-home-dir", aiHome},
 		DryRun:               dryRun,
-	})
+	}
+	if expectedProfile != "" {
+		return claudedesktopconfig.PrepareBoundProfile(ctx, options, expectedProfile)
+	}
+	return claudedesktopconfig.Prepare(ctx, options)
 }
 
 func newAppUUID() string {

@@ -3893,5 +3893,648 @@
       "coordinatorNotified": true,
       "noSharedArtifactMutation": true
     }
+  },
+  "cliProviderHealGoDelegation": {
+    "status": "partial-policy-owner-exit-not-whole-R2",
+    "sourceCommit": "6a7ab80dea0e673d133bad5e20c5f7ea3c82e5b1",
+    "approvedScopeMessage": "pm-793653bad1b0fba963605fac1a7c4b40",
+    "manifest": {
+      "baseCommit": "ec607d14e0ae3465443e5a3c4e1555df9091f2a8",
+      "archiveSHA256": "17cc35b4fb7d8819141d1e0498bfaf17aee3ddd34970f9b00f66d42cc893a9ae",
+      "paths": {
+        "lib/cli/services/pty/codex-provider-config-heal.js": "0480f59697c6c503214fd71f176a6d2104e6a2a6c4033a6c217ce2279a94c1ca",
+        "cmd/aih/provider_effort.go": "620919f9cd8b84a69ef2fbf6cef6c1d9f1f8243223993df47a754891e0af2117",
+        "cmd/aih/codex_config_heal.go": "d67f3fa13dcc18d92f6c92d7d9a74e768019d6bf5f7da2207987280c17ce76d4",
+        "internal/runtime/codexconfigheal/provider.go": "69af76db4c7abf802db7153f322c9a0d1bf44f56a18180052a76e8ada84068b9"
+      },
+      "sourceTree": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-provider-heal-20261118-v921wzxv/source",
+      "binary": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-provider-heal-20261118-v921wzxv/final-aih-go",
+      "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de",
+      "finalChange": "JS-dot parity and unchanged-response consistency guard; no publication or caller changes"
+    },
+    "manifestSHA256": "73e22cfede8b66e606a0bc6d3af7a65c817d6e87737e9728bc0840302294cec1",
+    "actualCaller": "lib/cli/services/pty/codex-config-heal.js:414 -> synchronous Go adapter -> pure policy -> existing locked ReplaceDocument",
+    "command": [
+      "codex",
+      "effort",
+      "--heal-provider-config"
+    ],
+    "capability": "aih-codex-provider-heal-v1",
+    "source": {
+      "configBytes": 4208,
+      "configSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+      "origin": "actual config4208 and extracted managed subtree; private text transforms only, no account fixtures"
+    },
+    "acceptance": {
+      "textEquivalence": {
+        "sourceSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+        "sourceBytes": 4208,
+        "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de",
+        "origin": "actual config4208 and extracted managed subtree; private text transforms only, no account fixtures",
+        "rows": [
+          {
+            "operation": "current",
+            "inputSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": false
+          },
+          {
+            "operation": "name-removed",
+            "inputSHA256": "2db2c7e9cdac6d3841af94be92bf0a92490d6c7ed6d12de873c81e2d217c4bfd",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "empty-name",
+            "inputSHA256": "cd2357b979d3a6b6841bb2c1a460d50802d178028e847920a1044f9a04c0b651",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "whitespace-name",
+            "inputSHA256": "808c1131808039496dbc6c82b2a90acce6cbedaad668fecbb6451587cb49a02d",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "5920e396bbf7e84b9aed5ca6de6a8ced122e832170f3cfa6841caaababe09c70",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "literal-empty",
+            "inputSHA256": "c7097f8573d04018d2e2bed437ad9da2196de68c51f6d9314149b094983174e7",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "3b351217915431ca1a8174c5bab064250f51d6a38843c49e4fa958081d80128a",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "quoted-header",
+            "inputSHA256": "fcabee5702c0d3f94150fa76b5acaa869d026b6a7640816eef169fa36b29aee9",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "80c21a5045228bb3cf660178c39a3ca60a591ca2d87f6ae79f85cd771676f923",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "CRLF-repair",
+            "inputSHA256": "f2315f5c2ca02413dfd6d5b5338f14d3cb6491d6c011e2b0a3500dc8bcd7a869",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "9bfc155f509b963e2f4a01a86f2e29233cfda38fc68ce2226caa265c04828b58",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "child-only",
+            "inputSHA256": "224fd7347df7ad00c694d12a7ccdde4c2db53db86966e42de88bbb1f4b20f868",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "c6ef244f4f48d88d141ced43ef5de60bec03f8c3d722bd7d2dcaf341c5362cd9",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "missing-tree",
+            "inputSHA256": "15a305e0dcbbb28e6ee920f3792dbb2d9509f0c79e79e67ba8e30ef922493436",
+            "blockSHA256": "a33ebe9f02eda5b076debcaa021050b82be6a24b34a6d97b2568974263c60818",
+            "outputSHA256": "feab70b73b0959a3df29d1290d18b3dfaf8e3042c98d9a0b53694454ab086948",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": true
+          },
+          {
+            "operation": "existing-label",
+            "inputSHA256": "ae9030bb80ea22a0f272a577ad39a686396410d20633ddc9fa6a8e0d80bf1585",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "ae9030bb80ea22a0f272a577ad39a686396410d20633ddc9fa6a8e0d80bf1585",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": false
+          },
+          {
+            "operation": "inline-root-no-child",
+            "inputSHA256": "a7a08e71496e27e52b8734418d7dae907001d4fd5b2839fb65dabe65a4c36ede",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "a7a08e71496e27e52b8734418d7dae907001d4fd5b2839fb65dabe65a4c36ede",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": true
+          },
+          {
+            "operation": "dotted-root-no-child",
+            "inputSHA256": "b3835eb7a79ed953f45d372b6527c9a2c3571375da3cb4387c2090dad70e7eaa",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "b3835eb7a79ed953f45d372b6527c9a2c3571375da3cb4387c2090dad70e7eaa",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": true
+          },
+          {
+            "operation": "inline-member-no-child",
+            "inputSHA256": "af18a4236c05a90564e6a55d018c9755d34de6576a8504900fad426ec665ec0b",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "af18a4236c05a90564e6a55d018c9755d34de6576a8504900fad426ec665ec0b",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": true
+          },
+          {
+            "operation": "multiline-example-no-child",
+            "inputSHA256": "5db537f3e5278b5f308e39d4f1ecf094b93d98553c1a41cdee4e7903d2df7f3d",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "5db537f3e5278b5f308e39d4f1ecf094b93d98553c1a41cdee4e7903d2df7f3d",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": true
+          },
+          {
+            "operation": "multiline-example-restore-real",
+            "inputSHA256": "5db537f3e5278b5f308e39d4f1ecf094b93d98553c1a41cdee4e7903d2df7f3d",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "e37812e58672c4382b8cac5a438d5b4b687d387a1d3065ee71574ab97eda674d",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": true
+          },
+          {
+            "operation": "literal-multiline-no-child",
+            "inputSHA256": "d58047d6dc69e9fd7dc0d31cfb8b8bdcd7408d0ff88e6f7e773ae1caa208d045",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "d58047d6dc69e9fd7dc0d31cfb8b8bdcd7408d0ff88e6f7e773ae1caa208d045",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": true
+          },
+          {
+            "operation": "escaped-name",
+            "inputSHA256": "0975a9ed2b24b02a18d671f08aea750cda3a5d4b9e6818b654dee7f7a2649ad7",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "invalid-escape-kept",
+            "inputSHA256": "dfa7fcf1e30c78e32229a721581a3469dd686101029ab263c0d239b3c40f6ef9",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "dfa7fcf1e30c78e32229a721581a3469dd686101029ab263c0d239b3c40f6ef9",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": false
+          },
+          {
+            "operation": "BOM-spaces-name",
+            "inputSHA256": "8bf6639ce1e866a31ed59eaae9c787e4af51c21ad38455d17d4ba475661673d1",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "319dfa3938713692f168c5fb911ad49c4504716ed8f4f1d6d31b7640a4bfc400",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-comment-13",
+            "inputSHA256": "ae0ed4fa0d2f4b426b37cfe11491a57e0098e90eca3ddc45a31677bb90c7eb4a",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "ae0ed4fa0d2f4b426b37cfe11491a57e0098e90eca3ddc45a31677bb90c7eb4a",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-header-13",
+            "inputSHA256": "50ab83d13d3be2c6bf4ad4f4d5c65e1bc9425df6dd73839271e15cf443e99de3",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "540effaec98d799fb3268d1ef6d0fb51e202d72671d4a965bb9520d598783e88",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-table-13",
+            "inputSHA256": "f08567913fbcc6d0f32ef8bd66841ff87e1e6f67c1d942ec4d45aa27e068d53f",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "79f1252b5d3893547a7550a08cc16ca750a493aa809cad27121ddfe466de0ab5",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": true
+          },
+          {
+            "operation": "dot-comment-8232",
+            "inputSHA256": "0e8f781e26a0b491bdfbb3d280cc2a98c2b88943bade155359a6ec719b2b6534",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "0e8f781e26a0b491bdfbb3d280cc2a98c2b88943bade155359a6ec719b2b6534",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-header-8232",
+            "inputSHA256": "fd1110cf8925dd929043f95b725dae3e48242a54380ca7b2ffb7059477d8f05e",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "87e94ff160f8ec5a01b3cedbfb7fe4acceb03fc1eb04eb8357376bf2fa5dc06e",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-table-8232",
+            "inputSHA256": "39eac987308bb9c40316a98e041b582b608d916ff1fbca58dddb47edb24ee5b3",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "86b89b0ff7333d6d80bde36de54db4d0f0ec047d6a3e6514200dd84db04d01a5",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": true
+          },
+          {
+            "operation": "dot-comment-8233",
+            "inputSHA256": "7d551b369372f8b90efb30f0259d4a0886e5a03b9238762c0b9cf1b4138c296f",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "7d551b369372f8b90efb30f0259d4a0886e5a03b9238762c0b9cf1b4138c296f",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": false,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-header-8233",
+            "inputSHA256": "67684adcf0fe428fba287422c404d40207d23f8a5ada1256e0cc42130dbf5ef4",
+            "blockSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "outputSHA256": "55c9fbbbfa8219b2993835cfb53d6861310706914ca25fce601d910172ec947c",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": false
+          },
+          {
+            "operation": "dot-table-8233",
+            "inputSHA256": "1e7cae6e97f640a7f9774c1585efff98189df9040ccc456ffcf67e98add61a34",
+            "blockSHA256": "4e9e692147dc5b859987c0c38c653503a0705a95160978e54f9db1c3d3ad8546",
+            "outputSHA256": "81d645302dcb4cb85625611b2bf7e458dcbc93102d322839cc7ea646629b4675",
+            "bytesEqual": true,
+            "changedEqual": true,
+            "installedAdapterEqual": true,
+            "changed": true,
+            "noChildInput": true
+          }
+        ],
+        "allEqual": true
+      },
+      "privateStandardInstalledCaller": {
+        "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de",
+        "actualSourceSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+        "operation": "private standard package install -> actual outer healer -> Go transform -> existing Go locked expected-document writer",
+        "repair": {
+          "first": {
+            "path": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-provider-heal-20261118-v921wzxv/final-real-caller-home/config.toml",
+            "changed": true,
+            "provider": {
+              "changed": true
+            },
+            "mcp": {
+              "converted": [],
+              "removed": []
+            },
+            "projects": {
+              "converted": [],
+              "removed": []
+            },
+            "hooksState": {
+              "removed": []
+            }
+          },
+          "secondChanged": false,
+          "beforeSHA256": "2db2c7e9cdac6d3841af94be92bf0a92490d6c7ed6d12de873c81e2d217c4bfd",
+          "afterSHA256": "a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322",
+          "restoredOriginal": true,
+          "mode": "640",
+          "logs": [
+            "[codex-heal] repaired managed provider aih_server configuration"
+          ]
+        },
+        "symlink": {
+          "changed": true,
+          "preserved": true,
+          "targetRestored": true,
+          "mode": "640",
+          "logs": [
+            "[codex-heal] repaired managed provider aih_server configuration"
+          ]
+        },
+        "negative": [
+          {
+            "operation": "missing-Go",
+            "changed": false,
+            "providerChanged": false,
+            "unchangedBytes": true,
+            "logs": [
+              "[codex-heal] skipped: codex_provider_heal_native_unavailable"
+            ],
+            "binarySHA256": null
+          },
+          {
+            "operation": "actual-shared-old-Go",
+            "changed": false,
+            "providerChanged": false,
+            "unchangedBytes": true,
+            "logs": [
+              "[codex-heal] skipped: codex_provider_heal_native_unavailable"
+            ],
+            "binarySHA256": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6"
+          },
+          {
+            "operation": "Go-rejected-NUL-text",
+            "changed": false,
+            "providerChanged": false,
+            "unchangedBytes": true,
+            "logs": [
+              "[codex-heal] skipped: codex_provider_heal_rejected"
+            ],
+            "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de"
+          }
+        ],
+        "pass": true
+      },
+      "lockedPublicationAndNodeOff": {
+        "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de",
+        "heldExistingAdvisoryLock": {
+          "result": {
+            "path": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-provider-heal-20261118-v921wzxv/final-lock-home/config.toml",
+            "changed": false,
+            "provider": {
+              "changed": false
+            },
+            "mcp": {
+              "converted": [],
+              "removed": []
+            },
+            "projects": {
+              "converted": [],
+              "removed": []
+            },
+            "hooksState": {
+              "removed": []
+            }
+          },
+          "logs": [
+            "[codex-heal] skipped: codex_config_edit_rejected"
+          ],
+          "exit": 0,
+          "unchangedBytes": true,
+          "stderrBytes": 0
+        },
+        "staleExpectedDocument": {
+          "exit": 1,
+          "stderr": "aih: codex_config_edit_rejected",
+          "stdoutBytes": 0,
+          "externalEditPreserved": true
+        },
+        "nodeOff": {
+          "exit": 0,
+          "stderrBytes": 0,
+          "changed": true,
+          "restoredOriginal": true,
+          "pathEntries": [],
+          "noAIHNodeHostStarted": true,
+          "scope": "direct pure policy command only; actual outer caller still Node bootstrap"
+        },
+        "pass": true
+      },
+      "strictDTOAndOpenStdin": {
+        "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de",
+        "negative": [
+          {
+            "operation": "duplicate-version",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "case-collision",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "trailing-document",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "null-config",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "null-missing-block",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "NUL-text",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "invalid-Unicode",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "extra-field",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "too-large-config",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          },
+          {
+            "operation": "too-large-block",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih: codex_provider_heal_input_invalid"
+          }
+        ],
+        "openStdin": {
+          "exit": 1,
+          "elapsedSeconds": 5.013,
+          "stdoutBytes": 0,
+          "stderr": "aih: codex_provider_heal_input_timeout",
+          "PIDGone": true
+        },
+        "pass": true
+      },
+      "actualAdapterHardKill": {
+        "binarySHA256": "85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de",
+        "inputOrigin": "current4208-byte config repeated as pure text only to 3.8MiB; no publication requested",
+        "actualAdapter": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-provider-heal-20261118-v921wzxv/source/lib/cli/services/pty/codex-provider-config-heal.js",
+        "parentNodePID": 16991,
+        "observed": [
+          {
+            "pid": 16996,
+            "ppid": 16991,
+            "argv": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-provider-heal-20261118-v921wzxv/source/bin/native/darwin-arm64/aih-go codex effort --heal-provider-config"
+          }
+        ],
+        "stoppedActualWorkerPID": 16996,
+        "parentExit": 0,
+        "result": {
+          "code": "codex_provider_heal_rejected",
+          "elapsedMS": 10060
+        },
+        "stderrBytes": 0,
+        "workerPIDGone": true,
+        "pass": true
+      },
+      "noAuthenticatedInferenceForThisPurePolicySlice": true
+    },
+    "sourceReview": {
+      "reviewers": [
+        "Hubble 01a1dac9-7f34-7260-892a-356a9d0c2daa",
+        "Mendel 01a1e041-ce36-75d2-970c-2f1678526c14"
+      ],
+      "final": "both exact4 source/hash no remaining blocking; read-only evidence review, not independent runtime replay",
+      "closedFindings": [
+        "Go regexp dot widened legacy JS matching at CR/LS/PS; reproduced red and limited comment/escape character classes",
+        "adapter now rejects changed=false with changed config"
+      ],
+      "limits": [
+        "original outer healer skip semantics retained",
+        "not default/resume complete launch acceptance",
+        "no shared installation authorization"
+      ]
+    },
+    "buildEvidence": {
+      "nativeBuild": true,
+      "focusedVet": true,
+      "nodeCheck": true,
+      "linuxAmd64": "compile-only",
+      "windowsAmd64": "compile-only",
+      "noNewTestsMocksFixturesOrOperationalMain": true,
+      "linuxBinarySHA256": "1df2e9f2276f5648296dad91f6e483e60dc7db3b142092c29dc2fed3631c9d90",
+      "windowsBinarySHA256": "1c6c7ba35a53b6cd9a2f5c9b1a77f1a622fdfa49b93249c0ebabd709a32d4800"
+    },
+    "indexSafety": {
+      "sourceCommit": "6a7ab80dea0e673d133bad5e20c5f7ea3c82e5b1",
+      "parentAtStart": "1f9bf26708654ccc1ff5aa4bccdd6b4677e2f1ba",
+      "paths": [
+        "lib/cli/services/pty/codex-provider-config-heal.js",
+        "cmd/aih/provider_effort.go",
+        "cmd/aih/codex_config_heal.go",
+        "internal/runtime/codexconfigheal/provider.go"
+      ],
+      "sourceManifestSHA256": "73e22cfede8b66e606a0bc6d3af7a65c817d6e87737e9728bc0840302294cec1",
+      "syncedOwnEntries": 4,
+      "skippedOwnEntries": [],
+      "outsideCompared": 6141,
+      "outsideChangedDuringCommit": [],
+      "outsideChangedOverall": [],
+      "peerCachedPathsAfter": 89,
+      "scopeStatus": ""
+    },
+    "sharedInstalled": {
+      "updatedByThisOwner": false,
+      "binarySHA256Observed": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6",
+      "providerHealCapability": "unsupported; actual outer records skipped without file changes",
+      "startupPolicyCapabilityGate": "previous section remains blocking new default/resume startup until compatible CLI release",
+      "releaseOwner": "original supervisor and health/release owner; no release authorization for this owner"
+    },
+    "remainingGates": [
+      "pure provider policy only; Node outer caller and other healer stages remain",
+      "not full default/resume/TUI launch acceptance",
+      "main context is not passed to this helper; hard deadlines are the cancellation bound",
+      "stdin 5s only covers input waiting; adapter probe 5s and transform10s SIGKILL",
+      "request16MiB config4MiB block1MiB; NUL and invalid Unicode refused",
+      "serialized output may exceed adapter16MiB; original publication stdin12MiB separately applies",
+      "worker failure skips subsequent healer stages per existing catch, not the entire launcher",
+      "no shared restart/binary replacement/stamp/db/account/user config mutation",
+      "next actual caller requires exact scope coordination; W0-W6 remains active"
+    ],
+    "localEvidenceRootPointer": "/tmp/aih-r2-provider-heal-latest-20261118.txt",
+    "rawDigests": {
+      "candidate-manifest-2.json": "73e22cfede8b66e606a0bc6d3af7a65c817d6e87737e9728bc0840302294cec1",
+      "final-build-vet.log": "e78ddc034b1028db395ce87a24303736f10dedab8b37e1cfcb175c7f1d5e95df",
+      "final-cross-build.log": "bf6cac3a652e12923d0f593cdf43090a9be8e7ce9ce13b78dbc7399ef381b9e5",
+      "real-regexp-red-before-fix.json": "c336b96dee231d668daf86112fa91ea7c3e1ea97e0427834834499b18f65b6bd",
+      "final-real-text-equivalence.json": "5f44d7e7f0cf94b2305a342316139f38964e8b63b39379bcabdb40fdf865221d",
+      "final-real-existing-caller.json": "4dce22dd11c8a5a83d421f2f9bf9728bcf67d2ad6feaf9a0075e5c5499d22ab5",
+      "final-lock-expected-nodeoff.json": "173c0eb38626fa93f9edffb1aae53121af9927d73e10a81ce037c7f1229f4580",
+      "final-strict-DTO-process.json": "834b1df92fe5212c53039b7a2e04537c24d7b1e9887e25fd8dd3fa6e335f22c4",
+      "final-adapter-hardkill.json": "1dc16b3ee0f446d5c488ee675aba9ecfedfcf06fe0f82b78008811112c483103",
+      "source-commit-index-receipt.json": "2b539578df88686790b5daec54809317d0b18186521844492ce3e0c91379e7aa",
+      "final-source-review-summary.json": "5167cd934cb0bab740b9b971f84a688e1db0e81078ce735bc35f0abe0a688360"
+    }
   }
 }

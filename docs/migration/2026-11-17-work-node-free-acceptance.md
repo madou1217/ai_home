@@ -310,3 +310,42 @@ native build、focused vet及Linux／Windows x64交叉编译通过，后两项�
 完整default/TUI/resume仍缺CLI-only snapshot/env等必要合同；heal算法／stale rollout条件writer／lifecycle、enabled metadata及Desktop仍open，既有Node逻辑不得长期当完成。shared标准Go构件、wrapper、stamp、服务未发布／重启。JSON字节等价只证明本次官方真实catalog；孤立UTF-16 surrogate／数值溢出存在旧parser差异，文件8MiB／depth100／request2MiB／argv4096与1MiB为新增资源门禁，SIGKILL可能留本人隐藏临时文件，不等同原子事务回滚。全R2／W0-W6保持Partial。原JSON新增 `cliStartupPolicyCatalogGoDelegation` 含最终6hash、12raw digest、runtime边界与index receipt，pointer `/tmp/aih-r2-startup-policy-latest-20261118.txt`。
 
 **共享发布具体门禁（05:29只读）**：标准CLI SHA `62ade2667a5f…` 的 `__codex-cli-startup --capabilities` 实回exit1／不支持；已安装Codex wrapper仍引用当前workspace JS。因此新default/resume启动在未发布兼容CLI构件前会按约定fail closed，不能回旧Node规则或称线上已可用。已回原监督协调精确CLI-only构件发布；本owner未获部署授权，不替换binary／改stamp／重启，既有运行会话不动。
+
+## 18. 2026-11-18 R2 provider-heal：真实外层 caller 消费 Go 文本修复
+
+本组源码 **`6a7ab80dea0e673d133bad5e20c5f7ea3c82e5b1`**，只关闭原 managed-provider/name 纯规则的 Node owner，不等于整个 healer、启动器或 R2 迁完。监督批准消息 `pm-793653bad1b0fba963605fac1a7c4b40` 的四路径：
+
+| 路径 | 责任／边界 |
+| --- | --- |
+| `lib/cli/services/pty/codex-provider-config-heal.js` | 同步 Go I/O adapter；无 Node 规则 fallback |
+| `internal/runtime/codexconfigheal/provider.go` | 旧行级修复规则，不读写文件、不启动服务 |
+| `cmd/aih/codex_config_heal.go` | 内部有界 stdin／能力合同，不新增 operational main |
+| `cmd/aih/provider_effort.go` | `--heal-provider-config` 内部早派仅3行，既有 effort 不改 |
+
+实际唯一调用 `codex-config-heal.js:414` 不变。外层继续一次读取、组合provider/MCP/projects/hooks后，经既有 `codexpreferences.ReplaceDocument` 在共享 advisory lock 内 expected-document 比较再写。未修改通用writer、M default/env、其他healer、peer `run.go`；不靠全局网关RPC或AIH Node server宿主计算本组策略。
+
+### 来源冻结与实际结果
+
+- 基点 `ec607d14e0ae3465443e5a3c4e1555df9091f2a8`，archive SHA `17cc35b4fb7d8819141d1e0498bfaf17aee3ddd34970f9b00f66d42cc893a9ae`，仅叠加own4；manifest-2 SHA `73e22cfede8b66e606a0bc6d3af7a65c817d6e87737e9728bc0840302294cec1`。最终私有CLI SHA `85c720f74dbf2672965b6f4bc60e21f999df90360a12f5c5929171ad78cdf4de`。不是从共享未提交源码整树构建。
+- 当前真实config私有副本4208bytes，来源SHA `a86e74f3bd1a413a06646b9fa1fa2c5356f44d0568a1c3ccae1bf4b8ff4f0322`；抽取其中真实provider子树作文本操作，不造账号/fixture。最终28项原Node／直接Go／私有标准安装adapter的内容和changed全部相同。含删name、空/quoted/literal/注释、CRLF、child-only、missing-block、无child的inline/dotted及多行示例。原始较早20比较中部分inline/multiline仍残有child header，不能当纯分支证据；本次已完整移除子树重验。
+- Hubble/Mendel发现Go dot与JS非dotAll差异，真实私有config注释插入CR/LS/PS重现3红；最终三处comment及escape排除四类行结束字符，28项绿，并补 `!changed => config相等` 响应guard。两位原reviewer按最终四hash无阻断；其结论是源码/证据只读审查，不声称独立业务重跑。
+- **真实已存在outer caller**，通过私有标准package路径加载最终CLI，不依赖default/PTy caller转发override：修复后字节恢复原SHA；第二轮changed=false；mode0640保持；symlink本身与目标权限保留。不是只跑未消费的raw helper。
+- 缺Go、实际共享旧CLI `62ade2667a5f…`、Go拒绝NUL三项，外层分别单条 `[codex-heal] skipped: ...`，原文件未改。实际持同一个advisory lock时拒写；原expected内容过期时保留私有外部编辑。未改或绕过writer。
+- 纯策略命令在空PATH、私有HOME下exit0/stderr0并恢复原内容，无AIH Node宿主；**outer caller本身仍是Node**。本组不需要认证推理，未发生成请求、未新增记账。
+- 最终10个严格DTO负向均exit1/stdout0/固定低敏code；stdin一直不EOF实测5.013s截止/PIDGone。ps捕获真实adapter子进程16996（argv只有命令，无配置），SIGSTOP后10060ms触发SIGKILL，parent返回固定rejected且worker PID消失。未把TERM/context当立即取消。
+- native `go build ./cmd/aih`、focused `go vet`、`node --check`及diff-check通过；Linux amd64／Windows amd64只有cross-compile，不是runtime。未新增或执行测试用例、mock、fixture。
+- 单次临时index／显式pathspec source提交，提交前cachedstat/后showstat exact4；本人4entry逐blob==HEAD后同步，outside6141 entries未变，89peer cached保留。
+
+### 已交源码、私有安装与共享运行分列
+
+| 维度 | 当前事实 |
+| --- | --- |
+| 源码 | exact4已交 `6a7ab80de`；本节和JSON为独立文档checkpoint |
+| 私有installed | 固定archive+own4的标准package layout，真实outer读取／修复／锁内发布已通过 |
+| shared installed／loaded | 本owner未替换；真实旧CLI `62ade2667a5f…` 无新heal能力，按旧outer catch skip；shared新启动还受§17 startup能力硬门禁阻挡，原发布owner协调 |
+| Node退役 | provider纯规则不再Node计算；Node bootstrap／外层其他healer与default/resume业务仍保留，不能称入口退出 |
+| 服务与配置 | 未共享restart／deploy／stamp／迁库；未修改真实用户config、账号、默认项或既有会话 |
+
+剩余边界：request16MiB／config4MiB／missing-block1MiB；拒NUL、非法Unicode和不合DTO文本。等价性限既有正常文本及已列私有操作，不代表任意输入。输出JSON可能膨胀触发adapter16MiB，原writer另有12MiB输入限额；策略被接纳不保证可发布。stdin5s仅覆盖输入等待；adapter能力5s和worker10s为SIGKILL截止，未接main context，不承诺TERM立即取消计算。失败由原outer catch跳过本轮后续MCP/projects/hooks并继续启动，不是launcher fail closed。本组未跑完整default/resume/TUI，不复用前组help成功冒充本轮全链；下一actualcaller先向原监督报scope。原W0–W6与全R2保持Partial/active。
+
+原JSON追加 `cliProviderHealGoDelegation`，包含最终四源码hash、11raw digest、实际结果/剩余门禁。本地低敏证据pointer `/tmp/aih-r2-provider-heal-latest-20261118.txt`；配置正文和凭据不入仓库。

@@ -428,3 +428,13 @@ b4cc56e9f仅本人3source(241+/3-)已交，3ownindex同步/outside6131entries相
 本组只关闭已消费startup策略的Node规则计算，不代全wrapper／default/TUI/resume／R2迁移；Node bootstrap、其余host/config/lease业务仍open。shared installed／loaded未更新，不重启／改stamp／DB。真实catalog字节等价限官方正常Unicode；孤立surrogate／数值溢出、8MiB文件／depth100／有界argv、路径跟随symlink与硬杀temp遗留边界明确登记。证据追加原acceptance §17与JSON `cliStartupPolicyCatalogGoDelegation`；无新测试、fixture或操作main。
 
 **共享发布具体门禁（05:29只读）**：标准CLI SHA `62ade2667a5f…` 的 `__codex-cli-startup --capabilities` 实回exit1／不支持；已安装Codex wrapper仍引用当前workspace JS。因此新default/resume启动在未发布兼容CLI构件前会按约定fail closed，不能回旧Node规则或称线上已可用。已回原监督协调精确CLI-only构件发布；本owner未获部署授权，不替换binary／改stamp／重启，既有运行会话不动。
+
+## 2026-11-18 R2：provider-heal 文本策略由 Go 单 owner 消费
+
+源码 `6a7ab80de` exact4：原同步 `codex-provider-config-heal.js` 退为有界 stdin/响应 adapter；`codexconfigheal/provider.go` 接管原行级 provider/name 规则；`cmd/aih/codex_config_heal.go` 提供内部编译入口，`provider_effort.go` 仅早派3行。真实唯一 caller 仍为 `codex-config-heal.js:414`，返回 `{config, changed}`；原一次组合、自带锁/expected-document publication 不改，M default/env、MCP/projects/hooks 规则与 peer `run.go` 不动。无旧 Node 规则 fallback。
+
+固定 `ec607d14e` archive SHA `17cc35b4fb7d…` + own4，最终私有 CLI `85c720f74dbf…`。真实配置4208bytes来源SHA `a86e74f3bd1a…` 的28项私有文本操作，原 Node／直接 Go／私有标准安装 adapter 字节和 changed 全等；包含完整移除 auth 子树后的 inline／多行，不把前一轮混有 child-header 的比较当这些门禁。review发现 Go dot扩大 CR／LS／PS 注释匹配，真实3红后限制三处comment及escape字符集；两位原reviewer按最终hash复审无阻断，不称reviewer重跑业务。
+
+真实现有outer healer→Go策略→既有Go锁内写回恢复原SHA，二次幂等、0640和symlink保留；缺Go／实际共享旧Go／NUL均单条skipped且文件不变。真实持锁拒写、stale expected保留外部改动；纯策略空PATH Node-off exit0，无AIH Node host。最终10DTO拒绝、open stdin5.013s/PIDGone；SIGSTOP实际worker16996后adapter10060ms硬杀回收。native build/vet/JS syntax通过，Linux／Windows仅编译。本人4source index同步，outside6141 entries不变、89peer cached保留。
+
+只关闭provider纯文本规则的Node owner，**不代表外层Node caller／全healer／default/TUI/resume或R2退出**。固定输入16MiB、config4MiB、block1MiB／NUL／非法Unicode拒绝；5s仅stdin等待，adapter能力5s／计算10s硬截止，不承诺main-context即刻取消。文本限额不保证序列化响应或原12MiB publication必定可用。worker失败按旧outer catch跳过后续全部healer，不阻断启动；这不是整个launcher fail closed。共享CLI仍旧 `62ade2667a5f…`，新heal门禁不支持会skip；前组startup能力缺失仍是共享新启动硬门禁，待原发布owner授权处理，本owner不替换构件／重启／改stamp。原acceptance §18与JSON `cliProviderHealGoDelegation` 保存来源与最终实证，主W0–W6继续Partial。

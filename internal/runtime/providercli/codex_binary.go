@@ -97,6 +97,11 @@ func (resolver binaryResolver) codexCandidatePaths(hostHomeDir string) []string 
 		home, _ = os.UserHomeDir()
 	}
 	if home != "" {
+		if runtime.GOOS == "windows" {
+			dirs = append(dirs, filepath.Join(home, "AppData", "Local", "aih-cli", "codex"))
+		} else {
+			dirs = append(dirs, filepath.Join(home, ".local", "share", "aih-cli", "codex", "bin"))
+		}
 		dirs = append(dirs,
 			filepath.Join(home, ".local", "bin"),
 			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin"),

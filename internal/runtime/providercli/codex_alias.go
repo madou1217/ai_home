@@ -1,6 +1,7 @@
 package providercli
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func resolveCodexHook(resolved string) (string, error) {
 		if err != nil {
 			return "", codexHookError(CodeCodexHookUntrusted, resolved, "Codex CLI hook target cannot be resolved", err)
 		}
-		resolved, err = filepath.EvalSymlinks(absolute)
+		resolved, err = evalCodexHookPath(absolute)
 		if err != nil {
 			return "", codexHookError(CodeCodexHookUntrusted, absolute, "Codex CLI hook target cannot be resolved", err)
 		}
@@ -77,7 +78,7 @@ func resolveCodexBackup(wrapper string) (string, error) {
 			}
 			return "", codexHookError(CodeCodexHookUntrusted, backup, "Codex CLI hook backup cannot be inspected", err)
 		}
-		if _, err := filepath.EvalSymlinks(backup); err != nil {
+		if _, err := evalCodexHookPath(backup); err != nil {
 			return "", codexHookError(CodeCodexHookUntrusted, backup, "Codex CLI hook backup cannot be resolved", err)
 		}
 		if executableFile(backup) {
@@ -85,6 +86,79 @@ func resolveCodexBackup(wrapper string) (string, error) {
 		}
 	}
 	return "", &codexHookUpstreamMissing{path: wrapper}
+}
+
+// Windows junctions are ModeIrregular, not ModeSymlink, on current Go versions.
+// Resolve each supported link with Readlink before the final standard-library
+// canonicalization. Unknown reparse points, unreadable links and cycles fail closed.
+func evalCodexHookPath(path string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return filepath.EvalSymlinks(path)
+	}
+	links := 0
+	active := make(map[string]bool)
+	fail := func(path, message string) (string, error) {
+		return "", &os.PathError{Op: "evalsymlinks", Path: path, Err: errors.New(message)}
+	}
+	var walk func(string) (string, error)
+	walk = func(path string) (string, error) {
+		if !filepath.IsAbs(path) {
+			return fail(path, "Codex link target is not absolute")
+		}
+		volume := filepath.VolumeName(path)
+		current := volume + string(filepath.Separator)
+		parts := strings.FieldsFunc(path[len(volume):], func(ch rune) bool { return ch == '/' || ch == '\\' })
+		for index, part := range parts {
+			switch part {
+			case ".":
+				continue
+			case "..":
+				current = filepath.Dir(current)
+				continue
+			}
+			current = filepath.Join(current, part)
+			info, err := os.Lstat(current)
+			if err != nil {
+				return "", err
+			}
+			if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				key := codexCandidateKey(current)
+				if active[key] {
+					return fail(current, "Codex filesystem link cycle")
+				}
+				links++
+				if links > 64 {
+					return fail(current, "Codex filesystem link depth exceeded")
+				}
+				target, err := os.Readlink(current)
+				if err != nil {
+					return "", err
+				}
+				if !filepath.IsAbs(target) {
+					if target == "" || filepath.VolumeName(target) != "" || os.IsPathSeparator(target[0]) {
+						return fail(current, "Codex link target is not a supported relative path")
+					}
+					// Preserve target components until the walk resolves links before '..'.
+					target = filepath.Dir(current) + string(filepath.Separator) + target
+				}
+				active[key] = true
+				current, err = walk(target)
+				delete(active, key)
+				if err != nil {
+					return "", err
+				}
+				info, err = os.Lstat(current)
+				if err != nil {
+					return "", err
+				}
+			}
+			if index < len(parts)-1 && !info.IsDir() {
+				return fail(current, "Codex link path component is not a directory")
+			}
+		}
+		return filepath.EvalSymlinks(current)
+	}
+	return walk(path)
 }
 
 func readCodexHookHeader(path string) (string, error) {

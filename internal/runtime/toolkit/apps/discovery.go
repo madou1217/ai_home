@@ -78,6 +78,14 @@ func ResolveProviderCLIPath(provider string, opts Options) string {
 		}
 		candidateDirs = append(candidateDirs, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
 	}
+	if norm == "codex" {
+		prefix := codexInstallPrefix(opts)
+		if p == platformWindows {
+			candidateDirs = append(candidateDirs, prefix)
+		} else {
+			candidateDirs = append(candidateDirs, filepath.Join(prefix, "bin"))
+		}
+	}
 	candidateDirs = uniqueStrings(candidateDirs)
 
 	// macOS 上的 Kiro bundle 同目录下同时有 kiro-cli 与 kiro-cli-chat 时优先选用 kiro-cli-chat。

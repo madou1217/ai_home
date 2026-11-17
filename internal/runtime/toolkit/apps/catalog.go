@@ -250,6 +250,9 @@ func buildNpmPlan(pkg string, opts Options) LifecyclePlan {
 	}
 	cmd, uc := npmCommand(opts)
 	args := append([]string{"install", "-g", norm}, npmNetworkFlags(uc, opts)...)
+	if norm == "@openai/codex" {
+		args = append(args, "--prefix", codexInstallPrefix(opts))
+	}
 	return LifecyclePlan{
 		ID:      "npm_global",
 		Label:   "npm 安装 " + norm,
@@ -267,6 +270,9 @@ func buildNpmUpdatePlan(pkg string, opts Options) LifecyclePlan {
 	}
 	cmd, uc := npmCommand(opts)
 	args := append([]string{"install", "--global", norm + "@latest"}, npmNetworkFlags(uc, opts)...)
+	if norm == "@openai/codex" {
+		args = append(args, "--prefix", codexInstallPrefix(opts))
+	}
 	return LifecyclePlan{
 		ID:      "npm_global_update",
 		Label:   "npm 更新 " + norm,
@@ -767,4 +773,14 @@ func parseVersionTuple(text string) ([3]int, bool) {
 		out[i] = n
 	}
 	return out, true
+}
+
+// Keep the officially installed CLI outside immutable AIH release runtimes and
+// away from legacy wrapper paths. Updating AIH must not uninstall Codex again.
+func codexInstallPrefix(opts Options) string {
+	home := ResolveHostHome(opts)
+	if resolvePlatform(opts) == platformWindows {
+		return joinPlatformPath(platformWindows, home, "AppData", "Local", "aih-cli", "codex")
+	}
+	return filepath.Join(home, ".local", "share", "aih-cli", "codex")
 }

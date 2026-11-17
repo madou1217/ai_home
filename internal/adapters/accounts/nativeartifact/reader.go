@@ -115,6 +115,7 @@ func New(options Options) *Reader {
 	reader.sources = map[string]sourceStrategy{
 		"claude": (*Reader).readClaude,
 		"codex":  (*Reader).readCodex,
+		"zcode":  (*Reader).readZcode,
 	}
 	return reader
 }
@@ -315,6 +316,39 @@ func identityValuesMatch(expected string, candidates ...string) bool {
 }
 
 // readCodex 组装官方 auth.json 单文件 envelope。
+// zcodeCredentialsRelative 是 ZCode 官方客户端的登录态文件（相对宿主 HOME）。
+const zcodeCredentialsRelative = ".zcode/v2/credentials.json"
+
+// readZcode 读取官方 ZCode 登录态，组装成 decodeExtended 约定的 envelope。
+//
+// 官方文件是扁平的 credentials 映射；aih 的账号存储用 {credentials: …} 包一层，
+// 这里保持同一形状，身份派生才能和导入链路用同一份证据。
+func (reader *Reader) readZcode() (Artifacts, error) {
+	home, err := reader.homeDir()
+	if err != nil {
+		return Artifacts{}, invalidSource("zcode 官方 artifact 路径不可用")
+	}
+	path := filepath.Join(home, zcodeCredentialsRelative)
+	raw, err := reader.readArtifactFile(path)
+	if err != nil {
+		return Artifacts{}, err
+	}
+	defer clear(raw)
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &document); err != nil || len(document) == 0 {
+		return Artifacts{}, invalidSource("zcode 官方 artifact 结构无效")
+	}
+	inner, err := json.Marshal(map[string]json.RawMessage{"credentials": raw})
+	if err != nil {
+		return Artifacts{}, invalidSource("zcode 官方 artifact 结构无效")
+	}
+	envelope, err := encodeEnvelope(map[string]json.RawMessage{"native_auth_json": inner})
+	if err != nil {
+		return Artifacts{}, err
+	}
+	return Artifacts{Envelope: envelope, Sources: []string{path}}, nil
+}
+
 func (reader *Reader) readCodex() (Artifacts, error) {
 	codexHome, err := reader.codexHomeDir()
 	if err != nil {

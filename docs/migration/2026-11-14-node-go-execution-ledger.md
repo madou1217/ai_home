@@ -365,3 +365,7 @@ Hubble独立review指出postcommit取消/PRAGMA预算映射两项，均修复并
 从 committed9c94b3ad9 archive固定来源构建57e97796...（5999文件逐内容匹配，未带并行worktree），实际Claude2.1.325/静态账号跑create/list/catalog/send/SSE→仅私有Go停起后同session/nativeID+CLI --resume历史正确→active cancel→confirm allow真实文件/deny无文件/pendingcancel清空→5session删除/runs0/全部观察私有进程退出及敏感HOME/DB清理。无AIH Node server/frontdoor/RPC宿主参与，approval MCP为同Go构件；并非仅编译或目录矩阵。
 
 PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version，另一未完全分类），故仅关闭该静态账号本地WORK的Node宿主依赖验收，不报全服务零Node调用。首轮operator误用rootGET405和事件名已真实纠正重跑，不当产品bug；无production源码修复/新测试。证据`2026-11-17-work-node-free-acceptance.md`及`evidence/2026-11-17-work-node-host-free.json`；AGY0账号、Capture、globalgateway/其他transport、UI/remote/publicwrapper/Node退出删除及共享loaded仍分列未关闭。不等R0来源问题阻塞隔离工程；未共享重启、迁库、凭据改写或动M/Chat9/terminal/protocol。
+
+## 2026-11-17 R1 公开 Go CLI 固定账号 Node-off 实跑
+
+不重复已完成WebUI WORK链，另选公开Go CLI NativeDirect入口：source9c94b3ad9 archive构建aih-go aae834af...，10:46真实执行`aih-go claude <现有数字alias> -- --print --output-format json --model deepseek-flash ...`，exit0/Claude success/实回GO_CLI_NODE_OFF_OK。私有HOME/DB、PATH无node、Gateway随机未监听且无管理key，无AIH server/RPC宿主；观察GoCLI43029→官方Claude43031，Node0/残留0/敏感目录清理。只证明该Go入口，不冒称安装的aih Node包装已切换或删除，亦不关闭OAuth/TUI/取消矩阵。结果追加原acceptance及evidence JSON；本轮无production修复/新test，M/Chat/terminal/protocol/R4R6R8未动。

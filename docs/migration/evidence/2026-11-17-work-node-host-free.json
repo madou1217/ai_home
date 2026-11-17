@@ -519,5 +519,75 @@
   ],
   "localAGYAccountCountObserved": 0,
   "rawFinalReportSha256": "679c188d3238f7c8cf90bf43c73c1fb41e7c7efd0dc9d087810f2ffd46d8548b",
-  "localEvidenceRootPointer": "/tmp/aih-work-nodefree-latest-20261117.txt"
+  "localEvidenceRootPointer": "/tmp/aih-work-nodefree-latest-20261117.txt",
+  "publicGoCLINativeDirect": {
+    "scope": "R1 public Go CLI native-direct entry, distinct from the earlier WebUI WORK server path; installed aih Node launcher was not replaced",
+    "sourceCommit": "9c94b3ad9bfb4c9b8b99d44fd4ff4b5fcd757e87",
+    "sourceTree": "b7111c2d3f7135bdab6d5ba1c2c65ab16b6265f1",
+    "buildCommand": "go build -mod=readonly -o <private-aih-go> ./cmd/aih",
+    "artifactSha256": "aae834af7a34692bc9636194a6055abe59bbe3d6c6d763961124f51280697c23",
+    "builtAt": "2026-11-17T10:45:01.106552+08:00",
+    "startedAt": "2026-11-17T10:46:13.921728+08:00",
+    "finishedAt": "2026-11-17T10:46:16.906952+08:00",
+    "operations": [
+      {
+        "action": "native_direct_start",
+        "at": "2026-11-17T10:46:14.959866+08:00",
+        "commandShape": "aih-go claude <existing-numeric-alias> -- --print --output-format json --model deepseek-flash <own-prompt>",
+        "nativeAccountKind": "api_key",
+        "nodeOnPATH": null,
+        "gatewayURLIsBoundNonListeningPrivatePort": true,
+        "managementKeySupplied": false
+      },
+      {
+        "action": "native_direct_exit",
+        "at": "2026-11-17T10:46:16.522153+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 1675,
+        "stderrBytes": 81,
+        "jsonResultParsed": true,
+        "resultSubtype": "success",
+        "providerIsError": false,
+        "answerMatches": true,
+        "firstPartyRPCServerAbsent": true
+      }
+    ],
+    "topology": [
+      {
+        "pid": 43029,
+        "ppid": 43027,
+        "role": "private Go CLI",
+        "isNode": false
+      },
+      {
+        "pid": 43031,
+        "ppid": 43029,
+        "role": "official Claude 2.1.325",
+        "isNode": false
+      }
+    ],
+    "nodeObserved": false,
+    "AIHServerStarted": false,
+    "privateSensitiveResourcesRemoved": true,
+    "observedProcessesRemaining": [],
+    "productionSourceEdited": false,
+    "sourceUpstreamFactsReadOnly": {
+      "observedFromSourceCredentialReadOnly": true,
+      "noURLOrCredentialExported": true,
+      "upstreamFacts": [
+        {
+          "field": "base_url",
+          "https": true,
+          "loopback": false,
+          "URLIncludesAuth": false
+        }
+      ]
+    },
+    "rawResultSha256": "27357544e0745ba77d3e5038d7475b3d9f0b455b6b5604213c7a494e630fe716",
+    "limitations": [
+      "No replacement of the installed aih JS entry or wrapper retirement",
+      "Static native-direct success/exit only; no OAuth/Capture, TUI or CLI cancellation matrix",
+      "No full syscall/network trace claim; private Gateway address unavailable, no management credential, and reviewed Go native branch does not construct Gateway RPC resolver"
+    ]
+  }
 }

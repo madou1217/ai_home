@@ -82,3 +82,20 @@ SSE replay/resume使用已确认的cursor；新轮终态及实际输出不以旧
 **下一可执行交接：**监督可把本地固定账号R1节点列为真实accepted（来源和构件限定）；本owner后续在独立声明path后承接Codex公开wrapper／条件hostwriter的Go切换。跨域warmup/remote/static与M/部署writer仍由各owner协调，不以本验收授权越界改代码。整体W0–W6仍未完成。
 
 独立复审：Mendel对最终真实结果、operator作用域及5999文件来源做只读核对，窄结论无blocking；本卡保留其要求的四个边界：未知Node子进程不强行归因、仅completed后重启续聊、清理仅限已观察集合、没有AGY/Capture/UI/全服务零Node声明。复审未重新执行业务。
+
+## 7. 下一独立节点实做：R1 公开 Go CLI native-direct 入口
+
+监督于10:44要求不重复已完成的WebUI/WORK验收，因此本轮改选**公开Go CLI的固定账号直启入口**，实际经过 `cmd/aih/run.go` → `internal/host/aihcli` → `internal/runtime/providercli/runner.go` / `launch_preparation.go`，不是另跑一次chatruntime服务。此次没有发现需要改产品源码的阻碍，未扩新功能。
+
+- **构件／命令已执行：**同一committed archive `9c94b3ad9bfb4c9b8b99d44fd4ff4b5fcd757e87`，`go build -mod=readonly -o <private-aih-go> ./cmd/aih` 成功；**10:45:01**产出CLI摘要 `aae834af7a34692bc9636194a6055abe59bbe3d6c6d763961124f51280697c23`。实际调用了其公开 `help claude` 核对语法，然后运行：
+
+  ```sh
+  <private-aih-go> claude <existing-numeric-alias> -- --print --output-format json --model deepseek-flash <own-prompt>
+  ```
+
+- **Node／RPC缺席条件：**没有启动任何AIH server；私有HOME/DB，PATH仅系统目录且无node；Gateway URL指定到随机bound但**未listen**的loopback端口，未提供管理密钥。源码中数字别名选中NativeDirect，`cmd/aih/run.go`不建Gateway账号RPC resolver，`aihcli.App.Run`也只在GatewayRelay时构造Gateway endpoint。所选真实静态账号的当前配置上游安全检查为HTTPS且非loopback，不导出URL或key。
+- **10:46:14–10:46:16真实结果：**Go CLI退出**0**；官方Claude JSON `subtype=success`、`is_error=false`，实际答案匹配 **`GO_CLI_NODE_OFF_OK`**，而非只拿到help/HTTP200。stdout1675bytes、stderr81bytes仅记长度，不发布可能含客户端诊断的原文。
+- **进程／caller：**观测到Go CLI PID43029 → 官方Claude2.1.325 PID43031；本次**没有观察到Node进程**、没有AIH server宿主。观察集合在完成后无剩余，私有敏感HOME/DB/项目目录删除。未触碰共享端口、stamp、草稿、迁库或其他owner路径。
+- **新缺口被补到哪：**证明该Go公开native-direct入口不需要Node launcher或第一方RPC服务即可完成实际账号选择、调用和退出；这是与WebUI R1/R3路径不同的可执行入口证据。它**不代表已将 `/opt/homebrew/bin/aih` 从现有Node包装切换到Go**，没有进行安装器/包装脚本退役，也不借此关闭OAuth、TUI、取消等未跑矩阵。
+
+本地原始低敏记录为前述root的 `cli-manifest.json`、`public-go-cli-native-result.json`，同目录JSON的 `publicGoCLINativeDirect` 保存持久派生证据。仅把新的真实操作追加到本人已有证据，未提交同义迁移卡或新的生产实现。

@@ -1,0 +1,523 @@
+{
+  "schema": "aih.migration.real-operation-evidence.v1",
+  "scope": "Pinned static-key Claude local WORK with no AIH Node server host; not whole-service Node-free",
+  "source": {
+    "commit": "9c94b3ad9bfb4c9b8b99d44fd4ff4b5fcd757e87",
+    "tree": "b7111c2d3f7135bdab6d5ba1c2c65ab16b6265f1",
+    "method": "git archive committed tree only; no overlay",
+    "archivedFilesCompared": 5999,
+    "archiveFilesMatched": true
+  },
+  "artifact": {
+    "sha256": "57e97796ccaeb36c5ec8729a1d0f5f1087c96d70ce8a0175743d2ddc415d4020",
+    "buildCommand": "go build -mod=readonly -o <private-artifact> ./cmd/aih-server",
+    "buildExit": 0,
+    "buildStartedAt": "2026-11-17T10:28:39.960224+08:00",
+    "buildFinishedAt": "2026-11-17T10:28:48.137212+08:00"
+  },
+  "execution": {
+    "startedAt": "2026-11-17T10:36:39.874890+08:00",
+    "finishedAt": "2026-11-17T10:36:57.075312+08:00",
+    "platform": "darwin-arm64",
+    "officialCLI": "Claude Code 2.1.325",
+    "model": "deepseek-flash",
+    "credentialKind": "actual static api_key",
+    "serverFlags": [
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "<private>"
+    ],
+    "noSuperviseNode": true,
+    "noNodeBaseOrFrontDoor": true,
+    "desktopTranslationNotExercised": true,
+    "serverPATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "nodeOnServerPATH": null,
+    "AIHNodeHostObserved": false,
+    "nodeProcessesObserved": true
+  },
+  "operations": [
+    {
+      "action": "private_isolation",
+      "at": "2026-11-17T10:36:41.016174+08:00",
+      "selectedAuthKind": "api_key",
+      "otherAccountCredentialsRemovedFromPrivateCopy": true,
+      "oldChatRowsRemovedFromPrivateCopy": true,
+      "appKVRemovedFromPrivateCopy": true,
+      "sharedDBModified": false
+    },
+    {
+      "action": "private_server_started",
+      "at": "2026-11-17T10:36:41.216244+08:00",
+      "pid": 32050,
+      "privatePort": 50577,
+      "ready": true
+    },
+    {
+      "action": "create",
+      "at": "2026-11-17T10:36:41.219646+08:00",
+      "status": 201,
+      "approvalMode": "bypass",
+      "sessionCreated": true,
+      "error": null
+    },
+    {
+      "action": "list",
+      "at": "2026-11-17T10:36:41.220329+08:00",
+      "status": 200,
+      "sessionFound": true,
+      "sessionCount": 1
+    },
+    {
+      "action": "catalog",
+      "at": "2026-11-17T10:36:41.223275+08:00",
+      "status": 200,
+      "modelCount": 2,
+      "selectedModelPresent": true
+    },
+    {
+      "action": "send",
+      "at": "2026-11-17T10:36:41.246780+08:00",
+      "status": 202,
+      "commandAccepted": true,
+      "error": null
+    },
+    {
+      "action": "send_stream_completed",
+      "at": "2026-11-17T10:36:43.451391+08:00",
+      "terminalType": "turn.completed",
+      "idle": true,
+      "answerMatches": true,
+      "nativeIdentityRecorded": true,
+      "stream": {
+        "status": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "frameCount": 17,
+        "types": [
+          "runtime.prewarm.ready",
+          "runtime.prewarm.started",
+          "session.created",
+          "session.policy.changed",
+          "session.runtime.bound",
+          "session.runtime.rebound",
+          "timeline.item.completed",
+          "timeline.item.delta",
+          "timeline.item.started",
+          "turn.completed",
+          "turn.queued",
+          "turn.started"
+        ],
+        "terminalFrames": [
+          {
+            "type": "turn.completed",
+            "seq": 18,
+            "turnId": "turn-289a17a0-ea66-464b-999a-de52e389f3cd",
+            "runId": "run-ebb2c68c-5a39-4356-b11e-d6933c83d1e3"
+          }
+        ],
+        "transportError": null
+      }
+    },
+    {
+      "action": "private_server_started",
+      "at": "2026-11-17T10:36:43.569305+08:00",
+      "pid": 32086,
+      "privatePort": 50577,
+      "ready": true
+    },
+    {
+      "action": "private_recovery",
+      "at": "2026-11-17T10:36:43.570397+08:00",
+      "oldServerExited": true,
+      "sessionRetained": true,
+      "nativeIdentityRetained": true
+    },
+    {
+      "action": "send",
+      "at": "2026-11-17T10:36:43.592173+08:00",
+      "status": 202,
+      "commandAccepted": true,
+      "error": null
+    },
+    {
+      "action": "resume",
+      "at": "2026-11-17T10:36:44.851015+08:00",
+      "terminalType": "turn.completed",
+      "idle": true,
+      "historyAnswerMatches": true,
+      "nativeIdentityRetained": true,
+      "stream": {
+        "status": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "frameCount": 11,
+        "types": [
+          "session.policy.changed",
+          "session.runtime.rebound",
+          "timeline.item.completed",
+          "timeline.item.delta",
+          "timeline.item.started",
+          "turn.completed",
+          "turn.queued",
+          "turn.started"
+        ],
+        "terminalFrames": [
+          {
+            "type": "turn.completed",
+            "seq": 30,
+            "turnId": "turn-b6b01070-cda6-4950-87db-74e891ccb3ee",
+            "runId": "run-30711a21-64bc-42f7-b80d-e3073c2fd985"
+          }
+        ],
+        "transportError": null
+      }
+    },
+    {
+      "action": "create",
+      "at": "2026-11-17T10:36:44.853780+08:00",
+      "status": 201,
+      "approvalMode": "bypass",
+      "sessionCreated": true,
+      "error": null
+    },
+    {
+      "action": "send",
+      "at": "2026-11-17T10:36:44.887232+08:00",
+      "status": 202,
+      "commandAccepted": true,
+      "error": null
+    },
+    {
+      "action": "cancel_requested",
+      "at": "2026-11-17T10:36:47.034117+08:00",
+      "status": 202,
+      "activeTurnObserved": true,
+      "error": null
+    },
+    {
+      "action": "cancel_settled",
+      "at": "2026-11-17T10:36:47.372441+08:00",
+      "terminalType": "turn.interrupted",
+      "idle": true,
+      "activeTurnCleared": true,
+      "stream": {
+        "status": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "frameCount": 14,
+        "types": [
+          "runtime.prewarm.ready",
+          "runtime.prewarm.started",
+          "session.created",
+          "session.policy.changed",
+          "session.runtime.bound",
+          "session.runtime.rebound",
+          "timeline.item.completed",
+          "timeline.item.delta",
+          "timeline.item.started",
+          "turn.interrupt.requested",
+          "turn.interrupted",
+          "turn.queued",
+          "turn.started"
+        ],
+        "terminalFrames": [
+          {
+            "type": "turn.interrupted",
+            "seq": 15,
+            "turnId": "turn-3888046d-878d-41bf-87a2-c58050e2179c",
+            "runId": "run-e4454cd4-2fc7-4a45-ad08-27aaa10aa4c8"
+          }
+        ],
+        "transportError": null
+      }
+    },
+    {
+      "action": "create",
+      "at": "2026-11-17T10:36:47.374675+08:00",
+      "status": 201,
+      "approvalMode": "confirm",
+      "sessionCreated": true,
+      "error": null
+    },
+    {
+      "action": "send",
+      "at": "2026-11-17T10:36:47.404843+08:00",
+      "status": 202,
+      "commandAccepted": true,
+      "error": null
+    },
+    {
+      "action": "approval_decision",
+      "at": "2026-11-17T10:36:49.526610+08:00",
+      "status": 202,
+      "decision": "allow",
+      "error": null
+    },
+    {
+      "action": "approve",
+      "at": "2026-11-17T10:36:50.697966+08:00",
+      "terminalType": "turn.completed",
+      "approvalDecisions": 1,
+      "fileCreated": true,
+      "fileMatches": true,
+      "idle": true,
+      "stream": {
+        "status": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "frameCount": 21,
+        "types": [
+          "interaction.requested",
+          "interaction.resolved",
+          "interaction.updated",
+          "runtime.prewarm.ready",
+          "runtime.prewarm.started",
+          "session.created",
+          "session.policy.changed",
+          "session.runtime.bound",
+          "session.runtime.rebound",
+          "timeline.item.completed",
+          "timeline.item.delta",
+          "timeline.item.started",
+          "turn.completed",
+          "turn.queued",
+          "turn.started"
+        ],
+        "terminalFrames": [
+          {
+            "type": "turn.completed",
+            "seq": 22,
+            "turnId": "turn-7acf3b76-7c21-4732-951c-570d0ad94ad7",
+            "runId": "run-c78682b0-c305-436e-8c0c-ab88ffa94bf3"
+          }
+        ],
+        "transportError": null
+      }
+    },
+    {
+      "action": "create",
+      "at": "2026-11-17T10:36:50.701538+08:00",
+      "status": 201,
+      "approvalMode": "confirm",
+      "sessionCreated": true,
+      "error": null
+    },
+    {
+      "action": "send",
+      "at": "2026-11-17T10:36:50.738660+08:00",
+      "status": 202,
+      "commandAccepted": true,
+      "error": null
+    },
+    {
+      "action": "approval_decision",
+      "at": "2026-11-17T10:36:52.700896+08:00",
+      "status": 202,
+      "decision": "deny",
+      "error": null
+    },
+    {
+      "action": "deny",
+      "at": "2026-11-17T10:36:53.786964+08:00",
+      "terminalType": "turn.completed",
+      "approvalDecisions": 1,
+      "fileAbsent": true,
+      "idle": true,
+      "pendingInteractions": 0,
+      "stream": {
+        "status": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "frameCount": 21,
+        "types": [
+          "interaction.requested",
+          "interaction.resolved",
+          "interaction.updated",
+          "runtime.prewarm.ready",
+          "runtime.prewarm.started",
+          "session.created",
+          "session.policy.changed",
+          "session.runtime.bound",
+          "session.runtime.rebound",
+          "timeline.item.completed",
+          "timeline.item.delta",
+          "timeline.item.started",
+          "turn.completed",
+          "turn.queued",
+          "turn.started"
+        ],
+        "terminalFrames": [
+          {
+            "type": "turn.completed",
+            "seq": 22,
+            "turnId": "turn-c8266aed-36ec-45de-881b-2073e2bb488c",
+            "runId": "run-000f043e-a87f-435a-a1f3-f1def81a7084"
+          }
+        ],
+        "transportError": null
+      }
+    },
+    {
+      "action": "create",
+      "at": "2026-11-17T10:36:53.791055+08:00",
+      "status": 201,
+      "approvalMode": "confirm",
+      "sessionCreated": true,
+      "error": null
+    },
+    {
+      "action": "send",
+      "at": "2026-11-17T10:36:53.828441+08:00",
+      "status": 202,
+      "commandAccepted": true,
+      "error": null
+    },
+    {
+      "action": "cancel_pending_approval",
+      "at": "2026-11-17T10:36:56.691349+08:00",
+      "status": 202,
+      "pendingApprovalObserved": true,
+      "terminalType": "turn.interrupted",
+      "idle": true,
+      "fileAbsent": true,
+      "activeTurnCleared": true,
+      "pendingInteractions": 0,
+      "stream": {
+        "status": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "frameCount": 19,
+        "types": [
+          "interaction.expired",
+          "interaction.requested",
+          "runtime.prewarm.ready",
+          "runtime.prewarm.started",
+          "session.created",
+          "session.policy.changed",
+          "session.runtime.bound",
+          "session.runtime.rebound",
+          "timeline.item.completed",
+          "timeline.item.delta",
+          "timeline.item.started",
+          "turn.interrupt.requested",
+          "turn.interrupted",
+          "turn.queued",
+          "turn.started"
+        ],
+        "terminalFrames": [
+          {
+            "type": "turn.interrupted",
+            "seq": 20,
+            "turnId": "turn-5a712483-e187-47f9-bd78-e6e8b21d5acc",
+            "runId": "run-ed2bfc6b-f8a0-49b4-b779-bcbf62720a59"
+          }
+        ],
+        "transportError": null
+      }
+    },
+    {
+      "action": "delete_session",
+      "at": "2026-11-17T10:36:56.694178+08:00",
+      "status": 200
+    },
+    {
+      "action": "delete_session",
+      "at": "2026-11-17T10:36:56.696205+08:00",
+      "status": 200
+    },
+    {
+      "action": "delete_session",
+      "at": "2026-11-17T10:36:56.697960+08:00",
+      "status": 200
+    },
+    {
+      "action": "delete_session",
+      "at": "2026-11-17T10:36:56.699803+08:00",
+      "status": 200
+    },
+    {
+      "action": "delete_session",
+      "at": "2026-11-17T10:36:56.701513+08:00",
+      "status": 200
+    },
+    {
+      "action": "cleanup_runs",
+      "at": "2026-11-17T10:36:56.702264+08:00",
+      "status": 200,
+      "activeRunCount": 0
+    }
+  ],
+  "processEvidence": {
+    "sampling": "private process descendants sampled approximately every 150 ms; metadata only, no raw argv/env exports",
+    "officialClaudeProcessCount": 6,
+    "nativeResumeProcesses": [
+      {
+        "pid": 32099,
+        "ppid": 32086,
+        "nativeResumeFlag": true,
+        "nativeResumeIDHash": "db50773ab5d7745464f332488322025c4412083ca00137457d93a670868e6404"
+      }
+    ],
+    "goApprovalMCPProcesses": [
+      {
+        "pid": 32153,
+        "ppid": 32144,
+        "sameBuiltGoArtifact": true,
+        "approvalMCPFlag": true
+      },
+      {
+        "pid": 32215,
+        "ppid": 32207,
+        "sameBuiltGoArtifact": true,
+        "approvalMCPFlag": true
+      },
+      {
+        "pid": 32242,
+        "ppid": 32237,
+        "sameBuiltGoArtifact": true,
+        "approvalMCPFlag": true
+      }
+    ],
+    "nodeProcesses": [
+      {
+        "pid": 32132,
+        "ppid": 32086,
+        "role": "absolute-path Node child, not AIH Node server host",
+        "argvMetadataClassified": true,
+        "AIHNodeHost": false,
+        "versionProbe": false,
+        "AIHScriptBasenames": []
+      },
+      {
+        "pid": 32134,
+        "ppid": 32086,
+        "role": "absolute-path Node child, not AIH Node server host",
+        "argvMetadataClassified": true,
+        "AIHNodeHost": false,
+        "versionProbe": true,
+        "AIHScriptBasenames": []
+      }
+    ],
+    "AIHNodeHostCount": 0,
+    "probeCaveat": "One Node child has --version metadata; the other is not fully classified. Do not claim no Node process/dependency across the whole server."
+  },
+  "cleanup": {
+    "activeRunsBeforeStop": 0,
+    "ownSessionDeletes200": 5,
+    "privateServerExited": true,
+    "observedPrivateProcessesRemaining": [],
+    "privateSensitiveResourcesRemoved": true,
+    "sharedRestart": false,
+    "sharedDatabaseWrites": false,
+    "otherCredentialsRemovedFromPrivateCopy": true,
+    "privateOldChatStateAndAppKVRemovedBeforeStart": true,
+    "sharedCredentialRefreshRequested": false
+  },
+  "evidenceLimits": [
+    "private static-key account only, no OAuth/Capture or AGY acceptance",
+    "no browser/remote/global gateway/other-provider or packaging acceptance",
+    "no whole-service no-Node claim; optional warmup still executes Node probes",
+    "first observer used unsupported session root GET and wrong approval event name; corrected to snapshot/interaction.requested and final real operations repeated",
+    "process sampling is bounded observation, not an exhaustive syscall execution trace",
+    "no production-source changes or shared deployment",
+    "restart/resume followed a completed turn; no in-flight crash recovery was exercised"
+  ],
+  "localAGYAccountCountObserved": 0,
+  "rawFinalReportSha256": "679c188d3238f7c8cf90bf43c73c1fb41e7c7efd0dc9d087810f2ffd46d8548b",
+  "localEvidenceRootPointer": "/tmp/aih-work-nodefree-latest-20261117.txt"
+}

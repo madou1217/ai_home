@@ -359,3 +359,9 @@ Hubble独立review指出postcommit取消/PRAGMA预算映射两项，均修复并
 新增 `2026-11-16-w0-native-node-exit-status.md` 对齐原W0–W6和统一总览，不以21源码/隔离矩阵作迁移完成。Codex effort/default/exec-intent、local appserver及本地native WORK核心已Go；仍有公开CLI/安装wrapper/stdio语义及条件host writer，static启动合同/remote代理，alias首迁/wildcard来源与Node model-policy兼容写者，supervisor尚未退。每项分Go目标、Node调用/写者、阻碍、下一切换及Node-off/退役门禁；不恢复第二套Node业务。
 
 2026-11-16 23:57只读运行证据更新：共享Go93990/Node94287，runtime identity与磁盘sha5cc9d8a9...一致，内嵌revcef00368e且modified=true；旧stamp仍85851ec39/079a565d...不符。历史“当时未加载WORK”不当现状，但不以dirty revision宣称精确加载及验收；先由当前发布owner补来源证明。source/push/artifact/loaded/real accept/Node停用删除分列；AGY、Capture、globalClaude、其他transport与完整Node-off保持Partial。Hubble/Mendel只读审计；本轮仅本人文档checkpoint，无新增feature/test、源码/DB/服务变更，不碰M/terminal/统一README，不授权删除或共享重启。
+
+## 2026-11-17 R1 本地 WORK 无 AIH Node server 宿主真实验收
+
+从 committed9c94b3ad9 archive固定来源构建57e97796...（5999文件逐内容匹配，未带并行worktree），实际Claude2.1.325/静态账号跑create/list/catalog/send/SSE→仅私有Go停起后同session/nativeID+CLI --resume历史正确→active cancel→confirm allow真实文件/deny无文件/pendingcancel清空→5session删除/runs0/全部观察私有进程退出及敏感HOME/DB清理。无AIH Node server/frontdoor/RPC宿主参与，approval MCP为同Go构件；并非仅编译或目录矩阵。
+
+PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version，另一未完全分类），故仅关闭该静态账号本地WORK的Node宿主依赖验收，不报全服务零Node调用。首轮operator误用rootGET405和事件名已真实纠正重跑，不当产品bug；无production源码修复/新测试。证据`2026-11-17-work-node-free-acceptance.md`及`evidence/2026-11-17-work-node-host-free.json`；AGY0账号、Capture、globalgateway/其他transport、UI/remote/publicwrapper/Node退出删除及共享loaded仍分列未关闭。不等R0来源问题阻塞隔离工程；未共享重启、迁库、凭据改写或动M/Chat9/terminal/protocol。

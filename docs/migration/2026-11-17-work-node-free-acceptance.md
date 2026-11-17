@@ -385,3 +385,41 @@ native build、focused vet及Linux／Windows x64交叉编译通过，后两项�
 时间/Unicode边界：正常vendor numeric/列已验，ISO/RFC3339和明确数值时区有源码支持；不支持的文本日期报错，包括字母时区RFC1123，不宣称完整Date.parse兼容；Node解析前已丢的number精度不可恢复。strict私有DTO拒绝非法Unicode/额外字段，不是任意wire文本无条件等价。
 
 本节点只退本continuation响应策略的Node计算；首屏merge、其他metadata/rollout/writer、default/resume/TUI与enabled整体transport还open。下一actualcaller继续先向原监督报准确路径，不因本slice交付关闭W0–W6。原JSON新增 `cliEnabledStateContinuationResponseGoDelegation` 保存最终hash与16raw digests，pointer `/tmp/aih-r2-list-scope-latest-20261118.txt`；完整线程/配置正文只在私有证据，不入仓库。
+
+
+## 20. R2 enabled thread/list 首屏与原生 cursor visibility 规则转 Go（Partial；2026-11-18）
+
+源码 `b9878bafbd0e4987e519fad36eea1cfa78d8ba39` 已推送，exact4（监督批准 `pm-5e79938f65c7b36262d92ce98e5c65fd`，admission `pm-3e25135e104cc6f35fc131a773af4da1`，catch门禁 `pm-fd5aa2fd6b238b4c104105b3972000e0`）：
+
+1. `lib/server/codex-app-server-stdio-proxy-patch.js`：仅 visibility apply委托与现catch预算hunk；其余patch／merge exports、title与Goal不动。
+2. `lib/server/codex-state-native-reader.js`：独立visibility capability和有界JSON framing adapter，不保留Node旧过滤／合并／排序mapper fallback。
+3. `cmd/aih-server/codex_state_page.go`：既有端口新增 `--thread-list-visibility` 早派，未改R5 `run.go`。
+4. `internal/runtime/codexstatepage/visibility.go`：复用ReadHidden／ReadPage／projectListThread，拥有hidden/subagent/cwd过滤、首屏merge/dedupe/stable sort/cap、最终行cursor及complete replacement line。
+
+### 实际消费与构件来源
+
+原enabled `stdio-proxy.js:793/865` 两路actualcaller保持原样。Node仅JSON parse/stringify I/O，传入canonical响应字符串、已捕获effective context、state home与TitleMaxBytes；Go只按原顺序编辑top/result两个对象层，保留opaque nested值与原字段名raw escape。Go返回unchanged时adapter返回传入的原line逐字节；它不是其后title stage恒不改变stdout的承诺。native/foreign cursor分支只过滤、保上游cursor及opaque字段；首屏才读Page和merge/cap，cursor锚定最终capped尾项而非扩大页的尾项。
+
+固定base `1638c4d03bd4af0a5cd14f393db252e59d59ce09` archive SHA `643e4a9a4930b7ac2625a588abfffbc7a5499430e3da43b4113a8895b66c5357` 加owner exact4。最终manifest SHA `b28d9776296ae9546a2c35de22c92090eb2e53ff9d013703244ef4791265d44e`；私有server SHA `fba232cf050494cd823f14f17f60e91e6c8f9bbd35e673bbdeb602eee5f1156d`。最后catch只有JS变化，Go未重编，前manifest／实证保留，不冒领不同来源新binary。两原reviewer按最终四hash复审no-blocking，属于源码／证据复核，不声称独立业务重跑。
+
+### 已运行实证与保留反证
+
+- 沿§19只读online backup，vendor state_5共639条、SHA `f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a`，639/639 ID为canonical小写UUID。无造账号、state或改写时间列。官方首屏曾因缺private rollouts为0；没有将statePage拼作上游。随后复制4份真实已存在rollout原bytes（192854794bytes、逐文件source/copy hash相等）到私有HOME相同相对路径，官方首屏2条、真实native cursor续页2条，两轮实回；原backup字节未变，副本允许官方自身维护。
+- **早两次探针反证保留**：operator仅改HOME/CODEX_HOME但继承 `CODEX_SQLITE_HOME=/Users/model/.codex`；不能作为private-DB验收。只发initialize/thread-list metadata，无create/turn或认证生成。更正后全部official显式私有HOME／CODEX_HOME／CODEX_SQLITE_HOME；新隔离结果另存，不改旧raw为绿。
+- 最终Go构件34项真实wire／context操作与旧Node逐byte相同，包含官方非空首屏和native续页、empty/all/project/nonmatching、limit0.5／1024／1025、created／recency、typed number/string/null ID和原空白line保留。实测最大DTO4018bytes、最大wire181367bytes；不把这当32MiB附近真实业务最大值或全输入证明。较大32MiB门禁只以明确的RPC文本压力操作另验，不造Thread数据。
+- 最终私有冻结enabled主入口→官方→Go，ordinary／aggregate／native各回2条，实际observed worker PID／argv可见、EOF0；ordinary/native以实际trace重建有效context与旧/新函数完整字节一致。两次重建曾误用operator自插cwd／原modelProviders，cursor签名不等；保留失败replay，最后改读实际rewritten params（既有rewrite清modelProviders并另携allProjects），不是产品红绿修复。aggregate实际成功，但原trace只有postpatch，不声称对它重建过prepatch逐byte。
+- **当前共享物理JS入口**再次连接私有HOME/DB与同一Go构件，三路各2条、EOF0，最终四source hash精确匹配manifest；不是只运行孤立helper。未启动AIH Node server宿主，未做认证推理；第一方Node stdio proxy/bootstrap与aggregate调度仍在，本次仅将visibility策略计算转Go。官方CLI会自行探测public plugins git，故不称绝对无网络或绝对无Node进程。
+- 最终10负向DTO／空EOF／过限stdin均exit1、stdout0；开放stdin SIGTERM实测1.85ms/PIDGone，deadline15.021s/PIDGone。缺Go／旧shared／旧private response-only构件均稳定 `-32000/codex_state_native_unavailable` 且无fallback；原page能力仍能用。
+- 最后catch门禁实际巨大typed ID原帧33554417bytes（限额内）因error envelope过限明确抛budget；no-ID原帧33554454bytes明确抛budget；4普通typedID错误与旧字节相同、预算内无ID原line不变。没有截断ID／改ID／回超限原文。raw whitespace超限明确budget。
+- 真实EOF0.3s检查：Node父、官方CLI、Go通知／worker均退，3个官方plugins git后代仍在，`immediateWholeTreeGone=false`保留。稍后同PID自然全退，未发kill、不触共享PID。**没有hard-stopped-worker adapter SIGKILL实证**，不挪用provider-heal旧证据或称per-RPC即时取消。
+- native build/vet、两JS syntax、diff-check通过；Linux amd64／Windows amd64仅编译。Windows rooted-path修正只有源码审查＋编译，不冒运行验收。未新增测试用例/mock/fixture/operational main。本人源码单次临时index显式exact4，cachedstat/showstat核对；own4逐blob==HEAD后本人同步，outside6147entries前后不变、114peer cached保留。
+
+### 新admission、发布与剩余Node
+
+新增有界合同，不宣称任意旧JSON完全等价：raw public line及replacement/error各自32MiB含LF；JSON DTO stdin≤32MiB，Go编码response envelope≤32MiB含LF，因二次转义实际wire可能更早触及预算；过限低敏显错，无法容纳typedID错误帧时向外抛固定budget。Go context15s，adapter每候选cap5s／query16s SIGKILL，多个候选可叠加，不等于总调用≤16s；同步spawn仍阻塞Node event loop。严格外DTO拒extra/missing/非法Unicode，不把opaque内层当strict DTO；Node解析前的数字精度损失不恢复。
+
+只有必须首屏merge同timestamp且不同ID时，无法证明localeCompare等价的非canonical小写UUID显 `codex_state_sort_identity_unsupported`；native cursor纯过滤不误拒。非finite排序值显 `codex_state_timestamp_nonfinite`，不是默选一个错序；这一额外admission实库未触发，仅源码审查保留。既有ReadPage limits、source/标题/日期语义仍原owner，当前numeric真实库不是任意Date.parse保证。
+
+共享server仍SHA `9916c2222ab53916a694e9f9602fc30f9a6a9d591698278dc26dd9ee6951cbf1`：旧state-page capability exit0，新 `aih-codex-thread-list-visibility-v1` exit1；已交源码/推送不等loaded。本owner未替换共享binary/companion、改stamp或重启。当前源码选中Go而旧构件缺能力会显错，不暗fallback；兼容CLI/server安装门禁由原监督/发布owner处理。
+
+本节点仅关闭enabled visibility的Node业务计算，aggregate调度、title/Goal、其他metadata/rollout/writer、default/resume/TUI以及整体stdio/R2仍OPEN；没有全量替换Node入口或关闭W0–W6 Goal。下个actualcaller先向原监督报最小scope再实施。JSON追加 `cliEnabledThreadListVisibilityGoDelegation` 保存最终hash及19份raw digests；pointer `/tmp/aih-r2-visibility-latest-20261118.txt`。完整rollout/线程/配置只在私有证据，仓库不含凭据与正文。

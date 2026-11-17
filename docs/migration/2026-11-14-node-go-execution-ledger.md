@@ -448,3 +448,14 @@ b4cc56e9f仅本人3source(241+/3-)已交，3ownindex同步/outside6131entries相
 最终真实enabled Node主入口→官方initialize/model-list→本续页Go完整2项，trace命中，响应再与原函数／私有标准安装逐字节比较相同；EOF0/stderr377如实hash。即时进程检查Node／官方／Go通知已退，但3官方plugins git后代0.2s仍在，原raw `pass:false`保留；随后复查全部自行消失，无kill，不伪报whole-tree即时清理。最终8DTO/空EOF拒绝、stdin SIGTERM1ms／超时15.02s/PIDGone，空PATH完整Go响应2项及显式emptyhome0通过。SIGSTOP worker太快未捕获，WAL锁不阻读，hardkill证明未取得；无per-RPC即时取消声明。Linux／Windows仅编译。本人own4 index同步，outside6142不变、peer104保留。
 
 只退出enabled AIH continuation这片响应规则的Node计算，**outer Node、首屏／整thread/list与全stdio/R2未退出**。新响应port为256KiB严格DTO/32MiB编码输出／15s context，adapter每次5s probe+16s SIGKILL上限，默认standard→companion可叠加，不称整调用≤16s。未知文本日期显错，不含完整RFC1123/Date.parse兼容；Node已解析数字精度不可逆。shared server `9916c222…`旧page能力仍有、新response capability实测exit1，选中返回-32000且无旧mapper fallback；本owner未安装／重启／改stamp，原发布owner协调。详见acceptance§19／JSON `cliEnabledStateContinuationResponseGoDelegation`，主Goal保持active。
+
+
+## 2026-11-18 R2：enabled thread/list visibility 策略转 Go，仍非全stdio退役
+
+源码 `b9878bafb` exact4已推送，审批 `pm-5e79938f`／admission `pm-3e25135e`／catch门禁 `pm-fd5aa2fd`。原actualcaller仍 `stdio-proxy.js:793/865`，patch apply只委派，reader只JSON framing＋新capability，原server state端口早派，新visibility owner复用ReadHidden/ReadPage/projectListThread。首屏hidden/subagent/cwd、merge/dedupe/stable sort/cap/最终尾项cursor由Go唯一计算；native cursor纯过滤保opaque，unchanged回原line bytes。titleGoal／FrameTransport／R5 run.go／M等不动。
+
+固定base1638c4d03 archive643e4a9a…+own4；final manifest b28d9776…／私有Go fba232cf…，最后catch JS-only不重编Go。真实639来源state加4份原bytes rollout副本，使官方首屏2条／真实native续页2条，不拿statePage冒上游。最终34项原Node/新Go逐byte相同、PATHempty核心2row；enabled普通/aggregate/native实际三路各2row、共享物理源码入口以私有环境再跑成功。ordinary/native从实际rewritten context复验原/新/actual stdout全等；aggregate仅实际主链成功，prepatch原wire未重建。初始继承sharedSQLITE探针和两次错误operator context重建均保反证，未改raw为绿。
+
+10负向DTO/EOF/过限拒绝，stdin SIGTERM1.85ms／deadline15.021s/PIDGone；最终catch巨大typedID及无ID超限显拒、普通typed错误字节不变。原双reviewer最终四hash no-blocking。EOF0.3s官方plugin3git后代仍活，rawfalse保留，后自然全退未发kill；hard-stopped-worker证据未得，无per-RPC即时cancel声明。native build/vet/JSsyntax通过，Linux/Windows仅编译；本人own4 index同步、outside6147 unchanged／114peer cached保留，无新测试或共享restart。
+
+新增admission是明确收紧：raw/replacement/error wire32MiB含LF、DTO输入32MiB／编码response32MiB含LF、15sGo／5sprobe＋16sadapter且候选可叠加；无法证明locale等价的首屏merge同timestamp非UUID显错，nonfinite sort亦显错，不称任意旧输入等价。共享server9916c222仍缺新capability，旧page可用，缺/旧不fallback；只源码/push/private实证，loaded及安装授权由原发布owner，本owner不暗装。Node bootstrap、aggregate调度、titleGoal、其他metadata/rollout/default/resume/TUI/writer与全R2仍OPEN。原acceptance§20／JSON `cliEnabledThreadListVisibilityGoDelegation` 保存19raw digests，主Goal active；下一个caller先报scope。

@@ -5286,5 +5286,179 @@
       "shared-install-gate.json": "1d5c34b62fd4d3ae4d7edee36dd0031c54d6057ce897129a4bf7a7abcc624d08",
       "final-source-review-summary.json": "5a63c77c56712733edd90a678c04b4f224fad0dedec4aca2970855a61d7b079f"
     }
+  },
+  "cliEnabledThreadListVisibilityGoDelegation": {
+    "status": "partial-enabled-list-visibility-policy-exit-not-whole-R2",
+    "sourceCommit": "b9878bafbd0e4987e519fad36eea1cfa78d8ba39",
+    "approvalMessages": [
+      "pm-5e79938f65c7b36262d92ce98e5c65fd",
+      "pm-3e25135e104cc6f35fc131a773af4da1",
+      "pm-fd5aa2fd6b238b4c104105b3972000e0"
+    ],
+    "actualCallers": [
+      "lib/server/codex-app-server-stdio-proxy.js:793 aggregate",
+      "lib/server/codex-app-server-stdio-proxy.js:865 ordinary"
+    ],
+    "manifest": {
+      "base": "1638c4d03bd4af0a5cd14f393db252e59d59ce09",
+      "archiveSHA256": "643e4a9a4930b7ac2625a588abfffbc7a5499430e3da43b4113a8895b66c5357",
+      "files": {
+        "lib/server/codex-app-server-stdio-proxy-patch.js": "eda495d8c81e4a98fe779fe734db2705a06af9bd67a650b2b0d1d302d0158975",
+        "lib/server/codex-state-native-reader.js": "75e6a0b6629ddf99578f35d264e63259035802b95314a9337ba9e4515027b78c",
+        "cmd/aih-server/codex_state_page.go": "fda7fb7c6f6c614a2c07a33d82f2822cd618469ea89f2cc26ac8f3fb5a121ac0",
+        "internal/runtime/codexstatepage/visibility.go": "c544e0d37a716770779be5832f2e000994e908ce12106b887a79bbedf8e02533"
+      },
+      "binarySHA256": "fba232cf050494cd823f14f17f60e91e6c8f9bbd35e673bbdeb602eee5f1156d",
+      "goBinaryUnchangedForJSOnlyCatchGate": true
+    },
+    "manifestSHA256": "b28d9776296ae9546a2c35de22c92090eb2e53ff9d013703244ef4791265d44e",
+    "command": [
+      "__codex-state-page",
+      "--thread-list-visibility"
+    ],
+    "capability": "aih-codex-thread-list-visibility-v1",
+    "sourceSnapshot": {
+      "threads": 639,
+      "SHA256": "f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a",
+      "canonicalLowerUUIDs": 639,
+      "sourceDBUnchanged": true,
+      "intactRealRolloutsCopied": 4,
+      "copiedRolloutBytes": 192854794,
+      "noFabricatedThreadOrAccount": true
+    },
+    "acceptance": {
+      "finalWireComparisons": 34,
+      "allByteEqual": true,
+      "observedMaxDTOBytes": 4018,
+      "observedMaxWireBytes": 181367,
+      "directGoPATHEmptyRows": 2,
+      "actualFinalEnabledBranches": {
+        "ordinary": 2,
+        "aggregate": 2,
+        "native": 2
+      },
+      "sharedPhysicalJSSourceWithPrivateRuntimeBranches": {
+        "ordinary": 2,
+        "aggregate": 2,
+        "native": 2
+      },
+      "actualVsOldAndNewFullWire": [
+        "ordinary",
+        "native"
+      ],
+      "aggregatePrepatchWireReconstruction": false,
+      "negativeDTOAndInputCases": 10,
+      "stdinSIGTERMms": 1.85,
+      "stdinDeadlineSeconds": 15.021,
+      "pidGone": true,
+      "hardStoppedAdapterProof": false,
+      "goBinaryUnchangedForFinalJSCatch": true,
+      "catchLargeTypedIDRawBytes": 33554417,
+      "catchNoIDRawBytes": 33554454,
+      "catchLargeInputStableRejected": true,
+      "normalTypedErrorsByteEqual": 4,
+      "nodeBootstrapStillPresent": true,
+      "noAIHNodeServerHostStarted": true,
+      "noAuthenticatedInference": true,
+      "immediateWholeTreeGone": false,
+      "thirdPartyGitAliveAfterEOF": 3,
+      "allNaturallyGoneInFollowup": true,
+      "noSignalsSent": true,
+      "linuxWindowsCompileOnly": true
+    },
+    "admission": {
+      "rawWirePlusLFBytes": 33554432,
+      "stdinDTOBytes": 33554432,
+      "encodedOutputPlusLFBytes": 33554432,
+      "goContextSeconds": 15,
+      "probeSecondsEachCandidate": 5,
+      "adapterQuerySeconds": 16,
+      "totalCallMayAddCandidateProbes": true,
+      "finiteSortRequired": true,
+      "sortIdentityGate": "only merged equal timestamp different IDs require canonical lowercase UUID; unsupported explicit error, no locale mismatch fallback",
+      "notArbitraryOldInputParity": true
+    },
+    "counterEvidence": [
+      "first two official probes inherited shared CODEX_SQLITE_HOME; cannot prove private state usage and not counted",
+      "initial private official metadata empty until actual rollout files copied intact",
+      "ordinary trace reconstruction twice used operator-assumed context; saved corrected rewritten params yield original/new/actual byte equality",
+      "postEOF 0.3s three official git descendants alive; not immediate whole tree cleanup",
+      "no stopped-worker hardkill proof"
+    ],
+    "sharedInstall": {
+      "serverSHA256": "9916c2222ab53916a694e9f9602fc30f9a6a9d591698278dc26dd9ee6951cbf1",
+      "oldPageCapabilityExit": 0,
+      "newVisibilityCapabilityExit": 1,
+      "missingOrOldGoError": "codex_state_native_unavailable",
+      "fallback": false,
+      "sourceNotEquivalentToLoaded": true,
+      "sharedBinaryReplaced": false,
+      "restart": false,
+      "stampChanged": false
+    },
+    "indexReceipt": {
+      "sourceCommit": "b9878bafbd0e4987e519fad36eea1cfa78d8ba39",
+      "paths": [
+        "lib/server/codex-app-server-stdio-proxy-patch.js",
+        "lib/server/codex-state-native-reader.js",
+        "cmd/aih-server/codex_state_page.go",
+        "internal/runtime/codexstatepage/visibility.go"
+      ],
+      "synchronizedOwned": 4,
+      "outsideEntriesUnchanged": 6147,
+      "remainingPeerCached": 114,
+      "manifestSHA256": "b28d9776296ae9546a2c35de22c92090eb2e53ff9d013703244ef4791265d44e",
+      "noBinaryRestartOrStamp": true
+    },
+    "review": {
+      "manifestSHA256": "b28d9776296ae9546a2c35de22c92090eb2e53ff9d013703244ef4791265d44e",
+      "reviewers": [
+        {
+          "id": "01a1dac9-7f34-7260-892a-356a9d0c2daa",
+          "result": "no-blocking final exact4 then catch-only re-review",
+          "scope": "source and manifest only; no independent live business rerun"
+        },
+        {
+          "id": "01a1e041-ce36-75d2-970c-2f1678526c14",
+          "result": "no-blocking after catch budget P2",
+          "scope": "source and manifest only; no independent live business rerun"
+        }
+      ],
+      "openLimits": [
+        "no hard-stopped adapter proof",
+        "third-party plugin git alive postEOF then naturally gone",
+        "not whole R2 or Nodebootstrap retirement",
+        "shared old server missing new capability"
+      ]
+    },
+    "remaining": [
+      "Node bootstrap and aggregate orchestration",
+      "titleGoal and other metadata/rollout policies",
+      "default/resume/TUI and writers",
+      "whole stdio/R2 and W0-W6 retirement",
+      "separately authorized compatible shared install"
+    ],
+    "rawEvidenceDirectory": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-visibility-20261118-K8eEtF8s",
+    "rawSHA256": {
+      "origin-private-admission-counterevidence.json": "1aa7e11083bbd65109e20c21a2a265c5f7cb542a79fbd5e2e578be9d9ecf3880",
+      "isolated-official-origin.json": "b6c385e94b2c3b0ca4d07a2561c8646a3d288a9056e45edf067b1866df3d95c7",
+      "rollout-official-origin.json": "c33b93c0b3b4c1df5cfb99b563fc26d891536cdcf2bff4bd9944887068101330",
+      "rollout-source-manifest.private.json": "7a01d258e306d7825364478506e6f3f8cff23a71086a3a831b18fede0a0fd7f7",
+      "final-manifest.json": "b28d9776296ae9546a2c35de22c92090eb2e53ff9d013703244ef4791265d44e",
+      "final-real-wire-matrix.json": "0e41f01f7b187accef4a70512adbb146c40b52d4fd62dd1db2981b9b941a7d5c",
+      "final-enabled-actual-caller.json": "a0473bdd0a2ed85c20b29d481a093eb15fd37e9d2a804edbf266aa33ca0bb6f7",
+      "final-enabled-original-wire-comparison.json": "814296a5768e658236548beb4cf7b67ed4f56be0c583f9434b606bf8c280c8cf",
+      "final-shared-source-private-runtime.json": "96a1dc6f48bc86bc51d719d7867c4cc38f3f1979ffa8c1485c4631bb85bf8ec1",
+      "final-shared-source-process-followup.json": "ba1829480da02915505fb95fda7e003b1c1e21989616b627c73e2acd82662094",
+      "final-strict-cancel-bounds.json": "3212c1ec6fa7b033f78108c7b0d1009ae8932fc0246d25e826b4f0e882f502e2",
+      "final-capability-and-raw-budget.json": "7ad95780fcfa986ca5f470d1982ea7cb95b64ecb27e52d4dcd6bfaf7ef6c1995",
+      "final-catch-budget-gate.json": "1597f1dcbe9a920fbed20ac4f1f7a0d76760360e56e013c1522069629f612c05",
+      "final-catch-normal-path-recheck.json": "c507853aa410dde6c5b9027061a5e43532bdc61810248fc1514d705c00ad9747",
+      "final-source-review-summary.json": "b0e3e2d2f1b7301564a3c2d9d50a178667b2a6bd8560236f5cbe72bd8782467c",
+      "source-commit-index-receipt.json": "5b7be4eb5599d6406f6a5282a351186a8cc4bfa19a20679d51f11eb102760f96",
+      "source-scoped-cached.stat": "e6dc966d75db2781724d6663ca1a2dbc688508a3ab9c31e28701ff7135ab4092",
+      "source-show.stat": "8a06ca1c5be2cadaf58c33e15b2e11acfee5f3e0947e363c28598bcbba4354a7",
+      "source-push.log": "759f4bd54428d97b8da88004b14832c2504c005a7da84858d3b76d7ee9541ac6"
+    }
   }
 }

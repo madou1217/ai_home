@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 )
 
 const (
@@ -676,98 +677,20 @@ func buildCodexAPIKeyConfig(hostConfig, baseURL, sqliteHome string) string {
 // --- Claude Desktop Gateway (Claude-3p) ---
 
 func (p *desktopPrepContext) prepareClaudeProfile() *Result {
-	profileDir := resolveClaudeDesktopGatewayDir(p.platformKey, p.hostHomeDir, p.baseEnv)
-	if profileDir == "" || strings.TrimSpace(p.aiHomeDir) == "" {
-		return nil
-	}
-	if p.repoRoot == "" {
-		return nil
-	}
-	helperPath := filepath.Join(p.repoRoot, "bin", "claude-desktop-credential.js")
-	if !pathExists(helperPath) {
+	env := envSliceToStringMap(p.baseEnv)
+	env["AIH_ROOT"] = p.repoRoot
+	if reason := apps.PrepareClaudeDesktopGateway(p.ctx, apps.Options{
+		AIHomeDir:   p.aiHomeDir,
+		HostHomeDir: p.hostHomeDir,
+		Platform:    catalogPlatformKey(p.platformKey),
+		Env:         env,
+	}); reason != "" {
 		return &Result{
 			OK:      false,
 			Error:   "claude_gateway_prepare_failed",
-			Reason:  "credential_helper_missing",
+			Reason:  reason,
 			Message: launchErrorMessage("claude_gateway_prepare_failed"),
 		}
-	}
-	nodeExe := findNodeExecutable(p.baseEnv, p.platformKey)
-	if nodeExe == "" {
-		nodeExe = "node"
-	}
-
-	serverBaseURL := readServerConfigGatewayBaseURL(p.aiHomeDir)
-	libraryDir := filepath.Join(profileDir, "configLibrary")
-	metaPath := filepath.Join(libraryDir, "_meta.json")
-	metaObj := map[string]any{"appliedId": "", "entries": []any{}}
-	if raw, err := os.ReadFile(metaPath); err == nil && len(strings.TrimSpace(string(raw))) > 0 {
-		if json.Unmarshal(raw, &metaObj) != nil || metaObj == nil {
-			return &Result{
-				OK:      false,
-				Error:   "claude_gateway_prepare_failed",
-				Reason:  "config_library_meta_invalid",
-				Message: launchErrorMessage("claude_gateway_prepare_failed"),
-			}
-		}
-	}
-	entriesSlice, _ := metaObj["entries"].([]any)
-	entryID := ""
-	for _, rawEntry := range entriesSlice {
-		entryMap, ok := rawEntry.(map[string]any)
-		if !ok {
-			continue
-		}
-		if stringField(entryMap, "name") == "ai-home API" {
-			candidateID := stringField(entryMap, "id")
-			if uuidV4Pattern.MatchString(candidateID) {
-				entryID = candidateID
-				break
-			}
-		}
-	}
-	if entryID == "" {
-		entryID = generateUUIDv4()
-		entriesSlice = append(entriesSlice, map[string]any{"id": entryID, "name": "ai-home API"})
-	}
-	metaObj["appliedId"] = entryID
-	metaObj["entries"] = entriesSlice
-
-	apiCfg := map[string]any{
-		"inferenceProvider":             "gateway",
-		"inferenceCredentialKind":       "helper-script",
-		"inferenceGatewayBaseUrl":       serverBaseURL,
-		"inferenceGatewayAuthScheme":    "bearer",
-		"inferenceCredentialHelper":     nodeExe,
-		"inferenceCredentialHelperArgs": []string{helperPath, "--ai-home-dir", p.aiHomeDir},
-		"modelDiscoveryEnabled":         true,
-	}
-	if err := writeJSONAtomic(filepath.Join(libraryDir, entryID+".json"), apiCfg); err != nil {
-		return &Result{OK: false, Error: "claude_gateway_prepare_failed", Reason: err.Error(), Message: launchErrorMessage("claude_gateway_prepare_failed")}
-	}
-	if err := writeJSONAtomic(metaPath, metaObj); err != nil {
-		return &Result{OK: false, Error: "claude_gateway_prepare_failed", Reason: err.Error(), Message: launchErrorMessage("claude_gateway_prepare_failed")}
-	}
-
-	devPath := filepath.Join(profileDir, "developer_settings.json")
-	devObj := map[string]any{}
-	if raw, err := os.ReadFile(devPath); err == nil && len(strings.TrimSpace(string(raw))) > 0 {
-		_ = json.Unmarshal(raw, &devObj)
-	}
-	devObj["allowDevTools"] = true
-	if err := writeJSONAtomic(devPath, devObj); err != nil {
-		return &Result{OK: false, Error: "claude_gateway_prepare_failed", Reason: err.Error(), Message: launchErrorMessage("claude_gateway_prepare_failed")}
-	}
-
-	desktopCfgPath := filepath.Join(profileDir, "claude_desktop_config.json")
-	desktopObj := map[string]any{}
-	if raw, err := os.ReadFile(desktopCfgPath); err == nil && len(strings.TrimSpace(string(raw))) > 0 {
-		_ = json.Unmarshal(raw, &desktopObj)
-	}
-	desktopObj["deploymentMode"] = "3p"
-	delete(desktopObj, "awaitingSignIn")
-	if err := writeJSONAtomic(desktopCfgPath, desktopObj); err != nil {
-		return &Result{OK: false, Error: "claude_gateway_prepare_failed", Reason: err.Error(), Message: launchErrorMessage("claude_gateway_prepare_failed")}
 	}
 	return nil
 }

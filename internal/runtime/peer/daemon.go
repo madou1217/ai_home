@@ -107,6 +107,10 @@ func NewDispatchDaemon(opts DispatchDaemonOptions) (*DispatchDaemon, error) {
 	}
 	// 强制归零：守护进程按固定 tick 轮询，忙则立刻让出并下轮重试，绝不在 tick 内睡等安静期。
 	delivery.Timeout = 0
+	// 默认用 pane 内容指纹判定空闲：window_activity 会被光标闪烁刷新，空闲 TUI 会永久 busy。
+	if delivery.ReadActivityAt == nil {
+		delivery.ReadActivityAt = NewPaneActivityTracker(nowFn, delivery.TmuxRunner, delivery.TmuxPath).ReadActivityAt
+	}
 
 	store := NewDispatchStore(aiHome, StoreOptions{Now: nowFn})
 	return &DispatchDaemon{

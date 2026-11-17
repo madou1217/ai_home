@@ -7,7 +7,31 @@ import (
 	"strings"
 )
 
-var composerPrompt = regexp.MustCompile(`^\s*[›❯>] (.*)$`)
+var composerFooter = regexp.MustCompile(`^\s*(?:\? for shortcuts|(?:enter/esc|enter|esc).*\? shortcuts|\d+% context left)`)
+
+// The editable text may contain separator or footer-looking lines. Only the
+// footer at the physical bottom of the pane can terminate the composer.
+func composerEnd(lines []string) int {
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) < 2 || !composerFooter.MatchString(lines[len(lines)-1]) {
+		return -1
+	}
+	end := len(lines) - 1
+	if composerBoundary.MatchString(lines[end-1]) {
+		return end - 1
+	}
+	// Codex keeps its model/permissions status on the penultimate pane row.
+	if strings.Contains(lines[end-1], " · ") {
+		return end - 1
+	}
+	return -1
+}
+
+var composerBoundary = regexp.MustCompile(`^\s*[─━═-]{3,}\s*$`)
+
+var composerPrompt = regexp.MustCompile(`^\s*[›❯>](?: (.*))?$`)
 
 // A quiet pane may still contain a draft. Dispatch must never submit that draft
 // together with a notification, including when the background daemon retries.
@@ -20,6 +44,15 @@ func inspectComposer(ctx context.Context, runner TmuxCommandRunner, command, soc
 	}
 	cursor, ok := run("display-message", "-p", "-t", session, "#{cursor_y}")
 	if !ok {
+		sessions, available := run("list-sessions", "-F", "#{session_name}")
+		if available {
+			for _, name := range strings.Split(sessions, "\n") {
+				if strings.TrimSpace(name) == session {
+					return "unknown"
+				}
+			}
+			return "gone"
+		}
 		return "unknown"
 	}
 	y, err := strconv.Atoi(strings.TrimSpace(cursor))
@@ -28,13 +61,22 @@ func inspectComposer(ctx context.Context, runner TmuxCommandRunner, command, soc
 	}
 	pane, ok := run("capture-pane", "-p", "-t", session)
 	lines := strings.Split(pane, "\n")
-	if !ok || y >= len(lines) {
+	end := composerEnd(lines)
+	if !ok || y >= len(lines) || end < 0 || y >= end {
 		return "unknown"
 	}
 	for row := y; row >= 0; row-- {
+		if composerBoundary.MatchString(lines[row]) {
+			break
+		}
 		match := composerPrompt.FindStringSubmatch(lines[row])
 		if match == nil {
 			continue
+		}
+		for below := y + 1; below < end; below++ {
+			if strings.TrimSpace(lines[below]) != "" {
+				return "draft"
+			}
 		}
 		text := strings.TrimSpace(strings.Join(append([]string{match[1]}, lines[row+1:y+1]...), "\n"))
 		if text == "" || text == "Ask Codex to do anything" || text == "Type a message" || text == "Ask anything" {

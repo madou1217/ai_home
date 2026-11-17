@@ -438,3 +438,13 @@ b4cc56e9f仅本人3source(241+/3-)已交，3ownindex同步/outside6131entries相
 真实现有outer healer→Go策略→既有Go锁内写回恢复原SHA，二次幂等、0640和symlink保留；缺Go／实际共享旧Go／NUL均单条skipped且文件不变。真实持锁拒写、stale expected保留外部改动；纯策略空PATH Node-off exit0，无AIH Node host。最终10DTO拒绝、open stdin5.013s/PIDGone；SIGSTOP实际worker16996后adapter10060ms硬杀回收。native build/vet/JS syntax通过，Linux／Windows仅编译。本人4source index同步，outside6141 entries不变、89peer cached保留。
 
 只关闭provider纯文本规则的Node owner，**不代表外层Node caller／全healer／default/TUI/resume或R2退出**。固定输入16MiB、config4MiB、block1MiB／NUL／非法Unicode拒绝；5s仅stdin等待，adapter能力5s／计算10s硬截止，不承诺main-context即刻取消。文本限额不保证序列化响应或原12MiB publication必定可用。worker失败按旧outer catch跳过后续全部healer，不阻断启动；这不是整个launcher fail closed。共享CLI仍旧 `62ade2667a5f…`，新heal门禁不支持会skip；前组startup能力缺失仍是共享新启动硬门禁，待原发布owner授权处理，本owner不替换构件／重启／改stamp。原acceptance §18与JSON `cliProviderHealGoDelegation` 保存来源与最终实证，主W0–W6继续Partial。
+
+## 2026-11-18 R2：enabled thread/list 的 AIH cursor 续页完整响应转 Go
+
+源码 `40c5a795d` exact4（监督 `pm-bc6af05657d01b48d94da0afb37d0373`）：现 `stdio-proxy.js:614` caller不改，`stdio-proxy-state.js` 目标函数仅预选并委派；state reader独立capability/I/O；既有server state端口新增受限operation；`codexstatepage/response.go` 复用ReadPage并接管本续页的cursor公共校验、row→wire和完整typed-id/result/error。非目标method／通知／native cursor仍原compat预选，选中失败不回旧Node mapper。首屏merge、其他共享builder、titleGoal、FrameTransport、R5 run.go、M与writer不改。
+
+固定 `acabe8181` archive `2b1d1c143f56…`+own4，最终私有server `0356b0e10dc2…`。真实state_5 mode=ro online backup639threads／SHA `f457078cf3b1…`，沿原page取真cursor；最终30项来源操作原Node／新Go byteequal（含typed IDs、requestContext、空页、-32602公共与-32000原生分层、limit1024.5实际187项）。独审P2：floor顺序、JS Number/base64、time.Time／非有限值和未知zone均窄修；真实3红后30绿，2原reviewer最终hash no-blocking。date泛输入仅源码边界，实库4时间列639行全integer，未冒任意Date.parse等价。
+
+最终真实enabled Node主入口→官方initialize/model-list→本续页Go完整2项，trace命中，响应再与原函数／私有标准安装逐字节比较相同；EOF0/stderr377如实hash。即时进程检查Node／官方／Go通知已退，但3官方plugins git后代0.2s仍在，原raw `pass:false`保留；随后复查全部自行消失，无kill，不伪报whole-tree即时清理。最终8DTO/空EOF拒绝、stdin SIGTERM1ms／超时15.02s/PIDGone，空PATH完整Go响应2项及显式emptyhome0通过。SIGSTOP worker太快未捕获，WAL锁不阻读，hardkill证明未取得；无per-RPC即时取消声明。Linux／Windows仅编译。本人own4 index同步，outside6142不变、peer104保留。
+
+只退出enabled AIH continuation这片响应规则的Node计算，**outer Node、首屏／整thread/list与全stdio/R2未退出**。新响应port为256KiB严格DTO/32MiB编码输出／15s context，adapter每次5s probe+16s SIGKILL上限，默认standard→companion可叠加，不称整调用≤16s。未知文本日期显错，不含完整RFC1123/Date.parse兼容；Node已解析数字精度不可逆。shared server `9916c222…`旧page能力仍有、新response capability实测exit1，选中返回-32000且无旧mapper fallback；本owner未安装／重启／改stamp，原发布owner协调。详见acceptance§19／JSON `cliEnabledStateContinuationResponseGoDelegation`，主Goal保持active。

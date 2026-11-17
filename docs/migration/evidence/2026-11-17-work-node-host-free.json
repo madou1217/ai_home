@@ -4536,5 +4536,755 @@
       "source-commit-index-receipt.json": "2b539578df88686790b5daec54809317d0b18186521844492ce3e0c91379e7aa",
       "final-source-review-summary.json": "5167cd934cb0bab740b9b971f84a688e1db0e81078ce735bc35f0abe0a688360"
     }
+  },
+  "cliEnabledStateContinuationResponseGoDelegation": {
+    "status": "partial-enabled-AIH-cursor-continuation-response-policy-exit",
+    "sourceCommit": "40c5a795d9a590263ed8c7677b9a3c0c19976e6b",
+    "approvedScopeMessage": "pm-bc6af05657d01b48d94da0afb37d0373",
+    "actualCaller": "lib/server/codex-app-server-stdio-proxy.js:614-630 -> selected buildStateThreadListResponse -> native operation -> complete id/result/error",
+    "manifest": {
+      "baseCommit": "acabe8181a924ef951f66fa333bada4eff928147",
+      "archiveSHA256": "2b1d1c143f56364a8e8e7f71ae8649b16292306d5ccbb666ceed2ab7b87b0a15",
+      "paths": {
+        "lib/server/codex-app-server-stdio-proxy-state.js": "49408e4fa6f1b5592aa8881dcdb39bbd7e66f9fa0a6776e39fcbf9d3c703a50c",
+        "lib/server/codex-state-native-reader.js": "1bca727d71ca9ce8057b9def474bcdbe768127b0175c487cf00e3dca6f2a2b3a",
+        "cmd/aih-server/codex_state_page.go": "5af99827981088d4c87799b14d132706fb1648aacc37cd7fcb9e8b434ab0a4ad",
+        "internal/runtime/codexstatepage/response.go": "2d65318ef91817ae09a6415f3217dfe9eadbc991c7c942be787b2de2e5df5ae6"
+      },
+      "sourceTree": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-list-scope-20261118-iMFwWR/source",
+      "binary": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-list-scope-20261118-iMFwWR/final-aih-server",
+      "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225"
+    },
+    "manifestSHA256": "42391439cffb01538ddb9b4f456fc08718e7a5c40a9df552b1c7c96f12664665",
+    "capability": "aih-codex-thread-list-response-v1",
+    "command": [
+      "__codex-state-page",
+      "--thread-list-response"
+    ],
+    "sourceSnapshot": {
+      "stateName": "state_5.sqlite",
+      "threadCount": 639,
+      "snapshotSHA256": "f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a",
+      "readOnlyOnlineBackup": true,
+      "noSyntheticAccountsOrState": true,
+      "typeAndIntegrityEvidence": {
+        "timestampTypeGroups": [
+          [
+            "integer",
+            "integer",
+            "integer",
+            "integer",
+            639
+          ]
+        ],
+        "threads": 639,
+        "databaseSHA256After": "f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a",
+        "originDatabaseSHA256": "f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a",
+        "unchangedDatabaseBytes": true,
+        "scope": "source-backed online snapshot only; no synthetic account/state or timestamp type mutation"
+      }
+    },
+    "acceptance": {
+      "wireMatrix": {
+        "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225",
+        "manifestSHA256": "42391439cffb01538ddb9b4f456fc08718e7a5c40a9df552b1c7c96f12664665",
+        "source": "actual639threads private readonly origin snapshot and real cursor; token/parameter/ID operations, no fabricated account or state",
+        "privateStandardInstalledEqual": true,
+        "rows": [
+          {
+            "operation": "actual",
+            "equalBytes": true,
+            "oldCount": 2,
+            "newCount": 2,
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-1_0",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-0x1p2",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-0b1_0",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value--0x1",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-+0x1",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-0x1f",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-0b101",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-0o007",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-90071992547409920",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-0Xffffffffffffffffffff",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-1e309",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "cursor-value-inf",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "public-base64-unpaired-sextet",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "fractional-limit-1024.5",
+            "equalBytes": true,
+            "oldCount": 187,
+            "newCount": 187,
+            "selected": true
+          },
+          {
+            "operation": "above-limit-1025",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32000,
+              "message": "codex_state_read_budget_exceeded"
+            },
+            "newError": {
+              "code": -32000,
+              "message": "codex_state_read_budget_exceeded"
+            },
+            "selected": true
+          },
+          {
+            "operation": "no-scope",
+            "equalBytes": true,
+            "oldCount": 0,
+            "newCount": 0,
+            "selected": true
+          },
+          {
+            "operation": "missing-value",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "null-value",
+            "equalBytes": true,
+            "oldCount": 0,
+            "newCount": 0,
+            "selected": true
+          },
+          {
+            "operation": "empty-page",
+            "equalBytes": true,
+            "oldCount": 0,
+            "newCount": 0,
+            "selected": true
+          },
+          {
+            "operation": "bad-filter",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "malformed-cursor",
+            "equalBytes": true,
+            "oldError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "newError": {
+              "code": -32602,
+              "message": "codex_state_cursor_invalid"
+            },
+            "selected": true
+          },
+          {
+            "operation": "native-cursor",
+            "equalBytes": true,
+            "selected": false
+          },
+          {
+            "operation": "notification",
+            "equalBytes": true,
+            "selected": false
+          },
+          {
+            "operation": "other-method",
+            "equalBytes": true,
+            "selected": false
+          },
+          {
+            "operation": "requestContext",
+            "equalBytes": true,
+            "oldCount": 2,
+            "newCount": 2,
+            "selected": true
+          },
+          {
+            "operation": "id-number",
+            "equalBytes": true,
+            "oldCount": 2,
+            "newCount": 2,
+            "selected": true
+          },
+          {
+            "operation": "id-zero",
+            "equalBytes": true,
+            "oldCount": 2,
+            "newCount": 2,
+            "selected": true
+          },
+          {
+            "operation": "id-empty-string",
+            "equalBytes": true,
+            "oldCount": 2,
+            "newCount": 2,
+            "selected": true
+          },
+          {
+            "operation": "id-null",
+            "equalBytes": true,
+            "oldCount": 2,
+            "newCount": 2,
+            "selected": true
+          }
+        ],
+        "allEqual": true
+      },
+      "finalActualEnabledCaller": {
+        "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225",
+        "manifestSHA256": "42391439cffb01538ddb9b4f456fc08718e7a5c40a9df552b1c7c96f12664665",
+        "sourceSnapshotSHA256": "f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a",
+        "operation": "unmodified existing enabled proxy main -> final Go continuation full envelope; official init and model/list also real",
+        "parentPID": 86759,
+        "childrenObserved": [
+          {
+            "pid": 86767,
+            "ppid": 86759,
+            "argv": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original app-server -c model_provider=\"openai\" -c preferred_auth_method=\"apikey\" -c check_for_update_on_startup=false"
+          },
+          {
+            "pid": 86769,
+            "ppid": 86759,
+            "argv": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-list-scope-20261118-iMFwWR/final-aih-server __codex-notifications --parent-pid 86759"
+          },
+          {
+            "pid": 86770,
+            "ppid": 86767,
+            "argv": "/Library/Developer/CommandLineTools/usr/bin/git -c safe.bareRepository=explicit ls-remote https://github.com/openai/plugins.git HEAD"
+          },
+          {
+            "pid": 86771,
+            "ppid": 86770,
+            "argv": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git remote-https https://github.com/openai/plugins.git https://github.com/openai/plugins.git"
+          },
+          {
+            "pid": 86773,
+            "ppid": 86771,
+            "argv": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https https://github.com/openai/plugins.git https://github.com/openai/plugins.git"
+          }
+        ],
+        "postEOFProcessCheck": [
+          {
+            "pid": 86759,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86767,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86769,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86770,
+            "alive": true,
+            "command": "86770     1 /Library/Developer/CommandLineTools/usr/bin/git -c safe.bareRepository=explicit ls-remote https://github.com/openai/plugins.git HEAD"
+          },
+          {
+            "pid": 86771,
+            "alive": true,
+            "command": "86771 86770 /Library/Developer/CommandLineTools/usr/libexec/git-core/git remote-https https://github.com/openai/plugins.git https://github.com/openai/plugins.git"
+          },
+          {
+            "pid": 86773,
+            "alive": true,
+            "command": "86773 86771 /Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https https://github.com/openai/plugins.git https://github.com/openai/plugins.git"
+          }
+        ],
+        "frames": [
+          {
+            "id": "init",
+            "method": null,
+            "hasResult": true,
+            "hasError": false
+          },
+          {
+            "id": null,
+            "method": "configWarning",
+            "hasResult": false,
+            "hasError": false
+          },
+          {
+            "id": null,
+            "method": "remoteControl/status/changed",
+            "hasResult": false,
+            "hasError": false
+          },
+          {
+            "id": "final-enabled-continuation",
+            "method": null,
+            "hasResult": true,
+            "hasError": false
+          },
+          {
+            "id": 0,
+            "method": null,
+            "hasResult": true,
+            "hasError": false
+          }
+        ],
+        "continuationRows": 2,
+        "completeResponseSHA256": "ea774baad475fa69d939253b703594721c3a6bfae971638496443d244d83e39e",
+        "EOFExit": 0,
+        "stderrBytes": 377,
+        "stderrSHA256": "5087729d3bc0315b1373fd8f677bbd289101f844a9f4aa4e78723e6545a616ae",
+        "stateDbPageTrace": true,
+        "NodeBootstrapStillPresent": true,
+        "noAIHNodeServerHostStarted": true,
+        "noAuthenticatedInference": true,
+        "pass": false
+      },
+      "postEOFDelayedNaturalCleanup": {
+        "observedEOFResult": "caller and official and Go notification child gone naturally, 3 official plugin git descendants survived 0.2s post-EOF; explicitly not whole-tree cleanup pass",
+        "operations": [
+          {
+            "pid": 86773,
+            "alreadyGone": true
+          },
+          {
+            "pid": 86771,
+            "alreadyGone": true
+          },
+          {
+            "pid": 86770,
+            "alreadyGone": true
+          },
+          {
+            "pid": 86769,
+            "alreadyGone": true
+          },
+          {
+            "pid": 86767,
+            "alreadyGone": true
+          }
+        ],
+        "postCleanupCheck": [
+          {
+            "pid": 86767,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86769,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86770,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86771,
+            "alive": false,
+            "command": ""
+          },
+          {
+            "pid": 86773,
+            "alive": false,
+            "command": ""
+          }
+        ],
+        "noSharedPIDTouched": true,
+        "scope": "verified exact private-run descendants only, no generic kill/killall",
+        "allGoneNow": true
+      },
+      "finalActualResponseByteComparison": {
+        "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225",
+        "operation": "actual enabled final response independently compared to original state function on its captured real effective project params",
+        "actualEqualsOldBytes": true,
+        "actualEqualsPrivateInstalledBytes": true,
+        "count": 2,
+        "pass": true
+      },
+      "strictEOFSignalAndNodeOff": {
+        "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225",
+        "negativeDTO": [
+          {
+            "operation": "duplicate-version",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "case-field",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "trailing-document",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "unknown-field",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "missing-id",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "null-params",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "invalidUnicode",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          },
+          {
+            "operation": "oversized-input",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderr": "aih codex state page: codex_state_response_input_invalid"
+          }
+        ],
+        "emptyStdinEOF": {
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderr": "aih codex state page: codex_state_response_input_invalid"
+        },
+        "SIGTERMWhileStdinOpen": {
+          "exit": 1,
+          "elapsedMS": 1,
+          "stdoutBytes": 0,
+          "stderr": "aih codex state page: codex_state_response_input_timeout",
+          "PIDGone": true
+        },
+        "openStdinTimeout": {
+          "exit": 1,
+          "elapsedSeconds": 15.02,
+          "stdoutBytes": 0,
+          "stderr": "aih codex state page: codex_state_response_input_timeout",
+          "PIDGone": true
+        },
+        "NodeOffCompleteResponse": {
+          "exit": 0,
+          "stderrBytes": 0,
+          "dataCount": 2,
+          "id": "read-only-continuation-origin",
+          "stdoutSHA256": "67de6dfbed092c2046010c5922acaf7828c301e874bdd64f788475428e5fee12",
+          "pathEntries": []
+        },
+        "directExplicitEmptyHome": {
+          "exit": 0,
+          "dataCount": 0,
+          "nextCursor": null
+        },
+        "hardStoppedWorkerProof": false,
+        "hardKillObservationLimit": "actual worker finishes too quickly for ps; WAL BEGIN EXCLUSIVE did not block readonly query; no hardkill success claimed",
+        "scope": "bounded synchronous selected response only; no per-RPC cancellation or whole Node-free claim",
+        "pass": true
+      },
+      "capabilityFailClosedAndOldPageCompatibility": {
+        "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225",
+        "rows": [
+          {
+            "operation": "actual-old-shared-server",
+            "id": "read-only-continuation-origin",
+            "error": {
+              "code": -32000,
+              "message": "codex_state_native_unavailable"
+            },
+            "binarySHA256": "9916c2222ab53916a694e9f9602fc30f9a6a9d591698278dc26dd9ee6951cbf1"
+          },
+          {
+            "operation": "missing-Go",
+            "id": "read-only-continuation-origin",
+            "error": {
+              "code": -32000,
+              "message": "codex_state_native_unavailable"
+            },
+            "binarySHA256": null
+          },
+          {
+            "operation": "explicit-final",
+            "id": "read-only-continuation-origin",
+            "count": 2,
+            "binarySHA256": "0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225"
+          }
+        ],
+        "oldPageStillConsumed": true,
+        "oldPageRowCount": 2,
+        "pass": true
+      }
+    },
+    "sourceReview": {
+      "reviewers": [
+        "Hubble 01a1dac9-7f34-7260-892a-356a9d0c2daa",
+        "Mendel 01a1e041-ce36-75d2-970c-2f1678526c14"
+      ],
+      "final": "both exact4 manifest2 source/hash no-blocking; read-only evidence review, not independent runtime replay",
+      "closedFindings": [
+        "floor before max limit",
+        "JS Number grammar and permissive public base64 vs strict native decoder error distinction",
+        "driver time.Time before seconds projection; non-finite unsupported types cannot silently become zero",
+        "no fabricated offset from unsupported RFC1123 alphabetic zone"
+      ],
+      "residualLimits": [
+        "unsupported Date.parse text errors rather than complete arbitrary date parser equivalence",
+        "no captured stopped worker hardkill proof",
+        "immediate official plugin git descendant cleanup raw pass=false; later naturally gone",
+        "outer Node still required; not whole thread/list or enabled stdio exit"
+      ]
+    },
+    "buildEvidence": {
+      "nativeBuild": true,
+      "focusedVet": true,
+      "twoJSSyntax": true,
+      "linuxAmd64": "compile-only",
+      "windowsAmd64": "compile-only",
+      "linuxBinarySHA256": "5bd6eb7d2911a65bf1cd01ce196e569b9a64bcf06f603521900c106841ae0c88",
+      "windowsBinarySHA256": "afbf80c7cd0e6623367c34fa1c0e3f9d213293051e87b0caf88a7c7958eef6dd",
+      "noNewTestsMocksFixturesOrOperationalMain": true
+    },
+    "indexSafety": {
+      "sourceCommit": "40c5a795d9a590263ed8c7677b9a3c0c19976e6b",
+      "parentAtStart": "fb0e8945a69b65dc02be7cb6dbe19e06a6d40de9",
+      "paths": [
+        "lib/server/codex-app-server-stdio-proxy-state.js",
+        "lib/server/codex-state-native-reader.js",
+        "cmd/aih-server/codex_state_page.go",
+        "internal/runtime/codexstatepage/response.go"
+      ],
+      "sourceManifestSHA256": "42391439cffb01538ddb9b4f456fc08718e7a5c40a9df552b1c7c96f12664665",
+      "syncedOwnEntries": 4,
+      "skippedOwnEntries": [],
+      "outsideCompared": 6142,
+      "outsideChanged": [],
+      "peerCachedPathsAfter": 104,
+      "scopeStatus": ""
+    },
+    "sharedInstalled": {
+      "observedAt": "2026-11-18 06:12:14 +0800",
+      "sharedBinarySHA256": "9916c2222ab53916a694e9f9602fc30f9a6a9d591698278dc26dd9ee6951cbf1",
+      "newResponseCapability": {
+        "exit": 1,
+        "stdout": "",
+        "stderrSHA256": "0b909ea58fa20b34a5f442019141d696af443a3db067121ec89d40fe93487fac"
+      },
+      "oldPageCapability": {
+        "exit": 0,
+        "stdout": "aih-codex-state-page-v1"
+      },
+      "updatedByThisOwner": false,
+      "noSharedServiceOrStampMutation": true
+    },
+    "remainingGates": [
+      "Node bootstrap and first-page/other shared mappers remain; not whole thread/list or enabled stdio exit",
+      "actual final raw pass=false because three official plugin git descendants alive at0.2s; later naturally exited, no kill",
+      "hard-stopped worker not observed; no runtime hardkill proof",
+      "synchronous adapter does not implement immediate per-RPC cancellation/reconnect",
+      "default candidate probes5s each; transform16s, not total16s",
+      "new operation strict input256KiB and encoded output32MiB incl newline, Go context15s",
+      "unsupported textual dates including alphabetic RFC1123 zones error; not complete Date.parse parity",
+      "Node-parsed ID precision cannot be restored; no precision before Node claim",
+      "source/private accepted; actual shared new capability unsupported and no deployment authorization",
+      "no authenticated inference or accounting; official metadata appserver did make plugin Git discovery",
+      "no shared restart/stamp/db migration/userconfig/account/default changes"
+    ],
+    "localEvidenceRootPointer": "/tmp/aih-r2-list-scope-latest-20261118.txt",
+    "rawDigests": {
+      "candidate-manifest-2.json": "42391439cffb01538ddb9b4f456fc08718e7a5c40a9df552b1c7c96f12664665",
+      "read-only-origin.json": "500465c318a6a3c5e0510b321a25f0a6d07dc82dc5c008fb41454dbebe9a5237",
+      "read-only-actual-caller.json": "d2a408978f212b4c641baf52b784d64cb40b1ac02fac6c068770c447ba4fc95c",
+      "real-review-red-before-fix.json": "8d3cec5ad3e1568458d180cd0a1febd61548130fb1c0bba2e09776359f9d8ea1",
+      "final-build-vet.log": "fe85d0f0c931c9f9d6f8b85bd0e430e1b62553c603418c7d941b9df20122a627",
+      "final-cross-build.log": "65dfb1c221202dd92d2d1eb022c2ce9798f7931a85ef50658a44ca9acdc9ce88",
+      "final-real-wire-matrix.json": "784ae4a55feb258907f074ae11b8139877768792e22717945ce57129a1d0cc76",
+      "final-enabled-proxy-result.json": "eb92c94e907fbdf9628aeee22c8cb5bca4b26b431f3f778b47008fb637e40fa3",
+      "final-enabled-proxy-cleanup.json": "77e9c0f934a1fccbcd4484babc7fb73c4288353a5a872d4e226ec3d03082205b",
+      "final-enabled-response-byte-comparison.json": "480094fbe6581e8d5bc69e993e8d0aa1a1d1b5058c120bbd927dc40300540ff9",
+      "final-strict-cancel-nodeoff.json": "de8e6cbdd2226f8e9217ee76e6df85be81ebdd60eda4601f11e6be51f635ec0c",
+      "final-capability-fail-closed.json": "338cda1fe43d0fc128d6b00f6b7e8b6dc7d9e73818f2efef6948bb861a1448c8",
+      "final-database-source-types.json": "53d31638d59cee0ec543468cd45d04929a32b1cbe0028c6feab2c6e32fef37b5",
+      "source-commit-index-receipt.json": "9a5b18df5b1a36263c9fcfb5e282b50a745d6071cc2b05d4996a92755686751d",
+      "shared-install-gate.json": "1d5c34b62fd4d3ae4d7edee36dd0031c54d6057ce897129a4bf7a7abcc624d08",
+      "final-source-review-summary.json": "5a63c77c56712733edd90a678c04b4f224fad0dedec4aca2970855a61d7b079f"
+    }
   }
 }

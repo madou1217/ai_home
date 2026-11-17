@@ -349,3 +349,39 @@ native build、focused vet及Linux／Windows x64交叉编译通过，后两项�
 剩余边界：request16MiB／config4MiB／missing-block1MiB；拒NUL、非法Unicode和不合DTO文本。等价性限既有正常文本及已列私有操作，不代表任意输入。输出JSON可能膨胀触发adapter16MiB，原writer另有12MiB输入限额；策略被接纳不保证可发布。stdin5s仅覆盖输入等待；adapter能力5s和worker10s为SIGKILL截止，未接main context，不承诺TERM立即取消计算。失败由原outer catch跳过本轮后续MCP/projects/hooks并继续启动，不是launcher fail closed。本组未跑完整default/resume/TUI，不复用前组help成功冒充本轮全链；下一actualcaller先向原监督报scope。原W0–W6与全R2保持Partial/active。
 
 原JSON追加 `cliProviderHealGoDelegation`，包含最终四源码hash、11raw digest、实际结果/剩余门禁。本地低敏证据pointer `/tmp/aih-r2-provider-heal-latest-20261118.txt`；配置正文和凭据不入仓库。
+
+## 19. 2026-11-18 R2 enabled AIH-cursor continuation：既有 stdio caller 消费 Go 完整响应
+
+源码 **`40c5a795d9a590263ed8c7677b9a3c0c19976e6b`**，监督范围 `pm-bc6af05657d01b48d94da0afb37d0373`。此项不是整个thread/list、enabled stdio或Node进程退出；官方method `model/list` 本已透传，没有为它另造不可消费helper。
+
+| exact路径 | 责任／不变边界 |
+| --- | --- |
+| `lib/server/codex-app-server-stdio-proxy-state.js` | 只替换buildStateThreadListResponse内部；原own-id/method/cursor预选与effective requestContext保留，其他export不改 |
+| `lib/server/codex-state-native-reader.js` | 新完整response operation的capability／DTO／I/O；旧page/hidden仍原端口，cache区分显式模式与能力 |
+| `cmd/aih-server/codex_state_page.go` | 原早派端口内新增 `--thread-list-response`；原page/hidden不收紧 |
+| `internal/runtime/codexstatepage/response.go` | 复用ReadPage；公共cursor层→native层分开，逐字段投影，返回完整id/result/error |
+
+现实际 `stdio-proxy.js:614–630` enabled stdin caller已消费该目标函数，命中后输出并return；非AIH cursor／notification／别method均原owner预选，选中失败不能发给upstream或恢复旧Node mapper。首屏merge/aggregate、title/goal、shared builder其他caller、M/default/env、R5 run.go、FrameTransport/协议/Terminal与所有writer不改。
+
+### 冻结来源与真实行为
+
+- base `acabe8181a924ef951f66fa333bada4eff928147`，archive SHA `2b1d1c143f56364a8e8e7f71ae8649b16292306d5ccbb666ceed2ab7b87b0a15` + own4，manifest-2 SHA `42391439cffb01538ddb9b4f456fc08718e7a5c40a9df552b1c7c96f12664665`；最终私有server SHA `0356b0e10dc27f847a850d78ac9f1e1a791c93be2df3ced3ba31d96192eb0225`。无共享未提交树整编译。
+- 对真实vendor `state_5.sqlite` 以mode=ro在线backup，639threads，私有snapshot SHA `f457078cf3b192e0dcecdf8d327f200bbe00177e375f71900bdf34ef84dd0a0a`，最终DB字节未变。首屏既有ReadPage生成真实cursor，未造账号或state；参数、ID、token文本操作均有此来源。
+- 最终30项原Node／新operation逐字节一致，privateStandardInstalledEqual=true。含2项非空、真实历史结束空页、空scope guard、typed number/0/string/空string/null ID、requestContext优先、notification/native cursor/othermethod不消费、public-invalid `-32602` 与native拒绝 `-32000`、额外base64 sextet、numeric grammar及limit1024.5实际187条；1025仍budget error。较早no-home因resolver回宿主实际非空，不当空home实证；最终直接显式emptyhome0项另记。
+- 原2reviewer发现limit先上限后floor、JS Number/base64差异、driver time.Time／非finite值、未知zone误零偏移；真实3红复现后窄修并30绿。time.Time先RFC3339Nano，未知／无法可靠日期显错，未写新parser或修改vendor；实际639行4个时间列全integer，不把源码日期修正称实机全Date.parse兼容。两reviewer最终四hash no-blocking，均为只读源码/结果复核，不声称业务独立重跑。
+- **真实当前enabled stdio主入口**通过私有HOME/config副本和真实私有SQLite：官方initialize／model-list响应、本地continuation2项均实回；trace stateDbPage=true。最终enabled完整response再次与原Node函数和无binary override私有标准安装逐byte比较相同。不是仅跑raw projection。无turn/start、认证生成或记账；官方CLI还自行探测plugins git网络，不冒绝对无网络。
+- final EOF exit0；stderr377bytes有hash，不写0。亲采postEOF：Node父／官方CLI／Go notification均消失，3个官方plugins git后代在0.2s检查仍在，因此 `final-enabled-proxy-result.json` **raw pass=false保留**。之后cleanup核对同PID均已自然退出，未发kill、不触共享PID；响应策略通过与即时whole-tree cleanup未通过分列。
+- 最终8严格DTO拒绝均exit1/stdout0；空stdin EOF同样拒绝。stdin开放时SIGTERM实测1ms/PIDGone，输入超时15.02s/PIDGone；空PATH/私有HOME直接Go返回完整2项/stderr0，直接明确emptyhome返回0／null cursor。这里的Node-off只属于Go operation，outer bootstrap仍Node。
+- 真实worker查询过快，ps未捕获SIGSTOP目标；私有WAL DB的BEGIN EXCLUSIVE未阻读，因此**没有hard-stopped-worker／hardkill运行证明**。不造worker脚本或fixture来填绿，不据此称查询级即时取消。
+- native build、focused vet、两JS syntax/diff-check通过；Linux amd64和Windows amd64只有编译。未新增或执行测试用例/mock/fixture/operational main，未迁库。
+- source单次临时index、显式4paths提交；前cachedstat／后showstat exact4(+513/-18)。own4逐blob==HEAD后本人同步，outside6142entries不变，104peer cached保留。
+
+### 发布／兼容／取消边界
+
+新capability为 `aih-codex-thread-list-response-v1`，不拿旧state-page-v1 cache充新能力。默认允许standard→同目录companion，显式override只probe自身；能力／执行失败是稳定-32000，无Node旧row mapper fallback。实际共享server SHA `9916c222…` 的旧page cap exit0、新response cap exit1；真实旧构件/缺Go矩阵均-32000，新私有构件2条，旧page调用仍正常。本owner未替换shared/companion、未重启或改stamp，不能把source/push/privateinstalled当loaded。
+
+资源门禁：外层严格256KiB stdin、32MiB编码输出（含换行）、15s context；helper内错误完整typed-id envelope且低敏固定code，Row内__stateDbPath不进入wire。adapter每个候选probe5s、query16s硬截止，默认多个候选会叠加，不能称整调用≤16s；同步spawn阻塞event loop，不等于单RPC cancel/reconnect即时传播。stdin取消只是已测边界，stdout Close/未捕获hardkill不当更强承诺。
+
+时间/Unicode边界：正常vendor numeric/列已验，ISO/RFC3339和明确数值时区有源码支持；不支持的文本日期报错，包括字母时区RFC1123，不宣称完整Date.parse兼容；Node解析前已丢的number精度不可恢复。strict私有DTO拒绝非法Unicode/额外字段，不是任意wire文本无条件等价。
+
+本节点只退本continuation响应策略的Node计算；首屏merge、其他metadata/rollout/writer、default/resume/TUI与enabled整体transport还open。下一actualcaller继续先向原监督报准确路径，不因本slice交付关闭W0–W6。原JSON新增 `cliEnabledStateContinuationResponseGoDelegation` 保存最终hash与16raw digests，pointer `/tmp/aih-r2-list-scope-latest-20261118.txt`；完整线程/配置正文只在私有证据，不入仓库。

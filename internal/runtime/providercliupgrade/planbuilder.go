@@ -57,6 +57,11 @@ func BuildPinnedPlans(input PlanBuildInput) ([]InstallPlan, string) {
 
 	channel := strings.TrimSpace(input.Channel)
 	switch channel {
+	case ChannelAIHManaged:
+		// Executed by RealDeps through the shared managed runtime transaction,
+		// never by an unscoped global npm command.
+		return []InstallPlan{{ID: "codex_managed_pin_" + version, Label: "准备 Codex " + version,
+			Command: "aih-managed-codex", Args: []string{version}, Timeout: defaultNpmInstallTimeout}}, ""
 	case ChannelStandaloneRelease:
 		plan, ok := buildStandalonePinnedPlan(version, goos, input.InstallDir, input.BaseEnv)
 		if !ok {

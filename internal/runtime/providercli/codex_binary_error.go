@@ -1,6 +1,7 @@
 package providercli
 
 const (
+	CodeCodexManagedRuntimeInvalid = "codex_managed_runtime_invalid"
 	CodeCodexOfficialCLIMissing    = "codex_official_cli_missing"
 	CodeCodexBinaryOverrideInvalid = "codex_binary_override_invalid"
 	CodeCodexHookUntrusted         = "codex_hook_untrusted"
@@ -9,7 +10,7 @@ const (
 )
 
 // CodexBinaryError keeps availability separate from unsafe or explicit selections.
-// Only codex_official_cli_missing offers install_official_cli to installer/UI callers.
+// Missing official CLI and invalid managed runtime have distinct recovery actions.
 // Resolution never installs a CLI or replaces an existing wrapper.
 type CodexBinaryError struct {
 	Code    string `json:"code"`
@@ -31,13 +32,13 @@ func (err *CodexBinaryError) Unwrap() error {
 }
 
 func codexOfficialCLIMissing(legacyHookPath string) error {
-	message := "未找到可用的官方 Codex CLI"
+	message := "Codex 尚未准备完成"
 	if legacyHookPath != "" {
-		message = "检测到旧 Codex Node hook，但没有可用的官方上游 CLI"
+		message = "Codex 旧安装需要修复"
 	}
 	return &CodexBinaryError{
 		Code:    CodeCodexOfficialCLIMissing,
-		Message: message + "；请打开工具箱 → 应用管理 → Codex CLI，点击安装并确认（保留现有配置及旧 hook）",
+		Message: message + "；请打开工具箱 → 应用管理 → Codex CLI，点击安装并修复（保留配置及旧版本）",
 		Path:    legacyHookPath,
 		Action:  "install_official_cli",
 		cause:   ErrProviderBinaryNotFound,

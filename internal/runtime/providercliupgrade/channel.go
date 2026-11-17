@@ -11,6 +11,7 @@ import (
 
 const (
 	ChannelStandaloneRelease = "standalone_release"
+	ChannelAIHManaged        = "aih_managed"
 	ChannelNpmGlobal         = "npm_global"
 	ChannelVendorSelfUpdate  = "vendor_selfupdate"
 	ChannelHomebrew          = "homebrew"
@@ -20,10 +21,10 @@ const (
 )
 
 var (
-	quotedPathRe          = regexp.MustCompile(`['"]([^'"\n]+)['"]`)
-	cmdUpstreamAssignRe   = regexp.MustCompile(`(?im)^\s*set\s+"` + codexhooks.WrapperUpstreamVar + `=([^"\n]+)"`)
-	npmCmdShimRe          = regexp.MustCompile(`(?i)"%~?dp0%[\\/]*([^"\n]*node_modules[\\/][^"\n]+)"`)
-	cmdOrBatExtRe         = regexp.MustCompile(`(?i)\.(?:cmd|bat)$`)
+	quotedPathRe        = regexp.MustCompile(`['"]([^'"\n]+)['"]`)
+	cmdUpstreamAssignRe = regexp.MustCompile(`(?im)^\s*set\s+"` + codexhooks.WrapperUpstreamVar + `=([^"\n]+)"`)
+	npmCmdShimRe        = regexp.MustCompile(`(?i)"%~?dp0%[\\/]*([^"\n]*node_modules[\\/][^"\n]+)"`)
+	cmdOrBatExtRe       = regexp.MustCompile(`(?i)\.(?:cmd|bat)$`)
 )
 
 // ChannelCapabilities 描述安装渠道支持的能力边界。
@@ -34,6 +35,7 @@ type ChannelCapabilities struct {
 }
 
 var baseChannelCapabilities = map[string]ChannelCapabilities{
+	ChannelAIHManaged:        {Pinnable: true, RollbackReusesLocalRelease: true, InstallsSideBySide: true},
 	ChannelStandaloneRelease: {Pinnable: true, RollbackReusesLocalRelease: true, InstallsSideBySide: true},
 	ChannelNpmGlobal:         {Pinnable: true, RollbackReusesLocalRelease: false, InstallsSideBySide: false},
 	ChannelVendorSelfUpdate:  {Pinnable: false, RollbackReusesLocalRelease: false, InstallsSideBySide: false},

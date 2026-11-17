@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 )
 
 const (
@@ -634,6 +636,21 @@ func (svc *CLIHookService) ResolvePaths(opts CLIHookEnsureOptions) CLIHookPaths 
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
+	// Managed generations stay immutable; a separate launcher carries the
+	// compatibility hook. Never snapshot/overwrite the selected native payload.
+	if managed, receipt, err := codexruntime.Current(svc.hostHomeDir); err == nil && receipt != nil && receipt.Disabled {
+		return CLIHookPaths{Reason: "managed_runtime_disabled"}
+	} else if err == nil && managed != "" {
+		name := "codex"
+		if svc.platform == "windows" {
+			name = "codex.cmd"
+		}
+		launcher := filepath.Join(codexruntime.Root(svc.hostHomeDir), "bin", name)
+		return CLIHookPaths{TargetBinaryPath: launcher, ResolvedTargetBinaryPath: launcher,
+			UpstreamBinaryPath: managed, Reason: "managed_external_launcher"}
+	} else if err != nil {
+		return CLIHookPaths{Reason: "managed_runtime_invalid"}
+	}
 	targetBinaryPath := svc.resolveCodexBinary(opts.Background)
 	if standalone := svc.resolveStandaloneTarget(targetBinaryPath); standalone != "" {
 		targetBinaryPath = standalone
@@ -880,6 +897,19 @@ func (svc *CLIHookService) writeState(enabled bool, paths CLIHookPaths, reason s
 }
 
 func (svc *CLIHookService) inspectOrInstallTarget(paths CLIHookPaths) CLIHookResult {
+	if paths.Reason == "managed_external_launcher" {
+		wrapper := svc.BuildWrapperScriptForTarget(paths.TargetBinaryPath, paths.UpstreamBinaryPath)
+		changed := readTextFileSafe(paths.TargetBinaryPath) != wrapper
+		if changed {
+			if err := writeWrapperFile(paths.TargetBinaryPath, wrapper); err != nil {
+				return CLIHookResult{Supported: true, Reason: "managed_launcher_write_failed"}
+			}
+		}
+		aliases := svc.RepairManagedAliases(paths.TargetBinaryPath)
+		return CLIHookResult{OK: true, Supported: true, Enabled: true, Healthy: true, Repaired: changed || len(aliases) > 0,
+			TargetBinaryPath: paths.TargetBinaryPath, ResolvedTargetBinaryPath: paths.TargetBinaryPath,
+			UpstreamBinaryPath: paths.UpstreamBinaryPath, RepairedAliases: aliases}
+	}
 	if paths.TargetBinaryPath == "" || paths.Reason == "desktop_bundle_binary" {
 		reason := paths.Reason
 		if reason == "" {

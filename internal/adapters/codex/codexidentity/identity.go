@@ -66,6 +66,9 @@ func probeCommands() []string {
 	if explicit := strings.TrimSpace(os.Getenv("AIH_CODEX_BINARY")); explicit != "" {
 		commands = append(commands, explicit)
 	}
+	if hint := strings.TrimSpace(os.Getenv("AIH_CODEX_DISCOVERED_BINARY")); filepath.IsAbs(hint) {
+		commands = append(commands, hint)
+	}
 	commands = append(commands, "codex")
 
 	// A supervised Linux service often has a deliberately small PATH.  Codex's

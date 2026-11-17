@@ -843,7 +843,7 @@ func (m *Manager) buildManagedApps(ctx context.Context, opts Options) ListResult
 			if resolveErr != nil {
 				availabilityError = resolveErr.Error()
 				var typed *providercli.CodexBinaryError
-				installAvailable = errors.As(resolveErr, &typed) && typed.Code == providercli.CodeCodexOfficialCLIMissing
+				installAvailable = errors.As(resolveErr, &typed) && (typed.Code == providercli.CodeCodexOfficialCLIMissing || typed.Code == providercli.CodeCodexManagedRuntimeInvalid)
 			}
 		}
 		installed := cliPath != ""

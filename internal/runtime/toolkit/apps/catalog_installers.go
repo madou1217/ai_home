@@ -192,14 +192,9 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 			Pkg:              "@openai/codex",
 			BinaryNames:      []string{"codex"},
 			CleanupHomeFiles: []string{".local/bin/codex"},
+			// One managed channel on every platform: never mutate Homebrew or
+			// the user's original install while repairing an AIH runtime.
 			ResolveInstallPlans: func(opts Options) []LifecyclePlan {
-				p := resolvePlatform(opts)
-				if p == platformMacOS {
-					return filterValidPlans([]LifecyclePlan{
-						buildCaskPlan("codex", "Homebrew 安装 Codex CLI"),
-						buildNpmPlan("@openai/codex", opts),
-					})
-				}
 				return filterValidPlans([]LifecyclePlan{buildNpmPlan("@openai/codex", opts)})
 			},
 		},

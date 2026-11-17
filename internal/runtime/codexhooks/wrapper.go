@@ -602,19 +602,44 @@ func isRegularFile(filePath string) bool {
 
 // copyExecutableSnapshot 原子复制可执行文件快照，保持原权限位。
 func copyExecutableSnapshot(sourcePath string, destinationPath string) (os.FileInfo, error) {
-	stat, err := os.Stat(sourcePath)
+	source, err := os.Open(sourcePath)
 	if err != nil {
 		return nil, err
 	}
-	content, err := os.ReadFile(sourcePath)
+	defer source.Close()
+	stat, err := source.Stat()
 	if err != nil {
+		return nil, err
+	}
+	if !stat.Mode().IsRegular() {
+		return nil, errors.New("upstream snapshot source is not a regular file")
+	}
+	if err = os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(destinationPath), "."+filepath.Base(destinationPath)+".aih-*.tmp")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	if _, err = io.Copy(tmp, source); err != nil {
 		return nil, err
 	}
 	perm := stat.Mode().Perm()
 	if perm == 0 {
 		perm = 0o755
 	}
-	if err := atomicWriteFile(destinationPath, content, perm); err != nil {
+	if err = tmp.Chmod(perm); err != nil {
+		return nil, err
+	}
+	if err = tmp.Sync(); err != nil {
+		return nil, err
+	}
+	if err = tmp.Close(); err != nil {
+		return nil, err
+	}
+	if err = os.Rename(tmp.Name(), destinationPath); err != nil {
 		return nil, err
 	}
 	return stat, nil

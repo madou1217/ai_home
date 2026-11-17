@@ -3,6 +3,7 @@ package providercliupgrade
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
+	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
 // ListUpgradeCandidateProviders 返回声明了 npm CLI 包的候选 provider 列表（有包名才能钉版本升级/回滚）。
@@ -293,12 +296,31 @@ func (d *RealDeps) CheckQuiescence(_ context.Context, provider string) (Quiescen
 	return CheckProviderQuiescence(provider, d.aiHomeDir, d.goos, time.Now().UnixMilli(), nil), nil
 }
 
-func (d *RealDeps) RunPlans(ctx context.Context, plans []InstallPlan, _ string, _ string, _ string) PlanResult {
+func (d *RealDeps) RunPlans(ctx context.Context, plans []InstallPlan, provider string, version string, phase string) PlanResult {
+	if provider == "codex" {
+		managedPlan := false
+		for _, plan := range plans {
+			if plan.Command == "aih-managed-codex" {
+				managedPlan = true
+			}
+		}
+		if managedPlan || d.inspectChannel(ctx, provider).Channel == ChannelAIHManaged {
+			return d.runCodexRuntime(ctx, version, phase)
+		}
+	}
 	return ExecuteInstallPlans(ctx, plans, d.goos, d.baseEnv)
 }
 
 func (d *RealDeps) inspectChannel(ctx context.Context, provider string) ChannelDetection {
 	resolvedPath := d.resolveCLIPath(provider)
+	if provider == "codex" && resolvedPath != "" {
+		managed, _, err := codexruntime.Current(d.hostHomeDir)
+		if err == nil && managed == resolvedPath {
+			return ChannelDetection{Channel: ChannelAIHManaged, ResolvedPath: resolvedPath, OwnerPath: resolvedPath,
+				PackageName: ProviderPackageName(d.catalog, provider), InstallDir: codexruntime.Root(d.hostHomeDir),
+				Pinnable: true, RollbackReusesLocalRelease: true, Evidence: []string{"verified_aih_managed_selection"}}
+		}
+	}
 	roots := d.getRoots(ctx)
 	pkg := ProviderPackageName(d.catalog, provider)
 	detected := DetectCLIChannel(ChannelDetectInput{
@@ -328,6 +350,23 @@ func (d *RealDeps) getRoots(ctx context.Context) InstallRoots {
 }
 
 func (d *RealDeps) resolveCLIPath(provider string) string {
+	if provider == "codex" {
+		resolved, err := providercli.ResolveCodexBinaryWithOptions(providercli.CodexBinaryOptions{
+			HostHomeDir: d.hostHomeDir,
+			LookupEnv: func(name string) (string, bool) {
+				for key, value := range d.baseEnv {
+					if key == name || (d.goos == "windows" && strings.EqualFold(key, name)) {
+						return value, true
+					}
+				}
+				return os.LookupEnv(name)
+			},
+		})
+		if err != nil {
+			return ""
+		}
+		return resolved
+	}
 	binName := ProviderBinaryName(d.catalog, provider)
 	if d.resolveCommand != nil {
 		return strings.TrimSpace(d.resolveCommand(binName))

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 )
@@ -483,6 +484,14 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 		return
 	}
 
+	if target.Provider == "codex" && target.Kind == "cli" && target.Action == "uninstall" {
+		if _, receipt, err := codexruntime.Current(ResolveHostHome(opts)); receipt != nil || err != nil {
+			attempt, result, ok := executeCodexRuntimeUninstall(opts)
+			m.appendAttempt(jobID, attempt, 85, attempt.Label)
+			succeeded, finalResult, finalErr = ok, result, attempt.Error
+			return
+		}
+	}
 	if target.Kind == "cli" && target.Action != "uninstall" && spec.CLI != nil {
 		if gateAttempt, gateErr := m.checkCLIMinNodeVersion(ctx, spec.CLI, opts); gateAttempt != nil {
 			m.appendAttempt(jobID, *gateAttempt, 0, gateAttempt.Label)
@@ -542,6 +551,9 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 }
 
 func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarget, plan LifecyclePlan, opts Options) (AttemptView, *JobResultView, bool) {
+	if target.Provider == "codex" && target.Kind == "cli" && target.Action != "uninstall" {
+		return executeCodexRuntimePlan(ctx, target, plan, opts)
+	}
 	timeout := plan.Timeout
 	if timeout <= 0 {
 		timeout = defaultPlanExecTimeout

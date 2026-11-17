@@ -37,6 +37,7 @@ export interface ProviderCliUpgradeRowPresentation {
 
 const CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   standalone_release: '官方版本化安装',
+  aih_managed: 'AIH 安全托管',
   npm_global: 'npm 全局',
   vendor_selfupdate: '厂商自更新',
   homebrew: 'Homebrew',

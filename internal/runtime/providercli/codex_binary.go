@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 )
 
 // CodexBinaryOptions adapts host discovery to the shared safe resolver.
@@ -36,6 +38,9 @@ func ResolveCodexBinaryWithOptions(options CodexBinaryOptions) (string, error) {
 }
 
 func (resolver binaryResolver) resolveCodexBinary(binary, hostHomeDir string) (string, error) {
+	if hostHomeDir == "" {
+		hostHomeDir, _ = resolver.lookupEnv("AIH_HOST_HOME")
+	}
 	if override, hasOverride := resolver.lookupEnv("AIH_CODEX_BINARY"); hasOverride {
 		var err error
 		if override == "" || override != strings.TrimSpace(override) {
@@ -69,6 +74,17 @@ func (resolver binaryResolver) resolveCodexBinary(binary, hostHomeDir string) (s
 		return resolveCodexHook(resolved)
 	}
 
+	// A successfully activated managed install is authoritative. Legacy PATH
+	// wrappers must not shadow a newer version selected by application management.
+	if managed, receipt, err := codexruntime.Current(hostHomeDir); err != nil {
+		return "", &CodexBinaryError{Code: CodeCodexManagedRuntimeInvalid, Message: "Codex 运行时需要修复；请在应用管理中点击安装并修复（保留配置及旧版本）",
+			Path: codexruntime.Root(hostHomeDir), Action: "repair_managed_runtime", cause: err}
+	} else if receipt != nil && receipt.Disabled {
+		return "", codexOfficialCLIMissing("")
+	} else if managed != "" {
+		return managed, nil
+	}
+
 	var legacyHookPath string
 	seen := make(map[string]bool)
 	tryResolved := func(resolved string) (string, error) {
@@ -90,6 +106,15 @@ func (resolver binaryResolver) resolveCodexBinary(binary, hostHomeDir string) (s
 			return "", nil
 		}
 		return target, err
+	}
+	// Node may see a login-shell install that is absent from a service PATH.
+	// This is a fallback discovery hint, never an explicit user selection.
+	if hint, ok := resolver.lookupEnv("AIH_CODEX_DISCOVERED_BINARY"); ok && filepath.IsAbs(hint) {
+		if resolved, hintErr := resolver.lookPath(hint); hintErr == nil {
+			if target, resolveErr := tryResolved(resolved); target != "" || resolveErr != nil {
+				return target, resolveErr
+			}
+		}
 	}
 	resolved, err := resolver.lookPath(binary)
 	if err == nil {

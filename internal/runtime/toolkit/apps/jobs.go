@@ -550,7 +550,7 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 	plan = withUsableJQScript(ctx, plan, opts)
 	execEnv := mergePlanEnv(opts.Env, plan.Env)
 	execEnv = withUsableJQPath(ctx, execEnv, opts)
-	res := (&opts).exec().Run(ctx, plan.Command, plan.Args, environment.ExecOptions{
+	res := runCodexNPMPlan(ctx, plan, opts, environment.ExecOptions{
 		Timeout: timeout,
 		Env:     execEnv,
 	})
@@ -561,7 +561,7 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 			plan = fallback
 			execEnv = mergePlanEnv(opts.Env, plan.Env)
 			execEnv = withUsableJQPath(ctx, execEnv, opts)
-			res = (&opts).exec().Run(ctx, plan.Command, plan.Args, environment.ExecOptions{
+			res = runCodexNPMPlan(ctx, plan, opts, environment.ExecOptions{
 				Timeout: timeout,
 				Env:     execEnv,
 			})

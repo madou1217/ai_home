@@ -38,6 +38,9 @@ func resolveOfficialCodex(opts Options) (string, error) {
 					}
 					return "", exec.ErrNotFound
 				}
+				if !dirExists(filepath.Dir(name)) {
+					return "", exec.ErrNotFound
+				}
 				if found := findExecutableInDir(resolvePlatform(opts), filepath.Dir(name), []string{filepath.Base(name)}); found != "" {
 					return found, nil
 				}
@@ -48,6 +51,10 @@ func resolveOfficialCodex(opts Options) (string, error) {
 			}
 			path, _ := lookup("PATH")
 			for _, dir := range filepath.SplitList(path) {
+				// Unlike CollectPathEntries, PATH entries must be directories.
+				if !dirExists(dir) {
+					continue
+				}
 				if found := findExecutableInDir(resolvePlatform(opts), dir, []string{name}); found != "" {
 					if !filepath.IsAbs(dir) {
 						return "", exec.ErrDot

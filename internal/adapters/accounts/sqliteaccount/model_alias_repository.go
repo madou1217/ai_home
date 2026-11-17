@@ -2,6 +2,7 @@ package sqliteaccount
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/madou1217/ai_home/application/modelalias"
 )
@@ -15,7 +16,28 @@ func (store *Store) Load(ctx context.Context) ([]modelalias.Record, int64, error
 	if err := store.migrateLegacyModelAliases(ctx); err != nil {
 		return nil, 0, err
 	}
-	return store.ListModelAliases(ctx)
+	records, generation, err := store.ListModelAliases(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Store.Restore's historical normalization discards an invalid collection.
+	// Validate the canonical read here so corruption cannot masquerade as empty.
+	if len(records) > modelalias.MaxRecords {
+		return nil, 0, fmt.Errorf("model_alias_canonical_invalid: %w", modelalias.ErrInvalidProjection)
+	}
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		if !record.IsValid() {
+			return nil, 0, fmt.Errorf("model_alias_canonical_invalid: %w", modelalias.ErrInvalidAlias)
+		}
+		if record.ID != "" {
+			if _, duplicate := seen[record.ID]; duplicate {
+				return nil, 0, fmt.Errorf("model_alias_canonical_invalid: %w", modelalias.ErrInvalidProjection)
+			}
+			seen[record.ID] = struct{}{}
+		}
+	}
+	return records, generation, nil
 }
 
 // Save 实现 modelalias.Repository。

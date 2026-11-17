@@ -115,3 +115,29 @@ application/modelalias中“Node唯一owner”“空表generation=0”等旧注�
 - commit：本文写入时待本人显式pathspec checkpoint；提交前后核对cached范围/提交stat，他人原索引不动，真正提交后再单独回SHA。
 - push：本slice未执行。
 - Node退役：只停这一个legacy seed caller的读/PUT；其他Node caller、wildcard数据来源、R4其余策略/凭据/OAuth未退。**不是整个R4Node-off，也不是可部署完成。**
+
+## 同 path 后续修复：canonical 损坏集合不能被 Restore 吞成空
+
+首个工程 checkpoint `a74390105` 于11:47:45提交，四生产路径+本文件，309+/86-；未push/共享加载。提交后相邻实测发现：真实副本中仅损坏原 canonical alias字段为空，SQL读取成功，但既有 `Store.Restore → normalizeRecords` 将整份无效集合吞成 nil，表现为 exit0/alias0/gen41。失败证据 `24-invalid-canonical-record-discovery.json` 保留，未将其宣称已通过。
+
+在已批准 `model_alias_repository.go` 的 `Load` 内增加最小读回校验：MaxRecords、Record.IsValid、非空 ID重复，返回 `model_alias_canonical_invalid` 并保留底层错误类型，成功则返回原 records/generation。未写 application/modelalias，空 ID和合法空集合/正代次tombstone仍按原contract处理。**不是全部canonical完整性校验**；底层display_models_json的既有容错等未改，不外推所有坏数据必拒绝。
+
+后续构件固定三Go覆盖归档，生产CLI最终SHA：
+
+```text
+5830992ac717009b45f0eac19439addd5f586f87d5248c2355f114a5b957879d
+```
+
+最终私有operational binary SHA：
+
+```text
+190a0e20eaf490d6c05b32db344734b3fe229b2e666f581529c06bc5f2f21032
+```
+
+最终构件重跑：损坏canonical读回现在exit1/明确canonical-invalid，不写alias表；production host与实际CLI均在serve/listen前显式失败。正常canonical仍alias1/display10/gen41；已清空仍alias0/gen42；确定空首stamp仍gen1；legacy坏列/wildcard首迁缺源仍明确错误。实际production CLI PID4212和strict production host PID4220各HTTP200/display10/exit0，两种证据等级仍分列。build/vet/Node语法通过，未新增测试。
+
+原reviewer于11:51对该repo 23+/1-独立只读复核，`NO BLOCKING FINDINGS`（`pm-1e6085be`），仅代码边界，不背书runtime/全R4。使用新的本人repo+本文件显式pathspec followup提交，不amend先前checkpoint；发布阻塞、真实非wildcard样本缺失和wildcard来源缺口全部保留。
+
+### 本次私有敏感资源清理回执
+
+监督 `pm-e5c6e386` 单独批准本次 R4 root（非套用 R5 许可）。最终复跑后重建清单，旧58项清单保留，逐项重新核对当时56个敏感文件均realpath在本人root、无symlink祖先；先保存完整低敏矩阵、原库alias三表HMAC/凭据变化未归因边界、快照与各副本完整SHA、构件/源码digest、原panic脱敏stack与纠正/新构件、锁与进程证据。`lsof +D` 无打开句柄、私有Go进程均退出后，于11:52逐项删除56个自有DB/sidecar/原始私有日志/HMAC key；summary、构件、来源源码、operational source与私有锁inode保留，根未删，不碰共享资源。精确清单和回执分别保留于 `sensitive-final-cleanup-manifest.json`、`sensitive-cleanup-receipt.json`。不宣称安全擦除/APFS快照销毁。

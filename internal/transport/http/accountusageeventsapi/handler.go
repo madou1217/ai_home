@@ -84,6 +84,19 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		}
 		after = parsed
 	}
+	projection := ""
+	if source, ok := handler.source.(interface{ UsageProjectionMode() string }); ok {
+		projection = source.UsageProjectionMode()
+	}
+	// Refuse old persistent Node consumers before exposing any event. This is
+	// an executable pair gate: an old Node process must not create boot-key
+	// mirrors for facts already projected by this Go writer.
+	if projection != "" && request.URL.Query().Get("usage_projection") != projection {
+		writeJSON(response, http.StatusConflict, map[string]errorView{"error": {
+			Code: "usage_projection_client_required", Message: "用量事件需要配套的只通知客户端",
+		}})
+		return
+	}
 	events, latest, truncated := handler.source.UsageEventsSince(after)
 	views := make([]eventView, 0, len(events))
 	for _, event := range events {
@@ -101,10 +114,11 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		})
 	}
 	writeJSON(response, http.StatusOK, map[string]any{
-		"boot_id":    handler.source.UsageBootID(),
-		"latest_seq": latest,
-		"truncated":  truncated,
-		"data":       views,
+		"usage_projection": projection,
+		"boot_id":          handler.source.UsageBootID(),
+		"latest_seq":       latest,
+		"truncated":        truncated,
+		"data":             views,
 	})
 }
 

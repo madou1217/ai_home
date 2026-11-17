@@ -2,6 +2,8 @@ package sqliteaccount
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,13 +16,40 @@ import (
 // AppendUsageRecord durably appends one successful inference fact.
 // The account FK makes stale or unknown runtime identities fail closed.
 func (store *Store) AppendUsageRecord(ctx context.Context, record usageledger.Record) error {
+	return store.appendUsageRecord(ctx, record, nil)
+}
+
+// AppendUsageRecordWithProjection commits a new fact and its read projection
+// together. The projection must only use the supplied transaction; it must not
+// start another writer or commit it. Existing facts are never backfilled here.
+func (store *Store) AppendUsageRecordWithProjection(
+	ctx context.Context,
+	record usageledger.Record,
+	project func(context.Context, *sql.Tx, int64) error,
+) error {
+	if project == nil {
+		return usageledger.ErrInvalidRecord
+	}
+	return store.appendUsageRecord(ctx, record, project)
+}
+
+func (store *Store) appendUsageRecord(
+	ctx context.Context,
+	record usageledger.Record,
+	project func(context.Context, *sql.Tx, int64) error,
+) error {
 	if store == nil || store.db == nil || ctx == nil || !record.IsValid() {
 		return usageledger.ErrInvalidRecord
 	}
 	store.routingWrites.Lock()
 	defer store.routingWrites.Unlock()
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("usage_ledger_begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	usage := record.Usage()
-	_, err := store.db.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO usage_ledger (
 			account_ref, provider_id, model_id, session_id, occurred_at_ms,
 			input_tokens, output_tokens, cached_input_tokens,
@@ -32,10 +61,25 @@ func (store *Store) AppendUsageRecord(ctx context.Context, record usageledger.Re
 		usage.TotalTokens(),
 	)
 	if err != nil {
-		if isConstraintError(err) {
-			return fmt.Errorf("写入 token 用量事实失败: %w", err)
-		}
 		return fmt.Errorf("写入 token 用量事实失败: %w", err)
+	}
+	if project != nil {
+		id, err := result.LastInsertId()
+		if err != nil || id <= 0 {
+			return errors.New("usage_ledger_identity_invalid")
+		}
+		// This identifies a committed ledger fact, not an upstream attempt.
+		// A repeated append is a new fact; do not guess identity from tokens/time.
+		if _, err := tx.ExecContext(ctx, `UPDATE usage_ledger SET source_key = ? WHERE usage_id = ?`,
+			fmt.Sprintf("go-ledger:v1:%d", id), id); err != nil {
+			return fmt.Errorf("usage_ledger_identity_write: %w", err)
+		}
+		if err := project(ctx, tx, id); err != nil {
+			return fmt.Errorf("usage_ledger_projection: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("usage_ledger_commit: %w", err)
 	}
 	return nil
 }

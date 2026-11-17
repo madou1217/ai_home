@@ -75,7 +75,9 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 	err := runtime.serverAccountRuntime.RecordSuccess(ctx, route, success)
 	runtime.outcomes.Record(route.AccountRef(), accountoutcomes.OutcomeSuccess)
 	if usage, ok := success.Usage(); ok {
-		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
+		if runtime.UsageProjectionMode() == "" {
+			runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
+		}
 		if runtime.usageLedger != nil && runtime.accounts != nil {
 			record, recordErr := buildUsageLedgerRecord(ctx, runtime.accounts, route, success)
 			if recordErr == nil {
@@ -83,6 +85,9 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 			}
 			if recordErr != nil && runtime.errorLog != nil {
 				runtime.errorLog.Printf("写入 Go token 用量账本失败（本次推理不受影响）: %v", recordErr)
+			}
+			if recordErr == nil && runtime.UsageProjectionMode() != "" {
+				runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
 			}
 		}
 	}
@@ -102,7 +107,9 @@ func (runtime outcomeRecordingRuntime) RecordAttemptUsage(
 		return nil
 	}
 	at := time.Now()
-	runtime.usage.Append(route.AccountRef(), route.ModelID().String(), at, usage)
+	if runtime.UsageProjectionMode() == "" {
+		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), at, usage)
+	}
 	if runtime.usageLedger == nil || runtime.accounts == nil {
 		return nil
 	}
@@ -119,6 +126,9 @@ func (runtime outcomeRecordingRuntime) RecordAttemptUsage(
 	}
 	if err = runtime.usageLedger.AppendUsageRecord(ctx, record); err != nil && runtime.errorLog != nil {
 		runtime.errorLog.Printf("写入 Go token 用量账本失败（本次推理不受影响）: %v", err)
+	}
+	if err == nil && runtime.UsageProjectionMode() != "" {
+		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), at, usage)
 	}
 	return err
 }
@@ -150,7 +160,9 @@ func (runtime outcomeRecordingRuntime) RecordImageUsage(
 	if err != nil || !usage.IsValid() || usage.TotalTokens() == 0 {
 		return
 	}
-	runtime.usage.Append(ref, model, at, usage)
+	if runtime.UsageProjectionMode() == "" {
+		runtime.usage.Append(ref, model, at, usage)
+	}
 	if runtime.usageLedger == nil || runtime.accounts == nil {
 		return
 	}
@@ -168,6 +180,9 @@ func (runtime outcomeRecordingRuntime) RecordImageUsage(
 	}
 	if recordErr = runtime.usageLedger.AppendUsageRecord(ctx, record); recordErr != nil && runtime.errorLog != nil {
 		runtime.errorLog.Printf("写入生图 token 用量账本失败（本次请求不受影响）: %v", recordErr)
+	}
+	if recordErr == nil && runtime.UsageProjectionMode() != "" {
+		runtime.usage.Append(ref, model, at, usage)
 	}
 }
 

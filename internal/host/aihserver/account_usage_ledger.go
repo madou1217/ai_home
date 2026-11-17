@@ -47,3 +47,13 @@ func buildUsageLedgerRecord(
 		Usage:      usage,
 	})
 }
+
+// UsageProjectionMode is advertised only by a runtime bound to the atomic Go
+// writer. Custom/older runtimes cannot accidentally opt Node into notification
+// mode while leaving persistence dependent on that notification ring.
+func (runtime outcomeRecordingRuntime) UsageProjectionMode() string {
+	if source, ok := runtime.usageLedger.(interface{ UsageProjectionMode() string }); ok {
+		return source.UsageProjectionMode()
+	}
+	return ""
+}

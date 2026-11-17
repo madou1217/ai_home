@@ -83,6 +83,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -321,12 +322,35 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号结果记录器失败: %w", err)
 	}
+	// Initialize the existing management projection before any inference handler
+	// receives the fact writer. Both tables share aih.db; every new fact below
+	// is projected in the account writer's own transaction, not a Node poller.
+	usageDBPath, err := sqliteaccount.DatabasePath(options.AIHomeDir)
+	if err != nil {
+		_ = outcomeRecorder.Close()
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, err
+	}
+	usageProjection, err := managementops.NewUsageStore(ctx, usageDBPath, catalogProviderIDs(catalog), time.Now)
+	if err != nil {
+		_ = outcomeRecorder.Close()
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("打开 Go 用量事实投影失败: %w", err)
+	}
+	projectionTransferred := false
+	defer func() {
+		if !projectionTransferred {
+			_ = usageProjection.Close()
+		}
+	}()
 	// 所有运行态记账入口都经过装饰器，为账号页状态条计数，见 account_outcomes.go。
 	accountRuntime := outcomeRecordingRuntime{
 		serverAccountRuntime:       inMemoryRuntime,
 		outcomes:                   outcomeRecorder,
 		usage:                      accountusagefeed.NewFeed(accountusagefeed.DefaultCapacity, time.Now()),
-		usageLedger:                store,
+		usageLedger:                &projectedUsageLedger{facts: store, projection: usageProjection},
 		accounts:                   store,
 		errorLog:                   options.ErrorLog,
 		quotaRefresh:               newQuotaFailureRefresh(store, time.Now, options.ErrorLog),
@@ -426,7 +450,8 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	resources = append(resources, webuiAccountsSource)
 	handlers.webuiAccounts = webuiAccountsHandler
-	resources = append(resources, codexVersions, outcomeRecorder, store, writerLease)
+	resources = append(resources, codexVersions, outcomeRecorder, usageProjection, store, writerLease)
+	projectionTransferred = true
 	leaseTransferred = true
 	rootHandler := withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers)))
 	deferredGateway.set(rootHandler)

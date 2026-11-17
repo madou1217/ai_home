@@ -9,6 +9,7 @@ package accountactivity
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 )
 
 // accountRefPattern 与 Node 的 isAccountRef 一致：acct_ + 20 位小写十六进制。
@@ -126,6 +128,10 @@ func collectAccountRefsFromAppState(
 	}
 	database, err := appstate.OpenReadOnly(ctx, databasePath)
 	if err != nil {
+		// 统一库之后 app-state.db 会被封存；遗留库读不到不是活动失败，aih.db 已足够。
+		if isLegacyDatabaseUnavailable(err) {
+			return nil
+		}
 		return err
 	}
 	defer func() { _ = database.Close() }()
@@ -167,6 +173,11 @@ func scanValidAccountRefs(rows *sql.Rows, seen map[string]struct{}) error {
 
 func isNoSuchTableError(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no such table")
+}
+
+// isLegacyDatabaseUnavailable 报告遗留 app-state.db 是否已被统一库封存。
+func isLegacyDatabaseUnavailable(err error) bool {
+	return errors.Is(err, businessdb.ErrMigrationRequired)
 }
 
 var _ AccountLister = (*CredentialAccountLister)(nil)

@@ -68,7 +68,9 @@ func LoadAccountRecord(
 	// 1) app-state.db（可能保留旧 env_json 或同步副本）
 	if appStatePath, err := appstate.DatabasePath(aiHomeDir); err == nil {
 		if rec, ok, err := readAccountRecordFromAppState(ctx, appStatePath, normalizedProvider, normalizedRef); err != nil {
-			return AccountRecord{}, false, err
+			if !isLegacyDatabaseUnavailable(err) {
+				return AccountRecord{}, false, err
+			}
 		} else if ok {
 			found = true
 			for k, v := range rec.Env {
@@ -1043,7 +1045,6 @@ func toFloat64(value any) float64 {
 		return 0
 	}
 }
-
 
 func nodePlatformArch(goos, goarch string) (string, string) {
 	plat := goos

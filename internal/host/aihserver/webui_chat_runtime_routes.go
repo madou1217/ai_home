@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
+	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/transport/http/inprocesshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 )
@@ -28,6 +30,7 @@ type WebUIChatRuntimeBuildOptions struct {
 	ChatStreamer         chatruntime.ChatTurnStreamer
 	ArtifactReader       chatruntime.ArtifactReader
 	ApprovalCallbackURL  string
+	OnSessionState       func(ctx context.Context, session *chatruntime.Session)
 }
 
 // BuildWebUIChatRuntimeService 构造并初始化供 WebUI 管理入口复用的 Canonical Chat Runtime Service。
@@ -63,6 +66,7 @@ func BuildWebUIChatRuntimeService(
 		WorkspaceCheckpoints: checkpoints,
 		ArtifactReader:       opts.ArtifactReader,
 		ApprovalCallbackURL:  strings.TrimSpace(opts.ApprovalCallbackURL),
+		OnSessionState:       opts.OnSessionState,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("初始化 Canonical Chat Runtime 失败: %w", err)
@@ -92,6 +96,34 @@ func AttachWebUIChatRuntime(
 	} else if trimmedNodeURL := strings.TrimRight(strings.TrimSpace(dependencies.NodeBaseURL), "/"); trimmedNodeURL != "" {
 		approvalCallbackURL = trimmedNodeURL + "/v0/webui/internal/approval-request"
 	}
+	stateStore := sessionevents.NewStateStore(sessionevents.StateStoreOptions{AIHomeDir: dependencies.AIHomeDir})
+	onSessionState := func(ctx context.Context, session *chatruntime.Session) {
+		if session == nil {
+			return
+		}
+		// 项目 watch 只认 working/waiting；idle/closed 必须落 turn-completed 清掉活跃态。
+		eventType := ""
+		switch session.State {
+		case "running", "waiting_input":
+			eventType = "session:turn-started"
+		case "idle", "closed":
+			eventType = "session:turn-completed"
+		default:
+			return
+		}
+		now := time.Now()
+		stateStore.Apply(sessionevents.StateEvent{
+			EventID: fmt.Sprintf("chat:%s:%d:%s", session.SessionID, now.UnixNano(), eventType),
+			Session: sessionevents.StateSession{
+				Provider:    session.Provider,
+				SessionID:   session.SessionID,
+				ProjectPath: session.ProjectPath,
+			},
+			Source: "chat-runtime",
+			Type:   eventType,
+			At:     now.UnixMilli(),
+		})
+	}
 	svc, err := BuildWebUIChatRuntimeService(ctx, WebUIChatRuntimeBuildOptions{
 		AIHomeDir:            dependencies.AIHomeDir,
 		HostHomeDir:          dependencies.HostHomeDir,
@@ -106,6 +138,7 @@ func AttachWebUIChatRuntime(
 			BaseURL:   "http://aih-gateway.internal",
 		},
 		ApprovalCallbackURL: approvalCallbackURL,
+		OnSessionState:      onSessionState,
 	})
 	if err != nil {
 		return nil, err

@@ -14,6 +14,9 @@ type PublishingStoreOptions struct {
 	EventHub           *EventHub
 	OnCommandPersisted func(commandID string, trace *TraceRecord)
 	OnEventPublished   func(event EventEnvelope)
+	// OnSessionState 在会话状态落库后通知宿主运行态。由上层把 turn 状态写入
+	// sessionevents.StateStore，项目 watch 才能看到真实 chat run 的活跃会话。
+	OnSessionState func(ctx context.Context, session *Session)
 }
 
 type sessionDeliveryQueue struct {
@@ -29,6 +32,7 @@ type PublishingStore struct {
 	eventHub           *EventHub
 	onCommandPersisted func(commandID string, trace *TraceRecord)
 	onEventPublished   func(event EventEnvelope)
+	onSessionState     func(ctx context.Context, session *Session)
 
 	sessMu sync.Mutex
 	opMu   map[string]*sync.Mutex
@@ -49,11 +53,16 @@ func NewPublishingStore(opts PublishingStoreOptions) *PublishingStore {
 	if onEvt == nil {
 		onEvt = func(EventEnvelope) {}
 	}
+	onState := opts.OnSessionState
+	if onState == nil {
+		onState = func(context.Context, *Session) {}
+	}
 	return &PublishingStore{
 		store:              opts.Store,
 		eventHub:           hub,
 		onCommandPersisted: onCmd,
 		onEventPublished:   onEvt,
+		onSessionState:     onState,
 		opMu:               make(map[string]*sync.Mutex),
 		queues:             make(map[string]*sessionDeliveryQueue),
 	}
@@ -64,6 +73,16 @@ func (p *PublishingStore) Store() *Store { return p.store }
 
 // EventHub 返回关联的内存事件总线。
 func (p *PublishingStore) EventHub() *EventHub { return p.eventHub }
+
+func (p *PublishingStore) notifySessionState(ctx context.Context, session *Session) {
+	if p == nil || p.onSessionState == nil || session == nil {
+		return
+	}
+	func() {
+		defer func() { _ = recover() }()
+		p.onSessionState(ctx, session)
+	}()
+}
 
 func (p *PublishingStore) sessionLock(sessionID string) *sync.Mutex {
 	p.sessMu.Lock()
@@ -311,19 +330,31 @@ func (p *PublishingStore) ClearGoal(ctx context.Context, sessionID string) (*Goa
 }
 
 func (p *PublishingStore) SetSessionState(ctx context.Context, sessionID, state string, activeTurn *ActiveTurn) (*Session, error) {
-	return p.store.SetSessionState(ctx, sessionID, state, activeTurn)
+	session, err := p.store.SetSessionState(ctx, sessionID, state, activeTurn)
+	if err == nil {
+		p.notifySessionState(ctx, session)
+	}
+	return session, err
 }
 
 func (p *PublishingStore) BeginTurn(ctx context.Context, sessionID string, in BeginTurnInput) (*TurnTransitionResult, error) {
-	return publishKnown(p, ctx, sessionID, func() (*TurnTransitionResult, error) {
+	result, err := publishKnown(p, ctx, sessionID, func() (*TurnTransitionResult, error) {
 		return p.store.BeginTurn(ctx, sessionID, in)
 	})
+	if err == nil && result != nil {
+		p.notifySessionState(ctx, result.Session)
+	}
+	return result, err
 }
 
 func (p *PublishingStore) TransitionTurnPhase(ctx context.Context, sessionID, state string, activeTurn *ActiveTurn, event EventDraft) (*TurnTransitionResult, error) {
-	return publishKnown(p, ctx, sessionID, func() (*TurnTransitionResult, error) {
+	result, err := publishKnown(p, ctx, sessionID, func() (*TurnTransitionResult, error) {
 		return p.store.TransitionTurnPhase(ctx, sessionID, state, activeTurn, event)
 	})
+	if err == nil && result != nil {
+		p.notifySessionState(ctx, result.Session)
+	}
+	return result, err
 }
 
 func (p *PublishingStore) UpdateActiveTurnAnchor(ctx context.Context, sessionID, runID, nativeTurnID, clientUserMsgID string) (*Session, error) {
@@ -433,9 +464,13 @@ func (p *PublishingStore) SettleQueueItem(ctx context.Context, queueID, leaseID,
 }
 
 func (p *PublishingStore) SettleTurn(ctx context.Context, sessionID string, in SettleTurnInput) (*TurnTransitionResult, error) {
-	return publishKnown(p, ctx, sessionID, func() (*TurnTransitionResult, error) {
+	result, err := publishKnown(p, ctx, sessionID, func() (*TurnTransitionResult, error) {
 		return p.store.SettleTurn(ctx, sessionID, in)
 	})
+	if err == nil && result != nil {
+		p.notifySessionState(ctx, result.Session)
+	}
+	return result, err
 }
 
 func (p *PublishingStore) ListQueue(ctx context.Context, sessionID string, activeOnly bool) ([]QueueEntry, error) {

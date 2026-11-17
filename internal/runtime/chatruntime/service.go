@@ -83,6 +83,8 @@ type ServiceOptions struct {
 	IDFactory               func(string) string
 	ReleaseFailureSink      func(map[string]any)
 	RemoteTools             CodexRemoteToolExecutor
+	// OnSessionState 把 chat turn 状态交给宿主的 sessionevents.StateStore。
+	OnSessionState func(ctx context.Context, session *Session)
 }
 
 type composerCacheEntry struct {
@@ -253,8 +255,9 @@ func NewService(ctx context.Context, opts ServiceOptions) (*Service, error) {
 	}
 
 	svc.publisher = NewPublishingStore(PublishingStoreOptions{
-		Store:    store,
-		EventHub: eventHub,
+		Store:          store,
+		EventHub:       eventHub,
+		OnSessionState: opts.OnSessionState,
 		OnEventPublished: func(ev EventEnvelope) {
 			svc.observePublishedEvent(ev)
 		},

@@ -370,6 +370,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		NodeBaseURL:                options.NodeBaseURL,
 		SelfBaseURL:                options.SelfBaseURL,
 		DesktopManagedByHost:       options.DesktopManagedByHost,
+		CodexHooks:                 options.CodexHooks,
 		ModelDiscovery:             modelDiscovery,
 		Runtime:                    accountRuntime,
 		OutcomeRecorder:            outcomeRecorder,
@@ -451,7 +452,9 @@ type handlerDependencies struct {
 	// SelfBaseURL 是本进程回环地址；内部回调不该绕道 Node。
 	SelfBaseURL          string
 	DesktopManagedByHost bool
-	ModelDiscovery       *accountapp.ModelDiscovery
+	// CodexHooks preserves explicit native-server hook startup options.
+	CodexHooks     CodexHooksOptions
+	ModelDiscovery *accountapp.ModelDiscovery
 	// Runtime 同时实现运行态、生图用量与生图结果三个端口。
 	Runtime         serverAccountRuntime
 	OutcomeRecorder *accountoutcomes.Recorder
@@ -1535,18 +1538,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			AIHomeDir:   hooksAIHome,
 			HostHomeDir: dependencies.HostHomeDir,
 		})
-		hooksRuntime, err = startCodexHooksDaemons(codexHooksDaemonOptions{
-			Context:                  ctx,
-			AIHomeDir:                hooksAIHome,
-			HostHomeDir:              dependencies.HostHomeDir,
-			EnableNotificationBridge: true,
-			SessionEventBus:          sessionEventBus,
-			LogWarn: func(message string) {
-				if errorLog != nil && strings.TrimSpace(message) != "" {
-					errorLog.Println(message)
-				}
-			},
-		})
+		hookOptions := buildCodexHooksDaemonOptions(Options{
+			AIHomeDir:   hooksAIHome,
+			NodeBaseURL: nodeBaseURL,
+			SelfBaseURL: dependencies.SelfBaseURL,
+			CodexHooks:  dependencies.CodexHooks,
+		}, hooksAIHome, nodeBaseURL, sessionEventBus, errorLog)
+		hookOptions.Context = ctx
+		hookOptions.HostHomeDir = dependencies.HostHomeDir
+		hooksRuntime, err = startCodexHooksDaemons(hookOptions)
 		if err != nil {
 			_ = inference.Close()
 			return serverHandlers{}, nil, err

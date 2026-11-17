@@ -1,6 +1,7 @@
 package codexhooks
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -329,11 +330,11 @@ func (svc *CLIHookService) BuildWrapperScriptForTarget(targetBinaryPath string, 
 
 // IsWrapperInstalled 判断给定文件是否包含独立的 aih-codex-cli-hook 注释标记行。
 func (svc *CLIHookService) IsWrapperInstalled(targetBinaryPath string) bool {
-	return HasCLIWrapperMarkerLine(readTextFileSafe(targetBinaryPath))
+	return HasCLIWrapperMarkerLine(readCLIProbeText(targetBinaryPath))
 }
 
 func (svc *CLIHookService) isAliasWrapperInstalled(targetBinaryPath string) bool {
-	return HasAliasWrapperMarkerLine(readTextFileSafe(targetBinaryPath))
+	return HasAliasWrapperMarkerLine(readCLIProbeText(targetBinaryPath))
 }
 
 // BuildBackupPath 为不同扩展名计算 .aih-original 备份文件路径。
@@ -352,7 +353,7 @@ func BuildBackupPath(binaryPath string) string {
 }
 
 func isNodeEntryContent(filePath string) bool {
-	text := readTextFileSafe(filePath)
+	text := readCLIProbeText(filePath)
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
@@ -441,12 +442,22 @@ func ReadAliasTarget(content string) string {
 	return ""
 }
 
+// readCLIProbeText bounds discovery to wrapper text, never the full native
+// executable. A NUL in the prefix identifies a binary rather than a script.
+func readCLIProbeText(filePath string) string {
+	prefix, err := readFilePrefix(filePath, maxMarkerProbeBytes)
+	if err != nil || bytes.IndexByte(prefix, 0) >= 0 {
+		return ""
+	}
+	return string(prefix)
+}
+
 func resolveAliasTargetFromFile(filePath string) string {
-	return ReadAliasTarget(readTextFileSafe(filePath))
+	return ReadAliasTarget(readCLIProbeText(filePath))
 }
 
 func resolvePnpmShimRuntimeTarget(filePath string) string {
-	content := readTextFileSafe(filePath)
+	content := readCLIProbeText(filePath)
 	m := rePnpmShimTarget.FindStringSubmatch(content)
 	if len(m) < 2 || strings.TrimSpace(m[1]) == "" {
 		return ""
@@ -455,7 +466,7 @@ func resolvePnpmShimRuntimeTarget(filePath string) string {
 }
 
 func resolveUpstreamDelegateTarget(filePath string) string {
-	content := readTextFileSafe(filePath)
+	content := readCLIProbeText(filePath)
 	if !reDelegateMarkerLine.MatchString(content) {
 		return ""
 	}

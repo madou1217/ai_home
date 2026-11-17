@@ -12,8 +12,8 @@ function activeServerId() {
 // Availability is a current observation, never a persisted deletion of a task.
 export function useTerminalAvailability(serverId: string, tabs: WebTerminalTab[], overviewVisible: boolean) {
   const directory = useTerminalDirectory(serverId, overviewVisible || tabs.some((tab) => tab.sessionKey.startsWith('native:')));
-  const scope = useRef({ serverId, epoch: 0 });
-  if (scope.current.serverId !== serverId) scope.current = { serverId, epoch: scope.current.epoch + 1 };
+  const scope = useRef({ lifecycle: directory.lifecycle, epoch: 0 });
+  if (scope.current.lifecycle !== directory.lifecycle) scope.current = { lifecycle: directory.lifecycle, epoch: scope.current.epoch + 1 };
   const scopeKey = `${serverId}:${scope.current.epoch}`;
   const activeScope = useRef(scopeKey);
   activeScope.current = scopeKey;
@@ -34,7 +34,11 @@ export function useTerminalAvailability(serverId: string, tabs: WebTerminalTab[]
   }, [scopeKey]);
 
   useEffect(() => {
-    if (directory.loading) return;
+    if (!directory.enabled || directory.loading) {
+      continuity.current += 1;
+      latest.current = null;
+      return;
+    }
     const live = new Set(directory.sessions.filter((item) => item.source === 'native'
       && item.status === 'running').map((item) => item.sessionKey));
     // Empty/unsupported and failed discovery invalidate in-flight evidence;
@@ -98,7 +102,7 @@ export function useTerminalAvailability(serverId: string, tabs: WebTerminalTab[]
       })();
       probes.current.set(probeKey, probe);
     }
-  }, [directory.error, directory.loading, directory.sessions, scopeKey, serverId, tabs]);
+  }, [directory.enabled, directory.error, directory.loading, directory.sessions, scopeKey, serverId, tabs]);
 
   const unavailableKeys = useMemo(() => new Set(unavailableByServer[serverId] || []), [serverId, unavailableByServer]);
   const interactiveTabs = useMemo(() => tabs.filter((tab) => !unavailableKeys.has(tab.sessionKey)

@@ -654,14 +654,12 @@ func builtinZcode() Definition {
 			// 两个**正交维度**，策略名是 `<区域>:<流程>`：
 			//   区域：zai（国际站 chat.z.ai）/ bigmodel（国内站 bigmodel.cn）——
 			//         决定授权入口、凭据键前缀（oauth:<region>:*）与套餐目录；
-			//   流程：server-flow（官方服务端中介；无需本机回调地址/协议处理器/本机浏览器）
-			//         / custom-scheme（zcode:// 自定义协议，授权后手填回调地址，不需要协议处理器）。
+			//   流程：只保留 server-flow（官方服务端中介；无需本机回调地址/协议处理器/本机浏览器）。
+			//   custom-scheme（zcode:// 手填回调）已从产品入口移除，Go 仅保留对旧客户端的兼容处理。
 			// loopback 不可用：该 client 的 redirect_uri 白名单已不再接受任何 http://localhost 地址。
 			// 维度正交：新增区域或流程各加一条，不在派发代码里写 if。
 			authOptionWithStrategy(AuthModeOAuthBrowser, "zai:server-flow", "ZCode 登录（Z.AI 国际站 · 官方 CLI 流程）", "chat.z.ai 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"),
 			authOptionWithStrategy(AuthModeOAuthBrowser, "bigmodel:server-flow", "ZCode 登录（BigModel 国内站 · 官方 CLI 流程）", "bigmodel.cn 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"),
-			authOptionWithStrategy(AuthModeOAuthBrowser, "zai:custom-scheme", "ZCode 登录（Z.AI 国际站 · zcode:// 回调）", "用官方注册的 zcode:// 回调，授权后把回调地址粘贴回来；不需要本机协议处理器。"),
-			authOptionWithStrategy(AuthModeOAuthBrowser, "bigmodel:custom-scheme", "ZCode 登录（BigModel 国内站 · zcode:// 回调）", "用官方注册的 zcode:// 回调，授权后把回调地址粘贴回来；不需要本机协议处理器。"),
 			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},

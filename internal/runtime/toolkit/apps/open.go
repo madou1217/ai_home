@@ -124,10 +124,23 @@ func PrepareClaudeDesktopGateway(ctx context.Context, opts Options) string {
 }
 
 func prepareClaudeDesktopGateway(ctx context.Context, opts Options) string {
+	result := PrepareClaudeDesktopGatewayResult(ctx, opts, false)
+	if !result.OK {
+		return result.Reason
+	}
+	return ""
+}
+
+// PrepareClaudeDesktopGatewayResult preserves the full preparation result for
+// private pipe callers while sharing the existing native admission and writer.
+func PrepareClaudeDesktopGatewayResult(ctx context.Context, opts Options, dryRun bool) claudedesktopconfig.Result {
 	profileDir := resolveClaudeDesktopGatewayProfileDir(opts)
+	failure := func(reason string) claudedesktopconfig.Result {
+		return claudedesktopconfig.Result{Status: "failed", Reason: reason, Mode: "api", ProfileDir: profileDir, DryRun: dryRun}
+	}
 	aiHome := strings.TrimSpace(opts.AIHomeDir)
 	if profileDir == "" || !filepath.IsAbs(aiHome) {
-		return "invalid_gateway_scope"
+		return failure("invalid_gateway_scope")
 	}
 	packagePlatform := resolvePlatform(opts)
 	if packagePlatform == platformMacOS {
@@ -147,17 +160,14 @@ func prepareClaudeDesktopGateway(ctx context.Context, opts Options) string {
 		Env:          resolveEnvMap(opts),
 	})
 	if err != nil {
-		return err.Error()
+		return failure(err.Error())
 	}
-	result := claudedesktopconfig.Prepare(ctx, claudedesktopconfig.Options{
+	return claudedesktopconfig.Prepare(ctx, claudedesktopconfig.Options{
 		ProfileDir: profileDir, Mode: "api", GatewayBaseURL: resolveDefaultServerRootURL(ctx, opts),
 		CredentialHelper:     helper,
 		CredentialHelperArgs: []string{claudedesktopcredential.Command, "--ai-home-dir", aiHome},
+		DryRun:               dryRun,
 	})
-	if !result.OK {
-		return result.Reason
-	}
-	return ""
 }
 
 func newAppUUID() string {

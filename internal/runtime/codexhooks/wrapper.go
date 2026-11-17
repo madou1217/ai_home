@@ -252,6 +252,41 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"NODE_BIN=" + ShellQuote(options.NodeExecPath),
 		"HELPER=" + ShellQuote(options.HelperScriptPath),
 		"STATE_FILE=" + ShellQuote(options.StateFilePath),
+	}
+	// Only the CLI-owned POSIX wrapper's exact native version diagnostic bypasses
+	// Node. Default/TUI, resume, app-server and Desktop/VSCode remain unchanged.
+	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
+		goBinary := ""
+		if filepath.IsAbs(options.HelperScriptPath) {
+			arch := runtime.GOARCH
+			if arch == "amd64" {
+				arch = "x64"
+			}
+			goBinary = filepath.Join(filepath.Dir(options.HelperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, "aih-go")
+		}
+		lines = append(lines,
+			`if [ "$#" -eq 1 ] && { [ "$1" = "--version" ] || [ "$1" = "-V" ]; }; then`,
+			"  AIH_GO_CLI="+ShellQuote(goBinary),
+			`  if [ ! -x "$AIH_GO_CLI" ]; then`,
+			`    printf '%s\n' '[aih] codex_cli_version_go_missing_or_outdated; no Node fallback.' >&2`,
+			"    exit 1",
+			"  fi",
+			`  if ! AIH_GO_CAPABILITY=$("$AIH_GO_CLI" codex version --raw --capabilities 2>/dev/null); then`,
+			`    printf '%s\n' '[aih] codex_cli_version_go_missing_or_outdated; no Node fallback.' >&2`,
+			"    exit 1",
+			"  fi",
+			`  if [ "$AIH_GO_CAPABILITY" != 'aih-codex-raw-version-v1' ]; then`,
+			`    printf '%s\n' '[aih] codex_cli_version_go_missing_or_outdated; no Node fallback.' >&2`,
+			"    exit 1",
+			"  fi",
+			// The cached backup is a discovery hint only; Go retains precedence
+			// for an explicit override and authoritative managed generations.
+			`  export AIH_CODEX_DISCOVERED_BINARY="${AIH_CODEX_DISCOVERED_BINARY:-$UPSTREAM}"`,
+			`  exec "$AIH_GO_CLI" codex version --raw "$1"`,
+			"fi",
+		)
+	}
+	lines = append(lines,
 		"AIH_SUBCOMMAND=",
 		"AIH_EXPECT_OPTION_VALUE=0",
 		`for AIH_ARG in "$@"; do`,
@@ -260,7 +295,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"    continue",
 		"  fi",
 		`  case "$AIH_ARG" in`,
-		"    " + strings.Join(CodexGlobalValueOptions, "|") + ")",
+		"    "+strings.Join(CodexGlobalValueOptions, "|")+")",
 		"      AIH_EXPECT_OPTION_VALUE=1",
 		"      ;;",
 		"    --)",
@@ -284,7 +319,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
 		`  exec "$NODE_BIN" "$HELPER" --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
 		"fi",
-	}
+	)
 	if options.RouteDefaultCLIThroughHelper {
 		lines = append(lines, `exec "$NODE_BIN" "$HELPER" --run-cli-default --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`)
 	} else {

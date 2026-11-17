@@ -385,3 +385,11 @@ PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version�
 ## 2026-11-18 R1 model-prefix：scope直接获批后共享单点实做
 
 用户直接准予原owner独占bin::tryRunGoProviderLaunch，已解除上一checkpoint等待。02:48:51重新逐blob/index/mode核对e1db clean后，仅落已独立审查同SHA bca11c5f predicate(12+/1-)，保留peer install/availability。02:49:32–02:49:48真实共享公开entry+现存标准Go62ade266...→官方Codex实回CODEX_PUBLIC_PREFIX_GO_OK/turn.completed；escape短-m e帮助、inline帮助成功，无效alias失败关闭；四项V8旧业务模块0、私有PID/敏感目录清理、entry及Go前后SHA相同。缺Go仍单列此前同SHA私有candidate证据，不移动共享产物。§10待scope记录由§11新事实接续；Nodebootstrap及malformed/默认/TUI等未退役，不宣称全R1/W0-W6完成。无新tests/sharedrestart/stamp/M/协议改动。下一R2已先只读核cf13ed88f26path及18b/2ff后续，并向1e7bb原owner询问在写paths/合同；不以本单点收工。
+
+
+## 2026-11-18 03:22 · R2 CLI POSIX 纯版本直接 Go checkpoint（Partial）
+
+监督pm-a03c1cb6确认精确两path后，03:20逐blob核同HEAD/index/disk再落wrapper.go CLI-owned POSIX exact --version/-V分支及provider_info.go raw适配。最终b4b84260/195c2c92经原Hubble/Mendel源码复审无blocking；amd64→x64和native signal两P2已修。固定2075e22f2 archive+两path、Goed479591的最终18真实操作通过：绝对NODE_BIN及PATH均无Node、JS helper不可用仍原样官方版本0，缺/旧/不可执行Go、override/host admission、产品真实managed激活/卸载/损坏拒绝均失败关闭，官方native子进程SIGKILL静默137；4排除形状仍旧Node路径126。原JS私有spike不计Node-off。本人三privatehome已清、观察PID/root进程0；build/vet及Linux/Windows x64仅交叉编译通过。共享Go/hook/服务/stamp未更新，仍需公开安装/loaded、旧Node条件selfheal单writer、其他R2分支及W0-W6退出门禁；不称全迁移完成。证据在原acceptance §12及原JSON新增key，不碰run.go/JS/M/协议/Terminal等并行scope。
+
+
+R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/126×4/137×1。额外真正cmd/aih-server+enableCLIHook私有入口尝试ready/鉴权status可用但120s未启CLI，来源核Options.CodexHooks未穿composition传递、内部daemon仅notification；已停止仅本人private并清home，public安装门禁仍阻塞。明确原18矩阵由两私有operational main调用真库，不冒称全程既有公开入口；两path授权不自动覆盖驱动合规。host接线超scope已报监督分owner，本writer不扩composition/run.go/Node路径。

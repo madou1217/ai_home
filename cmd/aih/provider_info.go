@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	accountapp "github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/application/providerruntime"
@@ -23,6 +24,7 @@ import (
 	opencodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/opencode"
 	qoderstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/qoder"
 	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
+	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -64,6 +66,9 @@ func runProviderVersion(
 	arguments []string,
 	runtime commandRuntime,
 ) error {
+	if providerID == "codex" && len(arguments) > 0 && arguments[0] == "--raw" {
+		return runCodexRawVersion(ctx, arguments[1:], runtime)
+	}
 	if len(arguments) != 0 {
 		return fmt.Errorf("%w: 用法 aih %s version", errInvalidCommand, providerID)
 	}
@@ -111,6 +116,63 @@ func runProviderVersion(
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "%s  %s\n", providerID, version)
 	_, _ = fmt.Fprintf(runtime.stdout, "  binary: %s\n", path)
+	return nil
+}
+
+// codexVersionExit preserves native diagnostic exit status without an AIH suffix.
+type codexVersionExit int
+
+func (code codexVersionExit) Error() string { return "" }
+func (code codexVersionExit) ExitCode() int { return int(code) }
+func (code codexVersionExit) SilentExit()   {}
+
+// runCodexRawVersion is the CLI wrapper's bounded diagnostic adapter. It does
+// not read account/default state, project config, or run arbitrary native argv.
+func runCodexRawVersion(ctx context.Context, arguments []string, runtime commandRuntime) error {
+	if len(arguments) == 1 && arguments[0] == "--capabilities" {
+		_, err := fmt.Fprintln(runtime.stdout, "aih-codex-raw-version-v1")
+		return err
+	}
+	if len(arguments) != 1 || (arguments[0] != "--version" && arguments[0] != "-V") {
+		return fmt.Errorf("%w: raw Codex version requires --version or -V", errInvalidCommand)
+	}
+	// Canonical selection retains explicit override, authoritative managed
+	// current/tombstone/repair and discovery-hint precedence in one place.
+	path, err := providercli.ResolveBinary("codex", "codex")
+	if err != nil {
+		return err
+	}
+	// Preserve the CLI helper's admission against an interrupted host default
+	// transaction; a version query does not authorize recovery or config writes.
+	home := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+	if home == "" {
+		host := strings.TrimSpace(os.Getenv("HOME"))
+		if host == "" {
+			host = strings.TrimSpace(os.Getenv("USERPROFILE"))
+		}
+		if host != "" {
+			home = filepath.Join(host, ".codex")
+		}
+	}
+	if err = codexpreferences.CheckHostReady(home); err != nil {
+		return err
+	}
+	command := exec.CommandContext(ctx, path, arguments[0])
+	command.Stdin = runtime.stdin
+	command.Stdout = runtime.stdout
+	command.Stderr = runtime.stderr
+	command.Env = os.Environ()
+	if err = command.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			if exit.ExitCode() >= 0 {
+				return codexVersionExit(exit.ExitCode())
+			}
+			if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+				return codexVersionExit(128 + int(status.Signal()))
+			}
+		}
+		return err
+	}
 	return nil
 }
 

@@ -1407,5 +1407,609 @@
       "Current standard Go is identified by actual artifact SHA, not asserted to match the candidate archive commit.",
       "No shared service restart, artifact/stamp replacement, DB migration, login mutation or new test cases."
     ]
+  },
+  "cliOwnedPosixRawVersionGoWrapper": {
+    "status": "exclusive_source_applied_private_node_unavailable_accepted_not_publicly_installed",
+    "authorizationPeer": "pm-a03c1cb6",
+    "sourceApplication": {
+      "at": "2026-11-18T03:20:23.785365+08:00",
+      "authorizationPeer": "pm-a03c1cb6",
+      "baseHeadAtApplication": "cb5a68f0970f3d8eff626cb770a298b96a34f408",
+      "scope": [
+        "internal/runtime/codexhooks/wrapper.go",
+        "cmd/aih/provider_info.go"
+      ],
+      "beforeAfter": [
+        {
+          "path": "internal/runtime/codexhooks/wrapper.go",
+          "headBlob": "c1381f170b7f6488f26ebf91ccd2e9a81265d933",
+          "indexEntry": "100644 c1381f170b7f6488f26ebf91ccd2e9a81265d933 0\tinternal/runtime/codexhooks/wrapper.go",
+          "diskBlob": "c1381f170b7f6488f26ebf91ccd2e9a81265d933",
+          "afterSha256": "b4b84260907651112cdcde37de1aa1c859d25f0eababe75f39e7be4b503b831b"
+        },
+        {
+          "path": "cmd/aih/provider_info.go",
+          "headBlob": "8deef12014b30c16c4bb53024e253865af48a78d",
+          "indexEntry": "100644 8deef12014b30c16c4bb53024e253865af48a78d 0\tcmd/aih/provider_info.go",
+          "diskBlob": "8deef12014b30c16c4bb53024e253865af48a78d",
+          "afterSha256": "195c2c92181ae12365287822a168cacea46fc0a09d150ea0bd86df3a8f1a84aa"
+        }
+      ],
+      "reviewers": [
+        "Hubble",
+        "Mendel"
+      ],
+      "sharedBinaryOrHookInstallationChanged": false,
+      "noSharedRestart": true
+    },
+    "privateSourceArchive": "ea64382f8cb88df7e67261055f4d7d39fa87458a940515983bcc63e3f7c1cc48",
+    "finalSourceManifest": {
+      "baseHead": "2075e22f2044fd2d71cfdefe2c2a5d39945da018",
+      "productionWriteSetEmpty": true,
+      "candidatePaths": [
+        "internal/runtime/codexhooks/wrapper.go",
+        "cmd/aih/provider_info.go"
+      ],
+      "sha256": {
+        "internal/runtime/codexhooks/wrapper.go": "b4b84260907651112cdcde37de1aa1c859d25f0eababe75f39e7be4b503b831b",
+        "cmd/aih/provider_info.go": "195c2c92181ae12365287822a168cacea46fc0a09d150ea0bd86df3a8f1a84aa"
+      },
+      "mode": "CLI-owned POSIX exact --version/-V, shell exec Go before any Node",
+      "goBinaryLayout": "same helper installation root/bin/native/GOOS-NodeArch/aih-go (Go amd64 maps x64); non-absolute helper fails closed",
+      "hostAdmission": "reuse codexpreferences.CheckHostReady with legacy CLI home precedence",
+      "scopeExclusions": [
+        "no Windows PS1/CMD migration",
+        "no Desktop/VSCode/default/TUI/exec/resume/app-server/protocol changes",
+        "no run.go/R5 changes",
+        "no runtime receipt/generations/resolver changes",
+        "no shared restart or artifact/stamp publication"
+      ],
+      "supersededPrivateJsSpike": "superseded-js-candidate-manifest.json",
+      "reviewCorrections": [
+        "canonical Node x64 artifact directory for Go amd64",
+        "native signaled exit maps silently to shell128+signal"
+      ]
+    },
+    "actualPrivateAcceptance": {
+      "at": "2026-11-18T03:20:22.944473+08:00",
+      "sourceManifest": {
+        "baseHead": "2075e22f2044fd2d71cfdefe2c2a5d39945da018",
+        "productionWriteSetEmpty": true,
+        "candidatePaths": [
+          "internal/runtime/codexhooks/wrapper.go",
+          "cmd/aih/provider_info.go"
+        ],
+        "sha256": {
+          "internal/runtime/codexhooks/wrapper.go": "b4b84260907651112cdcde37de1aa1c859d25f0eababe75f39e7be4b503b831b",
+          "cmd/aih/provider_info.go": "195c2c92181ae12365287822a168cacea46fc0a09d150ea0bd86df3a8f1a84aa"
+        },
+        "mode": "CLI-owned POSIX exact --version/-V, shell exec Go before any Node",
+        "goBinaryLayout": "same helper installation root/bin/native/GOOS-NodeArch/aih-go (Go amd64 maps x64); non-absolute helper fails closed",
+        "hostAdmission": "reuse codexpreferences.CheckHostReady with legacy CLI home precedence",
+        "scopeExclusions": [
+          "no Windows PS1/CMD migration",
+          "no Desktop/VSCode/default/TUI/exec/resume/app-server/protocol changes",
+          "no run.go/R5 changes",
+          "no runtime receipt/generations/resolver changes",
+          "no shared restart or artifact/stamp publication"
+        ],
+        "supersededPrivateJsSpike": "superseded-js-candidate-manifest.json",
+        "reviewCorrections": [
+          "canonical Node x64 artifact directory for Go amd64",
+          "native signaled exit maps silently to shell128+signal"
+        ]
+      },
+      "productHookApplication": {
+        "ok": true,
+        "supported": true,
+        "enabled": true,
+        "installed": true,
+        "healthy": true,
+        "repaired": true,
+        "targetBinaryPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex",
+        "resolvedTargetBinaryPath": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex",
+        "upstreamBinaryPath": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex.aih-original"
+      },
+      "same_product_selfheal_wrapper_bytes_unchanged": true,
+      "nodeAbsentOnPATH": true,
+      "configuredAbsoluteNodeAbsent": true,
+      "noAIHNodeServerStarted": true,
+      "noCredentialsUsed": true,
+      "noFirstPartyManagementRPC": true,
+      "wrapperSha256": "e3852b7ff1d316f3fc9f3c76fd4b87cc08d55e2083cdcc19fa0039b48d41f118",
+      "goSha256": "ed479591d1ac591c50c8488f039e4afb78570a5fce7a2265e7b255e4122b6c5c",
+      "operations": [
+        {
+          "action": "native_version",
+          "startedAt": "2026-11-18T03:20:14.558280+08:00",
+          "finishedAt": "2026-11-18T03:20:17.333751+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdout": "codex-cli 0.167.2\n",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "native_short_version",
+          "startedAt": "2026-11-18T03:20:17.335616+08:00",
+          "finishedAt": "2026-11-18T03:20:17.411871+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdout": "codex-cli 0.167.2\n",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "node_and_helper_missing",
+          "startedAt": "2026-11-18T03:20:17.413019+08:00",
+          "finishedAt": "2026-11-18T03:20:17.461322+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdout": "codex-cli 0.167.2\n",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "invalid_explicit_override",
+          "startedAt": "2026-11-18T03:20:17.461886+08:00",
+          "finishedAt": "2026-11-18T03:20:17.511978+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "aih: AIH_CODEX_BINARY 配置的 Codex CLI 不可用；请修正或移除该显式配置: exec: \"/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/not-installed\": stat /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/not-installed: no such file or directory\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "host_admission",
+          "startedAt": "2026-11-18T03:20:17.512507+08:00",
+          "finishedAt": "2026-11-18T03:20:17.561406+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "aih: codex_default_recovery_required: rerun codex set-default before launching\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "go_missing",
+          "startedAt": "2026-11-18T03:20:17.562219+08:00",
+          "finishedAt": "2026-11-18T03:20:17.596818+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "[aih] codex_cli_version_go_missing_or_outdated; no Node fallback.\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "actual_old_go",
+          "startedAt": "2026-11-18T03:20:17.597393+08:00",
+          "finishedAt": "2026-11-18T03:20:17.707905+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "[aih] codex_cli_version_go_missing_or_outdated; no Node fallback.\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "go_unexecutable",
+          "startedAt": "2026-11-18T03:20:17.708656+08:00",
+          "finishedAt": "2026-11-18T03:20:17.741794+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "[aih] codex_cli_version_go_missing_or_outdated; no Node fallback.\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "official_native_sigkill_0",
+          "startedAt": "2026-11-18T03:20:17.850112+08:00",
+          "finishedAt": "2026-11-18T03:20:18.103808+08:00",
+          "exitCode": 137,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": 56463
+        },
+        {
+          "action": "managed_current",
+          "startedAt": "2026-11-18T03:20:20.578701+08:00",
+          "finishedAt": "2026-11-18T03:20:20.766329+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdout": "codex-cli 0.167.2\n",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "managed_current_without_cached_backup",
+          "startedAt": "2026-11-18T03:20:20.766928+08:00",
+          "finishedAt": "2026-11-18T03:20:20.953046+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdout": "codex-cli 0.167.2\n",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "managed_disabled",
+          "startedAt": "2026-11-18T03:20:21.224584+08:00",
+          "finishedAt": "2026-11-18T03:20:21.270921+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "aih: Codex 尚未准备完成；请打开工具箱 → 应用管理 → Codex CLI，点击安装并修复（保留配置及旧版本）\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "explicit_override_wins_disabled",
+          "startedAt": "2026-11-18T03:20:21.271453+08:00",
+          "finishedAt": "2026-11-18T03:20:22.723637+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdout": "codex-cli 0.167.2\n",
+          "stderr": "",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "managed_corrupted",
+          "startedAt": "2026-11-18T03:20:22.724273+08:00",
+          "finishedAt": "2026-11-18T03:20:22.771172+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "aih: Codex 运行时需要修复；请在应用管理中点击安装并修复（保留配置及旧版本） (/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/.local/share/aih-cli/codex)\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "excluded_exec",
+          "startedAt": "2026-11-18T03:20:22.771795+08:00",
+          "finishedAt": "2026-11-18T03:20:22.818508+08:00",
+          "exitCode": 126,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: No such file or directory\n/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: exec: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: cannot execute: No such file or directory\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "excluded_model_prefix",
+          "startedAt": "2026-11-18T03:20:22.818948+08:00",
+          "finishedAt": "2026-11-18T03:20:22.870647+08:00",
+          "exitCode": 126,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: No such file or directory\n/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: exec: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: cannot execute: No such file or directory\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "excluded_extra_token",
+          "startedAt": "2026-11-18T03:20:22.871162+08:00",
+          "finishedAt": "2026-11-18T03:20:22.902291+08:00",
+          "exitCode": 126,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: No such file or directory\n/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: exec: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: cannot execute: No such file or directory\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        },
+        {
+          "action": "excluded_escape",
+          "startedAt": "2026-11-18T03:20:22.902781+08:00",
+          "finishedAt": "2026-11-18T03:20:22.943972+08:00",
+          "exitCode": 126,
+          "timeout": false,
+          "stdout": "",
+          "stderr": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: No such file or directory\n/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex: line 56: exec: /var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/node-not-installed: cannot execute: No such file or directory\n",
+          "v8Files": 0,
+          "exactObservedNativeChildKilled": null
+        }
+      ],
+      "runtimeProductOperations": [
+        {
+          "action": "product_activate_after_actual_version_and_appserver_initialize",
+          "exitCode": 0,
+          "current": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/.local/share/aih-cli/codex/releases/runtime-950143828/bin/codex",
+          "actualVersion": "0.167.2"
+        },
+        {
+          "action": "existing_formatted_version_same_canonical_selection",
+          "exitCode": 0
+        },
+        {
+          "action": "product_deactivate_tombstone",
+          "exitCode": 0
+        }
+      ],
+      "observedProcesses": [
+        {
+          "pid": 56336,
+          "ppid": 55684,
+          "pgid": 56336,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 56348,
+          "ppid": 56336,
+          "pgid": 56336,
+          "executable": "(bash)"
+        },
+        {
+          "pid": 56349,
+          "ppid": 56348,
+          "pgid": 56336,
+          "executable": "(aih-go)"
+        },
+        {
+          "pid": 56364,
+          "ppid": 56336,
+          "pgid": 56336,
+          "executable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex.aih-original"
+        },
+        {
+          "pid": 56421,
+          "ppid": 55684,
+          "pgid": 56421,
+          "executable": "(aih-go)"
+        },
+        {
+          "pid": 56425,
+          "ppid": 56421,
+          "pgid": 56421,
+          "executable": "(codex.aih-origin)"
+        },
+        {
+          "pid": 56427,
+          "ppid": 55684,
+          "pgid": 56427,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56437,
+          "ppid": 55684,
+          "pgid": 56437,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56443,
+          "ppid": 55684,
+          "pgid": 56443,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56447,
+          "ppid": 55684,
+          "pgid": 56447,
+          "executable": "(bash)"
+        },
+        {
+          "pid": 56449,
+          "ppid": 55684,
+          "pgid": 56449,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 56454,
+          "ppid": 55684,
+          "pgid": 56454,
+          "executable": "(bash)"
+        },
+        {
+          "pid": 56456,
+          "ppid": 55684,
+          "pgid": 56456,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56458,
+          "ppid": 56456,
+          "pgid": 56456,
+          "executable": "/bin/sh"
+        },
+        {
+          "pid": 56459,
+          "ppid": 56458,
+          "pgid": 56456,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56463,
+          "ppid": 56456,
+          "pgid": 56456,
+          "executable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex-signal-native"
+        },
+        {
+          "pid": 56472,
+          "ppid": 55684,
+          "pgid": 56472,
+          "executable": "(aih-go)"
+        },
+        {
+          "pid": 56481,
+          "ppid": 55684,
+          "pgid": 56481,
+          "executable": "<defunct>"
+        },
+        {
+          "pid": 56493,
+          "ppid": 55684,
+          "pgid": 56493,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56497,
+          "ppid": 55684,
+          "pgid": 56497,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56501,
+          "ppid": 56497,
+          "pgid": 56497,
+          "executable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/go-direct-final-home/bin/codex.aih-original"
+        },
+        {
+          "pid": 56545,
+          "ppid": 55684,
+          "pgid": 56545,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 56549,
+          "ppid": 55684,
+          "pgid": 56549,
+          "executable": "(bash)"
+        },
+        {
+          "pid": 56551,
+          "ppid": 55684,
+          "pgid": 56551,
+          "executable": "(bash)"
+        },
+        {
+          "pid": 56553,
+          "ppid": 55684,
+          "pgid": 56553,
+          "executable": "(bash)"
+        },
+        {
+          "pid": 56555,
+          "ppid": 55684,
+          "pgid": 56555,
+          "executable": "(bash)"
+        }
+      ],
+      "remainingObservedPIDs": [],
+      "observedNodeProcesses": [],
+      "publicSourceApplied": false,
+      "sharedArtifactReplaced": false,
+      "limitations": [
+        "Private product library-generated wrapper, not public installer/server deployment",
+        "POSIX exact native --version/-V only; Windows wrappers not migrated",
+        "Diagnostic deliberately omits account/default env/heal/catalog/rollout writes; host admission retained",
+        "Node compatibility hook conditional self-heal writer remains a separate production retirement gate",
+        "Excluded argument shapes retain old Node dependency",
+        "Process sampling and zero V8 coverage do not constitute complete syscall tracing"
+      ]
+    },
+    "cleanup": {
+      "at": "2026-11-18T03:21:53.078258+08:00",
+      "knownOperationObservedPIDsRemaining": [],
+      "ownedRootExecutableProcessScan": [],
+      "privateHomesRemoved": [
+        "home",
+        "go-direct-home",
+        "go-direct-final-home"
+      ],
+      "onlyTaskOwnedPrivateDirectoriesRemoved": true,
+      "candidateSourceAndCompiledEvidenceRetained": true,
+      "sharedSourceArtifactsConfigAndPeerDataUntouched": true
+    },
+    "buildEvidence": {
+      "nativeBuild": "go build -mod=readonly ./cmd/aih; hook operational command also rebuilt against the same frozen source",
+      "focusedVet": "go vet ./cmd/aih ./internal/runtime/codexhooks; exit0",
+      "crossCompile": [
+        {
+          "target": "linux-x64",
+          "startedAt": "2026-11-18T03:21:14.054733+08:00",
+          "finishedAt": "2026-11-18T03:21:17.967573+08:00",
+          "exitCode": 0,
+          "stderrBytes": 0,
+          "compileOnlyNotRuntimeAcceptance": true
+        },
+        {
+          "target": "windows-x64",
+          "startedAt": "2026-11-18T03:21:17.967753+08:00",
+          "finishedAt": "2026-11-18T03:21:21.723425+08:00",
+          "exitCode": 0,
+          "stderrBytes": 0,
+          "compileOnlyNotRuntimeAcceptance": true
+        }
+      ]
+    },
+    "review": {
+      "sourceReviewers": [
+        "Hubble",
+        "Mendel"
+      ],
+      "sourceNoBlocking": true,
+      "sourceFindingsClosed": [
+        "Go amd64 maps canonical x64 artifact directory",
+        "native signaled exit propagates silent shell128+signal"
+      ],
+      "finalEvidenceReview": "Mendel independently verified final/raw/manifest/shared same-byte consistency,18expected outcomes, nativechild137 and cleanup; no new evidence blocker; public entry/driver compliance boundaries retained",
+      "finalEvidenceExpectedExitHistogram": {
+        "0": 6,
+        "1": 7,
+        "126": 4,
+        "137": 1
+      }
+    },
+    "supersededSpike": {
+      "kind": "private JS early delegation experiment",
+      "productionPathsWritten": false,
+      "nodeBootstrapRemained": true,
+      "notCountedAsNodeUnavailableAcceptance": true,
+      "localManifest": "superseded-js-candidate-manifest.json"
+    },
+    "operatorResume": {
+      "originalAttempt": "private product snapshot copy interrupted by 15s operator timeout; 175MiB task temp observed, no live child",
+      "correction": "resume actual hook install with90s bounded operator timeout, no product modification",
+      "commandSha256": "b26a1672430a1b8680f0d74aad027257c7760c19445dc83221ca3e97b29a384b",
+      "sourceChangedByResume": false
+    },
+    "rawFinalReportSha256": "1faba17d90428c0cb2d3c79f577f362bba2a1f64dbaec5549b250cdba283cc93",
+    "rawCleanupReportSha256": "c828c254304cf9d314897ec37e5296971558c1b000903b28d60b6b6d29073b81",
+    "retainedLocalEvidencePointer": "/tmp/aih-r2-cli-wrapper-latest-20261118.txt",
+    "noSharedServerRestart": true,
+    "noSharedArtifactOrStampReplacement": true,
+    "publicInstalledWrapperUpdated": false,
+    "scopeStillPartial": true,
+    "remainingGates": [
+      "existing Go cmd/aih-server CodexHooks enable flag is not forwarded through composition; host owner must resolve before claiming actual public hook installation",
+      "public source-built artifact/install verification and coordinated loading",
+      "conditional Node hook self-healer remains separate retirement gate; no claim of current double writer",
+      "Windows PS1/CMD and real x64/Linux runtime acceptance not included",
+      "TUI/default/exec/resume/app-server/stdio protocol and full R2/W0-W6 not migrated by this version slice"
+    ],
+    "existingProductionEntryAttempt": {
+      "at": "2026-11-18T03:36:24.172931+08:00",
+      "attempt": "existing production cmd/aih-server --enable-codex-cli-hook=true in task-owned privateHOME/DB/port; no added operational main used for this attempt",
+      "startupEvidence": {
+        "at": "2026-11-18T03:28:29.670179+08:00",
+        "serverExit": null,
+        "statusAvailable": true,
+        "serverPort": 60031,
+        "logPrivateAndNotPublished": true
+      },
+      "result": "server ready and management status available, but enabled CLI hook was not exposed within120s; no cli-hook-state.json created, copied native target not wrapped",
+      "privateTargetWasUnwrappedNative": true,
+      "frozenCompositionSha256": "985c02f0eb9f73376ea18a861d48e1e88bc44af7407428901139b2fdf7938c97",
+      "sourceFinding": "cmd/aih-server/run.go passes Options.CodexHooks; aihserver.New composition does not pass those requested options to buildServerHandlers, whose startCodexHooksDaemons options only enable notification bridge; CLI hook remains disabled",
+      "outOfApprovedTwoPathScope": true,
+      "requiredResolutionOwner": "supervisor01a1df63 must assign host/composition owner and confirm no M/terminal conflict; do not widen current writer",
+      "noProductFixAttempted": true,
+      "publicInstallationAcceptanceStillOpen": true,
+      "ownedRootProcessesRemaining": [],
+      "sensitivePrivateHomeRemoved": true,
+      "sharedServerRestarted": false,
+      "nodeHostStarted": false,
+      "noClaimOfThirdPartyAbsoluteNodeProbeAbsence": true
+    },
+    "rawExistingEntryBlockSha256": "b7afd0c18695140e915684f47571ccb320cae6556b79aa75fa7a990b98327736",
+    "validationEntrypointLimit": "two private operational Go mains were used to call actual hook/runtime services; not all validation used pre-existing public product entry; separate actual Go server entry attempt remained blocked and is explicitly recorded"
   }
 }

@@ -168,3 +168,36 @@ Hubble初审抓到`-m -- exec`会被Go分隔符解析变成`-m exec`、潜在误
 - 缺Go证据仍仅来自§10已审同SHA私有candidate，未为此移动共享Go；不把私有negative操作冒充标准产物验证。malformed前缀仍不接新predicate，其legacy业务边界保留。
 
 `node --check`与scoped `diff --check`通过；本次来源应用receipt、真实逐操作/进程/cleanup及原始报告digest已追加既有evidence JSON。**Node bootstrap仍在；没有共享server发布、restart、stamp更改，也不称R1或整个迁移全部完成。** 后续继续R2 wrapper/stdio的单一Go转交方案，先核cf13ed88f及其后续owner写集，不覆盖managed runtime能力。
+
+
+## 12. R2 实做：CLI-owned POSIX 纯版本 wrapper 直接 Go（2026-11-18）
+
+**本组状态：源码已获准落盘、私有 Node 不可用窄门禁通过；公开安装／loaded／旧 Node writer 退出仍为 Partial。** 不以 R1 单 hunk 收工，也不把版本查询等同整个 R2/W0–W6。监督 `pm-a03c1cb6` 核对无并行 diff 后准予精确两生产路径；03:20:23 落盘前再次逐 blob 核实 HEAD/index/disk 相等。仅修改：
+
+- `internal/runtime/codexhooks/wrapper.go`：**CLI marker＋POSIX＋完整 argc=1 的 `--version/-V`** 在 Node 分流前直 exec 同 helper 安装根 `bin/native/<platform>-<NodeArch>/aih-go`；Go amd64 映射 x64。缺失、不可执行、capability 不兼容都失败关闭，不回 Node；缓存 upstream 仅为内部 discovery hint。
+- `cmd/aih/provider_info.go`：Codex-only raw 版本适配，沿既有 canonical resolver，保留显式 override > managed current/tombstone/invalid > hint 的选择权和只读 `CheckHostReady`。官方 stdout/stderr 原样继承，正常非零及 signal 的 `128+signal` 静默透传；不新增 default/config writer。
+
+没有写 JS launcher、`run.go`、CLIHookService/host、managed receipt/resolver 实现、Desktop/VSCode、协议、TUI/default/exec/resume。版本诊断**有意不再执行**旧 helper 的账号/default 环境选择、config heal、rollout 修复和 catalog 投影副作用；它保留 host recovery admission，但不是上述启动语义的全量等价迁移。
+
+### 同 SHA 实证，而非只看源码或旧回合
+
+冻结源码为已提交 `2075e22f2` archive＋上述两 path；最终源码 SHA-256 为 wrapper `b4b84260…`、info `195c2c92…`，Go CLI 为 `ed479591d1ac591c50c8488f039e4afb78570a5fce7a2265e7b255e4122b6c5c`。使用真实产品 `CLIHookService` 在本人私有 HOME 生成 wrapper，并重复产品自愈确认同字节；操作入口仅是私有 operational main 调用产品服务，不复制产品函数、不加测试/mock/fixture。因此本证据是**真实产品生成的私有 wrapper**，不冒充公开 installer 已发布。
+
+**03:20:22 最终 18 项真实操作完成：**绝对 `NODE_BIN` 不存在、PATH 无 node、无 AIH Node server/账号凭据/第一方管理 RPC；官方 Codex 0.167.2 的 `--version/-V` 均 exit0、原样版本行；连私有 JS helper 暂不可用仍成功。缺 Go、真实旧 Go、不可执行 Go、无效 explicit override、pending host marker、managed disabled 和损坏 receipt 均 exit1，不回 Node。managed 激活调用真实产品 transaction，先执行官方 version 和 app-server initialize，再发布；当前版本不依赖旧 cached backup，显式 valid override 的优先级真实验证。4 个排除形状（exec、model-prefix、extra token、native escape）继续旧路径，Node 缺失时 exit126，**未迁移**。
+
+仅对记录到的本人 PGID 内、Go 的**官方 native 子进程**发 SIGKILL，最终 exit137 且无 `aih:` 追加，未杀 Go 或共享进程组。采样进程链包含 Go 与官方 native，未观察 Node，18项 V8 文件数均0；这不是完整 syscall/network trace。03:21:53 复核已观察 PID 无残留、本人 root executable 扫描为空，仅删除三份本人私有 HOME；冻结源码／低敏证据保留。
+
+native build、focused vet 通过；Linux x64／Windows x64 cross-build exit0，**不是异机运行验收**。Hubble/Mendel 对最终两 SHA 源码复审 no blocking；曾发现的 amd64/x64 定位和 native signal P2 已修。首个 operator 15秒 snapshot-copy 超时保留记录（观察到175MiB本人临时copy），改用90秒有界真实操作完成；未据此修改产品快照逻辑或伪称产品回归已修。
+
+### 交付边界与下一退出门禁
+
+- 此前私有 JS early-delegation spike 保留历史但已撤出私有产品源码，**不计作 Node 不可用验收**；共享 JS 一直未写。
+- **没有热更新现存公开 Codex wrapper、标准 Go CLI／server、stamp 或共享服务。** 当前公开旧 wrapper 仍可依赖 Node；后续由发布 owner 协调来源一致的构件和真实安装／loaded 验收。
+- 旧 Node CLI hook 的条件 self-heal writer 仍须单 owner 证明及退出门禁；本次不声明其已删除，也不武断声称当前双 writer 正在运行。Windows wrapper、实机 x64/Linux、默认/TUI/exec/resume/app-server/stdio，以及完整 R2/W0–W6继续保留，不能借纯版本成功关闭。
+
+完整低敏逐操作／来源／caller／cleanup／原始 digest 追加既有 `evidence/2026-11-17-work-node-host-free.json` 的 `cliOwnedPosixRawVersionGoWrapper`。不新增测试用例，不操作共享草稿／暂停 goal／其他 owner 文件或索引。
+
+
+**补充的真实公开产品入口尝试（没有用 operational main，仍未闭门禁）：**同冻结源码两path构建现存 `cmd/aih-server`，用另一本人私有 HOME/DB/端口、`--enable-codex-cli-hook=true`、无 `--supervise-node`／front-door／Node base，启动后 ready 和鉴权管理状态可用，但120秒内 CLI hook 始终未 enabled，未产生 CLI state，复制的官方 native target 未被包装。随后仅停止该私有 server，根进程扫描为空并删除本人 home。源码逐层核对：`cmd/aih-server/run.go` 传 `Options.CodexHooks`，但 `aihserver.New` 到 `buildServerHandlers` 未转交该 options；内部 `startCodexHooksDaemons` 只启 notification bridge，不含 CLI enable。这是冻结版本的**真实 host 接线阻碍**，不是本两path版本转交的通过结果。没有修改共享 composition／host／run.go；已向监督01a1df63报告由其确认并分配 host owner，不能因两path获准而扩scope。
+
+Mendel最终核对源码、raw、manifest、cleanup和native子进程PPID/PGID，18项预期分布为 `0×6、1×7、126×4、137×1`，无新一致性 blocker。**仍披露两份新增私有 operational Go main 的验证入口边界；调用真产品库不自动等于全程使用既有公开入口，也不将两path授权解释为临时驱动合规豁免。** 上述新增公开入口尝试未成功，不用私有矩阵掩盖。最终raw的 `publicSourceApplied=false` 保留03:20:22历史快照；03:20:23落盘由独立application receipt接续，不回填原记录。

@@ -180,8 +180,14 @@ func Install(ctx context.Context, options Options) (result Result, resultErr err
 	}
 	busy, why := false, ""
 	if !o.Service {
-		if _, e := os.Stat(filepath.Join(o.Home, "run", "go-server-runtime.json")); e == nil && listenerPresent(readConfig(o.Home).Port) {
-			return result, errors.New("已有后台服务运行；请使用普通安装以安全更新，不支持对运行实例使用 --no-service")
+		if _, e := os.Stat(filepath.Join(o.Home, "run", "go-server-runtime.json")); e == nil {
+			c := readConfig(o.Home)
+			if c.readError != nil {
+				return result, c.readError
+			}
+			if listenerPresent(c.Port) {
+				return result, errors.New("已有后台服务运行；请使用普通安装以安全更新，不支持对运行实例使用 --no-service")
+			}
 		}
 	}
 	if o.Service {

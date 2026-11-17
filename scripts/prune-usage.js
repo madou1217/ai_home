@@ -13,9 +13,9 @@
 // 聊天会话、事件流、账号数据都不在这个脚本的范围内。
 
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 
 function parseArgs(argv) {
   const options = { days: 90, apply: false, vacuum: false, db: '' };
@@ -37,8 +37,8 @@ function parseArgs(argv) {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const options = parseArgs(process.argv.slice(2));
-const home = process.env.AIH_HOME_DIR || path.join(os.homedir(), '.ai_home');
-const dbPath = options.db || path.join(home, 'app-state.db');
+const home = resolveAiHomeDir();
+const dbPath = options.db || getBusinessDatabasePath(home);
 
 if (!fs.existsSync(dbPath)) {
   console.error('找不到数据库: ' + dbPath);
@@ -48,7 +48,7 @@ if (!fs.existsSync(dbPath)) {
 const cutoff = Date.now() - options.days * DAY_MS;
 const cutoffIso = new Date(cutoff).toISOString();
 const sizeBefore = fs.statSync(dbPath).size;
-const db = new DatabaseSync(dbPath);
+const db = new DatabaseSync(dbPath, { readOnly: !options.apply });
 
 const targets = [
   { table: 'model_usage_records', column: 'timestamp_ms' },
@@ -86,7 +86,7 @@ if (!options.apply) {
 db.exec('BEGIN IMMEDIATE');
 try {
   for (const t of targets) {
-    db.prepare('delete from "' + t.table + '" where "' + t.column + ' < ?').run(cutoff);
+    db.prepare('delete from "' + t.table + '" where "' + t.column + '" < ?').run(cutoff);
   }
   db.exec('COMMIT');
 } catch (error) {

@@ -171,7 +171,7 @@ func (handler *Handler) credentialStoreFiles(provider string, record *credential
 		ID:             "store:credentials",
 		Label:          "账号凭据记录",
 		Source:         "store",
-		Location:       "app-state.db · compat_account_credentials",
+		Location:       "aih.db · compat_account_credentials",
 		Format:         "json",
 		UpdatedAt:      record.UpdatedAt,
 		Content:        content,

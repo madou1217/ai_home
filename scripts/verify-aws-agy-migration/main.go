@@ -166,17 +166,20 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if err != nil {
 		return options{}, fmt.Errorf("resolve home directory: %w", err)
 	}
+	aiHome := strings.TrimSpace(os.Getenv("AIH_HOME_DIR"))
+	if aiHome == "" {
+		aiHome = filepath.Join(home, ".ai_home")
+	}
 	opts := options{
-		LocalDB:    filepath.Join(home, ".ai_home", "aih.db"),
-		AppStateDB: filepath.Join(home, ".ai_home", "app-state.db"),
-		RemoteDB:   "~/.ai_home/aih.db",
-		Timeout:    15 * time.Second,
+		LocalDB:  filepath.Join(aiHome, "aih.db"),
+		RemoteDB: "~/.ai_home/aih.db",
+		Timeout:  15 * time.Second,
 	}
 
 	fs := flag.NewFlagSet("verify-aws-agy-migration", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&opts.LocalDB, "local-db", opts.LocalDB, "local Go account database (read-only)")
-	fs.StringVar(&opts.AppStateDB, "app-state-db", opts.AppStateDB, "local app-state.db used to resolve ssh_connections")
+	fs.StringVar(&opts.AppStateDB, "app-state-db", opts.AppStateDB, "explicit offline database for ssh_connections (defaults to --local-db)")
 	fs.StringVar(&opts.RemoteDB, "remote-db", opts.RemoteDB, "remote aih.db path; ~ is expanded on the remote host")
 	fs.StringVar(&opts.Connection, "connection", "", "ssh_connections id or label; defaults to the unique label containing aws")
 	fs.StringVar(&opts.SSH, "ssh", "", "explicit user@host target; skips ssh_connections lookup")
@@ -203,6 +206,9 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	}
 	opts.LocalDB = strings.TrimSpace(opts.LocalDB)
 	opts.AppStateDB = strings.TrimSpace(opts.AppStateDB)
+	if opts.AppStateDB == "" {
+		opts.AppStateDB = opts.LocalDB
+	}
 	opts.RemoteDB = strings.TrimSpace(opts.RemoteDB)
 	opts.Connection = strings.TrimSpace(opts.Connection)
 	opts.SSH = strings.TrimSpace(opts.SSH)
@@ -478,17 +484,17 @@ func validateDestination(destination string) error {
 	return nil
 }
 
-func loadConnections(appStatePath string) ([]sshConnection, error) {
-	abs, err := expandHome(appStatePath)
+func loadConnections(databasePath string) ([]sshConnection, error) {
+	abs, err := expandHome(databasePath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve app-state database: %w", err)
+		return nil, fmt.Errorf("resolve connections database: %w", err)
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return nil, fmt.Errorf("app-state database not found: %s; use --ssh to specify the target directly", abs)
+		return nil, fmt.Errorf("connections database not found: %s; use --ssh to specify the target directly", abs)
 	}
 	db, err := sql.Open("sqlite", readOnlyDSN(abs))
 	if err != nil {
-		return nil, fmt.Errorf("open app-state database: %w", err)
+		return nil, fmt.Errorf("open connections database: %w", err)
 	}
 	defer db.Close()
 
@@ -497,7 +503,7 @@ func loadConnections(appStatePath string) ([]sshConnection, error) {
 	var raw string
 	err = db.QueryRowContext(ctx, "SELECT value FROM app_kv WHERE key = 'ssh_connections'").Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.New("app-state has no ssh_connections; use --ssh to specify the target directly")
+		return nil, errors.New("connections database has no ssh_connections; use --ssh to specify the target directly")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read ssh_connections: %w", err)

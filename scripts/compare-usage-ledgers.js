@@ -9,13 +9,13 @@
 //
 // 用法：
 //   node scripts/compare-usage-ledgers.js [--days 1] [--tolerance 0.2] [--json]
-//     [--node-db ~/.ai_home/app-state.db] [--go-db ~/.ai_home/aih.db]
+//     [--node-db ~/.ai_home/aih.db] [--go-db ~/.ai_home/aih.db]
 //
 // 退出码：0 = 可比（或只有一边有数据）；2 = 存在显著差异，先查清来源再谈切流。
 
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 
 const DEFAULT_DAYS = 1;
 const DEFAULT_TOLERANCE = 0.2;
@@ -23,12 +23,11 @@ const DEFAULT_TOLERANCE = 0.2;
 const PARTIAL_RATIO = 0.05;
 
 function parseArgs(argv) {
-  const home = process.env.HOME || os.homedir();
   const options = {
     days: DEFAULT_DAYS,
     tolerance: DEFAULT_TOLERANCE,
-    nodeDb: path.join(home, '.ai_home', 'app-state.db'),
-    goDb: path.join(home, '.ai_home', 'aih.db'),
+    nodeDb: '',
+    goDb: '',
     json: false
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -51,6 +50,11 @@ function parseArgs(argv) {
   if (!Number.isFinite(options.tolerance) || options.tolerance < 0) {
     options.tolerance = DEFAULT_TOLERANCE;
   }
+  if (!options.help) {
+    const root = resolveAiHomeDir();
+    if (!options.nodeDb) options.nodeDb = getBusinessDatabasePath(root);
+    if (!options.goDb) options.goDb = getBusinessDatabasePath(root);
+  }
   return options;
 }
 
@@ -60,7 +64,7 @@ function usage() {
     '',
     '  --days <n>        统计最近 n 天（默认 1）',
     '  --tolerance <p>   允许的相对差异（默认 0.2）',
-    '  --node-db <path>  Node 记录库（默认 ~/.ai_home/app-state.db）',
+    '  --node-db <path>  Node 记录库（默认 ~/.ai_home/aih.db；可显式指定离线旧库）',
     '  --go-db <path>    Go 账本库（默认 ~/.ai_home/aih.db）',
     '  --json            输出机器可读结果'
   ].join('\n');

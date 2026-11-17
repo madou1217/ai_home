@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/accounts/agy"
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 )
 
 const (
@@ -44,8 +45,8 @@ const (
 		"https://www.googleapis.com/auth/cloud-platform " +
 		"https://www.googleapis.com/auth/userinfo.profile"
 
-	// SourceAppStateDB 是 Node 固定使用的来源标签（凭据账本就在 app-state.db 里）。
-	SourceAppStateDB = "app-state.db"
+	// SourceAppStateDB 保留兼容名称；凭据账本已统一存入 AIH 业务数据库。
+	SourceAppStateDB = businessdb.FileName
 
 	// EnvAccessTokenKey / EnvGoogleAccessTokenKey 是账号环境里的两个兜底 token 键，
 	// 顺序即优先级，与 Node 的 readAgyEnvToken 一致。

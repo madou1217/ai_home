@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// 别名双库对账：Node（owner）的 app-state.db.model_aliases 与 Go 的 aih.db.model_alias。
+// 别名双库对账：aih.db 中 Node 投影 model_aliases 与 Go 的 model_alias（只读）。
 //
 // 与运行时影子对账的分工：
 //   - lib/server/model-alias-shadow.js 比的是「接口返回的投影」，只能反映被页面读到的那一刻；
@@ -11,18 +11,17 @@
 // targetProvider/priority/enabled/description。
 //
 // 用法：node scripts/compare-model-aliases.js [--json]
-//       [--node-db ~/.ai_home/app-state.db] [--go-db ~/.ai_home/aih.db]
+//       [--node-db ~/.ai_home/aih.db] [--go-db ~/.ai_home/aih.db]
 // 退出码：0 = 一致；2 = 存在差异（先查清来源再谈翻转所有权）。
 
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 
 function parseArgs(argv) {
-  const home = process.env.HOME || os.homedir();
   const options = {
-    nodeDb: path.join(home, '.ai_home', 'app-state.db'),
-    goDb: path.join(home, '.ai_home', 'aih.db'),
+    nodeDb: '',
+    goDb: '',
     json: false
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -40,6 +39,11 @@ function parseArgs(argv) {
       default: throw new Error('未知参数: ' + flag);
     }
   }
+  if (!options.help) {
+    const root = resolveAiHomeDir();
+    if (!options.nodeDb) options.nodeDb = getBusinessDatabasePath(root);
+    if (!options.goDb) options.goDb = getBusinessDatabasePath(root);
+  }
   return options;
 }
 
@@ -47,7 +51,7 @@ function usage() {
   return [
     '用法: node scripts/compare-model-aliases.js [选项]',
     '',
-    '  --node-db <path>  Node 库（默认 ~/.ai_home/app-state.db）',
+    '  --node-db <path>  Node 投影库（默认 ~/.ai_home/aih.db；可显式指定离线旧库）',
     '  --go-db <path>    Go 库（默认 ~/.ai_home/aih.db）',
     '  --json            输出机器可读结果'
   ].join('\n');

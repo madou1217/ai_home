@@ -9,15 +9,17 @@
 // links（Node ref ↔ Go ref），其次按 provider+secret+base URL 匹配。
 //
 // 默认 dry-run；加 --apply 才写库。写库前要求服务已停止（脚本会检查 19550/9527），
-// 并自动备份两份 SQLite 到 <aiHome>/backups/rekey-<timestamp>/。
+// 并自动备份实际修改的 canonical SQLite 到 <aiHome>/backups/rekey-<timestamp>/。
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 
 const DEFAULTS = Object.freeze({
-  aiHomeDir: process.env.AIH_HOME_DIR || '/Users/model/.ai_home'
+  aiHomeDir: resolveAiHomeDir()
 });
 
 const STATIC_TABLES = Object.freeze([
@@ -112,11 +114,12 @@ function readSyncLinks(db) {
   return { links: parseObject(row.value).links || {}, raw: parseObject(row.value) };
 }
 
-function nodeStaticRecords(db) {
+function nodeStaticRecords(db, legacySource = false) {
+  const credentialTable = legacySource ? 'account_credentials' : 'compat_account_credentials';
   const rows = db.prepare(`
     SELECT r.account_ref, r.provider, c.env_json
     FROM account_refs r
-    LEFT JOIN account_credentials c ON c.account_ref = r.account_ref
+    LEFT JOIN ${credentialTable} c ON c.account_ref = r.account_ref
     WHERE r.provider IN ('codex', 'claude')
   `).all();
   return rows.map((row) => {
@@ -140,10 +143,10 @@ function nodeBaseFor(record, provider) {
   return String(provider === 'codex' ? record.env.OPENAI_BASE_URL : record.env.ANTHROPIC_BASE_URL || '').trim();
 }
 
-function buildPlan(goDb, nodeDb) {
+function buildPlan(goDb, nodeDb, legacySource = false) {
   const staticAccounts = listStaticAccounts(goDb);
   const { links } = readSyncLinks(nodeDb);
-  const nodeRecords = nodeStaticRecords(nodeDb);
+  const nodeRecords = nodeStaticRecords(nodeDb, legacySource);
   const nodeByRef = new Map(nodeRecords.map((record) => [record.accountRef, record]));
   const nodeRefByGoRef = new Map();
   for (const [nodeRef, link] of Object.entries(links)) {
@@ -180,20 +183,47 @@ function buildPlan(goDb, nodeDb) {
   return plan;
 }
 
-function countRows(db, table, column, value) {
-  const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`).get(value);
-  return Number(row && row.n) || 0;
+function canonicalReferenceTables(db) {
+  const tables = new Set(STATIC_TABLES);
+  for (const row of db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all()) {
+    const name = String(row.name).replace(/"/g, '""');
+    const refs = db.prepare(`PRAGMA foreign_key_list("${name}")`).all();
+    if (refs.some((ref) => ref.table === 'accounts' && ref.from === 'account_ref' && ref.to === 'account_ref')) {
+      tables.add(String(row.name));
+    }
+  }
+  return Array.from(tables);
+}
+
+function updateSyncLinks(db, rekey) {
+  // 兼容投影的账号 ref 保持不变；只更新 canonical 库中的旧 Go ref 映射。
+  const { raw } = readSyncLinks(db);
+  if (!raw || !raw.links) return;
+  let changed = false;
+  for (const entry of rekey) {
+    for (const link of Object.values(raw.links)) {
+      if (link && link.goRef === entry.accountRef) {
+        link.goRef = entry.targetRef;
+        changed = true;
+      }
+    }
+  }
+  if (changed) {
+    db.prepare('UPDATE app_kv SET value = ?, updated_at = ? WHERE key = ?')
+      .run(JSON.stringify(raw), Date.now(), 'go-account-sync:state');
+  }
 }
 
 function applyPlan(goDb, nodeDb, plan) {
   const rekey = plan.filter((entry) => entry.reason === 'rekey');
   if (rekey.length === 0) return { rekey: 0, rows: {} };
   const rows = {};
+  const tables = canonicalReferenceTables(goDb);
   goDb.exec('PRAGMA foreign_keys = OFF');
   goDb.exec('BEGIN IMMEDIATE');
   try {
     for (const entry of rekey) {
-      for (const table of STATIC_TABLES) {
+      for (const table of tables) {
         if (table === 'accounts') {
           const result = goDb.prepare('UPDATE accounts SET account_ref = ? WHERE account_ref = ?')
             .run(entry.targetRef, entry.accountRef);
@@ -209,10 +239,14 @@ function applyPlan(goDb, nodeDb, plan) {
           rows[table] = (rows[table] || 0) + Number(result.changes || 0);
           continue;
         }
-        const result = goDb.prepare(`UPDATE ${table} SET account_ref = ? WHERE account_ref = ?`)
+        const result = goDb.prepare(`UPDATE "${table.replace(/"/g, '""')}" SET account_ref = ? WHERE account_ref = ?`)
           .run(entry.targetRef, entry.accountRef);
         rows[table] = (rows[table] || 0) + Number(result.changes || 0);
       }
+    }
+    updateSyncLinks(goDb, rekey);
+    if (goDb.prepare('PRAGMA foreign_key_check').all().length > 0) {
+      throw new Error('rekey would leave foreign-key violations');
     }
     goDb.exec('COMMIT');
   } catch (error) {
@@ -222,39 +256,18 @@ function applyPlan(goDb, nodeDb, plan) {
     goDb.exec('PRAGMA foreign_keys = ON');
   }
 
-  // sync links: 旧 Go ref 改指新 ref；print 保持不变，下一轮同步会按需校正。
-  const { raw } = readSyncLinks(nodeDb);
-  if (raw && raw.links) {
-    let changed = false;
-    for (const entry of rekey) {
-      for (const link of Object.values(raw.links)) {
-        if (link && link.goRef === entry.accountRef) {
-          link.goRef = entry.targetRef;
-          changed = true;
-        }
-      }
-    }
-    if (changed) {
-      nodeDb.prepare('UPDATE app_kv SET value = ?, updated_at = ? WHERE key = ?')
-        .run(JSON.stringify(raw), Date.now(), 'go-account-sync:state');
-    }
-  }
   return { rekey: rekey.length, rows };
 }
 
-function backup(aiHomeDir) {
+function backup(aiHomeDir, databasePath) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const dir = path.join(aiHomeDir, 'backups', `rekey-${stamp}`);
   fs.mkdirSync(dir, { recursive: true });
-  for (const file of ['aih.db', 'app-state.db']) {
-    const source = path.join(aiHomeDir, file);
-    if (!fs.existsSync(source)) continue;
-    const db = new DatabaseSync(source, { readOnly: true });
-    try {
-      db.exec(`VACUUM INTO '${path.join(dir, file).replace(/'/g, "''")}'`);
-    } finally {
-      db.close();
-    }
+  const db = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    db.exec(`VACUUM INTO '${path.join(dir, 'aih.db').replace(/'/g, "''")}'`);
+  } finally {
+    db.close();
   }
   return dir;
 }
@@ -271,17 +284,20 @@ function assertServerStopped() {
 function main(argv) {
   const args = parseArgs(argv);
   if (args.help) {
-    console.log('usage: node scripts/rekey-static-account-refs.js [--apply] [--ai-home DIR] [--go-db FILE] [--node-db FILE]');
+    console.log('usage: node scripts/rekey-static-account-refs.js [--apply] [--ai-home DIR] [--go-db FILE] [--node-db OFFLINE_SOURCE]');
     return 0;
   }
   const aiHomeDir = args.aiHomeDir || DEFAULTS.aiHomeDir;
-  const goDbPath = args.goDb || path.join(aiHomeDir, 'aih.db');
-  const nodeDbPath = args.nodeDb || path.join(aiHomeDir, 'app-state.db');
+  const goDbPath = fs.realpathSync(args.goDb || getBusinessDatabasePath(aiHomeDir));
+  const nodeDbPath = args.nodeDb ? fs.realpathSync(args.nodeDb) : goDbPath;
   if (args.apply && !args.skipServerCheck) assertServerStopped();
-  const goDb = new DatabaseSync(goDbPath);
-  const nodeDb = new DatabaseSync(nodeDbPath, { readOnly: !args.apply });
+  const goDb = new DatabaseSync(goDbPath, { readOnly: !args.apply });
+  let nodeDb;
   try {
-    const plan = buildPlan(goDb, nodeDb);
+    nodeDb = nodeDbPath === goDbPath ? goDb : new DatabaseSync(nodeDbPath, { readOnly: true });
+    // 只有显式指定的离线源才允许读取迁移前的凭据 schema。
+    const legacySource = nodeDb !== goDb && !nodeDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='compat_account_credentials'").get();
+    const plan = buildPlan(goDb, nodeDb, legacySource);
     for (const entry of plan) {
       console.log([
         entry.provider,
@@ -297,14 +313,14 @@ function main(argv) {
       console.log(`dry-run: ${plan.filter((entry) => entry.reason === 'rekey').length} account(s) would be rekeyed`);
       return 0;
     }
-    const backupDir = backup(aiHomeDir);
+    const backupDir = backup(aiHomeDir, goDbPath);
     console.log(`backup: ${backupDir}`);
     const result = applyPlan(goDb, nodeDb, plan);
     console.log(`applied: ${result.rekey} account(s); rows=${JSON.stringify(result.rows)}`);
     return 0;
   } finally {
+    if (nodeDb && nodeDb !== goDb) nodeDb.close();
     goDb.close();
-    nodeDb.close();
   }
 }
 

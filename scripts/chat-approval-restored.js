@@ -1,12 +1,9 @@
 'use strict';
-const fs = require('node:fs'), path = require('node:path'), { execFileSync } = require('node:child_process');
+const fs = require('node:fs'), path = require('node:path');
 const { loadPlaywright } = require('./playwright-require');
 const base = 'http://127.0.0.1:9527';
-let key = '';
-try {
-  const raw = execFileSync('sqlite3', ['file:/Users/model/.ai_home/app-state.db?mode=ro', "select value from app_kv where key='config:server';"], { encoding: 'utf8' }).trim();
-  key = String(JSON.parse(raw).managementKey || '').trim();
-} catch (_error) {}
+const { readManagementKey } = require('./lib/business-database-reader');
+const key = readManagementKey();
 const profileFor = (origin, key) => {
   const now = Date.now();
   return {

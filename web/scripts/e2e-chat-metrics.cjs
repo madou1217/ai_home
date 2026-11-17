@@ -1,13 +1,23 @@
-const { chromium } = require('/Users/model/.npm/_npx/86170c4cd1c5da32/node_modules/playwright');
 const { DatabaseSync } = require('node:sqlite');
-const path = require('path');
+const { getBusinessDatabasePath } = require('../../lib/server/business-database');
+const { resolveAiHomeDir } = require('../../lib/runtime/aih-home');
 
 async function runE2E() {
+  if (process.argv.includes('--help')) {
+    console.log('Usage: node web/scripts/e2e-chat-metrics.cjs');
+    return;
+  }
+  const { chromium } = require('/Users/model/.npm/_npx/86170c4cd1c5da32/node_modules/playwright');
+
   console.log('=== Step 1: 读取本地 Server 配置 ===');
-  const dbPath = path.join(process.env.HOME, '.ai_home', 'app-state.db');
-  const db = new DatabaseSync(dbPath, { readOnly: true });
-  const row = db.prepare('SELECT value FROM app_kv WHERE key = ?').get('config:server');
-  db.close();
+  const aiHomeDir = resolveAiHomeDir();
+  const db = new DatabaseSync(getBusinessDatabasePath(aiHomeDir), { readOnly: true });
+  let row;
+  try {
+    row = db.prepare('SELECT value FROM app_kv WHERE key = ?').get('config:server');
+  } finally {
+    db.close();
+  }
 
   if (!row) {
     throw new Error('未找到 config:server 配置');

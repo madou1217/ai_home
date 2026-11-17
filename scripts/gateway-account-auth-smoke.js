@@ -2,8 +2,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const os = require('node:os');
-const path = require('node:path');
+const { resolveBusinessDatabasePath } = require('./lib/business-database-reader');
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:9527';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -180,10 +179,7 @@ function fail(code) {
 }
 
 function defaultDbPath(env = process.env) {
-  const aihHome = typeof env.AIH_HOME_DIR === 'string' && env.AIH_HOME_DIR.trim()
-    ? env.AIH_HOME_DIR.trim()
-    : path.join(os.homedir(), '.ai_home');
-  return path.join(aihHome, 'app-state.db');
+  return resolveBusinessDatabasePath({ env });
 }
 
 function requireValue(argv, index, flag) {

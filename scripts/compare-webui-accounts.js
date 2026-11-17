@@ -22,14 +22,13 @@
 // 退出码：0 = filled 字段零差异；2 = 有差异；1 = 运行失败。
 
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 const { isDeepStrictEqual } = require('node:util');
 
 function parseArgs(argv) {
-  const home = process.env.HOME || os.homedir();
   const options = {
-    nodeDb: path.join(home, '.ai_home', 'app-state.db'),
+    nodeDb: '',
     baseUrl: 'http://127.0.0.1:9527',
     goBaseUrl: String(process.env.AIH_SERVER_BASE_URL || '').trim(),
     nodePayload: '',
@@ -55,6 +54,10 @@ function parseArgs(argv) {
       default: throw new Error('未知参数: ' + flag);
     }
   }
+  if (!options.help) {
+    const root = resolveAiHomeDir();
+    if (!options.nodeDb) options.nodeDb = getBusinessDatabasePath(root);
+  }
   return options;
 }
 
@@ -65,7 +68,7 @@ function usage() {
     '  --go-base-url <url>   Go Core 地址（默认读 AIH_SERVER_BASE_URL）',
     '  --go-payload <path>   直接用已保存的 Go 响应 JSON（离线对拍）',
     '  --node-payload <path> 直接用已保存的 Node 响应 JSON（默认实时抓取）',
-    '  --node-db <path>      Node 库，读 management key 与账号链接（默认 ~/.ai_home/app-state.db）',
+    '  --node-db <path>      Node 投影库，读 management key 与账号链接（默认 ~/.ai_home/aih.db；可指定离线旧库）',
     '  --base-url <url>      Node 服务地址（默认 http://127.0.0.1:9527）',
     '  --json                输出 JSON',
     '',

@@ -2,42 +2,39 @@
 'use strict';
 
 /**
- * 把 Node 的历史 token 事实（app-state.model_usage_records）导入 Go 的 usage_ledger。
+ * 把 Node 的历史 token 事实（aih.model_usage_records）导入 Go 的 usage_ledger。
  *
  * 为什么需要：额度统计页要切到 Go，但 Go 账本只有切换之后的数据；Node 手里有一百多万条
  * 历史。导入接口按 source_key 幂等，脚本可以反复跑，切流前再补一次增量即可。
  *
- * 用法：node scripts/backfill-usage-ledger.js [--batch 2000] [--dry-run] [--limit N]
+ * 用法：node scripts/backfill-usage-ledger.js [--batch 2000] [--dry-run] [--limit N] [--db PATH] [--source-db OFFLINE_PATH]
  */
 
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 
-const AIH_HOME = process.env.AIH_HOME_DIR || '/Users/model/.ai_home';
-const APP_STATE = path.join(AIH_HOME, 'app-state.db');
-const GO_DB = path.join(AIH_HOME, 'aih.db');
 // 走 Node 的中转路由：Go 的 management key 是 Node 启动时生成的，脚本拿不到。
 const ENDPOINT = process.env.AIH_IMPORT_ENDPOINT
   || 'http://127.0.0.1:9527/v0/webui/usage/backfill';
 
 function parseArgs(argv) {
-  const options = { batch: 2000, dryRun: false, limit: 0 };
+  const options = { batch: 2000, dryRun: false, limit: 0, db: '', sourceDb: '' };
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === '--batch') options.batch = Number(argv[index + 1]) || options.batch;
+    if (argv[index] === '--help') options.help = true;
     if (argv[index] === '--dry-run') options.dryRun = true;
     if (argv[index] === '--limit') options.limit = Number(argv[index + 1]) || 0;
+    if (argv[index] === '--db') options.db = argv[index + 1];
+    if (argv[index] === '--source-db') options.sourceDb = argv[index + 1];
   }
   return options;
 }
 
-function readManagementKey() {
-  const db = new DatabaseSync(APP_STATE, { readOnly: true });
-  try {
-    const row = db.prepare("select json_extract(value,'$.managementKey') as key from app_kv where key='config:server'").get();
-    return row && row.key ? String(row.key) : '';
-  } finally {
-    db.close();
-  }
+function readManagementKey(db) {
+  const row = db.prepare("select json_extract(value,'$.managementKey') as key from app_kv where key='config:server'").get();
+  return row && row.key ? String(row.key) : '';
 }
 
 // toEvent 把 Node 的计数口径翻译成 Go 账本口径。
@@ -70,41 +67,53 @@ function toEvent(row) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const key = process.env.AIH_SERVER_MANAGEMENT_KEY || readManagementKey();
-  if (!key && !options.dryRun) throw new Error('缺少管理密钥');
-  // 只导「Go 里还存在的账号」：账本有账号外键，已删除/已 rekey 的账号历史无法落库。
-  // 额度统计页是按账号看数据，这些历史本来就不会出现在页面上。
-  const goDb = new DatabaseSync(GO_DB, { readOnly: true });
-  const accounts = new Set(goDb.prepare('select account_ref from accounts').all().map((row) => String(row.account_ref)));
-  // 账号 ref 在迁移中被 rekey/合并过：历史用量按旧的 Node ref 记账，直接按原样导入
-  // 会因外键失败丢掉整段历史（真机：zcode 账号 13 条近 7 天记录全丢）。这里用同步状态
-  // 里的 links 把 Node ref 翻译成 Go ref，再按 Go 现存的账号过滤。
-  const stateDb = new DatabaseSync(APP_STATE, { readOnly: true });
-  const linksRow = stateDb.prepare("select value from app_kv where key='go-account-sync:state'").get();
-  stateDb.close();
-  const links = linksRow && linksRow.value ? JSON.parse(linksRow.value).links || {} : {};
-  // 切流时间点：Go 自己开始记账的第一条（source_key='' 是实时行）。此后的请求
-  // Go 已经记过，再从 Node 导入就是重复计数（真机：codex 账号虚高 4.3%，80 条重复）。
-  // 每个账号的切流点各自不同：Go 从哪一刻开始为该账号记账，就以那一刻为界。
-  // 全局最小时间会把「别的账号早就切了、这个账号还没切」的窗口一起排掉（真机：codex 少 14%）。
-  const liveSince = new Map();
-  for (const row of goDb.prepare("select account_ref, min(occurred_at_ms) as since from usage_ledger where source_key = '' group by account_ref").all()) {
-    liveSince.set(String(row.account_ref), Number(row.since) || 0);
+  if (options.help) {
+    console.log('Usage: node scripts/backfill-usage-ledger.js [--batch N] [--dry-run] [--limit N] [--db PATH] [--source-db PATH]');
+    return;
   }
-  goDb.close();
-  const goRefFor = (nodeRef) => {
-    const link = links[nodeRef];
-    return link && link.goRef ? String(link.goRef) : String(nodeRef);
-  };
-  const db = new DatabaseSync(APP_STATE, { readOnly: true });
-  let cursor = 0;
-  let total = 0;
-  let imported = 0;
-  let skipped = 0;
+  const dbPath = options.db || getBusinessDatabasePath(resolveAiHomeDir());
+  const sourcePath = options.sourceDb || dbPath;
+  const goDb = new DatabaseSync(dbPath, { readOnly: true });
+  let db;
   try {
-      // 只取可导入的行：早期记录没有账号与模型（account_ref=''），无法落进账本；
-      // 它们留在 Node 侧不影响统计，导入时直接跳过。
-      const select = db.prepare(`
+    db = path.resolve(sourcePath) === path.resolve(dbPath)
+      ? goDb : new DatabaseSync(sourcePath, { readOnly: true });
+    const key = options.dryRun ? '' : process.env.AIH_SERVER_MANAGEMENT_KEY || readManagementKey(goDb);
+    if (!key && !options.dryRun) throw new Error('缺少管理密钥');
+    // 只导「Go 里还存在的账号」：账本有账号外键，已删除/已 rekey 的账号历史无法落库。
+    // 额度统计页是按账号看数据，这些历史本来就不会出现在页面上。
+    const accounts = new Set(goDb.prepare('select account_ref from accounts').all().map((row) => String(row.account_ref)));
+    // Canonical accounts and sync links are authoritative; offline links are compatibility hints.
+    const readLinks = (database) => {
+      const row = database.prepare("select value from app_kv where key='go-account-sync:state'").get();
+      return row && row.value ? JSON.parse(row.value).links || {} : {};
+    };
+    const links = readLinks(goDb);
+    const sourceLinks = db === goDb ? links : readLinks(db);
+    // 切流时间点：Go 自己开始记账的第一条（source_key='' 是实时行）。此后的请求
+    // Go 已经记过，再从 Node 导入就是重复计数（真机：codex 账号虚高 4.3%，80 条重复）。
+    // 每个账号的切流点各自不同：Go 从哪一刻开始为该账号记账，就以那一刻为界。
+    // 全局最小时间会把「别的账号早就切了、这个账号还没切」的窗口一起排掉（真机：codex 少 14%）。
+    const liveSince = new Map();
+    for (const row of goDb.prepare("select account_ref, min(occurred_at_ms) as since from usage_ledger where source_key = '' group by account_ref").all()) {
+      liveSince.set(String(row.account_ref), Number(row.since) || 0);
+    }
+    const goRefFor = (nodeRef) => {
+      const original = String(nodeRef);
+      if (accounts.has(original)) return original;
+      for (const mapping of [links, sourceLinks]) {
+        const candidate = String(mapping[original]?.goRef || '');
+        if (accounts.has(candidate)) return candidate;
+      }
+      return original;
+    };
+    let cursor = 0;
+    let total = 0;
+    let imported = 0;
+    let skipped = 0;
+    // 只取可导入的行：早期记录没有账号与模型（account_ref=''），无法落进账本；
+    // 它们留在 Node 侧不影响统计，导入时直接跳过。
+    const select = db.prepare(`
       SELECT id, event_key, account_ref, provider, model, session_id, timestamp_ms,
              input_tokens, output_tokens, cache_read_input_tokens,
              cache_creation_input_tokens, reasoning_output_tokens, total_tokens
@@ -142,10 +151,11 @@ async function main() {
       }
       if (options.limit && total >= options.limit) break;
     }
+    console.log('done scanned=' + total + ' imported=' + imported + ' skipped=' + skipped + (options.dryRun ? ' (dry-run)' : ''));
   } finally {
-    db.close();
+    if (db && db !== goDb) db.close();
+    goDb.close();
   }
-  console.log('done scanned=' + total + ' imported=' + imported + ' skipped=' + skipped + (options.dryRun ? ' (dry-run)' : ''));
 }
 
 main().catch((error) => {

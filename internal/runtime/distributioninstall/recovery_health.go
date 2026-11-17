@@ -33,6 +33,9 @@ func verifyRestored(ctx context.Context, o Options, saved serviceSnapshot) error
 		return err
 	}
 	c := readConfig(o.Home)
+	if c.readError != nil {
+		return c.readError
+	}
 	deadline := time.NewTimer(45 * time.Second)
 	defer deadline.Stop()
 	for {

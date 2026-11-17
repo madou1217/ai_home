@@ -78,7 +78,11 @@ func (h platformHooks) Snapshot(ctx context.Context, o Options, backup string) (
 			s.TaskXML = string(raw)
 			s.Installed = true
 		}
-		s.Running = listenerPresent(readConfig(o.Home).Port)
+		c := readConfig(o.Home)
+		if c.readError != nil {
+			return s, c.readError
+		}
+		s.Running = listenerPresent(c.Port)
 	default:
 		return s, errors.New("installation_platform_unsupported")
 	}
@@ -162,10 +166,16 @@ func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot
 		} else {
 			_, _ = command(ctx, "schtasks", "/Delete", "/TN", serviceName(o), "/F")
 		}
-		if s.Running && !listenerPresent(readConfig(o.Home).Port) {
-			// InteractiveToken /Run can acknowledge an SSH call without starting.
-			// Restore the saved script through the same detached activation path.
-			return startWindowsService(ctx, o)
+		if s.Running {
+			c := readConfig(o.Home)
+			if c.readError != nil {
+				return c.readError
+			}
+			if !listenerPresent(c.Port) {
+				// InteractiveToken /Run can acknowledge an SSH call without starting.
+				// Restore the saved script through the same detached activation path.
+				return startWindowsService(ctx, o)
+			}
 		}
 	}
 	return nil

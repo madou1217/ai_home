@@ -12,8 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/businessdb"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 	_ "modernc.org/sqlite"
 )
@@ -23,26 +26,68 @@ type config struct {
 	Host          string `json:"host"`
 	APIKey        string `json:"apiKey"`
 	ManagementKey string `json:"managementKey"`
+	readError     error
 }
 
 func readConfig(home string) config {
 	c := config{Port: 9527, Host: "127.0.0.1"}
-	for _, name := range []string{"aih.db", "app-state.db"} {
+	// A retained legacy seal is never a fallback for an existing canonical store.
+	// Only installations that have not created aih.db may use pre-cutover config.
+	_, canonicalErr := os.Lstat(businessdb.Path(home))
+	legacyInstallation := errors.Is(canonicalErr, os.ErrNotExist)
+	if canonicalErr != nil && !legacyInstallation {
+		c.readError = fmt.Errorf("installation_config_unavailable: stat canonical database: %w", canonicalErr)
+		return c
+	}
+	names := []string{businessdb.FileName}
+	if legacyInstallation {
+		names = []string{businessdb.LegacyFileName}
+	}
+	for _, name := range names {
 		if _, err := os.Stat(filepath.Join(home, name)); err != nil {
+			if !legacyInstallation {
+				c.readError = fmt.Errorf("installation_config_unavailable: stat canonical database: %w", err)
+				return c
+			}
 			continue
 		}
-		db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(home, name))+"?mode=ro")
+		u := sqlitefile.URL(filepath.Join(home, name))
+		query := u.Query()
+		query.Set("mode", "ro")
+		u.RawQuery = query.Encode()
+		db, err := sql.Open("sqlite", u.String())
 		if err != nil {
+			if !legacyInstallation {
+				c.readError = fmt.Errorf("installation_config_unavailable: open canonical database: %w", err)
+				return c
+			}
 			continue
 		}
 		var raw string
 		err = db.QueryRow(`SELECT value FROM app_kv WHERE key='config:server'`).Scan(&raw)
-		db.Close()
-		if err == nil && json.Unmarshal([]byte(raw), &c) == nil {
+		err = errors.Join(err, db.Close())
+		candidate := c
+		if err == nil {
+			if json.Unmarshal([]byte(raw), &candidate) != nil {
+				err = errors.New("installation_config_invalid")
+			}
+		}
+		if err == nil && !legacyInstallation && strings.TrimSpace(candidate.ManagementKey) == "" {
+			err = errors.New("management_key_missing")
+		}
+		if err == nil && !legacyInstallation && (candidate.Port < 1 || candidate.Port > 65535) {
+			err = errors.New("installation_config_port_invalid")
+		}
+		if err == nil {
+			c = candidate
 			break
 		}
+		if !legacyInstallation {
+			c.readError = fmt.Errorf("installation_config_unavailable: read canonical server configuration: %w", err)
+			return c
+		}
 	}
-	if c.ManagementKey == "" {
+	if legacyInstallation && c.ManagementKey == "" {
 		if raw, err := os.ReadFile(filepath.Join(home, "server-config.json")); err == nil {
 			_ = json.Unmarshal(raw, &c)
 		}
@@ -83,6 +128,9 @@ func getLocal(ctx context.Context, c config, path string) (map[string]any, int, 
 // Unknown state on a reachable current management plane refuses an update.
 func Busy(ctx context.Context, home string) (bool, string, error) {
 	c := readConfig(home)
+	if c.readError != nil {
+		return true, "无法读取权威服务配置", c.readError
+	}
 	if !listenerPresent(c.Port) {
 		return false, "", nil
 	}
@@ -114,6 +162,9 @@ func Busy(ctx context.Context, home string) (bool, string, error) {
 
 func verifyStarted(ctx context.Context, o Options, b Build) error {
 	c := readConfig(o.Home)
+	if c.readError != nil {
+		return c.readError
+	}
 	deadline := time.Now().Add(90 * time.Second)
 	var last error
 	for time.Now().Before(deadline) {
@@ -148,6 +199,9 @@ func verifyStarted(ctx context.Context, o Options, b Build) error {
 
 func verifyRunningCommitted(ctx context.Context, o Options, b Build) error {
 	c := readConfig(o.Home)
+	if c.readError != nil {
+		return c.readError
+	}
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		j, status, err := getLocal(ctx, c, "/v0/webui/accounts")

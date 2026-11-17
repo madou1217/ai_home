@@ -12,14 +12,15 @@
  */
 
 const { DatabaseSync } = require('node:sqlite');
-
-const APP_STATE = '/Users/model/.ai_home/app-state.db';
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 const NODE_BASE = 'http://127.0.0.1:9527';
 const GO_BASE = 'http://127.0.0.1:19550';
 
 function parseArgs(argv) {
   const options = { provider: '', ref: '', days: 7, key: '' };
   for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === '--help') options.help = true;
     if (argv[index] === '--provider') options.provider = argv[index + 1];
     if (argv[index] === '--ref') options.ref = argv[index + 1];
     if (argv[index] === '--days') options.days = Number(argv[index + 1]) || 7;
@@ -29,7 +30,8 @@ function parseArgs(argv) {
 }
 
 function readConfig() {
-  const db = new DatabaseSync(APP_STATE, { readOnly: true });
+  const aiHomeDir = resolveAiHomeDir();
+  const db = new DatabaseSync(getBusinessDatabasePath(aiHomeDir), { readOnly: true });
   try {
     const row = db.prepare("select json_extract(value,'$.managementKey') as mgmt, json_extract(value,'$.apiKey') as api from app_kv where key='config:server'").get();
     const linksRow = db.prepare("select value from app_kv where key='go-account-sync:state'").get();
@@ -71,6 +73,10 @@ function dimensionRows(payload) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    console.log('Usage: node scripts/compare-quota-stats.js --provider NAME --ref REF [--days N] [--key KEY]');
+    return;
+  }
   if (!options.provider || !options.ref) throw new Error('需要 --provider 与 --ref');
   const config = readConfig();
   // Go 的 management key 是 Node 每次启动生成的（不落盘）；本地对拍默认

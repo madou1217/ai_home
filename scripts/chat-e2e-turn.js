@@ -3,9 +3,10 @@
 // 用法: node scripts/chat-e2e-turn.js <provider> <accountRef> <model> <prompt> <file1> [file2...]
 const fs = require('node:fs');
 const path = require('node:path');
+const { openBusinessDatabase, readManagementKey } = require('./lib/business-database-reader');
 
 const BASE = 'http://127.0.0.1:9527';
-const MGMT = fs.readFileSync('/tmp/aih-mgmt-key.txt', 'utf8').trim();
+const MGMT = readManagementKey();
 const [, , provider, accountRef, model, prompt, ...files] = process.argv;
 
 function mimeFor(file) {
@@ -56,8 +57,7 @@ async function main() {
   });
   console.log('submit:', submitted.status, submitted.json.ok);
 
-  const { DatabaseSync } = require('node:sqlite');
-  const db = new DatabaseSync(process.env.HOME + '/.ai_home/app-state.db', { readOnly: true });
+  const db = openBusinessDatabase();
   const deadline = Date.now() + 300000;
   let last = '';
   while (Date.now() < deadline) {

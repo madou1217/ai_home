@@ -8,6 +8,8 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
 
 const { readDefaultAccountRef } = require('../lib/account/default-account-store');
 const {
@@ -76,7 +78,7 @@ const APPROVAL_SMOKE_PROMPT = [
 
 function parseArgs(argv) {
   const options = {
-    sourceAiHomeDir: path.join(os.homedir(), '.ai_home'),
+    sourceAiHomeDir: resolveAiHomeDir(),
     interaction: true
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -976,7 +978,7 @@ async function run(options) {
         tempRoot,
         projectPath,
         interactionFixtureInstalled: project.interactionFixtureInstalled,
-        appStatePath: path.join(tempRoot, 'app-state.db'),
+        appStatePath: getBusinessDatabasePath(tempRoot),
         appServerLogPath: context.appServerLogPath,
         randomPort: port,
         sourceAccount: redactAccountRef(accountRef),

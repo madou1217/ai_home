@@ -75,6 +75,9 @@ func waitOwnedStop(ctx context.Context, port, pid int) error {
 
 func stopOwnedListener(ctx context.Context, o Options, saved serviceSnapshot) error {
 	c := readConfig(o.Home)
+	if c.readError != nil {
+		return c.readError
+	}
 	pid := stoppedDaemonPID(o)
 	if pid == 0 {
 		pid = saved.DaemonPID

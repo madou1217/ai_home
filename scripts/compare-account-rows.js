@@ -19,12 +19,12 @@
 // 字段增删要同步改这里（对拍脚本本身就是契约的复制品，不一致会被 row_identical 暴露）。
 //
 // 用法：node scripts/compare-account-rows.js [--json] [--node-payload <file>]
-//       [--node-db ~/.ai_home/app-state.db] [--go-db ~/.ai_home/aih.db] [--base-url http://127.0.0.1:9527]
+//       [--node-db ~/.ai_home/aih.db] [--go-db ~/.ai_home/aih.db] [--base-url http://127.0.0.1:9527]
 // 退出码：0 = 零差异；2 = 存在差异。
 
 const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 const { isDeepStrictEqual } = require('node:util');
 
 const {
@@ -38,10 +38,9 @@ const {
 } = require('../lib/server/account-row-sources');
 
 function parseArgs(argv) {
-  const home = process.env.HOME || os.homedir();
   const options = {
-    nodeDb: path.join(home, '.ai_home', 'app-state.db'),
-    goDb: path.join(home, '.ai_home', 'aih.db'),
+    nodeDb: '',
+    goDb: '',
     baseUrl: 'http://127.0.0.1:9527',
     nodePayload: '',
     json: false
@@ -63,6 +62,11 @@ function parseArgs(argv) {
       default: throw new Error('未知参数: ' + flag);
     }
   }
+  if (!options.help) {
+    const root = resolveAiHomeDir();
+    if (!options.nodeDb) options.nodeDb = getBusinessDatabasePath(root);
+    if (!options.goDb) options.goDb = getBusinessDatabasePath(root);
+  }
   return options;
 }
 
@@ -71,7 +75,7 @@ function usage() {
     '用法: node scripts/compare-account-rows.js [选项]',
     '',
     '  --node-payload <path> Node 响应 JSON（默认实时抓 /v0/webui/accounts）',
-    '  --node-db <path>      Node 库（默认 ~/.ai_home/app-state.db）',
+    '  --node-db <path>      Node 投影库（默认 ~/.ai_home/aih.db；可显式指定离线旧库）',
     '  --go-db <path>        Go 库（默认 ~/.ai_home/aih.db）',
     '  --base-url <url>      Node 服务地址（默认 http://127.0.0.1:9527）',
     '  --json                输出 JSON',

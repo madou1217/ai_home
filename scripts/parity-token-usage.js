@@ -20,12 +20,12 @@
  * 成本恒为 null，拿它和 Node 的历史成本比只会得到无意义的 100%。
  *
  * 用法：node scripts/parity-token-usage.js [--base-url http://127.0.0.1:9527]
- *        [--limit 5] [--threshold 1] [--node-db ~/.ai_home/app-state.db] [--key <management key>]
+ *        [--limit 5] [--threshold 1] [--node-db ~/.ai_home/aih.db] [--key <management key>]
  * 退出码：0 = 全部在阈值内；2 = 存在超阈值差异或请求失败。
  */
 
-const os = require('node:os');
-const path = require('node:path');
+const { getBusinessDatabasePath } = require('../lib/server/business-database');
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
 const { DatabaseSync } = require('node:sqlite');
 
 const DIMENSIONS = ['day', 'week', 'month', 'total'];
@@ -36,12 +36,11 @@ const DEFAULT_LIMIT = 5;
 const DEFAULT_THRESHOLD_PCT = 1;
 
 function parseArgs(argv) {
-  const home = process.env.HOME || os.homedir();
   const options = {
     baseUrl: 'http://127.0.0.1:9527',
     limit: DEFAULT_LIMIT,
     thresholdPct: DEFAULT_THRESHOLD_PCT,
-    nodeDb: path.join(home, '.ai_home', 'app-state.db'),
+    nodeDb: '',
     key: '',
     help: false
   };
@@ -62,6 +61,10 @@ function parseArgs(argv) {
       default: throw new Error('未知参数: ' + flag);
     }
   }
+  if (!options.help) {
+    const root = resolveAiHomeDir();
+    if (!options.nodeDb) options.nodeDb = getBusinessDatabasePath(root);
+  }
   return options;
 }
 
@@ -71,7 +74,7 @@ function usage() {
     '  --base-url <url>   AIH Server 地址（默认 http://127.0.0.1:9527）',
     '  --limit <n>        对拍账号数上限（默认 5，先按 codex/claude/codebuddy/zcode/agy 覆盖）',
     '  --threshold <pct>  差异告警阈值，百分比（默认 1）',
-    '  --node-db <path>   Node 库（默认 ~/.ai_home/app-state.db，用于取 Management Key）',
+    '  --node-db <path>   Node 投影库（默认 ~/.ai_home/aih.db，用于取 Management Key；可指定离线旧库）',
     '  --key <key>        显式指定 Management Key（默认从 config:server 读）',
     '  --help'
   ].join('\n');

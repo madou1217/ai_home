@@ -26,7 +26,8 @@ type Service struct {
 	store     *Store
 	providers map[string]struct{}
 	// targets 可选：判断目标模型是否真的可路由（见 TargetCatalog）。
-	targets TargetCatalog
+	targets       TargetCatalog
+	displaySource DisplaySource
 }
 
 // NewService 创建别名写服务。providerIDs 用于把未知作用域 Provider 归一到 all，
@@ -109,7 +110,11 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Record, 
 	if err := service.assertUnique(records, record.Alias, record.ScopeProvider(), ""); err != nil {
 		return Record{}, 0, err
 	}
-	generation, err := service.store.Replace(append(records, record))
+	record, err := service.withDisplayModels(ctx, record)
+	if err != nil {
+		return Record{}, 0, err
+	}
+	generation, err := service.store.ReplaceContext(ctx, append(records, record))
 	if err != nil {
 		return Record{}, 0, err
 	}
@@ -171,8 +176,12 @@ func (service *Service) Update(ctx context.Context, id string, input UpdateInput
 	if err := service.assertUnique(records, updated.Alias, updated.ScopeProvider(), id); err != nil {
 		return Record{}, 0, err
 	}
+	updated, err := service.withDisplayModels(ctx, updated)
+	if err != nil {
+		return Record{}, 0, err
+	}
 	records[index] = updated
-	generation, err := service.store.Replace(records)
+	generation, err := service.store.ReplaceContext(ctx, records)
 	if err != nil {
 		return Record{}, 0, err
 	}
@@ -313,6 +322,10 @@ func (service *Service) ReplaceGroup(
 		if err := ValidateAliasPattern(record.Alias); err != nil {
 			return nil, 0, 0, err
 		}
+		record, err := service.withDisplayModels(ctx, record)
+		if err != nil {
+			return nil, 0, 0, err
+		}
 		created = append(created, record)
 	}
 	// 唯一性在「保留 + 新建」整体上检查：分组替换最容易出的错就是把一条记录改成
@@ -326,7 +339,7 @@ func (service *Service) ReplaceGroup(
 		}
 		seen[key] = struct{}{}
 	}
-	generation, err := service.store.Replace(combined)
+	generation, err := service.store.ReplaceContext(ctx, combined)
 	if err != nil {
 		return nil, 0, 0, err
 	}

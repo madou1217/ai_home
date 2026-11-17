@@ -69,6 +69,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/deletionhost"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
@@ -1422,6 +1423,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	// 目标校验与 /targets 用同一份目录数据：写入口和下拉选项必须看到同一批模型，
 	// 否则会出现「下拉里有、保存时说没有」。
+	aliasService.SetDisplaySource(func(ctx context.Context, pattern string) ([]string, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return aliasdisplay.List(pattern, time.Now().UTC())
+	})
 	aliasService.SetTargetCatalog(func(provider, target string) (bool, bool) {
 		models, listErr := inference.models.ListRoutableModels(context.Background())
 		if listErr != nil {

@@ -69,8 +69,17 @@ func (store *Store) Restore(ctx context.Context) error {
 // Replace 用 Node 推送的完整别名集合替换当前投影，返回新代次。
 // 任一记录无效时整体拒绝并保留原投影，避免部分应用让别名解析出现空洞。
 func (store *Store) Replace(records []Record) (int64, error) {
-	if store == nil || len(records) > MaxRecords {
+	return store.ReplaceContext(context.Background(), records)
+}
+
+// ReplaceContext persists the complete collection using the caller cancellation
+// boundary, then publishes only a successful committed generation in memory.
+func (store *Store) ReplaceContext(ctx context.Context, records []Record) (int64, error) {
+	if store == nil || ctx == nil || len(records) > MaxRecords {
 		return 0, ErrInvalidProjection
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	next, err := validateRecords(records)
 	if err != nil {
@@ -79,7 +88,7 @@ func (store *Store) Replace(records []Record) (int64, error) {
 	// 先落库再发布内存：写库失败时内存不能前进，否则重启后会回到旧集合。
 	generation := int64(0)
 	if store.repository != nil {
-		generation, err = store.repository.Save(context.Background(), next)
+		generation, err = store.repository.Save(ctx, next)
 		if err != nil {
 			return 0, err
 		}

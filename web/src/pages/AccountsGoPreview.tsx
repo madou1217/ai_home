@@ -123,7 +123,16 @@ type CallbackUiCopy = {
 };
 
 // Codex 和 Claude 共用浏览器 OAuth + 手动回调地址的收口。
-function getCallbackUiCopy(): CallbackUiCopy {
+function getCallbackUiCopy(provider?: string): CallbackUiCopy {
+  if (provider === 'zcode') {
+    return {
+      hint: '授权完成后浏览器会跳到 zcode://oauth/callback。把地址栏里的完整地址（或 ?code=…&state=…）复制到这里提交；该登录不依赖本机协议处理器。',
+      placeholder: '粘贴 zcode://oauth/callback?code=…&state=…',
+      submitLabel: '提交回调',
+      emptyWarning: '请粘贴回调地址',
+      submitSuccess: '回调已提交，正在确认授权结果'
+    };
+  }
   return {
     hint: '同一台机器会自动接收回调；如果是远端访问，浏览器停在回调页或显示无法连接时，把地址栏完整地址粘贴到这里。只有本次授权链接的 state 才会被接受。',
     placeholder: '粘贴完整回调地址，或只粘贴 ?code=...&state=...',
@@ -1515,7 +1524,7 @@ export default function Accounts() {
 
   const handleSubmitBrowserCallback = async () => {
     if (!addJob || addJob.status !== 'running') return;
-    const copy = getCallbackUiCopy();
+    const copy = getCallbackUiCopy(addJob.provider);
     const callbackUrl = authCallbackUrl.trim();
     if (!callbackUrl) {
       message.warning(copy.emptyWarning);
@@ -2786,11 +2795,11 @@ export default function Accounts() {
                 ) : null}
                 {addJob.status === 'running' ? (
                   <Space direction="vertical" style={{ width: '100%' }} size="small">
-                    <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy().hint}</Text>
+                    <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>
                     <Input.TextArea
                       value={authCallbackUrl}
                       onChange={(event) => setAuthCallbackUrl(event.target.value)}
-                      placeholder={getCallbackUiCopy().placeholder}
+                      placeholder={getCallbackUiCopy(addJob.provider).placeholder}
                       autoSize={{ minRows: 2, maxRows: 4 }}
                     />
                     <Button
@@ -2799,7 +2808,7 @@ export default function Accounts() {
                       loading={authCallbackSubmitting}
                       disabled={!canSubmitBrowserCallback}
                     >
-                      {getCallbackUiCopy().submitLabel}
+                      {getCallbackUiCopy(addJob.provider).submitLabel}
                     </Button>
                   </Space>
                 ) : null}

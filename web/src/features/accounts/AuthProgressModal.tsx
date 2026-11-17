@@ -45,6 +45,18 @@ export function getCallbackUiCopy(provider?: string, authStrategy = ''): Callbac
       requiresAwaitingCode: false
     };
   }
+  if (provider === 'zcode') {
+    // 自定义协议回调由 ZCode Desktop 接管；aih 不再抢占 zcode: scheme，
+    // 否则桌面端升级会把 scheme 抢回去，登录任务收不到回调。
+    return {
+      hint: '授权完成后浏览器会跳到 zcode://oauth/callback。把地址栏里的完整地址（或 ?code=…&state=…）复制到这里提交；该登录不依赖本机协议处理器。',
+      placeholder: '粘贴 zcode://oauth/callback?code=…&state=…',
+      submitLabel: '提交回调',
+      emptyWarning: '请粘贴回调地址',
+      submitSuccess: '回调已提交，正在确认授权结果',
+      requiresAwaitingCode: false
+    };
+  }
   // kiro 只有 refresh_token 这一种认证方式会用到这个「粘贴并提交」入口
   // （设备码方式由服务端直接透出验证码，不需要粘贴），所以 provider 级别的文案就足够精确。
   if (provider === 'kiro') {

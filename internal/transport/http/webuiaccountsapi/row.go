@@ -243,6 +243,13 @@ func newRow(fact accountFact) Row {
 			}
 		}
 	}
+	// AGY 登录资料的 unknown 只是占位：仅用当前额度文档里的真实套餐兜底，
+	// 不覆盖资料里已有的明确套餐，也不改变其它 Provider 的套餐优先级。
+	if fact.Provider == "agy" && configured && !apiKeyMode && row.PlanType == "unknown" {
+		if plan, name := agySnapshotPlanPresentation(row.UsageSnapshot); plan != "" {
+			row.PlanType, row.PlanName = plan, name
+		}
+	}
 	if fact.Provider == "codex" && configured && !apiKeyMode {
 		row.PlanType, row.PlanName = codexPlanPresentation(fact, row.UsageSnapshot)
 	}
@@ -332,6 +339,32 @@ func snapshotAccountPlanType(snapshot any) string {
 	}
 	value, _ := account["planType"].(string)
 	return strings.TrimSpace(value)
+}
+
+// agySnapshotPlanPresentation 只采信已采集、未标记过期的 AGY 额度文档。
+// 文档由存储层按 captured_at_ms 单调更新；这里不另造套餐 TTL，避免额度刷新间隔
+// 导致已确认套餐反复退回 unknown。空值、oauth/unknown 等占位都不算套餐证据。
+func agySnapshotPlanPresentation(snapshot any) (string, string) {
+	object, ok := snapshot.(map[string]any)
+	if !ok || object["kind"] != "agy_code_assist_quota" {
+		return "", ""
+	}
+	if capturedAt, ok := snapshotNumber(object["capturedAt"]); !ok || capturedAt <= 0 {
+		return "", ""
+	}
+	if provenance, ok := object["provenance"].(map[string]any); ok && provenance["stale"] == true {
+		return "", ""
+	}
+	plan := normalizePlanToken(snapshotAccountPlanType(snapshot))
+	switch plan {
+	case "free", "pro", "ultra":
+	default:
+		return "", ""
+	}
+	account, _ := object["account"].(map[string]any)
+	name, _ := account["planName"].(string)
+	tier, _ := account["subscriptionTier"].(string)
+	return plan, firstNonEmpty(name, tier, planDisplayName(plan))
 }
 
 // normalizePlanToken 把 "Pro Plus" 归一成 "pro_plus"，与前端套餐 token 同口径。

@@ -301,6 +301,7 @@ func buildResponse(
 	selectableByAccountRef := map[string][]string{}
 	errorsByAccountRef := map[string]string{}
 	accountProbedAt := map[string]int64{}
+	successfulProbeAt := map[string]int64{}
 	modelsByProvider := map[string][]string{}
 	providerModelSets := map[string]map[string]struct{}{}
 	providerByUniqueModel := map[string]string{}
@@ -333,14 +334,22 @@ func buildResponse(
 		if provider == "" {
 			provider = providerByRef[ref]
 		}
+		probeError := strings.TrimSpace(set.LastErrorMessage)
+		if probeError == "" {
+			probeError = strings.TrimSpace(set.LastErrorCode)
+		}
 		if !set.LastAttemptAt.IsZero() {
 			scannedAccounts++
 			accountProbedAt[ref] = set.LastAttemptAt.UnixMilli()
+			// 目录非空不等于本次探测成功：失败会保留旧模型，必须检查失败事实。
+			if probeError == "" && strings.TrimSpace(set.LastSource) != "error" {
+				successfulProbeAt[ref] = set.LastAttemptAt.UnixMilli()
+			}
 		}
-		if errMsg := strings.TrimSpace(set.LastErrorMessage); errMsg != "" {
-			errorsByAccountRef[ref] = errMsg
+		if probeError != "" {
+			errorsByAccountRef[ref] = probeError
 			if firstError == "" {
-				firstError = errMsg
+				firstError = probeError
 			}
 		}
 
@@ -408,6 +417,13 @@ func buildResponse(
 		for snapKey, errMsg := range snapshot.ErrorsByAccount {
 			ref := mapAccountKeyToOutputRef(snapKey, providerByRef, resolver)
 			if ref == "" || (scopeGoRef != "" && ref != scopeGoRef) || strings.TrimSpace(errMsg) == "" {
+				continue
+			}
+			// 只比较该错误同键的可信账号探测时间（v2+），不能借用整份缓存或
+			// 其它 ref 别名的时刻给旧错误续命。Go 同刻或更晚的成功压住旧/无时刻
+			// 错误，更新的失败仍保留；Go 从未探测的账号继续兼容旧快照。
+			snapshotProbeAt := snapshot.AccountUpdatedAt[snapKey]
+			if probedAt, succeeded := successfulProbeAt[ref]; succeeded && snapshotProbeAt <= probedAt {
 				continue
 			}
 			if errorsByAccountRef[ref] == "" {

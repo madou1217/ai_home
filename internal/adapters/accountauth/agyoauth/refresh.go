@@ -113,8 +113,13 @@ func (*Provider) ExpiresAt(
 	credential accountapp.Credential,
 ) (time.Time, bool) {
 	auth, valid := credential.(*agy.OAuthAuth)
-	if !valid || auth == nil || auth.ExpiresAtMS() <= 0 {
+	if !valid || auth == nil || auth.RefreshToken() == "" {
 		return time.Time{}, false
+	}
+	// refresh-only 导入必须先取得 access token；即使遗留 expiry 仍在未来，
+	// 也用「可刷新但过期时间未知」交给 resolver，不能把空 token 当成新鲜凭据。
+	if auth.AccessToken() == "" || auth.ExpiresAtMS() <= 0 {
+		return time.Time{}, true
 	}
 	return time.UnixMilli(auth.ExpiresAtMS()).UTC(), true
 }

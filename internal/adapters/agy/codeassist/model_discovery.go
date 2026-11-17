@@ -81,7 +81,12 @@ func (source *ModelCatalogSource) DiscoverModels(
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
-		return nil, ErrInvalidUpstreamResponse
+		// 只记录状态码，不暴露上游正文；明确 401 才交给现有的有界认证恢复。
+		catalogErr := fmt.Errorf("%w: status=%d", ErrInvalidUpstreamResponse, response.StatusCode)
+		if response.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("%w: %w", accountapp.ErrModelAuthenticationRejected, catalogErr)
+		}
+		return nil, catalogErr
 	}
 	payload, err = io.ReadAll(io.LimitReader(response.Body, maxModelCatalogBytes+1))
 	if err != nil || len(payload) > maxModelCatalogBytes {

@@ -934,47 +934,6 @@ func (handler *Handler) persistJobHistory(job ModelCatalogJob) {
 	}
 }
 
-func (handler *Handler) refreshAllAccounts(ctx context.Context) error {
-	overviews, err := listAllAccountOverviews(ctx, handler.store)
-	if err != nil {
-		return err
-	}
-	_, providerSet := resolveModelCatalogProviders(handler.catalog)
-	var refs []accountcore.AccountRef
-	for _, overview := range overviews {
-		if providerSet[overview.Account().ProviderID()] {
-			refs = append(refs, overview.Account().Ref())
-		}
-	}
-	if len(refs) == 0 {
-		return nil
-	}
-
-	var waitGroup sync.WaitGroup
-	semaphore := make(chan struct{}, defaultRefreshWorkers)
-	for _, ref := range refs {
-		if ctx.Err() != nil {
-			break
-		}
-		select {
-		case semaphore <- struct{}{}:
-		case <-ctx.Done():
-			waitGroup.Wait()
-			return ctx.Err()
-		}
-		waitGroup.Add(1)
-		go func(target accountcore.AccountRef) {
-			defer func() {
-				<-semaphore
-				waitGroup.Done()
-			}()
-			_, _ = handler.modelRefresher.RefreshAccountModels(ctx, target)
-		}(ref)
-	}
-	waitGroup.Wait()
-	return nil
-}
-
 func (handler *Handler) updateJob(jobID string, mutate func(*ModelCatalogJob)) {
 	handler.jobsMu.Lock()
 	state := handler.jobs[jobID]

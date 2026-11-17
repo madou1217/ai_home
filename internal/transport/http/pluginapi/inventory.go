@@ -48,6 +48,10 @@ func NewInventoryHandler(
 }
 
 func (handler *InventoryHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.URL.Path == BrowserInventoryPath {
+		handler.serveBrowserInventory(response, request)
+		return
+	}
 	if handler == nil || !handler.authorizer.Authorized(request) {
 		writeInventoryError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return

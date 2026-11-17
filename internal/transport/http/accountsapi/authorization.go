@@ -36,6 +36,12 @@ func NewBearerAuthorizer(
 	return &BearerAuthorizer{managementKey: managementKey}, nil
 }
 
+// ManagementKeyConfigured reports configuration without exposing the key or
+// weakening the existing bearer authorization policy.
+func (authorizer *BearerAuthorizer) ManagementKeyConfigured() bool {
+	return authorizer != nil && authorizer.managementKey != nil && authorizer.managementKey() != ""
+}
+
 // Authorized 校验标准 Authorization Bearer 请求头。
 func (authorizer *BearerAuthorizer) Authorized(request *http.Request) bool {
 	if authorizer == nil || authorizer.managementKey == nil || request == nil {

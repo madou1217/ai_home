@@ -369,3 +369,9 @@ PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version�
 ## 2026-11-17 R1 公开 Go CLI 固定账号 Node-off 实跑
 
 不重复已完成WebUI WORK链，另选公开Go CLI NativeDirect入口：source9c94b3ad9 archive构建aih-go aae834af...，10:46真实执行`aih-go claude <现有数字alias> -- --print --output-format json --model deepseek-flash ...`，exit0/Claude success/实回GO_CLI_NODE_OFF_OK。私有HOME/DB、PATH无node、Gateway随机未监听且无管理key，无AIH server/RPC宿主；观察GoCLI43029→官方Claude43031，Node0/残留0/敏感目录清理。只证明该Go入口，不冒称安装的aih Node包装已切换或删除，亦不关闭OAuth/TUI/取消矩阵。结果追加原acceptance及evidence JSON；本轮无production修复/新test，M/Chat/terminal/protocol/R4R6R8未动。
+
+## 2026-11-17 R1 Codex 显式账号 exec/e 单点 Go 转交
+
+监督独占确认bin/ai-home.js::tryRunGoProviderLaunch，落盘前HEAD/index/disk同blob382d139...且100755；仅1hunk(11+/5-)接codex+数字alias+exec/e(至多一--)，opaque argv直接交既有Go，不走Node app/router/PTY/defaultlauncher/stdio业务，Go失败不fallback。11:10实际公开entry+现存Go cac088bb...→官方Codex0.167.2，实回CODEX_GO_DISPATCH_OK/turn.completed；e-help成功、invalidalias失败关闭，V8 old业务模块均0。私有同字节candidate另6条含缺Go和exactID resume同线程/记住前文，证据分列；共享产物/stamp/服务未操作。Hubble独立审查无blocking，Node bootstrap仍保留，不称整个CLI退出。
+
+同构件空库定向warmup另分类两个新Node探测：Go probeSingleHost→DeepSeek runCli --version和Pi cli --version，source重构与实际ps文本hash291d.../7e14...匹配，Mendel复核。属第三方JS CLI运行时，旧历史PID argv缺失不retroclaim、wholeNodefree不关闭。结果追加既有acceptance§8/§9及evidence JSON；仅该bin源hunk加本人文档，M/Chat9/terminal/protocol/R4R6R8/安装器不动，不新增tests/features或Node业务。

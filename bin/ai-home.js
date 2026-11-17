@@ -452,13 +452,19 @@ function tryRunGoProviderLaunch() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
-  if (!GO_NATIVE_LAUNCH_PROVIDERS.has(provider)) return false;
+  // Only explicit-account Codex headless launches move here. TUI, gateway and
+  // management forms keep their existing entry; native exec argv stays opaque.
+  const nativeCommand = args[2] === '--' ? args[3] : args[2];
+  const codexExec = provider === 'codex' && (nativeCommand === 'exec' || nativeCommand === 'e');
+  if (!GO_NATIVE_LAUNCH_PROVIDERS.has(provider) && !codexExec) return false;
   // 只有显式账号位才走 Go：默认账号/网关池形态仍按 Node 现有语义。
   if (!/^\d+$/.test(String(args[1] || '').trim())) return false;
-  // `--` 之后是原生参数逃生门：不再按 aih 动词判断。
-  for (const token of args.slice(2)) {
-    if (token === '--') break;
-    if (GO_UNIFIED_VERBS.has(String(token || '').trim().toLowerCase())) return false;
+  // After a recognized native exec, prompt words are not AIH management verbs.
+  if (!codexExec) {
+    for (const token of args.slice(2)) {
+      if (token === '--') break;
+      if (GO_UNIFIED_VERBS.has(String(token || '').trim().toLowerCase())) return false;
+    }
   }
   const fs = require('node:fs');
   const os = require('node:os');

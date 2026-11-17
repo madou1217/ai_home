@@ -589,5 +589,319 @@
       "Static native-direct success/exit only; no OAuth/Capture, TUI or CLI cancellation matrix",
       "No full syscall/network trace claim; private Gateway address unavailable, no management credential, and reviewed Go native branch does not construct Gateway RPC resolver"
     ]
+  },
+  "publicCodexPinnedExecDelegation": {
+    "scope": "single approved bin/ai-home.js::tryRunGoProviderLaunch hunk; explicit numeric Codex exec/e only",
+    "coordination": {
+      "approvedPreEditGitBlob": "382d139f9f40ada258962c0afbc0f257751ff90b",
+      "preEditHeadIndexDiskMatched": true,
+      "mode": "100755",
+      "sourceScopeApprover": "supervisor 01a1df63 explicit scope message",
+      "onlyProductionPath": "bin/ai-home.js",
+      "postEditSha256": "a1f5d9327e02ce5ccf1fe28ba31576330e679303bfae4a3bcd8f72dd8889218e"
+    },
+    "businessCallsRemovedFromThisBranch": [
+      "lib/cli/app.js",
+      "lib/cli/commands/ai-cli/router.js",
+      "lib/cli/services/pty/runtime.js",
+      "lib/server/codex-default-cli-launcher.js",
+      "lib/server/codex-app-server-stdio-proxy.js"
+    ],
+    "dispatch": "preserve argv, use existing Go native runner/exec intent; missing/failed Go handled without old Node fallback",
+    "preservedOutsideScope": [
+      "unselected/default/gateway Codex launch",
+      "TUI",
+      "management/default/mobile/Desktop effects",
+      "native global flags before exec",
+      "stdio/WS protocol implementations"
+    ],
+    "standardGoArtifactSha256UsedByActualEntry": "cac088bb126e46453f1212c6a98f7cbfc52d9d36244b8cd1114c35f07e46ed99",
+    "actualPublicEntry": "node <actual-repository>/bin/ai-home.js, the existing installed aih symlink target; no reinstall or standard artifact replacement",
+    "installedAIHSymlinkStillTargetsEntry": true,
+    "actualPublicOperations": [
+      {
+        "action": "numeric_exec_real",
+        "startedAt": "2026-11-17T11:10:22.324035+08:00",
+        "finishedAt": "2026-11-17T11:10:38.508967+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 363,
+        "stderrBytes": 39,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [
+          "thread.started",
+          "turn.started",
+          "item.completed",
+          "turn.completed"
+        ],
+        "answerMatches": true,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": false
+      },
+      {
+        "action": "native_escape_e_help",
+        "startedAt": "2026-11-17T11:10:38.509831+08:00",
+        "finishedAt": "2026-11-17T11:10:38.574213+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 4331,
+        "stderrBytes": 0,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [],
+        "answerMatches": null,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": true
+      },
+      {
+        "action": "unknown_numeric_account",
+        "startedAt": "2026-11-17T11:10:38.574516+08:00",
+        "finishedAt": "2026-11-17T11:10:38.612823+08:00",
+        "exitCode": 1,
+        "stdoutBytes": 0,
+        "stderrBytes": 55,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [],
+        "answerMatches": null,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": true,
+        "nativeExecHelp": false
+      }
+    ],
+    "actualPublicCallerTopology": [
+      {
+        "pid": 63929,
+        "ppid": 63924,
+        "role": "compatibility Node entry"
+      },
+      {
+        "pid": 63937,
+        "ppid": 63934,
+        "role": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+      },
+      {
+        "pid": 63930,
+        "ppid": 63929,
+        "role": "Go CLI"
+      },
+      {
+        "pid": 63931,
+        "ppid": 63930,
+        "role": "official Codex"
+      },
+      {
+        "pid": 63932,
+        "ppid": 63931,
+        "role": "/Library/Developer/CommandLineTools/usr/bin/git"
+      },
+      {
+        "pid": 63934,
+        "ppid": 63932,
+        "role": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+      }
+    ],
+    "actualPublicCleanup": {
+      "observedAt": "2026-11-17T11:11:49.630873+08:00",
+      "observedPrivatePIDCount": 6,
+      "observedPrivateProcessesRemaining": [],
+      "privateSensitiveDirectoryRemoved": true
+    },
+    "privateCandidateBase": "9c94b3ad9bfb4c9b8b99d44fd4ff4b5fcd757e87",
+    "privateCandidateGoArtifactSha256": "aae834af7a34692bc9636194a6055abe59bbe3d6c6d763961124f51280697c23",
+    "privateCandidateOperations": [
+      {
+        "action": "numeric_exec_real",
+        "startedAt": "2026-11-17T10:59:57.354553+08:00",
+        "finishedAt": "2026-11-17T11:00:13.821955+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 363,
+        "stderrBytes": 39,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [
+          "thread.started",
+          "turn.started",
+          "item.completed",
+          "turn.completed"
+        ],
+        "answerMatches": true,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": false
+      },
+      {
+        "action": "native_escape_e_help",
+        "startedAt": "2026-11-17T11:00:13.822726+08:00",
+        "finishedAt": "2026-11-17T11:00:13.890045+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 4331,
+        "stderrBytes": 0,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [],
+        "answerMatches": null,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": true
+      },
+      {
+        "action": "unknown_numeric_account",
+        "startedAt": "2026-11-17T11:00:13.890337+08:00",
+        "finishedAt": "2026-11-17T11:00:13.929585+08:00",
+        "exitCode": 1,
+        "stdoutBytes": 0,
+        "stderrBytes": 55,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [],
+        "answerMatches": null,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": true,
+        "nativeExecHelp": false
+      },
+      {
+        "action": "missing_go_fail_closed",
+        "startedAt": "2026-11-17T11:00:13.930014+08:00",
+        "finishedAt": "2026-11-17T11:00:13.957049+08:00",
+        "exitCode": 1,
+        "stdoutBytes": 0,
+        "stderrBytes": 235,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [],
+        "answerMatches": null,
+        "missingGoDiagnostic": true,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": false
+      }
+    ],
+    "privateCandidateResumeOperations": [
+      {
+        "action": "seed_native_thread",
+        "startedAt": "2026-11-17T11:02:57.291788+08:00",
+        "finishedAt": "2026-11-17T11:03:14.383442+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 359,
+        "stderrBytes": 39,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [
+          "thread.started",
+          "turn.started",
+          "item.completed",
+          "turn.completed"
+        ],
+        "answerMatches": true,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": false,
+        "nativeThreadHash": "e663735b5a4a60f6de865cfb7c240d0723d4a57e64d9a9383fde91a0d9d32e80"
+      },
+      {
+        "action": "resume_existing_native_thread",
+        "startedAt": "2026-11-17T11:03:14.384069+08:00",
+        "finishedAt": "2026-11-17T11:03:29.583153+08:00",
+        "exitCode": 0,
+        "stdoutBytes": 366,
+        "stderrBytes": 0,
+        "v8CoverageProduced": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "publicEntryLoaded": true,
+        "eventTypes": [
+          "thread.started",
+          "turn.started",
+          "item.completed",
+          "turn.completed"
+        ],
+        "answerMatches": true,
+        "missingGoDiagnostic": false,
+        "accountNotFoundDiagnostic": false,
+        "nativeExecHelp": false,
+        "nativeThreadHash": "e663735b5a4a60f6de865cfb7c240d0723d4a57e64d9a9383fde91a0d9d32e80"
+      }
+    ],
+    "privateCandidateResumeNativeIdentityRetained": true,
+    "missingGoOnlyExercisedOnPrivateArtifact": true,
+    "standardGoArtifactNotRenamedOrReplaced": true,
+    "actualPublicRawResultSha256": "e7d9656ddf7adb802e6586942e064ff0b81d401f90e4c2fe2a200ce42248d204",
+    "privateCandidateRawResultSha256": "5de56325bb21dfaebe44d47747520eaea18f398051d30b4ee0b53c0613eb94d2",
+    "privateCandidateResumeRawResultSha256": "e00ac294a5d1ab7f97c11771164445e8b91edbc6a1877a79ce8475bc806db25f",
+    "independentSourceReviewer": "Hubble; source no blocking, reviewed candidate equals applied entry bytes",
+    "limitations": [
+      "Node bootstrap remains; no claim that the installed entry no longer requires Node",
+      "No shared server restart, stamp mutation, M/Desktop or protocol implementation changes",
+      "V8 loaded-module evidence is not a full syscall/network trace",
+      "Public standard Go artifact smoke covers exec/help/unknown-account; exact-ID resume and missing-Go cases use private candidate as identified above"
+    ]
+  },
+  "nodeWarmupClassificationSupplement": {
+    "scope": "targeted empty-db warmup, no account/WORK turn; command classes are reproduction not recovery of lost historical argv",
+    "sourceCommit": "9c94b3ad9bfb4c9b8b99d44fd4ff4b5fcd757e87",
+    "artifactSha256": "57e97796ccaeb36c5ec8729a1d0f5f1087c96d70ce8a0175743d2ddc415d4020",
+    "startedAt": "2026-11-17T11:02:21.253647+08:00",
+    "finishedAt": "2026-11-17T11:02:37.378727+08:00",
+    "actualReproducedNodeFacts": [
+      {
+        "pid": 58122,
+        "ppid": 58066,
+        "executable": "/opt/homebrew/bin/node",
+        "flags": [
+          "-e"
+        ],
+        "evalProgram": "process.argv",
+        "scriptPaths": [],
+        "AIHNodeHost": false,
+        "argvSHA256": "291dabb85bbe8c15ff268cb5192b1736fd156ccd6ab8dd11dff929dd3c70a114"
+      },
+      {
+        "pid": 58123,
+        "ppid": 58066,
+        "executable": "/opt/homebrew/bin/node",
+        "flags": [
+          "--version"
+        ],
+        "evalProgram": null,
+        "scriptPaths": [
+          "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js"
+        ],
+        "AIHNodeHost": false,
+        "argvSHA256": "7e146b94acc1ef6e8366af13bdacf7de0ed2ad95f667cd475b8de20349b285e6"
+      }
+    ],
+    "evalRecordCaveat": "evalProgram=process.argv is only the first shlex token from ps text, not the full eval script",
+    "deepseekSourceReconstructedCommand": {
+      "thirdPartyPackage": "@deepseek-ai/dsh",
+      "entry": "/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/lib/bin.js",
+      "export": "runCli",
+      "forcedArgument": "--version",
+      "GoCaller": "internal/runtime/nativeresources/runtime.go:probeSingleHost",
+      "argvSHA256Matched": true,
+      "program": "process.argv = [process.argv[0], \"/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/lib/bin.js\", '--version']; const cli = await import(\"file:///opt/homebrew/lib/node_modules/@deepseek-ai/dsh/lib/bin.js\"); await cli[\"runCli\"]();"
+    },
+    "piSourceReconstructedCommand": {
+      "package": "@earendil-works/pi-coding-agent",
+      "entry": "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
+      "argument": "--version",
+      "GoCaller": "internal/runtime/nativeresources/runtime.go:probeSingleHost (CLIExport empty)",
+      "argvSHA256Matched": true
+    },
+    "fingerprintDefinition": "SHA-256 of ps -o args= output text including trailing newline, not raw execve argv",
+    "historicalCaveat": "Original old PIDs lacked complete argv; this is a same-build targeted reproduction with exact argv fingerprint, not recovery of historical memory.",
+    "classification": "Go native resources doctor probes for installed third-party DeepSeek/Pi JS CLIs, not AIH Node server business ownership",
+    "nodeLookupSource": "internal/runtime/nativeresources/runtime.go:88-94 defaultCommandRunner.FindNode absolute Homebrew fallback; global package lookup independent of private HOME",
+    "privateDirectoryRemoved": true,
+    "privateServerExited": true,
+    "independentReviewer": "Mendel; exact reconstructed ps-text hashes independently matched",
+    "retirementBoundary": "Keep third-party CLI Node runtime separate; these classifications do not authorize deleting external packages or prove the whole service is Node-free"
   }
 }

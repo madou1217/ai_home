@@ -99,3 +99,35 @@ SSE replay/resume使用已确认的cursor；新轮终态及实际输出不以旧
 - **新缺口被补到哪：**证明该Go公开native-direct入口不需要Node launcher或第一方RPC服务即可完成实际账号选择、调用和退出；这是与WebUI R1/R3路径不同的可执行入口证据。它**不代表已将 `/opt/homebrew/bin/aih` 从现有Node包装切换到Go**，没有进行安装器/包装脚本退役，也不借此关闭OAuth、TUI、取消等未跑矩阵。
 
 本地原始低敏记录为前述root的 `cli-manifest.json`、`public-go-cli-native-result.json`，同目录JSON的 `publicGoCLINativeDirect` 保存持久派生证据。仅把新的真实操作追加到本人已有证据，未提交同义迁移卡或新的生产实现。
+
+## 8. 获批落地：公开 Codex 指定账号 headless 单点转交
+
+监督明确确认独占 `bin/ai-home.js::tryRunGoProviderLaunch()`；11:09:43落盘前重新核对 **HEAD/index/disk blob全部为 `382d139f9f40ada258962c0afbc0f257751ff90b`、mode100755、scoped clean**。只落一个hunk，11 additions / 5 removals，应用后SHA-256 `a1f5d9327e02ce5ccf1fe28ba31576330e679303bfae4a3bcd8f72dd8889218e` 与Hubble审过的私有candidate完全相同。
+
+- **只认形状：**`codex + 显式数字alias + exec/e`，中间至多一个 `--`。原生后缀保持opaque，不把prompt中的 `usage/policy/login/delete` 当AIH管理词；argv原样交Go，不写第二套账号/tier算法。
+- **断开的第一方Node业务调用：**命中分支不再进入 `lib/cli/app.js` → AI-CLI router 的账号/调度/PTY launch → Codex default launcher / stdio业务包装。Go是该分支的业务owner；缺Go或Go非零退出保持handled并失败关闭，不回落旧Node app。
+- **明确未接管：**默认/无账号Gateway、裸TUI、管理命令、set/unset-default/mobile/Desktop effects、native全局参数在exec之前的形态、stdio/WS协议实现。没有把整个Node CLI入口替换，也没有安装器或M模块改动。
+
+### 真正公开入口验证（非只跑复制函数）
+
+实际运行共享工作区公开入口脚本——它仍是现有安装 `aih` 的symlink目标——及**现存**标准 `aih-go` 摘要 `cac088bb126e46453f1212c6a98f7cbfc52d9d36244b8cd1114c35f07e46ed99`，未替换标准产物。私有HOME/DB、PATH无node；仅Node bootstrap用绝对Node executable启动；指定静态Codex账号、原生0.167.2 executable，管理地址为私有未监听端口、无management key，不启动AIH server。
+
+- **11:10:22–11:10:38**：真实 `codex <id> exec --json ...` 返回exit0、thread/turn started、item/turn completed，答案匹配 `CODEX_GO_DISPATCH_OK`。prompt含 `usage` 作为普通文字仍正确转交。
+- 公开entry的 `-- e --help` exit0；不存在数字账号exit1。Node V8原生覆盖记录确认上述五个旧业务模块**全部未加载**。
+- 实际caller为 **Node bootstrap → Go CLI → 官方Codex**；观察到的额外git子进程也已退出。已观察6个PID在清理复核时无剩余；私有敏感目录已删除。
+- 同字节私有candidate另执行普通exec、escape-help、invalid-alias、missing-Go、seed和exact-ID resume **6条真实命令**；resume同native ID且记住前文，旧Node业务加载均为空。missing-Go通过只临时移动私有构件验证exit1和不回落；绝不移动共享二进制。公开标准Go的本轮smoke与私有candidate的resume/缺Go结果分开列，不相互借证。
+
+Hubble独立源码/候选结果审查无blocking；`node --check`、scoped diff check通过。V8覆盖是实际loaded-module证据，不是完整network/syscall trace。**Node bootstrap仍在，不能报Node入口已退出。** 本次是一个真实默认转交分支收敛，不是又交一份迁移规划。
+
+## 9. 两个绝对路径Node：定向分类补证与退出依据
+
+没有重跑WORK链。使用同构件、空私有DB/HOME，定向观察Go启动的native-resources doctor warmup；新重现的两个Node命令已按源码模板重构，和实际 `ps -o args=` **输出文本（含换行）**SHA-256完全匹配：
+
+| 新重现类别 | Go caller与真实用途 | 指纹 |
+| --- | --- | --- |
+| DeepSeek CLIExport | `nativeresources/runtime.go::probeSingleHost` 设置 `process.argv` 为 `@deepseek-ai/dsh/lib/bin.js --version`，ESM导入并调用 `runCli` | `291dabb85bbe8c15ff268cb5192b1736fd156ccd6ab8dd11dff929dd3c70a114` |
+| Pi direct-entry | 同函数对 `@earendil-works/pi-coding-agent/dist/bundle/cli.js` 直接传 `--version` | `7e146b94acc1ef6e8366af13bdacf7de0ed2ad95f667cd475b8de20349b285e6` |
+
+`FindNode` 会发现绝对Homebrew Node，全局package查找也不依赖私有HOME，所以PATH无node不等于这些探测不能运行。两者为**已安装第三方JS CLI的运行时/版本探测**，不是AIH Node backend或WORK actor业务。保留该第三方能力时其Node运行时要单列，不以迁移为由删除外部SDK或把其实现复制进AIH。
+
+Mendel独立复核source、两个命令指纹和第三方包映射。旧32132/32134未保留完整argv，**仍不能事后证明旧PID的实际命令**；本节是同构件新定向重现的已分类事实，不回写旧日志为已知。`evalProgram=process.argv`只是ps文本经shlex拆出的首token，完整程序依据source重构及全命令文本hash匹配，非execve argv-vector抓取。原whole-service非Node-free边界不变。

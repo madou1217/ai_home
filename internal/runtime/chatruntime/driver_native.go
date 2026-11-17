@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providercli/sessionchat"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -872,17 +873,21 @@ type NativeRunExit struct {
 // Runner 必须在最后一条事件后关闭 Events；Done 可以先到达，但其发送后不能再
 // 等待消费者输入才关闭 Events。这样调用方能有序 drain 尾帧再结算进程终态。
 type NativeRunHandle struct {
-	RunID                string
-	WriteSteer           func(content string) error
-	WriteInput           func(input string, appendNewline bool) error
-	Resize               func(cols, rows int) error
-	Abort                func() error
-	GetActivePrompt      func() map[string]any
-	GetContentSnapshot   func() string
-	InteractionMode      string
-	Events               <-chan NativeRunEvent
-	SessionIDs           <-chan string
-	Done                 <-chan NativeRunExit
+	RunID              string
+	WriteSteer         func(content string) error
+	WriteInput         func(input string, appendNewline bool) error
+	Resize             func(cols, rows int) error
+	Abort              func() error
+	GetActivePrompt    func() map[string]any
+	GetContentSnapshot func() string
+	InteractionMode    string
+	Events             <-chan NativeRunEvent
+	SessionIDs         <-chan string
+	Done               <-chan NativeRunExit
+	// Quiesced closes after process exit and projection cleanup, independently of
+	// the single-consumer Done channel. Destructive lifecycle operations await it.
+	Quiesced             <-chan struct{}
+	CleanupError         func() error
 	waitForLaunchRelease bool
 }
 
@@ -1432,6 +1437,19 @@ func (d *NativeSessionDriver) executeWithRetries(
 			}
 			model = settings.Model
 		}
+		var admission *accountadmission.Lease
+		// Gateway-scoped sessions do not hold a local account projection. Only
+		// pinned canonical account refs participate in this deletion fence.
+		if !IsGatewayRuntimeScope(accountRef) && strings.TrimSpace(accountRef) != "" {
+			var admissionErr error
+			admission, admissionErr = accountadmission.Launch(d.opts.AIHomeDir, d.provider, accountRef)
+			if admissionErr != nil {
+				act.markReady()
+				completeTerminalItem("failed")
+				act.done <- ProviderRunResult{Err: admissionErr}
+				return
+			}
+		}
 		handle, err := d.runner.Start(ctx, NativeRunRequest{
 			Session:         sess,
 			Provider:        d.provider,
@@ -1446,11 +1464,22 @@ func (d *NativeSessionDriver) executeWithRetries(
 			Slash:           isSlash,
 		})
 		if err != nil {
+			_ = admission.Close()
 			act.markReady()
 			completeTerminalItem("failed")
 			act.done <- ProviderRunResult{Err: err}
 			return
 		}
+		if handle.Quiesced == nil {
+			_ = admission.Close()
+			if handle.Abort != nil {
+				_ = handle.Abort()
+			}
+			act.markReady()
+			act.done <- ProviderRunResult{Err: NewError("native_run_exit_unverifiable", 503, nil)}
+			return
+		}
+		go func(done <-chan struct{}, lease *accountadmission.Lease) { <-done; _ = lease.Close() }(handle.Quiesced, admission)
 		d.mu.Lock()
 		act.handle = handle
 		disposed := d.disposed
@@ -1491,6 +1520,8 @@ func (d *NativeSessionDriver) executeWithRetries(
 				WriteSteer:         handle.WriteSteer,
 				Resize:             handle.Resize,
 				Abort:              handle.Abort,
+				Quiesced:           handle.Quiesced,
+				CleanupError:       handle.CleanupError,
 				GetActivePrompt:    handle.GetActivePrompt,
 				GetContentSnapshot: getSnapshot,
 			})
@@ -1989,6 +2020,8 @@ func (r *execNativeTurnRunner) startInteractivePTYWithLaunch(
 	eventsCh := make(chan NativeRunEvent, 64)
 	sidsCh := make(chan string, 1)
 	doneCh := make(chan NativeRunExit, 1)
+	quiesced := make(chan struct{})
+	var cleanupErr error
 
 	var ptyMu sync.Mutex
 	var writeMu sync.Mutex
@@ -2020,6 +2053,7 @@ func (r *execNativeTurnRunner) startInteractivePTYWithLaunch(
 	stopCancellation := context.AfterFunc(runCtx, abort)
 
 	go func() {
+		defer close(quiesced)
 		defer close(doneCh)
 		defer cancel()
 		defer closeTerminal()
@@ -2057,7 +2091,8 @@ func (r *execNativeTurnRunner) startInteractivePTYWithLaunch(
 		markClosed()
 		closeTerminal()
 		if release != nil {
-			waitErr = joinNativeLaunchError(waitErr, release())
+			cleanupErr = release()
+			waitErr = joinNativeLaunchError(waitErr, cleanupErr)
 		}
 		exitCode := 0
 		if waitErr != nil {
@@ -2101,7 +2136,14 @@ func (r *execNativeTurnRunner) startInteractivePTYWithLaunch(
 			return ptySess.Resize(pty.Size{Cols: uint16(c), Rows: uint16(rw)})
 		},
 		Abort:  func() error { abort(); return nil },
-		Events: eventsCh, SessionIDs: sidsCh, Done: doneCh,
+		Events: eventsCh, SessionIDs: sidsCh, Done: doneCh, Quiesced: quiesced, CleanupError: func() error {
+			select {
+			case <-quiesced:
+				return cleanupErr
+			default:
+				return NewError("native_cleanup_not_settled", 503, nil)
+			}
+		},
 	}, nil
 }
 

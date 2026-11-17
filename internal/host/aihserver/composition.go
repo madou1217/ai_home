@@ -1007,10 +1007,14 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除宿主投影失败: %w", err)
 	}
+	deletionRuntime, err := newAccountDeletionRuntime(aiHomeDir, catalog, nodeBaseURL, managementKey, deletionOccupancy, deletionPreparation, func() *chatruntime.Service { return chatRuntimeService })
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号删除运行保护失败: %w", err)
+	}
 	deleter, err := accountapp.NewDeleter(
 		store,
-		deletionOccupancy,
-		deletionPreparation,
+		deletionRuntime,
+		deletionRuntime,
 		modelRefresh,
 		usage,
 		accountRuntime,
@@ -1020,6 +1024,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
 	}
 	deleter.WithHostProjection(deletionHost, deletionHost)
+	deletionRuntime.Bind(deleter)
 	modelRefreshingRegistrar, err := accountapp.NewRegistrationModelRefreshDecorator(
 		registrar,
 		modelRefresh,
@@ -1221,7 +1226,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		QuotaStats:     quotaStatsService,
 		// 账号行的 token 用量直接读 Go 账本：与用量页同一份事实，不再回 Node 现算。
 		TokenUsage:          store,
-		Deletion:            deleter,
+		Deletion:            deletionRuntime,
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,
 		CredentialRotation:  modelRefreshingCredentialRotator,
@@ -1857,7 +1862,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
 		ReverseTunnels:  sshTunnelSupervisor,
-		AccountDeletion: deleter,
+		AccountDeletion: deletionRuntime,
 		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
 		AccountHostGrant: deletionHost,
 		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。

@@ -542,12 +542,12 @@ func Current() Manifest {
 				},
 			},
 			{
-				// 账号删除：浏览器旧路径（POST 无后缀）由 Go 承接，ref 先翻译。
+				// 账号删除：浏览器 DELETE 与兼容 POST 由 Go 承接，ref 先翻译。
 				ID:              "webui.account_delete",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
-					httpRoute([]string{"POST"}, "/v0/webui/accounts/{provider}/{accountRef}"),
+					httpRoute([]string{"DELETE", "POST"}, "/v0/webui/accounts/{provider}/{accountRef}"),
 				},
 			},
 			{

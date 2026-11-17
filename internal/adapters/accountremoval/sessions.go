@@ -241,13 +241,41 @@ func (hostTmuxProbe) Probe(ctx context.Context, socket string) (SessionSnapshot,
 	}
 	var exitError *exec.ExitError
 	if errors.As(runErr, &exitError) {
-		output := strings.ToLower(stderr.String() + "\n" + stdout.String())
-		if strings.Contains(output, "no server running") {
+		if tmuxServerAbsent(stderr.String(), socket) {
 			return SessionSnapshot{ServerAlive: false}, nil
 		}
 		return SessionSnapshot{}, fmt.Errorf("tmux 会话探测失败: %s", strings.TrimSpace(stderr.String()))
 	}
 	return SessionSnapshot{}, runErr
+}
+
+// tmuxServerAbsent accepts only an explicit no-server diagnostic for this
+// socket. A missing binary, permission error, timeout or unrelated ENOENT is
+// still unknown; those failures must never authorize account deletion.
+func tmuxServerAbsent(stderr, socket string) bool {
+	message := strings.TrimSpace(stderr)
+	lower := strings.ToLower(message)
+	if strings.ContainsAny(message, "\r\n") {
+		return false
+	}
+	if lower == "no server running" {
+		return true
+	}
+	var socketPath string
+	switch {
+	case strings.HasPrefix(lower, "no server running on "):
+		socketPath = strings.TrimSpace(message[len("no server running on "):])
+	case strings.HasPrefix(lower, "error connecting to "):
+		for _, reason := range []string{" (no such file or directory)", " (connection refused)"} {
+			if strings.HasSuffix(lower, reason) {
+				socketPath = strings.TrimSpace(message[len("error connecting to ") : len(message)-len(reason)])
+				break
+			}
+		}
+	}
+	// Accept native and MSYS path separators, but never another socket's error.
+	socketPath = strings.ReplaceAll(socketPath, "\\", "/")
+	return socketPath != "" && socket != "" && socketPath[strings.LastIndex(socketPath, "/")+1:] == socket
 }
 
 func lookTmux() (string, error) {

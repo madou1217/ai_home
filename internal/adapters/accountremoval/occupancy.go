@@ -212,9 +212,21 @@ func (service *Service) inspectAccountSocket(
 		state = service.probeSocket(ctx, socket)
 		probes[socket] = state
 	}
-	// 没有 tmux 引擎就没有服务端，也就没有可核对的会话（与 Node 的
-	// 「if (canonical && tmux.available)」一致）：这里只核对登记，不报 uncertain。
-	if state.err != nil || !state.serverAlive {
+	// 未读到登记不代表账号 socket 为空：引擎缺失、权限错误或超时都只能
+	// 说明状态未知。保留结构化原因；即使 force 也不能猜测会话名后强杀。
+	if state.err != nil {
+		return []accountapp.DeletionBlocker{{
+			Kind:         persistentSessionKind,
+			Label:        persistentSessionLabel,
+			Provider:     provider,
+			AccountRef:   accountRef,
+			Socket:       socket,
+			Detail:       state.err.Error(),
+			Uncertain:    true,
+			Unregistered: true,
+		}}
+	}
+	if !state.serverAlive {
 		return nil
 	}
 	blockers := make([]accountapp.DeletionBlocker, 0, len(state.names))

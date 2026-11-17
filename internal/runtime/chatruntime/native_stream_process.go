@@ -105,6 +105,7 @@ func startNativeStreamProcess(
 	producerDone := make(chan struct{})
 	processDone := make(chan struct{})
 	var waitErr error
+	var captureErr error
 	var closeOutputsOnce sync.Once
 	closeOutputs := func() {
 		closeOutputsOnce.Do(func() {
@@ -261,7 +262,8 @@ func startNativeStreamProcess(
 			finalErr = stderrErr
 		}
 		if release != nil {
-			finalErr = errors.Join(finalErr, release())
+			captureErr = release()
+			finalErr = errors.Join(finalErr, captureErr)
 		}
 		exitCode := 0
 		if finalErr != nil {
@@ -309,7 +311,14 @@ func startNativeStreamProcess(
 			return err
 		},
 		Abort:  func() error { abort(); return nil },
-		Events: eventsCh, SessionIDs: sidsCh, Done: doneCh,
+		Events: eventsCh, SessionIDs: sidsCh, Done: doneCh, Quiesced: producerDone, CleanupError: func() error {
+			select {
+			case <-producerDone:
+				return captureErr
+			default:
+				return NewError("native_cleanup_not_settled", 503, nil)
+			}
+		},
 	}, nil
 }
 

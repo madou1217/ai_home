@@ -118,6 +118,8 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 			goRef := refResolver.GoRef(request.PathValue("accountRef"))
 			cloned := request.Clone(request.Context())
 			cloned.URL.Path = "/v1/management/webui/accounts/" + request.PathValue("provider") + "/" + goRef + suffix
+			cloned.URL.RawPath = ""
+			cloned.SetPathValue("accountRef", goRef)
 			target.ServeHTTP(response, cloned)
 		})
 	}

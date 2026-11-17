@@ -45,6 +45,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	qodercli "github.com/madou1217/ai_home/internal/adapters/qoder/clilaunch"
 	zcodecli "github.com/madou1217/ai_home/internal/adapters/zcode/clilaunch"
+	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -119,12 +120,14 @@ type launchRunner interface {
 
 // App 持有单库、双模式规划器和 Provider Runtime 的一次进程生命周期。
 type App struct {
-	catalog   *providers.Catalog
-	planner   launchPlanner
-	runner    launchRunner
-	resources []io.Closer
-	closeOnce sync.Once
-	closeErr  error
+	catalog      *providers.Catalog
+	aiHomeDir    string
+	accountStore *sqliteaccount.Store
+	planner      launchPlanner
+	runner       launchRunner
+	resources    []io.Closer
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // New 装配 Provider Catalog、aih.db、OAuth 刷新、双模式 Strategy 和官方 CLI Runtime。
@@ -351,7 +354,12 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if store == nil {
 		return newApp(catalog, planner, runner)
 	}
-	return newApp(catalog, planner, runner, store)
+	app, err := newApp(catalog, planner, runner, store)
+	if err == nil {
+		app.aiHomeDir = options.AIHomeDir
+		app.accountStore = store
+	}
+	return app, err
 }
 
 // newProjectionProvisioner 装配已迁移 Provider 的投影策略、materializer、
@@ -445,6 +453,17 @@ func (app *App) Run(
 	plan, err := app.planner.Plan(ctx, intent, endpoint)
 	if err != nil {
 		return fmt.Errorf("规划 Provider CLI 启动失败: %w", err)
+	}
+	if native, ok := plan.Native(); ok && app.accountStore != nil {
+		lease, admitErr := accountadmission.Launch(app.aiHomeDir, native.ProviderID(), native.AccountRef().String())
+		if admitErr != nil {
+			return admitErr
+		}
+		defer lease.Close()
+		current, lookupErr := app.accountStore.GetByRef(ctx, native.AccountRef())
+		if lookupErr != nil || !current.Enabled() {
+			return errors.New("native_account_unavailable")
+		}
 	}
 	if err := app.runner.Run(ctx, plan, intent.Arguments()); err != nil {
 		return fmt.Errorf("执行 Provider CLI 失败: %w", err)

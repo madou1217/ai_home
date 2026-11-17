@@ -29,19 +29,22 @@ const (
 
 // ActiveRunRegistration 描述向 Chat Runtime 控制面登记的活动运行句柄。
 type ActiveRunRegistration struct {
-	RunID              string
-	Provider           string
-	AccountRef         string
-	SessionID          string
-	ProjectDirName     string
-	ProjectPath        string
-	StartedAt          int64
-	InteractionMode    string
-	Mode               string
-	WriteInput         func(input string, appendNewline bool) error
-	WriteSteer         func(content string) error
-	Resize             func(cols, rows int) error
-	Abort              func() error
+	RunID           string
+	Provider        string
+	AccountRef      string
+	SessionID       string
+	ProjectDirName  string
+	ProjectPath     string
+	StartedAt       int64
+	InteractionMode string
+	Mode            string
+	WriteInput      func(input string, appendNewline bool) error
+	WriteSteer      func(content string) error
+	Resize          func(cols, rows int) error
+	Abort           func() error
+	// Quiesced is a broadcast lifecycle signal, never a consumable exit result.
+	Quiesced           <-chan struct{}
+	CleanupError       func() error
 	GetActivePrompt    func() map[string]any
 	GetContentSnapshot func() string
 }

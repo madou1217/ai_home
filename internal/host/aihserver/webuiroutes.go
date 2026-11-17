@@ -523,6 +523,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		goRef := updateRefResolver.GoRef(request.PathValue("accountRef"))
 		cloned := request.Clone(request.Context())
 		cloned.URL.Path = "/v1/management/webui/accounts/" + provider + "/" + goRef + "/update"
+		cloned.URL.RawPath = ""
+		cloned.SetPathValue("accountRef", goRef)
 		accountUpdate.ServeHTTP(response, cloned)
 	})
 	modelsSettings, err := webuimodelsettingsapi.NewHandler(webuimodelsettingsapi.Dependencies{
@@ -554,6 +556,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		cloned := request.Clone(request.Context())
 		cloned.Method = http.MethodDelete
 		cloned.URL.Path = "/v1/management/webui/accounts/" + goRef
+		cloned.URL.RawPath = ""
+		cloned.SetPathValue("accountRef", goRef)
 		cloned.URL.RawQuery = request.URL.RawQuery
 		accountDelete.ServeHTTP(response, cloned)
 	})
@@ -702,6 +706,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		goRef := updateRefResolver.GoRef(request.PathValue("accountRef"))
 		cloned := request.Clone(request.Context())
 		cloned.URL.Path = "/v1/management/webui/accounts/" + request.PathValue("provider") + "/" + goRef + "/reauth"
+		cloned.URL.RawPath = ""
+		cloned.SetPathValue("accountRef", goRef)
 		reauth.ServeHTTP(response, cloned)
 	})
 	// 新增账号作业：作业引擎与重新认证共用 application/accountauth，本切片只把
@@ -886,6 +892,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 
 		{Pattern: "POST " + webuiaccountstatusapi.Path + webuiaccountstatusapi.RouteSuffix, Handler: accountStatus},
 		{Pattern: "DELETE " + webuiaccountdeleteapi.Path + webuiaccountdeleteapi.DeleteSuffix, Handler: accountDelete},
+		accountDeletionRecoveryRoute(dependencies),
 		// 账号授权作业快照：新前缀避开 /accounts/{provider}/{accountRef}/<action> 的模式冲突。
 		{Pattern: "GET " + webuiaccountjobsapi.Path + "/{jobId}", Handler: accountJobs},
 		{Pattern: "GET /v0/webui/account-jobs/{jobId}", Handler: webuipublicalias.Rewrite("/v0/webui/account-jobs", webuiaccountjobsapi.Path, accountJobs)},
@@ -898,7 +905,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiaccountupdateapi.UpdatePath, Handler: accountUpdate},
 		// 浏览器数据面：编辑入口（ref 先翻译成 Go ref）。
 		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}/update", Handler: publicAccountUpdate},
-		// 浏览器删除入口：Node 旧路径是 POST /accounts/{provider}/{accountRef}（无后缀）。
+		// 浏览器使用 DELETE；保留已有 POST 别名，二者复用 Go 删除用例。
+		{Pattern: "DELETE /v0/webui/accounts/{provider}/{accountRef}", Handler: publicAccountDelete},
 		{Pattern: "POST /v0/webui/accounts/{provider}/{accountRef}", Handler: publicAccountDelete},
 		{Pattern: "POST " + webuiroutingrulesapi.Path, Handler: routingRules},
 		{Pattern: "POST " + webuisetdefaultapi.Path + webuisetdefaultapi.SetDefaultRouteSuffix, Handler: setDefault},

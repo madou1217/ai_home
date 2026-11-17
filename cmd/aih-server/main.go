@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/madou1217/ai_home/internal/runtime/accountdeletionmarker"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime/approvaltool"
 	"github.com/madou1217/ai_home/internal/runtime/providersessionhook"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
@@ -18,6 +19,14 @@ import (
 // 交给管理端点：Windows 上 `child.kill('SIGTERM')` 实际是 TerminateProcess，
 // 宿主只能靠这条进程内路径触发优雅关闭。
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "__account-deletion-marker" {
+		if err := accountdeletionmarker.Run(os.Getenv("AIH_HOME_DIR"), os.Stdin); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "aih deletion marker:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "__codex-metadata" {
 		if err := runCodexMetadata(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "aih codex metadata:", err)

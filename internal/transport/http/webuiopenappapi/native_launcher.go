@@ -11,6 +11,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
+	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 )
 
@@ -185,6 +186,13 @@ func (l *NativeLauncher) Launch(ctx context.Context, req Request) (Result, error
 func (l *NativeLauncher) execute(ctx context.Context, req Request) (Result, error) {
 	var snapshot AccountSnapshot
 	var hasAccount bool
+	if req.AccountRef != "" && req.Action == "open" {
+		admission, err := accountadmission.Launch(l.deps.AIHomeDir, req.Provider, req.AccountRef)
+		if err != nil {
+			return Result{OK: false, Error: "account_runtime_active", Message: "账号正在删除，未启动新的运行进程。"}, nil
+		}
+		defer admission.Close()
+	}
 	if req.AccountRef != "" {
 		if l.deps.Accounts == nil {
 			return Result{OK: false, Error: "account_not_found", Message: launchErrorMessage("account_not_found")}, nil

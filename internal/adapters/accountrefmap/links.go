@@ -144,3 +144,18 @@ func Load(ctx context.Context, aiHomeDir string) (Table, error) {
 	}
 	return table, nil
 }
+
+// LoadStrict is used by destructive lifecycle coordination. A malformed mapping
+// is unknown ownership, not permission to inspect/delete the identity fallback.
+func LoadStrict(ctx context.Context, aiHomeDir string) (Table, error) {
+	empty := Table{byNode: map[string]string{}, byGo: map[string]string{}}
+	databasePath, err := appstate.DatabasePath(aiHomeDir)
+	if err != nil {
+		return empty, err
+	}
+	raw, found, err := appstate.ReadKV(ctx, databasePath, SyncStateKey)
+	if err != nil || !found {
+		return empty, err
+	}
+	return Parse(raw)
+}

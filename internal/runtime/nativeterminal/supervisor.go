@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	"os"
 	"os/signal"
 	"strings"
@@ -26,6 +28,17 @@ func supervise(home string, value launchEnvelope, rt Runtime) int {
 				return report(rt.Stderr, err)
 			}
 		}
+	}
+	intent, intentErr := specIntent(entry.Spec)
+	if intentErr != nil {
+		return report(rt.Stderr, intentErr)
+	}
+	if intent.Mode() == providerlaunch.LaunchModeNativeDirect {
+		admission, err := accountadmission.Launch(home, entry.IdentityProvider, entry.AccountRef)
+		if err != nil {
+			return report(rt.Stderr, err)
+		}
+		defer admission.Close()
 	}
 	if err := validateIdentity(context.Background(), home, entry.Spec, value.Env); err != nil {
 		entry.CleanupError = "native_terminal_identity_mismatch"

@@ -1297,6 +1297,7 @@
         {
           "transport": "http",
           "methods": [
+            "DELETE",
             "POST"
           ],
           "path": "/v0/webui/accounts/{provider}/{accountRef}"

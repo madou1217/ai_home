@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -37,6 +39,117 @@ func ApplicationName(provider string, accountRef string) string {
 		return kiroInstancePrefix + normalizedRef
 	}
 	return ""
+}
+
+// MatchDesktopInstances reuses display matching without scanning or swallowing
+// errors. Deletion callers must obtain instances with ListDesktopInstancesStrict.
+func MatchDesktopInstances(instances []DesktopInstance, accounts []Account, aiHome, platform string) map[string][]int {
+	return matchDesktopAccounts(instances, accounts, aiHome, platform)
+}
+
+// strictCLIInstances only treats an actual aih invocation as a CLI root.
+// Desktop helpers inherit AIH_ACCOUNT_APP too; their marker alone is neither
+// a CLI identity nor a reason to fail every account's deletion.
+func strictCLIInstances(processes []Process, platform string) ([]CLIInstance, error) {
+	cliProcesses := make([]Process, len(processes))
+	nativeRoots := make(map[int]bool)
+	for index, process := range processes {
+		command := process.CommandLine
+		if platform != PlatformWindows {
+			// ps eww appends environment values that can themselves mention aih.
+			// They must not be parsed as executable arguments or native flags.
+			command = processArguments(command)
+		}
+		cliProcesses[index] = process
+		cliProcesses[index].CommandLine = command
+		nativeCandidate := nativeTerminalCandidate(command)
+		marked := assignmentValue(process.CommandLine, AccountAppMarkerEnv) == "1"
+		if !nativeCandidate && (!marked || !cliInvocationCandidate(command)) {
+			continue
+		}
+		provider, accountID := parseCLIInvocation(command)
+		if provider == "" || accountID == "" {
+			return nil, fmt.Errorf("%w: CLI identity unavailable (pid=%d)", ErrScannerUnavailable, process.PID)
+		}
+		ref := assignmentValue(process.CommandLine, ProviderAccountRefEnv)
+		if ref != "" && NormalizeAccountRef(ref) == "" {
+			return nil, fmt.Errorf("%w: CLI account identity invalid (pid=%d)", ErrScannerUnavailable, process.PID)
+		}
+		if nativeCandidate {
+			_, _, nativeRef := parseNativeTerminalInvocation(command)
+			if nativeRef == "" || (ref != "" && ref != nativeRef) {
+				return nil, fmt.Errorf("%w: native CLI identity invalid (pid=%d)", ErrScannerUnavailable, process.PID)
+			}
+			ref = nativeRef
+		}
+		if idRef := NormalizeAccountRef(accountID); idRef != "" {
+			if ref != "" && ref != idRef {
+				return nil, fmt.Errorf("%w: CLI account identity mismatch (pid=%d)", ErrScannerUnavailable, process.PID)
+			}
+			ref = idRef
+		}
+		cliProcesses[index].CommandLine = command + " " + AccountAppMarkerEnv + "=1"
+		if ref != "" {
+			cliProcesses[index].CommandLine += " " + ProviderAccountRefEnv + "=" + ref
+		}
+		nativeRoots[process.PID] = nativeCandidate || assignmentValue(process.CommandLine, "AIH_SESSION_INTENT") != ""
+	}
+	instances := buildCLIInstances(cliProcesses)
+	for index := range instances {
+		instances[index].NativeOwned = instances[index].NativeOwned || nativeRoots[instances[index].RootPID]
+	}
+	return instances, nil
+}
+
+func cliInvocationCandidate(command string) bool {
+	if provider, _ := parseCLIInvocation(command); provider != "" {
+		return true
+	}
+	tokens := splitCommandLine(command)
+	for _, token := range tokens {
+		switch strings.ToLower(executableBase(token)) {
+		case "aih", "aih.cmd", "ai-home.js":
+			// Recognize a malformed aih root too, so missing identity fails closed.
+			return true
+		}
+	}
+	return false
+}
+
+func nativeTerminalCandidate(command string) bool {
+	tokens := splitCommandLine(command)
+	if len(tokens) < 2 || tokens[1] != "__native-terminal" {
+		return false
+	}
+	name := strings.ToLower(executableBase(tokens[0]))
+	return (name == "aih-go" || name == "aih-go.exe") && (len(tokens) < 3 || tokens[2] == "launch" || tokens[2] == "inner")
+}
+
+// processArguments trims the environment appended by POSIX ps eww. Preserve
+// quoting in argv and never include environment values in executable matching.
+func processArguments(command string) string {
+	start := 0
+	var quote byte
+	for index := 0; index < len(command); index++ {
+		character := command[index]
+		if quote != 0 {
+			if character == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch character {
+		case '\'', '"':
+			quote = character
+		case ' ', '\t':
+			start = index + 1
+		case '=':
+			if validEnvKey(command[start:index]) {
+				return strings.TrimSpace(command[:start])
+			}
+		}
+	}
+	return strings.TrimSpace(command)
 }
 
 // NormalizeAccountRef 与 Node 的 normalizeProviderAccountRef 同语义。
@@ -185,8 +298,17 @@ func firstToken(commandLine string) string {
 // 与 Node lib/runtime/desktop-process-user-data.js 同口径：只有恰好一条规则命中
 // 可执行文件路径时才反读，避免把别人的进程认成账号实例。
 func (scanner *Scanner) withMacUserDataDirs(ctx context.Context, processes []Process) []Process {
+	enriched, _ := scanner.readMacUserDataDirs(ctx, processes, false)
+	return enriched
+}
+
+func (scanner *Scanner) withMacUserDataDirsStrict(ctx context.Context, processes []Process) ([]Process, error) {
+	return scanner.readMacUserDataDirs(ctx, processes, true)
+}
+
+func (scanner *Scanner) readMacUserDataDirs(ctx context.Context, processes []Process, strict bool) ([]Process, error) {
 	if len(scanner.EnvRules) == 0 {
-		return processes
+		return processes, nil
 	}
 	type candidate struct {
 		envKey     string
@@ -207,6 +329,9 @@ func (scanner *Scanner) withMacUserDataDirs(ctx context.Context, processes []Pro
 		matchedCount := 0
 		for _, rule := range scanner.EnvRules {
 			if !validEnvKey(rule.EnvKey) {
+				if strict {
+					return nil, fmt.Errorf("%w: invalid desktop environment rule", ErrScannerUnavailable)
+				}
 				continue
 			}
 			for _, fragment := range rule.PathIncludes {
@@ -217,12 +342,15 @@ func (scanner *Scanner) withMacUserDataDirs(ctx context.Context, processes []Pro
 				}
 			}
 		}
+		if strict && matchedCount > 1 {
+			return nil, fmt.Errorf("%w: ambiguous desktop environment rule (pid=%d)", ErrScannerUnavailable, process.PID)
+		}
 		if matchedCount == 1 && matchedKey != "" {
 			candidates[process.PID] = candidate{envKey: matchedKey, executable: executable}
 		}
 	}
 	if len(candidates) == 0 {
-		return processes
+		return processes, nil
 	}
 	orderedPIDs := make([]string, 0, len(candidates))
 	for pid := range candidates {
@@ -231,44 +359,84 @@ func (scanner *Scanner) withMacUserDataDirs(ctx context.Context, processes []Pro
 		}
 	}
 	if len(orderedPIDs) == 0 {
-		return processes
+		return processes, nil
 	}
+	sort.Strings(orderedPIDs)
 	output, err := scanner.run(ctx, "ps", "eww", "-p", strings.Join(orderedPIDs, ","), "-o", "pid=,command=")
 	if err != nil {
-		return processes
+		if strict {
+			return nil, fmt.Errorf("%w: desktop environment scan failed: %w", ErrScannerUnavailable, err)
+		}
+		return processes, nil
 	}
 	identities := make(map[int]string)
+	resolved := make(map[int]bool)
 	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		fields := strings.SplitN(line, " ", 2)
+		if strict {
+			pidText, command, ok := cutProcessColumn(line)
+			if !ok {
+				return nil, fmt.Errorf("%w: invalid desktop environment row", ErrScannerUnavailable)
+			}
+			fields = []string{pidText, command}
+		}
 		if len(fields) < 2 {
 			continue
 		}
 		pid, pidErr := strconv.Atoi(strings.TrimSpace(fields[0]))
 		if pidErr != nil || pid <= 0 {
+			if strict {
+				return nil, fmt.Errorf("%w: invalid desktop environment pid", ErrScannerUnavailable)
+			}
 			continue
 		}
 		entry, found := candidates[pid]
 		if !found || entry.envKey == "" {
+			if strict {
+				return nil, fmt.Errorf("%w: unexpected desktop environment pid=%d", ErrScannerUnavailable, pid)
+			}
 			continue
 		}
 		command := strings.TrimSpace(fields[1])
 		if !strings.HasPrefix(command, entry.executable+" ") {
+			if strict {
+				return nil, fmt.Errorf("%w: desktop identity changed (pid=%d)", ErrScannerUnavailable, pid)
+			}
 			continue
 		}
 		environment := command[len(entry.executable)+1:]
 		if !validEnvKey(strings.SplitN(environment, "=", 2)[0]) {
+			if strict {
+				return nil, fmt.Errorf("%w: desktop environment unreadable (pid=%d)", ErrScannerUnavailable, pid)
+			}
 			continue
 		}
-		if value := environmentValue(environment, entry.envKey); strings.HasPrefix(value, "/") {
+		value := environmentValue(environment, entry.envKey)
+		if strict {
+			occurrences := 0
+			for _, field := range strings.Fields(environment) {
+				if name, _, hasValue := strings.Cut(field, "="); hasValue && name == entry.envKey {
+					occurrences++
+				}
+			}
+			if resolved[pid] || occurrences > 1 || (occurrences == 1 && !strings.HasPrefix(value, "/")) {
+				return nil, fmt.Errorf("%w: desktop environment identity ambiguous (pid=%d)", ErrScannerUnavailable, pid)
+			}
+			resolved[pid] = true
+		}
+		if strings.HasPrefix(value, "/") {
 			identities[pid] = value
 		}
 	}
+	if strict && len(resolved) != len(candidates) {
+		return nil, fmt.Errorf("%w: desktop environment scan incomplete", ErrScannerUnavailable)
+	}
 	if len(identities) == 0 {
-		return processes
+		return processes, nil
 	}
 	enriched := make([]Process, len(processes))
 	copy(enriched, processes)
@@ -277,7 +445,7 @@ func (scanner *Scanner) withMacUserDataDirs(ctx context.Context, processes []Pro
 			enriched[index].UserDataDir = value
 		}
 	}
-	return enriched
+	return enriched, nil
 }
 
 // macDesktopExecutable 返回「无参数、以 / 开头的 .app 主进程」的完整命令行；

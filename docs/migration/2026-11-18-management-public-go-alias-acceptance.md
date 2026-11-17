@@ -1,0 +1,88 @@
+# Legacy public management → Go direct acceptance
+
+时间：2026-11-18 03:24 Asia/Shanghai。Owner：原监督 `01a1df63`。这是已落源码与隔离真实操作的窄门禁，不是全 R0/R6/R8 或 Node 退役完成。
+
+## 工程与交付边界
+
+- source：`901be7391648b7abdbd2eac3ec2e9ab56545368b`，唯一生产路径 `internal/host/aihserver/webui_management_ops_routes.go`，15+/2-。固定源码 SHA-256 `df213fe47122cf36ce1d6b997f4f23ffead4fa445841cd1d62378a3255f9e1cd`。
+- push：本文写入时尚未为此 checkpoint 新取远端确认；后续单独回报实际 push/ls-remote，不以 tracking ref 代证。
+- artifact：固定 archive + 唯一已审路由覆盖，见下；不等同于包含并行 Desktop/remote 提交的整仓新发布。
+- loaded：只运行私有标准 Go CLI 与私有 production-host operational bootstrap；未替换标准 binary、未重启 9527。
+- realaccept：标准 CLI 的精确公共路由/鉴权/动态 job；另列 OS 严格禁止 Node/fork/出站的真实 canonical 副本状态写入与 SSE。
+- Node 停用/删除：本轮不删 Node management-router、plugins、CLI client 或共享宿主；其他真实 caller 尚有各自门禁。
+
+## 为什么不是挂整棵 public 子树
+
+原 Go 已有 canonical `/v1/management/webui/management/*` 和 browser `/v0/webui/management/*`，但历史 `/v0/management/*`（除 restart）仍落 Node fallback。真实调用者包括 `lib/cli/services/server/state-index-client.js`：四项写动作把请求发到 `/v0/management/state-index/*`，Node management-router 再转同一 Go handler。
+
+本次由已有 canonical route 列表派生 **28 条精确、保留 method 的 public 别名**，沿用同一个 handler、鉴权、前缀正规化、job PathValue、state/SSE 服务；既有 public restart 保留且不重复注册。不新增根路径或 subtree catchall：插件实际 public 命名空间 `/v0/plugins/*` 仍是另一 owner 的真实遗留入口，不能用新的广泛 404 截断它，也不能据此宣布插件已 Go-only。独立 review 未发现 Important/Critical 问题，绑定上述源码 hash；它只审 source，不替代运行证据。
+
+## 不可变输入与构件
+
+- committed base：`bf992b3c20ab75ef44cc8fb0573d445eec7dec1e`。
+- git archive SHA-256：`e360e76081e43c0a23b98d4fd9ee4663272d1513547eda1cbbd06994337f9770`；从 archive 解压后只覆盖唯一 owner path，无 shared dirty 源码混入。
+- baseline 标准 `./cmd/aih-server`：`0d73558dc4de3fd0c9c074b890f0925f1636c67e021009513e97d7ceeab0fc0a`。
+- candidate 标准 `./cmd/aih-server`：`3d0835e053c8e679772af808ecbe51c142026bb8042e6cfc311933a5259bfceb`。
+- strict operational host：`e3e25996d538fda1f7f7a3594b3df99cc01964b35ea8bec448ac6c428faf1e3c`。
+- 私有 bootstrap 源码：`07241c4516a77ccd58b933a5108e472cb647664bc3c0db9dd9deff59606c035c`，只调用未改动的 production `aihserver.New/Serve/Close`，不复制 handler/业务函数、不 mock、不构造账号或响应。
+- 三次 `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOWORK=off go build -mod=readonly` 均 exit0；focused `go vet ./internal/host/aihserver ./internal/transport/http/webuimanagementapi` exit0。未新增测试用例/fixture/分支/worktree。
+
+## 标准 Go CLI 实际路径（空私有 HOME/DB）
+
+无 `--front-door`、`--supervise-node` 或 Node base 参数，管理密钥仅放私有进程环境，不记录正文。
+
+| 真实操作 | 结果 |
+| --- | --- |
+| 未改 baseline public status / state-index upsert | 均 404；同 baseline canonical status 200 |
+| candidate public status/metrics/accounts 与 usage stats/models/sessions/requests | 各 200 |
+| 缺 Bearer、错 Bearer | 各 401，未因 loopback 绕过已配密钥 |
+| 不支持的方法（POST status / GET upsert） | 404；没有执行 mutation |
+| public state-index 坏 JSON | 400 |
+| public usage dashboard query create / 动态 ID GET / DELETE | 202 / 200 / 200，真实异步 job，未伪造 jobId |
+| canonical plugin inventory | 200；public plugin 在无 Node 候选下仍 404，不算插件迁移通过 |
+| 标准 CLI 未配 management key | 启动 exit1，未监听；这是既有 options 安全门，不冒充 no-key loopback HTTP 验收 |
+| 观察的各标准私有 CLI 结束 | 均 exit0；无共享服务操作 |
+
+标准 CLI 此轮仅作短窗口 PID/PPID/完整 argv 采样，未观察 Node child **不等于 OS 证明零 Node**，更不挪用此前 terminal 94 秒验收中两个未分类 Node PID。保留完整私有 argv；分类不用可能截断的 `ps comm` 列。
+
+## 真实 canonical 数据与严格 production host
+
+原 canonical `aih.db` 与封存 `app-state.db` 均以 SQLite `mode=ro` + `query_only` + read transaction + online backup 得一致私有快照，quick_check=ok。用于实际 state 写入的是 **canonical aih.db**，不是因旧注释仍写 app-state 而另造第二库；两输入快照完整 SHA 在矩阵窗口结束（03:19:58）前后相同；该核查早于后续旧 client 汇总（03:21:39），不外推为覆盖后续所有操作。不宣称 live 全库/其他 owner 并发数据冻结。
+
+- canonical input：975486976 bytes，SHA `561596b6eca3a34052a2cc6fd024f5fd3d684bc12ec2b427d67b447f9dfd3f22`；真实 accounts34、account_state32。
+- sealed legacy input：914698240 bytes，SHA `f6afbcb244d1e4fcbc410d1170880e1d7445d3ff73913ec6c2f5f07ce4554862`，只用于来源/未变边界，不写回原库。
+- 对已有真实 CodeBuddy account_state 行原字段重放；不新造账号/ref/pattern/token/业务样本。raw ref/显示数据只在受限私有根，低敏证据保存 ref hash。
+- Seatbelt 禁 `process-fork`、绝对 Node exec、出站 network，以及真实 AIH 根/仓库读写。Node 绝对执行实际 EPERM exit71、真实 shell fork exit128，向已监听 private host 的出站连接失败；不是无监听造成的假绿。
+- 这是 production host operational bootstrap，不含标准 macOS CLI identity publisher；不把它当标准 CLI OS-noexec。既有 `/bin/ps` 受限问题未扩改。
+
+| 真实 public 操作 | DB/HTTP 结果 |
+| --- | --- |
+| upsert 原 canonical 行 | 200/updated=true，七个展示/状态字段与原值相同 |
+| operational-status 改为相反真实状态 | 200，canonical SQL 读回实际变更 |
+| runtime-state 清空并恢复原 base | 200，状态恢复；不宣称本轮封住其内部所有错误传播语义 |
+| prune 保留 provider 所有真实 refs | 200/removed0 |
+| private prune 缺该真实 ref | 200/removed1，SQL 行实际消失 |
+| 再 upsert 完整原行 | 200，SQL 行恢复；只修改私有副本 |
+| 私有 accounts/account_credentials/account_profiles 三表 | 本操作窗口 HMAC 前后完全相同；非 live 不变宣称 |
+| public watch 与 canonical watch 同时订阅 | 各收到 connected + snapshot |
+| public POST watch/snapshot | 202/broadcasted=true，两流都收到新 snapshot，复用同一 Go hub |
+| 两 SSE disconnect 后普通 status | 200；host 自身退出0 |
+
+### 真实旧客户端而非手造 fetch
+
+单独启动**操作侧** Node client，调用 archive 内实际 `createStateIndexClient`，其 fetchImpl 只包原生 `fetch` 做响应观察，没有模拟 response/transport。upsert / setOperationalStatus / clearRuntimeState / pruneMissing 四次实际 `/v0/management/state-index/*` fetch 均 200，最后 canonical 原字段仍在。服务端使用同一生产 Go host 实现及 OS 禁 fork/Node/出站约束，但不是矩阵的同一进程：矩阵 PID56017，后续 client 验证 PID58912；均无 AIH Node server/backend。这条证据证明现有 Node CLI client 不再需要 **Node server 代理**，不冒充 client 自身已去 Node。caller/host 均正常退出0。
+
+## 失败、清理与剩余门禁
+
+首轮 driver 尝试未配密钥标准 CLI，在 options 校验 exit1；已保留 attempt1 结果及私有 log，没有放宽产品源。第二轮完整矩阵与单独旧 client 实跑完成。所有已观察自有 PID 的退出后核查为空；SSE 均关闭，未 kill/restart 共享服务或动 Edge/用户终端/草稿。敏感快照/私有 logs/key 尚保留在受限目录，未获单独许可前不做大范围删除；不将 chmod 等同安全擦除。
+
+03:24 共享只读仍 Go `84956` → 第一方 Node `85251`，runtime/disk `9916c2222ab53916a694e9f9602fc30f9a6a9d591698278dc26dd9ee6951cbf1`，stamp binary hash匹配、source `d0f4cab51000f484768b145fdfad6aed8aa8df87`。仍以 `--front-door --supervise-node` 运行，本轮源码没有加载。stamp 匹配也不能替代完整构建闭包/批准或 Node 退出。
+
+以下保持 OPEN：插件 public caller/JS host，Node CLI state client 本体，剩余 Node management consumers及旧代理的调用归零/删除，state/runtime 内部错误语义，tokenRefresh/401装配、usage_ledger→看板权威读模型、host观察/run收养/NodeOwner 与 TCP/UDP 合同，以及最终匹配构件批准/发布/真实业务 Node-off。短 SSE 共享 hub 验收不是90秒失活/背压/多 viewer 或 Edge 最终验收。
+
+## 证据定位
+
+- root：`/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-management-go-alias-20261118-ifoq4qys`；pointer：`/tmp/aih-management-go-alias-latest-20261118.txt`。
+- `evidence/build-manifest.json`、`snapshot-manifest.json`、`result.json`、`real-existing-state-client.json`。
+- `evidence/attempt1-result.json`、`source-review.json`、`source-commit-receipt.json`、`post-run-pid-audit.json`、`shared-runtime-readonly.json`。
+- raw 数据在本 root 的受限敏感/私有 runtime 目录，不提交凭据、token、原库或配置正文。

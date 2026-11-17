@@ -6,6 +6,13 @@
 >
 > **实际执行 owner：**原 W0 `01a1d99a` 继续 R2 wrapper；原 R4 `01a1da1b` 已真验当前 Go display 首迁，接续 CRUD display-source 原子写入；R5 credential-helper 单 slice 已由现有 `01a1e527` 明确认领/获批，不冒称损坏的原 M 全包已恢复；R6 由原 R0 事实 owner `01a1ea74` 认领 Go remote transport。共享 router/composition 采用顺序 hunk 锁，旧 staged/Chat/protocol 不处理。插件第一方 JS host、后台观察/恢复、backup public caller 和最终默认无 Node 拓扑继续开放，不能以控制面 Go 或安装包可用代替退出。
 
+配置/进度增量（2026-11-18 04:02，Asia/Shanghai，**目标持续 active，均未共享发布**）：
+
+- 监督 `901be7391` 将 legacy `/v0/management/*` 的28条精确别名直接交同一 Go handler；真实 canonical 副本 state-index、双前缀 SSE与现有 client 四次实际 fetch 已在无 AIH Node server 路径完成，[来源与严格 host 边界](2026-11-18-management-public-go-alias-acceptance.md)分列，操作侧 Node client/插件和其他旧caller仍未退。
+- 监督 `758bb6443` 修复标准 Go server 丢 Codex hook options与native discovery整文件扫描；真实标准 CLI显式off/on、无Node版本调用、4.756秒自修复、私有重启正常，[构件/早期失败/Node探测边界](2026-11-18-codex-hook-standard-go-acceptance.md)单列。R2仍由原W0接续：`00dfa6a05`版本窄转交与`007620be1`transport-neutral frame core已入main，完整stdio metadata/恢复/旧writer尚开。
+- 原R4已交`34e7dc196`权威display-source CRUD及`21a5dd90c`增量真验，现实际实施settings/manual-policy原子Go接管，93个失效ref只忽略不复活。R5已有`cb5a68f09`native credential helper及`6d87646c9`open-app旧独立writer委托；Node Desktop adapter/无receipt旧配置/真实GUI仍开。R6已有`5052144db`Go remote与`6acfffbeb`self-selector修正；tokenRefresh装配已由原`01a1ea74`实际开工，composition顺序锁已释放给它，webuiroutes之后再给R4。
+- 最近共享只读仍是03:24 Go84956→第一方Node85251（匹配stamp/source见上），不是04:02新观测或已加载新SHA。插件正式输入/JS host、host观察/run收养、usage投影、公开backup caller、terminal shim与最终无第一方Node默认拓扑继续开放；不得把本增量或partial checkpoint当全量完成。
+
 
 > 总控复核：2026-11-17 00:02–00:14（Asia/Shanghai）；原目标澄清为 2026-11-16 18:14–18:32。这是用户可读的目标与状态入口，不是新的平行开发计划，也不是实时仪表盘。详细需求继续以 [原 W0–W6 计划](../superpowers/plans/2026-11-14-node-go-next-development-plan.md)、[执行账](2026-11-14-node-go-execution-ledger.md) 和 [逐项证据审计](2026-11-16-requirement-evidence-audit.md) 为准；状态变化必须更新证据，不能把旧快照当现状。
 

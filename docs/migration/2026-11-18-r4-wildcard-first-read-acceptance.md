@@ -105,3 +105,66 @@
 3. Node 业务写者仍为 `lib/server/go-account-sync.js:888` setEnabled → PATCH accounts、`:922` setProviderDefault → PUT account-defaults、`:625` setModelPolicy → PATCH account models；不是已经退役的只读 proxy，未改动/认领该更大策略域。
 4. 只有一个真实 wildcard pattern，不能伪造另一 pattern、non-wildcard 或启用旧 alias。缺真实改 pattern/非 wildcard 正向与 insert 后中途 rollback 样本仍明确保留。
 5. 独立文档审查/显式 pathspec checkpoint 在真正完成前保持 pending；review 结论须绑定本文件的确切 SHA，不能沿用旧 review。新增 commit/push、loaded、部署、公开调用方迁移与 Node 退役必须分开报告。**本轮仅当前 Go core 有限验收，不是整个 R4 或项目迁移完成。**
+
+
+## 9. 后续 Go CRUD 工程（pm-72220794，新阶段；不覆盖前述零源码验收时点）
+
+以下是首迁验收后的**新增原 R4 窄工程**，不把前107行第一阶段的“生产零修改”挪为本工程结论；仍只有本份新增验收文档。应用层3path已实际改动，Host来源装配在私有 archive overlay 通过；共享 composition 仍受 R6 物理 writer 顺序锁，未释放前不写/代 stage。部署、loaded、公开 Node 退役未授权。
+
+### 工程边界与固定 source
+
+- 新 `application/modelalias/display_source.go` 定义应用内向来源端口，源错/nil/cancel 显式拒绝，成功空结果保留既有 Node 合同，拷贝来源名单；应用不导入 adapter。
+- `service.go` 的 Create/Update/ReplaceGroup 在整组持久化前统一派生 display；每次从新 pattern 重算，非 wildcard 明确清旧名单，不把 pattern 旧展示沿用。
+- `store.go` 的 ReplaceContext 传递原请求 ctx 到已有事务 Save，保留 persist-before-publish。旧 Replace 兼容 Background。没有扩 Delete、target、策略/OAuth 或重写 repository。
+- composition 仅在 aliasService 装配后注入 `aliasdisplay.List(pattern,time.Now().UTC())`，通过应用端口调用同一现有 Go SDK权威；无第二业务或 Node 回退。
+- 原始构建基点 `441a527c37f86e26501ea63598a8d2f379fe6641`、archive SHA `cbd8d494217cb4052664e811664a3df3c1e5f11ad1cf59bd12f4a67251ff3c76`。源3SHA：`display_source.go=5282e973ac88d8244de82b53448dc8b083cbea58d558767174242a5da51054d0`；`service.go=d45d03122894598c1c707727b4b442e76c6575a3a7463e9efb5dd968c3da5b36`；`store.go=9f8873edad5549a045cfa9ddfe21fd1f15a6f34c68e1831e3e8cbc22e15428b4`。私有 composition overlay SHA `0ecd1de02875bb798655b2b50189b33d56e58ed9c5db2f4686d037ac934e4ee2`（不等于已落共享production文件）。
+- 独立静态 source review `pm-832a88ca` 只绑定这3SHA及该 overlay；PASS 不替代 runtime/整个R4或最终装配 blob 审核。
+
+### 真实公开 Go HTTP 操作
+
+全部操作是新私有 HOME 内的真实 production aihserver.New/Serve，OS 禁 foreignexec/出站网，无 Node host/RPC。输入只重放该在线快照已有 canonical 的原业务配置（alias/target/provider/targetProvider/priority/enabled/description），不造新 pattern、模型或账号。Create/ReplaceGroup的新 id 是产品自身生成，原输入私存，不进文档。
+
+| 真实操作 | 实际结果 | 原子边界 |
+| --- | --- | --- |
+| 原记录 Update，同一真实配置 | HTTP200，gen43→44，display0→10 | 原 legacy 不变 |
+| 先 Delete，再 Create 同一真实配置 | HTTP200，gen45→46，display10 | 不造数据，原 legacy 不变 |
+| ReplaceGroup 同一真实配置/被替换 id | HTTP200，removed1，gen47/display10 | 整组替换，旧legacy不变 |
+| 真 private BEGIN IMMEDIATE 持锁 | 5.093183s，Update HTTP500 | 三alias表/内存摘要均不变；释放后可写 |
+| 完整 PUT 发送后0.35s关闭 client，再0.35s释放writer | 新实现不推进代次；DB/内存不变 | 未 instrument 服务端ctx到达具体阶段，不夸大为所有取消竞态证明 |
+| 相同门禁/原未改 binary 反证 | 已关闭的client请求仍把gen43推进44 | 原构件SHA `759c5fa32a7b20dad1527fc96bc17448ca43c71f8ac773ce3e216c78a838adb0`；不是 mock |
+| 取消后正常 Update 重试 | HTTP200，gen48/display10 | 系统恢复可写 |
+| 新进程重启 | gen/applied48/48，accepted1、display10；原业务字段全相等 | 持久化与内存恢复一致 |
+| bad-source 正代次启动后 Update | HTTP500 / model_aliases_failed | 三表/内存均不变 |
+| 同 bad-source ReplaceGroup | HTTP500 | 不删旧组，不留下半组，三表/内存不变 |
+| Delete 后 bad-source Create 原真实配置 | HTTP500 | 保持已删除状态，三表/内存不变，不复活 |
+
+严格 Host 各进程真实 exit0。另实际 cmd/aih-server 在无Node可执行PATH重启读取：WebUI aliases GET200显示10，management aliases GET200 gen/applied48/48、accepted1，health200，exit0、三alias表不变。命令行级别仍不冒称 OS noexec。
+
+- 新CLI二进制 SHA `2f4ff75acb6b68b4a867c3159c012f04461a921243b526938028f721ba6c1144`。
+- operational host SHA `4ed3e638dd71da81dc4adb3cb72a9bd7ea68831044db0fdc1edec33dceac9f6f`。
+- 私有 bad-source overlay host SHA `6d2a9c901f97183e23daf8bb58bc12a80e80f2edc6ea69cdcacde202ea810baa`；仅故障验收用，不是生产构件。
+- 公开CRUD矩阵实际完成时点2026-11-18 03:07:23（+08:00），实际CLI回读03:07:56。早先peer pm-cad9074a的“03:12”是笔误，已单独向监督更正；结果、source与binary摘要不变。
+- 低敏 `crud/evidence/http-crud-matrix.json`、`14-actual-production-cli-restart-readback.json`、全部 source/buildinfo。baseline进程条目的通用source文字曾误写成overlay来源，后按真实binarySHA显式provenanceTextCorrection更正为未改基点；不把旧baseline说成新构件。
+
+### 本工程保留的缺口
+
+- 只有一个真实 wildcard pattern；合法更换成另一 pattern、wildcard→nonwildcard清旧名单、nonwildcard正向与合法空展开结果，没有真实业务样本。不制造fixture，所以这些分支目前只有代码/静态review，不能称真实操作全矩阵等价。
+- 故障证明是源派生失败、BEGIN/DELETE持锁、客户端取消门禁；没有 insert之后中途故障回滚或所有取消竞态的证明。
+- Node enabled/default/model-policy 定时写者仍独立OPEN，不因本工程关闭；没有请求外部上游 inference，无计费/端到端执行验收。
+- 共享 composition 写入/最终sourcehash/独立review/精确checkpoint/清理许可仍应由后续实际证据更新，不提前填写完成。
+
+
+### 最终装配、重新校准和本人 checkpoint（覆盖前述工程 pending 状态）
+
+- 首轮107行已独立审查 `pm-66c3e169`（doc SHA `a7a72faeaea18b5414298161eabdb9d809dee9b6f827c5511dcf3b2ec67d8452`），2026-11-18 03:25 本人仅该doc显式 pathspec 提交 `23a4c95b8dee2b5b2ef871f1546d29dd6aefecb1`；原内容保留不改，不将该review自动移给追加内容。
+- R6 通过 `pm-ebcbb7bb` 正式释放 composition 的新HEAD `5052144db6c6b6d74bd0b7775d09c3cea844b479`；监督 `pm-037b1397`/`pm-6e854965` 批准后，本人只物理插入 aliasdisplay import 与 SetDisplaySource closure。共享 ContextWindows peer8+/7- 原样保留，不代提交，不再把私人 overlay 称为尚未落盘。
+- 最终4path source审查 `pm-820ae824`：应用3SHA未变，**提交候选 composition SHA `aedf3aa8150b4a3b26fcc81e4c73185128383a0795a7125244801a3132faef28`**；基于5052144仅本人2hunk，不含共享文件另一个 ContextWindows hunk。静态PASS不替代runtime。
+- 重新用不可变5052144 archive（完整SHA `7dc7128efce51d807a171731dc9ef218326383de7202e0c560e9d85a1ba8edc1`）加最终本人4源构建，正常构件不再用composition overlay；最终生产源逐byte等后来提交blob。`go build`三个构件与 `go vet ./application/modelalias ./internal/host/aihserver` 均exit0，gofmt/空白检查通过。普通非git archive里一条git diff检查因无.git失败，已在static-verification记录并另用格式/空白检查，不用失败命令冒充通过。
+- 最终新二进制：CLI `36a3777ff24ed0e9f86de83cc6b5ef4012cf33b6f6d20adac4ee6977fe973f9a`；严格Host `b4f731a5134f2880cafc74fd77871e1fe2da6c29fa55bee320b77f6e39e3e72a`；坏payload独立Host `7e3ef74d3e35168f3431bc49a6cd105731434e96351735387bb049e4a5b46aa0`。不把上一轮private composition overlay的runtime挪给该新source。
+- 最终构件完整重跑公开Go CRUD、取消/原binary对照、源错误、重启、实际CLI。结果一致：Update gen44/display10，原配置Create gen46/display10，ReplaceGroup gen47/display10，取消后无写且正常重试gen48；坏源3入口各HTTP500、DB/内存不变；最终持锁5.091589秒HTTP500且无写。新进程与实际CLI重启均gen/applied48/48、accepted1/display10、exit0。精确操作仍用真实原配置，不造另一个pattern；严格Host无exec/网络与CLI系统PATH两等级分列。
+- 本人源码checkpoint：`34e7dc196aa1d32c61501ee4dfa298693daa659c`，**仅获准4production path +83/-6**，无测试/账号/fixture，composition仅本人+7行；source blob与最终runtime构件来源4SHA全等。使用已批准的普通私有commit-view + `GIT_WORK_TREE` + 一次 `GIT_INDEX_FILE` 和显式4path提交，不创建git branch/worktree，提交前后核cached/stat/show。
+- 两次提交前后共享index**文件字节与条目完全相等**：bytes SHA `fb2b7a5be55f0de911b635726a8bf57c494f3b9ecbbf00ecd517497f7396e0da`，entries SHA `d6b45a04ecfe39e8cbcfad4b0625c13701ea55aa6a80695d8a32bb6391ff656c`。cached stat随HEAD前进从35变43是旧主索引相对新HEAD显现的反向差异，不是本会话stage/撤回。依监督许可不强行sync主index；他人必须仍按显式pathspec，不能整体提交这些旧blob。
+- 本轮03:25时点lsof无私有句柄、私有Go全部退出。**03:35:31最终真实源复核：三alias表HMAC仍与02:50相等，但两credentials表HMAC已经变化，未归因**。03:18前相等的窗口观察保留，但不能延伸成全程credentials不变，也不能归因其他会话/本轮私有操作。OS只读快照与真实HOME写禁令仍有记录；不宣称整个业务库不变。
+- 最终低敏`final/evidence/http-final-matrix.json`、`14-actual-production-cli-restart-readback.json`、`source-commit-receipt.json`、`original-source-after-final.json`和索引（36项，SHA `4f50e5546bd11905f7d87d419526449f523af65d1db2d2a26e6ee78052beeea9`）保存源/构件/进程/错误/锁全部边界；继承脚本中的generic provenance文字已按实际binary/source显式纠正，非抹旧失败。
+- 新根逐realpath/祖先非symlink清理清单 `final/evidence/sensitive-final-cleanup-manifest.json`：196项，完整SHA `b2961b174521387e5181e655ef25c028ab96686f40c8104390452895a97c417e`；仅本次自建DB/sidecar/私有raw输入/日志/keys，保留构件/source/低敏evidence/compiler缓存和全部私有lock inode、根。**目前尚未获得本新root独立删除许可、未删任何项**，不沿用旧R4/R5许可；后续独立清理回执才可更新这一状态。
+- 源码commit完成不等于push/loaded/部署完成。本追加内容仍待确切新SHA独立文档审查和本人doc后续checkpoint；没有共享重启、公开调用方切换、上游推理请求或全R4/Node退役放行。

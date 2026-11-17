@@ -55,6 +55,11 @@ func main() {
 			fail(fmt.Errorf("安装资源校验失败"))
 		}
 		directory = root
+		if strings.TrimSpace(os.Getenv("AIH_HOME_DIR")) == "" {
+			if err := os.Setenv("AIH_HOME_DIR", binding.Home); err != nil {
+				fail(err)
+			}
+		}
 	}
 
 	node := filepath.Join(directory, "runtime", "node.exe")

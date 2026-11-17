@@ -47,6 +47,10 @@ func main() {
 }
 
 func run() error {
+	if err := loadInstalledBinding(); err != nil {
+		return err
+	}
+
 	dest, err := destination()
 	if err != nil {
 		return err
@@ -257,4 +261,41 @@ func setEnv(env []string, key, value string) []string {
 		}
 	}
 	return append(env, prefix+value)
+}
+
+// An installed command may select a non-default data directory. Its private
+// sibling binding makes that choice survive a new terminal without requiring
+// users to manage environment variables or database locations.
+func loadInstalledBinding() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(exe + ".package.json")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var binding struct {
+		Version     int    `json:"version"`
+		Home        string `json:"home"`
+		PackageRoot string `json:"packageRoot"`
+	}
+	if len(raw) > 16384 || json.Unmarshal(raw, &binding) != nil || binding.Version != 1 || !filepath.IsAbs(binding.Home) || !filepath.IsAbs(binding.PackageRoot) {
+		return errors.New("安装资源记录无效")
+	}
+	root, err := filepath.EvalSymlinks(binding.PackageRoot)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(filepath.Join(binding.Home, "pkg"), root)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return errors.New("安装资源不在已管理目录")
+	}
+	if strings.TrimSpace(os.Getenv("AIH_HOME_DIR")) == "" {
+		return os.Setenv("AIH_HOME_DIR", binding.Home)
+	}
+	return nil
 }

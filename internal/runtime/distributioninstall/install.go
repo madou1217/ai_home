@@ -353,7 +353,7 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 	}
 	if len(m) == 0 {
 		if legacy, e := os.ReadFile(filepath.Join(oldHome, "server-config.json")); e == nil {
-			if json.Unmarshal(legacy, &m) != nil {
+			if json.Unmarshal(bytes.TrimPrefix(legacy, []byte{0xef, 0xbb, 0xbf}), &m) != nil {
 				return errors.New("旧服务配置损坏，未覆盖")
 			}
 		}
@@ -440,33 +440,24 @@ func publishLauncher(o Options, target string) error {
 	if err != nil {
 		return err
 	}
-	if source == targetAbs {
-		return nil
-	}
-	// Portable launchers locate runtime relative to themselves. Keep a link to
-	// their complete immutable bundle; only a self-contained SFX can be copied.
-	bytes, err := os.ReadFile(source)
+	build, err := ReadBuild(o.PackageRoot)
 	if err != nil {
 		return err
 	}
-	if runtime.GOOS != "windows" && strings.HasPrefix(string(bytes[:min(len(bytes), 16)]), "#!") {
-		temp := targetAbs + ".new-" + randomID()
-		if err = os.Symlink(source, temp); err != nil {
-			return err
-		}
-		defer os.Remove(temp)
-		return replaceFile(temp, targetAbs)
+	if err = atomicJSON(targetAbs+".package.json", map[string]any{"version": 1, "home": o.Home, "packageRoot": o.PackageRoot, "serverSha256": build.GoCore.SHA256}); err != nil {
+		return err
 	}
-	if runtime.GOOS == "windows" && within(o.PackageRoot, source) {
-		// A portable PE launcher needs its immutable package root when installed
-		// outside that directory. SFX launchers are self-contained and ignore it.
-		build, err := ReadBuild(o.PackageRoot)
-		if err != nil {
-			return err
-		}
-		if err = atomicJSON(targetAbs+".package.json", map[string]any{"version": 1, "home": o.Home, "packageRoot": o.PackageRoot, "serverSha256": build.GoCore.SHA256}); err != nil {
-			return err
-		}
+	if source == targetAbs {
+		return nil
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	if runtime.GOOS != "windows" && strings.HasPrefix(string(data[:min(len(data), 16)]), "#!") {
+		quote := func(x string) string { return "'" + strings.ReplaceAll(x, "'", "'\"'\"'") + "'" }
+		wrapper := "#!/bin/sh\n# aih-distribution-installed\nif [ -z \"$AIH_HOME_DIR\" ]; then AIH_HOME_DIR=" + quote(o.Home) + "; export AIH_HOME_DIR; fi\nexec " + quote(source) + " \"$@\"\n"
+		return atomicWrite(targetAbs, []byte(wrapper), 0755)
 	}
 	return copyFile(source, targetAbs, 0755)
 }

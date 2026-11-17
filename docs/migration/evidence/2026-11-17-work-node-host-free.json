@@ -3052,5 +3052,566 @@
       "webSocketClose1006Meaning": "client close event reports abnormal closure; code1006 was not received in a close frame",
       "nativeSampleTimeOrigin": "last visible at about20.193seconds relative to first process sample; subsequent samples no longer observed it"
     }
+  },
+  "cliOwnedHookDisabledAppServerGoDelegation": {
+    "at": "2026-11-18T04:38:40.059260+08:00",
+    "scope": "R2 public generated POSIX CLI-owned wrapper: retire hook-disabled app-server Node business branch only; hook-enabled compatibility remains Node",
+    "status": "Source checkpoint and isolated product-generated wrapper accepted; shared installed/loaded entry unchanged; full R2 not complete",
+    "authorizationPeer": "pm-cdbe3020",
+    "supersededNextHelperPlan": "four-path new server raw-stdio helper was not selected; no such files created",
+    "source": {
+      "checkpoint": "b4cc56e9fe36b425acdd66481bc70cbdb9407ede",
+      "baseCommit": "631276ee504b24b82818cf2dd2071bee7679e204",
+      "immutableArchiveSHA256": "7adcf3b09612240d8c83e98478f2ca4d0abbbda641057df2523d52e522c62152",
+      "paths": [
+        "cmd/aih/codex_app_server.go",
+        "cmd/aih/run.go",
+        "internal/runtime/codexhooks/wrapper.go"
+      ],
+      "sha256": {
+        "cmd/aih/codex_app_server.go": "3c6db1b69ddef70bdd5ff3d4834f8dcaafff51826b2fc9604c3adab1d847be23",
+        "cmd/aih/run.go": "0b21c93bcecc32ff35a9334692d9f3fd43fbd0f215ab169d02c574f9a89493df",
+        "internal/runtime/codexhooks/wrapper.go": "ed61801297ad639243e6d63c536eb3a806c0aa8824672849fad6d5e9fd480228"
+      },
+      "applicationAt": "2026-11-18T04:36:31.099105+08:00",
+      "applicationHead": "b7d803e4f917b4fb980563914af63e07f952252a"
+    },
+    "implementation": {
+      "privateCommand": "aih-go __codex-cli-app-server [--select] --state-file <fixed installed CLI state> [-- <original app-server argv>]",
+      "capability": "aih-codex-cli-app-server-v1",
+      "selectionTokens": [
+        "disabled-v1",
+        "enabled-compat-v1"
+      ],
+      "typedState": "reuse codexhooks.CLIHookState v1 discriminator; bounded64KiB regular non-symlink read with inode/mtime checks; strict exact version/enabled and duplicate/case-alias rejection; missing file means disabled",
+      "failureContract": "bad/unavailable/missing-discriminator/unknown-version state or missing/outdated/nonexecutable Go fails closed. Enabled is an explicit selection before native launch; no business error authorizes Node fallback",
+      "nativeExecution": "canonical providercli.ResolveBinary(codex,codex) then codexpreferences.CheckHostReady and final state re-read, POSIX syscall.Exec original argv/env/fds; no initialize consumer, rewrite, pipe framing or extra process supervisor",
+      "packageRootTrust": "Go absolute path derived from fixed absolute installed HelperScriptPath; no caller root/state executable path; capability token checks version not cryptographic provenance",
+      "boundaries": [
+        "state re-read is a snapshot check, not an atomic lock against writers",
+        "strict malformed-state/version rejection intentionally differs from old Node permissive disabled-on-parse-error",
+        "private command trusts the installed wrapper-provided fixed state path; absolute basename validation is not a general authorization endpoint",
+        "canonical explicit user-selected executable may itself require third-party Node; no universal zero-Node guarantee",
+        "existing AIH_CODEX_APP_SERVER_PASSTHROUGH internal branch unchanged",
+        "enabled still needs existing Node compatibility; no metadata/runtime/writer parity claim"
+      ]
+    },
+    "artifacts": {
+      "finalGoSHA256": "dd0ead24c0ec9a149ebc6abb3497530f7912e0a63648b66534ceada0bbf47742",
+      "fixedCandidateServerSHA256": "66901ff7e7d6e2c604d3e6003dad08d97b4e63a8e5ab9a61669e537148c72a1f",
+      "generatedWrapperSHA256": "3e2d330b829e8f39f84bf6358cff53d6baf93f4d7e065fad8d83f88f5d72c788",
+      "noSharedInstalledArtifactStampUpdate": true
+    },
+    "realPublicProductGeneration": {
+      "at": "2026-11-18T04:38:05.508234+08:00",
+      "sourceCommit": "b4cc56e9fe36b425acdd66481bc70cbdb9407ede",
+      "serverFinalSHA256": "66901ff7e7d6e2c604d3e6003dad08d97b4e63a8e5ab9a61669e537148c72a1f",
+      "aihGoFinalSHA256": "dd0ead24c0ec9a149ebc6abb3497530f7912e0a63648b66534ceada0bbf47742",
+      "realProductServerReenabledState": true,
+      "serverPrivatePort": 51661,
+      "wrapperContentUnchangedAfterFinalSourceRegeneration": true,
+      "wrapperSHA256": "3e2d330b829e8f39f84bf6358cff53d6baf93f4d7e065fad8d83f88f5d72c788",
+      "samePublicGeneratedWrapperRPCReceived": true,
+      "EOFexit": 0,
+      "stderrBytes": 0,
+      "sharedProductChanged": false,
+      "noNodeRPC": true
+    },
+    "finalGeneratedWrapperAcceptance": {
+      "at": "2026-11-18T04:35:31.259262+08:00",
+      "finalGoSHA256": "dd0ead24c0ec9a149ebc6abb3497530f7912e0a63648b66534ceada0bbf47742",
+      "generatedWrapperSHA256": "3e2d330b829e8f39f84bf6358cff53d6baf93f4d7e065fad8d83f88f5d72c788",
+      "operations": [
+        {
+          "action": "final_generated_wrapper_RPC_EOF",
+          "exit": 0,
+          "typedNumeric9AndString9Received": true,
+          "configModel": null,
+          "responseFacts": [
+            {
+              "id": 1,
+              "method": null,
+              "error": null,
+              "keys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "id": null,
+              "method": "remoteControl/status/changed",
+              "error": null,
+              "keys": null
+            },
+            {
+              "id": "9",
+              "method": null,
+              "error": null,
+              "keys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "id": 9,
+              "method": null,
+              "error": null,
+              "keys": [
+                "config",
+                "origins"
+              ]
+            }
+          ],
+          "samePIDNativeExecutable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-appserver-20261118-2dfaio75/installed-home/.local/bin/codex.aih-original",
+          "stderrBytes": 0,
+          "stdoutOnlyJSONRPC": true,
+          "stdinEOFNativeExitObserved": true
+        },
+        {
+          "action": "final_generated_wrapper_JShelperAbsent_RPC_EOF",
+          "exit": 0,
+          "typedNumeric9AndString9Received": true,
+          "configModel": null,
+          "responseFacts": [
+            {
+              "id": 1,
+              "method": null,
+              "error": null,
+              "keys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "id": null,
+              "method": "remoteControl/status/changed",
+              "error": null,
+              "keys": null
+            },
+            {
+              "id": "9",
+              "method": null,
+              "error": null,
+              "keys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "id": 9,
+              "method": null,
+              "error": null,
+              "keys": [
+                "config",
+                "origins"
+              ]
+            }
+          ],
+          "samePIDNativeExecutable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-appserver-20261118-2dfaio75/installed-home/.local/bin/codex.aih-original",
+          "stderrBytes": 0,
+          "stdoutOnlyJSONRPC": true,
+          "stdinEOFNativeExitObserved": true
+        },
+        {
+          "action": "final_global_config_prefix_argv_opaque",
+          "exit": 0,
+          "typedNumeric9AndString9Received": true,
+          "configModel": "aih-argv-probe",
+          "responseFacts": [
+            {
+              "id": 1,
+              "method": null,
+              "error": null,
+              "keys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "id": null,
+              "method": "remoteControl/status/changed",
+              "error": null,
+              "keys": null
+            },
+            {
+              "id": "9",
+              "method": null,
+              "error": null,
+              "keys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "id": 9,
+              "method": null,
+              "error": null,
+              "keys": [
+                "config",
+                "origins"
+              ]
+            }
+          ],
+          "samePIDNativeExecutable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-appserver-20261118-2dfaio75/installed-home/.local/bin/codex.aih-original",
+          "stderrBytes": 0,
+          "stdoutOnlyJSONRPC": true,
+          "stdinEOFNativeExitObserved": true
+        },
+        {
+          "action": "direct_official_SIGTERM",
+          "exit": 0,
+          "stderrBytes": 0,
+          "aihSuffix": false
+        },
+        {
+          "action": "direct_official_SIGINT",
+          "exit": -2,
+          "stderrBytes": 0,
+          "aihSuffix": false
+        },
+        {
+          "action": "direct_official_SIGKILL",
+          "exit": -9,
+          "stderrBytes": 0,
+          "aihSuffix": false
+        },
+        {
+          "action": "direct_official_native_invalid_args",
+          "argv": [
+            "app-server",
+            "--aih-invalid-option"
+          ],
+          "exit": 2,
+          "stdoutBytes": 0,
+          "stderrBytes": 138,
+          "stderrSHA256": "b9a0937029f9549d59a60d0428e5f488ddefd55b9d6410065180c2bc4930e39e",
+          "aihSuffix": false
+        },
+        {
+          "action": "direct_official_native_invalid_args",
+          "argv": [
+            "app-server",
+            "--listen",
+            "invalid://"
+          ],
+          "exit": 2,
+          "stdoutBytes": 0,
+          "stderrBytes": 204,
+          "stderrSHA256": "70b8afdd5947208a03905ae1f44783f0447a59006b055514ec739523c4259971",
+          "aihSuffix": false
+        },
+        {
+          "action": "final_generated_wrapper_SIGTERM",
+          "exit": 0,
+          "stderrBytes": 0,
+          "aihSuffix": false
+        },
+        {
+          "action": "final_generated_wrapper_SIGINT",
+          "exit": -2,
+          "stderrBytes": 0,
+          "aihSuffix": false
+        },
+        {
+          "action": "final_generated_wrapper_SIGKILL",
+          "exit": -9,
+          "stderrBytes": 0,
+          "aihSuffix": false
+        },
+        {
+          "action": "final_generated_wrapper_native_invalid_args",
+          "argv": [
+            "app-server",
+            "--aih-invalid-option"
+          ],
+          "exit": 2,
+          "stdoutBytes": 0,
+          "stderrBytes": 138,
+          "stderrSHA256": "b9a0937029f9549d59a60d0428e5f488ddefd55b9d6410065180c2bc4930e39e",
+          "aihSuffix": false
+        },
+        {
+          "action": "final_generated_wrapper_native_invalid_args",
+          "argv": [
+            "app-server",
+            "--listen",
+            "invalid://"
+          ],
+          "exit": 2,
+          "stdoutBytes": 0,
+          "stderrBytes": 204,
+          "stderrSHA256": "70b8afdd5947208a03905ae1f44783f0447a59006b055514ec739523c4259971",
+          "aihSuffix": false
+        }
+      ],
+      "nodeAbsentFromPATH": true,
+      "configuredAbsoluteNodeAbsent": true,
+      "firstPartyNodeRPC": false,
+      "AIHServerHostRunningDuringCalls": false,
+      "nativeTERMObservedGracefulZero": true,
+      "sharedWrapperUnchanged": true,
+      "publicGeneratedWrapperButPrivateInstall": true,
+      "noTestsMocksFixturesNewOperationalMain": true
+    },
+    "failClosedAndCompatibilityPreselection": {
+      "at": "2026-11-18T04:34:25.993559+08:00",
+      "finalGoSHA256": "dd0ead24c0ec9a149ebc6abb3497530f7912e0a63648b66534ceada0bbf47742",
+      "existingProductGeneratedWrapper": true,
+      "operations": [
+        {
+          "action": "state_missing_disabled_help",
+          "exit": 0,
+          "stdoutBytes": 3703,
+          "stderrBytes": 0,
+          "stderrClass": null,
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_empty",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_badjson",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_missingbool",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_nullbool",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_stringbool",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_wrongversion",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_duplicateenabled",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_casecollision",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_over64KiB",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_symlink",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "badstate_fifo_nonblocking_reject",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 40,
+          "stderrClass": "state_invalid",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "missingGo_failclosed",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 69,
+          "stderrClass": "go_missing_or_outdated",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "nonExecutableGo_failclosed",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 69,
+          "stderrClass": "go_missing_or_outdated",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "invalid_explicit_native_override",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 370,
+          "stderrClass": "override_rejected",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "host_recovery_admission_failclosed",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 79,
+          "stderrClass": "host_admission",
+          "noErrorNodeFallback": true
+        },
+        {
+          "action": "enabled_compat_preselected_missing_Node",
+          "exit": 126,
+          "stdoutBytes": 0,
+          "stderrBytes": 566,
+          "stderrClass": "enabled_compat_missing_node",
+          "noErrorNodeFallback": true,
+          "explicitPriorEnabledCompatibility": true,
+          "stderrSHA256": "613bd80cfb32339abe66f0e22b9b6b3da0d3748f06e989d084b2f86a57c65c9b"
+        },
+        {
+          "action": "execution_enabled_recheck_refuses",
+          "exit": 1,
+          "stderrClass": "state_changed_retry",
+          "stdoutBytes": 0
+        },
+        {
+          "action": "real_existing_sharedGo_outdated_capability_failclosed",
+          "at": "2026-11-18T04:36:00.408657+08:00",
+          "oldGoSHA256": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 69,
+          "errorClass": "go_missing_or_outdated",
+          "copiedOldProductArtifactNotFabricated": true,
+          "sharedArtifactChanged": false
+        }
+      ],
+      "operatorError": null,
+      "selectedEnabledCompatibilityNotMigrated": true,
+      "noFakeGoOrNodeFixture": true,
+      "privateOnly": true,
+      "AIHNodeBusinessExecuted": false,
+      "sharedSourceUntouched": true,
+      "operatorCorrection": "POSIX /bin/sh here reports126 for an explicitly selected missing Node executable, not assumed127; no product failure changed. This is prior selection not runtime fallback."
+    },
+    "sourceReview": {
+      "reviewers": [
+        "Hubble",
+        "Mendel"
+      ],
+      "finalSourceNoBlocking": true,
+      "fixedIssue": "case-insensitive Go struct decoding could override exact enabled; reproduced through actual private command, then reject aliases and decode exact RawMessage fields",
+      "before": {
+        "actualProductionCommand": true,
+        "state": "case-collision read using product private state file only",
+        "exit": 0,
+        "selected": "disabled-v1",
+        "expected": "fail closed; exact enabled=true cannot be overridden by differently cased field",
+        "sourceFixNeeded": true
+      },
+      "after": {
+        "exit": 1,
+        "stdout": "",
+        "error": "aih: codex_cli_app_server_state_invalid",
+        "sha256": "dd0ead24c0ec9a149ebc6abb3497530f7912e0a63648b66534ceada0bbf47742"
+      }
+    },
+    "buildEvidence": {
+      "nativePrivateBuild": "go build -mod=readonly ./cmd/aih and ./cmd/aih-server exit0",
+      "sharedSourcePrivateOutputBuild": "go build -mod=readonly -o <own private output> ./cmd/aih and go vet ./cmd/aih ./internal/runtime/codexhooks exit0; not source closure proof of all concurrent files",
+      "focusedVet": "go vet ./cmd/aih ./internal/runtime/codexhooks exit0",
+      "crossCompileOnly": [
+        {
+          "target": "linux-x64",
+          "artifactSHA256": "eb6313e3ca1e964423879e2e296da0e32db9e0bb081e4a94cde8bc7be4ebe857",
+          "exitCode": 0,
+          "compileOnlyNotRuntime": true
+        },
+        {
+          "target": "windows-x64",
+          "artifactSHA256": "fd5d87019787d9c46aa40f55173f2d9ded754d8d4a4d241a819be1d63cf42b86",
+          "exitCode": 0,
+          "compileOnlyNotRuntime": true
+        }
+      ]
+    },
+    "operatorCorrections": [
+      "initial RPC operator closed stdin after first of two outstanding responses; same binary rerun awaited both typed IDs, initial result not full gate",
+      "SIGTERM expectation -15 was wrong for official0.167.2 which gracefully exits0; final wrapper compared against direct official baseline",
+      "missing explicitly selected Node produces POSIX shell126 here, not assumed127; records reflect actual exit and prior selection",
+      "an initial failed matrix did not persist all completed rows; final matrix recaptured19operations after corrections, no fabricated responder or changed product behavior"
+    ],
+    "cleanup": {
+      "at": "2026-11-18T04:38:40.059260+08:00",
+      "privateInstalledHomeRemoved": true,
+      "rootScopedProcessExecutableScan": [],
+      "firstPrivateHomeRemoved": true,
+      "noLoginCredentialOrAccountDBCopied": true,
+      "retainedOnlySourceArtifactsAndLowSensitiveEvidence": true,
+      "sharedHomeSourceStampsOrServicesTouched": false
+    },
+    "sourceIndexReceipt": {
+      "actualFile": "source-commit-index-sync-receipt.json",
+      "ownSyncCount": 3,
+      "outsideEntryCountUnchanged": 6131,
+      "peerStagedCountPreservedAtSync": 45,
+      "ownPathsClean": true
+    },
+    "rawDigests": {
+      "candidate-manifest.json": "4e3c34d34abc65874c137c89dbd499f4f09d6999c63b51199cd6608ed1c01440",
+      "first-real-disabled-result.json": "40f044b824a5f7e1ef2e7c8fba37cf971ad0ab9ff4e17fea2e74d907f4310a0a",
+      "state-case-collision-before.json": "90a3bcb4b387b7c7228608663d7b3b6b597349168120f1847fb1d120cee05e6e",
+      "state-case-collision-after.json": "fad6c4921f652cf76d31c79e2eb2d1b7d989a1f933194876c6d2599d42583e34",
+      "final-generated-wrapper-acceptance.json": "15533c10da76f9478c8455bf733c5491c476a70ead6627da21eb17391fd07a38",
+      "final-real-fail-closed-selection-results.json": "51f0a12a09e520916b7be63f101ae3b63df5285a2ad9de52a6376cda7df982a4",
+      "final-server-regenerated-wrapper-result.json": "08cdb50eaa4328ed713ff9ab414615bb6cc7ec55750a6df7ad8a48b468608f8b",
+      "final-cleanup.json": "c0c04cc2cc0118f0ea0c5a10263073add2b7bb2ff06facfbc1421ede13dcd90b",
+      "final-cross-build-result.json": "7816f2921dbd7074800d7efa79dc9a1452117b80c7bb2e4864dd9a9073e44f7a",
+      "shared-source-application.json": "83559f5b4e095ee8f929a36355b7ad363341b4e77ba9a5b4adb4d2968010db6d",
+      "source-commit-index-sync-receipt.json": "da76521fdcaadb63efed027905134d2815237d8f2b627f21ec1f4aaf5489a7c9"
+    },
+    "localEvidenceRootPointer": "/tmp/aih-r2-cli-appserver-latest-20261118.txt",
+    "noNewTestsFixtureMockOrOperationalMain": true,
+    "noSharedRestartMigrationStampOrInstalledWrapperChange": true,
+    "remainingGates": [
+      "shared installed Go/generator loading under separately authorized release; no hot replacement in this task",
+      "enabled metadata/list/title/Goal/hydration/notification and conditional writer parity/retirement",
+      "default/TUI/resume launcher and Desktop/VSCode/Windows wrapper caller retirement",
+      "all original W0-W6 domains and cross-platform actual runtime acceptance"
+    ]
   }
 }

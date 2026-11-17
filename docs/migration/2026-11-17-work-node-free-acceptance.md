@@ -260,3 +260,35 @@ native build与focused vet通过；Linux/Windows x64交叉编译exit0，仅编�
 
 
 §15审查补记（04:18，Hubble）：慢消费者应精确表述为“恢复读取后，**客户端 close 事件报告1006（异常关闭）**”；1006不是对端发来的close frame。官方native是**相对首个进程样本最后可见于约20.193秒**，之后采样未再观察到，不把时间原点混成请求开始或精确15秒。原JSON的raw digest别名 `source-commit-index-sync-receipt.json` 对应实际文件名 **`commit-index-sync-receipt.json`**，准确root由 `/tmp/aih-r2-frame-core-latest-20261118.txt` 定位，SHA256 `4a94ccb287b816a6fe1f030f7ebab8674b8b2e5a14dfd1c7512587f31b273b68`；JSON新增reviewClarifications映射，不修改原始实跑或同步记录。本补记仅校准引用与措辞，不新增验收通过项或源码。
+
+
+## 16. R2 CLI-owned hook-disabled app-server 的可消费 Go 转交（2026-11-18 04:38）
+
+监督后续 `pm-74a3f28c / pm-a3016b71 / pm-f91052b5` 已明确选择**真正退出一个公开分支**，不选§15申请的四路径新server helper；`pm-cdbe3020` 正式授予原writer三个精确源码路径。没有创建 `codexappserverws/stdio_transport.go`、`host/codexstdio/run.go` 或新的server dispatch；旧“待四path”保留为历史状态，由本节接续。
+
+### 源码与信任边界
+
+1. 新 `cmd/aih/codex_app_server.go`：聚焦私有 `__codex-cli-app-server` adapter，复用 `codexhooks.CLIHookState` v1，不新建业务状态来源。64KiB有界、普通文件／非末级symlink、inode／mtime前后核对、重复字段及 `version/enabled` 大小写别名拒绝。缺文件按原约定disabled；空／坏JSON／缺bool／null／错误类型／非v1／不可读／非regular均**失败关闭**，不沿用旧Node“坏state当disabled”的宽松行为。
+2. `cmd/aih/run.go`：仅private命令早期分派3行，避开R5相邻Desktop语义，没有改普通launch／默认账号／账号写者。
+3. `internal/runtime/codexhooks/wrapper.go`：仅CLI marker＋RouteDefaultCLIThroughHelper的POSIX app-server分支，固定安装HelperScriptPath推导绝对Go路径；能力检查后，由Go输出精确 `disabled-v1` 或 `enabled-compat-v1`。**enabled在任何native执行前明确选择旧Node兼容**；disabled复读state、canonical resolver、host admission后以 `syscall.Exec` 原样替换官方CLI，原stdin/out/err、EOF、退出／信号不经过另一套pipe／handshake／RPC消费者。任何缺Go、坏state、目标／admission／native失败均不获得回Node的资格。
+
+state复读只是时间点校验，**不是与原writer原子互斥**；私有命令仅为可信安装wrapper的固定state path，不把绝对basename检查说成通用权限端口。capability是版本标记不是构件签名；canonical resolver保留用户显式binary选择，第三方JS CLI本身可能用Node，不能对任意override承诺zeroNode。原内部PASSTHROUGH分支、默认／resume／Desktop／VSCode／Windows生成逻辑未扩。
+
+固定 `631276ee5` archive（SHA256 `7adcf3b0…`）＋仅本人3path构建。独立审查发现case collision：旧候选 `enabled:true, Enabled:false` 被Go whole-struct解码错选disabled，已通过真实product private command复现后修复，只从精确字段解码并拒大小写别名；新实测exit1/stdout空。Hubble／Mendel对最终源码SHA **`3c6db1b6… / 0b21c93b… / ed618012…`** 复审no-blocking。
+
+04:36再次核共享两个旧path的HEAD/index/disk==冻结基线、新path缺失后落盘；04:37本人仅3source提交 **`b4cc56e9f`**（241+/3-），本人3index逐blob同步，窗口outside **6131 entries相同**、45条peer cached保持。没有修改标准Go、现有用户wrapper、stamp或服务。
+
+### 真实公开生成 wrapper，不新增 operational main
+
+现存 `cmd/aih-server --enable-codex-cli-hook=true` 在本人private HOME／DB／loopback端口真正安装wrapper，再停止私有server；不是直接调用生成函数的新main。最终Go **`dd0ead24c0ec9a149ebc6abb3497530f7912e0a63648b66534ceada0bbf47742`**、候选server `66901ff7…`、生成wrapper `3e2d330b…`；最终源码重新运行server使state enabled并确认wrapper同字节，随后仅私有state设disabled做真实调用。无登录、账号复制或收费推理。
+
+- 无PATH Node、配置的绝对Node不存在；wrapper真实 `app-server --listen stdio://` 收initialize、官方notification、数字9 config/read／字符串“9” model/list两独立响应，stdout纯RPC，EOF退出0、stderr0；同PID已替换为官方native0.167.2。
+- 移走**本人私有源码副本**的旧JS helper后仍同样RPC／EOF0，恢复副本后再测。全局 `-c model="aih-argv-probe"` 原参数实际出现在config/read，非仅对比argv字符串。
+- direct official与最终wrapper分别实送SIGTERM／SIGINT／SIGKILL，结果均为 **0／-2／-9**；TERM0是官方实际graceful行为，不强设-15。两个真实非法argv都exit2，stdout空，stderr长度及SHA完全相同，没有AIH附加错误尾缀。
+- 19项最终负例／预选记录覆盖missing state disabled、空／坏／缺bool／null／string／version／duplicate／casecollision／超64KiB／symlink／FIFO、缺Go／不可执行Go／真实旧Go能力缺失、非法binary override、host recovery admission、enabled显式选旧Node缺失exit126以及直接执行时发现enabled拒绝。enabled126是**兼容路径未迁移**，不是成功或运行失败fallback。
+
+原operator先只等先到的model响应便EOF，未记完整typed-ID门禁，已同binary等双ID纠正；原SIGTERM=-15和缺Node=127期望都由直官方／实际shell反证纠正，不改产品来迎合期望。新构件最终重跑与旧候选记录分离，不用旧09b485e0结果冒充最终dd0ead24。
+
+native build、focused vet及Linux／Windows x64交叉编译通过，后两项仅编译，不称平台运行。private HOME已删除，root-scoped进程executable扫描为空；不是全系统trace。新source不是第二套Node业务，无新tests／fixture／mock／Go main；真实命令全部为现存产品入口。
+
+本组关闭**源码及私有真实安装入口下hook-disabled app-server的第一方Node调用**，不称shared标准installed／loaded已变，enabled metadata/titleGoal/list/hydration/notifications/条件writer、TUI/default/resume、Desktop／Windows及完整R2／W0-W6仍open。来源、生成、最终操作、审查修复、清理、源index receipt与raw digest统一追加原JSON `cliOwnedHookDisabledAppServerGoDelegation`；本地pointer `/tmp/aih-r2-cli-appserver-latest-20261118.txt`。

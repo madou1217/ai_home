@@ -411,3 +411,10 @@ R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/
 
 
 04:18审查补记：§15慢消费者1006为客户端close事件报告，非对端close帧；20.193s相对首个PID样本。JSON中receipt别名映射到frame-core指针下实际commit-index-sync-receipt.json，digest4a94ccb2，新增reviewClarifications；不更改raw/原index证据、不新增门禁通过项。
+
+
+## 2026-11-18 04:38 · R2 CLI-owned disabled app-server 真实分支退出Node
+
+监督pmcdbe3020选可消费CLI-disabled转交，取消此前server4path候选。固定631276ee archive+3path，new cmd/aih/codex_app_server.go有界typed CLIHookState选择、run.go仅private dispatch、wrapper.go仅CLI-owned POSIX app-server。enabled事先明确旧Node兼容，disabled复读/canonicalresolver/hostadmission后syscallExec原argv+stdio/EOF/exit/signal，错误不fallback；state快照非writer锁，严格坏statefailclosed与原宽松行为差异明记。Mendel发现casecollision已真复现/fix，Hubble/Mendel最终3sha3c6db1b6/0b21c93/ed618012审过。
+
+b4cc56e9f仅本人3source(241+/3-)已交，3ownindex同步/outside6131entries相同/45peer保留。现存server私有HOME/端口真生成wrapper，再无server/Node绝对与PATH缺席及JShelper移走仍最终Godd0ead24真RPC typedID/EOF0；-cmodel实到config，directvswrapper TERM0/INT-2/KILL-9/非法2 stderrhash等，19项选择／失败关闭矩阵及enabledcompat126前置选择记录。原operator提前EOF/TERM-15/Node127错误期望已按真实结果纠正，不改产品。privatehome/root进程清，nativebuild/vet与linux/windows仅编译过；无新main/tests/mock/fixture/共享构件/stamp/restart。只关闭该公开生成私有安装disabled分支，不等于sharedloaded/完整enabledmetadata/resumewriter或整个R2完成。§16/原JSON统一保存来源/actual/receipt/digests。

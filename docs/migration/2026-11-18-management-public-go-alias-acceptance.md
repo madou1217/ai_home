@@ -117,3 +117,32 @@
 证据 root pointer `/tmp/aih-usage-ledger-projection-latest-20261118.txt`。`evidence/integrated-source-manifest-final.json`、`integrated-final-complete/{operations,result,observed-processes}.json`、`port-operations.json`、`integrated-paired-client-correction.json`、`physical-land-receipt.json`、`commit-receipt.json`；低敏review回执 `final-independent-source-review.json`。所有私有敏感快照/log/key继续受限保存，未做未经单独批准的清理。
 
 交付补记（05:08）：命令级 SSH-W relay `git push origin main` exit0，fresh `ls-remote origin refs/heads/main` 为 `5cb6476f7e4a9020787b5f6c71bc56f7f24ea4d2`；逐祖先验证包含 `7ee554693`、`549387601`、本节 `60b80f321` 和 Desktop `5cb6476f7`。没有改全局 SSH/git 配置，没有共享加载/重启。
+
+
+## 05:52 增量：插件 browser inventory 直接由 Go 应答，退出该 Node GET caller
+
+源码 **`747c0c9ab4064c0751a9faf171c1c576522a2b6a`**：精确5生产路径、169增/134删。`/v0/plugins` 与原 `/v1/management/plugins` 共用生产 `InventoryHandler`、SQLite reader、Go registry 及 `BuildInventory`，只增加旧浏览器DTO适配；没有HTTP反代理、第二状态源或poller。`BearerAuthorizer`只增加只读配置能力，不改既有`Authorized`。Node仅删除对应GET分派及独占mapper，其他trust/control/doctor保持；不是删整个plugins模块。
+
+### 固定输入与构件
+
+- 私有`git archive`基点`b73f9683fb11dba56ee9ae8f72e2003852aa2a9c`，archive SHA256 `326e06305e08193a9d18a96ad3cae5acd0bd60412fba82af64864edbf78ec69e`，叠加本人5路径。final manifest SHA256 `c3598a4998cdbb75eafc33d2ae7ed7543e1254718ea24e42f9637a4e063fceda`，标准Go构件`72983df0ff7c5dd845544e8995319252fbf7f95855a1cb80179085e7eb166f6c`；这是固定base+5overlay，**不是完整747c树构建**。
+- 复用同一真实sealed canonical输入`561596b6eca3a34052a2cc6fd024f5fd3d684bc12ec2b427d67b447f9dfd3f22`，本次前后全SHA相等。输入与05:33本机只读结果均未找到`plugins.control.v1`键；此时点keyAbsent只支持空清单，**不推断从未安装或真实发布插件已验**，不构造插件/账号/token/fixture。
+- `go build -mod=readonly -trimpath`、两个相关包`go vet`、Node语法均exit0。私有operational程序只调用生产exported handler+真实reader+NewRegistry，无mock/复制业务；标准server CLI本身要求配置key，所以不能拿它证明未配key可启动。
+
+### 真实正反/重启与旧caller退休
+
+标准私有Go未带frontdoor/superviseNode，PATH无node，**非OS-noexec**。最终29条记录中：browser200逐字段等于在同canonical响应上执行的原生产Node mapper；空数组/null合同保持；未鉴权/坏key在GET/POST/PUT/DELETE均401，先于方法/读取；已鉴权POST404、PUT/DELETE405；非法1byte/超限262145byte POST均原400领域码；canonical POST仍405。真实private父目录禁读触发503`plugin_state_unavailable`，恢复权限后200，不回成功空清单。
+
+另起真正第一方NodeCLI **25834**（独立空HOME/同privateGo外部URL）：inventory GET405、未鉴权401，原trusted sibling200；只停ownNode exit0后同Go **25818**仍200。同HOME再起Go **25935**响应一致。三个自有服务全部exit0，实际观察集合残余0；不是计量所有动态`getPluginInventory`消费者为0，也没有触碰共享服务。
+
+未配key的严格门禁另列：生产handler/reader/registry私有HTTP operational构件`dcdac420163f52082d6e62026022ab14322de40890605a009fef8f5868012036`，OS禁止fork/外部exec/出站/全部写入。两进程 **25959/25961** 共20次真实HTTP，缺key九次503、配置key后401/200/404/405与原canonical行为保持；两次采样无子进程、均exit0。**这不是标准CLI全路径或全服务全程OS-noexec结论。**
+
+首轮仅chmod DB000未满足预期503，未捕精确响应；该失败记录保留，不补造状态/原因。改父目录门禁后通过，无产品修复来迎合测试。另self-review保留旧POST先parse后404语义，最终新hash已独立复审、全矩阵重跑。
+
+### 审查、交付与硬边界
+
+Galileo独立核最终5SHA、两个构件、实际operations/result/operational JSON，**NO BLOCKING**；审查没有重跑服务。旧V1与原final index、原review均保留；首失败说明收紧后单独以`evidence-index-note-drift-receipt.json`记录note哈希漂移，新不可变`acceptance-index-final-v2.json`绑定当前note，其他三份operations/result叶子不变，不借旧hash背书。提交采用一次性临时index+普通私有commit-view+显式pathspec，pre cachedstat/post showstat exact5；主index字节`0f1991d4…`与全entry digest`db99316d…`前后不变，未同步他人89项旧暂存差异；router原remoteWebUI hunk保留且不作为本人新增改动夹带。
+
+**仍OPEN：**真实非空installed/contributions映射、正式插件包/receipt/来源/许可与允许业务输入、JS/Cordis ABI及HostClient+Invoker两接缝、第一方Node plugin host、Edge DOM、共享artifact/loaded/批准与最终默认Go单宿主。只读发布来源审计在`/tmp/aih-r8-source-audit-latest-20261118.txt`指向root；其真实DB metadata仅选installed字段、不读配置/信任正文，未fetch/install/demo/trust写。
+
+证据pointer `/tmp/aih-plugin-inventory-go-latest-20261118.txt`；root `/private/tmp/aih-plugin-inventory-go-20261118-b57a7b9f`，`evidence/{source-manifest-final,inventory-operations,inventory-result,operational-auth-result,independent-final-review,source-commit-receipt,physical-land-receipt,acceptance-index-final-v2}.json`。敏感副本/log仍受限保存，未获单独许可不删。05:46只读9527仍Go84956，非本次构件loaded；本节不授权发布/重启。

@@ -160,3 +160,8 @@
 **本轮监督仅在既有入口补当前事实、逐域退出卡和交付门禁；未新增功能/测试、看板服务或周期任务，未更改路由/业务实现、数据库、正式服务或其他 owner 的工作。整体 Node → Go 迁移尚未完成。**
 
 文档检查：本轮重新核对源码caller、runtime identity/进程/哈希/旧stamp与原42项+7门禁；9个相对链接、9张退出卡、引用路径及单路径提交边界检查通过。Newton独立只读复核给出APPROVE、无阻断文档问题，仅限入口信息提交；之后W0本人已提交的退出卡链接通过存在性与精确提交范围补核。不外推为源码/全部域/发布批准。完整流量、平台与Node-off矩阵未在本轮执行。
+
+
+工程增量（2026-11-18 05:52，**持续 active / 未共享加载**）：监督 **`747c0c9ab`** 已将`/v0/plugins` inventory GET及旧DTO直接交Go reader+registry，删除该Node分派/独占mapper，精确5paths。29项标准私有Go/真正NodeCLI实证及另列20次严格operational HTTP通过：auth/method/read503/原mapper一致、停ownNode后200、私有重启不变；[固定输入/最终hash/失败与边界](2026-11-18-management-public-go-alias-acceptance.md#0552-增量插件-browser-inventory-直接由-go-应答退出该-node-get-caller)。真实空状态不代非空发布插件/JS ABI/第一方Node host退出。
+
+原W0已交 **`128c7e637`** consumed startup/catalog和 **`6a7ab80de`** provider-heal策略，原R5已交 **`1f9bf2670`** prepared Claude account spawn，token owner已交 **`b73f9683f`** observed-generation slot门禁；各自private实证/缺正例/平台边界保留，不当全域完成。当前installed aih-go **`62ade266…`** 实测不支持新startup能力，原三端发布授权不覆盖本机单binary更新；**新default/resume可能明确failclosed，尚待本机适用更新授权，禁止暗装/重启掩盖**。安全工程继续：W0接实际thread/list continuation，R5接Claude detect-only，R4完成routing-derived/manual隔离final review，token域移除周期ref-only自动clear。终端shim/旧launcher、host/run收养、公开backup、插件宿主与R0默认无第一方Node仍开放，原42项+7门禁不缩减。

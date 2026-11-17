@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { history } from '@umijs/max';
 import {
   PlusOutlined, FolderOpenOutlined, InboxOutlined, ReloadOutlined, FolderOutlined, LoadingOutlined
 } from '@ant-design/icons';
+import { getPinnedSessionIds, setPinnedSessionId } from '../chat/pin-session-state';
+import { crossTabSync } from '@/services/cross-tab-session-sync';
 import SessionRelativeTime from '../chat/SessionRelativeTime';
 import type {
   AggregatedProject,
@@ -46,6 +48,180 @@ interface Props {
 const COLLAPSED_LIMIT = 10;
 const LONG_PRESS_MS = 500;
 
+interface ActiveRankTracker {
+  ranks: Map<string, number>;
+  seq: number;
+}
+
+interface ProjectOrderTracker {
+  activeRanks: Map<string, number>;
+  seenRanks: Map<string, number>;
+  activeSeq: number;
+  seenSeq: number;
+}
+
+function getSessionStableKey(session: Session): string {
+  return `${session.provider}:${session.id}`;
+}
+
+function getProjectStableKey(project: AggregatedProject): string {
+  return project.path || project.id;
+}
+
+function hasActiveRunPrefix(prefix: string, runningSessionKeys: Set<string>): boolean {
+  for (const key of runningSessionKeys) {
+    if (String(key || '').startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function pruneStaleSessionRanks(tracker: ActiveRankTracker, runningSessionKeys: Set<string>): void {
+  for (const key of Array.from(tracker.ranks.keys())) {
+    if (!hasActiveRunPrefix(`${key}:`, runningSessionKeys)) {
+      tracker.ranks.delete(key);
+    }
+  }
+}
+
+function isSessionPinned(session: Session, pinnedSessionIds: Set<string>): boolean {
+  if (pinnedSessionIds.size === 0) return false;
+  return pinnedSessionIds.has(session.id) || pinnedSessionIds.has(getSessionRunKey(session));
+}
+
+function sortSessionSliceStably(
+  sessions: readonly Session[],
+  runningSessionKeys: Set<string>,
+  tracker: ActiveRankTracker,
+  pinnedSessionIds: Set<string>,
+): Session[] {
+  for (const session of sessions) {
+    const key = getSessionStableKey(session);
+    if (isSessionRunning(session, runningSessionKeys)) {
+      if (!tracker.ranks.has(key)) {
+        tracker.seq += 1;
+        tracker.ranks.set(key, tracker.seq);
+      }
+    } else {
+      tracker.ranks.delete(key);
+    }
+  }
+
+  const getBucket = (session: Session, active: boolean): number => {
+    const pinned = isSessionPinned(session, pinnedSessionIds);
+    if (pinned && active) return 0;
+    if (pinned) return 1;
+    if (active) return 2;
+    return 3;
+  };
+
+  return [...sessions].sort((a, b) => {
+    const aActive = isSessionRunning(a, runningSessionKeys);
+    const bActive = isSessionRunning(b, runningSessionKeys);
+    const aBucket = getBucket(a, aActive);
+    const bBucket = getBucket(b, bActive);
+    if (aBucket !== bBucket) return aBucket - bBucket;
+
+    if (aActive && bActive) {
+      const aRank = tracker.ranks.get(getSessionStableKey(a)) ?? Number.MAX_SAFE_INTEGER;
+      const bRank = tracker.ranks.get(getSessionStableKey(b)) ?? Number.MAX_SAFE_INTEGER;
+      return aRank - bRank;
+    }
+
+    return (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);
+  });
+}
+
+function getLatestInactiveProjectActivity(
+  project: AggregatedProject,
+  runningSessionKeys: Set<string>,
+): number {
+  let latest = Number(project.addedAt) || 0;
+  for (const session of project.sessions) {
+    if (isSessionRunning(session, runningSessionKeys)) continue;
+    const updatedAt = Number(session.updatedAt) || 0;
+    if (updatedAt > latest) latest = updatedAt;
+  }
+  return latest;
+}
+
+function orderProjectsStably(
+  projects: readonly AggregatedProject[],
+  runningSessionKeys: Set<string>,
+  projectTracker: ProjectOrderTracker,
+  sessionTracker: ActiveRankTracker,
+  pinnedSessionIds: Set<string>,
+): AggregatedProject[] {
+  pruneStaleSessionRanks(sessionTracker, runningSessionKeys);
+
+  if (projects.length > 0) {
+    const presentProjectKeys = new Set<string>();
+    for (const project of projects) {
+      const key = getProjectStableKey(project);
+      presentProjectKeys.add(key);
+      if (!projectTracker.seenRanks.has(key)) {
+        projectTracker.seenSeq += 1;
+        projectTracker.seenRanks.set(key, projectTracker.seenSeq);
+      }
+    }
+
+    for (const key of Array.from(projectTracker.activeRanks.keys())) {
+      if (!presentProjectKeys.has(key)) {
+        projectTracker.activeRanks.delete(key);
+      }
+    }
+    for (const key of Array.from(projectTracker.seenRanks.keys())) {
+      if (!presentProjectKeys.has(key)) {
+        projectTracker.seenRanks.delete(key);
+      }
+    }
+  }
+
+  const decorated = projects.map((project) => {
+    const key = getProjectStableKey(project);
+    const active = project.sessions.some((session) => isSessionRunning(session, runningSessionKeys));
+    if (active) {
+      if (!projectTracker.activeRanks.has(key)) {
+        projectTracker.activeSeq += 1;
+        projectTracker.activeRanks.set(key, projectTracker.activeSeq);
+      }
+    } else {
+      projectTracker.activeRanks.delete(key);
+    }
+
+    const orderedSessions = sortSessionSliceStably(
+      project.sessions,
+      runningSessionKeys,
+      sessionTracker,
+      pinnedSessionIds,
+    );
+
+    return {
+      project: {
+        ...project,
+        sessions: orderedSessions,
+      },
+      active,
+      activeRank: projectTracker.activeRanks.get(key) ?? Number.MAX_SAFE_INTEGER,
+      inactiveActivity: getLatestInactiveProjectActivity(project, runningSessionKeys),
+      seenRank: projectTracker.seenRanks.get(key) ?? Number.MAX_SAFE_INTEGER,
+    };
+  });
+
+  decorated.sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    if (a.active && b.active) {
+      if (a.activeRank !== b.activeRank) return a.activeRank - b.activeRank;
+      return a.seenRank - b.seenRank;
+    }
+    if (b.inactiveActivity !== a.inactiveActivity) {
+      return b.inactiveActivity - a.inactiveActivity;
+    }
+    return a.seenRank - b.seenRank;
+  });
+
+  return decorated.map((entry) => entry.project);
+}
+
 const Chevron = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
@@ -79,63 +255,36 @@ const MobileSessions = ({
     return () => document.body.removeAttribute('data-mobile-sessions');
   }, []);
 
-  // 活跃会话的排序固定为「首次进入活跃」的顺序：会话持续输出时 updatedAt
-  // 每帧变化，不能拿它当排序键，否则多个活跃会话会互相顶位置。
-  const activeSessionRanksRef = useRef(new Map<string, number>());
-  const nextActiveSessionRankRef = useRef(0);
-  const projectRanksRef = useRef(new Map<string, number>());
-  const nextProjectRankRef = useRef(0);
-  const newProjectRankRef = useRef(0);
-  const projectOrderInitializedRef = useRef(false);
-
-  const sortSessions = (list: Session[]): Session[] => {
-    const active: Array<{ session: Session; rank: number }> = [];
-    const inactive: Session[] = [];
-    for (const session of Array.isArray(list) ? list : []) {
-      const key = getSessionRunKey(session);
-      if (isSessionRunning(session, runningSessionKeys)) {
-        let rank = activeSessionRanksRef.current.get(key);
-        if (rank === undefined) {
-          rank = ++nextActiveSessionRankRef.current;
-          activeSessionRanksRef.current.set(key, rank);
-        }
-        active.push({ session, rank });
-      } else {
-        activeSessionRanksRef.current.delete(key);
-        inactive.push(session);
-      }
-    }
-    active.sort((left, right) => left.rank - right.rank || String(left.session.id).localeCompare(String(right.session.id)));
-    inactive.sort((left, right) => (
-      (right.updatedAt || 0) - (left.updatedAt || 0)
-      || String(left.id).localeCompare(String(right.id))
-    ));
-    return [...active.map((item) => item.session), ...inactive];
-  };
-
-  const projectHasRunning = (p: AggregatedProject) => p.sessions.some((s) => isSessionRunning(s, runningSessionKeys));
-  const inactiveProjectActivity = (p: AggregatedProject) => Math.max(0, ...p.sessions
-    .filter((s) => !isSessionRunning(s, runningSessionKeys))
-    .map((s) => Number(s.updatedAt) || 0));
-  for (const project of projects) {
-    if (projectRanksRef.current.has(project.id)) continue;
-    projectRanksRef.current.set(
-      project.id,
-      projectOrderInitializedRef.current
-        ? --newProjectRankRef.current
-        : ++nextProjectRankRef.current,
-    );
-  }
-  if (projects.length > 0) projectOrderInitializedRef.current = true;
-  const orderedProjects = [...projects].sort((a, b) => {
-    const ar = projectHasRunning(a);
-    const br = projectHasRunning(b);
-    if (ar !== br) return ar ? -1 : 1;
-    if (ar) {
-      return (projectRanksRef.current.get(a.id) || 0) - (projectRanksRef.current.get(b.id) || 0);
-    }
-    return inactiveProjectActivity(b) - inactiveProjectActivity(a) || String(a.id).localeCompare(String(b.id));
+  const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => getPinnedSessionIds());
+  const projectOrderTrackerRef = useRef<ProjectOrderTracker>({
+    activeRanks: new Map(),
+    seenRanks: new Map(),
+    activeSeq: 0,
+    seenSeq: 0,
   });
+  const sessionRankTrackerRef = useRef<ActiveRankTracker>({
+    ranks: new Map(),
+    seq: 0,
+  });
+
+  useEffect(() => {
+    return crossTabSync.subscribe('SESSION_PINNED', (event) => {
+      const sessionId = String(event?.payload?.sessionId || '');
+      if (!sessionId) return;
+      setPinnedSessionIds(setPinnedSessionId(sessionId, Boolean(event.payload.pinned)));
+    });
+  }, []);
+
+  const orderedProjects = useMemo(
+    () => orderProjectsStably(
+      projects,
+      runningSessionKeys,
+      projectOrderTrackerRef.current,
+      sessionRankTrackerRef.current,
+      pinnedSessionIds,
+    ),
+    [projects, runningSessionKeys, pinnedSessionIds],
+  );
 
   const toggleShowAll = (id: string) => {
     setShowAll((prev) => {
@@ -149,10 +298,10 @@ const MobileSessions = ({
   // Lazy previews for the sessions of the currently-open group only.
   useEffect(() => {
     if (!openPath) return;
-    const project = projects.find((p) => p.path === openPath);
+    const project = orderedProjects.find((p) => p.path === openPath);
     if (!project) return;
     const visible = getVisibleProjectSessions(
-      sortSessions(project.sessions), true, showAll.has(openPath), COLLAPSED_LIMIT, project.sessions.length
+      project.sessions, true, showAll.has(openPath), COLLAPSED_LIMIT, project.sessions.length
     ) as Session[];
     const toFetch = visible
       .filter((session) => !fetchedRef.current.has(getSessionRunKey(session)))
@@ -181,7 +330,7 @@ const MobileSessions = ({
         });
       })
       .catch(() => {});
-  }, [projects, openPath, showAll]);
+  }, [orderedProjects, openPath, showAll]);
 
   const goBack = () => {
     try { if (window.history.length > 1) { history.back(); return; } } catch (_e) { /* noop */ }
@@ -242,7 +391,7 @@ const MobileSessions = ({
             const isShowAll = showAll.has(project.path);
             const isHydratingSessions = hydratingProjectPaths.has(project.path);
             const visible = getVisibleProjectSessions(
-              sortSessions(project.sessions), isOpen, isShowAll, COLLAPSED_LIMIT, project.sessions.length
+              project.sessions, isOpen, isShowAll, COLLAPSED_LIMIT, project.sessions.length
             );
             const canExpandMore = project.sessions.length > COLLAPSED_LIMIT;
 

@@ -80,14 +80,14 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 	}
 
 	hookHandler, err := webuisessionhookapi.NewHandler(webuisessionhookapi.Dependencies{
-		Authorizer:       dependencies.Authorizer,
-		Bus:              bus,
-		StateStore:       stateStore,
-		Catalog:          dependencies.Catalog,
-		AIHomeDir:        dependencies.AIHomeDir,
-		AccountActivity:  dependencies.AccountActivity,
-		OutcomeRecorder:  sideEffects,
-		RuntimeRecoverer: sideEffects,
+		Authorizer:      dependencies.Authorizer,
+		Bus:             bus,
+		StateStore:      stateStore,
+		Catalog:         dependencies.Catalog,
+		AIHomeDir:       dependencies.AIHomeDir,
+		AccountActivity: dependencies.AccountActivity,
+		OutcomeRecorder: sideEffects,
+		// Hook 成功不证明凭据或阻塞代次，暂不接自动恢复。
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 Provider Hook 接收接口失败: %w", err)

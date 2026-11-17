@@ -189,11 +189,12 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
-	// 别名由 Node 通过 /v1/management/model-aliases 推送，同时落进 Go 自己的库：
-	// 进程重启后先恢复本地投影，不用等 Node 再推一次（Node 不在时别名仍然有效）。
+	// Go owns legacy first-read migration and canonical alias restoration.
+	// A failed read must not become an empty catalog or wait for a Node seed.
 	modelAliases := modelalias.NewStoreWithRepository(dependencies.store)
-	// 恢复失败只影响「重启后立刻可用」，Node 就绪后会重新推送，因此不阻断启动。
-	_ = modelAliases.Restore(context.Background())
+	if err := modelAliases.Restore(context.Background()); err != nil {
+		return nil, err
+	}
 	builder, err := inferencecatalog.NewBuilder(
 		dependencies.store,
 		codexAdapter,

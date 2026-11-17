@@ -9,8 +9,12 @@ import (
 // 编译期确认：存储层满足别名持久化端口。
 var _ modelalias.Repository = (*Store)(nil)
 
-// Load 实现 modelalias.Repository。
+// Load owns the one-time legacy migration before reading canonical aliases.
+// Errors never authorize an empty projection or a Node-side seed fallback.
 func (store *Store) Load(ctx context.Context) ([]modelalias.Record, int64, error) {
+	if err := store.migrateLegacyModelAliases(ctx); err != nil {
+		return nil, 0, err
+	}
 	return store.ListModelAliases(ctx)
 }
 

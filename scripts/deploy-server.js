@@ -21,6 +21,7 @@
  */
 
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
@@ -198,7 +199,7 @@ const UPLOAD_TRANSPORTS = Object.freeze({
     resumable: true,
     maxAttempts: 20,
     args(options, localPath, remotePath) {
-      return ['-q', '--partial', rsyncAppendFlag(), '-e', sshCommandLine(options), localPath, `${options.ssh}:${remotePath}`];
+      return ['-q', '--partial', '--checksum', '-e', sshCommandLine(options), localPath, `${options.ssh}:${remotePath}`];
     }
   }),
   scp: Object.freeze({
@@ -343,17 +344,29 @@ function remoteArtifactSize(options, remotePath, target) {
   return Number(output) || 0;
 }
 
+function remoteArtifactHash(options, remotePath, target) {
+  if (isWindowsTarget(target)) {
+    const output = run('ssh', [...sshArgs(options), options.ssh,
+      'powershell', '-NoProfile', '-Command',
+      `(Get-FileHash -Algorithm SHA256 -LiteralPath ${psQuote(remotePath)}).Hash`], { capture: true });
+    return String(output).trim().toLowerCase();
+  }
+  const output = run('ssh', [...sshArgs(options), options.ssh, `sha256sum ${shQuote(remotePath)}`], { capture: true });
+  return String(output).trim().split(/\s+/)[0].toLowerCase();
+}
+
 function uploadArchive(options, localPath, remotePath, target) {
   const transport = UPLOAD_TRANSPORTS[options.upload];
   if (!transport) throw new Error(`unknown upload transport: ${options.upload}`);
   const expected = fs.statSync(localPath).size;
+  const digest = crypto.createHash('sha256').update(fs.readFileSync(localPath)).digest('hex');
   for (let attempt = 1; ; attempt += 1) {
     let failure;
     try {
       run(transport.command, transport.args(options, localPath, remotePath));
       const actual = remoteArtifactSize(options, remotePath, target);
-      if (actual === expected) return transport.name;
-      failure = new Error(`uploaded size mismatch (local ${expected}, remote ${actual})`);
+      if (actual === expected && remoteArtifactHash(options, remotePath, target) === digest) return transport.name;
+      failure = new Error(`uploaded artifact size/hash mismatch (local ${expected}, remote ${actual})`);
       if (!isWindowsTarget(target)) {
         run('ssh', [...sshArgs(options), options.ssh, `rm -f ${shQuote(remotePath)}`], { capture: true });
       }

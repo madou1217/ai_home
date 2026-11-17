@@ -155,6 +155,9 @@ func Install(ctx context.Context, options Options) (result Result, resultErr err
 	if busy {
 		return result, fmt.Errorf("暂不安装：%s；请结束任务后重试或预约稍后安装", why)
 	}
+	if err = checkSpace(o); err != nil {
+		return result, err
+	}
 	tx := filepath.Join(transactionRoot(o.Home), time.Now().UTC().Format("20060102T150405Z")+"-"+randomID())
 	if err = privateDir(tx); err != nil {
 		return result, err

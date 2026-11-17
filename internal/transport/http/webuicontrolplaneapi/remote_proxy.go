@@ -196,7 +196,16 @@ func (proxy *RemoteProxy) Wrap(next http.Handler) http.Handler {
 		}
 		selfOrigin := inferSelfCompareOrigin(request)
 		if targetOrigin == selfOrigin {
-			next.ServeHTTP(response, request)
+			localRequest := request.Clone(request.Context())
+			localRequest.Header.Del(TargetServerHeader)
+			query := localRequest.URL.Query()
+			for key := range query {
+				if strings.EqualFold(key, targetServerQueryParam) {
+					query.Del(key)
+				}
+			}
+			localRequest.URL.RawQuery = query.Encode()
+			next.ServeHTTP(response, localRequest)
 			return
 		}
 

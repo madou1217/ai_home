@@ -122,3 +122,44 @@ host credential observation, usage read models, deletion writer ownership,
 relay sockets, first-party plugin hosting, and run ownership remain separate
 Node-exit gates under the migration supervisor. Installation and default
 startup topology must follow those domain gates.
+
+## R6 and R7 self-profile terminal correction
+
+A subsequent independent integration review found that a verified self-profile
+request retained its target header when passed to the local mux. R7's browser
+terminal guard correctly rejects an unconsumed target. An actual request to
+`GET /v0/webui/terminal/sessions` therefore returned 404
+`terminal_route_not_found` for a valid self header, while no target and a self
+query returned 200; a remote header also returned 200. The original 34 checks
+had covered self server-config, not this browser terminal combination.
+
+After supervisor approval, the verified self-origin branch now clones the
+request, consumes the target header and all case-insensitive target query
+fields, and passes the clone to the local handler. It preserves the original
+request and R7's browser guard. Invalid profiles, malformed queries, forged
+Host headers, and local authentication are still rejected before this branch.
+Only `internal/transport/http/webuicontrolplaneapi/remote_proxy.go` changed in
+this correction; composition and router were not edited.
+
+The fixed candidate used committed base
+`2446378e68ad458458495f08fbda561e193fa160` plus transport blob
+`7ae8b113a3822c6bda9ea9f2dee9bf53195a0dd9`.
+Its binary SHA-256 is
+`5f1abff5e3bc167717324bd1193a3f8076fdefdc3294fb977782b9cefda6eb8c`.
+Candidate `go build` and scoped `go vet` both exited 0. On 2026-11-18 at
+03:39 Asia/Shanghai, all 43 actual checks passed: the preceding 34 checks plus
+nine terminal cases covering no target, self query, self header, encoded self
+query, self-header precedence, remote header, missing profile, wrong local key,
+and malformed self query. The self-header terminal list now returned 200.
+SSE returned connected/snapshot in 17 ms and released the remote connection
+15 ms after cancellation; WebSocket returned 101/connected and released it in
+16 ms. Both private Go services exited 0. This remains private candidate
+acceptance, without a shared runtime restart or a production release.
+
+Additional evidence beneath the same local root:
+
+- `r6-terminal-self-before-live/acceptance.json`: actual four-request comparison.
+- `r6-terminal-self-authorization.json`: approval for the single transport hunk.
+- `r6-terminal-self-candidate-info.json`: fixed source manifest.
+- `r6-terminal-self-build.json` and `r6-terminal-self-vet.json`: both exit 0.
+- `r6-terminal-self-after-live/acceptance.json`: all 43 checks and cleanup.

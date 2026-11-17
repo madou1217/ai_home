@@ -15,6 +15,9 @@ import (
 )
 
 func runCodexStatePage(args []string) error {
+	if len(args) > 0 && args[0] == "--thread-list-response" {
+		return runCodexThreadListResponse(args[1:])
+	}
 	if len(args) == 1 && args[0] == "--capabilities" {
 		_, err := fmt.Fprintln(os.Stdout, "aih-codex-state-page-v1")
 		return err
@@ -60,4 +63,48 @@ func runCodexStatePage(args []string) error {
 		return errors.New("codex_state_operation_invalid")
 	}
 	return json.NewEncoder(os.Stdout).Encode(result)
+}
+
+// runCodexThreadListResponse is a bounded operation of the existing state port,
+// not a new server, writer, native process supervisor or network endpoint.
+func runCodexThreadListResponse(args []string) error {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-thread-list-response-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_state_response_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	type input struct {
+		data []byte
+		err  error
+	}
+	read := make(chan input, 1)
+	go func() {
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, codexstatepage.MaxResponseInput+1))
+		read <- input{data, err}
+	}()
+	select {
+	case in := <-read:
+		if in.err != nil || len(in.data) > codexstatepage.MaxResponseInput {
+			return errors.New("codex_state_response_input_invalid")
+		}
+		result, err := codexstatepage.CompileThreadListResponse(ctx, in.data)
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return errors.New("codex_state_response_cancelled")
+		}
+		stopWrite := context.AfterFunc(ctx, func() { _ = os.Stdout.Close() })
+		defer stopWrite()
+		_, err = os.Stdout.Write(append(result, '\n'))
+		return err
+	case <-ctx.Done():
+		return errors.New("codex_state_response_input_timeout")
+	}
 }

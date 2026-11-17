@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
@@ -99,6 +100,11 @@ func (provisioner *Provisioner) Prepare(
 			PolicyID: providerID,
 		}, nil
 	}
+	release, err := provisioner.acquireProjectionLock(providerID, request.AccountRef.String())
+	if err != nil {
+		return appprojection.Result{}, err
+	}
+	defer release()
 	root, err := provisioner.ensureRoot(request, providerID)
 	if err != nil {
 		return appprojection.Result{}, err
@@ -153,6 +159,11 @@ func (provisioner *Provisioner) Capture(
 	if root == "" {
 		return appprojection.ErrInvalidProjectionRoot
 	}
+	release, err := provisioner.acquireProjectionLock(providerID, request.AccountRef.String())
+	if err != nil {
+		return err
+	}
+	defer release()
 	next, changed, err := materializer.Capture(ctx, request, policy, root)
 	if err != nil || !changed || next == nil {
 		return err
@@ -287,7 +298,7 @@ func (provisioner *Provisioner) applyProjection(
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(sourceRoot, 0o700); err != nil {
+		if err := prepareMappingRoot(sourceRoot, hostRoot); err != nil {
 			return err
 		}
 		if err := os.MkdirAll(hostRoot, 0o700); err != nil {
@@ -295,7 +306,7 @@ func (provisioner *Provisioner) applyProjection(
 		}
 		for _, name := range policy.PrecreatedDirectories {
 			target := filepath.Join(hostRoot, name)
-			if err := os.MkdirAll(target, 0o700); err != nil {
+			if err := ensurePrecreatedDirectory(target); err != nil {
 				return err
 			}
 		}
@@ -369,10 +380,7 @@ func (provisioner *Provisioner) applyHostLinks(
 		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
 			return err
 		}
-		if err := provisioner.linker.Link(source, target, targetInfo.IsDir()); err != nil {
-			if errors.Is(err, fs.ErrExist) && provisioner.linker.IsManaged(source, target) {
-				continue
-			}
+		if err := provisioner.linkShared(source, target, targetInfo.IsDir()); err != nil {
 			return err
 		}
 	}
@@ -455,13 +463,7 @@ func (provisioner *Provisioner) linkManagedChild(source string, target string, i
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := provisioner.linker.Link(source, target, isDir); err != nil {
-		if errors.Is(err, fs.ErrExist) && provisioner.linker.IsManaged(source, target) {
-			return nil
-		}
-		return err
-	}
-	return nil
+	return provisioner.linkShared(source, target, isDir)
 }
 
 func (provisioner *Provisioner) ensureSharedEntry(
@@ -558,7 +560,117 @@ func (provisioner *Provisioner) ensureSharedEntry(
 			}
 		}
 	}
-	return provisioner.linker.Link(source, target, targetInfo.IsDir())
+	return provisioner.linkShared(source, target, targetInfo.IsDir())
+}
+
+// prepareMappingRoot 修复旧布局把映射根做成宿主链接的形态：这种链接让源与目标
+// 变成同一目录，随后每个共享条目都只能生成指向自身的死链。指向宿主根的链接
+// 直接替换为真实目录（宿主数据仍在原处），其它链接维持失败关闭。
+func prepareMappingRoot(sourceRoot string, hostRoot string) error {
+	info, err := os.Lstat(sourceRoot)
+	if errors.Is(err, fs.ErrNotExist) {
+		return os.MkdirAll(sourceRoot, 0o700)
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return os.MkdirAll(sourceRoot, 0o700)
+	}
+	destination, err := os.Readlink(sourceRoot)
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(destination) {
+		destination = filepath.Join(filepath.Dir(sourceRoot), destination)
+	}
+	if filepath.Clean(destination) != filepath.Clean(hostRoot) {
+		return fmt.Errorf("%w: mapping root %s points to %s", appprojection.ErrProjectionConflict, sourceRoot, destination)
+	}
+	if err := os.Remove(sourceRoot); err != nil {
+		return err
+	}
+	return os.MkdirAll(sourceRoot, 0o700)
+}
+
+// linkShared 建立投影到宿主的共享链接。源与目标解析到同一物理位置时直接视为
+// 已共享，绝不建自指链接；并发建链拿到 EEXIST 且最终指向同一目标时幂等成功。
+func (provisioner *Provisioner) linkShared(source string, target string, isDir bool) error {
+	if samePhysicalLocation(source, target) {
+		return nil
+	}
+	if err := provisioner.linker.Link(source, target, isDir); err != nil {
+		if errors.Is(err, fs.ErrExist) && provisioner.linker.IsManaged(source, target) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// samePhysicalLocation 比较两个路径是否落在同一位置；叶子可以尚不存在，但父目录
+// 必须存在（调用点已确保）。
+func samePhysicalLocation(left string, right string) bool {
+	leftDir, leftErr := filepath.EvalSymlinks(filepath.Dir(left))
+	rightDir, rightErr := filepath.EvalSymlinks(filepath.Dir(right))
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return filepath.Clean(filepath.Join(leftDir, filepath.Base(left))) ==
+		filepath.Clean(filepath.Join(rightDir, filepath.Base(right)))
+}
+
+// precreatedDirectoryMu 串行化本进程内的预置目录修复：上百个 work 会话同时激活
+// 时指向同一批宿主目录，修复自指死链是「删链接再建目录」，并发交错会让刚建好的
+// 目录又被另一个协程的删除动作带走。
+var precreatedDirectoryMu sync.Mutex
+
+// ensurePrecreatedDirectory 创建投影预置目录；指向自身的符号链接是历史投影留下的
+// 死链（readlink 解析回自身），先清掉再创建。其它形态交给 MkdirAll：指向目录的
+// 链接视为已就绪，悬空链接或无主链接仍然失败关闭，避免误删用户数据。
+func ensurePrecreatedDirectory(path string) error {
+	precreatedDirectoryMu.Lock()
+	defer precreatedDirectoryMu.Unlock()
+	for attempt := 0; attempt < 3; attempt++ {
+		info, err := os.Lstat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return mkdirPrecreatedDirectory(path)
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return mkdirPrecreatedDirectory(path)
+		}
+		destination, err := os.Readlink(path)
+		if err != nil {
+			// 跨进程并发下路径可能刚被换成真实目录或被清掉：重读形态再判断。
+			continue
+		}
+		if !filepath.IsAbs(destination) {
+			destination = filepath.Join(filepath.Dir(path), destination)
+		}
+		if filepath.Clean(destination) != filepath.Clean(path) {
+			return mkdirPrecreatedDirectory(path)
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		return mkdirPrecreatedDirectory(path)
+	}
+	return mkdirPrecreatedDirectory(path)
+}
+
+// mkdirPrecreatedDirectory 以最终形态为准：MkdirAll 失败但路径已是目录时视为就绪，
+// 容忍并发修复/替换带来的 EEXIST 与 ENOTEMPTY。
+func mkdirPrecreatedDirectory(path string) error {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (provisioner *Provisioner) writeArtifact(root string, write appprojection.ArtifactWrite) error {

@@ -849,6 +849,93 @@ func repairZcodeProjectionLinks(profileDir string) {
 }
 
 // repairZcodeProjectionCredentialProfile 就地把旧格式 user_info 归一化为 ZCode 桌面端认可的结构。
+// zcodeProjectionRuntimeFiles 是投影根下按文件语义存在的旧链接；
+// 悬空时直接移除，不建同名目录。
+var zcodeProjectionRuntimeFiles = map[string]bool{
+	".DS_Store":    true,
+	".zcompdump":   true,
+	".zsh_history": true,
+	".zshrc":       true,
+}
+
+// repairZcodeProjectionRuntimeLayout 修复指向已消失共享 HOME 的投影软链。
+//
+// 旧版投影把 .aih-runtime/.cache/.config/workspace 等链到
+// ~/.zcode/.aih-runtime-home；该目录被清理后，ensureZcodeAgentLauncher
+// 写 launcher 会失败，host 的 storage preparation 直接报
+// Cannot find module .../zcode-agent-launcher.cjs。
+// 这里把悬空链接换成本地真实目录；仍能解析的链接保持原样。
+func repairZcodeProjectionRuntimeLayout(profileDir string) {
+	profileDir = strings.TrimSpace(profileDir)
+	if profileDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(profileDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		path := filepath.Join(profileDir, entry.Name())
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		_ = os.Remove(path)
+		if zcodeProjectionRuntimeFiles[entry.Name()] {
+			continue
+		}
+		_ = os.MkdirAll(path, 0o700)
+	}
+}
+
+// zcodeProjectionDanglingDataNames 是历史投影里可能指向真实 HOME 的链接。
+// 真实 HOME 的 ~/.zcode/v2 被清理后，这些链接悬空；host 的 storage preparation
+// 打开 tasks-index.sqlite 会直接 open_failed（"The database could not be opened"）。
+var zcodeProjectionDanglingDataNames = map[string]bool{
+	"tasks-index.sqlite":     true,
+	"tasks-index.sqlite-shm": true,
+	"tasks-index.sqlite-wal": true,
+	"sessions":               true,
+	"session-bindings":       true,
+	"checkpoints":            true,
+}
+
+// repairZcodeProjectionDataLayout 把账号投影里的悬空数据链接换成本地真实路径。
+//
+// 旧版投影只投影凭据，把 sessions/checkpoints/tasks-index.sqlite 链到真实
+// HOME 的 ~/.zcode/v2；一旦真实 HOME 被清理，这些链接就悬空。这里只处理
+// 悬空链接，仍能解析的链接保持原样（兼容仍在共享目录的旧布局）。目录按需
+// 重建，SQLite 文件不预创建，交给 host 自己初始化。
+func repairZcodeProjectionDataLayout(profileDir string) {
+	profileDir = strings.TrimSpace(profileDir)
+	if profileDir == "" {
+		return
+	}
+	root := filepath.Join(profileDir, ".zcode", "v2")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return
+	}
+	for name := range zcodeProjectionDanglingDataNames {
+		path := filepath.Join(root, name)
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			// 目标仍存在：保留共享布局。
+			continue
+		}
+		_ = os.Remove(path)
+		switch name {
+		case "sessions", "session-bindings", "checkpoints":
+			_ = os.MkdirAll(path, 0o700)
+		}
+	}
+}
+
 func repairZcodeProjectionCredentialProfile(profileDir string, hostHomeDir string, environ []string) {
 	credPath := filepath.Join(strings.TrimSpace(profileDir), ".zcode", "v2", "credentials.json")
 	raw, err := os.ReadFile(credPath)
@@ -978,6 +1065,10 @@ func ensureZcodeAgentLauncher(profileDir, nodeExecutable, repoRoot, bundlePath s
 		return "", false
 	}
 	launcherPath := filepath.Join(profileDir, ".aih-runtime", zcodeAgentLauncherRelPath)
+	// .aih-runtime 可能是悬空链接；写入前确保目录真实可用。
+	if err := os.MkdirAll(filepath.Dir(launcherPath), 0o700); err != nil {
+		return "", false
+	}
 	nodeJSON, _ := json.Marshal(strings.TrimSpace(nodeExecutable))
 	runnerJSON, _ := json.Marshal(runnerPath)
 	entryJSON, _ := json.Marshal(entryPath)
@@ -1017,7 +1108,12 @@ if (typeof process.stdin.fd === 'number') {
 `, nodeJSON, runnerJSON, entryJSON)
 	existing, err := os.ReadFile(launcherPath)
 	if err != nil || string(existing) != src {
-		_ = writeBytesAtomic(launcherPath, []byte(src), 0o700)
+		if writeErr := writeBytesAtomic(launcherPath, []byte(src), 0o700); writeErr != nil {
+			return "", false
+		}
+	}
+	if !pathExists(launcherPath) {
+		return "", false
 	}
 	_ = os.Chmod(launcherPath, 0o700)
 	return launcherPath, true

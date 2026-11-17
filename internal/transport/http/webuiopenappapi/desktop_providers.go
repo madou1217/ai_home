@@ -328,6 +328,11 @@ func (p *desktopPrepContext) prepareProfile() *Result {
 func (p *desktopPrepContext) prepareResolvedLaunch() *Result {
 	switch strings.ToLower(strings.TrimSpace(p.req.Provider)) {
 	case "zcode":
+		// 先把悬空的投影链接修成本地路径，再改凭据；否则 host 的
+		// storage preparation 会因 tasks-index.sqlite 或 agent launcher
+		// 缺失而启动失败。
+		repairZcodeProjectionRuntimeLayout(p.profileDir)
+		repairZcodeProjectionDataLayout(p.profileDir)
 		repairZcodeProjectionCredentialProfile(p.profileDir, p.hostHomeDir, p.baseEnv)
 		if p.platformKey == "darwin" {
 			shadowBundle, shadowExec, errCode, err := prepareZcodeShadowApp(

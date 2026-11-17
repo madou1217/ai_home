@@ -33,11 +33,13 @@ type OpenOptions struct {
 
 // Store 是账号应用端口的 SQLite 实现。
 type Store struct {
-	db          *sql.DB
-	catalog     *providers.Catalog
-	credentials credentialRegistry
-	profiles    profileRegistry
-	routes      *routingIndex
+	modelSettingsDigest [32]byte // guarded by routingWrites
+	modelSettingsWatch  *modelSettingsWatch
+	db                  *sql.DB
+	catalog             *providers.Catalog
+	credentials         credentialRegistry
+	profiles            profileRegistry
+	routes              *routingIndex
 	// routingWrites 串行化会同时改变 SQLite 路由事实和内存物化索引的管理写操作。
 	//
 	// 该锁不参与账号征召或 /v1/models 读取，只保证事务提交顺序与索引发布顺序一致。
@@ -79,12 +81,22 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// Take over settings-owned model policies before publishing the first routes.
+	// Canonical enabled/default state is never reseeded from legacy projections.
+	if err := store.migrateModelSettings(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	routes, err := store.loadRoutingIndex(ctx)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	store.routes = routes
+	if err := store.startModelSettingsWatch(options.AIHomeDir); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -106,6 +118,7 @@ func (store *Store) Close() error {
 	if store == nil || store.db == nil {
 		return nil
 	}
+	store.modelSettingsWatch.close()
 	return store.db.Close()
 }
 

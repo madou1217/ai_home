@@ -534,7 +534,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		accountUpdate.ServeHTTP(response, cloned)
 	})
 	modelsSettings, err := webuimodelsettingsapi.NewHandler(webuimodelsettingsapi.Dependencies{
-		Authorizer: authorizer, Store: webuimodelsettingsapi.DatabaseStore{DatabasePath: databasePath},
+		Authorizer: authorizer, Store: modelSettingsStore{store: dependencies.Store},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建模型设置写入接口失败: %w", err)
@@ -669,7 +669,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	)
 	openaiModelsWrite, err := webuiopenaimodelswriteapi.NewHandler(webuiopenaimodelswriteapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
-		Store:     webuiopenaimodelswriteapi.DatabaseStore{DatabasePath: databasePath},
+		Store:     modelSettingsStore{store: dependencies.Store},
 		Catalog:   dependencies.Store,
 		Refresher: modelCatalogRefresher,
 	})

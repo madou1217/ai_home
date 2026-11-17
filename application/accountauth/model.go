@@ -347,6 +347,9 @@ type StartRequest struct {
 	AuthStrategy string
 	// LoginProvider 指定同一策略下的上游身份提供方（如 Kiro 的 Google / Github）。
 	LoginProvider string
+	// AliasPoolParticipates 是新增账号是否进入全局别名自动选号池；
+	// nil 表示默认参与，只有显式 false 才在注册成功后写入退出偏好。
+	AliasPoolParticipates *bool
 }
 
 // Purpose 根据目标账号是否存在返回明确 Job 意图。
@@ -363,6 +366,18 @@ type NativeAccountDecoder interface {
 		providerID string,
 		artifactsJSON []byte,
 	) (accountapp.Credential, accountapp.PublicProfile, error)
+}
+
+// AliasPoolWriter 在账号注册成功后落账号级别名选号偏好。
+//
+// 只有显式「不参与」才需要写记录；默认参与由读取端缺省值表达。
+type AliasPoolWriter interface {
+	SetAliasPoolParticipation(
+		ctx context.Context,
+		accountRef accountcore.AccountRef,
+		participates bool,
+		updatedAt time.Time,
+	) error
 }
 
 // Registrar 是 OAuth 成功后唯一允许调用的账号注册端口。
@@ -406,4 +421,6 @@ type Dependencies struct {
 	// JobStore 持久化 Job 公开快照；为 nil 时退化为只存在于内存的旧行为，
 	// 这样尚未接入 aih.db 的宿主（如 aih CLI）不必立刻提供存储实现。
 	JobStore JobStore
+	// AliasPool 是新增账号的别名选号偏好写入端口；为 nil 时不写偏好。
+	AliasPool AliasPoolWriter
 }

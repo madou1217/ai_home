@@ -1279,7 +1279,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		GenerateID: accountauth.NewRandomJobID,
 		// 公开快照落 aih.db：重启后仍能查询 Job 状态；未完成 Job 由 Rehydrate 标成 expired
 		// （state/PKCE 只在内存，重启后无法继续，冒充 pending 会让前端一直等）。
-		JobStore: store,
+		JobStore:  store,
+		AliasPool: newAccountAliasPoolWriter(aiHomeDir),
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)

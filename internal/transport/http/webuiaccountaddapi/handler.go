@@ -102,9 +102,10 @@ type JobLocalImporter interface {
 
 // StartRequest 是一次注册型作业的起始命令。
 type StartRequest struct {
-	ProviderID    string
-	AuthStrategy  string
-	LoginProvider string
+	ProviderID            string
+	AuthStrategy          string
+	LoginProvider         string
+	AliasPoolParticipates *bool
 }
 
 // Started 是新建作业的公开结果：授权地址只在创建响应里交付一次。
@@ -145,10 +146,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 // 只接受 Go 能证明的字段：api-key / vertex / refresh-token / 自定义 authStrategy
 // 由 Node 执行，桥接层不会送进来；这里再拒绝一次，避免绕过桥接直接调用时被误解为成功。
 type startRequest struct {
-	Provider      string `json:"provider"`
-	AuthMode      string `json:"authMode"`
-	AuthStrategy  string `json:"authStrategy"`
-	LoginProvider string `json:"loginProvider"`
+	Provider              string `json:"provider"`
+	AuthMode              string `json:"authMode"`
+	AuthStrategy          string `json:"authStrategy"`
+	LoginProvider         string `json:"loginProvider"`
+	AliasPoolParticipates *bool  `json:"aliasPoolParticipates"`
 }
 
 // callbackRequest 是浏览器回调的提交体，键与 Node 的同名输入一致。
@@ -283,9 +285,10 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 	}
 
 	started, err := handler.jobs.Start(request.Context(), StartRequest{
-		ProviderID:    provider,
-		AuthStrategy:  strategy,
-		LoginProvider: loginProvider,
+		ProviderID:            provider,
+		AuthStrategy:          strategy,
+		LoginProvider:         loginProvider,
+		AliasPoolParticipates: payload.AliasPoolParticipates,
 	})
 	if err != nil {
 		writeStartError(response, err)

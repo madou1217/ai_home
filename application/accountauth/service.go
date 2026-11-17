@@ -35,6 +35,8 @@ type jobRecord struct {
 	done chan struct{}
 	// stop 只在设备码轮询 Job 上创建；进入终态时关闭，后台轮询随之退出。
 	stop chan struct{}
+	// aliasPoolParticipates 只对新增账号生效；nil/true 不写记录。
+	aliasPoolParticipates *bool
 }
 
 // Service 是并发安全、有界的 OAuth Job 编排器。
@@ -53,6 +55,7 @@ type Service struct {
 	clock       Clock
 	generateID  IDGenerator
 	jobStore    JobStore
+	aliasPool   AliasPoolWriter
 	settings    serviceSettings
 }
 
@@ -109,6 +112,7 @@ func newService(
 		clock:       dependencies.Clock,
 		generateID:  dependencies.GenerateID,
 		jobStore:    dependencies.JobStore,
+		aliasPool:   dependencies.AliasPool,
 		settings:    settings,
 	}, nil
 }
@@ -218,7 +222,11 @@ func (service *Service) Start(
 		authMode:     authMode,
 		authStrategy: authStrategy,
 	}
-	record := &jobRecord{job: job, flow: flow}
+	record := &jobRecord{
+		job:                   job,
+		flow:                  flow,
+		aliasPoolParticipates: request.AliasPoolParticipates,
+	}
 	if isDevice {
 		record.stop = make(chan struct{})
 	}
@@ -508,6 +516,21 @@ func (service *Service) finishClaimWithClaims(
 	if err != nil {
 		return service.failJob(claimed.jobID, accountWriteFailureCode(err)), err
 	}
+	// 新账号的别名选号偏好只有显式 false 才需要落库；失败只记日志，
+	// 账号已经注册成功，不能因为偏好写入把登录结果改成失败。
+	if claimed.purpose == PurposeRegister &&
+		claimed.aliasPoolParticipates != nil &&
+		!*claimed.aliasPoolParticipates &&
+		service.aliasPool != nil {
+		if preferenceErr := service.aliasPool.SetAliasPoolParticipation(
+			ctx,
+			account.Ref(),
+			false,
+			service.now(),
+		); preferenceErr != nil {
+			log.Printf("accountauth: 写入别名选号偏好失败 job=%s: %v", claimed.jobID, preferenceErr)
+		}
+	}
 
 	now := service.now()
 	service.mu.Lock()
@@ -679,11 +702,12 @@ func (service *Service) claimCompletion(
 			return completionClaim{}, ErrJobNotPending
 		}
 		claimed := claimedJob{
-			jobID:      record.job.id,
-			flow:       record.flow,
-			providerID: record.job.providerID,
-			purpose:    record.job.purpose,
-			targetRef:  record.job.targetRef,
+			jobID:                 record.job.id,
+			flow:                  record.flow,
+			providerID:            record.job.providerID,
+			purpose:               record.job.purpose,
+			targetRef:             record.job.targetRef,
+			aliasPoolParticipates: record.aliasPoolParticipates,
 		}
 		record.flow = nil
 		record.job.status = StatusProcessing
@@ -1017,9 +1041,10 @@ func accountWriteFailureCode(err error) string {
 
 // claimedJob 是 processing 阶段唯一消费者持有的不可变执行上下文。
 type claimedJob struct {
-	jobID      string
-	flow       OAuthFlow
-	providerID string
-	purpose    Purpose
-	targetRef  accountcore.AccountRef
+	jobID                 string
+	flow                  OAuthFlow
+	providerID            string
+	purpose               Purpose
+	targetRef             accountcore.AccountRef
+	aliasPoolParticipates *bool
 }

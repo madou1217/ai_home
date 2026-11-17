@@ -72,6 +72,9 @@ type fileRecord struct {
 	SHA256  string `json:"sha256,omitempty"`
 }
 type serviceSnapshot struct {
+	// Capture before stop commands can remove the public runtime identity.
+	DaemonPID int          `json:"daemonPid,omitempty"`
+	GoManaged bool         `json:"goManaged,omitempty"`
 	Installed bool         `json:"installed"`
 	Running   bool         `json:"running"`
 	Files     []fileRecord `json:"files"`

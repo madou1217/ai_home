@@ -50,6 +50,11 @@ func command(ctx context.Context, name string, args ...string) ([]byte, error) {
 }
 func (h platformHooks) Snapshot(ctx context.Context, o Options, backup string) (serviceSnapshot, error) {
 	var s serviceSnapshot
+	s.DaemonPID = stoppedDaemonPID(o)
+	s.GoManaged = s.DaemonPID > 0
+	if receipt, err := ReadReceipt(o.Home); err == nil && receipt.Executable != "" {
+		s.GoManaged = true
+	}
 	for _, path := range serviceFiles(o) {
 		r, err := snapshotFile(path, backup)
 		if err != nil {
@@ -89,10 +94,16 @@ func (h platformHooks) Stop(ctx context.Context, o Options, s serviceSnapshot) e
 		case "darwin":
 			_, _ = command(ctx, "launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), serviceName(o)))
 		case "windows":
+			// /End may kill the Go parent before it can stop Node. Stop the
+			// managed daemon gracefully first; only then clear the task instance.
+			if err := stopOwnedListener(ctx, o, s); err != nil {
+				return err
+			}
 			_, _ = command(ctx, "schtasks", "/End", "/TN", serviceName(o))
+			return nil
 		}
 	}
-	return stopOwnedListener(ctx, o)
+	return stopOwnedListener(ctx, o, s)
 }
 func (h platformHooks) Install(ctx context.Context, o Options) error {
 	// Reuse the application's existing service installer, not the CLI composition
@@ -119,9 +130,6 @@ const status=service.install();if(!status||!status.installed)throw Error('servic
 	return err
 }
 func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot) error {
-	if runtime.GOOS == "windows" {
-		_, _ = command(ctx, "schtasks", "/End", "/TN", serviceName(o))
-	}
 	for _, r := range s.Files {
 		if err := restoreFile(r); err != nil {
 			return err
@@ -151,12 +159,13 @@ func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot
 			if _, err := command(ctx, "schtasks", "/Create", "/TN", serviceName(o), "/XML", xml, "/F"); err != nil {
 				return err
 			}
-			if s.Running {
-				_, err := command(ctx, "schtasks", "/Run", "/TN", serviceName(o))
-				return err
-			}
 		} else {
 			_, _ = command(ctx, "schtasks", "/Delete", "/TN", serviceName(o), "/F")
+		}
+		if s.Running && !listenerPresent(readConfig(o.Home).Port) {
+			// InteractiveToken /Run can acknowledge an SSH call without starting.
+			// Restore the saved script through the same detached activation path.
+			return startWindowsService(ctx, o)
 		}
 	}
 	return nil

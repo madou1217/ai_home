@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 )
 
 func recoverJournal(ctx context.Context, o Options, path string) error {
@@ -54,7 +55,10 @@ func rollback(ctx context.Context, o Options, j *journal, jp string) error {
 			return err
 		}
 		if o.Service {
-			return h.Restore(op, o, j.Service)
+			if err := h.Restore(op, o, j.Service); err != nil {
+				return err
+			}
+			return verifyRestored(op, o, j.Service)
 		}
 		return nil
 	}
@@ -144,20 +148,7 @@ func rollback(ctx context.Context, o Options, j *journal, jp string) error {
 		if err := h.Restore(op, o, j.Service); err != nil {
 			return err
 		}
-		if j.Service.Running {
-			deadline := time.Now().Add(45 * time.Second)
-			for time.Now().Before(deadline) {
-				if listenerPresent(readConfig(o.Home).Port) {
-					return nil
-				}
-				select {
-				case <-op.Done():
-					return op.Err()
-				case <-time.After(300 * time.Millisecond):
-				}
-			}
-			return errors.New("原版本数据已恢复，但旧服务尚未通过恢复启动检查")
-		}
+		return verifyRestored(op, o, j.Service)
 	}
 
 	return nil

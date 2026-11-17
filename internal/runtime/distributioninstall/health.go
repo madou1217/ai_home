@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -112,55 +111,7 @@ func Busy(ctx context.Context, home string) (bool, string, error) {
 	}
 	return false, "", nil
 }
-func stopOwnedListener(ctx context.Context, o Options) error {
-	c := readConfig(o.Home)
-	if !listenerPresent(c.Port) {
-		return nil
-	}
-	// Only a trusted installed entry is permitted to stop its own legacy daemon.
-	var receipt Receipt
-	raw, _ := os.ReadFile(filepath.Join(o.Home, "distribution-install.json"))
-	_ = json.Unmarshal(raw, &receipt)
-	candidates := []string{o.Launcher}
-	if receipt.Launcher != "" {
-		candidates = append(candidates, receipt.Launcher)
-	}
-	for _, entry := range candidates {
-		if entry == "" {
-			continue
-		}
-		if _, err := os.Stat(entry); err != nil {
-			continue
-		}
-		cmd := exec.CommandContext(ctx, entry, "server", "stop")
-		cmd.Env = append(os.Environ(), "AIH_HOME_DIR="+o.Home, "AIH_HOST_HOME="+o.HostHome)
-		_ = cmd.Run()
-		if !listenerPresent(c.Port) {
-			return nil
-		}
-	}
-	if c.ManagementKey != "" {
-		client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}}
-		req, _ := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:"+strconv.Itoa(c.Port)+"/v0/management/shutdown", nil)
-		req.Header.Set("Authorization", "Bearer "+c.ManagementKey)
-		if resp, err := client.Do(req); err == nil {
-			resp.Body.Close()
-		}
-		client.CloseIdleConnections()
-	}
-	deadline := time.Now().Add(18 * time.Second)
-	for time.Now().Before(deadline) {
-		if !listenerPresent(c.Port) {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
-	return errors.New("无法安全停止已有 AIH 服务；原版本和数据保持不变")
-}
+
 func verifyStarted(ctx context.Context, o Options, b Build) error {
 	c := readConfig(o.Home)
 	deadline := time.Now().Add(90 * time.Second)

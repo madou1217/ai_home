@@ -131,10 +131,16 @@ func run(
 	if err != nil {
 		return err
 	}
+	var releaseIdentity func()
 	defer func() {
-		returnErr = errors.Join(returnErr, server.Close())
+		// The writer lease belongs to server.Close. Keep it while the Node
+		// child drains, so an offline installer cannot overlap its last writes.
 		if nodeSupervisor != nil {
 			nodeSupervisor.Stop()
+		}
+		returnErr = errors.Join(returnErr, server.Close())
+		if releaseIdentity != nil {
+			releaseIdentity()
 		}
 	}()
 
@@ -142,12 +148,12 @@ func run(
 	if err != nil {
 		return fmt.Errorf("监听 Go Server 地址失败: %w", err)
 	}
-	releaseIdentity, err := serveridentity.Publish(config.aiHomeDir, listener.Addr())
+	release, err := serveridentity.Publish(config.aiHomeDir, listener.Addr())
 	if err != nil {
 		_ = listener.Close()
 		return fmt.Errorf("记录 Go Server 进程身份失败: %w", err)
 	}
-	defer releaseIdentity()
+	releaseIdentity = release
 	_, _ = fmt.Fprintf(
 		runtime.stdout,
 		"aih-server listening on http://%s\n",

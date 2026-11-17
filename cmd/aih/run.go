@@ -89,6 +89,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__claude-desktop-credential" {
 		return runClaudeDesktopCredential(ctx, arguments[1:], runtime)
 	}
+	if providerID == "__claude-desktop-detect" && len(arguments) == 1 {
+		return runClaudeDesktopDetect(ctx, runtime)
+	}
 	if providerID == "__claude-desktop-launch" && len(arguments) == 1 {
 		return runClaudeDesktopLaunch(ctx, runtime)
 	}

@@ -1,14 +1,11 @@
 package providercliupgrade
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -16,8 +13,8 @@ import (
 
 const (
 	// NpmRegistryURL 锁定官方 npm registry，不被用户 .npmrc 私服劫持。
-	NpmRegistryURL         = "https://registry.npmjs.org"
-	defaultNpmViewTimeout  = 15 * time.Second
+	NpmRegistryURL          = "https://registry.npmjs.org"
+	defaultNpmViewTimeout   = 15 * time.Second
 	defaultNpmLatestTimeout = 8 * time.Second
 )
 
@@ -55,11 +52,7 @@ func QueryNpmLatestVersion(ctx context.Context, packageName string, goos string,
 	}
 	out, stderr, err := runNpmCommand(queryCtx, args, goos, env)
 	if err != nil {
-		msg := strings.TrimSpace(stderr)
-		if msg == "" {
-			msg = err.Error()
-		}
-		return "", fmt.Errorf("latest_version_unavailable:%s", msg)
+		return "", fmt.Errorf("latest_version_unavailable:%s", npmCommandFailure(out, stderr, err))
 	}
 	version := strings.TrimSpace(out)
 	if version == "" {
@@ -91,14 +84,7 @@ func FetchNpmTimeTable(ctx context.Context, packageName string, goos string, env
 	}
 	stdout, stderr, err := runNpmCommand(queryCtx, args, goos, env)
 	if err != nil {
-		msg := strings.TrimSpace(stderr)
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
-		if msg == "" {
-			msg = "npm_view_failed"
-		}
-		return nil, nil, errors.New(msg)
+		return nil, nil, errors.New(npmCommandFailure(stdout, stderr, err))
 	}
 	var rawTable map[string]string
 	if err := json.Unmarshal([]byte(stdout), &rawTable); err != nil || rawTable == nil {
@@ -153,29 +139,4 @@ func parseNPMTimestamp(raw string) (int64, bool) {
 		}
 	}
 	return 0, false
-}
-
-func runNpmCommand(ctx context.Context, args []string, goos string, env []string) (string, string, error) {
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	var cmd *exec.Cmd
-	if isWindowsOS(goos) {
-		quoted := make([]string, 0, len(args)+1)
-		quoted = append(quoted, "npm.cmd")
-		for _, a := range args {
-			quoted = append(quoted, `"`+strings.ReplaceAll(a, `"`, `\"`)+`"`)
-		}
-		cmd = exec.CommandContext(ctx, "cmd.exe", "/d", "/s", "/c", strings.Join(quoted, " "))
-	} else {
-		cmd = exec.CommandContext(ctx, "npm", args...)
-	}
-	if len(env) > 0 {
-		cmd.Env = env
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.String(), stderr.String(), err
 }

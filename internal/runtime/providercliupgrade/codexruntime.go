@@ -3,9 +3,6 @@ package providercliupgrade
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 
 	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 )
@@ -70,30 +67,5 @@ func (d *RealDeps) codexNPMInstallCommand(version, prefix string) (string, []str
 	args := []string{"install", "--global", "@openai/codex@" + version, "--prefix", prefix,
 		"--userconfig=" + userConfig, "--registry=" + NpmRegistryURL, "--maxsockets=4", "--fetch-timeout=60000",
 		"--fetch-retries=3", "--no-audit", "--no-fund"}
-	// Bundled Node/npm is the product dependency; users are never asked to
-	// install Node or repair a Windows command shim themselves.
-	node := d.nodeExec
-	if node == "" {
-		node = os.Getenv("AIH_SERVER_NODE_EXEC")
-	}
-	if node == "" {
-		node, _ = exec.LookPath("node")
-	}
-	if node != "" {
-		var entries []string
-		if d.goos == "windows" {
-			entries = []string{filepath.Join(filepath.Dir(node), "node_modules", "npm", "bin", "npm-cli.js")}
-		} else {
-			entries = []string{filepath.Join(filepath.Dir(filepath.Dir(node)), "lib", "node_modules", "npm", "bin", "npm-cli.js")}
-		}
-		for _, entry := range entries {
-			if info, err := os.Stat(entry); err == nil && info.Mode().IsRegular() {
-				return node, append([]string{entry}, args...), nil
-			}
-		}
-	}
-	if d.goos == "windows" {
-		return "", nil, fmt.Errorf("bundled_npm_unavailable")
-	}
-	return "npm", args, nil
+	return npmRuntimeCommand(args, d.goos, envSliceFromMap(d.baseEnv), d.nodeExec)
 }

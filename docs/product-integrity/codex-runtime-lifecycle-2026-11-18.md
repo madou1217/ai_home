@@ -2,7 +2,7 @@
 
 ## Scope and current evidence boundary
 
-This change makes the official Codex CLI a product-managed installation with side-by-side generations. The legacy `.aih-original` remains a compatible upstream source; neither updating Codex nor updating AIH requires users to replace executables or change databases. Desktop/VSCode bundled runtimes remain independently owned. This document is a work-in-progress implementation record, **not a release or three-host acceptance claim**.
+This change makes the official Codex CLI a product-managed installation with side-by-side generations. The legacy `.aih-original` remains a compatible upstream source; neither updating Codex nor updating AIH requires users to replace executables or change databases. Desktop/VSCode bundled runtimes remain independently owned. The first complete lifecycle release is **1.0.5 / a7bccdc58**; the delivery section below distinguishes package acceptance, formal offline delivery and remaining online/AWS/visual gates. This is **not an unconditional three-host acceptance claim**.
 
 No test cases were added. Local evidence is from actual official Codex/npm downloads, actual processes and authenticated private-service HTTP calls. All mutation used a task-owned private host home, never local shared 9527, user Codex config/auth or parallel working files.
 
@@ -39,9 +39,45 @@ First review withheld release for: shared helper accidentally overriding Desktop
 
 ## Delivery gates still required
 
-1. Focused explicit-path commit, including no peer staged or uncommitted artifacts.
-2. Full immutable versioned distribution with bundled runtime and fresh web build.
+1. Focused explicit-path commit completed as `cf13ed88f`; no peer staged or uncommitted artifacts were included.
+2. Full immutable 1.0.5 distribution completed from a fresh `git archive a7bccdc58`, with bundled runtime and a fresh full Web build.
 3. Official release publication and authenticated complete-installer updates on AWS, Windows and Linux; no binary-only deployment.
 4. Three-host process/receipt/source/hash/health/account-preservation and real Codex selection/app-server evidence.
 5. Official AIH update hints/scheduled restart-to-install proof; Linux online network failures must not be hidden by offline installation.
 6. Real desktop acceptance through the coordinated existing Edge single bridge only. Source/build/API evidence is not visual evidence.
+
+
+## 1.0.5 immutable publication and final-artifact evidence
+
+- GitHub release `449029094`, tag `v1.0.5`, published **2026-11-18 02:24:14 +08:00**; exact source `a7bccdc58fc74d26699789588df7af428df1ad9e`. Anonymous Latest, exact tag SHA and all five asset sizes/server digests were checked again at **02:29:56 +08:00**. Previously published 1.0.4 assets/tag were unchanged; both temporary release-workflow freezes were restored to their original active states.
+- Linux installer: 122626208 bytes, SHA256 `8e2b1356e72ae73234cb4b53581b1d95c0ef209b2692685182f6708d4874a1f5`.
+- Windows installer: 116289536 bytes, SHA256 `b90d1e98caec748d34f7ab3011be22cc9afbf03701e2a8bc073fb9e594e43f70`.
+- The exact final installers ran successfully in task-owned private homes on AWS Linux and Windows. Installed receipt/source/build/runtime hashes matched. Application-management jobs installed the real official Codex 0.169.0 into managed generations; canonical selection, direct official `--version`, product CLI and actual WebSocket app-server initialize/model-list (12 models) succeeded. Both task-owned private processes exited 0. These are protocol results, not authenticated model-generation claims.
+- The first AWS private install used `/tmp` and failed extraction with `disk quota exceeded`; `/tmp` is a quota-enabled 953 MiB tmpfs. The same unchanged artifact passed on the user-home filesystem. This failure is retained rather than counted as package acceptance.
+
+## 1.0.5 formal Windows/Linux delivery
+
+- Windows official check returned HTTP 503 with upstream HTTP 403; Linux official check returned HTTP 503 with a request deadline. Neither queued an appointment. These online failures remain visible and are **not** recorded as successful official online upgrades.
+- After idle/authenticated account checks and full-artifact digest verification, both hosts ran the complete product installer with service/data migration/activation, not a binary swap. Their installation journals reached `phase=complete`; receipt, running executable, actual file hash, build source and runtime record all matched 1.0.5 / a7bccdc58. The immediate helper's first post-restart fetch failed transiently; independent new SSH/HTTP observations then confirmed recovery. No duplicate installer was submitted because of that fetch error.
+- Windows kept all 14 account identities; Linux kept its zero-account state. Account identity-set digests and native Codex `config.toml`/`auth.json` file hashes were compared before/after. Windows `/healthz` and `/readyz` succeeded with ready=true; Linux health succeeded and ready=false correctly reflected no configured accounts.
+- Both formal application-management **update** jobs migrated the compatible legacy CLI selection to a managed 0.169.0 generation. Exact selection hashes, official/product CLI and real app-server WS101/model-list12 passed; native Codex config hashes remained unchanged. Windows' standalone `.aih-original` and Linux's older prefix were not renamed or deleted.
+- Linux's first actual background scheduler cycle reported `aih_managed`, version 0.169.0 and `up_to_date`. Windows' first cycle exposed the npm command issue below; CLI availability is not a claim that its background update check passed.
+
+## Additional Windows background npm check finding
+
+Actual 1.0.5 service-equivalent PATH can find bundled npm.cmd, but the old background `cmd.exe /c` command manually quoted every argument. npm received literal quotes and reported `Unknown command: ""view""` to **stdout**, while the old error path recorded only stderr/exit status. This was reproduced against the actual host; direct bundled Node + npm-cli.js with identical registry/userconfig arguments returned 0.169.0. A failed check leaves historical channel/path ledger fields untouched, so the stale standalone path is not evidence of canonical managed selection reverting.
+
+The focused follow-up shares a shell-free paired Node/npm resolver between Query, Fetch and managed install, preserves official-registry and timeout policy, fails closed for a configured missing runtime, and keeps bounded stderr -> stdout -> original-error diagnostics. Its operational crosscompiled CLI (outside Git, not a test case) actually queried the official latest and timestamp table on Windows with System32-only PATH and Linux with `/usr/bin:/bin`; both returned 0.169.0, a nonzero publish timestamp and 211 stable release entries. Candidate review, exact-source new-version packages and background first-cycle acceptance are still required. **Do not replace any published 1.0.5 asset.**
+
+## AWS source/maintenance freeze
+
+AWS formal package receipt still identifies released 1.0.4 / 9491e4602, but parallel sessions changed its package-local executable. The first observed 0eb71550 binary was not clean 6230ae1fd: the preserved producer tree contains that commit plus an early uncommitted composer.go. The same exact-commit reconstruction produced a93115c2; the extra file explains the difference. A later read-only observation found running 89395cda / PID709478 and a repair manifest declaring source commit 0ae8a37ae. This task did not perform either binary replacement or formal restart.
+
+The AWS official checker can see 1.0.5 and its exact artifact, but formal installation remains frozen until parallel ownership, exact source/manifest and a non-regressing complete-package maintenance handoff are resolved. 1.0.5 does not contain the later peer/HUD/database commits; it must not overwrite those parallel fixes. Final real existing-Edge visual acceptance and an actual future due-time install for this release also remain outstanding. No test cases were added and no shared Mac service or browser was restarted.
+
+
+### Focused Windows npm repair checkpoint (not a new release claim)
+
+The read-only background registry commands and managed install commands now share a focused Node/npm resolver. Packaged execution invokes the corresponding `npm-cli.js` with raw argv, never `cmd.exe`; an explicitly selected runtime missing Node/npm fails closed. Query APIs and timeouts/official registry flags are unchanged. Failure diagnostics retain bounded stdout when npm emits no stderr. No cycle/ledger/apply gate was relaxed.
+
+Actual cross-compiled operational commands invoked the changed public Query and Fetch functions against the official registry on Windows with System32-only PATH and Linux with `/usr/bin:/bin`; both returned Codex 0.169.0, its publish timestamp and 211 stable releases. Native package build/vet and native host CLI/server build completed without adding or running test cases. Focused independent review approved the exact three-source-file patch for an explicit-path checkpoint. This is not final-package/background-tick/1.0.6 release approval.

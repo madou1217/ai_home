@@ -14,8 +14,8 @@ import (
 
 const (
 	ProviderID          = "opencode"
-	GoBaseURL           = "https://opencode.ai/zen/go/v1"
-	ZenBaseURL          = "https://opencode.ai/zen/v1"
+	GoBaseURL           = accountcore.OpenCodeGoHTTPBaseURL
+	ZenBaseURL          = accountcore.OpenCodeZenHTTPBaseURL
 	ChatCompletionsPath = "/chat/completions"
 )
 
@@ -50,32 +50,11 @@ func (provider Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provid
 
 func (provider Provider) AccessToken(credential accountapp.Credential) (string, error) {
 	native, ok := credential.(*accountcore.NativeCredential)
-	if !ok || native == nil || native.ProviderID() != ProviderID || native.AuthKind() != "api-key" {
-		return "", relaycore.ErrUnsupportedCredential
-	}
-	fields, ok := relaycore.DecodeRawObject(native.Payload())
 	if !ok {
 		return "", relaycore.ErrUnsupportedCredential
 	}
-	auth, ok := relaycore.DecodeRawObject(fields["auth"])
-	if !ok {
-		auth = fields
-	}
-	preferred := []string{"opencode-go", "opencode"}
-	if provider.modelPrefix == "opencode/" {
-		preferred = []string{"opencode", "opencode-go"}
-	}
-	for _, name := range preferred {
-		record, ok := relaycore.DecodeRawObject(auth[name])
-		if !ok {
-			continue
-		}
-		if typ, ok := relaycore.RawString(record["type"]); ok && typ != "" && !strings.EqualFold(strings.TrimSpace(typ), "api") && !strings.EqualFold(strings.TrimSpace(typ), "api-key") {
-			continue
-		}
-		if key, ok := relaycore.RawString(record["key"]); ok && strings.TrimSpace(key) != "" {
-			return strings.TrimSpace(key), nil
-		}
+	if key, supported := accountcore.OpenCodeHTTPAPIKey(native, provider.modelPrefix == "opencode/"); supported {
+		return key, nil
 	}
 	return "", relaycore.ErrUnsupportedCredential
 }
@@ -116,7 +95,11 @@ func stripModelPrefix(model string) string {
 // SupportsCredential is shared by the account transport policy and model discovery.
 func SupportsCredential(credential accountapp.Credential) bool {
 	native, ok := credential.(*accountcore.NativeCredential)
-	return ok && native != nil && native.ProviderID() == ProviderID && native.AuthKind() == "api-key"
+	if !ok {
+		return false
+	}
+	_, supported := accountcore.OpenCodeHTTPAPIKey(native, false)
+	return supported
 }
 
 // AccessTokenFromCredential exposes the same conservative extraction used by

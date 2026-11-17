@@ -58,6 +58,12 @@ func (store *Store) derivedRoutingReason(provider string, credential accountapp.
 	_, baseURL, static := staticCredentialUIStateMeta(credential)
 	if !static {
 		if native, ok := credential.(*accountcore.NativeCredential); ok {
+			if provider == "opencode" {
+				if _, supported := accountcore.OpenCodeHTTPAPIKey(native, false); !supported {
+					return "native_http_credential_unsupported"
+				}
+				return ""
+			}
 			if native.AuthKind() == "oauth" {
 				return ""
 			}

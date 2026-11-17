@@ -12,7 +12,7 @@ import DictationButton from '@/components/chat/composer/DictationButton';
 import DictationRecordingBar from '@/components/chat/composer/DictationRecordingBar';
 import { useDictation } from '@/components/chat/composer/useDictation';
 import { chatAccountIdentity, isAihServerAccount } from '@/components/chat/aih-server-account';
-import { getAccountIdentityLabel } from '@/utils/account-labels';
+import { getAccountIdentityLabel, getCompactAccountIdentityLabel } from '@/utils/account-labels';
 import type { ComposerDelivery } from './session-runtime-actions';
 import type { ComposerProps } from './Composer';
 import type { ComposerController } from './use-composer-controller';
@@ -91,6 +91,7 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
             id: chatAccountIdentity(account),
             provider: account.provider,
             label: getAccountIdentityLabel(account) || account.displayName || chatAccountIdentity(account),
+            compactLabel: getCompactAccountIdentityLabel(account),
             // 网关目标不是账号：用 Gateway 标记与真实凭据（API Key / OAuth）区分。
             badge: isAihServerAccount(account) ? 'Gateway' : (account.apiKeyMode ? 'API Key' : 'OAuth'),
           }))}

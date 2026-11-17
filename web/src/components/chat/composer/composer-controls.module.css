@@ -564,3 +564,35 @@
     border-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard);
 }
+
+/* 小屏运行目标：provider icon + 最短身份；宽度变化时平滑收拢。 */
+.controlProviderLabel,
+.controlValue {
+  transition: max-width var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.controlProviderLabel {
+  max-width: 8em;
+  overflow: hidden;
+}
+
+.controlButton[data-compact='true'] .controlProviderLabel {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-4px);
+}
+
+.controlButton[data-compact='true'] .controlProviderLabel::after {
+  content: none;
+}
+
+.controlButton[data-compact='true'] small {
+  display: none;
+}
+
+.controlButton[data-compact='true'] .controlValue {
+  max-width: min(9.5em, 42vw);
+}
+

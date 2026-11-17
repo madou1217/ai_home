@@ -11,6 +11,8 @@ export interface ComposerAccountOption {
   readonly label: string;
   readonly badge?: string;
   readonly provider?: string;
+  /** 窄屏用的最短身份（邮箱本地部分 / 手机号尾号 / 截断昵称）；缺省回落到 label。 */
+  readonly compactLabel?: string;
   /**
    * 该账号所属站点的展示名；只有多站点产品（qoder / codebuddy / workbuddy）
    * 才有值。菜单按族合并后，同一族内必须靠它区分国内站与国际站账号。

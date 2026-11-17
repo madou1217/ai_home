@@ -120,7 +120,53 @@ function getCleanDisplayName(account: Pick<Account, 'displayName'>) {
   return displayName;
 }
 
-export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'email' | 'displayName' | 'configured' | 'apiKeyMode' | 'baseUrl' | 'authPendingStale'>) {
+function isEmailLike(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isPhoneLike(value: string) {
+  const cleaned = value.replace(/[\s\-()]/g, '');
+  return /^\+?\d{7,15}$/.test(cleaned) || /^\+?\d{2,6}\*{3,}\d{2,4}$/.test(cleaned);
+}
+
+function getNormalizedDisplayNames(account: { displayNames?: Array<{ type?: string; value?: string }> }) {
+  if (!Array.isArray(account.displayNames)) return [];
+  return account.displayNames
+    .map((item) => ({
+      type: String(item?.type || '').trim().toLowerCase(),
+      value: String(item?.value || '').trim(),
+    }))
+    .filter((item) => item.value && item.value !== 'Unknown' && !isInternalAccountLabel(item.value));
+}
+
+function maskEmailLocalPart(email: string) {
+  const local = String(email.split('@')[0] || '').trim();
+  if (!local) return '';
+  if (local.includes('*')) return local;
+  if (local.length <= 2) return `${local[0]}****`;
+  if (local.length <= 4) return `${local[0]}****${local.slice(-1)}`;
+  return `${local.slice(0, 2)}****${local.slice(-2)}`;
+}
+
+function getMaskedPhoneTail(phone: string) {
+  const masked = maskPhoneIdentity(phone);
+  const digits = masked.replace(/\D/g, '');
+  const tail = digits.slice(-4);
+  if (tail.length === 4) return `****${tail}`;
+  return masked;
+}
+
+function truncateNickname(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return '';
+  return trimmed.length > 12 ? `${trimmed.slice(0, 12)}…` : trimmed;
+}
+
+export function getAccountIdentityLabel(
+  account: Pick<Account, 'provider' | 'email' | 'displayName' | 'configured' | 'apiKeyMode' | 'baseUrl' | 'authPendingStale'> & {
+    displayNames?: Array<{ type?: string; value?: string }>;
+  }
+) {
   const displayName = getCleanDisplayName(account);
 
   if (account.apiKeyMode) {
@@ -131,10 +177,95 @@ export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'ema
     return getBaseDomain(account.baseUrl) || resolveDefaultApiHost(account.provider) || 'API Key';
   }
 
+  const displayNames = getNormalizedDisplayNames(account);
+  const emailEntry = displayNames.find((item) => item.type === 'email' || isEmailLike(item.value));
+  if (emailEntry) return maskPhoneIdentity(emailEntry.value);
+
   const email = String(account.email || '').trim();
-  if (email && !isInternalAccountLabel(email)) return maskPhoneIdentity(email);
+  if (email && !isInternalAccountLabel(email) && isEmailLike(email)) {
+    return maskPhoneIdentity(email);
+  }
+
+  if (displayName && isEmailLike(displayName)) {
+    return maskPhoneIdentity(displayName);
+  }
+
+  const phoneEntry = displayNames.find((item) => item.type === 'phone' || isPhoneLike(item.value));
+  if (phoneEntry) return maskPhoneIdentity(phoneEntry.value);
+
+  if (email && !isInternalAccountLabel(email) && isPhoneLike(email)) {
+    return maskPhoneIdentity(email);
+  }
+
+  if (displayName && isPhoneLike(displayName)) {
+    return maskPhoneIdentity(displayName);
+  }
+
+  if (email && !isInternalAccountLabel(email)) {
+    return maskPhoneIdentity(email);
+  }
+
+  const nicknameEntry = displayNames.find((item) => item.value);
+  if (nicknameEntry) return maskPhoneIdentity(nicknameEntry.value);
 
   if (displayName) return maskPhoneIdentity(displayName);
+
+  if (!account.configured && account.authPendingStale) return 'OAuth 授权超时';
+  return account.configured ? '账号待识别' : 'OAuth 授权中';
+}
+
+export function getCompactAccountIdentityLabel(
+  account: Pick<Account, 'provider' | 'email' | 'displayName' | 'configured' | 'apiKeyMode' | 'baseUrl' | 'authPendingStale'> & {
+    displayNames?: Array<{ type?: string; value?: string }>;
+  }
+) {
+  const displayName = getCleanDisplayName(account);
+
+  if (account.apiKeyMode) {
+    if (displayName) {
+      return truncateNickname(displayName);
+    }
+    return getBaseDomain(account.baseUrl) || resolveDefaultApiHost(account.provider) || 'API Key';
+  }
+
+  const displayNames = getNormalizedDisplayNames(account);
+  const email = String(account.email || '').trim();
+  const validEmail = email && !isInternalAccountLabel(email) ? email : '';
+
+  const candidates: string[] = [];
+
+  const addCandidate = (raw: string, explicitType?: string) => {
+    const val = raw.trim();
+    if (!val) return;
+    if (explicitType === 'email' || isEmailLike(val)) {
+      const compactEmail = maskEmailLocalPart(val);
+      if (compactEmail) candidates.push(compactEmail);
+      return;
+    }
+    if (explicitType === 'phone' || isPhoneLike(val)) {
+      const compactPhone = getMaskedPhoneTail(val);
+      if (compactPhone) candidates.push(compactPhone);
+      return;
+    }
+    const compactName = truncateNickname(maskPhoneIdentity(val));
+    if (compactName) candidates.push(compactName);
+  };
+
+  for (const item of displayNames) {
+    addCandidate(item.value, item.type);
+  }
+  if (validEmail) {
+    addCandidate(validEmail, isEmailLike(validEmail) ? 'email' : isPhoneLike(validEmail) ? 'phone' : undefined);
+  }
+  if (displayName) {
+    addCandidate(displayName);
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
+  if (uniqueCandidates.length > 0) {
+    uniqueCandidates.sort((a, b) => a.length - b.length);
+    return uniqueCandidates[0];
+  }
 
   if (!account.configured && account.authPendingStale) return 'OAuth 授权超时';
   return account.configured ? '账号待识别' : 'OAuth 授权中';

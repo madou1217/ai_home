@@ -68,7 +68,12 @@ function readSourceSha(repositoryRoot) {
 function copyAppTree(repositoryRoot, bundleRoot) {
   for (const directory of APP_DIRECTORIES) {
     const source = path.join(repositoryRoot, directory);
-    if (!fs.existsSync(source)) throw new Error(`missing required runtime directory: ${directory}`);
+    if (!fs.existsSync(source)) {
+      // Optional demo resources are not runtime dependencies and may be absent
+      // from a clean Git archive. Their resource APIs report unavailable.
+      if (directory === 'examples') continue;
+      throw new Error(`missing required runtime directory: ${directory}`);
+    }
     const destination = path.join(bundleRoot, directory);
     if (directory === 'bin') {
       // bin/native 里是本机为其它目标构建的 Go 二进制；只能带当前目标那一份。

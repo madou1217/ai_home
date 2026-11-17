@@ -102,22 +102,7 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			{From: []string{layout.configDir}, To: []string{layout.configDir}},
 			{From: []string{layout.ideDataName, "Claw"}, To: []string{layout.ideDataName, "Claw"}},
 		},
-		SharedEntries: []string{
-			"projects",
-			"AGENTS.md",
-			"mcp.json",
-			"models.json",
-			"history.jsonl",
-			"file-history",
-			"plans",
-			"tasks",
-			"shell-snapshots",
-			"blobs",
-			"settings.json",
-			"statusline-command.sh",
-			"argv.json",
-			"plugins",
-		},
+		SharedEntries:  familySharedEntries(id),
 		SessionEntries: []string{"projects"},
 		// 与 Node HOST_TOOLCHAIN_CACHES 逐项对齐：工具链缓存与账号无关，必须链接回
 		// 宿主，否则每个账号各存一份（历史上 zcode 单账号堆到 4GB）。
@@ -185,6 +170,32 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 		Env:              familyEnvironment(id, layout.configDir),
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}, true
+}
+
+// familySharedEntries 返回需要链接到宿主的那批共享条目。
+//
+// CLI 专有条目（settings/statusline/argv/plugins）只属于 .codebuddy / .codebuddy-cn：
+// WorkBuddy 桌面根的 settings.json 是 App 自己的 30KB 配置（sandbox/claw/office），
+// 与 CLI settings 不是同一个 schema。混在一起会把桌面配置归一成几百字节的 CLI 小
+// JSON，与 Node codebuddy-shared-config 的 sharedEntriesForConfigDir 同口径。
+func familySharedEntries(providerID string) []string {
+	entries := []string{
+		"projects",
+		"skills",
+		"AGENTS.md",
+		"mcp.json",
+		"models.json",
+		"history.jsonl",
+		"file-history",
+		"plans",
+		"tasks",
+		"shell-snapshots",
+		"blobs",
+	}
+	if providerID == providerCodebuddy || providerID == providerCodebuddyCN {
+		entries = append(entries, "settings.json", "statusline-command.sh", "argv.json", "plugins")
+	}
+	return entries
 }
 
 // familyEnvironment 生成伪 HOME 的环境绑定。WorkBuddy 两支额外需要

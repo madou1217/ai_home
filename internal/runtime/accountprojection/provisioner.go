@@ -487,6 +487,9 @@ func (provisioner *Provisioner) ensureSharedEntry(
 	} else if targetErr != nil {
 		return targetErr
 	}
+	// 宿主共享条目本身可能是「指向目录的链接」（如 ~/.workbuddy-ai/projects ->
+	// ~/.codebuddy/projects）。Lstat 不跟随，会把目录误判成文件；类型判定必须跟随一次。
+	targetIsDir := targetInfo != nil && targetDirectory(target, targetInfo)
 
 	if targetInfo == nil && sourceInfo != nil && sourceInfo.Mode()&os.ModeSymlink != 0 {
 		// 悬空托管链接的目标本来就不存在：删掉投影里的死链接，等宿主出现后再建。
@@ -513,6 +516,8 @@ func (provisioner *Provisioner) ensureSharedEntry(
 		if targetErr != nil {
 			return targetErr
 		}
+		targetIsDir = targetDirectory(target, targetInfo)
+		sourceInfo = nil // 已迁移到宿主，后续只需建链接
 	}
 
 	if sourceInfo != nil && sourceInfo.Mode()&os.ModeSymlink != 0 {
@@ -523,16 +528,21 @@ func (provisioner *Provisioner) ensureSharedEntry(
 	}
 
 	if sourceInfo != nil {
-		if targetInfo.IsDir() {
-			if !sourceInfo.IsDir() {
-				return fmt.Errorf("%w: %s type mismatch", appprojection.ErrProjectionConflict, name)
-			}
+		if sourceInfo.IsDir() != targetIsDir {
+			// 类型冲突（宿主把共享目录换成了文件或反向）：保留现场，本轮跳过建链。
+			// 与 Node shared-store-linker 的 unresolved 语义一致，不能因为一个共享
+			// 条目把整个会话启动打死。
+			return nil
+		}
+		if targetIsDir {
 			entries, err := os.ReadDir(source)
 			if err != nil {
 				return err
 			}
 			if len(entries) > 0 {
-				return fmt.Errorf("%w: %s is not empty", appprojection.ErrProjectionConflict, name)
+				// 历史遗留的真实目录原样保留（Node 语义：绝不搬迁、绝不吞数据），
+				// 本轮不建链，CLI 继续用投影里的本地副本。
+				return nil
 			}
 			if err := os.Remove(source); err != nil {
 				return err
@@ -560,7 +570,23 @@ func (provisioner *Provisioner) ensureSharedEntry(
 			}
 		}
 	}
-	return provisioner.linkShared(source, target, targetInfo.IsDir())
+	return provisioner.linkShared(source, target, targetIsDir)
+}
+
+// targetDirectory 判断宿主共享条目是不是目录；指向目录的符号链接要跟随一次
+// 再判定，悬空链接仍按非目录处理。
+func targetDirectory(path string, info os.FileInfo) bool {
+	if info == nil {
+		return false
+	}
+	if info.IsDir() {
+		return true
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	resolved, err := os.Stat(path)
+	return err == nil && resolved.IsDir()
 }
 
 // prepareMappingRoot 修复旧布局把映射根做成宿主链接的形态：这种链接让源与目标

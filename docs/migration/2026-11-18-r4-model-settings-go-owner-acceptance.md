@@ -79,3 +79,53 @@ Final evidence binding: `evidence-index-final.json` adds the real 69 aggregate a
 - Engineering checkpoint acceptance does not establish the three-writer publish gate or retire every remaining Node service. Credential refresh/adoption/probe/routing-exclusion/usage and other slices require their own owner and exit gates. Go-only alias work already landed separately and is not redone here.
 - Open evidence limits: no external inference was executed; candidate membership is not upstream acceptance. Actual legacyModels input was empty, so nonempty provider-wide expansion is source reviewed but not a real-data positive. Not all cancellation/overflow races or non-Darwin backends were exercised. Event convergence remains eventual.
 - The fresh root contains sensitive copies/portable plaintext/logs/keys, owner-only permissions. Cleanup is **not yet performed or authorized by prior roots**; it needs this run's exact manifest approval after low-sensitivity/full SHA and process/handle evidence is saved. Root/source/binaries/low-sensitivity artifacts and lock inodes must remain. No secure-erasure claim.
+
+## Canonical Vertex credential guard follow-up — 2026-11-18
+
+The preceding 81-line checkpoint is retained verbatim as historical status. It landed as `7ee554693926634ca91f8f566f5e65f34337afec`; independent postcommit review `pm-6aa0d5d3` accepted its exact engineering scope **with publish block**. Supervisor `pm-540c4b27` separately approved eight canonical-guard production paths and `pm-0be6be25` approved this appendix in the same document. No new schema, service, timer, account/model/credential fixture, test case, live database write or shared restart was introduced.
+
+### Guard authority and atomicity
+
+- The existing canonical typed `*gemini.VertexAuth` with `Placeholder()==true` is the only persisted guard authority. A separate derived `credentialExcluded` index bit participates in the one `serves` predicate together with user enabled and the existing routing-exclusion bit. Neither manual enable nor Node exclusion-clear can remove the credential bit. User enabled/default state is not rewritten.
+- Register, RegisterNew, ReplaceCredential CAS, portable restore/create/identity-match, static Vertex rotation and identity rekey capture full canonical routing facts in the same credential transaction. The existing routing-write lock is held through commit and one guarded index publication; rekey no longer publishes first and patches exclusion afterward. Startup uses one read transaction, and model-settings adapter route reconstruction includes the typed guard without adding credential business logic to the application planner.
+- A legacy state-only update for an unseen Gemini index entry defaults to guarded until canonical typed restoration supplies its actual bit. Existing bits are retained. A valid but as-yet-unverified Gemini account can be temporarily unavailable; the existing canonical event reconciliation, not user settings resave, resolves it. This missing-entry protection is **not cross-Store linearizability**: a different Store changing a previously verified credential still has the documented eventual-convergence boundary.
+- Invalid typed Vertex records return an error rather than false/empty. This is a focused typed-credential guard, not a claim that every possible database or credential corruption is detected.
+
+### Exact production provenance
+
+Final eight-source index `guard-source-index-v2.json`, SHA-256 `4425c176a7b2d1458defe9e944aa5d91d3ec6f0eac2d4f0bef12223af224c234`:
+
+| Production path | Complete SHA-256 |
+| --- | --- |
+| `internal/adapters/accounts/sqliteaccount/credential_routing_guard.go` | `e04536719bb503afb3178966c4226cc60272b732540120a6a6a953e6e0d90892` |
+| `internal/adapters/accounts/sqliteaccount/routing_index.go` | `ad053e2778b5d378c7cd74b3fbfe6f3209d9b1e66dfa1d4aaabd644447389a5e` |
+| `internal/adapters/accounts/sqliteaccount/credential_store.go` | `6ad68aa31b139c8da2568f47f172028ccc75218deded4cc2a3b2fb00fbb34a82` |
+| `internal/adapters/accounts/sqliteaccount/registration_store.go` | `99d6a0ed293f0a9b6c7e65fc39a51cb8763623bf1a33a29fe994e07c993ef83b` |
+| `internal/adapters/accounts/sqliteaccount/portable_restore.go` | `e3ab47931aa6df272b703adab83c2e158062b7974775562b9f3ddf26f78dabe4` |
+| `internal/adapters/accounts/sqliteaccount/static_credential_rotation_store.go` | `2b84bfcf40fbea5ce6c7b2843ab37dcfb85243ba118d4f1c86a213b257d3da95` |
+| `internal/adapters/accounts/sqliteaccount/rekey_store.go` | `64a72f6d833470bdb79cd64432937402d37708f6dad489c4c801ee65b9ef1de3` |
+| `internal/adapters/accounts/sqliteaccount/model_settings_sync.go` | `04010920e0a2bfcdd75a7667fcf570effcc688f29cfb3c692e5ed5d480c3359f` |
+
+Private latest-main archive baseline is `549387601872535d222d48eb0909961dabc33dad`. Production package build and vet each exited 0; the archive bootstrap only delegates to production ports. Operational artifact `vertex-operational-latest2` SHA-256 `b0af37149f09190dff12383c2a2b50545f5c635e836438f8e820300c4396923a` produced 97–100. The subsequent bootstrap-only settings-call addition produced `vertex-operational-final3` SHA-256 `73d6677ec7532e9ed5a650a2efacf9f1ee66e83eb7d929611a38bb7bbf51c650` and 101; production eight-source hashes are identical. Do not equate earlier v1 binaries or empty build logs with these final executions.
+
+### Actual isolated evidence
+
+| Evidence | Observation and limit |
+| --- | --- |
+| 70 / 71 | With the original real placeholder, the pre-guard production Store reported one serviceable Gemini account after manual enable and Node exclusion-clear. Guarded Store reported zero while user enabled remained true. Real Gemini model rows were zero: this is an actual route-account regression/repair, not a positive model-candidate inference run. |
+| 72–81 | Original real portable entry: private production delete then ImportInto created 1/failed 0 with the same ref; repeat unchanged 1. Actual registrar, registration port, same-real-credential replacement with stale repeat CAS conflict, Vertex rotation and process restarts all retained the guard. No credential or model was synthesized. |
+| 82 / 83a / 85 | First attempted original JSON truncation was rejected by the existing SQLite json-valid/object CHECK before the guard was exercised; it is not a guard-pass result. The observer was closed. No constraint was bypassed. |
+| 87–92 | Only the existing real placeholder field's type was damaged (bool to string, still valid object JSON). Existing Store kept the account excluded and logged reconciliation failure; a new Store exited 1 with typed-guard error. Exact original JSON restoration recovered exit 0. A separate production Store imported the same real portable entry while the first observed continued exclusion. Actual WorkBuddy candidate true → disable false → restore true showed the guard did not globally disable routing. |
+| 93–96 | Final v2 production sources rebuilt and repeated local ports, invalid typed credential, independent Store and real non-Gemini candidate controls; results remained guarded. These are retained separately from v1. |
+| 97–100 latest-main | Latest-main artifact repeated ten actual canonical-port operations including a bounded two-Store import/enable missing-entry cycle (0.011 seconds): immediate, Node-clear and post-quiet serviceable Gemini counts all zero. This did not instrument private index internals and is not a proof every scheduling race was traversed. Process tree contained the actual Go process and zero descendants under no-Node PATH plus Seatbelt fork/foreign-exec denial. Bad typed startup exited 1, exact recovery exited 0, independent import succeeded, observer Close exited 0, and real WorkBuddy candidate control was true/false/true. Two Store processes are not two full HTTP Hosts. |
+| 101 final3 | Real unchanged full settings document through production Service.Save: applied 0/ignored-stale 93, canonical enabled true retained, serviceable Gemini 0; next process restart also 0. This confirms the guarded settings-route restoration path with the final production hashes. |
+
+Guard evidence is separately frozen in `guard-evidence-index-final.json`: 46 low-sensitivity entries, complete file SHA-256 `51f44d731ec65cd1409e1af12f0d6b4f3a37c3eb3a2a4353cbb32d2cdcc89311`. Earlier 113/116-entry indexes remain unchanged. Full binary/source/selected real-portable SHA values, source origin and actual build exit receipts are retained outside the repository; no credential plaintext is included here.
+
+### Review and remaining acceptance boundary
+
+- v1 source review `pm-3de3e57b` and v2 focused source review `pm-1d69b894` found no blocking source point within their recorded hashes; final hash-bound document/evidence review and owner nine-path checkpoint are pending at appendix preparation. This text does not invent a future commit, reviewer-owned runtime execution, remote push or shared loaded state.
+- The real data has one Gemini placeholder and zero Gemini model rows, with no real non-placeholder Gemini or replacement identity credential sample. Valid non-placeholder guard clearing, identity rekey positive acceptance, and placeholder model-candidate positive/negative are source-reviewed boundaries, not actual runtime positives. No fixture was introduced to erase those limits.
+- These observations close the demonstrated local route-account safety regression and cover actual late import, restart, manual enable, Node-clear and typed-error failure cases for the existing input. Whole R4, all Node services, upstream inference acceptance and production publish/Node-off acceptance remain separate supervisor gates; this appendix grants no deployment permission.
+- Unified push is owned by the supervisor. Two read-only remote probes failed with `Connection closed by UNKNOWN port 65535`; no proxy/remote/SSH settings were changed. Shared loaded/restart/deploy were not attempted.
+- Private sensitive artifacts now also include the derived `guard-home`, real portable export and private raw logs. They remain owner-only and need this run's fresh exact cleanup manifest authorization after complete low-sensitivity, process/handle and lock evidence; no prior root permission is reused.

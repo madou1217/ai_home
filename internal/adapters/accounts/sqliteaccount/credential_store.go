@@ -58,17 +58,17 @@ func (store *Store) Register(
 	); err != nil {
 		return err
 	}
+	entry, err := store.readCredentialRoutingEntry(ctx, transaction, account.Ref())
+	if err != nil {
+		return err
+	}
 	if err := transaction.Commit(); err != nil {
 		if isConstraintError(err) {
 			return accountapp.ErrAccountConflict
 		}
 		return fmt.Errorf("提交账号注册事务失败: %w", err)
 	}
-	routingAccount, err := store.newRoutingAccount(account)
-	if err != nil {
-		return err
-	}
-	store.routes.setAccount(routingAccount, account.Enabled())
+	store.routes.publishCredentialAccount(entry, "")
 	return nil
 }
 
@@ -192,12 +192,17 @@ func (store *Store) ReplaceCredential(
 	if err != nil {
 		return err
 	}
+	transaction, err := store.beginModelTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
 	const statement = `
 		UPDATE account_credentials
 		SET credential_ref = ?, auth_kind = ?, auth_mode = ?, format_version = ?,
 		    credential_json = ?, updated_at_ms = ?
 		WHERE account_ref = ? AND updated_at_ms = ?`
-	result, err := store.db.ExecContext(
+	result, err := transaction.ExecContext(
 		ctx,
 		statement,
 		document.credentialRef.String(),
@@ -222,6 +227,14 @@ func (store *Store) ReplaceCredential(
 	if affected != 1 {
 		return accountapp.ErrCredentialConflict
 	}
+	entry, err := store.readCredentialRoutingEntry(ctx, transaction, replacement.AccountRef())
+	if err != nil {
+		return err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return err
+	}
+	store.routes.publishCredentialAccount(entry, "")
 	return nil
 }
 

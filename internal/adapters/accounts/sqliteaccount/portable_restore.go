@@ -110,17 +110,15 @@ func (store *Store) RestorePortableAccount(ctx context.Context, sourceRef, sourc
 
 			}
 		}
+		entry, e := store.readCredentialRoutingEntry(ctx, conn, ref)
+		if e != nil {
+			return accountcore.Account{}, false, e
+		}
 		if _, e = conn.ExecContext(ctx, "COMMIT"); e != nil {
 			return accountcore.Account{}, false, e
 		}
 		account, e := store.GetByRef(ctx, ref)
-		if e == nil {
-			routed, buildErr := store.newRoutingAccount(account)
-			if buildErr != nil {
-				return accountcore.Account{}, false, buildErr
-			}
-			store.routes.replaceAccount(routed, account.Enabled(), nil)
-		}
+		store.routes.publishCredentialAccount(entry, "")
 		return account, false, e
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -173,13 +171,13 @@ func (store *Store) RestorePortableAccount(ctx context.Context, sourceRef, sourc
 	if err = writePortableSupplement(ctx, conn, preferred, now.UnixMilli(), supplement); err != nil {
 		return accountcore.Account{}, false, err
 	}
+	entry, err := store.readCredentialRoutingEntry(ctx, conn, preferred)
+	if err != nil {
+		return accountcore.Account{}, false, err
+	}
 	if _, err = conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return accountcore.Account{}, false, fmt.Errorf("backup_restore_commit: %w", err)
 	}
-	routed, err := store.newRoutingAccount(account)
-	if err != nil {
-		return accountcore.Account{}, true, err
-	}
-	store.routes.replaceAccount(routed, account.Enabled(), nil)
+	store.routes.publishCredentialAccount(entry, "")
 	return account, true, nil
 }

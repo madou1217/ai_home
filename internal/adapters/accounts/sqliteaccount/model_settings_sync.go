@@ -124,7 +124,7 @@ func (store *Store) applyModelSettings(ctx context.Context, document *modelsetti
 	}
 	routeFacts := make([]modelSettingsRouteFact, 0, len(routes))
 	for _, entry := range routes {
-		routeFacts = append(routeFacts, modelSettingsRouteFact{Ref: entry.account.Ref().String(), Provider: entry.account.ProviderID(), Alias: entry.account.CLIAccountID().Int64(), Enabled: entry.enabled, Excluded: entry.excluded, Models: entry.models})
+		routeFacts = append(routeFacts, modelSettingsRouteFact{Ref: entry.account.Ref().String(), Provider: entry.account.ProviderID(), Alias: entry.account.CLIAccountID().Int64(), Enabled: entry.enabled, Excluded: entry.excluded, CredentialExcluded: entry.credentialExcluded, Models: entry.models})
 	}
 	input, err := json.Marshal(struct {
 		Value     string
@@ -343,15 +343,20 @@ func (store *Store) writeModelSettingsPolicies(ctx context.Context, transaction 
 }
 
 type modelSettingsRouteFact struct {
-	Ref      string
-	Provider string
-	Alias    int64
-	Enabled  bool
-	Excluded bool
-	Models   []runtimecore.ModelID
+	Ref                string
+	Provider           string
+	Alias              int64
+	Enabled            bool
+	Excluded           bool
+	CredentialExcluded bool
+	Models             []runtimecore.ModelID
 }
 
 func (store *Store) readModelSettingsRoutes(ctx context.Context, transaction *modelTransaction) ([]indexedRoutingAccount, error) {
+	guards, err := store.readCredentialRoutingGuards(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := transaction.QueryContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,coalesce(e.excluded,0)
   FROM accounts a LEFT JOIN account_routing_exclusions e ON e.account_ref=a.account_ref ORDER BY a.account_ref`)
 	if err != nil {
@@ -371,7 +376,7 @@ func (store *Store) readModelSettingsRoutes(ctx context.Context, transaction *mo
 			_ = rows.Close()
 			return nil, err
 		}
-		entries = append(entries, indexedRoutingAccount{account: account, enabled: enabled, excluded: excluded})
+		entries = append(entries, indexedRoutingAccount{account: account, enabled: enabled, excluded: excluded, credentialExcluded: guards[account.Ref()]})
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
@@ -403,7 +408,7 @@ func (store *Store) publishModelSettingsRoutes(entries []indexedRoutingAccount) 
 	index.accounts = make(map[accountcore.AccountRef]indexedRoutingAccount, len(entries))
 	index.reverse = map[routingIndexKey][]accountapp.RoutingAccount{}
 	for _, entry := range entries {
-		index.replaceAccountDataLocked(entry.account, entry.enabled, entry.excluded, entry.models)
+		index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, entry.credentialExcluded, entry.models)
 	}
 	for key := range index.reverse {
 		affected[key] = struct{}{}

@@ -86,17 +86,17 @@ func (store *Store) RegisterNew(
 			return accountcore.Account{}, err
 		}
 	}
+	entry, err := store.readCredentialRoutingEntry(ctx, transaction, account.Ref())
+	if err != nil {
+		return accountcore.Account{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		if isConstraintError(err) {
 			return accountcore.Account{}, accountapp.ErrAccountConflict
 		}
 		return accountcore.Account{}, fmt.Errorf("提交新账号注册事务失败: %w", err)
 	}
-	routingAccount, err := store.newRoutingAccount(account)
-	if err != nil {
-		return accountcore.Account{}, err
-	}
-	store.routes.replaceAccount(routingAccount, account.Enabled(), nil)
+	store.routes.publishCredentialAccount(entry, "")
 	return account, nil
 }
 

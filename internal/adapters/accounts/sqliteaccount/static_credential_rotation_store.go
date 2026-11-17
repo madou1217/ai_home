@@ -130,12 +130,17 @@ func (store *Store) RotateStaticCredential(
 	); err != nil {
 		return accountcore.Account{}, err
 	}
+	entry, err := store.readCredentialRoutingEntry(ctx, connection, rotation.AccountRef())
+	if err != nil {
+		return accountcore.Account{}, err
+	}
 	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
 		if isBusyError(err) || isConstraintError(err) {
 			return accountcore.Account{}, accountapp.ErrStaticCredentialRotationConflict
 		}
 		return accountcore.Account{}, fmt.Errorf("提交静态凭据轮换事务失败: %w", err)
 	}
+	store.routes.publishCredentialAccount(entry, "")
 	record.account.updatedAtMS = updatedAtMS
 	return store.restoreAccount(record.account)
 }

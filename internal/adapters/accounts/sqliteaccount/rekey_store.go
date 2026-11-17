@@ -207,12 +207,18 @@ func (store *Store) ReKeyAccount(
 	); err != nil {
 		return accountapp.CredentialSnapshot{}, fmt.Errorf("删除旧账号行失败: %w", err)
 	}
+	entry, err := store.readCredentialRoutingEntry(ctx, transaction, identityRef)
+	if err != nil {
+		return accountapp.CredentialSnapshot{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		if isConstraintError(err) {
 			return accountapp.CredentialSnapshot{}, accountapp.ErrAccountReKeyConflict
 		}
 		return accountapp.CredentialSnapshot{}, fmt.Errorf("提交账号身份迁移事务失败: %w", err)
 	}
+
+	store.routes.publishCredentialAccount(entry, accountRef)
 
 	snapshot, err := accountapp.NewCredentialSnapshot(
 		identityRef,
@@ -223,7 +229,6 @@ func (store *Store) ReKeyAccount(
 	if err != nil {
 		return accountapp.CredentialSnapshot{}, accountapp.ErrInvalidCredentialReplacement
 	}
-	store.reindexReKeyedAccount(ctx, accountRef, newAccount)
 	return snapshot, nil
 }
 
@@ -347,39 +352,4 @@ func moveOAuthJobRows(
 		return fmt.Errorf("迁移账号重新认证目标失败: %w", err)
 	}
 	return nil
-}
-
-// reindexReKeyedAccount 在提交后同步进程内路由索引；失败不回滚已提交的账号事实。
-func (store *Store) reindexReKeyedAccount(
-	ctx context.Context,
-	previous accountcore.AccountRef,
-	current accountcore.Account,
-) {
-	routingAccount, err := store.newRoutingAccount(current)
-	if err != nil {
-		return
-	}
-	models, err := store.listAccountModels(ctx, store.db, current.Ref())
-	if err != nil {
-		store.routes.deleteAccount(previous)
-		store.routes.replaceAccount(routingAccount, current.Enabled(), nil)
-		return
-	}
-	effective, err := accountapp.EffectiveModelIDs(models)
-	if err != nil {
-		effective = nil
-	}
-	store.routes.deleteAccount(previous)
-	store.routes.replaceAccount(routingAccount, current.Enabled(), effective)
-	// 路由排除行已经搬到新引用，但内存索引是按「新引用」重建的，默认不排除；
-	// 必须把搬过来的 excluded 事实补进索引，否则 re-key 会把停用路由的账号
-	// 重新放回可征召集合。
-	var excluded int
-	if err := store.db.QueryRowContext(
-		ctx,
-		"SELECT excluded FROM account_routing_exclusions WHERE account_ref = ?",
-		current.Ref().String(),
-	).Scan(&excluded); err == nil {
-		store.routes.setRoutingExcluded(current.Ref(), excluded != 0)
-	}
 }

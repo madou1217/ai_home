@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/gemini"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -45,7 +46,9 @@ type indexedRoutingAccount struct {
 	// excluded 是 Node 标记的账号级路由排除（自定义上游账号），优先级高于 enabled：
 	// 用户启用的账号仍可能因为 Go 服务不了它的上游而必须留在候选之外。
 	excluded bool
-	models   []runtimecore.ModelID
+	// credentialExcluded cannot be cleared by user enable or the Node exclusion writer.
+	credentialExcluded bool
+	models             []runtimecore.ModelID
 }
 
 // serves 判断该账号当前是否会进入 Go 的路由候选和模型目录。
@@ -53,7 +56,7 @@ type indexedRoutingAccount struct {
 // 候选与目录都从同一份倒排派生，只在这一处判定「算不算可服务」，
 // 两处就不可能对同一个账号给出不同答案。
 func (entry indexedRoutingAccount) serves() bool {
-	return entry.enabled && !entry.excluded
+	return entry.enabled && !entry.excluded && !entry.credentialExcluded
 }
 
 // routingIndexKey 是 Provider 与真实模型组成的倒排键。
@@ -68,6 +71,15 @@ type routingIndexKey struct {
 // SetRoutingExclusion 之后的增量状态完全同构：候选查询和 /v1/models 目录
 // 都只是这份倒排的投影，不需要各自再过滤一次（各自过滤迟早会漏掉一处）。
 func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error) {
+	transaction, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer transaction.Rollback()
+	guards, err := store.readCredentialRoutingGuards(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
 	const query = `
 		SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
 		       COALESCE(e.excluded, 0),
@@ -76,7 +88,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 		LEFT JOIN account_routing_exclusions AS e ON e.account_ref = a.account_ref
 		LEFT JOIN account_models AS m ON m.account_ref = a.account_ref
 		ORDER BY a.account_ref, m.model_id`
-	rows, err := store.db.QueryContext(ctx, query)
+	rows, err := transaction.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("加载账号模型路由索引失败: %w", err)
 	}
@@ -92,7 +104,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	var currentModels []runtimecore.ModelID
 	flush := func() {
 		if currentRef.IsValid() {
-			index.replaceAccountDataLocked(current, currentEnabled, currentExcluded, currentModels)
+			index.replaceGuardedAccountDataLocked(current, currentEnabled, currentExcluded, guards[currentRef], currentModels)
 		}
 	}
 	for rows.Next() {
@@ -169,7 +181,13 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("遍历账号模型路由索引失败: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
 	flush()
+	if err := transaction.Commit(); err != nil {
+		return nil, err
+	}
 	index.publishAllSnapshots()
 	return index, nil
 }
@@ -241,6 +259,21 @@ func (index *routingIndex) replaceAccountDataLocked(
 	excluded bool,
 	models []runtimecore.ModelID,
 ) {
+	// A legacy state-only update can arrive on a different Store before its
+	// canonical dirty-event restore. Unknown Gemini credentials are not proof
+	// of routability; only a typed canonical restore may clear this guard.
+	guard := account.ProviderID() == gemini.ProviderID
+	if previous, found := index.accounts[account.Ref()]; found {
+		guard = previous.credentialExcluded
+	}
+	index.replaceGuardedAccountDataLocked(account, enabled, excluded, guard, models)
+}
+
+func (index *routingIndex) replaceGuardedAccountDataLocked(
+	account accountapp.RoutingAccount,
+	enabled, excluded, credentialExcluded bool,
+	models []runtimecore.ModelID,
+) {
 	models = index.effectiveModels(account.ProviderID(), models)
 	if previous, found := index.accounts[account.Ref()]; found && previous.serves() {
 		for _, modelID := range previous.models {
@@ -258,10 +291,11 @@ func (index *routingIndex) replaceAccountDataLocked(
 		}
 	}
 	entry := indexedRoutingAccount{
-		account:  account,
-		enabled:  enabled,
-		excluded: excluded,
-		models:   append([]runtimecore.ModelID(nil), models...),
+		account:            account,
+		enabled:            enabled,
+		excluded:           excluded,
+		credentialExcluded: credentialExcluded,
+		models:             append([]runtimecore.ModelID(nil), models...),
 	}
 	index.accounts[account.Ref()] = entry
 	if !entry.serves() {
@@ -274,6 +308,40 @@ func (index *routingIndex) replaceAccountDataLocked(
 		}
 		index.reverse[key] = insertRoutingAccount(index.reverse[key], account)
 	}
+}
+
+// publishCredentialAccount replaces the complete committed account, including
+// both independent exclusion facts, in one index critical section. A re-key
+// removes the previous identity in that same publication, never before a guard.
+func (index *routingIndex) publishCredentialAccount(entry indexedRoutingAccount, previous accountcore.AccountRef) {
+	if index == nil {
+		return
+	}
+	index.mu.Lock()
+	affected := map[routingIndexKey]struct{}{}
+	for _, ref := range []accountcore.AccountRef{previous, entry.account.Ref()} {
+		if old, found := index.accounts[ref]; found && old.serves() {
+			for _, model := range old.models {
+				affected[routingIndexKey{old.account.ProviderID(), model}] = struct{}{}
+			}
+		}
+	}
+	if previous.IsValid() && previous != entry.account.Ref() {
+		if old, found := index.accounts[previous]; found {
+			index.replaceGuardedAccountDataLocked(old.account, false, old.excluded, old.credentialExcluded, nil)
+			delete(index.accounts, previous)
+		}
+	}
+	index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, entry.credentialExcluded, entry.models)
+	updated := index.accounts[entry.account.Ref()]
+	if updated.serves() {
+		for _, model := range updated.models {
+			affected[routingIndexKey{updated.account.ProviderID(), model}] = struct{}{}
+		}
+	}
+	index.publishSnapshotsLocked(affected)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
 }
 
 // effectiveModels 把 Provider 级合成模型并进账号的模型正排。

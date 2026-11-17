@@ -89,3 +89,21 @@ Local private evidence root: `/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/a
 Source is committed; push is a separate transport action and requires a fresh remote check. Artifacts were loaded **only in private short-lived processes**. No shared binary replacement, stamp mutation, production restart, remote deployment, credential operation or browser action was performed. At 03:04 local 9527 remained Go 84956 supervising Node 85251, runtime/disk SHA `9916c222…`; it was not replaced by this candidate.
 
 **R7 / whole-migration Node retirement is NOT complete.** Terminal-internal `.runtime-bin/aih` still generates Node+public-wrapper launch; old in-process launch callers and Node adapter exports remain. Actual public CLI parity, R6 transport, shared exact-source paired release, existing Edge acceptance and full caller/traffic-zero evidence must precede removing those old paths. This commit does not reopen the separately accepted garbage-character repair or claim all 42 requirements / seven gates passed.
+
+
+## 05:23 Node browser dispatcher 实际退役（非全 terminal 模块删除）
+
+源码 `4bd40a68e4d25b90f25be69348daa7586b3672f1` 只删 `lib/server/web-ui-router.js` 的 terminal require 和末端分支，共7行；私有固定 base `a331e43b2609686c96df76737c388cfed3b87b19`，candidate SHA256 `b1576be0100571f3ca932ade6bfdb63d3391e3463fd54e93fde5d2dc3448888e`，manifest SHA256 `242b6e1366b310a28bd9198ffce201b60043873d2fbf9c3212929d702db068d7`。这是先有 Go 完整 browser alias，再停对应 Node caller，不是继续两套 owner。
+
+实际命令 `python3 -u <root>/run-retirement-real.py` 运行私有标准 Go CLI（PID53927、SHA256 `e6fc5eb9c69734b6f816f5d84f5362d1e52b6911778047a649d6b4b79cbb67d3`、无front-door/supervise-node、PATH无node）及**真实第一方 Node CLI**（PID54141，actual `bin/ai-home.js server serve`，外部Go为同私有home；无账号fixture/业务上游/GUI）。依赖使用现有 node_modules只读解析，未安装或修改依赖。该组合用来验证旧私有端口不再承担 browser 入口，不代表最终默认拓扑。
+
+- Node直接GET/POST六路径 sessions/open/input/mux/launch/probe 全部 `404 webui_not_found`，无key仍401。
+- Go auth先判401、browser management-only launch404、未知remote target404、sessions200；真实 durable tmux shell54365、中文emoji文件精确、resize39×117、mux connected及实际PTY output均成立。
+- **只终止本次自有 Node54141，exit0；同 shell54365继续写入 `NODE_SERVER_OFF_PTY_OK`。**Go close200、关闭后attach404、Go53927 exit0，已观察全部7对象末次无存活。
+- 只通过源码可达性和实际HTTP404判定旧browser分派已停，**没有实测 `terminalRequest` counter，不能写成counter0**。tmux唯一自有socket最终kill-server返回1（session已关闭），原值保留；不报所有cleanup命令exit0，也未清理私有DB/log凭据目录。
+
+Galileo原独立reviewer核唯一源码和两份低敏JSON给 **NO BLOCKING / SOURCE APPROVE**；未重跑DB/二进制或做Edge验收。一次性临时index、显式单path commit；pre cached/post show核对，主index原字节SHA `23b3e1cf…`、全entries `4f239d06…` 前后不变；peer旧暂存未同步。源码disk==commit。构件只私有加载，未改正式9527/标准binary/stamp，未操作用户草稿/终端/浏览器。
+
+`webui-terminal-routes.js` **未整体删除**：账号launcher仍真实消费 `openWebUiTerminalSession`，已有benchmark脚本也还消费旧export；`go-core-host`/facade/stream方法因这些及未归零动态调用保持，不能从这次404外推无消费者。终端内Node `aih` shim、旧launch、全CLI parity、正式成对发布/Edge、remote/跨平台和全部42+7仍OPEN。
+
+证据pointer `/tmp/aih-terminal-node-browser-retirement-latest-20261118.txt`；`evidence/source-manifest.json`、`retirement-operations.json`、`retirement-result.json`、`independent-source-review.json`、`commit-receipt.json`，私有log在root/private受限保留。没有新增测试、fixture、分支/worktree或第二份看板文档。

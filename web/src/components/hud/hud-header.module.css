@@ -1,29 +1,46 @@
-/* HUD 顶栏：品牌 / 遥测条 / 开关组。只引用语义 token 与 hud.css 的通用类。 */
+/* HUD 顶栏：3D 魔方品牌区 / 赛博玻璃遥测条 / 触感开关组。只引用语义 token 与 hud.css 通用类。 */
 
 .brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-5);
   min-width: 0;
+  max-height: 44px;
 }
 
-.brandMark {
+.brandCubeSlot {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   flex: none;
-  background: var(--color-surface-raised);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
-  box-shadow: var(--hud-glow-accent);
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  border-radius: 2px;
+  background:
+    radial-gradient(
+      circle at 50% 62%,
+      color-mix(in srgb, var(--color-accent) 16%, transparent) 0%,
+      color-mix(in srgb, var(--hud-violet, #a855f7) 10%, transparent) 55%,
+      transparent 78%
+    ),
+    var(--color-surface-sunken);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  box-shadow:
+    inset 0 1px 0 var(--hud-glass-specular, transparent),
+    var(--hud-glow-accent);
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
-.brandMark img {
-  width: 20px;
-  height: 20px;
+.brand:hover .brandCubeSlot,
+.brandCubeSlot:focus-within {
+  border-color: var(--color-accent);
+  box-shadow:
+    inset 0 1px 0 var(--hud-glass-specular, transparent),
+    var(--hud-glow-accent),
+    var(--hud-glow-violet, 0 0 18px transparent);
 }
 
 .brandText {
@@ -41,6 +58,11 @@
   color: var(--color-heading);
   text-shadow: var(--hud-text-glow);
   white-space: nowrap;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+
+.brand:hover .brandTitle {
+  color: var(--color-accent);
 }
 
 .brandTag {
@@ -53,17 +75,28 @@
 }
 
 .telemetry {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-8);
+  gap: var(--space-7);
   height: 44px;
   margin-inline: auto;
   padding: 0 var(--space-8);
-  background: color-mix(in srgb, var(--color-surface-sunken) 80%, transparent);
-  border: 1px solid var(--color-border);
+  background:
+    var(--hud-glass-sheen),
+    color-mix(in srgb, var(--color-surface-sunken) 76%, transparent);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   min-width: 0;
   overflow: hidden;
+  transition: border-color var(--motion-base) var(--ease-standard);
+}
+
+.telemetry:hover {
+  border-color: var(--hud-border-glass-hover, var(--color-border-strong));
 }
 
 .cell {
@@ -72,6 +105,13 @@
   gap: 2px;
   line-height: 1.2;
   white-space: nowrap;
+  padding: 2px 4px;
+  border-radius: 2px;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.cell:hover {
+  background: var(--color-overlay-subtle);
 }
 
 .value {
@@ -94,7 +134,7 @@
   width: 1px;
   height: 22px;
   flex: none;
-  background: var(--color-border);
+  background: linear-gradient(180deg, transparent, var(--color-border-strong), transparent);
 }
 
 .toggles {
@@ -114,16 +154,37 @@
   font-weight: 600;
   letter-spacing: var(--tracking-wide);
   color: var(--color-muted);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
+  background: var(--hud-glass-raised-gradient), var(--color-surface-raised);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
   cursor: pointer;
   clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
-  transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-instant) var(--ease-standard);
+}
+
+.toggle[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
 }
 
 .toggle:hover {
   color: var(--color-accent);
   border-color: var(--color-accent);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--hud-glow-accent);
+}
+
+.toggle:active {
+  transform: scale(0.96);
+}
+
+.toggle:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: var(--ring-focus);
 }
 
 .toggleKey {
@@ -137,6 +198,12 @@
 
 .toggleOff {
   color: var(--color-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle:active {
+    transform: none;
+  }
 }
 
 @media (max-width: 1439px) {

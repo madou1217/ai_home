@@ -16,9 +16,11 @@
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-  box-shadow: var(--elevation-1, 0 2px 8px rgb(0 0 0 / 4%));
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  background: var(--hud-glass-gradient), var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
 }
 
 .languageToolbar,
@@ -531,8 +533,11 @@
   flex-direction: column;
   min-height: 460px;
   min-width: 0;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  background: var(--hud-glass-gradient), var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
   transition: border-color var(--motion-base) var(--ease-standard),
     box-shadow var(--motion-base) var(--ease-standard);
 }
@@ -541,14 +546,14 @@
 .paneResult,
 .pane--source,
 .pane--result {
-  box-shadow: var(--elevation-1, 0 2px 8px rgb(0 0 0 / 3%));
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--elevation-1);
 }
 
 .paneResult[data-phase="waiting"],
 .paneResult[data-phase="preparing"],
 .paneResult[data-phase="streaming"] {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent-soft), var(--elevation-1, 0 2px 8px rgb(0 0 0 / 3%));
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--hud-glow-accent);
 }
 
 .paneResult[data-phase="done"] {

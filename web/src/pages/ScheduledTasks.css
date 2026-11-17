@@ -1,46 +1,34 @@
-/* 计划任务页：紧凑信息密度，状态用标签/文字表达，不用大块告警容器或左侧色条。 */
-.scheduled-tasks-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--hos-space-3);
-  padding: var(--hos-space-4);
-}
-
-.scheduled-tasks-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--hos-space-3);
-  flex-wrap: wrap;
-}
-
-.scheduled-tasks-head h2 {
-  margin: 0 0 var(--hos-space-1);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.scheduled-tasks-head p {
-  margin: 0;
-  max-width: 720px;
-  color: var(--color-muted);
-  font-size: 12.5px;
-  line-height: 1.6;
-}
-
+/* 计划任务页：复用 PageScaffold + SectionCard 的赛博玻璃面板；状态用 LED 胶囊/标签表达，无整块告警或左侧竖条。 */
 .scheduled-tasks-scheduler {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 30px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  background: var(--hud-glass-raised-gradient), var(--color-surface-raised);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
   color: var(--color-muted);
 }
 
 .scheduled-tasks-scheduler.is-on {
-  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
 }
 
 .scheduled-tasks-name {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.scheduled-tasks-name strong {
+  color: var(--color-heading);
+  font-family: var(--font-mono);
 }
 
 .scheduled-tasks-name span {
@@ -56,16 +44,26 @@
 
 .scheduled-tasks-summary {
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
-/* 调度解读（含 cron 的中文解读 + 下次运行时间）：行内说明，不用告警容器。 */
+/* 调度解读（含 cron 的中文解读 + 下次运行时间）：紧凑等宽行内胶囊，不用告警容器。 */
 .scheduled-tasks-preview {
-  margin-top: var(--hos-space-1);
-  color: var(--color-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 32%, var(--color-border));
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: 12px;
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
 }
 
 .scheduled-tasks-preview.is-error {
-  color: var(--color-danger, var(--color-accent));
+  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  color: var(--color-danger);
 }

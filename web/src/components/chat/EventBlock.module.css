@@ -14,15 +14,20 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--event-border);
+  border: 1px solid var(--hud-border-glass, var(--event-border));
   border-radius: 0;
-  background: var(--hud-panel-bg);
+  background: var(--hud-glass-gradient), var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
   overflow: hidden;
   clip-path: polygon(
     0 var(--hud-cut), var(--hud-cut) 0, 100% 0,
     100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%
   );
-  transition: border-color var(--motion-base) var(--ease-standard);
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .root::before {

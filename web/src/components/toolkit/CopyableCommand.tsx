@@ -1,4 +1,4 @@
-import { CopyOutlined } from '@ant-design/icons';
+import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
 import { UNRESOLVED_COMMAND_PARAMETER as UNRESOLVED_PARAMETER } from './guided-command';
@@ -21,7 +21,7 @@ export default function CopyableCommand({
   copyLabel = '复制命令',
   compact = false
 }: CopyableCommandProps) {
-  const { copying, copy } = useCommandCopy();
+  const { copying, copied, copy } = useCommandCopy();
   const hasUnresolvedParameter = UNRESOLVED_PARAMETER.test(command);
   const copyDisabled = disabled || !command.trim() || hasUnresolvedParameter;
   const reason = disabledReason
@@ -37,20 +37,20 @@ export default function CopyableCommand({
       size="small"
       type="text"
       danger={danger}
-      icon={<CopyOutlined />}
+      icon={copied ? <CheckOutlined className="aih-check-pop" /> : <CopyOutlined />}
       loading={copying}
       disabled={copyDisabled}
-      aria-label={copyDisabled && reason ? `${copyLabel}，${reason}` : copyLabel}
+      aria-label={copyDisabled && reason ? `${copyLabel}，${reason}` : (copied ? '已复制命令' : copyLabel)}
       onClick={handleCopy}
     >
-      {compact ? null : copyLabel}
+      {compact ? null : (copied ? '已复制' : copyLabel)}
     </Button>
   );
 
   return (
-    <div className="toolkit-command" data-danger={danger || undefined}>
+    <div className="toolkit-command" data-danger={danger || undefined} data-copied={copied || undefined}>
       <pre tabIndex={0} aria-label="可复制命令"><code>{command || '等待生成命令'}</code></pre>
-      <Tooltip title={copyDisabled ? (reason || '命令暂不可复制') : copyLabel}>
+      <Tooltip title={copyDisabled ? (reason || '命令暂不可复制') : (copied ? '命令已复制' : copyLabel)}>
         <span>{copyButton}</span>
       </Tooltip>
     </div>

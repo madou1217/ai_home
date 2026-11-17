@@ -50,7 +50,7 @@ body {
 }
 
 /* -------------------------------------------------------------------------
- * 1. 切角面板 + 角标
+ * 1. 切角面板 + 角标（分层赛博发光玻璃材质）
  * ---------------------------------------------------------------------- */
 .hud-panel,
 .ant-pro-card.unified-section-card,
@@ -59,24 +59,28 @@ body {
 .hud-kpi-strip {
   --hud-cut: var(--hud-chamfer);
   position: relative;
-  background: var(--hud-panel-bg) !important;
+  background: var(--hud-glass-gradient), var(--hud-panel-bg) !important;
   -webkit-backdrop-filter: var(--hud-panel-blur);
   backdrop-filter: var(--hud-panel-blur);
-  border: 1px solid var(--color-border) !important;
+  border: 1px solid var(--hud-border-glass, var(--color-border)) !important;
   border-radius: 0 !important;
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent) !important;
   clip-path: polygon(
     0 var(--hud-cut), var(--hud-cut) 0,
     calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
     100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
     var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut))
   );
-  transition: border-color var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .hud-panel:hover,
 .ant-pro-card.unified-section-card:hover,
 .surface-card:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)) !important;
+  border-color: var(--hud-border-glass-hover, color-mix(in srgb, var(--color-accent) 48%, var(--color-border))) !important;
+  box-shadow: var(--hud-glow-panel-hover, inset 0 1px 0 var(--hud-glass-specular, transparent)) !important;
 }
 
 .hud-panel::before,
@@ -266,27 +270,40 @@ body {
 }
 
 .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):not(.ant-btn-background-ghost) {
-  background: color-mix(in srgb, var(--color-accent) 16%, transparent) !important;
+  background:
+    linear-gradient(
+      125deg,
+      color-mix(in srgb, var(--color-accent) 22%, transparent) 0%,
+      color-mix(in srgb, var(--hud-violet, #a855f7) 12%, transparent) 100%
+    ) !important;
   border: 1px solid var(--color-accent) !important;
   color: var(--color-accent) !important;
-  box-shadow: var(--hud-glow-accent) !important;
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--hud-glow-accent) !important;
 }
 
 .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):not(.ant-btn-background-ghost):hover {
   background: var(--color-accent) !important;
   color: var(--color-on-accent) !important;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--color-accent) 45%, transparent) !important;
 }
 
 .ant-btn-default:not(:disabled):not(.ant-btn-dangerous) {
-  background: var(--color-surface-raised);
-  border-color: var(--color-border);
+  background: var(--hud-glass-raised-gradient), var(--color-surface-raised);
+  border-color: var(--hud-border-glass, var(--color-border));
   color: var(--color-muted-strong);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
 }
 
 .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):hover {
   border-color: var(--color-accent) !important;
   color: var(--color-accent) !important;
-  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-raised)) !important;
+  background:
+    linear-gradient(
+      125deg,
+      color-mix(in srgb, var(--color-accent) 11%, var(--color-surface-raised)) 0%,
+      color-mix(in srgb, var(--hud-violet, #a855f7) 6%, var(--color-surface-raised)) 100%
+    ) !important;
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--hud-glow-accent) !important;
 }
 
 .ant-btn-dangerous:not(:disabled):not(.ant-btn-link):not(.ant-btn-text) {
@@ -403,8 +420,10 @@ body {
   --hud-cut: var(--hud-chamfer);
   border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border)) !important;
   border-radius: 0 !important;
-  background: var(--color-surface) !important;
-  box-shadow: var(--elevation-4) !important;
+  background: var(--hud-glass-raised-gradient), var(--color-surface) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--elevation-4) !important;
   clip-path: polygon(
     0 var(--hud-cut), var(--hud-cut) 0,
     calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
@@ -722,7 +741,7 @@ textarea.ant-input { font-family: var(--font-body); }
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 25%, transparent) !important;
 }
 
-/* 下拉 / 气泡 / 确认气泡 / 选择器弹层：切角暗面板 + 青色细框 */
+/* 下拉 / 气泡 / 确认气泡 / 选择器弹层：切角发光玻璃面板 + 青色细框 */
 .ant-select-dropdown,
 .ant-dropdown .ant-dropdown-menu,
 .ant-popover .ant-popover-inner,
@@ -730,9 +749,14 @@ textarea.ant-input { font-family: var(--font-body); }
 .ant-cascader-dropdown,
 .ant-mentions-dropdown,
 .ant-tree-select-dropdown {
-  background: var(--color-surface-raised) !important;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border)) !important;
-  box-shadow: var(--elevation-3), 0 0 16px color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+  background: var(--hud-glass-raised-gradient), var(--color-surface-raised) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 38%, var(--color-border)) !important;
+  box-shadow:
+    inset 0 1px 0 var(--hud-glass-specular, transparent),
+    var(--elevation-3),
+    0 0 18px color-mix(in srgb, var(--color-accent) 14%, transparent) !important;
 }
 .ant-dropdown .ant-dropdown-menu,
 .ant-popover .ant-popover-inner {
@@ -754,6 +778,7 @@ textarea.ant-input { font-family: var(--font-body); }
 .ant-popconfirm .ant-popconfirm-message-title { color: var(--color-text); font-weight: 600; }
 .ant-popconfirm .ant-popconfirm-message-icon .anticon { filter: drop-shadow(0 0 4px currentColor); }
 
+/* 列表/菜单项严禁左侧装饰条（AGENTS.md）：用完整 1px 内边框与玻璃底表达激活/选中 */
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item,
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-submenu-title,
 .ant-select-dropdown .ant-select-item,
@@ -761,27 +786,27 @@ textarea.ant-input { font-family: var(--font-body); }
   border-radius: 0 !important;
   font-family: var(--font-body);
   color: var(--color-text);
-  border-left: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px transparent;
 }
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item:hover,
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-active,
 .ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled),
 .ant-cascader-dropdown .ant-cascader-menu-item:hover {
   background: color-mix(in srgb, var(--color-accent) 9%, transparent) !important;
-  border-left-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 36%, transparent);
   color: var(--color-accent);
 }
 .ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled),
 .ant-cascader-dropdown .ant-cascader-menu-item-active:not(.ant-cascader-menu-item-disabled) {
   background: color-mix(in srgb, var(--color-accent) 14%, transparent) !important;
-  border-left-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 52%, transparent);
   color: var(--color-accent) !important;
   font-weight: 600;
 }
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger:not(.ant-dropdown-menu-item-disabled) { color: var(--color-danger) !important; }
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger:not(.ant-dropdown-menu-item-disabled):hover {
   background: color-mix(in srgb, var(--color-danger) 12%, transparent) !important;
-  border-left-color: var(--color-danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 48%, transparent);
   color: var(--color-danger) !important;
 }
 .ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-divider,
@@ -814,13 +839,20 @@ textarea.ant-input { font-family: var(--font-body); }
 .ant-picker-dropdown .ant-picker-cell-inner { border-radius: 1px !important; }
 .ant-picker-dropdown .ant-picker-cell-in-view.ant-picker-cell-today .ant-picker-cell-inner::before { border-color: var(--color-accent) !important; border-radius: 1px !important; }
 
-/* Drawer：切角左上 + 顶部青色细线 + 等宽正文 */
+/* Drawer：发光赛博玻璃抽屉 + 顶部青紫光幕 + 等宽正文 */
 .ant-drawer .ant-drawer-content {
-  background: var(--color-surface) !important;
+  background: var(--hud-glass-raised-gradient), var(--color-surface) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
 }
 .ant-drawer .ant-drawer-header {
-  border-bottom: 1px solid var(--color-border) !important;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent);
+  border-bottom: 1px solid var(--hud-border-glass, var(--color-border)) !important;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 9%, transparent) 0%,
+    color-mix(in srgb, var(--hud-violet, #a855f7) 4%, transparent) 60%,
+    transparent 100%
+  );
 }
 .ant-drawer .ant-drawer-title {
   font-size: 14px;
@@ -958,13 +990,13 @@ textarea.ant-input { font-family: var(--font-body); }
 .ant-timeline .ant-timeline-item-head-gray { color: var(--color-faint) !important; border-color: var(--color-faint) !important; box-shadow: none; }
 .ant-timeline .ant-timeline-item-label { font-family: var(--font-mono); color: var(--color-faint); }
 
-/* Tree：选中行左侧青轨 */
+/* Tree：选中行用完整 1px 青色玻璃内描边（禁用左侧竖条） */
 .ant-tree { background: transparent !important; font-family: var(--font-body); }
 .ant-tree .ant-tree-node-content-wrapper { border-radius: 0 !important; }
 .ant-tree .ant-tree-node-content-wrapper:hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent) !important; }
 .ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
   background: color-mix(in srgb, var(--color-accent) 14%, transparent) !important;
-  box-shadow: inset 2px 0 0 var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 52%, transparent);
   color: var(--color-accent);
 }
 .ant-tree .ant-tree-switcher { color: var(--color-muted); }
@@ -1089,11 +1121,14 @@ a.ant-typography:hover { text-shadow: var(--hud-text-glow); }
 .ant-upload-wrapper .ant-upload-drag:hover { border-color: var(--color-accent) !important; }
 .ant-upload-wrapper .ant-upload-list .ant-upload-list-item { border-radius: 0 !important; }
 
-/* Card（非 ProCard 的原生 antd Card）：切角小面板 */
+/* Card（非 ProCard 的原生 antd Card）：发光赛博玻璃小面板 */
 .ant-card:not(.ant-pro-card) {
   border-radius: 0 !important;
-  background: var(--hud-panel-bg) !important;
-  border-color: var(--color-border) !important;
+  background: var(--hud-glass-gradient), var(--hud-panel-bg) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border-color: var(--hud-border-glass, var(--color-border)) !important;
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
 }
 .ant-card:not(.ant-pro-card) .ant-card-head {
   border-bottom-color: var(--color-border) !important;

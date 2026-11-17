@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Grid, Segmented, Select, Space, Tooltip, Typography } from 'antd';
+import { Grid, Segmented, Select, Space, Tooltip, Typography } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -11,7 +11,10 @@ import './AccountQuota.css';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import AnimatedValue from '@/components/ui/AnimatedValue';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { formatCost, formatTokens } from '@/features/model-usage/model-usage-presentation';
 import QuotaWindowChart from '@/features/quota-stats/QuotaWindowChart';
 import QuotaWindowTable from '@/features/quota-stats/QuotaWindowTable';
@@ -39,6 +42,7 @@ export default function AccountQuota() {
   const routeParams = useParams<{ provider?: string; accountRef?: string }>();
   const provider = String(routeParams.provider || '').trim().toLowerCase();
   const accountRef = String(routeParams.accountRef || '').trim();
+  const { surfaceRef: quotaSurfaceRef, switchSurface: switchQuotaSurface } = useSurfaceSwitch<HTMLDivElement>();
 
   // 0 = 未指定，让服务端按该账号实际有的维度选一个：首屏只发一次请求，
   // 12h / 722 分钟这类非标准窗口不会被固定传 300 的旧逻辑挡一次。
@@ -181,20 +185,20 @@ export default function AccountQuota() {
       ]}
     >
       {error ? (
-        <Alert
-          type="error"
-          showIcon
-          message="额度统计加载失败"
+        <InlineNote
+          tone="error"
           description={error}
           style={{ marginBottom: 16 }}
-        />
+        >
+          额度统计加载失败
+        </InlineNote>
       ) : null}
 
       {isUsageView ? (
         <section className="usage-kpi-rail" aria-label="用量核心指标">
           <div className="usage-kpi-item usage-kpi-item--primary">
             <span>当前剩余</span>
-            <strong>{formatQuotaPct(current?.remainingPct)}</strong>
+            <strong><AnimatedValue>{formatQuotaPct(current?.remainingPct)}</AnimatedValue></strong>
             <small>
               {current?.resetAtMs
                 ? `下次关窗 ${formatQuotaClock(current.resetAtMs)}`
@@ -203,27 +207,27 @@ export default function AccountQuota() {
           </div>
           <div className="usage-kpi-item">
             <span>总 Tokens</span>
-            <strong>{formatTokens(usageSummary?.totalTokens ?? 0)}</strong>
+            <strong><AnimatedValue>{formatTokens(usageSummary?.totalTokens ?? 0)}</AnimatedValue></strong>
             <small>{periodLabel}均 {avgTokensText}</small>
           </div>
           <div className="usage-kpi-item usage-kpi-item--cost">
             <span>估算成本</span>
-            <strong>{costText}</strong>
+            <strong><AnimatedValue>{costText}</AnimatedValue></strong>
             <small>USD · 按当前价格快照</small>
           </div>
           <div className="usage-kpi-item">
             <span>请求数</span>
-            <strong>{usageSummary?.requestCount ?? 0}</strong>
+            <strong><AnimatedValue>{usageSummary?.requestCount ?? 0}</AnimatedValue></strong>
             <small>{usageSummary?.bucketCount ?? 0} 个{periodLabel}桶</small>
           </div>
           <div className="usage-kpi-item">
             <span>峰值 Tokens</span>
-            <strong>{formatTokens(peakBucket?.tokens ?? 0)}</strong>
+            <strong><AnimatedValue>{formatTokens(peakBucket?.tokens ?? 0)}</AnimatedValue></strong>
             <small>{peakBucket ? formatUsageBucketAxis(peakBucket.bucketStartMs, activeGranularity) : '范围内无用量'}</small>
           </div>
           <div className="usage-kpi-item">
             <span>统计范围</span>
-            <strong>{data?.range.rangeDays ?? 0} 天</strong>
+            <strong><AnimatedValue>{`${data?.range.rangeDays ?? 0} 天`}</AnimatedValue></strong>
             <small>自然{periodLabel}聚合</small>
           </div>
         </section>
@@ -231,7 +235,7 @@ export default function AccountQuota() {
         <section className="usage-kpi-rail" aria-label="额度窗口核心指标">
           <div className="usage-kpi-item usage-kpi-item--primary">
             <span>当前剩余</span>
-            <strong>{formatQuotaPct(current?.remainingPct)}</strong>
+            <strong><AnimatedValue>{formatQuotaPct(current?.remainingPct)}</AnimatedValue></strong>
             <small>
               {current?.resetAtMs
                 ? `下次关窗 ${formatQuotaClock(current.resetAtMs)}`
@@ -240,27 +244,27 @@ export default function AccountQuota() {
           </div>
           <div className="usage-kpi-item">
             <span>窗口数</span>
-            <strong>{summary?.windowCount ?? 0}</strong>
+            <strong><AnimatedValue>{summary?.windowCount ?? 0}</AnimatedValue></strong>
             <small>有完整消耗数据 {summary?.coveredWindowCount ?? 0}</small>
           </div>
           <div className="usage-kpi-item">
             <span>平均消耗</span>
-            <strong>{formatQuotaPct(summary?.avgConsumedPct)}</strong>
+            <strong><AnimatedValue>{formatQuotaPct(summary?.avgConsumedPct)}</AnimatedValue></strong>
             <small>峰值 {formatQuotaPct(summary?.maxConsumedPct)}</small>
           </div>
           <div className="usage-kpi-item">
             <span>总 Tokens</span>
-            <strong>{formatTokens(summary?.totalTokens ?? 0)}</strong>
+            <strong><AnimatedValue>{formatTokens(summary?.totalTokens ?? 0)}</AnimatedValue></strong>
             <small>每窗均 {avgTokensText}</small>
           </div>
           <div className="usage-kpi-item usage-kpi-item--cost">
             <span>估算成本</span>
-            <strong>{costText}</strong>
+            <strong><AnimatedValue>{costText}</AnimatedValue></strong>
             <small>USD · 按当前价格快照</small>
           </div>
           <div className="usage-kpi-item">
             <span>请求数</span>
-            <strong>{summary?.requestCount ?? 0}</strong>
+            <strong><AnimatedValue>{summary?.requestCount ?? 0}</AnimatedValue></strong>
             <small>
               {summary?.lastResetAtMs
                 ? `最近重置 ${formatQuotaClock(summary.lastResetAtMs)}`
@@ -275,30 +279,63 @@ export default function AccountQuota() {
           <Segmented
             value={activeGranularity}
             options={granularityOptions}
-            onChange={(value) => setGranularity(value as QuotaStatsGranularity)}
+            onChange={(value) => {
+              const next = value as QuotaStatsGranularity;
+              const order = granularityOptions.map((item) => item.value);
+              switchQuotaSurface(() => setGranularity(next), {
+                slot: 'granularity',
+                current: activeGranularity,
+                next,
+                direction: resolveOrderedDirection(order, activeGranularity, next)
+              });
+            }}
           />
           {!isUsageView && hasWindowDetails ? (
             <Segmented
               value={activeWindowMinutes}
               options={dimensionOptions}
               onChange={(value) => {
-                // 换维度时清掉 scope：不同窗口长度的 quotaKey 不通用，
-                // 留着旧值会让服务端多走一次「scope 不存在」的空请求。
-                setScopeKey('');
-                setWindowMinutes(Number(value));
+                const nextMinutes = Number(value);
+                const order = dimensionOptions.map((item) => Number(item.value));
+                switchQuotaSurface(() => {
+                  // 换维度时清掉 scope：不同窗口长度的 quotaKey 不通用，
+                  // 留着旧值会让服务端多走一次「scope 不存在」的空请求。
+                  setScopeKey('');
+                  setWindowMinutes(nextMinutes);
+                }, {
+                  slot: 'windowMinutes',
+                  current: activeWindowMinutes,
+                  next: nextMinutes,
+                  direction: resolveOrderedDirection(order, activeWindowMinutes, nextMinutes)
+                });
               }}
             />
           ) : null}
           <Segmented
             value={rangeDays}
             options={QUOTA_RANGE_OPTIONS}
-            onChange={(value) => setRangeDays(Number(value))}
+            onChange={(value) => {
+              const nextDays = Number(value);
+              const order = QUOTA_RANGE_OPTIONS.map((item) => Number(item.value));
+              switchQuotaSurface(() => setRangeDays(nextDays), {
+                slot: 'rangeDays',
+                current: rangeDays,
+                next: nextDays,
+                direction: resolveOrderedDirection(order, rangeDays, nextDays)
+              });
+            }}
           />
           {!isUsageView && scopeOptions.length > 1 && distinctScopeLabels > 1 ? (
             <Select
               value={scopeKey || undefined}
               options={scopeOptions}
-              onChange={(value) => setScopeKey(value)}
+              onChange={(value) => {
+                switchQuotaSurface(() => setScopeKey(value), {
+                  slot: 'scopeKey',
+                  current: scopeKey,
+                  next: value
+                });
+              }}
               style={{ minWidth: 180 }}
               placeholder="额度范围"
             />
@@ -311,48 +348,50 @@ export default function AccountQuota() {
         </Space>
       </SectionCard>
 
-      <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
-        {isUsageView ? (
-          <UsageBucketChart
-            buckets={data?.usageBuckets || []}
-            granularity={activeGranularity}
-            emptyReason={data?.emptyReason || null}
-          />
-        ) : (
-          <QuotaWindowChart
-            windows={data?.windows || []}
-            windowMinutes={activeWindowMinutes}
-            emptyReason={data?.emptyReason || null}
-          />
-        )}
-      </SectionCard>
+      <div ref={quotaSurfaceRef}>
+        <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
+          {isUsageView ? (
+            <UsageBucketChart
+              buckets={data?.usageBuckets || []}
+              granularity={activeGranularity}
+              emptyReason={data?.emptyReason || null}
+            />
+          ) : (
+            <QuotaWindowChart
+              windows={data?.windows || []}
+              windowMinutes={activeWindowMinutes}
+              emptyReason={data?.emptyReason || null}
+            />
+          )}
+        </SectionCard>
 
-      {isUsageView ? (
-        <SectionCard
-          title={`${periodLabel}明细`}
-          extra={loading ? <Typography.Text type="secondary">更新中…</Typography.Text> : null}
-        >
-          <UsageBucketTable
-            buckets={data?.usageBuckets || []}
-            granularity={activeGranularity}
-            loading={loading}
-          />
-          <Typography.Text type="secondary" className="quota-stats-footnote">
-            只统计能归属到本账号的网关用量；未归属的历史会话不计入。成本按当前价格快照估算。
-          </Typography.Text>
-        </SectionCard>
-      ) : hasWindowDetails ? (
-        <SectionCard
-          title="窗口明细"
-          extra={loading ? <Typography.Text type="secondary">更新中…</Typography.Text> : null}
-        >
-          <QuotaWindowTable windows={data?.windows || []} loading={loading} />
-          <Typography.Text type="secondary" className="quota-stats-footnote">
-            仅统计能归属到本账号的用量记录；未归属的历史会话不计入。历史窗口由重置事件与用量记录尽力重建，
-            标注「仅重置事件 / 重建」的行是估算值。
-          </Typography.Text>
-        </SectionCard>
-      ) : null}
+        {isUsageView ? (
+          <SectionCard
+            title={`${periodLabel}明细`}
+            extra={loading ? <Typography.Text type="secondary">更新中…</Typography.Text> : null}
+          >
+            <UsageBucketTable
+              buckets={data?.usageBuckets || []}
+              granularity={activeGranularity}
+              loading={loading}
+            />
+            <Typography.Text type="secondary" className="quota-stats-footnote">
+              只统计能归属到本账号的网关用量；未归属的历史会话不计入。成本按当前价格快照估算。
+            </Typography.Text>
+          </SectionCard>
+        ) : hasWindowDetails ? (
+          <SectionCard
+            title="窗口明细"
+            extra={loading ? <Typography.Text type="secondary">更新中…</Typography.Text> : null}
+          >
+            <QuotaWindowTable windows={data?.windows || []} loading={loading} />
+            <Typography.Text type="secondary" className="quota-stats-footnote">
+              仅统计能归属到本账号的用量记录；未归属的历史会话不计入。历史窗口由重置事件与用量记录尽力重建，
+              标注「仅重置事件 / 重建」的行是估算值。
+            </Typography.Text>
+          </SectionCard>
+        ) : null}
+      </div>
     </PageScaffold>
   );
 }

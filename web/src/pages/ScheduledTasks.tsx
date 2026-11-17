@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button,
-  Card,
-  Empty,
   Form,
   Input,
   Modal,
@@ -16,6 +13,13 @@ import {
   Tooltip,
   message
 } from 'antd';
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import Button from '@/components/ui/AppButton';
+import PageScaffold from '@/components/ui/PageScaffold';
+import Reveal from '@/components/ui/Reveal';
+import SectionCard from '@/components/ui/SectionCard';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import {
   accountsAPI,
   deleteScheduledTask,
@@ -121,6 +125,8 @@ export default function ScheduledTasks() {
   const [schedulerRunning, setSchedulerRunning] = useState(false);
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
   const [busyId, setBusyId] = useState('');
+  const { surfaceRef: recordsSurfaceRef, switchSurface: switchRecordsSurface } = useSurfaceSwitch<HTMLDivElement>();
+  const { surfaceRef: scheduleSurfaceRef, switchSurface: switchScheduleSurface } = useSurfaceSwitch<HTMLDivElement>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -428,27 +434,32 @@ export default function ScheduledTasks() {
   };
 
   return (
-    <div className="scheduled-tasks-page">
-      <div className="scheduled-tasks-head">
-        <div>
-          <h2>计划任务</h2>
-          <p>
-            把「签到 / 领臭鸡蛋」这类事件排成定时任务；执行进度在右下角任务队列里实时可见，
-            历史结果保留最近 {recordDays} 天。
-          </p>
-        </div>
-        <Space>
+    <PageScaffold
+      ghost
+      code="SCHEDULE"
+      className="scheduled-tasks-page"
+      title="计划任务"
+      subTitle={`把活动签到与自定义命令排成定时任务；执行进度在右下角任务队列实时可见，历史结果保留最近 ${recordDays} 天。`}
+      extra={(
+        <Space size={8} wrap>
           <span className={`scheduled-tasks-scheduler is-${schedulerRunning ? 'on' : 'off'}`}>
+            <span className={`hud-led ${schedulerRunning ? 'hud-led--ok hud-led--live' : ''}`} aria-hidden="true" />
             {schedulerRunning ? '调度器运行中' : '调度器未启动'}
           </span>
-          <Button onClick={() => void load()} loading={loading}>刷新</Button>
-          <Button type="primary" onClick={openCreate}>新建计划任务</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建计划任务</Button>
         </Space>
-      </div>
-
-      <Card size="small" title="任务列表">
+      )}
+    >
+      <SectionCard title="任务列表">
         {tasks.length === 0 ? (
-          <Empty description="还没有计划任务" />
+          <HudStateView
+            compact
+            code="NO_SCHEDULES"
+            title="还没有计划任务"
+            description="点击右上角「新建计划任务」即可配置按日、按周、固定间隔或 Cron 表达式触发的自动作业。"
+            extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建计划任务</Button>}
+          />
         ) : (
           <Table<ScheduledTask>
             rowKey="id"
@@ -520,10 +531,9 @@ export default function ScheduledTasks() {
             ]}
           />
         )}
-      </Card>
+      </SectionCard>
 
-      <Card
-        size="small"
+      <SectionCard
         title="运行记录"
         extra={(
           <Space size={6}>
@@ -532,7 +542,16 @@ export default function ScheduledTasks() {
               size="small"
               value={recordDays}
               style={{ width: 96 }}
-              onChange={(value) => setRecordDays(Number(value))}
+              onChange={(value) => {
+                const nextDays = Number(value);
+                const dayOrder = [1, 3, 7, 14] as const;
+                switchRecordsSurface(() => setRecordDays(nextDays), {
+                  slot: 'recordDays',
+                  current: recordDays,
+                  next: nextDays,
+                  direction: resolveOrderedDirection(dayOrder, recordDays as 1 | 3 | 7 | 14, nextDays as 1 | 3 | 7 | 14)
+                });
+              }}
               options={[
                 { value: 1, label: '1 天' },
                 { value: 3, label: '3 天' },
@@ -543,43 +562,49 @@ export default function ScheduledTasks() {
           </Space>
         )}
       >
-        {records.length === 0 ? (
-          <Empty description="暂无运行记录" />
-        ) : (
-          <Table<ScheduledTaskRecord>
-            rowKey="id"
-            size="small"
-            pagination={{
-              current: recordPage,
-              pageSize: recordPageSize,
-              total: recordTotal,
-              showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100],
-              showTotal: (total) => `共 ${total} 条记录`,
-              onChange: (page, pageSize) => {
-                setRecordPage(page);
-                if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
-              }
-            }}
-            dataSource={records}
-            columns={[
-              { title: '时间', render: (_value, row) => formatTime(row.startedAt) },
-              { title: '任务', dataIndex: 'taskName' },
-              { title: '事件', dataIndex: 'eventLabel' },
-              { title: '触发', render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
-              { title: '结果', render: (_value, row) => statusTag(row.status) },
-              {
-                title: '摘要',
-                render: (_value, row) => (
-                  <span className="scheduled-tasks-summary">
-                    {row.errorSummary || row.error || row.summary || '—'}
-                  </span>
-                )
-              }
-            ]}
-          />
-        )}
-      </Card>
+        <div ref={recordsSurfaceRef}>
+          {records.length === 0 ? (
+            <HudStateView compact code="NO_LOGS" title="暂无运行记录" />
+          ) : (
+            <Table<ScheduledTaskRecord>
+              rowKey="id"
+              size="small"
+              pagination={{
+                current: recordPage,
+                pageSize: recordPageSize,
+                total: recordTotal,
+                showSizeChanger: true,
+                pageSizeOptions: [20, 50, 100],
+                showTotal: (total) => `共 ${total} 条记录`,
+                onChange: (page, pageSize) => {
+                  switchRecordsSurface(() => {
+                    setRecordPage(page);
+                    if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
+                  }, {
+                    direction: page > recordPage ? 'forward' : page < recordPage ? 'backward' : 'neutral'
+                  });
+                }
+              }}
+              dataSource={records}
+              columns={[
+                { title: '时间', render: (_value, row) => formatTime(row.startedAt) },
+                { title: '任务', dataIndex: 'taskName' },
+                { title: '事件', dataIndex: 'eventLabel' },
+                { title: '触发', render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
+                { title: '结果', render: (_value, row) => statusTag(row.status) },
+                {
+                  title: '摘要',
+                  render: (_value, row) => (
+                    <span className="scheduled-tasks-summary">
+                      {row.errorSummary || row.error || row.summary || '—'}
+                    </span>
+                  )
+                }
+              ]}
+            />
+          )}
+        </div>
+      </SectionCard>
 
       <Modal
         open={editor.open}
@@ -620,8 +645,8 @@ export default function ScheduledTasks() {
               onChange={(event) => setEditor((prev) => ({ ...prev, name: event.target.value }))}
             />
           </Form.Item>
-          {selectedEvent?.kind === 'custom' ? (
-            <>
+          <Reveal open={selectedEvent?.kind === 'custom'}>
+            <div>
               <Form.Item label="命令">
                 <Input.TextArea
                   rows={3}
@@ -636,25 +661,36 @@ export default function ScheduledTasks() {
                   onChange={(event) => setEditor((prev) => ({ ...prev, cwd: event.target.value }))}
                 />
               </Form.Item>
-            </>
-          ) : null}
-          {selectedEvent?.kind === 'activity' ? (
-            <ActivityParamFields
-              fields={paramFields}
-              value={editor.activityParams}
-              onChange={(next) => setEditor((prev) => ({ ...prev, activityParams: next }))}
-              accountOptions={accountOptions}
-              probe={probe}
-              probing={probing}
-              onProbe={selectedEvent.supportsProbe ? () => void handleProbe() : undefined}
-            />
-          ) : null}
+            </div>
+          </Reveal>
+          <Reveal open={selectedEvent?.kind === 'activity'}>
+            {selectedEvent ? (
+              <ActivityParamFields
+                fields={paramFields}
+                value={editor.activityParams}
+                onChange={(next) => setEditor((prev) => ({ ...prev, activityParams: next }))}
+                accountOptions={accountOptions}
+                probe={probe}
+                probing={probing}
+                onProbe={selectedEvent.supportsProbe ? () => void handleProbe() : undefined}
+              />
+            ) : null}
+          </Reveal>
           <Form.Item label="周期">
             <Space size={8} wrap>
               <Select
                 style={{ width: 120 }}
                 value={editor.scheduleKind}
-                onChange={(value) => setEditor((prev) => ({ ...prev, scheduleKind: value }))}
+                onChange={(value) => {
+                  const kindOrder = ['daily', 'weekly', 'interval', 'cron'] as const;
+                  switchScheduleSurface(() => {
+                    setEditor((prev) => ({ ...prev, scheduleKind: value }));
+                  }, {
+                    current: editor.scheduleKind,
+                    next: value,
+                    direction: resolveOrderedDirection(kindOrder, editor.scheduleKind, value)
+                  });
+                }}
                 options={[
                   { value: 'daily', label: '每天' },
                   { value: 'weekly', label: '每周' },
@@ -662,53 +698,55 @@ export default function ScheduledTasks() {
                   { value: 'cron', label: 'cron 表达式' }
                 ]}
               />
-              {editor.scheduleKind === 'weekly' ? (
-                <Select
-                  style={{ width: 110 }}
-                  value={editor.weekday}
-                  onChange={(value) => setEditor((prev) => ({ ...prev, weekday: Number(value) }))}
-                  options={WEEKDAYS.map((label, index) => ({ value: index, label }))}
-                />
-              ) : null}
-              {editor.scheduleKind === 'interval' ? (
-                <>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={24}
+              <div ref={scheduleSurfaceRef} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {editor.scheduleKind === 'weekly' ? (
+                  <Select
                     style={{ width: 110 }}
-                    value={editor.hours}
-                    addonAfter="小时"
-                    onChange={(event) => setEditor((prev) => ({ ...prev, hours: Number(event.target.value) }))}
+                    value={editor.weekday}
+                    onChange={(value) => setEditor((prev) => ({ ...prev, weekday: Number(value) }))}
+                    options={WEEKDAYS.map((label, index) => ({ value: index, label }))}
                   />
+                ) : null}
+                {editor.scheduleKind === 'interval' ? (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={24}
+                      style={{ width: 110 }}
+                      value={editor.hours}
+                      addonAfter="小时"
+                      onChange={(event) => setEditor((prev) => ({ ...prev, hours: Number(event.target.value) }))}
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      style={{ width: 110 }}
+                      value={editor.minutes}
+                      addonAfter="分钟"
+                      onChange={(event) => setEditor((prev) => ({ ...prev, minutes: Number(event.target.value) }))}
+                    />
+                  </>
+                ) : editor.scheduleKind === 'cron' ? (
                   <Input
-                    type="number"
-                    min={0}
-                    max={59}
-                    style={{ width: 110 }}
-                    value={editor.minutes}
-                    addonAfter="分钟"
-                    onChange={(event) => setEditor((prev) => ({ ...prev, minutes: Number(event.target.value) }))}
+                    style={{ width: 240 }}
+                    value={editor.expression}
+                    placeholder="分 时 日 月 周，例如 0 20 * * *"
+                    onChange={(event) => setEditor((prev) => ({ ...prev, expression: event.target.value }))}
                   />
-                </>
-              ) : editor.scheduleKind === 'cron' ? (
-                <Input
-                  style={{ width: 240 }}
-                  value={editor.expression}
-                  placeholder="分 时 日 月 周，例如 0 20 * * *"
-                  onChange={(event) => setEditor((prev) => ({ ...prev, expression: event.target.value }))}
-                />
-              ) : (
-                <TimePicker
-                  format="HH:mm"
-                  minuteStep={5}
-                  value={dayjs(editor.at, 'HH:mm')}
-                  onChange={(value) => setEditor((prev) => ({
-                    ...prev,
-                    at: value ? value.format('HH:mm') : prev.at
-                  }))}
-                />
-              )}
+                ) : (
+                  <TimePicker
+                    format="HH:mm"
+                    minuteStep={5}
+                    value={dayjs(editor.at, 'HH:mm')}
+                    onChange={(value) => setEditor((prev) => ({
+                      ...prev,
+                      at: value ? value.format('HH:mm') : prev.at
+                    }))}
+                  />
+                )}
+              </div>
             </Space>
             {/* 解读与下次运行由服务端算（唯一实现处），前端只展示。 */}
             {previewError ? (
@@ -737,7 +775,12 @@ export default function ScheduledTasks() {
         onCancel={() => setRecordsTask(null)}
       >
         {taskRecords.length === 0 ? (
-          <Empty description={taskRecordsLoading ? '读取中…' : `最近 ${recordDays} 天没有执行记录`} />
+          <HudStateView
+            compact
+            variant={taskRecordsLoading ? 'loading' : 'empty'}
+            code={taskRecordsLoading ? 'SYS // LOADING' : 'NO_TASK_LOGS'}
+            title={taskRecordsLoading ? '正在读取执行记录…' : `最近 ${recordDays} 天没有执行记录`}
+          />
         ) : (
           <Table<ScheduledTaskRecord>
             rowKey="id"
@@ -773,6 +816,6 @@ export default function ScheduledTasks() {
           />
         )}
       </Modal>
-    </div>
+    </PageScaffold>
   );
 }

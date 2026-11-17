@@ -9,6 +9,10 @@ import {
   DeleteOutlined,
 } from '@ant-design/icons';
 import { Button, Input, Modal, Spin, Tooltip, message } from 'antd';
+import HudCube from '@/components/hud/HudCube';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { useSearchParams } from 'react-router-dom';
 import { imageStudioAPI } from '@/services/api';
 import { buildAppHref } from '@/services/app-navigation';
@@ -117,6 +121,9 @@ const ImageStudioWorkspace: React.FC = () => {
   const [running, setRunning] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const sessionHeaderRef = useRef<HTMLDivElement | null>(null);
+  const { surfaceRef: mainStageRef, switchSurface: switchMainStage } = useSurfaceSwitch<HTMLElement>();
+  useSwitchFade(sessionHeaderRef, session?.id || null, { scope: 'image-studio-session-header', duration: 165 });
 
   const setSelectionFromSession = useCallback((
     nextSession: ImageStudioSession,
@@ -667,8 +674,13 @@ const ImageStudioWorkspace: React.FC = () => {
     return (
       <PageContainer title={false} className={styles.pageContainer}>
         <div className={styles.initialLoading} role="status">
-          <Spin size="large" />
-          <span>正在装载影像会话与模型目录…</span>
+          <HudStateView
+            variant="loading"
+            tone="violet"
+            cubeSize={44}
+            code="SYS // IMAGE_STUDIO"
+            title="正在装载影像会话与模型目录…"
+          />
         </div>
       </PageContainer>
     );
@@ -678,8 +690,10 @@ const ImageStudioWorkspace: React.FC = () => {
     <PageContainer title={false} className={styles.pageContainer}>
       <div className={styles.workspace}>
         <header className={styles.workspaceHeader}>
-          <div className={styles.workspaceIdentity}>
-            <span className={styles.workspaceMark}>IMG/</span>
+          <div ref={sessionHeaderRef} className={styles.workspaceIdentity}>
+            <span className={styles.workspaceMark}>
+              <HudCube size={22} mode="brand" tone="violet" interactive label="Image Studio 全息棱镜（点击果冻弹跳）" />
+            </span>
             <div>
               <span className={styles.eyebrow}>AI HOME · IMAGE STUDIO</span>
               <h1>{session?.title || '影像工作台'}</h1>
@@ -736,14 +750,22 @@ const ImageStudioWorkspace: React.FC = () => {
             onOpenWindow={handleOpenWindow}
           />
 
-          <main className={styles.workspaceMain}>
+          <main ref={mainStageRef} className={styles.workspaceMain}>
             <ImageStudioCanvas
               session={session}
               revision={selectedRevision}
               selectedAsset={selectedAsset}
               assetUrls={assetUrls}
               running={running}
-              onSelectAsset={setSelectedAssetId}
+              onSelectAsset={(nextAssetId) => {
+                const assetOrder = selectedRevision?.outputAssetIds || [];
+                switchMainStage(() => setSelectedAssetId(nextAssetId), {
+                  slot: 'asset',
+                  current: selectedAssetId,
+                  next: nextAssetId,
+                  direction: resolveOrderedDirection(assetOrder, selectedAssetId, nextAssetId)
+                });
+              }}
               onContinueEdit={handleContinueEdit}
               onReuseRevision={handleReuseRevision}
               onDownload={handleDownload}
@@ -754,8 +776,18 @@ const ImageStudioWorkspace: React.FC = () => {
               selectedRevisionId={selectedRevision?.id || ''}
               assetUrls={assetUrls}
               onSelect={(revision) => {
-                setSelectedRevisionId(revision.id);
-                setSelectedAssetId(getRevisionPreviewAssetId(revision));
+                const revisionOrder = (session?.revisions || []).map((item) => item.id);
+                switchMainStage(() => {
+                  setSelectedRevisionId(revision.id);
+                  setSelectedAssetId(getRevisionPreviewAssetId(revision));
+                }, {
+                  slot: 'revision',
+                  current: selectedRevision?.id,
+                  next: revision.id,
+                  direction: selectedRevision
+                    ? resolveOrderedDirection(revisionOrder, selectedRevision.id, revision.id)
+                    : 'neutral'
+                });
               }}
             />
           </main>

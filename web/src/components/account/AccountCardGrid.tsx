@@ -24,6 +24,7 @@ import {
 } from '@/features/accounts/AccountBadges';
 import { canCopyAccountEmail, requiresAccountReauth } from '@/features/accounts/account-state';
 import TokenUsageCell from './TokenUsageCell';
+import HudStateView from '@/components/hud/HudStateView';
 import { formatTimeCell } from '@/utils/datetime';
 import styles from './AccountCardGrid.module.css';
 
@@ -80,8 +81,13 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   const flipRef = useFlipReorder<HTMLDivElement>(accounts);
   if (accounts.length === 0 && !loading) {
     return (
-      <div key="empty" className={`${styles.emptyGrid} aih-fade-in`}>
-        <span>暂无配置的 {provider.toUpperCase()} 账号</span>
+      <div key="empty" className={`${styles.emptyGrid} hud-panel hud-panel--sm aih-fade-in`}>
+        <HudStateView
+          compact
+          code="NO_ACCOUNTS"
+          title={`暂无配置的 ${provider.toUpperCase()} 账号`}
+          description="点击右上角添加账号或导入凭据即可接入网关调度池。"
+        />
       </div>
     );
   }

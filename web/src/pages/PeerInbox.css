@@ -1,57 +1,81 @@
-/* peer 消息收件箱：正文等宽、长文本可折叠；状态色沿用 antd Tag。 */
-.peer-inbox-page {
-  padding: 16px;
+/* peer 消息收件箱：走 PageScaffold + SectionCard 赛博玻璃容器，全部使用设计 token（零硬编码色值）。 */
+.peer-inbox-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
 }
 
 .peer-inbox-time,
 .peer-inbox-id {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--color-text-secondary, #8c8c8c);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.peer-inbox-id {
+  color: var(--color-accent);
 }
 
 .peer-inbox-party {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   display: inline-block;
   max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .peer-inbox-body {
   margin-bottom: 0 !important;
   font-family: var(--font-mono);
   font-size: 12px;
+  color: var(--color-text);
   word-break: break-word;
 }
 
 .peer-inbox-detail {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
   font-size: 12px;
+  color: var(--color-text);
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
 }
 
 .peer-inbox-detail-label {
   display: inline-block;
-  min-width: 76px;
-  color: var(--color-text-secondary, #8c8c8c);
+  min-width: 82px;
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
 }
 
 .peer-inbox-error {
-  color: var(--color-error, #ff4d4f);
+  color: var(--color-danger);
   font-family: var(--font-mono);
 }
 
 .peer-inbox-raw {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  color: var(--color-heading);
   font-family: var(--font-mono);
   font-size: 12px;
-  background: var(--color-fill-quaternary, rgba(0, 0, 0, 0.03));
-  border-radius: 2px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

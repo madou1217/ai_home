@@ -36,8 +36,10 @@ import type {
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import Reveal from '@/components/ui/Reveal';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import UsageTrendChart from '@/features/model-usage/UsageTrendChart';
 import UsageModelMixChart from '@/features/model-usage/UsageModelMixChart';
 import RequestDetailsSection from '@/features/model-usage/RequestDetailsSection';
@@ -187,6 +189,7 @@ function buildQuery(
 export default function ModelUsage() {
   const [rangeMode, setRangeMode] = useState<RangeMode>('today');
   const [usageTab, setUsageTab] = useState<'model' | 'session'>('model');
+  const { surfaceRef: usageDataSurfaceRef, switchSurface: switchUsageDataSurface } = useSurfaceSwitch<HTMLDivElement>();
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => buildRangeByMode('today'));
   const [provider, setProvider] = useState<ProviderFilter>('');
   const [model, setModel] = useState('');
@@ -404,30 +407,56 @@ export default function ModelUsage() {
 
   const handleRangeChange = (value: null | [Dayjs | null, Dayjs | null]) => {
     if (!value || !value[0] || !value[1]) return;
-    beginUsageTransition();
-    setRangeMode('custom');
-    setRange([value[0], value[1]]);
-    setModel('');
+    const nextRange: [Dayjs, Dayjs] = [value[0], value[1]];
+    switchUsageDataSurface(() => {
+      beginUsageTransition();
+      setRangeMode('custom');
+      setRange(nextRange);
+      setModel('');
+    });
   };
 
   const handleRangeModeChange = (value: RangeMode) => {
-    beginUsageTransition();
-    setRangeMode(value);
-    setModel('');
-    if (value !== 'custom') {
-      setRange(buildRangeByMode(value));
-    }
+    const rangeOrder = RANGE_OPTIONS.map((item) => item.value);
+    switchUsageDataSurface(() => {
+      beginUsageTransition();
+      setRangeMode(value);
+      setModel('');
+      if (value !== 'custom') {
+        setRange(buildRangeByMode(value));
+      }
+    }, {
+      slot: 'rangeMode',
+      current: rangeMode,
+      next: value,
+      direction: resolveOrderedDirection(rangeOrder, rangeMode, value)
+    });
   };
 
   const handleProviderChange = (value: ProviderFilter) => {
-    beginUsageTransition();
-    setProvider(value);
-    setModel('');
+    const providerOrder = PROVIDER_OPTIONS.map((item) => item.value);
+    switchUsageDataSurface(() => {
+      beginUsageTransition();
+      setProvider(value);
+      setModel('');
+    }, {
+      slot: 'provider',
+      current: provider,
+      next: value,
+      direction: resolveOrderedDirection(providerOrder, provider, value)
+    });
   };
 
   const handleModelChange = (value: string | undefined) => {
-    beginUsageTransition();
-    setModel(String(value || ''));
+    const nextModel = String(value || '');
+    switchUsageDataSurface(() => {
+      beginUsageTransition();
+      setModel(nextModel);
+    }, {
+      slot: 'model',
+      current: model,
+      next: nextModel
+    });
   };
 
   const requestUsageRefresh = useCallback((quiet: boolean) => {
@@ -848,7 +877,7 @@ export default function ModelUsage() {
             options={RANGE_OPTIONS}
             onChange={(value) => handleRangeModeChange(value as RangeMode)}
           />
-          {rangeMode === 'custom' ? (
+          <Reveal open={rangeMode === 'custom'}>
             <RangePicker
               value={range}
               onChange={handleRangeChange}
@@ -857,7 +886,7 @@ export default function ModelUsage() {
               showTime={{ format: 'HH:mm' }}
               format="YYYY-MM-DD HH:mm"
             />
-          ) : null}
+          </Reveal>
           <div className="usage-provider-scroll">
             <Segmented
               value={provider}
@@ -881,50 +910,53 @@ export default function ModelUsage() {
         </Space>
       </SectionCard>
 
-      <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
-        <div className="usage-insight-grid">
-          <UsageTrendChart trend={trend} />
-          <UsageModelMixChart
-            models={models}
-            onSelectModel={(row) => void openBreakdown({ kind: 'model', row })}
-          />
-        </div>
-      </SectionCard>
+      <div ref={usageDataSurfaceRef}>
+        <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
+          <div className="usage-insight-grid">
+            <UsageTrendChart trend={trend} />
+            <UsageModelMixChart
+              models={models}
+              onSelectModel={(row) => void openBreakdown({ kind: 'model', row })}
+            />
+          </div>
+        </SectionCard>
 
-      <SectionCard className="usage-results-card">
-        <Tabs
-          activeKey={usageTab}
-          onChange={(key) => setUsageTab(key as 'model' | 'session')}
-          items={[
-            {
-              key: 'model',
-              label: '按模型',
-              children: (
-                <ListTable<ModelUsageModelRow>
-                  loading={loading && models.length === 0}
-                  rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
-                  columns={modelColumns}
-                  dataSource={models}
-                  scroll={{ x: 1280 }}
-                />
-              )
-            },
-            {
-              key: 'session',
-              label: '按会话',
-              children: (
-                <ListTable<ModelUsageSessionRow>
-                  loading={loading && sessions.length === 0}
-                  rowKey={getSessionKey}
-                  columns={sessionColumns}
-                  dataSource={sessions}
-                  scroll={{ x: 1560 }}
-                />
-              )
-            }
-          ]}
-        />
-      </SectionCard>
+        <SectionCard className="usage-results-card">
+          <Tabs
+            activeKey={usageTab}
+            animated={{ inkBar: true, tabPane: true }}
+            onChange={(key) => setUsageTab(key as 'model' | 'session')}
+            items={[
+              {
+                key: 'model',
+                label: '按模型',
+                children: (
+                  <ListTable<ModelUsageModelRow>
+                    loading={loading && models.length === 0}
+                    rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
+                    columns={modelColumns}
+                    dataSource={models}
+                    scroll={{ x: 1280 }}
+                  />
+                )
+              },
+              {
+                key: 'session',
+                label: '按会话',
+                children: (
+                  <ListTable<ModelUsageSessionRow>
+                    loading={loading && sessions.length === 0}
+                    rowKey={getSessionKey}
+                    columns={sessionColumns}
+                    dataSource={sessions}
+                    scroll={{ x: 1560 }}
+                  />
+                )
+              }
+            ]}
+          />
+        </SectionCard>
+      </div>
 
       <RequestDetailsSection
         usage={requestUsage}

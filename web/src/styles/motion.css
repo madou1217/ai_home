@@ -47,9 +47,59 @@
   animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
-/* Tabs：切换后的面板淡入（antd 默认无内容过渡） */
+/* Tabs：默认淡入兜底；开启 animated={{ inkBar: true, tabPane: true }} 时由 ant-tabs-switch 同步驱动新旧面板进离场 */
+.ant-tabs-content {
+  position: relative;
+}
+
 .ant-tabs-tabpane-active {
   animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+
+.ant-tabs-content-animated .ant-tabs-tabpane-active {
+  animation: none;
+}
+
+.ant-tabs .ant-tabs-switch-appear,
+.ant-tabs .ant-tabs-switch-enter {
+  opacity: 0;
+  transform: translate3d(6px, 0, 0);
+  transition: none;
+}
+
+.ant-tabs .ant-tabs-switch-appear.ant-tabs-switch-appear-active,
+.ant-tabs .ant-tabs-switch-enter.ant-tabs-switch-enter-active {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-snappy, var(--ease-standard)) !important;
+}
+
+.ant-tabs .ant-tabs-switch-leave {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  transform: none;
+  pointer-events: none;
+  transition: none;
+}
+
+.ant-tabs .ant-tabs-switch-leave.ant-tabs-switch-leave-active {
+  opacity: 0;
+  transform: translate3d(-6px, 0, 0);
+  pointer-events: none;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard) !important;
+}
+
+/* Collapse 折叠面板与侧栏内联 SubMenu 展开/收起：统一干脆阻尼曲线 */
+.ant-motion-collapse,
+.ant-motion-collapse-legacy-active {
+  transition:
+    height 180ms var(--ease-snappy, var(--ease-standard)),
+    opacity 160ms var(--ease-standard) !important;
 }
 
 /* 原生 antd Table（计划任务 / 上游映射 / egress 等旧页面直接用 Table）：
@@ -177,9 +227,9 @@ details[open]::details-content {
 
 /* ── 3. 交互反馈 ─────────────────────────────────────────────────────────── */
 
-/* 按钮按下：轻微下沉（App.css 规定按钮平面无投影，这里只给按压瞬间的 2% 缩放反馈） */
-.ant-btn:not(:disabled):active {
-  transform: scale(0.98);
+/* 按钮按下：快速干脆的触感微压（只给非禁用按钮 2.5% 瞬时缩放反馈，绝不阻断连点） */
+.ant-btn:not(:disabled):not(.ant-btn-loading):active {
+  transform: scale(0.975);
   transition-duration: var(--motion-instant);
 }
 .ant-btn {
@@ -189,7 +239,33 @@ details[open]::details-content {
     color var(--motion-fast) var(--ease-standard),
     box-shadow var(--motion-fast) var(--ease-standard),
     opacity var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    transform var(--motion-fast) var(--ease-snappy, var(--ease-standard));
+}
+.ant-btn:disabled,
+.ant-btn.ant-btn-disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.ant-btn.ant-btn-loading {
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border)) !important;
+  animation: aih-btn-loading-pulse 1.2s var(--ease-in-out) infinite;
+}
+@keyframes aih-btn-loading-pulse {
+  50% {
+    box-shadow: 0 0 14px color-mix(in srgb, var(--color-accent) 32%, transparent);
+  }
+}
+
+/* 复制成功 / 状态勾选的轻弹反馈：只做合成器 scale，backwards 保证终态无残留 transform */
+@keyframes aih-check-pop {
+  0% { opacity: 0.4; transform: scale(0.68); }
+  62% { opacity: 1; transform: scale(1.18); }
+  100% { opacity: 1; transform: none; }
+}
+.anticon-check.dash-error-copy-ok,
+.ant-typography-copy-success .anticon,
+.aih-check-pop {
+  animation: aih-check-pop 240ms var(--ease-spring-soft, var(--ease-standard)) backwards;
 }
 
 /* 悬停才出现的行内复制按钮（账号 / 模型 / 用量列表）：透明度淡入淡出，而不是硬切。
@@ -213,7 +289,11 @@ details[open]::details-content {
     box-shadow var(--motion-base) var(--ease-standard) !important;
 }
 .ant-pro-sider .ant-menu-item .hud-nav-no,
-.ant-pro-sider .ant-menu-item .hud-nav-code {
+.ant-pro-sider .ant-menu-item .hud-nav-code,
+.ant-pro-sider .ant-menu-submenu-title .hud-nav-no,
+.ant-pro-sider .ant-menu-submenu-title .hud-nav-code,
+.ant-menu-submenu-popup .ant-menu-item .hud-nav-no,
+.ant-menu-submenu-popup .ant-menu-item .hud-nav-code {
   transition: color var(--motion-fast) var(--ease-standard);
 }
 /* 折叠按钮：保留 ProLayout 的箭头旋转，同时让悬停颜色过渡 */
@@ -260,7 +340,7 @@ details[open]::details-content {
   transform: scale(0.99);
 }
 
-/* 表格行 / 列表项：悬停底色过渡，而不是硬切 */
+/* 表格行 / 列表项 / 下拉项：悬停底色、颜色与内边框平滑过渡（不碰几何与 transform，保持粘性列稳定） */
 .ant-table-tbody > tr > td,
 .ant-list-item,
 .ant-dropdown-menu-item,
@@ -269,7 +349,56 @@ details[open]::details-content {
 .ant-menu-submenu-title {
   transition:
     background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+/* Tabs / Segmented：指示条与滑块使用轻柔阻尼过渡，页签文字快速响应 */
+.ant-tabs .ant-tabs-tab,
+.ant-tabs .ant-tabs-tab-btn {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    text-shadow var(--motion-base) var(--ease-standard);
+}
+.ant-tabs .ant-tabs-ink-bar-animated {
+  transition:
+    width var(--motion-base) var(--ease-snappy, var(--ease-standard)),
+    left var(--motion-base) var(--ease-snappy, var(--ease-standard)),
+    top var(--motion-base) var(--ease-snappy, var(--ease-standard)),
+    height var(--motion-base) var(--ease-snappy, var(--ease-standard)) !important;
+}
+.ant-segmented .ant-segmented-item {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+.ant-segmented .ant-segmented-thumb-motion-appear-active,
+.ant-segmented .ant-segmented-thumb-motion-enter-active {
+  transition:
+    transform var(--motion-base) var(--ease-spring-soft, var(--ease-standard)),
+    width var(--motion-base) var(--ease-snappy, var(--ease-standard)) !important;
+}
+
+/* Form 聚焦与校验反馈：聚焦字段标签提亮为青色；校验报错轻摇提示（backwards 不残留 transform） */
+.ant-form-item .ant-form-item-label > label {
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.ant-form-item:focus-within .ant-form-item-label > label {
+  color: var(--color-accent);
+}
+@keyframes aih-form-error-nudge {
+  0%, 100% { transform: none; }
+  25% { transform: translate3d(-3px, 0, 0); }
+  65% { transform: translate3d(3px, 0, 0); }
+}
+.ant-form-item-has-error .ant-form-item-explain-error {
+  animation: aih-fade-up var(--motion-fast) var(--ease-standard) backwards;
+}
+.ant-form-item-has-error .ant-form-item-control-input {
+  animation: aih-form-error-nudge 210ms var(--ease-standard) backwards;
 }
 
 /* 标签 / 徽标：状态切换时颜色过渡 */
@@ -349,8 +478,45 @@ details[open]::details-content {
   from { opacity: 0; transform: scaleY(0.92); }
   to { opacity: 1; transform: scaleY(1); }
 }
-/* 弹窗（Modal，antd 用 zoom）同理：prepare/start 期间就开始淡入。起始缩放从 0.2 收到
- * 0.96 —— 0.2 放大的「从一个点长出来」在 HUD 风格里过重，也是首帧显得慢的原因之一。 */
+@keyframes aih-popup-slide-out {
+  from { opacity: 1; transform: scaleY(1); }
+  to { opacity: 0; transform: scaleY(0.95); }
+}
+.ant-slide-up-leave.ant-slide-up-leave-active {
+  animation-name: aih-popup-slide-out !important;
+  animation-duration: var(--motion-fast) !important;
+  animation-timing-function: var(--ease-standard) !important;
+  animation-fill-mode: both !important;
+  transform-origin: 0% 0%;
+}
+.ant-slide-down-leave.ant-slide-down-leave-active {
+  animation-name: aih-popup-slide-out !important;
+  animation-duration: var(--motion-fast) !important;
+  animation-timing-function: var(--ease-standard) !important;
+  animation-fill-mode: both !important;
+  transform-origin: 0% 100%;
+}
+/* Tooltip / Popover（zoom-big-fast）：进出场同步干脆 */
+.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-prepare,
+.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-start,
+.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-active,
+.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-prepare,
+.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-start,
+.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-active {
+  animation-name: aih-popup-zoom-in !important;
+  animation-duration: var(--motion-fast) !important;
+  animation-timing-function: var(--ease-snappy, var(--ease-standard)) !important;
+  animation-fill-mode: both !important;
+  animation-play-state: running !important;
+}
+.ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-active {
+  animation-name: aih-popup-zoom-out !important;
+  animation-duration: var(--motion-instant) !important;
+  animation-timing-function: var(--ease-standard) !important;
+  animation-fill-mode: both !important;
+}
+
+/* 弹窗（Modal，antd 用 zoom）进场与离场：prepare/start 期间就开始淡入，离场对称微收淡出。 */
 .ant-zoom-appear.ant-zoom-appear-prepare,
 .ant-zoom-appear.ant-zoom-appear-start,
 .ant-zoom-enter.ant-zoom-enter-prepare,
@@ -359,13 +525,41 @@ details[open]::details-content {
 .ant-zoom-enter.ant-zoom-enter-active {
   animation-name: aih-popup-zoom-in;
   animation-duration: var(--motion-slow);
-  animation-timing-function: var(--ease-emphasized, var(--ease-standard));
+  animation-timing-function: var(--ease-spring-soft, var(--ease-standard));
   animation-fill-mode: both;
   animation-play-state: running;
 }
+.ant-zoom-leave.ant-zoom-leave-active {
+  animation-name: aih-popup-zoom-out;
+  animation-duration: var(--motion-base);
+  animation-timing-function: var(--ease-standard);
+  animation-fill-mode: both;
+}
 @keyframes aih-popup-zoom-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: scale(0.95) translate3d(0, 4px, 0); }
+  to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+}
+@keyframes aih-popup-zoom-out {
+  from { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+  to { opacity: 0; transform: scale(0.965) translate3d(0, 3px, 0); }
+}
+
+/* Drawer / Modal 遮罩与面板抽拉：遵循 antd 自身的定位与 rc-motion 阶段，只统一时长与曲线 */
+.ant-fade-appear.ant-fade-appear-active,
+.ant-fade-enter.ant-fade-enter-active,
+.ant-motion-mask-appear-active,
+.ant-motion-mask-enter-active {
+  animation-duration: var(--motion-base) !important;
+  animation-timing-function: var(--ease-standard) !important;
+}
+.ant-fade-leave.ant-fade-leave-active,
+.ant-motion-mask-leave-active {
+  animation-duration: var(--motion-fast) !important;
+  animation-timing-function: var(--ease-standard) !important;
+}
+.ant-drawer .ant-drawer-content-wrapper {
+  transition-duration: var(--motion-slow) !important;
+  transition-timing-function: var(--ease-snappy, var(--ease-standard)) !important;
 }
 
 /* 进度条：宽度变化平滑 */
@@ -374,13 +568,118 @@ details[open]::details-content {
   transition: width var(--motion-slower) var(--ease-standard) !important;
 }
 
-/* ── 4. 减少动态效果 ─────────────────────────────────────────────────────── */
-/* 主题切换：View Transitions 的整页交叉淡入（旧帧/新帧各一张快照，合成器完成）。
- * 触发见 services/theme-transition.ts；不支持的浏览器直接切换，这里只调时长。 */
-::view-transition-old(root),
-::view-transition-new(root) {
+/* ── 4. View Transitions（主题 / 桌面主路由 / 局部面板预提交切换）与减少动态效果 ── */
+::view-transition,
+::view-transition-group(*),
+::view-transition-image-pair(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  pointer-events: none !important;
+}
+
+/* 主题切换：整页交叉淡入（旧帧/新帧各一张快照，合成器完成）。 */
+:root[data-vt-kind='theme']::view-transition-old(root),
+:root[data-vt-kind='theme']::view-transition-new(root) {
   animation-duration: 220ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 桌面主路由与局部面板切换：关闭 root 整页捕获，使顶栏 3D 魔方、侧栏导航、Segmented 滑块保持实时活性 */
+:root[data-vt-kind='route'],
+:root[data-vt-kind='surface'] {
+  view-transition-name: none;
+}
+
+/* 路由切换期间由 ::view-transition-new(aih-route-stage) 负责进场，避免页面壳层重复叠加 aih-fade-up */
+:root[data-vt-kind='route'] .unified-page-wrapper,
+:root[data-vt-kind='route'] .unified-page-scaffold--fullbleed,
+:root[data-vt-kind='route'] .scheduled-tasks-page,
+:root[data-vt-kind='surface'] .aih-panel-enter {
+  animation: none !important;
+}
+
+@keyframes aih-vt-route-out-fwd {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, -8px, 0); }
+}
+@keyframes aih-vt-route-in-fwd {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes aih-vt-route-out-bwd {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, 8px, 0); }
+}
+@keyframes aih-vt-route-in-bwd {
+  from { opacity: 0; transform: translate3d(0, -10px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+:root[data-vt-kind='route']::view-transition-old(aih-route-stage) {
+  animation: aih-vt-route-out-fwd 160ms cubic-bezier(0.3, 0, 0.8, 0.15) both;
+}
+:root[data-vt-kind='route']::view-transition-new(aih-route-stage) {
+  animation: aih-vt-route-in-fwd 215ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+:root[data-vt-kind='route'][data-vt-dir='backward']::view-transition-old(aih-route-stage) {
+  animation-name: aih-vt-route-out-bwd;
+}
+:root[data-vt-kind='route'][data-vt-dir='backward']::view-transition-new(aih-route-stage) {
+  animation-name: aih-vt-route-in-bwd;
+}
+
+@keyframes aih-vt-surface-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.992); }
+}
+@keyframes aih-vt-surface-in {
+  from { opacity: 0; transform: translate3d(0, 5px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes aih-vt-surface-out-fwd {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(-8px, 0, 0); }
+}
+@keyframes aih-vt-surface-in-fwd {
+  from { opacity: 0; transform: translate3d(8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes aih-vt-surface-out-bwd {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(8px, 0, 0); }
+}
+@keyframes aih-vt-surface-in-bwd {
+  from { opacity: 0; transform: translate3d(-8px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+:root[data-vt-kind='surface']::view-transition-old(*) {
+  animation: aih-vt-surface-out 135ms cubic-bezier(0.3, 0, 0.8, 0.15) both;
+}
+:root[data-vt-kind='surface']::view-transition-new(*) {
+  animation: aih-vt-surface-in 175ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+:root[data-vt-kind='surface'][data-vt-dir='forward']::view-transition-old(*) {
+  animation-name: aih-vt-surface-out-fwd;
+}
+:root[data-vt-kind='surface'][data-vt-dir='forward']::view-transition-new(*) {
+  animation-name: aih-vt-surface-in-fwd;
+}
+:root[data-vt-kind='surface'][data-vt-dir='backward']::view-transition-old(*) {
+  animation-name: aih-vt-surface-out-bwd;
+}
+:root[data-vt-kind='surface'][data-vt-dir='backward']::view-transition-new(*) {
+  animation-name: aih-vt-surface-in-bwd;
+}
+
+@keyframes aih-reduced-motion-complete {
+  from { opacity: 0.999; transform: none; }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes aih-reduced-motion-leave {
+  from { opacity: 0.001; transform: none; }
+  to { opacity: 0; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -393,10 +692,104 @@ details[open]::details-content {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .ant-btn:not(:disabled):active,
+  .ant-btn:not(:disabled):not(.ant-btn-loading):active,
   .ant-card-hoverable:hover,
   .toolkit-observation-card:hover,
   .toolkit-tool-config-card:hover {
     transform: none;
+  }
+
+  /* rc-motion 仅在 STEP_ACTIVE 挂载 animationend/transitionend 监听（useStatus.js:131）。
+   * 减少动态效果下：
+   * 1) prepare/start 阶段显式取消动画并立即呈现（opacity:1 + transform:none），防止 0ms 动画在
+   *    监听器挂载前提前跑完导致 active 阶段同名动画不再重播而卡在 motionDeadline(1000ms)；
+   * 2) active / leave-active 阶段挂载无位移/无缩放/无模糊的 1ms 瞬时动画，保证 STEP_ACTIVE
+   *    的监听器在下一帧可靠收到 animationend 并立即退出 inMotion，不阻塞 Trigger triggerAlign。 */
+  .ant-slide-up-appear.ant-slide-up-appear-prepare,
+  .ant-slide-up-appear.ant-slide-up-appear-start,
+  .ant-slide-up-enter.ant-slide-up-enter-prepare,
+  .ant-slide-up-enter.ant-slide-up-enter-start,
+  .ant-slide-down-appear.ant-slide-down-appear-prepare,
+  .ant-slide-down-appear.ant-slide-down-appear-start,
+  .ant-slide-down-enter.ant-slide-down-enter-prepare,
+  .ant-slide-down-enter.ant-slide-down-enter-start,
+  .ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-prepare,
+  .ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-start,
+  .ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-prepare,
+  .ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-start,
+  .ant-zoom-appear.ant-zoom-appear-prepare,
+  .ant-zoom-appear.ant-zoom-appear-start,
+  .ant-zoom-enter.ant-zoom-enter-prepare,
+  .ant-zoom-enter.ant-zoom-enter-start {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .ant-slide-up-appear.ant-slide-up-appear-active,
+  .ant-slide-up-enter.ant-slide-up-enter-active,
+  .ant-slide-down-appear.ant-slide-down-appear-active,
+  .ant-slide-down-enter.ant-slide-down-enter-active,
+  .ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-active,
+  .ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-active,
+  .ant-zoom-appear.ant-zoom-appear-active,
+  .ant-zoom-enter.ant-zoom-enter-active,
+  .ant-fade-appear.ant-fade-appear-active,
+  .ant-fade-enter.ant-fade-enter-active,
+  .ant-motion-mask-appear-active,
+  .ant-motion-mask-enter-active {
+    animation-name: aih-reduced-motion-complete !important;
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-timing-function: linear !important;
+    animation-fill-mode: both !important;
+    animation-play-state: running !important;
+    transform: none !important;
+  }
+
+  .ant-slide-up-leave.ant-slide-up-leave-active,
+  .ant-slide-down-leave.ant-slide-down-leave-active,
+  .ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-active,
+  .ant-zoom-leave.ant-zoom-leave-active,
+  .ant-fade-leave.ant-fade-leave-active,
+  .ant-motion-mask-leave-active {
+    animation-name: aih-reduced-motion-leave !important;
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-timing-function: linear !important;
+    animation-fill-mode: both !important;
+    animation-play-state: running !important;
+    transform: none !important;
+  }
+
+  .ant-drawer .ant-drawer-content-wrapper,
+  .ant-tabs .ant-tabs-switch-appear.ant-tabs-switch-appear-active,
+  .ant-tabs .ant-tabs-switch-enter.ant-tabs-switch-enter-active,
+  .ant-tabs .ant-tabs-switch-leave.ant-tabs-switch-leave-active,
+  .ant-motion-collapse,
+  .ant-motion-collapse-legacy-active {
+    transition-duration: 1ms !important;
+    transform: none !important;
+  }
+  .ant-tabs .ant-tabs-switch-appear,
+  .ant-tabs .ant-tabs-switch-enter,
+  .ant-tabs .ant-tabs-switch-leave,
+  .toolkit-secondary-nav-item:active {
+    transform: none !important;
+  }
+  .ant-drawer-panel-motion-left-appear,
+  .ant-drawer-panel-motion-left-enter,
+  .ant-drawer-panel-motion-left-leave,
+  .ant-drawer-panel-motion-right-appear,
+  .ant-drawer-panel-motion-right-enter,
+  .ant-drawer-panel-motion-right-leave,
+  .ant-drawer-panel-motion-top-appear,
+  .ant-drawer-panel-motion-top-enter,
+  .ant-drawer-panel-motion-top-leave,
+  .ant-drawer-panel-motion-bottom-appear,
+  .ant-drawer-panel-motion-bottom-enter,
+  .ant-drawer-panel-motion-bottom-leave {
+    transform: none !important;
   }
 }

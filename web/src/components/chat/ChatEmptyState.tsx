@@ -1,5 +1,6 @@
 import { MessageOutlined, FolderOpenOutlined, PlusOutlined, RocketOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import HudCube from '@/components/hud/HudCube';
 import styles from './message-area.module.css';
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 export default function ChatEmptyState({
   mode = 'work',
   projectPath,
+  mobile,
   onCreateSession,
   onOpenProject,
 }: Props) {
@@ -20,9 +22,15 @@ export default function ChatEmptyState({
     return (
       <div className={styles.emptyContainerHarmony}>
         <div className={`hud-panel ${styles.emptyCardHarmony}`}>
-          <div className={styles.emptyIconBadgeHarmony}>
-            <RocketOutlined />
-          </div>
+          {mobile ? (
+            <div className={styles.emptyIconBadgeHarmony}>
+              <RocketOutlined />
+            </div>
+          ) : (
+            <div className={styles.emptyCubeStage}>
+              <HudCube size={42} mode="empty" tone="cyan" interactive label="点击弹跳 AI 会话全息魔方" />
+            </div>
+          )}
           <h2 className={styles.emptyTitleHarmony}>AI Home 纯聊天模式</h2>
           <div className={styles.emptyPromptChips}>
             {['💡 构思全栈系统架构', '⚡ 优化高并发流式渲染', '🎨 设计一个数据表格组件', '🔍 审查代码逻辑缺陷'].map((prompt) => (
@@ -56,9 +64,15 @@ export default function ChatEmptyState({
   return (
     <div className={styles.emptyContainerHarmony}>
       <div className={`hud-panel ${styles.emptyCardHarmony}`}>
-        <div className={styles.emptyIconBadgeHarmony}>
-          <FolderOpenOutlined />
-        </div>
+        {mobile ? (
+          <div className={styles.emptyIconBadgeHarmony}>
+            <FolderOpenOutlined />
+          </div>
+        ) : (
+          <div className={styles.emptyCubeStage}>
+            <HudCube size={42} mode="empty" tone="violet" interactive label="点击弹跳工作区全息魔方" />
+          </div>
+        )}
         <h2 className={styles.emptyTitleHarmony}>
           {projectPath ? '工作区项目就绪' : 'Work 工作区工程模式'}
         </h2>

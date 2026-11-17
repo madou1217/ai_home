@@ -71,11 +71,19 @@
 
 .defaultStar {
   color: var(--color-disabled);
+  transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-spring-soft, var(--ease-standard));
 }
 
 .defaultStarActive {
   color: var(--color-warning);
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-warning) 70%, transparent));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-warning) 75%, transparent));
+  animation: starPop 280ms var(--ease-spring-soft, var(--ease-standard)) backwards;
+}
+
+@keyframes starPop {
+  0% { transform: scale(0.72) rotate(-18deg); }
+  65% { transform: scale(1.22) rotate(6deg); }
+  100% { transform: none; }
 }
 
 .cardBody {
@@ -134,11 +142,21 @@
   font-variant-numeric: tabular-nums;
   line-height: 16px;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease-standard);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-instant) var(--ease-standard);
 }
 
 .pricingCapsule:hover:not(:disabled) {
   background: var(--color-overlay);
+  border-color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.pricingCapsule:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .pricingCapsule:disabled {
@@ -223,4 +241,10 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--color-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pricingCapsule:active:not(:disabled) {
+    transform: none;
+  }
 }

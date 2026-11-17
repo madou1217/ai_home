@@ -19,6 +19,10 @@ interface Props {
   projectPath?: string;
   workspace?: WorkbenchWorkspaceDescriptor;
   mobile: boolean;
+  /** 是否激活外围项目工作台壳（左文件/Sessions + 右 Review/浏览器或窄屏标签栏）；false 时仅保留中心会话槽位以维持单树身份。 */
+  chromeActive?: boolean;
+  /** 桌面原生快捷小窗固定使用 columns 宿主结构，避免跨 600px 断点切换布局分支导致会话组件卸载重建。 */
+  forceColumnsLayout?: boolean;
   chat: ReactNode;
   // 三栏左栏 Sessions 页签数据（Chat.tsx canonicalDirectory 派生，只读）。
   sessions?: readonly Session[];
@@ -40,6 +44,8 @@ export default function ProjectWorkbench({
   projectPath,
   workspace,
   mobile,
+  chromeActive = true,
+  forceColumnsLayout = false,
   chat,
   sessions = [],
   selectedSession = null,
@@ -87,14 +93,16 @@ export default function ProjectWorkbench({
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) || state.tabs[0];
   const chatVisible = activeTab.kind === 'chat';
   const toolVisible = !chatVisible;
-  // PC（>= 768px）三栏同屏；窄屏回退互斥标签页。标签页状态加载/保存不受布局模式影响。
-  const layoutMode = resolveLayoutMode(mobile);
+  // PC（>= 768px）及桌面原生 QuickChat 走 columns 宿主；窄屏回退互斥标签页。标签页状态加载/保存不受布局模式影响。
+  const layoutMode = forceColumnsLayout ? 'columns' : resolveLayoutMode(mobile);
+  const showChatRegion = !chromeActive || chatVisible;
 
   return (
     <WorkbenchProvider value={actions}>
-      <div className={styles.workbench} data-mobile={mobile}>
+      <div className={styles.workbench} data-mobile={mobile} data-chrome={chromeActive ? 'true' : 'false'}>
         {layoutMode === 'columns' ? (
           <WorkbenchColumns
+            chromeActive={chromeActive}
             projectPath={projectPath}
             workspace={workspace}
             chat={chat}
@@ -105,31 +113,35 @@ export default function ProjectWorkbench({
           />
         ) : (
           <>
-            <WorkbenchTabBar
-              tabs={state.tabs}
-              activeTabId={state.activeTabId}
-              onActivate={(id) => dispatch({ type: 'tab/activate', id })}
-              onClose={(id) => dispatch({ type: 'tab/close', id })}
-              onAdd={openPanel}
-            />
+            {chromeActive ? (
+              <WorkbenchTabBar
+                tabs={state.tabs}
+                activeTabId={state.activeTabId}
+                onActivate={(id) => dispatch({ type: 'tab/activate', id })}
+                onClose={(id) => dispatch({ type: 'tab/close', id })}
+                onAdd={openPanel}
+              />
+            ) : null}
             <div className={styles.workspaceStage}>
+              {chromeActive ? (
+                <section
+                  className={`${styles.toolRegion} ${toolVisible ? styles.regionVisible : styles.regionHidden}`}
+                  aria-hidden={!toolVisible}
+                  {...(!toolVisible ? { inert: '' } : {})}
+                >
+                  <WorkbenchPanelHost
+                    state={state}
+                    projectPath={projectPath}
+                    workspace={workspace}
+                    mobile={mobile}
+                    onClose={(id) => dispatch({ type: 'tab/close', id })}
+                  />
+                </section>
+              ) : null}
               <section
-                className={`${styles.toolRegion} ${toolVisible ? styles.regionVisible : styles.regionHidden}`}
-                aria-hidden={!toolVisible}
-                {...(!toolVisible ? { inert: '' } : {})}
-              >
-                <WorkbenchPanelHost
-                  state={state}
-                  projectPath={projectPath}
-                  workspace={workspace}
-                  mobile={mobile}
-                  onClose={(id) => dispatch({ type: 'tab/close', id })}
-                />
-              </section>
-              <section
-                className={`${styles.chatRegion} ${chatVisible ? styles.regionVisible : styles.regionHidden}`}
-                aria-hidden={!chatVisible}
-                {...(!chatVisible ? { inert: '' } : {})}
+                className={`${styles.chatRegion} ${showChatRegion ? styles.regionVisible : styles.regionHidden}`}
+                aria-hidden={!showChatRegion}
+                {...(!showChatRegion ? { inert: '' } : {})}
               >
                 {chat}
               </section>

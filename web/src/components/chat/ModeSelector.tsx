@@ -12,7 +12,10 @@ interface Props {
 
 export const ModeSelector = memo(function ModeSelector({ mode, onChange, mobile = false }: Props) {
   return (
-    <div className={`${styles.modeSelectorContainer} ${mobile ? styles.modeSelectorMobile : ''}`}>
+    <div
+      className={`${styles.modeSelectorContainer} ${mobile ? styles.modeSelectorMobile : ''}`}
+      data-mode={mode}
+    >
       <button
         type="button"
         className={`${styles.modeOptionBtn} ${mode === 'chat' ? styles.modeOptionBtnActive : ''}`}

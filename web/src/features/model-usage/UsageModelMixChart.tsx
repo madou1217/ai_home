@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Empty, Segmented } from 'antd';
+import { Segmented } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 
 import { providerNames } from '@/components/chat/provider-registry';
 import type { ModelUsageModelRow } from '@/types';
@@ -44,6 +46,7 @@ function buildModelMixTooltipFormatter(data: ModelMixDatum[], metric: ModelMixMe
 
 export default function UsageModelMixChart({ models, onSelectModel }: UsageModelMixChartProps) {
   const [metric, setMetric] = useState<ModelMixMetric>('tokens');
+  const { surfaceRef, switchSurface } = useSurfaceSwitch<HTMLDivElement>();
   const data = useMemo(() => buildModelMixData(models, metric), [metric, models]);
 
   const buildOption = useCallback((palette: UsageChartPalette) => ({
@@ -121,18 +124,27 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
             { label: 'Tokens', value: 'tokens' },
             { label: '成本', value: 'cost' }
           ]}
-          onChange={(value) => setMetric(value as ModelMixMetric)}
+          onChange={(value) => {
+            const next = value as ModelMixMetric;
+            switchSurface(() => setMetric(next), {
+              current: metric,
+              next,
+              direction: next === 'cost' ? 'forward' : 'backward'
+            });
+          }}
         />
       </div>
-      {data.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型分量" />
-      ) : (
-        <EChartCanvas
-          ariaLabel="模型用量排名"
-          buildOption={buildOption}
-          onDataClick={handleDataClick}
-        />
-      )}
+      <div ref={surfaceRef}>
+        {data.length === 0 ? (
+          <HudStateView compact code="NO_MIX" title="暂无模型分量" />
+        ) : (
+          <EChartCanvas
+            ariaLabel="模型用量排名"
+            buildOption={buildOption}
+            onDataClick={handleDataClick}
+          />
+        )}
+      </div>
     </div>
   );
 }

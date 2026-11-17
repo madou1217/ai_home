@@ -1,10 +1,12 @@
 .workbench {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex-direction: column;
   overflow: hidden;
-  background: var(--hos-bg);
+  background: var(--color-bg, var(--hos-bg));
 }
 
 .tabBar {
@@ -332,6 +334,7 @@
 .columnsLayout {
   position: relative;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   flex: 1;
@@ -346,8 +349,8 @@
   overflow: hidden;
 }
 .columnSide { background: var(--hos-surface-raised); }
-.columnCenter { background: var(--hos-bg); }
-.columnCenter > * { min-width: 0; min-height: 0; }
+.columnCenter { background: var(--color-bg, var(--hos-bg)); }
+.columnCenter > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 
 /* 分隔条：6px 命中区 + 居中 1px 功能分隔线，悬停/拖动时仅 1px 细线高亮（禁大块强调）。 */
 .columnDivider {

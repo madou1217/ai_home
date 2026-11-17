@@ -22,6 +22,10 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import Reveal from '@/components/ui/Reveal';
+import HudCube from '@/components/hud/HudCube';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { translationAPI } from '@/services/api';
 import type { TranslationDetectionResponse, TranslationRoutePreference, TranslationProviderOption } from '@/types';
 import {
@@ -117,6 +121,8 @@ export default function TranslationWorkspace() {
 
   // 翻译记录是「新的在最上面」：只让新插入的那一条进场（head 模式追加判定）。
   const historyListRef = useRef<HTMLUListElement | null>(null);
+  const outputRef = useRef<HTMLDivElement | null>(null);
+  const { surfaceRef: historySurfaceRef, switchSurface: switchHistorySurface } = useSurfaceSwitch<HTMLDivElement>();
   const historyKeys = useMemo(() => history.entries.map((entry) => entry.id), [history.entries]);
   useAppendEnter(historyListRef, historyKeys, 'translation-history', {
     selector: '[data-history-item]',
@@ -645,6 +651,8 @@ export default function TranslationWorkspace() {
     });
 
   const pageFailedCount = pageProgress.filter((item) => Boolean(item.error)).length;
+  const outputPhaseKey = resultText ? 'result' : feedback.active ? 'waiting' : 'empty';
+  useSwitchFade(outputRef, outputPhaseKey, { scope: 'translation-output-phase', duration: 165, from: 0.4 });
 
   return (
     <PageScaffold
@@ -798,7 +806,7 @@ export default function TranslationWorkspace() {
                 </Button>
               </div>
             </footer>
-            {showConfirmation ? (
+            <Reveal open={showConfirmation}>
               <div className={styles.languageIntentStrip} role="status">
                 <span>{intentMessage}</span>
                 <Select
@@ -811,7 +819,7 @@ export default function TranslationWorkspace() {
                 <Button appVariant="quiet" onClick={handleKeepOriginal}>保持原文</Button>
                 {sameLanguage ? <Button appVariant="secondary" onClick={() => void handleTranslate('explicit')}>仍然翻译</Button> : null}
               </div>
-            ) : null}
+            </Reveal>
           </section>
 
           <section className={`${styles.pane} ${styles.paneResult} ${styles['pane--result']}`} data-phase={feedback.phase} aria-labelledby="translation-result-title" aria-busy={feedback.active}>
@@ -819,14 +827,14 @@ export default function TranslationWorkspace() {
               <span id="translation-result-title" className={styles.paneTitle}>译文输出</span>
               <span className={styles.paneMeta}>{routeLabel}</span>
             </header>
-            {stream.state.status !== 'idle' || detecting ? (
+            <Reveal open={stream.state.status !== 'idle' || detecting}>
               <div className={styles.translationStatus} role="status" aria-live="polite">
                 <span className={styles.statusDot} aria-hidden="true" />
                 <span key={feedback.phase} className={styles.statusCaption}>{feedback.label}</span>
                 <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
               </div>
-            ) : null}
-            <div className={styles.output} aria-label="译文输出">
+            </Reveal>
+            <div ref={outputRef} className={styles.output} aria-label="译文输出">
               {resultText ? (
                 <div className={styles.outputText}>
                   {resultText}
@@ -839,7 +847,7 @@ export default function TranslationWorkspace() {
                 </div>
               ) : (
                 <div className={styles.outputEmpty}>
-                  <span className={styles.outputEmptyIcon} aria-hidden="true"><TranslationOutlined /></span>
+                  <HudCube size={32} mode={busy ? 'loading' : 'empty'} tone="cyan" interactive={!busy} label="点击弹跳译文工作台全息魔方" />
                   <strong>{busy ? '正在翻译…' : '译文会在这里流式出现'}</strong>
                   <span>输入原文并开始翻译，结果会实时显示在这里。</span>
                 </div>
@@ -930,12 +938,12 @@ export default function TranslationWorkspace() {
               {pageApplied && !pageBusy ? <Button appVariant="quiet" aria-label="撤回页面译文" onClick={() => { pageUndoRef.current?.(); pageUndoRef.current = null; setPageProgress([]); setPageApplied(false); }}>撤回页面译文</Button> : null}
             </div>
           </div>
-          {pageBusy || pageProgress.length || pageCancelled ? (
+          <Reveal open={Boolean(pageBusy || pageProgress.length || pageCancelled)}>
             <div className={styles.pageTranslationProgress} role="status" aria-live="polite">
               <span>{pageBusy ? '正在翻译页面' : pageCancelled ? '已停止页面翻译' : '页面翻译完成'} · 已处理 {pageProgress.length} 段</span>
               {pageFailedCount ? <span className={styles.limitWarning}>失败 {pageFailedCount} 段，可重试</span> : null}
             </div>
-          ) : null}
+          </Reveal>
         </section>
 
         <details className={styles.advancedTranslationSettings}>
@@ -1129,15 +1137,20 @@ export default function TranslationWorkspace() {
               {history.entries.length} 条 · 仅保存在本机
             </span>
             {history.entries.length ? (
-              <Button appVariant="quiet" aria-label="清空翻译记录" onClick={history.clear}>
+              <Button
+                appVariant="quiet"
+                aria-label="清空翻译记录"
+                onClick={() => switchHistorySurface(() => history.clear(), { direction: 'backward' })}
+              >
                 清空记录
               </Button>
             ) : null}
           </div>
         </header>
+        <div ref={historySurfaceRef}>
         {history.entries.length === 0 ? (
           <div className={styles.historyEmpty}>
-            <span className={styles.historyEmptyIcon} aria-hidden="true"><TranslationOutlined /></span>
+            <HudCube size={32} mode="empty" tone="violet" interactive label="点击弹跳翻译历史全息魔方" />
             <strong>还没有翻译记录</strong>
             <span>完成一次翻译后，原文、译文和模型信息会保存在本机。</span>
           </div>
@@ -1168,7 +1181,13 @@ export default function TranslationWorkspace() {
                       aria-label="删除这条记录"
                       title="删除这条记录"
                       icon={<DeleteOutlined />}
-                      onClick={() => history.remove(entry.id)}
+                      onClick={() => {
+                        if (history.entries.length === 1) {
+                          switchHistorySurface(() => history.remove(entry.id), { direction: 'backward' });
+                          return;
+                        }
+                        history.remove(entry.id);
+                      }}
                     />
                   </div>
                 </div>
@@ -1184,6 +1203,7 @@ export default function TranslationWorkspace() {
             ))}
           </ul>
         )}
+        </div>
       </section>
     </PageScaffold>
   );

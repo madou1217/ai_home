@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Empty, Segmented } from 'antd';
+import { Segmented } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 
 import type { ModelUsageTrend } from '@/types';
 import EChartCanvas, { buildChartTooltipStyle, type UsageChartPalette } from './EChartCanvas';
@@ -50,8 +52,11 @@ function createBaseOption(
   };
 }
 
+const TREND_MODES: readonly TrendMode[] = ['tokens', 'cost', 'cache'];
+
 export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
   const [mode, setMode] = useState<TrendMode>('tokens');
+  const { surfaceRef, switchSurface } = useSurfaceSwitch<HTMLDivElement>();
   const slots = useMemo(() => buildSlots(trend), [trend]);
   const labels = useMemo(() => slots.map((point, index) => (
     formatAxisTime(point?.bucketStartMs || trend.fromMs + index * trend.bucketMs, trend.bucketMs)
@@ -139,14 +144,23 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
             { label: '成本', value: 'cost' },
             { label: '缓存率', value: 'cache' }
           ]}
-          onChange={(value) => setMode(value as TrendMode)}
+          onChange={(value) => {
+            const next = value as TrendMode;
+            switchSurface(() => setMode(next), {
+              current: mode,
+              next,
+              direction: resolveOrderedDirection(TREND_MODES, mode, next)
+            });
+          }}
         />
       </div>
-      {slots.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无趋势数据" />
-      ) : (
-        <EChartCanvas ariaLabel="模型用量时间趋势" buildOption={buildOption} />
-      )}
+      <div ref={surfaceRef}>
+        {slots.length === 0 ? (
+          <HudStateView compact code="NO_TREND" title="暂无趋势数据" />
+        ) : (
+          <EChartCanvas ariaLabel="模型用量时间趋势" buildOption={buildOption} />
+        )}
+      </div>
     </div>
   );
 }

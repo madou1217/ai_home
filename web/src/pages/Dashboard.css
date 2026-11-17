@@ -21,9 +21,13 @@
   box-shadow: none;
 }
 
-/* ── 健康状态行（中性表面，只有状态点 / 文案 / 进度填充带状态色） ── */
+/* ── 健康状态行（赛博玻璃折射层，只有状态点 / 文案 / 进度填充带状态色） ── */
 .dash-hero {
   padding: var(--space-7, 14px) var(--space-8, 16px);
+  background:
+    var(--hud-glass-sheen),
+    var(--hud-glass-gradient),
+    var(--hud-panel-bg) !important;
 }
 
 .dash-hero-head {
@@ -130,11 +134,18 @@
   letter-spacing: 0.04em;
   line-height: 20px;
   color: var(--color-muted);
-  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
   border-radius: 2px;
   padding: 0 var(--space-4, 8px);
   font-variant-numeric: tabular-nums;
+  transition:
+    border-color var(--motion-fast, 120ms) var(--ease-standard),
+    background-color var(--motion-fast, 120ms) var(--ease-standard);
+}
+.dash-chip:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 11%, transparent);
 }
 .dash-chip b { color: var(--color-accent); font-weight: var(--weight-bold, 700); }
 
@@ -237,9 +248,21 @@
 }
 .dash-pcard {
   padding: var(--space-7, 14px) var(--space-8, 16px);
+  transition:
+    border-color var(--motion-base, 160ms) var(--ease-standard),
+    box-shadow var(--motion-base, 160ms) var(--ease-standard),
+    transform var(--motion-base, 160ms) var(--ease-snappy, var(--ease-standard));
 }
-/* 悬停：青色描边（.hud-panel:hover）+ 轻微青色内辉光（切角 clip-path 会裁掉外发光） */
-.dash-pcard:hover { box-shadow: inset 0 0 16px color-mix(in srgb, var(--color-accent) 10%, transparent); }
+/* 悬停：微浮 1px + 青色描边 + 轻微青紫内辉光（切角 clip-path 会裁掉外发光） */
+.dash-pcard:hover {
+  transform: translate3d(0, -1px, 0);
+  box-shadow:
+    inset 0 1px 0 var(--hud-glass-specular, transparent),
+    inset 0 0 20px color-mix(in srgb, var(--color-accent) 11%, transparent) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-pcard:hover { transform: none; }
+}
 /* 离线：内容降权，表面保持不透明（深色下不出现半透明灰块） */
 .dash-pcard--offline > * { opacity: 0.6; }
 .dash-pcard-head {
@@ -485,6 +508,15 @@
   flex-direction: column;
   gap: var(--space-6, 12px);
   padding: var(--space-7, 14px) var(--space-8, 16px);
+}
+.dash-route-item {
+  padding: var(--space-2, 4px) var(--space-3, 6px);
+  margin: 0 calc(var(--space-3, 6px) * -1);
+  border-radius: 2px;
+  transition: background-color var(--motion-fast, 120ms) var(--ease-standard);
+}
+.dash-route-item:hover {
+  background: var(--color-overlay-subtle);
 }
 .dash-route-line {
   display: flex;

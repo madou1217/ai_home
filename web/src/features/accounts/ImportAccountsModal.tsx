@@ -1,6 +1,7 @@
 import { Input, Modal, Segmented } from 'antd';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import type { ImportMode } from './account-import-export';
 
 interface ImportAccountsModalProps {
@@ -20,6 +21,7 @@ interface ImportAccountsModalProps {
 /**
  * 导入账号：只接受 aih 自己导出的账号文件（WebUI「导出」或 `aih export` 生成），
  * 同一身份更新原账号、新身份新增，重复导入不会多出账号。
+ * 文件 / 粘贴模式切换采用预提交双帧过渡，同时完整保留已粘贴的草稿文本。
  */
 export function ImportAccountsModal({
   open,
@@ -34,6 +36,8 @@ export function ImportAccountsModal({
   onSubmit,
   onCancel
 }: ImportAccountsModalProps) {
+  const { surfaceRef: modeSurfaceRef, switchSurface: switchModeSurface } = useSurfaceSwitch<HTMLDivElement>();
+
   return (
     <Modal
       title="导入账号"
@@ -48,41 +52,49 @@ export function ImportAccountsModal({
       <div className="aih-overlay-stack">
         <Segmented
           value={mode}
-          onChange={(value) => onModeChange(value as ImportMode)}
+          onChange={(value) => {
+            const next = value as ImportMode;
+            switchModeSurface(() => onModeChange(next), {
+              current: mode,
+              next,
+              direction: next === 'text' ? 'forward' : 'backward'
+            });
+          }}
           options={[
             { label: '文件', value: 'file' },
             { label: '粘贴', value: 'text' }
           ]}
         />
-        {mode === 'file' ? (
-          <InlineNote
-            key="file"
-            className="aih-fade-in"
-            tone={fileName ? 'success' : 'info'}
-            description="选择 aih 导出的账号文件（可多选）。已有的账号会更新凭据，不会重复添加。"
-            action={
-              <Button size="small" onClick={onPickFile}>
-                {fileName ? '重新选择' : '选择文件'}
-              </Button>
-            }
-          >
-            {fileName ? `已选择 ${fileName}` : '选择 .json 账号文件'}
-          </InlineNote>
-        ) : null}
-        {mode === 'text' ? (
-          <div key="text" className="accounts-import-paste aih-fade-in">
-            <InlineNote tone="info" description="粘贴导出文件的完整内容，或单个账号的 JSON。">
-              粘贴 aih 账号 JSON
+        <div ref={modeSurfaceRef}>
+          {mode === 'file' ? (
+            <InlineNote
+              key="file"
+              className="aih-fade-in"
+              tone={fileName ? 'success' : 'info'}
+              description="选择 aih 导出的账号文件（可多选）。已有的账号会更新凭据，不会重复添加。"
+              action={
+                <Button size="small" onClick={onPickFile}>
+                  {fileName ? '重新选择' : '选择文件'}
+                </Button>
+              }
+            >
+              {fileName ? `已选择 ${fileName}` : '选择 .json 账号文件'}
             </InlineNote>
-            <Input.TextArea
-              id="account-import-text"
-              rows={10}
-              placeholder={'{\n  "kind": "aih-accounts",\n  "version": 1,\n  "accounts": [ … ]\n}'}
-              value={importText}
-              onChange={(e) => onTextChange(e.target.value)}
-            />
-          </div>
-        ) : null}
+          ) : (
+            <div key="text" className="accounts-import-paste aih-fade-in">
+              <InlineNote tone="info" description="粘贴导出文件的完整内容，或单个账号的 JSON。">
+                粘贴 aih 账号 JSON
+              </InlineNote>
+              <Input.TextArea
+                id="account-import-text"
+                rows={10}
+                placeholder={'{\n  "kind": "aih-accounts",\n  "version": 1,\n  "accounts": [ … ]\n}'}
+                value={importText}
+                onChange={(e) => onTextChange(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   );

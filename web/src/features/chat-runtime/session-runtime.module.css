@@ -508,8 +508,12 @@
   border-radius: 2px;
   border-color: var(--color-border);
   box-shadow: none;
-  /* HUD 角标：用背景渐变绘制（.slashSuggestions 在卡片外侧绝对定位，不能用 clip-path / 伪元素占位） */
+  /* HUD 角标 + 赛博玻璃镜面层（.slashSuggestions 在卡片外侧绝对定位，不能用 clip-path / 伪元素占位） */
   background-color: var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border-color: var(--hud-border-glass, var(--color-border));
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
   background-image:
     linear-gradient(var(--hud-tick-color), var(--hud-tick-color)),
     linear-gradient(var(--hud-tick-color), var(--hud-tick-color)),
@@ -518,8 +522,13 @@
   background-size: var(--hud-tick) 2px, 2px var(--hud-tick), var(--hud-tick) 2px, 2px var(--hud-tick);
   background-position: left top, left top, right bottom, right bottom;
   background-repeat: no-repeat;
-  transition: border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.composer:hover:not(:focus-within) {
+  border-color: var(--hud-border-glass-hover, var(--color-border-strong));
 }
 
 @supports (corner-shape: bevel) {
@@ -531,7 +540,7 @@
 
 .composer:focus-within {
   border-color: var(--color-accent);
-  box-shadow: var(--hud-glow-accent);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--hud-glow-accent);
 }
 
 /* 全局 HUD 输入样式（暗槽 + 聚焦环）在卡片内部取消：卡片本身承担聚焦反馈 */
@@ -685,8 +694,11 @@
   background: transparent;
   cursor: pointer;
   font-size: var(--hos-text-h3); /* 归级:原 16px */
-  transition: background var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-instant) var(--ease-standard);
 }
 
 .composerToolButton:hover,
@@ -726,8 +738,17 @@
     100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
     0 100%, 0 var(--hud-cut)
   );
-  transition: background var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-instant) var(--ease-standard);
+}
+
+.sendButton:not(:disabled):active,
+.stopButton:active,
+.composerToolButton:not(:disabled):active {
+  transform: scale(0.94);
 }
 
 .sendButton:disabled {
@@ -819,4 +840,12 @@
   transition:
     background-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sendButton:not(:disabled):active,
+  .stopButton:active,
+  .composerToolButton:not(:disabled):active {
+    transform: none;
+  }
 }

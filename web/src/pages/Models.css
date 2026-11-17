@@ -231,9 +231,17 @@
   gap: var(--hos-space-3);
   min-height: 76px;
   padding: var(--hos-space-2-5) var(--hos-space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--hud-border-glass, var(--color-border));
   border-radius: 0;
-  background: var(--hud-panel-bg);
+  background: var(--hud-glass-gradient), var(--hud-panel-bg);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+.models-model-row:hover {
+  border-color: var(--hud-border-glass-hover, color-mix(in srgb, var(--color-accent) 48%, var(--color-border)));
+  box-shadow: var(--hud-glow-panel-hover, inset 0 1px 0 var(--hud-glass-specular, transparent));
 }
 .models-model-row--disabled {
   background: var(--color-surface-muted);

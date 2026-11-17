@@ -4,16 +4,14 @@ import { useLayoutEffect } from 'react';
  * 「切换」类交互的统一淡入：同一块区域从 A 换成 B（切会话、切视图）时，
  * 用一次只碰 opacity 的 WAAPI 动画表达「换掉了」，而不是让内容瞬间跳变。
  *
- * 为什么记在模块级而不是 ref 里：会话切换在部分聊天外壳里会连带整个组件重挂载，
- * 组件内的上一次 key 会随之丢失；模块级变量在 SPA 生命周期内一直有效。
- * 首次进入（没有上一次 key）不播——首屏由路由进场动画负责，避免叠加。
- *
- * 作用域：模块级记录按 scope 分区（如「模型目录筛选」「切换会话」各用一份），
- * 否则两处共用同一份「上一次 key」会互相顶掉——A 切完刚写上，B 一跑就把 A 的
- * 记录当成自己的上一次，动画直接跳过。
+ * 注意：
+ * - 此钩子同时被移动端页面引用，保持纯 opacity 后置淡入语义不变；
+ * - 若外层已激活预提交 ViewTransition（`html[data-vt-kind]`）、页面隐藏或终端拖拽调尺寸中，
+ *   自动跳过后置淡入，杜绝与合成器快照叠加播放。
  */
 
 const lastSwitchKeys = new Map<string, string>();
+const activeFadeAnimations = new WeakMap<HTMLElement, Animation>();
 
 export interface SwitchFadeOptions {
   /** 动画时长（ms），默认 180 */
@@ -37,18 +35,50 @@ export function useSwitchFade<E extends HTMLElement>(
     lastSwitchKeys.set(scope, next);
     if (!previous || previous === next) return;
     const node = ref.current;
-    if (!node) return;
+    if (!node || typeof node.animate !== 'function') return;
+    const doc = node.ownerDocument;
     let reduce = false;
     try {
       reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     } catch (_error) {
       reduce = false;
     }
-    if (reduce) return;
-    node.animate([{ opacity: from }, { opacity: 1 }], {
+    const prevAnim = activeFadeAnimations.get(node);
+    let startOpacity = from;
+    if (prevAnim) {
+      try {
+        const currentOpacity = Number.parseFloat(getComputedStyle(node).opacity);
+        if (Number.isFinite(currentOpacity) && currentOpacity > 0.05 && currentOpacity < 0.98) {
+          startOpacity = currentOpacity;
+        }
+        prevAnim.cancel();
+      } catch (_error) {
+        // 忽略取消异常。
+      }
+      activeFadeAnimations.delete(node);
+    }
+    if (
+      reduce
+      || doc.hidden
+      || (typeof doc.visibilityState === 'string' && doc.visibilityState !== 'visible')
+      || doc.documentElement.classList.contains('aih-terminal-resizing')
+      || doc.documentElement.hasAttribute('data-vt-kind')
+    ) {
+      return;
+    }
+    const anim = node.animate([{ opacity: startOpacity }, { opacity: 1 }], {
       duration,
-      easing: 'cubic-bezier(0.2, 0, 0, 1)'
+      easing: 'cubic-bezier(0.2, 0, 0, 1)',
+      fill: 'none'
     });
+    activeFadeAnimations.set(node, anim);
+    const clear = () => {
+      if (activeFadeAnimations.get(node) === anim) {
+        activeFadeAnimations.delete(node);
+      }
+    };
+    anim.onfinish = clear;
+    anim.oncancel = clear;
   }, [key, ref, duration, from, scope]);
 }
 

@@ -1,9 +1,10 @@
 import { writeClipboardText } from '@/utils/clipboard';
-import { Drawer, Empty, Space, Spin, Tabs, Tooltip, Typography, message } from 'antd';
+import { Drawer, Space, Tabs, Tooltip, Typography, message } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import { CopyOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
+import HudStateView from '@/components/hud/HudStateView';
 import ListTable from '@/components/ui/ListTable';
 import Button from '@/components/ui/AppButton';
 import type {
@@ -266,7 +267,9 @@ export default function UsageBreakdownDrawer({
       ) : null}
 
       {loading ? (
-        <div className="usage-breakdown-loading"><Spin /></div>
+        <div className="usage-breakdown-loading">
+          <HudStateView variant="loading" compact code="SYS // BREAKDOWN" title="正在聚合用量分量…" />
+        </div>
       ) : data && summary ? (
         <>
           <div className="usage-breakdown-summary">
@@ -279,6 +282,7 @@ export default function UsageBreakdownDrawer({
             <div className="usage-breakdown-summary-cost"><span>成本</span><strong>{formatCost(summary.costUsd)}</strong></div>
           </div>
           <Tabs
+            animated={{ inkBar: true, tabPane: true }}
             items={[
               {
                 key: 'accounts',
@@ -290,7 +294,7 @@ export default function UsageBreakdownDrawer({
                     dataSource={data.accounts}
                     scroll={{ x: 1090 }}
                   />
-                ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无账号分量" />
+                ) : <HudStateView compact code="NO_ACCOUNTS" title="暂无账号分量" />
               },
               {
                 key: 'models',
@@ -302,13 +306,13 @@ export default function UsageBreakdownDrawer({
                     dataSource={data.models}
                     scroll={{ x: 960 }}
                   />
-                ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型分量" />
+                ) : <HudStateView compact code="NO_MODELS" title="暂无模型分量" />
               }
             ]}
           />
         </>
       ) : (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无分量数据" />
+        <HudStateView compact code="NO_BREAKDOWN" title="暂无分量数据" />
       )}
     </Drawer>
   );

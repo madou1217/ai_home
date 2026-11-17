@@ -295,11 +295,14 @@ export function ChatConversationContent({
   state,
   canonicalFrameClassName,
   workbench = true,
+  forceColumnsLayout = false,
 }: {
   state: ChatPageState;
   canonicalFrameClassName?: string;
   /** work 模式是否外包项目工作台（文件 / Review）。快捷窗口窄宽度下关掉，只留会话。 */
   workbench?: boolean;
+  /** 桌面原生快捷窗口跨单/双/三栏宽度缩放时固定走三栏宿主槽位，防止跨 600px/1000px 重建会话运行时。 */
+  forceColumnsLayout?: boolean;
 }) {
   const {
     mobile,
@@ -397,26 +400,36 @@ export function ChatConversationContent({
     />
   );
 
-  // 在纯聊天模式下，直接展示对话面板，无需 ProjectWorkbench 工作区标签页
-  return workspaceMode === 'chat' || !workbench ? (
-    runtimeContent
-  ) : (
+  const chromeActive = workspaceMode === 'work' && workbench;
+  const workbenchDescriptor = projectCatalog.selectedProject?.path ? (projectCatalog.selectedProject.remote ? {
+    // 远程工作区：文件 / 变更 / 终端都落到 SSH 开发机（root 仍是影子目录 = 项目身份）。
+    kind: 'ssh-workspace',
+    serverId: resolveActiveServer().serverId || undefined,
+    workspaceId: projectCatalog.selectedProject.remote.workspaceId,
+    root: projectCatalog.selectedProject.path,
+    remoteRoot: projectCatalog.selectedProject.remote.remoteRoot,
+    label: `${projectCatalog.selectedProject.remote.host}:${projectCatalog.selectedProject.remote.remoteRoot}`,
+  } : {
+    kind: resolveActiveServer().isRemote ? 'remote-server' : 'local-server',
+    serverId: resolveActiveServer().serverId || undefined,
+    root: projectCatalog.selectedProject.path,
+    label: resolveActiveServer().isRemote ? '远程 Server' : '本机 Server',
+  }) satisfies WorkbenchWorkspaceDescriptor : undefined;
+
+  // 独立移动端路由（带 canonicalFrameClassName）保持原有条件直出，零触碰移动端 DOM 结构。
+  if (canonicalFrameClassName && !chromeActive) {
+    return runtimeContent;
+  }
+
+  // 桌面主站与 QuickChat 统一稳定单树组合：Chat / Work 切换或小窗宽度档位变化时，
+  // 仅开关 ProjectWorkbench 外围资源/工具栏（chromeActive），中心 runtimeContent 始终固定在同一 React Fiber 槽位，
+  // 从而完整保留未发送附件（use-composer-attachments）、输入草稿、SSE 运行时订阅与输入框焦点身份。
+  return (
     <ProjectWorkbench
+      chromeActive={chromeActive}
+      forceColumnsLayout={forceColumnsLayout}
       projectPath={projectCatalog.selectedProject?.path}
-      workspace={projectCatalog.selectedProject?.path ? (projectCatalog.selectedProject.remote ? {
-        // 远程工作区：文件 / 变更 / 终端都落到 SSH 开发机（root 仍是影子目录 = 项目身份）。
-        kind: 'ssh-workspace',
-        serverId: resolveActiveServer().serverId || undefined,
-        workspaceId: projectCatalog.selectedProject.remote.workspaceId,
-        root: projectCatalog.selectedProject.path,
-        remoteRoot: projectCatalog.selectedProject.remote.remoteRoot,
-        label: `${projectCatalog.selectedProject.remote.host}:${projectCatalog.selectedProject.remote.remoteRoot}`,
-      } : {
-        kind: resolveActiveServer().isRemote ? 'remote-server' : 'local-server',
-        serverId: resolveActiveServer().serverId || undefined,
-        root: projectCatalog.selectedProject.path,
-        label: resolveActiveServer().isRemote ? '远程 Server' : '本机 Server',
-      }) satisfies WorkbenchWorkspaceDescriptor : undefined}
+      workspace={workbenchDescriptor}
       mobile={mobile}
       chat={runtimeContent}
       sessions={resolveWorkbenchSessions(

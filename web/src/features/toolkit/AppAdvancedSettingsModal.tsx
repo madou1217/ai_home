@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { toolkitAPI } from '@/services/api';
 import type {
   ManagedAppItem,
@@ -85,6 +86,7 @@ export default function AppAdvancedSettingsModal({
 }: AppAdvancedSettingsModalProps) {
   const provider = app?.provider || '';
   const [activeTab, setActiveTab] = useState('permission');
+  const { surfaceRef: paneSurfaceRef, switchSurface: switchPaneSurface } = useSurfaceSwitch<HTMLDivElement>();
   const [settings, setSettings] = useState<ToolPermissionSettings | null>(null);
   const [capability, setCapability] = useState<ToolPermissionCapability | null>(null);
   const [selections, setSelections] = useState<PermissionSelection[]>([]);
@@ -235,7 +237,15 @@ export default function AppAdvancedSettingsModal({
           {tabs.length > 1 ? (
             <Tabs
               activeKey={activeTab}
-              onChange={setActiveTab}
+              animated={{ inkBar: true, tabPane: false }}
+              onChange={(nextTab) => {
+                const order = tabs.map((item) => item.key);
+                switchPaneSurface(() => setActiveTab(nextTab), {
+                  current: activeTab,
+                  next: nextTab,
+                  direction: resolveOrderedDirection(order, activeTab, nextTab)
+                });
+              }}
               items={tabs}
               className="aas-tabs"
             />
@@ -243,6 +253,7 @@ export default function AppAdvancedSettingsModal({
             <div className="aas-single-title">{tabs[0]?.label || '高级设置'}</div>
           )}
 
+          <div ref={paneSurfaceRef}>
           {activeTab === 'permission' && showPermissionTab ? (
             <div className="aas-permission-pane">
               {app?.installed && app.hookSupported ? (
@@ -525,6 +536,7 @@ export default function AppAdvancedSettingsModal({
               <ProviderConfigPanel providerId={provider} embedded view="reference" />
             </div>
           ) : null}
+          </div>
         </div>
       )}
     </Modal>

@@ -10,7 +10,12 @@ import TranslationFloatingPanel from "@/features/translation/TranslationFloating
 import ChatMiniWindow from "@/features/chat-runtime/ChatMiniWindow";
 import HudEffects from "@/components/hud/HudEffects";
 import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
-import { resolveHudNavCode } from "@/components/hud/hud-nav";
+import HudRouteStage from "@/components/hud/HudRouteStage";
+import { resolveHudNavCode, resolveHudRouteOrder } from "@/components/hud/hud-nav";
+import {
+  installRouteViewTransition,
+  type HistoryLike,
+} from "@/services/route-view-transition";
 import {
   installCatalogCacheInvalidation,
   resolveCatalogStorageKey
@@ -161,7 +166,13 @@ export async function getInitialState(): Promise<{
 
 // antd 的 token 体系必须整体跟随 data-theme，否则深色模式下按钮描边、次级文字、
 // 下拉项等仍取构建期的浅色值。包在最外层，让所有路由与 Layout 共用同一主题上下文。
-export function rootContainer(container: ReactNode) {
+export function rootContainer(
+  container: ReactNode,
+  args?: { history?: HistoryLike },
+) {
+  if (!isGoAccountsPreview) {
+    installRouteViewTransition(args?.history, resolveHudRouteOrder);
+  }
   return (
     <AntdThemeProvider>
       <WebTerminalManagerProvider>
@@ -186,8 +197,12 @@ function renderHudMenuLabel(item: HudMenuItem, dom: ReactNode) {
   const code = resolveHudNavCode(item.path);
   if (!code) return dom;
   return (
-    <span className="hud-nav-item">
-      {code.no ? <span className="hud-nav-no">{code.no}</span> : null}
+    <span
+      className="hud-nav-item"
+      data-hud-no={code.no}
+      data-child={code.parentPath ? "true" : undefined}
+    >
+      <span className="hud-nav-no">{code.no}</span>
       <span className="hud-nav-dom">{dom}</span>
       <span className="hud-nav-code">{code.code}</span>
     </span>
@@ -225,6 +240,9 @@ export const layout = ({ initialState }: any) => {
       <HudTelemetryBar enabled={!isGoAccountsPreview && resolveCurrentServerProfileGate().ready} />
     ),
     actionsRender: () => [<HudToggles key="hud-toggles" />],
+    menuProps: {
+      popupClassName: "hud-sider-submenu-popup",
+    },
     menuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuItem(item, dom),
     subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuLabel(item, dom),
     onPageChange: enforceServerProfileGate,
@@ -263,7 +281,7 @@ export const layout = ({ initialState }: any) => {
           <AppErrorBoundary>
             {/* 手机视口：MobileApp 按路由渲染独立的移动端 HUD 页面（web/src/mobile），桌面页不挂载 */}
             <MobileApp workspaceEnabled={canRenderWorkspaceRoute} dataPlaneReady={canRenderDataPlane}>
-              {canRenderWorkspaceRoute ? children : null}
+              {canRenderWorkspaceRoute ? <HudRouteStage>{children}</HudRouteStage> : null}
             </MobileApp>
           </AppErrorBoundary>
           {canRenderDataPlane && <AppInstallTaskQueue />}

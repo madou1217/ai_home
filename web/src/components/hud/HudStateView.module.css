@@ -1,0 +1,70 @@
+/* =============================================================================
+ * HudStateView — 桌面端通用空状态 / 加载态全息舞台（承载 3D HudCube）
+ * 紧凑克制、不制造整块彩底告警，支持键盘激活魔方弹跳与业务操作插槽。
+ * ========================================================================== */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-8);
+  text-align: center;
+  min-width: 0;
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
+}
+
+.compact {
+  padding: var(--space-8) var(--space-6);
+  gap: var(--space-2);
+}
+
+.code {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  opacity: 0.85;
+}
+
+.tone_warn .code {
+  color: var(--color-warning);
+}
+
+.tone_err .code {
+  color: var(--color-danger);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.03em;
+  line-height: 1.45;
+}
+
+.description {
+  max-width: 460px;
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}

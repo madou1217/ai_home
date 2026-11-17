@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
+import { Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { UpstreamErrorMappingGroup } from '@/types';
@@ -10,7 +10,9 @@ import {
   UPSTREAM_ERROR_PROVIDER_OPTIONS,
   upstreamErrorProviderLabel
 } from '@/features/accounts/upstream-error-mapping-presets';
+import Button from '@/components/ui/AppButton';
 import SectionCard from '@/components/ui/SectionCard';
+import HudStateView from '@/components/hud/HudStateView';
 
 interface UpstreamErrorMappingsProps {
   setActions?: (actions: ReactNode) => void;
@@ -165,7 +167,23 @@ export default function UpstreamErrorMappings({ setActions }: UpstreamErrorMappi
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           把不同 Provider 的错误响应转换为统一账号运行状态，再由调度器决定是否换号。规则按顺序匹配，条件之间为且关系。
         </Typography.Paragraph>
-        <Table rowKey="id" loading={loading} dataSource={groups} columns={columns} pagination={false} />
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={groups}
+          columns={columns}
+          pagination={false}
+          locale={{
+            emptyText: (
+              <HudStateView
+                compact
+                code="NO_ERROR_RULES"
+                title="暂无异常映射组"
+                description="点击右上角「添加映射组」配置自定义上游错误状态转换规则。"
+              />
+            )
+          }}
+        />
       </SectionCard>
       <Modal
         title={editingId ? '编辑异常映射组' : '添加异常映射组'}

@@ -21,7 +21,13 @@
   padding: var(--space-7, 14px) var(--space-8, 16px);
   background: transparent;
   box-shadow: 1px 0 0 var(--color-border), 0 1px 0 var(--color-border);
-  transition: background-color var(--motion-fast, 120ms) var(--ease-standard);
+  transition:
+    background-color var(--motion-fast, 120ms) var(--ease-standard),
+    box-shadow var(--motion-base, 160ms) var(--ease-standard);
+}
+
+.widgetCard:hover {
+  background: color-mix(in srgb, var(--color-accent) 4%, transparent);
 }
 
 .spanTwo {

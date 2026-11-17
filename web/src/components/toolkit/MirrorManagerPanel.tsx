@@ -1,4 +1,5 @@
-import { Empty, Segmented, Spin, Tag, Tooltip } from 'antd';
+import { Segmented, Tag, Tooltip } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
 import {
   CheckCircleOutlined,
   CloseOutlined,
@@ -9,6 +10,7 @@ import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import GuidedCommandPanel from './GuidedCommandPanel';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import {
   mirrorApplicableRegion as applicableRegion,
   mirrorLatencyLabel as latencyLabel,
@@ -38,6 +40,8 @@ export default function MirrorManagerPanel() {
     currentValue,
     selectedLatency
   } = useMirrorManager();
+  const { surfaceRef: workbenchRef, switchSurface: switchWorkbench } = useSurfaceSwitch<HTMLDivElement>();
+  const { surfaceRef: detailRef, switchSurface: switchDetail } = useSurfaceSwitch<HTMLDivElement>();
 
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-mirror-title">
@@ -61,7 +65,7 @@ export default function MirrorManagerPanel() {
         </InlineNote>
       )}
       {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" tip="正在读取软件源配置" /></div>
+        <HudStateView variant="loading" code="MIRROR // PROBE" title="正在读取软件源与镜像配置..." compact />
       ) : mirrorData ? (
         <>
           <ToolkitStatusTrack
@@ -91,12 +95,20 @@ export default function MirrorManagerPanel() {
           <div className="toolkit-runtime-switch">
             <Segmented
               value={kind}
-              onChange={(value) => setKind(String(value))}
+              onChange={(value) => {
+                const nextKind = String(value);
+                const order = kinds.map((item) => item.id);
+                switchWorkbench(() => setKind(nextKind), {
+                  current: kind,
+                  next: nextKind,
+                  direction: resolveOrderedDirection(order, kind, nextKind)
+                });
+              }}
               options={kinds.map((item) => ({ label: item.label, value: item.id }))}
             />
           </div>
 
-          <div className="toolkit-mirror-workbench">
+          <div ref={workbenchRef} className="toolkit-mirror-workbench">
             <div className="toolkit-mirror-index" role="group" aria-label={`${kind} 镜像列表`}>
               {presets.map((preset) => {
                 const result = latencies[preset.url];
@@ -107,7 +119,14 @@ export default function MirrorManagerPanel() {
                     className="toolkit-mirror-option"
                     data-active={preset.id === selectedPreset?.id || undefined}
                     aria-pressed={preset.id === selectedPreset?.id}
-                    onClick={() => setSelectedId(preset.id)}
+                    onClick={() => {
+                      const order = presets.map((item) => item.id);
+                      switchDetail(() => setSelectedId(preset.id), {
+                        current: selectedPreset?.id,
+                        next: preset.id,
+                        direction: selectedPreset ? resolveOrderedDirection(order, selectedPreset.id, preset.id) : 'neutral'
+                      });
+                    }}
                   >
                     <span className="toolkit-mirror-option-main">
                       <strong>{preset.name}</strong>
@@ -136,7 +155,7 @@ export default function MirrorManagerPanel() {
               })}
             </div>
 
-            <div className="toolkit-mirror-detail">
+            <div ref={detailRef} className="toolkit-mirror-detail">
               {selectedPreset ? (
                 <>
                   <div className="toolkit-detail-heading">
@@ -176,7 +195,7 @@ export default function MirrorManagerPanel() {
                     emptyText="服务端没有返回该镜像的命令指南。"
                   />
                 </>
-              ) : <Empty description="没有可选择的镜像源" />}
+              ) : <HudStateView code="MIRROR // EMPTY" title="没有可选择的镜像源" compact />}
             </div>
           </div>
         </>

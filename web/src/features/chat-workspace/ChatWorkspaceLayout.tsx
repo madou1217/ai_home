@@ -1,4 +1,4 @@
-import type { ReactNode, TouchEventHandler } from 'react';
+import type { ReactNode, Ref, TouchEventHandler } from 'react';
 import { Layout } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
@@ -22,6 +22,8 @@ type ChatWorkspaceLayoutProps = {
   onCreateSession: () => void;
   onTouchStart: TouchEventHandler<HTMLElement>;
   onTouchEnd: TouchEventHandler<HTMLElement>;
+  workspaceSurfaceRef?: Ref<HTMLDivElement>;
+  contentSurfaceRef?: Ref<HTMLElement>;
 };
 
 function MobileWorkspace(props: ChatWorkspaceLayoutProps) {
@@ -74,7 +76,10 @@ function MobileWorkspace(props: ChatWorkspaceLayoutProps) {
 function DesktopWorkspace(props: ChatWorkspaceLayoutProps) {
   const { Sider, Content } = Layout;
   return (
-    <>
+    <div
+      ref={props.workspaceSurfaceRef}
+      style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, width: '100%', height: '100%', overflow: 'hidden' }}
+    >
       <Sider
         width={280}
         theme="light"
@@ -84,10 +89,13 @@ function DesktopWorkspace(props: ChatWorkspaceLayoutProps) {
       >
         {props.projectList}
       </Sider>
-      <Content style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <Content
+        ref={props.contentSurfaceRef}
+        style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, height: '100%', overflow: 'hidden' }}
+      >
         {props.chatContent}
       </Content>
-    </>
+    </div>
   );
 }
 

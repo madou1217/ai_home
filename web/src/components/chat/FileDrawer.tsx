@@ -130,6 +130,7 @@ const FileDrawer = ({ open, tabs, activeKey, onClose, onChangeTab }: Props) => {
       <Tabs
         className={`${styles.fileDrawerTabs}${isMobile ? ` ${styles.fileDrawerTabsMobile}` : ''}`}
         activeKey={activeKey}
+        animated={isMobile ? undefined : { inkBar: true, tabPane: true }}
         onChange={onChangeTab}
         tabBarGutter={isMobile ? 6 : undefined}
         items={tabs.map((tab) => {

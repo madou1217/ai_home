@@ -7,6 +7,7 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import { Button, Input, InputNumber, Segmented, Select, Tooltip } from 'antd';
+import Reveal from '@/components/ui/Reveal';
 import type { ImageStudioModel, ImageStudioRevisionMode } from '@/types';
 import {
   formatImageStudioModelAvailability,
@@ -185,7 +186,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
         />
       </div>
 
-      {mode === 'edit' && (
+      <Reveal open={mode === 'edit'} keepMounted>
         <div className={`${styles.controlSection} ${styles.mountSection}`}>
           <div className={styles.fieldLabelRow}>
             <label className={styles.fieldLabel}>参考图与遮罩</label>
@@ -260,7 +261,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
             )}
           </div>
         </div>
-      )}
+      </Reveal>
 
       <div className={`${styles.controlSection} ${styles.promptSection}`}>
         <div className={styles.fieldLabelRow}>

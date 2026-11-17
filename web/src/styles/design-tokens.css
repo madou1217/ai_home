@@ -157,7 +157,8 @@
   --elevation-1: 0 1px 2px rgba(7, 18, 31, 0.06);
   --elevation-2: 0 2px 8px rgba(7, 18, 31, 0.08);
   --elevation-3: 0 10px 28px rgba(7, 18, 31, 0.12), 0 0 0 1px rgba(0, 134, 160, 0.08);
-  --elevation-4: 0 20px 56px rgba(7, 18, 31, 0.18), 0 0 0 1px rgba(0, 134, 160, 0.10);
+  --elevation-4: 0 20px 56px rgba(7, 18, 31, 0.18), 0 0 0 1px rgba(0, 134, 160, 0.12);
+  --elevation-5: 0 28px 72px rgba(7, 18, 31, 0.22), 0 0 0 1px rgba(0, 134, 160, 0.18), 0 0 28px rgba(124, 58, 237, 0.08);
   --ring-focus: 0 0 0 1px var(--color-accent), 0 0 0 4px rgba(0, 134, 160, 0.18);
   --ring-focus-info: var(--ring-focus);
 
@@ -166,9 +167,13 @@
   --motion-base: 160ms;
   --motion-slow: 240ms;
   --motion-slower: 320ms;
+  --motion-jelly: 620ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-snappy: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring-soft: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-jelly: cubic-bezier(0.25, 1.55, 0.5, 1);
 
   /* ---------------------------------------------------------------------------
    * 5. PRIMITIVES — Z-index layers
@@ -340,23 +345,52 @@
   --visual-viewport-height: 100dvh;
 
   /* ---------------------------------------------------------------------------
-   * 10. HUD — 几何与光效（Cyber HUD 专属）
+   * 10. HUD — 几何与光效（Cyber HUD 专属：分层发光玻璃 + 克制青/紫景深）
    * ------------------------------------------------------------------------ */
   --hud-chamfer: 10px;          /* 面板切角 */
   --hud-chamfer-sm: 6px;        /* 小卡 / 按钮切角 */
   --hud-tick: 10px;             /* 角标长度 */
   --hud-tick-color: var(--color-accent);
-  --hud-panel-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
-  --hud-panel-blur: blur(10px);
+  --hud-violet: #7c3aed;
+  --hud-violet-soft: rgba(124, 58, 237, 0.10);
+  --hud-glow-violet: 0 0 18px rgba(124, 58, 237, 0.16);
+  --hud-panel-bg: color-mix(in srgb, var(--color-surface) 84%, transparent);
+  --hud-panel-blur: blur(14px) saturate(145%);
+  --hud-glass-gradient: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.90) 0%,
+    rgba(247, 251, 254, 0.78) 58%,
+    rgba(238, 245, 252, 0.84) 100%
+  );
+  --hud-glass-raised-gradient: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(244, 249, 253, 0.90) 100%
+  );
+  --hud-glass-specular: rgba(255, 255, 255, 0.72);
+  --hud-glass-sheen: linear-gradient(
+    112deg,
+    transparent 24%,
+    rgba(0, 134, 160, 0.06) 46%,
+    rgba(124, 58, 237, 0.05) 54%,
+    transparent 76%
+  );
+  --hud-border-glass: color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+  --hud-border-glass-hover: color-mix(in srgb, var(--color-accent) 52%, var(--color-border));
+  --hud-ambient-cyan: rgba(0, 134, 160, 0.07);
+  --hud-ambient-violet: rgba(124, 58, 237, 0.05);
   --hud-grid-size: 32px;
-  --hud-grid-line: rgba(0, 134, 160, 0.06);
-  --hud-glow-accent: 0 0 16px rgba(0, 134, 160, 0.18);
+  --hud-grid-major-size: 128px;
+  --hud-grid-line: rgba(0, 134, 160, 0.055);
+  --hud-grid-major-line: rgba(0, 134, 160, 0.09);
+  --hud-glow-accent: 0 0 18px rgba(0, 134, 160, 0.20);
+  --hud-glow-panel-hover: inset 0 1px 0 var(--hud-glass-specular), inset 0 0 22px rgba(0, 134, 160, 0.07);
   --hud-text-glow: none;
   --hud-text-glow-soft: none;
   --hud-text-glow-success: none;
   --hud-text-glow-warning: none;
   --hud-text-glow-danger: none;
-  --hud-scanline: rgba(3, 8, 15, 0.10);
+  --hud-scanline: rgba(3, 8, 15, 0.08);
 }
 
 /* ===========================================================================
@@ -371,6 +405,9 @@
     --motion-base: 0ms;
     --motion-slow: 0ms;
     --motion-slower: 0ms;
+    --motion-jelly: 0ms;
+    --ease-spring-soft: cubic-bezier(0.2, 0, 0, 1);
+    --ease-jelly: cubic-bezier(0.2, 0, 0, 1);
   }
 }
 
@@ -593,21 +630,52 @@ body.dark {
   --ink-neutral: #a9c2d6;
 
   --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --elevation-3: 0 0 0 1px rgba(0, 240, 255, 0.10), 0 12px 32px rgba(0, 0, 0, 0.65);
-  --elevation-4: 0 0 0 1px rgba(0, 240, 255, 0.22), 0 0 30px rgba(0, 240, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.75);
+  --elevation-2: 0 4px 14px rgba(0, 0, 0, 0.55);
+  --elevation-3: 0 0 0 1px rgba(0, 240, 255, 0.12), 0 14px 36px rgba(0, 0, 0, 0.68);
+  --elevation-4: 0 0 0 1px rgba(0, 240, 255, 0.24), 0 0 32px rgba(0, 240, 255, 0.14), 0 24px 60px rgba(0, 0, 0, 0.78);
+  --elevation-5: 0 0 0 1px rgba(0, 240, 255, 0.28), 0 0 36px rgba(0, 240, 255, 0.16), 0 0 48px rgba(168, 85, 247, 0.12), 0 28px 72px rgba(0, 0, 0, 0.82);
   --ring-focus: 0 0 0 1px #00f0ff, 0 0 12px rgba(0, 240, 255, 0.45);
   --ring-focus-info: var(--ring-focus);
 
-  --hud-panel-bg: rgba(10, 16, 26, 0.85);
+  --hud-violet: #a855f7;
+  --hud-violet-soft: rgba(168, 85, 247, 0.14);
+  --hud-glow-violet: 0 0 22px rgba(168, 85, 247, 0.28);
+  --hud-panel-bg: rgba(10, 16, 26, 0.78);
+  --hud-panel-blur: blur(16px) saturate(155%);
+  --hud-glass-gradient: linear-gradient(
+    145deg,
+    rgba(16, 28, 46, 0.82) 0%,
+    rgba(9, 15, 26, 0.76) 56%,
+    rgba(16, 18, 36, 0.82) 100%
+  );
+  --hud-glass-raised-gradient: linear-gradient(
+    155deg,
+    rgba(18, 31, 50, 0.94) 0%,
+    rgba(11, 18, 31, 0.90) 68%,
+    rgba(17, 19, 38, 0.93) 100%
+  );
+  --hud-glass-specular: rgba(162, 246, 255, 0.14);
+  --hud-glass-sheen: linear-gradient(
+    112deg,
+    transparent 22%,
+    rgba(0, 240, 255, 0.08) 45%,
+    rgba(168, 85, 247, 0.07) 55%,
+    transparent 78%
+  );
+  --hud-border-glass: rgba(0, 240, 255, 0.16);
+  --hud-border-glass-hover: rgba(0, 240, 255, 0.52);
+  --hud-ambient-cyan: rgba(0, 240, 255, 0.075);
+  --hud-ambient-violet: rgba(168, 85, 247, 0.065);
   --hud-grid-line: rgba(0, 240, 255, 0.035);
-  --hud-glow-accent: 0 0 18px rgba(0, 240, 255, 0.25);
+  --hud-grid-major-line: rgba(0, 240, 255, 0.07);
+  --hud-glow-accent: 0 0 20px rgba(0, 240, 255, 0.26);
+  --hud-glow-panel-hover: inset 0 1px 0 rgba(162, 246, 255, 0.24), inset 0 0 26px rgba(0, 240, 255, 0.09);
   --hud-text-glow: 0 0 10px rgba(0, 240, 255, 0.55);
   --hud-text-glow-soft: 0 0 6px rgba(0, 240, 255, 0.28);
   --hud-text-glow-success: 0 0 10px rgba(0, 255, 102, 0.5);
   --hud-text-glow-warning: 0 0 10px rgba(255, 170, 0, 0.5);
   --hud-text-glow-danger: 0 0 10px rgba(255, 0, 85, 0.55);
-  --hud-scanline: rgba(0, 0, 0, 0.28);
+  --hud-scanline: rgba(0, 0, 0, 0.26);
 }
 
 /* =============================================================================

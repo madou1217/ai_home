@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useThemeMode } from '@/hooks/use-theme-mode';
 import { applyThemeModeAnimated } from '@/services/theme-transition';
 import { crossTabSync } from '@/services/cross-tab-session-sync';
@@ -6,7 +7,9 @@ import type { HudGatewayState } from './use-hud-telemetry';
 import { useHudTelemetry } from './use-hud-telemetry';
 import { useMobileMode } from '@/mobile/use-mobile-mode';
 import { useHudPreferences } from './use-hud-preferences';
+import AnimatedValue from '@/components/ui/AnimatedValue';
 import { formatHudCount, formatHudPercent, formatHudUptime } from './hud-format';
+import HudCube from './HudCube';
 import styles from './hud-header.module.css';
 
 const GATEWAY_LABEL: Record<HudGatewayState, { text: string; tone: 'ok' | 'warn' | 'err' | 'info' }> = {
@@ -17,18 +20,34 @@ const GATEWAY_LABEL: Record<HudGatewayState, { text: string; tone: 'ok' | 'warn'
   offline: { text: 'OFFLINE', tone: 'err' },
 };
 
-/** HUD 品牌区：替代 ProLayout 默认的 logo + 标题。 */
-export function HudBrand({ logo }: { logo: string }) {
+/** HUD 品牌区：3D 切面果冻弹跳全息棱镜魔方 + 品牌标识（全 span 短语级 DOM，点击或按回车/空格同时触发弹跳与返回首页）。 */
+export function HudBrand({ onActivate }: { logo?: string; onActivate?: () => void }) {
+  const navigate = useNavigate();
+  const handleBrandActivate = useCallback(() => {
+    if (onActivate) {
+      onActivate();
+      return;
+    }
+    navigate('/');
+  }, [navigate, onActivate]);
+
   return (
-    <div className={styles.brand}>
-      <span className={styles.brandMark}>
-        <img src={logo} alt="" />
+    <span className={styles.brand}>
+      <span className={styles.brandCubeSlot}>
+        <HudCube
+          size={20}
+          mode="brand"
+          tone="cyan"
+          interactive
+          label="AI_HOME 全息魔方（点击或按回车返回首页并触发果冻弹跳）"
+          onActivate={handleBrandActivate}
+        />
       </span>
       <span className={styles.brandText}>
         <span className={styles.brandTitle}>AI_HOME</span>
         <span className={styles.brandTag}>ACCOUNTS · GATEWAY</span>
       </span>
-    </div>
+    </span>
   );
 }
 
@@ -71,27 +90,33 @@ export function HudTelemetryBar({ enabled: requested }: { enabled: boolean }) {
       <div className={styles.cell}>
         <span className="hud-label">ACCOUNTS</span>
         <span className={`${styles.value} ${styles.tone_info}`}>
-          {status ? `${formatHudCount(status.activeAccounts)} / ${formatHudCount(status.totalAccounts)}` : '—'}
+          {status ? (
+            <AnimatedValue changeKey={`${status.activeAccounts}/${status.totalAccounts}`}>
+              {`${formatHudCount(status.activeAccounts)} / ${formatHudCount(status.totalAccounts)}`}
+            </AnimatedValue>
+          ) : '—'}
         </span>
       </div>
       <span className={styles.divider} />
       <div className={`${styles.cell} ${styles.optional}`}>
         <span className="hud-label">COOLDOWN</span>
         <span className={`${styles.value} ${cooldown > 0 ? styles.tone_warn : styles.tone_muted}`}>
-          {status ? formatHudCount(cooldown) : '—'}
+          {status ? <AnimatedValue changeKey={cooldown}>{formatHudCount(cooldown)}</AnimatedValue> : '—'}
         </span>
       </div>
       <span className={`${styles.divider} ${styles.optional}`} />
       <div className={styles.cell}>
         <span className="hud-label">SUCCESS</span>
         <span className={`${styles.value} ${hasRequests ? styles.tone_ok : styles.tone_muted}`}>
-          {hasRequests ? formatHudPercent(status?.successRate) : '—'}
+          {hasRequests ? <AnimatedValue changeKey={formatHudPercent(status?.successRate)}>{formatHudPercent(status?.successRate)}</AnimatedValue> : '—'}
         </span>
       </div>
       <span className={styles.divider} />
       <div className={`${styles.cell} ${styles.optional}`}>
         <span className="hud-label">REQUESTS</span>
-        <span className={styles.value}>{status ? formatHudCount(status.totalRequests) : '—'}</span>
+        <span className={styles.value}>
+          {status ? <AnimatedValue changeKey={status.totalRequests}>{formatHudCount(status.totalRequests)}</AnimatedValue> : '—'}
+        </span>
       </div>
       <span className={`${styles.divider} ${styles.optional}`} />
       <div className={`${styles.cell} ${styles.optionalWide}`}>

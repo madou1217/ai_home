@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
-  Empty,
   message,
-  Segmented,
-  Spin
+  Segmented
 } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
 import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
@@ -18,6 +17,7 @@ import { APP_CATEGORIES, useManagedApps } from './use-managed-apps';
 import { describeClearBrokenResult } from './provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
 import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 
 const UPGRADE_TRACK_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 'danger'> = {
   success: 'success',
@@ -75,6 +75,7 @@ export default function AppManagerPanel() {
     clearingProvider
   } = useProviderCliUpgrade();
   const [category, setCategory] = useState('ALL');
+  const { surfaceRef: appGridRef, switchSurface: switchAppGrid } = useSurfaceSwitch<HTMLDivElement>();
   const [advancedAppId, setAdvancedAppId] = useState('');
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
     app: ManagedAppLaunchTarget;
@@ -178,7 +179,7 @@ export default function AppManagerPanel() {
         </div>
       )}
       {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" tip="正在探测应用" /></div>
+        <HudStateView variant="loading" code="APPS // INVENTORY" title="正在探测主机应用清单..." compact />
       ) : data ? (
         <>
           <ToolkitStatusTrack
@@ -205,36 +206,46 @@ export default function AppManagerPanel() {
               <Segmented
                 aria-label="应用分类"
                 value={category}
-                onChange={(value) => setCategory(String(value))}
+                onChange={(value) => {
+                  const next = String(value);
+                  const order = APP_CATEGORIES.map((item) => item.value);
+                  switchAppGrid(() => setCategory(next), {
+                    current: category,
+                    next,
+                    direction: resolveOrderedDirection(order, category, next)
+                  });
+                }}
                 options={APP_CATEGORIES}
               />
             </div>
             <span className="toolkit-result-count">当前显示 {filteredApps.length} 项</span>
           </div>
 
-          {filteredApps.length ? (
-            <div className="toolkit-grid aih-fade-in">
-              {filteredApps.map((app) => (
-                <ManagedAppCard
-                  key={app.id}
-                  app={app}
-                  busyAction={busyActionFor(app)}
-                  checkingUpdate={Boolean(checkingUpdates[app.id])}
-                  accounts={accounts}
-                  runningAccountPids={runningAccountPids}
-                  runningCliAccountPids={runningCliAccountPids}
-                  upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
-                  clearingUpgrade={clearingProvider === app.provider}
-                  onAction={(target, action) => void runAppAction(target, action)}
-                  onCheckUpdate={(target) => void checkAppUpdate(target)}
-                  onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
-                  onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
-                  onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
-                  onEditConfig={(target) => setAdvancedAppId(target.id)}
-                />
-              ))}
-            </div>
-          ) : <Empty description="当前分类没有应用" />}
+          <div ref={appGridRef}>
+            {filteredApps.length ? (
+              <div className="toolkit-grid aih-fade-in">
+                {filteredApps.map((app) => (
+                  <ManagedAppCard
+                    key={app.id}
+                    app={app}
+                    busyAction={busyActionFor(app)}
+                    checkingUpdate={Boolean(checkingUpdates[app.id])}
+                    accounts={accounts}
+                    runningAccountPids={runningAccountPids}
+                    runningCliAccountPids={runningCliAccountPids}
+                    upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
+                    clearingUpgrade={clearingProvider === app.provider}
+                    onAction={(target, action) => void runAppAction(target, action)}
+                    onCheckUpdate={(target) => void checkAppUpdate(target)}
+                    onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
+                    onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
+                    onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
+                    onEditConfig={(target) => setAdvancedAppId(target.id)}
+                  />
+                ))}
+              </div>
+            ) : <HudStateView code="APPS // EMPTY" title="当前分类没有应用" compact />}
+          </div>
         </>
       ) : null}
 

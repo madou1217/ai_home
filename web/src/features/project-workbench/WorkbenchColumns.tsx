@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import Empty from 'antd/es/empty';
 import { BranchesOutlined, CloseOutlined, LeftOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import type { GitSummary } from '@/services/api';
 import type { Session } from '@/types';
 import BrowserPanel from './browser/BrowserPanel';
@@ -18,6 +19,7 @@ import type { WorkbenchWorkspaceDescriptor } from './workbench-types';
 import styles from './project-workbench.module.css';
 
 interface Props {
+  chromeActive?: boolean;
   projectPath?: string;
   workspace?: WorkbenchWorkspaceDescriptor;
   chat: ReactNode;
@@ -69,6 +71,7 @@ function ColumnToolbar<K extends string>({ panes, active, onSelect, ariaLabel, a
 // PC 三栏布局：左=文件/变更，中=会话，右=变更/浏览器（终端在全局浮窗里）。
 // 面板一律「首次访问后常驻挂载 + CSS 显隐」，避免树状态丢失。
 export default function WorkbenchColumns({
+  chromeActive = true,
   projectPath,
   chat,
   sessions = [],
@@ -84,6 +87,8 @@ export default function WorkbenchColumns({
   const [collapsed, setCollapsed] = useState<ColumnCollapsed>(initialLayout.collapsed);
   const [leftPane, setLeftPane] = useState<LeftPane>('files');
   const [rightPane, setRightPane] = useState<RightPane>('review');
+  const { surfaceRef: leftBodyRef, switchSurface: switchLeftBody } = useSurfaceSwitch<HTMLDivElement>();
+  const { surfaceRef: rightBodyRef, switchSurface: switchRightBody } = useSurfaceSwitch<HTMLDivElement>();
   // 容器实测宽度：驱动栏可见性降级（0 = 首帧未测量，策略层按三栏全显兜底）。
   const [containerWidth, setContainerWidth] = useState(0);
   // 显式 overlay：栏被策略隐藏后用户可重新打开，覆盖层不占网格宽度。
@@ -136,6 +141,7 @@ export default function WorkbenchColumns({
   // window resize：项目列表列开合也会改变工作台容器宽度。栏本身保持挂载，
   // 只切换显隐/overlay，终端 PTY 不回收。宽度萎缩/恢复由 clamp 派生完成，无需在此写回。
   useEffect(() => {
+    if (!chromeActive) return undefined;
     const el = containerRef.current;
     if (!el) return undefined;
     const syncWidth = () => setContainerWidth(el.clientWidth);
@@ -147,30 +153,46 @@ export default function WorkbenchColumns({
     const observer = new ResizeObserver(syncWidth);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [chromeActive]);
 
-  const leftOverlayActive = !visibility.left && columnOverlay === 'left';
-  const rightOverlayActive = !visibility.right && columnOverlay === 'right';
+  const leftOverlayActive = chromeActive && !visibility.left && columnOverlay === 'left';
+  const rightOverlayActive = chromeActive && !visibility.right && columnOverlay === 'right';
 
-  // 显式打开的 overlay 不被 resize 自动收回；仅当栏恢复进网格（越过上一级阈值）时复位。
+  // 显式打开的 overlay 不被 resize 自动收回；仅当栏恢复进网格（越过上一级阈值）或退出 Work 壳层时复位。
   useEffect(() => {
+    if (!chromeActive) {
+      setColumnOverlay(null);
+      return;
+    }
     setColumnOverlay((prev) => {
       if (prev === 'left' && visibility.left) return null;
       if (prev === 'right' && visibility.right) return null;
       return prev;
     });
-  }, [visibility.left, visibility.right]);
+  }, [chromeActive, visibility.left, visibility.right]);
 
   const selectLeftPane = useCallback((pane: LeftPane) => {
-    setLeftPane(pane);
-    if (pane === 'review') setLeftReviewMounted(true);
-  }, []);
+    switchLeftBody(() => {
+      setLeftPane(pane);
+      if (pane === 'review') setLeftReviewMounted(true);
+    }, {
+      current: leftPane,
+      next: pane,
+      direction: resolveOrderedDirection(LEFT_PANES, leftPane, pane)
+    });
+  }, [leftPane, switchLeftBody]);
 
   const selectRightPane = useCallback((pane: RightPane) => {
-    setRightPane(pane);
-    if (pane === 'review') setRightReviewMounted(true);
-    if (pane === 'browser') setBrowserMounted(true);
-  }, []);
+    switchRightBody(() => {
+      setRightPane(pane);
+      if (pane === 'review') setRightReviewMounted(true);
+      if (pane === 'browser') setBrowserMounted(true);
+    }, {
+      current: rightPane,
+      next: pane,
+      direction: resolveOrderedDirection(RIGHT_PANES, rightPane, pane)
+    });
+  }, [rightPane, switchRightBody]);
 
 
   // 栏折叠/展开：折叠收成栏头条（不占宽度预算、不出分隔条），展开恢复期望宽度；
@@ -262,56 +284,59 @@ export default function WorkbenchColumns({
     <div
       ref={containerRef}
       className={styles.columnsLayout}
-      style={{ gridTemplateColumns: gridTemplate }}
+      data-chrome={chromeActive ? 'true' : 'false'}
+      style={{ gridTemplateColumns: chromeActive ? gridTemplate : 'minmax(0, 1fr)' }}
     >
-      <aside className={sideClass('left')} style={sideStyle('left')}>
-        {/* 折叠态：栏头条（展开 chevron + 纵向当前面板标签），面板保持挂载仅 CSS 隐藏。 */}
-        {collapsed.left ? (
-          <div className={styles.columnRail}>
-            <button
-              type="button"
-              className={styles.columnRailButton}
-              aria-label="展开资源栏"
-              onClick={() => toggleCollapse('left')}
-            >
-              <RightOutlined />
-            </button>
-            <span className={styles.columnRailLabel}>{PANE_LABELS[leftPane]}</span>
-          </div>
-        ) : null}
-        <ColumnToolbar panes={LEFT_PANES} active={leftPane} onSelect={selectLeftPane} ariaLabel="资源栏" actions={leftActions} />
-        <div className={styles.columnBody}>
-          {projectPath ? (
-            <>
-              <div {...paneProps(leftPane === 'files')}>
-                <FilesPanel projectPath={projectPath} registerRefresh={registerFilesRefresh} />
-              </div>
-              {leftReviewMounted ? (
-                <div {...paneProps(leftPane === 'review')}>
-                  <ReviewPanel
-                    projectPath={projectPath}
-                    registerRefresh={registerLeftReviewRefresh}
-                    sessionId={selectedSession?.runtimeSessionId}
-                    onSummaryChange={setLeftReviewSummary}
+      {chromeActive ? (
+        <aside className={sideClass('left')} style={sideStyle('left')}>
+          {/* 折叠态：栏头条（展开 chevron + 纵向当前面板标签），面板保持挂载仅 CSS 隐藏。 */}
+          {collapsed.left ? (
+            <div className={styles.columnRail}>
+              <button
+                type="button"
+                className={styles.columnRailButton}
+                aria-label="展开资源栏"
+                onClick={() => toggleCollapse('left')}
+              >
+                <RightOutlined />
+              </button>
+              <span className={styles.columnRailLabel}>{PANE_LABELS[leftPane]}</span>
+            </div>
+          ) : null}
+          <ColumnToolbar panes={LEFT_PANES} active={leftPane} onSelect={selectLeftPane} ariaLabel="资源栏" actions={leftActions} />
+          <div ref={leftBodyRef} className={styles.columnBody}>
+            {projectPath ? (
+              <>
+                <div {...paneProps(leftPane === 'files')}>
+                  <FilesPanel projectPath={projectPath} registerRefresh={registerFilesRefresh} />
+                </div>
+                {leftReviewMounted ? (
+                  <div {...paneProps(leftPane === 'review')}>
+                    <ReviewPanel
+                      projectPath={projectPath}
+                      registerRefresh={registerLeftReviewRefresh}
+                      sessionId={selectedSession?.runtimeSessionId}
+                      onSummaryChange={setLeftReviewSummary}
+                    />
+                  </div>
+                ) : null}
+                {/* Sessions 是纯 props 渲染的只读列表，无内部重请求，常驻挂载即可。 */}
+                <div {...paneProps(leftPane === 'sessions')}>
+                  <SessionsPanel
+                    sessions={sessions}
+                    selectedSession={selectedSession}
+                    runningSessionKeys={runningSessionKeys}
+                    onSelectSession={(session) => onSelectSession?.(session)}
                   />
                 </div>
-              ) : null}
-              {/* Sessions 是纯 props 渲染的只读列表，无内部重请求，常驻挂载即可。 */}
-              <div {...paneProps(leftPane === 'sessions')}>
-                <SessionsPanel
-                  sessions={sessions}
-                  selectedSession={selectedSession}
-                  runningSessionKeys={runningSessionKeys}
-                  onSelectSession={(session) => onSelectSession?.(session)}
-                />
-              </div>
-            </>
-          ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择项目" />
-          )}
-        </div>
-      </aside>
-      {shown.left ? (
+              </>
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择项目" />
+            )}
+          </div>
+        </aside>
+      ) : null}
+      {chromeActive && shown.left ? (
         <div
           className={styles.columnDivider}
           role="separator"
@@ -320,8 +345,8 @@ export default function WorkbenchColumns({
           onPointerDown={onDividerDown('left')}
         />
       ) : null}
-      <section className={styles.columnCenter}>{chat}</section>
-      {shown.right ? (
+      <section className={styles.columnCenter} data-chat-center-stage="true">{chat}</section>
+      {chromeActive && shown.right ? (
         <div
           className={styles.columnDivider}
           role="separator"
@@ -330,46 +355,48 @@ export default function WorkbenchColumns({
           onPointerDown={onDividerDown('right')}
         />
       ) : null}
-      <aside className={sideClass('right')} style={sideStyle('right')}>
-        {collapsed.right ? (
-          <div className={styles.columnRail}>
-            <button
-              type="button"
-              className={styles.columnRailButton}
-              aria-label="展开工具栏"
-              onClick={() => toggleCollapse('right')}
-            >
-              <LeftOutlined />
-            </button>
-            <span className={styles.columnRailLabel}>{PANE_LABELS[rightPane]}</span>
+      {chromeActive ? (
+        <aside className={sideClass('right')} style={sideStyle('right')}>
+          {collapsed.right ? (
+            <div className={styles.columnRail}>
+              <button
+                type="button"
+                className={styles.columnRailButton}
+                aria-label="展开工具栏"
+                onClick={() => toggleCollapse('right')}
+              >
+                <LeftOutlined />
+              </button>
+              <span className={styles.columnRailLabel}>{PANE_LABELS[rightPane]}</span>
+            </div>
+          ) : null}
+          <ColumnToolbar panes={RIGHT_PANES} active={rightPane} onSelect={selectRightPane} ariaLabel="工具栏" actions={rightActions} />
+          <div ref={rightBodyRef} className={styles.columnBody}>
+            {rightReviewMounted ? (
+              <div {...paneProps(rightPane === 'review')}>
+                {projectPath ? (
+                  <ReviewPanel
+                    projectPath={projectPath}
+                    registerRefresh={registerRightReviewRefresh}
+                    sessionId={selectedSession?.runtimeSessionId}
+                    onSummaryChange={setRightReviewSummary}
+                  />
+                ) : (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择项目" />
+                )}
+              </div>
+            ) : null}
+            {browserMounted ? (
+              <div {...paneProps(rightPane === 'browser')}>
+                <BrowserPanel />
+              </div>
+            ) : null}
           </div>
-        ) : null}
-        <ColumnToolbar panes={RIGHT_PANES} active={rightPane} onSelect={selectRightPane} ariaLabel="工具栏" actions={rightActions} />
-        <div className={styles.columnBody}>
-          {rightReviewMounted ? (
-            <div {...paneProps(rightPane === 'review')}>
-              {projectPath ? (
-                <ReviewPanel
-                  projectPath={projectPath}
-                  registerRefresh={registerRightReviewRefresh}
-                  sessionId={selectedSession?.runtimeSessionId}
-                  onSummaryChange={setRightReviewSummary}
-                />
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择项目" />
-              )}
-            </div>
-          ) : null}
-          {browserMounted ? (
-            <div {...paneProps(rightPane === 'browser')}>
-              <BrowserPanel />
-            </div>
-          ) : null}
-        </div>
-      </aside>
+        </aside>
+      ) : null}
       {/* 栏被策略隐藏时的贴边展开入口：显式打开为覆盖层，不被 resize 自动收回。
           折叠态已渲染栏头条，不再重复提供贴边入口。 */}
-      {!visibility.left && !collapsed.left && !leftOverlayActive ? (
+      {chromeActive && !visibility.left && !collapsed.left && !leftOverlayActive ? (
         <button
           type="button"
           className={`${styles.columnExpand} ${styles.columnExpandLeft}`}
@@ -379,7 +406,7 @@ export default function WorkbenchColumns({
           <MenuUnfoldOutlined />
         </button>
       ) : null}
-      {!visibility.right && !collapsed.right && !rightOverlayActive ? (
+      {chromeActive && !visibility.right && !collapsed.right && !rightOverlayActive ? (
         <button
           type="button"
           className={`${styles.columnExpand} ${styles.columnExpandRight}`}

@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Empty, Segmented } from 'antd';
+import { Segmented } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 
 import EChartCanvas, {
   buildChartTooltipStyle,
@@ -58,6 +60,7 @@ function buildTooltipLines(window: QuotaStatsWindowRow, metric: QuotaWindowMetri
  */
 export default function QuotaWindowChart({ windows, windowMinutes, emptyReason }: QuotaWindowChartProps) {
   const [metric, setMetric] = useState<QuotaWindowMetric>('percent');
+  const { surfaceRef, switchSurface } = useSurfaceSwitch<HTMLDivElement>();
   const labels = useMemo(() => windows.map((window) => (
     formatQuotaAxisTime(window.anchorAtMs, windowMinutes)
   )), [windows, windowMinutes]);
@@ -144,30 +147,37 @@ export default function QuotaWindowChart({ windows, windowMinutes, emptyReason }
           size="small"
           value={metric}
           options={QUOTA_METRIC_OPTIONS}
-          onChange={(value) => setMetric(value as QuotaWindowMetric)}
+          onChange={(value) => {
+            const next = value as QuotaWindowMetric;
+            const order = QUOTA_METRIC_OPTIONS.map((item) => item.value);
+            switchSurface(() => setMetric(next), {
+              current: metric,
+              next,
+              direction: resolveOrderedDirection(order, metric, next)
+            });
+          }}
         />
       </div>
-      {windows.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={(
-            <span className="quota-empty-copy">
-              <strong>{getQuotaEmptyDescription(emptyReason)}</strong>
-              <small>{getQuotaEmptyHint(emptyReason)}</small>
-            </span>
-          )}
-        />
-      ) : (
-        <>
-          <EChartCanvas ariaLabel="额度窗口消耗" buildOption={buildOption} />
-          <div className="quota-chart-legend" aria-hidden="true">
-            <span><i className="quota-legend-dot quota-legend-dot--live" />实时</span>
-            <span><i className="quota-legend-dot quota-legend-dot--high" />采样充分</span>
-            <span><i className="quota-legend-dot quota-legend-dot--medium" />重建</span>
-            <span><i className="quota-legend-dot quota-legend-dot--low" />仅重置事件</span>
-          </div>
-        </>
-      )}
+      <div ref={surfaceRef}>
+        {windows.length === 0 ? (
+          <HudStateView
+            compact
+            code="NO_WINDOWS"
+            title={getQuotaEmptyDescription(emptyReason)}
+            description={getQuotaEmptyHint(emptyReason)}
+          />
+        ) : (
+          <>
+            <EChartCanvas ariaLabel="额度窗口消耗" buildOption={buildOption} />
+            <div className="quota-chart-legend" aria-hidden="true">
+              <span><i className="quota-legend-dot quota-legend-dot--live" />实时</span>
+              <span><i className="quota-legend-dot quota-legend-dot--high" />采样充分</span>
+              <span><i className="quota-legend-dot quota-legend-dot--medium" />重建</span>
+              <span><i className="quota-legend-dot quota-legend-dot--low" />仅重置事件</span>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

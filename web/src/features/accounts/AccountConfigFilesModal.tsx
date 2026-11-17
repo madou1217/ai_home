@@ -5,6 +5,8 @@ import type { Account, AccountConfigFile, AccountConfigFilesResponse } from '@/t
 import { accountsAPI } from '@/services/api';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
+import Reveal from '@/components/ui/Reveal';
+import { isSameCommittedIntent, resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import ConfigCodeEditor from '@/components/toolkit/config-editor/ConfigCodeEditor';
 
 const { Text } = Typography;
@@ -43,6 +45,7 @@ function formatTime(ms: number) {
 export function AccountConfigFilesPanel({ account, onExport, exporting }: AccountConfigFilesPanelProps) {
   const [mode, setMode] = useState<'redacted' | 'raw'>('redacted');
   const [data, setData] = useState<AccountConfigFilesResponse | null>(null);
+  const { surfaceRef: fileViewSurfaceRef, switchSurface: switchFileView } = useSurfaceSwitch<HTMLDivElement>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState('');
@@ -78,7 +81,7 @@ export function AccountConfigFilesPanel({ account, onExport, exporting }: Accoun
   }, [account, load]);
 
   const switchMode = (nextMode: 'redacted' | 'raw') => {
-    if (nextMode === mode) return;
+    if (isSameCommittedIntent(mode, nextMode)) return;
     if (nextMode === 'raw') {
       Modal.confirm({
         title: '显示原文？',
@@ -86,13 +89,17 @@ export function AccountConfigFilesPanel({ account, onExport, exporting }: Accoun
         okText: '显示原文',
         cancelText: '取消',
         onOk: () => {
-          setMode('raw');
+          switchFileView(() => {
+            setMode('raw');
+          }, { slot: 'mode', current: mode, next: 'raw', direction: 'forward' });
           void load('raw');
         }
       });
       return;
     }
-    setMode('redacted');
+    switchFileView(() => {
+      setMode('redacted');
+    }, { slot: 'mode', current: mode, next: 'redacted', direction: 'backward' });
     void load('redacted');
   };
 
@@ -141,7 +148,16 @@ export function AccountConfigFilesPanel({ account, onExport, exporting }: Accoun
       {data && data.files.length > 0 ? (
         <Tabs
           activeKey={selectedId}
-          onChange={setSelectedId}
+          animated={{ inkBar: true, tabPane: false }}
+          onChange={(nextId) => {
+            const order = data.files.map((file) => file.id);
+            switchFileView(() => setSelectedId(nextId), {
+              slot: 'file',
+              current: selectedId,
+              next: nextId,
+              direction: resolveOrderedDirection(order, selectedId, nextId)
+            });
+          }}
           size="small"
           items={data.files.map((file) => ({
             key: file.id,
@@ -150,34 +166,36 @@ export function AccountConfigFilesPanel({ account, onExport, exporting }: Accoun
         />
       ) : null}
       {error ? <InlineNote tone="warning">{error}</InlineNote> : null}
-      {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" tip="正在读取账号配置" /></div>
-      ) : !data || data.files.length === 0 ? (
-        <Empty description="该账号没有可查看的配置文件" />
-      ) : selected ? (
-        <>
-          <p className="toolkit-section-note">
-            <Text type="secondary">{selected.location}</Text>
-            {selected.updatedAt ? <Text type="secondary"> · 更新于 {formatTime(selected.updatedAt)}</Text> : null}
-            {mode === 'redacted' && selected.redactedFields.length > 0
-              ? <Text type="secondary"> · 已脱敏 {selected.redactedFields.length} 个字段</Text>
-              : null}
-          </p>
-          {mode === 'raw' ? (
-            <InlineNote tone="warning">当前显示原文，包含账号凭据。</InlineNote>
-          ) : null}
-          <Spin spinning={loading}>
-            <ConfigCodeEditor
-              value={selected.content}
-              onChange={() => undefined}
-              format={selected.format}
-              fileName={selected.label.split('/').pop()}
-              ariaLabel={`${selected.label} 内容`}
-              readOnly
-            />
-          </Spin>
-        </>
-      ) : null}
+      <div ref={fileViewSurfaceRef}>
+        {loading && !data ? (
+          <div className="toolkit-loading"><Spin size="large" tip="正在读取账号配置" /></div>
+        ) : !data || data.files.length === 0 ? (
+          <Empty description="该账号没有可查看的配置文件" />
+        ) : selected ? (
+          <>
+            <p className="toolkit-section-note">
+              <Text type="secondary">{selected.location}</Text>
+              {selected.updatedAt ? <Text type="secondary"> · 更新于 {formatTime(selected.updatedAt)}</Text> : null}
+              {mode === 'redacted' && selected.redactedFields.length > 0
+                ? <Text type="secondary"> · 已脱敏 {selected.redactedFields.length} 个字段</Text>
+                : null}
+            </p>
+            <Reveal open={mode === 'raw'}>
+              <InlineNote tone="warning">当前显示原文，包含账号凭据。</InlineNote>
+            </Reveal>
+            <Spin spinning={loading}>
+              <ConfigCodeEditor
+                value={selected.content}
+                onChange={() => undefined}
+                format={selected.format}
+                fileName={selected.label.split('/').pop()}
+                ariaLabel={`${selected.label} 内容`}
+                readOnly
+              />
+            </Spin>
+          </>
+        ) : null}
+      </div>
     </>
   );
 }

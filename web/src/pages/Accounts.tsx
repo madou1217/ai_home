@@ -115,7 +115,8 @@ import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
 import { useAccountActions } from '@/features/accounts/use-account-actions';
-import { useSwitchFade } from '@/hooks/use-switch-fade';
+import Reveal from '@/components/ui/Reveal';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { useAccountAppEntries } from '@/features/accounts/use-account-app-entries';
 import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
@@ -172,10 +173,7 @@ function isActivityJobTerminal(status: string): boolean {
 
 export default function Accounts() {
   const [viewMode, setViewMode] = useState<'card' | 'list'>(readStoredAccountsViewMode);
-  const viewBodyRef = useRef<HTMLDivElement | null>(null);
-  // 卡片/列表两个分支的根都是 div，React 会复用节点 → 分支上的挂载动画不会重播。
-  // 这里只做一次只碰 opacity 的切换淡入，不强制重挂（否则列表的排序/展开态会丢）。
-  useSwitchFade(viewBodyRef, viewMode, { scope: 'accounts-view-mode' });
+  const { surfaceRef: viewBodyRef, switchSurface: switchViewSurface } = useSurfaceSwitch<HTMLDivElement>();
   const location = useLocation();
   const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const accountsSnapshot = useAccountsSnapshot(accountsHandlersRef);
@@ -1107,13 +1105,13 @@ export default function Accounts() {
 
       <GlobalStatusPanel outcomes={accountOutcomes} />
 
-      {hasActiveImportJob ? (
+      <Reveal open={hasActiveImportJob}>
         <div className="accounts-import-running" role="status" aria-live="polite">
           <SyncOutlined spin aria-hidden="true" />
           <strong>账号导入正在后台运行</strong>
           <span>{formatImportJobProgress(importJob)}</span>
         </div>
-      ) : null}
+      </Reveal>
 
       <SectionCard
         title="账号列表"
@@ -1128,14 +1126,33 @@ export default function Accounts() {
             </Button>
             <Select
               value={filterStatus}
-              onChange={setFilterStatus}
+              onChange={(nextStatus) => {
+                const statusOrder = ACCOUNT_STATUS_FILTER_OPTIONS.map((item) => item.value);
+                switchViewSurface(() => setFilterStatus(nextStatus), {
+                  slot: 'status',
+                  current: filterStatus,
+                  next: nextStatus,
+                  direction: resolveOrderedDirection(statusOrder, filterStatus, nextStatus)
+                });
+              }}
               style={{ width: 156 }}
               options={ACCOUNT_STATUS_FILTER_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
               suffixIcon={<FilterOutlined />}
             />
             <Segmented
               value={viewMode}
-              onChange={(val) => { const next = val as 'card' | 'list'; setViewMode(next); persistAccountsViewMode(next); }}
+              onChange={(val) => {
+                const next = val as 'card' | 'list';
+                switchViewSurface(() => {
+                  setViewMode(next);
+                  persistAccountsViewMode(next);
+                }, {
+                  slot: 'viewMode',
+                  current: viewMode,
+                  next,
+                  direction: next === 'list' ? 'forward' : 'backward'
+                });
+              }}
               options={[
                 { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
                 { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },
@@ -1148,15 +1165,24 @@ export default function Accounts() {
         <Tabs
           className="accounts-provider-tabs"
           activeKey={activeProvider}
-          onChange={(key) => setActiveProvider(key)}
+          animated={{ inkBar: true, tabPane: false }}
+          onChange={(key) => {
+            const tabOrder = tabItems.map((tab) => tab.key);
+            switchViewSurface(() => setActiveProvider(key), {
+              slot: 'provider',
+              current: activeProvider,
+              next: key,
+              direction: resolveOrderedDirection(tabOrder, activeProvider, key)
+            });
+          }}
           items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
         />
         {/* 卡片视图：供应商动作放在 tab 内容区顶部；列表视图把它并到“可用 n”同一行。 */}
-        {viewMode === 'card' && (visibleActivityActions.length > 0 || rewardsProgressText) ? (
+        <Reveal open={viewMode === 'card' && (visibleActivityActions.length > 0 || Boolean(rewardsProgressText))}>
           <div className="accounts-activity-bar">
             {renderProviderActivityActions()}
           </div>
-        ) : null}
+        </Reveal>
         <div ref={viewBodyRef}>
         {viewMode === 'card' ? (
           <div className="aih-panel-enter" style={{ marginBottom: 16 }}>

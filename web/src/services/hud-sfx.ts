@@ -68,4 +68,10 @@ export const hudSfx = {
     tone(440, 0.1, 'sawtooth');
     tone(330, 0.15, 'sawtooth', 0.08);
   },
+  /** 3D 魔方果冻弹跳谐波微反馈 */
+  jelly() {
+    tone(520, 0.055, 'sine');
+    tone(780, 0.075, 'triangle', 0.045);
+    tone(1040, 0.09, 'sine', 0.11);
+  },
 };

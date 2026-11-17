@@ -1,8 +1,10 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ProTable } from '@ant-design/pro-components';
 import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
 import { Empty, Skeleton, Grid } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import '../../styles/unified.css';
 import '../mobile/mobile-cards.css';
 
@@ -21,6 +23,10 @@ export interface ListTableProps<T extends Record<string, any>, U extends Record<
 
 const emptyText = (
   <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
+);
+
+const desktopEmptyState = (
+  <HudStateView compact code="NO_RECORDS" title="暂无数据" />
 );
 
 // 全站统一的列表骨架屏：首屏加载（loading 且无缓存数据）时展示，列头沿用真实
@@ -147,7 +153,10 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
 }: ListTableProps<T, U>) {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
-  // 表格行不做 transform 补间（会破坏固定列/粘性列定位），改成「顺序真变了才淡入一次」
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+  const { surfaceRef: tableSurfaceRef, switchSurface: switchTableSurface } = useSurfaceSwitch<HTMLDivElement>();
+  // 表格行不做逐行 transform 补间（会破坏固定列/粘性列定位）；数据源变化由 fadeRef 接管，桌面翻页由 switchTableSurface 预提交快照驱动。
   const fadeRef = useFlipReorder<HTMLDivElement>(rest.dataSource, { mode: 'fade' });
   const resolveRowKey = (row: T, index?: number) => {
     if (typeof rowKey === 'function') return rowKey(row);
@@ -167,6 +176,11 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     return <ListTableMobileCards columns={columns} dataSource={rest.dataSource} rowKey={rowKey} />;
   }
 
+  const totalRows = Array.isArray(rest.dataSource) ? rest.dataSource.length : 0;
+  const safePageSize = Math.max(1, pageSize);
+  const maxPage = Math.max(1, Math.ceil(totalRows / safePageSize));
+  const effectivePage = Math.min(currentPage, maxPage);
+
   const fixedProps = {
     className: 'unified-list-table',
     columns,
@@ -174,14 +188,32 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     search: false as const,
     options: false as const,
     pagination: {
-      pageSize: 12,
+      current: effectivePage,
+      pageSize: safePageSize,
       showSizeChanger: true,
       showQuickJumper: true,
       showTotal: (total: number) => `共 ${total} 条`,
+      onChange: (nextPage: number, nextPageSize: number) => {
+        const resolvedSize = Math.max(1, nextPageSize || safePageSize);
+        const resolvedPage = resolvedSize !== safePageSize ? 1 : nextPage;
+        const direction = resolvedPage > effectivePage
+          ? 'forward'
+          : resolvedPage < effectivePage
+            ? 'backward'
+            : 'neutral';
+        switchTableSurface(() => {
+          setPageSize(resolvedSize);
+          setCurrentPage(resolvedPage);
+        }, {
+          current: `${effectivePage}:${safePageSize}`,
+          next: `${resolvedPage}:${resolvedSize}`,
+          direction,
+        });
+      },
     },
     toolBarRender,
     toolbar,
-    locale: { emptyText },
+    locale: { emptyText: desktopEmptyState },
     ...rest,
     // 在调用方 onRow 之上补 data-flip-key：容器据此判断行顺序是否真的变了
     onRow: (record: T, index?: number) => {
@@ -194,10 +226,12 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     },
   };
   return (
-    <div ref={fadeRef} className="unified-list-table-fade">
-      <ProTable {...(fixedProps as Omit<typeof fixedProps, 'rowKey'>)} rowKey={rowKey as never}>
-        {children ? <span style={{ display: 'none' }}>{children}</span> : null}
-      </ProTable>
+    <div ref={tableSurfaceRef}>
+      <div ref={fadeRef} className="unified-list-table-fade">
+        <ProTable {...(fixedProps as Omit<typeof fixedProps, 'rowKey'>)} rowKey={rowKey as never}>
+          {children ? <span style={{ display: 'none' }}>{children}</span> : null}
+        </ProTable>
+      </div>
     </div>
   );
 }

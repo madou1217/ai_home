@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { BarChart, LineChart } from 'echarts/charts';
 import {
   AriaComponent,
@@ -10,6 +10,7 @@ import * as echarts from 'echarts/core';
 import type { EChartsCoreOption, EChartsType } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { readThemeMode } from '@/services/theme-mode';
+import { prefersReducedMotion } from '@/services/view-transition';
 
 echarts.use([
   AriaComponent,
@@ -94,15 +95,31 @@ export function buildChartTooltipStyle(palette: UsageChartPalette) {
   };
 }
 
-/** 所有图表统一的等宽数据字体（轴标签、图例、数值）——在各图 option 之上兜底注入。 */
+/** 所有图表统一的等宽数据字体（轴标签、图例、数值）与动效策略（减少动态效果下关闭 ECharts 内部动画）。 */
 function withHudTextStyle(option: EChartsCoreOption, palette: UsageChartPalette): EChartsCoreOption {
   const base = (option as { textStyle?: Record<string, unknown> }).textStyle || {};
-  return { ...option, textStyle: { fontFamily: palette.fontMono, ...base } };
+  const reduced = prefersReducedMotion();
+  const motionDefaults = reduced
+    ? { animation: false, animationDuration: 0, animationDurationUpdate: 0 }
+    : {
+      animation: true,
+      animationDuration: 220,
+      animationDurationUpdate: 180,
+      animationEasing: 'cubicOut' as const,
+      animationEasingUpdate: 'cubicOut' as const,
+    };
+  return {
+    ...motionDefaults,
+    ...option,
+    ...(reduced ? { animation: false, animationDuration: 0, animationDurationUpdate: 0 } : {}),
+    textStyle: { fontFamily: palette.fontMono, ...base },
+  };
 }
 
 function renderOption(chart: EChartsType, host: HTMLElement, build: (palette: UsageChartPalette) => EChartsCoreOption) {
   const palette = readPalette(host);
-  chart.setOption(withHudTextStyle(build(palette), palette), { notMerge: true, lazyUpdate: true });
+  // 同步绘制（lazyUpdate: false），确保外层预提交 ViewTransition 在 flushSync 后立即采到新指标画布帧。
+  chart.setOption(withHudTextStyle(build(palette), palette), { notMerge: true, lazyUpdate: false });
 }
 
 export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EChartCanvasProps) {
@@ -114,7 +131,7 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
   onDataClickRef.current = onDataClick;
   buildOptionRef.current = buildOption;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = hostRef.current;
     if (!host) return undefined;
     const chart = echarts.init(host, undefined, {
@@ -144,12 +161,17 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = hostRef.current;
     const chart = chartRef.current;
     if (!host || !chart) return;
     renderOption(chart, host, buildOption);
   }, [buildOption]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (chart) chart.resize();
+  }, []);
 
   return <div ref={hostRef} className="usage-chart-canvas aih-fade-in" role="img" aria-label={ariaLabel} />;
 }

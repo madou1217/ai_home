@@ -6,6 +6,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import ListTable from '@/components/ui/ListTable';
 import SectionCard from '@/components/ui/SectionCard';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import type { ModelUsageRequestRow } from '@/types';
 import { formatModelShortName } from './model-usage-presentation';
 import {
@@ -179,69 +180,71 @@ export default function RequestDetailsSection({
   limit = 80,
   onRequest
 }: RequestDetailsSectionProps) {
-  if (!requested) {
-    return (
-      <SectionCard
-        className="request-details-section"
-        title="请求明细"
-        extra={(
-          <Button icon={<ReloadOutlined />} onClick={onRequest}>
-            加载最近 {limit} 条
-          </Button>
-        )}
-      >
-        <Text type="secondary">
-          成功与错误请求仅在需要时读取，避免日志解析占用趋势与分量统计的首屏资源。
-        </Text>
-      </SectionCard>
-    );
-  }
+  const { surfaceRef, switchSurface } = useSurfaceSwitch<HTMLDivElement>();
 
   return (
     <SectionCard
       className="request-details-section"
       title="请求明细"
-      extra={(
+      extra={!requested ? (
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => switchSurface(() => onRequest(), { direction: 'forward' })}
+        >
+          加载最近 {limit} 条
+        </Button>
+      ) : (
         <Button icon={<ReloadOutlined />} loading={loading} onClick={onRequest}>
           刷新明细
         </Button>
       )}
     >
-      {error ? (
-        <Text className="request-detail-load-error" type="danger" role="status">
-          请求明细加载失败：{error}
-        </Text>
-      ) : null}
-      <Tabs
-        items={[
-          {
-            key: 'usage',
-            label: `用量明细 ${usage.length}`,
-            children: (
-              <ListTable<ModelUsageRequestRow>
-                loading={loading && usage.length === 0}
-                rowKey="requestId"
-                columns={usageColumns}
-                dataSource={usage}
-                scroll={{ x: 1460 }}
-              />
-            )
-          },
-          {
-            key: 'errors',
-            label: `错误请求 ${errors.length}`,
-            children: (
-              <ListTable<ModelUsageRequestRow>
-                loading={loading && errors.length === 0}
-                rowKey="requestId"
-                columns={errorColumns}
-                dataSource={errors}
-                scroll={{ x: 1370 }}
-              />
-            )
-          }
-        ]}
-      />
+      <div ref={surfaceRef}>
+        {!requested ? (
+          <Text type="secondary">
+            成功与错误请求仅在需要时读取，避免日志解析占用趋势与分量统计的首屏资源。
+          </Text>
+        ) : (
+          <>
+            {error ? (
+              <Text className="request-detail-load-error" type="danger" role="status">
+                请求明细加载失败：{error}
+              </Text>
+            ) : null}
+            <Tabs
+              animated={{ inkBar: true, tabPane: true }}
+              items={[
+                {
+                  key: 'usage',
+                  label: `用量明细 ${usage.length}`,
+                  children: (
+                    <ListTable<ModelUsageRequestRow>
+                      loading={loading && usage.length === 0}
+                      rowKey="requestId"
+                      columns={usageColumns}
+                      dataSource={usage}
+                      scroll={{ x: 1460 }}
+                    />
+                  )
+                },
+                {
+                  key: 'errors',
+                  label: `错误请求 ${errors.length}`,
+                  children: (
+                    <ListTable<ModelUsageRequestRow>
+                      loading={loading && errors.length === 0}
+                      rowKey="requestId"
+                      columns={errorColumns}
+                      dataSource={errors}
+                      scroll={{ x: 1370 }}
+                    />
+                  )
+                }
+              ]}
+            />
+          </>
+        )}
+      </div>
     </SectionCard>
   );
 }

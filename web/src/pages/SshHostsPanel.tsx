@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, InputNumber, Modal, Tag, Space, Select, Breadcrumb, Radio, Tabs, Drawer } from 'antd';
+import FormSurfaceField, { useFormSubmitTransitionGuard } from '@/components/ui/FormSurfaceField';
 import InlineNote from '@/components/ui/InlineNote';
+import Reveal from '@/components/ui/Reveal';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
@@ -81,7 +85,10 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   }, [setActions]);
 
   // 远程目录浏览器状态
+  useFormSubmitTransitionGuard(connForm);
   const dirBrowser = useSshDirectoryBrowser();
+  const { surfaceRef: dirListSurfaceRef, switchSurface: switchDirSurface } = useSurfaceSwitch<HTMLDivElement>();
+  const { surfaceRef: authFieldsSurfaceRef, switchSurface: switchAuthFields } = useSurfaceSwitch<HTMLDivElement>();
 
   // ------------------------------------------
   // 3. Connection 物理连接管理逻辑
@@ -157,14 +164,14 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
     // 根目录项
     breadcrumbItems.push(
-      <Breadcrumb.Item key="root" onClick={() => dirBrowser.navigate('/')}>
+      <Breadcrumb.Item key="root" onClick={() => switchDirSurface(() => dirBrowser.navigate('/'), { direction: 'backward' })}>
         <span className="ssh-dir-crumb">[Root]</span>
       </Breadcrumb.Item>
     );
 
     buildRemotePathCrumbs(dirBrowser.currentPath).forEach((crumb, index) => {
       breadcrumbItems.push(
-        <Breadcrumb.Item key={index} onClick={crumb.last ? undefined : () => dirBrowser.navigate(crumb.path)}>
+        <Breadcrumb.Item key={index} onClick={crumb.last ? undefined : () => switchDirSurface(() => dirBrowser.navigate(crumb.path), { direction: 'backward' })}>
           <span className={crumb.last ? 'ssh-dir-crumb ssh-dir-crumb--current' : 'ssh-dir-crumb'}>
             {crumb.name}
           </span>
@@ -188,8 +195,13 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     if (!state) return <div className="ssh-diag-placeholder hud-label">等待测试连接...</div>;
     if (state.loading) return (
       <div className="ssh-diag-loading">
-        <LoadingOutlined className="ssh-diag-loading-icon" />
-        <span className="ssh-diag-loading-text">正在连接远程主机并执行依赖诊断，请稍后...</span>
+        <HudStateView
+          variant="loading"
+          compact
+          code="SYS // SSH_PROBE"
+          title="正在连接远程主机并执行依赖诊断…"
+          description="正在核验 SSH 握手、平台架构与 Node / Git / AIH 工具链。"
+        />
       </div>
     );
 
@@ -273,6 +285,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     <div className="ssh-hosts-management-wrapper animate__animated animate__fadeIn animate__faster">
       <Tabs
         activeKey={activeTab}
+        animated={{ inkBar: true, tabPane: true }}
         onChange={(key: string) => setActiveTab(key as any)}
         className="settings-control-plane-manage-tabs"
         items={[
@@ -306,7 +319,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               label: '项目工作空间',
               children: (
                 <>
-                  {filterConnectionId && (
+                  <Reveal open={Boolean(filterConnectionId)}>
                     <InlineNote tone="info" className="ssh-filter-note">
                       <span>
                         当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
@@ -315,7 +328,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                         </Button>
                       </span>
                     </InlineNote>
-                  )}
+                  </Reveal>
                   <SshWorkspaceCardList
                     workspaces={filteredWorkspaces}
                     connections={connections}
@@ -392,47 +405,69 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             label="认证方式"
             rules={[{ required: true }]}
           >
-            <Radio.Group onChange={(e) => setAuthType(e.target.value)}>
-              {SSH_AUTH_OPTIONS.map((option) => (
-                <Radio.Button key={option.value} value={option.value}>{option.label}</Radio.Button>
-              ))}
-            </Radio.Group>
+            <FormSurfaceField
+              onBeforeFieldCommit={(commit, rawEvent) => {
+                const nextType = (rawEvent as { target?: { value?: typeof authType } } | null)?.target?.value;
+                if (!nextType) {
+                  commit();
+                  return;
+                }
+                const authOrder = SSH_AUTH_OPTIONS.map((option) => option.value);
+                switchAuthFields(() => {
+                  commit();
+                  setAuthType(nextType);
+                }, {
+                  slot: 'authType',
+                  current: authType,
+                  next: nextType,
+                  direction: resolveOrderedDirection(authOrder, authType, nextType),
+                });
+              }}
+            >
+              <Radio.Group>
+                {SSH_AUTH_OPTIONS.map((option) => (
+                  <Radio.Button key={option.value} value={option.value}>{option.label}</Radio.Button>
+                ))}
+              </Radio.Group>
+            </FormSurfaceField>
           </Form.Item>
 
-          {authType === 'key-file' && (
-            <Form.Item
-              name="identityFile"
-              label="当前 Server 上的私钥路径"
-              help="例如 ~/.ssh/aws.pem；文件必须位于当前 AIH Server 运行用户的 ~/.ssh，AIH 只保存路径，不复制私钥内容。"
-              rules={[{ required: true, message: '请输入当前 Server 上的私钥路径' }]}
-            >
-              <Input placeholder="~/.ssh/aws.pem" />
-            </Form.Item>
-          )}
+          <div ref={authFieldsSurfaceRef}>
+            {authType === 'key-file' && (
+              <Form.Item
+                name="identityFile"
+                label="当前 Server 上的私钥路径"
+                help="例如 ~/.ssh/aws.pem；文件必须位于当前 AIH Server 运行用户的 ~/.ssh，AIH 只保存路径，不复制私钥内容。"
+                rules={[{ required: true, message: '请输入当前 Server 上的私钥路径' }]}
+              >
+                <Input placeholder="~/.ssh/aws.pem" />
+              </Form.Item>
+            )}
 
-          {authType === 'key' && (
-            <Form.Item
-              name="privateKey"
-              label="私钥内容"
-              rules={[{ required: true, message: '请粘贴 SSH 私钥 (PEM/OpenSSH格式)' }]}
-            >
-              <Input.TextArea
-                rows={6}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n..."
-                className="ssh-private-key-input"
-              />
-            </Form.Item>
-          )}
+            {authType === 'key' && (
+              <Form.Item
+                name="privateKey"
+                label="私钥内容"
+                rules={[{ required: true, message: '请粘贴 SSH 私钥 (PEM/OpenSSH格式)' }]}
+              >
+                <Input.TextArea
+                  rows={6}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n..."
+                  className="ssh-private-key-input"
+                />
+              </Form.Item>
+            )}
 
-          {authType === 'password' && (
-            <Form.Item
-              name="password"
-              label="连接密码 (Password)"
-              rules={[{ required: true, message: '请输入远程账户连接密码' }]}
-            >
-              <Input.Password placeholder="密码" />
-            </Form.Item>
-          )}
+            {authType === 'password' && (
+              <Form.Item
+                name="password"
+                label="连接密码 (Password)"
+                rules={[{ required: true, message: '请输入远程账户连接密码' }]}
+              >
+                <Input.Password placeholder="密码" />
+              </Form.Item>
+            )}
+          </div>
 
           <Form.Item
             name="egressConnectionId"
@@ -552,7 +587,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           {renderBreadcrumbs()}
 
           {/* 2. 目录详细列表 */}
-          <div className="directory-list-container ssh-dir-list">
+          <div ref={dirListSurfaceRef} className="directory-list-container ssh-dir-list">
             {dirBrowser.loading ? (
               <div className="ssh-dir-loading">
                 <LoadingOutlined className="ssh-dir-loading-icon" />
@@ -563,7 +598,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                 {dirBrowser.parentPath && dirBrowser.currentPath !== '/' && (
                   <div
                     className="dir-item ssh-dir-item ssh-dir-item--parent"
-                    onDoubleClick={() => dirBrowser.navigate(dirBrowser.parentPath)}
+                    onDoubleClick={() => switchDirSurface(() => dirBrowser.navigate(dirBrowser.parentPath), { direction: 'backward' })}
                   >
                     <FolderOpenOutlined className="ssh-dir-item-icon" />
                     <strong className="ssh-dir-item-up">.. (返回上级目录)</strong>
@@ -582,7 +617,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                         key={dir.path}
                         className={`dir-item ssh-dir-item${isSelected ? ' ssh-dir-item--selected' : ''}`}
                         onClick={() => dirBrowser.select(dir.path)}
-                        onDoubleClick={() => dirBrowser.navigate(dir.path)}
+                        onDoubleClick={() => switchDirSurface(() => dirBrowser.navigate(dir.path), { direction: 'forward' })}
                       >
                         <FolderOpenOutlined className="ssh-dir-item-icon" />
                         <span>{dir.name}</span>

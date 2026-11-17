@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Empty, Segmented, Select, Space, Spin, Tag } from 'antd';
+import { Segmented, Select, Space, Tag } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
 import {
   BookOutlined,
   ReloadOutlined
@@ -17,17 +18,25 @@ import ManagedResourceCard from './ManagedResourceCard';
 import { resolveRuntimePlugins, runtimePluginIcon, runtimePluginName } from './runtime-plugin-presentation';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import { readToolkitTarget, writeToolkitTarget } from '@/pages/toolkit-url-state';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { useEnvironmentResources, useToolkitTargets } from './use-environment-resources';
 
 export default function EnvironmentPanel() {
   const [runtime, setRuntime] = useState('node');
   const [target, setTarget] = useState(() => readToolkitTarget());
+  const { surfaceRef: gridSurfaceRef, switchSurface: switchGridSurface } = useSurfaceSwitch<HTMLDivElement>();
   const targets = useToolkitTargets();
   const remote = target !== 'local';
   const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources(target);
   const changeTarget = (value: string) => {
-    setTarget(value);
-    writeToolkitTarget(value);
+    switchGridSurface(() => {
+      setTarget(value);
+      writeToolkitTarget(value);
+    }, {
+      slot: 'target',
+      current: target,
+      next: value
+    });
   };
   const runtimePlugins = useMemo(
     () => resolveRuntimePlugins(data?.runtimePlugins, data?.resources),
@@ -79,7 +88,12 @@ export default function EnvironmentPanel() {
       ) : null}
 
       {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" tip={remote ? '正在经 SSH 探测远端运行环境' : '正在探测运行环境'} /></div>
+        <HudStateView
+          variant="loading"
+          code="ENV // PROBE"
+          title={remote ? '正在经 SSH 探测远端运行环境...' : '正在探测本机运行环境...'}
+          compact
+        />
       ) : data ? (
         <>
           <ToolkitStatusTrack
@@ -111,7 +125,16 @@ export default function EnvironmentPanel() {
               <Segmented
                 aria-label="运行环境类型"
                 value={runtime}
-                onChange={(value) => setRuntime(String(value))}
+                onChange={(value) => {
+                  const nextRuntime = String(value);
+                  const order = runtimePlugins.map((plugin) => plugin.id);
+                  switchGridSurface(() => setRuntime(nextRuntime), {
+                    slot: 'runtime',
+                    current: runtime,
+                    next: nextRuntime,
+                    direction: resolveOrderedDirection(order, runtime, nextRuntime)
+                  });
+                }}
                 options={runtimePlugins.map((plugin) => ({
                   label: plugin.name,
                   value: plugin.id,
@@ -122,6 +145,7 @@ export default function EnvironmentPanel() {
             <span className="toolkit-result-count">当前显示 {resources.length} 项</span>
           </div>
 
+          <div ref={gridSurfaceRef}>
           {resources.length ? (
             <div className="toolkit-grid">
               {resources.map((resource) => {
@@ -202,7 +226,14 @@ export default function EnvironmentPanel() {
                 );
               })}
             </div>
-          ) : <Empty description={remote ? '该远端系统没有可管理的运行环境工具' : '当前系统没有可管理的运行环境工具'} />}
+          ) : (
+            <HudStateView
+              code="ENV // EMPTY"
+              title={remote ? '该远端系统没有可管理的运行环境工具' : '当前系统没有可管理的运行环境工具'}
+              compact
+            />
+          )}
+          </div>
         </>
       ) : null}
     </section>

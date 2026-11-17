@@ -47,6 +47,7 @@ export default function HudEffects() {
 
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-hud-cube]')) return;
       if (target?.closest(INTERACTIVE_SELECTOR)) hudSfx.click();
     };
     document.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true });

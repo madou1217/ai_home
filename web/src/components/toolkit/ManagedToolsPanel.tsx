@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Space, Spin, Tag } from 'antd';
+import { Space, Tag } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
 import {
   EditOutlined,
   ReloadOutlined,
@@ -75,7 +76,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
       ) : null}
 
       {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" /></div>
+        <HudStateView variant="loading" code="TOOLKIT // PROBE" title="正在探测主机受管工具..." compact />
       ) : data ? (
         <>
           <ToolkitStatusTrack

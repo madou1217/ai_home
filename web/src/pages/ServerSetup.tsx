@@ -32,6 +32,7 @@ import '@/components/settings/settings-shared.css';
 import '@/components/ui/kpi-strip.css';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
+import HudCube from '@/components/hud/HudCube';
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 import DistributionUpdatePanel from '@/components/settings/DistributionUpdatePanel';
 
@@ -274,9 +275,9 @@ export default function ServerSetup() {
           if (!setupModalRequired) setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
         }}
       >
-        {/* HUD 引导代号行：纯展示，内容来自真实的弹窗模式（initial / add / authorize） */}
-        <div className="server-setup-boot-code" aria-hidden="true">
-          <span className="hud-led hud-led--info" />
+        {/* HUD 引导代号行：携带 3D 切面果冻弹跳魔方，内容来自真实的弹窗模式（initial / add / authorize） */}
+        <div className="server-setup-boot-code">
+          <HudCube size={18} mode="brand" tone="cyan" interactive label="AIH Server 全息棱镜（点击果冻弹跳）" />
           <span>SYS // SETUP</span>
           <span className="server-setup-boot-mode">{effectiveDialog.mode.toUpperCase()}</span>
         </div>

@@ -58,7 +58,7 @@ export function AccountRuntimeSettingsModal({
       onCancel={onClose}
       footer={<Button onClick={onClose}>关闭</Button>}
     >
-      <Tabs items={tabs} />
+      <Tabs animated={{ inkBar: true, tabPane: true }} items={tabs} />
     </Modal>
   );
 }

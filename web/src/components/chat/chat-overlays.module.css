@@ -298,7 +298,7 @@
   gap: var(--space-6);
   padding: var(--hos-space-1-5) var(--hos-space-2-5);
   border-radius: 0;
-  box-shadow: inset 2px 0 0 transparent;
+  box-shadow: inset 0 0 0 1px transparent;
   transition: background var(--motion-fast) var(--ease-standard),
     box-shadow var(--motion-fast) var(--ease-standard);
 }
@@ -309,7 +309,7 @@
 
 .shortcutRow:hover {
   background: var(--color-accent-soft);
-  box-shadow: inset 2px 0 0 var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 42%, transparent);
 }
 
 .shortcutDesc {

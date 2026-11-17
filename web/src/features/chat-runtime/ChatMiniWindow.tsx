@@ -28,7 +28,10 @@ import {
   runtimeAccountsForSession,
 } from './session-surface-policy';
 import { useSessionRuntime } from './use-session-runtime';
+import Reveal from '@/components/ui/Reveal';
 import { useCollapsePresence } from '@/hooks/use-collapse-presence';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
+import { prefersReducedMotion } from '@/services/view-transition';
 import SessionWorkspace from './SessionWorkspace';
 import { useSessionSelector } from '@/chat-runtime';
 import type { SessionProjection } from '@/chat-runtime';
@@ -36,6 +39,7 @@ import { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './chat-mini-window.module.css';
 
 const MINI_SESSION_TITLE = '快速 Chat';
+const MINI_WINDOW_EXIT_MS = 160;
 
 /**
  * 窗口本身是 z-index: 1200（chat-mini-window.module.css），而 antd 弹层按
@@ -79,6 +83,7 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   const persistedSessionRef = useRef(false);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number }>();
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const accounts = props.accounts || accountCatalog.accounts;
   const selectedAccount = props.account || accountOverride
@@ -199,6 +204,9 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   }, [location.pathname, open, selectedAccount]);
 
   const close = useCallback(() => {
+    if (typeof document !== 'undefined' && panelRef.current?.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
     setOpen(false);
     dragRef.current = undefined;
   }, []);
@@ -236,12 +244,22 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   }, []);
   const endDrag = useCallback(() => { dragRef.current = undefined; }, []);
 
-  // 关闭时留 160ms 播退场再卸载：快速窗口打开从右下角微抬进入，关闭缩回原处，
-  // 不再是一下子凭空出现/消失。
-  const presence = useCollapsePresence(open, 160);
-  if (!presence.present || typeof document === 'undefined') return null;
+  // 关闭时留 160ms 播退场再卸载：快速窗口用连续 CSS transition 驱动开合，
+  // 关闭中途重开可直接从当前帧平滑反转，且退场期间 inert 禁焦不遗留离屏可聚焦控件。
+  const reducedMotion = prefersReducedMotion();
+  const presence = useCollapsePresence(open, reducedMotion ? 0 : MINI_WINDOW_EXIT_MS);
+  const windowExpanded = open && (reducedMotion || presence.expanded);
   const persistedSessionOwnsCanonicalRoute = isChatPagePath(location.pathname)
     && persistedSessionRef.current;
+  const miniBodyPhaseKey = loadingSession
+    ? 'loading'
+    : !session
+      ? 'empty'
+      : persistedSessionOwnsCanonicalRoute
+        ? 'handoff'
+        : `ready:${session.id}`;
+  useSwitchFade(bodyRef, open ? miniBodyPhaseKey : null, { scope: 'chat-mini-window-body', duration: 150, from: 0.45 });
+  if (!presence.present || typeof document === 'undefined') return null;
   const style: CSSProperties | undefined = position
     ? { left: position.left, top: position.top, right: 'auto', bottom: 'auto' }
     : undefined;
@@ -249,9 +267,12 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
     <ConfigProvider theme={MINI_WINDOW_THEME}>
       <section
         ref={panelRef}
-        className={`${styles.window} ${pinned ? styles.pinned : ''} ${open ? '' : styles.windowLeaving}`}
+        className={`${styles.window} ${pinned ? styles.pinned : ''} ${windowExpanded ? '' : styles.windowClosed} ${open ? '' : styles.windowClosing}`}
+        data-open={open ? 'true' : 'false'}
         style={style}
         aria-label="AIH Chat 快速窗口"
+        aria-hidden={!open}
+        {...(!open ? { inert: '' } : {})}
       >
         <header
           className={styles.header}
@@ -273,13 +294,13 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
             <button type="button" onClick={close} aria-label="关闭 Chat 窗口"><CloseOutlined /></button>
           </div>
         </header>
-        <div className={styles.body}>
-          {sessionError ? (
+        <div ref={bodyRef} className={styles.body}>
+          <Reveal open={Boolean(sessionError)}>
             <div className={styles.inlineError} role="alert">
               <span>{sessionError}</span>
               <button type="button" onClick={() => void loadSession()}><ReloadOutlined /> 重试</button>
             </div>
-          ) : null}
+          </Reveal>
           {loadingSession ? <div className={styles.status} role="status">正在读取最近 Chat 会话…</div> : null}
           {!loadingSession && !session ? (
             <div className={styles.status} role="status">

@@ -1,4 +1,5 @@
-import { Empty, Input, Segmented, Select, Spin, Tag, Tooltip } from 'antd';
+import { Input, Segmented, Select, Tag, Tooltip } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
 import InlineNote from '@/components/ui/InlineNote';
 import {
   CheckCircleOutlined,
@@ -9,6 +10,8 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
+import Reveal from '@/components/ui/Reveal';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { effectiveRouteLabel, useProxyDiagnostics, type ProbeRoute } from './use-proxy-diagnostics';
 
 function proxyValue(value: string | undefined) {
@@ -41,6 +44,7 @@ export default function ProxyDiagnosticsPanel() {
     reachableCount,
     saveProxy
   } = useProxyDiagnostics();
+  const { surfaceRef: probeSurfaceRef, switchSurface: switchProbeSurface } = useSurfaceSwitch<HTMLDivElement>();
 
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-proxy-title">
@@ -58,7 +62,7 @@ export default function ProxyDiagnosticsPanel() {
 
       {proxyError && <InlineNote tone="error" description={proxyError}>代理状态读取失败</InlineNote>}
       {proxyLoading && !proxyData ? (
-        <div className="toolkit-loading"><Spin size="large" tip="正在读取代理配置" /></div>
+        <HudStateView variant="loading" code="NETWORK // PROXY" title="正在读取网络代理配置..." compact />
       ) : proxyData ? (
         <>
           <ToolkitStatusTrack
@@ -133,13 +137,13 @@ export default function ProxyDiagnosticsPanel() {
                 />
               </Tooltip>
             </div>
-            {selectedSource && (
+            <Reveal open={Boolean(selectedSource)}>
               <div className="toolkit-source-note">
                 <strong>当前选择</strong>
                 <code>{selectedSource}</code>
                 <span>{detectedSources.find((source) => source.value === selectedSource)?.origin}</span>
               </div>
-            )}
+            </Reveal>
             <div className="toolkit-proxy-source-actions">
               {toolTargets.map((target) => (
                 <Button
@@ -200,7 +204,14 @@ export default function ProxyDiagnosticsPanel() {
           <div className="toolkit-header-actions">
             <Segmented
               value={probeRoute}
-              onChange={(value) => setProbeRoute(value as ProbeRoute)}
+              onChange={(value) => {
+                const nextRoute = value as ProbeRoute;
+                switchProbeSurface(() => setProbeRoute(nextRoute), {
+                  current: probeRoute,
+                  next: nextRoute,
+                  direction: nextRoute === 'proxy' ? 'forward' : 'backward'
+                });
+              }}
               options={[
                 { label: '直连', value: 'direct' },
                 { label: '网关上游代理', value: 'proxy', disabled: !gatewayProxyUrl }
@@ -223,29 +234,31 @@ export default function ProxyDiagnosticsPanel() {
           </InlineNote>
         )}
         {connectivityError && <InlineNote tone="error" description={connectivityError}>连通性测试失败</InlineNote>}
-        {connectivityLoading && !connectivityData ? (
-          <div className="toolkit-loading compact"><Spin tip="正在测试端点响应" /></div>
-        ) : connectivityData?.results.length ? (
-          <div className="toolkit-connectivity-grid">
-            {connectivityData.results.map((result) => (
-              <article key={result.id} data-reachable={result.reachable || undefined}>
-                <div>
-                  <span className="toolkit-connectivity-name">
-                    <span className={`hud-led ${result.reachable ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
-                    <strong>{result.name}</strong>
-                  </span>
-                  {result.reachable
-                    ? <Tag color="success"><CheckCircleOutlined /> HTTP 可达</Tag>
-                    : <Tag color="error"><CloseCircleOutlined /> 未收到响应</Tag>}
-                </div>
-                <code>{result.host}</code>
-                <span>{result.reachable
-                  ? `HTTP ${result.statusCode || '响应'} · ${result.latencyMs} ms · ${result.route || connectivityData.route}`
-                  : (result.error || '连接失败')}</span>
-              </article>
-            ))}
-          </div>
-        ) : <Empty description="没有端点测试结果" />}
+        <div ref={probeSurfaceRef}>
+          {connectivityLoading && !connectivityData ? (
+            <HudStateView variant="loading" code="PROBE // HTTP" title="正在测试外部端点响应..." compact />
+          ) : connectivityData?.results.length ? (
+            <div className="toolkit-connectivity-grid">
+              {connectivityData.results.map((result) => (
+                <article key={result.id} data-reachable={result.reachable || undefined}>
+                  <div>
+                    <span className="toolkit-connectivity-name">
+                      <span className={`hud-led ${result.reachable ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
+                      <strong>{result.name}</strong>
+                    </span>
+                    {result.reachable
+                      ? <Tag color="success"><CheckCircleOutlined /> HTTP 可达</Tag>
+                      : <Tag color="error"><CloseCircleOutlined /> 未收到响应</Tag>}
+                  </div>
+                  <code>{result.host}</code>
+                  <span>{result.reachable
+                    ? `HTTP ${result.statusCode || '响应'} · ${result.latencyMs} ms · ${result.route || connectivityData.route}`
+                    : (result.error || '连接失败')}</span>
+                </article>
+              ))}
+            </div>
+          ) : <HudStateView code="PROBE // EMPTY" title="没有端点测试结果" compact />}
+        </div>
       </section>
     </section>
   );

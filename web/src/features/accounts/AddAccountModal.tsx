@@ -1,6 +1,10 @@
 import { Button, Form, Input, Modal, Radio, Select, Space, Switch, Tag } from 'antd';
 import ProviderIcon from '@/components/chat/ProviderIcon';
+import FormSurfaceField, { useFormSubmitTransitionGuard } from '@/components/ui/FormSurfaceField';
 import { InlineNote } from '@/components/ui/InlineNote';
+import Reveal from '@/components/ui/Reveal';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import { flushActiveTransitionSync } from '@/services/view-transition';
 import {
   PROVIDER_AUTH_OPTIONS,
   getProviderSiteLabel,
@@ -49,6 +53,8 @@ export function AddAccountModal({
   const selectedAuth = splitAuthOptionValue(Form.useWatch('authMode', form));
   const selectedAuthMode = selectedAuth.authMode;
   const kiroLoginProvider = Form.useWatch('kiroLoginProvider', form) as KiroLoginProvider | undefined;
+  useFormSubmitTransitionGuard(form);
+  const { surfaceRef: authStepSurfaceRef, switchSurface: switchAuthStepSurface } = useSurfaceSwitch<HTMLDivElement>();
   const providerAuthOptions = selectedProvider
     ? (PROVIDER_AUTH_OPTIONS[selectedProvider] || [])
     : [];
@@ -64,7 +70,20 @@ export function AddAccountModal({
     <Modal
       title="添加新账号"
       open={open}
-      onOk={() => form.submit()}
+      onOk={() => {
+        flushActiveTransitionSync();
+        const liveProvider = form.getFieldValue('provider') as Provider | undefined;
+        const liveAuthMode = splitAuthOptionValue(form.getFieldValue('authMode')).authMode;
+        const liveKiroProvider = form.getFieldValue('kiroLoginProvider') as KiroLoginProvider | undefined;
+        if (
+          !liveProvider
+          || !liveAuthMode
+          || (liveProvider === 'kiro' && liveAuthMode === 'oauth-device' && !liveKiroProvider)
+        ) {
+          return;
+        }
+        form.submit();
+      }}
       onCancel={onCancel}
       confirmLoading={submitting}
       okButtonProps={{ disabled: okDisabled }}
@@ -85,103 +104,129 @@ export function AddAccountModal({
           {/* 多站点产品（qoder / codebuddy / workbuddy）合并成一个分组，站点是组内
               的二级选项——因为国内站与国际站账号体系不互通，必须由用户显式选站点；
               表单值始终是真实 Provider ID，提交链路不因合并而改变。 */}
-          <Select placeholder="选择供应商" size="large">
-            {providerFamilies.map((group) => (group.multiSite ? (
-              <Select.OptGroup key={group.family} label={group.label}>
-                {group.providers.map((entry) => (
-                  <Select.Option key={entry.id} value={entry.id}>
-                    <Space align="center">
-                      <ProviderIcon provider={entry.id} size={18} />
-                      <span>{group.label}</span>
-                      <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
-                        {getProviderSiteLabel(entry.site)}
-                      </Tag>
-                    </Space>
-                  </Select.Option>
-                ))}
-              </Select.OptGroup>
-            ) : (
-              <Select.Option key={group.providers[0].id} value={group.providers[0].id}>
-                <Space align="center">
-                  <ProviderIcon provider={group.providers[0].id} size={18} />
-                  <span>{group.label}</span>
-                </Space>
-              </Select.Option>
-            )))}
-          </Select>
+          <FormSurfaceField
+            onBeforeFieldCommit={(commit) => {
+              switchAuthStepSurface(commit);
+            }}
+          >
+            <Select placeholder="选择供应商" size="large">
+              {providerFamilies.map((group) => (group.multiSite ? (
+                <Select.OptGroup key={group.family} label={group.label}>
+                  {group.providers.map((entry) => (
+                    <Select.Option key={entry.id} value={entry.id}>
+                      <Space align="center">
+                        <ProviderIcon provider={entry.id} size={18} />
+                        <span>{group.label}</span>
+                        <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
+                          {getProviderSiteLabel(entry.site)}
+                        </Tag>
+                      </Space>
+                    </Select.Option>
+                  ))}
+                </Select.OptGroup>
+              ) : (
+                <Select.Option key={group.providers[0].id} value={group.providers[0].id}>
+                  <Space align="center">
+                    <ProviderIcon provider={group.providers[0].id} size={18} />
+                    <span>{group.label}</span>
+                  </Space>
+                </Select.Option>
+              )))}
+            </Select>
+          </FormSurfaceField>
         </Form.Item>
 
-        {selectedProvider ? (
+        <Reveal open={Boolean(selectedProvider)}>
           <Form.Item
             name="authMode"
             label="认证方式"
-            rules={[{ required: true, message: '请选择认证方式' }]}
+            rules={selectedProvider ? [{ required: true, message: '请选择认证方式' }] : []}
           >
-            <Radio.Group size="large" className="aih-choice-tiles">
-              <Space direction="vertical">
-                {providerAuthOptions.map((option) => (
-                  <Radio
-                    key={getAuthOptionValue(option)}
-                    value={getAuthOptionValue(option)}
-                    disabled={Boolean(option.disabled)}
-                  >
-                    <Space direction="vertical" size={0}>
-                      <Space align="center" size={6}>
-                        <span className="aih-choice-tile-title">{option.label}</span>
-                        {option.disabled && (
-                          <Tag color="default" bordered={false} style={{ marginInlineEnd: 0 }}>
-                            已停用
-                          </Tag>
-                        )}
+            <FormSurfaceField
+              onBeforeFieldCommit={(commit, rawEvent) => {
+                const nextVal = String((rawEvent as { target?: { value?: unknown } } | null)?.target?.value || '');
+                const currentVal = String(form.getFieldValue('authMode') || '');
+                const authOrder = providerAuthOptions.map((option) => getAuthOptionValue(option));
+                switchAuthStepSurface(commit, {
+                  slot: 'authMode',
+                  current: currentVal,
+                  next: nextVal,
+                  direction: nextVal ? resolveOrderedDirection(authOrder, currentVal, nextVal) : 'neutral',
+                });
+              }}
+            >
+              <Radio.Group size="large" className="aih-choice-tiles">
+                <Space direction="vertical">
+                  {providerAuthOptions.map((option) => (
+                    <Radio
+                      key={getAuthOptionValue(option)}
+                      value={getAuthOptionValue(option)}
+                      disabled={Boolean(option.disabled)}
+                    >
+                      <Space direction="vertical" size={0}>
+                        <Space align="center" size={6}>
+                          <span className="aih-choice-tile-title">{option.label}</span>
+                          {option.disabled && (
+                            <Tag color="default" bordered={false} style={{ marginInlineEnd: 0 }}>
+                              已停用
+                            </Tag>
+                          )}
+                        </Space>
+                        <span className="aih-choice-tile-desc">
+                          {option.disabledReason || option.description}
+                        </span>
                       </Space>
-                      <span className="aih-choice-tile-desc">
-                        {option.disabledReason || option.description}
-                      </span>
-                    </Space>
-                  </Radio>
-                ))}
-              </Space>
-            </Radio.Group>
+                    </Radio>
+                  ))}
+                </Space>
+              </Radio.Group>
+            </FormSurfaceField>
           </Form.Item>
-        ) : null}
+        </Reveal>
 
-        {needsKiroLoginMethod ? (
+        <Reveal open={needsKiroLoginMethod}>
           <Form.Item
             name="kiroLoginProvider"
             label="登录方式"
-            rules={[{ required: true, message: '请选择登录方式（Builder ID / Google / GitHub）' }]}
+            rules={needsKiroLoginMethod ? [{ required: true, message: '请选择登录方式（Builder ID / Google / GitHub）' }] : []}
             extra="三种方式都是设备码授权：选定后点「确定」才会获取授权链接。"
           >
             <KiroLoginMethodChoice disabled={submitting} />
           </Form.Item>
-        ) : null}
+        </Reveal>
 
-        {localImport ? (
-          <div style={{ marginBottom: 16 }}>
-            <Space size={8} align="center" wrap>
-              <Button size="small" loading={localImport.submitting} onClick={localImport.onImport}>
-                从本机导入
-              </Button>
-              <span className="aih-overlay-hint">
-                {localImport.description || '本机已检测到该客户端的登录态，可直接建账号'}
-              </span>
-            </Space>
-          </div>
-        ) : null}
+        <Reveal open={Boolean(localImport)}>
+          {localImport ? (
+            <div style={{ marginBottom: 16 }}>
+              <Space size={8} align="center" wrap>
+                <Button size="small" loading={localImport.submitting} onClick={localImport.onImport}>
+                  从本机导入
+                </Button>
+                <span className="aih-overlay-hint">
+                  {localImport.description || '本机已检测到该客户端的登录态，可直接建账号'}
+                </span>
+              </Space>
+            </div>
+          ) : null}
+        </Reveal>
 
-        {pluginLogin ? (
-          <div style={{ marginBottom: 16 }}>
-            <Space size={8} align="center" wrap>
-              <Button size="small" loading={pluginLogin.submitting} onClick={pluginLogin.onLogin}>
-                插件登录
-              </Button>
-              <span className="aih-overlay-hint">
-                {pluginLogin.description || '该供应商由外部账号插件提供登录流程'}
-              </span>
-            </Space>
-          </div>
-        ) : null}
+        <Reveal open={Boolean(pluginLogin)}>
+          {pluginLogin ? (
+            <div style={{ marginBottom: 16 }}>
+              <Space size={8} align="center" wrap>
+                <Button size="small" loading={pluginLogin.submitting} onClick={pluginLogin.onLogin}>
+                  插件登录
+                </Button>
+                <span className="aih-overlay-hint">
+                  {pluginLogin.description || '该供应商由外部账号插件提供登录流程'}
+                </span>
+              </Space>
+            </div>
+          ) : null}
+        </Reveal>
 
+        {/* 认证凭据区域采用单树预提交切换，避免 api-key 与 vertex-ai 的同名 Form.Item 同时挂载冲突 */}
+        <div ref={authStepSurfaceRef}>
         {selectedAuthMode === 'api-key' || selectedAuthMode === 'auth-token' ? (
           <>
             <Form.Item
@@ -285,6 +330,7 @@ export function AddAccountModal({
             </Form.Item>
           </>
         ) : null}
+        </div>
       </Form>
     </Modal>
   );

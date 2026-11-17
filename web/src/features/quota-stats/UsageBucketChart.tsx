@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Empty, Segmented } from 'antd';
+import { Segmented } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 
 import EChartCanvas, {
   buildChartTooltipStyle,
@@ -43,6 +45,7 @@ function formatMetricValue(metric: UsageBucketMetric, value: number | null) {
  */
 export default function UsageBucketChart({ buckets, granularity, emptyReason }: UsageBucketChartProps) {
   const [metric, setMetric] = useState<UsageBucketMetric>('tokens');
+  const { surfaceRef, switchSurface } = useSurfaceSwitch<HTMLDivElement>();
   const labels = useMemo(() => buckets.map((bucket) => (
     formatUsageBucketAxis(bucket.bucketStartMs, granularity)
   )), [buckets, granularity]);
@@ -127,22 +130,29 @@ export default function UsageBucketChart({ buckets, granularity, emptyReason }: 
           size="small"
           value={metric}
           options={USAGE_METRIC_OPTIONS}
-          onChange={(value) => setMetric(value as UsageBucketMetric)}
+          onChange={(value) => {
+            const next = value as UsageBucketMetric;
+            const order = USAGE_METRIC_OPTIONS.map((item) => item.value);
+            switchSurface(() => setMetric(next), {
+              current: metric,
+              next,
+              direction: resolveOrderedDirection(order, metric, next)
+            });
+          }}
         />
       </div>
-      {!hasData ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={(
-            <span className="quota-empty-copy">
-              <strong>{getQuotaEmptyDescription(emptyReason)}</strong>
-              <small>{getQuotaEmptyHint(emptyReason)}</small>
-            </span>
-          )}
-        />
-      ) : (
-        <EChartCanvas ariaLabel="日周用量" buildOption={buildOption} />
-      )}
+      <div ref={surfaceRef}>
+        {!hasData ? (
+          <HudStateView
+            compact
+            code="NO_USAGE"
+            title={getQuotaEmptyDescription(emptyReason)}
+            description={getQuotaEmptyHint(emptyReason)}
+          />
+        ) : (
+          <EChartCanvas ariaLabel="日周用量" buildOption={buildOption} />
+        )}
+      </div>
     </div>
   );
 }

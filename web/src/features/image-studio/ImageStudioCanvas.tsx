@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Tooltip } from 'antd';
 import type { ImageStudioAsset, ImageStudioRevision, ImageStudioSession } from '@/types';
+import HudCube from '@/components/hud/HudCube';
 import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { formatAssetSize, imageStudioAssetKey, mapAssetsById } from './image-studio-utils';
 import styles from './image-studio.module.css';
@@ -79,13 +80,13 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
 
         {!revision ? (
           <div className={styles.canvasEmpty}>
-            <span className={styles.canvasEmptyMark}><PictureOutlined /></span>
+            <HudCube size={44} mode="empty" tone="violet" interactive label="点击弹跳影像母版全息魔方" />
             <strong>建立第一张母版</strong>
             <p>选择模型、写下画面意图，然后生成。结果会成为该会话的第一帧修订。</p>
           </div>
         ) : revision.status === 'failed' && !selectedUrl ? (
           <div className={styles.canvasEmpty}>
-            <span className={`${styles.canvasEmptyMark} ${styles.canvasEmptyMarkError}`}>!</span>
+            <HudCube size={40} mode="empty" tone="err" interactive label="点击弹跳重试状态魔方" />
             <strong>本次修订未出片</strong>
             <p>{revision.error?.message || '请检查模型可用状态或调整参数后重试。'}</p>
           </div>
@@ -95,7 +96,7 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
           </div>
         ) : (
           <div className={styles.canvasEmpty}>
-            <span className={styles.canvasEmptyMark}><LoadingOutlined spin={revision.status === 'running'} /></span>
+            <HudCube size={40} mode="loading" tone="cyan" />
             <strong>{revision.status === 'running' ? '正在生成' : '正在载入资产'}</strong>
             <p>大图资产通过受保护的 Studio 存储读取，不会暴露到公共 blob 缓存。</p>
           </div>

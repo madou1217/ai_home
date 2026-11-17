@@ -49,7 +49,7 @@ export default function TranslationProviderSettings({ providers, drafts, saving,
     <section className={styles.providerSettings} aria-label="翻译 Provider 配置" aria-busy={!providers.length && !error}>
       {error ? <div className={styles.inlineError} role="status">{error}<Button appVariant="quiet" onClick={onReload}>重试</Button></div> : null}
       {!providers.length && !error ? <span className={styles.savedHint} role="status" aria-live="polite">正在读取引擎目录…</span> : null}
-      {providers.length > 3 ? <Tabs className={styles.providerTabs} items={providers.map((provider) => ({ key: provider.id, label: provider.label, children: renderProvider(provider) }))} /> : providers.map((provider) => <div key={provider.id}>{renderProvider(provider)}</div>)}
+      {providers.length > 3 ? <Tabs className={styles.providerTabs} animated={{ inkBar: true, tabPane: true }} items={providers.map((provider) => ({ key: provider.id, label: provider.label, children: renderProvider(provider) }))} /> : providers.map((provider) => <div key={provider.id}>{renderProvider(provider)}</div>)}
     </section>
   );
 }

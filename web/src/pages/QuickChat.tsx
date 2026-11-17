@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Drawer } from 'antd';
 import { MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import { ProjectList } from '@/components/chat';
+import { getSessionRunKey } from '@/components/chat/project-runtime-state.js';
+import HudCube from '@/components/hud/HudCube';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
-import type { Session } from '@/types';
+import type { AggregatedProject, Session } from '@/types';
 import { ChatConversationContent, useChatPageState } from './chat-page-state';
 import { readQuickChatLaunch, useQuickChatHost } from './chat-quick-launch';
+import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import { runWaapiSurfaceFallback, supersedeActiveTransition } from '@/services/view-transition';
 import styles from './quick-chat.module.css';
 
 // Chat 快捷唤起的独立外壳（/chat/quick?embed=desktop，桌面原生小窗）：只做 chat / work。
@@ -51,6 +55,8 @@ export default function QuickChat() {
   const [launch] = useState(() => readQuickChatLaunch());
   useQuickChatHost(launch);
   const [containerRef, layout] = useContainerLayout();
+  const { surfaceRef: workspaceSurfaceRef, switchSurface: switchWorkspaceSurface } = useSurfaceSwitch<HTMLDivElement>();
+  const { surfaceRef: mainSurfaceRef } = useSurfaceSwitch<HTMLElement>();
   const compact = layout === 'single';
   const state = useChatPageState(compact, launch.mode, { urlSelectionOnly: true });
   const {
@@ -96,14 +102,120 @@ export default function QuickChat() {
     return () => window.clearInterval(timer);
   }, [containerRef, selectedSessionId]);
 
+  const resolveConversationStage = useCallback((): HTMLElement | null => (
+    mainSurfaceRef.current?.querySelector<HTMLElement>('[data-chat-center-stage="true"]')
+      || mainSurfaceRef.current
+  ), [mainSurfaceRef]);
+
+  const switchMode = useCallback((nextMode: WorkspaceMode): void => {
+    if (drawerOpen) {
+      supersedeActiveTransition();
+      setDrawerOpen(false);
+      handleModeChange(nextMode);
+      if (mainSurfaceRef.current && nextMode !== workspaceMode) {
+        runWaapiSurfaceFallback(mainSurfaceRef.current, nextMode === 'work' ? 'forward' : 'backward');
+      }
+      return;
+    }
+    switchWorkspaceSurface(() => handleModeChange(nextMode), {
+      slot: 'mode',
+      current: workspaceMode,
+      next: nextMode,
+      direction: nextMode === 'work' ? 'forward' : 'backward',
+      element: workspaceSurfaceRef.current,
+    });
+  }, [drawerOpen, handleModeChange, mainSurfaceRef, switchWorkspaceSurface, workspaceMode, workspaceSurfaceRef]);
+
+  const selectProject = useCallback((project: AggregatedProject): void => {
+    if (drawerOpen) {
+      handleSelectProject(project);
+      return;
+    }
+    switchWorkspaceSurface(() => handleSelectProject(project), {
+      slot: 'project',
+      current: projectCatalog.selectedProject?.path || '',
+      next: project.path,
+      direction: 'neutral',
+      element: mainSurfaceRef.current,
+    });
+  }, [drawerOpen, handleSelectProject, mainSurfaceRef, projectCatalog.selectedProject?.path, switchWorkspaceSurface]);
+
   const selectSession = useCallback((session: Session): void => {
-    handleSelectSession(session);
-    setDrawerOpen(false);
-  }, [handleSelectSession]);
+    const currentKey = projectCatalog.selectedSession ? getSessionRunKey(projectCatalog.selectedSession) : '';
+    const nextKey = getSessionRunKey(session);
+    if (drawerOpen) {
+      supersedeActiveTransition();
+      handleSelectSession(session);
+      setDrawerOpen(false);
+      if (mainSurfaceRef.current && currentKey !== nextKey) {
+        runWaapiSurfaceFallback(mainSurfaceRef.current, 'neutral');
+      }
+      return;
+    }
+    const targetMode: WorkspaceMode = session.projectPath ? 'work' : 'chat';
+    const changesMode = targetMode !== workspaceMode;
+    switchWorkspaceSurface(() => handleSelectSession(session), {
+      slot: 'session',
+      current: currentKey,
+      next: nextKey,
+      direction: changesMode ? (targetMode === 'work' ? 'forward' : 'backward') : 'neutral',
+      element: changesMode ? workspaceSurfaceRef.current : resolveConversationStage(),
+    });
+  }, [
+    drawerOpen,
+    handleSelectSession,
+    mainSurfaceRef,
+    projectCatalog.selectedSession,
+    resolveConversationStage,
+    switchWorkspaceSurface,
+    workspaceMode,
+    workspaceSurfaceRef,
+  ]);
+
   const createSession = useCallback((): void => {
-    handleCreateSession();
-    setDrawerOpen(false);
-  }, [handleCreateSession]);
+    const canCreate = Boolean(state.accountCatalog.selectedAccount || state.accountCatalog.accounts[0])
+      && (workspaceMode === 'chat' || Boolean(projectCatalog.selectedProject));
+    if (!canCreate) {
+      handleCreateSession();
+      return;
+    }
+    const currentKey = projectCatalog.selectedSession ? getSessionRunKey(projectCatalog.selectedSession) : '';
+    if (drawerOpen) {
+      supersedeActiveTransition();
+      handleCreateSession();
+      setDrawerOpen(false);
+      if (mainSurfaceRef.current) {
+        runWaapiSurfaceFallback(mainSurfaceRef.current, 'forward');
+      }
+      return;
+    }
+    switchWorkspaceSurface(() => handleCreateSession(), {
+      slot: 'session',
+      current: currentKey,
+      next: `draft:${Date.now()}`,
+      direction: 'forward',
+      element: resolveConversationStage(),
+    });
+  }, [
+    drawerOpen,
+    handleCreateSession,
+    mainSurfaceRef,
+    projectCatalog.selectedProject,
+    projectCatalog.selectedSession,
+    resolveConversationStage,
+    state.accountCatalog.accounts,
+    state.accountCatalog.selectedAccount,
+    switchWorkspaceSurface,
+    workspaceMode,
+  ]);
+
+  const quickState = useMemo(() => ({
+    ...state,
+    handleModeChange: switchMode,
+    handleSelectProject: selectProject,
+    handleSelectSession: selectSession,
+    handleCreateSession: createSession,
+  }), [createSession, selectProject, selectSession, state, switchMode]);
 
   const sessionList = (
     <ProjectList
@@ -117,7 +229,7 @@ export default function QuickChat() {
       mode={workspaceMode}
       onRefresh={refreshProjectList}
       onToggleProject={projectCatalog.toggleProject}
-      onSelectProject={handleSelectProject}
+      onSelectProject={selectProject}
       onSelectSession={selectSession}
       onOpenProject={dialogs.openProject}
       onCreateSession={createSession}
@@ -141,7 +253,8 @@ export default function QuickChat() {
             <MenuOutlined />
           </button>
         ) : null}
-        <div className={styles.modeSwitch} role="tablist" aria-label="模式">
+        <HudCube size={18} mode="brand" tone="cyan" interactive label="AI Home 全息棱镜（点击果冻弹跳）" />
+        <div className={styles.modeSwitch} data-mode={workspaceMode} role="tablist" aria-label="模式">
           {(['chat', 'work'] as const).map((mode) => (
             <button
               key={mode}
@@ -150,7 +263,7 @@ export default function QuickChat() {
               aria-selected={workspaceMode === mode}
               className={styles.modeTab}
               data-active={workspaceMode === mode || undefined}
-              onClick={() => handleModeChange(mode)}
+              onClick={() => switchMode(mode)}
             >
               {MODE_LABEL[mode]}
             </button>
@@ -161,10 +274,10 @@ export default function QuickChat() {
           <PlusOutlined />
         </button>
       </header>
-      <div className={styles.body}>
+      <div ref={workspaceSurfaceRef} className={styles.body}>
         {compact ? null : <aside className={styles.sidebar} aria-label="会话列表">{sessionList}</aside>}
-        <main className={styles.main}>
-          <ChatConversationContent state={state} workbench={layout === 'triple'} />
+        <main ref={mainSurfaceRef} className={styles.main}>
+          <ChatConversationContent state={quickState} workbench={layout === 'triple'} forceColumnsLayout />
         </main>
       </div>
       {compact ? (

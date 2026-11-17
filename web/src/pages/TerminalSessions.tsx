@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { CodeOutlined, CopyOutlined, PlusOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
-import { Button, Empty, Input, Select, Spin, message } from 'antd';
+import { Button, Input, Select, message } from 'antd';
+import HudStateView from '@/components/hud/HudStateView';
+import Reveal from '@/components/ui/Reveal';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
 import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
@@ -57,42 +59,46 @@ export default function TerminalSessions() {
   const options = [...new Set([...candidates, ...manager.unavailableTabs].map((tab) => tab.harness).filter(Boolean))];
   const active = candidates.find((tab) => tab.id === manager.activeTabId) || candidates[0];
   const select = (id: string) => { manager.setActiveTab(id); setQuery(''); setProvider('all'); };
-  return <main className="terminal-overview">
+  return <main className="terminal-overview aih-panel-enter">
     <header className="terminal-overview-header">
-      <div><span className="terminal-overview-eyebrow">LIVE SESSIONS</span><h1><CodeOutlined /> 会话总览 <span>{candidates.length}</span></h1></div>
+      <div><span className="terminal-overview-eyebrow">SYS // LIVE SESSIONS</span><h1><CodeOutlined className="terminal-overview-title-icon" /> 会话总览 <span className="terminal-overview-count">{candidates.length}</span></h1></div>
       <div className="terminal-overview-actions">
         <Button icon={<ReloadOutlined />} loading={directory.loading} onClick={() => void directory.refresh()}>刷新会话</Button>
         {hidden.length ? <Button icon={<EyeOutlined />} onClick={restoreHidden}>显示已隐藏 ({hidden.length})</Button> : null}
-        <Button icon={<PlusOutlined />} onClick={() => void openProjectTerminal(active?.cwd)}>项目终端</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => void openProjectTerminal(active?.cwd)}>项目终端</Button>
       </div>
     </header>
-    <div className="terminal-overview-toolbar">
+    <div className="terminal-overview-toolbar hud-panel hud-panel--sm">
       <Input.Search aria-label="查找会话" placeholder="查找名称、项目路径" value={query} onChange={(event) => setQuery(event.target.value)} allowClear />
       <Select aria-label="筛选会话类型" value={provider} onChange={setProvider} options={[{ value: 'all', label: '全部类型' }, ...options.map((value) => ({ value, label: value }))]} />
       <span className="terminal-overview-help">点击预览切换，直接在主窗口输入 · 关闭原生会话视图会保留后台任务</span>
-      {directory.error ? <span className="terminal-overview-error" role="status">{directory.error}</span> : null}
+      {directory.error ? <span className="terminal-overview-error" role="status"><span className="hud-led hud-led--err" aria-hidden="true" />{directory.error}</span> : null}
     </div>
-    {query || provider !== 'all' ? <nav className="terminal-overview-results" aria-label="查找结果">
-      {filtered.length ? filtered.map((tab) => <button key={tab.id} type="button" onClick={() => select(tab.id)} title={tab.cwd}>{tab.label}</button>) : <span>没有匹配的会话</span>}
-    </nav> : null}
-    {unavailable.length ? <section className="terminal-overview-unavailable" aria-label="暂不可接入的原会话">
-      <div className="terminal-overview-unavailable-heading">
-        <span role="status">{unavailable.length} 个原会话当前未发现，标识已保留</span>
-        <span>刷新后会重新核对；不会替换为同名终端或自动续跑</span>
-      </div>
-      <ul>{unavailable.map((tab) => <li key={tab.id}>
-        <div><strong>{tab.label}</strong><span>当前目录未发现且接入返回 404，不代表历史已丢失</span></div>
-        <code title={tab.sessionKey}>{tab.nativeSessionId || tab.sessionKey}</code>
-        <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void copyIdentity(tab.label, tab.sessionKey, tab.nativeSessionId)}>复制原标识</Button>
-      </li>)}</ul>
-    </section> : null}
+    <Reveal open={Boolean(query || provider !== 'all')}>
+      <nav className="terminal-overview-results" aria-label="查找结果">
+        {filtered.length ? filtered.map((tab) => <button key={tab.id} type="button" data-active={tab.id === active?.id ? 'true' : undefined} onClick={() => select(tab.id)} title={tab.cwd}>{tab.label}</button>) : <span className="terminal-overview-no-match">没有匹配的会话</span>}
+      </nav>
+    </Reveal>
+    <Reveal open={unavailable.length > 0}>
+      <section className="terminal-overview-unavailable hud-panel hud-panel--sm" aria-label="暂不可接入的原会话">
+        <div className="terminal-overview-unavailable-heading">
+          <span className="terminal-overview-unavailable-status" role="status"><span className="hud-led hud-led--warn" aria-hidden="true" />{unavailable.length} 个原会话当前未发现，标识已保留</span>
+          <span>刷新后会重新核对；不会替换为同名终端或自动续跑</span>
+        </div>
+        <ul>{unavailable.map((tab) => <li key={tab.id}>
+          <div><strong>{tab.label}</strong><span>当前目录未发现且接入返回 404，不代表历史已丢失</span></div>
+          <code title={tab.sessionKey}>{tab.nativeSessionId || tab.sessionKey}</code>
+          <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void copyIdentity(tab.label, tab.sessionKey, tab.nativeSessionId)}>复制原标识</Button>
+        </li>)}</ul>
+      </section>
+    </Reveal>
     <div className="terminal-overview-workspace">
       {candidates.length ? <ShellTerminalPanel key={manager.serverId} visible persistent compactChrome title="会话终端"
         sessionTabs={candidates.map((tab) => ({ ...tab, persistent: true }))} activeTabId={active?.id}
         onActiveTabChange={manager.setActiveTab} onTabClose={hide} layout="gallery" panelHeight={700}
         onClose={() => message.info('会话视图已关闭，后台任务继续运行')} allowNewTab={false} minimized={false} />
-        : directory.loading ? <div className="terminal-overview-empty"><Spin tip="正在发现运行中的会话" /></div>
-          : <div className="terminal-overview-empty"><Empty description="当前服务器没有可显示的会话"><Button onClick={() => void openProjectTerminal()}>打开终端</Button></Empty></div>}
+        : directory.loading ? <div className="terminal-overview-empty"><HudStateView variant="loading" code="SYS // DISCOVERING" title="正在发现运行中的会话" description="正在同步当前 Server 上的活跃终端与原生 CLI 会话" /></div>
+          : <div className="terminal-overview-empty"><HudStateView code="NO_TERMINALS" title="当前服务器没有可显示的会话" description="打开项目终端，或在账号管理 / AI 会话页启动 CLI 后会自动汇聚在此" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => void openProjectTerminal()}>打开终端</Button>} /></div>}
     </div>
   </main>;
 }

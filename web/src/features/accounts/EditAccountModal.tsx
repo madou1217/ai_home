@@ -143,6 +143,7 @@ export function EditAccountModal({
     >
       <Tabs
         activeKey={activeTab}
+        animated={{ inkBar: true, tabPane: true }}
         onChange={setActiveTab}
         items={tabItems}
       />

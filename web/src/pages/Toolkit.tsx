@@ -27,6 +27,7 @@ import GeoResourcePanel from '@/features/geo-resource/GeoResourcePanel';
 import NativeResourcesPanel from '@/components/toolkit/NativeResourcesPanel';
 import AihPluginPanel from '@/components/toolkit/AihPluginPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
+import { isSameCommittedIntent, resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
 
@@ -196,6 +197,7 @@ export default function Toolkit() {
   const [secondarySelection, setSecondarySelection] = useState<Record<ToolkitSection, string>>(
     deepLink ? { ...DEFAULT_SECONDARY, [deepLink.section]: deepLink.panel } : DEFAULT_SECONDARY
   );
+  const { surfaceRef: panelHostRef, switchSurface: switchPanelSurface } = useSurfaceSwitch<HTMLElement>();
 
   useEffect(() => subscribeToolkitPanel((panel) => {
     const next = resolveDeepLink(panel ? `?panel=${encodeURIComponent(panel)}` : '');
@@ -227,11 +229,25 @@ export default function Toolkit() {
               data-active={item.id === activePanelId || undefined}
               aria-current={item.id === activePanelId ? 'page' : undefined}
               onClick={() => {
-                setSecondarySelection((current) => ({
-                  ...current,
-                  [section]: item.id
-                }));
-                writeToolkitPanel(item.id);
+                const panelOrder = sectionItems.map((entry) => entry.id);
+                const commit = () => {
+                  setSecondarySelection((current) => ({
+                    ...current,
+                    [section]: item.id
+                  }));
+                  writeToolkitPanel(item.id);
+                };
+                if (section === activeSection) {
+                  switchPanelSurface(commit, {
+                    slot: section,
+                    current: activePanelId,
+                    next: item.id,
+                    direction: resolveOrderedDirection(panelOrder, activePanelId, item.id)
+                  });
+                } else {
+                  if (isSameCommittedIntent(activePanelId, item.id)) return;
+                  commit();
+                }
               }}
             >
               <span className="toolkit-secondary-nav-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
@@ -244,8 +260,12 @@ export default function Toolkit() {
           ))}
         </nav>
 
-        {/* key 随面板变化：切换二级面板时重新挂载并播放进场过渡（styles/motion.css） */}
-        <main className="toolkit-panel-host aih-panel-enter" key={activePanelId}>
+        {/* 二级面板切换：活动分区挂 panelHostRef 做预提交新旧快照过渡，避免仅新面板单向跳入 */}
+        <main
+          ref={section === activeSection ? panelHostRef : undefined}
+          className="toolkit-panel-host aih-panel-enter"
+          key={activePanelId}
+        >
           {renderPanel(activePanelId)}
         </main>
       </div>
@@ -264,6 +284,7 @@ export default function Toolkit() {
         <Tabs
           className="toolkit-primary-tabs"
           activeKey={activeSection}
+          animated={{ inkBar: true, tabPane: true }}
           onChange={(value) => {
             const next = value as ToolkitSection;
             setActiveSection(next);

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Empty, Segmented, Spin, Tag } from 'antd';
+import { Segmented, Tag } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
 import Button from '@/components/ui/AppButton';
+import HudStateView from '@/components/hud/HudStateView';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import GuidedCommandPanel, {
   type GuidedCommandTask
 } from '@/components/toolkit/GuidedCommandPanel';
@@ -44,6 +46,8 @@ export default function ToolkitInstallGuide() {
   const [platform, setPlatform] = useState<ClientPlatform | ''>('');
   const [runtime, setRuntime] = useState('node');
   const [selectedToolId, setSelectedToolId] = useState('');
+  const { surfaceRef: workbenchRef, switchSurface: switchWorkbench } = useSurfaceSwitch<HTMLDivElement>();
+  const { surfaceRef: detailRef, switchSurface: switchDetail } = useSurfaceSwitch<HTMLDivElement>();
 
   const load = useCallback(async (requestedPlatform?: ClientPlatform) => {
     setLoading(true);
@@ -104,7 +108,9 @@ export default function ToolkitInstallGuide() {
         ) : null}
 
         {loading && !data ? (
-          <div className="toolkit-loading"><Spin size="large" tip="正在生成当前系统指南" /></div>
+          <div className="toolkit-loading">
+            <HudStateView variant="loading" code="SYS // PLAYBOOK" title="正在生成当前系统指南…" />
+          </div>
         ) : data ? (
           <>
             <div className="toolkit-guide-controls">
@@ -117,7 +123,19 @@ export default function ToolkitInstallGuide() {
                     label: item.id === data.currentPlatform ? `${item.label} · 当前` : item.label,
                     value: item.id
                   }))}
-                  onChange={(value) => void load(value as ClientPlatform)}
+                  onChange={(value) => {
+                    const nextPlatform = value as ClientPlatform;
+                    const order = data.platforms.map((item) => item.id);
+                    switchWorkbench(() => {
+                      setPlatform(nextPlatform);
+                      void load(nextPlatform);
+                    }, {
+                      slot: 'platform',
+                      current: platform,
+                      next: nextPlatform,
+                      direction: platform ? resolveOrderedDirection(order, platform, nextPlatform) : 'neutral'
+                    });
+                  }}
                 />
               </div>
               <div>
@@ -130,12 +148,21 @@ export default function ToolkitInstallGuide() {
                     value: plugin.id,
                     icon: runtimePluginIcon(plugin.id)
                   }))}
-                  onChange={(value) => setRuntime(String(value))}
+                  onChange={(value) => {
+                    const nextRuntime = String(value);
+                    const order = runtimePlugins.map((plugin) => plugin.id);
+                    switchWorkbench(() => setRuntime(nextRuntime), {
+                      slot: 'runtime',
+                      current: runtime,
+                      next: nextRuntime,
+                      direction: resolveOrderedDirection(order, runtime, nextRuntime)
+                    });
+                  }}
                 />
               </div>
             </div>
 
-            <div className="toolkit-workbench toolkit-guide-workbench">
+            <div ref={workbenchRef} className="toolkit-workbench toolkit-guide-workbench">
               <nav className="toolkit-tool-index" aria-label="运行环境工具">
                 {tools.map((tool) => (
                   <button
@@ -143,7 +170,14 @@ export default function ToolkitInstallGuide() {
                     type="button"
                     className="toolkit-tool-option"
                     data-active={tool.id === selectedTool?.id || undefined}
-                    onClick={() => setSelectedToolId(tool.id)}
+                    onClick={() => {
+                      const order = tools.map((entry) => entry.id);
+                      switchDetail(() => setSelectedToolId(tool.id), {
+                        current: selectedTool?.id,
+                        next: tool.id,
+                        direction: selectedTool ? resolveOrderedDirection(order, selectedTool.id, tool.id) : 'neutral'
+                      });
+                    }}
                   >
                     <span>
                       <strong>{tool.name}</strong>
@@ -153,7 +187,7 @@ export default function ToolkitInstallGuide() {
                   </button>
                 ))}
               </nav>
-              <div className="toolkit-workbench-detail">
+              <div ref={detailRef} className="toolkit-workbench-detail">
                 {selectedTool ? (
                   <>
                     <div className="toolkit-detail-heading">
@@ -169,7 +203,7 @@ export default function ToolkitInstallGuide() {
                       tasks={guideTasks(selectedTool)}
                     />
                   </>
-                ) : <Empty description="当前系统没有对应工具指南" />}
+                ) : <HudStateView compact code="NO_GUIDE" title="当前系统没有对应工具指南" />}
               </div>
             </div>
           </>

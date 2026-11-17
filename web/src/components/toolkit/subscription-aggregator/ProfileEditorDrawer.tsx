@@ -284,6 +284,7 @@ export default function ProfileEditorDrawer({
       <Form form={form} layout="vertical" requiredMark={false} scrollToFirstError>
         <Tabs
           activeKey={activeTab}
+          animated={{ inkBar: true, tabPane: true }}
           onChange={(key) => setActiveTab(key as EditorTab)}
           items={[
             { key: 'sources', label: '订阅源', forceRender: true, children: sourcesTab },

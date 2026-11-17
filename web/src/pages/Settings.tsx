@@ -746,6 +746,7 @@ const Settings = ({ section }: SettingsProps) => {
 
         <Tabs
           className="settings-control-plane-manage-tabs"
+          animated={{ inkBar: true, tabPane: true }}
           items={[
             {
               key: 'profiles',
@@ -907,6 +908,7 @@ const Settings = ({ section }: SettingsProps) => {
       <Tabs
         className="settings-tabs"
         defaultActiveKey={getInitialSettingsTab()}
+        animated={{ inkBar: true, tabPane: true }}
         items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases' || item.key === 'upstream-errors')}
       />
     </PageScaffold>

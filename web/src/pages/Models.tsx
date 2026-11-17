@@ -56,6 +56,8 @@ import {
   type ProviderFilter
 } from '@/features/models/model-catalog';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
+import Reveal from '@/components/ui/Reveal';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { parseUpstreamError } from '@/utils/format-upstream-error';
 import { openExternalUrl } from '@/services/open-external-url';
@@ -93,12 +95,10 @@ export default function Models() {
   const manualProvider = Form.useWatch('provider', manualForm) as Provider | undefined;
   const [queryKeyword, setQueryKeyword] = useState('');
   const completedCatalogJobIdsRef = useRef<Set<string>>(new Set());
-  const modelListRef = useRef<HTMLDivElement | null>(null);
-  // 筛选轴（Provider / 账号 / 状态 / OpenCode 分组）切换时整列换一批行：
-  // 用一次只碰 opacity 的淡入表达「换掉了」，行本身仍由 flip 补间滑到新位置。
-  // 关键词输入不参与——逐字过滤每敲一个字都淡一次会闪。
-  const modelListSwitchKey = `${accountScoped ? `account:${accountFilter}` : 'global'}|${providerFilter}|${statusFilter}|${groupFilter}`;
-  useSwitchFade(modelListRef, modelListSwitchKey, { scope: 'models-catalog', duration: 200 });
+  const { surfaceRef: modelListRef, switchSurface: switchModelSurface } = useSurfaceSwitch<HTMLDivElement>();
+  const searchFadeRef = useRef<HTMLDivElement | null>(null);
+  // 离散筛选轴点击由 switchModelSurface 执行预提交双帧过渡；搜索词防抖落地在独立子节点上做纯 opacity 轻淡入，互不叠加。
+  useSwitchFade(searchFadeRef, `q:${queryKeyword}`, { scope: 'models-search-query', duration: 165 });
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQueryKeyword(keyword), 220);
@@ -684,8 +684,17 @@ export default function Models() {
                     <Segmented
                       value={providerFilter}
                       onChange={(value) => {
-                        setProviderFilter(value as ProviderFilter);
-                        setAccountFilter('all');
+                        const next = value as ProviderFilter;
+                        const providerOrder: readonly ProviderFilter[] = ['all', ...MODEL_PROVIDERS];
+                        switchModelSurface(() => {
+                          setProviderFilter(next);
+                          setAccountFilter('all');
+                        }, {
+                          slot: 'provider',
+                          current: providerFilter,
+                          next,
+                          direction: resolveOrderedDirection(providerOrder, providerFilter, next)
+                        });
                       }}
                       options={[
                         { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
@@ -699,7 +708,13 @@ export default function Models() {
                   <Select
                     className="models-account-filter"
                     value={accountFilter}
-                    onChange={(value) => setAccountFilter(value)}
+                    onChange={(value) => {
+                      switchModelSurface(() => setAccountFilter(value), {
+                        slot: 'account',
+                        current: accountFilter,
+                        next: value
+                      });
+                    }}
                     options={[
                       { label: '全部账号', value: 'all' },
                       ...accountOptions
@@ -727,10 +742,19 @@ export default function Models() {
                   setKeyword(value);
                 }}
               />
-              {isOpenCodeScoped ? (
+              <Reveal open={isOpenCodeScoped}>
                 <Segmented
                   value={groupFilter}
-                  onChange={(value) => setGroupFilter(value as ModelGroupFilter)}
+                  onChange={(value) => {
+                    const next = value as ModelGroupFilter;
+                    const groupOrder: readonly ModelGroupFilter[] = ['all', 'go', 'zen', 'free'];
+                    switchModelSurface(() => setGroupFilter(next), {
+                      slot: 'group',
+                      current: groupFilter,
+                      next,
+                      direction: resolveOrderedDirection(groupOrder, groupFilter, next)
+                    });
+                  }}
                   options={[
                     { label: `全部分组 (${metricSource.length})`, value: 'all' },
                     { label: `Go 订阅 (${openCodeGoCount})`, value: 'go' },
@@ -738,10 +762,19 @@ export default function Models() {
                     ...(openCodeFreeCount > 0 ? [{ label: `Free 免费 (${openCodeFreeCount})`, value: 'free' }] : [])
                   ]}
                 />
-              ) : null}
+              </Reveal>
               <Segmented
                 value={statusFilter}
-                onChange={(value) => setStatusFilter(value as ModelStatusFilter)}
+                onChange={(value) => {
+                  const next = value as ModelStatusFilter;
+                  const statusOrder = MODEL_STATUS_FILTER_OPTIONS.map((item) => item.value);
+                  switchModelSurface(() => setStatusFilter(next), {
+                    slot: 'status',
+                    current: statusFilter,
+                    next,
+                    direction: resolveOrderedDirection(statusOrder, statusFilter, next)
+                  });
+                }}
                 options={MODEL_STATUS_FILTER_OPTIONS}
               />
             </>
@@ -749,23 +782,25 @@ export default function Models() {
         />
 
         <div ref={modelListRef}>
-          {accountScoped ? (
-            <PaginatedList<ManagedOpenAIModelItem>
-              className="models-list models-list--account"
-              items={accountModelRows}
-              pageSize={16}
-              emptyText="暂无数据"
-              renderItem={(model) => renderModelRow(model)}
-            />
-          ) : (
-            <PaginatedList<GlobalModelRow>
-              className="models-list"
-              items={globalRows}
-              pageSize={14}
-              emptyText="暂无数据"
-              renderItem={(model) => renderGlobalModelRow(model)}
-            />
-          )}
+          <div ref={searchFadeRef}>
+            {accountScoped ? (
+              <PaginatedList<ManagedOpenAIModelItem>
+                className="models-list models-list--account"
+                items={accountModelRows}
+                pageSize={16}
+                emptyText="暂无数据"
+                renderItem={(model) => renderModelRow(model)}
+              />
+            ) : (
+              <PaginatedList<GlobalModelRow>
+                className="models-list"
+                items={globalRows}
+                pageSize={14}
+                emptyText="暂无数据"
+                renderItem={(model) => renderGlobalModelRow(model)}
+              />
+            )}
+          </div>
         </div>
       </SectionCard>
 

@@ -1,5 +1,6 @@
 import { Badge, Spin } from 'antd';
 import Button from '@/components/ui/AppButton';
+import HudCube from '@/components/hud/HudCube';
 import type { ChatRuntimeSession } from '@/chat-runtime';
 import type { ChatAccount, Provider, Session } from '@/types';
 import SessionWorkspace from './SessionWorkspace';
@@ -100,7 +101,7 @@ function RuntimeConnectingShell({
       </header>
       <div className={styles.timelineFrame}>
         <div className={styles.connectingTimeline} role="status" aria-live="polite">
-          <Spin size="small" />
+          {mobile ? <Spin size="small" /> : <HudCube size={28} mode="loading" tone="cyan" />}
           <span>{label}…</span>
         </div>
       </div>

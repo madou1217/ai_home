@@ -292,3 +292,21 @@ state复读只是时间点校验，**不是与原writer原子互斥**；私有�
 native build、focused vet及Linux／Windows x64交叉编译通过，后两项仅编译，不称平台运行。private HOME已删除，root-scoped进程executable扫描为空；不是全系统trace。新source不是第二套Node业务，无新tests／fixture／mock／Go main；真实命令全部为现存产品入口。
 
 本组关闭**源码及私有真实安装入口下hook-disabled app-server的第一方Node调用**，不称shared标准installed／loaded已变，enabled metadata/titleGoal/list/hydration/notifications/条件writer、TUI/default/resume、Desktop／Windows及完整R2／W0-W6仍open。来源、生成、最终操作、审查修复、清理、源index receipt与raw digest统一追加原JSON `cliOwnedHookDisabledAppServerGoDelegation`；本地pointer `/tmp/aih-r2-cli-appserver-latest-20261118.txt`。
+
+## 17. 2026-11-18 R2 startup argv／catalog：真实 caller 消费 Go（非完整 launcher Node-off）
+
+**范围与来源。** 按监督 `pm-4d5fe146`／`pm-372cf8a0`，源码 `128c7e637` 为6path窄checkpoint：同步JS adapter、CLI早派／stdin、startup policy、catalog I/O、有序JSON。保留现有Chat同步通用写函数，未改default/auth/env/heal/generation/rollout/lease/mode写者；不新建协议／worker main。最终私有构件来自固定 `a331e43b2609686c96df76737c388cfed3b87b19` archive（`f2eb11d26f19977dba06b08265c9be4a653c1223dc68a83a273450d6782ccd3f`）+本人6path，Go **`fffbad8c83733e66cdf63eefe773980d3757221d6f413f44c7f9268a1159cb88`**。早轮moving-HEAD探索构建不作为最终来源；最终manifest和archive由原Hubble/Mendel逐hash审，均no-blocking。
+
+**真实操作与结果。** 不新增测试用例：只复制当前真实config/cache至私有HOME（无auth凭据），8种native/OAuth/gateway/provider形状及7项边界原Node-vs-Go argv全同；最终构件3项复核亦同。缓存232模型中无gpt-5，原Node生成后删除，再由Go独立生成233模型catalog，**307203bytes及SHA `01aa3a67ac28582c34ceff7360e1835113ca109b000dc9e3ab00a56bc45a02dc`逐字节相同**；未知字段顺序保留，模板tier不继承，未启用旧未消费的unsupported-tier降级函数。
+
+- 真实现存 `codex-app-server-stdio-proxy.js --run-cli-default ... -- --help` 与 `--run-cli-resume ... -- resume --help` → 私有installed Go → 官方0.167.2；分别0.481s／0.068s、exit0、stderr0。未加载旧provider/projection策略模块；Node bootstrap仍在，不称整个caller已无Node。
+- 无PATH Node／无AIH Node server宿主，最终Go策略独立运行0.068s exit0并生成catalog。另一次官方appserver验证使用最终Go生成的启动参数（该组未带catalog参数），完成initialize／model-list／config-read三RPC响应、官方通知及stdin EOF退出0。官方实际stderr361bytes记录在raw，不伪报静默，不产生收费推理。
+- strict DTO的重复／大小写version、尾随JSON、null／非string／NUL argv、超限、非object真实拒绝；缺Go／旧Go能力不足明确报错不回Node。stdin不结束约5.016s input-timeout；capability与编译分别5s／10s hard-kill截止，不宣称整调用10s。
+- 坏／缺cache软跳过；CODEX_HOME／cache／目录symlink及相对父段沿旧受信本地路径语义，8项原行为比较通过；输出位置为普通文件时两侧硬失败。路径安全未新增no-symlink／沙箱隔离保证。
+- 两reviewer独立指出读FIFO先open再Stat会卡且TERM仅cancel不退出；本人真复现captured ownPID仍live后仅kill/wait该child。修为O_NONBLOCK打开+fd regular校验及JS SIGKILL截止；最终config symlink→FIFO／config直接FIFO／cache symlink→FIFO分别0.900／0.013／0.012s软skip退出0，目标catalog FIFO可及时原子替换为正确regular file。原旧worker通过新adapter约10.739s硬拒绝且无root-scoped残留。无共享进程操作。
+
+**构建、索引与剩余门禁。** native build、focused vet、JS syntax及diff检查通过；Linux／Windows amd64仅交叉编译。源码commit前scoped cached exact6，之后本人6条逐blob同步，outside6132 entry未变，85peer cached保留。第一轮隔离Node缺smol-toml属私有安装依赖未挂，补只读使用现node_modules后真caller通过，不为迎合验收改业务。
+
+完整default/TUI/resume仍缺CLI-only snapshot/env等必要合同；heal算法／stale rollout条件writer／lifecycle、enabled metadata及Desktop仍open，既有Node逻辑不得长期当完成。shared标准Go构件、wrapper、stamp、服务未发布／重启。JSON字节等价只证明本次官方真实catalog；孤立UTF-16 surrogate／数值溢出存在旧parser差异，文件8MiB／depth100／request2MiB／argv4096与1MiB为新增资源门禁，SIGKILL可能留本人隐藏临时文件，不等同原子事务回滚。全R2／W0-W6保持Partial。原JSON新增 `cliStartupPolicyCatalogGoDelegation` 含最终6hash、12raw digest、runtime边界与index receipt，pointer `/tmp/aih-r2-startup-policy-latest-20261118.txt`。
+
+**共享发布具体门禁（05:29只读）**：标准CLI SHA `62ade2667a5f…` 的 `__codex-cli-startup --capabilities` 实回exit1／不支持；已安装Codex wrapper仍引用当前workspace JS。因此新default/resume启动在未发布兼容CLI构件前会按约定fail closed，不能回旧Node规则或称线上已可用。已回原监督协调精确CLI-only构件发布；本owner未获部署授权，不替换binary／改stamp／重启，既有运行会话不动。

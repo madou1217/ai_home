@@ -3613,5 +3613,285 @@
       "default/TUI/resume launcher and Desktop/VSCode/Windows wrapper caller retirement",
       "all original W0-W6 domains and cross-platform actual runtime acceptance"
     ]
+  },
+  "cliStartupPolicyCatalogGoDelegation": {
+    "at": "2026-11-18T05:28:00.579389+08:00",
+    "scope": "R2 existing default/resume startup argv and conditional cached-catalog policy has one Go owner; Node launch/bootstrap/lifecycle stays open",
+    "status": "Source checkpoint + private installed caller acceptance; shared installed and loaded are not updated; full R2 and W0-W6 not complete",
+    "authorizationPeers": [
+      "pm-4d5fe146fb4f94c040f0d93809fba73a",
+      "pm-372cf8a0a70db5307f3a1e806ab58c68"
+    ],
+    "source": {
+      "checkpoint": "128c7e63784d0353e5cc67201d8aedfd32db65a2",
+      "baseCommit": "a331e43b2609686c96df76737c388cfed3b87b19",
+      "archiveSHA256": "f2eb11d26f19977dba06b08265c9be4a653c1223dc68a83a273450d6782ccd3f",
+      "pathsSHA256": {
+        "lib/server/codex-cli-startup-policy.js": "45a2d11770dcd6401c6c68f892f15546caebee920ecc0a78db37d8f1b55dc93a",
+        "cmd/aih/codex_cli_startup.go": "3e0492c95a7f6c702016a50500fd48eb2da018718ec658ce45f8fbe8821ca560",
+        "cmd/aih/run.go": "4bbabf5a89efd6a54c1869e188198bd918f3426a74c0bd376ce9f2095d8cb67f",
+        "internal/runtime/codexclistartup/startup.go": "5a1530467b986924372bfbddf68eea55dd7c8d06e7fb2c47bfc43e4b2fa0d873",
+        "internal/runtime/codexclistartup/catalog.go": "82b7ad75fb278872753558a3e6d2323b65a977211dc32809845603b3869c3e00",
+        "internal/runtime/codexclistartup/catalog_json.go": "246d0d7bd86d3b1b1b5fcb0cc8fc592b23849e4ab12588ff47c58417e63ffb5a"
+      },
+      "scopeFileCount": 6,
+      "manifestSHA256": "2559f2426bcea0503bd027150607492a3979925cfe75242d61c2956993baaacc",
+      "frozenCandidateIsSourceBasePlusExactOwnPaths": true,
+      "firstExploratoryBuildProvenanceSuperseded": "first source archive used moving HEAD; final verification uses immutable a331 archive+own6, never dirty peer files"
+    },
+    "implementation": {
+      "privateCommand": "aih-go __codex-cli-startup",
+      "capability": "aih-codex-cli-startup-v1",
+      "DTO": "strict exact version1/args/authMode/aiHomeDir/environment via bounded stdin, key presence only; no DTO or worker stderr echoed",
+      "caller": "lib/server/codex-cli-startup-policy.js exports synchronous adapter consumed by unchanged real default launcher and both resume sites",
+      "legacyBusinessRemoved": "old startup context/provider/catalog functions are not retained as fallback in adapter; shared provider/projection consumers outside this caller remain untouched",
+      "sharedIOUnchanged": [
+        "resolveCodexHome",
+        "writeModelCatalogAtomically"
+      ],
+      "nonblockingFileRead": "O_NONBLOCK + descriptor regular-file check; existing symlinks retained",
+      "hardWorkerTimeoutsSeconds": {
+        "capability": 5,
+        "compile": 10
+      },
+      "nativeSelectionEnvHealGenerationRolloutLeaseUnchanged": true
+    },
+    "artifact": {
+      "macOSArm64GoSHA256": "fffbad8c83733e66cdf63eefe773980d3757221d6f413f44c7f9268a1159cb88",
+      "linuxAmd64CompileOnlySHA256": "c8159dda8112dbbe0b568f6adeb677171266d3590fdc54ddb0b11b0ab7de329a",
+      "windowsAmd64CompileOnlySHA256": "0519d05eb14627cbfc1526611dda8ac4ef90f6e7157eb4831b6dd6685c8fd797",
+      "sharedArtifactsObservedNotModifiedByThisSession": {
+        "bin/native/darwin-arm64/aih-go": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6",
+        "bin/native/darwin-arm64/aih-server": "9916c2222ab53916a694e9f9602fc30f9a6a9d591698278dc26dd9ee6951cbf1"
+      }
+    },
+    "realAcceptance": {
+      "currentConfigAndCachePrivateCopies": {
+        "models": 232,
+        "readLiveCredentials": false
+      },
+      "nativeOAuthGatewayExplicitProviderArgvComparisons": {
+        "first8": "all equal",
+        "extra7": "all equal",
+        "final3": "all equal"
+      },
+      "independentMissingModelCatalog": {
+        "inputModels": 232,
+        "outputModels": 233,
+        "selectedActualModel": "gpt-5",
+        "bytes": 307203,
+        "SHA256": "01aa3a67ac28582c34ceff7360e1835113ca109b000dc9e3ab00a56bc45a02dc",
+        "originalAndGoBytesEqual": true,
+        "legacyArtifactDeletedBeforeFinalGoGeneration": true,
+        "unknownMetadataKept": true,
+        "templateTiersNotInherited": true
+      },
+      "existingDefaultAndResumeCallers": {
+        "baseCommit": "a331e43b2609686c96df76737c388cfed3b87b19",
+        "finalGoSHA256": "fffbad8c83733e66cdf63eefe773980d3757221d6f413f44c7f9268a1159cb88",
+        "fixedInstalledGo": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-startup-policy-20261118-akrptrkc/source-final/bin/native/darwin-arm64/aih-go",
+        "officialBinary": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original",
+        "noPATHNode": true,
+        "NodeBootstrapStillRequired": true,
+        "AIHNodeServerStarted": false,
+        "callerResults": [
+          {
+            "command": "--run-cli-default",
+            "nativeArgs": [
+              "--help"
+            ],
+            "elapsedSeconds": 0.481,
+            "exit": 0,
+            "stdoutBytes": 5940,
+            "stderrBytes": 0,
+            "helpObserved": true,
+            "stdoutSHA256": "d38f0c75ef44deb9f6f3f40c3bed05aefc44e36905432361c4254a1d799a50bc"
+          },
+          {
+            "command": "--run-cli-resume",
+            "nativeArgs": [
+              "resume",
+              "--help"
+            ],
+            "elapsedSeconds": 0.068,
+            "exit": 0,
+            "stdoutBytes": 4289,
+            "stderrBytes": 0,
+            "helpObserved": true,
+            "stdoutSHA256": "a69d53b274c25b7ca50fad2c5ed62bd538097033fa4092dc0b2587e8f0a50edb"
+          }
+        ],
+        "legacyNodePolicyNotLoaded": true,
+        "adapterExit": 0,
+        "stdioRuntimeNotFullyNodeFree": true
+      },
+      "nodeOffOfficialRPC": {
+        "finalGoSHA256": "fffbad8c83733e66cdf63eefe773980d3757221d6f413f44c7f9268a1159cb88",
+        "officialSHA256": "97bc82fd46f117cf10efb95e6ff0c81dc4784f5797bcdc2cb75093ba09e4def0",
+        "noNodePATH": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-startup-policy-20261118-akrptrkc/path-without-node",
+        "noAIHNodeHost": true,
+        "processEvidence": "66228 66225 /Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original",
+        "exit": 0,
+        "EOFExitObserved": true,
+        "responsesObserved": true,
+        "responseFacts": [
+          {
+            "id": 1,
+            "method": null,
+            "hasResult": true,
+            "hasError": false
+          },
+          {
+            "id": null,
+            "method": "configWarning",
+            "hasResult": false,
+            "hasError": false
+          },
+          {
+            "id": null,
+            "method": "remoteControl/status/changed",
+            "hasResult": false,
+            "hasError": false
+          },
+          {
+            "id": "models",
+            "method": null,
+            "hasResult": true,
+            "hasError": false
+          },
+          {
+            "id": "config",
+            "method": null,
+            "hasResult": true,
+            "hasError": false
+          }
+        ],
+        "stderrBytes": 361,
+        "stderrSHA256": "d8d7a56d5c63340a1d8a2f5536b02bba51bcf119a4c599847eb638f73e999087",
+        "startupArgs": [
+          "app-server",
+          "-c",
+          "suppress_unstable_features_warning=true",
+          "-c",
+          "check_for_update_on_startup=false",
+          "-c",
+          "model_provider=openai"
+        ]
+      },
+      "finalNativeFailClosed": {
+        "binarySHA256": "fffbad8c83733e66cdf63eefe773980d3757221d6f413f44c7f9268a1159cb88",
+        "results": [
+          {
+            "operation": "final-native-startup-policy-no-Node",
+            "exit": 0,
+            "elapsedSeconds": 0.068,
+            "stderrBytes": 0,
+            "catalogProduced": true
+          },
+          {
+            "operation": "duplicate-version",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderrCode": "aih: codex_cli_startup_input_invalid"
+          },
+          {
+            "operation": "case-version",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderrCode": "aih: codex_cli_startup_input_invalid"
+          },
+          {
+            "operation": "trailing",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderrCode": "aih: codex_cli_startup_input_invalid"
+          },
+          {
+            "operation": "null-args",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderrCode": "aih: codex_cli_startup_input_invalid"
+          },
+          {
+            "operation": "too-large",
+            "exit": 1,
+            "stdoutBytes": 0,
+            "stderrCode": "aih: codex_cli_startup_input_invalid"
+          },
+          {
+            "operation": "final-catalog-target-FIFO-replaced-atomically",
+            "exit": 0,
+            "elapsedSeconds": 0.018,
+            "regularAfter": true,
+            "contentEqual": true
+          }
+        ]
+      },
+      "FIFO": "old worker still alive after TERM reproduced; own PID killed/waited; final config FIFO/symlink/cache FIFO skip and output FIFO atomic replacement observed",
+      "pathCacheWriteMatrix": "8 operations match legacy; existing local symlink/dot-segment behavior explicitly retained",
+      "missingAndOldGo": "actual missing executable and prior real Go lacking capability reject; no Node fallback",
+      "hardCutoffOnOldFIFOWorkerMs": 10739,
+      "noAuthenticatedInferenceForThisCompilerSlice": true
+    },
+    "sourceReview": {
+      "reviewers": [
+        "Hubble 01a1dac9-7f34-7260-892a-356a9d0c2daa",
+        "Mendel 01a1e041-ce36-75d2-970c-2f1678526c14"
+      ],
+      "final": "both no-blocking source/hash; not reviewer runtime replay",
+      "closedFinding": "P2 readBounded FIFO plus TERM/context hang fixed and actual before/after observed"
+    },
+    "buildEvidence": {
+      "goBuild": true,
+      "focusedGoVet": true,
+      "nodeCheck": true,
+      "linuxAmd64": "compile-only",
+      "windowsAmd64": "compile-only",
+      "noTestsAddedOrRun": true
+    },
+    "indexSafety": {
+      "syncedOwnSourceEntries": 6,
+      "skippedOwnSourceEntries": [],
+      "outsideCompared": 6132,
+      "outsideChanged": [],
+      "peerCachedPathsRetainedAtSourceCommit": 85
+    },
+    "remainingGates": [
+      "Node bootstrap still needed for existing default/resume launcher",
+      "source/private installed accepted; shared standard Go was not updated",
+      "no authenticated inference performed for this startup-only non-network policy/compiler slice",
+      "legacy trusted local paths may follow symlinks and normalize dot segments",
+      "Go JSON string parser replaces lone surrogate escapes; arbitrary non-Unicode cache roundtrip not claimed",
+      "8MiB/cache/config, depth100, request2MiB, argv4096/1MiB are new resource bounds",
+      "hard SIGKILL may leave own hidden publication temporary file; not a database transaction rollback",
+      "default auth/env/heal/generation/rollout/lifecycle/tui/resume and enabled metadata remain open",
+      "no new tests/mocks/fixtures or operational main"
+    ],
+    "localEvidenceRootPointer": "/tmp/aih-r2-startup-policy-latest-20261118.txt",
+    "rawDigests": {
+      "final-real-callers.json": "6771bd9a55f9d58b19f69147b92f1fc4befc1652438f751d64ca728e2154865d",
+      "final-real-catalog-argv-comparison.json": "9dbf43a3d3cd230a11c1d4a870d003a8b1e8c3468720a229fe0414afc326cb97",
+      "final-native-official-rpc.json": "56fe1fa84ea4e0a0897f8f40e6d37f2129a63307a3fa45f328bef5373ae1c251",
+      "final-native-fail-closed.json": "77e041cf0044725a195451d406634d4b358f413bcd8c00849ea1f1988adb2542",
+      "fifo-before-fix.json": "27d199a6ed0007c5b18073aad1a23380726fcfc8b8fc39e87d733070906541c7",
+      "fifo-after-fix.json": "ba4b67572eed39d1050aac3e2a6765855ff52612da2c122eccd6e17d2588a784",
+      "real-adapter-hard-cutoff.json": "bede9af8da3af70824af16cf917acd3285d83d72cd710f1fe7175b5bfa25008a",
+      "real-path-cache-publication-comparison.json": "d1e8ca60adb97e5f9b38289b305d06a35945cc926c4f48a3e600a2759804ee30",
+      "real-adapter-fail-closed.json": "2b0141a7c7cc298bc3b366460ccc0b12e6c2fa3c90d1be2d40e73f1454fa83c2",
+      "real-argv-boundary-comparison.json": "1425f1a95e3d9cc7eb2769e1ac0805b435b6f5599e3c79136e080564cab3819b",
+      "first-real-argv-comparison.json": "7cc3cce0997637491a329eae6d97f8e464b0d221899879dd76e50c41b2595766",
+      "candidate-manifest-final.json": "2559f2426bcea0503bd027150607492a3979925cfe75242d61c2956993baaacc"
+    },
+    "sharedInstalledCapabilityGate": {
+      "observedAt": "2026-11-18T05:29:00+08:00",
+      "sharedGoSHA256": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6",
+      "capabilityExit": 1,
+      "stdoutBytes": 0,
+      "stderr": "aih: AIH CLI 启动请求无效: 当前只支持 codex / claude / gemini / CodeBuddy 家族",
+      "installedWrapperHelperStillWorkspace": true,
+      "effect": "fresh default/resume callers fail closed until compatible exact-source CLI artifact published; existing sessions untouched",
+      "coordinatorNotified": true,
+      "noSharedArtifactMutation": true
+    }
   }
 }

@@ -418,3 +418,13 @@ R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/
 监督pmcdbe3020选可消费CLI-disabled转交，取消此前server4path候选。固定631276ee archive+3path，new cmd/aih/codex_app_server.go有界typed CLIHookState选择、run.go仅private dispatch、wrapper.go仅CLI-owned POSIX app-server。enabled事先明确旧Node兼容，disabled复读/canonicalresolver/hostadmission后syscallExec原argv+stdio/EOF/exit/signal，错误不fallback；state快照非writer锁，严格坏statefailclosed与原宽松行为差异明记。Mendel发现casecollision已真复现/fix，Hubble/Mendel最终3sha3c6db1b6/0b21c93/ed618012审过。
 
 b4cc56e9f仅本人3source(241+/3-)已交，3ownindex同步/outside6131entries相同/45peer保留。现存server私有HOME/端口真生成wrapper，再无server/Node绝对与PATH缺席及JShelper移走仍最终Godd0ead24真RPC typedID/EOF0；-cmodel实到config，directvswrapper TERM0/INT-2/KILL-9/非法2 stderrhash等，19项选择／失败关闭矩阵及enabledcompat126前置选择记录。原operator提前EOF/TERM-15/Node127错误期望已按真实结果纠正，不改产品。privatehome/root进程清，nativebuild/vet与linux/windows仅编译过；无新main/tests/mock/fixture/共享构件/stamp/restart。只关闭该公开生成私有安装disabled分支，不等于sharedloaded/完整enabledmetadata/resumewriter或整个R2完成。§16/原JSON统一保存来源/actual/receipt/digests。
+
+## 2026-11-18 R2：default/resume 的 startup policy/catalog 由 Go 单 owner 消费
+
+源码 `128c7e637` 仅本人6path：既有同步 `codex-cli-startup-policy.js` 退为 Go I/O adapter；`cmd/aih` 私有有界stdin入口／早派，`codexclistartup` 按策略、条件catalog及有序JSON分责。原default与两resume caller不改即消费Go；旧策略不留Node fallback。Chat共享 `writeModelCatalogAtomically`／home helper原样，auth/env、heal、default generation、rollout writer、lease／TUI mode不改。
+
+固定 `a331e43b2` archive（SHA `f2eb11d26f19977d…`）+exact6构建最终Go `fffbad8c83733e66…`；原两reviewer按6hash复审no-blocking。真实private当前config/cache232模型，未知已有模型gpt-5触发233项，删旧产物后Go独立生成307203bytes、SHA `01aa3a67ac28582c…`，argv／文件名／内容与原Node完全同。现default／resume→private installed Go→官方CLI help均exit0/stderr0；Node-off Go策略→官方appserver initialize/model-list/config-read三响应及EOF0，实际stderr361记录，不冒称0。FIFO+TERM卡住P2已真实复现并在fd O_NONBLOCK／SIGKILL截止后闭合。native build/vet及Linux/Windows compile通过，后两项非runtime。本人6源index同步，outside6132 entries不变，peer85staged保留。
+
+本组只关闭已消费startup策略的Node规则计算，不代全wrapper／default/TUI/resume／R2迁移；Node bootstrap、其余host/config/lease业务仍open。shared installed／loaded未更新，不重启／改stamp／DB。真实catalog字节等价限官方正常Unicode；孤立surrogate／数值溢出、8MiB文件／depth100／有界argv、路径跟随symlink与硬杀temp遗留边界明确登记。证据追加原acceptance §17与JSON `cliStartupPolicyCatalogGoDelegation`；无新测试、fixture或操作main。
+
+**共享发布具体门禁（05:29只读）**：标准CLI SHA `62ade2667a5f…` 的 `__codex-cli-startup --capabilities` 实回exit1／不支持；已安装Codex wrapper仍引用当前workspace JS。因此新default/resume启动在未发布兼容CLI构件前会按约定fail closed，不能回旧Node规则或称线上已可用。已回原监督协调精确CLI-only构件发布；本owner未获部署授权，不替换binary／改stamp／重启，既有运行会话不动。

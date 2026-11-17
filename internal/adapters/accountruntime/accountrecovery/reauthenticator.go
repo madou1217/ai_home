@@ -2,20 +2,18 @@ package accountrecovery
 
 import (
 	"context"
-	"errors"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
-// Reauthenticator 在原子重登成功后解除账号凭据阻塞。
+// Reauthenticator 在原子重登成功后保留阻塞，等待可证明代次的恢复。
 type Reauthenticator struct {
 	next    ReauthenticationService
 	runtime Runtime
 }
 
-// NewReauthenticator 创建不改变原重登事务职责的恢复 Decorator。
+// NewReauthenticator 创建不改变原重登事务职责的 Decorator。
 func NewReauthenticator(
 	next ReauthenticationService,
 	runtime Runtime,
@@ -44,7 +42,7 @@ func (decorator *Reauthenticator) ValidateTarget(
 	return decorator.next.ValidateTarget(ctx, accountRef, providerID)
 }
 
-// Reauthenticate 只在持久化成功且返回同一账号后解除凭据阻塞。
+// Reauthenticate 验证持久化结果，不凭同账号成功返回解除凭据阻塞。
 func (decorator *Reauthenticator) Reauthenticate(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
@@ -70,15 +68,6 @@ func (decorator *Reauthenticator) Reauthenticate(
 	if !account.IsValid() || account.Ref() != accountRef {
 		return accountcore.Account{}, ErrInvalidResult
 	}
-	if err := decorator.runtime.ClearAccountBlock(
-		context.WithoutCancel(ctx),
-		accountRef,
-		runtimecore.RecoveryCredentialsUpdated,
-	); err != nil {
-		return accountcore.Account{}, errors.Join(
-			ErrRuntimeRecovery,
-			err,
-		)
-	}
+	// 同账号成功返回不证明替换了凭据或绑定了阻塞代次。
 	return account, nil
 }

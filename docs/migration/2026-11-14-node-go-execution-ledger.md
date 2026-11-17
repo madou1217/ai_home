@@ -393,3 +393,8 @@ PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version�
 
 
 R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/126×4/137×1。额外真正cmd/aih-server+enableCLIHook私有入口尝试ready/鉴权status可用但120s未启CLI，来源核Options.CodexHooks未穿composition传递、内部daemon仅notification；已停止仅本人private并清home，public安装门禁仍阻塞。明确原18矩阵由两私有operational main调用真库，不冒称全程既有公开入口；两path授权不自动覆盖驱动合规。host接线超scope已报监督分owner，本writer不扩composition/run.go/Node路径。
+
+
+## 2026-11-18 03:44 · R2 后续 stdio 真入口与最小范围调查
+
+00dfa6a05版本两path已push；监督sole接composition，本writer继续而非以version收工。03:42现存__codex-local-app-server私有HOME/PATH无node/无AIHNodehost/无凭据经现成wscat真收6帧：initialize/configread/modellist9/threadlist0成功，threadgoalget真-32600不计兼容。客户端第三方Node单列；初DEVNULL0frame不算、纠正stdin后才实证，PID/home清。下一候选仅transport-neutral bridge.go+既有stdio_bridge/必要stdio_lines让WS委托共享有界核心；3path尚待监督独占未写，不盲把localappserver或串行launchrpc接公开stdin。完整enabled stdio仍需metadata列表/Goal、resumehydration/state机、条件rollout/title writer合同，已明确解除owner并报监督。新事实进acceptance§13/原JSON，无新增生产代码/tests/restart/stamp或别人的索引同步。

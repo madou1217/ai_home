@@ -201,3 +201,20 @@ native build、focused vet 通过；Linux x64／Windows x64 cross-build exit0，
 **补充的真实公开产品入口尝试（没有用 operational main，仍未闭门禁）：**同冻结源码两path构建现存 `cmd/aih-server`，用另一本人私有 HOME/DB/端口、`--enable-codex-cli-hook=true`、无 `--supervise-node`／front-door／Node base，启动后 ready 和鉴权管理状态可用，但120秒内 CLI hook 始终未 enabled，未产生 CLI state，复制的官方 native target 未被包装。随后仅停止该私有 server，根进程扫描为空并删除本人 home。源码逐层核对：`cmd/aih-server/run.go` 传 `Options.CodexHooks`，但 `aihserver.New` 到 `buildServerHandlers` 未转交该 options；内部 `startCodexHooksDaemons` 只启 notification bridge，不含 CLI enable。这是冻结版本的**真实 host 接线阻碍**，不是本两path版本转交的通过结果。没有修改共享 composition／host／run.go；已向监督01a1df63报告由其确认并分配 host owner，不能因两path获准而扩scope。
 
 Mendel最终核对源码、raw、manifest、cleanup和native子进程PPID/PGID，18项预期分布为 `0×6、1×7、126×4、137×1`，无新一致性 blocker。**仍披露两份新增私有 operational Go main 的验证入口边界；调用真产品库不自动等于全程使用既有公开入口，也不将两path授权解释为临时驱动合规豁免。** 上述新增公开入口尝试未成功，不用私有矩阵掩盖。最终raw的 `publicSourceApplied=false` 保留03:20:22历史快照；03:20:23落盘由独立application receipt接续，不回填原记录。
+
+
+## 13. 下一 R2 stdio 节点已实跑既有 Go 核心，未冒充 wrapper 切换（2026-11-18 03:42）
+
+版本两path已作为 `00dfa6a05` 提交推送；监督随后本人接 sole composition 的 `Options.CodexHooks` 接线，本writer不碰 host/composition。下一步并非仅写规划：03:42:30–03:42:32 使用**现存 `cmd/aih-server __codex-local-app-server`**，首行私密配置走stdin、私有HOME、PATH无node、无AIH Node宿主／账号凭据／管理RPC，通过已安装第三方 `wscat` 真正发送官方RPC。没有新增main或测试；operator客户端自身Node运行时明确与AIH业务分列。
+
+共观察6帧：`initialize`、`config/read` 成功；`model/list` 为9项；`thread/list` 在空私有home为0项；不存在UUID的 `thread/goal/get` 返回 **-32600**，该原样错误不是Goal兼容通过。首次operator用DEVNULL令wscat在stdinEOF时退出0且0帧，**未算验收**；只纠正客户端保持stdinpipe后拿到上述响应，未改产品。采样AIH tree未见Node，但native进程可独立PGID，不能以采样推完整进程覆盖；观察PID无剩余、私有home已删除。来源仍为固定2075e22f2 archive＋已提交版本两path，不伪称最新并行main整体构件。
+
+### 下一最小工程动作及不能盲接的原因
+
+公开CLI-owned wrapper的app-server仍 `exec NODE_BIN HELPER --upstream ... --state-file ... -- <argv>`。现成Go `BridgeAppServerStdio` 虽已复用rewrite/resume/listScope/process owner，但接口硬绑WS；local-app-server先读私密config且写ready地址，直接接公开stdio会污染/吞握手；串行`codexlaunchrpc.Client`自己握手且丢method帧，也不能透明替代。enabled helper还包含列表投影、metadata、resume hydration和条件writer，不是搬一条pipe即可保真。
+
+已报监督的下一**候选**写集仅：新 `internal/runtime/codexappserverws/bridge.go`、既有 `internal/transport/http/codexappserverapi/stdio_bridge.go`、必要 `stdio_lines.go`，将有界帧泵抽为transport-neutral核心，让现有WS adapter委托同一实现；**尚未获该共享范围独占确认，当前未落盘**。这只是后续完整转交的工程前提，不作CLI stdio已无Node或R2完成声明。
+
+完整cutover需要监督确认M/metadata对sourceKinds/hidden/聚合分页/cursor/title/model/Goal投影合同，resume/protocol owner对运行配置/hydration/通知抑制/stale steer的合同，以及现存rollout/title条件writer的保留或退役；Go已有`codexstatepage`/`codexrollout`/`codexnotifications`直接复用，不再复制第二套reader/writer。`thread/goal/get`的兼容只可在原上游-32601及本地found时按既有合同补，不用本次-32600错误证明覆盖。
+
+逐RPC结果／来源／客户端边界／operator纠正／cleanup及digest保存在原JSON `nextCliStdioExistingGoCoreInvestigation`。Hubble只读架构审查已给出上述最小范围与缺口；完整协议切换仍需原协议/metadata owner协作。无新增生产文件、feature、tests、共享重启、stamp或其他会话索引操作。

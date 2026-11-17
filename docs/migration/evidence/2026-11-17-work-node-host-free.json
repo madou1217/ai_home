@@ -2011,5 +2011,181 @@
     },
     "rawExistingEntryBlockSha256": "b7afd0c18695140e915684f47571ccb320cae6556b79aa75fa7a990b98327736",
     "validationEntrypointLimit": "two private operational Go mains were used to call actual hook/runtime services; not all validation used pre-existing public product entry; separate actual Go server entry attempt remained blocked and is explicitly recorded"
+  },
+  "nextCliStdioExistingGoCoreInvestigation": {
+    "status": "existing_go_core_real_protocol_observed_next_source_scope_not_approved",
+    "priorVersionSliceCommit": "00dfa6a0527f516ea5a372e3ffa741d96ba6c0f9",
+    "noNewProductionCodeWritten": true,
+    "actualExistingEntryEvidence": {
+      "startedAt": "2026-11-18T03:42:30.122067+08:00",
+      "finishedAt": "2026-11-18T03:42:32.594452+08:00",
+      "sourceBase": "2075e22f2 with already committed two-path version slice only; next stdio core unmodified",
+      "serverSha256": "a84a84d1eb7d69e24267be03d57d14daff96423e13db36b32fe840a3f08dba5b",
+      "actualExistingEntry": "cmd/aih-server __codex-local-app-server --parent-pid <own operator pid>",
+      "configuredAbsoluteNodeAbsent": true,
+      "serverPATH": "/usr/bin:/bin",
+      "serverNodeHostStarted": false,
+      "noAccountOrCredentialUsed": true,
+      "managementRPCNotUsed": true,
+      "clientResult": {
+        "exitCode": 0,
+        "stdoutBytes": 14982,
+        "stderrBytes": 0,
+        "framesObserved": 6,
+        "responses": [
+          {
+            "method": "initialize",
+            "id": 1,
+            "responseReceived": true,
+            "isError": false,
+            "errorCode": null,
+            "resultKeys": [
+              "userAgent",
+              "codexHome",
+              "platformFamily",
+              "platformOs"
+            ],
+            "dataCount": null
+          },
+          {
+            "method": "model/list",
+            "id": 2,
+            "responseReceived": true,
+            "isError": false,
+            "errorCode": null,
+            "resultKeys": [
+              "data",
+              "nextCursor"
+            ],
+            "dataCount": 9
+          },
+          {
+            "method": "config/read",
+            "id": 3,
+            "responseReceived": true,
+            "isError": false,
+            "errorCode": null,
+            "resultKeys": [
+              "config",
+              "origins"
+            ],
+            "dataCount": null
+          },
+          {
+            "method": "thread/list",
+            "id": 4,
+            "responseReceived": true,
+            "isError": false,
+            "errorCode": null,
+            "resultKeys": [
+              "data",
+              "readStates",
+              "nextCursor",
+              "backwardsCursor"
+            ],
+            "dataCount": 0
+          },
+          {
+            "method": "thread/goal/get",
+            "id": 5,
+            "responseReceived": true,
+            "isError": true,
+            "errorCode": -32600,
+            "resultKeys": null,
+            "dataCount": null
+          }
+        ],
+        "rawNotPublished": true,
+        "client": "existing third-party wscat; its Node process deliberately separate from AIH tree",
+        "nodeClientIsNotAihBusiness": true
+      },
+      "observedAihTreeProcesses": [
+        {
+          "pid": 98167,
+          "ppid": 98165,
+          "pgid": 98167,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-cli-wrapper-20261118-udwkairv/source/bin/native/darwin-arm64/aih-server"
+        }
+      ],
+      "nodeObservedInAihTree": [],
+      "remainingObservedPIDs": [],
+      "privateHomeRemoved": true,
+      "noProductSourceChangedForNextStdioStep": true,
+      "limits": [
+        "Existing Go WS-to-stdio core only; installed CLI stdio wrapper is still Node and was not migrated",
+        "Third-party diagnostic client uses Node; not a claim that every process was Node-free",
+        "No authenticated generation/resume/Goal/metadata parity claim; method responses are reported as observed",
+        "No new tests/fixture/mock or Go operational main used for this protocol call"
+      ]
+    },
+    "rawExistingEntryDigestSha256": "952faa78b867882e0e793e53d343653c1e43e903b868bfcc848f0ef27d070260",
+    "operatorCorrection": {
+      "cause": "wscat existing readline closes WebSocket on stdinEOF; DEVNULL made initial client exit0 with no frames",
+      "correction": "keep third-party diagnostic stdin pipe open for real response; no product code modified",
+      "initialNoFrameResultNotCountedAsProtocolAcceptance": true,
+      "commandSha256": "d83efffd3ffc20afea5e20fa5cac213d20d0261c6af521a979b7d92f8f6841d8"
+    },
+    "sourceCaller": {
+      "installedCLIWrapper": "CLI-owned app-server branch currently execs absolute NODE_BIN + existing stdio helper + upstream/state-file + opaque native argv",
+      "enabledState": "not a pipe: applies list/metadata/resume lifecycle/notification transforms",
+      "disabledState": "native stdio passthrough branch remains distinct"
+    },
+    "directlyReusableCore": [
+      "codexappserverws.StartAppServerProcess",
+      "codexappserverws.RewriteClientMessage/ResumeTracker/ThreadListScopeTracker",
+      "codexstatepage.ReadPage/ReadHidden/ReadTitles/ReadGoal",
+      "codexrollout.ReadRecent/ReadModels",
+      "codexnotifications.Run existing queue protocol"
+    ],
+    "notTransparentProxyEntrypoints": [
+      "__codex-local-app-server consumes private config and emits ready address before WS; cannot bind directly to public stdio",
+      "codexlaunchrpc.Client owns initialize/initialized and discards method frames; not transparent client ID/reverse-RPC transport"
+    ],
+    "nextProposedSourceScope": [
+      "new internal/runtime/codexappserverws/bridge.go",
+      "internal/transport/http/codexappserverapi/stdio_bridge.go",
+      "internal/transport/http/codexappserverapi/stdio_lines.go if needed for delegated bounded line reads"
+    ],
+    "nextScopeStatus": "requested from supervisor pm-f17861f5; no production changes authorized or made for these paths at this checkpoint",
+    "proposalMeaning": "transport-neutral bounded frame core with existing WS adapter delegation, not a complete CLI stdio wrapper cutover",
+    "cutoverDependencies": [
+      {
+        "owner": "M/metadata owner coordinated by supervisor01a1df63",
+        "contract": "sourceKinds/hidden/project visibility/merged and aggregate pagination/cursor, model/title/Goal response projection; reuse Go readers rather than copy SQL"
+      },
+      {
+        "owner": "resume/protocol owner coordinated by supervisor01a1df63",
+        "contract": "selected thread runtime config, hidden resume hydration, suppressed notifications, turn lifecycle/stale steer, bounded state and cleanup"
+      },
+      {
+        "owner": "existing rollout/title writer owner coordinated by supervisor01a1df63",
+        "contract": "preserve or explicitly retire Node conditional UPDATE threads repairs; do not introduce another writer"
+      },
+      {
+        "owner": "supervisor01a1df63",
+        "contract": "sole composition fix and actual public installation verification remain separate from protocol core"
+      }
+    ],
+    "noAdditionalSharedRestartDeployOrStampChange": true,
+    "wholeR2Complete": false,
+    "independentDesignReview": {
+      "reviewers": [
+        "Hubble",
+        "Mendel"
+      ],
+      "scope": "transport-neutral bounded frame core only, not complete wrapper cutover",
+      "noDesignBlockingForNarrowExtraction": true,
+      "implementationAuthorizationNotGranted": true,
+      "preserveInboundOrder": [
+        "ThreadListScopeTracker.TryRemember(raw)",
+        "RewriteClientMessage",
+        "ResumeTracker.TryRememberRequest(rewritten)"
+      ],
+      "preserveOutboundOrder": [
+        "ResumeTracker.PatchResponse",
+        "ThreadListScopeTracker.Patch"
+      ],
+      "existingOwnerApprovalRequired": true
+    }
   }
 }

@@ -33,6 +33,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
+	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
@@ -185,6 +186,11 @@ type webuiRouteDependencies struct {
 	TranslationGateway http.Handler
 	ChatGateway        http.Handler
 	ChatModels         chatruntime.GatewayModelReader
+
+	// CredentialRefresher shares the canonical resolver with request-time credential refresh.
+	CredentialRefresher tokenrefreshdaemon.CredentialRefresher
+	// DelegateCredentialRefresh keeps refresh ownership with an embedding host when requested.
+	DelegateCredentialRefresh bool
 }
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {

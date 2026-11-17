@@ -99,7 +99,10 @@ type backgroundDaemonsRuntime struct {
 
 // startBackgroundDaemons 创建并启动全部后台守护协程；返回的运行时实现 io.Closer 供停机关闭。
 func startBackgroundDaemons(ctx context.Context, dependencies webuiRouteDependencies) (*backgroundDaemonsRuntime, error) {
-	return startBackgroundDaemonsWithPorts(ctx, dependencies, webuiDaemonsPorts{})
+	return startBackgroundDaemonsWithPorts(ctx, dependencies, webuiDaemonsPorts{
+		CredentialResolver:        dependencies.CredentialRefresher,
+		DelegateCredentialRefresh: dependencies.DelegateCredentialRefresh,
+	})
 }
 
 func startBackgroundDaemonsWithPorts(

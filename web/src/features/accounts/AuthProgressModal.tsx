@@ -4,7 +4,6 @@ import { CopyOutlined, GlobalOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { InlineNote } from '@/components/ui/InlineNote';
-import { openExternalUrl } from '@/services/open-external-url';
 import type { AccountAddJob } from '@/types';
 import type { ProviderAuthMethodSources } from '@/services/api';
 import './account-overlays.css';
@@ -272,16 +271,6 @@ export function AuthProgressModal({
     }
   };
 
-  const openAuthLink = async (value?: string) => {
-    const target = String(value || '').trim();
-    if (!target) return;
-    try {
-      await openExternalUrl(target);
-    } catch (_error) {
-      message.error('无法打开授权链接');
-    }
-  };
-
   const renderAuthDetail = (
     label: string,
     value: string,
@@ -304,12 +293,14 @@ export function AuthProgressModal({
               />
             </Tooltip>
             {options.openable ? (
-              <Tooltip title="在当前浏览器打开">
+              <Tooltip title="在新标签页打开">
                 <Button
                   type="text"
                   size="small"
                   icon={<GlobalOutlined />}
-                  onClick={() => openAuthLink(text)}
+                  href={text}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 />
               </Tooltip>
             ) : null}

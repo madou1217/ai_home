@@ -56,7 +56,6 @@ import {
   clearLoadFailureMessage,
   showLoadFailureMessage
 } from '@/services/load-failure-message.js';
-import { openExternalUrl } from '@/services/open-external-url';
 import { formatTimeCell } from '@/utils/datetime';
 import type {
   Account,
@@ -716,16 +715,6 @@ export default function Accounts() {
       message.success(successMessage);
     } catch (_error) {
       message.error('复制失败');
-    }
-  }, []);
-
-  const openAuthLink = React.useCallback(async (value?: string) => {
-    const target = String(value || '').trim();
-    if (!target) return;
-    try {
-      await openExternalUrl(target);
-    } catch (_error) {
-      message.error('无法打开授权链接');
     }
   }, []);
 
@@ -1770,12 +1759,14 @@ export default function Accounts() {
               />
             </Tooltip>
             {options.openable ? (
-              <Tooltip title="在当前浏览器打开">
+              <Tooltip title="在新标签页打开">
                 <Button
                   type="text"
                   size="small"
                   icon={<GlobalOutlined />}
-                  onClick={() => openAuthLink(text)}
+                  href={text}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 />
               </Tooltip>
             ) : null}

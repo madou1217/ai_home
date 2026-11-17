@@ -408,3 +408,6 @@ R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/
 ## 2026-11-18 04:12 · R2 core 已交＋真实帧边界补验
 
 007620be1三source+原3docs本人已push/6ownindex同步，sync时outside6124entries相同/43peer cached保留，后续peer新投影不动。固定6f0bac既有Goentry→官方native真发16MiB+1byte→WS1009，privatehost重连configread；真暂停socket21s+4096model/list只读，约20.193s native采样末见/恢复1006无operator强关，重连成功。支持bounded slowconsumer teardown，不伪称精确15s或唯一outbound；native stdout超长/最终无换行帧仍open。两个AIH树Node0/PID0/home清，第三方既有ws客户端Node单列；初shim依赖错误在发送前失败不算，纠正operator未改产品。直官方stdinEOF3帧exit0只定上游合同，不冒充新Gohelper。下一4path callable adapter仅pm227b9579待监督范围；无新源码/tests/fixture/mock/main/标准artifact/restart/stamp，完整R2仍Partial。§15/原JSON记录新证据，不回填旧门禁。
+
+
+04:18审查补记：§15慢消费者1006为客户端close事件报告，非对端close帧；20.193s相对首个PID样本。JSON中receipt别名映射到frame-core指针下实际commit-index-sync-receipt.json，digest4a94ccb2，新增reviewClarifications；不更改raw/原index证据、不新增门禁通过项。

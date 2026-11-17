@@ -3040,6 +3040,17 @@
         "cmd/aih-server/main.go"
       ],
       "contract": "shared frame core plus native owner; EOF half-close rather than WS disconnect, raw stderr, native WaitErr and signal exit; no wrapper/metadata writer cutover"
+    },
+    "reviewClarifications": {
+      "reviewer": "Hubble",
+      "at": "2026-11-18T04:18:00+08:00",
+      "receiptDigestAlias": "source-commit-index-sync-receipt.json",
+      "receiptActualFile": "commit-index-sync-receipt.json",
+      "receiptRootPointer": "/tmp/aih-r2-frame-core-latest-20261118.txt",
+      "receiptActualPath": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-frame-core-20261118-chhb8mhj/commit-index-sync-receipt.json",
+      "receiptSha256": "4a94ccb287b816a6fe1f030f7ebab8674b8b2e5a14dfd1c7512587f31b273b68",
+      "webSocketClose1006Meaning": "client close event reports abnormal closure; code1006 was not received in a close frame",
+      "nativeSampleTimeOrigin": "last visible at about20.193seconds relative to first process sample; subsequent samples no longer observed it"
     }
   }
 }

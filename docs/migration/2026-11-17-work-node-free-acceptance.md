@@ -257,3 +257,6 @@ native build与focused vet通过；Linux/Windows x64交叉编译exit0，仅编�
 后续可调用helper的精确4path（`codexappserverws/stdio_transport.go`、`host/codexstdio/run.go`、`cmd/aih-server/codex_stdio.go`、`cmd/aih-server/main.go`早期dispatch）已报监督 `pm-227b9579`，**待ownership/scope确认，未写入**。不添孤立unused adapter冒充公开迁移，不改wrapper／composition／cli_hook／M metadata／协议／Terminal。
 
 最终无换行native输出、native stdout超限行、精确deadline归因，以及认证inference/approval/resume、metadata与条件writer、公开installed wrapper stdio退出Node仍未闭。§14旧“未实跑oversize/slowconsumer”保留为历史快照，本节只追加新范围实证，Goal -32600仍不算兼容成功。原JSON `transportCoreRealBoundaryFollowup` 保存操作、边界、raw SHA和本地root指针；无shared构件/stamp/服务变更。
+
+
+§15审查补记（04:18，Hubble）：慢消费者应精确表述为“恢复读取后，**客户端 close 事件报告1006（异常关闭）**”；1006不是对端发来的close frame。官方native是**相对首个进程样本最后可见于约20.193秒**，之后采样未再观察到，不把时间原点混成请求开始或精确15秒。原JSON的raw digest别名 `source-commit-index-sync-receipt.json` 对应实际文件名 **`commit-index-sync-receipt.json`**，准确root由 `/tmp/aih-r2-frame-core-latest-20261118.txt` 定位，SHA256 `4a94ccb287b816a6fe1f030f7ebab8674b8b2e5a14dfd1c7512587f31b273b68`；JSON新增reviewClarifications映射，不修改原始实跑或同步记录。本补记仅校准引用与措辞，不新增验收通过项或源码。

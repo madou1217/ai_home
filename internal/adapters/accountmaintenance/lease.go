@@ -114,10 +114,9 @@ func Acquire(ctx context.Context, aiHomeDir string) (*Lease, error) {
 			return nil, pluginerr.New(CodeFileInvalid, "")
 		}
 	}
-	// 先以 0600 创建，避免 SQLite 按 umask 生成 0644；已存在时保持原文件。
-	if handle, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, leaseFileMode); err == nil {
-		_ = handle.Close()
-	}
+	// SQLite owns all descriptors for this inode. A raw open/close here would
+	// drop another connection's process-wide POSIX locks. The parent directory
+	// is private; restrict the file after SQLite opens it below.
 	database, err := sql.Open("sqlite", file)
 	if err != nil {
 		return nil, pluginerr.New(CodeUnavailable, "")
@@ -130,6 +129,11 @@ func Acquire(ctx context.Context, aiHomeDir string) (*Lease, error) {
 		if isBusy(err) {
 			return nil, pluginerr.New(CodeBusy, "")
 		}
+		return nil, pluginerr.New(CodeUnavailable, "")
+	}
+	if err := os.Chmod(file, leaseFileMode); err != nil {
+		_ = connection.Close()
+		_ = database.Close()
 		return nil, pluginerr.New(CodeUnavailable, "")
 	}
 	lease := &Lease{connection: connection, database: database}

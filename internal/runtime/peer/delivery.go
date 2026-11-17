@@ -177,6 +177,15 @@ func IsQuiet(lastActivityAtMs, nowMs int64, quietPeriod time.Duration) bool {
 
 // DeliverRecord 按记录内已持久化的 target descriptor 执行单点投递（不扫全量会话）。
 func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) DeliveryResult {
+	if !opts.DryRun {
+		home := ResolvePeerAIHomeDir(opts.AIHomeDir, opts.HostHomeDir, opts.Getenv)
+		if err := applyReadReceipt(filepath.Join(home, "run", "peer"), &rec); err != nil {
+			return DeliveryResult{Error: "read_receipt_unavailable", Message: err.Error()}
+		}
+		if rec.State == "read" {
+			return DeliveryResult{OK: true, Channel: rec.To.Channel}
+		}
+	}
 	text := renderMessageText(rec, opts)
 	channel := strings.TrimSpace(rec.To.Channel)
 	switch channel {
@@ -202,6 +211,9 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 	if expireAge <= 0 {
 		expireAge = DefaultExpireAge
 	}
+	if _, err := store.ReconcileRead(); err != nil {
+		return summary, err
+	}
 	if _, err := store.ExpireStale(expireAge); err != nil {
 		return summary, err
 	}
@@ -226,7 +238,7 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 	// 先过滤退避到期再截取 limit，防止前排退避中的消息把后排已到期消息饿死。
 	candidates := make([]Record, 0, limit)
 	for _, rec := range pending {
-		if rec.NextAttemptAt > nowMs {
+		if rec.State == "read" || rec.NextAttemptAt > nowMs {
 			continue
 		}
 		candidates = append(candidates, rec)
@@ -244,7 +256,10 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 			break
 		}
 		claimed, ok, err := store.Claim(rec.ID)
-		if err != nil || !ok || claimed == nil {
+		if err != nil {
+			return summary, err
+		}
+		if !ok || claimed == nil {
 			continue
 		}
 		summary.Attempted++
@@ -620,9 +635,9 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 		}
 		readActivity := opts.ReadActivityAt
 		if readActivity == nil {
-			readActivity = func(probeCtx context.Context, t DeliveryTarget) (int64, error) {
-				return readSingleWindowActivity(probeCtx, runner, tmuxCmd, socket, t.SessionName)
-			}
+			// Immediate CLI delivery needs the same content-based quiet signal
+			// as the background daemon; cursor blinking is not new output.
+			readActivity = NewPaneActivityTracker(nowFn, runner, tmuxCmd).ReadActivityAt
 		}
 		quiet, lastActivityAtMs := checkQuietWithTimeout(ctx, target, opts.Timeout, opts.PollInterval, quietPeriod, nowFn, readActivity)
 		if !quiet {
@@ -640,12 +655,24 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 	}
 	if composer := inspectComposer(ctx, runner, tmuxCmd, socket, sessionName); composer != "empty" {
 		code := "target_input_unavailable"
+		if composer == "gone" {
+			return DeliveryResult{Error: "session_gone", Message: "目标会话已不存在。"}
+		}
 		if composer == "draft" {
 			code = "target_has_draft"
 		}
 		return DeliveryResult{OK: false, Error: code, Message: "输入框已有草稿或状态无法确认，通知保留在收件箱。"}
 	}
 
+	// Re-check after the quiet/composer probes, immediately before the first
+	// injection. Once pasted, finish Enter even if an ACK arrives meanwhile.
+	home := ResolvePeerAIHomeDir(opts.AIHomeDir, opts.HostHomeDir, opts.Getenv)
+	if err := applyReadReceipt(filepath.Join(home, "run", "peer"), &rec); err != nil {
+		return DeliveryResult{Error: "read_receipt_unavailable", Message: err.Error()}
+	}
+	if rec.State == "read" {
+		return DeliveryResult{OK: true, Channel: "inject"}
+	}
 	if text != "" {
 		cmdCtx, cancel := context.WithTimeout(ctx, ActivityProbeTimeout)
 		_, code, err := runner(cmdCtx, tmuxCmd, []string{"-u", "-L", socket, "send-keys", "-t", sessionName, "-l", "--", text})

@@ -90,6 +90,8 @@ type Record struct {
 	ReadAt           int64           `json:"readAt"`
 	ChannelMessageID string          `json:"channelMessageId"`
 	Error            string          `json:"error,omitempty"`
+	Claim            *ClaimLease     `json:"claim,omitempty"`
+	ReceiptError     string          `json:"receiptError,omitempty"`
 }
 
 // CreateMessageInput 定义写入 pending 收件箱的新消息参数。
@@ -108,7 +110,7 @@ type StoreOptions struct {
 	MaxAttemptLog int
 }
 
-// DispatchStore 提供与 Node peer/store.js 兼容的原子 rename 收件箱操作。
+// DispatchStore 与 Node peer/store.js 共用短事务锁和带代次的原子迁移协议。
 type DispatchStore struct {
 	aiHomeDir     string
 	root          string
@@ -329,7 +331,7 @@ func (s *DispatchStore) EnsureLayout() error {
 	if err := ensurePrivateDir(s.root); err != nil {
 		return err
 	}
-	for _, sub := range []string{"pending", "inflight", "archive"} {
+	for _, sub := range []string{"pending", "inflight", "archive", "receipts"} {
 		if err := ensurePrivateDir(filepath.Join(s.root, sub)); err != nil {
 			return err
 		}
@@ -397,7 +399,7 @@ func normalizeRecordFromDisk(dirName string, rec *Record) {
 	rec.State = stateFromDirectory(dirName, rec.State)
 }
 
-func (s *DispatchStore) readRecord(dirName, id string) (*Record, error) {
+func (s *DispatchStore) readStoredRecord(dirName, id string) (*Record, error) {
 	data, err := os.ReadFile(s.fileIn(dirName, id))
 	if err != nil {
 		return nil, err
@@ -411,6 +413,14 @@ func (s *DispatchStore) readRecord(dirName, id string) (*Record, error) {
 	}
 	normalizeRecordFromDisk(dirName, &rec)
 	return &rec, nil
+}
+
+func (s *DispatchStore) readRecord(dirName, id string) (*Record, error) {
+	rec, err := s.readStoredRecord(dirName, id)
+	if err == nil {
+		projectReadReceipt(s.root, rec)
+	}
+	return rec, err
 }
 
 func (s *DispatchStore) writeRecord(dirName string, rec Record) error {
@@ -507,7 +517,9 @@ func (s *DispatchStore) ListPending() ([]Record, error) {
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
 		rec, err := s.readRecord("pending", id)
-		if err != nil {
+		if err != nil || rec.ReceiptError != "" {
+			// Block only this message. The read-only store keeps its full
+			// projection, including ID and receipt error, visible in the UI.
 			continue
 		}
 		records = append(records, *rec)
@@ -521,136 +533,175 @@ func (s *DispatchStore) ListPending() ([]Record, error) {
 	return records, nil
 }
 
-// Claim 通过同文件系统原子 rename 从 pending 抢占一条消息进入 inflight。
+// Claim stamps a fresh generation before the atomic pending -> inflight move.
+// Recovery and settlement share the lock, so an old file mtime or stale owner
+// cannot recover/overwrite a newly claimed record.
 func (s *DispatchStore) Claim(id string) (*Record, bool, error) {
 	key := NormalizeID(id)
 	if key == "" {
 		return nil, false, nil
 	}
-	if err := s.EnsureLayout(); err != nil {
+	unlock, err := s.lockRecords()
+	if err != nil {
+		return nil, false, err
+	}
+	defer unlock()
+	rec, err := s.readStoredRecord("pending", key)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if err := applyReadReceipt(s.root, rec); err != nil {
+		// The error is projected in ListMessages; do not abort healthy peers.
+		return nil, false, nil
+	}
+	if rec.State == "read" {
+		return nil, false, s.archiveReadLocked("pending", rec)
+	}
+	if _, err := os.Lstat(s.fileIn("inflight", key)); err == nil {
+		return nil, false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, false, err
+	}
+	generation := int64(1)
+	if rec.Claim != nil && rec.Claim.Generation > 0 {
+		generation = rec.Claim.Generation + 1
+	}
+	rec.Claim = &ClaimLease{Token: NewMessageID(), Generation: generation, ClaimedAt: s.now().UnixMilli()}
+	if err := s.writeRecord("pending", *rec); err != nil {
 		return nil, false, err
 	}
 	if err := os.Rename(s.fileIn("pending", key), s.fileIn("inflight", key)); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, false, nil
-		}
-		return nil, false, nil
-	}
-	rec, err := s.readRecord("inflight", key)
-	if err != nil {
 		return nil, false, err
 	}
 	return rec, true, nil
 }
 
-// SettleDelivered 将 inflight 消息标记为已送达并归档到 archive 目录。
+// settle merges into the current generation under lock, rather than writing a
+// caller's stale body/target/attempt snapshot. A missing or replaced claim is
+// never recreated by settlement.
+func (s *DispatchStore) settle(rec *Record, state, errCode, channelMessageID string, retryAfter time.Duration) (*Record, error) {
+	if rec == nil || strings.TrimSpace(rec.ID) == "" {
+		return nil, ErrInvalidRecord
+	}
+	unlock, err := s.lockRecords()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	next, err := s.ownedRecord(rec)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyReadReceipt(s.root, next); err != nil {
+		return nil, err
+	}
+	at := s.now().UnixMilli()
+	acknowledged := next.State == "read"
+	next.State = state
+	switch state {
+	case "delivered":
+		next.DeliveredAt = at
+		next.NextAttemptAt = 0
+		next.ChannelMessageID = strings.TrimSpace(channelMessageID)
+	case "pending":
+		retryMs := retryAfter.Milliseconds()
+		if retryMs < 0 {
+			retryMs = 0
+		}
+		next.NextAttemptAt = at + retryMs
+	case "failed":
+		next.Error = strings.TrimSpace(errCode)
+	}
+	s.appendAttempt(next, AttemptRecord{
+		At: at, Channel: strings.TrimSpace(next.To.Channel),
+		OK: state == "delivered", Error: strings.TrimSpace(errCode),
+	})
+	if acknowledged {
+		next.State = "read"
+		if err := s.ensureReadReceipt(next); err != nil {
+			return nil, err
+		}
+	}
+	if err := applyReadReceipt(s.root, next); err != nil {
+		return nil, err
+	}
+	if err := s.writeRecord("inflight", *next); err != nil {
+		return nil, err
+	}
+	dir := "archive"
+	if next.State == "pending" {
+		dir = "pending"
+	}
+	if err := os.Rename(s.fileIn("inflight", next.ID), s.fileIn(dir, next.ID)); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
 func (s *DispatchStore) SettleDelivered(rec *Record, channelMessageID string) (*Record, error) {
-	if rec == nil || strings.TrimSpace(rec.ID) == "" {
-		return nil, ErrInvalidRecord
-	}
-	at := s.now().UnixMilli()
-	next := *rec
-	next.State = "delivered"
-	next.DeliveredAt = at
-	next.NextAttemptAt = 0
-	next.ChannelMessageID = strings.TrimSpace(channelMessageID)
-	s.appendAttempt(&next, AttemptRecord{
-		At:      at,
-		Channel: strings.TrimSpace(rec.To.Channel),
-		OK:      true,
-		Error:   "",
-	})
-	if err := s.writeRecord("inflight", next); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(s.fileIn("inflight", next.ID), s.fileIn("archive", next.ID)); err != nil {
-		return nil, err
-	}
-	return &next, nil
+	return s.settle(rec, "delivered", "", channelMessageID, 0)
 }
 
-// SettlePending 将暂时未能投递的消息写回 pending 并记录下次退避重试时刻。
 func (s *DispatchStore) SettlePending(rec *Record, errCode string, retryAfter time.Duration) (*Record, error) {
-	if rec == nil || strings.TrimSpace(rec.ID) == "" {
-		return nil, ErrInvalidRecord
-	}
-	at := s.now().UnixMilli()
-	retryMs := retryAfter.Milliseconds()
-	if retryMs < 0 {
-		retryMs = 0
-	}
-	next := *rec
-	next.State = "pending"
-	next.NextAttemptAt = at + retryMs
-	s.appendAttempt(&next, AttemptRecord{
-		At:      at,
-		Channel: strings.TrimSpace(rec.To.Channel),
-		OK:      false,
-		Error:   strings.TrimSpace(errCode),
-	})
-	if err := s.writeRecord("inflight", next); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(s.fileIn("inflight", next.ID), s.fileIn("pending", next.ID)); err != nil {
-		return nil, err
-	}
-	return &next, nil
+	return s.settle(rec, "pending", errCode, "", retryAfter)
 }
 
-// SettleFailed 将遭遇终态错误或过期的消息标记为 failed 并移入 archive 目录。
 func (s *DispatchStore) SettleFailed(rec *Record, errCode string) (*Record, error) {
-	if rec == nil || strings.TrimSpace(rec.ID) == "" {
-		return nil, ErrInvalidRecord
-	}
-	at := s.now().UnixMilli()
-	reason := strings.TrimSpace(errCode)
-	next := *rec
-	next.State = "failed"
-	next.Error = reason
-	s.appendAttempt(&next, AttemptRecord{
-		At:      at,
-		Channel: strings.TrimSpace(rec.To.Channel),
-		OK:      false,
-		Error:   reason,
-	})
-	if err := s.writeRecord("inflight", next); err != nil {
-		return nil, err
-	}
-	if err := os.Rename(s.fileIn("inflight", next.ID), s.fileIn("archive", next.ID)); err != nil {
-		return nil, err
-	}
-	return &next, nil
+	return s.settle(rec, "failed", errCode, "", 0)
 }
 
-// RecoverStaleInflight 将遗留在 inflight 且 mtime 超过阈值的孤儿消息退回 pending。
+// RecoverStaleInflight uses the claim's birth time, not the pending file mtime.
+// Legacy inflight files without a claim retain the old mtime recovery path.
 func (s *DispatchStore) RecoverStaleInflight() (int, error) {
 	if s == nil || s.root == "" {
 		return 0, ErrStoreUnavailable
 	}
-	inflightDir := filepath.Join(s.root, "inflight")
-	entries, err := os.ReadDir(inflightDir)
+	entries, err := os.ReadDir(filepath.Join(s.root, "inflight"))
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return 0, nil
-		}
 		return 0, err
 	}
-	now := s.now()
 	recovered := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		src := filepath.Join(inflightDir, entry.Name())
-		info, err := os.Stat(src)
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		unlock, err := s.lockRecords()
 		if err != nil {
-			continue
+			return recovered, err
 		}
-		if now.Sub(info.ModTime()) < s.inflightStale {
-			continue
-		}
-		dst := filepath.Join(s.root, "pending", entry.Name())
-		if err := os.Rename(src, dst); err == nil {
+		changed := false
+		func() {
+			defer unlock()
+			rec, err := s.readStoredRecord("inflight", id)
+			if err != nil || applyReadReceipt(s.root, rec) != nil {
+				return
+			}
+			claimedAt := int64(0)
+			if rec.Claim != nil {
+				claimedAt = rec.Claim.ClaimedAt
+			} else if info, err := os.Stat(s.fileIn("inflight", id)); err == nil {
+				claimedAt = info.ModTime().UnixMilli()
+			}
+			if claimedAt <= 0 || s.now().UnixMilli()-claimedAt < s.inflightStale.Milliseconds() {
+				return
+			}
+			if rec.State == "read" {
+				changed = s.archiveReadLocked("inflight", rec) == nil
+				return
+			}
+			if _, err := os.Lstat(s.fileIn("pending", id)); !errors.Is(err, os.ErrNotExist) {
+				return
+			}
+			changed = os.Rename(s.fileIn("inflight", id), s.fileIn("pending", id)) == nil
+		}()
+		if changed {
 			recovered++
 		}
 	}
@@ -691,4 +742,11 @@ func parsePositiveMillis(raw string) int64 {
 		return 0
 	}
 	return int64(seconds * 1000)
+}
+
+func pendingOrArchive(rec Record) string {
+	if rec.State == "read" {
+		return "archive"
+	}
+	return "pending"
 }

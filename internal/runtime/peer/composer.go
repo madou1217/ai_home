@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var composerFooter = regexp.MustCompile(`^\s*(?:\? for shortcuts|(?:enter/esc|enter|esc).*\? shortcuts|\d+% context left)`)
+var composerFooter = regexp.MustCompile(`^\s*(?:.*\? (?:for )?shortcuts|\d+% context left)`)
 
 // The editable text may contain separator or footer-looking lines. Only the
 // footer at the physical bottom of the pane can terminate the composer.
@@ -15,10 +15,24 @@ func composerEnd(lines []string) int {
 	for len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
-	if len(lines) < 2 || !composerFooter.MatchString(lines[len(lines)-1]) {
+	if len(lines) < 2 {
 		return -1
 	}
 	end := len(lines) - 1
+	if !composerFooter.MatchString(lines[end]) {
+		// CodeBuddy has a bottom model/permissions row below its cwd and
+		// input frame. Both structural rows must be present.
+		if strings.Contains(lines[end], " · ") && end >= 2 &&
+			(strings.HasPrefix(strings.TrimSpace(lines[end-1]), "➜ ") || strings.HasPrefix(strings.TrimSpace(lines[end-1]), "❯ ")) &&
+			composerBoundary.MatchString(lines[end-2]) {
+			return end - 2
+		}
+		// Standalone Codex uses one model/cwd row as its bottom footer.
+		if strings.Contains(lines[end], " · ") && strings.Contains(lines[end], "← for agents") {
+			return end
+		}
+		return -1
+	}
 	if composerBoundary.MatchString(lines[end-1]) {
 		return end - 1
 	}

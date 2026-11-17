@@ -55,7 +55,7 @@ type WatchOptions struct {
 // ExistingDirectories 返回 <aiHomeDir>/run/peer 下当前存在的子目录。
 func ExistingDirectories(aiHomeDir string) []string {
 	root := filepath.Join(strings.TrimSpace(aiHomeDir), "run", "peer")
-	names := []string{"pending", "inflight", "archive"}
+	names := []string{"pending", "inflight", "archive", "receipts"}
 	dirs := make([]string, 0, len(names))
 	for _, name := range names {
 		candidate := filepath.Join(root, name)
@@ -86,8 +86,7 @@ func Watch(ctx context.Context, aiHomeDir string, options WatchOptions) (<-chan 
 	}
 
 	events := make(chan WatchEvent, 16)
-	dirs := ExistingDirectories(home)
-	if len(dirs) == 0 {
+	if len(ExistingDirectories(home)) == 0 {
 		events <- WatchEvent{Type: "peer-unavailable"}
 		go func() {
 			<-ctx.Done()
@@ -105,8 +104,13 @@ func Watch(ctx context.Context, aiHomeDir string, options WatchOptions) (<-chan 
 		}()
 		return events, nil
 	}
+	// Watch the root too: an existing subscriber must see receipts created
+	// after subscription, without the read-only API creating directories.
+	_ = watcher.Add(filepath.Join(home, "run", "peer"))
 	watched := 0
-	for _, dir := range dirs {
+	// Re-enumerate only after the root watch is active: a receipts directory
+	// created during subscription must not fall between enumeration and Add.
+	for _, dir := range ExistingDirectories(home) {
 		if addErr := watcher.Add(dir); addErr == nil {
 			watched++
 		}
@@ -122,7 +126,7 @@ func Watch(ctx context.Context, aiHomeDir string, options WatchOptions) (<-chan 
 	}
 
 	events <- WatchEvent{Type: "ready", At: nowFn().UnixMilli()}
-	go runWatchLoop(ctx, watcher, events, debounce, nowFn)
+	go runWatchLoop(ctx, watcher, events, debounce, nowFn, home)
 	return events, nil
 }
 
@@ -132,6 +136,7 @@ func runWatchLoop(
 	events chan<- WatchEvent,
 	debounce time.Duration,
 	nowFn func() time.Time,
+	aiHomeDir string,
 ) {
 	var closeOnce sync.Once
 	defer closeOnce.Do(func() {
@@ -154,9 +159,14 @@ func runWatchLoop(
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-watcher.Events():
+		case event, ok := <-watcher.Events():
 			if !ok {
 				return
+			}
+			if event.Op&fsnotify.Create != 0 && filepath.Dir(event.Name) == filepath.Join(aiHomeDir, "run", "peer") {
+				for _, dir := range ExistingDirectories(aiHomeDir) {
+					_ = watcher.Add(dir)
+				}
 			}
 			if timer == nil {
 				timer = time.NewTimer(debounce)

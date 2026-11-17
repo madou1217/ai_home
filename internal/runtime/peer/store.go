@@ -50,6 +50,7 @@ type Message struct {
 	AttemptCount     int    `json:"attemptCount"`
 	Error            string `json:"error"`
 	LastAttemptError string `json:"lastAttemptError"`
+	ReceiptError     string `json:"receiptError,omitempty"`
 }
 
 // Counts 统计本次返回列表里各状态的消息数。
@@ -150,14 +151,14 @@ func ListMessages(aiHomeDir string, state string, limit int) (ListResult, error)
 	case "all":
 		directories = []string{"pending", "inflight", "archive"}
 	default:
-		directories = []string{"archive"}
+		directories = []string{"pending", "inflight", "archive"}
 	}
 
 	var records []Message
 	for _, dirName := range directories {
 		dirRecords := readDirectory(filepath.Join(peerRoot, dirName), dirName)
 		for _, msg := range dirRecords {
-			if normalizedState != "all" && normalizedState != "pending" && msg.State != normalizedState {
+			if normalizedState != "all" && msg.State != normalizedState {
 				continue
 			}
 			records = append(records, msg)
@@ -221,7 +222,17 @@ func readDirectory(directory string, dirName string) []Message {
 		if err := json.Unmarshal(data, &raw); err != nil {
 			continue
 		}
+		if strings.TrimSpace(raw.ID) == "" {
+			raw.ID = strings.TrimSuffix(entry.Name(), ".json")
+		}
+		rec := Record{ID: raw.ID, State: raw.State, ReadAt: int64(raw.ReadAt), Error: raw.Error}
+		projectReadReceipt(filepath.Dir(directory), &rec)
+		raw.State, raw.ReadAt, raw.Error = rec.State, float64(rec.ReadAt), rec.Error
+		if rec.State == "read" && rec.ReceiptError == "" {
+			raw.NextAttemptAt = 0
+		}
 		msg := projectMessage(raw, stateFromDirectory(dirName, raw.State))
+		msg.ReceiptError = rec.ReceiptError
 		records = append(records, msg)
 	}
 	return records
@@ -229,6 +240,9 @@ func readDirectory(directory string, dirName string) []Message {
 
 func stateFromDirectory(dirName string, rawState string) string {
 	// 目录是状态的权威来源；archive 下只认 read/failed，其余归为 delivered。
+	if strings.TrimSpace(rawState) == "read" {
+		return "read"
+	}
 	if dirName == "pending" || dirName == "inflight" {
 		return "pending"
 	}

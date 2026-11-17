@@ -151,3 +151,29 @@ run_backup "$PRIVATE/destination" export > "$PRIVATE/evidence/readback.private.j
 - commit/push：由本 owner按该单一文档 pathspec核验并单独汇报，不能把源实现提交归到本 owner。
 
 审查：已向现有 `01a1e2ab` 会话请求仅文档/低敏摘要的只读审查（`pm-fd546597`），请求已读；截至本文件提交前尚未返回独立 verdict，不能写成独立审查通过。为遵守不新增 writer/会话的边界，未另启动 review会话。本次按仓库能力链降级执行 **self_review + plan_check，显式 doc-only review bypass**，仅限已获授权的本文件提交：逐项复核固定构件、9次状态、沙箱对照、锁/回读/进程/清理摘要、原W6与Node退出边界；并将真实导出中79个敏感字符串直接对照本文件，匹配0、账号ref匹配0，不输出值；secret形状/乱码扫描及单path staged diff检查通过。监督原任务及 `pm-543bb426` 均明确要求本人仅新doc提交；此bypass不是原M业务或共享发布的审查授权。若后续独立反馈需修正文档，以新的本人单path提交处理，不amend或重写并行历史。
+
+
+## 2026-11-18 06:40 增量：公开 local export 的 Node 业务退出
+
+本增量为监督 owner 本人交付 **`65c58b9801e0f898ff51141a542bf4e68e60d95e`**，不改上文2026-11-17 canonical core验收结论。实际父提交为 R4 文档 `5ea21cf5f`；物理落盘前观察值 `ff722f3bd` 不是最终parent，原commit receipt已正确记录，口头差异另有澄清receipt。
+
+### 精确工程边界
+
+仅六个production paths：`lib/cli/commands/backup/router.js`、`lib/account/backup/public-export.js`、`cmd/aih/backup_accounts.go`、`internal/host/backupaccounts/public_export.go`、`internal/adapters/accounts/nativeexportread/reader.go`、`internal/adapters/accounts/nativeexportread/selection.go`。公开 `aih export` / provider-scoped export 的既有兼容账号视图、选择器、filename、host/time和0600文件发布由Go唯一执行；Node仅fixed bundled Go能力探测、bounded pipe和低敏显示。原local import与remote backup改为延迟require但仍用原实现，未改canonical `__backup-accounts export/import`、Go运行入口或remote状态writer。缺/旧Go明确失败，绝不回落旧Node导出。
+
+**没有偷换导出集合：**本次真实sealed快照 `561596b6eca3a34052a2cc6fd024f5fd3d684bc12ec2b427d67b447f9dfd3f22` 中 canonical34 / compatibility32，后者独有3、前者独有5。因此本caller继续原32条语义，不把canonical-only混入，也不静默丢compatibility-only。统一账号真相源/删除这些历史表另有门禁。reader仅 `appstate.OpenReadOnly`＋同一read transaction；缺表/坏对象JSON/读取失败现在显式失败，是对旧缺表默认值/坏JSON当空的收紧，不宣称异常路径完全等价。合法空对象、缺凭据行仍按原skip；真正新空HOME可产生空document，公开router照原语义exit1。
+
+### 固定输入、构件和真实结果
+
+- 固定source `40c5a795d9a590263ed8c7677b9a3c0c19976e6b` archive `7f15f13756e157913843be9ca41e4f9fa121a4359b158e16d83460c624ea25a6` ＋exact6overlay；非最终commit整树build。
+- 最终source manifest `47e959a77141f401c572d9d2ffb3b6fadeb24bfdd7baa7df48ff68a6ed225a6d`；macOS实际Go CLI `9b4f009bae43337f6d461159b35d011445bfb5b1aeb2cb9d3f550f1a478af334`。build/vet/Node syntax均exit0；Windows仅cross-compile，不借为运行验收。
+- 实际命令为私有原生产 `runBackupCommand`、fixed Go `__backup-accounts export-public`、新同caller/adapter及真正 `node <private-package>/bin/ai-home.js export <private-output>`。真实32条逐entry整体摘要均为 `a9f4bf550c6727e9dcbd37af14e7b2ffa0d2bf68664bd71badcd2d24da41ff1f`，kind/version/host相等，时间字段各自真实生成；原snapshot完整SHA不变，输出0600。
+- 10组原/Go selector、provider-scoped与默认filename对比：8成功＋2拒绝，所记录账号entry与filename一致。真实root入口exit0同32条。V8证明旧transfer/remote模块未加载；Node account-reader模块被大app其他引用加载，但被观察的 `readNodeAccounts/openReadOnly/parseJsonObject` 函数count为0，不能写成零Node模块/进程。
+- 实际拒绝leaf/ancestor symlink、缺表/坏对象、strict DTO、缺/旧Go；已有0644私有文件替换后0600，真实写权限拒绝保留原文件SHA。metadata超限原先审查发现发布后才拒的P2，已改成含默认JSON转义＋LF的64KiB写前准入；同32真实账号配70087-byte用户目标路径实际exit1 `public_export_output_limit` 且未创建目录。大量缺凭据账号分支仅静态审查，未造账号实跑。
+- 最终构件空PATH＋OS禁fork/foreign exec/network，禁止读取live AIH/仓库，真实Go PID42723四次children0、导出32/exit0；输入未EOF实际5.026秒exit1，实际SIGTERM143/0.221秒；foreign `/usr/bin/true` control拒绝exit71。只证明本调用链，不是整机zero Node或所有短命进程无遗漏的内核审计。
+
+### 证据修正、安全和交付分列
+
+私有根 `/private/tmp/aih-public-export-go-20261118-bv7wnib_`（pointer `/tmp/aih-public-export-go-latest-20261118.txt`）。final3原始低敏运行leaf仍带旧manifest字符串，已由 `final3-binding-correction-receipt.json` / SHA `bf51c1c4b1e14445580a9d942af42e0806c2fd266437c506dc68c2c9c5237f72` 显式绑定最终六SHA/artifact，不覆盖旧leaf。原v1/v2、profile变动及v2 matrix profile路径笔误exit65保留，失败不算产品拒绝；随后fresh final3真实重跑。早期extra leaf为5项，不能称6项；旧lifecycle不升级为final3，最终另有 `final3-lifecycle-process.json`、`final3-write-denial.json`。所有正文/DB仅owner私有文件，不进Git/argv/peer，未授权清理则保管；不宣称敌手可写目录的race完全安全或Windows真实运行。
+
+原Galileo对最终exact6＋允许低敏binding **APPROVE / NO BLOCKING**，唯一P2已闭；review不是其本人重跑export。源码pre-cachedstat/post-showstat、六blob和scope均核，one-use index＋显式pathspec，主index完整bytes/entries前后不变，没有同步或清理peer旧索引。source已本人checkpoint；push以实际relay receipt为准；artifact仅上述私有产物；**本机标准CLI仍旧缺新capability、未安装/共享加载或重启，不能把新源码当已可用发行版**。适用用户安装授权仍单独需要。Node bootstrap、import/remote/core-mirror、Desktop stop/cache、host收养、插件JS执行宿主与默认双后端均未因此退出；R5及42项＋7门禁/R0–R8仍未完成。

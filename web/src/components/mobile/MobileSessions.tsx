@@ -79,20 +79,62 @@ const MobileSessions = ({
     return () => document.body.removeAttribute('data-mobile-sessions');
   }, []);
 
-  const sortSessions = (list: Session[]): Session[] => [...list].sort((a, b) => {
-    const ra = isSessionRunning(a, runningSessionKeys) ? 1 : 0;
-    const rb = isSessionRunning(b, runningSessionKeys) ? 1 : 0;
-    if (ra !== rb) return rb - ra;
-    return (b.updatedAt || 0) - (a.updatedAt || 0);
-  });
+  // 活跃会话的排序固定为「首次进入活跃」的顺序：会话持续输出时 updatedAt
+  // 每帧变化，不能拿它当排序键，否则多个活跃会话会互相顶位置。
+  const activeSessionRanksRef = useRef(new Map<string, number>());
+  const nextActiveSessionRankRef = useRef(0);
+  const projectRanksRef = useRef(new Map<string, number>());
+  const nextProjectRankRef = useRef(0);
+  const newProjectRankRef = useRef(0);
+  const projectOrderInitializedRef = useRef(false);
 
-  const projectActivity = (p: AggregatedProject) => Math.max(0, ...p.sessions.map((s) => s.updatedAt || 0));
+  const sortSessions = (list: Session[]): Session[] => {
+    const active: Array<{ session: Session; rank: number }> = [];
+    const inactive: Session[] = [];
+    for (const session of Array.isArray(list) ? list : []) {
+      const key = getSessionRunKey(session);
+      if (isSessionRunning(session, runningSessionKeys)) {
+        let rank = activeSessionRanksRef.current.get(key);
+        if (rank === undefined) {
+          rank = ++nextActiveSessionRankRef.current;
+          activeSessionRanksRef.current.set(key, rank);
+        }
+        active.push({ session, rank });
+      } else {
+        activeSessionRanksRef.current.delete(key);
+        inactive.push(session);
+      }
+    }
+    active.sort((left, right) => left.rank - right.rank || String(left.session.id).localeCompare(String(right.session.id)));
+    inactive.sort((left, right) => (
+      (right.updatedAt || 0) - (left.updatedAt || 0)
+      || String(left.id).localeCompare(String(right.id))
+    ));
+    return [...active.map((item) => item.session), ...inactive];
+  };
+
   const projectHasRunning = (p: AggregatedProject) => p.sessions.some((s) => isSessionRunning(s, runningSessionKeys));
+  const inactiveProjectActivity = (p: AggregatedProject) => Math.max(0, ...p.sessions
+    .filter((s) => !isSessionRunning(s, runningSessionKeys))
+    .map((s) => Number(s.updatedAt) || 0));
+  for (const project of projects) {
+    if (projectRanksRef.current.has(project.id)) continue;
+    projectRanksRef.current.set(
+      project.id,
+      projectOrderInitializedRef.current
+        ? --newProjectRankRef.current
+        : ++nextProjectRankRef.current,
+    );
+  }
+  if (projects.length > 0) projectOrderInitializedRef.current = true;
   const orderedProjects = [...projects].sort((a, b) => {
-    const ra = projectHasRunning(a) ? 1 : 0;
-    const rb = projectHasRunning(b) ? 1 : 0;
-    if (ra !== rb) return rb - ra;
-    return projectActivity(b) - projectActivity(a);
+    const ar = projectHasRunning(a);
+    const br = projectHasRunning(b);
+    if (ar !== br) return ar ? -1 : 1;
+    if (ar) {
+      return (projectRanksRef.current.get(a.id) || 0) - (projectRanksRef.current.get(b.id) || 0);
+    }
+    return inactiveProjectActivity(b) - inactiveProjectActivity(a) || String(a.id).localeCompare(String(b.id));
   });
 
   const toggleShowAll = (id: string) => {

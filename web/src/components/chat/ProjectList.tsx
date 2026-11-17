@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Dropdown, Skeleton, Empty, Popconfirm, message, Modal } from 'antd';
 import {
@@ -104,8 +104,94 @@ const ProjectList = ({
   const [mobileConfirm, setMobileConfirm] = useState<MobileConfirmState | null>(null);
   const [mobileConfirmLoading, setMobileConfirmLoading] = useState(false);
   const { capabilities: lifecycleCapabilities } = useSessionLifecycleCapabilities();
-  // 项目会话按 updatedAt 实时重排：FLIP 让条目滑到新位置，而不是瞬间跳走。
-  const projectSessionsFlipRef = useFlipReorder<HTMLDivElement>(projects);
+  // 活跃会话的排序不能跟着 updatedAt 每帧变化：多条会话同时活跃时，
+  // 每次消息刷新都会互相顶位置，形成「来回抢占」。这里给活跃会话分配
+  // 首次进入活跃时的稳定序号；退出活跃后才回到按 updatedAt 排序的池子。
+  const activeSessionRanksRef = useRef(new Map<string, number>());
+  const nextActiveSessionRankRef = useRef(0);
+  const projectRanksRef = useRef(new Map<string, number>());
+  const nextProjectRankRef = useRef(0);
+  const newProjectRankRef = useRef(0);
+  const projectOrderInitializedRef = useRef(false);
+
+  const orderSessionsForSidebar = useCallback((list: Session[], pinnedIds?: Set<string>) => {
+    const pinned = pinnedIds || new Set<string>();
+    const active: Array<{ session: Session; rank: number }> = [];
+    const pinnedActive: Array<{ session: Session; rank: number }> = [];
+    const inactive: Session[] = [];
+    const pinnedInactive: Session[] = [];
+    for (const session of Array.isArray(list) ? list : []) {
+      const rankKey = getSessionRunKey(session);
+      const running = isSessionRunning(session, runningSessionKeys);
+      if (running) {
+        let rank = activeSessionRanksRef.current.get(rankKey);
+        if (rank === undefined) {
+          rank = ++nextActiveSessionRankRef.current;
+          activeSessionRanksRef.current.set(rankKey, rank);
+        }
+        const item = { session, rank };
+        (pinned.has(session.id) ? pinnedActive : active).push(item);
+      } else {
+        activeSessionRanksRef.current.delete(rankKey);
+        (pinned.has(session.id) ? pinnedInactive : inactive).push(session);
+      }
+    }
+    const byUpdated = (left: Session, right: Session) => (
+      (right.updatedAt || 0) - (left.updatedAt || 0)
+      || String(left.id).localeCompare(String(right.id))
+    );
+    const byRank = (left: { rank: number; session: Session }, right: { rank: number; session: Session }) => (
+      left.rank - right.rank || String(left.session.id).localeCompare(String(right.session.id))
+    );
+    active.sort(byRank);
+    pinnedActive.sort(byRank);
+    inactive.sort(byUpdated);
+    pinnedInactive.sort(byUpdated);
+    return [
+      ...pinnedActive.map((item) => item.session),
+      ...pinnedInactive,
+      ...active.map((item) => item.session),
+      ...inactive,
+    ];
+  }, [runningSessionKeys]);
+
+  const projectHasRunningSession = useCallback((project: AggregatedProject) => (
+    (project.sessions || []).some((session) => isSessionRunning(session, runningSessionKeys))
+  ), [runningSessionKeys]);
+
+  const inactiveProjectActivity = useCallback((project: AggregatedProject) => (
+    Math.max(0, ...(project.sessions || [])
+      .filter((session) => !isSessionRunning(session, runningSessionKeys))
+      .map((session) => Number(session.updatedAt) || 0))
+  ), [runningSessionKeys]);
+
+  const orderedProjects = useMemo(() => {
+    const ranks = projectRanksRef.current;
+    for (const project of projects) {
+      if (ranks.has(project.id)) continue;
+      // 首次加载保持后端给的顺序；之后新增项目放最上面，已有项目不因活跃刷新跳位。
+      ranks.set(
+        project.id,
+        projectOrderInitializedRef.current
+          ? --newProjectRankRef.current
+          : ++nextProjectRankRef.current,
+      );
+    }
+    if (projects.length > 0) projectOrderInitializedRef.current = true;
+    return [...projects].sort((left, right) => {
+      const leftRunning = projectHasRunningSession(left);
+      const rightRunning = projectHasRunningSession(right);
+      if (leftRunning !== rightRunning) return leftRunning ? -1 : 1;
+      if (leftRunning) {
+        return (ranks.get(left.id) || 0) - (ranks.get(right.id) || 0);
+      }
+      return inactiveProjectActivity(right) - inactiveProjectActivity(left)
+        || String(left.id).localeCompare(String(right.id));
+    });
+  }, [projects, projectHasRunningSession, inactiveProjectActivity]);
+
+  // 项目会话按稳定顺序重排：FLIP 让条目滑到新位置，而不是瞬间跳走。
+  const projectSessionsFlipRef = useFlipReorder<HTMLDivElement>(orderedProjects);
 
   // 纯聊天 (Chat 模式) 会话列表状态
   // 先显示上次拿到的纯聊天会话列表，后台再刷新：/webui/chat-sessions 在会话多时要 2s+，
@@ -435,14 +521,7 @@ const ProjectList = ({
             ) : (
               // 骨架 → 真列表：整列淡入衔接，数据到达不再硬切（重排仍由 flipRef 逐行补间）
               <div ref={chatSessionsFlipRef} className="aih-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {[...chatSessions]
-                  .sort((a, b) => {
-                    const aPinned = pinnedSessionIds.has(a.id);
-                    const bPinned = pinnedSessionIds.has(b.id);
-                    if (aPinned && !bPinned) return -1;
-                    if (!aPinned && bPinned) return 1;
-                    return (b.updatedAt || 0) - (a.updatedAt || 0);
-                  })
+                {orderSessionsForSidebar(chatSessions, pinnedSessionIds)
                   .map((session) => (
                   (() => {
                     const isRunning = isSessionRunning(session, runningSessionKeys);
@@ -559,7 +638,7 @@ const ProjectList = ({
             ) : (
               // 骨架 → 真列表：整列淡入衔接，数据到达不再硬切
               <div ref={projectSessionsFlipRef} className="aih-fade-in" style={{ padding: '4px 0' }}>
-                {projects.map((project) => {
+                {orderedProjects.map((project) => {
                   const isExpanded = expandedProjects.has(project.id);
                   const isHovered = hoveredProject === project.id;
                   const isSessionsExpanded = expandedSessions.has(project.id);
@@ -567,7 +646,7 @@ const ProjectList = ({
                   const collapsedLimit = 10;
                   const expandedLimit = project.sessions.length;
                   const displaySessions = getVisibleProjectSessions(
-                    project.sessions,
+                    orderSessionsForSidebar(project.sessions),
                     isExpanded,
                     isSessionsExpanded,
                     collapsedLimit,

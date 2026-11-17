@@ -77,11 +77,13 @@ func normalize(o Options) (Options, error) {
 func receiptPath(home string) string     { return filepath.Join(home, "distribution-install.json") }
 func transactionRoot(home string) string { return home + ".install-history" }
 
-// pruneInstallHistory applies only an explicit operator retention opt-in.
-// Recovery/unknown/rolled-back transactions and unrelated directories are never
-// removed automatically; a successful update is not authority to discard them.
+// pruneInstallHistory keeps only the current transaction backup after a
+// verified upgrade and removes earlier completed transactions. Only journals
+// that prove a successful install of this home are eligible: recovery, unknown
+// or rolled-back transactions and unrelated directories are never removed.
+// Set AIH_INSTALL_PRUNE_COMPLETED_BACKUPS=0 to retain every backup.
 func pruneInstallHistory(home, keep string) {
-	if os.Getenv("AIH_INSTALL_PRUNE_COMPLETED_BACKUPS") != "1" {
+	if os.Getenv("AIH_INSTALL_PRUNE_COMPLETED_BACKUPS") == "0" {
 		return
 	}
 	root := transactionRoot(home)

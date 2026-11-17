@@ -10,10 +10,29 @@ import (
 	"strings"
 )
 
+// CodexBinaryOptions adapts host discovery to the shared safe resolver.
+type CodexBinaryOptions struct {
+	HostHomeDir string
+	LookupEnv   func(string) (string, bool)
+	LookPath    func(string) (string, error)
+}
+
 // ResolveCodexBinary is the canonical resolver for CLI and app-server launches.
 // It inspects installed candidates only; no shell, installer, or download is run.
 func ResolveCodexBinary(hostHomeDir string) (string, error) {
-	return defaultBinaryResolver().resolveCodexBinary("codex", hostHomeDir)
+	return ResolveCodexBinaryWithOptions(CodexBinaryOptions{HostHomeDir: hostHomeDir})
+}
+
+// ResolveCodexBinaryWithOptions shares availability semantics with the toolkit.
+func ResolveCodexBinaryWithOptions(options CodexBinaryOptions) (string, error) {
+	resolver := defaultBinaryResolver()
+	if options.LookupEnv != nil {
+		resolver.lookupEnv = options.LookupEnv
+	}
+	if options.LookPath != nil {
+		resolver.lookPath = options.LookPath
+	}
+	return resolver.resolveCodexBinary("codex", options.HostHomeDir)
 }
 
 func (resolver binaryResolver) resolveCodexBinary(binary, hostHomeDir string) (string, error) {
@@ -64,6 +83,10 @@ func (resolver binaryResolver) resolveCodexBinary(binary, hostHomeDir string) (s
 			if legacyHookPath == "" {
 				legacyHookPath = missing.path
 			}
+			return "", nil
+		}
+		var unavailable *CodexBinaryError
+		if errors.As(err, &unavailable) && unavailable.Code == CodeCodexOfficialCLIMissing {
 			return "", nil
 		}
 		return target, err

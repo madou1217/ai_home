@@ -290,6 +290,9 @@ func buildNpmUninstallPlan(pkg string, opts Options) LifecyclePlan {
 	}
 	cmd, uc := npmCommand(opts)
 	args := append([]string{"uninstall", "-g", norm}, "--userconfig="+uc, "--no-audit", "--no-fund")
+	if norm == "@openai/codex" {
+		args = append(args, "--prefix", codexInstallPrefix(opts))
+	}
 	return LifecyclePlan{
 		ID:      "npm_global_uninstall",
 		Label:   "npm 卸载 " + norm,

@@ -1984,6 +1984,7 @@ export interface ManagedAppItem {
   categories: string[];
   binaryName: string;
   cliPath: string;
+  availabilityError?: string;
   configName: string;
   configFormat: string;
   configExists: boolean;

@@ -85,7 +85,7 @@ func runProviderVersion(
 	command := exec.CommandContext(ctx, path, "--version")
 	command.Env = append(os.Environ(), "NO_COLOR=1")
 	raw, runErr := command.CombinedOutput()
-	if runErr != nil && len(raw) == 0 {
+	if runErr != nil && (providerID == "codex" || len(raw) == 0) {
 		return fmt.Errorf("执行 %s --version 失败: %w", binaryName, runErr)
 	}
 	output = string(raw)
@@ -104,6 +104,9 @@ func runProviderVersion(
 		break
 	}
 	if version == "" {
+		if providerID == "codex" {
+			return fmt.Errorf("官方 Codex CLI 未返回版本；请在工具箱的应用管理中检查或重新安装")
+		}
 		version = "(未取到版本)"
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "%s  %s\n", providerID, version)

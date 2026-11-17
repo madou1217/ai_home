@@ -37,7 +37,7 @@ func codexOfficialCLIMissing(legacyHookPath string) error {
 	}
 	return &CodexBinaryError{
 		Code:    CodeCodexOfficialCLIMissing,
-		Message: message + "；请通过官方 CLI 安装入口安装（保留现有 wrapper）",
+		Message: message + "；请打开工具箱 → 应用管理 → Codex CLI，点击安装并确认（保留现有配置及旧 hook）",
 		Path:    legacyHookPath,
 		Action:  "install_official_cli",
 		cause:   ErrProviderBinaryNotFound,

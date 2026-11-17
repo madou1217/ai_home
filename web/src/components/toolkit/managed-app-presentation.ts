@@ -29,6 +29,7 @@ export function getManagedAppWarning(app: ManagedAppItem, upgrade?: ManagedAppUp
   const upgradeWarning = Boolean(upgrade && (upgrade.attention || upgrade.statusTone === 'error'
     || (app.installed && upgrade.statusTone === 'warning' && !upgrade.hasUpdate)));
   return [
+    app.availabilityError || '',
     app.installed ? getAppHookStatusDetail(app) : '',
     upgradeWarning ? [upgrade?.statusLabel, upgrade?.reasonText].filter(Boolean).join('：') : '',
     upgradeWarning && upgrade?.blockedVersions.length ? `已拉黑版本：${upgrade.blockedVersions.join('、')}` : ''

@@ -187,7 +187,7 @@ func (m *Manager) scheduleVersionProbe(kind, target string, opts Options, probe 
 func probeCLIBinaryVersion(ctx context.Context, binaryPath string, opts Options) string {
 	if strings.HasSuffix(strings.ToLower(binaryPath), ".cjs") {
 		nodeBin := nonEmpty(opts.NodeExecPath, "node")
-		res := opts.exec().Run(ctx, nodeBin, []string{binaryPath, "--version"}, environment.ExecOptions{Timeout: 3 * time.Second})
+		res := opts.exec().Run(ctx, nodeBin, []string{binaryPath, "--version"}, environment.ExecOptions{Timeout: 3 * time.Second, Env: opts.Env})
 		if res.OK {
 			if v, ok := NormalizeVersionString(res.Stdout + "\n" + res.Stderr); ok {
 				return v
@@ -196,7 +196,7 @@ func probeCLIBinaryVersion(ctx context.Context, binaryPath string, opts Options)
 		return ""
 	}
 	for _, flag := range []string{"--version", "-v"} {
-		res := opts.exec().Run(ctx, binaryPath, []string{flag}, environment.ExecOptions{Timeout: 3 * time.Second})
+		res := opts.exec().Run(ctx, binaryPath, []string{flag}, environment.ExecOptions{Timeout: 3 * time.Second, Env: opts.Env})
 		if res.OK {
 			if v, ok := NormalizeVersionString(res.Stdout + "\n" + res.Stderr); ok {
 				return v

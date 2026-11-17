@@ -47,7 +47,7 @@ func resolveCodexHook(resolved string) (string, error) {
 			return "", codexHookError(CodeCodexHookUntrusted, resolved, "Codex CLI hook target cannot be inspected", err)
 		}
 		if !strings.Contains(content, codexhooks.WrapperMarkerCLI) {
-			return resolved, nil
+			return resolveCodexNPMEntry(resolved)
 		}
 		if strings.Contains(content, codexhooks.WrapperAliasMarker) {
 			target := codexhooks.ReadAliasTarget(content)

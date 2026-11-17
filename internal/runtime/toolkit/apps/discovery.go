@@ -3,6 +3,7 @@ package apps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 )
@@ -39,6 +41,10 @@ func ResolveProviderCLIPath(provider string, opts Options) string {
 	norm := strings.ToLower(strings.TrimSpace(provider))
 	if norm == "" {
 		return ""
+	}
+	if norm == "codex" {
+		path, _ := resolveOfficialCodex(opts)
+		return path
 	}
 	cat := resolveCatalog(opts)
 	def, _ := resolveProviderDefinition(cat, norm)
@@ -77,14 +83,6 @@ func ResolveProviderCLIPath(provider string, opts Options) string {
 			candidateDirs = append(candidateDirs, joinPlatformPath(p, home, ".local", "bin"), joinPlatformPath(p, home, "bin"))
 		}
 		candidateDirs = append(candidateDirs, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
-	}
-	if norm == "codex" {
-		prefix := codexInstallPrefix(opts)
-		if p == platformWindows {
-			candidateDirs = append(candidateDirs, prefix)
-		} else {
-			candidateDirs = append(candidateDirs, filepath.Join(prefix, "bin"))
-		}
 	}
 	candidateDirs = uniqueStrings(candidateDirs)
 
@@ -837,6 +835,17 @@ func (m *Manager) buildManagedApps(ctx context.Context, opts Options) ListResult
 		}
 
 		cliPath := ResolveProviderCLIPath(providerID, opts)
+		availabilityError := ""
+		installAvailable := isCLIInstallSupported(providerID)
+		if providerID == "codex" {
+			var resolveErr error
+			cliPath, resolveErr = resolveOfficialCodex(opts)
+			if resolveErr != nil {
+				availabilityError = resolveErr.Error()
+				var typed *providercli.CodexBinaryError
+				installAvailable = errors.As(resolveErr, &typed) && typed.Code == providercli.CodeCodexOfficialCLIMissing
+			}
+		}
 		installed := cliPath != ""
 		ver := ""
 		if installed {
@@ -889,6 +898,7 @@ func (m *Manager) buildManagedApps(ctx context.Context, opts Options) ListResult
 			Categories:        categories,
 			BinaryName:        binaryName,
 			CLIPath:           cliPath,
+			AvailabilityError: availabilityError,
 			ConfigExists:      cfgExists,
 			ConfigFileCount:   configCounts[providerID],
 			ConfigName:        basePlatformPath(p, cfgPath),
@@ -904,7 +914,7 @@ func (m *Manager) buildManagedApps(ctx context.Context, opts Options) ListResult
 			SyncMode:          syncMode,
 			HookReason:        hookDiag.Reason,
 			HookMissingEvents: missingEvents,
-			InstallAvailable:  isCLIInstallSupported(providerID),
+			InstallAvailable:  installAvailable,
 			CanUpdate:         canUpdate,
 			CanUninstall:      canUninstall,
 		})

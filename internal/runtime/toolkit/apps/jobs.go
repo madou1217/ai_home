@@ -2,11 +2,13 @@ package apps
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 )
 
@@ -603,6 +605,18 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 	}
 
 	cliPath := ResolveProviderCLIPath(target.Provider, opts)
+	if target.Provider == "codex" {
+		var resolveErr error
+		cliPath, resolveErr = resolveOfficialCodex(opts)
+		if resolveErr != nil {
+			var typed *providercli.CodexBinaryError
+			missing := errors.As(resolveErr, &typed) && typed.Code == providercli.CodeCodexOfficialCLIMissing
+			if target.Action != "uninstall" || !missing {
+				attempt.OK, attempt.Error = false, resolveErr.Error()
+				return attempt, nil, false
+			}
+		}
+	}
 	if target.Action == "uninstall" {
 		if cliPath != "" {
 			attempt.OK = false
@@ -614,6 +628,11 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 	if cliPath == "" {
 		attempt.OK = false
 		attempt.Error = lifecycleActionLabel(target.Action) + "命令已完成，但 CLI 校验失败。"
+		return attempt, nil, false
+	}
+	if target.Provider == "codex" && probeCLIBinaryVersion(ctx, cliPath, opts) == "" {
+		attempt.OK = false
+		attempt.Error = lifecycleActionLabel(target.Action) + "命令已完成，但官方 Codex CLI 无法运行或版本校验失败。"
 		return attempt, nil, false
 	}
 	return attempt, &JobResultView{Installed: true, CLIPath: cliPath}, true

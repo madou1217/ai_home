@@ -162,6 +162,7 @@ type AppView struct {
 	Categories           []string       `json:"categories"`
 	BinaryName           string         `json:"binaryName"`
 	CLIPath              string         `json:"cliPath"`
+	AvailabilityError    string         `json:"availabilityError,omitempty"`
 	ConfigExists         bool           `json:"configExists"`
 	ConfigFileCount      int            `json:"configFileCount"`
 	ConfigName           string         `json:"configName"`

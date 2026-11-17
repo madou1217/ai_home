@@ -589,6 +589,8 @@ function tryRunGoProviderCommonCommand() {
   // 家族有专门入口（多站点/别名），不要在这里重复处理。
   if (!provider || GO_FAMILY_PROVIDERS.has(provider)) return false;
   const command = String(args[1] || '').trim().toLowerCase();
+  // Codex version must use the same safe upstream resolver as actual launch.
+  const isCodexVersion = provider === 'codex' && command === 'version' && args.length === 2;
   const numeric = (value) => /^\d+$/.test(String(value || '').trim());
   const isList = command === 'ls' &&
     (args.length === 2 || (args.length === 3 && numeric(args[2])));
@@ -615,7 +617,7 @@ function tryRunGoProviderCommonCommand() {
     SET_DEFAULT_PROVIDERS.has(provider) &&
     numeric(args[2]) &&
     args.slice(3).every((token) => token === '--restart-client' || token === '--force-quit-client');
-  if (!isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault && !isUnsetDefault) return false;
+  if (!isCodexVersion && !isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault && !isUnsetDefault) return false;
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';

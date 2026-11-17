@@ -4,21 +4,22 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
 	upstreamPolicyKeyPrefix   = "egress:upstream-policy:"
 	upstreamEvidenceKeyPrefix = "egress:upstream-evidence:"
 	// DefaultEvidenceTTLMS 为上游地区实测的默认有效期（7 天）。
-	DefaultEvidenceTTLMS  int64 = 7 * 24 * 60 * 60 * 1000
-	maxUpstreamRules            = 100
-	maxEvidencePerUpstream      = 2000
-	defaultRegionPresetDate     = "2026-10-19"
+	DefaultEvidenceTTLMS    int64 = 7 * 24 * 60 * 60 * 1000
+	maxUpstreamRules              = 100
+	maxEvidencePerUpstream        = 2000
+	defaultRegionPresetDate       = "2026-10-19"
 )
 
 // Scopes 与 Node lib/server/egress-evidence-scope.js 对齐。
@@ -33,23 +34,6 @@ var GenericDenySignatures = []string{
 	"unavailable for legal reasons",
 	"not available in your region",
 	"not available in your country",
-}
-
-var officialUpstreamHosts = map[string][]string{
-	"codex":       {"api.openai.com"},
-	"claude":      {"api.anthropic.com"},
-	"gemini":      {"generativelanguage.googleapis.com"},
-	"agy":         {"daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"},
-	"opencode":    {"opencode.ai"},
-	"grok":        {"api.x.ai"},
-	"kiro":        {"q.us-east-1.amazonaws.com"},
-	"cline":       {"api.cline.bot"},
-	"zcode":       {"open.bigmodel.cn", "api.z.ai", "zcode.z.ai"},
-	"kimi":        {"api.kimi.com", "api.moonshot.cn", "api.moonshot.ai"},
-	"codebuddy":   {"codebuddy.ai"},
-	"workbuddy":   {"workbuddy.ai"},
-	"codebuddycn": {"copilot.tencent.com"},
-	"workbuddycn": {"copilot.tencent.com"},
 }
 
 type regionPolicyPreset struct {
@@ -120,11 +104,10 @@ var regionPolicyPresets = map[string]regionPolicyPreset{
 }
 
 var (
-	schemePrefixPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
-	upstreamIDStrip     = regexp.MustCompile(`[^a-z0-9.:-]`)
-	countryCodePattern  = regexp.MustCompile(`^[A-Z]{2}$`)
-	asnRulePattern      = regexp.MustCompile(`^AS\d+$`)
-	digitsOnlyPattern   = regexp.MustCompile(`^\d+$`)
+	upstreamIDStrip    = regexp.MustCompile(`[^a-z0-9.:-]`)
+	countryCodePattern = regexp.MustCompile(`^[A-Z]{2}$`)
+	asnRulePattern     = regexp.MustCompile(`^AS\d+$`)
+	digitsOnlyPattern  = regexp.MustCompile(`^\d+$`)
 )
 
 // ServerUpstreamOverrides 描述 config:server 中可选的上游端点覆盖。
@@ -165,40 +148,13 @@ type UpstreamInfo struct {
 	Accounts  []string `json:"accounts,omitempty"`
 }
 
-// ReadUpstreamHost 从用户填写的 base URL 提取小写主机名（允许省略协议）。
-func ReadUpstreamHost(baseURL string) string {
-	trimmed := strings.TrimSpace(baseURL)
-	if trimmed == "" {
-		return ""
-	}
-	withScheme := trimmed
-	if !schemePrefixPattern.MatchString(withScheme) {
-		withScheme = "https://" + withScheme
-	}
-	parsed, err := url.Parse(withScheme)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
-}
-
-// ListOfficialUpstreamHosts 返回某 provider 的官方主机清单。
+// These compatibility wrappers share the inward official-endpoint authority.
+func ReadUpstreamHost(baseURL string) string { return providers.ReadUpstreamHost(baseURL) }
 func ListOfficialUpstreamHosts(provider string) []string {
-	return officialUpstreamHosts[strings.ToLower(strings.TrimSpace(provider))]
+	return providers.ListOfficialUpstreamHosts(provider)
 }
-
-// IsOfficialUpstreamHost 判断主机名是否命中官方主机或其子域。
-func IsOfficialUpstreamHost(provider string, host string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(host))
-	if normalized == "" {
-		return false
-	}
-	for _, official := range ListOfficialUpstreamHosts(provider) {
-		if normalized == official || strings.HasSuffix(normalized, "."+official) {
-			return true
-		}
-	}
-	return false
+func IsOfficialUpstreamHost(provider, host string) bool {
+	return providers.IsOfficialUpstreamHost(provider, host)
 }
 
 // ResolveProviderUpstreamBaseURL 与 Node resolveProviderUpstream 同口径解析账号上游基址。

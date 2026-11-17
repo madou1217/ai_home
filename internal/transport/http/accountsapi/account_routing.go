@@ -26,23 +26,30 @@ type RoutingExclusionWriter interface {
 const maxRoutingExclusionReasonRunes = 200
 
 type accountRoutingRequest struct {
+	Intent   string `json:"intent"`
 	Excluded bool   `json:"excluded"`
 	Reason   string `json:"reason"`
 }
 
+// The response reports effective eligibility separately from manual intent.
 type accountRoutingView struct {
-	AccountRef string `json:"account_ref"`
-	Excluded   bool   `json:"excluded"`
+	AccountRef      string `json:"account_ref"`
+	Excluded        bool   `json:"excluded"`
+	ManualExcluded  bool   `json:"manual_excluded"`
+	DerivedExcluded bool   `json:"derived_excluded"`
+	DerivedReason   string `json:"derived_reason,omitempty"`
+}
+
+type routingExclusionReader interface {
+	RoutingExclusionState(context.Context, accountcore.AccountRef) (bool, bool, string, error)
 }
 
 type accountRoutingResponse struct {
 	Data accountRoutingView `json:"data"`
 }
 
-// handleAccountRouting 标记或解除账号的 Go 路由排除。
-//
-// 为什么由 Node 标记：判断一个账号是不是自定义上游，靠的是 Node 侧的凭据与
-// baseUrl 语义；Go 只接收结论并按它过滤候选，不去猜上游归属。
+// handleAccountRouting updates manual intent only; typed credential and Go
+// capability exclusions cannot be overridden by the retired Node writer.
 func (handler *Handler) handleAccountRouting(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -75,6 +82,21 @@ func (handler *Handler) handleAccountRouting(
 		)
 		return
 	}
+	if reason == "no_go_upstream" || reason == "custom_upstream_relay" {
+		writeAPIError(response, http.StatusConflict, "routing_derived_owned_by_go", "派生路由排除由 Go 权威计算")
+		return
+	}
+	// Retired loaded Node instances send included/blank without user intent.
+	// Do not let that ambiguous old request overwrite a real manual preference.
+	if payload.Intent != "manual" {
+		writeAPIError(response, http.StatusConflict, "routing_manual_intent_required", "人工路由变更必须显式声明 intent:manual")
+		return
+	}
+	reader, ok := handler.routingExclusions.(routingExclusionReader)
+	if !ok {
+		writeAPIError(response, http.StatusServiceUnavailable, "routing_exclusion_unavailable", "路由排除读取不可用")
+		return
+	}
 	if err := handler.routingExclusions.SetRoutingExclusion(
 		request.Context(),
 		accountRef,
@@ -85,10 +107,12 @@ func (handler *Handler) handleAccountRouting(
 		writeApplicationError(response, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, accountRoutingResponse{
-		Data: accountRoutingView{
-			AccountRef: accountRef.String(),
-			Excluded:   payload.Excluded,
-		},
-	})
+	manual, derived, derivedReason, err := reader.RoutingExclusionState(request.Context(), accountRef)
+	if err != nil {
+		writeApplicationError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, accountRoutingResponse{Data: accountRoutingView{
+		AccountRef: accountRef.String(), Excluded: manual || derived, ManualExcluded: manual, DerivedExcluded: derived, DerivedReason: derivedReason,
+	}})
 }

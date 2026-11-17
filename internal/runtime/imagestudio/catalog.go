@@ -208,7 +208,11 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 
 	exclusions := map[string]bool{}
 	if deps.Exclusions != nil {
-		if loaded, err := deps.Exclusions.LoadRoutingExclusions(ctx); err == nil && loaded != nil {
+		loaded, err := deps.Exclusions.LoadRoutingExclusions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if loaded != nil {
 			exclusions = loaded
 		}
 	}

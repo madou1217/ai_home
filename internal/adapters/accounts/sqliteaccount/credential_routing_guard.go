@@ -10,9 +10,8 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/gemini"
 )
 
-// A credential guard is derived from canonical typed credentials, never from
-// user enabled/default state or the legacy routing-exclusion writer. The
-// credential document remains its only persisted authority.
+// The Vertex credential guard is one part of the canonical derived route
+// decision. It never reads user enabled/default state or a legacy Node verdict.
 func credentialRoutingExcluded(credential accountapp.Credential) bool {
 	vertex, ok := credential.(*gemini.VertexAuth)
 	return ok && vertex != nil && vertex.Placeholder()
@@ -23,16 +22,21 @@ type credentialRoutingReader interface {
 	queryRowExecutor
 }
 
-// Read only typed Vertex documents. Unreadable or invalid documents are errors,
-// not permission to publish an otherwise enabled account into the routing pool.
-func (store *Store) readCredentialRoutingGuards(ctx context.Context, reader queryExecutor) (map[accountcore.AccountRef]bool, error) {
-	rows, err := reader.QueryContext(ctx, `SELECT a.account_ref,a.provider_id,c.credential_ref,c.auth_kind,c.auth_mode,c.format_version,c.credential_json,c.updated_at_ms
- FROM accounts a JOIN account_credentials c ON c.account_ref=a.account_ref
- WHERE a.provider_id=? AND c.auth_kind=?`, gemini.ProviderID, gemini.AuthKindVertex)
+// Every derived bit is read from the same canonical snapshot. A typed decoding
+// failure is an error, never permission to publish an account as included.
+func (store *Store) readDerivedRoutingReasons(ctx context.Context, reader queryExecutor, only accountcore.AccountRef) (map[accountcore.AccountRef]string, error) {
+	query := `SELECT a.account_ref,a.provider_id,c.credential_ref,c.auth_kind,c.auth_mode,c.format_version,c.credential_json,c.updated_at_ms
+ FROM accounts a JOIN account_credentials c ON c.account_ref=a.account_ref`
+	var args []any
+	if only.IsValid() {
+		query += " WHERE a.account_ref=?"
+		args = append(args, only.String())
+	}
+	rows, err := reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("credential_routing_guard_read: %w", err)
 	}
-	guards := map[accountcore.AccountRef]bool{}
+	reasons := map[accountcore.AccountRef]string{}
 	for rows.Next() {
 		var refText string
 		var record credentialRecord
@@ -50,12 +54,30 @@ func (store *Store) readCredentialRoutingGuards(ctx context.Context, reader quer
 			_ = rows.Close()
 			return nil, fmt.Errorf("credential_routing_guard_invalid: %w", err)
 		}
-		guards[ref] = credentialRoutingExcluded(snapshot.Credential())
+		reasons[ref] = store.derivedRoutingReason(record.providerID, snapshot.Credential())
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, fmt.Errorf("credential_routing_guard_rows: %w", err)
 	}
+	return reasons, nil
+}
+
+func (store *Store) readCredentialRoutingGuards(ctx context.Context, reader queryExecutor) (map[accountcore.AccountRef]bool, error) {
+	reasons, err := store.readDerivedRoutingReasons(ctx, reader, "")
+	if err != nil {
+		return nil, err
+	}
+	guards := make(map[accountcore.AccountRef]bool, len(reasons))
+	for ref, reason := range reasons {
+		guards[ref] = reason != ""
+	}
 	return guards, nil
+}
+
+// An absent credential cannot be interpreted as an unguarded account.
+func canonicalRoutingGuard(guards map[accountcore.AccountRef]bool, ref accountcore.AccountRef) bool {
+	guard, found := guards[ref]
+	return !found || guard
 }
 
 // The caller owns routingWrites and the same transaction that changed the
@@ -65,22 +87,25 @@ func (store *Store) readCredentialRoutingEntry(ctx context.Context, reader crede
 	var refText, provider string
 	var alias int64
 	var enabled, excluded bool
-	if err := reader.QueryRowContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,COALESCE(e.excluded,0)
- FROM accounts a LEFT JOIN account_routing_exclusions e ON e.account_ref=a.account_ref WHERE a.account_ref=?`, ref.String()).Scan(&refText, &provider, &alias, &enabled, &excluded); err != nil {
+	if err := reader.QueryRowContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,0
+ FROM accounts a WHERE a.account_ref=?`, ref.String()).Scan(&refText, &provider, &alias, &enabled, &excluded); err != nil {
 		return indexedRoutingAccount{}, err
 	}
 	_, account, err := restoreIndexedRoutingAccount(store.catalog, refText, provider, alias)
 	if err != nil {
 		return indexedRoutingAccount{}, err
 	}
-	guard := false
-	if provider == gemini.ProviderID {
-		guards, err := store.readCredentialRoutingGuards(ctx, reader)
-		if err != nil {
-			return indexedRoutingAccount{}, err
-		}
-		guard = guards[ref]
+	manual, err := store.readManualRoutingExclusions(ctx, reader)
+	if err != nil {
+		return indexedRoutingAccount{}, err
 	}
+	excluded = manual[ref.String()]
+	reasons, err := store.readDerivedRoutingReasons(ctx, reader, ref)
+	if err != nil {
+		return indexedRoutingAccount{}, err
+	}
+	reason, found := reasons[ref]
+	guard := !found || reason != ""
 	models, err := store.listAccountModels(ctx, reader, ref)
 	if err != nil {
 		return indexedRoutingAccount{}, err

@@ -120,6 +120,10 @@ func (store *Store) applyModelSettings(ctx context.Context, document *modelsetti
 	}
 	routes, err := store.readModelSettingsRoutes(ctx, transaction)
 	if err != nil {
+		// A previous included snapshot is not safe after canonical facts become
+		// unreadable. Reset the digest so exact recovery must republish the routes.
+		store.routes.quarantineRoutingSnapshot()
+		store.modelSettingsDigest = [32]byte{}
 		return modelsettingssync.Result{}, err
 	}
 	routeFacts := make([]modelSettingsRouteFact, 0, len(routes))
@@ -165,6 +169,8 @@ func (store *Store) applyModelSettings(ctx context.Context, document *modelsetti
 	if len(plan.Writes) > 0 {
 		routes, err = store.readModelSettingsRoutes(ctx, transaction)
 		if err != nil {
+			store.routes.quarantineRoutingSnapshot()
+			store.modelSettingsDigest = [32]byte{}
 			return modelsettingssync.Result{}, err
 		}
 	}
@@ -357,8 +363,12 @@ func (store *Store) readModelSettingsRoutes(ctx context.Context, transaction *mo
 	if err != nil {
 		return nil, err
 	}
-	rows, err := transaction.QueryContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,coalesce(e.excluded,0)
-  FROM accounts a LEFT JOIN account_routing_exclusions e ON e.account_ref=a.account_ref ORDER BY a.account_ref`)
+	manual, err := store.readManualRoutingExclusions(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,0
+  FROM accounts a ORDER BY a.account_ref`)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +386,7 @@ func (store *Store) readModelSettingsRoutes(ctx context.Context, transaction *mo
 			_ = rows.Close()
 			return nil, err
 		}
-		entries = append(entries, indexedRoutingAccount{account: account, enabled: enabled, excluded: excluded, credentialExcluded: guards[account.Ref()]})
+		entries = append(entries, indexedRoutingAccount{account: account, enabled: enabled, excluded: manual[account.Ref().String()], credentialExcluded: canonicalRoutingGuard(guards, account.Ref())})
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
@@ -405,6 +415,9 @@ func (store *Store) publishModelSettingsRoutes(entries []indexedRoutingAccount) 
 	for key := range index.reverse {
 		affected[key] = struct{}{}
 	}
+	// Only this complete, successfully committed canonical snapshot may release
+	// a quarantine. Per-account manual/credential writes cannot bypass it.
+	index.quarantined = false
 	index.accounts = make(map[accountcore.AccountRef]indexedRoutingAccount, len(entries))
 	index.reverse = map[routingIndexKey][]accountapp.RoutingAccount{}
 	for _, entry := range entries {

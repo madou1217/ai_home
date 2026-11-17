@@ -215,7 +215,11 @@ func BuildTranslationModelCatalog(
 ) (ModelCatalog, error) {
 	exclusions := map[string]bool{}
 	if deps.Exclusions != nil {
-		if loaded, err := deps.Exclusions.LoadRoutingExclusions(ctx); err == nil && loaded != nil {
+		loaded, err := deps.Exclusions.LoadRoutingExclusions(ctx)
+		if err != nil {
+			return ModelCatalog{}, err
+		}
+		if loaded != nil {
 			exclusions = loaded
 		}
 	}

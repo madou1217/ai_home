@@ -12,7 +12,6 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/core/accounts/gemini"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -20,13 +19,14 @@ import (
 //
 // 征召热读使用原子不可变快照；管理写请求只重建一个账号涉及的模型切片。
 type routingIndex struct {
-	mu         sync.RWMutex
-	accounts   map[accountcore.AccountRef]indexedRoutingAccount
-	reverse    map[routingIndexKey][]accountapp.RoutingAccount
-	slots      sync.Map
-	empty      *accountapp.RoutingCandidates
-	observerMu sync.RWMutex
-	observer   accountapp.RoutableModelObserver
+	quarantined bool // cleared only by a complete canonical snapshot publication
+	mu          sync.RWMutex
+	accounts    map[accountcore.AccountRef]indexedRoutingAccount
+	reverse     map[routingIndexKey][]accountapp.RoutingAccount
+	slots       sync.Map
+	empty       *accountapp.RoutingCandidates
+	observerMu  sync.RWMutex
+	observer    accountapp.RoutableModelObserver
 	// synthesize 返回 Provider 天然支持、但账号模型目录里可能没有的模型（图片模型）。
 	synthesize synthesizedModelSource
 }
@@ -43,8 +43,8 @@ type routeSlot struct {
 type indexedRoutingAccount struct {
 	account accountapp.RoutingAccount
 	enabled bool
-	// excluded 是 Node 标记的账号级路由排除（自定义上游账号），优先级高于 enabled：
-	// 用户启用的账号仍可能因为 Go 服务不了它的上游而必须留在候选之外。
+	// excluded preserves manual exclusion and explicit alias-pool opt-out.
+	// Credential/capability-derived exclusion is a separate, non-overridable bit.
 	excluded bool
 	// credentialExcluded cannot be cleared by user enable or the Node exclusion writer.
 	credentialExcluded bool
@@ -80,12 +80,15 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	if err != nil {
 		return nil, err
 	}
+	manual, err := store.readManualRoutingExclusions(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
 	const query = `
-		SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
-		       COALESCE(e.excluded, 0),
+  SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
+		       0,
 		       m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms
 		FROM accounts AS a
-		LEFT JOIN account_routing_exclusions AS e ON e.account_ref = a.account_ref
 		LEFT JOIN account_models AS m ON m.account_ref = a.account_ref
 		ORDER BY a.account_ref, m.model_id`
 	rows, err := transaction.QueryContext(ctx, query)
@@ -104,7 +107,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	var currentModels []runtimecore.ModelID
 	flush := func() {
 		if currentRef.IsValid() {
-			index.replaceGuardedAccountDataLocked(current, currentEnabled, currentExcluded, guards[currentRef], currentModels)
+			index.replaceGuardedAccountDataLocked(current, currentEnabled, currentExcluded, canonicalRoutingGuard(guards, currentRef), currentModels)
 		}
 	}
 	for rows.Next() {
@@ -149,7 +152,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			currentRef = accountRef
 			current = account
 			currentEnabled = enabled
-			currentExcluded = excluded
+			currentExcluded = manual[accountRef.String()]
 		}
 		if !modelIDText.Valid {
 			if upstream.Valid || manualPolicy.Valid || updatedAtMS.Valid {
@@ -260,9 +263,9 @@ func (index *routingIndex) replaceAccountDataLocked(
 	models []runtimecore.ModelID,
 ) {
 	// A legacy state-only update can arrive on a different Store before its
-	// canonical dirty-event restore. Unknown Gemini credentials are not proof
+	// canonical dirty-event restore. Unknown credentials are not proof
 	// of routability; only a typed canonical restore may clear this guard.
-	guard := account.ProviderID() == gemini.ProviderID
+	guard := true
 	if previous, found := index.accounts[account.Ref()]; found {
 		guard = previous.credentialExcluded
 	}
@@ -275,6 +278,7 @@ func (index *routingIndex) replaceGuardedAccountDataLocked(
 	models []runtimecore.ModelID,
 ) {
 	models = index.effectiveModels(account.ProviderID(), models)
+	credentialExcluded = credentialExcluded || index.quarantined
 	if previous, found := index.accounts[account.Ref()]; found && previous.serves() {
 		for _, modelID := range previous.models {
 			key := routingIndexKey{
@@ -525,6 +529,28 @@ func (index *routingIndex) deleteAccount(
 		}
 	}
 	delete(index.accounts, accountRef)
+	index.publishSnapshotsLocked(affected)
+	index.mu.Unlock()
+	index.notifyRoutableModelsChanged()
+}
+
+// quarantineRoutingSnapshot invalidates every cached candidate after an
+// unreadable canonical route snapshot. All entries retain user preferences and
+// models; only a later complete typed restore may clear the derived guard. A
+// global invalidation also covers more than one corrupt credential in a scan.
+func (index *routingIndex) quarantineRoutingSnapshot() {
+	if index == nil {
+		return
+	}
+	index.mu.Lock()
+	index.quarantined = true
+	affected := make(map[routingIndexKey]struct{}, len(index.reverse))
+	for key := range index.reverse {
+		affected[key] = struct{}{}
+	}
+	for _, entry := range index.accounts {
+		index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, true, entry.models)
+	}
 	index.publishSnapshotsLocked(affected)
 	index.mu.Unlock()
 	index.notifyRoutableModelsChanged()

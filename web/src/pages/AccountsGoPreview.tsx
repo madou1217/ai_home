@@ -626,6 +626,10 @@ export default function Accounts() {
   const [submitting, setSubmitting] = useState(false);
   const [addJobId, setAddJobId] = useState<string | null>(null);
   const [addJob, setAddJob] = useState<AccountAddJob | null>(null);
+  // 服务端中介流程（zcode server-flow）没有本机回调，只展示授权链接并等上游轮询。
+  const authSessionFlow = Boolean(
+    addJob?.sessionFlow || /:server-flow$/.test(String(addJob?.authStrategy || ''))
+  );
   const [authProgressVisible, setAuthProgressVisible] = useState(false);
   const [authSuccessClosing, setAuthSuccessClosing] = useState(false);
   const [authFlowKind, setAuthFlowKind] = useState<'add' | 'reauth'>('add');
@@ -2793,7 +2797,15 @@ export default function Accounts() {
                       : '本地自动接收已启动'}
                   </InlineNote>
                 ) : null}
-                {addJob.status === 'running' ? (
+                {authSessionFlow && addJob.status === 'running' ? (
+                  <InlineNote
+                    tone="info"
+                    description="这是服务端中介流程：授权完成后由 aih 轮询上游自动收尾。回调地址指向官方服务，不会回到本机，也不需要粘贴。"
+                  >
+                    无需粘贴回调，授权完成后自动完成
+                  </InlineNote>
+                ) : null}
+                {addJob.status === 'running' && !authSessionFlow ? (
                   <Space direction="vertical" style={{ width: '100%' }} size="small">
                     <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>
                     <Input.TextArea

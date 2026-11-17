@@ -104,7 +104,7 @@ D:39–317 共 **25 个规范名、6 个别名（31 个 token）**。此表已�
 | `qodercn` | 同上 | 与 qoder 共用实现不等于合并账号身份 |
 | `kimi` | 同上 | login 有 Go；不在 E:653 的历史转发集合，不能据其他 provider 推断 |
 | `kiro` | 同上 | login 有 Go；P:1889 另保留 `--device-code/--refresh-token` 登录；统一 resume/fork 不能冒充 TUI 能力 |
-| `zcode` | 同上 | 不在 E:522 Go login 集合；协议回调独立于 CLI login |
+| `zcode` | 同上 | 不在 E:522 Go login 集合；`zcode://` 回调由 WebUI 手动粘贴提交，独立于 CLI login |
 | `cline` | 同上 | login/历史有 Go；精确会话 ID 原生参数是 Node 策略的 `--id`，见 F04 |
 | `codebuddy` | E 家族：session 动词、sessions、login、管理、restart、数字启动 → 各自 Go 分支 | `applyGoFamilyEgressGuard`（E:728）可把需代理/绑定的启动交回 Node；不能跳过出口绑定。login 在执行路由存在但被 D 隐藏 |
 | `codebuddycn` | 同上 | 独立站点、共享会话布局不意味着任意跨站替换 |

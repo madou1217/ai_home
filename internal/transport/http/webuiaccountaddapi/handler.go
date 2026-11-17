@@ -623,7 +623,7 @@ func resolveStartOptions(provider, authMode, rawStrategy, rawLoginProvider strin
 		return strategy, "", "", ""
 	case "zcode":
 		switch lowerStrategy {
-		case "", "zai", "zai:custom-scheme", "zai:cli-flow", "bigmodel", "bigmodel:custom-scheme", "bigmodel:cli-flow":
+		case "", "zai", "zai:custom-scheme", "zai:cli-flow", "zai:server-flow", "bigmodel", "bigmodel:custom-scheme", "bigmodel:cli-flow", "bigmodel:server-flow":
 		default:
 			return "", "", "unsupported_auth_strategy", "不支持的 ZCode 登录策略"
 		}

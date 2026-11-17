@@ -240,6 +240,10 @@ export function AuthProgressModal({
   onConfirmCliInstall,
   onStartSocialDevice
 }: AuthProgressModalProps) {
+  // 服务端中介流程（zcode server-flow）：没有本机回调，界面只展示授权链接并等待上游轮询结果。
+  const sessionFlow = Boolean(
+    addJob?.sessionFlow || /:server-flow$/.test(String(addJob?.authStrategy || ''))
+  );
   // 扫描来源（handler = host-account-scan）：本机登录态是整批的，走既有「扫描本机账号」入库。
   const preferredSource = authSources
     ? (authSources.sources || []).find((source) => source.id === authSources.preferredSourceId) || null
@@ -433,7 +437,7 @@ export function AuthProgressModal({
                     : (addJob.callbackCaptureStatus === 'manual_only' ? '需要手动粘贴回调地址' : '本地自动接收不可用')}
                 </InlineNote>
               ) : null}
-              {addJob.sessionFlow && addJob.status === 'running' ? (
+              {sessionFlow && addJob.status === 'running' ? (
                 <InlineNote
                   tone="info"
                   description="这是服务端中介流程：授权完成后由 aih 轮询上游自动收尾。回调地址指向官方服务，不会回到本机，也不需要粘贴。"
@@ -441,7 +445,7 @@ export function AuthProgressModal({
                   无需粘贴回调，授权完成后自动完成
                 </InlineNote>
               ) : null}
-              {addJob.status === 'running' && !addJob.pluginLogin && !addJob.sessionFlow ? (
+              {addJob.status === 'running' && !addJob.pluginLogin && !sessionFlow ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider, addJob.authStrategy).hint}</Text>
                   <Input.TextArea

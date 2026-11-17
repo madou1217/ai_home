@@ -96,6 +96,8 @@ type Provider struct {
 	random        io.Reader
 	region        region
 	tokenEndpoint string
+	// cliBaseURL 是服务端中介授权（/oauth/cli/*）的入口；测试可注入替身。
+	cliBaseURL string
 }
 
 // providerOptions 仅供包内测试替换网络端点与随机源。
@@ -104,6 +106,7 @@ type providerOptions struct {
 	random        io.Reader
 	region        region
 	tokenEndpoint string
+	cliBaseURL    string
 }
 
 // New 创建使用默认区域（zai）的生产策略。
@@ -126,10 +129,15 @@ func NewForRegion(client *http.Client, value string) (*Provider, error) {
 
 // newProvider 校验可注入依赖，生产构造器不暴露端点覆盖能力。
 func newProvider(options providerOptions) (*Provider, error) {
+	cliBaseURL := strings.TrimRight(strings.TrimSpace(options.cliBaseURL), "/")
+	if cliBaseURL == "" {
+		cliBaseURL = cliAPIBase
+	}
 	if options.client == nil ||
 		options.random == nil ||
 		!validAbsoluteURL(options.region.authorizeEndpoint) ||
-		!validAbsoluteURL(options.tokenEndpoint) {
+		!validAbsoluteURL(options.tokenEndpoint) ||
+		!validAbsoluteURL(cliBaseURL) {
 		return nil, accountauth.ErrInvalidDependencies
 	}
 	return &Provider{
@@ -137,6 +145,7 @@ func newProvider(options providerOptions) (*Provider, error) {
 		random:        options.random,
 		region:        options.region,
 		tokenEndpoint: options.tokenEndpoint,
+		cliBaseURL:    cliBaseURL,
 	}, nil
 }
 
@@ -158,25 +167,37 @@ func (provider *Provider) BeginWithOptions(
 	if strings.TrimSpace(options.LoginProvider) != "" {
 		return nil, accountauth.ErrUnsupportedLoginProvider
 	}
-	selected, strategy, err := resolveRegionForStrategy(provider.region, options.AuthStrategy)
+	selected, strategy, serverFlow, err := resolveRegionForStrategy(provider.region, options.AuthStrategy)
 	if err != nil {
 		return nil, err
+	}
+	if serverFlow {
+		return provider.beginCLIFlow(ctx, selected, strategy)
 	}
 	return provider.beginForRegion(ctx, selected, strategy)
 }
 
-func resolveRegionForStrategy(fallback region, rawStrategy string) (region, string, error) {
+// resolveRegionForStrategy 把「区域 × 流程」策略名拆成区域、规范流程名和是否走服务端中介。
+//
+// server-flow 是官方服务端中介授权（无需本机回调/协议处理器/本机浏览器）；
+// custom-scheme 是 zcode:// 手动粘贴回调。cli-flow 保留为历史别名，语义仍是
+// custom-scheme（旧版本就是这么派发的），新 UI 不再使用它。
+func resolveRegionForStrategy(fallback region, rawStrategy string) (region, string, bool, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(rawStrategy))
 	if trimmed == "" {
-		return fallback, "", nil
+		return fallback, "", false, nil
 	}
 	switch trimmed {
 	case "zai", "zai:custom-scheme", "zai:cli-flow":
-		return regions["zai"], "zai:custom-scheme", nil
+		return regions["zai"], "zai:custom-scheme", false, nil
 	case "bigmodel", "bigmodel:custom-scheme", "bigmodel:cli-flow":
-		return regions["bigmodel"], "bigmodel:custom-scheme", nil
+		return regions["bigmodel"], "bigmodel:custom-scheme", false, nil
+	case "zai:server-flow":
+		return regions["zai"], "zai:server-flow", true, nil
+	case "bigmodel:server-flow":
+		return regions["bigmodel"], "bigmodel:server-flow", true, nil
 	default:
-		return region{}, "", accountauth.ErrUnsupportedAuthStrategy
+		return region{}, "", false, accountauth.ErrUnsupportedAuthStrategy
 	}
 }
 

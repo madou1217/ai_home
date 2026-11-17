@@ -238,29 +238,40 @@ func decodeUser(raw json.RawMessage) map[string]any {
 }
 
 // buildArtifacts 生成 nativeaccount 能解码的 native_auth_json。
+func (flow *flow) buildArtifacts(result exchangeResult) ([]byte, error) {
+	artifacts, account, err := buildZcodeArtifacts(flow.region, result)
+	if err != nil {
+		return nil, err
+	}
+	flow.account = account
+	return artifacts, nil
+}
+
+// buildZcodeArtifacts 由自定义协议与服务器中介两条流程共用。
 //
 // 形状与 zcode-credential-writer 落盘的 plaintext credentials 相同（键前缀由区域决定），
 // 只是这里不加密：解密后的 credentials 才是账号注册链的输入。
-func (flow *flow) buildArtifacts(result exchangeResult) ([]byte, error) {
+func buildZcodeArtifacts(selected region, result exchangeResult) ([]byte, accountauth.Account, error) {
 	credentials := map[string]any{
-		"oauth:active_provider":    flow.region.id,
-		flow.region.accessTokenKey: result.accessToken,
-		"zcodejwttoken":            result.zcodeJWToken,
+		"oauth:active_provider": selected.id,
+		selected.accessTokenKey: result.accessToken,
+		"zcodejwttoken":         result.zcodeJWToken,
 	}
 	if result.refreshToken != "" {
-		credentials[flow.region.refreshTokenKey] = result.refreshToken
+		credentials[selected.refreshTokenKey] = result.refreshToken
 	}
+	account := accountauth.Account{}
 	if profile := buildUserProfile(result.user); profile != nil {
 		encoded, err := json.Marshal(profile)
 		if err != nil {
-			return nil, accountauth.ErrInvalidArtifacts
+			return nil, accountauth.Account{}, accountauth.ErrInvalidArtifacts
 		}
-		credentials[flow.region.userInfoKey] = string(encoded)
-		flow.account = accountFromProfile(profile)
+		credentials[selected.userInfoKey] = string(encoded)
+		account = accountFromProfile(profile)
 	}
 	nativeAuth, err := json.Marshal(map[string]any{"credentials": credentials})
 	if err != nil {
-		return nil, accountauth.ErrInvalidArtifacts
+		return nil, accountauth.Account{}, accountauth.ErrInvalidArtifacts
 	}
 	artifacts, err := json.Marshal(struct {
 		NativeAuthJSON json.RawMessage `json:"native_auth_json"`
@@ -268,9 +279,9 @@ func (flow *flow) buildArtifacts(result exchangeResult) ([]byte, error) {
 		NativeAuthJSON: nativeAuth,
 	})
 	if err != nil {
-		return nil, accountauth.ErrInvalidArtifacts
+		return nil, accountauth.Account{}, accountauth.ErrInvalidArtifacts
 	}
-	return artifacts, nil
+	return artifacts, account, nil
 }
 
 // userProfile 是写入 credentials 的身份形状。

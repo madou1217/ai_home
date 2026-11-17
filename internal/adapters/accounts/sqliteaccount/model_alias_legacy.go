@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 )
 
 var errLegacyAliasDisplaySource = errors.New("model_alias_legacy_display_source_required")
@@ -45,13 +47,13 @@ func (store *Store) migrateLegacyModelAliases(ctx context.Context) error {
 	const insert = `INSERT INTO model_alias (
     id, alias, target, provider, target_provider, priority, enabled,
     description, created_at_ms, updated_at_ms, position, display_models_json
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]')`
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	for position, row := range records {
 		record := row.record
 		if _, err := conn.ExecContext(ctx, insert,
 			record.ID, record.Alias, record.Target, record.Provider,
 			record.TargetProvider, record.Priority, record.IsEnabled(),
-			record.Description, row.createdAt, row.updatedAt, position,
+			record.Description, row.createdAt, row.updatedAt, position, encodeDisplayModels(record.DisplayModels),
 		); err != nil {
 			return fmt.Errorf("model_alias_legacy_insert: %w", err)
 		}
@@ -148,10 +150,15 @@ func (store *Store) readLegacyModelAliases(ctx context.Context, conn *sql.Conn) 
 			return nil, modelalias.ErrInvalidProjection
 		}
 		seen[record.ID] = struct{}{}
-		// The old table has no display-model snapshot. Do not silently migrate a
-		// wildcard with an empty visible list or invent a replacement data source.
+		// The same pinned models.dev SDK and display policy formerly used by
+		// Node are generated into a validated build-time Go snapshot. Preserve
+		// legacy wildcard visibility without restoring a Node seed writer.
 		if strings.HasSuffix(record.Alias, "*") {
-			return nil, errLegacyAliasDisplaySource
+			display, err := aliasdisplay.List(record.Alias, time.Now().UTC())
+			if err != nil {
+				return nil, fmt.Errorf("%w: %w", errLegacyAliasDisplaySource, err)
+			}
+			record.DisplayModels = display
 		}
 		records = append(records, row)
 		if len(records) > modelalias.MaxRecords {

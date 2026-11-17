@@ -239,3 +239,21 @@ Mendel最终核对源码、raw、manifest、cleanup和native子进程PPID/PGID�
 native build与focused vet通过；Linux/Windows x64交叉编译exit0，仅编译不冒充异机运行。oversize／slowconsumer／最终无换行帧目前**只有源码等价保留**、未专门实跑，不用常规RPC代替这些验收；认证inference/approval/resume、metadata parity及公开wrapperstdio仍未完成。shared服务／构件／stamp均未操作。
 
 本组是**Partial transport-core checkpoint**，只为下一CLI adapter提供唯一可复用核心；metadata/titleGoal/hidden/cursor、resume hydration/turn状态机、旧条件writer及标准loaded继续按§13协调。完整逐操作、typed-ID operator纠正、来源、三SHA、review与raw digest追加原JSON `transportNeutralCodexFrameCoreExtraction`，不另建平行迁移计划。
+
+
+## 15. R2 已交 core 的真实边界补验（2026-11-18 04:12）
+
+§14 三源码及原三文档已由本writer提交推送 **`007620be1`**。临时index只用于一次显式6path commit；本人逐blob同步6条，sync窗口outside **6124 entries全部相同**、43条peer cached保留。随后main有并行新提交/暂存不回退不代清；本组不把source/push当标准installed/loaded。
+
+在同一固定3path候选（`6f0bac20518b4f448f3640966a1e5fdffaabcdc99305beb42b77b28953a889bd`）和既有 `__codex-local-app-server`／官方native0.167.2上，新增两个此前只有源码证据的真实操作。全在本人private HOME/临时loopback端口，PATH无node、无AIH Nodehost/第一方Node RPC、无账号凭据或推理；第三方诊断客户端使用已安装wscat的ws依赖，Node单列。
+
+- **超限入站帧**：initialize后发送合法config/read JSON后填空白至 **16,777,217 bytes**，收到WS **1009**、`read limited at 16777217 bytes`；同一Go私有宿主随后重连config/read正常。这只覆盖WS入站帧限制，不冒充native stdout超长行门禁。
+- **真实慢消费者**：initialize后暂停客户端socket读取21秒，同时发送4096个官方 `model/list` 只读请求；恢复读取后收到 **1006**，没有operator timeout或强制关闭。递归PPID采样的官方native最后可见约20.193秒，后无残留，宿主仍可重连config/read。支持“慢消费者/饱和下有界终止＋宿主可重连”；**不凭采样推导精确15秒或唯一outbound超时原因**，入站pipe背压也可触发同一保护。
+
+两个private操作均观察AIH树Node0、已观察PID全退出、HOME已清、私有宿主exit0。首次超限operator把pnpm shell shim当Node module base，客户端在发送产品请求前退出；不计通过，纠正为现成wscat包依赖后才有上述实证，未改产品。没有新增源码、测试、fixture、mock或operational main。
+
+另直接以官方native现装构件执行initialize/initialized/configread后关闭真实stdin，3帧（含官方notification）后exit0、stderr0、privateHOME清。**仅证明上游EOF合同，不是新Go stdio helper验收**。新raw adapter不能照搬WS EOF立即stop；必须先half-close native stdin、保留stdout收尾、原始stderr和native退出/信号，不抢客户端initialize或双向method/typed-ID。
+
+后续可调用helper的精确4path（`codexappserverws/stdio_transport.go`、`host/codexstdio/run.go`、`cmd/aih-server/codex_stdio.go`、`cmd/aih-server/main.go`早期dispatch）已报监督 `pm-227b9579`，**待ownership/scope确认，未写入**。不添孤立unused adapter冒充公开迁移，不改wrapper／composition／cli_hook／M metadata／协议／Terminal。
+
+最终无换行native输出、native stdout超限行、精确deadline归因，以及认证inference/approval/resume、metadata与条件writer、公开installed wrapper stdio退出Node仍未闭。§14旧“未实跑oversize/slowconsumer”保留为历史快照，本节只追加新范围实证，Goal -32600仍不算兼容成功。原JSON `transportCoreRealBoundaryFollowup` 保存操作、边界、raw SHA和本地root指针；无shared构件/stamp/服务变更。

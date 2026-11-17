@@ -403,3 +403,8 @@ R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/
 ## 2026-11-18 03:53 · R2 三path transport-neutral core 已准予落盘
 
 监督pm-cf1fece5授权，固定21a5dd90c archive+本人3path，原WS公开adapter签名/readlimit/Text/CloseNow不变，core+原bounded reader单实现迁codexappserverws/bridge.go；原rewrite/trackers顺序、16MiB/15s/2sdrain/CancelCloseWait无放宽。Hubble/Mendel同三SHA逐段审no-blocking。未改archiveD3d8与候选6f0b各现成Goentry→官方native3连接/断开重连真RPC结果一致，Goal/unknownmethod保-32600，typedstring9numeric9经operator修统计后同binary重跑独立核对。PPID递归含native独立PGID采样Node0/PID0/home清；第三方wscatNode单列，无新main/tests/mock/fixture。build/vet及跨linux/windows x64编译过，oversize/slowconsumer/无换行末帧仅源码等价未实跑。Partialcore，不切wrapper/新CLIadapter/metadata/host/共享artifact/stamp/service；原完整cutover owner合同仍open。§14/原JSON保存来源/actual/rawdigest。
+
+
+## 2026-11-18 04:12 · R2 core 已交＋真实帧边界补验
+
+007620be1三source+原3docs本人已push/6ownindex同步，sync时outside6124entries相同/43peer cached保留，后续peer新投影不动。固定6f0bac既有Goentry→官方native真发16MiB+1byte→WS1009，privatehost重连configread；真暂停socket21s+4096model/list只读，约20.193s native采样末见/恢复1006无operator强关，重连成功。支持bounded slowconsumer teardown，不伪称精确15s或唯一outbound；native stdout超长/最终无换行帧仍open。两个AIH树Node0/PID0/home清，第三方既有ws客户端Node单列；初shim依赖错误在发送前失败不算，纠正operator未改产品。直官方stdinEOF3帧exit0只定上游合同，不冒充新Gohelper。下一4path callable adapter仅pm227b9579待监督范围；无新源码/tests/fixture/mock/main/标准artifact/restart/stamp，完整R2仍Partial。§15/原JSON记录新证据，不回填旧门禁。

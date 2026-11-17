@@ -2833,5 +2833,213 @@
       "resume/hydration/stale-steer lifecycle owner contract",
       "conditional writer retirement and public installed/load acceptance"
     ]
+  },
+  "transportCoreRealBoundaryFollowup": {
+    "at": "2026-11-18T04:12:30.822138+08:00",
+    "status": "Partial: inbound frame bound and slow-consumer bounded teardown now runtime exercised; public raw stdio caller not cut over",
+    "sourceCheckpoint": "007620be1afdf7fa4ad2404d6b260b6d0b381f1c",
+    "sourceCheckpointSync": {
+      "ownPathCount": 6,
+      "outsideIndexEntryCountUnchanged": 6124,
+      "peerStagedCountPreservedAtSync": 43,
+      "freshRemoteMain": "007620be1afdf7fa4ad2404d6b260b6d0b381f1c"
+    },
+    "runtimeArtifactSha256": "6f0bac20518b4f448f3640966a1e5fdffaabcdc99305beb42b77b28953a889bd",
+    "existingProductEntrypoint": "__codex-local-app-server --parent-pid <own operator>",
+    "sourceAndInstalledRuntimeSeparated": true,
+    "oversizeInboundWebSocket": {
+      "operations": [
+        {
+          "action": "oversize_after_initialize",
+          "clientUsesThirdPartyNode": true,
+          "frames": [
+            {
+              "id": 1,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "remoteControl/status/changed"
+            }
+          ],
+          "sentOversizeBytes": 16777217,
+          "closeCode": 1009,
+          "closeReason": "read limited at 16777217 bytes",
+          "startedAt": "2026-11-18T04:10:38.353664+08:00",
+          "finishedAt": "2026-11-18T04:10:38.644115+08:00",
+          "clientExit": 0,
+          "clientStderrBytes": 0
+        },
+        {
+          "action": "reconnect_after_oversize",
+          "clientUsesThirdPartyNode": true,
+          "frames": [
+            {
+              "id": 1,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "remoteControl/status/changed"
+            },
+            {
+              "id": 3,
+              "resultKeys": [
+                "config",
+                "origins"
+              ]
+            }
+          ],
+          "sentOversizeBytes": 0,
+          "reconnectedReadReceived": true,
+          "closeCode": 1000,
+          "closeReason": "",
+          "startedAt": "2026-11-18T04:10:39.144433+08:00",
+          "finishedAt": "2026-11-18T04:10:39.394335+08:00",
+          "clientExit": 0,
+          "clientStderrBytes": 0
+        }
+      ],
+      "privateEphemeralPort": 65457,
+      "noCredentialOrFirstPartyNodeRPC": true,
+      "observedAIHTreeNode": [],
+      "observedPIDCount": 9,
+      "remainingObservedPIDs": [],
+      "privateHomeRemoved": true,
+      "boundary": "inbound WS limit only; not native stdout line limit"
+    },
+    "slowConsumerRealNativeReadRPC": {
+      "operations": [
+        {
+          "action": "pause_while_readonly_model_list",
+          "startedAt": "2026-11-17T20:12:03.074Z",
+          "framesReceived": 80,
+          "readPaused": true,
+          "requestsSent": 4096,
+          "initialized": true,
+          "pausedAt": "2026-11-17T20:12:03.302Z",
+          "outputExpectedOver40MiB": true,
+          "readResumedAt": "2026-11-17T20:12:24.335Z",
+          "socketDestroyedBeforeResume": false,
+          "closeCode": 1006,
+          "closeReason": "",
+          "finishedAt": "2026-11-17T20:12:24.343Z",
+          "clientExit": 0,
+          "clientStderrBytes": 0
+        },
+        {
+          "action": "reconnect_after_slow_consumer",
+          "startedAt": "2026-11-17T20:12:29.837Z",
+          "framesReceived": 3,
+          "readPaused": false,
+          "requestsSent": 0,
+          "initialized": true,
+          "reconnectReadReceived": true,
+          "closeCode": 1000,
+          "closeReason": "",
+          "finishedAt": "2026-11-17T20:12:30.037Z",
+          "clientExit": 0,
+          "clientStderrBytes": 0
+        }
+      ],
+      "privateEphemeralPort": 49227,
+      "noCredentialOrInference": true,
+      "observedAIHTreeNode": [],
+      "observedPIDCount": 5,
+      "sampleCount": 108,
+      "nativeLastSeenSecondsFromFirstSample": 20.193,
+      "remainingObservedPIDs": [],
+      "privateHomeRemoved": true,
+      "boundedTerminationAndReconnectObserved": true,
+      "exact15SecondOrSingleOutboundCauseProved": false,
+      "boundary": "read pause and real native read-RPC saturation, not a fake upstream; inbound pipe deadline may also terminate the same bridge"
+    },
+    "officialStdinEOFContractProbe": {
+      "command": [
+        "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original",
+        "app-server",
+        "--listen",
+        "stdio://"
+      ],
+      "frameFacts": [
+        {
+          "id": 1,
+          "method": null,
+          "error": null,
+          "resultKeys": [
+            "userAgent",
+            "codexHome",
+            "platformFamily",
+            "platformOs"
+          ]
+        },
+        {
+          "id": null,
+          "method": "remoteControl/status/changed",
+          "error": null,
+          "resultKeys": null
+        },
+        {
+          "id": 2,
+          "method": null,
+          "error": null,
+          "resultKeys": [
+            "config",
+            "origins"
+          ]
+        }
+      ],
+      "exitCode": 0,
+      "timedOutAfterInputClosed": false,
+      "stderrBytes": 0,
+      "privateHomeRemoved": true,
+      "boundary": "official upstream only; not acceptance of a new Go raw-stdio helper"
+    },
+    "operatorCorrection": {
+      "failure": "pnpm wscat shell shim was not a Node module base; initial client exited before sending a product request; not counted",
+      "corrected": "resolve existing wscat package dependency ws for the third-party real client",
+      "noProductCodeChange": true
+    },
+    "processEvidence": "PPID recursive samples include separate native PGIDs; observer third-party Node is outside AIH process tree; sampling is not full syscall tracing",
+    "rawDigests": {
+      "real-bound-result.json": "27292da753904c3c8c463a97cba162f29977bccd88005da573febf30fb934a0f",
+      "real-slow-consumer-result.json": "94581091dfc1432d2c94c61af4a4acee43c78726f7b32595329401592e66ccba",
+      "native-stdio-eof-result.json": "96d7c432908d1a91d702ad1c8347427320a71daa43680fd9aacd2aed6d30ec95",
+      "source-commit-index-sync-receipt.json": "4a94ccb287b816a6fe1f030f7ebab8674b8b2e5a14dfd1c7512587f31b273b68"
+    },
+    "retainedLocalRootPointers": [
+      "/tmp/aih-r2-frame-bound-latest-20261118.txt",
+      "/tmp/aih-r2-slow-consumer-latest-20261118.txt",
+      "/tmp/aih-r2-native-eof-latest-20261118.txt",
+      "/tmp/aih-r2-frame-core-latest-20261118.txt"
+    ],
+    "noNewProductSourceTestsMockFixtureOrOperationalMain": true,
+    "noSharedArtifactStampRestartOrGatewayMutation": true,
+    "remainingRuntimeGates": [
+      "native stdout oversize line rejection",
+      "final unterminated native output frame",
+      "exact deadline attribution beyond observed bounded termination",
+      "authenticated inference/approval/resume and metadata parity",
+      "public installed wrapper stdio cutover and Node writer retirement"
+    ],
+    "nextScopedAction": {
+      "state": "awaiting supervisor ownership authorization; no new helper source written",
+      "peer": "pm-227b9579",
+      "paths": [
+        "internal/runtime/codexappserverws/stdio_transport.go",
+        "internal/host/codexstdio/run.go",
+        "cmd/aih-server/codex_stdio.go",
+        "cmd/aih-server/main.go"
+      ],
+      "contract": "shared frame core plus native owner; EOF half-close rather than WS disconnect, raw stderr, native WaitErr and signal exit; no wrapper/metadata writer cutover"
+    }
   }
 }

@@ -189,13 +189,23 @@ func extractWithLock(dest string) error {
 	if err := os.RemoveAll(dest); err != nil {
 		return err
 	}
-	if err := os.Rename(staging, dest); err != nil {
-		if markerMatches(dest) {
-			return nil
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if err := os.Rename(staging, dest); err != nil {
+			if markerMatches(dest) {
+				return nil
+			}
+			// Windows scanners may briefly hold a freshly extracted executable.
+			// Do not delete/re-extract or weaken validation; retry publication of
+			// this invocation's complete private directory for a bounded period.
+			if runtime.GOOS == "windows" && os.IsPermission(err) && time.Now().Before(deadline) {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
+			return err
 		}
-		return err
+		return nil
 	}
-	return nil
 }
 
 func writeMarker(directory string) error {

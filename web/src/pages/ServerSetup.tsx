@@ -33,6 +33,7 @@ import '@/components/ui/kpi-strip.css';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
+import DistributionUpdatePanel from '@/components/settings/DistributionUpdatePanel';
 
 const PROFILE_STATUS_LED: Record<string, string> = {
   green: 'hud-led hud-led--ok',
@@ -251,6 +252,8 @@ export default function ServerSetup() {
           </div>
         )}
       </SectionCard>
+
+      {hasReadyServer ? <DistributionUpdatePanel /> : null}
 
       <Modal
         title={effectiveDialog.mode === 'authorize'

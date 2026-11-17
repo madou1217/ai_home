@@ -3,6 +3,13 @@
 set -e
 
 SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+# The product installer owns backup, offline data preparation, activation and
+# rollback. Keep legacy uninstall handling below; ordinary installation is one entry.
+case " ${*} " in
+  *" --uninstall "*) ;;
+  *) exec "$SELF_DIR/aih" install "$@" ;;
+esac
+
 VERSION="__AIH_VERSION__"
 DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 INSTALL_DIR=${AIH_INSTALL_DIR:-$DATA_HOME/aih}

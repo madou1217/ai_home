@@ -381,6 +381,41 @@
       ]
     },
     {
+      "id": "webui.distribution_update",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v0/webui/distribution-update"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/distribution-update/check"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/distribution-update/schedule"
+        },
+        {
+          "transport": "http",
+          "methods": [
+            "POST"
+          ],
+          "path": "/v0/webui/distribution-update/cancel"
+        }
+      ]
+    },
+    {
       "id": "webui.static_shell",
       "production_owner": "go",
       "migration_state": "go_owned",

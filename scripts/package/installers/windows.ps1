@@ -7,6 +7,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Version = '__AIH_VERSION__'
+if (-not $Uninstall) {
+  $launcher = Join-Path $PSScriptRoot 'aih.exe'
+  & $launcher install --bin-dir $Prefix
+  exit $LASTEXITCODE
+}
+
 
 function Assert-InstallPath([string]$Path) {
   if ([string]::IsNullOrWhiteSpace($Path)) { throw 'Empty installation path' }

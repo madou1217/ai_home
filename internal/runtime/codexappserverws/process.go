@@ -6,8 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -17,8 +15,6 @@ import (
 )
 
 const (
-	// codexLegacyHookMarker 标识旧版 Node 包装器脚本，解析官方二进制时需自动绕过。
-	codexLegacyHookMarker = "aih-codex-cli-hook"
 	// childKillGracePeriod 是关闭阶段从 SIGTERM 升级到 SIGKILL 的等待时长，与 Node 代理保持 500ms 一致。
 	childKillGracePeriod = 500 * time.Millisecond
 )
@@ -30,85 +26,9 @@ var (
 	ErrEmptyCommand = errors.New("Codex 启动命令为空")
 )
 
-// ResolveCodexBinary 解析官方 codex 可执行文件路径。
-// 优先委托 providercli.ResolveBinary("codex", "codex")（支持 AIH_CODEX_BINARY 覆盖与旧 hook 绕过）；
-// 若未在 PATH 中命中且未显式指定 AIH_CODEX_BINARY，则在宿主常用安装目录中兜底探测。
+// ResolveCodexBinary 与所有 Codex CLI 启动路径共用官方 CLI 解析策略。
 func ResolveCodexBinary(hostHomeDir string) (string, error) {
-	resolved, err := providercli.ResolveBinary("codex", "codex")
-	if err == nil {
-		return resolved, nil
-	}
-	if _, hasOverride := os.LookupEnv("AIH_CODEX_BINARY"); hasOverride {
-		return "", err
-	}
-	if !errors.Is(err, providercli.ErrProviderBinaryNotFound) {
-		return "", err
-	}
-	if runtime.GOOS == "windows" {
-		return "", err
-	}
-
-	for _, candidate := range unixCandidatePaths(hostHomeDir) {
-		target, ok, resolveErr := resolveExecutableCandidate(candidate)
-		if resolveErr != nil {
-			return "", resolveErr
-		}
-		if ok {
-			return target, nil
-		}
-	}
-	return "", err
-}
-
-func unixCandidatePaths(hostHomeDir string) []string {
-	home := strings.TrimSpace(hostHomeDir)
-	if home == "" {
-		if userHome, err := os.UserHomeDir(); err == nil {
-			home = strings.TrimSpace(userHome)
-		}
-	}
-	var dirs []string
-	if home != "" {
-		dirs = append(dirs,
-			filepath.Join(home, ".local", "bin"),
-			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin"),
-			filepath.Join(home, ".npm-global", "bin"),
-			filepath.Join(home, ".volta", "bin"),
-			filepath.Join(home, ".local", "share", "pnpm"),
-		)
-	}
-	dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
-	candidates := make([]string, 0, len(dirs))
-	for _, dir := range dirs {
-		candidates = append(candidates, filepath.Join(dir, "codex"))
-	}
-	return candidates
-}
-
-func resolveExecutableCandidate(candidate string) (string, bool, error) {
-	info, err := os.Stat(candidate)
-	if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-		return "", false, nil
-	}
-	if !hasFileMarkerPrefix(candidate, codexLegacyHookMarker) {
-		return filepath.Clean(candidate), true, nil
-	}
-	legacyUpstream := candidate + ".aih-original"
-	upInfo, statErr := os.Stat(legacyUpstream)
-	if statErr == nil && !upInfo.IsDir() && upInfo.Mode()&0o111 != 0 {
-		return filepath.Clean(legacyUpstream), true, nil
-	}
-	return "", false, errors.New("检测到旧 Codex Node hook，但没有可用的官方上游 CLI")
-}
-
-func hasFileMarkerPrefix(path string, marker string) bool {
-	file, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	buf, err := io.ReadAll(io.LimitReader(file, 4096))
-	return err == nil && strings.Contains(string(buf), marker)
+	return providercli.ResolveCodexBinary(hostHomeDir)
 }
 
 // StartProcessOptions 配置 Codex app-server 子进程启动参数。

@@ -43,7 +43,8 @@ PATH="$DIR/runtime/bin:$PATH"
 export PATH
 AIH_PACKAGED=1
 AIH_EXECUTABLE="$DIR/aih"
-export AIH_PACKAGED AIH_EXECUTABLE
+AIH_PACKAGE_ROOT="$DIR"
+export AIH_PACKAGED AIH_EXECUTABLE AIH_PACKAGE_ROOT
 
 exec "$NODE" "$DIR/bin/ai-home.js" "$@"
 `;
@@ -53,6 +54,13 @@ const POSIX_INSTALLER = fs.readFileSync(path.join(__dirname, 'installers', 'posi
 const POWERSHELL_INSTALLER = fs.readFileSync(path.join(__dirname, 'installers', 'windows.ps1'), 'utf8');
 
 function readSourceSha(repositoryRoot) {
+  // Exact archive builds have no .git directory. The caller pins the verified
+  // commit explicitly; never publish an empty or inferred source provenance.
+  const pinned = String(process.env.AIH_BUILD_SOURCE_SHA || '').trim();
+  if (pinned) {
+    if (!/^[0-9a-f]{40}$/.test(pinned)) throw new Error('AIH_BUILD_SOURCE_SHA must be an exact commit');
+    return pinned;
+  }
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' });
   return result.status === 0 ? String(result.stdout || '').trim() : '';
 }

@@ -13,6 +13,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
+	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/nodesupervisor"
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
 )
@@ -58,6 +59,9 @@ func run(
 		return nil
 	}
 	if err != nil {
+		return err
+	}
+	if err := distributioninstall.AwaitActivation(ctx, config.aiHomeDir, config.listenAddress(), runtime.listen, runtime.stderr); err != nil {
 		return err
 	}
 	managementKey := config.managementKey

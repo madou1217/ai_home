@@ -1118,8 +1118,25 @@ function tryRunGoFamilyServerCommand() {
   return true;
 }
 
+// Distribution installation is available before any business database consumer
+// initializes. The native installer owns automatic upgrade/backup/recovery.
+function tryRunDistributionInstall() {
+  const verb = process.argv[2];
+  if (verb !== 'install' && !(verb === 'update' && process.env.AIH_PACKAGED === '1')) return false;
+  const path = require('node:path');
+  const binary = require('../lib/cli/services/server/go-core-supervisor').resolveGoServerBinary({});
+  const root = path.resolve(__dirname, '..');
+  const env = { ...process.env, AIH_PACKAGE_ROOT: root };
+  const result = require('node:child_process').spawnSync(binary, [verb === 'install' ? '__distribution-install' : '__distribution-update', ...process.argv.slice(3)], { stdio: 'inherit', env });
+  if (result.error) process.stderr.write('[aih] 无法启动安装器：' + result.error.message + '\n');
+  process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+  return true;
+}
+
 const fastPathVerb = process.argv[2];
-if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
+if (tryRunDistributionInstall()) {
+  // Native product installation completed or reported a recoverable failure.
+} else if (INTERNAL_FAST_PATH_VERBS.has(fastPathVerb)) {
   const complete = require('../lib/cli/complete');
   const entryArgv = process.argv.slice(3);
   const exitCode = fastPathVerb === '__complete'

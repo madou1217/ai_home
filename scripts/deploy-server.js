@@ -367,114 +367,30 @@ function uploadArchive(options, localPath, remotePath, target) {
 }
 
 function buildLinuxInstallScript(options, artifact, version, target) {
-  const installDir = options.installDir || defaultInstallDir(target);
-  const restart = options.restart;
+  // Remote deployment is a consumer of the same product installer as a novice
+  // downloading the release. It never renames database files or kills listeners.
   return `set -euo pipefail
 ARTIFACT="$1"; VERSION="$2"; INSTALL_DIR="$3"; UNIT="$4"; PORT="$5"; RESTART="$6"
 INSTALL_DIR="\${INSTALL_DIR/#~/$HOME}"
-mkdir -p "$INSTALL_DIR"
-chmod +x "$ARTIFACT"
-PREV="$INSTALL_DIR/aih.prev"
-if [ -x "$INSTALL_DIR/aih" ]; then
-  cp -p "$INSTALL_DIR/aih" "$PREV" 2>/dev/null || true
-  "$INSTALL_DIR/aih" server stop >/dev/null 2>&1 || true
-fi
-rollback() {
-  trap - ERR
-  if [ -f "$PREV" ]; then
-    mv -f "$PREV" "$INSTALL_DIR/aih"
-    systemctl --user restart "$UNIT" >/dev/null 2>&1 || true
-  fi
-}
-trap rollback ERR
-mv -f "$ARTIFACT" "$INSTALL_DIR/aih"
-chmod 0755 "$INSTALL_DIR/aih"
-echo "[remote] installed $INSTALL_DIR/aih ($VERSION)"
+chmod 0755 "$ARTIFACT"
 if [ "$RESTART" = "1" ]; then
-  export AIH_EXECUTABLE="$INSTALL_DIR/aih"
-  export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-  # 旧源码部署可能留下一个不属于本启动器的 9527 监听者；它会让 readyz 假通过。
-  if command -v ss >/dev/null 2>&1; then
-    STALE_PID=$(ss -ltnp "sport = :$PORT" 2>/dev/null | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | head -n 1)
-    if [ -n "$STALE_PID" ]; then
-      STALE_CMD=$(tr '\\0' ' ' < "/proc/$STALE_PID/cmdline" 2>/dev/null || true)
-      case "$STALE_CMD" in
-        *ai-home*|*aih*server*serve*) kill "$STALE_PID" 2>/dev/null || true; sleep 1 ;;
-      esac
-    fi
-  fi
-  "$INSTALL_DIR/aih" server autostart install
-  systemctl --user restart "$UNIT"
-  READY=0
-  for _ in $(seq 1 ${options.readyTimeoutSec}); do
-    if curl -fsS -m 3 "http://127.0.0.1:\${PORT}/readyz" 2>/dev/null | grep -q '"ok": *true'; then READY=1; break; fi
-    sleep 1
-  done
-  echo "[remote] active=$(systemctl --user is-active "$UNIT") $(systemctl --user show "$UNIT" -p NRestarts)"
-  if [ "$READY" != 1 ]; then echo "[remote] readyz did not answer ok" >&2; exit 4; fi
-  echo "[remote] readyz ok"
+  "$ARTIFACT" install --bin-dir "$INSTALL_DIR"
+else
+  "$ARTIFACT" install --bin-dir "$INSTALL_DIR" --no-service
 fi
-rm -f "$PREV"
-trap - ERR
-"$INSTALL_DIR/aih" help | head -n 1
 `;
 }
 
 function buildWindowsInstallScript(options, artifact, version, target) {
   const installDir = options.installDir || defaultInstallDir(target);
-  const restart = options.restart;
   return `$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $Artifact = ${psQuote(artifact)}
 if (-not [System.IO.Path]::IsPathRooted($Artifact)) { $Artifact = Join-Path $env:USERPROFILE $Artifact }
-$Version = ${psQuote(version)}
 $InstallDir = ${psQuote(installDir)}.Replace('%LOCALAPPDATA%', $env:LOCALAPPDATA)
-$Restart = ${restart ? '1' : '0'}
-$Unit = ${psQuote(options.unit)}
-$Port = ${options.port}
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$Target = Join-Path $InstallDir 'aih.exe'
-if (Test-Path -LiteralPath $Target) {
-  try { & $Target server stop 2>$null | Out-Null } catch {}
-  Move-Item -Force -LiteralPath $Target -Destination "$Target.old"
-}
-Move-Item -Force -LiteralPath $Artifact -Destination $Target
-Write-Output "[remote] installed $Target ($Version)"
-if ($Restart -eq '1') {
-  $env:AIH_EXECUTABLE = $Target
-  # 旧源码部署可能留下一个不属于本启动器的 9527 监听者；它会让 readyz 假通过。
-  # 只清理占用本端口的非本启动器进程，避免新包“部署成功”但实际仍跑着旧代码。
-  $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($Listener -and $Listener.OwningProcess) {
-    $Owner = Get-Process -Id $Listener.OwningProcess -ErrorAction SilentlyContinue
-    $OwnerPath = ''
-    try { $OwnerPath = [string]$Owner.Path } catch {}
-    if ($OwnerPath -and $OwnerPath -ne $Target) {
-      Stop-Process -Id $Listener.OwningProcess -Force -ErrorAction SilentlyContinue
-      Start-Sleep -Seconds 1
-    }
-  }
-  & $Target server autostart install | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "[remote] server autostart install failed (exit $LASTEXITCODE)" }
-  # SSH / 计划任务的子进程会随会话结束被杀；WMI 创建的进程挂在 WmiPrvSE 下，
-  # 断开 SSH 后仍然存活，这是远程启动 Windows 服务的确定做法。
-  $ServeCommand = '"' + $Target + '" server serve --host 127.0.0.1 --port ' + $Port
-  $Created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $ServeCommand }
-  if ($Created.ReturnValue -ne 0) { throw "[remote] could not start the packaged server (Win32_Process=$($Created.ReturnValue))" }
-  $Ready = 0
-  for ($i = 0; $i -lt ${options.readyTimeoutSec}; $i += 1) {
-    try {
-      $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Uri "http://127.0.0.1:$Port/readyz"
-      if ($response.Content -match '"ok"\\s*:\\s*true') { $Ready = 1; break }
-    } catch {}
-    Start-Sleep -Seconds 1
-  }
-  if ($Ready -ne 1) { throw '[remote] readyz did not answer ok' }
-  Write-Output '[remote] readyz ok'
-}
-& $Target help | Out-Null
-Write-Output '[remote] launcher ok'
-exit 0
+& $Artifact install --bin-dir $InstallDir${options.restart ? '' : ' --no-service'}
+if ($LASTEXITCODE -ne 0) { throw '[remote] AIH product installation did not complete; inspect its retained recovery report' }
+Write-Output '[remote] product installation completed'
 `;
 }
 

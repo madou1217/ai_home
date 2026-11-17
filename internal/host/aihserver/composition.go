@@ -520,6 +520,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var sessionEventBus *sessionevents.Bus
 	var backgroundDaemons *backgroundDaemonsRuntime
 	var housekeepingDaemons *HousekeepingDaemons
+	var distributionUpdates io.Closer
 	var upgradeScheduler *providercliupgrade.Scheduler
 	var windowScheduler *windowactivation.Scheduler
 	var pluginBundle *localPluginRuntimeBundle
@@ -1902,6 +1903,13 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
+	updateRoutes, updateCloser, updateErr := buildDistributionUpdate(ctx, webuiDeps)
+	if updateErr != nil {
+		log.Printf("AIH 更新检测不可用: %v", updateErr)
+	} else {
+		distributionUpdates = updateCloser
+		webuiRoutes = append(webuiRoutes, updateRoutes...)
+	}
 	backgroundDaemons, err = startBackgroundDaemons(ctx, webuiDeps)
 	if err != nil {
 		_ = inference.Close()
@@ -2248,6 +2256,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if housekeepingDaemons != nil {
 			closers = append(closers, housekeepingDaemons)
+		}
+		if distributionUpdates != nil {
+			closers = append(closers, distributionUpdates)
 		}
 		if upgradeScheduler != nil {
 			closers = append(closers, upgradeScheduler)

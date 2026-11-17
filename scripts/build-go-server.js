@@ -86,6 +86,13 @@ function main(argv = process.argv.slice(2)) {
 }
 
 function readSourceSha(repositoryRoot = REPOSITORY_ROOT) {
+  // Exact archive builds have no .git directory. The caller pins the verified
+  // commit explicitly; never publish an empty or inferred source provenance.
+  const pinned = String(process.env.AIH_BUILD_SOURCE_SHA || '').trim();
+  if (pinned) {
+    if (!/^[0-9a-f]{40}$/.test(pinned)) throw new Error('AIH_BUILD_SOURCE_SHA must be an exact commit');
+    return pinned;
+  }
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' });
   return result.status === 0 ? String(result.stdout || '').trim() : '';
 }

@@ -7,10 +7,15 @@ package main
 // 用它当 AIH_EXECUTABLE 会让 resume / 会话恢复这类内部调用变得脆弱。
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -20,6 +25,38 @@ func main() {
 		fail(err)
 	}
 	directory := filepath.Dir(executable)
+	if raw, err := os.ReadFile(executable + ".package.json"); err == nil {
+		var binding struct {
+			Version     int    `json:"version"`
+			Home        string `json:"home"`
+			PackageRoot string `json:"packageRoot"`
+			SHA         string `json:"serverSha256"`
+		}
+		if len(raw) > 16384 || json.Unmarshal(raw, &binding) != nil || binding.Version != 1 || !filepath.IsAbs(binding.Home) || !filepath.IsAbs(binding.PackageRoot) {
+			fail(fmt.Errorf("安装资源记录无效"))
+		}
+		root, err := filepath.EvalSymlinks(binding.PackageRoot)
+		if err != nil {
+			fail(err)
+		}
+		rel, err := filepath.Rel(filepath.Join(binding.Home, "pkg"), root)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+			fail(fmt.Errorf("安装资源不在已管理目录"))
+		}
+		server := filepath.Join(root, "bin", "native", "win32-"+mapArch(), "aih-server.exe")
+		file, err := os.Open(server)
+		if err != nil {
+			fail(err)
+		}
+		hash := sha256.New()
+		_, err = io.Copy(hash, file)
+		file.Close()
+		if err != nil || hex.EncodeToString(hash.Sum(nil)) != binding.SHA {
+			fail(fmt.Errorf("安装资源校验失败"))
+		}
+		directory = root
+	}
+
 	node := filepath.Join(directory, "runtime", "node.exe")
 	entry := filepath.Join(directory, "bin", "ai-home.js")
 	if _, err := os.Stat(node); err != nil {
@@ -71,4 +108,11 @@ func set(env []string, key, value string) []string {
 func fail(err error) {
 	fmt.Fprintf(os.Stderr, "[aih] 启动失败: %v\n", err)
 	os.Exit(1)
+}
+
+func mapArch() string {
+	if runtime.GOARCH == "amd64" {
+		return "x64"
+	}
+	return runtime.GOARCH
 }

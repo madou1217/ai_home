@@ -2,6 +2,7 @@ package codexappserverapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
 const (
@@ -202,7 +204,15 @@ func (h *AppServerHandler) ServeHTTP(response http.ResponseWriter, request *http
 		if h.logError != nil && err != nil {
 			h.logError(err)
 		}
-		http.Error(response, "codex binary unavailable", http.StatusServiceUnavailable)
+		var unavailable *providercli.CodexBinaryError
+		if errors.As(err, &unavailable) {
+			response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			response.Header().Set("Cache-Control", "no-store")
+			response.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(response).Encode(map[string]any{"ok": false, "error": unavailable.Code, "message": unavailable.Message, "action": unavailable.Action})
+		} else {
+			http.Error(response, "codex binary unavailable", http.StatusServiceUnavailable)
+		}
 		return
 	}
 

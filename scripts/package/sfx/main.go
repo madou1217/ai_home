@@ -63,6 +63,9 @@ func run() error {
 		fmt.Println(dest)
 		return nil
 	}
+	if len(os.Args) == 1 {
+		os.Args = append(os.Args, "install")
+	}
 	return launch(dest)
 }
 

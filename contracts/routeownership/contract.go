@@ -194,6 +194,17 @@ func Current() Manifest {
 				},
 			},
 			{
+				ID:              "webui.distribution_update",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET"}, "/v0/webui/distribution-update"),
+					httpRoute([]string{"POST"}, "/v0/webui/distribution-update/check"),
+					httpRoute([]string{"POST"}, "/v0/webui/distribution-update/schedule"),
+					httpRoute([]string{"POST"}, "/v0/webui/distribution-update/cancel"),
+				},
+			},
+			{
 				// 静态 WebUI 外壳：web/dist 存在时由 Go 托管 /ui；缺失时前端门自动回落 Node。
 				ID:              "webui.static_shell",
 				ProductionOwner: "go",

@@ -86,3 +86,34 @@
 - `evidence/build-manifest.json`、`snapshot-manifest.json`、`result.json`、`real-existing-state-client.json`。
 - `evidence/attempt1-result.json`、`source-review.json`、`source-commit-receipt.json`、`post-run-pid-audit.json`、`shared-runtime-readonly.json`。
 - raw 数据在本 root 的受限敏感/私有 runtime 目录，不提交凭据、token、原库或配置正文。
+
+
+## 05:06 增量：Go 用量事实与管理投影同事务，退出该 Node 持久写者
+
+工程源码 **`60b80f3214d3a4ec2b0a6272eb26afa94d186f79`**，10 生产路径、285增/33删；父版本 `549387601` 的 token/HTTP401 接线完整保留，物理 `composition.go` 的 peer ContextWindows hunk 未夹带。一次性私有 archive commit-view + 临时 index + 显式 pathspec，主索引原字节 SHA256 `3a7c9357…` 及全部 entry digest `925cc5b3…` 前后不变。没有同步/重置他人74项旧暂存差异。
+
+旧必要链为 Go `usage_ledger` → 易失 event ring → Node 两秒 poll → `model_usage_records` → dashboard。现在 Go `AppendUsageRecordWithProjection` 在同一 SQLite transaction 插入事实、赋 `go-ledger:v1:<usage_id>`、投影同一事实并 commit；失败两边 rollback。既有价格/归属 normalizer 在事务前准备；canonical 的缓存/推理子集转换为管理表互斥列，总数不叠加。RequestID 仍空，不能伪造关联。现有 Node poll/shutdown pull **只通知、不再持久化**，旧 Go 能力缺失显式失败、不回落 Node writer；新 Go 对没有配套 `usage_projection=go-ledger-v1` 的旧客户端直接409，避免按 boot/seq 再写另一条记录。其余 Node 来源的记账没有冒删。
+
+### 固定输入、构件与真正操作
+
+- base `549387601872535d222d48eb0909961dabc33dad`；最终10路径 manifest SHA256 `88eafc387ce368435b0ac08b62268d422427099f7870d3e4bade914ae2ab76de`，逐路径已独立绑定，无 peer 未交 hunk。
+- 最终私有标准 Go server SHA256 `c23f7d128f226d1af9751652899ef0062ff3b9aa7fa12d6f44564f5d29d1069e`，build、focused vet、3个 JS syntax 均 exit0。
+- 输入是既有只读 online canonical snapshot，SHA256 `561596b6eca3a34052a2cc6fd024f5fd3d684bc12ec2b427d67b447f9dfd3f22`；未改 live DB，未造账号、token、usage fixture 或新的测试用例。
+- 最终执行 `python3 -u <root>/run-real-integrated-complete.py`。私有标准 Go CLI 不带 front-door/supervise-node，PATH 无 node；并非 OS-noexec。真实静态 Claude 账号经 DeepSeek flash 返回 `USAGE_GO_LEDGER_OK`：**input40/output18/total58**，真实计算费用 `0.0000168`。ledger/projection 各新增1行，事件键 `go-ledger:v1:275991`，session 保留、RequestID空。
+- 预先读 stats 后等既有5秒 cache TTL，public `/v0/management/usage/stats` 与 dashboard 均为 **58**；models/sessions 读200。requests200但仍筛掉空 RequestID，**不计该页面业务验收**。
+- 实际 `createGoManagementClient.listAccountUsageEvents` → `createGoUsageEventFeed` 首拉1、次拉0、通知 callback1；poll及stop pull 后 ledger/projection 计数均不变。callback 是操作侧 collector，**不是实际 UI emitter 或 DOM 验收**。
+- 同私有 home 重启后投影仍1行，stats响应 hash与58-token结果一致。自有 Go PID9862/10506 均 exit0；输入快照 SHA不变，未动9527。
+
+### 严格端口反例、早期失败与保留边界
+
+另以真实生产 Store/UsageStore exported ports + 现存真实 cache/reasoning fact 操作私有副本，空PATH、OS禁 network/fork/foreign exec：互斥输入245、输出645、cache读89088、写0、reasoning213、总90191；同事实重复投影不增长，冲突明确 `usage_ledger_projection_identity_conflict`，投影事实不匹配及预取消均使两表无新增。它是运行端口真操作，不是 HTTP/provider 端到端或产品自动历史回填。最终严格运行没有成功 ps 采样，不能声称该次进程树证据；前两次 sandbox 路径拼写失败完整保留。
+
+最终集成前一次遗漏了已审 JS client query，真实客户端被409拒绝，未回写；更正为原审同字节 client 后才取得上面的通过。另一次 max_tokens40 被上游思考消耗只返回 `US`，driver 断言失败；raw限私有保留，未改产品，最终真实请求上限128后成功。最早 stats0 是既有5秒cache，不掩盖为从未失败。
+
+这里只退出 **Go-source usage 的 Node 持久写者/通知丢失导致看板丢账依赖**。warmup 仍见 Node 工具与未分类 `(node)`，不报 whole-zero-Node；source_kind 与现有反向导入 skip 保持，但扫描器/其它 proxy 去重没有本轮端到端全验。3条现存非identity Node↔Go link（cline/opencode）归属差异尚未验，不能把已验 identity Claude 外推。ledgerID是事实标识，不是上游 attempt exactly-once。回写失败虽两表rollback，但成功推理仍可能未记账；没有发明 durable retry/backfill。通知 ring 重启不持久，既有通知语义未抬高。
+
+独立 Galileo 原reviewer最终 **NO BLOCKING / SOURCE INTEGRATION APPROVE**，重新核10文件SHA并核低敏 operations/result/processes；其结论不代表 DB重放、实际UI/平台/正式发布。push、共享 loaded、用户正式 Node-off 和全量迁移均另列，**本节不授权发布/重启**。
+
+证据 root pointer `/tmp/aih-usage-ledger-projection-latest-20261118.txt`。`evidence/integrated-source-manifest-final.json`、`integrated-final-complete/{operations,result,observed-processes}.json`、`port-operations.json`、`integrated-paired-client-correction.json`、`physical-land-receipt.json`、`commit-receipt.json`；低敏review回执 `final-independent-source-review.json`。所有私有敏感快照/log/key继续受限保存，未做未经单独批准的清理。
+
+交付补记（05:08）：命令级 SSH-W relay `git push origin main` exit0，fresh `ls-remote origin refs/heads/main` 为 `5cb6476f7e4a9020787b5f6c71bc56f7f24ea4d2`；逐祖先验证包含 `7ee554693`、`549387601`、本节 `60b80f321` 和 Desktop `5cb6476f7`。没有改全局 SSH/git 配置，没有共享加载/重启。

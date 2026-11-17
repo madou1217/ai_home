@@ -14,6 +14,13 @@
 - 最近共享只读仍是03:24 Go84956→第一方Node85251（匹配stamp/source见上），不是04:02新观测或已加载新SHA。插件正式输入/JS host、host观察/run收养、usage投影、公开backup caller、terminal shim与最终无第一方Node默认拓扑继续开放；不得把本增量或partial checkpoint当全量完成。
 
 
+配置/进度增量（2026-11-18 05:06，Asia/Shanghai，**持续 active / 未共享发布**）：
+
+- 监督源码 **`60b80f321`** 已实交 Go `usage_ledger` → `model_usage_records` 同事务投影，现有 Node poll/shutdown pull仅通知、旧未配套client409且无Node回落写者。最终真实Claude请求58 tokens、stats/dashboard58、配套真实client通知1后0且DB无增长、私有重启保投影；[固定输入/构件/反例及未验边界](2026-11-18-management-public-go-alias-acceptance.md#0506-增量go-用量事实与管理投影同事务退出该-node-持久写者)。不把此局部退写当全服务零Node/DOM/历史扫描去重完成。
+- 原R4已交 **`7ee554693`**（Go settings/manual-policy唯一写者、退出Node三段设置写），正由同owner `01a1da1b` 补canonical typed Vertex placeholder routing guard，晚导入不能被Node exclusion=false复活。原token owner `01a1ea74` 已交 **`549387601`**，真实HTTP401原观察进同daemon受限队列；成功仅 `credential_refreshed_block_retained`，不自动clear/replay，generation/persisted恢复仍开。
+- 原W0已交 **`b4cc56e9f` / `ef68deb9e`**：hook-disabled CLI app-server wrapper真正走Go；完整default/TUI/resume仍有env/heal/catalog/lease/rollout合同，下一已批准原owner迁startup policy/catalog，不伪装末端exec全退。R5现有owner `01a1e527` 已交 **`b7d803e4f`** 和 **`5cb6476f7`**：legacy gateway与公开account-mode都委托Go，首次profile绑定竞态有真实双账号副本证据；真实GUI/启动整包仍未验。05:08 fresh远端main=`5cb6476f7`已含本段以上工程SHA，不等于shared loaded。
+- 05:03只读9527仍Go84956，磁盘hash9916c222…（与03:24同），不是已加载上述SHA。第一方Node85251仅此前进程树观察，未在05:06重采完整runtime identity；R0默认双后端、host/run收养、terminal shim/旧launch、公开backup、插件正式ABI/执行host、跨平台/安装仍OPEN。原42项+7门禁不缩减，以下旧快照不得当当前状态。
+
 > 总控复核：2026-11-17 00:02–00:14（Asia/Shanghai）；原目标澄清为 2026-11-16 18:14–18:32。这是用户可读的目标与状态入口，不是新的平行开发计划，也不是实时仪表盘。详细需求继续以 [原 W0–W6 计划](../superpowers/plans/2026-11-14-node-go-next-development-plan.md)、[执行账](2026-11-14-node-go-execution-ledger.md) 和 [逐项证据审计](2026-11-16-requirement-evidence-audit.md) 为准；状态变化必须更新证据，不能把旧快照当现状。
 
 > **后续快照更正（2026-11-17 00:23，非本监督执行发布）：**本页00:02–00:14记录之后，运行已变为Go PID `7686`、Node PID `7889`（私有 `59784`）；runtime identity/磁盘均为 `a460355e...`，内嵌 `a4c4d8070` 且 `vcs.modified=true`，旧stamp仍 `85851ec...` / `079a565d...`。下面 `93990/94287/5cc9...` 是前一观察快照，不再代表实时值；R0须补最新构件来源，不能凭dirty revision确认全部已加载。00:20通过既有单次SSH跳板核对远端main为 `a4c4d8070`，确认本页与此前Desktop/Terminal提交已包含；这只证明Git交付，不证明加载或Node退出。未更改全局SSH/代理配置。 文档收尾期间runtime identity再次变化，故不将该观察延长为持续运行断言；后续状态必须另附观察时间和发布owner凭证。

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -46,6 +47,8 @@ type Runtime struct {
 	persistedFailures map[accountcore.AccountRef]failureBlock
 	// remaining 保存账号由最新额度快照推导出的剩余额度基点；无额度信息的账号不占条目。
 	remaining map[accountcore.AccountRef]uint16
+	// credentialRejections 只保存失败冷路径的低敏代次归属与在途写句柄。
+	credentialRejections map[accountcore.AccountRef]*credentialRejectionSlot
 }
 
 var (
@@ -89,14 +92,15 @@ func NewWithStore(
 		return nil, errors.Join(ErrInvalidDependencies, err)
 	}
 	return &Runtime{
-		clock:             clock,
-		cooldowns:         cooldowns,
-		accountBlocks:     make(map[accountcore.AccountRef]blockSet),
-		modelBlocks:       make(map[runtimecore.ModelRoute]blockSet),
-		accountFailures:   make(map[accountcore.AccountRef]failureBlock),
-		modelFailures:     make(map[runtimecore.ModelRoute]failureBlock),
-		persistedFailures: make(map[accountcore.AccountRef]failureBlock),
-		remaining:         make(map[accountcore.AccountRef]uint16),
+		clock:                clock,
+		cooldowns:            cooldowns,
+		accountBlocks:        make(map[accountcore.AccountRef]blockSet),
+		modelBlocks:          make(map[runtimecore.ModelRoute]blockSet),
+		accountFailures:      make(map[accountcore.AccountRef]failureBlock),
+		modelFailures:        make(map[runtimecore.ModelRoute]failureBlock),
+		persistedFailures:    make(map[accountcore.AccountRef]failureBlock),
+		remaining:            make(map[accountcore.AccountRef]uint16),
+		credentialRejections: make(map[accountcore.AccountRef]*credentialRejectionSlot),
 	}, nil
 }
 
@@ -171,6 +175,28 @@ func (runtime *Runtime) RecordFailure(
 
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	now := runtime.clock()
+	runtime.reconcileCredentialRejectionSlot(route.AccountRef(), now)
+	if err := runtime.recordFailureLocked(ctx, route, failure, now); err != nil {
+		return err
+	}
+	if failure.BlockDirective().Scope() == runtimecore.BlockScopeAccount &&
+		failure.BlockDirective().RecoveryTrigger() == runtimecore.RecoveryCredentialsUpdated {
+		if slot := runtime.credentialRejections[route.AccountRef()]; slot != nil {
+			slot.owner = accountcredentials.CredentialObservation{}
+			slot.unknown = true
+		}
+	}
+	return nil
+}
+
+// recordFailureLocked 复用同一终态变更；调用方已校验输入并持有 mu。
+func (runtime *Runtime) recordFailureLocked(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+	now time.Time,
+) error {
 	transition, err := runtime.cooldowns.RecordFailure(
 		ctx,
 		route,
@@ -191,6 +217,7 @@ func (runtime *Runtime) RecordFailure(
 			route,
 			failure.RuntimeKind(),
 			failure.BlockDirective(),
+			now,
 		)
 	default:
 		return ErrInvalidRequest
@@ -285,6 +312,9 @@ func (runtime *Runtime) ClearAccountBlock(
 
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	if block == blockCredentialsUpdated {
+		delete(runtime.credentialRejections, accountRef)
+	}
 	next := runtime.accountBlocks[accountRef].clear(block)
 	runtime.replaceAccountBlocks(accountRef, next)
 	runtime.replaceAccountFailure(accountRef, runtime.accountFailures[accountRef].clear(block))
@@ -429,6 +459,7 @@ func (runtime *Runtime) ForgetAccount(
 	defer runtime.mu.Unlock()
 	delete(runtime.accountBlocks, accountRef)
 	delete(runtime.accountFailures, accountRef)
+	delete(runtime.credentialRejections, accountRef)
 	delete(runtime.remaining, accountRef)
 	for route := range runtime.modelBlocks {
 		if route.AccountRef() == accountRef {
@@ -451,6 +482,7 @@ func (runtime *Runtime) recordBlock(
 	route runtimecore.ModelRoute,
 	kind runtimecore.FailureKind,
 	directive runtimecore.BlockDirective,
+	now time.Time,
 ) error {
 	if !directive.IsValidFor(kind) {
 		return ErrInvalidRequest
@@ -461,7 +493,6 @@ func (runtime *Runtime) recordBlock(
 	if !valid {
 		return ErrInvalidRequest
 	}
-	now := runtime.clock()
 	recheckAt := now.Add(runtimecore.BlockRecheckInterval)
 	switch directive.Scope() {
 	case runtimecore.BlockScopeAccount:
@@ -500,6 +531,7 @@ func (runtime *Runtime) forgetDueFailures(
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	runtime.reconcileCredentialRejectionSlot(accountRef, now)
 	if current, found := runtime.accountFailures[accountRef]; found && current.activeAt(now) == 0 {
 		delete(runtime.accountFailures, accountRef)
 	}
@@ -642,6 +674,10 @@ func (runtime *Runtime) replaceAccountFailure(
 	accountRef accountcore.AccountRef,
 	failure failureBlock,
 ) {
+	if runtime.accountFailures[accountRef].set&blockCredentialsUpdated != 0 &&
+		failure.set&blockCredentialsUpdated == 0 {
+		delete(runtime.credentialRejections, accountRef)
+	}
 	if failure.set == 0 {
 		delete(runtime.accountFailures, accountRef)
 		return

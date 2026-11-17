@@ -59,6 +59,7 @@ func (runtime *Runtime) validateManualClear(
 func (runtime *Runtime) clearAccountRuntime(accountRef accountcore.AccountRef) {
 	delete(runtime.accountBlocks, accountRef)
 	delete(runtime.accountFailures, accountRef)
+	delete(runtime.credentialRejections, accountRef)
 	delete(runtime.persistedFailures, accountRef)
 	for route := range runtime.modelBlocks {
 		if route.AccountRef() == accountRef {

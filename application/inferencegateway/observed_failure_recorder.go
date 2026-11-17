@@ -14,12 +14,31 @@ var (
 	ErrInvalidObservedAttemptRecorder = errors.New("凭据观察终态写入器依赖无效")
 	// ErrInvalidObservedAttempt 表示路由、凭据观察和终态不属于同一调用。
 	ErrInvalidObservedAttempt = errors.New("凭据观察终态写入请求无效")
+	// ErrObservedCredentialRejectionUnsupported 表示自定义运行态未提供观察归属门禁。
+	ErrObservedCredentialRejectionUnsupported = errors.New("账号运行态不支持凭据拒收观察归属")
 )
 
 // CredentialRejectionScheduler 只接收请求实际读取的低敏凭据代次。
 // 调度失败不改变当前请求的终态，也不触发请求重放。
 type CredentialRejectionScheduler interface {
 	TryScheduleCredentialRejection(accountcredentials.CredentialObservation) bool
+}
+
+// CredentialRejectionWrite 在当前观察校验之前登记，校验后最多提交一次。
+// 所有出口都必须 Close；句柄不保存凭据，也不执行校验 I/O。
+type CredentialRejectionWrite interface {
+	Commit(context.Context, AttemptFailure) (recorded bool, err error)
+	Close()
+}
+
+// ObservedCredentialRejectionRuntime 是不扩展旧 AttemptRecorder 的可选能力。
+// Clear 的 replacement 必须由调用方提供权威新代证据；该端口不读取凭据存储。
+type ObservedCredentialRejectionRuntime interface {
+	BeginObservedCredentialRejection(context.Context, runtimecore.ModelRoute,
+		accountcredentials.CredentialObservation) (CredentialRejectionWrite, error)
+	ClearObservedCredentialRejection(context.Context,
+		accountcredentials.CredentialObservation,
+		accountcredentials.CredentialObservation) (cleared bool, err error)
 }
 
 // ObservedAttemptRecorder 是所有推理入口共享的终态写入守卫。
@@ -91,6 +110,24 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 		failure = failure.forStaticSecret()
 	}
 	defer pluginruntime.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), false, string(failure.RuntimeKind()))
+	eligible := observedCredentialRejection(observation, failure)
+	var write CredentialRejectionWrite
+	if eligible {
+		if runtime, ok := recorder.attempts.(ObservedCredentialRejectionRuntime); ok {
+			var err error
+			write, err = runtime.BeginObservedCredentialRejection(ctx, route, observation)
+			if write != nil {
+				defer write.Close()
+			}
+			if errors.Is(err, ErrObservedCredentialRejectionUnsupported) {
+				write = nil
+			} else if err != nil {
+				return false, err
+			} else if write == nil {
+				return false, ErrInvalidObservedAttemptRecorder
+			}
+		}
+	}
 	current, err := recorder.observations.IsCurrentCredentialObservation(
 		ctx,
 		observation,
@@ -98,18 +135,32 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 	if err != nil || !current {
 		return false, nil
 	}
-	if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
+	if write != nil {
+		recorded, err := write.Commit(ctx, failure)
+		if err != nil || !recorded {
+			return recorded, err
+		}
+	} else if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
 		return false, err
 	}
-	status, known := failure.ObservedHTTPStatus()
-	if known && status == 401 && !observation.IsStaticSecret() &&
-		failure.RuntimeKind() == runtimecore.FailureCredentialRejected &&
-		failure.BlockDirective().RecoveryTrigger() == runtimecore.RecoveryCredentialsUpdated {
+	if eligible {
 		if scheduler, ok := recorder.attempts.(CredentialRejectionScheduler); ok {
 			scheduler.TryScheduleCredentialRejection(observation)
 		}
 	}
 	return true, nil
+}
+
+// observedCredentialRejection 只接受内置分类保留的实际 HTTP401 证据。
+func observedCredentialRejection(
+	observation accountcredentials.CredentialObservation,
+	failure AttemptFailure,
+) bool {
+	status, known := failure.ObservedHTTPStatus()
+	return known && status == 401 && !observation.IsStaticSecret() &&
+		failure.RuntimeKind() == runtimecore.FailureCredentialRejected &&
+		failure.BlockDirective().Scope() == runtimecore.BlockScopeAccount &&
+		failure.BlockDirective().RecoveryTrigger() == runtimecore.RecoveryCredentialsUpdated
 }
 
 // validObservation 统一成功和失败写入的身份不变量。

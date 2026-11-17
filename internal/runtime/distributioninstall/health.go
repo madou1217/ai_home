@@ -99,6 +99,11 @@ func Busy(ctx context.Context, home string) (bool, string, error) {
 			continue
 		}
 		if status != 200 {
+			if status == 503 && j["error"] == "no_available_account" {
+				if idle, err := legacyEmptyGatewayIdle(ctx, home, c); err == nil && idle {
+					return false, "", nil
+				}
+			}
 			return true, "无法确认活跃任务", nil
 		}
 		if rows, ok := j[endpoint.key].([]any); ok && len(rows) > 0 {

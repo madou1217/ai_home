@@ -175,6 +175,8 @@ type serverHandlers struct {
 	codexAppServer http.Handler
 	// frontDoor 把 Go 未注册的路径转交给 Node；nil 表示本进程不是公开入口。
 	frontDoor http.Handler
+	// remoteWebUI resolves profiles and streams remote WebUI requests in Go.
+	remoteWebUI *remoteWebUIProxy
 	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
 	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
@@ -249,6 +251,10 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	frontDoor, err := newFrontDoorHandler(options.FrontDoorBaseURL)
 	if err != nil {
 		return nil, err
+	}
+	remoteWebUI, err := newRemoteWebUIProxy(options.AIHomeDir, options.ManagementKey)
+	if err != nil {
+		return nil, fmt.Errorf("创建远端 WebUI 代理失败: %w", err)
 	}
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
@@ -397,6 +403,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	handlers.webUI = webUI
 	handlers.frontDoor = frontDoor
+	handlers.remoteWebUI = remoteWebUI
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
 	if err != nil {
 		_ = webuiAccountsSource.Close()

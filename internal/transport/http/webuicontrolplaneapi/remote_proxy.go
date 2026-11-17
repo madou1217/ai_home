@@ -135,8 +135,18 @@ func (proxy *RemoteProxy) Wrap(next http.Handler) http.Handler {
 		ErrorHandler:   proxy.handleProxyError,
 	}
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		serverID := extractTargetServerID(request)
-		if serverID == "" || isAlwaysLocalControlPlanePath(request.URL.Path) {
+		if isAlwaysLocalControlPlanePath(request.URL.Path) {
+			next.ServeHTTP(response, request)
+			return
+		}
+		serverID, err := extractTargetServerID(request)
+		if err != nil {
+			writeProxyJSON(response, http.StatusBadRequest, map[string]any{
+				"ok": false, "error": "server_proxy_invalid_query",
+			})
+			return
+		}
+		if serverID == "" {
 			next.ServeHTTP(response, request)
 			return
 		}
@@ -178,8 +188,14 @@ func (proxy *RemoteProxy) Wrap(next http.Handler) http.Handler {
 			return
 		}
 		targetOrigin := normalizeCompareOrigin(targetURL)
+		if targetOrigin == "" {
+			writeProxyJSON(response, http.StatusNotFound, map[string]any{
+				"ok": false, "error": "server_proxy_profile_not_found", "profileId": serverID,
+			})
+			return
+		}
 		selfOrigin := inferSelfCompareOrigin(request)
-		if targetOrigin == "" || targetOrigin == selfOrigin {
+		if targetOrigin == selfOrigin {
 			next.ServeHTTP(response, request)
 			return
 		}
@@ -218,7 +234,7 @@ func (proxy *RemoteProxy) rewriteProxyRequest(pr *httputil.ProxyRequest) {
 	// 剥离目标标识头与查询参数，避免远端再次代理或误判。
 	pr.Out.Header.Del(TargetServerHeader)
 	pr.Out.Header.Set(ProxyHopHeader, strconv.Itoa(resolved.nextHops))
-	if pr.Out.URL.RawQuery != "" && strings.Contains(strings.ToLower(pr.Out.URL.RawQuery), targetServerQueryParam+"=") {
+	if pr.Out.URL.RawQuery != "" {
 		query := pr.Out.URL.Query()
 		for key := range query {
 			if strings.EqualFold(key, targetServerQueryParam) {
@@ -368,23 +384,29 @@ func (rt *retryingRoundTripper) RoundTrip(request *http.Request) (*http.Response
 	return nil, lastErr
 }
 
-func extractTargetServerID(request *http.Request) string {
+func extractTargetServerID(request *http.Request) (string, error) {
 	if request == nil {
-		return ""
+		return "", nil
+	}
+	var query url.Values
+	if request.URL != nil {
+		var err error
+		query, err = url.ParseQuery(request.URL.RawQuery)
+		if err != nil {
+			return "", err
+		}
 	}
 	if headerVal := strings.TrimSpace(request.Header.Get(TargetServerHeader)); headerVal != "" {
-		return headerVal
+		return headerVal, nil
 	}
-	if request.URL != nil && strings.Contains(strings.ToLower(request.URL.RawQuery), targetServerQueryParam+"=") {
-		for key, values := range request.URL.Query() {
-			if strings.EqualFold(key, targetServerQueryParam) && len(values) > 0 {
-				if trimmed := strings.TrimSpace(values[0]); trimmed != "" {
-					return trimmed
-				}
+	for key, values := range query {
+		if strings.EqualFold(key, targetServerQueryParam) && len(values) > 0 {
+			if trimmed := strings.TrimSpace(values[0]); trimmed != "" {
+				return trimmed, nil
 			}
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // isAlwaysLocalControlPlanePath 保护入口网关的 profile 目录读写、本机引导与本机窄口回调：
@@ -446,32 +468,20 @@ func inferSelfCompareOrigin(request *http.Request) string {
 	if request == nil {
 		return ""
 	}
-	rawHost := firstHeaderToken(request.Header, "X-Forwarded-Host")
-	if rawHost == "" {
-		rawHost = firstCSVToken(request.Host)
-	}
-	if rawHost == "" {
-		rawHost = "127.0.0.1"
-	}
-	if rawHost == "::1" {
-		rawHost = "[::1]"
-	}
-	scheme := "http"
-	if proto := strings.TrimSuffix(strings.ToLower(firstHeaderToken(request.Header, "X-Forwarded-Proto")), ":"); proto == "https" {
-		scheme = "https"
-	} else if request.TLS != nil {
-		scheme = "https"
-	}
-	parsed, err := url.Parse(scheme + "://" + rawHost)
-	if err != nil {
+	// Only the accepted socket can prove a self target; incoming Host and
+	// forwarding headers describe caller-controlled routing, not this listener.
+	host, port := localSocketHost(request), localSocketPort(request)
+	if host == "" || port == 0 {
 		return ""
 	}
-	if parsed.Port() == "" {
-		if localPort := localSocketPort(request); localPort > 0 {
-			parsed.Host = net.JoinHostPort(parsed.Hostname(), strconv.Itoa(localPort))
-		}
+	scheme := "http"
+	if request.TLS != nil {
+		scheme = "https"
 	}
-	return normalizeCompareOrigin(parsed)
+	return normalizeCompareOrigin(&url.URL{
+		Scheme: scheme,
+		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
+	})
 }
 
 func writeProxyJSON(response http.ResponseWriter, status int, payload any) {

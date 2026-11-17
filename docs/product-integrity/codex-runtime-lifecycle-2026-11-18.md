@@ -134,3 +134,36 @@ The later provider-process audit found three old acceptance instances owned by t
 This removed five task-owned processes. Packages, database homes, registration definitions and all receipts/logs remain; only private acceptance auto-starts were disabled. Review intent resolved explicitly to documented self-review for this narrow cleanup (`private-service-cleanup-review-20261118.json`); peer non-use was not treated as authorization. Independent post-observation and stop receipts live outside Git in the evidence root above.
 
 OpenCode, live Codex/TUI/MCP processes, shared Edge and all AWS AGY processes were left untouched in this audit. Exact attribution, counts and remaining optimization proposals are recorded in `provider-process-audit-2026-11-18.md`. This operational cleanup is not implementation or acceptance of a cross-terminal pool, and it does not close the outstanding visual acceptance gate.
+
+
+## Fresh delivery audit — 04:22 to 04:30 +08
+
+This continuation performed no installation, provider CLI invocation, service restart or credential/configuration mutation. Three independent remote reads matched formal receipt1.0.6/source162, live executable/start identity and actual hash; installer journals are still `complete`, pending markers are absent, tasks/runs/app-install jobs are empty, and canonical account identity arrays still match the actual pre-install backups (AWS22, Windows14, Linux0). Native Codex config/auth hashes or absent states also match the earlier delivery observations. Health is200 everywhere; Linux ready=false remains the explicit zero-account boundary.
+
+Natural managed Codex background evidence is stronger than a single startup tick: AWS tick9, Windows tick15 and Linux tick14 all report `aih_managed`, installed/latest0.169.0 and healthy/up_to_date with no Codex check/apply error. These reads did not invoke a manual tick or an official CLI. They do not assert that unrelated providers have no errors, or that AWS has a managed previous generation registered.
+
+Anonymous TLS-verified GitHub GETs through the already-existing delivery transport confirmed published stable Latest `v1.0.6`/release449067747 and all five asset names/sizes/digests unchanged. Actual GitHub main was `631276ee504b24b82818cf2dd2071bee7679e204`; ancestry proves audit checkpoint `376eb5eb8` was included by the shared-main push. This supersedes the earlier local push-failure status without claiming those failed attempts succeeded.
+
+### Linux online check remains a real failure
+
+Exactly one check-only authenticated POST was submitted; it returned HTTP503 after20.027s with `release request failed: context deadline exceeded`. No schedule/download/install/restart request was sent. The server's runtime identity remained unchanged and health200. The saved status continues to expose `check_failed`, not an invented successful latest result.
+
+Read-only network isolation found no proxy environment on the formal process and an empty saved `proxyUrl`. Anonymous curl requests to the official GitHub API and manifest endpoint both timed out. The host resolved api.github.com to199.59.148.9 plus an IPv6 address, unlike the AWS control address20.27.177.116. A request-only resolution override to the AWS control IPv4 connected TCP in0.122s but TLS was reset before an HTTP response; official domain certificate validation was never disabled. This establishes a failing direct network path, not which resolver or network appliance caused it, and not an installer regression. No hosts/resolver/proxy configuration or persistent tunnel was added to make the check appear green.
+
+### Visual gate revalidated, not bypassed
+
+The bridge owner granted one fresh existing-Edge tab-list only. It completed with nine existing user/peer-inbox and Shalou business/draft pages, and no task-owned reusable target. There was no page creation, navigation, reload, selection, foreground request, browser restart/switch or Apple Events call. The serial window was explicitly returned; no browser command is inflight. The installed attachment still provides no proven inactive creation path. Update-panel/Codex-card visual acceptance remains **not achieved**, not passed by API/installer evidence.
+
+Current original-requirement status:
+
+| Requirement | Evidence/result | Boundary |
+| --- | --- | --- |
+| Distributable full product, not binary/database swaps | Immutable1.0.6 exact-package real acceptance and complete installer journals on all three hosts | No new installation repeated in this audit |
+| Official publication and source traceability | GitHub stable release/five asset digests and fixed source162; own audit commit confirmed on actual main | Later Node-to-Go main changes are not retrospectively part of1.0.6 |
+| AWS/Windows/Linux formal delivery and preservation | Live PID/start/hash/receipt; complete journal; actual account identity comparison; healthy API | Linux has no account and is not ready for model generation |
+| Old-hook recovery via managed official Codex | Prior actual install/update/repair/rollback and WS/CLI evidence; fresh managed healthy natural ticks on all three | Diagnostic is not merely hidden; GUI visual gate below remains open |
+| Update detection and scheduled restart-to-install | Windows original future appointment naturally downloaded/installed/restarted and is succeeded; AWS detection works | Linux official online detection still fails its direct network path |
+| Final update panel/Codex card real desktop acceptance | Fresh coordinated existing-Edge inventory only | Not achieved: no owned page and no proven inactive page-creation capability |
+| New cross-terminal process reuse discussion | Process attribution and scoped recommendation in provider-process audit | Proposed only; no approved implementation or claim of deployment |
+
+New sanitized receipts: `delivery-requirements-audit-20261118T0430.json`, three `*-formal-final-audit-20261118T0421.json` and `*-formal-final-supplement-20261118T0426.json`, `github-source-release-readonly-20261118T0428.json`, `linux-official-check-only-20261118T0427.json`, `linux-official-network-origin-20261118T0429.json`, `linux-official-egress-settings-20261118T0431.json`, AWS/Linux `*-official-dns-control-20261118T0433.json`, and `edge-final-visual-gate-20261118T0424.json`. Full-goal completion is not claimed while the network/visual and newly proposed architectural boundaries remain unresolved.

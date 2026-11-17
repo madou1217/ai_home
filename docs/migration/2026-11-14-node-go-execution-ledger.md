@@ -398,3 +398,8 @@ R2补界：Mendel对最终raw/source/cleanup独立复核，18预期为0×6/1×7/
 ## 2026-11-18 03:44 · R2 后续 stdio 真入口与最小范围调查
 
 00dfa6a05版本两path已push；监督sole接composition，本writer继续而非以version收工。03:42现存__codex-local-app-server私有HOME/PATH无node/无AIHNodehost/无凭据经现成wscat真收6帧：initialize/configread/modellist9/threadlist0成功，threadgoalget真-32600不计兼容。客户端第三方Node单列；初DEVNULL0frame不算、纠正stdin后才实证，PID/home清。下一候选仅transport-neutral bridge.go+既有stdio_bridge/必要stdio_lines让WS委托共享有界核心；3path尚待监督独占未写，不盲把localappserver或串行launchrpc接公开stdin。完整enabled stdio仍需metadata列表/Goal、resumehydration/state机、条件rollout/title writer合同，已明确解除owner并报监督。新事实进acceptance§13/原JSON，无新增生产代码/tests/restart/stamp或别人的索引同步。
+
+
+## 2026-11-18 03:53 · R2 三path transport-neutral core 已准予落盘
+
+监督pm-cf1fece5授权，固定21a5dd90c archive+本人3path，原WS公开adapter签名/readlimit/Text/CloseNow不变，core+原bounded reader单实现迁codexappserverws/bridge.go；原rewrite/trackers顺序、16MiB/15s/2sdrain/CancelCloseWait无放宽。Hubble/Mendel同三SHA逐段审no-blocking。未改archiveD3d8与候选6f0b各现成Goentry→官方native3连接/断开重连真RPC结果一致，Goal/unknownmethod保-32600，typedstring9numeric9经operator修统计后同binary重跑独立核对。PPID递归含native独立PGID采样Node0/PID0/home清；第三方wscatNode单列，无新main/tests/mock/fixture。build/vet及跨linux/windows x64编译过，oversize/slowconsumer/无换行末帧仅源码等价未实跑。Partialcore，不切wrapper/新CLIadapter/metadata/host/共享artifact/stamp/service；原完整cutover owner合同仍open。§14/原JSON保存来源/actual/rawdigest。

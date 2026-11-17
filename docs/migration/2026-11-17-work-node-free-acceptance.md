@@ -218,3 +218,24 @@ Mendel最终核对源码、raw、manifest、cleanup和native子进程PPID/PGID�
 完整cutover需要监督确认M/metadata对sourceKinds/hidden/聚合分页/cursor/title/model/Goal投影合同，resume/protocol owner对运行配置/hydration/通知抑制/stale steer的合同，以及现存rollout/title条件writer的保留或退役；Go已有`codexstatepage`/`codexrollout`/`codexnotifications`直接复用，不再复制第二套reader/writer。`thread/goal/get`的兼容只可在原上游-32601及本地found时按既有合同补，不用本次-32600错误证明覆盖。
 
 逐RPC结果／来源／客户端边界／operator纠正／cleanup及digest保存在原JSON `nextCliStdioExistingGoCoreInvestigation`。Hubble只读架构审查已给出上述最小范围与缺口；完整协议切换仍需原协议/metadata owner协作。无新增生产文件、feature、tests、共享重启、stamp或其他会话索引操作。
+
+
+## 14. R2 已授权纯 transport-core 提炼：3-source checkpoint（2026-11-18 03:53）
+
+监督 `pm-cf1fece5` 已核三path clean并准予本writer独占，故§13“下一scope待确认”是历史状态；不回填旧记录。固定main **`21a5dd90c`** archive（digest `ab52bec4…`）后，先独立保留未改archive构建，再只在本人候选改3path；03:53再次核HEAD/index/disk，原两个文件逐blob一致、新path缺失后落盘：
+
+1. 新 `internal/runtime/codexappserverws/bridge.go`：`FrameTransport` 只提供 `Read(context.Context)`／`Write(context.Context, []byte)`／`Close()`；原有frame pump与bounded stdout/stderr reader单实现迁入，复用原rewrite/resume/listScope及原process session ports，不创建业务状态或初始化消费者。
+2. `internal/transport/http/codexappserverapi/stdio_bridge.go`：**公开函数签名不变**，仅将WS `Read`、Text `Write`、`CloseNow` 适配给共享核心；`SetReadLimit`仍在原adapter。
+3. `stdio_lines.go`：旧bounded reader全部随core迁移，无第二套实现；原path仅保留迁移说明。
+
+入站仍 scope remember → rewrite → resume remember；出站仍 resume patch → scope patch；16MiB默认限帧、15秒写deadline、2秒最终stdout drain、取消／single Close／Wait／stderr 64KiB均源码精确保留。最终三SHA `c0edefcb… / 256a4e3c… / 78a4cc8e…` 经原Hubble和Mendel逐段独立审查 **no blocking**。没有改wrapper/CLI startup/host composition/metadata/env/resolver；新公开stdio adapter与wrapper切换仍未授权、未实施。
+
+### 前后真实反证
+
+未改构件 `d3d8d48b404d2a022c651ac15af83052c8d1df486fd66981e5d50e350374935b` 与3path候选 `6f0bac20518b4f448f3640966a1e5fdffaabcdc99305beb42b77b28953a889bd`，分别运行现成 `__codex-local-app-server` → 官方native0.167.2，并使用现成第三方wscat，每个构件3连接，断开后重连。initialize/configread/modellist9/threadlist0一致；Goal不存在与未知method各原样 **-32600**，不是成功兼容。数字9与字符串“9”同时请求分别收到config/model响应；初operator汇总 `str(id)` 可能合并两者，已不改产品、以原生typed keys在**同两构件重跑**后独立核对，初回合不借作该门禁通过。
+
+无账号/管理RPC/AIH Node宿主，PATH无node；wscat第三方客户端Node单列。进程采样以PPID递归收集官方native独立PGID，观察AIH树无Node、已观察PID全部退出，两privateHOME均清；不是全系统syscall tracing。所有调用是既有product entry+官方CLI+既有诊断客户端，无新Go operational main、测试、fixture或mock。
+
+native build与focused vet通过；Linux/Windows x64交叉编译exit0，仅编译不冒充异机运行。oversize／slowconsumer／最终无换行帧目前**只有源码等价保留**、未专门实跑，不用常规RPC代替这些验收；认证inference/approval/resume、metadata parity及公开wrapperstdio仍未完成。shared服务／构件／stamp均未操作。
+
+本组是**Partial transport-core checkpoint**，只为下一CLI adapter提供唯一可复用核心；metadata/titleGoal/hidden/cursor、resume hydration/turn状态机、旧条件writer及标准loaded继续按§13协调。完整逐操作、typed-ID operator纠正、来源、三SHA、review与raw digest追加原JSON `transportNeutralCodexFrameCoreExtraction`，不另建平行迁移计划。

@@ -2187,5 +2187,651 @@
       ],
       "existingOwnerApprovalRequired": true
     }
+  },
+  "transportNeutralCodexFrameCoreExtraction": {
+    "status": "approved_three_source_paths_applied_private_before_after_accepted_partial_core_only",
+    "authorizationPeer": "pm-cf1fece5",
+    "manifest": {
+      "at": "2026-11-18T03:48:52.627171+08:00",
+      "baseCommit": "21a5dd90c437f1ac29aee10ee831829e4ff46b12",
+      "archiveSha256": "ab52bec42d3a0c3eb5e10787a600436d1870498f076cd59bef55147d6aaf0740",
+      "authorizationPeer": "pm-cf1fece5",
+      "allowedPaths": [
+        "internal/runtime/codexappserverws/bridge.go",
+        "internal/transport/http/codexappserverapi/stdio_bridge.go",
+        "internal/transport/http/codexappserverapi/stdio_lines.go"
+      ],
+      "publicSignaturePreserved": true,
+      "wrapperCutover": false,
+      "sourceDir": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-frame-core-20261118-chhb8mhj/source",
+      "candidateSha256": {
+        "internal/runtime/codexappserverws/bridge.go": "c0edefcbcd5072bfadfdb01b6bde7c802b1683626a009e973ba7408e5429e3d2",
+        "internal/transport/http/codexappserverapi/stdio_bridge.go": "256a4e3c21a630c53924121bd28290a3ef15a8e85aa1d12f8a0c26fc51da11c6",
+        "internal/transport/http/codexappserverapi/stdio_lines.go": "78a4cc8ec3aa3ce12f83c644d54d1780b1cbb407c9d018106a41e5a64a179f5e"
+      },
+      "inboundOrder": [
+        "ListScope.TryRemember(raw)",
+        "RewriteClientMessage",
+        "ResumeTracker.TryRememberRequest(rewritten)"
+      ],
+      "outboundOrder": [
+        "ResumeTracker.PatchResponse",
+        "ListScope.Patch"
+      ],
+      "unchangedBounds": {
+        "defaultFrameBytes": 16777216,
+        "writeTimeoutSeconds": 15,
+        "finalNativePipeDrainSeconds": 2,
+        "stderrLineBytes": 65536
+      }
+    },
+    "application": {
+      "at": "2026-11-18T03:53:03.878032+08:00",
+      "authorizationPeer": "pm-cf1fece5",
+      "applicationHead": "21a5dd90c437f1ac29aee10ee831829e4ff46b12",
+      "paths": [
+        "internal/runtime/codexappserverws/bridge.go",
+        "internal/transport/http/codexappserverapi/stdio_bridge.go",
+        "internal/transport/http/codexappserverapi/stdio_lines.go"
+      ],
+      "before": [
+        {
+          "path": "internal/runtime/codexappserverws/bridge.go",
+          "before": "absent"
+        },
+        {
+          "path": "internal/transport/http/codexappserverapi/stdio_bridge.go",
+          "beforeBlob": "9b2e2258b1ae2393797079e997fa7bb40299da5b",
+          "index": "100644 9b2e2258b1ae2393797079e997fa7bb40299da5b 0\tinternal/transport/http/codexappserverapi/stdio_bridge.go"
+        },
+        {
+          "path": "internal/transport/http/codexappserverapi/stdio_lines.go",
+          "beforeBlob": "32ac359afc37fbb6b3dd1199183984bbd018c989",
+          "index": "100644 32ac359afc37fbb6b3dd1199183984bbd018c989 0\tinternal/transport/http/codexappserverapi/stdio_lines.go"
+        }
+      ],
+      "afterSha256": {
+        "internal/runtime/codexappserverws/bridge.go": "c0edefcbcd5072bfadfdb01b6bde7c802b1683626a009e973ba7408e5429e3d2",
+        "internal/transport/http/codexappserverapi/stdio_bridge.go": "256a4e3c21a630c53924121bd28290a3ef15a8e85aa1d12f8a0c26fc51da11c6",
+        "internal/transport/http/codexappserverapi/stdio_lines.go": "78a4cc8ec3aa3ce12f83c644d54d1780b1cbb407c9d018106a41e5a64a179f5e"
+      },
+      "review": "Hubble independent source no blocking; Mendel read-only pending",
+      "noWrapperCutover": true,
+      "noSharedArtifactOrServiceOperation": true
+    },
+    "beforeAfterComparison": {
+      "baselineSha256": "d3d8d48b404d2a022c651ac15af83052c8d1df486fd66981e5d50e350374935b",
+      "candidateSha256": "6f0bac20518b4f448f3640966a1e5fdffaabcdc99305beb42b77b28953a889bd",
+      "methodsAndExpectedErrorsEqual": true,
+      "eachDisconnectedThenReconnected": true,
+      "eachPrivateTreeCleaned": true
+    },
+    "baseline": {
+      "phase": "baseline",
+      "startedAt": "2026-11-18T03:51:57.928539+08:00",
+      "finishedAt": "2026-11-18T03:52:05.453692+08:00",
+      "serverSha256": "d3d8d48b404d2a022c651ac15af83052c8d1df486fd66981e5d50e350374935b",
+      "immutableBase": "21a5dd90c437f1ac29aee10ee831829e4ff46b12",
+      "candidateOverlayOnly": false,
+      "existingEntrypoint": "cmd/aih-server __codex-local-app-server",
+      "noAddedOperationalMainTestsMockOrFixture": true,
+      "serverNodeHostStarted": false,
+      "nodeAbsentFromPATH": true,
+      "configuredAbsoluteNodeAbsent": true,
+      "operatorThirdPartyClientUsesNode": true,
+      "credentialOrManagementRPCUsed": false,
+      "operations": [
+        {
+          "action": "five_actual_methods",
+          "startedAt": "2026-11-18T03:51:57.944065+08:00",
+          "finishedAt": "2026-11-18T03:52:00.246234+08:00",
+          "clientExit": 0,
+          "timeout": false,
+          "stdoutBytes": 14986,
+          "stderrBytes": 0,
+          "frames": 6,
+          "responseFacts": [
+            {
+              "method": "initialize",
+              "id": 1,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "model/list",
+              "id": 2,
+              "received": true,
+              "errorCode": null,
+              "dataCount": 9,
+              "resultKeys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "method": "config/read",
+              "id": 3,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "config",
+                "origins"
+              ]
+            },
+            {
+              "method": "thread/list",
+              "id": 4,
+              "received": true,
+              "errorCode": null,
+              "dataCount": 0,
+              "resultKeys": [
+                "data",
+                "readStates",
+                "nextCursor",
+                "backwardsCursor"
+              ]
+            },
+            {
+              "method": "thread/goal/get",
+              "id": 5,
+              "received": true,
+              "errorCode": -32600,
+              "dataCount": null,
+              "resultKeys": null
+            }
+          ]
+        },
+        {
+          "action": "unknown_method_error_passthrough",
+          "startedAt": "2026-11-18T03:52:00.246785+08:00",
+          "finishedAt": "2026-11-18T03:52:02.551806+08:00",
+          "clientExit": 0,
+          "timeout": false,
+          "stdoutBytes": 4914,
+          "stderrBytes": 0,
+          "frames": 3,
+          "responseFacts": [
+            {
+              "method": "initialize",
+              "id": 1,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "aih/nonexistent/method",
+              "id": 8,
+              "received": true,
+              "errorCode": -32600,
+              "dataCount": null,
+              "resultKeys": null
+            }
+          ]
+        },
+        {
+          "action": "typed_id_requests_and_reconnect",
+          "startedAt": "2026-11-18T03:52:02.552859+08:00",
+          "finishedAt": "2026-11-18T03:52:05.018265+08:00",
+          "clientExit": 0,
+          "timeout": false,
+          "stdoutBytes": 14801,
+          "stderrBytes": 0,
+          "frames": 4,
+          "responseFacts": [
+            {
+              "method": "initialize",
+              "id": 1,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "model/list",
+              "id": "9",
+              "received": true,
+              "errorCode": null,
+              "dataCount": 9,
+              "resultKeys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "method": "config/read",
+              "id": 9,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "config",
+                "origins"
+              ]
+            }
+          ]
+        }
+      ],
+      "observedTreeIncludingNativeIndependentPGID": [
+        {
+          "pid": 28947,
+          "ppid": 28946,
+          "pgid": 28947,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-frame-core-20261118-chhb8mhj/baseline-aih-server"
+        },
+        {
+          "pid": 28957,
+          "ppid": 28947,
+          "pgid": 28957,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 28958,
+          "ppid": 28957,
+          "pgid": 28957,
+          "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+        },
+        {
+          "pid": 28959,
+          "ppid": 28958,
+          "pgid": 28957,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+        },
+        {
+          "pid": 28960,
+          "ppid": 28959,
+          "pgid": 28957,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+        },
+        {
+          "pid": 28990,
+          "ppid": 28947,
+          "pgid": 28990,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 28992,
+          "ppid": 28990,
+          "pgid": 28990,
+          "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+        },
+        {
+          "pid": 28993,
+          "ppid": 28992,
+          "pgid": 28990,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+        },
+        {
+          "pid": 28994,
+          "ppid": 28993,
+          "pgid": 28990,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+        },
+        {
+          "pid": 29036,
+          "ppid": 28947,
+          "pgid": 29036,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 29037,
+          "ppid": 29036,
+          "pgid": 29036,
+          "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+        },
+        {
+          "pid": 29038,
+          "ppid": 29037,
+          "pgid": 29036,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+        },
+        {
+          "pid": 29039,
+          "ppid": 29038,
+          "pgid": 29036,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+        }
+      ],
+      "observedNodeInAihTree": [],
+      "remainingObservedPIDs": [],
+      "privateHomeRemoved": true,
+      "limits": [
+        "official native no-account read RPCs, not authenticated inference/approval/resume",
+        "sampled PID descendants including separate native PGIDs, not full syscall tracing",
+        "oversize/slowconsumer/final-unterminated-native-frame cases not yet runtime exercised; preserved source contract separately reviewed"
+      ]
+    },
+    "candidate": {
+      "phase": "candidate",
+      "startedAt": "2026-11-18T03:52:05.492421+08:00",
+      "finishedAt": "2026-11-18T03:52:12.977803+08:00",
+      "serverSha256": "6f0bac20518b4f448f3640966a1e5fdffaabcdc99305beb42b77b28953a889bd",
+      "immutableBase": "21a5dd90c437f1ac29aee10ee831829e4ff46b12",
+      "candidateOverlayOnly": true,
+      "existingEntrypoint": "cmd/aih-server __codex-local-app-server",
+      "noAddedOperationalMainTestsMockOrFixture": true,
+      "serverNodeHostStarted": false,
+      "nodeAbsentFromPATH": true,
+      "configuredAbsoluteNodeAbsent": true,
+      "operatorThirdPartyClientUsesNode": true,
+      "credentialOrManagementRPCUsed": false,
+      "operations": [
+        {
+          "action": "five_actual_methods",
+          "startedAt": "2026-11-18T03:52:05.508410+08:00",
+          "finishedAt": "2026-11-18T03:52:07.798155+08:00",
+          "clientExit": 0,
+          "timeout": false,
+          "stdoutBytes": 14987,
+          "stderrBytes": 0,
+          "frames": 6,
+          "responseFacts": [
+            {
+              "method": "initialize",
+              "id": 1,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "model/list",
+              "id": 2,
+              "received": true,
+              "errorCode": null,
+              "dataCount": 9,
+              "resultKeys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "method": "config/read",
+              "id": 3,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "config",
+                "origins"
+              ]
+            },
+            {
+              "method": "thread/list",
+              "id": 4,
+              "received": true,
+              "errorCode": null,
+              "dataCount": 0,
+              "resultKeys": [
+                "data",
+                "readStates",
+                "nextCursor",
+                "backwardsCursor"
+              ]
+            },
+            {
+              "method": "thread/goal/get",
+              "id": 5,
+              "received": true,
+              "errorCode": -32600,
+              "dataCount": null,
+              "resultKeys": null
+            }
+          ]
+        },
+        {
+          "action": "unknown_method_error_passthrough",
+          "startedAt": "2026-11-18T03:52:07.798557+08:00",
+          "finishedAt": "2026-11-18T03:52:10.333540+08:00",
+          "clientExit": 0,
+          "timeout": false,
+          "stdoutBytes": 4915,
+          "stderrBytes": 0,
+          "frames": 3,
+          "responseFacts": [
+            {
+              "method": "initialize",
+              "id": 1,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "aih/nonexistent/method",
+              "id": 8,
+              "received": true,
+              "errorCode": -32600,
+              "dataCount": null,
+              "resultKeys": null
+            }
+          ]
+        },
+        {
+          "action": "typed_id_requests_and_reconnect",
+          "startedAt": "2026-11-18T03:52:10.333861+08:00",
+          "finishedAt": "2026-11-18T03:52:12.612707+08:00",
+          "clientExit": 0,
+          "timeout": false,
+          "stdoutBytes": 14802,
+          "stderrBytes": 0,
+          "frames": 4,
+          "responseFacts": [
+            {
+              "method": "initialize",
+              "id": 1,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "userAgent",
+                "codexHome",
+                "platformFamily",
+                "platformOs"
+              ]
+            },
+            {
+              "method": "model/list",
+              "id": "9",
+              "received": true,
+              "errorCode": null,
+              "dataCount": 9,
+              "resultKeys": [
+                "data",
+                "nextCursor"
+              ]
+            },
+            {
+              "method": "config/read",
+              "id": 9,
+              "received": true,
+              "errorCode": null,
+              "dataCount": null,
+              "resultKeys": [
+                "config",
+                "origins"
+              ]
+            }
+          ]
+        }
+      ],
+      "observedTreeIncludingNativeIndependentPGID": [
+        {
+          "pid": 29075,
+          "ppid": 28946,
+          "pgid": 29075,
+          "executable": "/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r2-frame-core-20261118-chhb8mhj/candidate-aih-server"
+        },
+        {
+          "pid": 29085,
+          "ppid": 29075,
+          "pgid": 29085,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 29086,
+          "ppid": 29085,
+          "pgid": 29085,
+          "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+        },
+        {
+          "pid": 29087,
+          "ppid": 29086,
+          "pgid": 29085,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+        },
+        {
+          "pid": 29088,
+          "ppid": 29087,
+          "pgid": 29085,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+        },
+        {
+          "pid": 29167,
+          "ppid": 29075,
+          "pgid": 29167,
+          "executable": "(codex.aih-origin)"
+        },
+        {
+          "pid": 29172,
+          "ppid": 29167,
+          "pgid": 29167,
+          "executable": "(git)"
+        },
+        {
+          "pid": 29173,
+          "ppid": 29172,
+          "pgid": 29167,
+          "executable": "(git)"
+        },
+        {
+          "pid": 29174,
+          "ppid": 29173,
+          "pgid": 29167,
+          "executable": "(git-remote-http)"
+        },
+        {
+          "pid": 29251,
+          "ppid": 29075,
+          "pgid": 29251,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 29254,
+          "ppid": 29075,
+          "pgid": 29254,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 29255,
+          "ppid": 29254,
+          "pgid": 29254,
+          "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+        },
+        {
+          "pid": 29256,
+          "ppid": 29255,
+          "pgid": 29254,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+        },
+        {
+          "pid": 29257,
+          "ppid": 29256,
+          "pgid": 29254,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+        }
+      ],
+      "observedNodeInAihTree": [],
+      "remainingObservedPIDs": [],
+      "privateHomeRemoved": true,
+      "limits": [
+        "official native no-account read RPCs, not authenticated inference/approval/resume",
+        "sampled PID descendants including separate native PGIDs, not full syscall tracing",
+        "oversize/slowconsumer/final-unterminated-native-frame cases not yet runtime exercised; preserved source contract separately reviewed"
+      ]
+    },
+    "operatorTypedIdCorrection": {
+      "cause": "initial operator summary keyed id with str() and could collapse string9 with numeric9; product bridge was not changed",
+      "correction": "same immutable binaries/actual client operations rerun with native typed dictkeys and explicitbothIDs",
+      "notANewProductFixOrTestFile": true,
+      "operatorCommandSha256": "34e1500d63ddda63734e10e45ba2184ae54948e8299c1aab9b25f9ea892e5c17"
+    },
+    "typedIdRuntimeGate": "rerun with native typed keys; numeric9 and string9 each independently received expected official config/model response on both binaries",
+    "buildEvidence": {
+      "nativeBuild": "go build -mod=readonly ./cmd/aih-server exit0 for separate unmodified archive and threepath overlay",
+      "focusedVet": "go vet ./internal/runtime/codexappserverws ./internal/transport/http/codexappserverapi exit0",
+      "crossCompile": [
+        {
+          "target": "linux-x64",
+          "exitCode": 0,
+          "stderrBytes": 0,
+          "compileOnlyNotRuntime": true
+        },
+        {
+          "target": "windows-x64",
+          "exitCode": 0,
+          "stderrBytes": 0,
+          "compileOnlyNotRuntime": true
+        }
+      ]
+    },
+    "independentReview": {
+      "reviewers": [
+        "Hubble",
+        "Mendel"
+      ],
+      "sameThreeSourceSHAsNoBlocking": true,
+      "sourceContract": "framepump and reader exact move except transport ports; WS public signature/readlimit/Text/CloseNow retained",
+      "runtimeEvidenceBoundary": "5actualmethods plus unknownmethod and reconnect; Goal/unknown-method errors -32600 are preserved not successful parity"
+    },
+    "rawDigests": {
+      "baseline-real-result.json": "f525778f962ee2066556dc4283df012341e5c8e484019846c7ce50fb9e4d6383",
+      "candidate-real-result.json": "29cb51389dccc0896fa188a4fcf11826f89ccbfd1a2819026a7aec5c827a5cb2",
+      "before-after-comparison.json": "6ddd89592b8fe0f8b0932b94a00dbe589ffe6c8623348efecc103c6780dacd78"
+    },
+    "retainedLocalRootPointer": "/tmp/aih-r2-frame-core-latest-20261118.txt",
+    "wrapperCutoverOrNewCLIAdapterIncluded": false,
+    "sharedArtifactStampServerChanged": false,
+    "newTestsFixtureMockOrOperationalMainAdded": false,
+    "unchangedButNotRuntimeExercised": [
+      "oversize frame reject",
+      "slow consumer/deadline saturation",
+      "final native unterminated frame drain",
+      "authenticated inference/approval/resume metadata parity"
+    ],
+    "remainingGates": [
+      "subsequent CLI stdio adapter signature approved by supervisor before public wrapper switch",
+      "M metadata/titleGoal/hidden/cursor projection owner contract",
+      "resume/hydration/stale-steer lifecycle owner contract",
+      "conditional writer retirement and public installed/load acceptance"
+    ]
   }
 }

@@ -126,11 +126,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mountPublicManagementAliases(mux, handlers.webuiRoutes)
 	// 聊天入口：管理前缀 + 浏览器前缀（/v0/webui/chat/*，202 + 独立 SSE）都由 Go 应答。
 	mountWebUIChat(mux, handlers.webUIChat)
-	// WebUI 终端：Node 把 /v0/webui/terminal/* 原样反代到这里。
-	// 前缀注册同时覆盖 /open、/mux 等子路径；不带尾斜杠的那条是给潜在的空路径兜底。
+	// WebUI terminal browser and management paths share one Go session owner.
+	// The browser adapter excludes management-only launch/probe capabilities.
 	if handlers.webUITerminal != nil {
 		mux.Handle(webuiterminalapi.Prefix, handlers.webUITerminal)
 		mux.Handle(webuiterminalapi.Prefix+"/", handlers.webUITerminal)
+		browserTerminal := webuiterminalapi.BrowserHandler(handlers.webUITerminal)
+		mux.Handle(webuiterminalapi.BrowserPrefix, browserTerminal)
+		mux.Handle(webuiterminalapi.BrowserPrefix+"/", browserTerminal)
 	}
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	if handlers.accountOutcomes != nil {

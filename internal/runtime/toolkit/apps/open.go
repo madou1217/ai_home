@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/claudedesktopconfig"
+	"github.com/madou1217/ai_home/internal/runtime/claudedesktopcredential"
 )
 
 // OpenManagedDesktopApp 不绑定账号，直接在宿主打开已安装的桌面客户端。
@@ -128,19 +129,31 @@ func prepareClaudeDesktopGateway(ctx context.Context, opts Options) string {
 	if profileDir == "" || !filepath.IsAbs(aiHome) {
 		return "invalid_gateway_scope"
 	}
-	helper := nonEmpty(strings.TrimSpace(opts.CredentialHelperPath), resolveRepoFile(opts, "bin", "claude-desktop-credential.js"))
-	if !fileExists(helper) {
-		return "credential_helper_missing"
+	packagePlatform := resolvePlatform(opts)
+	if packagePlatform == platformMacOS {
+		packagePlatform = "darwin"
+	} else if packagePlatform == platformWindows {
+		packagePlatform = "win32"
 	}
-	nodeExec := strings.TrimSpace(opts.NodeExecPath)
-	if nodeExec == "" {
-		var err error
-		nodeExec, err = exec.LookPath("node")
-		if err != nil {
-			return "node_runtime_missing"
-		}
+	helperName := "aih-go"
+	if packagePlatform == "win32" {
+		helperName += ".exe"
 	}
-	result := claudedesktopconfig.Prepare(ctx, claudedesktopconfig.Options{ProfileDir: profileDir, Mode: "api", GatewayBaseURL: resolveDefaultServerRootURL(ctx, opts), CredentialHelper: nodeExec, CredentialHelperArgs: []string{helper, "--ai-home-dir", aiHome}})
+	helper, err := claudedesktopcredential.ResolveExecutable(claudedesktopcredential.CommandOptions{
+		ExplicitPath: opts.CredentialHelperPath,
+		PackagedPath: resolveRepoFile(opts, "bin", "native", packagePlatform+"-"+resolveArch(opts), helperName),
+		Platform:     resolvePlatform(opts),
+		Arch:         resolveArch(opts),
+		Env:          resolveEnvMap(opts),
+	})
+	if err != nil {
+		return err.Error()
+	}
+	result := claudedesktopconfig.Prepare(ctx, claudedesktopconfig.Options{
+		ProfileDir: profileDir, Mode: "api", GatewayBaseURL: resolveDefaultServerRootURL(ctx, opts),
+		CredentialHelper:     helper,
+		CredentialHelperArgs: []string{claudedesktopcredential.Command, "--ai-home-dir", aiHome},
+	})
 	if !result.OK {
 		return result.Reason
 	}

@@ -903,5 +903,327 @@
     "privateServerExited": true,
     "independentReviewer": "Mendel; exact reconstructed ps-text hashes independently matched",
     "retirementBoundary": "Keep third-party CLI Node runtime separate; these classifications do not authorize deleting external packages or prove the whole service is Node-free"
+  },
+  "publicCodexModelPrefixExecCandidate": {
+    "status": "private_candidate_verified_shared_scope_pending",
+    "scope": "one numeric-account Codex model prefix immediately followed by exec/e; no production source landed",
+    "candidateSourceCommit": "0ae8a37ae0779a8f0b04e4e94977150004301fa2",
+    "candidateSourceTree": "20d04415fb00649e3977022ec1d1db5ad97b7695",
+    "baseBinBlob": "e1db1a81ec41cfb3835c7790a5d8eb439648485f",
+    "candidateBinSha256": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+    "goSourceCommit": "9c94b3ad9bfb4c9b8b99d44fd4ff4b5fcd757e87",
+    "goArtifactSha256": "aae834af7a34692bc9636194a6055abe59bbe3d6c6d763961124f51280697c23",
+    "sourceArchiveAndGoVersionsDifferExplicitly": true,
+    "sharedBinSourceChanged": false,
+    "publicInstalledEntryAccepted": false,
+    "sharedServiceReleased": false,
+    "scopeCoordination": {
+      "supervisorSession": "01a1df63-a386-76d0-9acf-025e5a07582d",
+      "proposalMessage": "pm-3f465d7e2c3ec867deb23281d116d5b9",
+      "candidateResultMessage": "pm-66b38a9f602235c684b4de19224a1b15",
+      "replyNotYetObserved": true
+    },
+    "originalBaseline": {
+      "directGoOperation": {
+        "action": "direct_frozen_go_model_prefix_real",
+        "startedAt": "2026-11-18T02:34:55.074693+08:00",
+        "finishedAt": "2026-11-18T02:35:11.818531+08:00",
+        "exitCode": 0,
+        "timeout": false,
+        "stdoutBytes": 367,
+        "stderrBytes": 39,
+        "eventTypes": [
+          "thread.started",
+          "turn.started",
+          "item.completed",
+          "turn.completed"
+        ],
+        "answerMatches": true,
+        "nativeHelp": false,
+        "oldNodeBusinessModulesLoaded": [],
+        "coverageFiles": 0
+      },
+      "currentPublicEntryOperation": {
+        "action": "current_public_model_prefix_help",
+        "startedAt": "2026-11-18T02:35:11.819205+08:00",
+        "finishedAt": "2026-11-18T02:35:12.427634+08:00",
+        "exitCode": 1,
+        "timeout": false,
+        "stdoutBytes": 53,
+        "stderrBytes": 495,
+        "eventTypes": [],
+        "answerMatches": false,
+        "nativeHelp": false,
+        "oldNodeBusinessModulesLoaded": [
+          "lib/cli/app.js",
+          "lib/cli/commands/ai-cli/router.js",
+          "lib/cli/services/pty/runtime.js"
+        ],
+        "coverageFiles": 1
+      },
+      "failureCauseNotCaptured": true,
+      "noProductionBugConclusion": true,
+      "cleanupFollowup": {
+        "at": "2026-11-18T02:35:35.767537+08:00",
+        "scope": "own observed official Codex git descendants only; verified pgid and pid before TERM",
+        "terminatedProcessGroup": 43183,
+        "membersBefore": [
+          [
+            43189,
+            "/Library/Developer/CommandLineTools/usr/bin/git"
+          ],
+          [
+            43190,
+            "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+          ],
+          [
+            43191,
+            "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+          ]
+        ],
+        "aliveAfter": [],
+        "privateSensitiveResourcesAbsent": true
+      }
+    },
+    "reviewCorrection": {
+      "at": "2026-11-18T02:39:56.370090+08:00",
+      "reviewer": "Hubble",
+      "finding": "P2 model value -- was stripped as AIH separator and exec could become model value",
+      "correction": "only consume nonempty nonoption separate value or nonempty inline value; all other shapes remain outside migration predicate"
+    },
+    "sourceReview": {
+      "reviewer": "Hubble",
+      "reviewedSha256": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+      "result": "P2 closed, no remaining blocking finding; source-only review"
+    },
+    "execution": {
+      "startedAt": "2026-11-18T02:41:46.447807+08:00",
+      "finishedAt": "2026-11-18T02:42:06.715657+08:00",
+      "managementPortReservedNotListening": 54496,
+      "managementKeyProvided": false,
+      "pathExcludesNode": true,
+      "nodeBootstrapViaAbsolutePath": true,
+      "officialCodexVersion": "0.167.2",
+      "resultToken": "CODEX_PREFIX_REVIEWED_OK"
+    },
+    "actualOperations": [
+      {
+        "action": "reviewed_model_prefix_real",
+        "startedAt": "2026-11-18T02:41:49.060336+08:00",
+        "finishedAt": "2026-11-18T02:42:04.245446+08:00",
+        "exitCode": 0,
+        "timeout": false,
+        "stdoutBytes": 367,
+        "stderrBytes": 39,
+        "publicCandidateEntryLoaded": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "eventTypes": [
+          "thread.started",
+          "turn.started",
+          "item.completed",
+          "turn.completed"
+        ],
+        "answerMatches": true,
+        "nativeExecHelp": false,
+        "missingGoDiagnostic": false,
+        "unknownAliasDiagnostic": false,
+        "outOfScopeLegacyInvalidAccount": false
+      },
+      {
+        "action": "reviewed_escaped_short_model_e_help",
+        "startedAt": "2026-11-18T02:42:04.245829+08:00",
+        "finishedAt": "2026-11-18T02:42:04.338531+08:00",
+        "exitCode": 0,
+        "timeout": false,
+        "stdoutBytes": 4331,
+        "stderrBytes": 0,
+        "publicCandidateEntryLoaded": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "eventTypes": [],
+        "answerMatches": false,
+        "nativeExecHelp": true,
+        "missingGoDiagnostic": false,
+        "unknownAliasDiagnostic": false,
+        "outOfScopeLegacyInvalidAccount": false
+      },
+      {
+        "action": "reviewed_inline_model_exec_help",
+        "startedAt": "2026-11-18T02:42:04.339055+08:00",
+        "finishedAt": "2026-11-18T02:42:04.419836+08:00",
+        "exitCode": 0,
+        "timeout": false,
+        "stdoutBytes": 4331,
+        "stderrBytes": 0,
+        "publicCandidateEntryLoaded": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "eventTypes": [],
+        "answerMatches": false,
+        "nativeExecHelp": true,
+        "missingGoDiagnostic": false,
+        "unknownAliasDiagnostic": false,
+        "outOfScopeLegacyInvalidAccount": false
+      },
+      {
+        "action": "reviewed_unknown_alias",
+        "startedAt": "2026-11-18T02:42:04.420300+08:00",
+        "finishedAt": "2026-11-18T02:42:04.480277+08:00",
+        "exitCode": 1,
+        "timeout": false,
+        "stdoutBytes": 0,
+        "stderrBytes": 55,
+        "publicCandidateEntryLoaded": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "eventTypes": [],
+        "answerMatches": false,
+        "nativeExecHelp": false,
+        "missingGoDiagnostic": false,
+        "unknownAliasDiagnostic": true,
+        "outOfScopeLegacyInvalidAccount": false
+      },
+      {
+        "action": "reviewed_missing_private_go",
+        "startedAt": "2026-11-18T02:42:04.481524+08:00",
+        "finishedAt": "2026-11-18T02:42:04.528243+08:00",
+        "exitCode": 1,
+        "timeout": false,
+        "stdoutBytes": 0,
+        "stderrBytes": 224,
+        "publicCandidateEntryLoaded": true,
+        "oldNodeBusinessModulesLoaded": [],
+        "eventTypes": [],
+        "answerMatches": false,
+        "nativeExecHelp": false,
+        "missingGoDiagnostic": true,
+        "unknownAliasDiagnostic": false,
+        "outOfScopeLegacyInvalidAccount": false
+      },
+      {
+        "action": "malformed_model_boundary_not_migrated",
+        "startedAt": "2026-11-18T02:42:04.528714+08:00",
+        "finishedAt": "2026-11-18T02:42:05.760070+08:00",
+        "exitCode": 1,
+        "timeout": false,
+        "stdoutBytes": 0,
+        "stderrBytes": 100,
+        "publicCandidateEntryLoaded": true,
+        "oldNodeBusinessModulesLoaded": [
+          "lib/cli/app.js",
+          "lib/cli/commands/ai-cli/router.js",
+          "lib/cli/services/pty/runtime.js"
+        ],
+        "eventTypes": [],
+        "answerMatches": false,
+        "nativeExecHelp": false,
+        "missingGoDiagnostic": false,
+        "unknownAliasDiagnostic": false,
+        "outOfScopeLegacyInvalidAccount": false
+      }
+    ],
+    "processEvidence": [
+      {
+        "pid": 60569,
+        "ppid": 60316,
+        "pgid": 60569,
+        "executable": "/Users/model/.nvm/versions/node/v22.21.0/bin/node"
+      },
+      {
+        "pid": 60580,
+        "ppid": 60569,
+        "pgid": 60569,
+        "executable": "/private/var/folders/nj/0mx5gymd41x8f64xcfm635440000gn/T/aih-r1-model-prefix-20261118-ou4f6lwi/candidate/bin/native/darwin-arm64/aih-go"
+      },
+      {
+        "pid": 60583,
+        "ppid": 60580,
+        "pgid": 60569,
+        "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+      },
+      {
+        "pid": 60585,
+        "ppid": 60583,
+        "pgid": 60569,
+        "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+      },
+      {
+        "pid": 60586,
+        "ppid": 60585,
+        "pgid": 60569,
+        "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+      },
+      {
+        "pid": 60587,
+        "ppid": 60586,
+        "pgid": 60569,
+        "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+      },
+      {
+        "pid": 60977,
+        "ppid": 60316,
+        "pgid": 60977,
+        "executable": "(node)"
+      },
+      {
+        "pid": 60978,
+        "ppid": 60977,
+        "pgid": 60977,
+        "executable": "(aih-go)"
+      },
+      {
+        "pid": 60984,
+        "ppid": 60316,
+        "pgid": 60984,
+        "executable": "(node)"
+      },
+      {
+        "pid": 60985,
+        "ppid": 60984,
+        "pgid": 60984,
+        "executable": "(aih-go)"
+      },
+      {
+        "pid": 60988,
+        "ppid": 60316,
+        "pgid": 60988,
+        "executable": "/Users/model/.nvm/versions/node/v22.21.0/bin/node"
+      },
+      {
+        "pid": 61031,
+        "ppid": 60988,
+        "pgid": 60988,
+        "executable": "(bash)"
+      },
+      {
+        "pid": 61072,
+        "ppid": 60988,
+        "pgid": 60988,
+        "executable": "(bash)"
+      },
+      {
+        "pid": 61073,
+        "ppid": 61072,
+        "pgid": 60988,
+        "executable": "(bash)"
+      }
+    ],
+    "cleanup": {
+      "remainingObservedPIDs": [],
+      "ownObservedLeftoversTerminated": [
+        60585,
+        60586,
+        60587
+      ],
+      "privateSensitiveResourcesRemoved": true
+    },
+    "candidateProposedDiffNotApplied": "diff --git a/bin/ai-home.js b/bin/ai-home.js\nindex e1db1a81e..aa9535bf4 100755\n--- a/bin/ai-home.js\n+++ b/bin/ai-home.js\n@@ -454,7 +454,18 @@ function tryRunGoProviderLaunch() {\n   const provider = String(args[0] || '').trim().toLowerCase();\n   // Only explicit-account Codex headless launches move here. TUI, gateway and\n   // management forms keep their existing entry; native exec argv stays opaque.\n-  const nativeCommand = args[2] === '--' ? args[3] : args[2];\n+  let nativeCommandIndex = args[2] === '--' ? 3 : 2;\n+  if (provider === 'codex') {\n+    const option = args[nativeCommandIndex];\n+    const value = args[nativeCommandIndex + 1];\n+    // Consume only one valid model prefix; a native boundary is never its value.\n+    if ((option === '-m' || option === '--model') && typeof value === 'string' && value.trim() && !value.startsWith('-')) {\n+      nativeCommandIndex += 2;\n+    } else if (typeof option === 'string' && option.startsWith('--model=') && option.slice('--model='.length).trim()) {\n+      nativeCommandIndex += 1;\n+    }\n+  }\n+  const nativeCommand = args[nativeCommandIndex];\n   const codexExec = provider === 'codex' && (nativeCommand === 'exec' || nativeCommand === 'e');\n   if (!GO_NATIVE_LAUNCH_PROVIDERS.has(provider) && !codexExec) return false;\n   // 只有显式账号位才走 Go：默认账号/网关池形态仍按 Node 现有语义。\n",
+    "rawReviewedResultSha256": "1a8b48bcd8430252012b2f0842ae94bb8f45c1d332852988a6d34b88ae8e2235",
+    "localEvidenceRootPointer": "/tmp/aih-r1-model-prefix-latest-20261118.txt",
+    "limits": [
+      "Private source candidate only; this does not prove shared public entry/model-prefix ownership changed.",
+      "Node bootstrap is retained; this is not whole-CLI Node retirement.",
+      "Malformed model value is deliberately outside new predicate and may still load legacy Node; no claim that branch has migrated.",
+      "V8 coverage and sampled process tree are not complete syscall/network traces.",
+      "No M/Desktop, protocol, Terminal, Chat9, R4/R6/R8, installer, shared service or stamp changes.",
+      "No test cases, mock/fixture or copied-production-function driver added; only actual CLI and private filesystem operations."
+    ]
   }
 }

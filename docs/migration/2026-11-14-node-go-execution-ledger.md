@@ -375,3 +375,8 @@ PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version�
 监督独占确认bin/ai-home.js::tryRunGoProviderLaunch，落盘前HEAD/index/disk同blob382d139...且100755；仅1hunk(11+/5-)接codex+数字alias+exec/e(至多一--)，opaque argv直接交既有Go，不走Node app/router/PTY/defaultlauncher/stdio业务，Go失败不fallback。11:10实际公开entry+现存Go cac088bb...→官方Codex0.167.2，实回CODEX_GO_DISPATCH_OK/turn.completed；e-help成功、invalidalias失败关闭，V8 old业务模块均0。私有同字节candidate另6条含缺Go和exactID resume同线程/记住前文，证据分列；共享产物/stamp/服务未操作。Hubble独立审查无blocking，Node bootstrap仍保留，不称整个CLI退出。
 
 同构件空库定向warmup另分类两个新Node探测：Go probeSingleHost→DeepSeek runCli --version和Pi cli --version，source重构与实际ps文本hash291d.../7e14...匹配，Mendel复核。属第三方JS CLI运行时，旧历史PID argv缺失不retroclaim、wholeNodefree不关闭。结果追加既有acceptance§8/§9及evidence JSON；仅该bin源hunk加本人文档，M/Chat9/terminal/protocol/R4R6R8/安装器不动，不新增tests/features或Node业务。
+
+
+## 2026-11-18 R1 model-prefix headless：真实私有候选，scope待确认
+
+选取bin/ai-home.js::tryRunGoProviderLaunch单一最小predicate，不重复已交即刻exec或R3。已交源0ae8a37a私有archive候选只接一个-m/--model/--model=后紧邻exec/e，argv原样给既有Go。Hubble发现-m -- exec边界P2后增加非空非option值门禁，复审新SHA bca11c5f...无blocking；新SHA02:41:49–02:42:06实跑：真实CODEX_PREFIX_REVIEWED_OK/turn.completed、escape/e与inline帮助成功、invalidalias与私有缺Go失败关闭，五项旧Node业务模块加载0；malformed不接新Go而旧业务仍加载，明确保留未迁。私有进程/敏感目录已清理。当前生产bin仍e1db...干净、无source落地或shared发布；模型前缀扩shape的scope请求pm-3f465d7e尚无回执，旧授权不自动扩大。既有acceptance§10/evidence记录可恢复diff与原始digest，不以private候选代替安装入口/Node退役，Nodebootstrap仍在。M/Chat9/terminal/protocol/R4R6R8/安装器未动，无新tests/sharedrestart/stamp。

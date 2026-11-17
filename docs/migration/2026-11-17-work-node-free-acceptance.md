@@ -131,3 +131,24 @@ Hubble独立源码/候选结果审查无blocking；`node --check`、scoped diff 
 `FindNode` 会发现绝对Homebrew Node，全局package查找也不依赖私有HOME，所以PATH无node不等于这些探测不能运行。两者为**已安装第三方JS CLI的运行时/版本探测**，不是AIH Node backend或WORK actor业务。保留该第三方能力时其Node运行时要单列，不以迁移为由删除外部SDK或把其实现复制进AIH。
 
 Mendel独立复核source、两个命令指纹和第三方包映射。旧32132/32134未保留完整argv，**仍不能事后证明旧PID的实际命令**；本节是同构件新定向重现的已分类事实，不回写旧日志为已知。`evalProgram=process.argv`只是ps文本经shlex拆出的首token，完整程序依据source重构及全命令文本hash匹配，非execve argv-vector抓取。原whole-service非Node-free边界不变。
+
+
+## 10. 2026-11-18 R1 后续工程：模型前缀 headless 私有候选（待 scope，不报已落地）
+
+本轮没有重复R3或已交的数字账号紧随exec分支。只定位现有 **`codex <数字alias> [--] (-m MODEL | --model MODEL | --model=MODEL) exec/e ...`** 的一个转交点：`bin/ai-home.js::tryRunGoProviderLaunch()`。Node只识别一个模型前缀后的紧邻命令；argv仍原样交既有Go，不扫exec之后的prompt，不复制账号/凭据/model业务。没有扩大到默认、裸TUI、管理、Gateway、M/Desktop、安装器或协议。
+
+**目前状态是私有候选已真实验证，生产源码尚未落地。** 向监督01a1df63发送精确scope申请 `pm-3f465d7e`，以及实跑结果 `pm-66b38a9f`；尚未观察到本扩展形状的scope确认。此前即刻exec的获批范围不自动扩大。共享bin核查仍为HEAD/index/disk同blob `e1db1a81ec41cfb3835c7790a5d8eb439648485f`、100755；未覆盖peer新增的CLI availability/install前置。
+
+### 实际工程与真实结果
+
+- 私有源码由已提交 `0ae8a37ae0779a8f0b04e4e94977150004301fa2` archive冻结；只在上述predicate修改。复审后候选bin SHA-256为 `bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c`。
+- 使用此前来源冻结 `9c94b3ad...` 构建的Go CLI `aae834af...`，两份来源明确分列，不冒充当前共享artifact验收。官方Codex0.167.2；私有HOME/DB、PATH无node，bootstrap仅绝对Node启动；管理端口预占但不listen、无management key、不启动AIH server。
+- **02:41:49–02:42:04**：修正版私有公开薄壳→Go→官方Codex真实小请求exit0，观察到`thread.started`、`turn.completed`，答案 `CODEX_PREFIX_REVIEWED_OK`。prompt含usage/policy/set-default仍是文字。另`-- -m MODEL e --help`与`--model=MODEL exec --help`均exit0。
+- 不存在账号与只移动**私有**Go链接的缺Go操作均exit1、失败关闭；上述5项V8覆盖均未加载旧app/router/PTY/default launcher/stdio业务模块。caller实际观察为Node bootstrap→Go→官方Codex，观察的私有PID最终0、敏感HOME/DB全部删除。
+- 初次公开入口基线只证明旧Node app/router/PTY仍被加载；其失败stderr未保留，**不据此声称生产回归或确定失败根因**。另一个无凭据、空私有HOME的诊断命令因无效账号/无TTY失败，也不借用作原有效账号失败根因。
+
+### 审查发现和保留边界
+
+Hubble初审抓到`-m -- exec`会被Go分隔符解析变成`-m exec`、潜在误入TUI的P2。候选已改为只消费非空、非option的独立model值，inline model值也须非空；Hubble对上述新SHA复审无blocking。**不是用旧SHA实跑代替修正版验收。** 修正版随后真实执行malformed边界命令，确认没有新增Go接管；它仍加载旧Node业务并exit1，此分支明确未迁移，不宣称整个malformed/Node边界已退役。
+
+候选diff、原/新SHA、逐操作结果、进程和cleanup进入既有evidence JSON；本节只保存新实做证据，**未把待确认候选混作已安装入口交付或共享服务发布**。Node bootstrap仍在；V8与采样进程记录不等于完整network/syscall trace。无新测试/fixture/mock、无共享restart/stamp/迁库/登录改写。

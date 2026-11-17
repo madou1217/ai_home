@@ -76,6 +76,27 @@ func normalize(o Options) (Options, error) {
 }
 func receiptPath(home string) string     { return filepath.Join(home, "distribution-install.json") }
 func transactionRoot(home string) string { return home + ".install-history" }
+
+// pruneInstallHistory 保留本次事务的备份，删除历史升级留下的旧备份。
+// 安装已经提交并验证运行后才调用；失败/恢复中的事务不会被误删。
+func pruneInstallHistory(home, keep string) {
+	root := transactionRoot(home)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	keepPath := filepath.Clean(keep)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		if filepath.Clean(path) == keepPath {
+			continue
+		}
+		_ = os.RemoveAll(path)
+	}
+}
 func launcherTarget(o Options) string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(o.BinDir, "aih.exe")
@@ -336,6 +357,8 @@ func Install(ctx context.Context, options Options) (result Result, resultErr err
 	result.OK = true
 	result.Receipt = receipt
 	result.Message = "安装完成，账号、配置和会话数据已保留"
+	// 升级成功后只留本次备份用于回滚，旧的安装前备份自动清理，避免无限占盘。
+	pruneInstallHistory(o.Home, tx)
 	fmt.Fprintf(o.Output, "[aih] %s（%s）\n", result.Message, build.Version)
 	return result, nil
 }

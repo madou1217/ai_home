@@ -10,6 +10,9 @@ import (
 
 // runCodexEffort updates native preferences, not the prompt sent to the model.
 func runCodexEffort(arguments []string, runtime commandRuntime) error {
+	if len(arguments) > 0 && arguments[0] == "--heal-provider-config" {
+		return runCodexProviderHeal(arguments[1:], runtime)
+	}
 	if len(arguments) == 2 && arguments[0] == "--replace-config" {
 		return runCodexConfigEdit(arguments[1], runtime)
 	}

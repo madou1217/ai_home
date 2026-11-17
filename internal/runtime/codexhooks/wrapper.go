@@ -316,10 +316,52 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		fmt.Sprintf("  unset %s", CodexAppServerPassthroughEnv),
 		`  exec "$UPSTREAM" "$@"`,
 		"fi",
-		`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
-		`  exec "$NODE_BIN" "$HELPER" --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
-		"fi",
 	)
+	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
+		goBinary := ""
+		if filepath.IsAbs(options.HelperScriptPath) {
+			arch := runtime.GOARCH
+			if arch == "amd64" {
+				arch = "x64"
+			}
+			goBinary = filepath.Join(filepath.Dir(options.HelperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, "aih-go")
+		}
+		lines = append(lines,
+			`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
+			"  AIH_GO_CLI="+ShellQuote(goBinary),
+			`  if [ ! -x "$AIH_GO_CLI" ] || ! AIH_GO_CAPABILITY=$("$AIH_GO_CLI" __codex-cli-app-server --capabilities 2>/dev/null); then`,
+			`    printf '%s\n' '[aih] codex_cli_app_server_go_missing_or_outdated; no Node fallback.' >&2`,
+			"    exit 1",
+			"  fi",
+			`  if [ "$AIH_GO_CAPABILITY" != 'aih-codex-cli-app-server-v1' ]; then`,
+			`    printf '%s\n' '[aih] codex_cli_app_server_go_missing_or_outdated; no Node fallback.' >&2`,
+			"    exit 1",
+			"  fi",
+			`  if ! AIH_GO_HOOK_MODE=$("$AIH_GO_CLI" __codex-cli-app-server --select --state-file "$STATE_FILE"); then`,
+			"    exit 1",
+			"  fi",
+			`  case "$AIH_GO_HOOK_MODE" in`,
+			"    enabled-compat-v1)",
+			`      exec "$NODE_BIN" "$HELPER" --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
+			"      ;;",
+			"    disabled-v1)",
+			`      export AIH_CODEX_DISCOVERED_BINARY="${AIH_CODEX_DISCOVERED_BINARY:-$UPSTREAM}"`,
+			`      exec "$AIH_GO_CLI" __codex-cli-app-server --state-file "$STATE_FILE" -- "$@"`,
+			"      ;;",
+			"    *)",
+			`      printf '%s\n' '[aih] codex_cli_app_server_selection_invalid; no Node fallback.' >&2`,
+			"      exit 1",
+			"      ;;",
+			"  esac",
+			"fi",
+		)
+	} else {
+		lines = append(lines,
+			`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
+			`  exec "$NODE_BIN" "$HELPER" --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
+			"fi",
+		)
+	}
 	if options.RouteDefaultCLIThroughHelper {
 		lines = append(lines, `exec "$NODE_BIN" "$HELPER" --run-cli-default --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`)
 	} else {

@@ -152,3 +152,19 @@ Mendel独立复核source、两个命令指纹和第三方包映射。旧32132/32
 Hubble初审抓到`-m -- exec`会被Go分隔符解析变成`-m exec`、潜在误入TUI的P2。候选已改为只消费非空、非option的独立model值，inline model值也须非空；Hubble对上述新SHA复审无blocking。**不是用旧SHA实跑代替修正版验收。** 修正版随后真实执行malformed边界命令，确认没有新增Go接管；它仍加载旧Node业务并exit1，此分支明确未迁移，不宣称整个malformed/Node边界已退役。
 
 候选diff、原/新SHA、逐操作结果、进程和cleanup进入既有evidence JSON；本节只保存新实做证据，**未把待确认候选混作已安装入口交付或共享服务发布**。Node bootstrap仍在；V8与采样进程记录不等于完整network/syscall trace。无新测试/fixture/mock、无共享restart/stamp/迁库/登录改写。
+
+
+## 11. 2026-11-18 scope已直接获批：模型前缀单点落地及共享公开入口实跑
+
+用户直接转达监督的正式独占结论，§10的“待scope”是上一checkpoint的历史状态，现已解除。**02:48:51**落盘前重新核对共享bin的HEAD/index/disk全部为`e1db1a81ec41cfb3835c7790a5d8eb439648485f`、100755、scoped clean；仅应用Hubble已审的同字节predicate，1文件12+/1-，应用后SHA-256为`bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c`。其它内容包括peer的install/availability前置保持原样。只认数字alias、至多一个原生边界、一个有效model前缀后紧邻exec/e；argv不改写，失败保持handled。不是全量Codex/TUI/默认账号或协议切换。
+
+### 此次确实运行共享公开入口，而非只运行私有candidate
+
+现存标准Go CLI SHA-256 `62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6`，原位使用、未替换。私有HOME/DB/PATH无node，bootstrap由绝对Node执行，官方Codex0.167.2；管理地址为预占但不监听的私有端口，无management key、不启动AIH Node server。
+
+- **02:49:32–02:49:47**：真实共享`bin/ai-home.js codex <alias> --model gpt-6.1-sol exec --json ...` exit0，观察到`thread.started`与`turn.completed`，实回`CODEX_PUBLIC_PREFIX_GO_OK`；prompt中的usage/policy/set-default保持普通文字。
+- 共享entry的`-- -m MODEL e --help`与`--model=MODEL exec --help`均exit0；无效数字alias exit1、未回落旧Node业务。四项V8记录均实际加载共享entry，五个旧app/router/PTY/default launcher/stdio业务模块全部未加载。
+- caller为Node bootstrap→现存标准Go→官方Codex；已观察的私有PID最终0、敏感HOME/DB删除。entry与标准Go执行前后SHA完全相同。
+- 缺Go证据仍仅来自§10已审同SHA私有candidate，未为此移动共享Go；不把私有negative操作冒充标准产物验证。malformed前缀仍不接新predicate，其legacy业务边界保留。
+
+`node --check`与scoped `diff --check`通过；本次来源应用receipt、真实逐操作/进程/cleanup及原始报告digest已追加既有evidence JSON。**Node bootstrap仍在；没有共享server发布、restart、stamp更改，也不称R1或整个迁移全部完成。** 后续继续R2 wrapper/stdio的单一Go转交方案，先核cf13ed88f及其后续owner写集，不覆盖managed runtime能力。

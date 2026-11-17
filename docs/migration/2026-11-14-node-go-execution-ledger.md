@@ -380,3 +380,8 @@ PATH不含node，但仍观察绝对Homebrew Node子进程（一项明确version�
 ## 2026-11-18 R1 model-prefix headless：真实私有候选，scope待确认
 
 选取bin/ai-home.js::tryRunGoProviderLaunch单一最小predicate，不重复已交即刻exec或R3。已交源0ae8a37a私有archive候选只接一个-m/--model/--model=后紧邻exec/e，argv原样给既有Go。Hubble发现-m -- exec边界P2后增加非空非option值门禁，复审新SHA bca11c5f...无blocking；新SHA02:41:49–02:42:06实跑：真实CODEX_PREFIX_REVIEWED_OK/turn.completed、escape/e与inline帮助成功、invalidalias与私有缺Go失败关闭，五项旧Node业务模块加载0；malformed不接新Go而旧业务仍加载，明确保留未迁。私有进程/敏感目录已清理。当前生产bin仍e1db...干净、无source落地或shared发布；模型前缀扩shape的scope请求pm-3f465d7e尚无回执，旧授权不自动扩大。既有acceptance§10/evidence记录可恢复diff与原始digest，不以private候选代替安装入口/Node退役，Nodebootstrap仍在。M/Chat9/terminal/protocol/R4R6R8/安装器未动，无新tests/sharedrestart/stamp。
+
+
+## 2026-11-18 R1 model-prefix：scope直接获批后共享单点实做
+
+用户直接准予原owner独占bin::tryRunGoProviderLaunch，已解除上一checkpoint等待。02:48:51重新逐blob/index/mode核对e1db clean后，仅落已独立审查同SHA bca11c5f predicate(12+/1-)，保留peer install/availability。02:49:32–02:49:48真实共享公开entry+现存标准Go62ade266...→官方Codex实回CODEX_PUBLIC_PREFIX_GO_OK/turn.completed；escape短-m e帮助、inline帮助成功，无效alias失败关闭；四项V8旧业务模块0、私有PID/敏感目录清理、entry及Go前后SHA相同。缺Go仍单列此前同SHA私有candidate证据，不移动共享产物。§10待scope记录由§11新事实接续；Nodebootstrap及malformed/默认/TUI等未退役，不宣称全R1/W0-W6完成。无新tests/sharedrestart/stamp/M/协议改动。下一R2已先只读核cf13ed88f26path及18b/2ff后续，并向1e7bb原owner询问在写paths/合同；不以本单点收工。

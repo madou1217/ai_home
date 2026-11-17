@@ -1225,5 +1225,187 @@
       "No M/Desktop, protocol, Terminal, Chat9, R4/R6/R8, installer, shared service or stamp changes.",
       "No test cases, mock/fixture or copied-production-function driver added; only actual CLI and private filesystem operations."
     ]
+  },
+  "publicCodexModelPrefixExecDelegation": {
+    "status": "shared_source_applied_public_entry_accepted",
+    "supersedesPendingStatusOf": "publicCodexModelPrefixExecCandidate",
+    "authorization": "user directly delivered supervisor scope: only bin/ai-home.js::tryRunGoProviderLaunch model-prefix predicate; no longer wait for queued peer",
+    "sourceApplication": {
+      "appliedAt": "2026-11-18T02:48:51.070254+08:00",
+      "scope": "user directly authorized only model-prefix predicate; same reviewed candidate",
+      "sourcePath": "bin/ai-home.js",
+      "baseHead": "162207bdb3b81c86c99f4391c235814c977bda8d",
+      "beforeBlob": "e1db1a81ec41cfb3835c7790a5d8eb439648485f",
+      "afterSha256": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+      "mode": "0o755",
+      "goArtifactSha256": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6",
+      "standardGoArtifactNotReplaced": true
+    },
+    "sourceBinSha256": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+    "sourceHunk": {
+      "files": 1,
+      "insertions": 12,
+      "deletions": 1,
+      "mode": "100755",
+      "allOtherBinContentPreserved": true
+    },
+    "sharedPublicAcceptance": {
+      "startedAt": "2026-11-18T02:49:30.901801+08:00",
+      "finishedAt": "2026-11-18T02:49:49.069336+08:00",
+      "entryPath": "/Users/model/projects/feature/ai_home/bin/ai-home.js",
+      "entrySha256": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+      "standardGoSha256": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6",
+      "standardGoNotReplaced": true,
+      "managementPortReservedNotListening": 55264,
+      "managementKeyProvided": false,
+      "operations": [
+        {
+          "action": "shared_public_model_prefix_real",
+          "startedAt": "2026-11-18T02:49:32.708843+08:00",
+          "finishedAt": "2026-11-18T02:49:47.780548+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdoutBytes": 368,
+          "stderrBytes": 39,
+          "sharedPublicEntryLoaded": true,
+          "coverageFiles": 1,
+          "oldNodeBusinessModulesLoaded": [],
+          "eventTypes": [
+            "thread.started",
+            "turn.started",
+            "item.completed",
+            "turn.completed"
+          ],
+          "answerMatches": true,
+          "nativeExecHelp": false,
+          "unknownAliasDiagnostic": false
+        },
+        {
+          "action": "shared_public_escape_short_e_help",
+          "startedAt": "2026-11-18T02:49:47.780997+08:00",
+          "finishedAt": "2026-11-18T02:49:47.847839+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdoutBytes": 4331,
+          "stderrBytes": 0,
+          "sharedPublicEntryLoaded": true,
+          "coverageFiles": 1,
+          "oldNodeBusinessModulesLoaded": [],
+          "eventTypes": [],
+          "answerMatches": false,
+          "nativeExecHelp": true,
+          "unknownAliasDiagnostic": false
+        },
+        {
+          "action": "shared_public_inline_model_help",
+          "startedAt": "2026-11-18T02:49:47.848193+08:00",
+          "finishedAt": "2026-11-18T02:49:47.908042+08:00",
+          "exitCode": 0,
+          "timeout": false,
+          "stdoutBytes": 4331,
+          "stderrBytes": 0,
+          "sharedPublicEntryLoaded": true,
+          "coverageFiles": 1,
+          "oldNodeBusinessModulesLoaded": [],
+          "eventTypes": [],
+          "answerMatches": false,
+          "nativeExecHelp": true,
+          "unknownAliasDiagnostic": false
+        },
+        {
+          "action": "shared_public_unknown_alias",
+          "startedAt": "2026-11-18T02:49:47.908369+08:00",
+          "finishedAt": "2026-11-18T02:49:47.960091+08:00",
+          "exitCode": 1,
+          "timeout": false,
+          "stdoutBytes": 0,
+          "stderrBytes": 55,
+          "sharedPublicEntryLoaded": true,
+          "coverageFiles": 1,
+          "oldNodeBusinessModulesLoaded": [],
+          "eventTypes": [],
+          "answerMatches": false,
+          "nativeExecHelp": false,
+          "unknownAliasDiagnostic": true
+        }
+      ],
+      "observedProcesses": [
+        {
+          "pid": 75576,
+          "ppid": 75570,
+          "pgid": 75576,
+          "executable": "/Users/model/.nvm/versions/node/v22.21.0/bin/node"
+        },
+        {
+          "pid": 75577,
+          "ppid": 75576,
+          "pgid": 75576,
+          "executable": "/Users/model/projects/feature/ai_home/bin/native/darwin-arm64/aih-go"
+        },
+        {
+          "pid": 75714,
+          "ppid": 75579,
+          "pgid": 75576,
+          "executable": "/Library/Developer/CommandLineTools/usr/bin/git"
+        },
+        {
+          "pid": 75730,
+          "ppid": 75714,
+          "pgid": 75576,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"
+        },
+        {
+          "pid": 75732,
+          "ppid": 75730,
+          "pgid": 75576,
+          "executable": "/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https"
+        },
+        {
+          "pid": 75734,
+          "ppid": 75579,
+          "pgid": 75734,
+          "executable": "(zsh)"
+        },
+        {
+          "pid": 75579,
+          "ppid": 75577,
+          "pgid": 75576,
+          "executable": "/Users/model/.codex/packages/standalone/releases/0.167.2-aarch64-apple-darwin/bin/codex.aih-original"
+        },
+        {
+          "pid": 76529,
+          "ppid": 75570,
+          "pgid": 76529,
+          "executable": "/Users/model/.nvm/versions/node/v22.21.0/bin/node"
+        }
+      ],
+      "ownObservedLeftoversTerminated": [
+        75714,
+        75730,
+        75732
+      ],
+      "remainingObservedPIDs": [],
+      "privateSensitiveResourcesRemoved": true,
+      "entrySha256After": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+      "standardGoSha256After": "62ade2667a5f63fea300a75d389ecb6f45b5d4c67f3e161609d5b2f4f35f44b6"
+    },
+    "missingGoAcceptanceScope": "prior revised private candidate of the exact same source SHA only; standard Go was never renamed/replaced",
+    "review": {
+      "sourceReviewer": "Hubble",
+      "sourceReviewSha256": "bca11c5f532f871df13c7c48f1f648d8d6249c0d9d952d9ae60d0989a1bc412c",
+      "priorCandidateEvidenceReviewer": "Mendel",
+      "initialP2": "invalid model value -- must not be consumed as a model prefix; corrected before shared application"
+    },
+    "rawSharedPublicReportSha256": "1f0baae8b1b636f093e083ced04bbf7ca23cd8f0661284696ecef506ee0ee3e2",
+    "localEvidenceRootPointer": "/tmp/aih-r1-model-prefix-latest-20261118.txt",
+    "sharedServerReleasePerformed": false,
+    "limits": [
+      "Node bootstrap remains; this does not retire the public executable Node dependency.",
+      "Only one valid model prefix immediately followed by exec/e; bare/default/TUI, other global flag prefixes, management, M/Desktop and protocol unchanged.",
+      "Malformed excluded prefix remains a legacy route; no claim that path migrated.",
+      "V8 loaded-module and sampled process evidence do not constitute a complete network/syscall trace.",
+      "Current standard Go is identified by actual artifact SHA, not asserted to match the candidate archive commit.",
+      "No shared service restart, artifact/stamp replacement, DB migration, login mutation or new test cases."
+    ]
   }
 }

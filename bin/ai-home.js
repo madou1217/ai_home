@@ -454,7 +454,18 @@ function tryRunGoProviderLaunch() {
   const provider = String(args[0] || '').trim().toLowerCase();
   // Only explicit-account Codex headless launches move here. TUI, gateway and
   // management forms keep their existing entry; native exec argv stays opaque.
-  const nativeCommand = args[2] === '--' ? args[3] : args[2];
+  let nativeCommandIndex = args[2] === '--' ? 3 : 2;
+  if (provider === 'codex') {
+    const option = args[nativeCommandIndex];
+    const value = args[nativeCommandIndex + 1];
+    // Consume only one valid model prefix; a native boundary is never its value.
+    if ((option === '-m' || option === '--model') && typeof value === 'string' && value.trim() && !value.startsWith('-')) {
+      nativeCommandIndex += 2;
+    } else if (typeof option === 'string' && option.startsWith('--model=') && option.slice('--model='.length).trim()) {
+      nativeCommandIndex += 1;
+    }
+  }
+  const nativeCommand = args[nativeCommandIndex];
   const codexExec = provider === 'codex' && (nativeCommand === 'exec' || nativeCommand === 'e');
   if (!GO_NATIVE_LAUNCH_PROVIDERS.has(provider) && !codexExec) return false;
   // 只有显式账号位才走 Go：默认账号/网关池形态仍按 Node 现有语义。

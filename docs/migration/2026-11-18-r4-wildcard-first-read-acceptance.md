@@ -209,3 +209,52 @@
 - 新根40清单获监督**独立**`pm-b4ef37c4`许可后，于2026-11-18 03:44:46先保存低敏来源/权威/全SHA/HMAC/9操作/进程证据，再即时重核全部自有Go退出/lsof无句柄，每叶realpath/所有祖先非symlink/inode/dev/uid/nlink1/完整SHA精确匹配。仅unlink已批准40项，逻辑975766960B，manifest全叶不存在；新根/root/binary/SDK/source来源/evidence和1个private锁inode保留，不碰共享路径，不声称安全擦除。
 - 新根低敏 `evidence/sensitive-cleanup-receipt.json` 完整SHA `01400ce8bc21951ea312ef12a75a5baad720e20757a9a8a6cbe6f5444d476f9a`；cleanup-preflight与原40清单保留。上文24项index继续冻结，cleanup receipt是额外新文件，不把旧index悄然覆盖。旧root196清单/许可/receipt与新40清单严格分开。
 - 本节修正与cleanup事实使上文“新40仍待批准”的历史状态过期；本次确已获准并完成，不把未读queue当许可。该新doc SHA须最终独立复核后本人显式doc-only checkpoint；源码无增量、composition已交还总控，下一Node三写者只读方案不等于已获工程scope。
+
+
+## 12. 2026-11-18 06:25–06:35：原 thread 续接的当前 main 构件绑定
+
+本节是用户 native 续接后要求的当前构件复证，**不是重新实现来源，也不把历史验收挪成本轮结果**。先只读核 `0ae8a37ae` 与 `963a5f7b3`，当前 legacy 第153–161行确委托唯一 `aliasdisplay.List`；固定 SDK0.0.109 / sourceHash / JSON SHA 仍为第2节所列。首批回监督 `pm-6eedb247`：本轮最小生产写集为0；旧“缺 Go display 来源”阻碍已过期。未启动 R5、OAuth/policy/M、测试、分支/worktree、共享 restart/deploy 或真实数据库写。
+
+### 构件与真实输入
+
+- 构建启动时共享 main 已由初读 `b2b9f87b7` 推进到 `1638c4d03bd4af0a5cd14f393db252e59d59ce09`，本轮冻结后者的 committed archive；完整 SHA256 `643e4a9a4930b7ac2625a588abfffbc7a5499430e3da43b4113a8895b66c5357`。不从共享暂存区/未提交文件构建，不承诺未来 HEAD 仍相同。
+- 新独立 root：`/private/tmp/aih-r4-firstread-current-20261118-uig_c436`。`build-source.json` 与 `source-final-hashes.json` 绑定10个生产源码完整SHA且首尾相等；生产文件新增修改0。Go仍 `go1.27.3 darwin/arm64`，离线构建参数同第3节；CLI/原样 operational/私有坏源/只读路由 wiring 构建均 exit0。
+- 输入只读复用已存在的 immutable 在线快照 `aih-r4-modelsettings-nodeoff-20261118-rX6oAW/snapshot.db`，不是本轮重新打开 live DB；975486976字节，完整 SHA256 `626f76b502b7b36fe1ac3eaec2806583e509814e6976fde6945397089a0c222d` 前后相同。原始三alias表和两credentials表的逐行HMAC首尾均相等；不将此窗口外推为 live credentials 永久不变。
+- 使用 APFS clone 到本次自有 private HOME。gen0 目的只删除**私有** canonical alias 行并置generation0，legacy字段/disabled/目标均不改；这模拟首次读取状态，不造alias、账号或token。canonical 正向使用快照原本 enabled 的另一配置：pattern相同，但target与targetProvider不同，不能冒充旧disabled记录的业务等价。
+- 原 `r4-inspect` bootstrap完整SHA仍 `0c3402226a1dd40e4ff52e68f34e60a227394226a50e57482c2aa01b0a87a040`，只调用真实 Store.Restore/Replace 与 aihserver.New/Serve。额外私有只读 wiring 只调用生产 Builder、RouteCatalog.ResolveModel、AtomicCatalog.ReadProtocolModelView/ResolveProtocolRoute、Store.LoadRoutingCandidates；模型名从同一 `aliasdisplay.List` 读取，未复制路由/展示算法、构造消息或注入 mock upstream。
+
+| 实际构件 | 完整 SHA256 |
+| --- | --- |
+| `cmd/aih-server` | `0e3249118c4031b78ecd8968fd7c3c759270028bd3285fe2f8ac5ada24887787` |
+| 原样 `r4-inspect` | `1ccf4790716e0e97e032bfdd8e58fd9f296129631f79e1999a115fceea2cd188` |
+| 私有 bad-source overlay | `49042e6b802bede28084de05d838a889084c56e6660ba0ed53f681f666789ff3` |
+| 最终只读路由 wiring v3 | `03275e1e55386f819515b840217c09272c98767164df7f833e9e9e8ebaf63fc0` |
+
+bad-source 仍只用私有 build overlay 改内嵌 JSON 的一个 payloadHash hex字节；所有row、规则和Go生产源码不改，故障构件不是可发布产物。最终路由 bootstrap SHA `f6c8c9a7f875bba98e58b319ad428159cbec2d0f8f9ac7909ccd09bce5cc6bb5` 以低敏source-index实值为准，不沿用v1/v2 hash。
+
+### 本轮真实矩阵与路由分级
+
+| 操作 | 实际结果与边界 |
+| --- | --- |
+| 01–02 canonical 非空，含坏展示源重启 | exit0，原1行/gen43/display0均保持；三alias表不变，未回放legacy |
+| 04–05 真wildcard空/gen0首迁与新进程重启 | 各exit0，1行/display10/gen1；新进程仍gen1，legacy HMAC不变 |
+| 07–09 真实 Replace清空、好源/坏源各新进程重启 | 各exit0，空表/gen2；不读取坏来源，不复活 |
+| 10–11 源checksum失败与同目的good重试 | 坏源exit1、明确checksum mismatch，三alias表HMAC不变、0行/gen0；good新进程exit0→1行/display10/gen1。仅是读源阶段rollback，不冒称insert后中途故障rollback |
+| 12–14 只读wiring v2 | 各exit0；canonical accepted1，清空/旧disabled accepted0。v2的2route/2candidate是两protocol累计，**不是两个distinct账号**，最终以20–22分项为准 |
+| 15–17 三个真实严格Host | 均exit0、health200；gen0→gen1与重启1，墓碑仍2；旧disabled均accepted0，不作正向路由 |
+| 18–19 canonical正向严格Host与真实GoCRUD/重启 | 原gen43/applied43/accepted1；通过正式Go CRUD重存同7业务字段，HTTP200→gen44/display10、10个实际SDK名字全部在`/v1/models`；新进程gen44/applied44/accepted1/display10仍在 |
+| 20 最终只读生产路由分层 | 对该真实enabled配置，同SDK10名字在OpenAI chat及Anthropic messages各自：alias-only生产规则ResolveModel命中10、完整生产view命中目标10、原生精确protocol解析目标10；每protocol真实账号候选去重均1，跨两个protocol也只有**1个**。不是仅accepted或展示列表，也没有执行外部推理 |
+| 21–22 旧disabled/墓碑反向 | exit0；旧disabled gen1/display10但accepted0、上述路由/候选全0；墓碑gen2/0行/accepted0，五表均不变 |
+| 23 真production CLI | exit0，三个HTTP200均gen/applied1/1、accepted0；系统PATH无node，采样未见Node child，未配置Node host/RPC、supervise/frontdoor。此层不施加OS noexec/出站网禁令，不能外推OS保证 |
+
+15–19确为**5个**独立Host PID（33479/33712/34055/34118/34139），本轮计数不套用第11节旧根“四PID”修正。严格Host/Store/只读wiring使用 empty PATH、private HOME，Seatbelt禁foreign exec/fork/出站网并禁止读取真实HOME/仓库；仅自有Go binary获literal exec，Host仅开loopback入站/bind。未伪造Darwin identity/ps；production CLI的系统PATH证据与严格Host/library证据分列。记录了实际PID/PPID/子进程树与退出，不以PATH本身代替OS约束。两私有credentials表在有逐表前后采集的Store/Host/最终route/CLI操作中HMAC均相等；原immutable输入快照完整SHA不变。
+
+### 原失败保留、低敏索引与当前边界
+
+- 私有HMAC采集器初次 `ORDER BY rowid` 遇已有WITHOUT ROWID表而exit1，尚未启动Go业务操作；保留原script/hash/脱敏原因，改为真实全部列排序，未改产品或数据。
+- 私有只读路由wiring v1逐项调用WithRelayProviders，误把“替换registry”当“累加”，03/06真实exit1为缺codebuddy factory。保留原binary/bootstrap/两失败摘要；v2只把同production manifest既有IDs汇总后一次注入，exit0，未新增factory或调整生产规则。v3再把alias-only与full/native解析、distinct账号计数分开，不抹v2统计歧义。
+- 一共23个真实Go运行PID：20个exit0，03/06两个私有composition失败exit1，10一个预期坏源exit1；初次HMAC采集器失败在该23PID之外。全部已退出，06:35最终`lsof +D` exit1/stdout0，PID/PPID及句柄检查仅代表记录时点。
+- 49项最终低敏证据索引 `evidence/evidence-index-final.json` SHA256 `3d498346a9d32ed81256953c56042791d53a1fce908b4a40a98cd25d98ac1d29`；包括完整source/binary/旧失败/Store/Host/CLI/分层route矩阵、来源/HMAC/进程证明。原始DB、请求/响应与raw log不进仓库。
+- 本新root的107项敏感leaf清单 `evidence/sensitive-cleanup-manifest.json` SHA256 `7a413376b73bea18c3e63ab1d6b845f4afd4b3fd01bdc57ef2d29b80d74295ed`，逻辑4878072735字节；逐realpath/祖先非symlink/uid/nlink1与完整SHA已记。**新独立cleanup许可仍待批准，删除0**；不复用任何旧根许可，保留root/source/binary/低敏证据/自有lock inode，不碰真实库/仓库/他人。
+- 当前“legacy wildcard 缺Go展示源而启动失败”已关闭，Go CRUD同源+真实本地解析/索引候选有新构件实证。仍缺真实non-wildcard legacy首迁样本、insert之后故障回滚/全取消竞态、实际上游推理（尤其旧disabled别名原targetProvider的relay执行）；不造样本或开启旧alias来补绿。该窄矩阵不能宣布整个R4、公开Node调用方/服务退役、共享loaded/deploy完成。
+- 本轮只追加原唯一验收文档；最终独立review、本人doc-only显式pathspec checkpoint与remote包含验证在真实发生前均pending，不能自动沿用旧review。另一已到的legacyPUT两source批准`pm-f7141080`与本节生产零改动阶段分开，未混入本节写集。

@@ -71,22 +71,23 @@ type ProviderStats struct {
 
 // DaemonState 暴露 OAuth 主动续期守护进程的可观测状态快照。
 type DaemonState struct {
-	Running          bool                     `json:"running"`
-	Enabled          bool                     `json:"enabled"`
-	Delegated        bool                     `json:"delegated"`
-	IntervalMs       int64                    `json:"intervalMs"`
-	SkewMs           int64                    `json:"skewMs"`
-	TickCount        int64                    `json:"tickCount"`
-	LastTickAt       int64                    `json:"lastTickAt"`
-	LastDurationMs   int64                    `json:"lastDurationMs"`
-	RefreshedCount   int64                    `json:"refreshedCount"`
-	SkippedCount     int64                    `json:"skippedCount"`
-	SuppressedCount  int64                    `json:"suppressedCount"`
-	InvalidatedCount int64                    `json:"invalidatedCount"`
-	ErrorCount       int64                    `json:"errorCount"`
-	ActiveSuppressed int                      `json:"activeSuppressed"`
-	LastError        string                   `json:"lastError,omitempty"`
-	Providers        map[string]ProviderStats `json:"providers,omitempty"`
+	Running              bool                     `json:"running"`
+	Enabled              bool                     `json:"enabled"`
+	Delegated            bool                     `json:"delegated"`
+	IntervalMs           int64                    `json:"intervalMs"`
+	SkewMs               int64                    `json:"skewMs"`
+	TickCount            int64                    `json:"tickCount"`
+	LastTickAt           int64                    `json:"lastTickAt"`
+	LastDurationMs       int64                    `json:"lastDurationMs"`
+	RefreshedCount       int64                    `json:"refreshedCount"`
+	SkippedCount         int64                    `json:"skippedCount"`
+	SuppressedCount      int64                    `json:"suppressedCount"`
+	InvalidatedCount     int64                    `json:"invalidatedCount"`
+	ErrorCount           int64                    `json:"errorCount"`
+	ActiveSuppressed     int                      `json:"activeSuppressed"`
+	LastError            string                   `json:"lastError,omitempty"`
+	Providers            map[string]ProviderStats `json:"providers,omitempty"`
+	CredentialRejections RejectedObservationState `json:"credentialRejections"`
 }
 
 // TickSummary 描述单次 Tick 或手动 Trigger 的执行汇总结果。
@@ -123,6 +124,11 @@ type Daemon struct {
 	suppressions              *suppressionStore
 	testTickCh                <-chan time.Time
 	runGate                   chan struct{}
+	rejectedQueue             chan accountcredentials.CredentialObservation
+	rejectedPending           map[accountcredentials.CredentialObservation]struct{}
+	rejectedState             RejectedObservationState
+	runCtx                    context.Context
+	closed                    bool
 
 	mu               sync.Mutex
 	running          bool
@@ -194,6 +200,8 @@ func New(opts Options) *Daemon {
 		suppressions:              newSuppressionStore(opts.AIHomeDir, nowFn()),
 		testTickCh:                opts.testTickCh,
 		runGate:                   make(chan struct{}, 1),
+		rejectedQueue:             make(chan accountcredentials.CredentialObservation, rejectedObservationCapacity),
+		rejectedPending:           make(map[accountcredentials.CredentialObservation]struct{}),
 		providers:                 make(map[string]ProviderStats),
 	}
 }
@@ -211,13 +219,14 @@ func (d *Daemon) Start(ctx context.Context) {
 	}
 
 	d.mu.Lock()
-	if d.running {
+	if d.running || d.closed || ctx.Err() != nil {
 		d.mu.Unlock()
 		return
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	doneCh := make(chan struct{})
 	d.running = true
+	d.runCtx = runCtx
 	d.cancel = cancel
 	d.doneCh = doneCh
 	d.mu.Unlock()
@@ -227,11 +236,13 @@ func (d *Daemon) Start(ctx context.Context) {
 
 func (d *Daemon) loop(ctx context.Context, doneCh chan struct{}) {
 	defer func() {
-		close(doneCh)
 		d.mu.Lock()
 		d.running = false
+		d.runCtx = nil
 		d.cancel = nil
 		d.doneCh = nil
+		d.discardRejectedObservationsLocked()
+		close(doneCh)
 		d.mu.Unlock()
 	}()
 
@@ -262,6 +273,8 @@ func (d *Daemon) loop(ctx context.Context, doneCh chan struct{}) {
 		select {
 		case <-ctx.Done():
 			return
+		case observation := <-d.rejectedQueue:
+			d.consumeRejectedObservation(ctx, observation)
 		case <-tickCh:
 			if ctx.Err() != nil {
 				return
@@ -651,23 +664,27 @@ func (d *Daemon) State() DaemonState {
 	for k, v := range d.providers {
 		providersCopy[k] = v
 	}
+	rejectedState := d.rejectedState
+	rejectedState.Capacity = rejectedObservationCapacity
+	rejectedState.Pending = len(d.rejectedPending)
 	return DaemonState{
-		Running:          d.running,
-		Enabled:          d.enabled,
-		Delegated:        d.delegateCredentialRefresh,
-		IntervalMs:       d.interval.Milliseconds(),
-		SkewMs:           d.skew.Milliseconds(),
-		TickCount:        d.tickCount,
-		LastTickAt:       d.lastTickAt,
-		LastDurationMs:   d.lastDurationMs,
-		RefreshedCount:   d.refreshedCount,
-		SkippedCount:     d.skippedCount,
-		SuppressedCount:  d.suppressedCount,
-		InvalidatedCount: d.invalidatedCount,
-		ErrorCount:       d.errorCount,
-		ActiveSuppressed: activeSuppressed,
-		LastError:        d.lastError,
-		Providers:        providersCopy,
+		CredentialRejections: rejectedState,
+		Running:              d.running,
+		Enabled:              d.enabled,
+		Delegated:            d.delegateCredentialRefresh,
+		IntervalMs:           d.interval.Milliseconds(),
+		SkewMs:               d.skew.Milliseconds(),
+		TickCount:            d.tickCount,
+		LastTickAt:           d.lastTickAt,
+		LastDurationMs:       d.lastDurationMs,
+		RefreshedCount:       d.refreshedCount,
+		SkippedCount:         d.skippedCount,
+		SuppressedCount:      d.suppressedCount,
+		InvalidatedCount:     d.invalidatedCount,
+		ErrorCount:           d.errorCount,
+		ActiveSuppressed:     activeSuppressed,
+		LastError:            d.lastError,
+		Providers:            providersCopy,
 	}
 }
 
@@ -695,6 +712,12 @@ func (d *Daemon) Stop() {
 
 // Close 实现 io.Closer，安全停止后台协程。
 func (d *Daemon) Close() error {
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	d.closed = true
+	d.mu.Unlock()
 	d.Stop()
 	return nil
 }

@@ -16,6 +16,12 @@ var (
 	ErrInvalidObservedAttempt = errors.New("凭据观察终态写入请求无效")
 )
 
+// CredentialRejectionScheduler 只接收请求实际读取的低敏凭据代次。
+// 调度失败不改变当前请求的终态，也不触发请求重放。
+type CredentialRejectionScheduler interface {
+	TryScheduleCredentialRejection(accountcredentials.CredentialObservation) bool
+}
+
 // ObservedAttemptRecorder 是所有推理入口共享的终态写入守卫。
 //
 // 只有请求读取的凭据仍是账号当前快照时才允许写运行态；凭据已经轮换或存储
@@ -94,6 +100,14 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 	}
 	if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
 		return false, err
+	}
+	status, known := failure.ObservedHTTPStatus()
+	if known && status == 401 && !observation.IsStaticSecret() &&
+		failure.RuntimeKind() == runtimecore.FailureCredentialRejected &&
+		failure.BlockDirective().RecoveryTrigger() == runtimecore.RecoveryCredentialsUpdated {
+		if scheduler, ok := recorder.attempts.(CredentialRejectionScheduler); ok {
+			scheduler.TryScheduleCredentialRejection(observation)
+		}
 	}
 	return true, nil
 }

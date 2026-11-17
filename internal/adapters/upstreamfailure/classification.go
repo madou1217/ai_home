@@ -109,9 +109,10 @@ func (response Response) RetryAfter() time.Duration {
 
 // Classification 是 Provider 语义映射后的不可变运行态分类。
 type Classification struct {
-	kind           runtimecore.FailureKind
-	retryAfter     time.Duration
-	blockDirective runtimecore.BlockDirective
+	kind               runtimecore.FailureKind
+	retryAfter         time.Duration
+	blockDirective     runtimecore.BlockDirective
+	observedHTTPStatus int
 }
 
 // NewClassification 创建不能绕过领域 cooldown 上限的分类结果。
@@ -202,6 +203,21 @@ func (classification Classification) BlockDirective() runtimecore.BlockDirective
 	return classification.blockDirective
 }
 
+// WithObservedHTTPStatus 只在调用方持有真实 HTTP 响应时附加低敏状态证据。
+// 流内错误和配置规则不得用 payload 中的状态冒充 HTTP 观察。
+func (classification Classification) WithObservedHTTPStatus(status int) (Classification, error) {
+	if !classification.IsValid() || status < 200 || status > 599 {
+		return Classification{}, ErrInvalidClassification
+	}
+	classification.observedHTTPStatus = status
+	return classification, nil
+}
+
+// ObservedHTTPStatus 返回真实 HTTP 状态；零值表示来源未知。
+func (classification Classification) ObservedHTTPStatus() (int, bool) {
+	return classification.observedHTTPStatus, classification.observedHTTPStatus != 0
+}
+
 // IsValid 判断分类是否能安全提交给运行态 Registry。
 func (classification Classification) IsValid() bool {
 	_, err := newClassification(
@@ -209,7 +225,8 @@ func (classification Classification) IsValid() bool {
 		classification.retryAfter,
 		classification.blockDirective,
 	)
-	return err == nil
+	return err == nil && (classification.observedHTTPStatus == 0 ||
+		classification.observedHTTPStatus >= 200 && classification.observedHTTPStatus <= 599)
 }
 
 // validBlockDirective 验证硬阻塞必须带指令，其他动作必须保持零值。

@@ -31,12 +31,14 @@ func New(
 		return inferencegateway.AttemptFailure{},
 			sharedfailure.ErrInvalidClassification
 	}
+	status, _ := classification.ObservedHTTPStatus()
 	failure, err := inferencegateway.NewAttemptFailure(
 		inferencegateway.AttemptFailureInput{
-			ResponseFailure: responseFailure,
-			RuntimeKind:     kind,
-			RetryAfter:      classification.RetryAfter(),
-			BlockDirective:  classification.BlockDirective(),
+			ResponseFailure:    responseFailure,
+			RuntimeKind:        kind,
+			ObservedHTTPStatus: status,
+			RetryAfter:         classification.RetryAfter(),
+			BlockDirective:     classification.BlockDirective(),
 		},
 	)
 	if err != nil {

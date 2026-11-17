@@ -956,6 +956,13 @@ func (handler *Handler) recordHTTPFailure(
 		// 没有失败证据（例如 2xx）或分类不可用：不换号，按上游原样交付。
 		return httpFailureObservation{}
 	}
+	// 分类与交付保持原策略；边缘拒绝只否决刷新证据，不能借 401 刷凭据。
+	if _, edge := sharedfailure.ObserveEdgeRejection(response.StatusCode, response.Header, prefix); !edge {
+		classification, err = classification.WithObservedHTTPStatus(response.StatusCode)
+		if err != nil {
+			return httpFailureObservation{}
+		}
+	}
 	failure := httpFailureObservation{classification: classification, classified: true}
 	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：分类是 NoStateChange，
 	// 记账只留一次可观察的失败结果（不阻塞、不冷却、不换号），交付由调用方合成 502。

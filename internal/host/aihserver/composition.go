@@ -323,13 +323,14 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	// 所有运行态记账入口都经过装饰器，为账号页状态条计数，见 account_outcomes.go。
 	accountRuntime := outcomeRecordingRuntime{
-		serverAccountRuntime: inMemoryRuntime,
-		outcomes:             outcomeRecorder,
-		usage:                accountusagefeed.NewFeed(accountusagefeed.DefaultCapacity, time.Now()),
-		usageLedger:          store,
-		accounts:             store,
-		errorLog:             options.ErrorLog,
-		quotaRefresh:         newQuotaFailureRefresh(store, time.Now, options.ErrorLog),
+		serverAccountRuntime:       inMemoryRuntime,
+		outcomes:                   outcomeRecorder,
+		usage:                      accountusagefeed.NewFeed(accountusagefeed.DefaultCapacity, time.Now()),
+		usageLedger:                store,
+		accounts:                   store,
+		errorLog:                   options.ErrorLog,
+		quotaRefresh:               newQuotaFailureRefresh(store, time.Now, options.ErrorLog),
+		credentialRejectionRefresh: newCredentialRejectionRefresh(),
 	}
 	// 账号删除的宿主运行时探测与强制释放都在 Go 侧完成：Node 不再为删除提供
 	// 宿主清理回调，tmux 会话按登记 + 账号 socket 两份事实核对，探测不确定即失败关闭。
@@ -1931,6 +1932,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
+	}
+	if binder, ok := webuiDeps.AccountRuntime.(credentialRejectionRefreshBinder); ok {
+		binder.bindCredentialRejectionRefresh(backgroundDaemons.tokenRefresh)
 	}
 	daemonsRoutes, err := backgroundDaemons.Routes(authorizer)
 	if err != nil {

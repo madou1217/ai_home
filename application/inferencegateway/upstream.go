@@ -144,6 +144,7 @@ func (invocation Invocation) CredentialObservation() accountcredentials.Credenti
 type AttemptFailure struct {
 	responseFailure                        inference.ResponseFailure
 	responseMetadata                       inference.ResponseMetadata
+	observedHTTPStatus                     int
 	runtimeKind                            runtimecore.FailureKind
 	retryAfter                             time.Duration
 	blockDirective                         runtimecore.BlockDirective
@@ -158,6 +159,8 @@ type AttemptFailureInput struct {
 	ResponseMetadata inference.ResponseMetadata
 	// RuntimeKind 是账号运行态识别的稳定失败类型。
 	RuntimeKind runtimecore.FailureKind
+	// ObservedHTTPStatus 只接受真实 HTTP 响应证据，0 表示未知。
+	ObservedHTTPStatus int
 	// RetryAfter 只允许用于有限时间自动恢复的模型 cooldown。
 	RetryAfter time.Duration
 	// BlockDirective 只允许用于 credential、quota 或 policy 硬阻塞。
@@ -174,6 +177,7 @@ func NewAttemptFailure(
 	policy, err := runtimecore.PolicyFor(input.RuntimeKind)
 	if err != nil ||
 		!input.ResponseFailure.IsValid() ||
+		input.ObservedHTTPStatus != 0 && (input.ObservedHTTPStatus < 200 || input.ObservedHTTPStatus > 599) ||
 		input.RetryAfter < 0 ||
 		input.RetryAfter > runtimecore.MaxCooldownHint ||
 		input.RetryAfter%time.Millisecond != 0 ||
@@ -193,6 +197,7 @@ func NewAttemptFailure(
 		responseFailure:                        input.ResponseFailure,
 		responseMetadata:                       input.ResponseMetadata,
 		runtimeKind:                            input.RuntimeKind,
+		observedHTTPStatus:                     input.ObservedHTTPStatus,
 		retryAfter:                             input.RetryAfter,
 		blockDirective:                         input.BlockDirective,
 		deferAccountFailureUntilRequestOutcome: input.DeferAccountFailureUntilRequestOutcome,
@@ -207,6 +212,11 @@ func (failure AttemptFailure) ResponseFailure() inference.ResponseFailure {
 // RuntimeKind 返回账号运行态识别的失败类型。
 func (failure AttemptFailure) RuntimeKind() runtimecore.FailureKind {
 	return failure.runtimeKind
+}
+
+// ObservedHTTPStatus 返回真实 HTTP 状态及其是否已知，不改变客户端响应。
+func (failure AttemptFailure) ObservedHTTPStatus() (int, bool) {
+	return failure.observedHTTPStatus, failure.observedHTTPStatus != 0
 }
 
 // RetryAfter 返回不超过领域上限的有限恢复提示。
@@ -231,6 +241,7 @@ func (failure AttemptFailure) IsValid() bool {
 			ResponseFailure:                        failure.responseFailure,
 			ResponseMetadata:                       failure.responseMetadata,
 			RuntimeKind:                            failure.runtimeKind,
+			ObservedHTTPStatus:                     failure.observedHTTPStatus,
 			RetryAfter:                             failure.retryAfter,
 			BlockDirective:                         failure.blockDirective,
 			DeferAccountFailureUntilRequestOutcome: failure.deferAccountFailureUntilRequestOutcome,
@@ -248,9 +259,10 @@ func (failure AttemptFailure) forStaticSecret() AttemptFailure {
 		return failure
 	}
 	converted, err := NewAttemptFailure(AttemptFailureInput{
-		ResponseFailure:  failure.responseFailure,
-		ResponseMetadata: failure.responseMetadata,
-		RuntimeKind:      runtimecore.FailureStaticCredentialRejected,
+		ResponseFailure:    failure.responseFailure,
+		ResponseMetadata:   failure.responseMetadata,
+		RuntimeKind:        runtimecore.FailureStaticCredentialRejected,
+		ObservedHTTPStatus: failure.observedHTTPStatus,
 	})
 	if err != nil {
 		return failure

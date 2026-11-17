@@ -38,6 +38,8 @@ type outcomeRecordingRuntime struct {
 	errorLog    *log.Logger
 	// quotaRefresh 在额度耗尽类失败后排一次立即的额度刷新（见 quota_failure_refresh.go）。
 	quotaRefresh *quotaFailureRefresh
+	// credentialRejectionRefresh 共享原请求观察到唯一 token daemon 的晚绑定端口。
+	credentialRejectionRefresh *credentialRejectionRefresh
 }
 
 // restoreSchedulingRuntime 是内层运行态的可选能力：人工清空账号阻塞。

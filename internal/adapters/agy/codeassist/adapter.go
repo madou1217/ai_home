@@ -222,6 +222,8 @@ func classifyHTTPFailure(
 	response *http.Response,
 	observedAt time.Time,
 ) (inferencegateway.AttemptResult, error) {
+	// 有界预读后回放原 body；仅否决刷新证据，不改写既有分类或 renderer。
+	_, edgeRejected := sharedfailure.ObserveEdgeRejectionResponse(response)
 	var envelope struct {
 		Error struct {
 			Code    json.RawMessage `json:"code"`
@@ -255,6 +257,12 @@ func classifyHTTPFailure(
 	if err != nil {
 		return malformedAttempt()
 	}
+	if !edgeRejected {
+		classification, err = classification.WithObservedHTTPStatus(response.StatusCode)
+		if err != nil {
+			return malformedAttempt()
+		}
+	}
 	failure, err := newAgyAttemptFailure(classification, deferred)
 	if err != nil {
 		return malformedAttempt()
@@ -285,9 +293,11 @@ func newAgyAttemptFailure(
 	if err != nil {
 		return inferencegateway.AttemptFailure{}, err
 	}
+	status, _ := classification.ObservedHTTPStatus()
 	return inferencegateway.NewAttemptFailure(inferencegateway.AttemptFailureInput{
 		ResponseFailure:                        responseFailure,
 		RuntimeKind:                            classification.Kind(),
+		ObservedHTTPStatus:                     status,
 		RetryAfter:                             classification.RetryAfter(),
 		BlockDirective:                         classification.BlockDirective(),
 		DeferAccountFailureUntilRequestOutcome: deferred,

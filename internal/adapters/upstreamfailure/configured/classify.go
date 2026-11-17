@@ -45,7 +45,11 @@ func ClassifyWithRules(
 			return classification, nil
 		}
 	}
-	return builtin()
+	classification, err := builtin()
+	if err != nil {
+		return classification, err
+	}
+	return classification.WithObservedHTTPStatus(statusCode)
 }
 
 // ClassifySSEWithRules 是流内事件（SSE / WebSocket 帧）的求值装饰器。

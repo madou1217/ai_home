@@ -88,6 +88,7 @@ type DaemonState struct {
 	LastError            string                   `json:"lastError,omitempty"`
 	Providers            map[string]ProviderStats `json:"providers,omitempty"`
 	CredentialRejections RejectedObservationState `json:"credentialRejections"`
+	AccountBlockRecovery string                   `json:"accountBlockRecovery"`
 }
 
 // TickSummary 描述单次 Tick 或手动 Trigger 的执行汇总结果。
@@ -491,7 +492,7 @@ func (d *Daemon) executeCycle(ctx context.Context, providerFilter string) (TickS
 				stats.summary.Refreshed++
 				pStats.Refreshed++
 				d.suppressions.Clear(outcome.job.accountRef.String(), finishNow)
-				_, _ = clearAccountAuthInvalid(ctx, d.store, d.runtime, outcome.job.accountRef, finishNow)
+				// 刷新成功不证明阻塞代次或持久化版本，保留阻塞等待原子恢复。
 			case outcome.skipped:
 				stats.summary.Skipped++
 				pStats.Skipped++
@@ -669,6 +670,7 @@ func (d *Daemon) State() DaemonState {
 	rejectedState.Pending = len(d.rejectedPending)
 	return DaemonState{
 		CredentialRejections: rejectedState,
+		AccountBlockRecovery: "retained_pending_generation_provenance",
 		Running:              d.running,
 		Enabled:              d.enabled,
 		Delegated:            d.delegateCredentialRefresh,

@@ -59,34 +59,11 @@ type Store struct {
 
 // Open 创建或校验 aih.db，并返回可并发使用的账号 Store。
 func Open(ctx context.Context, options OpenOptions) (*Store, error) {
-	databasePath, err := DatabasePath(options.AIHomeDir)
+	store, err := openSchemaStore(ctx, options)
 	if err != nil {
 		return nil, err
 	}
-	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
-		return nil, err
-	}
-	databasePath, err = prepareDatabasePath(options)
-	if err != nil {
-		return nil, err
-	}
-	db, err := sql.Open("sqlite", buildDatabaseDSN(databasePath))
-	if err != nil {
-		return nil, fmt.Errorf("打开账号数据库失败: %w", err)
-	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(4)
-
-	store := &Store{
-		db:          db,
-		catalog:     options.Catalog,
-		credentials: newCredentialRegistry(),
-		profiles:    newProfileRegistry(),
-	}
-	if err := store.initialize(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
+	db := store.db
 	// 用户可见的 CLI 编号一直记录在 Node 台账 account_cli_aliases；Go 自增序列表
 	// 与它是两套编号。每次打开账号库都把两份收敛，保证 `aih ls`、`aih <id>`
 	// 和 WebUI 看到的是同一个数字。缺台账（全新安装）时是空操作。
@@ -108,10 +85,6 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 		return nil, err
 	}
 	store.routes = routes
-	if err := os.Chmod(databasePath, databaseFileMode); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("收紧账号数据库权限失败: %w", err)
-	}
 	return store, nil
 }
 

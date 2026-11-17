@@ -173,13 +173,13 @@ func initialize(ctx context.Context, opts Options, l layout, report *Report) err
 			return err
 		}
 	}
-	// There has never been a legacy file in this private directory. Open owns
-	// canonical initialization and schema upgrades, without a gate bypass.
-	store, err := sqliteaccount.Open(ctx, sqliteaccount.OpenOptions{AIHomeDir: l.scratch, Catalog: catalog})
-	if err != nil {
+	// This private directory has no legacy file yet. Initialize only the schema:
+	// normal Open also reconciles aliases and removes credentials, which would
+	// mutate preserved account content before the bidirectional equality check.
+	if err := sqliteaccount.InitializeSchema(ctx, sqliteaccount.OpenOptions{AIHomeDir: l.scratch, Catalog: catalog}); err != nil {
 		return fmt.Errorf("distributiondata: initialize private canonical: %w", err)
 	}
-	return store.Close()
+	return nil
 }
 
 func identity(ctx context.Context, path string) (id, version int, resultErr error) {

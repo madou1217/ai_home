@@ -15,6 +15,9 @@ import (
 )
 
 func runCodexStatePage(args []string) error {
+	if len(args) > 0 && args[0] == "--thread-list-visibility" {
+		return runCodexThreadListVisibility(args[1:])
+	}
 	if len(args) > 0 && args[0] == "--thread-list-response" {
 		return runCodexThreadListResponse(args[1:])
 	}
@@ -106,5 +109,49 @@ func runCodexThreadListResponse(args []string) error {
 		return err
 	case <-ctx.Done():
 		return errors.New("codex_state_response_input_timeout")
+	}
+}
+
+// Visibility consumes only an existing enabled thread/list response. It does
+// not start a host, mutate state or own the upstream stdio process.
+func runCodexThreadListVisibility(args []string) error {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-thread-list-visibility-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_state_visibility_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	type input struct {
+		data []byte
+		err  error
+	}
+	read := make(chan input, 1)
+	go func() {
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, codexstatepage.MaxVisibilityInput+1))
+		read <- input{data, err}
+	}()
+	select {
+	case in := <-read:
+		if in.err != nil || len(in.data) > codexstatepage.MaxVisibilityInput {
+			return errors.New("codex_state_visibility_input_invalid")
+		}
+		result, err := codexstatepage.CompileThreadListVisibility(ctx, in.data)
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return errors.New("codex_state_visibility_cancelled")
+		}
+		stopWrite := context.AfterFunc(ctx, func() { _ = os.Stdout.Close() })
+		defer stopWrite()
+		_, err = os.Stdout.Write(append(result, '\n'))
+		return err
+	case <-ctx.Done():
+		return errors.New("codex_state_visibility_input_timeout")
 	}
 }

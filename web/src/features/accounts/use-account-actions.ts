@@ -735,36 +735,6 @@ export function useAccountActions({
     };
   }, []);
 
-  React.useEffect(() => {
-    if (!addJobId) return;
-    let cancelled = false;
-    let timer: number | null = null;
-
-    const poll = async () => {
-      try {
-        const job = await accountsAPI.getAddJob(addJobId);
-        if (cancelled) return;
-        handleAuthJobUpdate(job);
-        // 登录作业是用户主动打开的短生命周期任务：只在 running 时继续查，
-        // 进入终态立即停止；这不是页面级后台轮询。
-        if (job.status === 'running') {
-          const delay = Math.max(1000, Number(job.pollIntervalMs) || 1000);
-          timer = window.setTimeout(() => { void poll(); }, delay);
-        }
-      } catch (_error) {
-        if (!cancelled) {
-          setAddJobId(null);
-        }
-      }
-    };
-
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [addJobId, handleAuthJobUpdate]);
-
   // 外部账号插件的登录任务：独立轮询入口，成功/失败都走同一套进度弹窗。
   React.useEffect(() => {
     if (!pluginLoginJobId) return;
@@ -1954,7 +1924,9 @@ export function useAccountActions({
         onSubmitBrowserCallback: handleSubmitBrowserCallback,
         onPluginLoginSubmitValueChange: setPluginLoginSubmitValue,
         onSubmitPluginLogin: handleSubmitPluginLogin,
-        onConfirmCliInstall: handleConfirmCliInstall
+        onConfirmCliInstall: handleConfirmCliInstall,
+        onRefreshJob: accountsAPI.getAddJob,
+        onJobUpdate: handleAuthJobUpdate
       },
       import: {
         open: importModalVisible,

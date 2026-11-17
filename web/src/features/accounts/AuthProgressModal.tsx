@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { writeClipboardText } from '@/utils/clipboard';
 import { Button, Card, Collapse, Input, Modal, Space, Tooltip, Typography, message } from 'antd';
 import { CopyOutlined, GlobalOutlined } from '@ant-design/icons';
@@ -208,6 +209,9 @@ interface AuthProgressModalProps {
   onInstallLocalClient: (kind?: 'desktop' | 'cli') => void;
   onScanHostAccounts: () => void;
   onConfirmCliInstall: () => void;
+  /** 登录作业状态刷新端口；弹窗自己推进进度，避免父层漏轮询时一直停在等待授权。 */
+  onRefreshJob?: (jobId: string) => Promise<AccountAddJob>;
+  onJobUpdate?: (job: AccountAddJob) => void;
   /** 切到 social（Google / Github）设备流 —— 与 Builder ID 是两套协议。 */
   onStartSocialDevice: (loginProvider: 'Google' | 'Github') => void;
 }
@@ -237,12 +241,47 @@ export function AuthProgressModal({
   onInstallLocalClient,
   onScanHostAccounts,
   onConfirmCliInstall,
+  onRefreshJob,
+  onJobUpdate,
   onStartSocialDevice
 }: AuthProgressModalProps) {
   // 服务端中介流程（zcode server-flow）：没有本机回调，界面只展示授权链接并等待上游轮询结果。
   const sessionFlow = Boolean(
     addJob?.sessionFlow || /:server-flow$/.test(String(addJob?.authStrategy || ''))
   );
+
+  // 弹窗自己推进作业状态：父层 SSE/轮询任一失效时，进度仍能从 running 走到终态。
+  // 只在弹窗打开且作业仍在运行时查询，终态/关闭立即停止。
+  const refreshRef = useRef(onRefreshJob);
+  const updateRef = useRef(onJobUpdate);
+  refreshRef.current = onRefreshJob;
+  updateRef.current = onJobUpdate;
+  useEffect(() => {
+    if (!open || !addJob || addJob.status !== 'running') return;
+    const jobId = addJob.id;
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = async () => {
+      const refresh = refreshRef.current;
+      if (!refresh) return;
+      try {
+        const next = await refresh(jobId);
+        if (cancelled) return;
+        updateRef.current?.(next);
+        if (next.status === 'running') {
+          timer = window.setTimeout(tick, Math.max(1000, Number(next.pollIntervalMs) || 1000));
+        }
+      } catch (_error) {
+        if (!cancelled) timer = window.setTimeout(tick, 3000);
+      }
+    };
+    timer = window.setTimeout(tick, 800);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [open, addJob?.id, addJob?.status]);
+
   // 扫描来源（handler = host-account-scan）：本机登录态是整批的，走既有「扫描本机账号」入库。
   const preferredSource = authSources
     ? (authSources.sources || []).find((source) => source.id === authSources.preferredSourceId) || null

@@ -117,6 +117,8 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         onInstallLocalClient={authProgress.onInstallLocalClient}
         onScanHostAccounts={authProgress.onScanHostAccounts}
         onConfirmCliInstall={authProgress.onConfirmCliInstall}
+        onRefreshJob={authProgress.onRefreshJob}
+        onJobUpdate={authProgress.onJobUpdate}
         onStartSocialDevice={authProgress.onStartSocialDevice}
       />
       <AccountAppInstallModal

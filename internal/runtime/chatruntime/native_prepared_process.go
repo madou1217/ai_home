@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -39,12 +40,15 @@ func (r *execNativeTurnRunner) startPreparedNativeProcess(
 			startErr = errors.Join(startErr, release())
 		}
 	}()
-	binPath, err := providercli.ResolveBinary(plan.Target.Provider, plan.BinaryName)
+	launch, err := providercli.ResolveLaunchBinary(plan.Target.Provider, plan.BinaryName, r.hostHomeDir, runtime.GOOS)
 	if err != nil {
 		return nil, NewError("provider_cli_not_found", http.StatusServiceUnavailable, map[string]any{
 			"provider": plan.Target.Provider, "message": err.Error(),
 		})
 	}
+	binPath := launch.Path
+	launchArgs := append(append([]string(nil), launch.PrefixArgs...), plan.Args...)
+	launchEnv := providercli.ApplyLaunchEnv(plan.Env, launch.Env)
 	workDir := strings.TrimSpace(req.Session.ProjectPath)
 	if workDir == "" {
 		if dir, err := ChatWorkingDirectory(r.aiHomeDir, req.Session.SessionID); err == nil {
@@ -59,18 +63,18 @@ func (r *execNativeTurnRunner) startPreparedNativeProcess(
 		return nil, NewError("native_execution_transport_mismatch", http.StatusUnprocessableEntity, nil)
 	}
 	if plan.Target.Provider == "agy" {
-		if err := verifyAGYStreamProtocol(ctx, binPath, workDir, plan.Env); err != nil {
+		if err := verifyAGYStreamProtocol(ctx, binPath, workDir, launchEnv); err != nil {
 			return nil, err
 		}
 	}
 	if interactive {
-		return r.startInteractivePTYWithLaunch(ctx, req, binPath, plan.Args, workDir, plan.Env, release)
+		return r.startInteractivePTYWithLaunch(ctx, req, binPath, launchArgs, workDir, launchEnv, release)
 	}
-	args, cleanup := plan.Args, func() {}
+	args, cleanup := launchArgs, func() {}
 	if strings.EqualFold(req.Provider, "claude") {
 		args, cleanup = configureClaudeApprovalArgs(r.aiHomeDir, r.approvalCallbackURL, req.RunID, req.ApprovalMode, args)
 	}
-	return startNativeStreamProcess(ctx, req, binPath, args, workDir, plan.Env, release, cleanup)
+	return startNativeStreamProcess(ctx, req, binPath, args, workDir, launchEnv, release, cleanup)
 }
 
 // Preserve the existing unprepared PTY entry point. Account-bound launches must

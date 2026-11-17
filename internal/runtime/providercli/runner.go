@@ -202,17 +202,19 @@ func (runner *Runner) runNativeDirect(
 	spec providerlaunch.LaunchSpec,
 	arguments []string,
 ) error {
-	path, err := runner.binaries.Resolve(spec.ProviderID(), spec.Binary())
+	launch, err := ResolveLaunchBinary(spec.ProviderID(), spec.Binary(), runner.hostHomeDir, runner.platform)
 	if err != nil {
 		return err
 	}
-	environment := applyEnvironment(runner.environ(), spec.Environment())
+	path := launch.Path
+	launchArguments := append(append([]string(nil), launch.PrefixArgs...), arguments...)
+	environment := ApplyLaunchEnv(applyEnvironment(runner.environ(), spec.Environment()), launch.Env)
 	// 进程标记：WebUI 运行态与宿主进程扫描靠这个变量把 CLI 归到账号；
 	// 必须先清掉宿主继承值，再写入本次账号。
 	environment = applyAccountRefEnvironment(environment, spec.AccountRef())
 	projection := spec.Projection()
 	if !projection.Required() {
-		return runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, arguments, environment)
+		return runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, launchArguments, environment)
 	}
 	if runner.projection == nil || runner.hostHomeDir == "" {
 		return ErrProjectionUnavailable
@@ -250,7 +252,8 @@ func (runner *Runner) runNativeDirect(
 	// qoder/qodercn 的账号边界在启动参数上（合同声明 --config-dir）：投影根
 	// 就绪后把本次账号的配置根注入 argv，不能落到宿主 ~/.qoder。
 	arguments = applyConfigDirArgument(spec.ProviderID(), arguments, result.Root)
-	runErr := runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, arguments, environment)
+	launchArguments = append(append([]string(nil), launch.PrefixArgs...), arguments...)
+	runErr := runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, launchArguments, environment)
 	// 回写失败必须可见：它意味着账号库停留在旧一代，下一次启动可能拿到失效的
 	// refresh_token。TUI 已经正常退出时把它当本次失败；TUI 自己失败时保留原
 	// 退出码，并向宿主显式携带 CaptureFailed，不能仅打印后丢掉回写失败事实。

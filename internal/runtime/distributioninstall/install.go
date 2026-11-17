@@ -77,21 +77,36 @@ func normalize(o Options) (Options, error) {
 func receiptPath(home string) string     { return filepath.Join(home, "distribution-install.json") }
 func transactionRoot(home string) string { return home + ".install-history" }
 
-// pruneInstallHistory 保留本次事务的备份，删除历史升级留下的旧备份。
-// 安装已经提交并验证运行后才调用；失败/恢复中的事务不会被误删。
+// pruneInstallHistory applies only an explicit operator retention opt-in.
+// Recovery/unknown/rolled-back transactions and unrelated directories are never
+// removed automatically; a successful update is not authority to discard them.
 func pruneInstallHistory(home, keep string) {
+	if os.Getenv("AIH_INSTALL_PRUNE_COMPLETED_BACKUPS") != "1" {
+		return
+	}
 	root := transactionRoot(home)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return
 	}
-	keepPath := filepath.Clean(keep)
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		path := filepath.Join(root, entry.Name())
-		if filepath.Clean(path) == keepPath {
+		if filepath.Clean(path) == filepath.Clean(keep) {
+			continue
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(path, "journal.json"))
+		if err != nil || len(raw) > 4<<20 {
+			continue
+		}
+		var previous journal
+		if json.Unmarshal(raw, &previous) != nil || previous.Version != 1 || previous.ID != entry.Name() || previous.Home != home || previous.Phase != "complete" {
 			continue
 		}
 		_ = os.RemoveAll(path)

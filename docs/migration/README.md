@@ -1,5 +1,12 @@
 # Node → Go 迁移总览
 
+> **2026-11-18 03:04 续接（Asia/Shanghai）：整体目标 active，未完成。**本页后续 2026-11-17 的 PID/旧 stamp、UI blocked 与来源缺口都是历史记录，不能直接当当前状态。最新本机只读为 Go `84956` → 第一方 Node `85251`，9527 ready 200；runtime/disk SHA 均 `9916c222…`，相邻 stamp 已匹配该 hash、source `d0f4cab510…`、version 1.0.4，不再沿用“当前仍是079a旧stamp”的说法。完整历史 dirty 输入闭包与逐域批准仍须独立证明，health/stamp 匹配也不等于 Node 退出。
+>
+> **本轮实际工程：**R1 owner 已交 `2075e22f2`（model-prefix Codex exec 转 Go，非全 CLI）；监督自交 **`441a527c3`** 将浏览器 terminal prefix 直接挂同一 Go handler。无 AIH Node 宿主的标准 CLI/PTY/tmux/SSE 94 秒、私有重启保同 PID/env/cwd，以及另列的 OS 禁 Node production-host 实跑均有[精确证据](2026-11-18-terminal-browser-go-alias-acceptance.md)。标准 CLI仍观察两条未分类 Node 工具进程；strict host 不冒称标准 CLI noexec。新 Go 构件仅私有加载，未发布/重启 9527，terminal shim/旧 launch caller/Node 桥删除仍未闭。
+>
+> **实际执行 owner：**原 W0 `01a1d99a` 继续 R2 wrapper；原 R4 `01a1da1b` 已真验当前 Go display 首迁，接续 CRUD display-source 原子写入；R5 credential-helper 单 slice 已由现有 `01a1e527` 明确认领/获批，不冒称损坏的原 M 全包已恢复；R6 由原 R0 事实 owner `01a1ea74` 认领 Go remote transport。共享 router/composition 采用顺序 hunk 锁，旧 staged/Chat/protocol 不处理。插件第一方 JS host、后台观察/恢复、backup public caller 和最终默认无 Node 拓扑继续开放，不能以控制面 Go 或安装包可用代替退出。
+
+
 > 总控复核：2026-11-17 00:02–00:14（Asia/Shanghai）；原目标澄清为 2026-11-16 18:14–18:32。这是用户可读的目标与状态入口，不是新的平行开发计划，也不是实时仪表盘。详细需求继续以 [原 W0–W6 计划](../superpowers/plans/2026-11-14-node-go-next-development-plan.md)、[执行账](2026-11-14-node-go-execution-ledger.md) 和 [逐项证据审计](2026-11-16-requirement-evidence-audit.md) 为准；状态变化必须更新证据，不能把旧快照当现状。
 
 > **后续快照更正（2026-11-17 00:23，非本监督执行发布）：**本页00:02–00:14记录之后，运行已变为Go PID `7686`、Node PID `7889`（私有 `59784`）；runtime identity/磁盘均为 `a460355e...`，内嵌 `a4c4d8070` 且 `vcs.modified=true`，旧stamp仍 `85851ec...` / `079a565d...`。下面 `93990/94287/5cc9...` 是前一观察快照，不再代表实时值；R0须补最新构件来源，不能凭dirty revision确认全部已加载。00:20通过既有单次SSH跳板核对远端main为 `a4c4d8070`，确认本页与此前Desktop/Terminal提交已包含；这只证明Git交付，不证明加载或Node退出。未更改全局SSH/代理配置。 文档收尾期间runtime identity再次变化，故不将该观察延长为持续运行断言；后续状态必须另附观察时间和发布owner凭证。

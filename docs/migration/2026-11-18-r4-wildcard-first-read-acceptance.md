@@ -168,3 +168,44 @@
 - 最终低敏`final/evidence/http-final-matrix.json`、`14-actual-production-cli-restart-readback.json`、`source-commit-receipt.json`、`original-source-after-final.json`和索引（36项，SHA `4f50e5546bd11905f7d87d419526449f523af65d1db2d2a26e6ee78052beeea9`）保存源/构件/进程/错误/锁全部边界；继承脚本中的generic provenance文字已按实际binary/source显式纠正，非抹旧失败。
 - 新根逐realpath/祖先非symlink清理清单 `final/evidence/sensitive-final-cleanup-manifest.json`：196项，完整SHA `b2961b174521387e5181e655ef25c028ab96686f40c8104390452895a97c417e`；仅本次自建DB/sidecar/私有raw输入/日志/keys，保留构件/source/低敏evidence/compiler缓存和全部私有lock inode、根。**目前尚未获得本新root独立删除许可、未删任何项**，不沿用旧R4/R5许可；后续独立清理回执才可更新这一状态。
 - 源码commit完成不等于push/loaded/部署完成。本追加内容仍待确切新SHA独立文档审查和本人doc后续checkpoint；没有共享重启、公开调用方切换、上游推理请求或全R4/Node退役放行。
+
+
+## 10. 已提交工程的真实改 pattern / concrete 补证与独立旧根清理
+
+本节是2026-11-18 03:39之后新增实证，保留前170行当时的 pending/缺样本原文，不把新结论倒签给旧review。
+
+- 170行终稿独立 `pm-44537f83` 为 PASS_WITH_OPEN_LIMITS，绑定 SHA `3f3e07c605947f1fa543b3724d98d86ba9c757f453a14d28478eea2b52dca2d9`、源码 `34e7dc196aa1d32c61501ee4dfa298693daa659c`、36项final index；本人 `2446378e68ad458458495f08fbda561e193fa160` 仅该doc追加63行，显式pathspec，非amend。该review不自动背书本节。
+- **旧本轮私有根** `/private/tmp/aih-r4-wildcard-firstread-20261118-TjmicL` 已由监督新独立 `pm-f3492248` 授权清理196清单叶项（manifest SHA `b2961b174521387e5181e655ef25c028ab96686f40c8104390452895a97c417e`）。03:39:21执行前重新查全部自有Go退出/lsof无句柄、每项realpath与全部祖先无symlink、inode/dev/uid/nlink1/全SHA；随后仅逐叶unlink196项。root/source/archive/binary/evidence/review/compiler缓存与9个私有锁inode全部保留，未动共享路径。不声称安全擦除。完整receipt `final/evidence/sensitive-cleanup-receipt.json` SHA `562c3cda7c578db4c27f5a5f0d6771c47877e360914b5b473f4e7cb95fb323e0`，preflight及原manifest保留。
+
+### 权威目录下的真实私有配置，不是伪造fixture
+
+监督 `pm-75740f79` 明确批准用同一真实 provider/target 的私有配置，通过正式公开Go CRUD把 wildcard 改为现有SDK/catalog可核实的另一个真实family pattern，再改为真实concrete model id；不伪造provider/model/token/响应，不写live。此次**源码新增0**，复用上述已审已提交构件，不重跑旧锁/源错/取消矩阵。
+
+新根 `/private/tmp/aih-r4-realpatterns-20261118-eGi7eZ` 与旧根授权独立。新真实canonical `mode=ro`、query_only、读事务/online backup，OS禁止真实HOME写入；snapshot975486976B，完整SHA `41ba50e6bb1550a47e6fea7d289a7a36536ded04f53d39839a6e3ff19daf6138`。构件仍是严格Host SHA `b4f731a5134f2880cafc74fd77871e1fe2da6c29fa55bee320b77f6e39e3e72a`，source `34e7dc196`；源码/构件来源原根保留且新根有provenance引用，不把共享main后续CLIhook或其它改动混进构件。
+
+权威来源仍SDK0.0.109 / sourceHash `80c88099d3b27408ac89bce5e7bd10a84e3c38215c9c5165a6a128d24026bab6`、内嵌JSON SHA `f9b2f46084b28c8c203d016a590073f6ba371042954968296c9c33d93b27bed4`。选取SDK既有row `claude-sonnet-4-6`、family `claude-sonnet`，并确认该concrete id**实际存在于本私有生产Go `/v1/models` HTTP200列表**；于是pattern为 `claude-sonnet-*`，不同于原wildcard。生成器/过滤策略/产品响应未被篡改，实际选择及来源摘要见 `authority-selection.json`。同真实目标/provider/enabled保持，不接外部推理。
+
+| 新实际公开Go操作 | HTTP / 持久化 / 重启结果 |
+| --- | --- |
+| PUT 原记录为 `claude-sonnet-*` | 200，gen/applied44/44、accepted1；display3为SDK实际 `claude-sonnet-5-5` / `claude-sonnet-5` / `claude-sonnet-4-6`，没有继承原10名单 |
+| 新进程重启该pattern | 同3名字、gen44稳定；legacy摘要不变 |
+| PUT 改concrete `claude-sonnet-4-6` | 200，gen/applied45/45、accepted1；display0，旧wildcard3名单清除 |
+| 新进程重启concrete | display0/gen45稳定；不是仅内存清空 |
+| PUT 恢复原真实wildcard业务字段 | 200，gen46/display10、accepted1；target/provider等全部保留 |
+| ReplaceGroup 为上述真实family pattern | 200，gen47/display3、accepted1；产品自己生成id |
+| Delete后Create上述真实concrete | 200，gen49/display0、accepted1；无新模型/账号fixture |
+| PUT再次恢复原业务配置，再新进程重启 | gen50/display10、原业务7字段全相等；legacy不变 |
+
+4个私有严格Host进程实际exit0，OS禁foreignexec/出站网，无Node host/RPC，保存真PID/PPID与进程检查。新根03:42:16输入/结束对比三alias表+两credentials表HMAC均相等，**只限新根这一输入窗口，不推翻旧根03:35 credentials变化未归因**。源3alias表从未作共享写；变更全在私有目的DB通过正式Go HTTP完成。
+
+低敏9步矩阵 `evidence/real-pattern-matrix.json`、真实权威选取、4进程退出、source-after、snapshot/provenance等24文件索引SHA `9c32f38a93ce3598974271971cf775f841448a3956576d9c4a54002463ce4ce0`。新根清单40个敏感叶项 `evidence/sensitive-final-cleanup-manifest.json` SHA `dc9c9c3c34447c8ee3fcaae272872684a1f4cdfd028e7bff7e7b903b38e245ec`；03:42时点Go已退出/lsof为空。**新根这40项尚待独立cleanup许可，不复用旧根196许可**，未声称已经删除；保留源码/二进制/摘要/私有锁inode和root。
+
+本补证关闭“已提交Go CRUD没有真实改pattern与wildcard→concrete清旧名单/重启证据”的窄缺口；**不补造non-wildcard legacy首迁记录，不声称insert之后故障回滚、所有取消竞态、合法空wildcard来源或上游推理成功**。Node enabled/default/model-policy定时写者仍OPEN；未做共享loaded/重启/部署/Node服务退役。Git远端验证因默认本地SSH代理关闭，以及临时绕代理直连443/22超时而未成功，未修改SSH配置，未force push；source/doc本地checkpoint与push状态明确分列。后续本节须独立新docSHAreview和本人doc-only提交。
+
+
+### 独立review计数修正与新40项清理执行
+
+- `pm-f5e26081` 已逐项核24/24证据及权威真实选择/9操作，但指出上文host计数错误：实际只有 initial-config/restart-pattern/restart-concrete/final-restore **4个PID**（96475/96484/96486/96509），没有第五进程。本轮只将该“5个”改单字为“4个”，不重跑/不回造第五日志，不改变真实矩阵；此前peer回执“五host”同属口误，以这4份实际PID/exit0记录为准。前170行保持原字节，新段中此处更正获独立review提醒，不沿用错误计数。
+- 新根40清单获监督**独立**`pm-b4ef37c4`许可后，于2026-11-18 03:44:46先保存低敏来源/权威/全SHA/HMAC/9操作/进程证据，再即时重核全部自有Go退出/lsof无句柄，每叶realpath/所有祖先非symlink/inode/dev/uid/nlink1/完整SHA精确匹配。仅unlink已批准40项，逻辑975766960B，manifest全叶不存在；新根/root/binary/SDK/source来源/evidence和1个private锁inode保留，不碰共享路径，不声称安全擦除。
+- 新根低敏 `evidence/sensitive-cleanup-receipt.json` 完整SHA `01400ce8bc21951ea312ef12a75a5baad720e20757a9a8a6cbe6f5444d476f9a`；cleanup-preflight与原40清单保留。上文24项index继续冻结，cleanup receipt是额外新文件，不把旧index悄然覆盖。旧root196清单/许可/receipt与新40清单严格分开。
+- 本节修正与cleanup事实使上文“新40仍待批准”的历史状态过期；本次确已获准并完成，不把未读queue当许可。该新doc SHA须最终独立复核后本人显式doc-only checkpoint；源码无增量、composition已交还总控，下一Node三写者只读方案不等于已获工程scope。

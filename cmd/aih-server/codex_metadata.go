@@ -16,6 +16,9 @@ import (
 )
 
 func runCodexMetadata(args []string) error {
+	if len(args) > 0 && args[0] == "--native-resume-lookup" {
+		return runCodexNativeResumeLookup(args[1:])
+	}
 	if len(args) > 0 && args[0] == "--thread-config-reconcile" {
 		return runCodexThreadConfigReconcile(args[1:])
 	}
@@ -229,6 +232,58 @@ func runCodexThreadConfigReconcile(args []string) (resultErr error) {
 		}
 		if ctx.Err() != nil {
 			resultErr = errors.New("codex_thread_config_reconcile_cancelled")
+		}
+	}()
+	_, err = os.Stdout.Write(append(result, '\n'))
+	return err
+}
+
+// Native lookup reads vendor values only; TOML, transport policy and rewrite
+// semantics remain with the existing caller. It never starts a service.
+func runCodexNativeResumeLookup(args []string) (resultErr error) {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-native-resume-lookup-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_native_resume_lookup_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	data, err := boundedinput.Read(ctx, os.Stdin, codexstatepage.MaxNativeResumeLookupInput)
+	defer clear(data)
+	if errors.Is(err, boundedinput.ErrTooLarge) {
+		return codexstatepage.ErrBudget
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return errors.New("codex_native_resume_lookup_input_timeout")
+	}
+	if err != nil {
+		return errors.New("codex_native_resume_lookup_input_invalid")
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_native_resume_lookup_cancelled")
+	}
+	result, err := codexstatepage.CompileNativeResumeLookup(ctx, data)
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_native_resume_lookup_cancelled")
+	}
+	writeDone := make(chan struct{})
+	stopWrite := context.AfterFunc(ctx, func() {
+		defer close(writeDone)
+		_ = os.Stdout.Close()
+	})
+	defer func() {
+		if !stopWrite() {
+			<-writeDone
+		}
+		if ctx.Err() != nil {
+			resultErr = errors.New("codex_native_resume_lookup_cancelled")
 		}
 	}()
 	_, err = os.Stdout.Write(append(result, '\n'))

@@ -16,6 +16,18 @@ import (
 )
 
 func runCodexMetadata(args []string) error {
+	if len(args) > 0 && args[0] == "--thread-title-repair" {
+		return runCodexThreadTitleRepair(args[1:])
+	}
+	if len(args) > 0 && args[0] == "--thread-state-lookup" {
+		return runCodexThreadStateLookup(args[1:])
+	}
+	if len(args) > 0 && args[0] == "--optimized-rollout-repair" {
+		return runCodexOptimizedRolloutRepair(args[1:])
+	}
+	if len(args) > 0 && args[0] == "--projected-rollout-repair" {
+		return runCodexProjectedRolloutRepair(args[1:])
+	}
 	if len(args) > 0 && args[0] == "--native-resume-lookup" {
 		return runCodexNativeResumeLookup(args[1:])
 	}
@@ -284,6 +296,210 @@ func runCodexNativeResumeLookup(args []string) (resultErr error) {
 		}
 		if ctx.Err() != nil {
 			resultErr = errors.New("codex_native_resume_lookup_cancelled")
+		}
+	}()
+	_, err = os.Stdout.Write(append(result, '\n'))
+	return err
+}
+
+// A distinct capability owns only existing authority DB projected-path CAS writes.
+func runCodexProjectedRolloutRepair(args []string) (resultErr error) {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-projected-rollout-repair-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_projected_rollout_repair_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	data, err := boundedinput.Read(ctx, os.Stdin, codexstatepage.MaxProjectedRolloutRepairInput)
+	defer clear(data)
+	if errors.Is(err, boundedinput.ErrTooLarge) {
+		return codexstatepage.ErrBudget
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return errors.New("codex_projected_rollout_repair_input_timeout")
+	}
+	if err != nil {
+		return errors.New("codex_projected_rollout_repair_input_invalid")
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_projected_rollout_repair_cancelled")
+	}
+	result, err := codexstatepage.RepairProjectedRollouts(ctx, data)
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_projected_rollout_repair_cancelled")
+	}
+	writeDone := make(chan struct{})
+	stopWrite := context.AfterFunc(ctx, func() {
+		defer close(writeDone)
+		_ = os.Stdout.Close()
+	})
+	defer func() {
+		if !stopWrite() {
+			<-writeDone
+		}
+		if ctx.Err() != nil {
+			resultErr = errors.New("codex_projected_rollout_repair_cancelled")
+		}
+	}()
+	_, err = os.Stdout.Write(append(result, '\n'))
+	return err
+}
+
+// Isolated list-sidecar write capability; no projected missing-path predicate.
+func runCodexOptimizedRolloutRepair(args []string) (resultErr error) {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-optimized-rollout-repair-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_optimized_rollout_repair_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	data, err := boundedinput.Read(ctx, os.Stdin, codexstatepage.MaxOptimizedRolloutRepairInput)
+	defer clear(data)
+	if errors.Is(err, boundedinput.ErrTooLarge) {
+		return codexstatepage.ErrBudget
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return errors.New("codex_optimized_rollout_repair_input_timeout")
+	}
+	if err != nil {
+		return errors.New("codex_optimized_rollout_repair_input_invalid")
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_optimized_rollout_repair_cancelled")
+	}
+	result, err := codexstatepage.RepairOptimizedRollouts(ctx, data)
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_optimized_rollout_repair_cancelled")
+	}
+	writeDone := make(chan struct{})
+	stopWrite := context.AfterFunc(ctx, func() {
+		defer close(writeDone)
+		_ = os.Stdout.Close()
+	})
+	defer func() {
+		if !stopWrite() {
+			<-writeDone
+		}
+		if ctx.Err() != nil {
+			resultErr = errors.New("codex_optimized_rollout_repair_cancelled")
+		}
+	}()
+	_, err = os.Stdout.Write(append(result, '\n'))
+	return err
+}
+
+// Complete existing thread row lookup with separately admitted same-source repair.
+func runCodexThreadStateLookup(args []string) (resultErr error) {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-thread-state-lookup-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_thread_state_lookup_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	data, err := boundedinput.Read(ctx, os.Stdin, codexstatepage.MaxThreadStateLookupInput)
+	defer clear(data)
+	if errors.Is(err, boundedinput.ErrTooLarge) {
+		return codexstatepage.ErrBudget
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return errors.New("codex_thread_state_lookup_input_timeout")
+	}
+	if err != nil {
+		return errors.New("codex_thread_state_lookup_input_invalid")
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_thread_state_lookup_cancelled")
+	}
+	result, err := codexstatepage.LookupThreadState(ctx, data)
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_thread_state_lookup_cancelled")
+	}
+	writeDone := make(chan struct{})
+	stopWrite := context.AfterFunc(ctx, func() {
+		defer close(writeDone)
+		_ = os.Stdout.Close()
+	})
+	defer func() {
+		if !stopWrite() {
+			<-writeDone
+		}
+		if ctx.Err() != nil {
+			resultErr = errors.New("codex_thread_state_lookup_cancelled")
+		}
+	}()
+	_, err = os.Stdout.Write(append(result, '\n'))
+	return err
+}
+
+// Isolated same-transaction title writer; no service or Node callback.
+func runCodexThreadTitleRepair(args []string) (resultErr error) {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-thread-title-repair-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_thread_title_repair_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	data, err := boundedinput.Read(ctx, os.Stdin, codexstatepage.MaxThreadTitleRepairInput)
+	defer clear(data)
+	if errors.Is(err, boundedinput.ErrTooLarge) {
+		return codexstatepage.ErrBudget
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return errors.New("codex_thread_title_repair_input_timeout")
+	}
+	if err != nil {
+		return errors.New("codex_thread_title_repair_input_invalid")
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_thread_title_repair_cancelled")
+	}
+	result, err := codexstatepage.RepairThreadTitles(ctx, data)
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_thread_title_repair_cancelled")
+	}
+	writeDone := make(chan struct{})
+	stopWrite := context.AfterFunc(ctx, func() {
+		defer close(writeDone)
+		_ = os.Stdout.Close()
+	})
+	defer func() {
+		if !stopWrite() {
+			<-writeDone
+		}
+		if ctx.Err() != nil {
+			resultErr = errors.New("codex_thread_title_repair_cancelled")
 		}
 	}()
 	_, err = os.Stdout.Write(append(result, '\n'))

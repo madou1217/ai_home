@@ -16,6 +16,9 @@ import (
 )
 
 func runCodexMetadata(args []string) error {
+	if len(args) > 0 && args[0] == "--thread-config-reconcile" {
+		return runCodexThreadConfigReconcile(args[1:])
+	}
 	if len(args) > 0 && args[0] == "--config-response" {
 		return runCodexConfigResponse(args[1:])
 	}
@@ -174,6 +177,58 @@ func runCodexConfigResponse(args []string) (resultErr error) {
 		}
 		if ctx.Err() != nil {
 			resultErr = errors.New("codex_config_response_cancelled")
+		}
+	}()
+	_, err = os.Stdout.Write(append(result, '\n'))
+	return err
+}
+
+// Managed reconciliation consumes an already resolved runtime config and reads
+// vendor state only. It never repairs history or starts a service.
+func runCodexThreadConfigReconcile(args []string) (resultErr error) {
+	if len(args) == 1 && args[0] == "--capabilities" {
+		_, err := fmt.Fprintln(os.Stdout, "aih-codex-thread-config-reconcile-v1")
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("codex_thread_config_reconcile_arguments_invalid")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	data, err := boundedinput.Read(ctx, os.Stdin, codexstatepage.MaxThreadConfigReconcileInput)
+	defer clear(data)
+	if errors.Is(err, boundedinput.ErrTooLarge) {
+		return codexstatepage.ErrBudget
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return errors.New("codex_thread_config_reconcile_input_timeout")
+	}
+	if err != nil {
+		return errors.New("codex_thread_config_reconcile_input_invalid")
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_thread_config_reconcile_cancelled")
+	}
+	result, err := codexstatepage.CompileThreadConfigReconcile(ctx, data)
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return errors.New("codex_thread_config_reconcile_cancelled")
+	}
+	writeDone := make(chan struct{})
+	stopWrite := context.AfterFunc(ctx, func() {
+		defer close(writeDone)
+		_ = os.Stdout.Close()
+	})
+	defer func() {
+		if !stopWrite() {
+			<-writeDone
+		}
+		if ctx.Err() != nil {
+			resultErr = errors.New("codex_thread_config_reconcile_cancelled")
 		}
 	}()
 	_, err = os.Stdout.Write(append(result, '\n'))

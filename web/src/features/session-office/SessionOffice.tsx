@@ -281,13 +281,18 @@ export default function SessionOffice({
     return activeRoom?.sessions[0] ?? null;
   }, [activeRoom, allSessions, selectedSessionId]);
 
+  const desktopSession = useMemo<OfficeSessionItem | null>(() => {
+    if (!selectedSessionId) return null;
+    return allSessions.find((session) => session.id === selectedSessionId) ?? null;
+  }, [allSessions, selectedSessionId]);
+
   const desktopRoom = useMemo<OfficeProjectRoom | null>(() => {
-    if (focusedSession) {
-      const sessionRoom = rooms.find((room) => room.projectKey === focusedSession.projectKey);
+    if (desktopSession) {
+      const sessionRoom = rooms.find((room) => room.projectKey === desktopSession.projectKey);
       if (sessionRoom) return sessionRoom;
     }
     return activeRoom;
-  }, [activeRoom, focusedSession, rooms]);
+  }, [activeRoom, desktopSession, rooms]);
 
   const roomSelectedSessionId = useMemo<string | null>(() => {
     if (!activeRoom) return null;
@@ -438,6 +443,16 @@ export default function SessionOffice({
     }
     setConfirmError('');
 
+    const wasViewingClosedSession =
+      selectedSessionId === target.id
+      || focusedSession?.sessionKey === target.sessionKey;
+
+    if (wasViewingClosedSession) {
+      clearZoomTimer();
+      setZoomingSessionId(null);
+      setDesktopOpen(false);
+    }
+
     const result = await terminateWebSession(target);
     if (target.serverId !== liveServerIdRef.current) {
       return;
@@ -449,10 +464,6 @@ export default function SessionOffice({
       message.error(errMsg);
       return;
     }
-
-    const wasViewingClosedSession =
-      selectedSessionId === target.id
-      || focusedSession?.sessionKey === target.sessionKey;
 
     if (wasViewingClosedSession) {
       clearZoomTimer();
@@ -1072,9 +1083,9 @@ export default function SessionOffice({
 
       {/* 员工工位桌面浮层：位于 3D 舞台容器之外 */}
       <SessionDesktop
-        open={desktopOpen}
+        open={desktopOpen && Boolean(desktopSession)}
         serverId={serverId}
-        session={focusedSession}
+        session={desktopSession}
         room={desktopRoom}
         allRooms={rooms}
         allMessages={peerMessages}

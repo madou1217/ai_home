@@ -7,13 +7,12 @@ const { spawnSync } = require('node:child_process');
 const { artifactBaseName, isWindows, targetKey } = require('./targets');
 const { copyTree, ensureDir, readJson, removeIfExists, sha256Tree, writeJson } = require('./fs-utils');
 
-// 运行时依赖的仓库内目录（不是文档）。web/dist 单独处理，因为它可能来自预构建产物。
+// 仅分发正式运行时目录；examples 不属于产品内容。web/dist 单独处理。
 const APP_DIRECTORIES = Object.freeze([
   'bin',
   'lib',
   'assets',
   'contracts',
-  'examples',
   'scripts',
   'native'
 ]);
@@ -69,9 +68,6 @@ function copyAppTree(repositoryRoot, bundleRoot) {
   for (const directory of APP_DIRECTORIES) {
     const source = path.join(repositoryRoot, directory);
     if (!fs.existsSync(source)) {
-      // Optional demo resources are not runtime dependencies and may be absent
-      // from a clean Git archive. Their resource APIs report unavailable.
-      if (directory === 'examples') continue;
       throw new Error(`missing required runtime directory: ${directory}`);
     }
     const destination = path.join(bundleRoot, directory);

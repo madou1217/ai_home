@@ -3,33 +3,17 @@ import { Card, Empty, Space, Tag, Typography, message } from 'antd';
 import {
   CheckCircleOutlined,
   DeleteOutlined,
-  ExperimentOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
-import type { AihPluginDoctorReport, AihPluginReport, NativeResourceDemoResult } from '@/types';
-
-function evidenceLines(result: NativeResourceDemoResult | null): string[] {
-  const evidence = result?.evidence;
-  if (!evidence || typeof evidence !== 'object') return [];
-  const steps = Array.isArray((evidence as { steps?: unknown }).steps)
-    ? (evidence as { steps: Array<Record<string, unknown>> }).steps
-    : [];
-  return steps.map((step) => {
-    const stage = String(step.stage || 'stage');
-    const passed = step.passed === true ? '通过' : '失败';
-    const used = step.sharedCoreCalled === true ? '已调用 Portable Core' : '';
-    return `${stage}: ${passed}${used ? `，${used}` : ''}`;
-  });
-}
+import type { AihPluginDoctorReport, AihPluginReport } from '@/types';
 
 export default function AihPluginPanel() {
   const [report, setReport] = useState<AihPluginReport | null>(null);
   const [doctor, setDoctor] = useState<AihPluginDoctorReport | null>(null);
-  const [demo, setDemo] = useState<NativeResourceDemoResult | null>(null);
   const [busy, setBusy] = useState('');
 
   const load = useCallback(async () => {
@@ -63,19 +47,6 @@ export default function AihPluginPanel() {
     }
   };
 
-  const runDemo = async () => {
-    setBusy('demo');
-    try {
-      const result = await toolkitAPI.runAihPluginDemo();
-      setDemo(result.demo);
-      message.success('AIH Portable Plugin demo 已通过');
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : 'AIH 插件 demo 失败');
-    } finally {
-      setBusy('');
-    }
-  };
-
   const installed = report?.installed || [];
   const instances = report?.instances || [];
   return (
@@ -87,7 +58,6 @@ export default function AihPluginPanel() {
           <Typography.Text type="secondary">这是 AIH 自有签名插件与 Host/RPC 生命周期控制面，和 Codex、Claude 等原生资源分开管理。</Typography.Text>
         </div>
         <Space>
-          <Button icon={<ExperimentOutlined />} loading={busy === 'demo'} onClick={() => void runDemo()}>运行闭环 demo</Button>
           <Button icon={<ReloadOutlined />} loading={busy === 'load'} onClick={() => void load()}>重新探测</Button>
         </Space>
       </header>
@@ -113,7 +83,6 @@ export default function AihPluginPanel() {
         })}
       </Space>
       {doctor ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>Doctor：{doctor.ok ? '健康' : `${doctor.issues?.length || 0} 个问题`}；runtime {String(doctor.runtime?.state || 'unknown')}</Typography.Text> : null}
-      {demo ? <Card size="small" title="最近一次 demo 证据" style={{ marginTop: 12 }}><Space direction="vertical" size={4}>{evidenceLines(demo).map((line) => <Typography.Text key={line}>{line}</Typography.Text>)}</Space></Card> : null}
     </section>
   );
 }

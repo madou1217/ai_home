@@ -2,11 +2,9 @@ package nativeresources
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -18,19 +16,20 @@ type Config struct {
 	Catalog         *providers.Catalog
 	Env             map[string]string
 	Runner          CommandRunner
-	DemoRoot        string
+	SourceRoot      string
+	DemoRoot        string // Deprecated: source-root alias for existing callers; never enables demos.
 	NativeBinaries  map[string]string
 	SkipDoctorProbe bool
 }
 
-// Service 提供 WebUI 原生资源（plugin / skill / mcp）的只读探测、生命周期操作与 Demo 验证。
+// Service 提供 WebUI 原生资源（plugin / skill / mcp）的只读探测、生命周期操作。
 type Service struct {
 	aiHomeDir       string
 	hostHomeDir     string
 	catalog         *providers.Catalog
 	env             map[string]string
 	runner          CommandRunner
-	demoRoot        string
+	sourceRoot      string
 	skipDoctorProbe bool
 	store           *managedStore
 	plugins         *nativePluginManager
@@ -60,9 +59,12 @@ func NewService(cfg Config) (*Service, error) {
 	if runner == nil {
 		runner = defaultCommandRunner{}
 	}
-	demoRoot := strings.TrimSpace(cfg.DemoRoot)
-	if demoRoot == "" {
-		demoRoot = resolveDemoRoot(env)
+	sourceRoot := strings.TrimSpace(cfg.SourceRoot)
+	if sourceRoot == "" {
+		sourceRoot = strings.TrimSpace(cfg.DemoRoot)
+	}
+	if sourceRoot == "" {
+		sourceRoot = resolveSourceRoot(env)
 	}
 
 	store, err := newManagedStore(cfg.AIHomeDir)
@@ -99,7 +101,7 @@ func NewService(cfg Config) (*Service, error) {
 		catalog:         catalog,
 		env:             env,
 		runner:          runner,
-		demoRoot:        demoRoot,
+		sourceRoot:      sourceRoot,
 		skipDoctorProbe: cfg.SkipDoctorProbe,
 		store:           store,
 		plugins:         pm,
@@ -119,8 +121,8 @@ func envFromOS() map[string]string {
 	return out
 }
 
-func resolveDemoRoot(env map[string]string) string {
-	if root := strings.TrimSpace(env["AIH_DEMO_ROOT"]); root != "" {
+func resolveSourceRoot(env map[string]string) string {
+	if root := strings.TrimSpace(env["AIH_PACKAGE_ROOT"]); root != "" {
 		if abs, err := filepath.Abs(root); err == nil {
 			return abs
 		}
@@ -132,7 +134,7 @@ func resolveDemoRoot(env map[string]string) string {
 	cur := cwd
 	for i := 0; i < 6; i++ {
 		if _, err := os.Stat(filepath.Join(cur, "package.json")); err == nil {
-			if _, err2 := os.Stat(filepath.Join(cur, "scripts")); err2 == nil {
+			if _, err2 := os.Stat(filepath.Join(cur, "lib")); err2 == nil {
 				return cur
 			}
 		}
@@ -145,11 +147,10 @@ func resolveDemoRoot(env map[string]string) string {
 	return cwd
 }
 
-// ProviderResourceReport 描述报告中单类资源的完整状态（能力 + 已托管记录 + Demo）。
+// ProviderResourceReport 描述报告中单类资源的完整状态（能力 + 已托管记录）。
 type ProviderResourceReport struct {
 	ResourceCapability
-	Managed any      `json:"managed"`
-	Demo    DemoSpec `json:"demo"`
+	Managed any `json:"managed"`
 }
 
 // ProviderReportRow 描述报告中的 Provider 行。
@@ -164,7 +165,6 @@ type ProviderReportRow struct {
 type HostPluginReport struct {
 	Capability ResourceCapability `json:"capability"`
 	Managed    []ManagedRecord    `json:"managed"`
-	Demo       DemoSpec           `json:"demo"`
 }
 
 // HostReportRow 描述报告中的 Host 行。
@@ -184,7 +184,7 @@ type ManagedSummaryGroup struct {
 type ReportResponse struct {
 	OK               bool                `json:"ok"`
 	Source           string              `json:"source"`
-	DemoSources      map[string]string   `json:"demoSources"`
+	DemoSources      map[string]string   `json:"-"` // Deprecated: retained only for Go source compatibility; never populated.
 	Providers        []ProviderReportRow `json:"providers"`
 	Hosts            []HostReportRow     `json:"hosts"`
 	Managed          ManagedSummaryGroup `json:"managed"`
@@ -210,13 +210,6 @@ type Selector struct {
 	Host     string `json:"host,omitempty"`
 }
 
-// DemoOutcome 描述 Demo 执行成功后的脱敏结果。
-type DemoOutcome struct {
-	Command  string   `json:"command"`
-	Args     []string `json:"args"`
-	Evidence any      `json:"evidence"`
-}
-
 // OperateResponse 对应 POST /v1/management/webui/toolkit/native-resources 的响应。
 type OperateResponse struct {
 	OK        bool            `json:"ok"`
@@ -225,7 +218,6 @@ type OperateResponse struct {
 	Selection Selector        `json:"selection"`
 	Result    any             `json:"result,omitempty"`
 	Report    *ReportResponse `json:"report,omitempty"`
-	Demo      *DemoOutcome    `json:"demo,omitempty"`
 }
 
 // Report 返回 60s SWR Doctor 能力探测结果 + 实时托管资源列表。
@@ -255,10 +247,6 @@ func (s *Service) Report(ctx context.Context) (ReportResponse, error) {
 			if !ok {
 				capVal = ResourceCapability{State: "unsupported", Reason: "resource_not_declared"}
 			}
-			demo, hasDemo := lookupDemoSpec(row.Provider, "", kind)
-			if !hasDemo {
-				demo = demoForKind(kind)
-			}
 			var managedAny any
 			switch kind {
 			case "plugin":
@@ -271,7 +259,6 @@ func (s *Service) Report(ctx context.Context) (ReportResponse, error) {
 			resMap[kind] = ProviderResourceReport{
 				ResourceCapability: capVal,
 				Managed:            managedAny,
-				Demo:               demo,
 			}
 		}
 		provRows = append(provRows, ProviderReportRow{
@@ -291,40 +278,29 @@ func (s *Service) Report(ctx context.Context) (ReportResponse, error) {
 		if row.State == "supported" {
 			capVal = ResourceCapability{State: "supported"}
 		}
-		demo, hasDemo := lookupDemoSpec("", row.Host, "plugin")
-		if !hasDemo {
-			demo = demoForKind("plugin")
-		}
 		hostRows = append(hostRows, HostReportRow{
 			DoctorHostRow: row,
 			Resources: map[string]HostPluginReport{
 				"plugin": {
 					Capability: capVal,
 					Managed:    filterRecordsByHost(pluginRecs, row.Host),
-					Demo:       demo,
 				},
 			},
 		})
 	}
 
-	demoSourcesCopy := make(map[string]string, len(demoRelativeSources))
-	for k, v := range demoRelativeSources {
-		demoSourcesCopy[k] = v
-	}
-
 	return ReportResponse{
-		OK:          true,
-		Source:      doctor.Source,
-		DemoSources: demoSourcesCopy,
-		Providers:   provRows,
-		Hosts:       hostRows,
+		OK:        true,
+		Source:    doctor.Source,
+		Providers: provRows,
+		Hosts:     hostRows,
 		Managed: ManagedSummaryGroup{
 			Plugin: sanitizeSummaryTargets(pluginRecs),
 			Skill:  sanitizeSummaryTargets(skillRecs),
 			MCP:    mcpRecs,
 		},
 		Lifecycle:        []string{"install", "enable", "disable", "remove"},
-		EvidenceBoundary: "management state and runtime declaration; native use is proven by the linked demo command",
+		EvidenceBoundary: "management state and runtime declaration only; installed plugin execution requires separate verification",
 	}, nil
 }
 
@@ -369,7 +345,7 @@ func sanitizeSummaryTargets(records []ManagedRecord) []ManagedRecord {
 	return out
 }
 
-// Operate 执行原生资源安装/启停/卸载、MCP 探针调用或闭环 Demo。
+// Operate 执行原生资源安装/启停/卸载、MCP 探针调用。
 func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateResponse, error) {
 	kind := strings.ToLower(strings.TrimSpace(input.Kind))
 	if kind != "plugin" && kind != "skill" && kind != "mcp" {
@@ -380,55 +356,12 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		return OperateResponse{}, err
 	}
 	action := strings.ToLower(strings.TrimSpace(input.Action))
-	if action == "" {
-		action = "install"
-	}
 
 	if action == "demo" {
-		spec, ok := lookupDemoSpec(sel.Provider, sel.Host, kind)
-		if !ok || len(spec.Args) == 0 {
-			return OperateResponse{}, fail("native_resource_demo_unavailable")
-		}
-		scriptPath := filepath.Join(s.demoRoot, filepath.FromSlash(spec.Args[0]))
-		if _, statErr := os.Stat(scriptPath); statErr != nil {
-			return OperateResponse{}, fail("native_resource_demo_unavailable")
-		}
-		nodeBin := s.runner.FindNode()
-		if nodeBin == "" {
-			return OperateResponse{}, fail("native_resource_demo_unavailable")
-		}
-		demoEnv := copyEnvMap(s.env)
-		demoEnv["NO_PROXY"] = "127.0.0.1,localhost"
-		res := s.runner.Run(ctx, nodeBin, spec.Args, s.demoRoot, demoEnv, 5*time.Minute)
-		var evidence any
-		_ = json.Unmarshal([]byte(strings.TrimSpace(res.Stdout)), &evidence)
-		evMap, _ := evidence.(map[string]any)
-		passed, _ := evMap["passed"].(bool)
-		if res.ExitCode != 0 || !passed {
-			stderr := res.Stderr
-			if len(stderr) > 2000 {
-				stderr = stderr[len(stderr)-2000:]
-			}
-			return OperateResponse{}, &DomainError{
-				Code: "native_resource_demo_failed",
-				Detail: map[string]any{
-					"status":   res.ExitCode,
-					"timedOut": res.TimedOut,
-					"stderr":   stderr,
-				},
-			}
-		}
-		return OperateResponse{
-			OK:        true,
-			Kind:      kind,
-			Action:    action,
-			Selection: sel,
-			Demo: &DemoOutcome{
-				Command:  spec.Command,
-				Args:     spec.Args,
-				Evidence: sanitizeEvidence(evidence),
-			},
-		}, nil
+		return OperateResponse{}, fail("native_resource_demo_removed")
+	}
+	if action == "" {
+		return OperateResponse{}, fail("native_resource_action_required")
 	}
 
 	var result any
@@ -436,7 +369,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 	switch kind {
 	case "plugin":
 		if action == "install" {
-			src, sErr := s.sourceFor(kind, input.Source)
+			src, sErr := s.sourceFor(input.Source)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -446,7 +379,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 	case "skill":
 		if action == "install" {
-			src, sErr := s.sourceFor(kind, input.Source)
+			src, sErr := s.sourceFor(input.Source)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -456,11 +389,11 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 	case "mcp":
 		if id == "" {
-			id = "aih-demo"
+			return OperateResponse{}, fail("native_resource_id_required")
 		}
 		switch action {
 		case "install":
-			src, sErr := s.sourceFor(kind, input.Source)
+			src, sErr := s.sourceFor(input.Source)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -479,11 +412,11 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		case "call":
 			tool := strings.TrimSpace(input.Tool)
 			if tool == "" {
-				tool = "aih_echo"
+				return OperateResponse{}, fail("native_resource_tool_required")
 			}
 			args := input.Args
 			if args == nil {
-				args = map[string]any{"text": "AIH_WEBUI_MCP_OK"}
+				args = map[string]any{}
 			}
 			result, err = s.mcps.call(ctx, id, sel.Provider, tool, args)
 		default:
@@ -516,18 +449,19 @@ func normalizeSelector(provider, host string) (Selector, error) {
 	return Selector{Provider: p, Host: h}, nil
 }
 
-func (s *Service) sourceFor(kind, rawSource string) (string, error) {
+func (s *Service) sourceFor(rawSource string) (string, error) {
 	src := strings.TrimSpace(rawSource)
 	if src == "" {
-		src = filepath.Join(s.demoRoot, filepath.FromSlash(demoRelativeSources[kind]))
-	} else if !filepath.IsAbs(src) {
-		src = filepath.Join(s.demoRoot, src)
+		return "", fail("native_resource_source_required")
+	}
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(s.sourceRoot, src)
 	}
 	candidate, err := filepath.Abs(src)
 	if err != nil {
 		return "", fail("native_resource_source_forbidden")
 	}
-	absRoot, err := filepath.Abs(s.demoRoot)
+	absRoot, err := filepath.Abs(s.sourceRoot)
 	if err != nil {
 		return "", fail("native_resource_source_forbidden")
 	}
@@ -539,43 +473,4 @@ func (s *Service) sourceFor(kind, rawSource string) (string, error) {
 		return "", fail("native_resource_source_missing")
 	}
 	return candidate, nil
-}
-
-var safeEvidenceKeys = map[string]bool{
-	"stage": true, "resource": true, "passed": true, "marker": true,
-	"pluginBodyObserved": true, "skillBodyObserved": true,
-	"toolSchema": true, "toolCall": true, "toolExecuted": true, "resultReturned": true,
-	"nativeToolCalled": true, "bodyObserved": true, "nativeActivation": true,
-	"loadingMode": true, "requestCount": true, "requests": true,
-	"toolExecutionVerified": true, "nativeAgentToolLoopVerified": true,
-	"accountHarnessVerified": true, "cleanup": true, "profileComposed": true,
-	"nativeConnected": true, "nativeAbsentAfterDisable": true,
-	"host": true, "provider": true, "version": true, "runtime": true, "inference": true,
-}
-
-func sanitizeEvidence(v any) any {
-	switch tv := v.(type) {
-	case []any:
-		out := make([]any, len(tv))
-		for i, item := range tv {
-			out[i] = sanitizeEvidence(item)
-		}
-		return out
-	case string:
-		if len(tv) > 160 {
-			return tv[:157] + "..."
-		}
-		return tv
-	case map[string]any:
-		out := make(map[string]any)
-		for k, val := range tv {
-			if !safeEvidenceKeys[k] {
-				continue
-			}
-			out[k] = sanitizeEvidence(val)
-		}
-		return out
-	default:
-		return v
-	}
 }

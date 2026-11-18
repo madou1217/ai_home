@@ -29,6 +29,9 @@ func (e *DomainError) Error() string { return e.Code }
 
 // HTTPStatus 返回与 Node 契约一致的 HTTP 错误状态码。
 func (e *DomainError) HTTPStatus() int {
+	if e.Code == "native_resource_demo_removed" {
+		return 410
+	}
 	if e.Code == "native_resource_payload_too_large" {
 		return 413
 	}

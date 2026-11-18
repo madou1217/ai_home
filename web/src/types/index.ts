@@ -3208,7 +3208,7 @@ export interface ConnectivityResponse {
 }
 
 export type NativeResourceKind = 'plugin' | 'skill' | 'mcp';
-export type NativeResourceAction = 'install' | 'enable' | 'disable' | 'remove' | 'test' | 'tools' | 'call' | 'demo';
+export type NativeResourceAction = 'install' | 'enable' | 'disable' | 'remove' | 'test' | 'tools' | 'call';
 
 export interface NativeResourceManagedRecord {
   kind: NativeResourceKind;
@@ -3235,7 +3235,6 @@ export interface NativeResourceCapability {
   adapter?: string;
   projection?: { path?: string; format?: string; [key: string]: unknown };
   managed: NativeResourceManagedRecord[];
-  demo: { source?: string; command: string; args?: string[] };
 }
 
 export interface NativeResourceProviderRow {
@@ -3260,11 +3259,6 @@ export interface NativeResourceReport {
   managed: Record<NativeResourceKind, NativeResourceManagedRecord[]>;
   lifecycle: string[];
   evidenceBoundary: string;
-}
-
-export interface NativeResourceDemoResult {
-  command: string;
-  evidence: Record<string, unknown>;
 }
 
 export interface AihPluginInstalled {

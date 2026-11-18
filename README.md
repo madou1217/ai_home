@@ -387,27 +387,14 @@ aih claim --json           # 机器可读
 
 ## 插件
 
+工具箱仅显示实际已安装的插件、Skill 与 MCP，不内置或分发演示插件。使用正式发布的插件包，并核对其来源、版本、签名和权限后安装。
+
 ```bash
-aih plugin validate examples/plugins/echo --load
-aih plugin pack examples/plugins/echo /tmp/aih-sample-echo.aih-plugin
-aih plugin install /tmp/aih-sample-echo.aih-plugin
-aih plugin enable aih.sample.echo
-aih plugin call sample.echo.call --value-json '{"marker":"AIH_PLUGIN_DEMO_OK"}' --json
 aih plugin list --json
-aih plugin disable aih.sample.echo --remove
 aih plugin doctor --json
-aih plugin uninstall aih.sample.echo
 ```
 
-完整闭环（使用临时 AIH home，不触碰用户账号）:
-
-```bash
-node scripts/plugin-closure-demo.js --json
-```
-
-它会依次验证 `pack → install → enable → use → restart → use-after-restart → disable → uninstall → doctor`。可运行样例见 [examples/plugins/echo](examples/plugins/echo)。
-
-Skill、MCP、原生插件以及 DeepSeek/OpenCode/Pi 的投影检查见 [插件、Skill、MCP 与原生插件快速上手](docs/demos/plugin-skill-mcp-quickstart.md)。统一跨宿主设计见 [Universal Agent Plugin Architecture](docs/superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；`provider doctor` 会把已验证的 runtime、仅投影和本机缺少宿主的状态分开报告。
+AIH 签名插件宿主与各 Provider 原生资源分别管理；宿主适配能力不代表已经安装插件或已验证插件运行。
 
 ## 终端集成（补全 / 打错纠正）
 

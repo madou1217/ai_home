@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, Col, Empty, Modal, Row, Space, Spin, Tag, Typography, message } from 'antd';
+import { Card, Empty, Space, Spin, Tag, Typography, message } from 'antd';
 import {
   ApiOutlined,
+  BookOutlined,
   CheckCircleOutlined,
   CodeOutlined,
   DeleteOutlined,
-  DownloadOutlined,
-  ExperimentOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined
@@ -15,158 +14,68 @@ import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
 import type {
   NativeResourceAction,
-  NativeResourceCapability,
-  NativeResourceHostRow,
   NativeResourceKind,
-  NativeResourceProviderRow,
+  NativeResourceManagedRecord,
   NativeResourceReport
 } from '@/types';
 
 const KIND_LABELS: Record<NativeResourceKind, string> = { plugin: '插件', skill: 'Skill', mcp: 'MCP' };
 const KIND_ICONS: Record<NativeResourceKind, React.ReactNode> = {
   plugin: <CodeOutlined />,
-  skill: <ExperimentOutlined />,
+  skill: <BookOutlined />,
   mcp: <ApiOutlined />
 };
 
-function stateColor(state: string): string {
-  if (state === 'supported') return 'success';
-  if (state === 'projection-only') return 'warning';
-  if (state === 'partial') return 'processing';
-  return 'default';
+type ManagedAction = Extract<NativeResourceAction, 'enable' | 'disable' | 'remove' | 'test'>;
+
+function recordKey(record: NativeResourceManagedRecord): string {
+  return `${record.host ? `host/${record.host}` : record.provider}:${record.kind}:${record.id}`;
 }
 
-function managedId(capability: NativeResourceCapability, kind: NativeResourceKind): string {
-  const first = capability.managed?.[0];
-  return first?.id || (kind === 'mcp' ? 'aih-demo' : 'aih-demo');
-}
-
-function ResourceCard({ provider, kind, capability, onAction, busy }: {
-  provider: string;
-  kind: NativeResourceKind;
-  capability: NativeResourceCapability;
-  onAction: (action: NativeResourceAction, capability: NativeResourceCapability) => void;
+function ResourceCard({ record, onAction, busy }: {
+  record: NativeResourceManagedRecord;
+  onAction: (record: NativeResourceManagedRecord, action: ManagedAction) => void;
   busy: string;
 }) {
-  const record = capability.managed?.[0];
-  const id = managedId(capability, kind);
-  const enabled = record?.enabled !== false && Boolean(record);
-  const supported = capability.state !== 'unsupported';
-  const canInstall = supported && provider !== 'host/aih';
-  const action = (name: NativeResourceAction) => `${provider}:${kind}:${name}`;
+  const enabled = record.enabled !== false;
+  const key = recordKey(record);
+  const owner = record.host ? `host/${record.host}` : record.provider;
   return (
-    <Card size="small" title={<Space>{KIND_ICONS[kind]}<span>{KIND_LABELS[kind]}</span></Space>}>
+    <Card size="small" title={<Space>{KIND_ICONS[record.kind]}<strong>{record.id}</strong><Tag>{KIND_LABELS[record.kind]}</Tag></Space>}>
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <Space wrap>
-          <Tag color={stateColor(capability.state)}>{capability.state}</Tag>
-          {record ? <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{enabled ? '已启用' : '已停用'}</Tag> : <Tag>未托管</Tag>}
+          <Typography.Text>{owner}</Typography.Text>
+          <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{enabled ? '已启用' : '已停用'}</Tag>
+          {record.mode ? <Tag>{record.mode}</Tag> : null}
         </Space>
-        <Typography.Text type="secondary">
-          {capability.reason || capability.mode || capability.adapter || '由 provider 描述符提供能力'}
-        </Typography.Text>
-        <Typography.Text ellipsis={{ tooltip: capability.demo.command }} style={{ display: 'block' }}>
-          Demo：{capability.demo.command}
-        </Typography.Text>
         <Space wrap>
           <Button
             size="small"
-            icon={<DownloadOutlined />}
-            disabled={!canInstall || Boolean(busy)}
-            loading={busy === action('install')}
-            onClick={() => onAction('install', capability)}
-          >安装 demo</Button>
-          {record ? (
-            <>
-              <Button
-                size="small"
-                icon={enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-                disabled={Boolean(busy)}
-                loading={busy === action(enabled ? 'disable' : 'enable')}
-                onClick={() => onAction(enabled ? 'disable' : 'enable', capability)}
-              >{enabled ? '停用' : '启用'}</Button>
-              <Button
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={Boolean(busy)}
-                loading={busy === action('remove')}
-                onClick={() => onAction('remove', capability)}
-              >移除</Button>
-            </>
-          ) : null}
-          {kind === 'mcp' && record ? (
+            icon={enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+            disabled={Boolean(busy)}
+            loading={busy === `${key}:${enabled ? 'disable' : 'enable'}`}
+            onClick={() => onAction(record, enabled ? 'disable' : 'enable')}
+          >{enabled ? '停用' : '启用'}</Button>
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            disabled={Boolean(busy)}
+            loading={busy === `${key}:remove`}
+            onClick={() => onAction(record, 'remove')}
+          >移除</Button>
+          {record.kind === 'mcp' ? (
             <Button
               size="small"
               icon={<ApiOutlined />}
               disabled={Boolean(busy)}
-              loading={busy === action('test')}
-              onClick={() => onAction('test', capability)}
+              loading={busy === `${key}:test`}
+              onClick={() => onAction(record, 'test')}
             >测试连接</Button>
           ) : null}
-          {capability.demo.command && (capability.state === 'supported' || record) && provider !== 'host/aih' ? (
-            <Button
-              size="small"
-              icon={<PlayCircleOutlined />}
-              disabled={Boolean(busy)}
-              loading={busy === action('demo')}
-              onClick={() => onAction('demo', capability)}
-            >运行 demo</Button>
-          ) : null}
         </Space>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {record ? `托管目标：${record.target || record.projection || id}` : `未安装；源包：${capability.demo.source}`}
-        </Typography.Text>
+        {record.target || record.projection ? <Typography.Text type="secondary">托管目标：{record.target || record.projection}</Typography.Text> : null}
       </Space>
-    </Card>
-  );
-}
-
-function ProviderRow({ row, onAction, busy }: {
-  row: NativeResourceProviderRow;
-  onAction: (provider: string, kind: NativeResourceKind, action: NativeResourceAction, capability: NativeResourceCapability) => void;
-  busy: string;
-}) {
-  return (
-    <Card
-      size="small"
-      title={<Space><strong>{row.provider}</strong><Tag color={row.runtime.available ? 'success' : 'default'}>{row.runtime.available ? `runtime ${row.runtime.version || 'available'}` : 'runtime unavailable'}</Tag></Space>}
-      extra={<Typography.Text type="secondary">声明来自 {row.runtime.binary || 'provider descriptor'}</Typography.Text>}
-    >
-      <Row gutter={[12, 12]}>
-        {(['plugin', 'skill', 'mcp'] as NativeResourceKind[]).map((kind) => (
-          <Col xs={24} md={8} key={kind}>
-            <ResourceCard
-              provider={row.provider}
-              kind={kind}
-              capability={row.resources[kind]}
-              busy={busy}
-              onAction={(action, capability) => onAction(row.provider, kind, action, capability)}
-            />
-          </Col>
-        ))}
-      </Row>
-    </Card>
-  );
-}
-
-function HostRow({ row, onAction, busy }: {
-  row: NativeResourceHostRow;
-  onAction: (host: string, kind: NativeResourceKind, action: NativeResourceAction, capability: NativeResourceCapability) => void;
-  busy: string;
-}) {
-  return (
-    <Card
-      size="small"
-      title={<Space><strong>host/{row.host}</strong><Tag color={row.state === 'supported' ? 'success' : 'warning'}>{row.state}</Tag></Space>}
-      extra={<Typography.Text type="secondary">{row.reason || 'imported host adapter'}</Typography.Text>}
-    >
-      <ResourceCard
-        provider={`host/${row.host}`}
-        kind="plugin"
-        capability={row.resources.plugin}
-        busy={busy}
-        onAction={(action, capability) => onAction(row.host, 'plugin', action, capability)}
-      />
     </Card>
   );
 }
@@ -175,7 +84,6 @@ export default function NativeResourcesPanel() {
   const [report, setReport] = useState<NativeResourceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
-  const [demoEvidence, setDemoEvidence] = useState<Record<string, unknown> | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     try { setReport(await toolkitAPI.getNativeResources()); }
@@ -183,24 +91,21 @@ export default function NativeResourcesPanel() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const providers = useMemo(() => report?.providers || [], [report]);
-  const onAction = useCallback(async (provider: string, kind: NativeResourceKind, action: NativeResourceAction, capability: NativeResourceCapability) => {
-    const record = capability.managed?.[0];
-    const key = `${provider}:${kind}:${action}`;
-    setBusy(key);
+  const records = useMemo(() => (['plugin', 'skill', 'mcp'] as const)
+    .flatMap((kind) => (report?.managed?.[kind] || []).map((record) => ({ ...record, kind })))
+    .filter((record) => !record.removed), [report]);
+  const onAction = useCallback(async (record: NativeResourceManagedRecord, action: ManagedAction) => {
+    setBusy(`${recordKey(record)}:${action}`);
     try {
-      const result = await toolkitAPI.operateNativeResource({
-        ...(provider.startsWith('host/') ? { host: provider.slice('host/'.length) } : { provider }),
-        kind,
+      await toolkitAPI.operateNativeResource({
+        ...(record.host ? { host: record.host } : { provider: record.provider }),
+        kind: record.kind,
         action,
-        id: record?.id || (kind === 'mcp' ? 'aih-demo' : 'aih-demo')
+        id: record.id
       });
-      if (action === 'demo' && result.demo?.evidence) {
-        setDemoEvidence(result.demo.evidence);
-        message.success(`${provider} ${KIND_LABELS[kind]} demo 已通过`);
-      } else if (result.result) message.success(`${provider} ${KIND_LABELS[kind]} ${action} 完成`);
+      message.success(`${record.id} ${KIND_LABELS[record.kind]} ${action === 'enable' ? '已启用' : action === 'disable' ? '已停用' : action === 'remove' ? '已移除' : '连接检查完成'}`);
       await load();
-    } catch (error) { message.error(error instanceof Error ? error.message : `${KIND_LABELS[kind]} 操作失败`); }
+    } catch (error) { message.error(error instanceof Error ? error.message : `${KIND_LABELS[record.kind]} 操作失败`); }
     finally { setBusy(''); }
   }, [load]);
   return (
@@ -209,20 +114,16 @@ export default function NativeResourcesPanel() {
         <div>
           <div className="toolkit-panel-kicker">NATIVE RESOURCE CONTROL</div>
           <h2 id="toolkit-native-resources">插件、Skill 与 MCP</h2>
-          <Typography.Text type="secondary">统一管理投影，按 provider 查看真实 runtime 和可运行 demo。projection-only 不会被伪装成原生执行。</Typography.Text>
+          <Typography.Text type="secondary">仅管理实际已安装的资源；宿主能力声明不代表插件已安装或已验证运行。</Typography.Text>
         </div>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
       </header>
       {loading && !report ? <div className="toolkit-loading"><Spin size="large" /></div> : null}
-      {!loading && !providers.length ? <Empty description="没有可用 provider 描述" /> : null}
+      {!loading && !records.length ? <Empty description="暂无已安装资源，请使用正式发布的插件、Skill 或 MCP" /> : null}
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {providers.map((row) => <ProviderRow key={row.provider} row={row} onAction={onAction} busy={busy} />)}
-        {report?.hosts?.map((row) => <HostRow key={row.host} row={row} onAction={onAction} busy={busy} />)}
+        {records.map((record) => <ResourceCard key={recordKey(record)} record={record} onAction={onAction} busy={busy} />)}
       </Space>
       {report ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 16 }}>{report.evidenceBoundary}</Typography.Text> : null}
-      <Modal open={Boolean(demoEvidence)} title="Native demo 证据" footer={null} onCancel={() => setDemoEvidence(null)}>
-        <pre style={{ maxHeight: 420, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{JSON.stringify(demoEvidence, null, 2)}</pre>
-      </Modal>
     </section>
   );
 }

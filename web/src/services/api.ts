@@ -2613,10 +2613,6 @@ export const toolkitAPI = {
     const response = await api.post(`/plugins/${action}`, input);
     return response.data;
   },
-  runAihPluginDemo: async (): Promise<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }> => {
-    const response = await api.post<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }>('/plugins/demo', {});
-    return response.data;
-  },
   getNativeResources: async (): Promise<import('@/types').NativeResourceReport> => {
     const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
     return response.data;
@@ -2630,8 +2626,8 @@ export const toolkitAPI = {
     source?: string;
     tool?: string;
     args?: Record<string, unknown>;
-  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }> => {
-    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }>(
+  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }> => {
+    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }>(
       '/webui/toolkit/native-resources', input
     );
     return response.data;

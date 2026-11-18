@@ -1,7 +1,6 @@
 package nativeresources
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -35,14 +34,14 @@ type HostDescriptor struct {
 	Entry     string `json:"entry,omitempty"`
 	CLIExport string `json:"cliExport,omitempty"`
 	Reason    string `json:"reason"`
-	Evidence  string `json:"evidence"`
+	Evidence  string `json:"evidence,omitempty"`
 }
 
 var importedHosts = []HostDescriptor{
-	{Host: "deepseek", State: "projection-only", Harness: "dsh", Entry: "lib/bin.js", CLIExport: "runCli", Reason: "native_owned_patch_boot_tool_cleanup_and_headless_loop_verified; Web/TUI entrypoints remain separate", Evidence: "scripts/deepseek-plugin-managed-demo.mjs"},
-	{Host: "opencode", State: "supported", Reason: "server_plugin_native_tool_loop_verified; TUI/RPC entrypoints remain separate", Evidence: "scripts/opencode-plugin-native-demo.js"},
-	{Host: "pi", State: "runtime-unavailable", Harness: "pi", Entry: "dist/bundle/cli.js", Reason: "native_directory_tool_command_cleanup_and_cli_tool_loop_verified; TUI/RPC entrypoints remain separate", Evidence: "scripts/pi-plugin-native-demo.js --managed"},
-	{Host: "aih", State: "supported", Reason: "canonical_signed_artifact_and_shared_core_supervised_host_verified", Evidence: "scripts/aih-portable-plugin-demo.js"},
+	{Host: "deepseek", State: "projection-only", Harness: "dsh", Entry: "lib/bin.js", CLIExport: "runCli", Reason: "host_adapter_declared; installed plugin execution is not verified"},
+	{Host: "opencode", State: "projection-only", Reason: "host_adapter_declared; installed plugin execution is not verified"},
+	{Host: "pi", State: "runtime-unavailable", Harness: "pi", Entry: "dist/bundle/cli.js", Reason: "host_adapter_declared; runtime must be detected"},
+	{Host: "aih", State: "supported", Reason: "signed_artifact_host_available; no plugin is bundled"},
 }
 
 var hostResourceCapabilities = map[string]map[string]ResourceCapability{
@@ -74,42 +73,6 @@ var harnessPackageNames = map[string]string{
 	"pi":      "@earendil-works/pi-coding-agent",
 	"dsh":     "@deepseek-ai/dsh",
 	"dsh-tui": "@deepseek-harness-tui/dsh-tui",
-}
-
-// DemoSpec 描述单类资源与 Provider 对应的实测闭环 Demo 脚本命令。
-type DemoSpec struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
-	Source  string   `json:"source,omitempty"`
-}
-
-var demoRelativeSources = map[string]string{
-	"plugin": "examples/native-plugins/aih-demo",
-	"skill":  "assets/provider-skills/aih-demo",
-	"mcp":    "examples/mcp/aih-demo-server.js",
-}
-
-var demoSpecs = map[string]DemoSpec{
-	"plugin:deepseek":    {Command: "node scripts/deepseek-plugin-managed-demo.mjs", Args: []string{"scripts/deepseek-plugin-managed-demo.mjs"}},
-	"plugin:pi":          {Command: "node scripts/pi-plugin-native-demo.js --managed", Args: []string{"scripts/pi-plugin-native-demo.js", "--managed"}},
-	"plugin:aih":         {Command: "node scripts/aih-portable-plugin-demo.js", Args: []string{"scripts/aih-portable-plugin-demo.js"}},
-	"plugin:codex":       {Command: "node scripts/native-plugin-use-demo.js codex", Args: []string{"scripts/native-plugin-use-demo.js", "codex"}},
-	"plugin:claude":      {Command: "node scripts/native-plugin-use-demo.js claude", Args: []string{"scripts/native-plugin-use-demo.js", "claude"}},
-	"plugin:opencode":    {Command: "node scripts/opencode-plugin-native-demo.js", Args: []string{"scripts/opencode-plugin-native-demo.js"}},
-	"plugin:codebuddy":   {Command: "node scripts/workbuddy-resource-native-demo.js --provider codebuddy", Args: []string{"scripts/workbuddy-resource-native-demo.js", "--provider", "codebuddy"}},
-	"plugin:codebuddycn": {Command: "node scripts/workbuddy-resource-native-demo.js --provider codebuddycn", Args: []string{"scripts/workbuddy-resource-native-demo.js", "--provider", "codebuddycn"}},
-	"plugin:workbuddy":   {Command: "node scripts/workbuddy-resource-native-demo.js", Args: []string{"scripts/workbuddy-resource-native-demo.js"}},
-	"skill:codex":        {Command: "node scripts/skill-native-demo.js --provider codex", Args: []string{"scripts/skill-native-demo.js", "--provider", "codex"}},
-	"skill:claude":       {Command: "node scripts/skill-native-demo.js --provider claude", Args: []string{"scripts/skill-native-demo.js", "--provider", "claude"}},
-	"skill:opencode":     {Command: "node scripts/skill-native-demo.js --provider opencode", Args: []string{"scripts/skill-native-demo.js", "--provider", "opencode"}},
-	"skill:workbuddy":    {Command: "node scripts/workbuddy-resource-native-demo.js", Args: []string{"scripts/workbuddy-resource-native-demo.js"}},
-	"skill:codebuddy":    {Command: "node scripts/workbuddy-resource-native-demo.js --provider codebuddy", Args: []string{"scripts/workbuddy-resource-native-demo.js", "--provider", "codebuddy"}},
-	"skill:codebuddycn":  {Command: "node scripts/workbuddy-resource-native-demo.js --provider codebuddycn", Args: []string{"scripts/workbuddy-resource-native-demo.js", "--provider", "codebuddycn"}},
-	"mcp:codex":          {Command: "node scripts/codex-mcp-tool-loop-demo.js", Args: []string{"scripts/codex-mcp-tool-loop-demo.js"}},
-	"mcp:claude":         {Command: "node scripts/claude-mcp-tool-loop-demo.js", Args: []string{"scripts/claude-mcp-tool-loop-demo.js"}},
-	"mcp:opencode":       {Command: "node scripts/opencode-mcp-tool-loop-demo.js", Args: []string{"scripts/opencode-mcp-tool-loop-demo.js"}},
-	"mcp:cline":          {Command: "node scripts/cline-mcp-tool-loop-demo.js", Args: []string{"scripts/cline-mcp-tool-loop-demo.js"}},
-	"mcp:workbuddy":      {Command: "node scripts/workbuddy-mcp-tool-loop-demo.js", Args: []string{"scripts/workbuddy-mcp-tool-loop-demo.js"}},
 }
 
 func nativeResourceStatus(def providers.Definition, resource string) ResourceCapability {
@@ -218,25 +181,4 @@ func nonNilStrings(in []string) []string {
 		}
 	}
 	return out
-}
-
-func demoForKind(kind string) DemoSpec {
-	src := demoRelativeSources[kind]
-	cmd := "node scripts/mcp-native-demo.js"
-	if kind == "plugin" {
-		cmd = "node scripts/resource-closure-demo.js --skip-skill --skip-mcp"
-	} else if kind == "skill" {
-		cmd = "node scripts/skill-native-demo.js --provider <provider>"
-	}
-	return DemoSpec{Source: src, Command: cmd}
-}
-
-func lookupDemoSpec(provider, host, kind string) (DemoSpec, bool) {
-	id := provider
-	if host != "" {
-		id = host
-	}
-	key := fmt.Sprintf("%s:%s", kind, id)
-	spec, ok := demoSpecs[key]
-	return spec, ok
 }

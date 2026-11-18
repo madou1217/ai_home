@@ -28,10 +28,14 @@ const (
 )
 
 // Executor 是本机命令执行器；零值可用。
-type Executor struct{}
+type Executor struct {
+	// ProcessGroup confines cancellation to this command and its descendants.
+	// CLI updates opt in; existing server execution semantics are unchanged.
+	ProcessGroup bool
+}
 
 // Run 执行一条命令并返回结果。
-func (Executor) Run(ctx context.Context, command string, args []string, options environment.ExecOptions) environment.RunResult {
+func (executor Executor) Run(ctx context.Context, command string, args []string, options environment.ExecOptions) environment.RunResult {
 	timeout := options.Timeout
 	if timeout <= 0 {
 		timeout = defaultTimeout
@@ -62,6 +66,15 @@ func (Executor) Run(ctx context.Context, command string, args []string, options 
 		return commandObj.Process.Signal(syscall.SIGTERM)
 	}
 	commandObj.WaitDelay = waitDelayAfterSIGTERM
+	if executor.ProcessGroup {
+		configureCommandProcessGroup(commandObj)
+		commandObj.Cancel = func() error { return killCommandProcessGroup(commandObj) }
+		defer func() {
+			if runCtx.Err() != nil {
+				_ = killCommandProcessGroup(commandObj)
+			}
+		}()
+	}
 
 	stdout, err := commandObj.StdoutPipe()
 	if err != nil {

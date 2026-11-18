@@ -9,8 +9,8 @@
 //
 // 浏览器协议（web/src/services/api.ts 的 terminalAPI）不受影响。
 
-const { maxImageBytes } = require('../generated/chat-attachments.json');
-const { openWebUiTerminalSession } = require('./webui-terminal-go-client');
+const { maxImageBytes } = require('../../generated/chat-attachments.json');
+const { openWebUiTerminalSession } = require('../../lib/server/webui-terminal-go-client');
 
 const BROWSER_PREFIX = '/v0/webui/terminal/';
 const GO_PREFIX = '/v1/management/webui/terminal';
@@ -229,31 +229,7 @@ async function handleWebUiTerminalRequest(ctx) {
   }
 }
 
-// 查询 sessionKey 对应的 tmux 外层是否还活着（SSH 工作区状态用）。
-async function probeTerminalSession(sessionKey, goHost = null) {
-  if (!goHost || typeof goHost.terminalRequest !== 'function') {
-    return { state: 'unavailable', message: 'go_core_unavailable' };
-  }
-  const key = String(sessionKey || '').trim();
-  if (!key) return { state: 'missing' };
-  let result = null;
-  try {
-    result = await goHost.terminalRequest({
-      method: 'GET',
-      path: GO_PREFIX + '/probe?sessionKey=' + encodeURIComponent(key)
-    });
-  } catch (_error) {
-    result = null;
-  }
-  const body = asObject(result && result.body);
-  return {
-    state: String(body.state || 'unavailable'),
-    message: String(body.message || '')
-  };
-}
-
 module.exports = {
   handleWebUiTerminalRequest,
-  openWebUiTerminalSession,
-  probeTerminalSession
+  openWebUiTerminalSession
 };

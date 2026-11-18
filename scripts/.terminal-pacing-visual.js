@@ -8,7 +8,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { handleWebUiTerminalRequest, openWebUiTerminalSession } = require('../lib/server/webui-terminal-routes');
+const { handleWebUiTerminalRequest, openWebUiTerminalSession } = require('./lib/webui-terminal-routes');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'web', 'dist');

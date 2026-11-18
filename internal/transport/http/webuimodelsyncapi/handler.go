@@ -532,7 +532,7 @@ func (handler *Handler) handleCreateManual(response http.ResponseWriter, request
 		policy = accountapp.ModelPolicyForceDisable
 	}
 	syncID := handler.matchAccountModelID(request.Context(), accountRef, runtimeID)
-	if _, policyErr := handler.store.SetManualModelPolicy(request.Context(), accountRef, syncID, policy, handler.now()); policyErr != nil {
+	if _, policyErr := handler.store.SetManualModelPolicy(request.Context(), accountRef, syncID, policy, handler.modelPolicyTimestamp()); policyErr != nil {
 		writeError(response, http.StatusInternalServerError, "save_model_catalog_settings_failed", "同步账号模型策略失败")
 		return
 	}
@@ -672,7 +672,7 @@ func (handler *Handler) handlePatchModel(response http.ResponseWriter, request *
 		default:
 			policy = accountapp.ModelPolicyForceEnable
 		}
-		if _, policyErr := handler.store.SetManualModelPolicy(ctx, accountRef, syncID, policy, handler.now()); policyErr != nil {
+		if _, policyErr := handler.store.SetManualModelPolicy(ctx, accountRef, syncID, policy, handler.modelPolicyTimestamp()); policyErr != nil {
 			writeError(response, http.StatusInternalServerError, "save_model_catalog_settings_failed", "同步账号模型策略失败")
 			return
 		}
@@ -716,7 +716,7 @@ func (handler *Handler) handleCatalogDelete(response http.ResponseWriter, reques
 
 	if _, overviewErr := handler.store.GetAccountOverview(ctx, accountRef); overviewErr == nil {
 		syncID := handler.matchAccountModelID(ctx, accountRef, runtimeID)
-		if _, policyErr := handler.store.SetManualModelPolicy(ctx, accountRef, syncID, accountapp.ModelPolicyInherit, handler.now()); policyErr != nil {
+		if _, policyErr := handler.store.SetManualModelPolicy(ctx, accountRef, syncID, accountapp.ModelPolicyInherit, handler.modelPolicyTimestamp()); policyErr != nil {
 			writeError(response, http.StatusInternalServerError, "save_model_catalog_settings_failed", "同步账号模型策略失败")
 			return
 		}
@@ -1097,6 +1097,15 @@ func (handler *Handler) matchAccountModelID(
 ) runtimecore.ModelID {
 	matched, _, _ := handler.findAccountModelDetails(ctx, accountRef, requested)
 	return matched
+}
+
+// modelPolicyTimestamp 把当前时间归一到账号库要求的时间精度。
+//
+// sqliteaccount.SetManualModelPolicy 只接受 UTC 且毫秒对齐的时间；WebUI 直接写
+// 账号库，不经过应用层的 normalizeModelTime，因此必须在这个边界自行归一。
+// 默认的 time.Now() 带本地时区和亚毫秒精度，会让每次策略同步都被判为非法。
+func (handler *Handler) modelPolicyTimestamp() time.Time {
+	return time.UnixMilli(handler.now().UnixMilli()).UTC()
 }
 
 func (handler *Handler) loadSettingsBestEffort(ctx context.Context) modelcatalogsettings.Settings {

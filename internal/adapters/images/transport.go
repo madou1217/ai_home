@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strings"
 
@@ -299,7 +301,7 @@ func buildUpstreamMultipart(
 		if !ok {
 			return nil, "", newError(400, "invalid_image_data_url", "image payload is not decodable")
 		}
-		part, err := writer.CreateFormFile(fieldName, fmt.Sprintf("image-%d", index+1))
+		part, err := createImageMultipartPart(writer, fieldName, fmt.Sprintf("image-%d", index+1), image.MIME)
 		if err != nil {
 			return nil, "", newError(500, "passthrough_transport_unavailable", "multipart part is not writable")
 		}
@@ -312,7 +314,7 @@ func buildUpstreamMultipart(
 		if !ok {
 			return nil, "", newError(400, "invalid_image_mask", "mask payload is not decodable")
 		}
-		part, err := writer.CreateFormFile("mask", "mask.png")
+		part, err := createImageMultipartPart(writer, "mask", "mask", input.Mask.MIME)
 		if err != nil {
 			return nil, "", newError(500, "passthrough_transport_unavailable", "multipart part is not writable")
 		}
@@ -329,6 +331,29 @@ func buildUpstreamMultipart(
 		return nil, "", newError(500, "passthrough_transport_unavailable", "multipart body is not closable")
 	}
 	return buffer.Bytes(), writer.Boundary(), nil
+}
+
+// createImageMultipartPart 保留已校验的图片类型，避免默认 octet-stream 被上游拒绝。
+func createImageMultipartPart(
+	writer *multipart.Writer,
+	field string,
+	stem string,
+	mimeType imagedata.MIME,
+) (io.Writer, error) {
+	extension := map[imagedata.MIME]string{
+		imagedata.MIMEPNG:  "png",
+		imagedata.MIMEJPEG: "jpg",
+		imagedata.MIMEWEBP: "webp",
+	}[mimeType]
+	if extension == "" {
+		return nil, fmt.Errorf("unsupported multipart image MIME %q", mimeType)
+	}
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+		"name": field, "filename": stem + "." + extension,
+	}))
+	header.Set("Content-Type", string(mimeType))
+	return writer.CreatePart(header)
 }
 
 // writeMultipartField 按表单语义写一个字段：数组重复同名字段，对象写成 JSON 文本，标量按字符串。

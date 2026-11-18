@@ -333,7 +333,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
             <label>
               <span>输出格式</span>
               <Select
-                value={outputFormat || 'png'}
+                value={outputFormat}
                 onChange={onOutputFormatChange}
                 options={IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS}
               />

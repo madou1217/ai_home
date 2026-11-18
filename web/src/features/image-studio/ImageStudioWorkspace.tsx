@@ -109,7 +109,7 @@ const ImageStudioWorkspace: React.FC = () => {
   const [size, setSize] = useState('auto');
   const [quality, setQuality] = useState('auto');
   const [background, setBackground] = useState('auto');
-  const [outputFormat, setOutputFormat] = useState('png');
+  const [outputFormat, setOutputFormat] = useState('');
   const [outputCompression, setOutputCompression] = useState(100);
   const [moderation, setModeration] = useState('auto');
   const [sourceSelections, setSourceSelections] = useState<ImageStudioSourceSelection[]>([]);
@@ -149,7 +149,7 @@ const ImageStudioWorkspace: React.FC = () => {
     setParentRevisionId('');
     setMaskUpload(null);
     setBackground('auto');
-    setOutputFormat('png');
+    setOutputFormat('');
     setOutputCompression(100);
     setModeration('auto');
   }, []);
@@ -271,7 +271,7 @@ const ImageStudioWorkspace: React.FC = () => {
     if (!selectedModel.capabilities.size) setSize('auto');
     if (!getImageStudioQualityOptions(selectedModel).includes(quality)) setQuality('auto');
     if (!selectedModel.capabilities.background) setBackground('auto');
-    if (!selectedModel.capabilities.outputFormat) setOutputFormat('png');
+    if (!selectedModel.capabilities.outputFormat) setOutputFormat('');
     if (!selectedModel.capabilities.outputCompression) setOutputCompression(100);
     if (!selectedModel.capabilities.moderation) setModeration('auto');
     if (outputFormat === 'jpeg' && background === 'transparent') setBackground('auto');

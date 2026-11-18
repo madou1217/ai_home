@@ -28,6 +28,7 @@ export function imageStudioBackgroundOptions(outputFormat: string) {
 }
 
 export const IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS = [
+  { value: '', label: '自动（跟随上游）' },
   { value: 'png', label: 'PNG' },
   { value: 'jpeg', label: 'JPEG' },
   { value: 'webp', label: 'WebP' },

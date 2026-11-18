@@ -134,8 +134,8 @@ export function buildImageStudioRevisionDraft(
       ? String(revision.parameters?.background || '').trim() || 'auto'
       : 'auto',
     outputFormat: selectedModel.capabilities.outputFormat
-      ? String(revision.parameters?.outputFormat || '').trim() || 'png'
-      : 'png',
+      ? String(revision.parameters?.outputFormat || '').trim()
+      : '',
     outputCompression: selectedModel.capabilities.outputCompression
       && Number.isInteger(desiredCompression)
       && desiredCompression >= 0

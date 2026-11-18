@@ -34,6 +34,61 @@ type FrameBridgeOptions struct {
 	MaxFrameBytes int
 	LogDebug      func(string)
 	LogError      func(error)
+	// StdioHalfClose is opt-in: the WebSocket lifecycle remains unchanged.
+	// StdinEOFTimeout bounds normal caller EOF until the single native Wait
+	// completes. This private stdio contract requires exactly 15 seconds.
+	// Native stdout then has its separate two-second drain window.
+	StdioHalfClose  bool
+	StdinEOFTimeout time.Duration
+}
+
+// ValidateStdioBridgePreflight is pure: a future stdio caller must call it
+// before starting native, with its prepared owner's actual Wait and Close
+// callbacks. Close must synchronously unblock pipes and Wait on success.
+// Non-nil callbacks alone do not prove reclamation; that owner contract still
+// needs caller integration and real acceptance. No public stdio caller is
+// enabled here, and a failed preflight must not be followed by native start.
+func ValidateStdioBridgePreflight(options FrameBridgeOptions, wait func() error, closeOwner func() error) error {
+	if !options.StdioHalfClose || options.StdinEOFTimeout != 15*time.Second || options.MaxFrameBytes > maxStdioFrameBytes || wait == nil || closeOwner == nil {
+		return errStdioHalfCloseOptions
+	}
+	return nil
+}
+
+// An already-started invalid session is not a substitute for preflight. Without
+// a complete owner, or after Close fails, no bounded join can be promised. Do
+// not enter Wait, detach a timeout goroutine, or claim native was reclaimed.
+func rejectStdioBridge(frames FrameTransport, stdio *StdioBridgeSession, log func(error)) {
+	report := func(err error) {
+		if log != nil && err != nil {
+			log(err)
+		}
+	}
+	report(errStdioHalfCloseOptions)
+	if frames != nil {
+		report(frames.Close())
+	}
+	if stdio == nil {
+		report(errStdioNativeCleanupUnknown)
+		return
+	}
+	if stdio.Close == nil || stdio.Wait == nil {
+		if stdio.Close != nil {
+			report(stdio.Close())
+		} else if stdio.Stdin != nil {
+			// Best effort only, not process-group reclamation evidence.
+			report(stdio.Stdin.Close())
+		}
+		report(errStdioNativeCleanupUnknown)
+		return
+	}
+	if err := stdio.Close(); err != nil {
+		report(err)
+		report(errStdioNativeCleanupUnknown)
+		return
+	}
+	// Only a complete owner whose Close succeeded may enter its sole join.
+	report(stdio.Wait())
 }
 
 // BridgeStdio delegates native transport to a caller frame adapter without
@@ -42,6 +97,16 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 	limit := options.MaxFrameBytes
 	if limit <= 0 {
 		limit = 16 * 1024 * 1024
+	}
+	if options.StdioHalfClose {
+		invalid := frames == nil || stdio == nil
+		if !invalid {
+			invalid = ValidateStdioBridgePreflight(options, stdio.Wait, stdio.Close) != nil || stdio.Stdin == nil || stdio.Stdout == nil
+		}
+		if invalid {
+			rejectStdioBridge(frames, stdio, options.LogError)
+			return
+		}
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -64,6 +129,7 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 	defer scopes.Close()
 	var workers sync.WaitGroup
 	stdoutDone := make(chan struct{})
+	nativeWaitDone := make(chan struct{})
 	logError := func(err error) {
 		if options.LogError != nil && err != nil && ctx.Err() == nil {
 			options.LogError(err)
@@ -73,7 +139,14 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 	go func() {
 		defer workers.Done()
 		defer close(stdoutDone)
-		defer stop()
+		stdoutEOF := false
+		defer func() {
+			// In explicit stdio mode stdout EOF alone is not native exit. Do
+			// not kill a child which closed stdout but is still finishing.
+			if !options.StdioHalfClose || !stdoutEOF {
+				stop()
+			}
+		}()
 		if stdio.Stdout == nil {
 			return
 		}
@@ -95,7 +168,8 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 				}
 			}
 			if err != nil {
-				if !errors.Is(err, io.EOF) {
+				stdoutEOF = errors.Is(err, io.EOF)
+				if !stdoutEOF {
 					logError(err)
 				}
 				return
@@ -110,13 +184,22 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			_ = stdio.Wait()
+			waitErr := stdio.Wait()
+			if options.StdioHalfClose {
+				logError(waitErr)
+			}
+			// One Wait owner broadcasts completion to the EOF path; the latter
+			// never calls Wait a second time or creates a new supervisor.
+			close(nativeWaitDone)
 			// Wait must not close stdout before its final frame is drained. Bound a
 			// descendant holding the inherited pipe after the direct child exits.
 			timer := time.NewTimer(2 * time.Second)
 			defer timer.Stop()
 			select {
 			case <-stdoutDone:
+				if options.StdioHalfClose {
+					stop()
+				}
 			case <-ctx.Done():
 			case <-timer.C:
 				stop()
@@ -126,6 +209,31 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 	for {
 		raw, err := frames.Read(ctx)
 		if err != nil {
+			if options.StdioHalfClose && errors.Is(err, io.EOF) && ctx.Err() == nil {
+				// EOF is a half-close, not cancellation. Deadline and I/O errors
+				// do not take this branch and retain the ordinary stop/join path.
+				if closeErr := stdio.Stdin.Close(); closeErr != nil {
+					logError(closeErr)
+					break
+				}
+				timer := time.NewTimer(options.StdinEOFTimeout)
+				select {
+				case <-nativeWaitDone:
+					timer.Stop()
+					// The sole Wait worker owns the independent post-exit
+					// drain deadline, including a descendant holding stdout.
+					select {
+					case <-stdoutDone:
+					case <-ctx.Done():
+					}
+				case <-timer.C:
+					logError(errStdioEOFNativeExitTimeout)
+				case <-ctx.Done():
+				}
+				timer.Stop()
+			} else if options.StdioHalfClose {
+				logError(err)
+			}
 			break
 		}
 		if err = scopes.TryRemember(raw, options.Rewrite); err != nil {
@@ -159,7 +267,12 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 	workers.Wait()
 }
 
-var errAppServerLineTooLarge = errors.New("codex_app_server_line_too_large")
+var (
+	errAppServerLineTooLarge     = errors.New("codex_app_server_line_too_large")
+	errStdioHalfCloseOptions     = errors.New("codex_stdio_half_close_options_invalid")
+	errStdioNativeCleanupUnknown = errors.New("codex_stdio_native_cleanup_unknown")
+	errStdioEOFNativeExitTimeout = errors.New("codex_stdio_eof_native_exit_timeout")
+)
 
 // Borrow complete short lines from bufio; long frames grow once amortized and
 // never exceed the configured wire ceiling. A final unterminated frame is data,

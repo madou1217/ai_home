@@ -53,6 +53,9 @@
   - 用 `GIT_INDEX_FILE` 临时索引准备提交后，又跑了一次**不带临时索引**的 `git commit --amend`（改提交信息）；amend 重新读取了主索引，于是把并行会话暂存的反向 diff 提交并推送了出去（37 个文件被回退，自己的改动反而没进去）。
   - 并行会话的 `git add -A` 把工作区里**过时的旧文件**一起暂存，提交时把另一条工作线整个 revert 掉（48 个文件、-2093 行）。
   - 结论：① 临时索引只用于**一次**提交，之后要改信息就重新走一遍完整流程，绝不在临时索引之外 amend；② `--amend` 前重新核对 `--cached --stat`，它和普通提交一样会重新读索引；③ 提交后 `git show --stat HEAD` 复核一次，确认没有多带文件；④ 发现带错文件时，用独立 worktree 在最新基点上**重建**自己的改动（`git checkout <好提交> -- <自己的文件>`），不要 reset/revert 别人的东西。
+- **每个任务必须及时完成 scoped commit（用户 2026-11-18 明确）**：派发或续接任务时必须列明 owner、精确路径/共享文件 hunk、验证方式，以及本子阶段的 scoped commit 和推送交付要求。完成一个可审查的逻辑变更及其必需依赖后，由原 owner 及时显式路径提交，再推进下一工程子任务；`aih peer` 的派发、ACK、报告或“已完成”不能代替真实提交。未通过审查、尚在实现或用户已暂停的工作保留原状态，必须明确未提交路径、原因和下一处理条件，不为清空待提交跳过审查或擅自续工。
+- **提交范围必须包含必需依赖并保留同伴改动**：提交前比较 HEAD、真实磁盘内容和 index，区分真正未提交改动与旧索引产生的反向 diff；不能把 `git status` 的路径数直接当成待提交成果。共享文件只提交本人已批准 hunk，不将 peer 内容、过时索引或未审新文件混入提交；禁止提交仍依赖未跟踪文件的代码。需要临时索引时从 fresh HEAD 准备，所有索引及提交命令使用同一 `GIT_INDEX_FILE`，提交后复核完整 tree/pathspec，并证明原主索引与同伴内容保持不变。
+- **scoped commit；遇到推送网络问题，使用 AWS server 作为临时代理完成推送。** 本地提交不依赖网络，不因网络失败积压已验证的源码。优先复用项目代理池里高级设置已启用的 AWS 受管出口：通过 `GET /v1/management/proxy-candidates` 选择当前可用的 AWS `ssh:<connectionId>`，以 `POST /v1/management/proxy-leases` 取得本次任务租约；仅为本次 Git 进程配置代理，执行 `git push origin main`，核验远端 main 包含预期提交，并在结束/取消时 `DELETE /v1/management/proxy-leases/{id}`。远程管理连接使用现有 authenticated Upgrade/本机任务入口，不能把服务端 localhost 当作客户端地址。凭据不得进入命令参数、URL 日志或提交；不改全局 Git/SSH/系统代理及代理池全局选中节点，不另起常驻远端代理。
 - **`git push` 在本仓库不属高风险操作**（用户 2026-10-15 明确）：本地提交可以直接 `git push origin main`，不必先征求确认（并发会话的本地提交会一并推上去，这是共享 main 的正常流程）。仍必须先确认的是**破坏性历史操作**（`git reset --hard`、丢弃提交的 rebase、删除 worktree/branch）——见上一条。
 
 ## Commit & Pull Request Guidelines

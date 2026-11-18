@@ -82,6 +82,13 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 	case errors.Is(err, accountapp.ErrModelWriteBusy):
 		response.Header().Set("Retry-After", "1")
 		writeAPIError(response, http.StatusServiceUnavailable, "account_model_write_busy", "账号模型正在被并发更新，请稍后重试")
+	case errors.Is(err, usageapp.ErrSnapshotSuperseded):
+		writeAPIError(
+			response,
+			http.StatusConflict,
+			"usage_observation_superseded",
+			"已有更新或冲突的额度观察，当前快照未被覆盖",
+		)
 	case errors.Is(err, usageapp.ErrSnapshotNotFound):
 		writeAPIError(
 			response,

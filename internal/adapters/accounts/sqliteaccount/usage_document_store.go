@@ -59,6 +59,20 @@ func (store *Store) ReplaceUsageDocument(
 		return usagecore.ErrInvalidDocument
 	}
 
+	if err := checkUsageObservationTime(ctx, transaction, document.AccountRef(), document.Source(), document.CapturedAt()); err != nil {
+		return err
+	}
+	if err := upsertUsageDocument(ctx, transaction, document); err != nil {
+		return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("提交额度文档写入事务失败: %w", err)
+	}
+	return nil
+}
+
+// upsertUsageDocument 与事实写入共享事务，拒绝时间倒退与同刻冲突。
+func upsertUsageDocument(ctx context.Context, transaction *sql.Tx, document usagecore.Document) error {
 	const statement = `
 		INSERT INTO account_usage_snapshots (
 			account_ref, provider_id, kind, source, captured_at_ms, payload_json
@@ -69,8 +83,12 @@ func (store *Store) ReplaceUsageDocument(
 			source = excluded.source,
 			captured_at_ms = excluded.captured_at_ms,
 			payload_json = excluded.payload_json
-		WHERE excluded.captured_at_ms >= account_usage_snapshots.captured_at_ms`
-	if _, err := transaction.ExecContext(
+		WHERE excluded.captured_at_ms > account_usage_snapshots.captured_at_ms
+       OR (excluded.captured_at_ms = account_usage_snapshots.captured_at_ms
+           AND excluded.source = account_usage_snapshots.source
+           AND excluded.kind = account_usage_snapshots.kind
+           AND json(excluded.payload_json) = json(account_usage_snapshots.payload_json))`
+	result, err := transaction.ExecContext(
 		ctx,
 		statement,
 		document.AccountRef().String(),
@@ -79,11 +97,14 @@ func (store *Store) ReplaceUsageDocument(
 		document.Source(),
 		document.CapturedAt().UnixMilli(),
 		string(document.Payload()),
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("写入账号额度文档失败: %w", err)
 	}
-	if err := transaction.Commit(); err != nil {
-		return fmt.Errorf("提交额度文档写入事务失败: %w", err)
+	if affected, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("读取额度文档写入结果失败: %w", err)
+	} else if affected == 0 {
+		return usageapp.ErrSnapshotSuperseded
 	}
 	return nil
 }
@@ -199,6 +220,10 @@ func (store *Store) ReplaceUsageDocumentQuotaState(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	return replaceUsageDocumentQuotaState(ctx, store.db, state)
+}
+
+func replaceUsageDocumentQuotaState(ctx context.Context, executor statementExecutor, state usageapp.DocumentQuotaState) error {
 	var remaining any
 	if state.Remaining.Known {
 		remaining = int64(state.Remaining.BasisPoints)
@@ -207,16 +232,24 @@ func (store *Store) ReplaceUsageDocumentQuotaState(
 	if state.Remaining.Known {
 		hasNumeric = 1
 	}
-	if _, err := store.db.ExecContext(
+	if _, err := executor.ExecContext(
 		ctx,
 		`UPDATE account_usage_snapshots
 		    SET quota_status = ?, quota_reason = ?, remaining_bps = ?, has_numeric_remaining = ?
-		  WHERE account_ref = ?`,
+		  WHERE account_ref = ? AND captured_at_ms = ?
+        AND ((? = 0 AND NOT EXISTS (SELECT 1 FROM account_usage WHERE account_ref = ?))
+          OR (? = 1 AND (SELECT MAX(captured_at_ms) FROM account_usage WHERE account_ref = ?) = ?))`,
 		state.Status,
 		state.Reason,
 		remaining,
 		hasNumeric,
 		state.AccountRef.String(),
+		state.DocumentCapturedAtMS,
+		state.HasUsageSnapshot,
+		state.AccountRef.String(),
+		state.HasUsageSnapshot,
+		state.AccountRef.String(),
+		state.UsageCapturedAtMS,
 	); err != nil {
 		return fmt.Errorf("写入账号额度状态失败: %w", err)
 	}

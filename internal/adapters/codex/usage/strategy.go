@@ -45,7 +45,7 @@ type Strategy struct {
 	versions clientversion.Source
 }
 
-var _ usageapp.ProviderStrategy = (*Strategy)(nil)
+var _ usageapp.ProviderSnapshotStrategy = (*Strategy)(nil)
 
 // New 创建不启动 stdio worker 的 Codex 额度 Strategy。
 func New(client HTTPClient) (*Strategy, error) {
@@ -73,30 +73,41 @@ func (*Strategy) MatchesModelFamily(
 	return false
 }
 
-// FetchUsage 使用 OAuth Bearer 读取完整额度并构造账号级快照。
+// FetchUsage 使用同一次采集构造的归一化快照。
 func (strategy *Strategy) FetchUsage(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 	credential accountapp.Credential,
 	capturedAt time.Time,
 ) (usagecore.Snapshot, error) {
+	snapshot, _, err := strategy.FetchUsageWithDocument(ctx, accountRef, credential, capturedAt)
+	return snapshot, err
+}
+
+// FetchUsageWithDocument 从同一响应同时产出路由事实与列表/WebUI 展示文档。
+func (strategy *Strategy) FetchUsageWithDocument(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	credential accountapp.Credential,
+	capturedAt time.Time,
+) (usagecore.Snapshot, *usagecore.Document, error) {
 	if strategy == nil ||
 		strategy.client == nil ||
 		ctx == nil ||
 		!accountRef.IsValid() {
-		return usagecore.Snapshot{}, usageapp.ErrInvalidRequest
+		return usagecore.Snapshot{}, nil, usageapp.ErrInvalidRequest
 	}
 	auth, ok := credential.(*codexauth.OAuthAuth)
 	if !ok || auth == nil {
-		return usagecore.Snapshot{}, usageapp.ErrUsageUnsupported
+		return usagecore.Snapshot{}, nil, usageapp.ErrUsageUnsupported
 	}
 	request, err := newRequest(ctx, auth, strategy.versions.Current())
 	if err != nil {
-		return usagecore.Snapshot{}, errors.Join(usageapp.ErrRefreshFailed, err)
+		return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, err)
 	}
 	response, err := strategy.client.Do(request)
 	if err != nil || response == nil || response.Body == nil {
-		return usagecore.Snapshot{}, errors.Join(
+		return usagecore.Snapshot{}, nil, errors.Join(
 			usageapp.ErrRefreshFailed,
 			ErrInvalidResponse,
 		)
@@ -106,18 +117,18 @@ func (strategy *Strategy) FetchUsage(
 	}()
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		return usagecore.Snapshot{}, errors.Join(
+		return usagecore.Snapshot{}, nil, errors.Join(
 			usageapp.ErrRefreshFailed,
 			ErrInvalidResponse,
 		)
 	}
 	payload, err := decodePayload(response.Body)
 	if err != nil {
-		return usagecore.Snapshot{}, errors.Join(usageapp.ErrRefreshFailed, err)
+		return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, err)
 	}
 	entries, err := payload.entries(capturedAt)
 	if err != nil || len(entries) == 0 {
-		return usagecore.Snapshot{}, errors.Join(
+		return usagecore.Snapshot{}, nil, errors.Join(
 			usageapp.ErrRefreshFailed,
 			ErrInvalidResponse,
 		)
@@ -131,12 +142,16 @@ func (strategy *Strategy) FetchUsage(
 		Entries:    entries,
 	})
 	if err != nil {
-		return usagecore.Snapshot{}, errors.Join(
+		return usagecore.Snapshot{}, nil, errors.Join(
 			usageapp.ErrRefreshFailed,
 			ErrInvalidResponse,
 		)
 	}
-	return snapshot, nil
+	document, err := newUsageDocument(snapshot)
+	if err != nil {
+		return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, err)
+	}
+	return snapshot, &document, nil
 }
 
 // snapshotPlanType 把 ID Token 的套餐 claim 归一成快照里的套餐 token。

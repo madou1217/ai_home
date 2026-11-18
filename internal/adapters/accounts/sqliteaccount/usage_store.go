@@ -46,6 +46,16 @@ func (store *Store) replaceUsageSnapshot(
 	snapshot usagecore.Snapshot,
 	expectedCredentialUpdatedAt time.Time,
 ) error {
+	return store.replaceUsageObservation(ctx, snapshot, expectedCredentialUpdatedAt, nil, nil)
+}
+
+func (store *Store) replaceUsageObservation(
+	ctx context.Context,
+	snapshot usagecore.Snapshot,
+	expectedCredentialUpdatedAt time.Time,
+	document *usagecore.Document,
+	state *usageapp.DocumentQuotaState,
+) error {
 	if store == nil ||
 		store.db == nil ||
 		ctx == nil ||
@@ -92,6 +102,12 @@ func (store *Store) replaceUsageSnapshot(
 			return accountapp.ErrCredentialConflict
 		}
 	}
+	if err := checkUsageObservationTime(ctx, transaction, snapshot.AccountRef(), snapshot.Source(), snapshot.CapturedAt()); err != nil {
+		return err
+	}
+	if err := checkUsageSnapshotReplay(ctx, transaction, snapshot); err != nil {
+		return err
+	}
 	if _, err := transaction.ExecContext(
 		ctx,
 		"DELETE FROM account_usage WHERE account_ref = ?",
@@ -101,6 +117,14 @@ func (store *Store) replaceUsageSnapshot(
 	}
 	if err := insertUsageEntries(ctx, transaction, snapshot); err != nil {
 		return err
+	}
+	if document != nil {
+		if err := upsertUsageDocument(ctx, transaction, *document); err != nil {
+			return err
+		}
+		if err := replaceUsageDocumentQuotaState(ctx, transaction, *state); err != nil {
+			return err
+		}
 	}
 	// 采样与当前快照同事务：先写当前值，再留一条历史事实，避免两者不一致。
 	// 采样是附加事实，写失败不能让额度快照本身失败（与 Node 侧一致）。

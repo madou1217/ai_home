@@ -68,9 +68,11 @@ func (handler *Handler) handleAccountQuotaStates(
 			continue
 		}
 		remaining := usagecore.UnknownRemaining()
+		var usageCapturedAtMS int64
 		result, usageErr := handler.usage.GetUsage(request.Context(), account.Ref())
 		if usageErr == nil {
 			remaining = result.Snapshot().MinRemaining()
+			usageCapturedAtMS = result.Snapshot().CapturedAt().UnixMilli()
 		} else if !errors.Is(usageErr, usageapp.ErrSnapshotNotFound) {
 			writeApplicationError(response, usageErr)
 			return
@@ -86,10 +88,13 @@ func (handler *Handler) handleAccountQuotaStates(
 		_ = handler.usage.ReplaceDocumentQuotaState(
 			request.Context(),
 			usageapp.DocumentQuotaState{
-				AccountRef: account.Ref(),
-				Status:     state.Status,
-				Reason:     state.Reason,
-				Remaining:  remaining,
+				AccountRef:           account.Ref(),
+				DocumentCapturedAtMS: document.CapturedAt().UnixMilli(),
+				UsageCapturedAtMS:    usageCapturedAtMS,
+				HasUsageSnapshot:     usageErr == nil,
+				Status:               state.Status,
+				Reason:               state.Reason,
+				Remaining:            remaining,
 			},
 		)
 		views = append(views, accountQuotaStateView{

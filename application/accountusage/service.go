@@ -37,6 +37,8 @@ var (
 	ErrRefreshFailed = errors.New("账号额度刷新失败")
 	// ErrInvalidSnapshot 表示 Adapter 或存储返回了身份不一致的额度快照。
 	ErrInvalidSnapshot = errors.New("账号额度快照结果无效")
+	// ErrSnapshotSuperseded 表示较新的观察已经生效，本次结果不得覆盖或投影。
+	ErrSnapshotSuperseded = errors.New("账号额度观察已被较新或冲突结果取代")
 	// ErrRuntimeProjection 表示快照已保存但运行态投影没有完成。
 	ErrRuntimeProjection = errors.New("账号额度运行态投影失败")
 )
@@ -63,6 +65,18 @@ type SnapshotStore interface {
 	) (usagecore.Snapshot, error)
 }
 
+// ObservationStore 原子提交一次采集的事实、展示文档和派生额度状态。
+// 凭据版本与采集时间门禁必须覆盖整个集合；写入失败不能降级为分步写。
+type ObservationStore interface {
+	ReplaceUsageObservationIfCredentialVersion(
+		ctx context.Context,
+		snapshot usagecore.Snapshot,
+		document usagecore.Document,
+		quotaState DocumentQuotaState,
+		expectedCredentialUpdatedAt time.Time,
+	) error
+}
+
 // UsageDocumentStore 保存采集方生产的完整 Provider 快照文档。
 //
 // 文档是 WebUI 的直接渲染输入，Go 只校验身份与 JSON 形状，不解释 Provider 字段；
@@ -87,10 +101,14 @@ type UsageDocumentStore interface {
 
 // DocumentQuotaState 是物化在快照文档上的账号级额度状态。
 type DocumentQuotaState struct {
-	AccountRef accountcore.AccountRef
-	Status     string
-	Reason     string
-	Remaining  usagecore.Remaining
+	// Compare both observations before publishing a derived scalar.
+	DocumentCapturedAtMS int64
+	UsageCapturedAtMS    int64
+	HasUsageSnapshot     bool
+	AccountRef           accountcore.AccountRef
+	Status               string
+	Reason               string
+	Remaining            usagecore.Remaining
 }
 
 // DocumentQuery 过滤账号快照文档；空过滤表示全部。
@@ -437,33 +455,52 @@ func (service *Service) refreshCurrent(
 		!snapshot.CapturedAt().Equal(capturedAt) {
 		return ReadResult{}, ErrInvalidSnapshot
 	}
-	if err := service.store.ReplaceUsageSnapshotIfCredentialVersion(
-		ctx,
-		snapshot,
-		credentialSnapshot.UpdatedAt(),
-	); err != nil {
-		return ReadResult{}, err
-	}
-	// 展示文档与归一化事实同源同刻：先落文档，再刷新物化额度状态。
-	if document != nil {
-		if err := service.ReplaceDocument(ctx, *document); err != nil {
-			return ReadResult{}, err
-		}
-	}
 	if call == nil {
 		return ReadResult{}, ErrInvalidRequest
 	}
+	if document != nil && (!document.IsValid() ||
+		document.AccountRef() != snapshot.AccountRef() ||
+		document.ProviderID() != snapshot.ProviderID() ||
+		document.Source() != snapshot.Source() ||
+		!document.CapturedAt().Equal(snapshot.CapturedAt())) {
+		return ReadResult{}, ErrInvalidSnapshot
+	}
 	if err := call.project(func() error {
-		return service.projectRuntime(
-			context.WithoutCancel(ctx),
-			snapshot,
-			strategy,
-		)
-	}); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return ReadResult{}, err
+		if document == nil {
+			if err := service.store.ReplaceUsageSnapshotIfCredentialVersion(
+				ctx, snapshot, credentialSnapshot.UpdatedAt(),
+			); err != nil {
+				return err
+			}
+		} else {
+			observations, ok := service.store.(ObservationStore)
+			if !ok {
+				return ErrInvalidDependencies
+			}
+			fields := parseDocumentPayloadFields(document.Payload())
+			remaining := snapshot.MinRemaining()
+			state := usagecore.DeriveQuotaState(usagecore.QuotaStateInput{
+				Kind: document.Kind(), FallbackSource: fields.FallbackSource,
+				PlanType: fields.Account.PlanType, Remaining: remaining,
+			})
+			if err := observations.ReplaceUsageObservationIfCredentialVersion(
+				ctx, snapshot, *document,
+				DocumentQuotaState{
+					AccountRef: accountRef, DocumentCapturedAtMS: document.CapturedAt().UnixMilli(),
+					UsageCapturedAtMS: snapshot.CapturedAt().UnixMilli(), HasUsageSnapshot: true,
+					Status: state.Status, Reason: state.Reason, Remaining: remaining,
+				},
+				credentialSnapshot.UpdatedAt(),
+			); err != nil {
+				return err
+			}
 		}
-		return ReadResult{}, errors.Join(ErrRuntimeProjection, err)
+		if err := service.projectRuntime(context.WithoutCancel(ctx), snapshot, strategy); err != nil {
+			return errors.Join(ErrRuntimeProjection, err)
+		}
+		return nil
+	}); err != nil {
+		return ReadResult{}, err
 	}
 	return NewReadResult(snapshot, false)
 }

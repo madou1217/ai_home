@@ -49,10 +49,12 @@ func (service *Service) refreshDocumentQuotaState(
 	}
 	document := documents[0]
 	remaining := usagecore.UnknownRemaining()
+	var usageCapturedAtMS int64
 	snapshot, snapshotErr := service.store.GetUsageSnapshot(ctx, accountRef)
 	switch {
 	case snapshotErr == nil:
 		remaining = snapshot.MinRemaining()
+		usageCapturedAtMS = snapshot.CapturedAt().UnixMilli()
 	case errors.Is(snapshotErr, ErrSnapshotNotFound):
 	default:
 		return snapshotErr
@@ -65,10 +67,13 @@ func (service *Service) refreshDocumentQuotaState(
 		Remaining:      remaining,
 	})
 	return service.documents.ReplaceUsageDocumentQuotaState(ctx, DocumentQuotaState{
-		AccountRef: accountRef,
-		Status:     state.Status,
-		Reason:     state.Reason,
-		Remaining:  remaining,
+		AccountRef:           accountRef,
+		DocumentCapturedAtMS: document.CapturedAt().UnixMilli(),
+		UsageCapturedAtMS:    usageCapturedAtMS,
+		HasUsageSnapshot:     snapshotErr == nil,
+		Status:               state.Status,
+		Reason:               state.Reason,
+		Remaining:            remaining,
 	})
 }
 

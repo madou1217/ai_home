@@ -30,10 +30,10 @@ const nodeRoutes = [
     layout: false,
   },
   {
-    name: "会话总览",
+    name: "项目办公室",
     path: "/terminals",
     component: "./TerminalSessions",
-    icon: "code",
+    icon: "desktop",
   },
   {
     name: "模型用量",
@@ -54,11 +54,10 @@ const nodeRoutes = [
     icon: "schedule",
   },
   {
-    // peer 消息收件箱：`aih peer send` 发出的消息在 WebUI 里可见（只读）。
-    name: "消息收件箱",
+    // peer 消息收件箱深度链接：直接打开同一「项目办公室」邮箱上下文，不在侧栏保留重复菜单项。
     path: "/peer-inbox",
     component: "./PeerInbox",
-    icon: "mail",
+    hideInMenu: true,
   },
   {
     path: "/toolkit/install-guide",

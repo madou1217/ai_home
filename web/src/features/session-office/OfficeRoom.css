@@ -1,0 +1,1911 @@
+/* =============================================================================
+ * OfficeRoom — Volumetric 3D Spatial Project Room
+ * Strictly uses design-tokens.css variables (light & dark themes), full 1px
+ * borders only (zero thick left/inset decorative stripes), and prefers-reduced-motion.
+ * ========================================================================== */
+
+.office-room-root {
+  --office-wall-bg: color-mix(in srgb, var(--color-surface-raised) 88%, var(--color-bg));
+  --office-wall-panel: color-mix(in srgb, var(--color-surface-muted) 86%, transparent);
+  --office-floor-bg: color-mix(in srgb, var(--color-surface-sunken) 82%, var(--color-bg));
+  --office-desk-top: color-mix(in srgb, var(--color-surface-raised) 82%, var(--color-surface-muted));
+  --office-desk-edge: color-mix(in srgb, var(--color-surface-muted) 92%, var(--color-border-strong));
+  --office-desk-shadow: color-mix(in srgb, var(--color-surface-sunken) 94%, var(--color-border));
+  --office-chair-bg: color-mix(in srgb, var(--color-surface-muted) 78%, var(--color-border-strong));
+  --office-monitor-shell: color-mix(in srgb, var(--color-surface-sunken) 78%, var(--color-surface-muted));
+  --office-screen-bg: color-mix(in srgb, var(--color-surface) 94%, var(--color-bg));
+  --office-border-hud: var(--hud-border-glass, var(--color-border));
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  border: 0;
+  background:
+    radial-gradient(ellipse 70% 42% at 50% 0%, color-mix(in srgb, var(--color-accent) 9%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 45% at 88% 100%, color-mix(in srgb, var(--hud-violet) 7%, transparent) 0%, transparent 72%),
+    var(--color-surface-soft);
+  overflow: hidden;
+}
+
+.office-room-root--state {
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-16);
+}
+
+.office-room-state-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* ── Top Compact Room Control Strip ──────────────────────────────────────── */
+
+.office-room-topbar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding: var(--space-5) var(--space-8);
+  border-bottom: 1px solid var(--office-border-hud);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+}
+
+.office-room-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.office-room-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 2px var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 34%, var(--color-border));
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  white-space: nowrap;
+}
+
+.office-room-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h2);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-heading);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-room-path {
+  padding: 2px var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-muted);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-room-counters {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.office-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-raised);
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.office-pill--ok {
+  border-color: color-mix(in srgb, var(--color-success) 38%, var(--color-border));
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.office-pill--warn {
+  border-color: color-mix(in srgb, var(--color-warning) 38%, var(--color-border));
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.office-pill--info {
+  border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.office-room-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.office-zone-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 2px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-raised);
+}
+
+.office-zone-status {
+  padding: 0 var(--space-2);
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.office-camera-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-sunken);
+}
+
+.office-camera-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--hos-radius-xs, 2px);
+  background: transparent;
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: var(--hos-text-micro);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.office-camera-btn:hover {
+  color: var(--color-heading);
+  background: var(--color-surface);
+}
+
+.office-camera-btn.is-active {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+  background: var(--color-surface);
+  color: var(--color-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+.office-btn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.office-btn-badge--warn {
+  border-color: color-mix(in srgb, var(--color-warning) 44%, var(--color-border));
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+/* ── Outer Scroll & 3D Perspective Stage ─────────────────────────────────── */
+
+.office-room-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-6) var(--space-6) var(--space-12);
+}
+
+.office-room-perspective {
+  perspective: 1550px;
+  perspective-origin: 50% 34%;
+  max-width: 1620px;
+  margin: 0 auto;
+}
+
+@keyframes officeRoomEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, -38px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.office-room-stage-frame {
+  transform-style: preserve-3d;
+  animation: officeRoomEnter var(--motion-slower) var(--ease-snappy) backwards;
+}
+
+.office-stage {
+  position: relative;
+  transform-style: preserve-3d;
+  padding: 14px 20px 28px;
+  transition: transform 420ms var(--ease-snappy);
+}
+
+.office-stage[data-camera='isometric'] {
+  transform: rotateX(8deg) rotateY(-5deg) scale(0.985);
+}
+
+.office-stage[data-camera='corridor'] {
+  transform: rotateX(4deg) rotateY(7deg) translate3d(0, 2px, 22px) scale(1);
+}
+
+.office-stage[data-camera='overview'] {
+  transform: rotateX(15deg) rotateY(0deg) translate3d(0, -4px, -10px) scale(0.95);
+}
+
+/* ── Volumetric Architectural Room Envelope ──────────────────────────────── */
+
+.office-ceiling {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-10);
+  height: 26px;
+  margin: 0 24px 6px;
+  transform-style: preserve-3d;
+  transform: translate3d(0, -6px, -24px) rotateX(-52deg);
+  pointer-events: none;
+}
+
+.office-ceiling-beam {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-raised)) 0%,
+    color-mix(in srgb, var(--color-accent) 6%, transparent) 100%
+  );
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.office-ceiling-beam--c {
+  border-color: color-mix(in srgb, var(--hud-violet) 32%, var(--color-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--hud-violet) 20%, var(--color-surface-raised)) 0%,
+    color-mix(in srgb, var(--color-accent) 8%, transparent) 100%
+  );
+}
+
+.office-wall-back {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  padding: var(--space-6) var(--space-10);
+  margin-bottom: var(--space-10);
+  border: 1px solid var(--office-border-hud);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 44px,
+      color-mix(in srgb, var(--color-accent) 8%, transparent) 44px,
+      color-mix(in srgb, var(--color-accent) 8%, transparent) 45px
+    ),
+    linear-gradient(180deg, var(--office-wall-bg) 0%, var(--office-wall-panel) 100%);
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, -44px);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.office-wall-plaque {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 36%, var(--color-border));
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+}
+
+.office-wall-plaque-code {
+  font-family: var(--font-display);
+  font-size: var(--hos-text-caption);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+}
+
+.office-wall-plaque-sub {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  color: var(--color-muted);
+}
+
+.office-wall-mail-terminal {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+  border-radius: var(--hos-radius-sm, 3px);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-accent-soft));
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.office-wall-mail-terminal:hover {
+  border-color: var(--color-accent);
+  transform: translate3d(0, -1px, 6px);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.office-wall-terminal-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+}
+
+.office-wall-terminal-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-strong);
+}
+
+.office-wall-side {
+  position: absolute;
+  top: 74px;
+  bottom: 0;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-10) var(--space-4);
+  border: 1px solid var(--office-border-hud);
+  background:
+    linear-gradient(180deg, var(--office-wall-bg) 0%, var(--office-floor-bg) 100%);
+  pointer-events: none;
+}
+
+.office-wall-side--left {
+  left: 0;
+  transform-origin: left center;
+  transform: translate3d(0, 0, -44px) rotateY(72deg);
+}
+
+.office-wall-side--right {
+  right: 0;
+  transform-origin: right center;
+  transform: translate3d(0, 0, -44px) rotateY(-72deg);
+}
+
+.office-wall-rib {
+  display: block;
+  height: 28%;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+}
+
+.office-wall-trim {
+  display: block;
+  height: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 44%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.office-floor {
+  position: absolute;
+  inset: 72px 10px 0;
+  border: 1px solid var(--office-border-hud);
+  background-color: var(--office-floor-bg);
+  background-image:
+    linear-gradient(to right, var(--hud-grid-major-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hud-grid-major-line) 1px, transparent 1px),
+    linear-gradient(to right, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hud-grid-line) 1px, transparent 1px);
+  background-size: 128px 128px, 128px 128px, 32px 32px, 32px 32px;
+  transform: translate3d(0, 0, -28px);
+  pointer-events: none;
+}
+
+.office-floor-aisle {
+  position: absolute;
+  inset: 16px 28px;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+/* ── Workstation Pods Grid ───────────────────────────────────────────────── */
+
+.office-pods-grid {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  column-gap: 16px;
+  row-gap: 30px;
+  padding: 4px 2px 10px;
+  transform-style: preserve-3d;
+}
+
+.office-room-empty-bay {
+  position: relative;
+  z-index: 3;
+  padding: var(--space-16) var(--space-8);
+  transform: translateZ(4px);
+}
+
+/* ── Individual 3D Workstation Pod ───────────────────────────────────────── */
+
+.office-pod {
+  --pod-accent: var(--color-accent);
+  --avatar-tone: var(--color-accent);
+  --pod-border: color-mix(in srgb, var(--pod-accent) 34%, var(--color-border));
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--hos-radius-md, 4px);
+  background: color-mix(in srgb, var(--color-surface) 44%, transparent);
+  transform-style: preserve-3d;
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    background-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.office-pod:hover {
+  border-color: color-mix(in srgb, var(--pod-accent) 44%, var(--color-border));
+  background: color-mix(in srgb, var(--color-surface) 64%, transparent);
+}
+
+.office-pod[data-selected='true'] {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.office-pod[data-zooming='true'] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--color-accent) 32%, transparent);
+}
+
+.office-pod[data-availability='exited'] {
+  opacity: 0.72;
+}
+
+.office-pod-stage {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  height: 224px;
+  margin: 0 auto;
+  transform-style: preserve-3d;
+}
+
+/* Floor Shadow & Directional Activity Ring */
+
+.office-pod-floor-pad {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 4px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 22%, transparent);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--pod-accent) 18%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface-sunken) 54%, transparent) 60%,
+    transparent 82%
+  );
+  transform: translate3d(0, 0, -16px) rotateX(68deg);
+  pointer-events: none;
+}
+
+.office-pod[data-activity='incoming'] .office-pod-floor-pad {
+  border-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
+}
+
+.office-pod[data-activity='outgoing'] .office-pod-floor-pad {
+  border-color: color-mix(in srgb, var(--hud-violet) 62%, transparent);
+}
+
+.office-pod[data-activity='both'] .office-pod-floor-pad {
+  border-color: color-mix(in srgb, var(--color-success) 56%, var(--color-accent));
+}
+
+/* ── 3D Ergonomic Chair ──────────────────────────────────────────────────── */
+
+.office-chair {
+  position: absolute;
+  right: 4px;
+  top: 46px;
+  width: 62px;
+  height: 158px;
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, -20px) rotateY(-16deg);
+  pointer-events: none;
+}
+
+.office-chair-back {
+  position: relative;
+  width: 50px;
+  height: 58px;
+  margin: 0 auto;
+  transform-style: preserve-3d;
+}
+
+.office-chair-back-face {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--hos-radius-md, 4px);
+  background: linear-gradient(
+    160deg,
+    var(--office-chair-bg) 0%,
+    var(--office-desk-shadow) 100%
+  );
+  transform: translateZ(4px);
+}
+
+.office-chair-back-side {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  right: 0;
+  width: 8px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform: translateX(4px) rotateY(90deg);
+}
+
+.office-chair-headrest {
+  position: absolute;
+  top: -10px;
+  left: 11px;
+  width: 28px;
+  height: 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--office-chair-bg);
+  transform: translateZ(4px);
+}
+
+.office-chair-seat {
+  position: absolute;
+  left: 6px;
+  top: 64px;
+  width: 52px;
+  height: 24px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--office-chair-bg);
+  transform: translateZ(10px) rotateX(66deg);
+}
+
+.office-chair-stem {
+  position: absolute;
+  left: 28px;
+  top: 84px;
+  width: 8px;
+  height: 58px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform: translateZ(2px);
+}
+
+.office-chair-base {
+  position: absolute;
+  left: 10px;
+  top: 136px;
+  width: 44px;
+  height: 18px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+  background: var(--office-desk-shadow);
+  transform: translateZ(4px) rotateX(70deg);
+}
+
+/* ── 3D Humanoid Employee ────────────────────────────────────────────────── */
+
+@keyframes empIdleFloat {
+  0%, 100% { transform: translate3d(0, 0, -4px) rotateY(-18deg); }
+  50% { transform: translate3d(0, -1.5px, -4px) rotateY(-15deg); }
+}
+
+@keyframes empTypeLeft {
+  0%, 100% { transform: translate3d(0, 0, 5px) rotateZ(38deg) rotateX(18deg); }
+  50% { transform: translate3d(-1px, 2px, 7px) rotateZ(34deg) rotateX(22deg); }
+}
+
+@keyframes empTypeRight {
+  0%, 100% { transform: translate3d(0, 1.5px, 10px) rotateZ(48deg) rotateX(18deg); }
+  50% { transform: translate3d(0, 0, 8px) rotateZ(52deg) rotateX(14deg); }
+}
+
+.office-emp {
+  position: absolute;
+  right: 2px;
+  top: 28px;
+  width: 72px;
+  height: 118px;
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, -4px) rotateY(-18deg);
+  pointer-events: none;
+}
+
+.office-emp[data-active='true'] {
+  animation: empIdleFloat 3.6s ease-in-out infinite;
+}
+
+.office-emp-head-wrap {
+  position: absolute;
+  left: 20px;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  transform-style: preserve-3d;
+}
+
+.office-emp-head {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  transform-style: preserve-3d;
+}
+
+.office-emp-face {
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--avatar-tone) 56%, var(--color-border-strong));
+  border-radius: var(--hos-radius-md, 4px);
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--avatar-tone) 24%, var(--color-surface-raised)) 0%,
+    color-mix(in srgb, var(--avatar-tone) 12%, var(--color-surface-muted)) 100%
+  );
+  transform: translateZ(9px);
+  overflow: visible;
+}
+
+.office-emp-head-side {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  right: 0;
+  width: 18px;
+  border: 1px solid color-mix(in srgb, var(--avatar-tone) 46%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--avatar-tone) 16%, var(--color-surface-sunken));
+  transform: translateX(9px) rotateY(90deg);
+}
+
+.office-emp-head-top {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 0;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--avatar-tone) 52%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--avatar-tone) 42%, var(--color-surface-muted));
+  transform: translateY(-9px) rotateX(90deg);
+}
+
+.office-emp-hair {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: color-mix(in srgb, var(--avatar-tone) 52%, var(--color-heading));
+  opacity: 0.72;
+}
+
+.office-emp-eyes {
+  position: absolute;
+  top: 13px;
+  left: 5px;
+  right: 5px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 3px;
+}
+
+.office-emp-eye {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-heading);
+}
+
+/* Persona Accessories: Visor / Glasses / Headset */
+
+.office-emp-visor {
+  position: absolute;
+  top: 10px;
+  left: -2px;
+  right: -2px;
+  height: 9px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: color-mix(in srgb, var(--color-accent) 42%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 36%, transparent);
+  transform: translateZ(3px);
+}
+
+.office-emp-glasses {
+  position: absolute;
+  top: 11px;
+  left: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transform: translateZ(3px);
+}
+
+.office-emp-lens {
+  width: 11px;
+  height: 8px;
+  border: 1px solid var(--color-heading);
+  border-radius: var(--hos-radius-2xs, 2px);
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.office-emp-bridge {
+  width: 4px;
+  height: 1px;
+  background: var(--color-heading);
+}
+
+.office-emp-headset {
+  position: absolute;
+  inset: -4px;
+  pointer-events: none;
+  transform: translateZ(2px);
+}
+
+.office-emp-headband {
+  position: absolute;
+  top: -1px;
+  left: 2px;
+  right: 2px;
+  height: 12px;
+  border-top: 2px solid var(--pod-accent);
+  border-radius: 12px 12px 0 0;
+}
+
+.office-emp-earcup {
+  position: absolute;
+  top: 11px;
+  width: 5px;
+  height: 12px;
+  border: 1px solid var(--pod-accent);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+}
+
+.office-emp-earcup--l {
+  left: -3px;
+}
+
+.office-emp-earcup--r {
+  right: -3px;
+}
+
+.office-emp-mic {
+  position: absolute;
+  top: 21px;
+  left: -1px;
+  width: 11px;
+  height: 2px;
+  background: var(--pod-accent);
+  transform: rotate(16deg);
+}
+
+.office-emp-neck {
+  position: absolute;
+  left: 31px;
+  top: 32px;
+  width: 10px;
+  height: 7px;
+  border: 1px solid var(--color-border-strong);
+  background: color-mix(in srgb, var(--avatar-tone) 20%, var(--color-surface-muted));
+}
+
+.office-emp-torso {
+  position: absolute;
+  left: 14px;
+  top: 38px;
+  width: 44px;
+  height: 50px;
+  transform-style: preserve-3d;
+}
+
+.office-emp-chest {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding-top: 8px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 46%, var(--color-border-strong));
+  border-radius: var(--hos-radius-md, 4px) var(--hos-radius-md, 4px) 2px 2px;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--pod-accent) 24%, var(--color-surface-raised)) 0%,
+    color-mix(in srgb, var(--avatar-tone) 18%, var(--color-surface-sunken)) 100%
+  );
+  transform: translateZ(9px);
+}
+
+.office-emp-torso-side {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  right: 0;
+  width: 18px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 34%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--pod-accent) 16%, var(--color-surface-sunken));
+  transform: translateX(9px) rotateY(90deg);
+}
+
+.office-emp-torso-top {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 0;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 38%, var(--color-border-strong));
+  background: color-mix(in srgb, var(--pod-accent) 28%, var(--color-surface-raised));
+  transform: translateY(-9px) rotateX(90deg);
+}
+
+.office-emp-collar {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  height: 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pod-accent) 48%, transparent);
+}
+
+.office-emp-badge {
+  padding: 1px 3px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 46%, var(--color-border));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.office-emp-status-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.office-emp[data-pulse='true'] .office-emp-status-dot {
+  box-shadow: 0 0 10px var(--color-accent), 0 0 0 2px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.office-emp-arm {
+  position: absolute;
+  top: 56px;
+  width: 9px;
+  height: 38px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 44%, var(--color-border-strong));
+  border-radius: var(--hos-radius-sm, 3px);
+  background: color-mix(in srgb, var(--pod-accent) 18%, var(--color-surface-muted));
+  transform-origin: top center;
+}
+
+.office-emp-arm--l {
+  left: 6px;
+  transform: translate3d(0, 0, 5px) rotateZ(38deg) rotateX(18deg);
+}
+
+.office-emp-arm--r {
+  left: 46px;
+  transform: translate3d(0, 1.5px, 10px) rotateZ(48deg) rotateX(18deg);
+}
+
+.office-emp[data-active='true'][data-posture='typing'] .office-emp-arm--l {
+  animation: empTypeLeft 1.15s ease-in-out infinite;
+}
+
+.office-emp[data-active='true'][data-posture='typing'] .office-emp-arm--r {
+  animation: empTypeRight 1.15s ease-in-out infinite;
+}
+
+.office-emp[data-posture='reading'] .office-emp-head-wrap {
+  transform: rotateX(-8deg) rotateY(-12deg);
+}
+
+/* ── 3D Monitor on Stand & Live Screen Preview ───────────────────────────── */
+
+.office-monitor {
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 174px;
+  height: 138px;
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, 24px) rotateY(4deg);
+  transition: transform var(--motion-base) var(--ease-snappy);
+}
+
+.office-pod:hover .office-monitor,
+.office-monitor[data-selected='true'] {
+  transform: translate3d(0, -1px, 30px) rotateY(3deg);
+}
+
+.office-monitor[data-zooming='true'] {
+  transform: translate3d(0, -3px, 42px) scale(1.03);
+}
+
+.office-monitor-stand {
+  position: absolute;
+  left: 53px;
+  bottom: 0;
+  width: 68px;
+  height: 22px;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+.office-monitor-neck {
+  position: absolute;
+  left: 24px;
+  top: -2px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-monitor-shell);
+  transform: translateZ(-2px);
+}
+
+.office-monitor-neck-side {
+  position: absolute;
+  left: 44px;
+  top: -2px;
+  width: 8px;
+  height: 20px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform-origin: left center;
+  transform: translateZ(2px) rotateY(90deg);
+}
+
+.office-monitor-base {
+  position: absolute;
+  left: 4px;
+  bottom: -2px;
+  width: 60px;
+  height: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--office-desk-edge);
+  transform: translateZ(2px) rotateX(68deg);
+}
+
+.office-monitor-screen-btn {
+  position: relative;
+  display: block;
+  width: 174px;
+  height: 122px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  pointer-events: auto;
+}
+
+.office-monitor-face {
+  position: absolute;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-monitor-shell);
+  pointer-events: none;
+}
+
+.office-monitor-back {
+  inset: 0;
+  transform: translateZ(-5px) rotateY(180deg);
+}
+
+.office-monitor-top {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 10px;
+  transform: translateY(-5px) rotateX(90deg);
+}
+
+.office-monitor-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  transform: translateY(5px) rotateX(-90deg);
+}
+
+.office-monitor-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  transform: translateX(-5px) rotateY(-90deg);
+}
+
+.office-monitor-right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  transform: translateX(5px) rotateY(90deg);
+}
+
+.office-monitor-bezel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 44%, var(--color-border-strong));
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--office-monitor-shell);
+  transform: translateZ(5px);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.office-monitor-screen-btn:hover .office-monitor-bezel,
+.office-monitor[data-selected='true'] .office-monitor-bezel {
+  border-color: var(--color-accent);
+  box-shadow:
+    inset 0 1px 0 var(--hud-glass-specular, transparent),
+    0 0 16px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.office-monitor[data-activity='incoming'] .office-monitor-bezel {
+  border-color: color-mix(in srgb, var(--color-accent) 68%, var(--color-border));
+}
+
+.office-monitor[data-activity='outgoing'] .office-monitor-bezel {
+  border-color: color-mix(in srgb, var(--hud-violet) 68%, var(--color-border));
+}
+
+.office-monitor[data-activity='both'] .office-monitor-bezel {
+  border-color: color-mix(in srgb, var(--color-success) 56%, var(--color-accent));
+}
+
+.office-monitor-cam {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-faint);
+  transform: translateX(-50%);
+}
+
+.office-monitor-display {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 4px 5px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 26%, var(--color-border));
+  border-radius: 2px;
+  background: var(--office-screen-bg);
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+.office-screen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+
+.office-screen-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.office-screen-title {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes screenMailPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 44%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+
+.office-screen-mail {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+
+.office-screen-mail em {
+  font-style: normal;
+  color: var(--color-warning);
+  font-weight: 700;
+}
+
+.office-screen-mail.is-active {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.office-screen-mail.is-pulse {
+  animation: screenMailPulse 1.6s ease-out infinite;
+}
+
+.office-screen-chips {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.office-screen-chip {
+  padding: 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-raised);
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  flex: none;
+}
+
+.office-screen-chip--provider {
+  border-color: color-mix(in srgb, var(--pod-accent) 40%, var(--color-border));
+  color: var(--color-heading);
+  text-transform: uppercase;
+}
+
+.office-screen-chip--model {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.office-tone--interactive {
+  border-color: color-mix(in srgb, var(--color-success) 38%, var(--color-border));
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.office-tone--directory {
+  border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.office-tone--unavailable {
+  border-color: color-mix(in srgb, var(--color-warning) 38%, var(--color-border));
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.office-tone--exited {
+  color: var(--color-faint);
+}
+
+.office-screen-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 3px 4px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+.office-screen-body-tag {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-accent);
+  line-height: 1.1;
+}
+
+.office-screen-body--mail .office-screen-body-tag {
+  color: var(--hud-violet);
+}
+
+.office-screen-body--meta .office-screen-body-tag {
+  color: var(--color-muted);
+}
+
+.office-screen-body-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.24;
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.office-screen-body-sub {
+  margin-top: auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1.15;
+  color: var(--color-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-screen-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: var(--color-muted);
+}
+
+.office-screen-activity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-screen-xproj {
+  flex: none;
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.office-screen-failed {
+  flex: none;
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+/* ── 3D Desk, 4 Volumetric Legs, Workstation Tower & Mail Tray ───────────── */
+
+.office-desk {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 10px;
+  height: 76px;
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, 12px);
+  pointer-events: none;
+}
+
+.office-desk-slab {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  transform-style: preserve-3d;
+}
+
+.office-desk-surface {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 44px;
+  border: 1px solid var(--pod-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--pod-accent) 8%, var(--office-desk-top)) 0%,
+    var(--office-desk-top) 100%
+  );
+  transform-origin: bottom center;
+  transform: translateZ(14px) rotateX(66deg);
+}
+
+.office-desk-mat {
+  position: absolute;
+  left: 72px;
+  right: 54px;
+  bottom: 6px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 28%, var(--color-border));
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+}
+
+.office-desk-keyboard {
+  position: absolute;
+  left: 84px;
+  right: 88px;
+  bottom: 11px;
+  height: 11px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-surface-muted) 0,
+    var(--color-surface-muted) 4px,
+    var(--color-border) 4px,
+    var(--color-border) 5px
+  );
+}
+
+.office-desk-mouse {
+  position: absolute;
+  right: 64px;
+  bottom: 12px;
+  width: 10px;
+  height: 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: var(--color-surface-raised);
+}
+
+.office-desk-trim {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+  height: 2px;
+  background: color-mix(in srgb, var(--pod-accent) 44%, transparent);
+}
+
+.office-desk-front-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  height: 9px;
+  border: 1px solid var(--pod-border);
+  background: var(--office-desk-edge);
+  transform: translateZ(14px);
+}
+
+.office-desk-side-edge {
+  position: absolute;
+  top: 18px;
+  width: 40px;
+  height: 9px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+}
+
+.office-desk-side-edge--l {
+  left: 0;
+  transform-origin: left center;
+  transform: translateZ(14px) rotateY(90deg);
+}
+
+.office-desk-side-edge--r {
+  right: 0;
+  transform-origin: right center;
+  transform: translateZ(14px) rotateY(-90deg);
+}
+
+.office-desk-apron {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 27px;
+  height: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--office-desk-shadow);
+  transform: translateZ(8px);
+}
+
+/* 4 Volumetric 3D Legs */
+
+.office-desk-legs {
+  position: absolute;
+  inset: 26px 10px 0;
+  transform-style: preserve-3d;
+}
+
+.office-desk-leg {
+  position: absolute;
+  width: 8px;
+  height: 48px;
+  transform-style: preserve-3d;
+}
+
+.office-desk-leg--fl {
+  left: 0;
+  bottom: 0;
+  transform: translateZ(11px);
+}
+
+.office-desk-leg--fr {
+  right: 0;
+  bottom: 0;
+  transform: translateZ(11px);
+}
+
+.office-desk-leg--bl {
+  left: 4px;
+  bottom: 8px;
+  transform: translateZ(-16px);
+}
+
+.office-desk-leg--br {
+  right: 4px;
+  bottom: 8px;
+  transform: translateZ(-16px);
+}
+
+.office-desk-leg-front {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-edge);
+  transform: translateZ(3px);
+}
+
+.office-desk-leg-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform: translateX(3px) rotateY(90deg);
+}
+
+/* Compact 3D Workstation Tower */
+
+.office-tower {
+  position: absolute;
+  right: 22px;
+  bottom: 2px;
+  width: 24px;
+  height: 42px;
+  transform-style: preserve-3d;
+  transform: translateZ(2px);
+}
+
+.office-tower-front {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 4px;
+  border: 1px solid var(--pod-border);
+  background: var(--office-monitor-shell);
+  transform: translateZ(8px);
+}
+
+.office-tower-led {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pod-accent);
+  box-shadow: 0 0 6px var(--pod-accent);
+}
+
+.office-tower-vents {
+  width: 100%;
+  height: 16px;
+  border-top: 1px solid var(--color-border-strong);
+  border-bottom: 1px solid var(--color-border-strong);
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0,
+    transparent 3px,
+    var(--color-border) 3px,
+    var(--color-border) 4px
+  );
+}
+
+.office-tower-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform: translateX(8px) rotateY(90deg);
+}
+
+.office-tower-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 16px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-edge);
+  transform: translateY(-8px) rotateX(90deg);
+}
+
+/* Interactive 3D Desk Mail Tray + Animated Mail Packet Arc */
+
+.office-mail-tray-btn {
+  position: absolute;
+  left: 6px;
+  top: -1px;
+  width: 46px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, 22px);
+  pointer-events: auto;
+}
+
+.office-mail-tray-base {
+  position: absolute;
+  inset: 2px 0 0;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform: rotateX(58deg);
+}
+
+.office-mail-tray-front {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-edge);
+  transform: translateZ(6px);
+}
+
+.office-mail-tray-side {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--office-desk-shadow);
+  transform: rotateY(90deg);
+}
+
+.office-mail-tray-btn.is-active .office-mail-tray-front,
+.office-mail-tray-btn:hover .office-mail-tray-front {
+  border-color: var(--color-accent);
+}
+
+.office-mail-tray-empty {
+  position: relative;
+  display: inline-block;
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  color: var(--color-faint);
+  transform: translateZ(8px);
+}
+
+.office-mail-packet {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  transform: translate3d(0, -3px, 10px);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 26%, transparent);
+}
+
+@keyframes mailArcTravel {
+  0% {
+    transform: translate3d(-10px, 4px, 0) scale(0.75);
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  55% {
+    transform: translate3d(0, -10px, 8px) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(12px, 3px, 0) scale(0.75);
+    opacity: 0;
+  }
+}
+
+.office-mail-arc {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: -18px;
+  height: 18px;
+  border-top: 1px dashed color-mix(in srgb, var(--color-accent) 72%, transparent);
+  border-radius: 50% 50% 0 0;
+  transform: translateZ(12px);
+  pointer-events: none;
+}
+
+.office-mail-arc-dot {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
+  animation: mailArcTravel 1.8s var(--ease-in-out) infinite;
+}
+
+/* ── Pod Footer Identity Plaque & Semantic Action Bar ────────────────────── */
+
+.office-pod-bar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  transform: translateZ(16px);
+}
+
+.office-pod-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.office-pod-badge {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--pod-accent) 44%, var(--color-border));
+  border-radius: var(--hos-radius-2xs, 2px);
+  background: color-mix(in srgb, var(--pod-accent) 12%, transparent);
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.office-pod-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.office-pod-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.office-action-count {
+  margin-left: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Reduced Motion & Responsive Breakpoints ─────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .office-room-stage-frame,
+  .office-emp[data-active='true'],
+  .office-emp[data-active='true'][data-posture='typing'] .office-emp-arm--l,
+  .office-emp[data-active='true'][data-posture='typing'] .office-emp-arm--r,
+  .office-screen-mail.is-pulse,
+  .office-mail-arc-dot {
+    animation: none !important;
+  }
+
+  .office-stage,
+  .office-monitor,
+  .office-monitor-bezel,
+  .office-pod,
+  .office-camera-btn,
+  .office-wall-mail-terminal {
+    transition: none !important;
+  }
+}
+
+@media (min-width: 1680px) {
+  .office-room-scroll {
+    padding: var(--space-8) var(--space-8) var(--space-14);
+  }
+
+  .office-stage {
+    padding: 16px 34px 32px;
+  }
+
+  .office-wall-side {
+    width: 84px;
+  }
+
+  .office-floor {
+    inset: 72px 14px 0;
+  }
+
+  .office-pods-grid {
+    grid-template-columns: repeat(auto-fill, minmax(308px, 1fr));
+    column-gap: 24px;
+    row-gap: 36px;
+    padding: 6px 6px 12px;
+  }
+
+  .office-pod-stage {
+    max-width: 320px;
+  }
+
+  .office-chair {
+    right: 8px;
+    width: 64px;
+  }
+
+  .office-emp {
+    right: 4px;
+    width: 74px;
+  }
+
+  .office-monitor {
+    left: 4px;
+    width: 196px;
+  }
+
+  .office-monitor-stand {
+    left: 64px;
+  }
+
+  .office-monitor-screen-btn {
+    width: 196px;
+  }
+
+  .office-mail-tray-btn {
+    left: 12px;
+    width: 50px;
+  }
+}
+
+@media (max-width: 960px) {
+  .office-stage {
+    padding: 12px 14px 24px;
+  }
+
+  .office-wall-side {
+    display: none;
+  }
+
+  .office-pods-grid {
+    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+    column-gap: 16px;
+    row-gap: 26px;
+  }
+}

@@ -1,0 +1,674 @@
+/* 项目办公室（/terminals & /peer-inbox 统一工作台）
+ * 严格遵循 Cyber HUD token：零硬编码主题色、零左侧粗竖条、零大面积 Alert 容器、
+ * 3D 舞台容器与独立邮箱/桌面浮层彻底分离（零 transform 包裹 xterm / 邮箱）。 */
+
+.session-office {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 76px);
+  min-height: 540px;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-5) var(--space-7) var(--space-6);
+}
+
+/* -------------------------------------------------------------------------
+ * 1. Top Office Command Bar
+ * ---------------------------------------------------------------------- */
+.session-office-command-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  flex: 0 0 auto;
+}
+
+.session-office-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.session-office-title-block {
+  min-width: 0;
+}
+
+.session-office-eyebrow {
+  display: block;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-shadow: var(--hud-text-glow);
+  opacity: 0.9;
+}
+
+.session-office-title-block h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-heading);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.session-office-title-icon {
+  color: var(--color-accent);
+}
+
+.session-office-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.session-office-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 3px var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  font-size: 12px;
+}
+
+.session-office-metric strong {
+  color: var(--color-heading);
+  font-size: 12px;
+}
+
+.session-office-metric--warn {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  background: var(--color-warning-soft);
+}
+
+.session-office-metric--warn strong {
+  color: var(--color-warning);
+}
+
+.session-office-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.session-office-search {
+  width: 224px;
+  max-width: 100%;
+}
+
+.session-office-provider-select {
+  width: 132px;
+}
+
+.session-office-inline-errors {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.session-office-inline-error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 2px var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Main Split Body (Project Rooms Sidebar + 3D Stage)
+ * ---------------------------------------------------------------------- */
+.session-office-body {
+  display: grid;
+  grid-template-columns: minmax(224px, 244px) minmax(0, 1fr);
+  gap: var(--space-5);
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.session-office-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-4) var(--space-5);
+  gap: var(--space-4);
+}
+
+.session-office-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex: 0 0 auto;
+}
+
+.session-office-sidebar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.session-office-sidebar-count {
+  padding: 1px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
+  font-size: 11px;
+}
+
+.session-office-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.session-office-room-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.session-office-room-card:hover {
+  border-color: var(--hud-border-glass-hover, var(--color-border-strong));
+  background: var(--color-overlay-subtle);
+}
+
+.session-office-room-card.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.session-office-room-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.session-office-room-name-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-office-room-name {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-room-card.is-active .session-office-room-name {
+  color: var(--color-accent);
+}
+
+.session-office-room-ratio {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
+  font-size: 11px;
+}
+
+.session-office-room-path {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-room-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+
+.session-office-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  height: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.session-office-pill--warn {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.session-office-pill--cross {
+  border-color: color-mix(in srgb, var(--hud-violet, var(--color-accent)) 45%, var(--color-border));
+  background: var(--hud-violet-soft, var(--color-accent-soft));
+  color: var(--color-heading);
+}
+
+.session-office-sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.session-office-sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+  flex: 0 0 auto;
+}
+
+.session-office-unassigned-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-raised);
+  color: var(--color-heading);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+.session-office-unassigned-card:hover,
+.session-office-unassigned-card.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.session-office-unassigned-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.session-office-unassigned-title > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-unassigned-title > :first-child {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
+.session-office-unassigned-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.session-office-unassigned-count {
+  padding: 1px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-size: 11px;
+}
+
+/* 暂不可接入的原会话紧凑折叠区 */
+.session-office-unavailable {
+  border: 1px solid color-mix(in srgb, var(--color-warning) 36%, var(--color-border));
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-raised);
+  overflow: hidden;
+}
+
+.session-office-unavailable-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-warning);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.session-office-unavailable-toggle:hover {
+  background: var(--color-overlay-subtle);
+}
+
+.session-office-unavailable-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-office-unavailable-label > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-unavailable-body {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-3) var(--space-4);
+}
+
+.session-office-unavailable-note {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  margin-bottom: var(--space-2);
+}
+
+.session-office-unavailable-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 152px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.session-office-unavailable-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+}
+
+.session-office-unavailable-item > .ant-btn {
+  flex: 0 0 auto;
+}
+
+.session-office-unavailable-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.session-office-unavailable-info strong {
+  color: var(--color-heading);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-unavailable-cwd {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-unavailable-info code {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. 3D Stage Container
+ * ---------------------------------------------------------------------- */
+.session-office-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hud-border-glass, var(--color-border));
+  background: var(--hud-glass-gradient), var(--hud-panel-bg);
+  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
+}
+
+.session-office-stage-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Standalone Office Mailbox Overlay (Zero 3D Transform Ancestor)
+ * ---------------------------------------------------------------------- */
+.session-office-mailbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 990;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--space-6);
+}
+
+.session-office-mailbox-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--color-scrim);
+}
+
+.session-office-mailbox-drawer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(1160px, calc(100vw - 48px));
+  height: calc(100vh - 32px);
+  max-height: 920px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-shadow: var(--elevation-5);
+  background: var(--color-surface);
+}
+
+.session-office-mailbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  flex: 0 0 auto;
+}
+
+.session-office-mailbox-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.session-office-mailbox-head-icon {
+  font-size: 20px;
+  color: var(--color-accent);
+}
+
+.session-office-mailbox-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.session-office-mailbox-scope-tag {
+  padding: 1px var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.session-office-mailbox-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------------------
+ * 5. Responsive Desktop Widths (1440px / 1920px / <= 1120px)
+ * ---------------------------------------------------------------------- */
+@media (min-width: 1680px) {
+  .session-office {
+    padding: var(--space-6) var(--unified-page-padding, 20px) var(--space-8);
+  }
+
+  .session-office-body {
+    grid-template-columns: 304px minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .session-office-sidebar {
+    padding: var(--space-5);
+  }
+
+  .session-office-room-card,
+  .session-office-unassigned-card {
+    padding: var(--space-4) var(--space-5);
+  }
+}
+
+@media (max-width: 1120px) {
+  .session-office {
+    height: auto;
+    min-height: calc(100vh - 76px);
+  }
+
+  .session-office-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(480px, 1fr);
+  }
+
+  .session-office-room-list {
+    max-height: 220px;
+  }
+
+  .session-office-mailbox-overlay {
+    padding: var(--space-4);
+  }
+
+  .session-office-mailbox-drawer {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+  }
+}

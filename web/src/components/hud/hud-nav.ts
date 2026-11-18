@@ -3,7 +3,7 @@
 // 隐藏路由（/chat/quick、/toolkit/install-guide、/server-setup、账号子路由与重定向）不占用一级序号。
 
 export interface HudNavCode {
-  /** 可见菜单序号：一级菜单为 01..13，二级子菜单采用稳定父子层级（如 10.01 / 10.02） */
+  /** 可见菜单序号：一级菜单为 01..12，二级子菜单采用稳定父子层级（如 09.01 / 09.02） */
   no: string;
   /** 右侧 HUD 英文代号 */
   code: string;
@@ -17,18 +17,17 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/dashboard': { no: '01', code: 'DASHBOARD', order: 1 },
   '/accounts': { no: '02', code: 'ACCOUNTS', order: 2 },
   '/chat': { no: '03', code: 'SESSIONS', order: 3 },
-  '/terminals': { no: '04', code: 'TERMINALS', order: 4 },
+  '/terminals': { no: '04', code: 'OFFICE', order: 4 },
   '/usage': { no: '05', code: 'USAGE', order: 5 },
   '/models': { no: '06', code: 'MODELS', order: 6 },
   '/scheduled-tasks': { no: '07', code: 'SCHEDULE', order: 7 },
-  '/peer-inbox': { no: '08', code: 'INBOX', order: 8 },
-  '/toolkit': { no: '09', code: 'TOOLKIT', order: 9 },
-  '/studio': { no: '10', code: 'STUDIO', order: 10 },
-  '/studio/image': { no: '10.01', code: 'IMAGE', parentPath: '/studio', order: 10.01 },
-  '/studio/translation': { no: '10.02', code: 'TRANSLATE', parentPath: '/studio', order: 10.02 },
-  '/servers': { no: '11', code: 'SERVER', order: 11 },
-  '/ssh-hosts': { no: '12', code: 'SSH', order: 12 },
-  '/settings': { no: '13', code: 'CONFIG', order: 13 },
+  '/toolkit': { no: '08', code: 'TOOLKIT', order: 8 },
+  '/studio': { no: '09', code: 'STUDIO', order: 9 },
+  '/studio/image': { no: '09.01', code: 'IMAGE', parentPath: '/studio', order: 9.01 },
+  '/studio/translation': { no: '09.02', code: 'TRANSLATE', parentPath: '/studio', order: 9.02 },
+  '/servers': { no: '10', code: 'SERVER', order: 10 },
+  '/ssh-hosts': { no: '11', code: 'SSH', order: 11 },
+  '/settings': { no: '12', code: 'CONFIG', order: 12 },
 };
 
 function normalizeNavPath(path: string | undefined): string {
@@ -62,6 +61,7 @@ export function resolveHudRouteOrder(pathname: string | undefined): number | nul
   const normalized = normalizeNavPath(pathname);
   if (!normalized || normalized === '/chat/quick') return null;
   if (normalized === '/') return NAV_CODES['/dashboard'].order;
+  if (normalized === '/peer-inbox') return NAV_CODES['/terminals'].order;
   if (normalized === '/studio') return NAV_CODES['/studio/image'].order;
   if (normalized === '/translation') return NAV_CODES['/studio/translation'].order;
 
@@ -70,7 +70,7 @@ export function resolveHudRouteOrder(pathname: string | undefined): number | nul
 
   if (/^\/accounts\/[^/]+\/[^/]+\/models$/.test(normalized)) return 2.01;
   if (/^\/accounts\/[^/]+\/[^/]+\/quota$/.test(normalized)) return 2.02;
-  if (normalized === '/toolkit/install-guide') return 9.01;
-  if (normalized === '/server-setup') return 11.01;
+  if (normalized === '/toolkit/install-guide') return 8.01;
+  if (normalized === '/server-setup') return 10.01;
   return null;
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
+	"github.com/madou1217/ai_home/internal/host/boundedinput"
 )
 
 // Private Node-to-Go pipe adapter; no server autostart, host discovery, or
@@ -48,11 +49,20 @@ func runBackupAccounts(ctx context.Context, args []string, runtime commandRuntim
 		if len(args) == 2 && !dry {
 			return errors.New("backup_accounts_invalid_action")
 		}
-		raw, err := io.ReadAll(io.LimitReader(runtime.stdin, 64*1024*1024+1))
-		if err != nil || len(raw) > 64*1024*1024 {
+		raw, err := readBackupAccountsInput(ctx, runtime.stdin, 64*1024*1024)
+		if err != nil {
+			if ctx.Err() != nil {
+				return errors.New("backup_import_cancelled")
+			}
+			if errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, boundedinput.ErrTooLarge) {
+				return errors.New("backup_import_input_timeout")
+			}
 			return errors.New("backup_import_input_too_large")
 		}
 		defer clear(raw)
+		if ctx.Err() != nil {
+			return errors.New("backup_import_cancelled")
+		}
 		var request backupaccounts.Request
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		if decoder.Decode(&request) != nil {
@@ -61,6 +71,9 @@ func runBackupAccounts(ctx context.Context, args []string, runtime commandRuntim
 		var extra any
 		if decoder.Decode(&extra) != io.EOF {
 			return errors.New("backup_import_invalid_json")
+		}
+		if ctx.Err() != nil {
+			return errors.New("backup_import_cancelled")
 		}
 		result, e = backupaccounts.Import(ctx, home, request, dry)
 	default:
@@ -75,28 +88,15 @@ func runBackupAccounts(ctx context.Context, args []string, runtime commandRuntim
 // The public export uses a separately bounded typed port. Its stdout never
 // contains the exported account document or credential diagnostics.
 func runPublicExport(ctx context.Context, home string, runtime commandRuntime) error {
-	type input struct {
-		raw []byte
-		err error
-	}
-	ready := make(chan input, 1)
-	go func() {
-		raw, err := io.ReadAll(io.LimitReader(runtime.stdin, backupaccounts.PublicExportMaxInput+1))
-		ready <- input{raw, err}
-	}()
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
-	var raw []byte
-	select {
-	case <-ctx.Done():
-		return errors.New("public_export_cancelled")
-	case <-timer.C:
-		return errors.New("public_export_input_timeout")
-	case in := <-ready:
-		raw = in.raw
-		if in.err != nil || len(raw) > backupaccounts.PublicExportMaxInput {
-			return errors.New("public_export_input_invalid")
+	raw, err := readBackupAccountsInput(ctx, runtime.stdin, backupaccounts.PublicExportMaxInput)
+	if err != nil {
+		if ctx.Err() != nil {
+			return errors.New("public_export_cancelled")
 		}
+		if errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, boundedinput.ErrTooLarge) {
+			return errors.New("public_export_input_timeout")
+		}
+		return errors.New("public_export_input_invalid")
 	}
 	defer clear(raw)
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -106,4 +106,24 @@ func runPublicExport(ctx context.Context, home string, runtime commandRuntime) e
 		return err
 	}
 	return json.NewEncoder(runtime.stdout).Encode(result)
+}
+
+// Command stdin is exclusively owned while reading. The shared reader joins its
+// cancellation callback before return and leaves the caller descriptor open.
+// Regular-file cancellation remains cooperative during kernel I/O.
+func readBackupAccountsInput(ctx context.Context, reader io.Reader, limit int64) ([]byte, error) {
+	inputCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	raw, err := boundedinput.Read(inputCtx, reader, limit)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil {
+		err = inputCtx.Err()
+	}
+	if err != nil {
+		clear(raw)
+		return nil, err
+	}
+	return raw, nil
 }

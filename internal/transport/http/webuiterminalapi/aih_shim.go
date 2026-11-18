@@ -8,8 +8,9 @@ import (
 	"strings"
 )
 
-// prepareAihShim keeps non-selected public commands owned by the existing Node
-// entry. An unavailable Node runtime must not disable the selected Go command.
+// prepareAihShim routes the session/list commands that Go already owns to the
+// sibling Go CLI. An unavailable Node runtime must not disable those commands;
+// the remaining public commands still use the existing Node entry.
 func prepareAihShim() string {
 	if runtime.GOOS == "windows" {
 		return ""
@@ -46,8 +47,11 @@ func prepareAihShim() string {
 
 func aihShimBody(cli string, node string, entry string) string {
 	body := "#!/bin/sh\n" +
-		`if [ "$#" -eq 2 ] && { [ "$1" = ss ] || [ "$1" = sessions ]; } && [ "$2" = --list ]; then` + "\n" +
-		"  exec " + quoteAihShimArgument(cli) + ` __terminal-sessions "$@"` + "\nfi\n"
+		`if [ "$#" -ge 1 ]; then` + "\n" +
+		`  case "$1" in` + "\n" +
+		`    ss|sessions|ls) exec ` + quoteAihShimArgument(cli) + ` "$@" ;;` + "\n" +
+		`  esac` + "\n" +
+		`fi` + "\n"
 	if node == "" {
 		return body + "printf '%s\\n' '[aih] Node CLI runtime unavailable for this command.' >&2\nexit 127\n"
 	}

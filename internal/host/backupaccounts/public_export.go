@@ -124,23 +124,11 @@ func ExportPublic(ctx context.Context, home string, input []byte) (PublicExportR
 	if err != nil {
 		return result, err
 	}
-	document := publicDocument{Kind: "aih-accounts", Version: 1,
-		ExportedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), Accounts: []nativeexportread.Record{}}
-	host, err := os.Hostname()
+	document, skipped, err := compatibilityDocument(selection.Records, "")
 	if err != nil {
-		return result, errors.New("public_export_host_unavailable")
+		return result, err
 	}
-	document.Source.Host = host
-	for _, record := range selection.Records {
-		if len(record.Env) == 0 && len(record.NativeAuth) == 0 {
-			result.Skipped = append(result.Skipped, remotebackup.SkippedAccount{Provider: record.Provider, AccountRef: record.AccountRef, Reason: "credentials_missing"})
-			continue
-		}
-		if record.Provider == "zcode" {
-			record.NativeAuth = remotebackup.PortableZcodeNativeAuth(record.NativeAuth)
-		}
-		document.Accounts = append(document.Accounts, record)
-	}
+	result.Skipped = skipped
 	if target == "" {
 		day := time.Now().UTC().Format("2006-01-02")
 		target = "aih-accounts-" + day + ".json"

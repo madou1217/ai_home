@@ -17,6 +17,10 @@ import (
 // Private Node-to-Go pipe adapter; no server autostart, host discovery, or
 // credential argv. stdout is either JSON or empty, errors never echo stdin.
 func runBackupAccounts(ctx context.Context, args []string, runtime commandRuntime) error {
+	if len(args) == 2 && args[0] == "export-compat" && args[1] == "--capabilities" {
+		_, err := fmt.Fprintln(runtime.stdout, "aih-compat-export-v1")
+		return err
+	}
 	if len(args) == 2 && args[0] == "export-public" && args[1] == "--capabilities" {
 		_, err := fmt.Fprintln(runtime.stdout, "aih-public-export-v1")
 		return err
@@ -34,6 +38,11 @@ func runBackupAccounts(ctx context.Context, args []string, runtime commandRuntim
 	}
 	var result backupaccounts.Result
 	switch args[0] {
+	case "export-compat":
+		if len(args) != 1 {
+			return errors.New("compat_export_arguments_invalid")
+		}
+		return runCompatibilityExport(ctx, home, runtime)
 	case "export-public":
 		if len(args) != 1 {
 			return errors.New("public_export_arguments_invalid")
@@ -126,4 +135,32 @@ func readBackupAccountsInput(ctx context.Context, reader io.Reader, limit int64)
 		return nil, err
 	}
 	return raw, nil
+}
+
+// This credential-bearing private pipe never writes an export file or starts a
+// server. Its single consumer retains canonical merge and remote orchestration.
+func runCompatibilityExport(ctx context.Context, home string, runtime commandRuntime) error {
+	raw, err := readBackupAccountsInput(ctx, runtime.stdin, backupaccounts.CompatibilityExportMaxInput)
+	if err != nil {
+		if ctx.Err() != nil {
+			return errors.New("compat_export_cancelled")
+		}
+		if errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, boundedinput.ErrTooLarge) {
+			return errors.New("compat_export_input_timeout")
+		}
+		return errors.New("compat_export_input_invalid")
+	}
+	defer clear(raw)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	output, err := backupaccounts.ExportCompatibilityDocument(ctx, home, raw)
+	if err != nil {
+		return err
+	}
+	defer clear(output)
+	if ctx.Err() != nil {
+		return errors.New("compat_export_cancelled")
+	}
+	_, err = runtime.stdout.Write(output)
+	return err
 }

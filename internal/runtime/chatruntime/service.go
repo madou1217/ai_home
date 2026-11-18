@@ -77,7 +77,8 @@ type ServiceOptions struct {
 	ResolveFallbackAccounts func(ctx context.Context, provider, currentRef string) []string
 	ReadProviderModels      func(ctx context.Context, provider, accountRef string) []string
 	ResolveDefaultModel     func(provider string) string
-	GetAdoptedNativeRun     func(engineRunID string) *NativeRunHandle
+	GetAdoptedNativeRun     func(context.Context, AdoptedNativeRunRequest) (*NativeRunHandle, error)
+	CloseAdoptedNativeRuns  func() error
 	IsModelEnabled          func(modelID string) bool
 	Clock                   func() int64
 	IDFactory               func(string) string
@@ -1012,6 +1013,11 @@ func (s *Service) observePublishedEvent(ev EventEnvelope) {
 
 // Close 停止队列自动化、释放全部常驻 Actor 与可选内部资源。
 func (s *Service) Close() error {
+	// Stop adopted observers before actors dispose; cancellation never aborts a legacy process.
+	var adoptedCloseErr error
+	if s.opts.CloseAdoptedNativeRuns != nil {
+		adoptedCloseErr = s.opts.CloseAdoptedNativeRuns()
+	}
 	if s.prewarmCancel != nil {
 		s.prewarmCancel()
 	}
@@ -1037,9 +1043,12 @@ func (s *Service) Close() error {
 		_ = s.codexPool.Close()
 	}
 	if s.ownsStore && s.store != nil {
-		return s.store.Close()
+		storeErr := s.store.Close()
+		if storeErr != nil {
+			return storeErr
+		}
 	}
-	return nil
+	return adoptedCloseErr
 }
 
 type defaultRuntimeResolver struct {

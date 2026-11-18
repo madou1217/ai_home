@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -886,7 +887,11 @@ type NativeRunHandle struct {
 	Done               <-chan NativeRunExit
 	// Quiesced closes after process exit and projection cleanup, independently of
 	// the single-consumer Done channel. Destructive lifecycle operations await it.
-	Quiesced             <-chan struct{}
+	Quiesced <-chan struct{}
+	// ObserverReleased closes after an inherited-run observer has stopped and
+	// finished releasing its log/lease, even while the user process remains alive.
+	// CleanupError reports whether release succeeded. This is not exit proof.
+	ObserverReleased     <-chan struct{}
 	CleanupError         func() error
 	waitForLaunchRelease bool
 }
@@ -909,7 +914,7 @@ type NativeDriverOptions struct {
 	LaunchPreparer          NativeLaunchPreparer
 	ResolveFallbackAccounts func(ctx context.Context, provider, currentRef string) []string
 	ReadModels              func(ctx context.Context, provider, accountRef string) []string
-	GetAdoptedRun           func(engineRunID string) *NativeRunHandle
+	GetAdoptedRun           func(context.Context, AdoptedNativeRunRequest) (*NativeRunHandle, error)
 	ApprovalSpawners        map[string]bool
 	ResolveDefaultModel     func(provider string) string
 	ResolveModels           func(context.Context, *Session, string, string) (TurnModelSettings, error)
@@ -943,6 +948,8 @@ type nativeActiveRun struct {
 	runID  string
 	handle *NativeRunHandle
 	done   chan ProviderRunResult
+	// Recovered runs detach their observer on disposal; newly launched runs retain Abort.
+	stopRecovery func() error
 	// ready 在首个 attempt 的进程启动并完成控制面注册后关闭。
 	// StartTurn 等待它，保证「运行对 ListActiveRuns 可见」时句柄已经可写/可 resize。
 	ready     chan struct{}
@@ -1070,7 +1077,7 @@ func (d *NativeSessionDriver) ExecuteSlash(ctx context.Context, tc DriverTurnCon
 	return d.StartTurn(ctx, tc)
 }
 
-// Dispose 关闭驱动并终止未结算的活动 CLI 进程。
+// Dispose 关闭驱动；恢复运行只 detach 并 join observer，新运行保留原 Abort。
 func (d *NativeSessionDriver) Dispose() bool {
 	d.mu.Lock()
 	if d.disposed {
@@ -1081,7 +1088,10 @@ func (d *NativeSessionDriver) Dispose() bool {
 	act := d.active
 	d.active = nil
 	d.mu.Unlock()
-	if act != nil && act.handle != nil && act.handle.Abort != nil {
+	var releaseErr error
+	if act != nil && act.stopRecovery != nil {
+		releaseErr = act.stopRecovery()
+	} else if act != nil && act.handle != nil && act.handle.Abort != nil {
 		_ = act.handle.Abort()
 	}
 	if d.approvalSurface != nil {
@@ -1090,7 +1100,7 @@ func (d *NativeSessionDriver) Dispose() bool {
 		}
 		d.approvalSurface.Dispose()
 	}
-	return true
+	return releaseErr == nil
 }
 
 // Steer 把正在运行的补充提示词写入 CLI stdin（如 claude stream-json）。
@@ -1124,6 +1134,45 @@ func (d *NativeSessionDriver) InterruptTurn(_ context.Context, _ DriverTurnConte
 
 // RecoverTurn 重连到服务器重启前遗留的已收养运行（若找不到则 409 fail-closed）。
 func (d *NativeSessionDriver) RecoverTurn(ctx context.Context, in RecoverTurnInput) (*ProviderRun, error) {
+	if ctx == nil {
+		return nil, NewError("chat_turn_recovery_context_required", http.StatusConflict, nil)
+	}
+	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
+	accepted := false
+	var reservation *nativeActiveRun
+	var handle *NativeRunHandle
+	acquisitionDone := make(chan struct{})
+	joinObserver := func() error {
+		if handle == nil {
+			return nil // A rejected acquisition releases synchronously in the manager.
+		}
+		if handle.ObserverReleased == nil || handle.CleanupError == nil {
+			return NewError("native_session_observer_release_unknown", http.StatusBadGateway, map[string]any{"outcomeUnknown": true})
+		}
+		<-handle.ObserverReleased // Release is independent of a live process's exit.
+		if err := handle.CleanupError(); err != nil {
+			return NewError("native_session_observer_release_failed", http.StatusBadGateway, map[string]any{"outcomeUnknown": true})
+		}
+		return nil
+	}
+	detachRecovery := func() error {
+		cancelRecovery()
+		// Disposal may race the acquisition; do not read an unpublished handle.
+		<-acquisitionDone
+		return joinObserver()
+	}
+	defer func() {
+		if !accepted {
+			cancelRecovery()
+		}
+		close(acquisitionDone)
+		if !accepted {
+			_ = joinObserver()
+			if reservation != nil {
+				d.clearActive(reservation)
+			}
+		}
+	}()
 	d.mu.Lock()
 	if d.disposed {
 		d.mu.Unlock()
@@ -1133,53 +1182,163 @@ func (d *NativeSessionDriver) RecoverTurn(ctx context.Context, in RecoverTurnInp
 		d.mu.Unlock()
 		return nil, NewError("chat_turn_already_active", http.StatusConflict, nil)
 	}
+	// Reserve before any I/O so concurrent recovery/start cannot claim a second Done.
+	reservation = &nativeActiveRun{turnID: in.TurnID, runID: in.RunID, stopRecovery: detachRecovery}
+	d.active = reservation
 	d.mu.Unlock()
-
-	engineRunID := ""
-	if in.ActiveTurn != nil {
-		engineRunID = strings.TrimSpace(in.ActiveTurn.NativeTurnID)
+	if in.ActiveTurn == nil || d.opts.GetAdoptedRun == nil || in.SessionID != d.session.SessionID {
+		return nil, NewError("chat_turn_recovery_unavailable", http.StatusConflict, nil)
 	}
-	var handle *NativeRunHandle
-	if d.opts.GetAdoptedRun != nil && engineRunID != "" {
-		handle = d.opts.GetAdoptedRun(engineRunID)
+	// Read the persisted canonical record, not a manifest or driver fallback snapshot.
+	session, err := d.store.GetSession(recoveryCtx, in.SessionID)
+	if err != nil || session == nil || session.ActiveTurn == nil {
+		return nil, NewError("chat_turn_recovery_identity_unavailable", http.StatusConflict, nil)
 	}
-	if handle == nil || handle.Done == nil {
-		return nil, NewError("chat_turn_recovery_unavailable", http.StatusConflict, map[string]any{"engineRunId": engineRunID})
+	active := *session.ActiveTurn
+	if session.SessionID != in.SessionID || session.Provider != d.provider ||
+		active.TurnID != in.TurnID || active.RunID != in.RunID || active.NativeTurnID == "" ||
+		active.NativeTurnID != in.ActiveTurn.NativeTurnID || active.TurnID != in.ActiveTurn.TurnID || active.RunID != in.ActiveTurn.RunID {
+		return nil, NewError("chat_turn_recovery_identity_mismatch", http.StatusConflict, nil)
 	}
-	act := &nativeActiveRun{
-		turnID: in.TurnID,
-		runID:  in.RunID,
-		handle: handle,
-		done:   make(chan ProviderRunResult, 1),
+	canonicalAccountRef := session.ExecutionAccountRef
+	gateway := IsGatewayRuntimeScope(canonicalAccountRef)
+	accountRef := canonicalAccountRef
+	if gateway {
+		accountRef = ""
 	}
+	request := AdoptedNativeRunRequest{
+		EngineRunID: active.NativeTurnID, CanonicalSessionID: session.SessionID,
+		CanonicalTurnID: active.TurnID, CanonicalRunID: active.RunID, Provider: session.Provider,
+		Gateway: gateway, AccountRef: accountRef, RuntimeScope: canonicalAccountRef,
+		NativeSessionID: strings.TrimSpace(asString(session.RuntimeBinding["nativeSessionId"])),
+		ProjectPath:     session.ProjectPath,
+	}
+	if err := request.validate(); err != nil {
+		return nil, err
+	}
+	handle, err = d.opts.GetAdoptedRun(recoveryCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	if handle == nil || handle.Done == nil || handle.Quiesced == nil || handle.ObserverReleased == nil ||
+		handle.CleanupError == nil || handle.RunID != request.EngineRunID {
+		return nil, NewError("chat_turn_recovery_unavailable", http.StatusConflict, nil)
+	}
+	// The canonical identity must still be current after owner acquisition/I/O.
+	latest, readErr := d.store.GetSession(recoveryCtx, in.SessionID)
+	if readErr != nil || latest == nil || latest.ActiveTurn == nil ||
+		latest.Provider != request.Provider || latest.ExecutionAccountRef != canonicalAccountRef ||
+		latest.ProjectPath != request.ProjectPath || strings.TrimSpace(asString(latest.RuntimeBinding["nativeSessionId"])) != request.NativeSessionID ||
+		latest.ActiveTurn.TurnID != request.CanonicalTurnID || latest.ActiveTurn.RunID != request.CanonicalRunID ||
+		latest.ActiveTurn.NativeTurnID != request.EngineRunID {
+		return nil, NewError("chat_turn_recovery_identity_mismatch", http.StatusConflict, nil)
+	}
+	act := &nativeActiveRun{turnID: in.TurnID, runID: in.RunID, handle: handle,
+		done: make(chan ProviderRunResult, 1), stopRecovery: detachRecovery}
 	d.mu.Lock()
+	if d.disposed || d.active != reservation {
+		d.mu.Unlock()
+		return nil, NewError("native_session_driver_closed", http.StatusGone, nil)
+	}
 	d.active = act
 	d.mu.Unlock()
-
+	accepted = true
 	go func() {
 		defer d.clearActive(act)
-		exit := <-handle.Done
-		if sid := strings.TrimSpace(exit.SessionID); sid != "" && sid != d.getNativeSessionID() {
-			d.bindNativeSessionID(ctx, sid)
+		defer cancelRecovery()
+		defer close(act.done)
+		result := func() ProviderRunResult {
+			var exit NativeRunExit
+			select {
+			case <-recoveryCtx.Done():
+				return ProviderRunResult{Err: recoveryCtx.Err()}
+			case value, ok := <-handle.Done:
+				if !ok {
+					return ProviderRunResult{Err: NewError("native_session_exit_unknown", http.StatusBadGateway, map[string]any{"outcomeUnknown": true})}
+				}
+				exit = value
+			}
+			// A diagnostic error is not itself exit proof. A matching identity and
+			// Quiesced permit history drain even if a final marker was malformed.
+			if strings.TrimSpace(exit.SessionID) != request.NativeSessionID {
+				return ProviderRunResult{Err: NewError("chat_turn_recovery_identity_mismatch", http.StatusConflict, map[string]any{"outcomeUnknown": true})}
+			}
+			select {
+			case <-handle.Quiesced:
+			default:
+				return ProviderRunResult{Err: errors.Join(
+					NewError("native_session_exit_unknown", http.StatusBadGateway, map[string]any{"outcomeUnknown": true}), exit.Err)}
+			}
+			if err := recoveryCtx.Err(); err != nil {
+				return ProviderRunResult{Err: err}
+			}
+			imported, reason := d.importHistory(recoveryCtx, true, &request)
+			// History recovery never hides an original diagnostic or failed exit.
+			if exit.Err != nil {
+				return ProviderRunResult{Err: errors.Join(
+					NewError("native_session_exit_unknown", http.StatusBadGateway, map[string]any{
+						"outcomeUnknown": true, "historyReason": reason,
+					}), exit.Err)}
+			}
+			if exit.ExitCode != 0 {
+				details := map[string]any{
+					"detail": fmt.Sprintf("exit %d", exit.ExitCode), "historyReason": reason,
+				}
+				if reason != "" {
+					details["historyRecovered"] = false
+					details["outcomeUnknown"] = true
+				}
+				return ProviderRunResult{Err: NewError("native_session_failed", http.StatusBadGateway, details)}
+			}
+			if err := recoveryCtx.Err(); err != nil {
+				return ProviderRunResult{Err: err}
+			}
+			if reason != "" {
+				code, status := "native_session_history_import_failed", http.StatusBadGateway
+				switch reason {
+				case "no_session", "identity_unavailable":
+					code, status = "chat_turn_recovery_identity_unavailable", http.StatusConflict
+				case "identity_mismatch":
+					code, status = "chat_turn_recovery_identity_mismatch", http.StatusConflict
+				case "empty_transcript":
+					code, status = "native_session_history_empty", http.StatusConflict
+				}
+				return ProviderRunResult{Err: NewError(code, status, map[string]any{
+					"reason": reason, "historyRecovered": false, "outcomeUnknown": true,
+				})}
+			}
+			historyStatus := "imported"
+			if imported == 0 {
+				// A nonempty transcript with no new canonical events is idempotent.
+				historyStatus = "already_imported"
+			}
+			return ProviderRunResult{Result: map[string]any{
+				"turnId": in.TurnID, "runId": in.RunID,
+				"history": map[string]any{"status": historyStatus, "imported": imported},
+			}}
+		}()
+		if result.Err != nil {
+			cancelRecovery()
 		}
-		_, _ = d.ImportHistory(ctx, true)
-		if exit.ExitCode != 0 || exit.Err != nil {
-			act.done <- ProviderRunResult{Err: NewError("native_session_failed", http.StatusBadGateway, map[string]any{
-				"detail": fmt.Sprintf("exit %d", exit.ExitCode),
-			})}
-			return
+		// Publish the sole Done result only after observer resources have joined.
+		if releaseErr := joinObserver(); releaseErr != nil {
+			result = ProviderRunResult{Err: errors.Join(releaseErr, result.Err)}
 		}
-		act.done <- ProviderRunResult{Result: map[string]any{"turnId": in.TurnID, "runId": in.RunID}}
+		if result.Err == nil {
+			if err := recoveryCtx.Err(); err != nil {
+				result = ProviderRunResult{Err: err}
+			}
+		}
+		act.done <- result
 	}()
-
 	return &ProviderRun{
-		NativeTurnID: engineRunID,
+		NativeTurnID: request.EngineRunID,
 		Done:         act.done,
 		Abandon: func(_ string) string {
-			if handle.Abort != nil {
-				_ = handle.Abort()
+			if err := detachRecovery(); err != nil {
+				return "unknown"
 			}
-			return "completed"
+			return "detached"
 		},
 	}, nil
 }
@@ -1726,37 +1885,104 @@ func (d *NativeSessionDriver) executeWithRetries(
 
 // ImportHistory 从官方 CLI 本地会话文件幂等导入历史消息到 Canonical 时间线。
 func (d *NativeSessionDriver) ImportHistory(ctx context.Context, force bool) (int, string) {
-	sid := d.getNativeSessionID()
-	if sid == "" {
-		return 0, "no_session"
+	return d.importHistory(ctx, force, nil)
+}
+
+// recoveryHistorySession requires current persisted identity; cached fallback is
+// unsuitable for deciding whether an inherited run recovered its history.
+func (d *NativeSessionDriver) recoveryHistorySession(ctx context.Context, expected AdoptedNativeRunRequest) (*Session, string) {
+	if ctx.Err() != nil {
+		return nil, "cancelled"
 	}
-	if !force {
-		if page, err := d.store.ReadTimeline(ctx, d.session.SessionID, "", 20); err == nil && page != nil {
-			for _, it := range page.Items {
-				if it.Kind != "notice" {
-					return 0, "timeline_not_empty"
+	if expected.NativeSessionID == "" {
+		return nil, "no_session"
+	}
+	sess, err := d.store.GetSession(ctx, expected.CanonicalSessionID)
+	if ctx.Err() != nil {
+		return nil, "cancelled"
+	}
+	if err != nil || sess == nil || sess.ActiveTurn == nil {
+		return nil, "identity_unavailable"
+	}
+	if sess.SessionID != expected.CanonicalSessionID || sess.Provider != expected.Provider ||
+		sess.ExecutionAccountRef != expected.RuntimeScope || sess.ProjectPath != expected.ProjectPath ||
+		strings.TrimSpace(asString(sess.RuntimeBinding["nativeSessionId"])) != expected.NativeSessionID ||
+		sess.ActiveTurn.TurnID != expected.CanonicalTurnID || sess.ActiveTurn.RunID != expected.CanonicalRunID ||
+		sess.ActiveTurn.NativeTurnID != expected.EngineRunID {
+		return nil, "identity_mismatch"
+	}
+	return sess, ""
+}
+
+func (d *NativeSessionDriver) importHistory(ctx context.Context, force bool, recovery *AdoptedNativeRunRequest) (int, string) {
+	var sess *Session
+	var sid string
+	if recovery != nil {
+		var reason string
+		sess, reason = d.recoveryHistorySession(ctx, *recovery)
+		if reason != "" {
+			return 0, reason
+		}
+		// Use the verified canonical run identity, not the driver's cached ID.
+		sid = recovery.NativeSessionID
+	} else {
+		sid = d.getNativeSessionID()
+		if sid == "" {
+			return 0, "no_session"
+		}
+		if !force {
+			if page, err := d.store.ReadTimeline(ctx, d.session.SessionID, "", 20); err == nil && page != nil {
+				for _, it := range page.Items {
+					if it.Kind != "notice" {
+						return 0, "timeline_not_empty"
+					}
 				}
 			}
 		}
+		sess = d.currentSession(ctx)
 	}
-	sess := d.currentSession(ctx)
+	historySessionID, historyProvider := d.session.SessionID, d.provider
+	historyRuntimeID, historyAccountRef := d.runtime.RuntimeScope, sess.ExecutionAccountRef
+	if recovery != nil {
+		historySessionID, historyProvider = recovery.CanonicalSessionID, recovery.Provider
+		historyRuntimeID, historyAccountRef = recovery.RuntimeScope, recovery.RuntimeScope
+	}
 	projectDirName := asString(sess.Policy["projectDirName"])
+	validateRecovery := func() string {
+		if recovery == nil {
+			return ""
+		}
+		latest, reason := d.recoveryHistorySession(ctx, *recovery)
+		if reason != "" {
+			return reason
+		}
+		if asString(latest.Policy["projectDirName"]) != projectDirName {
+			return "identity_mismatch"
+		}
+		return ""
+	}
 	snap, err := sessionread.ReadMessagesSnapshot(ctx, sessionread.Options{
 		AIHomeDir:   d.opts.AIHomeDir,
 		HostHomeDir: d.opts.HostHomeDir,
-		AccountRef:  sess.ExecutionAccountRef,
-	}, d.provider, sid, projectDirName)
+		AccountRef:  historyAccountRef,
+	}, historyProvider, sid, projectDirName)
+	if reason := validateRecovery(); reason != "" {
+		return 0, reason
+	}
 	if err != nil {
 		return 0, "import_failed"
 	}
 	if len(snap.Messages) == 0 {
 		return 0, "empty_transcript"
 	}
-	src := EventSource{Provider: d.provider, RuntimeID: d.runtime.RuntimeScope}
+	src := EventSource{Provider: historyProvider, RuntimeID: historyRuntimeID}
 	drafts := make([]EventDraft, 0, len(snap.Messages))
 	for idx, rawMsg := range snap.Messages {
 		var msg sessionread.Message
 		if uerr := json.Unmarshal(rawMsg, &msg); uerr != nil {
+			if recovery != nil {
+				return 0, "import_failed"
+			}
 			continue
 		}
 		role := strings.TrimSpace(msg.Role)
@@ -1791,7 +2017,16 @@ func (d *NativeSessionDriver) ImportHistory(ctx context.Context, force bool) (in
 			},
 		})
 	}
-	res, err := d.store.ImportTimeline(ctx, d.session.SessionID, drafts)
+	if recovery != nil && len(drafts) == 0 {
+		return 0, "empty_transcript"
+	}
+	if reason := validateRecovery(); reason != "" {
+		return 0, reason
+	}
+	res, err := d.store.ImportTimeline(ctx, historySessionID, drafts)
+	if reason := validateRecovery(); reason != "" {
+		return 0, reason
+	}
 	if err != nil || res == nil {
 		return 0, "import_failed"
 	}

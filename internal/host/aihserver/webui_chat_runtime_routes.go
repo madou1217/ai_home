@@ -26,11 +26,14 @@ type WebUIChatRuntimeBuildOptions struct {
 	ModelModalities      *modelsdev.Index
 	AccountStore         chatruntime.AccountPoolReader
 	NativeLaunchPreparer chatruntime.NativeLaunchPreparer
-	GatewayModels        chatruntime.GatewayModelReader
-	ChatStreamer         chatruntime.ChatTurnStreamer
-	ArtifactReader       chatruntime.ArtifactReader
-	ApprovalCallbackURL  string
-	OnSessionState       func(ctx context.Context, session *chatruntime.Session)
+	// Both dependencies remain nil until a paired owner transfer is authorized.
+	LegacyNativeOwner       chatruntime.LegacyNativeRunOwner
+	LegacyNativeMultiplexer chatruntime.LegacyNativeMultiplexer
+	GatewayModels           chatruntime.GatewayModelReader
+	ChatStreamer            chatruntime.ChatTurnStreamer
+	ArtifactReader          chatruntime.ArtifactReader
+	ApprovalCallbackURL     string
+	OnSessionState          func(ctx context.Context, session *chatruntime.Session)
 }
 
 // BuildWebUIChatRuntimeService 构造并初始化供 WebUI 管理入口复用的 Canonical Chat Runtime Service。
@@ -52,23 +55,31 @@ func BuildWebUIChatRuntimeService(
 		checkpoints = chatruntime.DefaultWorkspaceCheckpointsOpener(opts.AIHomeDir, hostHome, nil)
 	}
 	gatewayAccounts, _ := opts.AccountStore.(accountrouting.CandidateSource)
+	legacyNative := chatruntime.NewLegacyNativeAdoptionManager(ctx, chatruntime.LegacyNativeAdoptionOptions{
+		AIHomeDir:   strings.TrimSpace(opts.AIHomeDir),
+		Owner:       opts.LegacyNativeOwner,
+		Multiplexer: opts.LegacyNativeMultiplexer,
+	})
 	svc, err := chatruntime.NewService(ctx, chatruntime.ServiceOptions{
-		DBPath:               strings.TrimSpace(opts.DBPath),
-		AIHomeDir:            strings.TrimSpace(opts.AIHomeDir),
-		HostHomeDir:          hostHome,
-		AccountStore:         opts.AccountStore,
-		NativeLaunchPreparer: opts.NativeLaunchPreparer,
-		GatewayModels:        opts.GatewayModels,
-		GatewayAccounts:      gatewayAccounts,
-		ProviderCatalog:      opts.Catalog,
-		MetadataIndex:        opts.ModelModalities,
-		ChatStreamer:         opts.ChatStreamer,
-		WorkspaceCheckpoints: checkpoints,
-		ArtifactReader:       opts.ArtifactReader,
-		ApprovalCallbackURL:  strings.TrimSpace(opts.ApprovalCallbackURL),
-		OnSessionState:       opts.OnSessionState,
+		DBPath:                 strings.TrimSpace(opts.DBPath),
+		AIHomeDir:              strings.TrimSpace(opts.AIHomeDir),
+		HostHomeDir:            hostHome,
+		AccountStore:           opts.AccountStore,
+		NativeLaunchPreparer:   opts.NativeLaunchPreparer,
+		GatewayModels:          opts.GatewayModels,
+		GatewayAccounts:        gatewayAccounts,
+		ProviderCatalog:        opts.Catalog,
+		MetadataIndex:          opts.ModelModalities,
+		ChatStreamer:           opts.ChatStreamer,
+		WorkspaceCheckpoints:   checkpoints,
+		ArtifactReader:         opts.ArtifactReader,
+		ApprovalCallbackURL:    strings.TrimSpace(opts.ApprovalCallbackURL),
+		OnSessionState:         opts.OnSessionState,
+		GetAdoptedNativeRun:    legacyNative.GetOrAdopt,
+		CloseAdoptedNativeRuns: legacyNative.Close,
 	})
 	if err != nil {
+		_ = legacyNative.Close()
 		return nil, fmt.Errorf("初始化 Canonical Chat Runtime 失败: %w", err)
 	}
 	return svc, nil

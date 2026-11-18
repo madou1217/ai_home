@@ -177,3 +177,48 @@ run_backup "$PRIVATE/destination" export > "$PRIVATE/evidence/readback.private.j
 私有根 `/private/tmp/aih-public-export-go-20261118-bv7wnib_`（pointer `/tmp/aih-public-export-go-latest-20261118.txt`）。final3原始低敏运行leaf仍带旧manifest字符串，已由 `final3-binding-correction-receipt.json` / SHA `bf51c1c4b1e14445580a9d942af42e0806c2fd266437c506dc68c2c9c5237f72` 显式绑定最终六SHA/artifact，不覆盖旧leaf。原v1/v2、profile变动及v2 matrix profile路径笔误exit65保留，失败不算产品拒绝；随后fresh final3真实重跑。早期extra leaf为5项，不能称6项；旧lifecycle不升级为final3，最终另有 `final3-lifecycle-process.json`、`final3-write-denial.json`。所有正文/DB仅owner私有文件，不进Git/argv/peer，未授权清理则保管；不宣称敌手可写目录的race完全安全或Windows真实运行。
 
 原Galileo对最终exact6＋允许低敏binding **APPROVE / NO BLOCKING**，唯一P2已闭；review不是其本人重跑export。源码pre-cachedstat/post-showstat、六blob和scope均核，one-use index＋显式pathspec，主index完整bytes/entries前后不变，没有同步或清理peer旧索引。source已本人checkpoint；push以实际relay receipt为准；artifact仅上述私有产物；**本机标准CLI仍旧缺新capability、未安装/共享加载或重启，不能把新源码当已可用发行版**。适用用户安装授权仍单独需要。Node bootstrap、import/remote/core-mirror、Desktop stop/cache、host收养、插件JS执行宿主与默认双后端均未因此退出；R5及42项＋7门禁/R0–R8仍未完成。
+
+## 2026-11-18 09:28 增量：remote restore 兼容投影改由 Go 写入（source checkpoint）
+
+本增量仅对应 `remote-backup-service.js` 的兼容视图写入边界，不把 canonical core 的既有矩阵、公开 local export、remote transport 或整个 R5 合并为完成。批准范围为原监督 `pm-7a82f427`、单目的实跑 `pm-b3259e20` / `pm-a1525452`、正常锁基础设施 `pm-cd960ff6`、追加真实 pipe consumer `pm-317c8adf` 和 source checkpoint `pm-c86c5a6a`。本段以前的证据及边界保持原样。
+
+### 唯一 writer 与 exact4 工程边界
+
+- `lib/account/backup/remote-backup-service.js`：仅 remote restore 在已有 Go import wire 上显式请求 `compatibilityProjection:true`；核对返回的版本、applied 数和未知结果标记。丢回复、旧 Go 无 marker 或投影不完整时明确失败，不回落 Node writer；dry-run 不要求投影 marker。
+- 删除仅此实际 caller 使用的 `lib/account/backup/core-mirror.js`。保留原 remote strategy/传输 orchestration，未声称 remote Node 调度已经退出。
+- `internal/host/backupaccounts/app.go`：canonical import/readback 后组合 adapter DTO，已有 CLI 与 daemon handler 共用；保留 canonical 已知提交与可能提交事实，readback 失败不能抹成“未写入”。非该显式 flag 的标准 import/dry-run 保持原路径。
+- 新 `internal/adapters/accounts/sqliteaccount/backup_compatibility_projection.go`：只按 canonical readback 及同连接 `BEGIN IMMEDIATE` 内 provider/ref/alias、credential version 和有效 profile version 的 CAS，写原四表 `account_refs`、`account_cli_aliases`、`compat_account_credentials`、`account_state`。只允许既有精确 schema/索引/约束；不兼容即拒绝，绝不 DROP/重建/自愈。不会搬入旧 `createAccountStateIndex` 的全局 down 状态归一副作用。adapter 不向上依赖 host/runtime。
+
+### 冻结来源及审查发现
+
+固定 `68acc4db3c2183b84341137b007828f94947a2c4` 的 archive SHA `307ded6a61e8c307e2be854127e803965e4c060fbec9e3a106d4b858cefef476`；6187 个普通成员逐内容核对，私有工程仅上述 exact4 差异。不是从共享 dirty cwd 构建，也未叠加另一套 private helper/reader。
+
+最终 v4 manifest SHA `5a6d78dc3c78369b57a2a19d2293ef87fc8fb014496cd8eb67523aaa37183c25`，patch SHA `0f233d08dd4c35292b2771fab87d564de83cc7f7b63ce4dcad3c239718d3d3c8`；darwin/arm64 CGO0 实际 Go CLI SHA `0e5ee04f348d3b1a3f6eb567cd9cad0a390c666efcaafe8711c5887209eb7700`，`go build -mod=readonly ./cmd/aih`、定点 `go vet`、Node syntax 均 exit0。
+
+原 Galileo 定点独审先发现并修正：canonical readback 降级会抹除提交事实、额外 UNIQUE/冲突策略改变兼容写入语义、`idx_account_state_provider_updated` 必须含第三列 `account_ref`。最终 v4 source NO BLOCKING；这只指本 source gate。第五操作前的提案也曾因未明确 builder→import envelope 包装和失败 unknown 语义被 HOLD，修正后另审通过，保留旧记录，未抢跑或更改原输入。
+
+### 单一私有目的、四步对照与一次实际 pipe consumer
+
+唯一新增敏感目的：`/private/tmp/aih-backup-compat-go-20261118-cwot4uia/private/mirror/destination`。从已准真实 portable builder 输出 SHA `1382e92a94ecbd07fa46c25a00b4f8a5e1f0d8f18f46d9bf9ee992f917f6dd0d`（34 accounts / skipped0）走产品 import 填充；不复制 live/历史 DB，不造账号、token、冲突、规则或 schema 样本。HOME0700、DB/raw0600；产品正常维护协调库仅 `run/maintenance/access.sqlite` 的 lease/id1，另为原 canonical writer lock，非第二凭据库。
+
+| 实际操作 | PID | 结果 |
+| --- | --- | --- |
+| Go import + projection | 48497 | exit0 / created34 / applied34 |
+| Go repeat | 48532 | exit0 / unchanged34 / applied34 |
+| 冻结旧 Node mirror，仅一次、同前步实际 Go Result/同 DB | 48561 | exit0 / records34 |
+| Go after Node | 48574 | exit0 / unchanged34 / applied34 |
+| 实际 `coreAccounts` pipe import，显式选择冻结 v4 Go | Node90884 → Go90886 | exit0 / protocol1 / unchanged34 / failed0 / invalid0，两项 count34 / applied34 |
+
+Go 结果的 marker 均为 `canonicalStatus:committed / outcomeUnknown:false`。前三段和第五步前后的 30 张非兼容表全字段 HMAC 均保持；四兼容表完整业务语义 HMAC 相同。**不是零写入或 DB 字节不变**：`account_refs.updated_at`、`account_cli_aliases.updated_at`、`compat_account_credentials` 三个更新时间列及 `account_state.updated_at` 每步各34行变化，已逐项记录。四表各34行；canonical34、profiles0。本输入 profile version CAS 正例、自然 stale/conflict 不因此补齐。原输入及 sealed 源 `561596b6…` 全文件 SHA 前后不变。
+
+三个直接 Go 步骤为空 PATH、OS 禁网络/fork/foreign exec，进程样本未见 child；一次旧 Node baseline 同样禁派生。追加 pipe 步骤为真实 Node→Go，必须允许 fork 且权限由 Go 继承，exec 只限这两个 image path、并不限制 argv/派生深度，**不能把第五步称 OS nofork 或无 Node 引导**。三匿名 pipe、从零 env、无 daemon identity 文件、OS deny 网络及共享读写；观测实际 Go 子 PID并等待自然退出。所有已观察私有 PID 退出，无 operator signal/retry/fallback/cleanup。
+
+旧 mirror 模块 SHA `afd18c46…`，其67项静态相对 require 依赖均与原 archive 相同；绑定真实 operator 源码，不冒称动态 module-load trace。原独审仅重算 source/artifact/hash 及低敏记录一致性，未开 DB/raw/key 重新计算 HMAC；不得写成 reviewer 独立重跑整矩阵。
+
+### 证据与保留门禁
+
+证据根 `/private/tmp/aih-backup-compat-go-20261118-cwot4uia/evidence`：四操作 `mirror-real-four-operations-v4.json` SHA `153822a96b01ac05d393e900107b83f850c95f23e4bf8fa25f2a6edc8a3da152`；第五操作 `mirror-05-real-pipe-result.json` SHA `21b6af495c435b1772da0a697e587246114ae328dc578c5f9d73935784a49085`；各自 source gate、snapshot、原 Node 身份及 archive delta 均另有低敏绑定。raw/DB/key 不进入 Git或 peer，未获清理许可则精确保管。
+
+仍 OPEN：既有 **Node-first schema** 的真实动态准入（Go 先建再 Node IF NOT EXISTS 不能证明此项）；自然 CAS mismatch/alias conflict/锁/partial/unknown 结果；带 profile version 的正例；旧 down/runtime 归一副作用；HTTP daemon 动态 consumer；默认 packaged binary resolver；真实 remote restore 下载/策略/取消恢复；共享 caller/loaded/正式构件及全 R5 Node 退役。新 Node caller 需要具备本 projection marker 的 Go，**旧 Go 将 fail-closed，必须按适用批准配对发布 Go+Node**；本 checkpoint 不授权安装或重启。
+
+交付分列：source 为本 exact4＋既有 doc append checkpoint；push 只按真实远端收据，不拿 tracking ref 代证；artifact 为上述私有产物；loaded/accept 仅本私有有限操作，未安装或改变9527；Node 旧 mirror writer 的源码退出不等于 remote orchestration/全服务 Node-off。42项＋7门禁/R0–R8及默认双后端退出目标持续未完成。

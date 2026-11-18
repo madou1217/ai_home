@@ -25,9 +25,10 @@ import (
 )
 
 type Request struct {
-	Kind     string                                   `json:"kind"`
-	Version  int                                      `json:"version"`
-	Accounts []portableaccount.AihAccountsImportEntry `json:"accounts"`
+	CompatibilityProjection bool                                     `json:"compatibilityProjection,omitempty"`
+	Kind                    string                                   `json:"kind"`
+	Version                 int                                      `json:"version"`
+	Accounts                []portableaccount.AihAccountsImportEntry `json:"accounts"`
 }
 type Outcome struct {
 	Provider            string `json:"provider"`
@@ -39,14 +40,30 @@ type Outcome struct {
 	CredentialUpdatedAt int64  `json:"credentialUpdatedAt,omitempty"`
 	ProfileUpdatedAt    int64  `json:"profileUpdatedAt,omitempty"`
 }
+
+const CompatibilityProjectionProtocol = "aih-backup-compatibility-projection-v1"
+
+// ProjectionStatus is explicit about canonical imports committed before the
+// separate compatibility transaction. An unavailable reply never authorizes retry.
+type ProjectionStatus struct {
+	Protocol        string `json:"protocol"`
+	Status          string `json:"status"`
+	Applied         int    `json:"applied"`
+	CanonicalStatus string `json:"canonicalStatus"`
+	OutcomeUnknown  bool   `json:"outcomeUnknown"`
+}
+
 type Result struct {
-	ProtocolVersion int                           `json:"protocolVersion"`
-	OK              bool                          `json:"ok"`
-	Error           string                        `json:"error,omitempty"`
-	Summary         map[string]int                `json:"summary,omitempty"`
-	Accounts        []Outcome                     `json:"accounts,omitempty"`
-	Document        *Request                      `json:"document,omitempty"`
-	Skipped         []remotebackup.SkippedAccount `json:"skipped,omitempty"`
+	canonicalCommitted      bool
+	canonicalUncertain      bool
+	CompatibilityProjection *ProjectionStatus             `json:"compatibilityProjection,omitempty"`
+	ProtocolVersion         int                           `json:"protocolVersion"`
+	OK                      bool                          `json:"ok"`
+	Error                   string                        `json:"error,omitempty"`
+	Summary                 map[string]int                `json:"summary,omitempty"`
+	Accounts                []Outcome                     `json:"accounts,omitempty"`
+	Document                *Request                      `json:"document,omitempty"`
+	Skipped                 []remotebackup.SkippedAccount `json:"skipped,omitempty"`
 }
 
 func open(ctx context.Context, home string) (*sqliteaccount.Store, *providers.Catalog, error) {
@@ -94,7 +111,7 @@ func Import(ctx context.Context, home string, request Request, dryRun bool) (Res
 		return result, e
 	}
 	defer store.Close()
-	return importIntoStore(ctx, store, catalog, request, result)
+	return importAndProject(ctx, store, catalog, request, result)
 }
 
 func ImportInto(ctx context.Context, store Store, catalog *providers.Catalog, request Request, dryRun bool) (Result, error) {
@@ -103,12 +120,90 @@ func ImportInto(ctx context.Context, store Store, catalog *providers.Catalog, re
 	if e != nil || !preflight.OK || dryRun {
 		return preflight, e
 	}
-	return importIntoStore(ctx, store, catalog, request, preflight)
+	return importAndProject(ctx, store, catalog, request, preflight)
 }
 
 type Store interface {
 	remotebackup.ExportStore
 	RestorePortableAccount(context.Context, string, string, accountapp.Credential, accountapp.PublicProfile, bool, json.RawMessage) (accountcore.Account, bool, error)
+}
+
+func importAndProject(ctx context.Context, store Store, catalog *providers.Catalog, request Request, initial Result) (Result, error) {
+	result, err := importIntoStore(ctx, store, catalog, request, initial)
+	if !request.CompatibilityProjection {
+		return result, err
+	}
+	status := &ProjectionStatus{Protocol: CompatibilityProjectionProtocol, Status: "not_applied", CanonicalStatus: "none"}
+	result.CompatibilityProjection = status
+	if err != nil {
+		result.OK = false
+		result.Error = "backup_import_incomplete"
+		status.CanonicalStatus = "unknown"
+		status.OutcomeUnknown = true
+		return result, nil
+	}
+	successes := result.Summary["created"] + result.Summary["updated"] + result.Summary["unchanged"]
+	if result.canonicalCommitted {
+		status.CanonicalStatus = "committed"
+		if !result.OK {
+			status.CanonicalStatus = "partial"
+		}
+	}
+	if result.canonicalUncertain {
+		status.CanonicalStatus = "unknown"
+		status.OutcomeUnknown = true
+	}
+	projector, ok := store.(interface {
+		ProjectBackupCompatibility(context.Context, []sqliteaccount.BackupCompatibilityRecord) (int, error)
+	})
+	if !ok {
+		result.OK = false
+		result.Error = "backup_core_mirror_incomplete"
+		return result, nil
+	}
+	records := make([]sqliteaccount.BackupCompatibilityRecord, 0, successes)
+	if result.Document != nil {
+		for _, entry := range result.Document.Accounts {
+			var outcome *Outcome
+			for i := range result.Accounts {
+				item := &result.Accounts[i]
+				if item.AccountRef == entry.AccountRef && item.Status != "failed" && item.Status != "invalid" {
+					outcome = item
+					break
+				}
+			}
+			if outcome == nil {
+				result.OK = false
+				result.Error = "backup_core_mirror_incomplete"
+				return result, nil
+			}
+			env, encodeErr := json.Marshal(entry.Env)
+			if encodeErr != nil {
+				result.OK = false
+				result.Error = "backup_core_mirror_incomplete"
+				return result, nil
+			}
+			records = append(records, sqliteaccount.BackupCompatibilityRecord{AccountRef: entry.AccountRef, Provider: entry.Provider, CLIAccountID: entry.CLIAccountID, CredentialUpdatedAt: outcome.CredentialUpdatedAt, ProfileUpdatedAt: outcome.ProfileUpdatedAt, EnvJSON: env, NativeAuthJSON: entry.NativeAuth})
+		}
+	}
+	// A failed canonical readback must not erase an earlier commit or advertise
+	// an empty projection as complete. Preserve the partial/unknown outcome.
+	if len(records) == 0 && (result.canonicalCommitted || result.canonicalUncertain) {
+		result.OK = false
+		result.Error = "backup_core_mirror_incomplete"
+		return result, nil
+	}
+	applied, projectionErr := projector.ProjectBackupCompatibility(ctx, records)
+	if projectionErr != nil {
+		result.OK = false
+		result.Error = "backup_core_mirror_incomplete"
+		status.Status = "unknown"
+		status.OutcomeUnknown = true
+		return result, nil
+	}
+	status.Status = "applied"
+	status.Applied = applied
+	return result, nil
 }
 
 func importIntoStore(ctx context.Context, store Store, catalog *providers.Catalog, request Request, result Result) (Result, error) {
@@ -141,9 +236,17 @@ func importIntoStore(ctx context.Context, store Store, catalog *providers.Catalo
 		}
 		account, created, importErr := store.RestorePortableAccount(ctx, entry.AccountRef, entry.CLIAccountID, credential, profile, entry.Status == "down", supplement)
 		if importErr != nil {
+			// Restore can fail during post-COMMIT readback. The result alone
+			// does not authorize a claim of no write or an automatic retry.
+			if request.CompatibilityProjection {
+				result.canonicalUncertain = true
+			}
 			item.Reason = "canonical_restore_failed"
 			result.Summary["failed"]++
 		} else {
+			if request.CompatibilityProjection {
+				result.canonicalCommitted = true
+			}
 			item.AccountRef = account.Ref().String()
 			item.CLIAccountID = strconv.FormatInt(account.CLIAccountID().Int64(), 10)
 			item.Status = "unchanged"

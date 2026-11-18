@@ -60,7 +60,7 @@ func MapErrorStatus(code string) int {
 	if c == "request_body_too_large" {
 		return 413
 	}
-	if c == "local_scan_requires_local_request" {
+	if c == "local_scan_requires_local_request" || c == "managed_source_read_only" {
 		return 403
 	}
 	if strings.HasSuffix(c, "_not_found") {

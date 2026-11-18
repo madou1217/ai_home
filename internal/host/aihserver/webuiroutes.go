@@ -30,11 +30,13 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
+	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
+	"github.com/madou1217/ai_home/internal/transport/http/proxyleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
@@ -148,6 +150,7 @@ type webuiRouteDependencies struct {
 	TerminalProbe func(sessionKey string) string
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel。
 	ReverseTunnels *sshtunnel.Supervisor
+	SSHProxies     *sshproxy.Supervisor
 	// AccountDeletion 是账号删除用例（WebUI 的 DELETE 承接者）。
 	AccountDeletion webuiaccountdeleteapi.AccountDeletion
 	// AccountHostGrant 回收停用账号在宿主上的直连授权（当前只有 codex）。
@@ -195,6 +198,8 @@ type webuiRouteDependencies struct {
 
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
 	authorizer := dependencies.Authorizer
+	proxyRuntime := sshproxy.NewLeaseManager(dependencies.SSHProxies, dependencies.AIHomeDir, dependencies.EgressManager)
+	proxyAPI := &proxyleaseapi.Handler{Authorizer: authorizer, Runtime: proxyRuntime}
 
 	toolSettingsSource, err := webuitoolsettingsapi.OpenSettingsSource(dependencies.AIHomeDir)
 	if err != nil {
@@ -490,6 +495,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		OnConnectionsChanged: func(_ context.Context, rawConnections []byte) {
 			if dependencies.ReverseTunnels != nil {
 				_ = dependencies.ReverseTunnels.Reconcile(rawConnections)
+			}
+			if dependencies.SSHProxies != nil {
+				_ = dependencies.SSHProxies.Reconcile(rawConnections)
 			}
 		},
 		OnWorkspacesChanged: func(ctx context.Context) {
@@ -861,6 +869,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
 		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
 		{Pattern: "GET " + webuisshhostbrowseapi.Path, Handler: sshBrowse},
+		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},
+		{Pattern: "POST " + proxyleaseapi.LeasesPath, Handler: proxyAPI},
+		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},
+		{Pattern: "GET " + proxyleaseapi.LeasesPath + "/{id}/connect", Handler: proxyAPI},
+		{Pattern: "GET /v1/management/webui/proxy-candidates", Handler: proxyAPI},
 		{Pattern: "GET " + webuisshreverseapi.Path, Handler: sshReverseTunnels},
 		{Pattern: "GET " + webuisshreverseapi.WatchPath, Handler: sshReverseTunnels},
 		{Pattern: "POST " + webuisshreverseapi.ReconcilePath, Handler: sshReverseTunnels},

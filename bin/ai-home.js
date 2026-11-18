@@ -597,9 +597,10 @@ function tryRunGoProviderCommonCommand() {
   const args = process.argv.slice(2);
   if (args.length < 2) return false;
   const provider = String(args[0] || '').trim().toLowerCase();
-  // 家族有专门入口（多站点/别名），不要在这里重复处理。
-  if (!provider || GO_FAMILY_PROVIDERS.has(provider)) return false;
   const command = String(args[1] || '').trim().toLowerCase();
+  const isLifecycle = ['install', 'update'].includes(command) && !args.slice(2).includes('--');
+  // 家族的启动/账号命令走专门入口；harness 生命周期对所有 CLI 通用。
+  if (!provider || (GO_FAMILY_PROVIDERS.has(provider) && !isLifecycle)) return false;
   // Codex version must use the same safe upstream resolver as actual launch.
   const isCodexVersion = provider === 'codex' && command === 'version' && args.length === 2;
   const numeric = (value) => /^\d+$/.test(String(value || '').trim());
@@ -628,7 +629,7 @@ function tryRunGoProviderCommonCommand() {
     SET_DEFAULT_PROVIDERS.has(provider) &&
     numeric(args[2]) &&
     args.slice(3).every((token) => token === '--restart-client' || token === '--force-quit-client');
-  if (!isCodexVersion && !isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault && !isUnsetDefault) return false;
+  if (!isLifecycle && !isCodexVersion && !isList && !isUsageAll && !isUsageOne && !isTerminalIcon && !isAutoSwitch && !isDelete && !isDeleteAll && !isSetDefault && !isUnsetDefault) return false;
   if (!goProviderHasCli(provider)) return false;
   // codex/claude 的列表动画与全量 usage 进度条仍是 Node 实现。
   const animatedProvider = provider === 'codex' || provider === 'claude';
@@ -657,24 +658,49 @@ function tryRunGoProviderCommonCommand() {
   }
   if (!aiHomeDir) return false;
   // 列表读本机 aih.db，不需要运行中的 Server；其余动作仍要管理面。
-  const needsServer = isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault || isUnsetDefault;
+  const managedProxy = isLifecycle && args.slice(2).some((token, index, rest) => {
+    if (token !== '--proxy' && !token.startsWith('--proxy=')) return false;
+    const value = token === '--proxy' ? rest[index + 1] : token.slice('--proxy='.length);
+    return !value || value.startsWith('-') || !value.includes('://');
+  });
+  const needsServer = managedProxy || isUsageAll || isUsageOne || isAutoSwitch || isDelete || isDeleteAll || isSetDefault || isUnsetDefault;
   let managementKey = '';
   let config = null;
   if (needsServer) {
     try {
-      config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+      if (!isLifecycle || !process.env.AIH_SERVER_BASE_URL || !process.env.AIH_SERVER_MANAGEMENT_KEY) {
+        config = require('../lib/server/server-config-store').readServerConfig({ fs, aiHomeDir });
+      }
     } catch (_error) {
       config = null;
     }
-    managementKey = String(config && config.managementKey || '').trim();
-    if (!managementKey) return false;
+    managementKey = String(isLifecycle
+      ? (process.env.AIH_SERVER_MANAGEMENT_KEY || (!process.env.AIH_SERVER_BASE_URL && config && config.managementKey) || '')
+      : (config && config.managementKey || '')).trim();
+    if (!managementKey && !isLifecycle) return false;
   }
   const env = { ...process.env, AIH_HOME_DIR: aiHomeDir };
   if (needsServer) {
-    env.AIH_SERVER_BASE_URL = goPublicManagementBaseURL(config);
+    env.AIH_SERVER_BASE_URL = (isLifecycle && process.env.AIH_SERVER_BASE_URL) || goPublicManagementBaseURL(config);
     env.AIH_SERVER_MANAGEMENT_KEY = managementKey;
   }
   if (hostHome) env.AIH_HOST_HOME = hostHome;
+  if (isLifecycle) {
+    // Keep Node alive to forward cancellation and let Go reap its process group
+    // and release its task lease before this wrapper exits.
+    const child = require('node:child_process').spawn(binary, args, { stdio: 'inherit', env });
+    const handlers = new Map(['SIGINT', 'SIGTERM'].map((signal) => [signal, () => child.kill(signal)]));
+    for (const [signal, handler] of handlers) process.on(signal, handler);
+    child.once('error', () => {
+      process.stderr.write('[aih] 无法启动 Go CLI 生命周期命令。\n');
+      process.exitCode = 1;
+    });
+    child.once('close', (code, signal) => {
+      for (const [name, handler] of handlers) process.removeListener(name, handler);
+      process.exitCode = Number.isInteger(code) ? code : (signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : 1);
+    });
+    return true;
+  }
   const result = require('node:child_process').spawnSync(binary, args, { stdio: 'inherit', env });
   process.exitCode = Number.isInteger(result.status) ? result.status : 1;
   return true;

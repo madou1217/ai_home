@@ -90,6 +90,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
+	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/terminalsession"
@@ -1125,18 +1126,21 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			}
 		}
 	}
+	sshProxySupervisor := sshproxy.New(aiHomeDir, dependencies.HostHomeDir, knownHostKeys)
 	sshTunnelSupervisor := sshtunnel.NewWithHostKeys(dependencies.HostHomeDir, knownHostKeys, func(ctx context.Context, config sshremote.Config, remotePort, localPort int) (sshtunnel.Tunnel, error) {
 		return sshremote.OpenReverseTunnel(ctx, config, remotePort, localPort)
 	})
 	if sshSource, sourceErr := webuisshapi.OpenSource(dependencies.AIHomeDir); sourceErr == nil {
 		if raw, found, readErr := sshSource.ReadConnections(startupContext); readErr == nil && found {
 			_ = sshTunnelSupervisor.Reconcile([]byte(raw))
+			_ = sshProxySupervisor.Reconcile([]byte(raw))
 		}
 	}
 	if dependencies.Context != nil {
 		go func() {
 			<-dependencies.Context.Done()
 			sshTunnelSupervisor.Close()
+			sshProxySupervisor.Close()
 		}()
 	}
 	terminalService := terminalsession.NewService(pty.NewStarter(), terminalsession.Options{
@@ -1907,6 +1911,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
 		ReverseTunnels:  sshTunnelSupervisor,
+		SSHProxies:      sshProxySupervisor,
 		AccountDeletion: deletionRuntime,
 		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
 		AccountHostGrant: deletionHost,

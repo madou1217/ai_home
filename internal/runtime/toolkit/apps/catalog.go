@@ -175,14 +175,19 @@ func buildPosixScriptPlan(id, label, rawURL string, hosts []string, args []strin
 	if err != nil {
 		return LifecyclePlan{}
 	}
-	script := "curl -fsSL " + shellQuote(official) + " | bash"
-	if len(args) > 0 {
-		quotedArgs := make([]string, 0, len(args))
-		for _, arg := range args {
-			quotedArgs = append(quotedArgs, shellQuote(arg))
-		}
-		script = "curl -fsSL " + shellQuote(official) + " | bash -s -- " + strings.Join(quotedArgs, " ")
+	quotedArgs := make([]string, 0, len(args))
+	for _, arg := range args {
+		quotedArgs = append(quotedArgs, shellQuote(arg))
 	}
+	// A curl | bash pipeline can succeed on empty input after a download error.
+	// Download first, propagate its failure, then execute the official script.
+	script := strings.Join([]string{
+		"set -eu",
+		`tmp_dir="$(mktemp -d)"`,
+		`trap 'rm -rf "$tmp_dir"' EXIT`,
+		"curl --compressed -fsSL " + shellQuote(official) + ` -o "$tmp_dir/install.sh"`,
+		`bash "$tmp_dir/install.sh" ` + strings.Join(quotedArgs, " "),
+	}, "; ")
 	return buildShellPlan(id, label, script)
 }
 

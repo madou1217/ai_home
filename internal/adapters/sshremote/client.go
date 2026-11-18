@@ -69,7 +69,7 @@ func dial(ctx context.Context, config Config, timeout time.Duration, depth int) 
 			return nil, jumpErr
 		}
 		closers = append(closers, jump)
-		connection, err = jump.client.Dial("tcp", address)
+		connection, err = jump.client.DialContext(ctx, "tcp", address)
 	} else {
 		dialer := net.Dialer{Timeout: timeout}
 		connection, err = dialer.DialContext(ctx, "tcp", address)

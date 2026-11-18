@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, Empty, Popconfirm, Space, Spin } from 'antd';
-import { sshHostsAPI, watchSshReverseTunnels } from '@/services/api';
+import { fetchAuthorizedWebUiResource, sshHostsAPI, watchSshReverseTunnels } from '@/services/api';
 import { DeleteOutlined, EditOutlined, MessageOutlined, ToolOutlined } from '@ant-design/icons';
 import { buildAppHref } from '@/services/app-navigation';
 import { buildToolkitEnvironmentHref } from '@/pages/toolkit-url-state';
@@ -9,7 +9,8 @@ import {
   SSH_AUTH_LABELS as AUTH_LABELS,
   SSH_DELETE_CONNECTION_CONFIRM,
   SSH_DELETE_WORKSPACE_CONFIRM,
-  formatSshTarget
+  formatSshTarget,
+  isSshReverseTunnelEnabled
 } from '@/features/ssh-hosts/ssh-hosts-model';
 import type { SshConnection, SshReverseTunnelStatus, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
 import './SshHostCardLists.css';
@@ -27,21 +28,87 @@ interface ConnectionListProps {
   onDelete: (id: string) => void;
 }
 
-const TUNNEL_STATUS_LABEL: Record<string, string> = { open: '已连通', connecting: '连接中', retrying: '重连中' };
+const TUNNEL_STATUS_LABEL: Record<string, string> = { open: '已连通', connecting: '连接中', retrying: '重连中', error: '重连中' };
 
-/** 反向隧道状态（顺带让 Server 对齐一次隧道配置）。15s 轮询。 */
+/** SSE 即时刷新，15s 轮询兜底；请求失败后不继续展示陈旧端口。 */
 function useReverseTunnels(enabled: boolean): SshReverseTunnelStatus[] | null {
   const [tunnels, setTunnels] = useState<SshReverseTunnelStatus[] | null>(null);
   useEffect(() => {
+    setTunnels(null);
     if (!enabled) return undefined;
     let alive = true;
-    const load = () => { sshHostsAPI.listTunnels().then((list) => { if (alive) setTunnels(list); }).catch(() => {}); };
-    load();
+    let pending = false;
+    const load = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const list = await sshHostsAPI.listTunnels();
+        if (alive) setTunnels(list);
+      } catch {
+        if (alive) setTunnels(null);
+      } finally {
+        pending = false;
+      }
+    };
+    void load();
     const source = watchSshReverseTunnels();
-    source.onmessage = () => load();
-    return () => { alive = false; source.close(); };
+    source.onmessage = () => { void load(); };
+    const timer = window.setInterval(() => { void load(); }, 15000);
+    return () => { alive = false; source.close(); window.clearInterval(timer); };
   }, [enabled]);
   return tunnels;
+}
+
+function ReverseTunnelSummary({ connection, tunnels }: { connection: SshConnection; tunnels: SshReverseTunnelStatus[] | null }) {
+  if (!isSshReverseTunnelEnabled(connection)) return null;
+  const tunnel = tunnels?.find((item) => item.connectionId === connection.id);
+  const state = tunnel?.state || tunnel?.status || '';
+  const boundPort = state === 'open' ? tunnel?.remotePort : undefined;
+  return (
+    <div className="ssh-list-card-egress" role="status" title={tunnel?.error || '远端回环端口转发到 AIH Server 本机 SSH，重连后端口可能变化'}>
+      反向隧道：{boundPort ? `远端 127.0.0.1:${boundPort} → 本机 SSH :${tunnel?.localPort || 22}` : '等待分配端口'}
+      <span> · {TUNNEL_STATUS_LABEL[state] || (tunnels ? '未启动' : '状态待刷新')}</span>
+      {tunnel?.error ? <span> · {tunnel.error}</span> : null}
+    </div>
+  );
+}
+
+interface SshProxyCandidate { id: string; available: boolean; error?: string }
+
+function useSshProxyCandidates(enabled: boolean): SshProxyCandidate[] | null {
+  const [candidates, setCandidates] = useState<SshProxyCandidate[] | null>(null);
+  useEffect(() => {
+    setCandidates(null);
+    if (!enabled) return undefined;
+    let alive = true;
+    let pending = false;
+    const load = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await fetchAuthorizedWebUiResource('/v0/webui/proxy-candidates');
+        if (!response.ok) throw new Error('proxy_status_unavailable');
+        const result = await response.json();
+        if (alive) setCandidates(Array.isArray(result.candidates) ? result.candidates : []);
+      } catch {
+        if (alive) setCandidates(null);
+      } finally { pending = false; }
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 5000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [enabled]);
+  return candidates;
+}
+
+function ProxySummary({ connection, candidates }: { connection: SshConnection; candidates: SshProxyCandidate[] | null }) {
+  if (!connection.proxyEnabled) return null;
+  const proxy = candidates?.find((item) => item.id === `ssh:${connection.id}`);
+  return (
+    <div className="ssh-list-card-egress" role="status" title={proxy?.error || '此 SSH 出口已自动加入代理池，安装和更新可使用 --proxy 选择'}>
+      代理出口：{proxy?.available ? '可用 · 已加入代理池' : proxy?.error ? `不可用 · ${proxy.error}` : candidates ? '连接中' : '状态待刷新'}
+    </div>
+  );
 }
 
 export function SshConnectionCardList({
@@ -54,7 +121,8 @@ export function SshConnectionCardList({
   onEdit,
   onDelete
 }: ConnectionListProps) {
-  const tunnels = useReverseTunnels(connections.some((item) => Boolean(item.reverseTunnel?.remotePort)));
+  const tunnels = useReverseTunnels(connections.some(isSshReverseTunnelEnabled));
+  const proxyCandidates = useSshProxyCandidates(connections.some((item) => item.proxyEnabled));
   if (loading) return <div className="ssh-card-loading"><Spin /></div>;
   if (connections.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无远程连接" />;
 
@@ -69,14 +137,13 @@ export function SshConnectionCardList({
                 {formatSshTarget(connection)}
               </code>
             </div>
-            <span className={`ssh-auth-pill ssh-auth-pill--${connection.authType}`}>{AUTH_LABELS[connection.authType]}</span>
+            <Space size={6}>
+              {connection.proxyEnabled ? <span className="ssh-connection-pill" title="代理出口已启用；可用状态由托管代理运行时提供">代理已启用</span> : null}
+              <span className={`ssh-auth-pill ssh-auth-pill--${connection.authType}`}>{AUTH_LABELS[connection.authType]}</span>
+            </Space>
           </div>
-          {connection.reverseTunnel?.remotePort ? (
-            <div className="ssh-list-card-egress" title="这台机器的回环端口转到 AIH Server 本机 SSH">
-              反向隧道：远端 127.0.0.1:{connection.reverseTunnel.remotePort} → 本机 SSH
-              {tunnels ? <span> · {TUNNEL_STATUS_LABEL[tunnels.find((item) => item.connectionId === connection.id)?.status || ''] || '未启动'}</span> : null}
-            </div>
-          ) : null}
+          <ReverseTunnelSummary connection={connection} tunnels={tunnels} />
+          <ProxySummary connection={connection} candidates={proxyCandidates} />
           {connection.egressConnectionId ? (
             <div className="ssh-list-card-egress">
               出网经由：{connections.find((item) => item.id === connection.egressConnectionId)?.label || '已删除的连接'}

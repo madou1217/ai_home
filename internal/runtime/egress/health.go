@@ -13,15 +13,15 @@ import (
 )
 
 const (
-	healthFileName        = "node-health.json"
-	healthFileVersion     = 1
-	maxAccountsPerNode    = 20
-	defaultEventHistory   = 200
-	legacyIPBlockedKind   = "ip_blocked"
-	freeLimitCooldownMS   = 15 * 60 * 1000
-	gateCooldownMS        = 2 * 60 * 1000
-	networkCooldownMS     = 60 * 1000
-	maxNodeCooldownMS     = 30 * 60 * 1000
+	healthFileName      = "node-health.json"
+	healthFileVersion   = 1
+	maxAccountsPerNode  = 20
+	defaultEventHistory = 200
+	legacyIPBlockedKind = "ip_blocked"
+	freeLimitCooldownMS = 15 * 60 * 1000
+	gateCooldownMS      = 2 * 60 * 1000
+	networkCooldownMS   = 60 * 1000
+	maxNodeCooldownMS   = 30 * 60 * 1000
 )
 
 var failureKindCooldowns = map[string]int64{
@@ -314,8 +314,8 @@ func runtimeEntryFromProxy(name string, node ProxyNode, enabled bool) RuntimeNod
 	}
 	return RuntimeNodeEntry{
 		Name:         name,
-		NodeID:       BuildNodeEntityID(node.Protocol, node.Server, node.Port),
-		Identity:     BuildExitIdentity(node.Protocol, node.Server, node.Port),
+		NodeID:       NodeEntityID(node),
+		Identity:     NodeExitIdentity(node),
 		Label:        label,
 		Protocol:     NormalizeProtocol(node.Protocol),
 		Server:       strings.TrimSpace(node.Server),

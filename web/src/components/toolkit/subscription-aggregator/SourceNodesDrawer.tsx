@@ -3,7 +3,7 @@ import { Drawer, List, Pagination, Popconfirm, Space, Tag, Tooltip, Typography }
 import { CopyOutlined, DeleteOutlined, EditOutlined, LinkOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
-import { aggregatorErrorText, chainIssue, describeChain, nameWithFlag, responseErrorCode, skipReasonText } from './aggregator-presentation';
+import { aggregatorErrorText, chainIssue, describeChain, isManagedSource, MANAGED_SOURCE_HELP, MANAGED_SOURCE_PATH, nameWithFlag, responseErrorCode, skipReasonText } from './aggregator-presentation';
 import ManualNodeModal from './ManualNodeModal';
 import NodeChainModal from './NodeChainModal';
 import { parseManualContent, removeManualNode, serializeManualNodes, upsertManualNode, type ManualNode } from './manual-nodes';
@@ -20,7 +20,7 @@ interface SourceNodesDrawerProps {
   onSaveSource: (input: AggregatorSourceInput) => Promise<boolean>;
 }
 
-interface Row {
+interface Row extends Pick<AggregatorSourceNode, 'managedBy' | 'available' | 'lifecycle' | 'error'> {
   key: string;
   /** 节点库里的 id（配前置节点用）；没对上节点库时为空串 */
   id: string;
@@ -67,7 +67,8 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
   const [editing, setEditing] = useState<{ index: number; node: ManualNode | null } | null>(null);
   const [chainEditing, setChainEditing] = useState<{ id: string; name: string } | null>(null);
   const [page, setPage] = useState(1);
-  const manualNodes = useMemo(() => (source?.kind === 'local' ? parseManualContent(source.content) : null), [source]);
+  const managed = Boolean(source && isManagedSource(source));
+  const manualNodes = useMemo(() => (source && !isManagedSource(source) && source.kind === 'local' ? parseManualContent(source.content) : null), [source]);
 
   const measure = useCallback(async (sourceId: string, fresh: boolean) => {
     setMeasuring(true);
@@ -93,17 +94,25 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
   useEffect(() => {
     if (!source) return;
     setError('');
+    setNodes([]);
+    setChainNodes([]);
+    setEditing(null);
+    setChainEditing(null);
+    setPage(1);
     setLatency({});
     setLoading(true);
+    let active = true;
     subscriptionAggregatorAPI.sourceNodes(source.id)
       .then((result) => {
+        if (!active) return;
         setNodes(result.nodes);
-        void measure(source.id, false);
+        if (!managed) void measure(source.id, false);
       })
-      .catch((loadError) => setError(aggregatorErrorText(responseErrorCode(loadError), '读取节点失败')))
-      .finally(() => setLoading(false));
-    void reloadChainNodes();
-  }, [measure, reloadChainNodes, source]);
+      .catch((loadError) => { if (active) setError(aggregatorErrorText(responseErrorCode(loadError), '读取节点失败')); })
+      .finally(() => { if (active) setLoading(false); });
+    if (!managed) void reloadChainNodes();
+    return () => { active = false; };
+  }, [managed, measure, reloadChainNodes, source]);
 
   // 延迟按节点 id 返回；手动节点行按地址对上同一个节点。
   // 延迟结果由服务端按连接身份（nodeKey）返回：用 id 会因改名/重排对不上（见 lib/runtime/node-identity.js）。
@@ -140,7 +149,7 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
   );
 
   const saveManual = async (next: ManualNode[]) => {
-    if (!source) return false;
+    if (!source || managed) return false;
     const saved = await onSaveSource({ id: source.id, name: source.name, kind: 'local', content: serializeManualNodes(next) });
     // 重新读一遍：新节点要拿到节点库分配的 id 才能配前置，节点增删也可能改变链路。
     if (saved) {
@@ -151,7 +160,7 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
   };
 
   const saveChain = async (chain: string) => {
-    if (!chainEditing) return false;
+    if (!chainEditing || managed) return false;
     // 成环、前置不存在这类错误由服务端判定，抛出去让弹窗显示原文案。
     await subscriptionAggregatorAPI.setNodeChain(chainEditing.id, chain);
     setNodes((current) => current.map((node) => (node.id === chainEditing.id ? { ...node, chain } : node)));
@@ -178,14 +187,24 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
       extra={(
         <Space>
           {manualNodes ? <Button icon={<PlusOutlined />} onClick={() => setEditing({ index: -1, node: null })}>添加节点</Button> : null}
-          <Button icon={<ThunderboltOutlined />} loading={measuring} disabled={!source} onClick={() => source && void measure(source.id, true)}>测延迟</Button>
+          {managed ? (
+            <Button icon={<LinkOutlined />} href={MANAGED_SOURCE_PATH}>管理 SSH 主机</Button>
+          ) : (
+            <Button icon={<ThunderboltOutlined />} loading={measuring} disabled={!source} onClick={() => source && void measure(source.id, true)}>测延迟</Button>
+          )}
         </Space>
       )}
     >
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        <Text type="secondary">延迟是从服务器到节点地址的 TCP 建连耗时，不经过节点，不代表代理一定可用。</Text>
-        <Text type="secondary">前置节点（链式代理）：流量先经过前置，再由前置连到本节点；前置自己也能有前置，可以串成多级链。</Text>
-        {fakeIp ? <Text type="warning">本机代理接管了 DNS（fake-ip），延迟是到本机代理的，不代表节点。</Text> : null}
+        {managed ? (
+          <Text type="secondary">{MANAGED_SOURCE_HELP}；可用性由当前服务器的 SSH 运行时报告。</Text>
+        ) : (
+          <>
+            <Text type="secondary">延迟是从服务器到节点地址的 TCP 建连耗时，不经过节点，不代表代理一定可用。</Text>
+            <Text type="secondary">前置节点（链式代理）：流量先经过前置，再由前置连到本节点；前置自己也能有前置，可以串成多级链。</Text>
+          </>
+        )}
+        {!managed && fakeIp ? <Text type="warning">本机代理接管了 DNS（fake-ip），延迟是到本机代理的，不代表节点。</Text> : null}
         {error ? <Text type="danger">{error}</Text> : null}
         <List
           loading={loading}
@@ -194,10 +213,10 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
           renderItem={(row) => (
             <List.Item
               actions={[
-                row.link ? (
+                !managed && row.managedBy !== 'sshproxy' && row.link ? (
                   <Button key="copy" type="text" size="small" icon={<CopyOutlined />} aria-label={`复制 ${row.name} 的分享链接`} onClick={() => void copyText(row.link, '分享链接已复制')} />
                 ) : null,
-                row.id ? (
+                !managed && row.managedBy !== 'sshproxy' && row.id ? (
                   <Tooltip key="chain" title="配置前置节点（链式代理）">
                     <Button
                       type="text"
@@ -223,11 +242,25 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
                   <Space size={6} wrap>
                     <span>{nameWithFlag(row.name, row.flag)}</span>
                     <Tag>{row.protocol}</Tag>
-                    {latencyTag(latencyByAddress.get(addressKey(row.server, row.port)))}
-                    {chainTag(row)}
+                    {managed || row.managedBy === 'sshproxy' ? (
+                      <>
+                        <Tag color={row.available ? 'success' : 'default'}>{row.available ? '可用' : '不可用'}</Tag>
+                        {row.lifecycle && <Tag color={row.lifecycle === 'error' ? 'error' : row.lifecycle === 'connecting' ? 'processing' : 'success'}>{row.lifecycle === 'ready' ? '就绪' : row.lifecycle === 'connecting' ? '连接中' : '错误'}</Tag>}
+                      </>
+                    ) : (
+                      <>
+                        {latencyTag(latencyByAddress.get(addressKey(row.server, row.port)))}
+                        {chainTag(row)}
+                      </>
+                    )}
                   </Space>
                 )}
-                description={`${row.server}:${row.port}`}
+                description={(
+                  <Space size={8} wrap>
+                    <span>{row.server}:{row.port}{managed || row.managedBy === 'sshproxy' ? ' · 仅当前服务器' : ''}</span>
+                    {row.error && <Text type="danger">{row.error}</Text>}
+                  </Space>
+                )}
               />
             </List.Item>
           )}

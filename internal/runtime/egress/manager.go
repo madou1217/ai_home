@@ -379,13 +379,14 @@ func (m *Manager) syncHealthBindingsLocked() error {
 	byIdentity := make(map[string]ProxyNode, len(nodesData.Nodes))
 	if dataErr == nil {
 		for _, n := range nodesData.Nodes {
-			if n.Port <= 0 || !IsRoutableServer(n.Server) || IsInformationalNode(n.Name) {
+			if n.Port <= 0 || !IsUsableNode(n) || IsInformationalNode(n.Name) {
 				continue
 			}
-			id := BuildExitIdentity(n.Protocol, n.Server, n.Port)
+			id := NodeExitIdentity(n)
 			if id != "" {
 				if _, exists := byIdentity[id]; !exists {
 					byIdentity[id] = n
+					byIdentity[BuildExitIdentity(n.Protocol, n.Server, n.Port)] = n
 				}
 			}
 		}
@@ -405,6 +406,8 @@ func (m *Manager) syncHealthBindingsLocked() error {
 				Enabled:  true,
 			}
 			if raw, ok := byIdentity[entry.Identity]; ok {
+				entry.NodeID = NodeEntityID(raw)
+				entry.Identity = NodeExitIdentity(raw)
 				if raw.Name != "" {
 					entry.Label = raw.Name
 				}
@@ -440,7 +443,7 @@ func (m *Manager) syncHealthBindingsLocked() error {
 	}
 	entries := make([]RuntimeNodeEntry, 0, len(nodes))
 	for _, n := range nodes {
-		if n.Port <= 0 || !IsRoutableServer(n.Server) || IsInformationalNode(n.Name) {
+		if n.Port <= 0 || !IsUsableNode(n) || IsInformationalNode(n.Name) {
 			continue
 		}
 		e := runtimeEntryFromProxy(n.Name, n, true)

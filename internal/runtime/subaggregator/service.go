@@ -273,6 +273,16 @@ func readProcessEnvMap() map[string]string {
 }
 
 func toPublicSource(s Subscription) PublicSourceView {
+	if isManagedSource(s) {
+		// Runtime-owned sources have no portable subscription URL or editable content.
+		return PublicSourceView{
+			ID:        s.ID,
+			Name:      s.Name,
+			Kind:      "managed",
+			NodeCount: s.NodeCount,
+			Enabled:   s.Enabled,
+		}
+	}
 	isLocal := s.Kind == "local"
 	kind := "remote"
 	if isLocal {
@@ -633,12 +643,21 @@ func (s *Service) StartSourceSync(ids []string) (SyncJobView, error) {
 	wanted := map[string]bool{}
 	for _, id := range ids {
 		trimmed := strings.TrimSpace(id)
+		if trimmed == managedSSHSourceID {
+			return SyncJobView{}, errInvalid("managed_source_read_only")
+		}
 		if trimmed != "" {
 			wanted[trimmed] = true
 		}
 	}
 	var entries []SyncJobEntry
 	for _, src := range pool.Subscriptions {
+		if isManagedSource(src) {
+			if wanted[src.ID] {
+				return SyncJobView{}, errInvalid("managed_source_read_only")
+			}
+			continue
+		}
 		if !src.Enabled {
 			continue
 		}
@@ -657,6 +676,9 @@ func (s *Service) StartSourceSync(ids []string) (SyncJobView, error) {
 
 // StartSourceSyncOne 发起单个订阅源同步（若已在执行则复用任务）。
 func (s *Service) StartSourceSyncOne(subscriptionID string) (map[string]any, error) {
+	if subscriptionID == managedSSHSourceID {
+		return nil, errInvalid("managed_source_read_only")
+	}
 	pool, err := s.store.ReadProxyPool()
 	if err != nil {
 		return nil, err
@@ -670,6 +692,9 @@ func (s *Service) StartSourceSyncOne(subscriptionID string) (map[string]any, err
 	}
 	if found == nil {
 		return nil, errInvalid("subscription_not_found")
+	}
+	if isManagedSource(*found) {
+		return nil, errInvalid("managed_source_read_only")
 	}
 	if !found.Enabled {
 		return nil, errInvalid("subscription_disabled")
@@ -697,11 +722,17 @@ func (s *Service) OnSourceSyncChange(fn func(SyncEvent)) func() {
 
 // SetSourceEnabled 启用或停用指定订阅源。
 func (s *Service) SetSourceEnabled(subscriptionID string, enabled bool) (PublicSourceView, error) {
+	if subscriptionID == managedSSHSourceID {
+		return PublicSourceView{}, errInvalid("managed_source_read_only")
+	}
 	var updated Subscription
 	found := false
 	_, err := s.store.MutateProxyPool(func(data *ProxyPoolStoreData) error {
 		for i := range data.Subscriptions {
 			if data.Subscriptions[i].ID == subscriptionID {
+				if isManagedSource(data.Subscriptions[i]) {
+					return errInvalid("managed_source_read_only")
+				}
 				found = true
 				data.Subscriptions[i].Enabled = enabled
 				updated = data.Subscriptions[i]
@@ -744,6 +775,9 @@ func (s *Service) SaveSourceRecord(raw map[string]any) (Subscription, error) {
 	}
 	reqID := strings.TrimSpace(stringField(raw, "id"))
 	rawKind := strings.TrimSpace(stringField(raw, "kind"))
+	if reqID == managedSSHSourceID || strings.EqualFold(rawKind, "managed") {
+		return Subscription{}, errInvalid("managed_source_read_only")
+	}
 	rawURL := strings.TrimSpace(stringField(raw, "url"))
 	rawContent, hasContent := raw["content"].(string)
 	rawUA := strings.TrimSpace(stringField(raw, "userAgent"))
@@ -766,6 +800,9 @@ func (s *Service) SaveSourceRecord(raw map[string]any) (Subscription, error) {
 			}
 		}
 
+		if existing != nil && isManagedSource(*existing) {
+			return errInvalid("managed_source_read_only")
+		}
 		kind := rawKind
 		if kind == "" && existing != nil {
 			kind = existing.Kind
@@ -905,12 +942,18 @@ func (s *Service) SaveSource(ctx context.Context, raw map[string]any) (map[strin
 
 // DeleteSource 删除订阅源及其下属全部节点。
 func (s *Service) DeleteSource(subscriptionID string) (map[string]any, error) {
+	if subscriptionID == managedSSHSourceID {
+		return nil, errInvalid("managed_source_read_only")
+	}
 	removedNodes := 0
 	found := false
 	_, err := s.store.MutateProxyPool(func(data *ProxyPoolStoreData) error {
 		nextSubs := make([]Subscription, 0, len(data.Subscriptions))
 		for _, sub := range data.Subscriptions {
 			if sub.ID == subscriptionID {
+				if isManagedSource(sub) {
+					return errInvalid("managed_source_read_only")
+				}
 				found = true
 				continue
 			}
@@ -976,6 +1019,9 @@ func (s *Service) PreviewSource(content string) (map[string]any, error) {
 
 // SyncSource 同步单个订阅源（并发去重，拉取后落库）。
 func (s *Service) SyncSource(ctx context.Context, subscriptionID string) SourceSyncResult {
+	if subscriptionID == managedSSHSourceID {
+		return SourceSyncResult{OK: false, Error: "managed_source_read_only"}
+	}
 	s.mu.Lock()
 	if existing, ok := s.inFlightSyncs[subscriptionID]; ok {
 		s.mu.Unlock()
@@ -1011,6 +1057,9 @@ func (s *Service) doSyncSource(ctx context.Context, subscriptionID string) Sourc
 	}
 	if sub == nil {
 		return SourceSyncResult{OK: false, Error: "subscription_not_found"}
+	}
+	if isManagedSource(*sub) {
+		return SourceSyncResult{OK: false, Error: "managed_source_read_only"}
 	}
 	if !sub.Enabled {
 		return SourceSyncResult{OK: false, Error: "subscription_disabled"}
@@ -1115,16 +1164,49 @@ func (s *Service) SyncSources(ctx context.Context, ids []string) {
 	wg.Wait()
 }
 
-// SourceNodes 返回单个订阅源下的节点详情（含凭据与分享链接，仅供管理面）。
+// managedNodeSummary deliberately avoids EncodeProxyURI and copying arbitrary runtime fields.
+// These loopback endpoints and their temporary credentials belong only to this server.
+func managedNodeSummary(node ProxyNode, subID string) map[string]any {
+	name := node.Str("name")
+	port, _ := node.Int("port")
+	available, _ := node.Bool("available")
+	out := map[string]any{
+		"id":              DeterministicNodeID(node, subID),
+		"nodeKey":         BuildProxyNodeConnectionKey(node),
+		"name":            name,
+		"protocol":        NormalizeProtocolAlias(node.Str("protocol")),
+		"server":          node.Str("server"),
+		"port":            port,
+		"flag":            DetectFlag(name),
+		"link":            "",
+		"chain":           "",
+		"managedBy":       node.Str("managedBy"),
+		"sshConnectionId": node.Str("sshConnectionId"),
+		"available":       available,
+		"lifecycle":       node.Str("lifecycle"),
+	}
+	if message := node.Str("error"); message != "" {
+		for _, key := range []string{"password", "username"} {
+			if secret := node.Str(key); secret != "" {
+				message = strings.ReplaceAll(message, secret, "[redacted]")
+			}
+		}
+		out["error"] = message
+	}
+	return out
+}
+
+// SourceNodes 返回订阅源节点详情；受管节点仅返回不含凭据或分享链接的运行状态。
 func (s *Service) SourceNodes(subID string) ([]map[string]any, error) {
 	pool, err := s.store.ReadProxyPool()
 	if err != nil {
 		return nil, err
 	}
-	found := false
+	found, managed := false, false
 	for _, sub := range pool.Subscriptions {
 		if sub.ID == subID {
 			found = true
+			managed = isManagedSource(sub)
 			break
 		}
 	}
@@ -1134,7 +1216,11 @@ func (s *Service) SourceNodes(subID string) ([]map[string]any, error) {
 	out := make([]map[string]any, 0)
 	for _, n := range pool.Nodes {
 		if n.Str("subscriptionId") == subID {
-			out = append(out, FormatNodeSummary(n, subID))
+			if managed || isManagedSSHNode(n) {
+				out = append(out, managedNodeSummary(n, subID))
+			} else {
+				out = append(out, FormatNodeSummary(n, subID))
+			}
 		}
 	}
 	return out, nil
@@ -1177,6 +1263,9 @@ func (s *Service) SetNodeChain(nodeID, chainRef string) (map[string]any, error) 
 		}
 		if idx == -1 {
 			return errInvalid("proxy_node_not_found")
+		}
+		if isManagedSSHNode(data.Nodes[idx]) {
+			return errInvalid("managed_source_read_only")
 		}
 		if failCode := ValidateChainRef(data.Nodes, id, ref); failCode != "" {
 			return errInvalid(failCode)
@@ -1666,7 +1755,7 @@ func (s *Service) refreshStaleSources(ctx context.Context, profile AggregatorPro
 	scoped := scopedSubscriptions(profile, subs)
 	var stale []string
 	for _, src := range scoped {
-		if src.Kind == "local" {
+		if src.Kind == "local" || isManagedSource(src) {
 			continue
 		}
 		if src.LastSyncedAt == nil || *src.LastSyncedAt < cutoff {

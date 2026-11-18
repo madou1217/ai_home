@@ -29,6 +29,9 @@ import {
   formatBytes,
   formatExpire,
   formatTraffic,
+  isManagedSource,
+  MANAGED_SOURCE_HELP,
+  MANAGED_SOURCE_PATH,
   policyLabel
 } from './aggregator-presentation';
 import ImportProfileModal from './ImportProfileModal';
@@ -72,7 +75,7 @@ export default function SubscriptionAggregatorPanel() {
   const sources = overview?.sources || [];
   const profiles = overview?.profiles || [];
   const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
-  const enabledSources = sources.filter((source) => source.enabled);
+  const enabledSources = sources.filter((source) => source.enabled && !isManagedSource(source));
   const sourcePages = Math.max(1, Math.ceil(sources.length / SOURCE_PAGE_SIZE));
   const pagedSources = sources.slice((sourcePage - 1) * SOURCE_PAGE_SIZE, sourcePage * SOURCE_PAGE_SIZE);
 
@@ -145,42 +148,46 @@ export default function SubscriptionAggregatorPanel() {
               locale={{ emptyText: <Empty description="还没有订阅源：添加机场订阅地址（可批量粘贴），扫描本机客户端，或粘贴自建节点" /> }}
               renderItem={(source) => {
                 const traffic = formatTraffic(source.userInfo);
-                const syncing = state.syncingIds.has(source.id);
-                const last = state.lastResultFor(source.id);
+                const managed = isManagedSource(source);
+                const syncing = !managed && state.syncingIds.has(source.id);
+                const last = managed ? undefined : state.lastResultFor(source.id);
                 return (
                   <List.Item
                     className={source.enabled ? undefined : styles.sourceDisabled}
                     actions={[
-                      <Tooltip key="enabled" title={source.enabled ? '停用：节点保留，但不进聚合订阅与出口池' : '启用'}>
+                      <Tooltip key="enabled" title={managed ? MANAGED_SOURCE_HELP : source.enabled ? '停用：节点保留，但不进聚合订阅与出口池' : '启用'}>
                         <Switch
                           size="small"
                           checked={source.enabled}
-                          disabled={syncing}
+                          disabled={managed || syncing}
                           aria-label={`${source.enabled ? '停用' : '启用'} ${source.name}`}
                           onChange={(checked) => void state.setSourceEnabled(source.id, checked)}
                         />
                       </Tooltip>,
-                      <Tooltip key="sync" title={!source.enabled ? '已停用，启用后才能同步' : syncing ? '同步中…' : source.kind === 'local' ? '重新解析本地内容' : '立即拉取订阅'}>
+                      <Tooltip key="sync" title={managed ? MANAGED_SOURCE_HELP : !source.enabled ? '已停用，启用后才能同步' : syncing ? '同步中…' : source.kind === 'local' ? '重新解析本地内容' : '立即拉取订阅'}>
                         <Button
                           size="small"
                           icon={<SyncOutlined spin={syncing} />}
-                          disabled={syncing || !source.enabled}
+                          disabled={managed || syncing || !source.enabled}
                           aria-label={`同步 ${source.name}`}
                           onClick={() => state.syncSource(source.id)}
                         />
                       </Tooltip>,
-                      <Tooltip key="nodes" title="节点与延迟">
+                      <Tooltip key="nodes" title={managed ? '节点与可用性' : '节点与延迟'}>
                         <Button size="small" icon={<UnorderedListOutlined />} aria-label={`查看 ${source.name} 的节点`} onClick={() => setNodesSourceId(source.id)} />
                       </Tooltip>,
-                      <Button key="edit" size="small" icon={<EditOutlined />} aria-label={`编辑 ${source.name}`} onClick={() => setSourceEditor({ source })} />,
+                      <Tooltip key="edit" title={managed ? MANAGED_SOURCE_HELP : '编辑订阅源'}>
+                        <Button size="small" disabled={managed} icon={<EditOutlined />} aria-label={`编辑 ${source.name}`} onClick={() => setSourceEditor({ source })} />
+                      </Tooltip>,
                       <Popconfirm
                         key="delete"
+                        disabled={managed}
                         title={`删除订阅源「${source.name}」？`}
                         description="它的节点会从节点库移除，聚合订阅里也不再包含这些节点。"
                         okButtonProps={{ danger: true }}
                         onConfirm={() => void state.deleteSource(source.id)}
                       >
-                        <Button size="small" danger icon={<DeleteOutlined />} aria-label={`删除 ${source.name}`} />
+                        <Button size="small" danger disabled={managed} icon={<DeleteOutlined />} aria-label={`删除 ${source.name}`} />
                       </Popconfirm>
                     ]}
                   >
@@ -188,6 +195,7 @@ export default function SubscriptionAggregatorPanel() {
                       title={(
                         <Space size={8} wrap>
                           <span>{source.name}</span>
+                          {managed && <Tag>受管</Tag>}
                           {!source.enabled && <Tag>已停用</Tag>}
                           <Tag color={source.enabled ? 'blue' : undefined}>{source.nodeCount} 个节点</Tag>
                           {traffic && <Tag>{traffic}</Tag>}
@@ -202,10 +210,19 @@ export default function SubscriptionAggregatorPanel() {
                       )}
                       description={(
                         <span className={styles.sourceMeta}>
-                          <Text type="secondary" code className={styles.sourceUrl} title={source.kind === 'local' ? undefined : '订阅参数已隐藏'}>
-                            {describeSourceOrigin(source)}
-                          </Text>
-                          <Text type="secondary">上次同步：{formatLastSynced(source.lastSyncedAt)}</Text>
+                          {managed ? (
+                            <>
+                              <Text type="secondary">{MANAGED_SOURCE_HELP}</Text>
+                              <Typography.Link href={MANAGED_SOURCE_PATH}>管理 SSH 主机</Typography.Link>
+                            </>
+                          ) : (
+                            <>
+                              <Text type="secondary" code className={styles.sourceUrl} title={source.kind === 'local' ? undefined : '订阅参数已隐藏'}>
+                                {describeSourceOrigin(source)}
+                              </Text>
+                              <Text type="secondary">上次同步：{formatLastSynced(source.lastSyncedAt)}</Text>
+                            </>
+                          )}
                         </span>
                       )}
                     />

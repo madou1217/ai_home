@@ -6,16 +6,10 @@ package sshtunnel
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 )
@@ -83,6 +77,7 @@ type entry struct {
 	timer      *time.Timer
 	probeTimer *time.Ticker
 	probeStop  chan struct{}
+	cancel     context.CancelFunc
 	stopped    bool
 }
 
@@ -156,47 +151,6 @@ func (supervisor *Supervisor) ReconcileSpecs(specs []Spec) {
 	supervisor.mutex.Unlock()
 }
 
-func applyHostKeys(config sshremote.Config, known map[string]string) sshremote.Config {
-	if known == nil {
-		return config
-	}
-	config.HostKeyCallback = hostKeyCallback(config.Host, config.Port, known)
-	// app-state 的存量指纹按 Node/ssh2 的 ED25519 优先口径记录；固定顺序避免
-	// 服务端同时提供 ECDSA 时 Go 选了另一把 key 导致“指纹变了”的假告警。
-	config.HostKeyAlgorithms = []string{
-		ssh.KeyAlgoED25519,
-		ssh.KeyAlgoRSASHA512,
-		ssh.KeyAlgoRSASHA256,
-		ssh.KeyAlgoRSA,
-		ssh.KeyAlgoECDSA256,
-		ssh.KeyAlgoECDSA384,
-		ssh.KeyAlgoECDSA521,
-	}
-	if config.Jump != nil {
-		jump := applyHostKeys(*config.Jump, known)
-		config.Jump = &jump
-	}
-	return config
-}
-
-func hostKeyCallback(host string, port int, known map[string]string) ssh.HostKeyCallback {
-	if port == 0 {
-		port = 22
-	}
-	id := strings.ToLower(strings.TrimSpace(host)) + ":" + strconv.Itoa(port)
-	expected := strings.TrimSpace(known[id])
-	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
-		if expected == "" {
-			return nil
-		}
-		actual := ssh.FingerprintSHA256(key)
-		if actual != expected {
-			return fmt.Errorf("远端 %s 主机指纹变了（expected %s actual %s）", id, expected, actual)
-		}
-		return nil
-	}
-}
-
 func sameSpec(left Spec, right Spec) bool {
 	return left.RemotePort == right.RemotePort &&
 		left.LocalPort == right.LocalPort &&
@@ -229,19 +183,27 @@ func (supervisor *Supervisor) connect(id string, entry *entry) {
 	entry.generation++
 	generation := entry.generation
 	spec := entry.spec
+	ctx, cancel := context.WithCancel(context.Background())
+	entry.cancel = cancel
 	supervisor.mutex.Unlock()
 
-	config := applyHostKeys(spec.Config, supervisor.hostKeys)
-	tunnel, err := supervisor.opener(context.Background(), config, spec.RemotePort, spec.LocalPort)
+	config := ApplyHostKeys(spec.Config, supervisor.hostKeys)
+	tunnel, err := supervisor.opener(ctx, config, spec.RemotePort, spec.LocalPort)
 	supervisor.mutex.Lock()
 	if entry.stopped || supervisor.closed || entry.generation != generation {
 		supervisor.mutex.Unlock()
+		cancel()
 		if tunnel != nil {
 			_ = tunnel.Close()
 		}
 		return
 	}
 	if err != nil {
+		cancel()
+		entry.cancel = nil
+		if tunnel != nil {
+			_ = tunnel.Close()
+		}
 		entry.status = "error"
 		entry.lastError = err.Error()
 		entry.attempt++
@@ -258,11 +220,12 @@ func (supervisor *Supervisor) connect(id string, entry *entry) {
 	entry.openedAt = supervisor.now()
 	entry.probeTimer = time.NewTicker(probeInterval)
 	entry.probeStop = make(chan struct{})
+	ticker, stopCh := entry.probeTimer, entry.probeStop
 	supervisor.notifyLocked()
 	supervisor.mutex.Unlock()
 
 	go supervisor.watch(id, entry, tunnel, generation)
-	go supervisor.probeLoop(entry, tunnel, generation)
+	go supervisor.probeLoop(ctx, entry, tunnel, generation, ticker, stopCh)
 }
 
 func (supervisor *Supervisor) watch(id string, entry *entry, tunnel Tunnel, generation int) {
@@ -282,14 +245,7 @@ func (supervisor *Supervisor) watch(id string, entry *entry, tunnel Tunnel, gene
 	supervisor.mutex.Unlock()
 }
 
-func (supervisor *Supervisor) probeLoop(entry *entry, tunnel Tunnel, generation int) {
-	supervisor.mutex.Lock()
-	ticker := entry.probeTimer
-	stopCh := entry.probeStop
-	supervisor.mutex.Unlock()
-	if ticker == nil || stopCh == nil {
-		return
-	}
+func (supervisor *Supervisor) probeLoop(ctx context.Context, entry *entry, tunnel Tunnel, generation int, ticker *time.Ticker, stopCh <-chan struct{}) {
 	for {
 		select {
 		case <-stopCh:
@@ -303,7 +259,7 @@ func (supervisor *Supervisor) probeLoop(entry *entry, tunnel Tunnel, generation 
 		}
 		entry.lastProbe = supervisor.now()
 		supervisor.mutex.Unlock()
-		if err := tunnel.Probe(context.Background()); err != nil {
+		if err := tunnel.Probe(ctx); err != nil {
 			_ = tunnel.Close()
 			return
 		}
@@ -344,6 +300,9 @@ func (supervisor *Supervisor) Status() []Status {
 			status.LastProbeAt = entry.lastProbe.UnixMilli()
 		}
 		if entry.tunnel != nil {
+			if bound, ok := entry.tunnel.(interface{ BoundRemotePort() int }); ok {
+				status.RemotePort = bound.BoundRemotePort()
+			}
 			status.Stats = entry.tunnel.Stats()
 		}
 		result = append(result, status)
@@ -376,7 +335,9 @@ func (supervisor *Supervisor) Reconnect(connectionID string) bool {
 	}
 	supervisor.entries[connectionID] = next
 	supervisor.notifyLocked()
-	go supervisor.connect(connectionID, next)
+	if spec.Error == "" {
+		go supervisor.connect(connectionID, next)
+	}
 	supervisor.mutex.Unlock()
 	return true
 }
@@ -439,6 +400,10 @@ func (supervisor *Supervisor) stopLocked(entry *entry) {
 }
 
 func (supervisor *Supervisor) stopTunnelLocked(entry *entry) {
+	if entry.cancel != nil {
+		entry.cancel()
+		entry.cancel = nil
+	}
 	if entry.probeStop != nil {
 		close(entry.probeStop)
 		entry.probeStop = nil
@@ -450,110 +415,5 @@ func (supervisor *Supervisor) stopTunnelLocked(entry *entry) {
 	if entry.tunnel != nil {
 		_ = entry.tunnel.Close()
 		entry.tunnel = nil
-	}
-}
-
-// ParseSpecs 解析 ssh_connections 原文；egress 链与端口校验失败时保留 Error 状态。
-func ParseSpecs(raw []byte, homeDir string) ([]Spec, error) {
-	if len(strings.TrimSpace(string(raw))) == 0 {
-		return nil, nil
-	}
-	var records []map[string]any
-	if err := json.Unmarshal(raw, &records); err != nil {
-		return nil, fmt.Errorf("ssh_connections 不是合法 JSON: %w", err)
-	}
-	byID := make(map[string]map[string]any, len(records))
-	for _, record := range records {
-		if id := stringValue(record["id"]); id != "" {
-			byID[id] = record
-		}
-	}
-	specs := make([]Spec, 0)
-	for _, record := range records {
-		id := stringValue(record["id"])
-		tunnel, _ := record["reverseTunnel"].(map[string]any)
-		if id == "" || tunnel == nil {
-			continue
-		}
-		remotePort := intValue(tunnel["remotePort"])
-		localPort := intValue(tunnel["localPort"])
-		if localPort == 0 {
-			localPort = 22
-		}
-		spec := Spec{ConnectionID: id, RemotePort: remotePort, LocalPort: localPort}
-		if remotePort < 1024 || remotePort > 65535 {
-			spec.Error = "反向隧道远端端口必须在 1024-65535"
-			specs = append(specs, spec)
-			continue
-		}
-		if localPort < 1 || localPort > 65535 {
-			spec.Error = "反向隧道本机端口必须在 1-65535"
-			specs = append(specs, spec)
-			continue
-		}
-		config, err := configFromRecord(record, byID, map[string]bool{id: true}, 0)
-		if err != nil {
-			spec.Error = err.Error()
-			specs = append(specs, spec)
-			continue
-		}
-		config.HomeDir = homeDir
-		spec.Config = config
-		specs = append(specs, spec)
-	}
-	return specs, nil
-}
-
-func configFromRecord(record map[string]any, byID map[string]map[string]any, seen map[string]bool, depth int) (sshremote.Config, error) {
-	config := sshremote.Config{
-		Host:         stringValue(record["host"]),
-		Port:         intValue(record["port"]),
-		User:         stringValue(record["user"]),
-		AuthType:     stringValue(record["authType"]),
-		Password:     rawStringValue(record["password"]),
-		PrivateKey:   rawStringValue(record["privateKey"]),
-		IdentityFile: stringValue(record["identityFile"]),
-	}
-	egress := stringValue(record["egressConnectionId"])
-	if egress == "" {
-		return config, nil
-	}
-	if depth >= 5 || seen[egress] {
-		return sshremote.Config{}, fmt.Errorf("egress 链成环或超过 5 跳")
-	}
-	next, ok := byID[egress]
-	if !ok {
-		return sshremote.Config{}, fmt.Errorf("egress 连接 %s 不存在", egress)
-	}
-	seen[egress] = true
-	jump, err := configFromRecord(next, byID, seen, depth+1)
-	if err != nil {
-		return sshremote.Config{}, err
-	}
-	config.Jump = &jump
-	return config, nil
-}
-
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return strings.TrimSpace(text)
-}
-
-func rawStringValue(value any) string {
-	text, _ := value.(string)
-	return text
-}
-
-func intValue(value any) int {
-	switch number := value.(type) {
-	case float64:
-		return int(number)
-	case int:
-		return number
-	case string:
-		parsed, _ := strconv.Atoi(strings.TrimSpace(number))
-		return parsed
-	default:
-		return 0
 	}
 }

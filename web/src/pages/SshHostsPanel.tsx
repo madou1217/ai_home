@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, InputNumber, Modal, Tag, Space, Select, Breadcrumb, Radio, Tabs, Drawer } from 'antd';
+import { Form, Input, Collapse, Switch, Modal, Tag, Space, Select, Breadcrumb, Radio, Tabs, Drawer } from 'antd';
 import FormSurfaceField, { useFormSubmitTransitionGuard } from '@/components/ui/FormSurfaceField';
 import InlineNote from '@/components/ui/InlineNote';
 import Reveal from '@/components/ui/Reveal';
@@ -361,6 +361,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         }}
         modalProps={{
           destroyOnClose: true,
+          style: { top: 24 },
+          styles: { body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' } },
         }}
       >
         <div className="ssh-form-body">
@@ -469,28 +471,48 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             )}
           </div>
 
-          <Form.Item
-            name="egressConnectionId"
-            label="出网代理"
-            help="这台机器访问外网（GitHub、npm 等）不通或很慢时，借另一台连接的网络出去。只在安装工具等任务期间临时生效，两端都不安装任何程序。"
-          >
-            <Select
-              options={[
-                { value: '', label: '直连（不使用代理）' },
-                ...connections
-                  .filter((item) => !editingConn || item.id !== editingConn.id)
-                  .map((item) => ({ value: item.id, label: `${item.label}（${item.host}）` }))
-              ]}
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="reverseTunnelPort"
-            label="反向隧道（让这台机器连回本机）"
-            help="填一个端口（1024–65535）后，这台机器的 127.0.0.1:端口 会转到 AIH Server 本机的 SSH（只绑回环，不开公网端口）。在那台机器上把 127.0.0.1:端口 登记成 SSH 开发机，就能在它的 Work / 终端里操作本机目录。仍需本机 SSH 账号认证。留空关闭。"
-          >
-            <InputNumber min={1024} max={65535} placeholder="例如 22022" style={{ width: '100%' }} />
-          </Form.Item>
+          <Collapse
+            ghost
+            items={[{
+              key: 'advanced',
+              label: '高级设置',
+              forceRender: true,
+              children: (
+                <>
+                  <Form.Item
+                    name="reverseTunnelEnabled"
+                    label="反向隧道"
+                    valuePropName="checked"
+                    help="远端 sshd 自动分配回环端口，转发到 AIH Server 本机 SSH；实际端口在连接卡片显示，重连后可能变化，仍需本机 SSH 认证。"
+                  >
+                    <Switch aria-label="启用反向隧道" />
+                  </Form.Item>
+                  <Form.Item
+                    name="proxyEnabled"
+                    label="作为代理出口"
+                    valuePropName="checked"
+                    help="将此连接加入托管代理池，供安装、更新等任务选择；与反向隧道、下方出网代理相互独立，不修改全局代理。"
+                  >
+                    <Switch aria-label="作为代理出口" />
+                  </Form.Item>
+                  <Form.Item
+                    name="egressConnectionId"
+                    label="出网代理"
+                    help="这台机器访问外网（GitHub、npm 等）不通或很慢时，借另一台连接的网络出去。只在安装工具等任务期间临时生效，两端都不安装任何程序。"
+                  >
+                    <Select
+                      options={[
+                        { value: '', label: '直连（不使用代理）' },
+                        ...connections
+                          .filter((item) => !editingConn || item.id !== editingConn.id)
+                          .map((item) => ({ value: item.id, label: `${item.label}（${item.host}）` }))
+                      ]}
+                    />
+                  </Form.Item>
+                </>
+              )
+            }]}
+          />
         </div>
       </ModalForm>
 

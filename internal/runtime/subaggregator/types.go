@@ -2,6 +2,16 @@ package subaggregator
 
 import "encoding/json"
 
+const managedSSHSourceID = "aih-managed-ssh"
+
+func isManagedSource(source Subscription) bool {
+	return source.ID == managedSSHSourceID || source.Kind == "managed"
+}
+
+func isManagedSSHNode(node ProxyNode) bool {
+	return node.Str("managedBy") == "sshproxy" || node.Str("subscriptionId") == managedSSHSourceID
+}
+
 // ProxyNode 表示标准化后的代理节点对象（保留协议字段与可选运行时元数据）。
 type ProxyNode map[string]any
 
@@ -71,11 +81,11 @@ type SubscriptionUserInfo struct {
 	Expire   *float64 `json:"expire,omitempty"`
 }
 
-// Subscription 表示一个订阅源（远程或本地导入文本）。
+// Subscription 表示一个订阅源（远程、本地导入文本或运行时受管来源）。
 type Subscription struct {
 	ID           string                `json:"id"`
 	Name         string                `json:"name"`
-	Kind         string                `json:"kind"` // remote | local
+	Kind         string                `json:"kind"` // remote | local | managed
 	URL          *string               `json:"url"`
 	Content      string                `json:"content,omitempty"`
 	UserAgent    *string               `json:"userAgent,omitempty"`

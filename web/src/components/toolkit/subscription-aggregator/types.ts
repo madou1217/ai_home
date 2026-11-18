@@ -36,14 +36,14 @@ export interface AggregatorUserInfo {
   expire?: number;
 }
 
-/** remote：订阅地址；local：粘贴的节点内容（保存即解析，不联网）。 */
-export type AggregatorSourceKind = 'remote' | 'local';
+/** remote：订阅地址；local：粘贴内容；managed：由运行时管理的本机出口（不导出）。 */
+export type AggregatorSourceKind = 'remote' | 'local' | 'managed';
 
 export interface AggregatorSource {
   id: string;
   name: string;
   kind: AggregatorSourceKind;
-  /** 本地订阅为 null */
+  /** 本地或受管来源为 null */
   url: string | null;
   /** 远程订阅自定义的 User-Agent；为空时用 catalog.defaultUserAgent */
   userAgent?: string | null;
@@ -114,7 +114,7 @@ export interface AggregatorProtocolForm {
   }>;
 }
 
-/** 订阅源里的一个节点（节点表格用；link 是分享链接，含凭据）。 */
+/** 订阅源里的节点；普通来源的 link 含凭据，受管来源永远为空串。 */
 export interface AggregatorSourceNode {
   id: string;
   /** 连接身份（服务端下发，持久且改名不漂）：延迟结果等跨层数据都按它取。 */
@@ -125,6 +125,12 @@ export interface AggregatorSourceNode {
   port: number;
   flag: string;
   link: string;
+  managedBy?: string;
+  sshConnectionId?: string;
+  available?: boolean;
+  lifecycle?: 'ready' | 'connecting' | 'error';
+  /** 受管节点的运行错误；不含临时凭据。 */
+  error?: string;
   /** 链式代理的前置节点 id；空串表示直连 */
   chain: string;
 }
@@ -174,7 +180,7 @@ export interface AggregatorProbeResult {
 export interface AggregatorSourceInput {
   id?: string;
   name: string;
-  kind: AggregatorSourceKind;
+  kind: Exclude<AggregatorSourceKind, 'managed'>;
   url?: string;
   userAgent?: string;
   content?: string;

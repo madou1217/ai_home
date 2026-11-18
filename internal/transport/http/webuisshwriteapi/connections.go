@@ -45,6 +45,7 @@ type connectionInput struct {
 	IdentityFile       string
 	EgressConnectionID string
 	ReverseTunnel      map[string]any
+	ProxyEnabled       bool
 }
 
 // updatePatch 用指针区分「字段缺省」与「显式清空」。
@@ -60,6 +61,7 @@ type updatePatch struct {
 	egressConnectionID *string
 	reverseTunnelSet   bool
 	reverseTunnel      map[string]any
+	proxyEnabled       *bool
 }
 
 func parseCreateInput(payload map[string]any) (connectionInput, *requestError) {
@@ -107,6 +109,11 @@ func parseCreateInput(payload map[string]any) (connectionInput, *requestError) {
 		return input, failure
 	}
 	input.ReverseTunnel = tunnel
+	proxyEnabled, _, failure := readProxyEnabled(payload)
+	if failure != nil {
+		return input, failure
+	}
+	input.ProxyEnabled = proxyEnabled
 	return input, nil
 }
 
@@ -154,6 +161,13 @@ func parseUpdatePatch(payload map[string]any) (updatePatch, *requestError) {
 	if tunnelPresent {
 		patch.reverseTunnelSet = true
 		patch.reverseTunnel = tunnel
+	}
+	proxyEnabled, proxyPresent, failure := readProxyEnabled(payload)
+	if failure != nil {
+		return patch, failure
+	}
+	if proxyPresent {
+		patch.proxyEnabled = &proxyEnabled
 	}
 	return patch, nil
 }
@@ -213,15 +227,25 @@ func readReverseTunnel(payload map[string]any) (map[string]any, bool, *requestEr
 	if !ok {
 		return nil, true, invalidReverseTunnel("反向隧道必须是对象")
 	}
+	enabled, explicit := object["enabled"]
+	if explicit {
+		value, valid := enabled.(bool)
+		if !valid {
+			return nil, true, invalidReverseTunnel("反向隧道 enabled 必须是布尔值")
+		}
+		if !value {
+			return nil, true, nil
+		}
+	}
 	remotePort, failure := integerField(object, "remotePort", 0)
 	if failure != nil {
 		return nil, true, failure
 	}
-	if remotePort == 0 {
-		return nil, true, nil
+	if remotePort == 0 && !explicit {
+		return nil, true, nil // 兼容旧版以空 / 0 端口关闭的请求。
 	}
-	if remotePort < 1024 || remotePort > 65535 {
-		return nil, true, invalidReverseTunnel("反向隧道端口必须在 1024–65535")
+	if remotePort != 0 && (remotePort < 1024 || remotePort > 65535) {
+		return nil, true, invalidReverseTunnel("反向隧道端口必须为 0（自动分配）或在 1024–65535")
 	}
 	localPort, failure := integerField(object, "localPort", 22)
 	if failure != nil {
@@ -230,7 +254,30 @@ func readReverseTunnel(payload map[string]any) (map[string]any, bool, *requestEr
 	if localPort < 1 || localPort > 65535 {
 		return nil, true, invalidReverseTunnel("本机 SSH 端口无效")
 	}
-	return map[string]any{"remotePort": remotePort, "localPort": localPort}, true, nil
+	if !explicit {
+		return map[string]any{"remotePort": remotePort, "localPort": localPort}, true, nil
+	}
+	// 开关模式不写入临时分配端口；sshd 返回的实际端口只属于运行状态。
+	tunnel := map[string]any{"enabled": true}
+	if remotePort != 0 {
+		tunnel["remotePort"] = remotePort
+	}
+	if localPort != 22 {
+		tunnel["localPort"] = localPort
+	}
+	return tunnel, true, nil
+}
+
+func readProxyEnabled(payload map[string]any) (bool, bool, *requestError) {
+	raw, present := payload["proxyEnabled"]
+	if !present {
+		return false, false, nil
+	}
+	enabled, valid := raw.(bool)
+	if !valid {
+		return false, true, &requestError{status: http.StatusBadRequest, code: "invalid_proxy_enabled", message: "proxyEnabled 必须是布尔值"}
+	}
+	return enabled, true, nil
 }
 
 func integerField(object map[string]any, key string, fallback int) (int, *requestError) {
@@ -278,6 +325,7 @@ func buildConnection(id string, input connectionInput, connections []map[string]
 		"privateKey":         input.PrivateKey,
 		"identityFile":       input.IdentityFile,
 		"egressConnectionId": egress,
+		"proxyEnabled":       input.ProxyEnabled,
 		"createdAt":          time.Now().UnixMilli(),
 	}
 	if input.ReverseTunnel != nil {
@@ -288,6 +336,9 @@ func buildConnection(id string, input connectionInput, connections []map[string]
 }
 
 func (patch updatePatch) apply(connection map[string]any, connections []map[string]any, id string) *requestError {
+	if patch.proxyEnabled != nil {
+		connection["proxyEnabled"] = *patch.proxyEnabled
+	}
 	if patch.label != nil {
 		connection["label"] = *patch.label
 	}

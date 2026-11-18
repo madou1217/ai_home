@@ -114,6 +114,12 @@ func SelectAggregatedNodes(profile AggregatorProfile, subs []Subscription, rawNo
 
 	var scoped []ProxyNode
 	for _, rawNode := range rawNodes {
+		// SSH-managed HTTP endpoints use server-local loopback ports and temporary
+		// credentials. Keep them in management views, never in portable subscriptions
+		// (including relay exports), even if a profile explicitly selects this source.
+		if isManagedSSHNode(rawNode) {
+			continue
+		}
 		subID := rawNode.Str("subscriptionId")
 		if subID == "" {
 			if !profile.Sources.IncludeManualNodes {
@@ -121,7 +127,7 @@ func SelectAggregatedNodes(profile AggregatorProfile, subs []Subscription, rawNo
 			}
 		} else {
 			sub, exists := subByID[subID]
-			if !exists || !sub.Enabled {
+			if !exists || !sub.Enabled || isManagedSource(sub) {
 				continue
 			}
 			if !profile.Sources.All && !selectedSubSet[subID] {

@@ -98,6 +98,16 @@ aih codex 3 home                      # 查看该账号实际使用的 HOME / �
 aih codex usage 3 --refresh           # 查询并刷新单个账号额度
 aih codex usage                       # 扫描全部账号（-j N 控制并发）
 
+aih codex install                     # 安装 harness/provider CLI，执行后核验实际版本
+aih codex update                      # 更新 harness/provider CLI，不是更新 AIH 或模型
+aih codex install --proxy             # 裸 --proxy 自动选择可用受管代理
+aih claude update --proxy AWS         # 用唯一名称选择；TAB 展示可用节点名称/稳定 ID
+aih codex update --proxy=ssh:conn_...  # 也支持 SSH 节点稳定 ID、普通节点 ID、pool
+aih codex update --proxy http://127.0.0.1:8080  # 仅本次更新使用代理
+aih claude update --proxy http://127.0.0.1:8080
+aih agy update --proxy http://127.0.0.1:8080
+aih codex -- update                   # 需要官方 CLI 原生 update 时显式透传
+
 aih codex set-default 3               # 设置默认账号（作用见上）
 aih codex set-default                 # 宿主原生 CLI 改走 AIH Server
 aih codex unset-default
@@ -117,6 +127,12 @@ aih desktop status                    # 桌面端总览：canonical / 影子副�
 aih provider capabilities --json      # 各 provider 的资源边界与缺口
 aih claim --dry-run                   # 每日签到 / 活动福利：先看有什么可领
 ```
+
+`aih <provider> install|update [--proxy[=<选择器或 HTTP(S) URL>]]` 只作用于本次任务，不写入全局配置；不加旗标则继承当前代理环境。裸 `--proxy` 选择 `auto`，支持 `--proxy 名称`、`--proxy=稳定ID`、`ssh:conn_...` 或 `pool`；同名冲突请用稳定 ID，下一项旗标不会被当成代理值。显式 HTTP(S) URL 仍可离线于 AIH Server 使用；SOCKS URL 需先转换为 HTTP 代理。Windows 上无法保证遵守代理的官方安装器会明确拒绝，不回落直连。
+
+命名/自动选择使用既有管理面配置（`AIH_SERVER_BASE_URL` / `AIH_SERVER_MANAGEMENT_KEY`，Node 入口也读取现有 Server 配置；显式指定远程地址时须同时提供对应管理 key），申请任务 lease。远程 CLI 不使用 Server 的 localhost 地址：CLI 在自己的 `127.0.0.1` 随机端口建立认证入口，每个连接通过带管理认证的 HTTP Upgrade 转发到租约代理，TLS 证书验证保持不变。正常完成、失败及取消都会关闭本机入口并释放 lease；崩溃残留由 Server 在 3 小时到期时清理。管理凭据不传给安装器。
+
+`--proxy` 值位置的 TAB 补全仅读取有界、短缓存的管理面候选快照，只列可用项（稳定 ID 和名称）；不会拨号 SSH、申请 lease 或切换全局代理。`aih <provider> -- install|update` 继续原样透传给官方 CLI。安装复用已有官方安装计划，更新保留现有渠道判定；完成后核验实际可执行文件与版本。
 
 `aih ls` 在终端里是交互式的：`/` 进入筛选（边打边缩小，按整行文字和 provider 名匹配），`Enter` 保留筛选，`Esc` 清空筛选，`q` / `Esc` 退出。筛选输入态里 `q` 是普通字符（否则搜不了 qoder）。
 

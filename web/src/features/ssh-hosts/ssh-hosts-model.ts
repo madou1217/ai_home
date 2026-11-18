@@ -18,7 +18,9 @@ export interface SshConnection {
   /** 出网代理：借这条连接的网络出去（安装工具等需要外网的任务）；空为直连。 */
   egressConnectionId?: string;
   /** 反向隧道：这台远端的 127.0.0.1:remotePort 转到 AIH Server 本机的 sshd（让远端能 SSH 回本机）。 */
-  reverseTunnel?: { remotePort: number; localPort?: number };
+  reverseTunnel?: { enabled?: boolean; remotePort?: number; localPort?: number } | null;
+  /** 将这条 SSH 连接作为托管代理出口；独立于 egressConnectionId。 */
+  proxyEnabled?: boolean;
   createdAt: number;
 }
 
@@ -26,15 +28,30 @@ export interface SshReverseTunnelStatus {
   connectionId: string;
   remotePort: number;
   localPort: number;
-  status: 'connecting' | 'open' | 'retrying';
-  error: string;
-  connections: number;
-  openedAt: number;
+  state?: 'connecting' | 'open' | 'error';
+  /** 兼容旧版 Node 状态。 */
+  status?: 'connecting' | 'open' | 'retrying';
+  error?: string;
+  attempt?: number;
+  stats?: { connections: number; failed: number; rebounds: number };
+  /** 兼容旧版 Node 的平铺计数。 */
+  connections?: number;
+  openedAt?: number;
+  lastProbeAt?: number;
 }
 
-/** 表单值 → 请求体：reverseTunnelPort（数字输入）折成 reverseTunnel 对象；空 / 0 = 关闭。 */
+/** 新版开关优先；旧记录只有固定端口时保持可读。 */
+export function isSshReverseTunnelEnabled(connection: Pick<SshConnection, 'reverseTunnel'>): boolean {
+  const tunnel = connection.reverseTunnel;
+  return tunnel?.enabled ?? Boolean(tunnel?.remotePort);
+}
+
+/** 桌面开关序列化为自动模式；保留旧表单数字端口的兼容入口。 */
 export function sshConnectionPayload(values: Record<string, unknown>): Record<string, unknown> {
-  const { reverseTunnelPort, ...rest } = values;
+  const { reverseTunnelEnabled, reverseTunnelPort, ...rest } = values;
+  if (typeof reverseTunnelEnabled === 'boolean') {
+    return { ...rest, reverseTunnel: reverseTunnelEnabled ? { enabled: true } : null };
+  }
   const port = Number(reverseTunnelPort) || 0;
   return { ...rest, reverseTunnel: port ? { remotePort: port } : null };
 }
@@ -89,12 +106,14 @@ export function buildSshConnectionFormValues(connection: SshConnection) {
     password: connection.password || (connection.authType === 'password' ? SSH_PASSWORD_MASK : ''),
     privateKey: connection.privateKey || (connection.authType === 'key' ? SSH_PASSWORD_MASK : ''),
     egressConnectionId: connection.egressConnectionId || '',
+    reverseTunnelEnabled: isSshReverseTunnelEnabled(connection),
+    proxyEnabled: connection.proxyEnabled === true,
     reverseTunnelPort: connection.reverseTunnel?.remotePort || undefined
   };
 }
 
 /** 新建连接的默认值 */
-export const SSH_CONNECTION_FORM_DEFAULTS = { port: 22, authType: 'agent' as SshAuthType, egressConnectionId: '' };
+export const SSH_CONNECTION_FORM_DEFAULTS = { port: 22, authType: 'agent' as SshAuthType, egressConnectionId: '', reverseTunnelEnabled: false, proxyEnabled: false };
 
 /** 目录浏览器面包屑：把绝对路径拆成可点击的逐级路径。 */
 export function buildRemotePathCrumbs(currentPath: string) {

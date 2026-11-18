@@ -134,8 +134,17 @@ export function maskSourceUrl(url: string) {
   }
 }
 
-/** 列表里的来源说明：远程显示脱敏地址（自定义了 User-Agent 时附上），本地显示内容行数。 */
+export const MANAGED_SSH_SOURCE_ID = 'aih-managed-ssh';
+export const MANAGED_SOURCE_HELP = '由 SSH 主机管理；这里只读，不参与订阅导出';
+export const MANAGED_SOURCE_PATH = '/ui/fabric/ssh-hosts';
+
+export function isManagedSource(source: Pick<AggregatorSource, 'id' | 'kind'>) {
+  return source.id === MANAGED_SSH_SOURCE_ID || source.kind === 'managed';
+}
+
+/** 受管来源不展示 URL、内容或同步元数据。 */
 export function describeSourceOrigin(source: Pick<AggregatorSource, 'kind' | 'url' | 'userAgent' | 'content'>) {
+  if (source.kind === 'managed') return MANAGED_SOURCE_HELP;
   if (source.kind === 'local') {
     const lines = String(source.content || '').split(/\r?\n/).filter((line) => line.trim()).length;
     return `本地内容 · ${lines} 行`;
@@ -191,6 +200,7 @@ const ERROR_TEXT: Record<string, string> = {
   too_many_aggregator_group_members: '策略组成员过多（最多套用 100 个、勾选 500 个节点）',
   aggregator_profile_not_found: '聚合订阅不存在，可能已被删除',
   subscription_not_found: '订阅源不存在，可能已被删除',
+  managed_source_read_only: '受管来源仅可在 SSH 主机中管理，不支持编辑、删除、启停或同步',
   proxy_node_not_found: '节点不存在，可能已被删除',
   invalid_proxy_node: '节点不存在，可能已被删除',
   invalid_proxy_chain: '前置节点格式不对',

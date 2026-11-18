@@ -897,6 +897,18 @@ func BuildResourceTreeView(
 	}
 	if len(entities) == 0 {
 		entities = entitiesFromSnapshots(snapshots)
+	} else {
+		// Managed SSH resources are projected from live canonical pool nodes;
+		// their presence must not disappear merely because persistent entities exist.
+		known := make(map[string]bool, len(entities))
+		for _, entity := range entities {
+			known[entity.NodeID] = true
+		}
+		for _, entity := range entitiesFromSnapshots(snapshots) {
+			if strings.HasPrefix(entity.NodeID, "ssh:") && !known[entity.NodeID] {
+				entities = append(entities, entity)
+			}
+		}
 	}
 	if len(entities) == 0 {
 		return []ResourceGroupView{}

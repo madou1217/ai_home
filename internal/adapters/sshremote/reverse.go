@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ReverseTunnelStats 是反向隧道的运行计数；只用于状态面，不参与调度。
@@ -36,30 +37,60 @@ type ReverseTunnel struct {
 
 // OpenReverseTunnel 建立独立 SSH 连接并申请远端监听。
 func OpenReverseTunnel(ctx context.Context, config Config, remotePort int, localPort int) (*ReverseTunnel, error) {
-	if remotePort < 1024 || remotePort > 65535 {
-		return nil, newError(CodeInvalidConfig, "反向隧道远端端口必须在 1024-65535", nil)
+	if remotePort != 0 && (remotePort < 1024 || remotePort > 65535) {
+		return nil, newError(CodeInvalidConfig, "反向隧道远端端口必须为 0（自动分配）或在 1024-65535", nil)
 	}
 	if localPort < 1 || localPort > 65535 {
 		return nil, newError(CodeInvalidConfig, "反向隧道本机端口必须在 1-65535", nil)
 	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	client, err := Dial(ctx, config, 0)
 	if err != nil {
 		return nil, err
 	}
+	if remotePort == 0 {
+		// x/crypto 对 OpenSSH < 6 会猜测固定端口；自动模式必须由 sshd 原子分配。
+		_, version, openSSH := strings.Cut(string(client.client.ServerVersion()), "OpenSSH_")
+		if openSSH {
+			major, _, _ := strings.Cut(version, ".")
+			number, parseErr := strconv.Atoi(major)
+			if parseErr != nil || number < 6 {
+				_ = client.Close()
+				return nil, newError("tunnel_forward_refused", "远端 OpenSSH 版本不支持安全自动分配反向隧道端口", nil)
+			}
+		}
+	}
+	// tcpip-forward 没有 context 参数；取消时关闭本隧道的独立 SSH 连接。
+	stop := context.AfterFunc(ctx, func() { _ = client.Close() })
+	defer stop()
 	listener, err := client.client.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", remotePort))
 	if err != nil {
 		_ = client.Close()
 		return nil, newError("tunnel_forward_refused", "远端拒绝反向转发（端口被占用或不允许 AllowTcpForwarding）", err)
 	}
+	if !stop() || ctx.Err() != nil {
+		_ = client.Close()
+		return nil, ctx.Err()
+	}
+	address, ok := listener.Addr().(*net.TCPAddr)
+	if !ok || address.Port < 1 || address.Port > 65535 {
+		_ = client.Close()
+		return nil, newError("tunnel_forward_refused", "远端未返回有效的反向隧道端口", nil)
+	}
 	tunnel := &ReverseTunnel{
 		client:     client,
 		listener:   listener,
-		remotePort: remotePort,
+		remotePort: address.Port,
 		localPort:  localPort,
 		active:     make(map[net.Conn]struct{}),
 		done:       make(chan struct{}),
 	}
 	go tunnel.acceptLoop(listener)
+	go func() {
+		_ = client.client.Wait()
+		tunnel.markDone()
+	}()
 	return tunnel, nil
 }
 
@@ -71,7 +102,6 @@ func (tunnel *ReverseTunnel) acceptLoop(listener net.Listener) {
 			current := tunnel.listener
 			closed := tunnel.closed
 			tunnel.mutex.Unlock()
-			// Probe 替换 listener 时旧 acceptLoop 会退出，不能把新隧道标成断开。
 			if !closed && current == listener {
 				tunnel.markDone()
 			}
@@ -82,7 +112,7 @@ func (tunnel *ReverseTunnel) acceptLoop(listener net.Listener) {
 }
 
 func (tunnel *ReverseTunnel) forward(remote net.Conn) {
-	local, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(tunnel.localPort))
+	local, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(tunnel.localPort), 10*time.Second)
 	if err != nil {
 		tunnel.mutex.Lock()
 		tunnel.stats.Failed++
@@ -101,59 +131,70 @@ func (tunnel *ReverseTunnel) forward(remote net.Conn) {
 	tunnel.active[remote] = struct{}{}
 	tunnel.active[local] = struct{}{}
 	tunnel.mutex.Unlock()
-	go pipeAndClose(remote, local)
-	go pipeAndClose(local, remote)
+	defer func() {
+		_ = remote.Close()
+		_ = local.Close()
+		tunnel.mutex.Lock()
+		delete(tunnel.active, remote)
+		delete(tunnel.active, local)
+		tunnel.mutex.Unlock()
+	}()
+	finished := make(chan struct{}, 1)
+	go func() {
+		pipeAndClose(remote, local)
+		finished <- struct{}{}
+	}()
+	pipeAndClose(local, remote)
+	<-finished
 }
 
 func pipeAndClose(destination net.Conn, source net.Conn) {
-	_, _ = io.Copy(destination, source)
-	if tcp, ok := destination.(*net.TCPConn); ok {
-		_ = tcp.CloseWrite()
+	_, err := io.Copy(destination, source)
+	if closer, ok := destination.(interface{ CloseWrite() error }); ok && err == nil {
+		_ = closer.CloseWrite()
+	} else {
+		_ = destination.Close()
+		_ = source.Close()
 	}
-	_ = source.Close()
 }
 
-// Probe 再次申请同一远端端口：bind-taken 表示原监听仍健康；成功表示之前已丢失，
-// 采用新 listener 并计一次 rebound。
+// BoundRemotePort 返回 sshd 原子分配的端口（不是配置中的 0）。
+func (tunnel *ReverseTunnel) BoundRemotePort() int {
+	if tunnel == nil {
+		return 0
+	}
+	return tunnel.remotePort
+}
+
+// Probe 只检查这条 SSH 连接是否仍可响应，绝不重新绑定或占用其它监听。
+// 不支持 keepalive 的服务端可以回复 false；收到回复本身就证明连接存活。
 func (tunnel *ReverseTunnel) Probe(ctx context.Context) error {
 	if tunnel == nil {
 		return newError(CodeDialFailed, "反向隧道未建立", nil)
 	}
-	listener, err := tunnel.client.client.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", tunnel.remotePort))
-	if err != nil {
-		if isBindTaken(err) {
-			return nil
-		}
-		return newError("tunnel_probe_failed", "反向隧道探活失败", err)
-	}
-	tunnel.mutex.Lock()
-	if tunnel.closed {
-		tunnel.mutex.Unlock()
-		_ = listener.Close()
+	select {
+	case <-tunnel.Done():
 		return newError("tunnel_closed", "反向隧道已关闭", nil)
+	default:
 	}
-	old := tunnel.listener
-	tunnel.listener = listener
-	tunnel.stats.Rebounds++
-	tunnel.mutex.Unlock()
-	if old != nil {
-		_ = old.Close()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := tunnel.client.client.SendRequest("keepalive@openssh.com", true, nil)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		if err != nil {
+			_ = tunnel.Close()
+			return newError("tunnel_probe_failed", "反向隧道探活失败", err)
+		}
+		return nil
+	case <-ctx.Done():
+		_ = tunnel.Close()
+		return newError("tunnel_probe_failed", "反向隧道探活超时或取消", ctx.Err())
 	}
-	go tunnel.acceptLoop(listener)
-	return nil
-}
-
-func isBindTaken(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "unable to bind") ||
-		strings.Contains(message, "already in use") ||
-		strings.Contains(message, "address already in use") ||
-		// x/crypto 的 ssh.Client.Listen 对已占用端口统一返回 request denied；
-		// 首连已成功，说明 AllowTcpForwarding 是开的，这里的拒绝视为端口仍被自己占着。
-		strings.Contains(message, "request denied by peer")
 }
 
 // Done 在 SSH 连接断开/监听失败时关闭，供监督者退避重建。
@@ -194,14 +235,14 @@ func (tunnel *ReverseTunnel) Close() error {
 	}
 	tunnel.active = nil
 	tunnel.mutex.Unlock()
+	if tunnel.client != nil {
+		_ = tunnel.client.Close()
+	}
 	if listener != nil {
 		_ = listener.Close()
 	}
 	for _, connection := range active {
 		_ = connection.Close()
-	}
-	if tunnel.client != nil {
-		_ = tunnel.client.Close()
 	}
 	tunnel.markDone()
 	return nil

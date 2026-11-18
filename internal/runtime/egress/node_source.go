@@ -47,9 +47,10 @@ type ProxyNode struct {
 	LastChecked    int64  `json:"lastChecked"`
 	UUID           string `json:"uuid,omitempty"`
 	Password       string `json:"password,omitempty"`
-	Username       string         `json:"username,omitempty"`
+	Username       string `json:"username,omitempty"`
 	// Raw 保留原始 JSON 字段供 mihomo 节点编译器使用，永不对外序列化。
-	Raw            map[string]any `json:"-"`
+	Raw             map[string]any `json:"-"`
+	managedVerified bool
 }
 
 // EnabledFlag 判断该节点所属订阅是否启用（由订阅列表推导，单测也可直接构造）。
@@ -104,6 +105,12 @@ func ReadProxyPoolData(aiHomeDir string) (ProxyPoolData, error) {
 	for _, item := range doc.Nodes {
 		node, ok := decodeProxyNode(item)
 		if ok {
+			if node.Raw["managedBy"] == "sshproxy" {
+				if !verifiedManagedSSH(trimmedHome, node) {
+					continue
+				}
+				node.managedVerified = true
+			}
 			nodes = append(nodes, node)
 		}
 	}
@@ -119,6 +126,7 @@ func decodeProxyNode(raw json.RawMessage) (ProxyNode, bool) {
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return ProxyNode{}, false
 	}
+	delete(fields, "runtimeVerified")
 	node := ProxyNode{
 		ID:             stringField(fields["id"]),
 		Name:           stringField(fields["name"]),
@@ -165,7 +173,7 @@ func int64Field(value any) int64 {
 
 // IsUsableNode 校验节点至少具备可路由主机与合法端口。
 func IsUsableNode(node ProxyNode) bool {
-	return IsRoutableServer(node.Server) && NormalizePort(node.Port) > 0
+	return (IsRoutableServer(node.Server) || node.managedVerified) && NormalizePort(node.Port) > 0
 }
 
 func dedupeByExit(nodes []ProxyNode) []ProxyNode {
@@ -336,7 +344,7 @@ func readAggregatorCatalogGroups(aiHomeDir string, data ProxyPoolData) []Catalog
 			idSet := make(map[string]struct{}, len(matched))
 			identities := make([]string, 0, len(matched))
 			for _, entry := range matched {
-				identity := BuildExitIdentity(entry.node.Protocol, entry.node.Server, entry.node.Port)
+				identity := NodeExitIdentity(entry.node)
 				if identity == "" {
 					continue
 				}
@@ -540,10 +548,10 @@ func expandCustomGroup(group aggregatorCustomGroup, byID map[string]aggregatorCu
 }
 
 type regionRule struct {
-	id       string
-	code     string
-	words    []string
-	abbrs    []string
+	id    string
+	code  string
+	words []string
+	abbrs []string
 }
 
 var catalogRegions = []regionRule{

@@ -89,6 +89,12 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__claude-desktop-credential" {
 		return runClaudeDesktopCredential(ctx, arguments[1:], runtime)
 	}
+	if providerID == "__desktop-client-paths" {
+		if len(arguments) != 1 {
+			return errInvalidCommand
+		}
+		return runDesktopClientPaths(ctx, runtime)
+	}
 	if providerID == "__codex-desktop-detect" {
 		if len(arguments) != 1 {
 			return errInvalidCommand

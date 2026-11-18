@@ -50,6 +50,9 @@ func aihShimBody(cli string, node string, entry string) string {
 		`if [ "$#" -ge 1 ]; then` + "\n" +
 		`  case "$1" in` + "\n" +
 		`    ss|sessions|ls) exec ` + quoteAihShimArgument(cli) + ` "$@" ;;` + "\n" +
+		`    account)` + "\n" +
+		`      if [ -n "${AIH_SERVER_MANAGEMENT_KEY:-}" ]; then exec ` + quoteAihShimArgument(cli) + ` "$@"; fi` + "\n" +
+		`      ;;` + "\n" +
 		`  esac` + "\n" +
 		`fi` + "\n"
 	if node == "" {

@@ -22,6 +22,9 @@ type codexModelList struct {
 // codexModelView 是本地模型 ID 到 Codex ModelInfo 的保守传输投影。
 // 未被账号模型目录证明的上下文窗口、升级关系等能力保持 null 或缺省。
 type codexModelView struct {
+	ContextWindow                     int64                       `json:"context_window,omitempty"`
+	MaxContextWindow                  int64                       `json:"max_context_window,omitempty"`
+	AutoCompactTokenLimit             int64                       `json:"auto_compact_token_limit,omitempty"`
 	AdditionalSpeedTiers              []string                    `json:"additional_speed_tiers"`
 	ServiceTiers                      []modelmetadata.ServiceTier `json:"service_tiers"`
 	Slug                              string                      `json:"slug"`

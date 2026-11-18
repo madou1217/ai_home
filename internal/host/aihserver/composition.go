@@ -2143,13 +2143,14 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		)
 	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
-		ServiceTiers: codexmodelcatalog.NewReader(),
-		Models:       inference.models,
-		Catalog:      modelCatalogStore,
-		Modalities:   modelModalities,
-		Reasoning:    modelModalities,
-		Aliases:      inference.models,
-		Authorizer:   clientAuthorizer,
+		ServiceTiers:   codexmodelcatalog.NewReader(),
+		ContextWindows: codexmodelcatalog.NewContextReader(),
+		Models:         inference.models,
+		Catalog:        modelCatalogStore,
+		Modalities:     modelModalities,
+		Reasoning:      modelModalities,
+		Aliases:        inference.models,
+		Authorizer:     clientAuthorizer,
 	})
 	if err != nil {
 		_ = inference.Close()

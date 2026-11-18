@@ -48,13 +48,14 @@ type ModelReader interface {
 
 // Dependencies 声明标准模型目录的只读依赖。
 type Dependencies struct {
-	ServiceTiers modelmetadata.ServiceTierReader
-	Models       ModelReader
-	Catalog      CatalogReader
-	Modalities   modelmetadata.Reader
-	Reasoning    modelmetadata.ReasoningLadderReader
-	Aliases      modelalias.DisplayReader
-	Authorizer   Authorizer
+	ServiceTiers   modelmetadata.ServiceTierReader
+	ContextWindows modelmetadata.ContextWindowReader
+	Models         ModelReader
+	Catalog        CatalogReader
+	Modalities     modelmetadata.Reader
+	Reasoning      modelmetadata.ReasoningLadderReader
+	Aliases        modelalias.DisplayReader
+	Authorizer     Authorizer
 }
 
 // CatalogReader is the optional public model catalog projection supplied by
@@ -65,13 +66,14 @@ type CatalogReader interface {
 
 // Handler 把本地 Provider 模型元组渲染为 OpenAI 模型列表。
 type Handler struct {
-	serviceTiers modelmetadata.ServiceTierReader
-	models       ModelReader
-	catalog      CatalogReader
-	modalities   modelmetadata.Reader
-	reasoning    modelmetadata.ReasoningLadderReader
-	aliases      modelalias.DisplayReader
-	authorizer   Authorizer
+	serviceTiers   modelmetadata.ServiceTierReader
+	contextWindows modelmetadata.ContextWindowReader
+	models         ModelReader
+	catalog        CatalogReader
+	modalities     modelmetadata.Reader
+	reasoning      modelmetadata.ReasoningLadderReader
+	aliases        modelalias.DisplayReader
+	authorizer     Authorizer
 }
 
 // NewHandler 创建不会访问 SQLite、凭据或上游的标准模型目录 Handler。
@@ -82,13 +84,14 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		serviceTiers: dependencies.ServiceTiers,
-		models:       dependencies.Models,
-		catalog:      dependencies.Catalog,
-		modalities:   dependencies.Modalities,
-		reasoning:    dependencies.Reasoning,
-		aliases:      dependencies.Aliases,
-		authorizer:   dependencies.Authorizer,
+		serviceTiers:   dependencies.ServiceTiers,
+		contextWindows: dependencies.ContextWindows,
+		models:         dependencies.Models,
+		catalog:        dependencies.Catalog,
+		modalities:     dependencies.Modalities,
+		reasoning:      dependencies.Reasoning,
+		aliases:        dependencies.Aliases,
+		authorizer:     dependencies.Authorizer,
 	}, nil
 }
 
@@ -167,6 +170,9 @@ func (handler *Handler) ServeHTTP(
 		})
 	case catalogProtocolCodex:
 		payload := newCodexModelList(views)
+		if err := handler.applyContextWindows(request.Context(), &payload); err != nil {
+			response.Header().Set("X-AIH-Model-Context", "unavailable")
+		}
 		if handler.serviceTiers != nil {
 			for index := range payload.Models {
 				model := &payload.Models[index]

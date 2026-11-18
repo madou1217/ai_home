@@ -31,10 +31,15 @@ var (
 
 // Database 封装 app-state.db 上 Chat Runtime 专属的读写连接与串行写锁。
 type Database struct {
-	sqlDB *sql.DB
-	path  string
-	mu    sync.Mutex
-	clock func() int64
+	sqlDB      *sql.DB
+	path       string
+	mu         sync.Mutex
+	clock      func() int64
+	closed     bool
+	reserved   bool
+	generation uint64
+	session    *DatabaseSession
+	closeErr   error
 }
 
 // OpenDatabase 打开 app-state.db（若不存在则创建）并执行幂等 Chat Runtime 表结构初始化及迁移。
@@ -107,10 +112,26 @@ func OpenDatabase(ctx context.Context, dbPath string, clock func() int64) (*Data
 
 // Close 关闭底层 SQLite 连接。
 func (d *Database) Close() error {
-	if d == nil || d.sqlDB == nil {
+	if d == nil {
 		return nil
 	}
-	return d.sqlDB.Close()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return d.closeErr
+	}
+	d.closed = true
+	d.generation++
+	if d.session != nil {
+		d.closeErr = d.session.closeLocked()
+		if d.closeErr != nil {
+			return d.closeErr
+		}
+	}
+	if d.sqlDB != nil {
+		d.closeErr = d.sqlDB.Close()
+	}
+	return d.closeErr
 }
 
 // Path 返回数据库文件路径。
@@ -128,6 +149,12 @@ func (d *Database) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error 
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.closed {
+		return NewError("chat_database_closed", 410, nil)
+	}
+	if d.reserved {
+		return NewError("chat_database_session_reserved", 409, nil)
+	}
 
 	tx, err := d.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
@@ -156,6 +183,12 @@ func (d *Database) withRead(ctx context.Context, fn func(db *sql.DB) error) erro
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.closed {
+		return NewError("chat_database_closed", 410, nil)
+	}
+	if d.reserved {
+		return NewError("chat_database_session_reserved", 409, nil)
+	}
 	return fn(d.sqlDB)
 }
 

@@ -65,27 +65,67 @@ the user's task with it. Tell the user which model provided the description.
 
 ## 2b. Image generation: draw for me
 
+Generate through the dedicated Images endpoint. A model advertised by a remote
+API-key account does not require a local account for the model's vendor. Let the
+gateway resolve the account from the discovered model; do not force `provider`.
+
 ```bash
-MODEL=<image_out model id from step 1>
-OUT=./generated-image.png
-PROMPT="<what the user wants drawn, be specific>"
-curl -s "$AIH_GATEWAY_BASE_URL/v1/chat/completions" \
-    -H "Authorization: Bearer $AIH_GATEWAY_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "$(python3 -c 'import json,sys;print(json.dumps({"model":sys.argv[1],"messages":[{"role":"user","content":sys.argv[2]}]}))' "$MODEL" "$PROMPT")" \
-  | python3 -c '
-import json, sys, base64, re
-content = json.load(sys.stdin)["choices"][0]["message"]["content"]
-m = re.search(r"data:image/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)", content)
-if not m:
-    print("NO_IMAGE_IN_RESPONSE:", content[:300]); sys.exit(1)
-open(sys.argv[1], "wb").write(base64.b64decode(m.group(2)))
-print("saved", sys.argv[1])
-' "$OUT"
+export MODEL='<image_out model id from step 1>'
+export OUT='./generated-image.png'
+export PROMPT='<what the user wants drawn, be specific>'
+python3 - <<'PYGEN'
+import base64, json, os, pathlib, urllib.error, urllib.request
+
+base = os.environ['AIH_GATEWAY_BASE_URL'].rstrip('/')
+request = urllib.request.Request(
+    base + '/v1/images/generations',
+    data=json.dumps({
+        'model': os.environ['MODEL'],
+        'prompt': os.environ['PROMPT'],
+        'n': 1,
+        'response_format': 'b64_json',
+    }).encode(),
+    headers={
+        'Authorization': 'Bearer ' + os.environ['AIH_GATEWAY_API_KEY'],
+        'Content-Type': 'application/json',
+    },
+    method='POST',
+)
+try:
+    with urllib.request.urlopen(request, timeout=180) as response:
+        result = json.load(response)
+except urllib.error.HTTPError as error:
+    try:
+        detail = json.load(error).get('error', {})
+    except (ValueError, AttributeError):
+        detail = {}
+    if not isinstance(detail, dict):
+        detail = {}
+    raise SystemExit('IMAGE_GENERATION_FAILED: HTTP %s %s %s' % (
+        error.code, detail.get('code', ''), detail.get('message', '')[:300]))
+images = result.get('data', [])
+encoded = images[0].get('b64_json') if images and isinstance(images[0], dict) else None
+if not isinstance(encoded, str) or not encoded:
+    raise SystemExit('NO_IMAGE_IN_RESPONSE: expected data[0].b64_json')
+image = base64.b64decode(encoded, validate=True)
+output = pathlib.Path(os.environ['OUT'])
+if image.startswith(b'\x89PNG\r\n\x1a\n'):
+    suffix = '.png'
+elif image.startswith(b'\xff\xd8\xff'):
+    suffix = '.jpg'
+elif image.startswith(b'RIFF') and image[8:12] == b'WEBP':
+    suffix = '.webp'
+else:
+    raise SystemExit('INVALID_IMAGE_OUTPUT: unsupported image signature')
+output = output.with_suffix(suffix)
+output.write_bytes(image)
+print('saved', output)
+PYGEN
 ```
 
-Then hand `$OUT` to the user (mention the generating model). If the response
-contains no image data, report the model's text answer honestly.
+Then give the saved file to the user and name the generating model. A text-only
+chat completion is not a generated image. Preserve the gateway's error when a
+request fails; do not retry by switching to a local vendor account.
 
 ## Rules
 

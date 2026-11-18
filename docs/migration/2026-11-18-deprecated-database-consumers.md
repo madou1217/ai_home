@@ -122,25 +122,17 @@ scripts/lib/business-database-reader.js
 web/scripts/e2e-chat-metrics.cjs
 ```
 
-## 仍保留的旧库访问与引用
+## 旧库迁移逻辑已删除
 
-独立扫描 lib、scripts、internal、cmd、application、web/scripts，逐个追踪常量与
-间接路径；排除测试、历史文档和构建产物后，以下是有意保留的旧库行为。
-不能把这些清理成零字符串命中，也不能删掉旧库绕过 seal。
+2026-11-18 后续按单库要求删除了离线 db-unify 与所有运行时旧库门禁：
 
-| 实际位置 | 保留原因 |
-| --- | --- |
-| lib/server/business-database.js readReceipt / assertBusinessDatabaseReady | 只读旧库 aih_legacy_seal，和 canonical 回执比对；无回退、无启动迁库 |
-| internal/adapters/businessdb/path.go CheckReady / readReceipt | Go 对应 seal 验证，显式旧业务路径会被拒绝 |
-| distributioninstall/health.go readConfig | 仅确认 canonical 完全不存在的 pre-cutover 老安装，可只读旧配置以发现/安全停止旧服务；canonical 损坏不得走此路径 |
-| distributioninstall/legacy_idle.go | 仅 canonical 不存在时只读验证旧版空账号网关确实空闲 |
-| internal/runtime/dbunify/migrate.go | 显式离线迁移源；正常业务入口不调用 apply |
-| internal/runtime/distributiondata/{prepare,verify}.go | 私有安装/备份快照与迁移保真核对 |
-| distributioninstall/install.go、distributiondata/fingerprint.go | 备份、保留、发布封存文件或计算指纹，不是日常业务查询 |
-| 对账/backfill/rekey/verifier 的显式离线源参数 | 操作者主动指定的只读历史材料，默认不选择旧库 |
-| fsnotify 在 macOS 的 AIH 根目录监听 | O_EVTONLY 事件监听；不解析旧库业务表 |
+- 删除 `cmd/aih-db-unify` 与 `internal/runtime/dbunify`（迁移、封存、回执、触发器）。
+- `businessdb` 不再定义 `LegacyFileName`/`MigrationID`/`SealTable`；`CheckReady` 只接受非空数据库路径。
+- `distributiondata` 只准备、备份、核对 `aih.db`，不再复制、封装或合并旧库。
+- `distributioninstall` 的数据备份、发布和健康检查只认 `aih.db`；已删除 legacy idle 探测。
+- `lib/server/business-database.js` 只返回 `aih.db`，不再读旧库回执。
 
-其余多处旧库名称只存在于历史注释、错误文案和 schema 历史，不再决定开库路径。
+仍保留的只有历史注释、错误文案、测试夹具和离线对账/backfill/rekey 工具中操作者显式传入的历史材料路径；它们不参与默认业务开库。
 provider 原生 Kiro / OpenCode / CodeBuddy / WorkBuddy / ZCode / Codex state/history/log/goals
 数据库与 run/maintenance/access.sqlite 的文件锁协调数据不属于 AIH 业务数据库迁移。
 

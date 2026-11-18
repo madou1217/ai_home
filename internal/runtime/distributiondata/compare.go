@@ -144,8 +144,8 @@ func compareUnion(ctx context.Context, db *sql.DB, source, target string, hasBef
 			if err := db.QueryRowContext(ctx, "SELECT count(*) FROM before."+quote(target)).Scan(&count); err != nil {
 				return check, err
 			}
-			// dbunify rejects nonempty keyless targets; with a primary key,
-			// UNION exactly models its insert-only, identical-overlap policy.
+			// The union check rejects nonempty keyless targets; with a primary key,
+			// UNION exactly models the identical-overlap policy.
 			if count > 0 {
 				expected += " UNION " + selectTable("before", target, names)
 			}

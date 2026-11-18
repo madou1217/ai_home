@@ -14,7 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 )
 
-var databaseNames = []string{businessdb.FileName, businessdb.LegacyFileName}
+var databaseNames = []string{businessdb.FileName}
 var sidecars = []string{"", "-wal", "-shm", "-journal"}
 
 // VerifySource is read-only (including WAL/SHM); SQLite never opens Home. The
@@ -49,21 +49,14 @@ func fingerprint(ctx context.Context, home, capture string) (SourceFingerprint, 
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return result, err
 	}
-	var originals []os.FileInfo
 	for _, name := range databaseNames {
 		for _, suffix := range sidecars {
-			entry, fileInfo, err := fingerprintFile(ctx, home, capture, name+suffix)
+			entry, _, err := fingerprintFile(ctx, home, capture, name+suffix)
 			if err != nil {
 				return result, err
 			}
 			result.Files = append(result.Files, entry)
-			if suffix == "" && fileInfo != nil {
-				originals = append(originals, fileInfo)
-			}
 		}
-	}
-	if len(originals) == 2 && os.SameFile(originals[0], originals[1]) {
-		return result, errors.New("distributiondata: canonical and legacy are the same file")
 	}
 	return result, nil
 }

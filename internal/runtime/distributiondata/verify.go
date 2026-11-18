@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
@@ -30,53 +29,15 @@ func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
 	if err := integrity(ctx, db); err != nil {
 		return err
 	}
-	hasBefore := present(report.SourceFingerprint, businessdb.FileName)
-	hasLegacy := present(report.SourceFingerprint, businessdb.LegacyFileName)
-	if hasBefore {
+	if present(report.SourceFingerprint, businessdb.FileName) {
 		if err := attach(ctx, db, businessdb.Path(report.BackupHome), "before"); err != nil {
 			return err
 		}
-	}
-	merged := map[string]bool{}
-	if hasLegacy {
-		for _, entry := range []struct{ home, schema string }{{report.BackupHome, "legacy_before"}, {report.PreparedHome, "sealed"}} {
-			if err := attach(ctx, db, filepath.Join(entry.home, businessdb.LegacyFileName), entry.schema); err != nil {
-				return err
-			}
-		}
-		legacy, err := tables(ctx, db, "legacy_before")
-		if err != nil {
-			return err
-		}
-		for _, table := range legacy {
-			check, err := compareTable(ctx, db, "legacy_before", table, "sealed", table)
-			if err != nil {
-				return err
-			}
-			report.Checks = append(report.Checks, check)
-			// A matched receipt is historical: canonical rows can legitimately
-			// have changed AFTER the original cutover. Preserve both snapshots,
-			// rather than importing stale sealed rows back over live data.
-			if report.Unification.State != "already_complete" && table != businessdb.SealTable {
-				target := businessdb.CompatibilityTable(table)
-				check, err := compareUnion(ctx, db, table, target, hasBefore)
-				if err != nil {
-					return err
-				}
-				report.Checks = append(report.Checks, check)
-				merged[target] = true
-			}
-		}
-	}
-	if hasBefore {
 		before, err := tables(ctx, db, "before")
 		if err != nil {
 			return err
 		}
 		for _, table := range before {
-			if merged[table] {
-				continue // Already checked against BOTH originals, above.
-			}
 			check, err := compareTable(ctx, db, "before", table, "main", table)
 			if err != nil {
 				return err

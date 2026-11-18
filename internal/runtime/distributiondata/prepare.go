@@ -9,7 +9,6 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
-	"github.com/madou1217/ai_home/internal/runtime/dbunify"
 )
 
 // Prepare only prepares private artifacts. ALL source writers must already be
@@ -41,29 +40,10 @@ func Prepare(ctx context.Context, opts Options) (report Report, resultErr error)
 	if err := initialize(ctx, opts, l, &report); err != nil {
 		return report, err
 	}
-	if present(report.SourceFingerprint, businessdb.LegacyFileName) {
-		// This is a COPY into a newly initialized private home, never a move or
-		// temporary hiding of the source legacy file to evade CheckReady.
-		if err := snapshot(ctx, filepath.Join(report.BackupHome, businessdb.LegacyFileName), filepath.Join(l.scratch, businessdb.LegacyFileName)); err != nil {
-			return report, err
-		}
-		unified, err := dbunify.Run(ctx, dbunify.Options{Root: l.scratch, BackupDir: l.root, Apply: true, Offline: true})
-		report.Unification = &unified
-		if err != nil {
-			return report, fmt.Errorf("distributiondata: unify private data: %w", err)
-		}
-		report.Receipt, report.SealedLegacy = unified.Receipt, true
-		if unified.State == "already_complete" {
-			report.SourceState = "unified"
-		}
-	}
 	if err := ensureCompatibilitySchema(ctx, businessdb.Path(l.scratch)); err != nil {
 		return report, err
 	}
 	for _, name := range databaseNames {
-		if name == businessdb.LegacyFileName && !report.SealedLegacy {
-			continue
-		}
 		if err := snapshot(ctx, filepath.Join(l.scratch, name), filepath.Join(report.PreparedHome, name)); err != nil {
 			return report, err
 		}
@@ -121,28 +101,21 @@ func capture(ctx context.Context, l layout, report *Report) error {
 			return fmt.Errorf("distributiondata: capture %s: %w", name, err)
 		}
 	}
-	report.Fresh = !present(source, businessdb.FileName) && !present(source, businessdb.LegacyFileName)
+	report.Fresh = !present(source, businessdb.FileName)
 	return syncDir(report.BackupHome)
 }
 
 func initialize(ctx context.Context, opts Options, l layout, report *Report) error {
 	hasCanonical := present(report.SourceFingerprint, businessdb.FileName)
-	hasLegacy := present(report.SourceFingerprint, businessdb.LegacyFileName)
 	report.SourceState = "fresh"
 	if hasCanonical {
 		report.SourceState = "canonical_only"
-		if hasLegacy {
-			report.SourceState = "split"
-		}
 		original := businessdb.Path(report.BackupHome)
 		id, version, err := identity(ctx, original)
 		if err != nil {
 			return err
 		}
 		report.AlreadyReady = id == sqliteaccount.ApplicationID && version == sqliteaccount.SchemaVersion && businessdb.CheckReady(ctx, original) == nil
-		if report.AlreadyReady && hasLegacy {
-			report.SourceState = "unified"
-		}
 		if id == sqliteaccount.ApplicationID {
 			counts, err := accountCounts(ctx, original)
 			if err != nil {
@@ -151,9 +124,6 @@ func initialize(ctx context.Context, opts Options, l layout, report *Report) err
 			report.Accounts.BeforeAccounts, report.Accounts.BeforeCredentials = counts[0], counts[1]
 		} else {
 			report.SourceState = "compatibility_only"
-			if hasLegacy {
-				report.SourceState = "compatibility_split"
-			}
 			report.Accounts.InitializedDuringPrepare = true
 		}
 		if err := snapshot(ctx, original, businessdb.Path(l.scratch)); err != nil {
@@ -161,9 +131,6 @@ func initialize(ctx context.Context, opts Options, l layout, report *Report) err
 		}
 	} else {
 		report.Accounts.InitializedDuringPrepare = true
-		if hasLegacy {
-			report.SourceState = "legacy_only"
-		}
 	}
 	catalog := opts.Catalog
 	if catalog == nil {
@@ -173,7 +140,7 @@ func initialize(ctx context.Context, opts Options, l layout, report *Report) err
 			return err
 		}
 	}
-	// This private directory has no legacy file yet. Initialize only the schema:
+	// This private directory has no database yet. Initialize only the schema:
 	// normal Open also reconciles aliases and removes credentials, which would
 	// mutate preserved account content before the bidirectional equality check.
 	if err := sqliteaccount.InitializeSchema(ctx, sqliteaccount.OpenOptions{AIHomeDir: l.scratch, Catalog: catalog}); err != nil {

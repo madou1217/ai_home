@@ -11,15 +11,6 @@ import (
 
 const FileName = "aih.db"
 
-// The legacy file name and migration identifiers are only consumed by the
-// offline db-unify migration tool. Runtime services never open or gate on them.
-const (
-	LegacyFileName = "app-state.db"
-	MigrationID    = "app-state-to-aih-v1"
-	ReceiptTable   = "aih_storage_migrations"
-	SealTable      = "aih_legacy_seal"
-)
-
 // Path returns the single canonical business database path.
 func Path(root string) string { return filepath.Join(root, FileName) }
 

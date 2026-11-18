@@ -9,7 +9,7 @@ import (
 )
 
 // ensureCompatibilitySchema only receives a private scratch database after its
-// canonical initialization and any dbunify cutover. OpenWritable does not create
+// canonical initialization. OpenWritable does not create
 // app_kv: its existing WriteKV/DeleteKV/UpdateKV adapters lazily use this exact
 // DDL. Ensure just the schema, without inserting/deleting a placeholder key or
 // replacing configuration. Other compatibility tables stay with their owners.

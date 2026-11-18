@@ -6,7 +6,6 @@ package distributiondata
 
 import (
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/runtime/dbunify"
 )
 
 // Options identifies the read-only source and an installer-owned transaction
@@ -19,8 +18,8 @@ type Options struct {
 	Catalog   *providers.Catalog
 }
 
-// SourceFingerprint covers both databases and their WAL/SHM/rollback sidecars,
-// including absent files. It must be checked again immediately before publish.
+// SourceFingerprint covers aih.db and its WAL/SHM/rollback sidecars, including
+// absent files. It must be checked again immediately before publish.
 type SourceFingerprint struct {
 	Home       string            `json:"home"`
 	HomeExists bool              `json:"home_exists"`
@@ -84,9 +83,6 @@ type Report struct {
 	Fresh             bool              `json:"fresh"`
 	ApplicationID     int               `json:"application_id"`
 	UserVersion       int               `json:"user_version"`
-	SealedLegacy      bool              `json:"sealed_legacy"`
-	Receipt           string            `json:"receipt,omitempty"`
-	Unification       *dbunify.Report   `json:"unification,omitempty"`
 	Checks            []TableCheck      `json:"checks"`
 	Accounts          AccountReport     `json:"accounts"`
 	Error             string            `json:"error,omitempty"`

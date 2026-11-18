@@ -68,6 +68,15 @@ func loadWasm(provider string, options Options) ([]byte, error) {
 	return nil, lastErr
 }
 
+// RuntimeAvailable 判断本机是否有可用的 CLI 运行时（二进制存在且内嵌 wasm 可提取）。
+//
+// 与 DecryptBlob 共用同一条查找路径；用于把「本机缺客户端」和「凭据里没有 token」
+// 分开归因，让上层可以提示安装，而不是笼统报 token 缺失。
+func RuntimeAvailable(provider string, options Options) bool {
+	_, err := loadWasm(provider, options)
+	return err == nil
+}
+
 // candidateBinaries 按安装布局列出 CLI 二进制，新版本优先。
 func candidateBinaries(provider string, options Options) []string {
 	if path := strings.TrimSpace(options.BinaryPath); path != "" {

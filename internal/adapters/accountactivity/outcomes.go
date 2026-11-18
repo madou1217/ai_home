@@ -264,6 +264,11 @@ func planOf(result map[string]any) (ClaimGroup, bool) {
 	}, true
 }
 
+// failureCodeLabels 是少数需要人话解释的错误码；其余保持原码便于检索。
+var failureCodeLabels = map[string]string{
+	ErrorCodeQoderCLIMissing: "缺少 Qoder CLI",
+}
+
 // FormatFailureCodes 把失败码压成紧凑文案。
 func FormatFailureCodes(failures Failures) string {
 	if len(failures.ByCode) == 0 {
@@ -275,7 +280,11 @@ func FormatFailureCodes(failures Failures) string {
 	}
 	parts := make([]string, 0, limit)
 	for _, entry := range failures.ByCode[:limit] {
-		parts = append(parts, entry.Code+" ×"+strconv.Itoa(entry.Count))
+		code := entry.Code
+		if label := failureCodeLabels[code]; label != "" {
+			code = label
+		}
+		parts = append(parts, code+" ×"+strconv.Itoa(entry.Count))
 	}
 	return strings.Join(parts, "、")
 }

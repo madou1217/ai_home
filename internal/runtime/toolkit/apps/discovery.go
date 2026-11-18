@@ -57,7 +57,12 @@ func ResolveProviderCLIPath(provider string, opts Options) string {
 	if def.CLI != nil && def.CLI.BinaryName != "" {
 		binaryNames = append(binaryNames, def.CLI.BinaryName)
 	}
-	binaryNames = append(binaryNames, norm)
+	// 只有在描述符完全没有声明 CLI 名称时才回退到 provider 名。
+	// qoder 的 `qoder` 是 IDE/CLI 的 dispatcher 脚本，不是 CLI 本体；把它当二进制
+	// 会让「卸载后仍探测到 CLI」和「安装成功但实际没有 qodercli」同时发生。
+	if len(binaryNames) == 0 {
+		binaryNames = append(binaryNames, norm)
+	}
 	binaryNames = uniqueStrings(binaryNames)
 
 	p := resolvePlatform(opts)

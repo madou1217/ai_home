@@ -1,5 +1,8 @@
-import { Modal, Space, Tag, Typography } from 'antd';
+import { Button, Modal, Space, Tag, Typography } from 'antd';
 import type { AccountActivityResult } from '@/types';
+import { providerNames } from '@/components/chat/ProviderIcon';
+import { getActivityInstallHint } from '@/features/accounts/activity-app-install';
+import type { ActivityInstallHint } from '@/features/accounts/activity-app-install';
 
 // 纯展示弹窗：账号活动（签到 / 领臭鸡蛋）的执行结果。
 // 状态与请求都留在页面（Accounts.tsx），这里只按结果渲染，符合「弹窗状态留页面」的拆分约定。
@@ -24,6 +27,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 function describeResult(result: AccountActivityResult): string {
   if (result.status === 'error') {
+    // 安装提示已经是人话，不再把 qoder_cli_missing 这类内部码摆在最前面。
+    if (result.installRequired) return result.message || '需要先安装本机客户端';
     return [result.error, result.message].filter(Boolean).join(' · ') || '未知错误';
   }
   if (result.status === 'claimed') {
@@ -55,9 +60,19 @@ export interface AccountActivityModalProps {
   title?: string;
   results: AccountActivityResult[];
   onClose: () => void;
+  /** 结果提示需要安装客户端时由页面接管：安装完成后重试活动。 */
+  onInstallAndRetry?: (hint: ActivityInstallHint) => void | Promise<void>;
+  canRetryAfterInstall?: boolean;
 }
 
-export function AccountActivityModal({ open, title, results, onClose }: AccountActivityModalProps) {
+export function AccountActivityModal({
+  open,
+  title,
+  results,
+  onClose,
+  onInstallAndRetry,
+  canRetryAfterInstall = false
+}: AccountActivityModalProps) {
   const counts = countByStatus(results);
   const summary = [
     counts.claimed ? `领取 ${counts.claimed}` : '',
@@ -65,6 +80,12 @@ export function AccountActivityModal({ open, title, results, onClose }: AccountA
     counts.nothing_claimable ? `无可领 ${counts.nothing_claimable}` : '',
     counts.error ? `失败 ${counts.error}` : ''
   ].filter(Boolean);
+  const installHint = results
+    .map(getActivityInstallHint)
+    .find((hint): hint is ActivityInstallHint => hint !== null) || null;
+  const installLabel = installHint
+    ? `${providerNames[installHint.appId as keyof typeof providerNames] || installHint.appId} CLI`
+    : '';
 
   return (
     <Modal
@@ -84,6 +105,25 @@ export function AccountActivityModal({ open, title, results, onClose }: AccountA
             <Tag key={item} style={{ marginInlineEnd: 0 }}>{item}</Tag>
           ))}
         </Space>
+      ) : null}
+      {installHint && onInstallAndRetry ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 12
+          }}
+        >
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {installLabel} 未安装，签到需要它解密账号凭据；
+            {canRetryAfterInstall ? '安装完成后会自动重试。' : '本批包含已执行账号，安装后保留防抖，不自动重试。'}
+          </Typography.Text>
+          <Button size="small" type="primary" onClick={() => void onInstallAndRetry(installHint)}>
+            {canRetryAfterInstall ? '安装并重试' : '安装客户端'}
+          </Button>
+        </div>
       ) : null}
       {results.length === 0 ? (
         <Typography.Text type="secondary">没有可领取的活动。</Typography.Text>

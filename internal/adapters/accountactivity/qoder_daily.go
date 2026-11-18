@@ -10,12 +10,17 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/accounts/qodercred"
 )
 
 const (
 	qoderDefaultTimeout    = 15 * time.Second
 	qoderCampaignsPath     = "/sash/api/v1/me/campaigns"
 	qoderCampaignClaimTmpl = "/sash/api/v1/me/campaigns/{campaignId}/claim"
+	// ErrorCodeQoderCLIMissing 表示凭据是 CLI 机器绑定的 opaque blob，但本机没有可用的
+	// Qoder CLI。它和 qoder_token_missing 的区别是：账号凭据没坏，装回 CLI 就能恢复。
+	ErrorCodeQoderCLIMissing = "qoder_cli_missing"
 )
 
 var (
@@ -114,6 +119,14 @@ func (e *NativeExecutor) runQoderDailyClaim(
 
 	token, tokenSource := ResolveQoderAccessToken(provider, record, e.options.QoderOptions, e.options.QoderDecrypt)
 	if token == "" {
+		// 凭据是 opaque blob 时，token 只能由 CLI 内嵌 wasm 解出；本机没有 CLI 不是
+		// 「token 缺失」，而是缺一个可安装的运行时。分开归因，UI 才能提示安装并重试。
+		if qoderNeedsCLIRuntime(record) && !qodercred.RuntimeAvailable(provider, e.options.QoderOptions) {
+			result["error"] = ErrorCodeQoderCLIMissing
+			result["message"] = "未检测到 Qoder CLI；安装后即可继续签到。"
+			result["installRequired"] = map[string]any{"appId": provider, "kind": "cli"}
+			return result
+		}
 		result["error"] = "qoder_token_missing"
 		return result
 	}
@@ -270,4 +283,12 @@ func (e *NativeExecutor) runQoderDailyClaim(
 		result["message"] = firstFailureMsg
 	}
 	return result
+}
+
+// qoderNeedsCLIRuntime 判断 token 为空是否可能只是本机缺 CLI：
+// 凭据是 CLI 写的 opaque blob，且 machineId 足够长，解密只能由 CLI 内嵌 wasm 完成。
+func qoderNeedsCLIRuntime(record AccountRecord) bool {
+	blob := textOf(record.NativeAuth["credentials"])
+	machineID := textOf(record.NativeAuth["machineId"])
+	return qodercred.IsOpaqueCredential(blob) && len(machineID) >= 16
 }

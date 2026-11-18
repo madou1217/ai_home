@@ -111,6 +111,24 @@ func (guard *Guard) Acquire(key string, debounce time.Duration) (func(), *Denied
 	return release, nil
 }
 
+// Forget 清除某个键的防抖窗口。
+//
+// 只用于「任务还没真正打到上游」的失败（例如本机缺 CLI）：这种失败不构成重复
+// 请求风险，用户装完客户端应立即能重试，而不是被上一轮的 debounce 挡住。
+func (guard *Guard) Forget(key string) {
+	normalized := strings.TrimSpace(key)
+	if normalized == "" {
+		return
+	}
+	guard.mu.Lock()
+	defer guard.mu.Unlock()
+	entry := guard.runs[normalized]
+	if entry == nil || entry.inFlight {
+		return
+	}
+	delete(guard.runs, normalized)
+}
+
 // RunningKeys 返回当前在跑的全部键（升序）。
 func (guard *Guard) RunningKeys() []string {
 	guard.mu.Lock()

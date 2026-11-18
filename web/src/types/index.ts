@@ -445,6 +445,11 @@ export interface AccountActivityResult {
   claimed?: Array<Record<string, unknown>>;
   plans?: AccountActivityPlan[];
   plan?: AccountActivityPlan | null;
+  /**
+   * 需要先在本机安装客户端才能继续（目前是 Qoder CLI）。
+   * 值是可直接交给 Toolkit 应用安装接口的提示，前端不按错误码猜 appId。
+   */
+  installRequired?: { appId: string; kind: string };
   /** 前端补的展示名（服务端结果只带 accountRef）。 */
   displayName?: string;
 }

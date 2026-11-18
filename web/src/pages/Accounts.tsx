@@ -22,7 +22,8 @@ import {
   Popover,
   Menu,
   Tabs,
-  Typography
+  Typography,
+  Modal
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -123,6 +124,8 @@ import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import AccountConfigFilesModal from '@/features/accounts/AccountConfigFilesModal';
 import { AccountRuntimeSettingsModal } from '@/features/accounts/AccountRuntimeSettingsModal';
 import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
+import { canRetryActivityJobAfterInstall, getActivityInstallHint, installActivityClient } from '@/features/accounts/activity-app-install';
+import type { ActivityInstallHint } from '@/features/accounts/activity-app-install';
 import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
 import AccountEgressBulkPicker from '@/features/egress-upstream/AccountEgressBulkPicker';
 import { useAccountEgressSummary } from '@/features/egress-upstream/use-account-egress-summary';
@@ -272,6 +275,8 @@ export default function Accounts() {
   const [rewardsResults, setRewardsResults] = useState<AccountActivityResult[]>([]);
   const [rewardsJob, setRewardsJob] = useState<AccountActivityJob | null>(null);
   const rewardsPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 记下最近一次批量动作，安装客户端后按同一动作 + 同 provider 组合重试。
+  const rewardsActionRef = useRef<AccountActivityAction | null>(null);
   const [configFilesAccount, setConfigFilesAccount] = useState<Account | null>(null);
   const [runtimeSettingsAccount, setRuntimeSettingsAccount] = useState<Account | null>(null);
 
@@ -398,6 +403,47 @@ export default function Accounts() {
     setRewardsOpen(true);
   };
 
+  const describeInstallClient = (hint: ActivityInstallHint) => {
+    const providerLabel = providerNames[hint.appId as keyof typeof providerNames] || hint.appId;
+    return hint.kind === 'desktop' ? `${providerLabel} Desktop` : `${providerLabel} CLI`;
+  };
+
+  const installClientForActivity = async (hint: ActivityInstallHint) => {
+    const label = describeInstallClient(hint);
+    message.info(`正在安装 ${label}，进度显示在右下角任务队列`);
+    await installActivityClient(hint);
+    message.success(`${label} 安装完成`);
+  };
+
+  // 活动结果明确要求装客户端时，先弹确认；确认后安装 + 重跑同一动作。
+  // 返回 true 表示已经接管本次结果，调用方不要再用原失败结果覆盖提示。
+  const promptInstallForActivity = (
+    result: AccountActivityResult,
+    onRetry: () => Promise<void>,
+    actionLabel?: string
+  ) => {
+    const hint = getActivityInstallHint(result);
+    if (!hint) return false;
+    const label = describeInstallClient(hint);
+    Modal.confirm({
+      title: `需要安装 ${label}`,
+      content: `签到需要 ${label} 解密账号凭据。确认后会自动安装，安装完成后继续执行签到。`,
+      okText: '安装并签到',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await installClientForActivity(hint);
+          await onRetry();
+        } catch (error: any) {
+          message.error(error?.response?.data?.message || error?.message || `${label} 安装失败`);
+          presentRewards([result], actionLabel);
+        }
+      },
+      onCancel: () => presentRewards([result], actionLabel)
+    });
+    return true;
+  };
+
   const showRewardsSummary = (job: AccountActivityJob) => {
     const summary = job.summary;
     if (summary && summary.claimed > 0) {
@@ -446,6 +492,7 @@ export default function Accounts() {
     }
     setRewardsRunning(true);
     setRewardsJob(null);
+    rewardsActionRef.current = action;
     try {
       const started = await accountsAPI.startAccountActivityJob({
         providers,
@@ -465,7 +512,30 @@ export default function Accounts() {
     }
   };
 
-  const runOneReward = async (record: Account, actionId: string) => {
+  // 只有整批都缺客户端时自动重试；混批安装后保留既有结果和防抖。
+  const retryRewardsAfterInstall = async (hint: ActivityInstallHint) => {
+    const action = rewardsActionRef.current;
+    const job = rewardsJob;
+    if (!action || !job) return;
+    setRewardsOpen(false);
+    try {
+      await installClientForActivity(hint);
+      if (canRetryActivityJobAfterInstall(job)) {
+        await runProviderRewards(action, job.providers);
+      } else {
+        message.info('客户端已安装；本批包含已执行账号，保留防抖，未自动重试。');
+        presentRewards(job.results, action.label);
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '安装失败');
+    }
+  };
+
+  const runOneReward = async (
+    record: Account,
+    actionId: string,
+    options: { installRetried?: boolean } = {}
+  ) => {
     if (rewardsRunning) return;
     const action = (record.activityActions || []).find((item) => item.id === actionId);
     if (rewardsPollTimer.current) {
@@ -476,6 +546,13 @@ export default function Accounts() {
     setRewardsRunning(true);
     try {
       const result = await accountsAPI.runAccountActivity(record.provider, record.accountRef, actionId);
+      if (!options.installRetried && promptInstallForActivity(
+        result,
+        () => runOneReward(record, actionId, { installRetried: true }),
+        action?.label
+      )) {
+        return;
+      }
       presentRewards([result], action?.label);
       if (result.status === 'claimed') {
         message.success(`${getAccountPrimaryLabel(record)}：${action?.label || '领取'}成功`);
@@ -1305,6 +1382,8 @@ export default function Accounts() {
         open={rewardsOpen}
         title={rewardsTitle}
         results={rewardsResults}
+        onInstallAndRetry={rewardsJob ? retryRewardsAfterInstall : undefined}
+        canRetryAfterInstall={canRetryActivityJobAfterInstall(rewardsJob)}
         onClose={() => setRewardsOpen(false)}
       />
     </PageScaffold>

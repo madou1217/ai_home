@@ -193,7 +193,14 @@ func (service *Service) Run(ctx context.Context, selection Selection) Outcome {
 			defer cancel()
 			return service.execute(callContext, target, actionID, params, false)
 		},
-		OnSettled: func(*Job) { release() },
+		OnSettled: func(settled *Job) {
+			release()
+			// 只有整批都在访问上游前因缺 CLI 结束，才允许安装后立即重试。
+			// 混合结果保留防抖，避免重放已经访问上游的账号。
+			if jobOnlyHasInstallRequiredFailures(settled) {
+				service.guard.Forget(guardKey)
+			}
+		},
 	})
 	if startError != "" {
 		release()
@@ -208,6 +215,21 @@ func (service *Service) Run(ctx context.Context, selection Selection) Outcome {
 		"alreadyRunning": started.AlreadyRunning,
 		"job":            started.Job,
 	}}
+}
+
+// jobOnlyHasInstallRequiredFailures 只放行全部目标均缺 CLI 的完整任务。
+// 任何成功、未知失败或未完成目标都不能证明整批没有访问过上游。
+func jobOnlyHasInstallRequiredFailures(job *Job) bool {
+	if job == nil || job.Progress.Total <= 0 || job.Progress.Completed != job.Progress.Total ||
+		len(job.Results) != job.Progress.Total {
+		return false
+	}
+	for _, result := range job.Results {
+		if ErrorCodeOf(result) != ErrorCodeQoderCLIMissing {
+			return false
+		}
+	}
+	return true
 }
 
 // Probe 只读探测：先看清「有什么可领、是什么类型」，再决定领什么。

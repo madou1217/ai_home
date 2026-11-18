@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
@@ -28,6 +29,8 @@ type Server struct {
 	httpServer         *http.Server
 	resources          []io.Closer
 	desktopTranslation *desktoptranslation.Service
+	closeOnce          sync.Once
+	closeErr           error
 }
 
 // Serve 在调用方拥有的 Listener 上提供服务，关闭属于正常退出。
@@ -51,23 +54,33 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	return server.httpServer.Shutdown(ctx)
 }
 
-// Close 强制关闭 HTTP 连接、后台 worker 和 SQLite 连接池。
+// Close joins the original resource sequence once. The first uncertain
+// close stops dependency release; retained roots remain on this exact Server.
+// A caller must retain process lifetime on error (the production run does so).
+// This is not proof of all independent writer populations or a handoff grant.
 func (server *Server) Close() error {
 	if server == nil {
 		return nil
 	}
-	var httpErr error
-	if server.httpServer != nil {
-		httpErr = server.httpServer.Close()
-	}
-	closeErrors := []error{httpErr}
-	for _, resource := range server.resources {
-		if resource != nil {
-			closeErrors = append(closeErrors, resource.Close())
+	server.closeOnce.Do(func() {
+		if server.httpServer != nil {
+			if err := server.httpServer.Close(); err != nil {
+				server.closeErr = err
+				return
+			}
 		}
-	}
-	server.resources = nil
-	return errors.Join(closeErrors...)
+		for _, resource := range server.resources {
+			if resource == nil {
+				continue
+			}
+			if err := resource.Close(); err != nil {
+				server.closeErr = err
+				return // never close the following store/lease after an unknown join
+			}
+		}
+		server.resources = nil
+	})
+	return server.closeErr
 }
 
 // newServer 创建使用生产超时和头部上限的标准库 HTTP Server。

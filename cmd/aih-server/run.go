@@ -155,7 +155,18 @@ func run(
 				}
 			}
 		}
-		returnErr = errors.Join(returnErr, server.Close())
+		if closeErr := server.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, closeErr)
+			_, _ = fmt.Fprintln(runtime.stderr, "aih-server failclosed: host_resource_close_unknown; original holder retained; external controlled shutdown required")
+			// Source-only protection for this candidate, not the old loaded
+			// host. No main/os.Exit, identity release or new owner receipt.
+			for {
+				time.Sleep(time.Hour)
+				goruntime.KeepAlive(server)
+				goruntime.KeepAlive(releaseIdentity)
+				goruntime.KeepAlive(nodeSupervisor)
+			}
+		}
 		if releaseIdentity != nil {
 			releaseIdentity()
 		}

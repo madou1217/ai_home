@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -752,45 +751,10 @@ func withoutEnv(environment []string, key string) []string {
 	return result
 }
 
-// ensureAihShimDir 在仓库根生成 aih shim，并返回要前置到 PATH 的目录。
-//
-// 远端部署包通常没做过 npm link，login shell 里 aih 会 command not found；
-// 旧 Node 实现每次 open 都保证这个 shim 存在（失败则静默跳过），这里保持一致。
-// 仓库根只从可执行文件位置推导：生产构件在 <root>/bin/native/<os>-<arch>/ 下，
-// 打包位置不同或找不到 bin/ai-home.js 时不生成，不靠额外环境变量兜底。
+// ensureAihShimDir preserves the public Node commands while the precise session
+// list shape uses the sibling Go CLI. Construction lives in one focused helper.
 func (handler *Handler) ensureAihShimDir() string {
-	handler.shimOnce.Do(func() {
-		if runtime.GOOS == "windows" {
-			return
-		}
-		root := repositoryRootFromExecutable()
-		if root == "" {
-			return
-		}
-		entry := filepath.Join(root, "bin", "ai-home.js")
-		if info, err := os.Stat(entry); err != nil || info.IsDir() {
-			return
-		}
-		nodePath, err := exec.LookPath("node")
-		if err != nil {
-			return
-		}
-		shimDir := filepath.Join(root, ".runtime-bin")
-		if err := os.MkdirAll(shimDir, 0o755); err != nil {
-			return
-		}
-		shim := filepath.Join(shimDir, "aih")
-		body := "#!/bin/sh\nexec \"" + nodePath + "\" \"" + entry + "\" \"$@\"\n"
-		existing, _ := os.ReadFile(shim)
-		// 幂等：内容没变不重写，避免每次 open 都 churn 磁盘。
-		if string(existing) != body {
-			if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
-				return
-			}
-		}
-		_ = os.Chmod(shim, 0o755)
-		handler.shimDir = shimDir
-	})
+	handler.shimOnce.Do(func() { handler.shimDir = prepareAihShim() })
 	return handler.shimDir
 }
 

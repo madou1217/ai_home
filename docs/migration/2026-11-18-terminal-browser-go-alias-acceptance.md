@@ -107,3 +107,30 @@ Galileo原独立reviewer核唯一源码和两份低敏JSON给 **NO BLOCKING / SO
 `webui-terminal-routes.js` **未整体删除**：账号launcher仍真实消费 `openWebUiTerminalSession`，已有benchmark脚本也还消费旧export；`go-core-host`/facade/stream方法因这些及未归零动态调用保持，不能从这次404外推无消费者。终端内Node `aih` shim、旧launch、全CLI parity、正式成对发布/Edge、remote/跨平台和全部42+7仍OPEN。
 
 证据pointer `/tmp/aih-terminal-node-browser-retirement-latest-20261118.txt`；`evidence/source-manifest.json`、`retirement-operations.json`、`retirement-result.json`、`independent-source-review.json`、`commit-receipt.json`，私有log在root/private受限保留。没有新增测试、fixture、分支/worktree或第二份看板文档。
+
+
+## 08:23 精确终端 list shim 转 Go（source checkpoint，未安装／未共享加载）
+
+本次仅停止终端内 `aih ss --list` 与 `aih sessions --list` 的 Node 必要入口，不扩到其它 argv。适用批准为 `pm-253cb8cf`；原 R4 通过 `pm-a50396520248b5b4d0bddfe89b8a2a79` 明确释放独立 dispatch hunk，保留其后续 `__model-aliases-read` 插入区段。
+
+四源码路径为 `internal/transport/http/webuiterminalapi/sessions.go`（仅委托）、同包新增 `aih_shim.go`、`cmd/aih/run.go`（global ss/sessions 后仅新增 `__terminal-sessions` 三行）、新增 `cmd/aih/terminal_sessions_entry.go`。没有复制旧 archive 的整份 `run.go`；当前 startup、detect、launch 等入口全部保留。新 shim 按正在运行的 package executable 位置选同目录 `aih-go`，不把 server 当 CLI、不搜索 PATH/递归 `aih`；路径逐项单引号转义、argv 保持 `"$@"`、无 eval。选中分支直接 exec，Go 缺失或失败都不回落 Node；即使 Node 不存在也生成 Go 分支。其它命令仍保留原 Node entry，Windows 原先不生成 shim 的边界未改。
+
+仅私有内部 verb 补原 Node 列表 bootstrap：`AIH_HOST_HOME` → 非投影 HOME → OS user home；data root 为 `AIH_HOME_DIR` → `AI_HOME` → host/.ai_home。只读 `config:server` 中正常 typed management key/port，可选配置读取失败保留原注入值，覆盖只存在于本次 command lookup，不改进程全局环境，也不把 key 写入 shim/argv/log。任意非规范 JSON 的 JS String/Number coercion 不保证等价。复用现有 Go global list 业务；它会写 session cache，不能写成“列表零写”，所有实际运行均限定原有私有 HOME/namespace。
+
+### 两条构件链与真实操作分列
+
+1. **原批准私有链**：base `a331e43b2609686c96df76737c388cfed3b87b19` + 既有 retirement overlay `4bd40a68e4d25b90f25be69348daa7586b3672f1` + exact4，不能称为 current main 全树。CLI SHA256 `25ebe228075393cbf57d8efea0d0938fb5edb33ddcb6aed9ee4460c8d3643fba`，server candidate `1eb65594a3b33a9166f3c958939d5a963ac5913f472b3984d7f77ede9bf89810`（未 serve）。真实 generator 为另一制品 `0d9ec888d4202d4e455807de868ac3b7c5793a094d774e3b1275b4573eaee8ec`：overlay 替换 main 并在原包追加两个调用 wrapper，生产 helper 正文保持原字节；不是“产品 server 已生成”的证据。
+2. **当前 main 集成链**：固定 committed base `2403e28874cf9b2ca32f5ac2759c37103eeb46cc` 的 git archive，仅叠本次 exact4，非共享 dirty cwd 构建。`go build -mod=readonly ./cmd/aih`、同 server build 与 focused `go vet ./cmd/aih ./internal/transport/http/webuiterminalapi` 均 exit0。新 CLI SHA256 `8db0eb72c9771c7977921279986b57527fd245666ad1be234e94356721da8258`、server `5cf646abfdc1e136228f5a9ed19e7f2c578cd2172af8228fa6f7ac15deb72496`。复用前述已批准 generator 制品在该私有 package 生成 shim，新 CLI 两种 list 均 exit0、输出相等，错误内部形态 exit1；没有新增 observer 或启动服务。构件是 base＋已列源码 overlay，不假称已内嵌待产生的 commit SHA。
+
+原私有链的 22＋4 次操作观察含保留的重试/诊断，**不是 26 项独立要求通过**。真实 Node-absent 生成、两 literal list、AI_HOME/explicit host/nonprojected HOME、含空格和单引号的实际 CLI 路径均成立；额外参数、`-l`、大写 `SS` 均不命中新分支。Node 可用时选中缺 Go 实际 shell exit126；不可执行 Go 亦126；真实 Go broken stdout 为 SIGPIPE -13，均不能当正常业务成功、优雅取消或取消时延证明。没有 Node 回落由源码 exec 控制流及实际结果支持，不声明测得 Node counter0。
+
+相邻命令确继续原 Node：纯 `__complete` 真实 exit0、298 bytes。原 `--version` 进入 Node app 后，因私有 Seatbelt 拒绝指向共享 node_modules 的 symlink，出现 `fs-extra MODULE_NOT_FOUND`；保留为环境诊断，**不计产品通过**，未为变绿放开真实 HOME 权限。初 missing-Go 操作误预期127、真实126，以及 generator 观察缓存复用错误，均只修操作脚本并保存原记录，未改产品语义。操作进程禁出站和读取/写入真实 `/Users/model`，无账号/会话/key fixture、无新凭据 DB 副本、无实际会话 input/abort/cleanup、无浏览器或远端动作。
+
+### 审查、证据与未关闭门禁
+
+- 原 Galileo source review `01a1ebf3-f087-7a91-9c51-488beb24e660`、冻结证据 review `01a1ebff-2319-7ac1-96ba-ba5a7906849b` 均 NO BLOCKING，仅 private exact4/source 与低敏绑定。后者复算21个文件，核52 raw 声明/大小但未重算 raw 内容；监督 `01a1eac1` 另核全部21＋52内容 hash/size 与26 own PID 已退出，审记 SHA256 `5cf287763cb53f197f3695b5ecaa33c7fae36809655141af58e2a8d7e0ce6f1c`。没有把两种 review 范围混写。
+- 同既有证据 root（`/tmp/aih-terminal-node-browser-retirement-latest-20261118.txt`）中：`evidence/terminal-shim-private-ready-manifest.json` SHA256 `efd410775ece4c9cc961036e7de3146963db50d7bc11e62901a2c065e94dd92b`；`terminal-shim-private-result.json` `f9830566…`；`terminal-shim-failclosed-delta.json` `ba69c15a…`；`terminal-shim-current-main-build.json` `e591b1d1a9d9300ba00cc3ad38811017912bb506fbdac6d1c3c09de03eda20e9`；`terminal-shim-current-main-actual.json` `710ccccfb48bab8b4c220ce352e3ba70b7243f201d33a5ffb155a2649afaed9b`。原私有 DB SHA `0d18ac0ee53462a28386abae9da1629feae6fd6c660dc2d5e236e70ac0578eef` 前后一致；不是全 live DB 冻结声明。
+- 允许的原私有 registry/projections 为空，两 list 是真实空 namespace 结果，**非空列表、真实持久化 management-key config 正例仍 OPEN**。未生成样本补齐；Linux/Windows运行与实际产品 server 生成 shim 尚未验。
+- **source checkpoint 不等于 loaded/accept/Node 退役。**本次不替换标准 CLI/server、不改 stamp、不重启9527、不发布远端。既有标准 CLI `62ade266…`、server `9916c222…`仍保持；其旧能力不能拿新 source 代证。Terminal 其它 Node argv/旧 launcher/动态 caller、全 CLI 与最终第一方 Node 宿主退出，原42项＋7门禁，全部继续按原边界开放。
+
+本次提交仅四源码＋本文追加；主索引原114个 peer entries（含本 paths 的反向旧暂存）保持，使用一次性临时 index 和显式 pathspec，提交前后 stat/blob/hash另存低敏 receipt。未写测试、未建分支/worktree、未清理私有或共享文件。

@@ -115,6 +115,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "ss" || providerID == "sessions" {
 		return runGlobalSessions(ctx, arguments[1:], runtime)
 	}
+	if providerID == "__terminal-sessions" {
+		return runTerminalSessionsEntry(ctx, arguments[1:], runtime)
+	}
 	// Preserve the native boundary before interpreting any provider action. The
 	// launch intent parses only the prefix and strips the marker at its boundary.
 	if aihcli.SupportsNativeCLI(providerID) && containsArgument(arguments[1:], "--") {

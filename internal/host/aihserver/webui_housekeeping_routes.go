@@ -14,6 +14,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/housekeeping"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/remotebackup"
@@ -42,10 +43,12 @@ func (defaultHousekeepingLogger) Warn(message string) {
 
 // StartupHousekeepingSummary 汇总 Go Core 启动期一次性清理的结果与非致命告警。
 type StartupHousekeepingSummary struct {
-	Projections    housekeeping.PruneSummary `json:"projections"`
-	AppServers     housekeeping.PruneSummary `json:"appServers"`
-	ProjectionsErr error                     `json:"-"`
-	AppServersErr  error                     `json:"-"`
+	Projections     housekeeping.PruneSummary       `json:"projections"`
+	AppServers      housekeeping.PruneSummary       `json:"appServers"`
+	Distribution    distributioninstall.PruneReport `json:"distribution"`
+	ProjectionsErr  error                           `json:"-"`
+	AppServersErr   error                           `json:"-"`
+	DistributionErr error                           `json:"-"`
 }
 
 type startupHousekeepingPorts struct {
@@ -72,9 +75,10 @@ type housekeepingDaemonsPorts struct {
 
 // HousekeepingDaemons 统一托管 Go 远程备份调度器与持久会话空闲清理器的生命周期。
 type HousekeepingDaemons struct {
-	scheduler *remotebackup.Scheduler
-	janitor   *persistent.Janitor
-	closeOnce sync.Once
+	scheduler      *remotebackup.Scheduler
+	janitor        *persistent.Janitor
+	distributionGC *housekeeping.DistributionGC
+	closeOnce      sync.Once
 }
 
 // runStartupHousekeeping 在 Go Core 启动时执行一次陈旧运行时投影与 codex app-server 状态清理；
@@ -170,6 +174,20 @@ func runStartupHousekeepingWithPorts(
 		))
 	}
 
+	// 发行垃圾回收：只保留当前版本与相邻一份旧版本，更早的历史版本目录、
+	// 旧安装备份与过期安装包在这里清掉，避免长期占用磁盘。
+	distReport, distErr := distributioninstall.PruneArtifacts(distributioninstall.PruneOptions{Home: aiHomeDir})
+	summary.Distribution = distReport
+	summary.DistributionErr = distErr
+	if distErr != nil {
+		logger.Warn(fmt.Sprintf("启动清理历史发行产物告警: %v", distErr))
+	} else if len(distReport.Removed) > 0 || len(distReport.Failed) > 0 {
+		logger.Info(fmt.Sprintf(
+			"启动清理历史发行产物完成: removed=%d kept=%d failed=%d freedMB=%d",
+			len(distReport.Removed), len(distReport.Kept), len(distReport.Failed), distReport.FreedBytes/(1<<20),
+		))
+	}
+
 	return summary, nil
 }
 
@@ -256,14 +274,23 @@ func startHousekeepingDaemonsWithPorts(
 		Logger:       logger,
 	})
 
+	// 发行产物清理守护：默认每 6 小时巡检一次，与安装事务共用同一把安装锁。
+	distributionGC := housekeeping.NewDistributionGC(housekeeping.DistributionGCOptions{
+		Home:   absAIHomeDir,
+		Logger: logger,
+		Now:    ports.Now,
+	})
+
 	if !ports.DisableStart {
 		scheduler.Start(ctx)
 		janitor.Start(ctx)
+		distributionGC.Start(ctx)
 	}
 
 	return &HousekeepingDaemons{
-		scheduler: scheduler,
-		janitor:   janitor,
+		scheduler:      scheduler,
+		janitor:        janitor,
+		distributionGC: distributionGC,
 	}, nil
 }
 
@@ -340,6 +367,9 @@ func (d *HousekeepingDaemons) Close() error {
 		}
 		if d.janitor != nil {
 			d.janitor.Stop()
+		}
+		if d.distributionGC != nil {
+			d.distributionGC.Stop()
 		}
 	})
 	return nil

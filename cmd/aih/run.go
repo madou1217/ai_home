@@ -141,6 +141,12 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if aihcli.SupportsNativeCLI(providerID) && containsArgument(arguments[1:], "--") {
 		return runProviderLaunch(ctx, providerID, arguments[1:], runtime)
 	}
+	if len(arguments) >= 2 && arguments[1] == "update" && providerBinaryName(providerID) != "" {
+		return runProviderUpdate(ctx, providerID, arguments[2:], runtime)
+	}
+	if len(arguments) >= 2 && arguments[1] == "install" && providerBinaryName(providerID) != "" {
+		return runProviderInstall(ctx, providerID, arguments[2:], runtime)
+	}
 	if writeSessionVerbHelp(providerID, arguments, runtime) {
 		return nil
 	}

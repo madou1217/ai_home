@@ -997,9 +997,13 @@ export default function Accounts() {
       const values = await editForm.validateFields();
       if (!editingAccount) return false;
       setSubmitting(true);
+      // 和账号上的现值比较后再决定是否回传：回显缺失时表单是空串，
+      // 直接提交会把账号上实际存在的地址清掉；只有地址真的变了才发送。
+      const baseUrlChanged = String(values.baseUrl ?? '').trim()
+        !== String(editingAccount.baseUrl ?? '').trim();
       const res = await accountsAPI.updateAccount(editingAccount.provider, editingAccount.accountRef, {
         apiKey: values.apiKey,
-        baseUrl: values.baseUrl,
+        ...(baseUrlChanged ? { baseUrl: values.baseUrl } : {}),
         ...(editingAccount.provider === 'claude'
           ? {
               authMode: values.authMode,

@@ -209,6 +209,11 @@ func newRow(fact accountFact) Row {
 		apiKeyMode, authMode, baseURL = codexCredentialPresentation(fact)
 		// 身份标签和套餐使用同一份凭据地址，避免旧 UI 镜像再次参与兜底。
 		fact.UIBaseURL = baseURL
+	} else if credentialBaseURL, ok := credentialBaseURLForDisplay(fact); ok {
+		// 非 Codex 账号原先只读 UI 镜像；镜像为空时编辑弹窗回显不到地址。
+		// 凭据里的地址才是真值，统一以它为准（官方地址已在上游还原为空串）。
+		baseURL = credentialBaseURL
+		fact.UIBaseURL = baseURL
 	}
 	row := Row{
 		Provider:              fact.Provider,

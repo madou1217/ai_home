@@ -478,9 +478,13 @@ export function useAccountActions({
       // 官方地址账号不提交规则字段：既让服务端的「官方地址不接受规则」守卫不被空数组
       // 触发，也避免保存配置时顺手删掉账号上的历史规则。
       const routingRulesEditable = canEditAccountRoutingRules(editingAccount);
+      // 和账号上的现值比较后再决定是否回传：回显缺失时表单是空串，
+      // 直接提交会把账号上实际存在的地址清掉；只有地址真的变了才发送。
+      const baseUrlChanged = String(values.baseUrl ?? '').trim()
+        !== String(editingAccount.baseUrl ?? '').trim();
       const res = await accountsAPI.updateAccount(editingAccount.provider, editingAccount.accountRef, {
         apiKey: values.apiKey,
-        baseUrl: values.baseUrl,
+        ...(baseUrlChanged ? { baseUrl: values.baseUrl } : {}),
         ...(routingRulesEditable
           ? {
               upstreamErrorRules: values.upstreamErrorRules || [],

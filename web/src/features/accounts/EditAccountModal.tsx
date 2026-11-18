@@ -81,7 +81,7 @@ export function EditAccountModal({
           <Form.Item
             name="baseUrl"
             label="接口地址"
-            extra="自定义反代或网关地址。如不修改请留空。"
+            extra="自定义反代或网关地址；留空表示恢复 Provider 官方地址。"
           >
             <Input placeholder="https://api.openai.com/v1" className="aih-mono-input" />
           </Form.Item>

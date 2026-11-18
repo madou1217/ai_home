@@ -237,6 +237,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 		// 浏览器数据面：账号级上游错误规则只读视图（路径与 Node 旧入口一致）。
 		mux.Handle("GET /v0/webui/account-upstream-error-rules", webuipublicalias.Rewrite("/v0/webui/account-upstream-error-rules", accountrulesapi.CollectionPath, handlers.accountRules))
 		mux.Handle("GET "+accountrulesapi.CollectionPath, handlers.accountRules)
+		mux.Handle("POST "+accountrulesapi.ImportPath, handlers.accountRules)
 		mux.Handle("GET "+accountrulesapi.MemberPattern, handlers.accountRules)
 		mux.Handle("PUT "+accountrulesapi.MemberPattern, handlers.accountRules)
 		mux.Handle("DELETE "+accountrulesapi.MemberPattern, handlers.accountRules)

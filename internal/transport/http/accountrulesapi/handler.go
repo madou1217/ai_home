@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -157,11 +158,19 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 
 func (handler *Handler) list(response http.ResponseWriter, request *http.Request) {
 	ctx := request.Context()
-	accounts, err := handler.service.ListAccounts(ctx)
-	if err != nil {
-		writeError(response, http.StatusServiceUnavailable, "account_rules_unavailable", "账号规则服务不可用")
+	source, ok := handler.service.(interface {
+		Collection(context.Context) (rulesapp.Collection, error)
+	})
+	if !ok {
+		writeError(response, http.StatusServiceUnavailable, "account_rules_unavailable", "Go authority unavailable")
 		return
 	}
+	collection, err := source.Collection(ctx)
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "account_rules_unavailable", "Go authority unavailable")
+		return
+	}
+	accounts := collection.Accounts
 	refTable := handler.loadRefTable(ctx)
 	views := make([]accountRulesView, 0, len(accounts))
 	for _, account := range accounts {
@@ -170,11 +179,13 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 	supported := nonNilStrings(handler.service.SupportedProviders())
 	generation := handler.service.Generation()
 	writeJSON(response, http.StatusOK, map[string]any{
+		"source": collection.Source, "authority_version": collection.Version, "authority_revision": collection.Revision, "accepted_refs": collection.AcceptedRefs,
 		"ok":                  true,
 		"accounts":            views,
 		"supported_providers": supported,
 		"generation":          generation,
 		"data": map[string]any{
+			"source": collection.Source, "authority_version": collection.Version, "authority_revision": collection.Revision, "accepted_refs": collection.AcceptedRefs,
 			"accounts":            views,
 			"supported_providers": supported,
 			"generation":          generation,
@@ -226,73 +237,44 @@ func (handler *Handler) importRules(response http.ResponseWriter, request *http.
 	if !ok {
 		return
 	}
-	refTable := handler.loadRefTable(ctx)
 
-	existingSet := map[string]bool{}
-	if !force {
-		if existingAccounts, err := handler.service.ListAccounts(ctx); err == nil {
-			for _, view := range existingAccounts {
-				if len(view.Rules) > 0 || len(view.GroupIDs) > 0 {
-					existingSet[view.AccountRef] = true
-				}
-			}
-		}
-	}
-
-	pushed := 0
-	accepted := 0
-	failed := 0
-	dropped := 0
-	droppedReasons := make([]map[string]string, 0)
-	skippedAccounts := make([]string, 0)
-
+	// Resolve links and make nonforce/cleared decisions only in the repository
+	// transaction, not through ListAccounts (which admits every account).
+	records := make([]rulesapp.Record, 0, len(items))
 	for _, item := range items {
 		rawRef := strings.TrimSpace(item.AccountRef)
-		if rawRef == "" {
-			continue
+		if _, err := accountcore.ParseAccountRef(rawRef); err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_account_ref", "Invalid account reference in batch")
+			return
 		}
-		targetRef := refTable.GoRef(rawRef)
-		if !force && existingSet[targetRef] {
-			skippedAccounts = append(skippedAccounts, targetRef)
-			continue
-		}
-		rules, ruleDrops := parsePermissiveRules(item.Rules, targetRef)
-		if len(ruleDrops) > 0 {
-			dropped += len(ruleDrops)
-			droppedReasons = append(droppedReasons, ruleDrops...)
-		}
-		if len(rules) == 0 && len(item.GroupIDs) == 0 {
-			continue
-		}
-		pushed++
-		if _, err := handler.service.ReplaceAccount(ctx, targetRef, rulesapp.AccountInput{
-			GroupIDs: item.GroupIDs,
-			Rules:    rules,
-		}); err != nil {
-			if errors.Is(err, rulesapp.ErrAccountNotFound) {
-				skippedAccounts = append(skippedAccounts, rawRef)
-				pushed--
-				continue
+		var rules []rulescore.Rule
+		raw := bytes.TrimSpace(item.Rules)
+		if len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
+			if err := json.Unmarshal(raw, &rules); err != nil {
+				writeError(response, http.StatusBadRequest, "invalid_upstream_error_rules", "Invalid rules batch")
+				return
 			}
-			failed++
-			droppedReasons = append(droppedReasons, map[string]string{
-				"account_ref": targetRef,
-				"reason":      err.Error(),
-			})
-			continue
 		}
-		accepted++
+		// Empty configurations still cross the transaction mapping/validation gate.
+		records = append(records, rulesapp.Record{AccountRef: rawRef, GroupIDs: item.GroupIDs, Rules: rules})
 	}
-
+	batch, available := handler.service.(interface {
+		ImportAccounts(context.Context, rulesapp.ImportRequest) (rulesapp.ImportResult, error)
+	})
+	if !available {
+		writeError(response, http.StatusServiceUnavailable, "account_rules_unavailable", "Atomic import unavailable")
+		return
+	}
+	result, err := batch.ImportAccounts(ctx, rulesapp.ImportRequest{Accounts: records, Force: force})
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
 	writeJSON(response, http.StatusOK, map[string]any{
-		"ok":              failed == 0,
-		"pushed":          pushed,
-		"accepted":        accepted,
-		"failed":          failed,
-		"dropped":         dropped,
-		"droppedReasons":  droppedReasons,
-		"skippedAccounts": skippedAccounts,
-		"generation":      handler.service.Generation(),
+		"ok": true, "pushed": len(result.AcceptedRefs), "accepted": len(result.AcceptedRefs),
+		"failed": 0, "dropped": 0, "droppedReasons": []map[string]string{},
+		"skippedAccounts": result.SkippedRefs, "generation": handler.service.Generation(),
+		"authority_revision": result.Revision,
 	})
 }
 
@@ -311,12 +293,8 @@ func (handler *Handler) parseImportPayload(
 		body = bytes.TrimSpace(readBytes)
 	}
 	if len(body) == 0 {
-		items, err := handler.loadAppStateAccountRules(ctx)
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, "account_rules_failed", "读取历史账号规则失败")
-			return nil, false, false
-		}
-		return items, false, true
+		writeError(response, http.StatusConflict, "legacy_source_confirmation_required", "Explicit accounts payload required")
+		return nil, false, false
 	}
 	if body[0] != '{' {
 		writeError(response, http.StatusBadRequest, "invalid_account_rules", "请求体须为 JSON 对象")
@@ -339,12 +317,8 @@ func (handler *Handler) parseImportPayload(
 	if envelope.Accounts != nil {
 		return *envelope.Accounts, envelope.Force, true
 	}
-	items, err := handler.loadAppStateAccountRules(ctx)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, "account_rules_failed", "读取历史账号规则失败")
-		return nil, false, false
-	}
-	return items, envelope.Force, true
+	writeError(response, http.StatusConflict, "legacy_source_confirmation_required", "Explicit accounts payload required")
+	return nil, false, false
 }
 
 func (handler *Handler) loadAppStateAccountRules(ctx context.Context) ([]importAccountItem, error) {
@@ -518,6 +492,10 @@ func decodePayload(response http.ResponseWriter, request *http.Request) (account
 
 func writeServiceError(response http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, rulesapp.ErrInvalidImport):
+		writeError(response, http.StatusBadRequest, "invalid_account_rules", "Invalid atomic import")
+	case errors.Is(err, rulesapp.ErrLegacySourceConfirmationRequired), errors.Is(err, rulesapp.ErrSourcePlanChanged):
+		writeError(response, http.StatusConflict, "legacy_source_confirmation_required", "Canonical authority requires explicit source confirmation")
 	case errors.Is(err, rulesapp.ErrAccountNotFound):
 		writeError(response, http.StatusNotFound, "account_not_found", "账号不存在")
 	case errors.Is(err, rulesapp.ErrInvalidAccountRef):

@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	mappingcore "github.com/madou1217/ai_home/core/upstreammapping"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
 )
@@ -210,6 +211,46 @@ func (service *Service) ReplaceAccount(
 	return service.Effective(ctx, ref)
 }
 
+// ImportAccounts validates the complete explicit batch before delegating to the
+// only atomic repository port. No pre-list or post-write per-account read can
+// admit accounts before the entire batch is staged.
+func (service *Service) ImportAccounts(ctx context.Context, request ImportRequest) (ImportResult, error) {
+	if service == nil || service.repository == nil || ctx == nil {
+		return ImportResult{}, ErrServiceUnavailable
+	}
+	repository, ok := service.repository.(ImportRepository)
+	if !ok {
+		return ImportResult{}, ErrServiceUnavailable
+	}
+	if request.Legacy != nil && (request.Force || len(request.Accounts) != 0) {
+		return ImportResult{}, ErrInvalidImport
+	}
+	normalized := make([]Record, 0, len(request.Accounts))
+	for _, record := range request.Accounts {
+		ref := strings.TrimSpace(record.AccountRef)
+		if _, err := accountcore.ParseAccountRef(ref); err != nil {
+			return ImportResult{}, ErrInvalidAccountRef
+		}
+		groups, err := normalizeGroupIDs(record.GroupIDs)
+		if err != nil {
+			return ImportResult{}, err
+		}
+		rules, err := rulescore.Validate(record.Rules)
+		if err != nil {
+			return ImportResult{}, fmt.Errorf("%w: %v", rulescore.ErrInvalidRules, err)
+		}
+		// Provider is always read again from canonical accounts inside the txn.
+		normalized = append(normalized, Record{AccountRef: ref, GroupIDs: groups, Rules: rules})
+	}
+	request.Accounts = normalized
+	result, err := repository.ImportAccounts(ctx, request)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	service.generation.Add(int64(len(result.AcceptedRefs)))
+	return result, nil
+}
+
 // DeleteAccount 清空账号级配置；幂等。
 func (service *Service) DeleteAccount(ctx context.Context, accountRef string) (bool, error) {
 	if service == nil || service.repository == nil {
@@ -333,4 +374,44 @@ func (service *Service) supports(provider string) bool {
 // IsAccountNotFound 判断错误是否为账号不存在。
 func IsAccountNotFound(err error) bool {
 	return errors.Is(err, ErrAccountNotFound)
+}
+
+// Collection is a complete Go-owned acceptance snapshot, not a Node projection.
+type Collection struct {
+	Source       string
+	Version      int
+	Revision     int64
+	Accounts     []AccountView
+	AcceptedRefs []string
+}
+
+func (service *Service) Collection(ctx context.Context) (Collection, error) {
+	result := Collection{Accounts: []AccountView{}, AcceptedRefs: []string{}}
+	if service == nil || service.repository == nil {
+		return result, ErrServiceUnavailable
+	}
+	repository, ok := service.repository.(AuthorityRepository)
+	if !ok {
+		return result, ErrServiceUnavailable
+	}
+	snapshot, err := repository.AuthoritySnapshot(ctx)
+	if err != nil {
+		return result, err
+	}
+	groups, err := service.groupIndex(ctx)
+	if err != nil {
+		return result, err
+	}
+	result.Source = snapshot.Source
+	result.Version = snapshot.Version
+	result.Revision = snapshot.Revision
+	for _, record := range snapshot.Records {
+		supported := service.supports(record.Provider)
+		view := AccountView{AccountRef: record.AccountRef, Provider: record.Provider, Source: SourceAccount, GroupIDs: append([]string{}, record.GroupIDs...), Rules: append([]rulescore.Rule{}, record.Rules...), EffectiveRules: assembleWith(groups, record), Supported: supported}
+		result.Accounts = append(result.Accounts, view)
+		if supported {
+			result.AcceptedRefs = append(result.AcceptedRefs, record.AccountRef)
+		}
+	}
+	return result, nil
 }

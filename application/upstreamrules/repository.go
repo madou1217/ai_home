@@ -24,6 +24,8 @@ const (
 )
 
 var (
+	// ErrLegacySourceConfirmationRequired blocks ambiguous unowned legacy data.
+	ErrLegacySourceConfirmationRequired = errors.New("legacy_source_confirmation_required")
 	// ErrServiceUnavailable 表示服务缺少必要的存储依赖。
 	ErrServiceUnavailable = errors.New("上游错误规则服务不可用")
 	// ErrAccountNotFound 表示账号在 Go 的账号表里不存在。
@@ -59,3 +61,64 @@ type Repository interface {
 	// ListAccountRefs 返回所有持有规则或组挂载的账号引用（按引用排序）。
 	ListAccountRefs(ctx context.Context) ([]string, error)
 }
+
+// AuthoritySnapshot binds all admitted accounts, including authoritative empty
+// configurations, to one persisted Go authority revision.
+type AuthoritySnapshot struct {
+	Source   string
+	Version  int
+	Revision int64
+	Records  []Record
+}
+
+type AuthorityRepository interface {
+	AuthoritySnapshot(context.Context) (AuthoritySnapshot, error)
+}
+
+// ImportRequest separates an explicit user batch from confirmation of a frozen
+// legacy source. Force is never a substitute for source confirmation.
+type ImportRequest struct {
+	Accounts []Record
+	Force    bool
+	Legacy   *LegacyConfirmation
+}
+
+// ImportResult is published only after the entire batch and authority commit.
+type ImportResult struct {
+	AcceptedRefs []string
+	SkippedRefs  []string
+	Revision     int64
+}
+
+// ImportRepository must not implement this port by calling ReplaceAccount in a
+// loop: every target is staged before one global admission in one transaction.
+type ImportRepository interface {
+	ImportAccounts(context.Context, ImportRequest) (ImportResult, error)
+}
+
+const LegacyRulesSource = "aih.db/compat_account_credentials:upstream-rules"
+const LegacyRulesSelectorVersion = 1
+
+// LegacyPlan contains only counts and a hash of the selected rule/source facts.
+// SelectorVersion versions Go's selector, not an invented legacy data version.
+type LegacyPlan struct {
+	Source            string `json:"source"`
+	SelectorVersion   int    `json:"selector_version"`
+	AuthorityRevision int64  `json:"authority_revision"`
+	Digest            string `json:"digest"`
+	CanonicalAccounts int    `json:"canonical_accounts"`
+	LegacyAccounts    int    `json:"legacy_accounts"`
+	PendingAccounts   int    `json:"pending_accounts"`
+	ClearedAccounts   int    `json:"cleared_accounts"`
+}
+
+// LegacyConfirmation is explicit owner consent to exactly one read-only plan.
+type LegacyConfirmation struct {
+	Source            string
+	SelectorVersion   int
+	AuthorityRevision int64
+	Digest            string
+}
+
+var ErrInvalidImport = errors.New("upstream_rule_import_invalid")
+var ErrSourcePlanChanged = errors.New("upstream_rule_source_plan_changed")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
 )
 
@@ -58,23 +59,16 @@ func (repository *UpstreamErrorRuleRepository) Load(
 	if !repository.available(ctx) {
 		return rulesapp.Record{}, false, rulesapp.ErrServiceUnavailable
 	}
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
-	if err != nil {
-		return rulesapp.Record{}, false, fmt.Errorf("开始账号规则读取事务失败: %w", err)
-	}
-	defer func() { _ = transaction.Rollback() }()
-	records, err := loadRuleRecords(ctx, transaction, accountRef)
+	snapshot, err := repository.AuthoritySnapshot(ctx)
 	if err != nil {
 		return rulesapp.Record{}, false, err
 	}
-	if err := transaction.Commit(); err != nil {
-		return rulesapp.Record{}, false, fmt.Errorf("提交账号规则读取事务失败: %w", err)
+	for _, record := range snapshot.Records {
+		if record.AccountRef == accountRef {
+			return record, true, nil
+		}
 	}
-	record, exists := records[accountRef]
-	if !exists {
-		return rulesapp.Record{}, false, nil
-	}
-	return record, true, nil
+	return rulesapp.Record{}, false, nil
 }
 
 // ReplaceAccount 实现账号规则持久化端口。
@@ -91,14 +85,38 @@ func (repository *UpstreamErrorRuleRepository) ReplaceAccount(
 	repository.store.ruleWrites.Lock()
 	defer repository.store.ruleWrites.Unlock()
 
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
+	transaction, err := repository.beginRules(ctx)
 	if err != nil {
 		return fmt.Errorf("开始账号规则写入事务失败: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
+	if _, _, err := readRuleAuthority(ctx, transaction); err != nil {
+		return err
+	}
+	if _, err := validatedRuleRecords(ctx, transaction); err != nil {
+		return err
+	}
 
+	if err := stageAccountRules(ctx, transaction, record); err != nil {
+		return err
+	}
+	state := "owned"
+	if len(record.Rules) == 0 && len(record.GroupIDs) == 0 {
+		state = "cleared"
+	}
+	if _, err := admitRuleAuthority(ctx, transaction, ruleMutation{ref: record.AccountRef, state: state}); err != nil {
+		return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("提交账号规则写入失败: %w", err)
+	}
+	return nil
+}
+
+// stageAccountRules never admits or commits: the caller owns the whole batch.
+func stageAccountRules(ctx context.Context, transaction *ruleTransaction, record rulesapp.Record) error {
 	var provider string
-	err = transaction.QueryRowContext(
+	err := transaction.QueryRowContext(
 		ctx,
 		"SELECT provider_id FROM accounts WHERE account_ref = ?",
 		record.AccountRef,
@@ -108,6 +126,10 @@ func (repository *UpstreamErrorRuleRepository) ReplaceAccount(
 	}
 	if err != nil {
 		return fmt.Errorf("读取账号 Provider 失败: %w", err)
+	}
+	record.Provider = provider
+	if err := validRuleRecord(record); err != nil {
+		return err
 	}
 	if _, err := transaction.ExecContext(
 		ctx,
@@ -139,9 +161,6 @@ func (repository *UpstreamErrorRuleRepository) ReplaceAccount(
 			return fmt.Errorf("写入账号组挂载失败: %w", err)
 		}
 	}
-	if err := transaction.Commit(); err != nil {
-		return fmt.Errorf("提交账号规则写入失败: %w", err)
-	}
 	return nil
 }
 
@@ -156,11 +175,18 @@ func (repository *UpstreamErrorRuleRepository) DeleteAccountRules(
 	repository.store.ruleWrites.Lock()
 	defer repository.store.ruleWrites.Unlock()
 
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
+	transaction, err := repository.beginRules(ctx)
 	if err != nil {
 		return false, fmt.Errorf("开始账号规则删除事务失败: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
+	if _, _, err := readRuleAuthority(ctx, transaction); err != nil {
+		return false, err
+	}
+	if _, err := validatedRuleRecords(ctx, transaction); err != nil {
+		return false, err
+	}
+
 	deleted := 0
 	for _, statement := range []string{
 		"DELETE FROM account_upstream_error_rule WHERE account_ref = ?",
@@ -176,6 +202,9 @@ func (repository *UpstreamErrorRuleRepository) DeleteAccountRules(
 		}
 		deleted += int(affected)
 	}
+	if _, err := admitRuleAuthority(ctx, transaction, ruleMutation{ref: accountRef, state: "cleared"}); err != nil {
+		return false, err
+	}
 	if err := transaction.Commit(); err != nil {
 		return false, fmt.Errorf("提交账号规则删除失败: %w", err)
 	}
@@ -187,26 +216,13 @@ func (repository *UpstreamErrorRuleRepository) ListAccountRefs(ctx context.Conte
 	if !repository.available(ctx) {
 		return nil, rulesapp.ErrServiceUnavailable
 	}
-	const query = `
-		SELECT account_ref FROM account_upstream_error_rule WHERE source = 'account'
-		UNION
-		SELECT account_ref FROM account_upstream_error_group
-		ORDER BY account_ref`
-	rows, err := repository.store.db.QueryContext(ctx, query)
+	snapshot, err := repository.AuthoritySnapshot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("读取账号规则索引失败: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	refs := make([]string, 0, 16)
-	for rows.Next() {
-		var ref string
-		if err := rows.Scan(&ref); err != nil {
-			return nil, fmt.Errorf("读取账号规则索引行失败: %w", err)
-		}
-		refs = append(refs, ref)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历账号规则索引失败: %w", err)
+	refs := make([]string, 0, len(snapshot.Records))
+	for _, record := range snapshot.Records {
+		refs = append(refs, record.AccountRef)
 	}
 	return refs, nil
 }
@@ -325,7 +341,9 @@ func loadRuleRecords(
 // insertAccountRules 在事务内写入一个来源的全部规则。
 func insertAccountRules(
 	ctx context.Context,
-	transaction *sql.Tx,
+	transaction interface {
+		PrepareContext(context.Context, string) (*sql.Stmt, error)
+	},
 	record rulesapp.Record,
 	source rulesapp.Source,
 ) error {
@@ -347,4 +365,128 @@ func insertAccountRules(
 		}
 	}
 	return nil
+}
+
+// ImportAccounts is the only batch mutation path for explicit configuration and
+// owner-confirmed legacy migration. It never calls the single-account writer.
+func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Context, request rulesapp.ImportRequest) (rulesapp.ImportResult, error) {
+	if !repository.available(ctx) {
+		return rulesapp.ImportResult{}, rulesapp.ErrServiceUnavailable
+	}
+	if request.Legacy != nil && (request.Force || len(request.Accounts) != 0) {
+		return rulesapp.ImportResult{}, rulesapp.ErrInvalidImport
+	}
+	repository.store.ruleWrites.Lock()
+	defer repository.store.ruleWrites.Unlock()
+	tx, err := repository.beginRules(ctx)
+	if err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	defer tx.Rollback()
+	doc, found, err := readRuleAuthority(ctx, tx)
+	if err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	canonical, err := validatedRuleRecords(ctx, tx)
+	if err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	source, err := readLegacyRuleSource(ctx, tx)
+	if err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	current, err := ruleCurrentAccounts(ctx, tx)
+	if err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	for ref, state := range doc.Accounts {
+		if state.State == "cleared" {
+			if _, nonempty := canonical[ref]; nonempty {
+				return rulesapp.ImportResult{}, errors.New("upstream_rule_cleared_conflict")
+			}
+		}
+	}
+	items := request.Accounts
+	if request.Legacy != nil {
+		plan, err := ruleSourcePlan(ctx, tx, doc, found, canonical, current, source)
+		if err != nil {
+			return rulesapp.ImportResult{}, err
+		}
+		confirm := request.Legacy
+		if confirm.Source != plan.Source || confirm.SelectorVersion != plan.SelectorVersion || confirm.AuthorityRevision != plan.AuthorityRevision || confirm.Digest != plan.Digest {
+			return rulesapp.ImportResult{}, rulesapp.ErrSourcePlanChanged
+		}
+		items = make([]rulesapp.Record, 0, len(source.records))
+		for _, ref := range sortedRuleRefs(source.records) {
+			items = append(items, source.records[ref])
+		}
+	}
+	result := rulesapp.ImportResult{AcceptedRefs: []string{}, SkippedRefs: []string{}}
+	staged := make([]rulesapp.Record, 0, len(items))
+	mutations := make([]ruleMutation, 0, len(items))
+	seen := map[string]bool{}
+	// Validate/map the whole batch before any DELETE or INSERT. Canonical
+	// existence and tombstone decisions use this transaction's original rows.
+	for _, item := range items {
+		if _, err := accountcore.ParseAccountRef(item.AccountRef); err != nil {
+			return rulesapp.ImportResult{}, rulesapp.ErrInvalidAccountRef
+		}
+		ref := source.links.GoRef(item.AccountRef)
+		if request.Legacy != nil {
+			ref = item.AccountRef
+		} // already resolved exactly once
+		if _, err := accountcore.ParseAccountRef(ref); err != nil {
+			return rulesapp.ImportResult{}, rulesapp.ErrInvalidAccountRef
+		}
+		if seen[ref] {
+			return rulesapp.ImportResult{}, rulesapp.ErrInvalidImport
+		}
+		seen[ref] = true
+		provider, exists := current[ref]
+		if !exists {
+			if request.Legacy != nil {
+				return rulesapp.ImportResult{}, rulesapp.ErrLegacySourceConfirmationRequired
+			}
+			result.SkippedRefs = append(result.SkippedRefs, item.AccountRef)
+			continue
+		}
+		item.AccountRef, item.Provider = ref, provider
+		if err := validRuleRecord(item); err != nil {
+			return rulesapp.ImportResult{}, err
+		}
+		// Explicit empty import is a validated no-op, even with force. Only the
+		// existing PUT/DELETE clearing contract creates a cleared tombstone.
+		if request.Legacy == nil && len(item.Rules) == 0 && len(item.GroupIDs) == 0 {
+			result.SkippedRefs = append(result.SkippedRefs, ref)
+			continue
+		}
+		_, nonempty := canonical[ref]
+		state, owned := doc.Accounts[ref]
+		preserve := !request.Force || request.Legacy != nil
+		if preserve && (nonempty || (owned && state.State == "cleared")) {
+			result.SkippedRefs = append(result.SkippedRefs, ref)
+			continue
+		}
+		stateName := "owned"
+		if len(item.Rules) == 0 && len(item.GroupIDs) == 0 {
+			stateName = "cleared"
+		}
+		staged = append(staged, item)
+		mutations = append(mutations, ruleMutation{ref: ref, state: stateName})
+	}
+	for _, item := range staged {
+		if err := stageAccountRules(ctx, tx, item); err != nil {
+			return rulesapp.ImportResult{}, err
+		}
+		result.AcceptedRefs = append(result.AcceptedRefs, item.AccountRef)
+	}
+	snapshot, err := admitRuleAuthority(ctx, tx, mutations...)
+	if err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return rulesapp.ImportResult{}, err
+	}
+	result.Revision = snapshot.Revision
+	return result, nil
 }

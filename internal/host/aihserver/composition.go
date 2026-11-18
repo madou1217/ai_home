@@ -1400,8 +1400,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	//
 	// 必须在推理组合之前创建：分类点（Canonical Adapter 与原生传输 Handler）在
 	// 装配时就注入同一个求值端口，避免出现「投影已接收但没有任何分类点使用它」。
+	upstreamRulesRepository := sqliteaccount.NewUpstreamErrorRuleRepository(store)
+	if _, err := upstreamRulesRepository.AuthoritySnapshot(ctx); err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("admit Go upstream-rule authority: %w", err)
+	}
 	upstreamRulesService, err := upstreamrules.NewService(upstreamrules.Options{
-		Repository:         sqliteaccount.NewUpstreamErrorRuleRepository(store),
+		Repository:         upstreamRulesRepository,
 		Groups:             upstreamMappingService,
 		SupportedProviders: upstreamErrorRuleProviders,
 	})

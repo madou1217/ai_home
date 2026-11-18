@@ -44,17 +44,9 @@ type commandConfig struct {
 	// upstreamErrorRuleProviders 由 AIH_SERVER_UPSTREAM_ERROR_RULES 声明（逗号分隔）。
 	// 缺省为空：Go 不承接任何账号的自定义错误规则，Node 继续自己执行规则。
 	upstreamErrorRuleProviders []string
-	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui（过渡期 Node 仍在服务）。
+	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui。
 	webDir string
-	// nodeBaseURL 是 Node 宿主的回环管理地址（监督器注入）。为空时不挂实例启停路由。
-	nodeBaseURL string
-	// frontDoor 表示本进程拥有公开端口：未注册的路径转交给 nodeBaseURL。
-	// 关闭时（缺省）Go 仍只跑私有端口，未注册路径保持 404。
-	frontDoor bool
-	// superviseNode 表示本进程同时持有 Node 子进程：Node 只承接尚未迁移的 WebUI 路由。
-	// 打开时 Go 是服务主体，Node 的地址由 supervisor 动态分配，不能再传 nodeBaseURL。
-	superviseNode bool
-	// nodeExecPath 与 entryFilePath 由监督器通过 AIH_SERVER_NODE_EXEC / AIH_SERVER_ENTRY_FILE 注入，
+	// nodeExecPath 与 entryFilePath 通过 AIH_SERVER_NODE_EXEC / AIH_SERVER_ENTRY_FILE 注入，
 	// 供原生重启接口拉起独立后台重启进程；允许缺省，但显式设置损坏值时在启动期拦截。
 	nodeExecPath  string
 	entryFilePath string
@@ -73,15 +65,6 @@ type codexHooksConfig struct {
 	traceRemoteControl           bool
 	remoteControlProxy           bool
 	restartAppServerOnHookChange bool
-}
-
-// frontDoorBaseURL 只在公开端口模式下返回 Node 私有地址；其余情况为空，
-// 让 Go 保持「私有端口 + 未注册路径 404」的既有合同。
-func (config commandConfig) frontDoorBaseURL() string {
-	if !config.frontDoor {
-		return ""
-	}
-	return config.nodeBaseURL
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -131,12 +114,6 @@ func loadCommandConfig(
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")
 	var webDir string
 	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
-	var nodeBaseURL string
-	flags.StringVar(&nodeBaseURL, "node-base-url", "", "Node 宿主回环地址；由 Go Core 监督器注入，不面向用户")
-	var frontDoor bool
-	flags.BoolVar(&frontDoor, "front-door", false, "本进程拥有公开端口：未注册的路由转交给 --node-base-url")
-	var superviseNode bool
-	flags.BoolVar(&superviseNode, "supervise-node", false, "同时启动并监督 Node 子进程，承接尚未迁移的 WebUI 路由")
 	hooksCfg := codexHooksConfig{
 		cliSelfHealIntervalMs:     defaultCodexHookSelfHealIntervalMs,
 		desktopSelfHealIntervalMs: defaultCodexHookSelfHealIntervalMs,
@@ -147,7 +124,7 @@ func loadCommandConfig(
 	flags.BoolVar(&hooksCfg.enableDesktopHook, "enable-codex-desktop-hook", false, "启用 Codex Desktop/VSCode Hook 注入与后台自愈")
 	flags.IntVar(&hooksCfg.cliSelfHealIntervalMs, "codex-cli-hook-self-heal-interval-ms", defaultCodexHookSelfHealIntervalMs, "Codex CLI Hook 后台自愈间隔（毫秒）")
 	flags.IntVar(&hooksCfg.desktopSelfHealIntervalMs, "codex-desktop-hook-self-heal-interval-ms", defaultCodexHookSelfHealIntervalMs, "Codex Desktop/VSCode Hook 后台自愈间隔（毫秒）")
-	flags.StringVar(&hooksCfg.providerHookReceiverURL, "codex-provider-hook-receiver-url", "", "覆盖 Codex Desktop provider hook 回调地址；留空按 node-base-url 派生")
+	flags.StringVar(&hooksCfg.providerHookReceiverURL, "codex-provider-hook-receiver-url", "", "覆盖 Codex Desktop provider hook 回调地址；留空按自身回环地址派生")
 	flags.StringVar(&hooksCfg.traceFile, "codex-desktop-trace-file", "", "Codex Desktop 代理追踪日志文件路径")
 	flags.BoolVar(&hooksCfg.traceResponses, "codex-desktop-trace-responses", false, "开启 Codex Desktop responses 追踪日志")
 	flags.BoolVar(&hooksCfg.traceRemoteControl, "codex-desktop-trace-remote-control", true, "开启 Codex Desktop remote-control 追踪")
@@ -191,27 +168,6 @@ func loadCommandConfig(
 	if err != nil {
 		return commandConfig{}, err
 	}
-	nodeBaseURL = strings.TrimSpace(nodeBaseURL)
-	if nodeBaseURL != "" && !isLoopbackBaseURL(nodeBaseURL) {
-		return commandConfig{}, errInvalidCommandConfig
-	}
-	// 回退目标是可选的：Node 宿主缺席时 Go 仍能独立持有公开端口，
-	// 未注册路径按 404 失败关闭（不再把「没有 Node」当成启动错误）。
-	// 提供目标时只拒绝自环：指向自身会让未注册路径无限转发，
-	// 表现为 CPU 打满而不是一个可定位的错误。
-	if frontDoor && nodeBaseURL != "" {
-		nodePort, portErr := loopbackURLPort(nodeBaseURL)
-		if portErr != nil || nodePort == port {
-			return commandConfig{}, errInvalidCommandConfig
-		}
-	}
-	if superviseNode {
-		// Node 的私有端口由 supervisor 动态分配；固定端口与自监督要互斥，
-		// 否则同一个 Go 可能既当父进程又连一个外部 Node。
-		if !frontDoor || port <= 0 || nodeBaseURL != "" {
-			return commandConfig{}, errInvalidCommandConfig
-		}
-	}
 	if hooksCfg.cliSelfHealIntervalMs <= 0 || hooksCfg.desktopSelfHealIntervalMs <= 0 {
 		return commandConfig{}, errInvalidCommandConfig
 	}
@@ -243,9 +199,6 @@ func loadCommandConfig(
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
-		nodeBaseURL:                nodeBaseURL,
-		frontDoor:                  frontDoor,
-		superviseNode:              superviseNode,
 		nodeExecPath:               nodeExecPath,
 		entryFilePath:              entryFilePath,
 		codexHooks:                 hooksCfg,

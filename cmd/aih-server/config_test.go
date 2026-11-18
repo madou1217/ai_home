@@ -116,7 +116,6 @@ func TestLoadCommandConfigCodexHooksDefaultsAndFlags(t *testing.T) {
 	}
 
 	args := []string{
-		"--node-base-url", "http://127.0.0.1:9527",
 		"--enable-codex-cli-hook=true",
 		"--enable-codex-desktop-hook=true",
 		"--codex-cli-hook-self-heal-interval-ms", "2000",

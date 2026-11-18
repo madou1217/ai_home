@@ -75,8 +75,7 @@ type Options struct {
 	// 丢弃，Node 继续自己执行规则——接入前后行为完全一致。只有在失败分类点也接好了
 	// 该 Provider 的规则求值后，才可以把 Provider 加进来。
 	UpstreamErrorRuleProviders []string
-	// WebDir 是 Web UI 构建产物目录（web/dist）。为空表示不托管 /ui，
-	// 由 Node 宿主继续服务——过渡期的默认值。
+	// WebDir 是 Web UI 构建产物目录（web/dist）。为空表示不托管 /ui。
 	WebDir string
 	// NodeBaseURL 是 Node 宿主的回环地址（由 Go Core 监督器注入）。
 	// 插件实例启停的 prepare/activate/discard 要回调 Node；为空时只少挂这两条路由。
@@ -86,10 +85,6 @@ type Options struct {
 	SelfBaseURL string
 	// DesktopManagedByHost keeps a legacy Node-parent topology single-owned.
 	DesktopManagedByHost bool
-	// FrontDoorBaseURL 是 Go 拥有公开端口时 Node 宿主的私有回环地址。
-	// 非空表示本进程就是公开入口：Go 自己应答推理与管理路由，未注册的路径
-	// （WebUI 数据面 /v0/webui/*、插件运行时回调）整体转交给 Node。
-	FrontDoorBaseURL string
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
 	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
 	//

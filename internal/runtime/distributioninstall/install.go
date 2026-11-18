@@ -21,7 +21,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var dataFiles = []string{"aih.db", "aih.db-wal", "aih.db-shm", "aih.db-journal", "app-state.db", "app-state.db-wal", "app-state.db-shm", "app-state.db-journal"}
+var dataFiles = []string{"aih.db", "aih.db-wal", "aih.db-shm", "aih.db-journal"}
 
 func normalize(o Options) (Options, error) {
 	var err error
@@ -315,7 +315,7 @@ func Install(ctx context.Context, options Options) (result Result, resultErr err
 			return result, err
 		}
 	}
-	for _, name := range []string{"aih.db", "app-state.db"} {
+	for _, name := range []string{"aih.db"} {
 		source := filepath.Join(data.PreparedHome, name)
 		if _, e := os.Stat(source); os.IsNotExist(e) {
 			continue

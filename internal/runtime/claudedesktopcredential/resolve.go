@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/runtime/jsondocument"
 )
 
@@ -50,9 +49,6 @@ func Resolve(ctx context.Context, aiHomeDir string) (Credential, error) {
 	}
 	raw, found, err := appstate.ReadKV(ctx, database, "config:server")
 	if err != nil {
-		if errors.Is(err, businessdb.ErrMigrationRequired) {
-			return failure("desktop_credential_migration_required")
-		}
 		return failure("desktop_credential_store_unavailable")
 	}
 	if !found {

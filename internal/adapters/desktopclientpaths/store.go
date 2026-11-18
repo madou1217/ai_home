@@ -203,8 +203,6 @@ func failure(result Result, err error) Result {
 	result.Reason = "desktop_cache_unavailable"
 	if errors.Is(err, errInvalid) {
 		result.Reason = "desktop_cache_record_invalid"
-	} else if errors.Is(err, businessdb.ErrMigrationRequired) {
-		result.Reason = "desktop_cache_migration_required"
 	} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		result.Reason = "desktop_cache_cancelled"
 	} else if coded, ok := pluginerr.From(err); ok {
@@ -237,7 +235,7 @@ func inspectPaths(root string) (map[string]os.FileInfo, error) {
 	state := map[string]os.FileInfo{}
 	directories := map[string]bool{".": true, "run": true, "run/maintenance": true}
 	names := []string{".", "run", "run/maintenance", "run/maintenance/oauth-rekey.lock"}
-	for _, base := range []string{"aih.db", "app-state.db", "run/maintenance/access.sqlite"} {
+	for _, base := range []string{"aih.db", "run/maintenance/access.sqlite"} {
 		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
 			names = append(names, base+suffix)
 		}
@@ -263,7 +261,7 @@ func inspectPaths(root string) (map[string]os.FileInfo, error) {
 		}
 		state[name] = info
 	}
-	for _, base := range []string{"aih.db", "app-state.db", "run/maintenance/access.sqlite"} {
+	for _, base := range []string{"aih.db", "run/maintenance/access.sqlite"} {
 		if state[base] == nil {
 			for _, suffix := range []string{"-wal", "-shm", "-journal"} {
 				if state[base+suffix] != nil {
@@ -319,7 +317,7 @@ func sameBinding(before, after map[string]os.FileInfo) error {
 		if info != nil && (current == nil || !os.SameFile(info, current)) {
 			return errInvalid
 		}
-		if info == nil && current != nil && (strings.HasPrefix(name, "aih.db") || strings.HasPrefix(name, "app-state.db")) {
+		if info == nil && current != nil && strings.HasPrefix(name, "aih.db") {
 			return errInvalid
 		}
 	}
@@ -342,7 +340,7 @@ func Execute(ctx context.Context, request Request) Result {
 		return failure(result, err)
 	}
 	// Only a root with no business or coordination state qualifies as fresh.
-	if request.Operation == "get" && before["aih.db"] == nil && before["run"] == nil && before["app-state.db"] == nil {
+	if request.Operation == "get" && before["aih.db"] == nil && before["run"] == nil {
 		fresh := true
 		for name, info := range before {
 			if name != "." && info != nil {

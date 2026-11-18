@@ -1,4 +1,4 @@
-// Package appstate 提供 WebUI 只读模型访问 Node 的 app-state.db。
+// Package appstate 提供 WebUI 只读模型访问唯一的 aih.db。
 //
 // 为什么单独成包：账号页、额度重置历史、别名池设置等多个读模型都需要「只读打开
 // 同一份 SQLite + 校验 account_refs」，各自复制一份 DSN 与 busy_timeout 会在
@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	// DatabaseFileName 是 Node app-state-store 的数据库文件名。
+	// DatabaseFileName 是唯一业务数据库文件名。
 	DatabaseFileName = "aih.db"
 	busyTimeoutMS    = 5000
 )
@@ -29,7 +29,7 @@ const (
 // ErrInvalidRoot 表示没有可用的 AIH 数据根目录。
 var ErrInvalidRoot = errors.New("app-state 数据根目录无效")
 
-// DatabasePath 返回 aiHomeDir 下 app-state.db 的绝对路径。
+// DatabasePath 返回 aiHomeDir 下 aih.db 的绝对路径。
 func DatabasePath(aiHomeDir string) (string, error) {
 	root := strings.TrimSpace(aiHomeDir)
 	if root == "" {

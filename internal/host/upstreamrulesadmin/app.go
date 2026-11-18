@@ -11,7 +11,6 @@ import (
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 )
 
@@ -122,7 +121,7 @@ func ConfirmLegacy(ctx context.Context, home string, confirmation rulesapp.Legac
 // the CLI. The recovery gates remain distinguishable by stable error codes.
 func publicError(err error) error {
 	for _, known := range []error{rulesapp.ErrSourcePlanChanged, rulesapp.ErrLegacySourceConfirmationRequired,
-		rulesapp.ErrInvalidImport, accountwriterlease.ErrBusy, businessdb.ErrMigrationRequired,
+		rulesapp.ErrInvalidImport, accountwriterlease.ErrBusy,
 		context.Canceled, context.DeadlineExceeded} {
 		if errors.Is(err, known) {
 			return known

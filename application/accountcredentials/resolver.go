@@ -285,15 +285,22 @@ func (resolver *Resolver) resolve(
 		return credentialResolution{}, err
 	}
 	if suppression, suppressed := resolver.suppressedRefresh(snapshot, now); suppressed {
-		// 上一次已经是「必须重新认证」且凭据已过期：继续拿旧 token 打上游只会
-		// 得到 401，把真实原因埋掉。直接把 reauth 结论交还给调用方。
-		if suppression.reauthentication &&
-			refreshableCredentialExpired(strategy, snapshot.Credential(), now) {
-			return credentialResolution{}, fmt.Errorf(
-				"%w: %s 凭据已过期且无法自动刷新",
-				ErrReauthenticationRequired,
-				snapshot.ProviderID(),
-			)
+		// 抑制只限制刷新频率，不能把已过期的 token 变成可用凭据。
+		// 短暂刷新故障也必须保留失败；否则同一账号首个请求失败，后续请求
+		// 却会拿旧 token 打上游，把出口或刷新故障掩盖成认证失败。
+		if refreshableCredentialExpired(strategy, snapshot.Credential(), now) {
+			switch {
+			case suppression.identityMismatch:
+				return credentialResolution{}, accountapp.ErrReauthenticationIdentityMismatch
+			case suppression.reauthentication:
+				return credentialResolution{}, fmt.Errorf(
+					"%w: %s 凭据已过期且无法自动刷新",
+					ErrReauthenticationRequired,
+					snapshot.ProviderID(),
+				)
+			default:
+				return credentialResolution{}, ErrRefreshUnavailable
+			}
 		}
 		return currentResolution(snapshot), nil
 	}

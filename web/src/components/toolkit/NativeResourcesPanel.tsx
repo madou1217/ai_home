@@ -123,7 +123,7 @@ export default function NativeResourcesPanel() {
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         {records.map((record) => <ResourceCard key={recordKey(record)} record={record} onAction={onAction} busy={busy} />)}
       </Space>
-      {report ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 16 }}>{report.evidenceBoundary}</Typography.Text> : null}
+      {report ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 16 }}>此页仅反映安装与启停状态，不作为插件已真实执行的证明。</Typography.Text> : null}
     </section>
   );
 }

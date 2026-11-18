@@ -82,11 +82,11 @@ export default function TerminalSessions() {
     <Reveal open={unavailable.length > 0}>
       <section className="terminal-overview-unavailable hud-panel hud-panel--sm" aria-label="暂不可接入的原会话">
         <div className="terminal-overview-unavailable-heading">
-          <span className="terminal-overview-unavailable-status" role="status"><span className="hud-led hud-led--warn" aria-hidden="true" />{unavailable.length} 个原会话当前未发现，标识已保留</span>
+          <span className="terminal-overview-unavailable-status" role="status"><span className="hud-led hud-led--warn" aria-hidden="true" />{unavailable.length} 个原会话暂未确认可接入，标识已保留</span>
           <span>刷新后会重新核对；不会替换为同名终端或自动续跑</span>
         </div>
         <ul>{unavailable.map((tab) => <li key={tab.id}>
-          <div><strong>{tab.label}</strong><span>当前目录未发现且接入返回 404，不代表历史已丢失</span></div>
+          <div><strong>{tab.label}</strong><span>当前会话目录尚未确认可接入，不代表原会话已结束</span></div>
           <code title={tab.sessionKey}>{tab.nativeSessionId || tab.sessionKey}</code>
           <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void copyIdentity(tab.label, tab.sessionKey, tab.nativeSessionId)}>复制原标识</Button>
         </li>)}</ul>

@@ -1,12 +1,93 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CodeOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
+import { resolveLiveActiveServerId } from '@/features/session-office/office-computer-power';
+import {
+  readOfficeComputerPreferences,
+  subscribeOfficeComputerPreferences,
+} from '@/features/session-office/office-computer-state';
 import { terminalAPI } from '@/services/api';
-import { useWebTerminalManager } from './web-terminal-context';
+import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
+import { useWebTerminalManager, type WebTerminalTab } from './web-terminal-context';
 import { useTerminalWindowGesture } from './use-terminal-window-gesture';
 import { moveTerminalWindow } from './terminal-window-geometry';
 import './global-web-terminal.css';
+
+type ViewerIdentityTuple = readonly [id: string, sessionKey: string, serverId: string];
+
+let globalPrefsRevision = 0;
+let unsubscribeGlobalPrefs: (() => void) | null = null;
+const globalPrefsListeners = new Set<() => void>();
+
+function subscribeGlobalComputerPrefsRevision(listener: () => void): () => void {
+  globalPrefsListeners.add(listener);
+  if (!unsubscribeGlobalPrefs) {
+    unsubscribeGlobalPrefs = subscribeOfficeComputerPreferences(() => {
+      globalPrefsRevision += 1;
+      for (const item of [...globalPrefsListeners]) {
+        item();
+      }
+    });
+  }
+  return () => {
+    globalPrefsListeners.delete(listener);
+    if (globalPrefsListeners.size === 0 && unsubscribeGlobalPrefs) {
+      unsubscribeGlobalPrefs();
+      unsubscribeGlobalPrefs = null;
+    }
+  };
+}
+
+function getGlobalComputerPrefsRevision(): number {
+  return globalPrefsRevision;
+}
+
+function getServerGlobalComputerPrefsRevision(): number {
+  return 0;
+}
+
+function subscribeLiveServerScope(listener: () => void): () => void {
+  return addActiveControlPlaneProfileChangeListener(listener);
+}
+
+function getServerLiveServerScope(): string {
+  return 'local';
+}
+
+function filterAdmittedPoweredOnTabs(
+  managerServerId: string,
+  liveActiveServerId: string,
+  tabs: ReadonlyArray<WebTerminalTab>,
+  revision: number,
+): WebTerminalTab[] {
+  const sid = String(managerServerId || '').trim();
+  const liveSid = String(liveActiveServerId || '').trim();
+  if (revision < 0 || !sid || !liveSid || sid !== liveSid) return [];
+  if (resolveLiveActiveServerId() !== sid) return [];
+  return tabs.filter((tab) => {
+    const id = String(tab.id || '').trim();
+    const skey = String(tab.sessionKey || '').trim();
+    const tabSid = String(tab.serverId || '').trim();
+    if (!id || !skey || tabSid !== sid) return false;
+    return readOfficeComputerPreferences(sid, skey).power === 'on';
+  });
+}
+
+function buildCollisionSafeMembershipKey(
+  admittedServerId: string,
+  tuples: ReadonlyArray<ViewerIdentityTuple>,
+): string {
+  if (!admittedServerId || tuples.length === 0) {
+    return JSON.stringify([admittedServerId, []]);
+  }
+  const canonicalTuples = tuples
+    .slice()
+    .sort((a, b) => (
+      a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)
+    ));
+  return JSON.stringify([admittedServerId, canonicalTuples]);
+}
 
 function clampPosition(x: number, y: number, width: number, height = 420) {
   if (typeof window === 'undefined') return { x, y };
@@ -33,6 +114,12 @@ interface TerminalMotion {
   vars: Record<string, string>;
 }
 
+interface ActiveMotionFence {
+  motionId: number;
+  originServerId: string;
+  originGeneration: number;
+}
+
 interface RectLike {
   left: number;
   top: number;
@@ -43,7 +130,7 @@ interface RectLike {
 function prefersReducedMotion() {
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch (_error) {
+  } catch {
     return false;
   }
 }
@@ -74,9 +161,83 @@ function flipVars(rect: RectLike): Record<string, string> {
 
 export default function GlobalWebTerminalHost() {
   const manager = useWebTerminalManager();
+  const { closeTab, openTab, setMinimized, setPosition } = manager;
+  const prefsRevision = useSyncExternalStore(
+    subscribeGlobalComputerPrefsRevision,
+    getGlobalComputerPrefsRevision,
+    getServerGlobalComputerPrefsRevision,
+  );
+  const liveServerScope = useSyncExternalStore(
+    subscribeLiveServerScope,
+    resolveLiveActiveServerId,
+    getServerLiveServerScope,
+  );
+
+  const normalizedManagerServerId = String(manager.serverId || '').trim();
+  const serverAdmitted = Boolean(
+    normalizedManagerServerId
+    && normalizedManagerServerId === liveServerScope
+    && resolveLiveActiveServerId() === normalizedManagerServerId,
+  );
+  const admittedServerId = serverAdmitted ? normalizedManagerServerId : '';
+
+  const poweredOnTabs = useMemo(
+    () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.tabs, prefsRevision),
+    [liveServerScope, manager.tabs, normalizedManagerServerId, prefsRevision],
+  );
+  const exactViewerTuples = useMemo<ReadonlyArray<ViewerIdentityTuple>>(
+    () => poweredOnTabs.map((tab) => [
+      String(tab.id || '').trim(),
+      String(tab.sessionKey || '').trim(),
+      admittedServerId,
+    ] as const),
+    [admittedServerId, poweredOnTabs],
+  );
+  const poweredPanelKey = useMemo(
+    () => buildCollisionSafeMembershipKey(admittedServerId, exactViewerTuples),
+    [admittedServerId, exactViewerTuples],
+  );
+
+  // Monotonic viewer generation updated synchronously during render whenever
+  // origin server admission or exact powered-ON membership transitions (including
+  // ON -> OFF -> ON returning to the identical membership key string).
+  const viewerStateRef = useRef<{
+    generation: number;
+    serverAdmitted: boolean;
+    serverId: string;
+    membershipKey: string;
+    tuplesById: Map<string, ViewerIdentityTuple>;
+  }>({
+    generation: 0,
+    serverAdmitted: false,
+    serverId: '',
+    membershipKey: '',
+    tuplesById: new Map(),
+  });
+
+  if (
+    viewerStateRef.current.serverAdmitted !== serverAdmitted
+    || viewerStateRef.current.serverId !== admittedServerId
+    || viewerStateRef.current.membershipKey !== poweredPanelKey
+  ) {
+    viewerStateRef.current.generation += 1;
+    viewerStateRef.current.serverAdmitted = serverAdmitted;
+    viewerStateRef.current.serverId = admittedServerId;
+    viewerStateRef.current.membershipKey = poweredPanelKey;
+  }
+
+  const liveTuplesMap = new Map<string, ViewerIdentityTuple>();
+  if (serverAdmitted) {
+    for (const tuple of exactViewerTuples) {
+      liveTuplesMap.set(tuple[0], tuple);
+    }
+  }
+  viewerStateRef.current.tuplesById = liveTuplesMap;
+  const currentViewerGeneration = viewerStateRef.current.generation;
+
   const [creatingTab, setCreatingTab] = useState(false);
   const [, setViewportRevision] = useState(0);
-  const hasTabs = manager.tabs.length > 0;
+  const hasTabs = serverAdmitted && poweredOnTabs.length > 0;
   useEffect(() => {
     if (!hasTabs) return;
     let frame: number | null = null;
@@ -92,6 +253,9 @@ export default function GlobalWebTerminalHost() {
   const windowRef = useRef<HTMLDivElement>(null);
   const [motion, setMotion] = useState<TerminalMotion | null>(null);
   const motionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const motionSeqRef = useRef(0);
+  const activeMotionRef = useRef<ActiveMotionFence | null>(null);
+
   const position = clampPosition(manager.position.x, manager.position.y, manager.position.width, manager.position.height);
   const windowStyle: React.CSSProperties = {
     left: `${position.x}px`,
@@ -100,9 +264,10 @@ export default function GlobalWebTerminalHost() {
     height: `min(${manager.position.height}px, calc(100vh - 16px))`,
     ...(motion && motion.phase !== 'closing' ? motion.vars : null)
   };
-  const startGesture = useTerminalWindowGesture(windowRef, manager.setPosition, `${manager.serverId}:${manager.minimized}:${hasTabs}`, windowStyle);
+  const startGesture = useTerminalWindowGesture(windowRef, setPosition, `${admittedServerId}:${manager.minimized}:${hasTabs}`, windowStyle);
 
   const clearMotionTimer = useCallback(() => {
+    activeMotionRef.current = null;
     if (motionTimer.current) {
       clearTimeout(motionTimer.current);
       motionTimer.current = null;
@@ -111,31 +276,97 @@ export default function GlobalWebTerminalHost() {
 
   useEffect(() => clearMotionTimer, [clearMotionTimer]);
 
-  const scheduleMotionEnd = useCallback((delay: number, finish: () => void) => {
+  const isMotionFenceValid = useCallback((fence: ActiveMotionFence): boolean => {
+    const live = viewerStateRef.current;
+    if (!live.serverAdmitted || live.serverId !== fence.originServerId) return false;
+    if (live.generation !== fence.originGeneration) return false;
+    return resolveLiveActiveServerId() === fence.originServerId;
+  }, []);
+
+  // Invalidate pending timer and clear stale motion immediately on server or
+  // powered-ON membership transitions.
+  useEffect(() => {
+    const fence = activeMotionRef.current;
+    if (!fence) return;
+    const matchesCurrentSnapshot = (
+      serverAdmitted
+      && admittedServerId === fence.originServerId
+      && currentViewerGeneration === fence.originGeneration
+    );
+    if (!matchesCurrentSnapshot || !isMotionFenceValid(fence)) {
+      clearMotionTimer();
+      setMotion(null);
+    }
+  }, [admittedServerId, clearMotionTimer, currentViewerGeneration, isMotionFenceValid, serverAdmitted]);
+
+  const scheduleMotionEnd = useCallback((
+    delay: number,
+    fence: ActiveMotionFence,
+    finish: () => void,
+  ) => {
     clearMotionTimer();
+    activeMotionRef.current = fence;
     motionTimer.current = setTimeout(() => {
+      if (activeMotionRef.current?.motionId !== fence.motionId) return;
       motionTimer.current = null;
+      activeMotionRef.current = null;
+      if (!isMotionFenceValid(fence)) {
+        setMotion(null);
+        return;
+      }
       setMotion(null);
       finish();
     }, delay);
-  }, [clearMotionTimer]);
+  }, [clearMotionTimer, isMotionFenceValid]);
 
   const beginMinimize = useCallback(() => {
-    if (manager.minimized || motion) return;
+    if (manager.minimized || motion || !serverAdmitted || !admittedServerId) return;
+    const originGeneration = currentViewerGeneration;
+    const originServerId = admittedServerId;
+    if (
+      viewerStateRef.current.generation !== originGeneration
+      || viewerStateRef.current.serverId !== originServerId
+      || resolveLiveActiveServerId() !== originServerId
+    ) {
+      return;
+    }
     const el = windowRef.current;
     if (!el || prefersReducedMotion()) {
-      manager.setMinimized(true);
+      setMinimized(true);
       return;
     }
     const rect = el.getBoundingClientRect();
+    const fence: ActiveMotionFence = {
+      motionId: ++motionSeqRef.current,
+      originServerId,
+      originGeneration,
+    };
     setMotion({ phase: 'collapsing', vars: flipVars(rect) });
-    scheduleMotionEnd(COLLAPSE_MS, () => manager.setMinimized(true));
-  }, [manager, motion, scheduleMotionEnd]);
+    scheduleMotionEnd(COLLAPSE_MS, fence, () => {
+      if (
+        viewerStateRef.current.generation !== originGeneration
+        || viewerStateRef.current.serverId !== originServerId
+        || resolveLiveActiveServerId() !== originServerId
+      ) {
+        return;
+      }
+      setMinimized(true);
+    });
+  }, [admittedServerId, currentViewerGeneration, manager.minimized, motion, scheduleMotionEnd, serverAdmitted, setMinimized]);
 
   const beginRestore = useCallback(() => {
-    if (!manager.minimized || motion || typeof window === 'undefined') return;
+    if (!manager.minimized || motion || typeof window === 'undefined' || !serverAdmitted || !admittedServerId) return;
+    const originGeneration = currentViewerGeneration;
+    const originServerId = admittedServerId;
+    if (
+      viewerStateRef.current.generation !== originGeneration
+      || viewerStateRef.current.serverId !== originServerId
+      || resolveLiveActiveServerId() !== originServerId
+    ) {
+      return;
+    }
     if (prefersReducedMotion()) {
-      manager.setMinimized(false);
+      setMinimized(false);
       return;
     }
     const clamped = clampPosition(manager.position.x, manager.position.y, manager.position.width, manager.position.height);
@@ -145,40 +376,142 @@ export default function GlobalWebTerminalHost() {
       width: Math.min(manager.position.width, window.innerWidth - 16),
       height: Math.min(manager.position.height, window.innerHeight - 16)
     };
+    const fence: ActiveMotionFence = {
+      motionId: ++motionSeqRef.current,
+      originServerId,
+      originGeneration,
+    };
     setMotion({ phase: 'expanding', vars: flipVars(rect) });
-    scheduleMotionEnd(EXPAND_MS, () => manager.setMinimized(false));
-  }, [manager, motion, scheduleMotionEnd]);
+    scheduleMotionEnd(EXPAND_MS, fence, () => {
+      if (
+        viewerStateRef.current.generation !== originGeneration
+        || viewerStateRef.current.serverId !== originServerId
+        || resolveLiveActiveServerId() !== originServerId
+      ) {
+        return;
+      }
+      setMinimized(false);
+    });
+  }, [
+    admittedServerId,
+    currentViewerGeneration,
+    manager.minimized,
+    manager.position.height,
+    manager.position.width,
+    manager.position.x,
+    manager.position.y,
+    motion,
+    scheduleMotionEnd,
+    serverAdmitted,
+    setMinimized,
+  ]);
 
-  // 关闭需要先确认所有 PTY 都关掉（ShellTerminalPanel.closePanel 负责），这里只给成功关闭后的
-  // 卸载播一次淡出：onClose 被调用时 PTY 已关闭，动画结束后再清空页签。
+  const removeExactValidatedTuple = useCallback((
+    expectedGeneration: number,
+    originServerId: string,
+    tuple: ViewerIdentityTuple,
+  ): boolean => {
+    const live = viewerStateRef.current;
+    if (!live.serverAdmitted || live.serverId !== originServerId) return false;
+    if (live.generation !== expectedGeneration) return false;
+    if (resolveLiveActiveServerId() !== originServerId) return false;
+    const [id, sessionKey, tupleSid] = tuple;
+    if (!id || !sessionKey || tupleSid !== originServerId) return false;
+    const currentTuple = live.tuplesById.get(id);
+    if (
+      !currentTuple
+      || currentTuple[0] !== id
+      || currentTuple[1] !== sessionKey
+      || currentTuple[2] !== originServerId
+    ) {
+      return false;
+    }
+    if (readOfficeComputerPreferences(originServerId, sessionKey).power !== 'on') {
+      return false;
+    }
+    closeTab(id);
+    return true;
+  }, [closeTab]);
+
+  const handleTabClose = useCallback((id: string) => {
+    const originGeneration = currentViewerGeneration;
+    const originServerId = admittedServerId;
+    const originTuple = exactViewerTuples.find((item) => item[0] === id);
+    if (!originServerId || !originTuple) return;
+    removeExactValidatedTuple(originGeneration, originServerId, originTuple);
+  }, [admittedServerId, currentViewerGeneration, exactViewerTuples, removeExactValidatedTuple]);
+
+  const finalizeClosedTuples = useCallback((
+    expectedGeneration: number,
+    originServerId: string,
+    capturedTuples: ReadonlyArray<ViewerIdentityTuple>,
+  ) => {
+    for (const tuple of capturedTuples) {
+      removeExactValidatedTuple(expectedGeneration, originServerId, tuple);
+    }
+  }, [removeExactValidatedTuple]);
+
+  // 关闭绑定发起时的 generation + serverId + 精确可见元组快照；
+  // 任何过期的回调或延迟定时器在设置动画或移除元数据前均立即短路，绝不调用 closeAll。
   const beginClose = useCallback(() => {
-    if (motion) return;
-    const reduce = typeof window !== 'undefined' && prefersReducedMotion();
-    if (reduce || manager.minimized) {
-      manager.closeAll();
+    if (motion || !serverAdmitted || !admittedServerId) return;
+    const originGeneration = currentViewerGeneration;
+    const originServerId = admittedServerId;
+    const capturedTuples = exactViewerTuples.slice();
+    const live = viewerStateRef.current;
+    if (
+      !live.serverAdmitted
+      || live.serverId !== originServerId
+      || live.generation !== originGeneration
+      || resolveLiveActiveServerId() !== originServerId
+    ) {
       return;
     }
+    const reduce = typeof window !== 'undefined' && prefersReducedMotion();
+    if (reduce || manager.minimized) {
+      finalizeClosedTuples(originGeneration, originServerId, capturedTuples);
+      return;
+    }
+    const fence: ActiveMotionFence = {
+      motionId: ++motionSeqRef.current,
+      originServerId,
+      originGeneration,
+    };
     setMotion({ phase: 'closing', vars: {} });
-    scheduleMotionEnd(CLOSE_MS, () => manager.closeAll());
-  }, [manager, motion, scheduleMotionEnd]);
+    scheduleMotionEnd(CLOSE_MS, fence, () => {
+      finalizeClosedTuples(originGeneration, originServerId, capturedTuples);
+    });
+  }, [
+    admittedServerId,
+    currentViewerGeneration,
+    exactViewerTuples,
+    finalizeClosedTuples,
+    manager.minimized,
+    motion,
+    scheduleMotionEnd,
+    serverAdmitted,
+  ]);
 
-  const sessionTabs = useMemo(() => manager.tabs.map((tab) => ({
+  const sessionTabs = useMemo(() => poweredOnTabs.map((tab) => ({
     id: tab.id,
     sessionKey: tab.sessionKey,
     label: tab.label,
     cwd: tab.cwd,
     kind: tab.kind,
     persistent: true
-  })), [manager.tabs]);
+  })), [poweredOnTabs]);
   const onNewTab = useCallback(async () => {
-    if (creatingRef.current) return;
+    if (creatingRef.current || !serverAdmitted || !admittedServerId) return;
+    if (resolveLiveActiveServerId() !== admittedServerId) return;
+    const originServerId = admittedServerId;
     creatingRef.current = true;
     setCreatingTab(true);
     try {
-      const active = manager.tabs.find((tab) => tab.id === manager.activeTabId);
+      const active = poweredOnTabs.find((tab) => tab.id === manager.activeTabId) || poweredOnTabs[0];
       const random = new Uint8Array(16);
       globalThis.crypto.getRandomValues(random);
       const key = `shell-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+      if (resolveLiveActiveServerId() !== originServerId) return;
       const result = await terminalAPI.open(80, 24, undefined, active?.cwd, key);
       if (!result.ok || !result.termId) {
         message.error(`新建终端失败: ${result.error || 'unknown'}`);
@@ -187,12 +520,12 @@ export default function GlobalWebTerminalHost() {
       const labels = new Set(manager.tabs.map((tab) => tab.label));
       let number = 1;
       while (labels.has(`Shell ${number}`)) number += 1;
-      manager.openTab({ sessionKey: key, serverId: manager.serverId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
+      openTab({ sessionKey: key, serverId: originServerId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
     } finally {
       creatingRef.current = false;
       setCreatingTab(false);
     }
-  }, [manager]);
+  }, [admittedServerId, manager.activeTabId, manager.tabs, openTab, poweredOnTabs, serverAdmitted]);
   const onResizeKeyDown = useCallback((edge: string, event: React.KeyboardEvent) => {
     const horizontal = edge === 'e' || edge === 'w';
     const direction = event.key === (horizontal ? 'ArrowRight' : 'ArrowDown') ? 1
@@ -202,20 +535,20 @@ export default function GlobalWebTerminalHost() {
     event.preventDefault();
     const rect = node.getBoundingClientRect();
     const delta = direction * (event.shiftKey ? 48 : 12);
-    manager.setPosition(moveTerminalWindow(
+    setPosition(moveTerminalWindow(
       { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
       edge, horizontal ? delta : 0, horizontal ? 0 : delta, window.innerWidth, window.innerHeight,
     ));
-  }, [manager.setPosition]);
+  }, [setPosition]);
 
-  const closings = motion?.phase === 'closing';
-  if (manager.overviewVisible || (!manager.tabs.length && !closings)) return null;
-  const activeTab = manager.tabs.find((tab) => tab.id === manager.activeTabId) || manager.tabs[0];
+  const closings = serverAdmitted && motion?.phase === 'closing';
+  if (manager.overviewVisible || (!hasTabs && !closings)) return null;
+  const activeTab = poweredOnTabs.find((tab) => tab.id === manager.activeTabId) || poweredOnTabs[0];
   const availableWidth = typeof window === 'undefined' ? manager.position.width : Math.max(1, window.innerWidth - 16);
   const availableHeight = typeof window === 'undefined' ? manager.position.height : Math.max(1, window.innerHeight - 16);
   // 折叠/展开动画期间，窗口与停靠气泡同时在场：窗口做 FLIP，气泡做交汇淡入/淡出。
   const showWindow = closings || !manager.minimized || motion?.phase === 'expanding';
-  const showDock = !closings && (manager.minimized || motion?.phase === 'collapsing');
+  const showDock = !closings && hasTabs && (manager.minimized || motion?.phase === 'collapsing');
   const panelMinimized = motion?.phase === 'expanding' || motion?.phase === 'closing'
     ? false
     : (manager.minimized && !motion);
@@ -250,26 +583,28 @@ export default function GlobalWebTerminalHost() {
               } : { 'aria-hidden': true })}
             />
           ))}
-          <ShellTerminalPanel
-            key={manager.serverId}
-            visible
-            persistent
-            title="Web Terminal"
-            minimized={panelMinimized}
-            onMinimizedChange={(value) => { if (value) beginMinimize(); else beginRestore(); }}
-            onHeaderPointerDown={(event) => startGesture('move', event)}
-            panelHeight={Math.min(manager.position.height, typeof window === 'undefined' ? manager.position.height : window.innerHeight - 16)}
-            sessionTabs={sessionTabs}
-            onTabClose={manager.closeTab}
-            onClose={beginClose}
-            activeTabId={activeTab?.id || ''}
-            onActiveTabChange={manager.setActiveTab}
-            onNewTab={onNewTab}
-            creatingTab={creatingTab}
-            isCreatingTab={isCreatingTab}
-            layout={manager.layout}
-            onLayoutChange={manager.setLayout}
-          />
+          {serverAdmitted && sessionTabs.length > 0 ? (
+            <ShellTerminalPanel
+              key={poweredPanelKey}
+              visible
+              persistent
+              title="Web Terminal"
+              minimized={panelMinimized}
+              onMinimizedChange={(value) => { if (value) beginMinimize(); else beginRestore(); }}
+              onHeaderPointerDown={(event) => startGesture('move', event)}
+              panelHeight={Math.min(manager.position.height, typeof window === 'undefined' ? manager.position.height : window.innerHeight - 16)}
+              sessionTabs={sessionTabs}
+              onTabClose={handleTabClose}
+              onClose={beginClose}
+              activeTabId={activeTab?.id || ''}
+              onActiveTabChange={manager.setActiveTab}
+              onNewTab={onNewTab}
+              creatingTab={creatingTab}
+              isCreatingTab={isCreatingTab}
+              layout={manager.layout}
+              onLayoutChange={manager.setLayout}
+            />
+          ) : null}
         </div>
       ) : null}
       {showDock ? (
@@ -282,7 +617,7 @@ export default function GlobalWebTerminalHost() {
             onClick={beginRestore}
           >
             <CodeOutlined />
-            <span>{manager.tabs.length}</span>
+            <span>{poweredOnTabs.length}</span>
           </button>
         </div>
       ) : null}

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	// DefaultDispatchInterval 是后台 peer 空闲补投守护的默认轮询间隔。
+	// DefaultDispatchInterval 是有就绪积压时的批次间隔；休眠队列不按此轮询。
 	DefaultDispatchInterval = 3 * time.Second
 	// MinDispatchInterval 是保护事件循环和 tmux 的最小允许轮询间隔。
 	MinDispatchInterval = time.Second
@@ -28,24 +28,29 @@ type DispatchDaemonOptions struct {
 	Now         func() time.Time
 	OnSummary   func(FlushSummary)
 
-	// testTickCh 仅用于单元测试驱动确定性节拍，不走 1s 定时器。
+	// testTickCh 保留确定性节拍，不启动 watcher、首轮 tick 或动态定时器。
 	testTickCh <-chan time.Time
 }
 
 // DispatchDaemonState 暴露守护进程的可观测运行快照。
 type DispatchDaemonState struct {
-	Running     bool         `json:"running"`
-	Ticking     bool         `json:"ticking"`
-	IntervalMs  int64        `json:"intervalMs"`
-	Batch       int          `json:"batch"`
-	AIHomeDir   string       `json:"aiHomeDir"`
-	TickCount   int64        `json:"tickCount"`
-	LastRunAt   int64        `json:"lastRunAt"`
-	LastError   string       `json:"lastError,omitempty"`
-	LastSummary FlushSummary `json:"lastSummary"`
+	Running      bool         `json:"running"`
+	Ticking      bool         `json:"ticking"`
+	IntervalMs   int64        `json:"intervalMs"`
+	Batch        int          `json:"batch"`
+	AIHomeDir    string       `json:"aiHomeDir"`
+	TickCount    int64        `json:"tickCount"`
+	LastRunAt    int64        `json:"lastRunAt"`
+	LastError    string       `json:"lastError,omitempty"`
+	LastSummary  FlushSummary `json:"lastSummary"`
+	NextWakeAt   int64        `json:"nextWakeAt"`
+	WakeupReason string       `json:"wakeupReason,omitempty"`
+	Watching     bool         `json:"watching"`
+	WatchError   string       `json:"watchError,omitempty"`
+	WakeupError  string       `json:"wakeupError,omitempty"`
 }
 
-// DispatchDaemon 周期执行无等待（timeout=0）的 peer 收件箱单点补投。
+// DispatchDaemon 通过目录事件和到期时间触发无等待（timeout=0）的收件箱补投。
 type DispatchDaemon struct {
 	store     *DispatchStore
 	aiHomeDir string
@@ -57,15 +62,20 @@ type DispatchDaemon struct {
 	onSummary func(FlushSummary)
 	testTick  <-chan time.Time
 
-	mu          sync.Mutex
-	running     bool
-	ticking     bool
-	cancel      context.CancelFunc
-	doneCh      chan struct{}
-	tickCount   int64
-	lastRunAt   int64
-	lastError   string
-	lastSummary FlushSummary
+	mu           sync.Mutex
+	running      bool
+	ticking      bool
+	cancel       context.CancelFunc
+	doneCh       chan struct{}
+	tickCount    int64
+	lastRunAt    int64
+	lastError    string
+	lastSummary  FlushSummary
+	nextWakeAt   int64
+	wakeupReason string
+	watching     bool
+	watchError   string
+	wakeupError  string
 }
 
 // NewDispatchDaemon 创建未启动的 peer 补投守护实例，便于按需 Start 或测试 Tick。
@@ -105,7 +115,7 @@ func NewDispatchDaemon(opts DispatchDaemonOptions) (*DispatchDaemon, error) {
 	if delivery.Now == nil {
 		delivery.Now = nowFn
 	}
-	// 强制归零：守护进程按固定 tick 轮询，忙则立刻让出并下轮重试，绝不在 tick 内睡等安静期。
+	// 忙则立刻让出，按持久化 gate 安排下次唤醒，绝不在 tick 内睡等安静期。
 	delivery.Timeout = 0
 	// 默认用 pane 内容指纹判定空闲：window_activity 会被光标闪烁刷新，空闲 TUI 会永久 busy。
 	if delivery.ReadActivityAt == nil {
@@ -136,7 +146,7 @@ func StartDispatchDaemon(ctx context.Context, opts DispatchDaemonOptions) (*Disp
 	return daemon, nil
 }
 
-// Start 幂等启动后台定时补投循环，直到 ctx 取消或调用 Stop/Close。
+// Start 幂等启动事件/到期驱动循环，直到 ctx 取消或调用 Stop/Close。
 func (d *DispatchDaemon) Start(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -158,28 +168,27 @@ func (d *DispatchDaemon) Start(ctx context.Context) {
 
 func (d *DispatchDaemon) loop(ctx context.Context, doneCh chan struct{}) {
 	defer func() {
-		close(doneCh)
 		d.mu.Lock()
 		d.running = false
 		d.cancel = nil
 		d.doneCh = nil
+		d.nextWakeAt = 0
+		d.wakeupReason = "stopped"
+		d.watching = false
 		d.mu.Unlock()
+		close(doneCh)
 	}()
 
-	var ticker *time.Ticker
-	tickCh := d.testTick
-	if tickCh == nil {
-		ticker = time.NewTicker(d.interval)
-		tickCh = ticker.C
-		defer ticker.Stop()
+	if d.testTick == nil {
+		d.loopDispatchWakeups(ctx)
+		return
 	}
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-tickCh:
-			if ctx.Err() != nil {
+		case _, ok := <-d.testTick:
+			if !ok || ctx.Err() != nil {
 				return
 			}
 			_, _ = d.Tick(ctx)
@@ -232,15 +241,20 @@ func (d *DispatchDaemon) State() DispatchDaemonState {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return DispatchDaemonState{
-		Running:     d.running,
-		Ticking:     d.ticking,
-		IntervalMs:  d.interval.Milliseconds(),
-		Batch:       d.batch,
-		AIHomeDir:   d.aiHomeDir,
-		TickCount:   d.tickCount,
-		LastRunAt:   d.lastRunAt,
-		LastError:   d.lastError,
-		LastSummary: d.lastSummary,
+		Running:      d.running,
+		Ticking:      d.ticking,
+		IntervalMs:   d.interval.Milliseconds(),
+		Batch:        d.batch,
+		AIHomeDir:    d.aiHomeDir,
+		TickCount:    d.tickCount,
+		LastRunAt:    d.lastRunAt,
+		LastError:    d.lastError,
+		LastSummary:  d.lastSummary,
+		NextWakeAt:   d.nextWakeAt,
+		WakeupReason: d.wakeupReason,
+		Watching:     d.watching,
+		WatchError:   d.watchError,
+		WakeupError:  d.wakeupError,
 	}
 }
 

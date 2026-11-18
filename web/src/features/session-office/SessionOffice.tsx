@@ -1,22 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CloseOutlined,
+  CodeOutlined,
   CopyOutlined,
+  DeleteOutlined,
   DesktopOutlined,
   DownOutlined,
+  ExclamationCircleOutlined,
   EyeOutlined,
   FolderOutlined,
   InboxOutlined,
   MailOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   ReloadOutlined,
   RightOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Select, Tooltip, message } from 'antd';
+import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
 import OfficeMailbox from './OfficeMailbox';
 import OfficeRoom from './OfficeRoom';
 import SessionDesktop from './SessionDesktop';
+import {
+  buildStationPowerMap,
+  isSessionServerScopeAdmitted,
+  readStationPowerState,
+  useOfficeComputerStoreRevision,
+} from './office-computer-power';
+import { updateOfficeComputerPreferences } from './office-computer-state';
 import type {
   DesktopOriginRect,
   DesktopWindowLayout,
@@ -43,6 +55,13 @@ const MAILBOX_SCOPE_TITLES: Record<MailboxScope, string> = {
   unassigned: '未归属 / 历史邮箱',
   all: '全局协作邮箱',
 };
+
+const NATIVE_CLOSE_DISABLED_REASON =
+  '原生 CLI 会话由外部独立进程托管；终端 close 接口仅断开借用连接而不会终止原进程，如需结束请前往原 CLI 终端退出。';
+
+function isTerminableWebSession(session: OfficeSessionItem): boolean {
+  return session.source === 'web' && !session.sessionKey.startsWith('native:');
+}
 
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -103,8 +122,11 @@ export default function SessionOffice({
     peerCounts,
     peerLoading,
     peerError,
+    terminatingSessionKey,
+    isSessionTerminating,
     refreshAll,
     openNewProjectTerminal,
+    terminateWebSession,
     hideSession,
     restoreHiddenSessions,
     copySessionIdentity,
@@ -125,10 +147,25 @@ export default function SessionOffice({
   const [mailboxScope, setMailboxScope] = useState<MailboxScope>(defaultMailboxScope ?? 'room');
   const [unavailableExpanded, setUnavailableExpanded] = useState(true);
 
+  const [confirmTarget, setConfirmTarget] = useState<OfficeSessionItem | null>(null);
+  const [confirmError, setConfirmError] = useState<string>('');
+
+  const liveServerIdRef = useRef(serverId);
+  liveServerIdRef.current = serverId;
+  const prevServerIdRef = useRef(serverId);
   const zoomTimerRef = useRef<number | null>(null);
   const prevDefaultsRef = useRef({ defaultOpenMailbox, defaultMailboxScope });
   const deepLinkSignature = `${defaultOpenMailbox ? '1' : '0'}|${defaultMailboxScope ?? ''}|${defaultRoomKey ?? ''}|${defaultSessionKey ?? ''}`;
   const appliedDeepLinkRef = useRef<string>('');
+
+  // 服务器切换时立即清除原服务器上的关闭会话确认弹窗，防止跨节点误发关闭请求。
+  useEffect(() => {
+    if (prevServerIdRef.current !== serverId) {
+      prevServerIdRef.current = serverId;
+      setConfirmTarget(null);
+      setConfirmError('');
+    }
+  }, [serverId]);
 
   const clearZoomTimer = useCallback(() => {
     if (zoomTimerRef.current !== null && typeof window !== 'undefined') {
@@ -169,7 +206,7 @@ export default function SessionOffice({
     prevDefaultsRef.current = { defaultOpenMailbox, defaultMailboxScope };
   }, [defaultMailboxScope, defaultOpenMailbox]);
 
-  // 深链定位房间或会话（仅在目标就绪后触发一次，避免关闭桌面后被重复拉起）。
+  // 深链定位房间或会话（仅在目标就绪后触发一次，避免关闭会话或桌面后被重复拉起）。
   useEffect(() => {
     if (appliedDeepLinkRef.current === deepLinkSignature) return;
     if (!defaultRoomKey && !defaultSessionKey) {
@@ -213,6 +250,15 @@ export default function SessionOffice({
     rooms,
   ]);
 
+  // 自动清理已不存在的选中会话，避免会话终止或退出后残留过期激活引用。
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const stillExists = allSessions.some((session) => session.id === selectedSessionId);
+    if (!stillExists) {
+      setSelectedSessionId(null);
+    }
+  }, [allSessions, selectedSessionId]);
+
   const activeRoom = useMemo<OfficeProjectRoom | null>(() => {
     if (filteredRooms.length === 0) return null;
     if (selectedRoomKey) {
@@ -222,7 +268,6 @@ export default function SessionOffice({
     return filteredRooms[0];
   }, [filteredRooms, selectedRoomKey]);
 
-  // 独立邮箱使用未过滤的完整房间快照，确保房间会话数与 roomMessages 计数一致。
   const unfilteredActiveRoom = useMemo<OfficeProjectRoom | null>(() => {
     if (!activeRoom) return null;
     return rooms.find((room) => room.projectKey === activeRoom.projectKey) ?? activeRoom;
@@ -263,6 +308,25 @@ export default function SessionOffice({
     return activeRoom.projectPath;
   }, [activeRoom]);
 
+  const computerStoreRevision = useOfficeComputerStoreRevision();
+
+  const stationPowerMap = useMemo(
+    () => buildStationPowerMap(serverId, activeRoom?.sessions ?? [], computerStoreRevision),
+    [activeRoom?.sessions, computerStoreRevision, serverId],
+  );
+
+  const handleToggleStationPower = useCallback((station: OfficeSessionItem) => {
+    if (isSessionTerminating(station.sessionKey) || !isSessionServerScopeAdmitted(serverId, station)) {
+      return;
+    }
+    const sid = serverId.trim();
+    const skey = station.sessionKey.trim();
+    const current = readStationPowerState(sid, skey);
+    updateOfficeComputerPreferences(sid, skey, {
+      power: current === 'on' ? 'off' : 'on',
+    });
+  }, [isSessionTerminating, serverId]);
+
   const providerSelectOptions = useMemo(
     () => [
       { value: 'all', label: '全部类型' },
@@ -271,9 +335,8 @@ export default function SessionOffice({
     [providerOptions],
   );
 
-  // 独立邮箱浮层支持 Escape 关闭（桌面打开时由 SessionDesktop 自己处理）。
   useEffect(() => {
-    if (!mailboxOverlayOpen || desktopOpen) return undefined;
+    if (!mailboxOverlayOpen || desktopOpen || Boolean(confirmTarget)) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (event.target instanceof Element && event.target.closest('.xterm')) return;
@@ -281,7 +344,7 @@ export default function SessionOffice({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [desktopOpen, mailboxOverlayOpen]);
+  }, [confirmTarget, desktopOpen, mailboxOverlayOpen]);
 
   const openStandaloneMailbox = useCallback((scope: MailboxScope) => {
     setDesktopOpen(false);
@@ -341,6 +404,89 @@ export default function SessionOffice({
   const handleOpenNewTerminal = useCallback((cwd?: string) => {
     void openNewProjectTerminal(cwd ?? activeRoomCwd);
   }, [activeRoomCwd, openNewProjectTerminal]);
+
+  const handleRequestTerminateSession = useCallback((session: OfficeSessionItem) => {
+    if (!isTerminableWebSession(session)) {
+      message.info(NATIVE_CLOSE_DISABLED_REASON);
+      return;
+    }
+    if (isSessionTerminating(session.sessionKey)) {
+      return;
+    }
+    setConfirmError('');
+    setConfirmTarget(session);
+  }, [isSessionTerminating]);
+
+  const confirmBusy = Boolean(
+    confirmTarget && isSessionTerminating(confirmTarget.sessionKey),
+  );
+
+  const handleCancelTerminateModal = useCallback(() => {
+    if (confirmBusy) return;
+    setConfirmTarget(null);
+    setConfirmError('');
+  }, [confirmBusy]);
+
+  const handleConfirmTerminate = useCallback(async () => {
+    if (!confirmTarget || confirmBusy) return;
+    const target = confirmTarget;
+    if (target.serverId !== serverId || target.serverId !== liveServerIdRef.current) {
+      setConfirmTarget(null);
+      setConfirmError('');
+      message.warning('当前服务器已切换，原服务器关闭确认已取消');
+      return;
+    }
+    setConfirmError('');
+
+    const result = await terminateWebSession(target);
+    if (target.serverId !== liveServerIdRef.current) {
+      return;
+    }
+
+    if (!result.ok) {
+      const errMsg = result.error || '关闭会话失败';
+      setConfirmError(errMsg);
+      message.error(errMsg);
+      return;
+    }
+
+    const wasViewingClosedSession =
+      selectedSessionId === target.id
+      || focusedSession?.sessionKey === target.sessionKey;
+
+    if (wasViewingClosedSession) {
+      clearZoomTimer();
+      setZoomingSessionId(null);
+      setSelectedSessionId(null);
+      setDesktopOpen(false);
+    }
+
+    const remainingInRoom = allSessions.filter(
+      (item) => item.projectKey === target.projectKey && item.sessionKey !== target.sessionKey,
+    );
+    if (remainingInRoom.length === 0 && selectedRoomKey === target.projectKey) {
+      setSelectedRoomKey(null);
+    }
+
+    setConfirmTarget(null);
+    setConfirmError('');
+
+    if (result.alreadyGone) {
+      message.info(`会话「${target.label}」在服务端已结束，已清理残留视图并同步目录`);
+    } else {
+      message.success(`已关闭会话「${target.label}」`);
+    }
+  }, [
+    allSessions,
+    clearZoomTimer,
+    confirmBusy,
+    confirmTarget,
+    focusedSession?.sessionKey,
+    selectedRoomKey,
+    selectedSessionId,
+    serverId,
+    terminateWebSession,
+  ]);
 
   const handleJumpToSession = useCallback((sessionKey: string, projectKey?: string | null) => {
     const targetSession = allSessions.find((session) => matchesSessionRef(session, sessionKey)) ?? null;
@@ -497,7 +643,7 @@ export default function SessionOffice({
       </header>
 
       <div className="session-office-body">
-        <aside className="session-office-sidebar hud-panel" aria-label="项目房间选择器">
+        <aside className="session-office-sidebar hud-panel" aria-label="项目房间与工位选择器">
           <div className="session-office-sidebar-head">
             <span className="session-office-sidebar-title">
               <FolderOutlined />
@@ -583,6 +729,133 @@ export default function SessionOffice({
               </div>
             )}
           </div>
+
+          {activeRoom && activeRoom.sessions.length > 0 ? (
+            <section className="session-office-stations" aria-label="当前房间工位列表">
+              <div className="session-office-stations-head">
+                <span className="session-office-stations-title">
+                  <CodeOutlined />
+                  <span>当前房间工位</span>
+                </span>
+                <span className="session-office-sidebar-count hud-display">
+                  {activeRoom.sessions.length}
+                </span>
+              </div>
+
+              <ul className="session-office-station-list">
+                {activeRoom.sessions.map((station) => {
+                  const isSelected = roomSelectedSessionId === station.id;
+                  const canTerminate = isTerminableWebSession(station);
+                  const isTerminatingThis = isSessionTerminating(station.sessionKey);
+                  const isOtherTerminating = Boolean(terminatingSessionKey && !isTerminatingThis);
+                  const stationPower = stationPowerMap.get(station.sessionKey) ?? 'on';
+                  const isPoweredOff = stationPower === 'off';
+                  const ledClass = station.availability === 'interactive'
+                    ? 'hud-led hud-led--ok hud-led--live'
+                    : station.availability === 'directory-only'
+                      ? 'hud-led hud-led--info'
+                      : station.availability === 'unavailable'
+                        ? 'hud-led hud-led--warn'
+                        : 'hud-led';
+
+                  return (
+                    <li
+                      key={station.id}
+                      className={`session-office-station-item${isSelected ? ' is-selected' : ''}`}
+                      onClick={() => handleSelectRoomSession(station)}
+                    >
+                      <div className="session-office-station-top">
+                        <span className="session-office-station-name-wrap">
+                          <span className={ledClass} aria-hidden="true" />
+                          <strong className="session-office-station-name" title={station.label}>
+                            {station.shortLabel || station.label}
+                          </strong>
+                        </span>
+                        <span className="session-office-station-badges">
+                          {isPoweredOff ? (
+                            <span className="session-office-station-poweroff">虚拟关机</span>
+                          ) : null}
+                          <span className="session-office-station-source">
+                            {canTerminate ? 'Web Shell' : '原生 CLI'}
+                          </span>
+                        </span>
+                      </div>
+
+                      <div className="session-office-station-cwd" title={station.cwd || '未指定目录'}>
+                        {station.cwd || '未指定目录'}
+                      </div>
+
+                      <div className="session-office-station-actions">
+                        <Button
+                          size="small"
+                          icon={<DesktopOutlined />}
+                          disabled={isTerminatingThis}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenMonitor(station);
+                          }}
+                        >
+                          桌面
+                        </Button>
+
+                        <Tooltip
+                          title={
+                            isPoweredOff
+                              ? '开启该工位虚拟电脑（恢复按原标识连接）'
+                              : '虚拟电脑关机：仅熄屏并断开前端附着，保留后台持久会话'
+                          }
+                          placement="right"
+                        >
+                          <Button
+                            size="small"
+                            icon={isPoweredOff ? <ThunderboltOutlined /> : <PoweroffOutlined />}
+                            disabled={isTerminatingThis}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleToggleStationPower(station);
+                            }}
+                          >
+                            {isPoweredOff ? '开机' : '虚拟关机'}
+                          </Button>
+                        </Tooltip>
+
+                        {canTerminate ? (
+                          <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            loading={isTerminatingThis}
+                            disabled={isOtherTerminating}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRequestTerminateSession(station);
+                            }}
+                          >
+                            {isTerminatingThis ? '关闭中…' : '关闭会话'}
+                          </Button>
+                        ) : (
+                          <Tooltip title={NATIVE_CLOSE_DISABLED_REASON} placement="right">
+                            <span
+                              className="session-office-disabled-action"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <Button
+                                size="small"
+                                disabled
+                                icon={<DeleteOutlined />}
+                              >
+                                关闭会话
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
 
           <div className="session-office-sidebar-footer">
             <button
@@ -717,6 +990,7 @@ export default function SessionOffice({
             </div>
           ) : (
             <OfficeRoom
+              serverId={serverId}
               room={activeRoom}
               selectedSessionId={roomSelectedSessionId}
               zoomingSessionId={zoomingSessionId}
@@ -730,12 +1004,14 @@ export default function SessionOffice({
               onCopyIdentity={handleCopyIdentity}
               onOpenNewTerminal={handleOpenNewTerminal}
               directoryLoading={directoryLoading}
+              onTerminateSession={handleRequestTerminateSession}
+              terminatingSessionKey={terminatingSessionKey}
             />
           )}
         </section>
       </div>
 
-      {/* 独立办公邮箱浮层：挂在任何 3D 透视/transform 容器之外，避免文字模糊与弹层偏移 */}
+      {/* 独立办公邮箱浮层：挂在任何 3D 透视/transform 容器之外 */}
       {mailboxOverlayOpen && !desktopOpen ? (
         <div
           className="session-office-mailbox-overlay"
@@ -794,7 +1070,7 @@ export default function SessionOffice({
         </div>
       ) : null}
 
-      {/* 员工工位桌面浮层：同样完全位于 3D 舞台容器之外，确保 xterm 几何 1:1 稳定 */}
+      {/* 员工工位桌面浮层：位于 3D 舞台容器之外 */}
       <SessionDesktop
         open={desktopOpen}
         serverId={serverId}
@@ -810,6 +1086,9 @@ export default function SessionOffice({
         initialMode={desktopInitialMode}
         initialMailboxScope={desktopMailboxScope}
         originRect={desktopOriginRect}
+        terminatingSessionKey={terminatingSessionKey}
+        terminateConfirmOpen={Boolean(confirmTarget)}
+        onTerminateSession={handleRequestTerminateSession}
         onCloseToRoom={handleCloseToRoom}
         onSelectRoomSession={handleSelectRoomSession}
         onJumpToAnySession={handleJumpToSession}
@@ -818,6 +1097,75 @@ export default function SessionOffice({
         onRefreshAll={() => void refreshAll()}
         onOpenNewTerminal={handleOpenNewTerminal}
       />
+
+      {/* Web Shell 真实关闭会话不可逆确认层 */}
+      <Modal
+        open={Boolean(confirmTarget)}
+        zIndex={1300}
+        title="确认关闭 Web 终端会话？"
+        closable={!confirmBusy}
+        maskClosable={!confirmBusy}
+        keyboard={!confirmBusy}
+        onCancel={handleCancelTerminateModal}
+        footer={[
+          <Button
+            key="cancel"
+            disabled={confirmBusy}
+            onClick={handleCancelTerminateModal}
+          >
+            取消
+          </Button>,
+          <Button
+            key="confirm"
+            type="primary"
+            danger
+            icon={<DeleteOutlined />}
+            loading={confirmBusy}
+            disabled={confirmBusy}
+            onClick={() => void handleConfirmTerminate()}
+          >
+            {confirmBusy ? '正在关闭会话…' : '确认关闭会话'}
+          </Button>,
+        ]}
+      >
+        {confirmTarget ? (
+          <div className="session-office-terminate-confirm">
+            <p className="session-office-terminate-desc">
+              此操作将不可逆地停止服务端该 Shell 会话及其内正在运行的进程。关闭后本地工位与已最小化终端视图会同步移除，且不会自动重新打开或连接。若仅需关闭虚拟显示器并保留后台进程运行，请取消并使用“虚拟关机”。
+            </p>
+
+            <dl className="session-office-terminate-meta">
+              <div>
+                <dt>会话名称</dt>
+                <dd><strong>{confirmTarget.label}</strong></dd>
+              </div>
+              <div>
+                <dt>工作目录</dt>
+                <dd><code>{confirmTarget.cwd || '未指定目录'}</code></dd>
+              </div>
+              <div>
+                <dt>会话标识</dt>
+                <dd>
+                  <code>{confirmTarget.sessionKey}</code>
+                  {confirmTarget.termId ? (
+                    <span className="session-office-terminate-termid">
+                      termId: {confirmTarget.termId}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+            </dl>
+
+            {confirmError ? (
+              <div className="session-office-terminate-error" role="alert">
+                <span className="hud-led hud-led--err" aria-hidden="true" />
+                <ExclamationCircleOutlined aria-hidden="true" />
+                <span>{confirmError}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
     </main>
   );
 }

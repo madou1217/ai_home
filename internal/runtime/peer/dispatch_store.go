@@ -23,13 +23,13 @@ const (
 	DefaultInflightStale = 60 * time.Second
 	// DefaultMaxAttemptLog 限制 attempts 明细数组保留的最近条数；总次数仍以 attemptCount 为准。
 	DefaultMaxAttemptLog = 20
-	// DefaultExpireAge 是 pending 消息超时转 failed 的默认期限。
+	// DefaultExpireAge is a legacy stale-review threshold; mail is retained as manual, never age-expired or deleted.
 	DefaultExpireAge = 24 * time.Hour
 	// DefaultMaxBodyChars 是单行投递信封允许的最大正文字符数。
 	DefaultMaxBodyChars = 4000
-	// BackoffBase 与 BackoffCap 对齐 Node peer 指数退避策略（3s 起步，60s 封顶）。
+	// BackoffBase/BackoffCap match Node real-error backoff: 3/6/12/24/48s, capped at48s.
 	BackoffBase = 3 * time.Second
-	BackoffCap  = 60 * time.Second
+	BackoffCap  = 48 * time.Second
 )
 
 var (
@@ -75,32 +75,57 @@ type AttemptRecord struct {
 
 // Record 对应 <aiHome>/run/peer/{pending,inflight,archive}/pm-<hex>.json 的完整结构。
 type Record struct {
-	V                int             `json:"v"`
-	ID               string          `json:"id"`
-	From             RecordParty     `json:"from"`
-	To               RecordParty     `json:"to"`
-	ReplyTo          string          `json:"replyTo"`
-	Body             string          `json:"body"`
-	CreatedAt        int64           `json:"createdAt"`
-	State            string          `json:"state"`
-	Attempts         []AttemptRecord `json:"attempts"`
-	AttemptCount     int             `json:"attemptCount"`
-	NextAttemptAt    int64           `json:"nextAttemptAt"`
-	DeliveredAt      int64           `json:"deliveredAt"`
-	ReadAt           int64           `json:"readAt"`
-	ChannelMessageID string          `json:"channelMessageId"`
-	Error            string          `json:"error,omitempty"`
-	Claim            *ClaimLease     `json:"claim,omitempty"`
-	ReceiptError     string          `json:"receiptError,omitempty"`
+	SupersededBy        string `json:"supersededBy,omitempty"`
+	SupersedesAppliedAt int64  `json:"supersedesAppliedAt,omitempty"`
+	FailureResetAt      int64  `json:"failureResetAt,omitempty"`
+	autoDeliverUntilSet bool
+	Subject             string          `json:"subject,omitempty"`
+	Summary             string          `json:"summary,omitempty"`
+	Purpose             string          `json:"purpose,omitempty"`
+	Action              string          `json:"action,omitempty"`
+	ReplyPolicy         string          `json:"replyPolicy,omitempty"`
+	AutoDeliverUntil    int64           `json:"autoDeliverUntil"`
+	ExpiresAt           int64           `json:"expiresAt,omitempty"`
+	CanceledAt          int64           `json:"canceledAt,omitempty"`
+	Supersedes          string          `json:"supersedes,omitempty"`
+	NotificationState   string          `json:"notificationState,omitempty"`
+	WaitingReason       string          `json:"waitingReason,omitempty"`
+	BusySince           int64           `json:"busySince,omitempty"`
+	ProbeCount          int             `json:"probeCount,omitempty"`
+	V                   int             `json:"v"`
+	ID                  string          `json:"id"`
+	From                RecordParty     `json:"from"`
+	To                  RecordParty     `json:"to"`
+	ReplyTo             string          `json:"replyTo"`
+	Body                string          `json:"body"`
+	CreatedAt           int64           `json:"createdAt"`
+	State               string          `json:"state"`
+	Attempts            []AttemptRecord `json:"attempts"`
+	AttemptCount        int             `json:"attemptCount"`
+	NextAttemptAt       int64           `json:"nextAttemptAt"`
+	DeliveredAt         int64           `json:"deliveredAt"`
+	ReadAt              int64           `json:"readAt"`
+	ChannelMessageID    string          `json:"channelMessageId"`
+	Error               string          `json:"error,omitempty"`
+	Claim               *ClaimLease     `json:"claim,omitempty"`
+	ReceiptError        string          `json:"receiptError,omitempty"`
 }
 
 // CreateMessageInput 定义写入 pending 收件箱的新消息参数。
 type CreateMessageInput struct {
-	ID      string
-	From    RecordParty
-	To      RecordParty
-	ReplyTo string
-	Body    string
+	Subject          string
+	Summary          string
+	Purpose          string
+	Action           string
+	ReplyPolicy      string
+	AutoDeliverUntil *int64
+	ExpiresAt        int64
+	Supersedes       string
+	ID               string
+	From             RecordParty
+	To               RecordParty
+	ReplyTo          string
+	Body             string
 }
 
 // StoreOptions 配置 DispatchStore 的时钟与阈值参数。
@@ -249,7 +274,7 @@ func AttemptCountOf(rec Record) int {
 	return len(rec.Attempts)
 }
 
-// BackoffFor 计算下次重试的指数退避时长（3s 起步，60s 封顶）。
+// BackoffFor returns real-error backoff: 3s initially, capped at48s.
 func BackoffFor(attempts int) time.Duration {
 	if attempts < 1 {
 		attempts = 1
@@ -273,56 +298,6 @@ func IsTerminalDeliveryError(errCode string) bool {
 	return ok
 }
 
-// CollapseBody 将消息正文压成单行，转义换行为字面 \n 并清理终端控制字符。
-func CollapseBody(body, shortID string, maxChars int) string {
-	if maxChars <= 0 {
-		maxChars = DefaultMaxBodyChars
-	}
-	text := strings.ReplaceAll(body, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	text = controlCharPattern.ReplaceAllString(text, "")
-	text = strings.ReplaceAll(text, "\n", `\n`)
-	runes := []rune(text)
-	if len(runes) <= maxChars {
-		return text
-	}
-	short := strings.TrimSpace(shortID)
-	hint := " …"
-	if short != "" {
-		hint = fmt.Sprintf(" … (完整内容: aih peer read %s)", short)
-	}
-	hintRunes := []rune(hint)
-	keep := maxChars - len(hintRunes)
-	if keep < 0 {
-		keep = 0
-	}
-	return string(runes[:keep]) + hint
-}
-
-// FormatPeerEnvelope 生成 inject/native 通道共用的单行消息信封。
-func FormatPeerEnvelope(shortID string, from RecordParty, body string, maxChars int) string {
-	short := strings.TrimSpace(shortID)
-	collapsed := CollapseBody(body, short, maxChars)
-	if short == "" {
-		return collapsed
-	}
-	sender := strings.TrimSpace(from.Name)
-	if sender == "" {
-		sender = strings.TrimSpace(from.Address)
-	}
-	if sender == "" {
-		sender = strings.TrimSpace(from.SessionID)
-	}
-	if sender == "" {
-		sender = "unknown"
-	}
-	header := fmt.Sprintf("[aih-peer #%s from %s | reply: aih peer reply %s]", short, sender, short)
-	if collapsed == "" {
-		return header
-	}
-	return header + " " + collapsed
-}
-
 // EnsureLayout 确保 run/peer/{pending,inflight,archive} 为私有非符号链接目录。
 func (s *DispatchStore) EnsureLayout() error {
 	if s == nil || s.root == "" {
@@ -331,7 +306,7 @@ func (s *DispatchStore) EnsureLayout() error {
 	if err := ensurePrivateDir(s.root); err != nil {
 		return err
 	}
-	for _, sub := range []string{"pending", "inflight", "archive", "receipts"} {
+	for _, sub := range []string{"pending", "inflight", "archive", "receipts", "targets"} {
 		if err := ensurePrivateDir(filepath.Join(s.root, sub)); err != nil {
 			return err
 		}
@@ -400,6 +375,9 @@ func normalizeRecordFromDisk(dirName string, rec *Record) {
 }
 
 func (s *DispatchStore) readStoredRecord(dirName, id string) (*Record, error) {
+	if !recordIDPattern.MatchString(id) {
+		return nil, ErrInvalidRecord
+	}
 	data, err := os.ReadFile(s.fileIn(dirName, id))
 	if err != nil {
 		return nil, err
@@ -411,6 +389,9 @@ func (s *DispatchStore) readStoredRecord(dirName, id string) (*Record, error) {
 	if strings.TrimSpace(rec.ID) == "" {
 		rec.ID = id
 	}
+	if rec.ID != id {
+		return nil, ErrIdentityMismatch
+	}
 	normalizeRecordFromDisk(dirName, &rec)
 	return &rec, nil
 }
@@ -419,6 +400,7 @@ func (s *DispatchStore) readRecord(dirName, id string) (*Record, error) {
 	rec, err := s.readStoredRecord(dirName, id)
 	if err == nil {
 		projectReadReceipt(s.root, rec)
+		s.projectNotification(rec)
 	}
 	return rec, err
 }
@@ -472,29 +454,7 @@ func writeFileAtomic(targetPath string, content []byte) error {
 
 // CreateMessage 在 pending 目录原子落盘一条新的待投递消息。
 func (s *DispatchStore) CreateMessage(input CreateMessageInput) (*Record, error) {
-	if err := s.EnsureLayout(); err != nil {
-		return nil, err
-	}
-	id := NormalizeID(input.ID)
-	if id == "" {
-		id = NewMessageID()
-	}
-	rec := Record{
-		V:            RecordVersion,
-		ID:           id,
-		From:         normalizeRecordParty(input.From),
-		To:           normalizeRecordParty(input.To),
-		ReplyTo:      NormalizeID(input.ReplyTo),
-		Body:         input.Body,
-		CreatedAt:    s.now().UnixMilli(),
-		State:        "pending",
-		Attempts:     []AttemptRecord{},
-		AttemptCount: 0,
-	}
-	if err := s.writeRecord("pending", rec); err != nil {
-		return nil, err
-	}
-	return &rec, nil
+	return s.createScheduledMessage(input)
 }
 
 // ListPending 读取 pending 目录下全部待投递记录并按 createdAt 升序排列。
@@ -538,14 +498,17 @@ func (s *DispatchStore) ListPending() ([]Record, error) {
 // cannot recover/overwrite a newly claimed record.
 func (s *DispatchStore) Claim(id string) (*Record, bool, error) {
 	key := NormalizeID(id)
-	if key == "" {
-		return nil, false, nil
+	if !recordIDPattern.MatchString(key) {
+		return nil, false, ErrInvalidRecord
 	}
 	unlock, err := s.lockRecords()
 	if err != nil {
 		return nil, false, err
 	}
 	defer unlock()
+	if _, err := s.reconcileSupersedesLocked(); err != nil {
+		return nil, false, err
+	}
 	rec, err := s.readStoredRecord("pending", key)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, false, nil
@@ -560,9 +523,32 @@ func (s *DispatchStore) Claim(id string) (*Record, bool, error) {
 	if rec.State == "read" {
 		return nil, false, s.archiveReadLocked("pending", rec)
 	}
+	gate, err := s.readTargetGate(rec.To)
+	if err != nil {
+		return nil, false, err
+	}
+	previousState := rec.NotificationState
+	projectNotificationAt(rec, gate, s.now().UnixMilli())
+	if rec.NotificationState != "ready" {
+		if previousState != rec.NotificationState && (rec.NotificationState == "manual" || rec.NotificationState == "expired" || rec.NotificationState == "canceled") {
+			return nil, false, s.writeRecord("pending", *rec)
+		}
+		return nil, false, nil
+	}
+	busy, err := s.targetInflightLocked(rec.To)
+	if err != nil || busy {
+		return nil, false, err
+	}
 	if _, err := os.Lstat(s.fileIn("inflight", key)); err == nil {
 		return nil, false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, false, err
+	}
+	gate.LastProbeAt = s.now().UnixMilli()
+	gate.LastMessageID = rec.ID
+	gate.LastReason = "target_inflight"
+	gate.NextProbeAt = gate.LastProbeAt + ClaimReservation.Milliseconds()
+	if err := s.writeTargetGate(gate); err != nil {
 		return nil, false, err
 	}
 	generation := int64(1)
@@ -600,25 +586,9 @@ func (s *DispatchStore) settle(rec *Record, state, errCode, channelMessageID str
 	}
 	at := s.now().UnixMilli()
 	acknowledged := next.State == "read"
-	next.State = state
-	switch state {
-	case "delivered":
-		next.DeliveredAt = at
-		next.NextAttemptAt = 0
-		next.ChannelMessageID = strings.TrimSpace(channelMessageID)
-	case "pending":
-		retryMs := retryAfter.Milliseconds()
-		if retryMs < 0 {
-			retryMs = 0
-		}
-		next.NextAttemptAt = at + retryMs
-	case "failed":
-		next.Error = strings.TrimSpace(errCode)
+	if err := s.settleScheduling(next, state, errCode, channelMessageID, retryAfter, at); err != nil {
+		return nil, err
 	}
-	s.appendAttempt(next, AttemptRecord{
-		At: at, Channel: strings.TrimSpace(next.To.Channel),
-		OK: state == "delivered", Error: strings.TrimSpace(errCode),
-	})
 	if acknowledged {
 		next.State = "read"
 		if err := s.ensureReadReceipt(next); err != nil {
@@ -699,6 +669,17 @@ func (s *DispatchStore) RecoverStaleInflight() (int, error) {
 			if _, err := os.Lstat(s.fileIn("pending", id)); !errors.Is(err, os.ErrNotExist) {
 				return
 			}
+			gate, err := s.readTargetGate(rec.To)
+			if err != nil {
+				return
+			}
+			if gate.LastMessageID == rec.ID && gate.LastReason == "target_inflight" {
+				gate.NextProbeAt = s.now().UnixMilli()
+				gate.LastReason = "stale_claim_recovered"
+				if s.writeTargetGate(gate) != nil {
+					return
+				}
+			}
 			changed = os.Rename(s.fileIn("inflight", id), s.fileIn("pending", id)) == nil
 		}()
 		if changed {
@@ -708,31 +689,9 @@ func (s *DispatchStore) RecoverStaleInflight() (int, error) {
 	return recovered, nil
 }
 
-// ExpireStale 把超时未投出的 pending 消息抢占后按 expired 归档失败。
+// ExpireStale preserves stale mail as manual; only expiresAt is semantic expiry.
 func (s *DispatchStore) ExpireStale(maxAge time.Duration) (int, error) {
-	if maxAge <= 0 {
-		return 0, nil
-	}
-	pending, err := s.ListPending()
-	if err != nil {
-		return 0, err
-	}
-	nowMs := s.now().UnixMilli()
-	maxAgeMs := maxAge.Milliseconds()
-	expired := 0
-	for _, rec := range pending {
-		if nowMs-rec.CreatedAt < maxAgeMs {
-			continue
-		}
-		claimed, ok, err := s.Claim(rec.ID)
-		if err != nil || !ok || claimed == nil {
-			continue
-		}
-		if _, err := s.SettleFailed(claimed, "expired"); err == nil {
-			expired++
-		}
-	}
-	return expired, nil
+	return s.refreshScheduling(maxAge)
 }
 
 // parsePositiveMillis parses millisecond values defensively for callers reading optional metadata.

@@ -65,6 +65,7 @@ type NativeSendRequest struct {
 	FromAddress string
 	Mode        string
 	Token       string
+	BeforeWrite func() error
 }
 
 // NativeSendResult 返回 native 通道生成的协议消息 ID。
@@ -96,6 +97,11 @@ type DeliveryOptions struct {
 	ServerBaseURL     func() string
 	ManagementKey     func() string
 	ReadActivityAt    func(ctx context.Context, target DeliveryTarget) (int64, error)
+	// ProbeTarget is optional authoritative state for idle-dependent transport;
+	// only literal idle passes. Native UDS keeps its safe next-priority queue
+	// capability instead of requiring idle. Nil is never an idle observation.
+	ProbeTarget func(context.Context, RecordParty) (string, error)
+	BeforeSend  func(context.Context, Record) error
 }
 
 // DeliveryResult 表示单条消息投递的结果与失败分类错误码。
@@ -165,7 +171,7 @@ func DeriveSocket(cliName, runtimeScope string) (string, error) {
 // IsQuiet 判断单个会话最后输出时刻距离 nowMs 是否已达到安静期阈值。
 func IsQuiet(lastActivityAtMs, nowMs int64, quietPeriod time.Duration) bool {
 	if lastActivityAtMs <= 0 {
-		return true
+		return false
 	}
 	if quietPeriod < 0 {
 		quietPeriod = DefaultQuietPeriod
@@ -186,6 +192,11 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 			return DeliveryResult{OK: true, Channel: rec.To.Channel}
 		}
 	}
+	if !opts.DryRun {
+		if err := probeAuthoritative(ctx, rec.To, opts); err != nil {
+			return blockedDelivery(err)
+		}
+	}
 	text := renderMessageText(rec, opts)
 	channel := strings.TrimSpace(rec.To.Channel)
 	switch channel {
@@ -198,97 +209,15 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 	}
 }
 
-// FlushPending 恢复崩溃遗留的 inflight 孤儿、清理过期消息，并按退避时刻补投到点消息。
-func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) (FlushSummary, error) {
-	var summary FlushSummary
-	if store == nil {
-		return summary, ErrStoreUnavailable
-	}
-	if _, err := store.RecoverStaleInflight(); err != nil {
-		return summary, err
-	}
-	expireAge := opts.ExpireAge
-	if expireAge <= 0 {
-		expireAge = DefaultExpireAge
-	}
-	if _, err := store.ReconcileRead(); err != nil {
-		return summary, err
-	}
-	if _, err := store.ExpireStale(expireAge); err != nil {
-		return summary, err
-	}
-
-	pending, err := store.ListPending()
-	if err != nil {
-		return summary, err
-	}
-	nowFn := opts.Now
-	if nowFn == nil {
-		nowFn = store.now
-	}
-	if nowFn == nil {
-		nowFn = time.Now
-	}
-	nowMs := nowFn().UnixMilli()
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 20
-	}
-
-	// 先过滤退避到期再截取 limit，防止前排退避中的消息把后排已到期消息饿死。
-	candidates := make([]Record, 0, limit)
-	for _, rec := range pending {
-		if rec.State == "read" || rec.NextAttemptAt > nowMs {
-			continue
-		}
-		candidates = append(candidates, rec)
-		if len(candidates) >= limit {
-			break
-		}
-	}
-
-	deliveryOpts := opts.Delivery
-	if deliveryOpts.Now == nil {
-		deliveryOpts.Now = nowFn
-	}
-	for _, rec := range candidates {
-		if ctx.Err() != nil {
-			break
-		}
-		claimed, ok, err := store.Claim(rec.ID)
-		if err != nil {
-			return summary, err
-		}
-		if !ok || claimed == nil {
-			continue
-		}
-		summary.Attempted++
-		res := DeliverRecord(ctx, *claimed, deliveryOpts)
-		if res.OK {
-			if _, err := store.SettleDelivered(claimed, res.ChannelMessageID); err == nil {
-				summary.Delivered++
-			}
-			continue
-		}
-		if IsTerminalDeliveryError(res.Error) {
-			if _, err := store.SettleFailed(claimed, res.Error); err == nil {
-				summary.Failed++
-			}
-			continue
-		}
-		retryAfter := BackoffFor(AttemptCountOf(*claimed) + 1)
-		if _, err := store.SettlePending(claimed, res.Error, retryAfter); err == nil {
-			summary.Pending++
-		}
-	}
-	return summary, nil
-}
-
 func renderMessageText(rec Record, opts DeliveryOptions) string {
 	if opts.NoEnvelope {
 		return rec.Body
 	}
-	return FormatPeerEnvelope(ShortMessageID(rec.ID), rec.From, rec.Body, opts.MaxBodyChars)
+	now := time.Now
+	if opts.Now != nil {
+		now = opts.Now
+	}
+	return FormatRecordEnvelope(rec, opts.MaxBodyChars, now())
 }
 
 func deliverNative(ctx context.Context, rec Record, text string, opts DeliveryOptions) DeliveryResult {
@@ -315,6 +244,7 @@ func deliverNative(ctx context.Context, rec Record, text string, opts DeliveryOp
 		Body:        text,
 		FromAddress: strings.TrimSpace(rec.From.Address),
 		Mode:        strings.TrimSpace(opts.Mode),
+		BeforeWrite: func() error { return authorizeTransport(ctx, rec, opts) },
 	}
 	if opts.DryRun {
 		return DeliveryResult{OK: true, Channel: "native"}
@@ -325,8 +255,15 @@ func deliverNative(ctx context.Context, rec Record, text string, opts DeliveryOp
 			return defaultSendNative(sendCtx, r, opts)
 		}
 	}
+	if err := authorizeTransport(ctx, rec, opts); err != nil {
+		return blockedDelivery(err)
+	}
 	res, err := sender(ctx, req)
 	if err != nil {
+		var blocked *policyError
+		if errors.As(err, &blocked) || errors.Is(err, ErrClaimLost) {
+			return blockedDelivery(err)
+		}
 		return DeliveryResult{
 			OK:      false,
 			Error:   "native_send_failed",
@@ -431,8 +368,7 @@ func formatCrossSessionEnvelope(body, fromAddress, fromName, mode string) string
 	if len(attrs) > 0 {
 		head = "<cross-session-message " + strings.Join(attrs, " ") + ">"
 	}
-	normalized := strings.ReplaceAll(body, "\r\n", "\n")
-	return head + "\n" + normalized + "\n</cross-session-message>"
+	return head + "\n" + body + "\n</cross-session-message>"
 }
 
 func defaultSendNative(ctx context.Context, req NativeSendRequest, opts DeliveryOptions) (NativeSendResult, error) {
@@ -489,6 +425,11 @@ func defaultSendNative(ctx context.Context, req NativeSendRequest, opts Delivery
 	wire = append(wire, '\n')
 	wire = append(wire, controlFrame...)
 	wire = append(wire, '\n')
+	if req.BeforeWrite != nil {
+		if err := req.BeforeWrite(); err != nil {
+			return NativeSendResult{}, err
+		}
+	}
 	if _, err := conn.Write(wire); err != nil {
 		return NativeSendResult{}, err
 	}
@@ -542,47 +483,39 @@ func deliverWebuiChat(ctx context.Context, rec Record, text string, opts Deliver
 		base = fmt.Sprintf("peer-%d", time.Now().UnixMilli())
 	}
 
-	sendCmd := func(cmdID, cmdType string, payload map[string]any) bool {
-		bodyMap := map[string]any{
-			"commandId": cmdID,
-			"type":      cmdType,
-			"payload":   payload,
-		}
-		raw, err := json.Marshal(bodyMap)
-		if err != nil {
-			return false
-		}
-		reqCtx, cancel := context.WithTimeout(ctx, DefaultWebuiChatTimeout)
-		defer cancel()
-		endpoint := fmt.Sprintf("%s/v0/webui/chat/sessions/%s/commands", baseURL, url.PathEscape(sessionID))
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(raw))
-		if err != nil {
-			return false
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+mgmtKey)
-		resp, err := client.Do(req)
-		if err != nil {
-			return false
-		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		_ = resp.Body.Close()
-		return resp.StatusCode >= 200 && resp.StatusCode < 300
+	raw, err := json.Marshal(map[string]any{
+		"commandId": base + "-submit", "type": "turn.submit", "payload": map[string]any{"content": text},
+	})
+	if err != nil {
+		return DeliveryResult{Error: "chat_send_failed", Message: err.Error()}
 	}
-
-	if sendCmd(base+"-submit", "turn.submit", map[string]any{"content": text}) {
+	reqCtx, cancel := context.WithTimeout(ctx, DefaultWebuiChatTimeout)
+	defer cancel()
+	endpoint := fmt.Sprintf("%s/v0/webui/chat/sessions/%s/commands", baseURL, url.PathEscape(sessionID))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return DeliveryResult{Error: "chat_send_failed", Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+mgmtKey)
+	if err := authorizeTransport(ctx, rec, opts); err != nil {
+		return blockedDelivery(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return DeliveryResult{Error: "chat_send_failed", Message: err.Error()}
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return DeliveryResult{OK: true, Channel: "webui-chat", ChannelMessageID: base + "-submit"}
-	}
-	if sendCmd(base+"-queue", "queue.add", map[string]any{"content": text, "policy": "after_turn"}) {
-		return DeliveryResult{OK: true, Channel: "webui-chat", ChannelMessageID: base + "-queue", Queued: true}
-	}
-	if sendCmd(base+"-steer", "turn.intervene", map[string]any{"mode": "steer_current", "content": text}) {
-		return DeliveryResult{OK: true, Channel: "webui-chat", ChannelMessageID: base + "-steer", Steered: true}
-	}
-	return DeliveryResult{
-		OK:      false,
-		Error:   "chat_target_busy",
-		Message: "chat 会话现在不接受新轮次；消息先留在收件箱，空闲后自动投递。",
+	case resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusLocked:
+		return DeliveryResult{Error: "chat_target_busy"}
+	case resp.StatusCode == http.StatusNotFound:
+		return DeliveryResult{Error: "session_gone"}
+	default:
+		return DeliveryResult{Error: "chat_send_failed", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 }
 
@@ -641,6 +574,9 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 		}
 		quiet, lastActivityAtMs := checkQuietWithTimeout(ctx, target, opts.Timeout, opts.PollInterval, quietPeriod, nowFn, readActivity)
 		if !quiet {
+			if lastActivityAtMs <= 0 {
+				return DeliveryResult{Error: "target_probe_unavailable"}
+			}
 			return DeliveryResult{
 				OK:               false,
 				Error:            "target_busy",
@@ -691,6 +627,9 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 	if rec.State == "read" {
 		return DeliveryResult{OK: true, Channel: "inject"}
 	}
+	if err := authorizeTransport(ctx, rec, opts); err != nil {
+		return blockedDelivery(err)
+	}
 	if text != "" {
 		cmdCtx, cancel := context.WithTimeout(ctx, ActivityProbeTimeout)
 		_, code, err := runner(cmdCtx, tmuxCmd, []string{"-u", "-L", socket, "send-keys", "-t", sendTarget, "-l", "--", text})
@@ -733,10 +672,13 @@ func checkQuietWithTimeout(
 	nowFn func() time.Time,
 	readActivity func(context.Context, DeliveryTarget) (int64, error),
 ) (bool, int64) {
+	if readActivity == nil {
+		return false, 0
+	}
 	if timeout <= 0 {
 		lastActivity, err := readActivity(ctx, target)
-		if err != nil {
-			lastActivity = 0
+		if err != nil || lastActivity <= 0 {
+			return false, 0
 		}
 		return IsQuiet(lastActivity, nowFn().UnixMilli(), quietPeriod), lastActivity
 	}
@@ -748,11 +690,11 @@ func checkQuietWithTimeout(
 	for {
 		var err error
 		lastActivity, err = readActivity(ctx, target)
-		if err != nil {
+		if err != nil || lastActivity <= 0 {
 			lastActivity = 0
 		}
 		now := nowFn()
-		if IsQuiet(lastActivity, now.UnixMilli(), quietPeriod) {
+		if err == nil && lastActivity > 0 && IsQuiet(lastActivity, now.UnixMilli(), quietPeriod) {
 			return true, lastActivity
 		}
 		elapsed := now.Sub(started)
@@ -781,9 +723,13 @@ func readSingleWindowActivity(ctx context.Context, runner TmuxCommandRunner, tmu
 	defer cancel()
 	stdout, code, err := runner(probeCtx, tmuxCmd, []string{"-u", "-L", socket, "display-message", "-p", "-t", sessionName, "#{window_activity}"})
 	if err != nil || code != 0 {
-		return 0, err
+		return 0, fmt.Errorf("activity_probe_failed: exit %d: %v", code, err)
 	}
-	return parsePositiveMillis(stdout), nil
+	at := parsePositiveMillis(stdout)
+	if at <= 0 {
+		return 0, errors.New("activity_probe_failed: invalid timestamp")
+	}
+	return at, nil
 }
 
 func detectTmuxCommand() string {

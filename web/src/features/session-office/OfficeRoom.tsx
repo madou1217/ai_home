@@ -1,30 +1,34 @@
 import {
-  memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type MouseEvent,
+  useSyncExternalStore,
+  type KeyboardEvent,
 } from 'react';
 import {
+  AimOutlined,
   ApartmentOutlined,
   AppstoreOutlined,
+  CheckOutlined,
   CompassOutlined,
   CompressOutlined,
   CopyOutlined,
   DesktopOutlined,
+  DragOutlined,
   EyeOutlined,
   InboxOutlined,
   LeftOutlined,
   MailOutlined,
   PlusOutlined,
   RightOutlined,
+  StopOutlined,
+  UndoOutlined,
 } from '@ant-design/icons';
 import { Button, Tooltip } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
+import { useThemeMode } from '@/hooks/use-theme-mode';
 import type {
   DesktopOriginRect,
   OfficeCameraPreset,
@@ -32,9 +36,30 @@ import type {
   OfficeSessionItem,
   SessionAvailability,
 } from './session-office-types';
+import type {
+  OfficeHoverInfo,
+  OfficeMonitorDragMode,
+  OfficeMonitorIndex,
+  OfficeSceneCallbacks,
+  OfficeSceneSyncState,
+} from './office-scene-types';
+import {
+  clampOfficeMonitorTransform,
+  DEFAULT_OFFICE_MONITOR_TRANSFORMS,
+  readOfficeComputerPreferences,
+  readOfficeComputerPreferencesRevision,
+  resetOfficeComputerMonitors,
+  subscribeOfficeComputerPreferences,
+  updateOfficeComputerPreferences,
+  type OfficeComputerPreferences,
+  type OfficeMonitorTransform,
+} from './office-computer-state';
+import { OfficeSceneController } from './office-scene-controller';
+import OfficeMonitorControls from './OfficeMonitorControls';
 import './OfficeRoom.css';
 
 export interface OfficeRoomProps {
+  serverId: string;
   room: OfficeProjectRoom | null;
   selectedSessionId: string | null;
   zoomingSessionId: string | null;
@@ -48,9 +73,12 @@ export interface OfficeRoomProps {
   onCopyIdentity: (session: OfficeSessionItem) => void;
   onOpenNewTerminal: (cwd?: string) => void;
   directoryLoading: boolean;
+  onTerminateSession?: (session: OfficeSessionItem) => void | Promise<void>;
+  terminatingSessionKey?: string | null;
 }
 
 const ZONE_PAGE_SIZE = 8;
+const MAX_SHOW_ALL_STATIONS = 12;
 
 const CAMERA_OPTIONS: ReadonlyArray<{
   preset: OfficeCameraPreset;
@@ -71,17 +99,6 @@ function renderCameraIcon(preset: OfficeCameraPreset) {
     case 'overview':
       return <ApartmentOutlined aria-hidden="true" />;
   }
-}
-
-function toOriginRect(element: Element | null | undefined): DesktopOriginRect | undefined {
-  if (!element) return undefined;
-  const rect = element.getBoundingClientRect();
-  return {
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
-  };
 }
 
 function getAvailabilityMeta(availability: SessionAvailability): {
@@ -117,450 +134,45 @@ function getAvailabilityMeta(availability: SessionAvailability): {
   }
 }
 
-function getActivityTag(session: OfficeSessionItem): string {
-  const { activity, inboxCount, sentCount } = session;
-  switch (activity.kind) {
-    case 'incoming':
-      return `↙ 收件 ${inboxCount}`;
-    case 'outgoing':
-      return `↗ 发件 ${sentCount}`;
-    case 'both':
-      return `⇄ 收${inboxCount} / 发${sentCount}`;
-    case 'idle':
-      if (inboxCount > 0 || sentCount > 0) {
-        return `MAIL ${inboxCount}/${sentCount}`;
-      }
-      return session.source === 'native' ? 'NATIVE IDLE' : 'SHELL READY';
-  }
+function isTerminableWebShell(session: OfficeSessionItem): boolean {
+  if (session.source !== 'web') return false;
+  if (session.availability === 'exited' || session.availability === 'unavailable') return false;
+  return true;
 }
 
-function formatCompactPath(cwd: string): string {
-  const trimmed = cwd.trim();
-  if (!trimmed || trimmed === '__no_cwd__') return '';
-  if (trimmed.length <= 42) return trimmed;
-  const parts = trimmed.split('/').filter(Boolean);
-  if (parts.length <= 3) return trimmed;
-  return `…/${parts.slice(-3).join('/')}`;
-}
-
-function resolveScreenPreview(session: OfficeSessionItem): {
-  kind: 'preview' | 'mail' | 'meta';
+function resolveRealDockSnippet(session: OfficeSessionItem): {
   tag: string;
   text: string;
-  subline: string;
 } {
-  const contentPreview = (session.contentPreview || '').trim();
-  const latestSnippet = (session.activity.latestSnippet || '').trim();
-  const identityLine = session.nativeSessionId || session.sessionKey;
-  const compactPath = formatCompactPath(session.cwd);
-
-  if (contentPreview) {
-    return {
-      kind: 'preview',
-      tag: 'LIVE PREVIEW',
-      text: contentPreview,
-      subline: compactPath || identityLine,
-    };
+  const preview = (session.contentPreview || '').trim();
+  if (preview) {
+    return { tag: 'PREVIEW', text: preview };
   }
-  if (latestSnippet) {
-    return {
-      kind: 'mail',
-      tag: 'PEER MAIL',
-      text: latestSnippet,
-      subline: compactPath || identityLine,
-    };
+  const snippet = (session.activity.latestSnippet || '').trim();
+  if (snippet) {
+    return { tag: 'MAIL', text: snippet };
   }
-
+  const cwd = (session.cwd || '').trim();
+  if (cwd && cwd !== '__no_cwd__') {
+    return { tag: 'CWD', text: cwd };
+  }
   return {
-    kind: 'meta',
-    tag: session.availability === 'unavailable' ? 'PRESERVED ID' : (session.source === 'native' ? 'NATIVE SESSION' : 'WEB SHELL'),
-    text: compactPath || '未登记工作目录',
-    subline: identityLine,
+    tag: 'ID',
+    text: session.nativeSessionId || session.sessionKey,
   };
 }
 
-interface EmployeeFigureProps {
-  session: OfficeSessionItem;
-  availabilityLedClass: string;
+function readReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-const EmployeeFigure = memo(function EmployeeFigure({
-  session,
-  availabilityLedClass,
-}: EmployeeFigureProps) {
-  const { persona, activity, availability } = session;
-  const isActive = availability === 'interactive' || availability === 'directory-only';
-
-  return (
-    <div
-      className="office-emp"
-      data-posture={persona.posture}
-      data-visor={persona.visorStyle}
-      data-active={isActive ? 'true' : 'false'}
-      data-pulse={activity.recentPulse ? 'true' : 'false'}
-      aria-hidden="true"
-    >
-      <div className="office-emp-head-wrap">
-        <div className="office-emp-head">
-          <span className="office-emp-face">
-            <span className="office-emp-hair" />
-            <span className="office-emp-eyes">
-              <span className="office-emp-eye" />
-              <span className="office-emp-eye" />
-            </span>
-            {persona.visorStyle === 'visor' ? <span className="office-emp-visor" /> : null}
-            {persona.visorStyle === 'glasses' ? (
-              <span className="office-emp-glasses">
-                <span className="office-emp-lens" />
-                <span className="office-emp-bridge" />
-                <span className="office-emp-lens" />
-              </span>
-            ) : null}
-            {persona.visorStyle === 'headset' ? (
-              <span className="office-emp-headset">
-                <span className="office-emp-headband" />
-                <span className="office-emp-earcup office-emp-earcup--l" />
-                <span className="office-emp-earcup office-emp-earcup--r" />
-                <span className="office-emp-mic" />
-              </span>
-            ) : null}
-          </span>
-          <span className="office-emp-head-side" />
-          <span className="office-emp-head-top" />
-        </div>
-      </div>
-
-      <div className="office-emp-neck" />
-
-      <div className="office-emp-torso">
-        <span className="office-emp-chest">
-          <span className="office-emp-collar" />
-          <span className="office-emp-badge">{persona.badgeCode}</span>
-          <span className={`office-emp-status-dot ${availabilityLedClass}`} />
-        </span>
-        <span className="office-emp-torso-side" />
-        <span className="office-emp-torso-top" />
-      </div>
-
-      <span className="office-emp-arm office-emp-arm--l" />
-      <span className="office-emp-arm office-emp-arm--r" />
-    </div>
-  );
-});
-
-interface WorkstationMonitorProps {
-  session: OfficeSessionItem;
-  isSelected: boolean;
-  isZooming: boolean;
-  onRegisterMonitorRef: (sessionId: string, node: HTMLButtonElement | null) => void;
-  onOpenMonitor: (session: OfficeSessionItem, originRect?: DesktopOriginRect) => void;
-}
-
-const WorkstationMonitor = memo(function WorkstationMonitor({
-  session,
-  isSelected,
-  isZooming,
-  onRegisterMonitorRef,
-  onOpenMonitor,
-}: WorkstationMonitorProps) {
-  const availabilityMeta = getAvailabilityMeta(session.availability);
-  const preview = resolveScreenPreview(session);
-  const activityText = getActivityTag(session);
-  const providerLabel = session.provider || (session.kind === 'shell' ? 'shell' : 'cli');
-  const modelLabel = session.previewModel || session.model || '';
-  const hasUnreadOrPending = session.pendingCount > 0 || session.activity.unreadOrDeliveredCount > 0;
-
-  const setRef = useCallback((node: HTMLButtonElement | null) => {
-    onRegisterMonitorRef(session.id, node);
-  }, [onRegisterMonitorRef, session.id]);
-
-  const handleClick = useCallback((event: MouseEvent<HTMLButtonElement>) => {
-    onOpenMonitor(session, toOriginRect(event.currentTarget));
-  }, [onOpenMonitor, session]);
-
-  return (
-    <div
-      className="office-monitor"
-      data-selected={isSelected ? 'true' : 'false'}
-      data-zooming={isZooming ? 'true' : 'false'}
-      data-activity={session.activity.kind}
-      data-pulse={session.activity.recentPulse ? 'true' : 'false'}
-    >
-      <div className="office-monitor-stand" aria-hidden="true">
-        <span className="office-monitor-neck" />
-        <span className="office-monitor-neck-side" />
-        <span className="office-monitor-base" />
-      </div>
-
-      <button
-        ref={setRef}
-        type="button"
-        className="office-monitor-screen-btn"
-        onClick={handleClick}
-        aria-label={`打开 ${session.shortLabel} 电脑桌面（${providerLabel}，${availabilityMeta.label}，收件 ${session.inboxCount}${session.pendingCount > 0 ? `，待投递 ${session.pendingCount}` : ''}）`}
-        title={`${session.label} · 点击进入会话桌面`}
-      >
-        {/* 3D Monitor Enclosure Faces */}
-        <span className="office-monitor-face office-monitor-back" aria-hidden="true" />
-        <span className="office-monitor-face office-monitor-top" aria-hidden="true" />
-        <span className="office-monitor-face office-monitor-bottom" aria-hidden="true" />
-        <span className="office-monitor-face office-monitor-left" aria-hidden="true" />
-        <span className="office-monitor-face office-monitor-right" aria-hidden="true" />
-
-        {/* Front Bezel & Authentic Live Screen Preview */}
-        <span className="office-monitor-bezel">
-          <span className="office-monitor-cam" aria-hidden="true" />
-          <span className="office-monitor-display">
-            <span className="office-screen-head">
-              <span className="office-screen-title-wrap">
-                <span className={availabilityMeta.ledClass} aria-hidden="true" />
-                <span className="office-screen-title">{session.shortLabel}</span>
-              </span>
-              <span
-                className={`office-screen-mail${hasUnreadOrPending ? ' is-active' : ''}${session.activity.recentPulse ? ' is-pulse' : ''}`}
-              >
-                <MailOutlined aria-hidden="true" />
-                <span>{session.inboxCount}</span>
-                {session.pendingCount > 0 ? <em>+{session.pendingCount}</em> : null}
-              </span>
-            </span>
-
-            <span className="office-screen-chips">
-              <span className="office-screen-chip office-screen-chip--provider">{providerLabel}</span>
-              {modelLabel ? (
-                <span className="office-screen-chip office-screen-chip--model" title={modelLabel}>
-                  {modelLabel}
-                </span>
-              ) : null}
-              <span className={`office-screen-chip ${availabilityMeta.toneClass}`}>
-                {availabilityMeta.label}
-              </span>
-            </span>
-
-            <span className={`office-screen-body office-screen-body--${preview.kind}`}>
-              <span className="office-screen-body-tag">{preview.tag}</span>
-              <span className="office-screen-body-text">{preview.text}</span>
-              <span className="office-screen-body-sub">{preview.subline}</span>
-            </span>
-
-            <span className="office-screen-foot">
-              <span className="office-screen-activity">{activityText}</span>
-              {session.activity.failedCount > 0 ? (
-                <span className="office-screen-failed">失败 {session.activity.failedCount}</span>
-              ) : session.crossProjectCount > 0 ? (
-                <span className="office-screen-xproj">跨室 {session.crossProjectCount}</span>
-              ) : null}
-            </span>
-          </span>
-        </span>
-      </button>
-    </div>
-  );
-});
-
-interface WorkstationPodProps {
-  session: OfficeSessionItem;
-  isSelected: boolean;
-  isZooming: boolean;
-  onRegisterMonitorRef: (sessionId: string, node: HTMLButtonElement | null) => void;
-  getMonitorRect: (sessionId: string) => DesktopOriginRect | undefined;
-  onOpenMonitor: (session: OfficeSessionItem, originRect?: DesktopOriginRect) => void;
-  onOpenSessionMail: (session: OfficeSessionItem, originRect?: DesktopOriginRect) => void;
-  onCopyIdentity: (session: OfficeSessionItem) => void;
-}
-
-const WorkstationPod = memo(function WorkstationPod({
-  session,
-  isSelected,
-  isZooming,
-  onRegisterMonitorRef,
-  getMonitorRect,
-  onOpenMonitor,
-  onOpenSessionMail,
-  onCopyIdentity,
-}: WorkstationPodProps) {
-  const availabilityMeta = getAvailabilityMeta(session.availability);
-  const hasTrayActivity = session.inboxCount > 0 || session.pendingCount > 0 || session.activity.kind !== 'idle';
-
-  const podStyle = useMemo(() => ({
-    '--pod-accent': session.persona.deskAccent || 'var(--color-accent)',
-    '--avatar-tone': session.persona.avatarTone || 'var(--color-accent)',
-  }) as CSSProperties, [session.persona.avatarTone, session.persona.deskAccent]);
-
-  const handleDesktopAction = useCallback((event: MouseEvent<HTMLElement>) => {
-    const monitorRect = getMonitorRect(session.id);
-    onOpenMonitor(session, monitorRect ?? toOriginRect(event.currentTarget));
-  }, [getMonitorRect, onOpenMonitor, session]);
-
-  const handleMailAction = useCallback((event: MouseEvent<HTMLElement>) => {
-    onOpenSessionMail(session, toOriginRect(event.currentTarget));
-  }, [onOpenSessionMail, session]);
-
-  const handleCopyAction = useCallback(() => {
-    onCopyIdentity(session);
-  }, [onCopyIdentity, session]);
-
-  return (
-    <article
-      className="office-pod"
-      style={podStyle}
-      data-session-id={session.id}
-      data-availability={session.availability}
-      data-activity={session.activity.kind}
-      data-pulse={session.activity.recentPulse ? 'true' : 'false'}
-      data-selected={isSelected ? 'true' : 'false'}
-      data-zooming={isZooming ? 'true' : 'false'}
-    >
-      <div className="office-pod-stage">
-        {/* Floor Contact Shadow & Directional Signal Ring */}
-        <div className="office-pod-floor-pad" aria-hidden="true" />
-
-        {/* 3D Ergonomic Chair behind Employee */}
-        <div className="office-chair" aria-hidden="true">
-          <div className="office-chair-back">
-            <span className="office-chair-back-face" />
-            <span className="office-chair-back-side" />
-            <span className="office-chair-headrest" />
-          </div>
-          <div className="office-chair-seat" />
-          <div className="office-chair-stem" />
-          <div className="office-chair-base" />
-        </div>
-
-        {/* 3D Humanoid Employee */}
-        <EmployeeFigure
-          session={session}
-          availabilityLedClass={availabilityMeta.ledClass}
-        />
-
-        {/* 3D Monitor on Stand with Contextual Live Screen */}
-        <WorkstationMonitor
-          session={session}
-          isSelected={isSelected}
-          isZooming={isZooming}
-          onRegisterMonitorRef={onRegisterMonitorRef}
-          onOpenMonitor={onOpenMonitor}
-        />
-
-        {/* 3D Desk Slab + Thickness + Apron + 4 Volumetric Legs + Workstation Tower + Mail Tray */}
-        <div className="office-desk">
-          <div className="office-desk-slab" aria-hidden="true">
-            <div className="office-desk-surface">
-              <span className="office-desk-mat" />
-              <span className="office-desk-keyboard" />
-              <span className="office-desk-mouse" />
-              <span className="office-desk-trim" />
-            </div>
-            <div className="office-desk-front-edge" />
-            <div className="office-desk-side-edge office-desk-side-edge--l" />
-            <div className="office-desk-side-edge office-desk-side-edge--r" />
-            <div className="office-desk-apron" />
-          </div>
-
-          <div className="office-desk-legs" aria-hidden="true">
-            <span className="office-desk-leg office-desk-leg--fl">
-              <span className="office-desk-leg-front" />
-              <span className="office-desk-leg-side" />
-            </span>
-            <span className="office-desk-leg office-desk-leg--fr">
-              <span className="office-desk-leg-front" />
-              <span className="office-desk-leg-side" />
-            </span>
-            <span className="office-desk-leg office-desk-leg--bl">
-              <span className="office-desk-leg-front" />
-              <span className="office-desk-leg-side" />
-            </span>
-            <span className="office-desk-leg office-desk-leg--br">
-              <span className="office-desk-leg-front" />
-              <span className="office-desk-leg-side" />
-            </span>
-          </div>
-
-          <div className="office-tower" aria-hidden="true">
-            <span className="office-tower-front">
-              <span className="office-tower-led" />
-              <span className="office-tower-vents" />
-            </span>
-            <span className="office-tower-side" />
-            <span className="office-tower-top" />
-          </div>
-
-          <button
-            type="button"
-            className={`office-mail-tray-btn${hasTrayActivity ? ' is-active' : ''}`}
-            onClick={handleMailAction}
-            aria-label={`查看 ${session.shortLabel} 的同伴邮件（收件 ${session.inboxCount}，发件 ${session.sentCount}）`}
-            title={`会话邮件 · 收 ${session.inboxCount} / 发 ${session.sentCount}${session.pendingCount > 0 ? ` · 待投递 ${session.pendingCount}` : ''}`}
-          >
-            <span className="office-mail-tray-base" aria-hidden="true" />
-            <span className="office-mail-tray-front" aria-hidden="true" />
-            <span className="office-mail-tray-side" aria-hidden="true" />
-            {hasTrayActivity ? (
-              <span className="office-mail-packet" aria-hidden="true">
-                <MailOutlined />
-                <span>{session.pendingCount > 0 ? session.pendingCount : session.inboxCount}</span>
-              </span>
-            ) : (
-              <span className="office-mail-tray-empty" aria-hidden="true">TRAY</span>
-            )}
-            {session.activity.recentPulse ? (
-              <span className="office-mail-arc" aria-hidden="true">
-                <span className="office-mail-arc-dot" />
-              </span>
-            ) : null}
-          </button>
-        </div>
-      </div>
-
-      {/* Compact Pod Plaque + Semantic Action Bar */}
-      <footer className="office-pod-bar">
-        <div className="office-pod-identity">
-          <span className="office-pod-badge">{session.persona.badgeCode}</span>
-          <span className="office-pod-name" title={session.label}>
-            {session.label}
-          </span>
-        </div>
-
-        <div className="office-pod-actions">
-          <Tooltip title={session.availability === 'unavailable' ? '查看保留会话电脑' : '打开员工电脑'}>
-            <Button
-              size="small"
-              type={isSelected ? 'primary' : 'default'}
-              icon={<DesktopOutlined />}
-              onClick={handleDesktopAction}
-              aria-label={`打开 ${session.shortLabel} 电脑`}
-            />
-          </Tooltip>
-          <Tooltip title={`会话邮件 (收 ${session.inboxCount} · 发 ${session.sentCount})`}>
-            <Button
-              size="small"
-              icon={<MailOutlined />}
-              onClick={handleMailAction}
-              aria-label={`打开 ${session.shortLabel} 邮件`}
-            >
-              {session.inboxCount > 0 || session.pendingCount > 0 ? (
-                <span className="office-action-count">
-                  {session.inboxCount}
-                  {session.pendingCount > 0 ? `+${session.pendingCount}` : ''}
-                </span>
-              ) : null}
-            </Button>
-          </Tooltip>
-          <Tooltip title="复制会话标识">
-            <Button
-              size="small"
-              icon={<CopyOutlined />}
-              onClick={handleCopyAction}
-              aria-label={`复制 ${session.shortLabel} 会话标识`}
-            />
-          </Tooltip>
-        </div>
-      </footer>
-    </article>
-  );
-});
+const getServerPrefsRevision = (): number => 0;
 
 export function OfficeRoom({
+  serverId,
   room,
   selectedSessionId,
   zoomingSessionId,
@@ -574,69 +186,397 @@ export function OfficeRoom({
   onCopyIdentity,
   onOpenNewTerminal,
   directoryLoading,
+  onTerminateSession,
+  terminatingSessionKey = null,
 }: OfficeRoomProps) {
-  const monitorRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const lastFollowedSelectionRef = useRef<string>('');
+  const themeMode = useThemeMode();
+  const prefsRevision = useSyncExternalStore(
+    subscribeOfficeComputerPreferences,
+    readOfficeComputerPreferencesRevision,
+    getServerPrefsRevision
+  );
+  const [reducedMotion, setReducedMotion] = useState<boolean>(readReducedMotion);
   const [zoneIndex, setZoneIndex] = useState(0);
   const [showAllPods, setShowAllPods] = useState(false);
+  const [focusedSessionKey, setFocusedSessionKey] = useState<string | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<OfficeHoverInfo | null>(null);
+  const [contextLost, setContextLost] = useState(false);
+  const [webglError, setWebglError] = useState('');
+  const [monitorEditMode, setMonitorEditMode] = useState(false);
+  const [activeEditMonitorIndex, setActiveEditMonitorIndex] = useState<OfficeMonitorIndex>(0);
+  const [monitorDragMode, setMonitorDragMode] = useState<OfficeMonitorDragMode>('xz');
+  const [liveMonitorPreview, setLiveMonitorPreview] = useState<{
+    serverId: string;
+    sessionKey: string;
+    monitorIndex: OfficeMonitorIndex;
+    transform: OfficeMonitorTransform;
+  } | null>(null);
 
-  const registerMonitorRef = useCallback((sessionId: string, node: HTMLButtonElement | null) => {
-    if (node) {
-      monitorRefs.current.set(sessionId, node);
-    } else {
-      monitorRefs.current.delete(sessionId);
-    }
+  const canvasHostRef = useRef<HTMLDivElement>(null);
+  const controllerRef = useRef<OfficeSceneController | null>(null);
+  const stationButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const prevRoomKeyRef = useRef<string>('');
+  const prevSelectedPropIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = () => setReducedMotion(mediaQuery.matches);
+    handleChange();
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
-
-  const getMonitorRect = useCallback((sessionId: string) => (
-    toOriginRect(monitorRefs.current.get(sessionId))
-  ), []);
 
   const roomKey = room?.projectKey || '';
   const totalSessions = room?.sessions.length ?? 0;
+  const canShowAll = totalSessions > ZONE_PAGE_SIZE && totalSessions <= MAX_SHOW_ALL_STATIONS;
+  const effectiveShowAll = showAllPods && canShowAll;
   const totalZones = Math.max(1, Math.ceil(totalSessions / ZONE_PAGE_SIZE));
 
-  // Reset to zone 0 when switching project rooms
+  // Reset pagination when switching project rooms
   useEffect(() => {
-    setZoneIndex(0);
-    lastFollowedSelectionRef.current = '';
+    if (prevRoomKeyRef.current !== roomKey) {
+      prevRoomKeyRef.current = roomKey;
+      setZoneIndex(0);
+      setShowAllPods(false);
+      setHoverInfo(null);
+      setMonitorEditMode(false);
+      setLiveMonitorPreview(null);
+    }
   }, [roomKey]);
 
-  // Reset scroll offset cleanly whenever switching project rooms or pagination zones
-  useLayoutEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0;
-    }
-  }, [roomKey, zoneIndex]);
-
-  // Clamp zoneIndex if session count shrinks after filtering
+  // Clamp zoneIndex if filtered session list shrinks
   useEffect(() => {
     if (zoneIndex >= totalZones) {
       setZoneIndex(Math.max(0, totalZones - 1));
     }
   }, [totalZones, zoneIndex]);
 
-  // Follow newly selected session across zones when paginated without snapping back on user paging
+  // Keep focusedSessionKey synchronized when parent room or selectedSessionId prop changes,
+  // while letting local 3D clicks & keyboard selection move freely between stations.
   useEffect(() => {
-    if (!room || !selectedSessionId || showAllPods) return;
-    const signature = `${room.projectKey}::${selectedSessionId}`;
-    if (lastFollowedSelectionRef.current === signature) return;
-    lastFollowedSelectionRef.current = signature;
-    const matchIndex = room.sessions.findIndex((item) => item.id === selectedSessionId);
-    if (matchIndex < 0) return;
-    const targetZone = Math.floor(matchIndex / ZONE_PAGE_SIZE);
-    setZoneIndex((prev) => (prev === targetZone ? prev : targetZone));
-  }, [room, selectedSessionId, showAllPods]);
+    if (!room) {
+      setFocusedSessionKey(null);
+      prevSelectedPropIdRef.current = null;
+      return;
+    }
+
+    const propSession = selectedSessionId
+      ? room.sessions.find((item) => item.id === selectedSessionId) ?? null
+      : null;
+
+    const propChanged = prevSelectedPropIdRef.current !== selectedSessionId;
+    prevSelectedPropIdRef.current = selectedSessionId;
+
+    if (propChanged && propSession) {
+      setFocusedSessionKey(propSession.sessionKey);
+      if (!effectiveShowAll) {
+        const idx = room.sessions.findIndex((item) => item.sessionKey === propSession.sessionKey);
+        if (idx >= 0) {
+          const targetZone = Math.floor(idx / ZONE_PAGE_SIZE);
+          setZoneIndex((prev) => (prev === targetZone ? prev : targetZone));
+        }
+      }
+      return;
+    }
+
+    setFocusedSessionKey((current) => {
+      if (current && room.sessions.some((item) => item.sessionKey === current)) {
+        return current;
+      }
+      if (propSession) return propSession.sessionKey;
+      return room.sessions[0]?.sessionKey ?? null;
+    });
+  }, [effectiveShowAll, room, selectedSessionId]);
 
   const visibleSessions = useMemo(() => {
     if (!room) return [];
-    if (showAllPods || room.sessions.length <= ZONE_PAGE_SIZE) {
+    if (effectiveShowAll || room.sessions.length <= ZONE_PAGE_SIZE) {
       return room.sessions;
     }
     const start = zoneIndex * ZONE_PAGE_SIZE;
     return room.sessions.slice(start, start + ZONE_PAGE_SIZE);
-  }, [room, showAllPods, zoneIndex]);
+  }, [effectiveShowAll, room, zoneIndex]);
+
+  // Resolve active selected session within current room/zone
+  const activeSession = useMemo<OfficeSessionItem | null>(() => {
+    if (!room || room.sessions.length === 0) return null;
+    if (focusedSessionKey) {
+      const inVisible = visibleSessions.find((item) => item.sessionKey === focusedSessionKey);
+      if (inVisible) return inVisible;
+      const inRoom = room.sessions.find((item) => item.sessionKey === focusedSessionKey);
+      if (inRoom) return inRoom;
+    }
+    return visibleSessions[0] ?? room.sessions[0] ?? null;
+  }, [focusedSessionKey, room, visibleSessions]);
+
+  const effectiveSelectedKey = activeSession?.sessionKey ?? null;
+  const resolvedServerId = serverId || activeSession?.serverId || room?.sessions[0]?.serverId || 'local';
+
+  const computerPreferencesByKey = useMemo<Readonly<Record<string, OfficeComputerPreferences>>>(() => {
+    if (prefsRevision < 0) return {};
+    const map: Record<string, OfficeComputerPreferences> = {};
+    for (const session of visibleSessions) {
+      const sid = serverId || session.serverId || 'local';
+      map[session.sessionKey] = readOfficeComputerPreferences(sid, session.sessionKey);
+    }
+    return map;
+  }, [prefsRevision, serverId, visibleSessions]);
+
+  const activeComputerPrefs = useMemo<OfficeComputerPreferences | null>(() => {
+    if (!activeSession) return null;
+    const sid = serverId || activeSession.serverId || 'local';
+    return computerPreferencesByKey[activeSession.sessionKey]
+      ?? readOfficeComputerPreferences(sid, activeSession.sessionKey);
+  }, [activeSession, computerPreferencesByKey, serverId]);
+
+  useEffect(() => {
+    if (!activeComputerPrefs?.dualMonitor) {
+      if (activeEditMonitorIndex === 1) {
+        setActiveEditMonitorIndex(0);
+      }
+      setLiveMonitorPreview((prev) => (prev?.monitorIndex === 1 ? null : prev));
+    }
+  }, [activeComputerPrefs?.dualMonitor, activeEditMonitorIndex]);
+
+  useEffect(() => {
+    setLiveMonitorPreview(null);
+  }, [effectiveSelectedKey, monitorEditMode, resolvedServerId]);
+
+  useEffect(() => {
+    const editingActive = monitorEditMode && Boolean(effectiveSelectedKey);
+    controllerRef.current?.setMonitorEditState(
+      editingActive,
+      activeEditMonitorIndex,
+      monitorDragMode
+    );
+  }, [activeEditMonitorIndex, effectiveSelectedKey, monitorDragMode, monitorEditMode]);
+
+  const sceneSyncState = useMemo<OfficeSceneSyncState | null>(() => {
+    if (!room) return null;
+    return {
+      serverId: resolvedServerId,
+      roomKey: room.projectKey,
+      roomName: room.projectName,
+      projectPath: room.projectPath,
+      isFallbackRoom: room.isFallbackRoom,
+      runningCount: room.runningCount,
+      totalSessionCount: room.sessions.length,
+      pendingMailCount: room.pendingMailCount,
+      crossProjectMailCount: room.crossProjectMailCount,
+      roomMessageCount: room.roomMessages.length,
+      hasRecentPulse: room.hasRecentPulse,
+      sessions: visibleSessions,
+      selectedSessionKey: effectiveSelectedKey,
+      computerPreferences: computerPreferencesByKey,
+      cameraPreset,
+      theme: themeMode,
+      reducedMotion,
+    };
+  }, [
+    cameraPreset,
+    computerPreferencesByKey,
+    effectiveSelectedKey,
+    reducedMotion,
+    resolvedServerId,
+    room,
+    themeMode,
+    visibleSessions,
+  ]);
+
+  // Keep latest callbacks and session snapshots in refs so the single WebGL controller
+  // persists across room switches, message ticks, and preview refreshes.
+  const latestRef = useRef({
+    propServerId: serverId,
+    serverId: resolvedServerId,
+    roomSessions: room?.sessions ?? [],
+    onOpenMonitor,
+    onOpenSessionMail,
+    onOpenRoomMailbox,
+  });
+  latestRef.current = {
+    propServerId: serverId,
+    serverId: resolvedServerId,
+    roomSessions: room?.sessions ?? [],
+    onOpenMonitor,
+    onOpenSessionMail,
+    onOpenRoomMailbox,
+  };
+
+  const latestMonitorEditRef = useRef({
+    enabled: monitorEditMode && Boolean(effectiveSelectedKey),
+    activeMonitorIndex: activeEditMonitorIndex,
+    dragMode: monitorDragMode,
+  });
+  latestMonitorEditRef.current = {
+    enabled: monitorEditMode && Boolean(effectiveSelectedKey),
+    activeMonitorIndex: activeEditMonitorIndex,
+    dragMode: monitorDragMode,
+  };
+
+  const latestSyncStateRef = useRef<OfficeSceneSyncState | null>(sceneSyncState);
+  latestSyncStateRef.current = sceneSyncState;
+
+  const hasRoom = Boolean(room);
+
+  useEffect(() => {
+    if (!hasRoom) return undefined;
+    const host = canvasHostRef.current;
+    if (!host) return undefined;
+
+    let effectDisposed = false;
+    let controller: OfficeSceneController | null = null;
+
+    const callbacks: OfficeSceneCallbacks = {
+      onSelectStation: (sessionKey) => {
+        if (effectDisposed) return;
+        setFocusedSessionKey(sessionKey);
+      },
+      onOpenMonitor: (sessionKey, originRect) => {
+        if (effectDisposed) return;
+        const session = latestRef.current.roomSessions.find(
+          (item) => item.sessionKey === sessionKey
+        );
+        if (session) {
+          setFocusedSessionKey(sessionKey);
+          latestRef.current.onOpenMonitor(session, originRect);
+        }
+      },
+      onOpenSessionMail: (sessionKey, originRect) => {
+        if (effectDisposed) return;
+        const session = latestRef.current.roomSessions.find(
+          (item) => item.sessionKey === sessionKey
+        );
+        if (session) {
+          setFocusedSessionKey(sessionKey);
+          latestRef.current.onOpenSessionMail(session, originRect);
+        }
+      },
+      onOpenRoomMailbox: () => {
+        if (effectDisposed) return;
+        latestRef.current.onOpenRoomMailbox();
+      },
+      onHoverTarget: (info) => {
+        if (effectDisposed) return;
+        setHoverInfo(info);
+      },
+      onActiveEditMonitorChange: (monitorIndex) => {
+        if (effectDisposed) return;
+        setActiveEditMonitorIndex(monitorIndex);
+      },
+      onPreviewMonitorTransform: (originServerId, sessionKey, monitorIndex, transform) => {
+        if (effectDisposed) return;
+        if (!originServerId || latestRef.current.serverId !== originServerId) return;
+        const hasSession = latestRef.current.roomSessions.some(
+          (item) => item.sessionKey === sessionKey
+        );
+        if (!hasSession) return;
+        setLiveMonitorPreview({
+          serverId: originServerId,
+          sessionKey,
+          monitorIndex,
+          transform,
+        });
+      },
+      onCommitMonitorTransform: (originServerId, sessionKey, monitorIndex, transform) => {
+        if (effectDisposed) return;
+        setLiveMonitorPreview((prev) => (
+          prev
+          && prev.serverId === originServerId
+          && prev.sessionKey === sessionKey
+          && prev.monitorIndex === monitorIndex
+            ? null
+            : prev
+        ));
+        if (!originServerId || latestRef.current.serverId !== originServerId) {
+          return;
+        }
+        const matchedSession = latestRef.current.roomSessions.find(
+          (item) => item.sessionKey === sessionKey
+        );
+        if (!matchedSession) {
+          return;
+        }
+        const targetSid = latestRef.current.propServerId || matchedSession.serverId || originServerId;
+        if (targetSid !== originServerId) {
+          return;
+        }
+        const current = readOfficeComputerPreferences(targetSid, sessionKey);
+        const nextMonitors: [OfficeMonitorTransform, OfficeMonitorTransform] = [
+          monitorIndex === 0 ? transform : current.monitors[0],
+          monitorIndex === 1 ? transform : current.monitors[1],
+        ];
+        updateOfficeComputerPreferences(targetSid, sessionKey, { monitors: nextMonitors });
+      },
+      onCancelMonitorTransform: (originServerId, sessionKey, monitorIndex) => {
+        if (effectDisposed) return;
+        setLiveMonitorPreview((prev) => (
+          prev
+          && prev.serverId === originServerId
+          && prev.sessionKey === sessionKey
+          && prev.monitorIndex === monitorIndex
+            ? null
+            : prev
+        ));
+      },
+      onContextLostChange: (lost) => {
+        if (effectDisposed) return;
+        setContextLost(lost);
+      },
+    };
+
+    try {
+      const initialState = latestSyncStateRef.current;
+      controller = new OfficeSceneController(
+        host,
+        callbacks,
+        initialState?.theme ?? 'dark',
+        initialState?.reducedMotion ?? false
+      );
+      if (initialState) {
+        controller.syncState(initialState);
+      }
+      controller.setMonitorEditState(
+        latestMonitorEditRef.current.enabled,
+        latestMonitorEditRef.current.activeMonitorIndex,
+        latestMonitorEditRef.current.dragMode
+      );
+      controllerRef.current = controller;
+      setWebglError('');
+      setContextLost(false);
+
+      return () => {
+        effectDisposed = true;
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+        }
+        controller?.dispose();
+        controller = null;
+      };
+    } catch (error: unknown) {
+      effectDisposed = true;
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+      }
+      if (controller) {
+        try {
+          controller.dispose();
+        } catch {
+          // Ignore secondary cleanup failure after initialization/initial sync error
+        }
+        controller = null;
+      }
+      const msg = error instanceof Error ? error.message : '无法初始化 WebGL 3D 渲染器';
+      setWebglError(msg);
+      return undefined;
+    }
+  }, [hasRoom]);
+
+  useEffect(() => {
+    if (sceneSyncState && controllerRef.current) {
+      controllerRef.current.syncState(sceneSyncState);
+    }
+  }, [sceneSyncState]);
 
   const handleOpenRoomTerminal = useCallback(() => {
     if (!room || room.isFallbackRoom || !room.projectPath || room.projectPath === '__no_cwd__') {
@@ -645,6 +585,137 @@ export function OfficeRoom({
     }
     onOpenNewTerminal(room.projectPath);
   }, [onOpenNewTerminal, room]);
+
+  const handleCameraPresetSelect = useCallback((preset: OfficeCameraPreset) => {
+    if (preset === cameraPreset) {
+      controllerRef.current?.resetCamera(preset);
+      return;
+    }
+    onCameraPresetChange(preset);
+  }, [cameraPreset, onCameraPresetChange]);
+
+  const handleResetCamera = useCallback(() => {
+    controllerRef.current?.resetCamera(cameraPreset);
+  }, [cameraPreset]);
+
+  const handleFocusSelectedStation = useCallback(() => {
+    if (effectiveSelectedKey) {
+      controllerRef.current?.focusStation(effectiveSelectedKey);
+    }
+  }, [effectiveSelectedKey]);
+
+  const handleOpenSelectedMonitor = useCallback(() => {
+    if (!activeSession) return;
+    const originRect = controllerRef.current?.projectStationPartToRect(
+      activeSession.sessionKey,
+      'monitor'
+    );
+    onOpenMonitor(activeSession, originRect);
+  }, [activeSession, onOpenMonitor]);
+
+  const handleOpenSelectedMail = useCallback(() => {
+    if (!activeSession) return;
+    const originRect = controllerRef.current?.projectStationPartToRect(
+      activeSession.sessionKey,
+      'mail-tray'
+    );
+    onOpenSessionMail(activeSession, originRect);
+  }, [activeSession, onOpenSessionMail]);
+
+  const handleCopySelectedIdentity = useCallback(() => {
+    if (!activeSession) return;
+    onCopyIdentity(activeSession);
+  }, [activeSession, onCopyIdentity]);
+
+  const handleTerminateSelected = useCallback(() => {
+    if (!activeSession || !onTerminateSession || !isTerminableWebShell(activeSession)) return;
+    void onTerminateSession(activeSession);
+  }, [activeSession, onTerminateSession]);
+
+  const handleToggleDualMonitor = useCallback((nextDual: boolean) => {
+    if (!activeSession) return;
+    const targetSid = serverId || activeSession.serverId || 'local';
+    updateOfficeComputerPreferences(targetSid, activeSession.sessionKey, {
+      dualMonitor: nextDual,
+    });
+  }, [activeSession, serverId]);
+
+  const handleStepMonitorAxis = useCallback(
+    (axis: keyof OfficeMonitorTransform, delta: number) => {
+      if (!activeSession) return;
+      const targetSid = serverId || activeSession.serverId || 'local';
+      const current = readOfficeComputerPreferences(targetSid, activeSession.sessionKey);
+      const targetIdx: OfficeMonitorIndex =
+        activeEditMonitorIndex === 1 && current.dualMonitor ? 1 : 0;
+      const base = current.monitors[targetIdx];
+      const nextTransform = clampOfficeMonitorTransform(
+        { ...base, [axis]: base[axis] + delta },
+        DEFAULT_OFFICE_MONITOR_TRANSFORMS[targetIdx]
+      );
+      const nextMonitors: [OfficeMonitorTransform, OfficeMonitorTransform] = [
+        targetIdx === 0 ? nextTransform : current.monitors[0],
+        targetIdx === 1 ? nextTransform : current.monitors[1],
+      ];
+      setLiveMonitorPreview(null);
+      updateOfficeComputerPreferences(targetSid, activeSession.sessionKey, {
+        monitors: nextMonitors,
+      });
+    },
+    [activeEditMonitorIndex, activeSession, serverId]
+  );
+
+  const handleResetMonitors = useCallback(() => {
+    if (!activeSession) return;
+    const targetSid = serverId || activeSession.serverId || 'local';
+    setLiveMonitorPreview(null);
+    resetOfficeComputerMonitors(targetSid, activeSession.sessionKey);
+  }, [activeSession, serverId]);
+
+  const handleDoneMonitorEdit = useCallback(() => {
+    setMonitorEditMode(false);
+  }, []);
+
+  const registerStationButtonRef = useCallback(
+    (sessionKey: string, node: HTMLButtonElement | null) => {
+      if (node) {
+        stationButtonRefs.current.set(sessionKey, node);
+      } else {
+        stationButtonRefs.current.delete(sessionKey);
+      }
+    },
+    []
+  );
+
+  const handleStationRailKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (visibleSessions.length === 0) return;
+      const currentIdx = Math.max(
+        0,
+        visibleSessions.findIndex((item) => item.sessionKey === effectiveSelectedKey)
+      );
+
+      let nextIdx = -1;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        nextIdx = (currentIdx + 1) % visibleSessions.length;
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        nextIdx = (currentIdx - 1 + visibleSessions.length) % visibleSessions.length;
+      } else if (event.key === 'Home') {
+        nextIdx = 0;
+      } else if (event.key === 'End') {
+        nextIdx = visibleSessions.length - 1;
+      }
+
+      if (nextIdx >= 0) {
+        event.preventDefault();
+        const nextSession = visibleSessions[nextIdx];
+        if (nextSession) {
+          setFocusedSessionKey(nextSession.sessionKey);
+          stationButtonRefs.current.get(nextSession.sessionKey)?.focus();
+        }
+      }
+    },
+    [effectiveSelectedKey, visibleSessions]
+  );
 
   if (directoryLoading && !room) {
     return (
@@ -684,22 +755,53 @@ export function OfficeRoom({
     );
   }
 
-  const startSeat = showAllPods || totalSessions === 0 ? 1 : zoneIndex * ZONE_PAGE_SIZE + 1;
-  const endSeat = showAllPods ? totalSessions : Math.min(totalSessions, (zoneIndex + 1) * ZONE_PAGE_SIZE);
+  const startSeat = effectiveShowAll || totalSessions === 0 ? 1 : zoneIndex * ZONE_PAGE_SIZE + 1;
+  const endSeat = effectiveShowAll
+    ? totalSessions
+    : Math.min(totalSessions, (zoneIndex + 1) * ZONE_PAGE_SIZE);
   const needsPagination = totalSessions > ZONE_PAGE_SIZE;
+
+  const activeMeta = activeSession ? getAvailabilityMeta(activeSession.availability) : null;
+  const activeSnippet = activeSession ? resolveRealDockSnippet(activeSession) : null;
+  const canTerminateActive = Boolean(
+    activeSession && onTerminateSession && isTerminableWebShell(activeSession)
+  );
+  const isTerminatingActive = Boolean(
+    activeSession && terminatingSessionKey && terminatingSessionKey === activeSession.sessionKey
+  );
+  const isBusyTerminatingOther = Boolean(
+    activeSession && terminatingSessionKey && terminatingSessionKey !== activeSession.sessionKey
+  );
+  const editMonitorIdx: OfficeMonitorIndex =
+    activeComputerPrefs?.dualMonitor && activeEditMonitorIndex === 1 ? 1 : 0;
+  const displayedMonitorTransform: OfficeMonitorTransform | null = activeSession && activeComputerPrefs
+    ? (
+        liveMonitorPreview
+        && liveMonitorPreview.serverId === resolvedServerId
+        && liveMonitorPreview.sessionKey === activeSession.sessionKey
+        && liveMonitorPreview.monitorIndex === editMonitorIdx
+          ? liveMonitorPreview.transform
+          : activeComputerPrefs.monitors[editMonitorIdx]
+      )
+    : null;
+  const isMonitorEditActive = Boolean(monitorEditMode && activeSession && activeComputerPrefs);
 
   return (
     <section
       className="office-room-root"
       data-camera={cameraPreset}
       data-has-pulse={room.hasRecentPulse ? 'true' : 'false'}
+      data-zooming={zoomingSessionId ? 'true' : 'false'}
       aria-label={`项目办公室 ${room.projectName}`}
     >
       {/* Compact Top Architectural Room Bar */}
       <header className="office-room-topbar">
         <div className="office-room-meta">
           <span className="office-room-eyebrow">
-            <span className={room.runningCount > 0 ? 'hud-led hud-led--ok hud-led--live' : 'hud-led'} aria-hidden="true" />
+            <span
+              className={room.runningCount > 0 ? 'hud-led hud-led--ok hud-led--live' : 'hud-led'}
+              aria-hidden="true"
+            />
             PROJECT ROOM
           </span>
           <h2 className="office-room-title" title={room.projectName}>
@@ -726,7 +828,7 @@ export function OfficeRoom({
         <div className="office-room-controls">
           {needsPagination ? (
             <div className="office-zone-bar" role="group" aria-label="工位分区切换">
-              {!showAllPods ? (
+              {!effectiveShowAll ? (
                 <>
                   <Button
                     size="small"
@@ -749,13 +851,15 @@ export function OfficeRoom({
               ) : (
                 <span className="office-zone-status">全部 {totalSessions} 个工位</span>
               )}
-              <Button
-                size="small"
-                icon={showAllPods ? <CompressOutlined /> : <AppstoreOutlined />}
-                onClick={() => setShowAllPods((prev) => !prev)}
-              >
-                {showAllPods ? '分区视图' : '展开全部'}
-              </Button>
+              {canShowAll ? (
+                <Button
+                  size="small"
+                  icon={effectiveShowAll ? <CompressOutlined /> : <AppstoreOutlined />}
+                  onClick={() => setShowAllPods((prev) => !prev)}
+                >
+                  {effectiveShowAll ? '分区视图' : '展开全部'}
+                </Button>
+              ) : null}
             </div>
           ) : null}
 
@@ -769,7 +873,7 @@ export function OfficeRoom({
                   className={`office-camera-btn${active ? ' is-active' : ''}`}
                   aria-pressed={active}
                   title={opt.title}
-                  onClick={() => onCameraPresetChange(opt.preset)}
+                  onClick={() => handleCameraPresetSelect(opt.preset)}
                 >
                   {renderCameraIcon(opt.preset)}
                   <span>{opt.label}</span>
@@ -777,6 +881,30 @@ export function OfficeRoom({
               );
             })}
           </div>
+
+          <Tooltip title="重置当前 3D 视角">
+            <Button
+              size="small"
+              icon={<UndoOutlined />}
+              onClick={handleResetCamera}
+              aria-label="重置 3D 视角"
+            >
+              重置视角
+            </Button>
+          </Tooltip>
+
+          {activeSession ? (
+            <Tooltip title={`镜头聚焦到 ${activeSession.shortLabel}`}>
+              <Button
+                size="small"
+                icon={<AimOutlined />}
+                onClick={handleFocusSelectedStation}
+                aria-label="聚焦选中工位"
+              >
+                聚焦
+              </Button>
+            </Tooltip>
+          ) : null}
 
           <Button
             size="small"
@@ -808,108 +936,225 @@ export function OfficeRoom({
         </div>
       </header>
 
-      {/* Scrollable Outer Viewport (never flattens preserve-3d inside stage) */}
-      <div ref={scrollContainerRef} className="office-room-scroll">
-        <div className="office-room-perspective">
-          <div
-            key={room.projectKey}
-            className="office-room-stage-frame"
-          >
-            <div className="office-stage" data-camera={cameraPreset}>
-              {/* Architectural 3D Ceiling Beams */}
-              <div className="office-ceiling" aria-hidden="true">
-                <span className="office-ceiling-beam office-ceiling-beam--l" />
-                <span className="office-ceiling-beam office-ceiling-beam--c" />
-                <span className="office-ceiling-beam office-ceiling-beam--r" />
-              </div>
+      {/* Real WebGL Three.js 3D Stage (single mounted canvas per OfficeRoom) */}
+      <div className="office-webgl-viewport">
+        <div
+          ref={canvasHostRef}
+          className="office-webgl-host"
+          role="img"
+          aria-label={`项目办公室 ${room.projectName} 三维场景，共 ${visibleSessions.length} 个当前展示工位`}
+        />
 
-              {/* Architectural 3D Side Walls */}
-              <div className="office-wall-side office-wall-side--left" aria-hidden="true">
-                <span className="office-wall-rib" />
-                <span className="office-wall-rib" />
-                <span className="office-wall-trim" />
-              </div>
-              <div className="office-wall-side office-wall-side--right" aria-hidden="true">
-                <span className="office-wall-rib" />
-                <span className="office-wall-rib" />
-                <span className="office-wall-trim" />
-              </div>
+        {/* Lightweight HUD interaction bar */}
+        <div className="office-webgl-hud-top" aria-hidden="true">
+          <span className="office-webgl-hint">
+            {isMonitorEditActive
+              ? '显示器调整模式：拖拽选中工位显示器移动位置（Shift 旋转 / Alt 调高）· 空白处仍可旋转视角'
+              : '左键拖拽旋转 · 右键平移 · 滚轮缩放 · 点击工位选中 / 点击显示器打开桌面'}
+          </span>
+          {hoverInfo ? (
+            <span className="office-webgl-hover-pill">
+              <strong>{hoverInfo.label}</strong>
+              <span>{hoverInfo.hint}</span>
+            </span>
+          ) : null}
+        </div>
 
-              {/* Architectural 3D Back Wall with Project Plaque & Room Mail Counter Terminal */}
-              <div className="office-wall-back">
-                <div className="office-wall-plaque">
-                  <span className="office-wall-plaque-code">SECTOR // {room.projectName.toUpperCase()}</span>
-                  <span className="office-wall-plaque-sub">
-                    {totalSessions} 工位 · {room.runningCount} 活跃
-                    {room.crossProjectMailCount > 0 ? ` · 跨项目联络 ${room.crossProjectMailCount}` : ''}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  className="office-wall-mail-terminal"
-                  onClick={onOpenRoomMailbox}
-                  aria-label={`打开房间邮件终端（共 ${room.roomMessages.length} 封，待投递 ${room.pendingMailCount} 封）`}
-                >
-                  <span className="office-wall-terminal-head">
-                    <MailOutlined aria-hidden="true" />
-                    <span>ROOM MAIL TERMINAL</span>
-                    <span className={room.hasRecentPulse ? 'hud-led hud-led--ok hud-led--live' : 'hud-led hud-led--info'} aria-hidden="true" />
-                  </span>
-                  <span className="office-wall-terminal-stats">
-                    <span>总计 {room.roomMessages.length}</span>
-                    <span>待投递 {room.pendingMailCount}</span>
-                    <span>跨室 {room.crossProjectMailCount}</span>
-                  </span>
-                </button>
-              </div>
-
-              {/* Gridded 3D HUD Floor Plane */}
-              <div className="office-floor" aria-hidden="true">
-                <span className="office-floor-aisle" />
-              </div>
-
-              {/* Workstation Bays */}
-              {room.sessions.length > 0 ? (
-                <div className="office-pods-grid">
-                  {visibleSessions.map((session) => (
-                    <WorkstationPod
-                      key={session.id}
-                      session={session}
-                      isSelected={selectedSessionId === session.id}
-                      isZooming={zoomingSessionId === session.id}
-                      onRegisterMonitorRef={registerMonitorRef}
-                      getMonitorRect={getMonitorRect}
-                      onOpenMonitor={onOpenMonitor}
-                      onOpenSessionMail={onOpenSessionMail}
-                      onCopyIdentity={onCopyIdentity}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="office-room-empty-bay">
-                  <HudStateView
-                    compact
-                    code="BAY // EMPTY"
-                    title="当前项目房间暂无工位"
-                    description="可在当前目录打开新终端，或打开房间邮件终端查看历史跨会话通信"
-                    extra={(
-                      <div className="office-room-state-actions">
-                        <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenRoomTerminal}>
-                          新建终端
-                        </Button>
-                        <Button icon={<MailOutlined />} onClick={onOpenRoomMailbox}>
-                          房间邮件 ({room.roomMessages.length})
-                        </Button>
-                      </div>
-                    )}
-                  />
+        {/* Empty / WebGL context-loss / init-error compact overlays */}
+        {room.sessions.length === 0 ? (
+          <div className="office-webgl-overlay">
+            <HudStateView
+              compact
+              code="BAY // EMPTY"
+              title="当前项目房间暂无工位"
+              description="可在当前目录打开新终端，或打开房间邮件终端查看历史跨会话通信"
+              extra={(
+                <div className="office-room-state-actions">
+                  <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenRoomTerminal}>
+                    新建终端
+                  </Button>
+                  <Button icon={<MailOutlined />} onClick={onOpenRoomMailbox}>
+                    房间邮件 ({room.roomMessages.length})
+                  </Button>
                 </div>
               )}
-            </div>
+            />
           </div>
-        </div>
+        ) : webglError ? (
+          <div className="office-webgl-overlay">
+            <HudStateView
+              compact
+              tone="warn"
+              code="WEBGL // STANDBY"
+              title="3D 渲染画布暂不可用"
+              description={webglError}
+            />
+          </div>
+        ) : contextLost ? (
+          <div className="office-webgl-overlay">
+            <HudStateView
+              compact
+              variant="loading"
+              tone="warn"
+              code="WEBGL // RESTORING"
+              title="正在恢复 3D 渲染上下文"
+              description="检测到显卡上下文重置，请稍候或使用下方工位控制条继续操作"
+            />
+          </div>
+        ) : null}
       </div>
+
+      {/* Accessible Non-Canvas Station Rail & Selected Station Action Dock */}
+      {visibleSessions.length > 0 ? (
+        <footer className="office-station-dock" aria-label="工位键盘切换与操作面板">
+          <div
+            className="office-station-rail"
+            role="listbox"
+            aria-label="当前分区工位列表"
+            onKeyDown={handleStationRailKeyDown}
+          >
+            {visibleSessions.map((session) => {
+              const isSelected = session.sessionKey === effectiveSelectedKey;
+              const availMeta = getAvailabilityMeta(session.availability);
+              const mailTotal = session.inboxCount + session.pendingCount;
+              return (
+                <button
+                  key={session.sessionKey}
+                  ref={(node) => registerStationButtonRef(session.sessionKey, node)}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`office-station-chip${isSelected ? ' is-selected' : ''}`}
+                  data-availability={session.availability}
+                  data-pulse={session.activity.recentPulse ? 'true' : 'false'}
+                  onClick={() => setFocusedSessionKey(session.sessionKey)}
+                  title={`${session.label} (${availMeta.label})`}
+                >
+                  <span className={availMeta.ledClass} aria-hidden="true" />
+                  <span className="office-station-chip-code">{session.persona.badgeCode}</span>
+                  <span className="office-station-chip-name">{session.shortLabel}</span>
+                  {mailTotal > 0 ? (
+                    <span
+                      className={`office-station-chip-mail${session.pendingCount > 0 ? ' is-pending' : ''}`}
+                    >
+                      {session.inboxCount}
+                      {session.pendingCount > 0 ? `+${session.pendingCount}` : ''}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {activeSession && activeMeta && activeSnippet ? (
+            <div className="office-selected-bar">
+              <div className="office-selected-info">
+                <span className={activeMeta.ledClass} aria-hidden="true" />
+                <span className="office-selected-badge">{activeSession.persona.badgeCode}</span>
+                <span className="office-selected-name" title={activeSession.label}>
+                  {activeSession.label}
+                </span>
+                <span className="office-selected-chip">
+                  {activeSession.provider || (activeSession.kind === 'shell' ? 'shell' : 'cli')}
+                </span>
+                {activeSession.previewModel || activeSession.model ? (
+                  <span
+                    className="office-selected-chip office-selected-chip--muted"
+                    title={activeSession.previewModel || activeSession.model}
+                  >
+                    {activeSession.previewModel || activeSession.model}
+                  </span>
+                ) : null}
+                <span className={`office-selected-chip ${activeMeta.toneClass}`}>
+                  {activeMeta.label}
+                </span>
+                {activeComputerPrefs?.power === 'off' ? (
+                  <span className="office-selected-chip office-tone--poweroff">已关机</span>
+                ) : null}
+                {activeComputerPrefs?.dualMonitor ? (
+                  <span className="office-selected-chip office-tone--directory">双屏</span>
+                ) : null}
+                <span className="office-selected-preview" title={activeSnippet.text}>
+                  <em>{activeSnippet.tag}</em>
+                  <span>{activeSnippet.text}</span>
+                </span>
+              </div>
+
+              <div className="office-selected-actions">
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<DesktopOutlined />}
+                  onClick={handleOpenSelectedMonitor}
+                >
+                  {activeComputerPrefs?.power === 'off' ? '开机桌面' : '打开桌面'}
+                </Button>
+                <Tooltip title="拖拽或精调当前选中工位的 3D 显示器位置与单双屏模式">
+                  <Button
+                    size="small"
+                    type={isMonitorEditActive ? 'primary' : 'default'}
+                    icon={isMonitorEditActive ? <CheckOutlined /> : <DragOutlined />}
+                    aria-pressed={isMonitorEditActive}
+                    onClick={() => setMonitorEditMode((prev) => !prev)}
+                  >
+                    {isMonitorEditActive ? '完成调整' : '调整显示器'}
+                  </Button>
+                </Tooltip>
+                <Button
+                  size="small"
+                  icon={<MailOutlined />}
+                  onClick={handleOpenSelectedMail}
+                >
+                  会话邮件
+                  {activeSession.inboxCount > 0 || activeSession.pendingCount > 0 ? (
+                    <span className="office-action-count">
+                      {activeSession.inboxCount}
+                      {activeSession.pendingCount > 0 ? `+${activeSession.pendingCount}` : ''}
+                    </span>
+                  ) : null}
+                </Button>
+                <Tooltip title="复制会话标识">
+                  <Button
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={handleCopySelectedIdentity}
+                    aria-label={`复制 ${activeSession.shortLabel} 会话标识`}
+                  >
+                    复制标识
+                  </Button>
+                </Tooltip>
+                {canTerminateActive ? (
+                  <Button
+                    size="small"
+                    danger
+                    icon={<StopOutlined />}
+                    loading={isTerminatingActive}
+                    disabled={isBusyTerminatingOther}
+                    onClick={handleTerminateSelected}
+                  >
+                    结束终端
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {isMonitorEditActive && activeComputerPrefs && displayedMonitorTransform ? (
+            <OfficeMonitorControls
+              dualMonitor={activeComputerPrefs.dualMonitor}
+              activeMonitorIndex={editMonitorIdx}
+              dragMode={monitorDragMode}
+              transform={displayedMonitorTransform}
+              onToggleDualMonitor={handleToggleDualMonitor}
+              onSelectMonitorIndex={setActiveEditMonitorIndex}
+              onChangeDragMode={setMonitorDragMode}
+              onStepAxis={handleStepMonitorAxis}
+              onResetMonitors={handleResetMonitors}
+              onDone={handleDoneMonitorEdit}
+            />
+          ) : null}
+        </footer>
+      ) : null}
     </section>
   );
 }

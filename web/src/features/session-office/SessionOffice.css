@@ -324,6 +324,150 @@
   font-size: 12px;
 }
 
+/* 当前选中房间工位列表（直接提供可见“关闭会话”与“桌面”操作） */
+.session-office-stations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.session-office-stations-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.session-office-stations-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-heading);
+}
+
+.session-office-stations-title > .anticon {
+  color: var(--color-accent);
+}
+
+.session-office-station-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 2px 0 0;
+  max-height: 224px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.session-office-station-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-raised);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+.session-office-station-item:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-overlay-subtle);
+}
+
+.session-office-station-item.is-selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.session-office-station-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.session-office-station-name-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-office-station-name {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-station-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.session-office-station-poweroff {
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.session-office-station-source {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.session-office-station-cwd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-office-station-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 1px;
+}
+
+.session-office-disabled-action {
+  display: inline-flex;
+}
+
 .session-office-sidebar-footer {
   display: flex;
   flex-direction: column;
@@ -626,7 +770,89 @@
 }
 
 /* -------------------------------------------------------------------------
- * 5. Responsive Desktop Widths (1440px / 1920px / <= 1120px)
+ * 5. Web Shell Termination Confirmation Modal Content
+ * ---------------------------------------------------------------------- */
+.session-office-terminate-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+}
+
+.session-office-terminate-desc {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+
+.session-office-terminate-meta {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-sunken);
+}
+
+.session-office-terminate-meta > div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: 12px;
+}
+
+.session-office-terminate-meta dt {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-faint);
+}
+
+.session-office-terminate-meta dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--color-heading);
+  word-break: break-all;
+}
+
+.session-office-terminate-meta code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-accent);
+  user-select: text;
+}
+
+.session-office-terminate-termid {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-muted);
+}
+
+.session-office-terminate-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* -------------------------------------------------------------------------
+ * 6. Responsive Desktop Widths (1440px / 1920px / <= 1120px)
  * ---------------------------------------------------------------------- */
 @media (min-width: 1680px) {
   .session-office {

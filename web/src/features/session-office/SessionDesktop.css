@@ -6,8 +6,7 @@
  *      .session-desktop-terminal-host 严禁任何 transform 或 clip-path，
  *      确保 xterm FitAddon 行列测算与鼠标选区 1:1 像素精准。
  *   2. 严禁使用粗 border-left / inset 装饰条或大块 Alert 卡片。
- *   3. 隐藏 ShellTerminalPanel 内置的关闭按钮，防止误杀后台 PTY；所有关闭/最小化
- *      均通过安全 OS 窗口栏与任务栏完成。
+ *   3. 隐藏 ShellTerminalPanel 内置的关闭与非原生重启按钮，防止绕过确认框或误杀后台 PTY。
  * ========================================================================== */
 
 .session-desktop-backdrop {
@@ -79,6 +78,13 @@
   animation: session-desktop-shell-in var(--motion-base, 160ms) var(--ease-standard, ease) both;
 }
 
+.session-desktop-shell[data-rgb='on'][data-power='on'] {
+  border-color: color-mix(in srgb, var(--sd-rgb-color, var(--color-accent)) 52%, var(--color-border-strong));
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--sd-rgb-color, var(--color-accent)) 18%, transparent),
+    var(--elevation-5);
+}
+
 @keyframes session-desktop-shell-in {
   from {
     opacity: 0;
@@ -112,16 +118,24 @@
 }
 
 .session-desktop-topbar-left {
-  flex: 1 1 280px;
+  flex: 1 1 260px;
   flex-wrap: wrap;
 }
 
 .session-desktop-topbar-center {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   padding: 2px;
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm, 3px);
   background: var(--color-surface-sunken);
+}
+
+.session-desktop-topbar-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border);
+  flex: 0 0 auto;
 }
 
 .session-desktop-topbar-right {
@@ -164,7 +178,7 @@
   align-items: center;
   gap: var(--space-2, 4px);
   min-width: 0;
-  max-width: 240px;
+  max-width: 220px;
   color: var(--color-muted);
   font-family: var(--font-mono);
   font-size: var(--text-2xs, 11px);
@@ -191,7 +205,7 @@
 .session-desktop-session-name {
   font-weight: var(--weight-medium, 500);
   color: var(--color-heading);
-  max-width: 180px;
+  max-width: 170px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -228,12 +242,18 @@
   padding: 0 var(--space-5, 10px);
 }
 
-.session-desktop-btn:hover,
-.session-desktop-dock-pill:hover,
-.session-desktop-coworker-pill:hover {
+.session-desktop-btn:hover:not(:disabled),
+.session-desktop-dock-pill:hover:not(:disabled),
+.session-desktop-coworker-pill:hover:not(:disabled) {
   border-color: var(--color-accent);
   color: var(--color-accent);
   background: var(--color-accent-soft);
+}
+
+.session-desktop-btn:disabled,
+.session-desktop-layout-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .session-desktop-btn--back {
@@ -247,7 +267,7 @@
   color: var(--color-on-accent);
 }
 
-.session-desktop-btn--primary:hover {
+.session-desktop-btn--primary:hover:not(:disabled) {
   border-color: var(--color-accent-hover);
   background: var(--color-accent-hover);
   color: var(--color-on-accent);
@@ -255,6 +275,53 @@
 
 .session-desktop-btn--subtle {
   color: var(--color-muted);
+}
+
+/* 虚拟电脑关机 / 开机按钮（与销毁会话红色按钮严格视觉区分） */
+.session-desktop-btn--power-off {
+  border-color: color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-soft) 68%, var(--color-surface-raised));
+  color: var(--ink-warning, var(--color-warning));
+}
+
+.session-desktop-btn--power-off:hover:not(:disabled) {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--ink-warning, var(--color-warning));
+}
+
+.session-desktop-btn--power-on {
+  border-color: color-mix(in srgb, var(--color-success) 52%, var(--color-border));
+  background: var(--tint-success, var(--color-accent-soft));
+  color: var(--ink-success, var(--color-success));
+}
+
+.session-desktop-btn--power-on:hover:not(:disabled) {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 20%, var(--color-surface));
+  color: var(--ink-success, var(--color-success));
+}
+
+.session-desktop-btn--danger {
+  border-color: color-mix(in srgb, var(--color-danger) 50%, var(--color-border));
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.session-desktop-btn--danger:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 18%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.session-desktop-btn--disabled {
+  color: var(--color-muted);
+  background: var(--color-surface-sunken);
+  border-color: var(--color-border);
+}
+
+.session-desktop-disabled-wrap {
+  display: inline-flex;
 }
 
 .session-desktop-layout-btn {
@@ -265,7 +332,7 @@
   color: var(--color-muted);
 }
 
-.session-desktop-layout-btn:hover {
+.session-desktop-layout-btn:hover:not(:disabled) {
   color: var(--color-heading);
   background: var(--color-overlay);
 }
@@ -309,6 +376,12 @@
   color: var(--ink-danger);
 }
 
+.session-desktop-status-pill--standby {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted);
+}
+
 .session-desktop-inline-badge {
   display: inline-flex;
   align-items: center;
@@ -326,28 +399,200 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 桌面工作台主舞台 ──────────────────────────────────────────────────────── */
+/* ── 双显示器物理边框提示条（零 transform，纯 1px 分隔） ─────────────────── */
+.session-desktop-monitor-bezel-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) 1px minmax(360px, 0.88fr);
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 26px;
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.session-desktop-bezel-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  padding: 2px var(--space-5, 10px);
+  color: var(--color-muted);
+  min-width: 0;
+}
+
+.session-desktop-bezel-slot > .anticon {
+  color: var(--color-accent);
+}
+
+.session-desktop-bezel-slot strong {
+  color: var(--color-heading);
+  font-weight: var(--weight-semibold, 600);
+  white-space: nowrap;
+}
+
+.session-desktop-bezel-slot > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-desktop-bezel-divider {
+  width: 1px;
+  height: 100%;
+  background: var(--color-border-strong);
+}
+
+.session-desktop-bezel-span-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.session-desktop-bezel-span-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* ── 桌面工作台主舞台与三款壁纸光影层 ────────────────────────────────────── */
 .session-desktop-stage {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--color-bg);
+  background-color: #06101e;
+}
+
+/* 1. 极光冷翠 (Aurora Cyan) */
+.session-desktop-stage[data-wallpaper='aurora'] {
+  background-color: #040d1a;
   background-image:
-    radial-gradient(circle at 16% 18%, var(--hud-ambient-cyan), transparent 46%),
-    radial-gradient(circle at 84% 78%, var(--hud-ambient-violet), transparent 48%),
+    radial-gradient(ellipse 68% 42% at 24% 26%, rgba(16, 185, 129, 0.34), transparent 68%),
+    radial-gradient(ellipse 62% 40% at 74% 28%, rgba(0, 229, 255, 0.30), transparent 66%),
+    radial-gradient(circle at 64% 78%, rgba(56, 189, 248, 0.16), transparent 55%),
+    linear-gradient(180deg, rgba(4, 10, 22, 0.25) 0%, rgba(4, 12, 20, 0.68) 82%, rgba(3, 8, 15, 0.92) 100%),
     linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px),
-    linear-gradient(var(--hud-grid-major-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hud-grid-major-line) 1px, transparent 1px);
+    linear-gradient(162deg, #040a16 0%, #07192e 54%, #092637 100%);
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    var(--hud-grid-size, 32px) var(--hud-grid-size, 32px),
+    var(--hud-grid-size, 32px) var(--hud-grid-size, 32px),
+    100% 100%;
+}
+
+/* 2. 暮光琥珀 (Dusk Amber) */
+.session-desktop-stage[data-wallpaper='sunset'] {
+  background-color: #160e24;
+  background-image:
+    radial-gradient(circle at 64% 56%, rgba(254, 215, 130, 0.42) 0%, rgba(251, 146, 60, 0.24) 24%, transparent 56%),
+    radial-gradient(ellipse 72% 44% at 24% 24%, rgba(168, 85, 247, 0.22), transparent 66%),
+    linear-gradient(180deg, rgba(18, 12, 34, 0.18) 0%, rgba(20, 11, 28, 0.72) 86%, rgba(15, 9, 22, 0.92) 100%),
+    linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(180deg, #130f26 0%, #3b1d46 42%, #8c313f 74%, #c26622 100%);
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    var(--hud-grid-size, 32px) var(--hud-grid-size, 32px),
+    var(--hud-grid-size, 32px) var(--hud-grid-size, 32px),
+    100% 100%;
+}
+
+/* 3. 深空午夜 (Midnight Indigo — 深石墨底色与钴蓝流线丝带及银边微光) */
+.session-desktop-stage[data-wallpaper='midnight'] {
+  background-color: #080b12;
+  background-image:
+    radial-gradient(ellipse 68% 38% at 68% 36%, rgba(37, 99, 235, 0.34), transparent 62%),
+    radial-gradient(ellipse 56% 30% at 38% 64%, rgba(148, 163, 184, 0.16), transparent 58%),
+    linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(145deg, #07090f 0%, #0d1320 52%, #111c30 100%);
   background-size:
     100% 100%,
     100% 100%,
     var(--hud-grid-size, 32px) var(--hud-grid-size, 32px),
     var(--hud-grid-size, 32px) var(--hud-grid-size, 32px),
-    var(--hud-grid-major-size, 128px) var(--hud-grid-major-size, 128px),
-    var(--hud-grid-major-size, 128px) var(--hud-grid-major-size, 128px);
+    100% 100%;
+}
+
+/* 浅色主题下柔和校准壁纸明度与对比，保持可读性 */
+:root[data-theme='light'] .session-desktop-stage[data-wallpaper='aurora'] {
+  background-color: #dbeafe;
+  background-image:
+    radial-gradient(ellipse 68% 46% at 24% 26%, rgba(16, 185, 129, 0.28), transparent 68%),
+    radial-gradient(ellipse 62% 42% at 76% 30%, rgba(6, 182, 212, 0.30), transparent 66%),
+    linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(162deg, #e0f2fe 0%, #ccfbf1 52%, #dbeafe 100%);
+}
+
+:root[data-theme='light'] .session-desktop-stage[data-wallpaper='sunset'] {
+  background-color: #ffedd5;
+  background-image:
+    radial-gradient(circle at 64% 52%, rgba(251, 146, 60, 0.34) 0%, rgba(244, 114, 182, 0.20) 36%, transparent 66%),
+    linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(180deg, #ede9fe 0%, #fce7f3 48%, #ffedd5 100%);
+}
+
+:root[data-theme='light'] .session-desktop-stage[data-wallpaper='midnight'] {
+  background-color: #e0e7ff;
+  background-image:
+    radial-gradient(circle at 30% 34%, rgba(99, 102, 241, 0.28), transparent 58%),
+    radial-gradient(circle at 76% 64%, rgba(139, 92, 246, 0.24), transparent 56%),
+    linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(145deg, #e0e7ff 0%, #ede9fe 54%, #dbeafe 100%);
+}
+
+/* 虚拟关机状态：熄灭壁纸背光，呈现安静深灰黑待机屏面 */
+.session-desktop-stage[data-power='off'] {
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--color-surface-raised) 48%, transparent), transparent 65%);
+}
+
+/* 实景 WebP 壁纸图层（加载成功后展示 /ui/office-assets/computer-v3/wallpaper-*.webp，失败自动回退底层 CSS） */
+.session-desktop-wallpaper-image {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.92;
+}
+
+.session-desktop-wallpaper-image::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 9, 18, 0.14) 0%, rgba(4, 9, 18, 0.34) 100%);
+}
+
+:root[data-theme='light'] .session-desktop-wallpaper-image {
+  opacity: 0.84;
+}
+
+:root[data-theme='light'] .session-desktop-wallpaper-image::after {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.18) 0%, rgba(241, 245, 249, 0.28) 100%);
 }
 
 /* 桌面壁纸层（应用图标 + 身份与进程信息卡片） */
@@ -366,10 +611,9 @@
 }
 
 .session-desktop-icons {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6, 12px);
-  width: 164px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 148px));
+  gap: var(--space-5, 10px);
   flex: 0 0 auto;
 }
 
@@ -379,7 +623,7 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-3, 6px);
-  padding: var(--space-6, 12px) var(--space-4, 8px);
+  padding: var(--space-5, 10px) var(--space-4, 8px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-md, 4px);
   background: color-mix(in srgb, var(--color-surface) 88%, transparent);
@@ -408,13 +652,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--hos-radius-md, 4px);
   background: var(--color-surface-sunken);
   color: var(--color-accent);
-  font-size: 20px;
+  font-size: 19px;
 }
 
 .session-desktop-app-led {
@@ -457,7 +701,7 @@
 
 /* 桌面身份与进程信息小组件 */
 .session-desktop-identity-widget {
-  width: min(460px, 100%);
+  width: min(468px, 100%);
   padding: var(--space-7, 14px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-md, 4px);
@@ -547,7 +791,101 @@
   color: var(--color-muted);
 }
 
+.session-desktop-lifecycle-note {
+  margin: 0;
+  padding: var(--space-3, 6px) var(--space-4, 8px);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted);
+  font-size: var(--text-2xs, 11px);
+  line-height: 1.45;
+}
+
 .session-desktop-widget-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 8px);
+  flex-wrap: wrap;
+}
+
+/* ── 虚拟电脑已关机待机层（零终端挂载） ──────────────────────────────────── */
+.session-desktop-standby {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  justify-items: center;
+  gap: var(--space-6, 12px);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-8, 16px);
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.session-desktop-standby[data-dual='true'] {
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  align-items: stretch;
+}
+
+.session-desktop-standby-screen {
+  width: min(640px, 100%);
+  align-self: center;
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 10px);
+  padding: var(--space-9, 18px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--hos-radius-md, 4px);
+  background: var(--color-surface);
+  box-shadow: var(--elevation-3);
+}
+
+.session-desktop-standby[data-dual='true'] .session-desktop-standby-screen {
+  width: 100%;
+}
+
+.session-desktop-standby-screen--secondary {
+  background: var(--color-surface-raised);
+}
+
+.session-desktop-standby-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  flex-wrap: wrap;
+}
+
+.session-desktop-standby-tag {
+  padding: 1px var(--space-3, 6px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-pill, 9999px);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.session-desktop-standby-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: var(--weight-semibold, 600);
+  color: var(--color-heading);
+}
+
+.session-desktop-standby-desc {
+  margin: 0;
+  font-size: var(--text-base, 13px);
+  line-height: 1.55;
+  color: var(--color-muted);
+}
+
+.session-desktop-standby-actions {
   display: flex;
   align-items: center;
   gap: var(--space-4, 8px);
@@ -569,13 +907,12 @@
   pointer-events: none;
 }
 
-.session-desktop-windows[data-terminal-open='true'][data-mail-open='false'],
-.session-desktop-windows[data-terminal-open='false'][data-mail-open='true'] {
+.session-desktop-windows[data-cols='one'] {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 }
 
-.session-desktop-windows[data-layout='split'][data-terminal-open='true'][data-mail-open='true'] {
+.session-desktop-windows[data-cols='two'] {
   grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
   grid-template-rows: minmax(0, 1fr);
 }
@@ -593,6 +930,60 @@
   pointer-events: auto;
   transform: none;
   clip-path: none;
+}
+
+/* 双显示器空闲屏幕卡片（保持壁纸通透可见，提供快捷副屏操作） */
+.session-desktop-secondary-surface {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-5, 10px);
+  border: 1px dashed color-mix(in srgb, var(--color-border-strong) 75%, transparent);
+  border-radius: var(--hos-radius-md, 4px);
+  background: color-mix(in srgb, var(--color-bg) 16%, transparent);
+  pointer-events: auto;
+  overflow: auto;
+}
+
+.session-desktop-secondary-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 8px);
+  padding: var(--space-6, 12px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-md, 4px);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  box-shadow: var(--elevation-2);
+}
+
+.session-desktop-secondary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  flex-wrap: wrap;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--color-heading);
+}
+
+.session-desktop-secondary-head > .anticon {
+  color: var(--color-accent);
+}
+
+.session-desktop-secondary-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.session-desktop-secondary-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  flex-wrap: wrap;
 }
 
 /* 最小化或切换到邮箱时保持组件挂载但完全收缩隐藏，绝不触发 unmount / terminal.close */
@@ -682,6 +1073,68 @@
   color: var(--color-accent);
 }
 
+.session-desktop-win-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--color-border);
+  flex: 0 0 auto;
+}
+
+.session-desktop-win-power-btn,
+.session-desktop-win-terminate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 var(--space-3, 6px);
+  border-radius: var(--hos-radius-xs, 2px);
+  font-family: var(--font-body);
+  font-size: var(--text-2xs, 11px);
+  font-weight: var(--weight-medium, 500);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--motion-fast, 120ms) var(--ease-standard, ease),
+    background-color var(--motion-fast, 120ms) var(--ease-standard, ease);
+}
+
+.session-desktop-win-power-btn {
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-soft) 65%, var(--color-surface));
+  color: var(--ink-warning, var(--color-warning));
+}
+
+.session-desktop-win-power-btn:hover:not(:disabled) {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.session-desktop-win-power-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.session-desktop-win-terminate-btn {
+  border: 1px solid color-mix(in srgb, var(--color-danger) 48%, var(--color-border));
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.session-desktop-win-terminate-btn:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 18%, var(--color-surface));
+}
+
+.session-desktop-win-terminate-btn:disabled,
+.session-desktop-win-terminate-btn.is-disabled {
+  border-color: var(--color-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* xterm 宿主：严格零 transform、零 clip-path、100% 填充 */
 .session-desktop-terminal-host {
   display: flex;
@@ -707,8 +1160,12 @@
   padding: 0 var(--space-4, 8px);
 }
 
-/* 关键安全防护：隐藏 ShellTerminalPanel 内置关闭按钮，防止非原生 shell 调用 terminalAPI.close */
+/* 关键安全防护：
+ * 1. 隐藏 ShellTerminalPanel 内置关闭按钮，防止绕过确认框或误操作非 Web 会话。
+ * 2. 仅在办公室嵌入宿主中隐藏非原生 Web Shell 的「重启当前终端」（其内部会直接调用
+ *    terminalAPI.close 并重建 PTY，绕过确认与防复活墓碑）；保留原生 CLI 的「重新连接当前会话」。 */
 .session-desktop-terminal-host button[title="关闭终端面板"],
+.session-desktop-terminal-host button[title="重启当前终端"],
 .session-desktop-terminal-host [class*="shellTerminalTabClose"] {
   display: none !important;
 }
@@ -885,16 +1342,40 @@
   white-space: nowrap;
 }
 
-.session-desktop-dock-return {
+.session-desktop-coworker-poweroff {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.session-desktop-dock-right {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
   flex: 0 0 auto;
   margin-left: auto;
 }
 
+.session-desktop-dock-return {
+  flex: 0 0 auto;
+}
+
 /* ── 响应式与无障碍降级 ───────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
-  .session-desktop-windows[data-layout='split'][data-terminal-open='true'][data-mail-open='true'] {
+  .session-desktop-windows[data-cols='two'] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr);
+  }
+
+  .session-desktop-standby[data-dual='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .session-desktop-monitor-bezel-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .session-desktop-bezel-divider {
+    display: none;
   }
 
   .session-desktop-canvas {
@@ -902,13 +1383,14 @@
   }
 
   .session-desktop-icons {
+    display: flex;
     flex-direction: row;
     width: 100%;
     flex-wrap: wrap;
   }
 
   .session-desktop-app-icon {
-    flex: 1 1 140px;
+    flex: 1 1 136px;
   }
 }
 
@@ -945,6 +1427,8 @@
   .session-desktop-btn,
   .session-desktop-layout-btn,
   .session-desktop-win-btn,
+  .session-desktop-win-power-btn,
+  .session-desktop-win-terminate-btn,
   .session-desktop-dock-pill,
   .session-desktop-coworker-pill,
   .session-desktop-app-icon {

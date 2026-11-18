@@ -14,6 +14,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/codex/appserver"
+	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
@@ -79,6 +80,8 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		return nil, fmt.Errorf("创建会话监听接口失败: %w", err)
 	}
 
+	peerStore := peer.NewDispatchStore(peer.ResolvePeerAIHomeDir(dependencies.AIHomeDir, dependencies.HostHomeDir, os.Getenv), peer.StoreOptions{})
+
 	hookHandler, err := webuisessionhookapi.NewHandler(webuisessionhookapi.Dependencies{
 		Authorizer:      dependencies.Authorizer,
 		Bus:             bus,
@@ -87,6 +90,7 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		AIHomeDir:       dependencies.AIHomeDir,
 		AccountActivity: dependencies.AccountActivity,
 		OutcomeRecorder: sideEffects,
+		SessionObserver: peerStore.HandleSessionEvent,
 		// Hook 成功不证明凭据或阻塞代次，暂不接自动恢复。
 	})
 	if err != nil {

@@ -227,6 +227,7 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 	}
 
 	discoveredByAccount := make(map[string][]string)
+	disabledByAccount := make(map[string]map[string]bool)
 	if deps.AccountModels != nil {
 		cat, err := deps.AccountModels.ListAllAccountModels(ctx)
 		if err != nil {
@@ -235,10 +236,18 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 		for _, set := range cat.Sets {
 			ref := set.AccountRef.String()
 			for _, m := range set.Models {
-				if !m.IsValid() || !m.Effective() {
+				if !m.IsValid() {
 					continue
 				}
-				discoveredByAccount[ref] = append(discoveredByAccount[ref], m.ModelID().String())
+				if m.ManualPolicy() == accountapp.ModelPolicyForceDisable {
+					if disabledByAccount[ref] == nil {
+						disabledByAccount[ref] = make(map[string]bool)
+					}
+					disabledByAccount[ref][m.ModelID().String()] = true
+				}
+				if m.Effective() {
+					discoveredByAccount[ref] = append(discoveredByAccount[ref], m.ModelID().String())
+				}
 			}
 		}
 	}
@@ -309,6 +318,14 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 		if exclusions[ref.String()] {
 			return "excluded"
 		}
+		if disabledByAccount[ref.String()][modelID] {
+			return "model_disabled"
+		}
+		authKind := strings.ToLower(strings.TrimSpace(ov.AuthKind()))
+		if ov.Account().ProviderID() == "codex" && authKind != "api_key" && authKind != "api-key" &&
+			!images.SupportsCodexOAuthImagePlan(ov.SubscriptionKind()) {
+			return "image_plan_unsupported"
+		}
 		if deps.Runtime != nil {
 			route, err := runtimecore.NewModelRoute(ref, modelID)
 			if err != nil {
@@ -366,6 +383,10 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 		isAPIKey := authKind == "api_key" || authKind == "api-key"
 		if !isAPIKey {
 			for _, meta := range nativeModelMetas[provider] {
+				if images.NativeImageModelRequiresDiscovery(provider, meta.ID) &&
+					!containsDiscoveredModel(discoveredByAccount[acct.Ref().String()], meta.ID) {
+					continue
+				}
 				if caps, ok := images.NativeCapabilities(provider, meta.ID); ok {
 					recordAccount(
 						ensureAcc(provider, meta.ID, meta.Label, meta.Priority),
@@ -489,4 +510,14 @@ func ResolveDefaultModelKey(models []ModelEntry) string {
 		return models[0].Key
 	}
 	return ""
+}
+
+// containsDiscoveredModel 只接受该账号完整目录的有效模型，不从厂商清单推断可用性。
+func containsDiscoveredModel(models []string, modelID string) bool {
+	for _, found := range models {
+		if found == modelID {
+			return true
+		}
+	}
+	return false
 }

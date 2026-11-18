@@ -1,6 +1,5 @@
-// Package peer 提供 aih peer 持久收件箱的只读查询与目录事件监听。
-//
-// 只读原则：绝不 claim / rename / 改写状态文件，避免破坏 CLI 与后台补投的抢占语义。
+// Package peer provides durable peer scheduling and read-only inbox projections.
+// ListMessages never claims, renames or rewrites message or target state.
 package peer
 
 import (
@@ -10,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -26,35 +26,56 @@ var ErrStoreUnavailable = errors.New("peer_store_unavailable")
 
 // Party 描述发送方或接收方的地址投影。
 type Party struct {
-	Channel   string `json:"channel"`
-	Provider  string `json:"provider"`
-	Name      string `json:"name"`
-	Address   string `json:"address"`
-	SessionID string `json:"sessionId"`
+	Delivery  *DeliveryTarget `json:"delivery,omitempty"`
+	Channel   string          `json:"channel"`
+	Provider  string          `json:"provider"`
+	Name      string          `json:"name"`
+	Address   string          `json:"address"`
+	SessionID string          `json:"sessionId"`
 }
 
 // Message 是 WebUI 收件箱单条消息的只读投影。
 type Message struct {
-	ID               string `json:"id"`
-	ShortID          string `json:"shortId"`
-	From             Party  `json:"from"`
-	To               Party  `json:"to"`
-	ReplyTo          string `json:"replyTo"`
-	ReplyToShort     string `json:"replyToShort"`
-	Body             string `json:"body"`
-	State            string `json:"state"`
-	CreatedAt        int64  `json:"createdAt"`
-	DeliveredAt      int64  `json:"deliveredAt"`
-	ReadAt           int64  `json:"readAt"`
-	NextAttemptAt    int64  `json:"nextAttemptAt"`
-	AttemptCount     int    `json:"attemptCount"`
-	Error            string `json:"error"`
-	LastAttemptError string `json:"lastAttemptError"`
-	ReceiptError     string `json:"receiptError,omitempty"`
+	Subject           string `json:"subject,omitempty"`
+	Summary           string `json:"summary,omitempty"`
+	Purpose           string `json:"purpose,omitempty"`
+	Action            string `json:"action,omitempty"`
+	ReplyPolicy       string `json:"replyPolicy,omitempty"`
+	AutoDeliverUntil  int64  `json:"autoDeliverUntil"`
+	ExpiresAt         int64  `json:"expiresAt,omitempty"`
+	CanceledAt        int64  `json:"canceledAt,omitempty"`
+	Supersedes        string `json:"supersedes,omitempty"`
+	NotificationState string `json:"notificationState"`
+	WaitingReason     string `json:"waitingReason,omitempty"`
+	BusySince         int64  `json:"busySince,omitempty"`
+	ProbeCount        int    `json:"probeCount,omitempty"`
+	FailureResetAt    int64  `json:"failureResetAt,omitempty"`
+	TargetKey         string `json:"targetKey"`
+	ID                string `json:"id"`
+	ShortID           string `json:"shortId"`
+	From              Party  `json:"from"`
+	To                Party  `json:"to"`
+	ReplyTo           string `json:"replyTo"`
+	ReplyToShort      string `json:"replyToShort"`
+	Body              string `json:"body"`
+	State             string `json:"state"`
+	CreatedAt         int64  `json:"createdAt"`
+	DeliveredAt       int64  `json:"deliveredAt"`
+	ReadAt            int64  `json:"readAt"`
+	NextAttemptAt     int64  `json:"nextAttemptAt"`
+	AttemptCount      int    `json:"attemptCount"`
+	Error             string `json:"error"`
+	LastAttemptError  string `json:"lastAttemptError"`
+	ReceiptError      string `json:"receiptError,omitempty"`
 }
 
 // Counts 统计本次返回列表里各状态的消息数。
 type Counts struct {
+	Waiting   int `json:"waiting"`
+	Ready     int `json:"ready"`
+	Manual    int `json:"manual"`
+	Canceled  int `json:"canceled"`
+	Expired   int `json:"expired"`
 	Total     int `json:"total"`
 	Pending   int `json:"pending"`
 	Delivered int `json:"delivered"`
@@ -76,11 +97,12 @@ type ListResult struct {
 }
 
 type rawParty struct {
-	Channel   string `json:"channel"`
-	Provider  string `json:"provider"`
-	Name      string `json:"name"`
-	Address   string `json:"address"`
-	SessionID string `json:"sessionId"`
+	Delivery  *DeliveryTarget `json:"delivery,omitempty"`
+	Channel   string          `json:"channel"`
+	Provider  string          `json:"provider"`
+	Name      string          `json:"name"`
+	Address   string          `json:"address"`
+	SessionID string          `json:"sessionId"`
 }
 
 type rawAttempt struct {
@@ -89,19 +111,33 @@ type rawAttempt struct {
 }
 
 type rawRecord struct {
-	ID            string       `json:"id"`
-	From          *rawParty    `json:"from"`
-	To            *rawParty    `json:"to"`
-	ReplyTo       string       `json:"replyTo"`
-	Body          string       `json:"body"`
-	State         string       `json:"state"`
-	CreatedAt     float64      `json:"createdAt"`
-	DeliveredAt   float64      `json:"deliveredAt"`
-	ReadAt        float64      `json:"readAt"`
-	NextAttemptAt float64      `json:"nextAttemptAt"`
-	AttemptCount  float64      `json:"attemptCount"`
-	Error         string       `json:"error"`
-	Attempts      []rawAttempt `json:"attempts"`
+	Subject           string       `json:"subject,omitempty"`
+	Summary           string       `json:"summary,omitempty"`
+	Purpose           string       `json:"purpose,omitempty"`
+	Action            string       `json:"action,omitempty"`
+	ReplyPolicy       string       `json:"replyPolicy,omitempty"`
+	AutoDeliverUntil  int64        `json:"autoDeliverUntil"`
+	ExpiresAt         int64        `json:"expiresAt,omitempty"`
+	CanceledAt        int64        `json:"canceledAt,omitempty"`
+	Supersedes        string       `json:"supersedes,omitempty"`
+	NotificationState string       `json:"notificationState"`
+	WaitingReason     string       `json:"waitingReason,omitempty"`
+	BusySince         int64        `json:"busySince,omitempty"`
+	ProbeCount        int          `json:"probeCount,omitempty"`
+	FailureResetAt    int64        `json:"failureResetAt,omitempty"`
+	ID                string       `json:"id"`
+	From              *rawParty    `json:"from"`
+	To                *rawParty    `json:"to"`
+	ReplyTo           string       `json:"replyTo"`
+	Body              string       `json:"body"`
+	State             string       `json:"state"`
+	CreatedAt         float64      `json:"createdAt"`
+	DeliveredAt       float64      `json:"deliveredAt"`
+	ReadAt            float64      `json:"readAt"`
+	NextAttemptAt     float64      `json:"nextAttemptAt"`
+	AttemptCount      float64      `json:"attemptCount"`
+	Error             string       `json:"error"`
+	Attempts          []rawAttempt `json:"attempts"`
 }
 
 // NormalizeState 将查询状态归一到 WebUI 支持的闭集；不认识的值回落为 all。
@@ -182,6 +218,18 @@ func ListMessages(aiHomeDir string, state string, limit int) (ListResult, error)
 	for i := range records {
 		msg := records[len(records)-1-i]
 		messages[i] = msg
+		switch msg.NotificationState {
+		case "waiting":
+			counts.Waiting++
+		case "ready":
+			counts.Ready++
+		case "manual":
+			counts.Manual++
+		case "canceled":
+			counts.Canceled++
+		case "expired":
+			counts.Expired++
+		}
 		switch msg.State {
 		case "pending":
 			counts.Pending++
@@ -225,14 +273,27 @@ func readDirectory(directory string, dirName string) []Message {
 		if strings.TrimSpace(raw.ID) == "" {
 			raw.ID = strings.TrimSuffix(entry.Name(), ".json")
 		}
-		rec := Record{ID: raw.ID, State: raw.State, ReadAt: int64(raw.ReadAt), Error: raw.Error}
+		// Decode the full raw scheduling metadata too; a minimal ID/readAt
+		// snapshot would lose explicit zero, target identity and retry budget.
+		var rec Record
+		if err := json.Unmarshal(data, &rec); err != nil {
+			continue
+		}
+		rec.ID = raw.ID
+		rec.State = stateFromDirectory(dirName, raw.State)
 		projectReadReceipt(filepath.Dir(directory), &rec)
+		store := &DispatchStore{root: filepath.Dir(directory), now: time.Now}
+		store.projectNotification(&rec)
 		raw.State, raw.ReadAt, raw.Error = rec.State, float64(rec.ReadAt), rec.Error
 		if rec.State == "read" && rec.ReceiptError == "" {
 			raw.NextAttemptAt = 0
 		}
 		msg := projectMessage(raw, stateFromDirectory(dirName, raw.State))
 		msg.ReceiptError = rec.ReceiptError
+		msg.Subject, msg.Summary, msg.Purpose, msg.Action, msg.ReplyPolicy = rec.Subject, rec.Summary, rec.Purpose, rec.Action, rec.ReplyPolicy
+		msg.AutoDeliverUntil, msg.ExpiresAt, msg.CanceledAt, msg.Supersedes = rec.AutoDeliverUntil, rec.ExpiresAt, rec.CanceledAt, rec.Supersedes
+		msg.NotificationState, msg.WaitingReason, msg.BusySince, msg.ProbeCount = rec.NotificationState, rec.WaitingReason, rec.BusySince, rec.ProbeCount
+		msg.NextAttemptAt, msg.FailureResetAt, msg.TargetKey = rec.NextAttemptAt, rec.FailureResetAt, TargetKey(rec.To)
 		records = append(records, msg)
 	}
 	return records
@@ -257,7 +318,14 @@ func describeParty(party *rawParty) Party {
 	if party == nil {
 		return Party{}
 	}
+	var delivery *DeliveryTarget
+	if party.Delivery != nil {
+		copy := *party.Delivery
+		copy.CLIName, copy.RuntimeScope, copy.SessionName, copy.Socket = strings.TrimSpace(copy.CLIName), strings.TrimSpace(copy.RuntimeScope), strings.TrimSpace(copy.SessionName), strings.TrimSpace(copy.Socket)
+		delivery = &copy
+	}
 	return Party{
+		Delivery:  delivery,
 		Channel:   strings.TrimSpace(party.Channel),
 		Provider:  strings.TrimSpace(party.Provider),
 		Name:      strings.TrimSpace(party.Name),

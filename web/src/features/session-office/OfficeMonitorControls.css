@@ -1,0 +1,132 @@
+/* =============================================================================
+ * OfficeMonitorControls — Presentational 3D Monitor Layout & Dual-Screen Bar
+ * Strictly uses design-tokens.css variables and 1px full borders (no thick
+ * left/inset stripes or alert blocks), with prefers-reduced-motion support.
+ * ========================================================================== */
+
+.office-monitor-editor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+  border-radius: var(--hos-radius-sm, 3px);
+  background: var(--color-surface-sunken);
+}
+
+.office-monitor-editor-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface);
+}
+
+.office-monitor-seg-btn {
+  padding: 2px var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--hos-radius-2xs, 2px);
+  background: transparent;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.office-monitor-seg-btn:hover {
+  color: var(--color-heading);
+  background: var(--color-surface-raised);
+}
+
+.office-monitor-seg-btn.is-active {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.office-monitor-steppers {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.office-monitor-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-raised);
+}
+
+.office-monitor-stepper-label {
+  padding: 0 3px;
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.office-monitor-stepper-val {
+  min-width: 48px;
+  text-align: center;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.office-monitor-step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-2xs, 2px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+.office-monitor-step-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.office-monitor-step-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.office-monitor-editor-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office-monitor-seg-btn,
+  .office-monitor-step-btn {
+    transition: none !important;
+  }
+}

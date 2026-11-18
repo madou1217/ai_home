@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -71,7 +72,7 @@ func (t *PaneActivityTracker) ReadActivityAt(ctx context.Context, target Deliver
 	defer cancel()
 	stdout, code, err := runner(probeCtx, tmuxCmd, []string{"-u", "-L", socket, "capture-pane", "-p", "-t", target.SessionName})
 	if err != nil || code != 0 {
-		return 0, err
+		return 0, fmt.Errorf("activity_probe_failed: exit %d: %v", code, err)
 	}
 	digest := sha256.Sum256([]byte(stdout))
 	nowMs := t.now().UnixMilli()

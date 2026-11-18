@@ -1,22 +1,49 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   ArrowLeftOutlined,
   CodeOutlined,
   CompressOutlined,
+  ControlOutlined,
   CopyOutlined,
+  DeleteOutlined,
   DesktopOutlined,
+  ExpandOutlined,
   EyeInvisibleOutlined,
   FolderOutlined,
+  LoadingOutlined,
   MailOutlined,
   MinusOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   ReloadOutlined,
+  SettingOutlined,
   SplitCellsOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
+import { Tooltip } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
+import OfficeComputerSettings, { type ComputerSettingsTab } from './OfficeComputerSettings';
 import OfficeMailbox from './OfficeMailbox';
+import {
+  OFFICE_DESKTOP_WALLPAPER_MAP,
+  useOptionalDesktopWallpaperAsset,
+} from './office-computer-config';
+import {
+  buildStationPowerMap,
+  isSessionServerScopeAdmitted,
+  isTerminalTabScopeAdmitted,
+  useOfficeComputerPowerController,
+  useOfficeComputerStoreRevision,
+} from './office-computer-power';
 import type {
   DesktopOriginRect,
   DesktopWindowLayout,
@@ -44,6 +71,9 @@ export interface SessionDesktopProps {
   initialMode: DesktopWindowLayout;
   initialMailboxScope?: MailboxScope;
   originRect?: DesktopOriginRect | null;
+  terminatingSessionKey: string | null;
+  terminateConfirmOpen?: boolean;
+  onTerminateSession: (session: OfficeSessionItem) => void;
   onCloseToRoom: () => void;
   onSelectRoomSession: (session: OfficeSessionItem) => void;
   onJumpToAnySession: (sessionKey: string, projectKey?: string | null) => void;
@@ -61,6 +91,13 @@ interface AvailabilityMeta {
   description: string;
 }
 
+const NATIVE_CLOSE_DISABLED_REASON =
+  '原生 CLI 会话由独立进程托管，终端 close 接口仅断开借用连接而不会终止原进程；如需结束请前往原 CLI 会话退出。';
+
+function canTerminateWebShell(session: OfficeSessionItem | null | undefined): boolean {
+  return Boolean(session && session.source === 'web' && !session.sessionKey.startsWith('native:'));
+}
+
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   try {
@@ -72,13 +109,13 @@ function prefersReducedMotion(): boolean {
 
 function hasValidOriginRect(rect: DesktopOriginRect | null | undefined): rect is DesktopOriginRect {
   return Boolean(
-    rect &&
-    Number.isFinite(rect.left) &&
-    Number.isFinite(rect.top) &&
-    Number.isFinite(rect.width) &&
-    Number.isFinite(rect.height) &&
-    rect.width > 0 &&
-    rect.height > 0,
+    rect
+    && Number.isFinite(rect.left)
+    && Number.isFinite(rect.top)
+    && Number.isFinite(rect.width)
+    && Number.isFinite(rect.height)
+    && rect.width > 0
+    && rect.height > 0,
   );
 }
 
@@ -86,18 +123,18 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
   switch (availability) {
     case 'interactive':
       return {
-        label: '在线可接入',
+        label: '可尝试接入',
         ledClass: 'hud-led--ok hud-led--live',
         tone: 'ok',
-        title: '持久终端就绪',
-        description: '当前终端由持久后端托管，可直接交互输入；最小化或返回办公室均会保持后台运行。',
+        title: '具备原会话附着入口',
+        description: '当前工位具备受控终端附着资格（不等同于模型正在推理忙碌）；最小化、返回办公室或虚拟电脑关机均不销毁会话，仅“关闭会话”会终止 Web Shell。',
       };
     case 'directory-only':
       return {
         label: '仅目录记录',
         ledClass: 'hud-led--warn',
         tone: 'warn',
-        title: '目录已登记 · 未绑定 Web PTY',
+        title: '目录已登记 · 未绑定交互视图',
         description: '此工位目前仅同步到目录信息，未确认交互式终端通道；不会自动创建同名终端覆盖原记录。',
       };
     case 'unavailable':
@@ -114,7 +151,7 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
         ledClass: 'hud-led--err',
         tone: 'err',
         title: '终端进程已结束',
-        description: '该工位关联的终端进程已退出，历史标识仍可复制；如需新会话可手动新建项目终端。',
+        description: '该工位关联的终端进程已退出，历史标识仍可复制；若为残留 Web Shell 记录可点击“关闭会话”清理。',
       };
     default:
       return {
@@ -122,7 +159,7 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
         ledClass: '',
         tone: 'muted',
         title: '未选定活动工位',
-        description: '请从下方任务栏选择同房间工位，或打开 Peer 邮箱查看协作消息。',
+        description: '请从下方任务栏选择同房间工位，或打开协作邮箱查看消息。',
       };
   }
 }
@@ -138,7 +175,7 @@ function getMailboxScopeTitle(
     case 'room':
       return room ? `${room.projectName} · 房间通信` : '当前项目房间';
     case 'unassigned':
-      return '未归属 / 待认领';
+      return '未归属 / 历史';
     case 'all':
       return '服务器全部消息';
   }
@@ -167,6 +204,9 @@ export function SessionDesktop({
   initialMode,
   initialMailboxScope,
   originRect,
+  terminatingSessionKey,
+  terminateConfirmOpen = false,
+  onTerminateSession,
   onCloseToRoom,
   onSelectRoomSession,
   onJumpToAnySession,
@@ -179,6 +219,10 @@ export function SessionDesktop({
   const [terminalMinimized, setTerminalMinimized] = useState<boolean>(initialMode === 'mail-focus');
   const [mailMinimized, setMailMinimized] = useState<boolean>(initialMode === 'terminal-focus');
   const [mailboxScope, setMailboxScope] = useState<MailboxScope>(initialMailboxScope ?? 'session');
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [settingsTab, setSettingsTab] = useState<ComputerSettingsTab>('settings');
+  const [dualSpanFull, setDualSpanFull] = useState<boolean>(false);
+  const [standbyMailOpen, setStandbyMailOpen] = useState<boolean>(false);
   const [portalOrigin, setPortalOrigin] = useState<DesktopOriginRect | null>(null);
 
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -186,16 +230,73 @@ export function SessionDesktop({
   const prevOpenRef = useRef(false);
   const prevInitialModeRef = useRef(initialMode);
   const prevInitialScopeRef = useRef(initialMailboxScope);
-  const prevTerminalOpenRef = useRef(false);
+  const prevTerminalVisibleRef = useRef(false);
+  const lastRefitSignatureRef = useRef('');
 
-  // Sync open/mode/scope transitions cleanly without resetting user state on polling ticks.
+  const sessionScopeAdmitted = isSessionServerScopeAdmitted(serverId, session);
+  const tabScopeAdmitted = isTerminalTabScopeAdmitted(serverId, session);
+  const tabId = tabScopeAdmitted ? session?.tab?.id : undefined;
+  const tabSessionKey = tabScopeAdmitted ? session?.tab?.sessionKey : undefined;
+  const tabLabel = tabScopeAdmitted ? session?.tab?.label : undefined;
+  const tabCwd = tabScopeAdmitted ? session?.tab?.cwd : undefined;
+  const tabKind = tabScopeAdmitted ? session?.tab?.kind : undefined;
+  const terminalSessionTabs = useMemo(() => {
+    if (!tabId || !tabSessionKey || !tabLabel) return undefined;
+    return [
+      {
+        id: tabId,
+        sessionKey: tabSessionKey,
+        label: tabLabel,
+        cwd: tabCwd,
+        kind: tabKind,
+        persistent: true,
+      },
+    ];
+  }, [tabCwd, tabId, tabKind, tabLabel, tabSessionKey]);
+
+  const canAttachBase = Boolean(
+    sessionScopeAdmitted
+    && tabScopeAdmitted
+    && session?.canAttachTerminal
+    && session.tab
+    && terminalSessionTabs,
+  );
+  const isTerminating = Boolean(session && terminatingSessionKey === session.sessionKey);
+
+  const {
+    preferences,
+    isPoweredOn,
+    terminalReady,
+    bootPhase,
+    bootReason,
+    shouldMountTerminal,
+    durabilityNote,
+    powerOffComputer,
+    bootComputer,
+    toggleDualMonitor,
+    updateAppearance,
+  } = useOfficeComputerPowerController({
+    open,
+    serverId,
+    session,
+    canAttachBase,
+    isTerminating,
+    terminalHostRef,
+    onRefreshAll,
+  });
+
+  // Subscribe coworker pills to power preference updates across the room.
+  const storeRevision = useOfficeComputerStoreRevision();
+  const loadedWallpaperAssetUrl = useOptionalDesktopWallpaperAsset(preferences.wallpaper);
+
   useEffect(() => {
     const justOpened = open && !prevOpenRef.current;
     prevOpenRef.current = open;
 
     if (!open) {
       setPortalOrigin(null);
-      prevTerminalOpenRef.current = false;
+      setStandbyMailOpen(false);
+      prevTerminalVisibleRef.current = false;
       return;
     }
 
@@ -204,6 +305,7 @@ export function SessionDesktop({
       setLayoutMode(initialMode);
       setTerminalMinimized(initialMode === 'mail-focus');
       setMailMinimized(initialMode === 'terminal-focus');
+      setStandbyMailOpen(initialMode === 'mail-focus');
     }
 
     if (justOpened || prevInitialScopeRef.current !== initialMailboxScope) {
@@ -218,15 +320,14 @@ export function SessionDesktop({
         setPortalOrigin(null);
       }
 
-      if (initialMode === 'mail-focus' || !session?.canAttachTerminal) {
+      if (initialMode === 'mail-focus' || !session?.canAttachTerminal || !isPoweredOn) {
         requestAnimationFrame(() => {
           shellRef.current?.focus({ preventScroll: true });
         });
       }
     }
-  }, [initialMailboxScope, initialMode, open, originRect, session?.canAttachTerminal]);
+  }, [initialMailboxScope, initialMode, isPoweredOn, open, originRect, session?.canAttachTerminal]);
 
-  // Clear the non-terminal launch portal after ~220ms and ensure xterm refits cleanly.
   useEffect(() => {
     if (!open || !portalOrigin) return undefined;
     const timer = window.setTimeout(() => {
@@ -236,10 +337,16 @@ export function SessionDesktop({
     return () => window.clearTimeout(timer);
   }, [open, portalOrigin]);
 
-  // Global desktop Escape handling: never intercept normal Escape inside xterm or form controls;
-  // Alt+Escape always exits back to the 3D room.
   useEffect(() => {
-    if (!open) return undefined;
+    if (isPoweredOn) {
+      setStandbyMailOpen(false);
+    }
+  }, [isPoweredOn]);
+
+  // Global desktop Escape handling: never intercept Escape while the termination
+  // confirmation dialog is open, nor inside xterm or form inputs.
+  useEffect(() => {
+    if (!open || terminateConfirmOpen) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (event.altKey) {
@@ -249,31 +356,62 @@ export function SessionDesktop({
         return;
       }
       if (
-        event.target instanceof Element &&
-        event.target.closest('.xterm, input, textarea, [contenteditable="true"]')
+        event.target instanceof Element
+        && event.target.closest('.xterm, input, textarea, select, .ant-modal, [contenteditable="true"]')
       ) {
         return;
       }
       event.preventDefault();
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
       onCloseToRoom();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onCloseToRoom]);
+  }, [open, onCloseToRoom, settingsOpen, terminateConfirmOpen]);
 
-  const terminalOpen = !terminalMinimized && layoutMode !== 'mail-focus';
-  const mailOpen = !mailMinimized && layoutMode !== 'terminal-focus';
+  const terminalWanted = isPoweredOn && !terminalMinimized && layoutMode !== 'mail-focus';
+  const rawMailWanted = isPoweredOn
+    ? (!mailMinimized && layoutMode !== 'terminal-focus')
+    : standbyMailOpen;
 
-  // Refit xterm after restoring from dock or toggling split mode; focus xterm only on restore.
+  const dualGridActive = preferences.dualMonitor && !dualSpanFull;
+
+  // In single-monitor mode, when Settings is open alongside Terminal, Settings occupies the
+  // second split slot so we never cram 3 panes into one screen.
+  const mailVisible = rawMailWanted && !(settingsOpen && terminalWanted);
+  const secondaryWallpaperVisible = Boolean(
+    isPoweredOn
+    && dualGridActive
+    && !settingsOpen
+    && !(terminalWanted && mailVisible)
+    && (terminalWanted || mailVisible),
+  );
+  const primaryIconsSlotVisible = Boolean(
+    isPoweredOn
+    && dualGridActive
+    && settingsOpen
+    && !terminalWanted
+    && !mailVisible,
+  );
+
+  const terminalLayoutSignature = `${layoutMode}|${dualGridActive ? '1' : '0'}|${mailVisible ? '1' : '0'}|${settingsOpen ? '1' : '0'}|${tabId ?? ''}`;
+
   useEffect(() => {
     if (!open) return undefined;
-    const wasTerminalOpen = prevTerminalOpenRef.current;
-    prevTerminalOpenRef.current = terminalOpen;
-    if (!terminalOpen || !session?.canAttachTerminal) return undefined;
+    const wasVisible = prevTerminalVisibleRef.current;
+    prevTerminalVisibleRef.current = terminalWanted && shouldMountTerminal;
+    const layoutChanged = lastRefitSignatureRef.current !== terminalLayoutSignature;
+    lastRefitSignatureRef.current = terminalLayoutSignature;
+    if (!terminalWanted || !shouldMountTerminal) return undefined;
 
     const raf = requestAnimationFrame(() => {
-      dispatchTerminalResizeFinished(terminalHostRef.current);
-      if (!wasTerminalOpen) {
+      if (layoutChanged || !wasVisible) {
+        dispatchTerminalResizeFinished(terminalHostRef.current);
+      }
+      if (!wasVisible) {
         const active = document.activeElement;
         const alreadyInXterm = active instanceof Element && Boolean(active.closest('.xterm'));
         if (!alreadyInXterm) {
@@ -291,9 +429,17 @@ export function SessionDesktop({
       cancelAnimationFrame(raf);
       window.clearTimeout(timer);
     };
-  }, [layoutMode, open, session?.canAttachTerminal, session?.tab?.id, terminalOpen]);
+  }, [open, shouldMountTerminal, terminalLayoutSignature, terminalWanted]);
 
   const applyLayout = useCallback((nextLayout: DesktopWindowLayout) => {
+    if (!isPoweredOn) {
+      if (nextLayout === 'mail-focus') {
+        setStandbyMailOpen(true);
+      } else {
+        setStandbyMailOpen(false);
+      }
+      return;
+    }
     setLayoutMode(nextLayout);
     if (nextLayout === 'terminal-focus') {
       setTerminalMinimized(false);
@@ -304,16 +450,24 @@ export function SessionDesktop({
     } else {
       setTerminalMinimized(false);
       setMailMinimized(false);
+      if (!preferences.dualMonitor) {
+        setSettingsOpen(false);
+      }
     }
-  }, []);
+  }, [isPoweredOn, preferences.dualMonitor]);
 
   const handleRestoreTerminal = useCallback(() => {
+    if (!isPoweredOn) {
+      setStandbyMailOpen(false);
+      setSettingsOpen(false);
+      return;
+    }
     setTerminalMinimized(false);
     if (layoutMode === 'mail-focus') {
       setLayoutMode('terminal-focus');
       setMailMinimized(true);
     }
-  }, [layoutMode]);
+  }, [isPoweredOn, layoutMode]);
 
   const handleMinimizeTerminal = useCallback(() => {
     if (layoutMode === 'split' && !mailMinimized) {
@@ -333,39 +487,76 @@ export function SessionDesktop({
   }, [handleMinimizeTerminal, handleRestoreTerminal]);
 
   const handleRestoreMail = useCallback(() => {
-    setMailMinimized(false);
-    if (layoutMode === 'terminal-focus') {
-      setLayoutMode('mail-focus');
-      setTerminalMinimized(true);
+    if (!isPoweredOn) {
+      setSettingsOpen(false);
+      setStandbyMailOpen(true);
+      return;
     }
-  }, [layoutMode]);
+    setMailMinimized(false);
+    if (settingsOpen && terminalWanted) {
+      setSettingsOpen(false);
+    }
+    if (layoutMode === 'terminal-focus') {
+      if (preferences.dualMonitor && !dualSpanFull) {
+        setLayoutMode('split');
+      } else {
+        setLayoutMode('mail-focus');
+        setTerminalMinimized(true);
+      }
+    }
+  }, [dualSpanFull, isPoweredOn, layoutMode, preferences.dualMonitor, settingsOpen, terminalWanted]);
 
   const handleMinimizeMail = useCallback(() => {
+    if (!isPoweredOn) {
+      setStandbyMailOpen(false);
+      return;
+    }
     if (layoutMode === 'split' && !terminalMinimized) {
       setMailMinimized(true);
       setLayoutMode('terminal-focus');
       return;
     }
     setMailMinimized(true);
-  }, [layoutMode, terminalMinimized]);
+  }, [isPoweredOn, layoutMode, terminalMinimized]);
+
+  const handleOpenSettingsTab = useCallback((tab: ComputerSettingsTab) => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  }, []);
+
+  const handleToggleSettingsTab = useCallback((tab: ComputerSettingsTab) => {
+    if (settingsOpen && settingsTab === tab) {
+      setSettingsOpen(false);
+    } else {
+      setSettingsTab(tab);
+      setSettingsOpen(true);
+    }
+  }, [settingsOpen, settingsTab]);
 
   const handleToggleTerminalDock = useCallback(() => {
-    if (terminalOpen) {
+    if (!isPoweredOn) {
+      setStandbyMailOpen(false);
+      setSettingsOpen(false);
+      return;
+    }
+    if (terminalWanted) {
       handleMinimizeTerminal();
     } else {
       handleRestoreTerminal();
     }
-  }, [handleMinimizeTerminal, handleRestoreTerminal, terminalOpen]);
+  }, [handleMinimizeTerminal, handleRestoreTerminal, isPoweredOn, terminalWanted]);
 
   const handleToggleMailDock = useCallback(() => {
-    if (mailOpen) {
+    if (mailVisible) {
       handleMinimizeMail();
     } else {
       handleRestoreMail();
     }
-  }, [handleMinimizeMail, handleRestoreMail, mailOpen]);
+  }, [handleMinimizeMail, handleRestoreMail, mailVisible]);
 
   const handleJumpToSessionFromMail = useCallback((sessionKey: string, projectKey?: string | null) => {
+    setStandbyMailOpen(false);
+    setSettingsOpen(false);
     setLayoutMode('terminal-focus');
     setTerminalMinimized(false);
     setMailMinimized(true);
@@ -373,35 +564,40 @@ export function SessionDesktop({
     onJumpToAnySession(sessionKey, projectKey);
   }, [onJumpToAnySession]);
 
-  // Memoize the single-tab descriptor so polling updates on unread counts do not churn ShellTerminalPanel.
-  const tabId = session?.tab?.id;
-  const tabSessionKey = session?.tab?.sessionKey;
-  const tabLabel = session?.tab?.label;
-  const tabCwd = session?.tab?.cwd;
-  const tabKind = session?.tab?.kind;
-  const terminalSessionTabs = useMemo(() => {
-    if (!tabId || !tabSessionKey || !tabLabel) return undefined;
-    return [
-      {
-        id: tabId,
-        sessionKey: tabSessionKey,
-        label: tabLabel,
-        cwd: tabCwd,
-        kind: tabKind,
-        persistent: true,
-      },
-    ];
-  }, [tabCwd, tabId, tabKind, tabLabel, tabSessionKey]);
+  const handleRequestTerminateCurrent = useCallback(() => {
+    if (!session) return;
+    onTerminateSession(session);
+  }, [onTerminateSession, session]);
+
+  const handlePowerOff = useCallback(() => {
+    setStandbyMailOpen(false);
+    powerOffComputer();
+  }, [powerOffComputer]);
+
+  const handleBoot = useCallback(() => {
+    setStandbyMailOpen(false);
+    setTerminalMinimized(false);
+    if (layoutMode === 'mail-focus') {
+      setLayoutMode('terminal-focus');
+      setMailMinimized(true);
+    }
+    bootComputer();
+  }, [bootComputer, layoutMode]);
 
   const coworkers = useMemo(() => {
     if (room?.sessions.length) return room.sessions;
     return session ? [session] : [];
   }, [room?.sessions, session]);
 
+  const coworkerPowerMap = useMemo(
+    () => buildStationPowerMap(serverId, coworkers, storeRevision),
+    [coworkers, serverId, storeRevision],
+  );
+
   if (!open) return null;
 
   const availability = getAvailabilityMeta(session?.availability);
-  const canAttach = Boolean(session?.canAttachTerminal && session.tab && terminalSessionTabs);
+  const isWebShell = canTerminateWebShell(session);
   const projectName = room?.projectName || session?.projectName || '当前项目';
   const projectPath = room?.projectPath || session?.cwd || '未指定目录';
   const sessionTitle = session?.shortLabel || session?.label || '未选定会话';
@@ -410,7 +606,34 @@ export function SessionDesktop({
   const roomPending = room?.pendingMailCount ?? 0;
   const mailBadgeCount = sessionInbox > 0 ? sessionInbox : roomPending;
   const hasMailPulse = Boolean(session?.activity.recentPulse || room?.hasRecentPulse || sessionPending > 0);
-  const bothMinimized = !terminalOpen && !mailOpen;
+  const wallpaperSpec = OFFICE_DESKTOP_WALLPAPER_MAP[preferences.wallpaper];
+
+  const activePaneCount =
+    Number(terminalWanted)
+    + Number(mailVisible)
+    + Number(settingsOpen)
+    + Number(secondaryWallpaperVisible)
+    + Number(primaryIconsSlotVisible);
+  const gridColumns = activePaneCount >= 2 ? 'two' : (activePaneCount === 1 ? 'one' : 'none');
+  const allWindowsMinimized = isPoweredOn && gridColumns === 'none';
+
+  const fallbackMeta: AvailabilityMeta = bootPhase === 'exited'
+    ? {
+        label: '进程已退出',
+        ledClass: 'hud-led--err',
+        tone: 'err',
+        title: '原会话进程已在关机期间结束',
+        description: bootReason || availability.description,
+      }
+    : bootPhase === 'unavailable'
+      ? {
+          label: '原标识不可接入',
+          ledClass: 'hud-led--warn',
+          tone: 'warn',
+          title: '未能恢复接入原会话 · 未自动新建替代终端',
+          description: bootReason || availability.description,
+        }
+      : availability;
 
   const portalStyle = portalOrigin
     ? ({
@@ -418,7 +641,15 @@ export function SessionDesktop({
         '--sd-origin-top': `${Math.round(portalOrigin.top)}px`,
         '--sd-origin-width': `${Math.round(portalOrigin.width)}px`,
         '--sd-origin-height': `${Math.round(portalOrigin.height)}px`,
-      } as React.CSSProperties)
+      } as CSSProperties)
+    : undefined;
+
+  const shellStyle = {
+    '--sd-rgb-color': preferences.rgbColor,
+  } as CSSProperties;
+
+  const wallpaperImgStyle = loadedWallpaperAssetUrl
+    ? ({ backgroundImage: `url("${loadedWallpaperAssetUrl.replace(/"/g, '\\"')}")` } as CSSProperties)
     : undefined;
 
   return (
@@ -439,6 +670,9 @@ export function SessionDesktop({
       <div
         ref={shellRef}
         className="session-desktop-shell"
+        data-rgb={preferences.rgbEnabled ? 'on' : 'off'}
+        data-power={preferences.power}
+        style={shellStyle}
         tabIndex={-1}
       >
         {/* OS Top Status Bar */}
@@ -447,8 +681,9 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-btn session-desktop-btn--back"
+              disabled={isTerminating}
               onClick={onCloseToRoom}
-              title="返回 3D 办公室 (Esc / Alt+Esc)"
+              title="返回项目办公室（当前电源状态与后台会话原样保持）"
             >
               <ArrowLeftOutlined />
               <span>返回办公室</span>
@@ -472,15 +707,21 @@ export function SessionDesktop({
                   <span className={`hud-led ${availability.ledClass}`} aria-hidden="true" />
                   <span>{availability.label}</span>
                 </span>
+                {!isPoweredOn ? (
+                  <span className="session-desktop-status-pill session-desktop-status-pill--standby">
+                    <PoweroffOutlined />
+                    <span>虚拟已关机</span>
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>
 
-          <div className="session-desktop-topbar-center" role="group" aria-label="桌面窗口布局">
+          <div className="session-desktop-topbar-center" role="group" aria-label="桌面窗口与显示编排">
             <button
               type="button"
               className="session-desktop-layout-btn"
-              data-active={layoutMode === 'terminal-focus' && terminalOpen ? 'true' : undefined}
+              data-active={isPoweredOn && layoutMode === 'terminal-focus' && terminalWanted && !settingsOpen ? 'true' : undefined}
               onClick={() => applyLayout('terminal-focus')}
             >
               <CodeOutlined />
@@ -489,7 +730,7 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-layout-btn"
-              data-active={layoutMode === 'split' && terminalOpen && mailOpen ? 'true' : undefined}
+              data-active={isPoweredOn && layoutMode === 'split' && terminalWanted && mailVisible ? 'true' : undefined}
               onClick={() => applyLayout('split')}
             >
               <SplitCellsOutlined />
@@ -498,7 +739,7 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-layout-btn"
-              data-active={layoutMode === 'mail-focus' && mailOpen ? 'true' : undefined}
+              data-active={mailVisible && (!isPoweredOn || layoutMode === 'mail-focus') ? 'true' : undefined}
               onClick={() => applyLayout('mail-focus')}
             >
               <MailOutlined />
@@ -507,14 +748,46 @@ export function SessionDesktop({
                 <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
               ) : null}
             </button>
+            <span className="session-desktop-topbar-sep" aria-hidden="true" />
+            <button
+              type="button"
+              className="session-desktop-layout-btn"
+              data-active={preferences.dualMonitor ? 'true' : undefined}
+              disabled={!session || isTerminating}
+              aria-pressed={preferences.dualMonitor}
+              onClick={toggleDualMonitor}
+              title="切换单显示器 / 双显示器扩展桌面（与 3D 工位支架同步）"
+            >
+              <DesktopOutlined />
+              <span>{preferences.dualMonitor ? '双显示器: 开' : '双显示器'}</span>
+            </button>
+            <button
+              type="button"
+              className="session-desktop-layout-btn"
+              data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
+              onClick={() => handleToggleSettingsTab('settings')}
+            >
+              <SettingOutlined />
+              <span>电脑设置</span>
+            </button>
+            <button
+              type="button"
+              className="session-desktop-layout-btn"
+              data-active={settingsOpen && settingsTab === 'config' ? 'true' : undefined}
+              onClick={() => handleToggleSettingsTab('config')}
+            >
+              <ControlOutlined />
+              <span>电脑配置</span>
+            </button>
           </div>
 
           <div className="session-desktop-topbar-right">
             <button
               type="button"
               className="session-desktop-btn"
+              disabled={isTerminating}
               onClick={onRefreshAll}
-              title="刷新目录与 Peer 邮件状态"
+              title="刷新目录与协作邮件状态"
             >
               <ReloadOutlined />
               <span>刷新</span>
@@ -523,6 +796,7 @@ export function SessionDesktop({
               <button
                 type="button"
                 className="session-desktop-btn"
+                disabled={isTerminating}
                 onClick={() => onCopyIdentity(session)}
                 title="复制原会话标识（不会重启或改动进程）"
               >
@@ -534,6 +808,7 @@ export function SessionDesktop({
               <button
                 type="button"
                 className="session-desktop-btn session-desktop-btn--subtle"
+                disabled={isTerminating}
                 onClick={() => onHideSession(session.id)}
                 title="仅从当前办公室视图隐藏此工位，后台进程继续运行"
               >
@@ -541,137 +816,529 @@ export function SessionDesktop({
                 <span>隐藏视图</span>
               </button>
             ) : null}
+
+            {session ? (
+              isPoweredOn ? (
+                <button
+                  type="button"
+                  className="session-desktop-btn session-desktop-btn--power-off"
+                  disabled={isTerminating}
+                  onClick={handlePowerOff}
+                  title="虚拟电脑关机：仅关闭虚拟显示器并断开前端终端连接，保留后台持久会话与运行中进程"
+                >
+                  <PoweroffOutlined />
+                  <span>虚拟关机</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="session-desktop-btn session-desktop-btn--power-on"
+                  disabled={isTerminating}
+                  onClick={handleBoot}
+                  title="开启虚拟电脑并按原会话标识恢复连接（绝不静默启动新 Shell）"
+                >
+                  <ThunderboltOutlined />
+                  <span>开机恢复</span>
+                </button>
+              )
+            ) : null}
+
+            {session ? (
+              <>
+                <span className="session-desktop-win-sep" aria-hidden="true" />
+                {isWebShell ? (
+                  <button
+                    type="button"
+                    className="session-desktop-btn session-desktop-btn--danger"
+                    disabled={isTerminating}
+                    onClick={handleRequestTerminateCurrent}
+                    title="不可逆终止并销毁此 Web Shell 服务端进程（需弹窗确认）"
+                  >
+                    {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
+                    <span>{isTerminating ? '正在关闭…' : '关闭会话'}</span>
+                  </button>
+                ) : (
+                  <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
+                    <span className="session-desktop-disabled-wrap">
+                      <button
+                        type="button"
+                        className="session-desktop-btn session-desktop-btn--disabled"
+                        disabled
+                        aria-disabled="true"
+                      >
+                        <DeleteOutlined />
+                        <span>关闭会话</span>
+                      </button>
+                    </span>
+                  </Tooltip>
+                )}
+              </>
+            ) : null}
           </div>
         </header>
 
-        {/* Desktop Stage: Wallpaper Apps + Active OS Windows */}
-        <main className="session-desktop-stage">
-          {/* Desktop Wallpaper Layer (always visible behind / when minimized) */}
-          <section
-            className="session-desktop-canvas"
-            data-revealed={bothMinimized ? 'true' : undefined}
-            aria-label="桌面图标与会话身份面板"
-          >
-            <div className="session-desktop-icons">
-              <button
-                type="button"
-                className="session-desktop-app-icon"
-                data-active={terminalOpen ? 'true' : undefined}
-                onClick={handleRestoreTerminal}
-              >
-                <span className="session-desktop-app-glyph">
-                  <CodeOutlined />
-                  <span className={`hud-led ${availability.ledClass} session-desktop-app-led`} aria-hidden="true" />
-                </span>
-                <span className="session-desktop-app-title">会话终端</span>
-                <span className="session-desktop-app-meta">{sessionTitle}</span>
-              </button>
-
-              <button
-                type="button"
-                className="session-desktop-app-icon"
-                data-active={mailOpen ? 'true' : undefined}
-                data-pulse={hasMailPulse ? 'true' : undefined}
-                onClick={handleRestoreMail}
-              >
-                <span className="session-desktop-app-glyph">
-                  <MailOutlined />
-                  {mailBadgeCount > 0 ? (
-                    <span className="session-desktop-app-badge">{mailBadgeCount}</span>
-                  ) : null}
-                </span>
-                <span className="session-desktop-app-title">Peer 邮箱</span>
-                <span className="session-desktop-app-meta">
-                  收件 {sessionInbox} · 待投 {sessionPending}
-                  {roomPending > sessionPending ? ` · 房间待投 ${roomPending}` : ''}
-                </span>
-              </button>
+        {/* Dual Monitor Bezel Header when dualMonitor is active */}
+        {preferences.dualMonitor ? (
+          <div className="session-desktop-monitor-bezel-bar" aria-label="双显示器编排栏">
+            <div className="session-desktop-bezel-slot">
+              <DesktopOutlined />
+              <strong>DISPLAY 01 · 主显示器</strong>
+              <span>{isPoweredOn ? `${wallpaperSpec.label} · 主工作区` : 'STANDBY · 已熄屏'}</span>
             </div>
+            <div className="session-desktop-bezel-divider" aria-hidden="true" />
+            <div className="session-desktop-bezel-slot">
+              <DesktopOutlined />
+              <strong>DISPLAY 02 · 扩展副显示器</strong>
+              <span>
+                {isPoweredOn
+                  ? (settingsOpen ? '设置与配置视图' : (mailVisible && terminalWanted ? '协作邮箱视图' : '扩展壁纸桌面'))
+                  : 'STANDBY · 同步待机'}
+              </span>
+              {isPoweredOn && (terminalWanted || mailVisible) && !settingsOpen && !(terminalWanted && mailVisible) ? (
+                <button
+                  type="button"
+                  className="session-desktop-bezel-span-btn"
+                  onClick={() => setDualSpanFull((prev) => !prev)}
+                  title={dualSpanFull ? '恢复双显示器左右分立视图' : '将当前活动窗口跨双屏铺满'}
+                >
+                  {dualSpanFull ? <CompressOutlined /> : <ExpandOutlined />}
+                  <span>{dualSpanFull ? '恢复双屏分立' : '跨双屏铺满'}</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
-            <aside className="session-desktop-identity-widget" aria-label="身份与进程信息">
-              <div className="session-desktop-widget-header">
-                <span className="session-desktop-widget-title">
-                  <DesktopOutlined />
-                  <span>身份与进程信息</span>
-                </span>
-                <span className={`session-desktop-status-pill session-desktop-status-pill--${availability.tone}`}>
-                  <span className={`hud-led ${availability.ledClass}`} aria-hidden="true" />
-                  <span>{availability.label}</span>
-                </span>
+        {/* Desktop Stage: Wallpaper Backdrop + Standby or Active OS Windows */}
+        <main
+          className="session-desktop-stage"
+          data-wallpaper={preferences.wallpaper}
+          data-power={preferences.power}
+          data-dual-monitor={preferences.dualMonitor ? 'true' : 'false'}
+        >
+          {isPoweredOn && loadedWallpaperAssetUrl ? (
+            <div
+              className="session-desktop-wallpaper-image"
+              style={wallpaperImgStyle}
+              aria-hidden="true"
+            />
+          ) : null}
+
+          {isPoweredOn ? (
+            /* Powered-On Desktop Wallpaper Canvas (Desktop Icons + Identity Summary) */
+            <section
+              className="session-desktop-canvas"
+              data-revealed={allWindowsMinimized ? 'true' : undefined}
+              aria-label="桌面图标与会话身份面板"
+            >
+              <div className="session-desktop-icons">
+                <button
+                  type="button"
+                  className="session-desktop-app-icon"
+                  data-active={terminalWanted ? 'true' : undefined}
+                  onClick={handleRestoreTerminal}
+                >
+                  <span className="session-desktop-app-glyph">
+                    <CodeOutlined />
+                    <span className={`hud-led ${availability.ledClass} session-desktop-app-led`} aria-hidden="true" />
+                  </span>
+                  <span className="session-desktop-app-title">会话终端</span>
+                  <span className="session-desktop-app-meta">{sessionTitle}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="session-desktop-app-icon"
+                  data-active={mailVisible ? 'true' : undefined}
+                  data-pulse={hasMailPulse ? 'true' : undefined}
+                  onClick={handleRestoreMail}
+                >
+                  <span className="session-desktop-app-glyph">
+                    <MailOutlined />
+                    {mailBadgeCount > 0 ? (
+                      <span className="session-desktop-app-badge">{mailBadgeCount}</span>
+                    ) : null}
+                  </span>
+                  <span className="session-desktop-app-title">协作邮箱</span>
+                  <span className="session-desktop-app-meta">
+                    收件 {sessionInbox} · 待投 {sessionPending}
+                    {roomPending > sessionPending ? ` · 房间待投 ${roomPending}` : ''}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="session-desktop-app-icon"
+                  data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
+                  onClick={() => handleOpenSettingsTab('settings')}
+                >
+                  <span className="session-desktop-app-glyph">
+                    <SettingOutlined />
+                  </span>
+                  <span className="session-desktop-app-title">电脑设置</span>
+                  <span className="session-desktop-app-meta">
+                    {wallpaperSpec.label} · {preferences.dualMonitor ? '双屏' : '单屏'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="session-desktop-app-icon"
+                  data-active={settingsOpen && settingsTab === 'config' ? 'true' : undefined}
+                  onClick={() => handleOpenSettingsTab('config')}
+                >
+                  <span className="session-desktop-app-glyph">
+                    <ControlOutlined />
+                  </span>
+                  <span className="session-desktop-app-title">电脑配置</span>
+                  <span className="session-desktop-app-meta">真实会话事实与建模规格</span>
+                </button>
               </div>
 
-              {session ? (
-                <dl className="session-desktop-meta-grid">
-                  <div className="session-desktop-meta-row">
-                    <dt>SESSION KEY</dt>
-                    <dd><code>{session.sessionKey}</code></dd>
-                  </div>
-                  <div className="session-desktop-meta-row">
-                    <dt>NATIVE ID</dt>
-                    <dd><code>{session.nativeSessionId || '未分配（Web / 无原生 ID）'}</code></dd>
-                  </div>
-                  <div className="session-desktop-meta-row">
-                    <dt>WORKDIR</dt>
-                    <dd><code>{session.cwd || '未指定目录'}</code></dd>
-                  </div>
-                  <div className="session-desktop-meta-row">
-                    <dt>PROVIDER</dt>
-                    <dd>
-                      <span>
-                        {session.provider || 'shell'} · {session.source}
-                        {session.harness ? ` · ${session.harness}` : ''}
-                        {session.model ? ` · ${session.model}` : ''}
-                      </span>
-                    </dd>
-                  </div>
-                  <div className="session-desktop-meta-row">
-                    <dt>MAILBOX</dt>
-                    <dd>
-                      <span>
-                        收件 {session.inboxCount} · 发件 {session.sentCount} · 待投 {session.pendingCount} · 跨项目 {session.crossProjectCount}
-                      </span>
-                    </dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className="session-desktop-widget-empty">当前未选定会话，请从底部任务栏切换或返回办公室。</p>
-              )}
+              <aside className="session-desktop-identity-widget" aria-label="身份与进程信息">
+                <div className="session-desktop-widget-header">
+                  <span className="session-desktop-widget-title">
+                    <DesktopOutlined />
+                    <span>身份与进程信息</span>
+                  </span>
+                  <span className={`session-desktop-status-pill session-desktop-status-pill--${availability.tone}`}>
+                    <span className={`hud-led ${availability.ledClass}`} aria-hidden="true" />
+                    <span>{availability.label}</span>
+                  </span>
+                </div>
 
-              <div className="session-desktop-widget-actions">
                 {session ? (
+                  <>
+                    <dl className="session-desktop-meta-grid">
+                      <div className="session-desktop-meta-row">
+                        <dt>SESSION KEY</dt>
+                        <dd><code>{session.sessionKey}</code></dd>
+                      </div>
+                      <div className="session-desktop-meta-row">
+                        <dt>NATIVE ID</dt>
+                        <dd><code>{session.nativeSessionId || '未分配（Web Shell / 无原生 ID）'}</code></dd>
+                      </div>
+                      <div className="session-desktop-meta-row">
+                        <dt>WORKDIR</dt>
+                        <dd><code>{session.cwd || '未指定目录'}</code></dd>
+                      </div>
+                      <div className="session-desktop-meta-row">
+                        <dt>PROVIDER</dt>
+                        <dd>
+                          <span>
+                            {session.provider || 'shell'} · {session.source === 'web' ? 'Web 终端' : '原生 CLI'}
+                            {session.harness ? ` · ${session.harness}` : ''}
+                            {session.model ? ` · ${session.model}` : ''}
+                          </span>
+                        </dd>
+                      </div>
+                      <div className="session-desktop-meta-row">
+                        <dt>DISPLAY</dt>
+                        <dd>
+                          <span>
+                            {wallpaperSpec.label} · {preferences.dualMonitor ? '双联屏' : '单屏'} · RGB {preferences.rgbEnabled ? preferences.rgbColor.toUpperCase() : '关'}
+                          </span>
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {!isWebShell ? (
+                      <p className="session-desktop-lifecycle-note">
+                        {NATIVE_CLOSE_DISABLED_REASON}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="session-desktop-widget-empty">当前未选定会话，请从底部任务栏切换或返回办公室。</p>
+                )}
+
+                <div className="session-desktop-widget-actions">
                   <button
                     type="button"
                     className="session-desktop-btn"
-                    onClick={() => onCopyIdentity(session)}
+                    onClick={() => handleOpenSettingsTab('config')}
                   >
-                    <CopyOutlined />
-                    <span>复制原标识</span>
+                    <ControlOutlined />
+                    <span>查看电脑配置</span>
                   </button>
+                  {session ? (
+                    <button
+                      type="button"
+                      className="session-desktop-btn"
+                      disabled={isTerminating}
+                      onClick={() => onCopyIdentity(session)}
+                    >
+                      <CopyOutlined />
+                      <span>复制原标识</span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="session-desktop-btn"
+                    disabled={isTerminating}
+                    onClick={() => onOpenNewTerminal(session?.cwd || room?.projectPath)}
+                  >
+                    <PlusOutlined />
+                    <span>新建项目终端</span>
+                  </button>
+                  {session ? (
+                    <button
+                      type="button"
+                      className="session-desktop-btn session-desktop-btn--power-off"
+                      disabled={isTerminating}
+                      onClick={handlePowerOff}
+                    >
+                      <PoweroffOutlined />
+                      <span>虚拟电脑关机</span>
+                    </button>
+                  ) : null}
+                  {session ? (
+                    isWebShell ? (
+                      <button
+                        type="button"
+                        className="session-desktop-btn session-desktop-btn--danger"
+                        disabled={isTerminating}
+                        onClick={handleRequestTerminateCurrent}
+                      >
+                        {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
+                        <span>{isTerminating ? '正在关闭…' : '关闭会话'}</span>
+                      </button>
+                    ) : (
+                      <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
+                        <span className="session-desktop-disabled-wrap">
+                          <button
+                            type="button"
+                            className="session-desktop-btn session-desktop-btn--disabled"
+                            disabled
+                            aria-disabled="true"
+                          >
+                            <DeleteOutlined />
+                            <span>关闭会话</span>
+                          </button>
+                        </span>
+                      </Tooltip>
+                    )
+                  ) : null}
+                </div>
+              </aside>
+            </section>
+          ) : (
+            /* Virtual Workstation Powered-Off Standby Screen (Zero ShellTerminalPanel Mount) */
+            <section
+              className="session-desktop-standby"
+              data-dual={preferences.dualMonitor ? 'true' : 'false'}
+              aria-label="虚拟电脑已关机待机屏幕"
+            >
+              <div className="session-desktop-standby-screen">
+                <div className="session-desktop-standby-top">
+                  <span className="session-desktop-status-pill session-desktop-status-pill--standby">
+                    <PoweroffOutlined />
+                    <span>STANDBY · 虚拟电脑已关机</span>
+                  </span>
+                  <span className="session-desktop-standby-tag">{durabilityNote.badge}</span>
+                </div>
+
+                <h2 className="session-desktop-standby-title">
+                  {sessionTitle} — 虚拟显示器已断电熄屏
+                </h2>
+
+                <p className="session-desktop-standby-desc">
+                  当前仅关闭虚拟桌面显示并解除了浏览器终端流附着，未发送任何 close 或进程退出信号。
+                  {durabilityNote.summary}
+                </p>
+
+                {session ? (
+                  <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
+                    <div className="session-desktop-meta-row">
+                      <dt>SESSION KEY</dt>
+                      <dd><code>{session.sessionKey}</code></dd>
+                    </div>
+                    {session.nativeSessionId ? (
+                      <div className="session-desktop-meta-row">
+                        <dt>NATIVE ID</dt>
+                        <dd><code>{session.nativeSessionId}</code></dd>
+                      </div>
+                    ) : null}
+                    <div className="session-desktop-meta-row">
+                      <dt>WORKDIR</dt>
+                      <dd><code>{session.cwd || '未指定目录'}</code></dd>
+                    </div>
+                    <div className="session-desktop-meta-row">
+                      <dt>PROVIDER</dt>
+                      <dd>
+                        <span>
+                          {session.provider || 'shell'} · {session.source === 'web' ? 'Web 终端' : '原生 CLI'}
+                        </span>
+                      </dd>
+                    </div>
+                  </dl>
                 ) : null}
-                <button
-                  type="button"
-                  className="session-desktop-btn"
-                  onClick={() => onOpenNewTerminal(session?.cwd || room?.projectPath)}
-                >
-                  <PlusOutlined />
-                  <span>新建项目终端</span>
-                </button>
+
+                <div className="session-desktop-standby-actions">
+                  {session ? (
+                    <button
+                      type="button"
+                      className="session-desktop-btn session-desktop-btn--power-on"
+                      disabled={isTerminating}
+                      onClick={handleBoot}
+                    >
+                      <ThunderboltOutlined />
+                      <span>开机并恢复原会话</span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="session-desktop-btn"
+                    onClick={() => handleOpenSettingsTab('settings')}
+                  >
+                    <SettingOutlined />
+                    <span>电脑设置</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="session-desktop-btn"
+                    onClick={() => handleOpenSettingsTab('config')}
+                  >
+                    <ControlOutlined />
+                    <span>查看电脑配置</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="session-desktop-btn"
+                    onClick={handleRestoreMail}
+                  >
+                    <MailOutlined />
+                    <span>查看协作邮箱</span>
+                    {mailBadgeCount > 0 ? (
+                      <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
+                    ) : null}
+                  </button>
+                  {session ? (
+                    <button
+                      type="button"
+                      className="session-desktop-btn"
+                      disabled={isTerminating}
+                      onClick={() => onCopyIdentity(session)}
+                    >
+                      <CopyOutlined />
+                      <span>复制原标识</span>
+                    </button>
+                  ) : null}
+                  {session ? (
+                    isWebShell ? (
+                      <button
+                        type="button"
+                        className="session-desktop-btn session-desktop-btn--danger"
+                        disabled={isTerminating}
+                        onClick={handleRequestTerminateCurrent}
+                        title="不可逆销毁并停止服务端此 Web Shell 会话（需确认）"
+                      >
+                        {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
+                        <span>{isTerminating ? '正在关闭…' : '关闭会话'}</span>
+                      </button>
+                    ) : (
+                      <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
+                        <span className="session-desktop-disabled-wrap">
+                          <button
+                            type="button"
+                            className="session-desktop-btn session-desktop-btn--disabled"
+                            disabled
+                            aria-disabled="true"
+                          >
+                            <DeleteOutlined />
+                            <span>关闭会话</span>
+                          </button>
+                        </span>
+                      </Tooltip>
+                    )
+                  ) : null}
+                </div>
               </div>
-            </aside>
-          </section>
+
+              {preferences.dualMonitor ? (
+                <div className="session-desktop-standby-screen session-desktop-standby-screen--secondary">
+                  <div className="session-desktop-standby-top">
+                    <span className="session-desktop-status-pill session-desktop-status-pill--standby">
+                      <DesktopOutlined />
+                      <span>DISPLAY 02 · 扩展副屏待机</span>
+                    </span>
+                  </div>
+                  <p className="session-desktop-standby-desc">
+                    双联屏拓扑已保留（壁纸：{wallpaperSpec.label} · 机箱灯效：{preferences.rgbEnabled ? preferences.rgbColor.toUpperCase() : '关闭'}）。开机后自动同步点亮主副双屏。
+                  </p>
+                  <div className="session-desktop-standby-actions">
+                    {session ? (
+                      <button
+                        type="button"
+                        className="session-desktop-btn session-desktop-btn--power-on"
+                        disabled={isTerminating}
+                        onClick={handleBoot}
+                      >
+                        <ThunderboltOutlined />
+                        <span>同步点亮双屏</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="session-desktop-btn"
+                      onClick={() => handleOpenSettingsTab('config')}
+                    >
+                      <ControlOutlined />
+                      <span>查看工位规格</span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          )}
 
           {/* OS Windows Layer */}
           <div
             className="session-desktop-windows"
-            data-layout={layoutMode}
-            data-terminal-open={terminalOpen ? 'true' : 'false'}
-            data-mail-open={mailOpen ? 'true' : 'false'}
+            data-cols={gridColumns}
           >
-            {/* Terminal OS Window: kept mounted while Desktop is open so minimizing or switching to Mail never kills PTY */}
+            {/* Primary Icons Placeholder when Dual Monitor has only Settings on Display 02 */}
+            {primaryIconsSlotVisible ? (
+              <section
+                className="session-desktop-secondary-surface"
+                aria-label="主显示器壁纸桌面"
+              >
+                <div className="session-desktop-secondary-card">
+                  <div className="session-desktop-secondary-head">
+                    <DesktopOutlined />
+                    <strong>DISPLAY 01 · 主屏桌面待命</strong>
+                    <span className="office-cs-pill">{wallpaperSpec.label}</span>
+                  </div>
+                  <p className="session-desktop-secondary-desc">
+                    当前终端与邮箱已收起至任务栏，副屏正在展示电脑设置或配置信息。
+                  </p>
+                  <div className="session-desktop-secondary-actions">
+                    <button
+                      type="button"
+                      className="session-desktop-btn session-desktop-btn--primary"
+                      onClick={handleRestoreTerminal}
+                    >
+                      <CodeOutlined />
+                      <span>在主屏恢复会话终端</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="session-desktop-btn"
+                      onClick={handleRestoreMail}
+                    >
+                      <MailOutlined />
+                      <span>打开协作邮箱</span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {/* Terminal OS Window — constant JSX slot so ShellTerminalPanel never remounts on layout toggles */}
             <section
-              className={`session-desktop-window session-desktop-window--terminal${terminalOpen ? '' : ' session-desktop-window--docked'}`}
+              className={`session-desktop-window session-desktop-window--terminal${terminalWanted ? '' : ' session-desktop-window--docked'}`}
               aria-label={`会话终端 — ${sessionTitle}`}
-              aria-hidden={!terminalOpen}
+              aria-hidden={!terminalWanted}
             >
               <div className="session-desktop-window-bar">
                 <div className="session-desktop-window-title">
@@ -686,16 +1353,27 @@ export function SessionDesktop({
                   <button
                     type="button"
                     className="session-desktop-win-btn"
-                    onClick={() => applyLayout('mail-focus')}
-                    title="切换到 Peer 邮箱窗口"
+                    onClick={handleRestoreMail}
+                    title="打开或切换到协作邮箱窗口（终端保持后台运行）"
+                    aria-label="打开协作邮箱窗口"
                   >
                     <MailOutlined />
                   </button>
                   <button
                     type="button"
                     className="session-desktop-win-btn"
+                    onClick={() => handleToggleSettingsTab('settings')}
+                    title="打开或收起电脑设置窗口"
+                    aria-label="切换电脑设置窗口"
+                  >
+                    <SettingOutlined />
+                  </button>
+                  <button
+                    type="button"
+                    className="session-desktop-win-btn"
                     onClick={() => applyLayout(layoutMode === 'split' ? 'terminal-focus' : 'split')}
                     title={layoutMode === 'split' ? '独占终端窗口' : '分屏协同'}
+                    aria-label={layoutMode === 'split' ? '独占终端窗口' : '分屏协同'}
                   >
                     {layoutMode === 'split' ? <CompressOutlined /> : <SplitCellsOutlined />}
                   </button>
@@ -704,15 +1382,57 @@ export function SessionDesktop({
                     className="session-desktop-win-btn"
                     onClick={handleMinimizeTerminal}
                     aria-label="最小化终端窗口"
-                    title="最小化到任务栏（后台保持运行）"
+                    title="最小化窗口到任务栏（电脑保持开机，终端连接不中断）"
                   >
                     <MinusOutlined />
                   </button>
+
+                  {session ? (
+                    <>
+                      <span className="session-desktop-win-sep" aria-hidden="true" />
+                      <button
+                        type="button"
+                        className="session-desktop-win-power-btn"
+                        disabled={isTerminating}
+                        onClick={handlePowerOff}
+                        title="虚拟电脑关机：仅熄灭显示器并断开前端终端附着，保留后台持久会话"
+                      >
+                        <PoweroffOutlined />
+                        <span>虚拟关机</span>
+                      </button>
+                      {isWebShell ? (
+                        <button
+                          type="button"
+                          className="session-desktop-win-terminate-btn"
+                          disabled={isTerminating}
+                          onClick={handleRequestTerminateCurrent}
+                          title="不可逆关闭并终止此 Web Shell 会话进程（需确认）"
+                        >
+                          {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
+                          <span>{isTerminating ? '关闭中…' : '关闭会话'}</span>
+                        </button>
+                      ) : (
+                        <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
+                          <span className="session-desktop-disabled-wrap">
+                            <button
+                              type="button"
+                              className="session-desktop-win-terminate-btn is-disabled"
+                              disabled
+                              aria-disabled="true"
+                            >
+                              <DeleteOutlined />
+                              <span>关闭会话</span>
+                            </button>
+                          </span>
+                        </Tooltip>
+                      )}
+                    </>
+                  ) : null}
                 </div>
               </div>
 
               <div ref={terminalHostRef} className="session-desktop-terminal-host">
-                {canAttach && session && session.tab ? (
+                {shouldMountTerminal && session && session.tab ? (
                   <ShellTerminalPanel
                     key={`${serverId}:${session.tab.id}`}
                     visible={true}
@@ -725,22 +1445,45 @@ export function SessionDesktop({
                     panelHeight={640}
                     sessionTabs={terminalSessionTabs}
                     activeTabId={session.tab.id}
-                    minimized={!terminalOpen}
+                    minimized={!terminalWanted}
                     onMinimizedChange={handleShellMinimizedChange}
-                    onClose={handleMinimizeTerminal}
+                    onClose={handleRequestTerminateCurrent}
                   />
+                ) : bootPhase === 'checking' ? (
+                  <div className="session-desktop-terminal-fallback">
+                    <div className="session-desktop-fallback-card">
+                      <div className="session-desktop-fallback-head">
+                        <span className="session-desktop-status-pill">
+                          <LoadingOutlined />
+                          <span>正在核对原会话</span>
+                        </span>
+                        <h3>正在按原标识核对持久会话状态…</h3>
+                      </div>
+                      <p className="session-desktop-fallback-desc">
+                        {bootReason || '正在向当前服务器核对原会话标识，确认存活后将直接恢复附着，绝不静默创建替代终端。'}
+                      </p>
+                      {session ? (
+                        <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
+                          <div className="session-desktop-meta-row">
+                            <dt>SESSION KEY</dt>
+                            <dd><code>{session.sessionKey}</code></dd>
+                          </div>
+                        </dl>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : (
                   <div className="session-desktop-terminal-fallback">
                     <div className="session-desktop-fallback-card">
                       <div className="session-desktop-fallback-head">
-                        <span className={`session-desktop-status-pill session-desktop-status-pill--${availability.tone}`}>
-                          <span className={`hud-led ${availability.ledClass}`} aria-hidden="true" />
-                          <span>{availability.label}</span>
+                        <span className={`session-desktop-status-pill session-desktop-status-pill--${fallbackMeta.tone}`}>
+                          <span className={`hud-led ${fallbackMeta.ledClass}`} aria-hidden="true" />
+                          <span>{fallbackMeta.label}</span>
                         </span>
-                        <h3>{availability.title}</h3>
+                        <h3>{fallbackMeta.title}</h3>
                       </div>
 
-                      <p className="session-desktop-fallback-desc">{availability.description}</p>
+                      <p className="session-desktop-fallback-desc">{fallbackMeta.description}</p>
 
                       {session ? (
                         <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
@@ -760,9 +1503,19 @@ export function SessionDesktop({
                           </div>
                           <div className="session-desktop-meta-row">
                             <dt>PROVIDER</dt>
-                            <dd><span>{session.provider || 'shell'} · {session.source}</span></dd>
+                            <dd>
+                              <span>
+                                {session.provider || 'shell'} · {session.source === 'web' ? 'Web 终端' : '原生 CLI'}
+                              </span>
+                            </dd>
                           </div>
                         </dl>
+                      ) : null}
+
+                      {session && !isWebShell ? (
+                        <p className="session-desktop-lifecycle-note">
+                          {NATIVE_CLOSE_DISABLED_REASON}
+                        </p>
                       ) : null}
 
                       {session?.contentPreview ? (
@@ -773,10 +1526,22 @@ export function SessionDesktop({
                       ) : null}
 
                       <div className="session-desktop-fallback-actions">
+                        {session && (bootPhase === 'unavailable' || bootPhase === 'exited') ? (
+                          <button
+                            type="button"
+                            className="session-desktop-btn session-desktop-btn--power-on"
+                            disabled={isTerminating}
+                            onClick={handleBoot}
+                          >
+                            <ThunderboltOutlined />
+                            <span>重新尝试接入原会话</span>
+                          </button>
+                        ) : null}
                         {session ? (
                           <button
                             type="button"
                             className="session-desktop-btn"
+                            disabled={isTerminating}
                             onClick={() => onCopyIdentity(session)}
                           >
                             <CopyOutlined />
@@ -786,6 +1551,7 @@ export function SessionDesktop({
                         <button
                           type="button"
                           className="session-desktop-btn"
+                          disabled={isTerminating}
                           onClick={onRefreshAll}
                         >
                           <ReloadOutlined />
@@ -793,7 +1559,16 @@ export function SessionDesktop({
                         </button>
                         <button
                           type="button"
+                          className="session-desktop-btn"
+                          onClick={() => handleOpenSettingsTab('config')}
+                        >
+                          <ControlOutlined />
+                          <span>查看电脑配置</span>
+                        </button>
+                        <button
+                          type="button"
                           className="session-desktop-btn session-desktop-btn--primary"
+                          disabled={isTerminating}
                           onClick={() => onOpenNewTerminal(session?.cwd || room?.projectPath)}
                         >
                           <PlusOutlined />
@@ -802,11 +1577,39 @@ export function SessionDesktop({
                         <button
                           type="button"
                           className="session-desktop-btn"
+                          disabled={isTerminating}
                           onClick={handleRestoreMail}
                         >
                           <MailOutlined />
-                          <span>查看 Peer 邮箱</span>
+                          <span>查看协作邮箱</span>
                         </button>
+                        {session ? (
+                          isWebShell ? (
+                            <button
+                              type="button"
+                              className="session-desktop-btn session-desktop-btn--danger"
+                              disabled={isTerminating}
+                              onClick={handleRequestTerminateCurrent}
+                            >
+                              {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
+                              <span>{isTerminating ? '正在关闭…' : '关闭会话'}</span>
+                            </button>
+                          ) : (
+                            <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
+                              <span className="session-desktop-disabled-wrap">
+                                <button
+                                  type="button"
+                                  className="session-desktop-btn session-desktop-btn--disabled"
+                                  disabled
+                                  aria-disabled="true"
+                                >
+                                  <DeleteOutlined />
+                                  <span>关闭会话</span>
+                                </button>
+                              </span>
+                            </Tooltip>
+                          )
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -814,39 +1617,54 @@ export function SessionDesktop({
               </div>
             </section>
 
-            {/* Mailbox OS Window: kept mounted while Desktop is open to preserve folder/search/selection */}
+            {/* Mailbox OS Window */}
             <section
-              className={`session-desktop-window session-desktop-window--mail${mailOpen ? '' : ' session-desktop-window--hidden'}`}
-              aria-label="Peer 邮箱窗口"
-              aria-hidden={!mailOpen}
+              className={`session-desktop-window session-desktop-window--mail${mailVisible ? '' : ' session-desktop-window--hidden'}`}
+              aria-label="协作邮箱窗口"
+              aria-hidden={!mailVisible}
             >
               <div className="session-desktop-window-bar">
                 <div className="session-desktop-window-title">
                   <MailOutlined />
                   <span className="session-desktop-window-name">
-                    Peer 邮箱 — {getMailboxScopeTitle(mailboxScope, room, session)}
+                    协作邮箱 — {getMailboxScopeTitle(mailboxScope, room, session)}
                   </span>
                   {peerCounts.pending > 0 ? (
                     <span className="session-desktop-inline-badge">待投 {peerCounts.pending}</span>
                   ) : null}
                 </div>
                 <div className="session-desktop-window-controls">
+                  {isPoweredOn ? (
+                    <button
+                      type="button"
+                      className="session-desktop-win-btn"
+                      onClick={() => applyLayout('terminal-focus')}
+                      title="切换到会话终端"
+                      aria-label="切换到会话终端"
+                    >
+                      <CodeOutlined />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="session-desktop-win-btn"
-                    onClick={() => applyLayout('terminal-focus')}
-                    title="切换到会话终端"
+                    onClick={() => handleToggleSettingsTab('settings')}
+                    title="打开或收起电脑设置"
+                    aria-label="切换电脑设置"
                   >
-                    <CodeOutlined />
+                    <SettingOutlined />
                   </button>
-                  <button
-                    type="button"
-                    className="session-desktop-win-btn"
-                    onClick={() => applyLayout(layoutMode === 'split' ? 'mail-focus' : 'split')}
-                    title={layoutMode === 'split' ? '独占邮箱窗口' : '分屏协同'}
-                  >
-                    {layoutMode === 'split' ? <CompressOutlined /> : <SplitCellsOutlined />}
-                  </button>
+                  {isPoweredOn ? (
+                    <button
+                      type="button"
+                      className="session-desktop-win-btn"
+                      onClick={() => applyLayout(layoutMode === 'split' ? 'mail-focus' : 'split')}
+                      title={layoutMode === 'split' ? '独占邮箱窗口' : '分屏协同'}
+                      aria-label={layoutMode === 'split' ? '独占邮箱窗口' : '分屏协同'}
+                    >
+                      {layoutMode === 'split' ? <CompressOutlined /> : <SplitCellsOutlined />}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="session-desktop-win-btn"
@@ -878,6 +1696,111 @@ export function SessionDesktop({
                 />
               </div>
             </section>
+
+            {/* Focused Computer Settings & Configuration Window */}
+            <OfficeComputerSettings
+              open={settingsOpen}
+              activeTab={settingsTab}
+              onTabChange={setSettingsTab}
+              onCloseWindow={() => setSettingsOpen(false)}
+              onFocusTerminal={isPoweredOn ? () => {
+                setSettingsOpen(false);
+                handleRestoreTerminal();
+              } : undefined}
+              onFocusMail={() => {
+                setSettingsOpen(false);
+                handleRestoreMail();
+              }}
+              serverId={serverId}
+              session={session}
+              room={room}
+              preferences={preferences}
+              loadedWallpaperAssetUrl={loadedWallpaperAssetUrl}
+              terminalReadyObserved={terminalReady}
+              durabilityNote={durabilityNote}
+              isTerminating={isTerminating}
+              onPowerOffComputer={handlePowerOff}
+              onBootComputer={handleBoot}
+              onUpdateAppearance={updateAppearance}
+              onCopyIdentity={onCopyIdentity}
+              onReturnToRoom={onCloseToRoom}
+            />
+
+            {/* Secondary Monitor Desktop Surface when Dual Monitor is enabled and Display 02 has no window */}
+            {secondaryWallpaperVisible ? (
+              <aside
+                className="session-desktop-secondary-surface"
+                aria-label="副显示器扩展壁纸桌面"
+              >
+                <div className="session-desktop-secondary-card">
+                  <div className="session-desktop-secondary-head">
+                    <DesktopOutlined />
+                    <strong>DISPLAY 02 · 扩展副显示器</strong>
+                    <span className="office-cs-pill">{wallpaperSpec.label}</span>
+                  </div>
+
+                  <p className="session-desktop-secondary-desc">
+                    双显示器模式已开启，与 3D 工位双联屏支架实时联动。可在副屏展开协作邮箱、调节电脑设置或核对工位配置事实。
+                  </p>
+
+                  {session ? (
+                    <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
+                      <div className="session-desktop-meta-row">
+                        <dt>SESSION</dt>
+                        <dd><code>{session.shortLabel || session.label}</code></dd>
+                      </div>
+                      <div className="session-desktop-meta-row">
+                        <dt>MAILBOX</dt>
+                        <dd>
+                          <span>
+                            收件 {sessionInbox} · 待投 {sessionPending}
+                            {roomPending > sessionPending ? ` · 房间待投 ${roomPending}` : ''}
+                          </span>
+                        </dd>
+                      </div>
+                      <div className="session-desktop-meta-row">
+                        <dt>CHASSIS RGB</dt>
+                        <dd>
+                          <span>
+                            {preferences.rgbEnabled ? `开启 (${preferences.rgbColor.toUpperCase()})` : '关闭'}
+                          </span>
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : null}
+
+                  <div className="session-desktop-secondary-actions">
+                    <button
+                      type="button"
+                      className="session-desktop-btn session-desktop-btn--primary"
+                      onClick={handleRestoreMail}
+                    >
+                      <MailOutlined />
+                      <span>在副屏展开协作邮箱</span>
+                      {mailBadgeCount > 0 ? (
+                        <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
+                      ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="session-desktop-btn"
+                      onClick={() => handleOpenSettingsTab('settings')}
+                    >
+                      <SettingOutlined />
+                      <span>在副屏打开电脑设置</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="session-desktop-btn"
+                      onClick={() => handleOpenSettingsTab('config')}
+                    >
+                      <ControlOutlined />
+                      <span>查看电脑配置事实</span>
+                    </button>
+                  </div>
+                </div>
+              </aside>
+            ) : null}
           </div>
         </main>
 
@@ -887,30 +1810,58 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-dock-pill"
-              data-active={terminalOpen ? 'true' : undefined}
-              data-minimized={!terminalOpen ? 'true' : undefined}
+              data-active={terminalWanted ? 'true' : undefined}
+              data-minimized={!terminalWanted ? 'true' : undefined}
               onClick={handleToggleTerminalDock}
-              title={terminalOpen ? '最小化终端窗口（后台保持运行）' : '恢复终端窗口'}
+              title={
+                !isPoweredOn
+                  ? '查看虚拟电脑待机屏（点击“开机恢复”可重连终端）'
+                  : (terminalWanted ? '最小化终端窗口（保持开机与后台运行）' : '恢复终端窗口')
+              }
             >
               <CodeOutlined />
-              <span className={`hud-led ${availability.ledClass}`} aria-hidden="true" />
+              <span className={`hud-led ${isPoweredOn ? availability.ledClass : ''}`} aria-hidden="true" />
               <span>会话终端</span>
             </button>
 
             <button
               type="button"
               className="session-desktop-dock-pill"
-              data-active={mailOpen ? 'true' : undefined}
-              data-minimized={!mailOpen ? 'true' : undefined}
+              data-active={mailVisible ? 'true' : undefined}
+              data-minimized={!mailVisible ? 'true' : undefined}
               data-pulse={hasMailPulse ? 'true' : undefined}
               onClick={handleToggleMailDock}
-              title={mailOpen ? '最小化邮箱窗口' : '打开 Peer 邮箱'}
+              title={mailVisible ? '最小化邮箱窗口' : '打开协作邮箱'}
             >
               <MailOutlined />
-              <span>Peer 邮箱</span>
+              <span>协作邮箱</span>
               {mailBadgeCount > 0 ? (
                 <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
               ) : null}
+            </button>
+
+            <button
+              type="button"
+              className="session-desktop-dock-pill"
+              data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
+              data-minimized={!(settingsOpen && settingsTab === 'settings') ? 'true' : undefined}
+              onClick={() => handleToggleSettingsTab('settings')}
+              title="切换电脑显示与电源设置窗口"
+            >
+              <SettingOutlined />
+              <span>电脑设置</span>
+            </button>
+
+            <button
+              type="button"
+              className="session-desktop-dock-pill"
+              data-active={settingsOpen && settingsTab === 'config' ? 'true' : undefined}
+              data-minimized={!(settingsOpen && settingsTab === 'config') ? 'true' : undefined}
+              onClick={() => handleToggleSettingsTab('config')}
+              title="切换电脑配置与会话事实窗口"
+            >
+              <ControlOutlined />
+              <span>电脑配置</span>
             </button>
           </div>
 
@@ -920,6 +1871,7 @@ export function SessionDesktop({
             {coworkers.map((coworker) => {
               const isCurrent = coworker.id === session?.id;
               const coworkerMeta = getAvailabilityMeta(coworker.availability);
+              const coworkerPower = coworkerPowerMap.get(coworker.sessionKey) ?? 'on';
               const coworkerMailCount = coworker.pendingCount > 0 ? coworker.pendingCount : coworker.inboxCount;
               return (
                 <button
@@ -929,12 +1881,15 @@ export function SessionDesktop({
                   data-active={isCurrent ? 'true' : undefined}
                   aria-current={isCurrent ? 'true' : undefined}
                   onClick={() => onSelectRoomSession(coworker)}
-                  title={`${coworker.label} · ${coworkerMeta.label}`}
+                  title={`${coworker.label} · ${coworkerMeta.label}${coworkerPower === 'off' ? ' · 虚拟已关机' : ''}`}
                 >
                   {coworker.canAttachTerminal ? <CodeOutlined /> : <UserOutlined />}
-                  <span className={`hud-led ${coworkerMeta.ledClass}`} aria-hidden="true" />
+                  <span className={`hud-led ${coworkerPower === 'off' ? '' : coworkerMeta.ledClass}`} aria-hidden="true" />
                   <span className="session-desktop-coworker-code">{coworker.persona.badgeCode}</span>
                   <span className="session-desktop-coworker-name">{coworker.shortLabel || coworker.label}</span>
+                  {coworkerPower === 'off' ? (
+                    <PoweroffOutlined className="session-desktop-coworker-poweroff" aria-label="虚拟已关机" />
+                  ) : null}
                   {coworkerMailCount > 0 ? (
                     <span className="session-desktop-inline-badge">{coworkerMailCount}</span>
                   ) : null}
@@ -943,15 +1898,44 @@ export function SessionDesktop({
             })}
           </nav>
 
-          <button
-            type="button"
-            className="session-desktop-btn session-desktop-dock-return"
-            onClick={onCloseToRoom}
-            title="返回 3D 项目办公室"
-          >
-            <ArrowLeftOutlined />
-            <span>返回房间</span>
-          </button>
+          <div className="session-desktop-dock-right">
+            {session ? (
+              isPoweredOn ? (
+                <button
+                  type="button"
+                  className="session-desktop-btn session-desktop-btn--power-off"
+                  disabled={isTerminating}
+                  onClick={handlePowerOff}
+                  title="虚拟电脑关机：仅熄屏并断开前端附着，保留后台会话"
+                >
+                  <PoweroffOutlined />
+                  <span>虚拟关机</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="session-desktop-btn session-desktop-btn--power-on"
+                  disabled={isTerminating}
+                  onClick={handleBoot}
+                  title="开机恢复原会话连接"
+                >
+                  <ThunderboltOutlined />
+                  <span>开机恢复</span>
+                </button>
+              )
+            ) : null}
+
+            <button
+              type="button"
+              className="session-desktop-btn session-desktop-dock-return"
+              disabled={isTerminating}
+              onClick={onCloseToRoom}
+              title="返回项目办公室（后台会话继续运行）"
+            >
+              <ArrowLeftOutlined />
+              <span>返回房间</span>
+            </button>
+          </div>
         </footer>
       </div>
     </div>

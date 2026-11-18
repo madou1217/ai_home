@@ -78,6 +78,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeJSON(response, http.StatusUnauthorized, map[string]any{"ok": false, "error": "unauthorized", "message": "需要管理密钥"})
 		return
 	}
+	if request.URL != nil && (request.URL.Path == CancelPath || request.URL.Path == ResumePath) {
+		handler.handleLifecycle(response, request)
+		return
+	}
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
 		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})

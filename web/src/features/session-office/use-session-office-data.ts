@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { message } from 'antd';
-import api, { sessionsAPI, watchPeerMessages, type TerminalDirectorySession } from '@/services/api';
+import api, {
+  sessionsAPI,
+  terminalAPI,
+  watchPeerMessages,
+  type TerminalDirectorySession,
+} from '@/services/api';
 import { useWebTerminalManager, type WebTerminalTab } from '@/features/web-terminal/web-terminal-context';
 import { useOpenProjectTerminal } from '@/features/web-terminal/use-open-project-terminal';
 import { writeClipboardText } from '@/utils/clipboard';
@@ -10,32 +15,36 @@ import {
   computePeerCounts,
   normalizePeerMessageRecord,
   resolveEvidencedSessionKeysForMessage,
-  type SessionPreviewCacheEntry
+  type SessionPreviewCacheEntry,
 } from './session-office-model';
 import type {
   OfficeSessionItem,
   PeerCounts,
   PeerMessageRecord,
-  SessionOfficeDataState
+  SessionOfficeDataState,
+  TerminateSessionResult,
 } from './session-office-types';
 
 const HIDDEN_STORAGE_PREFIX = 'aih:terminal-overview:hidden:';
 const PREVIEW_BATCH_SIZE = 32;
 const PULSE_DURATION_MS = 4500;
 const WATCH_DEBOUNCE_MS = 180;
+const CLOSE_DIRECTORY_RESYNC_MS = 320;
 
 const EMPTY_COUNTS: PeerCounts = {
   total: 0,
   pending: 0,
   delivered: 0,
   read: 0,
-  failed: 0
+  failed: 0,
 };
 
 interface MessageSnapshotEntry {
   state: string;
+  notificationState: string;
   deliveredAt: number;
   readAt: number;
+  canceledAt: number;
 }
 
 interface PreviewTarget {
@@ -71,17 +80,35 @@ function extractRequestErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function formatTerminalCloseError(rawError?: string): string {
+  const code = String(rawError ?? '').trim();
+  switch (code) {
+    case 'unauthorized':
+    case 'terminal_http_401':
+    case 'terminal_http_403':
+      return `当前认证无权限关闭该终端会话 (${code})`;
+    case 'terminal_identity_mismatch':
+      return '终端会话标识校验不匹配，已拒绝关闭以防误停其他会话 (terminal_identity_mismatch)';
+    case 'terminal_not_found':
+      return '服务端未确认关闭目标终端，会话仍可能在线或状态未同步 (terminal_not_found)';
+    case 'terminal_request_failed':
+      return '连接服务端失败，未能终止该终端会话 (terminal_request_failed)';
+    default:
+      return code ? `关闭终端会话失败：${code}` : '关闭终端会话失败（服务端未返回成功确认）';
+  }
+}
+
 function buildEvidencedSessionStubs(
   serverId: string,
   directorySessions: TerminalDirectorySession[],
   interactiveTabs: WebTerminalTab[],
   unavailableTabs: WebTerminalTab[],
-  hiddenKeys: ReadonlySet<string>
+  excludedKeys: ReadonlySet<string>,
 ): OfficeSessionItem[] {
   const seen = new Set<string>();
   const stubs: OfficeSessionItem[] = [];
   const pushStub = (sessionKey: string, provider: string, nativeSessionId?: string) => {
-    if (!sessionKey || hiddenKeys.has(sessionKey) || seen.has(sessionKey)) return;
+    if (!sessionKey || excludedKeys.has(sessionKey) || seen.has(sessionKey)) return;
     seen.add(sessionKey);
     stubs.push({
       id: `web-terminal:${sessionKey}`,
@@ -104,7 +131,7 @@ function buildEvidencedSessionStubs(
         posture: 'monitoring',
         deskAccent: '',
         badgeCode: '',
-        seatIndex: 0
+        seatIndex: 0,
       },
       activity: {
         kind: 'idle',
@@ -113,12 +140,12 @@ function buildEvidencedSessionStubs(
         failedCount: 0,
         lastMessageAt: 0,
         recentPulse: false,
-        latestSnippet: ''
+        latestSnippet: '',
       },
       inboxCount: 0,
       sentCount: 0,
       pendingCount: 0,
-      crossProjectCount: 0
+      crossProjectCount: 0,
     });
   };
 
@@ -126,7 +153,7 @@ function buildEvidencedSessionStubs(
     pushStub(
       String(dir.sessionKey || '').trim(),
       String(dir.provider || '').trim(),
-      String(dir.nativeSessionId || '').trim() || undefined
+      String(dir.nativeSessionId || '').trim() || undefined,
     );
   }
   for (const tab of interactiveTabs) {
@@ -150,15 +177,42 @@ export function useSessionOfficeData(): SessionOfficeDataState {
 
   const [hiddenState, setHiddenState] = useState<{ serverId: string; keys: string[] }>(() => ({
     serverId: manager.serverId,
-    keys: readHiddenKeys(manager.serverId)
+    keys: readHiddenKeys(manager.serverId),
   }));
+
+  const [terminatedState, setTerminatedState] = useState<{ serverId: string; keys: string[] }>(() => ({
+    serverId: manager.serverId,
+    keys: [],
+  }));
+
+  const [canonicalOverride, setCanonicalOverride] = useState<{
+    serverId: string;
+    sessions: TerminalDirectorySession[];
+  } | null>(null);
+
+  const [terminatingKeysList, setTerminatingKeysList] = useState<string[]>([]);
+  const terminatingKeysRef = useRef<Set<string>>(new Set());
 
   const hiddenKeysList = useMemo(
     () => (hiddenState.serverId === manager.serverId ? hiddenState.keys : readHiddenKeys(manager.serverId)),
-    [hiddenState, manager.serverId]
+    [hiddenState, manager.serverId],
   );
 
-  const hiddenSessionKeys = useMemo(() => new Set(hiddenKeysList), [hiddenKeysList]);
+  const terminatedKeysList = useMemo(
+    () => (terminatedState.serverId === manager.serverId ? terminatedState.keys : []),
+    [manager.serverId, terminatedState],
+  );
+
+  const terminatedSessionKeys = useMemo(() => new Set(terminatedKeysList), [terminatedKeysList]);
+  const terminatingSessionKeys = useMemo(() => new Set(terminatingKeysList), [terminatingKeysList]);
+
+  const excludedSessionKeys = useMemo(() => {
+    const merged = new Set<string>(hiddenKeysList);
+    for (const key of terminatedKeysList) {
+      merged.add(key);
+    }
+    return merged;
+  }, [hiddenKeysList, terminatedKeysList]);
 
   useEffect(() => {
     setHiddenState((current) => (
@@ -166,25 +220,70 @@ export function useSessionOfficeData(): SessionOfficeDataState {
         ? current
         : { serverId: manager.serverId, keys: readHiddenKeys(manager.serverId) }
     ));
+    setTerminatedState((current) => (
+      current.serverId === manager.serverId
+        ? current
+        : { serverId: manager.serverId, keys: [] }
+    ));
+    setCanonicalOverride((current) => (
+      current && current.serverId === manager.serverId ? current : null
+    ));
   }, [manager.serverId]);
+
+  // Once the shared directory poll catches up and confirms closed sessions are gone,
+  // release the temporary canonical override snapshot so live polling stays primary.
+  useEffect(() => {
+    setCanonicalOverride((current) => {
+      if (!current || current.serverId !== manager.serverId) return null;
+      const stillHasTerminatedRunning = directory.sessions.some(
+        (item) => item.status === 'running' && terminatedSessionKeys.has(item.sessionKey),
+      );
+      return stillHasTerminatedRunning ? current : null;
+    });
+  }, [directory.sessions, manager.serverId, terminatedSessionKeys]);
+
+  const effectiveDirectorySessions = useMemo<TerminalDirectorySession[]>(() => {
+    const base = canonicalOverride && canonicalOverride.serverId === manager.serverId
+      ? canonicalOverride.sessions
+      : directory.sessions;
+    if (terminatedSessionKeys.size === 0) return base;
+    return base.filter((session) => !terminatedSessionKeys.has(session.sessionKey));
+  }, [canonicalOverride, directory.sessions, manager.serverId, terminatedSessionKeys]);
+
+  const effectiveInteractiveTabs = useMemo<WebTerminalTab[]>(() => {
+    if (terminatedSessionKeys.size === 0) return manager.tabs;
+    return manager.tabs.filter((tab) => !terminatedSessionKeys.has(tab.sessionKey));
+  }, [manager.tabs, terminatedSessionKeys]);
+
+  const effectiveUnavailableTabs = useMemo<WebTerminalTab[]>(() => {
+    if (terminatedSessionKeys.size === 0) return manager.unavailableTabs;
+    return manager.unavailableTabs.filter((tab) => !terminatedSessionKeys.has(tab.sessionKey));
+  }, [manager.unavailableTabs, terminatedSessionKeys]);
 
   const [query, setQuery] = useState('');
   const [providerFilter, setProviderFilter] = useState('all');
 
+  // Guard adoptSessions against hidden, closing, or terminated keys so a closed
+  // web shell is never re-adopted or resurrected from a stale directory poll.
   useEffect(() => {
     manager.adoptSessions(
-      directory.sessions
-        .filter((session) => session.status === 'running' && !hiddenSessionKeys.has(session.sessionKey))
+      effectiveDirectorySessions
+        .filter(
+          (session) =>
+            session.status === 'running'
+            && !excludedSessionKeys.has(session.sessionKey)
+            && !terminatingSessionKeys.has(session.sessionKey),
+        )
         .map((session) => ({
           sessionKey: session.sessionKey,
           label: session.label,
           cwd: session.cwd,
           kind: session.source === 'native' ? 'account-cli' : 'shell',
           harness: session.provider,
-          nativeSessionId: session.nativeSessionId
-        }))
+          nativeSessionId: session.nativeSessionId,
+        })),
     );
-  }, [directory.sessions, hiddenSessionKeys, manager.adoptSessions]);
+  }, [effectiveDirectorySessions, excludedSessionKeys, manager.adoptSessions, terminatingSessionKeys]);
 
   const [rawMessages, setRawMessages] = useState<PeerMessageRecord[]>([]);
   const [peerCounts, setPeerCounts] = useState<PeerCounts>(EMPTY_COUNTS);
@@ -195,26 +294,41 @@ export function useSessionOfficeData(): SessionOfficeDataState {
   const [previewCache, setPreviewCache] = useState<Map<string, SessionPreviewCacheEntry>>(() => new Map());
 
   const mountedRef = useRef(true);
+  const closeResyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (closeResyncTimerRef.current !== null) {
+        clearTimeout(closeResyncTimerRef.current);
+        closeResyncTimerRef.current = null;
+      }
     };
   }, []);
 
   const activeServerRef = useRef(manager.serverId);
   activeServerRef.current = manager.serverId;
 
+  const managerTabsRef = useRef(manager.tabs);
+  managerTabsRef.current = manager.tabs;
+
   const sessionStubsRef = useRef<OfficeSessionItem[]>([]);
   sessionStubsRef.current = useMemo(
     () => buildEvidencedSessionStubs(
       manager.serverId,
-      directory.sessions,
-      manager.tabs,
-      manager.unavailableTabs,
-      hiddenSessionKeys
+      effectiveDirectorySessions,
+      effectiveInteractiveTabs,
+      effectiveUnavailableTabs,
+      excludedSessionKeys,
     ),
-    [directory.sessions, hiddenSessionKeys, manager.serverId, manager.tabs, manager.unavailableTabs]
+    [
+      effectiveDirectorySessions,
+      effectiveInteractiveTabs,
+      effectiveUnavailableTabs,
+      excludedSessionKeys,
+      manager.serverId,
+    ],
   );
 
   const peerGenerationRef = useRef(0);
@@ -298,25 +412,31 @@ export function useSessionOfficeData(): SessionOfficeDataState {
             pending: Number(serverCounts.pending) || 0,
             delivered: Number(serverCounts.delivered) || 0,
             read: Number(serverCounts.read) || 0,
-            failed: Number(serverCounts.failed) || 0
+            failed: Number(serverCounts.failed) || 0,
           }
         : computedCounts;
 
       const nextSnapshot = new Map<string, MessageSnapshotEntry>();
       const changedMessages: PeerMessageRecord[] = [];
       for (const msg of normalized) {
+        const notif = String(msg.notificationState ?? '');
+        const canceledAt = Number(msg.canceledAt) || 0;
         nextSnapshot.set(msg.id, {
           state: msg.state,
+          notificationState: notif,
           deliveredAt: msg.deliveredAt,
-          readAt: msg.readAt
+          readAt: msg.readAt,
+          canceledAt,
         });
         if (detectPulse && hasInitialPeerLoadRef.current) {
           const prev = prevMessageSnapshotsRef.current.get(msg.id);
           if (
             !prev
             || prev.state !== msg.state
+            || prev.notificationState !== notif
             || prev.deliveredAt !== msg.deliveredAt
             || prev.readAt !== msg.readAt
+            || prev.canceledAt !== canceledAt
           ) {
             changedMessages.push(msg);
           }
@@ -358,7 +478,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     await loadPeerMessages(true);
   }, [loadPeerMessages]);
 
-  // Initial load & server switch reset
   useEffect(() => {
     peerGenerationRef.current += 1;
     hasInitialPeerLoadRef.current = false;
@@ -372,7 +491,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     void loadPeerMessages(false);
   }, [clearPulseTimer, loadPeerMessages, manager.serverId]);
 
-  // Live SSE watch for peer directory mutations with debounced reload and clean close()
   useEffect(() => {
     const source = watchPeerMessages();
     const scheduleReload = () => {
@@ -406,7 +524,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     };
   }, [loadPeerMessages, manager.serverId]);
 
-  // Bounded session preview fetching (cached by serverId:provider:nativeSessionId:cwd, <= 32 per batch)
   const inFlightPreviewKeysRef = useRef<Set<string>>(new Set());
   const previewEpochRef = useRef(0);
 
@@ -418,7 +535,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
   const previewTargets = useMemo<PreviewTarget[]>(() => {
     const targetsByKey = new Map<string, PreviewTarget>();
     const dirByKey = new Map<string, TerminalDirectorySession>();
-    for (const dir of directory.sessions) {
+    for (const dir of effectiveDirectorySessions) {
       dirByKey.set(dir.sessionKey, dir);
     }
 
@@ -427,9 +544,9 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       providerRaw: string | undefined,
       nativeSessionIdRaw: string | undefined,
       cwdRaw: string | undefined,
-      isRunning: boolean
+      isRunning: boolean,
     ) => {
-      if (!sessionKey || hiddenSessionKeys.has(sessionKey)) return;
+      if (!sessionKey || excludedSessionKeys.has(sessionKey)) return;
       const provider = String(providerRaw || '').trim();
       const nativeSessionId = String(nativeSessionIdRaw || '').trim();
       if (!provider || provider === 'shell' || !nativeSessionId) return;
@@ -440,48 +557,54 @@ export function useSessionOfficeData(): SessionOfficeDataState {
         cacheKey,
         provider,
         nativeSessionId,
-        isRunning
+        isRunning,
       });
     };
 
-    for (const dir of directory.sessions) {
+    for (const dir of effectiveDirectorySessions) {
       consider(
         dir.sessionKey,
         dir.provider,
         dir.nativeSessionId,
         dir.cwd,
-        dir.status === 'running'
+        dir.status === 'running',
       );
     }
-    for (const tab of manager.tabs) {
+    for (const tab of effectiveInteractiveTabs) {
       const dir = dirByKey.get(tab.sessionKey);
       consider(
         tab.sessionKey,
         dir?.provider || tab.harness,
         dir?.nativeSessionId || tab.nativeSessionId,
         dir?.cwd ?? tab.cwd,
-        dir ? dir.status === 'running' : true
+        dir ? dir.status === 'running' : true,
       );
     }
-    for (const tab of manager.unavailableTabs) {
+    for (const tab of effectiveUnavailableTabs) {
       const dir = dirByKey.get(tab.sessionKey);
       consider(
         tab.sessionKey,
         dir?.provider || tab.harness,
         dir?.nativeSessionId || tab.nativeSessionId,
         dir?.cwd ?? tab.cwd,
-        false
+        false,
       );
     }
 
     const allTargets = [...targetsByKey.values()];
     allTargets.sort((a, b) => Number(b.isRunning) - Number(a.isRunning));
     return allTargets;
-  }, [directory.sessions, hiddenSessionKeys, manager.serverId, manager.tabs, manager.unavailableTabs]);
+  }, [
+    effectiveDirectorySessions,
+    effectiveInteractiveTabs,
+    effectiveUnavailableTabs,
+    excludedSessionKeys,
+    manager.serverId,
+  ]);
 
   useEffect(() => {
     const missing = previewTargets.filter(
-      (item) => !previewCache.has(item.cacheKey) && !inFlightPreviewKeysRef.current.has(item.cacheKey)
+      (item) => !previewCache.has(item.cacheKey) && !inFlightPreviewKeysRef.current.has(item.cacheKey),
     );
     if (missing.length === 0) return;
 
@@ -507,17 +630,17 @@ export function useSessionOfficeData(): SessionOfficeDataState {
           const results = await sessionsAPI.getSessionPreviews(
             chunk.map((item) => ({
               provider: item.provider,
-              id: item.nativeSessionId
-            }))
+              id: item.nativeSessionId,
+            })),
           );
           for (const item of chunk) {
             const matched = results.find(
               (res) => res.id === item.nativeSessionId
-                && (!res.provider || String(res.provider).toLowerCase() === item.provider.toLowerCase())
+                && (!res.provider || String(res.provider).toLowerCase() === item.provider.toLowerCase()),
             );
             entries.set(item.cacheKey, {
               model: matched?.model?.trim() || undefined,
-              preview: matched?.preview?.trim() || undefined
+              preview: matched?.preview?.trim() || undefined,
             });
           }
         } catch {
@@ -549,33 +672,74 @@ export function useSessionOfficeData(): SessionOfficeDataState {
   const workspace = useMemo(
     () => buildOfficeWorkspaceModel({
       serverId: manager.serverId,
-      directorySessions: directory.sessions,
-      interactiveTabs: manager.tabs,
-      unavailableTabs: manager.unavailableTabs,
-      hiddenSessionKeys,
+      directorySessions: effectiveDirectorySessions,
+      interactiveTabs: effectiveInteractiveTabs,
+      unavailableTabs: effectiveUnavailableTabs,
+      hiddenSessionKeys: excludedSessionKeys,
       rawMessages,
       previewsByCacheKey: previewCache,
       recentPulseSessionKeys,
       query,
-      providerFilter
+      providerFilter,
     }),
     [
-      directory.sessions,
-      hiddenSessionKeys,
+      effectiveDirectorySessions,
+      effectiveInteractiveTabs,
+      effectiveUnavailableTabs,
+      excludedSessionKeys,
       manager.serverId,
-      manager.tabs,
-      manager.unavailableTabs,
       previewCache,
       providerFilter,
       query,
       rawMessages,
-      recentPulseSessionKeys
-    ]
+      recentPulseSessionKeys,
+    ],
   );
 
-  const refreshDirectory = useCallback(async () => {
+  const syncCanonicalDirectory = useCallback(async (targetServerId: string): Promise<TerminalDirectorySession[] | null> => {
+    if (!mountedRef.current || activeServerRef.current !== targetServerId) {
+      return null;
+    }
+
+    let directSessions: TerminalDirectorySession[] | null = null;
+    try {
+      const listed = await terminalAPI.listSessions();
+      if (!mountedRef.current || activeServerRef.current !== targetServerId) {
+        return null;
+      }
+      if (listed?.ok && Array.isArray(listed.sessions)) {
+        directSessions = listed.sessions;
+        setCanonicalOverride({
+          serverId: targetServerId,
+          sessions: listed.sessions,
+        });
+      }
+    } catch {
+      // Fall back to directory.refresh() below if direct fetch fails.
+    }
+
+    if (!mountedRef.current || activeServerRef.current !== targetServerId) {
+      return null;
+    }
+
     await directory.refresh();
+
+    if (closeResyncTimerRef.current !== null) {
+      clearTimeout(closeResyncTimerRef.current);
+    }
+    closeResyncTimerRef.current = setTimeout(() => {
+      closeResyncTimerRef.current = null;
+      if (mountedRef.current && activeServerRef.current === targetServerId) {
+        void directory.refresh();
+      }
+    }, CLOSE_DIRECTORY_RESYNC_MS);
+
+    return directSessions;
   }, [directory.refresh]);
+
+  const refreshDirectory = useCallback(async () => {
+    await syncCanonicalDirectory(manager.serverId);
+  }, [manager.serverId, syncCanonicalDirectory]);
 
   const refreshAll = useCallback(async () => {
     previewEpochRef.current += 1;
@@ -593,20 +757,162 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       }
       return removed ? next : current;
     });
-    await Promise.all([directory.refresh(), loadPeerMessages(true)]);
-  }, [directory.refresh, loadPeerMessages, manager.serverId]);
+    await Promise.all([syncCanonicalDirectory(manager.serverId), loadPeerMessages(true)]);
+  }, [loadPeerMessages, manager.serverId, syncCanonicalDirectory]);
 
   const openNewProjectTerminal = useCallback(async (cwd?: string) => {
     await openProjectTerminal(cwd);
   }, [openProjectTerminal]);
 
+  const finalizeClosedWebSession = useCallback(
+    (targetServerId: string, sessionKey: string, sessionId: string) => {
+      setTerminatedState((current) => {
+        const existing = current.serverId === targetServerId ? current.keys : [];
+        const nextKeys = existing.includes(sessionKey) ? existing : [...existing, sessionKey];
+        return { serverId: targetServerId, keys: nextKeys };
+      });
+
+      // Remove any persisted or minimized WebTerminalManager tabs for this session
+      // so GlobalWebTerminalHost / SessionDesktop will never re-attach or resurrect it.
+      const candidateTabIds = new Set<string>([sessionId, `web-terminal:${sessionKey}`]);
+      for (const tab of managerTabsRef.current) {
+        if (tab.sessionKey === sessionKey || tab.id === sessionId) {
+          candidateTabIds.add(tab.id);
+        }
+      }
+      for (const tabId of candidateTabIds) {
+        manager.closeTab(tabId);
+      }
+
+      // Clean up hidden-view storage if this session key had been previously hidden.
+      setHiddenState((current) => {
+        const existing = current.serverId === targetServerId ? current.keys : readHiddenKeys(targetServerId);
+        if (!existing.includes(sessionKey)) return current;
+        const nextKeys = existing.filter((item) => item !== sessionKey);
+        try {
+          if (nextKeys.length > 0) {
+            window.localStorage.setItem(
+              `${HIDDEN_STORAGE_PREFIX}${targetServerId}`,
+              JSON.stringify(nextKeys),
+            );
+          } else {
+            window.localStorage.removeItem(`${HIDDEN_STORAGE_PREFIX}${targetServerId}`);
+          }
+        } catch {
+          // Ignore localStorage write errors.
+        }
+        return { serverId: targetServerId, keys: nextKeys };
+      });
+    },
+    [manager],
+  );
+
+  const terminateWebSession = useCallback(
+    async (
+      target: Pick<
+        OfficeSessionItem,
+        'id' | 'serverId' | 'sessionKey' | 'termId' | 'source' | 'label' | 'cwd' | 'availability'
+      >,
+    ): Promise<TerminateSessionResult> => {
+      const sessionKey = String(target.sessionKey || '').trim();
+      const originServerId = String(target.serverId || '').trim();
+      if (!sessionKey) {
+        return { ok: false, error: '缺少有效的会话标识 (sessionKey)' };
+      }
+      if (!originServerId) {
+        return { ok: false, error: '缺少原会话所属服务器标识 (serverId)，已拒绝执行关闭' };
+      }
+      if (target.source !== 'web' || sessionKey.startsWith('native:')) {
+        return {
+          ok: false,
+          error: '原生 CLI 会话由独立进程托管，终端 close 接口仅断开借用连接，不支持在此终止原进程。',
+        };
+      }
+      if (terminatingKeysRef.current.has(sessionKey)) {
+        return { ok: false, error: '该会话正在关闭中，请勿重复提交' };
+      }
+
+      if (originServerId !== manager.serverId || originServerId !== activeServerRef.current) {
+        return {
+          ok: false,
+          error: '当前激活服务器已切换，已取消关闭原服务器上的终端会话以防误操作其他节点。',
+        };
+      }
+
+      const requestServerId = originServerId;
+      terminatingKeysRef.current.add(sessionKey);
+      setTerminatingKeysList([...terminatingKeysRef.current]);
+
+      try {
+        if (requestServerId !== manager.serverId || requestServerId !== activeServerRef.current) {
+          return {
+            ok: false,
+            error: '当前激活服务器已切换，已取消关闭原服务器上的终端会话以防误操作其他节点。',
+          };
+        }
+
+        const closeResult = await terminalAPI.close(target.termId || '', sessionKey);
+
+        if (closeResult.ok) {
+          if (mountedRef.current && activeServerRef.current === requestServerId) {
+            finalizeClosedWebSession(requestServerId, sessionKey, target.id);
+            await syncCanonicalDirectory(requestServerId);
+          }
+          return { ok: true };
+        }
+
+        if (
+          closeResult.error === 'terminal_not_found'
+          && mountedRef.current
+          && activeServerRef.current === requestServerId
+        ) {
+          const latestSessions = await syncCanonicalDirectory(requestServerId);
+          const stillRunningOnServer = latestSessions
+            ? latestSessions.some((item) => item.sessionKey === sessionKey && item.status === 'running')
+            : true;
+          if (latestSessions && !stillRunningOnServer) {
+            if (mountedRef.current && activeServerRef.current === requestServerId) {
+              finalizeClosedWebSession(requestServerId, sessionKey, target.id);
+            }
+            return { ok: true, alreadyGone: true };
+          }
+        }
+
+        return {
+          ok: false,
+          error: formatTerminalCloseError(closeResult.error),
+        };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          error: extractRequestErrorMessage(error, '关闭终端会话请求异常'),
+        };
+      } finally {
+        terminatingKeysRef.current.delete(sessionKey);
+        if (mountedRef.current) {
+          setTerminatingKeysList([...terminatingKeysRef.current]);
+        }
+      }
+    },
+    [finalizeClosedWebSession, manager.serverId, syncCanonicalDirectory],
+  );
+
+  const isSessionTerminating = useCallback(
+    (sessionKey: string) => terminatingSessionKeys.has(sessionKey),
+    [terminatingSessionKeys],
+  );
+
+  const terminatingSessionKey = terminatingKeysList.length > 0
+    ? terminatingKeysList[terminatingKeysList.length - 1]
+    : null;
+
   const hideSession = useCallback((sessionId: string) => {
-    const tab = manager.tabs.find((item) => item.id === sessionId || item.sessionKey === sessionId);
-    const unavailableTab = manager.unavailableTabs.find(
-      (item) => item.id === sessionId || item.sessionKey === sessionId
+    const tab = effectiveInteractiveTabs.find((item) => item.id === sessionId || item.sessionKey === sessionId);
+    const unavailableTab = effectiveUnavailableTabs.find(
+      (item) => item.id === sessionId || item.sessionKey === sessionId,
     );
-    const dirSession = directory.sessions.find(
-      (item) => `web-terminal:${item.sessionKey}` === sessionId || item.sessionKey === sessionId
+    const dirSession = effectiveDirectorySessions.find(
+      (item) => `web-terminal:${item.sessionKey}` === sessionId || item.sessionKey === sessionId,
     );
     const targetSessionKey = tab?.sessionKey || unavailableTab?.sessionKey || dirSession?.sessionKey;
     if (!targetSessionKey) return;
@@ -617,7 +923,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       try {
         window.localStorage.setItem(
           `${HIDDEN_STORAGE_PREFIX}${manager.serverId}`,
-          JSON.stringify(nextKeys)
+          JSON.stringify(nextKeys),
         );
       } catch {
         // Keep session management usable even when localStorage is blocked.
@@ -628,7 +934,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     if (tab) {
       manager.closeTab(tab.id);
     }
-  }, [directory.sessions, manager]);
+  }, [effectiveDirectorySessions, effectiveInteractiveTabs, effectiveUnavailableTabs, manager]);
 
   const restoreHiddenSessions = useCallback(() => {
     setHiddenState({ serverId: manager.serverId, keys: [] });
@@ -640,7 +946,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
   }, [manager.serverId]);
 
   const copySessionIdentity = useCallback(async (
-    session: Pick<OfficeSessionItem, 'label' | 'sessionKey' | 'nativeSessionId'>
+    session: Pick<OfficeSessionItem, 'label' | 'sessionKey' | 'nativeSessionId'>,
   ) => {
     const text = [session.label, session.nativeSessionId, session.sessionKey]
       .filter((part): part is string => Boolean(part && String(part).trim()))
@@ -654,11 +960,11 @@ export function useSessionOfficeData(): SessionOfficeDataState {
   }, []);
 
   const activateManagerSession = useCallback((sessionId: string) => {
-    const tab = manager.tabs.find((item) => item.id === sessionId || item.sessionKey === sessionId);
+    const tab = effectiveInteractiveTabs.find((item) => item.id === sessionId || item.sessionKey === sessionId);
     if (tab) {
       manager.setActiveTab(tab.id);
     }
-  }, [manager.setActiveTab, manager.tabs]);
+  }, [effectiveInteractiveTabs, manager.setActiveTab]);
 
   return {
     serverId: manager.serverId,
@@ -681,13 +987,16 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     peerLoading,
     peerError,
     recentPulseSessionKeys,
+    terminatingSessionKey,
+    isSessionTerminating,
     refreshAll,
     refreshDirectory,
     refreshPeerMessages,
     openNewProjectTerminal,
+    terminateWebSession,
     hideSession,
     restoreHiddenSessions,
     copySessionIdentity,
-    activateManagerSession
+    activateManagerSession,
   };
 }

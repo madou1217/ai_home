@@ -36,8 +36,10 @@ type imageTransportPolicy struct{}
 
 // SupportsCredential 判断凭据能否由图片上游协议承载。
 func (imageTransportPolicy) SupportsCredential(credential accountapp.Credential) bool {
-	switch credential.(type) {
-	case *codexaccount.OAuthAuth, *codexaccount.APIKeyAuth, *agyaccount.OAuthAuth:
+	switch typed := credential.(type) {
+	case *codexaccount.OAuthAuth:
+		return typed != nil && images.SupportsCodexOAuthImagePlan(typed.PlanType())
+	case *codexaccount.APIKeyAuth, *agyaccount.OAuthAuth:
 		return true
 	default:
 		return false

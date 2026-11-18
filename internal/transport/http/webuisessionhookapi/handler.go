@@ -55,6 +55,8 @@ type Dependencies struct {
 	AccountActivity  AccountActivityTracker
 	OutcomeRecorder  OutcomeRecorder
 	RuntimeRecoverer RuntimeRecoverer
+	// SessionObserver wakes peer target probes after accepted lifecycle events; it never injects.
+	SessionObserver func(sessionevents.Session, sessionevents.Event) (int, error)
 }
 
 // Handler 处理 POST /v1/management/webui/session-events/provider-hook。
@@ -68,6 +70,7 @@ type Handler struct {
 	accountActivity  AccountActivityTracker
 	outcomeRecorder  OutcomeRecorder
 	runtimeRecoverer RuntimeRecoverer
+	sessionObserver  func(sessionevents.Session, sessionevents.Event) (int, error)
 }
 
 // NewHandler 校验依赖并构建 Handler。
@@ -89,6 +92,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		accountActivity:  dependencies.AccountActivity,
 		outcomeRecorder:  dependencies.OutcomeRecorder,
 		runtimeRecoverer: dependencies.RuntimeRecoverer,
+		sessionObserver:  dependencies.SessionObserver,
 	}, nil
 }
 
@@ -248,10 +252,48 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		)
 	}
 
+	peerWakeCount := 0
+	peerWakeError := ""
+	// Accepted alone is not freshness: revision-less delayed hooks may be
+	// persisted after a newer turn. Wake only the current top-level completion.
+	peerWakeEligible := stateRes.Accepted && normalized.Event.Type == "session:turn-completed"
+	if peerWakeEligible {
+		latest, found := handler.stateStore.Get(sessionevents.StateSession{
+			Provider:       normalized.Session.Provider,
+			SessionID:      normalized.Session.SessionID,
+			ProjectPath:    normalized.Session.ProjectPath,
+			ProjectDirName: normalized.Session.ProjectDirName,
+		})
+		peerWakeEligible = found && latest != nil && latest.LastEvent != nil &&
+			latest.TurnState == "completed" && latest.LastEvent.EventID == eventID &&
+			latest.LastEvent.Type == "turn-completed" && latest.LastEventAt == normalized.Event.At
+	}
+	if peerWakeEligible && handler.sessionObserver != nil {
+		var observerErr error
+		peerWakeCount, observerErr = handler.sessionObserver(sessionevents.Session{
+			Provider:       normalized.Session.Provider,
+			SessionID:      normalized.Session.SessionID,
+			ProjectDirName: normalized.Session.ProjectDirName,
+			ProjectPath:    normalized.Session.ProjectPath,
+		}, sessionevents.Event{
+			Type:      normalized.Event.Type,
+			Source:    normalized.Event.Source,
+			At:        normalized.Event.At,
+			EventName: normalized.Event.EventName,
+			TurnID:    normalized.Event.TurnID,
+		})
+		if observerErr != nil {
+			// A peer queue failure must remain observable without rejecting an accepted hook.
+			peerWakeError = observerErr.Error()
+		}
+	}
+
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":               true,
 		"published":        published,
 		"runtimeRecovered": runtimeRecovered,
+		"peerWakeCount":    peerWakeCount,
+		"peerWakeError":    peerWakeError,
 		"event": map[string]any{
 			"type":           normalized.Event.Type,
 			"provider":       normalized.Session.Provider,

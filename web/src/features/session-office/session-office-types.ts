@@ -2,6 +2,17 @@ import type { WebTerminalTab } from '@/features/web-terminal/web-terminal-contex
 
 export type PeerDeliveryState = 'pending' | 'delivered' | 'read' | 'failed' | (string & {});
 
+export type PeerReplyPolicy = 'required' | 'optional' | 'none' | (string & {});
+
+export type PeerNotificationState =
+  | 'waiting'
+  | 'ready'
+  | 'manual'
+  | 'canceled'
+  | 'expired'
+  | 'delivered'
+  | (string & {});
+
 export interface PeerParty {
   channel: string;
   provider: string;
@@ -27,6 +38,20 @@ export interface PeerMessageRecord {
   error: string;
   lastAttemptError: string;
   receiptError?: string;
+  // Shared peer v2 optional structured & target-scheduling fields
+  subject?: string;
+  summary?: string;
+  purpose?: string;
+  action?: string;
+  replyPolicy?: PeerReplyPolicy;
+  autoDeliverUntil?: number;
+  expiresAt?: number;
+  canceledAt?: number;
+  supersedes?: string;
+  notificationState?: PeerNotificationState;
+  waitingReason?: string;
+  busySince?: number;
+  probeCount?: number;
 }
 
 export interface PeerCounts {
@@ -100,6 +125,55 @@ export interface ResolvedPeerEndpoint {
   isExternalOrHistorical: boolean;
 }
 
+export type PeerFieldProvenance = 'explicit' | 'classified' | 'extracted' | 'unknown';
+
+export type ResolvedReplyPolicyKind = 'required' | 'optional' | 'none' | 'unknown';
+
+export type LegacyMailCategoryId =
+  | 'late-status-reconciliation'
+  | 'browser-withdraw'
+  | 'browser-release'
+  | 'browser-no-operation'
+  | 'browser-occupied'
+  | 'browser-request-or-query'
+  | 'code-file-ownership-check'
+  | 'task-ack-and-scope'
+  | 'task-progress-report';
+
+export interface PeerJargonHint {
+  term: string;
+  meaning: string;
+}
+
+export interface ReadablePartySummary {
+  shortName: string;
+  providerLabel: string;
+  projectLabel: string;
+  hasKnownProject: boolean;
+  shortIdentity: string;
+  fullIdentity: string;
+  isOnlineInOffice: boolean;
+}
+
+export interface ReadableMailPresentation {
+  isStructured: boolean;
+  hasExtractedFallback: boolean;
+  provenanceLabel: string;
+  legacyCategory?: LegacyMailCategoryId;
+  title: string;
+  titleSource: PeerFieldProvenance;
+  summary: string;
+  summarySource: PeerFieldProvenance;
+  purpose: string;
+  purposeSource: PeerFieldProvenance;
+  actionText: string;
+  actionSource: PeerFieldProvenance;
+  replyPolicyKind: ResolvedReplyPolicyKind;
+  replyPolicyLabel: string;
+  replyPolicySource: PeerFieldProvenance;
+  jargonHints: ReadonlyArray<PeerJargonHint>;
+}
+
 export interface EnrichedPeerMessage {
   raw: PeerMessageRecord;
   id: string;
@@ -109,6 +183,10 @@ export interface EnrichedPeerMessage {
   snippet: string;
   fromResolved: ResolvedPeerEndpoint;
   toResolved: ResolvedPeerEndpoint;
+  fromReadable: ReadablePartySummary;
+  toReadable: ReadablePartySummary;
+  presentation: ReadableMailPresentation;
+  supersededByIds: string[];
   isCrossProject: boolean;
   isFullyUnassigned: boolean;
   hasUnresolvedParty: boolean;
@@ -147,6 +225,16 @@ export interface OfficeProjectRoom {
 
 export type MailboxScope = 'session' | 'room' | 'unassigned' | 'all';
 export type MailboxFolder = 'inbox' | 'sent' | 'all' | 'threads';
+export type MailboxStateFilter =
+  | 'all'
+  | 'undelivered'
+  | 'stale'
+  | 'delivered'
+  | 'attention'
+  | 'pending'
+  | 'read'
+  | 'failed';
+export type MailboxReplyFilter = 'all' | 'required' | 'none' | 'threaded' | 'unspecified';
 export type OfficeCameraPreset = 'isometric' | 'corridor' | 'overview';
 export type DesktopWindowLayout = 'terminal-focus' | 'mail-focus' | 'split';
 
@@ -155,6 +243,17 @@ export interface DesktopOriginRect {
   top: number;
   width: number;
   height: number;
+}
+
+export interface TerminateSessionResult {
+  ok: boolean;
+  alreadyGone?: boolean;
+  error?: string;
+}
+
+export interface OfficeSceneTerminationHookProps {
+  onTerminateSession?: (session: OfficeSessionItem) => void | Promise<void>;
+  terminatingSessionKey?: string;
 }
 
 export interface SessionOfficeDataState {
@@ -178,12 +277,22 @@ export interface SessionOfficeDataState {
   peerLoading: boolean;
   peerError: string;
   recentPulseSessionKeys: ReadonlySet<string>;
+  terminatingSessionKey: string | null;
+  isSessionTerminating: (sessionKey: string) => boolean;
   refreshAll: () => Promise<void>;
   refreshDirectory: () => Promise<void>;
   refreshPeerMessages: () => Promise<void>;
   openNewProjectTerminal: (cwd?: string) => Promise<void>;
+  terminateWebSession: (
+    session: Pick<
+      OfficeSessionItem,
+      'id' | 'serverId' | 'sessionKey' | 'termId' | 'source' | 'label' | 'cwd' | 'availability'
+    >,
+  ) => Promise<TerminateSessionResult>;
   hideSession: (sessionId: string) => void;
   restoreHiddenSessions: () => void;
-  copySessionIdentity: (session: Pick<OfficeSessionItem, 'label' | 'sessionKey' | 'nativeSessionId'>) => Promise<void>;
+  copySessionIdentity: (
+    session: Pick<OfficeSessionItem, 'label' | 'sessionKey' | 'nativeSessionId'>,
+  ) => Promise<void>;
   activateManagerSession: (sessionId: string) => void;
 }

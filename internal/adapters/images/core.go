@@ -164,6 +164,7 @@ type Strategy interface {
 
 // modelSpec 是 Provider 原生的图片模型声明。
 type modelSpec struct {
+	RequiresDiscovery bool
 	ID                string
 	Label             string
 	QualityOptions    []string
@@ -183,10 +184,18 @@ func NativeImageModelIDs(providerID string) []string {
 	}
 	modelIDs := make([]string, 0, len(specs))
 	for _, spec := range specs {
-		modelIDs = append(modelIDs, spec.ID)
+		if !spec.RequiresDiscovery {
+			modelIDs = append(modelIDs, spec.ID)
+		}
 	}
 	sort.Strings(modelIDs)
 	return modelIDs
+}
+
+// NativeImageModelRequiresDiscovery 表示该原生模型必须由账号上游目录确认，不能合成可用路由。
+func NativeImageModelRequiresDiscovery(providerID string, modelID string) bool {
+	spec, found := resolveModelSpec(normalizeProvider(providerID), modelID)
+	return found && spec.RequiresDiscovery
 }
 
 // nativeModelSpecs 与 Node 的 NATIVE_IMAGE_MODEL_SPECS 对齐。
@@ -210,8 +219,9 @@ var nativeModelSpecs = map[string][]modelSpec{
 			SupportsSize:      true,
 		},
 		{
-			ID:    "gemini-2.5-flash-image",
-			Label: "Gemini 2.5 Flash Image",
+			ID:                "gemini-2.5-flash-image",
+			Label:             "Gemini 2.5 Flash Image",
+			RequiresDiscovery: true,
 		},
 	},
 }

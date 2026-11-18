@@ -1,20 +1,28 @@
 import type { TerminalDirectorySession } from '@/services/api';
 import type { WebTerminalTab } from '@/features/web-terminal/web-terminal-context';
+import {
+  buildReadableMailPresentation,
+  buildReadablePartySummary,
+  evaluateMailLifecycle,
+} from './peer-message-presentation';
 import type {
   EmployeeVisualPersona,
   EnrichedPeerMessage,
   MailboxFolder,
+  MailboxReplyFilter,
   MailboxScope,
   OfficeProjectRoom,
   OfficeSessionItem,
   PeerCounts,
   PeerDeliveryState,
   PeerMessageRecord,
+  PeerNotificationState,
   PeerParty,
+  PeerReplyPolicy,
   PeerThreadGroup,
   ResolvedPeerEndpoint,
   SessionActivityCue,
-  SessionAvailability
+  SessionAvailability,
 } from './session-office-types';
 
 export const NO_CWD_PROJECT_KEY = '__no_cwd__';
@@ -55,6 +63,14 @@ export interface SessionMailboxViewResult {
   sentCount: number;
   allCount: number;
   threadCount: number;
+  undeliveredCount: number;
+  staleCount: number;
+  deliveredOrReadCount: number;
+  attentionCount: number;
+  replyRequiredCount: number;
+  noReplyCount: number;
+  threadedMsgCount: number;
+  unspecifiedReplyCount: number;
 }
 
 const AVATAR_TONES = [
@@ -65,7 +81,7 @@ const AVATAR_TONES = [
   '#f59e0b',
   '#f472b6',
   '#2dd4bf',
-  '#fb7185'
+  '#fb7185',
 ] as const;
 
 const DESK_ACCENTS = [
@@ -74,13 +90,13 @@ const DESK_ACCENTS = [
   '#10b981',
   '#8b5cf6',
   '#f59e0b',
-  '#ec4899'
+  '#ec4899',
 ] as const;
 
 const VISOR_STYLES: ReadonlyArray<EmployeeVisualPersona['visorStyle']> = [
   'visor',
   'glasses',
-  'headset'
+  'headset',
 ];
 
 function hashString(input: string): number {
@@ -118,7 +134,7 @@ export function buildPreviewCacheKey(
   serverId: string,
   provider: string,
   nativeSessionId: string,
-  cwd: string
+  cwd: string,
 ): string {
   return `${serverId}:${provider}:${nativeSessionId}:${cwd}`;
 }
@@ -128,7 +144,7 @@ export function formatOfficeTimestamp(ms: number): string {
   const date = new Date(ms);
   if (Number.isNaN(date.getTime())) return '-';
   const pad = (value: number) => String(value).padStart(2, '0');
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 export function normalizePeerParty(raw: unknown): PeerParty {
@@ -138,8 +154,28 @@ export function normalizePeerParty(raw: unknown): PeerParty {
     provider: String(source.provider ?? '').trim(),
     name: String(source.name ?? '').trim(),
     address: String(source.address ?? '').trim(),
-    sessionId: String(source.sessionId ?? '').trim()
+    sessionId: String(source.sessionId ?? '').trim(),
   };
+}
+
+function readOptionalTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function readOptionalPositiveTimestamp(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return undefined;
+  return num;
+}
+
+function readOptionalNonNegativeInt(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return undefined;
+  return Math.trunc(num);
 }
 
 export function normalizePeerMessageRecord(raw: unknown): PeerMessageRecord | null {
@@ -150,7 +186,24 @@ export function normalizePeerMessageRecord(raw: unknown): PeerMessageRecord | nu
   const shortId = String(record.shortId ?? '').trim() || id.slice(0, 11);
   const replyTo = String(record.replyTo ?? '').trim();
   const replyToShort = String(record.replyToShort ?? '').trim() || (replyTo ? replyTo.slice(0, 11) : '');
-  const receiptErrorRaw = record.receiptError;
+  const receiptError = readOptionalTrimmedString(record.receiptError);
+  const subject = readOptionalTrimmedString(record.subject);
+  const summary = readOptionalTrimmedString(record.summary);
+  const purpose = readOptionalTrimmedString(record.purpose);
+  const action = readOptionalTrimmedString(record.action);
+  const replyPolicyRaw = readOptionalTrimmedString(record.replyPolicy);
+  const autoDeliverUntil = readOptionalPositiveTimestamp(record.autoDeliverUntil);
+  const expiresAtRaw = record.expiresAt;
+  const expiresAt = expiresAtRaw === 0 || expiresAtRaw === '0'
+    ? 0
+    : readOptionalPositiveTimestamp(expiresAtRaw);
+  const canceledAt = readOptionalPositiveTimestamp(record.canceledAt);
+  const supersedes = readOptionalTrimmedString(record.supersedes);
+  const notificationStateRaw = readOptionalTrimmedString(record.notificationState);
+  const waitingReason = readOptionalTrimmedString(record.waitingReason);
+  const busySince = readOptionalPositiveTimestamp(record.busySince);
+  const probeCount = readOptionalNonNegativeInt(record.probeCount);
+
   return {
     id,
     shortId,
@@ -167,10 +220,35 @@ export function normalizePeerMessageRecord(raw: unknown): PeerMessageRecord | nu
     attemptCount: Number(record.attemptCount) || 0,
     error: String(record.error ?? ''),
     lastAttemptError: String(record.lastAttemptError ?? ''),
-    ...(typeof receiptErrorRaw === 'string' && receiptErrorRaw.trim()
-      ? { receiptError: receiptErrorRaw.trim() }
-      : {})
+    ...(receiptError ? { receiptError } : {}),
+    ...(subject ? { subject } : {}),
+    ...(summary ? { summary } : {}),
+    ...(purpose ? { purpose } : {}),
+    ...(action ? { action } : {}),
+    ...(replyPolicyRaw ? { replyPolicy: replyPolicyRaw as PeerReplyPolicy } : {}),
+    ...(autoDeliverUntil !== undefined ? { autoDeliverUntil } : {}),
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+    ...(canceledAt !== undefined ? { canceledAt } : {}),
+    ...(supersedes ? { supersedes } : {}),
+    ...(notificationStateRaw ? { notificationState: notificationStateRaw as PeerNotificationState } : {}),
+    ...(waitingReason ? { waitingReason } : {}),
+    ...(busySince !== undefined ? { busySince } : {}),
+    ...(probeCount !== undefined ? { probeCount } : {}),
   };
+}
+
+function isRecordActivelyPending(msg: PeerMessageRecord): boolean {
+  const notif = String(msg.notificationState ?? '').trim().toLowerCase();
+  if (notif === 'canceled' || notif === 'expired' || notif === 'delivered') {
+    return false;
+  }
+  if (msg.canceledAt && msg.canceledAt > 0) {
+    return false;
+  }
+  if (msg.deliveredAt > 0 || msg.readAt > 0) {
+    return false;
+  }
+  return msg.state === 'pending' || notif === 'waiting' || notif === 'ready';
 }
 
 export function computePeerCounts(messages: PeerMessageRecord[]): PeerCounts {
@@ -179,24 +257,18 @@ export function computePeerCounts(messages: PeerMessageRecord[]): PeerCounts {
     pending: 0,
     delivered: 0,
     read: 0,
-    failed: 0
+    failed: 0,
   };
   for (const msg of messages) {
-    switch (msg.state) {
-      case 'pending':
-        counts.pending += 1;
-        break;
-      case 'delivered':
-        counts.delivered += 1;
-        break;
-      case 'read':
-        counts.read += 1;
-        break;
-      case 'failed':
-        counts.failed += 1;
-        break;
-      default:
-        break;
+    const notif = String(msg.notificationState ?? '').trim().toLowerCase();
+    if (msg.state === 'read' || msg.readAt > 0) {
+      counts.read += 1;
+    } else if (msg.state === 'delivered' || notif === 'delivered' || msg.deliveredAt > 0) {
+      counts.delivered += 1;
+    } else if (msg.state === 'failed') {
+      counts.failed += 1;
+    } else if (isRecordActivelyPending(msg)) {
+      counts.pending += 1;
     }
   }
   return counts;
@@ -243,7 +315,7 @@ function deriveBadgeCode(provider: string, kind: 'account-cli' | 'shell', seatIn
     zcode: 'ZCD',
     kimi: 'KMI',
     kiro: 'KRO',
-    shell: 'SHL'
+    shell: 'SHL',
   };
   const prefix = prefixMap[norm] || (kind === 'shell' ? 'SHL' : (norm.slice(0, 3).toUpperCase() || 'SES'));
   return `${prefix}-${String(seatIndex + 1).padStart(2, '0')}`;
@@ -254,7 +326,7 @@ function createInitialPersona(
   provider: string,
   kind: 'account-cli' | 'shell',
   availability: SessionAvailability,
-  seatIndex: number
+  seatIndex: number,
 ): EmployeeVisualPersona {
   const hash = hashString(sessionKey);
   const providerHash = hashString(provider || kind);
@@ -264,7 +336,7 @@ function createInitialPersona(
     posture: availability === 'interactive' ? 'typing' : 'monitoring',
     deskAccent: DESK_ACCENTS[(providerHash + seatIndex) % DESK_ACCENTS.length],
     badgeCode: deriveBadgeCode(provider, kind, seatIndex),
-    seatIndex
+    seatIndex,
   };
 }
 
@@ -276,64 +348,107 @@ function createEmptyActivity(recentPulse: boolean): SessionActivityCue {
     failedCount: 0,
     lastMessageAt: 0,
     recentPulse,
-    latestSnippet: ''
+    latestSnippet: '',
   };
-}
-
-function buildTextSummaries(body: string): {
-  normalizedBody: string;
-  subjectLine: string;
-  snippet: string;
-} {
-  const normalizedBody = body.replace(/\r\n/g, '\n').trim();
-  if (!normalizedBody) {
-    return {
-      normalizedBody: '',
-      subjectLine: '(空消息)',
-      snippet: '(空消息)'
-    };
-  }
-  const lines = normalizedBody
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const rawFirst = (lines[0] || '').replace(/^#+\s*/, '').replace(/\s+/g, ' ').trim();
-  const subjectLine = rawFirst.length > 72 ? `${rawFirst.slice(0, 71)}…` : (rawFirst || '(空消息)');
-  const collapsed = normalizedBody.replace(/\s+/g, ' ').trim();
-  const snippet = collapsed.length > 120 ? `${collapsed.slice(0, 119)}…` : collapsed;
-  return { normalizedBody, subjectLine, snippet };
 }
 
 function resolveThreadRoots(messages: PeerMessageRecord[]): Map<string, string> {
   const byId = new Map<string, PeerMessageRecord>();
+  const byShortId = new Map<string, PeerMessageRecord>();
+  const duplicateShorts = new Set<string>();
+
   for (const msg of messages) {
     byId.set(msg.id, msg);
+    if (msg.shortId) {
+      if (byShortId.has(msg.shortId)) {
+        duplicateShorts.add(msg.shortId);
+      } else {
+        byShortId.set(msg.shortId, msg);
+      }
+    }
   }
+  for (const dup of duplicateShorts) {
+    byShortId.delete(dup);
+  }
+
+  const findParent = (refId: string, refShort: string): PeerMessageRecord | undefined => {
+    if (refId) {
+      const exact = byId.get(refId) ?? byShortId.get(refId);
+      if (exact) return exact;
+    }
+    if (refShort) {
+      return byShortId.get(refShort);
+    }
+    return undefined;
+  };
+
   const roots = new Map<string, string>();
   for (const msg of messages) {
-    if (!msg.replyTo) {
+    if (!msg.replyTo && !msg.replyToShort) {
       roots.set(msg.id, msg.id);
       continue;
     }
     const visited = new Set<string>([msg.id]);
-    let cursor = msg.replyTo;
+    let cursorId = msg.replyTo;
+    let cursorShort = msg.replyToShort;
     let rootId = msg.id;
-    while (cursor) {
-      if (visited.has(cursor)) {
-        break;
-      }
-      visited.add(cursor);
-      const parent = byId.get(cursor);
+    while (cursorId || cursorShort) {
+      const parent = findParent(cursorId, cursorShort);
       if (!parent) {
-        rootId = cursor;
+        rootId = cursorId || cursorShort || rootId;
         break;
       }
+      if (visited.has(parent.id)) {
+        break;
+      }
+      visited.add(parent.id);
       rootId = parent.id;
-      cursor = parent.replyTo;
+      cursorId = parent.replyTo;
+      cursorShort = parent.replyToShort;
     }
     roots.set(msg.id, rootId);
   }
   return roots;
+}
+
+function sameExactPartyIdentity(a: PeerParty, b: PeerParty): boolean {
+  const aKey = [a.channel, a.provider, a.sessionId || a.address || a.name]
+    .map((part) => part.trim().toLowerCase())
+    .join('\0');
+  const bKey = [b.channel, b.provider, b.sessionId || b.address || b.name]
+    .map((part) => part.trim().toLowerCase())
+    .join('\0');
+  return Boolean(aKey.replace(/\0/g, '')) && aKey === bKey;
+}
+
+function resolveSupersededByMap(messages: PeerMessageRecord[]): Map<string, string[]> {
+  const byId = new Map<string, PeerMessageRecord>();
+  const byShort = new Map<string, PeerMessageRecord>();
+  for (const msg of messages) {
+    byId.set(msg.id, msg);
+    if (msg.shortId && !byShort.has(msg.shortId)) {
+      byShort.set(msg.shortId, msg);
+    }
+  }
+
+  const supersededMap = new Map<string, string[]>();
+  for (const newer of messages) {
+    const targetRef = String(newer.supersedes ?? '').trim();
+    if (!targetRef) continue;
+    const older = byId.get(targetRef) ?? byShort.get(targetRef);
+    if (!older || older.id === newer.id) continue;
+    if (!sameExactPartyIdentity(older.from, newer.from) || !sameExactPartyIdentity(older.to, newer.to)) {
+      continue;
+    }
+    const bucket = supersededMap.get(older.id);
+    const newerLabel = newer.shortId || newer.id.slice(0, 8);
+    if (bucket) {
+      if (!bucket.includes(newerLabel)) bucket.push(newerLabel);
+    } else {
+      supersededMap.set(older.id, [newerLabel]);
+    }
+  }
+  return supersededMap;
 }
 
 interface SessionLookupIndex {
@@ -343,7 +458,7 @@ interface SessionLookupIndex {
 
 function buildSessionLookupIndex(sessions: OfficeSessionItem[]): SessionLookupIndex {
   const bySessionKey = new Map<string, OfficeSessionItem>();
-  const byNativeId = new Map<string, OfficeSessionItem[]>();
+  const byNativeId = new Map<string, OfficeSessionItem[]>;
   for (const session of sessions) {
     bySessionKey.set(session.sessionKey, session);
     const nativeId = String(session.nativeSessionId || '').trim();
@@ -363,7 +478,7 @@ function formatUnresolvedDisplayName(party: PeerParty): string {
 
 function matchSessionStrictly(
   party: PeerParty,
-  index: SessionLookupIndex
+  index: SessionLookupIndex,
 ): { session: OfficeSessionItem | null; matchBasis: ResolvedPeerEndpoint['matchBasis'] } {
   const rawSessionId = String(party.sessionId || '').trim();
   if (!rawSessionId) {
@@ -383,11 +498,10 @@ function matchSessionStrictly(
     return { session: nativeMatches[0], matchBasis: 'nativeSessionId' };
   }
 
-  // Only narrow duplicated nativeSessionId entries if party.provider uniquely identifies one.
   const partyProvider = party.provider.trim().toLowerCase();
   if (partyProvider) {
     const providerFiltered = nativeMatches.filter(
-      (item) => item.provider.trim().toLowerCase() === partyProvider
+      (item) => item.provider.trim().toLowerCase() === partyProvider,
     );
     if (providerFiltered.length === 1) {
       return { session: providerFiltered[0], matchBasis: 'nativeSessionId' };
@@ -399,7 +513,7 @@ function matchSessionStrictly(
 
 function resolvePeerEndpoint(
   party: PeerParty,
-  index: SessionLookupIndex
+  index: SessionLookupIndex,
 ): ResolvedPeerEndpoint {
   const { session, matchBasis } = matchSessionStrictly(party, index);
   if (!session || matchBasis === 'unresolved') {
@@ -413,7 +527,7 @@ function resolvePeerEndpoint(
       projectName: null,
       projectPath: null,
       matchBasis: 'unresolved',
-      isExternalOrHistorical: true
+      isExternalOrHistorical: true,
     };
   }
   return {
@@ -426,7 +540,7 @@ function resolvePeerEndpoint(
     projectName: session.projectName,
     projectPath: session.cwd,
     matchBasis,
-    isExternalOrHistorical: false
+    isExternalOrHistorical: false,
   };
 }
 
@@ -436,7 +550,7 @@ function resolvePeerEndpoint(
  */
 export function resolveEvidencedSessionKeysForMessage(
   raw: PeerMessageRecord,
-  sessions: OfficeSessionItem[]
+  sessions: OfficeSessionItem[],
 ): string[] {
   const index = buildSessionLookupIndex(sessions);
   const keys = new Set<string>();
@@ -477,7 +591,7 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
   const allKeys = new Set<string>([
     ...dirByKey.keys(),
     ...interactiveByKey.keys(),
-    ...unavailableByKey.keys()
+    ...unavailableByKey.keys(),
   ]);
 
   const draftItems: OfficeSessionItem[] = [];
@@ -551,16 +665,15 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
       pendingCount: 0,
       crossProjectCount: 0,
       contentPreview,
-      previewModel
+      previewModel,
     });
   }
 
-  // Deterministic ordering inside each room: interactive/running first, then label, then sessionKey
   const availabilityRank: Record<SessionAvailability, number> = {
     interactive: 0,
     'directory-only': 1,
     unavailable: 2,
-    exited: 3
+    exited: 3,
   };
   draftItems.sort((a, b) => {
     const rankDiff = availabilityRank[a.availability] - availabilityRank[b.availability];
@@ -570,14 +683,13 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     return a.sessionKey.localeCompare(b.sessionKey);
   });
 
-  // Assign room-local seatIndex deterministically
   const seatCountByProject = new Map<string, number>();
   return draftItems.map((item) => {
     const seatIndex = seatCountByProject.get(item.projectKey) || 0;
     seatCountByProject.set(item.projectKey, seatIndex + 1);
     return {
       ...item,
-      persona: createInitialPersona(item.sessionKey, item.provider, item.kind, item.availability, seatIndex)
+      persona: createInitialPersona(item.sessionKey, item.provider, item.kind, item.availability, seatIndex),
     };
   });
 }
@@ -585,7 +697,7 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
 function attachPeerTelemetry(
   sessions: OfficeSessionItem[],
   enrichedMessages: EnrichedPeerMessage[],
-  recentPulseSessionKeys: ReadonlySet<string>
+  recentPulseSessionKeys: ReadonlySet<string>,
 ): OfficeSessionItem[] {
   const bySession = new Map<string, EnrichedPeerMessage[]>();
   for (const msg of enrichedMessages) {
@@ -602,7 +714,7 @@ function attachPeerTelemetry(
     if (related.length === 0) {
       return {
         ...session,
-        activity: createEmptyActivity(recentPulse)
+        activity: createEmptyActivity(recentPulse),
       };
     }
 
@@ -619,17 +731,18 @@ function attachPeerTelemetry(
     for (const msg of related) {
       const isTo = msg.toResolved.sessionKey === session.sessionKey;
       const isFrom = msg.fromResolved.sessionKey === session.sessionKey;
+      const activePending = isRecordActivelyPending(msg.raw);
       if (isTo) inboxCount += 1;
       if (isFrom) sentCount += 1;
-      if (msg.raw.state === 'pending') pendingCount += 1;
+      if (activePending) pendingCount += 1;
       if (msg.isCrossProject) crossProjectCount += 1;
-      if (isTo && (msg.raw.state === 'pending' || msg.raw.state === 'delivered')) {
+      if (isTo && (activePending || msg.raw.state === 'delivered')) {
         unreadOrDeliveredCount += 1;
       }
       if (msg.raw.state === 'failed') failedCount += 1;
       if (msg.raw.createdAt > lastMessageAt) lastMessageAt = msg.raw.createdAt;
 
-      const isActiveMessage = msg.raw.state === 'pending' || (isTo && msg.raw.state === 'delivered');
+      const isActiveMessage = activePending || (isTo && msg.raw.state === 'delivered');
       if (isActiveMessage) {
         if (isTo) activeIncoming = true;
         if (isFrom) activeOutgoing = true;
@@ -661,7 +774,7 @@ function attachPeerTelemetry(
       crossProjectCount,
       persona: {
         ...session.persona,
-        posture
+        posture,
       },
       activity: {
         kind,
@@ -670,15 +783,15 @@ function attachPeerTelemetry(
         failedCount,
         lastMessageAt,
         recentPulse,
-        latestSnippet: latest ? latest.snippet : ''
-      }
+        latestSnippet: latest ? latest.snippet : '',
+      },
     };
   });
 }
 
 function buildProjectRooms(
   sessions: OfficeSessionItem[],
-  enrichedMessages: EnrichedPeerMessage[]
+  enrichedMessages: EnrichedPeerMessage[],
 ): OfficeProjectRoom[] {
   const sessionsByProject = new Map<string, OfficeSessionItem[]>();
   for (const session of sessions) {
@@ -721,7 +834,7 @@ function buildProjectRooms(
     let crossProjectMailCount = 0;
     let latestActivityAt = 0;
     for (const msg of roomMessages) {
-      if (msg.raw.state === 'pending') pendingMailCount += 1;
+      if (isRecordActivelyPending(msg.raw)) pendingMailCount += 1;
       if (msg.isCrossProject) crossProjectMailCount += 1;
       const msgAt = Math.max(msg.raw.createdAt, msg.raw.deliveredAt, msg.raw.readAt);
       if (msgAt > latestActivityAt) latestActivityAt = msgAt;
@@ -741,7 +854,7 @@ function buildProjectRooms(
       pendingMailCount,
       crossProjectMailCount,
       latestActivityAt,
-      hasRecentPulse
+      hasRecentPulse,
     });
   }
 
@@ -761,7 +874,7 @@ function buildProjectRooms(
 function sessionMatchesFilters(
   session: OfficeSessionItem,
   normalizedQuery: string,
-  providerFilter: string
+  providerFilter: string,
 ): boolean {
   if (providerFilter && providerFilter !== 'all') {
     if (session.provider !== providerFilter && session.harness !== providerFilter) {
@@ -779,7 +892,7 @@ function sessionMatchesFilters(
     session.model || '',
     session.nativeSessionId || '',
     session.sessionKey,
-    session.contentPreview || ''
+    session.contentPreview || '',
   ].join(' ').toLowerCase();
   return haystack.includes(normalizedQuery);
 }
@@ -787,7 +900,7 @@ function sessionMatchesFilters(
 function filterProjectRooms(
   rooms: OfficeProjectRoom[],
   query: string,
-  providerFilter: string
+  providerFilter: string,
 ): OfficeProjectRoom[] {
   const normalizedQuery = query.trim().toLowerCase();
   const hasFilter = Boolean(normalizedQuery) || (Boolean(providerFilter) && providerFilter !== 'all');
@@ -821,7 +934,7 @@ function filterProjectRooms(
       runningCount,
       unavailableCount,
       exitedCount,
-      hasRecentPulse
+      hasRecentPulse,
     });
   }
   return filtered;
@@ -831,17 +944,24 @@ export function buildOfficeWorkspaceModel(input: BuildOfficeWorkspaceInput): Off
   const baseSessions = buildJoinedSessions(input);
   const lookupIndex = buildSessionLookupIndex(baseSessions);
   const threadRoots = resolveThreadRoots(input.rawMessages);
+  const supersededByMap = resolveSupersededByMap(input.rawMessages);
 
   const enrichedMessages: EnrichedPeerMessage[] = input.rawMessages.map((raw) => {
     const fromResolved = resolvePeerEndpoint(raw.from, lookupIndex);
     const toResolved = resolvePeerEndpoint(raw.to, lookupIndex);
-    const { normalizedBody, subjectLine, snippet } = buildTextSummaries(raw.body);
+    const fromReadable = buildReadablePartySummary(fromResolved);
+    const toReadable = buildReadablePartySummary(toResolved);
+    const presentation = buildReadableMailPresentation(raw);
+    const normalizedBody = raw.body.replace(/\r\n/g, '\n').trim();
+    const subjectLine = presentation.title;
+    const snippet = presentation.summary || presentation.title;
+
     const hasUnresolvedParty = fromResolved.matchBasis === 'unresolved' || toResolved.matchBasis === 'unresolved';
     const isFullyUnassigned = fromResolved.matchBasis === 'unresolved' && toResolved.matchBasis === 'unresolved';
     const isCrossProject = Boolean(
       fromResolved.projectKey
       && toResolved.projectKey
-      && fromResolved.projectKey !== toResolved.projectKey
+      && fromResolved.projectKey !== toResolved.projectKey,
     );
 
     const projectKeySet = new Set<string>();
@@ -861,12 +981,16 @@ export function buildOfficeWorkspaceModel(input: BuildOfficeWorkspaceInput): Off
       snippet,
       fromResolved,
       toResolved,
+      fromReadable,
+      toReadable,
+      presentation,
+      supersededByIds: supersededByMap.get(raw.id) ?? [],
       isCrossProject,
       isFullyUnassigned,
       hasUnresolvedParty,
       threadRootId: threadRoots.get(raw.id) || raw.id,
       involvedProjectKeys: [...projectKeySet],
-      involvedSessionKeys: [...sessionKeySet]
+      involvedSessionKeys: [...sessionKeySet],
     };
   });
 
@@ -898,16 +1022,71 @@ export function buildOfficeWorkspaceModel(input: BuildOfficeWorkspaceInput): Off
     providerOptions,
     peerMessages: enrichedMessages,
     unassignedMessages,
-    fullyUnassignedCount
+    fullyUnassignedCount,
   };
+}
+
+function messageMatchesStateFilter(
+  msg: EnrichedPeerMessage,
+  normalizedState: string,
+  nowMs: number,
+): boolean {
+  if (!normalizedState || normalizedState === 'all') return true;
+  const lifecycle = evaluateMailLifecycle(msg, nowMs);
+  switch (normalizedState) {
+    case 'undelivered':
+      return lifecycle.isUndelivered && !lifecycle.isAttention;
+    case 'stale':
+      return lifecycle.isStaleOrManual;
+    case 'delivered':
+      return lifecycle.kind === 'delivered' || lifecycle.kind === 'read';
+    case 'attention':
+      return lifecycle.isAttention;
+    case 'pending':
+      return lifecycle.isUndelivered && !lifecycle.isAttention;
+    case 'read':
+      return lifecycle.kind === 'read';
+    case 'failed':
+      return lifecycle.kind === 'failed';
+    default:
+      return msg.raw.state === normalizedState || msg.raw.notificationState === normalizedState;
+  }
+}
+
+function messageMatchesReplyFilter(
+  msg: EnrichedPeerMessage,
+  replyFilter: MailboxReplyFilter,
+  explicitThreadedRootIds: ReadonlySet<string>,
+): boolean {
+  switch (replyFilter) {
+    case 'all':
+      return true;
+    case 'required':
+      return msg.presentation.replyPolicyKind === 'required';
+    case 'none':
+      return msg.presentation.replyPolicyKind === 'none';
+    case 'threaded':
+      return (
+        Boolean(msg.raw.replyTo || msg.raw.replyToShort)
+        || explicitThreadedRootIds.has(msg.threadRootId)
+      );
+    case 'unspecified':
+      return msg.presentation.replyPolicyKind === 'unknown';
+  }
 }
 
 function messageMatchesMailboxFilters(
   msg: EnrichedPeerMessage,
-  stateFilter: string,
-  normalizedQuery: string
+  normalizedState: string,
+  replyFilter: MailboxReplyFilter,
+  normalizedQuery: string,
+  explicitThreadedRootIds: ReadonlySet<string>,
+  nowMs: number,
 ): boolean {
-  if (stateFilter && stateFilter !== 'all' && msg.raw.state !== stateFilter) {
+  if (!messageMatchesStateFilter(msg, normalizedState, nowMs)) {
+    return false;
+  }
+  if (!messageMatchesReplyFilter(msg, replyFilter, explicitThreadedRootIds)) {
     return false;
   }
   if (!normalizedQuery) return true;
@@ -916,6 +1095,12 @@ function messageMatchesMailboxFilters(
     msg.shortId,
     msg.raw.replyTo,
     msg.raw.replyToShort,
+    msg.raw.supersedes || '',
+    msg.presentation.title,
+    msg.presentation.summary,
+    msg.presentation.purpose,
+    msg.presentation.actionText,
+    msg.presentation.replyPolicyLabel,
     msg.subjectLine,
     msg.normalizedBody,
     msg.raw.from.provider,
@@ -924,16 +1109,43 @@ function messageMatchesMailboxFilters(
     msg.raw.from.sessionId,
     msg.fromResolved.displayName,
     msg.fromResolved.projectName || '',
+    msg.fromReadable.shortName,
+    msg.fromReadable.projectLabel,
     msg.raw.to.provider,
     msg.raw.to.name,
     msg.raw.to.address,
     msg.raw.to.sessionId,
     msg.toResolved.displayName,
     msg.toResolved.projectName || '',
+    msg.toReadable.shortName,
+    msg.toReadable.projectLabel,
+    msg.raw.notificationState || '',
+    msg.raw.waitingReason || '',
     msg.raw.error,
-    msg.raw.lastAttemptError
+    msg.raw.lastAttemptError,
   ].join(' ').toLowerCase();
   return haystack.includes(normalizedQuery);
+}
+
+function collectExplicitThreadedRoots(messages: EnrichedPeerMessage[]): Set<string> {
+  const countsByRoot = new Map<string, number>();
+  const rootsWithReplyRef = new Set<string>();
+  for (const msg of messages) {
+    countsByRoot.set(msg.threadRootId, (countsByRoot.get(msg.threadRootId) || 0) + 1);
+    if (msg.raw.replyTo || msg.raw.replyToShort) {
+      rootsWithReplyRef.add(msg.threadRootId);
+    }
+  }
+  const result = new Set<string>();
+  for (const rootId of rootsWithReplyRef) {
+    result.add(rootId);
+  }
+  for (const [rootId, count] of countsByRoot.entries()) {
+    if (count > 1 && rootsWithReplyRef.has(rootId)) {
+      result.add(rootId);
+    }
+  }
+  return result;
 }
 
 function buildThreadGroups(messages: EnrichedPeerMessage[]): PeerThreadGroup[] {
@@ -965,7 +1177,7 @@ function buildThreadGroups(messages: EnrichedPeerMessage[]): PeerThreadGroup[] {
 
     for (const item of ordered) {
       if (item.raw.createdAt > latestAt) latestAt = item.raw.createdAt;
-      if (item.raw.state === 'pending') hasPending = true;
+      if (isRecordActivelyPending(item.raw)) hasPending = true;
       if (item.raw.state === 'failed') hasFailed = true;
       if (item.isCrossProject) isCrossProject = true;
       for (const pKey of item.involvedProjectKeys) {
@@ -976,18 +1188,21 @@ function buildThreadGroups(messages: EnrichedPeerMessage[]): PeerThreadGroup[] {
 
     threads.push({
       threadId,
-      subjectLine: firstMessage.subjectLine,
+      subjectLine: firstMessage.presentation.title || firstMessage.subjectLine,
       messages: ordered,
       latestMessage,
       latestAt,
       messageCount: ordered.length,
       hasPending,
       hasFailed,
-      isCrossProject
+      isCrossProject,
     });
   }
 
   threads.sort((a, b) => {
+    const aMulti = a.messageCount > 1 ? 1 : 0;
+    const bMulti = b.messageCount > 1 ? 1 : 0;
+    if (aMulti !== bMulti) return bMulti - aMulti;
     if (a.latestAt !== b.latestAt) return b.latestAt - a.latestAt;
     return b.threadId.localeCompare(a.threadId);
   });
@@ -1001,7 +1216,9 @@ export function buildSessionMailboxView(
   scope: MailboxScope,
   folder: MailboxFolder,
   stateFilter: string,
-  searchQuery: string
+  searchQuery: string,
+  replyFilter: MailboxReplyFilter = 'all',
+  nowMs: number = Date.now(),
 ): SessionMailboxViewResult {
   let inboxMsgs: EnrichedPeerMessage[] = [];
   let sentMsgs: EnrichedPeerMessage[] = [];
@@ -1013,7 +1230,7 @@ export function buildSessionMailboxView(
       inboxMsgs = messages.filter((msg) => msg.toResolved.sessionKey === session.sessionKey);
       sentMsgs = messages.filter((msg) => msg.fromResolved.sessionKey === session.sessionKey);
       allMsgs = messages.filter(
-        (msg) => msg.fromResolved.sessionKey === session.sessionKey || msg.toResolved.sessionKey === session.sessionKey
+        (msg) => msg.fromResolved.sessionKey === session.sessionKey || msg.toResolved.sessionKey === session.sessionKey,
       );
       const rootIds = new Set(allMsgs.map((msg) => msg.threadRootId));
       threadPoolMsgs = messages.filter((msg) => rootIds.has(msg.threadRootId));
@@ -1022,10 +1239,10 @@ export function buildSessionMailboxView(
     if (room) {
       const roomKeys = new Set(room.sessions.map((item) => item.sessionKey));
       inboxMsgs = room.roomMessages.filter(
-        (msg) => Boolean(msg.toResolved.sessionKey && roomKeys.has(msg.toResolved.sessionKey))
+        (msg) => Boolean(msg.toResolved.sessionKey && roomKeys.has(msg.toResolved.sessionKey)),
       );
       sentMsgs = room.roomMessages.filter(
-        (msg) => Boolean(msg.fromResolved.sessionKey && roomKeys.has(msg.fromResolved.sessionKey))
+        (msg) => Boolean(msg.fromResolved.sessionKey && roomKeys.has(msg.fromResolved.sessionKey)),
       );
       allMsgs = room.roomMessages;
       const rootIds = new Set(allMsgs.map((msg) => msg.threadRootId));
@@ -1061,19 +1278,65 @@ export function buildSessionMailboxView(
       break;
   }
 
+  const explicitThreadedRootIds = collectExplicitThreadedRoots(messages);
+
+  let undeliveredCount = 0;
+  let staleCount = 0;
+  let deliveredOrReadCount = 0;
+  let attentionCount = 0;
+  let replyRequiredCount = 0;
+  let noReplyCount = 0;
+  let threadedMsgCount = 0;
+  let unspecifiedReplyCount = 0;
+
+  for (const msg of activeFolderMsgs) {
+    const lifecycle = evaluateMailLifecycle(msg, nowMs);
+    if (lifecycle.isUndelivered && !lifecycle.isAttention) undeliveredCount += 1;
+    if (lifecycle.isStaleOrManual) staleCount += 1;
+    if (lifecycle.kind === 'delivered' || lifecycle.kind === 'read') deliveredOrReadCount += 1;
+    if (lifecycle.isAttention) attentionCount += 1;
+    if (msg.presentation.replyPolicyKind === 'required') replyRequiredCount += 1;
+    if (msg.presentation.replyPolicyKind === 'none') noReplyCount += 1;
+    if (msg.presentation.replyPolicyKind === 'unknown') unspecifiedReplyCount += 1;
+    if (
+      Boolean(msg.raw.replyTo || msg.raw.replyToShort)
+      || explicitThreadedRootIds.has(msg.threadRootId)
+    ) {
+      threadedMsgCount += 1;
+    }
+  }
+
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const normalizedState = (stateFilter || 'all').trim().toLowerCase();
 
   const filteredMessages = activeFolderMsgs
-    .filter((msg) => messageMatchesMailboxFilters(msg, normalizedState, normalizedQuery))
+    .filter((msg) => (
+      messageMatchesMailboxFilters(
+        msg,
+        normalizedState,
+        replyFilter,
+        normalizedQuery,
+        explicitThreadedRootIds,
+        nowMs,
+      )
+    ))
     .slice()
     .sort(compareMessagesNewestFirst);
 
   const allThreads = buildThreadGroups(threadPoolMsgs);
-  const threads = normalizedState === 'all' && !normalizedQuery
+  const threads = normalizedState === 'all' && replyFilter === 'all' && !normalizedQuery
     ? allThreads
     : allThreads.filter((thread) => (
-      thread.messages.some((msg) => messageMatchesMailboxFilters(msg, normalizedState, normalizedQuery))
+      thread.messages.some((msg) => (
+        messageMatchesMailboxFilters(
+          msg,
+          normalizedState,
+          replyFilter,
+          normalizedQuery,
+          explicitThreadedRootIds,
+          nowMs,
+        )
+      ))
     ));
 
   return {
@@ -1082,6 +1345,14 @@ export function buildSessionMailboxView(
     inboxCount: inboxMsgs.length,
     sentCount: sentMsgs.length,
     allCount: allMsgs.length,
-    threadCount: allThreads.length
+    threadCount: allThreads.length,
+    undeliveredCount,
+    staleCount,
+    deliveredOrReadCount,
+    attentionCount,
+    replyRequiredCount,
+    noReplyCount,
+    threadedMsgCount,
+    unspecifiedReplyCount,
   };
 }

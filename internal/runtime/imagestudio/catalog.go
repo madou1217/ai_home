@@ -384,7 +384,8 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 		if !isAPIKey {
 			for _, meta := range nativeModelMetas[provider] {
 				if images.NativeImageModelRequiresDiscovery(provider, meta.ID) &&
-					!containsDiscoveredModel(discoveredByAccount[acct.Ref().String()], meta.ID) {
+					!containsDiscoveredModel(discoveredByAccount[acct.Ref().String()], meta.ID) &&
+					!disabledByAccount[acct.Ref().String()][meta.ID] {
 					continue
 				}
 				if caps, ok := images.NativeCapabilities(provider, meta.ID); ok {

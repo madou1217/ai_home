@@ -55,10 +55,36 @@ type AppServerProcess struct {
 
 	waitMu  sync.Mutex
 	waitErr error
+
+	pipeMu  sync.Mutex
+	pipeErr error
 }
 
-// StartAppServerProcess 启动子进程并独立回收退出状态。
+// preparedAppServerProcess owns the same command and six pipe handles before
+// Start. Both the existing WebSocket launcher and the private stdio runner use
+// this owner; preparation never starts a process or a Wait goroutine.
+type preparedAppServerProcess struct {
+	mu          sync.Mutex
+	process     *AppServerProcess
+	childEnds   [3]*os.File
+	started     bool
+	aborted     bool
+	checkedOnce sync.Once
+	checkedErr  error
+}
+
+var errPreparedAppServerState = errors.New("codex_app_server_prepared_state_invalid")
+
+// StartAppServerProcess retains the existing WebSocket/default launch contract.
 func StartAppServerProcess(opts StartProcessOptions) (*AppServerProcess, error) {
+	prepared, err := prepareAppServerProcess(opts)
+	if err != nil {
+		return nil, err
+	}
+	return prepared.start()
+}
+
+func prepareAppServerProcess(opts StartProcessOptions) (*preparedAppServerProcess, error) {
 	command := strings.TrimSpace(opts.Command)
 	if command == "" {
 		return nil, ErrEmptyCommand
@@ -112,41 +138,154 @@ func StartAppServerProcess(opts StartProcessOptions) (*AppServerProcess, error) 
 	configureDetachedProcess(cmd)
 	configureVerbatimArguments(cmd, args, opts.WindowsVerbatim)
 
-	if err := cmd.Start(); err != nil {
-		_ = stdinR.Close()
-		_ = stdinW.Close()
-		_ = stdoutR.Close()
-		_ = stdoutW.Close()
-		_ = stderrR.Close()
-		_ = stderrW.Close()
+	proc := &AppServerProcess{
+		cmd: cmd, stdin: stdinW, stdout: stdoutR, stderr: stderrR,
+		done: make(chan struct{}),
+	}
+	return &preparedAppServerProcess{
+		process: proc, childEnds: [3]*os.File{stdinR, stdoutW, stderrW},
+	}, nil
+}
+
+func (prepared *preparedAppServerProcess) readyLocked() error {
+	if prepared.started || prepared.aborted || prepared.process == nil {
+		return errPreparedAppServerState
+	}
+	p := prepared.process
+	if p.cmd == nil || p.cmd.Process != nil || p.cmd.Stdin != prepared.childEnds[0] || p.cmd.Stdout != prepared.childEnds[1] || p.cmd.Stderr != prepared.childEnds[2] {
+		return errPreparedAppServerState
+	}
+	for _, file := range []*os.File{p.stdin, p.stdout, p.stderr, prepared.childEnds[0], prepared.childEnds[1], prepared.childEnds[2]} {
+		if file == nil {
+			return errPreparedAppServerState
+		}
+		info, err := file.Stat()
+		if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+			return errPreparedAppServerState
+		}
+	}
+	return nil
+}
+
+func (prepared *preparedAppServerProcess) ready() error {
+	if prepared == nil {
+		return errPreparedAppServerState
+	}
+	prepared.mu.Lock()
+	defer prepared.mu.Unlock()
+	return prepared.readyLocked()
+}
+
+func (prepared *preparedAppServerProcess) abortLocked() error {
+	if prepared.process == nil {
+		return errPreparedAppServerState
+	}
+	if prepared.started {
+		return errPreparedAppServerState
+	}
+	if !prepared.aborted {
+		prepared.aborted = true
+		p := prepared.process
+		for _, file := range []*os.File{prepared.childEnds[0], p.stdin, p.stdout, prepared.childEnds[1], p.stderr, prepared.childEnds[2]} {
+			p.closePipe(file)
+		}
+	}
+	return prepared.process.pipeCloseError()
+}
+
+func (prepared *preparedAppServerProcess) start() (*AppServerProcess, error) {
+	if prepared == nil {
+		return nil, errPreparedAppServerState
+	}
+	prepared.mu.Lock()
+	defer prepared.mu.Unlock()
+	// Recheck while holding the same lock as Start/abort; an earlier preflight
+	// cannot authorize starting a closed or already-started owner.
+	if err := prepared.readyLocked(); err != nil {
+		if !prepared.started {
+			err = errors.Join(err, prepared.abortLocked())
+		}
 		return nil, err
 	}
-
-	// 父进程立即释放子进程端句柄，确保子进程退出后 stdout/stderr 准确收到 EOF。
-	_ = stdinR.Close()
-	_ = stdoutW.Close()
-	_ = stderrW.Close()
-
-	proc := &AppServerProcess{
-		cmd:    cmd,
-		stdin:  stdinW,
-		stdout: stdoutR,
-		stderr: stderrR,
-		done:   make(chan struct{}),
+	p := prepared.process
+	if err := p.cmd.Start(); err != nil {
+		return nil, errors.Join(err, prepared.abortLocked())
 	}
-
+	prepared.started = true
+	// Keep the original immediate parent release, native pipes and process group.
+	for _, file := range prepared.childEnds {
+		p.closePipe(file)
+	}
 	go func() {
-		waitErr := cmd.Wait()
-		proc.waitMu.Lock()
-		proc.waitErr = waitErr
-		proc.waitMu.Unlock()
-		// Reclaim the exclusively created process group immediately after its
-		// leader exits. Later Close calls cannot signal a potentially reused PID.
-		proc.closeProcessGroup()
-		close(proc.done)
+		waitErr := p.cmd.Wait()
+		p.waitMu.Lock()
+		p.waitErr = waitErr
+		p.waitMu.Unlock()
+		p.closeProcessGroup()
+		close(p.done)
 	}()
+	return p, nil
+}
 
-	return proc, nil
+// wait observes the one existing cmd.Wait owner; it never creates another one.
+// Real Done is required for join. An OS/process-group reclamation failure can
+// therefore prevent completion; no detached timeout goroutine hides that fact.
+func (prepared *preparedAppServerProcess) wait() error {
+	if prepared == nil {
+		return errPreparedAppServerState
+	}
+	prepared.mu.Lock()
+	started, p := prepared.started, prepared.process
+	prepared.mu.Unlock()
+	if !started || p == nil {
+		return errPreparedAppServerState
+	}
+	<-p.Done()
+	return p.WaitErr()
+}
+
+// closeChecked reports owned-pipe errors and direct-child uncertainty, unlike
+// wrapping a void Close with unconditional nil. The existing platform group
+// terminator does not report outcomes: even a nil result is NOT group proof.
+func (prepared *preparedAppServerProcess) closeChecked() error {
+	if prepared == nil {
+		return errPreparedAppServerState
+	}
+	prepared.checkedOnce.Do(func() {
+		prepared.mu.Lock()
+		if !prepared.started {
+			prepared.checkedErr = prepared.abortLocked()
+			prepared.mu.Unlock()
+			return
+		}
+		p := prepared.process
+		prepared.mu.Unlock()
+		p.Close()
+		prepared.checkedErr = p.pipeCloseError()
+		select {
+		case <-p.Done():
+		default:
+			prepared.checkedErr = errors.Join(prepared.checkedErr, errStdioNativeCleanupUnknown)
+		}
+	})
+	return prepared.checkedErr
+}
+
+func (p *AppServerProcess) closePipe(file *os.File) {
+	if file == nil {
+		return
+	}
+	if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+		p.pipeMu.Lock()
+		p.pipeErr = errors.Join(p.pipeErr, err)
+		p.pipeMu.Unlock()
+	}
+}
+
+func (p *AppServerProcess) pipeCloseError() error {
+	p.pipeMu.Lock()
+	defer p.pipeMu.Unlock()
+	return p.pipeErr
 }
 
 // Stdin 返回子进程标准输入写入端。
@@ -208,7 +347,7 @@ func (p *AppServerProcess) Close() {
 	}
 	p.closeOnce.Do(func() {
 		if p.stdin != nil {
-			_ = p.stdin.Close()
+			p.closePipe(p.stdin)
 		}
 		p.closeProcessGroup()
 		select {
@@ -216,10 +355,10 @@ func (p *AppServerProcess) Close() {
 		case <-time.After(200 * time.Millisecond):
 		}
 		if p.stdout != nil {
-			_ = p.stdout.Close()
+			p.closePipe(p.stdout)
 		}
 		if p.stderr != nil {
-			_ = p.stderr.Close()
+			p.closePipe(p.stderr)
 		}
 	})
 }

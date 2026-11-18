@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	goruntime "runtime"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -136,7 +137,23 @@ func run(
 		// The writer lease belongs to server.Close. Keep it while the Node
 		// child drains, so an offline installer cannot overlap its last writes.
 		if nodeSupervisor != nil {
-			nodeSupervisor.Stop()
+			if drainErr := nodeSupervisor.Stop(); drainErr != nil {
+				// An uncertain direct-child/pump drain cannot release the
+				// original writer lease or publish a successful handoff.
+				returnErr = errors.Join(returnErr, drainErr)
+				_, _ = fmt.Fprintln(runtime.stderr, "aih-server failclosed: node_supervisor_direct_child_drain_unknown; original holder retained; external controlled shutdown required")
+				// Keep the concrete holder, identity release closure and
+				// supervisor reachable across every sleep. An empty select
+				// alone is neither a GC root guarantee nor deadlock-safe.
+				// This deliberately ignores the already-canceled shutdown
+				// context; external kill/crash still ends the OS lease.
+				for {
+					time.Sleep(time.Hour)
+					goruntime.KeepAlive(server)
+					goruntime.KeepAlive(releaseIdentity)
+					goruntime.KeepAlive(nodeSupervisor)
+				}
+			}
 		}
 		returnErr = errors.Join(returnErr, server.Close())
 		if releaseIdentity != nil {
@@ -163,7 +180,7 @@ func run(
 	if nodeSupervisor != nil {
 		nodeSupervisor.Start()
 	}
-	return serveUntilCanceled(ctx, server, listener)
+	return serveUntilCanceled(ctx, server, listener, nodeSupervisor)
 }
 
 // serveUntilCanceled 协调 HTTP Serve 和有界优雅关闭。
@@ -171,7 +188,14 @@ func serveUntilCanceled(
 	ctx context.Context,
 	server *aihserver.Server,
 	listener net.Listener,
+	nodeSupervisors ...*nodesupervisor.Supervisor,
 ) error {
+	inhibit := func() {
+		for _, supervisor := range nodeSupervisors {
+			supervisor.Inhibit()
+		}
+	}
+	defer inhibit()
 	serveErrors := make(chan error, 1)
 	go func() {
 		serveErrors <- server.Serve(listener)
@@ -180,6 +204,9 @@ func serveUntilCanceled(
 	case err := <-serveErrors:
 		return err
 	case <-ctx.Done():
+		// Stop new starts before HTTP shutdown; this closes only the
+		// original supervisor's admission, not all native/chat writers.
+		inhibit()
 		shutdownCtx, cancel := context.WithTimeout(
 			context.Background(),
 			shutdownTimeout,

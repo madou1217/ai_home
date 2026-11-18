@@ -8,6 +8,7 @@
 package nodesupervisor
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -50,11 +51,18 @@ type Supervisor struct {
 	options Options
 	port    int
 
-	mu       sync.Mutex
-	command  *exec.Cmd
-	started  bool
-	stopping bool
-	done     chan struct{}
+	mu         sync.Mutex
+	command    *exec.Cmd
+	started    bool
+	stopping   bool
+	done       chan struct{}
+	halt       chan struct{}
+	drained    chan struct{}
+	doneOnce   sync.Once
+	drainOnce  sync.Once
+	generation uint64
+	joined     uint64
+	drainErr   error
 }
 
 var errUnavailable = fmt.Errorf("node supervisor unavailable")
@@ -72,56 +80,48 @@ func Prepare(options Options) (*Supervisor, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return &Supervisor{options: options, port: port, done: make(chan struct{})},
+	return &Supervisor{options: options, port: port, done: make(chan struct{}), halt: make(chan struct{}), drained: make(chan struct{})},
 		fmt.Sprintf("http://127.0.0.1:%d", port), nil
 }
 
-// Start 拉起 Node 并开始守护；启动失败只报错，不阻塞 Go 继续服务。
+// Start is once-only. Starting and publishing the original command use the
+// same mutex as Inhibit, so no unregistered child can cross that barrier.
 func (supervisor *Supervisor) Start() {
 	if supervisor == nil {
 		return
 	}
 	supervisor.mu.Lock()
+	if supervisor.started || supervisor.stopping {
+		supervisor.mu.Unlock()
+		return
+	}
 	supervisor.started = true
+	err := supervisor.startLocked()
 	supervisor.mu.Unlock()
-	if err := supervisor.start(); err != nil {
+	if err != nil {
 		supervisor.logf("Node 子进程启动失败: %v", err)
-		close(supervisor.done)
+		supervisor.finish()
 		return
 	}
 	go supervisor.watch()
 }
 
-// Stop 停止 Node 子进程并等待退出。
-func (supervisor *Supervisor) Stop() {
+// Stop waits for the same original direct-child drain as every other caller.
+// This does not prove independent Node processes or descendants have stopped.
+func (supervisor *Supervisor) Stop() error {
 	if supervisor == nil {
-		return
+		return nil
 	}
-	supervisor.mu.Lock()
-	if supervisor.stopping {
-		supervisor.mu.Unlock()
-		return
-	}
-	supervisor.stopping = true
-	started := supervisor.started
-	command := supervisor.command
-	supervisor.mu.Unlock()
-	if !started {
-		return
-	}
-	if command == nil || command.Process == nil {
-		return
-	}
-	_ = command.Process.Signal(os.Interrupt)
-	select {
-	case <-supervisor.done:
-	case <-time.After(stopTimeout):
-		_ = command.Process.Kill()
-		<-supervisor.done
-	}
+	_, err := supervisor.Drain(context.Background())
+	return err
 }
 
-func (supervisor *Supervisor) start() error {
+// startLocked is called only with mu held, including across command.Start and
+// publication. The stop barrier cannot miss a child that is still starting.
+func (supervisor *Supervisor) startLocked() error {
+	if supervisor.stopping {
+		return errUnavailable
+	}
 	nodeExec, entry, err := supervisor.resolveCommand()
 	if err != nil {
 		return err
@@ -139,29 +139,38 @@ func (supervisor *Supervisor) start() error {
 	command.Stdin = nil
 	command.Stdout = supervisor.options.Stdout
 	command.Stderr = supervisor.options.Stderr
+	// Do not force-close inherited pipes and call that a completed pump join.
+	// Drain(ctx) may time out, but that never authorizes a terminal receipt.
+	command.WaitDelay = 0
 	if err := command.Start(); err != nil {
 		return err
 	}
-	supervisor.mu.Lock()
 	supervisor.command = command
-	supervisor.mu.Unlock()
-	supervisor.logf("Node 子进程已启动 pid=%d port=%d", command.Process.Pid, supervisor.port)
+	supervisor.generation++
 	return nil
 }
 
-// watch 在 Node 退出后按退避重启；Stop 之后不再重启。
+// watch is the sole Cmd.Wait consumer for every original started generation.
+// It joins exec's output pumps too; Process.Wait alone did not do that.
 func (supervisor *Supervisor) watch() {
-	defer close(supervisor.done)
-	delay := restartDelay
+	defer supervisor.finish()
 	for {
 		supervisor.mu.Lock()
 		command := supervisor.command
 		supervisor.mu.Unlock()
 		if command == nil || command.Process == nil {
+			supervisor.recordDrainUnknown()
 			return
 		}
-		state, err := command.Process.Wait()
+		err := command.Wait()
 		supervisor.mu.Lock()
+		if !directChildWaitJoined(command, err) {
+			supervisor.drainErr = fmt.Errorf("node_supervisor_direct_child_wait_unknown")
+			supervisor.inhibitLocked()
+		} else {
+			supervisor.joined++
+		}
+		supervisor.command = nil
 		stopping := supervisor.stopping
 		supervisor.mu.Unlock()
 		if stopping {
@@ -170,26 +179,31 @@ func (supervisor *Supervisor) watch() {
 		reason := "unknown"
 		if err != nil {
 			reason = err.Error()
-		} else if state != nil {
-			reason = fmt.Sprintf("exit=%d", state.ExitCode())
+		} else if command.ProcessState != nil {
+			reason = fmt.Sprintf("exit=%d", command.ProcessState.ExitCode())
 		}
+		delay := restartDelay
 		supervisor.logf("Node 子进程退出(%s)，%s 后重启", reason, delay)
-		time.Sleep(delay)
-		supervisor.mu.Lock()
-		stopping = supervisor.stopping
-		supervisor.mu.Unlock()
-		if stopping {
-			return
-		}
-		if err := supervisor.start(); err != nil {
+		for {
+			if !supervisor.waitRestart(delay) {
+				return
+			}
+			supervisor.mu.Lock()
+			if supervisor.stopping {
+				supervisor.mu.Unlock()
+				return
+			}
+			err = supervisor.startLocked()
+			supervisor.mu.Unlock()
+			if err == nil {
+				break
+			}
 			supervisor.logf("Node 子进程重启失败: %v", err)
 			delay *= 2
 			if delay > restartMaxDelay {
 				delay = restartMaxDelay
 			}
-			continue
 		}
-		delay = restartDelay
 	}
 }
 

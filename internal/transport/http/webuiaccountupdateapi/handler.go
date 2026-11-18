@@ -22,6 +22,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 
 const (
@@ -75,6 +76,9 @@ type Dependencies struct {
 	Authorizer Authorizer
 	Accounts   AccountDirectory
 	Editor     CredentialEditor
+	// Rows 是可选的账号页读模型：编辑成功后用它返回最新账号行，
+	// 与 Node 的 refreshLiveAccountRecord 行为一致；不接线时退化为最小视图。
+	Rows webuiaccountsapi.Source
 }
 
 // Handler 是账号配置编辑的 HTTP 入站适配器。
@@ -82,6 +86,7 @@ type Handler struct {
 	authorizer Authorizer
 	accounts   AccountDirectory
 	editor     CredentialEditor
+	rows       webuiaccountsapi.Source
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -95,6 +100,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer: dependencies.Authorizer,
 		accounts:   dependencies.Accounts,
 		editor:     dependencies.Editor,
+		rows:       dependencies.Rows,
 	}, nil
 }
 
@@ -136,6 +142,18 @@ type successResponse struct {
 	OK         bool   `json:"ok"`
 	Provider   string `json:"provider"`
 	AccountRef string `json:"accountRef"`
+	// Account 是编辑后的账号行；前端用它合并列表，缺失会被当成更新失败。
+	Account any `json:"account"`
+}
+
+// updatedAccountFallback 是读模型不可用时仍能满足前端合并的最小账号视图。
+//
+// baseUrl 用指针区分「未修改」与「显式清空」：后者必须返回空串让前端覆盖旧值。
+type updatedAccountFallback struct {
+	AccountRef string  `json:"accountRef"`
+	Provider   string  `json:"provider"`
+	BaseURL    *string `json:"baseUrl,omitempty"`
+	AuthMode   string  `json:"authMode,omitempty"`
 }
 
 type errorResponse struct {
@@ -214,7 +232,41 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		OK:         true,
 		Provider:   provider,
 		AccountRef: accountRef.String(),
+		Account:    handler.updatedAccountView(request.Context(), provider, accountRef, authKind, input.BaseURL),
 	})
+}
+
+// updatedAccountView 读取编辑后的账号行；读模型失败时退化为最小视图。
+//
+// Node 的更新接口在写成功后重新读取账号行并返回 {ok, account}；WebUI 依赖
+// res.account 合并列表。Go 入口不能只返回 ok，否则前端会在合并处抛异常。
+func (handler *Handler) updatedAccountView(
+	ctx context.Context,
+	provider string,
+	accountRef accountcore.AccountRef,
+	authKind string,
+	baseURL optionalString,
+) any {
+	if handler.rows != nil {
+		result, err := handler.rows.ListAccountRows(ctx, webuiaccountsapi.Query{
+			Provider:   provider,
+			AccountRef: accountRef.String(),
+			Limit:      1,
+		})
+		if err == nil && len(result.Rows) > 0 {
+			return result.Rows[0]
+		}
+	}
+	view := updatedAccountFallback{
+		AccountRef: accountRef.String(),
+		Provider:   provider,
+		AuthMode:   authKind,
+	}
+	if baseURL.Set {
+		value := baseURL.Value
+		view.BaseURL = &value
+	}
+	return view
 }
 
 // decodeUpdateRequest 限制正文大小并允许空正文等价于「不修改任何字段」。

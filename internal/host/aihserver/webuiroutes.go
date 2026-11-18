@@ -525,6 +525,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	accountUpdate, err := webuiaccountupdateapi.NewHandler(webuiaccountupdateapi.Dependencies{
 		Authorizer: authorizer, Accounts: dependencies.Store, Editor: dependencies.CredentialEditor,
+		Rows: dependencies.AccountRows,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号编辑接口失败: %w", err)

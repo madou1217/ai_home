@@ -664,8 +664,26 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 		return DeliveryResult{OK: false, Error: code, Message: "输入框已有草稿或状态无法确认，通知保留在收件箱。"}
 	}
 
+	sendTarget := sessionName
+	submitArgs := []string{"-u", "-L", socket, "send-keys", "-t", sessionName, "Enter"}
+	if cliName == "codex" {
+		plan, ok := resolveTmuxSubmitPlan(ctx, runner, tmuxCmd, socket, sessionName)
+		if !ok || !plan.recheck(ctx, runner, tmuxCmd, socket) {
+			return DeliveryResult{Error: "target_input_unavailable", Message: "无法确认 Codex 目标输入协议，通知保留在收件箱。"}
+		}
+		if composer := inspectComposer(ctx, runner, tmuxCmd, socket, plan.paneID); composer != "empty" {
+			code := "target_input_unavailable"
+			if composer == "draft" {
+				code = "target_has_draft"
+			}
+			return DeliveryResult{Error: code, Message: "目标 pane 的输入框已有草稿或状态无法确认，通知保留在收件箱。"}
+		}
+		sendTarget = plan.paneID
+		submitArgs = plan.submitArgs(socket)
+	}
+
 	// Re-check after the quiet/composer probes, immediately before the first
-	// injection. Once pasted, finish Enter even if an ACK arrives meanwhile.
+	// injection. Once pasted, finish the selected submit even if an ACK arrives meanwhile.
 	home := ResolvePeerAIHomeDir(opts.AIHomeDir, opts.HostHomeDir, opts.Getenv)
 	if err := applyReadReceipt(filepath.Join(home, "run", "peer"), &rec); err != nil {
 		return DeliveryResult{Error: "read_receipt_unavailable", Message: err.Error()}
@@ -675,7 +693,7 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 	}
 	if text != "" {
 		cmdCtx, cancel := context.WithTimeout(ctx, ActivityProbeTimeout)
-		_, code, err := runner(cmdCtx, tmuxCmd, []string{"-u", "-L", socket, "send-keys", "-t", sessionName, "-l", "--", text})
+		_, code, err := runner(cmdCtx, tmuxCmd, []string{"-u", "-L", socket, "send-keys", "-t", sendTarget, "-l", "--", text})
 		cancel()
 		if err != nil || code != 0 {
 			return DeliveryResult{
@@ -694,7 +712,7 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 		}
 	}
 	cmdCtx, cancel := context.WithTimeout(ctx, ActivityProbeTimeout)
-	_, code, err := runner(cmdCtx, tmuxCmd, []string{"-u", "-L", socket, "send-keys", "-t", sessionName, "Enter"})
+	_, code, err := runner(cmdCtx, tmuxCmd, submitArgs)
 	cancel()
 	if err != nil || code != 0 {
 		return DeliveryResult{

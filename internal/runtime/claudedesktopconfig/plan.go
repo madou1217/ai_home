@@ -3,11 +3,15 @@ package claudedesktopconfig
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/claudedesktopcredential"
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/jsondocument"
+	"github.com/madou1217/ai_home/internal/runtime/regularnativefile"
 )
 
 type document struct {
@@ -67,6 +71,9 @@ func ownedManaged(current, managed map[string]any) bool {
 	return true
 }
 func knownLegacy(current map[string]any, desired map[string]any, mode string) bool {
+	if mode == "api" && knownLegacyNodeGateway(current, desired) {
+		return true
+	}
 	if mode == "web" {
 		return len(current) == 0
 	}
@@ -87,6 +94,119 @@ func knownLegacy(current map[string]any, desired map[string]any, mode string) bo
 	}
 	return true
 }
+
+// Recognize only this known legacy package shape, with the same AIH root
+// already covered by requestSignature. Static layout and byte checks do not
+// authenticate the original writer or authorize application control.
+func knownLegacyNodeGateway(current, desired map[string]any) bool {
+	if !regularnativefile.Supported() {
+		return false
+	}
+	if len(current) != 7 || len(desired) != 7 {
+		return false
+	}
+	args, ok := desired["inferenceCredentialHelperArgs"].([]any)
+	if !ok || len(args) != 3 || args[0] != claudedesktopcredential.Command || args[1] != "--ai-home-dir" {
+		return false
+	}
+	aiHome, ok := args[2].(string)
+	if !ok || !filepath.IsAbs(aiHome) || filepath.Clean(aiHome) != aiHome {
+		return false
+	}
+	helper, ok := desired["inferenceCredentialHelper"].(string)
+	if !ok {
+		return false
+	}
+	native, err := claudedesktopcredential.ResolveExecutable(claudedesktopcredential.CommandOptions{ExplicitPath: helper, StrictRegularFiles: true})
+	if err != nil || native != helper {
+		return false
+	}
+	platform, arch, name := runtime.GOOS, runtime.GOARCH, "aih-go"
+	if platform == "windows" {
+		platform, name = "win32", "aih-go.exe"
+	}
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	root := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(native))))
+	if filepath.Join(root, "bin", "native", platform+"-"+arch, name) != native {
+		return false
+	}
+	script := filepath.Join(root, "bin", "claude-desktop-credential.js")
+	realScript, err := filepath.EvalSymlinks(script)
+	if err != nil || realScript != script {
+		return false
+	}
+	fileOptions := regularnativefile.Options{MaxBytes: 128 * 1024}
+	file, err := regularnativefile.Open(realScript, fileOptions)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	initial, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	scriptBytes, err := io.ReadAll(io.LimitReader(file, 128*1024+1))
+	if err != nil || regularnativefile.Verify(file, initial, fileOptions) != nil || fingerprint(scriptBytes) != "bf8ad861b454653473bc625121ce1e411994cfa3c709cd4af5fd8346486dc0c9" {
+		return false
+	}
+	oldArgs, ok := current["inferenceCredentialHelperArgs"].([]any)
+	if !ok || len(oldArgs) != 3 || oldArgs[0] != script || oldArgs[1] != "--ai-home-dir" || oldArgs[2] != aiHome {
+		return false
+	}
+	node, ok := current["inferenceCredentialHelper"].(string)
+	if !ok || !legacyNativeNode(node) {
+		return false
+	}
+	// Compare the complete seven-key entry, including the gateway URL. Neither
+	// display name, basename alone, extra fields nor a different scope is enough.
+	rebound := clone(current)
+	rebound["inferenceCredentialHelper"] = helper
+	rebound["inferenceCredentialHelperArgs"] = args
+	return sameValue(rebound, desired)
+}
+
+func legacyNativeNode(path string) bool {
+	if !regularnativefile.Supported() {
+		return false
+	}
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return false
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	expected := "node"
+	if runtime.GOOS == "windows" {
+		expected = "node.exe"
+	}
+	if filepath.Base(real) != expected {
+		return false
+	}
+	fileOptions := regularnativefile.Options{RequireExecutable: true}
+	file, err := regularnativefile.Open(real, fileOptions)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	initial, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	var header [4]byte
+	if _, err = io.ReadFull(file, header[:]); err != nil || regularnativefile.Verify(file, initial, fileOptions) != nil {
+		return false
+	}
+	magic := string(header[:])
+	return magic == "\x7fELF" || strings.HasPrefix(magic, "MZ") ||
+		magic == "\xcf\xfa\xed\xfe" || magic == "\xfe\xed\xfa\xcf" ||
+		magic == "\xce\xfa\xed\xfe" || magic == "\xfe\xed\xfa\xce" ||
+		magic == "\xca\xfe\xba\xbe" || magic == "\xbe\xba\xfe\xca" ||
+		magic == "\xca\xfe\xba\xbf" || magic == "\xbf\xba\xfe\xca"
+}
+
 func buildPlan(o Options, profile string) (transaction, error) {
 	meta, err := readObject(filepath.Join(profile, "configLibrary", "_meta.json"), map[string]any{"appliedId": "", "entries": []any{}})
 	if err != nil {

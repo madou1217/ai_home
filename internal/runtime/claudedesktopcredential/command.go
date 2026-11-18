@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"debug/buildinfo"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/regularnativefile"
 )
 
 const goCLIProgramPath = "github.com/madou1217/ai_home/cmd/aih"
@@ -20,6 +23,9 @@ type CommandOptions struct {
 	Platform     string
 	Arch         string
 	Env          map[string]string
+	// StrictRegularFiles opts in only the known legacy layout recognizer.
+	// The default resolver retains its existing behavior.
+	StrictRegularFiles bool
 }
 
 // ResolveExecutable inspects native Go build metadata and the command marker
@@ -46,6 +52,9 @@ func ResolveExecutable(options CommandOptions) (string, error) {
 	}
 	if platform != runtime.GOOS || arch != runtime.GOARCH {
 		return "", errors.New("desktop_credential_platform_unsupported")
+	}
+	if options.StrictRegularFiles {
+		return resolveStrictExecutable(options, platform, arch)
 	}
 	if explicit := strings.TrimSpace(options.ExplicitPath); explicit != "" {
 		if path := nativeCLI(explicit, platform, arch); path != "" {
@@ -98,19 +107,7 @@ func nativeCLI(candidate, platform, arch string) string {
 		return ""
 	}
 	build, err := buildinfo.ReadFile(resolved)
-	if err != nil || build.Path != goCLIProgramPath {
-		return ""
-	}
-	var goos, goarch string
-	for _, setting := range build.Settings {
-		switch setting.Key {
-		case "GOOS":
-			goos = setting.Value
-		case "GOARCH":
-			goarch = setting.Value
-		}
-	}
-	if goos != platform || goarch != arch || !containsCommand(resolved) {
+	if err != nil || !nativeBuildMatches(build, platform, arch) || !containsCommand(resolved) {
 		return ""
 	}
 	return resolved
@@ -124,11 +121,15 @@ func containsCommand(path string) bool {
 		return false
 	}
 	defer file.Close()
+	return containsCommandReader(file)
+}
+
+func containsCommandReader(reader io.Reader) bool {
 	marker := []byte(Command)
 	buffer := make([]byte, 64*1024+len(marker))
 	retained := 0
 	for {
-		read, err := file.Read(buffer[retained:])
+		read, err := reader.Read(buffer[retained:])
 		used := retained + read
 		if bytes.Contains(buffer[:used], marker) {
 			return true
@@ -142,4 +143,63 @@ func containsCommand(path string) bool {
 		}
 		copy(buffer, buffer[used-retained:used])
 	}
+}
+
+// nativeBuildMatches is shared by strict and compatibility inspection so the
+// canonical program/platform predicates stay identical across both paths.
+func nativeBuildMatches(build *buildinfo.BuildInfo, platform, arch string) bool {
+	if build == nil || build.Path != goCLIProgramPath {
+		return false
+	}
+	var goos, goarch string
+	for _, setting := range build.Settings {
+		switch setting.Key {
+		case "GOOS":
+			goos = setting.Value
+		case "GOARCH":
+			goarch = setting.Value
+		}
+	}
+	return goos == platform && goarch == arch
+}
+
+// The opt-in branch never searches another candidate or falls back on failure.
+// Build metadata and marker are read through independent readers of one handle.
+func resolveStrictExecutable(options CommandOptions, platform, arch string) (string, error) {
+	if !regularnativefile.Supported() {
+		return "", errors.New("desktop_credential_platform_unsupported")
+	}
+	invalid := func() (string, error) {
+		return "", errors.New("desktop_credential_helper_invalid")
+	}
+	explicit := strings.TrimSpace(options.ExplicitPath)
+	if !filepath.IsAbs(explicit) || filepath.Clean(explicit) != explicit || strings.ContainsRune(explicit, 0) {
+		return invalid()
+	}
+	resolved, err := filepath.EvalSymlinks(explicit)
+	if err != nil {
+		return invalid()
+	}
+	fileOptions := regularnativefile.Options{RequireExecutable: true}
+	file, err := regularnativefile.Open(resolved, fileOptions)
+	if err != nil {
+		return invalid()
+	}
+	defer file.Close()
+	initial, err := file.Stat()
+	if err != nil {
+		return invalid()
+	}
+	size := initial.Size()
+	build, err := buildinfo.Read(io.NewSectionReader(file, 0, size))
+	if err != nil || !nativeBuildMatches(build, platform, arch) {
+		return invalid()
+	}
+	if !containsCommandReader(io.NewSectionReader(file, 0, size)) {
+		return invalid()
+	}
+	if regularnativefile.Verify(file, initial, fileOptions) != nil {
+		return invalid()
+	}
+	return resolved, nil
 }

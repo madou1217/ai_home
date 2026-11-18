@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -107,8 +108,11 @@ func planClaudeDesktopAccountLaunch(ctx context.Context, request ClaudeDesktopAc
 	if ctx == nil || ctx.Err() != nil {
 		return fail("desktop_launch_cancelled")
 	}
-	if request.Intent != "account-api-launch" {
+	if request.Intent != "account-api-launch" && request.Intent != "account-web-launch" {
 		return fail("desktop_launch_intent_invalid")
+	}
+	if request.Intent == "account-web-launch" && (runtime.GOOS != "darwin" || resolvePlatform(opts) != platformMacOS) {
+		return fail("unsupported_platform")
 	}
 	root, profile, reason := claudeLaunchBinding(request)
 	if reason != "" {

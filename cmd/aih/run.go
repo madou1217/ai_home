@@ -104,7 +104,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__claude-desktop-detect" && len(arguments) == 1 {
 		return runClaudeDesktopDetect(ctx, runtime)
 	}
-	if providerID == "__claude-desktop-launch" && len(arguments) == 1 {
+	if providerID == "__claude-desktop-launch" {
+		if len(arguments) != 1 {
+			return errInvalidCommand
+		}
 		return runClaudeDesktopLaunch(ctx, runtime)
 	}
 	if providerID == "__claude-desktop-config" && len(arguments) == 1 {

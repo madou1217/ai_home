@@ -6,14 +6,24 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/madou1217/ai_home/internal/host/boundedinput"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 )
 
 func runClaudeDesktopLaunch(ctx context.Context, runtime commandRuntime) error {
-	raw, err := io.ReadAll(io.LimitReader(runtime.stdin, 64*1024+1))
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	raw, err := boundedinput.Read(ctx, runtime.stdin, 64*1024)
+	defer clear(raw)
 	invalid := errors.New("desktop_launch_request_invalid")
-	if err != nil || len(raw) > 64*1024 {
+	if err != nil {
 		return invalid
 	}
 	fields, err := exactClaudeLaunchObject(raw, "intent", "aiHomeDir", "hostHomeDir", "accountRef", "selectedRecord", "prepared", "planOnly")
@@ -29,10 +39,18 @@ func runClaudeDesktopLaunch(ctx context.Context, runtime commandRuntime) error {
 	var request apps.ClaudeDesktopAccountLaunchRequest
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&request) != nil {
+	if decoder.Decode(&request) != nil ||
+		(request.Intent != "account-api-launch" && request.Intent != "account-web-launch") {
 		return invalid
 	}
-	return json.NewEncoder(runtime.stdout).Encode(apps.LaunchClaudeDesktopAccount(ctx, request, apps.Options{}))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result := apps.LaunchClaudeDesktopAccount(ctx, request, apps.Options{})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return json.NewEncoder(runtime.stdout).Encode(result)
 }
 
 func exactClaudeLaunchObject(raw []byte, names ...string) (map[string]json.RawMessage, error) {

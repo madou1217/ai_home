@@ -165,7 +165,7 @@ func ListMessages(aiHomeDir string, state string, limit int) (ListResult, error)
 		}
 	}
 
-	// 与 Node store.listMessages 对齐：先按时间升序截断 limit 条，再反转为最新在上展示。
+	// 先按 (CreatedAt, ID) 升序排列，保留尾部最新的 limit 条消息，再反转为最新在前展示。
 	sort.SliceStable(records, func(i, j int) bool {
 		if records[i].CreatedAt != records[j].CreatedAt {
 			return records[i].CreatedAt < records[j].CreatedAt
@@ -173,7 +173,7 @@ func ListMessages(aiHomeDir string, state string, limit int) (ListResult, error)
 		return records[i].ID < records[j].ID
 	})
 	if len(records) > normalizedLimit {
-		records = records[:normalizedLimit]
+		records = records[len(records)-normalizedLimit:]
 	}
 
 	messages := make([]Message, len(records))

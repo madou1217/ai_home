@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
 // delegationMarker 标记"本次进程是被 Go 转交给 Node 的"。
@@ -85,7 +87,7 @@ func providerActionOwnedByGo(verb string) bool {
 	case "ls", "list", "export", "import", "version", "home", "sessions",
 		"policy", "terminal-icon", "terminal-icons", "usage", "login",
 		"delete", "deleteall", "delete-all", "set-default", "unset-default",
-		"auto-switch":
+		"auto-switch", "detect":
 		return true
 	default:
 		return false
@@ -137,6 +139,10 @@ func delegateToNode(args []string) bool {
 		return false
 	}
 	if len(args) >= 2 && launchProviders[args[0]] && providerActionOwnedByGo(args[1]) {
+		return false
+	}
+	if len(args) >= 3 && codebuddyfamilystorage.IsFamilyProvider(args[0]) && isDigits(args[1]) &&
+		(containsArgument(args[2:], "--restart-client") || containsArgument(args[2:], "--force-quit-client")) {
 		return false
 	}
 	if len(args) >= 2 && (args[0] == "server" || args[0] == "daemon") && serverActionOwnedByGo(args[1]) {

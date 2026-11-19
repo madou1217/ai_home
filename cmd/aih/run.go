@@ -239,6 +239,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) == 2 && (arguments[1] == "deleteall" || arguments[1] == "delete-all") {
 		return runProviderDelete(ctx, providerID, []string{"deleteall"}, runtime)
 	}
+	// 本机账号扫描对所有 Provider 是同一份数据面；Provider 名只用于输出上下文。
+	if len(arguments) >= 2 && arguments[1] == "detect" {
+		return runProviderDetect(ctx, providerID, arguments[2:], runtime)
+	}
 	if len(arguments) >= 2 && codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		switch arguments[1] {
 		case "detect":

@@ -112,8 +112,8 @@ func TestStartReturnsNodePendingShape(t *testing.T) {
 	}
 }
 
-// TestStartRejectsNodeOnlyFlows 锁死回落边界：Node 专有的策略/登录方式必须明确拒绝。
-func TestStartRejectsNodeOnlyFlows(t *testing.T) {
+// TestStartRejectsUnsupportedFlows 锁死回落边界：Node 专有的策略/登录方式必须明确拒绝。
+func TestStartRejectsUnsupportedFlows(t *testing.T) {
 	cases := []struct {
 		name string
 		body string
@@ -165,7 +165,7 @@ func TestStartAcceptsBuilderIDAlias(t *testing.T) {
 	}
 }
 
-// TestStartMapsUnsupportedProvider 锁死回落错误码：Node 只有看到这个码才回本地流程。
+// TestStartMapsUnsupportedProvider 锁死未支持 Provider 的错误码。
 func TestStartMapsUnsupportedProvider(t *testing.T) {
 	jobs := &fakeJobs{startErr: accountauth.ErrUnsupportedProvider}
 	response := doRequest(newTestHandler(t, jobs), http.MethodPost, Path,
@@ -324,7 +324,6 @@ func TestNewHandlerValidatesDependencies(t *testing.T) {
 		t.Fatalf("缺少 Jobs 必须失败关闭: %v", err)
 	}
 }
-
 
 type fakeLocalImporter struct {
 	calledJob      JobSnapshot

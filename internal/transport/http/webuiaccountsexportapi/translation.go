@@ -103,7 +103,7 @@ type exportedAccount struct {
 // decodeExportedAccounts 读取导出文档里的账号清单。
 //
 // 文档是刚由 Go 生成的（同一个请求内），解析失败只可能是内部契约漂移：
-// 此时不阻断导出，只是不发依赖它的附件名后缀与 node-only 计数。
+// 此时不阻断导出，只是不发依赖它的附件名后缀与兼容计数。
 func decodeExportedAccounts(document []byte) ([]exportedAccount, bool) {
 	var payload struct {
 		Accounts []exportedAccount `json:"accounts"`

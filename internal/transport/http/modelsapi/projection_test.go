@@ -39,7 +39,7 @@ func TestModelListUsesProjectedGlobalCatalogWhenAvailable(t *testing.T) {
 		Revision:   "rev-global",
 		Items: []modelcatalog.Item{
 			{
-				ID: "node-only", OwnedBy: "opencode",
+				ID: "extra-model", OwnedBy: "opencode",
 				InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"},
 				ReasoningEfforts: []inference.ReasoningEffort{inference.ReasoningEffortHigh},
 			},
@@ -75,7 +75,7 @@ func TestModelListUsesProjectedGlobalCatalogWhenAvailable(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body.Data) != 1 || body.Data[0].ID != "node-only" || body.Data[0].OwnedBy != "opencode" {
+	if len(body.Data) != 1 || body.Data[0].ID != "extra-model" || body.Data[0].OwnedBy != "opencode" {
 		t.Fatalf("projected data = %#v", body.Data)
 	}
 	if len(body.Data[0].Modalities.Input) != 2 || body.Data[0].Modalities.Input[1] != "image" {

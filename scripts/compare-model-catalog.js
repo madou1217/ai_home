@@ -5,16 +5,16 @@
 //
 // 背景：lib/generated/route-ownership.json 里 gateway.models.list 是最后一个
 // 仍然 node_owned 的数据面条目。它不能凭「Go 有目录」就划转——Go 的目录只含 Go 能
-// 路由的模型，Node 还可能列出 node-only Provider（当前只有 gemini）或自定义账号的
+// 路由的模型，Node 还可能列出 reference-only Provider（当前只有 gemini）或自定义账号的
 // 模型。划转前必须证明两边的差集是**已知且可接受**的。
 //
 // 用法：
 //   node scripts/compare-model-catalog.js \
 //     --node http://127.0.0.1:9527 --node-key <client key> \
 //     --go http://127.0.0.1:<go port> --go-key <client key> \
-//     [--allow-node-only gemini] [--json]
+//     [--allow-extra gemini] [--json]
 //
-// 退出码：0 = 差集全在允许前缀内（可划转）；2 = 存在未预期的 node-only 模型。
+// 退出码：0 = 差集全在允许前缀内（可划转）；2 = 存在未预期的 reference-only 模型。
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_REPORTED = 50;
@@ -41,7 +41,7 @@ function parseArgs(argv) {
       case '--go': options.go = next(); break;
       case '--node-key': options.nodeKey = next(); break;
       case '--go-key': options.goKey = next(); break;
-      case '--allow-node-only': options.allow.push(next()); break;
+      case '--allow-extra': options.allow.push(next()); break;
       case '--timeout-ms': options.timeoutMs = Number(next()) || DEFAULT_TIMEOUT_MS; break;
       case '--json': options.json = true; break;
       case '--help': options.help = true; break;
@@ -59,7 +59,7 @@ function usage() {
     '  --go <url>                Go Server 地址（必填）',
     '  --node-key <key>          Node 的 client key（也可用 AIH_SERVER_API_KEY）',
     '  --go-key <key>            Go 的 client key（缺省同 --node-key）',
-    '  --allow-node-only <前缀>  允许只出现在 Node 的模型前缀，可重复',
+    '  --allow-extra <前缀>  允许只出现在 Node 的模型前缀，可重复',
     '  --json                    输出机器可读结果',
     '  --timeout-ms <ms>         单次请求超时（默认 15000）'
   ].join('\n');
@@ -136,15 +136,15 @@ async function main() {
     return 1;
   }
 
-  const nodeOnly = difference(nodeIds, goIds);
+  const onlyInReference = difference(nodeIds, goIds);
   const goOnly = difference(goIds, nodeIds);
-  const unexpected = nodeOnly.filter((id) => !matchesAllowed(id, options.allow));
+  const unexpected = onlyInReference.filter((id) => !matchesAllowed(id, options.allow));
   const result = {
     nodeCount: nodeIds.size,
     goCount: goIds.size,
-    nodeOnly: nodeOnly.slice(0, MAX_REPORTED),
+    onlyInReference: onlyInReference.slice(0, MAX_REPORTED),
     goOnly: goOnly.slice(0, MAX_REPORTED),
-    unexpectedNodeOnly: unexpected.slice(0, MAX_REPORTED),
+    unexpectedOnlyInReference: unexpected.slice(0, MAX_REPORTED),
     allowedPrefixes: options.allow,
     verdict: unexpected.length === 0 ? 'catalog_can_move' : 'catalog_blocked'
   };
@@ -153,7 +153,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else {
     process.stdout.write(`Node ${result.nodeCount} 个模型 / Go ${result.goCount} 个模型\n`);
-    process.stdout.write(`仅 Node: ${result.nodeOnly.length ? result.nodeOnly.join(', ') : '（无）'}\n`);
+    process.stdout.write(`仅参考侧: ${result.onlyInReference.length ? result.onlyInReference.join(', ') : '（无）'}\n`);
     process.stdout.write(`仅 Go:   ${result.goOnly.length ? result.goOnly.join(', ') : '（无）'}\n`);
     if (result.allowedPrefixes.length) {
       process.stdout.write(`允许前缀: ${result.allowedPrefixes.join(', ')}\n`);

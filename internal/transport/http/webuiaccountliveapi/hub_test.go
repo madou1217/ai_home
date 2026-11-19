@@ -166,7 +166,7 @@ func TestRefreshBroadcastsAccountAddsChangesAndRemovals(t *testing.T) {
 	}
 }
 
-func TestEnrichRowsFillsNodeOnlyFields(t *testing.T) {
+func TestEnrichRowsFillsSupplementaryFields(t *testing.T) {
 	ref := testRef("a")
 	capturedAt := int64(1000)
 	row := testRow(ref, "codex", true)

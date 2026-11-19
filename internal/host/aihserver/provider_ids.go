@@ -8,8 +8,7 @@ import (
 
 // providerIDs 返回 Provider 目录里的全部 ID（归属解析的唯一真值源）。
 //
-// 该函数随 node-only provider 概念一起被误删，但成本计算、别名与模型规则仍
-// 依赖它；这里只保留目录读取，不再重新引入 nodeOnly 名单。
+// 成本计算、别名与模型规则依赖这份目录读取；只保留目录读取，不引入额外名单。
 func providerIDs(catalog *providers.Catalog) []string {
 	if catalog == nil {
 		return nil

@@ -185,7 +185,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && (arguments[1] == "terminal-icon" || arguments[1] == "terminal-icons") {
 		return runProviderTerminalIcon(ctx, providerID, arguments[2:], runtime)
 	}
-	// 删除投影已全量迁入 Go deletionprojection（Node 的 node-only 钩子表为空），
+	// 删除投影已全量迁入 Go deletionprojection（不再保留外部钩子表），
 	// 所有 Provider 的 delete/deleteall 都由 Go Server 承担。
 	if len(arguments) >= 2 && arguments[1] == "delete" {
 		return runProviderDelete(ctx, providerID, arguments[2:], runtime)

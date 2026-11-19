@@ -89,7 +89,7 @@ func TestPutReturnsGenerationAndRoutableIDs(t *testing.T) {
 		testRoutableModel(t, "codex", "gpt-6.1-sol"),
 	}}
 	handler, store := testHandler(t, true, routable)
-	payload := `{"revision":"rev-1","models":[{"id":"gpt-6.1-sol","owned_by":"openai","input_modalities":["text"],"output_modalities":["text"],"reasoning_efforts":["low"]},{"id":"node-only","owned_by":"opencode","input_modalities":["text","image"],"output_modalities":["text"],"reasoning_efforts":[]}]}`
+	payload := `{"revision":"rev-1","models":[{"id":"gpt-6.1-sol","owned_by":"openai","input_modalities":["text"],"output_modalities":["text"],"reasoning_efforts":["low"]},{"id":"extra-model","owned_by":"opencode","input_modalities":["text","image"],"output_modalities":["text"],"reasoning_efforts":[]}]}`
 	req := httptest.NewRequest(http.MethodPut, Path, strings.NewReader(payload))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
@@ -124,7 +124,7 @@ func TestGetReturnsProjectionAndRoutableIDs(t *testing.T) {
 	}}
 	handler, store := testHandler(t, true, routable)
 	if _, err := store.Replace("rev-get", []modelcatalog.Item{{
-		ID: "node-only", OwnedBy: "opencode", InputModalities: []string{"text"}, OutputModalities: []string{"text"},
+		ID: "extra-model", OwnedBy: "opencode", InputModalities: []string{"text"}, OutputModalities: []string{"text"},
 	}}); err != nil {
 		t.Fatalf("seed Replace() error = %v", err)
 	}
@@ -146,7 +146,7 @@ func TestGetReturnsProjectionAndRoutableIDs(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Data.Revision != "rev-get" || body.Data.AcceptedCount != 1 || len(body.Data.Models) != 1 || body.Data.Models[0].ID != "node-only" {
+	if body.Data.Revision != "rev-get" || body.Data.AcceptedCount != 1 || len(body.Data.Models) != 1 || body.Data.Models[0].ID != "extra-model" {
 		t.Fatalf("projection view = %#v", body.Data)
 	}
 	if len(body.Data.RoutableModelIDs) != 1 || body.Data.RoutableModelIDs[0] != "gpt-6.1-sol" {

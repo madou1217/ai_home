@@ -135,7 +135,7 @@ func TestExportUnknownAccountRefReturnsNotFound(t *testing.T) {
 func TestExportNodeRefForMissingGoAccountReturnsNotFound(t *testing.T) {
 	fixture := newFixture(t, 1)
 	catalog := mustCatalog(t)
-	missing, _ := mustCodexAccount(t, catalog, "sk-node-only", 42)
+	missing, _ := mustCodexAccount(t, catalog, "sk-extra", 42)
 	handler := newTestHandlerWithResolver(t, fixture, mustSyncResolver(t, map[string]string{
 		"node-ref-missing": missing.Ref().String(),
 	}))

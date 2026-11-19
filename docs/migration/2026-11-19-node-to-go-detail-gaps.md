@@ -103,6 +103,8 @@
 - Skill CLI：`aih skill list|doctor|install|enable|disable|remove` 由 Go
   `nativeresources` 服务执行；list/doctor JSON 与旧输出一致（Go 不保留显式
   `removed:false` 存储标记，语义相同）。
+- MCP CLI：`aih mcp list|add|test|tools|call|enable|disable|remove|doctor`
+  由 Go `nativeresources` 服务执行；list/doctor JSON 与旧输出逐字段一致。
 - 远端节点交互端点（device-node-session-start/input/stream、
   device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
   但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
@@ -118,8 +120,8 @@
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
 - 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop/Agent/Claim/Edge/
-  Skill 命令已是 Go；`cmd/aih` 仍有 Provider `restart-client`（及非 family
-  `detect`），以及顶层 ssh/shell/harness/mcp/native plugin/update/backup
+  Skill/MCP 命令已是 Go；`cmd/aih` 仍有 Provider `restart-client`（及非 family
+  `detect`），以及顶层 ssh/shell/harness/native plugin/update/backup
   走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
 
 ---

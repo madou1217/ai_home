@@ -32,7 +32,8 @@ func newFixture(t *testing.T, envJSON string, envUpdatedAt int64) *fixture {
 	t.Cleanup(func() { _ = db.Close() })
 	for _, statement := range []string{
 		"CREATE TABLE account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-		"CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		// 规则写入口按兼容投影读 compat_account_credentials（Node 旧表）。
+		"CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("create table: %v", err)
@@ -43,10 +44,10 @@ func newFixture(t *testing.T, envJSON string, envUpdatedAt int64) *fixture {
 	}
 	nativeAuth := string(mustJSON(t, map[string]any{"token": "native"}))
 	if _, err := db.Exec(
-		"INSERT INTO account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
 		testRef, envJSON, nativeAuth, envUpdatedAt, 1700000000111, 1700000000222,
 	); err != nil {
-		t.Fatalf("insert account_credentials: %v", err)
+		t.Fatalf("insert compat_account_credentials: %v", err)
 	}
 	store, err := Open(context.Background(), path)
 	if err != nil {
@@ -68,7 +69,7 @@ func mustJSON(t *testing.T, value any) []byte {
 func (f *fixture) storedEnv(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 	var raw string
-	if err := f.db.QueryRow("SELECT env_json FROM account_credentials WHERE account_ref = ?", testRef).Scan(&raw); err != nil {
+	if err := f.db.QueryRow("SELECT env_json FROM compat_account_credentials WHERE account_ref = ?", testRef).Scan(&raw); err != nil {
 		t.Fatalf("read env_json: %v", err)
 	}
 	env := map[string]json.RawMessage{}
@@ -81,7 +82,7 @@ func (f *fixture) storedEnv(t *testing.T) map[string]json.RawMessage {
 func (f *fixture) rowTimestamps(t *testing.T) (envUpdatedAt int64, nativeAuthUpdatedAt int64, updatedAt int64, nativeAuth string) {
 	t.Helper()
 	if err := f.db.QueryRow(
-		"SELECT env_updated_at, native_auth_updated_at, updated_at, native_auth_json FROM account_credentials WHERE account_ref = ?",
+		"SELECT env_updated_at, native_auth_updated_at, updated_at, native_auth_json FROM compat_account_credentials WHERE account_ref = ?",
 		testRef,
 	).Scan(&envUpdatedAt, &nativeAuthUpdatedAt, &updatedAt, &nativeAuth); err != nil {
 		t.Fatalf("read timestamps: %v", err)

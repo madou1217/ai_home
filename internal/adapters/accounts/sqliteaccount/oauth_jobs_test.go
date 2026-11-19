@@ -30,6 +30,51 @@ func openOAuthJobStoreAt(t *testing.T, aiHomeDir string) *Store {
 	return store
 }
 
+// dropHostDefaultOwnership 把 v31 引入的宿主默认归属收据回退掉。
+//
+// v31 的 CREATE TABLE / CREATE TRIGGER 不是幂等的；夹具要代表真正的 v31 之前的
+// 结构，否则前向迁移重放时会撞上「表/触发器已存在」。
+func dropHostDefaultOwnership(t *testing.T, store *Store) {
+	t.Helper()
+	for _, trigger := range []string{
+		"guard_owned_default_insert",
+		"guard_owned_default_update",
+		"guard_owned_default_delete",
+		"release_deleted_default_owner",
+	} {
+		if _, err := store.db.ExecContext(
+			context.Background(),
+			"DROP TRIGGER IF EXISTS "+trigger,
+		); err != nil {
+			t.Fatalf("drop trigger %s error = %v", trigger, err)
+		}
+	}
+	if _, err := store.db.ExecContext(
+		context.Background(),
+		"DROP TABLE IF EXISTS account_default_ownership",
+	); err != nil {
+		t.Fatalf("drop account_default_ownership error = %v", err)
+	}
+}
+
+// dropUsageLedgerQuotaBucket 回退 v33-v35 的档位列、覆盖索引与日汇总触发器/表。
+//
+// 这些对象晚于 v26；不先删掉 quota_bucket，重放 v26 时 source_key 会追加到它
+// 后面，虽然版本能升级成功，但列顺序与当前 schema 不一致导致结构校验失败。
+func dropUsageLedgerQuotaBucket(t *testing.T, store *Store) {
+	t.Helper()
+	for _, statement := range []string{
+		"DROP TRIGGER IF EXISTS usage_ledger_daily_after_insert",
+		"DROP INDEX IF EXISTS idx_usage_ledger_quota_bucket_cover",
+		"DROP TABLE IF EXISTS usage_ledger_daily",
+		"ALTER TABLE usage_ledger DROP COLUMN quota_bucket",
+	} {
+		if _, err := store.db.ExecContext(context.Background(), statement); err != nil {
+			t.Fatalf("%s error = %v", statement, err)
+		}
+	}
+}
+
 func newOAuthJobRecord(
 	id string,
 	status accountauth.Status,
@@ -492,6 +537,9 @@ func TestOAuthJobsForwardMigrationFromV16(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, "ALTER TABLE usage_ledger DROP COLUMN source_key"); err != nil {
 		t.Fatalf("drop usage_ledger.source_key error = %v", err)
 	}
+	// v33-v35 的档位对象也晚于 v16；回退后 v26 才能把 source_key 放回正确位置。
+	dropUsageLedgerQuotaBucket(t, store)
+	dropHostDefaultOwnership(t, store)
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 16"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)
 	}
@@ -545,6 +593,8 @@ func TestOAuthJobsTerminalColumnsForwardMigrationFromV28(t *testing.T) {
 			t.Fatalf("drop oauth_jobs.%s error = %v", column, err)
 		}
 	}
+	// v31 的默认归属收据表/触发器同样晚于 v28，重放前必须回退。
+	dropHostDefaultOwnership(t, store)
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 28"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)
 	}

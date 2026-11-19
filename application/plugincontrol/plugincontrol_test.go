@@ -319,9 +319,10 @@ func TestInstallPreservesUnmodeledStateFields(t *testing.T) {
 
 func assertStatePreserved(t *testing.T, home string, legacyRecord string, legacyInstance string, legacyGeneration string, activeGeneration float64) {
 	t.Helper()
-	database, err := sql.Open("sqlite", filepath.Join(home, "app-state.db"))
+	// 唯一业务库已收敛为 aih.db；旧的 app-state.db 名不再有写入方。
+	database, err := sql.Open("sqlite", filepath.Join(home, pluginstatestore.DatabaseFileName))
 	if err != nil {
-		t.Fatalf("打开 app-state.db 失败: %v", err)
+		t.Fatalf("打开 %s 失败: %v", pluginstatestore.DatabaseFileName, err)
 	}
 	defer func() { _ = database.Close() }()
 	var encoded string

@@ -80,7 +80,8 @@ func TestReadNodeAccountLinks(t *testing.T) {
 func TestReadNodeCLIAliasesWithLinks(t *testing.T) {
 	ctx := context.Background()
 	aiHomeDir := t.TempDir()
-	dbPath := filepath.Join(aiHomeDir, "app-state.db")
+	// appstate.DatabasePath 现在指向唯一的 aih.db；旧夹具的 app-state.db 已无读取方。
+	dbPath := filepath.Join(aiHomeDir, "aih.db")
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {

@@ -185,6 +185,10 @@ func TestAccountModelProbesForwardMigrationFromV20(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, "ALTER TABLE usage_ledger DROP COLUMN source_key"); err != nil {
 		t.Fatalf("drop usage_ledger.source_key error = %v", err)
 	}
+	// v33-v35 的档位对象也晚于 v20；回退后 v26 才能把 source_key 放回正确位置。
+	dropUsageLedgerQuotaBucket(t, store)
+	// v31 的默认归属收据表/触发器同样晚于 v20，重放前必须回退。
+	dropHostDefaultOwnership(t, store)
 	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 20"); err != nil {
 		t.Fatalf("rewind user_version error = %v", err)
 	}

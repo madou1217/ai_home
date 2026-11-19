@@ -93,8 +93,9 @@ func TestUsageDocumentRejectsOlderCapture(t *testing.T) {
 	if err := store.ReplaceUsageDocument(ctx, newUsageDocument(t, accountRef, 2000, `{"capturedAt":2000,"marker":"new"}`)); err != nil {
 		t.Fatalf("ReplaceUsageDocument() error = %v", err)
 	}
-	if err := store.ReplaceUsageDocument(ctx, newUsageDocument(t, accountRef, 1000, `{"capturedAt":1000,"marker":"old"}`)); err != nil {
-		t.Fatalf("stale ReplaceUsageDocument() error = %v", err)
+	// 观察代次只进不退：旧文档必须被显式拒绝，而不是静默成功或覆盖新文档。
+	if err := store.ReplaceUsageDocument(ctx, newUsageDocument(t, accountRef, 1000, `{"capturedAt":1000,"marker":"old"}`)); !errors.Is(err, usageapp.ErrSnapshotSuperseded) {
+		t.Fatalf("stale ReplaceUsageDocument() error = %v, want ErrSnapshotSuperseded", err)
 	}
 	documents, err := store.ListUsageDocuments(ctx, usageapp.DocumentQuery{})
 	if err != nil {

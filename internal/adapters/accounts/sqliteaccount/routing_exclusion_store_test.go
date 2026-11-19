@@ -9,6 +9,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -31,13 +32,16 @@ func openRoutingExclusionStore(
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	var refs [2]accountcore.AccountRef
-	for index, text := range []string{
-		"acct_0123456789abcdef0123",
-		"acct_ffffffffffffffffffff",
-	} {
-		ref, parseErr := accountcore.ParseAccountRef(text)
-		if parseErr != nil {
-			t.Fatalf("ParseAccountRef(%q) error = %v", text, parseErr)
+	// 路由候选只接纳有凭据的账号（无凭据既不是「可服务」也不是「被排除」），
+	// 所以夹具必须走注册事务把账号和凭据一起写入。
+	for index, apiKey := range []string{"sk-routing-one", "sk-routing-two"} {
+		credential, credentialErr := codex.NewAPIKeyAuth(codex.APIKeyInput{APIKey: apiKey})
+		if credentialErr != nil {
+			t.Fatalf("NewAPIKeyAuth() error = %v", credentialErr)
+		}
+		ref, deriveErr := accountcore.DeriveAccountRef(credential)
+		if deriveErr != nil {
+			t.Fatalf("DeriveAccountRef() error = %v", deriveErr)
 		}
 		alias, aliasErr := accountcore.NewCLIAccountID(int64(index + 1))
 		if aliasErr != nil {
@@ -50,8 +54,16 @@ func openRoutingExclusionStore(
 		if restoreErr != nil {
 			t.Fatalf("RestoreAccount() error = %v", restoreErr)
 		}
-		if createErr := store.Create(ctx, account); createErr != nil {
-			t.Fatalf("Create() error = %v", createErr)
+		registration, registrationErr := accountapp.NewRegistration(
+			account,
+			credential,
+			time.UnixMilli(100).UTC(),
+		)
+		if registrationErr != nil {
+			t.Fatalf("NewRegistration() error = %v", registrationErr)
+		}
+		if registerErr := store.Register(ctx, registration); registerErr != nil {
+			t.Fatalf("Register() error = %v", registerErr)
 		}
 		refs[index] = ref
 	}
@@ -225,7 +237,8 @@ func TestSetRoutingExclusionRejectsUnknownAccount(t *testing.T) {
 	}
 }
 
-// 表缺失时读排除必须是空集合而不是错误：账号视图读不出来比少一条排除更糟。
+// 表缺失时读排除必须报错：静默当空集合会把已排除账号重新放回目录，
+// 目录消费者需要知道事实不可读，而不是收到一份看似完整的空结果。
 func TestLoadRoutingExclusionsWithoutTable(t *testing.T) {
 	ctx := context.Background()
 	store, _, _, refs := openRoutingExclusionStore(t)
@@ -236,10 +249,7 @@ func TestLoadRoutingExclusionsWithoutTable(t *testing.T) {
 		t.Fatalf("DROP TABLE error = %v", err)
 	}
 	exclusions, err := store.LoadRoutingExclusions(ctx)
-	if err != nil {
-		t.Fatalf("LoadRoutingExclusions() error = %v", err)
-	}
-	if len(exclusions) != 0 {
-		t.Fatalf("缺表时排除集合 = %+v, want 空", exclusions)
+	if err == nil {
+		t.Fatalf("缺表时 LoadRoutingExclusions() = %+v, want error", exclusions)
 	}
 }

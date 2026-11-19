@@ -65,7 +65,7 @@ func createTestAppStateDB(t *testing.T, aiHomeDir string) *sql.DB {
 			account_ref TEXT PRIMARY KEY,
 			provider TEXT NOT NULL
 		);
-		CREATE TABLE IF NOT EXISTS account_credentials (
+		CREATE TABLE IF NOT EXISTS compat_account_credentials (
 			account_ref TEXT PRIMARY KEY,
 			env_json TEXT NOT NULL DEFAULT '{}',
 			native_auth_json TEXT NOT NULL DEFAULT '{}',
@@ -140,7 +140,7 @@ func TestCredentialAccountLister_MergesAihAndAppStateDBs(t *testing.T) {
 		if _, err := appDB.Exec(`INSERT INTO account_refs (account_ref, provider) VALUES (?, ?)`, row.ref, row.prov); err != nil {
 			t.Fatalf("insert app ref: %v", err)
 		}
-		if _, err := appDB.Exec(`INSERT INTO account_credentials (account_ref, env_json, native_auth_json) VALUES (?, ?, ?)`, row.ref, row.envJSON, row.nativeJSON); err != nil {
+		if _, err := appDB.Exec(`INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json) VALUES (?, ?, ?)`, row.ref, row.envJSON, row.nativeJSON); err != nil {
 			t.Fatalf("insert app cred: %v", err)
 		}
 	}
@@ -173,7 +173,7 @@ func TestLoadAccountRecord_MergesAndMapsFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := appDB.Exec(`
-		INSERT INTO account_credentials (account_ref, env_json, native_auth_json, native_auth_updated_at)
+		INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json, native_auth_updated_at)
 		VALUES (?, '{"CUSTOM_ENV":"from-app"}', '{"zcodejwttoken":"stale-jwt"}', 100)
 	`, refNewerAih); err != nil {
 		t.Fatal(err)

@@ -5,6 +5,7 @@ import (
 
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsyncapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
@@ -40,9 +41,11 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		return nil, fmt.Errorf("创建 WebUI 上游错误映射组接口失败: %w", err)
 	}
 
+	pricingResolver, _ := pricingresolver.Default()
 	modelsSyncHandler, err := webuimodelsyncapi.NewHandler(webuimodelsyncapi.Dependencies{
 		Authorizer:     dependencies.Authorizer,
 		Store:          dependencies.Store,
+		Resolver:       pricingResolver,
 		AIHomeDir:      dependencies.AIHomeDir,
 		Catalog:        dependencies.Catalog,
 		Modalities:     dependencies.ModelModalities,

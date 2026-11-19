@@ -34,6 +34,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -197,6 +198,7 @@ func (dir AccountRefMapDir) LoadTable(ctx context.Context) (accountrefmap.Table,
 type Dependencies struct {
 	Authorizer     Authorizer
 	Store          Store
+	Resolver       modelpricing.Resolver
 	AIHomeDir      string
 	Settings       SettingsStore
 	Snapshot       SnapshotReader
@@ -216,6 +218,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer     Authorizer
 	store          Store
+	resolver       modelpricing.Resolver
 	settings       SettingsStore
 	snapshot       SnapshotReader
 	refMapper      AccountRefMapper
@@ -300,6 +303,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	handler := &Handler{
 		authorizer:     dependencies.Authorizer,
 		store:          dependencies.Store,
+		resolver:       dependencies.Resolver,
 		settings:       settings,
 		snapshot:       snapshot,
 		refMapper:      refMapper,

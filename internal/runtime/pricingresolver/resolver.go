@@ -7,10 +7,34 @@ package pricingresolver
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/contracts/modelpricing"
+	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 )
+
+var (
+	defaultOnce     sync.Once
+	defaultResolver *Resolver
+	defaultErr      error
+)
+
+// Default 返回进程共享的 Resolver：models.dev 内置来源只加载一次。
+func Default() (*Resolver, error) {
+	defaultOnce.Do(func() {
+		adapter, err := modelsdevpricing.New()
+		if err != nil {
+			defaultErr = err
+			return
+		}
+		defaultResolver = New(
+			[]modelpricing.QuoteSource{adapter.QuoteSource()},
+			[]modelpricing.MetadataSource{adapter.MetadataSource()},
+		)
+	})
+	return defaultResolver, defaultErr
+}
 
 // Resolver 是 modelpricing.Resolver 的默认实现。
 type Resolver struct {

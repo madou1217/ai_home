@@ -334,7 +334,7 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		}
 		data = append(data, item)
 		if _, exists := metadataMap[entry.id]; !exists {
-			if meta := modelsdevadapter.ResolveMetadataMap(entry.provider, entry.id, now); meta != nil {
+			if meta := handler.resolveMetadataMap(ctx, entry.provider, entry.id, now); meta != nil {
 				metadataMap[entry.id] = meta
 			}
 		}
@@ -365,10 +365,7 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		if entry.provider != "" {
 			providersField = []string{entry.provider}
 		}
-		meta := modelsdevadapter.ResolveMetadataMap(entry.provider, entry.id, now)
-		if meta == nil {
-			meta = modelsdevadapter.BuildUnknownMetadataMap(entry.id, now)
-		}
+		meta := handler.resolveMetadataMap(ctx, entry.provider, entry.id, now)
 		// 元数据按 model id 去重放在顶层 metadata；账号行不再重复携带同一份成本/能力表。
 		if _, exists := metadataMap[entry.id]; !exists {
 			metadataMap[entry.id] = meta

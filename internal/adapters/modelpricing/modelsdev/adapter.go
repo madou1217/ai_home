@@ -217,6 +217,7 @@ func metadataFromMap(raw map[string]any, fallback modelpricing.Source) modelpric
 		Limit:                 limitFromMap(raw["limits"]),
 		Modalities:            modalitiesFromMap(raw["modalities"]),
 		ReasoningEfforts:      stringSlice(raw["reasoningEfforts"]),
+		Interleaved:           interleavedFromMap(raw["interleaved"]),
 		Cost:                  costFromMap(raw["cost"]),
 	}
 	if metadata.MetadataStatus == "" {
@@ -267,6 +268,7 @@ func sourceFromMap(value any, fallback modelpricing.Source) modelpricing.Source 
 		Authority:  intValue(raw["authority"]),
 		Confidence: floatValue(raw["confidence"]),
 		URL:        textValue(raw["url"]),
+		Path:       textValue(raw["path"]),
 		License:    textValue(raw["license"]),
 		Stale:      boolValue(raw["stale"]),
 	}
@@ -314,6 +316,26 @@ func capabilitiesFromMap(value any) modelpricing.Capabilities {
 	if v, ok := raw["openWeights"].(bool); ok {
 		capabilities.OpenWeights = &v
 	}
+	if v, ok := raw["structuredOutput"].(bool); ok {
+		capabilities.StructuredOutput = &v
+	}
+	if items, ok := raw["reasoningOptions"].([]any); ok {
+		for _, item := range items {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			option := modelpricing.ReasoningOption{
+				Type:   textValue(entry["type"]),
+				Values: stringSlice(entry["values"]),
+				Min:    numberPtr(entry["min"]),
+				Max:    numberPtr(entry["max"]),
+			}
+			if option.Type != "" {
+				capabilities.ReasoningOptions = append(capabilities.ReasoningOptions, option)
+			}
+		}
+	}
 	return capabilities
 }
 
@@ -324,7 +346,19 @@ func limitFromMap(value any) modelpricing.Limit {
 		// models.dev 的 limits 使用 output 作为输出上限。
 		maxOutput = intValue(raw["output"])
 	}
-	return modelpricing.Limit{Context: int64(intValue(raw["context"])), MaxOutput: int64(maxOutput)}
+	return modelpricing.Limit{Context: int64(intValue(raw["context"])), Input: int64(intValue(raw["input"])), MaxOutput: int64(maxOutput)}
+}
+
+func interleavedFromMap(value any) *modelpricing.Interleaved {
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	field := textValue(raw["field"])
+	if field == "" {
+		return nil
+	}
+	return &modelpricing.Interleaved{Field: field}
 }
 
 func modalitiesFromMap(value any) modelpricing.Modalities {

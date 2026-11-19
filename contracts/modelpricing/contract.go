@@ -88,6 +88,7 @@ type Source struct {
 	Authority  int        `json:"authority,omitempty"`
 	Confidence float64    `json:"confidence,omitempty"`
 	URL        string     `json:"url,omitempty"`
+	Path       string     `json:"path,omitempty"`
 	License    string     `json:"license,omitempty"`
 	FetchedAt  *time.Time `json:"fetchedAt,omitempty"`
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
@@ -197,27 +198,29 @@ const (
 
 // Metadata 是模型展示元数据。未知模型也必须显式返回 unknown，不能返回空对象。
 type Metadata struct {
-	ID                    string         `json:"id,omitempty"`
-	ProviderID            string         `json:"providerId,omitempty"`
-	BaseModel             string         `json:"baseModel,omitempty"`
-	MetadataSchemaVersion int            `json:"metadataSchemaVersion"`
-	MetadataStatus        MetadataStatus `json:"metadataStatus"`
-	MetadataSource        string         `json:"metadataSource,omitempty"`
-	MetadataAuthority     int            `json:"metadataAuthority,omitempty"`
-	MetadataFetchedAt     *time.Time     `json:"metadataFetchedAt,omitempty"`
-	MetadataStale         bool           `json:"metadataStale,omitempty"`
-	Source                Source         `json:"source"`
-	Name                  string         `json:"name,omitempty"`
-	Family                string         `json:"family,omitempty"`
-	ModelStatus           string         `json:"status,omitempty"`
-	Experimental          *bool          `json:"experimental,omitempty"`
-	Dates                 MetadataDates  `json:"dates,omitempty"`
-	Capabilities          Capabilities   `json:"capabilities,omitempty"`
-	Limit                 Limit          `json:"limit,omitempty"`
-	Modalities            Modalities     `json:"modalities,omitempty"`
-	ReasoningEfforts      []string       `json:"reasoningEfforts,omitempty"`
-	Cost                  Cost           `json:"cost,omitempty"`
-	Pricing               *Pricing       `json:"pricing,omitempty"`
+	ID                    string            `json:"id,omitempty"`
+	ProviderID            string            `json:"providerId,omitempty"`
+	BaseModel             string            `json:"baseModel,omitempty"`
+	MetadataSchemaVersion int               `json:"metadataSchemaVersion"`
+	MetadataStatus        MetadataStatus    `json:"metadataStatus"`
+	MetadataSource        string            `json:"metadataSource,omitempty"`
+	MetadataAuthority     int               `json:"metadataAuthority,omitempty"`
+	MetadataFetchedAt     *time.Time        `json:"metadataFetchedAt,omitempty"`
+	MetadataStale         bool              `json:"metadataStale,omitempty"`
+	Source                Source            `json:"source"`
+	Name                  string            `json:"name,omitempty"`
+	Family                string            `json:"family,omitempty"`
+	ModelStatus           string            `json:"status,omitempty"`
+	Experimental          *bool             `json:"experimental,omitempty"`
+	Dates                 MetadataDates     `json:"dates,omitempty"`
+	Capabilities          Capabilities      `json:"capabilities,omitempty"`
+	Limit                 Limit             `json:"limit,omitempty"`
+	Modalities            Modalities        `json:"modalities,omitempty"`
+	ReasoningEfforts      []string          `json:"reasoningEfforts,omitempty"`
+	ReasoningOptions      []ReasoningOption `json:"reasoningOptions,omitempty"`
+	Interleaved           *Interleaved      `json:"interleaved,omitempty"`
+	Cost                  Cost              `json:"cost,omitempty"`
+	Pricing               *Pricing          `json:"pricing,omitempty"`
 }
 
 // Pricing 是元数据里价格来源与新鲜度的摘要，供 UI 直接展示“价格来自哪、是否过期”。
@@ -238,15 +241,29 @@ type MetadataDates struct {
 }
 
 type Capabilities struct {
-	Attachment  *bool `json:"attachment,omitempty"`
-	Reasoning   *bool `json:"reasoning,omitempty"`
-	Temperature *bool `json:"temperature,omitempty"`
-	ToolCall    *bool `json:"toolCall,omitempty"`
-	OpenWeights *bool `json:"openWeights,omitempty"`
+	Attachment       *bool             `json:"attachment,omitempty"`
+	Reasoning        *bool             `json:"reasoning,omitempty"`
+	Temperature      *bool             `json:"temperature,omitempty"`
+	ToolCall         *bool             `json:"toolCall,omitempty"`
+	StructuredOutput *bool             `json:"structuredOutput,omitempty"`
+	OpenWeights      *bool             `json:"openWeights,omitempty"`
+	ReasoningOptions []ReasoningOption `json:"reasoningOptions,omitempty"`
+}
+
+type ReasoningOption struct {
+	Type   string   `json:"type"`
+	Values []string `json:"values,omitempty"`
+	Min    *float64 `json:"min,omitempty"`
+	Max    *float64 `json:"max,omitempty"`
+}
+
+type Interleaved struct {
+	Field string `json:"field"`
 }
 
 type Limit struct {
 	Context   int64 `json:"context,omitempty"`
+	Input     int64 `json:"input,omitempty"`
 	MaxOutput int64 `json:"maxOutput,omitempty"`
 }
 

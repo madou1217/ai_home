@@ -244,6 +244,7 @@ func (result StartResult) UserCode() string {
 
 // BeginOptions 描述发起 OAuth 流程时的可选子策略与上游登录提供方。
 type BeginOptions struct {
+	AuthMode      string
 	AuthStrategy  string
 	LoginProvider string
 }

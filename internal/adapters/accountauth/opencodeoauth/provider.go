@@ -100,6 +100,21 @@ func (*Provider) ProviderID() string {
 	return providerID
 }
 
+// BeginWithOptions 校验 OpenCode 的显式设备码策略；其它策略/身份提供方明确拒绝。
+func (provider *Provider) BeginWithOptions(
+	ctx context.Context,
+	options accountauth.BeginOptions,
+) (accountauth.OAuthFlow, error) {
+	if strings.TrimSpace(options.LoginProvider) != "" {
+		return nil, accountauth.ErrUnsupportedLoginProvider
+	}
+	strategy := strings.ToLower(strings.TrimSpace(options.AuthStrategy))
+	if strategy != "" && strategy != "opencode:device" {
+		return nil, accountauth.ErrUnsupportedAuthStrategy
+	}
+	return provider.Begin(ctx)
+}
+
 // Begin 申请设备码，并把 verification_uri_complete 作为授权地址交付。
 func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, error) {
 	if err := ctx.Err(); err != nil {

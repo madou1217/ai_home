@@ -25,10 +25,10 @@ import (
 
 const (
 	// socialClientID 是 Kiro CLI / Desktop Social 设备流公开客户端标识（与 Node 同常量）。
-	socialClientID = "820fd6d1-95c0-4ca4-bffb-3f01d32da842"
-	socialAuthPath = "/oauth/device/authorization"
-	socialPollPath = "/oauth/device/poll"
-	desktopRefresh = "/refreshToken"
+	socialClientID  = "820fd6d1-95c0-4ca4-bffb-3f01d32da842"
+	socialAuthPath  = "/oauth/device/authorization"
+	socialPollPath  = "/oauth/device/poll"
+	desktopRefresh  = "/refreshToken"
 	socialUserAgent = "Kiro-CLI"
 
 	credentialSocialTokenKey = "kirocli:social:token"
@@ -124,6 +124,9 @@ func (provider *LoginProvider) BeginWithOptions(
 		return nil, accountauth.ErrInvalidDependencies
 	}
 	strategy := strings.ToLower(strings.TrimSpace(options.AuthStrategy))
+	if strings.EqualFold(strings.TrimSpace(options.AuthMode), "oauth-refresh-token") {
+		strategy = "oauth-refresh-token"
+	}
 	switch strategy {
 	case "", "oauth-device", "builder-id", "social", "social-oauth-device", "oauth-refresh-token":
 	default:
@@ -744,7 +747,6 @@ func postSocialJSON(
 	}
 	return &httpResult{status: response.StatusCode, body: raw}, nil
 }
-
 
 var (
 	_ accountauth.OAuthFlow             = (*refreshTokenFlow)(nil)

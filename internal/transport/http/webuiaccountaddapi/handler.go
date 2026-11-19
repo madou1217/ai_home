@@ -271,11 +271,8 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		writeError(response, http.StatusBadRequest, "gemini_google_oauth_disabled", "Google 登录已关闭：Gemini Code Assist 个人版已停用，请改用 Gemini API Key 或 Antigravity。", nil)
 		return
 	}
-	strategy, loginProvider, errCode, errMessage := resolveStartOptions(provider, authMode, payload.AuthStrategy, payload.LoginProvider)
-	if errCode != "" {
-		writeError(response, http.StatusBadRequest, errCode, errMessage, nil)
-		return
-	}
+	strategy := strings.TrimSpace(payload.AuthStrategy)
+	loginProvider := strings.TrimSpace(payload.LoginProvider)
 
 	started, err := handler.jobs.Start(request.Context(), StartRequest{
 		ProviderID:            provider,
@@ -582,97 +579,6 @@ func deriveRedirectURI(authorizationURL string) string {
 		}
 	}
 	return ""
-}
-
-// normalizeLoginProvider 把「默认登录方式」的别名归一成空串。
-//
-// WebUI 对 kiro 的 Builder ID 发的是 builder-id；Go 的作业只描述协议（Builder ID =
-// 默认 OIDC），不记录这个展示值。认不出的值原样返回，交给调用方拒绝。
-func normalizeLoginProvider(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "builder-id", "builderid", "builder", "aws-builder-id", "awsbuilderid", "idc":
-		return ""
-	default:
-		return strings.TrimSpace(raw)
-	}
-}
-
-// resolveStartOptions 按 Provider 校验并归一 authStrategy / loginProvider。
-func resolveStartOptions(provider, authMode, rawStrategy, rawLoginProvider string) (string, string, string, string) {
-	strategy := strings.TrimSpace(rawStrategy)
-	lowerStrategy := strings.ToLower(strategy)
-	loginProvider := strings.TrimSpace(rawLoginProvider)
-
-	switch provider {
-	case "agy":
-		if strategy != "" && strategy != "aih-google-oauth" {
-			return "", "", "unsupported_auth_strategy", "Go 只承接直连 Google 登录策略"
-		}
-		if normalizeLoginProvider(loginProvider) != "" {
-			return "", "", "unsupported_login_provider", "Antigravity 不支持该登录提供方"
-		}
-		return strategy, "", "", ""
-	case "zcode":
-		switch lowerStrategy {
-		case "", "zai", "zai:custom-scheme", "zai:cli-flow", "zai:server-flow", "bigmodel", "bigmodel:custom-scheme", "bigmodel:cli-flow", "bigmodel:server-flow":
-		default:
-			return "", "", "unsupported_auth_strategy", "不支持的 ZCode 登录策略"
-		}
-		if normalizeLoginProvider(loginProvider) != "" {
-			return "", "", "unsupported_login_provider", "ZCode 不支持该登录提供方"
-		}
-		return lowerStrategy, "", "", ""
-	case "opencode":
-		if lowerStrategy != "" && lowerStrategy != "opencode:device" {
-			return "", "", "unsupported_auth_strategy", "不支持的 OpenCode 登录策略"
-		}
-		if normalizeLoginProvider(loginProvider) != "" {
-			return "", "", "unsupported_login_provider", "OpenCode 不支持该登录提供方"
-		}
-		return lowerStrategy, "", "", ""
-	case "kiro":
-		normLogin, isBuilderID, ok := normalizeKiroLoginProvider(loginProvider)
-		if !ok {
-			return "", "", "unsupported_login_provider", "不支持的 Kiro 登录提供方"
-		}
-		if authMode == "oauth-refresh-token" {
-			if lowerStrategy != "" && lowerStrategy != "oauth-refresh-token" {
-				return "", "", "unsupported_auth_strategy", "refresh_token 模式不支持自定义策略"
-			}
-			return "oauth-refresh-token", normLogin, "", ""
-		}
-		switch lowerStrategy {
-		case "", "oauth-device", "builder-id", "social", "social-oauth-device":
-		default:
-			return "", "", "unsupported_auth_strategy", "不支持的 Kiro 登录策略"
-		}
-		if isBuilderID && (lowerStrategy == "social" || lowerStrategy == "social-oauth-device") {
-			return "", "", "unsupported_login_provider", "social 登录需要选择 Google 或 GitHub"
-		}
-		return lowerStrategy, normLogin, "", ""
-	default:
-		if strategy != "" {
-			return "", "", "unsupported_auth_strategy", "Go 只承接默认 OAuth 策略"
-		}
-		if normalizeLoginProvider(loginProvider) != "" {
-			return "", "", "unsupported_login_provider", "Go 只承接默认登录方式"
-		}
-		return "", "", "", ""
-	}
-}
-
-func normalizeKiroLoginProvider(raw string) (normalized string, isBuilderID bool, ok bool) {
-	if normalizeLoginProvider(raw) == "" {
-		return "", true, true
-	}
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "google":
-		return "Google", false, true
-	case "github":
-		return "Github", false, true
-	default:
-		return "", false, false
-	}
 }
 
 // Millis 输出 Node 侧使用的毫秒时间戳；零值输出 0。

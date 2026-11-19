@@ -112,15 +112,13 @@ func TestStartReturnsNodePendingShape(t *testing.T) {
 	}
 }
 
-// TestStartRejectsUnsupportedFlows 锁死回落边界：Node 专有的策略/登录方式必须明确拒绝。
-func TestStartRejectsUnsupportedFlows(t *testing.T) {
+// TestStartRejectsDisabledProviderFlow 锁死产品策略拒绝，不负责 Provider 子策略校验。
+func TestStartRejectsDisabledProviderFlow(t *testing.T) {
 	cases := []struct {
 		name string
 		body string
 		code string
 	}{
-		{"strategy", "{\"provider\":\"agy\",\"authMode\":\"oauth-browser\",\"authStrategy\":\"native-cli\"}", "unsupported_auth_strategy"},
-		{"unknown-login-provider", "{\"provider\":\"kiro\",\"authMode\":\"oauth-device\",\"loginProvider\":\"okta\"}", "unsupported_login_provider"},
 		{"gemini-disabled", "{\"provider\":\"gemini\",\"authMode\":\"oauth-browser\"}", "gemini_google_oauth_disabled"},
 	}
 	for _, testCase := range cases {
@@ -355,8 +353,8 @@ func TestStartPassesKiroSocialZCodeStrategyAndRefreshToken(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("kiro social status = %d: %s", resp.Code, resp.Body.String())
 	}
-	if jobs.started.LoginProvider != "Google" {
-		t.Fatalf("LoginProvider = %q, want Google", jobs.started.LoginProvider)
+	if jobs.started.LoginProvider != "google" {
+		t.Fatalf("LoginProvider = %q, want raw google", jobs.started.LoginProvider)
 	}
 
 	// 2. ZCode bigmodel:cli-flow
@@ -394,8 +392,8 @@ func TestStartPassesKiroSocialZCodeStrategyAndRefreshToken(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("kiro rt status = %d: %s", resp.Code, resp.Body.String())
 	}
-	if rtJobs.started.AuthStrategy != "oauth-refresh-token" {
-		t.Fatalf("started AuthStrategy = %q", rtJobs.started.AuthStrategy)
+	if rtJobs.started.AuthMode != "oauth-refresh-token" {
+		t.Fatalf("started AuthMode = %q", rtJobs.started.AuthMode)
 	}
 }
 

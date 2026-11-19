@@ -170,14 +170,23 @@ func (service *Service) Start(
 		return StartResult{}, err
 	}
 	beginOptions := BeginOptions{
+		AuthMode:      strings.TrimSpace(request.AuthMode),
 		AuthStrategy:  strings.TrimSpace(request.AuthStrategy),
 		LoginProvider: strings.TrimSpace(request.LoginProvider),
 	}
 	var flow OAuthFlow
 	var err error
-	if optionProvider, ok := provider.(OAuthProviderWithOptions); ok &&
-		(beginOptions.AuthStrategy != "" || beginOptions.LoginProvider != "") {
-		flow, err = optionProvider.BeginWithOptions(ctx, beginOptions)
+	hasOptions := beginOptions.AuthMode != "" || beginOptions.AuthStrategy != "" || beginOptions.LoginProvider != ""
+	if optionProvider, ok := provider.(OAuthProviderWithOptions); ok {
+		if hasOptions {
+			flow, err = optionProvider.BeginWithOptions(ctx, beginOptions)
+		} else {
+			flow, err = provider.Begin(ctx)
+		}
+	} else if beginOptions.AuthStrategy != "" {
+		return StartResult{}, ErrUnsupportedAuthStrategy
+	} else if beginOptions.LoginProvider != "" {
+		return StartResult{}, ErrUnsupportedLoginProvider
 	} else {
 		flow, err = provider.Begin(ctx)
 	}

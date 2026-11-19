@@ -109,6 +109,21 @@ func newLoginProvider(options loginOptions) (*LoginProvider, error) {
 // ProviderID 返回规范 Antigravity Provider ID。
 func (*LoginProvider) ProviderID() string { return "agy" }
 
+// BeginWithOptions 校验 agy 的显式子策略；当前只支持默认 Google OAuth。
+func (provider *LoginProvider) BeginWithOptions(
+	ctx context.Context,
+	options accountauth.BeginOptions,
+) (accountauth.OAuthFlow, error) {
+	if strings.TrimSpace(options.LoginProvider) != "" {
+		return nil, accountauth.ErrUnsupportedLoginProvider
+	}
+	strategy := strings.ToLower(strings.TrimSpace(options.AuthStrategy))
+	if strategy != "" && strategy != "aih-google-oauth" {
+		return nil, accountauth.ErrUnsupportedAuthStrategy
+	}
+	return provider.Begin(ctx)
+}
+
 // Begin 生成 state 与 Google 授权地址；该流程不使用 PKCE（与 Node 生产路径一致）。
 func (provider *LoginProvider) Begin(ctx context.Context) (accountauth.OAuthFlow, error) {
 	if err := ctx.Err(); err != nil {

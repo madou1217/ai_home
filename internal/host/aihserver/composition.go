@@ -581,7 +581,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var egressManager *runtimeegress.Manager
 	var chatRuntimeService *chatruntime.Service
 	var chatPrewarmCloser io.Closer
+	var watchWSCloser io.Closer
 	defer func() {
+		if resultErr != nil && watchWSCloser != nil {
+			_ = watchWSCloser.Close()
+		}
 		if resultErr != nil && usage != nil {
 			_ = usage.Close()
 		}
@@ -1992,6 +1996,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
+	watchWSCloser = findWebUIWatchWSCloser(webuiRoutes)
 	// 运行时画像：内存/协程/GC 的唯一只读观测口。
 	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "GET " + runtimeDiagnosticsPath, Handler: runtimeDiagnosticsHandler{authorizer: authorizer}})
 	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "GET " + sessionDiagnosticsPath, Handler: sessionDiagnosticsHandler{authorizer: authorizer, aiHomeDir: aiHomeDir}})
@@ -2348,6 +2353,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if desktopTranslationService != nil {
 			closers = append([]io.Closer{desktopTranslationService}, closers...)
+		}
+		if watchWSCloser != nil {
+			closers = append([]io.Closer{watchWSCloser}, closers...)
 		}
 		if hooksRuntime != nil {
 			closers = append(closers, hooksRuntime)

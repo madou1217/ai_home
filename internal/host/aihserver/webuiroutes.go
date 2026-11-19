@@ -1158,6 +1158,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			Handler: accountQuotaStats,
 		})
 	}
+	watchWSRoutes, err := buildWebUIWatchWSRoutes(dependencies, routes)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, watchWSRoutes...)
 	return routes, nil
 }
 

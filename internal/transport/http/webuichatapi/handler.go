@@ -49,6 +49,11 @@ const (
 	statusUnprocessableEntity = http.StatusUnprocessableEntity
 )
 
+// AliasResolver 在账号征召前把请求模型改写成别名目标。
+type AliasResolver interface {
+	ResolveChatModel(ctx context.Context, model string) (string, bool)
+}
+
 // AccountSource 按模型产出候选账号（复用 relaycore 的征召端口）。
 type AccountSource = relaycore.AccountSource
 
@@ -86,6 +91,8 @@ type Dependencies struct {
 	//
 	// 生产接线挂 ManagementCollectionPath，测试与历史兼容路径用默认值。
 	PathPrefix string
+	// Aliases 可选：在账号征召前解析 relay/native 别名目标。
+	Aliases AliasResolver
 	// Accounts 按调度顺序提供候选账号（生产接线复用 relaycore.AccountSourceChain）。
 	Accounts AccountSource
 	// Credentials 读取目标账号的 Provider 归属与凭据。
@@ -119,6 +126,7 @@ type Handler struct {
 	authorizer        Authorizer
 	commandPath       string
 	accounts          AccountSource
+	aliases           AliasResolver
 	credentials       CredentialResolver
 	provider          relaycore.Provider
 	client            HTTPClient
@@ -183,6 +191,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer:        dependencies.Authorizer,
 		commandPath:       commandPath,
 		accounts:          dependencies.Accounts,
+		aliases:           dependencies.Aliases,
 		credentials:       dependencies.Credentials,
 		provider:          dependencies.Provider,
 		client:            dependencies.Client,
@@ -249,6 +258,11 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			statusUnprocessableEntity, "chat_turn_model_required", "本轮必须指定 model", nil,
 		))
 		return
+	}
+	if handler.aliases != nil {
+		if target, ok := handler.aliases.ResolveChatModel(request.Context(), command.Model); ok && target != "" {
+			command.Model = target
+		}
 	}
 	if len(command.AttachmentIDs) > 0 {
 		// 附件需要会话级附件仓库，本切片没有；明确拒绝好过悄悄丢掉用户上传的文件。

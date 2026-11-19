@@ -1989,6 +1989,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 切片就能服务，服务不了的账号在 Go 侧显式报错，而不是悄悄回落另一条推理路径。
 	webUIChatHandler, err := newWebUIChatHandler(webuichatapi.Dependencies{
 		Authorizer: authorizer,
+		Aliases:    newChatAliasResolver(inference.modelAliases, dependencies.store),
 		Accounts: relaycore.NewAccountSourceChain(
 			append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
 		),

@@ -5,9 +5,10 @@ package aihserver
 // 冲突来自这两个模式（Go 1.22 启动期会 panic）：
 //
 //	GET /v0/webui/accounts/activity/jobs/{jobId}
+//	GET /v0/webui/accounts/import/jobs/{jobId}
 //	GET /v0/webui/accounts/{provider}/{accountRef}/quota-reset-events
 //
-// 二者在第 2/3 段与末段上各有字面量，谁都不比谁更具体。浏览器契约要求两条
+// 它们在第 2/3 段与末段上各有字面量，谁都不比谁更具体。浏览器契约要求这些
 // 路径都保留，所以用 /v0/webui/accounts/ 子树做一次显式分发：只匹配已知形状，
 // 其余路径维持 404，不做任何兜底转发。
 
@@ -16,25 +17,28 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
 )
 
 const (
 	publicAccountsPrefix = "/v0/webui/accounts"
 	activityJobsPrefix   = publicAccountsPrefix + "/activity/jobs/"
+	importJobsPrefix     = publicAccountsPrefix + "/import/jobs/"
 	quotaResetSuffix     = "quota-reset-events"
 	resetHistorySuffix   = "reset-history"
 )
 
-// publicAccountsDispatcher 把账号活动任务与配额重置事件交给各自的处理器。
+// publicAccountsDispatcher 把账号活动任务、导入任务与配额重置事件交给各自的处理器。
 // 处理器的鉴权、方法与错误映射保持原样，分发器只负责路径改名。
 type publicAccountsDispatcher struct {
 	quotaReset http.Handler
 	activity   http.Handler
+	importJobs http.Handler
 }
 
-func newPublicAccountsDispatcher(quotaReset, activity http.Handler) http.Handler {
-	return publicAccountsDispatcher{quotaReset: quotaReset, activity: activity}
+func newPublicAccountsDispatcher(quotaReset, activity, importJobs http.Handler) http.Handler {
+	return publicAccountsDispatcher{quotaReset: quotaReset, activity: activity, importJobs: importJobs}
 }
 
 func (dispatcher publicAccountsDispatcher) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -44,6 +48,21 @@ func (dispatcher publicAccountsDispatcher) ServeHTTP(response http.ResponseWrite
 		return
 	}
 	path := request.URL.Path
+
+	// /v0/webui/accounts/import/jobs/{jobId} → account-import/jobs/{jobId}
+	// 浏览器在导入后按旧路径轮询作业；Go 的导入处理器本身挂在 account-import 前缀下，
+	// 这里只做一次路径改名，避免与 /accounts/{provider}/{accountRef}/... 的 ServeMux 歧义。
+	if jobID, ok := strings.CutPrefix(path, importJobsPrefix); ok {
+		if jobID != "" && !strings.Contains(jobID, "/") && dispatcher.importJobs != nil {
+			cloned := request.Clone(request.Context())
+			cloned.URL.Path = webuiaccountimportapi.Path + "/jobs/" + jobID
+			cloned.URL.RawPath = ""
+			dispatcher.importJobs.ServeHTTP(response, cloned)
+			return
+		}
+		handleRouteNotFound(response, request)
+		return
+	}
 
 	// /v0/webui/accounts/activity/jobs/{jobId} → account-activity/jobs/{jobId}
 	if jobID, ok := strings.CutPrefix(path, activityJobsPrefix); ok {

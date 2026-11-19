@@ -872,11 +872,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},
 		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},
 		{Pattern: "GET " + webuitoolsettingsapi.Path + "/{appId}/settings", Handler: toolSettings},
+		// 旧 Node 公开路径兼容：Go-only 部署下浏览器仍会请求 /v0/webui/toolkit/apps/*/settings。
+		// 与 tool-apps 是同一份能力，只做前缀重写，不复制处理器。
+		{Pattern: "GET /v0/webui/toolkit/apps/{appId}/settings", Handler: webuipublicalias.Rewrite("/v0/webui/toolkit/apps", webuitoolsettingsapi.Path, toolSettings), SkipPublicAlias: true},
+		{Pattern: "PUT /v0/webui/toolkit/apps/{appId}/settings", Handler: webuipublicalias.Rewrite("/v0/webui/toolkit/apps", webuitoolappsettingswriteapi.Path, toolAppSettings), SkipPublicAlias: true},
 		// 公开入口（quota-reset-events / reset-history）与 activity jobs 的模式
 		// 互不更具体，统一交给 publicAccountsDispatcher；这里关闭自动别名，
 		// 避免 ServeMux 启动期 panic。
 		{Pattern: "GET " + webuiquotaresetapi.Path + "/{provider}/{accountRef}/quota-reset-events", Handler: quotaReset, SkipPublicAlias: true},
-		{Pattern: "GET " + publicAccountsPrefix + "/", Handler: newPublicAccountsDispatcher(quotaReset, accountActivity)},
+		{Pattern: "GET " + publicAccountsPrefix + "/", Handler: newPublicAccountsDispatcher(quotaReset, accountActivity, accountImport)},
 		{Pattern: "GET " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		{Pattern: "POST " + webuialiaspoolapi.Path + "/{provider}/{accountRef}/alias-pool", Handler: aliasPool},
 		// 浏览器数据面：同一处理器 + 前缀重写。
@@ -905,6 +909,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshreverseapi.Path, Handler: sshReverseTunnels},
 		{Pattern: "GET " + webuisshreverseapi.WatchPath, Handler: sshReverseTunnels},
 		{Pattern: "POST " + webuisshreverseapi.ReconcilePath, Handler: sshReverseTunnels},
+		// 旧 Node 公开路径兼容：SSH 页仍在用 /v0/webui/ssh-connections/tunnels 与 .../watch。
+		// 与 canonical ssh/reverse-tunnels 是同一份能力，只做前缀重写。
+		{Pattern: "GET /v0/webui/ssh-connections/tunnels", Handler: webuipublicalias.Rewrite("/v0/webui/ssh-connections/tunnels", webuisshreverseapi.Path, sshReverseTunnels), SkipPublicAlias: true},
+		{Pattern: "GET /v0/webui/ssh-connections/tunnels/watch", Handler: webuipublicalias.Rewrite("/v0/webui/ssh-connections/tunnels/watch", webuisshreverseapi.WatchPath, sshReverseTunnels), SkipPublicAlias: true},
 		{Pattern: "POST " + webuisshreverseapi.Path + "/{connectionId}/reconnect", Handler: sshReverseTunnels},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},

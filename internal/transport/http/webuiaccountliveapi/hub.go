@@ -16,6 +16,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/core/usageledger"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 
@@ -686,6 +687,7 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 		return
 	}
 	now := hub.now()
+	thresholdPct := hub.usageThresholdPct(ctx)
 	states := hub.loadStates(ctx)
 	runtimeViews := hub.loadRuntimeViews()
 	for index := range rows {
@@ -715,6 +717,9 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 		// Go 亲自观察到的阻塞/最近成功优先于 Node 推进来的运行态文档。
 		if view, found := runtimeViews[ref]; found {
 			applyRuntimeView(row, view)
+			if models := runtimeModelViews(view.Models, now); len(models) > 0 {
+				row.RuntimeModels = models
+			}
 			if lastSuccess := unixMilli(view.LastSuccessAt); lastSuccess > lastUsed {
 				lastUsed = lastSuccess
 			}
@@ -727,6 +732,19 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 			runtime != "healthy" && runtime != "unknown" && !row.APIKeyMode {
 			row.SchedulableStatus = "blocked_by_runtime_status"
 			row.SchedulableReason = runtime
+		} else if !row.APIKeyMode && row.Enabled && row.RemainingPct != nil &&
+			*row.RemainingPct > 0 && *row.RemainingPct <= float64(100-thresholdPct) &&
+			!strings.EqualFold(strings.TrimSpace(row.QuotaStatus), "exhausted") {
+			row.SchedulableStatus = "blocked_by_policy"
+			if strings.EqualFold(row.Provider, "codex") {
+				if strings.EqualFold(row.PlanType, "free") {
+					row.SchedulableReason = "codex_free_plan_below_server_min_remaining"
+				} else {
+					row.SchedulableReason = "codex_usage_below_server_threshold"
+				}
+			} else {
+				row.SchedulableReason = "usage_below_server_threshold"
+			}
 		}
 		if lastUsed > 0 {
 			value := lastUsed
@@ -738,6 +756,61 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 		}
 	}
 	hub.enrichExtras(ctx, rows)
+}
+
+// runtimeModelViews 把 Go 运行态的模型级阻塞/冷却转成 Node 行的 runtimeModels。
+func runtimeModelViews(models []runtimeapp.ModelView, now time.Time) []any {
+	out := make([]any, 0, len(models))
+	for _, model := range models {
+		blocks := make([]string, 0, len(model.Blocks))
+		for _, block := range model.Blocks {
+			blocks = append(blocks, string(block))
+		}
+		until := int64(0)
+		if !model.CooldownUntil.IsZero() {
+			until = model.CooldownUntil.UnixMilli()
+		}
+		if len(blocks) == 0 && until <= now.UnixMilli() {
+			continue
+		}
+		out = append(out, map[string]any{
+			"model":         string(model.Model),
+			"blocks":        blocks,
+			"cooldownKind":  string(model.CooldownKind),
+			"cooldownUntil": until,
+		})
+	}
+	return out
+}
+
+// usageThresholdPct 读取 config:usage 的自动切换阈值；读不到时用 95（与 Node 默认一致）。
+func (hub *Hub) usageThresholdPct(ctx context.Context) int {
+	root := strings.TrimSpace(hub.aiHomeDir)
+	if root == "" {
+		return 95
+	}
+	dbPath, err := appstate.DatabasePath(root)
+	if err != nil {
+		return 95
+	}
+	raw, found, err := appstate.ReadKV(ctx, dbPath, "config:usage")
+	if err != nil || !found || strings.TrimSpace(raw) == "" {
+		return 95
+	}
+	var document struct {
+		ThresholdPct *int `json:"threshold_pct"`
+	}
+	if json.Unmarshal([]byte(raw), &document) != nil || document.ThresholdPct == nil {
+		return 95
+	}
+	value := *document.ThresholdPct
+	if value < 0 {
+		value = 0
+	}
+	if value > 100 {
+		value = 100
+	}
+	return value
 }
 
 func (hub *Hub) loadStates(ctx context.Context) map[string]runtimecore.AccountState {

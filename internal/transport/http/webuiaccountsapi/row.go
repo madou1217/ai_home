@@ -77,6 +77,8 @@ type Row struct {
 	RuntimeStatus string `json:"runtimeStatus,omitempty"`
 	RuntimeUntil  int64  `json:"runtimeUntil,omitempty"`
 	RuntimeReason string `json:"runtimeReason,omitempty"`
+	// RuntimeModels 是模型级阻塞/cooldown（只影响单个模型），由 live 运行态填充。
+	RuntimeModels []any `json:"runtimeModels,omitempty"`
 
 	// ModelCount 是 Go 的有效模型数（account_models 里 inherit+可用或 force_enable 的行）。
 	// Node 行没有这个键：它是本读模型给下一轮的附加事实，对拍时归为 extra。
@@ -163,6 +165,7 @@ var approxRowFields = []string{
 	// 用这里按账号静态事实算出的值，避免整列空串。
 	"schedulableStatus",
 	"schedulableReason",
+	"runtimeModels",
 }
 
 // unfilledRowFields 返回既不在 filled 也不在 approx 里的字段，即本切片的空占位。

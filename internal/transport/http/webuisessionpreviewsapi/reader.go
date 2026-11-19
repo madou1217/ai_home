@@ -69,8 +69,8 @@ type Preview struct {
 
 // Reader 是按会话读取「最后模型 + 最后消息预览」的端口。
 //
-// 它只做单会话定位与尾部读取，不做项目/会话列表扫描——列表事实仍由 Node 的
-// projects 快照提供，避免出现第二套扫描口径。
+// 它只做单会话定位与尾部读取，不做项目/会话列表扫描——列表事实由会话扫描与
+// aih.db 的 session_index 提供，避免出现第二套扫描口径。
 type Reader interface {
 	ReadPreview(ctx context.Context, request PreviewRequest) (Preview, error)
 }

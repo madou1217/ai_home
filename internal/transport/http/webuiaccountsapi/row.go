@@ -137,14 +137,15 @@ var filledRowFields = []string{
 	"vendor",
 }
 
-// approxRowFields 是 Go 也有值、但口径或时机由 Node 决定的字段：调用方优先用自己的值。
+// approxRowFields 是读模型也有值、但口径或采集时机可能变化的字段：调用方优先用 live 值。
 //
 // 两类来源：
-//  1. account_ui_state 是 Node 推上来的镜像（displayName / apiKeyMode / authMode /
-//     baseUrl / oauth_pending，以及由 subscription_kind 派生的 planType），Node 本地状态可能更新；
-//  2. Go 自己算的采集类标量（updatedAt / remainingPct / quotaStatus / quotaReason）
-//     会随后台采集变化，与 Node 行缓存存在正常的时机差；usageSnapshot 同理——
-//     它是某个采集时刻的文档，Node 缓存可能比这一份新。
+//  1. account_ui_state 是本地 UI 状态（displayName / apiKeyMode / authMode /
+//     baseUrl / oauth_pending，以及由 subscription_kind 派生的 planType），
+//     不同写入路径的更新时间可能不同；
+//  2. 采集类标量（updatedAt / remainingPct / quotaStatus / quotaReason）
+//     会随后台采集变化，与快照行存在正常的时机差；usageSnapshot 同理——
+//     它是某个采集时刻的文档，live 读模型可能比这一份新。
 var approxRowFields = []string{
 	"displayName",
 	// displayNames 由 Go 从 displayName / email / phone 派生；与 displayName 同源，
@@ -310,10 +311,10 @@ func resolveAccountStatus(up bool) string {
 	return "down"
 }
 
-// resolveSchedulableStatus 是 Go 独有账号的调度状态兜底。
+// resolveSchedulableStatus 是账号行的静态调度状态兜底。
 //
-// Node 存在账号行时仍由 Node 的完整派生（运行态/额度阈值/platform 策略）覆盖；
-// 这里只覆盖 Go 能静态确认的事实：未配置、停用、额度耗尽，其余按可调度。
+// live 读模型的完整派生（运行态/额度阈值/platform 策略）会覆盖这里的结果；
+// 本函数只覆盖能静态确认的事实：未配置、停用、额度耗尽，其余按可调度。
 func resolveSchedulableStatus(
 	configured bool,
 	enabled bool,

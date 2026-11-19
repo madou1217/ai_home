@@ -21,10 +21,11 @@ const (
 	maxCodexIndexEntries = 50000
 )
 
-// FileReader 是 Reader 的默认实现：读取宿主 HOME 下的 codex rollout JSONL。
+// FileReader 是 Reader 的默认实现：读取宿主 HOME 下的 codex rollout JSONL，
+// 其余已知 Provider 走 sessionread 的增量事件读取。
 //
-// 只承接 codex：其它 Provider 的增量事件在 Node 侧依赖各自的会话定位器
-// （SQLite / 账号投影），本包显式返回 ErrUnsupportedProvider，由 Node 继续处理。
+// provider 名单由 Provider 合同的 session_history 能力派生；不在合同内的 Provider
+// 返回 ErrUnsupportedProvider，由调用方给出明确错误，而不是回落第二套解析器。
 type FileReader struct {
 	// HostHomeDir 是宿主用户目录（.codex 在它下面）。
 	HostHomeDir string
@@ -106,9 +107,8 @@ func (reader *FileReader) clock() time.Time {
 
 // resolveCodexTranscript 在 ~/.codex/sessions 下按文件名里的会话 ID 定位 rollout 文件。
 //
-// 文件名形如 rollout-2026-11-04T20-31-00-<uuid>.jsonl。Node 先查 state DB，再递归
-// 匹配文件名；本切片只做递归匹配 + 短 TTL 索引（与 sessions/previews 同口径），
-// 找不到时返回 false，由 Node 代理回落到它自己的 state DB 解析。
+// 文件名形如 rollout-2026-11-04T20-31-00-<uuid>.jsonl。先查短 TTL 会话索引，再按
+// 文件名递归匹配；找不到返回 false，由调用方判定为缺失，不再回落第二套解析器。
 func (reader *FileReader) resolveCodexTranscript(sessionID string) (string, bool) {
 	if sessionID == "" {
 		return "", false

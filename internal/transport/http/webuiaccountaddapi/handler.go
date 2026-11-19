@@ -14,13 +14,13 @@
 // 本包只做鉴权、DTO 与稳定错误码。PKCE、state、授权码与 Token 都留在应用层内存里，
 // 传输层既不读取也不落库。
 //
-// 与 Node 的边界（刻意保留，不是未完成项）：
-//   - loopback 回调捕获：Node 监听 1455/54545 等本地端口，把完整回调原样转发到这里；
-//   - 本机登录态导入：来源解析与导入实现住在 Node 的 Provider 运行时（插件、宿主文件、
-//     身份探针），Go 的 OAuth Flow 无法转化这些来源，因此 local-import 明确返回 501；
-//     Node 桥接层只在「本机没有可用导入来源」时才把新作业交给 Go，本地作业仍由 Node 执行；
+// 与宿主运行时的边界：
+//   - loopback 回调捕获：浏览器授权重定向到 localhost:1455/54545 时，当前由 Node
+//     兼容入口监听并转发；纯 Go 部署可在前端手填回调地址（callbackUrl）完成同一作业。
+//   - 本机登录态导入：内置 <provider>-host-local 与插件 directImport 由 Go 直接完成；
+//     localImporter 未装配时才显式返回 501。
 //   - CLI 安装确认：Go 的 OAuth Flow 不依赖本地 CLI，install 对 Go 作业恒为
-//     install_not_required（与 Node 对不需要安装的作业给出的结论一致）。
+//     install_not_required（与不需要安装的作业给出的结论一致）。
 package webuiaccountaddapi
 
 import (
@@ -158,10 +158,9 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}, nil
 }
 
-// startRequest 是 Node 桥接层传来的新增作业输入。
+// startRequest 是新增作业的输入。
 //
-// 只接受 Go 能证明的字段：api-key / vertex / refresh-token / 自定义 authStrategy
-// 由 Node 执行，桥接层不会送进来；这里再拒绝一次，避免绕过桥接直接调用时被误解为成功。
+// 未支持的 authMode / authStrategy 由应用层显式返回稳定错误码（不会悄悄换流程）。
 type startRequest struct {
 	Provider              string `json:"provider"`
 	AuthMode              string `json:"authMode"`
@@ -187,8 +186,8 @@ type localImportRequest struct {
 
 // pendingResponse 是新增作业受理后的公开形状。
 //
-// 键名沿用 Node 的 buildPendingOauthResponse（camelCase），Node 可以只补 tracker 字段
-// 就交给前端；Go 没有的 Node 运行态字段（callbackCapture*）不出现在这里，由 Node 自己填。
+// 键名沿用历史 buildPendingOauthResponse（camelCase），前端无需改解析；
+// callbackCapture* 由宿主回调监听填充，未启用时不出现在响应里。
 type pendingResponse struct {
 	OK                bool   `json:"ok"`
 	Provider          string `json:"provider"`
@@ -624,7 +623,7 @@ func (handler *Handler) handleCancel(response http.ResponseWriter, request *http
 	writeCallbackError(response, err, nil)
 }
 
-// handleLocalImport 说明 Go 作业没有本机导入实现，由 Node 对本地作业执行。
+// handleLocalImport 从宿主本机登录态导入并去重注册账号；未装配导入端口时返回 501。
 func (handler *Handler) handleLocalImport(response http.ResponseWriter, request *http.Request, jobID string) {
 	if request.Method != http.MethodPost {
 		response.Header().Set("Allow", http.MethodPost)

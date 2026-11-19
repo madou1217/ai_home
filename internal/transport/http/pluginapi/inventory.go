@@ -13,17 +13,18 @@ import (
 //
 //	GET /v1/management/plugins
 //
-// 与 /v1/management/plugins/projection 并列：projection 收 Node 推送的存活代次，
+// 与 /v1/management/plugins/projection 并列：projection 收插件宿主推送的存活代次，
 // 本接口把「控制面期望状态」与「Go 已确认的投影」拼在一起返回。
 //
-// 插件安装与启停仍归 Node：状态在 app-state.db 的 app_kv 里，启用还要经过宿主
-// prepare 与 revision CAS。因此这里只有 GET；写请求返回 405 并显式标记只读边界。
+// 安装/启停写入口在 plugincontrolapi（/install、/uninstall、/state、
+// /instances/{id}/enable|disable），状态由 Go 写入 aih.db 的 app_kv 并经过宿主
+// prepare 与 revision CAS；本接口只是同一份事实的只读视图。
 const InventoryPath = "/v1/management/plugins"
 
-// InventorySource 标明清单里的控制面事实来自 Node 的 app-state.db。
-const InventorySource = "node-app-state"
+// InventorySource 标明清单里的控制面事实来自 Go 插件控制状态（aih.db app_kv）。
+const InventorySource = "go-plugin-control"
 
-// ControlStateReader 是读取 Node 插件控制状态的端口。
+// ControlStateReader 是读取插件控制状态的端口。
 type ControlStateReader interface {
 	ReadControlState(ctx context.Context) (pluginruntime.ControlState, error)
 }
@@ -57,11 +58,11 @@ func (handler *InventoryHandler) ServeHTTP(response http.ResponseWriter, request
 		return
 	}
 	if request.Method != http.MethodGet {
-		// 只读边界是刻意的：写入口必须留在 Node，否则控制面 revision 与
-		// 宿主实际代次会分叉。调用方看 Allow: GET 就知道该走哪条链路。
+		// 清单接口只读：写操作由同包的 /install、/uninstall、/state、
+		// /instances/{id}/enable|disable 路由承载，它们各自做 revision CAS。
 		response.Header().Set("Allow", http.MethodGet)
 		writeInventoryError(response, http.StatusMethodNotAllowed, "plugin_control_read_only",
-			"插件启停仍由 Node 控制面持有，Go 只提供只读清单")
+			"清单接口只读；安装/启停请使用 /v1/management/plugins 的写路由")
 		return
 	}
 	state, err := handler.reader.ReadControlState(request.Context())
@@ -87,9 +88,9 @@ func (handler *InventoryHandler) ServeHTTP(response http.ResponseWriter, request
 	})
 }
 
-// inventoryResponse 在 Node /v0/plugins 的列表字段外追加只读标记与来源。
+// inventoryResponse 在列表字段外追加只读标记与来源。
 //
-// 字段整体向后兼容：WebUI 现在读 revision/installed/instances，切到 Go 时无需改解析。
+// 字段整体向后兼容：WebUI 读 revision/installed/instances，不依赖来源字段。
 type inventoryResponse struct {
 	OK       bool   `json:"ok"`
 	ReadOnly bool   `json:"readOnly"`

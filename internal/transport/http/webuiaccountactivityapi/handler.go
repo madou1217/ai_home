@@ -13,9 +13,8 @@
 // 浏览器访问的 /v0/webui/accounts/activity/* 由 router 的公开别名直接重写到下面的管理地址。
 //
 // 任务状态、运行守卫（防抖 + 唯一）、探测/领取互斥、探测上限与上游调用的串行化都在
-// Go（见 internal/adapters/accountactivity）；本包只做管理鉴权、HTTP 形状与错误映射。
-// Provider handler 仍由 Node 执行（无痕验证码 / 设备指纹只有 Node 运行时具备），
-// 通过 Node 桥逐账号调用。
+// Go（见 internal/adapters/accountactivity）；Provider 动作由原生 Go 执行器
+// （NativeExecutor）完成，无痕验证码走 Go 自带的浏览器解算端口，不依赖 Node 运行时。
 package webuiaccountactivityapi
 
 import (

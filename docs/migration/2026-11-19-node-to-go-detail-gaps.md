@@ -43,6 +43,11 @@
   `chat_harness_required` 指向 `/v0/webui/chat/sessions`。无会话直连只在未挂载
   运行时时存在，它没有附件仓库，仍显式拒绝附件而不是静默丢弃。
 - `aih server serve --codex-models` 已映射：Go 账号发现器追加静态模型名。
+- 插件控制面写入：`application/plugincontrol` + `plugincontrolapi`
+  （install/uninstall/state/instances/{id}/enable|disable）由 Go 执行 revision CAS，
+  状态写 aih.db `app_kv/plugins.control.v1`；`pluginapi` 清单是同一事实的只读视图。
+- 账号活动（签到/领取/探测）由 `accountactivity.NativeExecutor` 原生 Go 执行，
+  验证码走 Go 自带浏览器解算端口，不再逐账号调用 Node。
 - 远端节点交互端点（device-node-session-start/input/stream、
   device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
   但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
@@ -50,8 +55,14 @@
 
 ## 2026-11-20 仍需验证 / 迁移
 
-- 真机对拍：用已登录 Edge 走一遍 canonical 会话的附件上传 → turn.submit →
-  timeline 回读，以及账号行 status/updatedAt/tokenUsageSource 的 UI 呈现。
+- OAuth loopback 回调监听：`codex`/`claude` 的 redirect 指向 localhost:1455/54545，
+  当前仍由宿主兼容入口监听并转发；纯 Go 部署可手填 callbackUrl 完成作业。
+  要让 Go 独占，需要把「按作业启动/释放 loopback listener → CompleteByState」
+  做成 Go 端口。
+- 插件控制 CLI：`aih plugin install/enable/disable/...` 仍委托 Node
+  （服务端 plugincontrolapi 已是 Go）；下一步把 CLI 子命令直接接 Go 应用层。
+- 真机对拍：canonical 会话的附件上传 → turn.submit → timeline 回读（上传/落盘/
+  删除已实测），以及账号行 status/updatedAt/tokenUsageSource 的 UI 呈现。
 - 逐端点响应键对拍（accounts、sessions、chat、models、auth jobs）仍需继续，
   以合同/读模型为唯一事实源，不再引入 Node 分支判定。
 

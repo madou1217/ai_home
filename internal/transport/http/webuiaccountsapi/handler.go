@@ -75,8 +75,8 @@ type pageView struct {
 
 // listResponse 是账号页读模型的成功响应。
 //
-// 三份字段清单是**契约的一部分**而不是文档：Node 代理时按 filled（Go 真值）/
-// approx（Go 有值，但口径或时机由 Node 决定）/ unfilled（空占位）决定覆盖策略，
+// 三份字段清单是**契约的一部分**而不是文档：调用方按 filled（读模型真值）/
+// approx（有值但口径或采集时机可能变化）/ unfilled（空占位）决定合并策略，
 // 服务端与调用方不需要各记一份名单。
 type listResponse struct {
 	OK             bool     `json:"ok"`

@@ -826,8 +826,8 @@ func (turn *turnState) metrics(
 
 // buildUpstreamBody 构造一次 OpenAI chat.completions 流式请求。
 //
-// 会话事实（历史消息）由 Node 随指令带来：本切片不持有会话，不能猜也不能补；
-// 调用方没带 messages 时退化成只发本轮正文，保持旧行为。
+// 会话事实（历史消息）由调用方随指令带来：这条无会话直连不持有会话，不能猜也不能补；
+// 调用方没带 messages 时退化成只发本轮正文。
 func buildUpstreamBody(command turnCommand) []byte {
 	messages := make([]map[string]string, 0, len(command.Messages)+1)
 	if len(command.Messages) > 0 {

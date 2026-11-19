@@ -1,9 +1,9 @@
-// Package plugincontrol 是 Node 插件控制状态的只读适配器。
+// Package plugincontrol 是插件控制状态的只读适配器。
 //
-// 插件安装、实例启停与 revision CAS 的唯一 owner 仍是 Node：状态存在
-// app-state.db 的 app_kv/plugins.control.v1 里，启用还要经过宿主 prepare 与
-// 代次激活。Go 只能读这份事实，用于管理面列表与投影一致性诊断——本适配器
-// 以 SQLite 只读模式打开数据库，绝不建库、建表或写回。
+// 插件安装、实例启停与 revision CAS 由 application/plugincontrol 写入
+// aih.db 的 app_kv/plugins.control.v1；启用还要经过宿主 prepare 与代次激活。
+// 本适配器只读同一份事实，用于管理面列表与投影一致性诊断——以 SQLite 只读
+// 模式打开数据库，绝不建库、建表或写回。
 package plugincontrol
 
 import (
@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	// AppStateDatabaseFileName 是 Node 运行态数据库的固定文件名。
+	// AppStateDatabaseFileName 是业务数据库（aih.db，历史上由 Node 命名为 app-state.db）的固定文件名。
 	AppStateDatabaseFileName = "aih.db"
 	databaseBusyTimeoutMS    = 5000
 )
@@ -32,7 +32,7 @@ var (
 	ErrInvalidOptions = errors.New("插件控制状态读取配置无效")
 )
 
-// Reader 从 Node 的 app-state.db 读取插件控制状态。
+// Reader 从 aih.db 读取插件控制状态。
 type Reader struct {
 	databasePath string
 }

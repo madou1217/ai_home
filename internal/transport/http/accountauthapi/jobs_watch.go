@@ -27,11 +27,11 @@ type JobEvents interface {
 	) (accountauth.Job, <-chan accountauth.Job, func(), error)
 }
 
-// jobProgressView 是 Node WebUI 展示进度所需的公开字段。
+// jobProgressView 是 WebUI 展示进度所需的公开字段。
 //
-// Go 只执行 OAuth 交换，不启动 Provider CLI，也不监听浏览器回调：
-// installRequired 恒为 false，callbackCaptureStatus 留空并由 Node 的
-// loopback 捕获合并到同一条 auth-job 事件里。authProgressState 由
+// OAuth 作业本身不启动 Provider CLI，也不在进程内监听浏览器回调：
+// installRequired 恒为 false；callbackCaptureStatus 由宿主兼容回调监听填充，
+// 未启用时为空（用户仍可手填 callbackUrl 完成作业）。authProgressState 由
 // 作业状态（与 Flow 形态）派生，不是按 Provider 猜测。
 type jobProgressView struct {
 	AuthProgressState     string `json:"auth_progress_state"`

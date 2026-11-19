@@ -43,7 +43,7 @@ const ErrorCodeUnsupportedProvider = "unsupported_provider"
 // ErrInvalidDependencies 表示 Handler 缺少鉴权或读取端口。
 var ErrInvalidDependencies = errors.New("会话事件接口依赖无效")
 
-// ErrUnsupportedProvider 表示该 Provider 的增量事件尚未由 Go 承接。
+// ErrUnsupportedProvider 表示该 Provider 不在会话历史合同内，或没有增量事件能力。
 var ErrUnsupportedProvider = errors.New("该 Provider 的增量事件尚未由 Go 承接")
 
 // ErrSessionNotFound 表示 rollout 与 state DB 都无法定位该会话文件。
@@ -163,7 +163,7 @@ func (handler *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, ErrUnsupportedProvider) {
 			writeJSON(w, http.StatusNotImplemented, map[string]any{
 				"ok": false, "error": ErrorCodeUnsupportedProvider,
-				"message": "该 Provider 的增量事件尚未由 Go 承接",
+				"message": "该 Provider 不在会话历史合同内，或没有增量事件能力",
 			})
 			return
 		}

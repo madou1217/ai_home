@@ -1,12 +1,10 @@
-// Package webuitoolsettingsapi 提供 WebUI「应用启动权限设置」的只读模型。
+// Package webuitoolsettingsapi 提供 WebUI「应用启动权限设置」的读模型。
 //
 // 边界（重要）：
-//   - GET /v1/management/webui/tool-apps/{appId}/settings 是唯一读入口，由本包直接读
-//     Node app-state.db 的设置记录并组装 capability；
-//   - PUT /v0/webui/toolkit/apps/{appId}/settings 仍在 Node：写入要经过 Provider 配置
-//     工作台的校验 / 冲突检测 / 历史备份，这部分依赖尚未迁到 Go。
+//   - GET /v1/management/webui/tool-apps/{appId}/settings 由本包读取设置记录并组装 capability；
+//   - PUT 同一路径由 webuitoolappsettingswriteapi 承接，校验 / 冲突检测 / 历史备份都在 Go。
 //
-// 因此不存在「Node 自己再算一份 GET」的双路径：Node 的 GET 只代理这里，Go 不可用就是 503。
+// 不存在第二套读计算路径：浏览器公开路径经别名进入同一处理器，Go 不可用就是明确错误。
 package webuitoolsettingsapi
 
 import (
@@ -102,7 +100,7 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
-// ServeHTTP 只接受 GET；PUT 由 Node 路由处理（见包注释）。
+// ServeHTTP 只接受 GET；PUT 由 webuitoolappsettingswriteapi 处理。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.providers == nil || handler.settings == nil {
 		writeError(response, http.StatusServiceUnavailable,

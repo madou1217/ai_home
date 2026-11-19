@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 type resumeOptions struct {
@@ -33,6 +35,7 @@ type resumeSession struct {
 	ProjectPath    string `json:"projectPath"`
 	ProjectDirName string `json:"projectDirName"`
 	UpdatedAt      int64  `json:"updatedAt"`
+	Preview        string `json:"preview,omitempty"`
 }
 
 var resumeProviderPriority = []string{
@@ -61,6 +64,7 @@ func runResume(ctx context.Context, arguments []string, runtime commandRuntime) 
 	if err != nil {
 		return true, err
 	}
+	attachResumePreviews(ctx, sessions, home, runtime)
 	if options.json {
 		encoded, err := json.MarshalIndent(map[string]any{"ok": true, "sessions": sessions}, "", "  ")
 		if err != nil {
@@ -256,9 +260,14 @@ func formatResumeList(sessions []resumeSession, cwd string) string {
 			line += "  · " + when
 		}
 		lines = append(lines, line)
-		lines = append(lines, "     "+session.ID+"  "+session.ProjectPath)
+		preview := strings.TrimSpace(session.Preview)
+		if preview != "" {
+			lines = append(lines, "     "+session.ID+"  "+preview)
+		} else {
+			lines = append(lines, "     "+session.ID+"  "+session.ProjectPath)
+		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, string(rune(10)))
 }
 
 func formatResumeRelativeTime(updatedAt int64) string {
@@ -317,6 +326,43 @@ func pickResumeSession(sessions []resumeSession, answer string) *resumeSession {
 		}
 	}
 	return nil
+}
+
+func attachResumePreviews(ctx context.Context, sessions []resumeSession, home string, runtime commandRuntime) {
+	hostHome := strings.TrimSpace(readEnv(runtime.lookupEnv, "HOME"))
+	if hostHome == "" {
+		hostHome, _ = runtime.userHomeDir()
+	}
+	options := sessionread.Options{HostHomeDir: hostHome, AIHomeDir: home}
+	for index := range sessions {
+		snapshot, err := sessionread.ReadMessagesSnapshot(ctx, options, sessions[index].Provider, sessions[index].ID, sessions[index].ProjectDirName)
+		if err != nil {
+			continue
+		}
+		sessions[index].Preview = resumePreviewFromMessages(snapshot.Messages)
+	}
+}
+
+var resumeHTMLTag = regexp.MustCompile("<[^>]+>")
+
+func resumePreviewFromMessages(messages []json.RawMessage) string {
+	for index := len(messages) - 1; index >= 0; index-- {
+		var message sessionread.Message
+		if json.Unmarshal(messages[index], &message) != nil || !strings.EqualFold(message.Role, "user") {
+			continue
+		}
+		text := strings.TrimSpace(resumeHTMLTag.ReplaceAllString(message.Content, " "))
+		text = strings.Join(strings.Fields(text), " ")
+		if text == "" {
+			continue
+		}
+		runes := []rune(text)
+		if len(runes) > 80 {
+			text = string(runes[:80])
+		}
+		return text
+	}
+	return ""
 }
 
 func writeResumeHelp(runtime commandRuntime) {

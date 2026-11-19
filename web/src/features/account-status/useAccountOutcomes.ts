@@ -21,7 +21,31 @@ export function useAccountOutcomes(): UseAccountOutcomesResult {
 
   React.useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    let dirty = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      if (cancelled) return;
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      if (timer !== null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void poll();
+      }, 500);
+    };
+
     const poll = async () => {
+      if (cancelled) return;
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      inFlight = true;
+      dirty = false;
       try {
         const response = await accountOutcomesAPI.get();
         if (cancelled) return;
@@ -34,25 +58,29 @@ export function useAccountOutcomes(): UseAccountOutcomesResult {
       } catch (_error) {
         if (!cancelled) setUnavailable(true);
       } finally {
-        if (!cancelled) setLoading(false);
+        inFlight = false;
+        if (!cancelled) {
+          setLoading(false);
+          if (dirty) {
+            dirty = false;
+            schedule();
+          }
+        }
       }
     };
+
     void poll();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const schedule = () => {
-      if (cancelled || timer) return;
-      timer = setTimeout(() => {
-        timer = null;
-        void poll();
-      }, 500);
-    };
     const watcher = accountsAPI.watch({
       onSnapshot: schedule,
       onAccount: schedule
     });
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      dirty = false;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
       watcher.close();
     };
   }, []);

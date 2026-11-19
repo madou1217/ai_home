@@ -14,7 +14,13 @@
  *
  * 只实现本仓库 watch 消费方用到的 EventSource 子集:onopen/onmessage/onerror/close。
  */
-import { guardedWebUiEventSource } from './webui-auth-transport';
+import {
+  guardedWebUiEventSource,
+  isTransportTargetStillValid,
+  resolveActiveTransportTarget,
+  subscribeTransportTargetChange,
+  type WebUiTransportTarget,
+} from './webui-auth-transport';
 
 type WatchEventKind = 'open' | 'message' | 'error';
 type RelayPayload = {
@@ -65,10 +71,13 @@ export interface SharedWatchHub {
   open(path: string): SharedWatchSource;
   /** 仅供测试:当前是否为 leader */
   readonly isLeader: boolean;
+  /** 关闭该 hub 下的全部真实连接、频道并释放锁，阻止过期 scope 继续重连。 */
+  dispose?(): void;
 }
 
 export function createSharedWatchHub(env: SharedWatchEnv, lockName: string, channelName: string): SharedWatchHub {
   let channel: BroadcastChannel | null = null;
+  let disposed = false;
   const hubs = new Map<string, PathHub>();
   const relayId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -176,23 +185,42 @@ export function createSharedWatchHub(env: SharedWatchEnv, lockName: string, chan
     channel?.postMessage({ path, kind, data });
   };
 
+  const closeReal = (hub: PathHub): void => {
+    const real = hub.real;
+    if (!real) return;
+    hub.real = null;
+    real.onopen = null;
+    real.onmessage = null;
+    real.onerror = null;
+    try { real.close(); } catch (_error) { /* ignore */ }
+  };
+
   const openReal = (path: string, hub: PathHub): void => {
-    if (hub.real) return;
+    if (disposed || hub.real) return;
     hub.readyState = 0;
     hub.replayFrames.clear();
     const real = env.openReal(path);
     hub.real = real;
-    real.onopen = () => { deliver(path, 'open', ''); relay(path, 'open'); };
+    real.onopen = () => {
+      if (disposed || hub.real !== real) return;
+      deliver(path, 'open', '');
+      relay(path, 'open');
+    };
     real.onmessage = (event) => {
+      if (disposed || hub.real !== real) return;
       const data = String(event.data ?? '');
       deliver(path, 'message', data);
       relay(path, 'message', data);
     };
-    real.onerror = () => { deliver(path, 'error', ''); relay(path, 'error'); };
+    real.onerror = () => {
+      if (disposed || hub.real !== real) return;
+      deliver(path, 'error', '');
+      relay(path, 'error');
+    };
   };
 
   const holdLeadership = (path: string, hub: PathHub): Promise<void> | undefined => {
-    if (hub.sources.size === 0) return undefined;
+    if (disposed || hub.sources.size === 0) return undefined;
     hub.leader = true;
     openReal(path, hub);
     // 最后一个订阅关闭即释放,其它标签页无需等 leader 整页关闭。
@@ -206,11 +234,11 @@ export function createSharedWatchHub(env: SharedWatchEnv, lockName: string, chan
   };
 
   const ensureElection = (path: string, hub: PathHub): void => {
-    if (hub.electionStarted) return;
+    if (disposed || hub.electionStarted || hub.sources.size === 0) return;
     hub.electionStarted = true;
     const settleElection = (): void => {
       hub.electionStarted = false;
-      if (hub.sources.size > 0) ensureElection(path, hub);
+      if (!disposed && hub.sources.size > 0) ensureElection(path, hub);
     };
     if (!env.requestLock) {
       // 无 Web Locks:退化为每 Tab 自持(与改造前一致)
@@ -224,15 +252,54 @@ export function createSharedWatchHub(env: SharedWatchEnv, lockName: string, chan
         // 已有 leader:本 Tab 保持 follower,挂常规请求排队继位
         return env.requestLock!(pathLockName, { ifAvailable: false }, () => holdLeadership(path, hub))
           .then(() => {});
-      }).catch(() => holdLeadership(path, hub)).finally(settleElection);
+      }).catch((error: unknown) => {
+        // 已无本地订阅、已持主、已销毁或显式取消的锁等待绝不降级成无锁重复连接。
+        if (disposed || hub.sources.size === 0 || hub.leader) return undefined;
+        if ((error as { name?: string } | null)?.name === 'AbortError') return undefined;
+        return holdLeadership(path, hub);
+      }).finally(settleElection);
     } catch (_error) {
-      void holdLeadership(path, hub)?.finally(settleElection);
+      if (!disposed && hub.sources.size > 0 && !hub.leader) {
+        void holdLeadership(path, hub)?.finally(settleElection);
+      } else {
+        hub.electionStarted = false;
+      }
     }
   };
 
   return {
-    get isLeader() { return [...hubs.values()].some((hub) => hub.leader); },
+    get isLeader() { return !disposed && [...hubs.values()].some((hub) => hub.leader); },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const hub of hubs.values()) {
+        for (const record of hub.sources) {
+          record.closed = true;
+          record.readyState = 2;
+        }
+        hub.sources.clear();
+        closeReal(hub);
+        hub.readyState = 0;
+        hub.replayFrames.clear();
+        hub.releaseLeadership?.();
+      }
+      hubs.clear();
+      if (channel) {
+        channel.onmessage = null;
+        try { channel.close(); } catch (_error) { /* ignore */ }
+        channel = null;
+      }
+    },
     open(path: string): SharedWatchSource {
+      if (disposed) {
+        return {
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          readyState: 2,
+          close() {},
+        };
+      }
       ensureChannel();
       const hub = hubFor(path);
       const record: SourceRecord = {
@@ -261,11 +328,8 @@ export function createSharedWatchHub(env: SharedWatchEnv, lockName: string, chan
           record.readyState = 2;
           hub.sources.delete(record);
           // 引用计数归零:leader 侧释放真实连接,不让空 path 白占连接
-          if (hub.sources.size === 0 && hub.real) {
-            hub.real.close();
-            hub.real = null;
-          }
           if (hub.sources.size === 0) {
+            closeReal(hub);
             hub.readyState = 0;
             hub.replayFrames.clear();
             hub.releaseLeadership?.();
@@ -310,22 +374,98 @@ function isSnapshotFrame(data: string): boolean {
 const DEFAULT_LOCK_NAME = 'aih-webui-watch-holder-v2';
 const DEFAULT_CHANNEL_NAME = 'aih-webui-watch-relay-v2';
 
-let defaultHub: SharedWatchHub | null = null;
+interface ScopedDefaultHubEntry {
+  readonly target: WebUiTransportTarget;
+  readonly hub: SharedWatchHub;
+  openCount: number;
+}
 
-function resolveDefaultHub(): SharedWatchHub | null {
-  if (defaultHub) return defaultHub;
+const defaultHubsByScope = new Map<string, ScopedDefaultHubEntry>();
+const liveLeaderSources = new Set<EventSource>();
+let lifecycleListenersInstalled = false;
+
+function disposeScopedHubEntry(scopeKey: string, entry: ScopedDefaultHubEntry): void {
+  if (defaultHubsByScope.get(scopeKey) === entry) {
+    defaultHubsByScope.delete(scopeKey);
+  }
+  entry.hub.dispose?.();
+}
+
+function pruneObsoleteScopedHubs(): void {
+  const currentTarget = resolveActiveTransportTarget();
+  for (const [scopeKey, entry] of [...defaultHubsByScope.entries()]) {
+    if (!isTransportTargetStillValid(entry.target)) {
+      disposeScopedHubEntry(scopeKey, entry);
+      continue;
+    }
+    if (scopeKey !== currentTarget.scopeKey && entry.openCount <= 0) {
+      disposeScopedHubEntry(scopeKey, entry);
+    }
+  }
+}
+
+function ensureLifecycleListeners(): void {
+  if (lifecycleListenersInstalled || typeof window === 'undefined') return;
+  lifecycleListenersInstalled = true;
+  window.addEventListener('pagehide', (event) => {
+    if (event.persisted) return;
+    for (const source of [...liveLeaderSources]) {
+      liveLeaderSources.delete(source);
+      try { source.close(); } catch (_error) { /* ignore */ }
+    }
+    for (const [scopeKey, entry] of [...defaultHubsByScope.entries()]) {
+      disposeScopedHubEntry(scopeKey, entry);
+    }
+  });
+  subscribeTransportTargetChange(pruneObsoleteScopedHubs);
+}
+
+function createBoundRealOpener(target: WebUiTransportTarget): (path: string) => EventSource {
+  return (path: string) => {
+    ensureLifecycleListeners();
+    // Always bind the real EventSource to this hub's captured transport target
+    // (never reading the shifting global active server) so reconnects and Web
+    // Lock leadership handoffs cannot connect to server B under hub A's scope.
+    const real = guardedWebUiEventSource(path, { target });
+    liveLeaderSources.add(real);
+    const originalClose = real.close.bind(real);
+    real.close = () => {
+      liveLeaderSources.delete(real);
+      originalClose();
+    };
+    return real;
+  };
+}
+
+function resolveDefaultHubEntry(target: WebUiTransportTarget): ScopedDefaultHubEntry | null {
   if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
+  ensureLifecycleListeners();
+  const existing = defaultHubsByScope.get(target.scopeKey);
+  if (existing && isTransportTargetStillValid(existing.target)) {
+    return existing;
+  }
+  if (existing) {
+    disposeScopedHubEntry(target.scopeKey, existing);
+  }
+  const lockName = target.scopeKey === 'local'
+    ? DEFAULT_LOCK_NAME
+    : `${DEFAULT_LOCK_NAME}:${target.scopeKey}`;
+  const channelName = target.scopeKey === 'local'
+    ? DEFAULT_CHANNEL_NAME
+    : `${DEFAULT_CHANNEL_NAME}:${target.scopeKey}`;
   const nav = navigator as Navigator & { locks?: { request: LockRequest } };
-  defaultHub = createSharedWatchHub(
+  const hub = createSharedWatchHub(
     {
       requestLock: nav.locks ? (name, options, callback) => nav.locks!.request(name, options, callback) : null,
       createChannel: (name) => new BroadcastChannel(name),
-      openReal: (path) => guardedWebUiEventSource(path),
+      openReal: createBoundRealOpener(target),
     },
-    DEFAULT_LOCK_NAME,
-    DEFAULT_CHANNEL_NAME,
+    lockName,
+    channelName,
   );
-  return defaultHub;
+  const entry: ScopedDefaultHubEntry = { target, hub, openCount: 0 };
+  defaultHubsByScope.set(target.scopeKey, entry);
+  return entry;
 }
 
 /**
@@ -333,7 +473,21 @@ function resolveDefaultHub(): SharedWatchHub | null {
  * 环境不支持共享(无 window/BroadcastChannel)时退化为直连真实 EventSource。
  */
 export function openSharedWebUiEventSource(path: string): EventSource {
-  const hub = resolveDefaultHub();
-  if (!hub) return guardedWebUiEventSource(path);
-  return hub.open(path) as unknown as EventSource;
+  const target = resolveActiveTransportTarget();
+  const entry = resolveDefaultHubEntry(target);
+  if (!entry) return guardedWebUiEventSource(path, { target });
+  const source = entry.hub.open(path);
+  entry.openCount += 1;
+  let closed = false;
+  const originalClose = source.close.bind(source);
+  source.close = () => {
+    if (closed) return;
+    closed = true;
+    entry.openCount = Math.max(0, entry.openCount - 1);
+    originalClose();
+    if (entry.openCount === 0 && resolveActiveTransportTarget().scopeKey !== entry.target.scopeKey) {
+      disposeScopedHubEntry(entry.target.scopeKey, entry);
+    }
+  };
+  return source as unknown as EventSource;
 }

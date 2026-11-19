@@ -11,9 +11,26 @@ import {
   getExplicitServerProfileId
 } from './server-selection-scope';
 import { readSessionWatchTarget, SessionWatchWebSocketSource } from './session-watch-websocket';
+import {
+  readTerminalMuxTarget,
+  TerminalMuxWebSocketSource,
+  type TerminalMuxFallbackSource,
+} from './terminal-mux-websocket';
 
 const SERVER_PROFILE_STORAGE_KEY = 'aih:control-plane-profiles:v1';
 const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
+const ACTIVE_PROFILE_CHANGED_EVENT = 'aih:active-control-plane-profile-changed';
+const CONTROL_PLANE_PROFILES_CHANGED_EVENT = 'aih:control-plane-profiles-changed';
+const STABLE_STREAM_RESET_MS = 10_000;
+
+export interface WebUiTransportTarget {
+  readonly serverId: string;
+  readonly isRemote: boolean;
+  /** Normalized endpoint origin (local page origin or remote profile origin). */
+  readonly targetOrigin: string;
+  /** Credential-free routing scope incorporating local/remote, serverId, and origin. */
+  readonly scopeKey: string;
+}
 
 function normalizeHost(host: string) {
   const value = String(host || '').toLowerCase();
@@ -23,6 +40,29 @@ function normalizeHost(host: string) {
 function effectivePort(url: URL) {
   if (url.port) return url.port;
   return url.protocol === 'https:' ? '443' : '80';
+}
+
+function normalizeEndpointOrigin(raw: string): string {
+  try {
+    const parsed = new URL(String(raw || ''));
+    return `${parsed.protocol}//${normalizeHost(parsed.hostname)}:${effectivePort(parsed)}`;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function findStoredProfileEndpoint(serverId: string): string | null {
+  if (typeof window === 'undefined' || !serverId) return null;
+  try {
+    const raw = window.localStorage.getItem(SERVER_PROFILE_STORAGE_KEY);
+    const profiles = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(profiles)) return null;
+    const profile = profiles.find((item) => item && item.id === serverId);
+    if (!profile?.endpoint) return null;
+    return String(profile.endpoint);
+  } catch (_error) {
+    return null;
+  }
 }
 
 function isSameServerEndpoint(left: URL, right: URL) {
@@ -104,19 +144,82 @@ export function resolveActiveServerOrigin(): string {
   }
 }
 
-export function buildAuthorizedWebUiHeaders(input?: HeadersInit) {
+/** Resolve a credential-free, bound transport target for the active server scope. */
+export function resolveActiveTransportTarget(): WebUiTransportTarget {
+  const active = resolveActiveServer();
+  if (!active.isRemote) {
+    const localOrigin = typeof window !== 'undefined' ? normalizeEndpointOrigin(window.location.origin) : '';
+    return {
+      serverId: active.serverId,
+      isRemote: false,
+      targetOrigin: localOrigin,
+      scopeKey: 'local',
+    };
+  }
+  const endpoint = findStoredProfileEndpoint(active.serverId);
+  const targetOrigin = endpoint ? normalizeEndpointOrigin(endpoint) : '';
+  return {
+    serverId: active.serverId,
+    isRemote: true,
+    targetOrigin,
+    scopeKey: `remote:${encodeURIComponent(active.serverId)}@${encodeURIComponent(targetOrigin)}`,
+  };
+}
+
+/** Verify whether a previously captured transport target still matches stored profile routing. */
+export function isTransportTargetStillValid(target: WebUiTransportTarget): boolean {
+  if (!target.isRemote) {
+    return typeof window === 'undefined' || normalizeEndpointOrigin(window.location.origin) === target.targetOrigin;
+  }
+  const endpoint = findStoredProfileEndpoint(target.serverId);
+  if (!target.targetOrigin) return !endpoint;
+  return endpoint !== null && normalizeEndpointOrigin(endpoint) === target.targetOrigin;
+}
+
+/** Listen for same-tab and cross-tab control-plane profile or active-server mutations. */
+export function subscribeTransportTargetChange(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const onProfileChanged = () => listener();
+  const onStorage = (event: StorageEvent) => {
+    if (
+      event.key === null
+      || event.key === ACTIVE_PROFILE_STORAGE_KEY
+      || event.key === SERVER_PROFILE_STORAGE_KEY
+    ) {
+      listener();
+    }
+  };
+  window.addEventListener(ACTIVE_PROFILE_CHANGED_EVENT, onProfileChanged);
+  window.addEventListener(CONTROL_PLANE_PROFILES_CHANGED_EVENT, onProfileChanged);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    window.removeEventListener(ACTIVE_PROFILE_CHANGED_EVENT, onProfileChanged);
+    window.removeEventListener(CONTROL_PLANE_PROFILES_CHANGED_EVENT, onProfileChanged);
+    window.removeEventListener('storage', onStorage);
+  };
+}
+
+export function buildAuthorizedWebUiHeaders(
+  input?: HeadersInit,
+  target?: Pick<WebUiTransportTarget, 'serverId' | 'isRemote'>,
+) {
   const headers = new Headers(input || {});
   const managementKey = resolveWebUiManagementKey();
-  const active = resolveActiveServer();
+  const resolved = target ?? resolveActiveServer();
   if (managementKey) headers.set('authorization', `Bearer ${managementKey}`);
-  if (active.isRemote && active.serverId) headers.set('x-aih-server-id', active.serverId);
+  if (resolved.isRemote && resolved.serverId) headers.set('x-aih-server-id', resolved.serverId);
+  else headers.delete('x-aih-server-id');
   return headers;
 }
 
-export async function fetchAuthorizedWebUiResource(input: RequestInfo | URL, init: RequestInit = {}) {
+export async function fetchAuthorizedWebUiResource(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  target?: Pick<WebUiTransportTarget, 'serverId' | 'isRemote'>,
+) {
   return fetch(input, {
     ...init,
-    headers: buildAuthorizedWebUiHeaders(init.headers),
+    headers: buildAuthorizedWebUiHeaders(init.headers, target),
     credentials: init.credentials || 'same-origin'
   });
 }
@@ -160,23 +263,50 @@ class AuthorizedWebUiEventSource extends EventTarget {
   onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
 
   private abortController: AbortController | null = null;
+  private activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private reconnectTimer: number | null = null;
+  private reconnectAttempt = 0;
   private closed = false;
   private readPaused = false;
   private resumeReader: (() => void) | null = null;
   private lastActivityAt = Date.now();
   private watchdogTimer: number | null = null;
   private readonly silenceTimeoutMs: number;
+  private readonly boundTarget?: WebUiTransportTarget;
+
+  private cancelActiveTransport() {
+    const reader = this.activeReader;
+    this.activeReader = null;
+    if (reader) void reader.cancel().catch(() => {});
+    this.abortController?.abort();
+    this.abortController = null;
+  }
+
+  private handlePageHide = (event: PageTransitionEvent) => {
+    if (!event.persisted) {
+      this.close();
+      return;
+    }
+    this.cancelActiveTransport();
+  };
 
   private checkConnection = () => {
     if (!this.closed && !this.readPaused && this.silenceTimeoutMs > 0
       && Date.now() - this.lastActivityAt >= this.silenceTimeoutMs) {
-      this.abortController?.abort();
+      this.cancelActiveTransport();
     }
   };
 
   private resumeConnection = () => {
-    if (!this.closed && !this.readPaused) this.abortController?.abort();
+    if (this.closed) return;
+    this.reconnectAttempt = 0;
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      void this.connect();
+      return;
+    }
+    if (this.silenceTimeoutMs > 0 && !this.readPaused) this.cancelActiveTransport();
   };
 
   setReadPaused(paused: boolean) {
@@ -194,14 +324,20 @@ class AuthorizedWebUiEventSource extends EventTarget {
     return this.readPaused && !this.closed ? new Promise<void>((resolve) => { this.resumeReader = resolve; }) : Promise.resolve();
   }
 
-  constructor(url: string, silenceTimeoutMs = 0) {
+  constructor(url: string, silenceTimeoutMs = 0, boundTarget?: WebUiTransportTarget) {
     super();
     this.url = url;
     this.silenceTimeoutMs = silenceTimeoutMs;
-    if (silenceTimeoutMs > 0) {
-      this.watchdogTimer = window.setInterval(this.checkConnection, Math.min(5000, silenceTimeoutMs));
-      document.addEventListener('visibilitychange', this.checkConnection);
+    this.boundTarget = boundTarget;
+    if (typeof window !== 'undefined') {
       window.addEventListener('online', this.resumeConnection);
+      window.addEventListener('pagehide', this.handlePageHide);
+    }
+    if (silenceTimeoutMs > 0 && typeof window !== 'undefined') {
+      this.watchdogTimer = window.setInterval(this.checkConnection, Math.min(5000, silenceTimeoutMs));
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', this.checkConnection);
+      }
     }
     queueMicrotask(() => this.connect());
   }
@@ -210,14 +346,18 @@ class AuthorizedWebUiEventSource extends EventTarget {
     this.closed = true;
     this.setReadPaused(false);
     this.readyState = EventSource.CLOSED;
-    this.abortController?.abort();
-    this.abortController = null;
+    this.cancelActiveTransport();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
     }
-    document.removeEventListener('visibilitychange', this.checkConnection);
-    window.removeEventListener('online', this.resumeConnection);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.checkConnection);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.resumeConnection);
+      window.removeEventListener('pagehide', this.handlePageHide);
+    }
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -242,31 +382,61 @@ class AuthorizedWebUiEventSource extends EventTarget {
   }
 
   private scheduleReconnect() {
-    if (this.closed || this.reconnectTimer !== null) return;
+    if (this.closed || this.reconnectTimer !== null || typeof window === 'undefined') return;
     this.readyState = EventSource.CONNECTING;
+    const baseDelayMs = Math.min(15_000, 1000 * 2 ** Math.min(this.reconnectAttempt, 4));
+    const jitterMs = this.reconnectAttempt > 0 ? Math.floor(Math.random() * 250) : 0;
+    this.reconnectAttempt += 1;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
-      this.connect();
-    }, 1000);
+      void this.connect();
+    }, baseDelayMs + jitterMs);
   }
 
   private async connect() {
     if (this.closed) return;
+    if (this.boundTarget && !isTransportTargetStillValid(this.boundTarget)) {
+      this.close();
+      return;
+    }
     const controller = new AbortController();
     this.abortController = controller;
     this.lastActivityAt = Date.now();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let openedAt = 0;
+    let stableResetTimer: number | null = null;
     try {
       const response = await fetchAuthorizedWebUiResource(this.url, {
         method: 'GET',
         headers: { accept: 'text/event-stream' },
         signal: controller.signal
-      });
-      if (!response.ok || !response.body) throw new Error(`webui_event_stream_http_${response.status}`);
-      this.lastActivityAt = Date.now();
+      }, this.boundTarget);
+      if (this.closed) {
+        void response.body?.cancel().catch(() => {});
+        return;
+      }
+      if (!response.ok || !response.body) {
+        void response.body?.cancel().catch(() => {});
+        throw new Error(`webui_event_stream_http_${response.status}`);
+      }
+      openedAt = Date.now();
+      this.lastActivityAt = openedAt;
       this.readyState = EventSource.OPEN;
+      // Reset reconnect backoff only after the stream stays stably open for
+      // STABLE_STREAM_RESET_MS so HTTP 200 + immediate EOF/read failure still
+      // enters exponential backoff (2s/4s/8s/15s) instead of looping at 1s.
+      if (typeof window !== 'undefined') {
+        stableResetTimer = window.setTimeout(() => {
+          stableResetTimer = null;
+          if (!this.closed && this.abortController === controller) {
+            this.reconnectAttempt = 0;
+          }
+        }, STABLE_STREAM_RESET_MS);
+      }
       this.emitOpen();
 
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
+      this.activeReader = reader;
       const decoder = new TextDecoder();
       let buffer = '';
       while (!this.closed) {
@@ -294,6 +464,18 @@ class AuthorizedWebUiEventSource extends EventTarget {
     } catch (_error) {
       if (!this.closed) this.emitError();
     } finally {
+      if (stableResetTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(stableResetTimer);
+        stableResetTimer = null;
+      }
+      if (openedAt > 0 && Date.now() - openedAt >= STABLE_STREAM_RESET_MS) {
+        this.reconnectAttempt = 0;
+      }
+      if (reader) {
+        if (this.activeReader === reader) this.activeReader = null;
+        void reader.cancel().catch(() => {});
+        try { reader.releaseLock(); } catch (_error) { /* ignore */ }
+      }
       controller.abort();
       if (this.abortController === controller) this.abortController = null;
       this.scheduleReconnect();
@@ -301,15 +483,34 @@ class AuthorizedWebUiEventSource extends EventTarget {
   }
 }
 
-export function guardedWebUiEventSource(path: string, options: { silenceTimeoutMs?: number } = {}): EventSource {
+export function guardedWebUiEventSource(
+  path: string,
+  options: { silenceTimeoutMs?: number; target?: WebUiTransportTarget } = {},
+): EventSource {
+  const effectiveTarget = options.target ?? resolveActiveTransportTarget();
   const target = readSessionWatchTarget(path);
   if (target && typeof window !== 'undefined' && typeof WebSocket !== 'undefined'
-    && !resolveActiveServer().isRemote) {
+    && effectiveTarget.isRemote === false) {
     return new SessionWatchWebSocketSource({
       origin: window.location.origin,
       target,
       readManagementKey: resolveWebUiManagementKey
     }) as unknown as EventSource;
   }
-  return new AuthorizedWebUiEventSource(path, options.silenceTimeoutMs) as unknown as EventSource;
+  const muxTarget = readTerminalMuxTarget(path);
+  if (muxTarget && typeof window !== 'undefined' && typeof WebSocket !== 'undefined'
+    && effectiveTarget.isRemote === false) {
+    return new TerminalMuxWebSocketSource({
+      origin: window.location.origin,
+      muxId: muxTarget.muxId,
+      readManagementKey: resolveWebUiManagementKey,
+      silenceTimeoutMs: options.silenceTimeoutMs,
+      createSseFallback: () => new AuthorizedWebUiEventSource(
+        path,
+        options.silenceTimeoutMs,
+        effectiveTarget,
+      ) as unknown as TerminalMuxFallbackSource,
+    }) as unknown as EventSource;
+  }
+  return new AuthorizedWebUiEventSource(path, options.silenceTimeoutMs, effectiveTarget) as unknown as EventSource;
 }

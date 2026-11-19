@@ -109,7 +109,7 @@ func (preparer *Preparer) PrepareAccountDeletion(
 		return nil
 	}
 	// 投影合同是表驱动的：没有注册规格的 Provider 不能被删除流程半途处理。
-	// 新增 Provider 时先补规格，或把它写进 nodeOnlyDeletionReasons 并留在 Node。
+	// 新增 Provider 时必须先补删除投影规格。
 	if _, found := projectionSpecFor(account.ProviderID()); !found {
 		return preparationFailure("Provider 投影合同未注册", nil)
 	}

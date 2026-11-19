@@ -7,10 +7,8 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 )
 
-// TestProjectionSpecsCoverEveryProvider 是表驱动的守卫：
-// 每个 Provider 要么有删除投影规格，要么在 node-only 名单里写明原因。
-// 两者都没有、两者都有、或原因为空，都必须让测试失败，避免新增 Provider
-// 时删除流程悄悄失败或悄悄走错分支。
+// TestProjectionSpecsCoverEveryProvider 是表驱动的守卫：每个 Provider 都必须
+// 有删除投影规格；缺规格必须失败，避免新增 Provider 时删除流程悄悄走错分支。
 func TestProjectionSpecsCoverEveryProvider(t *testing.T) {
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
@@ -23,25 +21,13 @@ func TestProjectionSpecsCoverEveryProvider(t *testing.T) {
 			continue
 		}
 		known[providerID] = true
-		_, hasSpec := projectionSpecFor(providerID)
-		reason, nodeOnly := nodeOnlyDeletionReasons[providerID]
-		switch {
-		case hasSpec && nodeOnly:
-			t.Errorf("%s 同时注册了投影规格和 node-only 原因，必须二选一", providerID)
-		case !hasSpec && !nodeOnly:
-			t.Errorf("%s 既没有投影规格，也不在 node-only 名单里", providerID)
-		case nodeOnly && strings.TrimSpace(reason) == "":
-			t.Errorf("%s 的 node-only 原因为空", providerID)
+		if _, hasSpec := projectionSpecFor(providerID); !hasSpec {
+			t.Errorf("%s 没有删除投影规格", providerID)
 		}
 	}
 	for providerID := range projectionSpecs {
 		if !known[providerID] {
 			t.Errorf("投影规格里的 %s 不在 Provider 目录中", providerID)
-		}
-	}
-	for providerID := range nodeOnlyDeletionReasons {
-		if !known[providerID] {
-			t.Errorf("node-only 名单里的 %s 不在 Provider 目录中", providerID)
 		}
 	}
 }
@@ -93,7 +79,7 @@ func TestProjectionSpecsDeclareCredentialAndRoot(t *testing.T) {
 }
 
 // TestPureFileSystemProviderBatchRegistration 固定纯文件系统 Provider 的接入边界：
-// cline/opencode/qoder/qodercn 已注册规格，不能同时留在 node-only 名单。
+// cline/opencode/qoder/qodercn 必须已注册规格。
 func TestPureFileSystemProviderBatchRegistration(t *testing.T) {
 	for _, providerID := range []string{
 		providerCline, providerOpencode, providerQoder, providerQoderCN,
@@ -101,14 +87,11 @@ func TestPureFileSystemProviderBatchRegistration(t *testing.T) {
 		if _, found := projectionSpecFor(providerID); !found {
 			t.Errorf("%s 应注册删除投影规格", providerID)
 		}
-		if reason, nodeOnly := nodeOnlyDeletionReasons[providerID]; nodeOnly {
-			t.Errorf("%s 已接入 Go，却仍在 node-only 名单: %s", providerID, reason)
-		}
 	}
 }
 
 // TestDeletionOnlyProviderBatchRegistration 固定本批「只删投影、不 adopt 凭据」
-// 的边界：家族四支与 kimi 已注册整根私有规格，不能同时留在 node-only 名单。
+// 的边界：家族四支与 kimi 必须注册整根私有规格。
 func TestDeletionOnlyProviderBatchRegistration(t *testing.T) {
 	for _, providerID := range []string{
 		providerCodebuddy, providerCodebuddyCN, providerWorkbuddy, providerWorkbuddyCN, providerKimi, providerZcode,
@@ -117,9 +100,6 @@ func TestDeletionOnlyProviderBatchRegistration(t *testing.T) {
 		if !found {
 			t.Errorf("%s 应注册删除投影规格", providerID)
 			continue
-		}
-		if reason, nodeOnly := nodeOnlyDeletionReasons[providerID]; nodeOnly {
-			t.Errorf("%s 已接入 Go，却仍在 node-only 名单: %s", providerID, reason)
 		}
 		rootSpec, found := spec.roots[projectionKindAccount]
 		if !found || !rootSpec.privateRoot {
@@ -132,14 +112,11 @@ func TestDeletionOnlyProviderBatchRegistration(t *testing.T) {
 }
 
 // TestKiroDeletionRegistration 固定 kiro 的接入边界：投影整根私有，
-// data.sqlite3 走独立的 SQLite 凭据模式，且不能再留在 node-only 名单。
+// data.sqlite3 走独立的 SQLite 凭据模式。
 func TestKiroDeletionRegistration(t *testing.T) {
 	spec, found := projectionSpecFor(providerKiro)
 	if !found {
 		t.Fatal("kiro 应注册删除投影规格")
-	}
-	if reason, nodeOnly := nodeOnlyDeletionReasons[providerKiro]; nodeOnly {
-		t.Fatalf("kiro 已接入 Go，却仍在 node-only 名单: %s", reason)
 	}
 	rootSpec, found := spec.roots[projectionKindAccount]
 	if !found || !rootSpec.privateRoot {
@@ -151,14 +128,6 @@ func TestKiroDeletionRegistration(t *testing.T) {
 	if len(spec.credential.artifacts) != 1 ||
 		!segmentsEqual(spec.credential.artifacts[0].segments, []string{"data.sqlite3"}) {
 		t.Fatalf("kiro 的凭据 artifact 应唯一指向 data.sqlite3: %+v", spec.credential.artifacts)
-	}
-}
-
-// TestNodeOnlyDeletionReasonsNameConcreteGaps 要求留在 Node 的 Provider 写清
-// 具体缺口：泛泛的「删除仍由 Node 处理」无法让后来的人判断何时可以迁过来。
-func TestNodeOnlyDeletionReasonsNameConcreteGaps(t *testing.T) {
-	if len(nodeOnlyDeletionReasons) != 0 {
-		t.Fatalf("所有 Provider 已迁入 Go，nodeOnlyDeletionReasons 应为空，实际 %+v", nodeOnlyDeletionReasons)
 	}
 }
 

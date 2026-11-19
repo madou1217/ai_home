@@ -430,12 +430,6 @@ func zcodeProjectionSpec() providerProjectionSpec {
 	}
 }
 
-// nodeOnlyDeletionReasons 记录尚未注册投影规格的 Provider 为什么仍留在 Node。
-//
-// 守卫测试会遍历 Provider 目录：既没有规格、也不在这张表里，或原因为空，
-// 测试都会失败。当前全量 Provider 已由 Go 删除规格覆盖。
-var nodeOnlyDeletionReasons = map[string]string{}
-
 // projectionSpecFor 是删除流程查询 Provider 规格的唯一入口。
 func projectionSpecFor(providerID string) (providerProjectionSpec, bool) {
 	spec, found := projectionSpecs[providerID]

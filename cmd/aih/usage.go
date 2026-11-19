@@ -16,15 +16,16 @@ import (
 )
 
 type usageOptions struct {
-	command   string
-	provider  string
-	model     string
-	sessionID string
-	from      string
-	to        string
-	limit     int
-	scan      bool
-	json      bool
+	command                 string
+	provider                string
+	model                   string
+	sessionID               string
+	from                    string
+	to                      string
+	limit                   int
+	scan                    bool
+	json                    bool
+	reindexCodexForkHistory bool
 }
 
 func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (bool, error) {
@@ -33,7 +34,7 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	}
 	if len(arguments) > 1 {
 		switch strings.TrimSpace(arguments[1]) {
-		case "scan", "recalculate-costs", "--help", "-h", "help":
+		case "recalculate-costs", "--help", "-h", "help":
 			return false, nil
 		}
 	}
@@ -41,15 +42,17 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	if err != nil {
 		return true, err
 	}
+	home, err := resolveAIHome(runtime)
+	if err != nil {
+		return true, err
+	}
 	switch options.command {
+	case "scan":
+		return true, runUsageScan(ctx, home, options, runtime)
 	case "stats", "summary", "models", "cost-by-model", "by-model", "sessions", "session", "session-detail":
 	default:
 		// scan / recalculate-costs / help remain on the legacy CLI for now.
 		return false, nil
-	}
-	home, err := resolveAIHome(runtime)
-	if err != nil {
-		return true, err
 	}
 	config, err := webuiserverconfigapi.ReadFullConfig(ctx, home)
 	if err != nil {
@@ -177,7 +180,7 @@ func parseUsageOptions(args []string) (usageOptions, error) {
 		case "--json":
 			options.json = true
 		case "--reindex-codex-forks":
-			return options, errors.New("--reindex-codex-forks 仅支持 usage scan")
+			options.reindexCodexForkHistory = true
 		default:
 			return options, fmt.Errorf("未知 usage 参数: %s", token)
 		}

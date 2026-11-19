@@ -17,11 +17,11 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
@@ -52,7 +52,7 @@ type Dependencies struct {
 	AiHomeDir      string
 	Store          Store
 	ModelRefresher accountapp.AccountModelRefresher
-	MetadataIndex  *modelsdev.Index
+	MetadataIndex  modelmetadata.Catalog
 }
 
 // Handler 处理 GET /v1/management/webui/workspace/models。
@@ -61,7 +61,7 @@ type Handler struct {
 	aiHomeDir     string
 	store         Store
 	refresher     accountapp.AccountModelRefresher
-	metadataIndex *modelsdev.Index
+	metadataIndex modelmetadata.Catalog
 }
 
 // NewHandler 创建工作区模型目录 Handler。
@@ -279,7 +279,7 @@ func buildResponse(
 	settings modelcatalogsettings.Settings,
 	snapshot *webuimodelssnapshot.Snapshot,
 	resolver accountrefmap.Resolver,
-	metadataIndex *modelsdev.Index,
+	metadataIndex modelmetadata.Catalog,
 	scopeGoRef string,
 	cached bool,
 ) map[string]any {
@@ -541,7 +541,7 @@ func buildResponse(
 func buildMetadataMap(
 	selectableByAccountRef map[string][]string,
 	providerByModel map[string]string,
-	index *modelsdev.Index,
+	index modelmetadata.Catalog,
 ) map[string]any {
 	out := map[string]any{}
 	if index == nil {
@@ -556,7 +556,7 @@ func buildMetadataMap(
 			entry := map[string]any{
 				"id":                    id,
 				"metadataSchemaVersion": 1,
-				"metadataSource":        "models.dev",
+				"metadataSource":        index.SourceID(),
 			}
 			resolved := false
 			if modalities, ok := index.LookupModalities(provider, id); ok {

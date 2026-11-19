@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/images"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
 // AccountOverviewLister 读取账号概览快照。
@@ -41,7 +41,7 @@ type CatalogDependencies struct {
 	Exclusions    RoutingExclusionReader
 	Runtime       EligibilityChecker
 	Providers     *providers.Catalog
-	Modalities    *modelsdev.Index
+	Modalities    modelmetadata.Reader
 }
 
 // CatalogCapabilities 描述前端渲染生图表单所需的模型能力矩阵。
@@ -139,7 +139,7 @@ func ImageModelBelongsToProvider(provider string, modelID string) bool {
 	}
 }
 
-func modelGeneratesImages(modalities *modelsdev.Index, providerID string, modelID string) bool {
+func modelGeneratesImages(modalities modelmetadata.Reader, providerID string, modelID string) bool {
 	if modalities != nil {
 		if m, found := modalities.LookupOrInferModalities(providerID, modelID); found {
 			for _, out := range m.Output() {

@@ -87,6 +87,9 @@ func New() (*Index, error) {
 
 var _ modelmetadata.ModelDescriptorRegistrar = (*Index)(nil)
 
+// SourceID 返回内置快照的稳定来源标识。
+func (index *Index) SourceID() string { return "models.dev" }
+
 // ReplaceModelDescriptors 原子替换一个 Provider 的运行时模态覆盖。
 //
 // 空切片表示该 Provider 当前没有覆盖，查询会回退到静态 models.dev 索引。

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providercli/sessionchat"
 )
@@ -53,7 +53,7 @@ type ServiceOptions struct {
 	GatewayModels           GatewayModelReader
 	GatewayAccounts         accountrouting.CandidateSource
 	ProviderCatalog         *providers.Catalog
-	MetadataIndex           *modelsdev.Index
+	MetadataIndex           modelmetadata.Catalog
 	ChatStreamer            ChatTurnStreamer
 	CodexPool               *CodexClientPool
 	ApprovalCallbackURL     string

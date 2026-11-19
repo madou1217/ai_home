@@ -13,12 +13,12 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 )
@@ -274,7 +274,7 @@ type ModelCatalogResolver struct {
 	AIHomeDir       string
 	Catalog         *providers.Catalog
 	AccountStore    AccountPoolReader
-	MetadataIndex   *modelsdev.Index
+	MetadataIndex   modelmetadata.Catalog
 	GatewayModels   GatewayModelReader
 	GatewayAccounts accountrouting.CandidateSource
 }

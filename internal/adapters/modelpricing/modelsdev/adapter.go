@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/contracts/modelpricing"
 )
 
@@ -24,6 +25,13 @@ func New() (*Adapter, error) {
 	}
 	return &Adapter{catalog: catalog}, nil
 }
+
+// ListWildcardAliasModels 实现 modelmetadata.AliasExpander：用内置目录展开通配别名。
+func (adapter *Adapter) ListWildcardAliasModels(pattern string, now time.Time) []string {
+	return ListWildcardAliasModels(pattern, now)
+}
+
+var _ modelmetadata.AliasExpander = (*Adapter)(nil)
 
 // Source 返回 models.dev 的来源声明。
 func (adapter *Adapter) Source(now time.Time) modelpricing.Source {

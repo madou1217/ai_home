@@ -12,8 +12,10 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/accountscheduling"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	schedcore "github.com/madou1217/ai_home/core/accountscheduling"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -114,6 +116,9 @@ type Dependencies struct {
 	Weights AccountWeightSource
 	// Usage 是选号前的额度门禁；为空表示不启用（等价 Node 没有额度策略）。
 	Usage UsageGate
+	// Scheduling 是账号/Provider 调度策略，与 WebUI 路由诊断共用同一套判定。
+	// 为空时退回"运行态资格 + 额度门禁"的内联判定（旧组合方式）。
+	Scheduling *accountscheduling.Evaluator
 	// Strategy 是选号策略；零值非法，必须由调用方显式解析。
 	Strategy SelectionStrategy
 }
@@ -322,6 +327,7 @@ type Recruiter struct {
 	credentials CredentialResolver
 	weights     AccountWeightSource
 	usage       UsageGate
+	scheduling  *accountscheduling.Evaluator
 	strategy    SelectionStrategy
 	scheduler   *FairRoundRobinScheduler
 	// affinity 保存 (Provider, 会话键) -> 账号的粘性绑定。
@@ -377,6 +383,7 @@ func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 		credentials: dependencies.Credentials,
 		weights:     dependencies.Weights,
 		usage:       dependencies.Usage,
+		scheduling:  dependencies.Scheduling,
 		strategy:    strategy,
 		scheduler:   &FairRoundRobinScheduler{},
 		affinity:    NewSessionAffinity(),
@@ -551,12 +558,12 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if eligibilityErr != nil {
 			return progress, eligibilityErr
 		}
-		if !session.admits(eligibility, offset, candidate) {
-			continue
-		}
-		if blocked, usageErr := session.usageBlocked(ctx, candidate); usageErr != nil {
+		// 额度门禁与运行态资格都是 Evidence；判定本身交给 Provider 策略。
+		usageBlocked, usageErr := session.usageBlocked(ctx, candidate)
+		if usageErr != nil {
 			return progress, usageErr
-		} else if blocked {
+		}
+		if !session.admits(session.evaluate(candidate, eligibility, usageBlocked), eligibility, offset, candidate) {
 			continue
 		}
 		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
@@ -680,20 +687,84 @@ func (session *RecruitmentSession) usageBlocked(
 	return decision.Blocked, nil
 }
 
+// evaluate 把运行态资格与额度门禁取证成 Evidence，交给 Provider 策略判定。
+//
+// 与 WebUI 路由诊断同一套 Policy：新增 Provider 的调度语义只加策略，不改这里。
+func (session *RecruitmentSession) evaluate(
+	candidate accountapp.RoutingAccount,
+	eligibility runtimecore.Eligibility,
+	usageBlocked bool,
+) schedcore.Verdict {
+	if session.recruiter.scheduling == nil {
+		return legacyVerdict(eligibility, usageBlocked)
+	}
+	evidence := accountscheduling.Evidence{
+		Provider:   session.request.ProviderID(),
+		AccountRef: string(candidate.Ref()),
+		ModelID:    session.request.ModelID().String(),
+		// 候选快照已按"启用 + 该模型已物化"筛选，账号级事实到这里恒为真。
+		Account: accountscheduling.AccountFacts{Enabled: true, Configured: true},
+	}
+	if usageBlocked {
+		evidence.Eligibility.UsageGate = schedcore.ReasonUsageGate
+	}
+	if reason := eligibilityStatusReason(eligibility.Status()); reason != "" {
+		evidence.Observed.ModelReasons = append(evidence.Observed.ModelReasons, reason)
+	}
+	if retryAt := eligibility.RetryAt(); !retryAt.IsZero() {
+		evidence.Observed.ModelCooldownUntil = retryAt
+	}
+	return session.recruiter.scheduling.Evaluate(evidence)
+}
+
+// legacyVerdict 是没有注入策略时的内联判定，保持旧组合方式的行为。
+func legacyVerdict(eligibility runtimecore.Eligibility, usageBlocked bool) schedcore.Verdict {
+	if usageBlocked {
+		return schedcore.Blocked(schedcore.ReasonUsageGate)
+	}
+	if eligibility.Eligible() {
+		return schedcore.Allowed("")
+	}
+	if reason := eligibilityStatusReason(eligibility.Status()); reason != "" {
+		return schedcore.Blocked(reason)
+	}
+	return schedcore.Blocked(schedcore.ReasonRuntimeBlocked)
+}
+
+// eligibilityStatusReason 把运行态资格状态映射成稳定原因码。
+func eligibilityStatusReason(status runtimecore.EligibilityStatus) schedcore.Reason {
+	switch status {
+	case runtimecore.EligibilityAvailable:
+		return ""
+	case runtimecore.EligibilityModelCooldown:
+		return schedcore.ReasonModelCooldown
+	case runtimecore.EligibilityCredentialBlocked:
+		return schedcore.ReasonRuntimeAuthInvalid
+	case runtimecore.EligibilityQuotaBlocked:
+		return schedcore.ReasonQuotaExhausted
+	case runtimecore.EligibilityPolicyBlocked:
+		return schedcore.ReasonRuntimeBlocked
+	default:
+		return schedcore.ReasonRuntimeBlocked
+	}
+}
+
 // admits 判定该候选能否继续解析凭据。
 //
 // 仅因软冷却被拦下的候选会被记入逃生阀，等整轮扫描落空后重放；硬阻塞直接跳过。
 // 携带加密推理链的续接请求会硬性优先其绑定账号：该账号只要不是硬阻塞，即使仅被
 // （账号,模型）软冷却挡住也放行（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
 func (session *RecruitmentSession) admits(
+	verdict schedcore.Verdict,
 	eligibility runtimecore.Eligibility,
 	offset int,
 	candidate accountapp.RoutingAccount,
 ) bool {
-	if eligibility.Eligible() {
+	if verdict.Schedulable() {
 		return true
 	}
-	if eligibility.Status() != runtimecore.EligibilityModelCooldown {
+	// 只有"该模型软冷却"还能走逃生阀；额度、凭据、策略硬阻塞一律跳过。
+	if verdict.Reason != schedcore.ReasonModelCooldown {
 		return false
 	}
 	// An upstream throttle is not a local transport hiccup. Preserve its

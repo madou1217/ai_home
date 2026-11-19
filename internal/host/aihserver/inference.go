@@ -250,6 +250,7 @@ func newInferenceComposition(
 		Runtime:                   dependencies.runtime,
 		Weights:                   dependencies.weights,
 		UsageGate:                 dependencies.usageGate,
+		Scheduling:                newSchedulingEvaluator(),
 		Strategy:                  dependencies.strategy,
 		Routes:                    activeCatalog,
 		CredentialStrategies:      dependencies.credentialRefresh,

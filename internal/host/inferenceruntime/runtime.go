@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/accountscheduling"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -58,6 +59,8 @@ type Dependencies struct {
 	Weights accountrouting.AccountWeightSource
 	// UsageGate 是选号前的额度门禁；为空表示不启用。
 	UsageGate accountrouting.UsageGate
+	// Scheduling 是账号/Provider 调度策略；为空时退回内联判定。
+	Scheduling *accountscheduling.Evaluator
 	// Strategy 是选号策略；零值非法，必须由调用方显式解析后传入。
 	Strategy accountrouting.SelectionStrategy
 	// Routes 负责客户端模型到真实上游路由计划的解析。
@@ -158,6 +161,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Credentials: credentials,
 			Weights:     dependencies.Weights,
 			Usage:       dependencies.UsageGate,
+			Scheduling:  dependencies.Scheduling,
 			Strategy:    dependencies.Strategy,
 		},
 	)

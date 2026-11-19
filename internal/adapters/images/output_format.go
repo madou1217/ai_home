@@ -16,7 +16,7 @@ const nativeImageConversionBudget = 20 * 1024 * 1024
 var errNativeImageOutputTooLarge = errors.New("native image conversion exceeds its output budget")
 
 type boundedImageBuffer struct {
-	bytes.Buffer
+	buffer    bytes.Buffer
 	remaining int
 }
 
@@ -24,7 +24,7 @@ func (b *boundedImageBuffer) Write(p []byte) (int, error) {
 	if len(p) > b.remaining {
 		return 0, errNativeImageOutputTooLarge
 	}
-	n, err := b.Buffer.Write(p)
+	n, err := b.buffer.Write(p)
 	b.remaining -= n
 	return n, err
 }
@@ -80,8 +80,11 @@ func encodeNativeImageOutput(result Result, format string) (Result, error) {
 		if err != nil {
 			return Result{}, newError(502, "invalid_image_output", "native image output cannot be encoded")
 		}
-		remaining -= encoded.Len()
-		output.B64JSON = base64.StdEncoding.EncodeToString(encoded.Bytes())
+		if encoded.buffer.Len() > remaining {
+			return Result{}, newError(502, "image_output_too_large", errNativeImageOutputTooLarge.Error())
+		}
+		remaining -= encoded.buffer.Len()
+		output.B64JSON = base64.StdEncoding.EncodeToString(encoded.buffer.Bytes())
 		output.MIME = targetMIME
 	}
 	return result, nil

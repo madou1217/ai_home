@@ -375,7 +375,8 @@ func (s *UsageStore) createAttributionsConn(
 				input_tokens + cache_read_input_tokens + cache_creation_input_tokens,
 				output_tokens + reasoning_output_tokens
 			FROM model_usage_records
-			WHERE source_kind IN ('session_jsonl', 'session_json') AND model != '' AND id <= ?`, hw); err != nil {
+			WHERE timestamp_ms BETWEEN ? AND ?
+				AND source_kind IN ('session_jsonl', 'session_json') AND model != '' AND id <= ?`, fromMS, toMS, hw); err != nil {
 		return nil, fmt.Errorf("准备本地扫描配对候选失败: %w", err)
 	}
 	candRows, err := conn.QueryContext(ctx, `

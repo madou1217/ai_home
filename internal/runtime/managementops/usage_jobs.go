@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 const (
@@ -102,8 +101,10 @@ func (h *jsonSSEHub) broadcast(payload any) {
 }
 
 type managedDashboardQueryJob struct {
-	job    UsageDashboardQueryJob
-	cancel context.CancelFunc
+	job         UsageDashboardQueryJob
+	cancel      context.CancelFunc
+	startRev    UsageProjectionRevision
+	hasStartRev bool
 }
 
 // UsageJobManager 管理异步本地会话扫描作业与渐进式看板查询作业，并提供 SSE 订阅分发。
@@ -122,19 +123,9 @@ type UsageJobManager struct {
 	queryOrder []string
 	queryHub   *jsonSSEHub
 
-	// dashCache 复用最近完成的看板结果：整段扫描要 10s 级，页面刷新/切回
-	// 同一时间窗时没必要重跑；键是归一化后的查询维度，TTL 见 dashboardCacheTTL。
-	dashCacheMu sync.Mutex
-	dashCache   map[string]cachedDashboardQuery
-}
-
-// dashboardCacheTTL 是看板结果的复用窗口。
-const dashboardCacheTTL = 2 * time.Minute
-
-type cachedDashboardQuery struct {
-	payload     UsageDashboardPayload
-	totalShards int
-	finishedAt  time.Time
+	// dashCache 按 (storeID, DB revision, exact query) 缓存已完成的看板快照，
+	// 写库/改价/分叉变化时立即失效，不再使用盲目 TTL。
+	dashCache *usageDashboardCache
 }
 
 // NewUsageJobManager 创建关联到 ManagementService 的用量异步作业管理器。
@@ -145,39 +136,48 @@ func NewUsageJobManager(service *ManagementService) *UsageJobManager {
 		scanHub:   newJSONSSEHub(),
 		queryJobs: make(map[string]*managedDashboardQueryJob),
 		queryHub:  newJSONSSEHub(),
-		dashCache: make(map[string]cachedDashboardQuery),
+		dashCache: newUsageDashboardCache(defaultDashboardCacheCapacity),
 	}
 }
 
-// dashboardCacheKey 用归一化查询的全部维度做键；窗口或过滤条件不同就不复用。
-func dashboardCacheKey(query UsageQuery) string {
-	return fmt.Sprintf("%d:%d:%s:%s:%s:%d:%t",
-		query.FromMS, query.ToMS, query.Provider, query.Model, query.SessionID, query.Limit, query.Scan)
+func (m *UsageJobManager) ensureDashCache() *usageDashboardCache {
+	if m == nil {
+		return nil
+	}
+	if m.dashCache != nil {
+		return m.dashCache
+	}
+	m.queryMu.Lock()
+	defer m.queryMu.Unlock()
+	if m.dashCache == nil {
+		m.dashCache = newUsageDashboardCache(defaultDashboardCacheCapacity)
+	}
+	return m.dashCache
 }
 
-func (m *UsageJobManager) lookupDashboardCache(query UsageQuery) (UsageDashboardPayload, int, bool) {
-	m.dashCacheMu.Lock()
-	defer m.dashCacheMu.Unlock()
-	cached, ok := m.dashCache[dashboardCacheKey(query)]
-	if !ok || time.Since(cached.finishedAt) > dashboardCacheTTL {
-		return UsageDashboardPayload{}, 0, false
+func (m *UsageJobManager) lookupDashboardCache(ctx context.Context, query UsageQuery) (UsageDashboardPayload, int, UsageProjectionRevision, bool, bool) {
+	if m == nil || m.service == nil || m.service.usageStore == nil {
+		return UsageDashboardPayload{}, 0, UsageProjectionRevision{}, false, false
 	}
-	return cached.payload, cached.totalShards, true
+	rev, err := m.service.usageStore.ProjectionRevision(ctx)
+	if err != nil {
+		return UsageDashboardPayload{}, 0, UsageProjectionRevision{}, false, false
+	}
+	if !rev.Cacheable || !rev.TriggerBacked {
+		return UsageDashboardPayload{}, 0, rev, false, false
+	}
+	dc := m.ensureDashCache()
+	if payload, totalShards, ok := dc.lookup(m.service.usageStore.cacheStoreID(), rev, query); ok {
+		return payload, totalShards, rev, true, true
+	}
+	return UsageDashboardPayload{}, 0, rev, true, false
 }
 
-func (m *UsageJobManager) storeDashboardCache(query UsageQuery, payload UsageDashboardPayload, totalShards int) {
-	m.dashCacheMu.Lock()
-	defer m.dashCacheMu.Unlock()
-	if len(m.dashCache) >= 8 {
-		for key := range m.dashCache {
-			delete(m.dashCache, key)
-		}
+func (m *UsageJobManager) storeDashboardCache(startRev UsageProjectionRevision, hasStartRev bool, query UsageQuery, payload UsageDashboardPayload, totalShards int) {
+	if !hasStartRev || m == nil || m.service == nil || m.service.usageStore == nil {
+		return
 	}
-	m.dashCache[dashboardCacheKey(query)] = cachedDashboardQuery{
-		payload:     payload,
-		totalShards: totalShards,
-		finishedAt:  time.Now(),
-	}
+	m.ensureDashCache().storeIfFresh(m.service.usageStore, startRev, query, payload, totalShards)
 }
 
 // ---------- 本地会话扫描作业 ----------
@@ -384,17 +384,29 @@ func cloneScanJob(j UsageScanJob) UsageScanJob {
 
 // StartDashboardQuery 启动一个支持进度推送与取消的渐进式用量看板查询作业。
 func (m *UsageJobManager) StartDashboardQuery(ctx context.Context, query UsageQuery) (UsageDashboardQueryJob, error) {
-	_ = ctx
 	if m == nil || m.service == nil || m.service.usageStore == nil {
 		return UsageDashboardQueryJob{}, ErrUsageUnavailable
 	}
+	readCtx := ctx
+	if readCtx == nil {
+		readCtx = context.Background()
+	}
+	if err := readCtx.Err(); err != nil {
+		return UsageDashboardQueryJob{}, err
+	}
 	normQ := normalizeUsageQueryBounds(query)
-	if payload, totalShards, ok := m.lookupDashboardCache(normQ); ok {
+	payload, totalShards, startRev, hasStartRev, hit := m.lookupDashboardCache(readCtx, normQ)
+	if !hasStartRev && readCtx.Err() != nil {
+		return UsageDashboardQueryJob{}, readCtx.Err()
+	}
+	if hit {
 		seq := m.querySeq.Add(1)
 		nowMS := m.service.now().UnixMilli()
 		jobID := fmt.Sprintf("usage-dashboard-query-%d-%d", nowMS, seq)
 		entry := &managedDashboardQueryJob{
-			cancel: func() {},
+			cancel:      func() {},
+			startRev:    startRev,
+			hasStartRev: true,
 			job: UsageDashboardQueryJob{
 				ID:              jobID,
 				Status:          "succeeded",
@@ -421,7 +433,9 @@ func (m *UsageJobManager) StartDashboardQuery(ctx context.Context, query UsageQu
 	jobCtx, cancel := context.WithCancel(context.Background())
 
 	entry := &managedDashboardQueryJob{
-		cancel: cancel,
+		cancel:      cancel,
+		startRev:    startRev,
+		hasStartRev: hasStartRev,
 		job: UsageDashboardQueryJob{
 			ID:     jobID,
 			Status: "queued",
@@ -683,11 +697,12 @@ func (m *UsageJobManager) runDashboardQueryJob(jobCtx context.Context, jobID str
 	entry.job.TotalShards = totalShards
 	entry.job.Dashboard = &finalDash
 	entry.job.FinishedAt = m.service.now().UnixMilli()
-	m.storeDashboardCache(normQ, finalDash, totalShards)
+	startRev, hasStartRev := entry.startRev, entry.hasStartRev
 	snap = cloneDashboardQueryJob(entry.job)
 	m.trimQueryJobsLocked()
 	m.queryMu.Unlock()
 
+	m.storeDashboardCache(startRev, hasStartRev, normQ, finalDash, totalShards)
 	m.broadcastDashboardQueryJob(snap)
 }
 

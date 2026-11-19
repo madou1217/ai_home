@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 )
@@ -42,10 +41,10 @@ var (
 
 // UsageProjectionContext 保存预先计算好的分叉上下文、高水位线及跨源归因配对结果。
 type UsageProjectionContext struct {
-	ForkDescriptors       []forkDescriptor
-	Attributions          []usageAttribution
-	RecordHighWaterID     int64
-	PromptHighWaterRowID  int64
+	ForkDescriptors      []forkDescriptor
+	Attributions         []usageAttribution
+	RecordHighWaterID    int64
+	PromptHighWaterRowID int64
 }
 
 type forkDescriptor struct {
@@ -157,38 +156,22 @@ func (s *UsageStore) PrepareDashboardProjection(ctx context.Context, query Usage
 	if s == nil || s.db == nil {
 		return nil, ErrUsageUnavailable
 	}
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return nil, err
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	defer func() { _ = conn.Close() }()
-
 	normalized := normalizeUsageQueryBounds(query)
-	return s.prepareProjectionContextConn(ctx, conn, normalized)
+	return s.prepareDashboardProjectionCached(ctx, normalized)
 }
 
 func (s *UsageStore) prepareProjectionContextConn(ctx context.Context, conn *sql.Conn, query UsageQuery) (*UsageProjectionContext, error) {
-	var recordHW, promptHW sql.NullInt64
-	if err := conn.QueryRowContext(ctx, `
-		SELECT
-			(SELECT COALESCE(MAX(id), 0) FROM model_usage_records),
-			(SELECT COALESCE(MAX(rowid), 0) FROM model_usage_prompt_events)`).Scan(&recordHW, &promptHW); err != nil {
-		return nil, fmt.Errorf("读取用量高水位线失败: %w", err)
+	if s == nil || s.db == nil {
+		return nil, ErrUsageUnavailable
 	}
-	forks, err := readForkDescriptorsConn(ctx, conn)
-	if err != nil {
-		return nil, err
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	attrs, err := s.createAttributionsConn(ctx, conn, query, forks, recordHW.Int64)
-	if err != nil {
-		return nil, err
-	}
-	return &UsageProjectionContext{
-		ForkDescriptors:      forks,
-		Attributions:         attrs,
-		RecordHighWaterID:    maxInt64(0, recordHW.Int64),
-		PromptHighWaterRowID: maxInt64(0, promptHW.Int64),
-	}, nil
+	normalized := normalizeUsageQueryBounds(query)
+	return s.prepareProjectionContextSnapshotConn(ctx, conn, normalized)
 }
 
 func readForkDescriptorsConn(ctx context.Context, conn *sql.Conn) ([]forkDescriptor, error) {
@@ -261,6 +244,9 @@ func (s *UsageStore) createAttributionsConn(
 	forks []forkDescriptor,
 	recordHW int64,
 ) ([]usageAttribution, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	fromMS := maxInt64(0, query.FromMS-scannerAfterProxyWindowMS)
 	toMS := query.ToMS + scannerBeforeProxyWindowMS
 	if toMS < query.ToMS {
@@ -270,24 +256,28 @@ func (s *UsageStore) createAttributionsConn(
 	if hw <= 0 {
 		hw = math.MaxInt64
 	}
-	// 归因只可能来自 session_jsonl/session_json 扫描行。没有候选行时直接返回，
-	// 避免按每个代理观测行做 ±5 分钟的 CROSS JOIN 扫描（纯网关流量下这是主要开销）。
+
 	var hasCandidate int
-	candidateErr := conn.QueryRowContext(ctx, `
-		SELECT 1 FROM model_usage_records INDEXED BY idx_model_usage_timestamp
+	if err := conn.QueryRowContext(ctx, `
+		SELECT 1
+		FROM model_usage_records INDEXED BY idx_model_usage_timestamp
 		WHERE timestamp_ms BETWEEN ? AND ?
 			AND id <= ?
 			AND source_kind IN ('session_jsonl', 'session_json')
 			AND model != ''
-		LIMIT 1`, fromMS, toMS, hw).Scan(&hasCandidate)
-	if candidateErr == sql.ErrNoRows {
-		return nil, nil
+		LIMIT 1`, fromMS, toMS, hw).Scan(&hasCandidate); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("检查扫描候选记录失败: %w", err)
 	}
-	if candidateErr != nil {
-		return nil, fmt.Errorf("查询代理归因候选失败: %w", candidateErr)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+
 	proxyRows, err := conn.QueryContext(ctx, `
-		SELECT id, provider, account_ref, session_id, source_kind, model,
+		SELECT
+			id, provider, account_ref, session_id, source_kind, model,
 			input_tokens, output_tokens, cache_read_input_tokens,
 			cache_creation_input_tokens, reasoning_output_tokens, total_tokens,
 			cost_usd, timestamp_ms
@@ -297,34 +287,43 @@ func (s *UsageStore) createAttributionsConn(
 			AND source_kind GLOB 'server_*'
 			AND model != ''
 			AND (
-				input_tokens > 0 OR output_tokens > 0 OR cache_read_input_tokens > 0
-				OR cache_creation_input_tokens > 0 OR reasoning_output_tokens > 0
+				input_tokens > 0
+				OR output_tokens > 0
+				OR cache_read_input_tokens > 0
+				OR cache_creation_input_tokens > 0
+				OR reasoning_output_tokens > 0
 			)
 		ORDER BY timestamp_ms, id`, fromMS, toMS, hw)
 	if err != nil {
-		return nil, fmt.Errorf("查询代理请求观测行失败: %w", err)
+		return nil, fmt.Errorf("读取代理请求观测记录失败: %w", err)
 	}
+	defer func() { _ = proxyRows.Close() }()
+
 	var proxies []observationRow
 	proxyByID := make(map[int64]observationRow)
 	for proxyRows.Next() {
-		var p observationRow
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var r observationRow
 		if scanErr := proxyRows.Scan(
-			&p.ID, &p.Provider, &p.AccountRef, &p.SessionID, &p.SourceKind, &p.Model,
-			&p.InputTokens, &p.OutputTokens, &p.CacheReadInputTokens,
-			&p.CacheCreationInputTokens, &p.ReasoningOutputTokens, &p.TotalTokens,
-			&p.CostUSD, &p.TimestampMS,
+			&r.ID, &r.Provider, &r.AccountRef, &r.SessionID, &r.SourceKind, &r.Model,
+			&r.InputTokens, &r.OutputTokens, &r.CacheReadInputTokens,
+			&r.CacheCreationInputTokens, &r.ReasoningOutputTokens, &r.TotalTokens,
+			&r.CostUSD, &r.TimestampMS,
 		); scanErr != nil {
-			_ = proxyRows.Close()
 			return nil, scanErr
 		}
-		proxies = append(proxies, p)
-		proxyByID[p.ID] = p
+		proxies = append(proxies, r)
+		proxyByID[r.ID] = r
 	}
 	if err := proxyRows.Err(); err != nil {
-		_ = proxyRows.Close()
 		return nil, err
 	}
 	_ = proxyRows.Close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(proxies) == 0 {
 		return nil, nil
 	}
@@ -336,49 +335,81 @@ func (s *UsageStore) createAttributionsConn(
 		OutputTokens     int64 `json:"outputTokens"`
 		GenerationTokens int64 `json:"generationTokens"`
 	}
-	payload := make([]proxyJSONItem, len(proxies))
-	for i, p := range proxies {
-		payload[i] = proxyJSONItem{
+	proxyItems := make([]proxyJSONItem, 0, len(proxies))
+	for _, p := range proxies {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		proxyItems = append(proxyItems, proxyJSONItem{
 			ID:               p.ID,
 			TimestampMS:      p.TimestampMS,
 			ContextTokens:    p.InputTokens + p.CacheReadInputTokens + p.CacheCreationInputTokens,
 			OutputTokens:     p.OutputTokens,
 			GenerationTokens: p.OutputTokens + p.ReasoningOutputTokens,
-		}
+		})
 	}
-	serialized, _ := json.Marshal(payload)
+	serialized, err := json.Marshal(proxyItems)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-	// 本地扫描行先收敛成带 token 键的临时表并按 token 建索引，再与代理观测等值连接。
-	// 原实现让每个代理行在 ±5 分钟窗口内扫全表，窗口 × 代理数会放大到千万级行。
 	for _, stmt := range []string{
 		`CREATE TEMP TABLE IF NOT EXISTS model_usage_read_session_candidates (
-			id INTEGER PRIMARY KEY, event_key TEXT NOT NULL, provider TEXT NOT NULL,
-			account_ref TEXT NOT NULL, session_id TEXT NOT NULL, source_kind TEXT NOT NULL,
-			model TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
-			cache_read_input_tokens INTEGER NOT NULL, cache_creation_input_tokens INTEGER NOT NULL,
-			reasoning_output_tokens INTEGER NOT NULL, total_tokens INTEGER NOT NULL,
-			cost_usd REAL NOT NULL, timestamp_ms INTEGER NOT NULL, project TEXT NOT NULL,
-			cwd TEXT NOT NULL, git_branch TEXT NOT NULL, context_tokens INTEGER NOT NULL,
-			generation_tokens INTEGER NOT NULL)`,
+			id INTEGER PRIMARY KEY,
+			event_key TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			account_ref TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			source_kind TEXT NOT NULL,
+			model TEXT NOT NULL,
+			input_tokens INTEGER NOT NULL,
+			output_tokens INTEGER NOT NULL,
+			cache_read_input_tokens INTEGER NOT NULL,
+			cache_creation_input_tokens INTEGER NOT NULL,
+			reasoning_output_tokens INTEGER NOT NULL,
+			total_tokens INTEGER NOT NULL,
+			cost_usd REAL NOT NULL,
+			timestamp_ms INTEGER NOT NULL,
+			project TEXT NOT NULL,
+			cwd TEXT NOT NULL,
+			git_branch TEXT NOT NULL,
+			context_tokens INTEGER NOT NULL,
+			generation_tokens INTEGER NOT NULL
+		)`,
 		`DELETE FROM temp.model_usage_read_session_candidates`,
 		`CREATE INDEX IF NOT EXISTS temp.idx_usage_session_ctx ON model_usage_read_session_candidates(context_tokens, output_tokens, timestamp_ms)`,
 		`CREATE INDEX IF NOT EXISTS temp.idx_usage_session_gen ON model_usage_read_session_candidates(context_tokens, generation_tokens, timestamp_ms)`,
 	} {
-		if _, err := conn.ExecContext(ctx, stmt); err != nil {
-			return nil, fmt.Errorf("准备本地扫描配对候选失败: %w", err)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if _, execErr := conn.ExecContext(ctx, stmt); execErr != nil {
+			return nil, fmt.Errorf("准备扫描候选临时表失败: %w", execErr)
 		}
 	}
-	if _, err := conn.ExecContext(ctx, `INSERT INTO temp.model_usage_read_session_candidates
-			SELECT id, event_key, provider, account_ref, session_id, source_kind, model,
-				input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-				reasoning_output_tokens, total_tokens, cost_usd, timestamp_ms, project, cwd, git_branch,
-				input_tokens + cache_read_input_tokens + cache_creation_input_tokens,
-				output_tokens + reasoning_output_tokens
-			FROM model_usage_records
-			WHERE timestamp_ms BETWEEN ? AND ?
-				AND source_kind IN ('session_jsonl', 'session_json') AND model != '' AND id <= ?`, fromMS, toMS, hw); err != nil {
-		return nil, fmt.Errorf("准备本地扫描配对候选失败: %w", err)
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO temp.model_usage_read_session_candidates
+		SELECT
+			id, event_key, provider, account_ref, session_id, source_kind, model,
+			input_tokens, output_tokens, cache_read_input_tokens,
+			cache_creation_input_tokens, reasoning_output_tokens, total_tokens,
+			cost_usd, timestamp_ms, project, cwd, git_branch,
+			input_tokens + cache_read_input_tokens + cache_creation_input_tokens,
+			output_tokens + reasoning_output_tokens
+		FROM model_usage_records
+		WHERE timestamp_ms BETWEEN ? AND ?
+			AND source_kind IN ('session_jsonl', 'session_json')
+			AND model != ''
+			AND id <= ?`, fromMS, toMS, hw); err != nil {
+		return nil, fmt.Errorf("填充扫描候选临时表失败: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	candRows, err := conn.QueryContext(ctx, `
 		WITH proxy_observations AS (
 			SELECT
@@ -401,10 +432,9 @@ func (s *UsageStore) createAttributionsConn(
 			AND (s.output_tokens = p.output_tokens OR s.generation_tokens = p.generation_tokens)
 			AND s.timestamp_ms BETWEEN p.timestamp_ms - ? AND p.timestamp_ms + ?
 		ORDER BY s.timestamp_ms, s.id, p.proxy_id`,
-		string(serialized), scannerBeforeProxyWindowMS, scannerAfterProxyWindowMS,
-	)
+		string(serialized), scannerBeforeProxyWindowMS, scannerAfterProxyWindowMS)
 	if err != nil {
-		return nil, fmt.Errorf("查询本地扫描配对候选失败: %w", err)
+		return nil, fmt.Errorf("查询跨源候选匹配失败: %w", err)
 	}
 	defer func() { _ = candRows.Close() }()
 
@@ -415,14 +445,19 @@ func (s *UsageStore) createAttributionsConn(
 	scannerByID := make(map[int64]observationRow)
 	var candidates []matchCandidate
 	for candRows.Next() {
-		var row observationRow
-		var proxyID int64
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var (
+			row     observationRow
+			proxyID int64
+		)
 		if scanErr := candRows.Scan(
-			&row.ID, &row.EventKey, &row.Provider, &row.AccountRef, &row.SessionID, &row.SourceKind, &row.Model,
-			&row.InputTokens, &row.OutputTokens, &row.CacheReadInputTokens,
-			&row.CacheCreationInputTokens, &row.ReasoningOutputTokens, &row.TotalTokens,
-			&row.CostUSD, &row.TimestampMS, &row.Project, &row.CWD, &row.GitBranch,
-			&proxyID,
+			&row.ID, &row.EventKey, &row.Provider, &row.AccountRef, &row.SessionID,
+			&row.SourceKind, &row.Model, &row.InputTokens, &row.OutputTokens,
+			&row.CacheReadInputTokens, &row.CacheCreationInputTokens,
+			&row.ReasoningOutputTokens, &row.TotalTokens, &row.CostUSD,
+			&row.TimestampMS, &row.Project, &row.CWD, &row.GitBranch, &proxyID,
 		); scanErr != nil {
 			return nil, scanErr
 		}
@@ -439,35 +474,49 @@ func (s *UsageStore) createAttributionsConn(
 		if delta < 0 {
 			delta = -delta
 		}
-		var sRank int64 = 1
-		if strings.TrimSpace(projected.SessionID) != "" && strings.TrimSpace(projected.SessionID) == strings.TrimSpace(proxy.SessionID) {
-			sRank = 0
+		rank := int64(1)
+		if strings.TrimSpace(projected.SessionID) != "" &&
+			strings.TrimSpace(projected.SessionID) == strings.TrimSpace(proxy.SessionID) {
+			rank = 0
 		}
 		candidates = append(candidates, matchCandidate{
 			ScannerID:          projected.ID,
 			ProxyID:            proxy.ID,
 			ScannerTimestampMS: projected.TimestampMS,
 			DeltaMS:            delta,
-			SessionRank:        sRank,
+			SessionRank:        rank,
 		})
 	}
 	if err := candRows.Err(); err != nil {
 		return nil, err
 	}
+	_ = candRows.Close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	matches := matchObservationCandidates(candidates)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(matches) == 0 {
 		return nil, nil
 	}
 
-	pricingSnap, err := s.loadPricingSnapshot(ctx, conn)
+	pricingSnap, err := s.loadPricingSnapshotFreshConn(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
 	attrs := make([]usageAttribution, 0, len(matches))
 	for _, m := range matches {
-		sc := scannerByID[m.ScannerID]
-		px := proxyByID[m.ProxyID]
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		sc, sOK := scannerByID[m.ScannerID]
+		px, pOK := proxyByID[m.ProxyID]
+		if !sOK || !pOK {
+			continue
+		}
 		model := s.attribution.FormatAttributedModel(sc.Provider, px.Provider, firstNonEmpty(px.Model, sc.Model))
 		accountRef := strings.TrimSpace(px.AccountRef)
 		pRec := pricingSnap.resolve(s.attribution, model, sc.Provider, accountRef)
@@ -485,8 +534,8 @@ func (s *UsageStore) createAttributionsConn(
 			costUSD = clampNonNegFloat(sc.CostUSD)
 		}
 		attrs = append(attrs, usageAttribution{
-			ScannerID:          m.ScannerID,
-			ProxyID:            m.ProxyID,
+			ScannerID:          sc.ID,
+			ProxyID:            px.ID,
 			ScannerTimestampMS: sc.TimestampMS,
 			ProxyTimestampMS:   px.TimestampMS,
 			Model:              model,
@@ -967,23 +1016,20 @@ func buildProjectedWhereClause(q UsageQuery, alias string, includeModel, include
 }
 
 func (s *UsageStore) openPreparedProjection(ctx context.Context, q UsageQuery, prebuilt *UsageProjectionContext) (*sql.Conn, string, *UsageProjectionContext, error) {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return nil, "", nil, err
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	pCtx := prebuilt
 	if pCtx == nil {
-		if cached, ok := loadProjectionCache(q); ok {
-			pCtx = cached
-		} else {
-			var prepErr error
-			pCtx, prepErr = s.prepareProjectionContextConn(ctx, conn, q)
-			if prepErr != nil {
-				_ = conn.Close()
-				return nil, "", nil, prepErr
-			}
-			storeProjectionCache(q, pCtx)
+		var prepErr error
+		pCtx, prepErr = s.PrepareDashboardProjection(ctx, q)
+		if prepErr != nil {
+			return nil, "", nil, prepErr
 		}
+	}
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return nil, "", nil, err
 	}
 	if err := materializeProjectionConn(ctx, conn, pCtx); err != nil {
 		cleanupProjectionConn(conn)
@@ -998,46 +1044,33 @@ func (s *UsageStore) QueryStats(ctx context.Context, query UsageQuery) (UsageSta
 	if s == nil || s.db == nil {
 		return UsageStatsSummary{}, ErrUsageUnavailable
 	}
-	q := normalizeUsageQueryBounds(query)
-	cacheKey := fmt.Sprintf("%d:%d:%s:%s:%s:%d", q.FromMS, q.ToMS, q.Provider, q.Model, q.SessionID, q.Limit)
-	now := s.now()
-	s.statsMu.Lock()
-	if hit, ok := s.statsCache[cacheKey]; ok && now.Sub(hit.cachedAt) < statsCacheTTL {
-		s.statsMu.Unlock()
-		return hit.value, nil
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	s.statsMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return UsageStatsSummary{}, err
+	}
+	q := normalizeUsageQueryBounds(query)
+	startRev, hasStartRev, hit, ok, revErr := s.lookupStatsRevisionCache(ctx, q)
+	if revErr != nil {
+		return UsageStatsSummary{}, revErr
+	}
+	if ok {
+		return hit, nil
+	}
 
 	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, nil)
 	if err != nil {
 		return UsageStatsSummary{}, err
 	}
-	defer func() {
-		cleanupProjectionConn(conn)
-		_ = conn.Close()
-	}()
-
-	stats, err := queryStatsConn(ctx, conn, cte, pCtx, q)
-	if err != nil {
-		return UsageStatsSummary{}, err
+	stats, queryErr := queryStatsConn(ctx, conn, cte, pCtx, q)
+	cleanupProjectionConn(conn)
+	_ = conn.Close()
+	if queryErr != nil {
+		return UsageStatsSummary{}, queryErr
 	}
 
-	s.statsMu.Lock()
-	if len(s.statsCache) >= maxStatsCacheEntries {
-		var oldestKey string
-		var oldestAt time.Time
-		for k, entry := range s.statsCache {
-			if oldestKey == "" || entry.cachedAt.Before(oldestAt) {
-				oldestKey = k
-				oldestAt = entry.cachedAt
-			}
-		}
-		if oldestKey != "" {
-			delete(s.statsCache, oldestKey)
-		}
-	}
-	s.statsCache[cacheKey] = statsCacheEntry{cachedAt: now, value: stats}
-	s.statsMu.Unlock()
+	s.storeStatsRevisionCacheIfFresh(ctx, startRev, hasStartRev, q, stats)
 	return stats, nil
 }
 
@@ -1569,10 +1602,10 @@ func (s *UsageStore) QueryBreakdown(ctx context.Context, query UsageQuery) (Usag
 	accountsMap := make(map[string]*UsageBreakdownAccount)
 	for rows.Next() {
 		var (
-			acctProv, acctRef, prov, model            string
-			calls                                     int
-			inTok, outTok, cr, cc, reason, totalTok   int64
-			costUSD                                   float64
+			acctProv, acctRef, prov, model          string
+			calls                                   int
+			inTok, outTok, cr, cc, reason, totalTok int64
+			costUSD                                 float64
 		)
 		if scanErr := rows.Scan(
 			&acctProv, &acctRef, &prov, &model,

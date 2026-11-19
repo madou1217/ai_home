@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	statsCacheTTL              = 5 * time.Second
 	maxStatsCacheEntries       = 64
 	pricingCustomRefreshWindow = 3 * time.Second
 	pricingActiveCatalogKVKey  = "active:model_usage_pricing"
@@ -178,11 +177,6 @@ type pricingCacheEntry struct {
 	loadedAt    time.Time
 }
 
-type statsCacheEntry struct {
-	cachedAt time.Time
-	value    UsageStatsSummary
-}
-
 // UsageStore 管理 app-state.db 中的 model_usage_* 与投影查询。
 type UsageStore struct {
 	db          *sql.DB
@@ -198,8 +192,7 @@ type UsageStore struct {
 	pricingMu    sync.RWMutex
 	pricingCache *pricingCacheEntry
 
-	statsMu    sync.Mutex
-	statsCache map[string]statsCacheEntry
+	projCache *usageProjectionCache
 }
 
 // NewUsageStore 打开（必要时初始化）app-state.db 中的用量表并返回 UsageStore。
@@ -278,11 +271,12 @@ func newUsageStoreInternal(
 		attribution: usagepricing.NewAttributionIndex(copiedProviders),
 		now:         nowFn,
 		reqReader:   newRequestLogReader(logPath),
-		statsCache:  make(map[string]statsCacheEntry),
+		projCache:   newUsageProjectionCache(defaultProjectionCacheCapacity),
 	}
 	if err := store.ensureSchema(ctx); err != nil {
 		return nil, err
 	}
+	store.initProjectionRevisionSchema(ctx)
 	return store, nil
 }
 
@@ -409,14 +403,14 @@ func (s *UsageStore) ensureSchema(ctx context.Context) error {
 	return nil
 }
 
-// InvalidateStatsCache 清空内存短时统计缓存。
+// InvalidateStatsCache 清空内存统计缓存并推进存储级投影失效代次。
 func (s *UsageStore) InvalidateStatsCache() {
 	if s == nil {
 		return
 	}
-	s.statsMu.Lock()
-	s.statsCache = make(map[string]statsCacheEntry)
-	s.statsMu.Unlock()
+	if s.projCache != nil {
+		s.projCache.invalidate()
+	}
 }
 
 type pricingResolverSnapshot struct {

@@ -212,10 +212,11 @@ export async function refreshActiveControlPlaneDeviceState(options: {
   fetchImpl?: typeof fetch;
 } = {}) {
   return runActiveControlPlaneRequest(async (profile, context) => {
+    // 同一事实：返回值是 profile 本身，不是 { profile } 包装。
     const snapshot = await refreshControlPlaneDeviceState(profile, options);
     return {
       ...snapshot,
-      activeProfileId: snapshot.profile.id,
+      activeProfileId: snapshot.id,
       activeProfileSource: context.source
     };
   });

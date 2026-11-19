@@ -1282,6 +1282,18 @@ export async function refreshControlPlaneDeviceState(profile: ControlPlaneProfil
   });
 }
 
+// normalizeRefreshError 把刷新失败归一成可持久化的短码。
+//
+// 与 active-control-plane 的 normalizeSyncError 同口径：优先取稳定 code，其次 message；
+// 不允许把对象直接写进 lastError（服务端 404 错误体是对象，React 渲染会炸）。
+function normalizeRefreshError(error: unknown) {
+  const source = error as { code?: string; message?: string };
+  return normalizeText(
+    source?.code || source?.message || error || 'control_plane_refresh_failed',
+    200
+  );
+}
+
 export async function refreshControlPlaneProfileStates(profiles: ControlPlaneProfile[] = [], options: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -1298,12 +1310,14 @@ export async function refreshControlPlaneProfileStates(profiles: ControlPlanePro
     }
 
     try {
+      // refreshControlPlaneDeviceState 返回**已经保存的 profile 本身**（saveControlPlaneProfile
+      // 的返回值），不是 { profile } 包装：曾经按包装取值会让这里的 profile 变成 undefined。
       const refreshed = await refreshControlPlaneDeviceState(profile, options);
       return {
         profileId: profile.id,
         endpoint: profile.endpoint,
         status: 'refreshed' as const,
-        profile: refreshed.profile
+        profile: refreshed
       };
     } catch (error) {
       const failedProfile = saveControlPlaneProfile({
@@ -1313,7 +1327,7 @@ export async function refreshControlPlaneProfileStates(profiles: ControlPlanePro
         state: 'degraded',
         managementKey: profile.managementKey,
         managementKeyConfigured: profile.managementKeyConfigured,
-        lastError: normalizeRefreshError(error)
+        lastError: normalizeRefreshError(error),
       });
       return {
         profileId: profile.id,

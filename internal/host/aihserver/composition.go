@@ -35,6 +35,7 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
+	modelpricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
@@ -1884,6 +1885,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		if err := pluginBundle.HostService.Start(ctx); err != nil && errorLog != nil {
 			errorLog.Printf("插件宿主初始激活降级: %v", err)
 		}
+	}
+	// 插件价格来源接进定价 Resolver：已生效（通过复核）的插件快照参与报价裁决，
+	// 按来源 authority 与宿主价格（账号/人工/官方）比较；未生效快照不参与计费。
+	if sharedPricingService != nil {
+		pricingresolver.ConfigurePluginSource(func() modelpricingcontract.QuoteSource {
+			store := sharedPricingService.Store()
+			if store == nil {
+				return nil
+			}
+			return store.ContractQuoteSource()
+		})
 	}
 	egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
 		AIHomeDir: aiHomeDir,

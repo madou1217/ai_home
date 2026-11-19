@@ -22,6 +22,7 @@ var (
 	defaultErr          error
 	defaultConfigLoader custompricing.RawConfigLoader
 	defaultManualLoader manualpricing.SettingsLoader
+	defaultPluginSource func() modelpricing.QuoteSource
 )
 
 // Configure 在 Default 首次调用前注入配置加载器；通常传账号 Store。
@@ -32,6 +33,16 @@ func Configure(loader custompricing.RawConfigLoader) {
 // ConfigureManual 注入账号模型自定义价格加载器（appstate settings）。
 func ConfigureManual(loader manualpricing.SettingsLoader) {
 	defaultManualLoader = loader
+}
+
+// ConfigurePluginSource 注入插件价格来源的延迟提供者。
+//
+// 为什么用提供者而不是直接传来源：插件宿主的 pricingcatalog 在组合根里晚于
+// Resolver 创建（插件运行时依赖账号存储与宿主进程），而 Resolver 的来源列表只在
+// Default() 时组装一次。提供者在每次裁决时取值，既保持来源列表稳定，又不要求
+// 两者有固定初始化顺序；提供者为空时该来源视为未接线。
+func ConfigurePluginSource(provider func() modelpricing.QuoteSource) {
+	defaultPluginSource = provider
 }
 
 // Default 返回进程共享的 Resolver。
@@ -64,6 +75,9 @@ func Default() (*Resolver, error) {
 			quotes = append(quotes, adapter.QuoteSource())
 			metadata = append(metadata, adapter.MetadataSource())
 		}
+		// 插件价格来源始终占一格：宿主价格（账号/人工/官方）按 authority 胜出，
+		// 插件来源只在没有更高可信度报价时生效。
+		quotes = append(quotes, lazyPluginSource{})
 		defaultResolver = New(quotes, metadata)
 	})
 	return defaultResolver, defaultErr
@@ -272,4 +286,24 @@ func unknownMetadata(request modelpricing.MetadataRequest) modelpricing.Metadata
 			Kind: modelpricing.SourceUnknown,
 		},
 	}
+}
+
+// lazyPluginSource 把插件价格来源的取值推迟到每次裁决。
+//
+// 未接线时返回显式 unknown：不能返回零值后当成「免费」，否则插件宿主启动失败
+// 会把所有模型成本算成 0 元。
+type lazyPluginSource struct{}
+
+func (lazyPluginSource) Capability() string { return modelpricing.CapabilityPricingQuote }
+
+func (lazyPluginSource) Quote(ctx context.Context, request modelpricing.QuoteRequest) (modelpricing.Quote, error) {
+	provider := defaultPluginSource
+	if provider == nil {
+		return modelpricing.Quote{}, nil
+	}
+	source := provider()
+	if source == nil {
+		return modelpricing.Quote{}, nil
+	}
+	return source.Quote(ctx, request)
 }

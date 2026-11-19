@@ -148,6 +148,14 @@ func NewService(deps ServiceDependencies) (*Service, error) {
 	}, nil
 }
 
+// Store 返回该服务持有的价格来源存储，供组合根把已生效快照接到契约端口。
+func (service *Service) Store() *Store {
+	if service == nil {
+		return nil
+	}
+	return service.store
+}
+
 // SourcesPayload 返回社区来源目录、当前生效快照摘要与待复核列表。
 func (service *Service) SourcesPayload() (SourcesPayload, error) {
 	docs, err := service.store.ListSources()

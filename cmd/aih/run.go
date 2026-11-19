@@ -17,6 +17,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
 const (
@@ -304,6 +305,10 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 			return err
 		}
 	}
+	var claudePreflight providercli.ClaudePreflight
+	if providerID == "claude" && aiHomeDir != "" {
+		claudePreflight = resolveClaudePreflight(ctx, runtime, aiHomeDir)
+	}
 	var gatewayAccounts providerlaunch.GatewayAccountResolver
 	if !needsNativeStore {
 		gatewayAccounts, err = newManagementGatewayAccountResolver(
@@ -321,6 +326,7 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 		Stdin:           runtime.stdin,
 		Stdout:          runtime.stdout,
 		Stderr:          runtime.stderr,
+		ClaudePreflight: claudePreflight,
 	})
 	if err != nil {
 		return fmt.Errorf("初始化 Go CLI 失败: %w", err)

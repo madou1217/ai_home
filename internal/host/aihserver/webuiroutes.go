@@ -60,6 +60,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiappentriesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatpasteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiclaudepreflightapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplanebootstrapapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuifsaccessapi"
@@ -273,6 +274,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	usageConfig, err := webuiusageconfigapi.NewHandler(webuiusageconfigapi.Dependencies{Authorizer: authorizer, Store: usageConfigSource})
 	if err != nil {
 		return nil, fmt.Errorf("创建用量配置接口失败: %w", err)
+	}
+
+	claudePreflightSource, err := webuiclaudepreflightapi.OpenSource(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("创建首屏检查配置数据源失败: %w", err)
+	}
+	claudePreflight, err := webuiclaudepreflightapi.NewHandler(webuiclaudepreflightapi.Dependencies{Authorizer: authorizer, Store: claudePreflightSource})
+	if err != nil {
+		return nil, fmt.Errorf("创建首屏检查配置接口失败: %w", err)
 	}
 
 	sshSource, err := webuisshapi.OpenSource(dependencies.AIHomeDir)
@@ -878,6 +888,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuichatpasteapi.PublicPath, Handler: webuichatpasteapi.NewPublicAlias(chatPaste)},
 		{Pattern: "GET " + webuiusageconfigapi.Path, Handler: usageConfig},
 		{Pattern: "POST " + webuiusageconfigapi.Path, Handler: usageConfig},
+		{Pattern: "GET " + webuiclaudepreflightapi.Path, Handler: claudePreflight},
+		{Pattern: "POST " + webuiclaudepreflightapi.Path, Handler: claudePreflight},
+		{Pattern: "POST " + webuiclaudepreflightapi.ProbePath, Handler: claudePreflight},
 		{Pattern: "GET " + webuisshapi.Path, Handler: sshHandler},
 		{Pattern: "GET " + webuisshapi.WorkspacesPath, Handler: sshWorkspaces},
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},

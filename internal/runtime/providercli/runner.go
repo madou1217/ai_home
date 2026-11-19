@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
@@ -66,24 +67,27 @@ type Options struct {
 	// PrepareNative applies provider launch intent after the final argv/env resolve.
 	// Its release is held through foreground exit; nil preserves existing behavior.
 	PrepareNative func(context.Context, string, string, []string, []string) ([]string, func(), error)
+	// ClaudePreflight 是 Claude 首屏检查决策；零值表示保留官方行为且不告警。
+	ClaudePreflight ClaudePreflight
 }
 
 // Runner 是 LaunchPlan 到官方进程拓扑的唯一执行入口。
 type Runner struct {
-	credentials   CredentialRefresher
-	stdin         io.Reader
-	stdout        io.Writer
-	stderr        io.Writer
-	httpClient    *http.Client
-	interactive   bool
-	ptyStarter    pty.Starter
-	projection    appprojection.Provisioner
-	hostHomeDir   string
-	platform      string
-	environ       func() []string
-	binaries      binaryResolver
-	processes     processFactory
-	prepareNative func(context.Context, string, string, []string, []string) ([]string, func(), error)
+	credentials     CredentialRefresher
+	stdin           io.Reader
+	stdout          io.Writer
+	stderr          io.Writer
+	httpClient      *http.Client
+	interactive     bool
+	ptyStarter      pty.Starter
+	projection      appprojection.Provisioner
+	hostHomeDir     string
+	platform        string
+	environ         func() []string
+	binaries        binaryResolver
+	processes       processFactory
+	prepareNative   func(context.Context, string, string, []string, []string) ([]string, func(), error)
+	claudePreflight ClaudePreflight
 }
 
 // NewRunner 创建只依赖标准库操作系统边界的生产 Runtime。
@@ -101,20 +105,21 @@ func NewRunner(options Options) (*Runner, error) {
 		platform = runtime.GOOS
 	}
 	return &Runner{
-		credentials:   options.Credentials,
-		stdin:         options.Stdin,
-		stdout:        options.Stdout,
-		stderr:        options.Stderr,
-		httpClient:    client,
-		interactive:   options.Interactive,
-		ptyStarter:    options.PTYStarter,
-		projection:    options.Projection,
-		hostHomeDir:   options.HostHomeDir,
-		platform:      platform,
-		environ:       os.Environ,
-		binaries:      defaultBinaryResolver(),
-		processes:     execProcessFactory{},
-		prepareNative: options.PrepareNative,
+		credentials:     options.Credentials,
+		stdin:           options.Stdin,
+		stdout:          options.Stdout,
+		stderr:          options.Stderr,
+		httpClient:      client,
+		interactive:     options.Interactive,
+		ptyStarter:      options.PTYStarter,
+		projection:      options.Projection,
+		hostHomeDir:     options.HostHomeDir,
+		platform:        platform,
+		environ:         os.Environ,
+		binaries:        defaultBinaryResolver(),
+		processes:       execProcessFactory{},
+		prepareNative:   options.PrepareNative,
+		claudePreflight: options.ClaudePreflight,
 	}, nil
 }
 
@@ -292,6 +297,9 @@ func (runner *Runner) runProviderProcess(
 	environment []string,
 ) error {
 	environment = applyProviderConfigRoot(providerID, runner.hostHomeDir, environment)
+	if strings.EqualFold(strings.TrimSpace(providerID), "claude") {
+		runner.applyClaudePreflight()
+	}
 	if runner.interactive && runner.ptyStarter != nil {
 		return runner.runInteractiveDirect(ctx, path, arguments, environment)
 	}

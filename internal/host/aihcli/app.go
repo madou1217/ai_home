@@ -80,6 +80,8 @@ type Options struct {
 	ProviderHTTPClient *http.Client
 	// HostHomeDir 覆盖账号投影的宿主家目录；为空时从进程环境解析。
 	HostHomeDir string
+	// ClaudePreflight 是 Claude 首屏检查决策；由命令入口按 app-state 解析。
+	ClaudePreflight providercli.ClaudePreflight
 }
 
 // GatewayConfig 只在 Gateway Relay 模式使用；Native Direct 不读取它。
@@ -340,16 +342,17 @@ func New(ctx context.Context, options Options) (*App, error) {
 		hostHomeDir = resolveHostHomeDir()
 	}
 	runner, err := providercli.NewRunner(providercli.Options{
-		Credentials:   credentials,
-		Stdin:         options.Stdin,
-		Stdout:        options.Stdout,
-		Stderr:        options.Stderr,
-		HTTPClient:    options.ProviderHTTPClient,
-		Interactive:   isInteractiveTTY(options.Stdin, options.Stdout),
-		PTYStarter:    pty.NewStarter(),
-		Projection:    provisioner,
-		HostHomeDir:   hostHomeDir,
-		PrepareNative: codexexecintent.Prepare,
+		Credentials:     credentials,
+		Stdin:           options.Stdin,
+		Stdout:          options.Stdout,
+		Stderr:          options.Stderr,
+		HTTPClient:      options.ProviderHTTPClient,
+		Interactive:     isInteractiveTTY(options.Stdin, options.Stdout),
+		PTYStarter:      pty.NewStarter(),
+		Projection:      provisioner,
+		HostHomeDir:     hostHomeDir,
+		PrepareNative:   codexexecintent.Prepare,
+		ClaudePreflight: options.ClaudePreflight,
 	})
 	if err != nil {
 		return fail("创建 Provider CLI Runtime 失败", err)

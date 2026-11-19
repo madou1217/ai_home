@@ -70,6 +70,11 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 			projection, ok = gate.registry.Get(generation)
 		}
 		if !ok {
+			if raw == "" {
+				// 没有活跃插件代次：与「没有插件系统」等价，直接放行。
+				next.ServeHTTP(response, request)
+				return
+			}
 			writeError(response, http.StatusConflict, "plugin_generation_unavailable", "插件代次不可用，请刷新后重试")
 			return
 		}

@@ -16,6 +16,12 @@ import {
   TerminalMuxWebSocketSource,
   type TerminalMuxFallbackSource,
 } from './terminal-mux-websocket';
+import {
+  openWatchMultiplexEventSource,
+  readMultiplexedWatchPath,
+  WATCH_MULTIPLEX_WEBSOCKET_PATH,
+  type WatchWebSocketSupportProbeResult,
+} from './watch-multiplex-websocket';
 
 const SERVER_PROFILE_STORAGE_KEY = 'aih:control-plane-profiles:v1';
 const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
@@ -483,6 +489,29 @@ class AuthorizedWebUiEventSource extends EventTarget {
   }
 }
 
+async function probeWatchWebSocketSupport(
+  signal: AbortSignal,
+  target: WebUiTransportTarget,
+): Promise<WatchWebSocketSupportProbeResult> {
+  if (target.isRemote || !isTransportTargetStillValid(target)) {
+    return 'policy';
+  }
+  try {
+    const response = await fetchAuthorizedWebUiResource(WATCH_MULTIPLEX_WEBSOCKET_PATH, {
+      method: 'GET',
+      cache: 'no-store',
+      signal,
+    }, target);
+    void response.body?.cancel().catch(() => {});
+    if (response.status === 426) return 'supported';
+    if (response.status === 404 || response.status === 501) return 'unsupported';
+    if (response.status === 401 || response.status === 403) return 'policy';
+    return 'unknown';
+  } catch (_error) {
+    return 'unknown';
+  }
+}
+
 export function guardedWebUiEventSource(
   path: string,
   options: { silenceTimeoutMs?: number; target?: WebUiTransportTarget } = {},
@@ -511,6 +540,24 @@ export function guardedWebUiEventSource(
         effectiveTarget,
       ) as unknown as TerminalMuxFallbackSource,
     }) as unknown as EventSource;
+  }
+  const watchPath = readMultiplexedWatchPath(path);
+  if (watchPath && typeof window !== 'undefined' && typeof WebSocket !== 'undefined'
+    && effectiveTarget.isRemote === false) {
+    return openWatchMultiplexEventSource({
+      origin: window.location.origin,
+      path: watchPath,
+      target: effectiveTarget,
+      readManagementKey: resolveWebUiManagementKey,
+      isTargetStillValid: () => isTransportTargetStillValid(effectiveTarget),
+      subscribeTargetChange: subscribeTransportTargetChange,
+      probeWebSocketSupport: (signal) => probeWatchWebSocketSupport(signal, effectiveTarget),
+      createSseFallback: () => new AuthorizedWebUiEventSource(
+        path,
+        options.silenceTimeoutMs,
+        effectiveTarget,
+      ) as unknown as EventSource,
+    });
   }
   return new AuthorizedWebUiEventSource(path, options.silenceTimeoutMs, effectiveTarget) as unknown as EventSource;
 }

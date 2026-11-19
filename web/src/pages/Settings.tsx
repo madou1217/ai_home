@@ -50,7 +50,6 @@ import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlanePr
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
 import { buildServerRouteRows } from '@/services/server-route-presentation';
-import { buildAppHref } from '@/services/app-navigation';
 import {
   SERVER_FORM_DEFAULTS,
   SERVER_PORT_RULES,
@@ -463,21 +462,6 @@ const Settings = ({ section }: SettingsProps) => {
           <ControlPlaneProfileSelect className="settings-server-select-trigger" />
         </div>
       </ProCard>
-
-      <SettingsGroupCard
-        title="开发工具与应用管理"
-        description="已整合至全新「开发工具 (Toolkit)」页面，统一管理 AI CLI、环境、镜像源与代理。"
-      >
-        <SettingsItem
-          title="开发工具箱 (Toolkit)"
-          subtitle="统一管理 AI CLI、Node 环境、镜像源与代理"
-          action={
-            <Button type="primary" onClick={() => window.location.href = buildAppHref('/toolkit')}>
-              进入工具箱
-            </Button>
-          }
-        />
-      </SettingsGroupCard>
 
       <LargePasteSettingCard />
 

@@ -5,7 +5,6 @@ import {
   ReloadOutlined,
   RightOutlined,
   SaveOutlined,
-  ToolOutlined,
   UndoOutlined
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
@@ -192,19 +191,6 @@ export default function BasicSettingsPanel() {
           )}
         </HudSection>
       ) : null}
-
-      <HudSection title="开发工具与应用管理" code="TOOLKIT">
-        <p className={styles.groupDesc}>已整合至全新「开发工具 (Toolkit)」页面，统一管理 AI CLI、环境、镜像源与代理。</p>
-        <div className={styles.group}>
-          <SettingRow
-            title="开发工具箱 (Toolkit)"
-            subtitle="统一管理 AI CLI、Node 环境、镜像源与代理"
-            control={(
-              <HudIconButton icon={<ToolOutlined />} label="进入工具箱" tone="primary" showLabel onClick={() => history.push('/toolkit')} />
-            )}
-          />
-        </div>
-      </HudSection>
 
       <HudSection title="外观个性化" code="DISPLAY">
         <p className={styles.groupDesc}>HUD 显示效果与主题。</p>

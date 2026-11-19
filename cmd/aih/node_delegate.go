@@ -69,6 +69,17 @@ func isNativeLaunch(args []string) bool {
 	return true
 }
 
+func serverActionOwnedByGo(action string) bool {
+	switch action {
+	case "start", "stop", "restart", "status", "config", "env", "serve",
+		"autostart", "sync-codex", "sync_codex", "add", "ls", "list",
+		"use", "remove", "rm":
+		return true
+	default:
+		return false
+	}
+}
+
 func providerActionOwnedByGo(verb string) bool {
 	switch verb {
 	case "ls", "list", "export", "import", "version", "home", "sessions",
@@ -123,6 +134,12 @@ func delegateToNode(args []string) bool {
 		return false
 	}
 	if len(args) >= 2 && launchProviders[args[0]] && providerActionOwnedByGo(args[1]) {
+		return false
+	}
+	if len(args) >= 2 && (args[0] == "server" || args[0] == "daemon") && serverActionOwnedByGo(args[1]) {
+		return false
+	}
+	if len(args) == 1 && args[0] == "serve" {
 		return false
 	}
 	// Usage reports and their help are native Go commands. Dispatch them before

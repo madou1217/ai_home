@@ -10,8 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -615,53 +613,6 @@ func validateSSHConfigChain(cfg sshremote.Config) error {
 		}
 	}
 	return nil
-}
-
-func (handler *WorkspaceTerminalHandler) resolveNodeAndCLI() (string, string, string, string) {
-	nodePath := handler.nodeExecPath
-	if nodePath == "" {
-		found, err := exec.LookPath("node")
-		if err != nil {
-			return "", "", "node_unavailable", "当前宿主机未找到 Node.js，无法启动工作区代理终端。"
-		}
-		nodePath = found
-	}
-	root := handler.repoRoot
-	if root == "" {
-		root = discoverRepoRoot()
-	}
-	if root == "" {
-		return "", "", "cli_entry_unavailable", "未找到 bin/ai-home.js，无法启动工作区代理终端。"
-	}
-	entry := filepath.Join(root, "bin", "ai-home.js")
-	if info, err := os.Stat(entry); err != nil || info.IsDir() {
-		return "", "", "cli_entry_unavailable", "未找到 bin/ai-home.js，无法启动工作区代理终端。"
-	}
-	return nodePath, entry, "", ""
-}
-
-func discoverRepoRoot() string {
-	candidates := make([]string, 0, 2)
-	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Dir(executable))
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, cwd)
-	}
-	for _, start := range candidates {
-		dir := start
-		for depth := 0; depth < 6; depth++ {
-			if info, err := os.Stat(filepath.Join(dir, "bin", "ai-home.js")); err == nil && !info.IsDir() {
-				return dir
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-	return ""
 }
 
 // buildNativeRemoteCommand 构造桌面终端要执行的命令：宿主二进制自己的

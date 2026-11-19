@@ -12,8 +12,9 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
-// 工具启动权限设置存在 Node 的 app-state.db（app_kv）里，与 CLI 启动时读的是同一行。
-// 这里只读，不建库、不建表、不写回：写入口仍在 Node（PUT /v0/webui/toolkit/apps/:id/settings）。
+// 工具启动权限设置存在业务库（app_kv）里，与 CLI 启动时读的是同一行。
+// 这里只读，不建库、不建表、不写回；写入口是 Go 的
+// webuitoolappsettingswriteapi（PUT /v0/webui/toolkit/apps/:id/settings）。
 const (
 	toolPermissionSettingsKey = "toolkit:tool-permission-settings"
 )

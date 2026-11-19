@@ -68,7 +68,8 @@
   与原生 help）都由 Go 直接执行；请求按 Provider 过滤，不再从旧 CLI 规划器绕行。
 - Provider 动作：`ls`、`usage`、`home`、`version`、`sessions`、`policy`、
   `terminal-icon` 等只读命令，以及 `login`、`delete/deleteall`、
-  `set-default/unset-default`、`auto-switch` 都由 Go 直接执行
+  `set-default/unset-default`、`auto-switch`、`detect` 和家族
+  `--restart-client/--force-quit-client` 都由 Go 直接执行
   （`delete`/`auto-switch` 增加原生 help）；CLI 启动时从 `config:server`
   注入管理密钥，不再依赖旧宿主包装。终端会话内的 `aih` shim 也已固定
   exec 同目录 Go CLI。
@@ -125,9 +126,8 @@
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
 - 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop/Agent/Claim/Edge/
-  Skill/MCP/Native plugin/Update 命令已是 Go；`cmd/aih` 仍有 Provider
-  `restart-client`（及非 family `detect`），以及顶层 ssh/shell/harness/backup
-  走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
+  Skill/MCP/Native plugin/Update 命令已是 Go；`cmd/aih` 仍有顶层
+  ssh/shell/harness/backup 走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
 
 ---
 

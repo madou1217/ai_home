@@ -21,7 +21,10 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
+	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
+	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 )
 
 const (
@@ -283,10 +286,25 @@ func setupTempAppState(t *testing.T) string {
 
 func newTestHandler(t *testing.T, store Store, refresher accountapp.AccountModelRefresher, aiHomeDir string, now time.Time) *Handler {
 	t.Helper()
+	modalities, err := modelsdev.New()
+	if err != nil {
+		t.Fatalf("modelsdev.New: %v", err)
+	}
+	expander, err := modelsdevpricing.New()
+	if err != nil {
+		t.Fatalf("modelsdevpricing.New: %v", err)
+	}
+	resolver, err := pricingresolver.Default()
+	if err != nil {
+		t.Fatalf("pricingresolver.Default: %v", err)
+	}
 	h, err := NewHandler(Dependencies{
 		Authorizer:     stubAuthorizer{allowed: true},
 		Store:          store,
+		Resolver:       resolver,
 		AIHomeDir:      aiHomeDir,
+		Modalities:     modalities,
+		AliasExpander:  expander,
 		ModelRefresher: refresher,
 		Now:            func() time.Time { return now },
 		WatchKeepalive: 50 * time.Millisecond,

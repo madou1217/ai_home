@@ -140,9 +140,19 @@ func listServerConfig(ctx context.Context, home string, args []string, runtime c
 
 func setServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
 	patch := map[string]any{}
+	clearManagementKey := false
+	confirmClearManagementKey := false
 	for index := 0; index < len(args); index++ {
 		flag := args[index]
 		if flag == "--json" || flag == "--one-line" || flag == "--verbose" || flag == "--show-secrets" {
+			continue
+		}
+		if flag == "--clear-management-key" {
+			clearManagementKey = true
+			continue
+		}
+		if flag == "--confirm-clear-management-key" {
+			confirmClearManagementKey = true
 			continue
 		}
 		if flag == "--generate-management-key" {
@@ -195,11 +205,21 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 		index++
 		patch[key] = args[index]
 	}
-	if len(patch) == 0 {
+	if clearManagementKey && !confirmClearManagementKey {
+		return errors.New("--clear-management-key requires --confirm-clear-management-key")
+	}
+	if len(patch) == 0 && !clearManagementKey {
 		return errors.New("server config set requires at least one option")
 	}
-	if _, err := webuiserverconfigapi.ApplyConfigPatch(ctx, home, patch); err != nil {
-		return err
+	if len(patch) > 0 {
+		if _, err := webuiserverconfigapi.ApplyConfigPatch(ctx, home, patch); err != nil {
+			return err
+		}
+	}
+	if clearManagementKey {
+		if err := webuiserverconfigapi.ClearManagementKey(ctx, home); err != nil {
+			return err
+		}
 	}
 	_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; run aih server restart to apply it.")
 	return nil

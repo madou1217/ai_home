@@ -2,17 +2,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/portableaccount"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/runtime/remotebackup"
 )
 
 var backupConfigCommands = map[string]bool{
 	"add": true, "list": true, "ls": true, "remove": true, "rm": true,
 	"enable": true, "disable": true, "config": true, "show": true,
+	"run": true, "test": true, "status": true, "restore": true,
 }
 
 func runBackup(ctx context.Context, arguments []string, runtime commandRuntime) error {
@@ -57,6 +64,14 @@ func runBackup(ctx context.Context, arguments []string, runtime commandRuntime) 
 			return err
 		}
 		return writeJSONDocument(runtime.stdout, map[string]any{"config": config, "state": state})
+	case "run":
+		return backupRun(ctx, home, arguments[1:], runtime)
+	case "test":
+		return backupTest(ctx, home, arguments[1:], runtime)
+	case "status":
+		return backupStatus(ctx, home, arguments[1:], runtime)
+	case "restore":
+		return backupRestore(ctx, home, arguments[1:], runtime)
 	}
 	return nil
 }
@@ -290,4 +305,197 @@ func writeBackupUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih backup test <id|user@host>")
 	_, _ = fmt.Fprintln(output, "  aih backup restore <id|user@host> [--dry-run]")
 	_, _ = fmt.Fprintln(output, "  aih backup recover <id> [--dry-run] [--confirm-stopped ...]")
+}
+
+func backupSelectTarget(config remotebackup.BackupConfig, selector string) (remotebackup.BackupTarget, bool) {
+	if index := backupTargetIndex(config.Targets, selector); index >= 0 {
+		return config.Targets[index], true
+	}
+	return remotebackup.BackupTarget{}, false
+}
+
+func newBackupStrategy(target remotebackup.BackupTarget, hostHome string) *remotebackup.SSHBackupStrategy {
+	return remotebackup.NewSSHBackupStrategy(target, remotebackup.SSHStrategyDeps{
+		HomeDir: hostHome,
+		Env:     os.Getenv,
+	})
+}
+
+func backupRun(ctx context.Context, home string, arguments []string, runtime commandRuntime) error {
+	positionals, flags, err := parseBackupTokens(arguments)
+	if err != nil {
+		return err
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return err
+	}
+	store, err := sqliteaccount.Open(ctx, sqliteaccount.OpenOptions{AIHomeDir: home, Catalog: catalog})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+	hostHome, _ := runtime.userHomeDir()
+	result, err := remotebackup.RunRemoteBackup(ctx, remotebackup.ServiceOptions{
+		AIHomeDir: home,
+		HomeDir:   hostHome,
+		Env:       os.Getenv,
+		Exporter:  remotebackup.SQLiteAccountExporter{Store: store, Catalog: catalog},
+	}, remotebackup.RunOptions{TargetIDs: positionals, Full: flags["full"] == "true"})
+	if err != nil {
+		return err
+	}
+	if result.Reason == "no_targets" {
+		_, _ = fmt.Fprintln(runtime.stdout, "[aih] 没有启用的备份目标。用 aih backup add <user@host> 添加。")
+		return nil
+	}
+	for _, item := range result.Targets {
+		if item.OK {
+			_, _ = fmt.Fprintf(runtime.stdout, "[aih] %s：上传 %d，未变 %d，删除标记 %d，revision %d\n", item.TargetID, item.Uploaded, item.Unchanged, item.Deleted, item.Revision)
+		} else {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] %s：%s\n", item.TargetID, item.Error)
+		}
+	}
+	if !result.OK {
+		return &cliExitCode{code: 1}
+	}
+	return nil
+}
+
+func backupTest(ctx context.Context, home string, arguments []string, runtime commandRuntime) error {
+	positionals, _, err := parseBackupTokens(arguments)
+	if err != nil {
+		return err
+	}
+	if len(positionals) == 0 {
+		return fmt.Errorf("用法：aih backup test <id|user@host>")
+	}
+	config, err := remotebackup.ReadBackupConfig(home)
+	if err != nil {
+		return err
+	}
+	target, ok := backupSelectTarget(config, positionals[0])
+	if !ok {
+		return fmt.Errorf("找不到备份目标：%s", positionals[0])
+	}
+	hostHome, _ := runtime.userHomeDir()
+	strategy := newBackupStrategy(target, hostHome)
+	if err := strategy.Connect(ctx); err != nil {
+		return err
+	}
+	defer func() { _ = strategy.Close() }()
+	snapshot, err := remotebackup.ReadRemoteSnapshot(ctx, strategy)
+	if err != nil {
+		if strings.Contains(err.Error(), "backup_manifest_missing") {
+			_, _ = fmt.Fprintf(runtime.stdout, "[aih] %s 连接成功\n[aih] 远端还没有备份清单（第一次 run 后生成）\n", target.ID)
+			return nil
+		}
+		return err
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] %s 连接成功\n[aih] 远端 revision %d，账号 %d\n", target.ID, snapshot.Revision, len(snapshot.Accounts))
+	return nil
+}
+
+func backupStatus(ctx context.Context, home string, arguments []string, runtime commandRuntime) error {
+	_, flags, err := parseBackupTokens(arguments)
+	if err != nil {
+		return err
+	}
+	config, err := remotebackup.ReadBackupConfig(home)
+	if err != nil {
+		return err
+	}
+	state, err := remotebackup.ReadBackupState(home)
+	if err != nil {
+		return err
+	}
+	writeBackupStatus(runtime.stdout, config, state)
+	if flags["remote"] != "true" {
+		return nil
+	}
+	hostHome, _ := runtime.userHomeDir()
+	for _, target := range config.Targets {
+		strategy := newBackupStrategy(target, hostHome)
+		if err := strategy.Connect(ctx); err != nil {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] %s: %s\n", target.ID, err)
+			_ = strategy.Close()
+			continue
+		}
+		snapshot, readErr := remotebackup.ReadRemoteSnapshot(ctx, strategy)
+		_ = strategy.Close()
+		if readErr != nil {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] %s: %s\n", target.ID, readErr)
+			continue
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "  %s: 远端 revision %d，账号 %d，删除标记 %d，清单 %d 字节\n",
+			target.ID, snapshot.Revision, len(snapshot.Accounts), len(snapshot.Manifest.Accounts)-len(snapshot.Accounts), snapshot.Bytes)
+	}
+	return nil
+}
+
+func backupRestore(ctx context.Context, home string, arguments []string, runtime commandRuntime) error {
+	positionals, flags, err := parseBackupTokens(arguments)
+	if err != nil {
+		return err
+	}
+	if len(positionals) == 0 {
+		return fmt.Errorf("用法：aih backup restore <id|user@host> [--dry-run]")
+	}
+	config, err := remotebackup.ReadBackupConfig(home)
+	if err != nil {
+		return err
+	}
+	target, ok := backupSelectTarget(config, positionals[0])
+	if !ok {
+		return fmt.Errorf("找不到备份目标：%s", positionals[0])
+	}
+	hostHome, _ := runtime.userHomeDir()
+	strategy := newBackupStrategy(target, hostHome)
+	if err := strategy.Connect(ctx); err != nil {
+		return err
+	}
+	defer func() { _ = strategy.Close() }()
+	snapshot, err := remotebackup.ReadRemoteSnapshot(ctx, strategy)
+	if err != nil {
+		return err
+	}
+	if len(snapshot.Missing) > 0 || len(snapshot.Corrupt) > 0 {
+		return fmt.Errorf("backup_integrity_failed")
+	}
+	if len(snapshot.Accounts) == 0 {
+		return fmt.Errorf("no_accounts_in_backup")
+	}
+	entries := make([]portableaccount.AihAccountsImportEntry, 0, len(snapshot.Accounts))
+	for _, record := range snapshot.Accounts {
+		encoded, _ := json.Marshal(record.NativeAuth)
+		entries = append(entries, portableaccount.AihAccountsImportEntry{
+			Provider: record.Provider, AccountRef: record.AccountRef,
+			CLIAccountID: record.CLIAccountID, Status: record.Status,
+			Env: record.Env, NativeAuth: encoded,
+		})
+	}
+	dryRun := flags["dry-run"] == "true"
+	result, err := backupaccounts.Import(ctx, home, backupaccounts.Request{
+		Kind: "aih-accounts", Version: 1, Accounts: entries, CompatibilityProjection: true,
+	}, dryRun)
+	if err != nil {
+		return err
+	}
+	summary := result.Summary
+	mode := ""
+	if dryRun {
+		mode = "（演练，未写入）"
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 从 %s 恢复：共 %d，新增 %d，更新 %d，未变 %d，无效 %d，失败 %d%s\n",
+		target.ID, summary["total"], summary["created"], summary["updated"], summary["unchanged"], summary["invalid"], summary["failed"], mode)
+	for _, entry := range result.Accounts {
+		if entry.Status == "unchanged" || entry.Status == "planned" {
+			continue
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "  %s %s → %s %s\n", entry.Status, entry.Provider, entry.AccountRef, entry.Reason)
+	}
+	if !result.OK || summary["failed"] > 0 {
+		return &cliExitCode{code: 1}
+	}
+	return nil
 }

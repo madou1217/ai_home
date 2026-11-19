@@ -8,14 +8,15 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
-	maxUsageJobs            = 20
-	maxDashboardShards      = 16
-	dashboardShardDayMS     = int64(86400000)
-	dashboardShardWorkers   = 4
-	watcherChannelBuffer    = 32
+	maxUsageJobs          = 20
+	maxDashboardShards    = 16
+	dashboardShardDayMS   = int64(86400000)
+	dashboardShardWorkers = 4
+	watcherChannelBuffer  = 32
 )
 
 type jsonSSEHub struct {
@@ -109,17 +110,31 @@ type managedDashboardQueryJob struct {
 type UsageJobManager struct {
 	service *ManagementService
 
-	scanMu      sync.Mutex
-	scanSeq     atomic.Int64
-	scanJobs    map[string]*UsageScanJob
-	scanOrder   []string
-	scanHub     *jsonSSEHub
+	scanMu    sync.Mutex
+	scanSeq   atomic.Int64
+	scanJobs  map[string]*UsageScanJob
+	scanOrder []string
+	scanHub   *jsonSSEHub
 
 	queryMu    sync.Mutex
 	querySeq   atomic.Int64
 	queryJobs  map[string]*managedDashboardQueryJob
 	queryOrder []string
 	queryHub   *jsonSSEHub
+
+	// dashCache 复用最近完成的看板结果：整段扫描要 10s 级，页面刷新/切回
+	// 同一时间窗时没必要重跑；键是归一化后的查询维度，TTL 见 dashboardCacheTTL。
+	dashCacheMu sync.Mutex
+	dashCache   map[string]cachedDashboardQuery
+}
+
+// dashboardCacheTTL 是看板结果的复用窗口。
+const dashboardCacheTTL = 2 * time.Minute
+
+type cachedDashboardQuery struct {
+	payload     UsageDashboardPayload
+	totalShards int
+	finishedAt  time.Time
 }
 
 // NewUsageJobManager 创建关联到 ManagementService 的用量异步作业管理器。
@@ -130,6 +145,38 @@ func NewUsageJobManager(service *ManagementService) *UsageJobManager {
 		scanHub:   newJSONSSEHub(),
 		queryJobs: make(map[string]*managedDashboardQueryJob),
 		queryHub:  newJSONSSEHub(),
+		dashCache: make(map[string]cachedDashboardQuery),
+	}
+}
+
+// dashboardCacheKey 用归一化查询的全部维度做键；窗口或过滤条件不同就不复用。
+func dashboardCacheKey(query UsageQuery) string {
+	return fmt.Sprintf("%d:%d:%s:%s:%s:%d:%t",
+		query.FromMS, query.ToMS, query.Provider, query.Model, query.SessionID, query.Limit, query.Scan)
+}
+
+func (m *UsageJobManager) lookupDashboardCache(query UsageQuery) (UsageDashboardPayload, int, bool) {
+	m.dashCacheMu.Lock()
+	defer m.dashCacheMu.Unlock()
+	cached, ok := m.dashCache[dashboardCacheKey(query)]
+	if !ok || time.Since(cached.finishedAt) > dashboardCacheTTL {
+		return UsageDashboardPayload{}, 0, false
+	}
+	return cached.payload, cached.totalShards, true
+}
+
+func (m *UsageJobManager) storeDashboardCache(query UsageQuery, payload UsageDashboardPayload, totalShards int) {
+	m.dashCacheMu.Lock()
+	defer m.dashCacheMu.Unlock()
+	if len(m.dashCache) >= 8 {
+		for key := range m.dashCache {
+			delete(m.dashCache, key)
+		}
+	}
+	m.dashCache[dashboardCacheKey(query)] = cachedDashboardQuery{
+		payload:     payload,
+		totalShards: totalShards,
+		finishedAt:  time.Now(),
 	}
 }
 
@@ -241,8 +288,8 @@ func (m *UsageJobManager) trimScanJobsLocked() {
 		return
 	}
 	type candidate struct {
-		id  string
-		ts  int64
+		id string
+		ts int64
 	}
 	var finished []candidate
 	for _, id := range m.scanOrder {
@@ -342,6 +389,32 @@ func (m *UsageJobManager) StartDashboardQuery(ctx context.Context, query UsageQu
 		return UsageDashboardQueryJob{}, ErrUsageUnavailable
 	}
 	normQ := normalizeUsageQueryBounds(query)
+	if payload, totalShards, ok := m.lookupDashboardCache(normQ); ok {
+		seq := m.querySeq.Add(1)
+		nowMS := m.service.now().UnixMilli()
+		jobID := fmt.Sprintf("usage-dashboard-query-%d-%d", nowMS, seq)
+		entry := &managedDashboardQueryJob{
+			cancel: func() {},
+			job: UsageDashboardQueryJob{
+				ID:              jobID,
+				Status:          "succeeded",
+				Query:           normQ,
+				StartedAt:       nowMS,
+				FinishedAt:      nowMS,
+				CompletedShards: totalShards,
+				TotalShards:     totalShards,
+				Dashboard:       &payload,
+			},
+		}
+		m.queryMu.Lock()
+		m.queryJobs[jobID] = entry
+		m.queryOrder = append(m.queryOrder, jobID)
+		snap := cloneDashboardQueryJob(entry.job)
+		m.trimQueryJobsLocked()
+		m.queryMu.Unlock()
+		m.broadcastDashboardQueryJob(snap)
+		return snap, nil
+	}
 	seq := m.querySeq.Add(1)
 	nowMS := m.service.now().UnixMilli()
 	jobID := fmt.Sprintf("usage-dashboard-query-%d-%d", nowMS, seq)
@@ -610,6 +683,7 @@ func (m *UsageJobManager) runDashboardQueryJob(jobCtx context.Context, jobID str
 	entry.job.TotalShards = totalShards
 	entry.job.Dashboard = &finalDash
 	entry.job.FinishedAt = m.service.now().UnixMilli()
+	m.storeDashboardCache(normQ, finalDash, totalShards)
 	snap = cloneDashboardQueryJob(entry.job)
 	m.trimQueryJobsLocked()
 	m.queryMu.Unlock()

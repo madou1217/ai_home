@@ -1,7 +1,46 @@
-# Node → Go 细节缺口清单（2026-11-19）
+# Node → Go 迁移状态（2026-11-20 更新）
 
-触发：移除 `aih server serve` 的 Node 常驻入口后，逐项核对 Go 是否完整承接 Node 行为。
-本清单只列**代码里能证明的缺口**：显式"留空/未接入/501/让走 Node"的标记，以及 serve 参数差异；不代表全量端点已完成对拍。
+历史：本文件最初是 2026-11-19 的缺口清单。2026-11-20 已继续迁移并关闭多项缺口；
+下面的"历史清单"保留作证据，当前状态以本节为准。目标是 **Go 是完整服务端**：
+不区分 "Node only / Go only"，Node 仅作为可选兼容宿主或插件运行时存在。
+
+## 2026-11-20 已关闭
+
+- 会话列表 / 消息 / 事件：provider 名单由 Provider 合同的 `session_history` 能力派生，
+  17 个已知载体全部走 Go（kimi/chat 为显式空结果例外）；非 codex 增量事件与 Node
+  旧行为一致（空 events + 文件 cursor + requiresSnapshot）。watch 文件定位补齐
+  agy/grok/kiro/zcode/chat。
+- 账号行：`status`（含 Vertex 占位 up）、`authPendingStale`/`authPendingAgeMs`、
+  `upstreamErrorRules`/`upstreamErrorGroupIds` 已在 Go 行/live 行补齐；编辑成功返回
+  live 行，避免零值覆盖派生字段。
+- 新增账号：支持 `config.loginProvider`、`replaceExisting`，409 携带现有 jobId；
+  本地 directImport 同时支持内置 `<provider>-host-local` 与插件来源。
+- 插件账号登录：`account.login` 状态机迁入 Go（start/poll/submit/cancel、持久化、
+  success 投影注册）；HTTP 路由 `/v0/webui/accounts/plugin-login/*` 由 Go 应答；
+  前端自动轮询按插件 job 分派。
+- 旧 Node 公开路径：CLI 应用高级设置、ServerSetup node-rpc、SSH 隧道、
+  账号导入进度均已补 Go 兼容别名。
+- 路由归属：移除两条 `node_owned` legacy 聚合，投影全部为 `go_owned`。
+- 账号授权作业：补 logs / lastOutputAt / callbackCaptureStatus/Error；
+  Go 无 loopback 监听时明确标 unavailable / manual_only。
+
+## 2026-11-20 仍需迁移
+
+- 插件宿主后端仍由 Go 启动 Node `host-entry.mjs`，manifest `runtime` 仍固定为 node；
+  需要 `runtime: process` + Go 进程后端 + 复合 HostClient，才能让任意语言插件运行。
+- 账号 OAuth：codex `oauth-device` 尚未在 Go 适配器实现；qoder/qodercn/grok/kimi/
+  cline/codebuddy 家族的 CLI 登录作业仍只在 Node 本地作业中。
+- 会话读取：codex 列表只扫 rollout，不读 `state_*.sqlite`；非 codex 真实增量事件
+  Node 也没有，保持空事件 + cursor。
+- 账号行：`tokenUsageSource`、`runtimeModels`、阈值/策略型 `schedulableStatus`
+  仍是静态/空值；`updatedAt` 语义与 Node 不同。
+- 聊天：legacy `/v0/webui/chat` 切片仍无附件仓库与会话存储（主 UI 已走 canonical
+  chat runtime）。
+- `aih server serve` 的 `--codex-models` 仍未映射到 Go。
+- 远端节点交互端点（device-node-session-start/input/stream 等）在仓库内没有服务端
+  实现，需确认是否由远端 node agent 提供。
+
+---
 
 **单库原则：所有缺口只补进 aih.db，不新增第二个数据库。** 文中出现的 `state*.sqlite` 是 Codex CLI 自己的本地文件，不是 aih 的库，也不是要接入的存储；需要的会话元数据应落到 aih.db 的索引表。
 

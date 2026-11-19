@@ -198,7 +198,6 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		"provider":               "codex",
 		"accountRef":             oauthAccountRef,
 		"displayId":              "1",
-		"status":                 "",
 		"displayName":            "工作号",
 		"configured":             true,
 		"apiKeyMode":             false,

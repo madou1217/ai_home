@@ -81,6 +81,13 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	providerID := arguments[0]
+	if providerID == "claude" && !commandNeedsNativeStore(providerID, arguments[1:]) {
+		configured, configErr := withClaudeGatewayConfig(ctx, runtime)
+		if configErr != nil {
+			return configErr
+		}
+		runtime = configured
+	}
 	if providerID == "__codex-cli-startup" {
 		return runCodexCLIStartup(ctx, arguments[1:], runtime)
 	}
@@ -452,6 +459,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output)
 		_, _ = fmt.Fprintln(output, "示例:")
 		_, _ = fmt.Fprintln(output, "  aih claude --model claude-opus-5")
+		_, _ = fmt.Fprintln(output, "  aih claude --model-alias deepseek-flash # 本次会话任意模型经 Go Gateway 改写")
 		_, _ = fmt.Fprintln(output, "  aih claude relay 9 --model claude-opus-5")
 		_, _ = fmt.Fprintln(output, "  aih claude 9 --model claude-opus-5")
 		_, _ = fmt.Fprintln(output, "  aih codex relay claude 9 --model claude-opus-5")
@@ -462,7 +470,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output)
 		_, _ = fmt.Fprintln(output, "共享状态:")
 		_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CLAUDE_CONFIG_DIR；AIH 不创建账号级 HOME，会话、信任和插件配置保持共享。")
-		_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME_DIR；Gateway Relay 不打开本地 AIH_HOME_DIR，固定数字别名由目标 Server 解析。")
+		_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME_DIR；Gateway Relay 仅读取本机 Server 连接配置，固定数字别名由目标 Server 解析。")
 		return
 	}
 

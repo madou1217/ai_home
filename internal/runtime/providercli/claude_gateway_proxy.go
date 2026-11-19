@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -37,6 +38,7 @@ type claudeGatewayProxy struct {
 	accountRef      accountcore.AccountRef
 	localSecret     string
 	client          *http.Client
+	modelAlias      providerlaunch.ModelAlias
 }
 
 // runClaudeGateway 用随机本地 Key 隔离真实 Server Key，并让 Server 按模型征召账号。
@@ -70,6 +72,7 @@ func (runner *Runner) runClaudeGateway(
 		accountRef:      accountRef,
 		localSecret:     localSecret,
 		client:          runner.httpClient,
+		modelAlias:      spec.ModelAlias(),
 	}
 	environment := applyEnvironment(runner.environ(), spec.Environment())
 	environment = unsetEnvironmentValue(environment, "ANTHROPIC_CUSTOM_HEADERS")
@@ -79,6 +82,15 @@ func (runner *Runner) runClaudeGateway(
 		"ANTHROPIC_BASE_URL",
 		"http://"+listener.Addr().String(),
 	)
+	arguments, cleanup, err := prepareClaudeGatewaySettings(arguments, environment)
+	if err != nil {
+		_ = listener.Close()
+		return err
+	}
+	defer cleanup()
+	if alias := spec.ModelAlias(); alias.Enabled() {
+		_, _ = fmt.Fprintf(runner.stderr, "[aih] --model-alias 生效：%s → %s（本次会话，Go Gateway）\n", alias.Source(), alias.Target())
+	}
 	return runner.runWithHTTPProxy(
 		ctx,
 		listener,
@@ -104,6 +116,13 @@ func (proxy *claudeGatewayProxy) ServeHTTP(writer http.ResponseWriter, incoming 
 	if incoming.URL.Path != "/v1/messages" || incoming.Method != http.MethodPost {
 		proxy.forwardNonMessage(writer, incoming, body)
 		return
+	}
+	if proxy.modelAlias.Enabled() {
+		body, err = rewriteClaudeModelAlias(body, proxy.modelAlias)
+		if err != nil {
+			writeProxyError(writer, http.StatusBadRequest, "invalid Claude model alias request")
+			return
+		}
 	}
 	model, err := claudeRequestModel(body)
 	if err != nil {
@@ -230,6 +249,7 @@ func (proxy *claudeGatewayProxy) projectServerAuthorization(
 	header.Del("x-api-key")
 	header.Del(pinnedAccountHeader)
 	header.Del(claudeRelayTokenHeader)
+	header.Del("X-AIH-Model-Alias")
 	switch decision.transport {
 	case gatewaycontract.TransportNativeOAuth:
 		header.Set(claudeRelayTokenHeader, decision.relayToken)

@@ -48,7 +48,7 @@ var launchProviders = map[string]bool{
 //	aih <provider>
 //	aih <provider> <账号编号>
 //
-// 其余形态（ls/usage/server/resume、原生参数逃生门等）全部交回 Node 入口。
+// Claude 已在 delegateToNode 中整体交给 Go；其它 Provider 的非启动形态仍可交回旧入口。
 // 理由：启动是长驻进程，去掉 Node 外壳才真正省内存和约 1.3s 启动；
 // 动作类命令继续走已验证的 Node 实现，避免兼容性回退。
 func isNativeLaunch(args []string) bool {
@@ -106,6 +106,11 @@ func resolveNodeEntry() (string, bool) {
 
 // delegateToNode 把非启动形态整体交给 Node 入口；成功时进程已被替换。
 func delegateToNode(args []string) bool {
+	// Claude launches and actions belong to Go, including unpinned Gateway
+	// sessions and --model-alias. Never silently re-enter the legacy host.
+	if len(args) > 0 && args[0] == "claude" {
+		return false
+	}
 	if isNativeLaunch(args) {
 		return false
 	}

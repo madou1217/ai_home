@@ -118,6 +118,7 @@ func (result GatewayStrategyResult) IsValid() bool {
 // GatewayLaunchSpec 是账号池或固定账号最终不可变启动描述。
 type GatewayLaunchSpec struct {
 	clientProviderID          string
+	modelAlias                ModelAlias
 	relayProviderID           string
 	accountRef                accountcore.AccountRef
 	cliAccountID              accountcore.CLIAccountID
@@ -139,6 +140,7 @@ func newGatewayLaunchSpec(
 		return GatewayLaunchSpec{}, ErrInvalidGatewayLaunchSpec
 	}
 	spec := GatewayLaunchSpec{
+		modelAlias:                intent.ModelAlias(),
 		clientProviderID:          intent.ClientProviderID(),
 		relayProviderID:           intent.RelayProviderID(),
 		accountRef:                accountRef,
@@ -153,6 +155,9 @@ func newGatewayLaunchSpec(
 	}
 	return spec, nil
 }
+
+// ModelAlias is applied before request-level account selection in the Go proxy.
+func (spec GatewayLaunchSpec) ModelAlias() ModelAlias { return spec.modelAlias }
 
 // Mode 返回固定的 Gateway Relay 模式。
 func (spec GatewayLaunchSpec) Mode() LaunchMode {

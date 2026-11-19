@@ -40,6 +40,7 @@ type LaunchIntent struct {
 	relayProviderID  string
 	cliAccountID     accountcore.CLIAccountID
 	arguments        []string
+	modelAlias       ModelAlias
 }
 
 // ParseLaunchIntent 使用首个业务 token 一次性区分 Gateway 与 Native，避免下层重新猜测。
@@ -69,6 +70,14 @@ func ParseLaunchIntent(
 			suffix = arguments[index+1:]
 			arguments = arguments[:index]
 			break
+		}
+	}
+	var modelAlias ModelAlias
+	if providerID == "claude" {
+		var err error
+		arguments, modelAlias, err = parseClaudeModelAlias(arguments)
+		if err != nil {
+			return LaunchIntent{}, err
 		}
 	}
 	// This typed launch API accepts numeric selectors only. Never downgrade a
@@ -113,8 +122,12 @@ func ParseLaunchIntent(
 		forwardArguments = arguments[1:]
 	}
 
+	if modelAlias.Enabled() && mode != LaunchModeGatewayRelay {
+		return LaunchIntent{}, errors.New("--model-alias 需要 Go Gateway；请使用 aih claude relay <account_id> --model-alias <model>")
+	}
 	forwardArguments = append(append([]string(nil), forwardArguments...), suffix...)
 	intent := LaunchIntent{
+		modelAlias:       modelAlias,
 		mode:             mode,
 		clientProviderID: providerID,
 		relayProviderID:  relayProviderID,
@@ -156,6 +169,9 @@ func (intent LaunchIntent) HasPinnedAccount() bool {
 func (intent LaunchIntent) Arguments() []string {
 	return append([]string(nil), intent.arguments...)
 }
+
+// ModelAlias returns the session-only model override; it never changes storage.
+func (intent LaunchIntent) ModelAlias() ModelAlias { return intent.modelAlias }
 
 // NativeSelectionRequest 把 Native 意图转换为显式账号选择；Gateway 永远不能读取凭据。
 func (intent LaunchIntent) NativeSelectionRequest() (accountapp.LaunchSelectionRequest, error) {

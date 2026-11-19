@@ -90,6 +90,7 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 		strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_SERVER_BINARY")),
 		receiptExecutable,
 		executableSibling("aih-server"),
+		packagedServerSibling("aih-server"),
 	)
 	if serverBinary == "" {
 		if resolved, lookupErr := exec.LookPath("aih-server"); lookupErr == nil {
@@ -107,6 +108,8 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 		candidates = append(candidates, filepath.Join(receiptRoot, "web", "dist"))
 	}
 	candidates = append(candidates,
+		filepath.Join(filepath.Dir(serverBinary), "web", "dist"),
+		filepath.Join(filepath.Dir(serverBinary), "..", "web", "dist"),
 		filepath.Join(filepath.Dir(serverBinary), "..", "..", "..", "web", "dist"),
 	)
 	for _, candidate := range candidates {
@@ -154,6 +157,24 @@ func readEnv(lookup func(string) (string, bool), key string) string {
 func textValue(value any) string {
 	text, _ := value.(string)
 	return strings.TrimSpace(text)
+}
+
+func packagedServerSibling(name string) string {
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, linkErr := filepath.EvalSymlinks(executable); linkErr == nil {
+		executable = resolved
+	}
+	candidate := filepath.Join(filepath.Dir(executable), "bin", "native", goruntime.GOOS+"-"+goruntime.GOARCH, name)
+	if goruntime.GOOS == "windows" {
+		candidate += ".exe"
+	}
+	if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+		return candidate
+	}
+	return ""
 }
 
 func executableSibling(name string) string {

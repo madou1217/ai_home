@@ -2212,7 +2212,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	imageHandler, err := imagesapi.NewHandler(imagesapi.Dependencies{
 		Registry: images.NewRegistry(
 			images.EffectiveCodexImageBaseURL(),
-			agycodeassist.GenerateContentURL,
+			agycodeassist.GenerateContentURL(),
 			images.NewFetcher(http.DefaultClient),
 		),
 		Accounts: imageAccountSource{

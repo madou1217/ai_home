@@ -201,7 +201,7 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		},
 		Registry: images.NewRegistry(
 			images.EffectiveCodexImageBaseURL(),
-			agycodeassist.GenerateContentURL,
+			agycodeassist.GenerateContentURL(),
 			imageFetcher,
 		),
 		Accounts: imageAccountSource,

@@ -112,14 +112,24 @@ func New(client HTTPClient) (*Strategy, error) {
 	}
 	return &Strategy{
 		client:   client,
-		baseURLs: append([]string(nil), defaultBaseURLs...),
+		baseURLs: effectiveBaseURLs(),
 	}, nil
+}
+
+// effectiveBaseURLs 按 Node resolveAgyQuotaBaseUrls 的语义选择候选根地址：
+// 显式配置了兜底地址时只试它，否则按 sandbox → daily → 正式的顺序换端点。
+func effectiveBaseURLs() []string {
+	configured := agy.EffectiveDefaultBaseURL()
+	if configured != agy.DefaultBaseURL {
+		return []string{configured}
+	}
+	return append([]string(nil), defaultBaseURLs...)
 }
 
 // endpoints 返回本轮请求允许尝试的根地址。
 func (strategy *Strategy) endpoints() []string {
 	if strategy == nil || len(strategy.baseURLs) == 0 {
-		return defaultBaseURLs
+		return effectiveBaseURLs()
 	}
 	return strategy.baseURLs
 }

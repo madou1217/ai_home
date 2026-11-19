@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	defaultBaseURL  = "https://daily-cloudcode-pa.googleapis.com/v1internal"
 	clientSessionID = "00000000-0000-4000-8000-000000000000"
 	maxProjectBytes = 2 * 1024 * 1024
 
@@ -36,11 +35,21 @@ func antigravityUserAgent() string {
 		"; auth_method=consumer)"
 }
 
-// GenerateContentURL 是 Code Assist 非流式 generateContent 的完整地址。
+// baseURL 返回进程级兜底或官方数据面根地址。
+//
+// 每次请求都重新读取，进程级配置在启动时写入，运行期不变但仍按值读取，
+// 避免把兜底地址冻结在包初始化阶段。
+func baseURL() string {
+	return agy.EffectiveDefaultBaseURL()
+}
+
+// GenerateContentURL 返回 Code Assist 非流式 generateContent 的完整地址。
 //
 // 图片生成走这条入口：它与流式入口共享同一个 base，只是不带 `?alt=sse`。
 // 导出它是为了让图片子系统复用同一份地址定义，而不是各写一份字面量。
-const GenerateContentURL = defaultBaseURL + ":generateContent"
+func GenerateContentURL() string {
+	return baseURL() + ":generateContent"
+}
 
 func loadProject(
 	ctx context.Context,
@@ -69,7 +78,7 @@ func loadProjectForToken(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		defaultBaseURL+":loadCodeAssist",
+		baseURL()+":loadCodeAssist",
 		strings.NewReader(string(payload)),
 	)
 	if err != nil {

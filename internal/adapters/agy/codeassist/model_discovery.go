@@ -64,7 +64,7 @@ func (source *ModelCatalogSource) DiscoverModels(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		defaultBaseURL+":fetchAvailableModels",
+		baseURL()+":fetchAvailableModels",
 		bytes.NewReader(payload),
 	)
 	if err != nil {

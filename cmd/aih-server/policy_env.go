@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -168,6 +169,9 @@ func init() {
 	}
 	if err := claude.ConfigureDefaultAPIBaseURL(defaults.ClaudeBaseURL); err != nil {
 		panic(fmt.Sprintf("Claude 上游默认地址无效: %v", err))
+	}
+	if err := agy.ConfigureDefaultBaseURL(defaults.AgyBaseURL); err != nil {
+		panic(fmt.Sprintf("AGY 上游默认地址无效: %v", err))
 	}
 	if err := upstreamdefaults.Configure(defaults); err != nil {
 		panic(fmt.Sprintf("上游默认地址无效: %v", err))

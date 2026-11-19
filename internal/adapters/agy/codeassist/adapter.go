@@ -112,7 +112,7 @@ func (adapter *Adapter) Execute(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		defaultBaseURL+":streamGenerateContent?alt=sse",
+		baseURL()+":streamGenerateContent?alt=sse",
 		bytes.NewReader(payload),
 	)
 	if err != nil {

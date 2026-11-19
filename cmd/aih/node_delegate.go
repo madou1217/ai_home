@@ -69,6 +69,16 @@ func isNativeLaunch(args []string) bool {
 	return true
 }
 
+func providerActionOwnedByGo(verb string) bool {
+	switch verb {
+	case "ls", "list", "export", "import", "version", "home", "sessions",
+		"policy", "terminal-icon", "terminal-icons", "usage":
+		return true
+	default:
+		return false
+	}
+}
+
 func isDigits(value string) bool {
 	text := strings.TrimSpace(value)
 	if text == "" {
@@ -110,7 +120,7 @@ func delegateToNode(args []string) bool {
 	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss" || args[0] == "ls" || args[0] == "list" || args[0] == "export" || args[0] == "import") {
 		return false
 	}
-	if len(args) >= 2 && launchProviders[args[0]] && (args[1] == "ls" || args[1] == "list" || args[1] == "export" || args[1] == "import") {
+	if len(args) >= 2 && launchProviders[args[0]] && providerActionOwnedByGo(args[1]) {
 		return false
 	}
 	// Usage reports and their help are native Go commands. Dispatch them before

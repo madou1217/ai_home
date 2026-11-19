@@ -38,6 +38,21 @@ func resolveBareLaunchArgs(args []string) ([]string, bool) {
 	return []string{provider, candidate.DisplayID}, true
 }
 
+// ensureManagementKeyEnv 与旧入口的动作命令保持同一套密钥注入：
+// 显式环境变量优先；否则从 config:server 读取并放入当前进程环境。
+func ensureManagementKeyEnv() {
+	if strings.TrimSpace(os.Getenv("AIH_SERVER_MANAGEMENT_KEY")) != "" {
+		return
+	}
+	home := bareLaunchHomeDir()
+	if home == "" {
+		return
+	}
+	if key := resolveManagementKey(home); key != "" {
+		_ = os.Setenv("AIH_SERVER_MANAGEMENT_KEY", key)
+	}
+}
+
 // pickHealthyAccount 是裸启动与 resume 共用的选号口径：健康优先、余量最高、
 // 其次最久未用。挑不到（无 server/无密钥/无可用候选）时返回 false，调用方
 // 各自保留原有兜底，不因选号失败阻断启动。

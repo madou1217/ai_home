@@ -29,6 +29,9 @@ func main() {
 		}
 		return
 	}
+	// 旧 Node 入口会为动作命令注入管理密钥；Go 命令直接读同一份 config:server，
+	// 显式环境变量优先，保证迁移后的命令不需要额外的宿主包装。
+	ensureManagementKeyEnv()
 	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到再交回 Node。
 	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {
 		os.Exit(execute(rewritten, defaultCommandRuntime()))

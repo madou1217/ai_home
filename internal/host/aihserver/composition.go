@@ -1752,7 +1752,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
 	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
 		codebuddyfamilyrelay.Dependencies{
-			Aliases: newChatAliasResolver(inference.modelAliases, dependencies.store),
+			Aliases: newChatAliasResolver(inference.modelAliases, dependencies.Store),
 			Accounts: relaycore.NewAccountSourceChain(
 				append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
 			),
@@ -2003,7 +2003,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 切片就能服务，服务不了的账号在 Go 侧显式报错，而不是悄悄回落另一条推理路径。
 	webUIChatHandler, err := newWebUIChatHandler(webuichatapi.Dependencies{
 		Authorizer: authorizer,
-		Aliases:    newChatAliasResolver(inference.modelAliases, dependencies.store),
+		Aliases:    newChatAliasResolver(inference.modelAliases, dependencies.Store),
 		Accounts: relaycore.NewAccountSourceChain(
 			append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
 		),

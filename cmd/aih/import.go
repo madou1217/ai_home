@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -21,7 +22,8 @@ func runRootImport(ctx context.Context, arguments []string, runtime commandRunti
 		case "--dry-run":
 			dryRun = true
 		case "--help", "-h", "help":
-			return false, nil
+			writeImportUsage(runtime.stdout)
+			return true, nil
 		default:
 			if strings.HasPrefix(token, "-") {
 				return true, fmt.Errorf("unknown option: %s", token)
@@ -73,4 +75,12 @@ func runRootImport(ctx context.Context, arguments []string, runtime commandRunti
 		return true, &cliExitError{code: 1}
 	}
 	return true, nil
+}
+
+func writeImportUsage(output io.Writer) {
+	_, _ = fmt.Fprintln(output, "用法:")
+	_, _ = fmt.Fprintln(output, "  aih import <文件.json...> [--dry-run]   # 导入账号（同身份更新、不重复）")
+	_, _ = fmt.Fprintln(output, "  aih import --help                     # 显示本帮助")
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output, "--dry-run 只报告将要发生的变更，不写账号库。")
 }

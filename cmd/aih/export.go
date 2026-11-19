@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
@@ -15,7 +16,8 @@ func runRootExport(ctx context.Context, arguments []string, runtime commandRunti
 	}
 	for _, argument := range arguments[1:] {
 		if argument == "--help" || argument == "-h" || argument == "help" {
-			return false, nil
+			writeExportUsage(runtime.stdout)
+			return true, nil
 		}
 	}
 	home, err := resolveAIHome(runtime)
@@ -46,4 +48,12 @@ func runRootExport(ctx context.Context, arguments []string, runtime commandRunti
 		return true, &cliExitError{code: 1}
 	}
 	return true, nil
+}
+
+func writeExportUsage(output io.Writer) {
+	_, _ = fmt.Fprintln(output, "用法:")
+	_, _ = fmt.Fprintln(output, "  aih export [账号ID...] [文件.json]   # 导出账号与明文凭据")
+	_, _ = fmt.Fprintln(output, "  aih export --help                  # 显示本帮助")
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output, "不指定文件时导出到当前目录；文件含明文凭据，请妥善保管。")
 }

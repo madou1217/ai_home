@@ -212,9 +212,10 @@ type EnvironmentInput struct {
 // 剥宿主账号键 → 合并本账号 env → 剥 Provider 配置根 + 重指 HOME → 注入 extraEnv
 // → 写入账号引用。
 //
-// 未包含（仍留在 Node）：Provider 启动策略的 buildEnvPatch（13 家各自配置模板）、
-// 跨 Provider 协作变量、codex managed-launch 标记、模型别名改写、PATH 归并、
-// UTF-8 locale / 代理归一与出口守卫。这些依赖读盘、配置或系统代理，不属于纯投影。
+// 本函数只做纯投影。Provider 启动策略的环境补丁（各厂商配置模板、跨 Provider
+// 协作变量、codex managed-launch 标记、模型别名改写、PATH 归并、UTF-8 locale /
+// 代理归一与出口守卫）由 internal/adapters/*/clilaunch 与 providercli 在启动层
+// 叠加，不在这里重复。
 func BuildProjectedEnvironment(input EnvironmentInput) map[string]string {
 	scoped := BuildAccountScopedEnv(input.BaseEnv, input.AccountEnv)
 	env := BuildHostScopedBaseEnv(scoped, input.HostHomeDir)

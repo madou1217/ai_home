@@ -101,7 +101,7 @@ func TestFetchCatalogAtAcceptsOpenAIShapeOnce(t *testing.T) {
 		context.Background(),
 		server.Client(),
 		modelCatalogAuth{baseURL: server.URL + "/anthropic", headerName: "x-api-key", headerValue: "sk-test"},
-		server.URL+"/anthropic/v1/models",
+		modelCatalogCandidate{endpoint: server.URL + "/anthropic/v1/models"},
 	)
 	if err != nil {
 		t.Fatalf("fetchCatalogAt() error = %v", err)

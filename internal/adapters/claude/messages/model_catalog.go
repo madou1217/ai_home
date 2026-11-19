@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	vendorendpoints "github.com/madou1217/ai_home/contracts/vendor-endpoints"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 )
@@ -44,6 +45,12 @@ type modelCatalogAuth struct {
 	headerName  string
 	headerValue string
 	oauthBeta   bool
+	// alternateHeaderName/Value 是同一凭据在另一门认证风格下的投影。
+	// Claude 账号用 x-api-key，而第三方厂商的模型目录几乎都挂在 OpenAI 兼容
+	// 端点上、只认 Authorization: Bearer（见 contracts/vendor-endpoints）。
+	// 没有可用投影时保持零值，按该风格请求的候选会被跳过而不是发错头。
+	alternateHeaderName  string
+	alternateHeaderValue string
 }
 
 // projectModelCatalogAuth 把四类 Claude 领域凭据投影成 Models API 合同。
@@ -73,12 +80,21 @@ func projectModelCatalogAuth(
 		if auth == nil {
 			return modelCatalogAuth{}, ErrInvalidInvocation
 		}
-		return newModelCatalogAuth(
+		projection, err := newModelCatalogAuth(
 			auth.BaseURL(),
 			"x-api-key",
 			auth.APIKey(),
 			false,
 		)
+		if err != nil {
+			return modelCatalogAuth{}, err
+		}
+		// 同一个 API Key 在厂商的 OpenAI 兼容端点上必须用 Bearer 发送。
+		if auth.APIKey() != "" {
+			projection.alternateHeaderName = "Authorization"
+			projection.alternateHeaderValue = "Bearer " + auth.APIKey()
+		}
+		return projection, nil
 	case *claudeauth.AuthTokenAuth:
 		if auth == nil {
 			return modelCatalogAuth{}, ErrInvalidInvocation
@@ -130,11 +146,57 @@ func newModelCatalogAuth(
 	}, nil
 }
 
+// header 返回指定认证风格下的 Header；该风格没有可用投影时报告 false。
+//
+// 空风格沿用账号协议的原生头；"bearer" / "x-api-key" 是厂商目录端点声明的风格。
+func (auth modelCatalogAuth) header(style string) (string, string, bool) {
+	switch strings.ToLower(strings.TrimSpace(style)) {
+	case "", "inherit", "native":
+		if auth.headerName == "" || auth.headerValue == "" {
+			return "", "", false
+		}
+		return auth.headerName, auth.headerValue, true
+	case "bearer":
+		if strings.EqualFold(auth.headerName, "Authorization") {
+			return auth.headerName, auth.headerValue, true
+		}
+		if strings.EqualFold(auth.alternateHeaderName, "Authorization") &&
+			auth.alternateHeaderValue != "" {
+			return auth.alternateHeaderName, auth.alternateHeaderValue, true
+		}
+		return "", "", false
+	case "x-api-key":
+		if strings.EqualFold(auth.headerName, "x-api-key") {
+			return auth.headerName, auth.headerValue, true
+		}
+		if strings.EqualFold(auth.alternateHeaderName, "x-api-key") &&
+			auth.alternateHeaderValue != "" {
+			return auth.alternateHeaderName, auth.alternateHeaderValue, true
+		}
+		return "", "", false
+	default:
+		return "", "", false
+	}
+}
+
+// modelCatalogCandidate 是一个目录探测候选：端点、认证风格与条目过滤。
+type modelCatalogCandidate struct {
+	endpoint      string
+	authStyle     string
+	excludesModel func(string) bool
+}
+
+func (candidate modelCatalogCandidate) excludes(modelID string) bool {
+	return candidate.excludesModel != nil && candidate.excludesModel(modelID)
+}
+
 // fetchModelCatalog 依次探测候选端点，第一个返回非空目录的端点胜出。
 //
-// 候选顺序复刻 Node 的 generic-models-probe：<base>/models、<base>/v1/models，
-// 再由 origin 根路径兜底。每个候选只发一次请求，响应同时按 Anthropic 分页形状
-// 与 OpenAI 形状解析 —— 第三方代理常见的 {object,data:[{id}]} 不会先失败再重试。
+// 候选顺序：厂商契约声明的目录端点（如千问 Anthropic 兼容 base 的模型目录挂在
+// 同厂商 OpenAI 兼容端点上），再复刻 Node 的 generic-models-probe：<base>/models、
+// <base>/v1/models，最后由 origin 根路径兜底。每个候选只发一次请求，响应同时按
+// Anthropic 分页形状与 OpenAI 形状解析 —— 第三方代理常见的 {object,data:[{id}]}
+// 不会先失败再重试。
 func fetchModelCatalog(
 	ctx context.Context,
 	client HTTPClient,
@@ -143,12 +205,15 @@ func fetchModelCatalog(
 	if ctx == nil || client == nil {
 		return modelCatalog{}, ErrInvalidDependencies
 	}
-	candidates := modelCatalogCandidates(auth.baseURL)
+	candidates := modelCatalogPlan(auth.baseURL)
 	failures := make([]string, 0, len(candidates))
-	for _, endpoint := range candidates {
-		models, err := fetchCatalogAt(ctx, client, auth, endpoint)
+	for _, candidate := range candidates {
+		if _, _, usable := auth.header(candidate.authStyle); !usable {
+			continue
+		}
+		models, err := fetchCatalogAt(ctx, client, auth, candidate)
 		if err != nil {
-			failures = append(failures, endpoint+" -> "+err.Error())
+			failures = append(failures, candidate.endpoint+" -> "+err.Error())
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return modelCatalog{}, ctxErr
 			}
@@ -168,6 +233,53 @@ func fetchModelCatalog(
 		ErrModelCatalogUnavailable,
 		strings.Join(failures, " | "),
 	)
+}
+
+// modelCatalogPlan 组装探测计划：厂商契约目录端点优先，再走通用兜底。
+func modelCatalogPlan(baseURL string) []modelCatalogCandidate {
+	candidates := vendorModelCatalogCandidates(baseURL)
+	for _, endpoint := range modelCatalogCandidates(baseURL) {
+		candidates = append(candidates, modelCatalogCandidate{endpoint: endpoint})
+	}
+	// 同一端点可能以不同认证风格各试一次（厂商目录端点恰好等于通用兜底端点时），
+	// 按「端点 + 风格」去重并保持先厂商后通用的顺序。
+	seen := make(map[string]struct{}, len(candidates))
+	deduped := make([]modelCatalogCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		key := candidate.endpoint + "\x00" + candidate.authStyle
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduped = append(deduped, candidate)
+	}
+	return deduped
+}
+
+// vendorModelCatalogCandidates 读取厂商契约声明的目录端点。
+//
+// 典型场景：千问/百炼的 Anthropic 兼容 base 上没有任何 /models 端点，模型目录
+// 挂在同厂商的 OpenAI 兼容端点上、且只认 Bearer。厂商事实见
+// contracts/vendor-endpoints/endpoints.json。
+func vendorModelCatalogCandidates(baseURL string) []modelCatalogCandidate {
+	resolution, found := vendorendpoints.Resolve(baseURL)
+	if !found {
+		return nil
+	}
+	entries := resolution.CatalogEndpoints()
+	candidates := make([]modelCatalogCandidate, 0, len(entries))
+	for _, entry := range entries {
+		endpoint := strings.TrimSpace(entry.URL)
+		if endpoint == "" {
+			continue
+		}
+		candidates = append(candidates, modelCatalogCandidate{
+			endpoint:      endpoint,
+			authStyle:     strings.TrimSpace(entry.Auth),
+			excludesModel: entry.ExcludesModel,
+		})
+	}
+	return candidates
 }
 
 // modelCatalogCandidates 复刻 Node 的候选顺序（base 优先，其次 origin 根路径）。
@@ -229,19 +341,24 @@ func fetchCatalogAt(
 	ctx context.Context,
 	client HTTPClient,
 	auth modelCatalogAuth,
-	endpoint string,
+	candidate modelCatalogCandidate,
 ) ([]string, error) {
-	payload, err := fetchCatalogPayload(ctx, client, auth, endpoint, "")
+	payload, err := fetchCatalogPayload(ctx, client, auth, candidate, "")
 	if err != nil {
 		return nil, err
 	}
 	page, anthropicShape := decodeAnthropicCatalogPage(payload)
 	if anthropicShape {
-		return collectAnthropicPages(ctx, client, auth, endpoint, page)
+		return collectAnthropicPages(ctx, client, auth, candidate, page)
 	}
-	models := parseOpenAIModels(payload)
+	models, hadEntries, excluded := parseOpenAIModels(payload, candidate)
 	if len(models) == 0 {
-		return nil, ErrInvalidModelCatalog
+		// 目录有条目、却既没有可用 ID 也不是被厂商规则过滤掉的，才算合同无效；
+		// 全被规则过滤（如 Anthropic 端点下的图片模型）保持「无可用模型」语义。
+		if hadEntries > 0 && excluded == 0 {
+			return nil, ErrInvalidModelCatalog
+		}
+		return nil, nil
 	}
 	return models, nil
 }
@@ -250,7 +367,7 @@ func collectAnthropicPages(
 	ctx context.Context,
 	client HTTPClient,
 	auth modelCatalogAuth,
-	endpoint string,
+	candidate modelCatalogCandidate,
 	first modelCatalogPageDTO,
 ) ([]string, error) {
 	models := make([]string, 0, modelCatalogPageLimit)
@@ -259,6 +376,7 @@ func collectAnthropicPages(
 	page := first
 	cursor := ""
 	entries := 0
+	excluded := 0
 	for range maxModelCatalogPages {
 		for _, entry := range *page.Data {
 			entries++
@@ -266,6 +384,11 @@ func collectAnthropicPages(
 			// 条目（如带空格的 “claude fable 5.2”）。单个不可用条目不应作废整份
 			// 目录：跳过它，与 OpenAI 形状解析的过滤规则保持一致。
 			if !validModelCatalogID(entry.ID) {
+				continue
+			}
+			// 厂商契约声明的过滤（如 Anthropic 兼容端点只服务文本生成类模型）。
+			if candidate.excludes(entry.ID) {
+				excluded++
 				continue
 			}
 			if len(models) >= maxModelCatalogModels {
@@ -278,8 +401,9 @@ func collectAnthropicPages(
 			models = append(models, entry.ID)
 		}
 		if !*page.HasMore {
-			// 目录有条目但全部不可用才算合同无效；空目录保持「无可用模型」语义。
-			if entries > 0 && len(models) == 0 {
+			// 目录有条目但全部不可用才算合同无效；空目录、以及全部被厂商规则
+			// 过滤掉（非文本模型）都保持「无可用模型」语义。
+			if entries > 0 && len(models) == 0 && excluded == 0 {
 				return nil, ErrInvalidModelCatalog
 			}
 			sort.Strings(models)
@@ -293,7 +417,7 @@ func collectAnthropicPages(
 			return nil, ErrInvalidModelCatalog
 		}
 		seenCursors[cursor] = struct{}{}
-		payload, err := fetchCatalogPayload(ctx, client, auth, endpoint, cursor)
+		payload, err := fetchCatalogPayload(ctx, client, auth, candidate, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -311,10 +435,14 @@ func fetchCatalogPayload(
 	ctx context.Context,
 	client HTTPClient,
 	auth modelCatalogAuth,
-	endpoint string,
+	candidate modelCatalogCandidate,
 	cursor string,
 ) ([]byte, error) {
-	parsed, err := url.Parse(endpoint)
+	headerName, headerValue, usable := auth.header(candidate.authStyle)
+	if !usable {
+		return nil, ErrInvalidInvocation
+	}
+	parsed, err := url.Parse(candidate.endpoint)
 	if err != nil {
 		return nil, ErrInvalidInvocation
 	}
@@ -330,8 +458,10 @@ func fetchCatalogPayload(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("anthropic-version", anthropicVersion)
-	request.Header.Set(auth.headerName, auth.headerValue)
-	if auth.oauthBeta {
+	request.Header.Set(headerName, headerValue)
+	// oauth beta 头只对 Bearer 投影有意义：厂商目录端点的 Bearer 是 API Key，
+	// 带上 oauth beta 只会让不认识它的服务端困惑。
+	if auth.oauthBeta && strings.EqualFold(headerName, "Authorization") {
 		request.Header.Set("anthropic-beta", betaOAuth)
 	}
 	response, err := client.Do(request)
@@ -494,20 +624,32 @@ type openAIModelListDTO struct {
 }
 
 // parseOpenAIModels 解析 {data:[{id}]} 或 {models:[{id|name}]} 形状。
-func parseOpenAIModels(payload []byte) []string {
+//
+// 返回值除模型外还带两个计数：目录里是否有条目（hadEntries）与有多少条被厂商
+// 规则过滤掉（excluded）。调用方据此区分「合同无效」与「有效目录但没有可服务
+// 的模型」，不把厂商的过滤规则误报成解析失败。
+func parseOpenAIModels(
+	payload []byte,
+	candidate modelCatalogCandidate,
+) (models []string, hadEntries int, excluded int) {
 	var document openAIModelListDTO
 	if json.Unmarshal(payload, &document) != nil {
-		return nil
+		return nil, 0, 0
 	}
 	entries := document.Data
 	if len(entries) == 0 {
 		entries = document.Models
 	}
+	hadEntries = len(entries)
 	seen := make(map[string]struct{}, len(entries))
-	models := make([]string, 0, len(entries))
+	models = make([]string, 0, len(entries))
 	for _, entry := range entries {
 		id := strings.TrimSpace(firstModelID(entry.ID, entry.Model, entry.Name))
 		if !validModelCatalogID(id) {
+			continue
+		}
+		if candidate.excludes(id) {
+			excluded++
 			continue
 		}
 		if _, exists := seen[id]; exists {
@@ -516,14 +658,14 @@ func parseOpenAIModels(payload []byte) []string {
 		seen[id] = struct{}{}
 		models = append(models, id)
 		if len(models) > maxModelCatalogModels {
-			return nil
+			return nil, hadEntries, excluded
 		}
 	}
 	if len(models) == 0 {
-		return nil
+		return nil, hadEntries, excluded
 	}
 	sort.Strings(models)
-	return models
+	return models, hadEntries, excluded
 }
 
 func firstModelID(values ...string) string {

@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "vendors": [
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "protocols": {
+        "anthropic": { "base_url": "https://api.deepseek.com/anthropic" },
+        "openai": { "base_url": "https://api.deepseek.com/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          { "url": "https://api.deepseek.com/v1/models", "auth": "bearer" }
+        ],
+        "openai": [
+          { "url": "https://api.deepseek.com/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 实测：/v1/models 200（Bearer 与 x-api-key 均可）；/anthropic/models 404"
+    },
+    {
+      "id": "moonshot",
+      "label": "Moonshot（国内站）",
+      "protocols": {
+        "anthropic": { "base_url": "https://api.moonshot.cn/anthropic" },
+        "openai": { "base_url": "https://api.moonshot.cn/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          { "url": "https://api.moonshot.cn/v1/models", "auth": "bearer" }
+        ],
+        "openai": [
+          { "url": "https://api.moonshot.cn/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/v1/models 401（端点存在，需 Bearer）"
+    },
+    {
+      "id": "moonshot-intl",
+      "label": "Moonshot（国际站）",
+      "protocols": {
+        "anthropic": { "base_url": "https://api.moonshot.ai/anthropic" },
+        "openai": { "base_url": "https://api.moonshot.ai/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          { "url": "https://api.moonshot.ai/v1/models", "auth": "bearer" }
+        ],
+        "openai": [
+          { "url": "https://api.moonshot.ai/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/v1/models 401（端点存在，需 Bearer）"
+    },
+    {
+      "id": "bigmodel",
+      "label": "智谱 BigModel",
+      "protocols": {
+        "anthropic": { "base_url": "https://open.bigmodel.cn/api/anthropic" },
+        "openai": { "base_url": "https://open.bigmodel.cn/api/paas/v4" }
+      },
+      "catalog": {
+        "anthropic": [
+          { "url": "https://open.bigmodel.cn/api/paas/v4/models", "auth": "bearer" }
+        ],
+        "openai": [
+          { "url": "https://open.bigmodel.cn/api/paas/v4/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/api/paas/v4/models 401（端点存在，需 Authorization）"
+    },
+    {
+      "id": "zai",
+      "label": "智谱 Z.ai",
+      "protocols": {
+        "anthropic": { "base_url": "https://api.z.ai/api/anthropic" },
+        "openai": { "base_url": "https://api.z.ai/api/paas/v4" }
+      },
+      "catalog": {
+        "anthropic": [
+          { "url": "https://api.z.ai/api/paas/v4/models", "auth": "bearer" }
+        ],
+        "openai": [
+          { "url": "https://api.z.ai/api/paas/v4/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/api/paas/v4/models 401（端点存在，需 Authorization）"
+    },
+    {
+      "id": "dashscope",
+      "label": "阿里云百炼 DashScope",
+      "protocols": {
+        "anthropic": { "base_url": "https://dashscope.aliyuncs.com/apps/anthropic" },
+        "openai": { "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          {
+            "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+            "auth": "bearer",
+            "exclude_model_id_regex": "(?i)(^wan|audio|image|video|tts|asr|realtime)"
+          }
+        ],
+        "openai": [
+          { "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/compatible-mode/v1/models 401（端点存在，需 Bearer）；Anthropic 兼容端点只服务文本生成类模型"
+    },
+    {
+      "id": "dashscope-intl",
+      "label": "阿里云百炼 DashScope（国际站）",
+      "protocols": {
+        "anthropic": { "base_url": "https://dashscope-intl.aliyuncs.com/apps/anthropic" },
+        "openai": { "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          {
+            "url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+            "auth": "bearer",
+            "exclude_model_id_regex": "(?i)(^wan|audio|image|video|tts|asr|realtime)"
+          }
+        ],
+        "openai": [
+          { "url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/compatible-mode/v1/models 401（端点存在，需 Bearer）；Anthropic 兼容端点只服务文本生成类模型"
+    },
+    {
+      "id": "qwen-token-plan",
+      "label": "千问 Token Plan（个人/团队）",
+      "protocols": {
+        "anthropic": { "base_url": "https://token-plan.maas.qianwenaiapi.com/apps/anthropic" },
+        "openai": { "base_url": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          {
+            "url": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1/models",
+            "auth": "bearer",
+            "exclude_model_id_regex": "(?i)(^wan|audio|image|video|tts|asr|realtime)"
+          }
+        ],
+        "openai": [
+          { "url": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 实测：Anthropic 兼容 base 的 /models 与 /v1/models 均为 404；/compatible-mode/v1/models 200 返回 23 个模型（Bearer 与 x-api-key 均可），Anthropic 兼容端点只服务文本生成类"
+    },
+    {
+      "id": "qwen-maas",
+      "label": "千问 AI 平台（按量计费）",
+      "protocols": {
+        "anthropic": { "base_url": "https://maas.qianwenaiapi.com/apps/anthropic" },
+        "openai": { "base_url": "https://maas.qianwenaiapi.com/compatible-mode/v1" }
+      },
+      "catalog": {
+        "anthropic": [
+          {
+            "url": "https://maas.qianwenaiapi.com/compatible-mode/v1/models",
+            "auth": "bearer",
+            "exclude_model_id_regex": "(?i)(^wan|audio|image|video|tts|asr|realtime)"
+          }
+        ],
+        "openai": [
+          { "url": "https://maas.qianwenaiapi.com/compatible-mode/v1/models", "auth": "bearer" }
+        ]
+      },
+      "evidence": "2026-11-19 形状探测：/compatible-mode/v1/models 401（端点存在，需 Bearer）；协议布局与 token-plan 同源（官方文档）"
+    }
+  ]
+}

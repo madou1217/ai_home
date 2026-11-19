@@ -110,7 +110,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusNotFound, "account_not_found", "账号不存在")
 		return
 	}
-	accounts, decoded := decodeExportedAccounts(result.Document)
+	accounts, _ := decodeExportedAccounts(result.Document)
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -119,12 +119,6 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	response.Header().Set("Content-Disposition", `attachment; filename="`+exportFileName(query, accounts)+`"`)
 	response.Header().Set("X-AIH-Exported-Accounts", strconv.Itoa(result.Exported))
 	response.Header().Set("X-AIH-Skipped-Accounts", strconv.Itoa(result.Skipped))
-	// node-only 只在数据可解释时给出：过滤会移出集合成员、跳过的账号也不在文档里，
-	// 两种情况都会把已存在的 Go 账号误算成 Node-only，宁可不发也不发错数。
-	if links := handler.resolverLinks(); links != nil && decoded &&
-		!query.hasProviders && !query.hasRefs && result.Skipped == 0 {
-		response.Header().Set(UnlinkedAccountsHeader, strconv.Itoa(unlinkedAccounts(links, accounts)))
-	}
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(result.Document)
 	_, _ = response.Write([]byte{'\n'})

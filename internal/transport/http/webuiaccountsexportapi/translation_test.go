@@ -150,66 +150,6 @@ func TestExportNodeRefForMissingGoAccountReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestExportReportsNodeOnlyAccountsFromLinks(t *testing.T) {
-	fixture := newFixture(t, 2)
-	catalog := mustCatalog(t)
-	missing, _ := mustCodexAccount(t, catalog, "sk-node-only", 7)
-	resolver := mustSyncResolver(t, map[string]string{
-		"node-ref-known":   fixture.accounts[0].Ref().String(),
-		"node-ref-unknown": missing.Ref().String(),
-	})
-
-	recorder := httptest.NewRecorder()
-	newTestHandlerWithResolver(t, fixture, resolver).ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, Path, nil),
-	)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
-	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "1" {
-		t.Fatalf("%s = %q", UnlinkedAccountsHeader, nodeOnly)
-	}
-
-	// 过滤后的集合不完整，计数不可解释：不发该响应头。
-	recorder = httptest.NewRecorder()
-	newTestHandlerWithResolver(t, fixture, resolver).ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, Path+"?provider=codex", nil),
-	)
-	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "" {
-		t.Fatalf("过滤导出不应给出 %s，得到 %q", UnlinkedAccountsHeader, nodeOnly)
-	}
-
-	// 未启用同步：两边引用相同，没有可统计的 Node-only。
-	recorder = httptest.NewRecorder()
-	newTestHandlerWithResolver(t, fixture, accountrefmap.NewResolver(false, accountrefmap.Table{})).ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, Path, nil),
-	)
-	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "" {
-		t.Fatalf("未启用同步不应给出 %s，得到 %q", UnlinkedAccountsHeader, nodeOnly)
-	}
-}
-
-func TestExportNodeOnlyDeduplicatesSharedGoRef(t *testing.T) {
-	fixture := newFixture(t, 1)
-	catalog := mustCatalog(t)
-	missing, _ := mustCodexAccount(t, catalog, "sk-shared", 8)
-	resolver := mustSyncResolver(t, map[string]string{
-		"node-ref-a": missing.Ref().String(),
-		"node-ref-b": missing.Ref().String(),
-	})
-	recorder := httptest.NewRecorder()
-	newTestHandlerWithResolver(t, fixture, resolver).ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, Path, nil),
-	)
-	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "1" {
-		t.Fatalf("%s = %q, 同一 Go 引用应只计一次", UnlinkedAccountsHeader, nodeOnly)
-	}
-}
-
 func TestTranslateExportQueryKeepsUnknownKeys(t *testing.T) {
 	fixture := newFixture(t, 1)
 	handler := newTestHandler(t, fixture)

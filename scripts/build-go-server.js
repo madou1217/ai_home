@@ -64,8 +64,8 @@ function buildGoServer(options = {}) {
     throw new Error(`go build exited with ${result.status}`);
   }
   try {
-    // Publish the matching CLI first. A newer server can migrate aih.db beyond
-    // the installed CLI's supported schema, breaking every native launch.
+    // Publish the CLI from the same source before the server. Database readiness
+    // is capability-based; paired artifacts keep native commands in sync.
     buildGoCLI({ ...options, repositoryRoot });
     fs.renameSync(plan.temporaryOutput, plan.output);
   } catch (error) {

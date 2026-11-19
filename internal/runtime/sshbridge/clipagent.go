@@ -85,11 +85,25 @@ func ClipAgentHelpText() string {
 	return strings.ReplaceAll(text, `\x1b`, "\x1b") + "\n"
 }
 
-func writeAgentJSON(writer http.ResponseWriter, status int, payload map[string]any) {
+func writeAgentJSON(writer http.ResponseWriter, status int, payload any) {
 	writer.Header().Set("content-type", "application/json; charset=utf-8")
 	writer.WriteHeader(status)
 	encoded, _ := json.Marshal(payload)
 	_, _ = writer.Write(append(encoded, '\n'))
+}
+
+type agentHealth struct {
+	OK      bool   `json:"ok"`
+	Service string `json:"service"`
+}
+
+type agentError struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error"`
+}
+
+func writeAgentNotFound(writer http.ResponseWriter) {
+	writeAgentJSON(writer, http.StatusNotFound, agentError{OK: false, Error: "not_found"})
 }
 
 // NewClipAgentHandler 构造剪贴板代理 HTTP 处理器。
@@ -100,14 +114,14 @@ func NewClipAgentHandler(maxBytes int) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
-			writeAgentJSON(writer, http.StatusNotFound, map[string]any{"ok": false, "error": "not_found"})
+			writeAgentNotFound(writer)
 			return
 		}
-		writeAgentJSON(writer, http.StatusOK, map[string]any{"ok": true, "service": "aih-clip-agent"})
+		writeAgentJSON(writer, http.StatusOK, agentHealth{OK: true, Service: "aih-clip-agent"})
 	})
 	mux.HandleFunc("/image", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
-			writeAgentJSON(writer, http.StatusNotFound, map[string]any{"ok": false, "error": "not_found"})
+			writeAgentNotFound(writer)
 			return
 		}
 		limit := maxBytes
@@ -116,7 +130,7 @@ func NewClipAgentHandler(maxBytes int) http.Handler {
 		}
 		image, found, err := ReadClipboardImage(limit)
 		if err != nil {
-			writeAgentJSON(writer, http.StatusUnprocessableEntity, map[string]any{"ok": false, "error": err.Error()})
+			writeAgentJSON(writer, http.StatusUnprocessableEntity, agentError{OK: false, Error: err.Error()})
 			return
 		}
 		if !found {
@@ -125,7 +139,7 @@ func NewClipAgentHandler(maxBytes int) http.Handler {
 		}
 		info, err := ValidateImage(image.Buffer, image.MimeType, limit)
 		if err != nil {
-			writeAgentJSON(writer, http.StatusUnprocessableEntity, map[string]any{"ok": false, "error": err.Error()})
+			writeAgentJSON(writer, http.StatusUnprocessableEntity, agentError{OK: false, Error: err.Error()})
 			return
 		}
 		writer.Header().Set("content-type", info.MimeType)
@@ -133,6 +147,9 @@ func NewClipAgentHandler(maxBytes int) http.Handler {
 		writer.Header().Set("x-aih-clip-sha256", info.SHA256)
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write(image.Buffer)
+	})
+	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		writeAgentNotFound(writer)
 	})
 	return mux
 }

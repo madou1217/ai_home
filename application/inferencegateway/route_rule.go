@@ -12,6 +12,8 @@ import (
 const (
 	// MaxRouteRules 限制单个不可变目录可接收的规则数量。
 	MaxRouteRules = 4096
+	// providerScopePrefix 表示按请求模型归属 Provider 匹配的作用域。
+	providerScopePrefix = "provider:"
 )
 
 var (
@@ -37,27 +39,70 @@ const (
 	RouteScopeClaude RouteScope = "claude"
 )
 
-// IsValid 判断作用域是否属于当前 Codex/Claude 重构范围。
-func (scope RouteScope) IsValid() bool {
-	return scope == RouteScopeAll ||
-		scope == RouteScopeCodex ||
-		scope == RouteScopeClaude
+// ProviderRouteScope 创建按请求模型归属 Provider 匹配的作用域。
+func ProviderRouteScope(providerID string) (RouteScope, error) {
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	if provider == "" {
+		return "", ErrInvalidRouteRule
+	}
+	for _, character := range provider {
+		if character >= 'a' && character <= 'z' ||
+			character >= '0' && character <= '9' ||
+			character == '-' || character == '_' {
+			continue
+		}
+		return "", ErrInvalidRouteRule
+	}
+	return RouteScope(providerScopePrefix + provider), nil
 }
 
-// accepts 判断客户端协议的默认 Provider 是否满足规则作用域。
-func (scope RouteScope) accepts(protocolID inference.ClientProtocolID) bool {
+// IsValid 判断作用域是否属于当前支持范围。
+func (scope RouteScope) IsValid() bool {
+	if scope == RouteScopeAll ||
+		scope == RouteScopeCodex ||
+		scope == RouteScopeClaude {
+		return true
+	}
+	value := string(scope)
+	if !strings.HasPrefix(value, providerScopePrefix) {
+		return false
+	}
+	_, err := ProviderRouteScope(strings.TrimPrefix(value, providerScopePrefix))
+	return err == nil
+}
+
+// accepts 判断客户端协议和请求模型归属 Provider 是否满足规则作用域。
+func (scope RouteScope) accepts(
+	protocolID inference.ClientProtocolID,
+	modelProviders []string,
+) bool {
 	if scope == RouteScopeAll {
 		return protocolID.IsValid()
 	}
-	switch protocolID {
-	case inference.ClientProtocolOpenAIResponses,
-		inference.ClientProtocolOpenAIChatCompletions:
-		return scope == RouteScopeCodex
-	case inference.ClientProtocolAnthropicMessages:
-		return scope == RouteScopeClaude
-	default:
+	if scope == RouteScopeCodex || scope == RouteScopeClaude {
+		switch protocolID {
+		case inference.ClientProtocolOpenAIResponses,
+			inference.ClientProtocolOpenAIChatCompletions:
+			return scope == RouteScopeCodex
+		case inference.ClientProtocolAnthropicMessages:
+			return scope == RouteScopeClaude
+		default:
+			return false
+		}
+	}
+	if !protocolID.IsValid() {
 		return false
 	}
+	target := strings.TrimPrefix(string(scope), providerScopePrefix)
+	if target == "" || target == string(scope) {
+		return false
+	}
+	for _, provider := range modelProviders {
+		if strings.EqualFold(strings.TrimSpace(provider), target) {
+			return true
+		}
+	}
+	return false
 }
 
 // routeMatchKind 区分精确模型名和仅允许尾部星号的前缀规则。
@@ -145,8 +190,9 @@ func (rule RouteRule) IsValid() bool {
 func (rule RouteRule) matches(
 	model string,
 	protocolID inference.ClientProtocolID,
+	modelProviders []string,
 ) bool {
-	if !rule.scope.accepts(protocolID) {
+	if !rule.scope.accepts(protocolID, modelProviders) {
 		return false
 	}
 	if rule.matchKind == routeMatchExact {

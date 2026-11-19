@@ -10,8 +10,9 @@ import (
 
 // RouteCatalog 是按精确模型索引并预排序通配符规则的不可变 Resolver。
 type RouteCatalog struct {
-	exact     map[string][]RouteRule
-	wildcards []RouteRule
+	exact          map[string][]RouteRule
+	wildcards      []RouteRule
+	modelProviders map[string][]string
 }
 
 // 编译期确认生产目录完整实现路由解析端口。
@@ -20,11 +21,21 @@ var _ ProtocolRouteResolver = (*RouteCatalog)(nil)
 
 // NewRouteCatalog 构建只读索引，并拒绝空、无界或重复规则集合。
 func NewRouteCatalog(rules ...RouteRule) (*RouteCatalog, error) {
+	return NewRouteCatalogWithProviders(nil, rules...)
+}
+
+// NewRouteCatalogWithProviders 同时记录请求模型归属的 Provider，供 provider
+// 作用域规则在解析时精确匹配。
+func NewRouteCatalogWithProviders(
+	modelProviders map[string][]string,
+	rules ...RouteRule,
+) (*RouteCatalog, error) {
 	if len(rules) == 0 || len(rules) > MaxRouteRules {
 		return nil, ErrInvalidRouteCatalog
 	}
 	catalog := &RouteCatalog{
-		exact: make(map[string][]RouteRule),
+		exact:          make(map[string][]RouteRule),
+		modelProviders: cloneProviderIndex(modelProviders),
 	}
 	identities := make(map[routeRuleIdentity]struct{}, len(rules))
 	for _, rule := range rules {
@@ -47,6 +58,7 @@ func (catalog *RouteCatalog) Resolve(
 	if err := ctx.Err(); err != nil {
 		return RoutePlan{}, err
 	}
+	modelProviders := catalog.modelProviders[request.Model()]
 	collector := routeCollector{
 		required: request.RequiredCapabilities(),
 	}
@@ -54,12 +66,14 @@ func (catalog *RouteCatalog) Resolve(
 		catalog.exact[request.Model()],
 		request.Model(),
 		request.ClientProtocol(),
+		modelProviders,
 	)
 	if !collector.full() {
 		collector.addRules(
 			catalog.wildcards,
 			request.Model(),
 			request.ClientProtocol(),
+			modelProviders,
 		)
 	}
 	return collector.plan()
@@ -120,8 +134,9 @@ func resolveProtocolRules(
 	providerID inference.ProviderID,
 	protocolID inference.ProtocolID,
 ) (Route, bool) {
+	providers := []string{string(providerID)}
 	for _, rule := range rules {
-		if !rule.matches(model, clientProtocol) {
+		if !rule.matches(model, clientProtocol, providers) {
 			continue
 		}
 		route := rule.Route()
@@ -207,6 +222,21 @@ func (catalog *RouteCatalog) canResolve(
 		request.RequiredCapabilities().IsValid()
 }
 
+// cloneProviderIndex 复制模型 → Provider 倒排，目录发布后调用方不能再改写。
+func cloneProviderIndex(input map[string][]string) map[string][]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(input))
+	for model, providers := range input {
+		if model == "" || len(providers) == 0 {
+			continue
+		}
+		out[model] = append([]string(nil), providers...)
+	}
+	return out
+}
+
 // routeCollector 在固定八个槽位内完成能力过滤和真实目标去重。
 type routeCollector struct {
 	routes   [MaxRouteCandidates]Route
@@ -220,12 +250,13 @@ func (collector *routeCollector) addRules(
 	rules []RouteRule,
 	model string,
 	protocolID inference.ClientProtocolID,
+	modelProviders []string,
 ) {
 	for _, rule := range rules {
 		if collector.full() {
 			return
 		}
-		if !rule.matches(model, protocolID) {
+		if !rule.matches(model, protocolID, modelProviders) {
 			continue
 		}
 		collector.matched = true

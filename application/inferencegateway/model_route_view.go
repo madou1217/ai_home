@@ -18,10 +18,11 @@ func (catalog *RouteCatalog) ResolveModel(ctx context.Context, protocol inferenc
 	if err := ctx.Err(); err != nil {
 		return RoutePlan{}, err
 	}
+	modelProviders := catalog.modelProviders[model]
 	collector := routeCollector{required: required}
-	collector.addRules(catalog.exact[model], model, protocol)
+	collector.addRules(catalog.exact[model], model, protocol, modelProviders)
 	if !collector.full() {
-		collector.addRules(catalog.wildcards, model, protocol)
+		collector.addRules(catalog.wildcards, model, protocol, modelProviders)
 	}
 	return collector.plan()
 }

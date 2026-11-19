@@ -105,11 +105,24 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 		// 「哪些别名 Go 接不了」，而不是静默丢失。
 		return newSnapshot(nil, nil, nil, 0, 0, builder.compileAliases(models, nil)), nil
 	}
+	modelProviders := make(map[string][]string)
 	rules := make([]inferencegateway.RouteRule, 0, len(models))
 	identities := make(map[ruleIdentity]struct{}, len(models))
 	routedModels := make([]accountapp.RoutableModel, 0, len(models))
 	displayModels := make([]accountapp.RoutableModel, 0, len(models))
 	for _, model := range models {
+		modelID := model.ModelID().String()
+		providerID := model.ProviderID()
+		known := false
+		for _, existing := range modelProviders[modelID] {
+			if existing == providerID {
+				known = true
+				break
+			}
+		}
+		if !known {
+			modelProviders[modelID] = append(modelProviders[modelID], providerID)
+		}
 		if builder.isNodeOnlyModel(model) {
 			// Node-only Provider：Go 不认识这些模型，请求会因「模型不可路由」交还 Node。
 			// 不能在这里报错——否则一个 kiro 模型就能让整个 Go 路由目录构建失败。
@@ -133,7 +146,7 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	rules = append(rules, compilation.Rules...)
 	var routes *inferencegateway.RouteCatalog
 	if len(rules) > 0 {
-		routes, err = inferencegateway.NewRouteCatalog(rules...)
+		routes, err = inferencegateway.NewRouteCatalogWithProviders(modelProviders, rules...)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrInvalidProviderRoute, err)
 		}

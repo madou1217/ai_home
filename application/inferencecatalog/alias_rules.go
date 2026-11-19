@@ -60,11 +60,11 @@ func identityOf(rule inferencegateway.RouteRule) ruleIdentity {
 	}
 }
 
-// aliasScope 把 Node 的别名作用域 Provider 映射为 Go 的客户端协议作用域。
+// aliasScope 把 Node 的别名作用域 Provider 映射为 Go 的路由作用域。
 //
-// Node 的 provider="all" 对任意客户端生效；codex/claude 分别对应 OpenAI 与
-// Anthropic 客户端入口。其余 Provider（gemini、agy、grok…）在 Go 里没有等价
-// 客户端作用域，保守丢弃——这些别名继续留在 Node。
+// all/codex/claude 沿用协议作用域；其余合法 Provider 映射为 provider:<id>，
+// 由 RouteCatalog 用「请求模型归属 Provider」精确匹配。只有非法 Provider
+// 标识才会被丢弃。
 func aliasScope(provider string) (inferencegateway.RouteScope, bool) {
 	switch provider {
 	case "", modelalias.ScopeAll:
@@ -74,7 +74,8 @@ func aliasScope(provider string) (inferencegateway.RouteScope, bool) {
 	case "claude":
 		return inferencegateway.RouteScopeClaude, true
 	default:
-		return "", false
+		scope, err := inferencegateway.ProviderRouteScope(provider)
+		return scope, err == nil
 	}
 }
 

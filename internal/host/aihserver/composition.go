@@ -1893,6 +1893,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		if err := pluginBundle.HostService.Start(ctx); err != nil && errorLog != nil {
 			errorLog.Printf("插件宿主初始激活降级: %v", err)
 		}
+		installPluginAliasSync(inference.modelAliases, pluginBundle.HostService, inference.RefreshCatalog)
 	}
 	// 插件价格来源接进定价 Resolver：已生效（通过复核）的插件快照参与报价裁决，
 	// 按来源 authority 与宿主价格（账号/人工/官方）比较；未生效快照不参与计费。

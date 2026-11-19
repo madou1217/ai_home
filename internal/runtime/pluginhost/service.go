@@ -56,6 +56,9 @@ type Service struct {
 	preparer       *ControlPreparer
 	pricingService *pricingcatalog.Service
 	pricingSync    *PricingSync
+
+	// accountProjectionRegistrar 由组合根注入，供插件登录成功后把投影登记进账号库。
+	accountProjectionRegistrar AccountProjectionRegistrar
 }
 
 // NewService 创建并装配完整的插件宿主运行服务。

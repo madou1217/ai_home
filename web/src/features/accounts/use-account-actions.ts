@@ -1824,6 +1824,15 @@ export function useAccountActions({
     navigate(`/accounts/${encodeURIComponent(record.provider)}/${encodeURIComponent(record.accountRef)}/quota`);
   }, [navigate]);
 
+  // AuthProgressModal 的通用自动轮询按 job 类型分派：插件登录走 plugin-login，
+  // 内置 OAuth/CLI 作业走 account-jobs。两者响应形状不同，不能混用。
+  const refreshAccountJob = React.useCallback(async (jobId: string): Promise<AccountAddJob> => {
+    if (addJob?.pluginLogin && addJob.id === jobId) {
+      return mapPluginLoginJob(await accountsAPI.getPluginLoginJob(jobId));
+    }
+    return accountsAPI.getAddJob(jobId);
+  }, [addJob]);
+
   return {
     serverRuntime,
     // 行级状态
@@ -1929,7 +1938,7 @@ export function useAccountActions({
         onPluginLoginSubmitValueChange: setPluginLoginSubmitValue,
         onSubmitPluginLogin: handleSubmitPluginLogin,
         onConfirmCliInstall: handleConfirmCliInstall,
-        onRefreshJob: accountsAPI.getAddJob,
+        onRefreshJob: refreshAccountJob,
         onJobUpdate: handleAuthJobUpdate
       },
       import: {

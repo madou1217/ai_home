@@ -27,6 +27,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeartifact"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/httpjson"
@@ -125,20 +126,31 @@ type Dependencies struct {
 	HostHomeDir string
 	NodeBaseURL string
 	Clock       func() time.Time
+	// PluginImporter 让 /accounts/local-import 也能处理插件声明的 directImport 来源，
+	// 不再只认内置的 <provider>-host-local。
+	PluginImporter  PluginAccountImporter
+	PluginRegistrar pluginhost.AccountProjectionRegistrar
+}
+
+// PluginAccountImporter 是插件 directImport 的窄端口（生产实现：pluginhost.Service）。
+type PluginAccountImporter interface {
+	ImportAccountSource(ctx context.Context, req pluginhost.AccountImportRequest, registrar pluginhost.AccountProjectionRegistrar) (pluginhost.AccountImportResult, error)
 }
 
 // Handler 聚合 ZCode 协议回调、静态账号与本机导入三条路由。
 type Handler struct {
-	authorizer  interface{ Authorized(*http.Request) bool }
-	catalog     *providers.Catalog
-	store       *sqliteaccount.Store
-	authJobs    *accountauth.Service
-	importer    *accountapp.AccountImporter
-	hostHomeDir string
-	nodeBaseURL string
-	decoder     *nativeaccount.Decoder
-	static      accountsapi.StaticCredentialFactory
-	now         func() time.Time
+	authorizer      interface{ Authorized(*http.Request) bool }
+	catalog         *providers.Catalog
+	store           *sqliteaccount.Store
+	authJobs        *accountauth.Service
+	importer        *accountapp.AccountImporter
+	hostHomeDir     string
+	nodeBaseURL     string
+	decoder         *nativeaccount.Decoder
+	static          accountsapi.StaticCredentialFactory
+	now             func() time.Time
+	pluginImporter  PluginAccountImporter
+	pluginRegistrar pluginhost.AccountProjectionRegistrar
 }
 
 // NewHandler 校验并构造 WebUI 账号认证与本机导入处理器。
@@ -167,16 +179,18 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		}
 	}
 	return &Handler{
-		authorizer:  dependencies.Authorizer,
-		catalog:     catalog,
-		store:       dependencies.Store,
-		authJobs:    dependencies.AuthJobs,
-		importer:    importer,
-		hostHomeDir: strings.TrimSpace(dependencies.HostHomeDir),
-		nodeBaseURL: strings.TrimSpace(dependencies.NodeBaseURL),
-		decoder:     nativeaccount.NewDecoder(),
-		static:      accountsapi.NewBuiltinStaticCredentialFactory(),
-		now:         clock,
+		authorizer:      dependencies.Authorizer,
+		catalog:         catalog,
+		store:           dependencies.Store,
+		authJobs:        dependencies.AuthJobs,
+		importer:        importer,
+		hostHomeDir:     strings.TrimSpace(dependencies.HostHomeDir),
+		nodeBaseURL:     strings.TrimSpace(dependencies.NodeBaseURL),
+		decoder:         nativeaccount.NewDecoder(),
+		static:          accountsapi.NewBuiltinStaticCredentialFactory(),
+		now:             clock,
+		pluginImporter:  dependencies.PluginImporter,
+		pluginRegistrar: dependencies.PluginRegistrar,
 	}, nil
 }
 
@@ -529,7 +543,7 @@ func (handler *Handler) HandleLocalImport(response http.ResponseWriter, request 
 	if !handler.requireAuthorizedPOST(response, request) {
 		return
 	}
-	if handler.store == nil || handler.importer == nil {
+	if handler.importer == nil && handler.pluginImporter == nil {
 		writeAuthRouteError(response, http.StatusServiceUnavailable, "account_store_unavailable", "账号存储未装配。")
 		return
 	}
@@ -546,6 +560,56 @@ func (handler *Handler) HandleLocalImport(response http.ResponseWriter, request 
 	}
 	if !ok {
 		writeAuthRouteError(response, http.StatusBadRequest, "auth_source_unknown", "未知的 Provider。")
+		return
+	}
+	// 插件 directImport：来源不在内置 <provider>-host-local 命名空间时交给插件宿主；
+	// 插件返回 auth_source_unknown 才继续走内置校验，保持既有错误语义。
+	if sourceID != canonical+hostLocalSourceSuffix && handler.pluginImporter != nil {
+		result, importErr := handler.pluginImporter.ImportAccountSource(request.Context(), pluginhost.AccountImportRequest{
+			Provider: canonical,
+			SourceID: sourceID,
+		}, handler.pluginRegistrar)
+		if importErr != nil {
+			writeAuthRouteError(response, http.StatusServiceUnavailable, "plugin_runtime_inactive", "插件运行时不可用。")
+			return
+		}
+		if result.OK {
+			if body.AliasPoolParticipates != nil && !*body.AliasPoolParticipates && result.AccountRef != "" && handler.store != nil {
+				accountRef, refErr := accountcore.ParseAccountRef(result.AccountRef)
+				if refErr != nil {
+					writeAuthRouteError(response, http.StatusConflict, "auth_source_unavailable:invalid_identity", "插件返回的账号引用无效。")
+					return
+				}
+				if exErr := handler.store.SetRoutingExclusion(request.Context(), accountRef, true, "", handler.now().UTC()); exErr != nil {
+					writeAuthRouteError(response, http.StatusInternalServerError, "alias_pool_preference_failed", "保存别名池偏好失败。")
+					return
+				}
+			}
+			writeAuthJSON(response, http.StatusOK, map[string]any{
+				"ok":           true,
+				"provider":     canonical,
+				"accountRef":   result.AccountRef,
+				"cliAccountId": result.CLIAccountID,
+				"sourceId":     result.SourceID,
+			})
+			return
+		}
+		if result.Code != "auth_source_unknown" {
+			status := http.StatusBadRequest
+			switch result.Code {
+			case "plugin_runtime_inactive":
+				status = http.StatusServiceUnavailable
+			case "auth_source_unavailable":
+				status = http.StatusConflict
+			case "auth_source_already_imported":
+				status = http.StatusConflict
+			}
+			writeAuthRouteError(response, status, result.Code, result.Detail)
+			return
+		}
+	}
+	if handler.store == nil || handler.importer == nil {
+		writeAuthRouteError(response, http.StatusServiceUnavailable, "account_store_unavailable", "账号存储未装配。")
 		return
 	}
 	if requiresLoginJobForLocalSource(canonical, sourceID) {

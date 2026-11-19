@@ -21,12 +21,14 @@ func selfOrNodeBaseURL(dependencies webuiRouteDependencies) string {
 // Kiro IDE 走专用导入；其它 Provider 走通用 provider-host-local。
 func NewAccountJobLocalImporter(dependencies webuiRouteDependencies) webuiaccountaddapi.JobLocalImporter {
 	importer, err := webuiaccountauthapi.NewJobLocalImporter(webuiaccountauthapi.Dependencies{
-		Authorizer:  dependencies.Authorizer,
-		Catalog:     dependencies.Catalog,
-		Store:       dependencies.Store,
-		AuthJobs:    dependencies.AuthJobs,
-		HostHomeDir: dependencies.HostHomeDir,
-		NodeBaseURL: selfOrNodeBaseURL(dependencies),
+		Authorizer:      dependencies.Authorizer,
+		Catalog:         dependencies.Catalog,
+		Store:           dependencies.Store,
+		AuthJobs:        dependencies.AuthJobs,
+		HostHomeDir:     dependencies.HostHomeDir,
+		NodeBaseURL:     selfOrNodeBaseURL(dependencies),
+		PluginImporter:  dependencies.PluginHostService,
+		PluginRegistrar: newPluginAccountRegistrar(dependencies),
 	})
 	if err != nil {
 		return webuiaccountauthapi.NewKiroJobLocalImporter(dependencies.AuthJobs, dependencies.HostHomeDir)
@@ -40,12 +42,14 @@ func buildWebUIAccountAuthRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		return nil, nil
 	}
 	handler, err := webuiaccountauthapi.NewHandler(webuiaccountauthapi.Dependencies{
-		Authorizer:  dependencies.Authorizer,
-		Catalog:     dependencies.Catalog,
-		Store:       dependencies.Store,
-		AuthJobs:    dependencies.AuthJobs,
-		HostHomeDir: dependencies.HostHomeDir,
-		NodeBaseURL: selfOrNodeBaseURL(dependencies),
+		Authorizer:      dependencies.Authorizer,
+		Catalog:         dependencies.Catalog,
+		Store:           dependencies.Store,
+		AuthJobs:        dependencies.AuthJobs,
+		HostHomeDir:     dependencies.HostHomeDir,
+		NodeBaseURL:     selfOrNodeBaseURL(dependencies),
+		PluginImporter:  dependencies.PluginHostService,
+		PluginRegistrar: newPluginAccountRegistrar(dependencies),
 	})
 	if err != nil {
 		return nil, err
@@ -64,12 +68,14 @@ func newStaticAccountHandler(dependencies webuiRouteDependencies) (http.Handler,
 		return nil, nil
 	}
 	handler, err := webuiaccountauthapi.NewHandler(webuiaccountauthapi.Dependencies{
-		Authorizer:  dependencies.Authorizer,
-		Catalog:     dependencies.Catalog,
-		Store:       dependencies.Store,
-		AuthJobs:    dependencies.AuthJobs,
-		HostHomeDir: dependencies.HostHomeDir,
-		NodeBaseURL: selfOrNodeBaseURL(dependencies),
+		Authorizer:      dependencies.Authorizer,
+		Catalog:         dependencies.Catalog,
+		Store:           dependencies.Store,
+		AuthJobs:        dependencies.AuthJobs,
+		HostHomeDir:     dependencies.HostHomeDir,
+		NodeBaseURL:     selfOrNodeBaseURL(dependencies),
+		PluginImporter:  dependencies.PluginHostService,
+		PluginRegistrar: newPluginAccountRegistrar(dependencies),
 	})
 	if err != nil {
 		return nil, err

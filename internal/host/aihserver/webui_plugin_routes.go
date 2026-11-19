@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/internal/pluginerr"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipluginapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipluginloginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
@@ -38,6 +39,17 @@ func buildWebUIPluginRoutesWithHostService(
 	if err != nil {
 		return nil, fmt.Errorf("创建插件管理接口失败: %w", err)
 	}
+	// 登录成功后的投影登记由组合根的 registrar 完成；Service 不持有账号库。
+	if hostService != nil {
+		hostService.SetAccountProjectionRegistrar(newPluginAccountRegistrar(dependencies))
+	}
+	loginHandler, err := webuipluginloginapi.NewHandler(webuipluginloginapi.Dependencies{
+		Authorizer: dependencies.Authorizer,
+		Service:    hostService,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建插件登录接口失败: %w", err)
+	}
 
 	return []webuiRoute{
 		{Pattern: "GET " + webuipluginapi.DoctorPath, Handler: handler},
@@ -48,6 +60,10 @@ func buildWebUIPluginRoutesWithHostService(
 		{Pattern: "POST " + webuipluginapi.AccountsImportPath, Handler: handler},
 		{Pattern: "POST " + webuipluginapi.AccountsRefreshPath, Handler: handler},
 		{Pattern: "POST " + webuipluginapi.AccountsMaterializePath, Handler: handler},
+		{Pattern: "POST " + webuipluginloginapi.StartPath, Handler: loginHandler},
+		{Pattern: "GET " + webuipluginloginapi.Prefix + "{jobId}", Handler: loginHandler},
+		{Pattern: "POST " + webuipluginloginapi.Prefix + "{jobId}/submit", Handler: loginHandler},
+		{Pattern: "POST " + webuipluginloginapi.Prefix + "{jobId}/cancel", Handler: loginHandler},
 		// 旧 Node 公开插件入口：浏览器仍会请求 /v0/plugins/doctor，
 		// 与 /v1/management/webui/plugins/doctor 是同一处理器，只做路径重写。
 		{Pattern: "GET /v0/plugins/doctor", Handler: webuipublicalias.RewritePath(webuipluginapi.DoctorPath, handler), SkipPublicAlias: true},

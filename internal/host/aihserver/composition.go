@@ -1221,7 +1221,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 成本口径：优先走统一 Resolver（models.dev 内置来源 + 后续自定义插件），
 	// 旧定价表只作为未收录模型的兜底；都没有时成本标为「未知」而不是 0 元。
 	var costCalculator *usagepricing.ModelCostCalculator
-	if pricingResolver, pricingErr := pricingresolver.Default(); pricingErr == nil {
+	pricingResolver, pricingErr := pricingresolver.Default()
+	if pricingErr == nil {
 		costCalculator, err = usagepricing.NewModelCostCalculatorWithResolver(store, pricingResolver, providerIDs(catalog))
 	} else {
 		costCalculator, err = usagepricing.NewModelCostCalculator(store, providerIDs(catalog))

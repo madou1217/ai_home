@@ -45,11 +45,11 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 	modelsSyncHandler, err := webuimodelsyncapi.NewHandler(webuimodelsyncapi.Dependencies{
 		Authorizer:     dependencies.Authorizer,
 		Store:          dependencies.Store,
+		PricingConfig:  dependencies.Store,
 		Resolver:       pricingResolver,
 		AIHomeDir:      dependencies.AIHomeDir,
 		Catalog:        dependencies.Catalog,
 		Modalities:     dependencies.ModelModalities,
-		AliasExpander:  dependencies.ModelAliasExpander,
 		AccountRows:    dependencies.AccountRows,
 		ModelRefresher: dependencies.ModelRefresher,
 	})
@@ -74,6 +74,8 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "DELETE /v0/webui/upstream-error-mapping-groups/{id}", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
 		{Pattern: "POST /v0/webui/upstream-error-mapping-groups/{id}/toggle", Handler: webuipublicalias.Rewrite("/v0/webui/upstream-error-mapping-groups", upstreammappingapi.WebUIPath, upstreamMappingsHandler)},
 		{Pattern: "GET " + webuimodelsyncapi.CatalogPath, Handler: modelsSyncHandler},
+		{Pattern: "GET " + webuimodelsyncapi.PricingConfigPath, Handler: modelsSyncHandler},
+		{Pattern: "PUT " + webuimodelsyncapi.PricingConfigPath, Handler: modelsSyncHandler},
 		{Pattern: "POST " + webuimodelsyncapi.BasePath, Handler: modelsSyncHandler},
 		{Pattern: "PATCH " + webuimodelsyncapi.BasePath, Handler: modelsSyncHandler},
 		{Pattern: "POST " + webuimodelsyncapi.CatalogDeletePath, Handler: modelsSyncHandler},
@@ -82,6 +84,8 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		// 浏览器数据面：公开路径与管理路径不同构，逐条改写到同一处理器。
 		// 查询串（accountRef）与方法由处理器原样消费，refresh 返回 202 + 作业。
 		{Pattern: "GET /v0/webui/openai-models", Handler: webuipublicalias.RewritePath(webuimodelsyncapi.CatalogPath, modelsSyncHandler)},
+		{Pattern: "GET /v0/webui/openai-models/pricing-config", Handler: webuipublicalias.RewritePath(webuimodelsyncapi.PricingConfigPath, modelsSyncHandler)},
+		{Pattern: "PUT /v0/webui/openai-models/pricing-config", Handler: webuipublicalias.RewritePath(webuimodelsyncapi.PricingConfigPath, modelsSyncHandler)},
 		{Pattern: "POST /v0/webui/openai-models", Handler: webuipublicalias.RewritePath(webuimodelsyncapi.BasePath, modelsSyncHandler)},
 		{Pattern: "PATCH /v0/webui/openai-models", Handler: webuipublicalias.RewritePath(webuimodelsyncapi.BasePath, modelsSyncHandler)},
 		{Pattern: "POST /v0/webui/openai-models/refresh", Handler: webuipublicalias.RewritePath(webuimodelsyncapi.CatalogRefreshPath, modelsSyncHandler)},

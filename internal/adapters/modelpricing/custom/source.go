@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -169,6 +170,24 @@ func ParseDocument(raw []byte) (Document, error) {
 	}
 	if !document.Enabled {
 		return Document{}, errInvalidConfig
+	}
+	return document, nil
+}
+
+// Validate 校验配置；空配置视为关闭，合法配置返回规范化后的文档。
+func Validate(raw []byte) (Document, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return Document{}, nil
+	}
+	document, err := ParseDocument(raw)
+	if err != nil {
+		return Document{}, err
+	}
+	for index, quote := range document.Quotes {
+		if err := quote.Validate(); err != nil {
+			return Document{}, fmt.Errorf("quotes[%d]: %w", index, err)
+		}
 	}
 	return document, nil
 }

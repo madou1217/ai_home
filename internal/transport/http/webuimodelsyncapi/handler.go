@@ -43,6 +43,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
+	custompricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/custom"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
@@ -52,6 +53,8 @@ const (
 	BasePath = "/v1/management/webui/openai-models"
 	// CatalogPath 是完整 WebUI 模型目录读取路径（避免与旧只读契约冲突）。
 	CatalogPath = "/v1/management/webui/openai-models/catalog"
+	// PricingConfigPath 是自定义价格来源配置的读写路径。
+	PricingConfigPath = "/v1/management/webui/openai-models/pricing-config"
 	// CatalogDeletePath 是删除自定义模型设置并还原账号策略的路径。
 	CatalogDeletePath = "/v1/management/webui/openai-models/catalog/delete"
 	// CatalogRefreshPath 是异步 202 触发模型目录刷新的路径。
@@ -92,6 +95,12 @@ type Store interface {
 		updatedAt time.Time,
 	) ([]accountapp.AccountModel, error)
 	ListModelAliases(ctx context.Context) ([]modelalias.Record, int64, error)
+}
+
+// PricingConfigStore 读写 aih.db app_kv 中的价格插件配置。
+type PricingConfigStore interface {
+	LoadRawConfig(ctx context.Context, key string) ([]byte, error)
+	SaveRawConfig(ctx context.Context, key string, value []byte) error
 }
 
 // SettingsStore 在 app-state.db 上原子读写 model-catalog-settings 文档。
@@ -198,6 +207,7 @@ func (dir AccountRefMapDir) LoadTable(ctx context.Context) (accountrefmap.Table,
 type Dependencies struct {
 	Authorizer     Authorizer
 	Store          Store
+	PricingConfig  PricingConfigStore
 	Resolver       modelpricing.Resolver
 	AIHomeDir      string
 	Settings       SettingsStore
@@ -219,6 +229,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer     Authorizer
 	store          Store
+	pricingConfig  PricingConfigStore
 	resolver       modelpricing.Resolver
 	settings       SettingsStore
 	snapshot       SnapshotReader
@@ -324,6 +335,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	handler := &Handler{
 		authorizer:     dependencies.Authorizer,
 		store:          dependencies.Store,
+		pricingConfig:  dependencies.PricingConfig,
 		resolver:       dependencies.Resolver,
 		settings:       settings,
 		snapshot:       snapshot,
@@ -398,6 +410,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	switch {
+	case request.URL.Path == PricingConfigPath && request.Method == http.MethodGet:
+		handler.handlePricingConfigGet(response, request)
+	case request.URL.Path == PricingConfigPath && request.Method == http.MethodPut:
+		handler.handlePricingConfigPut(response, request)
 	case request.URL.Path == CatalogPath && request.Method == http.MethodGet:
 		handler.handleGetCatalog(response, request)
 	case request.URL.Path == BasePath && request.Method == http.MethodPost:
@@ -412,6 +428,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.handleWatch(response, request)
 	case request.URL.Path == CatalogPath ||
 		request.URL.Path == BasePath ||
+		request.URL.Path == PricingConfigPath ||
 		request.URL.Path == CatalogDeletePath ||
 		request.URL.Path == CatalogRefreshPath ||
 		request.URL.Path == WatchPath:
@@ -419,6 +436,48 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	default:
 		writeError(response, http.StatusNotFound, "route_not_found", "路径不存在")
 	}
+}
+
+func (handler *Handler) handlePricingConfigGet(response http.ResponseWriter, request *http.Request) {
+	if handler.pricingConfig == nil {
+		writeError(response, http.StatusServiceUnavailable, "pricing_config_unavailable", "价格配置存储不可用")
+		return
+	}
+	raw, err := handler.pricingConfig.LoadRawConfig(request.Context(), custompricing.ConfigKey)
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "pricing_config_unavailable", "读取价格配置失败")
+		return
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		raw = []byte("{}")
+	}
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(http.StatusOK)
+	_, _ = response.Write(raw)
+}
+
+func (handler *Handler) handlePricingConfigPut(response http.ResponseWriter, request *http.Request) {
+	if handler.pricingConfig == nil {
+		writeError(response, http.StatusServiceUnavailable, "pricing_config_unavailable", "价格配置存储不可用")
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(request.Body, 1<<20))
+	if err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_pricing_config", "请求体读取失败")
+		return
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) > 0 {
+		if _, err := custompricing.Validate(raw); err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_pricing_config", err.Error())
+			return
+		}
+	}
+	if err := handler.pricingConfig.SaveRawConfig(request.Context(), custompricing.ConfigKey, raw); err != nil {
+		writeError(response, http.StatusInternalServerError, "pricing_config_write_failed", "写入价格配置失败")
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "configured": len(raw) > 0})
 }
 
 func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *http.Request) {

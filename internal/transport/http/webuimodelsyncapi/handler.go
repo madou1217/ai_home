@@ -16,6 +16,7 @@ package webuimodelsyncapi
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -421,10 +422,21 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 	etag := `"` + hex.EncodeToString(sum[:])[:20] + `"`
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("Cache-Control", "private, max-age=3, stale-while-revalidate=30")
+	response.Header().Set("Vary", "Accept-Encoding")
 	response.Header().Set("ETag", etag)
 	if strings.TrimSpace(request.Header.Get("If-None-Match")) == etag {
 		response.WriteHeader(http.StatusNotModified)
 		return
+	}
+	// 目录里 90% 是按账号重复的模型元数据，未压缩时接近 500KB；
+	// gzip 后约 13KB，且浏览器与本机客户端都默认接受。
+	if len(body) >= 1024 && strings.Contains(strings.ToLower(request.Header.Get("Accept-Encoding")), "gzip") {
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		if _, err := writer.Write(body); err == nil && writer.Close() == nil {
+			response.Header().Set("Content-Encoding", "gzip")
+			body = compressed.Bytes()
+		}
 	}
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(body)

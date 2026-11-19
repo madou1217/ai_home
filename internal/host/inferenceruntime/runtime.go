@@ -92,6 +92,8 @@ type Dependencies struct {
 	//
 	// 生产注入的是 vision guard：目标模型看不见图片时把图片换成可借视文本。
 	RequestRewriter inferencegateway.RequestRewriter
+	// AccountEgress 为每个被选中的账号解析网关侧出口（可选）。
+	AccountEgress inferencegateway.AccountEgressResolver
 }
 
 // Components 保存 Canonical Executor 与其共享的账号征召器。
@@ -191,6 +193,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			PoolRetries:            dependencies.PoolRetries,
 			Upstream429Retries:     dependencies.Upstream429Retries,
 			RequestRewriter:        dependencies.RequestRewriter,
+			AccountEgress:          dependencies.AccountEgress,
 		},
 	)
 	if err != nil {

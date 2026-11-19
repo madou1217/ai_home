@@ -123,6 +123,8 @@ type inferenceCompositionDependencies struct {
 	upstream429Retries *upstreamretry.Controller
 	// componentLog 记录不影响启动的组件级失败（如初次目录刷新）；可为空。
 	componentLog *log.Logger
+	// accountEgress 为每个被选中的账号解析上游出口（可选）。
+	accountEgress inferencegateway.AccountEgressResolver
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -150,6 +152,9 @@ func newInferenceComposition(
 			Timeout:       inferenceHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
 		}
+	}
+	if dependencies.accountEgress != nil {
+		client = newEgressAwareInferenceClient(client)
 	}
 	var codexVersions clientversion.Source = clientversion.Static(codexidentity.Floor)
 	if dependencies.codexVersions != nil {
@@ -279,6 +284,7 @@ func newInferenceComposition(
 		PoolRetries:        poolRetries,
 		Upstream429Retries: dependencies.upstream429Retries,
 		RequestRewriter:    dependencies.requestRewriter,
+		AccountEgress:      dependencies.accountEgress,
 	})
 	if err != nil {
 		return nil, err

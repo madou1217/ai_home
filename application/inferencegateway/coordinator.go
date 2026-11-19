@@ -16,6 +16,9 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 )
 
+// ErrAccountEgressUnavailable 表示账号绑定了出口但当前没有可用代理。
+var ErrAccountEgressUnavailable = errors.New("account_egress_unavailable")
+
 const (
 	// DefaultUpstreamAttemptLimit 限制单个路由候选最多调用的不同上游账号数。
 	// 与 Node serve 的 maxAttempts 默认值一致。
@@ -117,6 +120,8 @@ type Dependencies struct {
 	// 目前唯一的实现是 vision guard：目标模型看不见图片时把图片换成可借视文本。
 	// 它必须是幂等且纯函数的；为 nil 时不做任何改写。
 	RequestRewriter RequestRewriter
+	// AccountEgress 为每个被选中的账号解析网关侧出口（可选）。
+	AccountEgress AccountEgressResolver
 }
 
 // RequestRewriter 在派发前按目标 Provider 改写 Canonical 请求。
@@ -141,6 +146,7 @@ type Coordinator struct {
 	poolRetries          *RequestPoolRetryPolicy
 	upstream429Retries   *upstreamretry.Controller
 	requestRewriter      RequestRewriter
+	accountEgress        AccountEgressResolver
 	gate                 *providerGate
 	accountGate          *claudeAccountGate
 	routeCursor          atomic.Uint64
@@ -244,6 +250,7 @@ func NewCoordinator(
 		poolRetries:          dependencies.PoolRetries,
 		upstream429Retries:   dependencies.Upstream429Retries,
 		requestRewriter:      dependencies.RequestRewriter,
+		accountEgress:        dependencies.AccountEgress,
 		gate:                 newProviderGate(),
 		accountGate:          newClaudeAccountGate(),
 	}, nil
@@ -729,6 +736,22 @@ func (coordinator *Coordinator) executeRouteRound(
 		)
 		if err != nil {
 			return routeExecution{pendingFailure: pendingFailure, sawRawHTTP429: sawRawHTTP429}, err
+		}
+		if coordinator.accountEgress != nil {
+			proxyURL, required, egressErr := coordinator.accountEgress.ResolveAccountProxy(
+				ctx,
+				route.ProviderID(),
+				recruited.Account().Ref().String(),
+			)
+			if egressErr != nil {
+				return routeExecution{pendingFailure: pendingFailure, sawRawHTTP429: sawRawHTTP429}, egressErr
+			}
+			if required && proxyURL == "" {
+				return routeExecution{pendingFailure: pendingFailure, sawRawHTTP429: sawRawHTTP429}, ErrAccountEgressUnavailable
+			}
+			if proxyURL != "" {
+				ctx = WithAccountProxyURL(ctx, proxyURL)
+			}
 		}
 		outcome, err := coordinator.executeAttempt(
 			ctx,

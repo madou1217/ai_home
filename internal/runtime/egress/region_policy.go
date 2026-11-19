@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/upstreamdefaults"
 )
 
 const (
@@ -119,6 +120,11 @@ type ServerUpstreamOverrides struct {
 }
 
 // ReadServerUpstreamOverrides 读取 config:server 中各核心 provider 的全局覆盖基址。
+//
+// 进程级 upstreamdefaults 已在启动时合并 env > config:server（见
+// cmd/aih-server/policy_env.go），推理侧与出口裁决必须读同一份值，否则同一账号
+// 会出现「推理打自定义端点、出口按官方主机选路」的偏差。这里优先取进程级值，
+// 未装配（例如独立工具）时再回落到 config:server 读取。
 func ReadServerUpstreamOverrides(ctx context.Context, aiHomeDir string) ServerUpstreamOverrides {
 	var raw struct {
 		GeminiBaseURL string `json:"geminiBaseUrl"`
@@ -126,14 +132,13 @@ func ReadServerUpstreamOverrides(ctx context.Context, aiHomeDir string) ServerUp
 		ClaudeBaseURL string `json:"claudeBaseUrl"`
 		CodexBaseURL  string `json:"codexBaseUrl"`
 	}
-	if _, err := readJSONKV(ctx, aiHomeDir, serverConfigKey, &raw); err != nil {
-		return ServerUpstreamOverrides{}
-	}
+	_, _ = readJSONKV(ctx, aiHomeDir, serverConfigKey, &raw)
+	configured := upstreamdefaults.Current()
 	return ServerUpstreamOverrides{
-		GeminiBaseURL: strings.TrimSpace(raw.GeminiBaseURL),
-		AgyBaseURL:    strings.TrimSpace(raw.AgyBaseURL),
-		ClaudeBaseURL: strings.TrimSpace(raw.ClaudeBaseURL),
-		CodexBaseURL:  strings.TrimSpace(raw.CodexBaseURL),
+		GeminiBaseURL: firstNonEmpty(configured.GeminiBaseURL, raw.GeminiBaseURL),
+		AgyBaseURL:    firstNonEmpty(configured.AgyBaseURL, raw.AgyBaseURL),
+		ClaudeBaseURL: firstNonEmpty(configured.ClaudeBaseURL, raw.ClaudeBaseURL),
+		CodexBaseURL:  firstNonEmpty(configured.CodexBaseURL, raw.CodexBaseURL),
 	}
 }
 

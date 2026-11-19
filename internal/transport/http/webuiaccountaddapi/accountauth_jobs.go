@@ -50,6 +50,7 @@ func (adapter accountAuthAdapter) Start(
 ) (Started, error) {
 	result, err := adapter.jobs.Start(ctx, accountauth.StartRequest{
 		ProviderID:            request.ProviderID,
+		AuthMode:              request.AuthMode,
 		AuthStrategy:          request.AuthStrategy,
 		LoginProvider:         request.LoginProvider,
 		AliasPoolParticipates: request.AliasPoolParticipates,

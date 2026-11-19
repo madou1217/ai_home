@@ -117,6 +117,23 @@ func newService(
 	}, nil
 }
 
+// normalizeRequestedAuthMode 把请求别名归一成 Job 的公开形态；未知形态保留原值，
+// 由 Start 与流程实际形态比较后返回 ErrUnsupportedAuthMode。
+func normalizeRequestedAuthMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return ""
+	case "oauth-browser", "browser":
+		return "oauth-browser"
+	case "oauth-device", "device", "device-code":
+		return "oauth-device"
+	case "oauth-refresh-token", "refresh-token", "oauth_refresh_token":
+		return "oauth-refresh-token"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
 // NewRandomJobID 使用 128 位系统随机数创建不可预测的十六进制 Job ID。
 func NewRandomJobID() (string, error) {
 	var randomBytes [16]byte
@@ -179,6 +196,9 @@ func (service *Service) Start(
 		if declared := strings.TrimSpace(modeProvider.AuthMode()); declared != "" {
 			authMode = declared
 		}
+	}
+	if requested := normalizeRequestedAuthMode(request.AuthMode); requested != "" && requested != authMode {
+		return StartResult{}, ErrUnsupportedAuthMode
 	}
 	// refresh_token 手工粘贴导入没有官方授权跳转 URL，其余流程必须给出合法 HTTPS 授权地址。
 	if authMode != "oauth-refresh-token" && !validAuthorizationURL(flow.AuthorizationURL()) {

@@ -119,8 +119,6 @@ func TestStartRejectsUnsupportedFlows(t *testing.T) {
 		body string
 		code string
 	}{
-		{"api-key", "{\"provider\":\"codex\",\"authMode\":\"api-key\"}", "unsupported_auth_mode"},
-		{"codex-refresh-token", "{\"provider\":\"codex\",\"authMode\":\"oauth-refresh-token\"}", "unsupported_auth_mode"},
 		{"strategy", "{\"provider\":\"agy\",\"authMode\":\"oauth-browser\",\"authStrategy\":\"native-cli\"}", "unsupported_auth_strategy"},
 		{"unknown-login-provider", "{\"provider\":\"kiro\",\"authMode\":\"oauth-device\",\"loginProvider\":\"okta\"}", "unsupported_login_provider"},
 		{"gemini-disabled", "{\"provider\":\"gemini\",\"authMode\":\"oauth-browser\"}", "gemini_google_oauth_disabled"},
@@ -178,19 +176,22 @@ func TestStartMapsUnsupportedProvider(t *testing.T) {
 	}
 }
 
-// TestStartReleasesJobOnAuthModeMismatch 锁死「先建后撤」：形态不一致不能留下空作业。
-func TestStartReleasesJobOnAuthModeMismatch(t *testing.T) {
+// TestStartPassesAuthModeToJobs 锁死形态校验已下沉到 accountauth：handler 只透传。
+func TestStartPassesAuthModeToJobs(t *testing.T) {
 	jobs := &fakeJobs{startResult: Started{Job: JobSnapshot{
-		ID: "job-1", Provider: "kiro", AuthMode: "oauth-device",
+		ID: "job-1", Provider: "kiro", AuthMode: "oauth-browser",
 		AuthProgressState: progressAwaitingCode,
 	}}}
 	response := doRequest(newTestHandler(t, jobs), http.MethodPost, Path,
 		"{\"provider\":\"kiro\",\"authMode\":\"oauth-browser\"}")
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d，期望 400", response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d，期望 200", response.Code)
 	}
-	if jobs.cancelledID != "job-1" {
-		t.Fatalf("mismatch 时必须取消刚创建的作业，cancelledID = %q", jobs.cancelledID)
+	if jobs.started.AuthMode != "oauth-browser" {
+		t.Fatalf("AuthMode = %q，期望透传给 accountauth", jobs.started.AuthMode)
+	}
+	if jobs.cancelledID != "" {
+		t.Fatalf("成功受理不应取消作业，cancelledID = %q", jobs.cancelledID)
 	}
 }
 

@@ -103,6 +103,7 @@ type JobLocalImporter interface {
 // StartRequest 是一次注册型作业的起始命令。
 type StartRequest struct {
 	ProviderID            string
+	AuthMode              string
 	AuthStrategy          string
 	LoginProvider         string
 	AliasPoolParticipates *bool
@@ -265,16 +266,8 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		writeError(response, http.StatusBadRequest, "invalid_payload", "provider 不能为空", nil)
 		return
 	}
-	authMode := normalizeAuthMode(payload.AuthMode)
-	if authMode == "" {
-		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "Go 只承接 OAuth 登录与 Kiro refresh_token 导入作业", nil)
-		return
-	}
-	if authMode == "oauth-refresh-token" && provider != "kiro" {
-		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "仅 Kiro 支持 refresh_token 导入模式", nil)
-		return
-	}
-	if provider == "gemini" && authMode == "oauth-browser" {
+	authMode := strings.TrimSpace(payload.AuthMode)
+	if provider == "gemini" && strings.EqualFold(authMode, "oauth-browser") {
 		writeError(response, http.StatusBadRequest, "gemini_google_oauth_disabled", "Google 登录已关闭：Gemini Code Assist 个人版已停用，请改用 Gemini API Key 或 Antigravity。", nil)
 		return
 	}
@@ -286,6 +279,7 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 
 	started, err := handler.jobs.Start(request.Context(), StartRequest{
 		ProviderID:            provider,
+		AuthMode:              authMode,
 		AuthStrategy:          strategy,
 		LoginProvider:         loginProvider,
 		AliasPoolParticipates: payload.AliasPoolParticipates,
@@ -295,12 +289,6 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		return
 	}
 	job := started.Job
-	if job.AuthMode != authMode {
-		// 请求的形态与 Go 实际流程不一致时立刻释放刚创建的 Job，避免占住 Provider 名额。
-		_, _ = handler.jobs.Cancel(job.ID)
-		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "Go 的登录流程与请求的认证方式不一致", nil)
-		return
-	}
 	resolvedStrategy := strings.TrimSpace(job.AuthStrategy)
 	if resolvedStrategy == "" {
 		resolvedStrategy = strategy
@@ -687,20 +675,6 @@ func normalizeKiroLoginProvider(raw string) (normalized string, isBuilderID bool
 	}
 }
 
-// normalizeAuthMode 只接受 Go 承接的交互/粘贴认证形态；其它返回空串。
-func normalizeAuthMode(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "oauth-browser", "browser":
-		return "oauth-browser"
-	case "oauth-device", "device", "device-code":
-		return "oauth-device"
-	case "oauth-refresh-token", "refresh-token", "oauth_refresh_token":
-		return "oauth-refresh-token"
-	default:
-		return ""
-	}
-}
-
 // Millis 输出 Node 侧使用的毫秒时间戳；零值输出 0。
 func Millis(value time.Time) int64 {
 	if value.IsZero() {
@@ -734,6 +708,8 @@ func writeStartError(response http.ResponseWriter, err error) {
 		writeError(response, http.StatusConflict, "oauth_job_already_running", "该 Provider 已有进行中的登录任务", nil)
 	case errors.Is(err, accountauth.ErrJobCapacity):
 		writeError(response, http.StatusServiceUnavailable, "job_capacity_exhausted", "登录任务服务暂时繁忙", nil)
+	case errors.Is(err, accountauth.ErrUnsupportedAuthMode):
+		writeError(response, http.StatusBadRequest, "unsupported_auth_mode", "认证方式不受支持", nil)
 	case errors.Is(err, accountauth.ErrUnsupportedAuthStrategy):
 		writeError(response, http.StatusBadRequest, "unsupported_auth_strategy", "不支持的 OAuth 登录策略", nil)
 	case errors.Is(err, accountauth.ErrUnsupportedLoginProvider):

@@ -51,6 +51,8 @@ var (
 	ErrInvalidStartRequest = errors.New("OAuth Job 起始命令无效")
 	// ErrUnsupportedAuthStrategy 表示所选登录子策略当前不受 Go OAuth 引擎支持。
 	ErrUnsupportedAuthStrategy = errors.New("OAuth 登录策略不受支持")
+	// ErrUnsupportedAuthMode 表示请求的认证形态与 Provider 实际发起的流程不一致。
+	ErrUnsupportedAuthMode = errors.New("认证方式不受支持")
 	// ErrUnsupportedLoginProvider 表示所选上游身份提供方当前不受支持。
 	ErrUnsupportedLoginProvider = errors.New("OAuth 上游身份提供方不受支持")
 )
@@ -343,6 +345,9 @@ type StartRequest struct {
 	ProviderID string
 	// TargetAccountRef 非空时表示原地 reauth，空值表示注册新账号。
 	TargetAccountRef accountcore.AccountRef
+	// AuthMode 是请求的认证形态（oauth-browser / oauth-device / oauth-refresh-token）；
+	// 空值表示按 Provider 实际流程推导。
+	AuthMode string
 	// AuthStrategy 指定可选子策略（如 bigmodel:custom-scheme、aih-google-oauth）。
 	AuthStrategy string
 	// LoginProvider 指定同一策略下的上游身份提供方（如 Kiro 的 Google / Github）。

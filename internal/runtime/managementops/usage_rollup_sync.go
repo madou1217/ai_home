@@ -222,20 +222,9 @@ func (s *UsageStore) syncUncoveredGap(ctx context.Context, gap hourRange, pricin
 		chunkHours = rollupAttributedChunkHours
 	}
 	chunkMS := chunkHours * rollupHourMS
-	var invalidatedExt []int64
-	for cur := activeStart; cur < activeEnd; cur += chunkMS {
-		if ctx.Err() != nil {
-			return invalidatedExt, ctx.Err()
-		}
-		next := cur + chunkMS
-		if next > activeEnd {
-			next = activeEnd
-		}
-		extHours, err := s.materializeHourRange(ctx, cur, next, nil, true, pricingCache)
-		if err != nil {
-			return invalidatedExt, err
-		}
-		invalidatedExt = append(invalidatedExt, extHours...)
+	invalidatedExt, err := s.materializeGapChunks(ctx, activeStart, activeEnd, chunkMS)
+	if err != nil {
+		return invalidatedExt, err
 	}
 
 	if activeEnd < gap.EndHour {

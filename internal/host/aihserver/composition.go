@@ -76,6 +76,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
+	pluginmodelcatalog "github.com/madou1217/ai_home/internal/adapters/pluginprovider/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -93,6 +94,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
+	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -1002,6 +1004,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Catalog:             catalog,
 			Refresher:           recoveringModelManagement,
 			ProviderConcurrency: modelRefreshProviderConcurrency(modelDiscovery.ProviderIDs()),
+			PluginProviders:     modelDiscovery.PluginProviderIDs,
 			RefreshTimeout:      modelRefreshTimeout,
 			BaseBackoff:         modelRefreshBaseBackoff,
 			MaxBackoff:          modelRefreshMaxBackoff,
@@ -1874,11 +1877,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		nativeHTTP: codexHTTPHandler,
 	})
 	windowProbeMux.Handle(openaichatcompletionsapi.Path, familyRelayHandler)
+	pluginModelFallback := &pluginmodelcatalog.Discoverer{Client: &http.Client{Timeout: 15 * time.Second}}
 	bundle := newLocalPluginHandlers(localPluginHandlerOptions{
 		ManagementAuthorizer: authorizer,
 		ClientAuthorizer:     clientAuthorizer,
 		Describe:             accountProviderResolver(store),
 		AIHomeDir:            aiHomeDir,
+		OnProviderDescriptors: func(result pluginhost.DescriptorCollectResult) {
+			modelDiscovery.SetPluginProviders(pluginProviderModelDescriptors(result), pluginModelFallback)
+		},
 		OnLog: func(message string) {
 			if errorLog != nil && strings.TrimSpace(message) != "" {
 				errorLog.Println(message)
@@ -2654,6 +2661,75 @@ func modelRefreshProviderConcurrency(providerIDs []string) map[string]int {
 		concurrency[providerID] = modelRefreshConcurrency
 	}
 	return concurrency
+}
+
+func descriptorMapSlice(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if entry, ok := item.(map[string]any); ok {
+				out = append(out, entry)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func descriptorStringSlice(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, fmt.Sprint(item))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// pluginProviderModelDescriptors 把插件描述符里的 models strategies 压成发现集合。
+// 只有宿主实现了 general 探测的 handler 才会进入；其它 handler 保持 unsupported。
+func pluginProviderModelDescriptors(result pluginhost.DescriptorCollectResult) []accountapp.PluginProviderDescriptor {
+	out := make([]accountapp.PluginProviderDescriptor, 0, len(result.Accepted))
+	for _, accepted := range result.Accepted {
+		descriptor := accepted.Descriptor
+		capabilities, _ := descriptor["capabilities"].(map[string]any)
+		models, _ := capabilities["models"].(map[string]any)
+		if models == nil || models["supported"] != true {
+			continue
+		}
+		strategies := descriptorMapSlice(models["strategies"])
+		handlers := make([]string, 0, 1)
+		modes := make([]string, 0, 2)
+		for _, strategy := range strategies {
+			handler := strings.TrimSpace(fmt.Sprint(strategy["handler"]))
+			if handler != "" {
+				handlers = append(handlers, handler)
+			}
+			for _, mode := range descriptorStringSlice(strategy["modes"]) {
+				modes = append(modes, strings.TrimSpace(mode))
+			}
+		}
+		for _, handler := range handlers {
+			if handler == "generic-models-probe" {
+				out = append(out, accountapp.PluginProviderDescriptor{
+					ProviderID:    accepted.ProviderID,
+					ModelsHandler: handler,
+					Modes:         modes,
+				})
+				break
+			}
+		}
+	}
+	return out
 }
 
 // newModelDiscovery 创建生产模型目录源（见 model_providers.go 注册表），

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -38,10 +39,26 @@ type ProviderModelDiscoverer interface {
 	) ([]string, error)
 }
 
+// PluginProviderDescriptor 是插件声明的 Provider 模型发现事实。
+type PluginProviderDescriptor struct {
+	ProviderID    string
+	ModelsHandler string
+	Modes         []string
+}
+
+// FallbackModelDiscoverer 执行插件 Provider 的宿主侧通用模型探测。
+type FallbackModelDiscoverer interface {
+	DiscoverModels(ctx context.Context, credential Credential, descriptor PluginProviderDescriptor) ([]string, error)
+}
+
 // ModelDiscovery 按 Provider 选择唯一模型发现策略。
 type ModelDiscovery struct {
 	catalog    *providers.Catalog
 	strategies map[string]ProviderModelDiscoverer
+
+	pluginMu        sync.RWMutex
+	pluginProviders map[string]PluginProviderDescriptor
+	pluginFallback  FallbackModelDiscoverer
 }
 
 // NewModelDiscovery 创建不允许重复 Provider 策略的发现注册表。
@@ -65,7 +82,33 @@ func NewModelDiscovery(
 		}
 		indexed[providerID] = strategy
 	}
-	return &ModelDiscovery{catalog: catalog, strategies: indexed}, nil
+	return &ModelDiscovery{catalog: catalog, strategies: indexed, pluginProviders: map[string]PluginProviderDescriptor{}}, nil
+}
+
+// SetPluginProviders 用插件宿主当前接受的描述符整体替换插件 Provider 集合。
+//
+// 描述符只声明 handler id；只有宿主实现了通用模型探测的 handler 才进入发现集合，
+// 其它 handler 保持 unsupported，不会静默返回空目录。
+func (discovery *ModelDiscovery) SetPluginProviders(
+	descriptors []PluginProviderDescriptor,
+	fallback FallbackModelDiscoverer,
+) {
+	if discovery == nil {
+		return
+	}
+	indexed := make(map[string]PluginProviderDescriptor, len(descriptors))
+	for _, descriptor := range descriptors {
+		providerID := strings.TrimSpace(descriptor.ProviderID)
+		if providerID == "" {
+			continue
+		}
+		descriptor.ProviderID = providerID
+		indexed[providerID] = descriptor
+	}
+	discovery.pluginMu.Lock()
+	discovery.pluginProviders = indexed
+	discovery.pluginFallback = fallback
+	discovery.pluginMu.Unlock()
 }
 
 // ProviderIDs 返回注册了发现策略的 Provider 集合（升序快照）。
@@ -80,8 +123,30 @@ func (discovery *ModelDiscovery) ProviderIDs() []string {
 	for providerID := range discovery.strategies {
 		providers = append(providers, providerID)
 	}
+	discovery.pluginMu.RLock()
+	for providerID := range discovery.pluginProviders {
+		providers = append(providers, providerID)
+	}
+	discovery.pluginMu.RUnlock()
 	sort.Strings(providers)
 	return providers
+}
+
+// PluginProviderIDs 返回插件宿主当前声明、且带通用模型探测的 Provider。
+func (discovery *ModelDiscovery) PluginProviderIDs() []string {
+	if discovery == nil {
+		return nil
+	}
+	discovery.pluginMu.RLock()
+	defer discovery.pluginMu.RUnlock()
+	ids := make([]string, 0, len(discovery.pluginProviders))
+	for providerID, descriptor := range discovery.pluginProviders {
+		if strings.TrimSpace(descriptor.ModelsHandler) == "generic-models-probe" {
+			ids = append(ids, providerID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // DiscoverModels 执行 Provider 策略并规范化完整模型集合。
@@ -98,15 +163,25 @@ func (discovery *ModelDiscovery) DiscoverModels(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	providerID, found := discovery.catalog.CanonicalID(credential.ProviderID())
-	if !found || providerID != credential.ProviderID() {
-		return nil, ErrInvalidModelDiscoveryDependencies
+	providerID, builtin := discovery.catalog.CanonicalID(credential.ProviderID())
+	if builtin && providerID == credential.ProviderID() {
+		if strategy := discovery.strategies[providerID]; strategy != nil {
+			values, err := strategy.DiscoverModels(ctx, credential)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %w", ErrModelDiscoveryFailed, err)
+			}
+			return NormalizeDiscoveredModels(values)
+		}
 	}
-	strategy := discovery.strategies[providerID]
-	if strategy == nil {
+	// 插件 Provider 不在静态合同中：描述符声明 handler，宿主实现探测。
+	discovery.pluginMu.RLock()
+	descriptor, plugin := discovery.pluginProviders[credential.ProviderID()]
+	fallback := discovery.pluginFallback
+	discovery.pluginMu.RUnlock()
+	if !plugin || fallback == nil || strings.TrimSpace(descriptor.ModelsHandler) != "generic-models-probe" {
 		return nil, ErrModelDiscoveryUnsupported
 	}
-	values, err := strategy.DiscoverModels(ctx, credential)
+	values, err := fallback.DiscoverModels(ctx, credential, descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrModelDiscoveryFailed, err)
 	}

@@ -20,17 +20,18 @@ import (
 
 // localPluginHandlerOptions 描述 Go 自宿主插件运行时的装配选项（不依赖 Node 回调）。
 type localPluginHandlerOptions struct {
-	ManagementAuthorizer pluginapi.Authorizer
-	ClientAuthorizer     pluginapi.Authorizer
-	Describe             appplugins.AccountDescriber
-	AIHomeDir            string
-	RepoRoot             string
-	HostVersion          string
-	NodeVersion          string
-	PricingService       *pricingcatalog.Service
-	OnPricingApplied     func(context.Context)
-	OnAudit              func(operation string, details map[string]any)
-	OnLog                func(string)
+	ManagementAuthorizer  pluginapi.Authorizer
+	ClientAuthorizer      pluginapi.Authorizer
+	Describe              appplugins.AccountDescriber
+	AIHomeDir             string
+	RepoRoot              string
+	HostVersion           string
+	NodeVersion           string
+	PricingService        *pricingcatalog.Service
+	OnPricingApplied      func(context.Context)
+	OnProviderDescriptors func(pluginhost.DescriptorCollectResult)
+	OnAudit               func(operation string, details map[string]any)
+	OnLog                 func(string)
 }
 
 // localPluginRuntimeBundle 打包供组合根持有的 HTTP 接入与本地 Go 插件宿主服务。
@@ -53,15 +54,16 @@ func (b *localPluginRuntimeBundle) Close() error {
 // newLocalPluginHandlers 使用 Go 本地 pluginhost.Service 装配完整插件数据面与控制面（零 Node 回调）。
 func newLocalPluginHandlers(options localPluginHandlerOptions) localPluginRuntimeBundle {
 	service, err := pluginhost.NewService(pluginhost.ServiceOptions{
-		AIHomeDir:        options.AIHomeDir,
-		RepoRoot:         options.RepoRoot,
-		HostVersion:      options.HostVersion,
-		NodeVersion:      options.NodeVersion,
-		AccountDescriber: options.Describe,
-		PricingService:   options.PricingService,
-		OnPricingApplied: options.OnPricingApplied,
-		OnAudit:          options.OnAudit,
-		OnLog:            options.OnLog,
+		AIHomeDir:             options.AIHomeDir,
+		RepoRoot:              options.RepoRoot,
+		HostVersion:           options.HostVersion,
+		NodeVersion:           options.NodeVersion,
+		AccountDescriber:      options.Describe,
+		PricingService:        options.PricingService,
+		OnPricingApplied:      options.OnPricingApplied,
+		OnProviderDescriptors: options.OnProviderDescriptors,
+		OnAudit:               options.OnAudit,
+		OnLog:                 options.OnLog,
 	})
 	if err != nil {
 		return localPluginRuntimeBundle{}

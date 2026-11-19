@@ -58,6 +58,9 @@ type ModelRefreshCoordinatorOptions struct {
 	Refresher AccountModelRefresher
 	// ProviderConcurrency 是当前启用刷新 Provider 各自的 worker 数。
 	ProviderConcurrency map[string]int
+	// PluginProviders 返回插件宿主当前声明的 Provider；这些 ID 不在静态合同里，
+	// 但账号刷新同样需要独立队列。为空表示部署没有插件 Provider。
+	PluginProviders func() []string
 	// RefreshTimeout 限制单次上游目录刷新占用 worker 的时间。
 	RefreshTimeout time.Duration
 	// BaseBackoff 是 Provider 首次刷新失败后的最小等待。
@@ -78,22 +81,23 @@ type ModelRefreshCoordinatorOptions struct {
 
 // ModelRefreshCoordinator 使用 Provider 隔离队列异步刷新账号模型快照。
 type ModelRefreshCoordinator struct {
-	mu          sync.Mutex
-	catalog     *providers.Catalog
-	refresher   AccountModelRefresher
-	timeout     time.Duration
-	baseBackoff time.Duration
-	maxBackoff  time.Duration
-	maxAttempts uint32
-	clock       Clock
-	random      io.Reader
-	observer    ModelRefreshObserver
-	ctx         context.Context
-	cancel      context.CancelFunc
-	providers   map[string]*modelRefreshProviderQueue
-	pending     map[accountcore.AccountRef]*modelRefreshTask
-	closed      bool
-	workers     sync.WaitGroup
+	mu              sync.Mutex
+	catalog         *providers.Catalog
+	refresher       AccountModelRefresher
+	timeout         time.Duration
+	baseBackoff     time.Duration
+	maxBackoff      time.Duration
+	maxAttempts     uint32
+	clock           Clock
+	random          io.Reader
+	observer        ModelRefreshObserver
+	ctx             context.Context
+	cancel          context.CancelFunc
+	providers       map[string]*modelRefreshProviderQueue
+	pending         map[accountcore.AccountRef]*modelRefreshTask
+	pluginProviders func() []string
+	closed          bool
+	workers         sync.WaitGroup
 }
 
 // modelRefreshProviderQueue 保存一个 Provider 的首次、重试队列和共享退避状态。
@@ -127,19 +131,20 @@ func NewModelRefreshCoordinator(
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	coordinator := &ModelRefreshCoordinator{
-		catalog:     options.Catalog,
-		refresher:   options.Refresher,
-		timeout:     options.RefreshTimeout,
-		baseBackoff: options.BaseBackoff,
-		maxBackoff:  options.MaxBackoff,
-		maxAttempts: options.MaxAttempts,
-		clock:       options.Clock,
-		random:      options.Random,
-		observer:    options.Observer,
-		ctx:         ctx,
-		cancel:      cancel,
-		providers:   make(map[string]*modelRefreshProviderQueue),
-		pending:     make(map[accountcore.AccountRef]*modelRefreshTask),
+		catalog:         options.Catalog,
+		refresher:       options.Refresher,
+		timeout:         options.RefreshTimeout,
+		baseBackoff:     options.BaseBackoff,
+		maxBackoff:      options.MaxBackoff,
+		maxAttempts:     options.MaxAttempts,
+		clock:           options.Clock,
+		random:          options.Random,
+		observer:        options.Observer,
+		ctx:             ctx,
+		cancel:          cancel,
+		providers:       make(map[string]*modelRefreshProviderQueue),
+		pending:         make(map[accountcore.AccountRef]*modelRefreshTask),
+		pluginProviders: options.PluginProviders,
 	}
 	for providerID, concurrency := range options.ProviderConcurrency {
 		queue := &modelRefreshProviderQueue{notify: make(chan struct{})}
@@ -150,6 +155,19 @@ func NewModelRefreshCoordinator(
 		}
 	}
 	return coordinator, nil
+}
+
+// isPluginProvider 报告插件宿主当前是否声明该 Provider。
+func (coordinator *ModelRefreshCoordinator) isPluginProvider(providerID string) bool {
+	if coordinator == nil || coordinator.pluginProviders == nil {
+		return false
+	}
+	for _, id := range coordinator.pluginProviders() {
+		if id == providerID {
+			return true
+		}
+	}
+	return false
 }
 
 // ScheduleModelRefresh 合并同账号任务并放入对应 Provider 隔离队列。
@@ -167,7 +185,8 @@ func (coordinator *ModelRefreshCoordinator) ScheduleModelRefresh(
 		return err
 	}
 	canonicalProviderID, found := coordinator.catalog.CanonicalID(providerID)
-	if !found || canonicalProviderID != providerID {
+	pluginProvider := !found || canonicalProviderID != providerID
+	if pluginProvider && !coordinator.isPluginProvider(providerID) {
 		return ErrInvalidModelRefreshSchedule
 	}
 	coordinator.mu.Lock()
@@ -176,6 +195,12 @@ func (coordinator *ModelRefreshCoordinator) ScheduleModelRefresh(
 		return ErrModelRefreshCoordinatorClosed
 	}
 	queue := coordinator.providers[providerID]
+	if queue == nil && pluginProvider {
+		queue = &modelRefreshProviderQueue{notify: make(chan struct{})}
+		coordinator.providers[providerID] = queue
+		coordinator.workers.Add(1)
+		go coordinator.runProviderWorker(providerID, queue)
+	}
 	if queue == nil {
 		return ErrInvalidModelRefreshSchedule
 	}
@@ -200,11 +225,11 @@ func (coordinator *ModelRefreshCoordinator) SupportsModelRefresh(
 		return false
 	}
 	canonicalProviderID, found := coordinator.catalog.CanonicalID(providerID)
-	if !found || canonicalProviderID != providerID {
-		return false
+	if found && canonicalProviderID == providerID {
+		// 内置 Provider 队列只在构造阶段写入，启动 worker 后保持只读。
+		return coordinator.providers[providerID] != nil
 	}
-	// Provider 队列只在构造阶段写入，启动 worker 后保持只读。
-	return coordinator.providers[providerID] != nil
+	return coordinator.isPluginProvider(providerID)
 }
 
 // ForgetAccount 取消并分离账号当前刷新，使同身份重导入或凭据切换可以创建新代次。

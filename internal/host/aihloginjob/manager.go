@@ -30,10 +30,13 @@ const (
 	StatusSucceeded Status = "succeeded"
 	StatusFailed    Status = "failed"
 	StatusCancelled Status = "cancelled"
+	StatusExpired   Status = "expired"
 )
 
 const (
 	logLimitBytes = 64 * 1024
+	// DefaultJobTTL 与 Node 登录作业的等待窗口一致。
+	DefaultJobTTL = 10 * time.Minute
 )
 
 // ErrInvalidRequest 表示作业参数无效。
@@ -108,6 +111,8 @@ type Options struct {
 	Clock       func() time.Time
 	// SiteMenuDownDelay 是站点菜单下移与回车之间的等待；默认 900ms（真机标定）。
 	SiteMenuDownDelay time.Duration
+	// JobTTL 是等待用户完成 CLI 登录的最长时间；<=0 时用 DefaultJobTTL。
+	JobTTL time.Duration
 	// PromptRules 覆盖默认提示规则（测试注入）。
 	PromptRules []PromptRule
 }
@@ -125,6 +130,7 @@ type job struct {
 	updated  time.Time
 	cancel   context.CancelFunc
 	answered bool
+	expire   *time.Timer
 	input    *io.PipeWriter
 	rules    []PromptRule
 	fired    map[string]bool
@@ -148,6 +154,9 @@ func NewManager(options Options) *Manager {
 	}
 	if options.SiteMenuDownDelay <= 0 {
 		options.SiteMenuDownDelay = 900 * time.Millisecond
+	}
+	if options.JobTTL <= 0 {
+		options.JobTTL = DefaultJobTTL
 	}
 	return &Manager{options: options, jobs: make(map[string]*job)}
 }
@@ -200,6 +209,7 @@ func (manager *Manager) Start(ctx context.Context, providerID string) (Snapshot,
 	manager.mu.Lock()
 	manager.jobs[id] = entry
 	manager.mu.Unlock()
+	entry.expire = time.AfterFunc(manager.options.JobTTL, func() { manager.expire(id) })
 	reader, writer := io.Pipe()
 	entry.input = writer
 	go manager.run(jobCtx, entry, reader, writer)
@@ -265,12 +275,37 @@ func (manager *Manager) Cancel(id string) bool {
 	entry.mu.Lock()
 	if entry.status == StatusRunning {
 		entry.status = StatusCancelled
+		entry.progress = "cancelled"
 		entry.updated = manager.options.Clock()
+	}
+	if entry.expire != nil {
+		entry.expire.Stop()
 	}
 	cancel := entry.cancel
 	entry.mu.Unlock()
 	cancel()
 	return true
+}
+
+// expire 把仍等待授权的作业标记为过期并取消 CLI 进程。
+func (manager *Manager) expire(id string) {
+	manager.mu.Lock()
+	entry, ok := manager.jobs[id]
+	manager.mu.Unlock()
+	if !ok {
+		return
+	}
+	entry.mu.Lock()
+	if entry.status != StatusRunning {
+		entry.mu.Unlock()
+		return
+	}
+	entry.status = StatusExpired
+	entry.progress = "expired"
+	entry.updated = manager.options.Clock()
+	cancel := entry.cancel
+	entry.mu.Unlock()
+	cancel()
 }
 
 func (manager *Manager) run(ctx context.Context, entry *job, stdinReader *io.PipeReader, stdinWriter *io.PipeWriter) {
@@ -287,8 +322,11 @@ func (manager *Manager) run(ctx context.Context, entry *job, stdinReader *io.Pip
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	entry.updated = manager.options.Clock()
+	if entry.expire != nil {
+		entry.expire.Stop()
+	}
 	switch {
-	case entry.status == StatusCancelled:
+	case entry.status == StatusCancelled || entry.status == StatusExpired:
 		entry.err = err
 	case err != nil:
 		entry.status = StatusFailed

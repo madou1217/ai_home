@@ -460,6 +460,8 @@ func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
 		}
 	case aihloginjob.StatusCancelled:
 		status, progress = "cancelled", progressCancelled
+	case aihloginjob.StatusExpired:
+		status, progress = "expired", progressExpired
 	}
 	return JobSnapshot{
 		ID:                snapshot.ID,

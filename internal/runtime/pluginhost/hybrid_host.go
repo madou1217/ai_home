@@ -67,6 +67,7 @@ func (host *HybridHost) Prepare(ctx context.Context, generation int64, plugins [
 			return HostPrepareResult{}, err
 		}
 		result.Contributions = append(result.Contributions, processResult.Contributions...)
+		result.ProcessContributions = append(result.ProcessContributions, processResult.ProcessContributions...)
 		result.Diagnostics = append(result.Diagnostics, processResult.Diagnostics...)
 		for _, contributionID := range processResult.Contributions {
 			processContributions[contributionID] = true

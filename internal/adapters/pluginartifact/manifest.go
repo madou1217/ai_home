@@ -62,18 +62,9 @@ func buildCapabilityVersions() map[string]int {
 }
 
 func processCapabilityUnsupported(capability string) bool {
-	switch {
-	case strings.HasPrefix(capability, "gateway."),
-		strings.HasPrefix(capability, "chat."),
-		strings.HasPrefix(capability, "tool"),
-		strings.HasPrefix(capability, "approval"),
-		strings.HasPrefix(capability, "ui"),
-		capability == "command",
-		capability == "observe":
-		return true
-	default:
-		return false
-	}
+	// gateway.attempt 需要反向调用 next()，进程协议当前没有反向帧；其余控制面/
+	// 数据面能力都通过内嵌 Runtime 调用，process 插件可以承载。
+	return capability == "gateway.attempt"
 }
 
 var accountCapabilities = map[string]bool{

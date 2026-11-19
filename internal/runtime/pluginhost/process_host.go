@@ -26,22 +26,22 @@ import (
 //
 // Node 插件继续走 Supervisor；process 插件由本文件承载，二者由 HybridHost 路由。
 type ProcessHost struct {
-	onLog func(string)
-	mu    sync.Mutex
-	procs map[string]*processPlugin // instanceId -> process
+	onLog  func(string)
+	mu     sync.Mutex
+	procs  map[string]*processPlugin // instanceId -> process
 	routes map[string]*processPlugin // contributionId -> process
 }
 
 type processPlugin struct {
-	spec      PluginSpec
-	cmd       *exec.Cmd
-	stdin     io.WriteCloser
-	reader    *bufio.Reader
-	stderr    *tailBuffer
-	mu        sync.Mutex
-	nextID    int64
+	spec       PluginSpec
+	cmd        *exec.Cmd
+	stdin      io.WriteCloser
+	reader     *bufio.Reader
+	stderr     *tailBuffer
+	mu         sync.Mutex
+	nextID     int64
 	generation int64
-	closed    bool
+	closed     bool
 }
 
 type tailBuffer struct {
@@ -108,6 +108,7 @@ func (host *ProcessHost) Prepare(ctx context.Context, generation int64, plugins 
 		}
 		host.procs[spec.InstanceID] = proc
 		result.Contributions = append(result.Contributions, contributions...)
+		result.ProcessContributions = append(result.ProcessContributions, contributions...)
 	}
 	return result, nil
 }

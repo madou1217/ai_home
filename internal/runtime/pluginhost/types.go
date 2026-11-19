@@ -46,12 +46,14 @@ type PrepareDiagnostic struct {
 
 // HostPrepareResult 对应 Plugin Host `prepare` RPC 的返回。
 type HostPrepareResult struct {
-	Generation    int64               `json:"generation"`
-	State         string              `json:"state"`
-	Order         []string            `json:"order,omitempty"`
-	Contributions []string            `json:"contributions,omitempty"`
-	Diagnostics   []PrepareDiagnostic `json:"diagnostics,omitempty"`
-	Errors        []HostErrorRecord   `json:"errors,omitempty"`
+	Generation    int64    `json:"generation"`
+	State         string   `json:"state"`
+	Order         []string `json:"order,omitempty"`
+	Contributions []string `json:"contributions,omitempty"`
+	// ProcessContributions 标记由 Go process 后端承载的贡献项，供数据面路由。
+	ProcessContributions []string            `json:"processContributions,omitempty"`
+	Diagnostics          []PrepareDiagnostic `json:"diagnostics,omitempty"`
+	Errors               []HostErrorRecord   `json:"errors,omitempty"`
 }
 
 // HostActivateResult 对应 Plugin Host `activate` RPC 的返回。

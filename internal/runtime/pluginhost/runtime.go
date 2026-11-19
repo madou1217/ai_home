@@ -70,6 +70,8 @@ type GenerationSnapshot struct {
 	Projection     appplugins.Projection
 	CatalogAliases []CatalogAlias
 	Descriptors    DescriptorCollectResult
+	// ProcessContributions 是交给 Go process 后端承载的贡献项集合。
+	ProcessContributions map[string]bool
 }
 
 // Lease 固定当前活跃代次，保证请求期间代次不会被释放。Release 幂等。
@@ -404,11 +406,16 @@ func (r *Runtime) prepareLocked(ctx context.Context, plugins []PluginSpec) (Runt
 		return RuntimeTicket{}, newCandidateRejectedError(err.Error(), []PrepareDiagnostic{diag})
 	}
 
+	processContributions := make(map[string]bool, len(prepared.ProcessContributions))
+	for _, contributionID := range prepared.ProcessContributions {
+		processContributions[contributionID] = true
+	}
 	snap := GenerationSnapshot{
-		Generation:     candidateGen,
-		Projection:     draft,
-		CatalogAliases: aliases,
-		Descriptors:    descResult,
+		Generation:           candidateGen,
+		Projection:           draft,
+		CatalogAliases:       aliases,
+		Descriptors:          descResult,
+		ProcessContributions: processContributions,
 	}
 	ticketID := newTicketID()
 	contribs := append([]string(nil), prepared.Contributions...)
@@ -1039,9 +1046,13 @@ func (r *Runtime) syncRegistry() {
 	r.mu.Lock()
 	host := r.host
 	projections := make([]appplugins.Projection, 0, len(r.liveSnapshots))
+	processContributions := map[string]bool{}
 	for _, snap := range r.liveSnapshots {
 		if snap.Projection.Generation > 0 {
 			projections = append(projections, snap.Projection)
+		}
+		for contributionID := range snap.ProcessContributions {
+			processContributions[contributionID] = true
 		}
 	}
 	r.mu.Unlock()
@@ -1051,6 +1062,7 @@ func (r *Runtime) syncRegistry() {
 	})
 	// process-only 代次没有本机 socket：数据面走 Runtime 的内嵌路由。
 	r.registry.SetEmbeddedInvoker(r)
+	r.registry.SetEmbeddedContributions(processContributions)
 	if len(projections) == 0 || host == nil {
 		_, _ = r.registry.Replace(appplugins.HostAccess{}, nil, nil)
 		return

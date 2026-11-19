@@ -58,11 +58,11 @@ func (handler *Handler) evaluateAccountEligibility(
 	load sessionactivity.SelectionLoad,
 	catalog catalogFacts,
 	now time.Time,
-) string {
+) schedcore.Verdict {
 	evidence := handler.schedulingEvidence(
 		ctx, account, provider, model, parsedModelID, modelIDValid, state, runtimeView, load, catalog, now,
 	)
-	return string(handler.scheduling.Evaluate(evidence).Reason)
+	return handler.scheduling.Evaluate(evidence)
 }
 
 // schedulingEvidence 把一次判定的全部事实取证成 Evidence。
@@ -266,46 +266,55 @@ func findModelFailureKind(streaks map[string]json.RawMessage, model string) stri
 
 // bucketsFromSnapshot 把归一化额度快照里的档位转成策略可用的 Bucket。
 //
-// 这里只做结构转换，不判断哪一档该花：档位优先级属于 Provider 策略。
+// 快照来自不同装配路径（map[string]any 与 []map[string]any 混用），这里统一走
+// 一次 JSON 往返再解析，避免依赖具体 Go 容器类型。
 func bucketsFromSnapshot(snapshot map[string]any) []schedcore.Bucket {
 	if len(snapshot) == 0 {
 		return nil
 	}
-	rawEntries, ok := snapshot["entries"].([]any)
-	if !ok || len(rawEntries) == 0 {
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
 		return nil
 	}
-	buckets := make([]schedcore.Bucket, 0, len(rawEntries))
-	for _, raw := range rawEntries {
-		entry, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		id := strings.TrimSpace(stringValue(entry["bucket"]))
+	var doc struct {
+		Entries []struct {
+			Bucket       string   `json:"bucket"`
+			Label        string   `json:"label"`
+			RemainingPct *float64 `json:"remainingPct"`
+			UsedUnits    *float64 `json:"usedUnits"`
+			TotalUnits   *float64 `json:"totalUnits"`
+			ResetAtMs    *float64 `json:"resetAtMs"`
+		} `json:"entries"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	buckets := make([]schedcore.Bucket, 0, len(doc.Entries))
+	for _, entry := range doc.Entries {
+		id := strings.TrimSpace(entry.Bucket)
 		if id == "" {
-			id = strings.TrimSpace(stringValue(entry["label"]))
+			id = strings.TrimSpace(entry.Label)
 		}
 		if id == "" {
 			continue
 		}
 		bucket := schedcore.Bucket{ID: id}
-		if pct, found := floatValue(entry["remainingPct"]); found {
-			bucket.Known = true
+		if entry.RemainingPct != nil {
+			pct := *entry.RemainingPct
 			switch {
 			case pct < 0:
 				pct = 0
 			case pct > 100:
 				pct = 100
 			}
+			bucket.Known = true
 			bucket.RemainingBasisPoints = uint16(pct * 100)
 		}
-		if used, foundUsed := floatValue(entry["usedUnits"]); foundUsed {
-			if total, foundTotal := floatValue(entry["totalUnits"]); foundTotal && total > 0 && used >= total {
-				bucket.Exhausted = true
-			}
+		if entry.UsedUnits != nil && entry.TotalUnits != nil && *entry.TotalUnits > 0 && *entry.UsedUnits >= *entry.TotalUnits {
+			bucket.Exhausted = true
 		}
-		if reset, found := floatValue(entry["resetAtMs"]); found && reset > 0 {
-			bucket.ResetAt = time.UnixMilli(int64(reset))
+		if entry.ResetAtMs != nil && *entry.ResetAtMs > 0 {
+			bucket.ResetAt = time.UnixMilli(int64(*entry.ResetAtMs))
 		}
 		buckets = append(buckets, bucket)
 	}

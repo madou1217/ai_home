@@ -137,12 +137,14 @@ type Dependencies struct {
 
 // Candidate 是单个账号对目标模型的调度诊断行，字段与前端 RoutingWeightCandidate 一一对应。
 type Candidate struct {
-	AccountRef    string   `json:"accountRef"`
-	Provider      string   `json:"provider"`
-	CLIAccountID  *int64   `json:"cliAccountId"`
-	Email         string   `json:"email"`
-	Eligible      bool     `json:"eligible"`
-	Reason        string   `json:"reason"`
+	AccountRef   string `json:"accountRef"`
+	Provider     string `json:"provider"`
+	CLIAccountID *int64 `json:"cliAccountId"`
+	Email        string `json:"email"`
+	Eligible     bool   `json:"eligible"`
+	Reason       string `json:"reason"`
+	// QuotaBucket 是策略为该 (账号,模型) 选定的额度档位；空表示不区分档位。
+	QuotaBucket   string   `json:"quotaBucket,omitempty"`
 	RemainingPct  *float64 `json:"remainingPct"`
 	InFlight      int      `json:"inFlight"`
 	ModelInFlight int      `json:"modelInFlight"`
@@ -313,7 +315,7 @@ func (handler *Handler) evaluateWeights(
 		load := handler.selectionLoad(accountProvider, ref, model)
 		loadsByRef[ref] = load
 
-		reason := handler.evaluateAccountEligibility(
+		verdict := handler.evaluateAccountEligibility(
 			ctx,
 			account,
 			accountProvider,
@@ -327,6 +329,7 @@ func (handler *Handler) evaluateWeights(
 			now,
 		)
 
+		reason := string(verdict.Reason)
 		eligible := reason == ""
 		if eligible {
 			eligibleCount++
@@ -349,6 +352,7 @@ func (handler *Handler) evaluateWeights(
 			Email:         strings.TrimSpace(account.Email),
 			Eligible:      eligible,
 			Reason:        reason,
+			QuotaBucket:   verdict.Bucket,
 			RemainingPct:  remainingPtr,
 			InFlight:      load.InFlight,
 			ModelInFlight: load.ModelInFlight,

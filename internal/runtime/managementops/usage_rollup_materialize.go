@@ -12,6 +12,7 @@ func (s *UsageStore) materializeHourRange(
 	startHour, endHour int64,
 	targetHours map[int64]bool,
 	markCoverage bool,
+	pricingCache *rollupSyncPricingCache,
 ) ([]int64, error) {
 	if endHour <= startHour {
 		return nil, nil
@@ -70,14 +71,14 @@ func (s *UsageStore) materializeHourRange(
 			forksByHash[f.SourceHash] = f
 		}
 
-		// 必须在同一只读事务快照内严格现读定价，绝不复用 3s TTL 缓存，
-		// 防止用旧定价计算结果却写入新 pricing_rev 标签。
-		pricingSnap, err := loadStrictPricingSnapshotConn(ctx, conn)
+		// Reuse only within this serial sync, after same-snapshot capability
+		// and both persistent DATA pricing revisions have been verified.
+		pricingSnap, digest, err := pricingCache.loadConn(ctx, s, conn, capReport)
 		if err != nil {
 			readErr = err
 			return
 		}
-		customPricingDigest = computeCustomPricingDigest(pricingSnap.customIndex)
+		customPricingDigest = digest
 
 		endInclusive := endHour - 1
 		padFrom := maxInt64(0, startHour-scannerAfterProxyWindowMS)

@@ -83,6 +83,7 @@ func (s *UsageStore) ensureRollupSyncedForRange(ctx context.Context, startHour, 
 		return nil
 	}
 
+	var pricingCache rollupSyncPricingCache
 	invalidatedExtSet := make(map[int64]struct{})
 
 	// 1. 补齐未覆盖区间（按实际数据范围裁剪并分块提交，支持中途取消保留已提交进度）。
@@ -90,7 +91,7 @@ func (s *UsageStore) ensureRollupSyncedForRange(ctx context.Context, startHour, 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		extHours, err := s.syncUncoveredGap(ctx, gap)
+		extHours, err := s.syncUncoveredGap(ctx, gap, &pricingCache)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -117,7 +118,7 @@ func (s *UsageStore) ensureRollupSyncedForRange(ctx context.Context, startHour, 
 			}
 			cStart := batch[0]
 			cEnd := batch[len(batch)-1] + rollupHourMS
-			extHours, err := s.materializeHourRange(ctx, cStart, cEnd, targetSet, false)
+			extHours, err := s.materializeHourRange(ctx, cStart, cEnd, targetSet, false, &pricingCache)
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
@@ -150,7 +151,7 @@ func (s *UsageStore) ensureRollupSyncedForRange(ctx context.Context, startHour, 
 			}
 			cStart := batch[0]
 			cEnd := batch[len(batch)-1] + rollupHourMS
-			if _, err := s.materializeHourRange(ctx, cStart, cEnd, targetSet, false); err != nil {
+			if _, err := s.materializeHourRange(ctx, cStart, cEnd, targetSet, false, &pricingCache); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -187,7 +188,7 @@ func groupDirtyHoursIntoBatches(hours []int64, maxSpanHours int64, connectedRigh
 	return batches
 }
 
-func (s *UsageStore) syncUncoveredGap(ctx context.Context, gap hourRange) ([]int64, error) {
+func (s *UsageStore) syncUncoveredGap(ctx context.Context, gap hourRange, pricingCache *rollupSyncPricingCache) ([]int64, error) {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -230,7 +231,7 @@ func (s *UsageStore) syncUncoveredGap(ctx context.Context, gap hourRange) ([]int
 		if next > activeEnd {
 			next = activeEnd
 		}
-		extHours, err := s.materializeHourRange(ctx, cur, next, nil, true)
+		extHours, err := s.materializeHourRange(ctx, cur, next, nil, true, pricingCache)
 		if err != nil {
 			return invalidatedExt, err
 		}

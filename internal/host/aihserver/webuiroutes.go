@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/hostdetect"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
@@ -392,7 +393,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	modelsRead, err := webuimodelsapi.NewHandler(webuimodelsapi.Dependencies{
 		Authorizer: authorizer, Reader: dependencies.Store,
-		Settings: webuimodelsapi.SettingsFile{DatabasePath: databasePath},
+		Settings: modelcatalogsettings.Reader{DatabasePath: databasePath},
 		Snapshot: dependencies.ModelSnapshot,
 		Refs:     refResolver,
 		Metadata: dependencies.MetadataResolver,
@@ -402,7 +403,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	openaiModelsRead, err := webuiopenaimodelsapi.NewHandler(webuiopenaimodelsapi.Dependencies{
 		Authorizer: authorizer, Reader: dependencies.Store,
-		Settings:    webuiopenaimodelsapi.SettingsFile{DatabasePath: databasePath},
+		Settings:    modelcatalogsettings.Reader{DatabasePath: databasePath},
 		Snapshot:    dependencies.ModelSnapshot,
 		AccountRefs: refResolver,
 		Metadata:    dependencies.MetadataResolver,

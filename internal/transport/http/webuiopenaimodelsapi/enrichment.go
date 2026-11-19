@@ -35,16 +35,6 @@ type AccountRefResolver interface {
 	GoRef(nodeRef string) string
 }
 
-// SettingsFile 以 app-state.db 路径实现 SettingsReader。
-type SettingsFile struct {
-	DatabasePath string
-}
-
-// ReadSettings 读取并归一 model-catalog-settings。
-func (file SettingsFile) ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error) {
-	return modelcatalogsettings.Load(ctx, file.DatabasePath)
-}
-
 // identityRefs 是没有映射表时的翻译器：两侧引用本来就是同一个值。
 type identityRefs struct{}
 

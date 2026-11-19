@@ -41,7 +41,6 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	custompricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/custom"
@@ -126,68 +125,12 @@ type JobHistoryStore interface {
 	Recent(ctx context.Context, limit int) ([]modelcatalogjobhistory.Job, error)
 }
 
-// DatabaseSettingsStore 基于 appstate 数据库实现 SettingsStore。
-type DatabaseSettingsStore struct {
-	DatabasePath string
-}
-
-// Load 读取并归一当前模型目录设置。
-func (store DatabaseSettingsStore) Load(ctx context.Context) (modelcatalogsettings.Settings, error) {
-	if strings.TrimSpace(store.DatabasePath) == "" {
-		return modelcatalogsettings.Normalize(nil), nil
-	}
-	return modelcatalogsettings.Load(ctx, store.DatabasePath)
-}
-
-// Update 在 BEGIN IMMEDIATE 事务中安全更新 model-catalog-settings。
-func (store DatabaseSettingsStore) Update(
-	ctx context.Context,
-	mutate func(current modelcatalogsettings.Settings) (modelcatalogsettings.Settings, error),
-) (modelcatalogsettings.Settings, error) {
-	if strings.TrimSpace(store.DatabasePath) == "" {
-		return modelcatalogsettings.Settings{}, errors.New("app-state 数据库路径未配置")
-	}
-	var saved modelcatalogsettings.Settings
-	err := appstate.UpdateKV(ctx, store.DatabasePath, modelcatalogsettings.DatabaseKey, func(current string, _ bool) (string, error) {
-		next, mutateErr := mutate(modelcatalogsettings.Normalize(current))
-		if mutateErr != nil {
-			return "", mutateErr
-		}
-		next.Version = modelcatalogsettings.SettingsVersion
-		next.UpdatedAtMS = time.Now().UnixMilli()
-		encoded, marshalErr := json.Marshal(next)
-		if marshalErr != nil {
-			return "", marshalErr
-		}
-		saved = next
-		return string(encoded), nil
-	})
-	if err != nil {
-		return modelcatalogsettings.Settings{}, err
-	}
-	return saved, nil
-}
-
-// AccountRefMapDir 基于 AIHomeDir 加载 go-account-sync 映射表。
-type AccountRefMapDir struct {
-	AIHomeDir string
-}
-
-// LoadTable 读取当前映射表；无记录时返回空映射。
-func (dir AccountRefMapDir) LoadTable(ctx context.Context) (accountrefmap.Table, error) {
-	if strings.TrimSpace(dir.AIHomeDir) == "" {
-		return accountrefmap.Table{}, nil
-	}
-	return accountrefmap.Load(ctx, dir.AIHomeDir)
-}
-
 // Dependencies 汇总 Handler 全部依赖。
 type Dependencies struct {
 	Authorizer     Authorizer
 	Store          Store
 	PricingConfig  PricingConfigStore
 	Resolver       modelpricing.Resolver
-	AIHomeDir      string
 	Settings       SettingsStore
 	Snapshot       modelsnapshot.Reader
 	RefMapper      AccountRefMapper
@@ -273,22 +216,6 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	snapshot := dependencies.Snapshot
 	refMapper := dependencies.RefMapper
 	history := dependencies.History
-	if strings.TrimSpace(dependencies.AIHomeDir) != "" {
-		if dbPath, err := appstate.DatabasePath(dependencies.AIHomeDir); err == nil {
-			if settings == nil {
-				settings = DatabaseSettingsStore{DatabasePath: dbPath}
-			}
-			if history == nil {
-				history = modelcatalogjobhistory.NewStore(dbPath)
-			}
-		}
-		if refMapper == nil {
-			refMapper = AccountRefMapDir{AIHomeDir: dependencies.AIHomeDir}
-		}
-	}
-	if settings == nil {
-		settings = DatabaseSettingsStore{}
-	}
 	catalog := dependencies.Catalog
 	if catalog == nil {
 		if built, err := providers.NewCatalog(providers.BuiltinManifest()); err == nil {

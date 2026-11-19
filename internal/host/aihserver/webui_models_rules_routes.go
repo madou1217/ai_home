@@ -4,7 +4,11 @@ import (
 	"fmt"
 
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimodelsyncapi"
@@ -42,12 +46,20 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 	}
 
 	pricingResolver, _ := pricingresolver.Default()
+	var settingsStore modelcatalogsettings.Store
+	var historyStore *modelcatalogjobhistory.Store
+	if dbPath, pathErr := appstate.DatabasePath(dependencies.AIHomeDir); pathErr == nil {
+		settingsStore = modelcatalogsettings.Store{DatabasePath: dbPath}
+		historyStore = modelcatalogjobhistory.NewStore(dbPath)
+	}
 	modelsSyncHandler, err := webuimodelsyncapi.NewHandler(webuimodelsyncapi.Dependencies{
 		Authorizer:     dependencies.Authorizer,
 		Store:          dependencies.Store,
 		PricingConfig:  dependencies.Store,
 		Resolver:       pricingResolver,
-		AIHomeDir:      dependencies.AIHomeDir,
+		Settings:       settingsStore,
+		History:        historyStore,
+		RefMapper:      accountrefmap.Dir{AIHomeDir: dependencies.AIHomeDir},
 		Catalog:        dependencies.Catalog,
 		Modalities:     dependencies.ModelModalities,
 		AliasExpander:  dependencies.ModelAliasExpander,

@@ -21,6 +21,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
@@ -300,19 +301,25 @@ func newTestHandler(t *testing.T, store Store, refresher accountapp.AccountModel
 		t.Fatalf("pricingresolver.Default: %v", err)
 	}
 	var snapshot modelsnapshot.Reader
+	var settingsStore modelcatalogsettings.Store
+	var historyStore *modelcatalogjobhistory.Store
 	if dbPath, pathErr := appstate.DatabasePath(aiHomeDir); pathErr == nil {
 		reader, readerErr := webuimodelssnapshot.NewReaderAt(dbPath)
 		if readerErr != nil {
 			t.Fatalf("NewReaderAt: %v", readerErr)
 		}
 		snapshot = reader
+		settingsStore = modelcatalogsettings.Store{DatabasePath: dbPath}
+		historyStore = modelcatalogjobhistory.NewStore(dbPath)
 	}
 	h, err := NewHandler(Dependencies{
 		Authorizer:     stubAuthorizer{allowed: true},
 		Store:          store,
 		Resolver:       resolver,
+		Settings:       settingsStore,
+		History:        historyStore,
+		RefMapper:      accountrefmap.Dir{AIHomeDir: aiHomeDir},
 		Snapshot:       snapshot,
-		AIHomeDir:      aiHomeDir,
 		Modalities:     modalities,
 		AliasExpander:  expander,
 		ModelRefresher: refresher,

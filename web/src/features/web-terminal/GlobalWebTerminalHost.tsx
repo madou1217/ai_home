@@ -12,6 +12,7 @@ import { addActiveControlPlaneProfileChangeListener } from '@/services/control-p
 import { useWebTerminalManager, type WebTerminalTab } from './web-terminal-context';
 import { useTerminalWindowGesture } from './use-terminal-window-gesture';
 import { moveTerminalWindow } from './terminal-window-geometry';
+import { useOfficeTerminalRouteOwnership } from './web-terminal-route-ownership';
 import './global-web-terminal.css';
 
 type ViewerIdentityTuple = readonly [id: string, sessionKey: string, serverId: string];
@@ -160,6 +161,7 @@ function flipVars(rect: RectLike): Record<string, string> {
 }
 
 export default function GlobalWebTerminalHost() {
+  const officeRouteOwnsTerminal = useOfficeTerminalRouteOwnership();
   const manager = useWebTerminalManager();
   const { closeTab, openTab, setMinimized, setPosition } = manager;
   const prefsRevision = useSyncExternalStore(
@@ -542,7 +544,7 @@ export default function GlobalWebTerminalHost() {
   }, [setPosition]);
 
   const closings = serverAdmitted && motion?.phase === 'closing';
-  if (manager.overviewVisible || (!hasTabs && !closings)) return null;
+  if (officeRouteOwnsTerminal || manager.overviewVisible || (!hasTabs && !closings)) return null;
   const activeTab = poweredOnTabs.find((tab) => tab.id === manager.activeTabId) || poweredOnTabs[0];
   const availableWidth = typeof window === 'undefined' ? manager.position.width : Math.max(1, window.innerWidth - 16);
   const availableHeight = typeof window === 'undefined' ? manager.position.height : Math.max(1, window.innerHeight - 16);

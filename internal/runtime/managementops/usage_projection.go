@@ -1036,11 +1036,16 @@ func (s *UsageStore) openPreparedProjection(ctx context.Context, q UsageQuery, p
 	}
 	pCtx := prebuilt
 	if pCtx == nil {
-		var prepErr error
-		pCtx, prepErr = s.prepareProjectionContextConn(ctx, conn, q)
-		if prepErr != nil {
-			_ = conn.Close()
-			return nil, "", nil, prepErr
+		if cached, ok := loadProjectionCache(q); ok {
+			pCtx = cached
+		} else {
+			var prepErr error
+			pCtx, prepErr = s.prepareProjectionContextConn(ctx, conn, q)
+			if prepErr != nil {
+				_ = conn.Close()
+				return nil, "", nil, prepErr
+			}
+			storeProjectionCache(q, pCtx)
 		}
 	}
 	if err := materializeProjectionConn(ctx, conn, pCtx); err != nil {

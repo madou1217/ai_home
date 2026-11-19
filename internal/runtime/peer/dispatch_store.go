@@ -79,6 +79,7 @@ type Record struct {
 	SupersedesAppliedAt int64  `json:"supersedesAppliedAt,omitempty"`
 	FailureResetAt      int64  `json:"failureResetAt,omitempty"`
 	autoDeliverUntilSet bool
+	NoEnvelope          bool            `json:"noEnvelope,omitempty"`
 	NativeStatus        string          `json:"nativeStatus,omitempty"`
 	FromMode            string          `json:"fromMode,omitempty"`
 	Subject             string          `json:"subject,omitempty"`
@@ -115,6 +116,7 @@ type Record struct {
 
 // CreateMessageInput 定义写入 pending 收件箱的新消息参数。
 type CreateMessageInput struct {
+	NoEnvelope       bool
 	FromMode         string
 	Subject          string
 	Summary          string

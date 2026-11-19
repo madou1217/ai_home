@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/runtime/peer"
+	"math"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/peer"
 )
 
 func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, store *peer.DispatchStore, targets []peer.Target, self peer.RecordParty, delivery peer.DeliveryOptions, output func(any) error) error {
@@ -39,6 +42,9 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	if err != nil {
 		return err
 	}
+	if args.values["provider"] != "" && args.values["provider"] != target.Provider {
+		return fmt.Errorf("目标 Provider 不匹配")
+	}
 	if args.values["channel"] != "" && args.values["channel"] != target.Channel {
 		return fmt.Errorf("目标通道不匹配")
 	}
@@ -61,6 +67,14 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	if err != nil {
 		return err
 	}
+	if wait := args.values["wait"]; wait != "" {
+		seconds, err := strconv.ParseFloat(wait, 64)
+		if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 || seconds > 30 {
+			return fmt.Errorf("--wait 需为 0 到 30 秒")
+		}
+		delivery.Timeout = time.Duration(seconds * float64(time.Second))
+	}
+	delivery.NoEnvelope = args.flags["no-envelope"]
 	policy := args.values["reply-policy"]
 	// Explicitly informational messages stay in the mailbox: no modal, no TUI
 	// injection. Required/unspecified requests retain automatic delivery.
@@ -78,6 +92,7 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	// Serialize identical concurrent sends in the store as well as across CLI
 	// processes. This is not fuzzy coalescing: different user requests survive.
 	input.FromMode = delivery.Mode
+	input.NoEnvelope = delivery.NoEnvelope
 	rec, err := store.CreateMessageDeduplicated(input, 30*time.Second)
 	if err != nil {
 		return err

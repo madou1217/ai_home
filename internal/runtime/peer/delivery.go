@@ -200,6 +200,9 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 			return blockedDelivery(err)
 		}
 	}
+	if rec.NoEnvelope {
+		opts.NoEnvelope = true
+	}
 	text := renderMessageText(rec, opts)
 	if rec.To.Channel == "native" && !opts.NoEnvelope {
 		text = "[aih-peer-id:" + rec.ID + "]\n" + text

@@ -99,6 +99,17 @@ func fillBuckets(
 	fromUTC := from.UTC()
 	toUTC := to.UTC()
 	cursor := usageledger.BucketStart(fromUTC, granularity)
+	// 区间超过上限时只保留最近的桶：否则 2019→2026 这种全量查询会返回最早的
+	// 400 个空桶，真实数据全被挡在窗口外。
+	width := 24 * time.Hour
+	if granularity == usageledger.BucketGranularityWeek {
+		width = 7 * 24 * time.Hour
+	}
+	if span := toUTC.Sub(cursor); span > 0 {
+		if count := int(span/width) + 1; count > maxBucketRows {
+			cursor = cursor.Add(time.Duration(count-maxBucketRows) * width)
+		}
+	}
 	rows := make([]bucketRow, 0, 32)
 	for index := 0; cursor.Before(toUTC) && index < maxBucketRows; index++ {
 		next := usageledger.BucketEnd(cursor, granularity)

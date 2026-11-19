@@ -422,10 +422,18 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 			}
 		}
 	}
-	secret := func() string { var b [32]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
+	secret := func(prefix string) string {
+		var b [32]byte
+		_, _ = rand.Read(b[:])
+		return prefix + hex.EncodeToString(b[:])
+	}
 	for _, key := range []string{"apiKey", "managementKey"} {
 		if x, ok := m[key].(string); !ok || strings.TrimSpace(x) == "" {
-			m[key] = secret()
+			prefix := ""
+			if key == "apiKey" {
+				prefix = "sk-"
+			}
+			m[key] = secret(prefix)
 		}
 	}
 	if m["port"] == nil {

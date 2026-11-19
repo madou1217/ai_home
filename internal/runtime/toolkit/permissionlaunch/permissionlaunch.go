@@ -21,6 +21,12 @@ import (
 type Options struct {
 	Catalog   *providers.Catalog
 	AIHomeDir string
+	// HostHomeDir 是读取宿主配置（去重）的显式依据；为空时不做去重。
+	HostHomeDir string
+	// GOOS 与 Env 解析宿主配置路径（XDG/APPDATA 等）；为空时用当前进程。
+	GOOS      string
+	Env       map[string]string
+	LookupEnv func(string) string
 }
 
 // Result 是一次启动权限应用结果。
@@ -67,6 +73,13 @@ func Apply(ctx context.Context, options Options, providerID string, argv []strin
 	if len(settings.PermissionArgs) > 0 {
 		injected = settings.PermissionArgs
 	} else {
+		// 宿主配置已经表达的维度不再用命令行重复：同一件事说两遍会让 CLI 的权限
+		// 状态与自己 /approvals 切出来的不一致（Node 2026-10-21 用户报障）。
+		hostState := readHostPermissionState(options, providerID, maxArgs)
+		injected = dropHostSatisfiedArgs(normalizeProvider(providerID), maxArgs, hostState)
+		if len(injected) == 0 {
+			return Result{Reason: "host_config_satisfied"}
+		}
 		env = providers.MaxPermissionEnv(definition)
 	}
 	placed, applied := place(normalizeProvider(providerID), argv, injected)

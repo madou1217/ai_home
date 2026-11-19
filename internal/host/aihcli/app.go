@@ -370,7 +370,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return nil, err
 		}
-		app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir}
+		app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir, HostHomeDir: hostHomeDir, GOOS: runtime.GOOS}
 		return app, nil
 	}
 	app, err := newApp(catalog, planner, runner, store)
@@ -379,7 +379,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 	}
 	app.aiHomeDir = options.AIHomeDir
 	app.accountStore = store
-	app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir}
+	app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir, HostHomeDir: hostHomeDir, GOOS: runtime.GOOS}
 	return app, nil
 }
 
@@ -514,7 +514,7 @@ func (app *App) Run(
 	var endpoint providerlaunch.GatewayEndpoint
 	if intent.Mode() == providerlaunch.LaunchModeGatewayRelay {
 		if !supportedGatewayCLIProvider(intent.RelayProviderID()) {
-			return fmt.Errorf("%w: 当前 Relay 只支持 codex 和 claude", ErrInvalidRunRequest)
+			return fmt.Errorf("%w: %s 没有可用账号（健康账号与默认账号均不可用）", ErrInvalidRunRequest, providerID)
 		}
 		endpoint, err = providerlaunch.NewGatewayEndpoint(gateway.BaseURL, gateway.ClientKey)
 		if err != nil {

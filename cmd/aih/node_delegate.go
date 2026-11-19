@@ -50,16 +50,24 @@ var launchProviders = map[string]bool{
 //	aih <provider>
 //	aih <provider> <账号编号>
 //
-// Claude 已在 delegateToNode 中整体交给 Go；其它 Provider 的非启动形态仍可交回旧入口。
-// 理由：启动是长驻进程，去掉 Node 外壳才真正省内存和约 1.3s 启动；
-// 动作类命令继续走已验证的 Node 实现，避免兼容性回退。
+// 裸启动 codex/claude 是网关账号池模式，Go 的 GatewayRelay 规划器已承接；
+// 其余 Provider 依次尝试健康账号（resolveBareLaunchArgs）与 app_kv 的默认账号
+// （App.resolveDefaultAccountIntent），两者都在 Go 内完成。动作类命令继续走
+// 已验证的 Node 实现，避免兼容性回退。
 func isNativeLaunch(args []string) bool {
 	if len(args) == 0 || !launchProviders[args[0]] {
 		return false
 	}
-	// 只有显式账号编号才走原生：不带编号时 Node 有一套"默认账号/自动选择"
-	// 策略（含网关默认与优先级回退），Go 侧尚未完全对齐，先交回 Node。
-	if len(args) == 1 || !isDigits(args[1]) {
+	if len(args) >= 1 && gatewayRelayProviders[args[0]] &&
+		(len(args) == 1 || strings.HasPrefix(strings.TrimSpace(args[1]), "-")) {
+		// 不带账号号的 codex/claude 语义是网关账号池；官方旗标原样交给 Go 规划。
+		return true
+	}
+	if len(args) == 1 {
+		// 非网关 Provider 的裸启动：健康账号或默认账号都由 Go 解析。
+		return true
+	}
+	if !isDigits(args[1]) {
 		return false
 	}
 	for _, arg := range args[2:] {

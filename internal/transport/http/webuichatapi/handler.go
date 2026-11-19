@@ -28,12 +28,12 @@ import (
 )
 
 const (
-	// CollectionPath 是 WebUI Chat 会话集合前缀；浏览器经公开别名进入同一处理器。
+	// CollectionPath 是 WebUI Chat 会话集合前缀，与 Node webui-chat-runtime-routes 一致。
 	CollectionPath = "/v0/webui/chat/sessions/"
-	// ManagementCollectionPath 是浏览器公开路径转写后的 Go 内部入口。
+	// ManagementCollectionPath 是 Node 轮次执行调用本切片的内部入口。
 	//
-	// 管理前缀只接受带 Management Key 的内部调用；AttachRuntime 注入 canonical
-	// 运行时后，同一处理器同时承载会话集合、事件、附件与命令。
+	// 浏览器路由仍由 Node 拥有（202 + 独立 SSE 的语义不能变），所以 Go 不使用浏览器
+	// 路径，而是挂在管理前缀下，只接受带 Management Key 的内部调用。
 	ManagementCollectionPath = "/v1/management/webui/chat/sessions/"
 	// DefaultMaxBodyBytes 与 Node readJsonBody 的默认上限一致（1MB）。
 	DefaultMaxBodyBytes int64 = 1024 * 1024
@@ -216,13 +216,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 
 // ServeHTTP 处理 POST <PathPrefix>{sessionId}/commands。
 //
-// AttachRuntime 注入 canonical 运行时后，所有子路径先交给 serveCollectionSubpath
-// （会话、事件、附件、命令都在那里）；下面的无会话直连只有未挂运行时（测试或嵌入
-// 场景）才会走到。
+// 生产接线的前缀是 ManagementCollectionPath：浏览器仍走 Node 的 /v0/webui/chat/*，
+// 由 Node 的轮次执行把指令转发到这里。
 //
-// 无会话直连与 canonical 运行时的差异：canonical 先返回 202 再由独立 SSE 交付事件；
-// 这里把两条连接合成一条，因此凡是「还没向客户端写过字节」的失败都以 JSON 错误返回
-// （与历史路由错误形状一致），写过之后才改用 turn.failed 事件。
+// 与 Node 的差异：Node 先返回 202 再由另一条 SSE 连接交付事件；这里把两条连接合成
+// 一条，因此凡是「还没向客户端写过字节」的失败都以 JSON 错误返回（与 Node 路由错误
+// 的形状一致），写过之后才改用 turn.failed 事件。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if !handler.authorizer.Authorized(request) {
 		writeRouteError(response, newRouteError(
@@ -261,8 +260,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if command.Model == "" {
-		// canonical 运行时的模型来自会话策略；这条无会话直连没有策略可读，
-		// 只能要求调用方显式给出。
+		// Node 的模型来自会话策略，本切片没有会话存储，只能要求调用方显式给出。
 		writeRouteError(response, newRouteError(
 			statusUnprocessableEntity, "chat_turn_model_required", "本轮必须指定 model", nil,
 		))
@@ -274,16 +272,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		}
 	}
 	if len(command.AttachmentIDs) > 0 {
-		// 无会话直连没有 chat_runtime_attachments 可查；附件一律由 canonical
-		// 运行时的会话附件接口处理，明确拒绝好过悄悄丢掉用户上传的文件。
+		// 附件需要会话级附件仓库，本切片没有；明确拒绝好过悄悄丢掉用户上传的文件。
 		writeRouteError(response, newRouteError(
-			http.StatusServiceUnavailable, "chat_attachment_store_unavailable",
-			"无会话直连不支持附件；请使用已挂载运行时的会话附件接口", nil,
+			http.StatusServiceUnavailable, "chat_attachment_store_unavailable", "本切片尚未接入附件仓库", nil,
 		))
 		return
 	}
-	// 客户端断开或写失败时取消上游读取：canonical 轮次与会话解耦、断线不取消，
-	// 这条直连是单连接内联流，断线即取消。
+	// 客户端断开或写失败时取消上游读取：Node 的轮次与会话解耦、断线不取消，
+	// 本切片是单连接内联流，断线即取消（见 REPORT.md）。
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
 	call, routeErr := handler.openUpstream(ctx, request, command)

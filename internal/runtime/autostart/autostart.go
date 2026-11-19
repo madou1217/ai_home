@@ -257,7 +257,7 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 	_, _ = run(ctx, "launchctl", "bootout", target)
 	// bootout returns before launchd has always forgotten the old job. A short
 	// fixed delay plus polling avoids the common Input/output error race.
-	time.Sleep(time.Second)
+	time.Sleep(2 * time.Second)
 	for attempt := 0; attempt < 50; attempt++ {
 		if _, err := run(ctx, "launchctl", "print", target); err != nil {
 			break
@@ -285,7 +285,19 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 		return Status{}, fmt.Errorf("launchctl bootstrap: %w", bootstrapErr)
 	}
 	_, _ = run(ctx, "launchctl", "kickstart", "-k", target)
-	return StatusFor(ctx, options)
+	for attempt := 0; attempt < 20; attempt++ {
+		time.Sleep(500 * time.Millisecond)
+		if _, err := run(ctx, "launchctl", "print", target); err == nil {
+			// A delayed bootout can remove a just-bootstrapped job; confirm the
+			// label survives one more tick before reporting success.
+			time.Sleep(time.Second)
+			if _, confirmErr := run(ctx, "launchctl", "print", target); confirmErr == nil {
+				return StatusFor(ctx, options)
+			}
+		}
+		_, _ = run(ctx, "launchctl", "bootstrap", domain, path)
+	}
+	return Status{}, errors.New("launchctl job did not stay loaded")
 }
 
 func uninstallLaunchd(ctx context.Context, options Options) error {
@@ -336,7 +348,7 @@ func buildUnit(options Options) []byte {
 		"[Service]",
 		"Type=simple",
 		"ExecStart=" + strings.Join(quoted, " "),
-		"WorkingDirectory=" + systemdQuote(filepath.Dir(options.ServerBinary)),
+		"WorkingDirectory=" + filepath.Dir(options.ServerBinary),
 		"Restart=always",
 		"RestartSec=5",
 		"TimeoutStopSec=12",

@@ -46,7 +46,8 @@ func isNonBlankBodyText(value string) bool {
 	return strings.TrimSpace(value) != "" && isValidBodyTextDelta(value)
 }
 
-// isValidBodyTextDelta accepts ANSI sequences split across stream chunks. The
+// isValidBodyTextDelta accepts ANSI sequences, BEL-terminated OSC and PTY
+// backspaces, including sequences split across stream chunks. The
 // transport renderer must JSON-encode text; ESC is data, never an SSE delimiter.
 func isValidBodyTextDelta(value string) bool {
 	if value == "" || !utf8.ValidString(value) {
@@ -54,7 +55,7 @@ func isValidBodyTextDelta(value string) bool {
 	}
 	for _, character := range value {
 		if unicode.IsControl(character) && character != '\n' && character != '\t' &&
-			character != '\r' && character != '\x1b' {
+			character != '\r' && character != '\x1b' && character != '\a' && character != '\b' {
 			return false
 		}
 	}

@@ -62,14 +62,16 @@ const (
 	deriveByGo = "go"
 
 	// progress* 与 Node 的 AUTH_PROGRESS_STATES 逐字对齐。
-	progressStarting      = "starting"
-	progressAuthURLReady  = "auth_url_ready"
-	progressAwaitingCode  = "awaiting_code"
-	progressSubmittedCode = "submitted_code"
-	progressCompleted     = "completed"
-	progressFailed        = "failed"
-	progressCancelled     = "cancelled"
-	progressExpired       = "expired"
+	progressStarting            = "starting"
+	progressAwaitingLoginMethod = "awaiting_login_method"
+	progressAwaitingFolderTrust = "awaiting_folder_trust"
+	progressAuthURLReady        = "auth_url_ready"
+	progressAwaitingCode        = "awaiting_code"
+	progressSubmittedCode       = "submitted_code"
+	progressCompleted           = "completed"
+	progressFailed              = "failed"
+	progressCancelled           = "cancelled"
+	progressExpired             = "expired"
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少作业服务或鉴权策略。
@@ -433,6 +435,10 @@ func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
 		switch {
 		case containsAny(lowerLogs, "submitted", "写回", "已回填"):
 			progress = progressSubmittedCode
+		case containsAny(lowerLogs, "trust parent folder", "folder trust"):
+			progress = progressAwaitingFolderTrust
+		case containsAny(lowerLogs, "select login method"):
+			progress = progressAwaitingLoginMethod
 		case containsAny(lowerLogs, "authorization code", "授权码"):
 			progress = progressAwaitingCode
 		case strings.TrimSpace(snapshot.AuthURL) != "":
@@ -443,7 +449,12 @@ func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
 	case aihloginjob.StatusSucceeded:
 		status, progress = "succeeded", progressCompleted
 	case aihloginjob.StatusFailed:
-		status, progress = "failed", progressFailed
+		lowerError := strings.ToLower(strings.TrimSpace(snapshot.Error))
+		if containsAny(lowerError, "expired", "timed out", "timeout", "超时") {
+			status, progress = "expired", progressExpired
+		} else {
+			status, progress = "failed", progressFailed
+		}
 	case aihloginjob.StatusCancelled:
 		status, progress = "cancelled", progressCancelled
 	}

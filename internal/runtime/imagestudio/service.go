@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 )
 
@@ -18,17 +19,17 @@ const studioRecordTimeout = 5 * time.Second
 
 // StudioAccountFailureCodes 列举图片实体化阶段需计入账号健康度/冷却的原因码。
 var StudioAccountFailureCodes = map[string]struct{}{
-	"empty_image_output":                  {},
-	"image_asset_fetch_failed":            {},
-	"image_asset_host_resolution_failed":  {},
-	"image_asset_read_timeout":            {},
-	"image_asset_redirect_invalid":        {},
-	"image_asset_redirect_limit":          {},
-	"image_asset_too_large":               {},
-	"image_asset_url_blocked":             {},
-	"image_output_missing":                {},
-	"invalid_image_output":                {},
-	"invalid_image_output_url":            {},
+	"empty_image_output":                 {},
+	"image_asset_fetch_failed":           {},
+	"image_asset_host_resolution_failed": {},
+	"image_asset_read_timeout":           {},
+	"image_asset_redirect_invalid":       {},
+	"image_asset_redirect_limit":         {},
+	"image_asset_too_large":              {},
+	"image_asset_url_blocked":            {},
+	"image_output_missing":               {},
+	"invalid_image_output":               {},
+	"invalid_image_output_url":           {},
 }
 
 // RunSourceInput 描述单条前端传入的编辑底图来源（二选一）。
@@ -68,28 +69,30 @@ type RunResult struct {
 
 // ServiceDependencies 汇总 Image Studio 服务所需全部基础设施依赖。
 type ServiceDependencies struct {
-	Store    *Store
-	Catalog  CatalogDependencies
-	Registry images.Registry
-	Accounts images.AccountSource
-	HTTP     images.HTTPDoer
-	Fetcher  images.ImageFetcher
-	Usage    imagesapi.UsageRecorder
-	Outcomes imagesapi.ImageOutcomes
-	Now      func() time.Time
+	Store     *Store
+	Catalog   CatalogDependencies
+	Registry  images.Registry
+	Accounts  images.AccountSource
+	Execution *imageexecution.Executor
+	HTTP      images.HTTPDoer
+	Fetcher   images.ImageFetcher
+	Usage     imagesapi.UsageRecorder
+	Outcomes  imagesapi.ImageOutcomes
+	Now       func() time.Time
 }
 
 // Service 编排工作台模型目录、会话仓储与上游生图/编辑运行。
 type Service struct {
-	store    *Store
-	catalog  CatalogDependencies
-	registry images.Registry
-	accounts images.AccountSource
-	httpDoer images.HTTPDoer
-	fetcher  images.ImageFetcher
-	usage    imagesapi.UsageRecorder
-	outcomes imagesapi.ImageOutcomes
-	now      func() time.Time
+	store     *Store
+	catalog   CatalogDependencies
+	registry  images.Registry
+	accounts  images.AccountSource
+	execution *imageexecution.Executor
+	httpDoer  images.HTTPDoer
+	fetcher   images.ImageFetcher
+	usage     imagesapi.UsageRecorder
+	outcomes  imagesapi.ImageOutcomes
+	now       func() time.Time
 }
 
 // NewService 构造线程安全的 Image Studio 领域服务。
@@ -106,15 +109,16 @@ func NewService(deps ServiceDependencies) (*Service, error) {
 		fetcher = images.NewFetcher(deps.HTTP)
 	}
 	return &Service{
-		store:    deps.Store,
-		catalog:  deps.Catalog,
-		registry: deps.Registry,
-		accounts: deps.Accounts,
-		httpDoer: deps.HTTP,
-		fetcher:  fetcher,
-		usage:    deps.Usage,
-		outcomes: deps.Outcomes,
-		now:      nowFn,
+		store:     deps.Store,
+		catalog:   deps.Catalog,
+		registry:  deps.Registry,
+		accounts:  deps.Accounts,
+		execution: deps.Execution,
+		httpDoer:  deps.HTTP,
+		fetcher:   fetcher,
+		usage:     deps.Usage,
+		outcomes:  deps.Outcomes,
+		now:       nowFn,
 	}, nil
 }
 
@@ -344,7 +348,9 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	failAndRecord := func(cause error) error {
 		mapped := mapExecutionError(cause)
 		if revisionID != "" {
-			_, _, _ = svc.store.FailRevision(context.WithoutCancel(ctx), sessionID, revisionID, mapped)
+			fCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
+			_, _, _ = svc.store.FailRevision(fCtx, sessionID, revisionID, mapped)
+			cancel()
 		}
 		if hasExecution && svc.outcomes != nil {
 			if _, ok := StudioAccountFailureCodes[mapped.Code]; ok {
@@ -356,21 +362,31 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		return mapped
 	}
 
-	if svc.accounts == nil {
-		return RunResult{}, failAndRecord(NewError(503, "no_available_account", "image account source is not configured"))
-	}
-
-	execOpts := images.ExecuteOptions{HTTP: svc.httpDoer}
-	if svc.outcomes != nil {
-		execOpts.AttemptFailure = func(account images.Account, model string, attemptErr error) {
-			rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
-			defer cancel()
-			svc.outcomes.RecordImageFailure(rCtx, account.AccountRef, model, attemptErr)
+	var execResult imageexecution.Result
+	usedSharedExecutor := false
+	if svc.execution != nil {
+		usedSharedExecutor = true
+		execResult, err = svc.execution.Execute(ctx, selected.Provider, parsedReq)
+		if err != nil {
+			return RunResult{}, failAndRecord(err)
 		}
-	}
-	execution, err = images.Execute(ctx, svc.registry, svc.accounts, selected.Provider, parsedReq, execOpts)
-	if err != nil {
-		return RunResult{}, failAndRecord(err)
+		execution = execResult.Execution
+	} else {
+		if svc.accounts == nil {
+			return RunResult{}, failAndRecord(NewError(503, "no_available_account", "image account source is not configured"))
+		}
+		execOpts := images.ExecuteOptions{HTTP: svc.httpDoer}
+		if svc.outcomes != nil {
+			execOpts.AttemptFailure = func(account images.Account, model string, attemptErr error) {
+				rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
+				defer cancel()
+				svc.outcomes.RecordImageFailure(rCtx, account.AccountRef, model, attemptErr)
+			}
+		}
+		execution, err = images.Execute(ctx, svc.registry, svc.accounts, selected.Provider, parsedReq, execOpts)
+		if err != nil {
+			return RunResult{}, failAndRecord(err)
+		}
 	}
 	hasExecution = true
 
@@ -379,12 +395,6 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	materialized, err := MaterializeOutputs(ctx, execution, svc.fetcher, defaultRemoteFetchTimeout)
 	if err != nil {
 		return RunResult{}, failAndRecord(err)
-	}
-
-	if svc.outcomes != nil {
-		rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
-		svc.outcomes.RecordImageSuccess(rCtx, execution.Account.AccountRef, parsedReq.Model, svc.now())
-		cancel()
 	}
 
 	completedSession, _, err := svc.store.CompleteRevision(
@@ -398,6 +408,17 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		return RunResult{}, failAndRecord(err)
 	}
 	revisionID = ""
+
+	if usedSharedExecutor {
+		rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
+		svc.execution.RecordSuccess(rCtx, execResult, parsedReq.Model)
+		cancel()
+	} else if svc.outcomes != nil {
+		rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
+		svc.outcomes.RecordImageSuccess(rCtx, execution.Account.AccountRef, parsedReq.Model, svc.now())
+		cancel()
+	}
+
 	return RunResult{
 		Session:    completedSession,
 		RevisionID: startedRev.ID,

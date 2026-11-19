@@ -90,6 +90,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
@@ -2006,6 +2007,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		MetadataResolver:      pricingResolver,
 		EgressManager:         egressManager,
 		Upstream429RetryStore: upstream429Store,
+		ImageExecutionDependencies: imageexecution.Dependencies{
+			Upstream429Retries:     upstream429Controller,
+			Attempts:               accountRuntime,
+			CredentialObservations: credentials,
+			Rules:                  upstreamRuleEvaluator,
+		},
 		HostHomeDir:           dependencies.HostHomeDir,
 		Store:                 store,
 		NativeWorkPreparer:    nativeWork,

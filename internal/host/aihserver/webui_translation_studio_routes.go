@@ -36,6 +36,7 @@ import (
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/imagestudio"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
@@ -189,6 +190,34 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 	}
 
 	imageFetcher := images.NewFetcher(http.DefaultClient)
+	imageRegistry := images.NewRegistry(
+		images.EffectiveCodexImageBaseURL(),
+		agycodeassist.GenerateContentURL(),
+		imageFetcher,
+	)
+	var studioExecutor *imageexecution.Executor
+	if imageAccountSource != nil {
+		var legacyFailure imageexecution.LegacyFailureRecorder
+		var legacySuccess imageexecution.LegacySuccessRecorder
+		if imageOutcomes != nil {
+			outcomes := imageOutcomes
+			legacyFailure = outcomes.RecordImageFailure
+			legacySuccess = outcomes.RecordImageSuccess
+		}
+		studioExecutor = imageexecution.NewExecutor(imageexecution.Dependencies{
+			Surface:                "image_studio",
+			Registry:               imageRegistry,
+			Accounts:               imageAccountSource,
+			HTTP:                   http.DefaultClient,
+			Upstream429Retries:     dependencies.ImageExecutionDependencies.Upstream429Retries,
+			Attempts:               dependencies.ImageExecutionDependencies.Attempts,
+			CredentialObservations: dependencies.ImageExecutionDependencies.CredentialObservations,
+			Rules:                  dependencies.ImageExecutionDependencies.Rules,
+			LegacyFailure:          legacyFailure,
+			LegacySuccess:          legacySuccess,
+			Clock:                  time.Now,
+		})
+	}
 	studioService, err := imagestudio.NewService(imagestudio.ServiceDependencies{
 		Store: studioStore,
 		Catalog: imagestudio.CatalogDependencies{
@@ -199,17 +228,14 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 			Providers:     dependencies.Catalog,
 			Modalities:    dependencies.ModelModalities,
 		},
-		Registry: images.NewRegistry(
-			images.EffectiveCodexImageBaseURL(),
-			agycodeassist.GenerateContentURL(),
-			imageFetcher,
-		),
-		Accounts: imageAccountSource,
-		HTTP:     http.DefaultClient,
-		Fetcher:  imageFetcher,
-		Usage:    usageRecorder,
-		Outcomes: imageOutcomes,
-		Now:      time.Now,
+		Registry:  imageRegistry,
+		Accounts:  imageAccountSource,
+		Execution: studioExecutor,
+		HTTP:      http.DefaultClient,
+		Fetcher:   imageFetcher,
+		Usage:     usageRecorder,
+		Outcomes:  imageOutcomes,
+		Now:       time.Now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 Image Studio 领域服务失败: %w", err)

@@ -31,6 +31,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -124,20 +125,21 @@ type webuiRoute struct {
 // 这里刻意只收「跨切片共享」的依赖：新增一个 WebUI 能力时，在 buildWebUIRoutes
 // 里加一个 constructor + 路由条目即可，composition/router 不再逐切片增长。
 type webuiRouteDependencies struct {
-	DesktopSettingsChanged func()
-	Authorizer             interface{ Authorized(*http.Request) bool }
-	AIHomeDir              string
-	Catalog                *providers.Catalog
-	ModelModalities        modelmetadata.Catalog
-	ModelAliasExpander     modelmetadata.AliasExpander
-	ModelSnapshot          modelsnapshot.Reader
-	MetadataResolver       modelpricing.Resolver
-	EgressManager          *runtimeegress.Manager
-	Upstream429RetryStore  *runtimeupstreamretry.Store
-	HostHomeDir            string
-	Store                  *sqliteaccount.Store
-	NativeWorkPreparer     chatruntime.NativeLaunchPreparer
-	AccountRuntime         any
+	DesktopSettingsChanged     func()
+	Authorizer                 interface{ Authorized(*http.Request) bool }
+	AIHomeDir                  string
+	Catalog                    *providers.Catalog
+	ModelModalities            modelmetadata.Catalog
+	ModelAliasExpander         modelmetadata.AliasExpander
+	ModelSnapshot              modelsnapshot.Reader
+	MetadataResolver           modelpricing.Resolver
+	EgressManager              *runtimeegress.Manager
+	Upstream429RetryStore      *runtimeupstreamretry.Store
+	ImageExecutionDependencies imageexecution.Dependencies
+	HostHomeDir                string
+	Store                      *sqliteaccount.Store
+	NativeWorkPreparer         chatruntime.NativeLaunchPreparer
+	AccountRuntime             any
 	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
 	AuthJobs *accountauth.Service
 	// LoginJobs 是 CLI code-paste 登录作业单例；account-add 与 login-jobs 共用。

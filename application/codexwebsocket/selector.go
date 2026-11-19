@@ -42,6 +42,19 @@ type AccountRecruiter interface {
 	) (accountrouting.Result, error)
 }
 
+type sessionAccountRecruiter interface {
+	Begin(
+		ctx context.Context,
+		request accountrouting.Request,
+		transport accountrouting.CredentialTransportPolicy,
+	) (*accountrouting.RecruitmentSession, error)
+}
+
+// SelectionCursor 按序产出同一模型路由快照下尚未尝试过的候选账号。
+type SelectionCursor interface {
+	Next(ctx context.Context) (Selection, bool, error)
+}
+
 // Dependencies 声明原生 Responses WS 选择所需的稳定端口。
 type Dependencies struct {
 	Catalog    *providers.Catalog
@@ -153,33 +166,9 @@ func (selector *Selector) Select(
 	ctx context.Context,
 	request Request,
 ) (Selection, error) {
-	if selector == nil ||
-		selector.catalog == nil ||
-		selector.routes == nil ||
-		selector.recruiter == nil ||
-		selector.transports == nil ||
-		ctx == nil ||
-		request.ClientProtocol != inference.ClientProtocolOpenAIResponses ||
-		request.Model == "" {
-		return Selection{}, ErrInvalidRequest
-	}
-	if err := ctx.Err(); err != nil {
-		return Selection{}, err
-	}
-	route, err := selector.routes.ResolveProtocolRoute(
-		ctx,
-		request.ClientProtocol,
-		request.Model,
-		inference.ProviderCodex,
-		inference.ProtocolCodexResponses,
-	)
+	route, err := selector.resolveExactRoute(ctx, request)
 	if err != nil {
 		return Selection{}, err
-	}
-	// 原生 WS 的核心合同是除观察字段外不重写客户端帧。若别名解析改变模型，
-	// 应让调用方走 Canonical HTTP 路径，而不是悄悄修改原始 JSON。
-	if route.EffectiveModel() != request.Model {
-		return Selection{}, ErrModelRewriteRequired
 	}
 	var recruitment accountrouting.Request
 	pinnedAccountRef := strings.TrimSpace(request.PinnedAccountRef)
@@ -246,6 +235,290 @@ func (selector *Selector) Select(
 		result.Credential(),
 		result.CredentialObservation(),
 	)
+}
+
+// SelectPinnedOnly 在不静默回落到整池的前提下，仅征召客户端钉选的 Codex 账号。
+//
+// 当钉选账号当前已处于 (账号,模型) 软冷却时返回 (Selection{}, false, nil)，由调用方
+// 决定进入回落池；凭据/额度/策略硬阻塞、无效钉选或路由缺失均直接返回真实错误，绝不静默
+// 替换成其它账号。
+func (selector *Selector) SelectPinnedOnly(
+	ctx context.Context,
+	request Request,
+) (Selection, bool, error) {
+	route, err := selector.resolveExactRoute(ctx, request)
+	if err != nil {
+		return Selection{}, false, err
+	}
+	pinnedAccountRef := strings.TrimSpace(request.PinnedAccountRef)
+	if pinnedAccountRef == "" {
+		return Selection{}, false, ErrInvalidPinnedAccount
+	}
+	accountRef, parseErr := accountcore.ParseAccountRef(pinnedAccountRef)
+	if parseErr != nil {
+		return Selection{}, false, errors.Join(ErrInvalidPinnedAccount, parseErr)
+	}
+	pinUsable, usableErr := selector.pinnedAccountUsable(
+		ctx,
+		accountRef,
+		route.EffectiveModel(),
+	)
+	if usableErr != nil {
+		return Selection{}, false, usableErr
+	}
+	if !pinUsable {
+		return Selection{}, false, nil
+	}
+	recruitment, err := accountrouting.NewPinnedRequest(
+		selector.catalog,
+		codexauth.ProviderID,
+		route.EffectiveModel(),
+		accountRef,
+	)
+	if err != nil {
+		return Selection{}, false, errors.Join(ErrInvalidRequest, err)
+	}
+	result, err := selector.recruiter.Recruit(
+		ctx,
+		recruitment,
+		selector.transports,
+	)
+	if err != nil {
+		return Selection{}, false, err
+	}
+	selection, err := NewSelection(
+		route,
+		result.Account().Ref(),
+		result.Credential(),
+		result.CredentialObservation(),
+	)
+	if err != nil {
+		return Selection{}, false, err
+	}
+	return selection, true, nil
+}
+
+// OpenPool 打开未钉选池（或排除指定账号的回落池）的有限候选游标，用于在握手阶段零等待
+// 尝试所有健康 Codex 账号。
+func (selector *Selector) OpenPool(
+	ctx context.Context,
+	request Request,
+	excluded ...accountcore.AccountRef,
+) (SelectionCursor, error) {
+	route, err := selector.resolveExactRoute(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	var recruitment accountrouting.Request
+	if len(excluded) > 0 {
+		recruitment, err = accountrouting.NewRequestExcluding(
+			selector.catalog,
+			codexauth.ProviderID,
+			route.EffectiveModel(),
+			excluded,
+		)
+	} else {
+		recruitment, err = accountrouting.NewRequest(
+			selector.catalog,
+			codexauth.ProviderID,
+			route.EffectiveModel(),
+		)
+	}
+	if err != nil {
+		return nil, errors.Join(ErrInvalidRequest, err)
+	}
+	if sessionRecruiter, ok := selector.recruiter.(sessionAccountRecruiter); ok {
+		session, beginErr := sessionRecruiter.Begin(ctx, recruitment, selector.transports)
+		if beginErr != nil {
+			return nil, beginErr
+		}
+		return &recruitmentSelectionCursor{
+			route:   route,
+			session: session,
+		}, nil
+	}
+	return &singleShotSelectionCursor{
+		route:       route,
+		recruiter:   selector.recruiter,
+		recruitment: recruitment,
+		transports:  selector.transports,
+	}, nil
+}
+
+// ReacquireFor429Retry 在 429 握手退避等待结束后，通过完整 Recruiter 重新执行候选启用、
+// 额度门禁、硬阻塞、原子 CooldownReceipt + 原始 CredentialObservation 代次豁免、最新凭据
+// 解析与传输兼容校验。
+//
+// 非钉选场景下优先尝试当前已健康的替代账号（usedWaiver=false），仅在无健康替代时再对目标
+// 账号应用本次请求的自冷却豁免凭证。
+func (selector *Selector) ReacquireFor429Retry(
+	ctx context.Context,
+	request Request,
+	pinned bool,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (selection Selection, usedWaiver bool, found bool, err error) {
+	route, err := selector.resolveExactRoute(ctx, request)
+	if err != nil {
+		return Selection{}, false, false, err
+	}
+	if !target.IsValid() {
+		return Selection{}, false, false, ErrInvalidPinnedAccount
+	}
+	if !pinned {
+		poolReq, reqErr := accountrouting.NewRequest(
+			selector.catalog,
+			codexauth.ProviderID,
+			route.EffectiveModel(),
+		)
+		if reqErr == nil {
+			result, recruitErr := selector.recruiter.Recruit(ctx, poolReq, selector.transports)
+			if recruitErr == nil {
+				selected, selErr := NewSelection(
+					route,
+					result.Account().Ref(),
+					result.Credential(),
+					result.CredentialObservation(),
+				)
+				if selErr != nil {
+					return Selection{}, false, false, selErr
+				}
+				return selected, false, true, nil
+			}
+			if !errors.Is(recruitErr, accountrouting.ErrNoRoutableAccount) {
+				return Selection{}, false, false, recruitErr
+			}
+		}
+	}
+	pinnedReq, err := accountrouting.NewPinnedRequest(
+		selector.catalog,
+		codexauth.ProviderID,
+		route.EffectiveModel(),
+		target,
+	)
+	if err != nil {
+		return Selection{}, false, false, errors.Join(ErrInvalidRequest, err)
+	}
+	waiver := accountrouting.RateLimitCooldownWaiver{
+		Receipt:     receipt,
+		Observation: originObservation,
+	}
+	if waiver.IsValid() {
+		pinnedReq = pinnedReq.WithRateLimitCooldownWaiver(waiver)
+	}
+	result, err := selector.recruiter.Recruit(ctx, pinnedReq, selector.transports)
+	if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+		return Selection{}, false, false, nil
+	}
+	if err != nil {
+		return Selection{}, false, false, err
+	}
+	selected, err := NewSelection(
+		route,
+		result.Account().Ref(),
+		result.Credential(),
+		result.CredentialObservation(),
+	)
+	if err != nil {
+		return Selection{}, false, false, err
+	}
+	return selected, result.UsedRateLimitCooldownWaiver(), true, nil
+}
+
+func (selector *Selector) resolveExactRoute(
+	ctx context.Context,
+	request Request,
+) (inferencegateway.Route, error) {
+	if selector == nil ||
+		selector.catalog == nil ||
+		selector.routes == nil ||
+		selector.recruiter == nil ||
+		selector.transports == nil ||
+		ctx == nil ||
+		request.ClientProtocol != inference.ClientProtocolOpenAIResponses ||
+		request.Model == "" {
+		return inferencegateway.Route{}, ErrInvalidRequest
+	}
+	if err := ctx.Err(); err != nil {
+		return inferencegateway.Route{}, err
+	}
+	route, err := selector.routes.ResolveProtocolRoute(
+		ctx,
+		request.ClientProtocol,
+		request.Model,
+		inference.ProviderCodex,
+		inference.ProtocolCodexResponses,
+	)
+	if err != nil {
+		return inferencegateway.Route{}, err
+	}
+	// 原生 WS 的核心合同是除观察字段外不重写客户端帧。若别名解析改变模型，
+	// 应让调用方走 Canonical HTTP 路径，而不是悄悄修改原始 JSON。
+	if route.EffectiveModel() != request.Model {
+		return inferencegateway.Route{}, ErrModelRewriteRequired
+	}
+	return route, nil
+}
+
+type recruitmentSelectionCursor struct {
+	route   inferencegateway.Route
+	session *accountrouting.RecruitmentSession
+}
+
+func (cursor *recruitmentSelectionCursor) Next(ctx context.Context) (Selection, bool, error) {
+	if cursor == nil || cursor.session == nil {
+		return Selection{}, false, nil
+	}
+	result, err := cursor.session.Next(ctx)
+	if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+		return Selection{}, false, nil
+	}
+	if err != nil {
+		return Selection{}, false, err
+	}
+	selection, err := NewSelection(
+		cursor.route,
+		result.Account().Ref(),
+		result.Credential(),
+		result.CredentialObservation(),
+	)
+	if err != nil {
+		return Selection{}, false, err
+	}
+	return selection, true, nil
+}
+
+type singleShotSelectionCursor struct {
+	route       inferencegateway.Route
+	recruiter   AccountRecruiter
+	recruitment accountrouting.Request
+	transports  accountrouting.CredentialTransportPolicy
+	done        bool
+}
+
+func (cursor *singleShotSelectionCursor) Next(ctx context.Context) (Selection, bool, error) {
+	if cursor == nil || cursor.done || cursor.recruiter == nil {
+		return Selection{}, false, nil
+	}
+	cursor.done = true
+	result, err := cursor.recruiter.Recruit(ctx, cursor.recruitment, cursor.transports)
+	if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+		return Selection{}, false, nil
+	}
+	if err != nil {
+		return Selection{}, false, err
+	}
+	selection, err := NewSelection(
+		cursor.route,
+		result.Account().Ref(),
+		result.Credential(),
+		result.CredentialObservation(),
+	)
+	if err != nil {
+		return Selection{}, false, err
+	}
+	return selection, true, nil
 }
 
 // pinnedAccountUsable 判定钉选账号对目标模型是否还能继续服务。

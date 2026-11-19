@@ -246,12 +246,32 @@ func recordCodexFailure(
 	observation accountcredentials.CredentialObservation,
 	failure inferencegateway.AttemptFailure,
 ) (bool, error) {
+	recorded, _, err := recordCodexFailureWithReceipt(
+		ctx,
+		attempts,
+		modelRefreshes,
+		route,
+		observation,
+		failure,
+	)
+	return recorded, err
+}
+
+// recordCodexFailureWithReceipt 记录运行态失败，并在写入被接受时原子返回本次冷却代次凭证。
+func recordCodexFailureWithReceipt(
+	ctx context.Context,
+	attempts *inferencegateway.ObservedAttemptRecorder,
+	modelRefreshes inferencegateway.ModelRefreshScheduler,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure inferencegateway.AttemptFailure,
+) (bool, runtimecore.CooldownReceipt, error) {
 	if attempts == nil || modelRefreshes == nil {
-		return false, ErrInvalidObserverState
+		return false, runtimecore.CooldownReceipt{}, ErrInvalidObserverState
 	}
-	recorded, err := attempts.RecordFailure(ctx, route, observation, failure)
+	recorded, receipt, err := attempts.RecordFailureWithReceipt(ctx, route, observation, failure)
 	if err != nil || !recorded {
-		return recorded, err
+		return recorded, runtimecore.CooldownReceipt{}, err
 	}
 	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
 		_ = modelRefreshes.ScheduleModelRefresh(
@@ -260,7 +280,7 @@ func recordCodexFailure(
 			"codex",
 		)
 	}
-	return true, nil
+	return true, receipt, nil
 }
 
 // ActiveGenerating 判断连接断开时是否存在应归属到账号的真实生成请求。

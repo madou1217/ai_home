@@ -5,7 +5,6 @@
 package codexresponsesws
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,12 +20,12 @@ import (
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
-	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
@@ -102,21 +101,25 @@ type Dependencies struct {
 	Routes RouteObserver
 	// Ladders 可选：目标模型的推理强度档位；nil 表示不对齐，帧原样透传。
 	Ladders effortalign.LadderReader
+	// Upstream429Retries 可选：上游 WS 握手阶段原始 HTTP 429 有界等待重试控制器。
+	// 仅在尚未向任何上游发送业务帧（response.create）的握手阶段生效；连接内帧永不重试。
+	Upstream429Retries *upstreamretry.Controller
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
 type Handler struct {
-	authorizer     Authorizer
-	selector       Selector
-	upstream       UpstreamDialer
-	attempts       *inferencegateway.ObservedAttemptRecorder
-	modelRefreshes inferencegateway.ModelRefreshScheduler
-	routeMisses    RouteMissReporter
-	clock          func() time.Time
-	rules          configured.Rules
-	routes         RouteObserver
-	ladders        effortalign.LadderReader
-	sessions       *sessionRegistry
+	authorizer         Authorizer
+	selector           Selector
+	upstream           UpstreamDialer
+	attempts           *inferencegateway.ObservedAttemptRecorder
+	modelRefreshes     inferencegateway.ModelRefreshScheduler
+	routeMisses        RouteMissReporter
+	clock              func() time.Time
+	rules              configured.Rules
+	routes             RouteObserver
+	ladders            effortalign.LadderReader
+	upstream429Retries *upstreamretry.Controller
+	sessions           *sessionRegistry
 	// sessionAccounts 记住每个 Codex 会话上次由哪个账号服务，换号时剥离旧账号的加密推理。
 	sessionAccounts *sessionAccounts
 }
@@ -141,18 +144,19 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:      dependencies.Authorizer,
-		selector:        dependencies.Selector,
-		upstream:        dependencies.Upstream,
-		attempts:        attempts,
-		modelRefreshes:  dependencies.ModelRefreshes,
-		routeMisses:     dependencies.RouteMisses,
-		clock:           dependencies.Clock,
-		rules:           dependencies.Rules,
-		routes:          dependencies.Routes,
-		ladders:         dependencies.Ladders,
-		sessions:        newSessionRegistry(),
-		sessionAccounts: newSessionAccounts(),
+		authorizer:         dependencies.Authorizer,
+		selector:           dependencies.Selector,
+		upstream:           dependencies.Upstream,
+		attempts:           attempts,
+		modelRefreshes:     dependencies.ModelRefreshes,
+		routeMisses:        dependencies.RouteMisses,
+		clock:              dependencies.Clock,
+		rules:              dependencies.Rules,
+		routes:             dependencies.Routes,
+		ladders:            dependencies.Ladders,
+		upstream429Retries: dependencies.Upstream429Retries,
+		sessions:           newSessionRegistry(),
+		sessionAccounts:    newSessionAccounts(),
 	}, nil
 }
 
@@ -253,39 +257,34 @@ func (handler *Handler) ServeHTTP(
 		_ = client.Close(websocket.StatusPolicyViolation, "invalid response.create")
 		return
 	}
-	selection, err := handler.selector.Select(
-		session.Context(),
-		codexwebsocket.Request{
-			ClientProtocol:   inference.ClientProtocolOpenAIResponses,
-			Model:            firstRequest.Model,
-			PinnedAccountRef: strings.TrimSpace(request.Header.Get("X-Account-Ref")),
-		},
+	pinnedAccountRef := strings.TrimSpace(request.Header.Get("X-Account-Ref"))
+	sessionID := strings.TrimSpace(request.Header.Get("Session-Id"))
+	upstream, selection, route, connected := handler.connectUpstreamForTurn(
+		session,
+		firstRequest.Model,
+		pinnedAccountRef,
+		request.Header,
+		request.Host,
 	)
-	if err != nil {
-		handler.writeSelectionError(client, err)
+	if !connected {
 		return
 	}
-	route, err := runtimecore.NewModelRoute(
-		selection.AccountRef(),
-		selection.Route().EffectiveModel(),
-	)
-	if err != nil {
-		writeWebSocketError(
-			client,
-			http.StatusInternalServerError,
-			"invalid_runtime_route",
-			"账号运行态路由无效",
-		)
+	if upstream == nil || !session.SetUpstream(upstream) {
+		if upstream != nil {
+			_ = upstream.CloseNow()
+		}
 		return
 	}
+	upstream.SetReadLimit(MaxMessageBytes)
 	handler.observeRoute(request.Header.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
+	sendFrame := firstFrame
 	if previous, found := handler.sessionAccounts.Swap(
-		strings.TrimSpace(request.Header.Get("Session-Id")),
+		sessionID,
 		selection.AccountRef(),
 		handler.clock(),
 	); found && previous != selection.AccountRef() {
 		session.stripForeignReasoning = true
-		firstFrame = stripForeignReasoning(firstFrame)
+		sendFrame = stripForeignReasoning(sendFrame)
 	}
 	observer := newTurnObserver(
 		firstRequest.Model,
@@ -296,7 +295,7 @@ func (handler *Handler) ServeHTTP(
 		handler.clock,
 		handler.rules,
 	)
-	if err := observer.Begin(firstFrame); err != nil {
+	if err := observer.Begin(sendFrame); err != nil {
 		writeWebSocketError(
 			client,
 			http.StatusBadRequest,
@@ -305,39 +304,11 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	dialCtx, cancelDial := context.WithTimeout(
-		session.Context(),
-		upstreamDialTimeout,
-	)
-	upstream, upstreamResponse, dialErr := handler.upstream.Connect(
-		dialCtx,
-		selection.Credential(),
-		request.Header,
-		request.Host,
-	)
-	cancelDial()
-	if dialErr != nil {
-		handler.handleDialFailure(
-			client,
-			route,
-			selection.CredentialObservation(),
-			upstreamResponse,
-			dialErr,
-		)
-		return
-	}
-	if upstream == nil || !session.SetUpstream(upstream) {
-		if upstream != nil {
-			_ = upstream.CloseNow()
-		}
-		return
-	}
-	upstream.SetReadLimit(MaxMessageBytes)
 	if err := writeMessage(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		handler.prepareClientFrame(firstFrame, firstRequest.Model, route.ModelID().String()),
+		handler.prepareClientFrame(sendFrame, firstRequest.Model, route.ModelID().String()),
 	); err != nil {
 		handler.recordTransportFailure(
 			route,
@@ -357,8 +328,8 @@ func (handler *Handler) ServeHTTP(
 		observer,
 		request.Header,
 		request.Host,
-		strings.TrimSpace(request.Header.Get("X-Account-Ref")),
-		strings.TrimSpace(request.Header.Get("Session-Id")),
+		pinnedAccountRef,
+		sessionID,
 	)
 }
 
@@ -464,47 +435,14 @@ func (handler *Handler) switchModel(
 	if handler == nil || session == nil || strings.TrimSpace(model) == "" {
 		return nil, false
 	}
-	selection, err := handler.selector.Select(
-		session.Context(),
-		codexwebsocket.Request{
-			ClientProtocol:   inference.ClientProtocolOpenAIResponses,
-			Model:            model,
-			PinnedAccountRef: pinnedAccountRef,
-		},
-	)
-	if err != nil {
-		handler.writeSelectionError(session.Client(), err)
-		return nil, false
-	}
-	route, err := runtimecore.NewModelRoute(
-		selection.AccountRef(),
-		selection.Route().EffectiveModel(),
-	)
-	if err != nil {
-		writeWebSocketError(session.Client(), http.StatusInternalServerError, "invalid_runtime_route", "账号运行态路由无效")
-		return nil, false
-	}
-	handler.observeRoute(clientHeader.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
-	if previous, found := handler.sessionAccounts.Swap(sessionID, selection.AccountRef(), handler.clock()); found && previous != selection.AccountRef() {
-		session.stripForeignReasoning = true
-		frame = stripForeignReasoning(frame)
-	}
-	dialCtx, cancelDial := context.WithTimeout(session.Context(), upstreamDialTimeout)
-	upstream, upstreamResponse, dialErr := handler.upstream.Connect(
-		dialCtx,
-		selection.Credential(),
+	upstream, selection, route, connected := handler.connectUpstreamForTurn(
+		session,
+		model,
+		pinnedAccountRef,
 		clientHeader,
 		localAuthority,
 	)
-	cancelDial()
-	if dialErr != nil {
-		handler.handleDialFailure(
-			session.Client(),
-			route,
-			selection.CredentialObservation(),
-			upstreamResponse,
-			dialErr,
-		)
+	if !connected {
 		return nil, false
 	}
 	if upstream == nil || !session.ReplaceUpstream(upstream) {
@@ -514,6 +452,12 @@ func (handler *Handler) switchModel(
 		return nil, false
 	}
 	upstream.SetReadLimit(MaxMessageBytes)
+	handler.observeRoute(clientHeader.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
+	sendFrame := frame
+	if previous, found := handler.sessionAccounts.Swap(sessionID, selection.AccountRef(), handler.clock()); found && previous != selection.AccountRef() {
+		session.stripForeignReasoning = true
+		sendFrame = stripForeignReasoning(sendFrame)
+	}
 	observer := newTurnObserver(
 		model,
 		route,
@@ -523,7 +467,7 @@ func (handler *Handler) switchModel(
 		handler.clock,
 		handler.rules,
 	)
-	if err := observer.Begin(frame); err != nil {
+	if err := observer.Begin(sendFrame); err != nil {
 		_ = upstream.CloseNow()
 		writeWebSocketError(session.Client(), http.StatusBadRequest, "invalid_response_create", "首帧必须是有效的 response.create")
 		return nil, false
@@ -532,7 +476,7 @@ func (handler *Handler) switchModel(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		handler.prepareClientFrame(frame, model, selection.Route().EffectiveModel()),
+		handler.prepareClientFrame(sendFrame, model, selection.Route().EffectiveModel()),
 	); err != nil {
 		handler.recordTransportFailure(route, selection.CredentialObservation(), err)
 		_ = upstream.CloseNow()
@@ -550,6 +494,12 @@ func (handler *Handler) handleDialFailure(
 	response *http.Response,
 	dialErr error,
 ) {
+	var prefix []byte
+	var readErr error
+	if response != nil && response.Body != nil {
+		prefix, readErr = io.ReadAll(io.LimitReader(response.Body, sharedfailure.MaxErrorPayloadBytes+1))
+		_ = response.Body.Close()
+	}
 	if errors.Is(dialErr, responseswebsocket.ErrSelfLoop) ||
 		errors.Is(dialErr, responseswebsocket.ErrInvalidEndpoint) ||
 		errors.Is(dialErr, responseswebsocket.ErrUnsupportedCredential) {
@@ -561,30 +511,7 @@ func (handler *Handler) handleDialFailure(
 		)
 		return
 	}
-	var failure inferencegateway.AttemptFailure
-	var err error
-	if response != nil && response.Body != nil {
-		prefix, readErr := io.ReadAll(io.LimitReader(response.Body, sharedfailure.MaxErrorPayloadBytes+1))
-		if readErr == nil {
-			response.Body = io.NopCloser(bytes.NewReader(prefix))
-			observed := *response
-			classification, observeErr := configured.ClassifyWithRules(
-				handler.rules,
-				string(route.AccountRef()),
-				response.StatusCode,
-				prefix,
-				func() (sharedfailure.Classification, error) {
-					return codexfailure.ObserveHTTP(&observed, handler.clock())
-				},
-			)
-			if observeErr == nil {
-				failure, err = attemptfailure.New(classification)
-			}
-		}
-	}
-	if !failure.IsValid() {
-		failure, err = attemptfailure.NewTransport(dialErr)
-	}
+	failure, err := handler.classifyDialFailure(route, response, prefix, readErr, dialErr)
 	if err == nil && failure.IsValid() {
 		_, _ = recordCodexFailure(
 			context.Background(),

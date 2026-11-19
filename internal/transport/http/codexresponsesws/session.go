@@ -10,6 +10,11 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 )
 
+type clientFrame struct {
+	messageType websocket.MessageType
+	payload     []byte
+}
+
 // managedSession 绑定一对客户端/上游连接，并提供一次性取消语义。
 type managedSession struct {
 	mu       sync.Mutex
@@ -20,6 +25,13 @@ type managedSession struct {
 	closed   bool
 	// stripForeignReasoning：本会话上次由另一个账号服务，完整上下文里的加密推理需剥离。
 	stripForeignReasoning bool
+	// clientReaderStarted 在首次进入 429 握手等待时惰性启动唯一客户端读泵，
+	// 以便在不取消 coder/websocket.Read 上下文的前提下即时感知客户端断开，同时
+	// 保持正常 200 快路径零额外 goroutine 开销。
+	clientReaderStarted bool
+	clientFrames        chan clientFrame
+	clientClosed        chan struct{}
+	clientReadErr       error
 }
 
 func newManagedSession(
@@ -77,6 +89,128 @@ func (session *managedSession) Client() responseswebsocket.Connection {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	return session.client
+}
+
+// startClientReader 惰性启动绑定到会话全生命周期的客户端读协程。
+//
+// coder/websocket 取消 Read 的 ctx 会永久关闭连接，因此绝不对单次等待传入短 ctx；
+// 该协程始终使用 session.Context() 读取，进入 429 等待时可即时感知客户端 Close/EOF
+// 并唤醒取消，等待结束后 pumpClientToUpstream 通过 ReadClient 无缝承接后续帧。
+func (session *managedSession) startClientReader() {
+	if session == nil {
+		return
+	}
+	session.mu.Lock()
+	if session.clientReaderStarted || session.closed || session.client == nil {
+		session.mu.Unlock()
+		return
+	}
+	session.clientReaderStarted = true
+	frames := make(chan clientFrame, 1)
+	closed := make(chan struct{})
+	session.clientFrames = frames
+	session.clientClosed = closed
+	client := session.client
+	ctx := session.ctx
+	session.mu.Unlock()
+
+	go func() {
+		for {
+			messageType, payload, err := client.Read(ctx)
+			if err != nil {
+				session.mu.Lock()
+				session.clientReadErr = err
+				session.mu.Unlock()
+				close(closed)
+				return
+			}
+			select {
+			case frames <- clientFrame{messageType: messageType, payload: payload}:
+			case <-ctx.Done():
+				session.mu.Lock()
+				session.clientReadErr = ctx.Err()
+				session.mu.Unlock()
+				close(closed)
+				return
+			default:
+				// The single bounded pending slot is already full (client pipelined
+				// multiple unconsumed frames, violating the serial turn contract).
+				// Never block this sole disconnect-detecting reader waiting to enqueue:
+				// fail closed immediately, signal ClientClosed, and cancel the session
+				// so any active 429 backoff wait aborts without retrying upstream.
+				session.mu.Lock()
+				session.clientReadErr = ErrConcurrentTurn
+				session.mu.Unlock()
+				close(closed)
+				session.Cancel()
+				return
+			}
+		}
+	}()
+}
+
+// ClientClosed 返回客户端断开信号通道；未启动读协程时返回 nil。
+func (session *managedSession) ClientClosed() <-chan struct{} {
+	if session == nil {
+		return nil
+	}
+	session.mu.Lock()
+	closed := session.clientClosed
+	session.mu.Unlock()
+	return closed
+}
+
+// ClientReadErr 返回客户端读协程终止原因（正常断开、EOF 或并发帧溢出协议错误）。
+func (session *managedSession) ClientReadErr() error {
+	if session == nil {
+		return nil
+	}
+	session.mu.Lock()
+	err := session.clientReadErr
+	session.mu.Unlock()
+	return err
+}
+
+// ReadClient 在未启动读协程时直调 client.Read，已启动时从共享读通道无损承接。
+func (session *managedSession) ReadClient(
+	ctx context.Context,
+) (websocket.MessageType, []byte, error) {
+	if session == nil {
+		return 0, nil, context.Canceled
+	}
+	session.mu.Lock()
+	started := session.clientReaderStarted
+	frames := session.clientFrames
+	closed := session.clientClosed
+	client := session.client
+	session.mu.Unlock()
+	if !started {
+		return client.Read(ctx)
+	}
+	select {
+	case frame := <-frames:
+		return frame.messageType, frame.payload, nil
+	default:
+	}
+	select {
+	case frame := <-frames:
+		return frame.messageType, frame.payload, nil
+	case <-closed:
+		select {
+		case frame := <-frames:
+			return frame.messageType, frame.payload, nil
+		default:
+		}
+		session.mu.Lock()
+		err := session.clientReadErr
+		session.mu.Unlock()
+		if err == nil {
+			err = context.Canceled
+		}
+		return 0, nil, err
+	case <-ctx.Done():
+		return 0, nil, ctx.Err()
+	}
 }
 
 // Upstream 返回已经建立的上游连接。
@@ -176,7 +310,7 @@ func (handler *Handler) pumpClientToUpstream(
 	client := session.Client()
 	upstream := session.Upstream()
 	for {
-		messageType, payload, err := client.Read(session.Context())
+		messageType, payload, err := session.ReadClient(session.Context())
 		if err != nil {
 			results <- resultFromRead(pumpSourceClient, err, false)
 			return

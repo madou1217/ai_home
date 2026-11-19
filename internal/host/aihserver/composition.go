@@ -2244,6 +2244,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Upstream:               webSocketDialer,
 			Attempts:               accountRuntime,
 			CredentialObservations: credentials,
+			Upstream429Retries:     upstream429Controller,
 			ModelRefreshes:         inference.modelRefreshes,
 			RouteMisses:            routeMissRefresh,
 			Clock:                  time.Now,

@@ -47,11 +47,11 @@ Retry applies **only** when all conditions hold:
 
 ## Covered Execution Surfaces & Remaining Audit Items
 
-- **Covered in this phase (HTTP gateway & Desktop WebUI)**:
+- **Covered in HTTP & Codex WS handshake stages**:
   - Canonical `Coordinator`: `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/models/{m}:[stream]GenerateContent`, `/v1beta/models/{m}:[stream]GenerateContent`.
   - Native HTTP relays: `codexresponseshttp` (`/v1/responses`), `claudenativerelay` (`/v1/messages`), `relaycore` (`/v1/chat/completions` family/relay providers).
-  - Desktop WebUI: Global card in Settings (`Upstream429RetrySettingCard`) and desktop-opt-in per-account `429 重试` tab in `AccountRuntimeSettingsModal` via `Accounts.tsx` (`showUpstream429Retry`), keeping mobile views untouched.
-- **Source-audited remaining surfaces (next mandatory phase)**:
-  - `internal/transport/http/codexresponsesws/handler.go` (WS upstream dial 429 handshake & mid-connection WS error frames).
-  - `internal/transport/http/imagesapi/handler.go` + `internal/adapters/images` (`/v1/images/generations`, `/v1/images/edits`).
+  - Native Codex Responses WebSocket (`codexresponsesws` `/v1/responses` Upgrade): **upstream WS handshake raw HTTP `429` only** (initial handshake and model-switch handshake), strictly BEFORE attaching the upstream connection or sending any business frame (`response.create`) or receiving any upstream output. Client `websocket.Accept` (101) remains before first-frame parsing; mid-connection WS error frames (`error` / `response.failed`) and post-write errors are explicitly excluded and keep existing `observer`/`failover` semantics.
+  - Desktop WebUI (implemented, pending GUI acceptance): Global card in Settings (`Upstream429RetrySettingCard`) and desktop-opt-in per-account `429 重试` tab in `AccountRuntimeSettingsModal` via `Accounts.tsx` (`showUpstream429Retry`), keeping mobile views untouched.
+- **Source-audited remaining surfaces (next stages)**:
   - `internal/transport/http/webuichatapi/handler.go` direct relay turn loop (canonical `ChatGateway` path already flows through covered `familyRelayHandler` -> `Coordinator`).
+  - `internal/transport/http/imagesapi/handler.go` + `internal/adapters/images` (`/v1/images/generations`, `/v1/images/edits` — currently owned by another active P0 workstream).

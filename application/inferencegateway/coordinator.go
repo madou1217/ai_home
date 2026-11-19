@@ -37,6 +37,14 @@ func ConfigureUpstreamAttemptLimit(limit int) error {
 	return nil
 }
 
+// ConfiguredUpstreamAttemptLimit 返回本进程当前生效的上游账号尝试上限。
+//
+// 其它推理入口（例如聊天轮次执行）必须读同一份值，避免出现「协调器 3 次、
+// 聊天 4 次」这类同一进程内两套上限。
+func ConfiguredUpstreamAttemptLimit() int {
+	return effectiveUpstreamAttemptLimit()
+}
+
 func effectiveUpstreamAttemptLimit() int {
 	if value := int(configuredUpstreamAttemptLimit.Load()); value > 0 {
 		return value

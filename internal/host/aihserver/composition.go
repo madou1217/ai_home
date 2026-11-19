@@ -2126,7 +2126,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Client:   relayClient,
 		Attempts: accountRuntime,
 		Usage:    attemptUsage,
-		Clock:    time.Now,
+		// 与协调器共用同一份 --max-attempts：进程内不能有两套上游尝试上限。
+		MaxAttempts: inferencegateway.ConfiguredUpstreamAttemptLimit(),
+		Clock:       time.Now,
 	})
 	if err != nil {
 		_ = inference.Close()

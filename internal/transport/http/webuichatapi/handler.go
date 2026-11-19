@@ -37,8 +37,9 @@ const (
 	ManagementCollectionPath = "/v1/management/webui/chat/sessions/"
 	// DefaultMaxBodyBytes 与 Node readJsonBody 的默认上限一致（1MB）。
 	DefaultMaxBodyBytes int64 = 1024 * 1024
-	// DefaultMaxAttempts 与 relaycore 的上游尝试上限一致：账号池很大时不设上限
-	// 会让单个请求长时间打转，客户端只观察到超时。
+	// DefaultMaxAttempts 只在调用方没有注入上限（且进程级未配置）时兜底；
+	// 生产装配读的是 inferencegateway.ConfiguredUpstreamAttemptLimit()，与
+	// --max-attempts 同一份值。账号池很大时不设上限会让单个请求长时间打转。
 	DefaultMaxAttempts = 4
 	// DefaultHeartbeatInterval 与 Node DEFAULT_HEARTBEAT_MS 一致。
 	DefaultHeartbeatInterval = 15 * time.Second
@@ -165,6 +166,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		maxBodyBytes = DefaultMaxBodyBytes
 	}
 	maxAttempts := dependencies.MaxAttempts
+	if maxAttempts <= 0 {
+		// 进程级 --max-attempts 已配置时跟随它，不再吃本包私有的兜底值。
+		if configured := inferencegateway.ConfiguredUpstreamAttemptLimit(); configured > 0 {
+			maxAttempts = configured
+		}
+	}
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultMaxAttempts
 	}

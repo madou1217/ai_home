@@ -43,10 +43,12 @@ const (
 var ErrInvalidRequest = errors.New("invalid login job request")
 
 var (
-	loginURLPattern   = regexp.MustCompile("https://(?:www\\.)?(?:codebuddy|workbuddy)\\.(?:ai|cn)/login\\?[^\\s\"'\x60\x1b]+")
-	siteMenuPattern   = regexp.MustCompile("(?i)Select login method")
-	siteMenuAdvance   = regexp.MustCompile("(?i)Waiting for auth|Successfully|Logged in|登录成功")
-	ansiEscapePattern = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
+	loginURLPattern = regexp.MustCompile("https://(?:www\\.)?(?:codebuddy|workbuddy)\\.(?:ai|cn)/login\\?[^\\s\"'\x60\x1b]+")
+	// genericAuthURLPattern 捕获 codex/grok/qoder/kimi/cline 等官方 CLI 输出的授权链接。
+	genericAuthURLPattern = regexp.MustCompile("https://[^\\s\"'\x60\x1b]+")
+	siteMenuPattern       = regexp.MustCompile("(?i)Select login method")
+	siteMenuAdvance       = regexp.MustCompile("(?i)Waiting for auth|Successfully|Logged in|登录成功")
+	ansiEscapePattern     = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
 )
 
 // Snapshot 是给轮询方的最小作业视图。
@@ -178,6 +180,18 @@ func runDefault(ctx context.Context, options aihlogin.Options) (accountcore.Acco
 		Stdout:      options.Stdout,
 		Stderr:      options.Stderr,
 	})
+}
+
+// Supports 报告该 Provider 是否有 Go CLI 登录实现（CodeBuddy 家族或 clilogin 已登记）。
+func (manager *Manager) Supports(providerID string) bool {
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	if provider == "" {
+		return false
+	}
+	if codebuddyfamilystorage.IsFamilyProvider(provider) {
+		return true
+	}
+	return clilogin.Supported(provider)
 }
 
 // Start 启动一次登录作业并立即返回快照。
@@ -379,7 +393,11 @@ func (writer *logWriter) Write(data []byte) (int, error) {
 		writer.entry.logs.WriteString(text)
 	}
 	if writer.entry.authURL == "" {
-		if match := loginURLPattern.FindString(text); match != "" {
+		match := loginURLPattern.FindString(text)
+		if match == "" {
+			match = genericAuthURLPattern.FindString(text)
+		}
+		if match != "" {
 			writer.entry.authURL = match
 			if writer.entry.progress == "" || writer.entry.progress == "starting" {
 				writer.entry.progress = "auth_url_ready"

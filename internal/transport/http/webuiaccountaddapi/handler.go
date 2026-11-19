@@ -306,8 +306,8 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		}
 	}
 
-	if provider == "agy" && strings.EqualFold(strategy, "native-cli") && handler.loginJobs != nil {
-		handler.startLoginJob(response, request, provider)
+	if handler.shouldUseCLILogin(provider, authMode, strategy) {
+		handler.startLoginJob(response, request, provider, authMode)
 		return
 	}
 
@@ -386,7 +386,41 @@ func (handler *Handler) handleJob(response http.ResponseWriter, request *http.Re
 }
 
 // startLoginJob 把 agy native-cli 启动委托给 Go CLI 登录作业引擎。
-func (handler *Handler) startLoginJob(response http.ResponseWriter, request *http.Request, provider string) {
+// shouldUseCLILogin 决定是否走原生 CLI 登录作业。
+//
+// agy 只有显式选择 native-cli 才走 CLI（默认是 Go 直连 Google OAuth）；
+// qoder/grok/kimi/cline/CodeBuddy 家族的浏览器登录本来就是官方 CLI 流程，
+// 由 aihloginjob 统一承载，不再要求 Node 本地作业。
+func (handler *Handler) shouldUseCLILogin(provider, authMode, strategy string) bool {
+	if handler.loginJobs == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(strategy), "native-cli") {
+		return true
+	}
+	if provider == "codex" && strings.EqualFold(strings.TrimSpace(authMode), "oauth-device") {
+		return true
+	}
+	switch provider {
+	case "grok", "qoder", "qodercn", "kimi", "cline",
+		"codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+		if finder, ok := handler.loginJobs.(interface{ Supports(string) bool }); ok {
+			return finder.Supports(provider)
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func resolvedLoginAuthMode(authMode string) string {
+	if mode := strings.TrimSpace(authMode); mode != "" {
+		return mode
+	}
+	return "oauth-browser"
+}
+
+func (handler *Handler) startLoginJob(response http.ResponseWriter, request *http.Request, provider, authMode string) {
 	snapshot, err := handler.loginJobs.Start(request.Context(), provider)
 	if err != nil {
 		writeError(response, http.StatusBadGateway, "login_job_start_failed", "CLI 登录作业启动失败", nil)
@@ -396,7 +430,7 @@ func (handler *Handler) startLoginJob(response http.ResponseWriter, request *htt
 		OK:                true,
 		Provider:          provider,
 		Purpose:           string(accountauth.PurposeRegister),
-		AuthMode:          "oauth-browser",
+		AuthMode:          resolvedLoginAuthMode(authMode),
 		AuthStrategy:      "native-cli",
 		Status:            "pending",
 		JobID:             snapshot.ID,

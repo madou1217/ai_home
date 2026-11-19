@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/application/accountauth"
+	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 )
 
 // Path 是账号授权作业快照的管理前缀。
@@ -40,12 +41,21 @@ type JobReader interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	Jobs       JobReader
+	// LoginJobs 让同一 /account-jobs/{id} 端点也能读取 CLI 登录作业（agy/grok/
+	// qoder/kimi/cline/CodeBuddy 家族等）；没有装配时只读 OAuth 作业。
+	LoginJobs LoginJobReader
+}
+
+// LoginJobReader 是 CLI 登录作业的快照端口（aihloginjob.Manager 实现）。
+type LoginJobReader interface {
+	Get(id string) (aihloginjob.Snapshot, bool)
 }
 
 // Handler 处理 /v1/management/webui/account-jobs* 请求。
 type Handler struct {
 	authorizer Authorizer
 	jobs       JobReader
+	loginJobs  LoginJobReader
 }
 
 // NewHandler 创建并校验处理器。
@@ -53,7 +63,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Jobs == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, jobs: dependencies.Jobs}, nil
+	return &Handler{authorizer: dependencies.Authorizer, jobs: dependencies.Jobs, loginJobs: dependencies.LoginJobs}, nil
 }
 
 // ServeHTTP 只支持 GET：作业状态是只读视图。
@@ -84,6 +94,16 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	job, err := handler.jobs.GetJob(request.Context(), jobID)
+	if errors.Is(err, accountauth.ErrJobNotFound) && handler.loginJobs != nil {
+		if snapshot, found := handler.loginJobs.Get(jobID); found {
+			writeJSON(response, http.StatusOK, map[string]any{
+				"ok":        true,
+				"recovered": false,
+				"job":       serializeLoginJob(snapshot),
+			})
+			return
+		}
+	}
 	if errors.Is(err, accountauth.ErrJobNotFound) {
 		writeError(response, http.StatusNotFound, "job_not_found", "作业不存在")
 		return
@@ -211,6 +231,64 @@ func authProgressLogs(authMode string, status accountauth.Status, recovered bool
 		return "等待浏览器回调，或粘贴回调地址…"
 	default:
 		return "等待授权…"
+	}
+}
+
+// serializeLoginJob 把 CLI 登录作业投影成 account-add 作业形状。
+func serializeLoginJob(snapshot aihloginjob.Snapshot) map[string]any {
+	status := "running"
+	switch snapshot.Status {
+	case aihloginjob.StatusSucceeded:
+		status = "succeeded"
+	case aihloginjob.StatusFailed:
+		status = "failed"
+	case aihloginjob.StatusCancelled:
+		status = "cancelled"
+	case aihloginjob.StatusExpired:
+		status = "expired"
+	}
+	progress := strings.TrimSpace(snapshot.Progress)
+	if progress == "" {
+		progress = "starting"
+	}
+	authMode := "oauth-browser"
+	if strings.EqualFold(snapshot.Provider, "codex") {
+		authMode = "oauth-device"
+	}
+	return map[string]any{
+		"id":                      snapshot.ID,
+		"provider":                snapshot.Provider,
+		"accountRef":              snapshot.AccountRef,
+		"authMode":                authMode,
+		"authStrategy":            "native-cli",
+		"reauth":                  false,
+		"status":                  status,
+		"goStatus":                string(snapshot.Status),
+		"authProgressState":       progress,
+		"logs":                    snapshot.Logs,
+		"exitCode":                nil,
+		"error":                   snapshot.Error,
+		"failureCode":             snapshot.Error,
+		"createdAt":               snapshot.StartedAt.UnixMilli(),
+		"updatedAt":               snapshot.UpdatedAt.UnixMilli(),
+		"lastOutputAt":            snapshot.UpdatedAt.UnixMilli(),
+		"pid":                     nil,
+		"expiresAt":               snapshot.ExpiresAt.UnixMilli(),
+		"pollIntervalMs":          1000,
+		"verificationUri":         snapshot.AuthURL,
+		"verificationUriComplete": "",
+		"userCode":                "",
+		"authorizationUrl":        snapshot.AuthURL,
+		"redirectUri":             "",
+		"callbackCaptureStatus":   "",
+		"callbackListeningUrl":    "",
+		"callbackCaptureError":    "",
+		"email":                   "",
+		"displayName":             "",
+		"planType":                "",
+		"setupPhase":              "",
+		"installRequired":         false,
+		"installAttempts":         []any{},
 	}
 }
 

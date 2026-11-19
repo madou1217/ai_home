@@ -61,6 +61,8 @@ type Options struct {
 type providerSpec struct {
 	layout         func(catalog *providers.Catalog, hostHomeDir, runtimeDir string) (configDir string, env map[string]string, err error)
 	readCredential func(configDir string) ([]byte, error)
+	// loginArgs 在合同的 LoginArgs 上追加 Provider 专属参数（例如 codex --device-auth）。
+	loginArgs func([]string) []string
 }
 
 // providerSpecs 是已迁移 Provider 的唯一注册点。
@@ -126,9 +128,13 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 	if err != nil {
 		return accountcore.Account{}, fmt.Errorf("%s 官方 CLI 不存在: %w", providerID, err)
 	}
+	loginArgs := append([]string(nil), definition.CLI.LoginArgs...)
+	if spec.loginArgs != nil {
+		loginArgs = spec.loginArgs(loginArgs)
+	}
 	code, runErr := ptyhost.Run(ctx, ptyhost.Config{
 		Path:    binaryPath,
-		Args:    append([]string(nil), definition.CLI.LoginArgs...),
+		Args:    loginArgs,
 		Env:     environmentList(env),
 		Dir:     workspaceDir,
 		Stdin:   options.Stdin,

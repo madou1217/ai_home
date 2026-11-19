@@ -57,11 +57,11 @@ func TestDispatchDaemonInjectBusyThenQuietSinglePointZeroWait(t *testing.T) {
 		From: RecordParty{Name: "sender-pane", Address: "sender-pane"},
 		To: RecordParty{
 			Channel:  "inject",
-			Provider: "codex",
+			Provider: "claude",
 			Name:     "worker-pane",
 			Address:  "worker-pane",
 			Delivery: &DeliveryTarget{
-				CLIName:      "codex",
+				CLIName:      "claude",
 				RuntimeScope: "gateway",
 				SessionName:  "worker-pane",
 			},
@@ -74,9 +74,14 @@ func TestDispatchDaemonInjectBusyThenQuietSinglePointZeroWait(t *testing.T) {
 
 	var mu sync.Mutex
 	var commands [][]string
-	activitySec := atomic.Int64{}
-	// 最后活动在 200ms 前（< 1200ms 安静期）-> busy
-	activitySec.Store((nowMs.Load() - 200) / 1000)
+	// 活动判定用 pane 内容指纹，输入框守卫解析同一份 capture-pane 内容：
+	// 这里给一个「空输入框」的稳定画面——提示符 + 分隔线 + footer，
+	// 首个探测视为“刚活动”，内容不变即判定安静。
+	paneFixture := strings.Join([]string{
+		"› ",
+		"────────",
+		"100% context left",
+	}, "\n")
 
 	tickCh := make(chan time.Time, 4)
 	daemon, err := StartDispatchDaemon(context.Background(), DispatchDaemonOptions{
@@ -91,8 +96,12 @@ func TestDispatchDaemonInjectBusyThenQuietSinglePointZeroWait(t *testing.T) {
 				commands = append(commands, append([]string(nil), args...))
 				mu.Unlock()
 				for _, a := range args {
-					if a == "display-message" {
-						return fmt.Sprintf("%d\n", activitySec.Load()), 0, nil
+					if a == "capture-pane" {
+						return paneFixture, 0, nil
+					}
+					// 输入框守卫先读光标行；空输入框的光标在第 0 行。
+					if strings.Contains(a, "#{cursor_y}") {
+						return "0", 0, nil
 					}
 				}
 				return "", 0, nil
@@ -113,9 +122,12 @@ func TestDispatchDaemonInjectBusyThenQuietSinglePointZeroWait(t *testing.T) {
 		t.Fatalf("Tick 1 summary = %+v, want attempted=1 pending=1 delivered=0", summary)
 	}
 	mu.Lock()
-	if len(commands) != 1 || commands[0][3] != "display-message" {
+	// 现行探测先读 pane 内容判定「是否在跑」（capture-pane），而不是 query
+	// window_activity（display-message）；同一个 tmux 会话里两者都可能出现，
+	// 这里断言的是本实现选用的那一种。
+	if len(commands) != 1 || commands[0][3] != "capture-pane" {
 		mu.Unlock()
-		t.Fatalf("Tick 1 expected single display-message probe, got %v", commands)
+		t.Fatalf("Tick 1 expected single capture-pane probe, got %v", commands)
 	}
 	mu.Unlock()
 
@@ -131,12 +143,28 @@ func TestDispatchDaemonInjectBusyThenQuietSinglePointZeroWait(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(commands) != 4 {
-		t.Fatalf("expected 4 tmux calls (probe, probe, send-keys text, send-keys Enter), got %d: %v", len(commands), commands)
+	// 命令序列随输入框守卫/内容指纹探测增加，断言「找到了带 envelope 的原文投递」
+	// 而不是固定下标；顺序语义（先 probe 后 send-keys）由下面的下标比较保证。
+	// 信封已按 eae79515 收敛为紧凑格式：只保留短 id 与来源，不再附带 reply 提示。
+	textIndex := -1
+	for index, args := range commands {
+		if len(args) == 0 {
+			continue
+		}
+		last := args[len(args)-1]
+		// 信封前缀带的是短 id（ShortMessageID），与完整文件名不同，这里按结构断言。
+		if strings.HasPrefix(last, "[aih-peer #") &&
+			strings.Contains(last, " from sender-pane]") &&
+			strings.Contains(last, "line1") {
+			textIndex = index
+			break
+		}
 	}
-	textArgs := commands[2]
-	if textArgs[len(textArgs)-1] != fmt.Sprintf("[aih-peer #%s from sender-pane | reply: aih peer reply %s] line1\\nline2", ShortMessageID(rec.ID), ShortMessageID(rec.ID)) {
-		t.Fatalf("unexpected envelope text arg = %q", textArgs[len(textArgs)-1])
+	if textIndex < 0 {
+		t.Fatalf("未找到带 envelope 的原文投递命令: %v", commands)
+	}
+	if textIndex == 0 {
+		t.Fatalf("原文投递必须发生在探测之后: %v", commands)
 	}
 	if _, err := os.Stat(filepath.Join(aiHome, "run", "peer", "archive", rec.ID+".json")); err != nil {
 		t.Fatalf("expected archived record: %v", err)
@@ -158,9 +186,13 @@ func TestFlushPendingFilterBeforeLimitAndRecoverExpire(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		rec, err := store.CreateMessage(CreateMessageInput{
 			ID: fmt.Sprintf("pm-%032d", i+1),
+			// 投递记录要求可验证的发件人身份，缺 From 会被判 peer_record_invalid。
+			From: RecordParty{Channel: "inject", Name: "sender", Address: "sender"},
 			To: RecordParty{
 				Channel: "inject",
-				Delivery: &DeliveryTarget{CLIName: "codex", RuntimeScope: "gateway", SessionName: "s1"},
+				// 每条退避消息指向独立目标：目标级门禁（单点探测）会按目标串行化，
+				// 共用 s1 会让第 2 条起直接判忙，测不出「limit 前的就绪过滤」。
+				Delivery: &DeliveryTarget{CLIName: "claude", RuntimeScope: "gateway", SessionName: fmt.Sprintf("s%d", i+1)},
 			},
 			Body: "backed-off",
 		})
@@ -177,10 +209,11 @@ func TestFlushPendingFilterBeforeLimitAndRecoverExpire(t *testing.T) {
 		nowMs++
 	}
 	readyRec, err := store.CreateMessage(CreateMessageInput{
-		ID: "pm-00000000000000000000000000000099",
+		ID:   "pm-00000000000000000000000000000099",
+		From: RecordParty{Channel: "inject", Name: "sender", Address: "sender"},
 		To: RecordParty{
-			Channel: "inject",
-			Delivery: &DeliveryTarget{CLIName: "codex", RuntimeScope: "gateway", SessionName: "s2"},
+			Channel:  "inject",
+			Delivery: &DeliveryTarget{CLIName: "claude", RuntimeScope: "gateway", SessionName: "s6"},
 		},
 		Body: "ready-now",
 	})
@@ -188,36 +221,42 @@ func TestFlushPendingFilterBeforeLimitAndRecoverExpire(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 放一条过期的消息与一条 inflight 孤儿消息。
-	oldRec := Record{
-		V:         RecordVersion,
+	// 一条已过期消息：走真实创建路径，才能带上自动投递时限等内部字段。
+	oldRec, err := store.CreateMessage(CreateMessageInput{
 		ID:        "pm-00000000000000000000000000000088",
-		To:        RecordParty{Channel: "inject", Delivery: &DeliveryTarget{CLIName: "codex", RuntimeScope: "gateway", SessionName: "old"}},
+		From:      RecordParty{Channel: "inject", Name: "sender", Address: "sender"},
+		To:        RecordParty{Channel: "inject", Delivery: &DeliveryTarget{CLIName: "claude", RuntimeScope: "gateway", SessionName: "old"}},
 		Body:      "expired",
-		CreatedAt: nowMs - int64((25 * time.Hour).Milliseconds()),
-		State:     "pending",
-		Attempts:  []AttemptRecord{},
-	}
-	if err := store.writeRecord("pending", oldRec); err != nil {
+		ExpiresAt: nowMs - 1_000,
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	orphanRec := Record{
-		V:         RecordVersion,
-		ID:        "pm-00000000000000000000000000000077",
-		To:        RecordParty{Channel: "inject", Delivery: &DeliveryTarget{CLIName: "codex", RuntimeScope: "gateway", SessionName: "orphan"}},
-		Body:      "orphan",
-		CreatedAt: nowMs - 10_000,
-		State:     "pending",
-		Attempts:  []AttemptRecord{},
-	}
-	if err := store.writeRecord("inflight", orphanRec); err != nil {
+
+	orphanCreated, err := store.CreateMessage(CreateMessageInput{
+		ID:   "pm-00000000000000000000000000000077",
+		From: RecordParty{Channel: "inject", Name: "sender", Address: "sender"},
+		To:   RecordParty{Channel: "inject", Delivery: &DeliveryTarget{CLIName: "claude", RuntimeScope: "gateway", SessionName: "orphan"}},
+		Body: "orphan",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	// 模拟「claim 前进程崩溃」：把它直接搬到 inflight，不带 claim。
+	if err := os.Rename(
+		filepath.Join(aiHome, "run", "peer", "pending", orphanCreated.ID+".json"),
+		filepath.Join(aiHome, "run", "peer", "inflight", orphanCreated.ID+".json"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	orphanRec := *orphanCreated
+	orphanRec.CreatedAt = nowMs - 10_000
 	staleTime := time.UnixMilli(nowMs).Add(-10 * time.Second)
 	if err := os.Chtimes(filepath.Join(aiHome, "run", "peer", "inflight", orphanRec.ID+".json"), staleTime, staleTime); err != nil {
 		t.Fatal(err)
 	}
 
+	waitQuiet := false
 	var sentSessions []string
 	summary, err := FlushPending(context.Background(), store, FlushOptions{
 		Limit:     5,
@@ -225,9 +264,14 @@ func TestFlushPendingFilterBeforeLimitAndRecoverExpire(t *testing.T) {
 		Now:       nowFn,
 		Delivery: DeliveryOptions{
 			TmuxPath: "tmux",
+			// 本用例只验证「limit 之前先按就绪过滤」：不做安静等待，直接投递。
+			WaitForQuiet: &waitQuiet,
 			TmuxRunner: func(_ context.Context, _ string, args []string) (string, int, error) {
 				for _, a := range args {
-					if a == "display-message" {
+					if a == "capture-pane" {
+						return "› \n────────\n100% context left", 0, nil
+					}
+					if strings.Contains(a, "#{cursor_y}") {
 						return "0\n", 0, nil
 					}
 					if a == "-l" {
@@ -247,9 +291,14 @@ func TestFlushPendingFilterBeforeLimitAndRecoverExpire(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(aiHome, "run", "peer", "archive", readyRec.ID+".json")); err != nil {
 		t.Fatalf("expected readyRec archived: %v", err)
 	}
-	archivedOld, err := store.readRecord("archive", oldRec.ID)
-	if err != nil || archivedOld.State != "failed" || archivedOld.Error != "expired" {
-		t.Fatalf("expected expired record in archive as failed/expired, got %+v err=%v", archivedOld, err)
+	// 现行策略：过期只做语义标记（notification=expired），记录保留在收件箱里
+	// 供人工查看，不再自动归档成 failed（见 ExpireStale 的注释）。
+	expiredOld, err := store.readRecord("pending", oldRec.ID)
+	if err != nil || expiredOld.NotificationState != "expired" {
+		t.Fatalf("expected expired record kept with notification=expired, got %+v err=%v", expiredOld, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(aiHome, "run", "peer", "archive", oldRec.ID+".json")); !os.IsNotExist(statErr) {
+		t.Fatalf("expired record must not be archived, stat err=%v", statErr)
 	}
 }
 
@@ -269,10 +318,11 @@ func TestDeliverNativeUDSAndWebuiChat(t *testing.T) {
 	defer listener.Close()
 
 	var receivedLines []string
-	var wg sync.WaitGroup
-	wg.Add(1)
+	// 有界等待：投递失败时这里必须报出 nativeRes 的失败原因，而不是让整个包
+	// 挂在 wg.Wait() 上直到 go test 超时（会让 go test ./... 停摆十分钟）。
+	received := make(chan struct{})
 	go func() {
-		defer wg.Done()
+		defer close(received)
 		conn, err := listener.Accept()
 		if err != nil {
 			return
@@ -298,9 +348,12 @@ func TestDeliverNativeUDSAndWebuiChat(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// 手工构造的记录必须带 CreatedAt：投递前会投影通知状态，缺少创建时间会让
+	// 自动投递时限被判为「已过期」（auto_horizon_elapsed），记录永远不可投。
 	nativeRes := DeliverRecord(context.Background(), Record{
-		ID:   "pm-native12345678",
-		From: RecordParty{Name: "from-sess", Address: "from-addr"},
+		ID:        "pm-native12345678",
+		CreatedAt: time.Now().UnixMilli(),
+		From:      RecordParty{Name: "from-sess", Address: "from-addr"},
 		To: RecordParty{
 			Channel: "native",
 			Address: fmt.Sprintf("%d", pid),
@@ -314,7 +367,11 @@ func TestDeliverNativeUDSAndWebuiChat(t *testing.T) {
 		ProbeProcessAlive: func(p int) bool { return p == pid },
 		NativeFlushWait:   10 * time.Millisecond,
 	})
-	wg.Wait()
+	select {
+	case <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("UDS 在 5s 内没有收到两帧（native 投递结果 = %+v）", nativeRes)
+	}
 	if !nativeRes.OK || nativeRes.Channel != "native" || !strings.HasPrefix(nativeRes.ChannelMessageID, "cc-msg-") {
 		t.Fatalf("native DeliverRecord() = %+v", nativeRes)
 	}
@@ -322,7 +379,9 @@ func TestDeliverNativeUDSAndWebuiChat(t *testing.T) {
 		t.Fatalf("unexpected UDS frames: %v", receivedLines)
 	}
 
-	// webui-chat 降级链路: submit(409) -> queue.add(200)
+	// webui-chat 忙时的合同：Go 侧把 409 归类为可重试的门禁状态
+	// （chat_target_busy，见 target_gate/scheduling_policy），由调度按退避重试，
+	// 不再像 Node 适配器那样立刻改发 queue.add。这条测试跟随 Go 的现行合同。
 	var seenTypes []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret-key" {
@@ -345,14 +404,15 @@ func TestDeliverNativeUDSAndWebuiChat(t *testing.T) {
 	defer srv.Close()
 
 	chatRes := DeliverRecord(context.Background(), Record{
-		ID: "pm-chat12345678",
-		To: RecordParty{Channel: "webui-chat", SessionID: "chat-s1"},
-		Body: "hello chat",
+		ID:        "pm-chat12345678",
+		CreatedAt: time.Now().UnixMilli(),
+		To:        RecordParty{Channel: "webui-chat", SessionID: "chat-s1"},
+		Body:      "hello chat",
 	}, DeliveryOptions{
 		ServerBaseURL: func() string { return srv.URL },
 		ManagementKey: func() string { return "secret-key" },
 	})
-	if !chatRes.OK || !chatRes.Queued || len(seenTypes) != 2 || seenTypes[0] != "turn.submit" || seenTypes[1] != "queue.add" {
+	if chatRes.OK || chatRes.Queued || chatRes.Error != "chat_target_busy" || len(seenTypes) != 1 || seenTypes[0] != "turn.submit" {
 		t.Fatalf("webui-chat DeliverRecord() = %+v seenTypes=%v", chatRes, seenTypes)
 	}
 }
@@ -363,15 +423,17 @@ func TestDispatchDaemonNonOverlappingAndConcurrentState(t *testing.T) {
 	aiHome := t.TempDir()
 	store := NewDispatchStore(aiHome, StoreOptions{})
 	if _, err := store.CreateMessage(CreateMessageInput{
+		From: RecordParty{Channel: "inject", Name: "sender", Address: "sender"},
 		To: RecordParty{
 			Channel:  "inject",
-			Delivery: &DeliveryTarget{CLIName: "codex", RuntimeScope: "gateway", SessionName: "s1"},
+			Delivery: &DeliveryTarget{CLIName: "claude", RuntimeScope: "gateway", SessionName: "s1"},
 		},
 		Body: "concurrent check",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
+	waitQuiet := false
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var runnerCalls atomic.Int32
@@ -382,13 +444,18 @@ func TestDispatchDaemonNonOverlappingAndConcurrentState(t *testing.T) {
 		testTickCh: tickCh,
 		Delivery: DeliveryOptions{
 			TmuxPath: "tmux",
+			// 本用例验证「Tick 不重叠」，不涉及安静等待与注入协议。
+			WaitForQuiet: &waitQuiet,
 			TmuxRunner: func(_ context.Context, _ string, args []string) (string, int, error) {
 				if runnerCalls.Add(1) == 1 {
 					close(entered)
 					<-release
 				}
 				for _, a := range args {
-					if a == "display-message" {
+					if a == "capture-pane" {
+						return "› \n────────\n100% context left", 0, nil
+					}
+					if strings.Contains(a, "#{cursor_y}") {
 						return "0\n", 0, nil
 					}
 				}

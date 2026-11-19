@@ -114,6 +114,15 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 		candidates = candidates[:limit]
 	}
 	delivery := opts.Delivery
+	// 内容指纹活动追踪必须有跨投递的生命：若每次投递新建 tracker，首次观测一律
+	// 视为「刚活动」，直接 FlushPending（CLI/测试）将永远判定 busy、永远不投递。
+	if delivery.ReadActivityAt == nil {
+		nowFn := delivery.Now
+		if nowFn == nil {
+			nowFn = store.now
+		}
+		delivery.ReadActivityAt = NewPaneActivityTracker(nowFn, delivery.TmuxRunner, delivery.TmuxPath).ReadActivityAt
+	}
 	if delivery.Now == nil {
 		delivery.Now = now
 	}

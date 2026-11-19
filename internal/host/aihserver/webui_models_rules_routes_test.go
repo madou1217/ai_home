@@ -57,8 +57,8 @@ func TestBuildWebUIModelsRulesRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildWebUIModelsRulesRoutes() error = %v", err)
 		}
-		if len(routes) != 24 {
-			t.Fatalf("路由数量 = %d, want 24", len(routes))
+		if len(routes) != 28 {
+			t.Fatalf("路由数量 = %d, want 28", len(routes))
 		}
 
 		// 验证与 webuiroutes.go 既有 openai-models 路由以及 router.go model-aliases 路由无冲突。

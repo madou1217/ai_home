@@ -50,6 +50,8 @@ func TestBuildWebUISessionsWatchRoutes(t *testing.T) {
 		}
 		want := []string{
 			"GET " + webuisessionwatchapi.Path,
+			// Go 承接 WebUI 的 mux WebSocket 后，watch 的 ws 入口与 SSE 入口并存。
+			"GET " + webuisessionwatchapi.Path + "/ws",
 			"POST " + webuisessionhookapi.Path,
 			"POST /v0/webui/session-events/provider-hook",
 			"POST /v0/webui/internal/remote-tools",
@@ -201,11 +203,14 @@ func TestBuildWebUISessionsWatchRoutes(t *testing.T) {
 		if err := json.NewDecoder(hookResp.Body).Decode(&hookResult); err != nil {
 			t.Fatalf("decode hook response error = %v", err)
 		}
-		if hookResult["runtimeRecovered"] != true {
-			t.Fatalf("hookResult.runtimeRecovered = %v, want true (restored=%v)", hookResult["runtimeRecovered"], restorer.restored)
+		// 当前合同：Hook 成功**不**触发自动恢复——成功 hook 不能证明凭据或阻塞代次，
+		// 组合根因此没有装配 RuntimeRecoverer（见 webui_sessions_watch_routes.go）。
+		// 这里断言「不恢复」这一显式决定，避免将来误接线却没人发现。
+		if hookResult["runtimeRecovered"] != false {
+			t.Fatalf("hookResult.runtimeRecovered = %v, want false", hookResult["runtimeRecovered"])
 		}
-		if len(restorer.restored) != 1 || restorer.restored[0] != account.Ref() {
-			t.Fatalf("RestoreScheduling 调用记录 = %v, want [%s]", restorer.restored, account.Ref())
+		if len(restorer.restored) != 0 {
+			t.Fatalf("RestoreScheduling 调用记录 = %v, want none", restorer.restored)
 		}
 
 		select {

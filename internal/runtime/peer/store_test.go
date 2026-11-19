@@ -90,7 +90,9 @@ func TestListMessagesProjectsNormalizesAndReverses(t *testing.T) {
 	if all.Store.State != "all" || all.Store.Limit != MaxLimit {
 		t.Fatalf("store = %+v", all.Store)
 	}
-	if all.Counts != (Counts{Total: 4, Pending: 2, Delivered: 1, Read: 0, Failed: 1}) {
+	// 这三条历史记录没有自动投递时限，投影按「时限已过」判成 manual；
+	// 计数同时保留投递维度（pending/delivered/failed），两者不是互斥集合。
+	if all.Counts != (Counts{Total: 4, Pending: 2, Delivered: 1, Read: 0, Failed: 1, Manual: 3}) {
 		t.Fatalf("counts = %+v", all.Counts)
 	}
 	if len(all.Messages) != 4 || all.Messages[0].ID != "pm-444455556666" || all.Messages[3].ID != "pm-111122223333" {
@@ -163,8 +165,10 @@ func TestWatchReadyAndDebouncedChange(t *testing.T) {
 	if got := <-events; got.Type != "ready" || got.At != 12345 {
 		t.Fatalf("ready event = %+v", got)
 	}
-	if len(fw.added) != 2 {
-		t.Fatalf("watched %d dirs, want 2", len(fw.added))
+	// 目录事件同时盯 pending / inflight / archive：inflight 的认领与恢复
+	// 也要唤醒补投，否则崩溃恢复的消息要等到下一次兜底轮询。
+	if len(fw.added) != 3 {
+		t.Fatalf("watched %d dirs, want 3", len(fw.added))
 	}
 	fw.events <- fsnotify.Event{Name: "a.json", Op: fsnotify.Create}
 	fw.events <- fsnotify.Event{Name: "b.json", Op: fsnotify.Write}

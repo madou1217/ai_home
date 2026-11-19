@@ -108,8 +108,8 @@ func TestBuildWebUIPluginRoutes_ServeMuxAndFailClosedDoctorWithHostService(t *te
 	if err != nil {
 		t.Fatalf("buildWebUIPluginRoutes failed: %v", err)
 	}
-	if len(failClosedRoutes) != 8 {
-		t.Fatalf("expected 8 plugin routes, got %d", len(failClosedRoutes))
+	if len(failClosedRoutes) != 9 {
+		t.Fatalf("expected 9 plugin routes, got %d", len(failClosedRoutes))
 	}
 
 	muxFail := http.NewServeMux()

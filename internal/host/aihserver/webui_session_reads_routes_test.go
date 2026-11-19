@@ -27,7 +27,9 @@ func TestBuildWebUISessionReadsRoutes(t *testing.T) {
 	if err := os.MkdirAll(aiHome, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(aiHome, "app-state.db"))
+	// 生产读模型已统一到 aih.db（appstate.DatabasePath）；夹具必须写同一个库，
+	// 否则查询永远命中空表，测不出「有记录时返回模型」。
+	db, err := sql.Open("sqlite", filepath.Join(aiHome, "aih.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

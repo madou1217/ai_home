@@ -245,7 +245,15 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 
 	// 4) 在 peer/pending 写入一条 inject 消息。
 	peerStore := peer.NewDispatchStore(aiHome, peer.StoreOptions{Now: nowFn})
+	// 投递记录要求可验证的发件人身份（identity-safe delivery）：夹具必须给出
+	// From，否则 CreateMessage 会以 peer_record_invalid 拒绝。
 	peerRec, err := peerStore.CreateMessage(peer.CreateMessageInput{
+		From: peer.RecordParty{
+			Channel:  "inject",
+			Provider: "codex",
+			Name:     "s0",
+			Address:  "s0",
+		},
 		To: peer.RecordParty{
 			Channel:  "inject",
 			Provider: "codex",

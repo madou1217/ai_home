@@ -3,14 +3,18 @@ package aihserver
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/claude"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/kimi"
+	"github.com/madou1217/ai_home/internal/host/aihdefault/content/opencode"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 )
 
@@ -21,7 +25,7 @@ func buildSetDefaultHostProjection(aiHomeDir, hostHomeDir string) webuisetdefaul
 	targets := map[string]webuisetdefaultapi.HostFileTarget{}
 
 	claudeTarget := webuisetdefaultapi.HostFileTarget{
-		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".claude"), FileName: "settings.json", Ownership: aihdefault.OwnershipFile},
+		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".claude"), FileName: "settings.json", Ownership: aihdefault.OwnershipClaudeEnv},
 	}
 	claudeTarget.BuildAccount = func(ref accountcore.AccountRef) aihdefault.BuildContent {
 		return func(current string, _ bool) (string, error) {
@@ -40,6 +44,21 @@ func buildSetDefaultHostProjection(aiHomeDir, hostHomeDir string) webuisetdefaul
 	targets["claude"] = claudeTarget
 
 	// Codex uses the transactional Host adapter below; never a config-only projection.
+
+	opencodeDir := filepath.Join(hostHomeDir, ".config", "opencode")
+	opencodeFile := "opencode.json"
+	if info, err := os.Stat(filepath.Join(opencodeDir, "opencode.jsonc")); err == nil && !info.IsDir() {
+		opencodeFile = "opencode.jsonc"
+	}
+	opencodeModels := readHostProjectionModels(aiHomeDir)
+	opencodeTarget := webuisetdefaultapi.HostFileTarget{
+		Target: aihdefault.Target{Directory: opencodeDir, FileName: opencodeFile, Ownership: aihdefault.OwnershipFile},
+	}
+	opencodeTarget.BuildGateway = opencode.BuildGatewayContent(opencode.Gateway{
+		Server: opencode.ServerConfig{Host: config.Host, Port: config.Port, APIKey: config.APIKey, ClientKey: config.ClientKey},
+		Models: opencodeModels,
+	})
+	targets["opencode"] = opencodeTarget
 
 	kimiTarget := webuisetdefaultapi.HostFileTarget{
 		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".kimi-code"), FileName: "config.toml", Ownership: aihdefault.OwnershipFile},
@@ -82,6 +101,36 @@ func readHostProjectionServerConfig(aiHomeDir string) hostProjectionServerConfig
 	config.APIKey = stored.APIKey
 	config.ClientKey = stored.ClientKey
 	return config
+}
+
+func readHostProjectionModels(aiHomeDir string) []string {
+	databasePath, err := appstate.DatabasePath(aiHomeDir)
+	if err != nil {
+		return nil
+	}
+	raw, found, err := appstate.ReadKV(context.Background(), databasePath, "cache:webui-models-snapshot.json")
+	if err != nil || !found || raw == "" {
+		return nil
+	}
+	var snapshot struct {
+		ByProvider map[string][]string `json:"byProvider"`
+	}
+	if json.Unmarshal([]byte(raw), &snapshot) != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	models := make([]string, 0, len(snapshot.ByProvider))
+	for _, list := range snapshot.ByProvider {
+		for _, model := range list {
+			trimmed := strings.TrimSpace(model)
+			if trimmed != "" && !seen[trimmed] {
+				seen[trimmed] = true
+				models = append(models, trimmed)
+			}
+		}
+	}
+	sort.Strings(models)
+	return models
 }
 
 func hostWithPort(host string, port int) string {

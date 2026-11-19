@@ -64,10 +64,11 @@ type accountProbeRequest struct {
 	CheckedAtMS int64  `json:"checked_at_ms"`
 }
 
-// handleAccountProbe 接收 Node 推送的额度探针结果。
+// handleAccountProbe 接收旧调用方推送的额度探针结果。
 //
-// 为什么由 Node 推：探针要读 Provider 凭据并处理各家差异，这部分仍在 Node；
-// 但「最近一次探测结果」是账号页的事实，必须落库才能跨重启保留。
+// 探测本身已由 Go 的 accountusage.Service（WebUI refresh-usage 路径）执行；
+// 这个端点只保留给仍按历史协议回报结果的兼容调用方，保证「最近一次探测结果」
+// 落库后跨重启保留。
 func (handler *Handler) handleAccountProbe(
 	response http.ResponseWriter,
 	request *http.Request,

@@ -179,7 +179,7 @@ type HostFileTarget struct {
 }
 
 // HostFileProjection 是「内容构造已迁到 Go」的 Provider 的 HostSelector +
-// HostGate 实现；构造仍留在 Node 的 Provider 不要放进 Targets。
+// HostGate 实现；还没有内容构造器的 Provider 不要放进 Targets（显式返回 501）。
 type HostFileProjection struct {
 	Targets map[string]HostFileTarget
 }

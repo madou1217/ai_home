@@ -11,21 +11,18 @@ import (
 	"time"
 )
 
-// InternalLaunchPath 是 Node 宿主的内部执行端点。
+// InternalLaunchPath 是历史宿主执行端点的兼容路径。
 //
-// 为什么启动执行仍由 Node 托管：桌面 App 的 provider 策略（zcode 影子 App、kimi 托管
-// 登录、codex API-key profile、agy keychain、窗口/单实例身份）依赖厂商 Electron 运行时
-// 与宿主进程句柄，Go 没有等价实现；账号出口（egress）与自动安装器也只在 Node 侧有
-// 事实源。Go 承接管理路由、鉴权与启动计划，执行通过回环 + Go Core 引导密钥完成
-// （与账号扫描 hostdetect 同一形态）。
+// 生产装配固定使用 NativeLauncher（Go 原生启动器）；这里仅保留旧协议适配器用于
+// 对照与历史测试，不是运行路径。厂商 Electron 启动策略、账号出口与自动安装器
+// 已由 NativeLauncher / Go 的 egress 与安装器实现承接。
 const InternalLaunchPath = "/v0/internal/accounts/launch-app"
 
 const maxLaunchResponseBytes = 1 << 20
 
-// HostLauncher 是 Launcher 的兼容实现：通过 Node 宿主内部端点执行启动计划。
+// HostLauncher 是 Launcher 的历史兼容实现：通过旧宿主内部端点执行启动计划。
 //
-// 生产装配使用 NativeLauncher；保留本实现用于对照与渐进迁移。Node 侧仍持有
-// 厂商 Electron 运行时相关的启动策略。
+// 生产装配使用 NativeLauncher；本实现仅用于对照与历史测试。
 type HostLauncher struct {
 	baseURL       string
 	managementKey func() string

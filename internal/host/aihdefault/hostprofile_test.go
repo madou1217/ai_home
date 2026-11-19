@@ -3,6 +3,7 @@ package aihdefault
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -200,27 +201,37 @@ func TestActivateRejectsSymlinkTarget(t *testing.T) {
 	}
 }
 
-// TestOwnershipOutsideFileIsRejected claude-env 等策略仍留在 Node，Go 明确拒绝。
-func TestOwnershipOutsideFileIsRejected(t *testing.T) {
+// TestClaudeEnvOwnershipPreservesExternalFields：claude-env 只托管凭据 env 字段，
+// Claude Code 自己写入的权限等字段在还原时必须保留。
+func TestClaudeEnvOwnershipPreservesExternalFields(t *testing.T) {
 	target := testTarget(t)
-	target.Ownership = "claude-env"
-	if _, err := ActivateProfile(target, func(string, bool) (string, error) { return "{}\n", nil }); CodeOf(err) != CodeOwnershipUnsupported {
+	target.Ownership = OwnershipClaudeEnv
+	configPath := filepath.Join(target.Directory, target.FileName)
+	original := "{\n  \"permissions\": {\n    \"allow\": [\"Bash\"]\n  },\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": \"old\",\n    \"KEEP\": \"1\"\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	managed := "{\n  \"permissions\": {\n    \"allow\": [\"Bash\"]\n  },\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": \"new\",\n    \"KEEP\": \"1\"\n  }\n}\n"
+	if _, err := ActivateProfile(target, func(string, bool) (string, error) { return managed, nil }); err != nil {
 		t.Fatalf("ActivateProfile() error = %v", err)
 	}
-	target = testTarget(t)
-	statePath := filepath.Join(target.Directory, ManagedStateFileName)
-	state := ManagedState{
-		FileName:    target.FileName,
-		Active:      true,
-		Ownership:   "claude-env",
-		ManagedHash: contentHash("{}"),
+	externallyEdited := "{\n  \"permissions\": {\n    \"allow\": [\"Bash\", \"Read\"]\n  },\n  \"env\": {\n    \"ANTHROPIC_API_KEY\": \"new\",\n    \"KEEP\": \"1\"\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(externallyEdited), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if err := writePrivateJSON(statePath, state); err != nil {
-		t.Fatalf("writePrivateJSON() error = %v", err)
+	result, err := DeactivateProfile(target)
+	if err != nil {
+		t.Fatalf("DeactivateProfile() error = %v", err)
 	}
-	target.Takeover = &Takeover{}
-	if _, err := ActivateProfile(target, func(string, bool) (string, error) { return "{}\n", nil }); CodeOf(err) != CodeOwnershipUnsupported {
-		t.Fatalf("ActivateProfile() error = %v", err)
+	if !result.Restored {
+		t.Fatal("DeactivateProfile() did not restore claude-env credentials")
+	}
+	restored := mustReadFile(t, configPath)
+	if !strings.Contains(restored, `"ANTHROPIC_API_KEY": "old"`) {
+		t.Fatalf("restored credentials = %s", restored)
+	}
+	if !strings.Contains(restored, `"Read"`) || !strings.Contains(restored, `"KEEP": "1"`) {
+		t.Fatalf("external fields lost = %s", restored)
 	}
 }
 

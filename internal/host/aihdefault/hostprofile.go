@@ -31,6 +31,10 @@ type Ownership string
 // OwnershipFile 表示整文件由 AIH 托管（opencode、kimi、codex 一类）。
 const OwnershipFile Ownership = "file"
 
+// OwnershipClaudeEnv 只托管 Claude settings.json 的凭据 env 字段；Claude Code
+// 自己改写权限等其它字段不影响归属判断。
+const OwnershipClaudeEnv Ownership = "claude-env"
+
 var managedHashPattern = regexp.MustCompile("^[a-f0-9]{64}$")
 
 // Takeover 只给显式命令（set-default / unset-default）使用：外部改动后的文件
@@ -124,7 +128,10 @@ func ActivateProfile(target Target, build BuildContent) (ActivateResult, error) 
 	nextState := ManagedState{
 		FileName:    target.FileName,
 		Active:      true,
-		ManagedHash: contentHash(nextContent),
+		ManagedHash: managedHashFor(target.Ownership, nextContent),
+	}
+	if target.Ownership == OwnershipClaudeEnv {
+		nextState.Ownership = string(OwnershipClaudeEnv)
 	}
 	if keepBaseline {
 		nextState.OriginalExisted = inspected.state.OriginalExisted
@@ -154,10 +161,22 @@ func DeactivateProfile(target Target) (DeactivateResult, error) {
 	if inspected.state == nil || !inspected.state.Active {
 		return DeactivateResult{ConfigPath: configPath(target)}, nil
 	}
-	restoreManaged := inspected.matchesManaged ||
+	restoreManaged := ownershipMatchesManaged(target.Ownership, inspected.state, inspected.current, inspected.currentExisted) ||
 		(inspected.takeover != nil && !inspected.takeover.AdoptedAsBaseline)
 	if restoreManaged {
-		if inspected.state.OriginalExisted {
+		if target.Ownership == OwnershipClaudeEnv {
+			restored, contentExisted, restoreErr := restoreClaudeOwnedContent(inspected.current, inspected.state)
+			if restoreErr != nil {
+				return DeactivateResult{}, restoreErr
+			}
+			if !contentExisted {
+				if err := removeFile(configPath(target)); err != nil {
+					return DeactivateResult{}, err
+				}
+			} else if err := writePrivateFile(configPath(target), restored); err != nil {
+				return DeactivateResult{}, err
+			}
+		} else if inspected.state.OriginalExisted {
 			if err := writePrivateFile(configPath(target), inspected.state.Original); err != nil {
 				return DeactivateResult{}, err
 			}
@@ -200,16 +219,15 @@ func inspectTarget(target Target) (inspection, error) {
 	}
 	inspected := inspection{state: state, current: current, currentExisted: existed}
 	if state != nil && state.Active {
-		inspected.matchesManaged = existed && contentHash(current) == state.ManagedHash
-		matchesOriginal := (!state.OriginalExisted && !existed) ||
-			(state.OriginalExisted && existed && current == state.Original)
+		inspected.matchesManaged = ownershipMatchesManaged(target.Ownership, state, current, existed)
+		matchesOriginal := ownershipMatchesOriginal(target.Ownership, state, current, existed)
 		if !inspected.matchesManaged && !matchesOriginal {
 			if target.Takeover == nil {
 				return inspection{}, newError(CodeHostConfigChanged, nil)
 			}
 			inspected.takeover = &TakeoverDecision{
 				ExternallyChanged: true,
-				AdoptedAsBaseline: !looksManaged(current, target.Takeover),
+				AdoptedAsBaseline: !looksManaged(current, target),
 			}
 		}
 		return inspected, nil
@@ -220,9 +238,29 @@ func inspectTarget(target Target) (inspection, error) {
 	return inspected, nil
 }
 
-// looksManaged 判断当前内容是否仍带 AIH 网关痕迹（整文件托管的内容内嵌网关地址）。
-func looksManaged(current string, takeover *Takeover) bool {
+// looksManaged 判断当前内容是否仍带 AIH 网关痕迹。
+func looksManaged(current string, target Target) bool {
+	takeover := target.Takeover
 	if takeover == nil {
+		return false
+	}
+	if target.Ownership == OwnershipClaudeEnv {
+		projection, ok := claudeOwnedProjection(current)
+		if !ok {
+			return false
+		}
+		if strings.TrimSpace(projection["pin"]) != "" {
+			return true
+		}
+		baseURL := strings.TrimSpace(projection["ANTHROPIC_BASE_URL"])
+		if baseURL == "" {
+			return false
+		}
+		for _, rawURL := range takeover.GatewayURLs {
+			if strings.TrimSpace(rawURL) != "" && normalizeBaseURLLoose(rawURL) == normalizeBaseURLLoose(baseURL) {
+				return true
+			}
+		}
 		return false
 	}
 	for _, rawURL := range takeover.GatewayURLs {
@@ -232,6 +270,203 @@ func looksManaged(current string, takeover *Takeover) bool {
 		}
 	}
 	return false
+}
+
+var claudeCredentialEnvKeys = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"}
+
+const claudeCustomHeadersEnv = "ANTHROPIC_CUSTOM_HEADERS"
+const claudePinHeader = "x-account-ref:"
+
+func parseClaudeSettings(content string) (map[string]json.RawMessage, bool) {
+	if strings.TrimSpace(content) == "" {
+		return map[string]json.RawMessage{}, true
+	}
+	var document map[string]json.RawMessage
+	if json.Unmarshal([]byte(content), &document) != nil || document == nil {
+		return nil, false
+	}
+	if raw, ok := document["env"]; ok {
+		var env map[string]json.RawMessage
+		if json.Unmarshal(raw, &env) != nil || env == nil {
+			return nil, false
+		}
+	}
+	return document, true
+}
+
+// claudeOwnedProjection 只取 AIH 托管的三个凭据变量与钉选头行。
+func claudeOwnedProjection(content string) (map[string]string, bool) {
+	document, ok := parseClaudeSettings(content)
+	if !ok {
+		return nil, false
+	}
+	projection := map[string]string{}
+	var env map[string]json.RawMessage
+	if raw, present := document["env"]; present {
+		_ = json.Unmarshal(raw, &env)
+	}
+	for _, key := range claudeCredentialEnvKeys {
+		if raw, present := env[key]; present {
+			var value string
+			if json.Unmarshal(raw, &value) == nil {
+				projection[key] = value
+			}
+		}
+	}
+	var headers string
+	if raw, present := env[claudeCustomHeadersEnv]; present {
+		_ = json.Unmarshal(raw, &headers)
+	}
+	for _, line := range strings.Split(headers, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(trimmed), claudePinHeader) {
+			projection["pin"] = trimmed
+			break
+		}
+	}
+	return projection, true
+}
+
+func canonicalProjectionHash(projection map[string]string) string {
+	encoded, _ := json.Marshal(projection)
+	return contentHash(string(encoded))
+}
+
+func sameProjection(left, right map[string]string) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	leftJSON, _ := json.Marshal(left)
+	rightJSON, _ := json.Marshal(right)
+	return string(leftJSON) == string(rightJSON)
+}
+
+func managedHashFor(ownership Ownership, content string) string {
+	if ownership == OwnershipClaudeEnv {
+		projection, ok := claudeOwnedProjection(content)
+		if !ok {
+			return contentHash("null")
+		}
+		return canonicalProjectionHash(projection)
+	}
+	return contentHash(content)
+}
+
+func ownershipMatchesManaged(ownership Ownership, state *ManagedState, current string, existed bool) bool {
+	if ownership != OwnershipClaudeEnv {
+		return existed && contentHash(current) == state.ManagedHash
+	}
+	projection, ok := claudeOwnedProjection(current)
+	if !ok {
+		return false
+	}
+	if state.Ownership == string(OwnershipClaudeEnv) {
+		return canonicalProjectionHash(projection) == state.ManagedHash
+	}
+	// 旧版状态按整文件哈希记录：Claude Code 改过权限后必然对不上。
+	if existed && contentHash(current) == state.ManagedHash {
+		return true
+	}
+	originalProjection, _ := claudeOwnedProjection(state.Original)
+	return !sameProjection(projection, originalProjection)
+}
+
+func ownershipMatchesOriginal(ownership Ownership, state *ManagedState, current string, existed bool) bool {
+	if ownership != OwnershipClaudeEnv {
+		return (!state.OriginalExisted && !existed) ||
+			(state.OriginalExisted && existed && current == state.Original)
+	}
+	currentProjection, ok := claudeOwnedProjection(current)
+	if !ok {
+		return false
+	}
+	originalProjection, originalOK := claudeOwnedProjection(state.Original)
+	return originalOK && sameProjection(currentProjection, originalProjection)
+}
+
+// restoreClaudeOwnedContent 把 AIH 托管的 env 字段还原为接管前的值，保留 Claude
+// Code 之后写入的权限等其它字段。返回值第二项表示是否应写文件（false = 删除）。
+func restoreClaudeOwnedContent(current string, state *ManagedState) (string, bool, error) {
+	document, ok := parseClaudeSettings(current)
+	if !ok {
+		return "", false, newError(CodeInvalidState, errors.New("当前 Claude settings.json 无法解析"))
+	}
+	env := map[string]json.RawMessage{}
+	if raw, present := document["env"]; present {
+		_ = json.Unmarshal(raw, &env)
+	}
+	originalProjection, _ := claudeOwnedProjection(state.Original)
+	for _, key := range claudeCredentialEnvKeys {
+		delete(env, key)
+		if value, present := originalProjection[key]; present {
+			encoded, _ := json.Marshal(value)
+			env[key] = encoded
+		}
+	}
+	var existingHeaders string
+	if raw, present := env[claudeCustomHeadersEnv]; present {
+		_ = json.Unmarshal(raw, &existingHeaders)
+	}
+	headers := make([]string, 0, 4)
+	for _, line := range strings.Split(existingHeaders, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(strings.ToLower(trimmed), claudePinHeader) {
+			headers = append(headers, trimmed)
+		}
+	}
+	if pin := strings.TrimSpace(originalProjection["pin"]); pin != "" {
+		headers = append(headers, pin)
+	}
+	delete(env, claudeCustomHeadersEnv)
+	if len(headers) > 0 {
+		encoded, _ := json.Marshal(strings.Join(headers, "\n"))
+		env[claudeCustomHeadersEnv] = encoded
+	}
+	if len(env) > 0 {
+		encoded, _ := json.Marshal(env)
+		document["env"] = encoded
+	} else {
+		delete(document, "env")
+	}
+	// 只有托管字段变了：原样写回接管前的字节（原文件不存在则删除）。
+	if originalDocument, originalOK := parseClaudeSettings(state.Original); originalOK && canonicalDocumentEqual(document, originalDocument) {
+		return state.Original, state.OriginalExisted, nil
+	}
+	var buffer strings.Builder
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(document); err != nil {
+		return "", false, err
+	}
+	return buffer.String(), true, nil
+}
+
+func canonicalDocumentEqual(left, right map[string]json.RawMessage) bool {
+	leftValue := canonicalRawObject(left)
+	rightValue := canonicalRawObject(right)
+	return leftValue == rightValue
+}
+
+func canonicalRawObject(value map[string]json.RawMessage) string {
+	decoded := make(map[string]any, len(value))
+	for key, raw := range value {
+		var item any
+		if json.Unmarshal(raw, &item) != nil {
+			item = string(raw)
+		}
+		decoded[key] = item
+	}
+	encoded, _ := json.Marshal(decoded)
+	return string(encoded)
+}
+
+func normalizeBaseURLLoose(value string) string {
+	text := strings.TrimRight(strings.ToLower(strings.TrimSpace(value)), "/")
+	if strings.HasSuffix(text, "/v1") {
+		text = strings.TrimRight(text[:len(text)-3], "/")
+	}
+	return text
 }
 
 func readManagedState(path, fileName string) (*ManagedState, error) {
@@ -251,7 +486,7 @@ func readManagedState(path, fileName string) (*ManagedState, error) {
 	}
 	if document.Ownership != nil {
 		switch Ownership(*document.Ownership) {
-		case "", OwnershipFile:
+		case "", OwnershipFile, OwnershipClaudeEnv:
 		default:
 			return nil, newError(CodeOwnershipUnsupported, fmt.Errorf("ownership %q", *document.Ownership))
 		}
@@ -341,7 +576,7 @@ func (target Target) validate() error {
 		return fmt.Errorf("aihdefault: 非法宿主配置文件名 %q", target.FileName)
 	}
 	switch target.Ownership {
-	case "", OwnershipFile:
+	case "", OwnershipFile, OwnershipClaudeEnv:
 		return nil
 	default:
 		return newError(CodeOwnershipUnsupported, fmt.Errorf("ownership %q", target.Ownership))

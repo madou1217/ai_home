@@ -5,14 +5,15 @@
 //
 //   - 「AIH Server 默认档位」指针：app_kv 的 provider:default:<provider> = .aih-server。
 //   - 受管宿主配置文件的网关落点与还原：.aih-server-default-state.json 记录接管前
-//     原值，归属按整文件哈希判定（ownership=file）。
+//     原值，归属支持整文件哈希（ownership=file）与 Claude settings.json 的
+//     env 字段级托管（ownership=claude-env）。
 //
 // 账号级默认指针（account:default:<provider>）不在这里重复实现：Go Core 已把它迁到
 // account_defaults 表（core/accounts + internal/adapters/accounts/sqliteaccount），
-// 双写会让 Node 与 Go 的默认关系打架。
+// 双写会让两套默认关系打架。
 //
-// 本包只做可测试的文件/配置原语；宿主配置内容构造（opencode JSONC、kimi TOML、
-// claude settings env、codex config.toml）与真正的宿主同步仍在 Node。
+// 本包只做可测试的文件/状态原语；opencode JSONC、kimi TOML、claude settings env、
+// codex config.toml 的内容构造在 internal/host/aihdefault/content 下由 Go 实现。
 package aihdefault
 
 import (

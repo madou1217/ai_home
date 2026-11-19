@@ -320,7 +320,7 @@ func TestServeHTTPStartsReauthJob(t *testing.T) {
 		t.Fatalf("expiresAt 缺失或不是毫秒数字: %v", payload["expiresAt"])
 	}
 	if fields, ok := payload["unfilledFields"].([]any); !ok || len(fields) == 0 {
-		t.Fatalf("unfilledFields 应显式列出 Node 独有键: %v", payload["unfilledFields"])
+		t.Fatalf("unfilledFields 应显式列出 宿主侧键: %v", payload["unfilledFields"])
 	}
 	if jobs.calls != 1 || len(jobs.requests) != 1 {
 		t.Fatalf("Start 调用次数 = %d，期望 1", jobs.calls)

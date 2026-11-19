@@ -10,7 +10,7 @@
 //
 // 判据（来自 lib/server/account-row-sources.js 的来源表）：
 //   1. row_identical：assembleAccountRow(Node 行, Go 事实) 是否与 Node 行逐字段相同；
-//      Node 独有字段与 go-projected 字段原样保留，所以这一项检查的其实是「Go 覆盖不改变行」。
+//      宿主侧字段与 go-projected 字段原样保留，所以这一项检查的其实是「Go 覆盖不改变行」。
 //   2. field_mismatch：Go 有值且与 Node 不同的字段——这些是翻转后会变的地方，必须为 0。
 //   3. fallback：Go 没写、沿用 Node 的字段（当前是 displayName/email/planType，缺口不是漂移）。
 //
@@ -202,14 +202,14 @@ async function main() {
     if (entry.source === 'node' || entry.source === 'go-projected') continue;
     fieldStats.set(entry.field, { compared: 0, mismatch: 0 });
   }
-  // 覆盖口径要如实打出来：字段总数 / Go 参与判定 / Go 缺值回退 / Node 独有。
+  // 覆盖口径要如实打出来：字段总数 / Go 参与判定 / Go 缺值回退 / 宿主侧。
   // 「零差异」只对前两类负责，不能拿 39 个字段的名义宣称全部由 Go 校验过。
   const coverage = {
     total: ACCOUNT_ROW_FIELDS.length,
     goCompared: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'go').length,
     referenceOnly: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'node').length,
     goProjected: ACCOUNT_ROW_FIELDS.filter((entry) => entry.source === 'go-projected').length,
-    // 判定理由分布：Node 独有字段按原因归类，避免「看着能迁」反复翻烧。
+    // 判定理由分布：宿主侧字段按原因归类，避免「看着能迁」反复翻烧。
     reasons: ACCOUNT_ROW_FIELDS.reduce((acc, entry) => {
       acc[entry.reason] = (acc[entry.reason] || 0) + 1;
       return acc;

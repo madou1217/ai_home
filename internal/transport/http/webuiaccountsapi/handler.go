@@ -6,7 +6,7 @@
 //
 // 本切片只填「静态可派生」字段，全部来自 aih.db 的 accounts / account_credentials /
 // account_ui_state / account_profiles / account_usage_snapshots / account_defaults /
-// account_models。运行池、探针、token 用量、Provider 能力这些 Node 独有事实留空，
+// account_models。运行池、探针、token 用量、Provider 能力这些 宿主侧事实留空，
 // 由响应里的 derived_by=go_partial 与三份字段清单标注，让调用方知道哪些键必须覆盖。
 package webuiaccountsapi
 

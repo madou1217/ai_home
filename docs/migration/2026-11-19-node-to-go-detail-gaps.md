@@ -2,7 +2,7 @@
 
 历史：本文件最初是 2026-11-19 的缺口清单。2026-11-20 已继续迁移并关闭多项缺口；
 下面的"历史清单"保留作证据，当前状态以本节为准。目标是 **Go 是完整服务端**：
-不区分 "Node only / Go only"，Node 仅作为可选兼容宿主或插件运行时存在。
+不区分单侧归属，Node 仅作为可选兼容宿主或插件运行时存在。
 
 ## 2026-11-20 已关闭
 
@@ -25,7 +25,7 @@
   `/v0/webui/account-jobs/{id}` 增加 CLI 登录作业回退。
 - 旧 Node 公开路径：CLI 应用高级设置、ServerSetup node-rpc、SSH 隧道、
   账号导入进度均已补 Go 兼容别名。
-- 路由归属：移除两条 `node_owned` legacy 聚合，投影全部为 `go_owned`。
+- 路由归属：移除两条 legacy 聚合，投影全部为 `go_owned`。
 - 移除旧的「某一侧独有」命名：账号查找回退统一表述为
   「宿主台账未命中 → 统一账号库」（`ledgerBacked`），Node 同步报告用
   `unadopted`，测试名与注释同步；不再用「某一侧独有」描述账号事实。
@@ -165,7 +165,7 @@
 
 ## 清单：合同/文档残留
 
-- 路由归属：两条 `node_owned` legacy aggregate 已移除，投影全部为 `go_owned`。
+- 路由归属：两条 legacy aggregate 已移除，投影全部为 `go_owned`。
 - `webui.static_shell` 注释已改为缺失时由前置门返回明确错误。
 - `docs/testing/autostart-*.md` 保留 `--front-door --supervise-node` 历史参数，属历史证据，不应作为当前启动模板。
 

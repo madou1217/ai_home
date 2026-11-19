@@ -616,7 +616,7 @@ function tryRunGoProviderCommonCommand() {
     args.length >= 2;
   // 自动换号是全局 config:usage，Go 的读写口径与家族同一实现。
   const isAutoSwitch = command === 'auto-switch' && args.length >= 2 && args.length <= 5;
-  // 删除投影已全量迁 Go（Node node-only 钩子表为空）：delete <id...> / deleteall。
+  // 删除投影已全量迁 Go（旧宿主钩子表为空）：delete <id...> / deleteall。
   const isDelete = command === 'delete' && args.length >= 3;
   const isDeleteAll = (command === 'deleteall' || command === 'delete-all') && args.length === 2;
   // set-default：Go 已实现宿主配置同步的 Provider 才转发（其余仍交 Node 的 host-sync）。

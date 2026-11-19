@@ -25,7 +25,7 @@
 | 管理面/会话 watch | Go HTTP handlers + Node 兼容路径 | 并行 WebUI/auth/watch 修改未验收；需要实际桌面 Edge | W5 |
 | 其它 Provider/SSH/出口/插件/桌面/安装 | 见完整计划 W6 | 叶子清单、真机覆盖、退场条件仍未完成 | W6 |
 
-合同快照：65 条，61 个 go_owned、4 个 node_owned（含 health/readiness 和两项 preview）。`go run ./cmd/route-ownership-manifest --check` 通过。路由采集 endpoint 252/65，实际仅 14 个 Node 数据面候选参与比较，missing=0；这些数字不可计算全迁移完成率。
+合同快照：65 条，61 个 go_owned、4 个宿主侧条目（含 health/readiness 和两项 preview）。`go run ./cmd/route-ownership-manifest --check` 通过。路由采集 endpoint 252/65，实际仅 14 个 Node 数据面候选参与比较，missing=0；这些数字不可计算全迁移完成率。
 
 ## 执行中发现的新增问题
 

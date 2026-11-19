@@ -7,7 +7,7 @@ Status: in progress; full Node→Go migration remains active. Continuation of `2
 Before modification, the **actual exported Go client** launched official Codex `0.167.2` in an empty temporary HOME/CODEX_HOME:
 
 1. The real `thread/started` callback synchronously requested `thread/loaded/list`. It timed out after 1000 ms because the sole stdout reader was inside that callback.
-2. `ReleaseThread` returned success immediately, but the official loaded-list still contained the thread. Go only unbound callbacks; Node sends `thread/unsubscribe` and awaits `thread/closed`.
+2. `ReleaseThread` returned success immediately, but the official loaded-list still contained the thread. Go merely unbound callbacks; Node sends `thread/unsubscribe` and awaits `thread/closed`.
 3. Source review also found handshake publication before initialize completion, non-nil Background contexts bypassing request timeout, reader waiting on its own reaper, and zero-reference clients retained in the pool.
 
 Official protocol schema was generated from the installed executable (not a mock) into `/tmp/aih-rpc-protocol-20261114-UCeuPv/schema`. `ThreadUnsubscribeResponse` supports `notLoaded`, `notSubscribed`, `unsubscribed`. Online source retrieval did not yield usable content in this run; claims here use local source and actual protocol behavior, not a claimed current web version.

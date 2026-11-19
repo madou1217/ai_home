@@ -49,7 +49,7 @@ func TestUnfilledFieldsFollowInjectedPorts(t *testing.T) {
 		derivedBy    string
 	}{
 		{
-			name:         "没有端口时只剩 Node 独有的两块",
+			name:         "没有端口时只剩 宿主侧的两块",
 			dependencies: Dependencies{HostHomeDir: t.TempDir()},
 			wanted:       []string{"sources[].alreadyImported", "pluginSources"},
 			derivedBy:    derivedByGoPartial,

@@ -54,7 +54,7 @@ async function main(argv = process.argv.slice(2)) {
     printSummary(`dry-run ledger written to ${file}`, { summary: ledger.summary, defaults: ledger.defaults }, asJson);
     const blocked = ledger.entries.filter((entry) => entry.resolution === 'unsupported_in_go' || entry.resolution === 'rejected_by_go');
     if (!asJson && blocked.length > 0) {
-      console.log('[aih] accounts that stay Node-only:');
+      console.log('[aih] accounts kept on the host side:');
       for (const entry of blocked) console.log(`  ${entry.provider} ${entry.old_account_ref}: ${entry.reason}`);
     }
     return 0;

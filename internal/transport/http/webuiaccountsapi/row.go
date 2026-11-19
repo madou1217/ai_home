@@ -242,6 +242,7 @@ func newRow(fact accountFact) Row {
 		BaseURL:               baseURL,
 		QuotaStatus:           fact.QuotaStatus,
 		QuotaReason:           fact.QuotaReason,
+		TokenUsageSource:      "go",
 		ModelCount:            int(fact.ModelCount),
 		UpstreamErrorRules:    []any{},
 		UpstreamErrorGroupIDs: []any{},
@@ -438,10 +439,12 @@ func planDisplayName(token string) string {
 //
 // Node 在这两级之间还有 probeCheckedAt，本切片不读探针表，所以只保留这两级。
 func resolveUpdatedAt(configured, apiKeyMode bool, capturedAtMS, accountUpdatedAtMS int64) int64 {
-	if configured && !apiKeyMode && capturedAtMS > 0 {
-		return capturedAtMS
+	// Node 行的 updatedAt 是状态/记录更新时间，不是额度快照采集时间；
+	// 账号行缺失时才用快照时间兜底，避免把「刚采集」误当成「刚变更」。
+	if accountUpdatedAtMS > 0 {
+		return accountUpdatedAtMS
 	}
-	return accountUpdatedAtMS
+	return capturedAtMS
 }
 
 // resolveZcodeRegion 只认区域表里的取值；未知值留空（与 Node 的

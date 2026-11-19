@@ -205,7 +205,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		"isMobile":               false,
 		"status":                 "up",
 		"remainingPct":           73.5,
-		"updatedAt":              float64(oauthCapturedAtMS),
+		"updatedAt":              float64(oauthUpdatedAtMS),
 		"planType":               "plus",
 		"planName":               "plus",
 		"email":                  "a@example.com",
@@ -213,7 +213,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		"authPending":            false,
 		"baseUrl":                "",
 		"quotaStatus":            "available",
-		"tokenUsageSource":       "",
+		"tokenUsageSource":       "go",
 		"gatewayTargetSupported": false,
 		"modelCount":             float64(2),
 	}

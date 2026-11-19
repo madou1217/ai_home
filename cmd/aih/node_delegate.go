@@ -72,7 +72,9 @@ func isNativeLaunch(args []string) bool {
 func providerActionOwnedByGo(verb string) bool {
 	switch verb {
 	case "ls", "list", "export", "import", "version", "home", "sessions",
-		"policy", "terminal-icon", "terminal-icons", "usage":
+		"policy", "terminal-icon", "terminal-icons", "usage", "login",
+		"delete", "deleteall", "delete-all", "set-default", "unset-default",
+		"auto-switch":
 		return true
 	default:
 		return false

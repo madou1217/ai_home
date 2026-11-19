@@ -46,6 +46,9 @@ func runProviderAutoSwitch(
 			hasRemaining = true
 		case token == "on" || token == "off" || token == "status" || token == "show":
 			action = token
+		case token == "--help" || token == "-h" || token == "help":
+			_, _ = fmt.Fprintf(runtime.stdout, "Usage: aih %s auto-switch on|off|status [--remaining <0-100>]\n", providerID)
+			return nil
 		default:
 			return fmt.Errorf(
 				"Unknown auto-switch action '%s'.\nUsage: aih %s auto-switch on|off|status [--remaining <0-100>]",

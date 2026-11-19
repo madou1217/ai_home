@@ -18,6 +18,12 @@ func runProviderDelete(
 	arguments []string,
 	runtime commandRuntime,
 ) error {
+	for _, argument := range arguments {
+		if argument == "--help" || argument == "-h" || argument == "help" {
+			_, _ = fmt.Fprintf(runtime.stdout, "Usage: aih %s delete <id[,id...|start-end]...> | aih %s deleteall\n", providerID, providerID)
+			return nil
+		}
+	}
 	if len(arguments) == 0 {
 		return fmt.Errorf(
 			"用法 aih %s delete <id[,id...|start-end]...> 或 aih %s deleteall",

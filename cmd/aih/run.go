@@ -314,7 +314,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			containsArgument(arguments[2:], "--force-quit-client")) {
 		return runProviderRestart(ctx, providerID, arguments[1], runtime)
 	}
-	if len(arguments) >= 2 && arguments[1] == "usage" {
+	if len(arguments) >= 2 && (arguments[1] == "usage" || arguments[1] == "stats" || arguments[1] == "--usage") {
 		return runProviderUsage(ctx, providerID, arguments[2:], runtime)
 	}
 	if len(arguments) >= 2 && arguments[1] == "ls" {

@@ -77,6 +77,7 @@ type jobView struct {
 	Error        string `json:"error,omitempty"`
 	StartedAt    string `json:"startedAt"`
 	UpdatedAt    string `json:"updatedAt"`
+	ExpiresAt    string `json:"expiresAt,omitempty"`
 }
 
 type jobResponse struct {
@@ -187,6 +188,7 @@ func toJobView(snapshot aihloginjob.Snapshot) jobView {
 		Error:        snapshot.Error,
 		StartedAt:    snapshot.StartedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:    snapshot.UpdatedAt.UTC().Format(time.RFC3339),
+		ExpiresAt:    snapshot.ExpiresAt.UTC().Format(time.RFC3339),
 	}
 }
 

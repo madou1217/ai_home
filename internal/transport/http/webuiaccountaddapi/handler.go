@@ -478,6 +478,7 @@ func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
 		FailureCode:       snapshot.Error,
 		CreatedAt:         Millis(snapshot.StartedAt),
 		UpdatedAt:         Millis(snapshot.UpdatedAt),
+		ExpiresAt:         Millis(snapshot.ExpiresAt),
 	}
 }
 

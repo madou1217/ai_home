@@ -64,6 +64,7 @@ type Snapshot struct {
 	Error     string
 	StartedAt time.Time
 	UpdatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // RunFunc 与 aihlogin.Run 同签名，便于测试注入。
@@ -118,23 +119,24 @@ type Options struct {
 }
 
 type job struct {
-	id       string
-	provider string
-	status   Status
-	logs     strings.Builder
-	authURL  string
-	progress string
-	account  accountcore.Account
-	err      error
-	started  time.Time
-	updated  time.Time
-	cancel   context.CancelFunc
-	answered bool
-	expire   *time.Timer
-	input    *io.PipeWriter
-	rules    []PromptRule
-	fired    map[string]bool
-	mu       *sync.Mutex
+	id        string
+	provider  string
+	status    Status
+	logs      strings.Builder
+	authURL   string
+	progress  string
+	account   accountcore.Account
+	err       error
+	started   time.Time
+	updated   time.Time
+	expiresAt time.Time
+	cancel    context.CancelFunc
+	answered  bool
+	expire    *time.Timer
+	input     *io.PipeWriter
+	rules     []PromptRule
+	fired     map[string]bool
+	mu        *sync.Mutex
 }
 
 // Manager 管理内存中的登录作业（进程重启即失效，与 Node 的内存作业一致）。
@@ -192,14 +194,15 @@ func (manager *Manager) Start(ctx context.Context, providerID string) (Snapshot,
 	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	now := manager.options.Clock()
 	entry := &job{
-		id:       id,
-		provider: strings.ToLower(strings.TrimSpace(providerID)),
-		status:   StatusRunning,
-		progress: "starting",
-		started:  now,
-		updated:  now,
-		cancel:   cancel,
-		mu:       &manager.mu,
+		id:        id,
+		provider:  strings.ToLower(strings.TrimSpace(providerID)),
+		status:    StatusRunning,
+		progress:  "starting",
+		started:   now,
+		updated:   now,
+		expiresAt: now.Add(manager.options.JobTTL),
+		cancel:    cancel,
+		mu:        &manager.mu,
 	}
 	entry.rules = manager.options.PromptRules
 	if len(entry.rules) == 0 {
@@ -349,6 +352,7 @@ func (manager *Manager) snapshot(entry *job) Snapshot {
 		Progress:  entry.progress,
 		StartedAt: entry.started,
 		UpdatedAt: entry.updated,
+		ExpiresAt: entry.expiresAt,
 	}
 	if entry.err != nil {
 		snapshot.Error = entry.err.Error()

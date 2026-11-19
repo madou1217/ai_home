@@ -419,7 +419,7 @@ func TestFieldCoverageIsPartitionForEverySourceCombination(t *testing.T) {
 				if key == "" || filledKeys[key] {
 					t.Fatalf("filled_fields 存在空值或重复项: %v", filled)
 				}
-				if containsString(nodeOnlyFieldKeys, key) {
+				if containsString(legacyUnfilledFieldKeys, key) {
 					t.Fatalf("无来源的 Node 键 %q 不应出现在 filled", key)
 				}
 				filledKeys[key] = true
@@ -430,7 +430,7 @@ func TestFieldCoverageIsPartitionForEverySourceCombination(t *testing.T) {
 					t.Fatalf("unfilled_fields 存在空值或重复项: %v", unfilled)
 				}
 				unfilledKeys[key] = true
-				if !containsString(dataFieldKeys, key) && !containsString(nodeOnlyFieldKeys, key) {
+				if !containsString(dataFieldKeys, key) && !containsString(legacyUnfilledFieldKeys, key) {
 					t.Fatalf("unfilled_fields 出现未分类的键 %q", key)
 				}
 			}
@@ -445,7 +445,7 @@ func TestFieldCoverageIsPartitionForEverySourceCombination(t *testing.T) {
 					t.Errorf("基线键 %q 必须总是填充", key)
 				}
 			}
-			for _, key := range nodeOnlyFieldKeys {
+			for _, key := range legacyUnfilledFieldKeys {
 				if !unfilledKeys[key] {
 					t.Errorf("无来源键 %q 必须留在 unfilled", key)
 				}

@@ -188,7 +188,7 @@ var (
 	}
 )
 
-// nodeOnlyFieldKeys 是 Node 的 /v0/webui/openai-models 有、Go 仍无真值来源的键。
+// legacyUnfilledFieldKeys 是 Node 的 /v0/webui/openai-models 有、Go 仍无真值来源的键。
 //
 // 分组说明：
 //   - data / metadata / managedData.metadata：Node 的展示目录与 models.dev 全量元数据
@@ -199,7 +199,7 @@ var (
 //   - accountScope：Node accountRef 与 Go account_ref 不是同一个值，本端点不支持过滤。
 //   - data.*：Node 单个模型项的展示/设置字段（object/created/owned_by/模态/价格等）。
 //   - SSE：watch 与 refresh 任务仍由 Node 负责。
-var nodeOnlyFieldKeys = []string{
+var legacyUnfilledFieldKeys = []string{
 	"endpoint",
 	"cached",
 	"updatedAt",
@@ -377,8 +377,8 @@ func fieldCoverage(enrich *enrichment) (filled []string, unfilled []string) {
 	if hasSnapshot {
 		filled = append(filled, snapshotFieldKeys...)
 	}
-	unfilled = make([]string, 0, len(nodeOnlyFieldKeys)+3)
-	unfilled = append(unfilled, nodeOnlyFieldKeys...)
+	unfilled = make([]string, 0, len(legacyUnfilledFieldKeys)+3)
+	unfilled = append(unfilled, legacyUnfilledFieldKeys...)
 	if !hasSettings {
 		unfilled = append(unfilled, "managedData", "settingsUpdatedAt")
 	}

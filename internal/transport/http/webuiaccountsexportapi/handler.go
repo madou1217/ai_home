@@ -123,7 +123,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	// 两种情况都会把已存在的 Go 账号误算成 Node-only，宁可不发也不发错数。
 	if links := handler.resolverLinks(); links != nil && decoded &&
 		!query.hasProviders && !query.hasRefs && result.Skipped == 0 {
-		response.Header().Set(NodeOnlyAccountsHeader, strconv.Itoa(nodeOnlyAccounts(links, accounts)))
+		response.Header().Set(UnlinkedAccountsHeader, strconv.Itoa(unlinkedAccounts(links, accounts)))
 	}
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(result.Document)

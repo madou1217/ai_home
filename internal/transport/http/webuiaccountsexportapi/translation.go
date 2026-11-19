@@ -13,11 +13,11 @@ import (
 // ErrInvalidExportQuery 表示导出过滤参数不符合 WebUI 合同（结构或取值非法）。
 var ErrInvalidExportQuery = errors.New("账号导出过滤参数无效")
 
-// NodeOnlyAccountsHeader 是 Node 链接表中存在、Go 侧不存在的账号数。
+// UnlinkedAccountsHeader 是 Node 链接表中存在、Go 侧不存在的账号数。
 //
 // 语义只覆盖「Node 建过同步链接」的账号：从未同步过的 Node 账号不在 Go 数据里，
 // 因此该计数是真实 Node-only 的下界，而不是全量对账结果。
-const NodeOnlyAccountsHeader = "X-AIH-Node-Only-Accounts"
+const UnlinkedAccountsHeader = "X-AIH-Unlinked-Accounts"
 
 // exportQuery 是翻译与校验后的导出作用域。
 //
@@ -132,11 +132,11 @@ func exportFileName(query exportQuery, accounts []exportedAccount) string {
 	return "aih-accounts-" + day + ".json"
 }
 
-// nodeOnlyAccounts 统计链接表里 Go 侧不存在的账号（按 Go 引用去重）。
+// unlinkedAccounts 统计链接表里 Go 侧不存在的账号（按 Go 引用去重）。
 //
 // 只对「不过滤且无跳过」的导出调用：过滤会把其他 provider / 其他引用移出集合，
 // 凭据不可读的账号也不在文档里，两者都会把已存在的 Go 账号误算成 Node-only。
-func nodeOnlyAccounts(links map[string]string, accounts []exportedAccount) int {
+func unlinkedAccounts(links map[string]string, accounts []exportedAccount) int {
 	exported := make(map[string]struct{}, len(accounts))
 	for _, account := range accounts {
 		exported[account.AccountRef] = struct{}{}

@@ -167,8 +167,8 @@ func TestExportReportsNodeOnlyAccountsFromLinks(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	if nodeOnly := recorder.Header().Get(NodeOnlyAccountsHeader); nodeOnly != "1" {
-		t.Fatalf("%s = %q", NodeOnlyAccountsHeader, nodeOnly)
+	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "1" {
+		t.Fatalf("%s = %q", UnlinkedAccountsHeader, nodeOnly)
 	}
 
 	// 过滤后的集合不完整，计数不可解释：不发该响应头。
@@ -177,8 +177,8 @@ func TestExportReportsNodeOnlyAccountsFromLinks(t *testing.T) {
 		recorder,
 		httptest.NewRequest(http.MethodGet, Path+"?provider=codex", nil),
 	)
-	if nodeOnly := recorder.Header().Get(NodeOnlyAccountsHeader); nodeOnly != "" {
-		t.Fatalf("过滤导出不应给出 %s，得到 %q", NodeOnlyAccountsHeader, nodeOnly)
+	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "" {
+		t.Fatalf("过滤导出不应给出 %s，得到 %q", UnlinkedAccountsHeader, nodeOnly)
 	}
 
 	// 未启用同步：两边引用相同，没有可统计的 Node-only。
@@ -187,8 +187,8 @@ func TestExportReportsNodeOnlyAccountsFromLinks(t *testing.T) {
 		recorder,
 		httptest.NewRequest(http.MethodGet, Path, nil),
 	)
-	if nodeOnly := recorder.Header().Get(NodeOnlyAccountsHeader); nodeOnly != "" {
-		t.Fatalf("未启用同步不应给出 %s，得到 %q", NodeOnlyAccountsHeader, nodeOnly)
+	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "" {
+		t.Fatalf("未启用同步不应给出 %s，得到 %q", UnlinkedAccountsHeader, nodeOnly)
 	}
 }
 
@@ -205,8 +205,8 @@ func TestExportNodeOnlyDeduplicatesSharedGoRef(t *testing.T) {
 		recorder,
 		httptest.NewRequest(http.MethodGet, Path, nil),
 	)
-	if nodeOnly := recorder.Header().Get(NodeOnlyAccountsHeader); nodeOnly != "1" {
-		t.Fatalf("%s = %q, 同一 Go 引用应只计一次", NodeOnlyAccountsHeader, nodeOnly)
+	if nodeOnly := recorder.Header().Get(UnlinkedAccountsHeader); nodeOnly != "1" {
+		t.Fatalf("%s = %q, 同一 Go 引用应只计一次", UnlinkedAccountsHeader, nodeOnly)
 	}
 }
 

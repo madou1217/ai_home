@@ -329,11 +329,11 @@ var (
 	}
 )
 
-// nodeOnlyFieldKeys 是 Node 契约里有、Go 侧没有任何真值来源的键。
+// legacyUnfilledFieldKeys 是 Node 契约里有、Go 侧没有任何真值来源的键。
 //
 // 它们不出现在本响应的 JSON 里，但必须始终列进 unfilled_fields：那正是本接口
 // 「不伪造全量形状」的承诺（原因见 handler.go 的 unfilled 说明）。
-var nodeOnlyFieldKeys = []string{
+var legacyUnfilledFieldKeys = []string{
 	"models",
 	"metadata",
 	"selectableByAccountRef",
@@ -383,8 +383,8 @@ func (enrich *enricher) fieldCoverage() (filled []string, unfilled []string) {
 		}
 	}
 	filled = make([]string, 0, len(dataFieldKeys))
-	unfilled = make([]string, 0, len(dataFieldKeys)+len(nodeOnlyFieldKeys))
-	unfilled = append(unfilled, nodeOnlyFieldKeys...)
+	unfilled = make([]string, 0, len(dataFieldKeys)+len(legacyUnfilledFieldKeys))
+	unfilled = append(unfilled, legacyUnfilledFieldKeys...)
 	for _, key := range dataFieldKeys {
 		if present[key] {
 			filled = append(filled, key)

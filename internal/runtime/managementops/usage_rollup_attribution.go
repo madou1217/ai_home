@@ -229,7 +229,7 @@ func loadAttributionObservationsConn(
 		}
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	queryErr, readErr := streamObservationRows(ctx, conn, `
 		SELECT id, event_key, provider, account_ref, session_id, source_kind, model,
 			input_tokens, output_tokens, cache_read_input_tokens,
 			cache_creation_input_tokens, reasoning_output_tokens, total_tokens,
@@ -247,30 +247,18 @@ func loadAttributionObservationsConn(
 						OR cache_creation_input_tokens > 0 OR reasoning_output_tokens > 0
 					)
 				)
-			)`, attrFromMS, attrToMS, hw)
-	if err != nil {
-		return nil, nil, fmt.Errorf("扫描归因观测行失败: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var r observationRow
-		if scanErr := rows.Scan(
-			&r.ID, &r.EventKey, &r.Provider, &r.AccountRef, &r.SessionID, &r.SourceKind, &r.Model,
-			&r.InputTokens, &r.OutputTokens, &r.CacheReadInputTokens,
-			&r.CacheCreationInputTokens, &r.ReasoningOutputTokens, &r.TotalTokens,
-			&r.CostUSD, &r.TimestampMS, &r.Project, &r.CWD, &r.GitBranch,
-		); scanErr != nil {
-			return nil, nil, scanErr
-		}
+			)`, []int64{attrFromMS, attrToMS, hw}, func(r observationRow) {
 		if isProxyObservation(r) {
 			proxies = append(proxies, r)
 		} else if isScannerObservation(r) {
 			scanners = append(scanners, r)
 		}
+	})
+	if queryErr != nil {
+		return nil, nil, fmt.Errorf("扫描归因观测行失败: %w", queryErr)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, err
+	if readErr != nil {
+		return nil, nil, readErr
 	}
 	return proxies, scanners, nil
 }

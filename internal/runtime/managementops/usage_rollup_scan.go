@@ -103,7 +103,7 @@ func (s *UsageStore) scanRollupHourRangeConn(
 
 	if !hasScanner {
 		// 纯代理/非扫描流：直接单趟流式聚合，零行缓存。
-		rows, qErr := conn.QueryContext(ctx, `
+		qErr, readErr := streamObservationRows(ctx, conn, `
 			SELECT id, event_key, provider, account_ref, session_id, source_kind, model,
 				input_tokens, output_tokens, cache_read_input_tokens,
 				cache_creation_input_tokens, reasoning_output_tokens, total_tokens,
@@ -111,60 +111,33 @@ func (s *UsageStore) scanRollupHourRangeConn(
 			FROM model_usage_records
 			WHERE timestamp_ms BETWEEN ? AND ?
 				AND NOT (provider IN ('codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn') AND source_kind = 'native_session_done')`,
-			startHour, endInclusive)
+			[]int64{startHour, endInclusive}, func(r observationRow) {
+				if r.TimestampMS < 0 {
+					return
+				}
+				h := hourFloorMS(r.TimestampMS)
+				if !wantHour(h) {
+					return
+				}
+				hb := getOrCreateHourBuild(byHour, h)
+				accumulateCanonicalRowIntoHour(hb, r, nil, forksByHash)
+			})
 		if qErr != nil {
 			return rollupScanResult{}, qErr
 		}
-		for rows.Next() {
-			var r observationRow
-			if scanErr := rows.Scan(
-				&r.ID, &r.EventKey, &r.Provider, &r.AccountRef, &r.SessionID, &r.SourceKind, &r.Model,
-				&r.InputTokens, &r.OutputTokens, &r.CacheReadInputTokens,
-				&r.CacheCreationInputTokens, &r.ReasoningOutputTokens, &r.TotalTokens,
-				&r.CostUSD, &r.TimestampMS, &r.Project, &r.CWD, &r.GitBranch,
-			); scanErr != nil {
-				_ = rows.Close()
-				return rollupScanResult{}, scanErr
-			}
-			if r.TimestampMS < 0 {
-				continue
-			}
-			h := hourFloorMS(r.TimestampMS)
-			if !wantHour(h) {
-				continue
-			}
-			hb := getOrCreateHourBuild(byHour, h)
-			accumulateCanonicalRowIntoHour(hb, r, nil, forksByHash)
+		if readErr != nil {
+			return rollupScanResult{}, readErr
 		}
-		if rowsErr := rows.Err(); rowsErr != nil {
-			_ = rows.Close()
-			return rollupScanResult{}, rowsErr
-		}
-		_ = rows.Close()
 	} else {
 		// 含本地扫描行：单趟扫描 [padFrom, padTo]，并对触及目标小时的候选分量做完整边界闭合。
-		rows, qErr := conn.QueryContext(ctx, `
+		var proxies, scanners, targetRows []observationRow
+		qErr, readErr := streamObservationRows(ctx, conn, `
 			SELECT id, event_key, provider, account_ref, session_id, source_kind, model,
 				input_tokens, output_tokens, cache_read_input_tokens,
 				cache_creation_input_tokens, reasoning_output_tokens, total_tokens,
 				cost_usd, timestamp_ms, project, cwd, git_branch
 			FROM model_usage_records
-			WHERE timestamp_ms BETWEEN ? AND ?`, padFrom, padTo)
-		if qErr != nil {
-			return rollupScanResult{}, qErr
-		}
-		var proxies, scanners, targetRows []observationRow
-		for rows.Next() {
-			var r observationRow
-			if scanErr := rows.Scan(
-				&r.ID, &r.EventKey, &r.Provider, &r.AccountRef, &r.SessionID, &r.SourceKind, &r.Model,
-				&r.InputTokens, &r.OutputTokens, &r.CacheReadInputTokens,
-				&r.CacheCreationInputTokens, &r.ReasoningOutputTokens, &r.TotalTokens,
-				&r.CostUSD, &r.TimestampMS, &r.Project, &r.CWD, &r.GitBranch,
-			); scanErr != nil {
-				_ = rows.Close()
-				return rollupScanResult{}, scanErr
-			}
+			WHERE timestamp_ms BETWEEN ? AND ?`, []int64{padFrom, padTo}, func(r observationRow) {
 			if isProxyObservation(r) {
 				proxies = append(proxies, r)
 			} else if isScannerObservation(r) {
@@ -176,12 +149,13 @@ func (s *UsageStore) scanRollupHourRangeConn(
 					targetRows = append(targetRows, r)
 				}
 			}
+		})
+		if qErr != nil {
+			return rollupScanResult{}, qErr
 		}
-		if rowsErr := rows.Err(); rowsErr != nil {
-			_ = rows.Close()
-			return rollupScanResult{}, rowsErr
+		if readErr != nil {
+			return rollupScanResult{}, readErr
 		}
-		_ = rows.Close()
 
 		attrs, crossLeft, crossRight, unclosed, closeErr := s.closeMaterializeAttributionsConn(
 			ctx, conn, startHour, endHour, wantHour, padFrom, padTo,

@@ -198,6 +198,7 @@ func buildHTTPRequest(
 	ctx context.Context,
 	auth authProfile,
 	encoded encodedRequest,
+	clientVersion string,
 ) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
@@ -213,7 +214,7 @@ func buildHTTPRequest(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("anthropic-version", anthropicVersion)
 	request.Header.Set(auth.headerName, auth.headerValue)
-	applyClaudeCodeIdentity(request.Header, auth.officialClient)
+	applyClaudeCodeIdentity(request.Header, auth.officialClient, clientVersion)
 
 	betas := append([]string(nil), encoded.betaHeaders...)
 	if auth.oauthBeta {

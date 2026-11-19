@@ -15,7 +15,9 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -39,6 +41,9 @@ type Adapter struct {
 	client       HTTPClient
 	clock        Clock
 	decodeErrors func(error)
+	// versions 提供订阅 OAuth 请求自报的 Claude Code 客户端版本；不写死，
+	// 随本机 CLI 探测与真实客户端学习上涨。
+	versions clientversion.Source
 	// rules 可选：账号自定义上游错误规则求值端口，见 ObserveUpstreamRules。
 	rules configured.Rules
 	// aligner 可选：把请求的推理强度压进目标模型的档位阶梯，见 ObserveEffortLadders。
@@ -49,9 +54,40 @@ type Adapter struct {
 var _ inferencegateway.UpstreamAdapter = (*Adapter)(nil)
 
 // NewAdapter 创建显式注入 HTTP Client 和时钟的 Adapter。
+//
+// 客户端版本默认取编译期最低身份；需要跟随本机 CLI 与真实客户端时用
+// NewAdapterWithClientVersion 注入解析器。
 func NewAdapter(
 	client HTTPClient,
 	clock Clock,
+	decodeErrorObservers ...func(error),
+) (*Adapter, error) {
+	return newAdapter(
+		client,
+		clock,
+		clientversion.Static(claudeidentity.Floor),
+		decodeErrorObservers...,
+	)
+}
+
+// NewAdapterWithClientVersion 创建按版本来源自报客户端身份的 Adapter。
+func NewAdapterWithClientVersion(
+	client HTTPClient,
+	clock Clock,
+	versions clientversion.Source,
+	decodeErrorObservers ...func(error),
+) (*Adapter, error) {
+	if versions == nil {
+		return nil, ErrInvalidDependencies
+	}
+	return newAdapter(client, clock, versions, decodeErrorObservers...)
+}
+
+// newAdapter 是两条构造路径共享的校验与装配。
+func newAdapter(
+	client HTTPClient,
+	clock Clock,
+	versions clientversion.Source,
 	decodeErrorObservers ...func(error),
 ) (*Adapter, error) {
 	if client == nil || clock == nil || len(decodeErrorObservers) > 1 {
@@ -65,6 +101,7 @@ func NewAdapter(
 		client:       client,
 		clock:        clock,
 		decodeErrors: decodeErrors,
+		versions:     versions,
 	}, nil
 }
 
@@ -153,7 +190,7 @@ func (adapter *Adapter) Execute(
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}
-	request, err := buildHTTPRequest(ctx, auth, encoded)
+	request, err := buildHTTPRequest(ctx, auth, encoded, adapter.versions.Current())
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
@@ -36,10 +37,11 @@ import (
 // 只放「服务级」依赖：HTTP 传输、客户端版本源、凭据存储与时钟。账号级差异一律由
 // 策略在 FetchUsageWithDocument 里从凭据读取，不进装配上下文。
 type usageProviderContext struct {
-	client        UsageHTTPClient
-	codexVersions clientversion.Source
-	store         *sqliteaccount.Store
-	clock         usageapp.Clock
+	client         UsageHTTPClient
+	codexVersions  clientversion.Source
+	claudeVersions clientversion.Source
+	store          *sqliteaccount.Store
+	clock          usageapp.Clock
 	// aiHomeDir 用于读取账号级出口绑定（app-state.db / 池运行文件）。
 	aiHomeDir string
 }
@@ -82,7 +84,11 @@ func buildCodexUsage(context usageProviderContext) ([]usageapp.ProviderStrategy,
 }
 
 func buildClaudeUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
-	strategy, err := claudeusage.New(context.client)
+	source := context.claudeVersions
+	if source == nil {
+		source = clientversion.Static(claudeidentity.Floor)
+	}
+	strategy, err := claudeusage.NewWithClientVersion(context.client, source)
 	if err != nil {
 		return nil, err
 	}

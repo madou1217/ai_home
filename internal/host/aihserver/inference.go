@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
@@ -105,6 +106,8 @@ type inferenceCompositionDependencies struct {
 	upstreamDecodeErrors  func(error)
 	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
 	codexVersions clientversion.Source
+	// claudeVersions 提供模拟 Claude Code 客户端时自报的版本；为空时使用编译期最低版本。
+	claudeVersions clientversion.Source
 	// codexRejections 接收 Codex 上游拒绝请求的低敏诊断；可为空。
 	codexRejections func(codexresponses.UpstreamRejection)
 	clock           func() time.Time
@@ -159,9 +162,14 @@ func newInferenceComposition(
 	codexAdapter.ObserveRejections(dependencies.codexRejections)
 	codexAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
 	codexAdapter.ObserveEffortLadders(dependencies.effortLadders)
-	claudeAdapter, err := claudemessages.NewAdapter(
+	var claudeVersions clientversion.Source = clientversion.Static(claudeidentity.Floor)
+	if dependencies.claudeVersions != nil {
+		claudeVersions = dependencies.claudeVersions
+	}
+	claudeAdapter, err := claudemessages.NewAdapterWithClientVersion(
 		client,
 		dependencies.clock,
+		claudeVersions,
 		dependencies.upstreamDecodeErrors,
 	)
 	if err != nil {

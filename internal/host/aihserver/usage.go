@@ -43,6 +43,8 @@ type usageCompositionDependencies struct {
 	clock       usageapp.Clock
 	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
 	codexVersions clientversion.Source
+	// claudeVersions 提供模拟 Claude Code 客户端时自报的版本；为空时使用编译期最低版本。
+	claudeVersions clientversion.Source
 	// aiHomeDir 是账号级出口绑定（app-state.db / 池运行文件）的数据根。
 	aiHomeDir string
 }
@@ -69,11 +71,12 @@ func newUsageComposition(
 		}
 	}
 	strategies, providerConcurrency, err := buildUsageProviderStrategies(usageProviderContext{
-		client:        client,
-		codexVersions: dependencies.codexVersions,
-		store:         dependencies.store,
-		clock:         dependencies.clock,
-		aiHomeDir:     dependencies.aiHomeDir,
+		client:         client,
+		codexVersions:  dependencies.codexVersions,
+		claudeVersions: dependencies.claudeVersions,
+		store:          dependencies.store,
+		clock:          dependencies.clock,
+		aiHomeDir:      dependencies.aiHomeDir,
 	})
 	if err != nil {
 		return nil, err

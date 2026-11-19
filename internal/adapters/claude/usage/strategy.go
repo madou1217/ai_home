@@ -19,6 +19,8 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 )
 
 const (
@@ -27,7 +29,6 @@ const (
 	profilePath     = "/api/oauth/profile"
 	sourceID        = "claude_oauth_usage"
 	oauthBeta       = "oauth-2025-04-20"
-	claudeUserAgent = "claude-code/2.1.88"
 	maxResponseBody = 1 << 20
 	// profileTimeout 是补套餐用的 best-effort 请求上限：它失败不能拖慢或拖垮额度采集。
 	profileTimeout = 5 * time.Second
@@ -49,17 +50,26 @@ type HTTPClient interface {
 
 // Strategy 使用 Claude Bearer 凭据读取 OAuth usage。
 type Strategy struct {
-	client HTTPClient
+	client   HTTPClient
+	versions clientversion.Source
 }
 
 var _ usageapp.ProviderStrategy = (*Strategy)(nil)
 
 // New 创建不依赖 Claude Native Relay 的额度 Strategy。
 func New(client HTTPClient) (*Strategy, error) {
-	if client == nil {
+	return NewWithClientVersion(client, clientversion.Static(claudeidentity.Floor))
+}
+
+// NewWithClientVersion 创建按版本来源自报 Claude Code 客户端身份的额度 Strategy。
+func NewWithClientVersion(
+	client HTTPClient,
+	versions clientversion.Source,
+) (*Strategy, error) {
+	if client == nil || versions == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Strategy{client: client}, nil
+	return &Strategy{client: client, versions: versions}, nil
 }
 
 // ProviderID 返回当前 Strategy 唯一支持的 Provider。
@@ -103,7 +113,7 @@ func (strategy *Strategy) FetchUsage(
 	if !supported {
 		return usagecore.Snapshot{}, usageapp.ErrUsageUnsupported
 	}
-	request, err := newRequest(ctx, baseURL, token)
+	request, err := newRequest(ctx, baseURL, token, strategy.versions.Current())
 	if err != nil {
 		return usagecore.Snapshot{}, errors.Join(usageapp.ErrRefreshFailed, err)
 	}
@@ -139,7 +149,7 @@ func (strategy *Strategy) FetchUsage(
 		AccountRef: accountRef,
 		ProviderID: claudeauth.ProviderID,
 		Source:     sourceID,
-		PlanType:   strategy.fetchPlanType(ctx, baseURL, token),
+		PlanType:   strategy.fetchPlanType(ctx, baseURL, token, strategy.versions.Current()),
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -182,12 +192,13 @@ func newRequest(
 	ctx context.Context,
 	baseURL string,
 	token string,
+	clientVersion string,
 ) (*http.Request, error) {
 	endpoint, err := oauthEndpoint(baseURL, usagePath)
 	if err != nil || token == "" {
 		return nil, ErrInvalidResponse
 	}
-	return newGET(ctx, endpoint, token)
+	return newGET(ctx, endpoint, token, clientVersion)
 }
 
 // newGET 创建带 OAuth Header 的 GET 请求。
@@ -195,6 +206,7 @@ func newGET(
 	ctx context.Context,
 	endpoint string,
 	token string,
+	clientVersion string,
 ) (*http.Request, error) {
 	if token == "" {
 		return nil, ErrInvalidResponse
@@ -211,7 +223,7 @@ func newGET(
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Anthropic-Beta", oauthBeta)
-	request.Header.Set("User-Agent", claudeUserAgent)
+	request.Header.Set("User-Agent", claudeidentity.UserAgent(clientVersion))
 	return request, nil
 }
 
@@ -425,6 +437,7 @@ func (strategy *Strategy) fetchPlanType(
 	ctx context.Context,
 	baseURL string,
 	token string,
+	clientVersion string,
 ) string {
 	endpoint, err := oauthEndpoint(baseURL, profilePath)
 	if err != nil {
@@ -432,7 +445,7 @@ func (strategy *Strategy) fetchPlanType(
 	}
 	profileCtx, cancel := context.WithTimeout(ctx, profileTimeout)
 	defer cancel()
-	request, err := newGET(profileCtx, endpoint, token)
+	request, err := newGET(profileCtx, endpoint, token, clientVersion)
 	if err != nil {
 		return ""
 	}

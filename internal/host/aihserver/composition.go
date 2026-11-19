@@ -288,21 +288,22 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	// 图片专用模型不在账号的对话模型快照里，但该 Provider 的凭据确实能出图：合成进路由索引，
 	// 否则「只写 model」的图片请求会 503，/v1/models 也不会列出这些模型。
 	store.SetSynthesizedModelSource(images.NativeImageModelIDs)
-	codexVersions, err := newCodexClientVersions(ctx, options.AIHomeDir)
+	clientVersions, err := newClientVersions(ctx, options.AIHomeDir)
 	if err != nil {
 		_ = store.Close()
-		return nil, fmt.Errorf("创建 Codex 客户端版本解析器失败: %w", err)
+		return nil, fmt.Errorf("创建客户端版本解析器失败: %w", err)
 	}
+	codexVersions := clientVersions.Codex
 	modelModalities, err := modelsdev.New()
 	if err != nil {
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建 models.dev 模态索引失败: %w", err)
 	}
 	agyModelWires := newAgyModelWires(options.AIHomeDir)
 	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires, modelModalities, options.AIHomeDir)
 	if err != nil {
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, err
 	}
@@ -313,7 +314,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		persistErrorObserver(options.ErrorLog),
 	)
 	if err != nil {
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号运行态失败: %w", err)
 	}
@@ -321,20 +322,20 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	// 不能因为进程重启就消失。读失败直接失败启动——带着未知阻塞跑路由更危险。
 	seededStates, seedErr := store.ListAccountStates(ctx)
 	if seedErr != nil {
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("加载账号运行态失败: %w", seedErr)
 	}
 	for _, state := range seededStates {
 		if seedErr := inMemoryRuntime.ApplyAccountState(ctx, state); seedErr != nil {
-			_ = codexVersions.Close()
+			_ = clientVersions.Close()
 			_ = store.Close()
 			return nil, fmt.Errorf("投影账号运行态失败: %w", seedErr)
 		}
 	}
 	outcomeRecorder, err := newAccountOutcomeRecorder(ctx, store, options.ErrorLog)
 	if err != nil {
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号结果记录器失败: %w", err)
 	}
@@ -344,14 +345,14 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	usageDBPath, err := sqliteaccount.DatabasePath(options.AIHomeDir)
 	if err != nil {
 		_ = outcomeRecorder.Close()
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, err
 	}
 	usageProjection, err := managementops.NewUsageStore(ctx, usageDBPath, catalogProviderIDs(catalog), time.Now)
 	if err != nil {
 		_ = outcomeRecorder.Close()
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("打开 Go 用量事实投影失败: %w", err)
 	}
@@ -396,7 +397,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	webuiAccountsSource, err := webuiaccountsapi.OpenSQLiteSource(webuiaccountsapi.SQLiteOptions{AIHomeDir: options.AIHomeDir})
 	if err != nil {
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("打开账号页读模型数据源失败: %w", err)
 	}
@@ -433,6 +434,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		DelegateCredentialRefresh:  options.DelegateCredentialRefresh,
 		UpstreamErrorRuleProviders: options.UpstreamErrorRuleProviders,
 		CodexVersions:              codexVersions,
+		ClaudeVersions:             clientVersions.Claude,
 		AGYModelWires:              agyModelWires,
 		ModelModalities:            modelModalities,
 		RouteObserver:              codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
@@ -440,7 +442,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	})
 	if err != nil {
 		_ = webuiAccountsSource.Close()
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, err
 	}
@@ -450,7 +452,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
 	if err != nil {
 		_ = webuiAccountsSource.Close()
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号页读模型鉴权失败: %w", err)
 	}
@@ -460,13 +462,13 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	})
 	if err != nil {
 		_ = webuiAccountsSource.Close()
-		_ = codexVersions.Close()
+		_ = clientVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号页读模型接口失败: %w", err)
 	}
 	resources = append(resources, webuiAccountsSource)
 	handlers.webuiAccounts = webuiAccountsHandler
-	resources = append(resources, codexVersions, outcomeRecorder, usageProjection, store, writerLease)
+	resources = append(resources, clientVersions, outcomeRecorder, usageProjection, store, writerLease)
 	projectionTransferred = true
 	leaseTransferred = true
 	rootHandler := withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers)))
@@ -529,6 +531,7 @@ type handlerDependencies struct {
 	// UpstreamErrorRuleProviders 声明 Go 已接入规则求值的 Provider；空表示能力关闭。
 	UpstreamErrorRuleProviders []string
 	CodexVersions              *clientversion.Resolver
+	ClaudeVersions             *clientversion.Resolver
 	AGYModelWires              *agycodeassist.ModelWireStore
 	ModelModalities            *modelsdev.Index
 	// RouteObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
@@ -589,6 +592,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	delegateCredentialRefresh := dependencies.DelegateCredentialRefresh
 	upstreamErrorRuleProviders := dependencies.UpstreamErrorRuleProviders
 	codexVersions := dependencies.CodexVersions
+	claudeVersions := dependencies.ClaudeVersions
 	agyModelWires := dependencies.AGYModelWires
 	modelModalities := dependencies.ModelModalities
 	routeObserver := dependencies.RouteObserver
@@ -1043,15 +1047,16 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	usage, err = newUsageComposition(
 		ctx,
 		usageCompositionDependencies{
-			catalog:       catalog,
-			store:         store,
-			credentials:   credentials,
-			models:        store,
-			runtime:       accountRuntime,
-			httpClient:    usageClient,
-			clock:         time.Now,
-			codexVersions: codexVersions,
-			aiHomeDir:     aiHomeDir,
+			catalog:        catalog,
+			store:          store,
+			credentials:    credentials,
+			models:         store,
+			runtime:        accountRuntime,
+			httpClient:     usageClient,
+			clock:          time.Now,
+			codexVersions:  codexVersions,
+			claudeVersions: claudeVersions,
+			aiHomeDir:      aiHomeDir,
 		},
 	)
 	if err != nil {
@@ -1512,6 +1517,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			requestRewriter:           visionGuard,
 			effortLadders:             modelModalities,
 			codexVersions:             codexVersions,
+			claudeVersions:            claudeVersions,
 			codexRejections:           newCodexRejectionObserver(errorLog),
 			agyModelWires:             agyModelWires,
 			upstreamRules:             upstreamRuleEvaluator,
@@ -1993,28 +1999,28 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	modelSnapshot := newModelSnapshotReader(aiHomeDir)
 	webuiDeps := webuiRouteDependencies{
-		Authorizer:         authorizer,
-		AIHomeDir:          aiHomeDir,
-		Catalog:            catalog,
-		ModelModalities:    modelModalities,
-		ModelAliasExpander: modelAliasExpander,
-		ModelSnapshot:      modelSnapshot,
+		Authorizer:            authorizer,
+		AIHomeDir:             aiHomeDir,
+		Catalog:               catalog,
+		ModelModalities:       modelModalities,
+		ModelAliasExpander:    modelAliasExpander,
+		ModelSnapshot:         modelSnapshot,
 		MetadataResolver:      pricingResolver,
 		EgressManager:         egressManager,
 		Upstream429RetryStore: upstream429Store,
 		HostHomeDir:           dependencies.HostHomeDir,
-		Store:              store,
-		NativeWorkPreparer: nativeWork,
-		AccountRuntime:     accountRuntime,
-		AuthJobs:           jobs,
-		LoginJobs:          aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
-		AccountsHandler:    accountsHandler,
-		AccountRows:        dependencies.WebUIAccountsSource,
-		CredentialEditor:   credentialRotator,
-		ProviderDefaults:   providerDefaults,
-		ModelRefresher:     recoveringModelManagement,
-		UsageService:       usage.service,
-		QuotaStats:         quotaStatsService,
+		Store:                 store,
+		NativeWorkPreparer:    nativeWork,
+		AccountRuntime:        accountRuntime,
+		AuthJobs:              jobs,
+		LoginJobs:             aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
+		AccountsHandler:       accountsHandler,
+		AccountRows:           dependencies.WebUIAccountsSource,
+		CredentialEditor:      credentialRotator,
+		ProviderDefaults:      providerDefaults,
+		ModelRefresher:        recoveringModelManagement,
+		UsageService:          usage.service,
+		QuotaStats:            quotaStatsService,
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},

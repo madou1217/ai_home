@@ -1,17 +1,20 @@
 package messages
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
+)
 
 // 订阅 OAuth 走的是 Claude Code 的调用合同，不是通用 API Key 合同：Anthropic 依据
 // 客户端身份判定订阅额度是否可用。Canonical 转码路径从零构造请求，若不声明这组身份，
 // 同一账号、同一时刻、同一模型下原生 relay 成功而 Canonical 被限流。
 //
-// 下列三个值来自本机 Claude Code 2.1.229 可执行版本与既有回环抓包合同（假 Key 打
-// 127.0.0.1，未连接 Anthropic）对 POST /v1/messages 的实际合同。不含 SDK 遥测字段
+// 下列 Header 取值来自本机 Claude Code 可执行版本与既有回环抓包合同（假 Key 打
+// 127.0.0.1，未连接 Anthropic）对 POST /v1/messages 的实际合同。User-Agent 的产品名
+// 与形态固定，版本号由 claudeidentity 的解析器提供（不写死）。不含 SDK 遥测字段
 // （x-stainless-*），那些只描述运行环境，不参与身份判定。
 const (
-	// clientUserAgent 是官方 CLI 自报的客户端身份。
-	clientUserAgent = "claude-cli/2.1.229 (external, sdk-cli)"
 	// clientAppHeader 声明调用方是 CLI 形态的 Claude Code。
 	clientAppHeader = "x-app"
 	// clientAppValue 是官方 CLI 在该 Header 上发送的唯一取值。
@@ -32,12 +35,13 @@ const clientSystemIdentity = "You are Claude Code, Anthropic's official CLI for 
 // applyClaudeCodeIdentity 为订阅 OAuth 请求补齐官方客户端身份 Header。
 //
 // 只作用于 OAuth 凭据：API Key 和第三方 auth-token 代理走的是通用 API 合同，
-// 冒充官方 CLI 既无必要，也可能被代理按未知客户端拒绝。
-func applyClaudeCodeIdentity(header http.Header, oauth bool) {
+// 冒充官方 CLI 既无必要，也可能被代理按未知客户端拒绝。版本由 claudeidentity
+// 的解析器提供，写死会随官方 CLI 自动更新而过时。
+func applyClaudeCodeIdentity(header http.Header, oauth bool, version string) {
 	if header == nil || !oauth {
 		return
 	}
-	header.Set("User-Agent", clientUserAgent)
+	header.Set("User-Agent", claudeidentity.UserAgent(version))
 	header.Set(clientAppHeader, clientAppValue)
 	header.Set(clientDirectAccessHeader, clientDirectAccessValue)
 }

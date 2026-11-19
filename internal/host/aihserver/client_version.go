@@ -2,9 +2,11 @@ package aihserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"path/filepath"
 
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
@@ -17,22 +19,44 @@ const clientVersionsFile = "client-versions.json"
 // 与 client-versions.json 分开：学习值是单调高水位，探测值必须能随 CLI 升级变化。
 const clientVersionsProbeFile = "client-versions-probe.json"
 
-// newCodexClientVersions 创建并启动 Codex 客户端版本解析器。
+// newClientVersions 创建并启动 Codex / Claude 客户端版本解析器。
 //
-// 网关模拟 Codex 客户端的请求（推理、模型目录、用量、WS 兜底）都从这里取版本，
+// 网关模拟客户端的请求（推理、模型目录、用量、WS 兜底）都从这里取版本，
 // 版本随本机 CLI 自动更新与经过网关的真实客户端上涨，不再写死，见 clientversion 包。
-func newCodexClientVersions(
+//
+// 两个 Provider 必须共用同一份 LearnedStore 与 ProbeCache：存储按 Provider 建键，
+// 但落盘是整表覆盖，各持一份会互相抹掉对方的键。
+func newClientVersions(
 	ctx context.Context,
 	aiHomeDir string,
-) (*clientversion.Resolver, error) {
+) (*clientVersionSet, error) {
 	learned := clientversion.NewLearnedStore(filepath.Join(aiHomeDir, "run", clientVersionsFile))
 	probeCache := clientversion.NewProbeCache(filepath.Join(aiHomeDir, "run", clientVersionsProbeFile))
-	resolver, err := codexidentity.NewResolver(learned, probeCache)
+	codexResolver, err := codexidentity.NewResolver(learned, probeCache)
 	if err != nil {
 		return nil, err
 	}
-	resolver.Start(ctx)
-	return resolver, nil
+	claudeResolver, err := claudeidentity.NewResolver(learned, probeCache)
+	if err != nil {
+		return nil, err
+	}
+	codexResolver.Start(ctx)
+	claudeResolver.Start(ctx)
+	return &clientVersionSet{Codex: codexResolver, Claude: claudeResolver}, nil
+}
+
+// clientVersionSet 是共享版本存储的一组客户端版本解析器。
+type clientVersionSet struct {
+	Codex  *clientversion.Resolver
+	Claude *clientversion.Resolver
+}
+
+// Close 停止全部周期探测。
+func (set *clientVersionSet) Close() error {
+	if set == nil {
+		return nil
+	}
+	return errors.Join(set.Codex.Close(), set.Claude.Close())
 }
 
 // requestAuthorizer 是学习前复核客户端凭据的最小端口。

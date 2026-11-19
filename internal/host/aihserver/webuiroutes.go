@@ -131,6 +131,8 @@ type webuiRouteDependencies struct {
 	AccountRuntime         any
 	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
 	AuthJobs *accountauth.Service
+	// LoginJobs 是 CLI code-paste 登录作业单例；account-add 与 login-jobs 共用。
+	LoginJobs *aihloginjob.Manager
 	// AccountsHandler 是 accountsapi 的账号端点：HTTP 分发之外还提供导入作业需要的
 	// 逐条导入用例（ImportAihAccounts），两条入口共用同一份导入语义。
 	AccountsHandler interface {
@@ -740,7 +742,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	accountAdd, err := webuiaccountaddapi.NewHandler(webuiaccountaddapi.Dependencies{
 		Authorizer:    authorizer,
 		Jobs:          addJobs,
-		LoginJobs:     aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir}),
+		LoginJobs:     dependencies.LoginJobs,
 		LocalImporter: NewKiroJobLocalImporter(dependencies),
 	})
 	if err != nil {

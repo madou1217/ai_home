@@ -77,6 +77,7 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
+	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/host/worknative"
@@ -1909,6 +1910,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		NativeWorkPreparer: nativeWork,
 		AccountRuntime:     accountRuntime,
 		AuthJobs:           jobs,
+		LoginJobs:          aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
 		AccountsHandler:    accountsHandler,
 		AccountRows:        dependencies.WebUIAccountsSource,
 		CredentialEditor:   credentialRotator,

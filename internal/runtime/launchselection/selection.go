@@ -1,0 +1,214 @@
+// Package launchselection 为"不带账号编号的裸启动"挑选账号。
+//
+// 借用 relay 的调度口径：健康优先、余量优先、最少最近使用（fair round robin）。
+// 与 relay 的区别是执行体：relay 在服务进程内存里轮转，这里由 CLI 进程挑号，
+// 所以"最近使用"要落到共享文件并加锁，否则并发启动会同时命中同一个账号。
+package launchselection
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// recentWindowMillis 是"刚被选过就让开"的时间窗。
+const recentWindowMillis = int64(90 * 1000)
+
+// Candidate 是管理面返回的账号候选。
+type Candidate struct {
+	AccountRef   string   `json:"accountRef"`
+	DisplayID    string   `json:"displayId"`
+	Enabled      bool     `json:"enabled"`
+	Configured   bool     `json:"configured"`
+	Status       string   `json:"status"`
+	RemainingPct *float64 `json:"remainingPct"`
+}
+
+// Options 描述一次选号请求。
+type Options struct {
+	AIHomeDir     string
+	BaseURL       string
+	ManagementKey string
+	Provider      string
+	HTTPClient    *http.Client
+	Now           func() time.Time
+}
+
+// Pick 返回当前最该用的账号；没有可用候选时 found=false。
+func Pick(ctx context.Context, options Options) (Candidate, bool, error) {
+	candidates, err := fetchCandidates(ctx, options)
+	if err != nil {
+		return Candidate{}, false, err
+	}
+	usable := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !candidate.Enabled || !candidate.Configured || strings.TrimSpace(candidate.DisplayID) == "" {
+			continue
+		}
+		// status 非空代表限流/故障等运行态；健康优先，但不直接丢弃：全部不健康时仍要能启动。
+		usable = append(usable, candidate)
+	}
+	if len(usable) == 0 {
+		return Candidate{}, false, nil
+	}
+	nowFunc := time.Now
+	if options.Now != nil {
+		nowFunc = options.Now
+	}
+	usage, lock, lockErr := lockUsage(options.AIHomeDir)
+	if lockErr == nil && lock != nil {
+		defer releaseUsage(lock)
+	}
+	current := nowFunc()
+	// 最近刚被裸启动选过的账号先让开，避免连续/并发启动压在同一条号上；
+	// 全部都在冷却窗口内时，退回"最久未用 + 余量更高"。
+	fresh := make([]Candidate, 0, len(usable))
+	recent := make([]Candidate, 0, len(usable))
+	for _, candidate := range usable {
+		if current.UnixMilli()-usage.lastUsed(candidate.AccountRef) >= recentWindowMillis {
+			fresh = append(fresh, candidate)
+		} else {
+			recent = append(recent, candidate)
+		}
+	}
+	rank := func(pool []Candidate, byRemaining bool) {
+		sort.SliceStable(pool, func(left, right int) bool {
+			a, b := pool[left], pool[right]
+			aHealthy, bHealthy := isHealthy(a), isHealthy(b)
+			if aHealthy != bHealthy {
+				return aHealthy
+			}
+			aUsed, bUsed := usage.lastUsed(a.AccountRef), usage.lastUsed(b.AccountRef)
+			if byRemaining && remaining(a) != remaining(b) {
+				return remaining(a) > remaining(b)
+			}
+			if aUsed != bUsed {
+				return aUsed < bUsed
+			}
+			if remaining(a) != remaining(b) {
+				return remaining(a) > remaining(b)
+			}
+			return a.DisplayID < b.DisplayID
+		})
+	}
+	pool := fresh
+	if len(pool) == 0 {
+		pool = recent
+	}
+	rank(pool, len(fresh) > 0)
+	chosen := pool[0]
+	if lockErr == nil && usage != nil {
+		usage.record(chosen.AccountRef, current)
+		_ = saveUsage(options.AIHomeDir, usage)
+	}
+	return chosen, true, nil
+}
+
+func isHealthy(candidate Candidate) bool {
+	return strings.TrimSpace(candidate.Status) == ""
+}
+
+func remaining(candidate Candidate) float64 {
+	if candidate.RemainingPct == nil {
+		return -1
+	}
+	return *candidate.RemainingPct
+}
+
+func fetchCandidates(ctx context.Context, options Options) ([]Candidate, error) {
+	baseURL := strings.TrimSpace(options.BaseURL)
+	key := strings.TrimSpace(options.ManagementKey)
+	if baseURL == "" || key == "" || strings.TrimSpace(options.Provider) == "" {
+		return nil, fmt.Errorf("launchselection: 缺少 server 地址、管理密钥或 provider")
+	}
+	client := options.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 4 * time.Second}
+	}
+	endpoint := strings.TrimSuffix(baseURL, "/") + "/v1/management/webui/accounts?provider=" + url.QueryEscape(options.Provider)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+key)
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("launchselection: accounts http %d", response.StatusCode)
+	}
+	var payload struct {
+		Accounts []Candidate `json:"accounts"`
+	}
+	if err = json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload.Accounts, nil
+}
+
+// usageState 记录每个账号最近一次被裸启动选中的时间。
+type usageState struct {
+	LastUsed map[string]int64 `json:"lastUsed"`
+}
+
+func (state *usageState) lastUsed(ref string) int64 {
+	if state == nil || state.LastUsed == nil {
+		return 0
+	}
+	return state.LastUsed[ref]
+}
+
+func (state *usageState) record(ref string, at time.Time) {
+	if state.LastUsed == nil {
+		state.LastUsed = map[string]int64{}
+	}
+	state.LastUsed[ref] = at.UnixMilli()
+	// 只保留最近 200 条，避免文件无限增长。
+	if len(state.LastUsed) > 200 {
+		oldest, oldestRef := int64(0), ""
+		for key, value := range state.LastUsed {
+			if oldest == 0 || value < oldest {
+				oldest, oldestRef = value, key
+			}
+		}
+		delete(state.LastUsed, oldestRef)
+	}
+}
+
+func usagePath(aiHomeDir string) string {
+	return filepath.Join(aiHomeDir, "run", "launch-selection.json")
+}
+
+func parseUsage(raw []byte) *usageState {
+	state := &usageState{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, state)
+	}
+	return state
+}
+
+func saveUsage(aiHomeDir string, state *usageState) error {
+	path := usagePath(aiHomeDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	temp := path + ".tmp" + strconv.Itoa(os.Getpid())
+	if err = os.WriteFile(temp, payload, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temp, path)
+}

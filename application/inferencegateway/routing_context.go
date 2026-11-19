@@ -3,6 +3,7 @@ package inferencegateway
 import (
 	"context"
 	"errors"
+	"strings"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -96,6 +97,27 @@ func WithRequestSessionKey(ctx context.Context, sessionKey string) context.Conte
 		return ctx
 	}
 	return context.WithValue(ctx, requestSessionKeyContextKey{}, sessionKey)
+}
+
+// quotaBucketContextKey 标记本次尝试消费的额度档位。
+type quotaBucketContextKey struct{}
+
+// ContextWithQuotaBucket 把额度档位带给用量记账；空值不写入。
+func ContextWithQuotaBucket(ctx context.Context, bucket string) context.Context {
+	trimmed := strings.TrimSpace(bucket)
+	if ctx == nil || trimmed == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, quotaBucketContextKey{}, trimmed)
+}
+
+// RequestQuotaBucket 返回本次尝试消费的额度档位；空表示不区分档位。
+func RequestQuotaBucket(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	bucket, _ := ctx.Value(quotaBucketContextKey{}).(string)
+	return bucket
 }
 
 // RequestSessionKey 返回请求会话标识；未设置时返回空字符串。

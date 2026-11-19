@@ -1782,6 +1782,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			ExtraProviders: relayModuleProviders(relayModules),
 			// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
 			Usage: attemptUsage,
+			// 档位与选号/诊断同源：记账时按策略选出的档位归因。
+			Buckets: relayQuotaBuckets{gate: usageGate, evaluator: newSchedulingEvaluator()},
 		},
 	)
 	if err != nil {

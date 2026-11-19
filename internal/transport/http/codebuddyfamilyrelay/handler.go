@@ -69,6 +69,8 @@ type Dependencies struct {
 	ExtraProviders []relaycore.Provider
 	// Usage 记录真实 token 用量；为空时本入口不产生用量事实。
 	Usage relaycore.UsageRecorder
+	// Buckets 提供本次消费的额度档位；为空表示不归因档位。
+	Buckets relaycore.QuotaBucketSource
 }
 
 // Handler 是家族透传通道。
@@ -104,6 +106,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		MaxRequestBodyBytes: MaxRequestBodyBytes,
 		UnavailableMessage:  "家族透传当前不可用",
 		Usage:               dependencies.Usage,
+		Buckets:             dependencies.Buckets,
 	})
 	if err != nil {
 		return nil, err

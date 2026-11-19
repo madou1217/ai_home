@@ -117,7 +117,8 @@ func (runtime outcomeRecordingRuntime) RecordAttemptUsage(
 	if err != nil {
 		return err
 	}
-	record, err := buildUsageLedgerRecord(ctx, runtime.accounts, route, success.WithUsage(usage))
+	success = success.WithUsage(usage).WithQuotaBucket(inferencegateway.RequestQuotaBucket(ctx))
+	record, err := buildUsageLedgerRecord(ctx, runtime.accounts, route, success)
 	if err != nil {
 		if runtime.errorLog != nil {
 			runtime.errorLog.Printf("构造 Go token 用量记录失败（本次推理不受影响）: %v", err)

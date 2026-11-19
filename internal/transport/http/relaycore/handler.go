@@ -64,6 +64,18 @@ type HTTPClient interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
+// QuotaBucketSource 返回该 (账号, 模型) 本次消费的额度档位；空表示不区分档位。
+//
+// 透传通道自己不做额度语义：档位必须与选号/诊断同源，这里只问一次再带给记账。
+type QuotaBucketSource interface {
+	QuotaBucket(
+		ctx context.Context,
+		providerID string,
+		accountRef accountcore.AccountRef,
+		modelID runtimecore.ModelID,
+	) (string, error)
+}
+
 // Dependencies 集中声明透传通道的账号、凭据、传输与运行态端口。
 //
 // Provider 是唯一必需的业务依赖：它提供差异面（端点、凭据取法、改写、头、失败分类）。
@@ -90,6 +102,8 @@ type Dependencies struct {
 	MaxRequestBodyBytes int64
 	// UnavailableMessage 是「本通道不可用」时的客户端文案；为空时用默认。
 	UnavailableMessage string
+	// Buckets 提供本次消费的额度档位；为空表示不归因档位。
+	Buckets QuotaBucketSource
 	// Usage 记录真实 token 用量；为空时该通道不产生用量事实。
 	//
 	// 为什么必须单独注入：成功记账在首个字节交付前完成（账号健康不能等整条流），
@@ -113,6 +127,7 @@ type Handler struct {
 	maxRequestBodyBytes int64
 	unavailableMessage  string
 	usage               UsageRecorder
+	buckets             QuotaBucketSource
 }
 
 // NewHandler 创建默认失败关闭的透传通道。
@@ -153,6 +168,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		maxRequestBodyBytes: limit,
 		unavailableMessage:  message,
 		usage:               dependencies.Usage,
+		buckets:             dependencies.Buckets,
 	}, nil
 }
 
@@ -776,7 +792,7 @@ func (handler *Handler) writeResponse(
 	upstreamResponse := outcome.response
 	// 先包旁路解析再挂 defer：defer 在注册时就固定了 receiver，
 	// 之后替换 Body 的话关的会是原对象，结算永远不会触发。
-	upstreamResponse.Body = handler.trackUsage(request.Context(), outcome.route, upstreamResponse.Body)
+	upstreamResponse.Body = handler.trackUsage(request.Context(), outcome.provider, outcome.route, upstreamResponse.Body)
 	defer upstreamResponse.Body.Close()
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
 	if outcome.retryAccount {
@@ -863,6 +879,7 @@ func (handler *Handler) writeResponse(
 // 而这不会产生任何错误，只会在统计页表现为「Go 承接的请求没有用量」。
 func (handler *Handler) trackUsage(
 	ctx context.Context,
+	provider string,
 	route runtimecore.ModelRoute,
 	body io.ReadCloser,
 ) io.ReadCloser {
@@ -870,7 +887,7 @@ func (handler *Handler) trackUsage(
 		return body
 	}
 	return newUsageTee(body, func(usage inference.Usage) {
-		handler.recordUsage(ctx, route, usage)
+		handler.recordUsage(ctx, provider, route, usage)
 	})
 }
 
@@ -879,11 +896,20 @@ func (handler *Handler) trackUsage(
 // 失败只影响统计，不影响客户端已经收到的响应，因此写库错误在这里吞掉。
 func (handler *Handler) recordUsage(
 	ctx context.Context,
+	provider string,
 	route runtimecore.ModelRoute,
 	usage inference.Usage,
 ) {
 	if handler.usage == nil || !usage.IsValid() {
 		return
+	}
+	// 档位与选号/诊断同源：问一次策略再带给记账，失败不影响用量事实。
+	if handler.buckets != nil {
+		if bucket, err := handler.buckets.QuotaBucket(
+			ctx, provider, route.AccountRef(), route.ModelID(),
+		); err == nil {
+			ctx = inferencegateway.ContextWithQuotaBucket(ctx, bucket)
+		}
 	}
 	// 流结束时请求可能已经取消；用量是事实，不能因为客户端断开就丢掉。
 	_ = handler.usage.RecordAttemptUsage(context.WithoutCancel(ctx), route, usage)

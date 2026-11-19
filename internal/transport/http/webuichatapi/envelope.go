@@ -1,14 +1,13 @@
-// Package webuichatapi 提供 WebUI Chat 的 Go HTTP 入站切片。
+// Package webuichatapi 提供 WebUI Chat 的 Go HTTP 入站处理器。
 //
-// 与 Node 的关系：Node 侧一次 WebUI 对话被拆成两条独立连接——
+// 一次 WebUI 对话在 canonical 运行时里由两条连接组成——
 //
-//	POST /v0/webui/chat/sessions/{id}/commands  → chat-runtime-service（返回 202）
+//	POST /v0/webui/chat/sessions/{id}/commands  → 会话命令队列（返回 202）
 //	GET  /v0/webui/chat/sessions/{id}/events    → aih.chat.event.v1 SSE
 //
-// 本包把其中「一次 turn.submit 从入站、账号征召、上游增量到 SSE 回写」这一段竖切到
-// Go：Node 的轮次执行调用 ManagementCollectionPath，本包直接以 SSE 交付本轮事件，
-// 由 Node 翻译成既有 canonical 事件后再进会话事件表。浏览器路由因此不需要改指 Go，
-// 202 + 独立 SSE 的语义保持不变。
+// AttachRuntime 注入运行时后，本包在同一处理器里承载命令、事件、附件与会话读模型；
+// 下面的无会话直连保留给未挂运行时的测试/嵌入场景：它把「一次 turn.submit 从入站、
+// 账号征召、上游增量到 SSE 回写」合成一条连接，失败在写字节前用 JSON 错误返回。
 package webuichatapi
 
 import (
@@ -28,7 +27,7 @@ const (
 	EventSchema = "aih.chat.event.v1"
 	// runtimeID 是产生本切片事件的运行时标识。
 	//
-	// Node 侧写的是会话绑定出来的 `codex:<scope>`；本切片的运行时是 Go 的
+	// 历史 Node 侧写的是会话绑定出来的 `codex:<scope>`；本切片的运行时是 Go 的
 	// chat_completions 通道，因此用同一「家族:范围」形状，让前端不把它误认成 codex。
 	runtimeID = "go:chat-completions"
 

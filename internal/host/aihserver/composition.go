@@ -197,9 +197,11 @@ type serverHandlers struct {
 	// usageImport 接收 Node 历史用量的一次性批量导入（幂等，可重试）。
 	usageImport http.Handler
 	// usageBuckets 是按日/周聚合的 token 桶（额度统计页图表）。
-	usageBuckets  http.Handler
-	usageModels   http.Handler
-	usageSessions http.Handler
+	usageBuckets http.Handler
+	// usageQuotaBuckets 是按额度档位聚合的 token 用量。
+	usageQuotaBuckets http.Handler
+	usageModels       http.Handler
+	usageSessions     http.Handler
 	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
 	plugins pluginHandlers
 	// shutdown 是优雅退出端点；为空表示嵌入方没有提供退出回调，该端点不挂载。
@@ -1264,6 +1266,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量桶 Handler 失败: %w", err)
 	}
+	usageQuotaBucketsHandler, err := usagestatsapi.NewQuotaBucketsHandler(authorizer, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Go 额度档位用量 Handler 失败: %w", err)
+	}
 	// 窗口统计与模型用量共用同一份定价快照：两处口径必须一致，否则同一账号
 	// 在「模型用量」和「额度统计」两个页面会显示不同的成本。
 	windowPricer, err := usagepricing.NewWindowPricer(costCalculator)
@@ -2298,6 +2304,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		usageSessions:         usageSessionsHandler,
 		usageImport:           usageImportHandler,
 		usageBuckets:          usageBucketsHandler,
+		usageQuotaBuckets:     usageQuotaBucketsHandler,
 		claudeRelayLeases:     relayLeaseHandler,
 		claudeNativeRelay:     nativeRelayHandler,
 		familyRelay:           familyRelayHandler,

@@ -169,7 +169,7 @@ func (store *Store) readUsageRecords(ctx context.Context, query usageledger.Quer
 	rows, err := store.db.QueryContext(ctx, `
 		SELECT account_ref, provider_id, model_id, session_id, occurred_at_ms,
 		       input_tokens, output_tokens, cached_input_tokens,
-		       cache_write_input_tokens, reasoning_tokens
+		       cache_write_input_tokens, reasoning_tokens, quota_bucket
 		FROM usage_ledger WHERE `+where+` ORDER BY occurred_at_ms, usage_id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("查询 token 用量事实失败: %w", err)
@@ -177,10 +177,10 @@ func (store *Store) readUsageRecords(ctx context.Context, query usageledger.Quer
 	defer rows.Close()
 	records := make([]usageledger.Record, 0)
 	for rows.Next() {
-		var accountRef, provider, model, sessionID string
+		var accountRef, provider, model, sessionID, bucket string
 		var occurredAtMS int64
 		var input, output, cached, cacheWrite, reasoning uint64
-		if err := rows.Scan(&accountRef, &provider, &model, &sessionID, &occurredAtMS, &input, &output, &cached, &cacheWrite, &reasoning); err != nil {
+		if err := rows.Scan(&accountRef, &provider, &model, &sessionID, &occurredAtMS, &input, &output, &cached, &cacheWrite, &reasoning, &bucket); err != nil {
 			return nil, fmt.Errorf("读取 token 用量事实失败: %w", err)
 		}
 		parsedRef, err := accountcore.ParseAccountRef(accountRef)
@@ -196,7 +196,7 @@ func (store *Store) readUsageRecords(ctx context.Context, query usageledger.Quer
 		}
 		record, err := usageledger.NewRecord(usageledger.RecordInput{
 			AccountRef: parsedRef, Provider: provider, Model: model, SessionID: sessionID,
-			OccurredAt: time.UnixMilli(occurredAtMS).UTC(), Usage: usage,
+			OccurredAt: time.UnixMilli(occurredAtMS).UTC(), Usage: usage, Bucket: bucket,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("读取 token 用量事实无效: %w", err)

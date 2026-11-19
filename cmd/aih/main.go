@@ -39,6 +39,14 @@ func main() {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
+	// resume 与 server 系列命令在 Go 处理；其余顶层命令仍交回 Node。
+	if handled, err := runResume(context.Background(), args, runtime); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
 	// server sync-codex、serve、env、profiles、config 与生命周期在 Go 处理；其余 server 子命令仍交回 Node。
 	if handled, err := runServerSyncCodex(context.Background(), args, runtime); handled {
 		if err != nil {

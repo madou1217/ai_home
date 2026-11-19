@@ -19,8 +19,8 @@ const (
 	DefaultUsageThresholdPct = 95
 	// DefaultModelsCacheTTL 是 /models 的默认缓存窗口。
 	DefaultModelsCacheTTL = 5 * time.Minute
-	// DefaultModelAccountLimit 是单次模型探索默认账号上限。
-	DefaultModelAccountLimit = 3
+	// DefaultModelAccountLimit 是单次模型探索默认账号上限（与 Node modelsProbeAccounts 默认值一致）。
+	DefaultModelAccountLimit = 2
 	// MaxUsageQueryLimit 限制单次明细请求上限，对齐 Node normalizeQuery。
 	MaxUsageQueryLimit = 500
 	// DefaultUsageQueryLimit 是明细请求的默认条数。

@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
+	"github.com/madou1217/ai_home/internal/runtime/managementops"
 )
 
 // init applies the process-wide failure policy overrides exposed by
@@ -53,6 +54,22 @@ func init() {
 		if err := aihserver.ConfigureUpstreamTimeout(time.Duration(timeoutMS) * time.Millisecond); err != nil {
 			panic(fmt.Sprintf("AIH_SERVER_UPSTREAM_TIMEOUT_MS 无效: %v", err))
 		}
+	}
+
+	var modelTTL time.Duration
+	if ttlMS, ok, err := policyEnvInt64("AIH_SERVER_MODELS_CACHE_TTL_MS"); err != nil {
+		panic(err)
+	} else if ok && ttlMS > 0 {
+		modelTTL = time.Duration(ttlMS) * time.Millisecond
+	}
+	var probeAccounts int
+	if accounts, ok, err := policyEnvInt64("AIH_SERVER_MODELS_PROBE_ACCOUNTS"); err != nil {
+		panic(err)
+	} else if ok && accounts > 0 {
+		probeAccounts = int(accounts)
+	}
+	if err := managementops.ConfigureModelDefaults(modelTTL, probeAccounts); err != nil {
+		panic(fmt.Sprintf("模型缓存/探测环境变量无效: %v", err))
 	}
 }
 

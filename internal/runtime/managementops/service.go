@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -105,8 +105,8 @@ type ManagementService struct {
 	now              func() time.Time
 	startedAt        time.Time
 
-	modelsCache modelsCacheState
-	mu          sync.RWMutex
+	modelsCache   modelsCacheState
+	mu            sync.RWMutex
 	watchHub      *WatchHub
 	usageJobsOnce sync.Once
 	usageJobs     *UsageJobManager
@@ -446,10 +446,10 @@ func (s *ManagementService) Models(ctx context.Context, refresh bool, accountLim
 		return ModelsResponse{}, ErrManagementUnavailable
 	}
 	if accountLimit <= 0 {
-		accountLimit = DefaultModelAccountLimit
+		accountLimit = ConfiguredModelAccountLimit()
 	}
 	if ttl <= 0 {
-		ttl = DefaultModelsCacheTTL
+		ttl = ConfiguredModelsCacheTTL()
 	}
 	nowMS := s.now().UnixMilli()
 	sig := fmt.Sprintf("mode=%s|limit=%d", s.providerMode, accountLimit)

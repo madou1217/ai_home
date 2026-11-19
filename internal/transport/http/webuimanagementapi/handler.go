@@ -196,13 +196,13 @@ func (h *Handler) handleModels(response http.ResponseWriter, request *http.Reque
 	}
 	q := request.URL.Query()
 	refresh := parseBoolQuery(q.Get("refresh"))
-	accountLimit := managementops.DefaultModelAccountLimit
+	accountLimit := managementops.ConfiguredModelAccountLimit()
 	if raw := strings.TrimSpace(q.Get("accountLimit")); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 			accountLimit = n
 		}
 	}
-	ttl := managementops.DefaultModelsCacheTTL
+	ttl := managementops.ConfiguredModelsCacheTTL()
 	if raw := strings.TrimSpace(q.Get("ttlMs")); raw != "" {
 		if ms, err := strconv.ParseInt(raw, 10, 64); err == nil && ms >= 0 {
 			ttl = time.Duration(ms) * time.Millisecond

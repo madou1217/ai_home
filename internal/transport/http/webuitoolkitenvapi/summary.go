@@ -11,6 +11,10 @@ import (
 // remoteSummaryTTL 与 Node 远端汇总缓存一致：15s 内复用，过期同步重测。
 const remoteSummaryTTL = 15 * time.Second
 
+// localSummaryTTL 覆盖本机探测：BuildSummary 会并发 spawn 一组版本探测，
+// 每次都跑会让页面加载稳定多出数百毫秒。
+const localSummaryTTL = 15 * time.Second
+
 type remoteSummaryEntry struct {
 	at      time.Time
 	payload map[string]any
@@ -56,15 +60,29 @@ func (handler *Handler) handleEnvironments(response http.ResponseWriter, request
 		writeTargetError(response, classifyRemoteError(err))
 		return
 	}
+	refresh := request.URL.Query().Get("refresh") == "1"
+	if target.Kind == "local" && !refresh {
+		handler.localMu.Lock()
+		cached := handler.localSummary
+		cachedAt := handler.localAt
+		handler.localMu.Unlock()
+		if cached != nil && time.Since(cachedAt) < localSummaryTTL {
+			writeJSON(response, http.StatusOK, cached)
+			return
+		}
+	}
 	summary := environment.BuildSummary(request.Context(), host, environment.BuildOptions{
 		Platform: host.Platform,
 		HomeDir:  host.HomeDir,
 	})
 	if target.Kind == "local" {
+		handler.localMu.Lock()
+		handler.localSummary = summary
+		handler.localAt = time.Now()
+		handler.localMu.Unlock()
 		writeJSON(response, http.StatusOK, summary)
 		return
 	}
-	refresh := request.URL.Query().Get("refresh") == "1"
 	if !refresh {
 		if cached, ok := handler.summaries.get(target.Key); ok {
 			writeJSON(response, http.StatusOK, cached)

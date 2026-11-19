@@ -37,13 +37,34 @@ func nativeSessionKey(row persistent.SessionRow) string {
 	return nativeSessionPrefix + hex.EncodeToString(digest[:20])
 }
 
+// nativeRowsCacheTTL 覆盖一次 tmux 进程扫描。终端目录按 8s 轮询，
+// 1s 内复用不会让新建终端“消失”，但能消掉页面加载时稳定的进程启动开销。
+const nativeRowsCacheTTL = time.Second
+
 func (handler *Handler) nativeRows(ctx context.Context) ([]persistent.SessionRow, error) {
 	if handler.nativeSessions == nil {
 		return nil, nil
 	}
+	handler.rowsMu.Lock()
+	if handler.rowsCached && time.Since(handler.rowsAt) < nativeRowsCacheTTL {
+		rows := handler.rowsCache
+		handler.rowsMu.Unlock()
+		return rows, nil
+	}
+	handler.rowsMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	return handler.nativeSessions.CollectSessions(ctx)
+	rows, err := handler.nativeSessions.CollectSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	handler.rowsMu.Lock()
+	handler.rowsCache = rows
+	handler.rowsAt = time.Now()
+	handler.rowsCached = true
+	handler.rowsMu.Unlock()
+	return rows, nil
 }
 
 func (handler *Handler) handleSessions(response http.ResponseWriter, request *http.Request) {

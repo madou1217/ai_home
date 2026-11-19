@@ -121,6 +121,11 @@ type Handler struct {
 	nativeMu sync.Mutex
 	muxes    map[string]*muxStream
 	meta     map[string]*sessionMeta
+
+	rowsMu     sync.Mutex
+	rowsCache  []persistent.SessionRow
+	rowsAt     time.Time
+	rowsCached bool
 }
 
 // sessionMeta 是 terminalsession.Snapshot 之外、只有传输层关心的会话信息。

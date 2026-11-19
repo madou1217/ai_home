@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
@@ -84,6 +85,10 @@ type Handler struct {
 	jobs        *environment.JobManager
 	summaries   *summaryCache
 	now         func() time.Time
+
+	localMu      sync.Mutex
+	localSummary any
+	localAt      time.Time
 }
 
 // NewHandler 创建默认失败关闭的 Handler。

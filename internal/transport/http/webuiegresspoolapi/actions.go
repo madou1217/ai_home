@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 )
@@ -191,12 +192,45 @@ func (handler *Handler) serveFullHTTP(responseWriter http.ResponseWriter, reques
 	}
 }
 
+const egressPoolCacheTTL = 5 * time.Second
+
+type egressPoolCacheEntry struct {
+	at     time.Time
+	result *runtimeegress.PoolDescribeResult
+	etag   string
+}
+
 func (handler *Handler) handleFullPoolGet(responseWriter http.ResponseWriter, request *http.Request) {
 	query := parsePoolQuery(request)
-	result, etag, err := handler.manager.DescribePool(request.Context(), query)
-	if err != nil {
-		writeError(responseWriter, http.StatusServiceUnavailable, "egress_pool_unavailable", "出口池配置读取失败")
-		return
+	key := request.URL.RawQuery
+	var (
+		result *runtimeegress.PoolDescribeResult
+		etag   string
+	)
+	handler.poolMu.Lock()
+	entry, cached := handler.poolCache[key]
+	handler.poolMu.Unlock()
+	if cached && time.Since(entry.at) < egressPoolCacheTTL {
+		result, etag = entry.result, entry.etag
+	} else {
+		var err error
+		result, etag, err = handler.manager.DescribePool(request.Context(), query)
+		if err != nil {
+			writeError(responseWriter, http.StatusServiceUnavailable, "egress_pool_unavailable", "出口池配置读取失败")
+			return
+		}
+		handler.poolMu.Lock()
+		if handler.poolCache == nil {
+			handler.poolCache = make(map[string]egressPoolCacheEntry)
+		}
+		if len(handler.poolCache) >= 32 {
+			for stale := range handler.poolCache {
+				delete(handler.poolCache, stale)
+				break
+			}
+		}
+		handler.poolCache[key] = egressPoolCacheEntry{at: time.Now(), result: result, etag: etag}
+		handler.poolMu.Unlock()
 	}
 	if query.HasPage && etag != "" && strings.TrimSpace(request.Header.Get("If-None-Match")) == etag {
 		responseWriter.Header().Set("ETag", etag)

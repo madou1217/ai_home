@@ -33,6 +33,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
@@ -112,6 +113,11 @@ type Handler struct {
 	hostHomeDir string
 	providerIDs []string
 	codex       CodexDialer
+
+	capMu       sync.Mutex
+	capProbeMu  sync.Mutex
+	capSnapshot map[string]providerCapability
+	capAt       time.Time
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -248,11 +254,43 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 }
 
+// capabilitiesCacheTTL 是 Codex app-server 探测结果的复用窗口。
+// 能力集合只随运行时版本变化，页面加载不应每次都付一次 800ms 级的探测。
+const capabilitiesCacheTTL = 30 * time.Second
+
+// cachedCapabilities 返回带 TTL 的能力快照；并发探测只放行一个。
+func (handler *Handler) cachedCapabilities(ctx context.Context) map[string]providerCapability {
+	handler.capMu.Lock()
+	if handler.capSnapshot != nil && time.Since(handler.capAt) < capabilitiesCacheTTL {
+		snapshot := handler.capSnapshot
+		handler.capMu.Unlock()
+		return snapshot
+	}
+	handler.capMu.Unlock()
+
+	handler.capProbeMu.Lock()
+	defer handler.capProbeMu.Unlock()
+	handler.capMu.Lock()
+	if handler.capSnapshot != nil && time.Since(handler.capAt) < capabilitiesCacheTTL {
+		snapshot := handler.capSnapshot
+		handler.capMu.Unlock()
+		return snapshot
+	}
+	handler.capMu.Unlock()
+
+	probed := handler.capabilities(ctx)
+	handler.capMu.Lock()
+	handler.capSnapshot = probed
+	handler.capAt = time.Now()
+	handler.capMu.Unlock()
+	return probed
+}
+
 // serveCapabilities 返回所有 Provider 的能力声明。
 func (handler *Handler) serveCapabilities(response http.ResponseWriter, request *http.Request) {
 	writeJSON(response, http.StatusOK, capabilitiesResponse{
 		OK:        true,
-		Providers: handler.capabilities(request.Context()),
+		Providers: handler.cachedCapabilities(request.Context()),
 	})
 }
 

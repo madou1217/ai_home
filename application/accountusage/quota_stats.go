@@ -3,9 +3,11 @@ package accountusage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -111,6 +113,16 @@ type QuotaStatsService struct {
 	snapshots SnapshotStore
 	clock     Clock
 	pricer    QuotaWindowPricer
+
+	cacheMu sync.Mutex
+	cache   map[string]quotaStatsCacheEntry
+}
+
+const quotaStatsCacheTTL = 5 * time.Second
+
+type quotaStatsCacheEntry struct {
+	at    time.Time
+	value QuotaStatsResult
 }
 
 // NewQuotaStatsService 创建额度统计服务；任一端口缺失都失败关闭。
@@ -221,7 +233,49 @@ type QuotaStatsResult struct {
 }
 
 // BuildQuotaStats 生成账号的窗口期额度统计。
+// BuildQuotaStats 复用短 TTL 的额度统计结果。页面连续展开、前后台切换会重复请求同一账号；
+// 每次重扫样本与事件表会稳定多出数百毫秒。
 func (service *QuotaStatsService) BuildQuotaStats(
+	ctx context.Context,
+	query QuotaStatsQuery,
+) (QuotaStatsResult, error) {
+	if service == nil {
+		return QuotaStatsResult{}, ErrQuotaStatsUnavailable
+	}
+	now := query.Now
+	if now.IsZero() {
+		now = service.clock()
+	}
+	q := query
+	q.Now = now
+	key := fmt.Sprintf("%s\x00%d\x00%s\x00%d\x00%d", q.AccountRef.String(), q.WindowMinutes, q.QuotaKey, q.RangeDays, now.Truncate(quotaStatsCacheTTL).UnixMilli())
+	service.cacheMu.Lock()
+	if entry, ok := service.cache[key]; ok && time.Since(entry.at) < quotaStatsCacheTTL {
+		value := entry.value
+		service.cacheMu.Unlock()
+		return value, nil
+	}
+	service.cacheMu.Unlock()
+	value, err := service.buildQuotaStatsUncached(ctx, q)
+	if err != nil {
+		return value, err
+	}
+	service.cacheMu.Lock()
+	if service.cache == nil {
+		service.cache = make(map[string]quotaStatsCacheEntry)
+	}
+	if len(service.cache) >= 256 {
+		for stale := range service.cache {
+			delete(service.cache, stale)
+			break
+		}
+	}
+	service.cache[key] = quotaStatsCacheEntry{at: time.Now(), value: value}
+	service.cacheMu.Unlock()
+	return value, nil
+}
+
+func (service *QuotaStatsService) buildQuotaStatsUncached(
 	ctx context.Context,
 	query QuotaStatsQuery,
 ) (QuotaStatsResult, error) {

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
@@ -78,6 +79,16 @@ type Handler struct {
 	manager           UpstreamsManager
 	now               func() time.Time
 	heartbeatInterval time.Duration
+
+	viewMu    sync.Mutex
+	viewCache map[string]egressViewCacheEntry
+}
+
+const upstreamsViewCacheTTL = 10 * time.Second
+
+type egressViewCacheEntry struct {
+	at   time.Time
+	view *runtimeegress.EgressUpstreamsView
 }
 
 // NewHandler 校验依赖并构造 Handler。
@@ -102,6 +113,35 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 }
 
 // ServeHTTP 按精确方法与 URL 转义路径分发全部上游及账号出口路由。
+// buildUpstreamsView 复用短 TTL 的上游视图；视图包含大量节点与证据，重复构建成本高。
+func (handler *Handler) buildUpstreamsView(ctx context.Context, accountRefFilter string) (*runtimeegress.EgressUpstreamsView, error) {
+	handler.viewMu.Lock()
+	if entry, ok := handler.viewCache[accountRefFilter]; ok && time.Since(entry.at) < upstreamsViewCacheTTL {
+		view := entry.view
+		handler.viewMu.Unlock()
+		return view, nil
+	}
+	handler.viewMu.Unlock()
+
+	view, err := handler.manager.BuildUpstreamsView(ctx, accountRefFilter)
+	if err != nil || view == nil {
+		return view, err
+	}
+	handler.viewMu.Lock()
+	if handler.viewCache == nil {
+		handler.viewCache = make(map[string]egressViewCacheEntry)
+	}
+	if len(handler.viewCache) >= 32 {
+		for stale := range handler.viewCache {
+			delete(handler.viewCache, stale)
+			break
+		}
+	}
+	handler.viewCache[accountRefFilter] = egressViewCacheEntry{at: time.Now(), view: view}
+	handler.viewMu.Unlock()
+	return view, nil
+}
+
 func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.manager == nil {
 		writeError(responseWriter, http.StatusServiceUnavailable, "egress_upstreams_unavailable", "出口上游服务不可用")
@@ -124,7 +164,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 			return
 		}
 		accountRef := strings.TrimSpace(request.URL.Query().Get("accountRef"))
-		view, err := handler.manager.BuildUpstreamsView(request.Context(), accountRef)
+		view, err := handler.buildUpstreamsView(request.Context(), accountRef)
 		if err != nil || view == nil {
 			writeError(responseWriter, http.StatusServiceUnavailable, "egress_upstreams_unavailable", "出口上游视图读取失败")
 			return

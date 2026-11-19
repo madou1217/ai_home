@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
@@ -88,6 +89,16 @@ type Handler struct {
 	quotaStats   QuotaStatsReader
 	usageBuckets UsageBucketsReader
 	now          func() time.Time
+
+	statsMu    sync.Mutex
+	statsCache map[string]quotaStatsCacheEntry
+}
+
+const quotaStatsCacheTTL = 10 * time.Second
+
+type quotaStatsCacheEntry struct {
+	at    time.Time
+	value usageapp.QuotaStatsResult
 }
 
 // NewHandler 校验依赖并返回不可变的额度统计处理器。
@@ -231,6 +242,35 @@ type errorResponse struct {
 }
 
 // ServeHTTP 处理 GET .../accounts/{provider}/{accountRef}/quota-stats。
+// buildQuotaStats 复用短 TTL 的账号额度统计结果，避免同一账号的连续展开重复扫样本表。
+func (handler *Handler) buildQuotaStats(ctx context.Context, key string, query usageapp.QuotaStatsQuery) (usageapp.QuotaStatsResult, error) {
+	handler.statsMu.Lock()
+	if entry, ok := handler.statsCache[key]; ok && time.Since(entry.at) < quotaStatsCacheTTL {
+		value := entry.value
+		handler.statsMu.Unlock()
+		return value, nil
+	}
+	handler.statsMu.Unlock()
+
+	value, err := handler.quotaStats.BuildQuotaStats(ctx, query)
+	if err != nil {
+		return value, err
+	}
+	handler.statsMu.Lock()
+	if handler.statsCache == nil {
+		handler.statsCache = make(map[string]quotaStatsCacheEntry)
+	}
+	if len(handler.statsCache) >= 128 {
+		for stale := range handler.statsCache {
+			delete(handler.statsCache, stale)
+			break
+		}
+	}
+	handler.statsCache[key] = quotaStatsCacheEntry{at: time.Now(), value: value}
+	handler.statsMu.Unlock()
+	return value, nil
+}
+
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.quotaStats == nil || handler.usageBuckets == nil {
 		writeError(response, http.StatusServiceUnavailable, "quota_stats_unavailable", "账号额度统计服务不可用")
@@ -270,7 +310,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	result, err := handler.quotaStats.BuildQuotaStats(request.Context(), usageapp.QuotaStatsQuery{
+	cacheKey := strings.Join([]string{
+		provider, canonicalRef.String(),
+		strconv.FormatInt(parsedQuery.windowMinutes, 10), parsedQuery.scope,
+		strconv.Itoa(parsedQuery.rangeDays),
+		strconv.FormatInt(parsedQuery.anchor.UnixMilli(), 10),
+	}, "\x00")
+	result, err := handler.buildQuotaStats(request.Context(), cacheKey, usageapp.QuotaStatsQuery{
 		AccountRef:    canonicalRef,
 		WindowMinutes: parsedQuery.windowMinutes,
 		QuotaKey:      parsedQuery.scope,

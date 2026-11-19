@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -67,6 +68,9 @@ type Handler struct {
 	health     Health
 	manager    PoolManager
 	now        func() time.Time
+
+	poolMu    sync.Mutex
+	poolCache map[string]egressPoolCacheEntry
 }
 
 // NewHandler 校验依赖并创建 Handler。

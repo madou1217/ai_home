@@ -10,8 +10,8 @@ package accountactivity
 //     避免快速失败的账号把上游打成突发；
 //   * 等待可被请求上下文取消，不会把 HTTP 连接挂死。
 //
-// 执行本身委托给 Executor（生产实现是 Node 桥：provider handler、无痕验证码、
-// 设备指纹这些只有 Node 运行时具备）。Go 只负责排队、限速、聚合与状态。
+// 执行本身委托给 Executor；生产实现是 NativeExecutor（内置签到/领取 handler、
+// 无痕验证码与设备指纹都在 Go）。本包只负责排队、限速、聚合与状态。
 
 import (
 	"context"
@@ -27,7 +27,7 @@ const MaxConcurrentExecutions = 1
 // MinExecutionInterval 是同一动作两次上游调用之间的最小间隔。
 const MinExecutionInterval = 250 * time.Millisecond
 
-// ErrExecutorUnavailable 表示没有可用的执行器（Node 桥未接线）。
+// ErrExecutorUnavailable 表示没有可用的执行器（装配缺失）。
 var ErrExecutorUnavailable = errors.New("activity_executor_unavailable")
 
 // ExecutionRequest 是一次单账号领取/探测请求。

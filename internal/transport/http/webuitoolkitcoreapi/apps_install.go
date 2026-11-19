@@ -158,7 +158,7 @@ func (h *Handler) handleAppOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 绑定账号或 CLI 启动：透传给 HostLauncher（覆盖账号投影与 zcode 出口代理等宿主机行为）。
+	// 绑定账号或 CLI 启动：透传给启动执行器（生产为 NativeLauncher，覆盖账号投影与 zcode 出口代理等宿主机行为）。
 	if h.appLauncher == nil {
 		writeError(w, http.StatusNotImplemented, "launch_unavailable", "宿主机应用启动执行器未配置")
 		return

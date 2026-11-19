@@ -66,7 +66,7 @@ D:39–317 共 **25 个规范名、6 个别名（31 个 token）**。此表已�
 | `native` | R:221 强制第二词 `plugin` → `lib/cli/services/native-plugin-command.js` | `plugin list/install/enable/disable/remove/inspect/project/doctor`；原生投影，不与 AIH 插件包混并 |
 | `mcp` | R:226 → `lib/cli/services/mcp-command.js:44` | `list/add/test/tools/call/enable/disable/remove/doctor`；test/tools/call 会运行 stdio server，停用投影也可诊断，不是安全静态检查 |
 | `skill` | R:230 → `lib/cli/services/skill-command.js` `runSkillCommand` | `list/install/enable/disable/remove/doctor`；provider/all-supported、投影与删除分别审 |
-| `plugin` | R:284 → `lib/plugins/control/cli.js:151` | `validate/pack/keygen/trust/untrust/trusted/install/list(status)/enable/disable/uninstall/call/doctor`；信任根/签名/实例/贡献项执行各有风险 |
+| `plugin` | R:284 → `cmd/aih/plugin.go:runPlugin`（Node 入口仅转交） | `validate/pack/keygen/trust/untrust/trusted/install/list(status)/enable/disable/uninstall/call/doctor`；信任根/签名/实例/贡献项执行各有风险 |
 | `ssh` | R:190 → `lib/cli/services/ssh-clipboard/ssh-command.js:136` | 帮助、SSH 参数/连接、图片粘贴包装；连接和剪贴板副作用需真实验收 |
 | `ssh-clipboard` | R:208 → `lib/cli/services/ssh-clipboard/terminal-probe.js:445` | `probe`、普通诊断/真实 paste-event、超时、帮助；交互终端操作 |
 | `clip-agent` | R:199 → `lib/cli/services/ssh-clipboard/clip-agent.js:122` | `start`、监听/终止、帮助；会启动本机剪贴板代理 |

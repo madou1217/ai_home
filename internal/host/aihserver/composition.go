@@ -772,19 +772,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Cline 刷新策略失败: %w", err)
 	}
-	// 家族四支与 Qoder 双区没有 Go 侧刷新实现（Token 刷新由 Node 宿主/官方 CLI 完成并
-	// 同步进凭据库），但凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式
+	// 家族四支与 Qoder 双区没有 Go 侧刷新实现（凭据由厂商 CLI 续期并同步进凭据库），
+	// 但凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式
 	// 登记静态策略（声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合
 	// 同样登记，避免这些账号在两条解析链上出现「一条能读、一条读不到」的分叉。
 	//
 	// Qoder 额度 refresh 走的就是这条链路：凭据是 CLI 的 opaque blob，token 由
 	// qodercred 用厂商 wasm 解密，不需要（也没有）Go 侧 OAuth 刷新。
-	// 这里列的是「Go 已有采集/转发能力、但 Token 刷新仍归 Node 或厂商 CLI」的 Provider：
+	// 这里列的是「Go 已有采集/转发能力、但凭据由厂商 CLI 续期」的 Provider：
 	// 缺一条策略，凭据解析就直接失败，额度协调器与显式 refresh 都会 500。
-	// kiro / zcode / cline 的 Node 探针早已下线（descriptor quota.supported=false），
-	// 没有静态策略时它们的 Go 采集根本跑不起来，只能靠 Node 进程的旧连接推数据。
-	// grok 同理：Go 侧没有 OAuth 刷新实现，token 由 Node 的 token-refresh-daemon 续期后
-	// 经 go-account-sync 推进来；不登记静态策略，凭据解析与额度采集都会直接失败。
+	// kiro / zcode / cline 的旧探针已下线（descriptor quota.supported=false），
+	// 没有静态策略时它们的 Go 采集根本跑不起来，只能靠旧连接推送数据。
 	staticCredentialProviders := append(
 		append([]string{}, codebuddyfamilyrelay.FamilyProviders...),
 		"qoder",

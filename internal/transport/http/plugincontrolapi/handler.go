@@ -1,13 +1,13 @@
-// Package plugincontrolapi 暴露插件制品生命周期的管理 HTTP 边界。
+// Package plugincontrolapi 暴露插件制品与控制状态的管理 HTTP 边界。
 //
-//	POST /v1/management/plugins/install    {file, requireSigned}
-//	POST /v1/management/plugins/uninstall  {pluginId, version?, expectedRevision?}
+//	POST /v1/management/plugins/install              {file, requireSigned}
+//	POST /v1/management/plugins/uninstall            {pluginId, version?, expectedRevision?}
+//	POST /v1/management/plugins/state/commit         {operation, expectedRevision, candidate}
+//	POST /v1/management/plugins/instances/{id}/enable|disable
 //
-// 启用/停用/诊断/列表仍归 Node 与只读清单：本接口只承接安装与卸载，
-// 也就是「接受一个制品」和「从控制状态移除一条记录」两个动作。
-//
-// 响应字段与 Node control.install / control.uninstall 逐字一致；安装成功后的
-// audit.append 仍由 Node 写（审计与 WebUI 的请求所有权留在 Node）。
+// 安装、启停、卸载与状态 CAS 都在 Go：安装走 pluginartifact，启停由
+// application/plugincontrol 编排（读 revision → 宿主 prepare → CAS → activate），
+// 审计由 Go pluginhost.Service.Audit 落盘。响应字段与历史 control.* 契约保持一致。
 package plugincontrolapi
 
 import (
@@ -291,8 +291,8 @@ func parseInstancePath(path string) (string, plugincontrol.Operation, bool) {
 	return "", "", false
 }
 
-// instanceOperation 接收 Go 的公开启停请求：路径里的 instanceId 是权威值，
-// body 里的同名字段被覆盖；配置、权限与默认值仍由 Node prepare 校验。
+// instanceOperation 接收公开启停请求：路径里的 instanceId 是权威值，
+// body 里的同名字段被覆盖；配置、权限与默认值由 Go ControlPreparer 校验。
 func (handler *Handler) instanceOperation(
 	response http.ResponseWriter,
 	request *http.Request,

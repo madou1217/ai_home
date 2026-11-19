@@ -22,7 +22,10 @@ const InternalLaunchPath = "/v0/internal/accounts/launch-app"
 
 const maxLaunchResponseBytes = 1 << 20
 
-// HostLauncher 是 webuiopenappapi.Launcher 的生产实现：调用 Node 宿主执行启动计划。
+// HostLauncher 是 Launcher 的兼容实现：通过 Node 宿主内部端点执行启动计划。
+//
+// 生产装配使用 NativeLauncher；保留本实现用于对照与渐进迁移。Node 侧仍持有
+// 厂商 Electron 运行时相关的启动策略。
 type HostLauncher struct {
 	baseURL       string
 	managementKey func() string

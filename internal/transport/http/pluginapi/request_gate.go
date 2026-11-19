@@ -170,8 +170,8 @@ func isUpgrade(request *http.Request) bool {
 	return strings.EqualFold(request.Header.Get("Upgrade"), "websocket")
 }
 
-// handBack 让 Node 用它缓冲的原文重新处理同一请求（还没有任何副作用）。
+// handBack 让上游用它缓冲的原文重新处理同一请求（还没有任何副作用）。
 func handBack(response http.ResponseWriter, code string) {
 	inferenceapi.MarkDecodeRejected(response)
-	writeError(response, http.StatusBadRequest, code, "插件代次需由 Node 处理")
+	writeError(response, http.StatusBadRequest, code, "插件代次不可用，请稍后重试")
 }

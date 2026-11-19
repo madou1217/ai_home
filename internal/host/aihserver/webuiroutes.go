@@ -169,7 +169,7 @@ type webuiRouteDependencies struct {
 	AccountDeletion webuiaccountdeleteapi.AccountDeletion
 	// AccountHostGrant 回收停用账号在宿主上的直连授权（当前只有 codex）。
 	AccountHostGrant webuiaccountstatusapi.HostGrantRevoker
-	// NodeBaseURL 是 Node 宿主回环地址：账号活动的 provider handler 仍由 Node 执行。
+	// NodeBaseURL 是可选 Node 宿主回环地址：仅用于兼容宿主回调与自反向判定。
 	NodeBaseURL string
 	// SelfBaseURL 是本进程回环地址：内部回调（审批桥）直接回 Go。
 	SelfBaseURL string

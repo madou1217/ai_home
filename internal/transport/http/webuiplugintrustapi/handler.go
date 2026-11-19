@@ -1,19 +1,17 @@
 // Package webuiplugintrustapi 是插件发布者信任根的管理 HTTP 边界。
 //
 // 信任根文件 <aiHomeDir>/plugins/trusted-keys.json 是插件安装时校验发布者签名的
-// 唯一事实源。本包把「读 / 加信任 / 撤信任」三个动作从 Node 收到 Go：
+// 唯一事实源。本包提供「读 / 加信任 / 撤信任」三条管理路由：
 //
 //	GET  /v1/management/plugins/trusted
 //	POST /v1/management/plugins/trust
 //	POST /v1/management/plugins/untrust
 //
-// 为什么只有这三条：安装、启停、卸载仍归 Node 控制面（lib/plugins/control/*），
-// 但信任根是文件型写面——WebUI 与 CLI 两条写路径各写一份就会产生竞态与两种文件形状。
-// 收敛到 Go 后 WebUI 的写操作只有一种实现；Node CLI 仍在独立进程里直接改同一个文件，
-// 所以文件格式、0600 权限、keyId 派生与 PEM 归一必须与 Node 逐字节兼容。
+// 安装、启停、卸载与 CLI 的 trust 命令都已由 Go 实现；信任根只保留一种文件格式、
+// 0600 权限、keyId 派生与 PEM 归一，WebUI、CLI 与安装路径读同一份事实。
 //
-// body.file 的文件读取留在 Node：Node 先把 PEM 读出来再传给 Go，Go 只接
-// publicKey / publicKeyPem，避免管理面出现第二套「服务器本地路径」语义。
+// 服务端写路径只接 publicKey / publicKeyPem；CLI 在本地读 PEM 后同样交给
+// plugintrust，管理面不存在第二套「服务器本地路径」语义。
 package webuiplugintrustapi
 
 import (

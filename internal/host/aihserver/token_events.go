@@ -2,8 +2,10 @@ package aihserver
 
 import (
 	"sync"
+	"time"
 
 	"github.com/madou1217/ai_home/core/usageledger"
+	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 )
 
 // tokenEventBus 把 Go 推理结算的 token 用量注入账号实时流。
@@ -62,5 +64,23 @@ func (bus *tokenEventBus) PublishTokenConsumed(record usageledger.Record) {
 			"total":  total,
 		},
 		"occurredAt": record.OccurredAt().UnixMilli(),
+	})
+}
+
+// PublishAccountActivity 广播账号活动快照变化（字段与 Node account-activity 帧同名）。
+func (bus *tokenEventBus) PublishAccountActivity(snapshot map[string]sessionactivity.AccountSnapshot) {
+	if bus == nil || len(snapshot) == 0 {
+		return
+	}
+	bus.mu.RLock()
+	publish := bus.publish
+	bus.mu.RUnlock()
+	if publish == nil {
+		return
+	}
+	publish(map[string]any{
+		"type":     "account-activity",
+		"activity": snapshot,
+		"at":       time.Now().UnixMilli(),
 	})
 }

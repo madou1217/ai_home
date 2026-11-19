@@ -1928,7 +1928,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	activityDaemon := sessionactivity.NewDaemon(sessionactivity.DaemonOptions{
 		AIHomeDir:   aiHomeDir,
 		HostHomeDir: dependencies.HostHomeDir,
-		Catalog:     catalog,
+		OnSnapshotChanged: func(snapshot map[string]sessionactivity.AccountSnapshot) {
+			dependencies.TokenEvents.PublishAccountActivity(snapshot)
+		},
+		Catalog: catalog,
 		ResolveHarnessTurnMode: func(harnessID string) string {
 			definition, ok := catalog.Get(strings.TrimSpace(harnessID))
 			if !ok {

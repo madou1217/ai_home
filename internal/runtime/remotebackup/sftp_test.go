@@ -213,7 +213,7 @@ func (s *testSFTPServer) serveSFTP(rw io.ReadWriter) {
 			out = appendUint32(out, 0)
 			_ = writeServerPacket(rw, sftpPacketName, out)
 
-		case sftpPacketStat:
+		case sftpPacketStat, sftpPacketLstat:
 			reqID, rest, _ := readUint32(body)
 			rawPath, _, _ := readString(rest)
 			local, err := s.mapLocal(rawPath)
@@ -221,7 +221,11 @@ func (s *testSFTPServer) serveSFTP(rw io.ReadWriter) {
 				sendServerStatus(rw, reqID, 3, err.Error())
 				continue
 			}
-			info, err := os.Stat(local)
+			statFn := os.Stat
+			if pktType == sftpPacketLstat {
+				statFn = os.Lstat
+			}
+			info, err := statFn(local)
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					sendServerStatus(rw, reqID, sftpStatusNoSuchFile, "no such file")
@@ -251,6 +255,24 @@ func (s *testSFTPServer) serveSFTP(rw io.ReadWriter) {
 			}
 			if err := os.Mkdir(local, 0o755); err != nil {
 				sendServerStatus(rw, reqID, 4, err.Error())
+				continue
+			}
+			sendServerStatus(rw, reqID, sftpStatusOK, "ok")
+
+		case sftpPacketRmdir:
+			reqID, rest, _ := readUint32(body)
+			rawPath, _, _ := readString(rest)
+			local, err := s.mapLocal(rawPath)
+			if err != nil {
+				sendServerStatus(rw, reqID, 3, err.Error())
+				continue
+			}
+			if err := os.Remove(local); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					sendServerStatus(rw, reqID, sftpStatusNoSuchFile, "no such file")
+				} else {
+					sendServerStatus(rw, reqID, 4, err.Error())
+				}
 				continue
 			}
 			sendServerStatus(rw, reqID, sftpStatusOK, "ok")

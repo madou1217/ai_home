@@ -134,7 +134,8 @@ func TestAgyTurnModelTimelineAndBrainTranscript(t *testing.T) {
 	aiHome := filepath.Join(hostHome, ".ai_home")
 	opts := Options{HostHomeDir: hostHome, AIHomeDir: aiHome}
 
-	dbPath := filepath.Join(aiHome, "app-state.db")
+	// appstate.DatabasePath 已统一到唯一的 aih.db。
+	dbPath := filepath.Join(aiHome, "aih.db")
 	createTestSQLiteDB(t, dbPath, `CREATE TABLE model_usage_records (id INTEGER PRIMARY KEY, provider TEXT, session_id TEXT, model TEXT, source_kind TEXT, timestamp_ms INTEGER)`, func(db *sql.DB) error {
 		_, err := db.Exec(`INSERT INTO model_usage_records(provider, session_id, model, source_kind, timestamp_ms) VALUES ('agy','agy-1','claude-sonnet-4-6','native_session_done',2000), ('agy','agy-1','gpt-4o','manual_proxy',3000)`)
 		return err
@@ -338,9 +339,10 @@ func TestCodebuddyIDEVscdbSessionMessages(t *testing.T) {
 		"sub": "uid-42",
 	})
 	fakeJWT := "hdr." + base64.RawURLEncoding.EncodeToString(claims) + ".sig"
-	createTestSQLiteDB(t, filepath.Join(aiHome, "app-state.db"), `
+	// Node 原生凭据与账号台账都在唯一的 aih.db 中，原生 JSON 存于兼容投影表。
+	createTestSQLiteDB(t, filepath.Join(aiHome, "aih.db"), `
 		CREATE TABLE account_refs (account_ref TEXT, provider TEXT);
-		CREATE TABLE account_credentials (provider TEXT, account_ref TEXT, native_auth_json TEXT);
+		CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, native_auth_json TEXT);
 	`, func(db *sql.DB) error {
 		_, _ = db.Exec(`INSERT INTO account_refs VALUES ('acct-cb','codebuddycn')`)
 		payload, _ := json.Marshal(map[string]any{
@@ -349,7 +351,7 @@ func TestCodebuddyIDEVscdbSessionMessages(t *testing.T) {
 				"account": map[string]any{"uid": "uid-42"},
 			},
 		})
-		_, err := db.Exec(`INSERT INTO account_credentials VALUES ('codebuddycn','acct-cb',?)`, string(payload))
+		_, err := db.Exec(`INSERT INTO compat_account_credentials(account_ref, native_auth_json) VALUES ('acct-cb',?)`, string(payload))
 		return err
 	})
 

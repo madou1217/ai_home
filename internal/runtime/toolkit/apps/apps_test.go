@@ -122,11 +122,17 @@ func TestListManagedAppsCacheInvalidationAndVersionRefresh(t *testing.T) {
 	aiHome := filepath.Join(tmp, "aihome")
 	binDir := filepath.Join(tmp, "bin")
 	codexBin := writeFakeExecutable(t, binDir, "codex", "#!/bin/sh\n")
+	// 生产侧 Codex 路径解析会对 CLI 做 EvalSymlinks（macOS /var -> /private/var），
+	// 版本探针拿到的 command 已不是测试写入的原路径。
+	resolvedCodexBin, err := filepath.EvalSymlinks(codexBin)
+	if err != nil {
+		t.Fatalf("resolve fake codex: %v", err)
+	}
 
 	probeCalls := 0
 	execStub := &stubExecutor{
 		handler: func(_ context.Context, _ int, command string, args []string, _ environment.ExecOptions) environment.RunResult {
-			if command == codexBin && len(args) == 1 && args[0] == "--version" {
+			if (command == codexBin || command == resolvedCodexBin) && len(args) == 1 && args[0] == "--version" {
 				probeCalls++
 				return environment.RunResult{OK: true, Stdout: "codex-cli 1.2.3\n"}
 			}

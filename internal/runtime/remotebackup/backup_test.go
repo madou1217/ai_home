@@ -370,6 +370,62 @@ func (m *memoryStrategy) Close() error {
 	return nil
 }
 
+// RepositoryTransport：v2 备份仓库要求策略提供不可变写/发布句柄。该用例只验证
+// 目标隔离与 TOFU 回写，用内存文件表实现同语义的仓库作用域。
+type memoryRepositoryScope struct{ strategy *memoryStrategy }
+
+func (m *memoryStrategy) BeginRepository(context.Context) (RepositoryScope, error) {
+	return memoryRepositoryScope{strategy: m}, nil
+}
+
+func (s memoryRepositoryScope) Read(_ context.Context, relative string, limit int) ([]byte, bool, error) {
+	s.strategy.mu.Lock()
+	defer s.strategy.mu.Unlock()
+	content, found := s.strategy.files[relative]
+	if !found {
+		return nil, false, nil
+	}
+	if limit > 0 && len(content) > limit {
+		return nil, false, errors.New("backup_object_too_large")
+	}
+	return []byte(content), true, nil
+}
+
+func (s memoryRepositoryScope) PutImmutable(_ context.Context, relative string, data []byte, _ ...bool) (bool, error) {
+	s.strategy.mu.Lock()
+	defer s.strategy.mu.Unlock()
+	if s.strategy.files == nil {
+		s.strategy.files = make(map[string]string)
+	}
+	if existing, found := s.strategy.files[relative]; found {
+		if existing != string(data) {
+			return false, errors.New("backup_immutable_conflict")
+		}
+		return false, nil
+	}
+	s.strategy.files[relative] = string(data)
+	return true, nil
+}
+
+func (s memoryRepositoryScope) Publish(_ context.Context, relative string, data []byte) error {
+	s.strategy.mu.Lock()
+	defer s.strategy.mu.Unlock()
+	if s.strategy.files == nil {
+		s.strategy.files = make(map[string]string)
+	}
+	s.strategy.files[relative] = string(data)
+	return nil
+}
+
+func (s memoryRepositoryScope) Journal(ctx context.Context, data []byte) error {
+	_, err := s.PutImmutable(ctx, repositoryLayout.LockPath+"/intent.json", data)
+	return err
+}
+
+func (s memoryRepositoryScope) Retain() {}
+
+func (s memoryRepositoryScope) Release(context.Context) error { return nil }
+
 type stubExporter struct {
 	res ExportResult
 	err error

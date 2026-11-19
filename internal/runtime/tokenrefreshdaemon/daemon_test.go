@@ -573,8 +573,15 @@ func TestDaemonSuppressionAuthInvalidAndRecoveryAcrossRestarts(t *testing.T) {
 		t.Fatalf("expected full recovery on Tick after backoff expiry, got %+v", sumRecovered)
 	}
 
-	if _, err := store.GetAccountState(ctx, deadAcc.Ref()); !errors.Is(err, accountapp.ErrAccountNotFound) {
-		t.Fatalf("expected deadAcc runtime state deleted on recovery, got err=%v", err)
+	// 85009df3 起，周期性凭据刷新成功会保留账号运行态（阻塞代次由原子恢复流程处理），
+	// 因此这里不再要求删除状态行，只要求 auth_invalid 不再生效、调度资格恢复。
+	recoveredState, stateErr := store.GetAccountState(ctx, deadAcc.Ref())
+	if stateErr == nil {
+		if got := recoveredState.DeriveStatus(nowFn()).Status(); got == "auth_invalid" {
+			t.Fatalf("expected deadAcc auth_invalid cleared on recovery, got state %+v", recoveredState)
+		}
+	} else if !errors.Is(stateErr, accountapp.ErrAccountNotFound) {
+		t.Fatalf("expected deadAcc runtime state cleared or non-blocking, got err=%v", stateErr)
 	}
 	eligAfter, err := runtime.CheckEligibility(ctx, route)
 	if err != nil {

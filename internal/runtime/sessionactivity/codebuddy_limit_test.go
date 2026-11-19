@@ -92,7 +92,7 @@ func TestDiscoverCodebuddyHardlinkDedupAndObserverEndToEnd(t *testing.T) {
 	logDay := now.Format("2006-01-02")
 	sharedLogDir := filepath.Join(hostHome, ".codebuddy", "logs", logDay)
 	_ = os.MkdirAll(sharedLogDir, 0o755)
-	tsStr := now.Add(-5 * time.Second).Format("2006/01/02 15:04:05") + ".000"
+	tsStr := now.Add(-5*time.Second).Format("2006/01/02 15:04:05") + ".000"
 	logContent := "[" + tsStr + "] [Info] [pid=777] {\"userId\":\"" + uid + "\"}\n" +
 		"[" + tsStr + "] [Info] [pid=777] [addHistory] START sessionId=sess_cb1, storeId=st1, types=[message], input=[{type: message, id: m1}]\n" +
 		"[" + tsStr + "] [Info] [pid=777] [ModelProvider] Sending request: agent=cli, model=claude-sonnet-4.5, requestId=req_abc12345, ok=1\n"
@@ -191,19 +191,21 @@ func TestLoadCodebuddyAccountIdentitiesFromBothDBs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open app-state: %v", err)
 	}
+	// appstate.DatabasePath 已统一指向唯一的 aih.db；Node 原生凭据保存在
+	// 兼容投影表 compat_account_credentials（native_auth_json）中。
 	_, err = appDB.Exec(`
 		CREATE TABLE IF NOT EXISTS account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL);
-		CREATE TABLE IF NOT EXISTS account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}');
+		CREATE TABLE IF NOT EXISTS compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}');
 	`)
 	if err != nil {
-		t.Fatalf("create app-state tables: %v", err)
+		t.Fatalf("create compat tables: %v", err)
 	}
-	// 同 ref 在 app-state.db 存在但无 uid 时，不应覆盖 aih.db 里已解析的 uid；另加 refApp 验证 app-state.db 独立读取。
+	// 同 ref 在 Node 兼容台账存在但无 uid 时，不应覆盖 aih.db 里已解析的 uid；另加 refApp 验证兼容台账独立读取。
 	if _, err := appDB.Exec(`INSERT INTO account_refs(account_ref, provider) VALUES (?, 'workbuddycn'), (?, 'codebuddy')`, refAih, refApp); err != nil {
-		t.Fatalf("insert app-state refs: %v", err)
+		t.Fatalf("insert account_refs: %v", err)
 	}
-	if _, err := appDB.Exec(`INSERT INTO account_credentials(account_ref, native_auth_json) VALUES (?, '{}'), (?, ?)`, refAih, refApp, string(credAppBytes)); err != nil {
-		t.Fatalf("insert app-state creds: %v", err)
+	if _, err := appDB.Exec(`INSERT INTO compat_account_credentials(account_ref, native_auth_json) VALUES (?, '{}'), (?, ?)`, refAih, refApp, string(credAppBytes)); err != nil {
+		t.Fatalf("insert compat creds: %v", err)
 	}
 	_ = appDB.Close()
 

@@ -311,7 +311,7 @@
       "options": {
         "prompt": "hi there",
         "sessionId": "sid-1",
-        "model": "m1",
+        "model": "gemini-3.8-flash-high",
         "imagePaths": [
           "/tmp/a.png",
           " /tmp/b.PNG ",
@@ -326,7 +326,11 @@
         "args": [
           "--print",
           "hi there",
-          "--dangerously-skip-permissions"
+          "--output-format",
+          "stream-json",
+          "--dangerously-skip-permissions",
+          "--model",
+          "Gemini 3.8 Flash (High)"
         ]
       }
     },
@@ -336,7 +340,7 @@
       "options": {
         "prompt": "hi there",
         "sessionId": "sid-1",
-        "model": "m1",
+        "model": "gemini-3.8-flash-high",
         "imagePaths": [
           "/tmp/a.png",
           " /tmp/b.PNG ",
@@ -351,7 +355,11 @@
         "args": [
           "--print",
           "hi there",
-          "--dangerously-skip-permissions"
+          "--output-format",
+          "stream-json",
+          "--dangerously-skip-permissions",
+          "--model",
+          "Gemini 3.8 Flash (High)"
         ]
       }
     },
@@ -366,6 +374,8 @@
         "args": [
           "--print",
           "x",
+          "--output-format",
+          "stream-json",
           "--dangerously-skip-permissions"
         ]
       }
@@ -382,6 +392,8 @@
         "args": [
           "--print",
           "",
+          "--output-format",
+          "stream-json",
           "--dangerously-skip-permissions"
         ]
       }
@@ -1832,7 +1844,7 @@
       "options": {
         "prompt": "continue please",
         "sessionId": "sid-1",
-        "model": "m1",
+        "model": "gemini-3.8-flash-high",
         "imagePaths": [
           "/tmp/a.png"
         ],
@@ -1846,9 +1858,13 @@
         "args": [
           "--conversation",
           "sid-1",
-          "--dangerously-skip-permissions",
           "--print",
-          "continue please"
+          "continue please",
+          "--output-format",
+          "stream-json",
+          "--dangerously-skip-permissions",
+          "--model",
+          "Gemini 3.8 Flash (High)"
         ]
       }
     },
@@ -1858,7 +1874,7 @@
       "options": {
         "prompt": "continue please",
         "sessionId": "sid-1",
-        "model": "m1",
+        "model": "gemini-3.8-flash-high",
         "imagePaths": [
           "/tmp/a.png"
         ],
@@ -1872,9 +1888,13 @@
         "args": [
           "--conversation",
           "sid-1",
-          "--dangerously-skip-permissions",
           "--print",
-          "continue please"
+          "continue please",
+          "--output-format",
+          "stream-json",
+          "--dangerously-skip-permissions",
+          "--model",
+          "Gemini 3.8 Flash (High)"
         ]
       }
     },
@@ -1890,9 +1910,11 @@
         "args": [
           "--conversation",
           "s",
-          "--dangerously-skip-permissions",
           "--print",
-          "x"
+          "x",
+          "--output-format",
+          "stream-json",
+          "--dangerously-skip-permissions"
         ]
       }
     },
@@ -4715,7 +4737,7 @@
         "provider": "agy",
         "isResume": false,
         "expect": {
-          "mode": "pty-transcript",
+          "mode": "headless-stream",
           "promptDelivery": "argv",
           "streamUsage": false
         }
@@ -4724,7 +4746,7 @@
         "provider": "agy",
         "isResume": true,
         "expect": {
-          "mode": "pty-transcript",
+          "mode": "headless-stream",
           "promptDelivery": "argv",
           "streamUsage": false
         }

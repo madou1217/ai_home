@@ -136,6 +136,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
@@ -1409,6 +1410,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		// （state/PKCE 只在内存，重启后无法继续，冒充 pending 会让前端一直等）。
 		JobStore:  store,
 		AliasPool: newAccountAliasPoolWriter(aiHomeDir),
+		OnJobSnapshot: func(job accountauth.Job) {
+			dependencies.TokenEvents.PublishAuthJob(webuiaccountaddapi.NewJobView(job))
+		},
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 OAuth Job 服务失败: %w", err)

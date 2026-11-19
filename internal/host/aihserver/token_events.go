@@ -84,3 +84,25 @@ func (bus *tokenEventBus) PublishAccountActivity(snapshot map[string]sessionacti
 		"at":       time.Now().UnixMilli(),
 	})
 }
+
+// PublishAuthJob 广播一条 auth-job 帧。
+func (bus *tokenEventBus) PublishAuthJob(job any) {
+	bus.publishMessage(map[string]any{"type": "auth-job", "job": job})
+}
+
+// PublishRefreshJob 广播一条 account-refresh-job 帧。
+func (bus *tokenEventBus) PublishRefreshJob(job any) {
+	bus.publishMessage(map[string]any{"type": "account-refresh-job", "job": job})
+}
+
+func (bus *tokenEventBus) publishMessage(payload map[string]any) {
+	if bus == nil || payload == nil {
+		return
+	}
+	bus.mu.RLock()
+	publish := bus.publish
+	bus.mu.RUnlock()
+	if publish != nil {
+		publish(payload)
+	}
+}

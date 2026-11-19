@@ -44,19 +44,20 @@ type jobRecord struct {
 // Job 的私有 Flow 只存在于内存；公开快照在 jobStore 非空时同步落库，
 // 使进程重启后仍能查到终态结果。
 type Service struct {
-	mu          sync.Mutex
-	providers   map[string]OAuthProvider
-	jobs        map[string]*jobRecord
-	activeJobs  map[string]string
-	subscribers map[string]map[*jobSubscription]struct{}
-	decoder     NativeAccountDecoder
-	registrar   Registrar
-	reauth      Reauthenticator
-	clock       Clock
-	generateID  IDGenerator
-	jobStore    JobStore
-	aliasPool   AliasPoolWriter
-	settings    serviceSettings
+	mu            sync.Mutex
+	providers     map[string]OAuthProvider
+	jobs          map[string]*jobRecord
+	activeJobs    map[string]string
+	subscribers   map[string]map[*jobSubscription]struct{}
+	decoder       NativeAccountDecoder
+	registrar     Registrar
+	reauth        Reauthenticator
+	clock         Clock
+	generateID    IDGenerator
+	jobStore      JobStore
+	aliasPool     AliasPoolWriter
+	onJobSnapshot func(Job)
+	settings      serviceSettings
 }
 
 // NewService 创建只支持 Codex、Claude 且使用生产边界的 OAuth Job 服务。
@@ -102,18 +103,19 @@ func newService(
 		return nil, ErrInvalidDependencies
 	}
 	return &Service{
-		providers:   providerRegistry,
-		jobs:        make(map[string]*jobRecord),
-		activeJobs:  make(map[string]string),
-		subscribers: make(map[string]map[*jobSubscription]struct{}),
-		decoder:     dependencies.Decoder,
-		registrar:   dependencies.Registrar,
-		reauth:      dependencies.Reauth,
-		clock:       dependencies.Clock,
-		generateID:  dependencies.GenerateID,
-		jobStore:    dependencies.JobStore,
-		aliasPool:   dependencies.AliasPool,
-		settings:    settings,
+		providers:     providerRegistry,
+		jobs:          make(map[string]*jobRecord),
+		activeJobs:    make(map[string]string),
+		subscribers:   make(map[string]map[*jobSubscription]struct{}),
+		decoder:       dependencies.Decoder,
+		registrar:     dependencies.Registrar,
+		reauth:        dependencies.Reauth,
+		clock:         dependencies.Clock,
+		generateID:    dependencies.GenerateID,
+		jobStore:      dependencies.JobStore,
+		aliasPool:     dependencies.AliasPool,
+		onJobSnapshot: dependencies.OnJobSnapshot,
+		settings:      settings,
 	}, nil
 }
 
@@ -953,6 +955,12 @@ func (service *Service) persistJobLocked(job Job, now time.Time) {
 	// 每一次状态迁移都会经过这里落库，订阅者因此与存储看到同一份快照。
 	// 发布必须在 jobStore 判空之前：没有持久化存储的宿主也要有事件流。
 	service.publishJobLocked(job)
+	if service.onJobSnapshot != nil {
+		func() {
+			defer func() { _ = recover() }()
+			service.onJobSnapshot(job)
+		}()
+	}
 	if service.jobStore == nil {
 		return
 	}

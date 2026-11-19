@@ -110,8 +110,11 @@ type QuotaWindowRange struct {
 // 为什么需要按模型拆：成本 = Σ(token × 该模型单价)，没有这个明细就只能给出总额，
 // 无法定价。Provider 参与匹配（同一个模型名在不同 Provider 下可能是不同目录键）。
 type QuotaWindowModelUsage struct {
-	Provider                 string
-	Model                    string
+	Provider string
+	Model    string
+	// AccountRef 是该窗口用量的归属账号；按账号查询时由存储层填充，
+	// 供定价 Resolver 选择账号/人工覆盖价。
+	AccountRef               string
 	InputTokens              int64
 	OutputTokens             int64
 	CacheReadInputTokens     int64

@@ -329,6 +329,7 @@ func (store *Store) QueryQuotaWindowUsage(
 		usage.Models = append(usage.Models, usagecore.QuotaWindowModelUsage{
 			Provider:                 provider,
 			Model:                    model,
+			AccountRef:               accountRef,
 			InputTokens:              input,
 			OutputTokens:             output,
 			CacheReadInputTokens:     cacheRead,

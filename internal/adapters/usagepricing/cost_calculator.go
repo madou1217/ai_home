@@ -120,7 +120,11 @@ func (calculator *ModelCostCalculator) Costs(
 			CacheCreationInputTokens: int64(row.CacheWriteInputTokens),
 			ReasoningOutputTokens:    int64(row.ReasoningOutputTokens),
 		}
-		if cost, ok := calculator.costFromResolver(ctx, row.Provider, row.Model, usage); ok {
+		accountRef := ""
+		if len(row.AccountRefs) == 1 {
+			accountRef = row.AccountRefs[0]
+		}
+		if cost, ok := calculator.costFromResolver(ctx, row.Provider, row.Model, accountRef, usage); ok {
 			costs[index] = cost
 			known[index] = true
 			continue
@@ -141,14 +145,14 @@ func (calculator *ModelCostCalculator) Costs(
 	return costs, known, true
 }
 
-func (calculator *ModelCostCalculator) costFromResolver(ctx context.Context, provider, model string, usage Usage) (float64, bool) {
+func (calculator *ModelCostCalculator) costFromResolver(ctx context.Context, provider, model, accountRef string, usage Usage) (float64, bool) {
 	if calculator == nil || calculator.resolver == nil {
 		return 0, false
 	}
 	quote, err := calculator.resolver.ResolveQuote(ctx, modelpricing.QuoteRequest{
 		SchemaVersion: modelpricing.WireSchemaVersion,
 		Kind:          "quote",
-		ModelRef:      modelpricing.ModelRef{Provider: provider, Model: model},
+		ModelRef:      modelpricing.ModelRef{Provider: provider, Model: model, AccountRef: accountRef},
 	})
 	if err != nil || quote.Status == modelpricing.StatusUnknown {
 		return 0, false
@@ -250,7 +254,7 @@ func (pricer *WindowPricer) CostFor(
 		CacheCreationInputTokens: usage.CacheCreationInputTokens,
 		ReasoningOutputTokens:    usage.ReasoningOutputTokens,
 	}
-	if cost, ok := pricer.calculator.costFromResolver(ctx, provider, model, value); ok {
+	if cost, ok := pricer.calculator.costFromResolver(ctx, provider, model, usage.AccountRef, value); ok {
 		return cost, true
 	}
 	snapshot := pricer.calculator.snapshotFor(ctx)

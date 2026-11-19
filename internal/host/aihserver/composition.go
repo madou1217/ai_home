@@ -62,7 +62,6 @@ import (
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
@@ -71,6 +70,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/deletionhost"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
@@ -78,6 +78,7 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
@@ -469,6 +470,13 @@ func New(ctx context.Context, options Options) (*Server, error) {
 // 占了三格（运行态 / 生图用量 / 生图结果）。新增一个 Provider 能力时，少写一个参数或
 // 调换两个同类型参数都会**静默**把依赖接到错误的端口上——三个同类型参数编译器不会报错。
 // 具名字段把这类错误变成编译错误，也让新增依赖的 diff 只有一行。
+// modelSettingsLoader 让定价 Resolver 读取 appstate 中的账号模型自定义价格。
+type modelSettingsLoader struct{ path string }
+
+func (loader modelSettingsLoader) Load(ctx context.Context) (modelcatalogsettings.Settings, error) {
+	return modelcatalogsettings.Load(ctx, loader.path)
+}
+
 type handlerDependencies struct {
 	Context context.Context
 	Catalog *providers.Catalog
@@ -543,6 +551,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	catalog := dependencies.Catalog
 	store := dependencies.Store
 	aiHomeDir := dependencies.AIHomeDir
+	if settingsPath, pathErr := appstate.DatabasePath(aiHomeDir); pathErr == nil {
+		pricingresolver.ConfigureManual(modelSettingsLoader{path: settingsPath})
+	}
 	nodeBaseURL := dependencies.NodeBaseURL
 	selfBaseURL := dependencies.SelfBaseURL
 	modelDiscovery := dependencies.ModelDiscovery

@@ -12,6 +12,7 @@ import (
 
 	"github.com/madou1217/ai_home/contracts/modelpricing"
 	custompricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/custom"
+	manualpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/manual"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 )
 
@@ -20,11 +21,17 @@ var (
 	defaultResolver     *Resolver
 	defaultErr          error
 	defaultConfigLoader custompricing.RawConfigLoader
+	defaultManualLoader manualpricing.SettingsLoader
 )
 
 // Configure 在 Default 首次调用前注入配置加载器；通常传账号 Store。
 func Configure(loader custompricing.RawConfigLoader) {
 	defaultConfigLoader = loader
+}
+
+// ConfigureManual 注入账号模型自定义价格加载器（appstate settings）。
+func ConfigureManual(loader manualpricing.SettingsLoader) {
+	defaultManualLoader = loader
 }
 
 // Default 返回进程共享的 Resolver。
@@ -37,6 +44,10 @@ func Default() (*Resolver, error) {
 			metadata []modelpricing.MetadataSource
 		)
 		modelsDevDisabled := false
+		if defaultManualLoader != nil {
+			manualSource := manualpricing.New(defaultManualLoader)
+			quotes = append(quotes, manualSource.Quote())
+		}
 		if defaultConfigLoader != nil {
 			customSource := custompricing.New(defaultConfigLoader)
 			if document, ok := customSource.Config(context.Background()); ok {

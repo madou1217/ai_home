@@ -97,6 +97,11 @@ func init() {
 	if err := inferencegateway.ConfigureProviderLimits(providerLimits, int(queueLimit)); err != nil {
 		panic(fmt.Sprintf("Provider 并发/队列环境变量无效: %v", err))
 	}
+	if scope := strings.TrimSpace(os.Getenv("AIH_SERVER_PROVIDER_SCOPE")); scope != "" {
+		if err := inferencegateway.ConfigureProviderScope(scope); err != nil {
+			panic(fmt.Sprintf("AIH_SERVER_PROVIDER_SCOPE 无效: %v", err))
+		}
+	}
 
 	affinityTTLMS, _, err := policyEnvInt64("AIH_SERVER_SESSION_AFFINITY_TTL_MS")
 	if err != nil {

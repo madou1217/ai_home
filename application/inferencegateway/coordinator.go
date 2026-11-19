@@ -284,6 +284,9 @@ func (coordinator *Coordinator) executePlan(
 			phaseCtx = withoutPinnedAccount(ctx)
 		}
 		for _, route := range phasePlan.candidates[:phasePlan.count] {
+			if scope := currentProviderScope(); scope != "" && scope != "auto" && scope != string(route.ProviderID()) {
+				continue
+			}
 			if !route.Supports(request.RequiredCapabilities()) {
 				continue
 			}

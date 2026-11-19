@@ -70,7 +70,7 @@ func writeRequestError(response http.ResponseWriter, err error) {
 // writeDecodeError 把 Gemini Decoder 错误映射为 Google 风格状态。
 //
 // 所有分支都是 Decoder 在选账号和联系上游之前给出的 4xx，没有任何副作用，因此整条
-// 路径都标记为解码拒收，交还前置宿主重放。
+// 路径都标记为解码拒收，供前置宿主识别失败类别。
 func writeDecodeError(response http.ResponseWriter, err error) {
 	inferenceapi.MarkDecodeRejected(response)
 	switch {

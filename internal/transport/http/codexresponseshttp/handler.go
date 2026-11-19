@@ -63,10 +63,10 @@ type Upstream interface {
 }
 
 type Dependencies struct {
-	Authorizer     Authorizer
-	Accounts       AccountSource
-	Upstream       Upstream
-	Fallback       http.Handler
+	Authorizer         Authorizer
+	Accounts           AccountSource
+	Upstream           Upstream
+	Fallback           http.Handler
 	Attempts           inferencegateway.AttemptRecorder
 	Credentials        inferencegateway.CredentialObservationVerifier
 	ModelRefreshes     inferencegateway.ModelRefreshScheduler
@@ -139,8 +139,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if err != nil {
-		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败，
-		// 交还前置宿主重放（例如压缩体由 Node 归一化后再进来）。
+		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败；
+		// 标记为解码拒收，供前置宿主识别失败类别。
 		inferenceapi.MarkDecodeRejected(response)
 		writeError(response, "invalid_request_body")
 		return
@@ -149,6 +149,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	// 换号后无法解密的 reasoning）。见 sanitizeNativePayload 的说明。
 	payload = codexwire.SanitizeRequestPayload(payload)
 	payload = effortalign.AlignResponsesPayload(payload, inference.ProviderCodex, metadata.Model, handler.Ladders)
+	// gateway.attempt 由 Canonical Coordinator 执行；native 快路径没有该中间件时，
+	// 把请求交给 Canonical 执行同一代插件，而不是让插件静默不执行。
+	// 此时还没有打开账号游标、没有联系上游，交给 Canonical 不产生重复副作用。
+	if inferenceapi.RequiresAttemptMiddleware(request.Context()) {
+		request.Body = io.NopCloser(bytes.NewReader(payload))
+		request.ContentLength = int64(len(payload))
+		handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
+		return
+	}
 	trail := handler.newFailureTrail(metadata.Model)
 	ctx, reqState := upstreamretry.EnsureRequestState(ctx)
 	pinnedRef, requestPinned := inferencegateway.PinnedAccount(ctx)
@@ -187,14 +196,6 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		phaseCursors = append(phaseCursors, cursor)
 		phasePinnedFlags = append(phasePinnedFlags, requestPinned)
 	}
-	// Go 的 native Responses 快路径没有插件尝试中间件（gateway.attempt 由 Canonical
-	// Coordinator 执行）：交还前置宿主执行同一代插件，而不是静默跳过它。
-	// 此时还没有联系上游、也没有写出任何字节，重放安全。
-	if inferenceapi.RequiresAttemptHandback(request.Context()) {
-		inferenceapi.MarkAttemptHandback(response)
-		writeError(response, "invalid_request_body")
-		return
-	}
 	// 整个请求（含流式交付）的总预算。10 分钟的旧上限会切断长推理流，
 	// 现在与流空闲策略共享同一个放宽后的总时长（见 G3）。
 	ctx, cancel := context.WithTimeout(ctx, inferenceapi.StreamTotalTimeout)
@@ -221,12 +222,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				break
 			}
 			// ChatGPT 登录账号的上游只接受 codex CLI 形状的请求（见 nativeRequest.passthroughSafe）。
-			// 尚未联系上游时按「解码拒收」交回 Node 归一化（Go Canonical 编码器会直接拒收 store 等字段，
-			// 不能落到 Fallback）；已有账号试过就跳过这个账号，不把注定 400 的请求发出去。
+			// 其它形状交给 Canonical：OAuth 的 store/续接由 Canonical 按上游能力归一化或明确拒绝，
+			// 不能把已经选好的账号丢给 Node 重放。已有账号试过就跳过这个账号，不把注定 400 的请求发出去。
 			if isStatelessCredential(selection.Credential) && !metadata.passthroughSafe() {
 				if !contacted {
-					inferenceapi.MarkDecodeRejected(response)
-					writeError(response, "invalid_request_body")
+					request.Body = io.NopCloser(bytes.NewReader(payload))
+					request.ContentLength = int64(len(payload))
+					handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
 					return
 				}
 				continue

@@ -18,8 +18,8 @@ const CapabilityGatewayRequest = "gateway.request"
 
 const defaultRequestStepTimeout = 2 * time.Second
 
-// CodeHostUnavailable 表示连不上 Plugin Host（不是插件本身的失败）：调用方应把请求交还 Node，
-// 而不是按 failurePolicy 处理——Node 能连上同一个宿主，交还不会丢掉插件阶段。
+// CodeHostUnavailable 表示连不上 Plugin Host（不是插件本身的失败）：调用方应返回可重试的
+// 503，而不是按 failurePolicy 处理——宿主不可用不是插件给出的拒绝。
 const CodeHostUnavailable = "plugin_host_unavailable"
 
 var hostUnavailableCodes = map[string]bool{

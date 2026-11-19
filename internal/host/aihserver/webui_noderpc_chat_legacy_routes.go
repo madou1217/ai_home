@@ -93,7 +93,7 @@ func buildWebUINodeRPCChatLegacyRoutes(dependencies webuiRouteDependencies) ([]w
 		webuiRoute{Pattern: noderpcapi.Prefix, Handler: nodeRPCHandler},
 		webuiRoute{Pattern: noderpcapi.WebUIPrefix, Handler: nodeRPCHandler},
 		// 旧 Node 浏览器前缀兼容：WebUI 仍直接请求 /v0/node-rpc/*（如 ServerSetup 的
-		// device-status 探测）；Go-only 部署下把它重写到 Node 代理使用的管理前缀。
+		// device-status 探测）；当前部署下把它重写到 Node 代理使用的管理前缀。
 		webuiRoute{
 			Pattern:         "GET /v0/node-rpc/",
 			Handler:         webuipublicalias.Rewrite("/v0/node-rpc/", noderpcapi.WebUIPrefix, nodeRPCHandler),

@@ -288,7 +288,7 @@ func TestSetStatusUpdatesOnlyLifecycleColumns(t *testing.T) {
 }
 
 // TestProjectionExposesStatusResponseFields 锁住响应键集合：新增字段必须是
-// 明确的合同变更，而不是顺手带出 Node 独有词汇。
+// 明确的合同变更，而不是顺手带出 宿主侧词汇。
 func TestProjectionExposesStatusResponseFields(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()

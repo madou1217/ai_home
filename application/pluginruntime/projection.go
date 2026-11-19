@@ -1,8 +1,8 @@
 // Package pluginruntime 是 Go 数据面使用插件发布投影的应用层。
 //
-// Node 控制面是代次的唯一 owner：它把每个活跃或排空中的代次的不可变投影推给 Go，
-// 只把 Go 已确认的代次随请求转发（内部头带代次号）。Go 从不自行挑选「最新版本」，
-// 只按请求携带的代次查投影、调用同一个 Plugin Host。本包只依赖窄的 Invoker 端口，
+// 发布投影由 Go 的插件宿主构建：每个活跃或排空中的代次是一份不可变投影，
+// 由宿主替换进 Registry。数据面默认按活跃代次（最高代次）执行插件阶段；
+// 内部转发仍可携带代次号把请求固定到某个代次。本包只依赖窄的 Invoker 端口，
 // 不关心 socket、令牌或 HTTP。
 package pluginruntime
 
@@ -92,7 +92,7 @@ type HostAccess struct {
 	Token   string
 }
 
-// Registry 保存 Node 推送的全部存活代次；整体替换，读多写少。
+// Registry 保存插件宿主推送的全部存活代次；整体替换，读多写少。
 type Registry struct {
 	mu                    sync.RWMutex
 	host                  HostAccess
@@ -109,7 +109,7 @@ func NewRegistry() *Registry {
 	return &Registry{generations: map[int64]Projection{}}
 }
 
-// Replace 用 Node 推送的完整存活集合替换当前内容，返回已接受的代次。
+// Replace 用插件宿主推送的完整存活集合替换当前内容，返回已接受的代次。
 // 任一投影无效时整体拒绝，保留原内容。
 func (registry *Registry) Replace(host HostAccess, projections []Projection, accountRefs map[string]string) ([]int64, error) {
 	next := make(map[int64]Projection, len(projections))
@@ -176,6 +176,26 @@ func (registry *Registry) Get(generation int64) (Projection, bool) {
 	defer registry.mu.RUnlock()
 	projection, ok := registry.generations[generation]
 	return projection, ok
+}
+
+// Active 返回活跃代次（最高代次）的投影；没有存活代次时返回 false。
+func (registry *Registry) Active() (Projection, bool) {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	var (
+		active Projection
+		found  bool
+	)
+	for generation, projection := range registry.generations {
+		if !found || generation > active.Generation {
+			active = Projection{
+				Generation:    generation,
+				Contributions: append([]Contribution(nil), projection.Contributions...),
+			}
+			found = true
+		}
+	}
+	return active, found
 }
 
 // Snapshots 一次取回全部存活代次的不可变副本（按代次升序）。

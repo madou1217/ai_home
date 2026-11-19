@@ -1,5 +1,5 @@
 // Package pluginapi 是 Go 数据面接入插件发布投影的 HTTP 边界：
-// Node 推送投影的管理接口，以及推理入口前的 gateway.request 闸门。
+// 插件宿主推送投影的管理接口，以及推理入口前的 gateway.request 闸门。
 package pluginapi
 
 import (
@@ -13,7 +13,7 @@ import (
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 )
 
-// ProjectionPath 是 Node 推送全部存活代次投影的管理路径。
+// ProjectionPath 是插件宿主推送全部存活代次投影的管理路径。
 //
 //	PUT /v1/management/plugins/projection  整体替换，返回已接受的代次
 //	GET /v1/management/plugins/projection  只读诊断（不回显令牌）
@@ -90,13 +90,13 @@ func (handler *ProjectionHandler) ServeHTTP(response http.ResponseWriter, reques
 		}
 		host := appplugins.HostAccess{Address: push.Host.Address, Token: push.Host.Token}
 		if len(push.Generations) > 0 {
-			// 确认前先验证宿主可调用；连不上就清空投影、一个代次都不确认，请求全部留在 Node。
+			// 确认前先验证宿主可调用；连不上就拒绝本次投影并保留上一份——
+			// 数据面会按旧投影失败关闭（503），而不是静默跳过插件阶段。
 			probeCtx, cancel := context.WithTimeout(request.Context(), hostProbeTimeout)
 			err := handler.probe.Probe(probeCtx, host)
 			cancel()
 			if err != nil {
-				_, _ = handler.registry.Replace(appplugins.HostAccess{}, nil, nil)
-				writeGenerations(response, nil)
+				writeError(response, http.StatusServiceUnavailable, "plugin_host_unavailable", "插件宿主不可达，投影未更新")
 				return
 			}
 		}

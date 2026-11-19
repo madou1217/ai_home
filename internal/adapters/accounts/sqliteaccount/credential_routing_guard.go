@@ -84,11 +84,11 @@ func canonicalRoutingGuard(guards map[accountcore.AccountRef]bool, ref accountco
 // credential. Capture every routing fact before COMMIT so publication cannot
 // observe a different generation or fail after a successful credential write.
 func (store *Store) readCredentialRoutingEntry(ctx context.Context, reader credentialRoutingReader, ref accountcore.AccountRef) (indexedRoutingAccount, error) {
-	var refText, provider string
+	var refText, provider, authKind string
 	var alias int64
 	var enabled, excluded bool
-	if err := reader.QueryRowContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,0
- FROM accounts a WHERE a.account_ref=?`, ref.String()).Scan(&refText, &provider, &alias, &enabled, &excluded); err != nil {
+	if err := reader.QueryRowContext(ctx, `SELECT a.account_ref,a.provider_id,a.cli_account_id,a.enabled,0,COALESCE(c.auth_kind,'')
+ FROM accounts a LEFT JOIN account_credentials c ON c.account_ref=a.account_ref WHERE a.account_ref=?`, ref.String()).Scan(&refText, &provider, &alias, &enabled, &excluded, &authKind); err != nil {
 		return indexedRoutingAccount{}, err
 	}
 	_, account, err := restoreIndexedRoutingAccount(store.catalog, refText, provider, alias)
@@ -114,5 +114,5 @@ func (store *Store) readCredentialRoutingEntry(ctx context.Context, reader crede
 	if err != nil {
 		return indexedRoutingAccount{}, err
 	}
-	return indexedRoutingAccount{account: account, enabled: enabled, excluded: excluded, credentialExcluded: guard, models: effective}, nil
+	return indexedRoutingAccount{account: account, enabled: enabled, excluded: excluded, credentialExcluded: guard, authKind: authKind, models: effective}, nil
 }

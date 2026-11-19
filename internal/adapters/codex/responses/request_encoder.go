@@ -49,6 +49,10 @@ func encodeRequest(
 	}
 	text = profile.projectText(text)
 	store, _ := request.Store()
+	// ChatGPT 登录上游不存储 response：store=true 会被直接 400。
+	if authKind == codexauth.AuthKindOAuth {
+		store = false
+	}
 	parallelToolCalls, specified := request.ParallelToolCalls()
 	if !specified {
 		parallelToolCalls = true
@@ -162,13 +166,13 @@ func rejectUnsupportedRequest(
 	if _, found := request.Truncation(); found {
 		return unsupported("truncation")
 	}
+	// ChatGPT 登录账号（OAuth）的上游不存储 response：store 必须为 false，
+	// previous_response_id 也无从解析。与 Node 的 stateless 归一化一致：
+	// input 内联了完整上下文时丢弃续接引用，否则明确拒绝（客户端以为有上文）。
 	if _, found := request.Continuation(); found {
-		return unsupported("continuation")
-	}
-	if store, found := request.Store(); found &&
-		store &&
-		authKind == codexauth.AuthKindOAuth {
-		return unsupported("store")
+		if authKind != codexauth.AuthKindOAuth || len(request.Messages()) == 0 {
+			return unsupported("continuation")
+		}
 	}
 	return nil
 }

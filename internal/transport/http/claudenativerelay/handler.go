@@ -89,7 +89,7 @@ type Dependencies struct {
 	//
 	// 没有它就必须在此拒绝，而跨协议请求（Messages 客户端 + 非 claude 模型）
 	// 本就该由 Canonical 承载——透传只会说 Anthropic 一种线协议。
-	Fallback       http.Handler
+	Fallback           http.Handler
 	Credentials        CredentialResolver
 	Client             HTTPClient
 	Attempts           inferencegateway.AttemptRecorder
@@ -218,6 +218,13 @@ func (handler *Handler) ServeHTTP(
 	// Canonical 回退必须使用客户端原文；透传所需的 Claude Code
 	// 身份只属于 Native OAuth 线协议，不能污染其它 Provider。
 	canonicalBody := body
+	// gateway.attempt 由 Canonical Coordinator 执行；字节透传路径没有该中间件时，
+	// 把请求交给 Canonical 执行同一代插件，而不是让插件静默不执行。
+	// 此时还没打开账号游标、没有联系上游，交给 Canonical 不产生重复副作用。
+	if inferenceapi.RequiresAttemptMiddleware(request.Context()) {
+		handler.delegate(response, request, canonicalBody)
+		return
+	}
 	// 订阅额度按 Claude Code 客户端判定，缺身份的请求会被上游按限流拒绝。
 	//
 	// 但补齐只对**非原生客户端**做：真实 Claude Code 自带身份，对其正文做任何
@@ -239,14 +246,6 @@ func (handler *Handler) ServeHTTP(
 			"relay_account_unavailable",
 			"Claude Relay 账号当前不可用",
 		)
-		return
-	}
-
-	// Go 的字节透传路径没有插件尝试中间件（gateway.attempt 由 Canonical Coordinator
-	// 执行）：交还前置宿主执行同一代插件，而不是静默跳过它。此时还没联系上游。
-	if inferenceapi.RequiresAttemptHandback(request.Context()) {
-		inferenceapi.MarkAttemptHandback(response)
-		writeRelayError(response, http.StatusBadRequest, "invalid_relay_request", "Claude Relay 需要宿主执行插件尝试中间件")
 		return
 	}
 

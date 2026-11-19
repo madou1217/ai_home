@@ -61,7 +61,7 @@ type Builder struct {
 	// relayProviders 声明由独立透传通道执行、不进 Canonical 路由目录的 Provider。
 	// 键是账号目录里的 Provider ID（字符串），不经过 Canonical 的封闭 Provider 集合。
 	relayProviders map[string]struct{}
-	// aliases 是 Node 推送的模型别名投影；为空表示 Go 不做别名改写（全部交还 Node）。
+	// aliases 是 Go 持有的模型别名投影；为空表示不做别名改写。
 	aliases *modelalias.Store
 }
 

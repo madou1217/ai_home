@@ -58,7 +58,7 @@ type InstanceView struct {
 	UpdatedAt             int64    `json:"updatedAt"`
 }
 
-// RuntimeContribution 是活跃代次里的一个贡献项（由 Node 推送、Go 已确认）。
+// RuntimeContribution 是活跃代次里的一个贡献项（由插件宿主推送、Go 已确认）。
 type RuntimeContribution struct {
 	ID            string `json:"id"`
 	Capability    string `json:"capability"`

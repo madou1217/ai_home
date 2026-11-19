@@ -103,7 +103,7 @@ func buildAgyModelProvider(context modelProviderContext) ([]accountapp.ProviderM
 
 // kimi / grok 的透传通道已接入（见 relaycore），但账号的**模型目录**要单独发现：
 // 没有目录，Go 就不知道这两个 Provider 有哪些模型可路由，请求会被判成
-// model_not_routable 交还 Node —— 等于通道白接。
+// model_not_routable —— 等于通道白接。
 //
 // 两者都是标准 OpenAI 兼容端点（GET {base}/models），因此共用同一实现，
 // 差异只在端点与凭据取法。

@@ -203,7 +203,7 @@ func (source *Source) Entries(
 // entriesCache 让推理 relay 能在请求热路径上同步拿到目录条目。
 //
 // 目录发现是异步 HTTP，而 relay 的 RewriteRequest 是同步的；进程内缓存由周期刷新
-// 填充，冷启动时 relay 直接 fail-closed 交还 Node，等下一轮刷新后自然接管。
+// 填充，冷启动时 relay fail-closed 拒绝，等下一轮刷新后自然接管。
 var (
 	entriesCacheMu sync.RWMutex
 	entriesCache   = map[string][]Entry{}

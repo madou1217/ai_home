@@ -17,7 +17,7 @@ import (
 const ManagedStateFileName = ".aih-server-default-state.json"
 
 // 宿主配置归属策略。file：整文件归 AIH，任何外部改动都失败关闭。
-// claude-env（按 env 字段判定）仍留在 Node，本包遇到它会明确拒绝而不是猜。
+// claude-env：只托管凭据 env 字段，Claude Code 自己改写权限等其它字段不影响归属。
 const (
 	CodeInvalidState             = "invalid_gateway_default_state"
 	CodeHostConfigChanged        = "gateway_default_host_config_changed"

@@ -603,7 +603,6 @@ func pluginRequest(ctx context.Context, method, path string, payload map[string]
 	request.Header.Set("X-Aih-Host-Version", "1.0.0")
 	if nodeVersion := pluginNodeVersion(); nodeVersion != "" {
 		request.Header.Set("X-Aih-JS-Runtime-Version", nodeVersion)
-		request.Header.Set("X-Aih-Node-Version", nodeVersion)
 	}
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")

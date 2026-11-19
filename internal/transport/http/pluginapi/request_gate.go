@@ -12,19 +12,19 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountrouting"
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
-	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
-// GenerationHeader 是 Node 公开入口给内部转发打上的插件代次。
+// GenerationHeader 是内部转发可选打上的插件代次。
 //
-// 只有带内部客户端密钥的请求才信任它；闸门读取后立即删除，不向下游传播。
-// 公开客户端不能直接访问 Go，Node 的转发器也会剥掉客户端自带的同名头。
+// Go 网关默认使用自己活跃代次的投影执行插件阶段；携带该头时按调用方固定代次执行，
+// 供兼容路径与诊断使用。只有带内部客户端密钥的请求才信任它；闸门读取后立即删除，
+// 不向下游传播。公开客户端不能直接访问 Go，转发器也会剥掉客户端自带的同名头。
 const GenerationHeader = "X-Aih-Plugin-Generation"
 
 // RequestGate 在推理入口（选号、协议解码之前）运行 gateway.request，语义与 Node v1-router 一致。
 //
-// 没有代次头时零开销直通（不读正文）。代次投影不存在（例如 Go 刚重启、Node 尚未重新推送）
-// 或正文被压缩时，按「解码拒收」交回 Node：此时还没有任何副作用，Node 用它缓冲的原文重新处理。
+// 没有代次头时使用 Go 活跃代次的投影；活跃代次没有网关类贡献项时零开销直通（不读正文）。
+// 正文被压缩或超过上限时返回明确错误——Go 是唯一执行方，不再把请求交还其它宿主。
 type RequestGate struct {
 	registry   *appplugins.Registry
 	invoker    appplugins.Invoker
@@ -46,18 +46,31 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		raw := request.Header.Get(GenerationHeader)
 		request.Header.Del(GenerationHeader)
-		if raw == "" || !gate.authorizer.Authorized(request) || isUpgrade(request) || request.Method != http.MethodPost {
+		if !gate.authorizer.Authorized(request) || isUpgrade(request) || request.Method != http.MethodPost {
 			next.ServeHTTP(response, request)
 			return
 		}
-		generation, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || generation <= 0 {
-			next.ServeHTTP(response, request)
-			return
+		var (
+			generation int64
+			projection appplugins.Projection
+			ok         bool
+		)
+		if raw == "" {
+			projection, ok = gate.registry.Active()
+			if ok {
+				generation = projection.Generation
+			}
+		} else {
+			parsed, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || parsed <= 0 {
+				next.ServeHTTP(response, request)
+				return
+			}
+			generation = parsed
+			projection, ok = gate.registry.Get(generation)
 		}
-		projection, ok := gate.registry.Get(generation)
 		if !ok {
-			handBack(response, "plugin_generation_unavailable")
+			writeError(response, http.StatusConflict, "plugin_generation_unavailable", "插件代次不可用，请刷新后重试")
 			return
 		}
 		observing := projection.Has(appplugins.CapabilityObserve) && gate.observer != nil
@@ -88,14 +101,13 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 			return
 		}
 		if encoding := strings.TrimSpace(request.Header.Get("Content-Encoding")); encoding != "" && !strings.EqualFold(encoding, "identity") {
-			handBack(response, "plugin_compressed_body")
+			writeError(response, http.StatusUnsupportedMediaType, "plugin_compressed_body", "插件阶段要求未压缩的 JSON 请求体")
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(request.Body, gate.maxBody+1))
 		_ = request.Body.Close()
 		if err != nil || int64(len(body)) > gate.maxBody {
-			// Node 已缓冲原文并按自己的上限处理，交还而不是在 Go 侧拒绝。
-			handBack(response, "plugin_body_too_large")
+			writeError(response, http.StatusRequestEntityTooLarge, "plugin_body_too_large", "请求体超过插件阶段上限")
 			return
 		}
 		trimmed := bytes.TrimSpace(body)
@@ -115,9 +127,10 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 			if errors.As(err, &stageErr) && stageErr.Code != "" {
 				code = stageErr.Code
 			}
-			// 连不上 Plugin Host 不是插件失败：交还 Node（它能连上同一个宿主），不让请求以 502 结束。
+			// 连不上 Plugin Host 是插件执行链路的问题，不是请求形状问题：回 503 让客户端重试，
+			// 而不是伪装成解码拒收。
 			if code == appplugins.CodeHostUnavailable {
-				handBack(response, code)
+				writeError(response, http.StatusServiceUnavailable, code, "插件宿主不可用，请稍后重试")
 				return
 			}
 			writeError(response, http.StatusBadGateway, code, err.Error())
@@ -168,10 +181,4 @@ func restoreBody(request *http.Request, body []byte) {
 
 func isUpgrade(request *http.Request) bool {
 	return strings.EqualFold(request.Header.Get("Upgrade"), "websocket")
-}
-
-// handBack 让上游用它缓冲的原文重新处理同一请求（还没有任何副作用）。
-func handBack(response http.ResponseWriter, code string) {
-	inferenceapi.MarkDecodeRejected(response)
-	writeError(response, http.StatusBadRequest, code, "插件代次不可用，请稍后重试")
 }

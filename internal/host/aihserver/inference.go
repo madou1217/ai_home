@@ -66,7 +66,7 @@ type inferenceComposition struct {
 	claudeUpstream *claudemessages.Adapter
 	agyUpstream    *agycodeassist.Adapter
 	modelRefreshes inferencegateway.ModelRefreshScheduler
-	// modelAliases 是 Node 推送的模型别名投影；随管理接口写入，随目录刷新编译。
+	// modelAliases 是管理接口写入的模型别名投影；随目录刷新编译。
 	modelAliases *modelalias.Store
 	// catalogRefresh 在别名投影变更后触发重建，让新别名立即生效。
 	catalogRefresh *inferencecatalog.RefreshCoordinator
@@ -232,7 +232,7 @@ func newInferenceComposition(
 	// 名单只从 relayProviderIDs 取，避免目录声明与模型刷新队列各写一份而漂移。
 	builder.WithRelayProviders(relayProviderIDs()...)
 	// 尚未接入 Go 推理上游的 Provider 的模型不进 Go 目录：一个 kiro 模型就能让
-	// 整个快照构建失败，结果所有请求都被交还 Node。名单从 Catalog 派生。
+	// 整个快照构建失败，所有模型一起不可路由。名单从 Catalog 派生。
 	catalogRefresh, err := inferencecatalog.NewRefreshCoordinator(
 		inferencecatalog.RefreshCoordinatorOptions{
 			Builder: builder,

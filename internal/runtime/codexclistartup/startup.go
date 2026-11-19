@@ -191,8 +191,9 @@ func providerArgs(env environment) []string {
 	if protocol := trim(flags["upstreamProtocol"]); protocolPattern.MatchString(protocol) {
 		values = append(values, "model_providers.aih_server.http_headers.X-Aih-Upstream-Protocol="+protocol)
 	}
-	if flags["routeOwner"] == "node" {
-		values = append(values, "model_providers.aih_server.http_headers.X-Aih-Route-Owner=node")
+	// 跨 Provider harness 的推理归属声明；旧值 node 统一归一到 go（Go 是唯一推理承接方）。
+	if owner := flags["routeOwner"]; owner == "go" || owner == "node" {
+		values = append(values, "model_providers.aih_server.http_headers.X-Aih-Route-Owner=go")
 	}
 	args := make([]string, 0, len(values)*2)
 	for _, value := range values {

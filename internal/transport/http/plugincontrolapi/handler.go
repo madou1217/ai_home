@@ -40,9 +40,8 @@ const (
 	maxBodyBytes = 256 * 1024
 	// HostVersionHeader / RuntimeVersionHeader 是安装请求给出的宿主事实。
 	// 插件语言不限；JavaScript 插件按 JS 运行时版本判断 engines。
-	HostVersionHeader       = "X-Aih-Host-Version"
-	RuntimeVersionHeader    = "X-Aih-JS-Runtime-Version"
-	LegacyNodeVersionHeader = "X-Aih-Node-Version"
+	HostVersionHeader    = "X-Aih-Host-Version"
+	RuntimeVersionHeader = "X-Aih-JS-Runtime-Version"
 )
 
 // Authorizer 校验管理密钥。
@@ -150,7 +149,7 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 	}
 	options := plugincontrol.AcceptOptions{
 		HostVersion:   headerOr(request, HostVersionHeader, "1.0.0"),
-		NodeVersion:   firstHeader(request, RuntimeVersionHeader, LegacyNodeVersionHeader),
+		NodeVersion:   firstHeader(request, RuntimeVersionHeader),
 		RequireSigned: payload.RequireSigned,
 	}
 	result, err := handler.installer.Install(request.Context(), payload.File, options)

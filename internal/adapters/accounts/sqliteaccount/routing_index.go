@@ -48,7 +48,9 @@ type indexedRoutingAccount struct {
 	excluded bool
 	// credentialExcluded cannot be cleared by user enable or the Node exclusion writer.
 	credentialExcluded bool
-	models             []runtimecore.ModelID
+	// authKind is canonical public metadata; API keys require their own model catalog.
+	authKind string
+	models   []runtimecore.ModelID
 }
 
 // serves 判断该账号当前是否会进入 Go 的路由候选和模型目录。
@@ -86,9 +88,10 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	}
 	const query = `
   SELECT a.account_ref, a.provider_id, a.cli_account_id, a.enabled,
-		       0,
+		       0, COALESCE(c.auth_kind, ''),
 		       m.model_id, m.upstream_available, m.manual_policy, m.updated_at_ms
 		FROM accounts AS a
+		LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
 		LEFT JOIN account_models AS m ON m.account_ref = a.account_ref
 		ORDER BY a.account_ref, m.model_id`
 	rows, err := transaction.QueryContext(ctx, query)
@@ -104,10 +107,11 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 	var current accountapp.RoutingAccount
 	var currentEnabled bool
 	var currentExcluded bool
+	var currentAuthKind string
 	var currentModels []runtimecore.ModelID
 	flush := func() {
 		if currentRef.IsValid() {
-			index.replaceGuardedAccountDataLocked(current, currentEnabled, currentExcluded, canonicalRoutingGuard(guards, currentRef), currentModels)
+			index.replaceGuardedAccountDataLocked(current, currentEnabled, currentExcluded, canonicalRoutingGuard(guards, currentRef), currentAuthKind, currentModels)
 		}
 	}
 	for rows.Next() {
@@ -117,6 +121,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			cliAccountID   int64
 			enabled        bool
 			excluded       bool
+			authKind       string
 			modelIDText    sql.NullString
 			upstream       sql.NullBool
 			manualPolicy   sql.NullString
@@ -128,6 +133,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			&cliAccountID,
 			&enabled,
 			&excluded,
+			&authKind,
 			&modelIDText,
 			&upstream,
 			&manualPolicy,
@@ -152,6 +158,7 @@ func (store *Store) loadRoutingIndex(ctx context.Context) (*routingIndex, error)
 			currentRef = accountRef
 			current = account
 			currentEnabled = enabled
+			currentAuthKind = authKind
 			currentExcluded = manual[accountRef.String()]
 		}
 		if !modelIDText.Valid {
@@ -225,7 +232,7 @@ func (index *routingIndex) replaceAccountAndPublishLocked(
 	enabled bool,
 	models []runtimecore.ModelID,
 ) {
-	models = index.effectiveModels(account.ProviderID(), models)
+	models = index.effectiveModels(account.ProviderID(), index.accounts[account.Ref()].authKind, models)
 	affected := make(map[routingIndexKey]struct{}, len(models))
 	excluded := false
 	if previous, found := index.accounts[account.Ref()]; found {
@@ -266,18 +273,21 @@ func (index *routingIndex) replaceAccountDataLocked(
 	// canonical dirty-event restore. Unknown credentials are not proof
 	// of routability; only a typed canonical restore may clear this guard.
 	guard := true
+	authKind := ""
 	if previous, found := index.accounts[account.Ref()]; found {
 		guard = previous.credentialExcluded
+		authKind = previous.authKind
 	}
-	index.replaceGuardedAccountDataLocked(account, enabled, excluded, guard, models)
+	index.replaceGuardedAccountDataLocked(account, enabled, excluded, guard, authKind, models)
 }
 
 func (index *routingIndex) replaceGuardedAccountDataLocked(
 	account accountapp.RoutingAccount,
 	enabled, excluded, credentialExcluded bool,
+	authKind string,
 	models []runtimecore.ModelID,
 ) {
-	models = index.effectiveModels(account.ProviderID(), models)
+	models = index.effectiveModels(account.ProviderID(), authKind, models)
 	credentialExcluded = credentialExcluded || index.quarantined
 	if previous, found := index.accounts[account.Ref()]; found && previous.serves() {
 		for _, modelID := range previous.models {
@@ -299,6 +309,7 @@ func (index *routingIndex) replaceGuardedAccountDataLocked(
 		enabled:            enabled,
 		excluded:           excluded,
 		credentialExcluded: credentialExcluded,
+		authKind:           authKind,
 		models:             append([]runtimecore.ModelID(nil), models...),
 	}
 	index.accounts[account.Ref()] = entry
@@ -332,11 +343,11 @@ func (index *routingIndex) publishCredentialAccount(entry indexedRoutingAccount,
 	}
 	if previous.IsValid() && previous != entry.account.Ref() {
 		if old, found := index.accounts[previous]; found {
-			index.replaceGuardedAccountDataLocked(old.account, false, old.excluded, old.credentialExcluded, nil)
+			index.replaceGuardedAccountDataLocked(old.account, false, old.excluded, old.credentialExcluded, old.authKind, nil)
 			delete(index.accounts, previous)
 		}
 	}
-	index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, entry.credentialExcluded, entry.models)
+	index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, entry.credentialExcluded, entry.authKind, entry.models)
 	updated := index.accounts[entry.account.Ref()]
 	if updated.serves() {
 		for _, model := range updated.models {
@@ -353,11 +364,13 @@ func (index *routingIndex) publishCredentialAccount(entry indexedRoutingAccount,
 // 与 Node 的 listSynthesizedImageModelIds 同义：账号的模型快照来自上游对话模型目录，图片专用
 // 模型（gpt-image-2、gemini-*-image）通常不在里面，但该 Provider 的凭据确实能出图。不合成的话，
 // 「只写 model」的图片请求在 Go 侧会 503，/v1/models 也不会列出这些模型。
+// API Key 上游拥有独立的模型和计费合同，只使用其有效发现/人工登记目录，绝不合成。
 func (index *routingIndex) effectiveModels(
 	providerID string,
+	authKind string,
 	models []runtimecore.ModelID,
 ) []runtimecore.ModelID {
-	if index == nil || index.synthesize == nil {
+	if index == nil || index.synthesize == nil || authKind == "api_key" || authKind == "api-key" {
 		return models
 	}
 	extra := index.synthesize(providerID)
@@ -393,7 +406,7 @@ func (index *routingIndex) setSynthesizedModelSource(source synthesizedModelSour
 	index.mu.Lock()
 	index.synthesize = source
 	for _, entry := range index.accounts {
-		merged := index.effectiveModels(entry.account.ProviderID(), entry.models)
+		merged := index.effectiveModels(entry.account.ProviderID(), entry.authKind, entry.models)
 		if len(merged) == len(entry.models) {
 			continue
 		}
@@ -549,7 +562,7 @@ func (index *routingIndex) quarantineRoutingSnapshot() {
 		affected[key] = struct{}{}
 	}
 	for _, entry := range index.accounts {
-		index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, true, entry.models)
+		index.replaceGuardedAccountDataLocked(entry.account, entry.enabled, entry.excluded, true, entry.authKind, entry.models)
 	}
 	index.publishSnapshotsLocked(affected)
 	index.mu.Unlock()

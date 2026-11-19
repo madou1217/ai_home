@@ -1,9 +1,7 @@
 package images
 
-import "strings"
-
-// SupportsCodexOAuthImagePlan 只排除已知不提供 Codex 图片工具的 Free 套餐。
-// 未知套餐交给上游判断；API Key 使用独立的 OpenAI Images 合同，不受此规则限制。
-func SupportsCodexOAuthImagePlan(plan string) bool {
-	return !strings.EqualFold(strings.TrimSpace(plan), "free")
+// SupportsCodexOAuthImagePlan 不从套餐名称推断专用图片接口的授权。
+// 单个 Free 账号的 403 不能证明整个套餐不支持；真实权限由上游响应裁定。
+func SupportsCodexOAuthImagePlan(_ string) bool {
+	return true
 }

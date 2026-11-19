@@ -68,7 +68,7 @@ func (store *Store) Restore(ctx context.Context) error {
 	return nil
 }
 
-// Replace 用 Node 推送的完整别名集合替换当前投影，返回新代次。
+// Replace 用调用方推送的完整别名集合替换当前投影，返回新代次。
 // 任一记录无效时整体拒绝并保留原投影，避免部分应用让别名解析出现空洞。
 func (store *Store) Replace(records []Record) (int64, error) {
 	return store.ReplaceContext(context.Background(), records)

@@ -187,7 +187,7 @@ type serverHandlers struct {
 	codexAppServer http.Handler
 	// remoteWebUI resolves profiles and streams remote WebUI requests in Go.
 	remoteWebUI *remoteWebUIProxy
-	// frontDoor 是已退役前置门的历史字段，仅供对照测试；生产路由不使用。
+	// frontDoor 是已退役前置门的历史字段，仅供对照测试；生产路由不再使用。
 	frontDoor http.Handler
 	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
 	webUITerminal http.Handler
@@ -247,6 +247,12 @@ type serverAccountRuntime interface {
 func New(ctx context.Context, options Options) (*Server, error) {
 	if err := validateOptions(options); err != nil {
 		return nil, err
+	}
+	// 前置门只在 Go 拥有公开端口时装配；目标为空时返回 nil，路由表保持 404。
+	// 地址校验放在获取任何资源之前，非法配置不会留下需要清理的租约。
+	frontDoor, err := newFrontDoorHandler(options.FrontDoorBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("创建前置门处理器失败: %w", err)
 	}
 	writerLease, err := accountwriterlease.Acquire(options.AIHomeDir)
 	if err != nil {
@@ -442,6 +448,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	handlers.webUI = webUI
 	handlers.remoteWebUI = remoteWebUI
+	handlers.frontDoor = frontDoor
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)
 	if err != nil {
 		_ = webuiAccountsSource.Close()
@@ -2008,19 +2015,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			CredentialObservations: credentials,
 			Rules:                  upstreamRuleEvaluator,
 		},
-		HostHomeDir:           dependencies.HostHomeDir,
-		Store:                 store,
-		NativeWorkPreparer:    nativeWork,
-		AccountRuntime:        accountRuntime,
-		AuthJobs:              jobs,
-		LoginJobs:             aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
-		AccountsHandler:       accountsHandler,
-		AccountRows:           dependencies.WebUIAccountsSource,
-		CredentialEditor:      credentialRotator,
-		ProviderDefaults:      providerDefaults,
-		ModelRefresher:        recoveringModelManagement,
-		UsageService:          usage.service,
-		QuotaStats:            quotaStatsService,
+		HostHomeDir:        dependencies.HostHomeDir,
+		Store:              store,
+		NativeWorkPreparer: nativeWork,
+		AccountRuntime:     accountRuntime,
+		AuthJobs:           jobs,
+		LoginJobs:          aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
+		AccountsHandler:    accountsHandler,
+		AccountRows:        dependencies.WebUIAccountsSource,
+		CredentialEditor:   credentialRotator,
+		ProviderDefaults:   providerDefaults,
+		ModelRefresher:     recoveringModelManagement,
+		UsageService:       usage.service,
+		QuotaStats:         quotaStatsService,
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},

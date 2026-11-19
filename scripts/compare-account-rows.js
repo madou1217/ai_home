@@ -33,7 +33,6 @@ const {
   diffAccountRow,
   diffProjectedRow,
   usageSnapshotLagMs,
-  countNodeOnlySnapshots,
   countFallbacks
 } = require('../lib/server/account-row-sources');
 
@@ -250,14 +249,6 @@ async function main() {
           lagMs: lag
         });
       }
-    }
-    if (goRow && countNodeOnlySnapshots(nodeRow, goRow)) {
-      warnings.push({
-        accountRef: nodeRow.accountRef,
-        provider: nodeRow.provider,
-        warning: 'node_only_usage_snapshot',
-        capturedAt: nodeRow.usageSnapshot && nodeRow.usageSnapshot.capturedAt
-      });
     }
   }
 

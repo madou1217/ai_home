@@ -275,10 +275,17 @@ func establishedConns(ctx context.Context, procs []int) int {
 	for _, pid := range procs {
 		pidArgs = append(pidArgs, "-p", strconv.Itoa(pid))
 	}
-	args := append([]string{"-nP"}, pidArgs...)
+	// -a 必须显式给出：lsof 默认把 -p 与 -i 的条件取并集，
+	// 不加上就会把全机连接算进单个会话的统计。
+	args := append([]string{"-nP", "-a"}, pidArgs...)
 	args = append(args, "-iTCP", "-sTCP:ESTABLISHED")
 	out, err := runShort(ctx, "lsof", args...)
 	if err != nil {
+		// lsof 在"没有任何匹配"时也返回 1：空输出 + 退出码 1 应视为 0 条连接，
+		// 否则空闲会话永远被判成 connections_unknown，回收功能形同虚设。
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 && strings.TrimSpace(out) == "" {
+			return 0
+		}
 		return -1
 	}
 	count := 0

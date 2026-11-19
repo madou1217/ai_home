@@ -1969,6 +1969,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 运行时画像：内存/协程/GC 的唯一只读观测口。
 	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "GET " + runtimeDiagnosticsPath, Handler: runtimeDiagnosticsHandler{authorizer: authorizer}})
 	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "GET " + sessionDiagnosticsPath, Handler: sessionDiagnosticsHandler{authorizer: authorizer, aiHomeDir: aiHomeDir}})
+	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "POST " + sessionReclaimPath, Handler: sessionReclaimHandler{authorizer: authorizer, aiHomeDir: aiHomeDir}})
 	updateRoutes, updateCloser, updateErr := buildDistributionUpdate(ctx, webuiDeps)
 	if updateErr != nil {
 		log.Printf("AIH 更新检测不可用: %v", updateErr)

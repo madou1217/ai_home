@@ -40,6 +40,27 @@ func isValidDelta(value string) bool {
 	return true
 }
 
+// isNonBlankBodyText preserves ordinary terminal output, including ANSI escape
+// bytes, as JSON text. Metadata, names and opaque identities keep stricter checks.
+func isNonBlankBodyText(value string) bool {
+	return strings.TrimSpace(value) != "" && isValidBodyTextDelta(value)
+}
+
+// isValidBodyTextDelta accepts ANSI sequences split across stream chunks. The
+// transport renderer must JSON-encode text; ESC is data, never an SSE delimiter.
+func isValidBodyTextDelta(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) && character != '\n' && character != '\t' &&
+			character != '\r' && character != '\x1b' {
+			return false
+		}
+	}
+	return true
+}
+
 // isCanonicalOpaqueID 判断外部标识可原样跨协议传输，不执行修剪或大小写改写。
 func isCanonicalOpaqueID(value string) bool {
 	if value == "" || len(value) > 256 || !utf8.ValidString(value) || strings.TrimSpace(value) != value {

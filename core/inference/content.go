@@ -61,7 +61,7 @@ type TextContent struct {
 
 // NewTextContent 创建非空的普通文本内容。
 func NewTextContent(text string) (TextContent, error) {
-	if !isNonBlankText(text) {
+	if !isNonBlankBodyText(text) {
 		return TextContent{}, ErrInvalidContent
 	}
 	return TextContent{text: text}, nil
@@ -79,7 +79,7 @@ func (content TextContent) Text() string {
 
 // IsValid 判断文本内容仍满足构造不变量。
 func (content TextContent) IsValid() bool {
-	return isNonBlankText(content.text)
+	return isNonBlankBodyText(content.text)
 }
 
 // cloneContent 返回文本值对象的独立语义快照。

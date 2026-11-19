@@ -297,14 +297,14 @@ type TextDeltaEvent struct {
 	delta string
 }
 
-// NewTextDeltaEvent 创建允许空白但不允许空值或控制字符的文本增量。
+// NewTextDeltaEvent 创建保留终端 ANSI 文本、允许空白但不允许空值的文本增量。
 func NewTextDeltaEvent(
 	sequence uint64,
 	outputIndex uint32,
 	blockIndex uint32,
 	delta string,
 ) (TextDeltaEvent, error) {
-	if !isValidDelta(delta) {
+	if !isValidBodyTextDelta(delta) {
 		return TextDeltaEvent{}, ErrInvalidEvent
 	}
 	return TextDeltaEvent{
@@ -353,7 +353,7 @@ func NewTextCompletedEvent(
 	blockIndex uint32,
 	text string,
 ) (TextCompletedEvent, error) {
-	if !isNonBlankText(text) {
+	if !isNonBlankBodyText(text) {
 		return TextCompletedEvent{}, ErrInvalidEvent
 	}
 	return TextCompletedEvent{

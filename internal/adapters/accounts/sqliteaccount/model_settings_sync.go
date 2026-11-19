@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -508,7 +507,7 @@ func (store *Store) startModelSettingsWatch(root string) error {
 				return
 			case event, ok := <-events:
 				if !ok {
-					log.Printf("model_settings_watch_events_closed: rescan required")
+					store.logModelSettings("model_settings_watch_events_closed: rescan required")
 					events = nil
 					failures = nil
 					watcher.Close()
@@ -518,7 +517,7 @@ func (store *Store) startModelSettingsWatch(root string) error {
 				}
 				name := filepath.Clean(event.Name)
 				if name == absolute && event.Op&(fsnotify.Rename|fsnotify.Remove) != 0 {
-					log.Printf("model_settings_watch_root_moved: waiting for original root")
+					store.logModelSettings("model_settings_watch_root_moved: waiting for original root")
 					events = nil
 					failures = nil
 					watcher.Close()
@@ -534,7 +533,7 @@ func (store *Store) startModelSettingsWatch(root string) error {
 					failures = nil
 					continue
 				}
-				log.Printf("model_settings_watch_error: %v; rescan required", failure)
+				store.logModelSettings("model_settings_watch_error: %v; rescan required", failure)
 				// Overflow does not invalidate the watch registration; always rescan it.
 				schedule(100 * time.Millisecond)
 			case <-timer.C:
@@ -543,7 +542,7 @@ func (store *Store) startModelSettingsWatch(root string) error {
 					current, statErr := os.Stat(absolute)
 					target, pathErr := filepath.EvalSymlinks(absolute)
 					if statErr != nil || pathErr != nil || target != absolute || !os.SameFile(info, current) {
-						log.Printf("model_settings_watch_root_unavailable: original canonical directory required")
+						store.logModelSettings("model_settings_watch_root_unavailable: original canonical directory required")
 						schedule(time.Second)
 						continue
 					}
@@ -552,7 +551,7 @@ func (store *Store) startModelSettingsWatch(root string) error {
 						if next != nil {
 							next.Close()
 						}
-						log.Printf("model_settings_watch_reopen_failed: %v", err)
+						store.logModelSettings("model_settings_watch_reopen_failed: %v", err)
 						schedule(time.Second)
 						continue
 					}
@@ -565,10 +564,10 @@ func (store *Store) startModelSettingsWatch(root string) error {
 					if ctx.Err() != nil {
 						return
 					}
-					log.Printf("model_settings_reconcile_failed: %v", err)
+					store.logModelSettings("model_settings_reconcile_failed: %v", err)
 					schedule(time.Second)
 				} else if result.AppliedCount > 0 {
-					log.Printf("model_settings_reconciled: applied_count=%d ignored_stale_count=%d", result.AppliedCount, result.IgnoredStaleCount)
+					store.logModelSettings("model_settings_reconciled: applied_count=%d ignored_stale_count=%d", result.AppliedCount, result.IgnoredStaleCount)
 				}
 			}
 		}

@@ -33,12 +33,16 @@ type OpenOptions struct {
 	// Command-owned stores reconcile once on open; they must not keep a background
 	// writer (and its diagnostics) attached to the foreground provider terminal.
 	WatchModelSettings bool
+	// ModelSettingsLogf receives background watcher diagnostics when provided.
+	// A nil sink is silent; server hosts opt in explicitly.
+	ModelSettingsLogf func(string, ...any)
 }
 
 // Store 是账号应用端口的 SQLite 实现。
 type Store struct {
 	modelSettingsDigest [32]byte // guarded by routingWrites
 	modelSettingsWatch  *modelSettingsWatch
+	modelSettingsLogf   func(string, ...any)
 	db                  *sql.DB
 	catalog             *providers.Catalog
 	credentials         credentialRegistry
@@ -69,6 +73,7 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	store.modelSettingsLogf = options.ModelSettingsLogf
 	db := store.db
 	// 用户可见的 CLI 编号一直记录在 Node 台账 account_cli_aliases；Go 自增序列表
 	// 与它是两套编号。每次打开账号库都把两份收敛，保证 `aih ls`、`aih <id>`

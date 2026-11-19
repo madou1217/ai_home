@@ -269,6 +269,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		AIHomeDir:          options.AIHomeDir,
 		Catalog:            catalog,
 		WatchModelSettings: true,
+		ModelSettingsLogf:  log.Printf,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("打开账号数据库失败: %w", err)

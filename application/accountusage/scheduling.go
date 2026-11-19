@@ -3,9 +3,11 @@ package accountusage
 import (
 	"context"
 	"errors"
+	"strings"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	schedcore "github.com/madou1217/ai_home/core/accountscheduling"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
@@ -33,6 +35,9 @@ type SchedulingDecision struct {
 	Reason               string
 	RemainingBasisPoints uint16
 	RemainingKnown       bool
+	// Buckets 是适用于该模型的额度档位（含剩余与恢复时间），按快照原序给出。
+	// 调度策略据此决定本次消费哪一档；本层只提供事实。
+	Buckets []schedcore.Bucket
 }
 
 // EvaluateScheduling 判断账号能否为该模型承接请求。
@@ -89,6 +94,22 @@ func evaluateSchedulingSnapshot(
 			}
 		default:
 			continue
+		}
+		bucket := schedcore.Bucket{
+			ID:                   strings.TrimSpace(entry.Bucket()),
+			Exhausted:            entry.Availability() == usagecore.AvailabilityExhausted,
+			ResetAt:              entry.ResetAt(),
+			RemainingBasisPoints: 0,
+		}
+		if bucket.ID == "" {
+			bucket.ID = strings.TrimSpace(entry.ScopeKey())
+		}
+		if points, known := entry.RemainingBasisPoints(); known {
+			bucket.Known = true
+			bucket.RemainingBasisPoints = points
+		}
+		if bucket.ID != "" {
+			decision.Buckets = append(decision.Buckets, bucket)
 		}
 		if entry.Availability() == usagecore.AvailabilityExhausted {
 			return SchedulingDecision{

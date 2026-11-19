@@ -89,6 +89,8 @@ type UsageDecision struct {
 	Blocked bool
 	Status  string
 	Reason  string
+	// Buckets 是该账号对该模型的额度档位事实，交给调度策略选择消费档位。
+	Buckets []schedcore.Bucket
 }
 
 // UsageGate 提供账号对指定真实模型的额度资格。
@@ -288,6 +290,8 @@ type Result struct {
 	observation     accountcredentials.CredentialObservation
 	examined        int
 	sourceExhausted bool
+	// quotaBucket 是调度策略为本次请求选定的额度档位；空表示不区分档位。
+	quotaBucket string
 }
 
 // Account 返回本次选中的紧凑账号投影。
@@ -303,6 +307,11 @@ func (result Result) Binding() accountapp.CredentialBinding {
 // CredentialObservation 返回解析该凭据时看到的持久化时间，不包含秘密。
 func (result Result) CredentialObservation() accountcredentials.CredentialObservation {
 	return result.observation
+}
+
+// QuotaBucket 返回策略为本次请求选定的额度档位，供用量记账归因。
+func (result Result) QuotaBucket() string {
+	return result.quotaBucket
 }
 
 // Credential 返回稳定绑定中的当前 Provider 凭据。
@@ -559,11 +568,12 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 			return progress, eligibilityErr
 		}
 		// 额度门禁与运行态资格都是 Evidence；判定本身交给 Provider 策略。
-		usageBlocked, usageErr := session.usageBlocked(ctx, candidate)
+		usage, usageErr := session.usageDecision(ctx, candidate)
 		if usageErr != nil {
 			return progress, usageErr
 		}
-		if !session.admits(session.evaluate(candidate, eligibility, usageBlocked), eligibility, offset, candidate) {
+		verdict := session.evaluate(candidate, eligibility, usage)
+		if !session.admits(verdict, eligibility, offset, candidate) {
 			continue
 		}
 		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
@@ -592,6 +602,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		progress.account = candidate
 		progress.binding = binding
 		progress.observation = observation
+		progress.quotaBucket = verdict.Bucket
 		session.bindAffinity(candidate.Ref())
 		return progress, nil
 	}
@@ -661,16 +672,16 @@ func (recruiter *Recruiter) runtimeEligibility(
 	return eligibility, nil
 }
 
-// usageBlocked 在读取凭据前按最新额度快照判断候选是否应被跳过。
+// usageDecision 在读取凭据前取回该候选的额度判定与档位事实。
 //
 // 门禁错误按 fail-closed 处理：拿不到额度真相时终止本次征召，而不是把账号当作可用。
-func (session *RecruitmentSession) usageBlocked(
+func (session *RecruitmentSession) usageDecision(
 	ctx context.Context,
 	candidate accountapp.RoutingAccount,
-) (bool, error) {
+) (UsageDecision, error) {
 	gate := session.recruiter.usage
 	if gate == nil {
-		return false, nil
+		return UsageDecision{}, nil
 	}
 	decision, err := gate.EvaluateScheduling(
 		ctx,
@@ -680,11 +691,11 @@ func (session *RecruitmentSession) usageBlocked(
 	)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return false, ctxErr
+			return UsageDecision{}, ctxErr
 		}
-		return false, fmt.Errorf("读取账号额度门禁失败: %w", err)
+		return UsageDecision{}, fmt.Errorf("读取账号额度门禁失败: %w", err)
 	}
-	return decision.Blocked, nil
+	return decision, nil
 }
 
 // evaluate 把运行态资格与额度门禁取证成 Evidence，交给 Provider 策略判定。
@@ -693,10 +704,10 @@ func (session *RecruitmentSession) usageBlocked(
 func (session *RecruitmentSession) evaluate(
 	candidate accountapp.RoutingAccount,
 	eligibility runtimecore.Eligibility,
-	usageBlocked bool,
+	usage UsageDecision,
 ) schedcore.Verdict {
 	if session.recruiter.scheduling == nil {
-		return legacyVerdict(eligibility, usageBlocked)
+		return legacyVerdict(eligibility, usage.Blocked)
 	}
 	evidence := accountscheduling.Evidence{
 		Provider:   session.request.ProviderID(),
@@ -705,9 +716,11 @@ func (session *RecruitmentSession) evaluate(
 		// 候选快照已按"启用 + 该模型已物化"筛选，账号级事实到这里恒为真。
 		Account: accountscheduling.AccountFacts{Enabled: true, Configured: true},
 	}
-	if usageBlocked {
+	if usage.Blocked {
 		evidence.Eligibility.UsageGate = schedcore.ReasonUsageGate
 	}
+	// 档位事实来自额度层，选哪一档由策略决定。
+	evidence.Buckets = usage.Buckets
 	if reason := eligibilityStatusReason(eligibility.Status()); reason != "" {
 		evidence.Observed.ModelReasons = append(evidence.Observed.ModelReasons, reason)
 	}

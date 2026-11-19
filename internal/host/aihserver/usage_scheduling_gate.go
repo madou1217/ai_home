@@ -91,6 +91,7 @@ func (gate *usageSchedulingGate) EvaluateScheduling(
 		Blocked: decision.Blocked,
 		Status:  decision.Status,
 		Reason:  decision.Reason,
+		Buckets: decision.Buckets,
 	}
 	gate.mu.Lock()
 	gate.decisions[cacheKey] = usageCachedDecision{decision: result, at: now}

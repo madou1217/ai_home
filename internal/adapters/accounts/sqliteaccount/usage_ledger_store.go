@@ -53,12 +53,12 @@ func (store *Store) appendUsageRecord(
 		INSERT INTO usage_ledger (
 			account_ref, provider_id, model_id, session_id, occurred_at_ms,
 			input_tokens, output_tokens, cached_input_tokens,
-			cache_write_input_tokens, reasoning_tokens, total_tokens
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cache_write_input_tokens, reasoning_tokens, total_tokens, quota_bucket
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.AccountRef().String(), record.Provider(), record.Model(), record.SessionID(),
 		record.OccurredAt().UnixMilli(), usage.InputTokens(), usage.OutputTokens(),
 		usage.CachedInputTokens(), usage.CacheWriteInputTokens(), usage.ReasoningTokens(),
-		usage.TotalTokens(),
+		usage.TotalTokens(), record.Bucket(),
 	)
 	if err != nil {
 		return fmt.Errorf("写入 token 用量事实失败: %w", err)

@@ -597,6 +597,7 @@ func (coordinator *Coordinator) executeRouteRound(
 			recruited.Account(),
 			recruited.Binding(),
 			recruited.CredentialObservation(),
+			recruited.QuotaBucket(),
 		)
 		if err != nil {
 			return routeExecution{pendingFailure: pendingFailure}, err
@@ -787,6 +788,7 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 		if usage, ok := stream.Usage(); ok {
 			success = success.WithUsage(usage)
 		}
+		success = success.WithQuotaBucket(invocation.QuotaBucket())
 		providerID := string(invocation.Route().ProviderID())
 		accountFailures.ForgetPending(providerID, route)
 		return outcome, coordinator.completeAttempt(

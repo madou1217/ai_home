@@ -19,12 +19,14 @@ var (
 )
 
 type RecordInput struct {
+	// Bucket 是账号策略为该请求选定的额度档位；空表示不区分档位。
 	AccountRef accountcore.AccountRef
 	Provider   string
 	Model      string
 	SessionID  string
 	OccurredAt time.Time
 	Usage      inference.Usage
+	Bucket     string
 }
 
 type Record struct {
@@ -34,14 +36,16 @@ type Record struct {
 	sessionID  string
 	occurredAt time.Time
 	usage      inference.Usage
+	bucket     string
 }
 
 func NewRecord(input RecordInput) (Record, error) {
 	provider := strings.TrimSpace(strings.ToLower(input.Provider))
 	model := strings.TrimSpace(input.Model)
 	sessionID := strings.TrimSpace(input.SessionID)
+	bucket := strings.TrimSpace(input.Bucket)
 	if !input.AccountRef.IsValid() || provider == "" || model == "" ||
-		len(provider) > 64 || len(model) > 256 || len(sessionID) > 256 ||
+		len(provider) > 64 || len(model) > 256 || len(sessionID) > 256 || len(bucket) > 64 ||
 		input.OccurredAt.IsZero() || input.OccurredAt.Location() != time.UTC ||
 		!input.Usage.IsValid() || input.Usage.TotalTokens() == 0 {
 		return Record{}, ErrInvalidRecord
@@ -53,6 +57,7 @@ func NewRecord(input RecordInput) (Record, error) {
 		sessionID:  sessionID,
 		occurredAt: time.UnixMilli(input.OccurredAt.UnixMilli()).UTC(),
 		usage:      input.Usage,
+		bucket:     bucket,
 	}, nil
 }
 
@@ -62,6 +67,7 @@ func (record Record) Model() string                      { return record.model }
 func (record Record) SessionID() string                  { return record.sessionID }
 func (record Record) OccurredAt() time.Time              { return record.occurredAt }
 func (record Record) Usage() inference.Usage             { return record.usage }
+func (record Record) Bucket() string                     { return record.bucket }
 func (record Record) IsValid() bool {
 	_, err := NewRecord(RecordInput{
 		AccountRef: record.accountRef,

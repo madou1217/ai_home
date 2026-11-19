@@ -45,6 +45,7 @@ func buildUsageLedgerRecord(
 		SessionID:  inferencegateway.RequestSessionKey(ctx),
 		OccurredAt: success.HappenedAt(),
 		Usage:      usage,
+		Bucket:     success.QuotaBucket(),
 	})
 }
 

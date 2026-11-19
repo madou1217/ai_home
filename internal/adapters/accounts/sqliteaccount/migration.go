@@ -109,6 +109,7 @@ var expectedSchemaColumns = map[string][]string{
 		"reasoning_tokens",
 		"total_tokens",
 		"source_key",
+		"quota_bucket",
 	},
 	"account_tombstones": {
 		"tombstone_key",
@@ -336,6 +337,7 @@ var forwardMigrations = []string{
 	SchemaV30,
 	SchemaV31,
 	SchemaV32,
+	SchemaV33,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
@@ -361,11 +363,25 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 				ctx,
 				forwardMigrations[version],
 			); err != nil {
-				return fmt.Errorf(
-					"迁移账号数据库到 v%d 失败: %w",
-					version+1,
-					err,
-				)
+				if !isIdempotentMigrationError(err) {
+					return fmt.Errorf(
+						"迁移账号数据库到 v%d 失败: %w",
+						version+1,
+						err,
+					)
+				}
+				// 脚本在这里因"列已存在"中断，后面的 PRAGMA user_version 没机会执行；
+				// 目标结构已经成立，补写版本号，避免下一次启动重复迁移。
+				if _, versionErr := connection.ExecContext(
+					ctx,
+					fmt.Sprintf("PRAGMA user_version = %d;", version+1),
+				); versionErr != nil {
+					return fmt.Errorf(
+						"迁移账号数据库到 v%d 后写版本号失败: %w",
+						version+1,
+						versionErr,
+					)
+				}
 			}
 		}
 		return commitMigration(ctx, connection)
@@ -401,6 +417,17 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		}
 	}
 	return commitMigration(ctx, connection)
+}
+
+// isIdempotentMigrationError 容忍"重复加列"这一种可安全重放的前向迁移错误。
+//
+// 迁移脚本是前向的，但如果上一次进程在 ALTER 之后、提交版本号之前退出，重跑同一版本
+// 会撞上 duplicate column name；这种状态本身是目标结构，不应该把数据库判成不可用。
+func isIdempotentMigrationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
 }
 
 // commitMigration 提交 migration 事务并统一错误语义。

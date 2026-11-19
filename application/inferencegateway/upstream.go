@@ -3,6 +3,7 @@ package inferencegateway
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
@@ -31,6 +32,8 @@ var (
 // AttemptSuccess 是不含响应正文的成功发生事实。
 type AttemptSuccess struct {
 	happenedAt time.Time
+	// quotaBucket 是调度策略为本次尝试选定的额度档位；空表示不区分档位。
+	quotaBucket string
 	// usage 是本次尝试最后一个累计 token 快照；上游未返回 usage 时 hasUsage 为 false。
 	usage    inference.Usage
 	hasUsage bool
@@ -46,6 +49,21 @@ func NewAttemptSuccess(happenedAt time.Time) (AttemptSuccess, error) {
 	return AttemptSuccess{
 		happenedAt: time.UnixMilli(happenedAt.UnixMilli()).UTC(),
 	}, nil
+}
+
+// WithQuotaBucket 返回附带额度档位的成功事件；空档位被忽略。
+func (success AttemptSuccess) WithQuotaBucket(bucket string) AttemptSuccess {
+	trimmed := strings.TrimSpace(bucket)
+	if trimmed == "" || len(trimmed) > 64 {
+		return success
+	}
+	success.quotaBucket = trimmed
+	return success
+}
+
+// QuotaBucket 返回本次消费的额度档位，供用量记账归因。
+func (success AttemptSuccess) QuotaBucket() string {
+	return success.quotaBucket
 }
 
 // HappenedAt 返回成功终态被观察到的 UTC 毫秒时间。
@@ -86,6 +104,12 @@ type Invocation struct {
 	account     accountapp.RoutingAccount
 	credential  accountapp.Credential
 	observation accountcredentials.CredentialObservation
+	quotaBucket string
+}
+
+// QuotaBucket 返回调度策略为本次调用选定的额度档位。
+func (invocation Invocation) QuotaBucket() string {
+	return invocation.quotaBucket
 }
 
 // newInvocation 复核账号、凭据和路由属于同一个 Provider 身份。
@@ -95,6 +119,7 @@ func newInvocation(
 	account accountapp.RoutingAccount,
 	binding accountapp.CredentialBinding,
 	observation accountcredentials.CredentialObservation,
+	quotaBucket string,
 ) (Invocation, error) {
 	if !route.IsValid() ||
 		account.ProviderID() != string(route.ProviderID()) ||
@@ -112,6 +137,7 @@ func newInvocation(
 		account:     account,
 		credential:  binding.Credential(),
 		observation: observation,
+		quotaBucket: strings.TrimSpace(quotaBucket),
 	}, nil
 }
 

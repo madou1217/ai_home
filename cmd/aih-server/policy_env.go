@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,8 +12,12 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/core/accounts/claude"
+	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
+	"github.com/madou1217/ai_home/internal/runtime/upstreamdefaults"
 	"github.com/madou1217/ai_home/internal/runtime/usagedaemons"
 )
 
@@ -150,6 +156,52 @@ func init() {
 	} else if ok {
 		aihserver.ConfigureRequestLogging(requestLog)
 	}
+
+	defaults := upstreamDefaultsFromEnvAndConfig()
+	if err := codex.ConfigureDefaultAPIBaseURL(defaults.CodexBaseURL); err != nil {
+		panic(fmt.Sprintf("Codex 上游默认地址无效: %v", err))
+	}
+	if err := claude.ConfigureDefaultAPIBaseURL(defaults.ClaudeBaseURL); err != nil {
+		panic(fmt.Sprintf("Claude 上游默认地址无效: %v", err))
+	}
+	if err := upstreamdefaults.Configure(defaults); err != nil {
+		panic(fmt.Sprintf("上游默认地址无效: %v", err))
+	}
+}
+
+func upstreamDefaultsFromEnvAndConfig() upstreamdefaults.Defaults {
+	home := strings.TrimSpace(os.Getenv("AIH_HOME_DIR"))
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return upstreamdefaults.Defaults{}
+		}
+		home = userHome + string(os.PathSeparator) + ".ai_home"
+	}
+	stored := struct {
+		CodexBaseURL  string `json:"codexBaseUrl"`
+		ClaudeBaseURL string `json:"claudeBaseUrl"`
+		AgyBaseURL    string `json:"agyBaseUrl"`
+		GeminiBaseURL string `json:"geminiBaseUrl"`
+	}{}
+	if databasePath, err := appstate.DatabasePath(home); err == nil {
+		if raw, found, readErr := appstate.ReadKV(context.Background(), databasePath, "config:server"); readErr == nil && found {
+			_ = json.Unmarshal([]byte(raw), &stored)
+		}
+	}
+	return upstreamdefaults.Defaults{
+		CodexBaseURL:  firstNonEmptyEnv("AIH_SERVER_CODEX_BASE_URL", stored.CodexBaseURL),
+		ClaudeBaseURL: firstNonEmptyEnv("AIH_SERVER_CLAUDE_BASE_URL", stored.ClaudeBaseURL),
+		AgyBaseURL:    firstNonEmptyEnv("AIH_SERVER_AGY_BASE_URL", stored.AgyBaseURL),
+		GeminiBaseURL: firstNonEmptyEnv("AIH_SERVER_GEMINI_BASE_URL", stored.GeminiBaseURL),
+	}
+}
+
+func firstNonEmptyEnv(envName, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func policyEnvBool(name string) (bool, bool, error) {

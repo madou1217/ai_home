@@ -240,7 +240,7 @@ func (*AuthTokenAuth) seal() {}
 func normalizeAPIBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return DefaultAPIBaseURL, nil
+		return EffectiveDefaultAPIBaseURL(), nil
 	}
 	if raw != value || hasControlCharacter(value) || strings.Contains(value, "#") {
 		return "", errInvalidBaseURL

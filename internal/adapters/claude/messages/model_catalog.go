@@ -56,7 +56,7 @@ func projectModelCatalogAuth(
 			return modelCatalogAuth{}, ErrInvalidInvocation
 		}
 		return newModelCatalogBearerAuth(
-			claudeauth.DefaultAPIBaseURL,
+			claudeauth.EffectiveDefaultAPIBaseURL(),
 			auth.AccessToken(),
 			true,
 		)

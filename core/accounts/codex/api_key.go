@@ -137,7 +137,7 @@ func (*APIKeyAuth) seal() {}
 func normalizeAPIBaseURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return DefaultAPIBaseURL, nil
+		return EffectiveDefaultAPIBaseURL(), nil
 	}
 	if hasControlCharacter(value) {
 		return "", errInvalidBaseURL

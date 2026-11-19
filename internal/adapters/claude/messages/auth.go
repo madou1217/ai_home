@@ -61,7 +61,7 @@ func projectAuth(credential accountapp.Credential) (authProfile, error) {
 		}
 		// 可刷新订阅 OAuth 没有独立 Base URL，始终指向官方 Messages 端点。
 		profile, err := newBearerProfile(
-			claudeauth.DefaultAPIBaseURL,
+			claudeauth.EffectiveDefaultAPIBaseURL(),
 			auth.AccessToken(),
 			true,
 		)

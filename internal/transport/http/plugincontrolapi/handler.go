@@ -36,10 +36,10 @@ const (
 	InstancesPath = "/v1/management/plugins/instances"
 	// maxStateBodyBytes 覆盖候选文档上限（4MB）与 JSON 包装。
 	maxStateBodyBytes = 5 << 20
-	// maxBodyBytes 与 Node 插件路由的 MAX_BODY_BYTES（256KB）一致。
+	// maxBodyBytes 与插件管理路由的 MAX_BODY_BYTES（256KB）一致。
 	maxBodyBytes = 256 * 1024
 	// HostVersionHeader / NodeVersionHeader 是 Node 代理 install 时给出的宿主事实。
-	// 插件最终在 Node 宿主进程里执行，engines 必须按真正的宿主版本判断。
+	// JavaScript 插件最终在 JS 运行时执行，engines 必须按真正的运行时版本判断。
 	HostVersionHeader = "X-Aih-Host-Version"
 	NodeVersionHeader = "X-Aih-Node-Version"
 )

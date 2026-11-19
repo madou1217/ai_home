@@ -2,10 +2,8 @@ package aihserver
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -33,15 +31,14 @@ func newFrontDoorTestRouter(t *testing.T, target string) http.Handler {
 	})
 }
 
-// TestRouterForwardsUnregisteredPathToNode 是公开端口模式的核心契约：
-// Go 未注册的 /v0/webui/* 必须原样到达 Node，而不是落到 404。
-func TestRouterForwardsUnregisteredPathToNode(t *testing.T) {
+// TestRouterRejectsUnregisteredPathEvenWithFrontDoor 验证公开端口模式不再把未知路径
+// 转交给其它宿主：缺少注册即稳定 JSON 404。
+func TestRouterRejectsUnregisteredPathEvenWithFrontDoor(t *testing.T) {
+	nodeCalled := false
 	node := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/v0/webui/accounts/watch" {
-			t.Errorf("Node 收到路径 %q", request.URL.Path)
-		}
+		nodeCalled = true
 		response.Header().Set("Content-Type", "application/json")
-		_, _ = response.Write([]byte(`{"owner":"node"}`))
+		_, _ = response.Write([]byte(`{"owner":"legacy"}`))
 	}))
 	defer node.Close()
 
@@ -54,12 +51,22 @@ func TestRouterForwardsUnregisteredPathToNode(t *testing.T) {
 		t.Fatalf("请求失败: %v", err)
 	}
 	defer response.Body.Close()
-	body, _ := io.ReadAll(response.Body)
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("状态码 = %d，期望 200", response.StatusCode)
+	if nodeCalled {
+		t.Fatal("未注册路径不应再转交给其它宿主")
 	}
-	if !strings.Contains(string(body), `"owner":"node"`) {
-		t.Fatalf("响应体 = %q", string(body))
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("状态码 = %d，期望 404", response.StatusCode)
+	}
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("响应不是稳定 JSON: %v", err)
+	}
+	if payload.Error.Code != "route_not_found" {
+		t.Fatalf("错误码 = %q", payload.Error.Code)
 	}
 }
 

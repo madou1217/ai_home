@@ -159,6 +159,9 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	canonicalRequest := exchange.CanonicalRequest()
+	if hint := inferenceapi.ProviderHint(request); hint != "" {
+		canonicalRequest = canonicalRequest.WithProviderHint(hint)
+	}
 	if canonicalRequest.Stream() {
 		handler.executeStream(
 			response,

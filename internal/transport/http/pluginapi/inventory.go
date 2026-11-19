@@ -98,7 +98,7 @@ type inventoryResponse struct {
 	pluginruntime.Inventory
 }
 
-// writeInventoryError 使用 Node 插件管理面的错误形状（ok/error/message），
+// writeInventoryError 使用插件管理面的错误形状（ok/error/message），
 // 与 projection 接口的 OpenAI 错误壳区分：本接口的消费方是 WebUI 与 CLI。
 func writeInventoryError(response http.ResponseWriter, status int, code string, message string) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -24,7 +24,7 @@ const (
 	CodeConfigInvalid = "plugin_config_invalid"
 	// CodePermissionsUnacknowledged 表示插件申请了权限但未确认。
 	CodePermissionsUnacknowledged = "plugin_permissions_unacknowledged"
-	// CodeRuntimeUnavailable 表示 Node 插件运行时不可达或未就绪。
+	// CodeRuntimeUnavailable 表示 JavaScript 插件运行时不可达或未就绪。
 	CodeRuntimeUnavailable = "plugin_runtime_unavailable"
 	// CodeOperationInvalid 表示实例端点收到了未知操作。
 	CodeOperationInvalid = "plugin_operation_invalid"

@@ -32,7 +32,7 @@ const (
 	UntrustPath = "/v1/management/plugins/untrust"
 )
 
-// maxBodyBytes 与 Node 插件路由的 MAX_BODY_BYTES（256KB）一致。
+// maxBodyBytes 与插件管理路由的 MAX_BODY_BYTES（256KB）一致。
 const maxBodyBytes = 256 * 1024
 
 // ErrInvalidDependencies 表示 Handler 缺少鉴权或数据根。
@@ -208,7 +208,7 @@ func decodePayload(response http.ResponseWriter, request *http.Request, target a
 	return false
 }
 
-// writeStoreError 把信任根错误映射成 Node 插件管理面的错误形状。
+// writeStoreError 把信任根错误映射成插件管理面的错误形状。
 //
 // Node writeError 只把 runtime/revision/not_installed 少数码改成 5xx/409/404，
 // 公钥、keyId、信任文件这三类都是参数/输入问题 → 400。

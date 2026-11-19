@@ -10,7 +10,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/frontdoorapi"
 )
 
-// newFrontDoorHandler 在公开端口模式下把 Go 未注册的路径交还给 Node 宿主。
+// newFrontDoorHandler 是已退役前置门的历史构造器，仅供对照测试使用。
 //
 // 目标为空表示当前进程不拥有公开端口（Go Core 跑在私有端口、由 Node 转发），
 // 此时返回 nil，路由表保持「未命中即 404」，与迁移前完全一致。

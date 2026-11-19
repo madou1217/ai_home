@@ -2,6 +2,7 @@ package inference
 
 import (
 	"math"
+	"strings"
 )
 
 // Capability 是路由征召必须明确满足的推理语义。
@@ -571,6 +572,7 @@ type RequestInput struct {
 type Request struct {
 	clientProtocol    ClientProtocolID
 	model             string
+	providerHint      string
 	messages          []Message
 	tools             []ToolDefinition
 	webSearch         *WebSearchTool
@@ -674,6 +676,18 @@ func (request Request) ClientProtocol() ClientProtocolID {
 // Model 返回未经 Adapter 改写的目标模型。
 func (request Request) Model() string {
 	return request.model
+}
+
+// ProviderHint 返回客户端显式选择的 Provider（x-provider）。
+// 空串或 auto 表示不限制，路由按正常目录选择。
+func (request Request) ProviderHint() string {
+	return request.providerHint
+}
+
+// WithProviderHint 返回带显式 Provider 约束的请求副本；不修改原值。
+func (request Request) WithProviderHint(provider string) Request {
+	request.providerHint = strings.ToLower(strings.TrimSpace(provider))
+	return request
 }
 
 // Messages 返回全部消息的深拷贝。

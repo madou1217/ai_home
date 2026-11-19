@@ -1,10 +1,9 @@
 package frontdoorapi
 
-// 前置门（front door）：Go 监听公开端口后，把自身未实现的路由原样转交给 Node 宿主。
+// Deprecated: 旧前置门的流式反代实现，仅保留给历史对照测试。
 //
-// 迁移到「Go 拥有公开端口」之后，Node 仍持有两类能力：WebUI 数据面（/v0/webui/*）
-// 与插件运行时回调。二者都是**流式**的（SSE、WebSocket 升级、文件上传/下载），
-// 因此这里用 httputil.ReverseProxy 而不是拼接 JSON 的二跳代理：
+// 生产路由已不再把未注册路径转交给其它宿主；Go 拥有公开端口后，未知路径统一返回
+// 稳定 JSON 404。这里保留 ReverseProxy 的流式语义仅用于理解旧协议和已有单元测试：
 //
 //   - 升级请求（WebSocket）由 ReverseProxy 的协议切换路径处理，不会把 101 吞成 200；
 //   - 响应体按块透传并立即冲刷，SSE 的心跳与增量不会攒在缓冲区里；

@@ -19,12 +19,12 @@ import (
 
 // ProcessHost 是语言无关插件运行时：每个 process 插件一个子进程，走行分隔 JSON-RPC。
 //
-// 它不是 Node 宿主协议（帧/二进制 payload）的替代，而是给非 JS 插件的最小通道：
+// 它不是 JavaScript 宿主协议（帧/二进制 payload）的替代，而是给任意语言插件的最小通道：
 //
 //	请求  {"id":"...","method":"prepare|activate|invoke|dispose|status|shutdown","params":{...}}
 //	响应  {"id":"...","result":{...}} 或 {"id":"...","error":{"code":"...","message":"..."}}
 //
-// Node 插件继续走 Supervisor；process 插件由本文件承载，二者由 HybridHost 路由。
+// JavaScript 运行时插件由 Supervisor 承载；任意语言的 process 插件由本文件承载，二者由 HybridHost 路由。
 type ProcessHost struct {
 	onLog  func(string)
 	mu     sync.Mutex

@@ -305,6 +305,9 @@ func (coordinator *Coordinator) executePlan(
 		phaseTracker := &upstream429Tracker{}
 		phaseQueueFailure := error(nil)
 		for _, route := range phasePlan.candidates[:phasePlan.count] {
+			if hint := request.ProviderHint(); hint != "" && hint != "auto" && hint != string(route.ProviderID()) {
+				continue
+			}
 			if scope := currentProviderScope(); scope != "" && scope != "auto" && scope != string(route.ProviderID()) {
 				continue
 			}

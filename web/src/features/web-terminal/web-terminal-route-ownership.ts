@@ -2,11 +2,15 @@ import { useSyncExternalStore } from 'react';
 import { history } from '@umijs/max';
 import { resolveAppRoutePathname } from '@/services/app-navigation';
 
-function getOfficeRouteOwnership(): boolean {
+export function isOfficeTerminalRoute(): boolean {
   if (typeof window === 'undefined') return false;
   const { pathname, hash } = window.location;
   const route = resolveAppRoutePathname(hash.startsWith('#/') ? hash.slice(1) : pathname);
   return route === '/terminals' || route === '/peer-inbox';
+}
+
+function getOfficeRouteOwnership(): boolean {
+  return isOfficeTerminalRoute();
 }
 
 function subscribeOfficeRouteOwnership(listener: () => void): () => void {

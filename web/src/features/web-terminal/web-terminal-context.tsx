@@ -1,9 +1,18 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveActiveServer } from '@/services/webui-auth-transport';
 import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
 import { updateTerminalScope } from './web-terminal-scope';
 import { useTerminalDirectory } from './use-terminal-directory';
 import { useTerminalAvailability } from './use-terminal-availability';
+import {
+  isFloatingHostTab,
+  isFloatingViewerVisible,
+  normalizeTabOrigin,
+  promoteTabOrigin,
+  shouldPollTerminalDirectory,
+  type WebTerminalTabOrigin,
+} from './web-terminal-lifecycle';
+import { isOfficeTerminalRoute, useOfficeTerminalRouteOwnership } from './web-terminal-route-ownership';
 
 export type WebTerminalTabKind = 'account-cli' | 'shell';
 
@@ -14,6 +23,7 @@ export interface WebTerminalTab {
   cwd: string;
   serverId: string;
   kind: WebTerminalTabKind;
+  origin?: WebTerminalTabOrigin;
   harness?: string;
   model?: string;
   nativeSessionId?: string;
@@ -36,6 +46,7 @@ export interface OpenWebTerminalTabInput {
   cwd?: string;
   serverId?: string;
   kind?: WebTerminalTabKind;
+  origin?: WebTerminalTabOrigin;
   harness?: string;
   model?: string;
   nativeSessionId?: string;
@@ -44,6 +55,8 @@ export interface OpenWebTerminalTabInput {
 interface WebTerminalManagerValue extends WebTerminalLayoutState {
   serverId: string;
   overviewVisible: boolean;
+  floatingOpen: boolean;
+  focusRequestSeq: number;
   setOverviewVisible: (visible: boolean) => void;
   openTab: (input: OpenWebTerminalTabInput) => void;
   adoptSessions: (inputs: OpenWebTerminalTabInput[]) => void;
@@ -62,7 +75,7 @@ const DEFAULT_WIDTH = 900;
 const DEFAULT_STATE: WebTerminalLayoutState = {
   tabs: [],
   activeTabId: '',
-  minimized: false,
+  minimized: true,
   layout: 'gallery',
   position: { x: 0, y: 0, width: DEFAULT_WIDTH, height: 420 }
 };
@@ -89,6 +102,7 @@ function normalizeTab(value: unknown, serverId: string): WebTerminalTab | null {
     cwd: String(item.cwd || ''),
     serverId: String(item.serverId || serverId).trim() || serverId,
     kind: item.kind === 'account-cli' ? 'account-cli' : 'shell',
+    origin: normalizeTabOrigin(item.origin),
     harness: String(item.harness || '').trim() || undefined,
     model: String(item.model || '').trim() || undefined,
     nativeSessionId: String(item.nativeSessionId || '').trim() || undefined
@@ -112,7 +126,7 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
   return {
     tabs,
     activeTabId,
-    minimized: item.minimized === true,
+    minimized: item.minimized !== false,
     layout: item.layout === 'sidebar' || item.layout === 'tabs' ? item.layout : 'gallery',
     position: {
       x: Number.isFinite(x) ? x : 0,
@@ -132,7 +146,7 @@ function readStoredState(serverId: string): WebTerminalLayoutState {
     const legacy = JSON.parse(window.localStorage.getItem('aih:account-web-terminal:v1') || 'null');
     const migrated = normalizeTab(legacy, serverId);
     if (migrated) {
-      const accountTab = { ...migrated, kind: 'account-cli' as const };
+      const accountTab = { ...migrated, kind: 'account-cli' as const, origin: 'explicit' as const };
       return { ...DEFAULT_STATE, tabs: [accountTab], activeTabId: accountTab.id, position: { ...DEFAULT_STATE.position } };
     }
   } catch (_error) {
@@ -163,34 +177,126 @@ function makeTabId(sessionKey: string): string {
 
 export function WebTerminalManagerProvider({ children }: { children: React.ReactNode }) {
   const [overviewVisible, setOverviewVisible] = useState(false);
-  const [{ serverId, state }, setScopedState] = useState(() => {
+  const officeRouteOwned = useOfficeTerminalRouteOwnership();
+  const [{ serverId, serverGeneration, state }, setScopedState] = useState(() => {
     const id = currentServerId();
-    return { serverId: id, state: readStoredState(id) };
+    return { serverId: id, serverGeneration: 1, state: readStoredState(id) };
+  });
+  // Transient explicit user intent for the global floating viewer, fenced by
+  // both serverId and monotonic serverGeneration (rejects stale A -> B and A -> B -> A).
+  const [floatingIntent, setFloatingIntent] = useState<{
+    open: boolean;
+    serverId: string;
+    serverGeneration: number;
+    focusSeq: number;
+  }>({ open: false, serverId: '', serverGeneration: 0, focusSeq: 0 });
+
+  const inOffice = overviewVisible || officeRouteOwned;
+  const inOfficeRef = useRef(inOffice);
+  inOfficeRef.current = inOffice;
+  const liveServerScopeRef = useRef({ serverId, generation: serverGeneration });
+  if (liveServerScopeRef.current.serverId !== serverId && serverGeneration > liveServerScopeRef.current.generation) {
+    liveServerScopeRef.current = { serverId, generation: serverGeneration };
+  }
+
+  const isIssuedScopeLive = useCallback((issuedServerId: string, issuedGeneration: number): boolean => (
+    liveServerScopeRef.current.serverId === issuedServerId
+    && liveServerScopeRef.current.generation === issuedGeneration
+    && currentServerId() === issuedServerId
+  ), []);
+
+  const floatingOpenForServer = (
+    floatingIntent.open
+    && floatingIntent.serverId === serverId
+    && floatingIntent.serverGeneration === serverGeneration
+  );
+  const directoryEnabled = shouldPollTerminalDirectory({
+    overviewVisible,
+    officeRouteOwned,
+    floatingOpen: floatingOpenForServer,
+    tabs: state.tabs,
   });
 
-  const { directory, interactiveTabs, unavailableTabs, isUnavailable } = useTerminalAvailability(serverId, state.tabs, overviewVisible);
+  const { directory, interactiveTabs, unavailableTabs, isUnavailable } = useTerminalAvailability(
+    serverId,
+    state.tabs,
+    directoryEnabled,
+    serverGeneration,
+  );
+
+  const hasStoredFloatingTabs = useMemo(
+    () => state.tabs.some((tab) => tab.serverId === serverId && isFloatingHostTab(tab)),
+    [serverId, state.tabs],
+  );
+  const hasInteractiveFloatingTabs = useMemo(
+    () => interactiveTabs.some((tab) => tab.serverId === serverId && isFloatingHostTab(tab)),
+    [interactiveTabs, serverId],
+  );
+
+  // Entering an office route, switching servers, or closing the last explicit
+  // floating tab clears transient floating viewer intent so navigating away
+  // never wakes the global host unprompted.
+  useEffect(() => {
+    setFloatingIntent((prev) => {
+      if (!prev.open) return prev;
+      if (
+        inOffice
+        || prev.serverId !== serverId
+        || prev.serverGeneration !== serverGeneration
+        || !hasStoredFloatingTabs
+      ) {
+        return { ...prev, open: false, serverId: '', serverGeneration: 0 };
+      }
+      return prev;
+    });
+  }, [hasStoredFloatingTabs, inOffice, serverGeneration, serverId]);
 
   // Server selection can change without remounting the application shell. Swap
-  // to that server's persisted terminal layout and let the host remount its
-  // xterm panel; persistent PTYs from the previous server remain attachable.
-  useEffect(() => addActiveControlPlaneProfileChangeListener(() => {
-    const nextServerId = currentServerId();
-    setScopedState((current) => current.serverId === nextServerId
-      ? current
-      : { serverId: nextServerId, state: readStoredState(nextServerId) });
-  }), []);
+  // to that server's persisted terminal layout and bump monotonic serverGeneration
+  // synchronously so stale async callbacks from A (even after A -> B -> A) are fenced.
+  useEffect(() => {
+    const syncScope = () => {
+      const nextServerId = currentServerId();
+      if (liveServerScopeRef.current.serverId !== nextServerId) {
+        liveServerScopeRef.current = {
+          serverId: nextServerId,
+          generation: liveServerScopeRef.current.generation + 1,
+        };
+      }
+      const nextGeneration = liveServerScopeRef.current.generation;
+      setScopedState((current) => (current.serverId === nextServerId && current.serverGeneration === nextGeneration
+        ? current
+        : { serverId: nextServerId, serverGeneration: nextGeneration, state: readStoredState(nextServerId) }));
+      setFloatingIntent((prev) => (prev.open && (prev.serverId !== nextServerId || prev.serverGeneration !== nextGeneration)
+        ? { ...prev, open: false, serverId: '', serverGeneration: 0 }
+        : prev));
+    };
+    syncScope();
+    return addActiveControlPlaneProfileChangeListener(syncScope);
+  }, []);
 
   const update = useCallback((next: WebTerminalLayoutState | ((current: WebTerminalLayoutState) => WebTerminalLayoutState)) => {
     setScopedState((current) => {
       const change = typeof next === 'function' ? next : () => next;
-      return updateTerminalScope(current, serverId, change, readStoredState, persistState);
+      const updated = updateTerminalScope(current, serverId, change, readStoredState, persistState);
+      return updated === current ? current : { ...current, state: updated.state };
     });
   }, [serverId]);
 
   const openTab = useCallback((input: OpenWebTerminalTabInput) => {
     const sessionKey = String(input.sessionKey || '').trim();
     if (!sessionKey) return;
-    const targetServerId = String(input.serverId || serverId).trim() || serverId;
+    const issuedServerId = serverId;
+    const issuedGeneration = serverGeneration;
+    const targetServerId = String(input.serverId || issuedServerId).trim() || issuedServerId;
+    const openingInOffice = inOfficeRef.current || isOfficeTerminalRoute();
+    const requestedOrigin: WebTerminalTabOrigin = input.origin || (openingInOffice ? 'adopted' : 'explicit');
+    const canActivateFloating = (
+      !openingInOffice
+      && requestedOrigin === 'explicit'
+      && targetServerId === issuedServerId
+      && isIssuedScopeLive(issuedServerId, issuedGeneration)
+    );
     const tab: WebTerminalTab = {
       id: makeTabId(sessionKey),
       sessionKey,
@@ -198,6 +304,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
       cwd: String(input.cwd || ''),
       serverId: targetServerId,
       kind: input.kind || 'account-cli',
+      origin: requestedOrigin,
       harness: String(input.harness || '').trim() || undefined,
       model: String(input.model || '').trim() || undefined,
       nativeSessionId: String(input.nativeSessionId || '').trim() || undefined
@@ -205,15 +312,36 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     setScopedState((current) => {
       // A launch may finish after the user switches servers. Preserve it in
       // the originating server's layout instead of attaching it to this one.
-      return updateTerminalScope(current, targetServerId, (targetState) => {
+      const updated = updateTerminalScope(current, targetServerId, (targetState) => {
         const existing = targetState.tabs.findIndex((item) => item.id === tab.id);
         const tabs = targetState.tabs.slice();
-        if (existing >= 0) tabs[existing] = { ...tabs[existing], ...tab };
-        else tabs.push(tab);
-        return { ...targetState, tabs, activeTabId: tab.id };
+        if (existing >= 0) {
+          tabs[existing] = {
+            ...tabs[existing],
+            ...tab,
+            origin: promoteTabOrigin(tabs[existing].origin, requestedOrigin),
+          };
+        } else {
+          tabs.push(tab);
+        }
+        return {
+          ...targetState,
+          tabs,
+          activeTabId: tab.id,
+          minimized: canActivateFloating ? false : targetState.minimized,
+        };
       }, readStoredState, persistState);
+      return updated === current ? current : { ...current, state: updated.state };
     });
-  }, [serverId]);
+    if (canActivateFloating) {
+      setFloatingIntent((prev) => ({
+        open: true,
+        serverId: issuedServerId,
+        serverGeneration: issuedGeneration,
+        focusSeq: prev.focusSeq + 1,
+      }));
+    }
+  }, [isIssuedScopeLive, serverGeneration, serverId]);
 
   const closeTab = useCallback((id: string) => {
     update((current) => {
@@ -240,9 +368,17 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
           }
           continue;
         }
-        tabs.push({ id: makeTabId(input.sessionKey), sessionKey: input.sessionKey,
-          serverId, label: input.label, cwd: input.cwd || '', kind: input.kind || 'account-cli',
-          harness: input.harness, nativeSessionId: input.nativeSessionId });
+        tabs.push({
+          id: makeTabId(input.sessionKey),
+          sessionKey: input.sessionKey,
+          serverId,
+          label: input.label,
+          cwd: input.cwd || '',
+          kind: input.kind || 'account-cli',
+          origin: 'adopted',
+          harness: input.harness,
+          nativeSessionId: input.nativeSessionId,
+        });
         changed = true;
       }
       return changed ? { ...current, tabs, activeTabId: current.activeTabId || tabs[0]?.id || '' } : current;
@@ -256,21 +392,78 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
       return { ...current, tabs, activeTabId: tabs.some((tab) => tab.id === current.activeTabId) ? current.activeTabId : tabs[0]?.id || '' };
     });
   }, [interactiveTabs, isUnavailable, update]);
-  const setActiveTab = useCallback((id: string) => update((current) => current.tabs.some((tab) => tab.id === id) ? { ...current, activeTabId: id } : current), [update]);
-  const setMinimized = useCallback((value: boolean) => update((current) => ({ ...current, minimized: value })), [update]);
+
+  const setActiveTab = useCallback((id: string) => {
+    const issuedServerId = serverId;
+    const issuedGeneration = serverGeneration;
+    if (!isIssuedScopeLive(issuedServerId, issuedGeneration)) return;
+    const outsideOffice = !inOfficeRef.current && !isOfficeTerminalRoute();
+    update((current) => {
+      const idx = current.tabs.findIndex((tab) => tab.id === id);
+      if (idx < 0) return current;
+      const targetTab = current.tabs[idx];
+      if (!outsideOffice || targetTab.origin === 'explicit') {
+        return current.activeTabId === id ? current : { ...current, activeTabId: id };
+      }
+      const tabs = current.tabs.slice();
+      tabs[idx] = { ...targetTab, origin: 'explicit' };
+      return { ...current, tabs, activeTabId: id };
+    });
+    if (outsideOffice) {
+      setFloatingIntent((prev) => (
+        prev.open && prev.serverId === issuedServerId && prev.serverGeneration === issuedGeneration
+          ? { ...prev, focusSeq: prev.focusSeq + 1 }
+          : prev
+      ));
+    }
+  }, [isIssuedScopeLive, serverGeneration, serverId, update]);
+
+  const setMinimized = useCallback((value: boolean) => {
+    const issuedServerId = serverId;
+    const issuedGeneration = serverGeneration;
+    if (!isIssuedScopeLive(issuedServerId, issuedGeneration)) return;
+    update((current) => (current.minimized === value ? current : { ...current, minimized: value }));
+    if (value) {
+      setFloatingIntent((prev) => (prev.open ? { ...prev, open: false, serverId: '', serverGeneration: 0 } : prev));
+      return;
+    }
+    if (!inOfficeRef.current && !isOfficeTerminalRoute()) {
+      setFloatingIntent((prev) => ({
+        open: true,
+        serverId: issuedServerId,
+        serverGeneration: issuedGeneration,
+        focusSeq: prev.focusSeq + 1,
+      }));
+    }
+  }, [isIssuedScopeLive, serverGeneration, serverId, update]);
+
   const setLayout = useCallback((layout: WebTerminalLayoutState['layout']) => update((current) => ({ ...current, layout })), [update]);
   const setPosition = useCallback((position: Partial<WebTerminalLayoutState['position']>) => update((current) => ({
     ...current,
     position: { ...current.position, ...position }
   })), [update]);
 
+  const floatingVisible = isFloatingViewerVisible({
+    floatingOpen: floatingIntent.open,
+    floatingServerId: floatingIntent.serverId,
+    floatingServerGeneration: floatingIntent.serverGeneration,
+    currentServerId: serverId,
+    currentServerGeneration: serverGeneration,
+    overviewVisible,
+    officeRouteOwned,
+    hasFloatingTabs: hasInteractiveFloatingTabs,
+  });
+
   const value = useMemo<WebTerminalManagerValue>(() => ({
     ...state,
+    minimized: !floatingVisible,
     tabs: interactiveTabs,
     unavailableTabs,
     activeTabId: interactiveTabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : interactiveTabs[0]?.id || '',
     serverId,
     overviewVisible,
+    floatingOpen: floatingOpenForServer,
+    focusRequestSeq: floatingIntent.focusSeq,
     setOverviewVisible,
     openTab,
     adoptSessions,
@@ -281,7 +474,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     setMinimized,
     setLayout,
     setPosition
-  }), [adoptSessions, closeAll, closeTab, directory, interactiveTabs, openTab, overviewVisible, serverId, setActiveTab, setLayout, setMinimized, setPosition, state, unavailableTabs]);
+  }), [adoptSessions, closeAll, closeTab, directory, floatingIntent.focusSeq, floatingOpenForServer, floatingVisible, interactiveTabs, openTab, overviewVisible, serverId, setActiveTab, setLayout, setMinimized, setPosition, state, unavailableTabs]);
   return <WebTerminalManagerContext.Provider value={value}>{children}</WebTerminalManagerContext.Provider>;
 }
 

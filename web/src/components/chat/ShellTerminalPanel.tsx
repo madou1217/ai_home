@@ -22,7 +22,7 @@ import { createTerminalPendingOutput } from './terminal-pending-output';
 
 interface ShellTerminalPanelProps {
   visible: boolean;
-  onClose: () => void;
+  onClose: (closedTargets?: ReadonlyArray<{ id: string; closeToken?: string }>) => void;
   /** Optional title shown in the panel chrome (for example the selected account/harness). */
   title?: string;
   // 当前项目路径：新开/重连终端时作为 shell 的 cwd，直接进入项目目录（而非 home）。
@@ -42,10 +42,13 @@ interface ShellTerminalPanelProps {
     cwd?: string;
     persistent?: boolean;
     kind?: 'account-cli' | 'shell';
+    closeToken?: string;
   }>;
   activeTabId?: string;
   onActiveTabChange?: (id: string) => void;
-  onTabClose?: (id: string) => void;
+  onTabClose?: (id: string, closeToken?: string) => void;
+  /** Optional synchronous host authority validating whether a captured tab token is still live. */
+  isSessionCurrent?: (id: string, closeToken?: string) => boolean;
   allowNewTab?: boolean;
   onNewTab?: () => void;
   creatingTab?: boolean;
@@ -56,6 +59,10 @@ interface ShellTerminalPanelProps {
   onMinimizedChange?: (value: boolean) => void;
   onHeaderPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   panelHeight?: number;
+  /** When false, only focus xterm on explicit focusRequestSeq changes or tab selection. */
+  autoFocus?: boolean;
+  /** Monotonic counter incremented by the host on explicit open/restore actions. */
+  focusRequestSeq?: number;
 }
 
 type TabStatus = 'connecting' | 'ready' | 'closed' | 'error';
@@ -73,6 +80,7 @@ interface TermInstance extends TerminalInputState {
   term: Terminal;
   fit: FitAddon;
   sessionKey: string;
+  closeToken?: string;
   durable: boolean;
   exited: boolean;
   exitedTermId: string;
@@ -85,10 +93,24 @@ interface TermInstance extends TerminalInputState {
   restoreRenderStyles?: () => void;
 }
 
+interface PendingCloseOp {
+  opId: number;
+  closeToken?: string;
+  inst?: TermInstance;
+}
+
 const HEIGHT_STORAGE_KEY = 'aih:webui-terminal-height:v1';
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 300;
-const CONNECTION_STOP_ERRORS = new Set(['terminal_not_found', 'too_many_terminals', 'unauthorized', 'terminal_http_403', 'native_session_attach_required', 'terminal_identity_mismatch']);
+const CONNECTION_STOP_ERRORS = new Set([
+  'terminal_not_found',
+  'too_many_terminals',
+  'unauthorized',
+  'terminal_http_403',
+  'native_session_attach_required',
+  'terminal_identity_mismatch',
+  'terminal_attachment_stale',
+]);
 
 function terminalConnectionFailure(error?: string) {
   return error === 'terminal_not_found'
@@ -150,6 +172,7 @@ function ShellTerminalPanel({
   activeTabId: controlledActiveTabId,
   onActiveTabChange,
   onTabClose,
+  isSessionCurrent,
   allowNewTab = true,
   onNewTab,
   creatingTab = false,
@@ -159,7 +182,9 @@ function ShellTerminalPanel({
   minimized: controlledMinimized,
   onMinimizedChange,
   onHeaderPointerDown,
-  panelHeight
+  panelHeight,
+  autoFocus = true,
+  focusRequestSeq
 }: ShellTerminalPanelProps) {
   const muxIdRef = useRef<string>('');
   const connectionEpochRef = useRef(0);
@@ -173,35 +198,80 @@ function ShellTerminalPanel({
     esRef.current?.setReadPaused?.(outputBlockedRef.current.size > 0);
   }, []);
   const lastFocusedRef = useRef('');
+  const lastFocusRequestSeqRef = useRef<number | undefined>(undefined);
+  const userTabFocusRef = useRef(0);
+  const lastUserTabFocusRef = useRef(0);
   const instancesRef = useRef<Map<string, TermInstance>>(new Map());
   const byTermIdRef = useRef<Map<string, string>>(new Map());
+  const bodyNodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const bodyRefCallbacksRef = useRef<Map<string, (el: HTMLDivElement | null) => void>>(new Map());
   // termId -> 早到但还没建立 termId→tab 映射时缓存的帧（open 的 fetch 与 SSE 输出是两条通道，
   // PTY 的首个 prompt 可能先于 open 响应到达，若不缓存会被丢弃 → 终端空白）。
   const [pendingOutput] = useState(() => createTerminalPendingOutput((blocked) => setOutputBlocked('pending', blocked)));
   const tabSeqRef = useRef(0);
   const panelReadyRef = useRef(false);
   const recoverRef = useRef<(target?: TermInstance) => void>(() => {});
-  const closingRef = useRef<Set<string>>(new Set());
+  const closeOpSeqRef = useRef(0);
+  const closingOpsRef = useRef<Map<string, PendingCloseOp>>(new Map());
   const sessionTabsRef = useRef<SessionTabDefinition[] | undefined>(sessionTabs);
   sessionTabsRef.current = sessionTabs;
+  const onTabCloseRef = useRef(onTabClose);
+  onTabCloseRef.current = onTabClose;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const isCreatingTabRef = useRef(isCreatingTab);
+  isCreatingTabRef.current = isCreatingTab;
+  const isSessionCurrentRef = useRef(isSessionCurrent);
+  isSessionCurrentRef.current = isSessionCurrent;
+
+  const isClosingInstance = useCallback((id: string, inst?: TermInstance, closeToken?: string): boolean => {
+    const op = closingOpsRef.current.get(id);
+    if (!op) return false;
+    if (closeToken !== undefined && op.closeToken !== undefined && op.closeToken !== closeToken) {
+      return false;
+    }
+    if (inst !== undefined && op.inst !== undefined && op.inst !== inst) {
+      return false;
+    }
+    return true;
+  }, []);
+
+  const releaseOwnCloseOp = useCallback((id: string, opId: number) => {
+    if (closingOpsRef.current.get(id)?.opId === opId) {
+      closingOpsRef.current.delete(id);
+      setClosingCount(closingOpsRef.current.size);
+    }
+  }, []);
+
   const releaseLateAttachment = useCallback((result: { ok: boolean; termId?: string }, key: string, id: string, mux: string) => {
     const current = instancesRef.current.get(id);
-    // A newer attach may reuse this same mux/key client before its response
-    // updates current.termId. Protect that in-flight ownership as well.
-    const reused = !closingRef.current.has(id) && muxIdRef.current === mux && current?.sessionKey === key;
+    // A newer live attach may reuse this same mux/key client before its response
+    // updates current.termId. Only protect an instance still authorized by host.
+    const currentAuthorized = Boolean(
+      current
+      && (!isSessionCurrentRef.current || isSessionCurrentRef.current(id, current.closeToken)),
+    );
+    const reused = currentAuthorized
+      && !isClosingInstance(id, current, current?.closeToken)
+      && muxIdRef.current === mux
+      && current?.sessionKey === key;
     releaseOrphanedNativeAttachment(result, key, reused, terminalAPI.close);
     if (!key && result.ok && result.termId && current?.termId !== result.termId) {
       void terminalAPI.close(result.termId).catch(() => {});
     }
-  }, []);
+  }, [isClosingInstance]);
 
   const [tabs, setTabs] = useState<TabMeta[]>([]);
   const [activeId, setActiveId] = useState<string>('');
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const [panelStatus, setPanelStatus] = useState<TabStatus>('connecting');
   const [height, setHeight] = useState<number>(DEFAULT_HEIGHT);
   const [internalMinimized, setInternalMinimized] = useState(false);
   const [closingCount, setClosingCount] = useState(0);
   const minimized = controlledMinimized ?? internalMinimized;
+  const minimizedRef = useRef(minimized);
+  minimizedRef.current = minimized;
   const flushInput = useCallback((inst: TermInstance) => {
     void flushTerminalInput(inst, terminalAPI.input, () => {
       if (Array.from(instancesRef.current.values()).includes(inst)) recoverRef.current(inst);
@@ -263,7 +333,7 @@ function ShellTerminalPanel({
       inst.output.write(base64ToBytes(msg.data));
     } else if (msg.type === 'exit') {
       inst.exitedTermId = inst.termId;
-      if (inst.restarting || closingRef.current.has(tabId)) return;
+      if (inst.restarting || isClosingInstance(tabId, inst, inst.closeToken)) return;
       inst.inputReady = false;
       inst.resizeSender.clear();
       if (inst.durable && inst.sessionKey) {
@@ -283,7 +353,7 @@ function ShellTerminalPanel({
       inst.output.write(new TextEncoder().encode('\r\n\x1b[90m[进程已退出]\x1b[0m\r\n'));
       setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, status: 'closed' } : t)));
     }
-  }, []);
+  }, [isClosingInstance]);
 
   // 建立 termId→tab 映射，并回放这段时间内早到被缓存的帧（prompt 等）。
   const registerTermId = useCallback((tabId: string, termId: string, inst: TermInstance) => {
@@ -361,13 +431,17 @@ function ShellTerminalPanel({
   const createTab = useCallback(async (definition?: SessionTabDefinition) => {
     const id = String(definition?.id || `t-${(tabSeqRef.current += 1)}`);
     if (instancesRef.current.has(id)) return;
+    const definitionCloseToken = definition?.closeToken;
+    if (isSessionCurrentRef.current && !isSessionCurrentRef.current(id, definitionCloseToken)) {
+      return;
+    }
     const label = String(definition?.label || `终端 ${tabSeqRef.current}`);
     const tabSessionKey = String(definition?.sessionKey || sessionKey || '').trim();
     const tabCwd = definition?.cwd ?? cwdRef.current;
     const term = newTerm();
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, durable: false, exited: false, exitedTermId: '', restarting: false, opened: false, inputQueue: [], sending: false, inputReady: false, attachmentVersion: 0,
+    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, closeToken: definitionCloseToken, durable: false, exited: false, exitedTermId: '', restarting: false, opened: false, inputQueue: [], sending: false, inputReady: false, attachmentVersion: 0,
       resizeSender: createTerminalResizeSender(terminalAPI.resize),
       output: createTerminalOutput(term, () => activeIdRef.current === id && !document.hidden, (blocked) => setOutputBlocked(id, blocked)),
       focusSender: createTerminalFocusSender(terminalAPI.focus),
@@ -389,28 +463,56 @@ function ShellTerminalPanel({
       if (inst.termId && activeIdRef.current === id) inst.resizeSender.enqueue(inst.termId, cols, rows);
     });
 
-    setTabs((prev) => [...prev, { id, termId: '', label, status: 'connecting' }]);
+    setTabs((prev) => [...prev.filter((tab) => tab.id !== id), { id, termId: '', label, status: 'connecting' }]);
     setActiveId((current) => current || id);
 
     const finishOpening = pendingOutput.begin(id);
     const version = ++inst.attachmentVersion;
+    const openingMux = muxIdRef.current;
+    const isControlledDefinitionCurrent = () => {
+      if (!definition) return true;
+      const currentDefinitions = sessionTabsRef.current;
+      if (!currentDefinitions) return false;
+      const liveDefinition = currentDefinitions.find((item) => item.id === id);
+      if (!liveDefinition) return false;
+      const liveKey = String(liveDefinition.sessionKey || sessionKey || '').trim();
+      if (liveKey !== tabSessionKey) return false;
+      if (definitionCloseToken !== undefined && liveDefinition.closeToken !== definitionCloseToken) return false;
+      return true;
+    };
+    const isAuthorityCurrent = () => (
+      !isSessionCurrentRef.current || isSessionCurrentRef.current(id, definitionCloseToken)
+    );
+    const isAttachmentAlive = () => (
+      instancesRef.current.get(id) === inst
+      && inst.attachmentVersion === version
+      && !isClosingInstance(id, inst, definitionCloseToken)
+      && Boolean(esRef.current && openingMux && muxIdRef.current === openingMux)
+      && isControlledDefinitionCurrent()
+      && isAuthorityCurrent()
+    );
     try {
-      const openingMux = muxIdRef.current;
       let requestEpoch = connectionEpochRef.current;
       let previousResultId = '';
       const openOrAttach = async () => {
         requestEpoch = connectionEpochRef.current;
+        if (!isAttachmentAlive()) return { ok: false, error: 'terminal_attachment_stale' };
         if (previousResultId) return terminalAPI.attach(tabSessionKey || previousResultId, openingMux);
         return (tabSessionKey
         ? (async () => {
           const attached = await terminalAPI.attach(tabSessionKey, openingMux);
           if (attached.ok) return attached;
           if (strictExistingSession) return attached;
-          // A missing controlled account session must not silently become a
-          // different shell. A persistent session is created only for an
-          // explicit open/restart path; attach failures remain visible in the tab.
-          if (definition?.sessionKey) return attached;
+          // A saved shell tab can outlive its server-side PTY after a restart.
+          // Recreate only a plain shell; account/native sessions must retain
+          // their original identity and must never fall back to an empty shell.
+          if (definition?.sessionKey && (definition.kind !== 'shell' || tabSessionKey.startsWith('native:'))) return attached;
           if (attached.error !== 'terminal_not_found') return attached;
+          // Revalidate exact instance identity, attachment version, controlled
+          // definition, mux stream, live host authority, and connection epoch
+          // synchronously BEFORE issuing the side-effectful fallback open.
+          if (!isAttachmentAlive()) return { ok: false, error: 'terminal_attachment_stale' };
+          if (requestEpoch !== connectionEpochRef.current) return { ok: false, error: 'terminal_connection_changed' };
           return terminalAPI.open(term.cols || 80, term.rows || 24, openingMux, tabCwd, tabSessionKey);
         })()
         : terminalAPI.open(term.cols || 80, term.rows || 24, openingMux, tabCwd));
@@ -419,16 +521,16 @@ function ShellTerminalPanel({
       let attempts = 0;
       // Retrying an attach/keyed open is idempotent. An unkeyed open with a
       // lost response is ambiguous even if the stream changed in parallel.
-      while (!CONNECTION_STOP_ERRORS.has(res.error || '') && Boolean(tabSessionKey || previousResultId || (res.ok && res.termId)) && (requestEpoch !== connectionEpochRef.current || !res.ok) && instancesRef.current.get(id) === inst && inst.attachmentVersion === version) {
+      while (!CONNECTION_STOP_ERRORS.has(res.error || '') && Boolean(tabSessionKey || previousResultId || (res.ok && res.termId)) && (requestEpoch !== connectionEpochRef.current || !res.ok) && isAttachmentAlive()) {
         if (res.ok && res.termId) previousResultId = res.termId;
         await new Promise((resolve) => setTimeout(resolve, Math.min(4000, 500 * 2 ** attempts++)));
-        if (instancesRef.current.get(id) !== inst || inst.attachmentVersion !== version) {
+        if (!isAttachmentAlive()) {
           releaseLateAttachment(res, tabSessionKey, id, openingMux);
           return;
         }
         res = await openOrAttach();
       }
-      if (instancesRef.current.get(id) !== inst || inst.attachmentVersion !== version) {
+      if (!isAttachmentAlive()) {
         releaseLateAttachment(res, tabSessionKey, id, openingMux);
         return;
       }
@@ -450,11 +552,11 @@ function ShellTerminalPanel({
           : t
       )));
     } catch (error) {
-      if (instancesRef.current.get(id) !== inst || inst.attachmentVersion !== version) return;
+      if (!isAttachmentAlive()) return;
       term.writeln(`\x1b[31m终端连接失败: ${String((error as Error)?.message || error)}\x1b[0m`);
       setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
     } finally { finishOpening(); }
-  }, [flushInput, pendingOutput, persistent, registerTermId, releaseLateAttachment, sessionKey, setOutputBlocked, strictExistingSession]);
+  }, [flushInput, isClosingInstance, pendingOutput, persistent, registerTermId, releaseLateAttachment, sessionKey, setOutputBlocked, strictExistingSession]);
 
   // ── 面板生命周期：建立 mux SSE + 首个 tab；卸载/关闭时全部回收 ──
   useEffect(() => {
@@ -479,7 +581,16 @@ function ShellTerminalPanel({
       if (disposed || !panelReadyRef.current) return;
       const definitions = sessionTabsRef.current;
       for (const [tabId, inst] of instancesRef.current) {
-        if ((target && target !== inst) || !inst.termId || inst.exited || inst.restarting || closingRef.current.has(tabId)) continue;
+        if (
+          (target && target !== inst)
+          || !inst.termId
+          || inst.exited
+          || inst.restarting
+          || isClosingInstance(tabId, inst, inst.closeToken)
+          || (isSessionCurrentRef.current && !isSessionCurrentRef.current(tabId, inst.closeToken))
+        ) {
+          continue;
+        }
         const epoch = connectionEpochRef.current;
         const pending = recoveries.get(inst);
         if (pending?.epoch === epoch && pending.version === inst.attachmentVersion) continue;
@@ -493,8 +604,16 @@ function ShellTerminalPanel({
         inst.inputReady = false;
         discardTerminalProtocolInput(inst);
         const finishRecovery = () => { if (recoveries.get(inst) === recovery) recoveries.delete(inst); };
+        const isRecoveryCurrent = () => (
+          !disposed
+          && connectionEpochRef.current === epoch
+          && instancesRef.current.get(tabId) === inst
+          && inst.attachmentVersion === version
+          && !isClosingInstance(tabId, inst, inst.closeToken)
+          && (!isSessionCurrentRef.current || isSessionCurrentRef.current(tabId, inst.closeToken))
+        );
         const retry = () => {
-          if (disposed || connectionEpochRef.current !== epoch || instancesRef.current.get(tabId) !== inst || inst.attachmentVersion !== version) {
+          if (!isRecoveryCurrent()) {
             finishRecovery();
             return;
           }
@@ -502,14 +621,14 @@ function ShellTerminalPanel({
           retryTimers.add(timer);
         };
         const attach = () => {
-          if (disposed || !panelReadyRef.current || connectionEpochRef.current !== epoch || instancesRef.current.get(tabId) !== inst || inst.attachmentVersion !== version) {
+          if (!panelReadyRef.current || !isRecoveryCurrent()) {
             finishRecovery();
             return;
           }
           const requestEpoch = connectionEpochRef.current;
           const finishAttaching = pendingOutput.begin(tabId);
           void terminalAPI.attach(key, attachmentMux).then((attached) => {
-            if (disposed || instancesRef.current.get(tabId) !== inst || inst.attachmentVersion !== version || requestEpoch !== connectionEpochRef.current) {
+            if (!isRecoveryCurrent() || requestEpoch !== connectionEpochRef.current) {
               releaseLateAttachment(attached, key, tabId, attachmentMux);
               finishRecovery();
               return;
@@ -601,16 +720,20 @@ function ShellTerminalPanel({
         try { inst.term.dispose(); } catch { /* ignore */ }
       }
       instancesRef.current.clear();
+      closingOpsRef.current.clear();
       outputBlockedRef.current.clear();
       byTermIdRef.current.clear();
+      bodyNodesRef.current.clear();
+      bodyRefCallbacksRef.current.clear();
       pendingOutput.clear();
       muxIdRef.current = '';
       panelReadyRef.current = false;
+      setClosingCount(0);
       setTabs([]);
       setActiveId('');
       tabSeqRef.current = 0;
     };
-  }, [createTab, flushInput, pendingOutput, persistent, releaseLateAttachment, sessionKey, visible]);
+  }, [createTab, flushInput, isClosingInstance, pendingOutput, persistent, releaseLateAttachment, sessionKey, visible]);
 
   useEffect(() => {
     if (controlledActiveTabId && controlledActiveTabId !== activeId && tabs.some((tab) => tab.id === controlledActiveTabId)) {
@@ -618,10 +741,7 @@ function ShellTerminalPanel({
     }
   }, [activeId, controlledActiveTabId, tabs]);
 
-  // 挂载 xterm 到激活 tab 的容器（每个容器只 open 一次）。
-  const attachBody = useCallback((id: string) => (el: HTMLDivElement | null) => {
-    const inst = instancesRef.current.get(id);
-    if (!inst || !el) return;
+  const openOrAttachInstanceDom = useCallback((inst: TermInstance, el: HTMLDivElement) => {
     if (!inst.opened) {
       inst.term.open(el);
       if (inst.term.element) inst.restoreRenderStyles = avoidDuplicateTerminalStyleWrites(inst.term.element);
@@ -629,31 +749,47 @@ function ShellTerminalPanel({
     } else if (inst.term.element && inst.term.element.parentElement !== el) {
       el.appendChild(inst.term.element);
     }
-    requestAnimationFrame(() => {
-      if (activeIdRef.current !== id) return;
-      fitActiveTerminal(instancesRef.current, id);
-    });
   }, []);
+
+  // 挂载 xterm 到激活 tab 的容器（按 tab 缓存稳定 ref 回调，隐藏 tab 延迟到首次激活再 open）。
+  const attachBody = useCallback((id: string) => {
+    let cb = bodyRefCallbacksRef.current.get(id);
+    if (!cb) {
+      cb = (el: HTMLDivElement | null) => {
+        if (!el) {
+          bodyNodesRef.current.delete(id);
+          return;
+        }
+        bodyNodesRef.current.set(id, el);
+        const inst = instancesRef.current.get(id);
+        if (!inst) return;
+        if (activeIdRef.current !== id || minimizedRef.current) return;
+        openOrAttachInstanceDom(inst, el);
+        if (!document.hidden) {
+          requestAnimationFrame(() => {
+            if (minimizedRef.current || document.hidden || activeIdRef.current !== id) return;
+            fitActiveTerminal(instancesRef.current, id);
+          });
+        }
+      };
+      bodyRefCallbacksRef.current.set(id, cb);
+    }
+    return cb;
+  }, [openOrAttachInstanceDom]);
 
   const attachGalleryBody = useCallback((id: string, el: HTMLDivElement, active: boolean) => {
     const inst = instancesRef.current.get(id);
     if (!inst) return;
-    if (!inst.opened) {
-      inst.term.open(el);
-      if (inst.term.element) inst.restoreRenderStyles = avoidDuplicateTerminalStyleWrites(inst.term.element);
-      inst.opened = true;
-    } else if (inst.term.element && inst.term.element.parentElement !== el) {
-      el.appendChild(inst.term.element);
-    }
+    openOrAttachInstanceDom(inst, el);
     inst.term.options.disableStdin = !inst.inputReady;
     inst.term.textarea?.setAttribute('tabindex', active ? '0' : '-1');
     inst.term.options.cursorBlink = active;
-    if (active) requestAnimationFrame(() => {
-      if (activeIdRef.current !== id) return;
+    if (active && !minimizedRef.current && !document.hidden) requestAnimationFrame(() => {
+      if (minimizedRef.current || document.hidden || activeIdRef.current !== id) return;
       fitActiveTerminal(instancesRef.current, id);
       inst.output.flush();
     });
-  }, []);
+  }, [openOrAttachInstanceDom]);
 
   // 主题（深色 HUD / 日光 HUD）切换时，所有已打开 tab 的 xterm 画布同步换色。
   useEffect(() => subscribeTerminalTheme((theme) => {
@@ -662,7 +798,7 @@ function ShellTerminalPanel({
     }
   }), []);
 
-  // 切换 tab 或布局时重新适配并聚焦；尺寸变化交给 ResizeObserver，避免抢走调整手柄的键盘焦点。
+  // 切换 tab 或布局时重新适配并聚焦；尺寸变化交给 ResizeObserver，避免抢走调整手柄或宿主页焦点。
   useEffect(() => {
     for (const [id, instance] of instancesRef.current) {
       const foreground = id === activeId && !minimized && !document.hidden;
@@ -671,23 +807,38 @@ function ShellTerminalPanel({
       instance.term.options.cursorBlink = foreground;
       if (instance.termId && instance.sessionKey.startsWith('native:')) instance.focusSender.setActive(instance.termId, foreground);
     }
-    if (!activeId) return;
+    if (!activeId || minimized) return;
     const inst = instancesRef.current.get(activeId);
-    if (!inst || !inst.opened) return;
+    if (!inst) return;
+    if (layout !== 'gallery') {
+      const mountEl = bodyNodesRef.current.get(activeId);
+      if (mountEl) openOrAttachInstanceDom(inst, mountEl);
+    }
+    if (!inst.opened) return;
     const raf = requestAnimationFrame(() => {
+      if (minimizedRef.current || document.hidden || activeIdRef.current !== activeId) return;
       fitActiveTerminal(instancesRef.current, activeId);
-      if (!minimized && lastFocusedRef.current !== activeId) {
+      const explicitSeq = Boolean(
+        focusRequestSeq !== undefined
+        && focusRequestSeq > 0
+        && focusRequestSeq !== lastFocusRequestSeqRef.current,
+      );
+      const explicitTabClick = userTabFocusRef.current !== lastUserTabFocusRef.current;
+      const shouldFocus = explicitSeq || explicitTabClick || (autoFocus && lastFocusedRef.current !== activeId);
+      if (shouldFocus) {
         lastFocusedRef.current = activeId;
+        if (focusRequestSeq !== undefined) lastFocusRequestSeqRef.current = focusRequestSeq;
+        lastUserTabFocusRef.current = userTabFocusRef.current;
         inst.term.focus();
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, layout, minimized, tabs]);
+  }, [activeId, autoFocus, focusRequestSeq, layout, minimized, openOrAttachInstanceDom, tabs]);
 
   useEffect(() => {
     const resume = () => {
       for (const [id, inst] of instancesRef.current) {
-        const active = id === activeIdRef.current && !document.hidden;
+        const active = id === activeIdRef.current && !minimizedRef.current && !document.hidden;
         if (inst.termId && inst.sessionKey.startsWith('native:')) inst.focusSender.setActive(inst.termId, active);
         inst.term.options.disableStdin = !inst.inputReady;
         if (active) { fitActiveTerminal(instancesRef.current, id); inst.output.flush(); }
@@ -700,22 +851,21 @@ function ShellTerminalPanel({
   // 三栏分隔条拖拽/窗口缩放只改容器宽度，上面的 effect 感知不到 → 换行宽度滞后。
   // 用 ResizeObserver 合并容器变化并限制重排频率；拖拽结束立即补齐最终尺寸。
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
   useEffect(() => {
     if (!visible) return;
     const el = panelRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const gestureHost = el.closest('.global-web-terminal-window');
     const refitter = createTerminalRefitter(() => {
+      if (minimizedRef.current || document.hidden) return;
       fitActiveTerminal(instancesRef.current, activeIdRef.current);
     }, undefined, undefined, {
       minInterval: () => 64,
       afterFlush: () => instancesRef.current.get(activeIdRef.current)?.resizeSender.flush(),
     });
     const observer = new ResizeObserver(() => {
-      // 高度过渡期间每一帧都会触发，逐帧 fit 会让 xterm 反复重排；过渡结束补一次即可。
-      if (animatingRef.current) return;
+      // 高度过渡或隐藏/最小化期间不做逐帧 fit，避免无意义重排。
+      if (animatingRef.current || minimizedRef.current || document.hidden) return;
       refitter.notifyResize();
     });
     const finishResize = () => refitter.flush();
@@ -755,27 +905,49 @@ function ShellTerminalPanel({
     return () => panel.removeEventListener('paste', handleTerminalPaste, true);
   }, [handleTerminalPaste, visible]);
 
-  const closeTab = useCallback(async (id: string, closeLast = true, notifyParent = true): Promise<boolean> => {
-    if (isCreatingTab?.()) return false;
-    if (closingRef.current.has(id)) return false;
-    closingRef.current.add(id);
-    setClosingCount((count) => count + 1);
+  const closeTab = useCallback(async (
+    id: string,
+    closeLast = true,
+    notifyParent = true,
+    explicitCloseToken?: string,
+  ): Promise<boolean> => {
+    if (isCreatingTabRef.current?.()) return false;
     const inst = instancesRef.current.get(id);
+    const matchedTab = sessionTabsRef.current?.find((tab) => tab.id === id);
+    const capturedCloseToken = explicitCloseToken ?? inst?.closeToken ?? matchedTab?.closeToken;
+    if (isClosingInstance(id, inst, capturedCloseToken)) return false;
+    // Synchronously verify live host authority before issuing terminalAPI.close
+    // or mutating local instance/tab state.
+    if (isSessionCurrentRef.current && !isSessionCurrentRef.current(id, capturedCloseToken)) {
+      return false;
+    }
+    const opId = ++closeOpSeqRef.current;
+    closingOpsRef.current.set(id, { opId, closeToken: capturedCloseToken, inst });
+    setClosingCount(closingOpsRef.current.size);
     if (inst) inst.attachmentVersion += 1;
-    const key = inst?.sessionKey || sessionTabsRef.current?.find((tab) => tab.id === id)?.sessionKey || '';
+    const key = inst?.sessionKey || matchedTab?.sessionKey || '';
+    const isCloseStillAuthorized = () => (
+      instancesRef.current.get(id) === inst
+      && (!inst || capturedCloseToken === undefined || inst.closeToken === capturedCloseToken)
+      && (!isSessionCurrentRef.current || isSessionCurrentRef.current(id, capturedCloseToken))
+    );
     if (inst?.termId || (key && !key.startsWith('native:'))) {
       const result = await terminalAPI.close(inst?.termId || '', key);
-      if (instancesRef.current.get(id) !== inst) {
-        closingRef.current.delete(id);
-        setClosingCount((count) => Math.max(0, count - 1));
+      if (!isCloseStillAuthorized()) {
+        releaseOwnCloseOp(id, opId);
         return false;
       }
       if (!result.ok) {
-        closingRef.current.delete(id);
-        setClosingCount((count) => count - 1);
+        releaseOwnCloseOp(id, opId);
         message.error(`关闭终端失败: ${result.error || 'unknown'}`);
         return false;
       }
+    }
+    // Pre-dispose synchronous authority gate: never dispose local xterm or
+    // remove tabs if the captured close token was invalidated while pending.
+    if (!isCloseStillAuthorized()) {
+      releaseOwnCloseOp(id, opId);
+      return false;
     }
     if (inst) {
       inst.inputReady = false;
@@ -792,66 +964,172 @@ function ShellTerminalPanel({
       try { inst.term.dispose(); } catch { /* ignore */ }
       instancesRef.current.delete(id);
     }
-    const isLast = tabs.length <= 1;
+    bodyNodesRef.current.delete(id);
+    bodyRefCallbacksRef.current.delete(id);
+    const isLast = instancesRef.current.size === 0;
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
       if (next.length === 0) return next;
-      const nextActiveId = next.find((tab) => tab.id === activeId)?.id || next[next.length - 1].id;
+      const nextActiveId = next.find((tab) => tab.id === activeIdRef.current)?.id || next[next.length - 1].id;
       setActiveId((cur) => (cur === id ? nextActiveId : cur));
       return next;
     });
     if (notifyParent) {
-      if (onTabClose) onTabClose(id);
-      else if (isLast && closeLast) onClose();
+      if (onTabCloseRef.current) onTabCloseRef.current(id, capturedCloseToken);
+      else if (isLast && closeLast) onCloseRef.current();
     }
-    closingRef.current.delete(id);
-    setClosingCount((count) => count - 1);
+    releaseOwnCloseOp(id, opId);
     return true;
-  }, [activeId, isCreatingTab, onClose, onTabClose, pendingOutput, tabs.length]);
+  }, [isClosingInstance, pendingOutput, releaseOwnCloseOp]);
+
+  // Detach a controlled persistent tab locally when the parent removes it from
+  // sessionTabs or advances its closeToken (for example virtual power-off,
+  // same-tick OFF -> ON handoff, or route filtering) without sending
+  // terminalAPI.close or remounting sibling tabs.
+  const detachTabLocally = useCallback((
+    id: string,
+    options?: { expectedInst?: TermInstance; forceIfTokenMismatch?: string },
+  ) => {
+    const pendingOp = closingOpsRef.current.get(id);
+    if (pendingOp) {
+      const supersededByNewToken = Boolean(
+        options?.forceIfTokenMismatch !== undefined
+        && pendingOp.closeToken !== options.forceIfTokenMismatch,
+      );
+      const invalidatedByAuthority = Boolean(
+        isSessionCurrentRef.current
+        && !isSessionCurrentRef.current(id, pendingOp.closeToken),
+      );
+      if (!supersededByNewToken && !invalidatedByAuthority) return;
+      closingOpsRef.current.delete(id);
+      setClosingCount(closingOpsRef.current.size);
+    }
+    const inst = instancesRef.current.get(id);
+    if (options?.expectedInst && inst !== options.expectedInst) return;
+    if (inst) {
+      inst.attachmentVersion += 1;
+      inst.inputReady = false;
+      inst.inputQueue = [];
+      pendingOutput.cancel(id);
+      if (inst.termId) {
+        pendingOutput.retire(inst.termId);
+        byTermIdRef.current.delete(inst.termId);
+      }
+      inst.resizeSender.dispose();
+      inst.focusSender.dispose(inst.sessionKey.startsWith('native:') ? inst.termId : '');
+      inst.output.dispose();
+      inst.restoreRenderStyles?.();
+      try { inst.term.dispose(); } catch { /* ignore */ }
+      instancesRef.current.delete(id);
+    }
+    bodyNodesRef.current.delete(id);
+    bodyRefCallbacksRef.current.delete(id);
+    if (lastFocusedRef.current === id) lastFocusedRef.current = '';
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      if (next.length === prev.length) return prev;
+      if (next.length > 0) {
+        const nextActiveId = next.find((tab) => tab.id === activeIdRef.current)?.id || next[next.length - 1].id;
+        setActiveId((cur) => (cur === id ? nextActiveId : cur));
+      } else {
+        setActiveId('');
+      }
+      return next;
+    });
+  }, [pendingOutput]);
 
   // The global host is controlled by the application root. New account launches
   // append definitions here without remounting the xterm panel or losing old tabs.
+  // When an admitted definition carries a new closeToken/sessionKey for an
+  // existing id (e.g. same-tick OFF -> ON while siblings keep the panel mounted),
+  // detach only the superseded local instance (NO terminalAPI.close) and attach
+  // the new live identity immediately.
   useEffect(() => {
     if (!visible || !sessionTabs?.length || !esRef.current) return;
-    for (const definition of sessionTabs) {
-      if (!instancesRef.current.has(definition.id)) void createTab(definition);
-    }
     const wanted = new Set(sessionTabs.map((definition) => definition.id));
     for (const tab of tabs) {
       // The parent already changed its definitions. Viewer cleanup is not a
       // second user request to delete a saved task, even if it reappeared.
-      if (!wanted.has(tab.id)) void closeTab(tab.id, false, false);
+      if (!wanted.has(tab.id)) {
+        if (persistent) detachTabLocally(tab.id);
+        else void closeTab(tab.id, false, false);
+      }
     }
-  }, [closeTab, createTab, creatingTab, sessionTabs, tabs, visible]);
+    for (const definition of sessionTabs) {
+      const existing = instancesRef.current.get(definition.id);
+      const nextKey = String(definition.sessionKey || sessionKey || '').trim();
+      const incarnationChanged = Boolean(
+        existing
+        && (
+          (definition.closeToken !== undefined && existing.closeToken !== definition.closeToken)
+          || (Boolean(definition.sessionKey) && existing.sessionKey !== nextKey)
+        ),
+      );
+      if (incarnationChanged && existing) {
+        detachTabLocally(definition.id, {
+          expectedInst: existing,
+          forceIfTokenMismatch: definition.closeToken,
+        });
+      }
+      if (
+        !instancesRef.current.has(definition.id)
+        && !isClosingInstance(definition.id, undefined, definition.closeToken)
+      ) {
+        void createTab(definition);
+      }
+    }
+  }, [closeTab, closingCount, createTab, creatingTab, detachTabLocally, isClosingInstance, persistent, sessionKey, sessionTabs, tabs, visible]);
 
   // 关闭面板：先确认所有 PTY 关闭成功，再播一次收起动画（高度归零 + 淡出）并通知父级卸载。
   // 浮窗宿主自己有更完整的 FLIP 收起（GlobalWebTerminalHost），这里只覆盖停靠在输入框上的形态。
   const [closing, setClosing] = useState(false);
   const closePanel = useCallback(async () => {
-    if (closing || isCreatingTab?.()) return;
-    const ids = new Set([...instancesRef.current.keys(), ...(sessionTabsRef.current || []).map((tab) => tab.id)]);
-    const results = await Promise.all(Array.from(ids, (id) => closeTab(id, false)));
+    if (closing || isCreatingTabRef.current?.()) return;
+    const capturedIds = Array.from(new Set([
+      ...instancesRef.current.keys(),
+      ...(sessionTabsRef.current || []).map((tab) => tab.id),
+    ]));
+    const capturedTargets = capturedIds.map((id) => ({
+      id,
+      closeToken: instancesRef.current.get(id)?.closeToken
+        ?? sessionTabsRef.current?.find((tab) => tab.id === id)?.closeToken,
+    }));
+    const results = await Promise.all(
+      capturedTargets.map((target) => closeTab(target.id, false, true, target.closeToken)),
+    );
     if (!results.every(Boolean)) return;
+    if (onTabCloseRef.current) {
+      // Each captured target has already been settled via onTabClose with its
+      // exact closeToken; forward only those captured targets so any tab added
+      // concurrently during async close is never closed.
+      onCloseRef.current(capturedTargets);
+      return;
+    }
     const reduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce || !visible || persistent) {
-      onClose();
+      onCloseRef.current();
       return;
     }
     setClosing(true);
-    window.setTimeout(() => { setClosing(false); onClose(); }, 180);
-  }, [closeTab, closing, isCreatingTab, onClose, persistent, visible]);
+    window.setTimeout(() => { setClosing(false); onCloseRef.current(); }, 180);
+  }, [closeTab, closing, persistent, visible]);
 
   // 重启激活 tab：关掉旧 PTY，清屏，开新 PTY（复用同一 tab 槽 / xterm）。
   const reloadActiveTab = useCallback(async () => {
     const id = activeId;
     const inst = instancesRef.current.get(id);
     if (!inst || inst.restarting) return;
+    if (isSessionCurrentRef.current && !isSessionCurrentRef.current(id, inst.closeToken)) return;
     inst.restarting = true;
     inst.exited = false;
     const version = ++inst.attachmentVersion;
     const attachmentMux = muxIdRef.current;
     const requestEpoch = connectionEpochRef.current;
-    const isCurrent = () => instancesRef.current.get(id) === inst && inst.attachmentVersion === version;
+    const isCurrent = () => (
+      instancesRef.current.get(id) === inst
+      && inst.attachmentVersion === version
+      && (!isSessionCurrentRef.current || isSessionCurrentRef.current(id, inst.closeToken))
+    );
     const finishReloading = pendingOutput.begin(id);
     try {
       if (inst.sessionKey.startsWith('native:')) {
@@ -959,19 +1237,32 @@ function ShellTerminalPanel({
       tabIndex={0}
       aria-selected={t.id === activeId}
       className={`${styles.shellTerminalTab} ${t.id === activeId ? styles.shellTerminalTabActive : ''}`}
-      onClick={() => { setActiveId(t.id); onActiveTabChange?.(t.id); }}
+      onClick={() => {
+        userTabFocusRef.current += 1;
+        setActiveId(t.id);
+        onActiveTabChange?.(t.id);
+        if (t.id === activeId && !minimized && !document.hidden) {
+          lastUserTabFocusRef.current = userTabFocusRef.current;
+          instancesRef.current.get(t.id)?.term.focus();
+        }
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
+          userTabFocusRef.current += 1;
           setActiveId(t.id);
           onActiveTabChange?.(t.id);
+          if (t.id === activeId && !minimized && !document.hidden) {
+            lastUserTabFocusRef.current = userTabFocusRef.current;
+            instancesRef.current.get(t.id)?.term.focus();
+          }
         }
       }}
       title={t.label}
     >
       <span className={styles.shellTerminalTabDot} data-status={t.status} />
       <span className={styles.shellTerminalTabLabel}>{t.label}</span>
-      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title={creatingTab ? '正在新建终端' : '关闭此终端'} disabled={creatingTab || closingRef.current.has(t.id)} onClick={(event) => { event.stopPropagation(); void closeTab(t.id); }}>
+      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title={creatingTab ? '正在新建终端' : '关闭此终端'} disabled={creatingTab || closingOpsRef.current.has(t.id)} onClick={(event) => { event.stopPropagation(); void closeTab(t.id); }}>
         <CloseOutlined />
       </button>
     </div>
@@ -1034,7 +1325,7 @@ function ShellTerminalPanel({
             aria-label="新建终端"
             aria-busy={creatingTab}
             disabled={creatingTab || closingCount > 0}
-            onClick={() => { if (closingRef.current.size) return; if (onNewTab) onNewTab(); else void createTab(); }}
+            onClick={() => { if (closingOpsRef.current.size) return; if (onNewTab) onNewTab(); else void createTab(); }}
             style={allowNewTab && !sessionKey ? undefined : { display: 'none' }}
           >
             {creatingTab ? <LoadingOutlined /> : <PlusOutlined />}
@@ -1080,7 +1371,7 @@ function ShellTerminalPanel({
         </div>
       </div>
       <div className={styles.shellTerminalContent} style={{ display: bodiesHidden ? 'none' : undefined }}>
-        {layout === 'gallery' ? <TerminalSessionGallery tabs={tabs} activeId={activeId} attach={attachGalleryBody} select={(id) => { setActiveId(id); onActiveTabChange?.(id); }} close={(id) => { void closeTab(id); }} /> : <>
+        {layout === 'gallery' ? <TerminalSessionGallery tabs={tabs} activeId={activeId} attach={attachGalleryBody} select={(id) => { userTabFocusRef.current += 1; setActiveId(id); onActiveTabChange?.(id); }} close={(id) => { void closeTab(id); }} /> : <>
         {layout === 'sidebar' ? <div className={styles.shellTerminalSidebar} role="tablist" aria-label="终端会话">{tabList}</div> : null}
         <div className={styles.shellTerminalBodies}>
         {tabs.map((t) => (

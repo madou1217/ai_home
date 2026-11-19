@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CodeOutlined } from '@ant-design/icons';
+import { CodeOutlined, LoadingOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { resolveLiveActiveServerId } from '@/features/session-office/office-computer-power';
@@ -10,12 +10,17 @@ import {
 import { terminalAPI } from '@/services/api';
 import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
 import { useWebTerminalManager, type WebTerminalTab } from './web-terminal-context';
+import { isFloatingHostTab } from './web-terminal-lifecycle';
+import {
+  createWebTerminalViewerAuthority,
+  type CloseTarget,
+  type TabIncarnation,
+  type ViewerIdentityTuple,
+} from './web-terminal-authority';
 import { useTerminalWindowGesture } from './use-terminal-window-gesture';
 import { moveTerminalWindow } from './terminal-window-geometry';
 import { useOfficeTerminalRouteOwnership } from './web-terminal-route-ownership';
 import './global-web-terminal.css';
-
-type ViewerIdentityTuple = readonly [id: string, sessionKey: string, serverId: string];
 
 let globalPrefsRevision = 0;
 let unsubscribeGlobalPrefs: (() => void) | null = null;
@@ -71,23 +76,9 @@ function filterAdmittedPoweredOnTabs(
     const skey = String(tab.sessionKey || '').trim();
     const tabSid = String(tab.serverId || '').trim();
     if (!id || !skey || tabSid !== sid) return false;
+    if (!isFloatingHostTab(tab)) return false;
     return readOfficeComputerPreferences(sid, skey).power === 'on';
   });
-}
-
-function buildCollisionSafeMembershipKey(
-  admittedServerId: string,
-  tuples: ReadonlyArray<ViewerIdentityTuple>,
-): string {
-  if (!admittedServerId || tuples.length === 0) {
-    return JSON.stringify([admittedServerId, []]);
-  }
-  const canonicalTuples = tuples
-    .slice()
-    .sort((a, b) => (
-      a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)
-    ));
-  return JSON.stringify([admittedServerId, canonicalTuples]);
 }
 
 function clampPosition(x: number, y: number, width: number, height = 420) {
@@ -118,7 +109,7 @@ interface TerminalMotion {
 interface ActiveMotionFence {
   motionId: number;
   originServerId: string;
-  originGeneration: number;
+  originServerGeneration: number;
 }
 
 interface RectLike {
@@ -187,6 +178,13 @@ export default function GlobalWebTerminalHost() {
     () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.tabs, prefsRevision),
     [liveServerScope, manager.tabs, normalizedManagerServerId, prefsRevision],
   );
+  // Explicit powered-ON native tabs whose server-side availability has not yet
+  // been observed while the floating viewer is dormant. Used only to render the
+  // lightweight non-attaching restore dock affordance without background polling.
+  const dormantExplicitNativeTabs = useMemo(
+    () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.unavailableTabs, prefsRevision),
+    [liveServerScope, manager.unavailableTabs, normalizedManagerServerId, prefsRevision],
+  );
   const exactViewerTuples = useMemo<ReadonlyArray<ViewerIdentityTuple>>(
     () => poweredOnTabs.map((tab) => [
       String(tab.id || '').trim(),
@@ -195,53 +193,79 @@ export default function GlobalWebTerminalHost() {
     ] as const),
     [admittedServerId, poweredOnTabs],
   );
-  const poweredPanelKey = useMemo(
-    () => buildCollisionSafeMembershipKey(admittedServerId, exactViewerTuples),
-    [admittedServerId, exactViewerTuples],
+
+  // Synchronous per-server + per-identity incarnation authority shared between
+  // host close/motion fencing and ShellTerminalPanel pre-fallback/pre-dispose
+  // authorization. Invalidates immediately on server switches and power-OFF
+  // transitions without waiting for a React render.
+  const [viewerAuthority] = useState(() => createWebTerminalViewerAuthority({
+    readLiveServerId: resolveLiveActiveServerId,
+    isPoweredOn: (sid, sessionKey) => readOfficeComputerPreferences(sid, sessionKey).power === 'on',
+  }));
+
+  useEffect(() => addActiveControlPlaneProfileChangeListener(() => {
+    viewerAuthority.onServerProfileChanged();
+  }), [viewerAuthority]);
+
+  useEffect(() => subscribeOfficeComputerPreferences(() => {
+    viewerAuthority.onPowerPreferencesChanged();
+  }), [viewerAuthority]);
+
+  const {
+    serverGeneration: currentServerGeneration,
+    incarnationSignature,
+  } = viewerAuthority.reconcile(serverAdmitted, admittedServerId, exactViewerTuples);
+
+  const isSessionCurrent = useCallback(
+    (id: string, closeToken?: string) => viewerAuthority.isSessionCurrent(id, closeToken),
+    [viewerAuthority],
   );
-
-  // Monotonic viewer generation updated synchronously during render whenever
-  // origin server admission or exact powered-ON membership transitions (including
-  // ON -> OFF -> ON returning to the identical membership key string).
-  const viewerStateRef = useRef<{
-    generation: number;
-    serverAdmitted: boolean;
-    serverId: string;
-    membershipKey: string;
-    tuplesById: Map<string, ViewerIdentityTuple>;
-  }>({
-    generation: 0,
-    serverAdmitted: false,
-    serverId: '',
-    membershipKey: '',
-    tuplesById: new Map(),
-  });
-
-  if (
-    viewerStateRef.current.serverAdmitted !== serverAdmitted
-    || viewerStateRef.current.serverId !== admittedServerId
-    || viewerStateRef.current.membershipKey !== poweredPanelKey
-  ) {
-    viewerStateRef.current.generation += 1;
-    viewerStateRef.current.serverAdmitted = serverAdmitted;
-    viewerStateRef.current.serverId = admittedServerId;
-    viewerStateRef.current.membershipKey = poweredPanelKey;
-  }
-
-  const liveTuplesMap = new Map<string, ViewerIdentityTuple>();
-  if (serverAdmitted) {
-    for (const tuple of exactViewerTuples) {
-      liveTuplesMap.set(tuple[0], tuple);
-    }
-  }
-  viewerStateRef.current.tuplesById = liveTuplesMap;
-  const currentViewerGeneration = viewerStateRef.current.generation;
 
   const [creatingTab, setCreatingTab] = useState(false);
   const [, setViewportRevision] = useState(0);
-  const hasTabs = serverAdmitted && poweredOnTabs.length > 0;
+  const dockTabCount = poweredOnTabs.length + dormantExplicitNativeTabs.length;
+  const hasInteractiveTabs = serverAdmitted && poweredOnTabs.length > 0;
+  const hasRestorableTabs = serverAdmitted && dockTabCount > 0;
+  const restoringNative = Boolean(
+    !officeRouteOwnsTerminal
+    && !manager.overviewVisible
+    && serverAdmitted
+    && manager.floatingOpen
+    && !hasInteractiveTabs
+    && hasRestorableTabs,
+  );
+
+  // When the user explicitly clicks Restore for dormant explicit native-only
+  // tabs, discovery runs once to verify live server sessions. If discovery
+  // settles without any matching running native session, return cleanly to
+  // dormant mode so polling stops and saved identities remain retained.
   useEffect(() => {
-    if (!hasTabs) return;
+    if (!restoringNative) return;
+    if (!manager.directory.enabled || manager.directory.loading) return;
+    const hasMatchingRunningNative = !manager.directory.error && manager.directory.sessions.some(
+      (item) => item.source === 'native'
+        && item.status === 'running'
+        && dormantExplicitNativeTabs.some((tab) => tab.sessionKey === item.sessionKey),
+    );
+    if (hasMatchingRunningNative) return;
+    if (manager.directory.error) {
+      message.warning(`终端会话检查失败: ${manager.directory.error}`);
+    } else {
+      message.info('已保存的终端会话当前未运行，暂无法恢复');
+    }
+    setMinimized(true);
+  }, [
+    dormantExplicitNativeTabs,
+    manager.directory.enabled,
+    manager.directory.error,
+    manager.directory.loading,
+    manager.directory.sessions,
+    restoringNative,
+    setMinimized,
+  ]);
+
+  useEffect(() => {
+    if (!hasInteractiveTabs) return;
     let frame: number | null = null;
     const resize = () => {
       if (frame !== null) return;
@@ -249,7 +273,7 @@ export default function GlobalWebTerminalHost() {
     };
     window.addEventListener('resize', resize);
     return () => { window.removeEventListener('resize', resize); if (frame !== null) cancelAnimationFrame(frame); };
-  }, [hasTabs]);
+  }, [hasInteractiveTabs]);
   const creatingRef = useRef(false);
   const isCreatingTab = useCallback(() => creatingRef.current, []);
   const windowRef = useRef<HTMLDivElement>(null);
@@ -266,7 +290,7 @@ export default function GlobalWebTerminalHost() {
     height: `min(${manager.position.height}px, calc(100vh - 16px))`,
     ...(motion && motion.phase !== 'closing' ? motion.vars : null)
   };
-  const startGesture = useTerminalWindowGesture(windowRef, setPosition, `${admittedServerId}:${manager.minimized}:${hasTabs}`, windowStyle);
+  const startGesture = useTerminalWindowGesture(windowRef, setPosition, `${admittedServerId}:${manager.minimized}:${hasInteractiveTabs}`, windowStyle);
 
   const clearMotionTimer = useCallback(() => {
     activeMotionRef.current = null;
@@ -278,28 +302,34 @@ export default function GlobalWebTerminalHost() {
 
   useEffect(() => clearMotionTimer, [clearMotionTimer]);
 
-  const isMotionFenceValid = useCallback((fence: ActiveMotionFence): boolean => {
-    const live = viewerStateRef.current;
-    if (!live.serverAdmitted || live.serverId !== fence.originServerId) return false;
-    if (live.generation !== fence.originGeneration) return false;
-    return resolveLiveActiveServerId() === fence.originServerId;
-  }, []);
+  const isMotionFenceValid = useCallback((fence: ActiveMotionFence): boolean => (
+    viewerAuthority.isMotionScopeCurrent(fence.originServerId, fence.originServerGeneration)
+  ), [viewerAuthority]);
 
-  // Invalidate pending timer and clear stale motion immediately on server or
-  // powered-ON membership transitions.
+  // Invalidate pending timer and clear stale motion immediately on server
+  // transitions or when interactive tabs disappear during expand/collapse.
   useEffect(() => {
     const fence = activeMotionRef.current;
     if (!fence) return;
     const matchesCurrentSnapshot = (
       serverAdmitted
       && admittedServerId === fence.originServerId
-      && currentViewerGeneration === fence.originGeneration
+      && currentServerGeneration === fence.originServerGeneration
+      && (motion?.phase === 'closing' || hasInteractiveTabs)
     );
     if (!matchesCurrentSnapshot || !isMotionFenceValid(fence)) {
       clearMotionTimer();
       setMotion(null);
     }
-  }, [admittedServerId, clearMotionTimer, currentViewerGeneration, isMotionFenceValid, serverAdmitted]);
+  }, [
+    admittedServerId,
+    clearMotionTimer,
+    currentServerGeneration,
+    hasInteractiveTabs,
+    isMotionFenceValid,
+    motion?.phase,
+    serverAdmitted,
+  ]);
 
   const scheduleMotionEnd = useCallback((
     delay: number,
@@ -322,14 +352,10 @@ export default function GlobalWebTerminalHost() {
   }, [clearMotionTimer, isMotionFenceValid]);
 
   const beginMinimize = useCallback(() => {
-    if (manager.minimized || motion || !serverAdmitted || !admittedServerId) return;
-    const originGeneration = currentViewerGeneration;
+    if (manager.minimized || motion || !serverAdmitted || !admittedServerId || !hasInteractiveTabs) return;
+    const originServerGeneration = currentServerGeneration;
     const originServerId = admittedServerId;
-    if (
-      viewerStateRef.current.generation !== originGeneration
-      || viewerStateRef.current.serverId !== originServerId
-      || resolveLiveActiveServerId() !== originServerId
-    ) {
+    if (!viewerAuthority.isMotionScopeCurrent(originServerId, originServerGeneration)) {
       return;
     }
     const el = windowRef.current;
@@ -341,30 +367,40 @@ export default function GlobalWebTerminalHost() {
     const fence: ActiveMotionFence = {
       motionId: ++motionSeqRef.current,
       originServerId,
-      originGeneration,
+      originServerGeneration,
     };
     setMotion({ phase: 'collapsing', vars: flipVars(rect) });
     scheduleMotionEnd(COLLAPSE_MS, fence, () => {
-      if (
-        viewerStateRef.current.generation !== originGeneration
-        || viewerStateRef.current.serverId !== originServerId
-        || resolveLiveActiveServerId() !== originServerId
-      ) {
+      if (!viewerAuthority.isMotionScopeCurrent(originServerId, originServerGeneration)) {
         return;
       }
       setMinimized(true);
     });
-  }, [admittedServerId, currentViewerGeneration, manager.minimized, motion, scheduleMotionEnd, serverAdmitted, setMinimized]);
+  }, [
+    admittedServerId,
+    currentServerGeneration,
+    hasInteractiveTabs,
+    manager.minimized,
+    motion,
+    scheduleMotionEnd,
+    serverAdmitted,
+    setMinimized,
+    viewerAuthority,
+  ]);
 
   const beginRestore = useCallback(() => {
-    if (!manager.minimized || motion || typeof window === 'undefined' || !serverAdmitted || !admittedServerId) return;
-    const originGeneration = currentViewerGeneration;
+    if (!manager.minimized || motion || typeof window === 'undefined' || !serverAdmitted || !admittedServerId || !hasRestorableTabs) return;
+    const originServerGeneration = currentServerGeneration;
     const originServerId = admittedServerId;
-    if (
-      viewerStateRef.current.generation !== originGeneration
-      || viewerStateRef.current.serverId !== originServerId
-      || resolveLiveActiveServerId() !== originServerId
-    ) {
+    if (!viewerAuthority.isMotionScopeCurrent(originServerId, originServerGeneration)) {
+      return;
+    }
+    // Saved explicit native-only tabs stay dormant with discovery disabled.
+    // Explicit restore enables discovery first without mounting an empty panel;
+    // once admitted, only exact live identities attach.
+    if (!hasInteractiveTabs) {
+      if (manager.floatingOpen) return;
+      setMinimized(false);
       return;
     }
     if (prefersReducedMotion()) {
@@ -381,22 +417,21 @@ export default function GlobalWebTerminalHost() {
     const fence: ActiveMotionFence = {
       motionId: ++motionSeqRef.current,
       originServerId,
-      originGeneration,
+      originServerGeneration,
     };
     setMotion({ phase: 'expanding', vars: flipVars(rect) });
     scheduleMotionEnd(EXPAND_MS, fence, () => {
-      if (
-        viewerStateRef.current.generation !== originGeneration
-        || viewerStateRef.current.serverId !== originServerId
-        || resolveLiveActiveServerId() !== originServerId
-      ) {
+      if (!viewerAuthority.isMotionScopeCurrent(originServerId, originServerGeneration)) {
         return;
       }
       setMinimized(false);
     });
   }, [
     admittedServerId,
-    currentViewerGeneration,
+    currentServerGeneration,
+    hasInteractiveTabs,
+    hasRestorableTabs,
+    manager.floatingOpen,
     manager.minimized,
     manager.position.height,
     manager.position.width,
@@ -406,102 +441,100 @@ export default function GlobalWebTerminalHost() {
     scheduleMotionEnd,
     serverAdmitted,
     setMinimized,
+    viewerAuthority,
   ]);
 
-  const removeExactValidatedTuple = useCallback((
-    expectedGeneration: number,
-    originServerId: string,
+  const removeExactValidatedIncarnation = useCallback((
+    expectedServerId: string,
+    expectedServerGeneration: number,
+    expectedIncarnation: number,
     tuple: ViewerIdentityTuple,
   ): boolean => {
-    const live = viewerStateRef.current;
-    if (!live.serverAdmitted || live.serverId !== originServerId) return false;
-    if (live.generation !== expectedGeneration) return false;
-    if (resolveLiveActiveServerId() !== originServerId) return false;
-    const [id, sessionKey, tupleSid] = tuple;
-    if (!id || !sessionKey || tupleSid !== originServerId) return false;
-    const currentTuple = live.tuplesById.get(id);
-    if (
-      !currentTuple
-      || currentTuple[0] !== id
-      || currentTuple[1] !== sessionKey
-      || currentTuple[2] !== originServerId
-    ) {
+    if (!viewerAuthority.consumeIncarnationForClose(
+      admittedServerId,
+      expectedServerId,
+      expectedServerGeneration,
+      expectedIncarnation,
+      tuple,
+    )) {
       return false;
     }
-    if (readOfficeComputerPreferences(originServerId, sessionKey).power !== 'on') {
-      return false;
-    }
-    closeTab(id);
+    closeTab(tuple[0]);
     return true;
-  }, [closeTab]);
+  }, [admittedServerId, closeTab, viewerAuthority]);
 
-  const handleTabClose = useCallback((id: string) => {
-    const originGeneration = currentViewerGeneration;
-    const originServerId = admittedServerId;
-    const originTuple = exactViewerTuples.find((item) => item[0] === id);
-    if (!originServerId || !originTuple) return;
-    removeExactValidatedTuple(originGeneration, originServerId, originTuple);
-  }, [admittedServerId, currentViewerGeneration, exactViewerTuples, removeExactValidatedTuple]);
+  const handleTabClose = useCallback((id: string, closeToken?: string) => {
+    if (!viewerAuthority.consumeTokenForClose(admittedServerId, id, closeToken)) return;
+    closeTab(id);
+  }, [admittedServerId, closeTab, viewerAuthority]);
 
-  const finalizeClosedTuples = useCallback((
-    expectedGeneration: number,
+  const finalizeClosedIncarnations = useCallback((
     originServerId: string,
-    capturedTuples: ReadonlyArray<ViewerIdentityTuple>,
+    capturedEntries: ReadonlyArray<TabIncarnation>,
   ) => {
-    for (const tuple of capturedTuples) {
-      removeExactValidatedTuple(expectedGeneration, originServerId, tuple);
+    for (const entry of capturedEntries) {
+      removeExactValidatedIncarnation(
+        originServerId,
+        entry.serverGeneration,
+        entry.incarnation,
+        entry.tuple,
+      );
     }
-  }, [removeExactValidatedTuple]);
+  }, [removeExactValidatedIncarnation]);
 
-  // 关闭绑定发起时的 generation + serverId + 精确可见元组快照；
-  // 任何过期的回调或延迟定时器在设置动画或移除元数据前均立即短路，绝不调用 closeAll。
-  const beginClose = useCallback(() => {
-    if (motion || !serverAdmitted || !admittedServerId) return;
-    const originGeneration = currentViewerGeneration;
-    const originServerId = admittedServerId;
-    const capturedTuples = exactViewerTuples.slice();
-    const live = viewerStateRef.current;
-    if (
-      !live.serverAdmitted
-      || live.serverId !== originServerId
-      || live.generation !== originGeneration
-      || resolveLiveActiveServerId() !== originServerId
-    ) {
+  // 关闭绑定发起时的 serverId + serverGeneration + 每页签精确 incarnation 快照；
+  // 兄弟页签增删不影响已发起关闭的结算，同时 OFF -> ON 同身份与切服（含 A -> B -> A）均严格拦截，绝不调用 closeAll。
+  const beginClose = useCallback((closedTargets?: ReadonlyArray<CloseTarget>) => {
+    if (closedTargets) {
+      for (const target of closedTargets) {
+        handleTabClose(target.id, target.closeToken);
+      }
       return;
     }
+    if (motion || !serverAdmitted || !admittedServerId) return;
+    const originServerGeneration = currentServerGeneration;
+    const originServerId = admittedServerId;
+    const capturedEntries = viewerAuthority.snapshotLiveIncarnations(originServerId, originServerGeneration);
+    if (!capturedEntries.length) return;
     const reduce = typeof window !== 'undefined' && prefersReducedMotion();
     if (reduce || manager.minimized) {
-      finalizeClosedTuples(originGeneration, originServerId, capturedTuples);
+      finalizeClosedIncarnations(originServerId, capturedEntries);
       return;
     }
     const fence: ActiveMotionFence = {
       motionId: ++motionSeqRef.current,
       originServerId,
-      originGeneration,
+      originServerGeneration,
     };
     setMotion({ phase: 'closing', vars: {} });
     scheduleMotionEnd(CLOSE_MS, fence, () => {
-      finalizeClosedTuples(originGeneration, originServerId, capturedTuples);
+      finalizeClosedIncarnations(originServerId, capturedEntries);
     });
   }, [
     admittedServerId,
-    currentViewerGeneration,
-    exactViewerTuples,
-    finalizeClosedTuples,
+    currentServerGeneration,
+    finalizeClosedIncarnations,
+    handleTabClose,
     manager.minimized,
     motion,
     scheduleMotionEnd,
     serverAdmitted,
+    viewerAuthority,
   ]);
 
-  const sessionTabs = useMemo(() => poweredOnTabs.map((tab) => ({
-    id: tab.id,
-    sessionKey: tab.sessionKey,
-    label: tab.label,
-    cwd: tab.cwd,
-    kind: tab.kind,
-    persistent: true
-  })), [poweredOnTabs]);
+  const sessionTabs = useMemo(() => {
+    const pairs = JSON.parse(incarnationSignature) as ReadonlyArray<readonly [string, string]>;
+    const tokens = new Map(pairs);
+    return poweredOnTabs.map((tab) => ({
+      id: tab.id,
+      sessionKey: tab.sessionKey,
+      label: tab.label,
+      cwd: tab.cwd,
+      kind: tab.kind,
+      persistent: true,
+      closeToken: tokens.get(tab.id),
+    }));
+  }, [incarnationSignature, poweredOnTabs]);
   const onNewTab = useCallback(async () => {
     if (creatingRef.current || !serverAdmitted || !admittedServerId) return;
     if (resolveLiveActiveServerId() !== admittedServerId) return;
@@ -522,7 +555,14 @@ export default function GlobalWebTerminalHost() {
       const labels = new Set(manager.tabs.map((tab) => tab.label));
       let number = 1;
       while (labels.has(`Shell ${number}`)) number += 1;
-      openTab({ sessionKey: key, serverId: originServerId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
+      openTab({
+        sessionKey: key,
+        serverId: originServerId,
+        label: `Shell ${number}`,
+        cwd: active?.cwd,
+        kind: 'shell',
+        origin: 'explicit',
+      });
     } finally {
       creatingRef.current = false;
       setCreatingTab(false);
@@ -544,13 +584,13 @@ export default function GlobalWebTerminalHost() {
   }, [setPosition]);
 
   const closings = serverAdmitted && motion?.phase === 'closing';
-  if (officeRouteOwnsTerminal || manager.overviewVisible || (!hasTabs && !closings)) return null;
+  if (officeRouteOwnsTerminal || manager.overviewVisible || (!hasRestorableTabs && !closings)) return null;
   const activeTab = poweredOnTabs.find((tab) => tab.id === manager.activeTabId) || poweredOnTabs[0];
   const availableWidth = typeof window === 'undefined' ? manager.position.width : Math.max(1, window.innerWidth - 16);
   const availableHeight = typeof window === 'undefined' ? manager.position.height : Math.max(1, window.innerHeight - 16);
   // 折叠/展开动画期间，窗口与停靠气泡同时在场：窗口做 FLIP，气泡做交汇淡入/淡出。
-  const showWindow = closings || !manager.minimized || motion?.phase === 'expanding';
-  const showDock = !closings && hasTabs && (manager.minimized || motion?.phase === 'collapsing');
+  const showWindow = closings || (hasInteractiveTabs && (!manager.minimized || motion?.phase === 'expanding'));
+  const showDock = !closings && hasRestorableTabs && (manager.minimized || motion?.phase === 'collapsing');
   const panelMinimized = motion?.phase === 'expanding' || motion?.phase === 'closing'
     ? false
     : (manager.minimized && !motion);
@@ -587,15 +627,18 @@ export default function GlobalWebTerminalHost() {
           ))}
           {serverAdmitted && sessionTabs.length > 0 ? (
             <ShellTerminalPanel
-              key={poweredPanelKey}
+              key={admittedServerId}
               visible
               persistent
+              autoFocus={false}
+              focusRequestSeq={manager.focusRequestSeq}
               title="Web Terminal"
               minimized={panelMinimized}
               onMinimizedChange={(value) => { if (value) beginMinimize(); else beginRestore(); }}
               onHeaderPointerDown={(event) => startGesture('move', event)}
               panelHeight={Math.min(manager.position.height, typeof window === 'undefined' ? manager.position.height : window.innerHeight - 16)}
               sessionTabs={sessionTabs}
+              isSessionCurrent={isSessionCurrent}
               onTabClose={handleTabClose}
               onClose={beginClose}
               activeTabId={activeTab?.id || ''}
@@ -614,12 +657,14 @@ export default function GlobalWebTerminalHost() {
           <button
             type="button"
             className="global-web-terminal-restore"
-            aria-label="恢复 Web Terminal"
-            title="恢复 Web Terminal"
+            aria-label={restoringNative ? '正在检查可恢复的 Web Terminal' : '恢复 Web Terminal'}
+            aria-busy={restoringNative || undefined}
+            title={restoringNative ? '正在检查可恢复的终端会话…' : '恢复 Web Terminal'}
+            disabled={restoringNative}
             onClick={beginRestore}
           >
-            <CodeOutlined />
-            <span>{poweredOnTabs.length}</span>
+            {restoringNative ? <LoadingOutlined /> : <CodeOutlined />}
+            <span>{dockTabCount}</span>
           </button>
         </div>
       ) : null}

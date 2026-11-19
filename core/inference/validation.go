@@ -12,20 +12,20 @@ func cloneBytes(value []byte) []byte {
 	return append([]byte(nil), value...)
 }
 
-// isNonBlankText 判断文本包含有效 UTF-8、没有控制字符且至少含一个非空白字符。
+// isNonBlankText 接受有效 UTF-8 和常规文本空白（含 CRLF），拒绝其他控制字符与纯空白。
 func isNonBlankText(value string) bool {
 	if !utf8.ValidString(value) || strings.TrimSpace(value) == "" {
 		return false
 	}
 	for _, character := range value {
-		if unicode.IsControl(character) && character != '\n' && character != '\t' {
+		if unicode.IsControl(character) && character != '\n' && character != '\t' && character != '\r' {
 			return false
 		}
 	}
 	return true
 }
 
-// isValidDelta 判断增量非空、是有效 UTF-8，且不含协议不允许的控制字符。
+// isValidDelta 判断增量非空、是有效 UTF-8，并允许常规文本空白（含 CRLF）。
 //
 // 单个增量可以只有空格或换行，因此不能复用完整文本的非空白约束。
 func isValidDelta(value string) bool {
@@ -33,7 +33,7 @@ func isValidDelta(value string) bool {
 		return false
 	}
 	for _, character := range value {
-		if unicode.IsControl(character) && character != '\n' && character != '\t' {
+		if unicode.IsControl(character) && character != '\n' && character != '\t' && character != '\r' {
 			return false
 		}
 	}

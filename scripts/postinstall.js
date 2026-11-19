@@ -102,6 +102,89 @@ function buildWebUI(rootDir) {
   }
 }
 
+const GO_CLI_BASENAME = process.platform === 'win32' ? 'aih-go.exe' : 'aih-go';
+
+// nativeCliPath 返回随包分发的 Go CLI 路径（bin/native/<platform>-<arch>/aih-go）。
+function nativeCliPath(rootDir) {
+  return path.join(rootDir, 'bin', 'native', process.platform + '-' + process.arch, GO_CLI_BASENAME);
+}
+
+// candidateBinDirs 列出可能存放 aih 入口链接的目录。
+function candidateBinDirs() {
+  const dirs = [];
+  const prefix = String(process.env.npm_config_prefix || '').trim();
+  if (prefix) dirs.push(path.join(prefix, 'bin'));
+  dirs.push('/opt/homebrew/bin', '/usr/local/bin');
+  const home = String(process.env.HOME || '').trim();
+  if (home) dirs.push(path.join(home, '.local', 'bin'), path.join(home, 'bin'));
+  return [...new Set(dirs)];
+}
+
+// ensureNativeCli 在缺少 Go CLI 且本机有 Go 工具链时就地构建；否则返回空。
+function ensureNativeCli(rootDir) {
+  const binary = nativeCliPath(rootDir);
+  if (fs.existsSync(binary)) return binary;
+  if (spawnSync('go', ['version'], { stdio: 'ignore' }).status !== 0) return '';
+  const build = spawnSync(process.execPath, [path.join(rootDir, 'scripts', 'build-go-cli.js')], {
+    cwd: rootDir,
+    stdio: 'ignore'
+  });
+  if (build.status !== 0) return '';
+  return fs.existsSync(binary) ? binary : '';
+}
+
+// linkTarget 优先沿用 npm 的包目录链接（<prefix>/lib/node_modules/ai_home），
+// 这样目标不写死仓库路径，换目录后仍然有效。
+function linkTarget(dir, rootDir, binary) {
+  const packageDir = path.join(path.dirname(dir), 'lib', 'node_modules', 'ai_home');
+  try {
+    if (fs.realpathSync(packageDir) === rootDir) {
+      const fromPackage = path.join(packageDir, path.relative(rootDir, binary));
+      return path.relative(dir, fromPackage);
+    }
+  } catch (err) {
+    // 非 npm 布局（如 Homebrew 自带目录）时退回仓库相对路径。
+  }
+  return path.relative(dir, binary);
+}
+
+// relinkAihEntry 把全局 aih 入口指向 Go CLI：启动会话不再经过 Node 外壳。
+// 只改指向本包的符号链接；任一步失败都保留原链接（Node 入口仍可用）。
+function relinkAihEntry(rootDir, options = {}) {
+  const log = options.log || console;
+  if (process.platform === 'win32') return { action: 'skipped_windows', count: 0 };
+  const binary = options.binary || ensureNativeCli(rootDir);
+  if (!binary) return { action: 'skipped_no_binary', count: 0 };
+  try {
+    fs.chmodSync(binary, 0o755);
+  } catch (err) {
+    // 权限调整失败不影响后续链接尝试。
+  }
+  const linked = [];
+  for (const dir of candidateBinDirs()) {
+    const link = path.join(dir, 'aih');
+    let stat;
+    try {
+      stat = fs.lstatSync(link);
+    } catch (err) {
+      continue;
+    }
+    if (!stat.isSymbolicLink()) continue;
+    try {
+      const target = fs.realpathSync(link);
+      if (!target.startsWith(rootDir + path.sep)) continue;
+      const temporary = link + '.aih-link-' + process.pid;
+      fs.rmSync(temporary, { force: true });
+      fs.symlinkSync(linkTarget(dir, rootDir, binary), temporary);
+      fs.renameSync(temporary, link);
+      linked.push(link);
+    } catch (err) {
+      log.log('ℹ️  native entry link skipped (' + link + '): ' + err.message);
+    }
+  }
+  if (linked.length > 0) log.log('[aih] entry linked to native CLI: ' + linked.join(', '));
+  return { action: linked.length > 0 ? 'linked' : 'not_found', count: linked.length, links: linked };
+}
 function main() {
   const rootDir = path.resolve(__dirname, '..');
   fixStalePreCommitHook(rootDir);
@@ -116,6 +199,13 @@ function main() {
     helpers.forEach(ensureExecutable);
   }
 
+  // 入口链接：aih 指向 Go CLI，启动会话不再经过 Node 外壳（失败不影响安装）。
+  try {
+    relinkAihEntry(rootDir);
+  } catch (error) {
+    console.log(`ℹ️  native entry link skipped: ${error.message}`);
+  }
+
   // 构建 Web UI
   buildWebUI(rootDir);
 
@@ -128,4 +218,8 @@ function main() {
   );
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { relinkAihEntry, nativeCliPath, ensureNativeCli };

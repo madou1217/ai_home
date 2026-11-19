@@ -7,10 +7,9 @@
 //	响应 { "ok": true, "events": [...], "cursor": <byte>, "requiresSnapshot"?: bool,
 //	       "hasAssistantToolCall": bool }
 //
-// 本切片只承接 codex 的增量读取：它的会话真相是一个可追加的 rollout JSONL，
-// cursor 是该文件里的字节偏移。其它 Provider 在 Node 侧只有「文件大小变化就回
-// snapshot」的兜底语义，各自需要不同的会话定位器；Go 侧未实现前返回
-// unsupported_provider，Go 尚未承接，不猜格式。
+// 覆盖范围：codex 有真实增量事件解析；其它已知 Provider 与 Node 旧实现一致，
+// 返回空 events + 当前文件字节 cursor + requiresSnapshot 标记（客户端据此拉快照）。
+// 只有未知 Provider 返回 501 unsupported_provider。
 //
 // 对拍证据：testdata/parity-cases.json 由 Node 现实现生成
 // （scripts/dump-session-events-parity-cases.js），TestNodeParity（Go）与
@@ -19,8 +18,7 @@
 // 与 Node 的差异（有意为之，均为更严格的边界）：
 //   - 非法/负 cursor 归零；Node 会用 Number() 接受小数，随后在 fs 调用处失败。
 //   - sessionId 必须是安全的单段值（不含 / \ ..）；Node 只做路由正则匹配。
-//   - Go 找不到 rollout 时返回 404，而 Node 通过 state DB 仍可能找到 sessions 目录
-//     之外的会话；Node 代理据此回落，因此 /v0/webui 的公开契约不变。
+//   - codex 先查 rollout 文件，再回退 state DB 定位；两者都找不到才返回 404。
 package webuisessioneventsapi
 
 import (
@@ -48,10 +46,7 @@ var ErrInvalidDependencies = errors.New("会话事件接口依赖无效")
 // ErrUnsupportedProvider 表示该 Provider 的增量事件尚未由 Go 承接。
 var ErrUnsupportedProvider = errors.New("该 Provider 的增量事件尚未由 Go 承接")
 
-// ErrSessionNotFound 表示 Go 的会话定位器找不到 rollout 文件。
-//
-// 这不等同于 Node 的「空事件 + cursor 0」：Node 可能通过 state DB 找到 sessions
-// 目录之外的文件。Handler 返回 404，Node 代理据此回落，公开契约保持不变。
+// ErrSessionNotFound 表示 rollout 与 state DB 都无法定位该会话文件。
 var ErrSessionNotFound = errors.New("会话文件不存在")
 
 // Authorizer 是管理面请求的鉴权策略（与其它 WebUI 契约共用同一个 Bearer 实现）。

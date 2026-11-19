@@ -204,6 +204,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		"apiKeyMode":             false,
 		"isDefault":              true,
 		"isMobile":               false,
+		"status":                 "up",
 		"remainingPct":           73.5,
 		"updatedAt":              float64(oauthCapturedAtMS),
 		"planType":               "plus",

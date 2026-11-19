@@ -728,28 +728,6 @@ func Current() Manifest {
 					{Transport: "websocket", Methods: []string{"GET"}, Path: "/", Upgrade: true, Role: "legacy app-server compatibility"},
 				},
 			},
-			{
-				ID:              "go.preview.account_management",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
-				GoRoutes: []Route{{
-					Transport: "http", Methods: []string{"*"}, Path: "/v1/management/*", Role: "legacy aggregate; inspect precise Go registrations for current management ownership",
-				}},
-				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/management/*", Role: "legacy compatibility aggregate; current Go-first facade is mounted separately",
-				}},
-			},
-			{
-				ID:              "go.preview.claude_relay_leases",
-				ProductionOwner: "node",
-				MigrationState:  "node_owned",
-				GoRoutes: []Route{{
-					Transport: "http", Methods: []string{"POST"}, Path: "/v1/claude-relay-leases", Role: "Go relay lease endpoint; legacy aggregate is not a whole-control-plane ownership claim",
-				}},
-				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"*"}, Path: "/v0/webui/*", Role: "legacy broad Node namespace; not evidence that every child endpoint remains Node-owned",
-				}},
-			},
 		},
 	}
 }

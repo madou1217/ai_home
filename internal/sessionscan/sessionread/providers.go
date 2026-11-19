@@ -6,31 +6,34 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
 const unnamedTitle = "未命名会话"
 
-// allKnownProviders 与 Node lib/provider-catalog.js 的 sessionHistory 能力表及 chat/kimi 对齐。
-var allKnownProviders = map[string]bool{
-	"codex":       true,
-	"claude":      true,
-	"gemini":      true,
-	"agy":         true,
-	"opencode":    true,
-	"qoder":       true,
-	"qodercn":     true,
-	"grok":        true,
-	"kiro":        true,
-	"zcode":       true,
-	"cline":       true,
-	"codebuddy":   true,
-	"codebuddycn": true,
-	"workbuddy":   true,
-	"workbuddycn": true,
-	"kimi":        true,
-	"chat":        true,
+// allKnownProviders 由 Provider 合同的 session_history 能力派生，避免名单漂移。
+//
+// chat 是 aih 自有会话存储（不是 Provider 合同项）；kimi 当前没有可渲染的
+// user/assistant 历史读取器，但 Node 与旧 Go 都以「空结果」而不是 501 暴露它，
+// 因此保留为显式例外。
+var allKnownProviders = buildKnownProviders()
+
+func buildKnownProviders() map[string]bool {
+	known := map[string]bool{
+		"chat": true,
+		"kimi": true,
+	}
+	for _, definition := range providers.BuiltinManifest().Providers {
+		for _, capability := range definition.Capabilities {
+			if capability == providers.CapabilitySessionHistory {
+				known[definition.ID] = true
+				break
+			}
+		}
+	}
+	return known
 }
 
 // NormalizeProvider 归一化 Provider 标识为小写去空白字符串。

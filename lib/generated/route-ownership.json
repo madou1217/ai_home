@@ -1670,56 +1670,6 @@
           "role": "legacy app-server compatibility"
         }
       ]
-    },
-    {
-      "id": "go.preview.account_management",
-      "production_owner": "node",
-      "migration_state": "node_owned",
-      "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v1/management/*",
-          "role": "legacy aggregate; inspect precise Go registrations for current management ownership"
-        }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/management/*",
-          "role": "legacy compatibility aggregate; current Go-first facade is mounted separately"
-        }
-      ]
-    },
-    {
-      "id": "go.preview.claude_relay_leases",
-      "production_owner": "node",
-      "migration_state": "node_owned",
-      "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/claude-relay-leases",
-          "role": "Go relay lease endpoint; legacy aggregate is not a whole-control-plane ownership claim"
-        }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "*"
-          ],
-          "path": "/v0/webui/*",
-          "role": "legacy broad Node namespace; not evidence that every child endpoint remains Node-owned"
-        }
-      ]
     }
   ]
 }

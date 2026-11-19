@@ -216,7 +216,7 @@ func newInferenceComposition(
 	// 与账号路由索引（交还判定、/v1/models 依赖），但不编译 Canonical 规则。
 	// 名单只从 relayProviderIDs 取，避免目录声明与模型刷新队列各写一份而漂移。
 	builder.WithRelayProviders(relayProviderIDs()...)
-	// Node-only Provider（Go 无推理上游）的模型不进 Go 目录：一个 kiro 模型就能让
+	// 尚未接入 Go 推理上游的 Provider 的模型不进 Go 目录：一个 kiro 模型就能让
 	// 整个快照构建失败，结果所有请求都被交还 Node。名单从 Catalog 派生。
 	catalogRefresh, err := inferencecatalog.NewRefreshCoordinator(
 		inferencecatalog.RefreshCoordinatorOptions{

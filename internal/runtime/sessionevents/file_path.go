@@ -1,11 +1,13 @@
 package sessionevents
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 const maxCodexResolveEntries = 20000
@@ -41,6 +43,13 @@ func ResolveSessionFilePath(hostHomeDir, aiHomeDir, provider, sessionID, project
 		return resolveClineSessionPath(hostHome, aiHomeDir, cleanSessionID)
 	case "qoder", "qodercn":
 		return resolveQoderSessionPath(hostHome, normalizedProvider, cleanSessionID, cleanProjectDirName)
+	case "agy", "grok", "kiro", "zcode", "chat":
+		// 这些载体的定位逻辑已经在 sessionread 中实现（账号投影、SQLite、chat JSON）；
+		// 订阅只需要同一个文件游标，直接复用，避免两套路径规则漂移。
+		return sessionread.ResolveSessionFilePath(context.Background(), sessionread.Options{
+			HostHomeDir: hostHome,
+			AIHomeDir:   aiHomeDir,
+		}, normalizedProvider, cleanSessionID, cleanProjectDirName)
 	default:
 		return ""
 	}

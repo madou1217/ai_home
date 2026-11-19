@@ -894,7 +894,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuimobileaccountapi.SetMobilePath, Handler: setMobile},
 		{Pattern: "POST " + webuimobileaccountapi.ClearMobilePath, Handler: clearMobile},
 		{Pattern: "GET " + webuitoolsettingsapi.Path + "/{appId}/settings", Handler: toolSettings},
-		// 旧 Node 公开路径兼容：Go-only 部署下浏览器仍会请求 /v0/webui/toolkit/apps/*/settings。
+		// 旧 Node 公开路径兼容：浏览器仍会请求 /v0/webui/toolkit/apps/*/settings。
 		// 与 tool-apps 是同一份能力，只做前缀重写，不复制处理器。
 		{Pattern: "GET /v0/webui/toolkit/apps/{appId}/settings", Handler: webuipublicalias.Rewrite("/v0/webui/toolkit/apps", webuitoolsettingsapi.Path, toolSettings), SkipPublicAlias: true},
 		{Pattern: "PUT /v0/webui/toolkit/apps/{appId}/settings", Handler: webuipublicalias.Rewrite("/v0/webui/toolkit/apps", webuitoolappsettingswriteapi.Path, toolAppSettings), SkipPublicAlias: true},

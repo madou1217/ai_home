@@ -162,7 +162,7 @@ func TestRowFieldListsCoverEveryJSONKey(t *testing.T) {
 		"enabled":    "filled",
 		"modelCount": "filled",
 		"updatedAt":  "approx",
-		"status":     "unfilled",
+		"status":     "filled",
 	} {
 		if seen[field] != want {
 			t.Fatalf("字段 %s 归在 %s, 期望 %s", field, seen[field], want)

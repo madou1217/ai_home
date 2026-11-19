@@ -123,6 +123,7 @@ var filledRowFields = []string{
 	"accountRef",
 	"displayId",
 	"enabled",
+	"status",
 	"email",
 	"configured",
 	"isDefault",
@@ -224,6 +225,7 @@ func newRow(fact accountFact) Row {
 		AccountRef:            fact.AccountRef,
 		DisplayID:             strconv.FormatInt(fact.CLIAccountID, 10),
 		Enabled:               fact.Enabled != 0,
+		Status:                resolveAccountStatus(fact.Enabled != 0 || strings.EqualFold(fact.CredentialKind, "vertex_ai")),
 		DisplayName:           firstNonEmpty(fact.UIDisplayName, fact.ProfileName, fact.ProfileEmail),
 		Configured:            configured,
 		APIKeyMode:            apiKeyMode,
@@ -276,6 +278,16 @@ func newRow(fact accountFact) Row {
 		row.QuotaStatus,
 	)
 	return row
+}
+
+// resolveAccountStatus 复刻 Node 的 status 派生：启停事实的展示词只有 up/down。
+// Vertex 占位账号在 Go 侧 enabled=false，但 Node 一直按 up 展示；保持该例外，
+// 否则 Gemini 的 Vertex 入口会凭空变成「已停用」。
+func resolveAccountStatus(up bool) string {
+	if up {
+		return "up"
+	}
+	return "down"
 }
 
 // resolveSchedulableStatus 是 Go 独有账号的调度状态兜底。

@@ -11,6 +11,6 @@
 // Env.CanonicalizeProviderPath 注入。provider 配置/私有产物拒绝与可读资源根
 // 复用 internal/runtime/storagepolicy，避免同一份安全白名单出现两个真值。
 //
-// 已知非本包职责（Node-only 输入）：provider 投影映射与文本规范化、项目快照抓取、
+// 已知非本包职责：provider 投影映射与文本规范化、项目快照抓取、
 // os.homedir() 兜底；目录名排序在 Node 用 localeCompare，这里是字节序。
 package webuifile

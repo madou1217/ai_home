@@ -12,10 +12,10 @@
 // 会话按 updatedAt 降序；空 id 的会话不下发；读不出任何项目时 projects 为空数组
 // 而不是 null。
 //
-// 覆盖范围：只承接 Go 有事实源的 Provider —— claude、codex 与 CodeBuddy 家族
-// （codebuddy / codebuddycn / workbuddy / workbuddycn）。其余 Provider 的会话
-// 真相在 SQLite 或账号投影里，本切片返回 501 unsupported_provider，绝不用空
-// 列表冒充「该账号没有会话」。
+// 覆盖范围：sessionread.IsKnownProvider 的全部会话载体（claude、codex、gemini、agy、
+// opencode、qoder 家族、grok、kiro、zcode、cline、CodeBuddy 家族、chat；kimi 在
+// Provider 合同中未声明 session_history，按空结果处理）。未知 Provider 才返回
+// 501 unsupported_provider，绝不用空列表冒充「该账号没有会话」。
 //
 // 数据边界：只读宿主 HOME 下的会话目录。这些 Provider 的会话按产品共享
 // （切换账号不改变可见历史，见 lib/sessions/session-reader-codebuddy.js 的说明），

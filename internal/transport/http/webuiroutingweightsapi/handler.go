@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/accountscheduling"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -126,6 +127,8 @@ type Dependencies struct {
 	States      AccountStateSource
 	UsageGate   UsageGate
 	Activity    ActivitySource
+	// Scheduling 是账号/Provider 调度策略注册表；为空时用通用默认策略。
+	Scheduling *accountscheduling.Registry
 	// Strategy 为当前选号策略（random / round-robin）；为空时取随机策略。
 	Strategy string
 	// Now 是测试时钟注入点；为空时使用 time.Now。
@@ -179,6 +182,7 @@ type Handler struct {
 	states      AccountStateSource
 	usageGate   UsageGate
 	activity    ActivitySource
+	scheduling  *accountscheduling.Evaluator
 	strategy    string
 	now         func() time.Time
 }
@@ -202,6 +206,10 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 			eligibility = source
 		}
 	}
+	registry := dependencies.Scheduling
+	if registry == nil {
+		registry = accountscheduling.NewRegistry(accountscheduling.NewDefaultPolicy(""))
+	}
 	return &Handler{
 		authorizer:  dependencies.Authorizer,
 		pool:        dependencies.Pool,
@@ -212,6 +220,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		states:      dependencies.States,
 		usageGate:   dependencies.UsageGate,
 		activity:    dependencies.Activity,
+		scheduling:  accountscheduling.NewEvaluator(registry),
 		strategy:    string(parsedStrategy),
 		now:         nowFn,
 	}, nil

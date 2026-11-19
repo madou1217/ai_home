@@ -3,13 +3,14 @@ package webuiroutingweightsapi
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"strings"
 	"time"
 
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
+	"github.com/madou1217/ai_home/application/accountscheduling"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	schedcore "github.com/madou1217/ai_home/core/accountscheduling"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 )
 
@@ -32,18 +33,19 @@ type persistedModelFailureStreak struct {
 	Kind string `json:"kind"`
 }
 
-var goBlockReasonMap = map[runtimecore.RecoveryTrigger]string{
-	runtimecore.RecoveryCredentialsUpdated: "runtime_auth_invalid",
-	runtimecore.RecoveryUsageSnapshot:      "runtime_rate_limited",
-	runtimecore.RecoveryBillingSnapshot:    "runtime_service_unavailable",
-	runtimecore.RecoveryAccountStatus:      "runtime_service_unavailable",
-	runtimecore.RecoveryPolicySnapshot:     "runtime_service_unavailable",
-	runtimecore.RecoveryModelCatalog:       "model_not_in_catalog",
+var goBlockReasonMap = map[runtimecore.RecoveryTrigger]schedcore.Reason{
+	runtimecore.RecoveryCredentialsUpdated: schedcore.ReasonRuntimeAuthInvalid,
+	runtimecore.RecoveryUsageSnapshot:      schedcore.ReasonRuntimeRateLimited,
+	runtimecore.RecoveryBillingSnapshot:    schedcore.ReasonRuntimeServiceUnavailable,
+	runtimecore.RecoveryAccountStatus:      schedcore.ReasonRuntimeServiceUnavailable,
+	runtimecore.RecoveryPolicySnapshot:     schedcore.ReasonRuntimeServiceUnavailable,
+	runtimecore.RecoveryModelCatalog:       schedcore.ReasonModelNotInCatalog,
 }
 
-// evaluateAccountEligibility 按 Node createEligibilityEvaluator 与 Go 运行态的统一口径判定资格。
+// evaluateAccountEligibility 返回空串表示可调度，否则返回稳定的原因码。
 //
-// 返回空串表示可调度；非空字符串为稳定的原因码（与前端 REASON_LABELS 一一对应）。
+// 判定规则不在本层：这里只把运行态、持久化状态与外部端口的结论取证成 Evidence，
+// 交给账号/Provider 策略（application/accountscheduling）决定。
 func (handler *Handler) evaluateAccountEligibility(
 	ctx context.Context,
 	account PoolAccount,
@@ -56,10 +58,41 @@ func (handler *Handler) evaluateAccountEligibility(
 	load sessionactivity.SelectionLoad,
 	now time.Time,
 ) string {
-	nowMS := now.UnixMilli()
-	if !account.Enabled {
-		return "account_state_unavailable"
+	evidence := handler.schedulingEvidence(
+		ctx, account, provider, model, parsedModelID, modelIDValid, state, runtimeView, load, now,
+	)
+	return string(handler.scheduling.Evaluate(evidence).Reason)
+}
+
+// schedulingEvidence 把一次判定的全部事实取证成 Evidence。
+func (handler *Handler) schedulingEvidence(
+	ctx context.Context,
+	account PoolAccount,
+	provider string,
+	model string,
+	parsedModelID runtimecore.ModelID,
+	modelIDValid bool,
+	state runtimecore.AccountState,
+	runtimeView *runtimeapp.AccountView,
+	load sessionactivity.SelectionLoad,
+	now time.Time,
+) accountscheduling.Evidence {
+	evidence := accountscheduling.Evidence{
+		Provider:   provider,
+		AccountRef: account.AccountRef,
+		ModelID:    model,
+		Account: accountscheduling.AccountFacts{
+			Enabled:           account.Enabled,
+			Configured:        account.Configured,
+			APIKeyMode:        account.APIKeyMode,
+			RemainingPct:      account.RemainingPct,
+			QuotaStatus:       account.QuotaStatus,
+			SchedulableStatus: account.SchedulableStatus,
+		},
 	}
+	evidence.Observed.AccountInFlight = load.InFlight
+	evidence.Observed.ModelInFlight = load.ModelInFlight
+	evidence.Buckets = bucketsFromSnapshot(account.UsageSnapshot)
 
 	hasState := len(state.Document()) > 0
 	var doc persistedRuntimeStateDoc
@@ -67,106 +100,108 @@ func (handler *Handler) evaluateAccountEligibility(
 		_ = json.Unmarshal(state.Document(), &doc)
 	}
 
-	// 1. 账号级运行时阻塞 / 冷却状态（优先采用 Go 运行态实时观察，再看持久化 account_states）。
+	// 1. 账号级运行态阻塞：优先采用 Go 运行态实时观察，再看持久化 account_states。
 	if runtimeView != nil {
 		for _, block := range runtimeView.Blocks {
 			if reason, found := goBlockReasonMap[block]; found {
-				return reason
+				evidence.Observed.AccountReasons = append(evidence.Observed.AccountReasons, reason)
 			}
 		}
 	}
 	if hasState {
-		status := state.DeriveStatus(now)
-		if !status.IsHealthy() {
-			return "runtime_" + status.Status()
+		if status := state.DeriveStatus(now); !status.IsHealthy() {
+			evidence.Observed.AccountReasons = append(
+				evidence.Observed.AccountReasons,
+				schedcore.Reason("runtime_"+status.Status()),
+			)
 		}
 		if doc.RoutingBlock != nil && strings.TrimSpace(doc.RoutingBlock.Kind) != "" {
 			if strings.EqualFold(strings.TrimSpace(doc.RoutingBlock.Recheck), "manual") {
-				return "runtime_" + normalizeRoutingBlockKind(doc.RoutingBlock.Kind)
+				evidence.Observed.RoutingBlockReason = "runtime_" + normalizeRoutingBlockKind(doc.RoutingBlock.Kind)
 			}
-			// 路由硬阻塞到期进入单一试探期：已有在途请求时其余并发不蜂拥。
-			if int64(doc.RoutingBlock.Until) > 0 && int64(doc.RoutingBlock.Until) <= nowMS && load.InFlight > 0 {
-				return "routing_block_probe_in_flight"
+			if untilMS := int64(doc.RoutingBlock.Until); untilMS > 0 {
+				evidence.Observed.RoutingBlockUntil = time.UnixMilli(untilMS)
 			}
 		}
-		if int64(doc.CooldownUntil) > nowMS {
-			return "account_cooldown"
+		if wait := int64(doc.CooldownUntil); wait > now.UnixMilli() {
+			evidence.Observed.AccountCooldownUntil = time.UnixMilli(wait)
 		}
+		if wait := findModelCooldownUntilMS(doc.ModelCooldowns, model); wait > 0 {
+			evidence.Observed.ModelCooldownUntil = time.UnixMilli(wait)
+		}
+		evidence.Observed.ModelFailureKind = findModelFailureKind(doc.ModelFailureStreaks, model)
 	}
 
-	// 2. (账号, 模型) 维度冷却与恢复中检查。
-	if findModelCooldownUntilMS(doc.ModelCooldowns, model) > nowMS {
-		return "model_cooldown"
-	}
-	if hasState && findModelFailureKind(doc.ModelFailureStreaks, model) == "model_capacity_unavailable" && load.ModelInFlight > 0 {
-		return "model_capacity_recovery_in_flight"
-	}
-
+	// 2. (账号, 模型) 维度的运行态观察。
 	if runtimeView != nil {
+		entryCooldown := int64(0)
 		for _, modelEntry := range runtimeView.Models {
 			if !modelIdsMatch(modelEntry.Model.String(), model) {
 				continue
 			}
 			for _, block := range modelEntry.Blocks {
-				switch block {
-				case runtimecore.RecoveryModelCatalog:
-					return reasonModelNotInCatalog
-				case runtimecore.RecoveryUsageSnapshot:
-					return "quota_exhausted"
-				case runtimecore.RecoveryCredentialsUpdated:
-					return "runtime_auth_invalid"
-				default:
-					return "runtime_blocked"
-				}
+				evidence.Observed.ModelReasons = append(
+					evidence.Observed.ModelReasons,
+					modelBlockReason(block),
+				)
 			}
 			if modelEntry.CooldownUntil.After(now) {
-				return "model_cooldown"
+				if until := modelEntry.CooldownUntil.UnixMilli(); until > entryCooldown {
+					entryCooldown = until
+				}
 			}
+		}
+		if entryCooldown > 0 {
+			evidence.Observed.RuntimeModelCooldownUntil = time.UnixMilli(entryCooldown)
 		}
 	}
 
+	// 3. 需要外部端口才能得出的两个结论：路由资格与选号前额度门禁。
 	parsedRef, refErr := accountcore.ParseAccountRef(strings.TrimSpace(account.AccountRef))
 	if handler.eligibility != nil && refErr == nil && modelIDValid {
 		if route, routeErr := runtimecore.NewModelRoute(parsedRef, parsedModelID.String()); routeErr == nil {
-			elig, checkErr := handler.eligibility.CheckEligibility(ctx, route)
-			if checkErr == nil && !elig.Eligible() {
-				switch elig.Status() {
-				case runtimecore.EligibilityModelCooldown:
-					return "model_cooldown"
-				case runtimecore.EligibilityCredentialBlocked:
-					return "runtime_auth_invalid"
-				case runtimecore.EligibilityQuotaBlocked:
-					return "quota_exhausted"
-				case runtimecore.EligibilityPolicyBlocked:
-					return "runtime_blocked"
-				}
+			if elig, checkErr := handler.eligibility.CheckEligibility(ctx, route); checkErr == nil && !elig.Eligible() {
+				evidence.Eligibility.Route = eligibilityReason(elig.Status())
 			}
 		}
 	}
-
-	// 3. 额度耗尽与静态可调度策略检查。
-	if !account.APIKeyMode {
-		if account.RemainingPct != nil && !math.IsNaN(*account.RemainingPct) && *account.RemainingPct <= 0 {
-			return "quota_exhausted"
-		}
-		if strings.EqualFold(strings.TrimSpace(account.QuotaStatus), "exhausted") ||
-			strings.TrimSpace(account.SchedulableStatus) == "blocked_by_quota" {
-			return "quota_exhausted"
-		}
-	}
-	if !allowsLiveRuntimeRecheck(account.SchedulableStatus) {
-		return "runtime_blocked"
-	}
-
-	// 4. 选号前额度门禁（UsageGate：config:usage 阈值与模型额度窗口，错误按 fail-closed 拦截）。
 	if handler.usageGate != nil && refErr == nil && modelIDValid {
 		decision, err := handler.usageGate.EvaluateScheduling(ctx, provider, parsedRef, parsedModelID)
 		if err != nil || decision.Blocked {
-			return "usage_gate"
+			evidence.Eligibility.UsageGate = schedcore.ReasonUsageGate
 		}
 	}
+	return evidence
+}
 
-	return ""
+// eligibilityReason 把运行态资格状态映射成稳定原因码。
+func eligibilityReason(status runtimecore.EligibilityStatus) schedcore.Reason {
+	switch status {
+	case runtimecore.EligibilityModelCooldown:
+		return schedcore.ReasonModelCooldown
+	case runtimecore.EligibilityCredentialBlocked:
+		return schedcore.ReasonRuntimeAuthInvalid
+	case runtimecore.EligibilityQuotaBlocked:
+		return schedcore.ReasonQuotaExhausted
+	case runtimecore.EligibilityPolicyBlocked:
+		return schedcore.ReasonRuntimeBlocked
+	default:
+		return schedcore.ReasonRuntimeBlocked
+	}
+}
+
+// modelBlockReason 把单个模型级恢复触发映射成原因码。
+func modelBlockReason(block runtimecore.RecoveryTrigger) schedcore.Reason {
+	switch block {
+	case runtimecore.RecoveryModelCatalog:
+		return schedcore.ReasonModelNotInCatalog
+	case runtimecore.RecoveryUsageSnapshot:
+		return schedcore.ReasonQuotaExhausted
+	case runtimecore.RecoveryCredentialsUpdated:
+		return schedcore.ReasonRuntimeAuthInvalid
+	default:
+		return schedcore.ReasonRuntimeBlocked
+	}
 }
 
 func normalizeRoutingBlockKind(kind string) string {
@@ -179,13 +214,6 @@ func normalizeRoutingBlockKind(kind string) string {
 	default:
 		return "cooling_down"
 	}
-}
-
-func allowsLiveRuntimeRecheck(schedulableStatus string) bool {
-	status := strings.TrimSpace(schedulableStatus)
-	return status == "" ||
-		status == "schedulable" ||
-		status == "blocked_by_runtime_status"
 }
 
 func findModelCooldownUntilMS(cooldowns map[string]float64, model string) int64 {
@@ -226,4 +254,75 @@ func findModelFailureKind(streaks map[string]json.RawMessage, model string) stri
 		}
 	}
 	return ""
+}
+
+// bucketsFromSnapshot 把归一化额度快照里的档位转成策略可用的 Bucket。
+//
+// 这里只做结构转换，不判断哪一档该花：档位优先级属于 Provider 策略。
+func bucketsFromSnapshot(snapshot map[string]any) []schedcore.Bucket {
+	if len(snapshot) == 0 {
+		return nil
+	}
+	rawEntries, ok := snapshot["entries"].([]any)
+	if !ok || len(rawEntries) == 0 {
+		return nil
+	}
+	buckets := make([]schedcore.Bucket, 0, len(rawEntries))
+	for _, raw := range rawEntries {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := strings.TrimSpace(stringValue(entry["bucket"]))
+		if id == "" {
+			id = strings.TrimSpace(stringValue(entry["label"]))
+		}
+		if id == "" {
+			continue
+		}
+		bucket := schedcore.Bucket{ID: id}
+		if pct, found := floatValue(entry["remainingPct"]); found {
+			bucket.Known = true
+			switch {
+			case pct < 0:
+				pct = 0
+			case pct > 100:
+				pct = 100
+			}
+			bucket.RemainingBasisPoints = uint16(pct * 100)
+		}
+		if used, foundUsed := floatValue(entry["usedUnits"]); foundUsed {
+			if total, foundTotal := floatValue(entry["totalUnits"]); foundTotal && total > 0 && used >= total {
+				bucket.Exhausted = true
+			}
+		}
+		if reset, found := floatValue(entry["resetAtMs"]); found && reset > 0 {
+			bucket.ResetAt = time.UnixMilli(int64(reset))
+		}
+		buckets = append(buckets, bucket)
+	}
+	return buckets
+}
+
+func stringValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
+}
+
+func floatValue(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }

@@ -13,11 +13,13 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/accountscheduling"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
+	codebuddycnpolicy "github.com/madou1217/ai_home/internal/adapters/scheduling/codebuddycn"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingweightsapi"
@@ -80,7 +82,11 @@ func buildWebUIRoutingWeightsRoutes(dependencies webuiRouteDependencies) ([]webu
 		States:      stateSource,
 		UsageGate:   usageGate,
 		Activity:    newRoutingWeightsActivitySource(dependencies.AccountActivity, dependencies.AIHomeDir),
-		Strategy:    string(strategy),
+		Scheduling: accountscheduling.NewRegistry(
+			accountscheduling.NewDefaultPolicy(""),
+			codebuddycnpolicy.NewPolicy(),
+		),
+		Strategy: string(strategy),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建路由权重诊断接口失败: %w", err)

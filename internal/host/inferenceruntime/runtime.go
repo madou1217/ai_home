@@ -94,6 +94,8 @@ type Dependencies struct {
 	RequestRewriter inferencegateway.RequestRewriter
 	// AccountEgress 为每个被选中的账号解析网关侧出口（可选）。
 	AccountEgress inferencegateway.AccountEgressResolver
+	// AccountHints 解析会话级模型改写携带的一次性账号（可选）。
+	AccountHints inferencegateway.AccountHintResolver
 }
 
 // Components 保存 Canonical Executor 与其共享的账号征召器。
@@ -194,6 +196,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Upstream429Retries:     dependencies.Upstream429Retries,
 			RequestRewriter:        dependencies.RequestRewriter,
 			AccountEgress:          dependencies.AccountEgress,
+			AccountHints:           dependencies.AccountHints,
 		},
 	)
 	if err != nil {

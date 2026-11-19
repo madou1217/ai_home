@@ -1523,6 +1523,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			upstream429Retries:        upstream429Controller,
 			componentLog:              errorLog,
 			accountEgress:             inferenceEgressResolver{manager: egressManager},
+			accountHints:              inferenceAccountHintResolver{store: store},
 		},
 	)
 	if err != nil {

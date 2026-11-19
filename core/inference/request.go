@@ -573,6 +573,7 @@ type Request struct {
 	clientProtocol    ClientProtocolID
 	model             string
 	providerHint      string
+	accountHint       string
 	messages          []Message
 	tools             []ToolDefinition
 	webSearch         *WebSearchTool
@@ -682,6 +683,23 @@ func (request Request) Model() string {
 // 空串或 auto 表示不限制，路由按正常目录选择。
 func (request Request) ProviderHint() string {
 	return request.providerHint
+}
+
+// WithModel 返回替换目标模型后的请求副本；不修改原值。
+func (request Request) WithModel(model string) Request {
+	request.model = strings.TrimSpace(model)
+	return request
+}
+
+// AccountHint 返回会话级模型改写指定的一次性账号（CLI 编号或 accountRef）。
+func (request Request) AccountHint() string {
+	return request.accountHint
+}
+
+// WithAccountHint 返回带一次性账号钉选提示的请求副本；不修改原值。
+func (request Request) WithAccountHint(account string) Request {
+	request.accountHint = strings.TrimSpace(account)
+	return request
 }
 
 // WithProviderHint 返回带显式 Provider 约束的请求副本；不修改原值。

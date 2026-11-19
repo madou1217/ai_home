@@ -114,7 +114,7 @@ func TestInstallForwardsHostHeaders(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, InstallPath, strings.NewReader(`{"file":"/tmp/x"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(HostVersionHeader, "1.2.3")
-	request.Header.Set(NodeVersionHeader, "22.14.0")
+	request.Header.Set(RuntimeVersionHeader, "22.14.0")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {

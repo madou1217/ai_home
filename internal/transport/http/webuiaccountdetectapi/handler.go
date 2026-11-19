@@ -4,10 +4,10 @@
 //
 //	POST /v1/management/webui/accounts/detect
 //
-// 契约与 Node 的 handleDetectHostAccountsRequest 一致：成功 200，检测器整体不可用
+// 契约与历史接口一致：成功 200，检测器整体不可用
 // 时 500，响应体保持 {ok, scanned, updated, reloaded, registered, skipped, accounts}。
-// 扫描执行本身仍走 Node 宿主能力（家族 .info 需要厂商 Electron 运行时解密、桌面端
-// 状态库与登录 shell 环境只有 Node 侧实现）；Go 持有路由、鉴权、响应契约与后续替换点。
+// 扫描执行由 Go 的 hostdetect.NewNativeDetector 完成（厂商 .info、桌面状态库与
+// 登录 shell 环境均在 Go 原生探测）；本包只负责路由、鉴权与响应契约。
 package webuiaccountdetectapi
 
 import (

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/sessionmodelalias"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
 	accountrulesapi "github.com/madou1217/ai_home/internal/transport/http/accountrulesapi"
@@ -309,7 +310,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 			fallback.ServeHTTP(response, request)
 		})
 	}
-	return withRemoteWebUIProxy(handlers.remoteWebUI, mux)
+	return withRemoteWebUIProxy(handlers.remoteWebUI, withSessionModelAliasPath(mux))
 }
 
 // handleHealth 返回不依赖账号数量的进程存活状态。
@@ -575,4 +576,26 @@ func writeSystemJSON(
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(payload)
+}
+
+// withSessionModelAliasPath 在路由匹配前剥离 /-/ma/<token> 前缀，并把规则写入
+// 标准请求头，后续 Canonical 入口与直接透传使用同一份语义。
+func withSessionModelAliasPath(next http.Handler) http.Handler {
+	if next == nil {
+		return http.HandlerFunc(handleRouteNotFound)
+	}
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		rule, stripped, ok := sessionmodelalias.SplitPath(request.URL.Path)
+		if !ok {
+			next.ServeHTTP(response, request)
+			return
+		}
+		cloned := request.Clone(request.Context())
+		urlCopy := *request.URL
+		urlCopy.Path = stripped
+		urlCopy.RawPath = ""
+		cloned.URL = &urlCopy
+		cloned.Header.Set(sessionmodelalias.HeaderName, rule.String())
+		next.ServeHTTP(response, cloned)
+	})
 }

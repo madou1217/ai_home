@@ -294,3 +294,16 @@ func (s *Service) CollectPricingSnapshots(ctx context.Context, timeout time.Dura
 	effectiveTimeout := clampPricingTimeout(timeout, defaultPricingInvokeTimeout)
 	return collectPricingSnapshotsFromRuntime(ctx, s.runtime, time.Now().UTC().Format(time.RFC3339Nano), effectiveTimeout)
 }
+
+// CatalogAliases 返回当前活跃代次声明的模型别名（不触发新代次准备）。
+func (s *Service) CatalogAliases() []CatalogAlias {
+	if s == nil || s.runtime == nil {
+		return nil
+	}
+	lease := s.runtime.Acquire()
+	defer lease.Release()
+	if lease == nil {
+		return nil
+	}
+	return append([]CatalogAlias(nil), lease.Snapshot.CatalogAliases...)
+}

@@ -35,6 +35,8 @@ type Store struct {
 	repository Repository
 	generation int64
 	records    []Record
+	// volatile 是插件运行时贡献的别名：不落库，随运行代次变化整体替换。
+	volatile []Record
 }
 
 // NewStore 创建空投影（没有任何别名时 Go 不做别名改写）。
@@ -149,15 +151,34 @@ func normalizeRecords(records []Record) []Record {
 }
 
 // Snapshot 返回当前投影的一致快照。
+// SetVolatile 替换插件运行时贡献的别名投影，不写持久化仓储。
+func (store *Store) SetVolatile(records []Record) error {
+	if store == nil {
+		return ErrInvalidProjection
+	}
+	next, err := validateRecords(records)
+	if err != nil {
+		return err
+	}
+	store.mu.Lock()
+	store.volatile = next
+	store.generation++
+	store.mu.Unlock()
+	return nil
+}
+
 func (store *Store) Snapshot() Snapshot {
 	if store == nil {
 		return Snapshot{}
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
+	records := make([]Record, 0, len(store.records)+len(store.volatile))
+	records = append(records, store.records...)
+	records = append(records, store.volatile...)
 	return Snapshot{
 		generation: store.generation,
-		records:    append([]Record(nil), store.records...),
+		records:    records,
 	}
 }
 

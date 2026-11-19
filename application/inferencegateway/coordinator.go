@@ -122,6 +122,8 @@ type Dependencies struct {
 	RequestRewriter RequestRewriter
 	// AccountEgress 为每个被选中的账号解析网关侧出口（可选）。
 	AccountEgress AccountEgressResolver
+	// AccountHints 解析会话级模型改写携带的一次性账号（可选）。
+	AccountHints AccountHintResolver
 }
 
 // RequestRewriter 在派发前按目标 Provider 改写 Canonical 请求。
@@ -147,6 +149,7 @@ type Coordinator struct {
 	upstream429Retries   *upstreamretry.Controller
 	requestRewriter      RequestRewriter
 	accountEgress        AccountEgressResolver
+	accountHints         AccountHintResolver
 	gate                 *providerGate
 	accountGate          *claudeAccountGate
 	routeCursor          atomic.Uint64
@@ -251,6 +254,7 @@ func NewCoordinator(
 		upstream429Retries:   dependencies.Upstream429Retries,
 		requestRewriter:      dependencies.RequestRewriter,
 		accountEgress:        dependencies.AccountEgress,
+		accountHints:         dependencies.AccountHints,
 		gate:                 newProviderGate(),
 		accountGate:          newClaudeAccountGate(),
 	}, nil
@@ -264,6 +268,20 @@ func (coordinator *Coordinator) Execute(
 ) error {
 	if err := coordinator.validateExecute(ctx, request, emit); err != nil {
 		return err
+	}
+	if hint := request.AccountHint(); hint != "" && coordinator.accountHints != nil {
+		accountRef, provider, resolveErr := coordinator.accountHints.ResolveAccountHint(ctx, hint, request.ProviderHint())
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if request.ProviderHint() == "" && provider != "" {
+			request = request.WithProviderHint(provider)
+		}
+		pinnedCtx, pinErr := WithPinnedAccount(ctx, accountRef)
+		if pinErr != nil {
+			return pinErr
+		}
+		ctx = pinnedCtx
 	}
 	plan, err := coordinator.routes.Resolve(ctx, request)
 	if err != nil {

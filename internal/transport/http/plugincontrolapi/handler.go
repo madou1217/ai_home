@@ -38,10 +38,10 @@ const (
 	maxStateBodyBytes = 5 << 20
 	// maxBodyBytes 与插件管理路由的 MAX_BODY_BYTES（256KB）一致。
 	maxBodyBytes = 256 * 1024
-	// HostVersionHeader / NodeVersionHeader 是 Node 代理 install 时给出的宿主事实。
+	// HostVersionHeader / RuntimeVersionHeader 是安装请求给出的宿主事实。
 	// JavaScript 插件最终在 JS 运行时执行，engines 必须按真正的运行时版本判断。
-	HostVersionHeader = "X-Aih-Host-Version"
-	NodeVersionHeader = "X-Aih-Node-Version"
+	HostVersionHeader    = "X-Aih-Host-Version"
+	RuntimeVersionHeader = "X-Aih-Node-Version"
 )
 
 // Authorizer 校验管理密钥。
@@ -149,7 +149,7 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 	}
 	options := plugincontrol.AcceptOptions{
 		HostVersion:   headerOr(request, HostVersionHeader, "1.0.0"),
-		NodeVersion:   request.Header.Get(NodeVersionHeader),
+		NodeVersion:   request.Header.Get(RuntimeVersionHeader),
 		RequireSigned: payload.RequireSigned,
 	}
 	result, err := handler.installer.Install(request.Context(), payload.File, options)

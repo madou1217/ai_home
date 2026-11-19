@@ -170,6 +170,7 @@ func (handler *Handler) ServeHTTP(
 	if hint := inferenceapi.ProviderHint(request); hint != "" {
 		canonicalRequest = canonicalRequest.WithProviderHint(hint)
 	}
+	canonicalRequest = inferenceapi.ApplySessionModelAlias(request.Header.Get("X-Aih-Model-Alias"), canonicalRequest)
 	if canonicalRequest.Stream() {
 		handler.executeStream(
 			response,

@@ -125,6 +125,8 @@ type inferenceCompositionDependencies struct {
 	componentLog *log.Logger
 	// accountEgress 为每个被选中的账号解析上游出口（可选）。
 	accountEgress inferencegateway.AccountEgressResolver
+	// accountHints 解析会话模型改写里的一次性账号（可选）。
+	accountHints inferencegateway.AccountHintResolver
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -285,6 +287,7 @@ func newInferenceComposition(
 		Upstream429Retries: dependencies.upstream429Retries,
 		RequestRewriter:    dependencies.requestRewriter,
 		AccountEgress:      dependencies.accountEgress,
+		AccountHints:       dependencies.accountHints,
 	})
 	if err != nil {
 		return nil, err
@@ -312,6 +315,14 @@ func newInferenceComposition(
 }
 
 // Close 先停止账号模型 worker，再停止目录刷新 worker。
+// RefreshCatalog 在插件别名等运行态目录变化后触发一次路由目录重建。
+func (composition *inferenceComposition) RefreshCatalog() {
+	if composition == nil || composition.catalogRefresh == nil {
+		return
+	}
+	_ = composition.catalogRefresh.Refresh(context.Background())
+}
+
 func (composition *inferenceComposition) Close() error {
 	if composition == nil {
 		return nil

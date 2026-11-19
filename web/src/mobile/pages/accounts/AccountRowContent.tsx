@@ -4,6 +4,7 @@ import {
   getAccountDisplayBadgeMeta,
   getAccountLoginTypeLabel,
   getAccountPrimaryLabel,
+  getAccountVendorMeta,
   getPlanTagLabels,
   getQuotaStateMeta
 } from '@/features/accounts/AccountBadges';
@@ -49,6 +50,8 @@ export default function AccountRowContent({ record, activity, removing, desktopR
     ...getPlanTagLabels(record),
     record.isDefault ? '默认' : '',
     record.isMobile ? 'APP' : '',
+    // 双协议厂商能力：只显示短标签，完整端点放在详情抽屉。
+    getAccountVendorMeta(record)?.label || '',
     desktopRunning ? 'DESKTOP' : ''
   ].filter(Boolean).join(' · ');
 

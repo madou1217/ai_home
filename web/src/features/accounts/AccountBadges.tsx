@@ -365,6 +365,45 @@ export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'regio
   );
 }
 
+/**
+ * 双协议厂商标签：提示「同一密钥还能原生访问另一门协议」。
+ *
+ * 判定只依赖服务端事实（accountProtocol + 两门端点），不按 Provider 名猜测：
+ * 账号归属 Provider 与它当前使用的协议不是一回事。只提供一门协议的厂商不显示标签。
+ */
+const ACCOUNT_VENDOR_PROTOCOL_META: Record<string, { label: string; color: string; endpointKey: 'anthropicBaseUrl' | 'openaiBaseUrl' }> = {
+  anthropic: { label: '原生 Anthropic', color: 'geekblue', endpointKey: 'anthropicBaseUrl' },
+  openai: { label: '原生 OpenAI', color: 'cyan', endpointKey: 'openaiBaseUrl' }
+};
+
+export function getAccountVendorMeta(record: Pick<Account, 'vendor'>) {
+  const vendor = record.vendor;
+  if (!vendor) return null;
+  const current = String(vendor.accountProtocol || '').trim().toLowerCase();
+  const other = current === 'anthropic' ? 'openai' : current === 'openai' ? 'anthropic' : '';
+  const meta = other ? ACCOUNT_VENDOR_PROTOCOL_META[other] : null;
+  const endpoint = meta ? String(vendor[meta.endpointKey] || '').trim() : '';
+  if (!meta || !endpoint) return null;
+  return {
+    label: meta.label,
+    color: meta.color,
+    endpoint,
+    detail: `${vendor.vendorLabel || vendor.vendorId}：同一密钥也可直接访问 ${other} 兼容端点 ${endpoint}，无需协议转换。`
+  };
+}
+
+export function renderAccountVendorTag(record: Pick<Account, 'vendor'>) {
+  const meta = getAccountVendorMeta(record);
+  if (!meta) return null;
+  return (
+    <Tooltip title={meta.detail}>
+      <Tag color={meta.color} style={accountRoleTagStyle}>
+        {meta.label}
+      </Tag>
+    </Tooltip>
+  );
+}
+
 // HUD 方形读数徽标：2px 圆角 + 同色发丝框（圆形只留给 LED / 头像 / 计数，web/DESIGN.md §4）。
 const accountRoleIconStyle: React.CSSProperties = {
   width: 18,

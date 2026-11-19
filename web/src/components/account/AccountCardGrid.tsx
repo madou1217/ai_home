@@ -20,6 +20,7 @@ import {
   renderAccountDisplayBadge,
   renderAccountLoginTypeTag,
   renderAccountRegionTag,
+  renderAccountVendorTag,
   renderAccountRoleIcons,
 } from '@/features/accounts/AccountBadges';
 import { canCopyAccountEmail, requiresAccountReauth } from '@/features/accounts/account-state';
@@ -156,6 +157,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                     <Tag key={label} color={getPlanTagColor(acc)} className={styles.planTag}>{label}</Tag>
                   ))}
                   {renderAccountRegionTag(acc)}
+                  {renderAccountVendorTag(acc)}
                   {renderAccountLoginTypeTag(acc)}
                   {renderExtraTags ? renderExtraTags(acc) : null}
                 </span>

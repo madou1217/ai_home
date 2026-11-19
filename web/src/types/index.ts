@@ -624,6 +624,21 @@ export interface Account {
   usageSnapshot?: AccountUsageSnapshot | null;
   modelSummary?: AccountModelSummary;
   tokenUsage?: AccountTokenUsage | null;
+  /**
+   * 账号所属的双协议厂商能力（服务端按共享契约 contracts/vendor-endpoints 解析）。
+   * 两个地址分别表示「同一密钥可用 Anthropic / OpenAI 兼容端点」；未知厂商为 null。
+   * 前端只消费事实，不在本地维护厂商清单或从 URL 猜测。
+   */
+  vendor?: AccountVendorCapability | null;
+}
+
+export interface AccountVendorCapability {
+  vendorId: string;
+  vendorLabel: string;
+  /** 账号当前配置使用的协议（anthropic / openai），由服务端按契约解析。 */
+  accountProtocol: string;
+  anthropicBaseUrl?: string;
+  openaiBaseUrl?: string;
 }
 
 export type UpstreamErrorKind = 'billing_blocked' | 'quota_exhausted' | 'auth_invalid' | 'permission_denied' | 'rate_limited' | 'service_unavailable';

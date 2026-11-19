@@ -35,6 +35,7 @@ import {
   getAccountPrimaryLabel,
   getAccountRegionMeta,
   getAccountSecondaryLabel,
+  getAccountVendorMeta,
   getAccountStatusDetailLines,
   getClinePlanSubscription,
   getKimiPlanSubscription,
@@ -133,6 +134,7 @@ export default function AccountDetailSheet({
   const statusDetails = getAccountStatusDetailLines(record);
   const secondary = getAccountSecondaryLabel(record);
   const region = getAccountRegionMeta(record);
+  const vendorMeta = getAccountVendorMeta(record);
   const providerSite = isMultiSiteProvider(record.provider)
     ? getProviderSiteLabel(getProviderSite(record.provider))
     : '';
@@ -270,6 +272,7 @@ export default function AccountDetailSheet({
           : getPlanTagLabels(record).join(' · ')
     },
     ...(region ? [{ key: 'region', label: '区域', value: region.endpoint ? `${region.label} · ${region.endpoint}` : region.label, mono: false }] : []),
+    ...(vendorMeta ? [{ key: 'vendor', label: '双协议端点', value: `${vendorMeta.label} · ${vendorMeta.endpoint}`, mono: false }] : []),
     ...(roles ? [{ key: 'roles', label: '角色', value: roles, mono: false }] : []),
     {
       key: 'configured',

@@ -193,6 +193,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 	}
 
 	oauth := rows[0]
+	// planName 与 planType 同源（见 codex_presentation.go）：已识别套餐的账号必然两者都有。
 	wantOAuth := map[string]any{
 		"provider":               "codex",
 		"accountRef":             oauthAccountRef,
@@ -206,6 +207,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		"remainingPct":           73.5,
 		"updatedAt":              float64(oauthCapturedAtMS),
 		"planType":               "plus",
+		"planName":               "plus",
 		"email":                  "a@example.com",
 		"authMode":               "oauth",
 		"authPending":            false,
@@ -225,7 +227,7 @@ func TestListAccountRowsFillsStaticFields(t *testing.T) {
 		}
 	}
 	// 条件字段为空时按 Node 的习惯省略，不产出假键。
-	for _, field := range []string{"planName", "region", "zcodeRegion", "loginType", "lastUsedAt", "runtimeStatus", "quotaReason"} {
+	for _, field := range []string{"region", "zcodeRegion", "loginType", "lastUsedAt", "runtimeStatus", "quotaReason"} {
 		if _, present := oauth[field]; present {
 			t.Fatalf("账号 1 不该出现空的条件字段 %s", field)
 		}

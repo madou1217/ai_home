@@ -58,11 +58,13 @@ type Row struct {
 	AuthPendingAgeMs int64  `json:"authPendingAgeMs"`
 	BaseURL          string `json:"baseUrl"`
 
-	CustomUpstream            bool  `json:"customUpstream"`
-	WindowActivationSupported bool  `json:"windowActivationSupported"`
-	AliasPoolParticipates     bool  `json:"aliasPoolParticipates"`
-	ActivityActions           []any `json:"activityActions"`
-	GatewayTargetSupported    bool  `json:"gatewayTargetSupported"`
+	// Vendor 是账号绑定的双协议厂商能力（见 vendor_capability.go）；未知厂商为 null。
+	Vendor                    *VendorCapability `json:"vendor"`
+	CustomUpstream            bool              `json:"customUpstream"`
+	WindowActivationSupported bool              `json:"windowActivationSupported"`
+	AliasPoolParticipates     bool              `json:"aliasPoolParticipates"`
+	ActivityActions           []any             `json:"activityActions"`
+	GatewayTargetSupported    bool              `json:"gatewayTargetSupported"`
 
 	QuotaStatus string `json:"quotaStatus"`
 	QuotaReason string `json:"quotaReason,omitempty"`
@@ -125,6 +127,8 @@ var filledRowFields = []string{
 	"configured",
 	"isDefault",
 	"modelCount",
+	// vendor 由共享厂商契约 + Go 独占凭据地址派生，Node 行没有对应事实。
+	"vendor",
 }
 
 // approxRowFields 是 Go 也有值、但口径或时机由 Node 决定的字段：调用方优先用自己的值。
@@ -265,6 +269,7 @@ func newRow(fact accountFact) Row {
 		row.RemainingPct = &remaining
 	}
 	row.ZcodeRegion = resolveZcodeRegion(fact.Provider, fact.ZcodeRegion)
+	row.Vendor = resolveVendorCapability(baseURL)
 	row.SchedulableStatus, row.SchedulableReason = resolveSchedulableStatus(
 		configured,
 		row.Enabled,

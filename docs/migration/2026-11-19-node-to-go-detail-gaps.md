@@ -92,6 +92,8 @@
 - Server CLI：`aih server start|stop|restart|status|config|env|profiles|serve|
   autostart|sync-codex|add|ls|use|remove` 与 `aih serve` 均由 Go 执行；
   只有未知子命令继续走旧入口。
+- Desktop CLI：`aih desktop status [--json]` 由 Go 采集 canonical/影子副本/
+  运行中实例/漂移；JSON 与旧输出逐字段一致（`checkedAt` 除外），human 表格不变。
 - 远端节点交互端点（device-node-session-start/input/stream、
   device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
   但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
@@ -106,9 +108,9 @@
   空载荷探针，全部命中（`projects/pick` 会等待系统文件夹对话框，按预期阻塞）。
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
-- 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server 命令已是 Go；
-  `cmd/aih` 仍有 Provider `detect`、`restart-client`，以及顶层 ssh/desktop/
-  edge/shell/claim/agent/harness/mcp/skill/native plugin/update/backup
+- 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop 命令已是 Go；
+  `cmd/aih` 仍有 Provider `restart-client`（及非 family `detect`），以及顶层
+  ssh/edge/shell/claim/agent/harness/mcp/skill/native plugin/update/backup
   走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
 
 ---

@@ -579,29 +579,15 @@ func buildHostPluginsFromDoc(doc rawControlDoc) ([]PluginSpec, error) {
 		}
 		manifest, _ := installed["manifest"].(map[string]any)
 		directory := stringField(installed, "directory")
-		entryRel := stringField(manifest, "entry")
-		entryPath := joinManifestEntry(directory, entryRel)
-		runtimeKind := strings.TrimSpace(stringField(manifest, "runtime"))
-		if runtimeKind == "" {
-			runtimeKind = "node"
-		}
-		execArgv, execEnv := processExecFields(manifest)
 		cfg, _ := inst["configuration"].(map[string]any)
-		if cfg == nil {
-			cfg = map[string]any{}
-		}
-		plugins = append(plugins, PluginSpec{
-			InstanceID:    stringField(inst, "instanceId"),
-			PluginID:      pluginID,
-			Version:       version,
-			EntryPath:     entryPath,
-			Directory:     directory,
-			Runtime:       runtimeKind,
-			ExecArgv:      execArgv,
-			ExecEnv:       execEnv,
-			Manifest:      manifest,
-			Configuration: cfg,
-		})
+		plugins = append(plugins, NewPluginSpec(
+			directory,
+			stringField(inst, "instanceId"),
+			pluginID,
+			version,
+			manifest,
+			cfg,
+		))
 	}
 	return plugins, nil
 }

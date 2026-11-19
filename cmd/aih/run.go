@@ -81,6 +81,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	providerID := arguments[0]
+	if providerID == "plugin" {
+		return runPlugin(ctx, arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}
@@ -429,6 +432,7 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih <client> relay <provider> <account_id> [provider_args...] # Gateway 跨 Provider 固定账号")
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> <account_id> [provider_args...]       # Native Direct")
 	_, _ = fmt.Fprintln(output, "  "+accountUsageLine())
+	_, _ = fmt.Fprintln(output, "  aih plugin <command> [options]                         # 插件打包、信任根与启停")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih codex relay claude 9 --model claude-opus-5")

@@ -46,6 +46,11 @@
 - 插件控制面写入：`application/plugincontrol` + `plugincontrolapi`
   （install/uninstall/state/instances/{id}/enable|disable）由 Go 执行 revision CAS，
   状态写 aih.db `app_kv/plugins.control.v1`；`pluginapi` 清单是同一事实的只读视图。
+- 插件 CLI：`aih plugin` 全部子命令由 Go CLI（`cmd/aih/plugin.go`）实现：
+  validate（含一次性宿主试加载）、pack（含 Ed25519 签名）、keygen、trust/untrust/trusted，
+  以及 install/list/enable/disable/uninstall/call/doctor 的 Go Server 调用；
+  Node 的 `lib/plugins/control/cli.js` 只剩进程转交，旧打包/签名实现已删除。
+  已用真实插件包跑通安装→启用→调用→停用→卸载（process 与 canonical 两种包）。
 - 账号活动（签到/领取/探测）由 `accountactivity.NativeExecutor` 原生 Go 执行，
   验证码走 Go 自带浏览器解算端口，不再逐账号调用 Node。
 - OAuth loopback 回调监听：新增 `internal/adapters/accountauth/oauthloopback`，
@@ -59,8 +64,6 @@
 
 ## 2026-11-20 仍需验证 / 迁移
 
-- 插件控制 CLI：`aih plugin install/enable/disable/...` 仍委托 Node
-  （服务端 plugincontrolapi 已是 Go）；下一步把 CLI 子命令直接接 Go 应用层。
 - 真机对拍：canonical 会话的附件上传 → turn.submit → timeline 回读（上传/落盘/
   删除已实测），以及账号行 status/updatedAt/tokenUsageSource 的 UI 呈现。
 - 逐端点响应键对拍（accounts、sessions、chat、models、auth jobs）仍需继续，

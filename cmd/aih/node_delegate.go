@@ -107,8 +107,9 @@ func resolveNodeEntry() (string, bool) {
 // delegateToNode 把非启动形态整体交给 Node 入口；成功时进程已被替换。
 func delegateToNode(args []string) bool {
 	// Claude launches and actions belong to Go, including unpinned Gateway
-	// sessions and --model-alias. Never silently re-enter the legacy host.
-	if len(args) > 0 && (args[0] == "claude" || args[0] == "peer") {
+	// sessions and --model-alias. plugin 的离线命令与运行态调用也全部在 Go。
+	// Never silently re-enter the legacy host for these verbs.
+	if len(args) > 0 && (args[0] == "claude" || args[0] == "peer" || args[0] == "plugin") {
 		return false
 	}
 	if isNativeLaunch(args) {

@@ -130,6 +130,7 @@ type Coordinator struct {
 	poolRetries          *RequestPoolRetryPolicy
 	requestRewriter      RequestRewriter
 	gate                 *providerGate
+	accountGate          *claudeAccountGate
 	routeCursor          atomic.Uint64
 	routeSourceCursor    atomic.Uint64
 }
@@ -230,6 +231,7 @@ func NewCoordinator(
 		poolRetries:          dependencies.PoolRetries,
 		requestRewriter:      dependencies.RequestRewriter,
 		gate:                 newProviderGate(),
+		accountGate:          newClaudeAccountGate(),
 	}, nil
 }
 
@@ -292,7 +294,9 @@ func (coordinator *Coordinator) executePlan(
 			}
 			supported = true
 			routeCtx := poolRetryPermit.routeContext(phaseCtx, coordinator.poolRetries, route)
-			release, acquireErr := coordinator.gate.acquire(routeCtx, string(route.ProviderID()))
+			// Claude takes its provider slot only after the per-account slot:
+			// waiting sessions on one upstream must not occupy the whole provider.
+			release, acquireErr := coordinator.acquireRouteSlot(routeCtx, route)
 			if acquireErr != nil {
 				if errors.Is(acquireErr, ErrProviderQueueFull) {
 					queueFailure = acquireErr
@@ -315,6 +319,10 @@ func (coordinator *Coordinator) executePlan(
 				pendingFailure = execution.pendingFailure
 			}
 			if err != nil {
+				if errors.Is(err, ErrProviderQueueFull) {
+					queueFailure = err
+					continue
+				}
 				if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
 					return finishInterruptedPlan(
 						pendingFailure,
@@ -567,7 +575,7 @@ func (coordinator *Coordinator) executeRouteRound(
 		return routeExecution{}, err
 	}
 	refreshedCandidateSnapshot := false
-	for range coordinator.upstreamAttemptLimit {
+	for attempted < coordinator.upstreamAttemptLimit {
 		recruited, err := session.Next(ctx)
 		if errors.Is(err, accountcredentials.ErrCredentialIdentityChanged) && !refreshedCandidateSnapshot && attempted == 0 && !request.IncludeEncryptedReasoning() {
 			if _, pinned := PinnedAccount(ctx); !pinned {
@@ -609,6 +617,10 @@ func (coordinator *Coordinator) executeRouteRound(
 			emit,
 			accountFailures,
 		)
+		if errors.Is(err, errAdmittedAccountUnavailable) {
+			// Admission is local, not an upstream attempt or account failure.
+			continue
+		}
 		attempted++
 		if err != nil {
 			if outcome.Visible() {
@@ -763,6 +775,15 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 	accountFailures *requestAccountFailureRecorder,
 ) (attemptOutcome, error) {
 	outcome := newAttemptOutcome(stream, false)
+	release, err := coordinator.acquireAttemptSlots(ctx, invocation)
+	if err != nil {
+		return outcome, err
+	}
+	defer release()
+	invocation, err = coordinator.refreshAdmittedInvocation(ctx, invocation, upstream)
+	if err != nil {
+		return outcome, err
+	}
 	result, executeErr := upstream.Execute(ctx, invocation, stream.Accept)
 	if stream.Err() != nil {
 		return outcome, stream.Err()

@@ -1904,6 +1904,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			pluginProviders.Update(result)
 			catalog.ReplaceDynamic(pluginProviders.Definitions())
 			modelDiscovery.SetPluginProviders(pluginProviders.ModelDescriptors(), pluginModelFallback)
+			if inference != nil {
+				inference.RefreshCatalog()
+			}
 		},
 		OnLog: func(message string) {
 			if errorLog != nil && strings.TrimSpace(message) != "" {

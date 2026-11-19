@@ -246,9 +246,10 @@ type Handler struct {
 // 已编码的目录字节，让 ETag 复核和连续页面加载不再付完整构建成本。
 const catalogResponseTTL = 3 * time.Second
 
-// catalogStaleTTL 与 Cache-Control 的 stale-while-revalidate 对齐：
-// 陈旧窗口内立即返回旧字节，同时后台重建，避免冷页面加载等待目录构建。
-const catalogStaleTTL = 30 * time.Second
+// catalogStaleTTL 是服务端允许返回陈旧目录的最大时长；一旦陈旧就立即后台重建，
+// 因此实际陈旧只有一次重建的耗时，不会累积到这个上限。5 分钟仅作为后台刷新
+// 持续失败时的兜底，避免任何间隔的请求都同步等待目录构建。
+const catalogStaleTTL = 5 * time.Minute
 
 type catalogCacheEntry struct {
 	at   time.Time

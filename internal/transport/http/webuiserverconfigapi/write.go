@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+
+	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
 
 // writeConfig 处理 POST：把 payload.config 合并进当前配置，按 Node
@@ -33,15 +35,23 @@ func (handler *Handler) writeConfig(response http.ResponseWriter, request *http.
 
 	var saved ConfigView
 	err := handler.store.UpdateServerConfig(request.Context(), func(current string, found bool) (string, error) {
-		base, err := sanitizeFullServerConfigFromJSON(current, found)
+		rawCurrent, err := parseRawConfigObject(current, found)
 		if err != nil {
 			return "", err
 		}
+		base := sanitizeServerConfig(rawCurrent)
+		validatedRetry, hasRetryPatch, retryErr := validateUpstream429Patch(patch, base.Upstream429Retry)
+		if retryErr != nil {
+			return "", retryErr
+		}
 		merged := mergeServerConfigPatch(base, patch)
 		saved = sanitizeServerConfig(merged)
-		stored := configToMap(saved)
-		delete(stored, "apiKeyConfigured")
-		delete(stored, "managementKeyConfigured")
+		if hasRetryPatch {
+			saved.Upstream429Retry = validatedRetry
+		} else {
+			saved.Upstream429Retry = base.Upstream429Retry
+		}
+		stored := mergeKnownFieldsPreservingUnknown(rawCurrent, saved)
 		encoded, err := json.Marshal(stored)
 		if err != nil {
 			return "", err
@@ -49,8 +59,15 @@ func (handler *Handler) writeConfig(response http.ResponseWriter, request *http.
 		return string(encoded), nil
 	})
 	if err != nil {
+		if code, msg, isValidation := upstream429ValidationError(err); isValidation {
+			writeError(response, http.StatusBadRequest, code, msg)
+			return
+		}
 		writeError(response, http.StatusInternalServerError, "set_server_config_failed", "")
 		return
+	}
+	if handler.onSaved != nil {
+		handler.onSaved(saved)
 	}
 	writeJSON(response, http.StatusOK, responseView{OK: true, Config: publicServerConfig(saved)})
 }
@@ -66,6 +83,12 @@ func mergeServerConfigPatch(base ConfigView, patch map[string]any) map[string]an
 		}
 		if key == "apiKey" || key == "managementKey" {
 			if strings.TrimSpace(jsString(value)) == "" {
+				continue
+			}
+		}
+		if key == "upstream429Retry" {
+			if mergedRetry, err := corepolicy.ValidateGlobalPatchRaw(value, base.Upstream429Retry); err == nil {
+				merged[key] = mergedRetry
 				continue
 			}
 		}

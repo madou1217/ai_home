@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
 
 const (
@@ -53,12 +55,15 @@ type Store interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	Store      Store
+	// OnSaved 在 config:server 成功落库后收到归一化配置，供运行时立即刷新热快照（可选）。
+	OnSaved func(ConfigView)
 }
 
 // Handler 处理 server 配置读取。
 type Handler struct {
 	authorizer Authorizer
 	store      Store
+	onSaved    func(ConfigView)
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -66,36 +71,41 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Store == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, store: dependencies.Store}, nil
+	return &Handler{
+		authorizer: dependencies.Authorizer,
+		store:      dependencies.Store,
+		onSaved:    dependencies.OnSaved,
+	}, nil
 }
 
 // ConfigView 是 Node toPublicServerConfig 的响应形状。
 type ConfigView struct {
-	Host                              string   `json:"host"`
-	Port                              int      `json:"port"`
-	APIKey                            string   `json:"apiKey"`
-	ManagementKey                     string   `json:"managementKey"`
-	OpenNetwork                       bool     `json:"openNetwork"`
-	ProxyURL                          string   `json:"proxyUrl"`
-	NoProxy                           string   `json:"noProxy"`
-	ModelsProbeAccounts               float64  `json:"modelsProbeAccounts"`
-	ModelCacheSync                    string   `json:"modelCacheSync"`
-	WindowActivation                  bool     `json:"windowActivation"`
-	WindowActivationDefaultIntervalMs float64  `json:"windowActivationDefaultIntervalMs"`
-	WindowActivationMinIntervalMs     float64  `json:"windowActivationMinIntervalMs"`
-	GoCoreEnabled                     bool     `json:"goCoreEnabled"`
-	GoCoreRoutes                      []string `json:"goCoreRoutes"`
-	UpstreamErrorRuleProviders        []string `json:"upstreamErrorRuleProviders"`
-	RelayUDP                          string   `json:"relayUdp"`
-	RelayUDPAdvertiseHost             string   `json:"relayUdpAdvertiseHost"`
-	RelayUDPAdvertisePort             float64  `json:"relayUdpAdvertisePort"`
-	RelayPortMode                     string   `json:"relayPortMode"`
-	RelayListenHost                   string   `json:"relayListenHost"`
-	MaxAttempts                       float64  `json:"maxAttempts"`
-	EgressEvidenceTTLMs               float64  `json:"egressEvidenceTtlMs"`
-	LargePasteChars                   int      `json:"largePasteChars"`
-	APIKeyConfigured                  bool     `json:"apiKeyConfigured"`
-	ManagementKeyConfigured           bool     `json:"managementKeyConfigured"`
+	Host                              string                  `json:"host"`
+	Port                              int                     `json:"port"`
+	APIKey                            string                  `json:"apiKey"`
+	ManagementKey                     string                  `json:"managementKey"`
+	OpenNetwork                       bool                    `json:"openNetwork"`
+	ProxyURL                          string                  `json:"proxyUrl"`
+	NoProxy                           string                  `json:"noProxy"`
+	ModelsProbeAccounts               float64                 `json:"modelsProbeAccounts"`
+	ModelCacheSync                    string                  `json:"modelCacheSync"`
+	WindowActivation                  bool                    `json:"windowActivation"`
+	WindowActivationDefaultIntervalMs float64                 `json:"windowActivationDefaultIntervalMs"`
+	WindowActivationMinIntervalMs     float64                 `json:"windowActivationMinIntervalMs"`
+	GoCoreEnabled                     bool                    `json:"goCoreEnabled"`
+	GoCoreRoutes                      []string                `json:"goCoreRoutes"`
+	UpstreamErrorRuleProviders        []string                `json:"upstreamErrorRuleProviders"`
+	RelayUDP                          string                  `json:"relayUdp"`
+	RelayUDPAdvertiseHost             string                  `json:"relayUdpAdvertiseHost"`
+	RelayUDPAdvertisePort             float64                 `json:"relayUdpAdvertisePort"`
+	RelayPortMode                     string                  `json:"relayPortMode"`
+	RelayListenHost                   string                  `json:"relayListenHost"`
+	MaxAttempts                       float64                 `json:"maxAttempts"`
+	EgressEvidenceTTLMs               float64                 `json:"egressEvidenceTtlMs"`
+	LargePasteChars                   int                     `json:"largePasteChars"`
+	Upstream429Retry                  corepolicy.GlobalPolicy `json:"upstream429Retry"`
+	APIKeyConfigured                  bool                    `json:"apiKeyConfigured"`
+	ManagementKeyConfigured           bool                    `json:"managementKeyConfigured"`
 }
 
 type responseView struct {
@@ -241,6 +251,7 @@ func sanitizeServerConfig(input map[string]any) ConfigView {
 		MaxAttempts:                       clampNumber(input["maxAttempts"], 0, 32, 0),
 		EgressEvidenceTTLMs:               egressTTL,
 		LargePasteChars:                   normalizeLargePasteChars(input["largePasteChars"]),
+		Upstream429Retry:                  corepolicy.SanitizeGlobalRaw(input["upstream429Retry"]),
 	}
 	if value, ok := input["modelCacheSync"]; ok && value == "scheduler" {
 		config.ModelCacheSync = "scheduler"

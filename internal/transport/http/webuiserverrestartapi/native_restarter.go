@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
+	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
 
 const (
@@ -306,6 +307,7 @@ func sanitizeServerConfigView(input map[string]any) webuiserverconfigapi.ConfigV
 		MaxAttempts:                       clampNumber(input["maxAttempts"], 0, 32, 0),
 		EgressEvidenceTTLMs:               egressTTL,
 		LargePasteChars:                   normalizeLargePasteChars(input["largePasteChars"]),
+		Upstream429Retry:                  corepolicy.SanitizeGlobalRaw(input["upstream429Retry"]),
 		APIKeyConfigured:                  apiKey != "",
 		ManagementKeyConfigured:           managementKey != "",
 	}

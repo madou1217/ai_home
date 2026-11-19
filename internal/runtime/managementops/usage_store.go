@@ -217,6 +217,9 @@ func NewUsageStore(ctx context.Context, dbPath string, providerIDs []string, now
 	query.Set("mode", "rwc")
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "journal_mode(WAL)")
+	// Usage scans repeatedly revisit wide-row pages; configure each pooled
+	// connection rather than changing only one borrowed connection's cache.
+	query.Add("_pragma", "cache_size(-8192)")
 	fileURL.RawQuery = query.Encode()
 	db, err := sql.Open("sqlite", fileURL.String())
 	if err != nil {

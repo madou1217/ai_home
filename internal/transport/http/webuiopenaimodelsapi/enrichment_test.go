@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
@@ -35,16 +36,16 @@ func (source fakeSettings) ReadSettings(context.Context) (modelcatalogsettings.S
 }
 
 type fakeSnapshot struct {
-	snapshot *webuimodelssnapshot.Snapshot
+	snapshot *modelsnapshot.Snapshot
 	err      error
 }
 
-func (source fakeSnapshot) ReadSnapshot(context.Context) (*webuimodelssnapshot.Snapshot, error) {
+func (source fakeSnapshot) Read(context.Context) (*modelsnapshot.Snapshot, error) {
 	if source.err != nil {
 		return nil, source.err
 	}
 	if source.snapshot == nil {
-		return &webuimodelssnapshot.Snapshot{}, nil
+		return &modelsnapshot.Snapshot{}, nil
 	}
 	return source.snapshot, nil
 }
@@ -127,7 +128,7 @@ func testSettings(t *testing.T) modelcatalogsettings.Settings {
 	}
 }
 
-func testSnapshot(t *testing.T) *webuimodelssnapshot.Snapshot {
+func testSnapshot(t *testing.T) *modelsnapshot.Snapshot {
 	t.Helper()
 	// zcode 只出现在快照里：它必须被过滤掉，否则调用方会以为还有该 Provider 的账号。
 	return webuimodelssnapshot.Parse([]byte(`{

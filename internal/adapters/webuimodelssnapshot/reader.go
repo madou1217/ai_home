@@ -14,9 +14,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"sort"
 	"strings"
-	"time"
 
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -39,27 +40,10 @@ const (
 // ErrInvalidDatabasePath 表示没有可用的 app-state.db 路径。
 var ErrInvalidDatabasePath = errors.New("app-state 数据库路径无效")
 
-// Snapshot 是归一后的快照读模型。零值可用，所有查找返回零值。
-type Snapshot struct {
-	// Available 表示快照存在、是 JSON 对象且成功解析；false 时各表为空。
-	Available bool
-	// UpdatedAtMS 是快照写入时刻（Unix 毫秒），缺失或非法时为 0。
-	UpdatedAtMS int64
-	// ProbeVersion 是快照声明的账号探测语义版本，缺失时为 0。
-	ProbeVersion int
+// Snapshot 是快照值对象；读模型合同定义在 application/modelsnapshot。
+type Snapshot = modelsnapshot.Snapshot
 
-	// ContextLimits 是 accountRef -> modelID -> 上游声明的上下文窗口。
-	ContextLimits map[string]map[string]int
-	// ByAccount 是 accountRef -> 模型 id；空清单不保留（没有条目 = 未知）。
-	ByAccount map[string][]string
-	// ErrorsByAccount 是 accountRef -> 上次探测错误；空消息不保留。
-	ErrorsByAccount map[string]string
-	// Labels 是 provider -> modelID -> 上游显示名。
-	Labels map[string]map[string]string
-	// AccountUpdatedAt 是 accountRef -> 该账号真正被探测过的时刻（Unix 毫秒）。
-	// 仅当 ProbeVersion >= MinTrustedProbeVersion 时才有内容。
-	AccountUpdatedAt map[string]int64
-}
+var _ modelsnapshot.Reader = (*Reader)(nil)
 
 // Reader 从 app-state.db 读取快照。
 type Reader struct {
@@ -112,11 +96,23 @@ func Parse(raw []byte) *Snapshot {
 	var envelope struct {
 		UpdatedAt           json.RawMessage `json:"updatedAt"`
 		AccountProbeVersion json.RawMessage `json:"accountProbeVersion"`
-		ContextLimits       json.RawMessage `json:"contextLimits"`
+		ByProvider          json.RawMessage `json:"byProvider"`
 		ByAccount           json.RawMessage `json:"byAccount"`
+		RetainedByAccount   json.RawMessage `json:"retainedByAccount"`
 		ErrorsByAccount     json.RawMessage `json:"errorsByAccount"`
-		Labels              json.RawMessage `json:"labels"`
+		IncompleteByAccount json.RawMessage `json:"incompleteByAccount"`
 		AccountUpdatedAt    json.RawMessage `json:"accountUpdatedAt"`
+		AccountSource       json.RawMessage `json:"accountSource"`
+		AccountScanned      json.RawMessage `json:"accountScanned"`
+		ContextLimits       json.RawMessage `json:"contextLimits"`
+		Labels              json.RawMessage `json:"labels"`
+		Signature           json.RawMessage `json:"signature"`
+		Source              json.RawMessage `json:"source"`
+		SourceCount         json.RawMessage `json:"sourceCount"`
+		ScannedAccounts     json.RawMessage `json:"scannedAccounts"`
+		FirstError          json.RawMessage `json:"firstError"`
+		GoGeneration        json.RawMessage `json:"goGeneration"`
+		GoSyncedAt          json.RawMessage `json:"goSyncedAt"`
 	}
 	if err := json.Unmarshal(trimmed, &envelope); err != nil {
 		return snapshot
@@ -125,82 +121,26 @@ func Parse(raw []byte) *Snapshot {
 	snapshot.UpdatedAtMS, _ = positiveInteger(envelope.UpdatedAt)
 	version, _ := positiveInteger(envelope.AccountProbeVersion)
 	snapshot.ProbeVersion = int(version)
+	snapshot.ByProvider = normalizeModelLists(envelope.ByProvider)
+	snapshot.ByAccount = normalizeModelLists(envelope.ByAccount)
+	snapshot.RetainedByAccount = normalizeRetained(envelope.RetainedByAccount)
+	snapshot.ErrorsByAccount = normalizeTrimmedStrings(envelope.ErrorsByAccount)
+	snapshot.IncompleteByAccount = normalizeTrimmedStrings(envelope.IncompleteByAccount)
 	snapshot.ContextLimits = normalizeContextLimits(envelope.ContextLimits)
-	snapshot.ByAccount = normalizeByAccount(envelope.ByAccount)
-	snapshot.ErrorsByAccount = normalizeErrors(envelope.ErrorsByAccount)
 	snapshot.Labels = normalizeLabels(envelope.Labels)
 	if snapshot.ProbeVersion >= MinTrustedProbeVersion {
 		snapshot.AccountUpdatedAt = normalizeAccountUpdatedAt(envelope.AccountUpdatedAt)
 	}
+	snapshot.AccountSource = normalizeTrimmedStrings(envelope.AccountSource)
+	snapshot.AccountScanned = normalizeAccountScanned(envelope.AccountScanned)
+	snapshot.Signature = stringValue(envelope.Signature)
+	snapshot.Source = stringValue(envelope.Source)
+	snapshot.SourceCount = int(nonNegativeInteger(envelope.SourceCount))
+	snapshot.ScannedAccounts = int(nonNegativeInteger(envelope.ScannedAccounts))
+	snapshot.FirstError = stringValue(envelope.FirstError)
+	snapshot.GoGeneration = nonNegativeInteger(envelope.GoGeneration)
+	snapshot.GoSyncedAt = nonNegativeInteger(envelope.GoSyncedAt)
 	return snapshot
-}
-
-// Models 返回账号的模型清单（副本）。空清单或未知账号返回 false。
-func (s *Snapshot) Models(accountRef string) ([]string, bool) {
-	if s == nil {
-		return nil, false
-	}
-	models, ok := s.ByAccount[strings.TrimSpace(accountRef)]
-	if !ok || len(models) == 0 {
-		return nil, false
-	}
-	return append([]string(nil), models...), true
-}
-
-// LastError 返回账号上次探测错误。没有错误与未知账号都返回 false。
-func (s *Snapshot) LastError(accountRef string) (string, bool) {
-	if s == nil {
-		return "", false
-	}
-	message, ok := s.ErrorsByAccount[strings.TrimSpace(accountRef)]
-	if !ok || message == "" {
-		return "", false
-	}
-	return message, true
-}
-
-// ContextLimit 返回账号 × 模型的上游上下文窗口。未知组合返回 false。
-func (s *Snapshot) ContextLimit(accountRef string, modelID string) (int, bool) {
-	if s == nil {
-		return 0, false
-	}
-	byModel := s.ContextLimits[strings.TrimSpace(accountRef)]
-	if byModel == nil {
-		return 0, false
-	}
-	tokens, ok := byModel[strings.TrimSpace(modelID)]
-	if !ok || tokens <= 0 {
-		return 0, false
-	}
-	return tokens, true
-}
-
-// Label 返回模型的上游显示名。没有显示名时返回 false，调用方应回落到模型 id。
-func (s *Snapshot) Label(provider string, modelID string) (string, bool) {
-	if s == nil {
-		return "", false
-	}
-	byModel := s.Labels[strings.TrimSpace(provider)]
-	if byModel == nil {
-		return "", false
-	}
-	label, ok := byModel[strings.TrimSpace(modelID)]
-	if !ok || label == "" {
-		return "", false
-	}
-	return label, true
-}
-
-// ProbedAt 返回账号真正被探测过的时刻。旧语义快照或未知账号返回 false。
-func (s *Snapshot) ProbedAt(accountRef string) (time.Time, bool) {
-	if s == nil {
-		return time.Time{}, false
-	}
-	milliseconds, ok := s.AccountUpdatedAt[strings.TrimSpace(accountRef)]
-	if !ok || milliseconds <= 0 {
-		return time.Time{}, false
-	}
-	return time.UnixMilli(milliseconds).UTC(), true
 }
 
 // objectEntries 解析 JSON 对象为逐字段原始值；形状不对时返回空表。
@@ -215,7 +155,7 @@ func objectEntries(raw json.RawMessage) map[string]json.RawMessage {
 	return entries
 }
 
-func normalizeByAccount(raw json.RawMessage) map[string][]string {
+func normalizeModelLists(raw json.RawMessage) map[string][]string {
 	out := map[string][]string{}
 	for accountRef, value := range objectEntries(raw) {
 		ref := strings.TrimSpace(accountRef)
@@ -250,7 +190,7 @@ func normalizeByAccount(raw json.RawMessage) map[string][]string {
 	return out
 }
 
-func normalizeErrors(raw json.RawMessage) map[string]string {
+func normalizeTrimmedStrings(raw json.RawMessage) map[string]string {
 	out := map[string]string{}
 	for accountRef, value := range objectEntries(raw) {
 		ref := strings.TrimSpace(accountRef)
@@ -340,6 +280,112 @@ func normalizeAccountUpdatedAt(raw json.RawMessage) map[string]int64 {
 		out[ref] = milliseconds
 	}
 	return out
+}
+
+// normalizeRetained 解析离开运行池账号的保留目录，兼容数组与 {provider, models} 两种形状。
+func normalizeRetained(raw json.RawMessage) map[string]modelsnapshot.Retained {
+	out := map[string]modelsnapshot.Retained{}
+	for accountRef, value := range objectEntries(raw) {
+		ref := strings.TrimSpace(accountRef)
+		if ref == "" {
+			continue
+		}
+		var models []string
+		provider := ""
+		var list []json.RawMessage
+		if err := json.Unmarshal(value, &list); err == nil {
+			for _, entry := range list {
+				var model string
+				if json.Unmarshal(entry, &model) == nil {
+					models = append(models, model)
+				}
+			}
+		} else {
+			var object struct {
+				Provider json.RawMessage `json:"provider"`
+				Models   []string        `json:"models"`
+			}
+			if json.Unmarshal(value, &object) != nil {
+				continue
+			}
+			provider = strings.ToLower(stringValue(object.Provider))
+			models = object.Models
+		}
+		normalized := make([]string, 0, len(models))
+		seen := make(map[string]struct{}, len(models))
+		for _, model := range models {
+			trimmed := strings.TrimSpace(model)
+			if trimmed == "" {
+				continue
+			}
+			if _, duplicate := seen[trimmed]; duplicate {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			normalized = append(normalized, trimmed)
+			if len(normalized) >= 500 {
+				break
+			}
+		}
+		if len(normalized) == 0 {
+			continue
+		}
+		out[ref] = modelsnapshot.Retained{Provider: provider, Models: normalized}
+	}
+	if len(out) <= 200 {
+		return out
+	}
+	refs := make([]string, 0, len(out))
+	for ref := range out {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	trimmed := make(map[string]modelsnapshot.Retained, 200)
+	for _, ref := range refs[len(refs)-200:] {
+		trimmed[ref] = out[ref]
+	}
+	return trimmed
+}
+
+func normalizeAccountScanned(raw json.RawMessage) map[string]int64 {
+	out := map[string]int64{}
+	for accountRef, value := range objectEntries(raw) {
+		ref := strings.TrimSpace(accountRef)
+		if ref == "" {
+			continue
+		}
+		count, ok := positiveInteger(value)
+		if !ok {
+			continue
+		}
+		out[ref] = count
+	}
+	return out
+}
+
+func stringValue(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func nonNegativeInteger(raw json.RawMessage) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	var number float64
+	if err := json.Unmarshal(raw, &number); err != nil {
+		return 0
+	}
+	if number < 0 || number > maxSafeInteger || math.Trunc(number) != number {
+		return 0
+	}
+	return int64(number)
 }
 
 // positiveInteger 只接受正的、整数的、安全范围内的 JSON 数字。

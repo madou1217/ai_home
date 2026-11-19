@@ -35,6 +35,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -178,8 +179,8 @@ type SnapshotFile struct {
 	DatabasePath string
 }
 
-// ReadSnapshot 读取并归一快照显示名。
-func (file SnapshotFile) ReadSnapshot(ctx context.Context) (*webuimodelssnapshot.Snapshot, error) {
+// Read 读取并归一快照显示名。
+func (file SnapshotFile) Read(ctx context.Context) (*modelsnapshot.Snapshot, error) {
 	if strings.TrimSpace(file.DatabasePath) == "" {
 		return &webuimodelssnapshot.Snapshot{}, nil
 	}
@@ -211,7 +212,7 @@ type Dependencies struct {
 	Resolver       modelpricing.Resolver
 	AIHomeDir      string
 	Settings       SettingsStore
-	Snapshot       SnapshotReader
+	Snapshot       modelsnapshot.Reader
 	RefMapper      AccountRefMapper
 	Catalog        *providers.Catalog
 	Modalities     modelmetadata.Catalog
@@ -232,7 +233,7 @@ type Handler struct {
 	pricingConfig  PricingConfigStore
 	resolver       modelpricing.Resolver
 	settings       SettingsStore
-	snapshot       SnapshotReader
+	snapshot       modelsnapshot.Reader
 	refMapper      AccountRefMapper
 	catalog        *providers.Catalog
 	modalities     modelmetadata.Catalog
@@ -1290,15 +1291,15 @@ func (handler *Handler) loadSettingsBestEffort(ctx context.Context) modelcatalog
 	return loaded
 }
 
-func (handler *Handler) loadSnapshotLabelsBestEffort(ctx context.Context) map[string]map[string]string {
+func (handler *Handler) loadSnapshotBestEffort(ctx context.Context) *modelsnapshot.Snapshot {
 	if handler.snapshot == nil {
-		return map[string]map[string]string{}
+		return &modelsnapshot.Snapshot{}
 	}
-	snap, err := handler.snapshot.ReadSnapshot(ctx)
-	if err != nil || snap == nil || len(snap.Labels) == 0 {
-		return map[string]map[string]string{}
+	snap, err := handler.snapshot.Read(ctx)
+	if err != nil || snap == nil {
+		return &modelsnapshot.Snapshot{}
 	}
-	return snap.Labels
+	return snap
 }
 
 func (handler *Handler) loadRefTableBestEffort(ctx context.Context) accountrefmap.Table {

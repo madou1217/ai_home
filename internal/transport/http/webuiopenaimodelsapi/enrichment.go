@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
@@ -27,11 +28,6 @@ type SettingsReader interface {
 	ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error)
 }
 
-// SnapshotReader 读 WebUI 模型快照（cache:webui-models-snapshot.json）。
-type SnapshotReader interface {
-	ReadSnapshot(ctx context.Context) (*webuimodelssnapshot.Snapshot, error)
-}
-
 // AccountRefResolver 把 Node 账号引用翻译成 Go account_ref。
 //
 // accountrefmap.Resolver 直接满足本接口：没有链接时它按恒等回落，
@@ -50,13 +46,13 @@ func (file SettingsFile) ReadSettings(ctx context.Context) (modelcatalogsettings
 	return modelcatalogsettings.Load(ctx, file.DatabasePath)
 }
 
-// SnapshotFile 以 app-state.db 路径实现 SnapshotReader。
+// SnapshotFile 以 app-state.db 路径实现 modelsnapshot.Reader。
 type SnapshotFile struct {
 	DatabasePath string
 }
 
-// ReadSnapshot 读取并归一模型快照。
-func (file SnapshotFile) ReadSnapshot(ctx context.Context) (*webuimodelssnapshot.Snapshot, error) {
+// Read 读取并归一模型快照。
+func (file SnapshotFile) Read(ctx context.Context) (*modelsnapshot.Snapshot, error) {
 	reader, err := webuimodelssnapshot.NewReaderAt(file.DatabasePath)
 	if err != nil {
 		return nil, err
@@ -114,7 +110,7 @@ type enrichment struct {
 	refs        AccountRefResolver
 	settings    modelcatalogsettings.Settings
 	hasSettings bool
-	snapshot    *webuimodelssnapshot.Snapshot
+	snapshot    *modelsnapshot.Snapshot
 	hasSnapshot bool
 	unavailable []string
 
@@ -167,7 +163,7 @@ func newEnrichment(
 	ctx context.Context,
 	refs AccountRefResolver,
 	settingsReader SettingsReader,
-	snapshotReader SnapshotReader,
+	snapshotReader modelsnapshot.Reader,
 	metadataReader pricingcontract.Resolver,
 ) *enrichment {
 	enrich := &enrichment{ctx: ctx, refs: refs, metadata: metadataReader}
@@ -188,7 +184,7 @@ func newEnrichment(
 		}
 	}
 	if snapshotReader != nil {
-		snapshot, err := snapshotReader.ReadSnapshot(ctx)
+		snapshot, err := snapshotReader.Read(ctx)
 		switch {
 		case err != nil || snapshot == nil || !snapshot.Available:
 			enrich.unavailable = append(enrich.unavailable, unavailableSnapshot)

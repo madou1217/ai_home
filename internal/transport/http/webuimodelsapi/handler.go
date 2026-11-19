@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 )
 
@@ -69,7 +70,7 @@ type Dependencies struct {
 	// Settings 读 app-state 的 model-catalog-settings（账号×模型设置）。
 	Settings SettingsReader
 	// Snapshot 读 WebUI 模型快照（显示名、上下文窗口、探测时刻）。
-	Snapshot SnapshotReader
+	Snapshot modelsnapshot.Reader
 	// Refs 做账号引用翻译；零值时按恒等处理。
 	Refs AccountRefResolver
 	// Metadata 是 model.metadata 插件契约的可选读端口；不绑定具体插件实现。
@@ -81,7 +82,7 @@ type Handler struct {
 	authorizer Authorizer
 	reader     Reader
 	settings   SettingsReader
-	snapshot   SnapshotReader
+	snapshot   modelsnapshot.Reader
 	refs       AccountRefResolver
 	metadata   pricingcontract.Resolver
 }

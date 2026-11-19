@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
@@ -45,11 +46,11 @@ func (reader fakeSettingsReader) ReadSettings(context.Context) (modelcatalogsett
 }
 
 type fakeSnapshotReader struct {
-	snapshot *webuimodelssnapshot.Snapshot
+	snapshot *modelsnapshot.Snapshot
 	err      error
 }
 
-func (reader fakeSnapshotReader) ReadSnapshot(context.Context) (*webuimodelssnapshot.Snapshot, error) {
+func (reader fakeSnapshotReader) Read(context.Context) (*modelsnapshot.Snapshot, error) {
 	return reader.snapshot, reader.err
 }
 
@@ -110,7 +111,7 @@ func testSnapshot(t *testing.T) *webuimodelssnapshot.Snapshot {
 	return webuimodelssnapshot.Parse([]byte(raw))
 }
 
-func newEnrichedHandler(t *testing.T, settings SettingsReader, snapshot SnapshotReader, refs AccountRefResolver) *Handler {
+func newEnrichedHandler(t *testing.T, settings SettingsReader, snapshot modelsnapshot.Reader, refs AccountRefResolver) *Handler {
 	t.Helper()
 	return newTestHandlerWith(t, Dependencies{
 		Authorizer: stubAuthorizer(true),
@@ -404,7 +405,7 @@ func TestFieldCoverageIsPartitionForEverySourceCombination(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			var settingsReader SettingsReader
-			var snapshotReader SnapshotReader
+			var snapshotReader modelsnapshot.Reader
 			if testCase.settings {
 				settingsReader = fakeSettingsReader{settings: testSettings(t)}
 			}

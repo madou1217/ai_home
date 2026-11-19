@@ -18,6 +18,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -201,7 +202,7 @@ func loadSettings(ctx context.Context, dbPath string) modelcatalogsettings.Setti
 	return settings
 }
 
-func loadSnapshot(ctx context.Context, dbPath string) *webuimodelssnapshot.Snapshot {
+func loadSnapshot(ctx context.Context, dbPath string) *modelsnapshot.Snapshot {
 	if dbPath == "" {
 		return &webuimodelssnapshot.Snapshot{}
 	}
@@ -250,7 +251,7 @@ func resolveRequestedScopeRef(
 func isNeverProbed(
 	goRef string,
 	catalog accountapp.AccountModelCatalog,
-	snapshot *webuimodelssnapshot.Snapshot,
+	snapshot *modelsnapshot.Snapshot,
 	resolver accountrefmap.Resolver,
 ) bool {
 	for _, set := range catalog.Sets {
@@ -277,7 +278,7 @@ func buildResponse(
 	overviews []accountapp.AccountOverview,
 	catalog accountapp.AccountModelCatalog,
 	settings modelcatalogsettings.Settings,
-	snapshot *webuimodelssnapshot.Snapshot,
+	snapshot *modelsnapshot.Snapshot,
 	resolver accountrefmap.Resolver,
 	metadataIndex modelmetadata.Catalog,
 	scopeGoRef string,

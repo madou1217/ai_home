@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 )
 
@@ -62,7 +63,7 @@ type Dependencies struct {
 	Reader     Reader
 
 	Settings    SettingsReader
-	Snapshot    SnapshotReader
+	Snapshot    modelsnapshot.Reader
 	AccountRefs AccountRefResolver
 	// Metadata 是 model.metadata 插件契约的可选读端口；不绑定具体插件实现。
 	Metadata pricingcontract.Resolver
@@ -73,7 +74,7 @@ type Handler struct {
 	authorizer  Authorizer
 	reader      Reader
 	settings    SettingsReader
-	snapshot    SnapshotReader
+	snapshot    modelsnapshot.Reader
 	accountRefs AccountRefResolver
 	metadata    pricingcontract.Resolver
 }

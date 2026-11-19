@@ -116,7 +116,11 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 	}
 	rowsByRef := handler.loadAccountRowsMap(ctx)
 	settings := handler.loadSettingsBestEffort(ctx)
-	labels := handler.loadSnapshotLabelsBestEffort(ctx)
+	snapshot := handler.loadSnapshotBestEffort(ctx)
+	labels := snapshot.Labels
+	if labels == nil {
+		labels = map[string]map[string]string{}
+	}
 	refTable := handler.loadRefTableBestEffort(ctx)
 	aliases := handler.loadAliasesBestEffort(ctx)
 
@@ -306,6 +310,16 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 	}
 
 	updatedAtMS := maxInt64(catalog.UpdatedAtMS, settings.UpdatedAtMS)
+	summary := snapshot.Summary()
+	if summary.UpdatedAtMS > updatedAtMS {
+		updatedAtMS = summary.UpdatedAtMS
+	}
+	if sources == 0 {
+		sources = summary.Sources
+	}
+	if scannedAccounts == 0 {
+		scannedAccounts = summary.ScannedAccounts
+	}
 	createdSec := now.Unix()
 	if updatedAtMS > 0 {
 		createdSec = updatedAtMS / 1000
@@ -394,6 +408,9 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 
 	var scope *AccountScope
 	firstError := globalFirstError
+	if firstError == "" {
+		firstError = summary.FirstError
+	}
 	if scopedAccountRef != "" {
 		scope = &AccountScope{AccountRef: scopedAccountRef}
 		firstError = errorsByAccountRef[scopedAccountRef]

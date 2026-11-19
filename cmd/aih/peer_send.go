@@ -32,16 +32,18 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 		}
 		original = rec
 		replyTo = rec.ID
-		if rec.From.SessionID != "" {
-			wanted = rec.From.SessionID
-		} else {
-			wanted = rec.From.Address
-		}
 	}
-	target, err := peer.FindTarget(targets, wanted)
+	var target peer.Target
+	var err error
+	if original != nil {
+		target, err = peer.FindReplyTarget(targets, original.From)
+	} else {
+		target, err = peer.FindTarget(targets, wanted)
+	}
 	if err != nil {
 		return err
 	}
+
 	if args.values["provider"] != "" && args.values["provider"] != target.Provider {
 		return fmt.Errorf("目标 Provider 不匹配")
 	}

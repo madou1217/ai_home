@@ -2,15 +2,15 @@ package webuiterminalapi
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 )
 
-// prepareAihShim routes the session/list commands that Go already owns to the
-// sibling Go CLI. An unavailable Node runtime must not disable those commands;
-// the remaining public commands still use the existing Node entry.
+// prepareAihShim 让终端会话里的 aih 命令直接执行同目录的 Go CLI。
+//
+// 终端不再经由 Node 入口：命令解析、账号/会话读取与启动都由 Go CLI 负责；
+// Node 仅作为插件运行时存在。
 func prepareAihShim() string {
 	if runtime.GOOS == "windows" {
 		return ""
@@ -26,8 +26,7 @@ func prepareAihShim() string {
 	// Native package contract: aih-go is adjacent to the running aih-server. Do
 	// not execute this server as a CLI and do not recurse through PATH/aih.
 	cli := filepath.Join(filepath.Dir(executable), "aih-go")
-	node, _ := exec.LookPath("node")
-	body := aihShimBody(cli, node, filepath.Join(root, "bin", "ai-home.js"))
+	body := aihShimBody(cli)
 	directory := filepath.Join(root, ".runtime-bin")
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return ""
@@ -45,20 +44,8 @@ func prepareAihShim() string {
 	return directory
 }
 
-func aihShimBody(cli string, node string, entry string) string {
-	body := "#!/bin/sh\n" +
-		`if [ "$#" -ge 1 ]; then` + "\n" +
-		`  case "$1" in` + "\n" +
-		`    ss|sessions|ls) exec ` + quoteAihShimArgument(cli) + ` "$@" ;;` + "\n" +
-		`    account)` + "\n" +
-		`      if [ -n "${AIH_SERVER_MANAGEMENT_KEY:-}" ]; then exec ` + quoteAihShimArgument(cli) + ` "$@"; fi` + "\n" +
-		`      ;;` + "\n" +
-		`  esac` + "\n" +
-		`fi` + "\n"
-	if node == "" {
-		return body + "printf '%s\\n' '[aih] Node CLI runtime unavailable for this command.' >&2\nexit 127\n"
-	}
-	return body + "exec " + quoteAihShimArgument(node) + " " + quoteAihShimArgument(entry) + ` "$@"` + "\n"
+func aihShimBody(cli string) string {
+	return "#!/bin/sh\nexec " + quoteAihShimArgument(cli) + ` "$@"` + "\n"
 }
 
 func quoteAihShimArgument(value string) string {

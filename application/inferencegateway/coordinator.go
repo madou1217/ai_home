@@ -262,7 +262,7 @@ func (coordinator *Coordinator) executePlan(
 	emit EventSink,
 ) error {
 	if _, pinned := PinnedAccount(ctx); !pinned {
-		plan = coordinator.orderRoutePlan(request.Model(), plan)
+		plan = coordinator.orderRoutePlan(request, plan)
 	}
 	// 请求级尝试记账（插件看到的 attempt 序号与最近失败文本）；没有插件时只多一次 ctx 包装。
 	ctx = withAttemptJournal(ctx)
@@ -278,7 +278,7 @@ func (coordinator *Coordinator) executePlan(
 	// 路由上提前放弃钉选，否则用户指定 Codex 也可能被交给 Claude。
 	plans := []RoutePlan{plan}
 	if _, pinned := PinnedAccount(ctx); pinned {
-		plans = append(plans, coordinator.orderRoutePlan(request.Model(), plan))
+		plans = append(plans, coordinator.orderRoutePlan(request, plan))
 	}
 	for phase, phasePlan := range plans {
 		phaseCtx := ctx
@@ -367,23 +367,65 @@ func shouldFallBackFromPin(ctx context.Context, execution routeExecution, err er
 // source 或请求模型的原生 source。同一真实模型的跨 Provider routes 继续独立
 // 轮转；两个 cursor 都属于长生命周期 Coordinator，不随目录刷新重置。
 func (coordinator *Coordinator) orderRoutePlan(
-	requestedModel string,
+	request inference.Request,
 	plan RoutePlan,
 ) RoutePlan {
-	aliasRoutes, nativeRoutes := partitionRouteSources(plan, requestedModel)
+	preferred := preferredUpstreamProtocol(request.ClientProtocol())
+	aliasRoutes, nativeRoutes := partitionRouteSources(plan, request.Model())
 	if len(aliasRoutes) > 0 && len(nativeRoutes) > 0 {
 		if len(nativeRoutes) > 1 {
 			start := (coordinator.routeCursor.Add(1) - 1) % uint64(len(nativeRoutes))
-			nativeRoutes = rotateRoutes(nativeRoutes, int(start))
+			nativeRoutes = rotateRoutesWithinTiers(nativeRoutes, preferred, int(start))
 		}
 		nativeFirst := (coordinator.routeSourceCursor.Add(1)-1)%2 == 1
 		return joinRouteSources(aliasRoutes, nativeRoutes, nativeFirst)
 	}
 	if plan.hasEquivalentModelRoutes() {
 		start := (coordinator.routeCursor.Add(1) - 1) % uint64(plan.count)
-		return rotateRoutePlan(plan, int(start))
+		routes := rotateRoutesWithinTiers(
+			plan.candidates[:plan.count],
+			preferred,
+			int(start),
+		)
+		rotated, err := NewRoutePlan(routes...)
+		if err != nil {
+			return plan
+		}
+		return rotated
 	}
 	return plan
+}
+
+// rotateRoutesWithinTiers 在「同协议优先」的前提下轮转候选。
+//
+// 轮转只为跨 Provider 公平，不能改变「客户端说哪种协议就先走哪种上游」：
+// 先把候选按协议分成两层（同协议 / 其余），各层内部轮转，层间顺序固定。
+// 没有协议偏好时不分层，保持原有整表轮转语义。
+func rotateRoutesWithinTiers(
+	routes []Route,
+	preferred inference.ProtocolID,
+	start int,
+) []Route {
+	if len(routes) <= 1 || preferred == "" {
+		return rotateRoutes(routes, start)
+	}
+	preferredRoutes := make([]Route, 0, len(routes))
+	others := make([]Route, 0, len(routes))
+	for _, route := range routes {
+		if route.ProtocolID() == preferred {
+			preferredRoutes = append(preferredRoutes, route)
+			continue
+		}
+		others = append(others, route)
+	}
+	rotated := make([]Route, 0, len(routes))
+	if len(preferredRoutes) > 0 {
+		rotated = append(rotated, rotateRoutes(preferredRoutes, start%len(preferredRoutes))...)
+	}
+	if len(others) > 0 {
+		rotated = append(rotated, rotateRoutes(others, start%len(others))...)
+	}
+	return rotated
 }
 
 // partitionRouteSources 使用请求模型本身识别 native route；其余候选均属于

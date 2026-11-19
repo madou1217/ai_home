@@ -40,6 +40,20 @@ type ProviderRouteFactory interface {
 	) (inferencegateway.Route, error)
 }
 
+// ProviderRouteVariants 让 Provider 为同一真实模型声明额外的上游协议路由。
+//
+// 典型场景：双协议厂商把 OpenAI 兼容地址配在 codex 账号下，同厂商的 Anthropic
+// 兼容端点由 Messages Adapter 承载。路由目录因此为该模型同时编译 Responses 与
+// Messages 两条候选；某个账号是否真的能走 Messages 由征召期的凭据策略逐账号
+// 判定，不能走的账号被跳过、回落到 Responses，不影响既有账号。
+type ProviderRouteVariants interface {
+	ProviderRouteFactory
+	// BuildRouteVariants 返回该模型的全部候选路由，第一条必须是 BuildRoute 的结果。
+	BuildRouteVariants(
+		modelID runtimecore.ModelID,
+	) ([]inferencegateway.Route, error)
+}
+
 // Builder 从本地物化模型读取端口创建完整不可变快照。
 type Builder struct {
 	models    accountapp.RoutableModelReader
@@ -126,12 +140,14 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 			// 执行规则：通道选择由入口挂载决定，出现规则反而会制造第二处真相。
 			continue
 		}
-		rule, buildErr := builder.buildRule(model)
+		modelRules, buildErr := builder.buildRules(model)
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		rules = append(rules, rule)
-		identities[identityOf(rule)] = struct{}{}
+		rules = append(rules, modelRules...)
+		for _, rule := range modelRules {
+			identities[identityOf(rule)] = struct{}{}
+		}
 		routedModels = append(routedModels, model)
 	}
 	compilation := builder.compileAliases(models, identities)
@@ -220,48 +236,78 @@ func (builder *Builder) WithAliasStore(store *modelalias.Store) *Builder {
 	return builder
 }
 
-// buildRule 让 Provider Factory 决定上游协议和能力，Builder 只维护精确匹配。
-func (builder *Builder) buildRule(
+// buildRules 让 Provider Factory 决定上游协议和能力，Builder 只维护精确匹配。
+//
+// 实现了 ProviderRouteVariants 的 Factory 会为该模型声明多条候选路由（例如双协议
+// 厂商的 Responses 与 Messages 两条）。是否真的有账号能走每条路由由征召期判定。
+func (builder *Builder) buildRules(
 	model accountapp.RoutableModel,
-) (inferencegateway.RouteRule, error) {
+) ([]inferencegateway.RouteRule, error) {
 	providerID := inference.ProviderID(model.ProviderID())
 	factory := builder.factories[providerID]
 	if factory == nil {
 		// 带上 Provider：只有「Factory 不存在」时不知道是谁，排查只能靠猜。
-		return inferencegateway.RouteRule{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%w: %s",
 			ErrProviderRouteFactoryNotFound,
 			providerID,
 		)
 	}
-	route, err := factory.BuildRoute(model.ModelID())
+	routes, err := buildFactoryRoutes(factory, model.ModelID())
 	if err != nil {
-		return inferencegateway.RouteRule{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%w: %w",
 			ErrInvalidProviderRoute,
 			err,
 		)
 	}
-	if !route.IsValid() ||
-		route.ProviderID() != providerID ||
-		route.EffectiveModel() != model.ModelID().String() {
-		return inferencegateway.RouteRule{}, ErrInvalidProviderRoute
-	}
-	rule, err := inferencegateway.NewRouteRule(
-		inferencegateway.RouteRuleInput{
-			Pattern: model.ModelID().String(),
-			Scope:   inferencegateway.RouteScopeAll,
-			Route:   route,
-		},
-	)
-	if err != nil {
-		return inferencegateway.RouteRule{}, fmt.Errorf(
-			"%w: %w",
-			ErrInvalidProviderRoute,
-			err,
+	rules := make([]inferencegateway.RouteRule, 0, len(routes))
+	for _, route := range routes {
+		if !route.IsValid() ||
+			route.ProviderID() != providerID ||
+			route.EffectiveModel() != model.ModelID().String() {
+			return nil, ErrInvalidProviderRoute
+		}
+		rule, err := inferencegateway.NewRouteRule(
+			inferencegateway.RouteRuleInput{
+				Pattern: model.ModelID().String(),
+				Scope:   inferencegateway.RouteScopeAll,
+				Route:   route,
+			},
 		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%w: %w",
+				ErrInvalidProviderRoute,
+				err,
+			)
+		}
+		rules = append(rules, rule)
 	}
-	return rule, nil
+	return rules, nil
+}
+
+// buildFactoryRoutes 返回该模型要编译的路由；变体 Factory 的第一条必须是
+// BuildRoute 的结果，保证原有协议始终是首选声明。
+func buildFactoryRoutes(
+	factory ProviderRouteFactory,
+	modelID runtimecore.ModelID,
+) ([]inferencegateway.Route, error) {
+	if variants, ok := factory.(ProviderRouteVariants); ok {
+		routes, err := variants.BuildRouteVariants(modelID)
+		if err != nil {
+			return nil, err
+		}
+		if len(routes) == 0 {
+			return nil, ErrInvalidProviderRoute
+		}
+		return routes, nil
+	}
+	route, err := factory.BuildRoute(modelID)
+	if err != nil {
+		return nil, err
+	}
+	return []inferencegateway.Route{route}, nil
 }
 
 // validateModelSnapshot 确保模型按 model/provider 排序且同一 Provider 不重复。

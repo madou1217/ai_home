@@ -102,11 +102,22 @@ func (adapter *Adapter) SupportsCredential(
 ) bool {
 	if adapter == nil ||
 		credential == nil ||
-		credential.ProviderID() != string(inference.ProviderClaude) {
+		!supportsMessagesCredentialProvider(credential.ProviderID()) {
 		return false
 	}
 	_, err := projectAuth(credential)
 	return err == nil
+}
+
+// supportsMessagesCredentialProvider 判断某 Provider 的账号凭据能否由 Messages
+// 线协议承载。
+//
+// claude 是原生归属；codex 账号走的是双协议厂商的 Anthropic 兼容端点（凭据里
+// 必须能按厂商契约解析出该端点，见 projectAuth）。是否真的可用由 projectAuth
+// 逐凭据判定，这里只回答「这个账号域是否可能」。
+func supportsMessagesCredentialProvider(providerID string) bool {
+	return providerID == string(inference.ProviderClaude) ||
+		providerID == string(inference.ProviderCodex)
 }
 
 // Execute 编码请求、执行 HTTP 传输并同步输出 Canonical 事件。
@@ -131,7 +142,9 @@ func (adapter *Adapter) Execute(
 	effectiveModel := invocation.Route().EffectiveModel()
 	// 强度对齐必须发生在编码之前：encodeReasoning 只认识 Anthropic 的档位词汇，
 	// 把 Codex 的 xhigh/ultra 交给它会在各条路径各夹一次、方向还可能相反。
-	aligned := adapter.aligner.Apply(invocation.Request(), invocation.Route().ProviderID(), effectiveModel)
+	// 强度档位按**线协议**而不是账号 Provider 对齐：codex 账号走厂商的 Anthropic
+	// 端点时，上游认识的是 Anthropic 的档位词汇。
+	aligned := adapter.aligner.Apply(invocation.Request(), inference.ProviderClaude, effectiveModel)
 	encoded, err := encodeRequest(
 		aligned,
 		effectiveModel,
@@ -250,11 +263,11 @@ func (adapter *Adapter) validateInvocation(
 		adapter.clock == nil ||
 		ctx == nil ||
 		emit == nil ||
-		invocation.Route().ProviderID() != inference.ProviderClaude ||
 		invocation.Route().ProtocolID() != inference.ProtocolClaudeMessages ||
+		!supportsMessagesCredentialProvider(string(invocation.Route().ProviderID())) ||
 		invocation.Credential() == nil ||
 		invocation.Credential().ProviderID() !=
-			string(inference.ProviderClaude) {
+			string(invocation.Route().ProviderID()) {
 		return ErrInvalidInvocation
 	}
 	if err := ctx.Err(); err != nil {

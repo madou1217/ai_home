@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	vendorendpoints "github.com/madou1217/ai_home/contracts/vendor-endpoints"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 )
 
 const (
@@ -91,9 +93,42 @@ func projectAuth(credential accountapp.Credential) (authProfile, error) {
 			return authProfile{}, ErrInvalidInvocation
 		}
 		return newBearerProfile(auth.BaseURL(), auth.AuthToken(), false)
+	case *codexauth.APIKeyAuth:
+		if auth == nil {
+			return authProfile{}, ErrInvalidInvocation
+		}
+		// 双协议厂商：账号配在 codex（OpenAI 兼容 base），同厂商的 Anthropic
+		// 兼容端点由厂商契约给出，同一个 API Key 用 x-api-key 访问（Anthropic
+		// SDK 合同，千问/百炼等兼容层均接受）。
+		return newVendorMessagesProfile(auth.APIKey(), auth.BaseURL())
 	default:
 		return authProfile{}, ErrInvalidInvocation
 	}
+}
+
+// newVendorMessagesProfile 把「OpenAI 兼容端点上的 API Key」投影成同厂商
+// Anthropic 兼容端点的 Messages 认证。
+//
+// 未知厂商或没有 Anthropic 端点的账号返回错误：征召期据此跳过该账号，
+// 候选回落到账号原本的 Responses 路由。
+func newVendorMessagesProfile(
+	apiKey string,
+	openAIBaseURL string,
+) (authProfile, error) {
+	if apiKey == "" {
+		return authProfile{}, ErrInvalidInvocation
+	}
+	resolution, found := vendorendpoints.Resolve(openAIBaseURL)
+	if !found || resolution.Protocol != vendorendpoints.ProtocolOpenAI {
+		return authProfile{}, ErrInvalidInvocation
+	}
+	anthropicBaseURL := strings.TrimSpace(
+		resolution.ProtocolBaseURL(vendorendpoints.ProtocolAnthropic),
+	)
+	if anthropicBaseURL == "" {
+		return authProfile{}, ErrInvalidInvocation
+	}
+	return newAuthProfile(anthropicBaseURL, "x-api-key", apiKey, false)
 }
 
 // newBearerProfile 创建 Authorization Bearer 投影。

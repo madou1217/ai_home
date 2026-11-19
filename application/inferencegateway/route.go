@@ -186,5 +186,11 @@ func providerOwnsProtocol(
 		(providerID == inference.ProviderClaude &&
 			protocolID == inference.ProtocolClaudeMessages) ||
 		(providerID == inference.ProviderAgy &&
-			protocolID == inference.ProtocolAgyCodeAssist)
+			protocolID == inference.ProtocolAgyCodeAssist) ||
+		// Codex 账号可以按厂商契约访问同厂商的 Anthropic 兼容端点（千问、DeepSeek
+		// 等双协议厂商）。线协议仍是 Messages，账号归属仍是 codex；某个具体账号
+		// 是否真的可用由征召时的凭据策略（Messages Adapter.SupportsCredential）
+		// 逐账号判定，不满足的账号会被跳过并回落到 Responses 候选。
+		(providerID == inference.ProviderCodex &&
+			protocolID == inference.ProtocolClaudeMessages)
 }

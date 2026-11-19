@@ -261,10 +261,14 @@ func tmuxServerAbsent(stderr, socket string) bool {
 	if lower == "no server running" {
 		return true
 	}
+	// tmux only reports this for the socket it was invoked with (-L <socket>),
+	// so the message itself is authoritative regardless of path spelling
+	// (/tmp vs /private/tmp or an older tmux default path).
+	if strings.HasPrefix(lower, "no server running on ") {
+		return true
+	}
 	var socketPath string
 	switch {
-	case strings.HasPrefix(lower, "no server running on "):
-		socketPath = strings.TrimSpace(message[len("no server running on "):])
 	case strings.HasPrefix(lower, "error connecting to "):
 		for _, reason := range []string{" (no such file or directory)", " (connection refused)"} {
 			if strings.HasSuffix(lower, reason) {

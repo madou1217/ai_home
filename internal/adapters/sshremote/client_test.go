@@ -326,8 +326,10 @@ func TestKeyFileAuthentication(t *testing.T) {
 
 func TestAgentUnavailable(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
+	// 隔离 HOME，避免宿主 ~/.ssh 下的默认私钥回退成功或失败，从而掩盖 agent 缺失分类。
 	_, err := Dial(context.Background(), Config{
 		Host: "127.0.0.1", User: "tester", AuthType: AuthAgent,
+		HomeDir:        t.TempDir(),
 		KnownHostsPath: filepath.Join(t.TempDir(), "known_hosts"),
 	}, time.Second)
 	if ErrorCode(err) != CodeAgentUnavailable {

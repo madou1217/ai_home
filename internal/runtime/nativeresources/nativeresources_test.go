@@ -63,7 +63,7 @@ func TestDoctorCapabilitiesAndSWRCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("首次 Report 失败: %v", err)
 	}
-	if !rep1.OK || rep1.DemoSources["skill"] != "assets/provider-skills/aih-demo" {
+	if !rep1.OK || rep1.Source == "" {
 		t.Fatalf("Report 基础字段异常: %+v", rep1)
 	}
 	if len(rep1.Providers) == 0 || len(rep1.Hosts) < 3 {
@@ -248,6 +248,7 @@ func TestPluginAdaptersAndPortableHost(t *testing.T) {
 		Kind:     "plugin",
 		Action:   "install",
 		Provider: "gemini",
+		Source:   "examples/native-plugins/aih-demo",
 	}); err != nil {
 		t.Fatalf("gemini plugin install 失败: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestPluginAdaptersAndPortableHost(t *testing.T) {
 	ocDir := filepath.Join(hostHome, ".config/opencode")
 	_ = os.MkdirAll(ocDir, 0o700)
 	_ = os.WriteFile(filepath.Join(ocDir, "opencode.jsonc"), []byte("{\n  // user config\n  \"theme\": \"dark\",\n}\n"), 0o600)
-	if _, err := svc.Operate(ctx, OperateInput{Kind: "plugin", Action: "install", Provider: "opencode"}); err != nil {
+	if _, err := svc.Operate(ctx, OperateInput{Kind: "plugin", Action: "install", Provider: "opencode", Source: "examples/native-plugins/aih-demo"}); err != nil {
 		t.Fatalf("opencode plugin install 失败: %v", err)
 	}
 	ocRaw, _ := os.ReadFile(filepath.Join(ocDir, "opencode.jsonc"))
@@ -268,7 +269,7 @@ func TestPluginAdaptersAndPortableHost(t *testing.T) {
 	}
 
 	// 3) DeepSeek host portable + cordis-patch adapter
-	resDS, err := svc.Operate(ctx, OperateInput{Kind: "plugin", Action: "install", Host: "deepseek"})
+	resDS, err := svc.Operate(ctx, OperateInput{Kind: "plugin", Action: "install", Host: "deepseek", Source: "examples/native-plugins/aih-demo"})
 	if err != nil {
 		t.Fatalf("deepseek host plugin install 失败: %v", err)
 	}
@@ -322,7 +323,7 @@ func TestPluginAdaptersAndPortableHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svcCodex.Operate(ctx, OperateInput{Kind: "plugin", Action: "install", Provider: "codex"}); err != nil {
+	if _, err := svcCodex.Operate(ctx, OperateInput{Kind: "plugin", Action: "install", Provider: "codex", Source: "examples/native-plugins/aih-demo"}); err != nil {
 		t.Fatalf("codex marketplace install 失败: %v", err)
 	}
 }
@@ -414,7 +415,14 @@ rl.on('line', (line) => {
 		if len(toolsSlice) != 1 || toolsSlice[0]["name"] != "aih_echo" {
 			t.Fatalf("MCP tools 内容异常: %+v", toolsOut.Result)
 		}
-		callOut, err := svc.Operate(ctx, OperateInput{Kind: "mcp", Action: "call", Provider: "codex", ID: "aih-demo"})
+		callOut, err := svc.Operate(ctx, OperateInput{
+			Kind:     "mcp",
+			Action:   "call",
+			Provider: "codex",
+			ID:       "aih-demo",
+			Tool:     "aih_echo",
+			Args:     map[string]any{"text": "AIH_WEBUI_MCP_OK"},
+		})
 		if err != nil {
 			t.Fatalf("MCP call 失败: %v", err)
 		}

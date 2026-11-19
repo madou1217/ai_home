@@ -7,7 +7,7 @@ import (
 )
 
 // TestRewriteFamilySessionVerb 守住统一动词的翻译边界：账号位可选、id 转成
-// 原生 --resume、无 id 退回 --continue、fork 明确拒绝（家族 CLI 没有分叉入口）。
+// 原生 --resume、无 id 退回 --continue、fork 走合同声明的 --fork-session。
 func TestRewriteFamilySessionVerb(t *testing.T) {
 	ctx := context.Background()
 	runtime := commandRuntime{}
@@ -37,10 +37,10 @@ func TestRewriteFamilySessionVerb(t *testing.T) {
 			wantArgs:    []string{"codebuddycn", "2", "--continue", "--model", "glm-5.3"},
 		},
 		{
-			name:        "fork is rejected for family",
+			name:        "fork uses declared family entry",
 			arguments:   []string{"codebuddycn", "2", "fork", "s1"},
 			wantHandled: true,
-			wantError:   "codebuddycn 未声明会话分叉入口",
+			wantArgs:    []string{"codebuddycn", "2", "--resume", "s1", "--fork-session"},
 		},
 		{
 			name:        "no verb is untouched",

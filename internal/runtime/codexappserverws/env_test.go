@@ -76,7 +76,7 @@ func createTestAppStateDB(t *testing.T, aiHomeDir string, sqlStatements ...strin
 			provider TEXT NOT NULL,
 			account_id TEXT NOT NULL DEFAULT ''
 		);
-		CREATE TABLE IF NOT EXISTS account_credentials (
+		CREATE TABLE IF NOT EXISTS compat_account_credentials (
 			account_ref TEXT PRIMARY KEY,
 			env_json TEXT NOT NULL DEFAULT '{}',
 			native_auth_json TEXT NOT NULL DEFAULT '{}'
@@ -169,7 +169,7 @@ func TestBuildSpawnEnvDefaultAccountAPIKeyAndOAuth(t *testing.T) {
 		createTestAppStateDB(t, aiHome,
 			`INSERT INTO app_kv (key, value) VALUES ('account:default:codex', '"acct_key_1"')`,
 			`INSERT INTO account_refs (account_ref, provider, account_id) VALUES ('acct_key_1', 'codex', 'k1')`,
-			`INSERT INTO account_credentials (account_ref, env_json, native_auth_json) VALUES ('acct_key_1', '{"OPENAI_API_KEY":"sk-acct-1"}', '{}')`,
+			`INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json) VALUES ('acct_key_1', '{"OPENAI_API_KEY":"sk-acct-1"}', '{}')`,
 		)
 		env, err := BuildSpawnEnv(context.Background(), SpawnEnvOptions{
 			AIHomeDir: aiHome,
@@ -199,7 +199,7 @@ func TestBuildSpawnEnvDefaultAccountAPIKeyAndOAuth(t *testing.T) {
 		createTestAppStateDB(t, aiHome,
 			`INSERT INTO app_kv (key, value) VALUES ('account:default:codex', '"acct_oauth_1"')`,
 			`INSERT INTO account_refs (account_ref, provider, account_id) VALUES ('acct_oauth_1', 'codex', 'o1')`,
-			`INSERT INTO account_credentials (account_ref, env_json, native_auth_json) VALUES ('acct_oauth_1', '{}', '{"tokens":{"access_token":"jwt"}}')`,
+			`INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json) VALUES ('acct_oauth_1', '{}', '{"tokens":{"access_token":"jwt"}}')`,
 		)
 		env, err := BuildSpawnEnv(context.Background(), SpawnEnvOptions{
 			AIHomeDir: aiHome,

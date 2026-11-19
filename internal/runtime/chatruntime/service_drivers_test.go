@@ -746,8 +746,10 @@ func (r *fakeNativeRunner) Start(_ context.Context, req NativeRunRequest) (*Nati
 	events := make(chan NativeRunEvent, 4)
 	sids := make(chan string, 1)
 	done := make(chan NativeRunExit, 1)
+	quiesced := make(chan struct{})
 
 	go func() {
+		defer close(quiesced)
 		if attemptNum == 1 {
 			done <- NativeRunExit{ExitCode: 1, Stderr: "429 rate limit exceeded capacity"}
 			close(events)
@@ -775,6 +777,7 @@ func (r *fakeNativeRunner) Start(_ context.Context, req NativeRunRequest) (*Nati
 		Events:     events,
 		SessionIDs: sids,
 		Done:       done,
+		Quiesced:   quiesced,
 	}, nil
 }
 

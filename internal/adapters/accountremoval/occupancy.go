@@ -215,6 +215,13 @@ func (service *Service) inspectAccountSocket(
 	// 未读到登记不代表账号 socket 为空：引擎缺失、权限错误或超时都只能
 	// 说明状态未知。保留结构化原因；即使 force 也不能猜测会话名后强杀。
 	if state.err != nil {
+		// 同一 socket 上的登记项已经按 uncertain 上报；再追加一条「未登记」
+		// 的未知占用者只是重复，不能提供更多信息。
+		for _, entry := range matching {
+			if entry.Socket == socket {
+				return nil
+			}
+		}
 		return []accountapp.DeletionBlocker{{
 			Kind:         persistentSessionKind,
 			Label:        persistentSessionLabel,

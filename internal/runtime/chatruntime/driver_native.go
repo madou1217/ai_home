@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providercli/sessionchat"
@@ -1599,7 +1600,7 @@ func (d *NativeSessionDriver) executeWithRetries(
 		var admission *accountadmission.Lease
 		// Gateway-scoped sessions do not hold a local account projection. Only
 		// pinned canonical account refs participate in this deletion fence.
-		if !IsGatewayRuntimeScope(accountRef) && strings.TrimSpace(accountRef) != "" {
+		if _, refErr := accountcore.ParseAccountRef(accountRef); refErr == nil {
 			var admissionErr error
 			admission, admissionErr = accountadmission.Launch(d.opts.AIHomeDir, d.provider, accountRef)
 			if admissionErr != nil {

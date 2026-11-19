@@ -58,8 +58,17 @@ func TestResolveCodexBinary(t *testing.T) {
 		if err != nil {
 			t.Fatalf("应通过用户目录与 .aih-original 解析成功: %v", err)
 		}
-		if resolved != origPath {
-			t.Fatalf("resolved = %q, 期望 %q", resolved, origPath)
+		// 解析器返回真实路径（macOS 上 /var 会展开成 /private/var），比较时同样规范化。
+		resolvedCanonical, err := filepath.EvalSymlinks(resolved)
+		if err != nil {
+			t.Fatalf("规范化 resolved 失败: %v", err)
+		}
+		origCanonical, err := filepath.EvalSymlinks(origPath)
+		if err != nil {
+			t.Fatalf("规范化期望路径失败: %v", err)
+		}
+		if resolvedCanonical != origCanonical {
+			t.Fatalf("resolved = %q, 期望 %q", resolvedCanonical, origCanonical)
 		}
 
 		overrideBin := filepath.Join(root, "custom-codex")
@@ -68,7 +77,9 @@ func TestResolveCodexBinary(t *testing.T) {
 		}
 		t.Setenv("AIH_CODEX_BINARY", overrideBin)
 		overridden, err := ResolveCodexBinary(root)
-		if err != nil || overridden != overrideBin {
+		overriddenCanonical, canonErr := filepath.EvalSymlinks(overridden)
+		overrideCanonical, overrideErr := filepath.EvalSymlinks(overrideBin)
+		if err != nil || canonErr != nil || overrideErr != nil || overriddenCanonical != overrideCanonical {
 			t.Fatalf("AIH_CODEX_BINARY 覆盖异常: path=%q err=%v", overridden, err)
 		}
 	})

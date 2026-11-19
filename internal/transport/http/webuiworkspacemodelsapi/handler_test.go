@@ -187,7 +187,7 @@ func TestWorkspaceModelsFullContractAndColdProbe(t *testing.T) {
 		MetadataIndex:  modalIndex,
 		Snapshot:       snapshotReader,
 		Settings:       modelcatalogsettings.Reader{DatabasePath: dbPath},
-		Refs:           accountrefmap.NewResolver(true, accountrefmap.Table{}),
+		Refs:           accountrefmap.Dir{AIHomeDir: aiHome},
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

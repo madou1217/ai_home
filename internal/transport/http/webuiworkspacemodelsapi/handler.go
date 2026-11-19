@@ -46,6 +46,14 @@ type SettingsReader interface {
 	ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error)
 }
 
+// RefTableSource 读取 Node→Go 账号引用映射表。
+//
+// 按请求读取而不是构造期缓存：账号导入会在运行期新增链接，缓存整表会让新账号
+// 的引用翻译静默退回恒等，从而查不到按 Node ref 记录的模型设置。
+type RefTableSource interface {
+	LoadTable(ctx context.Context) (accountrefmap.Table, error)
+}
+
 // Store 组合账号概览与账号模型批量读端口。
 type Store interface {
 	ListAllAccountModels(ctx context.Context) (accountapp.AccountModelCatalog, error)
@@ -60,7 +68,7 @@ type Dependencies struct {
 	MetadataIndex  modelmetadata.Catalog
 	Snapshot       modelsnapshot.Reader
 	Settings       SettingsReader
-	Refs           accountrefmap.Resolver
+	Refs           RefTableSource
 }
 
 // Handler 处理 GET /v1/management/webui/workspace/models。
@@ -71,7 +79,7 @@ type Handler struct {
 	metadataIndex modelmetadata.Catalog
 	snapshot      modelsnapshot.Reader
 	settings      SettingsReader
-	refs          accountrefmap.Resolver
+	refs          RefTableSource
 }
 
 // NewHandler 创建工作区模型目录 Handler。
@@ -115,7 +123,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	resolver := handler.refs
+	resolver := handler.resolveRefs(ctx)
 	settings := handler.loadSettings(ctx)
 	snapshot := handler.loadSnapshot(ctx)
 
@@ -177,6 +185,20 @@ func loadAllOverviews(ctx context.Context, store Store) ([]accountapp.AccountOve
 		afterRef = lastRef
 	}
 	return all, nil
+}
+
+// resolveRefs 读取当前引用映射表并构造翻译器。
+//
+// 未接线或读表失败时按恒等回落（与「同步未启用」一致），不阻断模型目录读取。
+func (handler *Handler) resolveRefs(ctx context.Context) accountrefmap.Resolver {
+	if handler == nil || handler.refs == nil {
+		return accountrefmap.Resolver{}
+	}
+	table, err := handler.refs.LoadTable(ctx)
+	if err != nil {
+		return accountrefmap.Resolver{}
+	}
+	return accountrefmap.NewResolver(true, table)
 }
 
 // loadSettings 读取注入的设置端口；未接线或读取失败时返回空设置。

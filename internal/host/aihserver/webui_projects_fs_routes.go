@@ -100,15 +100,11 @@ func buildWebUIProjectsFSRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 
 	// 模型目录读取依赖 SQLite 账号库；跳过 nil 指针，避免传入类型化 nil 接口。
 	if dependencies.Store != nil {
-		// 设置与引用映射的适配器只在组合层构造：handler 只持有只读端口，
-		// 设置文档仍在每次请求时按 aih.db 读取，不缓存快照。
+		// 设置与引用映射的适配器只在组合层构造：handler 只持有只读端口。
+		// 两者都在每次请求时按 aih.db 读取，运行期新增的账号链接因此立即可见。
 		var settingsReader webuiworkspacemodelsapi.SettingsReader
-		var refResolver accountrefmap.Resolver
 		if dbPath, pathErr := appstate.DatabasePath(aiHome); pathErr == nil {
 			settingsReader = modelcatalogsettings.Reader{DatabasePath: dbPath}
-		}
-		if table, tableErr := accountrefmap.Load(context.Background(), aiHome); tableErr == nil {
-			refResolver = accountrefmap.NewResolver(true, table)
 		}
 		workspaceModels, err := webuiworkspacemodelsapi.NewHandler(webuiworkspacemodelsapi.Dependencies{
 			Authorizer:     dependencies.Authorizer,
@@ -117,7 +113,7 @@ func buildWebUIProjectsFSRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 			MetadataIndex:  dependencies.ModelModalities,
 			Snapshot:       dependencies.ModelSnapshot,
 			Settings:       settingsReader,
-			Refs:           refResolver,
+			Refs:           accountrefmap.Dir{AIHomeDir: aiHome},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建工作区模型目录接口失败: %w", err)

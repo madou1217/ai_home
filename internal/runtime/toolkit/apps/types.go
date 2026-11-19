@@ -152,19 +152,21 @@ type VersionSource struct {
 
 // AppView 表示工具箱应用卡片的单条状态视图。
 type AppView struct {
-	ID                   string         `json:"id"`
-	Name                 string         `json:"name"`
-	Provider             string         `json:"provider"`
-	ClientID             string         `json:"clientId"`
-	ClientName           string         `json:"clientName"`
-	ConfigProvider       string         `json:"configProvider,omitempty"`
-	Type                 string         `json:"type"`
-	Categories           []string       `json:"categories"`
-	BinaryName           string         `json:"binaryName"`
-	CLIPath              string         `json:"cliPath"`
-	AvailabilityError    string         `json:"availabilityError,omitempty"`
-	ConfigExists         bool           `json:"configExists"`
-	ConfigFileCount      int            `json:"configFileCount"`
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Provider          string   `json:"provider"`
+	ClientID          string   `json:"clientId"`
+	ClientName        string   `json:"clientName"`
+	ConfigProvider    string   `json:"configProvider,omitempty"`
+	Type              string   `json:"type"`
+	Categories        []string `json:"categories"`
+	BinaryName        string   `json:"binaryName"`
+	CLIPath           string   `json:"cliPath"`
+	AvailabilityError string   `json:"availabilityError,omitempty"`
+	ConfigExists      bool     `json:"configExists"`
+	ConfigFileCount   int      `json:"configFileCount"`
+	// PermissionSupported 表示该应用有 Provider 合同，可读写启动权限设置。
+	PermissionSupported  bool           `json:"permissionSupported"`
 	ConfigName           string         `json:"configName"`
 	ConfigFormat         string         `json:"configFormat"`
 	Installed            bool           `json:"installed"`

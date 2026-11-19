@@ -50,11 +50,11 @@ export function getAppCurrentVersion(app: ManagedAppItem) {
  * 否则用户只会看到一支没有含义的铅笔。
  */
 export function getAppAdvancedEntryLabel(
-  app: Pick<ManagedAppItem, 'type' | 'provider'>,
+  app: Pick<ManagedAppItem, 'type' | 'provider' | 'permissionSupported'>,
   configFileCount: number
 ) {
   const fileCount = Math.max(0, Number(configFileCount) || 0);
-  const hasPermission = app.type === 'cli';
+  const hasPermission = app.type === 'cli' && app.permissionSupported === true;
   const hasPreflight = supportsClaudePreflight(app);
   const parts = [
     hasPermission ? '启动权限' : '',

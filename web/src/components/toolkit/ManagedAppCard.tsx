@@ -57,7 +57,7 @@ export default function ManagedAppCard({
   const canInstall = Boolean(app.installAvailable);
   const existingConfig = hasExistingConfig(app);
   const configFileCount = Math.max(0, Number(app.configFileCount) || 0);
-  const canOpenAdvanced = app.type === 'cli' || configFileCount > 0;
+  const canOpenAdvanced = app.permissionSupported === true || configFileCount > 0;
   const warning = getManagedAppWarning(app, upgrade);
   const currentVersion = getAppCurrentVersion(app);
   const details = [

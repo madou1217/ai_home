@@ -87,7 +87,7 @@ export default function AppAdvancedSettingsModal({
   const [error, setError] = useState('');
   const [reloadToken, setReloadToken] = useState(0);
 
-  const showPermissionTab = app?.type === 'cli';
+  const showPermissionTab = app?.type === 'cli' && app?.permissionSupported === true;
   // 首屏检查与启动权限、配置文件一起收在同一个应用高级设置里。
   const showPreflightTab = supportsClaudePreflight(app);
   const showConfigTab = Boolean(provider && (app?.configFileCount || 0) > 0);

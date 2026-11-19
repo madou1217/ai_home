@@ -2023,6 +2023,8 @@ export interface ManagedAppItem {
   configExists: boolean;
   /** 该应用可管理的配置文件数量（来自 Provider 配置声明表）。 */
   configFileCount?: number;
+  /** 该应用有 Provider 合同，可读写启动权限设置。 */
+  permissionSupported?: boolean;
   installed: boolean;
   version: string;
   versionSource?: {

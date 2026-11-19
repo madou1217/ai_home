@@ -34,7 +34,7 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	}
 	if len(arguments) > 1 {
 		switch strings.TrimSpace(arguments[1]) {
-		case "recalculate-costs", "--help", "-h", "help":
+		case "--help", "-h", "help":
 			return false, nil
 		}
 	}
@@ -49,6 +49,8 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	switch options.command {
 	case "scan":
 		return true, runUsageScan(ctx, home, options, runtime)
+	case "recalculate-costs":
+		return true, runUsageRecalculateCosts(ctx, home, options, runtime)
 	case "stats", "summary", "models", "cost-by-model", "by-model", "sessions", "session", "session-detail":
 	default:
 		// scan / recalculate-costs / help remain on the legacy CLI for now.

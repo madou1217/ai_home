@@ -1,0 +1,49 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/managementops"
+)
+
+func runUsageRecalculateCosts(ctx context.Context, home string, options usageOptions, runtime commandRuntime) error {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return err
+	}
+	dbPath, err := appstate.DatabasePath(home)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0)
+	for _, item := range catalog.List() {
+		if item.ID != "" {
+			ids = append(ids, item.ID)
+		}
+	}
+	store, err := managementops.NewUsageStore(ctx, dbPath, ids, time.Now)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	result, err := store.RecalculateCosts(ctx)
+	if err != nil {
+		return err
+	}
+	if options.json {
+		encoded, err := json.MarshalIndent(map[string]any{"ok": true, "command": "recalculate-costs", "result": result}, "", "  ")
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
+		return nil
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量成本重算完成: scanned=%d, recalculated=%d, batches=%d\n",
+		result.Scanned, result.Recalculated, result.Batches)
+	return nil
+}

@@ -184,7 +184,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	}
 	if !isSupportedProvider(provider) {
 		writeError(responseWriter, http.StatusNotImplemented, errorCodeUnsupported,
-			"该 Provider 的会话读取尚未由 Go 承接，请走 Node 网关")
+			"该 Provider 的会话读取尚未由 Go 承接")
 		return
 	}
 

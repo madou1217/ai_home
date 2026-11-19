@@ -10,7 +10,7 @@
 // 本切片只承接 codex 的增量读取：它的会话真相是一个可追加的 rollout JSONL，
 // cursor 是该文件里的字节偏移。其它 Provider 在 Node 侧只有「文件大小变化就回
 // snapshot」的兜底语义，各自需要不同的会话定位器；Go 侧未实现前返回
-// unsupported_provider，由 Node 继续本地处理，不猜格式。
+// unsupported_provider，Go 尚未承接，不猜格式。
 //
 // 对拍证据：testdata/parity-cases.json 由 Node 现实现生成
 // （scripts/dump-session-events-parity-cases.js），TestNodeParity（Go）与

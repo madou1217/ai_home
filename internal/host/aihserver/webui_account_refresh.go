@@ -35,7 +35,11 @@ func buildWebUIRefreshRoutes(dependencies webuiRouteDependencies) ([]webuiRoute,
 
 	// 作业表是三条路由的共享状态，必须只建一份：各自建表会让查询入口看不到写入口
 	// 登记的作业。
-	jobs := webuirefreshjobstore.New(webuirefreshjobstore.Options{})
+	jobs := webuirefreshjobstore.New(webuirefreshjobstore.Options{
+		OnChanged: func(snapshot webuirefreshjobstore.Snapshot) {
+			dependencies.TokenEvents.PublishRefreshJob(snapshot)
+		},
+	})
 
 	// 额度端口用显式 nil 判断而不是直接赋值：*usageapp.Service 的 nil 指针装进接口
 	// 之后接口非空，执行器会真的去调用它并 panic。

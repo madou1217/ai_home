@@ -91,6 +91,8 @@ type Options struct {
 	Now func() time.Time
 	// NewID 生成作业 ID；nil 表示与 Node 同前缀的默认生成器。
 	NewID func(provider, accountRef string) string
+	// OnChanged 在作业创建或状态推进后收到快照（q 在锁外调用）。
+	OnChanged func(Snapshot)
 }
 
 // RunFunc 是一次刷新的执行体。ctx 已用 context.WithoutCancel 包过，客户端断开
@@ -114,6 +116,7 @@ type Store struct {
 	retention time.Duration
 	now       func() time.Time
 	newID     func(provider, accountRef string) string
+	onChanged func(Snapshot)
 }
 
 // New 创建作业表；Options 的零值字段使用默认值。
@@ -124,6 +127,7 @@ func New(options Options) *Store {
 		retention: options.Retention,
 		now:       options.Now,
 		newID:     options.NewID,
+		onChanged: options.OnChanged,
 	}
 	store.applyDefaults()
 	return store
@@ -192,6 +196,7 @@ func (store *Store) Start(ctx context.Context, request StartRequest) (Snapshot, 
 	jobID := snapshot.ID
 	queued := cloneSnapshot(*snapshot)
 	store.mu.Unlock()
+	store.notify(queued)
 
 	// Run 必须脱离请求上下文：客户端断开不能中止已经开始的刷新。
 	go store.run(context.WithoutCancel(ctx), jobID, request.Run)
@@ -235,12 +240,20 @@ func (store *Store) run(ctx context.Context, jobID string, run RunFunc) {
 	}
 	snapshot.Status = StatusRunning
 	snapshot.UpdatedAt = store.now().UnixMilli()
+	running := cloneSnapshot(*snapshot)
 	store.mu.Unlock()
+	store.notify(running)
 
 	result, err := invokeRun(ctx, run)
 
 	store.mu.Lock()
-	defer store.mu.Unlock()
+	var final Snapshot
+	defer func() {
+		store.mu.Unlock()
+		if final.ID != "" {
+			store.notify(final)
+		}
+	}()
 	snapshot, exists = store.jobs[jobID]
 	if !exists {
 		return
@@ -256,6 +269,7 @@ func (store *Store) run(ctx context.Context, jobID string, run RunFunc) {
 		snapshot.Status = StatusFailed
 		snapshot.Error = truncateRunes(err.Error(), maxErrorRunes)
 		snapshot.FinishedAt = int64Pointer(nowMS)
+		final = cloneSnapshot(*snapshot)
 		return
 	}
 
@@ -266,6 +280,16 @@ func (store *Store) run(ctx context.Context, jobID string, run RunFunc) {
 		finishedAt = *result.FinishedAt
 	}
 	snapshot.FinishedAt = int64Pointer(finishedAt)
+	final = cloneSnapshot(*snapshot)
+}
+
+// notify 在锁外投递作业快照；订阅方失败不影响作业状态。
+func (store *Store) notify(snapshot Snapshot) {
+	if store == nil || store.onChanged == nil || snapshot.ID == "" {
+		return
+	}
+	defer func() { _ = recover() }()
+	store.onChanged(snapshot)
 }
 
 // invokeRun 执行 Run 并把 panic 收敛成错误，避免后台 goroutine 崩掉整个进程。

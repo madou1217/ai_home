@@ -3,7 +3,9 @@
 触发：移除 `aih server serve` 的 Node 常驻入口后，逐项核对 Go 是否完整承接 Node 行为。
 本清单只列**代码里能证明的缺口**：显式"留空/未接入/501/让走 Node"的标记，以及 serve 参数差异；不代表全量端点已完成对拍。
 
-## P0：Node 已不再回落，当前会直接失败
+**单库原则：所有缺口只补进 aih.db，不新增第二个数据库。** 文中出现的 `state*.sqlite` 是 Codex CLI 自己的本地文件，不是 aih 的库，也不是要接入的存储；需要的会话元数据应落到 aih.db 的索引表。
+
+## 清单：Node 已不再回落，当前会直接失败
 
 1. **会话列表非 codex provider**
    `internal/transport/http/webuisessionslistapi/handler.go:187`
@@ -14,9 +16,9 @@
 3. **会话消息非支持 provider**
    `internal/transport/http/webuisessionmessagesapi/handler.go:77,155`
    返回 501 `unsupported_provider`。
-4. **Codex 会话只读 rollout JSONL**
+4. **Codex 会话元数据未落到 aih.db**
    `internal/transport/http/webuisessionslistapi/codex.go:32-33`
-   Node 优先读 `~/.codex/state*.sqlite` 的 threads 表；Go 只读 rollout `session_meta`。只存在于 state DB、磁盘 rollout 已没有的会话会丢失。
+   session list 每次从 rollout JSONL 扫描；缺少的 thread 元数据应物化到 aih.db 的 session index，由 aih.db 统一读出，不读取也不新增外部数据库。
 5. **账号新增/本机导入只承接部分模式**
    `internal/transport/http/webuiaccountaddapi/handler.go:270,457,621`
    Go 只承接 OAuth 登录与 Kiro refresh_token；其他 auth mode / 本机登录态来源返回 400/503。
@@ -30,7 +32,7 @@
    `internal/transport/http/accountauthapi/jobs_watch.go:30-35`
    `callbackCaptureStatus` 恒留空，注释说明由 Node loopback 捕获合并；Node 仅作为按需宿主能力存在时需确认该合并仍在。
 
-## P1：接口能返回 200，但字段/诊断被留空
+## 清单：接口能返回 200，但字段/诊断被留空
 
 1. **账号行的调度规则为空**
    `internal/transport/http/webuiaccountsapi/row.go:37,234`
@@ -48,7 +50,7 @@
    - `webuimodelsyncapi` 的策略时间已归一（UTC 毫秒）。
    - `webuiaccountupdateapi` 已补回 `account` 行；同类"成功响应少字段"的点仍需逐端点扫。
 
-## P2：`aih server serve` 参数缺口（当前 fail-closed）
+## 清单：`aih server serve` 参数缺口（当前 fail-closed）
 
 已映射到 Go flag/env：
 `host`、`port`、`client-key/api-key`、`management-key`、`proxy-url`、`no-proxy`、`strategy`、`codex-client-version`、`provider-cli-auto-upgrade*`、`window-activation*`、`strict-port`、`allow-multi`；hooks 与 web-dir 由适配器自动传。
@@ -67,7 +69,7 @@
 - Node 默认单实例锁/端口占用处理与 Go 的严格 bind 不同；`--allow-multi` 只是不再探测已运行实例。
 - 删除了 Node 启动前的 usage scheduler / state-index 预热；Go 自己启动刷新，需用真实数据对拍确认无缺口。
 
-## P3：合同/文档残留
+## 清单：合同/文档残留
 
 - `contracts/routeownership/contract.go:732,743` 仍保留两条 `node_owned` legacy aggregate；不是实际路由，但会让完成度看起来未清零。
 - `contracts/routeownership/contract.go` 的 `webui.static_shell` 注释仍写"web/dist 缺失回落 Node"；Go-only 已无 Node 可回落。

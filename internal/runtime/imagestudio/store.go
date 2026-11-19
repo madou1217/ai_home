@@ -267,7 +267,14 @@ func (s *Store) withSerializedTx(ctx context.Context, write bool, fn func(tx *sq
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	db, err := appstate.OpenWritable(ctx, s.dbPath)
+	open := appstate.OpenReadOnly
+	if write {
+		// Reserve the writer before reading the session. A deferred transaction
+		// cannot upgrade a stale WAL snapshot after another module commits;
+		// busy_timeout cannot make that upgrade succeed.
+		open = appstate.OpenWritableImmediate
+	}
+	db, err := open(ctx, s.dbPath)
 	if err != nil {
 		return err
 	}
@@ -276,10 +283,6 @@ func (s *Store) withSerializedTx(ctx context.Context, write bool, fn func(tx *sq
 	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON;"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, studioSchemaSQL); err != nil {
-		return err
-	}
-
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: !write})
 	if err != nil {
 		return err
@@ -293,6 +296,16 @@ func (s *Store) withSerializedTx(ctx context.Context, write bool, fn func(tx *sq
 }
 
 func (s *Store) initAndRecover(ctx context.Context) error {
+	// Schema work belongs to startup, not every session read or write.
+	db, err := appstate.OpenWritable(ctx, s.dbPath)
+	if err != nil {
+		return err
+	}
+	_, schemaErr := db.ExecContext(ctx, studioSchemaSQL)
+	_ = db.Close()
+	if schemaErr != nil {
+		return schemaErr
+	}
 	return s.withSerializedTx(ctx, true, func(tx *sql.Tx) error {
 		recoveredAt := s.nowMS()
 		rows, err := tx.QueryContext(ctx, "SELECT payload_json FROM image_studio_sessions")

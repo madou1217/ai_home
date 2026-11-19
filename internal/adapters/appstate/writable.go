@@ -71,7 +71,7 @@ func OpenWritable(ctx context.Context, databasePath string) (*sql.DB, error) {
 // 用于共享键（例如 config:server）的局部字段更新：与其它写者的立即事务串行化，
 // 不会把对方刚写的字段覆盖回旧值。
 func UpdateKV(ctx context.Context, databasePath string, key string, mutate func(current string, found bool) (string, error)) error {
-	db, err := openWritableImmediate(ctx, databasePath)
+	db, err := OpenWritableImmediate(ctx, databasePath)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,9 @@ func UpdateKV(ctx context.Context, databasePath string, key string, mutate func(
 	return tx.Commit()
 }
 
-func openWritableImmediate(ctx context.Context, databasePath string) (*sql.DB, error) {
+// OpenWritableImmediate opens a writer whose transactions acquire the SQLite
+// write reservation before reading, avoiding deferred read-to-write upgrades.
+func OpenWritableImmediate(ctx context.Context, databasePath string) (*sql.DB, error) {
 	if err := businessdb.CheckReady(ctx, databasePath); err != nil {
 		return nil, err
 	}

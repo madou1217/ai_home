@@ -114,7 +114,7 @@ func (store *delegationStore) ReplaceCredential(
 }
 
 // TestDelegatedRefreshRespectsAccountOwnership 守住宿主委托的刷新所有权边界：
-// 宿主台账里的账号仍由宿主刷新，Go 独有账号（OwnsRefresh=true）必须由本进程刷新。
+// 宿主台账里的账号仍由宿主刷新，无台账投影账号（OwnsRefresh=true）必须由本进程刷新。
 func TestDelegatedRefreshRespectsAccountOwnership(t *testing.T) {
 	now := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
 	credential := delegationCredential{
@@ -149,7 +149,7 @@ func TestDelegatedRefreshRespectsAccountOwnership(t *testing.T) {
 			wantRefreshes: 0,
 		},
 		{
-			name: "Go 独有账号在委托模式下仍刷新并写回",
+			name: "无台账投影账号在委托模式下仍刷新并写回",
 			ownsRefresh: func(ref accountcore.AccountRef) bool {
 				return ref == accountRef
 			},

@@ -132,8 +132,8 @@ function compareRows(nodeRows, goRows, tolerance) {
     // 把它报成 diverged 会让「未完成迁移」和「口径不同」混成一件事。
     const partial = bothPresent && Math.min(node.tokens, go.tokens) / baseline < PARTIAL_RATIO;
     let verdict = 'comparable';
-    if (node.tokens > 0 && go.tokens === 0) verdict = 'node_only';
-    else if (go.tokens > 0 && node.tokens === 0) verdict = 'go_only';
+    if (node.tokens > 0 && go.tokens === 0) verdict = 'node_ledger';
+    else if (go.tokens > 0 && node.tokens === 0) verdict = 'go_ledger';
     else if (partial) verdict = 'partial';
     else if (bothPresent && delta > tolerance) verdict = 'diverged';
     rows.push({

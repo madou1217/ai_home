@@ -54,7 +54,7 @@ type Authorizer interface {
 // AccountStateProjection 是 Node account_state 展示投影的写入端口。
 //
 // 由 *accountstate.Store 实现。返回 changed=false 表示 Node 台账里没有这个账号
-// （Go 独有账号），此时没有投影要维护，不是错误。nil 表示投影端口未接入，账号
+// （无台账投影账号），此时没有投影要维护，不是错误。nil 表示投影端口未接入，账号
 // 启停仍按 Go 真值执行。
 type AccountStateProjection interface {
 	SetStatus(ctx context.Context, accountRef string, status string) (bool, error)

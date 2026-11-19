@@ -73,7 +73,7 @@ type Dependencies struct {
 	// DelegateCredentialRefresh 表示嵌入宿主独占 OAuth 刷新，解析器不自行刷新。
 	DelegateCredentialRefresh bool
 	// OwnsCredentialRefresh 判定「这条账号的凭据由本进程刷新」。
-	// 嵌入宿主台账里没有的账号（Go 独有账号）在委托模式下也必须自刷新，
+	// 嵌入宿主台账里没有的账号（无台账投影账号）在委托模式下也必须自刷新，
 	// 否则 token 过期后推理会一路 401 且没人能救。
 	OwnsCredentialRefresh func(accountcore.AccountRef) bool
 	// Upstreams 注册按真实线协议区分的上游 Adapter。

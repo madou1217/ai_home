@@ -236,7 +236,7 @@ async function main() {
     }
   }
 
-  const goOnly = goRows
+  const goLedger = goRows
     .map((row) => String(row.accountRef || ''))
     .filter((ref) => !nodeRows.some((row) => goRefFor(String(row.accountRef || ''), links) === ref));
 
@@ -245,7 +245,7 @@ async function main() {
     goRows: goRows.length,
     matched,
     unmatchedNode,
-    goOnly,
+    goLedger,
     filledMismatchCount: buckets.filled.length,
     approxMismatchCount: buckets.approx.length,
     unfilledMismatchCount: buckets.unfilled.length,
@@ -253,7 +253,7 @@ async function main() {
     missingKeys: Object.fromEntries(missingKeys),
     extraKeys: Object.fromEntries(extraKeys),
     mismatches: buckets,
-    zeroDiff: buckets.filled.length === 0 && buckets.unknown.length === 0 && unmatchedNode.length === 0 && goOnly.length === 0
+    zeroDiff: buckets.filled.length === 0 && buckets.unknown.length === 0 && unmatchedNode.length === 0 && goLedger.length === 0
   };
 
   if (options.json) {
@@ -265,7 +265,7 @@ async function main() {
       ' unfilled 差异=' + report.unfilledMismatchCount +
       ' 未分类差异=' + report.unknownMismatchCount);
     if (unmatchedNode.length > 0) console.log('Node 有、Go 无: ' + unmatchedNode.join(', '));
-    if (goOnly.length > 0) console.log('Go 有、Node 无: ' + goOnly.join(', '));
+    if (goLedger.length > 0) console.log('Go 有、Node 无: ' + goLedger.join(', '));
     const missing = Object.keys(report.missingKeys);
     if (missing.length > 0) console.log('Go 未发出的 Node 键: ' + missing.map((k) => k + '×' + report.missingKeys[k]).join(', '));
     const extra = Object.keys(report.extraKeys);

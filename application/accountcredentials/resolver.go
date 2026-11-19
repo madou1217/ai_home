@@ -437,7 +437,7 @@ func (resolver *Resolver) ForceRefreshCredentialBinding(
 
 // delegatesRefresh 判断本次是否必须把刷新完全交给宿主进程。
 //
-// 委托语义只覆盖宿主拥有并会自行刷新的账号；宿主台账里没有的账号（Go 独有）
+// 委托语义只覆盖宿主拥有并会自行刷新的账号；宿主台账里没有的账号（无台账投影）
 // 由 OwnsRefresh 判定为本进程负责，即使开了委托也必须照常刷新，避免两侧都不刷新。
 func (resolver *Resolver) delegatesRefresh(
 	accountRef accountcore.AccountRef,

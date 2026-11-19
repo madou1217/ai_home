@@ -15,7 +15,7 @@
 
 原 Go 已有 canonical `/v1/management/webui/management/*` 和 browser `/v0/webui/management/*`，但历史 `/v0/management/*`（除 restart）仍落 Node fallback。真实调用者包括 `lib/cli/services/server/state-index-client.js`：四项写动作把请求发到 `/v0/management/state-index/*`，Node management-router 再转同一 Go handler。
 
-本次由已有 canonical route 列表派生 **28 条精确、保留 method 的 public 别名**，沿用同一个 handler、鉴权、前缀正规化、job PathValue、state/SSE 服务；既有 public restart 保留且不重复注册。不新增根路径或 subtree catchall：插件实际 public 命名空间 `/v0/plugins/*` 仍是另一 owner 的真实遗留入口，不能用新的广泛 404 截断它，也不能据此宣布插件已 Go-only。独立 review 未发现 Important/Critical 问题，绑定上述源码 hash；它只审 source，不替代运行证据。
+本次由已有 canonical route 列表派生 **28 条精确、保留 method 的 public 别名**，沿用同一个 handler、鉴权、前缀正规化、job PathValue、state/SSE 服务；既有 public restart 保留且不重复注册。不新增根路径或 subtree catchall：插件实际 public 命名空间 `/v0/plugins/*` 仍是另一 owner 的真实遗留入口，不能用新的广泛 404 截断它，也不能据此宣布插件已全部 Go。独立 review 未发现 Important/Critical 问题，绑定上述源码 hash；它只审 source，不替代运行证据。
 
 ## 不可变输入与构件
 

@@ -102,7 +102,7 @@ func LookupAccountProvider(ctx context.Context, databasePath string, accountRef 
 	// 未命中 Node 台账时回落 Go 账号库：账号的真实写入方已经是 Go（浏览器登录 / 导入），
 	// account_refs 只覆盖 Node 建过的账号。不回落的话，所有「按 ref 判归属」的接口
 	// （模型上下文、账号配置、额度、路由规则、默认账号、窗口激活……）都会对
-	// Go 独有账号一律 404。
+	// 无台账投影账号一律 404。
 	return lookupGoAccountProviderNear(ctx, databasePath, reference)
 }
 
@@ -110,7 +110,7 @@ func LookupAccountProvider(ctx context.Context, databasePath string, accountRef 
 //
 // 与 LookupAccountProvider 的区别：后者回落 Go 账号库以兼容「账号真实写入方已经是
 // Go」的读模型；这里要回答的是「Node 宿主是否拥有该账号」，所以只能在 Node 台账里
-// 查找。Go 独有账号返回 found=false，调用方据此接管刷新。
+// 查找。无台账投影账号返回 found=false，调用方据此接管刷新。
 func LookupNodeAccountProvider(
 	ctx context.Context,
 	databasePath string,

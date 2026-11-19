@@ -714,7 +714,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// agy 刷新可能带账号级出口绑定（Node 的 account:egress:<ref>）。Go 接管
 	// 刷新后必须沿用同一绑定：url/system/tun/pool/direct 先由 egress 解析成
 	// 具体出站目标（fail-closed），再交给刷新策略；未绑定时保持进程默认。
-	// 绑定只存在于 Node 台账账号；Go 独有账号通常没有绑定，行为与默认一致。
+	// 绑定只存在于 Node 台账账号；无台账投影账号通常没有绑定，行为与默认一致。
 	agyEgress := agyegress.NewResolver(agyegress.Options{AIHomeDir: aiHomeDir})
 	agyEgressResolver := func(
 		ctx context.Context,
@@ -811,7 +811,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return append(oauth, staticCredentialStrategies...)
 	}
 	// 凭据刷新所有权以 Node 的 account_refs 台账为准：台账里的账号由宿主刷新，
-	// 委托模式下 Go 不重复刷新；Go 独有的账号（台账里没有，例如 Go 完成 agy 登录）
+	// 委托模式下 Go 不重复刷新；无台账投影的账号（台账里没有，例如 Go 完成 agy 登录）
 	// 没有宿主凭据，必须由 Go 接管，否则 Token 过期后两侧都无人刷新。
 	appStateDatabasePath, appStatePathErr := appstate.DatabasePath(aiHomeDir)
 	ownsCredentialRefresh := func(accountRef accountcore.AccountRef) bool {

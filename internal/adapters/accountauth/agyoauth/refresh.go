@@ -428,7 +428,7 @@ func (provider *Provider) refreshWithClient(
 		IDToken: firstNonEmptyRefreshValue(tokens.IDToken, auth.IDToken()),
 	})
 	// 身份可能变化（Google 侧改了邮箱）：这里不拒绝，交给 Resolver 判定是
-	// 迁移账号（Go 独有账号）还是拒绝（宿主拥有身份映射）。Node 就是直接
+	// 迁移账号（无台账投影账号）还是拒绝（宿主拥有身份映射）。Node 就是直接
 	// 采用 id_token 的新身份，拒绝会丢掉官方返回的合法结果。
 	if err != nil {
 		return nil, false, accountcredentials.ErrInvalidRefreshResult

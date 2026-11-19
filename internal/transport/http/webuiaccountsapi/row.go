@@ -162,7 +162,7 @@ var approxRowFields = []string{
 	"usageSnapshot",
 	"quotaStatus",
 	"quotaReason",
-	// 调度状态：Node 行存在时仍以 Node 派生为准；Go 独有账号（没有 Node 行）
+	// 调度状态：Node 行存在时仍以 Node 派生为准；无台账投影账号（没有 Node 行）
 	// 用这里按账号静态事实算出的值，避免整列空串。
 	"schedulableStatus",
 	"schedulableReason",

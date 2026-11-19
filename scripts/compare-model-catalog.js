@@ -137,13 +137,13 @@ async function main() {
   }
 
   const onlyInReference = difference(nodeIds, goIds);
-  const goOnly = difference(goIds, nodeIds);
+  const goLedger = difference(goIds, nodeIds);
   const unexpected = onlyInReference.filter((id) => !matchesAllowed(id, options.allow));
   const result = {
     nodeCount: nodeIds.size,
     goCount: goIds.size,
     onlyInReference: onlyInReference.slice(0, MAX_REPORTED),
-    goOnly: goOnly.slice(0, MAX_REPORTED),
+    goLedger: goLedger.slice(0, MAX_REPORTED),
     unexpectedOnlyInReference: unexpected.slice(0, MAX_REPORTED),
     allowedPrefixes: options.allow,
     verdict: unexpected.length === 0 ? 'catalog_can_move' : 'catalog_blocked'
@@ -154,7 +154,7 @@ async function main() {
   } else {
     process.stdout.write(`Node ${result.nodeCount} 个模型 / Go ${result.goCount} 个模型\n`);
     process.stdout.write(`仅参考侧: ${result.onlyInReference.length ? result.onlyInReference.join(', ') : '（无）'}\n`);
-    process.stdout.write(`仅 Go:   ${result.goOnly.length ? result.goOnly.join(', ') : '（无）'}\n`);
+    process.stdout.write(`仅 Go:   ${result.goLedger.length ? result.goLedger.join(', ') : '（无）'}\n`);
     if (result.allowedPrefixes.length) {
       process.stdout.write(`允许前缀: ${result.allowedPrefixes.join(', ')}\n`);
     }

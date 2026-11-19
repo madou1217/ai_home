@@ -69,10 +69,10 @@ func TestMissingDatabaseIsEmpty(t *testing.T) {
 	}
 }
 
-// TestLookupAccountProviderFallsBackToGoStore 锁住「Go 独有账号」的归属判定。
+// TestLookupAccountProviderFallsBackToGoStore 锁住「无台账投影账号」的归属判定。
 //
 // 账号的真实写入方已经是 Go（浏览器登录 / 导入），account_refs 只覆盖 Node 建过的账号。
-// 只看 account_refs 会让模型上下文、账号配置、额度、路由规则等入口对 Go 独有账号一律 404。
+// 只看 account_refs 会让模型上下文、账号配置、额度、路由规则等入口对 无台账投影账号一律 404。
 func TestLookupAccountProviderFallsBackToGoStore(t *testing.T) {
 	ctx := context.Background()
 	appStatePath := seed(t)
@@ -87,14 +87,14 @@ func TestLookupAccountProviderFallsBackToGoStore(t *testing.T) {
 	); err != nil {
 		t.Fatalf("create accounts: %v", err)
 	}
-	const goOnlyRef = "acct_0ea957d4866d74953fcd"
-	if _, err := goDatabase.Exec(`INSERT INTO accounts VALUES (?, 'agy')`, goOnlyRef); err != nil {
+	const unprojectedRef = "acct_0ea957d4866d74953fcd"
+	if _, err := goDatabase.Exec(`INSERT INTO accounts VALUES (?, 'agy')`, unprojectedRef); err != nil {
 		t.Fatalf("insert accounts: %v", err)
 	}
 
-	provider, found, err := LookupAccountProvider(ctx, appStatePath, goOnlyRef)
+	provider, found, err := LookupAccountProvider(ctx, appStatePath, unprojectedRef)
 	if err != nil || !found || provider != "agy" {
-		t.Fatalf("LookupAccountProvider(go-only) = %q/%v/%v, want agy/true/nil", provider, found, err)
+		t.Fatalf("LookupAccountProvider(without-host-ledger) = %q/%v/%v, want agy/true/nil", provider, found, err)
 	}
 	// Node 台账仍然优先：同一个 ref 两边都有时以 account_refs 为准。
 	provider, found, err = LookupAccountProvider(ctx, appStatePath, testRef)
@@ -105,9 +105,9 @@ func TestLookupAccountProviderFallsBackToGoStore(t *testing.T) {
 	if _, found, err = LookupAccountProvider(ctx, appStatePath, "acct_ffffffffffffffffffff"); err != nil || found {
 		t.Fatalf("LookupAccountProvider(missing) = %v/%v, want false/nil", found, err)
 	}
-	// 刷新所有权判定只看 Node 台账：Go 独有账号不能被视为宿主拥有。
-	if _, found, err = LookupNodeAccountProvider(ctx, appStatePath, goOnlyRef); err != nil || found {
-		t.Fatalf("LookupNodeAccountProvider(go-only) = %v/%v, want false/nil", found, err)
+	// 刷新所有权判定只看 Node 台账：无台账投影账号不能被视为宿主拥有。
+	if _, found, err = LookupNodeAccountProvider(ctx, appStatePath, unprojectedRef); err != nil || found {
+		t.Fatalf("LookupNodeAccountProvider(without-host-ledger) = %v/%v, want false/nil", found, err)
 	}
 	provider, found, err = LookupNodeAccountProvider(ctx, appStatePath, testRef)
 	if err != nil || !found || provider != "claude" {

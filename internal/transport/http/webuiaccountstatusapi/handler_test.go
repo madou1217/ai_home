@@ -437,7 +437,7 @@ func TestStatusFailsClosedWhenProjectionWriteFails(t *testing.T) {
 	}
 }
 
-func TestStatusAllowsGoOnlyAccountWithoutProjectionRow(t *testing.T) {
+func TestStatusAllowsAccountWithoutProjectionRow(t *testing.T) {
 	store, ref := newStore(t)
 	projection := &fakeProjection{missing: true}
 	handler := newHandlerWith(t, store, projection, &fakeHostGrant{supported: true})

@@ -291,7 +291,13 @@ func decodeThinkingContent(raw json.RawMessage, field string) (decodedContent, e
 		wireContent.Signature,
 	)
 	if contentErr != nil {
-		return decodedContent{}, invalidField(field)
+		// 断流重放或兼容上游会回传没有签名的 thinking 块；上游本来也不认这种块，
+		// 当作普通文本回放进历史，而不是让整轮请求 400。
+		text, textErr := inference.NewTextContent(wireContent.Thinking)
+		if textErr != nil {
+			return decodedContent{}, invalidField(field)
+		}
+		return decodedContent{content: text}, nil
 	}
 	return decodedContent{content: content}, nil
 }

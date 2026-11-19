@@ -409,17 +409,35 @@ func (state *responseState) completeOutputItem(event inference.OutputItemComplet
 	return nil
 }
 
-// updateUsage 要求累计 usage 不能倒退。
+// updateUsage 吸收累计 usage。
+//
+// usage 只影响统计与计费，不参与内容语义：兼容上游会在同一条流里重复上报，
+// 甚至把缓存分项报小。这里按字段取大值收敛，绝不因为统计值波动打断已开始的响应。
 func (state *responseState) updateUsage(usage inference.Usage) error {
-	if usage.InputTokens() < state.usage.InputTokens() ||
-		usage.OutputTokens() < state.usage.OutputTokens() ||
-		usage.CachedInputTokens() < state.usage.CachedInputTokens() ||
-		usage.CacheWriteInputTokens() < state.usage.CacheWriteInputTokens() ||
-		usage.ReasoningTokens() < state.usage.ReasoningTokens() {
-		return ErrInvalidEventSequence
-	}
-	state.usage = usage
+	state.usage = maxUsage(state.usage, usage)
 	return nil
+}
+
+// maxUsage 逐个字段取累计值的较大者，保持单调不回退。
+func maxUsage(base inference.Usage, next inference.Usage) inference.Usage {
+	merged, err := inference.NewUsage(inference.UsageInput{
+		InputTokens:           maxUint64(base.InputTokens(), next.InputTokens()),
+		OutputTokens:          maxUint64(base.OutputTokens(), next.OutputTokens()),
+		CachedInputTokens:     maxUint64(base.CachedInputTokens(), next.CachedInputTokens()),
+		CacheWriteInputTokens: maxUint64(base.CacheWriteInputTokens(), next.CacheWriteInputTokens()),
+		ReasoningTokens:       maxUint64(base.ReasoningTokens(), next.ReasoningTokens()),
+	})
+	if err != nil {
+		return base
+	}
+	return merged
+}
+
+func maxUint64(left uint64, right uint64) uint64 {
+	if right > left {
+		return right
+	}
+	return left
 }
 
 // completeResponse 只接受全部输出项完成后的明确成功终态。

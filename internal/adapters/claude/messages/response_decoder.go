@@ -195,11 +195,18 @@ func (decoder *responseDecoder) startContentBlock(
 	index *uint32,
 	raw json.RawMessage,
 ) error {
-	if !decoder.started ||
-		index == nil ||
-		int(*index) != len(decoder.blocks) ||
-		len(raw) == 0 ||
-		decoder.hasOpenBlock() {
+	if !decoder.started || index == nil || len(raw) == 0 {
+		return ErrInvalidUpstreamResponse
+	}
+	// 有些兼容上游（DeepSeek）会在上一个块没发 content_block_stop 的情况下直接
+	// 开下一个块；这里把上一个块按隐式结束处理，而不是把整条流拒掉。
+	if decoder.hasOpenBlock() {
+		last := decoder.blocks[len(decoder.blocks)-1].wireIndex
+		if err := decoder.completeContentBlock(&last); err != nil {
+			return err
+		}
+	}
+	if int(*index) != len(decoder.blocks) {
 		return ErrInvalidUpstreamResponse
 	}
 	var wire outputContentDTO

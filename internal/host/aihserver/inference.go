@@ -212,7 +212,6 @@ func newInferenceComposition(
 	builder.WithRelayProviders(relayProviderIDs()...)
 	// Node-only Provider（Go 无推理上游）的模型不进 Go 目录：一个 kiro 模型就能让
 	// 整个快照构建失败，结果所有请求都被交还 Node。名单从 Catalog 派生。
-	builder.WithNodeOnlyProviders(nodeOnlyProviderIDs(dependencies.catalog)...)
 	catalogRefresh, err := inferencecatalog.NewRefreshCoordinator(
 		inferencecatalog.RefreshCoordinatorOptions{
 			Builder: builder,

@@ -66,17 +66,6 @@ func relayHostsGoRelay(entries ...string) map[string]RelayHost {
 	}
 }
 
-// relayHostsNodeOnly 声明「只有 Node 能服务该 Provider 的推理」，并写明 Go 不能的原因。
-//
-// reason 必填（validateRelayHosts 强制）：沉默缺失正是本能力位要消灭的形态——
-// Provider 不在任何名单里、没人知道为什么，故障时只能靠翻代码猜。
-func relayHostsNodeOnly(reason string) map[string]RelayHost {
-	return map[string]RelayHost{
-		RelayHostNode: {Supported: true, Channel: RelayChannelRelay},
-		RelayHostGo:   {Supported: false, Reason: reason},
-	}
-}
-
 // hookFeatureFlag 返回特性开关的地址：false 与 nil 是两种不同事实
 // （合同声明「不需要」/ 合同没有声明），不能用同一个零值表示。
 func hookFeatureFlag(enabled bool) *bool {

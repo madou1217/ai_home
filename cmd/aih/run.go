@@ -105,6 +105,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "native" && len(arguments) >= 2 && arguments[1] == "plugin" {
 		return runNativePlugin(ctx, arguments[2:], runtime)
 	}
+	if providerID == "update" {
+		return runUpdate(ctx, arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}

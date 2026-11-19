@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 )
@@ -27,7 +28,11 @@ func VerifySource(ctx context.Context, expected SourceFingerprint) error {
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(expected, actual) {
+	// WAL and shared-memory sidecars are transient: a read-only SQLite
+	// connection or a checkpoint can rewrite them without changing logical
+	// data. Writers are excluded by the installer's writer lease, so compare
+	// the durable database and rollback journal only.
+	if !reflect.DeepEqual(stableSourceFiles(expected), stableSourceFiles(actual)) {
 		return errors.New("distributiondata: source_changed_since_preparation")
 	}
 	return nil
@@ -59,6 +64,17 @@ func fingerprint(ctx context.Context, home, capture string) (SourceFingerprint, 
 		}
 	}
 	return result, nil
+}
+
+func stableSourceFiles(source SourceFingerprint) SourceFingerprint {
+	files := make([]FileFingerprint, 0, 2)
+	for _, file := range source.Files {
+		if file.Name == businessdb.FileName || strings.HasSuffix(file.Name, "-journal") {
+			files = append(files, file)
+		}
+	}
+	source.Files = files
+	return source
 }
 
 func fingerprintFile(ctx context.Context, home, capture, name string) (entry FileFingerprint, info os.FileInfo, resultErr error) {

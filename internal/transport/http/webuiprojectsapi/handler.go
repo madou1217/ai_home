@@ -127,7 +127,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if aiHomeDir == "" {
 		aiHomeDir = filepath.Join(hostHomeDir, ".ai_home")
 	}
-	return &Handler{
+	handler := &Handler{
 		authorizer:    dependencies.Authorizer,
 		hostHomeDir:   hostHomeDir,
 		aiHomeDir:     aiHomeDir,
@@ -135,7 +135,18 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		scanTimeout:   scanTimeout,
 		heartbeat:     DefaultWatchHeartbeat,
 		watchCoalesce: watchSnapshotCoalesce,
-	}, nil
+	}
+	// 冷缓存的第一次全量扫描要 ~1.3s（先读会话文件头/尾）。服务启动时后台预热一次，
+	// 首个页面请求就不用等这一次扫描。
+	go handler.warmProjectCache()
+	return handler, nil
+}
+
+// warmProjectCache 后台跑一次完整扫描，把会话事实灌进进程级缓存。
+func (handler *Handler) warmProjectCache() {
+	ctx, cancel := context.WithTimeout(context.Background(), handler.scanTimeout*2)
+	defer cancel()
+	handler.collect(ctx, aggregateOptions{})
 }
 
 // projectView 与 Node 的项目条目同形（manual / addedAt / remote 属于其它切片）。

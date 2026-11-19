@@ -237,7 +237,7 @@ func readProjectDir(budget Budget, projectDir, dirName, provider string) ([]Sess
 		if sessionID == "" {
 			continue
 		}
-		facts := readSessionFacts(filePath)
+		facts := cachedSessionFacts(filePath)
 		if projectPath == "" && facts.projectPath != "" {
 			projectPath = facts.projectPath
 		}

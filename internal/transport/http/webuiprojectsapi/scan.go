@@ -376,7 +376,7 @@ type codexRolloutMeta struct {
 // readCodexSessionRecord 把一个 rollout 文件翻译成会话条目；不满足 Node 可见性
 // 规则（子代理、非交互来源、worktree 项目、无标题）时 ok=false。
 func readCodexSessionRecord(sessionFilePath string, threadNames map[string]codexThreadName) (rawSession, string, bool) {
-	meta, ok := readCodexSessionMeta(sessionFilePath)
+	meta, ok := cachedCodexSessionMeta(sessionFilePath)
 	if !ok {
 		return rawSession{}, "", false
 	}
@@ -457,7 +457,7 @@ func readCodexThreadRecord(
 	title := normalizeCodexSessionTitle(rawTitle)
 	if title == "" {
 		if rolloutPath := resolveCodexRolloutPath(codexDir, row.ID, row.RolloutPath); rolloutPath != "" {
-			title = readCodexFallbackTitle(rolloutPath)
+			title = cachedCodexFallbackTitle(rolloutPath)
 		}
 	}
 	if title == "" {

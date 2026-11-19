@@ -10,6 +10,31 @@ import (
 	"sync/atomic"
 )
 
+// coldPanelPolicy 控制冷快照队列计算中启用的面板与收口选项，
+// 使同步单窗接口（Stats/Models/Sessions/Dashboard）与渐进作业分片复用同一内核，
+// 同时避免不需要的元数据查询、提示词扫描或趋势分桶依赖。
+type coldPanelPolicy struct {
+	needStats         bool
+	needModels        bool
+	needModelOptions  bool
+	needSessions      bool
+	needPrompts       bool
+	needTrend         bool
+	includeModelRefs  bool
+	applySessionLimit bool
+}
+
+var coldDashboardJobPolicy = coldPanelPolicy{
+	needStats:         true,
+	needModels:        true,
+	needModelOptions:  true,
+	needSessions:      true,
+	needPrompts:       true,
+	needTrend:         true,
+	includeModelRefs:  true,
+	applySessionLimit: false,
+}
+
 // tryComputeColdDashboardShards 面向首次无汇总覆盖的长窗（>=30d，含 FromMS=0）渐进看板作业：
 // 在请求私有的 3 连接同版本只读 WAL 快照队列上，复用 scanRollupHourRangeConn 并行计算小时聚合，
 // 通过虚拟计划边界闭合求得整窗精确归因，再在同一快照队列上产出与原有分片器完全一致的 []UsageDashboardShard；
@@ -20,6 +45,16 @@ func (s *UsageStore) tryComputeColdDashboardShards(
 	query UsageQuery,
 	shards []UsageQuery,
 	overallTrendOriginMS, overallTrendBucketMS int64,
+) ([]UsageDashboardShard, bool, error) {
+	return s.computeColdShards(ctx, query, shards, overallTrendOriginMS, overallTrendBucketMS, coldDashboardJobPolicy)
+}
+
+func (s *UsageStore) computeColdShards(
+	ctx context.Context,
+	query UsageQuery,
+	shards []UsageQuery,
+	overallTrendOriginMS, overallTrendBucketMS int64,
+	policy coldPanelPolicy,
 ) ([]UsageDashboardShard, bool, error) {
 	if s == nil || s.db == nil {
 		return nil, false, ErrUsageUnavailable
@@ -39,9 +74,14 @@ func (s *UsageStore) tryComputeColdDashboardShards(
 		return nil, false, nil
 	}
 	firstFull, lastFullEnd := fullHourWindow(q.FromMS, q.ToMS)
-	resolvedOrigin, resolvedBucket, _, _ := ResolveUsageTrend(q.FromMS, q.ToMS, overallTrendBucketMS, overallTrendOriginMS)
-	if !isColdDashboardTrendSupported(firstFull, lastFullEnd, resolvedOrigin, resolvedBucket) {
+	if firstFull >= lastFullEnd {
 		return nil, false, nil
+	}
+	if policy.needTrend {
+		resolvedOrigin, resolvedBucket, _, _ := ResolveUsageTrend(q.FromMS, q.ToMS, overallTrendBucketMS, overallTrendOriginMS)
+		if !isColdDashboardTrendSupported(firstFull, lastFullEnd, resolvedOrigin, resolvedBucket) {
+			return nil, false, nil
+		}
 	}
 	normShards, shardsValid := normalizeAndValidateColdShards(q, shards)
 	if !shardsValid {
@@ -99,7 +139,14 @@ func (s *UsageStore) tryComputeColdDashboardShards(
 		RecordHighWaterID:    -1,
 		PromptHighWaterRowID: -1,
 	})
-	outShards, err := buildColdShardsParallel(ctx, cohort, normShards, overallTrendOriginMS, overallTrendBucketMS, win, globalLctx)
+	if len(normShards) == 1 {
+		sh, shErr := buildColdDashboardShardConn(ctx, baseSlot.conn, normShards[0], overallTrendOriginMS, overallTrendBucketMS, win, globalLctx, policy)
+		if shErr != nil {
+			return nil, false, shErr
+		}
+		return []UsageDashboardShard{sh}, true, nil
+	}
+	outShards, err := buildColdShardsParallel(ctx, cohort, normShards, overallTrendOriginMS, overallTrendBucketMS, win, globalLctx, policy)
 	if err != nil {
 		return nil, false, err
 	}
@@ -202,7 +249,7 @@ func (s *UsageStore) resolveColdWindowAttributionsConn(
 	}, true, nil
 }
 
-func buildColdShardsParallel(ctx context.Context, cohort *coldSnapshotCohort, shards []UsageQuery, overallTrendOriginMS, overallTrendBucketMS int64, win coldComputedWindow, globalLctx liveCanonicalContext) ([]UsageDashboardShard, error) {
+func buildColdShardsParallel(ctx context.Context, cohort *coldSnapshotCohort, shards []UsageQuery, overallTrendOriginMS, overallTrendBucketMS int64, win coldComputedWindow, globalLctx liveCanonicalContext, policy coldPanelPolicy) ([]UsageDashboardShard, error) {
 	out := make([]UsageDashboardShard, len(shards))
 	workerCount := min(len(cohort.slots), len(shards))
 	workerCtx, cancel := context.WithCancelCause(ctx)
@@ -227,7 +274,7 @@ func buildColdShardsParallel(ctx context.Context, cohort *coldSnapshotCohort, sh
 				if workerCtx.Err() != nil {
 					return
 				}
-				sh, shErr := buildColdDashboardShardConn(workerCtx, conn, shards[idx], overallTrendOriginMS, overallTrendBucketMS, win, globalLctx)
+				sh, shErr := buildColdDashboardShardConn(workerCtx, conn, shards[idx], overallTrendOriginMS, overallTrendBucketMS, win, globalLctx, policy)
 				if shErr != nil {
 					if !isInternalWorkerCancelErr(ctx, workerCtx, shErr) {
 						errMu.Lock()
@@ -257,21 +304,48 @@ func buildColdShardsParallel(ctx context.Context, cohort *coldSnapshotCohort, sh
 	return out, nil
 }
 
-func buildColdDashboardShardConn(ctx context.Context, conn *sql.Conn, sq UsageQuery, overallTrendOriginMS, overallTrendBucketMS int64, win coldComputedWindow, globalLctx liveCanonicalContext) (UsageDashboardShard, error) {
-	originMS, bucketMS, fromMS, toMS := ResolveUsageTrend(sq.FromMS, sq.ToMS, overallTrendBucketMS, overallTrendOriginMS)
+func buildColdDashboardShardConn(ctx context.Context, conn *sql.Conn, sq UsageQuery, overallTrendOriginMS, overallTrendBucketMS int64, win coldComputedWindow, globalLctx liveCanonicalContext, policy coldPanelPolicy) (UsageDashboardShard, error) {
+	var originMS, bucketMS, fromMS, toMS int64
+	if policy.needTrend {
+		originMS, bucketMS, fromMS, toMS = ResolveUsageTrend(sq.FromMS, sq.ToMS, overallTrendBucketMS, overallTrendOriginMS)
+	}
 	if sq.ToMS < sq.FromMS {
-		return UsageDashboardShard{
-			Models: []UsageModelItem{}, SessionParts: []UsageSessionPart{}, ModelOptions: []UsageModelItem{},
-			Trend: UsageTrend{FromMS: fromMS, ToMS: toMS, BucketMS: bucketMS, Points: listEmptyTrendPoints(fromMS, toMS, originMS, bucketMS)},
-		}, nil
+		var empty UsageDashboardShard
+		if policy.needModels {
+			empty.Models = []UsageModelItem{}
+		}
+		if policy.needModelOptions {
+			empty.ModelOptions = []UsageModelItem{}
+		}
+		if policy.needSessions {
+			empty.SessionParts = []UsageSessionPart{}
+		}
+		if policy.needTrend {
+			empty.Trend = UsageTrend{
+				FromMS:   fromMS,
+				ToMS:     toMS,
+				BucketMS: bucketMS,
+				Points:   listEmptyTrendPoints(fromMS, toMS, originMS, bucketMS),
+			}
+		}
+		return empty, nil
 	}
 
-	needOpts := sq.Model != ""
-	needTrend := originMS > 0 && bucketMS > 0
+	needOpts := policy.needModelOptions && sq.Model != ""
+	needTrend := policy.needTrend && originMS > 0 && bucketMS > 0
 	acc := newUsagePanelAccumulator(usagePanelOptions{
-		provider: sq.Provider, model: sq.Model, needStats: true, needModels: true,
-		needModelOptions: needOpts, needSessions: true, needPrompts: true, needTrend: needTrend,
-		trendOriginMS: originMS, trendBucketMS: bucketMS, trendFromMS: fromMS, trendToMS: toMS,
+		provider:         sq.Provider,
+		model:            sq.Model,
+		needStats:        policy.needStats,
+		needModels:       policy.needModels,
+		needModelOptions: needOpts,
+		needSessions:     policy.needSessions,
+		needPrompts:      policy.needPrompts,
+		needTrend:        needTrend,
+		trendOriginMS:    originMS,
+		trendBucketMS:    bucketMS,
+		trendFromMS:      fromMS,
+		trendToMS:        toMS,
 	})
 
 	var straddleRanges []timeRange
@@ -283,13 +357,13 @@ func buildColdDashboardShardConn(ctx context.Context, conn *sql.Conn, sq UsageQu
 			h := win.sortedHours[i]
 			hb := win.byHour[h]
 			aligned := !needTrend || isHourAlignedToTrendBucket(h, originMS, bucketMS)
-			feedColdHourIntoAcc(acc, h, hb, aligned)
-			if !aligned && len(hb.models) > 0 {
+			feedColdHourIntoAcc(acc, h, hb, policy, needTrend && aligned)
+			if needTrend && !aligned && len(hb.models) > 0 {
 				straddleRanges = append(straddleRanges, timeRange{FromMS: h, ToMS: h + rollupHourMS - 1})
 			}
 		}
 	}
-	if len(straddleRanges) > 0 {
+	if needTrend && len(straddleRanges) > 0 {
 		trendAcc := newUsagePanelAccumulator(usagePanelOptions{
 			provider: sq.Provider, model: sq.Model, needTrend: true,
 			trendOriginMS: originMS, trendBucketMS: bucketMS, trendFromMS: fromMS, trendToMS: toMS,
@@ -307,50 +381,73 @@ func buildColdDashboardShardConn(ctx context.Context, conn *sql.Conn, sq UsageQu
 			)
 		}
 	}
-	for _, lr := range complementTimeRanges(sq.FromMS, sq.ToMS, shardRollup) {
-		if err := scanLiveCanonicalRangeConn(ctx, conn, acc, lr, globalLctx, true, true, true); err != nil {
+	scanUsage := policy.needStats || policy.needModels || policy.needModelOptions || policy.needSessions || needTrend
+	if scanUsage || policy.needPrompts {
+		for _, lr := range complementTimeRanges(sq.FromMS, sq.ToMS, shardRollup) {
+			if err := scanLiveCanonicalRangeConn(ctx, conn, acc, lr, globalLctx, scanUsage, policy.needPrompts, needTrend); err != nil {
+				return UsageDashboardShard{}, err
+			}
+		}
+	}
+
+	var out UsageDashboardShard
+	if policy.needStats {
+		out.Stats = acc.finalizeStats()
+	}
+	if policy.needModels {
+		out.Models = acc.finalizeModels(policy.includeModelRefs)
+	}
+	if policy.needModelOptions {
+		if needOpts {
+			out.ModelOptions = acc.finalizeModelOptions(policy.includeModelRefs)
+		} else {
+			out.ModelOptions = out.Models
+		}
+	}
+	if policy.needSessions {
+		parts, err := acc.finalizeSessionParts(ctx, conn, policy.applySessionLimit, sq.Limit)
+		if err != nil {
 			return UsageDashboardShard{}, err
 		}
+		out.SessionParts = parts
 	}
-
-	stats := acc.finalizeStats()
-	models := acc.finalizeModels(true)
-	modelOptions := models
-	if needOpts {
-		modelOptions = acc.finalizeModelOptions(true)
+	if policy.needTrend {
+		out.Trend = acc.finalizeTrend()
 	}
-	parts, err := acc.finalizeSessionParts(ctx, conn, false, sq.Limit)
-	if err != nil {
-		return UsageDashboardShard{}, err
-	}
-	return UsageDashboardShard{Stats: stats, Models: models, SessionParts: parts, ModelOptions: modelOptions, Trend: acc.finalizeTrend()}, nil
+	return out, nil
 }
 
-func feedColdHourIntoAcc(acc *usagePanelAccumulator, h int64, hb *rollupHourBuild, includeTrend bool) {
-	for mk, mAgg := range hb.models {
-		acc.addRollupModelRow(
-			h, mk.provider, mk.model, mk.accountRef, mAgg.calls,
-			mAgg.inputTokens, mAgg.outputTokens, mAgg.cacheReadInputTokens,
-			mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens,
-			mAgg.totalTokens, mAgg.costUSD, includeTrend,
-		)
-	}
-	for sk, sAgg := range hb.sessions {
-		if (acc.opts.provider != "" && sk.provider != acc.opts.provider) ||
-			(acc.opts.model != "" && sk.model != acc.opts.model) {
-			continue
+func feedColdHourIntoAcc(acc *usagePanelAccumulator, h int64, hb *rollupHourBuild, policy coldPanelPolicy, includeTrend bool) {
+	if policy.needStats || policy.needModels || policy.needModelOptions || includeTrend {
+		for mk, mAgg := range hb.models {
+			acc.addRollupModelRow(
+				h, mk.provider, mk.model, mk.accountRef, mAgg.calls,
+				mAgg.inputTokens, mAgg.outputTokens, mAgg.cacheReadInputTokens,
+				mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens,
+				mAgg.totalTokens, mAgg.costUSD, includeTrend,
+			)
 		}
-		acc.addSessionAggregate(
-			sk.provider, sk.sessionID, sk.accountRef, sAgg.calls,
-			sAgg.inputTokens, sAgg.outputTokens, sAgg.cacheReadInputTokens,
-			sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens,
-			sAgg.totalTokens, sAgg.costUSD,
-			sAgg.minTimestampMS, sAgg.maxTimestampMS,
-			sAgg.maxProject, sAgg.maxCWD, sAgg.maxGitBranch,
-		)
 	}
-	for pk, cnt := range hb.prompts {
-		acc.addPromptCount(pk.provider, pk.sessionID, cnt)
+	if policy.needSessions || policy.needStats {
+		for sk, sAgg := range hb.sessions {
+			if (acc.opts.provider != "" && sk.provider != acc.opts.provider) ||
+				(acc.opts.model != "" && sk.model != acc.opts.model) {
+				continue
+			}
+			acc.addSessionAggregate(
+				sk.provider, sk.sessionID, sk.accountRef, sAgg.calls,
+				sAgg.inputTokens, sAgg.outputTokens, sAgg.cacheReadInputTokens,
+				sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens,
+				sAgg.totalTokens, sAgg.costUSD,
+				sAgg.minTimestampMS, sAgg.maxTimestampMS,
+				sAgg.maxProject, sAgg.maxCWD, sAgg.maxGitBranch,
+			)
+		}
+	}
+	if policy.needPrompts {
+		for pk, cnt := range hb.prompts {
+			acc.addPromptCount(pk.provider, pk.sessionID, cnt)
+		}
 	}
 }
 

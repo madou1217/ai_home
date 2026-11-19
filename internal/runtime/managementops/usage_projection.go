@@ -1064,6 +1064,12 @@ func (s *UsageStore) QueryStats(ctx context.Context, query UsageQuery) (UsageSta
 	if ok {
 		return hit, nil
 	}
+	if stats, coldReady, coldErr := s.tryComputeColdSyncStats(ctx, q); coldErr != nil {
+		return UsageStatsSummary{}, coldErr
+	} else if coldReady {
+		s.storeStatsRevisionCacheIfFresh(ctx, startRev, hasStartRev, q, stats)
+		return stats, nil
+	}
 
 	conn, cte, pCtx, err := s.openPreparedProjectionMode(ctx, q, nil, false)
 	if err != nil {
@@ -1091,6 +1097,11 @@ func (s *UsageStore) QueryCostByModel(ctx context.Context, query UsageQuery) ([]
 		return nil, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
+	if value, coldReady, coldErr := s.tryComputeColdSyncModels(ctx, q); coldErr != nil {
+		return nil, coldErr
+	} else if coldReady {
+		return value, nil
+	}
 	conn, cte, pCtx, err := s.openPreparedProjectionMode(ctx, q, nil, false)
 	if err != nil {
 		return nil, err
@@ -1113,6 +1124,11 @@ func (s *UsageStore) QuerySessions(ctx context.Context, query UsageQuery) ([]Usa
 		return nil, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
+	if value, coldReady, coldErr := s.tryComputeColdSyncSessions(ctx, q); coldErr != nil {
+		return nil, coldErr
+	} else if coldReady {
+		return value, nil
+	}
 	conn, cte, pCtx, err := s.openPreparedProjectionMode(ctx, q, nil, false)
 	if err != nil {
 		return nil, err
@@ -1180,6 +1196,11 @@ func (s *UsageStore) QueryDashboard(ctx context.Context, query UsageQuery) (Usag
 		return UsageDashboardPayload{}, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
+	if value, coldReady, coldErr := s.tryComputeColdSyncDashboard(ctx, q); coldErr != nil {
+		return UsageDashboardPayload{}, coldErr
+	} else if coldReady {
+		return value, nil
+	}
 	return s.queryDashboardWithRollup(ctx, q)
 }
 

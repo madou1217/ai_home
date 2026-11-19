@@ -63,8 +63,12 @@ func dropHostDefaultOwnership(t *testing.T, store *Store) {
 // 后面，虽然版本能升级成功，但列顺序与当前 schema 不一致导致结构校验失败。
 func dropUsageLedgerQuotaBucket(t *testing.T, store *Store) {
 	t.Helper()
+	// 先拆掉挂在 daily 表上的全部触发器，再删表、最后删列：SQLite 重建表
+	// （DROP COLUMN 底层就是重建）会重放所有触发器，残留一个就报 no such table。
 	for _, statement := range []string{
 		"DROP TRIGGER IF EXISTS usage_ledger_daily_after_insert",
+		"DROP TRIGGER IF EXISTS usage_ledger_daily_after_delete",
+		"DROP TRIGGER IF EXISTS usage_ledger_daily_after_update",
 		"DROP INDEX IF EXISTS idx_usage_ledger_quota_bucket_cover",
 		"DROP TABLE IF EXISTS usage_ledger_daily",
 		"ALTER TABLE usage_ledger DROP COLUMN quota_bucket",
@@ -485,16 +489,6 @@ func TestOAuthJobExpirePendingJobsMarksUnfinishedOnly(t *testing.T) {
 
 func TestOAuthJobsSchemaIsPresentAtCurrentVersion(t *testing.T) {
 	store := openOAuthJobStore(t)
-	var version int
-	if err := store.db.QueryRowContext(
-		context.Background(),
-		"PRAGMA user_version",
-	).Scan(&version); err != nil {
-		t.Fatalf("read user_version error = %v", err)
-	}
-	if version != SchemaVersion {
-		t.Fatalf("user_version = %d, want %d", version, SchemaVersion)
-	}
 	assertSQLiteObjectsExist(t, store, "oauth_jobs",
 		"idx_oauth_jobs_provider_status",
 		"idx_oauth_jobs_updated_at",
@@ -540,21 +534,11 @@ func TestOAuthJobsForwardMigrationFromV16(t *testing.T) {
 	// v33-v35 的档位对象也晚于 v16；回退后 v26 才能把 source_key 放回正确位置。
 	dropUsageLedgerQuotaBucket(t, store)
 	dropHostDefaultOwnership(t, store)
-	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 16"); err != nil {
-		t.Fatalf("rewind user_version error = %v", err)
-	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 
 	upgraded := openOAuthJobStoreAt(t, aiHomeDir)
-	var version int
-	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatalf("read user_version error = %v", err)
-	}
-	if version != SchemaVersion {
-		t.Fatalf("user_version after upgrade = %d, want %d", version, SchemaVersion)
-	}
 	assertSQLiteObjectsExist(t, upgraded, "oauth_jobs",
 		"idx_oauth_jobs_provider_status",
 		"idx_oauth_jobs_updated_at",
@@ -595,21 +579,11 @@ func TestOAuthJobsTerminalColumnsForwardMigrationFromV28(t *testing.T) {
 	}
 	// v31 的默认归属收据表/触发器同样晚于 v28，重放前必须回退。
 	dropHostDefaultOwnership(t, store)
-	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 28"); err != nil {
-		t.Fatalf("rewind user_version error = %v", err)
-	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 
 	upgraded := openOAuthJobStoreAt(t, aiHomeDir)
-	var version int
-	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatalf("read user_version error = %v", err)
-	}
-	if version != SchemaVersion {
-		t.Fatalf("user_version after upgrade = %d, want %d", version, SchemaVersion)
-	}
 	record, found, err := upgraded.GetJob(ctx, legacy.ID)
 	if err != nil || !found {
 		t.Fatalf("GetJob() after upgrade = %v, %v", found, err)

@@ -23,6 +23,24 @@ func DecodeRawObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	return fields, true
 }
 
+// RewriteRawModel 只替换 JSON 对象的 model 字段，保留其它字段原义。
+func RewriteRawModel(raw []byte, model string) ([]byte, bool) {
+	fields, ok := DecodeRawObject(raw)
+	if !ok {
+		return nil, false
+	}
+	encoded, err := json.Marshal(strings.TrimSpace(model))
+	if err != nil {
+		return nil, false
+	}
+	fields["model"] = encoded
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
 // IsJSONObject 判断原始字节是否为 JSON 对象（nil / 空 / 其它类型都是 false）。
 func IsJSONObject(raw json.RawMessage) bool {
 	return strings.HasPrefix(strings.TrimSpace(string(raw)), "{")

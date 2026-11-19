@@ -41,6 +41,8 @@ var ErrInvalidDependencies = relaycore.ErrInvalidDependencies
 // 编排逻辑整体在 relaycore.Handler；本结构保留家族特有的可注入项（补位文案、端点覆盖），
 // 并把它们转成 relaycore 的 Provider 选项。
 type Dependencies struct {
+	// Aliases 可选：在账号征召前解析 relay 别名目标。
+	Aliases relaycore.AliasResolver
 	// Accounts 按调度顺序提供账号；为空表示只服务钉选调用方。
 	Accounts AccountSource
 	// Fallback 承接透传服务不了的请求，通常是 Canonical 推理入口。
@@ -91,6 +93,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	inner, err := relaycore.NewHandler(relaycore.Dependencies{
 		Provider:    relaycore.NewProviderChain(members...),
 		Path:        Path,
+		Aliases:     dependencies.Aliases,
 		Accounts:    dependencies.Accounts,
 		Fallback:    dependencies.Fallback,
 		Credentials: dependencies.Credentials,

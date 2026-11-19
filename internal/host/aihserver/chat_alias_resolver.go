@@ -36,6 +36,10 @@ type chatAliasMatch struct {
 }
 
 // ResolveChatModel 返回请求模型应改写的真实目标；没有匹配时返回 false。
+func (resolver *chatAliasResolver) ResolveRelayModel(ctx context.Context, model string) (string, bool) {
+	return resolver.ResolveChatModel(ctx, model)
+}
+
 func (resolver *chatAliasResolver) ResolveChatModel(ctx context.Context, model string) (string, bool) {
 	if resolver == nil || resolver.aliases == nil || resolver.models == nil {
 		return "", false

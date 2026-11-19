@@ -1739,6 +1739,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
 	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
 		codebuddyfamilyrelay.Dependencies{
+			Aliases: newChatAliasResolver(inference.modelAliases, dependencies.store),
 			Accounts: relaycore.NewAccountSourceChain(
 				append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
 			),

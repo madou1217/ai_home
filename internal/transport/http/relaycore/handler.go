@@ -35,6 +35,11 @@ const (
 	DegradationHeader = "x-aih-degradations"
 )
 
+// AliasResolver 在账号征召前把 relay 请求模型改写成别名目标。
+type AliasResolver interface {
+	ResolveRelayModel(ctx context.Context, model string) (string, bool)
+}
+
 // AccountSource 按模型产出候选账号（透传同样需要多账号故障转移）。
 type AccountSource interface {
 	Accounts(ctx context.Context, modelID runtimecore.ModelID) (AccountCursor, error)
@@ -67,6 +72,8 @@ type Dependencies struct {
 	Provider Provider
 	// Path 是本通道挂载的客户端入口路径（必需，如 "/v1/chat/completions"）。
 	Path string
+	// Aliases 可选：在账号征召前解析 relay 别名目标。
+	Aliases AliasResolver
 	// Accounts 按调度顺序提供账号；为空表示只服务钉选调用方。
 	Accounts AccountSource
 	// Fallback 承接透传服务不了的请求，通常是 Canonical 推理入口。
@@ -96,6 +103,7 @@ type Dependencies struct {
 type Handler struct {
 	provider            Provider
 	path                string
+	aliases             AliasResolver
 	accounts            AccountSource
 	fallback            http.Handler
 	credentials         CredentialResolver
@@ -135,6 +143,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		provider:            dependencies.Provider,
 		path:                strings.TrimSpace(dependencies.Path),
+		aliases:             dependencies.Aliases,
 		accounts:            dependencies.Accounts,
 		fallback:            dependencies.Fallback,
 		credentials:         dependencies.Credentials,
@@ -213,6 +222,20 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if !ok {
 		handler.delegate(response, request, body)
 		return
+	}
+	if handler.aliases != nil {
+		if target, matched := handler.aliases.ResolveRelayModel(request.Context(), modelID.String()); matched && target != "" {
+			rewritten, rewrittenOK := RewriteRawModel(body, target)
+			targetID, idErr := runtimecore.NewModelID(target)
+			if !rewrittenOK || idErr != nil {
+				handler.delegate(response, request, body)
+				return
+			}
+			body = rewritten
+			modelID = targetID
+			request.Body = io.NopCloser(bytes.NewReader(body))
+			request.ContentLength = int64(len(body))
+		}
 	}
 	source := handler.resolveAccountSource(request)
 	if source == nil {

@@ -55,8 +55,8 @@ func seedLiveTestDatabases(
 		t.Fatalf("write kimi region.json: %v", err)
 	}
 
-	// 3. app-state.db（aliasPoolParticipates + upstreamErrorRules + upstreamErrorGroupIds）
-	appStatePath := filepath.Join(aiHomeDir, "app-state.db")
+	// 3. aih.db（aliasPoolParticipates + upstreamErrorRules + upstreamErrorGroupIds）
+	appStatePath := filepath.Join(aiHomeDir, "aih.db")
 	if err := os.MkdirAll(filepath.Dir(appStatePath), 0o755); err != nil {
 		t.Fatalf("mkdir app-state dir: %v", err)
 	}
@@ -67,7 +67,7 @@ func seedLiveTestDatabases(
 	defer func() { _ = appDB.Close() }()
 	for _, stmt := range []string{
 		`CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
-		`CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)`,
+		`CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)`,
 	} {
 		if _, err := appDB.Exec(stmt); err != nil {
 			t.Fatalf("create app-state table: %v", err)
@@ -86,7 +86,7 @@ func seedLiveTestDatabases(
 		rulesenv.GroupIDsEnvKey: string(groupsPayload),
 	})
 	if _, err := appDB.Exec(
-		`INSERT INTO account_credentials (account_ref, env_json, updated_at) VALUES (?, ?, 1)`,
+		`INSERT INTO compat_account_credentials (account_ref, env_json, updated_at) VALUES (?, ?, 1)`,
 		claudeRef, string(envPayload),
 	); err != nil {
 		t.Fatalf("insert app-state rules: %v", err)

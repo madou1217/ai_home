@@ -24,7 +24,7 @@ type fakeAuthorizer struct{ allowed bool }
 
 func (fake fakeAuthorizer) Authorized(*http.Request) bool { return fake.allowed }
 
-// newAppState 创建带 account_refs/account_credentials 的临时 app-state.db。
+// newAppState 创建带 account_refs/compat_account_credentials 的临时 aih.db。
 func newAppState(t *testing.T) string {
 	t.Helper()
 	directory := t.TempDir()
@@ -40,7 +40,7 @@ func newAppState(t *testing.T) string {
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		)`,
-		`CREATE TABLE account_credentials (
+		`CREATE TABLE compat_account_credentials (
 			account_ref TEXT PRIMARY KEY,
 			env_json TEXT NOT NULL DEFAULT '{}',
 			native_auth_json TEXT NOT NULL DEFAULT '{}',
@@ -70,11 +70,11 @@ func insertAccount(t *testing.T, directory string, provider string, accountRef s
 		t.Fatalf("insert account_refs: %v", err)
 	}
 	if _, err := db.Exec(
-		`INSERT INTO account_credentials
+		`INSERT INTO compat_account_credentials
 		 (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at)
 		 VALUES (?, '{}', ?, 0, 0, 1)`, accountRef, nativeAuth,
 	); err != nil {
-		t.Fatalf("insert account_credentials: %v", err)
+		t.Fatalf("insert compat_account_credentials: %v", err)
 	}
 }
 

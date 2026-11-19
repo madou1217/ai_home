@@ -5,10 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -286,7 +289,15 @@ func TestManagedToolsServiceAndTerminalsRoutes(t *testing.T) {
 }
 
 func TestAppsOpenPlanInstallAndSseWatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("受管 Codex 运行时夹具在 Windows 上未覆盖")
+	}
 	tmp := t.TempDir()
+	// Codex 运行时把路径 canonicalize 到 /private/var，宿主目录也必须用同一形态，
+	// 否则受管事务前缀与 EvalSymlinks 结果不一致，Activate 会判定越界。
+	if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
+		tmp = resolved
+	}
 	hostHome := filepath.Join(tmp, "home")
 	aiHome := filepath.Join(tmp, "aihome")
 	binDir := filepath.Join(tmp, "bin")
@@ -298,9 +309,20 @@ func TestAppsOpenPlanInstallAndSseWatch(t *testing.T) {
 				_ = os.MkdirAll(binDir, 0o755)
 				installedCli = filepath.Join(binDir, "codex")
 				_ = os.WriteFile(installedCli, []byte("#!/bin/sh\n"), 0o755)
+				// 受管安装会校验 --prefix 下的官方 npm 布局与原生二进制，
+				// 并用隔离沙箱拉起 `codex app-server` 等待 listening 签名。
+				if prefix := codexPrefixArg(args); prefix != "" {
+					if err := installFakeCodexRuntime(prefix); err != nil {
+						return environment.RunResult{OK: false, Message: "fixture: " + err.Error()}
+					}
+				}
 				return environment.RunResult{OK: true}
 			}
 			if command == installedCli {
+				return environment.RunResult{OK: true, Stdout: "codex-cli 1.0.0\n"}
+			}
+			if strings.Contains(command, string(filepath.Separator)+"node_modules"+string(filepath.Separator)) {
+				// 受管运行时的版本探测：保留低于 npm 最新版的版本以验证 check-update。
 				return environment.RunResult{OK: true, Stdout: "codex-cli 1.0.0\n"}
 			}
 			if strings.Contains(command, "npm") && len(args) > 0 && args[0] == "view" {
@@ -454,6 +476,100 @@ func TestAppsOpenPlanInstallAndSseWatch(t *testing.T) {
 	if rec := doHTTP(t, h, http.MethodPost, AppsHooksPath, `{"providers":["codex"],"action":"bad"}`); rec.Code != 400 || decodeMap(t, rec)["error"] != "invalid_hook_action" {
 		t.Fatalf("expected 400 invalid_hook_action: %d %s", rec.Code, rec.Body.String())
 	}
+}
+
+// codexPrefixArg 从 npm 安装参数里取出受管 --prefix。
+func codexPrefixArg(args []string) string {
+	for index, arg := range args {
+		if arg == "--prefix" && index+1 < len(args) {
+			return args[index+1]
+		}
+		if value, ok := strings.CutPrefix(arg, "--prefix="); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+// fakeCodexTriple 返回 codexruntime.NativeFromPrefix 期望的平台三元组。
+func fakeCodexTriple() (string, bool) {
+	triple := "x86_64"
+	arch := "x64"
+	if runtime.GOARCH == "arm64" {
+		triple = "aarch64"
+		arch = "arm64"
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return triple + "-apple-darwin", true
+	case "linux":
+		return triple + "-unknown-linux-musl", true
+	case "windows":
+		return arch + "-pc-windows-msvc", true
+	default:
+		return "", false
+	}
+}
+
+// installFakeCodexRuntime 模拟 npm 在 --prefix 下落地官方包布局，并编译一份
+// 真实原生可执行文件作为 codex：`app-server` 模式输出 listening 签名，其余输出
+// 低于 npm 最新版的版本号。
+func installFakeCodexRuntime(prefix string) error {
+	modulesDir := filepath.Join(prefix, "lib", "node_modules")
+	executable := "codex"
+	if runtime.GOOS == "windows" {
+		modulesDir = filepath.Join(prefix, "node_modules")
+		executable = "codex.exe"
+	}
+	packageDir := filepath.Join(modulesDir, "@openai", "codex")
+	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(
+		filepath.Join(packageDir, "package.json"),
+		[]byte(`{"name":"@openai/codex"}`), 0o644,
+	); err != nil {
+		return err
+	}
+	triple, ok := fakeCodexTriple()
+	if !ok {
+		return errors.New("unsupported platform for fake Codex runtime")
+	}
+	binaryDir := filepath.Join(packageDir, "vendor", triple, "bin")
+	if err := os.MkdirAll(binaryDir, 0o755); err != nil {
+		return err
+	}
+	sourceDir := filepath.Join(prefix, "fake-codex-src")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		return err
+	}
+	source := `package main
+
+import (
+	"fmt"
+	"os"
+	"time"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "app-server" {
+		fmt.Println("listening on: ws://127.0.0.1:0")
+		time.Sleep(5 * time.Second)
+		return
+	}
+	fmt.Println("codex-cli 1.0.0")
+}
+`
+	sourcePath := filepath.Join(sourceDir, "main.go")
+	if err := os.WriteFile(sourcePath, []byte(source), 0o644); err != nil {
+		return err
+	}
+	binaryPath := filepath.Join(binaryDir, executable)
+	build := exec.Command("go", "build", "-o", binaryPath, sourcePath)
+	if output, err := build.CombinedOutput(); err != nil {
+		return errors.New("build fake codex: " + err.Error() + ": " + string(output))
+	}
+	return nil
 }
 
 // 确认 tools 包接口引用在编译期被覆蓋验证。

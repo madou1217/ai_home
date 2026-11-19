@@ -72,7 +72,7 @@ func seedAppState(t *testing.T) string {
 		t.Fatalf("insert account_refs: %v", err)
 	}
 	_, err = db.Exec(`
-		CREATE TABLE account_quota_reset_events (
+		CREATE TABLE compat_account_quota_reset_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			event_key TEXT,
 			account_ref TEXT,
@@ -98,7 +98,7 @@ func seedAppState(t *testing.T) string {
 	}
 	for index := 1; index <= 3; index++ {
 		_, err = db.Exec(
-			`INSERT INTO account_quota_reset_events
+			`INSERT INTO compat_account_quota_reset_events
 			 (event_key, account_ref, provider, quota_key, window_label, window_minutes,
 			  event_kind, classification, cause, previous_remaining_pct, current_remaining_pct,
 			  previous_expected_reset_at_ms, detected_at_ms, early_duration_ms, exhausted_at_ms,

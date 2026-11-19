@@ -2,11 +2,11 @@ package webuisessionpreviewsapi
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
-	"database/sql"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -235,7 +235,6 @@ func TestHandlerUsesFileReaderWithHostHomeDir(t *testing.T) {
 	}
 }
 
-
 func TestFileReaderAllAdditionalProviders(t *testing.T) {
 	home := t.TempDir()
 	aiHome := filepath.Join(home, ".ai_home")
@@ -243,8 +242,8 @@ func TestFileReaderAllAdditionalProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// app-state.db: AGY recorded model overrides transcript
-	db, err := sql.Open("sqlite", filepath.Join(aiHome, "app-state.db"))
+	// aih.db: AGY recorded model overrides transcript
+	db, err := sql.Open("sqlite", filepath.Join(aiHome, "aih.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

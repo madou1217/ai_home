@@ -28,6 +28,19 @@ func (fakeRemoteSession) Run(_ context.Context, cmd string, _ int) (sshremote.Re
 	switch {
 	case strings.Contains(cmd, "AIH_POSIX"):
 		return sshremote.Result{Stdout: []byte("Linux\nAIH_POSIX\n")}, nil
+	case strings.Contains(cmd, "aih-workspace-path"):
+		// 远端路径契约脚本：成功时输出 root\0target\0io\0 四段。
+		tokens := strings.Fields(cmd)
+		root, rel := "/srv/remote", ""
+		if len(tokens) >= 4 {
+			root = strings.Trim(tokens[len(tokens)-4], "'")
+			rel = strings.Trim(tokens[len(tokens)-3], "'")
+		}
+		target := root
+		if rel != "" {
+			target = strings.TrimSuffix(root, "/") + "/" + rel
+		}
+		return sshremote.Result{Stdout: []byte(root + "\x00" + target + "\x00" + target + "\x00")}, nil
 	case strings.Contains(cmd, "--printf"):
 		return sshremote.Result{Stdout: []byte("directory\t0\t1700\tsrc\nregular file\t5\t1701\t.env\nregular file\t10\t1702\tmain.go\n")}, nil
 	case strings.Contains(cmd, "printf"):

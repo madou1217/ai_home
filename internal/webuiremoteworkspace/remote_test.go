@@ -124,6 +124,22 @@ func TestSessionPOSIXOperationsAndLimits(t *testing.T) {
 			switch {
 			case strings.Contains(cmd, "AIH_POSIX"):
 				return sshremote.Result{Stdout: []byte("Linux\nAIH_POSIX\n")}, nil
+			case strings.Contains(cmd, "aih-workspace-path"):
+				// 远端路径契约脚本：成功时输出 root\0target\0io\0 四段。
+				tokens := strings.Fields(cmd)
+				root, rel := "/srv/app", ""
+				if len(tokens) >= 4 {
+					root = strings.Trim(tokens[len(tokens)-4], "'")
+					rel = strings.Trim(tokens[len(tokens)-3], "'")
+				}
+				if rel == "missing.txt" {
+					return sshremote.Result{Code: 73, Stderr: []byte("AIH_PATH:not_found\n")}, nil
+				}
+				target := root
+				if rel != "" {
+					target = strings.TrimSuffix(root, "/") + "/" + rel
+				}
+				return sshremote.Result{Stdout: []byte(root + "\x00" + target + "\x00" + target + "\x00")}, nil
 			case strings.Contains(cmd, "--printf"):
 				return sshremote.Result{Stdout: []byte("directory\t0\t1700\tsrc\nregular file\t12\t1701\tREADME.md\n")}, nil
 			case strings.Contains(cmd, "base64 <"):

@@ -23,7 +23,7 @@ func TestSessionModelOpenCodeUsageRecordsAndAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	appDB, err := sql.Open("sqlite", filepath.Join(aiHome, "app-state.db"))
+	appDB, err := sql.Open("sqlite", filepath.Join(aiHome, "aih.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

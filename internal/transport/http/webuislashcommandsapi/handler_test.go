@@ -241,6 +241,8 @@ func TestBuiltinCatalogShape(t *testing.T) {
 }
 
 func TestParsesUserCommandsWithFrontmatter(t *testing.T) {
+	// 宿主环境可能注入 CLAUDE_CONFIG_DIR；本用例验证 <HOME>/.claude/commands 扫描。
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home := t.TempDir()
 	commandsDir := filepath.Join(home, ".claude", "commands")
 	writeFile(t, filepath.Join(commandsDir, "deploy.md"),
@@ -309,6 +311,7 @@ func TestHonorsClaudeConfigDir(t *testing.T) {
 }
 
 func TestRejectsSymlinkEscape(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home := t.TempDir()
 	outside := t.TempDir()
 	writeFile(t, filepath.Join(outside, "secret.md"), "---\ndescription: 越界命令\n---\n")
@@ -341,6 +344,7 @@ func TestRejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestOversizedFileIsListedWithoutMetadata(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home := t.TempDir()
 	oversized := "---\ndescription: 超大文件描述\n---\n" + strings.Repeat("x", maxCommandFileBytes+1)
 	writeFile(t, filepath.Join(home, ".claude", "commands", "huge.md"), oversized)
@@ -356,6 +360,7 @@ func TestOversizedFileIsListedWithoutMetadata(t *testing.T) {
 }
 
 func TestTruncatesAtDepthLimit(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home := t.TempDir()
 	deepest := filepath.Join(home, ".claude", "commands")
 	for index := 0; index <= maxScanDepth+1; index++ {
@@ -377,6 +382,7 @@ func TestTruncatesAtDepthLimit(t *testing.T) {
 }
 
 func TestTruncatesAtEntryLimit(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home := t.TempDir()
 	commandsDir := filepath.Join(home, ".claude", "commands")
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {

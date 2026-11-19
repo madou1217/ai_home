@@ -290,7 +290,7 @@ func drainCoalescedWatchBatch(first sessionevents.Event, eventsCh <-chan session
 				isPureWatchRefreshEvent(next) &&
 				strings.TrimSpace(last.Type) == strings.TrimSpace(next.Type) &&
 				strings.TrimSpace(last.Source) == strings.TrimSpace(next.Source) &&
-				last.Reason == next.Reason && last.ProjectDirName == next.ProjectDirName && last.ProjectPath == next.ProjectPath {
+				last.ProjectDirName == next.ProjectDirName && last.ProjectPath == next.ProjectPath {
 				*last = next
 			} else {
 				batch = append(batch, next)

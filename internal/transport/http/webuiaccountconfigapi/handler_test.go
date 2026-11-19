@@ -40,14 +40,14 @@ func newTestHandler(t *testing.T, aiHomeDir string) http.Handler {
 
 func seedAppState(t *testing.T, aiHomeDir string, accountRef string, provider string, envJSON string, nativeJSON string, updatedAt int64) {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(aiHomeDir, "app-state.db"))
+	db, err := sql.Open("sqlite", filepath.Join(aiHomeDir, "aih.db"))
 	if err != nil {
 		t.Fatalf("open app-state: %v", err)
 	}
 	defer func() { _ = db.Close() }()
 	statements := []string{
 		"CREATE TABLE IF NOT EXISTS account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-		"CREATE TABLE IF NOT EXISTS account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE IF NOT EXISTS compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {
@@ -57,7 +57,7 @@ func seedAppState(t *testing.T, aiHomeDir string, accountRef string, provider st
 	if _, err := db.Exec("INSERT OR REPLACE INTO account_refs (account_ref, provider, created_at, updated_at) VALUES (?, ?, 1, 1)", accountRef, provider); err != nil {
 		t.Fatalf("insert account_refs: %v", err)
 	}
-	if _, err := db.Exec("INSERT OR REPLACE INTO account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+	if _, err := db.Exec("INSERT OR REPLACE INTO compat_account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
 		accountRef, envJSON, nativeJSON, updatedAt, updatedAt, updatedAt); err != nil {
 		t.Fatalf("insert credentials: %v", err)
 	}

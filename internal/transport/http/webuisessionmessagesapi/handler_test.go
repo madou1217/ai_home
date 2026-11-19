@@ -76,7 +76,7 @@ func TestAllProvidersMessagesAndByteBudget(t *testing.T) {
 	if err := os.MkdirAll(aiHome, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dbPath := filepath.Join(aiHome, "app-state.db")
+	dbPath := filepath.Join(aiHome, "aih.db")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatal(err)

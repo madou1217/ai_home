@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/modelalias"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
@@ -263,6 +266,38 @@ func envLookup(env []string, key string) (string, bool) {
 }
 
 func noopSleep(_ context.Context, _ time.Duration) error { return nil }
+
+// buildTestGoCLI 在临时目录里构建受管的 aih-go 构件，供需要真实 Go CLI 解析的
+// 启动用例使用；构件布局与 build-go-cli.js 一致（bin/native/<platform>-<arch>/aih-go）。
+func buildTestGoCLI(t *testing.T) (string, string) {
+	t.Helper()
+	root := discoverRepositoryRoot()
+	if root == "" {
+		t.Fatal("无法定位仓库根目录用于构建 aih-go")
+	}
+	platform := runtime.GOOS
+	packagePlatform := platform
+	name := "aih-go"
+	if platform == "windows" {
+		packagePlatform = "win32"
+		name += ".exe"
+	}
+	arch := runtime.GOARCH
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	target := filepath.Join(repoRoot, "bin", "native", packagePlatform+"-"+arch, name)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", target, "./cmd/aih")
+	build.Dir = root
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build aih-go: %v\n%s", err, output)
+	}
+	return repoRoot, target
+}
 
 func TestNativeLauncherAccountEligibilityAndPlatformGuards(t *testing.T) {
 	t.Parallel()
@@ -1045,6 +1080,17 @@ func TestNativeLauncherCLIOpenCloseWebUIAliasesAndHTTP428(t *testing.T) {
 	workdir := t.TempDir()
 	cat := newTestCatalog(t)
 	runner := newFakeCommandRunner()
+	platform := runtime.GOOS
+	repoRoot, goCLIPath := buildTestGoCLI(t)
+	// 跨 Provider Go CLI 需要从 aih.db 的 config:server 读取网关地址与密钥。
+	dbPath, err := appstate.DatabasePath(aiHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appstate.WriteKV(context.Background(), dbPath, "config:server",
+		`{"port":9527,"apiKey":"test-api-key-0123456789abcdef0123456789abcdef","managementKey":"test-management-key"}`, 1); err != nil {
+		t.Fatal(err)
+	}
 
 	codexCLI := filepath.Join(t.TempDir(), "codex")
 	if err := os.WriteFile(codexCLI, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -1089,8 +1135,8 @@ func TestNativeLauncherCLIOpenCloseWebUIAliasesAndHTTP428(t *testing.T) {
 	launcher := NewNativeLauncher(NativeLauncherDependencies{
 		AIHomeDir:      aiHome,
 		HostHomeDir:    hostHome,
-		RepoRoot:       "/repo",
-		Platform:       "darwin",
+		RepoRoot:       repoRoot,
+		Platform:       platform,
 		Catalog:        cat,
 		Accounts:       accounts,
 		ModelAliases:   aliases,
@@ -1129,9 +1175,12 @@ func TestNativeLauncherCLIOpenCloseWebUIAliasesAndHTTP428(t *testing.T) {
 	if err != nil || !res.OK || res.Status != "launched" || res.LaunchMode != "webui-pty" {
 		t.Fatalf("webui PTY open failed: res=%+v err=%v", res, err)
 	}
-	wantArgs := []string{filepath.Join("/repo", "bin", "ai-home.js"), "claude", crossRef.String(), "--model", "gpt-5-codex"}
+	wantArgs := []string{"claude", "relay", "codex", "43", "--model", "gpt-5-codex"}
 	if !slices.Equal(openedWebUI[0].Args, wantArgs) {
 		t.Fatalf("unexpected webui PTY args: got=%v want=%v", openedWebUI[0].Args, wantArgs)
+	}
+	if openedWebUI[0].File != goCLIPath {
+		t.Fatalf("expected Go CLI binary %q, got %q", goCLIPath, openedWebUI[0].File)
 	}
 	if marker, _ := envLookup(openedWebUI[0].Env, "AIH_ACCOUNT_APP"); marker != "1" {
 		t.Fatalf("expected AIH_ACCOUNT_APP=1 in webui env")
@@ -1206,7 +1255,7 @@ func TestNativeLauncherCLIOpenCloseWebUIAliasesAndHTTP428(t *testing.T) {
 	installMissingLauncher := NewNativeLauncher(NativeLauncherDependencies{
 		AIHomeDir:       aiHome,
 		HostHomeDir:     hostHome,
-		Platform:        "darwin",
+		Platform:        platform,
 		Catalog:         cat,
 		Accounts:        accounts,
 		CLIBinaryFinder: func(context.Context, string, string, string) string { return "" },

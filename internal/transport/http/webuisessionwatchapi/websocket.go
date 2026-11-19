@@ -109,7 +109,12 @@ func (handler *Handler) serveWebSocket(response http.ResponseWriter, request *ht
 	}
 
 	connCtx, cancelConn := context.WithCancel(request.Context())
-	stopOnBusClose := context.AfterFunc(handler.bus.Context(), cancelConn)
+	// 总线生命周期结束必须显式以 1011 关闭：只 cancel 会让主循环走 connCtx.Done 分支
+	// 静默返回，客户端只能看到 EOF，拿不到上游关闭语义。
+	stopOnBusClose := context.AfterFunc(handler.bus.Context(), func() {
+		closeConnection(websocket.StatusInternalError, "upstream_closed")
+		cancelConn()
+	})
 	defer stopOnBusClose()
 	defer cancelConn()
 

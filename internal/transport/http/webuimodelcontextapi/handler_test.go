@@ -32,7 +32,7 @@ const (
 
 func seedAppState(t *testing.T, aiHomeDir string) {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(aiHomeDir, "app-state.db"))
+	db, err := sql.Open("sqlite", filepath.Join(aiHomeDir, "aih.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -40,7 +40,7 @@ func seedAppState(t *testing.T, aiHomeDir string) {
 	for _, statement := range []string{
 		"CREATE TABLE account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
 		"CREATE TABLE account_state (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, status TEXT, configured INTEGER, display_name TEXT)",
-		"CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
 		"CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)",
 	} {
 		if _, err := db.Exec(statement); err != nil {
@@ -61,13 +61,13 @@ func seedAppState(t *testing.T, aiHomeDir string) {
 	if _, err := db.Exec("INSERT INTO account_state VALUES (?, 'codex', 'up', 1, 'Keyed')", apiKeyRef); err != nil {
 		t.Fatalf("account_state: %v", err)
 	}
-	if _, err := db.Exec("INSERT INTO account_credentials VALUES (?, '{}', '{}', 0, 0, 1)", mainRef); err != nil {
+	if _, err := db.Exec("INSERT INTO compat_account_credentials VALUES (?, '{}', '{}', 0, 0, 1)", mainRef); err != nil {
 		t.Fatalf("credentials: %v", err)
 	}
-	if _, err := db.Exec("INSERT INTO account_credentials VALUES (?, '{}', '{}', 0, 0, 1)", oauthRef); err != nil {
+	if _, err := db.Exec("INSERT INTO compat_account_credentials VALUES (?, '{}', '{}', 0, 0, 1)", oauthRef); err != nil {
 		t.Fatalf("credentials: %v", err)
 	}
-	if _, err := db.Exec("INSERT INTO account_credentials VALUES (?, '{\"OPENAI_API_KEY\":\"sk-key\"}', '{}', 0, 0, 1)", apiKeyRef); err != nil {
+	if _, err := db.Exec("INSERT INTO compat_account_credentials VALUES (?, '{\"OPENAI_API_KEY\":\"sk-key\"}', '{}', 0, 0, 1)", apiKeyRef); err != nil {
 		t.Fatalf("credentials: %v", err)
 	}
 	overrides := "{\"" + mainRef + "\":{\"gpt-5\":64000},\"unknown-ref\":{\"gpt-5\":1000}}"

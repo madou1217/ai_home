@@ -200,7 +200,7 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 			Modalities:    dependencies.ModelModalities,
 		},
 		Registry: images.NewRegistry(
-			images.ChatGPTCodexBaseURL,
+			images.EffectiveCodexImageBaseURL(),
 			agycodeassist.GenerateContentURL,
 			imageFetcher,
 		),

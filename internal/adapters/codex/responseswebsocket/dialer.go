@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	// OAuthEndpoint 是官方 Codex Responses WebSocket 地址。
-	OAuthEndpoint = "wss://chatgpt.com/backend-api/codex/responses"
 	// BetaHeaderValue 来自当前官方 Codex Responses WS v2 握手合同。
 	BetaHeaderValue = "responses_websockets=2026-02-06"
 	// HopHeader 记录本请求已被几台 aih 网关转发过（防 A→B→A 无限环）。
@@ -169,7 +167,13 @@ func projectCredential(
 		if auth.IsFedRAMP() {
 			header.Set("X-OpenAI-Fedramp", "true")
 		}
-		return OAuthEndpoint, header, nil
+		// OAuth 账号没有账号级上游：端点由进程级兜底推导（https→wss 并追加
+		// 一次 responses），缺省时回落到官方 chatgpt.com 前缀。
+		endpoint, err := websocketEndpoint(codexauth.EffectiveDefaultOAuthBaseURL())
+		if err != nil {
+			return "", nil, err
+		}
+		return endpoint, header, nil
 	case *codexauth.APIKeyAuth:
 		if auth == nil || auth.APIKey() == "" || auth.BaseURL() == "" {
 			return "", nil, ErrUnsupportedCredential

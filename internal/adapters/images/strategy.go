@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	"github.com/madou1217/ai_home/internal/adapters/imagedata"
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
@@ -20,11 +21,19 @@ import (
 // 它们对应 Node 的 image-generation-codex.js、image-generation-agy-gemini.js、
 // image-generation-passthrough.js 与 image-generation-unsupported.js。
 
-// ChatGPTCodexBaseURL 是 Codex OAuth 账号的默认上游前缀。
+// ChatGPTCodexBaseURL 是 Codex OAuth 账号的官方上游前缀。
 //
-// 与 internal/adapters/codex/responses 的 chatGPTCodexBaseURL 同源：Codex 的图片扩展
-// 挂在同一个 backend-api codex 前缀下（`/images/generations`、`/images/edits`）。
-const ChatGPTCodexBaseURL = "https://chatgpt.com/backend-api/codex"
+// 与 internal/adapters/codex/responses 共用同一官方基址：Codex 的图片扩展挂在
+// 同一个 backend-api codex 前缀下（`/images/generations`、`/images/edits`）。
+// 进程级兜底见 EffectiveCodexImageBaseURL。
+const ChatGPTCodexBaseURL = codexauth.DefaultOAuthBaseURL
+
+// EffectiveCodexImageBaseURL 返回进程级兜底的 Codex 图片上游前缀。
+//
+// 图片与 Responses 共用同一个 OAuth 兜底，避免两条路径指向不同上游。
+func EffectiveCodexImageBaseURL() string {
+	return codexauth.EffectiveDefaultOAuthBaseURL()
+}
 
 // codexImageModel 是 codex 原生图片策略唯一支持的模型。
 const codexImageModel = "gpt-image-2"
@@ -94,11 +103,11 @@ type CodexStrategy struct {
 	baseURL string
 }
 
-// NewCodexStrategy 创建 codex 图片策略；baseURL 为空时使用官方前缀。
+// NewCodexStrategy 创建 codex 图片策略；baseURL 为空时使用进程级兜底前缀。
 func NewCodexStrategy(baseURL string) CodexStrategy {
 	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if trimmed == "" {
-		trimmed = ChatGPTCodexBaseURL
+		trimmed = EffectiveCodexImageBaseURL()
 	}
 	return CodexStrategy{baseURL: trimmed}
 }

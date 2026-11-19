@@ -2203,7 +2203,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 图片能被 GET /v1/blobs/{id} 取回。
 	imageHandler, err := imagesapi.NewHandler(imagesapi.Dependencies{
 		Registry: images.NewRegistry(
-			images.ChatGPTCodexBaseURL,
+			images.EffectiveCodexImageBaseURL(),
 			agycodeassist.GenerateContentURL,
 			images.NewFetcher(http.DefaultClient),
 		),

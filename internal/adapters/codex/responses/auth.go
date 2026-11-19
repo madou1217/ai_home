@@ -13,8 +13,6 @@ import (
 )
 
 const (
-	// chatGPTCodexBaseURL 与官方 Codex rust-v0.146.0 的 OAuth Provider 基址一致。
-	chatGPTCodexBaseURL = "https://chatgpt.com/backend-api/codex"
 	// responsesPath 是官方 ResponsesClient 使用的相对端点。
 	responsesPath = "responses"
 )
@@ -48,8 +46,11 @@ func projectAuth(credential accountapp.Credential) (authProjection, error) {
 		if auth == nil || auth.AccessToken() == "" {
 			return authProjection{}, ErrInvalidInvocation
 		}
+		// OAuth 账号没有账号级上游：基址只来自进程级兜底，缺省时回落到
+		// 官方 chatgpt.com/backend-api/codex。Node 侧 resolveCodexUpstreamBaseUrl
+		// 同样只对 API Key 读取账号 openaiBaseUrl。
 		return authProjection{
-			baseURL:   chatGPTCodexBaseURL,
+			baseURL:   codexauth.EffectiveDefaultOAuthBaseURL(),
 			token:     auth.AccessToken(),
 			accountID: auth.UpstreamAccountID(),
 			fedRAMP:   auth.IsFedRAMP(),

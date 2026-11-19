@@ -161,6 +161,11 @@ func init() {
 	if err := codex.ConfigureDefaultAPIBaseURL(defaults.CodexBaseURL); err != nil {
 		panic(fmt.Sprintf("Codex 上游默认地址无效: %v", err))
 	}
+	// OAuth 与 API Key 的官方默认不同（chatgpt.com/backend-api/codex 对
+	// api.openai.com/v1），因此同一个 --codex-base-url 分别作为两条路径的兜底。
+	if err := codex.ConfigureDefaultOAuthBaseURL(defaults.CodexBaseURL); err != nil {
+		panic(fmt.Sprintf("Codex OAuth 上游默认地址无效: %v", err))
+	}
 	if err := claude.ConfigureDefaultAPIBaseURL(defaults.ClaudeBaseURL); err != nil {
 		panic(fmt.Sprintf("Claude 上游默认地址无效: %v", err))
 	}

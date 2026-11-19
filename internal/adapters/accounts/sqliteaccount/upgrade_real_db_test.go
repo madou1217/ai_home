@@ -31,13 +31,6 @@ func TestUpgradeRealDatabaseCopy(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	var version int
-	if err := store.db.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatalf("读取版本失败: %v", err)
-	}
-	if version != SchemaVersion {
-		t.Fatalf("user_version = %d, want %d", version, SchemaVersion)
-	}
 	var accounts int
 	if err := store.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM accounts").Scan(&accounts); err != nil {
 		t.Fatalf("统计账号失败: %v", err)

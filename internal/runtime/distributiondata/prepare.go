@@ -111,11 +111,20 @@ func initialize(ctx context.Context, opts Options, l layout, report *Report) err
 	if hasCanonical {
 		report.SourceState = "canonical_only"
 		original := businessdb.Path(report.BackupHome)
-		id, version, err := identity(ctx, original)
+		id, err := identity(ctx, original)
 		if err != nil {
 			return err
 		}
-		report.AlreadyReady = id == sqliteaccount.ApplicationID && version == sqliteaccount.SchemaVersion && businessdb.CheckReady(ctx, original) == nil
+		if id == sqliteaccount.ApplicationID {
+			originalDB, err := openDB(ctx, original, true)
+			if err != nil {
+				return err
+			}
+			report.AlreadyReady = sqliteaccount.ValidateSchema(ctx, originalDB) == nil
+			if err := originalDB.Close(); err != nil {
+				return err
+			}
+		}
 		if id == sqliteaccount.ApplicationID {
 			counts, err := accountCounts(ctx, original)
 			if err != nil {
@@ -149,15 +158,14 @@ func initialize(ctx context.Context, opts Options, l layout, report *Report) err
 	return nil
 }
 
-func identity(ctx context.Context, path string) (id, version int, resultErr error) {
+func identity(ctx context.Context, path string) (id int, resultErr error) {
 	db, err := openDB(ctx, path, true)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, db.Close()) }()
 	if err := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&id); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version)
-	return id, version, err
+	return id, nil
 }

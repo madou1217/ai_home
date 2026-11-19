@@ -65,7 +65,7 @@ type AccountReport struct {
 // OriginalBackup also preserves the exact source DB/sidecar bytes. Missing
 // original files are recorded in SourceFingerprint (rollback must not invent
 // them). Neither backup directory may be passed to a normal application writer.
-// AlreadyReady describes the input's current canonical schema/cutover gate; it
+// AlreadyReady describes the input's required schema capabilities; it
 // does NOT authorize skipping publication of the prepared result.
 // Fresh only means neither source database existed; Home may still contain
 // existing keys/configuration or native artifacts owned by the installer.
@@ -82,7 +82,6 @@ type Report struct {
 	AlreadyReady      bool              `json:"already_ready"`
 	Fresh             bool              `json:"fresh"`
 	ApplicationID     int               `json:"application_id"`
-	UserVersion       int               `json:"user_version"`
 	Checks            []TableCheck      `json:"checks"`
 	Accounts          AccountReport     `json:"accounts"`
 	Error             string            `json:"error,omitempty"`

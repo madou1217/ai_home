@@ -10,12 +10,12 @@ import (
 )
 
 func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
-	id, version, err := identity(ctx, businessdb.Path(report.PreparedHome))
+	id, err := identity(ctx, businessdb.Path(report.PreparedHome))
 	if err != nil {
 		return err
 	}
-	report.ApplicationID, report.UserVersion = id, version
-	if id != sqliteaccount.ApplicationID || version != sqliteaccount.SchemaVersion {
+	report.ApplicationID = id
+	if id != sqliteaccount.ApplicationID {
 		return errors.New("distributiondata: prepared canonical schema identity mismatch")
 	}
 	if err := businessdb.CheckReady(ctx, businessdb.Path(report.PreparedHome)); err != nil {
@@ -26,6 +26,9 @@ func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, db.Close()) }()
+	if err := sqliteaccount.ValidateSchema(ctx, db); err != nil {
+		return fmt.Errorf("distributiondata: prepared schema capabilities: %w", err)
+	}
 	if err := integrity(ctx, db); err != nil {
 		return err
 	}
@@ -38,7 +41,13 @@ func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
 			return err
 		}
 		for _, table := range before {
-			check, err := compareTable(ctx, db, "before", table, "main", table)
+			var check TableCheck
+			var err error
+			if table == "usage_ledger_daily" {
+				check, err = verifyLedgerDaily(ctx, db)
+			} else {
+				check, err = compareTable(ctx, db, "before", table, "main", table)
+			}
 			if err != nil {
 				return err
 			}

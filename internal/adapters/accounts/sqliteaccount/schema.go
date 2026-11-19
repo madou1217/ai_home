@@ -6,197 +6,192 @@ import _ "embed"
 const (
 	// ApplicationID 是 aih.db 的 SQLite application_id，十六进制表示为 0x41494831。
 	ApplicationID = 1_095_321_649
-	// SchemaVersion 是当前账号数据库只接受的结构版本。
-	SchemaVersion = 35
 )
 
-// SchemaV1 是只用于全新 aih.db 的第一版完整结构。
+// SchemaBaselineSQL 是 aih.db 全部核心业务表的幂等终态建表脚本（不含版本号门禁）。
 //
-//go:embed schema_v1.sql
-var SchemaV1 string
+//go:embed schema.sql
+var SchemaBaselineSQL string
 
-// SchemaV2 是从既有 v1 前向增加账号模型关系的唯一 migration。
+// SchemaIndexesAndTriggersSQL 是核心索引与默认账号所有权触发器的幂等定义脚本。
 //
-//go:embed schema_v2.sql
-var SchemaV2 string
+//go:embed schema-indexes-triggers.sql
+var SchemaIndexesAndTriggersSQL string
 
-// SchemaV3 是从既有 v2 前向增加账号当前额度快照的唯一 migration。
+// SchemaUsageLedgerDailySQL 是 usage_ledger_daily 派生汇总表及增删改完整性触发器脚本。
 //
-//go:embed schema_v3.sql
-var SchemaV3 string
+//go:embed schema-usage-ledger-daily.sql
+var SchemaUsageLedgerDailySQL string
 
-// SchemaV4 把可轮换凭据的查重引用与稳定 AccountRef 分离。
+// requiredTableColumns 声明当前运行时读取或写入所需的最小列集合。
 //
-//go:embed schema_v4.sql
-var SchemaV4 string
+// 校验按“必需子集”判定（不绑定列顺序与列总数），保留未知新表与表上新增列。
+var requiredTableColumns = map[string][]string{
+	"accounts": {
+		"account_ref", "provider_id", "cli_account_id", "enabled",
+		"created_at_ms", "updated_at_ms",
+	},
+	"account_credentials": {
+		"account_ref", "credential_ref", "auth_kind", "auth_mode",
+		"format_version", "credential_json", "updated_at_ms",
+	},
+	"account_profiles": {
+		"account_ref", "display_name", "email", "subscription_kind",
+		"subscription_raw", "format_version", "profile_json",
+		"updated_at_ms", "workspace_id",
+	},
+	"account_models": {
+		"account_ref", "model_id", "upstream_available", "manual_policy",
+		"updated_at_ms",
+	},
+	"account_usage": {
+		"account_ref", "limit_id", "limit_name", "bucket", "kind", "scope",
+		"scope_key", "remaining_bps", "availability", "window_seconds",
+		"reset_at_ms", "source", "captured_at_ms", "plan_type",
+	},
+	"account_defaults": {
+		"provider_id", "account_ref", "updated_at_ms",
+	},
+	"account_outcomes": {
+		"account_ref", "granularity", "bucket_start_ms", "outcome", "count",
+	},
+	"account_runtime_state": {
+		"account_ref", "model_id", "streak_kind", "streak_count",
+		"streak_expires_at_ms", "cooldown_kind", "cooldown_until_ms",
+		"last_failure_at_ms",
+	},
+	"usage_ledger": {
+		"usage_id", "account_ref", "provider_id", "model_id", "session_id",
+		"occurred_at_ms", "input_tokens", "output_tokens", "cached_input_tokens",
+		"cache_write_input_tokens", "reasoning_tokens", "total_tokens",
+		"source_key", "quota_bucket",
+	},
+	"usage_ledger_daily": {
+		"day_ms", "account_ref", "provider_id", "model_id", "quota_bucket",
+		"calls", "input_tokens", "output_tokens", "cached_input_tokens",
+		"cache_write_input_tokens", "reasoning_tokens", "total_tokens",
+	},
+	"account_tombstones": {
+		"tombstone_key", "account_ref", "provider_id", "kind", "fingerprint",
+		"created_at_ms",
+	},
+	"account_usage_snapshots": {
+		"account_ref", "provider_id", "kind", "source", "captured_at_ms",
+		"payload_json", "quota_status", "quota_reason", "remaining_bps",
+		"has_numeric_remaining",
+	},
+	"account_ui_state": {
+		"account_ref", "status", "display_name", "auth_mode", "api_key_mode",
+		"base_url", "updated_at_ms", "configured", "oauth_pending",
+	},
+	"account_runtime_blocks": {
+		"account_ref", "kind", "scope", "reason", "observed_at_ms", "until_ms",
+	},
+	"account_runtime_states": {
+		"account_ref", "state_json", "updated_at_ms",
+	},
+	"oauth_jobs": {
+		"job_id", "provider_id", "purpose", "target_ref", "status",
+		"created_at_ms", "expires_at_ms", "updated_at_ms", "error_code",
+		"error_message", "account_ref", "cli_account_id", "finished_at_ms",
+		"owner", "source",
+	},
+	"account_quota_window_samples": {
+		"sample_id", "account_ref", "provider_id", "quota_key", "window_label",
+		"window_minutes", "remaining_pct", "expected_reset_at_ms",
+		"captured_at_ms", "captured_bucket", "plan_type", "created_at_ms",
+	},
+	"account_quota_window_ledger": {
+		"account_ref", "window_minutes", "anchor_at_ms", "close_at_ms",
+		"source", "observed_at_ms", "updated_at_ms",
+	},
+	"account_quota_detector_state": {
+		"account_ref", "quota_key", "provider_id", "last_remaining_pct",
+		"last_expected_reset_at_ms", "last_captured_at_ms", "is_armed",
+		"rearm_generation", "exhausted_at_ms", "updated_at_ms",
+	},
+	"account_quota_reset_events": {
+		"event_id", "event_key", "account_ref", "provider_id", "quota_key",
+		"window_label", "window_minutes", "event_kind", "classification",
+		"cause", "previous_remaining_pct", "current_remaining_pct",
+		"previous_expected_reset_at_ms", "exhausted_at_ms", "occurred_at_ms",
+		"detected_at_ms", "early_duration_ms", "created_at_ms",
+	},
+	"account_model_probes": {
+		"account_ref", "provider_id", "last_attempt_at_ms", "last_error_code",
+		"last_error_message", "last_source", "last_model_count", "updated_at_ms",
+	},
+	"model_alias": {
+		"id", "alias", "target", "provider", "target_provider", "priority",
+		"enabled", "description", "created_at_ms", "updated_at_ms", "position",
+		"display_models_json",
+	},
+	"model_alias_meta": {
+		"id", "generation",
+	},
+	"account_probe_state": {
+		"account_ref", "status", "error", "checked_at_ms", "updated_at_ms",
+	},
+	"account_routing_exclusions": {
+		"account_ref", "excluded", "reason", "updated_at_ms",
+	},
+	"upstream_error_mapping_group": {
+		"id", "name", "description", "provider", "enabled", "position",
+		"version", "created_at_ms", "updated_at_ms",
+	},
+	"upstream_error_mapping_rule": {
+		"group_id", "position", "rule_json",
+	},
+	"account_upstream_error_rule": {
+		"account_ref", "source", "position", "rule_json",
+	},
+	"account_upstream_error_group": {
+		"account_ref", "position", "group_id",
+	},
+	"account_default_ownership": {
+		"provider_id", "owner", "expected_ref", "operation_id", "updated_at_ms",
+	},
+	"session_index": {
+		"provider", "account_ref", "project_id", "project_name", "project_path",
+		"session_id", "title", "updated_at_ms", "project_dir_name", "scanned_at_ms",
+	},
+	"session_index_state": {
+		"provider", "account_ref", "scanned_at_ms", "truncated",
+	},
+}
 
-// SchemaV5 增加每个 Provider 唯一的默认启动账号关系。
-//
-//go:embed schema_v5.sql
-var SchemaV5 string
+var requiredIndexNames = []string{
+	"idx_accounts_routing",
+	"idx_account_credentials_credential_ref",
+	"idx_account_models_effective",
+	"idx_account_outcomes_bucket",
+	"idx_account_runtime_state_cooldown",
+	"idx_usage_ledger_time",
+	"idx_usage_ledger_provider_model_time",
+	"idx_usage_ledger_account_time",
+	"idx_usage_ledger_source_key",
+	"idx_usage_ledger_quota_bucket_cover",
+	"idx_account_tombstones_ref",
+	"idx_account_tombstones_key",
+	"idx_account_usage_snapshots_provider",
+	"idx_account_runtime_blocks_until",
+	"idx_account_runtime_states_updated",
+	"idx_oauth_jobs_provider_status",
+	"idx_oauth_jobs_updated_at",
+	"idx_quota_window_samples_account_key_time",
+	"idx_quota_window_samples_time",
+	"idx_quota_reset_events_account_key_time",
+	"idx_quota_reset_events_account_time",
+	"model_alias_order",
+	"idx_upstream_error_mapping_group_position",
+	"idx_account_upstream_error_group_group",
+	"idx_session_index_scope",
+}
 
-// SchemaV6 把 Codex 工作区提升为 account_profiles 的公开列。
-//
-//go:embed schema_v6.sql
-var SchemaV6 string
-
-// SchemaV7 增加账号请求结果的时间桶聚合（账号状态页）。
-//
-//go:embed schema_v7.sql
-var SchemaV7 string
-
-// SchemaV8 增加跨重启保留的账号模型冷却状态。
-//
-//go:embed schema_v8.sql
-var SchemaV8 string
-
-// SchemaV9 增加 Go 自有的成功推理 token 用量事实账本。
-//
-//go:embed schema_v9.sql
-var SchemaV9 string
-
-// SchemaV10 增加账号 ref 与静态密钥指纹的删除墓碑。
-//
-//go:embed schema_v10.sql
-var SchemaV10 string
-
-// SchemaV11 保存采集方生产的完整 Provider 额度快照文档（WebUI 展示真相）。
-//
-//go:embed schema_v11.sql
-var SchemaV11 string
-
-// SchemaV12 在快照文档上物化账号级额度状态，供 Node 服务端与 CLI 共同读取。
-//
-//go:embed schema_v12.sql
-var SchemaV12 string
-
-// SchemaV13 保存账号页展示状态（status / displayName / authMode / baseUrl）。
-//
-//go:embed schema_v13.sql
-var SchemaV13 string
-
-// SchemaV14 保存账号级失败阻塞（auth_invalid / rate_limited / permission_denied）。
-//
-//go:embed schema_v14.sql
-var SchemaV14 string
-
-// SchemaV15 在账号展示状态上物化 configured 与 OAuth 待登录判定。
-//
-//go:embed schema_v15.sql
-var SchemaV15 string
-
-// SchemaV16 保存账号级运行态文档，Go 负责持久化与派生。
-//
-//go:embed schema_v16.sql
-var SchemaV16 string
-
-// SchemaV17 保存 OAuth Job 的公开快照（不含授权码、state、PKCE、Token）。
-//
-//go:embed schema_v17.sql
-var SchemaV17 string
-
-// SchemaV18 保存额度窗口采样，供按窗口期（5h / 7 天 / 30 天）统计消耗。
-//
-//go:embed schema_v18.sql
-var SchemaV18 string
-
-// SchemaV19 保存窗口账本、重置检测基线与本机识别出的额度重置事件。
-//
-//go:embed schema_v19.sql
-var SchemaV19 string
-
-// SchemaV20 在账号当前额度快照上补 Provider 归一后的套餐标识。
-//
-//go:embed schema_v20.sql
-var SchemaV20 string
-
-// SchemaV21 保存账号模型探测事实（时刻 / 来源 / 错误 / 模型数）。
-//
-// 探测事实与 account_models 分开：目录快照会被失败刷新保留，而探测结果必须反映
-// 最近一次尝试，两者生命周期不同。
-//
-//go:embed schema_v21.sql
-var SchemaV21 string
-
-// SchemaV22 保存 Go 自有的模型别名表与代次。
-//
-// 别名所有权最终要迁到 Go：这张表让 Go 重启后能自己恢复，而不是等 Node 再推一次。
-// generation 单调递增，路由编译靠它判断快照新旧。
-//
-//go:embed schema_v22.sql
-var SchemaV22 string
-
-// SchemaV23 给别名补 display_models_json：通配别名的展示名单不能只活在内存里。
-//
-//go:embed schema_v23.sql
-var SchemaV23 string
-
-// SchemaV24 保存账号额度探针的最近结果（由 Node 执行并推送）。
-//
-//go:embed schema_v24.sql
-var SchemaV24 string
-
-// SchemaV25 保存账号级 Go 路由排除（自定义上游账号必须永远不进 Go 候选）。
-//
-//go:embed schema_v25.sql
-var SchemaV25 string
-
-// SchemaV26 给 usage_ledger 加幂等导入键（Node 历史 token 事实并账用）。
-//
-//go:embed schema_v26.sql
-var SchemaV26 string
-
-// SchemaV27 保存上游错误映射组与组内规则条目。
-//
-// 独立成表而不是复用 app-state：映射组的写入口归 Go，需要行级版本 CAS 与级联
-// 删除，这两件事 JSON 文档存储都给不了（详见 migration 注释）。
-//
-//go:embed schema_v27.sql
-var SchemaV27 string
-
-// SchemaV28 保存账号级上游错误规则与映射组挂载关系。
-//
-// source 列保留历史兼容投影的隔离标记；投影写入已移除，新数据只写 account。
-//
-//go:embed schema_v28.sql
-var SchemaV28 string
-
-// SchemaV29 给 oauth_jobs 补终态结果列（account_ref / cli_account_id / finished_at）。
-//
-// 终态回放要跨重启可用，账号结果不能只活在内存保留期里。
-//
-//go:embed schema_v29.sql
-var SchemaV29 string
-
-// SchemaV30 给 oauth_jobs 补 owner/source：Go 只回收自己遗留的 pending。
-//
-// Node 仍是部分登录的执行者；Go 重启时若把所有 pending 都标 expired，会把
-// Node 正在运行的 Job 也误杀。
-//
-//go:embed schema_v30.sql
-var SchemaV30 string
-
-// SchemaV31 fences Go-owned host default selections against legacy writes.
-//
-//go:embed schema_v31.sql
-var SchemaV31 string
-
-// SchemaV32 保存 WebUI 会话列表的物化索引，读侧只读 aih.db。
-//
-//go:embed schema_v32.sql
-var SchemaV32 string
-
-// SchemaV33 给 usage_ledger 补额度档位列（本次请求实际消费的档位）。
-//
-//go:embed schema_v33.sql
-var SchemaV33 string
-
-// SchemaV34 给 usage_ledger 加档位聚合的覆盖索引（避免聚合时回表读宽行）。
-//
-//go:embed schema_v34.sql
-var SchemaV34 string
-
-// SchemaV35 增加 usage_ledger 的 UTC 日粒度汇总表及其写入触发器。
-//
-//go:embed schema_v35.sql
-var SchemaV35 string
+var requiredCoreTriggerNames = []string{
+	"trg_account_defaults_clear_disabled",
+	"guard_owned_default_insert",
+	"guard_owned_default_update",
+	"guard_owned_default_delete",
+	"release_deleted_default_owner",
+}

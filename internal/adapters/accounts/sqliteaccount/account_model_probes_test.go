@@ -189,21 +189,11 @@ func TestAccountModelProbesForwardMigrationFromV20(t *testing.T) {
 	dropUsageLedgerQuotaBucket(t, store)
 	// v31 的默认归属收据表/触发器同样晚于 v20，重放前必须回退。
 	dropHostDefaultOwnership(t, store)
-	if _, err := store.db.ExecContext(ctx, "PRAGMA user_version = 20"); err != nil {
-		t.Fatalf("rewind user_version error = %v", err)
-	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
 
 	upgraded := openOAuthJobStoreAt(t, aiHomeDir)
-	var version int
-	if err := upgraded.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatalf("read user_version error = %v", err)
-	}
-	if version != SchemaVersion {
-		t.Fatalf("user_version after upgrade = %d, want %d", version, SchemaVersion)
-	}
 	assertSQLiteObjectsExist(t, upgraded, "account_model_probes")
 	var accountCount int
 	if err := upgraded.db.QueryRowContext(

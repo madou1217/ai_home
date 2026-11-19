@@ -17,247 +17,7 @@ const (
 	journalModeRetryMax   = 100 * time.Millisecond
 )
 
-var expectedSchemaColumns = map[string][]string{
-	"account_default_ownership": {"provider_id", "owner", "expected_ref", "operation_id", "updated_at_ms"},
-	"accounts": {
-		"account_ref",
-		"provider_id",
-		"cli_account_id",
-		"enabled",
-		"created_at_ms",
-		"updated_at_ms",
-	},
-	"account_credentials": {
-		"account_ref",
-		"credential_ref",
-		"auth_kind",
-		"auth_mode",
-		"format_version",
-		"credential_json",
-		"updated_at_ms",
-	},
-	"account_profiles": {
-		"account_ref",
-		"display_name",
-		"email",
-		"subscription_kind",
-		"subscription_raw",
-		"format_version",
-		"profile_json",
-		"updated_at_ms",
-		"workspace_id",
-	},
-	"account_models": {
-		"account_ref",
-		"model_id",
-		"upstream_available",
-		"manual_policy",
-		"updated_at_ms",
-	},
-	"account_model_probes": {
-		"account_ref",
-		"provider_id",
-		"last_attempt_at_ms",
-		"last_error_code",
-		"last_error_message",
-		"last_source",
-		"last_model_count",
-		"updated_at_ms",
-	},
-	"account_usage": {
-		"account_ref",
-		"limit_id",
-		"limit_name",
-		"bucket",
-		"kind",
-		"scope",
-		"scope_key",
-		"remaining_bps",
-		"availability",
-		"window_seconds",
-		"reset_at_ms",
-		"source",
-		"captured_at_ms",
-		"plan_type",
-	},
-	"account_defaults": {
-		"provider_id",
-		"account_ref",
-		"updated_at_ms",
-	},
-	"account_runtime_state": {
-		"account_ref",
-		"model_id",
-		"streak_kind",
-		"streak_count",
-		"streak_expires_at_ms",
-		"cooldown_kind",
-		"cooldown_until_ms",
-		"last_failure_at_ms",
-	},
-	"usage_ledger": {
-		"usage_id",
-		"account_ref",
-		"provider_id",
-		"model_id",
-		"session_id",
-		"occurred_at_ms",
-		"input_tokens",
-		"output_tokens",
-		"cached_input_tokens",
-		"cache_write_input_tokens",
-		"reasoning_tokens",
-		"total_tokens",
-		"source_key",
-		"quota_bucket",
-	},
-	"account_tombstones": {
-		"tombstone_key",
-		"account_ref",
-		"provider_id",
-		"kind",
-		"fingerprint",
-		"created_at_ms",
-	},
-	"account_usage_snapshots": {
-		"account_ref",
-		"provider_id",
-		"kind",
-		"source",
-		"captured_at_ms",
-		"payload_json",
-		"quota_status",
-		"quota_reason",
-		"remaining_bps",
-		"has_numeric_remaining",
-	},
-	"account_ui_state": {
-		"account_ref",
-		"status",
-		"display_name",
-		"auth_mode",
-		"api_key_mode",
-		"base_url",
-		"updated_at_ms",
-		"configured",
-		"oauth_pending",
-	},
-	"account_runtime_blocks": {
-		"account_ref",
-		"kind",
-		"scope",
-		"reason",
-		"observed_at_ms",
-		"until_ms",
-	},
-	"oauth_jobs": {
-		"job_id",
-		"provider_id",
-		"purpose",
-		"target_ref",
-		"status",
-		"created_at_ms",
-		"expires_at_ms",
-		"updated_at_ms",
-		"error_code",
-		"error_message",
-		"account_ref",
-		"cli_account_id",
-		"finished_at_ms",
-		"owner",
-		"source",
-	},
-	"account_quota_window_samples": {
-		"sample_id",
-		"account_ref",
-		"provider_id",
-		"quota_key",
-		"window_label",
-		"window_minutes",
-		"remaining_pct",
-		"expected_reset_at_ms",
-		"captured_at_ms",
-		"captured_bucket",
-		"plan_type",
-		"created_at_ms",
-	},
-	"account_quota_window_ledger": {
-		"account_ref",
-		"window_minutes",
-		"anchor_at_ms",
-		"close_at_ms",
-		"source",
-		"observed_at_ms",
-		"updated_at_ms",
-	},
-	"account_quota_detector_state": {
-		"account_ref",
-		"quota_key",
-		"provider_id",
-		"last_remaining_pct",
-		"last_expected_reset_at_ms",
-		"last_captured_at_ms",
-		"is_armed",
-		"rearm_generation",
-		"exhausted_at_ms",
-		"updated_at_ms",
-	},
-	"account_quota_reset_events": {
-		"event_id",
-		"event_key",
-		"account_ref",
-		"provider_id",
-		"quota_key",
-		"window_label",
-		"window_minutes",
-		"event_kind",
-		"classification",
-		"cause",
-		"previous_remaining_pct",
-		"current_remaining_pct",
-		"previous_expected_reset_at_ms",
-		"exhausted_at_ms",
-		"occurred_at_ms",
-		"detected_at_ms",
-		"early_duration_ms",
-		"created_at_ms",
-	},
-	"account_routing_exclusions": {
-		"account_ref",
-		"excluded",
-		"reason",
-		"updated_at_ms",
-	},
-	"upstream_error_mapping_group": {
-		"id",
-		"name",
-		"description",
-		"provider",
-		"enabled",
-		"position",
-		"version",
-		"created_at_ms",
-		"updated_at_ms",
-	},
-	"upstream_error_mapping_rule": {
-		"group_id",
-		"position",
-		"rule_json",
-	},
-	"account_upstream_error_rule": {
-		"account_ref",
-		"source",
-		"position",
-		"rule_json",
-	},
-	"account_upstream_error_group": {
-		"account_ref",
-		"position",
-		"group_id",
-	},
-}
-
-// initialize 校验数据库身份、执行首次 migration 并启用 WAL。
+// initialize 校验数据库身份、按实际结构能力增量补齐对象并启用 WAL。
 func (store *Store) initialize(ctx context.Context) error {
 	if err := store.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("连接账号数据库失败: %w", err)
@@ -270,7 +30,7 @@ func (store *Store) initialize(ctx context.Context) error {
 		_ = connection.Close()
 	}()
 
-	if err := migrateConnection(ctx, connection); err != nil {
+	if err := ensureConnectionSchema(ctx, connection); err != nil {
 		return err
 	}
 	if err := validateConnection(ctx, connection); err != nil {
@@ -279,15 +39,11 @@ func (store *Store) initialize(ctx context.Context) error {
 	return enableWAL(ctx, connection)
 }
 
-// inspectDatabase 读取 SQLite 身份、版本和非系统对象数量。
-func inspectDatabase(ctx context.Context, connection *sql.Conn) (int, int, int, error) {
+// inspectDatabaseIdentity 读取 SQLite application_id 与非系统对象数量（不读取任何版本号）。
+func inspectDatabaseIdentity(ctx context.Context, connection *sql.Conn) (int, int, error) {
 	var applicationID int
 	if err := connection.QueryRowContext(ctx, "PRAGMA application_id").Scan(&applicationID); err != nil {
-		return 0, 0, 0, fmt.Errorf("读取账号数据库 application_id 失败: %w", err)
-	}
-	var schemaVersion int
-	if err := connection.QueryRowContext(ctx, "PRAGMA user_version").Scan(&schemaVersion); err != nil {
-		return 0, 0, 0, fmt.Errorf("读取账号数据库 user_version 失败: %w", err)
+		return 0, 0, fmt.Errorf("读取账号数据库 application_id 失败: %w", err)
 	}
 	var objectCount int
 	const countObjectsSQL = `
@@ -296,151 +52,36 @@ func inspectDatabase(ctx context.Context, connection *sql.Conn) (int, int, int, 
 		WHERE name NOT LIKE 'sqlite_%'
 		  AND type IN ('table', 'index', 'view', 'trigger')`
 	if err := connection.QueryRowContext(ctx, countObjectsSQL).Scan(&objectCount); err != nil {
-		return 0, 0, 0, fmt.Errorf("检查账号数据库对象失败: %w", err)
+		return 0, 0, fmt.Errorf("检查账号数据库对象失败: %w", err)
 	}
-	return applicationID, schemaVersion, objectCount, nil
+	return applicationID, objectCount, nil
 }
 
-// forwardMigrations 按「起始版本 - 1」索引前向 migration 脚本。
-//
-// 索引 i 的脚本把 v(i+1) 迁移到 v(i+2)；全新数据库按顺序执行全部脚本。
-var forwardMigrations = []string{
-	SchemaV1,
-	SchemaV2,
-	SchemaV3,
-	SchemaV4,
-	SchemaV5,
-	SchemaV6,
-	SchemaV7,
-	SchemaV8,
-	SchemaV9,
-	SchemaV10,
-	SchemaV11,
-	SchemaV12,
-	SchemaV13,
-	SchemaV14,
-	SchemaV15,
-	SchemaV16,
-	SchemaV17,
-	SchemaV18,
-	SchemaV19,
-	SchemaV20,
-	SchemaV21,
-	SchemaV22,
-	SchemaV23,
-	SchemaV24,
-	SchemaV25,
-	SchemaV26,
-	SchemaV27,
-	SchemaV28,
-	SchemaV29,
-	SchemaV30,
-	SchemaV31,
-	SchemaV32,
-	SchemaV33,
-	SchemaV34,
-	SchemaV35,
-}
-
-// migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
-func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr error) {
-	if _, err := connection.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		return fmt.Errorf("开始账号数据库 migration 失败: %w", err)
+// verifyCompatibilityBootstrapObjects 确认 application_id=0 的非空库仅包含允许的兼容投影对象。
+func verifyCompatibilityBootstrapObjects(ctx context.Context, connection *sql.Conn) error {
+	rows, err := connection.QueryContext(
+		ctx,
+		"SELECT type, tbl_name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'",
+	)
+	if err != nil {
+		return fmt.Errorf("读取兼容引导对象失败: %w", err)
 	}
 	defer func() {
-		if resultErr != nil {
-			_, _ = connection.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
-		}
+		_ = rows.Close()
 	}()
-
-	applicationID, schemaVersion, objectCount, err := inspectDatabase(ctx, connection)
-	if err != nil {
-		return err
-	}
-	if applicationID == ApplicationID &&
-		schemaVersion >= 1 &&
-		schemaVersion <= SchemaVersion {
-		for version := schemaVersion; version < SchemaVersion; version++ {
-			if _, err := connection.ExecContext(
-				ctx,
-				forwardMigrations[version],
-			); err != nil {
-				if !isIdempotentMigrationError(err) {
-					return fmt.Errorf(
-						"迁移账号数据库到 v%d 失败: %w",
-						version+1,
-						err,
-					)
-				}
-				// 脚本在这里因"列已存在"中断，后面的 PRAGMA user_version 没机会执行；
-				// 目标结构已经成立，补写版本号，避免下一次启动重复迁移。
-				if _, versionErr := connection.ExecContext(
-					ctx,
-					fmt.Sprintf("PRAGMA user_version = %d;", version+1),
-				); versionErr != nil {
-					return fmt.Errorf(
-						"迁移账号数据库到 v%d 后写版本号失败: %w",
-						version+1,
-						versionErr,
-					)
-				}
-			}
+	for rows.Next() {
+		var kind, table string
+		if err := rows.Scan(&kind, &table); err != nil {
+			return fmt.Errorf("解析兼容引导对象失败: %w", err)
 		}
-		return commitMigration(ctx, connection)
-	}
-	if applicationID != 0 || schemaVersion != 0 {
-		// 把版本号带出来：库被更新的二进制升过级时，旧 aih-go 只会报一句
-		// "结构不兼容"，看不出是"CLI 太旧"还是"文件损坏"。
-		return fmt.Errorf("%w: 数据库 schema=%d，当前程序最高支持=%d；请重建并安装 aih-go 与 aih-server",
-			ErrIncompatibleDatabase, schemaVersion, SchemaVersion)
-	}
-	if objectCount != 0 {
-		rows, err := connection.QueryContext(ctx, "SELECT type,tbl_name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var kind, table string
-			if err := rows.Scan(&kind, &table); err != nil {
-				return err
-			}
-			if (kind != "table" && kind != "index") || !businessdb.IsCompatibilityTable(table) {
-				return ErrIncompatibleDatabase
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		if err := rows.Close(); err != nil {
-			return err
+		if (kind != "table" && kind != "index") || !businessdb.IsCompatibilityTable(table) {
+			return ErrIncompatibleDatabase
 		}
 	}
-	for version, migration := range forwardMigrations {
-		if _, err := connection.ExecContext(ctx, migration); err != nil {
-			return fmt.Errorf("创建账号数据库 v%d 失败: %w", version+1, err)
-		}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("遍历兼容引导对象失败: %w", err)
 	}
-	return commitMigration(ctx, connection)
-}
-
-// isIdempotentMigrationError 容忍"重复加列"这一种可安全重放的前向迁移错误。
-//
-// 迁移脚本是前向的，但如果上一次进程在 ALTER 之后、提交版本号之前退出，重跑同一版本
-// 会撞上 duplicate column name；这种状态本身是目标结构，不应该把数据库判成不可用。
-func isIdempotentMigrationError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "duplicate column name")
-}
-
-// commitMigration 提交 migration 事务并统一错误语义。
-func commitMigration(ctx context.Context, connection *sql.Conn) error {
-	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
-		return fmt.Errorf("提交账号数据库 migration 失败: %w", err)
-	}
-	return nil
+	return rows.Close()
 }
 
 // enableWAL 幂等启用持久 WAL，并处理并发进程初始化时的短暂 SQLite 锁竞争。
@@ -493,120 +134,6 @@ func waitForJournalModeRetry(ctx context.Context, attempt int) error {
 	case <-timer.C:
 		return nil
 	}
-}
-
-// validateConnection 确保连接级外键和最新表、索引结构完整。
-func validateConnection(ctx context.Context, connection *sql.Conn) error {
-	applicationID, schemaVersion, _, err := inspectDatabase(ctx, connection)
-	if err != nil {
-		return err
-	}
-	if applicationID != ApplicationID || schemaVersion != SchemaVersion {
-		return ErrIncompatibleDatabase
-	}
-	var foreignKeysEnabled int
-	if err := connection.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled); err != nil {
-		return fmt.Errorf("读取账号数据库外键设置失败: %w", err)
-	}
-	if foreignKeysEnabled != 1 {
-		return fmt.Errorf("%w: foreign_keys=off", ErrIncompatibleDatabase)
-	}
-	for tableName, expectedColumns := range expectedSchemaColumns {
-		columns, err := readTableColumns(ctx, connection, tableName)
-		if err != nil {
-			return err
-		}
-		if !equalStrings(columns, expectedColumns) {
-			return fmt.Errorf("%w: table=%s", ErrIncompatibleDatabase, tableName)
-		}
-	}
-	for _, indexName := range []string{
-		"idx_accounts_routing",
-		"idx_account_credentials_credential_ref",
-		"idx_account_models_effective",
-		"idx_account_runtime_state_cooldown",
-		"idx_account_tombstones_ref",
-		"idx_account_tombstones_key",
-		"idx_account_usage_snapshots_provider",
-		"idx_account_runtime_blocks_until",
-		"idx_oauth_jobs_provider_status",
-		"idx_oauth_jobs_updated_at",
-		"idx_account_upstream_error_group_group",
-	} {
-		var indexCount int
-		const indexSQL = `
-			SELECT COUNT(*)
-			FROM sqlite_schema
-			WHERE type = 'index' AND name = ?`
-		if err := connection.QueryRowContext(ctx, indexSQL, indexName).Scan(&indexCount); err != nil {
-			return fmt.Errorf("检查账号索引失败: %w", err)
-		}
-		if indexCount != 1 {
-			return ErrIncompatibleDatabase
-		}
-	}
-	var triggerCount int
-	const triggerSQL = `
-		SELECT COUNT(*)
-		FROM sqlite_schema
-		WHERE type = 'trigger' AND name = 'trg_account_defaults_clear_disabled'`
-	if err := connection.QueryRowContext(ctx, triggerSQL).Scan(&triggerCount); err != nil {
-		return fmt.Errorf("检查账号默认关系触发器失败: %w", err)
-	}
-	if triggerCount != 1 {
-		return ErrIncompatibleDatabase
-	}
-	return nil
-}
-
-// readTableColumns 返回 STRICT 表按声明顺序排列的列名。
-func readTableColumns(ctx context.Context, connection *sql.Conn, tableName string) ([]string, error) {
-	rows, err := connection.QueryContext(ctx, "PRAGMA table_info("+tableName+")")
-	if err != nil {
-		return nil, fmt.Errorf("读取账号表结构失败: %w", err)
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	var columns []string
-	for rows.Next() {
-		var columnID int
-		var name, columnType string
-		var notNull, primaryKey int
-		var defaultValue sql.NullString
-		if err := rows.Scan(
-			&columnID,
-			&name,
-			&columnType,
-			&notNull,
-			&defaultValue,
-			&primaryKey,
-		); err != nil {
-			return nil, fmt.Errorf("解析账号表结构失败: %w", err)
-		}
-		columns = append(columns, name)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历账号表结构失败: %w", err)
-	}
-	if len(columns) == 0 {
-		return nil, ErrIncompatibleDatabase
-	}
-	return columns, nil
-}
-
-// equalStrings 判断两个有序字符串切片是否完全一致。
-func equalStrings(left []string, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }
 
 // isConstraintError 判断错误是否属于 SQLite 约束冲突。

@@ -37,15 +37,23 @@ func ApplyConfigPatch(ctx context.Context, aiHomeDir string, patch map[string]an
 	}
 	var saved ConfigView
 	err = source.UpdateServerConfig(ctx, func(current string, found bool) (string, error) {
-		base, err := sanitizeFullServerConfigFromJSON(current, found)
+		rawCurrent, err := parseRawConfigObject(current, found)
 		if err != nil {
 			return "", err
 		}
+		base := sanitizeServerConfig(rawCurrent)
+		validatedRetry, hasRetryPatch, retryErr := validateUpstream429Patch(patch, base.Upstream429Retry)
+		if retryErr != nil {
+			return "", retryErr
+		}
 		merged := mergeServerConfigPatch(base, patch)
 		saved = sanitizeServerConfig(merged)
-		stored := configToMap(saved)
-		delete(stored, "apiKeyConfigured")
-		delete(stored, "managementKeyConfigured")
+		if hasRetryPatch {
+			saved.Upstream429Retry = validatedRetry
+		} else {
+			saved.Upstream429Retry = base.Upstream429Retry
+		}
+		stored := mergeKnownFieldsPreservingUnknown(rawCurrent, saved)
 		encoded, err := json.Marshal(stored)
 		if err != nil {
 			return "", err

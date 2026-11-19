@@ -1,0 +1,57 @@
+# Gateway Upstream HTTP 429 Bounded Wait-and-Retry
+
+## Behavior Overview
+
+AIH absorbs transient upstream HTTP `429` responses without interrupting unattended sessions when:
+
+1. **Pinned account (`X-Account-Ref` or Claude relay lease)**: AIH runs bounded wait-and-retry on the requested account first (honoring that account's effective policy) before any legacy pool fallback.
+2. **Unpinned pool**: AIH fails over across all eligible accounts and candidate routes **first** with zero wait. Only after pool exhaustion with an uncommitted, eligible raw HTTP `429` does it wait and retry.
+
+### Strict Eligibility Gate
+
+Retry applies **only** when all conditions hold:
+- **Strict Eligibility Gate**:
+  - No downstream response status/headers/body bytes have been committed (`!stream.Visible()`).
+  - Raw observed HTTP status is `429` (`ObservedHTTPStatus == 429`), including custom-rule-matched HTTP `429` responses (which preserve real HTTP `Retry-After` independently via `configured.ClassifyHTTPWithRules`).
+  - Runtime classification is transient, retryable `FailureRateLimited` (`ActionModelCooldown`, `!BlocksRouting()`).
+  - Excludes explicit structured hard-quota/billing/auth/safety/model-unsupported identities even on generic OpenAI-compatible HTTP `429` responses (`insufficient_quota`, `quota_exhausted`, `quota_error`, `quota_exceeded`, `usage_limit_reached`, `billing_not_active`, `billing_hard_limit_reached`, `billing_error`), WAF edge rejections, HTTP `200` SSE rate limits, HTTP `529`, network timeouts, and local admission errors (`ErrProviderQueueFull`).
+  - Legacy AGY 500ms `RequestPoolRetryPolicy` handles only non-429 ambiguous failures and never multiplies or caps 429 waits.
+
+## Configuration & Precedence
+
+- **Global (`app_kv['config:server'].upstream429Retry`)**:
+  - Default: `{ "enabled": true, "backoffSeconds": [30] }` (1 extra retry after 30s).
+  - Canonical schedule: ordered array of positive integers in seconds (`1..10` steps, `1..300s` per step, cumulative sum `<= 900s`). Each entry is the delay before retry `1..N`, not a cumulative timestamp.
+  - Unknown top-level keys in `config:server` AND unknown nested keys inside `config:server.upstream429Retry` are preserved across both Go and Node saves while client write validation still rejects unknown keys in incoming patches.
+  - **CLI (`aih server config set`, supported in both Go CLI `cmd/aih` and legacy Node CLI)**: `--upstream-429-retry`, `--no-upstream-429-retry`, `--upstream-429-retry-backoff <sec,...>`, and `--clear-upstream-429-retry-backoff` (resets schedule to `[30]`). Changes that modify **only** `upstream429Retry` hot-reload automatically into the running server without restarting; listener/key or other server config changes still require `aih server restart`.
+- **Per-account override (`app_kv['account:upstream-429-retry:<accountRef>']`)**:
+  - Endpoints: `GET|POST /v1/management/webui/accounts/{provider}/{accountRef}/upstream-429-retry` (browser alias `/v0/webui/accounts/{provider}/{accountRef}/upstream-429-retry`).
+  - Strictly **3 modes**:
+    - `"inherit"`: deletes the override row; inherits global `enabled` and `backoffSeconds`.
+    - `"enabled"`: forces retry enabled with a required explicit non-empty `backoffSeconds` array (`1..10` steps, `1..300s`, sum `<= 900s`).
+    - `"disabled"`: forces retry disabled regardless of global setting.
+  - Precedence: **Account > Global**.
+  - Account saves merge owned fields transactionally (`BEGIN IMMEDIATE`) so stored unknown keys survive `enabled`/`disabled` updates while client payloads reject unknown keys.
+  - Account rekey migrates `account:upstream-429-retry:<old>` -> `<new>` inside a single `BEGIN IMMEDIATE` transaction; if the destination key already exists, the existing destination override is preserved and the orphaned source key is deleted.
+- **Cross-writer coherence & error semantics**:
+  - Snapshots load `config:server` and all `account:upstream-429-retry:*` rows together in a single SQLite read transaction (`ReadOnly: true`). Fast-path stat fingerprint caching is trusted only when `fpBefore == fpAfter` and within the bounded `500ms` full-reload window (no `MAX(updated_at)/COUNT(*)` shortcut).
+  - Missing database or missing `app_kv` table initializes defaults **only** during genuine initial fresh-home bootstrap before any durable DB/table load has succeeded (`!hasDurableLoad`); once any durable load succeeds, a subsequent missing DB or missing `app_kv` table is treated as a storage read failure (no DB creation on read, `GET` returns HTTP `500` and UI disables Save, runtime preserves the last-known-good snapshot with `fingerprintTrusted = false` and never overwrites an explicit `false`/`disabled` with default `true`). Unreadable/corrupt storage or canceled contexts always propagate real errors.
+
+## Wait, `Retry-After`, Atomic Reacquisition & Headers
+
+- **Lock/resource hygiene**: Provider semaphores, Claude per-account gates, and upstream HTTP response bodies (after a bounded error snapshot in relays) are released before sleeping.
+- **Anchored `Retry-After` handling**: Honors valid RFC 9110 delta-seconds (including exact fail-closed overflow preservation for unrepresentably large valid numeric values without truncating or retrying early) and HTTP-date headers, anchored strictly at observation time as absolute UTC `ExplicitRetryAt` (no unanchored duration fallback). Effective wait is `max(schedule[i], remainingUntilExplicitRetryAt)`. If remaining exceeds `300s`, `totalWait + delay > 900s`, or `ctx.Deadline()` is insufficient, AIH fails fast without early replay and returns the real HTTP `429` with accurate remaining `Retry-After` seconds (or removes stale copied `Retry-After` if an authoritative window already elapsed during waiting).
+- **First-observation freeze, single-flight permit & final pre-dispatch re-check**: The per-target schedule freezes at that target's first eligible `429` observation (`FreezePolicyAtObservation`, without claiming a retry or sleeping), backed by a request-shared monotonic `RequestState` epoch preventing stale/overlapping `Wait` reuse. Live policy enablement, cancellation, and `ExplicitRetryAt` not-before are re-checked via `CanDispatchAfterWait` after waiting AND again immediately after the last potentially blocking recruitment, queue admission, credential resolution/refresh, and `IsCurrentCredentialObservation` verification — right before `upstream.Execute` / `nativeRoundTrip` / `client.Do` — preserving the buffered original HTTP `429` on abort.
+- **Atomic runtime `CooldownReceipt`, production forwarding & credential-generation waiver (`RateLimitCooldownWaiver`)**: `outcomeRecordingRuntime.RecordFailureWithReceipt` forwards to `inmemory.Runtime.RecordFailureWithReceipt` while executing outcome/quota-refresh side effects once. Under `Registry.RecordFailureWithRevision` lock, a non-zero waivable revision is returned **only** when the failure exclusively owns the resulting cooldown (no pre-existing active cooldown, or unbroken single-request chain presenting the exact immediately preceding owned `CooldownReceipt` via `ContextWithPriorCooldownReceipt`); if `ModelState.Apply` retained or stacked onto another request's active cooldown, the longer runtime cooldown and revision increment remain intact while returning a zero/non-bypassable receipt (fail-closed). At the application boundary, `accountrouting.RateLimitCooldownWaiver` pairs that `CooldownReceipt` with the failed attempt's originating `CredentialObservation`; whenever a cooldown waiver is actually used (`UsedRateLimitCooldownWaiver() == true`), both recruitment and pre-dispatch (including post-Claude-queue admission and native relays) require the credential to still match and be current for that originating generation (`IsCurrentCredentialObservation`), while independently eligible accounts (`UsedRateLimitCooldownWaiver() == false`) allow normal fresh/re-authenticated credentials.
+- **Response headers**: Emits `x-aih-upstream-429-retries` and `x-aih-upstream-429-wait-ms` when `retries > 0`, and preserves real final HTTP `429` (including Gemini `429 RESOURCE_EXHAUSTED`) + accurate remaining `Retry-After` on exhaustion.
+
+## Covered Execution Surfaces & Remaining Audit Items
+
+- **Covered in this phase (HTTP gateway & Desktop WebUI)**:
+  - Canonical `Coordinator`: `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/models/{m}:[stream]GenerateContent`, `/v1beta/models/{m}:[stream]GenerateContent`.
+  - Native HTTP relays: `codexresponseshttp` (`/v1/responses`), `claudenativerelay` (`/v1/messages`), `relaycore` (`/v1/chat/completions` family/relay providers).
+  - Desktop WebUI: Global card in Settings (`Upstream429RetrySettingCard`) and desktop-opt-in per-account `429 重试` tab in `AccountRuntimeSettingsModal` via `Accounts.tsx` (`showUpstream429Retry`), keeping mobile views untouched.
+- **Source-audited remaining surfaces (next mandatory phase)**:
+  - `internal/transport/http/codexresponsesws/handler.go` (WS upstream dial 429 handshake & mid-connection WS error frames).
+  - `internal/transport/http/imagesapi/handler.go` + `internal/adapters/images` (`/v1/images/generations`, `/v1/images/edits`).
+  - `internal/transport/http/webuichatapi/handler.go` direct relay turn loop (canonical `ChatGateway` path already flows through covered `familyRelayHandler` -> `Coordinator`).

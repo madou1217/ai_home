@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -213,6 +214,36 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 			patch["goCoreEnabled"] = false
 			continue
 		}
+		if flag == "--upstream-429-retry" {
+			setUpstream429RetryField(patch, "enabled", true)
+			continue
+		}
+		if flag == "--no-upstream-429-retry" {
+			setUpstream429RetryField(patch, "enabled", false)
+			continue
+		}
+		if flag == "--clear-upstream-429-retry-backoff" {
+			setUpstream429RetryField(patch, "backoffSeconds", corepolicy.DefaultBackoffSeconds())
+			continue
+		}
+		if flag == "--upstream-429-retry-backoff" || strings.HasPrefix(flag, "--upstream-429-retry-backoff=") {
+			var rawBackoff string
+			if strings.HasPrefix(flag, "--upstream-429-retry-backoff=") {
+				rawBackoff = strings.TrimPrefix(flag, "--upstream-429-retry-backoff=")
+			} else {
+				if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+					return errors.New("--upstream-429-retry-backoff requires a value")
+				}
+				index++
+				rawBackoff = args[index]
+			}
+			steps, err := parseUpstream429BackoffCSV(rawBackoff, "--upstream-429-retry-backoff")
+			if err != nil {
+				return err
+			}
+			setUpstream429RetryField(patch, "backoffSeconds", steps)
+			continue
+		}
 		if strings.HasPrefix(flag, "--clear-") {
 			key, ok := clearConfigKey(strings.TrimPrefix(flag, "--clear-"))
 			if !ok {
@@ -247,8 +278,66 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 			return err
 		}
 	}
-	_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; run aih server restart to apply it.")
+	if serverConfigPatchRequiresRestart(patch, clearManagementKey) {
+		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; run aih server restart to apply it.")
+	} else {
+		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; upstream 429 retry changes take effect automatically without restarting the server.")
+	}
 	return nil
+}
+
+func setUpstream429RetryField(patch map[string]any, field string, value any) {
+	nested, ok := patch["upstream429Retry"].(map[string]any)
+	if !ok || nested == nil {
+		nested = map[string]any{}
+		patch["upstream429Retry"] = nested
+	}
+	nested[field] = value
+}
+
+func parseUpstream429BackoffCSV(raw string, flagName string) ([]int, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, fmt.Errorf("%s requires comma-separated integer seconds (e.g. 30 or 10,30,60)", flagName)
+	}
+	parts := strings.Split(trimmed, ",")
+	steps := make([]int, 0, len(parts))
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if !isASCIIUnsignedDigits(token) {
+			return nil, fmt.Errorf("%s contains invalid integer %q", flagName, token)
+		}
+		value, err := strconv.Atoi(token)
+		if err != nil {
+			return nil, fmt.Errorf("%s contains invalid integer %q", flagName, token)
+		}
+		steps = append(steps, value)
+	}
+	return corepolicy.ValidateBackoffSeconds(steps)
+}
+
+func isASCIIUnsignedDigits(text string) bool {
+	if text == "" {
+		return false
+	}
+	for index := 0; index < len(text); index++ {
+		if text[index] < '0' || text[index] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func serverConfigPatchRequiresRestart(patch map[string]any, clearManagementKey bool) bool {
+	if clearManagementKey {
+		return true
+	}
+	for key := range patch {
+		if key != "upstream429Retry" {
+			return true
+		}
+	}
+	return false
 }
 
 type configDisplayFlags struct {
@@ -338,6 +427,9 @@ func normalizeConfigKey(key string) string {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
 		return ""
+	}
+	if strings.EqualFold(trimmed, "upstream_429_retry") {
+		return "upstream429Retry"
 	}
 	parts := strings.Split(trimmed, "-")
 	for index := 1; index < len(parts); index++ {

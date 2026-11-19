@@ -108,6 +108,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "update" {
 		return runUpdate(ctx, arguments[1:], runtime)
 	}
+	if providerID == "backup" && len(arguments) >= 2 && backupConfigCommands[strings.ToLower(strings.TrimSpace(arguments[1]))] {
+		return runBackup(ctx, arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}

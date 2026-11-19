@@ -138,6 +138,9 @@ func delegateToNode(args []string) bool {
 	if len(args) >= 2 && args[0] == "native" && args[1] == "plugin" {
 		return false
 	}
+	if len(args) >= 2 && args[0] == "backup" && backupConfigCommands[strings.ToLower(strings.TrimSpace(args[1]))] {
+		return false
+	}
 	if len(args) >= 2 && launchProviders[args[0]] && providerActionOwnedByGo(args[1]) {
 		return false
 	}

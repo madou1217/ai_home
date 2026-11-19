@@ -111,6 +111,8 @@
   与旧输出逐字段一致。
 - Update CLI：`aih update --check|--dry-run|--force` 由 Go 执行；
   区分 source-link/package/npm 安装源，source-link 给出 git 手动更新提示。
+- Backup 配置 CLI：`aih backup add/list/remove/enable/disable/config/show`
+  由 Go 的 remote-backup config/state 读写；`run/test/restore/recover` 仍待迁。
 - 远端节点交互端点（device-node-session-start/input/stream、
   device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
   但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
@@ -125,9 +127,10 @@
   空载荷探针，全部命中（`projects/pick` 会等待系统文件夹对话框，按预期阻塞）。
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
-- 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop/Agent/Claim/Edge/
-  Skill/MCP/Native plugin/Update 命令已是 Go；`cmd/aih` 仍有顶层
-  ssh/shell/harness/backup 走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
+- 旧 CLI 动作迁移：上述只读/备份配置/登录/启停/Server/Desktop/Agent/Claim/
+  Edge/Skill/MCP/Native plugin/Update 命令已是 Go；`cmd/aih` 仍有顶层
+  ssh/shell/harness，以及 backup 的 run/test/restore/recover 走旧入口。
+  下一步按命令逐个迁到 Go 并真机对拍。
 
 ---
 

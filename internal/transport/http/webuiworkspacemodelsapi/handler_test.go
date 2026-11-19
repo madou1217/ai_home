@@ -14,7 +14,9 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
@@ -180,11 +182,12 @@ func TestWorkspaceModelsFullContractAndColdProbe(t *testing.T) {
 	}
 	handler, err := NewHandler(Dependencies{
 		Authorizer:     staticAuthorizer{allow: true},
-		AiHomeDir:      aiHome,
 		Store:          store,
 		ModelRefresher: refresher,
 		MetadataIndex:  modalIndex,
 		Snapshot:       snapshotReader,
+		Settings:       modelcatalogsettings.Reader{DatabasePath: dbPath},
+		Refs:           accountrefmap.NewResolver(true, accountrefmap.Table{}),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

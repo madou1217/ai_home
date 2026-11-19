@@ -21,7 +21,6 @@ import (
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
@@ -40,6 +39,13 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+// SettingsReader 读 model-catalog-settings 文档的只读端口。
+//
+// 由组合层注入适配器实现（aih.db 路径），本包不自己解析数据库位置。
+type SettingsReader interface {
+	ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error)
+}
+
 // Store 组合账号概览与账号模型批量读端口。
 type Store interface {
 	ListAllAccountModels(ctx context.Context) (accountapp.AccountModelCatalog, error)
@@ -49,21 +55,23 @@ type Store interface {
 // Dependencies 汇总工作区模型目录接口依赖。
 type Dependencies struct {
 	Authorizer     Authorizer
-	AiHomeDir      string
 	Store          Store
 	ModelRefresher accountapp.AccountModelRefresher
 	MetadataIndex  modelmetadata.Catalog
 	Snapshot       modelsnapshot.Reader
+	Settings       SettingsReader
+	Refs           accountrefmap.Resolver
 }
 
 // Handler 处理 GET /v1/management/webui/workspace/models。
 type Handler struct {
 	authorizer    Authorizer
-	aiHomeDir     string
 	store         Store
 	refresher     accountapp.AccountModelRefresher
 	metadataIndex modelmetadata.Catalog
 	snapshot      modelsnapshot.Reader
+	settings      SettingsReader
+	refs          accountrefmap.Resolver
 }
 
 // NewHandler 创建工作区模型目录 Handler。
@@ -73,11 +81,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}
 	return &Handler{
 		authorizer:    dependencies.Authorizer,
-		aiHomeDir:     strings.TrimSpace(dependencies.AiHomeDir),
 		store:         dependencies.Store,
 		refresher:     dependencies.ModelRefresher,
 		metadataIndex: dependencies.MetadataIndex,
 		snapshot:      dependencies.Snapshot,
+		settings:      dependencies.Settings,
+		refs:          dependencies.Refs,
 	}, nil
 }
 
@@ -106,9 +115,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	resolver := loadRefResolver(ctx, handler.aiHomeDir)
-	dbPath := resolveAppStateDBPath(handler.aiHomeDir)
-	settings := loadSettings(ctx, dbPath)
+	resolver := handler.refs
+	settings := handler.loadSettings(ctx)
 	snapshot := handler.loadSnapshot(ctx)
 
 	catalog, err := handler.store.ListAllAccountModels(ctx)
@@ -171,33 +179,12 @@ func loadAllOverviews(ctx context.Context, store Store) ([]accountapp.AccountOve
 	return all, nil
 }
 
-func loadRefResolver(ctx context.Context, aiHomeDir string) accountrefmap.Resolver {
-	if strings.TrimSpace(aiHomeDir) == "" {
-		return accountrefmap.Resolver{}
-	}
-	table, err := accountrefmap.Load(ctx, aiHomeDir)
-	if err != nil {
-		return accountrefmap.Resolver{}
-	}
-	return accountrefmap.NewResolver(true, table)
-}
-
-func resolveAppStateDBPath(aiHomeDir string) string {
-	if strings.TrimSpace(aiHomeDir) == "" {
-		return ""
-	}
-	dbPath, err := appstate.DatabasePath(aiHomeDir)
-	if err != nil {
-		return ""
-	}
-	return dbPath
-}
-
-func loadSettings(ctx context.Context, dbPath string) modelcatalogsettings.Settings {
-	if dbPath == "" {
+// loadSettings 读取注入的设置端口；未接线或读取失败时返回空设置。
+func (handler *Handler) loadSettings(ctx context.Context) modelcatalogsettings.Settings {
+	if handler == nil || handler.settings == nil {
 		return modelcatalogsettings.Settings{}
 	}
-	settings, err := modelcatalogsettings.Load(ctx, dbPath)
+	settings, err := handler.settings.ReadSettings(ctx)
 	if err != nil {
 		return modelcatalogsettings.Settings{}
 	}

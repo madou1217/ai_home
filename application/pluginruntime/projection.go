@@ -81,6 +81,11 @@ type EmbeddedInvoker interface {
 	InvokeEmbedded(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error)
 }
 
+// EmbeddedReverseInvoker 是可选的带反向调用版本（gateway.attempt next）。
+type EmbeddedReverseInvoker interface {
+	InvokeEmbeddedReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall ReverseCall) (json.RawMessage, error)
+}
+
 // HostAccess 是连接 Plugin Host 所需的本机地址与令牌（只经管理接口传入，不落日志）。
 type HostAccess struct {
 	Address string

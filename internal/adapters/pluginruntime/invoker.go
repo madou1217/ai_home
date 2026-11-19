@@ -77,6 +77,9 @@ func (invoker *HostInvoker) InvokeReverse(
 	if invoker.registry.IsEmbeddedContribution(contributionID) {
 		if embedded := invoker.registry.EmbeddedInvoker(); embedded != nil {
 			if onCall != nil {
+				if reverse, ok := embedded.(appplugins.EmbeddedReverseInvoker); ok {
+					return reverse.InvokeEmbeddedReverse(ctx, generation, contributionID, value, timeout, onCall)
+				}
 				return nil, &Error{Code: "plugin_runtime_inactive", Message: "进程插件不支持反向调用"}
 			}
 			return embedded.InvokeEmbedded(ctx, generation, contributionID, value, timeout)
@@ -86,6 +89,9 @@ func (invoker *HostInvoker) InvokeReverse(
 	if host.Address == "" || host.Token == "" {
 		if embedded := invoker.registry.EmbeddedInvoker(); embedded != nil {
 			if onCall != nil {
+				if reverse, ok := embedded.(appplugins.EmbeddedReverseInvoker); ok {
+					return reverse.InvokeEmbeddedReverse(ctx, generation, contributionID, value, timeout, onCall)
+				}
 				return nil, &Error{Code: "plugin_runtime_inactive", Message: "进程插件不支持反向调用"}
 			}
 			return embedded.InvokeEmbedded(ctx, generation, contributionID, value, timeout)

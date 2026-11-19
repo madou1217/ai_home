@@ -55,6 +55,12 @@ type ExitEvent struct {
 	Stderr string
 }
 
+// HostReverseClient 是可选扩展接口：允许插件在处理 invoke 时反向调用网关
+// （协议 v2 的 call 帧，gateway.attempt 的 next()）。process 后端实现行协议反向帧。
+type HostReverseClient interface {
+	InvokeReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall func(context.Context, string, json.RawMessage) (any, error)) (json.RawMessage, error)
+}
+
 // HostRawClient 是可选扩展接口：在 Invoke 返回值之外同时暴露二进制 payload 字节片段。
 type HostRawClient interface {
 	InvokeRaw(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error)
@@ -618,6 +624,39 @@ func (s *Supervisor) Activate(ctx context.Context, generation int64, retainPrevi
 func (s *Supervisor) Invoke(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error) {
 	raw, _, err := s.InvokeRaw(ctx, generation, contributionID, value, timeout)
 	return raw, err
+}
+
+// InvokeReverse 允许 Node 插件在当前 invoke 中反向调用网关（gateway.attempt next）。
+func (s *Supervisor) InvokeReverse(
+	ctx context.Context,
+	generation int64,
+	contributionID string,
+	value any,
+	timeout time.Duration,
+	onCall func(context.Context, string, json.RawMessage) (any, error),
+) (json.RawMessage, error) {
+	cli, err := s.ensureClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	callCtx := ctx
+	if callCtx == nil {
+		callCtx = context.Background()
+	}
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		callCtx, cancel = context.WithTimeout(callCtx, timeout)
+		defer cancel()
+	}
+	res, err := cli.CallWith(callCtx, "invoke", map[string]any{
+		"generation":     generation,
+		"contributionId": contributionID,
+		"value":          value,
+	}, nil, adapterplugins.CallOptions{OnCall: onCall})
+	if err != nil {
+		return nil, err
+	}
+	return res.Value, nil
 }
 
 // InvokeRaw 在 Invoke 基础上同步返回宿主响应帧附带的二进制 payload。

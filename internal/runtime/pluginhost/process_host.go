@@ -38,10 +38,22 @@ type processPlugin struct {
 	stdin      io.WriteCloser
 	reader     *bufio.Reader
 	stderr     *tailBuffer
-	mu         sync.Mutex
+	writeMu    sync.Mutex
+	stateMu    sync.Mutex
 	nextID     int64
+	pending    map[string]*processPending
 	generation int64
 	closed     bool
+}
+
+type processPending struct {
+	replies chan processReply
+	onCall  func(context.Context, string, json.RawMessage) (any, error)
+}
+
+type processReply struct {
+	value json.RawMessage
+	err   error
 }
 
 type tailBuffer struct {
@@ -137,11 +149,13 @@ func (host *ProcessHost) startPlugin(ctx context.Context, generation int64, spec
 	proc := &processPlugin{
 		spec: spec, cmd: cmd, stdin: stdin, reader: bufio.NewReader(stdout),
 		stderr: &tailBuffer{limit: 8192}, generation: generation,
+		pending: map[string]*processPending{},
 	}
 	cmd.Stderr = proc.stderr
 	if err := cmd.Start(); err != nil {
 		return nil, pluginerr.New("plugin_process_start_failed", "process 插件启动失败："+err.Error())
 	}
+	go proc.readLoop()
 	prepareCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	response, err := proc.call(prepareCtx, "prepare", map[string]any{
@@ -189,6 +203,16 @@ func (host *ProcessHost) Invoke(ctx context.Context, generation int64, contribut
 	return proc.call(callCtx, "invoke", map[string]any{
 		"generation": generation, "contributionId": contributionID, "value": value,
 	})
+}
+
+func (host *ProcessHost) InvokeReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall func(context.Context, string, json.RawMessage) (any, error)) (json.RawMessage, error) {
+	host.mu.Lock()
+	proc := host.routes[contributionID]
+	host.mu.Unlock()
+	if proc == nil {
+		return nil, pluginerr.New("plugin_process_route_missing", "没有 process 插件承载该能力："+contributionID)
+	}
+	return proc.InvokeReverse(ctx, generation, contributionID, value, timeout, onCall)
 }
 
 func (host *ProcessHost) Dispose(ctx context.Context, generation int64) (HostDisposeResult, error) {
@@ -246,65 +270,152 @@ func (host *ProcessHost) log(message string) {
 }
 
 func (proc *processPlugin) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	proc.mu.Lock()
-	defer proc.mu.Unlock()
+	return proc.callWith(ctx, method, params, nil)
+}
+
+func (proc *processPlugin) callWith(ctx context.Context, method string, params any, onCall func(context.Context, string, json.RawMessage) (any, error)) (json.RawMessage, error) {
+	proc.stateMu.Lock()
 	if proc.closed {
+		proc.stateMu.Unlock()
 		return nil, pluginerr.New("plugin_rpc_closed", "process 插件已退出")
 	}
 	proc.nextID++
 	id := fmt.Sprintf("%d", proc.nextID)
+	pending := &processPending{replies: make(chan processReply, 1), onCall: onCall}
+	proc.pending[id] = pending
+	proc.stateMu.Unlock()
+	defer func() {
+		proc.stateMu.Lock()
+		delete(proc.pending, id)
+		proc.stateMu.Unlock()
+	}()
+
 	request, _ := json.Marshal(map[string]any{"id": id, "method": method, "params": params})
-	if _, err := proc.stdin.Write(append(request, '\n')); err != nil {
+	proc.writeMu.Lock()
+	_, err := proc.stdin.Write(append(request, '\n'))
+	proc.writeMu.Unlock()
+	if err != nil {
 		return nil, pluginerr.New("plugin_rpc_closed", "process 插件写入失败："+err.Error())
 	}
-	type readResult struct {
-		line []byte
-		err  error
-	}
-	done := make(chan readResult, 1)
-	go func() {
-		line, err := proc.reader.ReadBytes('\n')
-		done <- readResult{line: line, err: err}
-	}()
 	select {
 	case <-ctx.Done():
 		proc.stop(context.Background())
 		return nil, pluginerr.New("plugin_rpc_timeout", "process 插件调用超时")
-	case result := <-done:
-		if result.err != nil {
-			proc.closed = true
-			return nil, pluginerr.New("plugin_rpc_closed", "process 插件读取失败："+result.err.Error())
-		}
-		var response struct {
-			ID     string          `json:"id"`
-			Result json.RawMessage `json:"result"`
-			Error  *struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal(result.line, &response); err != nil {
-			return nil, pluginerr.New("plugin_rpc_invalid", "process 插件返回不是 JSON")
-		}
-		if response.Error != nil {
-			return nil, pluginerr.New(firstNonEmpty(response.Error.Code, "plugin_rpc_error"), response.Error.Message)
-		}
-		if len(response.Result) == 0 {
-			return json.RawMessage("null"), nil
-		}
-		return response.Result, nil
+	case reply := <-pending.replies:
+		return reply.value, reply.err
 	}
 }
 
+// readLoop 读取插件的响应行，并把带 parent 的 call 帧分发给对应 invoke 的反向回调。
+func (proc *processPlugin) readLoop() {
+	for {
+		line, err := proc.reader.ReadBytes('\n')
+		if len(line) > 0 {
+			proc.handleLine(line)
+		}
+		if err != nil {
+			proc.stateMu.Lock()
+			proc.closed = true
+			pending := make([]*processPending, 0, len(proc.pending))
+			for _, item := range proc.pending {
+				pending = append(pending, item)
+			}
+			proc.stateMu.Unlock()
+			for _, item := range pending {
+				item.replies <- processReply{err: pluginerr.New("plugin_rpc_closed", "process 插件已退出")}
+			}
+			return
+		}
+	}
+}
+
+func (proc *processPlugin) handleLine(line []byte) {
+	var message struct {
+		ID     string          `json:"id"`
+		Parent string          `json:"parent"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(line, &message) != nil || message.ID == "" {
+		return
+	}
+	if message.Parent != "" && message.Method != "" {
+		proc.stateMu.Lock()
+		pending := proc.pending[message.Parent]
+		proc.stateMu.Unlock()
+		if pending == nil || pending.onCall == nil {
+			proc.writeResponse(message.ID, nil, pluginerr.New("plugin_rpc_invalid", "反向调用父请求不存在"))
+			return
+		}
+		go func() {
+			result, err := pending.onCall(context.Background(), message.Method, message.Params)
+			proc.writeResponse(message.ID, result, err)
+		}()
+		return
+	}
+	proc.stateMu.Lock()
+	pending := proc.pending[message.ID]
+	proc.stateMu.Unlock()
+	if pending == nil {
+		return
+	}
+	if message.Error != nil {
+		pending.replies <- processReply{err: pluginerr.New(firstNonEmpty(message.Error.Code, "plugin_rpc_error"), message.Error.Message)}
+		return
+	}
+	value := message.Result
+	if len(value) == 0 {
+		value = json.RawMessage("null")
+	}
+	pending.replies <- processReply{value: value}
+}
+
+func (proc *processPlugin) writeResponse(id string, result any, callErr error) {
+	payload := map[string]any{"id": id}
+	if callErr != nil {
+		code := "plugin_rpc_error"
+		message := callErr.Error()
+		if coded, ok := pluginerr.From(callErr); ok {
+			code = firstNonEmpty(coded.Code, code)
+			message = coded.Message
+		}
+		payload["error"] = map[string]any{"code": code, "message": message}
+	} else {
+		payload["result"] = result
+	}
+	encoded, _ := json.Marshal(payload)
+	proc.writeMu.Lock()
+	_, _ = proc.stdin.Write(append(encoded, '\n'))
+	proc.writeMu.Unlock()
+}
+
+// InvokeReverse 允许 process 插件在 invoke 中通过 call 帧反向调用网关。
+func (proc *processPlugin) InvokeReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall func(context.Context, string, json.RawMessage) (any, error)) (json.RawMessage, error) {
+	callCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	return proc.callWith(callCtx, "invoke", map[string]any{
+		"generation": generation, "contributionId": contributionID, "value": value,
+	}, onCall)
+}
+
 func (proc *processPlugin) stop(ctx context.Context) {
-	proc.mu.Lock()
+	proc.stateMu.Lock()
 	if proc.closed {
-		proc.mu.Unlock()
+		proc.stateMu.Unlock()
 		return
 	}
 	proc.closed = true
 	_ = proc.stdin.Close()
-	proc.mu.Unlock()
+	proc.stateMu.Unlock()
 	if proc.cmd != nil && proc.cmd.Process != nil {
 		_ = proc.cmd.Process.Kill()
 		_, _ = proc.cmd.Process.Wait()

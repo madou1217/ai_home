@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/pluginerr"
 )
 
 // HybridHost 按 manifest.runtime 把插件分给两个后端：
@@ -121,6 +123,23 @@ func (host *HybridHost) Invoke(ctx context.Context, generation int64, contributi
 		return nil, errProcessHostUnavailable
 	}
 	return host.node.Invoke(ctx, generation, contributionID, value, timeout)
+}
+
+func (host *HybridHost) InvokeReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall func(context.Context, string, json.RawMessage) (any, error)) (json.RawMessage, error) {
+	host.mu.RLock()
+	isProcess := host.processContributions[contributionID]
+	host.mu.RUnlock()
+	if isProcess {
+		return host.process.InvokeReverse(ctx, generation, contributionID, value, timeout, onCall)
+	}
+	if host.node == nil {
+		return nil, errProcessHostUnavailable
+	}
+	reverse, ok := host.node.(HostReverseClient)
+	if !ok {
+		return nil, pluginerr.New("plugin_rpc_invalid", "当前宿主不支持反向调用")
+	}
+	return reverse.InvokeReverse(ctx, generation, contributionID, value, timeout, onCall)
 }
 
 func (host *HybridHost) Dispose(ctx context.Context, generation int64) (HostDisposeResult, error) {

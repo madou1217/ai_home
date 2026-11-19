@@ -61,10 +61,9 @@ func buildCapabilityVersions() map[string]int {
 	return versions
 }
 
-func processCapabilityUnsupported(capability string) bool {
-	// gateway.attempt 需要反向调用 next()，进程协议当前没有反向帧；其余控制面/
-	// 数据面能力都通过内嵌 Runtime 调用，process 插件可以承载。
-	return capability == "gateway.attempt"
+func processCapabilityUnsupported(string) bool {
+	// process 协议已支持 call/result 反向帧；所有合同能力都可由进程插件承载。
+	return false
 }
 
 var accountCapabilities = map[string]bool{

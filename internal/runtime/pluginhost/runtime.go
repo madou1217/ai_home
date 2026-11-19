@@ -652,6 +652,26 @@ func (r *Runtime) InvokeEmbedded(ctx context.Context, generation int64, contribu
 	return r.Invoke(ctx, generation, contributionID, value, timeout)
 }
 
+// InvokeEmbeddedReverse 实现内嵌反向调用（gateway.attempt 的 next()）。
+func (r *Runtime) InvokeEmbeddedReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall appplugins.ReverseCall) (json.RawMessage, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lease := r.acquireForGeneration(generation)
+	if lease == nil {
+		return nil, pluginerr.New(CodeRuntimeUnavailable, "目标代次未就绪或已卸载")
+	}
+	defer lease.Release()
+	r.mu.Lock()
+	host := r.host
+	r.mu.Unlock()
+	reverse, ok := host.(HostReverseClient)
+	if !ok {
+		return nil, pluginerr.New(CodeRuntimeUnavailable, "当前宿主不支持反向调用")
+	}
+	return reverse.InvokeReverse(ctx, generation, contributionID, value, timeout, onCall)
+}
+
 // InvokeWithPayload 与 Invoke 相同，但保留宿主附带的二进制 payload。
 func (r *Runtime) InvokeWithPayload(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error) {
 	if ctx == nil {

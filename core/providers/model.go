@@ -232,7 +232,12 @@ type SessionSync struct {
 
 // CLIConfig 描述原生 CLI 的发现、登录和账号隔离参数。
 type CLIConfig struct {
-	Order                  int             `json:"order"`
+	Order int `json:"order"`
+
+	// DisplayName 是 Toolkit 应用列表里的 CLI 名称；空表示沿用 Provider 展示名
+	// （例如 Codex CLI 的 Provider 展示名是 ChatGPT，但 CLI 本身叫 Codex）。
+	DisplayName string `json:"displayName,omitempty"`
+
 	GlobalDir              string          `json:"globalDir"`
 	ConfigSubDir           string          `json:"configSubDir,omitempty"`
 	ConfigFile             string          `json:"configFile,omitempty"`

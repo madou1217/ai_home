@@ -877,6 +877,11 @@ func (m *Manager) buildManagedApps(ctx context.Context, opts Options) ListResult
 			label = providerID
 		}
 		displayName := label
+		// CLI 自己的名称优先于 Provider 展示名：Codex 的 Provider 叫 ChatGPT，
+		// 但 Toolkit 的应用列表应显示它实际启动的 CLI 名称。
+		if def.CLI != nil && def.CLI.DisplayName != "" {
+			displayName = def.CLI.DisplayName
+		}
 		if standalone != nil && standalone.Name != "" {
 			displayName = standalone.Name
 		}

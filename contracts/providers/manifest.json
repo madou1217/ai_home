@@ -74,6 +74,7 @@
       },
       "cli": {
         "order": 4,
+        "displayName": "Codex",
         "globalDir": ".codex",
         "configFile": "config.toml",
         "loginArgs": [

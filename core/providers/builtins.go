@@ -104,13 +104,14 @@ func builtinCodex() Definition {
 			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Interrupt", "Stop"},
 		},
 		CLI: &CLIConfig{
-			Order:      4,
-			GlobalDir:  ".codex",
-			ConfigFile: "config.toml",
-			LoginArgs:  []string{"login"},
-			Package:    "@openai/codex",
-			EnvKeys:    []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
-			Headless:   &HeadlessConfig{TriggerSubcommands: []string{"exec"}},
+			Order:       4,
+			DisplayName: "Codex",
+			GlobalDir:   ".codex",
+			ConfigFile:  "config.toml",
+			LoginArgs:   []string{"login"},
+			Package:     "@openai/codex",
+			EnvKeys:     []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
+			Headless:    &HeadlessConfig{TriggerSubcommands: []string{"exec"}},
 			DesktopClient: &DesktopClient{
 				UserDataEnvKey: "CODEX_ELECTRON_USER_DATA_PATH",
 				MacOS: &DesktopPlatform{

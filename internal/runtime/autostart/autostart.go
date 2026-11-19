@@ -113,6 +113,33 @@ func Install(ctx context.Context, options Options) (Status, error) {
 	}
 }
 
+func Stop(ctx context.Context, options Options) error {
+	options, err := normalize(options)
+	if err != nil {
+		return err
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		target := launchdDomain() + "/" + options.Label
+		_, _ = run(ctx, "launchctl", "bootout", target)
+		for attempt := 0; attempt < 50; attempt++ {
+			if _, err := run(ctx, "launchctl", "print", target); err != nil {
+				return nil
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		return nil
+	case "linux":
+		_, err := run(ctx, "systemctl", "--user", "stop", options.Label+".service")
+		return err
+	case "windows":
+		_, _ = run(ctx, "schtasks", "/End", "/TN", options.Label)
+		return nil
+	default:
+		return ErrUnsupportedPlatform
+	}
+}
+
 func Uninstall(ctx context.Context, options Options) error {
 	options, err := normalize(options)
 	if err != nil {

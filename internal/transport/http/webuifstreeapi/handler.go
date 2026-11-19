@@ -47,6 +47,9 @@ type Authorizer interface {
 // Dependencies 汇总目录树依赖。
 type Dependencies struct {
 	Authorizer Authorizer
+	// HostHomeDir 是宿主 HOME：它本身（及其祖先）不允许作为可浏览的项目根，
+	// 否则一次列目录就会触发 macOS 对整个用户目录的隐私授权。
+	HostHomeDir string
 	// ProjectPaths 返回服务端当前已登记项目的绝对路径；为 nil 时没有项目根。
 	ProjectPaths func() []string
 	// TrustedRoots 返回 app-state 中已信任的目录；为 nil 时视为没有信任项。
@@ -59,6 +62,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer   Authorizer
 	fs           webuifile.FS
+	hostHomeDir  string
 	projectPaths func() []string
 	trustedRoots func() []webuifile.TrustedRoot
 }
@@ -75,6 +79,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		authorizer:   dependencies.Authorizer,
 		fs:           fs,
+		hostHomeDir:  strings.TrimSpace(dependencies.HostHomeDir),
 		projectPaths: dependencies.ProjectPaths,
 		trustedRoots: dependencies.TrustedRoots,
 	}, nil
@@ -132,7 +137,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	registry := webuifile.NewProjectRoots(handler.authorizedRoots())
+	registry := webuifile.NewProjectRootsForHost(handler.authorizedRoots(), handler.hostHomeDir)
 	budget := MaxTreeNodes
 	entries, truncated, failure := expandEntries(handler.fs, registry, query.Get("projectPath"), query.Get("path"), depth, &budget)
 	if failure != nil {

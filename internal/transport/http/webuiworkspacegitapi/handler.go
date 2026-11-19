@@ -160,7 +160,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) authorizeLocalRoot(ctx context.Context, projectPath string) (string, bool, error) {
-	registry := webuifile.NewProjectRoots(handler.projectPaths(ctx))
+	registry := webuifile.NewProjectRootsForHost(handler.projectPaths(ctx), handler.hostHomeDir)
 	authorized, ok := registry.Authorize(projectPath)
 	if !ok {
 		return "", false, &gitErr{status: http.StatusForbidden, code: "unknown_project_root", message: "只允许查看已登记项目的 Git 状态"}

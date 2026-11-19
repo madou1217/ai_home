@@ -205,9 +205,15 @@ func (handler *Handler) serveBrowse(responseWriter http.ResponseWriter, request 
 			continue
 		}
 		fullPath := filepath.Join(targetDir, name)
+		// 只用目录项本身的类型，不对每个子项做 stat：目录浏览默认落在宿主 home，
+		// 逐项 stat 会让 macOS 依次弹出 Desktop / Documents / Downloads / 相册 /
+		// 媒体库的隐私授权——列一个目录不该触碰这些受保护目录。
+		// 只有符号链接需要额外解析（d_type 只说明它不是普通目录）。
 		isDir := entry.IsDir()
-		if childInfo, statErr := os.Stat(fullPath); statErr == nil {
-			isDir = childInfo.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			if childInfo, statErr := os.Stat(fullPath); statErr == nil && childInfo.IsDir() {
+				isDir = true
+			}
 		}
 		if isDir {
 			directories = append(directories, dirItem{Name: name, Path: fullPath})

@@ -124,9 +124,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	registry := webuifile.NewProjectRoots(nil)
+	registry := webuifile.NewProjectRootsForHost(nil, handler.env.HostHomeDir)
 	if handler.projectPaths != nil {
-		registry = webuifile.NewProjectRoots(handler.projectPaths())
+		registry = webuifile.NewProjectRootsForHost(handler.projectPaths(), handler.env.HostHomeDir)
 	}
 	var trusted []webuifile.TrustedRoot
 	if handler.trustedRoots != nil {

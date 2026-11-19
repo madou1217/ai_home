@@ -457,7 +457,7 @@ func (handler *Handler) serveLocalTree(response http.ResponseWriter, request *ht
 			roots = append(roots, item.Path)
 		}
 	}
-	registry := webuifile.NewProjectRoots(roots)
+	registry := webuifile.NewProjectRootsForHost(roots, handler.hostHomeDir)
 
 	budget := maxTreeNodes
 	entries, truncated, failure := expandLocalTree(handler.fs, registry, query.Get("projectPath"), query.Get("path"), depth, showHidden, &budget)

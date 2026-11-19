@@ -485,7 +485,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建文件读取接口失败: %w", err)
 	}
 	fsTree, err := webuifstreeapi.NewHandler(webuifstreeapi.Dependencies{
-		Authorizer: authorizer,
+		Authorizer:  authorizer,
+		HostHomeDir: dependencies.HostHomeDir,
 		TrustedRoots: func() []webuifile.TrustedRoot {
 			roots, _ := trustSource.ReadTrustedRoots(context.Background())
 			return roots

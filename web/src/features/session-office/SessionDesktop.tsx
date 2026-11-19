@@ -228,10 +228,16 @@ export function SessionDesktop({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const prevOpenRef = useRef(false);
+  const prevDesktopIdentityRef = useRef<string | null>(null);
   const prevInitialModeRef = useRef(initialMode);
-  const prevInitialScopeRef = useRef(initialMailboxScope);
+  const prevInitialScopeRef = useRef<MailboxScope>(initialMailboxScope ?? 'session');
   const prevTerminalVisibleRef = useRef(false);
   const lastRefitSignatureRef = useRef('');
+
+  const resolvedServerId = typeof serverId === 'string' ? serverId : '';
+  const resolvedSessionKey = typeof session?.sessionKey === 'string' ? session.sessionKey : null;
+  const desktopIdentity = JSON.stringify([resolvedServerId, resolvedSessionKey]);
+  const resolvedInitialMailboxScope: MailboxScope = initialMailboxScope ?? 'session';
 
   const sessionScopeAdmitted = isSessionServerScopeAdmitted(serverId, session);
   const tabScopeAdmitted = isTerminalTabScopeAdmitted(serverId, session);
@@ -297,20 +303,38 @@ export function SessionDesktop({
       setPortalOrigin(null);
       setStandbyMailOpen(false);
       prevTerminalVisibleRef.current = false;
+      lastRefitSignatureRef.current = '';
       return;
     }
 
-    if (justOpened || prevInitialModeRef.current !== initialMode) {
-      prevInitialModeRef.current = initialMode;
+    const identityChanged = prevDesktopIdentityRef.current !== desktopIdentity;
+    prevDesktopIdentityRef.current = desktopIdentity;
+
+    const modeChanged = prevInitialModeRef.current !== initialMode;
+    prevInitialModeRef.current = initialMode;
+
+    const scopeChanged = prevInitialScopeRef.current !== resolvedInitialMailboxScope;
+    prevInitialScopeRef.current = resolvedInitialMailboxScope;
+
+    if (justOpened || identityChanged || modeChanged) {
       setLayoutMode(initialMode);
       setTerminalMinimized(initialMode === 'mail-focus');
       setMailMinimized(initialMode === 'terminal-focus');
       setStandbyMailOpen(initialMode === 'mail-focus');
     }
 
-    if (justOpened || prevInitialScopeRef.current !== initialMailboxScope) {
-      prevInitialScopeRef.current = initialMailboxScope;
-      setMailboxScope(initialMailboxScope ?? 'session');
+    if (justOpened || identityChanged || scopeChanged) {
+      setMailboxScope(resolvedInitialMailboxScope);
+    }
+
+    if (identityChanged) {
+      setSettingsOpen(false);
+      setDualSpanFull(false);
+      prevTerminalVisibleRef.current = false;
+      lastRefitSignatureRef.current = '';
+      if (!justOpened) {
+        setPortalOrigin(null);
+      }
     }
 
     if (justOpened) {
@@ -326,7 +350,15 @@ export function SessionDesktop({
         });
       }
     }
-  }, [initialMailboxScope, initialMode, isPoweredOn, open, originRect, session?.canAttachTerminal]);
+  }, [
+    desktopIdentity,
+    initialMode,
+    isPoweredOn,
+    open,
+    originRect,
+    resolvedInitialMailboxScope,
+    session?.canAttachTerminal,
+  ]);
 
   useEffect(() => {
     if (!open || !portalOrigin) return undefined;

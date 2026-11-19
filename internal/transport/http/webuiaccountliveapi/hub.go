@@ -934,12 +934,6 @@ func (hub *Hub) tokenUsageFor(ctx context.Context, accountRef string) (*tokenUsa
 	return value, true
 }
 
-// PublishPath 让宿主把 Node 仍然产生的事件（token-consumed / account-activity）
-// 注入同一条实时流：迁移 watch 到 Go 时，这两类帧必须继续出现在浏览器端。
-//
-//	POST /v1/management/webui/accounts/watch/publish
-const PublishPath = Path + "/publish"
-
 // 保留类型：快照与账号行只能由 Go 从数据库推导，外部注入会让两侧版本与内容分叉。
 var reservedPublishTypes = map[string]struct{}{
 	"snapshot": {},

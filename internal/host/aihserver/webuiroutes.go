@@ -891,7 +891,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET /v0/webui/accounts/live", Handler: webuiaccountliveapi.NewPublicLiveAlias(accountLive)},
 		{Pattern: "POST " + webuiaccountliveapi.SnapshotPath, Handler: accountLive},
 		// 宿主注入实时事件（token-consumed / account-activity）到同一条 watch 流。
-		{Pattern: "POST " + webuiaccountliveapi.PublishPath, Handler: accountLive},
 		{Pattern: "GET " + webuiaccountliveapi.LivePath, Handler: http.HandlerFunc(accountLive.ServeLiveHTTP)},
 		// 浏览器入口：账号发现与导出都由 router 统一派生公开别名。
 		{Pattern: "POST " + webuiaccountdetectapi.Path, Handler: accountDetect},
